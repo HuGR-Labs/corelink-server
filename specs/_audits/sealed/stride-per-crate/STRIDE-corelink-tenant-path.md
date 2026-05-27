@@ -28,7 +28,7 @@
 | **S** | Caller passes attacker-controlled tenant_id (URL or header injection) | tenant_id sourced from validated PAT/JWT `tid` claim only; URL/header path includes tenant only as cross-check (must match) | `specs/tla/tenant_isolation.tla` + `crates/tenant-path/tests/prop_tenant_path.rs` — FM-TENANT-001 |
 | **T** | Tampered prefix substituted between derive and storage call | Prefix returned by value (owned bytes); type-system enforces flow; assertion at storage driver re-derives + compares | property test cross-tenant 30k cases (INV-TENANT-ISOLATION) |
 | **R** | "We read another tenant's blob" claim | Audit emit includes derived prefix hash + tenant_id (pre+post) | INV-AUTH-AUDIT-PRE-POST-ORDERING |
-| **I** | Existence oracle via 404 timing | CTRL-ISO-004 (Constant-time 404 MissReason parity per ADR-0023+ADR-0028); `TimingPaddingLayer`; pairwise Mann-Whitney + Šidák; \|Δmedian\| ≤ 1ms gate; alert SEV-2 > 5ms | `specs/_audits/2026-05-14-property-test-summary-s19.md` — FM-TENANT-004 |
+| **I** | Existence oracle via 404 timing | CTRL-ISO-004 (Constant-time 404 MissReason parity per ADR-0023+ADR-0028); `TimingPaddingLayer`; pairwise Mann-Whitney + Šidák; \|Δmedian\| ≤ 1ms gate; alert SEV-2 > 5ms | `specs/_audits/sealed/2026-05-14-property-test-summary-s19.md` — FM-TENANT-004 |
 | **D** | High prefix-derivation cost (HMAC) on hot path | HMAC-SHA256 ≤ 10 µs; result cached per request (`Arc<[u8;16]>`) | benches |
 | **E** | Cross-tenant escalation by passing both tenants' IDs to a single call | INV-TENANT-ISOLATION 5-layer defense (`auth_model.md §8.1`); confused-deputy mitigated by single-tenant-per-call invariant | `specs/tla/tenant_isolation.tla` |
 
@@ -61,7 +61,7 @@
 | **S** | Tenant injects forged dedup hint | Dedup lookup uses derived digest only; tenant_id verified post-match | property test |
 | **T** | Dedup table tampered to point to attacker blob | CAS integrity check on read (CTRL-CAS-002 BLAKE3 verify); INV-CAS-INTEGRITY | `specs/tla/cas_integrity.tla` |
 | **R** | "Dedup credited my tenant for unowned content" | Audit emit with both source + target tenant_id on cross-tenant match | INV-AUDIT-APPEND-ONLY |
-| **I** | Existence oracle: "this blob is in another tenant" leaks | CTRL-ISO-005 — cross-tenant dedup OFF by default; opt-in requires customer ADR signing acknowledging existence-oracle risk | `specs/_audits/2026-05-14-pentest-s14-byok.md` |
+| **I** | Existence oracle: "this blob is in another tenant" leaks | CTRL-ISO-005 — cross-tenant dedup OFF by default; opt-in requires customer ADR signing acknowledging existence-oracle risk | `specs/_audits/sealed/2026-05-14-pentest-s14-byok.md` |
 | **D** | Dedup probe storm | Per-tenant dedup lookup rate | rate-limit |
 | **E** | Cross-tenant dedup used to read another tenant's blob | Dedup returns digest match only; blob read still enforces tenant prefix; impossible to read across | INV-DEDUP-CONSISTENCY |
 
@@ -78,8 +78,8 @@
 - `crates/tenant-path/tests/prop_tenant_path.rs` — derivation primitive property tests
 - `crates/corelink-worker/tests/` — path-traversal + cross-tenant integration cases
 - `specs/tla/tenant_isolation.tla` — formal 5-layer model
-- `specs/_audits/2026-05-14-property-test-summary-s19.md` — timing-parity evidence (CTRL-ISO-004)
-- `specs/_audits/2026-05-01-adversarial-s03.md` and later S-04/S-05 (tenant isolation focus sprints)
+- `specs/_audits/sealed/2026-05-14-property-test-summary-s19.md` — timing-parity evidence (CTRL-ISO-004)
+- `specs/_audits/sealed/2026-05-01-adversarial-s03.md` and later S-04/S-05 (tenant isolation focus sprints)
 
 ## 5. Cross-references
 

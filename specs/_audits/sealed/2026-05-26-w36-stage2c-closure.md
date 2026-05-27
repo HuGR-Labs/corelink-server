@@ -14,9 +14,9 @@ supersedes: null
 superseded_by: null
 tags: ["audit","wave-36","stage-2c","closure","consumer-migration","follow-up","partial-seal"]
 references:
-  - "specs/_audits/2026-05-22-w33-stage2-c-adapter-splits.md"
-  - "specs/_audits/2026-05-26-wave-33-34-closure-followups.md"
-  - "specs/_audits/2026-05-26-w35-adapter-host-prep.md"
+  - "specs/_audits/sealed/2026-05-22-w33-stage2-c-adapter-splits.md"
+  - "specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md"
+  - "specs/_audits/sealed/2026-05-26-w35-adapter-host-prep.md"
 ---
 
 # Wave 36 Stage 2.C Closure — Consumer Migration (Partial SEAL)
@@ -38,7 +38,7 @@ migrate all workspace consumer files away from direct
 - `corelink_slack_real::*` → `corelink_ops::slack::*`
 - `corelink_clerk_cf::*` → `corelink_auth::clerk_cf::*`
 
-Source: `specs/_audits/2026-05-26-wave-33-34-closure-followups.md`
+Source: `specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md`
 §3 follow-up #1.
 
 ## §2. Pre-migration surface
@@ -203,7 +203,7 @@ resolver would reject it at resolution time.)
 CHILD of the `corelink-billing` umbrella. It is not an independent
 consumer — it IS part of the billing family. The correct resolution
 is a dep-graph inversion (as originally documented in
-`specs/_audits/2026-05-22-w33-stage2-c-adapter-splits.md` §5):
+`specs/_audits/sealed/2026-05-22-w33-stage2-c-adapter-splits.md` §5):
 the materializer's trait imports (AuditEmitter, IdempotencyStore,
 StateMaterializer, etc.) should be defined INSIDE `corelink-billing`
 (not in `corelink-stripe-real`), and `corelink-stripe-real`'s adapter
@@ -306,7 +306,7 @@ What STILL BLOCKS full closure:
    `corelink-billing` and inverting the dep direction so
    `corelink-stripe-real` depends on `corelink-billing` (not the
    current inverse). This is the 6-crate dep-graph inversion from
-   `specs/_audits/2026-05-22-w33-stage2-c-adapter-splits.md` §5.
+   `specs/_audits/sealed/2026-05-22-w33-stage2-c-adapter-splits.md` §5.
 
 2. **DSR scheduler wasm32 tokio gate** (Trigger B) — requires
    platform-gating `corelink-ops` in the scheduler's Cargo.toml or
@@ -365,7 +365,7 @@ all compile clean via `cargo test --workspace --no-run`).
 ## §10. Closure note — W36 Stage 3 cargo-deny lockdown enforced (2026-05-27)
 
 The §8 step 3 "cargo-deny lockdown" task is now executed and SEALed
-in `specs/_audits/2026-05-27-w36-stage-3-seal.md`. The lockdown
+in `specs/_audits/sealed/2026-05-27-w36-stage-3-seal.md`. The lockdown
 adds 4 `[bans] deny` entries (one per absorbed adapter crate) to
 the workspace `deny.toml`, each with a `wrappers = [...]` allowlist
 enumerating exactly the legal historical direct importers (Wave-33
@@ -377,7 +377,7 @@ canonical umbrella path.
 
 Combined with Trigger A SEAL (materializer src migrated to
 `corelink-billing-stripe-traits`,
-`specs/_audits/2026-05-27-w36-trigger-a-seal.md`) and Trigger B
+`specs/_audits/sealed/2026-05-27-w36-trigger-a-seal.md`) and Trigger B
 SEAL (scheduler `corelink-ops` platform-gated to `not(wasm32)`,
 `specs/_audits/2026-05-27-w36-trigger-b-seal.md`), this Partial-SEAL
 is upgraded to **FULL Wave-36 closure** end-to-end: closure-followups

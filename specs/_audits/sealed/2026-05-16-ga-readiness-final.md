@@ -6,11 +6,11 @@
 > **Base:** `main` @ `33138b5` ("merge wt/r-prep-debt-008-mutation-wave23 into main (wave-23)" — wave-23 SEAL tip).
 > **Scope:** consolidate wave-19 → wave-24 evidence into a single sign-off-ready document; render an aggregate **GO / CONDITIONAL / NO-GO** recommendation; surface every residual blocker by class (user-bound, vendor-bound, in-flight, post-GA) with closure ETA; provide the 2-key signature block keyed against `RB-GA-CUTOVER.md` §4 greenlight criteria + `GA-GATE-GO-NOGO-TEMPLATE.md` decision schema.
 > **Companion docs:**
-> - `specs/_audits/2026-05-16-ga-final-checklist.md` — operator-runnable boolean checklist (this audit references each row).
+> - `specs/_audits/sealed/2026-05-16-ga-final-checklist.md` — operator-runnable boolean checklist (this audit references each row).
 > - `specs/_runbooks/RB-GA-CUTOVER.md` §0 → §4 (cutover prerequisites + greenlight composite query).
 > - `specs/_compliance/GA-GATE-CRITERIA.md` (59 criteria across 6 tracks; this audit aggregates the engineering + security + operations tracks).
 > - `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md` (the meeting whose APPROVED decision authorizes `RB-GA-CUTOVER.md`).
-> - `specs/_audits/2026-05-15-debt-register.md` v1.2.x (DEBT canonical state).
+> - `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.x (DEBT canonical state).
 > - `specs/03_architecture/invariant_registry.md` (INV canonical state).
 
 ---
@@ -26,7 +26,7 @@
 | Dimension | State | Verdict |
 |---|---|---|
 | Sprint implementation (S-00 → S-20) | All 21 sprints SEALED; R-prep + waves 18-24 production wiring complete | ✅ GREEN |
-| Spec corpus | 197 INVs declared / 143 WI-coverage / 0 orphan / **0 CRITICAL without TLA+ proof** (was 1 — INV-PAT-REVOKE-PROPAGATION §3.28 is now TLA-verified via `specs/tla/auth_pat_revoke.tla` cherry-pick `8fa1c22` landed wave-25; **61/61 CRITICAL TLA-verified, Z=0 unverified per wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`**; broader-scope TLA-verified count now 82; figures refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`) | ✅ GREEN |
+| Spec corpus | 197 INVs declared / 143 WI-coverage / 0 orphan / **0 CRITICAL without TLA+ proof** (was 1 — INV-PAT-REVOKE-PROPAGATION §3.28 is now TLA-verified via `specs/tla/auth_pat_revoke.tla` cherry-pick `8fa1c22` landed wave-25; **61/61 CRITICAL TLA-verified, Z=0 unverified per wave-26 final audit `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`**; broader-scope TLA-verified count now 82; figures refreshed wave-27 per `specs/_audits/sealed/2026-05-16-tla-figure-refresh-wave27.md`) | ✅ GREEN |
 | Adversarial review aggregate (waves 18→23) | wave-18 9.5/10 → wave-19 8.86/10 → wave-20 9.40/10 → wave-21 9.55/10 → wave-22 9.45/10 → wave-23 (this wave, in-flight stream #1) | ✅ GREEN (trend stable above 9.4 SOTA-bar with floor 8.5) |
 | DEBT register | 6 canonical OPEN pre-wave-23-SEAL → projected 4 post-wave-23-SEAL; 1 P0 (DEBT-003 user-bound) | 🟡 YELLOW (P0 user-bound) |
 | Mutation kill-rate (DEBT-008) | 4 crates empirically CLOSED (audit-chain 84.24%, hash 97.22%, dedup 92.06%, tenant-path 100%) + 2 PARTIAL projected 100% + 5 in-flight wave-23 + 4 on CI-nightly matrix | 🟡 YELLOW (narrows to GREEN at wave-23 stream #2 SEAL) |
@@ -36,7 +36,7 @@
 | Customer-facing readiness | CLI verify-ndjson HTTP / SDK examples / pilot onboarding E2E (wave-23 stream #5) / CS playbook (wave-23 stream #7) / beta-feedback triage (wave-23 stream #8) | 🟡 YELLOW pending wave-23 SEAL streams |
 | Operational readiness | RB-GA-CUTOVER + 50+ RB-* runbooks cross-ref; 24h endurance harness built wave-22; chaos campaign 8 fail-CLOSED scenarios SEALED wave-22; chaos combined-failure (wave-23) in flight | 🟡 YELLOW pending dry-run rehearsal |
 | External dependencies | 7 DEFER (5 user-bound + 1 vendor-bound + 1 mixed) | 🟡 YELLOW (counter §11) |
-| Freeze status | GA-1 feature freeze ACTIVE since 2026-05-16 per `specs/_audits/2026-05-16-ga-1-feature-freeze.md` §1; only §3.a P0-security / §3.b P1-ga-blocker / §3.c cosmetic-doc exceptions may merge to `main` until §6 thaw conditions are satisfied | ✅ ACTIVE |
+| Freeze status | GA-1 feature freeze ACTIVE since 2026-05-16 per `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md` §1; only §3.a P0-security / §3.b P1-ga-blocker / §3.c cosmetic-doc exceptions may merge to `main` until §6 thaw conditions are satisfied | ✅ ACTIVE |
 
 **Net:** **CONDITIONAL GO**. Owner sign-off via ADR-0034b 2-key (Owner + on-call SRE) unlocks `RB-GA-CUTOVER.md` §0 checklist run. The 7 external DEFER items are the *only* gate remaining; engineering-side has no in-house blocker. Feature-freeze GA-1 is now enforced (`scripts/check-ga-freeze-allowed.py`), so no further engineering scope can creep into the cutover window.
 
@@ -66,7 +66,7 @@ All 21 sprints SEALED per `specs/04_sprints/S{00..20}/` `work_status: SEALED` ma
 | S-15 | Observability + SLO | wave-15 | DEBT-011 replication SLO landed; `slo_catalog.md` wave-15. |
 | S-16 | Compliance + DSR | wave-16 | `corelink-dsr-*` workers; SOC 2 / ISO 27001 / GDPR / LGPD rolled-up 2026-05-15. |
 | S-17 | Operational discipline | wave-17 | INV registry §3.27 (wave-23 sweep); runbook tracker; tabletop schedule. |
-| S-18 | Pentest + security | wave-18 | Pentest scope SEALED `specs/_audits/2026-05-16-pre-ga-pentest-scope.md`; engagement vendor-bound. |
+| S-18 | Pentest + security | wave-18 | Pentest scope SEALED `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md`; engagement vendor-bound. |
 | S-19 | Pilot onboarding + GA cutover prep | wave-19 | `RB-GA-CUTOVER.md` + `GA-GATE-CRITERIA.md` + `GA-GATE-GO-NOGO-TEMPLATE.md`. |
 | S-20 | GA cutover execution | wave-20 | All cutover machinery in place; awaiting `RB-GA-CUTOVER.md` §0 checklist run authorization. |
 
@@ -122,23 +122,23 @@ Per `python3 scripts/validate_canonical_consistency.py` against `wt/r-prep-ga-re
 | └ MEDIUM | **4** | 0 |
 | └ LOW / UNKNOWN | **0** | 0 |
 | Aliases declared (registry §5) | **15** | +2 (wave-23 sweep added 2 legacy → canonical aliases) |
-| TLA+ verified (declared INVs proved in `specs/tla/*.tla`) | **82** | +1 (was 81 pre-wave-25; +1 from `auth_pat_revoke.tla` cherry-pick `8fa1c22`; refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`) |
+| TLA+ verified (declared INVs proved in `specs/tla/*.tla`) | **82** | +1 (was 81 pre-wave-25; +1 from `auth_pat_revoke.tla` cherry-pick `8fa1c22`; refreshed wave-27 per `specs/_audits/sealed/2026-05-16-tla-figure-refresh-wave27.md`) |
 | Code-referenced (declared INVs cited in `crates/*/src/`) | **103** | 0 |
 | Test-referenced (declared INVs cited in `crates/*/tests/`) | **89** | 0 |
 | Orphan refs (in code, NOT in registry+aliases) | **0** | 0 |
-| CRITICAL without TLA+ proof | **0** (was 1; INV-PAT-REVOKE-PROPAGATION TLA-verified via `auth_pat_revoke.tla` cherry-pick `8fa1c22` wave-25; **61/61 CRITICAL TLA-verified, Z=0 unverified per wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`**) | -1 |
+| CRITICAL without TLA+ proof | **0** (was 1; INV-PAT-REVOKE-PROPAGATION TLA-verified via `auth_pat_revoke.tla` cherry-pick `8fa1c22` wave-25; **61/61 CRITICAL TLA-verified, Z=0 unverified per wave-26 final audit `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`**) | -1 |
 | Declared with NO code/test reference | **76** | +5 (forward-looking INV-DRAFT promotions) |
 | Declared test-only (test ref but no src/) | **18** | 0 |
 
 Per `python3 scripts/validate_inv_promotion.py`: registry coverage **143/143** (all WI-declared INVs present in registry §3) — unchanged.
 
-**Net INV state:** **all 61 CRITICAL invariants have direct or inherited TLA+ proof** post wave-25 `auth_pat_revoke.tla` cherry-pick `8fa1c22` + wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`) confirming 61/61 CRITICAL TLA-verified, Z=0 unverified. The §4.3 wall-clock-obligation exemption framework remains in the registry but **no CRITICAL invariant currently consumes it**. Zero orphan refs. Coverage is 143/143 against WI-declared INVs. The +5 INV-DRAFT promotions from wave-23 sweep are forward-looking (no current code-ref yet) and reflect S-17 OPS + AUTH-PAT registry sections. (Figures refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`.)
+**Net INV state:** **all 61 CRITICAL invariants have direct or inherited TLA+ proof** post wave-25 `auth_pat_revoke.tla` cherry-pick `8fa1c22` + wave-26 final audit `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`) confirming 61/61 CRITICAL TLA-verified, Z=0 unverified. The §4.3 wall-clock-obligation exemption framework remains in the registry but **no CRITICAL invariant currently consumes it**. Zero orphan refs. Coverage is 143/143 against WI-declared INVs. The +5 INV-DRAFT promotions from wave-23 sweep are forward-looking (no current code-ref yet) and reflect S-17 OPS + AUTH-PAT registry sections. (Figures refreshed wave-27 per `specs/_audits/sealed/2026-05-16-tla-figure-refresh-wave27.md`.)
 
 ---
 
 ## §5. DEBT register state
 
-Per `specs/_audits/2026-05-15-debt-register.md` v1.2.1 (most recent reconciliation; +DEBT-025 LFPDPPP MX added wave-23 OPEN). Totals: **22 rows; 6 canonical OPEN pre-wave-23-SEAL** (1 P0, 3 P1, 2 P2). Projected post-wave-23-SEAL: **4 OPEN** (DEBT-015-BUILD closes if stream #3 succeeds; DEBT-008 narrows empirical subset; user-bound rows remain).
+Per `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.1 (most recent reconciliation; +DEBT-025 LFPDPPP MX added wave-23 OPEN). Totals: **22 rows; 6 canonical OPEN pre-wave-23-SEAL** (1 P0, 3 P1, 2 P2). Projected post-wave-23-SEAL: **4 OPEN** (DEBT-015-BUILD closes if stream #3 succeeds; DEBT-008 narrows empirical subset; user-bound rows remain).
 
 ### §5.1 OPEN canonical rows pre-wave-23-SEAL
 
@@ -181,9 +181,9 @@ Cross-ref `slo_catalog.md` (§4.27–§4.29 replication SLOs landed wave-15 DEBT
 
 ### §6.1 Chaos + endurance evidence
 
-- **Chaos campaign 8 fail-CLOSED scenarios** SEALED wave-22 (`specs/_audits/2026-05-16-chaos-campaign-harness.md` + `RB-CHAOS-CAMPAIGN.md` + `RB-CHAOS-CATALOG.md`).
-- **Chaos combined-failures matrix** (executor-loss × replication-lag × tenant-isolation) in flight wave-23 stream #4 (`specs/_audits/2026-05-16-chaos-combined-failures.md`).
-- **24h endurance harness** SEALED wave-22 (`specs/_audits/2026-05-16-24h-endurance-harness.md` + `RB-24H-ENDURANCE-LOAD.md` + `RB-ENDURANCE-24H-DRILL.md`). **Soak run execution scheduled wave-24 stream #6.**
+- **Chaos campaign 8 fail-CLOSED scenarios** SEALED wave-22 (`specs/_audits/sealed/2026-05-16-chaos-campaign-harness.md` + `RB-CHAOS-CAMPAIGN.md` + `RB-CHAOS-CATALOG.md`).
+- **Chaos combined-failures matrix** (executor-loss × replication-lag × tenant-isolation) in flight wave-23 stream #4 (`specs/_audits/sealed/2026-05-16-chaos-combined-failures.md`).
+- **24h endurance harness** SEALED wave-22 (`specs/_audits/sealed/2026-05-16-24h-endurance-harness.md` + `RB-24H-ENDURANCE-LOAD.md` + `RB-ENDURANCE-24H-DRILL.md`). **Soak run execution scheduled wave-24 stream #6.**
 
 ---
 
@@ -197,7 +197,7 @@ Per `specs/_compliance/*` 2026-05-15 dated rollup docs (last-touched compliance 
 | **ISO 27001** | `ISO27001-CROSSWALK-2026-05-15.md` + `ISO27001-STATEMENT-OF-APPLICABILITY-2026-05-15.md` + `ISO27001-GAP-ANALYSIS.md` + `ISO27001-INTERNAL-AUDIT-PROGRAM.md` + `ISO27001-ROADMAP.md` + `ISO27001-MANAGEMENT-REVIEW-TEMPLATE.md` | 2026-05-15 | Stage-1 / Stage-2 audits per roadmap | ✅ READY (Stage-1 audit eligible; Stage-2 = T+6m) |
 | **GDPR** | `GDPR-FULL-AUDIT-2026-05-15.md` + `GDPR-DPIA-LIBRARY.md` + `GDPR-SCC-EXECUTION-2026-05-15.md` | 2026-05-15 | DPIA library complete; SCC executed | ✅ READY |
 | **LGPD** | `LGPD-FULL-AUDIT-2026-05-15.md` + `LGPD-RESIDENCY-ATTESTATION-2026-05-15.md` + `LGPD-ROPA-2026-05-15.md` + `LGPD-DPO-MONTHLY-CHECKLIST.md` + `DPO-APPOINTMENT-2026-05-15.md` | 2026-05-15 | DPO appointed; monthly checklist cadence | ✅ READY |
-| **LFPDPPP (MX)** | `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md` + `docs/legal/lfpdppp-mx-engagement-letter-template.md` | 2026-05-16 (engineering-side) | Attorney sign-off pending (DEBT-025 OPEN) | 🟡 YELLOW (user/attorney) |
+| **LFPDPPP (MX)** | `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md` + `docs/legal/lfpdppp-mx-engagement-letter-template.md` | 2026-05-16 (engineering-side) | Attorney sign-off pending (DEBT-025 OPEN) | 🟡 YELLOW (user/attorney) |
 | **PCI DSS (SAQ-A)** | `PCI-DSS-SAQ-A-2026-05-15.md` + `PCI-DSS-BOUNDARY-DIAGRAM.md` + `PCI-DSS-ANNUAL-RECERTIFY.md` | 2026-05-15 | SAQ-A scope (Stripe-tokenised; no PAN in CoreLink boundary) | ✅ READY |
 | **CCPA** | Cross-referenced from GDPR/LGPD rollups + `IR-TABLETOP-PLAYBOOK.md` §1798.82 cure-period drill | 2026-05-15 | Inherits from GDPR pipeline | ✅ READY |
 | **FedRAMP Moderate** | `FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md` + `FEDRAMP-NOT-IN-SCOPE-RATIONALE.md` | 2026-05-15 | Explicitly **NOT in scope** for GA (rationale doc) | ✅ DOCUMENTED |
@@ -210,16 +210,16 @@ Per `specs/_compliance/*` 2026-05-15 dated rollup docs (last-touched compliance 
 
 | Surface | Evidence | Verdict |
 |---|---|---|
-| **BYOK 4-provider matrix** (AWS KMS / GCP KMS / Azure Key Vault / HashiCorp Vault) | `specs/_audits/2026-05-15-byok-real-provider-pattern.md` + `BYOK-FIPS-ATTESTATION-MATRIX.md` (3 of 4 provider rows complete; AWS row `TBD-on-receipt` = DEBT-003) | 🟡 YELLOW (DEBT-003 user-bound) |
-| **RLS WITH CHECK** (Neon shadow + D1) | Wave-18 Stream B Neon shadow `specs/_audits/2026-05-15-neon-analytics-shadow.md` + `specs/_audits/2026-05-16-neon-shadow-real-driver.md` | ✅ GREEN |
+| **BYOK 4-provider matrix** (AWS KMS / GCP KMS / Azure Key Vault / HashiCorp Vault) | `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md` + `BYOK-FIPS-ATTESTATION-MATRIX.md` (3 of 4 provider rows complete; AWS row `TBD-on-receipt` = DEBT-003) | 🟡 YELLOW (DEBT-003 user-bound) |
+| **RLS WITH CHECK** (Neon shadow + D1) | Wave-18 Stream B Neon shadow `specs/_audits/sealed/2026-05-15-neon-analytics-shadow.md` + `specs/_audits/sealed/2026-05-16-neon-shadow-real-driver.md` | ✅ GREEN |
 | **Audit fail-CLOSED** | `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER` family enforced; chaos campaign 8 scenarios SEALED wave-22; mutation 84.24% empirically CLOSED wave-15 | ✅ GREEN |
 | **WallClock cross-route** | Wave-21 closure `f3462c6`; 9.55/10 adversarial score; wave-23 cleanup absorbed P2-01 | ✅ GREEN |
 | **Chaos combined-failure** | wave-23 stream #4 in flight (executor-loss × replication-lag × tenant-isolation) | 🟡 YELLOW pending stream #4 SEAL |
-| **Pentest scope** | `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` v1.0 SEALED wave-18 (502 lines, 6 attacker models, 41 attack chains, ASVS v4.0.3 self-assessment, STRIDE + LINDDUN matrices) | ✅ DOCUMENTED (engagement vendor-bound) |
-| **Pre-GA security attestation** | `specs/_audits/2026-05-16-pre-ga-security-attestation.md` (wave-25) — consolidated 8-wave adversarial trend, INV-CRITICAL TLA+ coverage, mutation/chaos/endurance evidence, compliance + BYOK + audit chain rollup, vendor handoff checklist | ✅ DOCUMENTED (day-1 vendor pack) |
-| **Mutation kill-rate** (DEBT-008 11-of-15 crates either empirical or projected ≥75%) | `specs/_audits/2026-05-16-debt-008-wave23-mutation-sweep.md` + 4 prior sweep audits; 4 crates on CI-nightly matrix | 🟡 YELLOW (narrows to GREEN at wave-23 stream #2 SEAL) |
-| **Secrets matrix** | `specs/_audits/2026-05-16-secrets-matrix-tighten.md` (DEBT-001 closed wave-15; validator `code_only=0`); `specs/_audits/2026-05-16-secrets-x-false-positive-fix.md` | ✅ GREEN |
-| **Static analysis** | `specs/_audits/2026-05-15-static-analysis-baseline.md` + `specs/_audits/2026-05-15-codeql-semgrep-baseline.md` + actionlint baseline + action SHA pinning baseline | ✅ GREEN |
+| **Pentest scope** | `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` v1.0 SEALED wave-18 (502 lines, 6 attacker models, 41 attack chains, ASVS v4.0.3 self-assessment, STRIDE + LINDDUN matrices) | ✅ DOCUMENTED (engagement vendor-bound) |
+| **Pre-GA security attestation** | `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` (wave-25) — consolidated 8-wave adversarial trend, INV-CRITICAL TLA+ coverage, mutation/chaos/endurance evidence, compliance + BYOK + audit chain rollup, vendor handoff checklist | ✅ DOCUMENTED (day-1 vendor pack) |
+| **Mutation kill-rate** (DEBT-008 11-of-15 crates either empirical or projected ≥75%) | `specs/_audits/sealed/2026-05-16-debt-008-wave23-mutation-sweep.md` + 4 prior sweep audits; 4 crates on CI-nightly matrix | 🟡 YELLOW (narrows to GREEN at wave-23 stream #2 SEAL) |
+| **Secrets matrix** | `specs/_audits/sealed/2026-05-16-secrets-matrix-tighten.md` (DEBT-001 closed wave-15; validator `code_only=0`); `specs/_audits/sealed/2026-05-16-secrets-x-false-positive-fix.md` | ✅ GREEN |
+| **Static analysis** | `specs/_audits/sealed/2026-05-15-static-analysis-baseline.md` + `specs/_audits/sealed/2026-05-15-codeql-semgrep-baseline.md` + actionlint baseline + action SHA pinning baseline | ✅ GREEN |
 | **Dependency hygiene** | `dependabot-policy.md` + `RB-DEPENDABOT-INCIDENT.md` | ✅ GREEN |
 
 **Net security:** **3 GREEN-blocked-on-external-DEFER** (BYOK matrix AWS row, chaos combined-failure stream-#4 SEAL, mutation stream-#2 SEAL) + **rest GREEN**. No structural security blocker.
@@ -232,12 +232,12 @@ Per `specs/_compliance/*` 2026-05-15 dated rollup docs (last-touched compliance 
 |---|---|---|
 | **CLI `verify-ndjson` HTTP** | S-19 SEALED; CLI wired to handler | ✅ GREEN |
 | **SDK examples** | S-19 SEALED; examples docs | ✅ GREEN |
-| **Pilot onboarding E2E dry-run** | wave-23 stream #5 in flight `specs/_audits/2026-05-16-pilot-onboarding-e2e.md` + `RB-PILOT-ONBOARDING-E2E.md` | 🟡 YELLOW pending stream #5 SEAL |
+| **Pilot onboarding E2E dry-run** | wave-23 stream #5 in flight `specs/_audits/sealed/2026-05-16-pilot-onboarding-e2e.md` + `RB-PILOT-ONBOARDING-E2E.md` | 🟡 YELLOW pending stream #5 SEAL |
 | **Customer success playbook** | wave-23 stream #7 in flight (onboarding ladder + health-score thresholds + escalation matrix) | 🟡 YELLOW pending stream #7 SEAL |
-| **Beta feedback triage pipeline** | wave-23 stream #8 in flight `specs/_audits/2026-05-16-beta-feedback-triage-harness.md` (GitHub-issue + email + status-page comment routes → labels + per-area routing) | 🟡 YELLOW pending stream #8 SEAL |
-| **Customer breach notification templates** | `specs/_audits/2026-05-15-customer-breach-notification-templates.md` | ✅ GREEN |
-| **Customer dashboard** | `specs/_audits/2026-05-15-customer-dashboard-spec.md` + 12 dashboards in `specs/_dashboards/` | ✅ GREEN |
-| **Stripe customer portal** | `specs/_audits/2026-05-15-stripe-customer-portal-spec.md` + `RB-STRIPE-PORTAL-INCIDENT.md` | ✅ GREEN |
+| **Beta feedback triage pipeline** | wave-23 stream #8 in flight `specs/_audits/sealed/2026-05-16-beta-feedback-triage-harness.md` (GitHub-issue + email + status-page comment routes → labels + per-area routing) | 🟡 YELLOW pending stream #8 SEAL |
+| **Customer breach notification templates** | `specs/_audits/sealed/2026-05-15-customer-breach-notification-templates.md` | ✅ GREEN |
+| **Customer dashboard** | `specs/_audits/sealed/2026-05-15-customer-dashboard-spec.md` + 12 dashboards in `specs/_dashboards/` | ✅ GREEN |
+| **Stripe customer portal** | `specs/_audits/sealed/2026-05-15-stripe-customer-portal-spec.md` + `RB-STRIPE-PORTAL-INCIDENT.md` | ✅ GREEN |
 
 **Net customer-facing:** **5 GREEN + 3 YELLOW pending wave-23 SEAL streams**. No structural customer-facing blocker.
 
@@ -262,7 +262,7 @@ Per `specs/_compliance/*` 2026-05-15 dated rollup docs (last-touched compliance 
 
 ### §10.2 GA cutover dry-run rehearsal
 
-Per `specs/_audits/2026-05-16-wave23-closure.md` §3.4 dry-run readiness assessment, the machinery (chaos + endurance + pilot E2E + CS playbook + beta-feedback + INV/DEBT registry) becomes fully operable post-wave-23-SEAL. **Wave-24 stream-#1 priority** is the end-to-end dry-run rehearsal. This stream is **not** the GA cutover itself — it produces evidence for `RB-GA-CUTOVER.md` §0.6 row "GA cutover dry-run complete".
+Per `specs/_audits/sealed/2026-05-16-wave23-closure.md` §3.4 dry-run readiness assessment, the machinery (chaos + endurance + pilot E2E + CS playbook + beta-feedback + INV/DEBT registry) becomes fully operable post-wave-23-SEAL. **Wave-24 stream-#1 priority** is the end-to-end dry-run rehearsal. This stream is **not** the GA cutover itself — it produces evidence for `RB-GA-CUTOVER.md` §0.6 row "GA cutover dry-run complete".
 
 **Status:** PENDING wave-24 dispatch (this audit is the wave-24 #1 catalogue stream; the dry-run rehearsal stream is a sibling).
 
@@ -270,7 +270,7 @@ Per `specs/_audits/2026-05-16-wave23-closure.md` §3.4 dry-run readiness assessm
 
 ## §11. External dependency state — DEFER counter
 
-The 7 items below are **agent-impossible** under the autonomous-execution charter. They are tracked here to provide a single counter for the go/no-go board. (Count delta vs the pre-wave-25 corpus is recorded in the totals line below; full provenance in `specs/_audits/2026-05-16-ga-readiness-defer-scrub.md`.)
+The 7 items below are **agent-impossible** under the autonomous-execution charter. They are tracked here to provide a single counter for the go/no-go board. (Count delta vs the pre-wave-25 corpus is recorded in the totals line below; full provenance in `specs/_audits/sealed/2026-05-16-ga-readiness-defer-scrub.md`.)
 
 | # | Item | Class | Owner | Wave-23 unblock vector | ETA |
 |---|---|---|---|---|---|
@@ -288,7 +288,7 @@ The 7 items below are **agent-impossible** under the autonomous-execution charte
 
 ## §12. Wave-24+ residual queue (post-GA cleanup)
 
-Recommended wave-24 dispatch list (ordered by GA-blocker severity), cross-ref `specs/_audits/2026-05-16-wave23-closure.md` §6:
+Recommended wave-24 dispatch list (ordered by GA-blocker severity), cross-ref `specs/_audits/sealed/2026-05-16-wave23-closure.md` §6:
 
 | # | Stream | Severity | Notes |
 |---|---|---|---|
@@ -311,7 +311,7 @@ Per `RB-GA-CUTOVER.md` §0 + `GA-GATE-GO-NOGO-TEMPLATE.md` §1-§4 + ADR-0034b 2
 
 ### §13.1 Pre-condition gate (boolean — must all be `true` before signature)
 
-- [ ] `specs/_audits/2026-05-16-ga-final-checklist.md` rows fully reconciled (`true` count == row count OR `defer:` entry per row).
+- [ ] `specs/_audits/sealed/2026-05-16-ga-final-checklist.md` rows fully reconciled (`true` count == row count OR `defer:` entry per row).
 - [ ] Wave-23 stream #1 (wave-22 adversarial review codex Opus pass) **SEALED** with no P0 and no P1.
 - [ ] Wave-23 streams #2 + #3 + #4 + #5 + #6 + #7 + #8 + #9 all **SEALED** or explicitly DEFERRED in this audit §11.
 - [ ] Wave-24 stream #1 (GA cutover dry-run rehearsal) **SEALED** with no fail-CLOSED scenario surfacing P0.
@@ -350,11 +350,11 @@ Upon 2-key APPROVED decision in §13.2 + §13.3:
 5. Greenlight composite `slo:greenlight:composite_ok == 1` ≥ 30 min before declaring §3.11 cutover complete.
 6. T+24h / T+72h / T+7d: `RB-GA-CUTOVER.md` §6 post-cutover review cadence.
 
-**Cutover dependency map (wave-27).** The canonical T-N-day DAG that governs steps 1–6 above is `specs/_audits/2026-05-16-cutover-dependency-map.md`. It enumerates 15 nodes (11 critical-path, 4 with slack) across phases F (framework GA tag) / D (dress rehearsal + tabletop) / S (Statuspage Option A / Option B) / C (GA-GATE-CRITERIA + §0 checklist + DPO no-breach attestation) / X (T-72h → T-24h → T-0h execution) / P (T+24h → T+72h → T+7d post-cutover). Every critical-path node's success-gate row in the map MUST be ticked before its downstream node may proceed. The STATUSPAGE go-live (N-S-2) is fixed at T-7d with Option A's 3d provisioning buffer (start T-10d) and Option B's 1d verify window (start T-10d, finish T-8d); slip on either branch defers GA T-0 by ≥ 7 days per `RB-GA-LAUNCH-ROLLBACK.md` §7 RA-3.
+**Cutover dependency map (wave-27).** The canonical T-N-day DAG that governs steps 1–6 above is `specs/_audits/sealed/2026-05-16-cutover-dependency-map.md`. It enumerates 15 nodes (11 critical-path, 4 with slack) across phases F (framework GA tag) / D (dress rehearsal + tabletop) / S (Statuspage Option A / Option B) / C (GA-GATE-CRITERIA + §0 checklist + DPO no-breach attestation) / X (T-72h → T-24h → T-0h execution) / P (T+24h → T+72h → T+7d post-cutover). Every critical-path node's success-gate row in the map MUST be ticked before its downstream node may proceed. The STATUSPAGE go-live (N-S-2) is fixed at T-7d with Option A's 3d provisioning buffer (start T-10d) and Option B's 1d verify window (start T-10d, finish T-8d); slip on either branch defers GA T-0 by ≥ 7 days per `RB-GA-LAUNCH-ROLLBACK.md` §7 RA-3.
 
 ### §13.5 Audit retention
 
-This document plus `specs/_audits/2026-05-16-ga-final-checklist.md` plus the signed `GA-GATE-GO-NOGO-TEMPLATE.md` instance + cutover decision-meeting notes constitute the GA-launch evidence package per `IR-TABLETOP-PLAYBOOK.md` retention norm (SOC 2 CC7.4 continuous-improvement signal).
+This document plus `specs/_audits/sealed/2026-05-16-ga-final-checklist.md` plus the signed `GA-GATE-GO-NOGO-TEMPLATE.md` instance + cutover decision-meeting notes constitute the GA-launch evidence package per `IR-TABLETOP-PLAYBOOK.md` retention norm (SOC 2 CC7.4 continuous-improvement signal).
 
 ### §13.6 Lote-6-Owner-prep — framework v1.0.0 GA tag cut (independent of product GA)
 
@@ -363,13 +363,13 @@ The framework v1.0.0 GA tag (`framework-v1-0-0-ga`) is a **prerequisite for the 
 | Aspect | Framework v1.0.0 GA cut | Product v1.0.0-GA cut |
 |---|---|---|
 | Tag | `framework-v1-0-0-ga` | `v1.0.0-GA` |
-| Pre-condition gate | `specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md §5` (10-step boolean) | §13.1 (8 booleans) |
+| Pre-condition gate | `specs/_audits/sealed/2026-05-16-lote-6-owner-signoff-prep.md §5` (10-step boolean) | §13.1 (8 booleans) |
 | Sign-off mechanics | §43.1 (FW-H-1..4 + Final Approver) per ADR-0034b (Option C) or Option A | §13.2 + §13.3 (2-key per ADR-0034b) |
-| Authorizing reference | `specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md §6` (5-step git command list) | `RB-GA-CUTOVER.md` §0 → §4 |
+| Authorizing reference | `specs/_audits/sealed/2026-05-16-lote-6-owner-signoff-prep.md §6` (5-step git command list) | `RB-GA-CUTOVER.md` §0 → §4 |
 | Trimestral cadence | Anchored at framework cut date (addendum §5.1) | N/A (product GA is a one-shot) |
-| Wave-27 D-day eligibility | Owner-sign-off prep package shipped — `DEFER-with-Owner-sign-off-prep-package-shipped` per `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §11.9` | Conditional on §13.1 + §11 DEFER closure |
+| Wave-27 D-day eligibility | Owner-sign-off prep package shipped — `DEFER-with-Owner-sign-off-prep-package-shipped` per `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §11.9` | Conditional on §13.1 + §11 DEFER closure |
 
-**Owner action surface for the framework cut:** **`specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md`** — single ~30-min Owner read package (read order §1, decision §2, fills §3/§4, execution §5, commands §6, post-cut §7). The framework cut can land before, with, or after the product GA cutover at Owner discretion; the prep doc §7 post-cut table enumerates what unfreezes downstream when the framework tag is cut.
+**Owner action surface for the framework cut:** **`specs/_audits/sealed/2026-05-16-lote-6-owner-signoff-prep.md`** — single ~30-min Owner read package (read order §1, decision §2, fills §3/§4, execution §5, commands §6, post-cut §7). The framework cut can land before, with, or after the product GA cutover at Owner discretion; the prep doc §7 post-cut table enumerates what unfreezes downstream when the framework tag is cut.
 
 ---
 
@@ -377,7 +377,7 @@ The framework v1.0.0 GA tag (`framework-v1-0-0-ga`) is a **prerequisite for the 
 
 | Gate | Command | Result |
 |---|---|---|
-| Canonical consistency validator | `python3 scripts/validate_canonical_consistency.py` | exit 0 — 197 INVs declared, 0 orphan refs, **0 CRITICAL without TLA+ proof** (was 1; INV-PAT-REVOKE-PROPAGATION TLA-verified via `auth_pat_revoke.tla` cherry-pick `8fa1c22` wave-25; tla-verified: 82 declared INVs proved; refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md` against wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`). |
+| Canonical consistency validator | `python3 scripts/validate_canonical_consistency.py` | exit 0 — 197 INVs declared, 0 orphan refs, **0 CRITICAL without TLA+ proof** (was 1; INV-PAT-REVOKE-PROPAGATION TLA-verified via `auth_pat_revoke.tla` cherry-pick `8fa1c22` wave-25; tla-verified: 82 declared INVs proved; refreshed wave-27 per `specs/_audits/sealed/2026-05-16-tla-figure-refresh-wave27.md` against wave-26 final audit `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`). |
 | Reference validator | `python3 scripts/validate_references.py` | exit 0 — no dangling references. |
 | Spec corpus validator | `python3 scripts/validate_specs.py` | exit 0 — `_audits/` excluded from `SKIP_ALL`. |
 | INV promotion validator | `python3 scripts/validate_inv_promotion.py` | exit 0 — 143/143 WI-coverage. |
@@ -393,35 +393,35 @@ The framework v1.0.0 GA tag (`framework-v1-0-0-ga`) is a **prerequisite for the 
 - **Sign-off:** Gustavo Schneiter (Signature 1, §13.2) + on-call SRE (Signature 2, §13.3)
 - **Co-Authored-By:** Claude Opus 4.7 <noreply@anthropic.com>
 - **Refresh history:**
-  - **2026-05-16 (wave-27 R-prep, branch `wt/r-prep-tla-figure-refresh`)** — TLA-coverage figures refreshed on §1.2 row "Spec corpus" (line 29), §4 INV table rows (lines 120, 125, 129) + narrative paragraph (line 135), §14 Quality gates row "Canonical consistency validator" (line 363) from the wave-24-authored snapshot "**81 TLA-verified / 1 CRITICAL TLA-exempt**" to the wave-26-canonical state "**82 TLA-verified / 0 TLA-exempt + 61/61 CRITICAL TLA-verified, Z=0 unverified**" per wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`). Root cause: wave-25 P1-01 in `specs/_audits/2026-05-16-wave25-adversarial-review.md` §3 — registry state advanced one row after `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed wave-25; this audit was authored pre-cherry-pick. Substantive verdict unchanged (CONDITIONAL GO remains; CRITICAL-no-TLA = 0 was true under exempt classification, now true under direct-proof classification). Cross-ref `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`.
+  - **2026-05-16 (wave-27 R-prep, branch `wt/r-prep-tla-figure-refresh`)** — TLA-coverage figures refreshed on §1.2 row "Spec corpus" (line 29), §4 INV table rows (lines 120, 125, 129) + narrative paragraph (line 135), §14 Quality gates row "Canonical consistency validator" (line 363) from the wave-24-authored snapshot "**81 TLA-verified / 1 CRITICAL TLA-exempt**" to the wave-26-canonical state "**82 TLA-verified / 0 TLA-exempt + 61/61 CRITICAL TLA-verified, Z=0 unverified**" per wave-26 final audit `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`). Root cause: wave-25 P1-01 in `specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md` §3 — registry state advanced one row after `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed wave-25; this audit was authored pre-cherry-pick. Substantive verdict unchanged (CONDITIONAL GO remains; CRITICAL-no-TLA = 0 was true under exempt classification, now true under direct-proof classification). Cross-ref `specs/_audits/sealed/2026-05-16-tla-figure-refresh-wave27.md`.
 
 ---
 
 ## §16. Cross-references
 
-- `specs/_audits/2026-05-16-ga-final-checklist.md` — operator-runnable boolean checklist (companion).
-- `specs/_audits/2026-05-16-wave23-closure.md` — wave-23 closure audit (predecessor).
-- `specs/_audits/2026-05-16-wave22-closure.md` — wave-22 closure audit.
-- `specs/_audits/2026-05-16-wave21-closure.md` — wave-21 closure audit.
-- `specs/_audits/2026-05-16-wave20-closure.md` — wave-20 closure audit.
-- `specs/_audits/2026-05-16-wave18-aggregate-closure.md` — wave-18 aggregate closure.
-- `specs/_audits/2026-05-16-wave19-adversarial-review.md` — wave-19 adversarial review.
-- `specs/_audits/2026-05-16-wave20-adversarial-review.md` — wave-20 adversarial review.
-- `specs/_audits/2026-05-16-wave21-adversarial-review.md` — wave-21 adversarial review.
-- `specs/_audits/2026-05-16-wave22-adversarial-review.md` — wave-22 adversarial review.
-- `specs/_audits/2026-05-15-debt-register.md` v1.2.1 — DEBT register canonical state.
+- `specs/_audits/sealed/2026-05-16-ga-final-checklist.md` — operator-runnable boolean checklist (companion).
+- `specs/_audits/sealed/2026-05-16-wave23-closure.md` — wave-23 closure audit (predecessor).
+- `specs/_audits/sealed/2026-05-16-wave22-closure.md` — wave-22 closure audit.
+- `specs/_audits/sealed/2026-05-16-wave21-closure.md` — wave-21 closure audit.
+- `specs/_audits/sealed/2026-05-16-wave20-closure.md` — wave-20 closure audit.
+- `specs/_audits/sealed/2026-05-16-wave18-aggregate-closure.md` — wave-18 aggregate closure.
+- `specs/_audits/sealed/2026-05-16-wave19-adversarial-review.md` — wave-19 adversarial review.
+- `specs/_audits/sealed/2026-05-16-wave20-adversarial-review.md` — wave-20 adversarial review.
+- `specs/_audits/sealed/2026-05-16-wave21-adversarial-review.md` — wave-21 adversarial review.
+- `specs/_audits/sealed/2026-05-16-wave22-adversarial-review.md` — wave-22 adversarial review.
+- `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.1 — DEBT register canonical state.
 - `specs/03_architecture/invariant_registry.md` — INV registry canonical state (post-wave-23 sweep: 197 declared).
-- `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` v1.0 — pre-GA pentest scope (SEALED wave-18, engagement vendor-bound).
-- `specs/_audits/2026-05-16-pre-ga-security-attestation.md` — consolidated pre-GA security attestation (wave-25; day-1 evidence pack for external pentest vendor + cross-ref §8 security posture row).
+- `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` v1.0 — pre-GA pentest scope (SEALED wave-18, engagement vendor-bound).
+- `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` — consolidated pre-GA security attestation (wave-25; day-1 evidence pack for external pentest vendor + cross-ref §8 security posture row).
 - `specs/_runbooks/RB-GA-CUTOVER.md` — cutover runbook (this audit's pre-condition gate feeds §0 checklist).
 - `specs/_runbooks/RB-GA-LAUNCH-ROLLBACK.md` — reverse runbook (§5 trigger conditions).
 - `specs/_compliance/GA-GATE-CRITERIA.md` — 59-criteria checklist (6 tracks).
 - `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md` — meeting template (this audit feeds §1-§4).
 - `specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md` — 2-key signature waiver path.
 - `specs/00_framework.md` v1.0.0-rc2 — framework (RC1 → RC2 at wave-26; this audit notes the §17 below + §13.6 Lote-6-Owner-prep cross-ref).
-- `specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md` — wave-27 Owner-sign-off prep package for the `framework-v1-0-0-ga` tag cut (see §13.6).
-- `specs/_audits/2026-05-16-lote-6-v1-rc2-ready.md` — wave-26 readiness summary (predecessor of the wave-27 prep package).
-- `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md` §11.8 (wave-26 RC2 cut) + §11.9 (wave-27 prep package shipped).
+- `specs/_audits/sealed/2026-05-16-lote-6-owner-signoff-prep.md` — wave-27 Owner-sign-off prep package for the `framework-v1-0-0-ga` tag cut (see §13.6).
+- `specs/_audits/sealed/2026-05-16-lote-6-v1-rc2-ready.md` — wave-26 readiness summary (predecessor of the wave-27 prep package).
+- `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md` §11.8 (wave-26 RC2 cut) + §11.9 (wave-27 prep package shipped).
 
 ---
 

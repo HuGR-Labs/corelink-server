@@ -1,7 +1,7 @@
 ---
 id: AUDIT-SONNET-R5-S06-WI-REVIEW
-parent_audit: specs/_audits/2026-04-25-agent-r4-s06-part1-wi-review.md
-sprint_contract: specs/04_sprints/S06/_spec_contract.md
+parent_audit: specs/_audits/sealed/2026-04-25-agent-r4-s06-part1-wi-review.md
+sprint_contract: specs/04_sprints/_sealed/S06/_spec_contract.md
 tags: [audit, sota, lote-10.6, s-06, sonnet-r5, independent, post-lote-10.6bis]
 reviewer: Sonnet 4.6 (independent — round 5; different model than Opus R4)
 scope: S-06 all 7 WIs + sprint contract v1.2.0 post-Lote 10.6bis (commit 44183ef)

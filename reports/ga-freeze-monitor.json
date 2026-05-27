@@ -1,7 +1,7 @@
 {
   "$schema": "internal://corelink/reports/ga-freeze-monitor.schema.json",
   "doc_kind": "ga-freeze-monitor",
-  "canonical_source": "specs/_audits/2026-05-16-ga-1-feature-freeze.md",
+  "canonical_source": "specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md",
   "freeze_name": "GA-1",
   "freeze_effective_date": "2026-05-16",
   "freeze_anchor_commit": "PENDING_MERGE",

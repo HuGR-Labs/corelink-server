@@ -73,7 +73,7 @@ Sem decomposição clara, ambos sprints reivindicam "quota". Quem detecta breach
 
 ## References
 
-- `specs/04_sprints/S07/_spec_contract.md` (CAP-EVICT-003).
+- `specs/04_sprints/_sealed/S07/_spec_contract.md` (CAP-EVICT-003).
 - `specs/04_sprints/S08/_spec_contract.md` (CAP-QUOTA-001/002).
 - Codex Round 2 CF-06.
 

@@ -27,7 +27,7 @@
 | **T** | Event signature forged at emit | Ed25519 signing key per region in HSM-backed CF Secrets; INV-AUDIT-CHAIN-HASH-DETERMINISTIC (JCS) | `crates/corelink-audit-chain/tests/` forge regression — FM-AUDIT-002 |
 | **R** | Caller never emits (silent action) | INV-AUTH-AUDIT-PRE-POST-ORDERING — middleware emits pre+post; missing post = SEV-2 alert via heartbeat | `crates/corelink-clerk/tests/adversarial.rs` (pre/post ordering) |
 | **I** | Audit event contains PII / secret accidentally | CTRL-PRIV-001 redact + schema allowlist; no-secret-in-log lint | LINDDUN audit + `tools/pat_plaintext_lint/` |
-| **D** | Emit storm fills D1 → blocks legitimate writes | Per-tenant emit rate cap; spill to R2 NDJSON with backpressure (PAT-BULKHEAD-001) | `specs/_audits/2026-05-14-property-test-summary-s19.md` |
+| **D** | Emit storm fills D1 → blocks legitimate writes | Per-tenant emit rate cap; spill to R2 NDJSON with backpressure (PAT-BULKHEAD-001) | `specs/_audits/sealed/2026-05-14-property-test-summary-s19.md` |
 | **E** | Emit API used to inject crafted event with attacker tenant_id | tenant_id derived from caller context (Worker request `tid`), never from event payload | property test |
 
 ### 2.2 TB-audit-2 (storage)
@@ -46,8 +46,8 @@
 | STRIDE | Attacker scenario | Control / invariant | Test coverage |
 |---|---|---|---|
 | **S** | Forged verifier identity emits "all-good" signal | Verifier cron runs in CF Workers with scoped IAM; result is signed by independent key; cross-region verifier diff | RB-FM-AUDIT-BREAK |
-| **T** | Verifier code tampered to skip checks | INV-SUPPLY-SIGNED-DEPLOY + reproducible build (CTRL-SUPPLY-008); cargo-fuzz coverage | `specs/_audits/2026-05-14-cargo-fuzz-summary-s15.md` |
-| **R** | Customer claims they were never alerted on break | Alerts go to multiple channels + SEV-1 PagerDuty + customer status page entry; immutable alert log | oncall readiness `specs/_audits/2026-05-14-s20-oncall-24-7-readiness.md` |
+| **T** | Verifier code tampered to skip checks | INV-SUPPLY-SIGNED-DEPLOY + reproducible build (CTRL-SUPPLY-008); cargo-fuzz coverage | `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md` |
+| **R** | Customer claims they were never alerted on break | Alerts go to multiple channels + SEV-1 PagerDuty + customer status page entry; immutable alert log | oncall readiness `specs/_audits/sealed/2026-05-14-s20-oncall-24-7-readiness.md` |
 | **I** | Inclusion proof leaks unrelated event existence | RFC 6962 §2.1 leaf/inner discrimination (`BLAKE3(0x00 ‖ data)` vs `BLAKE3(0x01 ‖ left ‖ right)`); proof contains only sibling hashes | `crates/corelink-client-verify/fuzz` — FM-AUDIT-007 |
 | **D** | Verify endpoint flooded; legitimate auditor blocked | Per-tenant rate limit + priority queue for audit:verify scope | k6 audit-flood scenario |
 | **E** | Verifier path used to read other tenants' chain | PAT `audit:verify` scope is tenant-scoped; INV-TENANT-ISOLATION | property test |

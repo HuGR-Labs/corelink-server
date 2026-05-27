@@ -133,7 +133,7 @@ Stream architecture: orchestrator-direct foundation (Stage 0), 3-stream parallel
 - `cargo deny check`: clean (preserve existing rules).
 - TLA+ specs that name audit/crypto invariants: still valid (no spec changes, only Rust restructure).
 
-**SEAL artifact:** `specs/_audits/2026-05-22-w33-stage0-foundation.md`.
+**SEAL artifact:** `specs/_audits/sealed/2026-05-22-w33-stage0-foundation.md`.
 
 ### Stage 1 — 3 parallel agents (~3-5 days wall-clock)
 
@@ -241,7 +241,7 @@ On any trigger: HALT the active stream/stage, document in the relevant audit doc
 
 ## 9. Cross-references
 
-- Parent: this is its own wave; sibling to `specs/_audits/2026-05-22-wave32-prod-deploy-spec.md` (Wave 32 paused until Wave 33 SEALs).
+- Parent: this is its own wave; sibling to `specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md` (Wave 32 paused until Wave 33 SEALs).
 - Research source: agent-delivered architectural pattern survey + decision matrix (2026-05-22; full report archived in conversation transcript).
 - Charter: `specs/03_architecture/invariant_registry.md` (198 INVs, 61 CRITICAL TLA-verified, must remain TLA-proved post-reorg).
 - Previous waves: 18-30 (engineering completion), 31 (DEBT-029-cas + wallet broker dual-mode), 32 Phase A (BetterStack live).

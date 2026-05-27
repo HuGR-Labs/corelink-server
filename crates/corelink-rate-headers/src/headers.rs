@@ -163,14 +163,14 @@ impl RateLimitPolicy {
 /// field of the canonical 429 JSON body (`RateLimitErrorBody`).
 ///
 /// Frozen at `https://corelink.humangr.com/pricing` per the audit
-/// `specs/_audits/2026-05-15-ratelimit-ux-audit.md` §2.
+/// `specs/_audits/sealed/2026-05-15-ratelimit-ux-audit.md` §2.
 pub const TIER_UPGRADE_URL: &str = "https://corelink.humangr.com/pricing";
 
 /// Canonical customer-facing rate-limit docs URL — value of the
 /// `docs_url` field of the canonical 429 JSON body (`RateLimitErrorBody`).
 ///
 /// Frozen at `https://docs.corelink.humangr.com/explanation/rate-limits` per the
-/// audit `specs/_audits/2026-05-15-ratelimit-ux-audit.md` §2; matches the
+/// audit `specs/_audits/sealed/2026-05-15-ratelimit-ux-audit.md` §2; matches the
 /// Diátaxis Explanation quadrant doc at
 /// `apps/docs/docs/explanation/rate-limits.mdx`.
 pub const DOCS_URL: &str = "https://docs.corelink.humangr.com/explanation/rate-limits";
@@ -187,7 +187,7 @@ pub const DOCS_URL: &str = "https://docs.corelink.humangr.com/explanation/rate-l
 /// `X-CoreLink-Quota-Reset-UTC`, `X-CoreLink-Tier-Upgrade-URL`) are
 /// **informational additions** alongside (NOT replacements for) the
 /// IETF canonical RFC 9331 + RFC 6585 pair per the audit
-/// `specs/_audits/2026-05-15-ratelimit-ux-audit.md` §3.
+/// `specs/_audits/sealed/2026-05-15-ratelimit-ux-audit.md` §3.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RateLimitHeaders {
     /// RFC 9331 `RateLimit: limit=…` field.
@@ -411,7 +411,7 @@ impl RateLimitHeaderBuilder {
 }
 
 /// Canonical 429 response JSON body schema (per audit
-/// `specs/_audits/2026-05-15-ratelimit-ux-audit.md` §2).
+/// `specs/_audits/sealed/2026-05-15-ratelimit-ux-audit.md` §2).
 ///
 /// Customer SDKs pattern-match against `error.code` (the 5-arm stable
 /// taxonomy mirroring [`XRateLimitTypeKind`]); humans read

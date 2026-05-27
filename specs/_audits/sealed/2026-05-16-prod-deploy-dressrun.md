@@ -5,7 +5,7 @@
 > **Wave / Stream:** Wave-26 R-PREP / `wt/r-prep-prod-deploy-dressrun` (agent: Claude Opus 4.7 background worker).
 > **Base:** `main` @ `2a4e00c` (wave-25 SEAL tip — "merge wt/r-prep-tenant-config-cf-prod-wire into main (wave-25)").
 > **Scope:** Production-tier dress-run of `specs/_runbooks/RB-GA-CUTOVER.md` §3 (11-step T-0h cutover sequence) against a parallel `ga-cutover-prep` tenant ring (isolated bring-up channel, distinct from any production tenants), plus pre-authoring of the `v1.0.0-GA` annotated tag message for Owner sign-off at wave-27.
-> **Cross-ref:** `specs/_runbooks/RB-GA-CUTOVER.md` v1.0.0 (wave-19), `specs/_audits/2026-05-16-ga-cutover-dryrun.md` (wave-24 in-process simulation backstop), `dashboards/alerts/dash-ga-greenlight.yml`, `docs/release/v1.0.0-GA-tag-draft.txt` (new artifact produced by this audit).
+> **Cross-ref:** `specs/_runbooks/RB-GA-CUTOVER.md` v1.0.0 (wave-19), `specs/_audits/sealed/2026-05-16-ga-cutover-dryrun.md` (wave-24 in-process simulation backstop), `dashboards/alerts/dash-ga-greenlight.yml`, `docs/release/v1.0.0-GA-tag-draft.txt` (new artifact produced by this audit).
 
 ---
 
@@ -209,7 +209,7 @@ No RETRY or BLOCK condition fires.
 - GA tag draft: `docs/release/v1.0.0-GA-tag-draft.txt`
 - Runbook source: `specs/_runbooks/RB-GA-CUTOVER.md` v1.0.0
 - Recording rules: `dashboards/alerts/dash-ga-greenlight.yml`
-- Wave-24 backstop: `specs/_audits/2026-05-16-ga-cutover-dryrun.md`
+- Wave-24 backstop: `specs/_audits/sealed/2026-05-16-ga-cutover-dryrun.md`
 
 ## Annex B — Reproducer
 

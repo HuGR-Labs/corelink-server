@@ -223,4 +223,4 @@ conversation without exposing the entire 50-question dossier.
 | RL-UX-P2-1 | P2 | RateLimit-Policy multi-camada disambiguator (tag policies per camada) | **deferred** S-22 |
 
 Every P0 closed in this WI; P1 / P2 filed as follow-on tickets in
-`specs/_audits/proptest-followup-tickets.md` parent file.
+`specs/_audits/sealed/proptest-followup-tickets.md` parent file.

@@ -13,9 +13,9 @@
 > bounded-contexts (`corelink-cas`, `corelink-ac`) plus the
 > mega-file decomposition of `corelink-reapi/src/handler.rs` (124 KB)
 > and `corelink-gc/src/reconcile.rs` (82 KB). Charter:
-> `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §6 Stream A;
+> `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md` §6 Stream A;
 > Stage 0 foundation lessons:
-> `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4 + §7.
+> `specs/_audits/sealed/2026-05-22-w33-stage0-foundation.md` §4 + §7.
 
 ## §1. Scope
 
@@ -55,7 +55,7 @@ canonical sources; physical absorption deferred to Stage 2).
 
 ### Aggregator surface
 
-Per `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §4 Crate
+Per `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md` §4 Crate
 Mapping, Stream A's two contexts now have canonical import surfaces:
 
 ```
@@ -266,7 +266,7 @@ algorithmic changes).
 
 ## §7. Hard pause triggers — status
 
-Per `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §7 +
+Per `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md` §7 +
 dispatch §"Hard pause triggers":
 
 | # | Trigger | Status |

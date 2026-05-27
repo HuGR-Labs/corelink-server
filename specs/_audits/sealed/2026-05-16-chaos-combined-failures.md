@@ -5,7 +5,7 @@
 - **Branch**: `wt/r-prep-chaos-combined-failures`
 - **Crate**: `tests/chaos` (`chaos-campaign`)
 - **Companion runbook**: [`specs/_runbooks/RB-CHAOS-CAMPAIGN.md`](../_runbooks/RB-CHAOS-CAMPAIGN.md)
-- **Predecessor audit**: [`specs/_audits/2026-05-16-chaos-campaign-harness.md`](2026-05-16-chaos-campaign-harness.md) (wave-22 — 8 isolated scenarios baseline)
+- **Predecessor audit**: [`specs/_audits/sealed/2026-05-16-chaos-campaign-harness.md`](2026-05-16-chaos-campaign-harness.md) (wave-22 — 8 isolated scenarios baseline)
 
 ## Scope
 

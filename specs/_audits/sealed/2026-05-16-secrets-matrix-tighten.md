@@ -20,7 +20,7 @@ tags: ["audit", "secrets", "soc2-cc6.1", "r-prep", "wave-20", "small-closure", "
 > **Reviewer:** Gustavo Schneiter
 > **Files touched:** `scripts/validate_secrets_matrix.py`, `docs/internal/secrets-checklist.md`
 > **Base commit:** `2eec064` (main, post-wave-19 merge)
-> **Cross-ref:** `specs/_audits/2026-05-15-secrets-coverage-baseline.md`, `specs/_runbooks/RB-SECRETS-DRIFT.md`, `docs/internal/secrets-runbook.md`
+> **Cross-ref:** `specs/_audits/sealed/2026-05-15-secrets-coverage-baseline.md`, `specs/_runbooks/RB-SECRETS-DRIFT.md`, `docs/internal/secrets-runbook.md`
 > **Disposition:** Closes the wave-19 follow-on flagging 3 unmapped secrets (`STATUSPAGE_API_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`). One secret receives a real code binding via a precise validator extension (Path A); two receive forward-looking annotations with target wave + feature (Path B). Validator output remains clean (exit 0; zero `code_only` drift) with `matrix_only` dropping from 21 → 20.
 
 ---
@@ -258,6 +258,6 @@ Brief acceptance: ✓ no new unmapped warnings; the 3 wave-19-flagged secrets ar
 
 - `scripts/validate_secrets_matrix.py` — added `RUST_WORKER_ENV_RE`, `RUST_BINDING_CONST_RE`, and extended `scan_rust()` to resolve worker-binding consts with shape-filter.
 - `docs/internal/secrets-checklist.md` — updated `Last sealed` header; updated row #42 (`STATUSPAGE_API_KEY`) consumer column; updated rows #40 / #41 (`TWILIO_*`) to point at `§Forward-looking secrets`; added `## Forward-looking secrets` subsection above `## Drift policy`.
-- `specs/_audits/2026-05-16-secrets-matrix-tighten.md` — this audit.
+- `specs/_audits/sealed/2026-05-16-secrets-matrix-tighten.md` — this audit.
 
 No production code touched; no spec/runbook touched. Closure is documentation + validator-scanner only.

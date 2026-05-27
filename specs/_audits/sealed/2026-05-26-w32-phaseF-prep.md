@@ -27,7 +27,7 @@ This document covers the **prep-only** deliverables for Wave 32 Phase F:
 
 **Not in scope for this prep:** actual Cloudflare Pages deploy, DNS cutover, custom domain setup. Those are Phase F APPLY, blocked on Phase E (container deploy) + CF token bump.
 
-**Spec reference:** `specs/_audits/2026-05-22-wave32-prod-deploy-spec.md` §3 Phase F scope + §4 Phase F APPLY gates.
+**Spec reference:** `specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md` §3 Phase F scope + §4 Phase F APPLY gates.
 
 ---
 

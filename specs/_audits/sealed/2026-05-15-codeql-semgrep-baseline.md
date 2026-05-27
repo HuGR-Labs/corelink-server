@@ -233,7 +233,7 @@ in the parent doc §5).
 
 ## 10. Cross-references
 
-- Parent ledger: `specs/_audits/2026-05-15-static-analysis-baseline.md`.
+- Parent ledger: `specs/_audits/sealed/2026-05-15-static-analysis-baseline.md`.
 - Triage runbook: `specs/_runbooks/RB-STATIC-ANALYSIS-TRIAGE.md`.
 - Custom rule pack: `semgrep.yml` (repo root, post-tune).
 - Ignore list: `.semgrepignore` (no changes this PR — sweep showed
@@ -242,7 +242,7 @@ in the parent doc §5).
 - SOC2 evidence rollup: `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md`
   row **CC8.1**.
 - Charter cross-ref for R2 narrowing: AUDIT-2026-05-14-S20 rows 13–14
-  (`specs/_audits/2026-05-14-s20-sprint-close-review-round1.md`).
+  (`specs/_audits/sealed/2026-05-14-s20-sprint-close-review-round1.md`).
 - DEBT register: DEBT-022 (CodeQL/Semgrep baseline triaged) — CLOSED.
 
 ## 11. Reviewer notes (frozen on SEAL)

@@ -1,6 +1,6 @@
 //! `corelink-statuspage-real` — Atlassian Statuspage real client
 //! (wave-16; closes WI-S11-002 §6 status-page deferral from
-//! `specs/_audits/2026-05-15-dsr-worker-production.md` §5).
+//! `specs/_audits/sealed/2026-05-15-dsr-worker-production.md` §5).
 //!
 //! # Purpose
 //!

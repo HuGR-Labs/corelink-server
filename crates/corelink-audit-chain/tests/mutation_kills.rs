@@ -392,7 +392,7 @@ fn failing_meta_audit_sink_returns_store_error_with_message() {
 // =====================================================================
 // 2026-05-15 follow-on: kills the 26 missed mutants surfaced by the
 // empirical `cargo mutants -p corelink-audit-chain` measured sweep
-// (see specs/_audits/2026-05-15-mutation-full-sweep.md). 22 of the 26
+// (see specs/_audits/sealed/2026-05-15-mutation-full-sweep.md). 22 of the 26
 // were `delete match arm` mutations on `event::region_from_str`
 // (private serde helper) — covered indirectly via the public
 // `AuditEvent::to_ndjson_line` → `from_ndjson_line` round-trip path

@@ -76,8 +76,8 @@
 - `crates/corelink-dual-approval/tests/adversarial.rs` — same-identity-bypass, sig forge
 - `crates/corelink-dual-approval/tests/prop_dual_approval.rs` — 10k bypass attempts (INV-ADMIN-DUAL-APPROVAL = 0 bypasses)
 - `crates/corelink-dual-approval/tests/mutation_kills.rs` — mutation baseline
-- `specs/_audits/2026-05-14-rb-fm-205-dry-run.md` — admin-mistake runbook drill
-- `specs/_audits/2026-05-14-s17-tabletop-byok-revoke.md` — dual-approval in BYOK revoke flow
+- `specs/_audits/sealed/2026-05-14-rb-fm-205-dry-run.md` — admin-mistake runbook drill
+- `specs/_audits/sealed/2026-05-14-s17-tabletop-byok-revoke.md` — dual-approval in BYOK revoke flow
 
 ## 5. Cross-references
 

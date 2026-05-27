@@ -13,7 +13,7 @@ supersedes: null
 superseded_by: null
 tags: ["runbook", "p2", "observability", "grafana", "vendor-outage", "rb-fm-153", "wi-s09-007", "dry-run-executed"]
 dry_run_executed: "2026-05-03"
-dry_run_evidence: "specs/_audits/2026-05-03-rb-fm-153-dry-run.md"
+dry_run_evidence: "specs/_audits/sealed/2026-05-03-rb-fm-153-dry-run.md"
 ---
 
 # RB-FM-153 — Grafana Cloud Outage (Observability Backend Down)
@@ -74,5 +74,5 @@ dry_run_evidence: "specs/_audits/2026-05-03-rb-fm-153-dry-run.md"
 
 - `failure_modes.md` FM-153 entry.
 - `observability_model.md §11` fallback observability strategy.
-- `specs/04_sprints/S09/_spec_contract.md` (canary independente).
+- `specs/04_sprints/_sealed/S09/_spec_contract.md` (canary independente).
 - Grafana Cloud SLA: <https://grafana.com/legal/sla/>.

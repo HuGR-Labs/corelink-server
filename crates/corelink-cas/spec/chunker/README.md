@@ -113,8 +113,8 @@ from the default 256 PR-time iter up to 10 000 nightly iter and 100 000 weekly i
 
 ## Related docs
 
-- WI-S05-002 — `specs/04_sprints/S05/work_items/WI-S05-002-corelink-chunker-fastcdc-adr-0022.md`
+- WI-S05-002 — `specs/04_sprints/_sealed/S05/work_items/WI-S05-002-corelink-chunker-fastcdc-adr-0022.md`
 - ADR-0022 — `specs/03_architecture/adrs/ADR-0022-chunk-size-vs-part-size-decoupling.md`
 - ADR-0039 — `specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md`
-- Spec contract S-05 — `specs/04_sprints/S05/_spec_contract.md`
+- Spec contract S-05 — `specs/04_sprints/_sealed/S05/_spec_contract.md`
 - Crate spec — `crates/corelink-chunker/spec/chunker_protocol.md`

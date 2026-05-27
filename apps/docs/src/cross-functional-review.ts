@@ -34,7 +34,7 @@ export type GatedTree = (typeof GATED_TREES)[number];
  * `cross_functional_review` MUST be one of {@link CROSS_FUNCTIONAL_PENDING_VALUES}
  * until sign-off lands. Both `TBD` and `pending` are accepted as equivalent
  * unsigned-off markers — the wave-22 DEBT-015 build closure (see
- * `specs/_audits/2026-05-15-debt-register.md` row DEBT-015) flipped the literal
+ * `specs/_audits/sealed/2026-05-15-debt-register.md` row DEBT-015) flipped the literal
  * from `TBD` to `pending` on `audit-chain.mdx` / `byok.mdx` / `lgpd-brazil.mdx`
  * to keep the pages in the production build (Docusaurus excludes `draft: true`
  * pages, which broke 90+ MDX cross-links). Both literals carry identical

@@ -5,7 +5,7 @@
 > **Wave / Stream:** Wave-25 R-prep / `wt/r-prep-statuspage-init-dressrun` (agent: Claude Opus 4.7 background worker).
 > **Base:** `main` @ `e9ee8eb` (wave-24 SEAL tip — "merge wt/r-prep-pat-clerk-mutation-sweep into main (wave-24)").
 > **Scope:** Operational dress-run of `specs/_runbooks/STATUSPAGE-INIT.md` (wave-24 DEBT-016 operator playbook). Simulates the operator provisioning Option A (CNAME) + Option B (env-var override) using sandboxed fakes, with per-step PASS/FAIL capture, an operator-handoff JSON, and a 7-assertion verification harness.
-> **Cross-ref:** `specs/_runbooks/STATUSPAGE-INIT.md` v1.0.0 (wave-24, DEBT-016 closure), `specs/_audits/2026-05-16-debt-016-statuspage-urls.md`, `apps/docs/src/statuspage-url.ts`, `apps/docs/docusaurus.config.ts customFields.statuspageUrl`.
+> **Cross-ref:** `specs/_runbooks/STATUSPAGE-INIT.md` v1.0.0 (wave-24, DEBT-016 closure), `specs/_audits/sealed/2026-05-16-debt-016-statuspage-urls.md`, `apps/docs/src/statuspage-url.ts`, `apps/docs/docusaurus.config.ts customFields.statuspageUrl`.
 
 ---
 
@@ -126,9 +126,9 @@ Until those 4 items are checked by the SRE Lead against the production cutover, 
 ## 8. Cross-references
 
 - Runbook: `specs/_runbooks/STATUSPAGE-INIT.md` (wave-24)
-- Engineering-closure audit: `specs/_audits/2026-05-16-debt-016-statuspage-urls.md` (wave-24)
+- Engineering-closure audit: `specs/_audits/sealed/2026-05-16-debt-016-statuspage-urls.md` (wave-24)
 - Build-time accessor: `apps/docs/src/statuspage-url.ts`
 - Build config wiring: `apps/docs/docusaurus.config.ts customFields.statuspageUrl`
-- Sibling dry-run pattern: `scripts/ga-cutover-dryrun.sh` + `specs/_audits/2026-05-16-ga-cutover-dryrun.md` (wave-24)
+- Sibling dry-run pattern: `scripts/ga-cutover-dryrun.sh` + `specs/_audits/sealed/2026-05-16-ga-cutover-dryrun.md` (wave-24)
 - DSR-channel runbook: `specs/_runbooks/RB-DSR-STATUSPAGE-PUBLISH-FAILED.md`
-- Debt-register row: `specs/_audits/2026-05-15-debt-register.md` (DEBT-016, operator-pending)
+- Debt-register row: `specs/_audits/sealed/2026-05-15-debt-register.md` (DEBT-016, operator-pending)

@@ -136,7 +136,7 @@ DR drill execution WI; STANDARD lane.
    - Cycle 1 script `cycle_1_cf_region_outage.ts` (simulate CF region outage + failover + SLO measured).
    - Cycle 2 script `cycle_2_d1_primary_loss.ts` (deferred annual at GA via waiver opt; placeholder).
    - Cycle 3 script `cycle_3_byok_compromise.ts` (deferred annual at GA via waiver opt; placeholder).
-   - Semestral cadence calendar published em `specs/04_sprints/S17/dr_drill_cadence.md`.
+   - Semestral cadence calendar published em `specs/04_sprints/_sealed/S17/dr_drill_cadence.md`.
 
 2. **1 cycle completed em staging** (cycle 1):
    - Simulate CF region outage staging (chaos-mesh network partition reuse from WI-S17-001).
@@ -296,7 +296,7 @@ Feature: DR drill scheduler + 1 cycle completed
 |---|---|---|
 | DR drill cycle 1 script | `infra/dr_drills/cycle_1_cf_region_outage.ts` | TypeScript |
 | DR drill cycles 2/3 placeholders | `infra/dr_drills/cycle_2_*.ts`, `cycle_3_*.ts` | TypeScript |
-| Semestral cadence calendar | `specs/04_sprints/S17/dr_drill_cadence.md` | Markdown |
+| Semestral cadence calendar | `specs/04_sprints/_sealed/S17/dr_drill_cadence.md` | Markdown |
 | Cycle 1 report | `specs/_audits/2026-XX-XX-dr-drill-cycle-1.md` | Markdown |
 | ADR cycles 2/3 deferred | `specs/_decisions/ADR-XXXX-dr-drill-cycles-2-3-deferred.md` | Markdown |
 | Cycle 1 archive | R2 `evidence-dr-drills/cycle-1.json` (7y retention) | JSON |

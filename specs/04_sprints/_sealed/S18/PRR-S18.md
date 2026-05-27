@@ -113,7 +113,7 @@ docs). 2-week sprint without post-sprint observation window required.
 |---|---|---|---|
 | 1 | WIs SEALED 5/5 | OK at S-18 close | git log; per-WI frontmatter `doc_status: SEALED` |
 | 2 | Docs URL live + SSL + custom domain `docs.corelink.humangr.com` | PENDING (WI-S18-001) | CF Pages deploy log |
-| 3 | 5 dev externals complete getting started ≤ 5 min | CONDITIONALLY_APPROVED | `specs/_audits/2026-05-14-s18-ux-research.md` (DRAFT synthetic baseline; R-UX-05 real-participant re-run D+10) |
+| 3 | 5 dev externals complete getting started ≤ 5 min | CONDITIONALLY_APPROVED | `specs/_audits/sealed/2026-05-14-s18-ux-research.md` (DRAFT synthetic baseline; R-UX-05 real-participant re-run D+10) |
 | 4 | Pricing calculator validated by Finance + 10 sample scenarios | PENDING-CROSS-FUNCTIONAL (WI-S18-004 CF-1) | Finance sign-off log |
 | 5 | Pricing page reviewed Finance + Legal | PENDING-CROSS-FUNCTIONAL (CF-1) | CODEOWNERS gate |
 | 6 | Compliance page reviewed Legal + Privacy Officer | PENDING-CROSS-FUNCTIONAL (CF-3) | CODEOWNERS gate |
@@ -191,11 +191,11 @@ invariants.
 
 ## 7. Adversarial summary
 
-Cross-WI roll-up in `specs/_audits/2026-05-14-s18-adversarial-summary.md`:
+Cross-WI roll-up in `specs/_audits/sealed/2026-05-14-s18-adversarial-summary.md`:
 **28 scenarios**, 100 % named mitigation, 1 MEDIUM residual (UX-28
 synthetic baseline pending R-UX-05).
 
-UX research findings: `specs/_audits/2026-05-14-s18-ux-research.md` —
+UX research findings: `specs/_audits/sealed/2026-05-14-s18-ux-research.md` —
 5-persona synthetic baseline; 25/30 task-bar coverage (83 %); mean SUS
 78.2; remediation tickets R-UX-01..05 logged.
 

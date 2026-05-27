@@ -2,8 +2,8 @@
 title: Wave 33 Stage 2.C — Adapter HTTPS-vs-pure-logic split — PARTIAL / HALT
 date: 2026-05-26
 status: HALT (hard-pause trigger #7 activated pre-mutation)
-parent_audit: specs/_audits/2026-05-22-wave33-code-reorg-spec.md §6 Stage 2
-precedent: specs/_audits/2026-05-22-w33-stream-a-data-path.md §7 (partial-activation)
+parent_audit: specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md §6 Stage 2
+precedent: specs/_audits/sealed/2026-05-22-w33-stream-a-data-path.md §7 (partial-activation)
 branch: wt/r-prep-w33-stage2-c-adapter-splits
 base_main: dfe3e9d4 (post-PRE-B SEAL)
 ---
@@ -342,7 +342,7 @@ Rationale:
 # §10. Files touched
 
 ```
-specs/_audits/2026-05-22-w33-stage2-c-adapter-splits.md  +311 LOC (this doc)
+specs/_audits/sealed/2026-05-22-w33-stage2-c-adapter-splits.md  +311 LOC (this doc)
 ```
 
 Zero source-code files mutated. Zero Cargo.toml mutated. Zero
@@ -357,10 +357,10 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>.
 
 # §12. Cross-references
 
-- Parent: `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §6 Stage 2.
-- Precedent: `specs/_audits/2026-05-22-w33-stream-a-data-path.md` §7 partial-activation.
-- Stage 1 Stream B (sibling deps): `specs/_audits/2026-05-22-w33-stream-b-policy.md`.
-- Stage 1 Stream C (sibling aggregator): `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
+- Parent: `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md` §6 Stage 2.
+- Precedent: `specs/_audits/sealed/2026-05-22-w33-stream-a-data-path.md` §7 partial-activation.
+- Stage 1 Stream B (sibling deps): `specs/_audits/sealed/2026-05-22-w33-stream-b-policy.md`.
+- Stage 1 Stream C (sibling aggregator): `specs/_audits/sealed/2026-05-22-w33-stream-c-infra-ops.md`.
 - Charter: `specs/03_architecture/invariant_registry.md`.
 - Memory: `[[corelink-autonomous-execution-charter]]`, `[[feedback-synchronous-agents]]`.
 

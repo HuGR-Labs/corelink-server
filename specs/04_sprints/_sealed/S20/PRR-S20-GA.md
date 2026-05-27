@@ -83,7 +83,7 @@ PRR-S20-GA is the **global Production Readiness Review** that cumulatively ratif
 
 **Engineering Gate WI status:** WI-S20-001 SEALED (this doc); WI-S20-002..007 enter parallel-wave staffing window post-D+0. Sprint-level seal target D+60.
 
-**Canonical sources:** all 14 ACTIVE + cumulative INVs ratified + cumulative CTRLs enforced + cumulative SLOs sustained per coverage matrix (link §2 below + audit `specs/_audits/2026-05-14-s20-prr-global-coverage.md`).
+**Canonical sources:** all 14 ACTIVE + cumulative INVs ratified + cumulative CTRLs enforced + cumulative SLOs sustained per coverage matrix (link §2 below + audit `specs/_audits/sealed/2026-05-14-s20-prr-global-coverage.md`).
 
 **Sign-off staffing:** 5/13 signed at Implementation SEAL (Owner, Final Approver, Engineer Lead, Product, CTO — dual-hat solo founder per ADR-0034 Option A); 8/13 pending external advisor pool (Tier-1 contracted ~$80-200k aggregate per ADR-0034 Option C + Legal Counsel Cooley/DLA Piper/Bird & Bird ~$15-30k + External Auditor / pentest firm Schellman or A-LIGN). Pending slots tracked to D+30 with hard ceiling at D+60 GA Evidence Gate. **Per WI-S20-001 §6.2 negative-path 4 (Lote 10.20 codex P0 canonical fix), Option A solo-tier waiver is NOT acceptable PRR independence baseline for GA-go**; minimum 5 of 8 pending roles MUST be filled by external advisor before promotion gate converts to `APPROVED` (Compliance Officer + Privacy Officer + Security Lead + Legal Counsel + External Auditor canonical priority). Option B (defer GA) is the canonical fallback if Option C cost prohibitive.
 
@@ -110,7 +110,7 @@ PRR-S20-GA is the **global Production Readiness Review** that cumulatively ratif
 
 > **Path notation:** the WI-S20-001 §5.2 listing referenced `specs/01_vision/remote_cache_product_profile.md` for source #11; canonical location in the working tree is `specs/03_architecture/remote_cache_product_profile.md` (confirmed via §V of the coverage audit). KEY-MANAGEMENT (`specs/03_architecture/key_management.md`) is rolled into row #2 SECURITY-MODEL cumulative CTRLs (CTRL-KEY-010..015 + INV-KEY-NO-SKIP + INV-KEY-OVERLAP + INV-BYOK-CRYPTO-SOVEREIGNTY) per ADR-0034 Crypto-SME-folds-into-Architect; the registry-of-record canonical list (CAS-PROFILE + STORAGE-SEMANTICS occupying rows #12/#13 as separable verification slots) preserves the **14-row canonical count** per spec contract §3 codex P0 fix.
 
-All 14 canonical sources VERIFIED ACTIVE. Detailed evidence and provenance per row in `specs/_audits/2026-05-14-s20-prr-global-coverage.md`.
+All 14 canonical sources VERIFIED ACTIVE. Detailed evidence and provenance per row in `specs/_audits/sealed/2026-05-14-s20-prr-global-coverage.md`.
 
 ---
 
@@ -312,7 +312,7 @@ All active at D+0 per `specs/03_architecture/invariant_registry.md`. Sustained a
 
 ## 10. Evidence pack (cumulative S-13..S-19 + S-20)
 
-Per WI-S20-001 §2.1.4 cumulative evidence pack assembly. Annexed in `specs/_audits/2026-05-14-s20-prr-global-coverage.md`.
+Per WI-S20-001 §2.1.4 cumulative evidence pack assembly. Annexed in `specs/_audits/sealed/2026-05-14-s20-prr-global-coverage.md`.
 
 - Cumulative S-13..S-19 PRRs: `PRR-S13.md` · `PRR-S14.md` · `PRR-S15.md` · `PRR-S16.md` · `PRR-S17.md` · `PRR-S18.md` · `PRR-S19.md`.
 - 30d staging metrics (DASH-* dashboards exports) — pending W-30D-STAGING D+60.

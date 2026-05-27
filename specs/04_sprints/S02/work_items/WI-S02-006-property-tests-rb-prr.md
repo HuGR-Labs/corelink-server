@@ -275,7 +275,7 @@ Não. Standard practice; aligned com framework HIGH_RISK matrix.
 - [x] **10.6.2** Bit rot 10 scenarios → 100% caught (`crates/corelink-reapi/tests/integration_bit_rot.rs`) (EVT-002).
 - [x] **10.6.3** RB-FM-253 dry-run host-side executed via `scripts/rb_fm_253_dry_run.sh` (EVT-017 evidence emitted to `--evidence <path>`); staging dry-run deferred to staging account provisioning (revalidation trigger documented in PRR-S02 §3) (EVT-017).
 - [x] **10.6.4** PRR-S02.md com 11 sign-offs canonical documented (`specs/04_sprints/S02/PRR-S02.md` §2; 5 ✅ APPROVED + 6 ⚠️ WAIVED via ADR-0034) (EVT-031).
-- [x] **10.6.5** Adversarial review report + findings em audit doc (`specs/_audits/2026-04-30-pentest-s02-internal.md`) (EVT-040 internal).
+- [x] **10.6.5** Adversarial review report + findings em audit doc (`specs/_audits/sealed/2026-04-30-pentest-s02-internal.md`) (EVT-040 internal).
 - [x] **10.6.6** Promotion gate checklist 11/12 ✅ + 1/12 ⚠️ DEFERRED (staging load test, forward-looking gate per PRR-S02 §3); decision STAGING-STABLE.
 - [x] **10.6.7** All S-02 DoD items have EVT linked + verifiable per PRR-S02 §3 evidence column.
 
@@ -286,7 +286,7 @@ Não. Standard practice; aligned com framework HIGH_RISK matrix.
 - [x] RB-FM-253 automated dry-run script (host-side; staging dry-run deferred per PRR §3 revalidation trigger).
 - [x] EVT-017 captured em host-side dry-run (script writes evidence log to `--evidence <path>`).
 - [x] PRR-S02.md com 11 sign-offs canonical (5 ✅ + 6 ⚠️ WAIVED via ADR-0034).
-- [x] Adversarial review report (`specs/_audits/2026-04-30-pentest-s02-internal.md`).
+- [x] Adversarial review report (`specs/_audits/sealed/2026-04-30-pentest-s02-internal.md`).
 - [ ] Sprint review presentation — sprint-close ceremony deliverable (post-WI Lote).
 
 ## 12. Invariants Validated
@@ -317,7 +317,7 @@ Não. Standard practice; aligned com framework HIGH_RISK matrix.
 | Bit-rot fault-injection helper | `crates/corelink-worker/src/storage/r2.rs::InMemoryR2::inject_corrupt_for_test` | Rust test fake |
 | RB-FM-253 dry-run script (host-side) | `scripts/rb_fm_253_dry_run.sh` | Bash |
 | PRR doc | `specs/04_sprints/S02/PRR-S02.md` | Markdown |
-| Internal pentest report | `specs/_audits/2026-04-30-pentest-s02-internal.md` | Markdown |
+| Internal pentest report | `specs/_audits/sealed/2026-04-30-pentest-s02-internal.md` | Markdown |
 
 ## 14. Quality Standards SOTA
 
@@ -438,7 +438,7 @@ Per S-02 sprint contract §14: 11 sign-offs canonical incluindo Crypto SME (spec
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.2) | Spec inicial. |
 | 1.1.0 | 2026-04-29 | Gustavo (Lote 10.2bis) | Spec drift fixes through cycle 13: round-robin strategy explicit semantics; eventual-consistency negative cache oracle; 11 sign-off canonical (folded Crypto SME + Adversarial); bit-rot 10 scenarios; runtime bound 5min soft / 10min hard. |
-| 2.0.0 | 2026-04-30 | Gustavo (via Claude Opus 4.7; Lote 10.21 — WI-S02-006 SEAL) | **WI SEALED** in code. Substantive deliverables: (a) `crates/corelink-reapi/tests/prop_cas_read.rs` ships the 6 cross-component property tests + the 100k round-robin integration test (`prop_get_blob_unary_isolation` × 10k, `prop_round_trip_same_tenant_idempotent_reads` × 10k, `prop_find_missing_no_existence_oracle` × 10k, `prop_negative_cache_correctness` × 10k, `prop_tombstone_returns_uniform_not_found` × 10k, `negative_cache_ttl_boundary_does_not_block_post_write_read`, `cross_tenant_read_round_robin_100k`); 7/7 release in 0.49 s. (b) `crates/corelink-reapi/tests/integration_bit_rot.rs` ships the 10-scenario bit-rot battery + opt-out negative control; 100 % bit-rot caught at `ClientVerifier::default_on()`. (c) `crates/corelink-worker/src/storage/r2.rs::InMemoryR2::inject_corrupt_for_test` adds a test-only corruption injector (production code never calls it) — the host-side analog of `wrangler r2 object put --force corrupted-bytes`. (d) `scripts/rb_fm_253_dry_run.sh` host-side dry-run harness with EVT-017 evidence emission + drift detection against the canonical runbook headers. (e) `specs/04_sprints/S02/PRR-S02.md` PRR doc with 11-row sign-off matrix (5 ✅ APPROVED + 6 ⚠️ WAIVED via ADR-0034 dual-hat) + residual risk register + adversarial review summary + STAGING-STABLE promotion decision. (f) `specs/_audits/2026-04-30-pentest-s02-internal.md` internal pentest report covering cross-tenant + side-channel + bit-rot + probe-storm + capability-scope strictness. **Spec drift fixed in same Lote**: §13 path-routing decision (`corelink-worker/tests/` → `corelink-reapi/tests/`) per WI-S01-006 lesson + §31 changelog enumerating substantive deltas; per Lote 10.20 SEAL ceremony; **NO per-WI codex** per protocol change 2026-04-30 — sprint-close adversarial review uses an independent Sonnet agent. |
+| 2.0.0 | 2026-04-30 | Gustavo (via Claude Opus 4.7; Lote 10.21 — WI-S02-006 SEAL) | **WI SEALED** in code. Substantive deliverables: (a) `crates/corelink-reapi/tests/prop_cas_read.rs` ships the 6 cross-component property tests + the 100k round-robin integration test (`prop_get_blob_unary_isolation` × 10k, `prop_round_trip_same_tenant_idempotent_reads` × 10k, `prop_find_missing_no_existence_oracle` × 10k, `prop_negative_cache_correctness` × 10k, `prop_tombstone_returns_uniform_not_found` × 10k, `negative_cache_ttl_boundary_does_not_block_post_write_read`, `cross_tenant_read_round_robin_100k`); 7/7 release in 0.49 s. (b) `crates/corelink-reapi/tests/integration_bit_rot.rs` ships the 10-scenario bit-rot battery + opt-out negative control; 100 % bit-rot caught at `ClientVerifier::default_on()`. (c) `crates/corelink-worker/src/storage/r2.rs::InMemoryR2::inject_corrupt_for_test` adds a test-only corruption injector (production code never calls it) — the host-side analog of `wrangler r2 object put --force corrupted-bytes`. (d) `scripts/rb_fm_253_dry_run.sh` host-side dry-run harness with EVT-017 evidence emission + drift detection against the canonical runbook headers. (e) `specs/04_sprints/S02/PRR-S02.md` PRR doc with 11-row sign-off matrix (5 ✅ APPROVED + 6 ⚠️ WAIVED via ADR-0034 dual-hat) + residual risk register + adversarial review summary + STAGING-STABLE promotion decision. (f) `specs/_audits/sealed/2026-04-30-pentest-s02-internal.md` internal pentest report covering cross-tenant + side-channel + bit-rot + probe-storm + capability-scope strictness. **Spec drift fixed in same Lote**: §13 path-routing decision (`corelink-worker/tests/` → `corelink-reapi/tests/`) per WI-S01-006 lesson + §31 changelog enumerating substantive deltas; per Lote 10.20 SEAL ceremony; **NO per-WI codex** per protocol change 2026-04-30 — sprint-close adversarial review uses an independent Sonnet agent. |
 
 ## 32. Anti-patterns evitados
 

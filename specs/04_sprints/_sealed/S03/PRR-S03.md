@@ -71,13 +71,13 @@ Per framework §33.5.4.3 + ADR-0034. The 11 canonical roles for HIGH_RISK lane:
 | 2 | Final Approver | Gustavo Schneiter | 2026-05-01 | ✅ APPROVED | Owner + Final Approver dual-hat per ADR-0034. |
 | 3 | Architect (incl. Crypto SME specialization for Argon2id + JWT alg-none defense + WebAuthn invariants + chain-hash methodology) | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-01 | ✅ APPROVED (waived) | Hybrid PAT format design (HMAC fast-fail + Argon2id full verify) reviewed; JWKS cache + RS256-only filter reviewed; WebAuthn UV/sign-counter/origin invariants algorithmic enforcement reviewed; RFC 8785 §A.3 vector pinned. |
 | 4 | Security Lead | TBD (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | STRIDE delta — alg=none rejection enforced (`prop_clerk_jwt_no_alg_none_acceptance`); 5-layer tenant isolation propagated (`prop_5_layer_defense_full_propagation`); revocation race coverage (`prop_revocation_race_full_stack`). Internal pentest §6 below: zero HIGH/CRITICAL; one MEDIUM tracked under FM-249. Revalidation trigger: hire Security Lead OR external advisor onboarded. |
-| 5 | SRE Lead | TBD (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | RB-FM-160 host-side dry-run executes via `scripts/rb_fm_160_dry_run.sh` (cargo-driven, drift-detectable); audit `specs/_audits/2026-05-01-rb-fm-160-dry-run.md`. Full staging 1000 req/s × 30 min run deferred until staging account provisioned. Revalidation trigger: SRE Lead hired OR staging account provisioned. |
+| 5 | SRE Lead | TBD (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | RB-FM-160 host-side dry-run executes via `scripts/rb_fm_160_dry_run.sh` (cargo-driven, drift-detectable); audit `specs/_audits/sealed/2026-05-01-rb-fm-160-dry-run.md`. Full staging 1000 req/s × 30 min run deferred until staging account provisioned. Revalidation trigger: SRE Lead hired OR staging account provisioned. |
 | 6 | Engineer (S-03 implementation lead) | Gustavo Schneiter | 2026-05-01 | ✅ APPROVED | Implementation lead through WI-S03-001..008. |
 | 7 | QA Lead | TBD (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | Cross-component property tests at 10k iter release-mode (`prop_auth_full.rs` 4 tests behind `tower-middleware`); per-WI mutation testing where mandated; DSR integration `integration_dsr_pat_export.rs` covers cascade + pseudonym + cross-tenant + surface-shape. Revalidation trigger: QA Lead hired. |
 | 8 | Product | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-01 | ✅ APPROVED (waived) | JTBD coverage (§3 sprint contract): SSO via Clerk (email + WebAuthn opt); PAT lifecycle emit/use/revoke ≤ 60 s; MFA WebAuthn obrigatório admin; audit chain S-09 align; 5-layer tenant isolation propagated. Unblocks S-10 (Stripe billing), S-13/S-16 (admin self-service), S-14 (BYOK + DPA). |
-| 9 | Compliance Officer | TBD (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | OWASP ASVS V2/V3/V4/V6/V8 self-checklist published (`specs/04_sprints/S03/asvs-v2-v3-v4-v6-v8-checklist.md`) with WAIVED items revalidation-bound to S-08/S-13/S-19/S-20; SOC 2 + LGPD ship-gate gap analysis closes at S-20 GA gate. Revalidation trigger: Compliance Officer hired. |
+| 9 | Compliance Officer | TBD (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | OWASP ASVS V2/V3/V4/V6/V8 self-checklist published (`specs/04_sprints/_sealed/S03/asvs-v2-v3-v4-v6-v8-checklist.md`) with WAIVED items revalidation-bound to S-08/S-13/S-19/S-20; SOC 2 + LGPD ship-gate gap analysis closes at S-20 GA gate. Revalidation trigger: Compliance Officer hired. |
 | 10 | Privacy Officer | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-01 | ✅ APPROVED (waived) | INV-NO-PII-IN-LOGS pinned at the audit boundary (`prop_no_raw_pii_in_canonical_bytes` + domain-separated `principal_id`/`email_hash`/`pat_id` redact surrogates with empty-input rejection at construction); DSR PAT export integration covers erasure cascade + audit pseudonym preservation. LINDDUN delta zero. Revalidation trigger: Privacy Officer hired. |
-| 11 | AppSec advisor / Adversarial reviewer | TBD (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | Adversarial review summary in §6 (this doc) + `specs/_audits/2026-05-01-adversarial-s03.md`. Internal pentest report `specs/_audits/2026-05-01-pentest-s03-internal.md` traces 5-layer defense and pins zero HIGH/CRITICAL. External pentest = S-20 GA gate. Revalidation trigger: AppSec advisor / external pentest engaged. |
+| 11 | AppSec advisor / Adversarial reviewer | TBD (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | Adversarial review summary in §6 (this doc) + `specs/_audits/sealed/2026-05-01-adversarial-s03.md`. Internal pentest report `specs/_audits/sealed/2026-05-01-pentest-s03-internal.md` traces 5-layer defense and pins zero HIGH/CRITICAL. External pentest = S-20 GA gate. Revalidation trigger: AppSec advisor / external pentest engaged. |
 
 **Sign-off totals:** 11 / 11 (5 ✅ APPROVED + 6 ⚠️ WAIVED via ADR-0034 dual-hat). Per framework §33.5.4.3 the HIGH_RISK matrix requires 10–12 sign-offs; the 11-canonical row is met. ADR-0034 solo-tier waiver register entry required for each `WAIVED` row; revalidation triggers documented inline.
 
@@ -100,9 +100,9 @@ Per `_spec_contract.md` v1.10.2 §6 (DoD).
 | Audit events EVT-047 + chain integrity S-09 align | ✅ | `corelink-audit::chain` + `subtle::ConstantTimeEq` chain hash; RFC 8785 JCS canonical envelope; 33 `AuthEventType` variants pinned by exhaustive enum test. |
 | DSR PAT export with cascade + audit pseudonym preservation | ✅ | `crates/corelink-auth-schema/tests/integration_dsr_pat_export.rs` covers cascade purge, pseudonym preservation, cross-tenant isolation, surface-shape exclusion of raw `token_hash`. |
 | RB-FM-160 dry-run | ✅ (host-side) | `scripts/rb_fm_160_dry_run.sh`; staging dry-run deferred (see DEFERRED row below). |
-| OWASP ASVS V2/V3/V4/V6/V8 self-checklist | ✅ | `specs/04_sprints/S03/asvs-v2-v3-v4-v6-v8-checklist.md` published with WAIVED items revalidation-bound. |
-| Adversarial review summary | ✅ | `specs/_audits/2026-05-01-adversarial-s03.md` aggregates per-WI Sonnet review outcomes. |
-| Internal pentest report (zero HIGH/CRITICAL) | ✅ | `specs/_audits/2026-05-01-pentest-s03-internal.md`; one MEDIUM tracked under FM-249. |
+| OWASP ASVS V2/V3/V4/V6/V8 self-checklist | ✅ | `specs/04_sprints/_sealed/S03/asvs-v2-v3-v4-v6-v8-checklist.md` published with WAIVED items revalidation-bound. |
+| Adversarial review summary | ✅ | `specs/_audits/sealed/2026-05-01-adversarial-s03.md` aggregates per-WI Sonnet review outcomes. |
+| Internal pentest report (zero HIGH/CRITICAL) | ✅ | `specs/_audits/sealed/2026-05-01-pentest-s03-internal.md`; one MEDIUM tracked under FM-249. |
 | Staging cross-region revocation E2E ≤ 60 s × 72 h | ⚠️ DEFERRED | Forward-looking; staging account TBD. Revalidation trigger: staging account provisioned + S-19 onboarding starts. |
 | Production WebAuthn engine (`webauthn-rs = 0.5` Cloudflare-credentialed) | ⚠️ DEFERRED | Charter HARD inflection trigger. `ProductionEngineNotConfigured` sentinel pins contract; `InMemoryEngine` ships with full algorithmic invariant coverage. |
 | PRR HIGH_RISK 11 sign-offs canonical | ✅ | This document §2. |
@@ -150,7 +150,7 @@ All residuals = LOW after mitigation. No risk requires escalation.
 
 ## 6. Adversarial review summary (internal pentest)
 
-Per WI-S03-008 §6.1.5. Internal pentest scope (not external — that is S-20 GA gate). Full report: `specs/_audits/2026-05-01-pentest-s03-internal.md`.
+Per WI-S03-008 §6.1.5. Internal pentest scope (not external — that is S-20 GA gate). Full report: `specs/_audits/sealed/2026-05-01-pentest-s03-internal.md`.
 
 1. **JWT acceptance hardening.** Driven by `prop_clerk_jwt_no_alg_none_acceptance` (10k iter random alg/header/payload mutations). **Result:** zero acceptance of `alg=none` / `alg=HS256` / unsigned tokens; RS256-only JWKS filter holds.
 2. **PAT brute-force feasibility.** Hybrid format combines HMAC fast-fail (constant-time, sub-µs reject) with Argon2id full verify (m_cost 65536, t_cost 3). **Result:** `prop_argon2_calibration_stable` confirms parameters honored; hybrid format invalidates pre-image attack pre-Argon2 stage.
@@ -183,10 +183,10 @@ Dashboards `DASH-AUTH` + alerts (SEV-1 / SEV-2 / SEV-3 thresholds) defined in sp
 Per WI-S03-008 §27. KT artifacts produced by S-03 SEAL:
 
 - `PRR-S03.md` (this doc) — canonical decision record.
-- `specs/04_sprints/S03/asvs-v2-v3-v4-v6-v8-checklist.md` — OWASP ASVS V2/V3/V4/V6/V8 self-checklist with revalidation triggers.
-- `specs/_audits/2026-05-01-pentest-s03-internal.md` — internal pentest full report.
-- `specs/_audits/2026-05-01-adversarial-s03.md` — per-WI Sonnet review aggregation.
-- `specs/_audits/2026-05-01-rb-fm-160-dry-run.md` — RB-FM-160 dry-run audit trace.
+- `specs/04_sprints/_sealed/S03/asvs-v2-v3-v4-v6-v8-checklist.md` — OWASP ASVS V2/V3/V4/V6/V8 self-checklist with revalidation triggers.
+- `specs/_audits/sealed/2026-05-01-pentest-s03-internal.md` — internal pentest full report.
+- `specs/_audits/sealed/2026-05-01-adversarial-s03.md` — per-WI Sonnet review aggregation.
+- `specs/_audits/sealed/2026-05-01-rb-fm-160-dry-run.md` — RB-FM-160 dry-run audit trace.
 - `ADR-0032-webauthn-engine-trait.md` — engine trait + production sentinel decision.
 - `ADR-0034-solo-tier-waiver.md` (inherited) — dual-hat reviewer policy.
 

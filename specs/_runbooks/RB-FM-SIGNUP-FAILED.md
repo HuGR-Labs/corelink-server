@@ -175,9 +175,9 @@ tags: ["runbook", "p1", "onboarding", "signup", "atomic-provisioning", "dpa-firs
 ## 10. References
 
 - `failure_modes.md` FM-X-SIGNUP-FAILED (to be added; placeholder until S-20).
-- `specs/04_sprints/S19/_spec_contract.md` (signup atomicity + DPA-first contract).
-- `specs/04_sprints/S19/work_items/WI-S19-001-signup-orchestration-atomic-provisioning-clerk-d1-tx-chaos-stripe-outage.md`.
-- `specs/04_sprints/S19/work_items/WI-S19-004-tier-selection-stripe-checkout-inv-onboard-dpa-first-d1-lock.md`.
+- `specs/04_sprints/_sealed/S19/_spec_contract.md` (signup atomicity + DPA-first contract).
+- `specs/04_sprints/_sealed/S19/work_items/WI-S19-001-signup-orchestration-atomic-provisioning-clerk-d1-tx-chaos-stripe-outage.md`.
+- `specs/04_sprints/_sealed/S19/work_items/WI-S19-004-tier-selection-stripe-checkout-inv-onboard-dpa-first-d1-lock.md`.
 - `specs/02_governance/invariant_registry.md` §3.12 (INV-ONBOARD-DPA-FIRST + INV-ONBOARD-ATOMIC-PROVISIONING).
 - `specs/05_quality/runbooks/RB-FM-160-auth-invalid-storm.md` (pattern template).
 - `specs/_runbooks/RB-GA-CUTOVER.md` §3.6 + §3.11 — GA cutover Clerk JWT issuer flip + signup-open feature flag (this runbook is consumed if signup fails post-cutover).

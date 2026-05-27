@@ -172,5 +172,5 @@ Run these checks within 30 min of cutover:
 - `crates/corelink-byok-gcp/src/lib.rs` — GCP KMS provider (R2-7).
 - `migrations/d1/0040_enterprise_inquiries.sql` — D1 schema for
   `encrypted_payload_b64`.
-- `specs/_audits/2026-05-14-s19-sprint-close-review-round1.md` §P1-NEW-3 —
+- `specs/_audits/sealed/2026-05-14-s19-sprint-close-review-round1.md` §P1-NEW-3 —
   the audit finding this runbook + the R2-11 implementation closed.

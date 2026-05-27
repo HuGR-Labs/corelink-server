@@ -44,7 +44,7 @@
 
 ## 3. Regressões novas
 
-- **`b06ab36` introduziu um CI snippet que falha no próprio repositório.** O script novo de `specs/00_framework.md:956-966` faz `Path('specs').rglob('*.md')` e exige front matter em todo `.md` de `specs/`. Executado como documentado, ele falha imediatamente em `specs/_audits/2026-04-24-gpt-audit-v1.md`, que não tem front matter. O problema não está nos 6 docs auditados; está no escopo errado da validação.
+- **`b06ab36` introduziu um CI snippet que falha no próprio repositório.** O script novo de `specs/00_framework.md:956-966` faz `Path('specs').rglob('*.md')` e exige front matter em todo `.md` de `specs/`. Executado como documentado, ele falha imediatamente em `specs/_audits/sealed/2026-04-24-gpt-audit-v1.md`, que não tem front matter. O problema não está nos 6 docs auditados; está no escopo errado da validação.
 
 - **`b06ab36` criou contradição de tipo na regra de supersession.** O schema canônico declara `supersedes` e `superseded_by` como `string ou null` em `specs/00_framework.md:892-893`, mas a regra de split manda preencher `superseded_by` com “lista dos sucessores” e usar `supersedes: ["<este WI>"]` em `specs/_templates/work_item.md:1036-1047`. Ou o schema aceita lista, ou a regra não aceita split 1→N. Hoje os dois textos se desmentem.
 

@@ -14,16 +14,16 @@ supersedes: null
 superseded_by: null
 tags: ["audit", "wave-32", "phase-h", "apply", "prod-deploy", "smoke", "cutover"]
 references:
-  - "specs/_audits/2026-05-26-w32-phaseH-prep.md"
-  - "specs/_audits/2026-05-26-w32-phaseB-worker-shim.md"
-  - "specs/_audits/2026-05-26-w32-phaseC-cf-provision.md"
-  - "specs/_audits/2026-05-26-w32-phaseD-apply.md"
-  - "specs/_audits/2026-05-26-w32-phaseE-apply.md"
-  - "specs/_audits/2026-05-26-w32-phaseF-apply-admin-ui-closure.md"
-  - "specs/_audits/2026-05-26-w32-phaseG-apply.md"
-  - "specs/_audits/2026-05-26-w32-phaseH-cutover-checklist-20260526T235900Z.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseH-prep.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseB-worker-shim.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseC-cf-provision.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseD-apply.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseE-apply.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseF-apply-admin-ui-closure.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseG-apply.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseH-cutover-checklist-20260526T235900Z.md"
   - "target/phase-h-smoke.log"
-  - "specs/_audits/2026-05-22-wave32-prod-deploy-spec.md"
+  - "specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md"
 ---
 
 # Wave 32 Phase H APPLY — Smoke + Cutover SEAL Audit (2026-05-26)
@@ -167,7 +167,7 @@ Hard-stop triggers NOT fired:
 
 **Script:** `scripts/cutover-checklist-prod.sh --non-interactive`
 **wrangler version:** 4.95.0
-**Output file:** `specs/_audits/2026-05-26-w32-phaseH-cutover-checklist-20260526T235900Z.md`
+**Output file:** `specs/_audits/sealed/2026-05-26-w32-phaseH-cutover-checklist-20260526T235900Z.md`
 **Exit code:** 0
 **Warnings:** 0
 

@@ -6,7 +6,7 @@
 #
 # Authoritative reference:
 #   specs/03_architecture/adrs/ADR-S30-001-byok-mutually-exclusive-providers.md
-#   specs/_audits/2026-05-15-byok-real-provider-pattern.md §7
+#   specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §7
 #
 # Verifies, in order:
 #
@@ -39,7 +39,7 @@ cd "$REPO_ROOT"
 ORCH="apps/server/src/byok_orchestrator.rs"
 SERVER_TOML="apps/server/Cargo.toml"
 ADR="specs/03_architecture/adrs/ADR-S30-001-byok-mutually-exclusive-providers.md"
-BASELINE_AUDIT="specs/_audits/2026-05-15-byok-real-provider-pattern.md"
+BASELINE_AUDIT="specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md"
 
 PROVIDERS=("aws" "gcp" "azure" "vault")
 

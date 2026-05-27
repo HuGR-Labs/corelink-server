@@ -212,11 +212,11 @@ Categorization:
 
 ### 2.1 Sources Reviewed
 
-- `specs/_audits/2026-04-25-sonnet-r5-s06-wi-review.md` (OPUS-MISS-3, OPUS-MISS-4)
-- `specs/_audits/2026-04-25-sonnet-r5-s07-wi-review.md` (P2-1, P2-2, P2-3)
-- `specs/_audits/2026-04-25-sonnet-r5-s08-wi-review.md` (P2-1, P2-2, P2-3, P2-4)
-- `specs/_audits/2026-04-25-sonnet-r5-s09-wi-review.md` (P2-1, P2-2, P2-3, P2-4)
-- `specs/_audits/2026-04-26-sonnet-r5-s10-wi-review.md` (P2-1, P2-2, P2-3, P2-4, P2-5)
+- `specs/_audits/sealed/2026-04-25-sonnet-r5-s06-wi-review.md` (OPUS-MISS-3, OPUS-MISS-4)
+- `specs/_audits/sealed/2026-04-25-sonnet-r5-s07-wi-review.md` (P2-1, P2-2, P2-3)
+- `specs/_audits/sealed/2026-04-25-sonnet-r5-s08-wi-review.md` (P2-1, P2-2, P2-3, P2-4)
+- `specs/_audits/sealed/2026-04-25-sonnet-r5-s09-wi-review.md` (P2-1, P2-2, P2-3, P2-4)
+- `specs/_audits/sealed/2026-04-26-sonnet-r5-s10-wi-review.md` (P2-1, P2-2, P2-3, P2-4, P2-5)
 
 ### 2.2 P2 Findings Table
 
@@ -267,4 +267,4 @@ Categorization:
 | `specs/05_quality/runbooks/RB-FM-303-ac-cross-tenant.md` | References section: INV-AC-PATH-KEY-MATERIALIZED added with operational note | THIN INV wiring |
 | `specs/05_quality/runbooks/RB-FM-AC-TTL-DRIFT.md` | Header: INV-AC-ORPHAN-R2-CLEANUP-EVENTUAL added to CTRLs + callout box | THIN INV wiring |
 | `specs/05_quality/runbooks/RB-FM-160-auth-invalid-storm.md` | Header: INV-AUTH-PAT-HMAC-SIG-VERIFIED added to INVs + callout box | THIN INV wiring |
-| `specs/_audits/HARDENING_SPRINT_2026-05-07_inv_audit.md` | NEW — this document | Deliverable |
+| `specs/_audits/sealed/HARDENING_SPRINT_2026-05-07_inv_audit.md` | NEW — this document | Deliverable |

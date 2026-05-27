@@ -53,7 +53,7 @@ use corelink_cf_bindings::{
 /// row before the 503 fires. If that emission encounters a poisoned
 /// recorder mutex (test-mode native target only — production `wasm32`
 /// ConsoleNdjson is infallible), the original code silently dropped the
-/// event. Wave-26 adversarial review (`specs/_audits/2026-05-16-wave26-adversarial-review.md §228`)
+/// event. Wave-26 adversarial review (`specs/_audits/sealed/2026-05-16-wave26-adversarial-review.md §228`)
 /// flagged the silent drop as an INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER
 /// observability gap: the operator cannot tell from logs that an audit
 /// emission failed, even though the 503 still fires correctly.

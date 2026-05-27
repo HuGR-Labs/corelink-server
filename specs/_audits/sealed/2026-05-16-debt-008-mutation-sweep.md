@@ -8,7 +8,7 @@ created: "2026-05-16"
 updated: "2026-05-16"
 sprint: "Wave-21 (post-2026-05-15 DEBT-008 expansion) + wave-22 addendum (tenant-path)"
 parent_wi: "WI-DEBT-008-MUTATION-FULL-SWEEP"
-parent_audit: "specs/_audits/2026-05-15-mutation-full-sweep.md"
+parent_audit: "specs/_audits/sealed/2026-05-15-mutation-full-sweep.md"
 owner: "Gustavo Schneiter"
 tags: ["audit", "mutation-testing", "cargo-mutants", "debt-008", "corelink-hash", "corelink-tenant-path", "wave-21", "wave-22"]
 ---

@@ -14,7 +14,7 @@
 > activation: `corelink-reapi/src/handler.rs` (124 KB / 3060 LOC
 > baseline; 641-LOC `batch_read_blobs` function) and
 > `corelink-gc/src/reconcile.rs` (82 KB / 2101 LOC baseline). Stream A1
-> SEAL audit (`specs/_audits/2026-05-22-w33-stream-a-data-path.md` §4)
+> SEAL audit (`specs/_audits/sealed/2026-05-22-w33-stream-a-data-path.md` §4)
 > recommended dispatching a follow-on agent with explicit greenlight for
 > function-internal helper extraction. This is that follow-on.
 

@@ -298,4 +298,4 @@ Quarterly review process (per ADR-0015 §6):
 - [SOURCE_DATE_EPOCH specification](https://reproducible-builds.org/docs/source-date-epoch/) — standard env var.
 - [rustc `--remap-path-prefix`](https://doc.rust-lang.org/rustc/command-line-arguments.html#--remap-path-prefix-remap-path-prefixes-in-all-output) — rustc docs.
 - [rust-toolchain.toml reference](https://rust-lang.github.io/rustup/overrides.html#the-toolchain-file) — rustup docs.
-- `WI-S12-006` spec: `specs/04_sprints/S12/work_items/WI-S12-006-reproducible-builds-2-runner-diff-adr.md`.
+- `WI-S12-006` spec: `specs/04_sprints/_sealed/S12/work_items/WI-S12-006-reproducible-builds-2-runner-diff-adr.md`.

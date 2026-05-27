@@ -200,7 +200,7 @@ The Neon analytics shadow is an **operational analytics tier**:
 
 - The R2 archive remains the canonical chain-integrity store with
   Object Lock Governance Mode 7y retention per
-  `CTRL-AUDIT-001` + `specs/_audits/2026-05-15-audit-chain-retention.md`.
+  `CTRL-AUDIT-001` + `specs/_audits/sealed/2026-05-15-audit-chain-retention.md`.
 - A shadow lag / drift does NOT impair the customer's ability to
   produce a verifiable audit export (the export pipeline reads from
   R2, NOT the shadow).

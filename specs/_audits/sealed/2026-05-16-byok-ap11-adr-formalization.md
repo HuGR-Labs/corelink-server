@@ -15,7 +15,7 @@ superseded_by: null
 inv: ["INV-BYOK-CRYPTO-SOVEREIGNTY", "INV-KEY-OVERLAP"]
 references:
   - "specs/03_architecture/adrs/ADR-S30-001-byok-mutually-exclusive-providers.md"
-  - "specs/_audits/2026-05-15-byok-real-provider-pattern.md"
+  - "specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md"
   - "apps/server/src/byok_orchestrator.rs"
   - ".claude/skills/techlead/SKILL.md"
   - "scripts/byok-feature-validate.sh"
@@ -35,7 +35,7 @@ tags: ["audit", "byok", "ap-11", "techlead", "feature-flags", "compile-error", "
 ## 1. Trigger
 
 `/techlead` AP-11 entry (v2.1.0, 2026-05-15) cited
-`specs/_audits/2026-05-15-byok-real-provider-pattern.md §7` as the
+`specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §7` as the
 ratifying document for the `cargo build --workspace --all-features`
 failure on `corelink-server`. Reviewers (human + Sonnet) kept re-
 discovering this failure as a finding because audit documents are not
@@ -65,7 +65,7 @@ worktree `agent-byok-ap11-adr`):
    `compile_error!` macros declared, (V3) all 4 `byok-*-real` feature
    flags declared in `apps/server/Cargo.toml`, (V4) ADR-S30-001
    present and ACCEPTED, (V5) wave-15 audit cites the ADR.
-4. **UPDATE** `specs/_audits/2026-05-15-byok-real-provider-pattern.md`
+4. **UPDATE** `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md`
    §7 — adds "Ratified by ADR-S30-001 (2026-05-16)" cross-reference at
    the top of §7.2, so a reader landing on the audit is immediately
    pointed at the canonical ADR.
@@ -145,7 +145,7 @@ this formalization, step 2 returns the ADR and is closed.
 
 - `specs/03_architecture/adrs/ADR-S30-001-byok-mutually-exclusive-providers.md`
   — the ADR this audit ratifies the filing of.
-- `specs/_audits/2026-05-15-byok-real-provider-pattern.md`
+- `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md`
   — wave-15 parent baseline; §7 now points back at the ADR.
 - `.claude/skills/techlead/SKILL.md` v2.1.1
   — verifier-side ratification (L1.3a + AP-11).

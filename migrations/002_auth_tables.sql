@@ -2,7 +2,7 @@
 --
 -- Canonical sources:
 --   - specs/03_architecture/data_model.md §4.1 (Neon control-plane DDL)
---   - specs/04_sprints/S03/work_items/WI-S03-005-neon-schema-auth-tables.md §1
+--   - specs/04_sprints/_sealed/S03/work_items/WI-S03-005-neon-schema-auth-tables.md §1
 --   - specs/03_architecture/auth_model.md §2 (PAT / principal types)
 --   - specs/03_architecture/key_management.md §3.13 (column encryption keys)
 --   - specs/03_architecture/privacy_model.md §3 (PII handling)

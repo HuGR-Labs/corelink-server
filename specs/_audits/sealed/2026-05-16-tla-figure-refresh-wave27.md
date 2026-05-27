@@ -5,7 +5,7 @@
 > **Author:** wave-27 TLA-figure-refresh agent (Claude Opus 4.7) — branch `wt/r-prep-tla-figure-refresh`.
 > **Base:** `main` @ `a48bbec` ("merge wt/r-prep-cf-worker-prefetch-wire into main (wave-26)").
 > **Scope:** close the **wave-25 adversarial-review P1-01 finding** (stale TLA-coverage figures in three SEAL-gate audit docs post wave-25 `auth_pat_revoke.tla` cherry-pick `8fa1c22` + post wave-26 INV-CRITICAL TLA+ coverage milestone). Refresh figures to the wave-26-canonical state. Substantive verdicts unchanged.
-> **Freeze classification:** cosmetic-doc fix per `specs/_audits/2026-05-16-ga-1-feature-freeze.md` §3.d allowlist.
+> **Freeze classification:** cosmetic-doc fix per `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md` §3.d allowlist.
 
 ---
 
@@ -13,13 +13,13 @@
 
 ### §1.1 P1-01 source
 
-`specs/_audits/2026-05-16-wave25-adversarial-review.md` §3 P1-01 ("Stale TLA-coverage figures in three SEAL-gate audit docs post-cherry-pick"):
+`specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md` §3 P1-01 ("Stale TLA-coverage figures in three SEAL-gate audit docs post-cherry-pick"):
 
 > Three audit docs authored EARLIER in the wave-25 merge order (security-attestation, ga-readiness-final, wave25-closure) still cite "81 TLA-verified / 1 CRITICAL TLA-exempt" figures that the registry no longer matches post-cherry-pick. This is the symmetric counterpart to wave-24 P0/P1 — registry now leads doc text by one row, where wave-24 had doc text leading registry by one exemption.
 
 ### §1.2 Canonical state at HEAD
 
-Per wave-26 final pre-GA INV-CRITICAL TLA+ coverage audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`):
+Per wave-26 final pre-GA INV-CRITICAL TLA+ coverage audit `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`):
 
 | Metric | Value |
 |---|---|
@@ -40,7 +40,7 @@ The three SEAL-gate docs were authored either on wave-24 SEAL tip (`e9ee8eb` / `
 
 ## §2. Per-doc refresh log
 
-### §2.1 `specs/_audits/2026-05-16-pre-ga-security-attestation.md`
+### §2.1 `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md`
 
 Authored on `e9ee8eb` (wave-24 SEAL tip) at commit `619d449` (wave-25 stream #8). Was distributed externally as day-1 pentest vendor + GA cutover board input. SEAL-gate distribution makes this the highest-priority refresh target.
 
@@ -52,9 +52,9 @@ Authored on `e9ee8eb` (wave-24 SEAL tip) at commit `619d449` (wave-25 stream #8)
 | §11.1 V&V table row "Invariant registry" (line 306) | `197 INVs + 81 TLA-verified` | `197 INVs + 82 TLA-verified (61/61 CRITICAL TLA-verified post wave-26)` |
 | §14 changelog | (v1.0.0 marker added `[SUPERSEDED — see v1.0.1]`) | New v1.0.1 entry documenting the refresh with full per-line citations. |
 
-**Stale figures replaced:** 4 distinct locations (5 stale text spans). Substantive verdict unchanged: CRITICAL-no-TLA was 0 under wave-25 exempt classification, remains 0 under wave-26 direct-proof classification. Cross-ref added to wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`).
+**Stale figures replaced:** 4 distinct locations (5 stale text spans). Substantive verdict unchanged: CRITICAL-no-TLA was 0 under wave-25 exempt classification, remains 0 under wave-26 direct-proof classification. Cross-ref added to wave-26 final audit `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`).
 
-### §2.2 `specs/_audits/2026-05-16-ga-readiness-final.md`
+### §2.2 `specs/_audits/sealed/2026-05-16-ga-readiness-final.md`
 
 Authored on `33138b5` (wave-23 SEAL tip) by wave-24 GA-readiness final-audit agent. This is the canonical CONDITIONAL GO board document feeding the GA-cutover meeting per §13 2-key authorization block.
 
@@ -70,7 +70,7 @@ Authored on `33138b5` (wave-23 SEAL tip) by wave-24 GA-readiness final-audit age
 
 **Stale figures replaced:** 6 distinct locations. Substantive verdict (CONDITIONAL GO) unchanged.
 
-### §2.3 `specs/_audits/2026-05-16-wave25-closure.md`
+### §2.3 `specs/_audits/sealed/2026-05-16-wave25-closure.md`
 
 Authored at commit `7cf4bbb` (wave-25 stream #10 — hygiene + cataloguing pass). Survey-only doc — no SEAL from this stream — but referenced widely as the canonical wave-25 closure document.
 
@@ -90,9 +90,9 @@ Authored at commit `7cf4bbb` (wave-25 stream #10 — hygiene + cataloguing pass)
 
 | Doc | Stale locations refreshed | Substantive verdict change |
 |---|---|---|
-| `specs/_audits/2026-05-16-pre-ga-security-attestation.md` | 5 (§1 row + §3 INV table + §3 narrative + §11.1 V&V row + §14 changelog v1.0.1 entry) | None (CRITICAL-no-TLA was 0 under exempt classification, remains 0 under direct-proof) |
-| `specs/_audits/2026-05-16-ga-readiness-final.md` | 7 (§1.2 row + 4× §4 INV table rows + §4 narrative + §14 Quality gates row + §15 refresh history) | None (CONDITIONAL GO retained) |
-| `specs/_audits/2026-05-16-wave25-closure.md` | 5 (§5 INV table 2 rows + §7 Quality gates row + §8.1 caveat + §9 refresh history) | None (wave-25 CLOSED via combined-bucket retained) |
+| `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` | 5 (§1 row + §3 INV table + §3 narrative + §11.1 V&V row + §14 changelog v1.0.1 entry) | None (CRITICAL-no-TLA was 0 under exempt classification, remains 0 under direct-proof) |
+| `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` | 7 (§1.2 row + 4× §4 INV table rows + §4 narrative + §14 Quality gates row + §15 refresh history) | None (CONDITIONAL GO retained) |
+| `specs/_audits/sealed/2026-05-16-wave25-closure.md` | 5 (§5 INV table 2 rows + §7 Quality gates row + §8.1 caveat + §9 refresh history) | None (wave-25 CLOSED via combined-bucket retained) |
 | **Total** | **17 distinct locations across 3 docs** | **0 verdict changes** |
 
 ---
@@ -103,7 +103,7 @@ Authored at commit `7cf4bbb` (wave-25 stream #10 — hygiene + cataloguing pass)
 |---|---|---|
 | Spec corpus validator | `python3 scripts/validate_specs.py` | exit 0 — `_audits/` excluded from `SKIP_ALL`; this audit doc not validated structurally but adjacent specs unchanged |
 | Reference validator | `python3 scripts/validate_references.py` | exit 0 — no dangling references introduced (new cross-refs are to existing audit docs on `main`) |
-| Stale-figure grep gate | `grep -rn "81 TLA-verified\|81 / 1" specs/_audits/2026-05-16-pre-ga-security-attestation.md specs/_audits/2026-05-16-ga-readiness-final.md specs/_audits/2026-05-16-wave25-closure.md` | 0 hits in non-historical / non-quoted context (refresh-history sub-bullets are explicitly quoted "was 81" snapshots; counted as historical, not stale) |
+| Stale-figure grep gate | `grep -rn "81 TLA-verified\|81 / 1" specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md specs/_audits/sealed/2026-05-16-ga-readiness-final.md specs/_audits/sealed/2026-05-16-wave25-closure.md` | 0 hits in non-historical / non-quoted context (refresh-history sub-bullets are explicitly quoted "was 81" snapshots; counted as historical, not stale) |
 | Freeze allowlist gate | `python3 scripts/check-ga-freeze-allowed.py --staged` | PASS — cosmetic-doc fix per freeze §3.d allowlist (`_audits/` doc-only paths; no INV/SLO/ADR semantic shifts) |
 
 ---
@@ -112,7 +112,7 @@ Authored at commit `7cf4bbb` (wave-25 stream #10 — hygiene + cataloguing pass)
 
 The single canonical TLA-coverage source-of-truth at wave-27 is:
 
-- `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`) — **61/61 CRITICAL TLA-verified, Z=0 unverified, 82 TLA-verified broader scope, 0 TLA-exempt**.
+- `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`) — **61/61 CRITICAL TLA-verified, Z=0 unverified, 82 TLA-verified broader scope, 0 TLA-exempt**.
 
 Future audits citing TLA-coverage figures should cross-reference this doc directly rather than copy the figures into prose. The three refreshed docs now all cross-ref to this canonical source.
 
@@ -131,12 +131,12 @@ Future audits citing TLA-coverage figures should cross-reference this doc direct
 
 ## §7. Cross-references
 
-- `specs/_audits/2026-05-16-wave25-adversarial-review.md` (wave-25 adversarial review; §3 P1-01 source).
-- `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` (wave-26 final pre-GA INV-CRITICAL TLA+ coverage audit — canonical source-of-truth).
-- `specs/_audits/2026-05-16-pre-ga-security-attestation.md` (refreshed — see §2.1).
-- `specs/_audits/2026-05-16-ga-readiness-final.md` (refreshed — see §2.2).
-- `specs/_audits/2026-05-16-wave25-closure.md` (refreshed — see §2.3).
-- `specs/_audits/2026-05-16-ga-1-feature-freeze.md` (freeze policy §3.d cosmetic-doc allowlist).
+- `specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md` (wave-25 adversarial review; §3 P1-01 source).
+- `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` (wave-26 final pre-GA INV-CRITICAL TLA+ coverage audit — canonical source-of-truth).
+- `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` (refreshed — see §2.1).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` (refreshed — see §2.2).
+- `specs/_audits/sealed/2026-05-16-wave25-closure.md` (refreshed — see §2.3).
+- `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md` (freeze policy §3.d cosmetic-doc allowlist).
 - `specs/03_architecture/invariant_registry.md` §3.28 (INV-PAT-REVOKE-PROPAGATION — was the TLA-exempt entry pre-cherry-pick; now TLA-verified).
 - `specs/tla/auth_pat_revoke.tla` (the wave-25 cherry-pick `8fa1c22` that flipped the registry state).
 

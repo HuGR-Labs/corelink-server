@@ -32,7 +32,7 @@ tags:
 > **Purpose:** map inbound DSR (Data Subject Request) requests through the **existing DSR pipeline** (`crates/corelink-dsr/`) end-to-end: intake → identity verification → routing → fulfilment → legal escalation when unusual.
 > **Audience:** Support T1 + T2 agents (intake), DPO (decisions), Legal-on-call (escalations).
 > **Parent:** `specs/_runbooks/RB-CUSTOMER-SUPPORT-T-90.md` (general support).
-> **DSR pipeline canonical sources:** `crates/corelink-dsr/` (API + state machine), `specs/05_quality/runbooks/RB-DSR-INTAKE-FAILURE.md`, `specs/05_quality/runbooks/RB-DSR-ERASURE-INCOMPLETE.md`, `specs/04_sprints/S11/work_items/WI-S11-001-dsr-api-7-endpoints-jwt-receipt-mfa-step-up.md`, `specs/04_sprints/S16/work_items/WI-S16-004-dsr-self-service-form-6-direitos-mfa-jwt-receipt.md`, `specs/tla/dsr_erasure_atomicity.tla` (TLA+ proof).
+> **DSR pipeline canonical sources:** `crates/corelink-dsr/` (API + state machine), `specs/05_quality/runbooks/RB-DSR-INTAKE-FAILURE.md`, `specs/05_quality/runbooks/RB-DSR-ERASURE-INCOMPLETE.md`, `specs/04_sprints/S11/work_items/WI-S11-001-dsr-api-7-endpoints-jwt-receipt-mfa-step-up.md`, `specs/04_sprints/_sealed/S16/work_items/WI-S16-004-dsr-self-service-form-6-direitos-mfa-jwt-receipt.md`, `specs/tla/dsr_erasure_atomicity.tla` (TLA+ proof).
 > **Regulatory anchors:** LGPD Arts. 18, 19, 48 (Brazil); GDPR Arts. 12, 15–22, 33 (EU); state privacy laws (US — CCPA/CPRA, VCDPA, CPA, etc.).
 > **Hard rule:** **30-day clock is wall-clock from receipt, not from verification.** Identity verification delay does not pause the clock.
 
@@ -302,7 +302,7 @@ Tracked in `SUPPORT-DASHBOARD-SPEC.md` under DSR panel:
 - `crates/corelink-dsr/` — DSR API + state machine
 - `specs/04_sprints/S11/work_items/WI-S11-001-dsr-api-7-endpoints-jwt-receipt-mfa-step-up.md` — original API spec
 - `specs/04_sprints/S11/work_items/WI-S11-008-dpia-lia-3-filled-tla-dsr-erasure-atomicity.md` — DPIA + LIA + TLA+ proof
-- `specs/04_sprints/S16/work_items/WI-S16-004-dsr-self-service-form-6-direitos-mfa-jwt-receipt.md` — self-service form
+- `specs/04_sprints/_sealed/S16/work_items/WI-S16-004-dsr-self-service-form-6-direitos-mfa-jwt-receipt.md` — self-service form
 - `specs/tla/dsr_erasure_atomicity.tla` + `.cfg` — TLA+ atomicity proof
 - `specs/05_quality/runbooks/RB-DSR-INTAKE-FAILURE.md` — intake failure mode
 - `specs/05_quality/runbooks/RB-DSR-ERASURE-INCOMPLETE.md` — erasure failure mode (INV-DATA-ERASURE-COMPLETE CRITICAL)

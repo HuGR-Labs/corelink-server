@@ -26,9 +26,9 @@ tags: ["audit", "review", "r5", "sonnet", "s11", "privacy", "round-2", "lote-10.
 > **Round-1 inputs** (chain prerequisites):
 >
 > 1. V1 — `_spec_contract.md §20 v2.2.0` (Lote 10.11.0-bis, 2026-04-27) — canonical truth baseline (12 backends / 7-state / 12-purpose / severity matrix HIGH→CRITICAL / 3 PAT canonical).
-> 2. V2 — `specs/_audits/2026-05-15-s11-truth-table-sweep-v2.md` (Lote 10.11.0-bis-bis, 2026-05-15) — status-cascade sweep (10 drifts → 10 resolved: TLA+ GREEN sustained + region_residency.tla landed-early; spec_contract bumped v1.7.0→v2.3.0).
-> 3. ter — `specs/_audits/2026-05-15-s11-legal-citation-revalidation.md` (Lote 10.11.0-ter, 2026-05-15) — corpus-wide legal-citation rigor (9 drifts → 8 resolved + 1 LFPDPPP MX deferred to outside legal review).
-> **Companion:** `specs/_audits/2026-05-15-s11-round-2-validation.md` (this round-2 audit closure).
+> 2. V2 — `specs/_audits/sealed/2026-05-15-s11-truth-table-sweep-v2.md` (Lote 10.11.0-bis-bis, 2026-05-15) — status-cascade sweep (10 drifts → 10 resolved: TLA+ GREEN sustained + region_residency.tla landed-early; spec_contract bumped v1.7.0→v2.3.0).
+> 3. ter — `specs/_audits/sealed/2026-05-15-s11-legal-citation-revalidation.md` (Lote 10.11.0-ter, 2026-05-15) — corpus-wide legal-citation rigor (9 drifts → 8 resolved + 1 LFPDPPP MX deferred to outside legal review).
+> **Companion:** `specs/_audits/sealed/2026-05-15-s11-round-2-validation.md` (this round-2 audit closure).
 > **Mandate (task #119, Lote 10.11-tris):** VALIDATION-ONLY pass — no new WI edits, no INV promotion, no spec_contract bump unless a real drift surfaces. Honesty principle: if round-2 finds new P0/P1 that prior cycles missed, document them — do not hide.
 
 ---
@@ -78,7 +78,7 @@ After three correction cycles, the principal risk is **iatrogenic drift**: edits
 - **Honesty principle.** If round-2 finds new P0/P1 that prior cycles missed, document them. Do not hide. Failure to surface a finding now is worse than finding nothing — it would mean three rounds of adversarial review missed something the GA gate will need to absorb in panic mode.
 - **Cross-reference every claim.** Each finding (or non-finding) cited to source-doc section.
 - **Worktree-isolated.** Operate only in `.claude/worktrees/agent-<id>/`. Do NOT touch orchestrator main checkout.
-- **Output:** review doc (this file) + audit closure doc (companion `specs/_audits/2026-05-15-s11-round-2-validation.md`) — both with deltas-vs-prior-cycles documented even if drift count is zero.
+- **Output:** review doc (this file) + audit closure doc (companion `specs/_audits/sealed/2026-05-15-s11-round-2-validation.md`) — both with deltas-vs-prior-cycles documented even if drift count is zero.
 
 ### 1.3 What round-2 is NOT
 
@@ -339,7 +339,7 @@ S-11 is **ready for cumulative review at S-20 GA gate**. The 8-WI corpus + sprin
 R5 (Sonnet) S-11 round-2 adversarial validation SEALED. Deliverables:
 
 - Round-2 review doc landed at `specs/04_sprints/S11/_review_R5_sonnet_round_2.md` (this file).
-- Companion audit closure doc landed at `specs/_audits/2026-05-15-s11-round-2-validation.md` (mirrors V2 closure pattern).
+- Companion audit closure doc landed at `specs/_audits/sealed/2026-05-15-s11-round-2-validation.md` (mirrors V2 closure pattern).
 - 5/5 mandated validators GREEN (exit 0).
 - Per-WI scores: 9.5 (001) / 9.3 (002) / 9.0 (003) / 9.4 (004) / 9.3 (005) / 8.9 (006) / 9.4 (007) / 9.6 (008). Aggregate: **9.4 / 10**.
 - Findings: 0 P0 + 0 P1 + 5 P2 informational + 2 P3 cosmetic prose drifts (WI-S11-003 + WI-S11-006 prose-header lines stale vs frontmatter).

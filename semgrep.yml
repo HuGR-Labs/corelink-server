@@ -76,7 +76,7 @@ rules:
   # Rationale: CoreLink charter §"runtime-agnostic core" — only the
   # crates that target the CF Workers / WASM runtime (V8 isolates, no
   # tokio executor available) must remain tokio-free. The S20 sprint-
-  # close review (`specs/_audits/2026-05-14-s20-sprint-close-review-round1.md`
+  # close review (`specs/_audits/sealed/2026-05-14-s20-sprint-close-review-round1.md`
   # rows 13–14) explicitly lists `corelink-lighthouse-tracker` and
   # `corelink-synthetic-pager` as the charter-bound runtime-agnostic
   # surface; other workspace crates (`corelink-worker`, `corelink-byok-*`,

@@ -259,7 +259,7 @@ spec'd at:
   replica-failover runbook: coordinator-layer flip BEFORE
   request-path flip — the reverse would create INV-FAILOVER-NO-SPLIT-BRAIN
   violation at the coordinator layer).
-- **Drill spec WI**: `specs/04_sprints/S17/work_items/WI-S17-008-active-failover-drill.md`
+- **Drill spec WI**: `specs/04_sprints/_sealed/S17/work_items/WI-S17-008-active-failover-drill.md`
   (wave-16; quarterly cadence, ≥ 1 promote+failback round/quarter,
   MTTA ≤ 5 min, MTTR ≤ 30 min, zero SEV-1 from drill, INV-FAILOVER-NO-SPLIT-BRAIN
   + INV-REGION-NO-CROSS-LEAK assertions at every phase boundary,
@@ -273,8 +273,8 @@ for those production wirings — see WI-S17-008 §21 Soft blockers).
 
 ## 7. Cross-links
 
-- Source audit (DEBT-011): `specs/_audits/2026-05-15-replication-audit.md`
-- Follow-up ticket dispatch: `specs/_audits/replication-followup-tickets.md`
+- Source audit (DEBT-011): `specs/_audits/sealed/2026-05-15-replication-audit.md`
+- Follow-up ticket dispatch: `specs/_audits/sealed/replication-followup-tickets.md`
 - Resilience patterns: `specs/03_architecture/resilience_patterns.md §Failback`
 - Failover write-lease TLA spec (wave-12): `specs/tla/failover_no_split_brain.tla`
 - New coordinator TLA spec (this audit): `specs/tla/replica_failover.tla`

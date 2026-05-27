@@ -366,7 +366,7 @@ separate Lote 10.9bis WI authored against this report.
 
 **P1-1 INV reference drift triple — CLOSED.** Per the §3 remediation matrix:
 
-1. `INV-CAS-DIGEST-INTEGRITY` → renamed to canonical `INV-CAS-INTEGRITY` (registry §3.2; CRITICAL; TLA+ `cas_integrity.tla` GREEN) in `dashboards/grafana/DASH-CAS.json` panel 10 title + description AND in `specs/04_sprints/S09/work_items/WI-S09-005-12-grafana-dashboards-as-code.md` SEAL row.
+1. `INV-CAS-DIGEST-INTEGRITY` → renamed to canonical `INV-CAS-INTEGRITY` (registry §3.2; CRITICAL; TLA+ `cas_integrity.tla` GREEN) in `dashboards/grafana/DASH-CAS.json` panel 10 title + description AND in `specs/04_sprints/_sealed/S09/work_items/WI-S09-005-12-grafana-dashboards-as-code.md` SEAL row.
 2. `INV-EXEC-IDEMPOTENT` → promoted to `invariant_registry.md §3.12` (S-09 row; HIGH severity; INSERT ON CONFLICT (tenant_id, exec_id) idempotency; S-17 worker scheduler race detector PLANNED).
 3. `INV-LGPD-AUTO-SUSPEND-FORBIDDEN` → promoted to `invariant_registry.md §3.12` (S-09 row; HIGH severity; LGPD Art. 20 + GDPR Art. 22 anti-automated-decision; requires `human_reviewer_id` in audit emit + dual-approval via INV-ADMIN-DUAL-APPROVAL).
 

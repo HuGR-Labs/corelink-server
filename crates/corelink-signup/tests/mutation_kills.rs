@@ -5,7 +5,7 @@
 //! Pattern: each block targets one `as_str` / `Display` / canonical
 //! taxonomy surface where the existing suite did not exercise the
 //! returned value directly. See
-//! `specs/_audits/2026-05-14-mutation-baseline.md` for full rationale.
+//! `specs/_audits/sealed/2026-05-14-mutation-baseline.md` for full rationale.
 
 #![forbid(unsafe_code)]
 #![allow(

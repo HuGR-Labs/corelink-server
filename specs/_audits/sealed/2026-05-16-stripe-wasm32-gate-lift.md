@@ -20,7 +20,7 @@ tags: ["audit", "stripe", "wasm32", "r-prep", "wave-19", "trait-abstraction-defe
 > **Reviewer:** Gustavo Schneiter
 > **Crate touched:** `crates/corelink-stripe-real`
 > **Crate unblocked:** `crates/corelink-billing-stripe-materializer` (wave-18 SEAL)
-> **Cross-ref:** [`specs/_audits/2026-05-15-cf-binding-real-pattern.md`](2026-05-15-cf-binding-real-pattern.md)
+> **Cross-ref:** [`specs/_audits/sealed/2026-05-15-cf-binding-real-pattern.md`](2026-05-15-cf-binding-real-pattern.md)
 > **WI closure:** `specs/04_sprints/S10/work_items/WI-S10-003-corelink-billing-stripe-adapter-idempotency-webhook.md` § change-log v1.5.0
 > **Disposition:** Lifts the crate-root `#![cfg(not(target_arch = "wasm32"))]` so the wasm32-safe surface (`webhook` / `webhook_dispatch` / `error` / `retry` / `dlq` / `portal`) compiles on `wasm32-unknown-unknown`. The native-only HTTPS client (`client.rs`, depends on `reqwest::blocking`) is per-module gated to non-wasm32 targets. Mirrors the `corelink-cf-bindings` r2/d1/kv/do_real per-module gate pattern.
 

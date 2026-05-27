@@ -4,7 +4,7 @@
 >
 > **Author:** wave-26 adversarial-review agent (Claude Opus 4.7) — branch `wt/r-prep-wave25-adversarial-review`.
 > **Base:** `main` @ `2a4e00c` (wave-25 final merge tip).
-> **Predecessor wave:** wave-25 adversarial review (`specs/_audits/2026-05-16-wave24-adversarial-review.md`) — 6.95/10 CONDITIONAL → drove wave-25 P0 recovery via cherry-picks `d172a4a` + `8fa1c22`.
+> **Predecessor wave:** wave-25 adversarial review (`specs/_audits/sealed/2026-05-16-wave24-adversarial-review.md`) — 6.95/10 CONDITIONAL → drove wave-25 P0 recovery via cherry-picks `d172a4a` + `8fa1c22`.
 > **Scope:** independent SOTA-bar review of the 11 dispatched wave-25 R-PREP streams + 2 wave-24 recovery cherry-picks, with focused inspection of: (a) recovery cherry-pick integrity, (b) DEBT-015-BUILD ssgRequire path #3 + i18n `.mdx`-suffix pivot, (c) pentest scope-freeze vendor scoring defensibility, (d) endurance dressrun GREENLIGHT + 5x regression-flip validity, (e) Lote 7 RACI single-A discipline + Pairing-Alpha/Beta coherence, (f) GA-readiness drift detector false-positive resistance.
 > **Charter:** review-only; no source code changes; SOTA-bar 8.5 PASS.
 > **Score formula:** `clamp[0,10](10 - 1.5·P0 - 0.5·P1 - 0.15·P2 - 0.05·P3)`.
@@ -72,9 +72,9 @@ $ python3 scripts/validate_canonical_consistency.py  # wave-25 SEAL tip (2a4e00c
 
 **However**, three audit docs authored earlier in the wave-25 merge order still carry the wave-24 figures:
 
-1. `specs/_audits/2026-05-16-pre-ga-security-attestation.md` (commit `619d449`) — §1 row "INV-CRITICAL TLA+ coverage" (line 29), §3 INV-table row +1 CRITICAL with TLA-exempt rationale (lines 78–80), §V&V `tla-verified: 81` (line 306), changelog 1.0.0 narrative (line 379) all assert `81 TLA-verified / 1 CRITICAL TLA-exempt (INV-PAT-REVOKE-PROPAGATION — wall-clock obligation per §4.3 pattern)`.
-2. `specs/_audits/2026-05-16-ga-readiness-final.md` (touched by `619d449` and earlier wave-24 work) — §1.2 row "Spec corpus" (line 29), §6 INV-CRITICAL +1 line (line 119), §6 "CRITICAL without TLA+ proof: 1" row (line 128), §V&V table (line 362) all carry the same stale framing.
-3. `specs/_audits/2026-05-16-wave25-closure.md` (commit `7cf4bbb`) — line 130 carries `tla-verified: 81`.
+1. `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` (commit `619d449`) — §1 row "INV-CRITICAL TLA+ coverage" (line 29), §3 INV-table row +1 CRITICAL with TLA-exempt rationale (lines 78–80), §V&V `tla-verified: 81` (line 306), changelog 1.0.0 narrative (line 379) all assert `81 TLA-verified / 1 CRITICAL TLA-exempt (INV-PAT-REVOKE-PROPAGATION — wall-clock obligation per §4.3 pattern)`.
+2. `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` (touched by `619d449` and earlier wave-24 work) — §1.2 row "Spec corpus" (line 29), §6 INV-CRITICAL +1 line (line 119), §6 "CRITICAL without TLA+ proof: 1" row (line 128), §V&V table (line 362) all carry the same stale framing.
+3. `specs/_audits/sealed/2026-05-16-wave25-closure.md` (commit `7cf4bbb`) — line 130 carries `tla-verified: 81`.
 
 **Why this is P1, not P0.** Unlike wave-24 P0 (where audit text asserted GREEN status on commits that were NOT on main), wave-25 has the **substantive engineering work landed on main** — the TLA proof is verified by the canonical-consistency validator at HEAD. The drift is in the consuming-audit text only; the integrity-of-record source (registry + validator) is correct. The pre-GA security attestation is the day-1 vendor-handoff doc + GA cutover board input, so the drift is sign-off-document hygiene, not a substantive verdict gap. A wave-26 micro-patch updating the three doc references makes the docs truthful by construction.
 
@@ -89,7 +89,7 @@ $ python3 scripts/validate_canonical_consistency.py  # wave-25 SEAL tip (2a4e00c
 
 **Severity:** P2 (defensibility / vendor-facing methodology coherence; relative ranking unaffected).
 
-**Evidence.** `specs/_audits/pentest-vendor-shortlist.md` §0.1 declares "7 primary capability gates (each 0-10; **weighted ×7 = 70 max**)" and §0.2 declares "4 secondary dimensions (each 0-10; **weighted ×3 = 30 max**)". The §6.1 scoreboard then carries column headers `Capability score (70 max)` + `Secondary score (30 max)`.
+**Evidence.** `specs/_audits/sealed/pentest-vendor-shortlist.md` §0.1 declares "7 primary capability gates (each 0-10; **weighted ×7 = 70 max**)" and §0.2 declares "4 secondary dimensions (each 0-10; **weighted ×3 = 30 max**)". The §6.1 scoreboard then carries column headers `Capability score (70 max)` + `Secondary score (30 max)`.
 
 **However**, the per-vendor §N.1 tables sum 0–10 cells **flat** (no weight multipliers), and the §6.1 scoreboard cells are RAW sums:
 
@@ -109,7 +109,7 @@ The secondary score column header reads "30 max" but observed values reach 36/40
 
 **Severity:** P2 (forward-risk; assumption not validated in the closure wave).
 
-**Evidence.** `specs/_audits/2026-05-16-debt-015-build-wave25-closure.md` §"Files touched" footer asserts:
+**Evidence.** `specs/_audits/sealed/2026-05-16-debt-015-build-wave25-closure.md` §"Files touched" footer asserts:
 
 > The wave-24 babel patches stay landed unchanged (they are load-bearing — removing them re-introduces the wave-22 nested-require symptom on en-US; this was *not* re-tested in wave-25 to preserve the green build, but the babel-patch diff vs upstream is a single-file change with a clearly documented purpose, so retention is no-risk).
 
@@ -125,7 +125,7 @@ This is internally consistent with the wave-25 re-framing ("the babel patch DID 
 
 **Evidence.** `scripts/ga-readiness-defer-drift.py` docstring (lines 14–16):
 
-> - `specs/_audits/2026-05-16-ga-final-checklist.md`
+> - `specs/_audits/sealed/2026-05-16-ga-final-checklist.md`
 >   * Lines beginning with the checklist token `- [ ]` (these are
 >     the live DEFER rows operators evaluate).
 
@@ -143,7 +143,7 @@ This matches `- [ ]`, `- [x]`, and `- [X]`. Functionally tighter than documented
 
 **Severity:** P3 (cosmetic / readability).
 
-**Evidence.** `specs/_audits/2026-05-16-ga-readiness-final.md` §11 intro line 272 reads:
+**Evidence.** `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §11 intro line 272 reads:
 
 > The 7 items below are **agent-impossible** under the autonomous-execution charter. They are tracked here to provide a single counter for the go/no-go board. (Wave-25 scrub: prior row #7 "Docs CI billing reinstatement" removed as stale — CI is locally executed per `feedback_ci_local` memory; GHA billing reinstatement is not on the GA-blocker path. See …)
 
@@ -220,15 +220,15 @@ The wave-24 → wave-25 trajectory (6.95 CONDITIONAL → 9.00 PASS) is the recov
 **SEAL wave-25.** Dispatch one wave-26 hygiene micro-WI:
 
 1. **Refresh stale TLA-coverage figures** in three docs (per P1-01 fix-shape):
-   - `specs/_audits/2026-05-16-pre-ga-security-attestation.md` — 4 references on lines 29, 78–80, 306, 379.
-   - `specs/_audits/2026-05-16-ga-readiness-final.md` — 4 references on lines 29, 119, 128, 362.
-   - `specs/_audits/2026-05-16-wave25-closure.md` — 1 reference on line 130.
+   - `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` — 4 references on lines 29, 78–80, 306, 379.
+   - `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` — 4 references on lines 29, 119, 128, 362.
+   - `specs/_audits/sealed/2026-05-16-wave25-closure.md` — 1 reference on line 130.
 
    Single commit, ≤ 20 lines changed, single owner sign-off. Restores doc/registry consistency before the §13 2-key block lands.
 
 2. **(Optional, defensibility)** Author `scripts/validate_tla_count_consistency.py` (~50 LOC) that re-greps audit docs for `tla-verified: NN` strings and confirms they match `scripts/validate_canonical_consistency.py` output. Same shape as `ga-readiness-defer-drift.py`. Prevents recurrence.
 
-3. **(Optional, vendor-facing)** Refresh `specs/_audits/pentest-vendor-shortlist.md` §0.1/§0.2 to describe the actual `raw_total / 110 × 100` normalisation (per P2-01 fix-shape) BEFORE RFP packets are sent to Bishop Fox / NCC / Trail of Bits.
+3. **(Optional, vendor-facing)** Refresh `specs/_audits/sealed/pentest-vendor-shortlist.md` §0.1/§0.2 to describe the actual `raw_total / 110 × 100` normalisation (per P2-01 fix-shape) BEFORE RFP packets are sent to Bishop Fox / NCC / Trail of Bits.
 
 4. **(Optional, forward-risk)** Single empirical retest of `pnpm build` with wave-24 babel patches reverted (per P2-02 fix-shape) — 5-minute experiment that closes the "load-bearing" assumption.
 
@@ -265,10 +265,10 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 ## 10. Closure note — wave-30 P2 absorption sweep (2026-05-16)
 
 > The P2 / P3 findings recorded in this review have been triaged in
-> `specs/_audits/2026-05-16-p2-absorption-sweep-w25-28.md` (wave-30 stream-7).
+> `specs/_audits/sealed/2026-05-16-p2-absorption-sweep-w25-28.md` (wave-30 stream-7).
 > Per-finding dispositions:
 >
-> - **P2-01** (pentest vendor-shortlist scoring-rubric vs application drift) → **CLOSED-WAVE-30** (FIX-NOW). `specs/_audits/pentest-vendor-shortlist.md` §0.1 / §0.2 / §6.1 rewritten to describe the actual raw-sum computation (110 max = 70 primary + 40 secondary); relative ranking unaffected.
+> - **P2-01** (pentest vendor-shortlist scoring-rubric vs application drift) → **CLOSED-WAVE-30** (FIX-NOW). `specs/_audits/sealed/pentest-vendor-shortlist.md` §0.1 / §0.2 / §6.1 rewritten to describe the actual raw-sum computation (110 max = 70 primary + 40 secondary); relative ranking unaffected.
 > - **P2-02** (DEBT-015-BUILD babel-patch "load-bearing" claim without empirical re-test) → **DEFER-POST-GA**. 5-minute `pnpm build` re-test with patches reverted is substantive verification, not cosmetic; recorded in the sweep's §4 residual queue for wave-30+ R-prep.
 > - **P3-01** (`ga-readiness-defer-drift.py` docstring vs regex drift) → **CLOSED-WAVE-30** (FIX-NOW). Docstring now matches the functionally-tighter "checked or unchecked DEFER rows" reality.
 > - **P3-02** (§11 intro scrub-annotation triple-confirmation pattern) → **CLOSED-WAVE-30** (FIX-NOW). Duplicate parenthetical stripped from `2026-05-16-ga-readiness-final.md` §11 intro; provenance retained in the totals line.

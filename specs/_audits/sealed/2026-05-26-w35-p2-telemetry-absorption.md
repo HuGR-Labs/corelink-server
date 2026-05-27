@@ -3,7 +3,7 @@
 **Status:** SEALED
 **Date:** 2026-05-26
 **Branch:** `w35-p2-telemetry`
-**Parent spec:** `specs/_audits/2026-05-26-wave-33-34-closure-followups.md` §4
+**Parent spec:** `specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md` §4
 **Charter mandate:** "Pure refactor. No behaviour drift. Preserve `#[non_exhaustive]`, `#![forbid(unsafe_code)]`, no `unwrap`/`expect`/`panic` outside tests, no `use tokio` in src/, INV-AUDIT + CTRL-CRED-001."
 
 Tags: `wave-35`, `phase-2`, `absorption`, `telemetry`, `corelink-telemetry`, `seal`.
@@ -162,7 +162,7 @@ Touched files:
 * `crates/corelink-telemetry/Cargo.toml` — manifest
 * `crates/corelink-telemetry/src/**` — all absorbed code lives here now
 * `crates/corelink-telemetry/tests/**` — 6 integration test files (5 moved + 1 was already empty dir, so created)
-* `specs/_audits/2026-05-26-w35-p2-telemetry-absorption.md` — this file
+* `specs/_audits/sealed/2026-05-26-w35-p2-telemetry-absorption.md` — this file
 
 NOT touched:
 

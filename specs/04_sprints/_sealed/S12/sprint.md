@@ -102,7 +102,7 @@ Ver `_spec_contract.md §4`. Foundation: `security_model.md §11.4` (Supply Chai
 | S12-D4 | cargo-audit + cargo-deny + Dependabot | `deny.toml` + `.github/workflows/cargo-audit.yml` + `.github/dependabot.yml` | PR check + daily cron; license allowlist + banned + yanked + sources policies em `deny.toml`; Dependabot weekly grouped + auto-merge minor patches |
 | S12-D5 | Dependency-Track self-host + CVE alerts | `infra/dependency-track/` (CF Pages + Neon Postgres) + `crates/corelink-dt-webhook/` | DT v4.11+ instance running; webhook → Slack ≤ 15 min para HIGH/CRITICAL; mock CVE injection test verde |
 | S12-D6 | Reproducible build 2-runner diff + ADR | `.github/workflows/reproducible-build.yml` + `docs/build/reproducible.md` + `specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md` | 2 parallel runners (matrix `os: [ubuntu-22.04]` × 2 instances) build → SHA-256 diff check; non-determinism sources documentadas; ADR-0015 ratificado |
-| S12-D7 | RB dry-runs + Security walkthrough + PRR | `specs/05_runbooks/RB-FM-156.md` + `specs/05_runbooks/RB-FM-157.md` + `specs/04_sprints/S12/PRR-S12.md` | RB-FM-156 (dep malicious) + RB-FM-157 (typosquatting) dry-runs executados em staging; reports committed; PRR 11 sign-offs canonical documented |
+| S12-D7 | RB dry-runs + Security walkthrough + PRR | `specs/05_runbooks/RB-FM-156.md` + `specs/05_runbooks/RB-FM-157.md` + `specs/04_sprints/_sealed/S12/PRR-S12.md` | RB-FM-156 (dep malicious) + RB-FM-157 (typosquatting) dry-runs executados em staging; reports committed; PRR 11 sign-offs canonical documented |
 
 ## 6. Escopo técnico por camada (inherits_from)
 

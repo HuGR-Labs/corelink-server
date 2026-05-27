@@ -10,8 +10,8 @@ final_approver: "Gustavo Schneiter"
 companion_docs:
   - "CHANGELOG.md"
   - "docs/release-notes/v1.0.0-GA-marketing-summary.md"
-  - "specs/_audits/2026-05-16-ga-readiness-final.md"
-  - "specs/_audits/2026-05-16-pre-ga-security-attestation.md"
+  - "specs/_audits/sealed/2026-05-16-ga-readiness-final.md"
+  - "specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md"
   - "specs/_runbooks/RB-GA-CUTOVER.md"
 ---
 
@@ -19,10 +19,10 @@ companion_docs:
 
 > **DRAFT.** Publication is gated on the `framework-v1-0-0-ga` tag and the
 > 2-key Owner + on-call SRE approval recorded in
-> `specs/_audits/2026-05-16-ga-readiness-final.md` §13. Numbers, dates, and
+> `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §13. Numbers, dates, and
 > tier prices below are pinned against the wave-29 SEAL tip (engineering
 > corpus feature-complete since wave-26 GA-1 freeze `74b8faa`) and
-> editorially polished against `specs/_audits/2026-05-16-release-notes-editorial-polish.md`.
+> editorially polished against `specs/_audits/sealed/2026-05-16-release-notes-editorial-polish.md`.
 > Operator review per `marketing/launch/RELEASE-NOTES-EDITORIAL-GUIDE.md`
 > still required before publish. Do not distribute externally until the
 > gate flips.
@@ -205,7 +205,7 @@ production version to upgrade from.
 
 ### §3.2 External penetration test
 
-- **Engagement scope frozen** — `specs/_audits/2026-05-16-pre-ga-pentest-scope.md`
+- **Engagement scope frozen** — `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md`
   v1.0 (502 lines; 6 attacker models; 41 attack chains; ASVS v4.0.3
   self-assessment; STRIDE + LINDDUN matrices).
 - **RFP + vendor shortlist + SOW template** SEAL'd wave-25; **RFP send
@@ -255,7 +255,7 @@ cold-tool reviewer (charter: review-only, no source changes):
 Footnotes — † Wave-24 landed at 6.95 / 10 CONDITIONAL; recovered to a
 9.40 projection via wave-25 cherry-picks `d172a4a` + `8fa1c22`. (\*) Two
 framings of the wave-24 score; both reconciled in
-`specs/_audits/2026-05-16-wave27-closure.md §6.1`.
+`specs/_audits/sealed/2026-05-16-wave27-closure.md §6.1`.
 
 **Rolling-mean framings** (wave-27 closure §6.2):
 
@@ -280,12 +280,12 @@ at any wave boundary since wave-19 SEAL.
 - **Production-tier GA-readiness dress-run** (wave-26): **9.36 / 10 PROCEED**
   — 13 / 13 steps PASS, 6 / 6 greenlights GREEN, 0 / 6 rollback triggers
   fired, prep-ring isolation guard verified
-  (`specs/_audits/2026-05-16-prod-deploy-dressrun.md`).
+  (`specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md`).
 - **Final cutover-readiness verdict** (wave-27 stream #8): **CONDITIONAL GO**
   pending **7 external DEFER items** (5 user-bound + 1 vendor-bound +
   1 mixed) — the *only* gate remaining; no structural code, spec, or
   invariant blocker
-  (`specs/_audits/2026-05-16-final-cutover-readiness.md`).
+  (`specs/_audits/sealed/2026-05-16-final-cutover-readiness.md`).
 - **DEBT register at wave-29 close:** **8 nominally OPEN**, of which
   **5 are engineering-CLOSED with operator-bound residual**
   (DEBT-003 / -016 / -025 / -026 / -027) and **3 remain engineering-side
@@ -300,7 +300,7 @@ at any wave boundary since wave-19 SEAL.
   tail) against a 5-day baseline; gate is mandatory on every PR.
 - **24-hour endurance harness** built wave-22, dress-rehearsed wave-25
   at 10-minute compressed cadence
-  (`specs/_audits/2026-05-16-24h-endurance-harness.md`). Full 24h soak
+  (`specs/_audits/sealed/2026-05-16-24h-endurance-harness.md`). Full 24h soak
   scheduled in the pre-cutover T-24h window.
 - **Streaming-memory verification** for multipart blobs is O(1) in
   blob size (`INV-MULTIPART-STREAMING-MEMORY`).
@@ -314,12 +314,12 @@ at any wave boundary since wave-19 SEAL.
 
 - **`RB-GA-CUTOVER` rehearsed three times** end-to-end:
   - Wave-24 dry-run (G1 – G6 all GREEN) —
-    `specs/_audits/2026-05-16-ga-cutover-dryrun.md`.
+    `specs/_audits/sealed/2026-05-16-ga-cutover-dryrun.md`.
   - Wave-25 dress-run re-rehearsal.
   - Wave-26 **production-tier dress-run scoring 9.36 / 10 PROCEED**
     (13 / 13 steps PASS, 6 / 6 greenlights GREEN, 0 / 6 rollback
     triggers fired, prep-ring isolation guard verified) —
-    `specs/_audits/2026-05-16-prod-deploy-dressrun.md`.
+    `specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md`.
 - **13 SEV-0 / SEV-1 runbooks active** covering: audit-export
   integrity, audit-export verify failure, backup verification failure,
   DPO escalation, Neon shadow lag, replica failover, perf regression,
@@ -334,7 +334,7 @@ at any wave boundary since wave-19 SEAL.
   - Runs under `cargo test --features chaos`.
 - **24-hour endurance harness** — built wave-22; **10-minute compressed
   dress-run wave-25 SEAL'd with 0 SLO violations + 0 INV violations**
-  (`specs/_audits/2026-05-16-endurance-10min-dressrun.md`); continuous
+  (`specs/_audits/sealed/2026-05-16-endurance-10min-dressrun.md`); continuous
   **7-day (168 h) endurance soak** is wave-27 stream #4 — wall-clock
   evidence anchor scheduled into the pre-cutover T-24h window.
 - **Auto-failover for region partition** — `PAT-REGION-FAILOVER-001`
@@ -382,12 +382,12 @@ at any wave boundary since wave-19 SEAL.
 ## §8. Known limitations (carry-forward DEFER items)
 
 Honesty is a feature. The wave-25 scrub
-(`specs/_audits/2026-05-16-ga-readiness-defer-scrub.md`) reduced the
+(`specs/_audits/sealed/2026-05-16-ga-readiness-defer-scrub.md`) reduced the
 DEFER counter from 8 to **7 external items** (5 user-bound + 1
 vendor-bound + 1 mixed). These are the *only* gates remaining; **no
 structural code, spec, or invariant blocker remains**. Tracked in
-`specs/_audits/2026-05-15-debt-register.md` and
-`specs/_audits/2026-05-16-ga-readiness-final.md` §11.
+`specs/_audits/sealed/2026-05-15-debt-register.md` and
+`specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §11.
 
 | # | Item | Class | ETA | Customer impact |
 |---|---|---|---|---|
@@ -401,7 +401,7 @@ structural code, spec, or invariant blocker remains**. Tracked in
 
 The engineering-side verdict at wave-27 stream #8 final cutover-readiness
 audit is **CONDITIONAL GO** per
-`specs/_audits/2026-05-16-final-cutover-readiness.md` §1.1. Wave-26
+`specs/_audits/sealed/2026-05-16-final-cutover-readiness.md` §1.1. Wave-26
 production-tier dress-run scored **9.36 / 10 PROCEED**.
 
 ---
@@ -462,9 +462,9 @@ CoreLink v1.0.0 GA exists because of:
 - `CHANGELOG.md` — technical changelog (sprint-by-sprint).
 - `docs/release-notes/v1.0.0-GA-marketing-summary.md` — 1-page
   exec summary for PR / marketing.
-- `specs/_audits/2026-05-16-ga-readiness-final.md` — sign-off-ready
+- `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` — sign-off-ready
   GA-readiness audit + 2-key signature block.
-- `specs/_audits/2026-05-16-pre-ga-security-attestation.md` —
+- `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` —
   consolidated pre-GA security attestation (day-1 vendor pack for
   the external pentest engagement).
 - `specs/_runbooks/RB-GA-CUTOVER.md` — cutover runbook.

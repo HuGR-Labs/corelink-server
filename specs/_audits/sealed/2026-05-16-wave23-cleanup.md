@@ -4,7 +4,7 @@
 >
 > **Author:** wave-23 cleanup agent (Claude Opus 4.7) — branch `wt/r-prep-wave23-p2-cleanup`.
 > **Base:** `main` @ `043428a` ("merge wt/r-prep-debt-008-mutation-wave22 into main (wave-22)" — wave-22 SEAL tip).
-> **Scope:** Close the two outstanding P2 findings from the wave-21 adversarial review (`specs/_audits/2026-05-16-wave21-adversarial-review.md` §3.3) plus add a defensive rustls CryptoProvider init guard to the `corelink-cli` HTTP integration test suite.
+> **Scope:** Close the two outstanding P2 findings from the wave-21 adversarial review (`specs/_audits/sealed/2026-05-16-wave21-adversarial-review.md` §3.3) plus add a defensive rustls CryptoProvider init guard to the `corelink-cli` HTTP integration test suite.
 
 ---
 
@@ -62,7 +62,7 @@ let now_ms = wall_now_ms;
 
 **Location:** `.github/workflows/tla_runbooks_check.yml:50` (wave-21 baseline).
 
-**Wave-21 baseline behaviour:** the workflow's `TLC_SHA256_PINNED` env var inherits the same wave-20 archive value (`d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f`) that FT-3 documents as drifted upstream (actual `25780ac95...`). Behaviour is fail-CLOSED by design (PR gate refuses to merge with an `::error::` annotation), so the runbook workflow fails every PR until the FT-3 waiver is re-closed. This was acceptable per the FT-3 fail-CLOSED waiver in `specs/_audits/2026-05-15-debt-014-ft3-ft4-waivers.md` §FT-3, but provided **zero positive signal** until Security WG + Architect re-pin.
+**Wave-21 baseline behaviour:** the workflow's `TLC_SHA256_PINNED` env var inherits the same wave-20 archive value (`d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f`) that FT-3 documents as drifted upstream (actual `25780ac95...`). Behaviour is fail-CLOSED by design (PR gate refuses to merge with an `::error::` annotation), so the runbook workflow fails every PR until the FT-3 waiver is re-closed. This was acceptable per the FT-3 fail-CLOSED waiver in `specs/_audits/sealed/2026-05-15-debt-014-ft3-ft4-waivers.md` §FT-3, but provided **zero positive signal** until Security WG + Architect re-pin.
 
 **Wave-23 fix (this audit):** add an inline `# DRIFT-WAIVED-FT-3` block above the `TLC_SHA256_PINNED` value calling out:
 - the waiver document anchor;
@@ -76,8 +76,8 @@ let now_ms = wall_now_ms;
   env:
     TLC_VERSION: '1.8.0'
     # DRIFT-WAIVED-FT-3 — this SHA-pin is the wave-20 archive value
-    # tracked in `specs/_audits/2026-05-15-debt-014-ft3-ft4-waivers.md`
-    # §FT-3 and audited in `specs/_audits/2026-05-16-wave21-adversarial-review.md`
+    # tracked in `specs/_audits/sealed/2026-05-15-debt-014-ft3-ft4-waivers.md`
+    # §FT-3 and audited in `specs/_audits/sealed/2026-05-16-wave21-adversarial-review.md`
     # §3.3 (W21-R-P2-02). Upstream v1.8.0 release artifact has drifted
     # to `25780ac95...` post-pin (release re-hash incident). Behaviour
     # is fail-CLOSED by design — the PR gate refuses to run until

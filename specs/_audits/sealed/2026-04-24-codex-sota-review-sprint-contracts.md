@@ -73,8 +73,8 @@ tags: [audit, sota, sprint-contracts, elevation]
 
 ### S-01
 
-- `specs/04_sprints/S01/_spec_contract.md:125-131` usa horas simples, não PERT, apesar de `HIGH_RISK` exigir estimativa mais rica (`specs/04_sprints/_sprint_creation_contract.md:189`).
-- `specs/04_sprints/S01/_spec_contract.md:147-152` ainda usa risk register de 4 colunas. Para um sprint que toca `INV-TENANT-ISOLATION`, a versão S07/S08/S09 já mostra a régua correta: `Prob/Det/Impacto/Exposure/Mitigação/Residual`.
+- `specs/04_sprints/_sealed/S01/_spec_contract.md:125-131` usa horas simples, não PERT, apesar de `HIGH_RISK` exigir estimativa mais rica (`specs/04_sprints/_sprint_creation_contract.md:189`).
+- `specs/04_sprints/_sealed/S01/_spec_contract.md:147-152` ainda usa risk register de 4 colunas. Para um sprint que toca `INV-TENANT-ISOLATION`, a versão S07/S08/S09 já mostra a régua correta: `Prob/Det/Impacto/Exposure/Mitigação/Residual`.
 
 ### S-02
 
@@ -85,36 +85,36 @@ tags: [audit, sota, sprint-contracts, elevation]
 
 ### S-03
 
-- `specs/04_sprints/S03/_spec_contract.md:44-53` não herda `SLO-CATALOG` nem `RESILIENCE-PATTERNS`, embora o sprint imponha alvo de revogação global em `≤ 60s` (`:32`, `:68`, `:85`). O meta-contract obriga essas fontes quando a sprint toca reliability/SLO (`specs/04_sprints/_sprint_creation_contract.md:156`).
-- `specs/04_sprints/S03/_spec_contract.md:76-81` deixa 4 itens DoD sem evidence tipada.
-- `specs/04_sprints/S03/_spec_contract.md:115-124` continua sem PERT.
+- `specs/04_sprints/_sealed/S03/_spec_contract.md:44-53` não herda `SLO-CATALOG` nem `RESILIENCE-PATTERNS`, embora o sprint imponha alvo de revogação global em `≤ 60s` (`:32`, `:68`, `:85`). O meta-contract obriga essas fontes quando a sprint toca reliability/SLO (`specs/04_sprints/_sprint_creation_contract.md:156`).
+- `specs/04_sprints/_sealed/S03/_spec_contract.md:76-81` deixa 4 itens DoD sem evidence tipada.
+- `specs/04_sprints/_sealed/S03/_spec_contract.md:115-124` continua sem PERT.
 
 ### S-04
 
-- `specs/04_sprints/S04/_spec_contract.md:67` define `CTRL-AC-002` como HKDF tenant key, enquanto `:118` abre “HKDF + Ed25519 opt” no WI. Falta decisão arquitetural explícita; hoje o contract aceita duas primitivas incompatíveis sem ADR.
-- `specs/04_sprints/S04/_spec_contract.md:73-79` tem `7/7` itens DoD sem `EVT-XXX`.
-- `specs/04_sprints/S04/_spec_contract.md:111-120` não traz PERT.
-- `specs/04_sprints/S04/_spec_contract.md:59` já entrega `CAP-AC-004` (TTL management), mas `S07` reabre ownership desse tópico em `CAP-EVICT-002` (`specs/04_sprints/S07/_spec_contract.md:64`) sem declarar override explícito.
+- `specs/04_sprints/_sealed/S04/_spec_contract.md:67` define `CTRL-AC-002` como HKDF tenant key, enquanto `:118` abre “HKDF + Ed25519 opt” no WI. Falta decisão arquitetural explícita; hoje o contract aceita duas primitivas incompatíveis sem ADR.
+- `specs/04_sprints/_sealed/S04/_spec_contract.md:73-79` tem `7/7` itens DoD sem `EVT-XXX`.
+- `specs/04_sprints/_sealed/S04/_spec_contract.md:111-120` não traz PERT.
+- `specs/04_sprints/_sealed/S04/_spec_contract.md:59` já entrega `CAP-AC-004` (TTL management), mas `S07` reabre ownership desse tópico em `CAP-EVICT-002` (`specs/04_sprints/_sealed/S07/_spec_contract.md:64`) sem declarar override explícito.
 
 ### S-05
 
-- `specs/04_sprints/S05/_spec_contract.md:55` promete blobs de até `5 TiB`, mas `:94` limita multipart a `≤ 50` parts por blob. Sem separar “chunk size” de “multipart part size”, o contrato fica matematicamente inconsistente.
-- `specs/04_sprints/S05/_spec_contract.md:72-77` tem `6/6` itens DoD sem `EVT-XXX`.
-- `specs/04_sprints/S05/_spec_contract.md:109-116` continua sem PERT.
+- `specs/04_sprints/_sealed/S05/_spec_contract.md:55` promete blobs de até `5 TiB`, mas `:94` limita multipart a `≤ 50` parts por blob. Sem separar “chunk size” de “multipart part size”, o contrato fica matematicamente inconsistente.
+- `specs/04_sprints/_sealed/S05/_spec_contract.md:72-77` tem `6/6` itens DoD sem `EVT-XXX`.
+- `specs/04_sprints/_sealed/S05/_spec_contract.md:109-116` continua sem PERT.
 
 ### S-06
 
-- `specs/04_sprints/S06/_spec_contract.md:81`, `:86`, `:131-133` exigem simulação/estabilidade de `30d`, mas `§13` continua em `4 semanas` (`:125-127`) sem reservar explicitamente esse burn-in. O gate está fora do orçamento da sprint.
-- `specs/04_sprints/S06/_spec_contract.md:75-81` tem `7/7` itens DoD sem `EVT-XXX`.
-- `specs/04_sprints/S06/_spec_contract.md:115-123` não usa PERT.
-- `specs/04_sprints/S06/_spec_contract.md:137-142` ainda usa risk register de 3 colunas num sprint `FF-HR-011`.
+- `specs/04_sprints/_sealed/S06/_spec_contract.md:81`, `:86`, `:131-133` exigem simulação/estabilidade de `30d`, mas `§13` continua em `4 semanas` (`:125-127`) sem reservar explicitamente esse burn-in. O gate está fora do orçamento da sprint.
+- `specs/04_sprints/_sealed/S06/_spec_contract.md:75-81` tem `7/7` itens DoD sem `EVT-XXX`.
+- `specs/04_sprints/_sealed/S06/_spec_contract.md:115-123` não usa PERT.
+- `specs/04_sprints/_sealed/S06/_spec_contract.md:137-142` ainda usa risk register de 3 colunas num sprint `FF-HR-011`.
 
 ### S-07
 
-- `specs/04_sprints/S07/_spec_contract.md:114`, `:121` introduzem `INV-DEDUP-CONSISTENCY`, mas ele ainda não existe em `specs/03_architecture/invariant_registry.md`; o validator aponta dangling.
-- `specs/04_sprints/S07/_spec_contract.md:78`, `:91`, `:163` referenciam `RB-FM-305` e `RB-FM-059`, mas esses runbooks não existem em `specs/05_quality/runbooks/`.
-- `specs/04_sprints/S07/_spec_contract.md:130` diz que compressão foi “defer pra S-11”, mas `S-11` é privacy/DSR, não storage optimization (`specs/04_sprints/S11/_spec_contract.md:17`, `:28`).
-- `specs/04_sprints/S07/_spec_contract.md:138` declara que bloqueia `S-10` e `S-14`, mas isso não está espelhado nos contracts downstream.
+- `specs/04_sprints/_sealed/S07/_spec_contract.md:114`, `:121` introduzem `INV-DEDUP-CONSISTENCY`, mas ele ainda não existe em `specs/03_architecture/invariant_registry.md`; o validator aponta dangling.
+- `specs/04_sprints/_sealed/S07/_spec_contract.md:78`, `:91`, `:163` referenciam `RB-FM-305` e `RB-FM-059`, mas esses runbooks não existem em `specs/05_quality/runbooks/`.
+- `specs/04_sprints/_sealed/S07/_spec_contract.md:130` diz que compressão foi “defer pra S-11”, mas `S-11` é privacy/DSR, não storage optimization (`specs/04_sprints/S11/_spec_contract.md:17`, `:28`).
+- `specs/04_sprints/_sealed/S07/_spec_contract.md:138` declara que bloqueia `S-10` e `S-14`, mas isso não está espelhado nos contracts downstream.
 
 ### S-08
 
@@ -127,34 +127,34 @@ tags: [audit, sota, sprint-contracts, elevation]
 
 ### S-09
 
-- `specs/04_sprints/S09/_spec_contract.md:26`, `:45`, `:138`, `:239` inventam a pseudo-lane `STANDARD-PLUS`. O framework só conhece `LOW_RISK | STANDARD | HIGH_RISK` (`specs/00_framework.md:965`, `:2015-2057`).
-- `specs/04_sprints/S09/_spec_contract.md:46`, `:56-58`, `:94-116` processa PII, logs e audit chain, mas ainda fica em `STANDARD`. Pelo framework, isso está muito mais próximo de `FF-HR-003`/`FF-HR-005` que de um STANDARD puro.
-- `specs/04_sprints/S09/_spec_contract.md:128-138` deixa `10/11` itens DoD sem `EVT-XXX`, mesmo sendo o sprint com maior ambição de governança.
-- `specs/04_sprints/S09/_spec_contract.md:155`, `:157` misturam controles (`CTRL-PRIV-001`, `CTRL-AUDIT-001`) com invariants em `§8`.
-- `specs/04_sprints/S09/_spec_contract.md:161-162` cria `INV-OBS-CARDINALITY-BUDGET` e `INV-OBS-AUDIT-CHAIN-INTEGRITY`; o validator também acusou `INV-OBS-CARDINALITY` por referência interna não definida. Nada disso está no registry ainda.
-- `specs/04_sprints/S09/_spec_contract.md:137`, `:217`, `:248` exigem `RB-FM-153` e `RB-FM-201`, mas esses runbooks não existem. Pior: `FM-201` em `failure_modes.md` é “config change causa rate-limit drop”, não “cardinality explosion” (`specs/03_architecture/failure_modes.md:164`).
-- `specs/04_sprints/S09/_spec_contract.md:133` fala em screenshots de dashboard, mas não tipa `EVT-013`; o framework proíbe aceitar URL de dashboard como evidence isolada (`specs/00_framework.md:458`, `:2717-2744`).
+- `specs/04_sprints/_sealed/S09/_spec_contract.md:26`, `:45`, `:138`, `:239` inventam a pseudo-lane `STANDARD-PLUS`. O framework só conhece `LOW_RISK | STANDARD | HIGH_RISK` (`specs/00_framework.md:965`, `:2015-2057`).
+- `specs/04_sprints/_sealed/S09/_spec_contract.md:46`, `:56-58`, `:94-116` processa PII, logs e audit chain, mas ainda fica em `STANDARD`. Pelo framework, isso está muito mais próximo de `FF-HR-003`/`FF-HR-005` que de um STANDARD puro.
+- `specs/04_sprints/_sealed/S09/_spec_contract.md:128-138` deixa `10/11` itens DoD sem `EVT-XXX`, mesmo sendo o sprint com maior ambição de governança.
+- `specs/04_sprints/_sealed/S09/_spec_contract.md:155`, `:157` misturam controles (`CTRL-PRIV-001`, `CTRL-AUDIT-001`) com invariants em `§8`.
+- `specs/04_sprints/_sealed/S09/_spec_contract.md:161-162` cria `INV-OBS-CARDINALITY-BUDGET` e `INV-OBS-AUDIT-CHAIN-INTEGRITY`; o validator também acusou `INV-OBS-CARDINALITY` por referência interna não definida. Nada disso está no registry ainda.
+- `specs/04_sprints/_sealed/S09/_spec_contract.md:137`, `:217`, `:248` exigem `RB-FM-153` e `RB-FM-201`, mas esses runbooks não existem. Pior: `FM-201` em `failure_modes.md` é “config change causa rate-limit drop”, não “cardinality explosion” (`specs/03_architecture/failure_modes.md:164`).
+- `specs/04_sprints/_sealed/S09/_spec_contract.md:133` fala em screenshots de dashboard, mas não tipa `EVT-013`; o framework proíbe aceitar URL de dashboard como evidence isolada (`specs/00_framework.md:458`, `:2717-2744`).
 
 ### S-10
 
 - `specs/04_sprints/S10/_spec_contract.md:39-46` está `HIGH_RISK` mas não herda `INVARIANT-REGISTRY`, exigido pelo meta-contract para essa lane (`specs/04_sprints/_sprint_creation_contract.md:150`).
 - `specs/04_sprints/S10/_spec_contract.md:78`, `:120`, `:124` exigem `30d` de frescor/drift, mas a sprint continua orçada em `3 semanas`.
 - `specs/04_sprints/S10/_spec_contract.md:69-74` deixa `6/6` itens DoD sem `EVT-XXX`.
-- `specs/04_sprints/S10/_spec_contract.md:102-104` não lista `S-07` nem `S-08` como blockers, embora ambos digam explicitamente que bloqueiam billing (`specs/04_sprints/S07/_spec_contract.md:138`, `specs/04_sprints/S08/_spec_contract.md:136`).
+- `specs/04_sprints/S10/_spec_contract.md:102-104` não lista `S-07` nem `S-08` como blockers, embora ambos digam explicitamente que bloqueiam billing (`specs/04_sprints/_sealed/S07/_spec_contract.md:138`, `specs/04_sprints/S08/_spec_contract.md:136`).
 
 ### S-11
 
 - `specs/04_sprints/S11/_spec_contract.md:40-48` está `HIGH_RISK` mas não herda `INVARIANT-REGISTRY`.
-- `specs/04_sprints/S11/_spec_contract.md:28` promete “self-service API + UI”, mas a UI de consent/DSR está alocada em `S-16` (`specs/04_sprints/S16/_spec_contract.md:27`, `:48-49`). Falta separar backend de frontend ou declarar dependência.
+- `specs/04_sprints/S11/_spec_contract.md:28` promete “self-service API + UI”, mas a UI de consent/DSR está alocada em `S-16` (`specs/04_sprints/_sealed/S16/_spec_contract.md:27`, `:48-49`). Falta separar backend de frontend ou declarar dependência.
 - `specs/04_sprints/S11/_spec_contract.md:73` usa SLA de `30d`, enquanto `§13` continua em `3 semanas` (`:122-124`).
 - `specs/04_sprints/S11/_spec_contract.md:72-78` deixa `6/7` itens DoD sem `EVT-XXX`.
 
 ### S-12
 
-- `specs/04_sprints/S12/_spec_contract.md:69` coloca “bit-identical **ou** documentação das fontes de non-determinism pending”. Isso quebra o princípio de DoD binário do meta-contract (`specs/04_sprints/_sprint_creation_contract.md:177`).
-- `specs/04_sprints/S12/_spec_contract.md:62-70`, `:112-115` não citam PRR nem adversarial review, embora o sprint seja `HIGH_RISK`.
-- `specs/04_sprints/S12/_spec_contract.md:64-70` deixa `6/7` itens DoD sem `EVT-XXX`.
-- `specs/04_sprints/S12/_spec_contract.md:99-106` continua sem PERT.
+- `specs/04_sprints/_sealed/S12/_spec_contract.md:69` coloca “bit-identical **ou** documentação das fontes de non-determinism pending”. Isso quebra o princípio de DoD binário do meta-contract (`specs/04_sprints/_sprint_creation_contract.md:177`).
+- `specs/04_sprints/_sealed/S12/_spec_contract.md:62-70`, `:112-115` não citam PRR nem adversarial review, embora o sprint seja `HIGH_RISK`.
+- `specs/04_sprints/_sealed/S12/_spec_contract.md:64-70` deixa `6/7` itens DoD sem `EVT-XXX`.
+- `specs/04_sprints/_sealed/S12/_spec_contract.md:99-106` continua sem PERT.
 
 ### S-13
 
@@ -175,66 +175,66 @@ tags: [audit, sota, sprint-contracts, elevation]
 
 ### S-15
 
-- `specs/04_sprints/S15/_spec_contract.md:35-40` viola o mínimo STANDARD ao não herdar `FAILURE-MODES`.
-- `specs/04_sprints/S15/_spec_contract.md:71-74` usa `§8 Invariants` para dois statements soltos, sem invariants registradas.
-- `specs/04_sprints/S15/_spec_contract.md:60-64` deixa `5/5` itens DoD sem `EVT-XXX`.
-- `specs/04_sprints/S15/_spec_contract.md:94-98` não traz PERT.
-- `specs/04_sprints/S15/_spec_contract.md:54` define wrappers `pyO3/cgo/WASM`, mas o contract não registra trade-off nem fallback caso a estratégia multi-FFI fique mais cara que SDK nativo/HTTP thin client.
+- `specs/04_sprints/_sealed/S15/_spec_contract.md:35-40` viola o mínimo STANDARD ao não herdar `FAILURE-MODES`.
+- `specs/04_sprints/_sealed/S15/_spec_contract.md:71-74` usa `§8 Invariants` para dois statements soltos, sem invariants registradas.
+- `specs/04_sprints/_sealed/S15/_spec_contract.md:60-64` deixa `5/5` itens DoD sem `EVT-XXX`.
+- `specs/04_sprints/_sealed/S15/_spec_contract.md:94-98` não traz PERT.
+- `specs/04_sprints/_sealed/S15/_spec_contract.md:54` define wrappers `pyO3/cgo/WASM`, mas o contract não registra trade-off nem fallback caso a estratégia multi-FFI fique mais cara que SDK nativo/HTTP thin client.
 
 ### S-16
 
-- `specs/04_sprints/S16/_spec_contract.md:36-41` viola o mínimo STANDARD ao não herdar `FAILURE-MODES`.
-- `specs/04_sprints/S16/_spec_contract.md:45` colide diretamente com `S-19` na ownership de onboarding (`specs/04_sprints/S19/_spec_contract.md:27`, `:44-46`).
-- `specs/04_sprints/S16/_spec_contract.md:77-80` usa controles/plain statements em `§8`, não invariants canônicas.
-- `specs/04_sprints/S16/_spec_contract.md:65-70` deixa `6/6` itens DoD sem `EVT-XXX`.
-- `specs/04_sprints/S16/_spec_contract.md:101-106` não traz PERT.
+- `specs/04_sprints/_sealed/S16/_spec_contract.md:36-41` viola o mínimo STANDARD ao não herdar `FAILURE-MODES`.
+- `specs/04_sprints/_sealed/S16/_spec_contract.md:45` colide diretamente com `S-19` na ownership de onboarding (`specs/04_sprints/_sealed/S19/_spec_contract.md:27`, `:44-46`).
+- `specs/04_sprints/_sealed/S16/_spec_contract.md:77-80` usa controles/plain statements em `§8`, não invariants canônicas.
+- `specs/04_sprints/_sealed/S16/_spec_contract.md:65-70` deixa `6/6` itens DoD sem `EVT-XXX`.
+- `specs/04_sprints/_sealed/S16/_spec_contract.md:101-106` não traz PERT.
 
 ### S-17
 
-- `specs/04_sprints/S17/_spec_contract.md:62` exige `4 semanas` de chaos tests, mas `§13` continua em `2.5 semanas` (`:103-105`). O gate não cabe no orçamento.
-- `specs/04_sprints/S17/_spec_contract.md:74-75` usa PATs em `§8`, não invariants.
-- `specs/04_sprints/S17/_spec_contract.md:61-65` deixa `4/5` itens DoD sem `EVT-XXX`.
-- `specs/04_sprints/S17/_spec_contract.md:97-101` não traz PERT.
+- `specs/04_sprints/_sealed/S17/_spec_contract.md:62` exige `4 semanas` de chaos tests, mas `§13` continua em `2.5 semanas` (`:103-105`). O gate não cabe no orçamento.
+- `specs/04_sprints/_sealed/S17/_spec_contract.md:74-75` usa PATs em `§8`, não invariants.
+- `specs/04_sprints/_sealed/S17/_spec_contract.md:61-65` deixa `4/5` itens DoD sem `EVT-XXX`.
+- `specs/04_sprints/_sealed/S17/_spec_contract.md:97-101` não traz PERT.
 
 ### S-18
 
-- `specs/04_sprints/S18/_spec_contract.md:27`, `:46-47` publica pricing/security/SLA-adjacent claims, mas continua `LOW_RISK`. Se o sprint puder mudar promessas públicas, precisa anti-scope mais duro ou lane superior.
-- `specs/04_sprints/S18/_spec_contract.md:58-61` deixa `4/4` itens DoD sem `EVT-XXX`.
-- `specs/04_sprints/S18/_spec_contract.md:80` aponta “Enterprise-only docs (S-19 customer onboarding)”, mas `S-19` não é sprint de docs enterprise; o cross-reference está torto.
+- `specs/04_sprints/_sealed/S18/_spec_contract.md:27`, `:46-47` publica pricing/security/SLA-adjacent claims, mas continua `LOW_RISK`. Se o sprint puder mudar promessas públicas, precisa anti-scope mais duro ou lane superior.
+- `specs/04_sprints/_sealed/S18/_spec_contract.md:58-61` deixa `4/4` itens DoD sem `EVT-XXX`.
+- `specs/04_sprints/_sealed/S18/_spec_contract.md:80` aponta “Enterprise-only docs (S-19 customer onboarding)”, mas `S-19` não é sprint de docs enterprise; o cross-reference está torto.
 
 ### S-19
 
-- `specs/04_sprints/S19/_spec_contract.md:36-40` viola o mínimo STANDARD ao não herdar `OBSERVABILITY-MODEL` e `FAILURE-MODES`.
-- `specs/04_sprints/S19/_spec_contract.md:31` reconhece que toca `DPA`/`Terms`, mas continua `STANDARD`. Pelo framework, isso aciona `FF-HR-009`.
-- `specs/04_sprints/S19/_spec_contract.md:27`, `:44-46` colide com `S-16` na ownership do fluxo `signup → DPA → billing`.
-- `specs/04_sprints/S19/_spec_contract.md:56` cria dependência implícita em Slack/CRM, mas `§11` não a declara e o repo não trata esse fluxo em canonical sources.
-- `specs/04_sprints/S19/_spec_contract.md:60-64` deixa `4/5` itens DoD sem `EVT-XXX`.
-- `specs/04_sprints/S19/_spec_contract.md:94-98` não traz PERT.
+- `specs/04_sprints/_sealed/S19/_spec_contract.md:36-40` viola o mínimo STANDARD ao não herdar `OBSERVABILITY-MODEL` e `FAILURE-MODES`.
+- `specs/04_sprints/_sealed/S19/_spec_contract.md:31` reconhece que toca `DPA`/`Terms`, mas continua `STANDARD`. Pelo framework, isso aciona `FF-HR-009`.
+- `specs/04_sprints/_sealed/S19/_spec_contract.md:27`, `:44-46` colide com `S-16` na ownership do fluxo `signup → DPA → billing`.
+- `specs/04_sprints/_sealed/S19/_spec_contract.md:56` cria dependência implícita em Slack/CRM, mas `§11` não a declara e o repo não trata esse fluxo em canonical sources.
+- `specs/04_sprints/_sealed/S19/_spec_contract.md:60-64` deixa `4/5` itens DoD sem `EVT-XXX`.
+- `specs/04_sprints/_sealed/S19/_spec_contract.md:94-98` não traz PERT.
 
 ### S-20
 
-- `specs/04_sprints/S20/_spec_contract.md:28` fala em “todos os 10 canonical sources verdes”, mas `§3` lista 14 fontes canônicas (`:39-54`). O número está objetivamente errado.
-- `specs/04_sprints/S20/_spec_contract.md:82`, `:91`, `:104`, `:111` exigem janelas de `30d`, enquanto `§13` segue em `3 semanas` (`:136-138`). O gate é impossível sem pré-bake externo à sprint.
-- `specs/04_sprints/S20/_spec_contract.md:78-87` deixa `10/10` itens DoD sem `EVT-XXX`.
-- `specs/04_sprints/S20/_spec_contract.md:109` regride a precisão do supply-chain gate: `S12` fixou `CycloneDX 1.5+` (`specs/04_sprints/S12/_spec_contract.md:48`), mas `S20` voltou para “Full SBOM v1.0”.
-- `specs/04_sprints/S20/_spec_contract.md:74`, `:85`, `:134` mistura GTM/marketing/Product Hunt com gates de readiness técnica. O sprint final precisa separar `GA engineering gate` de `launch orchestration`.
+- `specs/04_sprints/_sealed/S20/_spec_contract.md:28` fala em “todos os 10 canonical sources verdes”, mas `§3` lista 14 fontes canônicas (`:39-54`). O número está objetivamente errado.
+- `specs/04_sprints/_sealed/S20/_spec_contract.md:82`, `:91`, `:104`, `:111` exigem janelas de `30d`, enquanto `§13` segue em `3 semanas` (`:136-138`). O gate é impossível sem pré-bake externo à sprint.
+- `specs/04_sprints/_sealed/S20/_spec_contract.md:78-87` deixa `10/10` itens DoD sem `EVT-XXX`.
+- `specs/04_sprints/_sealed/S20/_spec_contract.md:109` regride a precisão do supply-chain gate: `S12` fixou `CycloneDX 1.5+` (`specs/04_sprints/_sealed/S12/_spec_contract.md:48`), mas `S20` voltou para “Full SBOM v1.0”.
+- `specs/04_sprints/_sealed/S20/_spec_contract.md:74`, `:85`, `:134` mistura GTM/marketing/Product Hunt com gates de readiness técnica. O sprint final precisa separar `GA engineering gate` de `launch orchestration`.
 
 ## Cross-contract inconsistencies
 
-- `S07` declara que bloqueia `S10` e `S14` (`specs/04_sprints/S07/_spec_contract.md:138`), mas `S10` (`:102-104`) e `S14` (`:107-109`) não refletem isso.
+- `S07` declara que bloqueia `S10` e `S14` (`specs/04_sprints/_sealed/S07/_spec_contract.md:138`), mas `S10` (`:102-104`) e `S14` (`:107-109`) não refletem isso.
 - `S08` declara que bloqueia `S10` e `S14` (`specs/04_sprints/S08/_spec_contract.md:136`), mas `S10`/`S14` também não refletem isso.
-- Ownership de TTL/eviction ficou duplicada: `S04 CAP-AC-004` (`specs/04_sprints/S04/_spec_contract.md:59`) vs `S07 CAP-EVICT-002` (`specs/04_sprints/S07/_spec_contract.md:64`).
-- Ownership de quota ficou duplicada: `S07 CAP-EVICT-003` (`specs/04_sprints/S07/_spec_contract.md:65`) vs `S08 CAP-QUOTA-001/002` (`specs/04_sprints/S08/_spec_contract.md:59-60`).
-- `S11` coloca UI no escopo (`specs/04_sprints/S11/_spec_contract.md:28`), mas `S16` já é a sprint de consent/DSR UI (`specs/04_sprints/S16/_spec_contract.md:27`, `:48-49`).
-- `S16` e `S19` duplicam onboarding: `S16 CAP-UI-001` (`specs/04_sprints/S16/_spec_contract.md:45`) vs `S19 CAP-ONBOARD-001..003` (`specs/04_sprints/S19/_spec_contract.md:44-46`).
+- Ownership de TTL/eviction ficou duplicada: `S04 CAP-AC-004` (`specs/04_sprints/_sealed/S04/_spec_contract.md:59`) vs `S07 CAP-EVICT-002` (`specs/04_sprints/_sealed/S07/_spec_contract.md:64`).
+- Ownership de quota ficou duplicada: `S07 CAP-EVICT-003` (`specs/04_sprints/_sealed/S07/_spec_contract.md:65`) vs `S08 CAP-QUOTA-001/002` (`specs/04_sprints/S08/_spec_contract.md:59-60`).
+- `S11` coloca UI no escopo (`specs/04_sprints/S11/_spec_contract.md:28`), mas `S16` já é a sprint de consent/DSR UI (`specs/04_sprints/_sealed/S16/_spec_contract.md:27`, `:48-49`).
+- `S16` e `S19` duplicam onboarding: `S16 CAP-UI-001` (`specs/04_sprints/_sealed/S16/_spec_contract.md:45`) vs `S19 CAP-ONBOARD-001..003` (`specs/04_sprints/_sealed/S19/_spec_contract.md:44-46`).
 - `S14` já faz `DPA amendment`/`DPA signed` (`specs/04_sprints/S14/_spec_contract.md:84`, `:122`, `:130`) mas não lista `FF-HR-009`.
-- `S20` fala em 10 canonical sources (`specs/04_sprints/S20/_spec_contract.md:28`), herda 14 (`:39-54`) e o framework lista 18 fontes canônicas possíveis (`specs/00_framework.md:2443-2462`).
-- `S12` fixa SBOM em `CycloneDX 1.5+` (`specs/04_sprints/S12/_spec_contract.md:48`), enquanto `S20` retrocede para “SBOM v1.0” (`specs/04_sprints/S20/_spec_contract.md:109`).
-- `S09` cria `STANDARD-PLUS` (`specs/04_sprints/S09/_spec_contract.md:26`, `:45`), mas o framework não reconhece lane intermediária.
+- `S20` fala em 10 canonical sources (`specs/04_sprints/_sealed/S20/_spec_contract.md:28`), herda 14 (`:39-54`) e o framework lista 18 fontes canônicas possíveis (`specs/00_framework.md:2443-2462`).
+- `S12` fixa SBOM em `CycloneDX 1.5+` (`specs/04_sprints/_sealed/S12/_spec_contract.md:48`), enquanto `S20` retrocede para “SBOM v1.0” (`specs/04_sprints/_sealed/S20/_spec_contract.md:109`).
+- `S09` cria `STANDARD-PLUS` (`specs/04_sprints/_sealed/S09/_spec_contract.md:26`, `:45`), mas o framework não reconhece lane intermediária.
 - `S07/S08/S09` introduzem invariants novas (`INV-DEDUP-CONSISTENCY`, `INV-RATE-LIMIT-PROPORTIONALITY`, `INV-OBS-*`) sem propagação para `invariant_registry.md`.
 - `S07/S08/S09` referenciam runbooks inexistentes (`RB-FM-305`, `RB-FM-059`, `RB-FM-250`, `RB-FM-153`, `RB-FM-201`), quebrando a coerência com a biblioteca de 26 runbooks.
-- `S07` manda compressão para `S-11` (`specs/04_sprints/S07/_spec_contract.md:130`), mas `S-11` é privacy/DSR, não storage/perf.
-- `S09` mapeia `RB-FM-201` para “cardinality explosion” (`specs/04_sprints/S09/_spec_contract.md:137`), enquanto `FM-201` em `failure_modes.md` é “config change causa rate-limit drop” (`specs/03_architecture/failure_modes.md:164`).
+- `S07` manda compressão para `S-11` (`specs/04_sprints/_sealed/S07/_spec_contract.md:130`), mas `S-11` é privacy/DSR, não storage/perf.
+- `S09` mapeia `RB-FM-201` para “cardinality explosion” (`specs/04_sprints/_sealed/S09/_spec_contract.md:137`), enquanto `FM-201` em `failure_modes.md` é “config change causa rate-limit drop” (`specs/03_architecture/failure_modes.md:164`).
 
 ## SOTA enrichments recomendados (universais)
 

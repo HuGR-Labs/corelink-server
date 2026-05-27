@@ -59,7 +59,7 @@ tags: ["runbook", "dsr", "statuspage", "privacy", "sev-1", "gdpr-art-30", "lgpd-
 > - `crates/corelink-statuspage-real/src/http.rs` (the wave-16 HTTP wiring)
 > - `specs/03_architecture/observability_model.md` §9 (severity + clock semantics)
 > - `specs/03_architecture/privacy_model.md` §6.2 (canonical DSR pipeline)
-> - `specs/_audits/2026-05-15-dsr-worker-production.md` §5.6 (wave-17 scheduler surface)
+> - `specs/_audits/sealed/2026-05-15-dsr-worker-production.md` §5.6 (wave-17 scheduler surface)
 > - `specs/_runbooks/RB-DSR-GDPR.md` (DSR processing — separate concern)
 > - `specs/_runbooks/RB-DSR-LGPD-FULL.md` (DSR processing — separate concern)
 > - `specs/_runbooks/ONCALL-ESCALATION-MATRIX.md`

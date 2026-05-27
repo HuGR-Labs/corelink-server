@@ -37,7 +37,7 @@
 //! is resolved at [`verify_webhook_signature`] caller in both modes —
 //! webhook flow stays direct (inbound + local HMAC verify).
 //!
-//! See `specs/_audits/2026-05-16-wallet-broker-stripe.md` §10 for the
+//! See `specs/_audits/sealed/2026-05-16-wallet-broker-stripe.md` §10 for the
 //! dual-mode addendum + blast-radius analysis.
 //!
 //! # Idempotency
@@ -64,8 +64,8 @@
 //! client (`client.rs`, depends on `reqwest::blocking`) is per-module
 //! gated to non-wasm32 targets. This mirrors the `r2_real / d1_real /
 //! kv_real / do_real` pattern documented in
-//! `specs/_audits/2026-05-15-cf-binding-real-pattern.md` and
-//! `specs/_audits/2026-05-16-stripe-wasm32-gate-lift.md`.
+//! `specs/_audits/sealed/2026-05-15-cf-binding-real-pattern.md` and
+//! `specs/_audits/sealed/2026-05-16-stripe-wasm32-gate-lift.md`.
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]

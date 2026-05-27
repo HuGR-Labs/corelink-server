@@ -124,10 +124,10 @@ tags: ["property-tests", "proptest", "s19", "onboarding", "dpa-first", "atomic-p
 
 ## 8. Cross-reference
 
-- `specs/_audits/2026-05-14-s19-adversarial-summary.md` §9 (INV ↔ property test ↔ adversarial scenario coverage matrix).
-- `specs/04_sprints/S19/PRR-S19.md` §2 (DoD line 1: property test summary 7+ properties × 10k iter green).
+- `specs/_audits/sealed/2026-05-14-s19-adversarial-summary.md` §9 (INV ↔ property test ↔ adversarial scenario coverage matrix).
+- `specs/04_sprints/_sealed/S19/PRR-S19.md` §2 (DoD line 1: property test summary 7+ properties × 10k iter green).
 - `specs/02_governance/invariant_registry.md` §3.12 (INV-ONBOARD-* registrations).
-- `specs/_audits/2026-05-14-property-test-summary-s13.md` (pattern template inheritance).
+- `specs/_audits/sealed/2026-05-14-property-test-summary-s13.md` (pattern template inheritance).
 
 ---
 

@@ -5,28 +5,28 @@
 > **Author:** wave-25 pre-GA security attestation agent (Claude Opus 4.7) — branch `wt/r-prep-pre-ga-security-attestation`.
 > **Base:** `main` @ `e9ee8eb` ("merge wt/r-prep-pat-clerk-mutation-sweep into main (wave-24)").
 > **Audience:**
-> 1. External pentest vendor (Schellman / A-LIGN / Bishop Fox per `specs/_pentest/vendor-shortlist.md`) — day-1 evidence pack.
-> 2. GA cutover sign-off package per `specs/_audits/2026-05-16-ga-readiness-final.md` §security-posture.
+> 1. External pentest vendor (Schellman / A-LIGN / Bishop Fox per `specs/_audits/sealed/pentest/vendor-shortlist.md`) — day-1 evidence pack.
+> 2. GA cutover sign-off package per `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §security-posture.
 > 3. Owner + Security Lead (`(a nomear)` per FW-H-3) 2-key authorization per ADR-0034b.
 > **Companion docs:**
-> - `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` v1.0.0 — pentest scope freeze (predecessor in wave-19).
-> - `specs/_audits/2026-05-16-ga-readiness-final.md` — sign-off-ready GA-readiness audit (cross-ref §security-posture row).
-> - `specs/_pentest/SOW-S20-EXTERNAL-PENTEST.md` — contractual SOW.
-> - `specs/_pentest/PENTEST-EVIDENCE-PACKAGE.md` — day-1 vendor pack.
+> - `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` v1.0.0 — pentest scope freeze (predecessor in wave-19).
+> - `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` — sign-off-ready GA-readiness audit (cross-ref §security-posture row).
+> - `specs/_audits/sealed/pentest/SOW-S20-EXTERNAL-PENTEST.md` — contractual SOW.
+> - `specs/_audits/sealed/pentest/PENTEST-EVIDENCE-PACKAGE.md` — day-1 vendor pack.
 > - `docs/internal/pentest-engagement-checklist.md` — operational engagement runbook.
 
 ---
 
 ## §1. Executive summary — pre-GA security posture
 
-CoreLink is a multi-tenant, content-addressable cache + remote-execution backend running on Cloudflare Workers, D1, R2, Durable Objects, and a Neon Postgres shadow analytics plane, with BYOK envelope encryption against four KMS providers (AWS, GCP, Azure, Vault) and a 7-year tamper-evident audit chain with Merkle proofs. As of `main` @ `e9ee8eb` (wave-24 SEAL tip), the product is **CONDITIONAL GO** for GA per `specs/_audits/2026-05-16-ga-readiness-final.md` §1.1, with the conditional bar being external dependencies (attorney sign-off, FW-H role nominations, pentest vendor engagement, AWS Artifact PDF download, Statuspage go-live).
+CoreLink is a multi-tenant, content-addressable cache + remote-execution backend running on Cloudflare Workers, D1, R2, Durable Objects, and a Neon Postgres shadow analytics plane, with BYOK envelope encryption against four KMS providers (AWS, GCP, Azure, Vault) and a 7-year tamper-evident audit chain with Merkle proofs. As of `main` @ `e9ee8eb` (wave-24 SEAL tip), the product is **CONDITIONAL GO** for GA per `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §1.1, with the conditional bar being external dependencies (attorney sign-off, FW-H role nominations, pentest vendor engagement, AWS Artifact PDF download, Statuspage go-live).
 
 **Aggregate security posture (waves 18 → 24):**
 
 | Dimension | State | Verdict |
 |---|---|---|
 | Adversarial review trend (8 waves) | 8.35 → 9.5 → 8.78/8.86 → 9.40 → 9.55 → 9.45 → 9.20 → wave-24 codex Opus pass surveyed in `2026-05-16-wave24-closure.md` (stream #9 in flight) | ✅ Stable above SOTA bar 8.50 for 7 consecutive waves; mean of last 5 waves = 9.41/10 |
-| INV-CRITICAL TLA+ coverage | 61 CRITICAL declared / **61 of 61 CRITICAL TLA-verified** (Z=0 unverified; milestone reached wave-26 per `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`) / 82 TLA-verified in broader scope (includes non-CRITICAL invariants pinned via TLA) / **0 TLA-exempt** (wave-24 INV-PAT-REVOKE-PROPAGATION §4.3 exemption rescinded when `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed wave-25; figures refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`) | ✅ All 61 CRITICAL invariants carry direct or inherited TLA+ proofs |
+| INV-CRITICAL TLA+ coverage | 61 CRITICAL declared / **61 of 61 CRITICAL TLA-verified** (Z=0 unverified; milestone reached wave-26 per `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`) / 82 TLA-verified in broader scope (includes non-CRITICAL invariants pinned via TLA) / **0 TLA-exempt** (wave-24 INV-PAT-REVOKE-PROPAGATION §4.3 exemption rescinded when `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed wave-25; figures refreshed wave-27 per `specs/_audits/sealed/2026-05-16-tla-figure-refresh-wave27.md`) | ✅ All 61 CRITICAL invariants carry direct or inherited TLA+ proofs |
 | Mutation testing aggregate | 8 of 15 crates empirically CLOSED (≥ 95 % of killable); 2 crates wave-23 PARTIAL → wave-24 empirically CLOSED; 5 crates on `mutation-nightly.yml` CI-nightly lane (75 % floor) | 🟢 DEBT-008 first-sweep queue exhausted at wave-24 |
 | Chaos engineering coverage | 8 isolated fail-CLOSED scenarios (wave-22 SEAL) + 3 combined-failure scenarios (wave-23 SEAL) — all green under `cargo test --features chaos` | ✅ 16-test corpus across 11 scenarios |
 | Endurance + perf testing | 24h harness operable (wave-22) + 10-min dress-run executed wave-25 (cross-ref `agent-endurance-dressrun`); CI perf regression 5 % / 15 % tolerances tightened wave-22 | ✅ Rig + tolerances production-ready |
@@ -70,18 +70,18 @@ Eight consecutive waves of independent SOTA-bar adversarial review by Claude Opu
 
 ## §3. INV-CRITICAL TLA+ coverage
 
-Source: `specs/03_architecture/invariant_registry.md` post wave-23 sweep + `specs/_audits/2026-05-16-ga-readiness-final.md` §3 INV table.
+Source: `specs/03_architecture/invariant_registry.md` post wave-23 sweep + `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §3 INV table.
 
 | Class | Count | Notes |
 |---|---|---|
 | Total INVs declared | 197 | 322 raw INV-* tokens in registry (includes cross-refs); 197 canonical per `validate_canonical_consistency.py` |
 | └ CRITICAL | **61** | +1 from wave-23 sweep (INV-PAT-REVOKE-PROPAGATION §3.28 — sub-second wall-clock revocation; now TLA-verified via `specs/tla/auth_pat_revoke.tla` cherry-pick `8fa1c22` landed wave-25) |
 | TLA+ verified (declared INVs proved in `specs/tla/*.tla`) | **82** | Includes some non-CRITICAL invariants pinned via TLA for completeness (was 81 pre-wave-25; +1 from `auth_pat_revoke.tla` cherry-pick) |
-| CRITICAL without TLA+ proof | **0** | All 61 CRITICAL invariants have direct or inherited TLA+ proofs per wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`) |
+| CRITICAL without TLA+ proof | **0** | All 61 CRITICAL invariants have direct or inherited TLA+ proofs per wave-26 final audit `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`) |
 | Orphan refs | **0** | `validate_references.py` exit 0 |
 | WI-coverage | **143 / 143** | `validate_inv_promotion.py` exit 0 |
 
-**Net:** all 61 CRITICAL invariants have direct or inherited TLA+ proof in `specs/tla/*.tla` post wave-25 cherry-pick `8fa1c22` (auth_pat_revoke.tla) + wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`) confirming **61/61 CRITICAL TLA-verified, Z=0 unverified**. The §4.3 wall-clock-obligation exemption framework remains in the registry but **no CRITICAL invariant currently consumes it** (figures refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`).
+**Net:** all 61 CRITICAL invariants have direct or inherited TLA+ proof in `specs/tla/*.tla` post wave-25 cherry-pick `8fa1c22` (auth_pat_revoke.tla) + wave-26 final audit `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`) confirming **61/61 CRITICAL TLA-verified, Z=0 unverified**. The §4.3 wall-clock-obligation exemption framework remains in the registry but **no CRITICAL invariant currently consumes it** (figures refreshed wave-27 per `specs/_audits/sealed/2026-05-16-tla-figure-refresh-wave27.md`).
 
 The brief's headline ("60 CRITICAL declared; 76+ TLA-verified; remaining critical-no-TLA = 0 post wave-24") is corroborated and **strengthened post wave-25/26**: 61 CRITICAL (all 61 carry TLA+ proof — 0 exempt, 0 unverified), 82 TLA-verified in broader scope (≥ 76+), 0 CRITICAL lacking proof.
 
@@ -89,7 +89,7 @@ The brief's headline ("60 CRITICAL declared; 76+ TLA-verified; remaining critica
 
 ## §4. Mutation testing aggregate (DEBT-008)
 
-Source: `specs/_audits/2026-05-16-debt-008-mutation-sweep.md` + wave-22/23/24 follow-ons.
+Source: `specs/_audits/sealed/2026-05-16-debt-008-mutation-sweep.md` + wave-22/23/24 follow-ons.
 
 | Crate | State | Kill rate (raw / of killable) | Wave anchor |
 |---|---|---|---|
@@ -121,7 +121,7 @@ The brief's headline ("DEBT-008 empirically CLOSED 8/15 crates; 2 partial-empiri
 
 ## §5. Chaos engineering coverage
 
-Source: `specs/_audits/2026-05-16-chaos-campaign-harness.md` (wave-22 — 8 isolated scenarios) + `specs/_audits/2026-05-16-chaos-combined-failures.md` (wave-23 — 3 combined-failure scenarios).
+Source: `specs/_audits/sealed/2026-05-16-chaos-campaign-harness.md` (wave-22 — 8 isolated scenarios) + `specs/_audits/sealed/2026-05-16-chaos-combined-failures.md` (wave-23 — 3 combined-failure scenarios).
 
 ### §5.1 Isolated scenarios (wave-22, 8 scenarios)
 
@@ -157,7 +157,7 @@ Source: `specs/_audits/2026-05-16-chaos-campaign-harness.md` (wave-22 — 8 isol
 
 ### §6.1 24h endurance harness (wave-22)
 
-Source: `specs/_audits/2026-05-16-24h-endurance-harness.md`.
+Source: `specs/_audits/sealed/2026-05-16-24h-endurance-harness.md`.
 
 | Artifact | Path | Function |
 |---|---|---|
@@ -181,7 +181,7 @@ Wave-22 stream `perf-regression-ci-tighten` (commit `6494d9c`) tightened the CI 
 
 ## §7. Compliance attestation state
 
-Source: `specs/_audits/2026-05-16-ga-readiness-final.md` §7 compliance table + `specs/_compliance/*` rollups.
+Source: `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §7 compliance table + `specs/_compliance/*` rollups.
 
 | Cert / regime | Anchor doc | Date | Status | Gating |
 |---|---|---|---|---|
@@ -189,7 +189,7 @@ Source: `specs/_audits/2026-05-16-ga-readiness-final.md` §7 compliance table + 
 | **ISO 27001 Stage-1** | `specs/_compliance/ISO-27001-STAGE-1-PREP-2026-05-15.md` + `iso27001-soa.csv` + `ISO-27001-STAGE-2-INTERNAL-AUDIT-PLAN.md` | 2026-05-15 | ✅ READY | Stage-2 = certifier-audited annual surveillance, ETA Q4 |
 | **GDPR (EU/UK)** | `specs/_compliance/GDPR-COMPLIANCE-2026-05-15.md` + `DPIA-CORELINK.md` + sub-processor register | 2026-05-15 | ✅ READY | — |
 | **LGPD (BR)** | `specs/_compliance/LGPD-COMPLIANCE-2026-05-15.md` + breach notification templates pt-BR | 2026-05-15 | ✅ READY | — |
-| **LFPDPPP (MX)** | `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md` + es-MX privacy notice + 2 es breach templates | 2026-05-16 (wave-23) | 🟡 PENDING | MX attorney sign-off DEFER (DEBT-025 — `legal_review_status: PENDING_MX_ATTORNEY`) |
+| **LFPDPPP (MX)** | `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md` + es-MX privacy notice + 2 es breach templates | 2026-05-16 (wave-23) | 🟡 PENDING | MX attorney sign-off DEFER (DEBT-025 — `legal_review_status: PENDING_MX_ATTORNEY`) |
 | **PCI DSS (SAQ-A)** | `specs/_compliance/PCI-DSS-SAQ-A-2026-05-15.md` + `PCI-DSS-BOUNDARY-DIAGRAM.md` + `PCI-DSS-ANNUAL-RECERTIFY.md` | 2026-05-15 | ✅ READY | SAQ-A scope (Stripe-tokenised; no PAN in CoreLink boundary) |
 | **CCPA** | Cross-referenced from GDPR/LGPD rollups + `IR-TABLETOP-PLAYBOOK.md` §1798.82 cure-period drill | 2026-05-15 | ✅ READY | Inherits from GDPR pipeline |
 | **FedRAMP Moderate** | `specs/_compliance/FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md` + `FEDRAMP-NOT-IN-SCOPE-RATIONALE.md` | 2026-05-15 | ✅ DOCUMENTED | Explicitly NOT in scope for GA (rationale doc) |
@@ -202,7 +202,7 @@ Source: `specs/_audits/2026-05-16-ga-readiness-final.md` §7 compliance table + 
 
 ### §8.1 BYOK 4-provider matrix
 
-Source: `specs/_audits/2026-05-15-byok-real-provider-pattern.md` + `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md`.
+Source: `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md` + `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md`.
 
 | Provider | Envelope wrap/unwrap | DEK cache (5min hard) | Kill-switch ≤5min | FIPS row |
 |---|---|---|---|---|
@@ -230,7 +230,7 @@ Source: `specs/_audits/2026-05-15-byok-real-provider-pattern.md` + `specs/_compl
 
 ## §9. Audit chain integrity
 
-Source: `specs/_audits/2026-05-16-wave18-adversarial-review-streamA-audit-export.md` + wave-19 + wave-20 reviews + `specs/_audits/2026-05-16-wave18-adversarial-review-streamB-neon-shadow.md`.
+Source: `specs/_audits/sealed/2026-05-16-wave18-adversarial-review-streamA-audit-export.md` + wave-19 + wave-20 reviews + `specs/_audits/sealed/2026-05-16-wave18-adversarial-review-streamB-neon-shadow.md`.
 
 | Component | State | Anchor |
 |---|---|---|
@@ -290,12 +290,12 @@ The external pentest vendor receives this attestation + the day-1 evidence pack 
 
 | Section | Path | Function |
 |---|---|---|
-| Pentest scope | `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` v1.0.0 | 12 assets + 5 attackers + 46 attack chains + ASVS v4.0.3 self-assessment + STRIDE/LINDDUN matrix |
-| This attestation | `specs/_audits/2026-05-16-pre-ga-security-attestation.md` | Consolidated security posture (this doc) |
-| Day-1 evidence pack | `specs/_pentest/PENTEST-EVIDENCE-PACKAGE.md` | Architecture artifacts + INV registry + internal pentest corpus |
-| SOW | `specs/_pentest/SOW-S20-EXTERNAL-PENTEST.md` | Contractual scope, methodology, deliverables |
-| Vendor onboarding | `specs/_pentest/VENDOR-ONBOARDING.md` | Onboarding playbook |
-| Access provisioning | `specs/_pentest/access-provisioning.md` | Credentials + endpoints |
+| Pentest scope | `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` v1.0.0 | 12 assets + 5 attackers + 46 attack chains + ASVS v4.0.3 self-assessment + STRIDE/LINDDUN matrix |
+| This attestation | `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` | Consolidated security posture (this doc) |
+| Day-1 evidence pack | `specs/_audits/sealed/pentest/PENTEST-EVIDENCE-PACKAGE.md` | Architecture artifacts + INV registry + internal pentest corpus |
+| SOW | `specs/_audits/sealed/pentest/SOW-S20-EXTERNAL-PENTEST.md` | Contractual scope, methodology, deliverables |
+| Vendor onboarding | `specs/_audits/sealed/pentest/VENDOR-ONBOARDING.md` | Onboarding playbook |
+| Access provisioning | `specs/_audits/sealed/pentest/access-provisioning.md` | Credentials + endpoints |
 | Findings template | `specs/_pentest/findings-template.md` | Machine-readable finding format |
 | Operational checklist | `docs/internal/pentest-engagement-checklist.md` | Day-by-day engagement choreography |
 | Architecture | `ARCHITECTURE.md` + `docs/internal/architecture/diagrams/` (C4 L1–L3, sanitized) | Top-level overview + diagrams |
@@ -303,7 +303,7 @@ The external pentest vendor receives this attestation + the day-1 evidence pack 
 | Privacy model | `specs/03_architecture/privacy_model.md` | Privacy CTRLs canonical |
 | Key management | `specs/03_architecture/key_management.md` | BYOK canonical |
 | Data model | `specs/03_architecture/data_model.md` | D1 schemas + RLS policies |
-| Invariant registry | `specs/03_architecture/invariant_registry.md` | 197 INVs + **82 TLA-verified** (61/61 CRITICAL TLA-verified post wave-26 per `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`) |
+| Invariant registry | `specs/03_architecture/invariant_registry.md` | 197 INVs + **82 TLA-verified** (61/61 CRITICAL TLA-verified post wave-26 per `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`) |
 | Internal pentest corpus | All 8 §5.1 + 16 §5.2 + 7 §5.4 reports per scope doc | 32 cross-referenced reports |
 | Adversarial reviews | Wave-18 → wave-24 audit docs (8 docs) | Independent SOTA-bar reviews |
 | Mutation test evidence | All DEBT-008 sweep audits (5 docs) | Per-crate kill-rate evidence |
@@ -311,7 +311,7 @@ The external pentest vendor receives this attestation + the day-1 evidence pack 
 | Endurance + perf | `2026-05-16-24h-endurance-harness.md` + wave-25 dress-run | Capacity-drift detection rig |
 | Compliance rollups | `specs/_compliance/*` 2026-05-15 dated docs (7 cert posture docs) | Per-cert evidence |
 | Runbook corpus | `specs/_runbooks/RB-*.md` (50+ runbooks) | Operational responses |
-| GA-readiness final | `specs/_audits/2026-05-16-ga-readiness-final.md` | Go/no-go decision board |
+| GA-readiness final | `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` | Go/no-go decision board |
 
 ### §11.2 Expected vendor output
 
@@ -340,8 +340,8 @@ Per `pre-ga-pentest-scope.md` §11:
 
 This attestation is **ACTIVE** pending counter-signature by the two roles below. Acceptance unlocks:
 
-1. Day-1 evidence handoff to the selected pentest vendor (per `specs/_pentest/access-provisioning.md`).
-2. `specs/_audits/2026-05-16-ga-readiness-final.md` §13 2-key auth (this attestation feeds the `Security posture` row).
+1. Day-1 evidence handoff to the selected pentest vendor (per `specs/_audits/sealed/pentest/access-provisioning.md`).
+2. `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §13 2-key auth (this attestation feeds the `Security posture` row).
 
 | Role | Signer | Date | Status |
 |---|---|---|---|
@@ -377,7 +377,7 @@ This attestation is **ACTIVE** pending counter-signature by the two roles below.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 1.0.0 | 2026-05-16 | Gustavo Schneiter (via Claude Opus 4.7, wave-25 R-prep stream) | Initial consolidated pre-GA security attestation: 8-wave adversarial trend (8.35 → 9.20 mean 9.41), 61 CRITICAL / 81 TLA-verified / 1 documented-exempt INV state [SUPERSEDED — see v1.0.1], DEBT-008 8/15 empirically-CLOSED + 2 wave-24 re-sweep + 5 CI-nightly lane, chaos 8 isolated + 3 combined (16 tests), 24h endurance rig + wave-25 10-min dress-run + 5/15 perf tolerances, compliance 7 of 8 ready + LFPDPPP MX attorney DEFER, BYOK 4-provider matrix (3 FIPS rows complete; AWS user-bound), audit chain 9 components verified end-to-end, residuals 0 P0 / 0 P1 / ~9 P2 / ~8 P3 (all wave-absorbed), vendor handoff checklist + 2-key sign-off. Cross-refs `pre-ga-pentest-scope.md` + `ga-readiness-final.md`. |
-| 1.0.1 | 2026-05-16 | wave-27 R-prep TLA figure refresh agent (Claude Opus 4.7) | **Wave-27 P1 close (cosmetic-doc refresh, freeze §3.d allowlist).** Refreshed stale TLA-coverage figures in §1 row "INV-CRITICAL TLA+ coverage" (line 29), §3 INV table rows (lines 78–80) + narrative paragraphs (lines 84–86), §11.1 V&V table row "Invariant registry" (line 306) from the wave-25-authored snapshot "**61 CRITICAL / 81 TLA-verified / 1 TLA-exempt**" to the wave-26-canonical state "**61/61 CRITICAL TLA-verified, Z=0 unverified, 0 TLA-exempt + 82 TLA-verified broader scope**" per `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`). Root cause is the wave-25 P1-01 finding in `specs/_audits/2026-05-16-wave25-adversarial-review.md` §3 — this attestation was authored on `e9ee8eb` BEFORE the wave-25 cherry-pick `8fa1c22` (`auth_pat_revoke.tla`) reordered the registry state, leaving the figures one row stale on a SEAL-gate distributed-externally document. Substantive verdict unchanged (CRITICAL-no-TLA = 0 was true under exempt classification; now true under direct-proof classification — both yield the same security-posture conclusion). Cross-ref `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`. |
+| 1.0.1 | 2026-05-16 | wave-27 R-prep TLA figure refresh agent (Claude Opus 4.7) | **Wave-27 P1 close (cosmetic-doc refresh, freeze §3.d allowlist).** Refreshed stale TLA-coverage figures in §1 row "INV-CRITICAL TLA+ coverage" (line 29), §3 INV table rows (lines 78–80) + narrative paragraphs (lines 84–86), §11.1 V&V table row "Invariant registry" (line 306) from the wave-25-authored snapshot "**61 CRITICAL / 81 TLA-verified / 1 TLA-exempt**" to the wave-26-canonical state "**61/61 CRITICAL TLA-verified, Z=0 unverified, 0 TLA-exempt + 82 TLA-verified broader scope**" per `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`). Root cause is the wave-25 P1-01 finding in `specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md` §3 — this attestation was authored on `e9ee8eb` BEFORE the wave-25 cherry-pick `8fa1c22` (`auth_pat_revoke.tla`) reordered the registry state, leaving the figures one row stale on a SEAL-gate distributed-externally document. Substantive verdict unchanged (CRITICAL-no-TLA = 0 was true under exempt classification; now true under direct-proof classification — both yield the same security-posture conclusion). Cross-ref `specs/_audits/sealed/2026-05-16-tla-figure-refresh-wave27.md`. |
 
 ---
 

@@ -422,7 +422,7 @@ Rationale:
 ## §10. Files touched
 
 ```
-specs/_audits/2026-05-22-w33-stage2-a-worker-moves.md  +<NN> LOC (this doc; created)
+specs/_audits/sealed/2026-05-22-w33-stage2-a-worker-moves.md  +<NN> LOC (this doc; created)
 ```
 
 Zero source files mutated. Zero Cargo.toml mutated. Zero
@@ -439,24 +439,24 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>.
 
 ## §12. Cross-references
 
-- **Parent:** `specs/_audits/2026-05-22-wave33-code-reorg-spec.md`
+- **Parent:** `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md`
   §6 Stage 2; §4 row 5 (corelink-worker decomposition row); §3 line 59
   (CF Worker entry inventory); acceptable risk #5 (line 227).
 - **Direct precedent (same disposition):**
-  `specs/_audits/2026-05-22-w33-stage2-c-adapter-splits.md` §9
+  `specs/_audits/sealed/2026-05-22-w33-stage2-c-adapter-splits.md` §9
   recommendation (a) ACCEPT-PARTIAL.
 - **Aggregator-pattern foundation:**
-  `specs/_audits/2026-05-22-w33-stage0-foundation.md` §1 lines 25-86
+  `specs/_audits/sealed/2026-05-22-w33-stage0-foundation.md` §1 lines 25-86
   (Option-A aggregator reading rationale).
 - **Stage 2 PRE-A foundation:**
-  `specs/_audits/2026-05-22-w33-stage2-pre-a-worker-megafiles.md`
+  `specs/_audits/sealed/2026-05-22-w33-stage2-pre-a-worker-megafiles.md`
   §8 (Stage 2.A continuation hand-off; per-file moves enabled but
   target-crate model not validated).
 - **Sibling Stage 2 work:**
-  `specs/_audits/2026-05-26-w33-stage2-b-container.md` (corelink-container
+  `specs/_audits/sealed/2026-05-26-w33-stage2-b-container.md` (corelink-container
   creation — followed Option-A by absorbing apps/server in-place
   rather than into an aggregator),
-  `specs/_audits/2026-05-22-w33-stage2-d-out-of-tree.md` (6 SDK/CLI
+  `specs/_audits/sealed/2026-05-22-w33-stage2-d-out-of-tree.md` (6 SDK/CLI
   crate path moves with `git mv` — package-level moves, no
   module-internal decomposition).
 - **Charter:** `specs/03_architecture/invariant_registry.md`.

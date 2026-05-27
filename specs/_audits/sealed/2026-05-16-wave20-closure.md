@@ -5,7 +5,7 @@
 > **Author:** wave-20 hygiene agent (Claude Opus 4.7) — branch `wt/r-prep-inv-registry-wave20-sweep`.
 > **Base:** `main` @ `2eec064` (wave-19 SEAL tip: "merge wt/r-prep-audit-export-async-pages into main (wave-19)").
 > **Scope:** INV registry hygiene + DEBT register reconciliation + wave-20 stream catalogue + GA-readiness snapshot post wave-20.
-> **Cross-ref:** `specs/_audits/2026-05-15-debt-register.md` (changelog v1.2.0 entry for this sweep); `specs/03_architecture/invariant_registry.md`; wave-19 closure docs (`2026-05-16-stripe-wasm32-gate-lift.md`, `2026-05-16-neon-shadow-real-driver.md`, `2026-05-16-wave18-adversarial-review-streamA-audit-export.md`, `2026-05-16-wave18-adversarial-review-streamB-neon-shadow.md`).
+> **Cross-ref:** `specs/_audits/sealed/2026-05-15-debt-register.md` (changelog v1.2.0 entry for this sweep); `specs/03_architecture/invariant_registry.md`; wave-19 closure docs (`2026-05-16-stripe-wasm32-gate-lift.md`, `2026-05-16-neon-shadow-real-driver.md`, `2026-05-16-wave18-adversarial-review-streamA-audit-export.md`, `2026-05-16-wave18-adversarial-review-streamB-neon-shadow.md`).
 
 ---
 
@@ -130,7 +130,7 @@ Per `python3 scripts/validate_inv_promotion.py`: registry coverage 143/143 (all 
 
 ## 6. DEBT register state (post-sweep)
 
-Per the reconciliation in `specs/_audits/2026-05-15-debt-register.md` v1.2.0 changelog entry (this wave):
+Per the reconciliation in `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.0 changelog entry (this wave):
 
 | Class | Pre-sweep count | Post-sweep count | Delta |
 |---|---|---|---|
@@ -200,9 +200,9 @@ Per the wave-20 sweep charter:
 
 ## 10. Cross-references
 
-- `specs/_audits/2026-05-15-debt-register.md` v1.2.0 (this sweep's changelog entry; duplicate-row reconciliation rationale).
+- `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.0 (this sweep's changelog entry; duplicate-row reconciliation rationale).
 - `specs/03_architecture/invariant_registry.md` (unchanged this wave; full coverage maintained).
-- `specs/_audits/2026-05-15-canonical-consistency-baseline.md` (the CI ratchet floor; DEBT-004 closure log §3.1).
+- `specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md` (the CI ratchet floor; DEBT-004 closure log §3.1).
 - Wave-19 audit docs: `2026-05-16-stripe-wasm32-gate-lift.md` (stream #3); `2026-05-16-neon-shadow-real-driver.md` (stream #2); `2026-05-16-wave18-adversarial-review-streamA-audit-export.md` (stream #1 source); `2026-05-16-wave18-adversarial-review-streamB-neon-shadow.md` (stream #2 source).
 - `RB-GA-CUTOVER.md` (wave-19 cutover runbook; greenlight dashboard).
-- `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` (wave-19 pentest scope; engagement checklist).
+- `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` (wave-19 pentest scope; engagement checklist).

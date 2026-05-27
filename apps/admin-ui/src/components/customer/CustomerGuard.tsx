@@ -5,7 +5,7 @@
 // org role — admin / viewer / member — is allowed. Anonymous sessions hit the
 // in-page 401 panel and are pointed at `/sign-in`.
 //
-// See `specs/_audits/2026-05-15-customer-dashboard-spec.md` §RBAC and
+// See `specs/_audits/sealed/2026-05-15-customer-dashboard-spec.md` §RBAC and
 // `apps/docs/docs/explanation/rbac/role-catalog.mdx` for the canonical role
 // matrix.
 

@@ -95,7 +95,7 @@ For every Critical-category vendor we require a **tested failover path** to sati
 
 | Critical vendor | Failover strategy | Failover tested? | Evidence |
 |---|---|---|---|
-| Cloudflare | Multi-region Workers (us-east-1 ↔ eu-west-1 ↔ ap-southeast-1) + cold-restore from R2 cross-region replication | Yes (`specs/_audits/2026-05-14-region-outage-chaos-s14.md`) | Region-outage chaos drill SEALED |
+| Cloudflare | Multi-region Workers (us-east-1 ↔ eu-west-1 ↔ ap-southeast-1) + cold-restore from R2 cross-region replication | Yes (`specs/_audits/sealed/2026-05-14-region-outage-chaos-s14.md`) | Region-outage chaos drill SEALED |
 | Stripe | Stripe-test-mode rehearsal + 24h webhook replay buffer + manual invoice flow documented in `legal/billing-fallback-playbook.md` | Yes (R-2 wiring tested webhook replay) | `corelink-billing-replay` |
 | Clerk | JWT-verification path tolerates Clerk-down for ≤ 24h via long-lived JWKS cache + read-only-mode toggle in admin plane | Yes (kill-Clerk drill 2026-05-09) | `specs/_audits/2026-05-09-clerk-outage-drill.md` (planned; tracked under R6 staging-bake) |
 | AWS KMS | Customer holds CMK in customer account; CoreLink BYOK matrix supports parallel KMS/GCP/Azure/Vault per tenant | Yes (BYOK matrix weekly workflow) | `.github/workflows/byok_matrix_weekly.yml` |

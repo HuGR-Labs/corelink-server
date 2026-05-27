@@ -20,10 +20,10 @@ tags:
   - "fu-w33-001"
   - "density-gate"
 references:
-  - "specs/_audits/proptest-followup-tickets.md"
-  - "specs/_audits/2026-05-26-wave-33-34-closure-followups.md"
-  - "specs/_audits/2026-05-15-proptest-density.md"
-  - "specs/_audits/2026-05-22-wave33-code-reorg-spec.md"
+  - "specs/_audits/sealed/proptest-followup-tickets.md"
+  - "specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md"
+  - "specs/_audits/sealed/2026-05-15-proptest-density.md"
+  - "specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md"
 ---
 
 # W36-PROPTEST-FU-001 — Umbrella aggregator double-counting closure SEAL
@@ -36,7 +36,7 @@ references:
 
 ## §1. Mandate recap
 
-Per `specs/_audits/proptest-followup-tickets.md` WI-PROPTEST-FU-W33-001
+Per `specs/_audits/sealed/proptest-followup-tickets.md` WI-PROPTEST-FU-W33-001
 (authored 2026-05-26): the proptest density gate was reported to
 "double-count" Wave-33 umbrella aggregator crates — INV references in
 the umbrella's `lib.rs` doc comments inflated the denominator while 0
@@ -175,17 +175,17 @@ Rationale:
    block to document the closure narrative + the residual INV-pin
    documentation pattern (container + core) with per-crate ownership
    pointers.
-2. `specs/_audits/proptest-followup-tickets.md` — version bump
+2. `specs/_audits/sealed/proptest-followup-tickets.md` — version bump
    `1.2.0 → 1.3.0`; WI-PROPTEST-FU-W33-001 marked CLOSED with full
    closure narrative; summary table updated.
-3. `specs/_audits/2026-05-26-wave-33-34-closure-followups.md` — §2
+3. `specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md` — §2
    roster row #4 and §6 prose updated to CLOSED with pointer to this
    SEAL audit.
 4. `crates/corelink-container/src/lib.rs` — added `# INV pin map`
    doc block enumerating each pinned INV → property-test-owner crate.
 5. `crates/corelink-core/src/lib.rs` — added `## INV pin map` doc
    block for `INV-DATA-RESIDENCY` → `corelink-signup` ownership.
-6. `specs/_audits/2026-05-26-w36-proptest-fu-001-seal.md` (this file).
+6. `specs/_audits/sealed/2026-05-26-w36-proptest-fu-001-seal.md` (this file).
 
 ### §4.2. Charter compliance
 

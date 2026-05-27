@@ -20,7 +20,7 @@ tags: ["audit", "stripe", "wallet-broker", "credential-brokerage", "r-prep", "wa
 > **Reviewer:** Gustavo Schneiter
 > **Crates touched:** `crates/corelink-stripe-real`, `tests/e2e-signup-flow`
 > **Crates inspected, no change:** `crates/corelink-tier-selection`, `crates/corelink-billing-stripe-materializer`, `apps/server`
-> **Cross-ref:** [`specs/_audits/2026-05-16-stripe-wasm32-gate-lift.md`](2026-05-16-stripe-wasm32-gate-lift.md), [`specs/_audits/2026-05-15-stripe-webhook-production.md`](2026-05-15-stripe-webhook-production.md)
+> **Cross-ref:** [`specs/_audits/sealed/2026-05-16-stripe-wasm32-gate-lift.md`](2026-05-16-stripe-wasm32-gate-lift.md), [`specs/_audits/sealed/2026-05-15-stripe-webhook-production.md`](2026-05-15-stripe-webhook-production.md)
 > **Disposition:** ALL outbound Stripe API calls now route through the HuGR Wallet remote credential broker at `{HUGR_WALLET_BASE}/_wallet/proxy/{HUGR_STRIPE_REF}/<path>` with `Authorization: Bearer ${HUGR_WALLET_TOKEN}`. CoreLink no longer holds a real upstream Stripe API secret in its Cloudflare Worker secrets. Webhook signature verification stays direct (inbound, local HMAC on `STRIPE_WEBHOOK_SECRET`) — explicit non-change.
 
 ---
@@ -40,7 +40,7 @@ In-scope:
 - `crates/corelink-stripe-real/tests/wallet_broker_proxy.rs` — NEW integration test suite (3 wiremock-driven tests).
 - `tests/e2e-signup-flow/tests/happy_path_starter_stripe_test_mode.rs` — live-integration arm (`#[ignore]`) updated to new env contract + asserts proxy-base contract.
 - `docs/internal/secrets-runbook.md` — Stripe section + rotation playbook updated.
-- `specs/_audits/2026-05-15-debt-register.md` — top-of-doc update + bottom changelog row.
+- `specs/_audits/sealed/2026-05-15-debt-register.md` — top-of-doc update + bottom changelog row.
 
 Out-of-scope (explicit non-changes):
 
@@ -172,7 +172,7 @@ Key property: CoreLink never possesses `sk_live_...`. The `hugrw_` token only au
 - Audit trail example payload updated.
 - Quick-reference table row updated.
 
-### §3.8 `specs/_audits/2026-05-15-debt-register.md`
+### §3.8 `specs/_audits/sealed/2026-05-15-debt-register.md`
 
 - Top-of-doc update line added (`v1.4.0`, first wallet-broker series entry).
 - Bottom change log table row appended.

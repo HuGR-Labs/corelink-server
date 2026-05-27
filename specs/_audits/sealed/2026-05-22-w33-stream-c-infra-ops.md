@@ -13,10 +13,10 @@
 > **Mandate:** wave-33 Stage 1 Stream C reorganises the infra +
 > ops + cloud-adapter + vault-adapter contexts under the modular-
 > monolith + hexagonal target shape per
-> `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §6 Stage 1.
+> `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md` §6 Stage 1.
 > This is the **LARGEST absorption stream of Wave 33**: 38 absorbed
 > crates → 4 umbrella crates. Aggregator pattern per Stage 0 SEAL
-> `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4.
+> `specs/_audits/sealed/2026-05-22-w33-stage0-foundation.md` §4.
 
 ## §1. Scope — sub-step commit chain
 

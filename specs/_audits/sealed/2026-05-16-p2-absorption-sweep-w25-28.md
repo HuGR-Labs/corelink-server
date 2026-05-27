@@ -13,10 +13,10 @@
 
 | # | Source review | Branch tip reviewed | P2 count | Notes |
 |---|---|---|---|---|
-| 1 | `specs/_audits/2026-05-16-wave25-adversarial-review.md` | `2a4e00c` | 2 (+ 2 P3 absorbed alongside) | wave-26 reviewing wave-25 |
-| 2 | `specs/_audits/2026-05-16-wave26-adversarial-review.md` | `a48bbec` | 8 | wave-27 reviewing wave-26 |
+| 1 | `specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md` | `2a4e00c` | 2 (+ 2 P3 absorbed alongside) | wave-26 reviewing wave-25 |
+| 2 | `specs/_audits/sealed/2026-05-16-wave26-adversarial-review.md` | `a48bbec` | 8 | wave-27 reviewing wave-26 |
 | 3 | wave-27 adversarial review | — | — | No standalone adversarial-review doc; wave-27 hygiene is in `2026-05-16-wave27-closure.md`. No new P2 findings carry forward from wave-27 streams. |
-| 4 | `specs/_audits/2026-05-16-wave28-adversarial-review.md` | `365dd38` | 3 | wave-29 reviewing wave-28 |
+| 4 | `specs/_audits/sealed/2026-05-16-wave28-adversarial-review.md` | `365dd38` | 3 | wave-29 reviewing wave-28 |
 
 Total carry-forward population: **13 P2 + 2 P3** (P3 cosmetics absorbed inline where the fix shape was identical).
 
@@ -38,7 +38,7 @@ Classification labels:
 | W25-P2-01 | P2 | Pentest vendor-shortlist §0.1/§0.2 declares "weighted ×7 = 70 max" / "weighted ×3 = 30 max" but per-vendor tables sum 0-10 flat; §6.1 secondary column header "30 max" carries values up to 36/40. Relative ranking is internally consistent but methodology vs application drifts. | **FIX-NOW** | Re-write §0.1, §0.2, and §6.1 column header to describe the actual computation (raw sums; 70-max primary + 40-max secondary; total normalised to 110 not 100). Relative ranking + verdicts unaffected. |
 | W25-P2-02 | P2 | DEBT-015-BUILD wave-25 closure doc asserts the wave-22 babel patch is "load-bearing" without an empirical re-test in wave-25. | **DEFER-POST-GA** | A 5-minute empirical retest (`pnpm build` with wave-24 babel patches reverted) is the prescribed fix and falls outside this hygiene sweep's cosmetic-only mandate. Forward-risk only; recorded in wave-30 residual queue. |
 | W25-P3-01 | P3 | `scripts/ga-readiness-defer-drift.py` docstring says "lines beginning with `- [ ]`" (unchecked only) but regex `^-\s*\[\s*[ xX]\s*\]` matches checked + unchecked. | **FIX-NOW** | Update docstring to say "checked or unchecked DEFER rows" — keeping the functionally tighter regex. |
-| W25-P3-02 | P3 | `specs/_audits/2026-05-16-ga-readiness-final.md` §11 intro carries a long parenthetical "(Wave-25 scrub: prior row #7 removed…)" that duplicates the same information already present in the §11 totals line. Triple-confirmation pattern reduces skimmability. | **FIX-NOW** | Strip the duplicate scrub parenthetical from the §11 intro (kept in totals line for the audit trail). |
+| W25-P3-02 | P3 | `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §11 intro carries a long parenthetical "(Wave-25 scrub: prior row #7 removed…)" that duplicates the same information already present in the §11 totals line. Triple-confirmation pattern reduces skimmability. | **FIX-NOW** | Strip the duplicate scrub parenthetical from the §11 intro (kept in totals line for the audit trail). |
 
 ### 2.2 Wave-26 carry-forward (source: `2026-05-16-wave26-adversarial-review.md`)
 
@@ -70,10 +70,10 @@ Classification labels:
 | # | File touched | Finding ID closed | Diff shape |
 |---|---|---|---|
 | 1 | `scripts/ga-readiness-defer-drift.py` | W25-P3-01 | Docstring: "checked or unchecked DEFER rows" + matching regex note. |
-| 2 | `specs/_audits/pentest-vendor-shortlist.md` | W25-P2-01 | §0 rubric description rewritten to match actual computation; §6.1 scoreboard column header corrected to "(40 max)" for secondary. Total denominator updated `/110`. |
-| 3 | `specs/_audits/2026-05-16-ga-readiness-final.md` | W25-P3-02 | §11 intro: dropped duplicate scrub parenthetical (kept in totals line). |
-| 4 | `specs/_audits/2026-05-16-prod-deploy-dressrun.md` | W26-P2-06 | §6 GA-tag-draft bullets: added explicit T-14d real-mode mandate line. |
-| 5 | `specs/_audits/2026-05-16-wave26-closure.md` | W26-P2-10 | §1 stream #4 row renamed to reflect tracker scaffolding scope. |
+| 2 | `specs/_audits/sealed/pentest-vendor-shortlist.md` | W25-P2-01 | §0 rubric description rewritten to match actual computation; §6.1 scoreboard column header corrected to "(40 max)" for secondary. Total denominator updated `/110`. |
+| 3 | `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` | W25-P3-02 | §11 intro: dropped duplicate scrub parenthetical (kept in totals line). |
+| 4 | `specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md` | W26-P2-06 | §6 GA-tag-draft bullets: added explicit T-14d real-mode mandate line. |
+| 5 | `specs/_audits/sealed/2026-05-16-wave26-closure.md` | W26-P2-10 | §1 stream #4 row renamed to reflect tracker scaffolding scope. |
 | 6 | `docs/release-notes/v1.0.0-GA-marketing-summary.md` | W26-P2-09 | "8 consecutive… averaging 9.41" → "≈9.4 (audit-trail mean 9.39)". |
 | 7 | `scripts/admin/statuspage-bootstrap.sh` | W28-P2-01 | 2-line stdin-flow comment above `find_by_name`. |
 | 8 | `scripts/admin/send-pentest-rfp.sh` | W28-P2-02 | `print_vendor_recipe` rewritten to pass vendor name via `argv`. |
@@ -121,7 +121,7 @@ Each source review doc receives a §closure-note appended pointing back at this 
 ```
 > **Wave-30 closure note (P2 absorption sweep — 2026-05-16):** the P2 / P3
 > findings recorded in this review have been triaged in
-> `specs/_audits/2026-05-16-p2-absorption-sweep-w25-28.md`. Per-finding
+> `specs/_audits/sealed/2026-05-16-p2-absorption-sweep-w25-28.md`. Per-finding
 > dispositions:
 >   - <ID> → CLOSED-WAVE-30 (FIX-NOW absorbed)
 >   - <ID> → DEFER-POST-GA (residual queue, §4)
@@ -130,9 +130,9 @@ Each source review doc receives a §closure-note appended pointing back at this 
 
 Closure-note insertion targets:
 
-- `specs/_audits/2026-05-16-wave25-adversarial-review.md` — appended below §9 DCO.
-- `specs/_audits/2026-05-16-wave26-adversarial-review.md` — appended below the DCO block.
-- `specs/_audits/2026-05-16-wave28-adversarial-review.md` — appended below the DCO block.
+- `specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md` — appended below §9 DCO.
+- `specs/_audits/sealed/2026-05-16-wave26-adversarial-review.md` — appended below the DCO block.
+- `specs/_audits/sealed/2026-05-16-wave28-adversarial-review.md` — appended below the DCO block.
 
 (Wave-27 has no standalone adversarial-review doc, so no closure-note required.)
 

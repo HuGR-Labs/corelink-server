@@ -5,7 +5,7 @@
 > **Wave / Stream:** Wave-27 R-prep / `wt/r-prep-statuspage-timing-cutover-map` (agent: Claude Opus 4.7 background worker).
 > **Base:** `main` @ `a48bbec` (wave-26 SEAL tip — "merge wt/r-prep-cf-worker-prefetch-wire into main (wave-26)").
 > **Scope:** Author the canonical T-N day dependency DAG for GA cutover with critical-path identification and per-node slack metrics. Tightens the STATUSPAGE-INIT go-live timing per `RB-GA-CUTOVER.md` §3 + §0 checklist and per `RB-STATUSPAGE-INIT.md` §4 T-7d gate.
-> **Cross-ref:** `specs/_runbooks/RB-GA-CUTOVER.md` §0 + §1 + §2 + §3 + §9 (wave-19, v1.0.0), `specs/_runbooks/STATUSPAGE-INIT.md` §2 + §3 + §4 (wave-24, DEBT-016), `specs/_audits/2026-05-16-statuspage-init-dressrun.md` (wave-25), `specs/_audits/2026-05-16-ga-readiness-final.md` §13.4, `specs/_compliance/GA-GATE-CRITERIA.md` (59-criteria checklist).
+> **Cross-ref:** `specs/_runbooks/RB-GA-CUTOVER.md` §0 + §1 + §2 + §3 + §9 (wave-19, v1.0.0), `specs/_runbooks/STATUSPAGE-INIT.md` §2 + §3 + §4 (wave-24, DEBT-016), `specs/_audits/sealed/2026-05-16-statuspage-init-dressrun.md` (wave-25), `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §13.4, `specs/_compliance/GA-GATE-CRITERIA.md` (59-criteria checklist).
 
 ---
 
@@ -220,7 +220,7 @@ Each row maps to one node in §3 / §4. Slack values are validated in §6 agains
 | 4 | > 0d (N-D-2, N-C-3, N-P-2, N-P-3) |
 | **15** | **total tracked** |
 
-**Critical-path-to-total ratio:** 11/15 = 73%. This is dense by industry standards (a healthy launch DAG typically sits at 50–60%) and reflects the tight T-21d → T-0h funnel. The implication is that **every single critical-path node owns its own dress rehearsal or dry-run** — and the wave-25 STATUSPAGE-INIT dress-run (`specs/_audits/2026-05-16-statuspage-init-dressrun.md`) is precisely the artefact that hardens `N-S-1` + `N-S-1b` ahead of `N-S-2`.
+**Critical-path-to-total ratio:** 11/15 = 73%. This is dense by industry standards (a healthy launch DAG typically sits at 50–60%) and reflects the tight T-21d → T-0h funnel. The implication is that **every single critical-path node owns its own dress rehearsal or dry-run** — and the wave-25 STATUSPAGE-INIT dress-run (`specs/_audits/sealed/2026-05-16-statuspage-init-dressrun.md`) is precisely the artefact that hardens `N-S-1` + `N-S-1b` ahead of `N-S-2`.
 
 ## 8. STATUSPAGE go-live timing tightening
 
@@ -268,9 +268,9 @@ The 7d minimum defer for N-S-2 / N-C-2 failures is the single largest schedule r
 
 - Runbook (cutover): `specs/_runbooks/RB-GA-CUTOVER.md` (v1.0.0, wave-19)
 - Runbook (statuspage): `specs/_runbooks/STATUSPAGE-INIT.md` (v1.0.0, wave-24, DEBT-016)
-- Dress-run audit: `specs/_audits/2026-05-16-statuspage-init-dressrun.md` (wave-25)
-- Dry-run audit: `specs/_audits/2026-05-16-ga-cutover-dryrun.md` (wave-24)
-- GA-readiness final: `specs/_audits/2026-05-16-ga-readiness-final.md` §13.4 (wave-24)
+- Dress-run audit: `specs/_audits/sealed/2026-05-16-statuspage-init-dressrun.md` (wave-25)
+- Dry-run audit: `specs/_audits/sealed/2026-05-16-ga-cutover-dryrun.md` (wave-24)
+- GA-readiness final: `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §13.4 (wave-24)
 - GA gate criteria: `specs/_compliance/GA-GATE-CRITERIA.md`
 - GA gate go/no-go: `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md`
 - Reverse runbook: `specs/_runbooks/RB-GA-LAUNCH-ROLLBACK.md` §7 RA-3

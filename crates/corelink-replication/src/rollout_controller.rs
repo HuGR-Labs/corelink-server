@@ -86,7 +86,7 @@
 // `deny(missing_debug_implementations)`) are inherited from the
 // `corelink-replication` umbrella crate root + Cargo `[lints.rust]`
 // stanza. Wave-35 Phase 2 absorption (per
-// `specs/_audits/2026-05-26-w35-p2-replication-absorption.md`)
+// `specs/_audits/sealed/2026-05-26-w35-p2-replication-absorption.md`)
 // physically relocated this module from the standalone
 // `corelink-rollout-controller` crate into
 // `corelink-replication::rollout_controller`; charter constraints

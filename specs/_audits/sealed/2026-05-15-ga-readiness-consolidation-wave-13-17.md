@@ -14,15 +14,15 @@ superseded_by: null
 inv: []
 gap: null
 references:
-  - "specs/_audits/2026-05-15-debt-register.md"
-  - "specs/_audits/2026-05-15-canonical-consistency-baseline.md"
-  - "specs/_audits/2026-05-15-byok-real-provider-pattern.md"
-  - "specs/_audits/2026-05-15-cf-binding-real-pattern.md"
-  - "specs/_audits/2026-05-15-stripe-webhook-production.md"
-  - "specs/_audits/2026-05-15-dsr-worker-production.md"
-  - "specs/_audits/2026-05-15-audit-chain-retention.md"
-  - "specs/_audits/2026-05-15-replica-coordinator-production.md"
-  - "specs/_audits/2026-05-15-debt-014-ft3-ft4-waivers.md"
+  - "specs/_audits/sealed/2026-05-15-debt-register.md"
+  - "specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md"
+  - "specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md"
+  - "specs/_audits/sealed/2026-05-15-cf-binding-real-pattern.md"
+  - "specs/_audits/sealed/2026-05-15-stripe-webhook-production.md"
+  - "specs/_audits/sealed/2026-05-15-dsr-worker-production.md"
+  - "specs/_audits/sealed/2026-05-15-audit-chain-retention.md"
+  - "specs/_audits/sealed/2026-05-15-replica-coordinator-production.md"
+  - "specs/_audits/sealed/2026-05-15-debt-014-ft3-ft4-waivers.md"
   - "ROADMAP-TO-GA.md"
 tags: ["ga-readiness", "consolidation", "wave-13", "wave-14", "wave-15", "wave-16", "wave-17", "pre-ga-snapshot", "techlead", "canonical-reference"]
 ---
@@ -392,15 +392,15 @@ The verdict is **READY-WITH-WAIVERS** (not unqualified READY) because the follow
 
 ## 9. Cross-references
 
-- `specs/_audits/2026-05-15-debt-register.md` v1.0.8 — institutional debt source-of-truth
-- `specs/_audits/2026-05-15-canonical-consistency-baseline.md` — ratchet floors (orphan_refs 0; critical_no_tla 0; tla_verified 76)
-- `specs/_audits/2026-05-15-byok-real-provider-pattern.md` v1.2.0 — 4-provider matrix
-- `specs/_audits/2026-05-15-cf-binding-real-pattern.md` v1.3.0 — 4-binding + actor matrix
-- `specs/_audits/2026-05-15-stripe-webhook-production.md` v1.1.0 — 10-event dispatch
-- `specs/_audits/2026-05-15-dsr-worker-production.md` — 12-backend coverage
-- `specs/_audits/2026-05-15-audit-chain-retention.md` — 7y R2 Object Lock + daily-verify cron
-- `specs/_audits/2026-05-15-replica-coordinator-production.md` — 4-region GA orchestrator
-- `specs/_audits/2026-05-15-debt-014-ft3-ft4-waivers.md` — FT-3/FT-4 waivers with fail-CLOSED monitoring compensation
+- `specs/_audits/sealed/2026-05-15-debt-register.md` v1.0.8 — institutional debt source-of-truth
+- `specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md` — ratchet floors (orphan_refs 0; critical_no_tla 0; tla_verified 76)
+- `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md` v1.2.0 — 4-provider matrix
+- `specs/_audits/sealed/2026-05-15-cf-binding-real-pattern.md` v1.3.0 — 4-binding + actor matrix
+- `specs/_audits/sealed/2026-05-15-stripe-webhook-production.md` v1.1.0 — 10-event dispatch
+- `specs/_audits/sealed/2026-05-15-dsr-worker-production.md` — 12-backend coverage
+- `specs/_audits/sealed/2026-05-15-audit-chain-retention.md` — 7y R2 Object Lock + daily-verify cron
+- `specs/_audits/sealed/2026-05-15-replica-coordinator-production.md` — 4-region GA orchestrator
+- `specs/_audits/sealed/2026-05-15-debt-014-ft3-ft4-waivers.md` — FT-3/FT-4 waivers with fail-CLOSED monitoring compensation
 - `ROADMAP-TO-GA.md` v1.0.0 — 6 phases × 8 waves; this consolidation is the R-3..R-4 boundary snapshot
 - Wave SEAL tags: `wave-14-impl-sealed`, `wave-15-impl-sealed`, `wave-16-impl-sealed`
 

@@ -12,7 +12,7 @@ tags: ["audit", "preflight", "s17", "ops-maturity"]
 
 # Adversarial Pre-flight Review — S-17 Ops Maturity
 
-Working tree: `corelink-server` @ main `5d70701` (pre-S17 baseline). Scope: 6 WI specs being built in parallel on unmerged branches. **This is a pre-flight review of the specifications**, not a sprint-close audit. Source-of-truth files reviewed: `specs/04_sprints/S17/_spec_contract.md` (v1.2.0), `WI-S17-001..006`, `specs/03_architecture/{failure_modes.md,resilience_patterns.md,slo_catalog.md}`, `specs/05_quality/runbooks/*.md` (55 files; 33 tagged P0/P1 in frontmatter).
+Working tree: `corelink-server` @ main `5d70701` (pre-S17 baseline). Scope: 6 WI specs being built in parallel on unmerged branches. **This is a pre-flight review of the specifications**, not a sprint-close audit. Source-of-truth files reviewed: `specs/04_sprints/_sealed/S17/_spec_contract.md` (v1.2.0), `WI-S17-001..006`, `specs/03_architecture/{failure_modes.md,resilience_patterns.md,slo_catalog.md}`, `specs/05_quality/runbooks/*.md` (55 files; 33 tagged P0/P1 in frontmatter).
 
 ---
 

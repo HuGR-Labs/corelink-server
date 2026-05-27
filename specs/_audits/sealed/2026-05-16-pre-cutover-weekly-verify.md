@@ -13,11 +13,11 @@
 > - `reports/pre-cutover-weekly/2026-05-16-digest.md` — first-run dry-run digest (this audit's evidence row).
 >
 > **Cross-ref:**
-> - `specs/_audits/2026-05-16-ga-readiness-final.md` (wave-24 final audit; §11 DEFER counter source).
-> - `specs/_audits/2026-05-16-final-cutover-readiness.md` (wave-27 closure; §1 enumerates the canonical 8 DEFER items).
-> - `specs/_audits/2026-05-16-ga-final-checklist.md` (operator boolean checklist; §G mirror).
-> - `specs/_audits/2026-05-16-pre-cutover-state-snapshot.md` (wave-27 metric snapshot; §L locks the count at 8).
-> - `specs/_audits/2026-05-16-cutover-dependency-map.md` (wave-25 dependency map; the cron's regression signal feeds the dependency-map's slack budget).
+> - `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` (wave-24 final audit; §11 DEFER counter source).
+> - `specs/_audits/sealed/2026-05-16-final-cutover-readiness.md` (wave-27 closure; §1 enumerates the canonical 8 DEFER items).
+> - `specs/_audits/sealed/2026-05-16-ga-final-checklist.md` (operator boolean checklist; §G mirror).
+> - `specs/_audits/sealed/2026-05-16-pre-cutover-state-snapshot.md` (wave-27 metric snapshot; §L locks the count at 8).
+> - `specs/_audits/sealed/2026-05-16-cutover-dependency-map.md` (wave-25 dependency map; the cron's regression signal feeds the dependency-map's slack budget).
 > - `scripts/ga-readiness-defer-drift.py` (wave-25 detector; the verify script re-runs this every week).
 > - `scripts/check-ga-freeze-allowed.py` (wave-26 freeze gate; the verify script re-runs `--self-test`).
 > - `specs/_runbooks/RB-GA-CUTOVER.md` (the runbook whose §0 checklist this digest helps unblock).
@@ -42,24 +42,24 @@ This cron-driven verification fills that gap. Every Monday 09:00 Bahia (UTC-3) t
 6. On regression: exits the verify step with `rc=1`, opens an auto-PR with the `pre-cutover-regression` label, and triggers a PagerDuty event (severity `warning`, group `corelink-ga-cutover`).
 7. Otherwise: opens an auto-PR with the `pre-cutover` label and exits 0.
 
-The cron is **explicitly retired** at the post-cutover thaw step (`RB-POST-GA-CONTINUITY.md` §5.5 Owner thaw declaration) — once the product GA tag is cut and the thaw conditions of `specs/_audits/2026-05-16-ga-1-feature-freeze.md §6` are met, this workflow is either removed or rewritten as the long-running post-GA continuity monitor.
+The cron is **explicitly retired** at the post-cutover thaw step (`RB-POST-GA-CONTINUITY.md` §5.5 Owner thaw declaration) — once the product GA tag is cut and the thaw conditions of `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md §6` are met, this workflow is either removed or rewritten as the long-running post-GA continuity monitor.
 
 ## §2. The canonical 8 DEFER items
 
-The script orders them exactly as `specs/_audits/2026-05-16-final-cutover-readiness.md §1` does:
+The script orders them exactly as `specs/_audits/sealed/2026-05-16-final-cutover-readiness.md §1` does:
 
 | # | Item | Source artifact | Probe strategy | Readiness class on success | D-day ETA |
 |---|---|---|---|---|---|
-| 1 | LFPDPPP MX attorney sign-off (DEBT-025) | `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md` + DEBT register change-log row | grep canonical change-log row matching `^\|\s*YYYY-MM-DD\s*\|\s*v[0-9.]+\s+—\s+\*\*DEBT-025 (CLOSED\|RESOLVED)` OR `reports/lfpdppp-mx-closure.json` presence | `LEGAL_BOUND` → `SIGNED` | wave-26 absorption |
+| 1 | LFPDPPP MX attorney sign-off (DEBT-025) | `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md` + DEBT register change-log row | grep canonical change-log row matching `^\|\s*YYYY-MM-DD\s*\|\s*v[0-9.]+\s+—\s+\*\*DEBT-025 (CLOSED\|RESOLVED)` OR `reports/lfpdppp-mx-closure.json` presence | `LEGAL_BOUND` → `SIGNED` | wave-26 absorption |
 | 2 | FW-H-1..4 role nominations | `specs/_governance/fw-h-nominations.md` (optional; if absent: `NOT_STARTED`) | grep `FW-H-[1-4].*\b(named\|nominated\|appointed)\b` | `OPERATOR_BOUND` → `SIGNED` | Pre-GA-Gate |
 | 3 | External pentest vendor SOW countersign (DEBT-026) | `reports/pentest-rfp-tracker.json` | jq aggregate over `vendors[*].state` (NOT_CONTACTED → RFP_SENT → RESPONDED → SOW_DRAFT → SOW_COUNTERSIGNED) | `VENDOR_BOUND` → `SIGNED` | T-28d → T-0 |
 | 4 | DEBT-003 AWS Artifact PDF + sha256 | `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md` | grep `TBD-on-receipt` (present = `DRAFT_READY`; absent = `CLOSED`) | `OPERATOR_BOUND` → `SIGNED` | Pre-GA-Gate (T+30d) |
-| 5 | DEBT-016 Statuspage `status.corelink.humangr.com` go-live | `specs/_audits/2026-05-16-debt-016-statuspage-urls.md` + (advisory) `reports/statuspage-live-state.json` from the workflow's live probe | dress-run snapshot detection + live-state lookup | `ENGINEERING_CLOSED_OPERATOR_BOUND` → `SIGNED` | T-7d |
-| 6 | Pilot signups ≥ 5 design-partners (G4) | `specs/_audits/2026-05-16-pilot-onboarding-e2e.md` + (optional) `reports/pilot-tenant-state.json` | jq count of `tenants[*].attestation_signed == true` ≥ 5 | `OPERATOR_BOUND` → `SIGNED` | Pre-T-24h (G4 snapshot) |
+| 5 | DEBT-016 Statuspage `status.corelink.humangr.com` go-live | `specs/_audits/sealed/2026-05-16-debt-016-statuspage-urls.md` + (advisory) `reports/statuspage-live-state.json` from the workflow's live probe | dress-run snapshot detection + live-state lookup | `ENGINEERING_CLOSED_OPERATOR_BOUND` → `SIGNED` | T-7d |
+| 6 | Pilot signups ≥ 5 design-partners (G4) | `specs/_audits/sealed/2026-05-16-pilot-onboarding-e2e.md` + (optional) `reports/pilot-tenant-state.json` | jq count of `tenants[*].attestation_signed == true` ≥ 5 | `OPERATOR_BOUND` → `SIGNED` | Pre-T-24h (G4 snapshot) |
 | 7 | Pentest retest letter zero HIGH/CRITICAL (DEBT-026 final gate) | `reports/pentest-rfp-tracker.json` | jq `.retest_letter_received == true` (else NOT_STARTED / IN_FLIGHT if `retest_delivery_date != null`) | `VENDOR_BOUND` → `SIGNED` | Earliest 2026-07-29 |
-| 8 | Owner sign-off (ADR-0034b 2-key) | `specs/_audits/2026-05-16-final-cutover-readiness.md` §10 signature block | grep populated `^**Signature:** ...` line | `OPERATOR_BOUND` → `SIGNED` | T-0h |
+| 8 | Owner sign-off (ADR-0034b 2-key) | `specs/_audits/sealed/2026-05-16-final-cutover-readiness.md` §10 signature block | grep populated `^**Signature:** ...` line | `OPERATOR_BOUND` → `SIGNED` | T-0h |
 
-**Why this enumeration is canonical.** It mirrors the 8-row §1 table of `specs/_audits/2026-05-16-final-cutover-readiness.md` (wave-27 consolidation) and the §L locked-count assertion of `specs/_audits/2026-05-16-pre-cutover-state-snapshot.md`. The wave-25 `ga-readiness-defer-drift.py` detector (scoped against `specs/_audits/2026-05-16-ga-readiness-final.md §11` — which is the wave-24 audit that the wave-25 scrub edited down 8→7 before the wave-26/27 re-count restored 8) is **re-run** by this script every week to keep that surface honest.
+**Why this enumeration is canonical.** It mirrors the 8-row §1 table of `specs/_audits/sealed/2026-05-16-final-cutover-readiness.md` (wave-27 consolidation) and the §L locked-count assertion of `specs/_audits/sealed/2026-05-16-pre-cutover-state-snapshot.md`. The wave-25 `ga-readiness-defer-drift.py` detector (scoped against `specs/_audits/sealed/2026-05-16-ga-readiness-final.md §11` — which is the wave-24 audit that the wave-25 scrub edited down 8→7 before the wave-26/27 re-count restored 8) is **re-run** by this script every week to keep that surface honest.
 
 ## §3. State ordinal scheme
 
@@ -111,7 +111,7 @@ Saved to `reports/pre-cutover-weekly/2026-05-16-digest.md`. Per-item state at ba
 | 7 | Pentest retest letter zero HIGH/CRITICAL | `NOT_STARTED` | `VENDOR_BOUND` |
 | 8 | Owner sign-off (ADR-0034b 2-key) | `NOT_STARTED` | `OPERATOR_BOUND` |
 
-Aggregate: 1 LEGAL_BOUND · 4 OPERATOR_BOUND · 1 ENGINEERING_CLOSED_OPERATOR_BOUND · 2 VENDOR_BOUND · 0 SIGNED · 0 UNKNOWN. This matches the canonical wave-27 snapshot (`specs/_audits/2026-05-16-pre-cutover-state-snapshot.md` §L = 8 = 5 user-bound + 3 vendor-bound) once `LEGAL_BOUND` is rolled up under "user-bound" and `ENGINEERING_CLOSED_OPERATOR_BOUND` is rolled up under "user-bound (ops)".
+Aggregate: 1 LEGAL_BOUND · 4 OPERATOR_BOUND · 1 ENGINEERING_CLOSED_OPERATOR_BOUND · 2 VENDOR_BOUND · 0 SIGNED · 0 UNKNOWN. This matches the canonical wave-27 snapshot (`specs/_audits/sealed/2026-05-16-pre-cutover-state-snapshot.md` §L = 8 = 5 user-bound + 3 vendor-bound) once `LEGAL_BOUND` is rolled up under "user-bound" and `ENGINEERING_CLOSED_OPERATOR_BOUND` is rolled up under "user-bound (ops)".
 
 ## §7. PII / secrets hygiene
 
@@ -134,7 +134,7 @@ If the digest detects a regression (per-item ordinal drop OR a previously-green 
 
 ## §9. Forward-looking work
 
-- **Wave-28 step-11..N:** if a probe surfaces a closure (e.g. DEBT-025 → CLOSED) but the canonical doc was not edited to reflect it, the script flags it on the watch-list rather than auto-amending — the closure must be sealed in `specs/_audits/2026-05-15-debt-register.md` change-log first.
+- **Wave-28 step-11..N:** if a probe surfaces a closure (e.g. DEBT-025 → CLOSED) but the canonical doc was not edited to reflect it, the script flags it on the watch-list rather than auto-amending — the closure must be sealed in `specs/_audits/sealed/2026-05-15-debt-register.md` change-log first.
 - **Post-GA:** at the freeze thaw window, replace this cron with `RB-POST-GA-CONTINUITY.md` §3 continuity monitor; the post-GA monitor watches T+0..T+30d gates (SLO sustain, no SEV-0/SEV-1, pilot-to-GA conversion, Owner thaw declaration), not the pre-GA DEFER counter.
 - **Diff script enrichments:** the current diff script summarises ordinals; a future enrichment may flag *expected* vs *actual* progress velocity (e.g. "item 3 has been DRAFT_READY for 3 consecutive digests; SOW countersign clock at risk of slipping past T-7d").
 
@@ -144,7 +144,7 @@ If the digest detects a regression (per-item ordinal drop OR a previously-green 
 - `scripts/pre-cutover-state-diff.py` (≈ 180 LOC python; pure stdlib).
 - `.github/workflows/pre-cutover-weekly-cron.yml` (Monday 09:00 Bahia cron + workflow_dispatch + push-to-main; 4 SHA-pinned actions; 2 optional secrets).
 - `reports/pre-cutover-weekly/2026-05-16-digest.md` (first-run dry-run output).
-- `specs/_audits/2026-05-16-pre-cutover-weekly-verify.md` (this audit).
+- `specs/_audits/sealed/2026-05-16-pre-cutover-weekly-verify.md` (this audit).
 
 ## §11. Snapshot record
 

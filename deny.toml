@@ -130,7 +130,7 @@ deny = [
     # ---------------------------------------------------------------
     # Wave-36 Stage 3 — adapter HTTPS crates lockdown.
     # ---------------------------------------------------------------
-    # Per `specs/_audits/2026-05-26-wave-33-34-closure-followups.md` §3
+    # Per `specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md` §3
     # follow-up #1 closure path (c) and `specs/_audits/2026-05-26-w36-
     # stage2c-closure.md` §8 step 3 (final Stage 2.C closure step). The
     # 4 absorbed adapter HTTPS crates (`corelink-stripe-real`,

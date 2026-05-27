@@ -70,7 +70,7 @@ the S-18 spec contract §10 anti-scope rule (see WI-S18-004 task #17 and PRR-S18
 3. `draft: true` in YAML frontmatter
 4. A `<DraftBanner />` or literal blockquote banner in the body
 
-**What changed in wave-22.** `specs/_audits/2026-05-15-debt-register.md` row
+**What changed in wave-22.** `specs/_audits/sealed/2026-05-15-debt-register.md` row
 DEBT-015 (wave-22, `wt/r-prep-debt-015-build-closure`) **removed `draft: true`**
 from `audit-chain.mdx`, `byok.mdx`, and `lgpd-brazil.mdx` because Docusaurus
 excludes `draft: true` pages from the production build, which broke 90+ MDX
@@ -105,7 +105,7 @@ block, consistent with the other gated security pages (`audit-chain.mdx`,
 
 `docusaurus.config.ts` line 70 ships `["en-US", "pt-BR", "es-419", "de"]` per
 the R-prep i18n-de expansion (German added for EU enterprise GA buyers — DACH
-region). Per `specs/_audits/2026-05-15-debt-register.md` DEBT-015 wave-25
+region). Per `specs/_audits/sealed/2026-05-15-debt-register.md` DEBT-015 wave-25
 closure, the `de` locale build is green on Node 22.17.1 (server 42.8 s / client
 1.10 min). The test still asserted the legacy three-locale list from
 WI-S18-001 / R-S18-12. Fix: update test to assert the four-locale list and
@@ -220,7 +220,7 @@ fully subsumes the user-visible signal that `draft: true` was meant to carry.
 
 Per WI-S18-004 spec contract §19, removing or relaxing a gate check requires
 a waiver. The waiver here is implicit in the wave-22 DEBT-015 closure
-(`specs/_audits/2026-05-16-debt-015-build-closure.md`) which explicitly traded
+(`specs/_audits/sealed/2026-05-16-debt-015-build-closure.md`) which explicitly traded
 the frontmatter `draft: true` flag for the JSX `<DraftBanner />` element to
 unblock the Node-22 build. This audit doc serves as the explicit waiver
 record for the test-contract amendment.

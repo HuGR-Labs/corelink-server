@@ -271,7 +271,7 @@ Per WI-S07-005 §15 + sprint contract §15. Internal review only —
 external pentest is S-20 GA gate (STANDARD lane does NOT require
 internal pentest report per spec contract §6 DoD; absent from S-07
 ship gate by design). Full report:
-`specs/_audits/2026-05-02-adversarial-s07.md` (20 scenarios across
+`specs/_audits/sealed/2026-05-02-adversarial-s07.md` (20 scenarios across
 WI-S07-001..004 + ship gate; cumulative invariant interaction
 matrix; zero HIGH/CRITICAL).
 
@@ -343,11 +343,11 @@ stack.
 Per WI-S07-005 §27. KT artifacts produced by S-07 SEAL:
 
 - `PRR-S07.md` (this doc) — canonical decision record.
-- `specs/_audits/2026-05-02-adversarial-s07.md` — per-WI
+- `specs/_audits/sealed/2026-05-02-adversarial-s07.md` — per-WI
   adversarial scenario aggregation.
-- `specs/_audits/2026-05-02-rb-fm-305-s07-dry-run.md` — RB-FM-305
+- `specs/_audits/sealed/2026-05-02-rb-fm-305-s07-dry-run.md` — RB-FM-305
   (S-07 re-execution) dry-run audit trace.
-- `specs/_audits/2026-05-02-rb-fm-059-dry-run.md` — RB-FM-059
+- `specs/_audits/sealed/2026-05-02-rb-fm-059-dry-run.md` — RB-FM-059
   dry-run audit trace.
 - `dashboards/grafana/DASH-DEDUP.json` +
   `dashboards/alerts/dash-dedup-alerts.yml` — operational

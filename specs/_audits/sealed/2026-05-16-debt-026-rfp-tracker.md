@@ -5,7 +5,7 @@
 > **Author:** wave-26 R-prep DEBT-026 RFP-tracker agent (Claude Opus 4.7) — branch `wt/r-prep-debt-026-rfp-tracker`.
 > **Base:** `main` @ `2a4e00c` ("merge wt/r-prep-tenant-config-cf-prod-wire into main (wave-25)" — wave-25 SEAL tip).
 > **Scope:** Author the DEBT-026 (external pentest engagement) procurement-tracker stack so the Owner can execute the wave-25 SOW + vendor shortlist with minimal friction. Specifically: (a) state-machine-backed CLI tracker, (b) initial 5-vendor JSON status file, (c) RFP email template with per-vendor personalisation, (d) 10-item vendor due-diligence self-attestation checklist, (e) DEBT register reference uplift.
-> **Cross-ref:** `specs/_audits/2026-05-16-pentest-engagement-scope-freeze.md` (wave-25 engagement-scope freeze; binding work statement), `specs/_audits/pentest-vendor-shortlist.md` (wave-25 broader 5-vendor shortlist), `docs/legal/pentest-engagement-contract-template.md` (wave-25 drop-in contract template), `specs/_audits/2026-05-15-debt-register.md` (DEBT-026 row).
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-pentest-engagement-scope-freeze.md` (wave-25 engagement-scope freeze; binding work statement), `specs/_audits/sealed/pentest-vendor-shortlist.md` (wave-25 broader 5-vendor shortlist), `docs/legal/pentest-engagement-contract-template.md` (wave-25 drop-in contract template), `specs/_audits/sealed/2026-05-15-debt-register.md` (DEBT-026 row).
 
 ---
 
@@ -29,8 +29,8 @@ This audit doc lands the engineering-side scaffolding for that loop; the actual 
 | 2 | Initial tracker JSON | `reports/pentest-rfp-tracker.json` | 5 vendors all `NOT_CONTACTED` — Bishop Fox (T1, 89), NCC Group (T1, 87), Trail of Bits (T1, 85), Cure53 (T2, 85), Doyensec (T2, 84). schema_version `1.0`. |
 | 3 | RFP email template | `docs/legal/pentest-rfp-email-template.md` | Mustache placeholders; per-vendor `{{vendor_personalized_rationale}}` paragraphs already calibrated for all 5 shortlist vendors; decline + out-of-bandwidth boilerplate replies. |
 | 4 | Vendor due-diligence checklist | `docs/legal/pentest-vendor-due-diligence.md` | 10-item self-attestation form organised: 5 corporate (registration, ≥4-yr practice, SOC 2 / ISO 27001 vendor self-audit, insurance ≥$5M E&O+cyber, beneficial-ownership + sanctions) + 3 privacy (DPA template, data residency + 12-mo retention, sub-processor disclosure) + 2 technical (Rust portfolio, CF Workers ≥2 engagements). Owner-filled §4 verification status table. |
-| 5 | DEBT register reference uplift | `specs/_audits/2026-05-15-debt-register.md` | DEBT-026 row gains tracker reference + Owner action items table (one row per current `NOT_CONTACTED` vendor + the sequenced selection / SOW / kickoff actions). |
-| 6 | This audit doc | `specs/_audits/2026-05-16-debt-026-rfp-tracker.md` | Land record. |
+| 5 | DEBT register reference uplift | `specs/_audits/sealed/2026-05-15-debt-register.md` | DEBT-026 row gains tracker reference + Owner action items table (one row per current `NOT_CONTACTED` vendor + the sequenced selection / SOW / kickoff actions). |
+| 6 | This audit doc | `specs/_audits/sealed/2026-05-16-debt-026-rfp-tracker.md` | Land record. |
 
 ---
 
@@ -89,12 +89,12 @@ Exit `0` if green; exit `1` with enumerated errors otherwise. Exit `2` on file /
 
 The full RFP packet sent to each vendor includes 7 attached docs (per shortlist §7) + the new vendor due-diligence checklist as item #8:
 
-1. `specs/_audits/2026-05-16-pentest-engagement-scope-freeze.md` — engagement-scope freeze (binding work statement).
+1. `specs/_audits/sealed/2026-05-16-pentest-engagement-scope-freeze.md` — engagement-scope freeze (binding work statement).
 2. `docs/legal/pentest-engagement-contract-template.md` — contract template (vendor's redlines welcomed via §1.3 scope-amendment register process).
-3. `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` — wave-19 technical baseline (46 attack chains + ASVS coverage + STRIDE/LINDDUN matrices).
-4. `specs/_pentest/PENTEST-EVIDENCE-PACKAGE.md` — day-1 vendor pack (handover artifacts).
+3. `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` — wave-19 technical baseline (46 attack chains + ASVS coverage + STRIDE/LINDDUN matrices).
+4. `specs/_audits/sealed/pentest/PENTEST-EVIDENCE-PACKAGE.md` — day-1 vendor pack (handover artifacts).
 5. `specs/_pentest/findings-template.md` — per-finding card template.
-6. `specs/_pentest/access-provisioning.md` — staging access provisioning playbook.
+6. `specs/_audits/sealed/pentest/access-provisioning.md` — staging access provisioning playbook.
 7. **Cover email** — generated from `docs/legal/pentest-rfp-email-template.md` with vendor placeholders filled.
 8. **Vendor due-diligence checklist** — `docs/legal/pentest-vendor-due-diligence.md` (vendor returns completed within the 14-day response window).
 
@@ -186,7 +186,7 @@ Per DEBT-026 charter "wave-26 absorption pre-GA":
 2. Each tracker state transition → commit on `main` with `chore(debt-026): <vendor> → <STATE>` message.
 3. Per-finding remediation worktrees (`wt/r-pentest-remediate-<finding-id>`) open as findings land in §5.2 of scope-freeze.
 4. ASVS gap analysis CSV (vendor §5.3 deliverable) absorbs into `specs/03_architecture/security_model.md` at engagement-close.
-5. Retest letter (vendor §5.4 deliverable) absorbs into `specs/_audits/2026-05-16-ga-readiness-final.md` as the DEFER #3 closure note.
+5. Retest letter (vendor §5.4 deliverable) absorbs into `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` as the DEFER #3 closure note.
 6. DEBT-026 flips OPEN → CLOSED in the canonical register on the retest-letter commit.
 7. GA cutover unblocks per `RB-GA-CUTOVER.md` (retest letter is a hard gate).
 
@@ -194,18 +194,18 @@ Per DEBT-026 charter "wave-26 absorption pre-GA":
 
 ## 9. Cross-references
 
-- `specs/_audits/2026-05-16-pentest-engagement-scope-freeze.md` — wave-25 engagement-scope freeze (binding work statement; Schedule A of the contract).
-- `specs/_audits/pentest-vendor-shortlist.md` — wave-25 broader 5-vendor shortlist (capability scores: BF 89, NCC 87, ToB 85, Cure53 85, Doyensec 84).
+- `specs/_audits/sealed/2026-05-16-pentest-engagement-scope-freeze.md` — wave-25 engagement-scope freeze (binding work statement; Schedule A of the contract).
+- `specs/_audits/sealed/pentest-vendor-shortlist.md` — wave-25 broader 5-vendor shortlist (capability scores: BF 89, NCC 87, ToB 85, Cure53 85, Doyensec 84).
 - `docs/legal/pentest-engagement-contract-template.md` — wave-25 drop-in contract template.
 - `docs/legal/pentest-rfp-email-template.md` — this stream; RFP send template with per-vendor personalisation.
 - `docs/legal/pentest-vendor-due-diligence.md` — this stream; 10-item vendor self-attestation + Owner verification.
 - `scripts/pentest-rfp-tracker.py` — this stream; state-machine CLI tracker.
 - `reports/pentest-rfp-tracker.json` — this stream; live tracker JSON (5 vendors initial).
-- `specs/_audits/2026-05-15-debt-register.md` — DEBT-026 row uplifted with tracker reference + Owner action table.
-- `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` — wave-19 SEALED technical baseline (46 chains + ASVS coverage).
-- `specs/_pentest/PENTEST-EVIDENCE-PACKAGE.md` — day-1 vendor handover pack.
+- `specs/_audits/sealed/2026-05-15-debt-register.md` — DEBT-026 row uplifted with tracker reference + Owner action table.
+- `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` — wave-19 SEALED technical baseline (46 chains + ASVS coverage).
+- `specs/_audits/sealed/pentest/PENTEST-EVIDENCE-PACKAGE.md` — day-1 vendor handover pack.
 - `specs/_pentest/findings-template.md` — per-finding card template.
-- `specs/_pentest/access-provisioning.md` — staging access provisioning playbook.
+- `specs/_audits/sealed/pentest/access-provisioning.md` — staging access provisioning playbook.
 - `specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md` — solo-tier waiver path (Security Lead nomination dependency).
 - `specs/_runbooks/RB-PENTEST-FINDING-RESPONSE.md` — finding-triage runbook (live during engagement).
 - `specs/_runbooks/RB-GA-CUTOVER.md` — cutover runbook (retest letter is hard gate).

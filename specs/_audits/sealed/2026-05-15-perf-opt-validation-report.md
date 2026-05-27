@@ -187,8 +187,8 @@ a gate on the OPT-01..OPT-05 closures already landed.
 
 ## 5. References
 
-- `specs/_audits/2026-05-15-perf-optimization-audit.md` — source projections.
-- `specs/_audits/perf-optimization-followup-tickets.md` — OPT-06 ticket.
+- `specs/_audits/sealed/2026-05-15-perf-optimization-audit.md` — source projections.
+- `specs/_audits/sealed/perf-optimization-followup-tickets.md` — OPT-06 ticket.
 - `specs/_audits/2026-05-15-perf-baseline.md` (alias `2026-05-14-perf-baseline.md`) — criterion baseline used by the audit.
 - `specs/_runbooks/RB-PERF-REGRESSION.md` — perf-regression triage.
 - `crates/corelink-clerk/benches/principal_id_clone.rs` — OPT-07 bench.

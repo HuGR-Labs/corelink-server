@@ -2,7 +2,7 @@
  * wt/r-prep-audit-chain-viz — chain head card populates from the mock backend.
  *
  * Verifies Component A of the customer audit-chain visualization spec
- * (`specs/_audits/2026-05-15-audit-viz-spec.md`):
+ * (`specs/_audits/sealed/2026-05-15-audit-viz-spec.md`):
  *   - page loads under `/[locale]/customer/audit/visualization`
  *   - chain head card renders total_events, head digest, algorithm,
  *     last-updated

@@ -19,7 +19,7 @@ references:
   - "specs/04_sprints/S11/work_items/WI-S11-006-breach-notification-runbook-3-jurisdictional-templates-dry-run.md"
   - "specs/05_quality/runbooks/RB-BREACH-NOTIF.md"
   - "specs/_runbooks/RB-AUDIT-EXPORT-VERIFY-FAILED.md"
-  - "specs/_audits/2026-05-15-s11-legal-citation-revalidation.md"
+  - "specs/_audits/sealed/2026-05-15-s11-legal-citation-revalidation.md"
   - "legal/privacy-notice/v1.0.0/pt-BR.md"
   - "legal/privacy-notice/v1.0.0/en-US.md"
   - "legal/privacy-notice/v1.0.0/es-MX.md"
@@ -64,7 +64,7 @@ docs/customer-comm/breach-notification/v1.0.0/
    ├─ audit-chain-integrity-incident.md
    └─ dsr-pipeline-temporary-degradation.md
 
-specs/_audits/2026-05-15-customer-breach-notification-templates.md  # this file
+specs/_audits/sealed/2026-05-15-customer-breach-notification-templates.md  # this file
 specs/05_quality/runbooks/RB-BREACH-NOTIF.md                        # §3.4 cross-ref appended
 specs/04_sprints/S11/work_items/WI-S11-006-*.md                     # §31 changelog wave-18 row
 ```
@@ -264,7 +264,7 @@ Wave-18 customer breach notification email templates SEALED.
 
 Deliverables:
 - 6 markdown templates landed at `docs/customer-comm/breach-notification/v1.0.0/{pt-BR,en,es}/{audit-chain-integrity-incident,dsr-pipeline-temporary-degradation}.md`.
-- This audit doc landed at `specs/_audits/2026-05-15-customer-breach-notification-templates.md`.
+- This audit doc landed at `specs/_audits/sealed/2026-05-15-customer-breach-notification-templates.md`.
 - `RB-BREACH-NOTIF.md` §3.4 customer-comm section appended with cross-ref to wave-18 templates.
 - `WI-S11-006` §31 changelog appended with wave-18 closure row.
 - Dry-run plan §4 wired to RB-BREACH-NOTIF §5 Q3 cadence with 2 new test cases (wave-18-A + wave-18-B).

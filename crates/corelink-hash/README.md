@@ -4,7 +4,7 @@ CAS digest types for CoreLink — BLAKE3 + constant-time verify, type-driven
 integrity at the write boundary.
 
 Implements layer of `INV-CAS-INTEGRITY` / CTRL-CAS-001 (`security_model.md §6.1`,
-`invariant_registry.md §3.2`). Sprint contract: [`WI-S01-002`](../../specs/04_sprints/S01/work_items/WI-S01-002-blake3-verify-at-write.md).
+`invariant_registry.md §3.2`). Sprint contract: [`WI-S01-002`](../../specs/04_sprints/_sealed/S01/work_items/WI-S01-002-blake3-verify-at-write.md).
 
 ## Quickstart
 

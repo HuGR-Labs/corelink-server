@@ -1,8 +1,8 @@
 # Baseline diff — wave-22 (`perf-baseline-pre-ga-2026-05-16`) → wave-29 GA-freeze (`perf-baseline-ga-2026-05-16`)
 
-> Companion to `specs/_audits/2026-05-16-perf-baseline-ga-freeze.md` §5
+> Companion to `specs/_audits/sealed/2026-05-16-perf-baseline-ga-freeze.md` §5
 > and the wave-30 recapture in
-> `specs/_audits/2026-05-16-perf-benches-recapture.md`.
+> `specs/_audits/sealed/2026-05-16-perf-benches-recapture.md`.
 > Mechanical diff intended for the GA-day +24h SRE check.
 
 ## Tag transition
@@ -86,9 +86,9 @@ strategy and completed all eight in a single ~29-minute run window
 
 ## Cross-references
 
-- `specs/_audits/2026-05-16-perf-baseline-ga-freeze.md` (wave-29 stream-9)
-- `specs/_audits/2026-05-16-perf-benches-recapture.md` (wave-30 stream-5)
-- `specs/_audits/2026-05-16-perf-regression-ci-tightened.md` (wave-22)
+- `specs/_audits/sealed/2026-05-16-perf-baseline-ga-freeze.md` (wave-29 stream-9)
+- `specs/_audits/sealed/2026-05-16-perf-benches-recapture.md` (wave-30 stream-5)
+- `specs/_audits/sealed/2026-05-16-perf-regression-ci-tightened.md` (wave-22)
 - `reports/perf/README.md`
 - `reports/perf/baseline-ga-2026-05-16-365dd38.json` (umbrella manifest)
 - `.github/workflows/perf-regression.yml` (header comment names the new tag)

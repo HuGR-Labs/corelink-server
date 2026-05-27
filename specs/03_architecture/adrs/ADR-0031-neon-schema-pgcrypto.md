@@ -228,7 +228,7 @@ credentials land).
 
 ## Cross-references
 
-- `specs/04_sprints/S03/work_items/WI-S03-005-neon-schema-auth-tables.md`
+- `specs/04_sprints/_sealed/S03/work_items/WI-S03-005-neon-schema-auth-tables.md`
 - `specs/03_architecture/data_model.md §4.1`
 - `specs/03_architecture/auth_model.md §2 / §5`
 - `specs/03_architecture/key_management.md §3.2 / §3.13`

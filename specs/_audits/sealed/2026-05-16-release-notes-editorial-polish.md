@@ -16,13 +16,13 @@
 > **Cross-ref:** `RELEASE-NOTES-v1.0.0-GA.md` (wave-26 DRAFT `6ce134b`),
 > `CHANGELOG.md` (wave-26 DRAFT),
 > `docs/release-notes/v1.0.0-GA-marketing-summary.md` (wave-26 DRAFT),
-> `specs/_audits/2026-05-16-wave26-closure.md` (release notes draft
-> stream #8), `specs/_audits/2026-05-16-wave27-closure.md`,
-> `specs/_audits/2026-05-16-wave29-closure.md`,
-> `specs/_audits/2026-05-16-wave28-adversarial-review.md`,
-> `specs/_audits/2026-05-16-final-cutover-readiness.md`,
-> `specs/_audits/2026-05-16-prod-deploy-dressrun.md`,
-> `specs/_audits/2026-05-16-ga-readiness-defer-scrub.md`.
+> `specs/_audits/sealed/2026-05-16-wave26-closure.md` (release notes draft
+> stream #8), `specs/_audits/sealed/2026-05-16-wave27-closure.md`,
+> `specs/_audits/sealed/2026-05-16-wave29-closure.md`,
+> `specs/_audits/sealed/2026-05-16-wave28-adversarial-review.md`,
+> `specs/_audits/sealed/2026-05-16-final-cutover-readiness.md`,
+> `specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md`,
+> `specs/_audits/sealed/2026-05-16-ga-readiness-defer-scrub.md`.
 
 ---
 

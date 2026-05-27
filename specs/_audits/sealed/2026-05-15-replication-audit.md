@@ -363,7 +363,7 @@ Wire into the staging cron (R-6 wave): runs daily at 02:00 UTC alongside `script
 | `specs/03_architecture/resilience_patterns.md` | §3.4 + §3.6 | PAT-REGION-FAILOVER-001 + PAT-DO-MIGRATION-AWARE-001 + PAT-KV-TTL-001 are the patterns enforcing the topology audited here. |
 | `specs/03_architecture/storage_semantics_matrix.md` | §7.2 | Pre-existing per-backend RPO statements; this audit reconciles them with implementation. |
 | `ROADMAP-TO-GA.md` | §6 (Wave R-6) | DR-16 is listed under "BCP / DR drill cadence"; this audit is the type-level companion. |
-| `specs/_audits/replication-followup-tickets.md` | All | The actionable backlog generated from this audit's gaps. |
+| `specs/_audits/sealed/replication-followup-tickets.md` | All | The actionable backlog generated from this audit's gaps. |
 
 ---
 

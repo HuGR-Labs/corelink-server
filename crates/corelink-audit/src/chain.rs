@@ -4,7 +4,7 @@
 //! S-09 Merkle chain processor + tamper-detection job). The actual
 //! implementation lives in `crates/corelink-audit-chain/` (Stage 0
 //! sub-step 4 Option-A aggregator pattern; see crate-level rustdoc
-//! and `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4).
+//! and `specs/_audits/sealed/2026-05-22-w33-stage0-foundation.md` §4).
 //!
 //! Note: the in-crate hash-primitive helpers
 //! (`compute_content_hash` / `link_chain_hash` / `ContentHash` /

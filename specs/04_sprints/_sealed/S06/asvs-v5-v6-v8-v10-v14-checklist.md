@@ -20,8 +20,8 @@ tags: ["compliance", "asvs", "owasp", "s06", "gc", "checklist"]
 > **Date:** 2026-05-02 · **Mode:** internal self-checklist (external audit deferred to S-20 GA gate)
 
 ASVS chapter scope per WI-S06-007 §6 + S-04/S-05 ASVS precedent
-(`specs/04_sprints/S04/asvs-v5-v6-v8-v10-v14-checklist.md` +
-`specs/04_sprints/S05/asvs-v5-v6-v8-v10-v14-checklist.md`):
+(`specs/04_sprints/_sealed/S04/asvs-v5-v6-v8-v10-v14-checklist.md` +
+`specs/04_sprints/_sealed/S05/asvs-v5-v6-v8-v10-v14-checklist.md`):
 **V5 / V6 / V8 / V10 / V14**. Same chapters as S-04 + S-05 — the GC
 surface inherits the AC + multipart threat models and adds mark / sweep
 / physical-delete / reconcile sub-surfaces. Standard reference:

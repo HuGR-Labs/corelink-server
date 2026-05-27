@@ -94,7 +94,7 @@ Entry at `specs/03_architecture/invariant_registry.md:587-601` is well-formed: s
 
 ### 3.5 DEBT-015-BUILD path narrowing — PASS
 
-Audit `specs/_audits/2026-05-16-debt-015-build-final.md` (229 LOC) supersedes the wave-22 closure doc. Diagnosis is sound: the emitted module wrapper (line 70-90) **proves** that webpack's static analyzer correctly rewrote the *outer* helper import to `__webpack_require__(807)` while leaving the double-nested arrow-function-wrapped `require(spec)` as a literal CJS require. This is the conclusive evidence that no webpack-config knob fixes it — babel has already rewritten `import()` → `require()` before webpack sees the code.
+Audit `specs/_audits/sealed/2026-05-16-debt-015-build-final.md` (229 LOC) supersedes the wave-22 closure doc. Diagnosis is sound: the emitted module wrapper (line 70-90) **proves** that webpack's static analyzer correctly rewrote the *outer* helper import to `__webpack_require__(807)` while leaving the double-nested arrow-function-wrapped `require(spec)` as a literal CJS require. This is the conclusive evidence that no webpack-config knob fixes it — babel has already rewritten `import()` → `require()` before webpack sees the code.
 
 Wave-22 path (B) framing is correctly invalidated (no on-disk MDX compiled output in `.docusaurus/`; only the `@generated/*.json` half resolves trivially).
 
@@ -104,7 +104,7 @@ Wave-22 path (B) framing is correctly invalidated (no on-disk MDX compiled outpu
 
 ### 3.6 DEBT-008 chunker + multipart-schema projected vs empirical — PASS with discrepancy
 
-`specs/_audits/2026-05-16-debt-008-wave23-mutation-sweep.md` table §1 cleanly documents the two PARTIAL → CLOSED re-sweep verifications (handler-cas + auth-schema; both 100 % empirical) and the two first sweeps (chunker projected 100 %; multipart-schema projected ≥ 84.6 %).
+`specs/_audits/sealed/2026-05-16-debt-008-wave23-mutation-sweep.md` table §1 cleanly documents the two PARTIAL → CLOSED re-sweep verifications (handler-cas + auth-schema; both 100 % empirical) and the two first sweeps (chunker projected 100 %; multipart-schema projected ≥ 84.6 %).
 
 **P2-4 (NUMBER DISCREPANCY)**: The commit message and the audit doc disagree on projections:
 
@@ -115,7 +115,7 @@ Wave-22 path (B) framing is correctly invalidated (no on-disk MDX compiled outpu
 
 The audit table is the SoT; the commit message inflates multipart-schema's projection by 6 pp. Wave-24 re-sweep will resolve the discrepancy empirically, but the in-flight projection should be reconcilable. Recommend the wave-24 DEBT-008 stream verify both numbers and amend the audit if the commit-message figure was the post-additions actual. **P2**.
 
-**CLOSED (wave-25, branch `wt/r-prep-debt-008-number-discrepancy`)** — Wave-24 empirical re-sweep produced the canonical figures: chunker **95.79 % raw / 100 % of killable**, multipart-schema **97.44 % raw / 100 % of killable** (see `specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md`). Wave-25 reconciled the wave-23 audit doc (§1 table, §5.2, §7 status table, §9 decisions log) to point at the canonical wave-24 figures inline; the pre-additions empirical numbers (79.79 % / 77.78 %) remain canonical for the wave-23 snapshot. Reconciliation audit: `specs/_audits/2026-05-16-debt-008-number-discrepancy-fix.md`.
+**CLOSED (wave-25, branch `wt/r-prep-debt-008-number-discrepancy`)** — Wave-24 empirical re-sweep produced the canonical figures: chunker **95.79 % raw / 100 % of killable**, multipart-schema **97.44 % raw / 100 % of killable** (see `specs/_audits/sealed/2026-05-16-debt-008-wave24-mutation-sweep.md`). Wave-25 reconciled the wave-23 audit doc (§1 table, §5.2, §7 status table, §9 decisions log) to point at the canonical wave-24 figures inline; the pre-additions empirical numbers (79.79 % / 77.78 %) remain canonical for the wave-23 snapshot. Reconciliation audit: `specs/_audits/sealed/2026-05-16-debt-008-number-discrepancy-fix.md`.
 
 **P3-5**: 11 of the 26 multipart-schema missed mutants are explicitly deferred to wave-24 as "lifecycle-bound" (require deeper session-lifecycle fixtures). The deferral is documented and reasonable but the audit doc does not enumerate WHICH 11 mutants — just the file-line clusters. Wave-24 starting from line/mutant-id list would be faster. Cosmetic doc improvement.
 

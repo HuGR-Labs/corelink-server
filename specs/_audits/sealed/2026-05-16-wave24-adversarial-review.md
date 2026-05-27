@@ -4,7 +4,7 @@
 >
 > **Author:** wave-25 adversarial-review agent (Claude Opus 4.7) — branch `wt/r-prep-wave24-adversarial-review`.
 > **Base:** `main` @ `e9ee8eb` (wave-24 final merge tip).
-> **Predecessor wave:** wave-23 adversarial review (`specs/_audits/2026-05-16-wave23-adversarial-review.md`) — 9.20/10 PASS.
+> **Predecessor wave:** wave-23 adversarial review (`specs/_audits/sealed/2026-05-16-wave23-adversarial-review.md`) — 9.20/10 PASS.
 > **Scope:** independent SOTA-bar review of the 11-commit wave-24 R-PREP set listed in the dispatch brief, with focused inspection of: GA-readiness final-audit verdict, GA cutover dry-run faithfulness, DEBT-015 path-narrowing, INV-PAT-REVOKE-PROPAGATION TLA+ stream, DEBT-008 row classification, ADR-0034b dual-hat eligibility, and WallClock symmetry sweep.
 > **Charter:** review-only; no source code changes; SOTA-bar 8.5 PASS.
 > **Score formula:** `clamp[0,10](10 - 1.5·P0 - 0.5·P1 - 0.15·P2 - 0.05·P3)`.
@@ -37,7 +37,7 @@ Wave-24 produced exceptionally rigorous individual artifacts (ADR-0034b, DEBT-01
 | 7 | DEBT-015-BUILD wave-24 (d91a690) | **9.4 / 10** | Empirical disproof of wave-23 path #1 (babel preset-env `modules:false`) is exemplary — bundle inspection 226 alias-prefixed runtime requires post-patch proves the bug sits in webpack 5 `target:'node'` chunk emission, not babel. Recommends `ssgRequire` alias resolver (path B) at 2-3h. PARTIAL closure honest. |
 | 8 | Audit-analytics WallClock symmetry (78673c2) | **NOT IN MAIN** | Commit is **not** an ancestor of HEAD `e9ee8eb` (verified `git merge-base --is-ancestor 78673c2 e9ee8eb` → false). `apps/server/src/routes/audit_analytics.rs:675` still contains the silent-fallback `let now_ms = if wall_now_ms == 0 { to_ms } else { wall_now_ms };` — the wave-23 §4 first caveat remains open. |
 | 9 | DEBT-008 mutation wave-24 (7b10444) | **9.1 / 10** | Two re-sweeps verified at 100% of killable; +10 lifecycle-bound multipart-schema kills; 3 large crates moved to CI-nightly with documented 75% floor (correctly classified per `TD-DEBT-008-WAVE-14-EMPIRICAL` precedent). Honest about wave-23 projection vs empirical (7-pp upside on multipart-schema). |
-| 10 | auth_pat_revoke.tla (93ebe3c) | **NOT IN MAIN** | Commit is **not** an ancestor of HEAD `e9ee8eb`. `specs/tla/auth_pat_revoke.tla`, `auth_pat_revoke.cfg`, `auth_pat_revoke_nightly.cfg`, and `specs/_audits/2026-05-16-auth-pat-revoke-tla.md` are all absent from HEAD. The CRITICAL invariant `INV-PAT-REVOKE-PROPAGATION` therefore remains unproved on main. Byzantine-attacker question moot until the spec is on main. |
+| 10 | auth_pat_revoke.tla (93ebe3c) | **NOT IN MAIN** | Commit is **not** an ancestor of HEAD `e9ee8eb`. `specs/tla/auth_pat_revoke.tla`, `auth_pat_revoke.cfg`, `auth_pat_revoke_nightly.cfg`, and `specs/_audits/sealed/2026-05-16-auth-pat-revoke-tla.md` are all absent from HEAD. The CRITICAL invariant `INV-PAT-REVOKE-PROPAGATION` therefore remains unproved on main. Byzantine-attacker question moot until the spec is on main. |
 | 11 | pat+clerk mutation sweep (c469fe5) | **8.6 / 10** | Honest partial reporting: pat 74.8% on 62.1% sample (projected 79.3% post-additions); clerk 85.7% on 17.2% sample. Correctly classified as "PARTIAL (empirically validated subset)" — not flipped to CLOSED. Awaits CI-nightly artifact as SEAL gate. |
 
 Mean of merged-and-graded streams (excluding 2 NOT-IN-MAIN): 8.59. Mean penalised for missing-merge structural failures: **6.95**.
@@ -103,7 +103,7 @@ $ grep -n "now_ms = if" apps/server/src/routes/audit_analytics.rs
 675:    let now_ms = if wall_now_ms == 0 { to_ms } else { wall_now_ms };
 ```
 
-The wave-23 cleanup audit `specs/_audits/2026-05-16-wave23-cleanup.md §4` explicitly scoped this path out and tracked it as a residual; wave-24 stream #7 closed the asymmetry — but the commit (`78673c2`) is not on main. The silent fallback to the request's `to_ms` parameter on `wall_now_ms == 0` (clock injection failure or test-fixture race) means rate-limit accounting can use attacker-controlled timestamps under a narrow failure condition. The symmetric path on `audit_export.rs` was closed wave-21 (`5203e8b`, audit `2026-05-16-wave23-cleanup.md §1.1`); leaving `audit_analytics.rs` open is the documented W21-R-P2-01 caveat.
+The wave-23 cleanup audit `specs/_audits/sealed/2026-05-16-wave23-cleanup.md §4` explicitly scoped this path out and tracked it as a residual; wave-24 stream #7 closed the asymmetry — but the commit (`78673c2`) is not on main. The silent fallback to the request's `to_ms` parameter on `wall_now_ms == 0` (clock injection failure or test-fixture race) means rate-limit accounting can use attacker-controlled timestamps under a narrow failure condition. The symmetric path on `audit_export.rs` was closed wave-21 (`5203e8b`, audit `2026-05-16-wave23-cleanup.md §1.1`); leaving `audit_analytics.rs` open is the documented W21-R-P2-01 caveat.
 
 **Fix shape:** re-issue 78673c2 as a wave-25 stream off `e9ee8eb`; the patch is fully drafted in the unmerged commit's body (replace silent fallback with fail-CLOSED branch + analytics audit-emit row).
 

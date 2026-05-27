@@ -284,7 +284,7 @@ Until then, auditor evidence is:
 `corelink_supply_dependabot_prs_total` is emitted as a log line; an
 external job (Grafana Agent on the CI bastion) must ingest. Wiring is
 the SRE on-call's responsibility — tracked under
-`specs/_audits/perf-optimization-followup-tickets.md`.
+`specs/_audits/sealed/perf-optimization-followup-tickets.md`.
 
 ### 6.3 Quarterly auto-merge sample audit
 

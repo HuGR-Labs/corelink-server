@@ -6,23 +6,23 @@
 #
 # Canonical 8 DEFER items (sources cross-ref):
 #   1. LFPDPPP MX attorney sign-off (DEBT-025)
-#       source: specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md
+#       source: specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md
 #   2. FW-H-1..4 role nominations (governance staffing)
-#       source: specs/_audits/2026-05-16-final-cutover-readiness.md §1 row 2
+#       source: specs/_audits/sealed/2026-05-16-final-cutover-readiness.md §1 row 2
 #   3. External pentest vendor SOW countersign (DEBT-026)
 #       source: reports/pentest-rfp-tracker.json
 #   4. DEBT-003 AWS Artifact PDF download + sha256 (BYOK FIPS attestation)
 #       source: specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md (TBD-on-receipt)
 #   5. DEBT-016 Statuspage status.corelink.humangr.com go-live
-#       source: specs/_audits/2026-05-16-debt-016-statuspage-urls.md
+#       source: specs/_audits/sealed/2026-05-16-debt-016-statuspage-urls.md
 #                + live HEAD check (when --probe-live)
 #   6. Pilot signups ≥ 5 design-partner attestations (G4)
-#       source: specs/_audits/2026-05-16-pre-cutover-state-snapshot.md L.* +
-#                pilot tenant state under specs/_audits/2026-05-16-pilot-onboarding-e2e.md
+#       source: specs/_audits/sealed/2026-05-16-pre-cutover-state-snapshot.md L.* +
+#                pilot tenant state under specs/_audits/sealed/2026-05-16-pilot-onboarding-e2e.md
 #   7. Pentest retest letter zero HIGH/CRITICAL (DEBT-026 final gate; vendor-paced)
 #       source: reports/pentest-rfp-tracker.json (retest_delivery_date)
 #   8. Owner sign-off (ADR-0034b 2-key)
-#       source: specs/_audits/2026-05-16-final-cutover-readiness.md §10 signature block
+#       source: specs/_audits/sealed/2026-05-16-final-cutover-readiness.md §10 signature block
 #
 # Per-item this script captures:
 #   - state token: NOT_STARTED | IN_FLIGHT | DRAFT_READY | VENDOR_SELECTED |
@@ -159,7 +159,7 @@ last_touched() {
 # ----------------------------------------------------------------------
 
 probe_item_1_lfpdppp() {
-    local src="specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md"
+    local src="specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md"
     local lt; lt="$(last_touched "${src}")"
     local state="DRAFT_READY"
     local rc="LEGAL_BOUND"
@@ -175,7 +175,7 @@ probe_item_1_lfpdppp() {
         state="CLOSED"
         rc="SIGNED"
         note="Closure record present at reports/lfpdppp-mx-closure.json."
-    elif grep -qE "^\|\s*[0-9]{4}-[0-9]{2}-[0-9]{2}\s*\|\s*v[0-9.]+\s+—\s+\*\*DEBT-025 (CLOSED|RESOLVED)" specs/_audits/2026-05-15-debt-register.md 2>/dev/null; then
+    elif grep -qE "^\|\s*[0-9]{4}-[0-9]{2}-[0-9]{2}\s*\|\s*v[0-9.]+\s+—\s+\*\*DEBT-025 (CLOSED|RESOLVED)" specs/_audits/sealed/2026-05-15-debt-register.md 2>/dev/null; then
         state="CLOSED"
         rc="SIGNED"
         note="DEBT-025 closure row present in register change-log."
@@ -184,7 +184,7 @@ probe_item_1_lfpdppp() {
 }
 
 probe_item_2_fwh_nominations() {
-    local src="specs/_audits/2026-05-16-final-cutover-readiness.md"
+    local src="specs/_audits/sealed/2026-05-16-final-cutover-readiness.md"
     local lt; lt="$(last_touched "${src}")"
     local state="NOT_STARTED"
     local rc="OPERATOR_BOUND"
@@ -250,7 +250,7 @@ probe_item_4_debt_003_aws() {
 }
 
 probe_item_5_statuspage() {
-    local src="specs/_audits/2026-05-16-debt-016-statuspage-urls.md"
+    local src="specs/_audits/sealed/2026-05-16-debt-016-statuspage-urls.md"
     local lt; lt="$(last_touched "${src}")"
     local state="DRAFT_READY"
     local rc="ENGINEERING_CLOSED_OPERATOR_BOUND"
@@ -271,7 +271,7 @@ probe_item_5_statuspage() {
 }
 
 probe_item_6_pilot_signups() {
-    local src="specs/_audits/2026-05-16-pilot-onboarding-e2e.md"
+    local src="specs/_audits/sealed/2026-05-16-pilot-onboarding-e2e.md"
     local lt; lt="$(last_touched "${src}")"
     local state="IN_FLIGHT"
     local rc="OPERATOR_BOUND"
@@ -316,7 +316,7 @@ probe_item_7_pentest_retest() {
 }
 
 probe_item_8_owner_signoff() {
-    local src="specs/_audits/2026-05-16-final-cutover-readiness.md"
+    local src="specs/_audits/sealed/2026-05-16-final-cutover-readiness.md"
     local lt; lt="$(last_touched "${src}")"
     local state="NOT_STARTED"
     local rc="OPERATOR_BOUND"
@@ -479,7 +479,7 @@ GIT_HEAD="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
     printf '> **Git HEAD:** `%s`.\n' "${GIT_HEAD}"
     printf '> **Mode:** %s.\n' "$([[ "${DRY_RUN}" -eq 1 ]] && echo 'dry-run (no cargo)' || ([[ "${NO_TESTS}" -eq 1 ]] && echo 'no-tests' || echo 'full'))"
     printf '> **Prior digest:** `%s`.\n' "${PRIOR_DIGEST:-<none>}"
-    printf '> **Canonical sources:** `specs/_audits/2026-05-16-ga-readiness-final.md §11`, `specs/_audits/2026-05-16-final-cutover-readiness.md §1`, `specs/_audits/2026-05-16-ga-final-checklist.md §G`, `specs/_audits/2026-05-16-pre-cutover-state-snapshot.md §L`.\n>\n'
+    printf '> **Canonical sources:** `specs/_audits/sealed/2026-05-16-ga-readiness-final.md §11`, `specs/_audits/sealed/2026-05-16-final-cutover-readiness.md §1`, `specs/_audits/sealed/2026-05-16-ga-final-checklist.md §G`, `specs/_audits/sealed/2026-05-16-pre-cutover-state-snapshot.md §L`.\n>\n'
     printf '> **Charter:** SYNCHRONOUS BASH ONLY. Digest contains zero PII; any tenant_ids are BLAKE3-pseudonymized.\n\n'
 
     printf -- '---\n\n'

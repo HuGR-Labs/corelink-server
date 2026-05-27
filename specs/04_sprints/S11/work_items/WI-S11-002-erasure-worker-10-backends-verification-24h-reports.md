@@ -304,7 +304,7 @@ Não — regulatory feature, sem A/B (multi-arm = compliance risk).
 > (pure 24h-rolling aggregator over `VerificationOutcome` slice +
 > nearest-rank p95 of `dsr_resolution_hours` observations) + the
 > `dsr_bridge` converter between the two. Closes wave-15 deferral
-> documented in `specs/_audits/2026-05-15-dsr-worker-production.md`
+> documented in `specs/_audits/sealed/2026-05-15-dsr-worker-production.md`
 > §5; see that audit §5.2 / §5.3 / §5.5 for the canonical surface
 > map + test counts + secrets-matrix rows. Production publish-job
 > binding (cron / DO-alarm trigger + secrets read from CF Workers
@@ -330,7 +330,7 @@ Não — regulatory feature, sem A/B (multi-arm = compliance risk).
 > link on wasm32 — the cron firing is observable in the audit chain
 > from wave-17 forward but the actual publish round-trip awaits the
 > real `worker::Fetch`-backed adapter shipped wave-18.
-> See `specs/_audits/2026-05-15-dsr-worker-production.md` §5.6 for the
+> See `specs/_audits/sealed/2026-05-15-dsr-worker-production.md` §5.6 for the
 > canonical surface map.
 >
 > **Wave-18 closure note (2026-05-15) — observability:** PD wiring for
@@ -349,7 +349,7 @@ Não — regulatory feature, sem A/B (multi-arm = compliance risk).
 > identifiers; never the `STATUSPAGE_API_KEY` bytes — wave-16
 > `redact_api_key` last-4 semantics bottom out at
 > `StatuspageHttpClient`). See
-> `specs/_audits/2026-05-15-dsr-worker-production.md` §5.7 for the
+> `specs/_audits/sealed/2026-05-15-dsr-worker-production.md` §5.7 for the
 > canonical surface map + regulatory posture rationale.
 >
 > **Wave-18 closure note (2026-05-15) — wasm32 real binding:**
@@ -374,7 +374,7 @@ Não — regulatory feature, sem A/B (multi-arm = compliance risk).
 > `CfD1DatabaseReal::bind` (constant-time tenant-id check). The
 > credential redaction (`OAuth ***<last4>` via
 > `redact_api_key`) is preserved verbatim across the wasm32 audit
-> envelope. See `specs/_audits/2026-05-15-dsr-worker-production.md`
+> envelope. See `specs/_audits/sealed/2026-05-15-dsr-worker-production.md`
 > §5.6 for the canonical surface map.
 
 > **Wave-19 closure note (2026-05-15) — outcome rehydration ENABLED:**

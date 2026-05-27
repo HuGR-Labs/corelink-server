@@ -69,7 +69,7 @@ EXAMPLES:
   ${SCRIPT_NAME} --tenant-id 4a2c0a7e-1b9f-4d3a-9c0e-7e1f2b3a4c5d
   ${SCRIPT_NAME} --all-active --dry-run
 
-See: specs/_audits/2026-05-16-pilot-signup-pipeline.md §3 (24h auto-checkin)
+See: specs/_audits/sealed/2026-05-16-pilot-signup-pipeline.md §3 (24h auto-checkin)
      docs/internal/customer-success-playbook.md §3.3 (no-blob silent-fail)
 USAGE
 }

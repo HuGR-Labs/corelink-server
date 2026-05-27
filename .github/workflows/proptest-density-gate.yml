@@ -4,7 +4,7 @@ name: proptest-density-gate
 # workspace. Allowlist `scripts/proptest-density-allowlist.txt` tolerates
 # pre-existing gaps (each tagged with a closing WI ID).
 #
-# Source audit:   specs/_audits/2026-05-15-proptest-density.md
+# Source audit:   specs/_audits/sealed/2026-05-15-proptest-density.md
 # Follow-up WI:   WI-PROPTEST-FU-005 (DEBT-017)
 # Gate script:    scripts/check_proptest_density_gate.sh
 

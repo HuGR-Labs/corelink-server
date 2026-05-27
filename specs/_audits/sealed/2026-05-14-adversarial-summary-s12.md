@@ -113,7 +113,7 @@ tags: ["adversarial-summary", "s12", "supply-chain", "wi-s12-007", "ship-gate"]
 
 ## 7. Security Walkthrough Scenarios (2026-05-14)
 
-See full report: `specs/_audits/2026-05-14-security-walkthrough-s12.md`.
+See full report: `specs/_audits/sealed/2026-05-14-security-walkthrough-s12.md`.
 
 | # | Scenario | Control | Result |
 |---|---|---|---|

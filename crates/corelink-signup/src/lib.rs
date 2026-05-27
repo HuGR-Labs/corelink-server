@@ -110,7 +110,7 @@
 //!
 //! # Wave-33 Stream B sub-step B.4 — canonical-path adoption review
 //!
-//! Per `specs/_audits/2026-05-22-w33-stream-b-policy.md` sub-step B.4,
+//! Per `specs/_audits/sealed/2026-05-22-w33-stream-b-policy.md` sub-step B.4,
 //! the wave-33 reorg surveys this crate for adoption of the canonical
 //! cross-cutting surfaces introduced at Stage 0:
 //!

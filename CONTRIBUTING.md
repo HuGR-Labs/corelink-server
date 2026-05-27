@@ -29,7 +29,7 @@
 > `CHANGELOG.md`, `TODO.md`, `ROADMAP-TO-GA.md`.
 >
 > Full allowlist + decision protocol + thaw conditions live in
-> [`specs/_audits/2026-05-16-ga-1-feature-freeze.md`](./specs/_audits/2026-05-16-ga-1-feature-freeze.md)
+> [`specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md`](./specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md)
 > §3 / §4 / §6. Read it before opening a PR that touches a frozen path.
 >
 > If your contribution does not fit one of the three exception classes,
@@ -155,8 +155,8 @@ but the matching proptest is in a follow-up WI), add the crate to
 allowlist is review-gated by an `@code-owner` so silent regressions
 don't accumulate; the list shrinks as follow-up WIs land.
 
-Audit baseline: `specs/_audits/2026-05-15-proptest-density.md`.
-Followup tickets: `specs/_audits/proptest-followup-tickets.md`.
+Audit baseline: `specs/_audits/sealed/2026-05-15-proptest-density.md`.
+Followup tickets: `specs/_audits/sealed/proptest-followup-tickets.md`.
 
 ---
 

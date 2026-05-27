@@ -13,16 +13,16 @@ supersedes: null
 superseded_by: null
 reviewer: "R5 Sonnet persona (Sonnet 4.6, different model lineage than R4 Opus — Wave 14 Lote 10.6 review dispatch; testability + observability focus)"
 scope: "Lote 10.6 — Sprint S-06 Part 1 (WI-S06-001 .. WI-S06-004) on FROZEN v1.3.0 corpus post Lote 10.6bis + 10.6-tris remediation"
-parent_audit: "specs/04_sprints/S06/_review_R4_opus_part1.md"
-sprint_contract: "specs/04_sprints/S06/_spec_contract.md v2.0.0"
+parent_audit: "specs/04_sprints/_sealed/S06/_review_R4_opus_part1.md"
+sprint_contract: "specs/04_sprints/_sealed/S06/_spec_contract.md v2.0.0"
 calibration_baselines:
-  - "specs/_audits/2026-04-25-sonnet-r5-s06-wi-review.md (post-bis 9.1/10 target)"
-  - "specs/_audits/2026-04-25-agent-r4-s06-part1-wi-review.md (pre-bis 8.13/10)"
+  - "specs/_audits/sealed/2026-04-25-sonnet-r5-s06-wi-review.md (post-bis 9.1/10 target)"
+  - "specs/_audits/sealed/2026-04-25-agent-r4-s06-part1-wi-review.md (pre-bis 8.13/10)"
 files_reviewed:
-  - "specs/04_sprints/S06/work_items/WI-S06-001-worker-gc-binary-scheduler-degrade-mode.md (649 lines, v1.3.0 FROZEN)"
-  - "specs/04_sprints/S06/work_items/WI-S06-002-mark-phase-multi-pass-scan-mark-started-at.md (653 lines, v1.3.0 FROZEN)"
-  - "specs/04_sprints/S06/work_items/WI-S06-003-sweep-phase-soft-delete-inv-gc-004.md (663 lines, v1.3.0 FROZEN)"
-  - "specs/04_sprints/S06/work_items/WI-S06-004-physical-delete-post-grace-r2-idempotent.md (463 lines, v1.3.0 FROZEN)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-001-worker-gc-binary-scheduler-degrade-mode.md (649 lines, v1.3.0 FROZEN)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-002-mark-phase-multi-pass-scan-mark-started-at.md (653 lines, v1.3.0 FROZEN)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-003-sweep-phase-soft-delete-inv-gc-004.md (663 lines, v1.3.0 FROZEN)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-004-physical-delete-post-grace-r2-idempotent.md (463 lines, v1.3.0 FROZEN)"
 cross_references:
   - "crates/corelink-gc/src/ (~6000 LOC including sweep.rs + physical_delete.rs + mark.rs)"
   - "crates/corelink-gc/tests/ (94+143+174+198 tests progression)"

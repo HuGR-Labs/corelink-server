@@ -23,7 +23,7 @@ tags: ["ga", "gate", "criteria", "checklist", "go-nogo", "r7", "engineering-gate
 >
 > **Scope.** All gates the GA decision depends on, across **6 tracks**: Engineering, Security, Operations, Customer, Legal/Compliance, Marketing/Launch. **59 criteria total** (15 engineering · 12 security · 10 operations · 8 customer · 8 legal · 6 launch). Each ID is `GA-GATE-XX` with the track prefix.
 >
-> **Companion docs.** `GA-GATE-GO-NOGO-TEMPLATE.md` (decision meeting template) · `specs/_runbooks/RB-GA-LAUNCH-ROLLBACK.md` (failure-mode rollback) · `specs/04_sprints/S20/PRR-S20-GA.md` (the per-WI evidence backing each criterion).
+> **Companion docs.** `GA-GATE-GO-NOGO-TEMPLATE.md` (decision meeting template) · `specs/_runbooks/RB-GA-LAUNCH-ROLLBACK.md` (failure-mode rollback) · `specs/04_sprints/_sealed/S20/PRR-S20-GA.md` (the per-WI evidence backing each criterion).
 >
 > **Cross-ref with PRR-S20-GA.** PRR-S20-GA §5 DoD checklist (19 items) covers the engineering binary gate. This doc is **wider** — it adds non-engineering tracks (customer, legal, marketing, ops) that PRR-S20-GA delegates to the Owner / Product / Legal sign-offs. The PRR remains the canonical sign-off doc; THIS doc is the **operational pre-flight checklist** used by the four launch executives.
 
@@ -209,8 +209,8 @@ Decision is **unanimous-4-signer veto** per `GA-GATE-GO-NOGO-TEMPLATE.md` — an
 ## 10. References
 
 - `ROADMAP-TO-GA.md` §7 — Wave R-7 Evidence Gate.
-- `specs/04_sprints/S20/PRR-S20-GA.md` — global PRR with binary engineering DoD (cross-ref §5 of PRR-S20-GA).
-- `specs/04_sprints/S20/PRR-S20-CLOSING.md` — closing PRR with 8 TLA+ specs + final sign-off matrix.
+- `specs/04_sprints/_sealed/S20/PRR-S20-GA.md` — global PRR with binary engineering DoD (cross-ref §5 of PRR-S20-GA).
+- `specs/04_sprints/_sealed/S20/PRR-S20-CLOSING.md` — closing PRR with 8 TLA+ specs + final sign-off matrix.
 - `specs/_compliance/SOC2-GAP-ANALYSIS.md` — GAP-XX backlog ≤ T+3 m post-GA.
 - `specs/_compliance/BCP-DR-DRILL-CADENCE.md` — DR drill cadence + GA-GATE-O04 evidence source.
 - `specs/_runbooks/ONCALL-ESCALATION-MATRIX.md` — GA-GATE-O02 evidence source.

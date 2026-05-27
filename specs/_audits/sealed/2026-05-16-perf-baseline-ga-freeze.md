@@ -233,8 +233,8 @@ stream-X), the row above is updated and the audit moves
 - `.github/workflows/perf-regression.yml` (header comment updated)
 - `reports/perf/baseline-*.json` (numeric refresh)
 - `reports/perf/baseline-ga-diff-vs-wave22.md` (machine-readable diff)
-- `specs/_audits/2026-05-16-perf-regression-ci-tightened.md` (wave-22)
-- `specs/_audits/2026-05-15-perf-opt-validation-report.md` (DEBT-013)
-- `specs/_audits/2026-05-15-perf-optimization-audit.md` (hot-path)
+- `specs/_audits/sealed/2026-05-16-perf-regression-ci-tightened.md` (wave-22)
+- `specs/_audits/sealed/2026-05-15-perf-opt-validation-report.md` (DEBT-013)
+- `specs/_audits/sealed/2026-05-15-perf-optimization-audit.md` (hot-path)
 - `specs/_runbooks/RB-PERF-REGRESSION.md` (triage)
 - `docs/internal/PERFORMANCE-PLAYBOOK.md` §"How regression gates work"

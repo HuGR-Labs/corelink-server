@@ -25,7 +25,7 @@ tags: [audit, sota, sprint-contracts, round-3, lote-9.4-validation, pre-implemen
 | Finding origem | Status R3 | File:line evidence |
 |---|---|---|
 | Opus C-01/C-02 `INV-KEY-*` | ✅ | `specs/03_architecture/adrs/ADR-0018-key-overlap-per-asset.md:17-41`; `specs/03_architecture/key_management.md:97-115`; `specs/03_architecture/invariant_registry.md:181-193` |
-| Codex CF-05 / CF-06 ownership TTL/quota | ✅ | `specs/03_architecture/adrs/ADR-0019-ttl-ownership-s04-s07.md:30-52`; `specs/03_architecture/adrs/ADR-0020-quota-ownership-s07-s08.md:28-50`; `specs/04_sprints/S04/_spec_contract.md:65-78`; `specs/04_sprints/S07/_spec_contract.md:64-65`; `specs/04_sprints/S08/_spec_contract.md:62-64` |
+| Codex CF-05 / CF-06 ownership TTL/quota | ✅ | `specs/03_architecture/adrs/ADR-0019-ttl-ownership-s04-s07.md:30-52`; `specs/03_architecture/adrs/ADR-0020-quota-ownership-s07-s08.md:28-50`; `specs/04_sprints/_sealed/S04/_spec_contract.md:65-78`; `specs/04_sprints/_sealed/S07/_spec_contract.md:64-65`; `specs/04_sprints/S08/_spec_contract.md:62-64` |
 | Cluster `S-00..S-06` v1.1 | ✅ | `version: "1.1.0"` em `S00..S06`; exemplos: `specs/04_sprints/S00/_spec_contract.md:6`, `S02:6`, `S06:6`; PERT explícito em `S02:197-208`, `S03:177-190`, `S06:207-219`; risk register 6 colunas em `S00:143-149`, `S02:232-244`, `S06:230-244` |
 | EVT uplift `S-00..S-06` | ✅ | Recontagem atual do DoD: `83/86` itens com `EVT-*` (`96.5%`), versus `16/52` no R2; evidência representativa em `S00:69-76`, `S02:117-129`, `S06:126-139` |
 | Runbooks críticos antes em stub | ✅ | `specs/05_quality/runbooks/RB-BILLING-001.md:21-136`; `RB-BILLING-002.md:21-139`; `RB-DSR-ERASURE-INCOMPLETE.md:21-191`; `RB-DATA-RESIDENCY-LEAK.md:21-198`; `RB-FM-105-region-replication-diverge.md:21-142`; `RB-FM-SIGNUP-FAILED.md:21-174` |
@@ -59,7 +59,7 @@ tags: [audit, sota, sprint-contracts, round-3, lote-9.4-validation, pre-implemen
 | CF-04 cost regression gate não transversal | ✅ | Gate universal em `_sprint_creation_contract.md:245`; propagado explicitamente em `S02:129`, `S03:108`, `S04:95`, `S06:137`, `S14:168`. |
 | CF-05 clash TTL/eviction | ✅ | Fechado semanticamente por `ADR-0019` + patches em `S04`/`S07`. |
 | CF-06 clash quota ownership | ✅ | Fechado semanticamente por `ADR-0020` + boundary explícita em `S07:65` e `S08:62`. |
-| CF-07 compressão de `S-07` deferida para `S-11` | ❌ | Continua errado em `specs/04_sprints/S07/_spec_contract.md:130`. |
+| CF-07 compressão de `S-07` deferida para `S-11` | ❌ | Continua errado em `specs/04_sprints/_sealed/S07/_spec_contract.md:130`. |
 | CF-08 binarismo de `S-12` pela metade | ⚠️ | O `OR` crítico caiu, mas o target segue `diff <= 5%` em `S12:119`, `:142-153`; melhoria real, não fechamento total do ideal SOTA. |
 
 ### Codex R2 (R2-01..R2-25)
@@ -131,22 +131,22 @@ Ainda não.
 ## Novos findings R3
 
 - **R3-01 — `S-02` introduz dependency inversion com sprints futuras.** O DoD exige integração SDK em 3 linguagens "S-15 ownership" e SBOM via `S-12`, mesmo `S-15` sendo outbound e `S-12` estando à frente no roadmap. Isso conflita com o anti-pattern "sprint que depende de sprint futura". Evidence: `specs/04_sprints/S02/_spec_contract.md:121`, `:124`, `:194`, `specs/04_sprints/_sprint_creation_contract.md:298`.
-- **R3-02 — `S-02` ainda não está liberado para implementation start pelo próprio gating declarado.** O contract exige `S-00` e `S-01` SEALED como hard blockers, mas `S-01` ainda está `work_status: READY` e `doc_status: DRAFT` em `specs/04_sprints/S01/sprint.md:4-7`, e `S-00` nem possui `sprint.md` no diretório. Evidence: `specs/04_sprints/S02/_spec_contract.md:181-184`.
-- **R3-03 — `S-20` continua aritmeticamente impossível.** O sprint tenta fechar `30d sustained staging`, `30d lighthouse observation` e `2w pentest + 1w retest` dentro de uma janela `D+30`, com `WI-S20-007` e `WI-S20-004` ditos completos em `D+25`. Evidence: `specs/04_sprints/S20/_spec_contract.md:220-239`.
-- **R3-04 — `S-20` continua subespecificando o gate formal methods pré-GA.** O registry exige que todo INV CRITICAL planejado esteja `GREEN` antes do gate S-20, mas o contract ainda fala em "all 4 specs" históricas. Evidence: `specs/03_architecture/invariant_registry.md:215-247`, `specs/04_sprints/S20/_spec_contract.md:137`, `:140`, `:318`.
+- **R3-02 — `S-02` ainda não está liberado para implementation start pelo próprio gating declarado.** O contract exige `S-00` e `S-01` SEALED como hard blockers, mas `S-01` ainda está `work_status: READY` e `doc_status: DRAFT` em `specs/04_sprints/_sealed/S01/sprint.md:4-7`, e `S-00` nem possui `sprint.md` no diretório. Evidence: `specs/04_sprints/S02/_spec_contract.md:181-184`.
+- **R3-03 — `S-20` continua aritmeticamente impossível.** O sprint tenta fechar `30d sustained staging`, `30d lighthouse observation` e `2w pentest + 1w retest` dentro de uma janela `D+30`, com `WI-S20-007` e `WI-S20-004` ditos completos em `D+25`. Evidence: `specs/04_sprints/_sealed/S20/_spec_contract.md:220-239`.
+- **R3-04 — `S-20` continua subespecificando o gate formal methods pré-GA.** O registry exige que todo INV CRITICAL planejado esteja `GREEN` antes do gate S-20, mas o contract ainda fala em "all 4 specs" históricas. Evidence: `specs/03_architecture/invariant_registry.md:215-247`, `specs/04_sprints/_sealed/S20/_spec_contract.md:137`, `:140`, `:318`.
 - **R3-05 — O blueprint TLA+ reintroduziu severity drift no domínio billing.** `PLANNED-specs.md` trata `INV-BILLING-NO-LOSS` e `INV-BILLING-NO-DUP` como CRITICAL, enquanto o registry canônico ainda os classifica HIGH. Evidence: `specs/tla/PLANNED-specs.md:42-45`, `specs/03_architecture/invariant_registry.md:136-137`.
 - **R3-06 — O naming/scope de TLA+ para residency/BYOK está inconsistente.** Registry/S-14 apontam `region_residency.tla`; o blueprint detalha `byok_sovereignty.tla` cobrindo a mesma invariante de residency. Evidence: `specs/03_architecture/invariant_registry.md:225-226`, `specs/04_sprints/S14/_spec_contract.md:213`, `specs/tla/PLANNED-specs.md:159-220`.
 - **R3-07 — Os novos CI gates continuam não-enforced.** `check_tla_obligations.py` e `check_error_taxonomy.py` estão planejados em docs, mas não existem em `scripts/`; então o lote criou obrigações sem enforcement real. Evidence: `specs/03_architecture/invariant_registry.md:245-247`, `specs/03_architecture/error_taxonomy.md:239-257`.
 - **R3-08 — `error_taxonomy.md` não instancia o próprio schema canônico.** O schema exige `retry_strategy`, `customer_message` multilocale, `canonical_source` e `introduced_in_sprint`, mas o catálogo real não os materializa. Evidence: `specs/03_architecture/error_taxonomy.md:55-71`, `:79-165`.
 - **R3-09 — A nova taxonomia de erros conflita com o canonical source anterior de observability.** `observability_model.md` continua definindo a enum fechada de `error_code` em `AUTH_*`, `TENANT_*`, `CAS_*` etc.; a nova taxonomia cria `COR_*` sem mapping canônico. Evidence: `specs/03_architecture/observability_model.md:215-229`, `specs/03_architecture/error_taxonomy.md:55-71`.
-- **R3-10 — A customer-facing surface de onboarding ainda não entrou na taxonomia.** `S-19` define signup, DPA versioning, re-acceptance e degrade read-only; a taxonomia não tem domínio `COR_ONBOARD_*` nem equivalentes. Evidence: `specs/04_sprints/S19/_spec_contract.md:83-104`, `:132-138`, `specs/03_architecture/error_taxonomy.md:77-165`.
+- **R3-10 — A customer-facing surface de onboarding ainda não entrou na taxonomia.** `S-19` define signup, DPA versioning, re-acceptance e degrade read-only; a taxonomia não tem domínio `COR_ONBOARD_*` nem equivalentes. Evidence: `specs/04_sprints/_sealed/S19/_spec_contract.md:83-104`, `:132-138`, `specs/03_architecture/error_taxonomy.md:77-165`.
 - **R3-11 — `S-11` expandiu a sweep list para 10 backends, mas DoD e completeness continuam provando só 7.** Isso reabre o risco de H-10 em termos de auditability. Evidence: `specs/04_sprints/S11/_spec_contract.md:99-104`, `:153-154`, `:173`.
 - **R3-12 — `S-11` e `S-14` continuam contraditórios sobre Schrems II TIA.** `S-11` ainda trata TIA como anti-scope pós-GA; `S-14` a trata como deliverable pré-GA. Evidence: `specs/04_sprints/S11/_spec_contract.md:205`, `specs/04_sprints/S14/_spec_contract.md:90`, `:126`, `:136`.
-- **R3-13 — A baseline de runbooks está em três estados ao mesmo tempo.** `S-17` ainda exporta "26 runbooks", `S-20` fala "40", e o repo hoje contém 42 arquivos em `specs/05_quality/runbooks/`. Evidence: `specs/04_sprints/S17/_spec_contract.md:197`, `specs/04_sprints/S20/_spec_contract.md:135`, `:185`, `:281`.
-- **R3-14 — `S-15` ainda tem inconsistência interna simples mas corrosiva: 8 checks prometidos, 6 listados.** Evidence: `specs/04_sprints/S15/_spec_contract.md:81`, `:85-92`, `:134`.
-- **R3-15 — `admin.corelink.humangr.com` continua órfão.** `S-16` o exclui explicitamente, mas nenhuma sprint assume ownership desse painel operacional interno. Evidence: `specs/04_sprints/S16/_spec_contract.md:177`, `:194`.
-- **R3-16 — `S-07` ainda empurra compressão para o sprint errado.** O texto continua deferindo para `S-11` ou ADR, apesar de `S-11` ser privacy/DSR. Evidence: `specs/04_sprints/S07/_spec_contract.md:130`.
-- **R3-17 — `S-09` continua com trilha de prova hipotética.** O contract depende de `specs/_schemas/log_event.schema.json` e `cardinality_check.py`, mas esses artefatos não existem no checkout. Evidence: `specs/04_sprints/S09/_spec_contract.md:96-99`, `:131`, `:168`.
+- **R3-13 — A baseline de runbooks está em três estados ao mesmo tempo.** `S-17` ainda exporta "26 runbooks", `S-20` fala "40", e o repo hoje contém 42 arquivos em `specs/05_quality/runbooks/`. Evidence: `specs/04_sprints/_sealed/S17/_spec_contract.md:197`, `specs/04_sprints/_sealed/S20/_spec_contract.md:135`, `:185`, `:281`.
+- **R3-14 — `S-15` ainda tem inconsistência interna simples mas corrosiva: 8 checks prometidos, 6 listados.** Evidence: `specs/04_sprints/_sealed/S15/_spec_contract.md:81`, `:85-92`, `:134`.
+- **R3-15 — `admin.corelink.humangr.com` continua órfão.** `S-16` o exclui explicitamente, mas nenhuma sprint assume ownership desse painel operacional interno. Evidence: `specs/04_sprints/_sealed/S16/_spec_contract.md:177`, `:194`.
+- **R3-16 — `S-07` ainda empurra compressão para o sprint errado.** O texto continua deferindo para `S-11` ou ADR, apesar de `S-11` ser privacy/DSR. Evidence: `specs/04_sprints/_sealed/S07/_spec_contract.md:130`.
+- **R3-17 — `S-09` continua com trilha de prova hipotética.** O contract depende de `specs/_schemas/log_event.schema.json` e `cardinality_check.py`, mas esses artefatos não existem no checkout. Evidence: `specs/04_sprints/_sealed/S09/_spec_contract.md:96-99`, `:131`, `:168`.
 - **R3-18 — O stack de governança ainda não está frozen enough para chamar gate pre-implementation "limpo".** Meta-contract está em `REVIEW`, mas framework segue `DRAFT/rc1` e `validate_specs.py` continua indisponível. Evidence: `specs/04_sprints/_sprint_creation_contract.md:19-22`, `specs/00_framework.md:4-6`, `:19-30`.
 
 ## Pre-implementation gate check
@@ -155,7 +155,7 @@ Ainda não.
 
 - **Bloqueios materiais:**
 - Dependency inversion no próprio DoD: `S-02` não pode exigir `S-12` e `S-15` para selar (`S02:121`, `:124`, `:194`, `_sprint_creation_contract.md:298`).
-- Hard blocker literal ainda não satisfeito: `S-01` está `READY`, não `SEALED` (`specs/04_sprints/S01/sprint.md:4-7`).
+- Hard blocker literal ainda não satisfeito: `S-01` está `READY`, não `SEALED` (`specs/04_sprints/_sealed/S01/sprint.md:4-7`).
 - Governança/tooling ainda incompletos: `00_framework.md` segue `DRAFT/rc1` e `validate_specs.py` não roda.
 
 - **Pré-condições atendidas:**

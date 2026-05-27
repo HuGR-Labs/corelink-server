@@ -7,9 +7,9 @@ status: CLOSED
 debts_touched:
   - DEBT-015-BUILD (post-closure follow-up)
 provenance:
-  - specs/_audits/2026-05-16-wave25-adversarial-review.md  # §P2-02 (lines 108-120)
-  - specs/_audits/2026-05-16-debt-015-build-wave25-closure.md
-  - specs/_audits/2026-05-16-p2-absorption-sweep-w25-28.md  # W25-P2-02 row
+  - specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md  # §P2-02 (lines 108-120)
+  - specs/_audits/sealed/2026-05-16-debt-015-build-wave25-closure.md
+  - specs/_audits/sealed/2026-05-16-p2-absorption-sweep-w25-28.md  # W25-P2-02 row
 conclusion: OBSOLETE
 ---
 
@@ -35,15 +35,15 @@ patch remains. Repo returns to a green-build state.
 
 This audit closes the **P2-DEFER-POST-GA** follow-up flagged in:
 
-- `specs/_audits/2026-05-16-wave25-adversarial-review.md` §P2-02
+- `specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md` §P2-02
   (lines 108-120): "DEBT-015-BUILD wave-25 doc asserts babel-patch is
   'load-bearing' without empirical re-test" — fix shape was a single
   `pnpm build` run with babel patches reverted, 5-minute experiment to
   close the load-bearing assumption.
-- `specs/_audits/2026-05-16-p2-absorption-sweep-w25-28.md` row
+- `specs/_audits/sealed/2026-05-16-p2-absorption-sweep-w25-28.md` row
   **W25-P2-02** — disposition `DEFER-POST-GA`, queued for wave-30+
   R-prep.
-- `specs/_audits/2026-05-16-debt-015-build-wave25-closure.md` — the
+- `specs/_audits/sealed/2026-05-16-debt-015-build-wave25-closure.md` — the
   wave-25 closure that asserted retention "no-risk" without retest.
 
 ## 2. Babel-patch file path + pnpm patch flow

@@ -1,7 +1,7 @@
 name: SLO Instrumentation Gate (audit 2026-05-14)
 
 # Enforces SLO catalog ↔ Sli enum binding per
-# `specs/_audits/2026-05-14-slo-instrumentation-gaps.md`. Every SLO
+# `specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md`. Every SLO
 # declared in `specs/03_architecture/slo_catalog.md §4.x` MUST either
 # - bind to an `Sli::*::slug()` in
 #   `crates/corelink-slo/src/definition.rs`, OR
@@ -17,7 +17,7 @@ on:
   pull_request:
     paths:
       - 'specs/03_architecture/slo_catalog.md'
-      - 'specs/_audits/2026-05-14-slo-instrumentation-gaps.md'
+      - 'specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md'
       - 'crates/corelink-slo/src/definition.rs'
       - 'scripts/validate_slo_instrumentation.py'
       - '.github/workflows/slo-instrumentation.yml'
@@ -25,7 +25,7 @@ on:
     branches: [main]
     paths:
       - 'specs/03_architecture/slo_catalog.md'
-      - 'specs/_audits/2026-05-14-slo-instrumentation-gaps.md'
+      - 'specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md'
       - 'crates/corelink-slo/src/definition.rs'
       - 'scripts/validate_slo_instrumentation.py'
       - '.github/workflows/slo-instrumentation.yml'

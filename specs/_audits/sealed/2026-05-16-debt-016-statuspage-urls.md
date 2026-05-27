@@ -10,7 +10,7 @@ debt_links:
   - "DEBT-016"
 related:
   - "specs/_runbooks/STATUSPAGE-INIT.md"
-  - "specs/_audits/2026-05-15-debt-register.md"
+  - "specs/_audits/sealed/2026-05-15-debt-register.md"
   - "marketing/launch/STATUS-PAGE-SPEC.md"
   - "apps/docs/docusaurus.config.ts"
   - "apps/docs/src/statuspage-url.ts"
@@ -116,8 +116,8 @@ documented in `specs/_runbooks/STATUSPAGE-INIT.md`.
 | `apps/docs/src/statuspage-url.ts` | NEW | `DEFAULT_STATUSPAGE_URL` constant + `getStatuspageUrl()` helper |
 | `apps/docs/docusaurus.config.ts` | EDIT | Import helper + add `customFields.statuspageUrl` + DEBT-016 commentary |
 | `specs/_runbooks/STATUSPAGE-INIT.md` | NEW | Operator provisioning playbook (Option A CNAME + Option B env-var); GA-cutover gate at T-7d |
-| `specs/_audits/2026-05-16-debt-016-statuspage-urls.md` | NEW | This audit doc |
-| `specs/_audits/2026-05-15-debt-register.md` | EDIT | DEBT-016 row updated → engineering-CLOSED (operator-bound URL provisioning pending T-7d) |
+| `specs/_audits/sealed/2026-05-16-debt-016-statuspage-urls.md` | NEW | This audit doc |
+| `specs/_audits/sealed/2026-05-15-debt-register.md` | EDIT | DEBT-016 row updated → engineering-CLOSED (operator-bound URL provisioning pending T-7d) |
 
 ## 5. Substitution-mechanism summary (Report fields)
 

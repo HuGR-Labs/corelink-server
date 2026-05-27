@@ -5,7 +5,7 @@
 > **Author:** wave-29 hygiene agent (Claude Opus 4.7) — branch `wt/r-prep-inv-registry-wave29-sweep`.
 > **Base:** `main` @ `365dd38` ("merge wt/r-prep-pre-cutover-weekly-verify into main (wave-28)" — wave-28 SEAL tip).
 > **Scope:** **Cutover-wait-state hygiene sweep — INV registry survey + DEBT register survey + wave-29 stream catalogue.** Wave-29 is the **first customer-acquisition + GA-wait-state wave** (engineering corpus is feature-complete since wave-26 GA-1 freeze; cutover ceremony gated on operator-paced DEBT items per wave-27 §3.4 NO-GO triggers). Ten streams catalogued — 3 signup-pipeline streams (backend / landing / admin UI), 1 ShadowSinkFactory full-adoption stream, 1 wave-28 adversarial review, 3 customer-facing artefact streams (audit-chain viz / pricing calculator / trust center publish), 1 perf-baseline GA-freeze stream, and this hygiene sweep (#10). No new canonical INV promotions warranted (signup backend INV-SIGNUP-TOKEN-IDEMPOTENT candidate surveyed but deferred — see §6.2). DEBT register surveyed; wave-28 closures (DEBT-003 / DEBT-016 / DEBT-025 / DEBT-026 / DEBT-027) all flipped to **engineering-CLOSED with operator-bound action enumerated**; net OPEN reduced 8 → 5 operator-paced rows.
-> **Cross-ref:** `specs/_audits/2026-05-16-wave27-closure.md` (predecessor; wave-28 closure doc was deferred into the wave-29 hygiene sweep), `specs/_audits/2026-05-15-debt-register.md` v1.2.4, `specs/03_architecture/invariant_registry.md` v0.2.2, `specs/_audits/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 CONDITIONAL GO), `specs/_runbooks/RB-GA-CUTOVER.md`, `specs/_runbooks/RB-POST-GA-CONTINUITY.md` (wave-27 anchor), `specs/_compliance/GA-GATE-CRITERIA.md`, `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md`.
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-wave27-closure.md` (predecessor; wave-28 closure doc was deferred into the wave-29 hygiene sweep), `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.4, `specs/03_architecture/invariant_registry.md` v0.2.2, `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 CONDITIONAL GO), `specs/_runbooks/RB-GA-CUTOVER.md`, `specs/_runbooks/RB-POST-GA-CONTINUITY.md` (wave-27 anchor), `specs/_compliance/GA-GATE-CRITERIA.md`, `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md`.
 
 ---
 
@@ -150,7 +150,7 @@ Five SLO families pinned at wave-29 stream #9 SEAL:
 
 ### 5.2 Freeze mechanism
 
-Stream #9 commits a `specs/_audits/2026-05-16-perf-baseline-ga-freeze.md` doc with the 5 SLO families pinned at the wave-29 base commit (`365dd38`). The endurance 7-day soak streak (wave-27 stream #4 — wall-clock 168h) reads this doc as the canonical baseline; any deviation > regression-threshold per SLO-family policy fires NO-GO trigger #5.
+Stream #9 commits a `specs/_audits/sealed/2026-05-16-perf-baseline-ga-freeze.md` doc with the 5 SLO families pinned at the wave-29 base commit (`365dd38`). The endurance 7-day soak streak (wave-27 stream #4 — wall-clock 168h) reads this doc as the canonical baseline; any deviation > regression-threshold per SLO-family policy fires NO-GO trigger #5.
 
 ### 5.3 DEBT impact
 
@@ -191,7 +191,7 @@ Wave-29 stream #1 (signup backend) introduces an exactly-once consumption semant
 
 **Net: 0 promotions warranted from this audit stream.** Wave-30 absorbs the DRAFT promotion.
 
-**Update (Wave-30 stream-4 R-PREP — 2026-05-16):** **Net flipped to 1 promotion absorbed by wave-30**. The Wave-30 stream-4 dispatch authored `specs/tla/signup_token_idempotent.tla` + PR/nightly cfgs + CI matrix wiring + registry §3.29 + §4.1 coverage-table row, promoting `INV-SIGNUP-TOKEN-IDEMPOTENT` from DRAFT → PROMOTED + **TLA-VERIFIED**. PR lane: 1 017 distinct states / 5 s; nightly: 37 273 distinct states / 33 s — both green. Despite the §6.2 forward-looking note that TLA+ was "likely not required at HIGH" the dispatch elected to author the spec anyway to (a) tighten the audit-emit-atomic contract beyond what the integration tests assert (Len(audit_log) = request_count atomicity bijection) and (b) prove the cross-branch SoT coherence (token_tenant ↔ email_tenant agreement) that the in-memory store's iter-find-first-match semantics relies on. See `specs/_audits/2026-05-16-inv-signup-token-tla.md` for the full dispatch ledger + counterexample-driven refinement history (the initial `InvSignupIdempotentByEmail` formulation was found over-tight by TLC and reformulated to the per-`reserved`-row granularity that matches the prod `insert_or_existing` semantics).
+**Update (Wave-30 stream-4 R-PREP — 2026-05-16):** **Net flipped to 1 promotion absorbed by wave-30**. The Wave-30 stream-4 dispatch authored `specs/tla/signup_token_idempotent.tla` + PR/nightly cfgs + CI matrix wiring + registry §3.29 + §4.1 coverage-table row, promoting `INV-SIGNUP-TOKEN-IDEMPOTENT` from DRAFT → PROMOTED + **TLA-VERIFIED**. PR lane: 1 017 distinct states / 5 s; nightly: 37 273 distinct states / 33 s — both green. Despite the §6.2 forward-looking note that TLA+ was "likely not required at HIGH" the dispatch elected to author the spec anyway to (a) tighten the audit-emit-atomic contract beyond what the integration tests assert (Len(audit_log) = request_count atomicity bijection) and (b) prove the cross-branch SoT coherence (token_tenant ↔ email_tenant agreement) that the in-memory store's iter-find-first-match semantics relies on. See `specs/_audits/sealed/2026-05-16-inv-signup-token-tla.md` for the full dispatch ledger + counterexample-driven refinement history (the initial `InvSignupIdempotentByEmail` formulation was found over-tight by TLC and reformulated to the per-`reserved`-row granularity that matches the prod `insert_or_existing` semantics).
 
 ### 6.3 Registry severity-breakdown snapshot (canonical; wave-29 base = wave-28 close = wave-27 close)
 
@@ -203,7 +203,7 @@ For the GA-cutover D-day execution meeting (preserved cite):
 
 ## 7. DEBT register state — wave-28 closures + wave-29 deltas
 
-Per `specs/_audits/2026-05-15-debt-register.md` v1.2.4 (wave-27 close baseline). Wave-28 absorbed five operator-bound DEBT items into engineering-CLOSED state by landing the AS-IF-AUTOMATED bundles + Owner-action runbooks; wave-29 in-flight streams add zero new DEBT rows (signup pipeline maps to existing DEBT-027; ShadowSinkFactory adoption maps to existing wave-18 caveats already closed).
+Per `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.4 (wave-27 close baseline). Wave-28 absorbed five operator-bound DEBT items into engineering-CLOSED state by landing the AS-IF-AUTOMATED bundles + Owner-action runbooks; wave-29 in-flight streams add zero new DEBT rows (signup pipeline maps to existing DEBT-027; ShadowSinkFactory adoption maps to existing wave-18 caveats already closed).
 
 ### 7.1 Wave-28 engineering-CLOSED list (5 rows)
 
@@ -317,12 +317,12 @@ Per the wave-29 sweep charter:
 
 ## 11. Cross-references
 
-- `specs/_audits/2026-05-16-wave27-closure.md` (immediate predecessor; wave-28 closure absorbed into wave-29 sweep).
-- `specs/_audits/2026-05-15-debt-register.md` v1.2.4 (canonical DEBT state; wave-28 closures appended in change-log v1.2.5+ when register PR lands).
+- `specs/_audits/sealed/2026-05-16-wave27-closure.md` (immediate predecessor; wave-28 closure absorbed into wave-29 sweep).
+- `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.4 (canonical DEBT state; wave-28 closures appended in change-log v1.2.5+ when register PR lands).
 - `specs/03_architecture/invariant_registry.md` v0.2.2 (197 declared; 61 CRITICAL all TLA+-proved — Z = 0 milestone preserved across waves 26 → 29).
-- `specs/_audits/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 — CONDITIONAL GO; 8-item DEFER counter).
-- `specs/_audits/2026-05-16-ga-readiness-defer-scrub.md` (wave-25 stream #4 — DEFER drift detector; counter locked at 8).
-- `specs/_audits/2026-05-16-ga-cutover-dryrun.md` (wave-24 stream #1 G1..G6 all GREEN).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 — CONDITIONAL GO; 8-item DEFER counter).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-defer-scrub.md` (wave-25 stream #4 — DEFER drift detector; counter locked at 8).
+- `specs/_audits/sealed/2026-05-16-ga-cutover-dryrun.md` (wave-24 stream #1 G1..G6 all GREEN).
 - `specs/_compliance/GA-GATE-CRITERIA.md` (59 criteria across 6 tracks).
 - `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md` (GA-GO/NO-GO meeting template).
 - `specs/_runbooks/RB-GA-CUTOVER.md` (cutover runbook).

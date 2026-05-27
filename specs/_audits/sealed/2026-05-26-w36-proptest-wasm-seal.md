@@ -13,8 +13,8 @@ supersedes: null
 superseded_by: null
 tags: ["audit", "wave-36", "proptest", "corelink-wasm", "density", "seal"]
 references:
-  - "specs/_audits/2026-05-26-wave-33-34-closure-followups.md"
-  - "specs/_audits/proptest-followup-tickets.md"
+  - "specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md"
+  - "specs/_audits/sealed/proptest-followup-tickets.md"
 ---
 
 # Wave 36 — corelink-wasm proptest density SEAL
@@ -22,8 +22,8 @@ references:
 ## §1. Scope
 
 Closes WI-PROPTEST-FU-W33-002 partial (corelink-wasm portion) per
-`specs/_audits/proptest-followup-tickets.md` and Wave 33/34 closure
-follow-up #5 in `specs/_audits/2026-05-26-wave-33-34-closure-followups.md`
+`specs/_audits/sealed/proptest-followup-tickets.md` and Wave 33/34 closure
+follow-up #5 in `specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md`
 §6.
 
 The `corelink-wasm` crate had a pre-existing density gap with **zero**

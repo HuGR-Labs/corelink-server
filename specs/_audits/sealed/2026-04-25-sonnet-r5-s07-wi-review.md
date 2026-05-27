@@ -1,7 +1,7 @@
 ---
 id: AUDIT-SONNET-R5-S07-WI-REVIEW
-parent_audit: specs/_audits/2026-04-25-agent-r4-s07-wi-review.md
-sprint_contract: specs/04_sprints/S07/_spec_contract.md v1.1.0
+parent_audit: specs/_audits/sealed/2026-04-25-agent-r4-s07-wi-review.md
+sprint_contract: specs/04_sprints/_sealed/S07/_spec_contract.md v1.1.0
 tags: [audit, sota, lote-10.7, s-07, sonnet-r5, independent]
 reviewer: Sonnet 4.6 (independent — round 5; different model lineage than Opus R4)
 date: 2026-04-25

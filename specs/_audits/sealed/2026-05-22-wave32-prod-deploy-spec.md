@@ -100,7 +100,7 @@ Out of scope for Wave 32:
 - Remove DNS CNAME → reverts to BetterStack-side `hugrl.betteruptime.com` subdomain. Page itself stays.
 - PATCH page back to `subscribable=false` if needed (idempotent).
 
-**Audit doc:** `specs/_audits/2026-05-22-w32-phaseA-betterstack-live.md`.
+**Audit doc:** `specs/_audits/sealed/2026-05-22-w32-phaseA-betterstack-live.md`.
 
 ### Phase B — Worker shim + Durable Object (~16-24h, requires Phase A sign-off)
 
@@ -224,7 +224,7 @@ Out of scope for Wave 32:
 **Scope:**
 - Run `bash scripts/pre-cutover-weekly-verify.sh` against the live production deploy.
 - `bash scripts/ga-cutover-prod-dressrun.sh` (wave-24 dressrun script) end-to-end.
-- Refresh `specs/_audits/2026-05-16-ga-readiness-final.md` with post-deploy state — replace "engineering-CLOSED, deploy-pending" with "deploy-COMPLETE".
+- Refresh `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` with post-deploy state — replace "engineering-CLOSED, deploy-pending" with "deploy-COMPLETE".
 - Statuspage-init dressrun re-run (`statuspage-init-dressrun.sh`) against REAL BetterStack page (not mock).
 - Update `specs/_compliance/GA-GATE-CRITERIA.md` checklist rows for: status page, worker, container, pages, DNS, secrets.
 

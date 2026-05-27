@@ -321,6 +321,6 @@ Opus 4.7 demonstrates superior depth on individual WIs (complex cross-reference 
 ---
 
 *Reviewer*: Agent R5 (Claude Sonnet 4.6, claude-sonnet-4-6)
-*File*: `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/_audits/2026-04-25-sonnet-r5-s03-wi-review.md`
+*File*: `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/_audits/sealed/2026-04-25-sonnet-r5-s03-wi-review.md`
 *Status*: COMPLETE
 *Date*: 2026-04-25

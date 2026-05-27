@@ -35,7 +35,7 @@ inherits_from: ["VDP-001", "RB-SECURITY-VULNERABILITY-INTAKE"]
 > - Dep policy:        `docs/internal/dep-policy.md`
 > - License source:    `deny.toml [licenses]`
 > - Incoming-vuln intake: `RB-SECURITY-VULNERABILITY-INTAKE`
-> - Audit baseline:    `specs/_audits/2026-05-15-dependabot-policy.md`
+> - Audit baseline:    `specs/_audits/sealed/2026-05-15-dependabot-policy.md`
 
 ---
 

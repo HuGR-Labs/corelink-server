@@ -34,7 +34,7 @@ mutated; Phase H APPLY (the actual cutover execution) requires Phase E complete 
 | Smoke script | `scripts/smoke-prod-corelink.sh` | 504 | End-to-end smoke test, all 5 check areas, 22 checks |
 | Cutover checklist | `scripts/cutover-checklist-prod.sh` | 519 | Interactive go-live checklist, 15 items, signed markdown output |
 | Rollback script | `scripts/rollback-prod-corelink.sh` | 407 | Fast rollback: Worker+DO, Container, DNS, post-rollback smoke |
-| This audit | `specs/_audits/2026-05-26-w32-phaseH-prep.md` | — | PREP SEAL |
+| This audit | `specs/_audits/sealed/2026-05-26-w32-phaseH-prep.md` | — | PREP SEAL |
 
 **Total script LOC:** 1,430
 
@@ -353,7 +353,7 @@ and Phase G (DNS live). Steps:
    - Output signed to `specs/_audits/2026-05-26-w32-phaseH-cutover-checklist-<ts>.md`.
 
 4. **Refresh GA readiness doc:**
-   - Update `specs/_audits/2026-05-16-ga-readiness-final.md`:
+   - Update `specs/_audits/sealed/2026-05-16-ga-readiness-final.md`:
      replace all "engineering-CLOSED, deploy-pending" → "deploy-COMPLETE".
 
 5. **Update `specs/_compliance/GA-GATE-CRITERIA.md`:**
@@ -374,7 +374,7 @@ and Phase G (DNS live). Steps:
 |---|---|---|---|
 | 1 | `scripts/dns-prod-plan.sh` not present | Both smoke and cutover scripts check at startup | Exit 1 with HARD PAUSE TRIGGER 1 message |
 | 2 | `wrangler` CLI not installed or not in PATH | Cutover and rollback check at startup; smoke warns only | Exit 1 (cutover/rollback); warn (smoke) |
-| 3 | `specs/_audits/2026-05-26-w32-phaseG-prep.md` has fewer than 9 DNS plan rows | Cutover script: `grep -c "corelink.*humangr.com.*CNAME"` | Exit 1 with HARD PAUSE TRIGGER 3 message |
+| 3 | `specs/_audits/sealed/2026-05-26-w32-phaseG-prep.md` has fewer than 9 DNS plan rows | Cutover script: `grep -c "corelink.*humangr.com.*CNAME"` | Exit 1 with HARD PAUSE TRIGGER 3 message |
 
 **Additional inherited triggers from wave-32 spec §7 (evaluated at Phase H APPLY time):**
 - Post-cutover smoke exit code > 0 → auto-rollback (cutover-fail-CLOSED)

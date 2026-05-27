@@ -5,7 +5,7 @@
 > **Author:** wave-29 stream-3 pilot-admin-web-ui agent (Claude Opus 4.7) — branch `wt/r-prep-pilot-admin-web-ui`.
 > **Base:** `main` @ `365dd38`.
 > **Scope:** replace the wave-27 placeholder shell scripts (`grant-pilot-tier.sh`, `list-pilot-tenants.sh`, `pilot-24h-checkin.sh`) with proper admin endpoints + a Docusaurus admin page that operators consume from a browser. Closes the wave-23 audit §8 "production wiring lands when the admin endpoints are formalized" expectation.
-> **Cross-ref:** `specs/_audits/2026-05-16-pilot-onboarding-e2e.md` §8 (wave-23 journey + wave-27 placeholders), `specs/_audits/2026-05-16-pilot-signup-pipeline.md` (wave-27 placeholder contract), `apps/server/src/routes/admin.rs` (wave-15 admin handler discipline this module mirrors).
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-pilot-onboarding-e2e.md` §8 (wave-23 journey + wave-27 placeholders), `specs/_audits/sealed/2026-05-16-pilot-signup-pipeline.md` (wave-27 placeholder contract), `apps/server/src/routes/admin.rs` (wave-15 admin handler discipline this module mirrors).
 
 ---
 

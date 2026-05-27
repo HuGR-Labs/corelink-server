@@ -29,5 +29,5 @@ Kanonische Begriffe:
 
 **Ehrlicher Pre-GA-Hinweis:** Jeder Geldbetrag ist vorläufig und kann
 bis zum GA noch verfeinert werden. Der Pilottarif ist während der
-Evaluierung kostenlos. Siehe `specs/_audits/2026-05-16-pricing-page.md`
+Evaluierung kostenlos. Siehe `specs/_audits/sealed/2026-05-16-pricing-page.md`
 für den Status der Preisliste.

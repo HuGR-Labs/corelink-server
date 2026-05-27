@@ -4,10 +4,10 @@
 **Date**: 2026-04-25
 **Scope**: WI-S03-005 (Neon schema + pgcrypto + RLS), WI-S03-006 (WebAuthn L3), WI-S03-007 (Audit EVT-047), WI-S03-008 (PRR ship gate)
 **Source files**:
-- `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/04_sprints/S03/work_items/WI-S03-005-neon-schema-auth-tables.md`
-- `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/04_sprints/S03/work_items/WI-S03-006-webauthn-level3-admin.md`
-- `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/04_sprints/S03/work_items/WI-S03-007-audit-events-evt047-chain.md`
-- `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/04_sprints/S03/work_items/WI-S03-008-property-pentest-prr-ship-gate.md`
+- `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/04_sprints/_sealed/S03/work_items/WI-S03-005-neon-schema-auth-tables.md`
+- `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/04_sprints/_sealed/S03/work_items/WI-S03-006-webauthn-level3-admin.md`
+- `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/04_sprints/_sealed/S03/work_items/WI-S03-007-audit-events-evt047-chain.md`
+- `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/04_sprints/_sealed/S03/work_items/WI-S03-008-property-pentest-prr-ship-gate.md`
 **Cross-references**: `_spec_contract.md` v1.1.0, `sprint.md`, S-03 Part 1 review (2026-04-25-agent-r4-s03-part1-wi-review.md), S-01/S-02 R4 reviews.
 
 ---
@@ -339,5 +339,5 @@ The four WIs hit the SOTA bar in volume, ambition, and cross-cutting integration
 ---
 
 **Reviewer**: Agent R4 (Claude Opus 4.7, 1M context)
-**File**: `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/_audits/2026-04-25-agent-r4-s03-part2-wi-review.md`
+**File**: `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/_audits/sealed/2026-04-25-agent-r4-s03-part2-wi-review.md`
 **Status**: COMPLETE

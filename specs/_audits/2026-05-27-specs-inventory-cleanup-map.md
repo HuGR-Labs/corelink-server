@@ -534,12 +534,12 @@ specs/_audits/stride-per-crate/STRIDE-corelink-stripe-real.md	7869	audit/seal ar
 specs/_audits/stride-per-crate/STRIDE-corelink-tenant-path.md	8205	audit/seal artifact
 specs/_audits/stride-per-crate/STRIDE-tenant-path.md	7750	audit/seal artifact
 specs/_audits/tla-followup-tickets.md	26069	audit/seal artifact
-specs/_pentest/PENTEST-EVIDENCE-PACKAGE.md	77530	pentest evidence
-specs/_pentest/SOW-S20-EXTERNAL-PENTEST.md	16262	pentest evidence
-specs/_pentest/VENDOR-ONBOARDING.md	12309	pentest evidence
-specs/_pentest/access-provisioning.md	7406	pentest evidence
-specs/_pentest/vendor-shortlist.md	7003	pentest evidence
-specs/_postmortems/PM-2026-05-14-S17-CHAOS-PARTITION-DRILL.md	12324	postmortem
+specs/_audits/sealed/pentest/PENTEST-EVIDENCE-PACKAGE.md	77530	pentest evidence
+specs/_audits/sealed/pentest/SOW-S20-EXTERNAL-PENTEST.md	16262	pentest evidence
+specs/_audits/sealed/pentest/VENDOR-ONBOARDING.md	12309	pentest evidence
+specs/_audits/sealed/pentest/access-provisioning.md	7406	pentest evidence
+specs/_audits/sealed/pentest/vendor-shortlist.md	7003	pentest evidence
+specs/_audits/sealed/postmortems/PM-2026-05-14-S17-CHAOS-PARTITION-DRILL.md	12324	postmortem
 ```
 </details>
 

@@ -50,7 +50,7 @@
 //! # Pattern replication
 //!
 //! This is the third application of the pattern documented in
-//! `specs/_audits/2026-05-15-cf-binding-real-pattern.md` (R2 / D1 / KV
+//! `specs/_audits/sealed/2026-05-15-cf-binding-real-pattern.md` (R2 / D1 / KV
 //! are the siblings). All four bindings share:
 //!
 //! - Typed tenant-scoped key/name wrapper.
@@ -431,7 +431,7 @@ impl FakeDoRouter {
 /// constructed via [`Self::with_fake_router`], routes through a
 /// [`FakeDoRouter`] for unit tests.
 ///
-/// See `specs/_audits/2026-05-15-cf-binding-real-pattern.md` for the
+/// See `specs/_audits/sealed/2026-05-15-cf-binding-real-pattern.md` for the
 /// replication pattern.
 #[cfg(target_arch = "wasm32")]
 pub struct CfDurableObjectReal {

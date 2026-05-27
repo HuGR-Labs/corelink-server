@@ -4,7 +4,7 @@
 >
 > **Author:** wave-30+ P2-defer closure agent (Claude Opus 4.7) — branch `wt/r-prep-w26-p2-08-mutex-poison-telemetry`.
 > **Base:** `main` @ `0f77f48` (post wave-30 stream merges).
-> **Cross-ref:** `specs/_audits/2026-05-16-wave26-adversarial-review.md §228` + §429 (origin of DEFER-POST-GA classification), `specs/03_architecture/invariant_registry.md` (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER row), `crates/corelink-clerk-cf/src/audit_sink.rs` (silent-drop site pre-fix), `crates/corelink-clerk-cf/src/prod_wiring.rs` (single call site of `emit_synthetic` on the fail-CLOSED path).
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-wave26-adversarial-review.md §228` + §429 (origin of DEFER-POST-GA classification), `specs/03_architecture/invariant_registry.md` (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER row), `crates/corelink-clerk-cf/src/audit_sink.rs` (silent-drop site pre-fix), `crates/corelink-clerk-cf/src/prod_wiring.rs` (single call site of `emit_synthetic` on the fail-CLOSED path).
 
 ---
 

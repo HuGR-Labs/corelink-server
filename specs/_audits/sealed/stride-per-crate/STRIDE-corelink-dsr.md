@@ -37,8 +37,8 @@
 | **S** | Backend driver impersonated (rogue worker calls real backends) | Service-account identity scoped per backend; deploy signature (CTRL-SUPPLY-002) | INV-SUPPLY-SIGNED-DEPLOY |
 | **T** | Backend ack tampered to skip a backend | Per-backend ack stored with hash + signed; aggregator requires all-12 acks before attestation; missing ack = SEV-1 page ≤ 5 min | `crates/corelink-dsr/tests/prop_dsr.rs` + RB-DSR-ERASURE-INCOMPLETE |
 | **R** | "Backend X never received the request" | INV-AUTH-AUDIT-PRE-POST-ORDERING per backend call; PAT-RETRY-IDEMPOTENT-001 idempotency keys for replay | INV-AUDIT-APPEND-ONLY + `specs/tla/dsr_erasure_atomicity.tla` (S-11 WI-S11-008) |
-| **I** | Subject-id leaked in backend audit logs (PII in log) | CTRL-PRIV-001 redact + schema allowlist; subject pseudonymized in non-essential backend logs | LINDDUN review `specs/_audits/2026-05-14-linddun-cli-telemetry.md` |
-| **D** | One backend stuck → 24h SLO breach | Per-backend timeout + circuit breaker; DLQ quarantine; on-call page ≤ 5 min; runbook RB-DSR-ERASURE-INCOMPLETE | `specs/_audits/2026-05-13-rb-fm-156-dry-run.md` analogue, FM-450 |
+| **I** | Subject-id leaked in backend audit logs (PII in log) | CTRL-PRIV-001 redact + schema allowlist; subject pseudonymized in non-essential backend logs | LINDDUN review `specs/_audits/sealed/2026-05-14-linddun-cli-telemetry.md` |
+| **D** | One backend stuck → 24h SLO breach | Per-backend timeout + circuit breaker; DLQ quarantine; on-call page ≤ 5 min; runbook RB-DSR-ERASURE-INCOMPLETE | `specs/_audits/sealed/2026-05-13-rb-fm-156-dry-run.md` analogue, FM-450 |
 | **E** | One backend driver gains scope on unrelated tenant | tenant_id explicit per call; backend driver least-privilege IAM | CTRL-AUTHZ-002 |
 
 ### 2.3 TB-dsr-3 (attestation)

@@ -4,7 +4,7 @@
 **Operator:** gustavoschneiter@MacBook-Pro-de-Gustavo.local
 **wrangler:** 4.95.0
 **Script:** scripts/cutover-checklist-prod.sh
-**Parent spec:** specs/_audits/2026-05-22-wave32-prod-deploy-spec.md §4 Phase H
+**Parent spec:** specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md §4 Phase H
 
 ---
 
@@ -70,7 +70,7 @@
 | Operator | gustavoschneiter@MacBook-Pro-de-Gustavo.local |
 | Warnings | 0 |
 | Cutover committed | NO |
-| Checklist doc | specs/_audits/2026-05-26-w32-phaseH-cutover-checklist-20260526T235900Z.md |
+| Checklist doc | specs/_audits/sealed/2026-05-26-w32-phaseH-cutover-checklist-20260526T235900Z.md |
 
 DCO sign-off: Gustavo Schneiter <gustavo@humangr.com>
 

@@ -81,7 +81,7 @@
 //!
 //! The 7-year retention SLA is enforced via R2 bucket-level Object Lock
 //! Governance Mode (Terraform/wrangler IaC config) — see
-//! `specs/_audits/2026-05-15-audit-chain-retention.md` for the mechanism +
+//! `specs/_audits/sealed/2026-05-15-audit-chain-retention.md` for the mechanism +
 //! the property-test stub. This module does NOT delete; it only writes.
 //! Any path that mutates audit data would violate INV-AUDIT-APPEND-ONLY
 //! and is therefore not exposed.

@@ -365,7 +365,7 @@ Total estimated savings if all 11 tickets land: **~52 billable min / PR + ~24 wa
 - ADR-0044 — SHA-pin policy + cosign keyless model
 - WI-S01-007 — `cas_foundation.yml` convergence design
 - WI-S12-006 — full 2-runner SLSA L3 reproducible-build verification (post-S-12)
-- Tickets: `specs/_audits/ci-optimization-followup-tickets.md`
+- Tickets: `specs/_audits/sealed/ci-optimization-followup-tickets.md`
 - Template: `.github/workflows/_TEMPLATE.yml.md`
 - (No `.github/CONTRIBUTING.md` exists today — recommend creating one referencing the template; alternative: surface guidance in `docs/internal/ENGINEERING-ONBOARDING.md` per ROADMAP R1-9.)
 

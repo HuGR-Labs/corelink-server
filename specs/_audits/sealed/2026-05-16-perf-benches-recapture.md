@@ -273,8 +273,8 @@ the operator's signed workstation, not from the worktree agent).
 
 ## 8. Cross-references
 
-- `specs/_audits/2026-05-16-perf-baseline-ga-freeze.md` (wave-29 stream-9 — superseded numeric rows; §7 bullet 2 closure)
-- `specs/_audits/2026-05-16-perf-regression-ci-tightened.md` (wave-22)
+- `specs/_audits/sealed/2026-05-16-perf-baseline-ga-freeze.md` (wave-29 stream-9 — superseded numeric rows; §7 bullet 2 closure)
+- `specs/_audits/sealed/2026-05-16-perf-regression-ci-tightened.md` (wave-22)
 - `reports/perf/baseline-ga-2026-05-16-365dd38.json` (umbrella manifest)
 - `reports/perf/baseline-ga-diff-vs-wave22.md` (machine-readable diff)
 - `reports/perf/baseline-corelink-tenant-path-derive.json`

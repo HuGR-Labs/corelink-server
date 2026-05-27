@@ -12,8 +12,8 @@
 > **Mandate:** wave-33 Stage 1 Stream B reorganises the 5 policy-
 > context families (billing / BYOK / auth / signup / privacy) under
 > the modular-monolith + hexagonal + microkernel(BYOK) target shape
-> per `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §6 Stage 1.
-> Aggregator pattern per Stage 0 SEAL `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4.
+> per `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md` §6 Stage 1.
+> Aggregator pattern per Stage 0 SEAL `specs/_audits/sealed/2026-05-22-w33-stage0-foundation.md` §4.
 
 ## §1. Scope — sub-step commit chain
 

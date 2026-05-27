@@ -28,7 +28,7 @@ tags: ["sales", "faq", "api", "stability", "deprecation", "enterprise", "r-prep"
 >
 > **Companion docs:**
 > - `apps/docs/docs/explanation/api-stability.mdx` (the public policy — this FAQ paraphrases it)
-> - `specs/_audits/2026-05-15-api-stability-baseline.md` (the per-endpoint tier matrix)
+> - `specs/_audits/sealed/2026-05-15-api-stability-baseline.md` (the per-endpoint tier matrix)
 > - `marketing/sales/FAQ-MASTER.md` (master 50-question sales FAQ)
 > - `apps/docs/docs/trust/index.mdx` (Trust Center; links to this policy)
 
@@ -102,9 +102,9 @@ ones, and how do I avoid them?
   in normal customer use — the SDKs do not expose them.
 
 You can read the per-endpoint matrix at
-`specs/_audits/2026-05-15-api-stability-baseline.md`.
+`specs/_audits/sealed/2026-05-15-api-stability-baseline.md`.
 
-**Sources:** `specs/_audits/2026-05-15-api-stability-baseline.md` §1, §3;
+**Sources:** `specs/_audits/sealed/2026-05-15-api-stability-baseline.md` §1, §3;
 `apps/docs/docs/explanation/api-stability.mdx` §1.
 
 ---
@@ -191,7 +191,7 @@ Action Cache (`GetActionResult`, `UpdateActionResult`) is not yet exposed
 on the public surface. When it lands it will be **Preview** for 90 days
 before being promoted to GA.
 
-**Sources:** `specs/_audits/2026-05-15-api-stability-baseline.md` §2;
+**Sources:** `specs/_audits/sealed/2026-05-15-api-stability-baseline.md` §2;
 `apps/docs/docs/reference/reapi/`.
 
 ---
@@ -265,7 +265,7 @@ and move on.
 ## Cross-references
 
 - Public policy: `apps/docs/docs/explanation/api-stability.mdx`
-- Per-endpoint matrix: `specs/_audits/2026-05-15-api-stability-baseline.md`
+- Per-endpoint matrix: `specs/_audits/sealed/2026-05-15-api-stability-baseline.md`
 - CI gate: `.github/workflows/api-deprecation-check.yml`
 - Extractor: `scripts/extract-api-deprecations.py`
 - Master sales FAQ: `marketing/sales/FAQ-MASTER.md`

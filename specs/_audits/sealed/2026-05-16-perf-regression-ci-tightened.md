@@ -198,9 +198,9 @@ Counts: **7 CRITICAL · 4 NON_CRITICAL · 11 total**.
 - `.github/workflows/perf-regression.yml` (this PR)
 - `scripts/perf-regression-check.py` (this PR)
 - `reports/perf/README.md` + `reports/perf/baseline-*.json` (this PR)
-- `specs/_audits/perf-optimization-followup-tickets.md` (DEBT-013 scope)
-- `specs/_audits/2026-05-15-perf-opt-validation-report.md` (DEBT-013 OPT-06 closure)
-- `specs/_audits/2026-05-15-perf-optimization-audit.md` (hot-path analysis source)
-- `specs/_audits/2026-05-15-ga-readiness-consolidation-wave-13-17.md` (wave ledger)
+- `specs/_audits/sealed/perf-optimization-followup-tickets.md` (DEBT-013 scope)
+- `specs/_audits/sealed/2026-05-15-perf-opt-validation-report.md` (DEBT-013 OPT-06 closure)
+- `specs/_audits/sealed/2026-05-15-perf-optimization-audit.md` (hot-path analysis source)
+- `specs/_audits/sealed/2026-05-15-ga-readiness-consolidation-wave-13-17.md` (wave ledger)
 - `specs/_runbooks/RB-PERF-REGRESSION.md` (triage flow)
 - `docs/internal/PERFORMANCE-PLAYBOOK.md` §"How regression gates work"

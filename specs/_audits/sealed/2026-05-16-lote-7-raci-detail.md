@@ -19,7 +19,7 @@ references:
   - "specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md"
   - "specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md"
   - "specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md"
-  - "specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md"
+  - "specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md"
   - "specs/_governance/reviewer_staffing_strategy.md"
 tags: ["audit", "lote-7", "wave-25", "wave-26", "governance", "reviewers", "raci", "framework-freeze", "ga", "dual-hat"]
 ---
@@ -210,13 +210,13 @@ This wave-25 work updates the following documents:
 |---|---|---|
 | `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md` | Insert §6 RACI matrix detail (3 subsections: legend / 15-row matrix / dual-hat fallback row / disambiguating rules / cross-refs). Renumber §6→§7 (COI), §7→§8 (summary), §8→§9 (acceptance), §9→§10 (changelog). Update §8 summary to reflect 7 clauses. | 0.1.1 → 0.1.2 |
 | `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` | Migrate cross-refs from `addendum §6.2/§6.4` to `§7.2/§7.4` (COI subsections renumbered). Add context_links pointer to addendum §6. | 0.1.0 → 0.1.1 |
-| `specs/_audits/2026-05-16-lote-7-raci-detail.md` (this file) | Initial creation — audit doc for the wave-25 RACI detail. | 1.0.0 |
+| `specs/_audits/sealed/2026-05-16-lote-7-raci-detail.md` (this file) | Initial creation — audit doc for the wave-25 RACI detail. | 1.0.0 |
 
 ### §6.1 Upstream documents (this audit references but does not modify)
 
 - `specs/00_framework.md §43.1` — sign-off block where the R / A cell holders record commit SHAs. Already cross-references the addendum (line 3210). No changes needed.
 - `specs/_proposals/2026-05-16-framework-reviewer-roles.md §6` — the 13-row summary that this wave-25 detail expands. Wave-25 leaves the summary intact (it remains the proposal's coarse-grain view; the detail lives in the addendum).
-- `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §11` — the Lote 6 audit baseline. The audit's `unblock-path-C-progress` already records wave-22 addendum + wave-24 ADR-0034b absorption; wave-25 RACI detail closes the forward reference. No mutation required to the Lote 6 audit doc (it points at the addendum, which now contains the detailed matrix).
+- `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §11` — the Lote 6 audit baseline. The audit's `unblock-path-C-progress` already records wave-22 addendum + wave-24 ADR-0034b absorption; wave-25 RACI detail closes the forward reference. No mutation required to the Lote 6 audit doc (it points at the addendum, which now contains the detailed matrix).
 - `specs/_governance/reviewer_staffing_strategy.md` — multi-tier strategy SOT. The RACI detail does not redefine staffing; it operates downstream.
 
 ---
@@ -232,7 +232,7 @@ Both gates run as part of the wave-25 commit pre-merge check.
 
 ## §8 Open items (forward to wave-26+) — CLOSED wave-26
 
-All three items below are CLOSED by wave-26. See `specs/_audits/2026-05-16-lote-7-followons-closure.md` for the per-item closure rationale + deliverables.
+All three items below are CLOSED by wave-26. See `specs/_audits/sealed/2026-05-16-lote-7-followons-closure.md` for the per-item closure rationale + deliverables.
 
 1. **Wire RACI per-row SLA into a CI gate?** **CLOSED wave-26.** `scripts/check-raci-sla.py` lands as advisory CI gate in `.github/workflows/spec_validation.yml`. Parses §6.2 + lanes (addendum §3.1); emits one-line conformance summary consumable by the quarterly review delta-doc (addendum §3.4). `--dry-run` is the CI default; `--since <iso-date>` mode scans git log for candidate stalls and emits non-blocking WARN lines. Closure doc §2.
 2. **Per-row INV binding?** **CLOSED wave-26.** §6.2 matrix extended with trailing `INV binding` column. 6 of 15 rows bind to concrete INVs (rows 3, 8, 9, 10, 11, 13 → `INV-OBS-AUDIT-CHAIN-INTEGRITY`, `INV-BYOK-CRYPTO-SOVEREIGNTY`, `INV-REGION-NO-CROSS-LEAK`, `INV-AUTH-MIGRATION-ADDITIVE`, `INV-AUDIT-APPEND-ONLY`, `INV-ROLLOUT-COSIGN-GATE`). The other 9 rows carry `—` (decision class not pin-down-able to a single invariant; binding is implicit via §-coverage). Closure doc §3.
@@ -245,4 +245,4 @@ All three items below are CLOSED by wave-26. See `specs/_audits/2026-05-16-lote-
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-05-16 | Claude Opus 4.7 (wave-25 Lote 7 RACI detail authoring agent) | Initial audit doc documenting the wave-25 addendum v0.1.2 §6 RACI matrix detail authoring. §2 explains why a detailed matrix was needed beyond the original 13-row summary. §3 documents per-row rationale for all 15 decision rows. §4 explains the dual-hat fallback row design and per-pairing affected rows. §5 verifies single-A discipline across all rows. §6 enumerates the cross-reference graph changes (addendum 0.1.1→0.1.2; ADR-0034b 0.1.0→0.1.1; this audit doc 1.0.0). §7 names quality gates. §8 forward-references wave-26 open items (CI SLA wire-up, INV binding, pairing selection heuristics). |
-| 1.0.1 | 2026-05-16 | Claude Opus 4.7 (wave-26 Lote 7 follow-ons closure) | Update §8 to mark all three deferred items CLOSED by wave-26 with pointer to `specs/_audits/2026-05-16-lote-7-followons-closure.md`. Add `wave-26` tag. No semantic change to §1–§7 (the wave-25 baseline). |
+| 1.0.1 | 2026-05-16 | Claude Opus 4.7 (wave-26 Lote 7 follow-ons closure) | Update §8 to mark all three deferred items CLOSED by wave-26 with pointer to `specs/_audits/sealed/2026-05-16-lote-7-followons-closure.md`. Add `wave-26` tag. No semantic change to §1–§7 (the wave-25 baseline). |

@@ -16,7 +16,7 @@
 > file split — NO moves to other crates, NO logic change.
 >
 > **Pattern reference:** Stream A2 precedent
-> (`specs/_audits/2026-05-22-w33-stream-a2-megafiles.md`,
+> (`specs/_audits/sealed/2026-05-22-w33-stream-a2-megafiles.md`,
 > commits `d15d68b8` / `558fcecf` / `6ce103e7` / `f80f40d4`):
 > function-internal helper extraction (when needed) + file split +
 > behaviour-preservation, with parent dispatch files re-exporting

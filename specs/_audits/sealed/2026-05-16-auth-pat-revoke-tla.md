@@ -5,7 +5,7 @@
 > **Author:** Wave-24 R-PREP `auth_pat_revoke.tla` agent (Claude Opus 4.7) — branch `wt/r-prep-auth-pat-revoke-tla`.
 > **Base:** `main` @ `33138b5` ("merge wt/r-prep-debt-008-mutation-wave23 into main (wave-23)" — wave-23 SEAL tip).
 > **Scope:** close the Wave-23 INV-DRAFT promotion sweep CRITICAL pre-GA gate flagged by `INV-PAT-REVOKE-PROPAGATION` (registry §3.28, declared `PLANNED` by `auth_pat_revoke.tla` reference) by authoring the spec + PR/nightly cfgs + CI matrix wiring + INV registry status promotion.
-> **Cross-ref:** `specs/03_architecture/invariant_registry.md §3.28` (CRITICAL INV declared), `specs/_audits/2026-05-16-inv-draft-sweep.md` (parent Wave-23 sweep), `specs/_audits/tla-followup-tickets.md` FT-10 (this dispatch's followup row), `specs/tla/auth_pat_hybrid.tla` (mint-side sibling), `specs/tla/auth_revocation.tla` (queue-side disjoint cousin).
+> **Cross-ref:** `specs/03_architecture/invariant_registry.md §3.28` (CRITICAL INV declared), `specs/_audits/sealed/2026-05-16-inv-draft-sweep.md` (parent Wave-23 sweep), `specs/_audits/sealed/tla-followup-tickets.md` FT-10 (this dispatch's followup row), `specs/tla/auth_pat_hybrid.tla` (mint-side sibling), `specs/tla/auth_revocation.tla` (queue-side disjoint cousin).
 
 ---
 
@@ -135,7 +135,7 @@ Inserted immediately after the `auth_pat_hybrid` step (sibling pairing). The pin
 
 ## 7. Followup ledger
 
-`specs/_audits/tla-followup-tickets.md` gained FT-10 (CLOSED) above FT-9 in narrative order with a summary-table row appended:
+`specs/_audits/sealed/tla-followup-tickets.md` gained FT-10 (CLOSED) above FT-9 in narrative order with a summary-table row appended:
 
 ```
 | FT-10 | CRITICAL | `auth_pat_revoke.tla` | Auth WG | **CLOSED** 2026-05-16 (Wave-24 R-PREP) |
@@ -171,8 +171,8 @@ The audit notes that FT-10 is **not** a DEBT-014 child — it's a Wave-24 R-PREP
 - `specs/tla/auth_pat_revoke.cfg` (PR-lane bounds)
 - `specs/tla/auth_pat_revoke_nightly.cfg` (nightly bounds)
 - `.github/workflows/tla_check.yml` (CI matrix row)
-- `specs/_audits/tla-followup-tickets.md` FT-10 (closure ledger)
-- `specs/_audits/2026-05-16-inv-draft-sweep.md` (parent Wave-23 sweep)
+- `specs/_audits/sealed/tla-followup-tickets.md` FT-10 (closure ledger)
+- `specs/_audits/sealed/2026-05-16-inv-draft-sweep.md` (parent Wave-23 sweep)
 - `apps/docs/static/openapi-corelink-v1.yaml` (DELETE /v1/pats/{pat_id} 204 contract)
 - Sibling specs: `specs/tla/auth_pat_hybrid.tla` (mint), `specs/tla/auth_revocation.tla` (queue)
 

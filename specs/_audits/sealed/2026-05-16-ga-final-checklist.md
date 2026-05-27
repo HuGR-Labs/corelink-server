@@ -2,14 +2,14 @@
 
 > **Doc kind:** operator-runnable boolean checklist (no canonical front matter required — `_audits/` excluded from `validate_specs.py` per `scripts/validate_specs.py::SKIP_ALL`).
 >
-> **Companion:** `specs/_audits/2026-05-16-ga-readiness-final.md` (the sign-off-ready board this checklist underpins).
+> **Companion:** `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` (the sign-off-ready board this checklist underpins).
 >
 > **Usage.** Owner + on-call SRE walk through this checklist in the GA-Gate go/no-go meeting (per `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md`). Each row resolves to one of:
 > - `[x] true` — gate green; no action.
 > - `[ ] false` — gate red; **must** resolve before §13 signature.
 > - `[!] defer: <link to §11 row OR documented waiver>` — explicit, traced DEFER.
 >
-> **Rule.** Signature §13.2 + §13.3 require **zero `false` rows**. Every `defer:` must point to either `specs/_audits/2026-05-16-ga-readiness-final.md §11` (the 7 external DEFER items, scrubbed wave-25) OR a documented waiver in `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md §3`.
+> **Rule.** Signature §13.2 + §13.3 require **zero `false` rows**. Every `defer:` must point to either `specs/_audits/sealed/2026-05-16-ga-readiness-final.md §11` (the 7 external DEFER items, scrubbed wave-25) OR a documented waiver in `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md §3`.
 
 ---
 
@@ -38,7 +38,7 @@
 - [ ] B-03 — Audit fail-CLOSED enforced: `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER` family proptest streak ≥ 30 d green.
 - [ ] B-04 — WallClock cross-route closure landed (wave-21 `f3462c6`; wave-23 cleanup P2-01 absorbed).
 - [ ] B-05 — Chaos combined-failure matrix (wave-23 stream #4) green — executor-loss × replication-lag × tenant-isolation surface.
-- [ ] B-06 — Pentest scope SEALED (`specs/_audits/2026-05-16-pre-ga-pentest-scope.md` v1.0).
+- [ ] B-06 — Pentest scope SEALED (`specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` v1.0).
 - [ ] B-07 — Pentest engagement kicked off (vendor + SOW signed) OR `defer: §11#3`.
 - [ ] B-08 — Secrets matrix validator `code_only=0` (DEBT-001 closed; matrix=109, code=89, in_both=89).
 - [ ] B-09 — Static-analysis baseline green (CodeQL + Semgrep + actionlint + action SHA pinning).
@@ -72,9 +72,9 @@
 - [ ] D-03 — Pilot onboarding E2E dry-run executed end-to-end (wave-23 stream #5 SEAL).
 - [ ] D-04 — Customer success playbook published (wave-23 stream #7 SEAL).
 - [ ] D-05 — Beta feedback triage pipeline operable (wave-23 stream #8 SEAL).
-- [ ] D-06 — Customer breach notification templates ready (`specs/_audits/2026-05-15-customer-breach-notification-templates.md`).
-- [ ] D-07 — Customer dashboard accessible (`specs/_audits/2026-05-15-customer-dashboard-spec.md`).
-- [ ] D-08 — Stripe customer portal operable (`specs/_audits/2026-05-15-stripe-customer-portal-spec.md`).
+- [ ] D-06 — Customer breach notification templates ready (`specs/_audits/sealed/2026-05-15-customer-breach-notification-templates.md`).
+- [ ] D-07 — Customer dashboard accessible (`specs/_audits/sealed/2026-05-15-customer-dashboard-spec.md`).
+- [ ] D-08 — Stripe customer portal operable (`specs/_audits/sealed/2026-05-15-stripe-customer-portal-spec.md`).
 - [ ] D-09 — Pilot signups ≥ 3 design-partners (DPA signed) OR `defer: §11#6`.
 
 ## E. Compliance / Legal track (mirrors `GA-GATE-CRITERIA.md` §5 — owner: Legal Counsel + DPO)
@@ -92,7 +92,7 @@
 
 - [ ] F-01 — Launch announcement drafted + scheduled (T-24h send).
 - [ ] F-02 — Status page banner template ready (per `RB-GA-CUTOVER.md` §0.5).
-- [ ] F-03 — Pricing page live + matches `specs/_audits/2026-05-15-stripe-customer-portal-spec.md`.
+- [ ] F-03 — Pricing page live + matches `specs/_audits/sealed/2026-05-15-stripe-customer-portal-spec.md`.
 - [ ] F-04 — Sales onboarding deck reviewed.
 - [ ] F-05 — Press kit ready (logo, founder bio, one-pager).
 - [ ] F-06 — Owner availability confirmed for cutover window + first 72 h post-cutover.
@@ -150,5 +150,5 @@
 - **Branch:** `wt/r-prep-ga-readiness-final-audit`.
 - **Base commit:** `33138b5` (wave-23 SEAL tip).
 - **Audit date:** 2026-05-16.
-- **Companion audit:** `specs/_audits/2026-05-16-ga-readiness-final.md`.
+- **Companion audit:** `specs/_audits/sealed/2026-05-16-ga-readiness-final.md`.
 - **Co-Authored-By:** Claude Opus 4.7 <noreply@anthropic.com>.

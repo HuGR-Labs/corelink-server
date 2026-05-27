@@ -31,7 +31,7 @@
 //! every error site (audit fail-CLOSED). The orchestrator does NOT
 //! transform those events — they flow through the server's global
 //! `tracing` subscriber to the audit sink. See
-//! `specs/_audits/2026-05-15-byok-real-provider-pattern.md §5` for the
+//! `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §5` for the
 //! closed `reason` vocabulary.
 //!
 //! # Configuration via environment
@@ -55,7 +55,7 @@
 //!
 //! # Pattern reference
 //!
-//! `specs/_audits/2026-05-15-byok-real-provider-pattern.md §7`.
+//! `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §7`.
 
 #![forbid(unsafe_code)]
 
@@ -78,42 +78,42 @@ compile_error!(
     "BYOK orchestrator: features `byok-aws-real` AND `byok-gcp-real` are \
      mutually exclusive — only one BYOK real provider may be enabled at \
      a time (the orchestrator is a singleton trait object). \
-     See specs/_audits/2026-05-15-byok-real-provider-pattern.md §7."
+     See specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §7."
 );
 
 #[cfg(all(feature = "byok-aws-real", feature = "byok-azure-real"))]
 compile_error!(
     "BYOK orchestrator: features `byok-aws-real` AND `byok-azure-real` are \
      mutually exclusive — only one BYOK real provider may be enabled at \
-     a time. See specs/_audits/2026-05-15-byok-real-provider-pattern.md §7."
+     a time. See specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §7."
 );
 
 #[cfg(all(feature = "byok-aws-real", feature = "byok-vault-real"))]
 compile_error!(
     "BYOK orchestrator: features `byok-aws-real` AND `byok-vault-real` are \
      mutually exclusive — only one BYOK real provider may be enabled at \
-     a time. See specs/_audits/2026-05-15-byok-real-provider-pattern.md §7."
+     a time. See specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §7."
 );
 
 #[cfg(all(feature = "byok-gcp-real", feature = "byok-azure-real"))]
 compile_error!(
     "BYOK orchestrator: features `byok-gcp-real` AND `byok-azure-real` are \
      mutually exclusive — only one BYOK real provider may be enabled at \
-     a time. See specs/_audits/2026-05-15-byok-real-provider-pattern.md §7."
+     a time. See specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §7."
 );
 
 #[cfg(all(feature = "byok-gcp-real", feature = "byok-vault-real"))]
 compile_error!(
     "BYOK orchestrator: features `byok-gcp-real` AND `byok-vault-real` are \
      mutually exclusive — only one BYOK real provider may be enabled at \
-     a time. See specs/_audits/2026-05-15-byok-real-provider-pattern.md §7."
+     a time. See specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §7."
 );
 
 #[cfg(all(feature = "byok-azure-real", feature = "byok-vault-real"))]
 compile_error!(
     "BYOK orchestrator: features `byok-azure-real` AND `byok-vault-real` are \
      mutually exclusive — only one BYOK real provider may be enabled at \
-     a time. See specs/_audits/2026-05-15-byok-real-provider-pattern.md §7."
+     a time. See specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §7."
 );
 
 // ── Active-provider label (used for telemetry / readiness probes) ────

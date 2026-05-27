@@ -33,7 +33,7 @@ Per-WI assessment summary:
 
 ### WI-S01-002 (BLAKE3)
 - Strengths:
-  - Narrativa atende o piso HIGH_RISK (~348 palavras) e justifica blast radius/reversibilidade com clareza (`specs/04_sprints/S01/work_items/WI-S01-002-blake3-verify-at-write.md:62-85`).
+  - Narrativa atende o piso HIGH_RISK (~348 palavras) e justifica blast radius/reversibilidade com clareza (`specs/04_sprints/_sealed/S01/work_items/WI-S01-002-blake3-verify-at-write.md:62-85`).
   - Gherkin e forte, especifico e nao-placeholder, com cenarios de mismatch, timing oracle, throughput, type-enforcement e build wasm (`WI-S01-002-blake3-verify-at-write.md:148-210`).
   - STRIDE/LINDDUN, sign-off e anti-patterns estao em nivel comparavel ao template (`WI-S01-002-blake3-verify-at-write.md:406-487`).
 - Gaps:
@@ -46,11 +46,11 @@ Per-WI assessment summary:
 
 ### WI-S01-003 (R2 adapter)
 - Strengths:
-  - Estrutura completa, Gherkin especifico e decisoes de design tem alternativas reais (`specs/04_sprints/S01/work_items/WI-S01-003-r2-adapter-single-blob.md:167-277`).
+  - Estrutura completa, Gherkin especifico e decisoes de design tem alternativas reais (`specs/04_sprints/_sealed/S01/work_items/WI-S01-003-r2-adapter-single-blob.md:167-277`).
   - Dependencias principais estao na direcao certa (`WI-S01-003-r2-adapter-single-blob.md:366-379`).
 - Gaps:
   - A narrativa fica abaixo do piso HIGH_RISK por pouco (~299 palavras), o que ja quebra o criterio formal do lote (`WI-S01-003-r2-adapter-single-blob.md:72-95`).
-  - O WI invade escopo de leitura com `R2Reader`, cenarios GET e artifact de read path, apesar de S-01 marcar read path como anti-scope e o sprint descrever S01 como write path (`WI-S01-003-r2-adapter-single-blob.md:49-61,212-231,316-320`; `specs/04_sprints/S01/sprint.md:58,66-68`).
+  - O WI invade escopo de leitura com `R2Reader`, cenarios GET e artifact de read path, apesar de S-01 marcar read path como anti-scope e o sprint descrever S01 como write path (`WI-S01-003-r2-adapter-single-blob.md:49-61,212-231,316-320`; `specs/04_sprints/_sealed/S01/sprint.md:58,66-68`).
   - `Security & Privacy`, `Knowledge Transfer`, `Sign-off` e `Anti-patterns` estao muito abaixo do template `WI-S01-001` em densidade e rigor (`WI-S01-003-r2-adapter-single-blob.md:415-460`; `WI-S01-001-tenant-path-hmac.md:416-449`).
   - Naming de metricas oscila entre dot notation e underscore notation, quebrando o modelo canonico de observabilidade (`WI-S01-003-r2-adapter-single-blob.md:141-143,184,197,217`; `specs/03_architecture/observability_model.md:120-136`).
 - Critical issues:
@@ -60,7 +60,7 @@ Per-WI assessment summary:
 
 ### WI-S01-004 (D1 schema)
 - Strengths:
-  - O doc enxerga os riscos certos: uniqueness, refcount race, migration drift e tombstone leakage (`specs/04_sprints/S01/work_items/WI-S01-004-d1-schema-blob-meta.md:72-92`).
+  - O doc enxerga os riscos certos: uniqueness, refcount race, migration drift e tombstone leakage (`specs/04_sprints/_sealed/S01/work_items/WI-S01-004-d1-schema-blob-meta.md:72-92`).
   - Sub-tasks e acceptance criteria sao concretos e implementaveis (`WI-S01-004-d1-schema-blob-meta.md:142-186,268-283`).
 - Gaps:
   - A narrativa tambem fica abaixo do piso HIGH_RISK (~299 palavras) (`WI-S01-004-d1-schema-blob-meta.md:72-92`).
@@ -74,12 +74,12 @@ Per-WI assessment summary:
 
 ### WI-S01-005 (REAPI handler)
 - Strengths:
-  - O WI reconhece corretamente que esse handler e a superficie externa mais perigosa do lote (`specs/04_sprints/S01/work_items/WI-S01-005-reapi-batchupdateblobs.md:68-90`).
+  - O WI reconhece corretamente que esse handler e a superficie externa mais perigosa do lote (`specs/04_sprints/_sealed/S01/work_items/WI-S01-005-reapi-batchupdateblobs.md:68-90`).
   - A cadeia de dependencias 001->004->005 esta clara e correta em alto nivel (`WI-S01-005-reapi-batchupdateblobs.md:291-299`).
 - Gaps:
   - A narrativa tem so ~258 palavras e falha o requisito HIGH_RISK (`WI-S01-005-reapi-batchupdateblobs.md:68-90`).
   - `Quality Standards`, `Observability`, `Security & Privacy`, `Sign-off` e parte de `PRR` estao em placeholder puro, sem densidade suficiente para production-ready (`WI-S01-005-reapi-batchupdateblobs.md:256-270,309-357`).
-  - O WI adiciona um surface REST `POST /v1/cas/<digest>` que nao aparece no sprint scope nem no contrato REAPI canonico do sprint, aumentando superficie sem amarracao suficiente (`WI-S01-005-reapi-batchupdateblobs.md:125`; `specs/04_sprints/S01/sprint.md:46-50`).
+  - O WI adiciona um surface REST `POST /v1/cas/<digest>` que nao aparece no sprint scope nem no contrato REAPI canonico do sprint, aumentando superficie sem amarracao suficiente (`WI-S01-005-reapi-batchupdateblobs.md:125`; `specs/04_sprints/_sealed/S01/sprint.md:46-50`).
   - O rollback "best-effort delete" apos `R2Writer.put` nao discute o caso canonico de orfao `R2 PUT` sem `D1 INSERT`, que a matriz de storage trata explicitamente como inevitavel e dependente de reconciliacao/GC (`WI-S01-005-reapi-batchupdateblobs.md:83,323-329`; `specs/03_architecture/storage_semantics_matrix.md:104-110,246-250,280-282`).
 - Critical issues:
   - O doc confunde `BatchUpdateBlobs` com `google::bytestream::WriteRequest`, o que esta tecnicamente errado na camada de protocolo (`WI-S01-005-reapi-batchupdateblobs.md:85`).
@@ -90,7 +90,7 @@ Per-WI assessment summary:
 
 ### WI-S01-006 (Property tests)
 - Strengths:
-  - Boa intuicao de bridge entre TLA+ e codigo real; regression DB e helpers sao escolhas corretas (`specs/04_sprints/S01/work_items/WI-S01-006-property-tests-10k.md:89-110,219-225,255-263`).
+  - Boa intuicao de bridge entre TLA+ e codigo real; regression DB e helpers sao escolhas corretas (`specs/04_sprints/_sealed/S01/work_items/WI-S01-006-property-tests-10k.md:89-110,219-225,255-263`).
   - Sub-tasks sao concretos e cobrem os invariants certos (`WI-S01-006-property-tests-10k.md:285-302`).
 - Gaps:
   - A narrativa tem ~223 palavras e falha o piso HIGH_RISK por margem larga (`WI-S01-006-property-tests-10k.md:89-110`).
@@ -103,7 +103,7 @@ Per-WI assessment summary:
 
 ### WI-S01-007 (CI TLC + SBOM)
 - Strengths:
-  - O conjunto de gates e correto em principio: TLC, tests, clippy, audit, deny, fuzz, SBOM, signing (`specs/04_sprints/S01/work_items/WI-S01-007-ci-tlc-gate-sbom.md:46-61,109-123`).
+  - O conjunto de gates e correto em principio: TLC, tests, clippy, audit, deny, fuzz, SBOM, signing (`specs/04_sprints/_sealed/S01/work_items/WI-S01-007-ci-tlc-gate-sbom.md:46-61,109-123`).
   - Anti-scope e risk around `pull_request_target` e long-lived keys mostram boa higiene de supply chain (`WI-S01-007-ci-tlc-gate-sbom.md:146-153,406-413`).
 - Gaps:
   - A narrativa fica em ~234 palavras, abaixo do threshold HIGH_RISK (`WI-S01-007-ci-tlc-gate-sbom.md:66-90`).
@@ -117,11 +117,11 @@ Per-WI assessment summary:
 ## Cross-WI Consistency
 - Estrutura: os 6 WIs novos possuem as 32 secoes, mas so `WI-S01-002` realmente sustenta profundidade HIGH_RISK; `WI-S01-003/004/005/006/007` falham o piso de narrativa >= 300 palavras.
 - Dependencias: a espinha dorsal `WI-S01-002 -> WI-S01-003 -> WI-S01-005` esta correta, e `WI-S01-005` depender de todos os prereqs faz sentido (`WI-S01-002:339-354`, `WI-S01-003:366-379`, `WI-S01-005:291-299`). Ainda assim, ha over/under-specification: `WI-S01-004` nao deveria depender fortemente de `WI-S01-001`; `WI-S01-003` invade read path; `WI-S01-006` assume ownership de workflow CI que `WI-S01-007` tambem assume.
-- Estimativas: o contrato de sprint estima ~206h PERT (`specs/04_sprints/S01/_spec_contract.md:131-141`), mas a soma atual dos PERTs dos WIs e ~186.9h; considerando so os 6 novos, o lote fecha ~144.9h vs ~164h esperados. O maior drift esta em `WI-S01-005` (32h vs 48h do contrato) e `WI-S01-007` (28.5h vs 16h do contrato).
+- Estimativas: o contrato de sprint estima ~206h PERT (`specs/04_sprints/_sealed/S01/_spec_contract.md:131-141`), mas a soma atual dos PERTs dos WIs e ~186.9h; considerando so os 6 novos, o lote fecha ~144.9h vs ~164h esperados. O maior drift esta em `WI-S01-005` (32h vs 48h do contrato) e `WI-S01-007` (28.5h vs 16h do contrato).
 - Estimativas internas: em todos os 6 novos WIs, a soma dos sub-tasks e maior que o `O` da secao 19, e o `**Total**`/`PERT-weighted` da secao 17 conflita com a conta formal da secao 19 (`WI-S01-002:337,358-361`; `WI-S01-003:364,383-384`; `WI-S01-004:283,298`; `WI-S01-005:289,303`; `WI-S01-006:302,314`; `WI-S01-007:329,344`).
-- Naming de metricas: ha drift serio entre sprint e WIs, e entre WIs entre si: `corelink.cas.*` vs `corelink_cas_*` vs `corelink.storage.r2.*`; labels `tenant_tier` vs `tenant_id` vs canonical `plan`; e `_bucket` aparece/ some de forma inconsistente (`specs/04_sprints/S01/sprint.md:179-183`; `WI-S01-002:57,124-125,164,176,372-373`; `WI-S01-003:141-143,184,197,217`; `WI-S01-004:252,307`; `specs/03_architecture/observability_model.md:120-136`).
+- Naming de metricas: ha drift serio entre sprint e WIs, e entre WIs entre si: `corelink.cas.*` vs `corelink_cas_*` vs `corelink.storage.r2.*`; labels `tenant_tier` vs `tenant_id` vs canonical `plan`; e `_bucket` aparece/ some de forma inconsistente (`specs/04_sprints/_sealed/S01/sprint.md:179-183`; `WI-S01-002:57,124-125,164,176,372-373`; `WI-S01-003:141-143,184,197,217`; `WI-S01-004:252,307`; `specs/03_architecture/observability_model.md:120-136`).
 - Error taxonomy: referencias validas existem para `COR_CAS_DIGEST_MISMATCH`, `COR_AUTH_SCOPE_INSUFFICIENT`, `COR_CAS_BLOB_TOO_LARGE` e `COR_SERVICE_DEGRADED`; `COR_CAS_DUPLICATE_REJECTED` nao existe no catalog (`specs/03_architecture/error_taxonomy.md:102-108,122-127,200-202`).
-- Scope names: o sprint usa `cas-w`, o WI-S01-005 usa `cache:w/cache:r`, e o `auth_model.md` canonico define `cache-w/cache-r/cache-rw`; hoje ha tres dialetos para o mesmo conceito (`specs/04_sprints/S01/sprint.md:113`; `WI-S01-005:149,168`; `specs/03_architecture/auth_model.md:176-179,227-228`).
+- Scope names: o sprint usa `cas-w`, o WI-S01-005 usa `cache:w/cache:r`, e o `auth_model.md` canonico define `cache-w/cache-r/cache-rw`; hoje ha tres dialetos para o mesmo conceito (`specs/04_sprints/_sealed/S01/sprint.md:113`; `WI-S01-005:149,168`; `specs/03_architecture/auth_model.md:176-179,227-228`).
 - Digest format: os WIs novos migraram silenciosamente de `digest = algo:hex` do `data_model.md` para bare hex 64-char/newtype binario, sem decisao explicita de compatibilidade (`specs/03_architecture/data_model.md:94,231`; `WI-S01-002:55,69,115`; `WI-S01-003:67,123`; `WI-S01-004:51`).
 
 ## Technical Accuracy Issues
@@ -165,4 +165,4 @@ Per-WI assessment summary:
   2. Corrigir protocolo/conformance do WI-S01-005.
   3. Remover placeholders HIGH_RISK e reescrever narrativas < 300 palavras.
   4. Unificar metricas/scopes/error codes/digest format com os canonical sources.
-  5. Reestimar o lote inteiro e reconciliar com `specs/04_sprints/S01/_spec_contract.md`.
+  5. Reestimar o lote inteiro e reconciliar com `specs/04_sprints/_sealed/S01/_spec_contract.md`.

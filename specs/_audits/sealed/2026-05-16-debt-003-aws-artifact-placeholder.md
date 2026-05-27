@@ -16,7 +16,7 @@
 > `--pdf <path>`); (d) a `.gitignore` that excludes PDF binaries while
 > keeping the ledger committed; (e) DEBT register reference uplift.
 >
-> **Cross-ref:** `specs/_audits/2026-05-15-debt-register.md` (DEBT-003 row),
+> **Cross-ref:** `specs/_audits/sealed/2026-05-15-debt-register.md` (DEBT-003 row),
 > `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md` (§2 AWS KMS row with
 > `sha256:TBD-on-receipt` token), `specs/_compliance/fips-attestation-letters/LETTER-AWS-KMS.md`
 > (vendor letter complement to the AWS Artifact PDF).
@@ -55,8 +55,8 @@ is required between this wave and DEBT-003 closure.
 | 2 | Verifier script | `scripts/verify-aws-artifact-pdf.sh` | 3 modes (`--check-empty`, `--verify-ledger`, `--pdf <path>`); chooses `sha256sum` (Linux) or `shasum -a 256` (macOS) automatically; documented in script header; exits {0, 1, 2}. |
 | 3 | SHA256SUMS ledger | `specs/_compliance/aws-artifact-pdfs/SHA256SUMS` | Header-only initial state; line format `<64-hex>  <filename>  # fetched=YYYY-MM-DD principal=<arn> kind=<fips\|soc2\|other>`. |
 | 4 | Gitignore | `specs/_compliance/aws-artifact-pdfs/.gitignore` | Ignores everything except `SHA256SUMS` and `.gitignore` itself — guarantees PDF binaries can't slip into git. |
-| 5 | This audit doc | `specs/_audits/2026-05-16-debt-003-aws-artifact-placeholder.md` | Land record + Owner action sequence. |
-| 6 | DEBT register reference uplift | `specs/_audits/2026-05-15-debt-register.md` | DEBT-003 row gains `engineering-CLOSED; operator-bound` annotation + cross-ref to this doc and the verifier. |
+| 5 | This audit doc | `specs/_audits/sealed/2026-05-16-debt-003-aws-artifact-placeholder.md` | Land record + Owner action sequence. |
+| 6 | DEBT register reference uplift | `specs/_audits/sealed/2026-05-15-debt-register.md` | DEBT-003 row gains `engineering-CLOSED; operator-bound` annotation + cross-ref to this doc and the verifier. |
 
 ---
 
@@ -151,7 +151,7 @@ The Owner can close DEBT-003 entirely without further engineering input:
    Both must exit 0.
 7. **Commit** both files with message `chore(debt-003): record AWS Artifact
    FIPS PDF SHA-256 (YYYY-MM-DD)`.
-8. **Flip the DEBT-003 row** in `specs/_audits/2026-05-15-debt-register.md`
+8. **Flip the DEBT-003 row** in `specs/_audits/sealed/2026-05-15-debt-register.md`
    from `(engineering-CLOSED; operator-bound)` to `CLOSED <date>, commit
    <sha>` and add the commit hash.
 
@@ -237,7 +237,7 @@ records the first real SHA-256 row in `SHA256SUMS` and replaces the
 | `scripts/verify-aws-artifact-pdf.sh` | Placeholder doc §4.2 ledger format + §5 verifier modes | Implements the gate logic. |
 | `specs/_compliance/aws-artifact-pdfs/SHA256SUMS` | Placeholder doc §4.2 line format | Append-only ledger. |
 | `specs/_compliance/aws-artifact-pdfs/.gitignore` | Placeholder doc §4.1 storage rationale | Ensures PDFs never commit. |
-| `specs/_audits/2026-05-15-debt-register.md` DEBT-003 row | This audit doc + the verifier + the ledger + the placeholder doc | Row uplift to `engineering-CLOSED; operator-bound`. |
+| `specs/_audits/sealed/2026-05-15-debt-register.md` DEBT-003 row | This audit doc + the verifier + the ledger + the placeholder doc | Row uplift to `engineering-CLOSED; operator-bound`. |
 
 ---
 

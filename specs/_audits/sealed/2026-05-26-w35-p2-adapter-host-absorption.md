@@ -11,7 +11,7 @@ consolidation of the five Wave-34 adapter crates into the
 
 ## 0 — Mandate (verbatim)
 
-> Per `specs/_audits/2026-05-26-wave-33-34-closure-followups.md` §4: absorb
+> Per `specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md` §4: absorb
 > 5 Wave-34 adapter crates into `corelink-adapter-host` via inline `mod X;`.
 
 Absorbed crates:
@@ -241,7 +241,7 @@ types that map the adapter-local ports onto the canonical workspace
 SPI traits in a single, locally-consistent crate.
 
 Follow-up #4 in
-`specs/_audits/2026-05-26-wave-33-34-closure-followups.md §4` is
+`specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md §4` is
 **CLOSED** by this SEAL.
 
 ---

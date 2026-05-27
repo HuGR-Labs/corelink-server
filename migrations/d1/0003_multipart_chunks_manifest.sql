@@ -2,8 +2,8 @@
 -- + `multipart_sessions` (S-05 Multipart + Chunking + Merkle storage backbone).
 --
 -- Canonical sources:
---   - specs/04_sprints/S05/work_items/WI-S05-004-d1-schema-chunks-manifest-multipart-sessions.md §1
---   - specs/04_sprints/S05/_spec_contract.md §5.3 (R-S05-6)
+--   - specs/04_sprints/_sealed/S05/work_items/WI-S05-004-d1-schema-chunks-manifest-multipart-sessions.md §1
+--   - specs/04_sprints/_sealed/S05/_spec_contract.md §5.3 (R-S05-6)
 --   - specs/03_architecture/data_model.md §4.3
 --   - specs/03_architecture/adrs/ADR-0036-d1-schema-migration-governance.md
 --   - specs/03_architecture/adrs/ADR-0035-ac-handler-invariants.md (H-3 tenant_prefix materialization)

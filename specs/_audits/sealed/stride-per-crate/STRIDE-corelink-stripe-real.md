@@ -78,9 +78,9 @@
 - `crates/corelink-stripe-real/tests/prop_dlq.rs` — DLQ behavior (FM-BILLING-005)
 - `crates/corelink-stripe-real/tests/live_integration.rs` — staging-only
 - `specs/tla/billing_atomicity.tla` — formal billing model
-- `specs/_audits/2026-05-03-rb-billing-001-replay-forensic-dry-run.md`
-- `specs/_audits/2026-05-03-rb-fm-151-stripe-outage-dry-run.md`
-- `specs/_audits/2026-05-03-rb-fm-302-billing-drift-dry-run.md`
+- `specs/_audits/sealed/2026-05-03-rb-billing-001-replay-forensic-dry-run.md`
+- `specs/_audits/sealed/2026-05-03-rb-fm-151-stripe-outage-dry-run.md`
+- `specs/_audits/sealed/2026-05-03-rb-fm-302-billing-drift-dry-run.md`
 
 ## 5. Cross-references
 

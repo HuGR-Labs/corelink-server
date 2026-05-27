@@ -177,7 +177,7 @@ Canonical library at GA:
 
 - **A** — CF region outage (reuse DR drill cycle 1 patterns).
 - **B** — BYOK CMK revoke under load (this template's worked example;
-  see `specs/_audits/2026-05-14-s17-tabletop-byok-revoke.md`).
+  see `specs/_audits/sealed/2026-05-14-s17-tabletop-byok-revoke.md`).
 - **C** — Supply-chain typosquat (FM-156 / FM-157).
 - **D** — Insider exfiltration (FM-258).
 

@@ -4,7 +4,7 @@
 //!
 //! Wave-20 closure for the wave-19 deferred "5 `#[ignore]`-by-default
 //! Neon-staging integration tests" caveat — see
-//! `specs/_audits/2026-05-16-neon-shadow-real-driver.md` §6 (status
+//! `specs/_audits/sealed/2026-05-16-neon-shadow-real-driver.md` §6 (status
 //! row "the 5 `#[ignore]`-by-default Neon-staging integration tests
 //! are deferred to the wave-19 server-wire follow-on").
 //!

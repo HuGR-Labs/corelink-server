@@ -20,7 +20,7 @@ name: api deprecation check (stability policy enforcement)
 #
 # Companion script: scripts/extract-api-deprecations.py
 # Companion policy: apps/docs/docs/explanation/api-stability.mdx §6
-# Companion baseline: specs/_audits/2026-05-15-api-stability-baseline.md
+# Companion baseline: specs/_audits/sealed/2026-05-15-api-stability-baseline.md
 
 on:
   pull_request:

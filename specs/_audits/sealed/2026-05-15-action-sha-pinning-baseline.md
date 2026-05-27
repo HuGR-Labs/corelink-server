@@ -144,7 +144,7 @@ This closes the meta-question: the verifier script itself uses SHA-pinned action
 
 ## 6. Cross-references
 
-- `specs/_audits/2026-05-15-debt-register.md` — DEBT-018 + DEBT-019 marked CLOSED with pointer to this baseline.
+- `specs/_audits/sealed/2026-05-15-debt-register.md` — DEBT-018 + DEBT-019 marked CLOSED with pointer to this baseline.
 - `scripts/verify-action-sha-pinning.py` — the verifier.
 - `.github/workflows/action-sha-audit.yml` — the CI gate.
 - SOC 2 CC7.1 rollup (`specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md`) — supply-chain control evidence.

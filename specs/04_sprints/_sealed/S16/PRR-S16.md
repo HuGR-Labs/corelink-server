@@ -102,7 +102,7 @@ Per `_spec_contract.md` §6:
 | 10 | CSP enforcement prod < 5 violations/day | △ FLAG WIRED | `CSP_ENFORCEMENT` env var (next.config.ts + middleware.ts); README rollout doc. Counters begin on first prod deploy. |
 | 11 | Lighthouse a11y CI gate | ✓ | `lighthouserc.cjs` asserts accessibility ≥ 1.0; PR fails on regression. |
 | 12 | PRR STANDARD with 5-8 canonical sign-offs | This doc, see §9 | Sign-off slots populated below; solo-tier waiver applies per ADR-0034. |
-| 13 | UX testing 5 devs externos SUS ≥ 75 + time-to-first-PAT ≤ 5 min | △ DRAFT-SYNTHETIC | `specs/_audits/2026-05-14-s16-ux-workshop.md` carries synthetic numbers; real participants D+10. |
+| 13 | UX testing 5 devs externos SUS ≥ 75 + time-to-first-PAT ≤ 5 min | △ DRAFT-SYNTHETIC | `specs/_audits/sealed/2026-05-14-s16-ux-workshop.md` carries synthetic numbers; real participants D+10. |
 
 Legend: ✓ done · △ deferred-with-plan · ✗ blocked.
 
@@ -138,7 +138,7 @@ Legend: ✓ done · △ deferred-with-plan · ✗ blocked.
 
 ## 5. Cross-WI adversarial summary
 
-See `specs/_audits/2026-05-14-s16-adversarial-summary.md`. 36 scenarios
+See `specs/_audits/sealed/2026-05-14-s16-adversarial-summary.md`. 36 scenarios
 catalogued; 100% mitigation rate; one ship-gate-discovered HIGH severity
 finding (F1 nested-`<html>` merge bug) queued for S-17 hotfix HF-S17-001.
 
@@ -146,7 +146,7 @@ finding (F1 nested-`<html>` merge bug) queued for S-17 hotfix HF-S17-001.
 
 ## 6. UX workshop
 
-See `specs/_audits/2026-05-14-s16-ux-workshop.md`. Workshop framework +
+See `specs/_audits/sealed/2026-05-14-s16-ux-workshop.md`. Workshop framework +
 tasks + SUS instrument + remediation tickets committed; synthetic
 participant data carries `DRAFT — synthetic personas` marker pending real
 recruitment.
@@ -185,8 +185,8 @@ once-display) is waived.
 | axe-core integration | `@axe-core/playwright` + `playwright/e2e/00-a11y-sweep.spec.ts` |
 | CSP rollout doc | `apps/admin-ui/README.md` → "CSP rollout" section |
 | CSP enforce env flag | `apps/admin-ui/next.config.ts` + `middleware.ts` (`CSP_ENFORCEMENT`) |
-| UX workshop pack | `specs/_audits/2026-05-14-s16-ux-workshop.md` |
-| Adversarial summary | `specs/_audits/2026-05-14-s16-adversarial-summary.md` |
+| UX workshop pack | `specs/_audits/sealed/2026-05-14-s16-ux-workshop.md` |
+| Adversarial summary | `specs/_audits/sealed/2026-05-14-s16-adversarial-summary.md` |
 
 ---
 

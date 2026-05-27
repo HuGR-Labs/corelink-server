@@ -4,7 +4,7 @@
 (*                                                                          *)
 (* Wave-30 stream-4 promotion (R-PREP) — closes the Wave-29 stream-10       *)
 (* DRAFT promotion candidate `INV-SIGNUP-TOKEN-IDEMPOTENT` flagged in       *)
-(* `specs/_audits/2026-05-16-wave29-closure.md §6.2`.                       *)
+(* `specs/_audits/sealed/2026-05-16-wave29-closure.md §6.2`.                       *)
 (*                                                                          *)
 (* Invariant claim (registry §3.29):                                        *)
 (*                                                                          *)
@@ -65,7 +65,7 @@
 (*   - `specs/03_architecture/invariant_registry.md §3.29`                  *)
 (*   - `apps/server/src/routes/signup.rs` (wave-29 commit b3c359f)         *)
 (*   - `apps/server/tests/signup_pilot.rs::duplicate_email_returns_*`     *)
-(*   - `specs/_audits/2026-05-16-inv-signup-token-tla.md` (this dispatch)  *)
+(*   - `specs/_audits/sealed/2026-05-16-inv-signup-token-tla.md` (this dispatch)  *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, Sequences, TLC

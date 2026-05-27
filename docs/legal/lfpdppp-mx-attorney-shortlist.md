@@ -1,10 +1,10 @@
 # LFPDPPP MX Attorney / Firm Shortlist — Wave-28 Engagement-Ready
 
-> **Status:** Send-ready candidate shortlist prepared by the wave-28 step-6 R-prep stream. Companion to `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md` (engineering-side scoping packet — the binding work statement) and `docs/legal/lfpdppp-mx-engagement-letter-template.md` (engagement letter template).
+> **Status:** Send-ready candidate shortlist prepared by the wave-28 step-6 R-prep stream. Companion to `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md` (engineering-side scoping packet — the binding work statement) and `docs/legal/lfpdppp-mx-engagement-letter-template.md` (engagement letter template).
 >
 > **Owner action sequence:** review the 5 candidates below; email tier-1 candidates first using `docs/legal/lfpdppp-mx-engagement-email-template.md` with the engagement letter + scoping packet attached. Track state in `reports/lfpdppp-mx-tracker.json` (via `scripts/admin/lfpdppp-mx-tracker.py`).
 >
-> **Audit cross-reference:** `specs/_audits/2026-05-16-lfpdppp-mx-engagement-package-final.md` (wave-28 step-6 closure).
+> **Audit cross-reference:** `specs/_audits/sealed/2026-05-16-lfpdppp-mx-engagement-package-final.md` (wave-28 step-6 closure).
 >
 > **Disclaimer.** Capability scores and firm metadata below are best-effort estimates built from **publicly available sources** (firm websites, IAPP directories, INAI public register, LexLatin / Chambers / Legal500 LATAM listings, peer-review journals, ABA Section of International Law profiles, public ARCO / PPD precedents). Owner MUST verify contact email + cédula profesional + conflict-of-interest posture before sending. Fee bands are **indicative** at MX market rates 2026; bind only after the firm returns a written proposal.
 
@@ -182,13 +182,13 @@ For the **selected** attorney (post-retainer-signature), Owner must verify the a
 ## §4 — Cross-references
 
 - **Engagement letter template:** `docs/legal/lfpdppp-mx-engagement-letter-template.md` (the binding work statement; attach to RFP email).
-- **Scoping packet:** `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md` (engineering-side artifact inventory + 4 open questions Q1-Q4).
+- **Scoping packet:** `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md` (engineering-side artifact inventory + 4 open questions Q1-Q4).
 - **RFP email template:** `docs/legal/lfpdppp-mx-engagement-email-template.md` (Mustache-templated email; send to each candidate).
 - **Retainer template (engineering-side draft):** `docs/legal/lfpdppp-mx-retainer-template.md` (pin to attorney's preferred template at signature; this draft is the negotiating baseline).
 - **Tracker script:** `scripts/admin/lfpdppp-mx-tracker.py` + `reports/lfpdppp-mx-tracker.json` (state machine + per-candidate rollup).
-- **Wave-28 closure audit:** `specs/_audits/2026-05-16-lfpdppp-mx-engagement-package-final.md` (consolidates the 4 deliverables + 3-email Owner action sequence).
-- **Debt-register row:** `specs/_audits/2026-05-15-debt-register.md DEBT-025` (this engagement; target wave-26+ close).
-- **Pentest shortlist precedent:** `specs/_audits/pentest-vendor-shortlist.md` (model wave-25 shortlist; same shortlist→tracker→email→contract pattern applied here for LFPDPPP MX).
+- **Wave-28 closure audit:** `specs/_audits/sealed/2026-05-16-lfpdppp-mx-engagement-package-final.md` (consolidates the 4 deliverables + 3-email Owner action sequence).
+- **Debt-register row:** `specs/_audits/sealed/2026-05-15-debt-register.md DEBT-025` (this engagement; target wave-26+ close).
+- **Pentest shortlist precedent:** `specs/_audits/sealed/pentest-vendor-shortlist.md` (model wave-25 shortlist; same shortlist→tracker→email→contract pattern applied here for LFPDPPP MX).
 
 ---
 

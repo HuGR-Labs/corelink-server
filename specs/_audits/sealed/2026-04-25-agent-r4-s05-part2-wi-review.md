@@ -8,14 +8,14 @@ created: "2026-04-25"
 updated: "2026-05-27"
 reviewer: "Agent R4 (Claude Opus 4.7, 1M context, independent reviewer)"
 scope: "Lote 10.5 — Sprint S-05 Part 2 (WI-S05-004 .. WI-S05-006)"
-sprint_contract: "specs/04_sprints/S05/_spec_contract.md v1.1.0"
+sprint_contract: "specs/04_sprints/_sealed/S05/_spec_contract.md v1.1.0"
 calibration_baselines:
-  - "specs/_audits/2026-04-25-agent-r4-s04-part1-wi-review.md (S-04 part1, 8.05/10; WI-S04-003 best-in-class 8.6)"
-  - "specs/_audits/2026-04-25-agent-r4-s04-part2-wi-review.md (S-04 part2, 7.83/10)"
+  - "specs/_audits/sealed/2026-04-25-agent-r4-s04-part1-wi-review.md (S-04 part1, 8.05/10; WI-S04-003 best-in-class 8.6)"
+  - "specs/_audits/sealed/2026-04-25-agent-r4-s04-part2-wi-review.md (S-04 part2, 7.83/10)"
 files_reviewed:
-  - "specs/04_sprints/S05/work_items/WI-S05-004-d1-schema-chunks-manifest-multipart-sessions.md (558 lines)"
-  - "specs/04_sprints/S05/work_items/WI-S05-005-merkle-manifest-builder-verifier.md (561 lines)"
-  - "specs/04_sprints/S05/work_items/WI-S05-006-sweeper-rb-fm-060-prr-ship-gate.md (614 lines)"
+  - "specs/04_sprints/_sealed/S05/work_items/WI-S05-004-d1-schema-chunks-manifest-multipart-sessions.md (558 lines)"
+  - "specs/04_sprints/_sealed/S05/work_items/WI-S05-005-merkle-manifest-builder-verifier.md (561 lines)"
+  - "specs/04_sprints/_sealed/S05/work_items/WI-S05-006-sweeper-rb-fm-060-prr-ship-gate.md (614 lines)"
 cross_references:
   - "WI-S05-001..003 (read for cross-WI consistency)"
   - "_spec_contract.md S-05 v1.1.0"
@@ -503,4 +503,4 @@ The program is at **8.05 average for S-05 part 2** — the third-highest part-sc
 ---
 
 **Reviewer**: Agent R4 (Claude Opus 4.7, 1M context)
-**File**: `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/_audits/2026-04-25-agent-r4-s05-part2-wi-review.md`
+**File**: `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/_audits/sealed/2026-04-25-agent-r4-s05-part2-wi-review.md`

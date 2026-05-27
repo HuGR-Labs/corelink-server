@@ -8,7 +8,7 @@ created: "2026-05-16"
 updated: "2026-05-16"
 sprint: "Wave-24 (post-33138b5 pat+clerk dispatch)"
 parent_wi: "WI-DEBT-008-MUTATION-FULL-SWEEP"
-parent_audit: "specs/_audits/2026-05-16-debt-008-wave23-mutation-sweep.md"
+parent_audit: "specs/_audits/sealed/2026-05-16-debt-008-wave23-mutation-sweep.md"
 owner: "Gustavo Schneiter"
 tags: ["audit", "mutation-testing", "cargo-mutants", "debt-008", "wave-24", "pat", "clerk"]
 ---
@@ -19,7 +19,7 @@ tags: ["audit", "mutation-testing", "cargo-mutants", "debt-008", "wave-24", "pat
 > `corelink-clerk` out of the CI-nightly-only lane and into the
 > empirically-CLOSED subset of DEBT-008. Both crates were on the
 > 75 % CI-nightly floor in `.github/workflows/mutation-nightly.yml`
-> since wave-15 (`specs/_audits/2026-05-15-mutation-expansion.md`)
+> since wave-15 (`specs/_audits/sealed/2026-05-15-mutation-expansion.md`)
 > with defensive `mutation_kills.rs` files written without prior
 > empirical confirmation.
 >
@@ -256,7 +256,7 @@ remaining survivors will queue for wave-25.
 
 `.github/workflows/mutation-nightly.yml` is updated to flag
 `corelink-pat` + `corelink-clerk` as **"empirical baseline validated
-at wave-24 (`specs/_audits/2026-05-16-pat-clerk-mutation-sweep.md`);
+at wave-24 (`specs/_audits/sealed/2026-05-16-pat-clerk-mutation-sweep.md`);
 nightly is the empirical SEAL gate per wave-14 precedent."** The
 baseline floor `PAT_BASELINE=75` and `CLERK_BASELINE=75` and the
 regression tolerance `REGRESSION_TOLERANCE_PP=5` are preserved

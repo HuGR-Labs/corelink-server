@@ -5,20 +5,20 @@
 > **Author:** wave-26 hygiene agent (Claude Opus 4.7) — branch `wt/r-prep-inv-registry-wave26-sweep`.
 > **Base:** `main` @ `2a4e00c` ("merge wt/r-prep-tenant-config-cf-prod-wire into main (wave-25)" — wave-25 SEAL tip).
 > **Scope:** INV registry hygiene + DEBT register survey (wave-26 in-flight — survey-only per charter) + wave-26 stream catalogue + GA-1 feature freeze status (cross-ref stream #1) + Lote 6 v1.0.0 GA RC2 readiness (cross-ref stream #5) + wasm32 baseline + CF prefetch (cross-refs streams #2 #3) + wave-26 DEBT closure surface: DEBT-015-BUILD (wave-25 actual closure) + DEBT-026 RFP tracker + INV registry severity-breakdown snapshot + wave-27 candidate streams.
-> **Cross-ref:** `specs/_audits/2026-05-16-wave25-closure.md` (predecessor), `specs/_audits/2026-05-15-debt-register.md` v1.2.2, `specs/03_architecture/invariant_registry.md`, `specs/_audits/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 final audit; CONDITIONAL GO), `specs/_audits/2026-05-16-debt-015-build-wave25-closure.md` (DEBT-015-BUILD CLOSED 2026-05-16 wave-25), `specs/_audits/2026-05-16-pentest-engagement-scope-freeze.md` (wave-25 SEALED scope freeze; spawns DEBT-026), `specs/_audits/2026-05-16-tenant-config-cf-prod-wire.md` (wave-25 stream #7 CF prod-wire SEAL), `specs/_audits/2026-05-16-endurance-10min-dressrun.md` (wave-25 stream #5 dress-run SEAL), `specs/_audits/2026-05-16-statuspage-init-dressrun.md` (wave-25 stream #6 SEAL), `specs/_audits/2026-05-16-pre-ga-security-attestation.md` (wave-25 stream #8 SEAL), `specs/_audits/2026-05-16-wave24-adversarial-review.md` (wave-25 stream #9 — 6.95/10 CONDITIONAL).
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-wave25-closure.md` (predecessor), `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.2, `specs/03_architecture/invariant_registry.md`, `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 final audit; CONDITIONAL GO), `specs/_audits/sealed/2026-05-16-debt-015-build-wave25-closure.md` (DEBT-015-BUILD CLOSED 2026-05-16 wave-25), `specs/_audits/sealed/2026-05-16-pentest-engagement-scope-freeze.md` (wave-25 SEALED scope freeze; spawns DEBT-026), `specs/_audits/sealed/2026-05-16-tenant-config-cf-prod-wire.md` (wave-25 stream #7 CF prod-wire SEAL), `specs/_audits/sealed/2026-05-16-endurance-10min-dressrun.md` (wave-25 stream #5 dress-run SEAL), `specs/_audits/sealed/2026-05-16-statuspage-init-dressrun.md` (wave-25 stream #6 SEAL), `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` (wave-25 stream #8 SEAL), `specs/_audits/sealed/2026-05-16-wave24-adversarial-review.md` (wave-25 stream #9 — 6.95/10 CONDITIONAL).
 
 ---
 
 ## 1. Wave-26 scope — 10 streams catalogued
 
-Wave-26 is the **final wave before GA cutover** — per `specs/_audits/2026-05-16-wave25-closure.md §8 "anchor: GA-1 freeze + Lote 6 v1.0.0 GA absorption"` — dispatched on `main` @ `2a4e00c` (wave-25 SEAL tip after 11 wave-25 merges: pentest scope freeze, DEBT-015-BUILD path-(3) ssgRequire CLOSURE, DEBT-008 number-discrepancy reconciliation, GA-readiness DEFER drift detector, endurance 10-min dress-run, statuspage-init dress-run, tenant-config CF prod-wire, pre-GA security attestation rollup, wave-24 adversarial review, Lote 7 RACI detail, wave-25 hygiene sweep). Ten parallel streams catalogued (this stream is #10). Per wave-25 §8 candidate streams + §8.1 caveats, wave-26 anchors GA-1 feature freeze (stream #1, per wave-25 §8 candidate #1) and the wasm32 baseline / CF prefetch landing-prep work (streams #2 #3) as cross-cutting prep for cutover-day execution.
+Wave-26 is the **final wave before GA cutover** — per `specs/_audits/sealed/2026-05-16-wave25-closure.md §8 "anchor: GA-1 freeze + Lote 6 v1.0.0 GA absorption"` — dispatched on `main` @ `2a4e00c` (wave-25 SEAL tip after 11 wave-25 merges: pentest scope freeze, DEBT-015-BUILD path-(3) ssgRequire CLOSURE, DEBT-008 number-discrepancy reconciliation, GA-readiness DEFER drift detector, endurance 10-min dress-run, statuspage-init dress-run, tenant-config CF prod-wire, pre-GA security attestation rollup, wave-24 adversarial review, Lote 7 RACI detail, wave-25 hygiene sweep). Ten parallel streams catalogued (this stream is #10). Per wave-25 §8 candidate streams + §8.1 caveats, wave-26 anchors GA-1 feature freeze (stream #1, per wave-25 §8 candidate #1) and the wasm32 baseline / CF prefetch landing-prep work (streams #2 #3) as cross-cutting prep for cutover-day execution.
 
 | # | Stream | Branch / worktree | Disposition |
 |---|---|---|---|
 | 1 | **GA-1 feature freeze anchor** (anchor stream per wave-25 §8 candidate #1) — code freeze on `main`, last commits to `crates/` and `apps/` accepted; `RB-GA-CUTOVER.md §0` authorization handoff; ADR-0034b 2-key (Owner + on-call SRE) signature block populated against the wave-24 GA-readiness CONDITIONAL GO verdict. Cutover-day execution (D-day) consumes this freeze. | `wt/r-prep-ga-1-feature-freeze` (worktree `agent-ga-1-freeze`) | **IN FLIGHT** (wave-26) |
 | 2 | **wasm32 baseline lock** — `crates/corelink-clerk-cf` + `crates/corelink-pat-cf` + `crates/corelink-rate-headers-cf` baselined for wasm32-unknown-unknown size + boot-time + module-instantiation budgets; CI gate ratchets the wasm artefact size + boot p99 against wave-25 numbers. Locks the CF Worker shape going into GA. | `wt/r-prep-wasm32-baseline-lock` (worktree `agent-wasm32-baseline`) | **IN FLIGHT** (wave-26) |
 | 3 | **CF prefetch / signed-URL landing prep** — wave-25 stream #7 wired `D1TenantRegionResolver` into the CF prod boot; stream #3 here lands the CF prefetch (KV cache warm-up + R2 signed-URL hot path) for GA-cutover D-day so first-customer requests don't pay the cold-cache penalty. | `wt/r-prep-cf-prefetch-landing` (worktree `agent-cf-prefetch`) | **IN FLIGHT** (wave-26) |
-| 4 | **DEBT-026 RFP tracker scaffolding** (engineering-side; actual RFP send is **user-bound** and was absorbed in wave-28 stream #4 — see `specs/_audits/2026-05-16-pentest-rfp-send-ceremony.md`). Wave-25 stream #1 SEALED engineering-side artefacts (scope freeze, vendor shortlist, RFP/SOW templates). Wave-26 stream #4 lands the state-machine tracker (`scripts/pentest-rfp-tracker.py`, `reports/pentest-rfp-tracker.json` seeded NOT_CONTACTED × 5), RFP email template, and vendor due-diligence doc — the scaffolding that the Owner-side RFP send and 30-day vendor-selection clock will operate against. The actual RFP send is explicitly user-bound per `2026-05-16-debt-026-rfp-tracker.md` §"Out of scope". Pre-GA cutover dependency. | `wt/r-prep-debt-026-rfp-send-authorisation` (worktree `agent-debt-026-rfp-send`) | **IN FLIGHT** (wave-26) |
+| 4 | **DEBT-026 RFP tracker scaffolding** (engineering-side; actual RFP send is **user-bound** and was absorbed in wave-28 stream #4 — see `specs/_audits/sealed/2026-05-16-pentest-rfp-send-ceremony.md`). Wave-25 stream #1 SEALED engineering-side artefacts (scope freeze, vendor shortlist, RFP/SOW templates). Wave-26 stream #4 lands the state-machine tracker (`scripts/pentest-rfp-tracker.py`, `reports/pentest-rfp-tracker.json` seeded NOT_CONTACTED × 5), RFP email template, and vendor due-diligence doc — the scaffolding that the Owner-side RFP send and 30-day vendor-selection clock will operate against. The actual RFP send is explicitly user-bound per `2026-05-16-debt-026-rfp-tracker.md` §"Out of scope". Pre-GA cutover dependency. | `wt/r-prep-debt-026-rfp-send-authorisation` (worktree `agent-debt-026-rfp-send`) | **IN FLIGHT** (wave-26) |
 | 5 | **Lote 6 v1.0.0 GA RC2 absorption** (cross-ref §3) — Lote 6 (cache layer) v1.0.0 GA RC1 went through wave-22 adversarial review; RC2 incorporates the wave-23 chaos combined-failure feedback + wave-24 dry-run gates + wave-25 endurance dress-run streak. Stream #5 produces the RC2 absorption commit + RC2 SEAL audit. | `wt/r-prep-lote-6-v1-0-0-ga-rc2` (worktree `agent-lote-6-rc2`) | **IN FLIGHT** (wave-26) |
 | 6 | **GA-cutover D-day rehearsal #2** — wave-24 stream #1 ran the dry-run G1..G6 all-GREEN; wave-25 stream #5 dress-rehearsed the soak-streak ratchet. Stream #6 executes a second end-to-end dry-run of `RB-GA-CUTOVER §3` against the wave-25 SEAL tip with the pre-GA security attestation rollup attached as the meeting-input artefact. | `wt/r-prep-ga-cutover-dryrun-2` (worktree `agent-ga-cutover-d2`) | **IN FLIGHT** (wave-26) |
 | 7 | **Wave-25 adversarial review (codex Opus pass)** — mandatory per charter "all P1-classified streams must close before next wave unblocks P2/P3". Cross-review wave-25 streams #1 pentest engagement, #2 DEBT-015-BUILD path-3, #3 DEBT-008 reconciliation, #4 DEFER drift detector, #5 endurance 10min dress-run, #7 tenant-config CF prod-wire, #8 pre-GA security attestation, #9 wave-24 adversarial review. Largest review pass to date (wave-25 had 11 in-flight streams of which 7 are P1-classified per the wave-25 §8 SEAL gate). | `wt/r-prep-wave25-adversarial-review` (worktree `agent-wave25-review`) | **IN FLIGHT** (wave-26) |
@@ -38,16 +38,16 @@ Stream #1 is the **wave-26 anchor stream** per wave-25 §8 candidate streams. Ch
 
 | GA-1 freeze prerequisite | State at wave-26 dispatch | Source |
 |---|---|---|
-| GA-readiness final audit verdict | CONDITIONAL GO (wave-24 stream #8) | `specs/_audits/2026-05-16-ga-readiness-final.md` |
-| DEFER counter | 8 (5 user-bound + 3 vendor-bound) — locked by wave-25 stream #4 drift detector | `specs/_audits/2026-05-16-ga-readiness-defer-scrub.md` + wave-25 stream #4 SEAL |
-| GA-cutover dry-run G1..G6 | All GREEN (wave-24 stream #1) | `specs/_audits/2026-05-16-ga-cutover-dryrun.md` |
-| Endurance soak-streak ratchet | 10-min compressed dress-run SEALED (wave-25 stream #5); 7-day continuous soak scheduled for wave-27 | `specs/_audits/2026-05-16-endurance-10min-dressrun.md` |
-| Statuspage init dress-run | SEALED engineering-side (wave-25 stream #6); user-bound provisioning at T-7d | `specs/_audits/2026-05-16-statuspage-init-dressrun.md` + DEBT-016 row |
-| Tenant-config CF prod-wire | SEALED (wave-25 stream #7) | `specs/_audits/2026-05-16-tenant-config-cf-prod-wire.md` |
-| Pre-GA security attestation | SEALED (wave-25 stream #8) | `specs/_audits/2026-05-16-pre-ga-security-attestation.md` |
-| Wave-24 adversarial review (P1 close-out) | 6.95/10 CONDITIONAL (wave-25 stream #9) | `specs/_audits/2026-05-16-wave24-adversarial-review.md` |
-| DEBT-015-BUILD | CLOSED (wave-25 stream #2 path-(3) ssgRequire) | `specs/_audits/2026-05-16-debt-015-build-wave25-closure.md` |
-| Pentest engagement scope freeze | SEALED engineering-side (wave-25 stream #1); RFP send + vendor selection user-bound — handed off to wave-26 stream #4 | `specs/_audits/2026-05-16-pentest-engagement-scope-freeze.md` + DEBT-026 row |
+| GA-readiness final audit verdict | CONDITIONAL GO (wave-24 stream #8) | `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` |
+| DEFER counter | 8 (5 user-bound + 3 vendor-bound) — locked by wave-25 stream #4 drift detector | `specs/_audits/sealed/2026-05-16-ga-readiness-defer-scrub.md` + wave-25 stream #4 SEAL |
+| GA-cutover dry-run G1..G6 | All GREEN (wave-24 stream #1) | `specs/_audits/sealed/2026-05-16-ga-cutover-dryrun.md` |
+| Endurance soak-streak ratchet | 10-min compressed dress-run SEALED (wave-25 stream #5); 7-day continuous soak scheduled for wave-27 | `specs/_audits/sealed/2026-05-16-endurance-10min-dressrun.md` |
+| Statuspage init dress-run | SEALED engineering-side (wave-25 stream #6); user-bound provisioning at T-7d | `specs/_audits/sealed/2026-05-16-statuspage-init-dressrun.md` + DEBT-016 row |
+| Tenant-config CF prod-wire | SEALED (wave-25 stream #7) | `specs/_audits/sealed/2026-05-16-tenant-config-cf-prod-wire.md` |
+| Pre-GA security attestation | SEALED (wave-25 stream #8) | `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` |
+| Wave-24 adversarial review (P1 close-out) | 6.95/10 CONDITIONAL (wave-25 stream #9) | `specs/_audits/sealed/2026-05-16-wave24-adversarial-review.md` |
+| DEBT-015-BUILD | CLOSED (wave-25 stream #2 path-(3) ssgRequire) | `specs/_audits/sealed/2026-05-16-debt-015-build-wave25-closure.md` |
+| Pentest engagement scope freeze | SEALED engineering-side (wave-25 stream #1); RFP send + vendor selection user-bound — handed off to wave-26 stream #4 | `specs/_audits/sealed/2026-05-16-pentest-engagement-scope-freeze.md` + DEBT-026 row |
 | ADR-0034b dual-hat fallback policy | Authored wave-24; 2-key signature block awaiting GA-1 freeze populate | `specs/_decisions/ADR-0034b-dual-hat-fallback-policy.md` |
 
 ### 2.2 Wave-26 stream #1 SEAL-gate (forward-looking; not enforced by this audit)
@@ -75,13 +75,13 @@ Lote 6 (cache layer — `corelink-handler-cas` + `corelink-dedup` + `corelink-ch
 
 | Lote 6 RC2 input | State at wave-26 dispatch | Source |
 |---|---|---|
-| Lote 6 RC1 SEAL | wave-22 (post-adversarial review 9.3+/10 PASS) | `specs/_audits/2026-05-16-wave22-closure.md` + Lote 6 PRR |
+| Lote 6 RC1 SEAL | wave-22 (post-adversarial review 9.3+/10 PASS) | `specs/_audits/sealed/2026-05-16-wave22-closure.md` + Lote 6 PRR |
 | Wave-23 chaos combined-failure absorption | SEALED `6dcc19c chaos(wave-23): combined-failure orchestrated scenarios` | `crates/corelink-chaos/` |
-| Wave-24 GA-cutover dry-run G1..G6 (consumes Lote 6 cache layer in §3 path) | All GREEN | `specs/_audits/2026-05-16-ga-cutover-dryrun.md` |
-| Wave-25 endurance 10-min dress-run (exercises cache layer continuously) | SEALED 0 SLO violations + 0 INV violations | `specs/_audits/2026-05-16-endurance-10min-dressrun.md` |
-| DEBT-008 empirical-CLOSED subset (covers cache crates) | 8 of the 8 Lote-6 cache crates empirically CLOSED at ≥ 92% kill rate (chunker 95.79% raw / 100% of killable; multipart-schema 97.44% raw / 100% of killable; dedup 92.06%; tenant-path 100%; handler-cas 100%; hash 97.22%; audit-chain 84.24%; auth-schema 100%); the 3 cache-adjacent crates on CI-nightly (`r2-multipart`, `quota-cas`, `webauthn`) carry 75% floor with mutation-nightly.yml SEAL gate. | `specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md` + `specs/_audits/2026-05-16-debt-008-number-discrepancy-fix.md` (wave-25 reconciliation) |
+| Wave-24 GA-cutover dry-run G1..G6 (consumes Lote 6 cache layer in §3 path) | All GREEN | `specs/_audits/sealed/2026-05-16-ga-cutover-dryrun.md` |
+| Wave-25 endurance 10-min dress-run (exercises cache layer continuously) | SEALED 0 SLO violations + 0 INV violations | `specs/_audits/sealed/2026-05-16-endurance-10min-dressrun.md` |
+| DEBT-008 empirical-CLOSED subset (covers cache crates) | 8 of the 8 Lote-6 cache crates empirically CLOSED at ≥ 92% kill rate (chunker 95.79% raw / 100% of killable; multipart-schema 97.44% raw / 100% of killable; dedup 92.06%; tenant-path 100%; handler-cas 100%; hash 97.22%; audit-chain 84.24%; auth-schema 100%); the 3 cache-adjacent crates on CI-nightly (`r2-multipart`, `quota-cas`, `webauthn`) carry 75% floor with mutation-nightly.yml SEAL gate. | `specs/_audits/sealed/2026-05-16-debt-008-wave24-mutation-sweep.md` + `specs/_audits/sealed/2026-05-16-debt-008-number-discrepancy-fix.md` (wave-25 reconciliation) |
 | INV registry coverage (Lote 6 INVs) | All Lote 6 INVs (INV-CAS-*, INV-CHUNK-*, INV-DEDUP-*, INV-MULTIPART-*) present in registry §3 with code + test refs | `specs/03_architecture/invariant_registry.md` (197 declared total at wave-26 base) |
-| Pre-GA security attestation rollup (covers Lote 6 surface) | SEALED (wave-25 stream #8) | `specs/_audits/2026-05-16-pre-ga-security-attestation.md` |
+| Pre-GA security attestation rollup (covers Lote 6 surface) | SEALED (wave-25 stream #8) | `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` |
 
 ### 3.2 Wave-26 stream #5 SEAL-gate (forward-looking; not enforced by this audit)
 
@@ -123,7 +123,7 @@ Streams #2 #3 are paired cross-cutting prep — both touch the Cloudflare Worker
 
 | CF prefetch input | State at wave-26 dispatch | Source |
 |---|---|---|
-| D1TenantRegionResolver | Production-wired wave-25 stream #7 | `specs/_audits/2026-05-16-tenant-config-cf-prod-wire.md` |
+| D1TenantRegionResolver | Production-wired wave-25 stream #7 | `specs/_audits/sealed/2026-05-16-tenant-config-cf-prod-wire.md` |
 | KV cache warm-up | Not yet wired — wave-26 stream #3 lands this | new |
 | R2 signed-URL hot-path | Not yet pre-warmed — wave-26 stream #3 lands this | new |
 | Cold-cache penalty exposure on GA-1 | First customer requests would pay the cold-cache penalty unless stream #3 lands | risk |
@@ -198,15 +198,15 @@ For the GA-cutover D-day execution meeting (wave-27 anchor):
 
 ## 6. DEBT register state — wave-26 closures + survey
 
-Per `specs/_audits/2026-05-15-debt-register.md` v1.2.2 (DEBT-025 added wave-23; DEBT-026 added wave-25). No DEBT closures performed by this stream (charter-bound survey-only). The two wave-26-relevant DEBT closure surfaces are recorded below per charter instruction.
+Per `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.2 (DEBT-025 added wave-23; DEBT-026 added wave-25). No DEBT closures performed by this stream (charter-bound survey-only). The two wave-26-relevant DEBT closure surfaces are recorded below per charter instruction.
 
 ### 6.1 DEBT-015-BUILD — wave-25 actual closure (recorded here for wave-26 narrative)
 
-DEBT-015-BUILD was CLOSED in wave-25 stream #2 (`705be37 merge wt/r-prep-debt-015-build-ssgrequire-path3 into main (wave-25)` consuming `b01d14a debt-015-build: wave-25 closure — pnpm build green on all 4 locales`). The wave-25 closure audit `specs/_audits/2026-05-16-wave25-closure.md §3` projected "CLOSED or escalate to P1 alt-arch" as the two outcomes; the actual outcome is **CLOSED** — `pnpm --filter docs build` is green on all 4 locales (en-US server 2.0s/client 2.0s, pt-BR server 5.1s/client 20.3s, es-419 server 10.3s/client 27.2s, de server 42.8s/client 1.10m) on Node 22.17.1.
+DEBT-015-BUILD was CLOSED in wave-25 stream #2 (`705be37 merge wt/r-prep-debt-015-build-ssgrequire-path3 into main (wave-25)` consuming `b01d14a debt-015-build: wave-25 closure — pnpm build green on all 4 locales`). The wave-25 closure audit `specs/_audits/sealed/2026-05-16-wave25-closure.md §3` projected "CLOSED or escalate to P1 alt-arch" as the two outcomes; the actual outcome is **CLOSED** — `pnpm --filter docs build` is green on all 4 locales (en-US server 2.0s/client 2.0s, pt-BR server 5.1s/client 20.3s, es-419 server 10.3s/client 27.2s, de server 42.8s/client 1.10m) on Node 22.17.1.
 
 **Wave-26 implication:** the wave-25 §8 candidate #3 "DEBT-015-BUILD wave-26 escalation" is **no longer needed** — wave-26 does NOT dispatch a docs-platform-eval stream. Docusaurus 3 stays as the docs platform. The `patches/@docusaurus__core@3.10.1.patch` (extended with `@site/*` + `@generated/*.json` resolver branches in `lib/ssg/ssgNodeRequire.js` as defence-in-depth) and the wave-24 `patches/@docusaurus__babel@3.10.1.patch` both stay landed. The 15 `.mdx`-suffixed cross-links in i18n locales pointing to `draft: true` translated pages were converted to `pathname://` protocol — the canonical Docusaurus escape-hatch.
 
-**DEBT-015-BUILD row in `specs/_audits/2026-05-15-debt-register.md`** is already flipped to `~~DEBT-015~~ CLOSED 2026-05-16 (P2 docs portion + build-side both CLOSED — wave-25)` per the wave-25 stream #2 SEAL commit; no wave-26 register edit needed.
+**DEBT-015-BUILD row in `specs/_audits/sealed/2026-05-15-debt-register.md`** is already flipped to `~~DEBT-015~~ CLOSED 2026-05-16 (P2 docs portion + build-side both CLOSED — wave-25)` per the wave-25 stream #2 SEAL commit; no wave-26 register edit needed.
 
 ### 6.2 DEBT-026 — RFP tracker (wave-25 SEALED engineering-side; wave-26 stream #4 RFP send authorisation)
 
@@ -236,7 +236,7 @@ Per the wave-25 closure §6.1 baseline + wave-25 SEAL commits between `e9ee8eb` 
 **Post-wave-25-SEAL closures actually landed at wave-26 base** (verified against `git log` between `e9ee8eb` and `2a4e00c`):
 - ✅ `5c02954 merge wt/r-prep-debt-008-number-discrepancy into main (wave-25)` — DEBT-008 narrative reconciliation SEALED.
 - ✅ `1ee1a3f merge wt/r-prep-ga-checklist-drift-detector into main (wave-25)` — DEFER drift detector SEALED (locks DEFER counter at 8).
-- ✅ `ac77dda merge wt/r-prep-inv-registry-wave25-sweep into main (wave-25)` — wave-25 sweep SEAL'd with closure audit `specs/_audits/2026-05-16-wave25-closure.md`.
+- ✅ `ac77dda merge wt/r-prep-inv-registry-wave25-sweep into main (wave-25)` — wave-25 sweep SEAL'd with closure audit `specs/_audits/sealed/2026-05-16-wave25-closure.md`.
 - ✅ `25b03f9 merge wt/r-prep-wave24-adversarial-review into main (wave-25)` — wave-24 adversarial review 6.95/10 CONDITIONAL.
 - ✅ `787dbcc merge wt/r-prep-statuspage-init-dressrun into main (wave-25)` — statuspage-init dress-run SEALED.
 - ✅ `413ee7c merge wt/r-prep-pre-ga-security-attestation into main (wave-25)` — pre-GA security attestation rollup SEALED.
@@ -353,21 +353,21 @@ Per the wave-26 charter §"next-wave (wave-27) candidate streams — anchor: GA 
 
 ## 11. Cross-references
 
-- `specs/_audits/2026-05-16-wave25-closure.md` (wave-25 closure; predecessor).
-- `specs/_audits/2026-05-16-wave24-closure.md` (wave-24 closure).
-- `specs/_audits/2026-05-15-debt-register.md` (DEBT register canonical state — v1.2.2; DEBT-015-BUILD CLOSED wave-25 / DEBT-026 added wave-25).
+- `specs/_audits/sealed/2026-05-16-wave25-closure.md` (wave-25 closure; predecessor).
+- `specs/_audits/sealed/2026-05-16-wave24-closure.md` (wave-24 closure).
+- `specs/_audits/sealed/2026-05-15-debt-register.md` (DEBT register canonical state — v1.2.2; DEBT-015-BUILD CLOSED wave-25 / DEBT-026 added wave-25).
 - `specs/03_architecture/invariant_registry.md` (197 declared at wave-26 base; 61 CRITICAL all TLA+-proved — new milestone).
-- `specs/_audits/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 final audit; CONDITIONAL GO; 8-item DEFER counter).
-- `specs/_audits/2026-05-16-ga-readiness-defer-scrub.md` (wave-25 stream #4 DEFER drift detector — locks counter at 8).
-- `specs/_audits/2026-05-16-debt-015-build-wave25-closure.md` (wave-25 stream #2 path-(3) ssgRequire CLOSURE).
-- `specs/_audits/2026-05-16-pentest-engagement-scope-freeze.md` (wave-25 stream #1 SEALED; spawns DEBT-026).
-- `specs/_audits/2026-05-16-tenant-config-cf-prod-wire.md` (wave-25 stream #7 SEALED; precursor to wave-26 stream #3 CF prefetch).
-- `specs/_audits/2026-05-16-endurance-10min-dressrun.md` (wave-25 stream #5 SEALED; precursor to wave-27 7d soak).
-- `specs/_audits/2026-05-16-statuspage-init-dressrun.md` (wave-25 stream #6 SEALED; user-bound at T-7d).
-- `specs/_audits/2026-05-16-pre-ga-security-attestation.md` (wave-25 stream #8 SEALED).
-- `specs/_audits/2026-05-16-wave24-adversarial-review.md` (wave-25 stream #9 — 6.95/10 CONDITIONAL).
-- `specs/_audits/2026-05-16-debt-008-number-discrepancy-fix.md` (wave-25 stream #3 narrative reconciliation).
-- `specs/_audits/2026-05-16-ga-cutover-dryrun.md` (wave-24 stream #1 dry-run G1..G6 all GREEN; precursor to wave-26 stream #6 dry-run #2).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 final audit; CONDITIONAL GO; 8-item DEFER counter).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-defer-scrub.md` (wave-25 stream #4 DEFER drift detector — locks counter at 8).
+- `specs/_audits/sealed/2026-05-16-debt-015-build-wave25-closure.md` (wave-25 stream #2 path-(3) ssgRequire CLOSURE).
+- `specs/_audits/sealed/2026-05-16-pentest-engagement-scope-freeze.md` (wave-25 stream #1 SEALED; spawns DEBT-026).
+- `specs/_audits/sealed/2026-05-16-tenant-config-cf-prod-wire.md` (wave-25 stream #7 SEALED; precursor to wave-26 stream #3 CF prefetch).
+- `specs/_audits/sealed/2026-05-16-endurance-10min-dressrun.md` (wave-25 stream #5 SEALED; precursor to wave-27 7d soak).
+- `specs/_audits/sealed/2026-05-16-statuspage-init-dressrun.md` (wave-25 stream #6 SEALED; user-bound at T-7d).
+- `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` (wave-25 stream #8 SEALED).
+- `specs/_audits/sealed/2026-05-16-wave24-adversarial-review.md` (wave-25 stream #9 — 6.95/10 CONDITIONAL).
+- `specs/_audits/sealed/2026-05-16-debt-008-number-discrepancy-fix.md` (wave-25 stream #3 narrative reconciliation).
+- `specs/_audits/sealed/2026-05-16-ga-cutover-dryrun.md` (wave-24 stream #1 dry-run G1..G6 all GREEN; precursor to wave-26 stream #6 dry-run #2).
 - `specs/_compliance/GA-GATE-CRITERIA.md` (59 criteria across 6 tracks).
 - `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md` (the meeting whose APPROVED decision authorises `RB-GA-CUTOVER.md`).
 - `specs/_runbooks/RB-GA-CUTOVER.md` (cutover runbook; wave-26 GA-1 freeze authorises §0 checklist run; wave-27 executes §3).

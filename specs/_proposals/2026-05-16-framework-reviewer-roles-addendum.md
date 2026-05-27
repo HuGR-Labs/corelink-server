@@ -15,7 +15,7 @@ tags: ["governance", "reviewers", "staffing", "proposal", "framework-freeze", "w
 references:
   - "specs/00_framework.md"
   - "specs/_proposals/2026-05-16-framework-reviewer-roles.md"
-  - "specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md"
+  - "specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md"
   - "specs/_governance/reviewer_staffing_strategy.md"
   - "specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md"
 ---
@@ -154,7 +154,7 @@ The Reviewer Training Pack is the existing §4 onboarding read order (no new doc
 2. ADR index `specs/03_architecture/adrs/` (27 ADRs, ~2–4h)
 3. Invariant registry `specs/03_architecture/invariant_registry.md` (192 INVs, ~1–2h)
 4. Section-specific canonical sources per `reviewer_staffing_strategy.md §2` mapping
-5. Audit baseline `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md` + `specs/_audits/2026-05-15-ga-readiness-consolidation-wave-13-17.md`
+5. Audit baseline `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md` + `specs/_audits/sealed/2026-05-15-ga-readiness-consolidation-wave-13-17.md`
 6. Runbook index `specs/_runbooks/` (124 runbooks, ~1–2h skim)
 7. (Optional) one sprint contract + one PRR
 
@@ -228,7 +228,7 @@ The original proposal §6 contains a 13-row RACI summary scoped to framework-lev
 
 ### §6.2 Detailed RACI matrix — 15 framework decision rows
 
-> **Wave-26 update.** The trailing `INV binding` column was added per `specs/_audits/2026-05-16-lote-7-followons-closure.md §3` to bind rows to the invariant-registry entries they functionally enforce. Rows whose decision class is not directly tied to a single invariant carry `—` (the binding is implicit via the broader §-coverage). The binding is **non-exclusive**: a row may touch multiple INVs at runtime; the column names the *closest* invariant whose violation would block the decision. Bindings reference `specs/03_architecture/invariant_registry.md`.
+> **Wave-26 update.** The trailing `INV binding` column was added per `specs/_audits/sealed/2026-05-16-lote-7-followons-closure.md §3` to bind rows to the invariant-registry entries they functionally enforce. Rows whose decision class is not directly tied to a single invariant carry `—` (the binding is implicit via the broader §-coverage). The binding is **non-exclusive**: a row may touch multiple INVs at runtime; the column names the *closest* invariant whose violation would block the decision. Bindings reference `specs/03_architecture/invariant_registry.md`.
 
 | # | Decision | Owner (Gustavo) | FW-H-1 Architecture | FW-H-2 Compliance | FW-H-3 Security | FW-H-4 Production Ops | INV binding |
 |---|---|---|---|---|---|---|---|
@@ -359,7 +359,7 @@ This is the §3.4 SLA-conformance line's structural sibling: a per-90-day record
 - `specs/_proposals/2026-05-16-framework-reviewer-roles.md §6` — the summary view (13 rows; same staffing intent, coarser grain).
 - `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md §Permitted pairings + §Forbidden pairings + §Cross-veto rights under dual-hat` — authorization for the §6.3 dual-hat row of this matrix.
 - `specs/00_framework.md §43.1` — sign-off block where R / A cell holders record commit SHAs.
-- `specs/_audits/2026-05-16-lote-7-raci-detail.md` — audit doc explaining the per-row rationale (e.g., why Row 4 sprint impl sign-off is FW-H-4 R rather than FW-H-1 R; why Row 8 BYOK is FW-H-3 R rather than FW-H-1 R).
+- `specs/_audits/sealed/2026-05-16-lote-7-raci-detail.md` — audit doc explaining the per-row rationale (e.g., why Row 4 sprint impl sign-off is FW-H-4 R rather than FW-H-1 R; why Row 8 BYOK is FW-H-3 R rather than FW-H-1 R).
 - This addendum §1 (dual-hat policy) + §2 (cross-veto) + §3 (SLA) + §7 (COI / recusal — post-renumber) — the operating-policy clauses that bind against the §6.2 matrix.
 
 ---
@@ -395,7 +395,7 @@ A recused reviewer:
 
 Because the Owner is always Final Approver (always **A**), Owner recusal is structurally impossible at the framework freeze tier (there is no escalation above Final Approver). The dual-hat fallback (§1 of this addendum) intensifies this — when Owner holds 2 slots, conflicts are correspondingly more likely.
 
-Mitigation: when the Owner has a personal conflict on a decision (e.g., the Owner authored the section under review AND is one of the dual-hat slots signing off), the §42 change-log entry MUST disclose the conflict explicitly with `owner_conflict_disclosed: <reason>`. This is an audit-trail requirement, not a recusal — the Owner does NOT recuse, but the conflict is on-record for future external auditors (e.g., during the SOC2 readiness exercise referenced in `specs/_audits/2026-05-14-soc2-readiness-score.md`).
+Mitigation: when the Owner has a personal conflict on a decision (e.g., the Owner authored the section under review AND is one of the dual-hat slots signing off), the §42 change-log entry MUST disclose the conflict explicitly with `owner_conflict_disclosed: <reason>`. This is an audit-trail requirement, not a recusal — the Owner does NOT recuse, but the conflict is on-record for future external auditors (e.g., during the SOC2 readiness exercise referenced in `specs/_audits/sealed/2026-05-14-soc2-readiness-score.md`).
 
 ### §7.5 Auditor review on conflicts
 
@@ -439,14 +439,14 @@ Until then, the addendum sits as DRAFT alongside the original proposal and `revi
 | 0.1.0 | 2026-05-16 | Gustavo Schneiter (via Claude Opus 4.7, wave-22 Lote 7 absorption) | Initial addendum. Extends `specs/_proposals/2026-05-16-framework-reviewer-roles.md` v0.1.0 with §1 dual-hat fallback policy (Pairing-Alpha / Pairing-Beta), §2 cross-veto rule + 3-of-4 quorum, §3 sign-off SLA (STANDARD 3 BD / HIGH_RISK 7 BD), §4 Reviewer Training Pack 10-hour floor, §5 90-day rolling quarterly cadence anchored on FROZEN cut, §6 conflict-of-interest declaration + recusal. Does not modify FW-H-* role scopes; specifies operating mechanics for small-org case. |
 | 0.1.1 | 2026-05-16 | Claude Opus 4.7 (wave-24 ADR-0034b cross-ref) | Adds §1 wave-24 cross-ref callout pointing at the newly-authored `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` (the §1.1 item-4-required authorization artifact). Adds ADR-0034b to the closing cross-references list. No semantic change to operating policy. |
 | 0.1.2 | 2026-05-16 | Claude Opus 4.7 (wave-25 Lote 7 RACI detail) | Adds **§6 RACI matrix detail** authoring the 15-row per-decision matrix (ADR creation, ADR approval, INV registry promotions, sprint impl sign-off, DEBT register entries, runbook approvals, TLA+ spec additions, BYOK provider additions, region additions, schema migrations, customer breach response, pentest finding triage, GA cutover, quarterly review, annual deep review) with explicit R/A/C/I cells per FW-H-* slot, single-A discipline enforced (Owner = A always), and a dedicated **§6.3 dual-hat fallback row** showing per-pairing A/R-cell migration under ADR-0034b Pairing-Alpha (FW-H-1+FW-H-3) and Pairing-Beta (FW-H-2+FW-H-4). Renumbers existing §6 (COI) → §7, §7 (summary table) → §8, §8 (acceptance) → §9, §9 (changelog) → §10. The §8 summary table is updated to reflect the seven (was six) clauses. Cross-veto preservation under dual-hat is reasserted in §6.3 last paragraph. Closes the wave-22 / wave-24 forward reference where both documents pointed at "the addendum proposal §6 RACI" without an authored detail. ADR-0034b cross-refs `addendum §6.2 / §6.4` (COI subsections) are migrated to `§7.2 / §7.4` in the same wave-25 commit. |
-| 0.1.3 | 2026-05-16 | Claude Opus 4.7 (wave-26 Lote 7 follow-ons closure) | Closes the three wave-25 follow-on items deferred in `specs/_audits/2026-05-16-lote-7-raci-detail.md §8`: (1) Adds **INV binding column** to the §6.2 matrix — 6 of 15 rows bind to a concrete INV (Row 3 → INV-OBS-AUDIT-CHAIN-INTEGRITY; Row 8 → INV-BYOK-CRYPTO-SOVEREIGNTY; Row 9 → INV-REGION-NO-CROSS-LEAK; Row 10 → INV-AUTH-MIGRATION-ADDITIVE; Row 11 → INV-AUDIT-APPEND-ONLY; Row 13 → INV-ROLLOUT-COSIGN-GATE). Rows with no direct INV binding carry `—`. (2) Inserts new **§6.4 Pairing-Alpha vs Pairing-Beta selection heuristics** with decision tree, default-for-SaaS-pre-GA (Pairing-Beta), re-pairing criteria post-GA, anti-patterns, and audit-trail format. Renumbers the previous §6.4 (Disambiguating rules) → §6.5 and the previous §6.5 (Cross-references) → §6.6. (3) **CI SLA wire-up** lands `scripts/check-raci-sla.py` parsing §6.2 + §3.2 lanes + emitting an advisory conformance line; wired into `.github/workflows/spec_validation.yml` as an advisory step (never blocks). Closure audit doc: `specs/_audits/2026-05-16-lote-7-followons-closure.md`. No semantic change to §1–§5 / §7–§9 operating-policy clauses. |
+| 0.1.3 | 2026-05-16 | Claude Opus 4.7 (wave-26 Lote 7 follow-ons closure) | Closes the three wave-25 follow-on items deferred in `specs/_audits/sealed/2026-05-16-lote-7-raci-detail.md §8`: (1) Adds **INV binding column** to the §6.2 matrix — 6 of 15 rows bind to a concrete INV (Row 3 → INV-OBS-AUDIT-CHAIN-INTEGRITY; Row 8 → INV-BYOK-CRYPTO-SOVEREIGNTY; Row 9 → INV-REGION-NO-CROSS-LEAK; Row 10 → INV-AUTH-MIGRATION-ADDITIVE; Row 11 → INV-AUDIT-APPEND-ONLY; Row 13 → INV-ROLLOUT-COSIGN-GATE). Rows with no direct INV binding carry `—`. (2) Inserts new **§6.4 Pairing-Alpha vs Pairing-Beta selection heuristics** with decision tree, default-for-SaaS-pre-GA (Pairing-Beta), re-pairing criteria post-GA, anti-patterns, and audit-trail format. Renumbers the previous §6.4 (Disambiguating rules) → §6.5 and the previous §6.5 (Cross-references) → §6.6. (3) **CI SLA wire-up** lands `scripts/check-raci-sla.py` parsing §6.2 + §3.2 lanes + emitting an advisory conformance line; wired into `.github/workflows/spec_validation.yml` as an advisory step (never blocks). Closure audit doc: `specs/_audits/sealed/2026-05-16-lote-7-followons-closure.md`. No semantic change to §1–§5 / §7–§9 operating-policy clauses. |
 
 ---
 
 **Cross-references:**
 
 - `specs/_proposals/2026-05-16-framework-reviewer-roles.md §10` — wave-20 proposal cross-refs back to this addendum (wave-22 update adds §10 cross-ref line pointing here).
-- `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §11` — wave-20 Lote 7 audit update notes that this addendum extends the proposal to handle the small-org case.
+- `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §11` — wave-20 Lote 7 audit update notes that this addendum extends the proposal to handle the small-org case.
 - `specs/00_framework.md §43.1` — slot labels reference role IDs FW-H-1..4 defined in the original proposal; this addendum specifies how those slots are filled, vetoed, scheduled, and trained.
 - `specs/_governance/reviewer_staffing_strategy.md` — multi-tier strategy SOT; this addendum is downstream operating policy for the Tier 1 framework-freeze gate specifically.
 - `specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md` — prior-art for the §1.1-mandated dual-hat ADR pattern.

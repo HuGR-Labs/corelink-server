@@ -2,7 +2,7 @@
 --
 -- Canonical sources:
 --   - specs/03_architecture/data_model.md §4.2 (`blob_meta` DDL — table/columns/index)
---   - specs/04_sprints/S01/work_items/WI-S01-004-d1-schema-blob-meta.md §1
+--   - specs/04_sprints/_sealed/S01/work_items/WI-S01-004-d1-schema-blob-meta.md §1
 --   - specs/03_architecture/invariant_registry.md
 --       INV-CAS-IDEMPOTENCY (`(tenant_id, digest)` primary key + `INSERT OR IGNORE`)
 --       INV-CAS-IMMUTABILITY (write-once)

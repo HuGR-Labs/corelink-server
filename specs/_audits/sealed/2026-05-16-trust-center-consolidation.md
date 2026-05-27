@@ -5,8 +5,8 @@
 > **Author:** wave-29 stream-8 trust-center publish-prep agent (Claude Opus 4.7) — branch `wt/r-prep-trust-center-publish` based on `main` @ `365dd38` ("merge wt/r-prep-pre-cutover-weekly-verify into main (wave-28)").
 > **Audience:** GA cutover sign-off, Trust Center launch checklist (`LAUNCH-CHECKLIST-V2.md` row L23: "Trust center unlock"), and the Security Lead + Legal + DPO trio that owns the trust corpus.
 > **Companion docs:**
-> - `specs/_audits/2026-05-16-pre-ga-security-attestation.md` (wave-25) — consolidated pre-GA security posture.
-> - `specs/_audits/2026-05-16-ga-readiness-final.md` — GA readiness final.
+> - `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` (wave-25) — consolidated pre-GA security posture.
+> - `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` — GA readiness final.
 > - `apps/docs/CONTENT-REVIEW.md` — cross-functional review tracker.
 
 ---
@@ -126,7 +126,7 @@ All remaining gaps are post-GA roadmap items, not pre-GA blockers. None of them 
 
 ### §4.2 Detail: existing MDX (all PUBLISH)
 
-All 7 deep-dive MDX pages × 4 locales (32 file-locale pairs) inherited from waves 4 + 5 are PUBLISH-grade — they carry `draft: false` front matter, dated `last_updated: 2026-05-15`, and link cleanly into the existing trust corpus. The wave-25 pre-GA security attestation (`specs/_audits/2026-05-16-pre-ga-security-attestation.md`) validated the compliance claims in these pages.
+All 7 deep-dive MDX pages × 4 locales (32 file-locale pairs) inherited from waves 4 + 5 are PUBLISH-grade — they carry `draft: false` front matter, dated `last_updated: 2026-05-15`, and link cleanly into the existing trust corpus. The wave-25 pre-GA security attestation (`specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md`) validated the compliance claims in these pages.
 
 The migration this wave moves `index.mdx` from slug `/trust` to slug `/trust/overview` across all 4 locales (descriptions updated to explain the move). No other content changes.
 

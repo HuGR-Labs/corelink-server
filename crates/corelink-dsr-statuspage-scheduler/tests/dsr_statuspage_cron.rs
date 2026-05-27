@@ -38,7 +38,7 @@ use corelink_privacy_erasure_worker::event::{
 use corelink_privacy_erasure_worker::report::ErasureReport;
 use corelink_privacy_erasure_worker::verification_job::VerificationOutcome;
 // W36 Stage 2.C Trigger B (closure spec
-// `specs/_audits/2026-05-26-w36-stage2c-closure.md` §5.2):
+// `specs/_audits/sealed/2026-05-26-w36-stage2c-closure.md` §5.2):
 // Integration tests are native-only (cargo test does not run under the
 // wasm32 worker target), so this file consumes the Wave-33 canonical
 // `corelink_ops::statuspage::*` umbrella unconditionally. The crate's

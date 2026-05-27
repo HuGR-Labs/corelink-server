@@ -10,7 +10,7 @@ name: license-policy (R7-1 supply-quality rollup)
 # SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin policy.
 #
 # Reference: scripts/license-audit.sh,
-#            specs/_audits/2026-05-14-license-audit.md
+#            specs/_audits/sealed/2026-05-14-license-audit.md
 
 on:
   pull_request:

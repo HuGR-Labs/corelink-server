@@ -112,7 +112,7 @@ tags: ["soc2", "tsc-2017", "tsc-2022", "gap-analysis", "drata", "vanta", "type-i
 
 ### CC3.1 — Specifies suitable objectives
 
-- **Evidence:** `specs/04_sprints/S20/_spec_contract.md` GA-go binary gates; SLO catalog `specs/03_architecture/slo_catalog.md`.
+- **Evidence:** `specs/04_sprints/_sealed/S20/_spec_contract.md` GA-go binary gates; SLO catalog `specs/03_architecture/slo_catalog.md`.
 - **Gap:** none.
 - **Status:** GREEN.
 
@@ -252,13 +252,13 @@ tags: ["soc2", "tsc-2017", "tsc-2022", "gap-analysis", "drata", "vanta", "type-i
 
 ### CC7.1 — Detection of configuration vulnerabilities
 
-- **Evidence:** Dependency-Track ADR-0037; cargo-deny `deny.toml`; cargo-fuzz summaries `specs/_audits/2026-05-14-cargo-fuzz-summary-s15.md`.
+- **Evidence:** Dependency-Track ADR-0037; cargo-deny `deny.toml`; cargo-fuzz summaries `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`.
 - **Gap:** none.
 - **Status:** GREEN.
 
 ### CC7.2 — Monitors components and operation for anomalies
 
-- **Evidence:** Prometheus metrics catalog; DASH-GA-READINESS + DASH-COMPLIANCE-S20; pentest summaries `specs/_audits/2026-05-14-pentest-s14-byok.md`.
+- **Evidence:** Prometheus metrics catalog; DASH-GA-READINESS + DASH-COMPLIANCE-S20; pentest summaries `specs/_audits/sealed/2026-05-14-pentest-s14-byok.md`.
 - **Gap:** none.
 - **Status:** GREEN.
 
@@ -282,7 +282,7 @@ tags: ["soc2", "tsc-2017", "tsc-2022", "gap-analysis", "drata", "vanta", "type-i
 
 ### CC7.5 — Recovery from security incidents
 
-- **Evidence:** RB-DR-DRILL; region-outage chaos `specs/_audits/2026-05-14-region-outage-chaos-s14.md`; byok-kill-switch drill `specs/_audits/2026-05-14-byok-kill-switch-drill-aws.md`.
+- **Evidence:** RB-DR-DRILL; region-outage chaos `specs/_audits/sealed/2026-05-14-region-outage-chaos-s14.md`; byok-kill-switch drill `specs/_audits/sealed/2026-05-14-byok-kill-switch-drill-aws.md`.
 - **Gap:** **GAP-13** DR drill cadence quarterly committed but not yet calendar-scheduled.
 - **Severity:** minor.
 - **Remediation:** Drata-driven quarterly DR drill reminder; first drill T+0 (Q1 pós-GA).
@@ -365,7 +365,7 @@ tags: ["soc2", "tsc-2017", "tsc-2022", "gap-analysis", "drata", "vanta", "type-i
 
 ### PI1.1 — Quality of inputs / completeness
 
-- **Evidence:** schema validation `specs/_schemas/`; property tests `specs/_audits/2026-05-14-property-test-summary-s19.md`.
+- **Evidence:** schema validation `specs/_schemas/`; property tests `specs/_audits/sealed/2026-05-14-property-test-summary-s19.md`.
 - **Gap:** none.
 - **Status:** GREEN.
 
@@ -500,18 +500,18 @@ Per pre-flight P0-S20-003 (CIS Controls v8 / CIS Cloudflare Benchmark coverage d
 | 4 | Secure Configuration of Enterprise Assets and Software | IG2 | `deny.toml` cargo-deny + `specs/03_architecture/adrs/ADR-0037-dependency-track.md` self-host + `.github/workflows/` SHA-pinned | minor — runtime drift detection absent (GAP-11 compensating control) | SRE | T+6m (GAP-11) |
 | 5 | Account Management | IG2 | `specs/03_architecture/auth_model.md` Clerk SSO + `legal/sub-processors.md` provisioning + WI-S19-001 onboarding | none material | Compliance | n/a (GREEN) |
 | 6 | Access Control Management | IG3 | `specs/03_architecture/compliance_matrix.md` CC6.1 + CTRL-AUTH-010 WebAuthn UV=1 + PAT-DUAL-APPROVAL-001 + INV-ADMIN-MFA-FRESHNESS | minor — quarterly access review not yet automated (GAP-01 + GAP-26) | Compliance | D+30 (GAP-01) |
-| 7 | Continuous Vulnerability Management | IG2 | `specs/_audits/2026-05-14-cargo-fuzz-summary-s15.md` + Dependency-Track + GAP-29 vuln-mgmt SLA per severity (informal currently) | minor — vuln-mgmt SLA per severity not yet formalized (GAP-29) | Security | D+30 (GAP-29) |
+| 7 | Continuous Vulnerability Management | IG2 | `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md` + Dependency-Track + GAP-29 vuln-mgmt SLA per severity (informal currently) | minor — vuln-mgmt SLA per severity not yet formalized (GAP-29) | Security | D+30 (GAP-29) |
 | 8 | Audit Log Management | IG3 | `specs/03_architecture/observability_model.md` + INV-AUDIT-APPEND-ONLY + INV-OBS-AUDIT-CHAIN-INTEGRITY + Merkle audit chain + Object Lock 7y retention | none material | SRE | n/a (GREEN) |
 | 9 | Email and Web Browser Protections | IG1 | `legal/sub-processors.md` Google Workspace + DMARC/DKIM/SPF DNS records + Cloudflare email routing | minor — DMARC strict policy enforcement at IG2 level deferred to T+3m | SRE | T+3m post-GA |
 | 10 | Malware Defenses | IG2 | Immutable Cloudflare Workers (no runtime mutation path) + Cosign verification at deploy + INV-SUPPLY-NO-YANKED + INV-SUPPLY-LICENSE-ALLOWLIST | minor — Falco-style runtime integrity check absent (GAP-11 compensating control: immutable images) | SRE | T+6m (GAP-11) |
-| 11 | Data Recovery | IG2 | `specs/_audits/2026-05-14-region-outage-chaos-s14.md` + RB-DR-DRILL + multi-region D1+DO+R2 replication | GAP-15 cold restore drill not yet executed end-to-end | SRE | T+2m post-GA (GAP-15) |
+| 11 | Data Recovery | IG2 | `specs/_audits/sealed/2026-05-14-region-outage-chaos-s14.md` + RB-DR-DRILL + multi-region D1+DO+R2 replication | GAP-15 cold restore drill not yet executed end-to-end | SRE | T+2m post-GA (GAP-15) |
 | 12 | Network Infrastructure Management | IG2 | Cloudflare WAF + Access + mTLS edge-to-origin + per-tenant DO namespace network segmentation | GAP-10 WAF rule baseline OWASP CRS 4.0 alignment | Security | D+60 (GAP-10) |
 | 13 | Network Monitoring and Defense | IG2 | Prometheus metrics catalog + DASH-GA-READINESS + DASH-COMPLIANCE-S20 + Cloudflare Analytics + Logpush to SIEM | none material | SRE | n/a (GREEN) |
 | 14 | Security Awareness and Skills Training | IG1 | `templates/` skill matrix per role + advisor pool CV review template `legal/legal-externo-engagement-contract.md` | GAP-30 onboarding security training tracking not yet automated | Compliance | T+2m post-GA (GAP-30) |
 | 15 | Service Provider Management | IG2 | `legal/sub-processors.md` 10/14 documented + Drata vendor module + GAP-14 4 pending sub-processor reviews + GAP-09 SOC 2 refresh + GAP-21 sub-processor change-notification automation | GAP-14 + GAP-21 in flight; GAP-09 quarterly | Compliance | D+60 (GAP-14) |
-| 16 | Application Software Security | IG3 | `specs/_pentest/SOW-S20-EXTERNAL-PENTEST.md` external pentest scope (zero HIGH/CRITICAL @ retest = SEAL gate hard) + OWASP ASVS L2/L3 per-surface map §4.1 + ADR-0037 Dependency-Track + property tests + TLA+ 4 INV-level + 4 runbook-level specs | GAP-20 annual pentest cadence calendarized (post-GA) | Security | T+1m post-GA (GAP-20) |
+| 16 | Application Software Security | IG3 | `specs/_audits/sealed/pentest/SOW-S20-EXTERNAL-PENTEST.md` external pentest scope (zero HIGH/CRITICAL @ retest = SEAL gate hard) + OWASP ASVS L2/L3 per-surface map §4.1 + ADR-0037 Dependency-Track + property tests + TLA+ 4 INV-level + 4 runbook-level specs | GAP-20 annual pentest cadence calendarized (post-GA) | Security | T+1m post-GA (GAP-20) |
 | 17 | Incident Response Management | IG3 | WI-S20-006 PagerDuty 24/7 + 3 regions + synthetic page weekly + RB-BREACH-NOTIF + RB-CONSENT-TAMPERING + RB-DATA-RESIDENCY-LEAK + RB-DSR-ERASURE-INCOMPLETE + RB-BYOK-REVOKE | GAP-03 IR plan tabletop end-to-end not yet executed | SRE | D+60 (GAP-03) |
-| 18 | Penetration Testing | IG3 | `specs/_pentest/SOW-S20-EXTERNAL-PENTEST.md` Schellman / A-LIGN / Bishop Fox engagement (2-week test + 1-week retest); zero HIGH/CRITICAL @ retest = GA gate hard; `specs/_audits/2026-05-14-pentest-s14-byok.md` prior S-14 BYOK pentest baseline | GAP-20 annual cadence calendarized (post-GA) | Security | T+1m post-GA (GAP-20) |
+| 18 | Penetration Testing | IG3 | `specs/_audits/sealed/pentest/SOW-S20-EXTERNAL-PENTEST.md` Schellman / A-LIGN / Bishop Fox engagement (2-week test + 1-week retest); zero HIGH/CRITICAL @ retest = GA gate hard; `specs/_audits/sealed/2026-05-14-pentest-s14-byok.md` prior S-14 BYOK pentest baseline | GAP-20 annual cadence calendarized (post-GA) | Security | T+1m post-GA (GAP-20) |
 
 **Totals:** 18 CIS Controls v8 mapped · 6 GREEN (controls 2, 5, 8, 13 + none-material rows) · 12 with active gap rows already tracked in §CC1..§Privacy GAP register (no new GAPs introduced by this mapping — all referenced via existing GAP-01..GAP-33 IDs). **CIS Cloudflare Benchmark** coverage is satisfied via control 12 (Network Infrastructure Management) + control 4 (Secure Configuration of Enterprise Assets and Software) + Cloudflare-native security posture (CF Access + WAF + Zero Trust); explicit benchmark crosswalk to be added post-GA in `specs/_compliance/CIS-CLOUDFLARE-BENCHMARK.md` (Q1 post-GA — currently deferred per WI-S20-003 §2 anti-scope clause; **NOT** blocking GA).
 

@@ -98,7 +98,7 @@ Deliverables 6-fold:
    - **Output**: 2 case-studies committed + customer testimonials.
 
 6. **PRR STANDARD doc S-15 + adversarial summary aggregation** (per spec contract §6 DoD + §14):
-   - **PRR doc** `specs/04_sprints/S15/PRR-S15.md` covering:
+   - **PRR doc** `specs/04_sprints/_sealed/S15/PRR-S15.md` covering:
      - DoD §6 + §7 criteria status (single-phase SEAL D+15; STANDARD lane no observation window).
      - CTRLs trace verified (CTRL-CAS-002 + CTRL-CRED-001 enforced).
      - All 6 WIs SEALED state precondition.
@@ -222,7 +222,7 @@ Sprint ship gate; STANDARD lane; closing WI single-phase SEAL D+15.
    - Output: 2 case-studies committed + customer testimonials.
 
 6. **PRR STANDARD doc S-15**:
-   - File `specs/04_sprints/S15/PRR-S15.md`:
+   - File `specs/04_sprints/_sealed/S15/PRR-S15.md`:
      - 5-8 sign-offs canonical table (7 typical).
      - Evidence pack:
        - Cargo-fuzz 1M iter summary (0 panics + 0 leaks).
@@ -449,7 +449,7 @@ Feature: S-15 ship gate — cargo-fuzz 1M + 3 OSes signed + 2 OSS proof + PRR
 | GPG public key | `https://corelink.humangr.com/.well-known/gpg-pubkey.asc` (CDN endpoint) | ASCII-armor |
 | 2 OSS case-studies | `examples/case-studies.md` | Markdown |
 | Dev workshop report | `specs/_audits/2026-XX-XX-dev-workshop-s15.md` | Markdown |
-| PRR doc S-15 | `specs/04_sprints/S15/PRR-S15.md` | Markdown |
+| PRR doc S-15 | `specs/04_sprints/_sealed/S15/PRR-S15.md` | Markdown |
 | Adversarial test summary | `specs/_audits/2026-XX-XX-adversarial-summary-s15.md` | Markdown |
 | Release notes S-15 | `specs/04_sprints/S15/RELEASE_NOTES.md` | Markdown |
 | `secret_redaction_check` harness | `fuzz/secret_redaction_check.rs` | Rust |
@@ -673,13 +673,13 @@ Pré-PRR mandatory check: confirmed canonical reviewers vs pending. Sprint S-15 
 
 Artifacts landed in this WI:
 
-- 5 cargo-fuzz targets at `crates/corelink-cli/fuzz/fuzz_targets/` (`cli_input`, `config_toml`, `json_deserialize`, `auth_resolution`, `secret_redaction_check`) + `corelink_cli` library facade (`src/lib.rs`, `fuzz_api` module with `count_pat_leaks` scanner) — workspace + fuzz crate both compile clean on stable; nightly fuzz runtime deferred to CI per `specs/_audits/2026-05-14-cargo-fuzz-summary-s15.md`.
+- 5 cargo-fuzz targets at `crates/corelink-cli/fuzz/fuzz_targets/` (`cli_input`, `config_toml`, `json_deserialize`, `auth_resolution`, `secret_redaction_check`) + `corelink_cli` library facade (`src/lib.rs`, `fuzz_api` module with `count_pat_leaks` scanner) — workspace + fuzz crate both compile clean on stable; nightly fuzz runtime deferred to CI per `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`.
 - Three signing workflows: `.github/workflows/notarize-macos.yml` (codesign + notarytool + stapler), `.github/workflows/sign-linux.yml` (GPG detach-sign + verify), `.github/workflows/sign-windows.yml` (signtool sign + verify). All SHA-pinned actions; all secrets referenced via `${{ secrets.* }}`; all guarded by `*-present` gate jobs that short-circuit silently when secrets are absent (no false-failures while certs are in flight).
 - `specs/03_architecture/adrs/ADR-S15-009-windows-codesign-deferral.md` — ratifies Lote 10.15 codex P1 "no unsigned Windows ship" decision + the +1-sprint deferral path.
 - `examples/case-studies.md` — Case Study #1 (HuGR Forge, internal customer-zero; INTERNAL ZERO disclaimer; 4 min 41 s time-to-first-cache-hit on synthetic data) + Case Study #2 DRAFT skeleton with 3-candidate shortlist (`bazelbuild/rules_rust`, `bufbuild/buf`, `tilt-dev/tilt`) and D+0..D+13 engagement plan.
-- `specs/04_sprints/S15/PRR-S15.md` — 7 canonical sign-offs (Owner / Final Approver / Engineer / QA Lead / Product / DevX advisor / Docs lead); decision `CONDITIONALLY_APPROVED` with 4 bounded waivers (fuzz CI runtime, signing cert acquisition, dev workshop scheduling, external case-study signature).
-- `specs/_audits/2026-05-14-cargo-fuzz-summary-s15.md` — fuzz target inventory + 100k local proof-of-green plan + 1M PR / 5M nightly CI plan + coverage strategy.
-- `specs/_audits/2026-05-14-s15-adversarial-summary.md` — 32-scenario cross-WI rollup (CLI fuzz 5 + FFI memory 8 + WASM 4 + telemetry 5 + signing 5 + OSS adoption 5).
+- `specs/04_sprints/_sealed/S15/PRR-S15.md` — 7 canonical sign-offs (Owner / Final Approver / Engineer / QA Lead / Product / DevX advisor / Docs lead); decision `CONDITIONALLY_APPROVED` with 4 bounded waivers (fuzz CI runtime, signing cert acquisition, dev workshop scheduling, external case-study signature).
+- `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md` — fuzz target inventory + 100k local proof-of-green plan + 1M PR / 5M nightly CI plan + coverage strategy.
+- `specs/_audits/sealed/2026-05-14-s15-adversarial-summary.md` — 32-scenario cross-WI rollup (CLI fuzz 5 + FFI memory 8 + WASM 4 + telemetry 5 + signing 5 + OSS adoption 5).
 - `README.md` — GPG verification snippet for end-users.
 - Spec contract S-15 changelog updated (see `_spec_contract.md` §20 v1.3.0).
 

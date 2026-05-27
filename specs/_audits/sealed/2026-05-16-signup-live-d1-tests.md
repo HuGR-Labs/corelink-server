@@ -11,9 +11,9 @@
 - **Closes:** wave-29 stream-1 audit doc §13 follow-up note (the
   live-D1 lift was deferred to wave-30 in the closing summary).
 - **Cross-refs:**
-    - `specs/_audits/2026-05-16-signup-corelink-dev-backend.md`
+    - `specs/_audits/sealed/2026-05-16-signup-corelink-dev-backend.md`
       (wave-29 stream-1 baseline; §closure-note updated this wave)
-    - `specs/_audits/2026-05-16-neon-shadow-pg-testharness.md`
+    - `specs/_audits/sealed/2026-05-16-neon-shadow-pg-testharness.md`
       (wave-20 testcontainers Postgres pattern that informed the
       D1-surrogate design)
     - `crates/corelink-d1-migrations/src/lib.rs` (R2-13 rusqlite +
@@ -80,8 +80,8 @@ D1 surrogate; this wave reuses the same pin in
 | `apps/server/tests/harness/d1_container.rs`                | Harness   | `D1Harness` + `SqliteSignupStore` (implements `SignupStore`)             |
 | `apps/server/tests/signup_pilot_live_d1.rs`                | Integration tests | 8 tests mirroring the wave-29 in-memory suite                    |
 | `apps/server/Cargo.toml`                                   | Manifest  | Adds `rusqlite 0.32 + bundled` and `tempfile` to `[dev-dependencies]`    |
-| `specs/_audits/2026-05-16-signup-live-d1-tests.md`         | Audit     | This doc                                                                  |
-| `specs/_audits/2026-05-16-signup-corelink-dev-backend.md`  | Audit cross-ref | Wave-29 §closure-note updated to record the wave-30 live-D1 lift   |
+| `specs/_audits/sealed/2026-05-16-signup-live-d1-tests.md`         | Audit     | This doc                                                                  |
+| `specs/_audits/sealed/2026-05-16-signup-corelink-dev-backend.md`  | Audit cross-ref | Wave-29 §closure-note updated to record the wave-30 live-D1 lift   |
 
 ## 4. Test matrix
 

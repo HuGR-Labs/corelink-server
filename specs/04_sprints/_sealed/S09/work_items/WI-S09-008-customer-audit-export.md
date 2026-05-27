@@ -161,7 +161,7 @@ Tests net-new (wave-19): +9 server unit (`r2_list_page_size_matches_cf_api_v4_de
 
 - `WI-S09-004` — parent CloudEvents emitter + daily verifier (lift inheritance).
 - `WI-R-PREP-AUDIT-EXPORT` — pure-logic exporter primitive (lift inheritance).
-- `specs/_audits/2026-05-15-audit-chain-retention.md` — 7-year retention mechanism + property test stub + Wave-15.3 endpoint wire-up reference.
+- `specs/_audits/sealed/2026-05-15-audit-chain-retention.md` — 7-year retention mechanism + property test stub + Wave-15.3 endpoint wire-up reference.
 - `specs/_runbooks/RB-AUDIT-EXPORT-INTEGRITY.md` — operator response for SEV-0 chain-break-mid-export.
 - `.github/workflows/audit-chain-daily-verify.yml` — Wave-15 daily verifier cron.
 - `crates/corelink-audit-chain/src/archive_producer.rs` — Wave-15 R2 NDJSON archive producer.
@@ -525,4 +525,4 @@ The wave-8 `wt/r-prep-audit-chain-viz` scaffold (commit `21f8ea8`,
 admin-shell variant; the wave-29 docs-surface page is the customer-facing
 default that ships at `docs.corelink.humangr.com/customer/audit-chain`.
 
-Audit doc: `specs/_audits/2026-05-16-audit-chain-viz-ui.md`.
+Audit doc: `specs/_audits/sealed/2026-05-16-audit-chain-viz-ui.md`.

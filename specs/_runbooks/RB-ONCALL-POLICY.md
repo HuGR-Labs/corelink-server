@@ -223,7 +223,7 @@ Synchronous handoff (15 min sync) MUST occur when:
 At GA, the EMEA / APAC primaries MUST be contracted (Owner solo-tier
 dual-hat is regulatory-acceptable per ADR-0034 only for Americas
 because of the Owner's UTC-3 anchor). The audit
-`specs/_audits/2026-05-14-s20-oncall-24-7-readiness.md` captures the
+`specs/_audits/sealed/2026-05-14-s20-oncall-24-7-readiness.md` captures the
 go/no-go staffing assessment.
 
 ### 11.4 Holiday + parental-leave coverage

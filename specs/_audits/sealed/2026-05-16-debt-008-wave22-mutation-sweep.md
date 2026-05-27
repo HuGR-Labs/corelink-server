@@ -8,7 +8,7 @@ created: "2026-05-16"
 updated: "2026-05-16"
 sprint: "Wave-22 (post-bccdd97 DEBT-008 dispatch)"
 parent_wi: "WI-DEBT-008-MUTATION-FULL-SWEEP"
-parent_audit: "specs/_audits/2026-05-16-debt-008-mutation-sweep.md"
+parent_audit: "specs/_audits/sealed/2026-05-16-debt-008-mutation-sweep.md"
 owner: "Gustavo Schneiter"
 tags: ["audit", "mutation-testing", "cargo-mutants", "debt-008", "wave-22"]
 ---

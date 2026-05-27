@@ -41,17 +41,17 @@ All 11 flips have direct git tag and/or SEAL commit evidence in `main`. Each got
 
 | Audit file | Work tracked | Evidence in `main` |
 |---|---|---|
-| `specs/_audits/2026-04-25-agent-r4-s02-wi-review.md` | Agent R4 independent review of S-02 WIs 002–006 | Tag `s02-impl-sealed` (sprint sealed) |
-| `specs/_audits/2026-04-25-agent-r4-s03-part1-wi-review.md` | Agent R4 review of S-03 Part 1 (WIs 001–004) | Tag `s03-impl-sealed` |
-| `specs/_audits/2026-04-25-agent-r4-s04-part2-wi-review.md` | Agent R4 review of S-04 Part 2 (WIs 004–006) | Tag `s04-impl-sealed` |
-| `specs/_audits/2026-04-25-agent-r4-s05-part1-wi-review.md` | Agent R4 review of S-05 Part 1 (WIs 001–003) | Tag `s05-impl-sealed` |
-| `specs/_audits/2026-04-25-agent-r4-s05-part2-wi-review.md` | Agent R4 review of S-05 Part 2 (WIs 004–006) | Tag `s05-impl-sealed` |
-| `specs/_audits/2026-04-25-agent-r4-s06-part1-wi-review.md` | Agent R4 review of S-06 Part 1 (WIs 001–003) | Tag `s06-impl-sealed` |
-| `specs/_audits/2026-04-25-agent-r4-s06-part2a-wi-review.md` | Agent R4 review of S-06 Part 2a (WIs 004–005) | Tag `s06-impl-sealed` |
-| `specs/_audits/2026-04-25-agent-r4-s06-part2b-wi-review.md` | Agent R4 review of S-06 Part 2b (WIs 006–007) | Tag `s06-impl-sealed` |
-| `specs/_audits/2026-05-26-w33-stage2-a-v2-additive-aggregator.md` | Wave-33 Stage 2.A-v2 additive aggregator SEAL audit | Tag `wave-33-stage2-sealed`; commit `a1c49678` |
-| `specs/_audits/2026-05-26-w33-stage2-e-consumer-migration.md` | Wave-33 Stage 2.E consumer migration partial-SEAL audit | Tag `wave-33-stage2-sealed`; commits `814bd380`, `d6edab86`; Phase-2 subsumed by `wave-35-phase-2-sealed` |
-| `specs/_audits/2026-05-26-w34-adapter-oci.md` | Wave-34 OCI registry adapter SEAL audit | Tag `wave-34-adapters-sealed`; commit `941f9315`; absorbed into `corelink-adapter-host` via `wave-35-phase-2-sealed` |
+| `specs/_audits/sealed/2026-04-25-agent-r4-s02-wi-review.md` | Agent R4 independent review of S-02 WIs 002–006 | Tag `s02-impl-sealed` (sprint sealed) |
+| `specs/_audits/sealed/2026-04-25-agent-r4-s03-part1-wi-review.md` | Agent R4 review of S-03 Part 1 (WIs 001–004) | Tag `s03-impl-sealed` |
+| `specs/_audits/sealed/2026-04-25-agent-r4-s04-part2-wi-review.md` | Agent R4 review of S-04 Part 2 (WIs 004–006) | Tag `s04-impl-sealed` |
+| `specs/_audits/sealed/2026-04-25-agent-r4-s05-part1-wi-review.md` | Agent R4 review of S-05 Part 1 (WIs 001–003) | Tag `s05-impl-sealed` |
+| `specs/_audits/sealed/2026-04-25-agent-r4-s05-part2-wi-review.md` | Agent R4 review of S-05 Part 2 (WIs 004–006) | Tag `s05-impl-sealed` |
+| `specs/_audits/sealed/2026-04-25-agent-r4-s06-part1-wi-review.md` | Agent R4 review of S-06 Part 1 (WIs 001–003) | Tag `s06-impl-sealed` |
+| `specs/_audits/sealed/2026-04-25-agent-r4-s06-part2a-wi-review.md` | Agent R4 review of S-06 Part 2a (WIs 004–005) | Tag `s06-impl-sealed` |
+| `specs/_audits/sealed/2026-04-25-agent-r4-s06-part2b-wi-review.md` | Agent R4 review of S-06 Part 2b (WIs 006–007) | Tag `s06-impl-sealed` |
+| `specs/_audits/sealed/2026-05-26-w33-stage2-a-v2-additive-aggregator.md` | Wave-33 Stage 2.A-v2 additive aggregator SEAL audit | Tag `wave-33-stage2-sealed`; commit `a1c49678` |
+| `specs/_audits/sealed/2026-05-26-w33-stage2-e-consumer-migration.md` | Wave-33 Stage 2.E consumer migration partial-SEAL audit | Tag `wave-33-stage2-sealed`; commits `814bd380`, `d6edab86`; Phase-2 subsumed by `wave-35-phase-2-sealed` |
+| `specs/_audits/sealed/2026-05-26-w34-adapter-oci.md` | Wave-34 OCI registry adapter SEAL audit | Tag `wave-34-adapters-sealed`; commit `941f9315`; absorbed into `corelink-adapter-host` via `wave-35-phase-2-sealed` |
 
 All flips applied only to YAML frontmatter (`audit_status`, `version` minor-bump, `updated:` field) + a single `> **CLOSED 2026-05-27** — …` blockquote inserted right after the closing `---` of the frontmatter. No original audit body content modified.
 

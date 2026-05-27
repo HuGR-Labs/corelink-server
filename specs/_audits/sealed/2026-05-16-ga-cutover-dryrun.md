@@ -5,7 +5,7 @@
 > **Wave / Stream:** Wave-24 R-PREP / `wt/r-prep-ga-cutover-dryrun` (agent: Claude Opus 4.7 background worker).
 > **Base:** `main` @ `33138b5` (wave-23 SEAL tip — "merge wt/r-prep-debt-008-mutation-wave23 into main (wave-23)").
 > **Scope:** End-to-end simulated execution of `specs/_runbooks/RB-GA-CUTOVER.md` §3 (11-step T-0h cutover sequence) against in-process fakes, with §4 greenlight evidence capture (G1..G6 + composite) and §5 rollback-trigger evaluation. Backstop for the §9 production dress-rehearsal mandate.
-> **Cross-ref:** `specs/_runbooks/RB-GA-CUTOVER.md` v1.0.0 (wave-19 `dc39000`), `dashboards/alerts/dash-ga-greenlight.yml` (wave-19), `specs/_audits/2026-05-16-wave23-closure.md` §"GA cutover dry-run readiness assessment".
+> **Cross-ref:** `specs/_runbooks/RB-GA-CUTOVER.md` v1.0.0 (wave-19 `dc39000`), `dashboards/alerts/dash-ga-greenlight.yml` (wave-19), `specs/_audits/sealed/2026-05-16-wave23-closure.md` §"GA cutover dry-run readiness assessment".
 
 ---
 

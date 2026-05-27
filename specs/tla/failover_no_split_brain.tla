@@ -28,7 +28,7 @@
 (* Cross-refs:                                                             *)
 (*   - `specs/03_architecture/invariant_registry.md §3.13 INV-REGION-*`   *)
 (*   - `specs/03_architecture/data_residency_model.md`                    *)
-(*   - `specs/_audits/2026-05-14-region-outage-chaos-s14.md`              *)
+(*   - `specs/_audits/sealed/2026-05-14-region-outage-chaos-s14.md`              *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, Sequences, TLC

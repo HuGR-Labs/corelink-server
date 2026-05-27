@@ -34,7 +34,7 @@ The sprint shipped substantial scope (7-subcommand CLI, FFI for 3 languages, CI 
    - `examples/bazel-starter/.bazel/corelink-credential-helper.sh:2` / `:29` / `:47`
 
 3. **`python3 scripts/validate_specs.py` FAILS for S-15 docs** (DoD spec validation gate):
-   - `specs/04_sprints/S15/work_items/WI-S15-004-ffi-wrappers-python-go-js-adr-0016.md` — `work_status: "SEALED"` is not in the allowed enum (`PROPOSED / READY / DOING / REVIEWING / BLOCKED / DONE / CANCELED / ROLLED_BACK`). Must be `DONE` (mirror WI-001/003/005 which correctly use `work_status: DONE` + `doc_status: SEALED`).
+   - `specs/04_sprints/_sealed/S15/work_items/WI-S15-004-ffi-wrappers-python-go-js-adr-0016.md` — `work_status: "SEALED"` is not in the allowed enum (`PROPOSED / READY / DOING / REVIEWING / BLOCKED / DONE / CANCELED / ROLLED_BACK`). Must be `DONE` (mirror WI-001/003/005 which correctly use `work_status: DONE` + `doc_status: SEALED`).
    - `specs/_decisions/ADR-0016-ffi-vs-native-http.md` — `doc_status: "ACCEPTED"` not in allowed enum; `reviewers` entries are strings, schema expects objects.
 
 4. **Duplicate ADR-0016 at two paths** — schema-violating, source-of-truth ambiguity.
@@ -43,7 +43,7 @@ The sprint shipped substantial scope (7-subcommand CLI, FFI for 3 languages, CI 
    - The "real" ADR content lives at the wrong path while the canonical path holds a stub. Either promote the canonical one (move content, fix frontmatter to allowed `SEALED` or `FROZEN`) and delete the duplicate, or `supersedes`/`superseded_by` one from the other.
 
 5. **WI-S15-002 frontmatter still `DRAFT` / `READY`** — sprint contract says it was merged + SEALED; the work item itself disagrees.
-   - `specs/04_sprints/S15/work_items/WI-S15-002-bazel-integration-starter-ci-test.md:4-5` — `doc_status: "DRAFT"`, `work_status: "READY"`. Must update to `SEALED` / `DONE` like its peers.
+   - `specs/04_sprints/_sealed/S15/work_items/WI-S15-002-bazel-integration-starter-ci-test.md:4-5` — `doc_status: "DRAFT"`, `work_status: "READY"`. Must update to `SEALED` / `DONE` like its peers.
 
 6. **GitHub Action workflows for S-15 not SHA-pinned (CTRL-SUPPLY-001 violation).** Bazel/Buck2 starter CI workflows are properly pinned, but two S-15 workflows are not:
    - `.github/workflows/release-cli.yml:64` `actions/checkout@v4` (floating tag)
@@ -55,7 +55,7 @@ The sprint shipped substantial scope (7-subcommand CLI, FFI for 3 languages, CI 
 
 1. **WASM bundle-size profile not set** — `crates/corelink-wasm/Cargo.toml` has no `[profile.release]` override. Workspace default is `opt-level = 3`; WASM needs `opt-level = "z"` (size). The 1 MiB CI gate documented at `crates/corelink-wasm/src/lib.rs:22` may still pass for an empty stub, but ships with the wrong profile by design. Add a crate-local `[profile.release]` with `opt-level = "z"` (and confirm `lto = "fat"`, `strip = true` inherit, `panic = "abort"` is set if/when the workspace allows per-crate panic strategy).
 
-2. **Spec contract `S15/_spec_contract.md` is missing a changelog section** — review checklist item 18 requires "rows for 001..005"; no `## Changelog` exists. The contract's `doc_status` is also still `DRAFT` (`specs/04_sprints/S15/_spec_contract.md:4`) despite 5/6 WIs claiming SEAL.
+2. **Spec contract `S15/_spec_contract.md` is missing a changelog section** — review checklist item 18 requires "rows for 001..005"; no `## Changelog` exists. The contract's `doc_status` is also still `DRAFT` (`specs/04_sprints/_sealed/S15/_spec_contract.md:4`) despite 5/6 WIs claiming SEAL.
 
 3. **Heavy use of blanket `#[allow(clippy::uninlined_format_args, clippy::format_in_format_args, ...)]`** across `corelink-cli` test modules (12 occurrences) — silences rust 1.91 strict lints rather than fixing the test code (review checklist 21). Examples:
    - `crates/corelink-cli/src/auth.rs:132`
@@ -68,7 +68,7 @@ The sprint shipped substantial scope (7-subcommand CLI, FFI for 3 languages, CI 
 
 5. **`AuthConfig::redacted_pat` panics-safe but slicing logic is brittle** — `crates/corelink-cli/src/config.rs:58-67`: `&p[..idx.min(20)]` slices by byte index into a `String` that may contain multi-byte UTF-8 (PATs are usually ASCII, but the type is `String` without an ASCII invariant). If a non-ASCII PAT ever lands, this panics. Use `char_indices` or guard with `is_char_boundary`. P1 not P0 because PATs are ASCII-by-convention.
 
-6. **Telemetry endpoint hardcoded with no override** — `crates/corelink-cli/src/telemetry.rs:24`: `const TELEMETRY_ENDPOINT: &str = "https://telemetry.corelink.humangr.com/v1/events";` Privacy review (LINDDUN at `specs/_audits/2026-05-14-linddun-cli-telemetry.md`) implies customers might want to direct telemetry to their own collector. No env var override (`CORELINK_TELEMETRY_ENDPOINT`) and no config key. Pre-GA constraint, but worth noting.
+6. **Telemetry endpoint hardcoded with no override** — `crates/corelink-cli/src/telemetry.rs:24`: `const TELEMETRY_ENDPOINT: &str = "https://telemetry.corelink.humangr.com/v1/events";` Privacy review (LINDDUN at `specs/_audits/sealed/2026-05-14-linddun-cli-telemetry.md`) implies customers might want to direct telemetry to their own collector. No env var override (`CORELINK_TELEMETRY_ENDPOINT`) and no config key. Pre-GA constraint, but worth noting.
 
 7. **CTRL-CRED-001 rejection happens before clap parse but does not cover `--pat=<value>` in unicode-fold attacks or `-p` short flag.** `crates/corelink-cli/src/main.rs:161-168` checks `a == "--pat" || a.starts_with("--pat=")`. If anyone ever adds `-p` as a short alias for any future flag, the security rejection is bypassed. Defensive: also reject `-p` and any arg that contains the bytes `pat=`. P1, not P0, because no such flag exists today.
 

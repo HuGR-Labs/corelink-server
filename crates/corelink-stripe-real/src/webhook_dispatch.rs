@@ -22,7 +22,7 @@
 //! `RecordingStateMaterializer`, `RecordingAuditEmitter`,
 //! `RecordingSliRecorder`, `FixedClock`) remain defined here; the
 //! `impl` blocks now reference the traits crate explicitly. See
-//! `specs/_audits/2026-05-27-w36-trigger-a-seal.md` for the cycle
+//! `specs/_audits/sealed/2026-05-27-w36-trigger-a-seal.md` for the cycle
 //! resolution rationale.
 //!
 //! # Pipeline

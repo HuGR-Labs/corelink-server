@@ -167,7 +167,7 @@ All 5 mandated quality-gate validators executed against the worktree HEAD post r
 
 Round-2 adversarial validation SEALED. Deliverables:
 
-- Round-2 audit closure doc landed at `specs/_audits/2026-05-15-s11-round-2-validation.md` (this file).
+- Round-2 audit closure doc landed at `specs/_audits/sealed/2026-05-15-s11-round-2-validation.md` (this file).
 - Companion round-2 review doc landed at `specs/04_sprints/S11/_review_R5_sonnet_round_2.md` (R5 Sonnet adversarial validator persona; per-WI scores + findings + verdict).
 - 5/5 mandated validators GREEN (exit 0).
 - Aggregate score: **9.4 / 10**.

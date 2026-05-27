@@ -66,7 +66,7 @@ Deliverables 5-fold:
    - Refine FM mappings (clarify which FMs each chaos covers).
    - Commit refined catalog em `specs/05_quality/chaos/`.
 
-3. **Closing PRR doc S-17** em `specs/04_sprints/S17/PRR-S17.md`:
+3. **Closing PRR doc S-17** em `specs/04_sprints/_sealed/S17/PRR-S17.md`:
    - Front matter per `prr` schema: feature_wi + capabilities + prod_target_date + work_status (NOT_STARTED → IN_REVIEW → APPROVED).
    - Body covering DoD §6 + §7 (two-phase SEAL D+20 Implementation + D+50 GA Evidence Gate).
    - All 6 WIs SEALED state precondition.
@@ -176,7 +176,7 @@ Sprint ship gate; STANDARD lane; closing WI two-phase SEAL D+20/D+50.
    - Refine FM mappings (clarify per chaos type).
    - Commit refined catalog em `specs/05_quality/chaos/`.
 
-3. **Closing PRR doc** em `specs/04_sprints/S17/PRR-S17.md`:
+3. **Closing PRR doc** em `specs/04_sprints/_sealed/S17/PRR-S17.md`:
    - Front matter per `prr` schema.
    - Body covering DoD §6 + §7 (two-phase SEAL D+20 + D+50).
    - CTRLs trace verified.
@@ -376,7 +376,7 @@ Feature: S-17 ship gate — game day + chaos cleanup + PRR + two-phase SEAL D+20
 | Game day scenarios library | `specs/_templates/game_day_scenarios.md` | Markdown |
 | Game day Q1 report | `specs/_audits/2026-XX-XX-game-day-q1.md` | Markdown |
 | Chaos catalog refined | `specs/05_quality/chaos/<experiment>.md` × 8 (refined) | Markdown |
-| PRR doc S-17 | `specs/04_sprints/S17/PRR-S17.md` | Markdown |
+| PRR doc S-17 | `specs/04_sprints/_sealed/S17/PRR-S17.md` | Markdown |
 | Adversarial summary S-17 | `specs/_audits/2026-XX-XX-adversarial-summary-s17.md` | Markdown |
 | LINDDUN review S-17 | `specs/_audits/2026-XX-XX-linddun-ops-maturity.md` | Markdown |
 | Release notes S-17 | `specs/04_sprints/S17/RELEASE_NOTES.md` | Markdown |

@@ -60,18 +60,18 @@ done
 
 | # | INV ID | Standalone refs | Surface | Disposition | Action |
 |---|---|---|---|---|---|
-| 1 | `INV-S17-OPS-EXCLUSIVITY` | 1 | `specs/04_sprints/S17/_spec_contract.md §8` | **PROMOTE** | Added to registry §3.27 (new OPS domain) |
-| 2 | `INV-S17-SEV1-DRILL-PAUSE` | 1 | `specs/04_sprints/S17/_spec_contract.md §8` | **PROMOTE** | Added to registry §3.27 (new OPS domain) |
-| 3 | `INV-S17-CHAOS-STAGING-ONLY` | 1 | `specs/04_sprints/S17/_spec_contract.md §8` | **PROMOTE** | Added to registry §3.27 (new OPS domain) |
-| 4 | `INV-S17-ONCALL-FATIGUE-AUTOROTATE` | 1 | `specs/04_sprints/S17/_spec_contract.md §8` | **PROMOTE** | Added to registry §3.27 (new OPS domain) |
+| 1 | `INV-S17-OPS-EXCLUSIVITY` | 1 | `specs/04_sprints/_sealed/S17/_spec_contract.md §8` | **PROMOTE** | Added to registry §3.27 (new OPS domain) |
+| 2 | `INV-S17-SEV1-DRILL-PAUSE` | 1 | `specs/04_sprints/_sealed/S17/_spec_contract.md §8` | **PROMOTE** | Added to registry §3.27 (new OPS domain) |
+| 3 | `INV-S17-CHAOS-STAGING-ONLY` | 1 | `specs/04_sprints/_sealed/S17/_spec_contract.md §8` | **PROMOTE** | Added to registry §3.27 (new OPS domain) |
+| 4 | `INV-S17-ONCALL-FATIGUE-AUTOROTATE` | 1 | `specs/04_sprints/_sealed/S17/_spec_contract.md §8` | **PROMOTE** | Added to registry §3.27 (new OPS domain) |
 | 5 | `INV-PAT-REVOKE-PROPAGATION` | 5 | `apps/docs/static/openapi-corelink-v1.yaml` + 4 i18n MDX (`apps/docs/.../delete-v1-pats-by-pat_id.mdx`) | **PROMOTE** | Added to registry §3.28 (new AUTH-PAT revocation domain) |
-| 6 | `INV-AUDIT-CHAIN` | 2 | `specs/04_sprints/S03/_spec_contract.md v1.3.2` + `specs/04_sprints/S03/PRR-S03.md R-S03-007` | **ALIAS** | Added to §5 aliases → `INV-AUDIT-APPEND-ONLY` (shortened form of chain-integrity claim) |
+| 6 | `INV-AUDIT-CHAIN` | 2 | `specs/04_sprints/_sealed/S03/_spec_contract.md v1.3.2` + `specs/04_sprints/_sealed/S03/PRR-S03.md R-S03-007` | **ALIAS** | Added to §5 aliases → `INV-AUDIT-APPEND-ONLY` (shortened form of chain-integrity claim) |
 | 7 | `INV-AUDIT-EMIT-ATOMIC` | 16 | 5 Wave-20+ crates: `corelink-statuspage-real`, `corelink-slack-real` (incl. property test), `corelink-region`, `corelink-rotation-adapters`, `corelink-drata-sync` | **ALIAS** | Added to §5 aliases → `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER` (shortened form widely used in source) |
 | 8 | `INV-AUTH-WEBAUTHN` | 2 | `crates/corelink-webauthn/README.md` (explicitly described as "family invariant") | **ALIAS** | Added to §5 aliases → §3.14 AUTH-WEBAUTHN family-collective shorthand (5 canonical INVs: UV-REQUIRED-ADMIN / ATTESTATION-VERIFIED / SIGN-COUNT-MONOTONIC / ORIGIN-EXACT / RP-ID-CANONICAL) |
-| 9 | `INV-BLAKE3-256-LOWER-HEX-64` | 1 | `specs/04_sprints/S06/_review_R4_opus_part1.md §P3-002-1` (informational review recommendation, never canonicalized) | **ALIAS** | Added to §5 aliases → `INV-CAS-INTEGRITY` (digest canonical-form constraint subsumed by write-time hash check + BLAKE3 deterministic). Audit doc is immutable; alias entry documents the subsumption explicitly. |
+| 9 | `INV-BLAKE3-256-LOWER-HEX-64` | 1 | `specs/04_sprints/_sealed/S06/_review_R4_opus_part1.md §P3-002-1` (informational review recommendation, never canonicalized) | **ALIAS** | Added to §5 aliases → `INV-CAS-INTEGRITY` (digest canonical-form constraint subsumed by write-time hash check + BLAKE3 deterministic). Audit doc is immutable; alias entry documents the subsumption explicitly. |
 | 10 | `INV-AUDIT-CHAIN-001` | 4 | 4 SDK quickstart examples: `crates/corelink-{cli,wasm,py,go}/examples/quickstart_audit.{rs,ts,py,go}` | **ORPHAN-FIX** | Replaced with canonical `INV-AUDIT-APPEND-ONLY` in all 4 examples (Wave-21 SDK docs used fabricated `-001` suffix not present in registry). |
 | 11 | `INV-AUDIT-EMIT` | 1 | `crates/corelink-handler-cas/src/handler.rs:462` (test comment) | **ORPHAN-FIX** | Replaced with canonical `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER` in test comment. |
-| 12 | `INV-CRITICAL` | 1 | `specs/04_sprints/S06/_review_R4_opus_part1.md:160` ("INV-CRITICAL crypto-load-bearing WIs") | **NO-ACTION** | Prose artifact (semantic = "CRITICAL-severity INVs"), not a real INV identifier. Audit doc is immutable. No structural fix required; documented here as a known prose artifact for grep-based scans. |
+| 12 | `INV-CRITICAL` | 1 | `specs/04_sprints/_sealed/S06/_review_R4_opus_part1.md:160` ("INV-CRITICAL crypto-load-bearing WIs") | **NO-ACTION** | Prose artifact (semantic = "CRITICAL-severity INVs"), not a real INV identifier. Audit doc is immutable. No structural fix required; documented here as a known prose artifact for grep-based scans. |
 | 13 | `INV-DATA-CLASSIFICATION` | 2 | `specs/04_sprints/S00/_spec_contract.md §88 + §97` | **NO-ACTION** | Already explicitly deprecated in S-00 spec_contract: "meta-rules de processo, não invariantes técnicas formais — promovidas a quality standards (§9)". Already in `scripts/validate_inv_promotion.py` EXCLUDE_INV set. Historical reference preserved intentionally. |
 | 14 | `INV-SCOPE-DISCIPLINE` | 2 | `specs/04_sprints/S00/_spec_contract.md §88 + §98` | **NO-ACTION** | Same as #13 (sister meta-rule deprecated to §9 quality standards in S-00 spec_contract Lote 9.4 fix). Already in validator EXCLUDE_INV set. |
 
@@ -111,14 +111,14 @@ scripts/validate_specs.py            → ✅ 452 docs validated (443 full schema
 - `crates/corelink-handler-cas/src/handler.rs` — `INV-AUDIT-EMIT` → `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER` (test comment).
 
 ### Audit doc (new)
-- `specs/_audits/2026-05-16-inv-draft-sweep.md` (this doc).
+- `specs/_audits/sealed/2026-05-16-inv-draft-sweep.md` (this doc).
 
 ### Not modified
 - 5 Wave-20+ crates referencing `INV-AUDIT-EMIT-ATOMIC` (shortened) — covered by new alias entry; no rewrite required (alias is canonical resolution path until 2026-10-24 deprecation window).
 - `crates/corelink-webauthn/README.md` — `INV-AUTH-WEBAUTHN` is intentional family-shorthand; covered by alias entry.
-- `specs/04_sprints/S06/_review_R4_opus_part1.md` — immutable AUDIT doc; references to `INV-BLAKE3-256-LOWER-HEX-64` and `INV-CRITICAL` preserved as historical record.
+- `specs/04_sprints/_sealed/S06/_review_R4_opus_part1.md` — immutable AUDIT doc; references to `INV-BLAKE3-256-LOWER-HEX-64` and `INV-CRITICAL` preserved as historical record.
 - `specs/04_sprints/S00/_spec_contract.md` — explicit deprecation prose for `INV-DATA-CLASSIFICATION` / `INV-SCOPE-DISCIPLINE` preserved; no orphan to fix.
-- `specs/04_sprints/S03/_spec_contract.md` + `specs/04_sprints/S03/PRR-S03.md` — `INV-AUDIT-CHAIN` short form covered by alias; no rewrite required.
+- `specs/04_sprints/_sealed/S03/_spec_contract.md` + `specs/04_sprints/_sealed/S03/PRR-S03.md` — `INV-AUDIT-CHAIN` short form covered by alias; no rewrite required.
 
 ---
 

@@ -22,7 +22,7 @@
 > `Wave 33 Stage 2.B — corelink-container creation + Dockerfile fix`.
 >
 > **Pattern reference:** Stage 2 PRE-B precedent
-> (`specs/_audits/2026-05-22-w33-stage2-pre-b-audit-megafiles.md`):
+> (`specs/_audits/sealed/2026-05-22-w33-stage2-pre-b-audit-megafiles.md`):
 > behaviour-preserving structural move with parent dispatch files
 > re-exporting the canonical public surface so consumers continue to
 > import via the same paths.
@@ -220,7 +220,7 @@ only + Dockerfile".
   history and does NOT trigger L2.10 (L2.10 applies to NEW files).
 - `Cargo.toml`: +7 / -1 (members swap + 6 lines of comment).
 - `Dockerfile`: +43 / -13 (rewrite of the build flow).
-- `specs/_audits/2026-05-26-w33-stage2-b-container.md`: this audit file.
+- `specs/_audits/sealed/2026-05-26-w33-stage2-b-container.md`: this audit file.
 
 The audit file is the only new file in this stage. It is a
 documentation file (audit class) and is excluded from L2.10 by the

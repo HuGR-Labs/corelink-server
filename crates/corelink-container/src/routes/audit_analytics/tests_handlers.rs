@@ -261,7 +261,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
 ///
 /// The wave-23 cleanup explicitly scoped the analytics symmetric path
 /// OUT of `W21-R-P2-01` (see commit `5203e8b` +
-/// `specs/_audits/2026-05-16-wave23-cleanup.md` §1.1 CAVEAT). This is
+/// `specs/_audits/sealed/2026-05-16-wave23-cleanup.md` §1.1 CAVEAT). This is
 /// the follow-on hygiene sweep that closes the asymmetry: the bucket
 /// clock NEVER couples to caller-controlled bytes on EITHER route.
 #[tokio::test]

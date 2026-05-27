@@ -23,7 +23,7 @@ tags: ["audit", "w26", "p2-03", "inv-inheritance", "validator", "registry"]
 
 ## §1. Scope + provenance
 
-The wave-26 adversarial review enumerated W26-P2-03 (`specs/_audits/2026-05-16-p2-absorption-sweep-w25-28.md` L49):
+The wave-26 adversarial review enumerated W26-P2-03 (`specs/_audits/sealed/2026-05-16-p2-absorption-sweep-w25-28.md` L49):
 
 > *INV inheritance chains (`INV-CAS-IDEMPOTENCY → cas_integrity.tla`, `INV-GC-004 → InvGCReRefProtected`) are asserted by prose, not machine-readable. A future regression dropping an inherited property would not be caught mechanically. Verdict: DEFER-POST-GA. Requires a structured-field addition to the invariant registry schema + a new validator check. Architectural — not a cosmetic absorption candidate. Recorded in wave-30 residual queue.*
 

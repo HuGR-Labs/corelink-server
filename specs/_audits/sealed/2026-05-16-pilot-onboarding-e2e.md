@@ -192,9 +192,9 @@ admin scripts (`grant-pilot-tier.sh`, `list-pilot-tenants.sh`,
 (`dashboards/grafana/dash-pilot-tenants.yml`), and a new DEBT row
 tracking "pilot signups ≥ 3" GA readiness.
 
-See `specs/_audits/2026-05-16-pilot-signup-pipeline.md` for the full
+See `specs/_audits/sealed/2026-05-16-pilot-signup-pipeline.md` for the full
 wave-27 deliverables and `DEBT-027` in
-`specs/_audits/2026-05-15-debt-register.md` for the gate-tracking row.
+`specs/_audits/sealed/2026-05-15-debt-register.md` for the gate-tracking row.
 
 ### 8.1 Wave-29 stream-3 closure — admin endpoints + web UI
 
@@ -212,7 +212,7 @@ Routes are gated by 5-Layer Defense + fail-CLOSED audit emit
 ordering (matches the wave-15 admin handler discipline). Test
 coverage: `apps/server/tests/admin_pilot.rs` — 12 async integration
 tests; full audit + closure note in
-`specs/_audits/2026-05-16-pilot-admin-web-ui.md`.
+`specs/_audits/sealed/2026-05-16-pilot-admin-web-ui.md`.
 
 The wave-27 shell scripts remain in-tree as the operator-shell
 escape hatch until the Clerk admin instance is provisioned end-to-

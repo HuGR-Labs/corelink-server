@@ -78,7 +78,7 @@ Atualizar `00_framework.md §35.7 EVT-010`:
 
 ## 5. Evidence
 
-- Audit finding: `specs/_audits/2026-04-24-sonnet-audit-lote3-4.md` (S-04).
+- Audit finding: `specs/_audits/sealed/2026-04-24-sonnet-audit-lote3-4.md` (S-04).
 - Framework atualizado: `00_framework.md §35.7 EVT-010` (v0.5.0).
 
 ---

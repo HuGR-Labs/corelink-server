@@ -155,9 +155,9 @@ crash-free degradation surface if the build pipeline drifts.
   `@generated/*.json` defensive branches)
 - 12 i18n MDX files (4 files × 3 locales) — `.mdx`-suffixed links →
   `pathname://` protocol on 15 link sites
-- `specs/_audits/2026-05-16-debt-015-build-wave25-closure.md` (this
+- `specs/_audits/sealed/2026-05-16-debt-015-build-wave25-closure.md` (this
   audit doc)
-- `specs/_audits/2026-05-15-debt-register.md` (DEBT-015-BUILD addendum
+- `specs/_audits/sealed/2026-05-15-debt-register.md` (DEBT-015-BUILD addendum
   → CLOSED)
 
 The wave-24 babel patches stay landed unchanged (they are load-bearing

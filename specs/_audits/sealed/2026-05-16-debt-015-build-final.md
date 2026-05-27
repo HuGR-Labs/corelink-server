@@ -205,8 +205,8 @@ client chunks (3-5 h).
 
 ## Files touched
 
-- `specs/_audits/2026-05-16-debt-015-build-final.md` (this file)
-- `specs/_audits/2026-05-15-debt-register.md` (DEBT-015-BUILD inline
+- `specs/_audits/sealed/2026-05-16-debt-015-build-final.md` (this file)
+- `specs/_audits/sealed/2026-05-15-debt-register.md` (DEBT-015-BUILD inline
   addendum updated with wave-23 diagnosis + new ETA)
 
 ## ETA for follow-on

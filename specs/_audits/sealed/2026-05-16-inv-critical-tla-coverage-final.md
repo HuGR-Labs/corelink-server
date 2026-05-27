@@ -8,7 +8,7 @@ status: PASS
 related:
   - specs/03_architecture/invariant_registry.md
   - specs/03_architecture/security_model.md (CTRL-FORMAL-001)
-  - specs/_audits/2026-05-15-tla-coverage-audit.md (preceding R-prep)
+  - specs/_audits/sealed/2026-05-15-tla-coverage-audit.md (preceding R-prep)
   - scripts/validate_canonical_consistency.py
   - scripts/check_tla_obligations.py
 ---
@@ -155,7 +155,7 @@ Columns:
 ## 5. Remediation actions taken this stream
 
 None required. The preceding R-prep stream (2026-05-15, audit
-`specs/_audits/2026-05-15-tla-coverage-audit.md`) plus DEBT-005
+`specs/_audits/sealed/2026-05-15-tla-coverage-audit.md`) plus DEBT-005
 batches 1-6 FINAL + DEBT-014 FT-6 / FT-7 / FT-8 / FT-9 already drove
 the count to zero across the Wave-23 → Wave-25 cycle. This audit is
 the **final pre-GA snapshot** confirming the state survived the

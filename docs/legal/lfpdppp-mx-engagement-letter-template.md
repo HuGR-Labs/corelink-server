@@ -21,13 +21,13 @@ reviewers:
   - "Privacy Officer"
 supersedes: null
 superseded_by: null
-related_audit: "specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md"
+related_audit: "specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md"
 ---
 
 # LFPDPPP MX Attorney Review — Engagement Letter Template
 ## CoreLink / HuGR Labs — WI-S11-004 §6.1.4
 
-> **Purpose:** Template engagement letter for retaining a Mexican attorney to review the CoreLink LFPDPPP compliance package consolidated in `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md`. Customize fields between `[BRACKETS]` and send under HuGR Labs letterhead.
+> **Purpose:** Template engagement letter for retaining a Mexican attorney to review the CoreLink LFPDPPP compliance package consolidated in `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md`. Customize fields between `[BRACKETS]` and send under HuGR Labs letterhead.
 
 ---
 
@@ -39,7 +39,7 @@ This document defines the engagement plan for retaining a Mexican attorney with 
 2. **`docs/customer-comm/breach-notification/v1.0.0/es/audit-chain-integrity-incident.md`** — es breach-notification template (audit-chain integrity incident).
 3. **`docs/customer-comm/breach-notification/v1.0.0/es/dsr-pipeline-temporary-degradation.md`** — es breach-notification template (DSR pipeline degradation).
 
-The engagement scoping packet is `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md` (§1-§8), which includes statutory citation inventory, breach template anchors, privacy notice metadata, DSR erasure flow, data residency posture, sub-processor disclosure, and 4 open questions for attorney opinion (Q1-Q4).
+The engagement scoping packet is `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md` (§1-§8), which includes statutory citation inventory, breach template anchors, privacy notice metadata, DSR erasure flow, data residency posture, sub-processor disclosure, and 4 open questions for attorney opinion (Q1-Q4).
 
 CoreLink has no in-house Mexican counsel. External legal review is mandatory before WI-S11-004 §6.1.4 can be marked CLOSED, and before any Mexican tenant onboards to CoreLink at GA.
 
@@ -146,7 +146,7 @@ The attorney shall deliver, by the date set in §6 below:
 | Q&A reserve (up to 2 hours @ $[RATE]/hr) | $[600 - 900] | Used only if needed |
 | **Estimated total** | **$[3,100 - 5,400]** | Cap set in §5.4 below |
 
-Owner sets the actual cap per `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md §8.3`.
+Owner sets the actual cap per `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md §8.3`.
 
 ### 5.2 Payment terms
 
@@ -212,14 +212,14 @@ Communication cadence: weekly written status check from attorney (≤ 2 paragrap
 
 ## 9. Cross-references
 
-- **Scoping packet**: `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md` (§1-§8 — read before signing this engagement).
+- **Scoping packet**: `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md` (§1-§8 — read before signing this engagement).
 - **Review process SOP**: `legal/privacy-notice/REVIEW_PROCESS.md` (EVT-044 PDF SOP).
 - **Privacy notice metadata**: `legal/privacy-notice/v1.0.0/metadata.yaml` (where attorney name + EVT-044 path will be recorded post-review).
 - **Work item**: `specs/04_sprints/S11/work_items/WI-S11-004-privacy-notice-versioning-3-locales-diff-publication.md` §6.1.4 (legal local review SLA).
-- **Debt-register row**: `specs/_audits/2026-05-15-debt-register.md DEBT-025` (this engagement; target wave-26 close).
+- **Debt-register row**: `specs/_audits/sealed/2026-05-15-debt-register.md DEBT-025` (this engagement; target wave-26 close).
 - **Prior LGPD/GDPR engagement letter template (model precedent)**: `legal/legal-externo-engagement-contract.md` (WI-S14-008; DPA + TIA review engagement structure).
-- **Wave-17-ter LFPDPPP audit (origin of D-8 deferral)**: `specs/_audits/2026-05-15-s11-legal-citation-revalidation.md §3 D-8`.
-- **Wave-18 breach-notification templates audit**: `specs/_audits/2026-05-15-customer-breach-notification-templates.md §2.1` (Art. 21 anchor design rationale).
+- **Wave-17-ter LFPDPPP audit (origin of D-8 deferral)**: `specs/_audits/sealed/2026-05-15-s11-legal-citation-revalidation.md §3 D-8`.
+- **Wave-18 breach-notification templates audit**: `specs/_audits/sealed/2026-05-15-customer-breach-notification-templates.md §2.1` (Art. 21 anchor design rationale).
 
 ---
 

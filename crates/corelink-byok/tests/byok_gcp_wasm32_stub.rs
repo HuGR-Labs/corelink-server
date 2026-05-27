@@ -7,7 +7,7 @@
 //!   3. The async error path `wrap_dek` returns
 //!      `BYOKError::Provider("GCP KMS real provider unsupported on
 //!      wasm32; ...")` — the explicit-error contract documented in
-//!      `specs/_audits/2026-05-15-byok-real-provider-pattern.md` §4.
+//!      `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md` §4.
 //!
 //! Build gate: `cargo build --tests --target wasm32-unknown-unknown -p
 //! corelink-byok-gcp --test wasm32_stub`.

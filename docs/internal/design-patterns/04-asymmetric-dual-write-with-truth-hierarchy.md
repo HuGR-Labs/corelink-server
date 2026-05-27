@@ -223,7 +223,7 @@ This pattern generalises to **any system that needs to serve qualitatively diffe
 - `archive_producer.rs` — R2 NDJSON canonical store (Wave 15)
 - `migrations/neon/0001_audit_events_shadow.sql` — Schema + RLS policy
 - `migrations/neon/0052_tenant_config_region.sql` — Per-tenant region pinning (Wave 21)
-- `specs/_audits/2026-05-16-neon-shadow-real-driver.md` — Wave 20/21 closure design
+- `specs/_audits/sealed/2026-05-16-neon-shadow-real-driver.md` — Wave 20/21 closure design
 - Kleppmann, M. (2017). *Designing Data-Intensive Applications*. O'Reilly. Ch. 11 (Stream Processing) on derived data systems and source-of-truth disciplines.
 - CloudEvents Specification 1.0 — `https://cloudevents.io/`
 - PostgreSQL Row Level Security — `https://www.postgresql.org/docs/current/ddl-rowsecurity.html`

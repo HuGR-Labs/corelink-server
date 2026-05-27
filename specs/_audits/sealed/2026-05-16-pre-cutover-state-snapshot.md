@@ -1,11 +1,11 @@
 # Pre-Cutover State Snapshot — 2026-05-16 (wave-27 base)
 
-> **Doc kind:** companion snapshot to `specs/_audits/2026-05-16-wave27-closure.md` (no canonical front matter required — `_audits/` excluded from `validate_specs.py`).
+> **Doc kind:** companion snapshot to `specs/_audits/sealed/2026-05-16-wave27-closure.md` (no canonical front matter required — `_audits/` excluded from `validate_specs.py`).
 >
 > **Author:** wave-27 hygiene agent (Claude Opus 4.7) — branch `wt/r-prep-inv-registry-wave27-sweep`.
 > **Base:** `main` @ `a48bbec` (wave-26 SEAL tip).
 > **Scope:** **Final pre-GA cutover state snapshot.** Single-page metric table consumed by the GA-GO/NO-GO meeting + the wave-27 cutover dependency map (`stream #7`) + the final readiness verdict (`stream #8`). All metrics derived from validator outputs + `git log` + spec corpus at `a48bbec`.
-> **Cross-ref:** `specs/_audits/2026-05-16-wave27-closure.md` (sister doc; same wave-27 sweep), `specs/_audits/2026-05-16-wave26-closure.md`, `specs/_audits/2026-05-16-ga-readiness-final.md`, `specs/03_architecture/invariant_registry.md`.
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-wave27-closure.md` (sister doc; same wave-27 sweep), `specs/_audits/sealed/2026-05-16-wave26-closure.md`, `specs/_audits/sealed/2026-05-16-ga-readiness-final.md`, `specs/03_architecture/invariant_registry.md`.
 
 ---
 
@@ -139,16 +139,16 @@
 
 ## 5. Cross-references
 
-- `specs/_audits/2026-05-16-wave27-closure.md` (sister doc; same wave-27 sweep — this snapshot is consumed by §3 final readiness verdict + §7 Owner-tickable checklist).
-- `specs/_audits/2026-05-16-wave26-closure.md` (wave-26 closure; predecessor metrics baseline).
-- `specs/_audits/2026-05-15-debt-register.md` v1.2.3.
+- `specs/_audits/sealed/2026-05-16-wave27-closure.md` (sister doc; same wave-27 sweep — this snapshot is consumed by §3 final readiness verdict + §7 Owner-tickable checklist).
+- `specs/_audits/sealed/2026-05-16-wave26-closure.md` (wave-26 closure; predecessor metrics baseline).
+- `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.3.
 - `specs/03_architecture/invariant_registry.md` v0.2.2.
-- `specs/_audits/2026-05-16-wave25-adversarial-review.md` (latest SEALED review @ 9.00/10 PASS).
-- `specs/_audits/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 — CONDITIONAL GO baseline).
-- `specs/_audits/2026-05-16-ga-readiness-defer-scrub.md` (DEFER counter locked at 8).
-- `specs/_audits/2026-05-16-ga-cutover-dryrun.md` (dry-run #1 G1..G6 all GREEN).
-- `specs/_audits/2026-05-16-ga-1-feature-freeze.md` (freeze enforcement gate).
-- `specs/_audits/2026-05-16-debt-026-rfp-tracker.md` (RFP tracker stack).
+- `specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md` (latest SEALED review @ 9.00/10 PASS).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 — CONDITIONAL GO baseline).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-defer-scrub.md` (DEFER counter locked at 8).
+- `specs/_audits/sealed/2026-05-16-ga-cutover-dryrun.md` (dry-run #1 G1..G6 all GREEN).
+- `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md` (freeze enforcement gate).
+- `specs/_audits/sealed/2026-05-16-debt-026-rfp-tracker.md` (RFP tracker stack).
 - `specs/_compliance/GA-GATE-CRITERIA.md` (59 criteria across 6 tracks).
 - `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md` (GA-GO/NO-GO meeting template — consumes §3 citations directly).
 - `specs/_runbooks/RB-GA-CUTOVER.md` (cutover runbook).

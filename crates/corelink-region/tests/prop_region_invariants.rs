@@ -2,7 +2,7 @@
 //! (`corelink-region` WI-S14-001).
 //!
 //! Closes the proptest-density gap identified in
-//! `specs/_audits/2026-05-15-proptest-density.md` (ratio 0/3 → 3/3).
+//! `specs/_audits/sealed/2026-05-15-proptest-density.md` (ratio 0/3 → 3/3).
 //!
 //! # Iteration tiers (per S-07 P1-2 PROPTEST_CASES contract)
 //!

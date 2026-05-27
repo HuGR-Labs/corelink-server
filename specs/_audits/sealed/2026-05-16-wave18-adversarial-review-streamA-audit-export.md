@@ -17,8 +17,8 @@ This review evaluates the wave-18 audit-export streaming stream — five files /
 - `apps/server/src/routes/audit_export.rs` (1102 LOC, modified to ship `Body::new(StreamBody::new(...))` + per-row re-verify + `Frame::trailers` abort path)
 - `apps/server/tests/audit_export.rs` (693 LOC, +3 new wave-18 integration tests)
 - `crates/corelink-cli/src/commands/verify_ndjson.rs` (506 LOC, +1 new streaming-compat test)
-- `specs/04_sprints/S09/work_items/WI-S09-008-customer-audit-export.md` (work-item spec referenced; not modified in this commit)
-- `specs/_audits/2026-05-15-audit-chain-retention.md` (retention audit doc, cross-referenced)
+- `specs/04_sprints/_sealed/S09/work_items/WI-S09-008-customer-audit-export.md` (work-item spec referenced; not modified in this commit)
+- `specs/_audits/sealed/2026-05-15-audit-chain-retention.md` (retention audit doc, cross-referenced)
 
 The review verifies the wave-16 SEAL caveat #2 is closed: the customer-audit-export endpoint moved from buffer-then-flush to chunked streaming, emits the SEV-0 `corelink.audit.export_verify_failed.v1` audit row BEFORE the `Frame::trailers` abort frame on mid-stream chain-break, and remains byte-for-byte compatible with the wave-17 customer-CLI parser.
 

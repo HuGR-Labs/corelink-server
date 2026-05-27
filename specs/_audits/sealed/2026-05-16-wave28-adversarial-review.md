@@ -15,11 +15,11 @@ inv: []
 gap: null
 tags: ["audit", "wave-28", "adversarial-review", "review-only", "ga-prep"]
 references:
-  - "specs/_audits/2026-05-16-wave26-adversarial-review.md"
-  - "specs/_audits/2026-05-16-pilot-comms-package.md"
-  - "specs/_audits/2026-05-16-pentest-rfp-send-ceremony.md"
-  - "specs/_audits/2026-05-16-pre-cutover-weekly-verify.md"
-  - "specs/_audits/2026-05-16-lfpdppp-mx-engagement-package-final.md"
+  - "specs/_audits/sealed/2026-05-16-wave26-adversarial-review.md"
+  - "specs/_audits/sealed/2026-05-16-pilot-comms-package.md"
+  - "specs/_audits/sealed/2026-05-16-pentest-rfp-send-ceremony.md"
+  - "specs/_audits/sealed/2026-05-16-pre-cutover-weekly-verify.md"
+  - "specs/_audits/sealed/2026-05-16-lfpdppp-mx-engagement-package-final.md"
   - "scripts/admin/record-aws-artifact-pdf.sh"
   - "scripts/admin/statuspage-bootstrap.sh"
   - "scripts/admin/send-pentest-rfp.sh"
@@ -280,7 +280,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 ## 7. Closure note — wave-30 P2 absorption sweep (2026-05-16)
 
 > The 3 P2 findings recorded in this review have been triaged in
-> `specs/_audits/2026-05-16-p2-absorption-sweep-w25-28.md` (wave-30 stream-7).
+> `specs/_audits/sealed/2026-05-16-p2-absorption-sweep-w25-28.md` (wave-30 stream-7).
 > All 3 absorbed as **CLOSED-WAVE-30** (FIX-NOW); the P3 cosmetic cohort is
 > retained on the residual queue for opportunistic absorption.
 >

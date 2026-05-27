@@ -14,12 +14,12 @@ supersedes: null
 superseded_by: null
 tags: ["audit", "wave-35", "adapter-host", "consolidation"]
 references:
-  - "specs/_audits/2026-05-26-wave-33-34-closure-followups.md"
-  - "specs/_audits/2026-05-26-w34-adapter-cargo-v2.md"
-  - "specs/_audits/2026-05-26-w34-adapter-npm-v2.md"
-  - "specs/_audits/2026-05-26-w34-adapter-pip.md"
-  - "specs/_audits/2026-05-26-w34-adapter-brew.md"
-  - "specs/_audits/2026-05-26-w34-adapter-oci.md"
+  - "specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md"
+  - "specs/_audits/sealed/2026-05-26-w34-adapter-cargo-v2.md"
+  - "specs/_audits/sealed/2026-05-26-w34-adapter-npm-v2.md"
+  - "specs/_audits/sealed/2026-05-26-w34-adapter-pip.md"
+  - "specs/_audits/sealed/2026-05-26-w34-adapter-brew.md"
+  - "specs/_audits/sealed/2026-05-26-w34-adapter-oci.md"
 ---
 
 # Wave 35 — `corelink-adapter-host` SEAL Audit
@@ -28,7 +28,7 @@ references:
 
 New crate `crates/corelink-adapter-host/` bridges the five Wave-34
 adapter-local port traits onto the canonical workspace Stage-1 SPI traits.
-Closes follow-up #3 from `specs/_audits/2026-05-26-wave-33-34-closure-followups.md §5`.
+Closes follow-up #3 from `specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md §5`.
 
 ## Baseline
 

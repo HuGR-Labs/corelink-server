@@ -15,9 +15,9 @@ inv: []
 gap: null
 references:
   - "specs/00_framework.md"
-  - "specs/_audits/2026-05-15-ga-readiness-consolidation-wave-13-17.md"
-  - "specs/_audits/2026-05-15-debt-register.md"
-  - "specs/_audits/2026-05-15-canonical-consistency-baseline.md"
+  - "specs/_audits/sealed/2026-05-15-ga-readiness-consolidation-wave-13-17.md"
+  - "specs/_audits/sealed/2026-05-15-debt-register.md"
+  - "specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md"
   - "specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md"
   - "specs/_proposals/2026-05-16-framework-reviewer-roles.md"
   - "specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md"
@@ -239,9 +239,9 @@ The charter says *"execute até o último pacote, sem loose ends, sem gambiarras
 ## 9. Cross-references
 
 - `specs/00_framework.md` v1.0.0-rc1 — subject of this audit
-- `specs/_audits/2026-05-15-ga-readiness-consolidation-wave-13-17.md` — input baseline (wave-17 verdict READY-WITH-WAIVERS)
-- `specs/_audits/2026-05-15-debt-register.md` v1.0.8 — institutional debt SOT (21 of 24 CLOSED; 3 OPEN human-bound)
-- `specs/_audits/2026-05-15-canonical-consistency-baseline.md` — ratchet floors (orphan_refs 0; critical_no_tla 0; tla_verified 76)
+- `specs/_audits/sealed/2026-05-15-ga-readiness-consolidation-wave-13-17.md` — input baseline (wave-17 verdict READY-WITH-WAIVERS)
+- `specs/_audits/sealed/2026-05-15-debt-register.md` v1.0.8 — institutional debt SOT (21 of 24 CLOSED; 3 OPEN human-bound)
+- `specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md` — ratchet floors (orphan_refs 0; critical_no_tla 0; tla_verified 76)
 - `specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md` — solo-tier waiver pattern (scopes to PRR sign-offs; analogous logic available for framework freeze via §35.6 + §41.3)
 - `ROADMAP-TO-GA.md` v1.0.0 — R-3..R-4 boundary snapshot
 
@@ -362,11 +362,11 @@ The wave-26 RC2 readiness agent landed three artifacts that consolidate the wave
 4. Owner flips `doc_status: DRAFT → FROZEN` and `version: 1.0.0-rc2 → 1.0.0` in the framework frontmatter (single commit).
 5. Owner tags `framework-v1-0-0-ga` and writes the v1.0.0 promotion audit at `specs/_audits/2026-MM-DD-framework-v1.0.0-promotion.md`.
 
-**Cross-reference.** Consolidated wave-26 readiness summary at `specs/_audits/2026-05-16-lote-6-v1-rc2-ready.md` (companion doc to this audit; restates the §6.3 paths in terms of the §42 template's Shape A / Shape C fields and the actual ~30-min Owner-action surface).
+**Cross-reference.** Consolidated wave-26 readiness summary at `specs/_audits/sealed/2026-05-16-lote-6-v1-rc2-ready.md` (companion doc to this audit; restates the §6.3 paths in terms of the §42 template's Shape A / Shape C fields and the actual ~30-min Owner-action surface).
 
 ### 11.9 Wave-27 follow-on: Owner-sign-off prep package shipped — verdict narrows to `DEFER-with-Owner-sign-off-prep-package-shipped`
 
-The wave-27 Owner-sign-off prep agent ships a **single ~30-min Owner read package** at `specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md`. The doc collapses the wave-20 / wave-22 / wave-24 / wave-26 absorption chain into one front-door artifact and adds the residual operational scaffolding (10-step boolean execution checklist, 5-step copy-pasteable git command list, SHA chicken-and-egg note for `§43.1 sha:<7>` fields, post-cut unfreeze table).
+The wave-27 Owner-sign-off prep agent ships a **single ~30-min Owner read package** at `specs/_audits/sealed/2026-05-16-lote-6-owner-signoff-prep.md`. The doc collapses the wave-20 / wave-22 / wave-24 / wave-26 absorption chain into one front-door artifact and adds the residual operational scaffolding (10-step boolean execution checklist, 5-step copy-pasteable git command list, SHA chicken-and-egg note for `§43.1 sha:<7>` fields, post-cut unfreeze table).
 
 | Aspect | Wave-26 RC2-ready (`...lote-6-v1-rc2-ready.md`) | Wave-27 prep package (this entry's artifact) |
 |---|---|---|
@@ -381,10 +381,10 @@ The wave-27 Owner-sign-off prep agent ships a **single ~30-min Owner read packag
 
 **Pending user action.** Identical to wave-26 §11.8 pending-user-action list but routed through the single front-door doc:
 
-1. Owner reads `specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md` first; that doc's §1 routes the rest of the 30-min read.
+1. Owner reads `specs/_audits/sealed/2026-05-16-lote-6-owner-signoff-prep.md` first; that doc's §1 routes the rest of the 30-min read.
 2–5. Identical to §11.8 (decision → fill → commit → tag) — operationalised by the prep doc's §5 boolean checklist and §6 command list.
 
-**Cross-reference.** Wave-27 prep package: `specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md` (supersedes `...lote-6-v1-rc2-ready.md` as the Owner-action front door; the wave-26 doc remains canonical for §4.1–§4.3 Shape A vs Shape C detail and §3 Owner-action surface table — the wave-27 doc adds the front-door routing + 10-step + 5-command + post-cut layers).
+**Cross-reference.** Wave-27 prep package: `specs/_audits/sealed/2026-05-16-lote-6-owner-signoff-prep.md` (supersedes `...lote-6-v1-rc2-ready.md` as the Owner-action front door; the wave-26 doc remains canonical for §4.1–§4.3 Shape A vs Shape C detail and §3 Owner-action surface table — the wave-27 doc adds the front-door routing + 10-step + 5-command + post-cut layers).
 
 ---
 
@@ -392,8 +392,8 @@ The wave-27 Owner-sign-off prep agent ships a **single ~30-min Owner read packag
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 1.5.0 | 2026-05-16 | Claude Opus 4.7 (wave-27 Lote 6 Owner-sign-off prep agent) | Adds §11.9 wave-27 follow-on. Ships the single ~30-min Owner read package at `specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md` — front-door doc collapsing the proposal + addendum + ADR-0034b + RC2-ready chain into one 30-min read plan + Option A vs Option C decision table + Option-A and Option-C-Pairing-Alpha/Beta fill templates + 10-step boolean execution checklist + 5-step copy-pasteable git command list (with SHA chicken-and-egg resolution) + post-cut unfreeze table. Verdict text narrows from `DEFER-with-Owner-sign-off-only-remaining` (wave-26) to **`DEFER-with-Owner-sign-off-prep-package-shipped`** (wave-27). §6 DEFER verdict itself unchanged (still gated on Owner's §7 / §43.1 sign-off). |
-| 1.4.0 | 2026-05-16 | Claude Opus 4.7 (wave-26 Lote 6 RC2 readiness agent) | Adds §11.8 wave-26 follow-on. Framework RC1 → **RC2** version bump + §42 template entry pre-authored (Shape A + Shape C) + §43.1 placeholder convention (`PROPOSED-OWNER-DUAL-HAT` vs `(a nomear)`) all land in `specs/00_framework.md`. Verdict text narrows from `DEFER-with-engineering-side-COMPLETE` (wave-24) to `DEFER-with-Owner-sign-off-only-remaining` (wave-26 — ~30 min mechanical action: read + decision + fill-in + commit + tag). §6 DEFER verdict itself unchanged (still gated on Owner's §7 / §43.1 sign-off). Companion readiness doc: `specs/_audits/2026-05-16-lote-6-v1-rc2-ready.md`. |
+| 1.5.0 | 2026-05-16 | Claude Opus 4.7 (wave-27 Lote 6 Owner-sign-off prep agent) | Adds §11.9 wave-27 follow-on. Ships the single ~30-min Owner read package at `specs/_audits/sealed/2026-05-16-lote-6-owner-signoff-prep.md` — front-door doc collapsing the proposal + addendum + ADR-0034b + RC2-ready chain into one 30-min read plan + Option A vs Option C decision table + Option-A and Option-C-Pairing-Alpha/Beta fill templates + 10-step boolean execution checklist + 5-step copy-pasteable git command list (with SHA chicken-and-egg resolution) + post-cut unfreeze table. Verdict text narrows from `DEFER-with-Owner-sign-off-only-remaining` (wave-26) to **`DEFER-with-Owner-sign-off-prep-package-shipped`** (wave-27). §6 DEFER verdict itself unchanged (still gated on Owner's §7 / §43.1 sign-off). |
+| 1.4.0 | 2026-05-16 | Claude Opus 4.7 (wave-26 Lote 6 RC2 readiness agent) | Adds §11.8 wave-26 follow-on. Framework RC1 → **RC2** version bump + §42 template entry pre-authored (Shape A + Shape C) + §43.1 placeholder convention (`PROPOSED-OWNER-DUAL-HAT` vs `(a nomear)`) all land in `specs/00_framework.md`. Verdict text narrows from `DEFER-with-engineering-side-COMPLETE` (wave-24) to `DEFER-with-Owner-sign-off-only-remaining` (wave-26 — ~30 min mechanical action: read + decision + fill-in + commit + tag). §6 DEFER verdict itself unchanged (still gated on Owner's §7 / §43.1 sign-off). Companion readiness doc: `specs/_audits/sealed/2026-05-16-lote-6-v1-rc2-ready.md`. |
 | 1.3.0 | 2026-05-16 | Claude Opus 4.7 (wave-24 ADR-0034b agent) | Adds §11.7 wave-24 follow-on. `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` v0.1.0 lands (PROPOSED) as the §1.1-item-4-required authorization artifact for the addendum's dual-hat fallback. Engineering side of Path A now COMPLETE (verdict text moves from `DEFER-with-engineering-side-READY` to `DEFER-with-engineering-side-COMPLETE`). §6 DEFER verdict itself unchanged (still gated on Owner nomination/invocation). |
 | 1.2.0 | 2026-05-16 | Claude Opus 4.7 (wave-22 Lote 7 absorption agent) | Adds §11.6 wave-22 follow-on. The reviewer-roles proposal is now extended by `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md` v0.1.0 with six operating-policy clauses (dual-hat fallback, cross-veto + quorum, sign-off SLA, training pack budget, 90-day rolling cadence, conflict-of-interest declaration). v1.0.0 GA verdict remains DEFER on §7 / §43.1 rule; addendum specifies HOW the existing gate operates in the small-org regime without adding new gates. |
 | 1.1.0 | 2026-05-16 | Claude Opus 4.7 (wave-20 Lote 7 agent) | Adds §11 `unblock-path-C-progress` documenting that the engineering side of Path A is now READY: reviewer roles proposal `specs/_proposals/2026-05-16-framework-reviewer-roles.md` lands defining FW-H-1..4 role profiles; framework §43.1 annotated to link to the proposal. v1.0.0 GA verdict remains DEFER pending user nomination of individuals (purely human-action; §11.5). Path A is now single-step-away rather than multi-step. |

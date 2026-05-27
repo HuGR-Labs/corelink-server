@@ -2,7 +2,7 @@
 //!
 //! Pins surviving mutants from the wave-23 first sweep
 //! (cargo-mutants 25.0.1, `--no-shuffle --jobs 4 --timeout 120`).
-//! See `specs/_audits/2026-05-16-debt-008-wave23-mutation-sweep.md`
+//! See `specs/_audits/sealed/2026-05-16-debt-008-wave23-mutation-sweep.md`
 //! §4 for the 1:1 survivor → kill mapping.
 
 #![allow(

@@ -13,15 +13,15 @@ supersedes: null
 superseded_by: null
 tags: ["audit", "wave-33", "wave-34", "closure", "followups", "scheduling"]
 references:
-  - "specs/_audits/2026-05-22-wave33-code-reorg-spec.md"
-  - "specs/_audits/2026-05-22-w33-stage2-c-adapter-splits.md"
-  - "specs/_audits/2026-05-26-w33-stage2-e-consumer-migration.md"
-  - "specs/_audits/2026-05-26-w33-stage2-a-v2-additive-aggregator.md"
-  - "specs/_audits/2026-05-26-w34-adapter-pip.md"
-  - "specs/_audits/2026-05-26-w34-adapter-brew.md"
-  - "specs/_audits/2026-05-26-w34-adapter-oci.md"
-  - "specs/_audits/2026-05-26-w34-adapter-cargo-v2.md"
-  - "specs/_audits/2026-05-26-w34-adapter-npm-v2.md"
+  - "specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md"
+  - "specs/_audits/sealed/2026-05-22-w33-stage2-c-adapter-splits.md"
+  - "specs/_audits/sealed/2026-05-26-w33-stage2-e-consumer-migration.md"
+  - "specs/_audits/sealed/2026-05-26-w33-stage2-a-v2-additive-aggregator.md"
+  - "specs/_audits/sealed/2026-05-26-w34-adapter-pip.md"
+  - "specs/_audits/sealed/2026-05-26-w34-adapter-brew.md"
+  - "specs/_audits/sealed/2026-05-26-w34-adapter-oci.md"
+  - "specs/_audits/sealed/2026-05-26-w34-adapter-cargo-v2.md"
+  - "specs/_audits/sealed/2026-05-26-w34-adapter-npm-v2.md"
 ---
 
 # Wave 33 + Wave 34 — Closure Follow-ups (Scheduled, Not Debt)
@@ -51,24 +51,24 @@ appears below with closure target + owner + acceptance criteria.
 
 | # | Source | Target wave | Owner | Severity | Status |
 |---|---|---|---|---|---|
-| 1 | Stage 2.C HALT — adapter HTTPS-vs-pure-logic physical split | Wave 36 (Stage 3 cargo-deny lockdown) | Orchestrator + per-adapter sprint owners | LOW (architectural endpoint; current state functional) | **PARTIAL 2026-05-26** — see `specs/_audits/2026-05-26-w36-stage2c-closure.md` (PARTIAL-SEAL; 3 consumer files migrated in `corelink-container`; 6 files blocked by 2 hard-pause triggers: dep-graph cycle in `corelink-billing-stripe-materializer` [Trigger A] + wasm32 tokio/mio pull in `corelink-dsr-statuspage-scheduler` [Trigger B]; both documented with escalation paths) |
+| 1 | Stage 2.C HALT — adapter HTTPS-vs-pure-logic physical split | Wave 36 (Stage 3 cargo-deny lockdown) | Orchestrator + per-adapter sprint owners | LOW (architectural endpoint; current state functional) | **PARTIAL 2026-05-26** — see `specs/_audits/sealed/2026-05-26-w36-stage2c-closure.md` (PARTIAL-SEAL; 3 consumer files migrated in `corelink-container`; 6 files blocked by 2 hard-pause triggers: dep-graph cycle in `corelink-billing-stripe-materializer` [Trigger A] + wasm32 tokio/mio pull in `corelink-dsr-statuspage-scheduler` [Trigger B]; both documented with escalation paths) |
 | 2 | Stage 2.E Phase 2 — 72 absorbed crates removal | Wave 35 (post adapter-host consolidation) | Orchestrator | MEDIUM (workspace bloat; consumer migration prerequisite) | **CLOSED 2026-05-26** — 10 W35-P2 absorption agents SEALed; workspace.members 149 → 86 (-63 packages); SEALs: cas `8c8e597f`, telemetry `c785aab7`+`7c550d45`, adapter-host `f0c9ff61`, replication `b8ff7d77`, auth `9fb5a4fd`+`44988a11`, billing `e7d2643f`, privacy `07d05d00`, ops `823ff003`, ac `079395cd`, byok `ea7e7e12`; tag `wave-35-phase-2-sealed` |
-| 3 | Wave 35 — adapter-host consolidation crate | Wave 35 (next campaign) | Orchestrator | HIGH (blocks adapter production deployment) | **CLOSED 2026-05-26** — see `specs/_audits/2026-05-26-w35-adapter-host-prep.md` (SEAL `9d0f4284`; 1974 LOC; 44 tests GREEN; merged into main as `7aacf4d6`) |
-| 4 | WI-PROPTEST-FU-W33-001 — umbrella aggregator double-counting | Wave 36 (tooling pass) | Orchestrator | P3 | **CLOSED 2026-05-26** — see `specs/_audits/2026-05-26-w36-proptest-fu-001-seal.md` (obsoleted by Wave 35 Phase 2 physical absorption of corelink-auth + corelink-cas; corelink-container + corelink-core re-classified as INV-pin documentation pattern with per-INV ownership pointers in lib.rs + allowlist) |
-| 5 | WI-PROPTEST-FU-W33-002 — pre-existing density gaps | Wave 36 (per-crate sprint) | TBD per crate | P3 | **CLOSED 2026-05-26** — see `specs/_audits/2026-05-26-w36-proptest-wasm-seal.md` (`4bdf17e9`, +6 proptests wasm) + `specs/_audits/2026-05-26-w36-proptest-fu-002-seal.md` (`723c6395`, +8 proptests clerk-cf + statuspage-real); all PROPTEST_CASES=256 stress GREEN; tag `wave-36-stage-2-sealed` |
+| 3 | Wave 35 — adapter-host consolidation crate | Wave 35 (next campaign) | Orchestrator | HIGH (blocks adapter production deployment) | **CLOSED 2026-05-26** — see `specs/_audits/sealed/2026-05-26-w35-adapter-host-prep.md` (SEAL `9d0f4284`; 1974 LOC; 44 tests GREEN; merged into main as `7aacf4d6`) |
+| 4 | WI-PROPTEST-FU-W33-001 — umbrella aggregator double-counting | Wave 36 (tooling pass) | Orchestrator | P3 | **CLOSED 2026-05-26** — see `specs/_audits/sealed/2026-05-26-w36-proptest-fu-001-seal.md` (obsoleted by Wave 35 Phase 2 physical absorption of corelink-auth + corelink-cas; corelink-container + corelink-core re-classified as INV-pin documentation pattern with per-INV ownership pointers in lib.rs + allowlist) |
+| 5 | WI-PROPTEST-FU-W33-002 — pre-existing density gaps | Wave 36 (per-crate sprint) | TBD per crate | P3 | **CLOSED 2026-05-26** — see `specs/_audits/sealed/2026-05-26-w36-proptest-wasm-seal.md` (`4bdf17e9`, +6 proptests wasm) + `specs/_audits/sealed/2026-05-26-w36-proptest-fu-002-seal.md` (`723c6395`, +8 proptests clerk-cf + statuspage-real); all PROPTEST_CASES=256 stress GREEN; tag `wave-36-stage-2-sealed` |
 
 (#4 + #5 also tracked separately in
-`specs/_audits/proptest-followup-tickets.md` per the existing follow-up
+`specs/_audits/sealed/proptest-followup-tickets.md` per the existing follow-up
 pipeline convention.)
 
 ## §3. Follow-up #1 — Stage 2.C HALT (adapter HTTPS-vs-pure-logic split) [CLOSED 2026-05-27]
 
 > **Status: CLOSED 2026-05-27.** Full closure achieved by Wave 36
 > end-to-end campaign: Stage 2.C consumer migration (partial SEAL
-> `specs/_audits/2026-05-26-w36-stage2c-closure.md`) +
+> `specs/_audits/sealed/2026-05-26-w36-stage2c-closure.md`) +
 > Trigger A materializer dep-inversion via
 > `corelink-billing-stripe-traits`
-> (SEAL `specs/_audits/2026-05-27-w36-trigger-a-seal.md`) +
+> (SEAL `specs/_audits/sealed/2026-05-27-w36-trigger-a-seal.md`) +
 > Trigger B scheduler wasm32 platform-gate
 > (SEAL `specs/_audits/2026-05-27-w36-trigger-b-seal.md`) +
 > **Stage 3 cargo-deny lockdown (SEAL `specs/_audits/2026-05-27-w36-
@@ -79,7 +79,7 @@ pipeline convention.)
 > dangling-legacy + 1 workspace e2e); any new direct importer fails
 > CI gate.
 
-**Source:** `specs/_audits/2026-05-22-w33-stage2-c-adapter-splits.md`
+**Source:** `specs/_audits/sealed/2026-05-22-w33-stage2-c-adapter-splits.md`
 (HALT — hard-pause trigger #7 activated pre-mutation; zero LOC changed).
 
 **Original ask:** physically split 4 dual-use adapter crates
@@ -136,11 +136,11 @@ lockdown).
 adapter crates linger as workspace members without serving a unique
 consumer surface (architectural smell, but functionally identical).
 
-**Tracking:** this audit + `specs/_audits/2026-05-22-w33-stage2-c-adapter-splits.md`.
+**Tracking:** this audit + `specs/_audits/sealed/2026-05-22-w33-stage2-c-adapter-splits.md`.
 
 ## §4. Follow-up #2 — Stage 2.E Phase 2 (72 absorbed crates removal)
 
-**Source:** `specs/_audits/2026-05-26-w33-stage2-e-consumer-migration.md`
+**Source:** `specs/_audits/sealed/2026-05-26-w33-stage2-e-consumer-migration.md`
 (partial-SEAL; hard-pause-trigger #1 activated by huge margin — all 72
 candidates remain canonical LOC owners).
 
@@ -193,12 +193,12 @@ target 25-30); slower `cargo build --workspace` cold-cache; harder
 for new engineers to navigate. NOT runtime correctness risk.
 
 **Tracking:** this audit +
-`specs/_audits/2026-05-26-w33-stage2-e-consumer-migration.md`.
+`specs/_audits/sealed/2026-05-26-w33-stage2-e-consumer-migration.md`.
 
 ## §5. Follow-up #3 — Wave 35 adapter-host consolidation [CLOSED 2026-05-26]
 
 > **Status: CLOSED.** Crate `corelink-adapter-host` delivered and SEALed.
-> SEAL audit: `specs/_audits/2026-05-26-w35-adapter-host-prep.md`.
+> SEAL audit: `specs/_audits/sealed/2026-05-26-w35-adapter-host-prep.md`.
 > 44 tests passing; all acceptance criteria met.
 
 **Source:** Wave 34 adapter campaign (5 SEAL audits) — every adapter's
@@ -263,7 +263,7 @@ requires Wave 35.
 
 ## §6. Follow-up #4 + #5 — proptest density gaps
 
-Tracked in `specs/_audits/proptest-followup-tickets.md`:
+Tracked in `specs/_audits/sealed/proptest-followup-tickets.md`:
 
 - **WI-PROPTEST-FU-W33-001** — umbrella aggregator double-counting fix
   (corelink-{auth, cas, container, core}). **CLOSED 2026-05-26**
@@ -272,7 +272,7 @@ Tracked in `specs/_audits/proptest-followup-tickets.md`:
   INV-pin documentation crates with per-INV ownership pointers in
   their `lib.rs` doc blocks and `proptest-density-allowlist.txt`
   comments). SEAL audit:
-  `specs/_audits/2026-05-26-w36-proptest-fu-001-seal.md`. P3.
+  `specs/_audits/sealed/2026-05-26-w36-proptest-fu-001-seal.md`. P3.
 - **WI-PROPTEST-FU-W33-002** — 3 pre-existing density gaps
   (corelink-clerk-cf, corelink-statuspage-real, corelink-wasm).
   Target Wave 36 per-crate sprint. P3. **OPEN**.

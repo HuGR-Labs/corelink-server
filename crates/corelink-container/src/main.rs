@@ -223,7 +223,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 // skips the per-request `TenantRegionResolver` round-
                 // trip when the wave-26 `RequestPrelude` populated the
                 // region) is unit-testable. See
-                // `specs/_audits/2026-05-16-shadow-sink-full-adoption.md`.
+                // `specs/_audits/sealed/2026-05-16-shadow-sink-full-adoption.md`.
                 let audit_sink: Arc<dyn ShadowSyncAuditSink> =
                     Arc::new(InMemoryShadowSyncAuditSink::new());
                 Arc::new(TokioPgShadowSinkFactory::new(

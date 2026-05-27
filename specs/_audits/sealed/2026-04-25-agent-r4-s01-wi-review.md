@@ -2,7 +2,7 @@
 
 > Reviewer: Agent R4 (Claude Opus 4.7, 1M ctx) · Date: 2026-04-25 · Mode: independent SOTA review
 > Inputs: WI-S01-002 .. WI-S01-007 (six new specs); WI-S01-001 (baseline reference, not scored).
-> Cross-checked against: `specs/04_sprints/S01/sprint.md`, `specs/04_sprints/S01/_spec_contract.md`, `specs/03_architecture/storage_semantics_matrix.md`.
+> Cross-checked against: `specs/04_sprints/_sealed/S01/sprint.md`, `specs/04_sprints/_sealed/S01/_spec_contract.md`, `specs/03_architecture/storage_semantics_matrix.md`.
 
 ---
 

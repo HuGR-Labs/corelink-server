@@ -26,7 +26,7 @@ inherits_from:
 tags: ["wi", "s19", "onboarding", "conversion-funnel", "cohort-dashboard", "property-tests-aggregated", "rb-fm-signup-failed", "prr", "ship-gate", "high-risk"]
 ---
 
-# WI-S19-006 — Closing WI Sprint S-19 Ship Gate — Conversion Funnel Instrumentation (7 Steps signup_start → email_verified → dpa_signed → tier_selected → stripe_activated → first_pat_created → first_cas_put × 3 Regions × 5 Tiers = 105 Séries Cardinality Safe Respeitando INV-OBS-CARDINALITY-BUDGET; **NUNCA per-tenant labels**) + Cohort Analysis Dashboard DASH-ONBOARDING (S-09 Alignment Dashboards-as-Code) com Weekly Cohort Signup → Activation Rate (First CAS PUT Within 7d) + Property Tests 10k Aggregated (DPA-First INV-ONBOARD-DPA-FIRST + Atomicity INV-ONBOARD-ATOMIC-PROVISIONING + Cross-WI Integration Stress) + Adversarial Summary 25+ Scenarios Aggregated em `specs/_audits/2026-XX-XX-adversarial-summary-s19.md` + RB-FM-SIGNUP-FAILED Stub em `specs/05_runbooks/RB-FM-SIGNUP-FAILED.md` + PRR HIGH_RISK 11 Sign-Offs Canonical Doc `specs/04_sprints/S19/PRR-S19.md` + Two-Phase SEAL D+15 Implementation + D+45 GA Evidence Gate (30d Observation Window: Signup ≤ 3 min Sustained 5-Dev Workshop Weekly + DPA Re-Acceptance v1→v2 Cycle Simulado + 5 Real Signups Closed Beta + Funnel Sustained 30d Staging + Enterprise Handoff Atomicity Sustained Weekly Chaos Drill)
+# WI-S19-006 — Closing WI Sprint S-19 Ship Gate — Conversion Funnel Instrumentation (7 Steps signup_start → email_verified → dpa_signed → tier_selected → stripe_activated → first_pat_created → first_cas_put × 3 Regions × 5 Tiers = 105 Séries Cardinality Safe Respeitando INV-OBS-CARDINALITY-BUDGET; **NUNCA per-tenant labels**) + Cohort Analysis Dashboard DASH-ONBOARDING (S-09 Alignment Dashboards-as-Code) com Weekly Cohort Signup → Activation Rate (First CAS PUT Within 7d) + Property Tests 10k Aggregated (DPA-First INV-ONBOARD-DPA-FIRST + Atomicity INV-ONBOARD-ATOMIC-PROVISIONING + Cross-WI Integration Stress) + Adversarial Summary 25+ Scenarios Aggregated em `specs/_audits/2026-XX-XX-adversarial-summary-s19.md` + RB-FM-SIGNUP-FAILED Stub em `specs/05_runbooks/RB-FM-SIGNUP-FAILED.md` + PRR HIGH_RISK 11 Sign-Offs Canonical Doc `specs/04_sprints/_sealed/S19/PRR-S19.md` + Two-Phase SEAL D+15 Implementation + D+45 GA Evidence Gate (30d Observation Window: Signup ≤ 3 min Sustained 5-Dev Workshop Weekly + DPA Re-Acceptance v1→v2 Cycle Simulado + 5 Real Signups Closed Beta + Funnel Sustained 30d Staging + Enterprise Handoff Atomicity Sustained Weekly Chaos Drill)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-19](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -81,7 +81,7 @@ Deliverables 6-fold:
    - WI-S19-005: 5 scenarios (saga partial state + spam + reCAPTCHA bypass + Slack forge + CRM key exfiltration).
    - 100% mitigation rate sustained.
 
-6. **PRR doc S-19** em `specs/04_sprints/S19/PRR-S19.md`:
+6. **PRR doc S-19** em `specs/04_sprints/_sealed/S19/PRR-S19.md`:
    - **Mandatory 11 sign-offs canonical** (per spec contract §6 + framework §33.5.4.3 + ADR-0034).
    - **Evidence pack**:
      - 7+ properties × 10k iter green (PR) + 100k iter green (nightly).
@@ -208,7 +208,7 @@ Sprint ship gate; HIGH_RISK; FF-HR-009.
    - Aggregate report linking todos os adversarial tests em S-19 WIs (25+ scenarios).
    - 100% mitigation rate sustained.
 
-6. **PRR doc S-19** em `specs/04_sprints/S19/PRR-S19.md`:
+6. **PRR doc S-19** em `specs/04_sprints/_sealed/S19/PRR-S19.md`:
    - **Mandatory 11 sign-offs canonical** (vide §28).
    - **Evidence pack** (vide §1).
    - **Promotion gate decision**: `APPROVED | CONDITIONALLY_APPROVED | REJECTED`.
@@ -459,7 +459,7 @@ TLA+ alignment: registry §4.2 indica `onboarding_atomicity.tla` PLANNED S-19 co
 | Cross-WI integration property test | `tests/cross_wi_integration_s19.rs` | Rust |
 | RB-FM-SIGNUP-FAILED stub | `specs/05_runbooks/RB-FM-SIGNUP-FAILED.md` | Markdown |
 | Adversarial test summary | `specs/_audits/2026-XX-XX-adversarial-summary-s19.md` | Markdown |
-| PRR doc S-19 | `specs/04_sprints/S19/PRR-S19.md` | Markdown |
+| PRR doc S-19 | `specs/04_sprints/_sealed/S19/PRR-S19.md` | Markdown |
 | OWASP + compliance checklist | `specs/04_sprints/S19/asvs-v4-v5-v6-v7-v14-gdpr-lgpd-checklist.md` | Markdown |
 | Release notes S-19 | `specs/04_sprints/S19/RELEASE_NOTES.md` | Markdown |
 
@@ -661,7 +661,7 @@ Este WI emite o PRR; sign-off do PRR-S19.md doc é o sign-off final S-19 sprint.
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S19-006 (cycle 12.S19.0; SOTA full ship gate — funnel + cohort dashboard + property tests aggregated + RB-FM-SIGNUP-FAILED stub + adversarial summary 25+ + PRR 11 sign-offs canonical + two-phase SEAL D+15/D+45). |
-| 1.1.0 | 2026-05-14 | Gustavo (via Sonnet WI-S19-006 builder) | SEALED — ship-gate deliverables committed: RB-FM-SIGNUP-FAILED stub (`specs/_runbooks/`), adversarial summary cross-WI 27 scenarios (`specs/_audits/2026-05-14-s19-adversarial-summary.md`), property test summary 8 props × 10k green (`specs/_audits/2026-05-14-property-test-summary-s19.md`), PRR-S19 12 canonical sign-off slots CONDITIONALLY_APPROVED w/ 8 waiver rows (`specs/04_sprints/S19/PRR-S19.md`), spec contract S-19 promoted to SEALED v1.3.0 with §20 changelog. Two-phase SEAL D+15 Implementation done; D+45 GA Evidence Gate target 2026-06-28. |
+| 1.1.0 | 2026-05-14 | Gustavo (via Sonnet WI-S19-006 builder) | SEALED — ship-gate deliverables committed: RB-FM-SIGNUP-FAILED stub (`specs/_runbooks/`), adversarial summary cross-WI 27 scenarios (`specs/_audits/sealed/2026-05-14-s19-adversarial-summary.md`), property test summary 8 props × 10k green (`specs/_audits/sealed/2026-05-14-property-test-summary-s19.md`), PRR-S19 12 canonical sign-off slots CONDITIONALLY_APPROVED w/ 8 waiver rows (`specs/04_sprints/_sealed/S19/PRR-S19.md`), spec contract S-19 promoted to SEALED v1.3.0 with §20 changelog. Two-phase SEAL D+15 Implementation done; D+45 GA Evidence Gate target 2026-06-28. |
 
 ## 32. Anti-patterns evitados
 

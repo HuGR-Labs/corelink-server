@@ -6,11 +6,11 @@
 > **Base:** `main` @ `a48bbec` ("merge wt/r-prep-cf-worker-prefetch-wire into main (wave-26)" — wave-26 SEAL tip).
 > **Audience:** Owner (Gustavo) + on-call SRE / `(a nomear)` Security Lead. **Read on the morning of cutover D-day.** Target read-time ≤ 10 minutes. Confirms GO / NO-GO posture against the wave-18 → wave-26 evidence corpus in a single doc.
 > **Companion docs:**
-> - `specs/_audits/2026-05-16-final-cutover-readiness-checklist.md` — 1-page printable boolean checklist (operator-runnable).
-> - `specs/_audits/2026-05-16-ga-readiness-final.md` — wave-24 GA-readiness final audit (CONDITIONAL GO; predecessor).
-> - `specs/_audits/2026-05-16-pre-ga-security-attestation.md` — wave-25 consolidated security attestation.
-> - `specs/_audits/2026-05-16-ga-1-feature-freeze.md` — wave-26 GA-1 freeze declaration.
-> - `specs/_audits/2026-05-16-prod-deploy-dressrun.md` — wave-26 prod-deploy dress-run (9.36/10 PROCEED).
+> - `specs/_audits/sealed/2026-05-16-final-cutover-readiness-checklist.md` — 1-page printable boolean checklist (operator-runnable).
+> - `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` — wave-24 GA-readiness final audit (CONDITIONAL GO; predecessor).
+> - `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` — wave-25 consolidated security attestation.
+> - `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md` — wave-26 GA-1 freeze declaration.
+> - `specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md` — wave-26 prod-deploy dress-run (9.36/10 PROCEED).
 > - `specs/_runbooks/RB-GA-CUTOVER.md` — cutover runbook (§0 mandatory pre-cutover read includes this doc).
 > - `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` — 2-key signature path.
 
@@ -105,7 +105,7 @@ Per wave-26 sweep, **all 61 CRITICAL invariants have ≥ 1 TLA+ proof or §4.3 d
 
 ## §4. GA-1 freeze monitor state
 
-Per `specs/_audits/2026-05-16-ga-1-feature-freeze.md` §1 effective date and §5 freeze-monitor ledger (cross-ref `reports/ga-freeze-monitor.json` machine-readable mirror):
+Per `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md` §1 effective date and §5 freeze-monitor ledger (cross-ref `reports/ga-freeze-monitor.json` machine-readable mirror):
 
 | Metric | Value |
 |---|---|
@@ -126,7 +126,7 @@ Per `specs/_audits/2026-05-16-ga-1-feature-freeze.md` §1 effective date and §5
 
 ## §5. Wave-26 prod-deploy dress-run verdict
 
-Per `specs/_audits/2026-05-16-prod-deploy-dressrun.md` §7-§8:
+Per `specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md` §7-§8:
 
 | Dimension | Value |
 |---|---|
@@ -171,7 +171,7 @@ Eight consecutive sealed waves (+ wave-26 in flight per stream #7 cross-review).
 
 ## §7. Mutation kill-rate aggregate (DEBT-008)
 
-Per `specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md` + wave-25 reconciliation (`2026-05-16-debt-008-number-discrepancy-fix.md`):
+Per `specs/_audits/sealed/2026-05-16-debt-008-wave24-mutation-sweep.md` + wave-25 reconciliation (`2026-05-16-debt-008-number-discrepancy-fix.md`):
 
 ### §7.1 Empirically CLOSED (first-sweep, agent-dispatched)
 
@@ -208,7 +208,7 @@ Per `specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md` + wave-25 recon
 
 ## §8. Chaos coverage — 16 scenarios + 6 fail-CLOSED arms
 
-Per `specs/_audits/2026-05-16-chaos-campaign-harness.md` (wave-22, 8 isolated) + `specs/_audits/2026-05-16-chaos-combined-failures.md` (wave-23, 3 combined-pair + 5 additional combined scenarios → 8 combined total).
+Per `specs/_audits/sealed/2026-05-16-chaos-campaign-harness.md` (wave-22, 8 isolated) + `specs/_audits/sealed/2026-05-16-chaos-combined-failures.md` (wave-23, 3 combined-pair + 5 additional combined scenarios → 8 combined total).
 
 ### §8.1 Isolated scenarios (wave-22, 8 scenarios)
 
@@ -253,8 +253,8 @@ Two anchors per the brief:
 
 | Wave | Artefact | Result |
 |---|---|---|
-| 22 | 24h endurance harness build (`specs/_audits/2026-05-16-24h-endurance-harness.md`) | k6 script `endurance-24h-w22.js` (1000 RPS × 22h sustain + 1h ramps), analyser `scripts/analyze_endurance_run.py`, runbook `RB-24H-ENDURANCE-LOAD.md` — **rig SEALED, 9.4/10 adversarial score**. |
-| 25 | 10-min compressed dress-run (`specs/_audits/2026-05-16-endurance-10min-dressrun.md`) | 0 SLO violations + 0 INV violations during the compressed window; analyser veredito GREENLIGHT — **dress-run SEALED**. |
+| 22 | 24h endurance harness build (`specs/_audits/sealed/2026-05-16-24h-endurance-harness.md`) | k6 script `endurance-24h-w22.js` (1000 RPS × 22h sustain + 1h ramps), analyser `scripts/analyze_endurance_run.py`, runbook `RB-24H-ENDURANCE-LOAD.md` — **rig SEALED, 9.4/10 adversarial score**. |
+| 25 | 10-min compressed dress-run (`specs/_audits/sealed/2026-05-16-endurance-10min-dressrun.md`) | 0 SLO violations + 0 INV violations during the compressed window; analyser veredito GREENLIGHT — **dress-run SEALED**. |
 
 **Combined verdict:** rig + dress-rehearsal cadence proven; the 7-day continuous soak streak (wave-27+ candidate stream per `2026-05-16-wave26-closure.md §9.5`) is the post-cutover SLO observation streak ≥ 168 h that feeds back to the greenlight composite. Wave-22 9.4/10 and wave-25 GREENLIGHT verdicts compose to a single GREEN posture for the endurance dimension of the cutover decision.
 
@@ -266,7 +266,7 @@ Per `ADR-0034b-framework-reviewer-dual-hat-fallback.md` §3 and `RB-GA-CUTOVER.m
 
 ### §10.1 Pre-condition gate (boolean — must all be `true`)
 
-- [ ] `specs/_audits/2026-05-16-final-cutover-readiness-checklist.md` rows fully reconciled (`true` on every row OR `defer:` per row with §1 entry).
+- [ ] `specs/_audits/sealed/2026-05-16-final-cutover-readiness-checklist.md` rows fully reconciled (`true` on every row OR `defer:` per row with §1 entry).
 - [ ] Wave-25 + wave-26 adversarial reviews SEALED with verdict ≥ PASS (no outstanding P0/P1).
 - [ ] DEBT-026 retest letter received with **zero HIGH/CRITICAL outstanding** (earliest 2026-07-29).
 - [ ] All 8 §1 DEFER items either resolved OR documented in `GA-GATE-GO-NOGO-TEMPLATE.md` §3 waiver register with Owner-approved waiver.
@@ -311,7 +311,7 @@ Upon 2-key APPROVED decision in §10.2 + §10.3:
 
 ### §10.5 Audit retention
 
-This document + `specs/_audits/2026-05-16-final-cutover-readiness-checklist.md` + the signed `GA-GATE-GO-NOGO-TEMPLATE.md` instance + cutover decision-meeting notes + the post-cutover post-mortem audit constitute the GA-launch evidence package per `IR-TABLETOP-PLAYBOOK.md` retention norm (SOC 2 CC7.4 continuous-improvement signal).
+This document + `specs/_audits/sealed/2026-05-16-final-cutover-readiness-checklist.md` + the signed `GA-GATE-GO-NOGO-TEMPLATE.md` instance + cutover decision-meeting notes + the post-cutover post-mortem audit constitute the GA-launch evidence package per `IR-TABLETOP-PLAYBOOK.md` retention norm (SOC 2 CC7.4 continuous-improvement signal).
 
 ---
 
@@ -339,17 +339,17 @@ This document + `specs/_audits/2026-05-16-final-cutover-readiness-checklist.md` 
 
 ## §13. Cross-references
 
-- `specs/_audits/2026-05-16-final-cutover-readiness-checklist.md` — 1-page printable boolean checklist (companion).
-- `specs/_audits/2026-05-16-ga-readiness-final.md` — wave-24 GA-readiness final audit (CONDITIONAL GO; predecessor).
-- `specs/_audits/2026-05-16-pre-ga-security-attestation.md` — wave-25 consolidated security attestation.
-- `specs/_audits/2026-05-16-ga-1-feature-freeze.md` — wave-26 GA-1 freeze declaration.
-- `specs/_audits/2026-05-16-prod-deploy-dressrun.md` — wave-26 prod-deploy dress-run (9.36/10).
-- `specs/_audits/2026-05-16-wave18-aggregate-closure.md` through `2026-05-16-wave26-closure.md` — wave-N closure audit corpus.
-- `specs/_audits/2026-05-16-ga-final-checklist.md` — wave-24 operator-runnable checklist (sibling).
-- `specs/_audits/2026-05-16-chaos-campaign-harness.md` + `2026-05-16-chaos-combined-failures.md` — chaos evidence.
-- `specs/_audits/2026-05-16-24h-endurance-harness.md` + `2026-05-16-endurance-10min-dressrun.md` — endurance evidence.
-- `specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md` + `2026-05-16-debt-008-number-discrepancy-fix.md` — mutation evidence.
-- `specs/_audits/2026-05-15-debt-register.md` v1.2.2 — DEBT register canonical state.
+- `specs/_audits/sealed/2026-05-16-final-cutover-readiness-checklist.md` — 1-page printable boolean checklist (companion).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` — wave-24 GA-readiness final audit (CONDITIONAL GO; predecessor).
+- `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` — wave-25 consolidated security attestation.
+- `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md` — wave-26 GA-1 freeze declaration.
+- `specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md` — wave-26 prod-deploy dress-run (9.36/10).
+- `specs/_audits/sealed/2026-05-16-wave18-aggregate-closure.md` through `2026-05-16-wave26-closure.md` — wave-N closure audit corpus.
+- `specs/_audits/sealed/2026-05-16-ga-final-checklist.md` — wave-24 operator-runnable checklist (sibling).
+- `specs/_audits/sealed/2026-05-16-chaos-campaign-harness.md` + `2026-05-16-chaos-combined-failures.md` — chaos evidence.
+- `specs/_audits/sealed/2026-05-16-24h-endurance-harness.md` + `2026-05-16-endurance-10min-dressrun.md` — endurance evidence.
+- `specs/_audits/sealed/2026-05-16-debt-008-wave24-mutation-sweep.md` + `2026-05-16-debt-008-number-discrepancy-fix.md` — mutation evidence.
+- `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.2 — DEBT register canonical state.
 - `specs/03_architecture/invariant_registry.md` — INV registry canonical (197 declared; 61 CRITICAL all TLA+-proved).
 - `specs/_runbooks/RB-GA-CUTOVER.md` — cutover runbook (this audit cross-referenced from §0 mandatory pre-cutover read).
 - `specs/_compliance/GA-GATE-CRITERIA.md` — 59-criteria checklist (6 tracks).

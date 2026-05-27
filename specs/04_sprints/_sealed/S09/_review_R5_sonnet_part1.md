@@ -192,11 +192,11 @@ exclusion clause in SLI recording rules — see Part 2 P1-D).
 ### P1-S4 — Chaos test framework documented but not executable at SEAL
 
 **Severity:** P1 — the 12 chaos scenarios catalogued in
-`specs/_audits/2026-05-03-adversarial-s09.md` are a *narrative* artifact,
+`specs/_audits/sealed/2026-05-03-adversarial-s09.md` are a *narrative* artifact,
 not an *executable* test suite.
 
 **Defect:** PRR-S09 §6 cites "chaos suite 12 scenarios catalogued in
-`specs/_audits/2026-05-03-adversarial-s09.md`". The 12 scenarios are
+`specs/_audits/sealed/2026-05-03-adversarial-s09.md`". The 12 scenarios are
 documented (catastrophic cardinality bomb, PII leak via raw bearer token,
 hash chain break via canonical-bytes mutation, etc.) — each scenario has
 an "Outcome" section claiming "structurally impossible" or pointing to a

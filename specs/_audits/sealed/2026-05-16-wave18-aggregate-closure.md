@@ -31,9 +31,9 @@ Single worktree `wt/r-prep-wave18-codex-p2-p3-closure` collapses the 16 cosmetic
 - `migrations/neon/0001_audit_events_shadow.sql` — B-P2-05 (global-rollup hook + write-amplification rationale).
 
 **Audit docs updated:**
-- `specs/_audits/2026-05-16-wave18-adversarial-review-streamA-audit-export.md` — every row in §3 findings table moved OPEN → CLOSED; new §6 wave-20 closure verdict.
-- `specs/_audits/2026-05-16-wave18-adversarial-review-streamB-neon-shadow.md` — every row in §3 findings table moved OPEN → CLOSED; new §6 wave-20 closure verdict.
-- `specs/_audits/2026-05-16-wave18-aggregate-closure.md` — this doc.
+- `specs/_audits/sealed/2026-05-16-wave18-adversarial-review-streamA-audit-export.md` — every row in §3 findings table moved OPEN → CLOSED; new §6 wave-20 closure verdict.
+- `specs/_audits/sealed/2026-05-16-wave18-adversarial-review-streamB-neon-shadow.md` — every row in §3 findings table moved OPEN → CLOSED; new §6 wave-20 closure verdict.
+- `specs/_audits/sealed/2026-05-16-wave18-aggregate-closure.md` — this doc.
 
 ## 3. Wave-19 OBE attribution
 

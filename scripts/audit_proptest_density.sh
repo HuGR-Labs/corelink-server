@@ -10,7 +10,7 @@
 #   bash scripts/audit_proptest_density.sh > /tmp/proptest_audit.csv
 #   awk -F'|' 'NR>1 && $4>0 && $5!="N/A" && $5+0<1.0' /tmp/proptest_audit.csv
 #
-# Source audit: specs/_audits/2026-05-15-proptest-density.md
+# Source audit: specs/_audits/sealed/2026-05-15-proptest-density.md
 # Charter ref: CoreLink autonomous-execution charter / R-PREP lane.
 
 set -u

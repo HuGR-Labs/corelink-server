@@ -1,7 +1,7 @@
 -- CoreLink Neon Postgres — defence-in-depth RLS WITH CHECK fix (Wave 20).
 --
 -- Canonical sources:
---   - specs/_audits/2026-05-16-wave18-adversarial-review-streamB-neon-shadow.md
+--   - specs/_audits/sealed/2026-05-16-wave18-adversarial-review-streamB-neon-shadow.md
 --       Finding B-P1-01: original RLS uses USING only — cross-tenant INSERT
 --       lands silently if the RealNeonShadowSink driver drops the
 --       `SET LOCAL app.current_tenant` GUC. Add WITH CHECK to gate INSERT
@@ -56,7 +56,7 @@ EXCEPTION
         -- instead of silently swallowing it. The original migration's
         -- CREATE POLICY will run with USING + the caller is expected
         -- to re-run this migration after. See W21-FOLLOWUP-01
-        -- (`specs/_audits/2026-05-16-wave20-adversarial-review.md`
+        -- (`specs/_audits/sealed/2026-05-16-wave20-adversarial-review.md`
         -- W20-P2-01).
         RAISE NOTICE 'tenant_isolation_audit_events_shadow policy already exists';
 END $$;

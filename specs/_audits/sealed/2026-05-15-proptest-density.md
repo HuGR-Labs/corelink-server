@@ -183,7 +183,7 @@ Per orchestrator charter:
   asset covered by the S-13 internal pentest. INV-KEY-OVERLAP and
   INV-KEY-NO-SKIP property tests close two open items in the
   pentest's "fuzz-rotation-state-machine" recommendation.
-  See `specs/_audits/2026-05-01-pentest-s05-internal.md` §4
+  See `specs/_audits/sealed/2026-05-01-pentest-s05-internal.md` §4
   (where it exists; otherwise filed under generic key-management lane).
 - **Roadmap**: `specs/04_sprints/ROADMAP.md` — proptest density is a
   pre-GA quality gate per the sprint-21 SEAL contract; this audit
@@ -283,7 +283,7 @@ Post-closure, the workspace ratio chart shows:
   the new `corelink-admin-dry-run/src/lib.rs`.
 
 **DEBT-009 status:** CLOSED. Cross-reference:
-`specs/_audits/2026-05-15-debt-register.md` row updated.
+`specs/_audits/sealed/2026-05-15-debt-register.md` row updated.
 
 ## Appendix A — crates with no declared INV refs (excluded from gap analysis)
 

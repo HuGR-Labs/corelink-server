@@ -112,9 +112,9 @@ A daily aggregator (`scripts/aggregate_30d_evidence.py` — **planned WI-S20-007
 
 The S-17 chaos automation 4-week period (D-30..D+0) already provides:
 
-- Weekly region-outage chaos drill: 4 ran (artefacts: `specs/_audits/2026-05-14-region-outage-chaos-s14.md` + 3 follow-ons during S-17 cycle).
-- Weekly BYOK kill-switch drill: 4 ran (rotation AWS / GCP / Azure / Vault; one artefact: `specs/_audits/2026-05-14-byok-kill-switch-drill-aws.md`).
-- Monthly tabletop: 1 ran (`specs/_audits/2026-05-14-s17-tabletop-byok-revoke.md`).
+- Weekly region-outage chaos drill: 4 ran (artefacts: `specs/_audits/sealed/2026-05-14-region-outage-chaos-s14.md` + 3 follow-ons during S-17 cycle).
+- Weekly BYOK kill-switch drill: 4 ran (rotation AWS / GCP / Azure / Vault; one artefact: `specs/_audits/sealed/2026-05-14-byok-kill-switch-drill-aws.md`).
+- Monthly tabletop: 1 ran (`specs/_audits/sealed/2026-05-14-s17-tabletop-byok-revoke.md`).
 
 During the S-20 30-day observation window (D+30..D+60) the **same cadence continues**:
 

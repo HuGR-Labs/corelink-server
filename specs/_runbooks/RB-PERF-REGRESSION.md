@@ -89,7 +89,7 @@ If real, narrow it down:
 
 Every regression on a tracked bench is — by definition — eroding a
 DEBT-013 optimization. Open the related ticket in
-`specs/_audits/perf-optimization-followup-tickets.md` and add a comment
+`specs/_audits/sealed/perf-optimization-followup-tickets.md` and add a comment
 that the regression was observed. If the WI is closed, file a new
 follow-up ticket under the same DEBT-013 umbrella tagged
 `debt-013-regression`.
@@ -120,7 +120,7 @@ that costs 12% on p99 but closes a CVE). Requires:
 - [ ] PR description includes:
   - The exact regression observed (bench, baseline, current, delta_pct).
   - The rationale (security, correctness, feature delivery).
-  - A follow-up WI in `specs/_audits/perf-optimization-followup-tickets.md`
+  - A follow-up WI in `specs/_audits/sealed/perf-optimization-followup-tickets.md`
     with a target date for restoring the baseline.
 - [ ] A baseline refresh PR follows the merge:
   `scripts/refresh-perf-baseline.sh && git commit -m "chore(perf): accept regression for <PR>"`.
@@ -150,9 +150,9 @@ time to fix the regression" — use option 5.3 instead.
 ## 8. References
 
 - `docs/internal/PERFORMANCE-PLAYBOOK.md` — patterns + bench evidence.
-- `specs/_audits/2026-05-14-perf-baseline.md` — original criterion baseline.
-- `specs/_audits/2026-05-15-perf-optimization-audit.md` — DEBT-013 audit.
-- `specs/_audits/perf-optimization-followup-tickets.md` — DEBT-013 backlog.
+- `specs/_audits/sealed/2026-05-14-perf-baseline.md` — original criterion baseline.
+- `specs/_audits/sealed/2026-05-15-perf-optimization-audit.md` — DEBT-013 audit.
+- `specs/_audits/sealed/perf-optimization-followup-tickets.md` — DEBT-013 backlog.
 - `scripts/perf-regression-check.py` — gate implementation.
 - `scripts/refresh-perf-baseline.sh` — operator refresh script.
 - `reports/perf/README.md` — committed baseline manifest format.

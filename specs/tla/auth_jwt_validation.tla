@@ -3,7 +3,7 @@
 (* CoreLink — JWT validation algorithm + issuer binding (DEBT-005 5/40)    *)
 (*                                                                         *)
 (* Closes 2 CRITICAL TLA gaps from                                         *)
-(* `specs/_audits/2026-05-15-canonical-consistency-baseline.md` §2         *)
+(* `specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md` §2         *)
 (* (critical_no_tla=40) by formally proving the algorithm-confusion and    *)
 (* issuer-spoof attack surface is closed by the verify state machine.     *)
 (*                                                                         *)
@@ -33,7 +33,7 @@
 (* Cross-refs:                                                             *)
 (*   - `specs/03_architecture/invariant_registry.md §3.14 INV-AUTH-JWT-*`  *)
 (*   - `specs/03_architecture/security_model.md §6.9 CTRL-FORMAL-001`      *)
-(*   - `specs/_audits/2026-05-15-canonical-consistency-baseline.md` §2     *)
+(*   - `specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md` §2     *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, Sequences, TLC

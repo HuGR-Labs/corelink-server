@@ -52,7 +52,7 @@ RB-BILLING-DLQ-DRAIN, RB-STRIPE-WEBHOOK-FAILURE, RB-REVENUE-RECONCILIATION, RB-I
 
 ## Customer-facing surfaces linked
 - Stripe Customer Portal config + redirect flow:
-  `specs/_audits/2026-05-15-stripe-customer-portal-spec.md`.
+  `specs/_audits/sealed/2026-05-15-stripe-customer-portal-spec.md`.
 - Customer guide:
   `apps/docs/docs/how-to/billing/manage-subscription.mdx`.
 

@@ -148,7 +148,7 @@ Per WI-S02-006 §6.1.5. Internal pentest scope (not external — that is S-20 GA
 
 The internal review surfaced no CRITICAL findings during S-02 implementation. The codex / Sonnet adversarial review across cycles 1..13 of S-02 closed all P0 + P1 findings with documented changelog entries; the residual P2/P3 findings are stylistic / forward-looking and do not block SEAL.
 
-A canonical audit doc for this internal pentest is filed under `specs/_audits/2026-04-30-pentest-s02-internal.md` (wired in the same Lote as this PRR).
+A canonical audit doc for this internal pentest is filed under `specs/_audits/sealed/2026-04-30-pentest-s02-internal.md` (wired in the same Lote as this PRR).
 
 ## 7. Observability live status
 

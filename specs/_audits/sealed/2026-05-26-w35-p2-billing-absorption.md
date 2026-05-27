@@ -13,7 +13,7 @@ supersedes: null
 superseded_by: null
 tags: ["audit", "wave-35", "phase-2", "absorption", "billing", "seal"]
 references:
-  - "specs/_audits/2026-05-26-wave-33-34-closure-followups.md"
+  - "specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md"
 ---
 
 # Wave 35 Phase 2 — corelink-billing absorption SEAL

@@ -4,8 +4,8 @@
 -- CardinalityValidator).
 --
 -- Canonical sources:
---   - specs/04_sprints/S09/work_items/WI-S09-001-worker-analytics-engine-red-metrics-cardinality-validator.md §6
---   - specs/04_sprints/S09/_spec_contract.md §4 CAP-OBS-001 + §5 R-S09-1 + §5 R-S09-2 + §8 INV-OBS-CARDINALITY-BUDGET
+--   - specs/04_sprints/_sealed/S09/work_items/WI-S09-001-worker-analytics-engine-red-metrics-cardinality-validator.md §6
+--   - specs/04_sprints/_sealed/S09/_spec_contract.md §4 CAP-OBS-001 + §5 R-S09-1 + §5 R-S09-2 + §8 INV-OBS-CARDINALITY-BUDGET
 --   - specs/03_architecture/invariant_registry.md §3.12 INV-OBS-CARDINALITY-BUDGET
 --   - specs/03_architecture/observability_model.md §11.2 cardinality budget
 --   - specs/03_architecture/adrs/ADR-0036-d1-schema-migration-governance.md

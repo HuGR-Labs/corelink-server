@@ -14,9 +14,9 @@
 //!
 //! ## Stage 0 absorption strategy — Option-A aggregator
 //!
-//! Per `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §6 sub-step
+//! Per `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md` §6 sub-step
 //! 2, this crate "absorbs" 3 existing crates. The Stage 0 audit doc
-//! `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4 documents the
+//! `specs/_audits/sealed/2026-05-22-w33-stage0-foundation.md` §4 documents the
 //! deliberate choice to land sub-step 2 as a re-export aggregator
 //! rather than a physical source move:
 //!
@@ -41,7 +41,7 @@
 //!   That is precisely the kind of cross-stream coordination Stage 1's
 //!   FFI / SDK stream should own atomically — not a Stage 0 task. This
 //!   is hard-pause-trigger-1 (charter §7) partial activation; flagged
-//!   in `specs/_audits/2026-05-22-w33-stage0-foundation.md` §7.
+//!   in `specs/_audits/sealed/2026-05-22-w33-stage0-foundation.md` §7.
 //! - `corelink-hash` benches (`benches/blake3.rs`, `blake3_bench.rs`),
 //!   examples (`examples/blake3_vectors.rs`), tests (`tests/*.rs`), and
 //!   fuzz targets (`fuzz/`) reference internal-crate types. A physical

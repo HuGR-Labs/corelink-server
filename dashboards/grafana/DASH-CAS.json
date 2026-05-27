@@ -434,7 +434,7 @@
   "links": [
     {
       "title": "Spec — WI-S09-005",
-      "url": "../../specs/04_sprints/S09/work_items/WI-S09-005-12-grafana-dashboards-as-code.md",
+      "url": "../../specs/04_sprints/_sealed/S09/work_items/WI-S09-005-12-grafana-dashboards-as-code.md",
       "type": "link",
       "icon": "doc"
     },

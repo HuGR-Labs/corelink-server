@@ -52,7 +52,7 @@ tags: ["runbook", "audit", "audit-export", "data-integrity", "sev-0", "soc2", "c
 > - `apps/server/src/routes/audit_export.rs` §6-7 (verify pipeline + emit)
 > - `crates/corelink-audit-chain/src/exporter.rs` (`verify_export_result` semantics)
 > - `crates/corelink-audit-chain/src/archive_producer.rs` (R2 chunk shape)
-> - `specs/_audits/2026-05-15-audit-chain-retention.md` (retention mechanism + R2 Object Lock)
+> - `specs/_audits/sealed/2026-05-15-audit-chain-retention.md` (retention mechanism + R2 Object Lock)
 > - `specs/_runbooks/RB-AUDIT-EXPORT-INTEGRITY.md` (customer-reported sibling; reuse §2 chain-break triage)
 > - `specs/_runbooks/RB-AUDIT-EXPORT-CROSS-TENANT-ATTEMPT.md` (sibling SEV-1; if both fire concurrently → coordinated attack)
 > - `RB-AUDIT-CHAIN-001` (daily-verifier chain-break runbook)
@@ -275,7 +275,7 @@ The report shape per `crates/corelink-audit-chain/src/exporter.rs`:
   escalate to Cloudflare support per WI-S20-006).
 - `replay_mismatch_missing_object` → the chunk is missing from R2 →
   **retention violation**; cross-reference
-  `specs/_audits/2026-05-15-audit-chain-retention.md` §2.2 monotonic
+  `specs/_audits/sealed/2026-05-15-audit-chain-retention.md` §2.2 monotonic
   chunk-count check and trigger the §3.7 audit-retention runbook
   (the daily-verifier should have caught this — investigate the
   verifier's gap).

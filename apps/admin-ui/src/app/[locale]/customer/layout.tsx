@@ -3,7 +3,7 @@
 // Distinct from the operator surface: no admin chrome, no global tenant
 // switcher, no operator nav. Anyone authenticated in the org (admin / viewer /
 // member) sees only their own tenant's data through `/v1/customer/*`
-// endpoints. See `specs/_audits/2026-05-15-customer-dashboard-spec.md`.
+// endpoints. See `specs/_audits/sealed/2026-05-15-customer-dashboard-spec.md`.
 
 import * as React from "react";
 import CustomerNav from "@/components/customer/CustomerNav";

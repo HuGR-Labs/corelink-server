@@ -29,7 +29,7 @@ colocated.
 
 **Canonical template to mirror:** pip is the closest analogue — both have CAS + KV. See
 `crates/corelink-adapter-pip/src/ports.rs` (121 LOC; 3 async traits + handle type aliases).
-SEAL audit precedent: `specs/_audits/2026-05-26-w34-adapter-pip.md` §3.
+SEAL audit precedent: `specs/_audits/sealed/2026-05-26-w34-adapter-pip.md` §3.
 
 Document this inline-ports decision in your SEAL audit §3 (mirror pip/brew/oci §3 / §6).
 

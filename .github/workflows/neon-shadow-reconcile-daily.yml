@@ -51,7 +51,7 @@ name: neon-shadow-reconcile-daily (Wave 19)
 #
 # Implements: Wave-19 closure note for wave-18 caveat #3 (real Neon
 #            shadow driver + per-region resolution + daily reconcile).
-#            See `specs/_audits/2026-05-16-neon-shadow-real-driver.md`
+#            See `specs/_audits/sealed/2026-05-16-neon-shadow-real-driver.md`
 #            §5 reconciliation contract.
 
 on:

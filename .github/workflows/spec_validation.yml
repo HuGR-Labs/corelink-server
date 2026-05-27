@@ -65,5 +65,5 @@ jobs:
         # addendum and emits an advisory conformance line consumed by the
         # quarterly framework review delta-doc (addendum §3.4). Advisory
         # only — exits 0 even when SLA breaches detected. Wave-26 closure
-        # per `specs/_audits/2026-05-16-lote-7-followons-closure.md`.
+        # per `specs/_audits/sealed/2026-05-16-lote-7-followons-closure.md`.
         run: python3 scripts/check-raci-sla.py --dry-run

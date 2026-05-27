@@ -20,7 +20,7 @@ tags: ["compliance", "asvs", "owasp", "s05", "multipart", "checklist"]
 > **Date:** 2026-05-01 · **Mode:** internal self-checklist (external audit deferred to S-20 GA gate)
 
 ASVS chapter scope per WI-S05-006 §6.1.5 + S-04 ASVS precedent
-(`specs/04_sprints/S04/asvs-v5-v6-v8-v10-v14-checklist.md`):
+(`specs/04_sprints/_sealed/S04/asvs-v5-v6-v8-v10-v14-checklist.md`):
 **V5 / V6 / V8 / V10 / V14**. Same chapters as S-04 — the multipart
 CAS surface inherits the AC surface's threat model and adds chunker
 + R2 multipart adapter + sweeper sub-surfaces. Standard reference:

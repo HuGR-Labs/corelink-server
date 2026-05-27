@@ -103,7 +103,7 @@ pub mod real;
 /// checks on both targets — every stub method surfaces
 /// [`real::NeonError::WasmOnly`].
 ///
-/// Pattern reference: `specs/_audits/2026-05-16-neon-shadow-real-driver.md`
+/// Pattern reference: `specs/_audits/sealed/2026-05-16-neon-shadow-real-driver.md`
 /// §7 (wave-20 closure-note appended).
 pub mod real_tokio_pg;
 
@@ -115,7 +115,7 @@ pub mod real_tokio_pg;
 /// wrapping the new `tenant_config` D1 table (migration
 /// `0052_tenant_config_region.sql`).
 ///
-/// Pattern reference: `specs/_audits/2026-05-16-neon-shadow-real-driver.md`
+/// Pattern reference: `specs/_audits/sealed/2026-05-16-neon-shadow-real-driver.md`
 /// §7 (wave-21 closure-note appended).
 pub mod tenant_region;
 
@@ -282,7 +282,7 @@ impl ShadowEventRow {
 /// Parse-error surface for [`ShadowEventRow::from_persisted_line`].
 ///
 /// Wave-21 closure of B-P1-05 (per
-/// `specs/_audits/2026-05-16-wave18-adversarial-review-streamB-neon-shadow.md`
+/// `specs/_audits/sealed/2026-05-16-wave18-adversarial-review-streamB-neon-shadow.md`
 /// §6): the wave-18 implementation silently admitted malformed NDJSON
 /// rows with `event_time_ms = 0` and `event_type = ""`, which inflated
 /// the analytics `[0..granularity)` bucket. This typed error is the

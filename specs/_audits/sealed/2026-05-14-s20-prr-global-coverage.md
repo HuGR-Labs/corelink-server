@@ -23,7 +23,7 @@ tags:
 
 # S-20 PRR Global Coverage Audit — 14 Canonical Sources Verification Matrix
 
-Cross-source coverage matrix backing `specs/04_sprints/S20/PRR-S20-GA.md` §2. For
+Cross-source coverage matrix backing `specs/04_sprints/_sealed/S20/PRR-S20-GA.md` §2. For
 each of the 14 canonical sources, this audit lists the artefacts that prove
 readiness (file path + doc_status active + `validate_specs.py` outcome + test
 counts + runbook drill cadence + chaos / TLA+ runs + cumulative INVs / CTRLs /

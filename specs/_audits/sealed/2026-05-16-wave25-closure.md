@@ -5,7 +5,7 @@
 > **Author:** wave-25 hygiene agent (Claude Opus 4.7) — branch `wt/r-prep-inv-registry-wave25-sweep`.
 > **Base:** `main` @ `e9ee8eb` ("merge wt/r-prep-pat-clerk-mutation-sweep into main (wave-24)" — wave-24 SEAL tip).
 > **Scope:** INV registry hygiene + DEBT register survey (wave-25 in-flight — DO NOT close from this stream) + wave-25 stream catalogue + external pentest engagement state (cross-ref stream #1) + DEBT-015-BUILD path-(3) final state (cross-ref stream #2) + GA-readiness DEFER drift detector (cross-ref stream #4) + INV registry severity-breakdown snapshot + wave-26 candidate streams.
-> **Cross-ref:** `specs/_audits/2026-05-16-wave24-closure.md` (predecessor), `specs/_audits/2026-05-15-debt-register.md` v1.2.x, `specs/03_architecture/invariant_registry.md`, `specs/_audits/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 final audit; CONDITIONAL GO), `specs/_audits/2026-05-16-debt-015-build-final.md` (wave-23 root-cause narrowing baseline), `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` (wave-19 SEALED pentest scope).
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-wave24-closure.md` (predecessor), `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.x, `specs/03_architecture/invariant_registry.md`, `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 final audit; CONDITIONAL GO), `specs/_audits/sealed/2026-05-16-debt-015-build-final.md` (wave-23 root-cause narrowing baseline), `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` (wave-19 SEALED pentest scope).
 
 ---
 
@@ -15,13 +15,13 @@ Wave-25 is the post-wave-24 GA-freeze-prep wave, dispatched on `main` @ `e9ee8eb
 
 | # | Stream | Branch / worktree | Disposition |
 |---|---|---|---|
-| 1 | **External pentest engagement scope freeze** (anchor stream per wave-24 §6 candidate #1) — author RFP draft + vendor shortlist + SOW template against the wave-19 SEALED scope (`specs/_audits/2026-05-16-pre-ga-pentest-scope.md`); ratify or amend the scope based on wave-24 dry-run findings + wave-24 GA-readiness final audit DEFER counter. Vendor selection + engagement letter remain user-bound. | `wt/r-prep-pentest-engagement-scope-freeze` (worktree `agent-pentest-engagement-scope`) | **IN FLIGHT** (wave-25) |
+| 1 | **External pentest engagement scope freeze** (anchor stream per wave-24 §6 candidate #1) — author RFP draft + vendor shortlist + SOW template against the wave-19 SEALED scope (`specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md`); ratify or amend the scope based on wave-24 dry-run findings + wave-24 GA-readiness final audit DEFER counter. Vendor selection + engagement letter remain user-bound. | `wt/r-prep-pentest-engagement-scope-freeze` (worktree `agent-pentest-engagement-scope`) | **IN FLIGHT** (wave-25) |
 | 2 | **DEBT-015-BUILD path-(3) ssgRequire sandbox-eval** — wave-24 stream #3 attempted path-(1) babel-preset `modules: false` patch (PARTIAL per `d91a690 chore(docs): wave-24 babel preset patch + ssgRequire path forward (DEBT-015-BUILD PARTIAL)`); wave-25 stream #2 executes the path-(3) ssgRequire sandbox-eval over the `build/assets/js/<chunkId>.<hash>.js` client chunks — per wave-23 final-audit fix-path order. This is the LAST in-charter path-attempt before alternative-architecture decision per wave-24 §4.3. | `wt/r-prep-debt-015-build-ssgrequire-path3` (worktree `agent-debt-015-w25`) | **IN FLIGHT** (wave-25) |
 | 3 | **DEBT-008 number-discrepancy reconciliation** — wave-24 stream #2 SEAL'd 2 batches (`7b10444 wave-24 DEBT-008 mutation closure (chunker + multipart-schema CLOSED; 3 large crates → CI-nightly)` + `c469fe5 chore(debt-008): wave-24 empirical lift for corelink-pat + corelink-clerk`). Cross-wave kill % narrative drifted — chunker/multipart-schema CLOSED but the 3 large crates (`r2-multipart`, `quota-cas`, `webauthn`) were re-classified to CI-nightly instead of empirical first-sweep. Stream #3 reconciles the post-wave-24 number-discrepancy with the wave-23 baseline narrative and updates DEBT-008 row text in the canonical register to reflect the actual final state. | `wt/r-prep-debt-008-number-discrepancy` (worktree `agent-debt-008-numbers`) | **IN FLIGHT** (wave-25) |
-| 4 | **GA-readiness DEFER drift detector** — wave-24 stream #8 GA-readiness final audit (`specs/_audits/2026-05-16-ga-readiness-final.md`) issued **CONDITIONAL GO** with 8 DEFER items (5 user-bound + 3 vendor-bound). Stream #4 authors a drift-detector script + CI gate that re-counts the DEFER population each commit and fails the build if the DEFER set grows without an associated `specs/_audits/<date>-defer-add-*.md` evidence doc. Prevents silent regression of the GA-readiness verdict between wave-25 and the cutover meeting. | `wt/r-prep-ga-checklist-drift-detector` (worktree `agent-ga-checklist-drift`) | **IN FLIGHT** (wave-25) |
+| 4 | **GA-readiness DEFER drift detector** — wave-24 stream #8 GA-readiness final audit (`specs/_audits/sealed/2026-05-16-ga-readiness-final.md`) issued **CONDITIONAL GO** with 8 DEFER items (5 user-bound + 3 vendor-bound). Stream #4 authors a drift-detector script + CI gate that re-counts the DEFER population each commit and fails the build if the DEFER set grows without an associated `specs/_audits/<date>-defer-add-*.md` evidence doc. Prevents silent regression of the GA-readiness verdict between wave-25 and the cutover meeting. | `wt/r-prep-ga-checklist-drift-detector` (worktree `agent-ga-checklist-drift`) | **IN FLIGHT** (wave-25) |
 | 5 | **Endurance 10-minute dress rehearsal** — wave-22 stream #8 built the 24h endurance rig; wave-24 stream #1 dry-run consumed ≥24h streak evidence (`ec074a1 wave-24 r-prep — RB-GA-CUTOVER §3 dry-run (G1..G6 all GREEN)`). Wave-25 stream #5 executes a 10-minute compressed dress rehearsal of the soak-streak ratchet (per wave-24 §6 candidate #6) as the cadence-preserving evidence rotation for the greenlight dashboard between wave-25 and cutover. | `wt/r-prep-endurance-10min-dressrun` (worktree `agent-endurance-dressrun`) | **IN FLIGHT** (wave-25) |
 | 6 | **Statuspage init dress rehearsal** — DEBT-016 closed engineering-side wave-24 (`4076391 debt-016: statuspage URL substitution mechanism (engineering-CLOSED)`); user-bound provisioning still T-7d. Wave-25 stream #6 executes a dress-run of the statuspage-init flow against a staging Statuspage tenant (or a mocked HTTP harness if Statuspage org is not yet provisioned) — validates the URL-substitution mechanism end-to-end so the T-7d user-side switch is a pure DNS + ORG-ID swap. | `wt/r-prep-statuspage-init-dressrun` (worktree `agent-statuspage-dressrun`) | **IN FLIGHT** (wave-25) |
-| 7 | **Tenant-config CF prod-wire** — wire the tenant-config region resolver (wave-21 9.85/10 adversarial-review highlight per wave-24 §3.2) into the Cloudflare prod binding using the real CF binding pattern (`specs/_audits/2026-05-15-cf-binding-real-pattern.md`). Production wiring layer addition; brings the region resolver from staging-only to GA-cutover-ready. | `wt/r-prep-tenant-config-cf-prod-wire` (worktree `agent-tenant-config-cf-wire`) | **IN FLIGHT** (wave-25) |
+| 7 | **Tenant-config CF prod-wire** — wire the tenant-config region resolver (wave-21 9.85/10 adversarial-review highlight per wave-24 §3.2) into the Cloudflare prod binding using the real CF binding pattern (`specs/_audits/sealed/2026-05-15-cf-binding-real-pattern.md`). Production wiring layer addition; brings the region resolver from staging-only to GA-cutover-ready. | `wt/r-prep-tenant-config-cf-prod-wire` (worktree `agent-tenant-config-cf-wire`) | **IN FLIGHT** (wave-25) |
 | 8 | **Pre-GA security attestation rollup** — consolidate SOC 2 / ISO 27001 / GDPR / LGPD / PCI / CCPA + the wave-24 LFPDPPP MX attorney package + the BYOK 4-provider matrix + the wave-24 chaos combined-failure evidence into a single sign-off-ready pre-GA security attestation document. Cross-references `specs/_compliance/GA-GATE-CRITERIA.md` security track. | `wt/r-prep-pre-ga-security-attestation` (worktree `agent-security-attestation`) | **IN FLIGHT** (wave-25) |
 | 9 | **Wave-24 adversarial review (codex Opus pass)** — mandatory per charter "all P1-classified streams must close before next wave unblocks P2/P3". Cross-review wave-24 streams #1 dry-run, #2 DEBT-008 wave-24 batch, #3 DEBT-015-BUILD babel-patch, #6 PAT-revoke TLA+, #8 GA-readiness final audit. **Largest review pass to date** — wave-24 had 9 in-flight streams of which 5 are P1-classified. | `wt/r-prep-wave24-adversarial-review` (worktree `agent-wave24-review`) | **IN FLIGHT** (wave-25) |
 | 10 | **Wave-25 INV registry sweep + DEBT register survey + wave-25 closure audit** (this stream — hygiene + cataloguing pass; survey-only) + **Lote 7 RACI detail** (combined-bucket per wave-24 §3.2 pattern — RACI detail rows for Lote 7 (Auth) tenant-isolation matrix) | `wt/r-prep-inv-registry-wave25-sweep` (worktree `agent-wave25-sweep`) + `wt/r-prep-lote-7-raci-detail` (worktree `agent-lote-7-raci`) | **CLOSED via this commit** (combined-bucket) |
@@ -38,8 +38,8 @@ Stream #1 is the **wave-25 anchor stream** per wave-24 §6 candidate streams. Ch
 
 | Pentest baseline artifact | State at wave-25 dispatch | Source |
 |---|---|---|
-| Wave-19 SEALED pentest scope | Frozen | `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` |
-| S-14 BYOK internal pentest | Complete | `specs/_audits/2026-05-14-pentest-s14-byok.md` |
+| Wave-19 SEALED pentest scope | Frozen | `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` |
+| S-14 BYOK internal pentest | Complete | `specs/_audits/sealed/2026-05-14-pentest-s14-byok.md` |
 | S-02..S-06 internal pentest baseline | Complete | `specs/_audits/2026-04-30..2026-05-02-pentest-s0X-internal.md` (5 sprints) |
 | Wave-24 dry-run findings (drives scope amendment input) | Available | `ec074a1 wave-24 r-prep — RB-GA-CUTOVER §3 dry-run (G1..G6 all GREEN)` + `2128ce3 wave-24 GA-readiness final audit + go/no-go decision board` |
 | Vendor shortlist | Not yet authored | — |
@@ -100,8 +100,8 @@ Stream #4 addresses a structural risk surfaced by the wave-24 GA-readiness final
 ### 4.1 Stream #4 SEAL-gate (forward-looking)
 
 - ✅ Author `scripts/validate_ga_defer_drift.py` (or equivalent) that:
-  - Parses `specs/_audits/2026-05-16-ga-readiness-final.md` §11 (DEFER counter table) for the baseline DEFER set.
-  - Parses `specs/_audits/2026-05-15-debt-register.md` for OPEN rows flagged as `defer-class: user-bound | vendor-bound`.
+  - Parses `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §11 (DEFER counter table) for the baseline DEFER set.
+  - Parses `specs/_audits/sealed/2026-05-15-debt-register.md` for OPEN rows flagged as `defer-class: user-bound | vendor-bound`.
   - Cross-checks the two for drift (any OPEN DEFER row not in the baseline = drift; any baseline row missing from register = drift).
   - Exits 0 if drift count is 0; exits 1 with a summary diff otherwise.
 - ✅ Optional CI gate (`.github/workflows/ga-defer-drift.yml`) that runs the validator on every PR touching `specs/_audits/*` or `specs/_compliance/GA-GATE-*` paths.
@@ -127,11 +127,11 @@ Per `python3 scripts/validate_canonical_consistency.py` on this branch (post-swe
 | └ MEDIUM | **4** | 0 |
 | └ LOW / UNKNOWN | **0** | 0 |
 | Aliases declared (registry §5) | 15 | 0 |
-| TLA+ verified (declared INVs proved in `specs/tla/*.tla`) | **82** | +1 (was 81 at wave-25 sweep authoring; +1 from `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed later in wave-25 merge order; figure refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`) |
+| TLA+ verified (declared INVs proved in `specs/tla/*.tla`) | **82** | +1 (was 81 at wave-25 sweep authoring; +1 from `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed later in wave-25 merge order; figure refreshed wave-27 per `specs/_audits/sealed/2026-05-16-tla-figure-refresh-wave27.md`) |
 | Code-referenced (declared INVs cited in `crates/*/src/`) | 103 | 0 |
 | Test-referenced (declared INVs cited in `crates/*/tests/`) | 89 | 0 |
 | Orphan refs (in code, NOT in registry+aliases) | **0** | 0 |
-| CRITICAL without TLA+ proof | **0** (was 1 at wave-25 sweep authoring; INV-PAT-REVOKE-PROPAGATION TLA-verified via `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed later in wave-25 merge order; **61/61 CRITICAL TLA-verified, Z=0 unverified per wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`**; figure refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`) | -1 |
+| CRITICAL without TLA+ proof | **0** (was 1 at wave-25 sweep authoring; INV-PAT-REVOKE-PROPAGATION TLA-verified via `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed later in wave-25 merge order; **61/61 CRITICAL TLA-verified, Z=0 unverified per wave-26 final audit `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`**; figure refreshed wave-27 per `specs/_audits/sealed/2026-05-16-tla-figure-refresh-wave27.md`) | -1 |
 | Declared with NO code/test reference | 76 | 0 |
 | Declared test-only (test ref but no src/) | 18 | 0 |
 
@@ -171,7 +171,7 @@ For the GA-cutover meeting:
 
 ## 6. DEBT register survey — pre-wave-25-SEAL state
 
-Per `specs/_audits/2026-05-15-debt-register.md` (last reconciled in wave-23 close — DEBT-025 added 2026-05-16; total canonical OPEN rows surveyed below). No DEBT closures performed by this stream (charter-bound survey-only).
+Per `specs/_audits/sealed/2026-05-15-debt-register.md` (last reconciled in wave-23 close — DEBT-025 added 2026-05-16; total canonical OPEN rows surveyed below). No DEBT closures performed by this stream (charter-bound survey-only).
 
 ### 6.1 Open count + per-priority breakdown (canonical rows; pre-wave-25-SEAL)
 
@@ -191,7 +191,7 @@ Per the wave-24 closure §8.1 baseline + wave-24 SEAL commits between `33138b5` 
 - ✅ `e421a6c merge wt/r-prep-adr-0034b-dual-hat into main (wave-24)` — ADR-0034b dual-hat decomposition SEALED.
 - ✅ `3ab6fc2 merge wt/r-prep-ga-cutover-dryrun into main (wave-24)` — GA cutover dry-run G1..G6 all GREEN (per `ec074a1`).
 - ✅ `df67e1e merge wt/r-prep-debt-016-statuspage-urls into main (wave-24)` — DEBT-016 engineering-CLOSED (statuspage URL substitution mechanism per `4076391`).
-- ✅ `b71a360 merge wt/r-prep-inv-registry-wave24-sweep into main (wave-24)` — wave-24 sweep SEALED with closure audit `specs/_audits/2026-05-16-wave24-closure.md`.
+- ✅ `b71a360 merge wt/r-prep-inv-registry-wave24-sweep into main (wave-24)` — wave-24 sweep SEALED with closure audit `specs/_audits/sealed/2026-05-16-wave24-closure.md`.
 - ✅ `d58734f merge wt/r-prep-wave23-adversarial-review into main (wave-24)` — wave-23 adversarial review 9.20/10 PASS (per `90d9849`).
 - ✅ `4a54407 merge wt/r-prep-ga-readiness-final-audit into main (wave-24)` — GA-readiness final audit CONDITIONAL GO verdict authored.
 - ✅ `a3b1a20 merge wt/r-prep-debt-015-build-babel-patch into main (wave-24)` — DEBT-015-BUILD path-(1)+(2) attempt PARTIAL; path-(3) handed off to wave-25 stream #2.
@@ -228,7 +228,7 @@ Per the wave-25 sweep charter:
 | Gate | Command | Result |
 |---|---|---|
 | INV promotion validator | `python3 scripts/validate_inv_promotion.py` | exit 0 — registry coverage 143/143; all WI-declared INVs present. |
-| Canonical consistency validator | `python3 scripts/validate_canonical_consistency.py` | exit 0 — 197 INVs declared; 0 orphan refs; **0 CRITICAL without TLA+** at HEAD (was 1 at wave-25 sweep authoring; INV-PAT-REVOKE-PROPAGATION TLA-verified via `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed later in wave-25 merge order; tla-verified: 82; refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md` against wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`). |
+| Canonical consistency validator | `python3 scripts/validate_canonical_consistency.py` | exit 0 — 197 INVs declared; 0 orphan refs; **0 CRITICAL without TLA+** at HEAD (was 1 at wave-25 sweep authoring; INV-PAT-REVOKE-PROPAGATION TLA-verified via `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed later in wave-25 merge order; tla-verified: 82; refreshed wave-27 per `specs/_audits/sealed/2026-05-16-tla-figure-refresh-wave27.md` against wave-26 final audit `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`). |
 | Spec corpus validator | `python3 scripts/validate_specs.py` | exit 0 — 446 with schema + 9 YAML-only (455 total). |
 | Reference validator | `python3 scripts/validate_references.py` | exit 0 — no dangling references (267 INV uses; 82 SLO uses; 234 RB uses; 36 ADR uses; 11 FF-HR uses; 31 SLO definitions; 127 RB definitions; 27 ADR definitions; 199 INV definitions). |
 
@@ -244,7 +244,7 @@ Per the wave-25 charter §"next-wave (wave-26) candidate streams — anchor: GA-
 | 2 | **Wave-25 adversarial review (codex Opus pass)** | Mandatory per charter "all P1-classified streams must close before next wave unblocks P2/P3". Cross-review wave-25 streams #1 pentest engagement, #2 DEBT-015-BUILD path-3, #3 DEBT-008 reconciliation, #4 DEFER drift detector, #8 pre-GA security attestation, #9 wave-24 adversarial review. | ~1 codex Opus pass per P1 stream + 1 audit doc per stream. |
 | 3 | **DEBT-015-BUILD wave-26 escalation** (only if wave-25 stream #2 path-(3) failed) | Alt-arch decision — docs-platform-eval stream: Docusaurus 3 → Astro Starlight / Mintlify / Next.js + nextra / invasive runtime-patch. **Hard wave-24 §4.3 escalation deadline already reached** — wave-26 alt-arch is the LAST resort before GA-Limited launches without the docs CI gate. | 1 codex Opus for alt-arch decision + 1 Sonnet for implementation if Docusaurus stays. |
 | 4 | **DEBT-008 wave-26 follow-on** (only if wave-25 stream #3 reconciliation surfaces a < 75% CI-nightly streak for any of `{dual-approval, ratelimit, r2-multipart, quota-cas, webauthn}`) | Targeted-test additions per the wave-15 / wave-21 / wave-22 / wave-23 / wave-24 empirical-closure methodology. | 1 Sonnet per remediation. |
-| 5 | **Pentest engagement scope-ratify-or-amend absorption** | Once wave-25 stream #1 SEALs (RFP + shortlist + SOW + scope decision), absorb the decision into `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` v2 (ratified) or v2 (amended). | 1 Sonnet absorption. |
+| 5 | **Pentest engagement scope-ratify-or-amend absorption** | Once wave-25 stream #1 SEALs (RFP + shortlist + SOW + scope decision), absorb the decision into `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` v2 (ratified) or v2 (amended). | 1 Sonnet absorption. |
 | 6 | **DEBT-025 LFPDPPP MX attorney absorption** (T+30d-ish horizon) | LFPDPPP MX attorney-side review absorption — wave-23 stream #6 drafted the package; once attorney returns sign-off / edits, an agent absorbs the legal-side feedback into the residency annex + retention table + DPA addendum. | 1 Sonnet × absorption. |
 | 7 | **24h endurance soak streak ratchet** | Wave-25 stream #5 dress-rehearsed the 10-minute compressed soak; wave-26 schedules a continuous 7-day endurance soak as the cutover-day evidence (SLO observation streak ≥ 168 h). | Wall-clock; 1 Sonnet for evidence absorption. |
 | 8 | **DEBT-010 P2 CI optimisation batch** (carried from wave-23/24 §6 — post-GA polish) | ~30 min/PR cumulative savings; concurrency cancel + shared rust-cache key + TLC matrix + paths-filter audit. | 1 Sonnet × 4 P2 tickets. |
@@ -255,7 +255,7 @@ Per the wave-25 charter §"next-wave (wave-26) candidate streams — anchor: GA-
 
 - **INV registry stable at 197** — wave-24 SEAL added zero new canonical INVs; wave-25 in-flight streams (per §5.1) project zero additions. **Wave-26 GA-1 freeze locks the count at 197 declared.** Any post-GA additions are R-prep-post-GA absorption work, not GA-blockers.
 - **No DRAFT entries detected** in `specs/03_architecture/invariant_registry.md` §3 sub-sections at wave-25 base; the doc-level `doc_status: DRAFT` front-matter remains staffing-blocked per F-09 until ≥ 2 reviewers nominated (separate from per-entry status — same caveat as wave-22/23/24).
-- **CRITICAL-no-TLA+ count is 0 at HEAD** (was 1 — INV-PAT-REVOKE-PROPAGATION — at wave-25 sweep authoring; flipped to TLA-verified when `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed later in wave-25 merge order; **61/61 CRITICAL TLA-verified, Z=0 unverified per wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`**). The wave-24 PAT-revoke TLA+ stream (#6) attempt was completed and absorbed via the wave-25 cherry-pick. The §4.3 wall-clock-obligation exemption framework remains in the registry but no CRITICAL invariant currently consumes it. **No wave-26 follow-on warranted** (caveat refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`).
+- **CRITICAL-no-TLA+ count is 0 at HEAD** (was 1 — INV-PAT-REVOKE-PROPAGATION — at wave-25 sweep authoring; flipped to TLA-verified when `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed later in wave-25 merge order; **61/61 CRITICAL TLA-verified, Z=0 unverified per wave-26 final audit `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`**). The wave-24 PAT-revoke TLA+ stream (#6) attempt was completed and absorbed via the wave-25 cherry-pick. The §4.3 wall-clock-obligation exemption framework remains in the registry but no CRITICAL invariant currently consumes it. **No wave-26 follow-on warranted** (caveat refreshed wave-27 per `specs/_audits/sealed/2026-05-16-tla-figure-refresh-wave27.md`).
 - **DEBT-008 final state is 10 empirically-CLOSED crates + 5 CI-nightly** post-wave-24-SEAL (wave-24 stream #2 + PAT/clerk combined-bucket added pat + clerk to the empirical set; the 3 large crates were re-classified to CI-nightly per the wave-24 commit narrative). **No wave-26 first-sweep stream needed** unless wave-25 stream #3 surfaces a < 75% CI-nightly streak.
 - **DEBT-015-BUILD path-(3) is the LAST in-charter attempt** — wave-26 alt-arch is the escalation deadline already triggered by the path-(3) outcome. If path-(3) succeeds (wave-25 stream #2 CLOSED), DEBT-015-BUILD flips to CLOSED and wave-26 needs no follow-on. If path-(3) fails, wave-26 stream #3 is mandatory and escalates DEBT-015-BUILD to P1 with alt-arch decision.
 - **GA-readiness DEFER counter locked at 8** (5 user-bound + 3 vendor-bound) by wave-25 stream #4 drift detector. Wave-26 GA-1 freeze cutover meeting consumes this counter as the canonical residual-blocker list.
@@ -282,23 +282,23 @@ Per the wave-25 charter §"next-wave (wave-26) candidate streams — anchor: GA-
 - **Sign-off:** Gustavo Schneiter (final approver, async at next review)
 - **Co-Authored-By:** Claude Opus 4.7 <noreply@anthropic.com>
 - **Refresh history:**
-  - **2026-05-16 (wave-27 R-prep, branch `wt/r-prep-tla-figure-refresh`)** — TLA-coverage figures refreshed on §5 INV registry table (lines 130, 134), §7 Quality gates "Canonical consistency validator" row (line 231), §8.1 caveat "CRITICAL-no-TLA+ count" (line 258) from the wave-25-sweep-authoring snapshot "**81 TLA-verified / 1 CRITICAL TLA-exempt**" to the wave-26-canonical state "**82 TLA-verified / 0 TLA-exempt + 61/61 CRITICAL TLA-verified, Z=0 unverified**" per wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`). Root cause: wave-25 P1-01 in `specs/_audits/2026-05-16-wave25-adversarial-review.md` §3 — this audit was authored on `e9ee8eb` BEFORE the wave-25 cherry-pick `8fa1c22` (`auth_pat_revoke.tla`) reordered the registry state. Substantive verdict (wave-25 closure CLOSED via combined-bucket) unchanged. Cross-ref `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`.
+  - **2026-05-16 (wave-27 R-prep, branch `wt/r-prep-tla-figure-refresh`)** — TLA-coverage figures refreshed on §5 INV registry table (lines 130, 134), §7 Quality gates "Canonical consistency validator" row (line 231), §8.1 caveat "CRITICAL-no-TLA+ count" (line 258) from the wave-25-sweep-authoring snapshot "**81 TLA-verified / 1 CRITICAL TLA-exempt**" to the wave-26-canonical state "**82 TLA-verified / 0 TLA-exempt + 61/61 CRITICAL TLA-verified, Z=0 unverified**" per wave-26 final audit `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`). Root cause: wave-25 P1-01 in `specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md` §3 — this audit was authored on `e9ee8eb` BEFORE the wave-25 cherry-pick `8fa1c22` (`auth_pat_revoke.tla`) reordered the registry state. Substantive verdict (wave-25 closure CLOSED via combined-bucket) unchanged. Cross-ref `specs/_audits/sealed/2026-05-16-tla-figure-refresh-wave27.md`.
 
 ---
 
 ## 10. Cross-references
 
-- `specs/_audits/2026-05-16-wave24-closure.md` (wave-24 closure; predecessor).
-- `specs/_audits/2026-05-16-wave23-closure.md` (wave-23 closure; structural patterns continued).
-- `specs/_audits/2026-05-16-wave22-closure.md` (wave-22 closure; baseline cadence).
-- `specs/_audits/2026-05-15-debt-register.md` (DEBT register canonical state).
+- `specs/_audits/sealed/2026-05-16-wave24-closure.md` (wave-24 closure; predecessor).
+- `specs/_audits/sealed/2026-05-16-wave23-closure.md` (wave-23 closure; structural patterns continued).
+- `specs/_audits/sealed/2026-05-16-wave22-closure.md` (wave-22 closure; baseline cadence).
+- `specs/_audits/sealed/2026-05-15-debt-register.md` (DEBT register canonical state).
 - `specs/03_architecture/invariant_registry.md` (197 declared at wave-25 base; severity-classification clean).
-- `specs/_audits/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 final audit; CONDITIONAL GO verdict; 8-item DEFER counter).
-- `specs/_audits/2026-05-16-ga-final-checklist.md` (operator-runnable boolean checklist; wave-25 stream #4 drift detector references this).
-- `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` (wave-19 SEALED pentest scope; wave-25 stream #1 ratifies or amends).
-- `specs/_audits/2026-05-16-debt-015-build-final.md` (wave-23 root-cause narrowing baseline; sets fix-path order picked up by wave-24 stream #3 path-(1)/(2) + wave-25 stream #2 path-(3)).
-- `specs/_audits/2026-05-16-ga-cutover-dryrun.md` (wave-24 stream #1 dry-run G1..G6 all GREEN; provides scope-amendment input for wave-25 stream #1).
-- `specs/_audits/2026-05-15-canonical-consistency-baseline.md` (CI ratchet floor; DEBT-004 closure log).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 final audit; CONDITIONAL GO verdict; 8-item DEFER counter).
+- `specs/_audits/sealed/2026-05-16-ga-final-checklist.md` (operator-runnable boolean checklist; wave-25 stream #4 drift detector references this).
+- `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` (wave-19 SEALED pentest scope; wave-25 stream #1 ratifies or amends).
+- `specs/_audits/sealed/2026-05-16-debt-015-build-final.md` (wave-23 root-cause narrowing baseline; sets fix-path order picked up by wave-24 stream #3 path-(1)/(2) + wave-25 stream #2 path-(3)).
+- `specs/_audits/sealed/2026-05-16-ga-cutover-dryrun.md` (wave-24 stream #1 dry-run G1..G6 all GREEN; provides scope-amendment input for wave-25 stream #1).
+- `specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md` (CI ratchet floor; DEBT-004 closure log).
 - `specs/_compliance/GA-GATE-CRITERIA.md` (59 criteria across 6 tracks; wave-25 stream #8 pre-GA security attestation aggregates the security track).
 - `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md` (the meeting whose APPROVED decision authorizes `RB-GA-CUTOVER.md`; wave-26 GA-1 freeze populates).
 - `specs/_runbooks/RB-GA-CUTOVER.md` (cutover runbook; wave-24 stream #1 dry-run rehearsed §3 G1..G6; wave-26 GA-1 freeze authorizes §0 checklist run).

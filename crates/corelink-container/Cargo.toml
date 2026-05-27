@@ -38,7 +38,7 @@ default = []
 # compiled in; the flag toggles the `apps/server` boot path log that
 # pins the production wiring is live.
 #
-# Pattern reference: `specs/_audits/2026-05-16-neon-shadow-real-driver.md` §3.
+# Pattern reference: `specs/_audits/sealed/2026-05-16-neon-shadow-real-driver.md` §3.
 neon-real = ["corelink-audit-chain/neon-real"]
 
 # Wire the production AWS KMS provider (`corelink_byok_aws::AwsKmsRealProvider`)
@@ -48,7 +48,7 @@ neon-real = ["corelink-audit-chain/neon-real"]
 # construction based on which (single) `byok-*-real` flag is set.
 #
 # Pattern reference (replicated for GCP/Azure/Vault):
-# `specs/_audits/2026-05-15-byok-real-provider-pattern.md` §7.
+# `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md` §7.
 byok-aws-real = ["corelink-byok/aws"]
 
 # Wire the production GCP Cloud KMS provider
@@ -60,7 +60,7 @@ byok-aws-real = ["corelink-byok/aws"]
 # `GcpKmsWasmStub` is linked and every method surfaces an explicit
 # "unsupported on wasm32" error (Workers proxy to the native server).
 #
-# Pattern reference: `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+# Pattern reference: `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md`.
 byok-gcp-real = ["corelink-byok/gcp"]
 
 # Wire the production Azure Key Vault provider
@@ -68,7 +68,7 @@ byok-gcp-real = ["corelink-byok/gcp"]
 # in-memory fake. Off by default — enable in production deployments where
 # customer CMKs live in Azure Key Vault Premium HSM / Managed HSM.
 #
-# Pattern reference: `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+# Pattern reference: `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md`.
 byok-azure-real = ["corelink-byok/azure"]
 
 # Wire the production HashiCorp Vault Transit provider
@@ -76,7 +76,7 @@ byok-azure-real = ["corelink-byok/azure"]
 # Off by default — enable in production deployments where customer CMKs
 # live in a customer-hosted Vault Enterprise (FIPS-mode) cluster.
 #
-# Pattern reference: `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+# Pattern reference: `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md`.
 byok-vault-real = ["corelink-byok/vault"]
 
 # R-PREP-CF-R2-REAL — opt into the real Cloudflare R2 binding adapter
@@ -109,7 +109,7 @@ cf-r2-real = ["dep:corelink-cf-bindings"]
 # CF Worker on native dev/CI anyway). Off by default; enable on the CF
 # Worker build (`wrangler deploy --features cf-billing-real`).
 #
-# Pattern reference: see `specs/_audits/2026-05-15-stripe-webhook-production.md`
+# Pattern reference: see `specs/_audits/sealed/2026-05-15-stripe-webhook-production.md`
 # §materializers.wasm32-binders.
 cf-billing-real = ["corelink-billing-stripe-materializer/cf-billing-real"]
 
@@ -157,7 +157,7 @@ corelink-billing-stripe-materializer = { workspace = true }
 
 # R-prep: handler crates wired into apps/server::routes as the
 # end-to-end SLO-instrumented handler surface (see audit
-# `specs/_audits/2026-05-14-slo-instrumentation-gaps.md`). The CAS
+# `specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md`). The CAS
 # wire-up landed in wave 8; the AC + Admin wire-ups land in wave 11
 # (this commit) — both follow the cas-read trait-object pattern with
 # `Arc<dyn HandlerTrait>` to keep route shape stable across the
@@ -188,7 +188,7 @@ hex = { workspace = true }
 # must compile in the default `cargo build -p corelink-server`
 # configuration and return `Arc<dyn KmsProvider>` backed by a local
 # in-memory fake when no `byok-*-real` flag is active.
-# Pattern: `specs/_audits/2026-05-15-byok-real-provider-pattern.md` §7.
+# Pattern: `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md` §7.
 corelink-byok = { path = "../../crates/corelink-byok" }
 # Wave-35 Phase 2 — the former `corelink-byok-{aws,gcp,azure,vault}`
 # crates were physically absorbed into the umbrella. Provider

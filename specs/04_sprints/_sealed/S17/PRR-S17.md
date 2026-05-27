@@ -113,7 +113,7 @@ Per `_spec_contract.md` §6:
 | 7 | PagerDuty schedule published + rotation iniciada (EVT-026 / 018) | ✓ AT WI-S17-005 SEAL | PD schedule live evidence in WI-S17-005. |
 | 8 | Fadigue dashboard live (SEV-1/shift, SEV-2/shift, pages/month) | ✓ AT WI-S17-005 SEAL | Dashboard screenshot in WI-S17-005. |
 | 9 | Chaos catalog ≥ 8 FMs covered | ✓ THIS WI | `specs/_runbooks/RB-CHAOS-CATALOG.md` §1 cross-reference (8 experiments). |
-| 10 | 1 game day exercise (quarterly cadence start) | △ SYNTHETIC | `specs/_audits/2026-05-14-s17-tabletop-byok-revoke.md` synthetic 60-min walk-through; real Q3-2026 quarterly target 2026-09-01. |
+| 10 | 1 game day exercise (quarterly cadence start) | △ SYNTHETIC | `specs/_audits/sealed/2026-05-14-s17-tabletop-byok-revoke.md` synthetic 60-min walk-through; real Q3-2026 quarterly target 2026-09-01. |
 | 11 | PRR STANDARD 5–8 canonical sign-offs | This doc, see §9 | Sign-off slots populated below; solo-tier waiver applies per ADR-0034. |
 
 Legend: ✓ done · △ deferred-with-plan · ✗ blocked.
@@ -149,7 +149,7 @@ workflow PRs MUST be SHA-pinned per repo convention.
 
 ## 5. Cross-WI adversarial summary
 
-See `specs/_audits/2026-05-14-s17-adversarial-summary.md`. **32
+See `specs/_audits/sealed/2026-05-14-s17-adversarial-summary.md`. **32
 scenarios catalogued** (target ≥ 30); 100 % mitigation coverage; 5
 residual MEDIUM tracked items (47-runbook 90-day gap → S-20, APAC
 coverage → post-S-20, PRR staffing → ADR-0034 + D+10, D+50 sustained
@@ -161,7 +161,7 @@ owned + due-dated.
 
 ## 6. Game day evidence
 
-See `specs/_audits/2026-05-14-s17-tabletop-byok-revoke.md`. 60-min
+See `specs/_audits/sealed/2026-05-14-s17-tabletop-byok-revoke.md`. 60-min
 synthetic walk-through of BYOK CMK revoke under load; 100 % owner /
 due-date coverage on 5 findings. Real quarterly tabletop target:
 2026-09-01 (Scenario A — CF region outage). Quarterly cron scheduled
@@ -206,9 +206,9 @@ to soften it to semestral.
 | Artifact | Path |
 |---|---|
 | Tabletop template | `specs/_runbooks/RB-TABLETOP-TEMPLATE.md` |
-| Synthetic tabletop run (BYOK revoke) | `specs/_audits/2026-05-14-s17-tabletop-byok-revoke.md` |
+| Synthetic tabletop run (BYOK revoke) | `specs/_audits/sealed/2026-05-14-s17-tabletop-byok-revoke.md` |
 | Chaos catalog cleanup pass | `specs/_runbooks/RB-CHAOS-CATALOG.md` |
-| Adversarial summary cross-WI | `specs/_audits/2026-05-14-s17-adversarial-summary.md` |
+| Adversarial summary cross-WI | `specs/_audits/sealed/2026-05-14-s17-adversarial-summary.md` |
 | Chaos per-experiment specs (WI-S17-001) | `specs/05_quality/chaos/*.md` |
 | DR drill cycle 1 report (WI-S17-002) | `specs/_audits/<TBD>-dr-drill-cycle-1.md` |
 | Runbook dry-run EVT-017s (WI-S17-003) | R2 archive references |

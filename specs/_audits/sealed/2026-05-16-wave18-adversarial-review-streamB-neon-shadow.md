@@ -18,7 +18,7 @@ This review evaluates the wave-18 Neon analytics shadow sync — five files / ~+
 - `apps/server/src/routes/audit_analytics.rs` (689 LOC, new — `GET /v1/audit/analytics/{event-count,timeline}` routes)
 - `migrations/neon/0001_audit_events_shadow.sql` (113 LOC, new — additive `audit_events_shadow` + `audit_shadow_lag` tables with RLS)
 - `crates/corelink-audit-chain/tests/neon_shadow.rs` (317 LOC, new — 3 deliverable integration tests: round-trip 100 events, lag-detection SEV-2 at 60min, tenant-isolation fail-CLOSED)
-- `specs/_audits/2026-05-15-neon-analytics-shadow.md` (audit attestation doc; cross-referenced with retention doc)
+- `specs/_audits/sealed/2026-05-15-neon-analytics-shadow.md` (audit attestation doc; cross-referenced with retention doc)
 
 The review verifies the architecture pin "R2 is canonical chain-integrity store, Neon is analytics-only" is preserved, the per-tenant per-region binding catches misroute bugs at the type system, and the SEV-2 lag SLO is mechanically enforced.
 

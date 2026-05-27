@@ -90,7 +90,7 @@ pub mod kv_real;
 /// `DoError::Backend("WasmOnly: …")` and a `FakeDoRouter` injection
 /// point so tests can exercise the full round-trip without the wasm32
 /// toolchain. See module docs and the pattern doc
-/// `specs/_audits/2026-05-15-cf-binding-real-pattern.md`.
+/// `specs/_audits/sealed/2026-05-15-cf-binding-real-pattern.md`.
 pub mod do_real;
 
 #[cfg(target_arch = "wasm32")]

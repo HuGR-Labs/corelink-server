@@ -337,7 +337,7 @@ Each ticket follows the WI template:
 
 - **Status:** **CLOSED (2026-05-15)** — landed in `wt/debt-013-perf-opt-tail-2`.
   Validation deliverable in
-  `specs/_audits/2026-05-15-perf-opt-validation-report.md`: each of the
+  `specs/_audits/sealed/2026-05-15-perf-opt-validation-report.md`: each of the
   closed OPTs (OPT-01, OPT-02, OPT-04 ph1, OPT-05, OPT-07) cross-checked
   against the audit's projected p99 delta; OPT-01 and OPT-07 carry
   **measured** validations (OPT-07's new criterion bench landed in this
@@ -397,7 +397,7 @@ Each ticket follows the WI template:
   - `clerk_session_id_arc_clone` → **10.8 ns/clone** (−75.9 %)
   - Three clones per JWT request → ≈ 100 ns/req saved on
     `orchestrate_auth` (full validation in
-    `specs/_audits/2026-05-15-perf-opt-validation-report.md §2 OPT-07`).
+    `specs/_audits/sealed/2026-05-15-perf-opt-validation-report.md §2 OPT-07`).
   Six unit tests under `principal::opt07_clone_tests` assert
   `std::ptr::eq` on cloned inner buffers (clone is structurally a
   refcount bump, not a heap dup) and confirm the PII-redacting `Debug`

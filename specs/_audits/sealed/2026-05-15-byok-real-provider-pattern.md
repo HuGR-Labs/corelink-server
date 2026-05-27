@@ -18,7 +18,7 @@ references:
   - "compliance/byok-fips-matrix.md"
   - "crates/corelink-byok-aws/src/real.rs"
   - "specs/03_architecture/adrs/ADR-S30-001-byok-mutually-exclusive-providers.md"
-  - "specs/_audits/2026-05-16-byok-ap11-adr-formalization.md"
+  - "specs/_audits/sealed/2026-05-16-byok-ap11-adr-formalization.md"
 tags: ["byok", "fips", "ga", "pattern", "canonical-reference", "aws-kms", "gcp-kms", "azure-kv", "vault", "ap-11"]
 ---
 
@@ -332,7 +332,7 @@ adapter crates remain optional and gated by the respective feature.
 > (ACCEPTED 2026-05-16).** This section is the operational baseline; the
 > ADR is the first-class architectural decision and the canonical
 > reference for `/techlead` AP-11 exception blocks.
-> See also: `specs/_audits/2026-05-16-byok-ap11-adr-formalization.md`
+> See also: `specs/_audits/sealed/2026-05-16-byok-ap11-adr-formalization.md`
 > (the formalization event record) and `scripts/byok-feature-validate.sh`
 > (regression guard).
 
@@ -347,7 +347,7 @@ two flags in conflict, e.g.:
 error: BYOK orchestrator: features `byok-aws-real` AND `byok-gcp-real`
        are mutually exclusive — only one BYOK real provider may be
        enabled at a time (the orchestrator is a singleton trait
-       object). See specs/_audits/2026-05-15-byok-real-provider-pattern.md §7.
+       object). See specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §7.
 ```
 
 ### 7.3 Configuration via environment

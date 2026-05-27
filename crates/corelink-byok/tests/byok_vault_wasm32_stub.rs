@@ -6,7 +6,7 @@
 //!   2. `VaultWasmStub` implements `KmsProvider`.
 //!   3. `wrap_dek` returns `BYOKError::Provider("Vault real provider
 //!      unsupported on wasm32; ...")` — explicit-error contract per
-//!      `specs/_audits/2026-05-15-byok-real-provider-pattern.md` §4.
+//!      `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md` §4.
 
 #![cfg(target_arch = "wasm32")]
 #![forbid(unsafe_code)]

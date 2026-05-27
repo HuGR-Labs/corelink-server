@@ -9,7 +9,7 @@ updated: "2026-05-27"
 reviewer: "Agent R4 (Claude Opus 4.7, 1M context, independent reviewer)"
 scope: "Lote 10.3 — Sprint S-03 Part 1 (WI-S03-001 .. WI-S03-004)"
 baseline_template: "WI-S01-001 (não revisado; baseline reference)"
-sprint_contract: "specs/04_sprints/S03/_spec_contract.md v1.1.0"
+sprint_contract: "specs/04_sprints/_sealed/S03/_spec_contract.md v1.1.0"
 ---
 
 > **CLOSED 2026-05-27** — S-03 sprint implementation sealed via git tag `s03-impl-sealed`; this independent review record is delivered. See `specs/_audits/2026-05-27-audit-triage-post-w36.md` for triage methodology.

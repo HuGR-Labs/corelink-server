@@ -19,7 +19,7 @@
 #   - Phase E (container deploy) complete
 #   - Phase F (pages deploy) complete
 #   - Phase G (DNS production) complete
-#   See: specs/_audits/2026-05-26-w32-phaseH-prep.md
+#   See: specs/_audits/sealed/2026-05-26-w32-phaseH-prep.md
 
 set -euo pipefail
 

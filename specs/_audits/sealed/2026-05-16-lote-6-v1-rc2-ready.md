@@ -1,12 +1,12 @@
 # Lote 6 v1.0.0-rc2 readiness summary — 2026-05-16 (wave-26)
 
-> **Doc kind:** wave-closure readiness summary (companion to `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md`; no canonical front matter required — `_audits/` excluded from `validate_specs.py::SKIP_ALL`).
+> **Doc kind:** wave-closure readiness summary (companion to `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md`; no canonical front matter required — `_audits/` excluded from `validate_specs.py::SKIP_ALL`).
 >
 > **Author:** wave-26 Lote 6 RC2 readiness agent (Claude Opus 4.7) — branch `wt/r-prep-lote-6-v1-rc2-ready`.
 > **Base:** `main` @ `2a4e00c` ("merge wt/r-prep-tenant-config-cf-prod-wire into main (wave-25)" — wave-25 SEAL tip).
 > **Mandate:** wave-26 conditional close of Lote 6 framework v1.0.0 GA — flip the wave-18 audit verdict from `DEFER-with-engineering-side-COMPLETE` (wave-24) to `DEFER-with-Owner-sign-off-only-remaining` (wave-26) by pre-authoring every artifact the Owner needs at FROZEN-cut time, including the §42 change-log entry shells and the §43.1 placeholder convention.
 >
-> **Cross-ref:** `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md` (predecessor; §11.8 wave-26 closure lands in v1.4.0 of that audit), `specs/_proposals/2026-05-16-framework-reviewer-roles.md`, `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md`, `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md`, `specs/00_framework.md` (RC1 → RC2 bump in this commit).
+> **Cross-ref:** `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md` (predecessor; §11.8 wave-26 closure lands in v1.4.0 of that audit), `specs/_proposals/2026-05-16-framework-reviewer-roles.md`, `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md`, `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md`, `specs/00_framework.md` (RC1 → RC2 bump in this commit).
 
 ---
 
@@ -20,8 +20,8 @@ Three coordinated edits to `specs/00_framework.md` + one new entry in the Lote 6
 | Framework header readiness blockquote | `specs/00_framework.md` § (top of doc, after frontmatter) | New "Wave-26 RC2 readiness note" blockquote summarising the wave-20 / wave-22 / wave-24 / wave-26 absorption arc and pointing at this readiness doc + the audit §11.8. Existing wave-24 GA-readiness unlock note preserved verbatim. |
 | §43.1 placeholder convention | `specs/00_framework.md` §43.1 | Each FW-H-* slot now labeled with one of two placeholders that the Owner replaces at FROZEN cut: `PROPOSED-OWNER-DUAL-HAT` (Option C / ADR-0034b dual-hat path) or `(a nomear)` (Option A / 4-distinct path). Pairing-Alpha vs Pairing-Beta seat assignments documented inline per slot. The original "Revisor de Produto" framing is re-scoped to FW-H-4 Production Operations Lead per proposal §8 OQ-2. |
 | §42 change-log template entry | `specs/00_framework.md` §42 | New row at the table head labeled `1.0.0` / `YYYY-MM-DD` / `TEMPLATE — v1.0.0 GA cut entry, pre-authored, awaiting Owner` containing both **Shape A** (Option A) and **Shape C** (Option C / ADR-0034b dual-hat) field-level shells. Owner deletes the unused shape and fills the remaining shape's placeholder fields at FROZEN cut. New RC2 row immediately below records the wave-26 readiness bump itself (no promotion). |
-| Lote 6 audit §11.8 wave-26 closure | `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md` v1.3.0 → v1.4.0 | Adds §11.8 documenting the wave-26 absorption + verdict-text narrowing from `DEFER-with-engineering-side-COMPLETE` to `DEFER-with-Owner-sign-off-only-remaining`. §6 DEFER verdict itself unchanged. Adds `wave-24` + `wave-26` to tags. |
-| This readiness summary | `specs/_audits/2026-05-16-lote-6-v1-rc2-ready.md` | Single-page consolidated summary the Owner reads alongside the audit §11.8 to execute the ~30-min sign-off. |
+| Lote 6 audit §11.8 wave-26 closure | `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md` v1.3.0 → v1.4.0 | Adds §11.8 documenting the wave-26 absorption + verdict-text narrowing from `DEFER-with-engineering-side-COMPLETE` to `DEFER-with-Owner-sign-off-only-remaining`. §6 DEFER verdict itself unchanged. Adds `wave-24` + `wave-26` to tags. |
+| This readiness summary | `specs/_audits/sealed/2026-05-16-lote-6-v1-rc2-ready.md` | Single-page consolidated summary the Owner reads alongside the audit §11.8 to execute the ~30-min sign-off. |
 
 ---
 
@@ -44,7 +44,7 @@ Wave-26 RC2 therefore stops at the **last operation an agent can validly perform
 | 1 | Read `specs/_proposals/2026-05-16-framework-reviewer-roles.md` (wave-20 proposal — role definitions for FW-H-1..4) | yes | ~10 min |
 | 2 | Read `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md` (wave-22 addendum — operating policy: dual-hat, quorum, SLA, training-pack budget, 90-day cadence, COI declaration; wave-25 RACI detail in §6) | yes | ~10 min |
 | 3 | Read `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` (wave-24 ADR — small-org dual-hat authorisation: Eligibility / Pairings / Forbidden pairings / Cross-veto / Quorum / Sign-off mechanics / Auto-expiration) | yes | ~7 min |
-| 4 | Read `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §11.8` (wave-26 closure entry) + this readiness doc | yes | ~3 min |
+| 4 | Read `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §11.8` (wave-26 closure entry) + this readiness doc | yes | ~3 min |
 | 5 | **Decide:** Option A (hire 4 distinct senior reviewers) OR Option C (invoke ADR-0034b Pairing-Alpha or Pairing-Beta) | yes (irreducible) | depends |
 | 6 | Edit `specs/00_framework.md`: replace `(a nomear)` / `PROPOSED-OWNER-DUAL-HAT` placeholders in §43.1 with `<name> — <YYYY-MM-DD> — sha:<7-char>` (4 reviewer lines + Final Approver line); delete the unused Shape (A or C) from the §42 TEMPLATE row; fill the remaining Shape's placeholder fields | yes | ~5 min if Option C / depends on hiring if Option A |
 | 7 | Flip `doc_status: "DRAFT" → "FROZEN"` and `version: "1.0.0-rc2" → "1.0.0"` and `updated: "2026-05-16" → "<YYYY-MM-DD>"` in the framework frontmatter | yes | ~30 sec |
@@ -112,7 +112,7 @@ The post-edit verification is reported in the agent summary block at commit-time
 
 **Lote 6 framework v1.0.0 GA engineering side: CLOSED.** Wave-26 RC2 readiness lands the last agent-actionable preparation; the remaining work is exclusively Owner-bound per the framework's own §7 / §43.1 rule.
 
-**Wave-18 audit verdict (`specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §6.1`): DEFER — UNCHANGED.** Verdict text narrows to `DEFER-with-Owner-sign-off-only-remaining`. §6.3 Path C ("DEFER and continue") remains the active state until the Owner acts; Path A / Path C selection at Owner discretion.
+**Wave-18 audit verdict (`specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §6.1`): DEFER — UNCHANGED.** Verdict text narrows to `DEFER-with-Owner-sign-off-only-remaining`. §6.3 Path C ("DEFER and continue") remains the active state until the Owner acts; Path A / Path C selection at Owner discretion.
 
 **Pending user action (~30 min):** read the four cross-ref docs + this summary + the audit §11.8, decide Option A or Option C, fill the §42 TEMPLATE entry + §43.1 placeholders, commit, tag `framework-v1-0-0-ga`.
 
@@ -121,10 +121,10 @@ The post-edit verification is reported in the agent summary block at commit-time
 ## 7. References
 
 - `specs/00_framework.md` — RC1 → **RC2** in this commit (version stamp + §43.1 placeholder convention + §42 TEMPLATE entry + wave-26 readiness blockquote)
-- `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md` v1.4.0 — predecessor audit (§11.8 wave-26 closure entry; verdict text narrows to `DEFER-with-Owner-sign-off-only-remaining`)
+- `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md` v1.4.0 — predecessor audit (§11.8 wave-26 closure entry; verdict text narrows to `DEFER-with-Owner-sign-off-only-remaining`)
 - `specs/_proposals/2026-05-16-framework-reviewer-roles.md` v0.1.0 — wave-20 proposal (FW-H-1..4 role profiles)
 - `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md` v0.1.2 — wave-22 + wave-25 addendum (dual-hat / quorum / SLA / training pack / 90-day cadence / COI / RACI detail)
 - `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` v0.1.1 — wave-24 + wave-25 ADR (small-org dual-hat authorisation)
-- `specs/_audits/2026-05-15-ga-readiness-consolidation-wave-13-17.md` — wave-17 verdict READY-WITH-WAIVERS baseline (unaffected by this readiness flip)
+- `specs/_audits/sealed/2026-05-15-ga-readiness-consolidation-wave-13-17.md` — wave-17 verdict READY-WITH-WAIVERS baseline (unaffected by this readiness flip)
 - `specs/_governance/reviewer_staffing_strategy.md §7.2` — Founder-only-sign-off prior art
 - `ROADMAP-TO-GA.md` — R-3..R-4 boundary snapshot (framework freeze gate is independent of the GA tag gate per audit §6.4)

@@ -111,11 +111,11 @@ Per `_spec_contract.md` §6:
 | # | DoD line | Status | Evidence |
 |---|---|---|---|
 | 1 | 6/6 WIs SEALED state | AT MERGE | This worktree shows 5/6 still DRAFT (parallel worktrees not yet merged); D+15 ceremony confirms 6/6 SEALED post-merge. |
-| 2 | Conversion funnel committed (5+ métricas underscored snake_case; 105 séries cardinality) | THIS WI | `specs/_audits/2026-05-14-s19-adversarial-summary.md` §1 row "Funnel cardinality" 105/20k = 0.5 %. |
+| 2 | Conversion funnel committed (5+ métricas underscored snake_case; 105 séries cardinality) | THIS WI | `specs/_audits/sealed/2026-05-14-s19-adversarial-summary.md` §1 row "Funnel cardinality" 105/20k = 0.5 %. |
 | 3 | Cohort dashboard DASH-ONBOARDING live | AT WI-S19-006 STAGING | Dashboard committed to `infra/grafana/dashboards/dash-onboarding.json` (parallel worktree); panel validation pending staging deploy. |
-| 4 | Property test summary 8 props × 10k iter green PR + 100k nightly | THIS WI | `specs/_audits/2026-05-14-property-test-summary-s19.md`. |
+| 4 | Property test summary 8 props × 10k iter green PR + 100k nightly | THIS WI | `specs/_audits/sealed/2026-05-14-property-test-summary-s19.md`. |
 | 5 | RB-FM-SIGNUP-FAILED stub committed | THIS WI | `specs/_runbooks/RB-FM-SIGNUP-FAILED.md`. |
-| 6 | Adversarial summary 27 scenarios; 100 % mitigation | THIS WI | `specs/_audits/2026-05-14-s19-adversarial-summary.md`. |
+| 6 | Adversarial summary 27 scenarios; 100 % mitigation | THIS WI | `specs/_audits/sealed/2026-05-14-s19-adversarial-summary.md`. |
 | 7 | PRR HIGH_RISK 12 canonical sign-offs documented | THIS DOC | §9 below. |
 | 8 | INV-ONBOARD-DPA-FIRST + INV-ONBOARD-ATOMIC-PROVISIONING ratificadas em registry §3.12 | AT MERGE | Registry rows landed in WI-S19-001 + WI-S19-004 worktree merges. |
 | 9 | SLO-ONBOARD-SIGNUP-DURATION ≤ 3 min p99 sustained 30d | D+45 GATE | GA Evidence Gate. |
@@ -166,7 +166,7 @@ workflow PRs MUST be SHA-pinned per repo convention.
 
 ## 5. Cross-WI adversarial summary
 
-See `specs/_audits/2026-05-14-s19-adversarial-summary.md`. **27 scenarios
+See `specs/_audits/sealed/2026-05-14-s19-adversarial-summary.md`. **27 scenarios
 catalogued** (target ≥ 25); **100 % named mitigation coverage**;
 **0 residual HIGH / CRITICAL**; **3 residual MEDIUM tracked**
 (RES-S19-01..03; all with named expiry triggers: D+10 real-prod-keys
@@ -179,8 +179,8 @@ window).
 
 | Artifact | Path |
 |---|---|
-| Property test summary | `specs/_audits/2026-05-14-property-test-summary-s19.md` |
-| Adversarial summary cross-WI | `specs/_audits/2026-05-14-s19-adversarial-summary.md` |
+| Property test summary | `specs/_audits/sealed/2026-05-14-property-test-summary-s19.md` |
+| Adversarial summary cross-WI | `specs/_audits/sealed/2026-05-14-s19-adversarial-summary.md` |
 | RB-FM-SIGNUP-FAILED stub | `specs/_runbooks/RB-FM-SIGNUP-FAILED.md` |
 | Cohort dashboard DASH-ONBOARDING | `infra/grafana/dashboards/dash-onboarding.json` (WI-S19-006 parallel) |
 | Conversion funnel emitter crate | `crates/corelink-onboarding-funnel/` (WI-S19-006 parallel) |

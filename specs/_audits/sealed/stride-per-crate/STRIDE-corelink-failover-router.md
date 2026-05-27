@@ -27,7 +27,7 @@
 | **T** | Region binding mutated post-decision | Route result returned by value (immutable); driver re-checks region tag matches `tenant.primary_region` | property test — INV-REGION-NO-CROSS-LEAK 30k cases ≥ 0 leaks |
 | **R** | Repudiation of cross-region read | INV-DATA-RESIDENCY fail-CLOSED 451 emits CloudEvents `dev.hugr.corelink.residency.write_rejected_cross_region.v1` audit; pre+post audit on every route | `crates/corelink-failover-router/tests/prop_failover.rs` + INV-AUDIT-APPEND-ONLY |
 | **I** | Region of tenant leaks via routing latency | Routing decision constant-time over presence; SLO chart aggregates regions | timing benches |
-| **D** | One region's outage cascades (all traffic re-pins) | PAT-ROUTING-PINNED-001 fail-CLOSED 451 in mismatch (NUNCA passthrough silencioso); per-region degraded mode preserves tenancy; tenant chooses degraded-read vs hard-fail in plan | `specs/_audits/2026-05-14-region-outage-chaos-s14.md` — FM-050 |
+| **D** | One region's outage cascades (all traffic re-pins) | PAT-ROUTING-PINNED-001 fail-CLOSED 451 in mismatch (NUNCA passthrough silencioso); per-region degraded mode preserves tenancy; tenant chooses degraded-read vs hard-fail in plan | `specs/_audits/sealed/2026-05-14-region-outage-chaos-s14.md` — FM-050 |
 | **E** | Re-routing escalates tenant to read another region's data | INV-REGION-NO-CROSS-LEAK + INV-DATA-RESIDENCY (CRITICAL — Schrems II + LGPD Art. 33 §1º) | 20k property test cases — FM-451 |
 
 ### 2.2 TB-fr-2 (health probes)
@@ -35,7 +35,7 @@
 | STRIDE | Attacker scenario | Control / invariant | Test coverage |
 |---|---|---|---|
 | **S** | Probe target impersonated (poisoned health-state) | Probes use service binding (CTRL-NET-003) + deploy-signed targets | INV-SUPPLY-SIGNED-DEPLOY |
-| **T** | Health-state table tampered to mask region down | Probe state read from DO + replicated; reconcile across two independent probers | `specs/_audits/2026-05-15-replication-audit.md` |
+| **T** | Health-state table tampered to mask region down | Probe state read from DO + replicated; reconcile across two independent probers | `specs/_audits/sealed/2026-05-15-replication-audit.md` |
 | **R** | "Router never knew region was down" | Probe heartbeat + dead-man switch; missed probe = SEV-2 | RB-FM-050 (region-outage) |
 | **I** | Probe results leak tenant counts per region | Aggregated state only; cardinality bound (INV-OBS-CARDINALITY-BUDGET) | observability_model.md |
 | **D** | Probe storm self-DoS targets | Probe cadence bounded; jitter | benches |
@@ -50,7 +50,7 @@
 | **R** | "Storage was written to wrong region" | Audit chain entry per write with region tag; cross-region attempt emits SEV-1 | INV-AUDIT-APPEND-ONLY |
 | **I** | Storage error leaks region info | Sanitized error envelope (CTRL-NET-004); 451 is generic residency-block | error envelope test |
 | **D** | Storage write storms in healthy region | Per-tenant + per-region rate limit | rate-limit tests |
-| **E** | Driver bug causes silent cross-region write | INV-REGION-NO-CROSS-LEAK + INV-DATA-RESIDENCY CRITICAL + 20k property test + chaos drill | `specs/_audits/2026-05-14-region-outage-chaos-s14.md` |
+| **E** | Driver bug causes silent cross-region write | INV-REGION-NO-CROSS-LEAK + INV-DATA-RESIDENCY CRITICAL + 20k property test + chaos drill | `specs/_audits/sealed/2026-05-14-region-outage-chaos-s14.md` |
 
 ### 2.4 TB-fr-4 (admin override)
 
@@ -74,8 +74,8 @@
 ## 4. Adversarial test pointers
 
 - `crates/corelink-failover-router/tests/prop_failover.rs` — routing properties + residency (20k cases)
-- `specs/_audits/2026-05-14-region-outage-chaos-s14.md` — region-outage chaos drill
-- `specs/_audits/2026-05-15-replication-audit.md` — replication audit
+- `specs/_audits/sealed/2026-05-14-region-outage-chaos-s14.md` — region-outage chaos drill
+- `specs/_audits/sealed/2026-05-15-replication-audit.md` — replication audit
 - RB-DATA-RESIDENCY-LEAK + RB-FM-050 dry-runs
 - `specs/03_architecture/tla+/...` (custom domain routing TLA+ S-11 WI-S11-007 SEALED)
 

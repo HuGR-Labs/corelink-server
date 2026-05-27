@@ -2,7 +2,7 @@
 //! `corelink-slack-real` (WI-PROPTEST-FU-001 — DEBT-009).
 //!
 //! Closes the proptest-density gap identified in
-//! `specs/_audits/2026-05-15-proptest-density.md` (ratio 0/2 → 4/2).
+//! `specs/_audits/sealed/2026-05-15-proptest-density.md` (ratio 0/2 → 4/2).
 //!
 //! # Invariant coverage
 //!

@@ -67,7 +67,7 @@ python3 scripts/check_cost_regression.py      # ✅ green
 
 1. **Lote 10.4 — S-04 full WI spec** (Action Cache + Read-Through Cache + cripto signing)
    - 7 WIs HIGH_RISK estimados
-   - Sprint contract S-04 já existe em `specs/04_sprints/S04/_spec_contract.md` + `sprint.md` (Lote 9.1)
+   - Sprint contract S-04 já existe em `specs/04_sprints/_sealed/S04/_spec_contract.md` + `sprint.md` (Lote 9.1)
    - Padrão SOTA: 13-row sign-off table desde início; Mann-Whitney 3-prong onde aplicável; cost TCO 12m breakdown; STRIDE+LINDDUN delta full; risk register ≥ 10 rows; ≥ 5 chaos experiments; ADR forward (ADR-0035+ TBD)
    - Domain key: AC digest signing HKDF vs Ed25519 (ADR-0021 forward); cripto-touching → Crypto SME mandatory
 
@@ -80,10 +80,10 @@ python3 scripts/check_cost_regression.py      # ✅ green
 
 ## Reviews referência (canonical SOTA bar)
 
-- `specs/_audits/2026-04-25-agent-r4-s01-wi-review.md` (S-01 7.2/10 baseline)
-- `specs/_audits/2026-04-25-agent-r4-s02-wi-review.md` (S-02 7.6/10)
-- `specs/_audits/2026-04-25-agent-r4-s03-part1-wi-review.md` (S-03 part1 7.6/10; WI-S03-003 best-in-class 8.5/10)
-- `specs/_audits/2026-04-25-agent-r4-s03-part2-wi-review.md` (S-03 part2 7.95/10)
+- `specs/_audits/sealed/2026-04-25-agent-r4-s01-wi-review.md` (S-01 7.2/10 baseline)
+- `specs/_audits/sealed/2026-04-25-agent-r4-s02-wi-review.md` (S-02 7.6/10)
+- `specs/_audits/sealed/2026-04-25-agent-r4-s03-part1-wi-review.md` (S-03 part1 7.6/10; WI-S03-003 best-in-class 8.5/10)
+- `specs/_audits/sealed/2026-04-25-agent-r4-s03-part2-wi-review.md` (S-03 part2 7.95/10)
 
 **Trajetória SOTA confirmada**: 7.2 → 7.6 → 7.95 (S-01 baseline → S-02 → S-03 part2). Target SOTA puro 9-10 atingido em WI-S03-003 standalone (best-in-class).
 

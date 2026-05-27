@@ -431,7 +431,7 @@ No hard pause triggers fired during this prep agent run. The following triggers 
 - Total: 738 lines
 
 **Parallel-safety confirmation:**
-- This agent touched only: `scripts/apply-d1-migrations-prod.sh`, `scripts/put-secrets-prod.sh`, `scripts/verify-secrets-deployed.sh`, `specs/_audits/2026-05-26-w32-phaseD-prep.md`.
+- This agent touched only: `scripts/apply-d1-migrations-prod.sh`, `scripts/put-secrets-prod.sh`, `scripts/verify-secrets-deployed.sh`, `specs/_audits/sealed/2026-05-26-w32-phaseD-prep.md`.
 - No overlap with: `worker/` (Phase B), `wrangler.toml` (Phase B/C), `scripts/deploy-pages-prod.sh` (Phase F), `scripts/dns-prod-plan.sh` (Phase G).
 
 **DCO sign-off:** Gustavo Schneiter <gustavo@humangr.com>

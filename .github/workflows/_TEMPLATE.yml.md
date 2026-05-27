@@ -209,8 +209,8 @@ jobs:
 
 ## Cross-references
 
-- Audit: `specs/_audits/2026-05-15-ci-workflow-optimization.md`
-- Tickets: `specs/_audits/ci-optimization-followup-tickets.md`
+- Audit: `specs/_audits/sealed/2026-05-15-ci-workflow-optimization.md`
+- Tickets: `specs/_audits/sealed/ci-optimization-followup-tickets.md`
 - ADR-0044 — SHA-pin policy + cosign keyless signing
 - WI-S01-007 — `cas_foundation.yml` convergence design
 - ROADMAP-TO-GA.md §1 (Wave R-1 cleanup tail)

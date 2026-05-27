@@ -7,8 +7,8 @@ version: "1.0.0"
 created: "2026-05-16"
 updated: "2026-05-16"
 sprint: "Wave-21 (adversarial review)"
-parent_audit: "specs/_audits/2026-05-16-wave21-closure.md"
-prior_review: "specs/_audits/2026-05-16-wave20-adversarial-review.md"
+parent_audit: "specs/_audits/sealed/2026-05-16-wave21-closure.md"
+prior_review: "specs/_audits/sealed/2026-05-16-wave20-adversarial-review.md"
 owner: "Gustavo Schneiter"
 tags: ["audit", "adversarial-review", "wave-21", "sota-bar", "tla-debt-014", "wallclock", "neon-shadow", "tenant-region", "mutation-debt-008"]
 ---
@@ -45,14 +45,14 @@ Net diff: 51 files / +4205 / −199. Heavy on specs + tests; thin on Rust src.
 
 Each stream cold-read against (a) charter (`no source changes`, `DCO`,
 `fail-CLOSED on ambiguity`), (b) the prior-art audits in
-`specs/_audits/2026-05-16-wave20-adversarial-review.md`, and (c) the
+`specs/_audits/sealed/2026-05-16-wave20-adversarial-review.md`, and (c) the
 INV-* anchors in `specs/03_architecture/invariant_registry.md`.
 
 Verification checks performed:
 
 - TLA spec inspection (CONSTANTS / Init / Next / SafetyInvariants per
   spec) cross-referenced to FT-6..FT-9 ticket text in
-  `specs/_audits/tla-followup-tickets.md`.
+  `specs/_audits/sealed/tla-followup-tickets.md`.
 - INV registry anchor lookup for all new TLA-cited invariants
   (`INV-MULTIPART-*`, `INV-BYOK-CRYPTO-SOVEREIGNTY`,
   `INV-SIGNUP-RESIGNUP-IDEMPOTENT`).
@@ -80,7 +80,7 @@ None.
 
 None.
 
-### 3.3 P2 (nice-to-have) — **2** (both **CLOSED 2026-05-16** by wave-23 cleanup — see `specs/_audits/2026-05-16-wave23-cleanup.md`)
+### 3.3 P2 (nice-to-have) — **2** (both **CLOSED 2026-05-16** by wave-23 cleanup — see `specs/_audits/sealed/2026-05-16-wave23-cleanup.md`)
 
 - **W21-R-P2-01 — CLOSED 2026-05-16** (wave-23 cleanup §1.1; saturating branch now fail-CLOSED 503 + `clock_unavailable` audit row; NET-NEW test `wall_clock_saturated_to_zero_returns_503_and_emits_clock_unavailable_row` pins the contract). (WallClock fallback couples to attacker-controlled
   `until_ms`).** `audit_export.rs:589` — when `wall_clock.now_ms() == 0`
@@ -105,7 +105,7 @@ None.
   blocks the merge with an `::error::` annotation), so the runbook
   workflow will fail every PR until the FT-3 waiver is re-closed.
   This is acceptable per the FT-3 fail-CLOSED waiver in
-  `specs/_audits/2026-05-15-debt-014-ft3-ft4-waivers.md` §FT-3, but
+  `specs/_audits/sealed/2026-05-15-debt-014-ft3-ft4-waivers.md` §FT-3, but
   it does mean the wave-21 runbook gate provides **zero positive
   signal** until Security WG + Architect re-pin. Suggested mitigation:
   add a `:warning::` note in the workflow comment block calling
@@ -132,7 +132,7 @@ None.
   selected, but per-resolution logging is absent for the D1-backed
   path. Misleading docstring; no behavioural bug.
 - **W21-R-P3-03 (DEBT-008 audit doc_status REVIEW + not yet sealed).**
-  `specs/_audits/2026-05-16-debt-008-mutation-sweep.md:3` carries
+  `specs/_audits/sealed/2026-05-16-debt-008-mutation-sweep.md:3` carries
   `doc_status: REVIEW`. The wave-21 closure audit cites this work as
   closing DEBT-008 corelink-hash, but the audit document itself has
   not flipped to FINAL. Process hygiene only; the empirical numbers
@@ -195,7 +195,7 @@ post-GA gate at:
 
 | Caveat | Source | Disposition |
 |---|---|---|
-| FT-3 TLC SHA-pin upstream drift (`d5d07d5...` vs `25780ac9...`) | Pre-existing wave-20 waiver | Tracked in `specs/_audits/2026-05-15-debt-014-ft3-ft4-waivers.md` §FT-3; affects W21-R-P2-02 above. Re-closure requires Security WG + ADR-0042 §A1 update. |
+| FT-3 TLC SHA-pin upstream drift (`d5d07d5...` vs `25780ac9...`) | Pre-existing wave-20 waiver | Tracked in `specs/_audits/sealed/2026-05-15-debt-014-ft3-ft4-waivers.md` §FT-3; affects W21-R-P2-02 above. Re-closure requires Security WG + ADR-0042 §A1 update. |
 | FT-4 `.cfg` function-literal parser brittleness | Pre-existing wave-20 waiver | Tracked in same waiver doc §FT-4; affects S-14 region_residency only (not in CI matrix). |
 | DEBT-015 build-side (theme-alias / draft pages / extensionless MDX) | Inline addendum on DEBT-015 row | Carried forward as `DEBT-015-BUILD`; out of scope for wave-21 docs portion. |
 | Mutation sweep coverage on 8 deferred crates | `2026-05-16-debt-008-mutation-sweep.md §6` | Explicitly deferred to wave-22 per 60-min budget triage. |
@@ -243,7 +243,7 @@ post-GA gate at:
   `^[A-Z][A-Z0-9_]+$` ≥ 2 chars; `--self-test` exercises the
   fixture against canonical-accept (`PORT`, `DT_API_KEY`,
   `STATUSPAGE_API_KEY`) and canonical-reject (`X`).
-- Read `specs/_audits/2026-05-15-debt-register.md` DEBT-014 + DEBT-015
+- Read `specs/_audits/sealed/2026-05-15-debt-register.md` DEBT-014 + DEBT-015
   rows — both carry explicit-CLOSED variants with closed_by and
   closed_at cross-refs. L7 UNION resolution preserved both narratives
   semantically (no row collision, no duplicate-status drift).

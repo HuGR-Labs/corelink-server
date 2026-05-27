@@ -105,11 +105,11 @@ Open carve-outs (acknowledged at GA, tracked for closure)
 Dress-rehearsal evidence
 ================================================================
 - wave-24 GA-cutover dry-run (in-process simulation):
-  `specs/_audits/2026-05-16-ga-cutover-dryrun.md` — 11/11 §3 steps
+  `specs/_audits/sealed/2026-05-16-ga-cutover-dryrun.md` — 11/11 §3 steps
   PASS, 6/6 greenlights GREEN, 0/6 rollback triggers fired,
   GA-readiness 8.9/10, recommendation PROCEED.
 - wave-26 production-tier dress-run (ga-cutover-prep ring, parallel
-  to staging): `specs/_audits/2026-05-16-prod-deploy-dressrun.md` —
+  to staging): `specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md` —
   13/13 steps PASS (S0 prep-ring provision + 11x §3 + S12 cleanup),
   6/6 greenlights GREEN, 0/6 rollback triggers fired.
 

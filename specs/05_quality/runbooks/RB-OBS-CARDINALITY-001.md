@@ -13,7 +13,7 @@ supersedes: null
 superseded_by: null
 tags: ["runbook", "p2", "observability", "cardinality", "cost-control", "rb-obs-cardinality-001", "wi-s09-007", "dry-run-executed"]
 dry_run_executed: "2026-05-03"
-dry_run_evidence: "specs/_audits/2026-05-03-rb-obs-cardinality-001-dry-run.md"
+dry_run_evidence: "specs/_audits/sealed/2026-05-03-rb-obs-cardinality-001-dry-run.md"
 ---
 
 # RB-OBS-CARDINALITY-001 — Cardinality Explosion (Métrica → OOM Mimir / Cost Spike)
@@ -83,6 +83,6 @@ dry_run_evidence: "specs/_audits/2026-05-03-rb-obs-cardinality-001-dry-run.md"
 
 - `observability_model.md §11.2` cardinality budget.
 - `invariant_registry.md` INV-OBS-CARDINALITY-BUDGET (S-09).
-- `specs/04_sprints/S09/_spec_contract.md`.
+- `specs/04_sprints/_sealed/S09/_spec_contract.md`.
 - Grafana Mimir cardinality limits: <https://grafana.com/docs/mimir/latest/configure/about-tenant-ids/>.
 - PromCon 2022 — "Cardinality is your enemy" talk.

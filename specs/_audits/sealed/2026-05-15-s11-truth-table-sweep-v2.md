@@ -34,7 +34,7 @@ The **V1 sweep** (Lote 10.11.0-bis, sprint_contract v1.3.0 changelog row dated 2
 
 In the 9-day interval between V1 close (2026-04-27) and V2 sweep (2026-05-15), **two canonical states changed** that the S-11 spec corpus did not yet reflect:
 
-- **TLA+ status transitions sustained**: per the same-day `specs/_audits/2026-05-15-tla-coverage-audit.md` §3 coverage matrix (delivered by the R-prep TLA wave), the dsr_erasure_atomicity spec now reports `✅ GREEN` against the three S-11 CRITICAL invariants (INV-DATA-ERASURE-COMPLETE, INV-CONSENT-PROOF-VERIFIABLE, INV-DATA-RESIDENCY). The CI gate first-run-verde precondition embedded in the V1 honest-flag is satisfied.
+- **TLA+ status transitions sustained**: per the same-day `specs/_audits/sealed/2026-05-15-tla-coverage-audit.md` §3 coverage matrix (delivered by the R-prep TLA wave), the dsr_erasure_atomicity spec now reports `✅ GREEN` against the three S-11 CRITICAL invariants (INV-DATA-ERASURE-COMPLETE, INV-CONSENT-PROOF-VERIFIABLE, INV-DATA-RESIDENCY). The CI gate first-run-verde precondition embedded in the V1 honest-flag is satisfied.
 - **S-14 residency spec landed early**: `specs/tla/region_residency.tla` is checked in (module header `S-14 WI-S14-009 — Cross-region routing actions + tenant residency enforcement`; 4 INV-DATA-RESIDENCY references). The same TLA-coverage audit shows `INV-DATA-RESIDENCY` and `INV-REGION-NO-CROSS-LEAK` both `✅ GREEN` via `region_residency.tla`. The S-11 corpus still pervasively cites this spec as "deferred to S-14" / "📋 PLANNED".
 
 The V2 sweep therefore is **NOT** a re-baseline of canonical truth (cardinality 12, 7-state, 12-purpose, severity matrix, 3 PAT patterns all remain stable — V1 closure baseline confirmed). V2 is a **status-cascade sweep**: propagate the resolved TLA+ status from the registry/audit corpus down to S-11 sprint_contract + 8 WI corpus + spec_contract YAML header.
@@ -106,7 +106,7 @@ All 7 mandated S-11 quality-gate validators executed against the worktree HEAD; 
 
 **7/7 GREEN.** V2 sweep does not regress any canonical floor and does not introduce any new INV declaration, dashboard reference, or compliance-matrix row — it normalises stale STATUS cells against today's TLA+ ground truth.
 
-**Note on validator #4**: The 3 drift entries it surfaces (all in `specs/04_sprints/S09/work_items/WI-S09-005-12-grafana-dashboards-as-code.md`) are pre-existing S-09 dashboard inheritance references and pre-date this V2 sweep. They are explicitly out of S-11 scope per the V2 charter; flagging here so a future S-09 sweep can absorb them.
+**Note on validator #4**: The 3 drift entries it surfaces (all in `specs/04_sprints/_sealed/S09/work_items/WI-S09-005-12-grafana-dashboards-as-code.md`) are pre-existing S-09 dashboard inheritance references and pre-date this V2 sweep. They are explicitly out of S-11 scope per the V2 charter; flagging here so a future S-09 sweep can absorb them.
 
 ## 5. Sprint contract version bump
 
@@ -122,7 +122,7 @@ Semver rationale: **minor bump** (2.2.0 → 2.3.0) rather than patch (2.2.x). Th
 ## 6. Caveats + honesty notes
 
 - **No new INVs declared.** V2 is pure status cascade. The 154 → 188 registry expansion (per 2026-05-15-canonical-consistency-baseline.md §3) happened in DEBT-004 closure; V2 does not move that baseline.
-- **No new TLA+ specs landed by this V2.** The V2 sweep observes that `dsr_erasure_atomicity.tla` (S-11 own) + `region_residency.tla` (S-14 landed early in R-prep wave) are GREEN per today's TLA coverage audit. The actual CI-run verification + ratchet floor update were performed by the R-prep TLA wave (see `specs/_audits/2026-05-15-tla-coverage-audit.md`).
+- **No new TLA+ specs landed by this V2.** The V2 sweep observes that `dsr_erasure_atomicity.tla` (S-11 own) + `region_residency.tla` (S-14 landed early in R-prep wave) are GREEN per today's TLA coverage audit. The actual CI-run verification + ratchet floor update were performed by the R-prep TLA wave (see `specs/_audits/sealed/2026-05-15-tla-coverage-audit.md`).
 - **ADR-S11-010 + ADR-S11-012 are NOT superseded.** Both ADRs remain valid: S-11 still does not OWN the cross-region formal proof. S-14 owns it. The deferral rationale (industry standard runtime + property tests sufficient for S-11 regulatory baseline; S-14 BYOK overlap; sprint scope discipline) is unaffected. What changed is the *landing date*: S-14 delivered ahead of schedule via R-prep ratchet.
 - **Honest-flag preserved.** The V1 honest-flag protocol ("S-11 NÃO claim full residency formal coverage") still holds verbatim. V2 corrects only the misleading **PLANNED** label on the landed S-14 spec — not the S-11 ownership claim.
 - **Cardinality + severity invariants stable.** The 9-day interval saw no new findings in: 12-backend canonical / 7-state machine / 12-purpose enum / severity matrix / FM-450..453 / DASH-PRIVACY canon / sub-processor list / HKDF info strings / 22 S-11 CloudEvents catalog / 3 PAT canonical / LGPD-LGPDfull / GDPR-full / LGPD-residency-attestation compliance audits.
@@ -133,7 +133,7 @@ Semver rationale: **minor bump** (2.2.0 → 2.3.0) rather than patch (2.2.x). Th
 
 V2 sweep SEALED. Deliverables:
 
-- ✅ Audit doc landed at `specs/_audits/2026-05-15-s11-truth-table-sweep-v2.md` (this file).
+- ✅ Audit doc landed at `specs/_audits/sealed/2026-05-15-s11-truth-table-sweep-v2.md` (this file).
 - ✅ Concrete remediation applied to 4 docs: `invariant_registry.md` (5 edits across §4.2 + §4.3), `_spec_contract.md` (YAML version bump + §5.7 R-S11-19a prose + §20 row v2.3.0 NEW + closing line + v2.2.0 row appendix), `WI-S11-007` (saturated "deferred to S-14" prose → "landed early"), `WI-S11-008` (saturated `🟡 spec written` hedges → `✅ GREEN sustained`).
 - ✅ Sprint contract minor version bump: 2.2.0 → 2.3.0 (+ YAML field bump 1.7.0 → 2.3.0 to absorb pre-V2 YAML drift).
 - ✅ 7/7 mandated validators GREEN (exit 0).

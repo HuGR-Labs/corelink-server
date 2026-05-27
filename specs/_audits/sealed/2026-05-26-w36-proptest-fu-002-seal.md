@@ -13,9 +13,9 @@ supersedes: null
 superseded_by: null
 tags: ["audit", "wave-36", "proptest", "fu-w33-002", "corelink-clerk-cf", "corelink-statuspage-real", "density", "seal"]
 references:
-  - "specs/_audits/proptest-followup-tickets.md"
-  - "specs/_audits/2026-05-26-w36-proptest-wasm-seal.md"
-  - "specs/_audits/2026-05-26-wave-33-34-closure-followups.md"
+  - "specs/_audits/sealed/proptest-followup-tickets.md"
+  - "specs/_audits/sealed/2026-05-26-w36-proptest-wasm-seal.md"
+  - "specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md"
 ---
 
 # Wave 36 — clerk-cf + statuspage-real proptest density SEAL
@@ -23,7 +23,7 @@ references:
 ## §1. Scope
 
 Closes the remaining two-crate portion of **WI-PROPTEST-FU-W33-002**
-per `specs/_audits/proptest-followup-tickets.md`. The corelink-wasm
+per `specs/_audits/sealed/proptest-followup-tickets.md`. The corelink-wasm
 portion was sealed earlier in this wave at
 `2026-05-26-w36-proptest-wasm-seal.md` (commit `4bdf17e9`, 6 proptests);
 this audit covers the residual:

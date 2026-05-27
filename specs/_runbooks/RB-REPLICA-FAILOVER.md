@@ -19,7 +19,7 @@ tags: ["runbook", "dr", "replica-failover", "replication-coordinator", "split-br
 
 # RB-REPLICA-FAILOVER — Coordinator-driven Primary/Replica Role Flip
 
-> **Status:** ACTIVE. Companion to `crates/corelink-replication-coordinator/` (wave-15 `InMemoryReplicationCoordinator`), `specs/tla/replica_failover.tla` (✅ GREEN — `InvAtMostOnePrimary` proves INV-FAILOVER-NO-SPLIT-BRAIN at the coordinator layer), `specs/04_sprints/S17/work_items/WI-S17-008-active-failover-drill.md` (quarterly drill spec), `specs/_compliance/BCP-DR-DRILL-CADENCE.md` §DR-16.
+> **Status:** ACTIVE. Companion to `crates/corelink-replication-coordinator/` (wave-15 `InMemoryReplicationCoordinator`), `specs/tla/replica_failover.tla` (✅ GREEN — `InvAtMostOnePrimary` proves INV-FAILOVER-NO-SPLIT-BRAIN at the coordinator layer), `specs/04_sprints/_sealed/S17/work_items/WI-S17-008-active-failover-drill.md` (quarterly drill spec), `specs/_compliance/BCP-DR-DRILL-CADENCE.md` §DR-16.
 >
 > **Purpose:** procedural runbook for the **back-plane coordinator-level** failover — the four-domain replication SLI (R2 hot blobs, D1, KV, Neon) shows the current `Primary` region is no longer eligible (heartbeat stale OR lag breaches `SLO-REPLICATION-LAG-{R2,D1,KV}` p99 budget) and the singleton coordinator must flip role state (Primary → HotStandby, eligible Replica → Primary) **with fail-CLOSED audit + 24 h failback cool-down**. Complements `RB-ACTIVE-FAILOVER.md` (which drives the **request-path / write-lease** flip via `corelink-failover-router`); both runbooks fire together for a real DR-16 incident — see §1.4.
 >
@@ -428,8 +428,8 @@ For both drills and real incidents, the IC + Scribe MUST complete the following 
 
 - `crates/corelink-replication-coordinator/` — wave-15 coordinator (state / heartbeat / lag / audit / coordinator modules; `InMemoryReplicationCoordinator`)
 - `specs/tla/replica_failover.tla` — ✅ GREEN; `InvAtMostOnePrimary` proves INV-FAILOVER-NO-SPLIT-BRAIN at the coordinator layer
-- `specs/_audits/2026-05-15-replica-coordinator-production.md` — wave-15 audit (singleton DO lock, audit-bus, `/v1/health/replication` deferred)
-- `specs/04_sprints/S17/work_items/WI-S17-008-active-failover-drill.md` — quarterly drill spec (this runbook's drill rehearsal cadence)
+- `specs/_audits/sealed/2026-05-15-replica-coordinator-production.md` — wave-15 audit (singleton DO lock, audit-bus, `/v1/health/replication` deferred)
+- `specs/04_sprints/_sealed/S17/work_items/WI-S17-008-active-failover-drill.md` — quarterly drill spec (this runbook's drill rehearsal cadence)
 - `specs/_compliance/BCP-DR-DRILL-CADENCE.md §DR-16` — drill cadence (weekly `--simulate` + monthly `--staging` + quarterly real-paired with active-failover)
 - `specs/_compliance/ACTIVE-FAILOVER-DRILL-SPEC.md` — DR-16 drill spec parent
 - `specs/_runbooks/RB-ACTIVE-FAILOVER.md` — request-path / write-lease runbook (this doc's companion; ordering: replica-failover BEFORE active-failover, see §1.4)

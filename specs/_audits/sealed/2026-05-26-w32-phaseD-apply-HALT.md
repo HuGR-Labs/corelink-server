@@ -104,7 +104,7 @@ Note: The `wrangler.toml` schema is likely correct for wrangler 4.x; this error 
 
 ### Check 6 — Phase D prep spec review
 
-`specs/_audits/2026-05-26-w32-phaseD-prep.md` read and understood. The runner contract is clear. The prep agent noted in §5.3: "Full dry-run requires `wrangler` in PATH — not installed in this environment. The script exits 127 cleanly when wrangler is absent." This confirms the baseline gap was known at prep time and the apply agent requires the wrangler installation precondition to be met by the operator.
+`specs/_audits/sealed/2026-05-26-w32-phaseD-prep.md` read and understood. The runner contract is clear. The prep agent noted in §5.3: "Full dry-run requires `wrangler` in PATH — not installed in this environment. The script exits 127 cleanly when wrangler is absent." This confirms the baseline gap was known at prep time and the apply agent requires the wrangler installation precondition to be met by the operator.
 
 ---
 
@@ -166,7 +166,7 @@ Once the operator resolves the blockers (§8 below), the apply agent should:
 2. Run `bash scripts/apply-d1-migrations-prod.sh --apply` — capture to `target/phase-d-apply-migrations.log`.
 3. Run `bash scripts/put-secrets-prod.sh --apply` — capture to `target/phase-d-apply-secrets.log` (values redacted; NAME + SHA256[:8] only).
 4. Run `bash scripts/verify-secrets-deployed.sh` — capture to `target/phase-d-apply-verify.log`; assert exit 0.
-5. Write `specs/_audits/2026-05-26-w32-phaseD-apply.md` (the green SEAL).
+5. Write `specs/_audits/sealed/2026-05-26-w32-phaseD-apply.md` (the green SEAL).
 6. Commit with DCO + Co-Authored-By.
 
 ---

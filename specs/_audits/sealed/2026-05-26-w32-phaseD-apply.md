@@ -6,7 +6,7 @@
 >
 > **Authored:** 2026-05-26 by Claude Sonnet 4.6 (agent-a7ae0ffae2f7552ac) during Phase D apply re-dispatch.
 >
-> **Supersedes:** `specs/_audits/2026-05-26-w32-phaseD-apply-HALT.md` (agent-a439b54302191076f HALT on wrangler@4 + .env.local blockers — both resolved before this dispatch).
+> **Supersedes:** `specs/_audits/sealed/2026-05-26-w32-phaseD-apply-HALT.md` (agent-a439b54302191076f HALT on wrangler@4 + .env.local blockers — both resolved before this dispatch).
 >
 > **Base commit:** `9fa6da5f` (confirmed at dispatch start)
 >
@@ -200,6 +200,6 @@ The 11 EXTRA secrets are deployed but not classified as `cf-wrangler` in the sec
 
 Phase D APPLY is **COMPLETE** for the MVP scope (52 migrations + 16 secrets). All hard-pause triggers remained silent. CTRL-CRED-001 preserved throughout.
 
-Next: Wave 32 Phase E (Worker deploy) — see `specs/_audits/2026-05-26-w32-phaseE-prep.md`.
+Next: Wave 32 Phase E (Worker deploy) — see `specs/_audits/sealed/2026-05-26-w32-phaseE-prep.md`.
 
 **SEAL:** `2026-05-26T20:10:10Z` — agent-a7ae0ffae2f7552ac (Claude Sonnet 4.6)

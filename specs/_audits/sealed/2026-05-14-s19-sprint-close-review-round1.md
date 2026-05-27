@@ -12,7 +12,7 @@ tags: ["audit", "sprint-close", "s19", "adversarial", "high-risk"]
 
 # AUDIT-S19-SPRINT-CLOSE-R1 — Post-Merge Adversarial Sprint-Close Round 1 (HIGH_RISK)
 
-> **Scope:** post-merge sprint-close review of S-19 (Customer Onboarding) — 6 WIs SEALED + merged + pushed to `main`. Comparator: `specs/_audits/2026-05-14-s19-sprint-preflight-review.md` (5 P0 + 8 P1).
+> **Scope:** post-merge sprint-close review of S-19 (Customer Onboarding) — 6 WIs SEALED + merged + pushed to `main`. Comparator: `specs/_audits/sealed/2026-05-14-s19-sprint-preflight-review.md` (5 P0 + 8 P1).
 > **Working dir:** `/Users/gustavoschneiter/Documents/HuGR/corelink-server` @ `main 53a107d`.
 > **Gates executed:** `cargo build --workspace` (PASS), `cargo clippy --workspace --tests -- -D warnings` (PASS), `cargo test --workspace --no-run` (PASS), `python3 scripts/validate_specs.py` (327 OK / 9 YAML-only / 14 pre-existing S-11/S-13 ADR failures; 0 S-19 failures), conflict-marker grep empty.
 
@@ -70,7 +70,7 @@ The in-process `processed_event_ids: HashSet<String>` in `crates/corelink-tier-s
 `crates/corelink-dpa-versioning/src/re_accept.rs:41-85` walks read → version-check → tenant-read → `write_tenant` → return receipt. There is no `audit` collaborator and no event emit on the version bump. The WI-002 click-through handler is *implicitly* invoked downstream of `re_accept` per the WI-003 spec, but the re-acceptance code path itself produces no `dpa.re_accepted` or `dpa.version_bumped` event — so the audit chain cannot prove forensically that the v1 → v2 transition occurred at time T for tenant X. Pre-flight P1-1 named this gap in the funnel context; it survives at the re-acceptance handler boundary as well. Fix: re_accept handler takes an audit-sink, emits `ReAccepted { tenant, from_version, to_version, accepted_at }` BEFORE `write_tenant`.
 
 **P1-NEW-6. PRR-S19 single Legal Counsel seat, not 3 per locale (pre-flight P1-8 partial).**
-`specs/04_sprints/S19/PRR-S19.md:264-277` table has **one** Legal Counsel slot (#7), explicitly tagged "synthetic Architect-folded SME review at SEAL for 3 locales DPA templates". Pre-flight P1-8 explicitly asked for 3 separate Legal sign-offs (en-US/CCPA, pt-BR/LGPD, es-419). The PRR W6 waiver expiry (D+10) does say "Real Legal counsel sign-off per locale committed as addendum"; the structural reconciliation is to expand the §9 table to 3 rows (Legal-en-US, Legal-pt-BR, Legal-es-419) so the addendum has 3 named slots, not 1. Same intent, cleaner audit trail.
+`specs/04_sprints/_sealed/S19/PRR-S19.md:264-277` table has **one** Legal Counsel slot (#7), explicitly tagged "synthetic Architect-folded SME review at SEAL for 3 locales DPA templates". Pre-flight P1-8 explicitly asked for 3 separate Legal sign-offs (en-US/CCPA, pt-BR/LGPD, es-419). The PRR W6 waiver expiry (D+10) does say "Real Legal counsel sign-off per locale committed as addendum"; the structural reconciliation is to expand the §9 table to 3 rows (Legal-en-US, Legal-pt-BR, Legal-es-419) so the addendum has 3 named slots, not 1. Same intent, cleaner audit trail.
 
 ### P2
 

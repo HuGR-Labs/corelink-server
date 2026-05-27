@@ -145,7 +145,7 @@ All three runbooks have been **dry-run executed** at WI-S06-007 SEAL
 
 - [SLA addendum](./gc-sla-addendum-s06-ga.md)
 - [Release notes S-06](./release-notes-s06.md)
-- [PRR-S06 promotion decision](../../specs/04_sprints/S06/PRR-S06.md)
+- [PRR-S06 promotion decision](../../specs/04_sprints/_sealed/S06/PRR-S06.md)
 
 ## Change log
 

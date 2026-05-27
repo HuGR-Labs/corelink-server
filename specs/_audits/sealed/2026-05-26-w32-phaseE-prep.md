@@ -13,7 +13,7 @@
 > CF Containers registry push runner scripts, WITHOUT deploying. Phase E
 > APPLY is blocked on Phase D (migrations + secrets) completing.
 >
-> **Parent spec:** `specs/_audits/2026-05-22-wave32-prod-deploy-spec.md`
+> **Parent spec:** `specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md`
 > §4 Phase E.
 >
 > **Parallel-safe with:** Phase B (`acb7786e`), Phase C (`a6bd9fbbd1`),
@@ -34,7 +34,7 @@ requires Phase D green) executes the actual build + push + deploy.
 | Build script | `scripts/build-container-prod.sh` | Local docker build, image tagging, smoke probe, ADR-0015 attestation |
 | Push script | `scripts/push-container-prod.sh` | CF Containers registry push (default dry-run; --apply to push) |
 | Verify script | `scripts/verify-container-prod.sh` | Post-deploy smoke: health endpoint, CF metrics, DO storage |
-| This audit | `specs/_audits/2026-05-26-w32-phaseE-prep.md` | PREP SEAL |
+| This audit | `specs/_audits/sealed/2026-05-26-w32-phaseE-prep.md` | PREP SEAL |
 
 **What Phase E PREP does NOT do:**
 - Build or push any Docker image (Docker daemon offline on prep host;

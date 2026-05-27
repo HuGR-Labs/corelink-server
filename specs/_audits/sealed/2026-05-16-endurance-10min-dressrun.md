@@ -283,7 +283,7 @@ apenas wiring-validation.
 
 - `specs/_runbooks/RB-24H-ENDURANCE-LOAD.md`
 - `specs/_runbooks/RB-GA-CUTOVER.md`
-- `specs/_audits/2026-05-16-24h-endurance-harness.md`
+- `specs/_audits/sealed/2026-05-16-24h-endurance-harness.md`
 - `tests/load/k6/scenarios/endurance-24h-w22.js`
 - `tests/load/fixtures/customer-routes.ndjson`
 - `scripts/run_24h_endurance.sh`

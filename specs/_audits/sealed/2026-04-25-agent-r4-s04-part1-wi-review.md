@@ -4,9 +4,9 @@
 **Date**: 2026-04-25
 **Scope**: WI-S04-001 (REAPI ActionCache handlers), WI-S04-002 (D1 ac_meta + R2 bucket), WI-S04-003 (corelink-ac Merkle dual-side)
 **Source files**:
-- `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/04_sprints/S04/work_items/WI-S04-001-reapi-actioncache-handlers.md`
-- `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/04_sprints/S04/work_items/WI-S04-002-d1-ac-meta-r2-bucket.md`
-- `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/04_sprints/S04/work_items/WI-S04-003-corelink-ac-merkle-dual-side.md`
+- `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/04_sprints/_sealed/S04/work_items/WI-S04-001-reapi-actioncache-handlers.md`
+- `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/04_sprints/_sealed/S04/work_items/WI-S04-002-d1-ac-meta-r2-bucket.md`
+- `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/04_sprints/_sealed/S04/work_items/WI-S04-003-corelink-ac-merkle-dual-side.md`
 **Cross-references**: `_spec_contract.md` v1.1.0 (S-04), `data_model.md §4.2/§5.2`, `security_model.md §CTRL-AC-001/002`, `error_taxonomy.md §3.2`, `invariant_registry.md §3.3`, ADR-0019, S-01 lib `corelink-tenant-path`, S-03 part1+part2 R4 reviews (calibration baseline 7.6 / 7.95; best-in-class WI-S03-003 = 8.5).
 
 ---

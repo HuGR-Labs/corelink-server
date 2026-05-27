@@ -213,7 +213,7 @@ Legal templates + Legal externo review path + lighthouse customer engagement; HI
    - Provide DPA + TIA template + technical evidence pack.
    - Customer Legal review cycle (parallel track).
    - DPA signed = lighthouse milestone.
-   - Document: `specs/_audits/2026-XX-XX-lighthouse-customer-dpa-signed.md`.
+   - Document: `specs/_audits/sealed/2026-XX-XX-lighthouse-customer-dpa-signed.md`.
 
 5. **Quarterly Legal review cycle**:
    - Cadence: every 3 months post-template ratification.
@@ -495,8 +495,8 @@ TLA+ alignment: registry §4.2 indica `region_residency.tla` PLANNED S-14 WI-S14
 | Quarterly Legal review template | `legal/quarterly-legal-review-template.md` | Markdown |
 | Customer doc DPA onboarding | `docs/customer/dpa-onboarding.md` | Markdown |
 | Internal doc Legal review process | `docs/internal/legal-review-process.md` | Markdown |
-| Lighthouse customer DPA signed report | `specs/_audits/2026-XX-XX-lighthouse-customer-dpa-signed.md` | Markdown |
-| Legal externo review report | `specs/_audits/2026-XX-XX-legal-externo-review-s14.md` | Markdown |
+| Lighthouse customer DPA signed report | `specs/_audits/sealed/2026-XX-XX-lighthouse-customer-dpa-signed.md` | Markdown |
+| Legal externo review report | `specs/_audits/sealed/2026-XX-XX-legal-externo-review-s14.md` | Markdown |
 | ADR-XXXX (DPA + TIA + Legal externo + 12th sign-off) | `specs/03_architecture/adrs/ADR-XXXX-dpa-amendment-schrems-ii-tia-legal-externo.md` | Markdown |
 | ADR WAIVER-S14-001 (if needed) | `specs/03_architecture/adrs/WAIVER-S14-001-legal-externo-timeline.md` | Markdown |
 

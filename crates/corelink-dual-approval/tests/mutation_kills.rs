@@ -3,7 +3,7 @@
 //! on 2026-05-15.
 //!
 //! Each test is the minimum case required to kill a specific surviving
-//! mutation; see `specs/_audits/2026-05-15-mutation-expansion.md` for
+//! mutation; see `specs/_audits/sealed/2026-05-15-mutation-expansion.md` for
 //! the full mutant-by-mutant classification.
 
 #![forbid(unsafe_code)]

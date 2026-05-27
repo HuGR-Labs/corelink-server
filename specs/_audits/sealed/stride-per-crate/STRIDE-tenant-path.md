@@ -60,7 +60,7 @@
 |---|---|---|---|
 | **S** | Test harness substitutes mock derive at runtime | `cfg(test)` only; release build has no mock path; cargo-deny + clippy gate | CI build matrix |
 | **T** | Fuzz seed corpus tampered to hide regressions | Corpus checked into repo + signed commits (CTRL-SUPPLY-002) | INV-SUPPLY-SIGNED-DEPLOY |
-| **R** | "Fuzz never caught X" disputes | Fuzz runs published to CI artifact; coverage report in `2026-05-14-cargo-fuzz-summary-s15.md` | `specs/_audits/2026-05-14-cargo-fuzz-summary-s15.md` |
+| **R** | "Fuzz never caught X" disputes | Fuzz runs published to CI artifact; coverage report in `2026-05-14-cargo-fuzz-summary-s15.md` | `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md` |
 | **I** | Fuzz outputs leak prod tenant_id shape | Fuzz uses synthetic ULIDs; no prod data | fuzz/corpus review |
 | **D** | Fuzz job hogs CI | Time-boxed budget per job | CI config |
 | **E** | Fuzz harness writes to prod | Fuzz hermetic; no network; no prod secrets | fuzz/ review |
@@ -79,7 +79,7 @@
 - `crates/tenant-path/fuzz/` — cargo-fuzz harness (FM-156 supply-chain analog covered)
 - `crates/tenant-path/benches/` — constant-time + cost benches
 - `specs/tla/tenant_isolation.tla` — 5-layer defense formal model
-- `specs/_audits/2026-05-14-cargo-fuzz-summary-s15.md` — fuzz baseline
+- `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md` — fuzz baseline
 
 ## 5. Cross-references
 

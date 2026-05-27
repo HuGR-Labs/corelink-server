@@ -78,7 +78,7 @@
 - `crates/corelink-abuse/tests/calibration_abuse.rs` — calibration regression
 - `crates/corelink-customer-alerts/tests/` — alert + appeal
 - k6 noisy-neighbor + edge-flood scenarios
-- `specs/_audits/2026-05-14-rb-fm-201-dry-run.md` (config rollback drill)
+- `specs/_audits/sealed/2026-05-14-rb-fm-201-dry-run.md` (config rollback drill)
 
 ## 5. Cross-references
 

@@ -115,7 +115,7 @@ coverage (with named owners / due dates for any unstaffed mitigation).
 ## 9. Ship-gate-discovered findings (from WI-S17-006 builder run)
 
 The tabletop synthetic run surfaced 5 findings (`F1..F5` in
-`specs/_audits/2026-05-14-s17-tabletop-byok-revoke.md` §5):
+`specs/_audits/sealed/2026-05-14-s17-tabletop-byok-revoke.md` §5):
 
 - F1 stale PagerDuty phone bridge in RB-BYOK-REVOKE §6 — **HIGH** —
   owned, due S-18 D+5.

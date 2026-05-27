@@ -56,7 +56,7 @@
 //!
 //! # Pattern reference
 //!
-//! See `specs/_audits/2026-05-15-cf-binding-real-pattern.md` for the
+//! See `specs/_audits/sealed/2026-05-15-cf-binding-real-pattern.md` for the
 //! step-by-step recipe. This module ticks the D1 row of the
 //! per-binding replication checklist.
 

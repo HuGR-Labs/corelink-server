@@ -16,7 +16,7 @@
 //! Stripe webhook route's
 //! [`corelink_stripe_real::webhook_dispatch::StateMaterializer`]
 //! collaborator (wave 16 unification —
-//! `specs/_audits/2026-05-15-stripe-webhook-production.md`
+//! `specs/_audits/sealed/2026-05-15-stripe-webhook-production.md`
 //! §unification).
 //!
 //! # SLO emit

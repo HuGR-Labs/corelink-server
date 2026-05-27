@@ -172,7 +172,7 @@ Declare SEV-3 if:
 
 **3-locale requirement**: All 3 locales (PT-BR, EN-US, ES-MX) MUST be sent. This is a mandatory GA requirement per sprint contract §10.s11.7 and LGPD Art. 9 (direito à informação acessível). Do NOT send single locale.
 
-**Wave-18 customer-readable narrative templates** (per `specs/_audits/2026-05-15-customer-breach-notification-templates.md`):
+**Wave-18 customer-readable narrative templates** (per `specs/_audits/sealed/2026-05-15-customer-breach-notification-templates.md`):
 
 The MJML transactional templates above ship the email envelope. The **customer-readable markdown narrative** referenced by each MJML body lives under `docs/customer-comm/breach-notification/v1.0.0/`, organised as **2 incident classes × 3 locales**:
 

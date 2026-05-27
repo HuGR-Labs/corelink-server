@@ -4,8 +4,8 @@
 -- PII Redaction).
 --
 -- Canonical sources:
---   - specs/04_sprints/S09/work_items/WI-S09-002-logpush-r2-loki-log-schema-pii-redaction.md §6
---   - specs/04_sprints/S09/_spec_contract.md §5.2 (R-S09-4 / R-S09-5 / R-S09-6)
+--   - specs/04_sprints/_sealed/S09/work_items/WI-S09-002-logpush-r2-loki-log-schema-pii-redaction.md §6
+--   - specs/04_sprints/_sealed/S09/_spec_contract.md §5.2 (R-S09-4 / R-S09-5 / R-S09-6)
 --   - specs/03_architecture/privacy_model.md §6 retention + §11.4 volume budget + CTRL-PRIV-001
 --   - specs/03_architecture/observability_model.md §5 logs canonical schema
 --   - specs/03_architecture/adrs/ADR-0036-d1-schema-migration-governance.md

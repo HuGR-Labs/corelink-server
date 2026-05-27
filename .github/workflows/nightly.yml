@@ -56,17 +56,17 @@ jobs:
           # Added R-PREP 2026-05-15 — closes auth-revocation cluster
           # (INV-AUTH-REVOCATION-IDEMPOTENT/-SLO-60S/-MASS-REVOKE-ATOMIC
           # + INV-AUTH-PROPAGATION-AT-LEAST-ONCE). See
-          # `specs/_audits/2026-05-15-tla-coverage-audit.md`.
+          # `specs/_audits/sealed/2026-05-15-tla-coverage-audit.md`.
           - auth_revocation
           # DEBT-005 batch 1 closure 2026-05-15 — 5 new specs (5/40 critical
-          # INV-no-TLA gaps). See specs/_audits/2026-05-15-debt-register.md.
+          # INV-no-TLA gaps). See specs/_audits/sealed/2026-05-15-debt-register.md.
           - auth_jwt_validation
           - tenant_ctx_propagation
           - merkle_integrity
           - byok_envelope_aad
           - failover_no_split_brain
           # DEBT-014 partial closure 2026-05-15 — 3 new specs closing FT-1,
-          # FT-2, FT-5 from `specs/_audits/tla-followup-tickets.md`.
+          # FT-2, FT-5 from `specs/_audits/sealed/tla-followup-tickets.md`.
           - auth_pat_hybrid
           - key_lifecycle
           - gc_lock_protocol

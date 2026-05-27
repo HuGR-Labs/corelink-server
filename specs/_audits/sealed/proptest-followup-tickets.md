@@ -250,7 +250,7 @@ following two follow-up WIs.
 ### WI-PROPTEST-FU-W33-001 — Umbrella aggregator proptest accounting — **CLOSED 2026-05-26 (obsoleted by Wave 35 Phase 2 physical absorption + INV-pin documentation pattern)**
 
 **Status:** CLOSED 2026-05-26 (W36-PROPTEST-FU-001)
-**Closure SEAL:** `specs/_audits/2026-05-26-w36-proptest-fu-001-seal.md`
+**Closure SEAL:** `specs/_audits/sealed/2026-05-26-w36-proptest-fu-001-seal.md`
 **Owner:** orchestrator (Gustavo Schneiter)
 **Priority:** P3 (architectural decision, not runtime correctness)
 **Effort:** 0.5d (executed as decision + allowlist + doc cleanup; no
@@ -316,7 +316,7 @@ applied** to the 2 boundary/types crates:
 - `corelink-core/src/lib.rs`: added INV pin pointer for
   `INV-DATA-RESIDENCY` → `corelink-signup` ownership.
 - This ticket → CLOSED.
-- `specs/_audits/2026-05-26-wave-33-34-closure-followups.md` §6 #4 →
+- `specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md` §6 #4 →
   CLOSED.
 
 **Acceptance criteria (one of) — selected:** option (b) ("document
@@ -331,8 +331,8 @@ ownership documentation is more honest than a structural heuristic.
 change, no test regression.
 
 **Tracking:** this ticket + closure SEAL audit
-`specs/_audits/2026-05-26-w36-proptest-fu-001-seal.md` +
-`specs/_audits/2026-05-26-wave-33-34-closure-followups.md` §6 #4.
+`specs/_audits/sealed/2026-05-26-w36-proptest-fu-001-seal.md` +
+`specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md` §6 #4.
 
 ---
 

@@ -8,20 +8,20 @@ created: "2026-04-25"
 updated: "2026-05-27"
 reviewer: "Agent R4 (Claude Opus 4.7, 1M context — round 4 part 2b focused)"
 scope: "Lote 10.6 — Sprint S-06 Part 2b (WI-S06-006 TLA+ CI gate + WI-S06-007 PRR ship gate)"
-sprint_contract: "specs/04_sprints/S06/_spec_contract.md v1.1.0"
+sprint_contract: "specs/04_sprints/_sealed/S06/_spec_contract.md v1.1.0"
 calibration_baselines:
-  - "specs/_audits/2026-04-25-agent-r4-s06-part1-wi-review.md (8.13/10 aggregate; P0-1 LIKE→json_each highest leverage)"
-  - "specs/_audits/2026-04-25-agent-r4-s05-part2-wi-review.md (8.05/10)"
+  - "specs/_audits/sealed/2026-04-25-agent-r4-s06-part1-wi-review.md (8.13/10 aggregate; P0-1 LIKE→json_each highest leverage)"
+  - "specs/_audits/sealed/2026-04-25-agent-r4-s05-part2-wi-review.md (8.05/10)"
   - "WI-S04-003 best-in-class 8.6"
 files_reviewed:
-  - "specs/04_sprints/S06/work_items/WI-S06-006-tla-ci-gate-property-test-100k-race.md (429 lines)"
-  - "specs/04_sprints/S06/work_items/WI-S06-007-dash-gc-rb-dry-runs-prr-ship-gate.md (585 lines)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-006-tla-ci-gate-property-test-100k-race.md (429 lines)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-007-dash-gc-rb-dry-runs-prr-ship-gate.md (585 lines)"
 cross_references:
-  - "specs/04_sprints/S06/_spec_contract.md v1.1.0 §6 DoD; §10.s06.4 30d TLA+ verde; §19 Waiver policy"
+  - "specs/04_sprints/_sealed/S06/_spec_contract.md v1.1.0 §6 DoD; §10.s06.4 30d TLA+ verde; §19 Waiver policy"
   - "specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md (FROZEN; 91 lines design content)"
   - "specs/03_architecture/invariant_registry.md §3.17 (23 INV-GC-* rows promovidas preemptivamente)"
-  - "specs/04_sprints/S05/work_items/WI-S05-006-sweeper-rb-fm-060-prr-ship-gate.md (precedent staffing)"
-  - "specs/_audits/2026-04-25-agent-r4-s06-part1-wi-review.md (existing P0-1..P0-6)"
+  - "specs/04_sprints/_sealed/S05/work_items/WI-S05-006-sweeper-rb-fm-060-prr-ship-gate.md (precedent staffing)"
+  - "specs/_audits/sealed/2026-04-25-agent-r4-s06-part1-wi-review.md (existing P0-1..P0-6)"
 ---
 
 > **CLOSED 2026-05-27** — S-06 sprint implementation sealed via git tag `s06-impl-sealed`; this independent review record is delivered. See `specs/_audits/2026-05-27-audit-triage-post-w36.md` for triage methodology.

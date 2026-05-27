@@ -22,7 +22,7 @@ tags: ["audit", "replication", "backlog", "sprint-ready", "rpo", "dr-16", "wi-ca
 > (staging dry-run can proceed with P1/P2 outstanding, but P0 are
 > hard blockers).
 >
-> **Anchor:** `specs/_audits/2026-05-15-replication-audit.md` §3
+> **Anchor:** `specs/_audits/sealed/2026-05-15-replication-audit.md` §3
 > (per-domain audit) + §5 (inconsistency windows) + §7 (verification).
 
 ---
@@ -335,7 +335,7 @@ All 10 tickets reference back to the canonical audit (`2026-05-15-replication-au
 
 ## Cross-links
 
-- Source audit: `specs/_audits/2026-05-15-replication-audit.md`
+- Source audit: `specs/_audits/sealed/2026-05-15-replication-audit.md`
 - Updated SLOs: `specs/03_architecture/slo_catalog.md §4.23..4.26`
 - Verifier: `scripts/verify-replication-lag.py`
 - Consuming drill specs: `specs/_compliance/ACTIVE-FAILOVER-DRILL-SPEC.md` (DR-16) + `specs/_compliance/COLD-RESTORE-DRILL-SPEC.md` (DR-15)

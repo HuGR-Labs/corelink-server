@@ -387,7 +387,7 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | Burn alert         | 1h fast-burn (10× violation rate; SEV-2) + 6h slow-burn (3× rate; SEV-3) per Google SRE Workbook   |
 | Owner              | SRE Lead; replica-worker maintainer (S-14 cluster)                                                 |
 | Verifier           | `scripts/verify-replication-lag.py --domain=r2_hot --domain=r2_crr` (daily cron alongside `backup-daily.sh`) |
-| Anchor             | `specs/_audits/2026-05-15-replication-audit.md §3.1 + §3.2`                                        |
+| Anchor             | `specs/_audits/sealed/2026-05-15-replication-audit.md §3.1 + §3.2`                                        |
 | Notas              | Closes audit gap GAP-R1 (hot) + GAP-R2 (CRR). Drives DR-16 active-failover §1.3 declaration check. |
 
 ### 4.24 Reliability — Cross-region replication lag D1 (R-prep replication audit)
@@ -403,7 +403,7 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | Burn alert         | 1h fast-burn (10× rate; SEV-2) + 6h slow-burn (3× rate; SEV-3); 5-min sustained lag > 60 s → SEV-2 |
 | Owner              | SRE Lead                                                                                           |
 | Verifier           | `scripts/verify-replication-lag.py --domain=d1`                                                    |
-| Anchor             | `specs/_audits/2026-05-15-replication-audit.md §3.3`                                               |
+| Anchor             | `specs/_audits/sealed/2026-05-15-replication-audit.md §3.3`                                               |
 | Notas              | Closes audit gap GAP-R3. Single-writer per region (no conflict resolution); replica is read-only. |
 
 ### 4.25 Reliability — Cross-region replication lag KV (R-prep replication audit)
@@ -420,7 +420,7 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | Burn alert         | Sustained 5 min > 60 s typical → SEV-3; > 300 s ceiling → SEV-2                                   |
 | Owner              | SRE Lead                                                                                           |
 | Verifier           | `scripts/verify-replication-lag.py --domain=kv`                                                    |
-| Anchor             | `specs/_audits/2026-05-15-replication-audit.md §3.4`                                               |
+| Anchor             | `specs/_audits/sealed/2026-05-15-replication-audit.md §3.4`                                               |
 | Notas              | Closes audit gap GAP-R4. KV is global eventual — every region pair is probed (12 pairs / 4×3).    |
 
 ### 4.27 Reliability — Neon read-replica lag (R-prep replication audit, soft)
@@ -435,7 +435,7 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | Burn alert         | **None at GA** — dashboard trend + quarterly review with Neon platform team                        |
 | Owner              | SRE Lead                                                                                           |
 | Verifier           | `scripts/verify-replication-lag.py --domain=neon`                                                  |
-| Anchor             | `specs/_audits/2026-05-15-replication-audit.md §3.6` (GAP-R6)                                      |
+| Anchor             | `specs/_audits/sealed/2026-05-15-replication-audit.md §3.6` (GAP-R6)                                      |
 | Notas              | Closes audit gap GAP-R6. CoreLink-side probe complements Neon platform SLA — catches silent regressions. Toggling to paging requires ADR. |
 
 ### 4.28 Reliability — Hot-blob replication coverage (R-prep replication audit, polish)
@@ -450,7 +450,7 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | Burn alert         | None at GA — if sustained < 0.90 for 30 d, propose ADR to shorten `AGGREGATION_WINDOW_DAYS`        |
 | Owner              | SRE Lead + Replica-Worker owner                                                                    |
 | Verifier           | dashboard panel; ratio surfaced via `corelink-replica-worker::coverage` module                     |
-| Anchor             | `specs/_audits/2026-05-15-replication-audit.md §3.1 edge case (c)`                                 |
+| Anchor             | `specs/_audits/sealed/2026-05-15-replication-audit.md §3.1 edge case (c)`                                 |
 | Notas              | Closes ticket P2-002. Empty-window vacuous truth = 1.0; inversion clamped to 1.0 defensively.      |
 
 ### 4.29 Reliability — Multipart in-flight inventory at failover (R-prep replication audit, polish)
@@ -465,7 +465,7 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | Burn alert         | Any session count > 0 not matched by a CloudEvent within drain window → SEV-2                      |
 | Owner              | SRE Lead + Enterprise Support                                                                      |
 | Verifier           | drill matrix in `ACTIVE-FAILOVER-DRILL-SPEC.md` step 3 (Drain); seed 3 synthetic in-flight uploads; assert 3 CloudEvents |
-| Anchor             | `specs/_audits/2026-05-15-replication-audit.md §3.5 edge case (b)`                                 |
+| Anchor             | `specs/_audits/sealed/2026-05-15-replication-audit.md §3.5 edge case (b)`                                 |
 | Notas              | Closes ticket P2-003. Audit fail-CLOSED: any per-session emit error halts the drain. Per-tenant grouping (`by_tenant()`) drives the on-call comms template. |
 
 ### 4.26 Reliability — DO state sync-age (R-prep replication audit)
@@ -482,7 +482,7 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | Burn alert         | Sustained 5 min sync-age over budget → SEV-3                                                       |
 | Owner              | SRE Lead                                                                                           |
 | Verifier           | `scripts/verify-replication-lag.py --domain=do`                                                    |
-| Anchor             | `specs/_audits/2026-05-15-replication-audit.md §3.5`                                               |
+| Anchor             | `specs/_audits/sealed/2026-05-15-replication-audit.md §3.5`                                               |
 | Notas              | Closes audit gap GAP-R5. DO is single-region; sync-age is the *proxy* for cross-region rebuild RPO. |
 
 ---

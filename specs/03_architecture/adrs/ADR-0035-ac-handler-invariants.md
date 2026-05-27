@@ -14,7 +14,7 @@ supersedes: null
 superseded_by: null
 deciders: ["Gustavo Schneiter (Owner)", "Architect (TBD)"]
 context_links:
-  - "specs/04_sprints/S04/work_items/WI-S04-001-reapi-actioncache-handlers.md"
+  - "specs/04_sprints/_sealed/S04/work_items/WI-S04-001-reapi-actioncache-handlers.md"
 tags: ["adr", "s04", "ac", "handlers", "reapi", "invariants"]
 ---
 

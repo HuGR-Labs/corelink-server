@@ -280,7 +280,7 @@ The wave-21 closure-note above flagged ONE remaining deferred bit:
 > against the `tenant_config.region` column.
 
 That CF Worker production wire is **CLOSED at wave-25** — see
-`specs/_audits/2026-05-16-tenant-config-cf-prod-wire.md`. The wire
+`specs/_audits/sealed/2026-05-16-tenant-config-cf-prod-wire.md`. The wire
 ships:
 
 - `corelink-clerk-cf::tenant_region_real::D1TenantConfigStore` (sync

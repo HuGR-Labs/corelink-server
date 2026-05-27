@@ -14,16 +14,16 @@ supersedes: null
 superseded_by: null
 tags: ["audit", "wave-32", "phase-i", "seal", "prod-deploy", "ga-readiness"]
 references:
-  - "specs/_audits/2026-05-22-wave32-prod-deploy-spec.md"
+  - "specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md"
   - "specs/_audits/2026-05-26-w32-phaseA-betterstack-live.md"
-  - "specs/_audits/2026-05-26-w32-phaseB-worker-shim.md"
-  - "specs/_audits/2026-05-26-w32-phaseC-cf-provision.md"
-  - "specs/_audits/2026-05-26-w32-phaseD-apply.md"
-  - "specs/_audits/2026-05-26-w32-phaseE-apply.md"
-  - "specs/_audits/2026-05-26-w32-phaseF-apply-admin-ui-closure.md"
-  - "specs/_audits/2026-05-26-w32-phaseG-apply.md"
-  - "specs/_audits/2026-05-26-w32-phaseH-apply.md"
-  - "specs/_audits/2026-05-26-wave-33-34-closure-followups.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseB-worker-shim.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseC-cf-provision.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseD-apply.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseE-apply.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseF-apply-admin-ui-closure.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseG-apply.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseH-apply.md"
+  - "specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md"
 ---
 
 # Wave 32 Phase I — Production Deploy Sign-Off SEAL Audit (2026-05-26)

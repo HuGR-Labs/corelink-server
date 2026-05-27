@@ -118,7 +118,7 @@ Note: Scenario 4.3 counts as "mitigated" via P2 waiver + compensating control; n
 
 ## 6. Security Walkthrough Scenarios
 
-> See full report: `specs/_audits/2026-05-14-security-walkthrough-s13.md`
+> See full report: `specs/_audits/sealed/2026-05-14-security-walkthrough-s13.md`
 
 | # | Scenario | Result |
 |---|---|---|

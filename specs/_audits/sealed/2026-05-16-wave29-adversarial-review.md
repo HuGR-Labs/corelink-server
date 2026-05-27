@@ -15,12 +15,12 @@ findings:
   P2: 3
   P3: 7
 references:
-  - specs/_audits/2026-05-16-wave29-closure.md
-  - specs/_audits/2026-05-16-signup-landing-page.md
-  - specs/_audits/2026-05-16-pricing-page.md
-  - specs/_audits/2026-05-16-trust-center-consolidation.md
-  - specs/_audits/2026-05-16-audit-chain-viz-ui.md
-  - specs/_audits/2026-05-16-perf-baseline-ga-freeze.md
+  - specs/_audits/sealed/2026-05-16-wave29-closure.md
+  - specs/_audits/sealed/2026-05-16-signup-landing-page.md
+  - specs/_audits/sealed/2026-05-16-pricing-page.md
+  - specs/_audits/sealed/2026-05-16-trust-center-consolidation.md
+  - specs/_audits/sealed/2026-05-16-audit-chain-viz-ui.md
+  - specs/_audits/sealed/2026-05-16-perf-baseline-ga-freeze.md
 ---
 
 # Wave-30 adversarial review — wave-29 streams (`365dd38..04f2dff`)
@@ -88,7 +88,7 @@ the `json.dump` ordering.
 The recovery commit `1f48ad3` re-introduces
 `apps/docs/src/pages/customer/audit-chain.{tsx,module.css}` (549 + 240
 LOC), the four i18n deltas, and the `WI-S09-008 §14` closure note. The
-audit doc `specs/_audits/2026-05-16-audit-chain-viz-ui.md` is present
+audit doc `specs/_audits/sealed/2026-05-16-audit-chain-viz-ui.md` is present
 and consistent (front-matter `status: SHIPPED`, base_commit `365dd38`,
 references resolve).
 
@@ -220,7 +220,7 @@ documenting in the audit doc for D+24h dashboard authors.
 
 ### 2.7 Trust center 12 / 1 / 2 classification — **PASS**
 
-`specs/_audits/2026-05-16-trust-center-consolidation.md` enumerates:
+`specs/_audits/sealed/2026-05-16-trust-center-consolidation.md` enumerates:
 
 - **12 PUBLISH:** 8 MDX deep-dives (`/trust/overview`, `/compliance`,
   `/data-handling`, `/subprocessors`, `/incident-response`,

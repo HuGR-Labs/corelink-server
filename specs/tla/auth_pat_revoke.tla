@@ -64,7 +64,7 @@
 (* Cross-refs:                                                              *)
 (*   - `specs/03_architecture/invariant_registry.md §3.28`                  *)
 (*   - `apps/docs/static/openapi-corelink-v1.yaml` DELETE /v1/pats/{pat_id} *)
-(*   - `specs/_audits/2026-05-16-auth-pat-revoke-tla.md` (this dispatch)    *)
+(*   - `specs/_audits/sealed/2026-05-16-auth-pat-revoke-tla.md` (this dispatch)    *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, Sequences, TLC

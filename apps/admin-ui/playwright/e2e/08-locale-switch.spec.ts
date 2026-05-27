@@ -27,7 +27,7 @@ test.describe("Locale switch", () => {
     // Playwright reads the outer one which is locale-agnostic (`en`). The
     // INNER lang reflects the URL locale correctly. This is a real merge
     // bug surfaced by the ship gate and queued for S-17 hotfix (tracked in
-    // specs/_audits/2026-05-14-s16-adversarial-summary.md §findings).
+    // specs/_audits/sealed/2026-05-14-s16-adversarial-summary.md §findings).
     // Re-enable once the layout double-html is resolved.
     const todo = ["pt", "es"].includes(l.code) ? test.fixme : test;
     todo(`renders ${l.code} with html[lang]=${l.code}`, async ({ page }) => {

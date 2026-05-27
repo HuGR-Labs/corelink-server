@@ -88,7 +88,7 @@ CoreLink first-party CI already runs on Node 22 (see
 
 ## References
 
-- Register entry: `specs/_audits/2026-05-15-debt-register.md` row DEBT-015
+- Register entry: `specs/_audits/sealed/2026-05-15-debt-register.md` row DEBT-015
 - Docusaurus build caveat: `apps/docs/README.md` §"Known limitation: local
   production build"
 - Upstream Node release schedule: https://nodejs.org/en/about/previous-releases

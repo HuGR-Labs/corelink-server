@@ -12,7 +12,7 @@ status: COMPLETE
 
 Pre-GA review of CoreLink's TLA+ corpus to identify the highest-impact uncovered invariant before R-prep ships. Companion delivery: one new spec
 (`specs/tla/auth_revocation.tla`) closing the gap recommended in §5, plus
-followup ticket backlog in `specs/_audits/tla-followup-tickets.md`.
+followup ticket backlog in `specs/_audits/sealed/tla-followup-tickets.md`.
 
 ## 1. Scope
 
@@ -188,7 +188,7 @@ in single-digit seconds on a 4-core laptop; "No error has been found".
   definitions) and §4.2 (PLANNED obligation matrix).
 - `specs/03_architecture/security_model.md §6.9 CTRL-FORMAL-001` (mandate).
 - `ROADMAP-TO-GA.md` (R-PREP entry — to be cross-linked when this PR lands).
-- `specs/_audits/tla-followup-tickets.md` — backlog for the other 8 candidate
+- `specs/_audits/sealed/tla-followup-tickets.md` — backlog for the other 8 candidate
   gaps.
 
 ## 8. Caveats / known limitations
@@ -216,5 +216,5 @@ in single-digit seconds on a 4-core laptop; "No error has been found".
 
 **End of audit.** Companion artefacts:
 - `specs/tla/auth_revocation.tla` + two `.cfg` files (PR + nightly).
-- `specs/_audits/tla-followup-tickets.md` (8 remaining gap tickets).
+- `specs/_audits/sealed/tla-followup-tickets.md` (8 remaining gap tickets).
 - `.github/workflows/tla_check.yml` matrix update.

@@ -82,7 +82,7 @@ Deliverables 7-fold:
    - Findings documented em `specs/_audits/2026-XX-XX-ux-research-s18.md`.
 
 7. **PRR LOW_RISK 3 sign-offs canonical + cross-functional publish gate separate**:
-   - PRR `specs/04_sprints/S18/PRR-S18.md` (front matter per `prr` schema: feature_wi + capabilities + prod_target_date + work_status NOT_STARTED → IN_REVIEW → APPROVED).
+   - PRR `specs/04_sprints/_sealed/S18/PRR-S18.md` (front matter per `prr` schema: feature_wi + capabilities + prod_target_date + work_status NOT_STARTED → IN_REVIEW → APPROVED).
    - 3 sign-offs canonical: Owner + Final Approver + Docs lead.
    - Cross-functional publish gate separate (não main PRR per spec contract §10 anti-scope): Finance pricing + Legal terms + Privacy Officer compliance + Security lead security per relevant page (CF-1 + CF-2 + CF-3 from WI-S18-004).
 
@@ -229,7 +229,7 @@ Closing ship gate WI; LOW_RISK lane.
    - Iteration based on findings (post-sprint cadence; not blocking ship).
 
 7. **PRR LOW_RISK 3 sign-offs canonical + cross-functional publish gate separate**:
-   - PRR `specs/04_sprints/S18/PRR-S18.md` em PRR schema (feature_wi + capabilities + prod_target_date + work_status NOT_STARTED → IN_REVIEW → APPROVED).
+   - PRR `specs/04_sprints/_sealed/S18/PRR-S18.md` em PRR schema (feature_wi + capabilities + prod_target_date + work_status NOT_STARTED → IN_REVIEW → APPROVED).
    - 3 sign-offs canonical (LOW_RISK): Owner + Final Approver + Docs lead.
    - Cross-functional publish gate separate (não main PRR; non-skippable per Waiver policy §19):
      - CF-1 `/pricing`: Finance + Legal sign-off.
@@ -325,7 +325,7 @@ Feature: S-18 closing ship gate single-phase SEAL D+10
     And findings documented em specs/_audits/2026-XX-XX-ux-research-s18.md
 
   Scenario: PRR LOW_RISK 3 sign-offs canonical
-    Given specs/04_sprints/S18/PRR-S18.md
+    Given specs/04_sprints/_sealed/S18/PRR-S18.md
     When PRR review
     Then 3 sign-offs canonical (Owner + Final Approver + Docs lead)
     And work_status: NOT_STARTED → IN_REVIEW → APPROVED
@@ -450,7 +450,7 @@ Feature: S-18 closing ship gate single-phase SEAL D+10
 | lychee broken-link CI evidence | `specs/_audits/2026-XX-XX-lychee-evidence.md` + `.github/workflows/docs-lychee.yml` | Markdown / YAML |
 | UX research session report | `specs/_audits/2026-XX-XX-ux-research-s18.md` | Markdown |
 | Cross-functional sign-off log | `specs/_audits/2026-XX-XX-cross-functional-signoffs-s18.md` | Markdown |
-| PRR S-18 | `specs/04_sprints/S18/PRR-S18.md` | Markdown (`prr` schema) |
+| PRR S-18 | `specs/04_sprints/_sealed/S18/PRR-S18.md` | Markdown (`prr` schema) |
 
 ## 14. Quality Standards
 

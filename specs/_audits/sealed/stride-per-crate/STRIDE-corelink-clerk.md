@@ -39,7 +39,7 @@
 | **R** | Clerk denies serving a key (key-pin dispute) | Cache key with fetch timestamp; audit emit on rotation | audit emission test |
 | **I** | JWKS leak — n/a (public by design) | n/a | n/a |
 | **D** | Clerk JWKS endpoint outage blocks all auth | Cached JWKS w/ 1h TTL + 24h stale-while-revalidate; SEV-2 alert if stale > 24h; fail-CLOSED on no-key | `crates/corelink-clerk/tests/rotation.rs` |
-| **E** | Compromised JWKS introduces attacker key | Vendor risk on Clerk; mitigation: pinned kid set updated via CTRL-SUPPLY-002 release; rotation requires CoreLink deploy | vendor risk doc `specs/_audits/2026-05-14-roadmap-r1-8-dependency-audit.md` |
+| **E** | Compromised JWKS introduces attacker key | Vendor risk on Clerk; mitigation: pinned kid set updated via CTRL-SUPPLY-002 release; rotation requires CoreLink deploy | vendor risk doc `specs/_audits/sealed/2026-05-14-roadmap-r1-8-dependency-audit.md` |
 
 ### 2.3 TB-clerk-3 (session → handler)
 

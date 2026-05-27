@@ -7,7 +7,7 @@ version: 1.0.0
 created: 2026-04-25
 reviewer: Agent R4 (Claude Opus 4.7 1M context)
 scope: S-07 all 5 WIs + sprint contract v1.1.0 + 5 NEW INVs §3.18 + ADR-0019 + ADR-0020
-sprint_contract: specs/04_sprints/S07/_spec_contract.md v1.1.0
+sprint_contract: specs/04_sprints/_sealed/S07/_spec_contract.md v1.1.0
 tags: [audit, sota, lote-10.7, s-07, work-items, agent-r4, adversarial]
 ---
 

@@ -18,7 +18,7 @@ deliverables:
   - apps/docs/i18n/pt-BR/code.json (i18n strings)
   - apps/docs/i18n/de/code.json (i18n strings)
   - apps/docs/i18n/es-419/code.json (i18n strings)
-  - specs/04_sprints/S09/work_items/WI-S09-008-customer-audit-export.md (§14 closure-note)
+  - specs/04_sprints/_sealed/S09/work_items/WI-S09-008-customer-audit-export.md (§14 closure-note)
 freeze_clause: "§3.b customer-value-add pre-GA enhancement"
 ---
 
@@ -124,7 +124,7 @@ This stream did NOT introduce any new test failures.
 
 ## 6. Cross-references
 
-- `specs/04_sprints/S09/work_items/WI-S09-008-customer-audit-export.md` —
+- `specs/04_sprints/_sealed/S09/work_items/WI-S09-008-customer-audit-export.md` —
   §14 closure-note pointing back to this UI deliverable.
 - `apps/docs/docs/explanation/security/audit-chain.mdx` — the existing
   Diátaxis explanation page that already mentions the customer dashboard

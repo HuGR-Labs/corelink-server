@@ -119,7 +119,7 @@ export default function Calculator(): ReactElement {
           and subject to refinement at GA. Enterprise pricing is contract-based
           and rendered as <em>Contact us</em> — we do not anchor a misleading
           $0. See the audit doc{" "}
-          <code>specs/_audits/2026-05-16-pricing-page.md</code> for the rate
+          <code>specs/_audits/sealed/2026-05-16-pricing-page.md</code> for the rate
           card status.
         </div>
 

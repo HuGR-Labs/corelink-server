@@ -4,7 +4,7 @@
 # What this DOES:
 #   - Reads the §§1..§4 criteria from `specs/_runbooks/RB-POST-GA-CONTINUITY.md`
 #     (per-window exit gates) and the §5 freeze-thaw truth table from
-#     `specs/_audits/2026-05-16-ga-1-feature-freeze.md §6`.
+#     `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md §6`.
 #   - Emits a single markdown digest under `reports/post-ga/YYYY-MM-DD-digest.md`
 #     summarizing: current T+offset window, per-window gate status, greenlight
 #     composite sample-point status (when available), §5 thaw-condition truth
@@ -98,9 +98,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 RUNBOOK="$REPO_ROOT/specs/_runbooks/RB-POST-GA-CONTINUITY.md"
-FREEZE_AUDIT="$REPO_ROOT/specs/_audits/2026-05-16-ga-1-feature-freeze.md"
+FREEZE_AUDIT="$REPO_ROOT/specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md"
 CUTOVER_RUNBOOK="$REPO_ROOT/specs/_runbooks/RB-GA-CUTOVER.md"
-FRAMEWORK_AUDIT="$REPO_ROOT/specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md"
+FRAMEWORK_AUDIT="$REPO_ROOT/specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md"
 OUT_DIR="$REPO_ROOT/reports/post-ga"
 
 if [[ ! -f "$RUNBOOK" ]]; then

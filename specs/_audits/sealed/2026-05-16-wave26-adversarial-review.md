@@ -15,16 +15,16 @@ inv: []
 gap: null
 tags: ["audit", "wave-26", "adversarial-review", "review-only", "ga-prep"]
 references:
-  - "specs/_audits/2026-05-16-ga-1-feature-freeze.md"
-  - "specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md"
-  - "specs/_audits/2026-05-16-lote-6-v1-rc2-ready.md"
-  - "specs/_audits/2026-05-16-prod-deploy-dressrun.md"
-  - "specs/_audits/2026-05-16-wasm32-baseline-getrandom-fix.md"
-  - "specs/_audits/2026-05-16-cf-worker-prefetch-wire.md"
-  - "specs/_audits/2026-05-16-lote-7-followons-closure.md"
-  - "specs/_audits/2026-05-16-debt-026-rfp-tracker.md"
-  - "specs/_audits/2026-05-16-wave25-adversarial-review.md"
-  - "specs/_audits/2026-05-16-wave26-closure.md"
+  - "specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md"
+  - "specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md"
+  - "specs/_audits/sealed/2026-05-16-lote-6-v1-rc2-ready.md"
+  - "specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md"
+  - "specs/_audits/sealed/2026-05-16-wasm32-baseline-getrandom-fix.md"
+  - "specs/_audits/sealed/2026-05-16-cf-worker-prefetch-wire.md"
+  - "specs/_audits/sealed/2026-05-16-lote-7-followons-closure.md"
+  - "specs/_audits/sealed/2026-05-16-debt-026-rfp-tracker.md"
+  - "specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md"
+  - "specs/_audits/sealed/2026-05-16-wave26-closure.md"
   - "scripts/check-ga-freeze-allowed.py"
   - "scripts/ga-cutover-prod-dressrun.sh"
   - "crates/corelink-clerk-cf/src/prod_wiring.rs"
@@ -79,12 +79,12 @@ Mean: 8.93. Aggregate after P1 discount (formula §14): **8.83**.
 
 ## 3. Stream 1 — GA-1 feature freeze (9.2/10)
 
-**What was reviewed.** `specs/_audits/2026-05-16-ga-1-feature-freeze.md` (declaration), `scripts/check-ga-freeze-allowed.py` (413 LOC enforcement gate), `reports/ga-freeze-monitor.json` (machine-readable ledger).
+**What was reviewed.** `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md` (declaration), `scripts/check-ga-freeze-allowed.py` (413 LOC enforcement gate), `reports/ga-freeze-monitor.json` (machine-readable ledger).
 
 **Strengths.**
 
 - §2 frozen surfaces enumerated against concrete path patterns; §3 four exception classes are mutually exclusive and well-scoped (`P0-security`, `P1-ga-blocker`, `cosmetic-doc`, `implicit-allow`).
-- Script structure: `is_frozen(path)` checks `SKIP_PATH_PATTERNS` FIRST (lines 124-132), so `specs/_audits/2026-05-16-ga-1-feature-freeze.md` correctly does NOT trigger on itself. The skip-first precedence prevents the recursive-self-violation footgun.
+- Script structure: `is_frozen(path)` checks `SKIP_PATH_PATTERNS` FIRST (lines 124-132), so `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md` correctly does NOT trigger on itself. The skip-first precedence prevents the recursive-self-violation footgun.
 - Three operating modes (`--staged`, `--range A..B`, `--check-empty`) cover pre-commit, pre-merge/CI, and audit-time invocation. `--range` mode uses `--no-merges` so the source commits (not merge commits) carry the trailer — correct.
 - `FREEZE_TRAILER_RE` is case-insensitive multiline and tolerates whitespace; `classify_message` requires `recognised AND not unknown` so an unknown class on a commit that ALSO has a recognised class still fails — defensive.
 - §6 thaw conditions are AND-gated on 4 items including the post-GA T+7d clean-window and a separate Owner thaw-declaration audit doc. No partial-thaw shortcut.
@@ -105,7 +105,7 @@ Mean: 8.93. Aggregate after P1 discount (formula §14): **8.83**.
 
 ## 4. Stream 2 — INV-CRITICAL TLA final audit (9.4/10)
 
-**What was reviewed.** `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` (210 LOC), cross-referenced against `specs/03_architecture/invariant_registry.md` and the `specs/tla/` directory.
+**What was reviewed.** `specs/_audits/sealed/2026-05-16-inv-critical-tla-coverage-final.md` (210 LOC), cross-referenced against `specs/03_architecture/invariant_registry.md` and the `specs/tla/` directory.
 
 **Strengths.**
 
@@ -132,7 +132,7 @@ Mean: 8.93. Aggregate after P1 discount (formula §14): **8.83**.
 
 ## 5. Stream 3 — Lote 6 v1.0.0-rc2 readiness + §42 TEMPLATE (9.1/10)
 
-**What was reviewed.** `specs/_audits/2026-05-16-lote-6-v1-rc2-ready.md`, `specs/00_framework.md` §43.1 placeholder convention + §42 TEMPLATE row, cross-refs to ADR-0034b + addendum.
+**What was reviewed.** `specs/_audits/sealed/2026-05-16-lote-6-v1-rc2-ready.md`, `specs/00_framework.md` §43.1 placeholder convention + §42 TEMPLATE row, cross-refs to ADR-0034b + addendum.
 
 **Strengths.**
 
@@ -153,7 +153,7 @@ Mean: 8.93. Aggregate after P1 discount (formula §14): **8.83**.
 
 ## 6. Stream 4 — Prod-deploy dressrun sim-mode (8.4/10) — CAVEAT
 
-**What was reviewed.** `specs/_audits/2026-05-16-prod-deploy-dressrun.md`, `scripts/ga-cutover-prod-dressrun.sh` (743 LOC), `reports/ga-cutover-prod-dressrun-2026-05-16.json`.
+**What was reviewed.** `specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md`, `scripts/ga-cutover-prod-dressrun.sh` (743 LOC), `reports/ga-cutover-prod-dressrun-2026-05-16.json`.
 
 **Strengths.**
 
@@ -181,7 +181,7 @@ Mean: 8.93. Aggregate after P1 discount (formula §14): **8.83**.
 
 ## 7. Stream 5 — wasm32 baseline `getrandom` fix (9.3/10)
 
-**What was reviewed.** `.cargo/config.toml` (28 LOC), `crates/corelink-cf-bindings/Cargo.toml` wasm32-only dep, `specs/_audits/2026-05-16-wasm32-baseline-getrandom-fix.md`.
+**What was reviewed.** `.cargo/config.toml` (28 LOC), `crates/corelink-cf-bindings/Cargo.toml` wasm32-only dep, `specs/_audits/sealed/2026-05-16-wasm32-baseline-getrandom-fix.md`.
 
 **Strengths.**
 
@@ -201,7 +201,7 @@ Mean: 8.93. Aggregate after P1 discount (formula §14): **8.83**.
 
 ## 8. Stream 6 — CF Worker prefetch wire fail-CLOSED (9.4/10)
 
-**What was reviewed.** `crates/corelink-clerk-cf/src/prod_wiring.rs` (709 LOC), `crates/corelink-clerk-cf/src/health.rs` (fetch handler integration lines 386-400), `crates/corelink-clerk-cf/tests/cf_worker_prefetch_wire.rs` (236 LOC), audit doc `specs/_audits/2026-05-16-cf-worker-prefetch-wire.md`.
+**What was reviewed.** `crates/corelink-clerk-cf/src/prod_wiring.rs` (709 LOC), `crates/corelink-clerk-cf/src/health.rs` (fetch handler integration lines 386-400), `crates/corelink-clerk-cf/tests/cf_worker_prefetch_wire.rs` (236 LOC), audit doc `specs/_audits/sealed/2026-05-16-cf-worker-prefetch-wire.md`.
 
 **Fail-CLOSED arm verification.** The 5 failure arms described in the audit doc §3:
 
@@ -255,7 +255,7 @@ The 5xx arms that ACTUALLY exercise the prefetch (arms 1+2+3) emit `tenant_regio
 
    But `reports/pentest-rfp-tracker.json` (committed in the same wave) has ALL 5 vendors at `state: "NOT_CONTACTED"`. The wave-26 closure audit §1 stream #4 documents this as "RFP send + vendor selection user-bound — handed off to wave-26 stream #4 ... 30-day vendor-selection clock". The vendor is NOT engaged; vendor selection has not even begun.
 
-   The same drift appears in `specs/_audits/2026-05-16-prod-deploy-dressrun.md` §6 GA tag draft contents bullet ("DEBT-026 — external pentest vendor engaged + scope-frozen; field-work begins post-GA (T+0..T+14d). Target T+30d post-GA.").
+   The same drift appears in `specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md` §6 GA tag draft contents bullet ("DEBT-026 — external pentest vendor engaged + scope-frozen; field-work begins post-GA (T+0..T+14d). Target T+30d post-GA.").
 
    The marketing summary has the correct framing ("engagement is contracted for 2026-Q3; the report is forward-looking"). The TEAM KNOWS the right framing. The tag draft and dressrun audit just didn't propagate it.
 
@@ -267,7 +267,7 @@ The 5xx arms that ACTUALLY exercise the prefetch (arms 1+2+3) emit `tenant_regio
 
    > *"DEBT-026 external penetration test — engineering-side scope-freeze SEALED per `2026-05-16-pentest-engagement-scope-freeze.md`; vendor selection in progress (5-vendor shortlist, RFP send pending per `reports/pentest-rfp-tracker.json`); field-work scheduled 2026-Q3. Findings feed wave-27+."*
 
-   Mirror change in `specs/_audits/2026-05-16-prod-deploy-dressrun.md` §6 bullet.
+   Mirror change in `specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md` §6 bullet.
 
 **P2 findings.**
 
@@ -279,7 +279,7 @@ The 5xx arms that ACTUALLY exercise the prefetch (arms 1+2+3) emit `tenant_regio
 
 ## 10. Stream 8 — Lote 7 follow-ons (9.0/10)
 
-**What was reviewed.** `specs/_audits/2026-05-16-lote-7-followons-closure.md`, `scripts/check-raci-sla.py` (313 LOC), addendum §6.2 INV-binding column + new §6.4.
+**What was reviewed.** `specs/_audits/sealed/2026-05-16-lote-7-followons-closure.md`, `scripts/check-raci-sla.py` (313 LOC), addendum §6.2 INV-binding column + new §6.4.
 
 **Strengths.**
 
@@ -298,7 +298,7 @@ The 5xx arms that ACTUALLY exercise the prefetch (arms 1+2+3) emit `tenant_regio
 
 ## 11. Stream 9 — DEBT-026 RFP tracker (8.9/10)
 
-**What was reviewed.** `scripts/pentest-rfp-tracker.py` (471 LOC), `reports/pentest-rfp-tracker.json` (initial 5-vendor seed), `docs/legal/pentest-rfp-email-template.md`, `docs/legal/pentest-vendor-due-diligence.md`, audit doc `specs/_audits/2026-05-16-debt-026-rfp-tracker.md`.
+**What was reviewed.** `scripts/pentest-rfp-tracker.py` (471 LOC), `reports/pentest-rfp-tracker.json` (initial 5-vendor seed), `docs/legal/pentest-rfp-email-template.md`, `docs/legal/pentest-vendor-due-diligence.md`, audit doc `specs/_audits/sealed/2026-05-16-debt-026-rfp-tracker.md`.
 
 **Strengths.**
 
@@ -314,7 +314,7 @@ The 5xx arms that ACTUALLY exercise the prefetch (arms 1+2+3) emit `tenant_regio
 
 ## 12. Stream 10 — Wave-25 adversarial review (meta) (9.0/10)
 
-**What was reviewed.** `specs/_audits/2026-05-16-wave25-adversarial-review.md` (261 LOC).
+**What was reviewed.** `specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md` (261 LOC).
 
 **Strengths.**
 
@@ -328,7 +328,7 @@ The 5xx arms that ACTUALLY exercise the prefetch (arms 1+2+3) emit `tenant_regio
 
 ## 13. Stream 11 — Wave-26 closure (8.8/10)
 
-**What was reviewed.** `specs/_audits/2026-05-16-wave26-closure.md` (375 LOC).
+**What was reviewed.** `specs/_audits/sealed/2026-05-16-wave26-closure.md` (375 LOC).
 
 **Strengths.**
 
@@ -338,7 +338,7 @@ The 5xx arms that ACTUALLY exercise the prefetch (arms 1+2+3) emit `tenant_regio
 
 **P2 findings.**
 
-1. **§1 table calls stream #4 "DEBT-026 RFP send authorisation + vendor 30-day clock kick-off"** but the actual wave-26 deliverable is the RFP tracker scaffolding, not the send (per `specs/_audits/2026-05-16-debt-026-rfp-tracker.md` §"Out of scope" — "actual RFP sends are user-bound"). Naming drift; doesn't affect correctness because the audit doc itself is honest about scope.
+1. **§1 table calls stream #4 "DEBT-026 RFP send authorisation + vendor 30-day clock kick-off"** but the actual wave-26 deliverable is the RFP tracker scaffolding, not the send (per `specs/_audits/sealed/2026-05-16-debt-026-rfp-tracker.md` §"Out of scope" — "actual RFP sends are user-bound"). Naming drift; doesn't affect correctness because the audit doc itself is honest about scope.
 
 **Verdict: PASS. 8.8/10.** Closure audit is comprehensive; minor naming drift.
 
@@ -365,7 +365,7 @@ The 5xx arms that ACTUALLY exercise the prefetch (arms 1+2+3) emit `tenant_regio
 
 **Action items for wave-27 (NOT blocking SEAL):**
 
-1. **(P1)** Edit `docs/release/v1.0.0-GA-tag-draft.txt` lines 93-95 to replace "vendor engaged" with "vendor selection in progress (5-vendor shortlist; RFP send pending)". Mirror in `specs/_audits/2026-05-16-prod-deploy-dressrun.md` §6.
+1. **(P1)** Edit `docs/release/v1.0.0-GA-tag-draft.txt` lines 93-95 to replace "vendor engaged" with "vendor selection in progress (5-vendor shortlist; RFP send pending)". Mirror in `specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md` §6.
 2. **(P2)** Wave-28: formalise INV inheritance chains as a structured field (not prose-only) in the registry — see §4 P2-1.
 3. **(P2)** Wave-28: review Pairing-Beta pre-GA default against actual wave-26 commit pattern — see §5 P2-1 and §10 P2-1.
 4. **(P2)** Wave-27: verify R2-10 wasm32 CI job picks up `.cargo/config.toml` — see §7 P2-1.
@@ -396,7 +396,7 @@ FINDINGS: P0=0 P1=1 P2=8 P3=2
 P0 LIST: none
 P1 LIST: docs/release/v1.0.0-GA-tag-draft.txt lines 93-95 claim "vendor engaged"
          while reports/pentest-rfp-tracker.json has all 5 vendors NOT_CONTACTED;
-         mirrored in specs/_audits/2026-05-16-prod-deploy-dressrun.md §6.
+         mirrored in specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md §6.
          Fix: 3-line text edit, GA-1 freeze implicit-allow class, no routing.
 RECOMMENDATION: SEAL wave-26 (P1 fix is one-line edit on DRAFT artifact;
                 does not block SEAL or wave-27 dispatch).
@@ -416,7 +416,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 ## 17. Closure note — wave-30 P2 absorption sweep (2026-05-16)
 
 > The 8 P2 findings recorded in this review have been triaged in
-> `specs/_audits/2026-05-16-p2-absorption-sweep-w25-28.md` (wave-30 stream-7).
+> `specs/_audits/sealed/2026-05-16-p2-absorption-sweep-w25-28.md` (wave-30 stream-7).
 > Per-finding dispositions (W26-P2-NN IDs assigned by the sweep doc §2.2):
 >
 > - **W26-P2-01** (`--range` excludes merge commits; merge-commit-only FREEZE trailer would be missed) → **DEFER-POST-GA**. Substantive code-path change + tests, not cosmetic.

@@ -142,7 +142,7 @@ This is the most severe new P0 introduced by bis: the correction was applied onl
 
 ### NEW-P0-1 — WI-S09-005: Split-brain dashboard list (OLD vs NEW) in same document
 
-**File:** `specs/04_sprints/S09/work_items/WI-S09-005-12-grafana-dashboards-as-code.md`
+**File:** `specs/04_sprints/_sealed/S09/work_items/WI-S09-005-12-grafana-dashboards-as-code.md`
 
 **Finding:** P0-D correction updated §1.1 Invariants (the declaration section) to the canonical 12 dashboards (GLOBAL-HEALTH, GLOBAL-PRODUCT, TENANT, CAS, AC, EXEC, GC, SUPPLY-CHAIN, SECURITY, PRIVACY, COST, SLO-CATALOG). However it failed to update:
 - Document title/header (#1): lists OLD 12 (AUTH/BILLING/RATE-LIMIT/DEDUP/CHAOS/SLO).
@@ -162,7 +162,7 @@ The document is now internally inconsistent. A developer implementing from §6.1
 
 ### NEW-P0-2 — WI-S09-004: AuditEventData typed enum does not enforce redaction at serde boundary
 
-**File:** `specs/04_sprints/S09/work_items/WI-S09-004-cloudevents-audit-r2-hash-chain-daily-verify.md`
+**File:** `specs/04_sprints/_sealed/S09/work_items/WI-S09-004-cloudevents-audit-r2-hash-chain-daily-verify.md`
 
 **Finding:** P0-J replaced `serde_json::Value` with typed `AuditEventData` enum. The enum uses wrapper types `BlobDigest`, `BearerToken`, `IpAddress` as field types. However:
 
@@ -183,7 +183,7 @@ The compile-time enforcement claim is partially correct in that the type system 
 
 ### NEW-P0-3 — WI-S09-002: 4-tier lifecycle narrative contradicts single-expiration Terraform (P0-C partial fix)
 
-**File:** `specs/04_sprints/S09/work_items/WI-S09-002-logpush-r2-loki-log-schema-pii-redaction.md`
+**File:** `specs/04_sprints/_sealed/S09/work_items/WI-S09-002-logpush-r2-loki-log-schema-pii-redaction.md`
 
 **Finding:** P0-C correctly removed the Terraform storage class transition rules. However the narrative model describing a "4-tier lifecycle" (hot 30d / warm 90d / cold 400d / purge) was not updated to match the corrected single-expiration reality. The following locations still describe the non-existent tiers:
 

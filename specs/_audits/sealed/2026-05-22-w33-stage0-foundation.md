@@ -11,7 +11,7 @@
 >
 > **Mandate:** wave-33 Stage 0 lands the 4 cross-cutting crates that
 > every Stage 1 stream depends on. Orchestrator-direct, single-pass,
-> sequential per `specs/_audits/2026-05-22-wave33-code-reorg-spec.md`
+> sequential per `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md`
 > §6 Stage 0.
 
 ## §1. Scope
@@ -174,7 +174,7 @@ explicit Stage 1 work.
 
 ## §4. Dependency graph confirmation
 
-Per `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §3 apex
+Per `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md` §3 apex
 constraint: `corelink-core` MUST depend on NO other `corelink-*`
 crate.
 

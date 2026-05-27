@@ -205,9 +205,9 @@ Any future disable that doesn't carry a rationale is grounds for a `/techlead` f
 
 ## 7. Cross-references
 
-- `specs/_audits/2026-05-15-action-sha-pinning-baseline.md` — companion supply-chain baseline (DEBT-018 + DEBT-019 closure).
-- `specs/_audits/2026-05-15-debt-register.md` — DEBT-020 row added + marked CLOSED.
-- `specs/_audits/2026-05-15-ci-workflow-optimization.md` — CI optimization audit; this work is the static-analysis half of that hardening.
+- `specs/_audits/sealed/2026-05-15-action-sha-pinning-baseline.md` — companion supply-chain baseline (DEBT-018 + DEBT-019 closure).
+- `specs/_audits/sealed/2026-05-15-debt-register.md` — DEBT-020 row added + marked CLOSED.
+- `specs/_audits/sealed/2026-05-15-ci-workflow-optimization.md` — CI optimization audit; this work is the static-analysis half of that hardening.
 - `.github/workflows/actionlint.yml` — the CI gate.
 - `.actionlint.yaml` — the config.
 - `.github/workflows/_TEMPLATE.yml.md` — author checklist now requires actionlint clean.

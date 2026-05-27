@@ -31,7 +31,7 @@ CAS-only, no KV):
 
 - `crates/corelink-adapter-brew/src/ports.rs` — async `CasStore` + `TenantResolver`; ~107 LOC.
 - `crates/corelink-adapter-pip/src/ports.rs` — adds `KvStore` (not needed here); ~121 LOC.
-- `specs/_audits/2026-05-26-w34-adapter-brew.md` §6 + §3 — SEAL audit precedent.
+- `specs/_audits/sealed/2026-05-26-w34-adapter-brew.md` §6 + §3 — SEAL audit precedent.
 
 Document this inline-ports decision in your SEAL audit §3 (mirrors the brew/pip/oci §3 / §6).
 

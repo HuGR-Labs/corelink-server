@@ -14,9 +14,9 @@ supersedes: null
 superseded_by: null
 deciders: ["Gustavo Schneiter (Owner)", "Architect (TBD)"]
 context_links:
-  - "specs/04_sprints/S04/work_items/WI-S04-002-d1-ac-meta-r2-bucket.md"
-  - "specs/04_sprints/S05/work_items/WI-S05-006-sweeper-rb-fm-060-prr-ship-gate.md"
-  - "specs/04_sprints/S06/work_items/WI-S06-001-worker-gc-binary-scheduler-degrade-mode.md"
+  - "specs/04_sprints/_sealed/S04/work_items/WI-S04-002-d1-ac-meta-r2-bucket.md"
+  - "specs/04_sprints/_sealed/S05/work_items/WI-S05-006-sweeper-rb-fm-060-prr-ship-gate.md"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-001-worker-gc-binary-scheduler-degrade-mode.md"
 tags: ["adr", "d1", "schema", "migration", "sqlite", "governance"]
 ---
 

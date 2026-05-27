@@ -13,10 +13,10 @@ supersedes: null
 superseded_by: null
 tags: ["audit", "wave-35", "phase-2", "absorption", "byok", "seal"]
 references:
-  - "specs/_audits/2026-05-26-wave-33-34-closure-followups.md"
-  - "specs/_audits/2026-05-26-w35-p2-privacy-absorption.md"
-  - "specs/_audits/2026-05-15-byok-real-provider-pattern.md"
-  - "specs/_audits/2026-05-22-wave33-code-reorg-spec.md"
+  - "specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md"
+  - "specs/_audits/sealed/2026-05-26-w35-p2-privacy-absorption.md"
+  - "specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md"
+  - "specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md"
 ---
 
 # Wave 35 Phase 2 — corelink-byok absorption SEAL

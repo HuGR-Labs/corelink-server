@@ -1,6 +1,6 @@
 # Final Cutover Readiness — 1-Page Boolean Checklist — 2026-05-16
 
-> **Companion to:** `specs/_audits/2026-05-16-final-cutover-readiness.md` (full D-day morning consolidation).
+> **Companion to:** `specs/_audits/sealed/2026-05-16-final-cutover-readiness.md` (full D-day morning consolidation).
 > **Read on:** cutover D-day morning, ≤ 5 minutes. Tick each box; if ANY row is `[ ]` (NO) at signature time, decision is **CONDITIONAL GO** or **NO-GO** per §10.1 of the companion doc.
 > **Printable:** intended for paper printout; one column of checkboxes; each row self-contained.
 
@@ -147,7 +147,7 @@
 
 **Decision rule:** if every row in A..M is `[x]` (or carries an explicit Owner-approved waiver per `GA-GATE-GO-NOGO-TEMPLATE.md §3`), and both N signatures are GO, then **execute `RB-GA-CUTOVER.md §0..§3` immediately**. Otherwise the decision is CONDITIONAL or NO-GO per `2026-05-16-final-cutover-readiness.md §10.1` pre-condition gate.
 
-Cross-ref: `specs/_audits/2026-05-16-final-cutover-readiness.md` (full evidence) + `specs/_runbooks/RB-GA-CUTOVER.md §0` (cutover entry point).
+Cross-ref: `specs/_audits/sealed/2026-05-16-final-cutover-readiness.md` (full evidence) + `specs/_runbooks/RB-GA-CUTOVER.md §0` (cutover entry point).
 
 Signed-off-by: Gustavo Schneiter <gustavo@humangr.com>
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>

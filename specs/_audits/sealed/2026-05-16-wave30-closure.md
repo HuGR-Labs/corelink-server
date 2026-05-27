@@ -5,7 +5,7 @@
 > **Author:** wave-30 hygiene agent (Claude Opus 4.7) — branch `wt/r-prep-inv-registry-wave30-sweep`.
 > **Base:** `main` @ `04f2dff` ("merge wt/r-prep-perf-baseline-ga-freeze into main (wave-29)" — wave-29 SEAL tip; 10 wave-29 merges absorbed: signup backend / landing / admin UI / ShadowSinkFactory full adoption / wave-28 adversarial review / audit-chain viz UI / pricing calculator / trust center publish / perf baseline GA freeze / wave-29 sweep).
 > **Scope:** **Cutover-wait-state hygiene sweep #2 — INV registry survey + DEBT register survey + wave-30 stream catalogue (10 streams).** Wave-30 is the **second cutover-wait-state wave** (engineering corpus has been feature-complete since wave-26 GA-1 freeze; cutover ceremony remains gated on operator/vendor-paced DEBT items per wave-27 §3.4 NO-GO triggers). Ten streams catalogued — 1 DEBT-029 route-syntax fix (wave-29 stream-3 follow-on), 1 pre-existing test-failures triage, 1 corelink-py PyO3 linker-fix, 1 INV-SIGNUP-TOKEN-IDEMPOTENT promotion (wave-29 deferral absorption), 1 perf-bench recapture + GA tag staging, 1 wave-29 adversarial review (codex Opus pass), 1 P2 absorption sweep covering DEBT-010 P2/P3 + DEBT-013 OPT residuals, 1 BYOK AP-11 ADR follow-on, 1 signup live D1 integration tests, and this hygiene sweep (#10). **One canonical INV promotion this wave: `INV-SIGNUP-TOKEN-IDEMPOTENT` (HIGH; TLA-verified candidate — see §5).** No new DEBT rows surface this wave; wave-29 DEBT closures (DEBT-003 / -016 / -025 / -026 / -027 already engineering-CLOSED in wave-28; wave-29 stream #1 lifted DEBT-027 to `engineering-CLOSED` per register v1.2.7) hold. Net OPEN unchanged 8 → 8 (5 engineering-CLOSED + operator/vendor-bound; 3 engineering-side P1 partial; all post-GA-horizon-acceptable except DEBT-026 retest letter 2026-07-29 sole external cutover blocker).
-> **Cross-ref:** `specs/_audits/2026-05-16-wave29-closure.md` (immediate predecessor), `specs/_audits/2026-05-15-debt-register.md` v1.2.7, `specs/03_architecture/invariant_registry.md` v0.2.2, `specs/_audits/2026-05-16-ga-readiness-final.md`, `specs/_runbooks/RB-GA-CUTOVER.md`, `specs/_runbooks/RB-POST-GA-CONTINUITY.md` v1.0.0, `specs/_compliance/GA-GATE-CRITERIA.md`, `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md`, `scripts/pre-cutover-weekly-verify.sh` (wave-28 step-10).
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-wave29-closure.md` (immediate predecessor), `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.7, `specs/03_architecture/invariant_registry.md` v0.2.2, `specs/_audits/sealed/2026-05-16-ga-readiness-final.md`, `specs/_runbooks/RB-GA-CUTOVER.md`, `specs/_runbooks/RB-POST-GA-CONTINUITY.md` v1.0.0, `specs/_compliance/GA-GATE-CRITERIA.md`, `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md`, `scripts/pre-cutover-weekly-verify.sh` (wave-28 step-10).
 
 ---
 
@@ -67,7 +67,7 @@ Wave-29 stream-4 ShadowSinkFactory full adoption (`c51d176` + merge `36abbb5`) f
 Per stream #2 orchestrator-internal triage (no canonical R-prep worktree; outcome lands as inline commits or DEBT-008 CI-nightly absorption):
 
 - **Test 1 (audit-chain ordering):** Test-hygiene fix — reorder assertion to use causal-ordering (per-event-ID hash) instead of wall-clock; no production code change. Lands as `test:` commit on `wt/r-prep-debt-029-route-syntax` cleanup commit or standalone.
-- **Test 2 (replication failover off-by-1):** Acknowledge as pre-existing wave-21 caveat; route to DEBT-008 CI-nightly lane (75% floor in `mutation-nightly.yml`); no immediate fix. Documented in `specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md` follow-on note.
+- **Test 2 (replication failover off-by-1):** Acknowledge as pre-existing wave-21 caveat; route to DEBT-008 CI-nightly lane (75% floor in `mutation-nightly.yml`); no immediate fix. Documented in `specs/_audits/sealed/2026-05-16-debt-008-wave24-mutation-sweep.md` follow-on note.
 - **Test 3 (r2-multipart region resolver TTL):** Test-harness fix — replace explicit invalidation with TTL-aware mock clock; lands as `test:` commit.
 
 ### 3.2 INV touch surface
@@ -289,7 +289,7 @@ Post stream #4 merge, validators will read 198 / 83 / 16-alias against the canon
 
 ## 11. DEBT register final state — wave-29 baseline + wave-30 deltas
 
-Per `specs/_audits/2026-05-15-debt-register.md` v1.2.7 (wave-29 close baseline). Wave-30 streams introduce one new row (DEBT-029 route-syntax fix, closes same wave) and absorb two existing rows (DEBT-010 fully closed, DEBT-013 fully closed via final disposition).
+Per `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.7 (wave-29 close baseline). Wave-30 streams introduce one new row (DEBT-029 route-syntax fix, closes same wave) and absorb two existing rows (DEBT-010 fully closed, DEBT-013 fully closed via final disposition).
 
 ### 11.1 Wave-29 baseline (8 nominally-OPEN rows)
 
@@ -419,18 +419,18 @@ All four quality gates green on this branch.
 
 ## 16. Cross-references
 
-- `specs/_audits/2026-05-16-wave29-closure.md` (immediate predecessor — wave-29 closure absorbed 10 streams).
-- `specs/_audits/2026-05-15-debt-register.md` v1.2.7 (canonical DEBT state; wave-30 deltas append in v1.2.8 next register PR).
+- `specs/_audits/sealed/2026-05-16-wave29-closure.md` (immediate predecessor — wave-29 closure absorbed 10 streams).
+- `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.7 (canonical DEBT state; wave-30 deltas append in v1.2.8 next register PR).
 - `specs/03_architecture/invariant_registry.md` v0.2.2 (197 declared at wave-29 SEAL; stream #4 promotion lifts to 198).
-- `specs/_audits/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 — CONDITIONAL GO; 8-item DEFER counter).
-- `specs/_audits/2026-05-16-ga-readiness-defer-scrub.md` (wave-25 stream #4 — DEFER drift detector; counter locked at 8; wave-30 confirms no drift).
-- `specs/_audits/2026-05-16-ga-cutover-dryrun.md` (wave-24 stream #1 G1..G6 all GREEN).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 — CONDITIONAL GO; 8-item DEFER counter).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-defer-scrub.md` (wave-25 stream #4 — DEFER drift detector; counter locked at 8; wave-30 confirms no drift).
+- `specs/_audits/sealed/2026-05-16-ga-cutover-dryrun.md` (wave-24 stream #1 G1..G6 all GREEN).
 - `specs/_compliance/GA-GATE-CRITERIA.md` (59 criteria across 6 tracks).
 - `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md` (GA-GO/NO-GO meeting template).
 - `specs/_runbooks/RB-GA-CUTOVER.md` (cutover runbook).
 - `specs/_runbooks/RB-POST-GA-CONTINUITY.md` v1.0.0 (wave-27 `5414720` 30-day playbook — §13 assessed no gaps).
 - `specs/_decisions/ADR-0034b-dual-hat-fallback-policy.md` (2-key signature framework; cutover-commit gate).
 - `scripts/pre-cutover-weekly-verify.sh` (wave-28 step-10 cron; 8-item DEFER inventory; no wave-30 amendment).
-- `specs/_audits/2026-05-16-pentest-rfp-send-ceremony.md` (DEBT-026 send-ceremony stack).
-- `specs/_audits/2026-05-16-pilot-signup-pipeline.md` (DEBT-027 engineering-CLOSED).
+- `specs/_audits/sealed/2026-05-16-pentest-rfp-send-ceremony.md` (DEBT-026 send-ceremony stack).
+- `specs/_audits/sealed/2026-05-16-pilot-signup-pipeline.md` (DEBT-027 engineering-CLOSED).
 - `apps/server/src/routes/signup.rs` + `migrations/d1/0053_pilot_signups.sql` (wave-29 stream-1 canonical wire-spec consumed by wave-30 stream #4 INV promotion).

@@ -36,7 +36,7 @@ tags: ["audit", "review", "r5", "sonnet", "s09", "observability", "testability",
 > **Framework citations:** Framework §31 (testability), §32 (proptest density
 > gate), §33.5 (review-cycle protocol); `2026-05-15-debt-register.md` charter
 > "Nao deixamos debitos aqui, nao se esqueca disso"; S-06 cycle-close
-> precedent (`specs/04_sprints/S06/_spec_contract.md v2.1.0` + debt-register
+> precedent (`specs/04_sprints/_sealed/S06/_spec_contract.md v2.1.0` + debt-register
 > §3.1).
 
 ---

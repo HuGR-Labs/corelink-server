@@ -8,21 +8,21 @@ created: "2026-04-25"
 updated: "2026-05-27"
 reviewer: "Agent R4 (Claude Opus 4.7, 1M context, independent reviewer — round 4)"
 scope: "Lote 10.6 — Sprint S-06 Part 1 (WI-S06-001 .. WI-S06-003)"
-sprint_contract: "specs/04_sprints/S06/_spec_contract.md v1.1.0"
+sprint_contract: "specs/04_sprints/_sealed/S06/_spec_contract.md v1.1.0"
 calibration_baselines:
-  - "specs/_audits/2026-04-25-agent-r4-s05-part1-wi-review.md (S-05 part1 8.10/10)"
-  - "specs/_audits/2026-04-25-agent-r4-s05-part2-wi-review.md (S-05 part2 8.05/10)"
+  - "specs/_audits/sealed/2026-04-25-agent-r4-s05-part1-wi-review.md (S-05 part1 8.10/10)"
+  - "specs/_audits/sealed/2026-04-25-agent-r4-s05-part2-wi-review.md (S-05 part2 8.05/10)"
   - "WI-S04-003 best-in-class 8.6"
 files_reviewed:
-  - "specs/04_sprints/S06/work_items/WI-S06-001-worker-gc-binary-scheduler-degrade-mode.md (640 lines)"
-  - "specs/04_sprints/S06/work_items/WI-S06-002-mark-phase-multi-pass-scan-mark-started-at.md (586 lines)"
-  - "specs/04_sprints/S06/work_items/WI-S06-003-sweep-phase-soft-delete-inv-gc-004.md (648 lines)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-001-worker-gc-binary-scheduler-degrade-mode.md (640 lines)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-002-mark-phase-multi-pass-scan-mark-started-at.md (586 lines)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-003-sweep-phase-soft-delete-inv-gc-004.md (648 lines)"
 cross_references:
-  - "specs/04_sprints/S06/_spec_contract.md (v1.1.0)"
+  - "specs/04_sprints/_sealed/S06/_spec_contract.md (v1.1.0)"
   - "specs/tla/gc_correctness.tla (verified Lote 5.13 + 7.1)"
   - "specs/03_architecture/invariant_registry.md §3.4 + §3.17"
-  - "specs/04_sprints/S04/work_items/WI-S04-002-d1-ac-meta-r2-bucket.md (ac_meta schema canonical)"
-  - "specs/04_sprints/S04/work_items/WI-S04-001-reapi-actioncache-handlers.md (INV-AC-OUTPUTS-VALID)"
+  - "specs/04_sprints/_sealed/S04/work_items/WI-S04-002-d1-ac-meta-r2-bucket.md (ac_meta schema canonical)"
+  - "specs/04_sprints/_sealed/S04/work_items/WI-S04-001-reapi-actioncache-handlers.md (INV-AC-OUTPUTS-VALID)"
 ---
 
 > **CLOSED 2026-05-27** — S-06 sprint implementation sealed via git tag `s06-impl-sealed`; this independent review record is delivered. See `specs/_audits/2026-05-27-audit-triage-post-w36.md` for triage methodology.

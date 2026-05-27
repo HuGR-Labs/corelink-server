@@ -16,7 +16,7 @@
 > other crates, NO logic change.
 >
 > **Pattern reference:** Stage 2 PRE-A precedent
-> (`specs/_audits/2026-05-22-w33-stage2-pre-a-worker-megafiles.md`,
+> (`specs/_audits/sealed/2026-05-22-w33-stage2-pre-a-worker-megafiles.md`,
 > commits `628ebb18` / `4357e134` / `30ff07bc` / `44b3a409` / `bd7c69ab`):
 > file split + behaviour-preservation, with parent dispatch files
 > re-exporting the canonical public surface so consumers continue to

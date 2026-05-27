@@ -11,7 +11,7 @@
 //!
 //! ## Stage 1 Stream C absorption strategy — Option-A aggregator
 //!
-//! Per `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §6 Stage 1
+//! Per `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md` §6 Stage 1
 //! Stream C, this crate "absorbs" the **binding portion** of
 //! `corelink-byok-vault` by re-exporting it at the canonical
 //! submodule path. The pure-logic portion of `corelink-byok-vault` is

@@ -13,19 +13,19 @@ supersedes: null
 superseded_by: null
 reviewer: "R4 Opus persona (Claude Opus 4.7, 1M ctx, adversarial independent reviewer — Wave 14 Lote 10.6 review dispatch)"
 scope: "Lote 10.6 — Sprint S-06 Part 1 (WI-S06-001 .. WI-S06-004) on FROZEN v1.3.0 corpus post Lote 10.6bis + 10.6-tris remediation"
-sprint_contract: "specs/04_sprints/S06/_spec_contract.md v2.0.0"
+sprint_contract: "specs/04_sprints/_sealed/S06/_spec_contract.md v2.0.0"
 calibration_baselines:
-  - "specs/_audits/2026-04-25-agent-r4-s06-part1-wi-review.md (S-06 part1 pre-bis 8.13/10)"
-  - "specs/_audits/2026-04-25-sonnet-r5-s06-wi-review.md (post-bis 9.1/10 target)"
+  - "specs/_audits/sealed/2026-04-25-agent-r4-s06-part1-wi-review.md (S-06 part1 pre-bis 8.13/10)"
+  - "specs/_audits/sealed/2026-04-25-sonnet-r5-s06-wi-review.md (post-bis 9.1/10 target)"
   - "WI-S04-003 best-in-class 8.6"
 files_reviewed:
-  - "specs/04_sprints/S06/work_items/WI-S06-001-worker-gc-binary-scheduler-degrade-mode.md (649 lines, v1.3.0 FROZEN)"
-  - "specs/04_sprints/S06/work_items/WI-S06-002-mark-phase-multi-pass-scan-mark-started-at.md (653 lines, v1.3.0 FROZEN)"
-  - "specs/04_sprints/S06/work_items/WI-S06-003-sweep-phase-soft-delete-inv-gc-004.md (663 lines, v1.3.0 FROZEN)"
-  - "specs/04_sprints/S06/work_items/WI-S06-004-physical-delete-post-grace-r2-idempotent.md (463 lines, v1.3.0 FROZEN)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-001-worker-gc-binary-scheduler-degrade-mode.md (649 lines, v1.3.0 FROZEN)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-002-mark-phase-multi-pass-scan-mark-started-at.md (653 lines, v1.3.0 FROZEN)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-003-sweep-phase-soft-delete-inv-gc-004.md (663 lines, v1.3.0 FROZEN)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-004-physical-delete-post-grace-r2-idempotent.md (463 lines, v1.3.0 FROZEN)"
 cross_references:
-  - "specs/04_sprints/S06/_spec_contract.md v2.0.0 (FROZEN AUDITED)"
-  - "specs/04_sprints/S06/PRR-S06.md"
+  - "specs/04_sprints/_sealed/S06/_spec_contract.md v2.0.0 (FROZEN AUDITED)"
+  - "specs/04_sprints/_sealed/S06/PRR-S06.md"
   - "specs/tla/gc_correctness.tla (Lote 5.13 + 7.1; L152-154 protect-if-`>=`)"
   - "specs/03_architecture/invariant_registry.md §3.17"
   - "specs/03_architecture/adrs/ADR-0042 (TLC SHA + scope limitations)"

@@ -5,7 +5,7 @@
 > **Author:** wave-24 hygiene agent (Claude Opus 4.7) — branch `wt/r-prep-inv-registry-wave24-sweep`.
 > **Base:** `main` @ `33138b5` ("merge wt/r-prep-debt-008-mutation-wave23 into main (wave-23)" — wave-23 SEAL tip).
 > **Scope:** INV registry hygiene + DEBT register survey (wave-24 in-flight — DO NOT close from this stream) + wave-24 stream catalogue + GA cutover dry-run results (cross-ref stream #1) + DEBT-008 + DEBT-015-BUILD final state narratives + GA-readiness verdict (cross-ref stream #8 final audit) + wave-25 candidate streams (external pentest engagement scope freeze).
-> **Cross-ref:** `specs/_audits/2026-05-16-wave23-closure.md` (predecessor), `specs/_audits/2026-05-15-debt-register.md` v1.2.1, `specs/03_architecture/invariant_registry.md`, `specs/_audits/2026-05-16-debt-008-wave23-mutation-sweep.md` (wave-23 baseline DEBT-008), `specs/_audits/2026-05-16-debt-015-build-final.md` (wave-23 baseline DEBT-015-BUILD).
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-wave23-closure.md` (predecessor), `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.1, `specs/03_architecture/invariant_registry.md`, `specs/_audits/sealed/2026-05-16-debt-008-wave23-mutation-sweep.md` (wave-23 baseline DEBT-008), `specs/_audits/sealed/2026-05-16-debt-015-build-final.md` (wave-23 baseline DEBT-015-BUILD).
 
 ---
 
@@ -17,7 +17,7 @@ Wave-24 is the post-wave-23 GA-rehearsal + final-audit wave, dispatched on `main
 |---|---|---|---|
 | 1 | **GA cutover dry-run rehearsal** — execute end-to-end dry-run of the `RB-GA-CUTOVER.md` runbook (chaos harness + 24h endurance rig + pilot E2E + CS playbook + beta-feedback + INV/DEBT register state); produces evidence for greenlight-dashboard row "GA cutover dry-run complete". Anchor stream per wave-23 §3.4. | `wt/r-prep-ga-cutover-dryrun` (worktree `agent-ga-cutover-dryrun`) | **IN FLIGHT** (wave-24) |
 | 2 | **DEBT-008 wave-24 mutation sweep** — re-sweep verification on `corelink-chunker` (wave-23 projected 97.9 % of viable / 100 % of killable) + `corelink-multipart-schema` (wave-23 projected ≥ 90.6 %) + first sweeps on `corelink-r2-multipart` (150 mutants), `corelink-quota-cas` (350), `corelink-webauthn` (369) + the 11 lifecycle-bound multipart-schema hardening kills carried from wave-23 stream #2. | `wt/r-prep-debt-008-mutation-wave24` (worktree `agent-ab42db3ac8dbf120a`, locked) + `wt/r-prep-pat-clerk-mutation-sweep` (worktree `agent-a5f4154bbf454315f`, locked combined-bucket) | **IN FLIGHT** (wave-24) |
-| 3 | **DEBT-015-BUILD babel-preset patch** — apply wave-23 stream #3 narrowed root-cause fix path (1): patch `@docusaurus/babel/lib/preset.js` to use `modules: false` for the server preset-env config (matching client). Path-(1) preferred over path-(2) custom babel plugin and path-(3) ssgRequire sandbox-eval per wave-23 final audit (`specs/_audits/2026-05-16-debt-015-build-final.md`). | `wt/r-prep-debt-015-build-babel-patch` (worktree `agent-debt-015-w24`) | **IN FLIGHT** (wave-24) |
+| 3 | **DEBT-015-BUILD babel-preset patch** — apply wave-23 stream #3 narrowed root-cause fix path (1): patch `@docusaurus/babel/lib/preset.js` to use `modules: false` for the server preset-env config (matching client). Path-(1) preferred over path-(2) custom babel plugin and path-(3) ssgRequire sandbox-eval per wave-23 final audit (`specs/_audits/sealed/2026-05-16-debt-015-build-final.md`). | `wt/r-prep-debt-015-build-babel-patch` (worktree `agent-debt-015-w24`) | **IN FLIGHT** (wave-24) |
 | 4 | **DEBT-016 Statuspage URL pre-wiring** — pre-populate the post-DEBT-016 cutover URLs (`status.corelink.humangr.com` + RSS + atom + summary endpoints) in user-facing docs + runbook references so user-bound provisioning becomes a pure DNS + CNAME swap at T-7d pre-launch. | `wt/r-prep-debt-016-statuspage-urls` (worktree `agent-debt-016-statuspage`) | **IN FLIGHT** (wave-24) |
 | 5 | **ADR-0034b dual-hat decomposition** — resolve the FW-H-* role nominations gating item (PRR dual-hat row decompositions across S-06 / S-09 / S-13). Cannot do the nominations themselves (user-bound) but can decompose the dual-hat rows into separate single-hat invariants + acceptance criteria so the user-side onboarding effort drops from "design a structure" to "fill in names". | `wt/r-prep-adr-0034b-dual-hat` (worktree `agent-adr-0034b`) | **IN FLIGHT** (wave-24) |
 | 6 | **INV-PAT-REVOKE-PROPAGATION TLA+ proof** — eliminate the lone CRITICAL-without-TLA+ entry surfaced by `validate_canonical_consistency.py` (`INV-PAT-REVOKE-PROPAGATION` from wave-23 §3.28 PAT revocation domain). Without this, GA-readiness greenlight dashboard cannot flip the "0 CRITICAL without TLA+" cell to GREEN. | `wt/r-prep-auth-pat-revoke-tla` (worktree `agent-auth-pat-revoke-tla`) | **IN FLIGHT** (wave-24) |
@@ -76,7 +76,7 @@ Stream #1's dispatched scope per worktree branch name + wave-23 §6 item #1 rati
 
 ### 3.1 DEBT-008 closure ledger (cumulative pre-wave-24-SEAL)
 
-Per `specs/_audits/2026-05-15-debt-register.md` row §51 (DEBT-008 progressive expansion ledger) + `specs/_audits/2026-05-16-debt-008-wave23-mutation-sweep.md` (wave-23 baseline).
+Per `specs/_audits/sealed/2026-05-15-debt-register.md` row §51 (DEBT-008 progressive expansion ledger) + `specs/_audits/sealed/2026-05-16-debt-008-wave23-mutation-sweep.md` (wave-23 baseline).
 
 | Crate | Empirical kill % | Closure status | Source wave |
 |---|---|---|---|
@@ -122,7 +122,7 @@ Per `specs/_audits/2026-05-15-debt-register.md` row §51 (DEBT-008 progressive e
 
 - **Wave-15 → wave-21**: docs P2 portion CLOSED (engine pin `<22` lifted; 11 doc files migrated to Node 22+ LTS callouts). `apps/docs/package.json` engine pin `>=22.0.0 <23.0.0`.
 - **Wave-22 (`wt/r-prep-debt-015-build-closure` → `f356985`)**: blockers (a) `draft: true` removed from 3 referenced security/residency pages; (b) 90 docs files normalised to extensionless MDX cross-links (261 link sites + 4 broken specs/ROADMAP markdown links rewritten); (c) theme-alias rewrite APPLIED to `patches/@docusaurus__core@3.10.1.patch`. Net: build progresses past MDX compile and server-bundle load; SSG reaches per-route rendering. **New same-class residual:** server-bundle clientModule chunk registry emits literal `require("@site/docs/*.mdx")` + `require("@generated/docusaurus-plugin-content-docs/default/p/*.json")` strings that fail to externalise in pnpm-isolated layout.
-- **Wave-23 (`wt/r-prep-debt-015-build-final` → final audit `specs/_audits/2026-05-16-debt-015-build-final.md`)**: configureWebpack plugin attempted (path A: force `output.asyncChunks: false` + `dynamicImportMode: 'eager'` + `splitChunks: false` on server); zero effect on the 113 `@site/*.mdx` + 77 `@generated/*.json` literal-require count. **Root cause narrowed** to `@docusaurus/babel/lib/preset.js` running `@babel/preset-env` with implicit `modules: 'auto'` on the server target (vs `modules: false` for client) — this transforms `() => import(spec)` into nested CJS `require(spec)` BEFORE webpack sees the code, and webpack's static analyzer doesn't deep-walk arrow-nested CJS requires. **Wave-23 fix path order documented (path 1 preferred):** (1) patch `@docusaurus/babel/lib/preset.js` `modules: false` for server config — 1–2 h; (2) custom babel plugin in `apps/docs/babel.config.js` rewriting nested `require("@site/X")` back to top-level import — 2–3 h; (3) `ssgRequire` patch sandbox-evaling `build/assets/js/<chunkId>.<hash>.js` client chunks — 3–5 h. Wave-22's path-B framing superseded by path (3). No regression vs wave-22; build still red identically.
+- **Wave-23 (`wt/r-prep-debt-015-build-final` → final audit `specs/_audits/sealed/2026-05-16-debt-015-build-final.md`)**: configureWebpack plugin attempted (path A: force `output.asyncChunks: false` + `dynamicImportMode: 'eager'` + `splitChunks: false` on server); zero effect on the 113 `@site/*.mdx` + 77 `@generated/*.json` literal-require count. **Root cause narrowed** to `@docusaurus/babel/lib/preset.js` running `@babel/preset-env` with implicit `modules: 'auto'` on the server target (vs `modules: false` for client) — this transforms `() => import(spec)` into nested CJS `require(spec)` BEFORE webpack sees the code, and webpack's static analyzer doesn't deep-walk arrow-nested CJS requires. **Wave-23 fix path order documented (path 1 preferred):** (1) patch `@docusaurus/babel/lib/preset.js` `modules: false` for server config — 1–2 h; (2) custom babel plugin in `apps/docs/babel.config.js` rewriting nested `require("@site/X")` back to top-level import — 2–3 h; (3) `ssgRequire` patch sandbox-evaling `build/assets/js/<chunkId>.<hash>.js` client chunks — 3–5 h. Wave-22's path-B framing superseded by path (3). No regression vs wave-22; build still red identically.
 - **Wave-24 (this wave) — `wt/r-prep-debt-015-build-babel-patch` (worktree `agent-debt-015-w24`)**: stream #3 executes path (1) per wave-23 final-audit recommendation.
 
 ### 4.2 Wave-24 stream #3 SEAL gate (forward-looking; not enforced by this audit)
@@ -184,7 +184,7 @@ Per the wave-24 charter, the wave-25 anchor stream is the **external pentest eng
 
 | # | Stream | Rationale | Estimated cost |
 |---|---|---|---|
-| 1 | **External pentest engagement scope freeze** (anchor stream) | Pentest scope SEALED wave-19 (`specs/_audits/2026-05-16-pre-ga-pentest-scope.md`); wave-22 deferred RFP-prep to wave-24; wave-24 deferred to wave-25 because wave-24 stream-#1 dry-run needed first to inform scope (e.g., which combined-failure surfaces should be in pentest scope). Wave-25 stream #1 executes: (a) RFP draft + vendor shortlist + SOW template; (b) scope-freeze decision: ratify or amend the wave-19 SEALED scope based on wave-24 dry-run + final-audit findings. Vendor selection + engagement letter remain user-bound. | 1 codex/Opus draft RFP + shortlist + SOW; 1 Sonnet absorb wave-24 findings into amended scope. |
+| 1 | **External pentest engagement scope freeze** (anchor stream) | Pentest scope SEALED wave-19 (`specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md`); wave-22 deferred RFP-prep to wave-24; wave-24 deferred to wave-25 because wave-24 stream-#1 dry-run needed first to inform scope (e.g., which combined-failure surfaces should be in pentest scope). Wave-25 stream #1 executes: (a) RFP draft + vendor shortlist + SOW template; (b) scope-freeze decision: ratify or amend the wave-19 SEALED scope based on wave-24 dry-run + final-audit findings. Vendor selection + engagement letter remain user-bound. | 1 codex/Opus draft RFP + shortlist + SOW; 1 Sonnet absorb wave-24 findings into amended scope. |
 | 2 | **Wave-24 adversarial review (codex Opus pass)** | Mandatory per charter §"all P1-classified streams must close before next wave unblocks P2/P3". Cross-review wave-24 streams #1 dry-run, #2 DEBT-008 wave-24 batch, #3 DEBT-015-BUILD babel-patch, #6 PAT-revoke TLA+, #8 GA-readiness final audit. | ~1 codex Opus pass per P1 stream + 1 audit doc per stream. |
 | 3 | **Wave-24 stream-#1 dry-run findings absorption** | If wave-24 stream #1 dry-run surfaces P0/P1 findings on `RB-GA-CUTOVER.md` runbook gaps (notably any chaos combined-failure that exposes new fail-OPEN classes, pilot-onboarding gaps not yet papered over, or CS playbook ambiguity), dispatch fix agents. | Branch-per-finding; size depends on findings. |
 | 4 | **DEBT-008 wave-25 follow-on** | Any crate from wave-24 stream #2 batch that hit < 75 % empirical kill rate; or `dual-approval` + `ratelimit` empirical-baseline first-sweep if CI-nightly streak insufficient. | 1 Sonnet per remediation. |
@@ -248,7 +248,7 @@ Same pattern as wave-22/wave-23 close: wave-24 in-flight streams are predominant
 
 ## 8. DEBT register survey — pre-wave-24-SEAL state
 
-Per `specs/_audits/2026-05-15-debt-register.md` v1.2.1 (last reconciled in wave-23 close — DEBT-025 added 2026-05-16; total rows 22). No DEBT closures performed by this stream (charter-bound survey-only).
+Per `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.1 (last reconciled in wave-23 close — DEBT-025 added 2026-05-16; total rows 22). No DEBT closures performed by this stream (charter-bound survey-only).
 
 ### 8.1 Open count + per-priority breakdown (canonical rows; pre-wave-24-SEAL)
 
@@ -263,10 +263,10 @@ Per `specs/_audits/2026-05-15-debt-register.md` v1.2.1 (last reconciled in wave-
 | **P2** | DEBT-025 (LFPDPPP MX attorney sign-off — added wave-23 v1.2.1) | 1 | Stream-of-attorneys, not stream-of-agents; agent absorption deferred to wave-25 item #9 |
 
 **Post-wave-23-SEAL closures actually landed at wave-24 base** (verified against `git log` commits between `043428a` and `33138b5`):
-- ✅ DEBT-008 wave-23 expansion: `handler-cas` + `auth-schema` re-sweep CLOSED 100 %; `chunker` + `multipart-schema` PARTIAL with wave-23 projections; baseline audit `specs/_audits/2026-05-16-debt-008-wave23-mutation-sweep.md`.
-- ✅ DEBT-015-BUILD wave-23 final audit `specs/_audits/2026-05-16-debt-015-build-final.md`: root cause narrowed to babel preset-env `modules: 'auto'` on server target; 3 fix paths documented in priority order.
+- ✅ DEBT-008 wave-23 expansion: `handler-cas` + `auth-schema` re-sweep CLOSED 100 %; `chunker` + `multipart-schema` PARTIAL with wave-23 projections; baseline audit `specs/_audits/sealed/2026-05-16-debt-008-wave23-mutation-sweep.md`.
+- ✅ DEBT-015-BUILD wave-23 final audit `specs/_audits/sealed/2026-05-16-debt-015-build-final.md`: root cause narrowed to babel preset-env `modules: 'auto'` on server target; 3 fix paths documented in priority order.
 - ✅ Wave-23 INV registry sweep + DEBT register survey (predecessor stream) — CLOSED with merge `33138b5`.
-- ✅ Wave-23 stream #9 invariant-draft promotion sweep — CLOSED; §3.27 OPS (4 INVs) + §3.28 PAT (1 INV) + 5 aliases added; audit `specs/_audits/2026-05-16-inv-draft-sweep.md`.
+- ✅ Wave-23 stream #9 invariant-draft promotion sweep — CLOSED; §3.27 OPS (4 INVs) + §3.28 PAT (1 INV) + 5 aliases added; audit `specs/_audits/sealed/2026-05-16-inv-draft-sweep.md`.
 - ✅ Wave-23 streams #4, #5, #6, #7, #8 (chaos combined-failures + pilot E2E + LFPDPPP package + CS playbook + beta-feedback triage) — assumed all CLOSED based on the `33138b5` SEAL tip; stream #8's GA-readiness-final-audit (wave-24 stream #8) will reconcile any residuals.
 - ✅ DEBT-025 added to register (LFPDPPP MX attorney review — OPEN, target wave-26 absorption).
 
@@ -319,19 +319,19 @@ Per the wave-24 sweep charter:
 
 ## 11. Cross-references
 
-- `specs/_audits/2026-05-16-wave23-closure.md` (wave-23 closure; predecessor).
-- `specs/_audits/2026-05-16-wave22-closure.md` (wave-22 closure; structural patterns continued).
-- `specs/_audits/2026-05-16-wave21-closure.md` (wave-21 closure; baseline cadence).
-- `specs/_audits/2026-05-15-debt-register.md` v1.2.1 (DEBT register canonical state; DEBT-025 added 2026-05-16; no new changelog entry this wave — survey-only).
+- `specs/_audits/sealed/2026-05-16-wave23-closure.md` (wave-23 closure; predecessor).
+- `specs/_audits/sealed/2026-05-16-wave22-closure.md` (wave-22 closure; structural patterns continued).
+- `specs/_audits/sealed/2026-05-16-wave21-closure.md` (wave-21 closure; baseline cadence).
+- `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.1 (DEBT register canonical state; DEBT-025 added 2026-05-16; no new changelog entry this wave — survey-only).
 - `specs/03_architecture/invariant_registry.md` (197 declared post wave-23 invariant-draft sweep; §3.27 OPS + §3.28 PAT promoted from spec corpus).
-- `specs/_audits/2026-05-15-canonical-consistency-baseline.md` (CI ratchet floor; DEBT-004 closure log §3.1).
-- `specs/_audits/2026-05-16-debt-008-wave23-mutation-sweep.md` (wave-23 baseline for DEBT-008; sets re-sweep + first-sweep methodology for wave-24 stream #2).
-- `specs/_audits/2026-05-16-debt-008-wave22-mutation-sweep.md` (wave-22 expansion baseline; equivalent-mutation analysis pattern).
-- `specs/_audits/2026-05-16-debt-008-mutation-sweep.md` (wave-21 `corelink-hash` expansion baseline).
-- `specs/_audits/2026-05-15-mutation-full-sweep.md` (wave-15 `corelink-audit-chain` empirical baseline; methodology continuum).
-- `specs/_audits/2026-05-16-debt-015-build-final.md` (wave-23 final audit narrowing DEBT-015-BUILD root cause to babel preset-env; sets wave-24 stream #3 fix-path order).
-- `specs/_audits/2026-05-16-debt-015-build-closure.md` (wave-22 PARTIAL baseline for DEBT-015-BUILD).
-- `specs/_audits/2026-05-16-inv-draft-sweep.md` (wave-23 invariant-draft promotion audit; §3.27 + §3.28 source-of-truth).
-- `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` (wave-19 SEALED pentest scope; wave-25 anchor stream ratifies or amends).
+- `specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md` (CI ratchet floor; DEBT-004 closure log §3.1).
+- `specs/_audits/sealed/2026-05-16-debt-008-wave23-mutation-sweep.md` (wave-23 baseline for DEBT-008; sets re-sweep + first-sweep methodology for wave-24 stream #2).
+- `specs/_audits/sealed/2026-05-16-debt-008-wave22-mutation-sweep.md` (wave-22 expansion baseline; equivalent-mutation analysis pattern).
+- `specs/_audits/sealed/2026-05-16-debt-008-mutation-sweep.md` (wave-21 `corelink-hash` expansion baseline).
+- `specs/_audits/sealed/2026-05-15-mutation-full-sweep.md` (wave-15 `corelink-audit-chain` empirical baseline; methodology continuum).
+- `specs/_audits/sealed/2026-05-16-debt-015-build-final.md` (wave-23 final audit narrowing DEBT-015-BUILD root cause to babel preset-env; sets wave-24 stream #3 fix-path order).
+- `specs/_audits/sealed/2026-05-16-debt-015-build-closure.md` (wave-22 PARTIAL baseline for DEBT-015-BUILD).
+- `specs/_audits/sealed/2026-05-16-inv-draft-sweep.md` (wave-23 invariant-draft promotion audit; §3.27 + §3.28 source-of-truth).
+- `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` (wave-19 SEALED pentest scope; wave-25 anchor stream ratifies or amends).
 - `RB-GA-CUTOVER.md` (cutover runbook; greenlight dashboard — wave-24 stream #1 dry-run rehearses; wave-24 stream #8 final-audit issues GA verdict).
 - `.github/workflows/mutation-nightly.yml` (CI-nightly artifact precedence; `TD-DEBT-008-WAVE-14-EMPIRICAL` SEAL mechanism — covers `{dual-approval, ratelimit}` continuously at wave-24 SEAL; potentially `{pat, clerk}` too pending wave-24 stream #2 combined-bucket SEAL).

@@ -85,7 +85,7 @@ pub struct DatadogConfig {
     pub timeout_ms: u32,
     /// Optional: opt-out of forwarding low-value high-cost metric kinds
     /// (defaults to forward-all-top-level + SLO-bound; see
-    /// `specs/_audits/2026-05-15-otel-export-spec.md`).
+    /// `specs/_audits/sealed/2026-05-15-otel-export-spec.md`).
     pub opt_out_low_value_metrics: bool,
 }
 

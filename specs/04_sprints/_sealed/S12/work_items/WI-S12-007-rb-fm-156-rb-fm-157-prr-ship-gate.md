@@ -78,7 +78,7 @@ Deliverables 4-fold:
    - Output: `specs/_audits/2026-XX-XX-security-walkthrough-s12.md` com findings classified P0/P1/P2; remediation plan; sign-off.
    - Cycle: every 6 months for major sprints; ad-hoc for HIGH_RISK changes.
 
-4. **PRR doc S-12** em `specs/04_sprints/S12/PRR-S12.md`:
+4. **PRR doc S-12** em `specs/04_sprints/_sealed/S12/PRR-S12.md`:
    - 11 sign-offs canonical documented (per framework §33.5.4.3 + ADR-0034).
    - Evidence pack:
      - SLSA L3 attestation 100% releases últimos 30d (verifiable via `rekor-cli search`).
@@ -215,7 +215,7 @@ Sprint ship gate; HIGH_RISK; FF-HR-005.
      - Sign-off: Security Lead + AppSec.
    - **Cycle**: every 6 months for major sprints; ad-hoc for HIGH_RISK changes em S-13+.
 
-4. **PRR doc S-12** em `specs/04_sprints/S12/PRR-S12.md`:
+4. **PRR doc S-12** em `specs/04_sprints/_sealed/S12/PRR-S12.md`:
    - **Mandatory 11 sign-offs canonical table** (vide §30).
    - **Evidence pack**:
      - SLSA L3 attestation: `rekor-cli search` outputs for 100% releases últimos 30d.
@@ -249,7 +249,7 @@ Sprint ship gate; HIGH_RISK; FF-HR-005.
    - SSDF PS.1 (cripto integrity): satisfied.
    - SSDF PW.4 (third-party software): satisfied.
    - EO 14028 SBOM mandatory: satisfied.
-   - Output: `specs/04_sprints/S12/asvs-v14-v11.1-ssdf-eo14028-checklist.md`.
+   - Output: `specs/04_sprints/_sealed/S12/asvs-v14-v11.1-ssdf-eo14028-checklist.md`.
 
 7. **Métricas validation**:
    - All métricas listed em individual WIs (~12 metrics across S-12) emitting em staging com expected ranges; dashboard DASH-SUPPLY validated.
@@ -370,7 +370,7 @@ Feature: S-12 ship gate — RB-FM-156 + RB-FM-157 + security walkthrough + PRR
     Given checklist scoped to S-12 surface
     When self-checklist executed
     Then 100% items pass
-    And report committed em specs/04_sprints/S12/asvs-v14-v11.1-ssdf-eo14028-checklist.md
+    And report committed em specs/04_sprints/_sealed/S12/asvs-v14-v11.1-ssdf-eo14028-checklist.md
 ```
 
 ## 9. Design Decisions
@@ -489,9 +489,9 @@ TLA+ alignment: não-aplicável (build-time + deploy-time controles, não runtim
 | RB-FM-157 dry-run automation | `scripts/rb_fm_157_dry_run.rs` | Rust binary |
 | RB-FM-157 dry-run report | `specs/_audits/2026-XX-XX-rb-fm-157-dry-run.md` | Markdown |
 | Security walkthrough report | `specs/_audits/2026-XX-XX-security-walkthrough-s12.md` | Markdown |
-| PRR doc S-12 | `specs/04_sprints/S12/PRR-S12.md` | Markdown |
+| PRR doc S-12 | `specs/04_sprints/_sealed/S12/PRR-S12.md` | Markdown |
 | Adversarial test summary | `specs/_audits/2026-XX-XX-adversarial-summary-s12.md` | Markdown |
-| OWASP ASVS + SSDF + EO 14028 checklist | `specs/04_sprints/S12/asvs-v14-v11.1-ssdf-eo14028-checklist.md` | Markdown |
+| OWASP ASVS + SSDF + EO 14028 checklist | `specs/04_sprints/_sealed/S12/asvs-v14-v11.1-ssdf-eo14028-checklist.md` | Markdown |
 | Release notes S-12 | `specs/04_sprints/S12/RELEASE_NOTES.md` | Markdown |
 
 ## 14. Quality Standards SOTA

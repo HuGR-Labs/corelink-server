@@ -22,9 +22,9 @@ tags:
   - "physical-move"
   - "seal"
 references:
-  - "specs/_audits/2026-05-26-wave-33-34-closure-followups.md"
-  - "specs/_audits/2026-05-22-wave33-code-reorg-spec.md"
-  - "specs/_audits/2026-05-22-w33-stage0-foundation.md"
+  - "specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md"
+  - "specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md"
+  - "specs/_audits/sealed/2026-05-22-w33-stage0-foundation.md"
   - "crates/corelink-replication/Cargo.toml"
   - "crates/corelink-replication/src/lib.rs"
   - "crates/corelink-replication/src/rollout_controller.rs"
@@ -34,7 +34,7 @@ references:
 
 > **Branch:** `w35-p2-replication`
 >
-> **Trigger:** `specs/_audits/2026-05-26-wave-33-34-closure-followups.md`
+> **Trigger:** `specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md`
 > §4 — "absorb 1 sub-crate into `corelink-replication` umbrella" as
 > part of the broader Wave-33 Stage-1 Option-A → physical-move
 > transition that retires shim-only re-export crates.
@@ -248,5 +248,5 @@ Tests: 5 → 61 (net +56)
 Build:   GREEN  (cargo build -p corelink-replication)
 Clippy:  GREEN  (cargo clippy -p corelink-replication --tests -- -D warnings)
 Tests:   GREEN  (61 passed; 0 failed)
-SEAL audit: specs/_audits/2026-05-26-w35-p2-replication-absorption.md
+SEAL audit: specs/_audits/sealed/2026-05-26-w35-p2-replication-absorption.md
 ```

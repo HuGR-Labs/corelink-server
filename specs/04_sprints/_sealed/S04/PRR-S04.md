@@ -125,13 +125,13 @@ HIGH_RISK lane:
 | 2 | Final Approver | Gustavo Schneiter | 2026-05-01 | ✅ APPROVED | Owner + Final Approver dual-hat per ADR-0034. |
 | 3 | Architect (incl. Crypto SME specialization for HKDF + Merkle + canonical preimage + key rotation methodology) | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-01 | ✅ APPROVED (waived) | HKDF-SHA256 + BLAKE3-keyed sig protocol reviewed against ADR-0021 v1.1.0; 121-byte canonical preimage 1:1 parity asserted at compile-time; Mann-Whitney 3-prong CT gate ratified; `accepted_key_ids` rotation grace API reviewed; RFC 6962 domain separation (`\x00`-leaf / `\x01`-inner) pinned; bounded parser limits (depth 32 / fanout 4096 / nodes 100k / payload 1 MiB / files 4096 / dirs 4096) reviewed. ADR-0021 + ADR-0035 + ADR-0036 + ADR-0037 all ACCEPTED. |
 | 4 | Security Lead | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | STRIDE delta — INV-AC-TENANT-SCOPED holds at 100k iter SHIP-GATE (`prop_ac_full_stack_tenant_isolation_100k`); INV-AC-EVICT-TENANT-SCOPED holds at 10k iter (`prop_ac_full_stack_ttl_eviction_tenant_scoped`); INV-AC-MERKLE-VALID holds dual-side; INV-AC-DIGEST-SIGNED holds + Mann-Whitney 3-prong CT gate green release-mode. Internal pentest §6 below: zero HIGH/CRITICAL. Revalidation trigger: hire Security Lead OR external advisor onboarded. |
-| 5 | SRE Lead | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | RB-FM-303 host-side dry-run executes via `scripts/rb_fm_303_dry_run.sh` (cargo-driven, drift-detectable); audit `specs/_audits/2026-05-01-rb-fm-303-dry-run.md`. RB-FM-AC-TTL-DRIFT + RB-FM-AC-TTL-STORM published (WI-S04-005). DASH-AC dashboard + 11 alert rules ship in `dashboards/grafana/DASH-AC.json` + `dashboards/alerts/dash-ac-alerts.yml`. Full staging 72h SLO sustained run + chaos PR + on-call drill deferred until staging account provisioned. Revalidation trigger: SRE Lead hired OR staging account provisioned. |
+| 5 | SRE Lead | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | RB-FM-303 host-side dry-run executes via `scripts/rb_fm_303_dry_run.sh` (cargo-driven, drift-detectable); audit `specs/_audits/sealed/2026-05-01-rb-fm-303-dry-run.md`. RB-FM-AC-TTL-DRIFT + RB-FM-AC-TTL-STORM published (WI-S04-005). DASH-AC dashboard + 11 alert rules ship in `dashboards/grafana/DASH-AC.json` + `dashboards/alerts/dash-ac-alerts.yml`. Full staging 72h SLO sustained run + chaos PR + on-call drill deferred until staging account provisioned. Revalidation trigger: SRE Lead hired OR staging account provisioned. |
 | 6 | Engineer (S-04 implementation lead) | Gustavo Schneiter | 2026-05-01 | ✅ APPROVED | Implementation lead through WI-S04-001..006. Quality gates: full workspace `cargo test --workspace --all-targets --features corelink-worker/tower-middleware` 0 failures (release + debug); `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `python3 scripts/validate_specs.py` clean; `python3 scripts/validate_references.py` no new dangling refs; `python3 scripts/check_migrations_additive.py` clean. |
 | 7 | QA Lead | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | Cross-component property tests at 100k SHIP-GATE + 3 × 10k PR (`prop_ac_full.rs` 4 release-mode props behind `tower-middleware`); REAPI v2 conformance subset 10 / 10 pass (`reapi_v2_ac_conformance.rs`); per-WI property suites at 10k iter green; chaos experiments executed (12 per WI §15). Revalidation trigger: QA Lead hired. |
 | 8 | Product | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-01 | ✅ APPROVED (waived) | JTBD coverage: Bazel / Buck2 cache hit reduces build time > 50% (validated in `prop_ac_full_stack_idempotent_under_concurrent_update`); cache hit ratio business metric exposed in DASH-AC panel 1 + customer dashboard S-16 (forward); SLA addendum + release notes drafts queued for S-19 onboarding. Unblocks S-13 (admin self-service invalidation override), S-15 (CLI/SDK), S-20 (GA cache hit ratio sustained + REAPI conformance). |
-| 9 | Compliance Officer | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | OWASP ASVS V5 / V6 (S-04 delta) / V8 / V10 / V14 self-checklist published (`specs/04_sprints/S04/asvs-v5-v6-v8-v10-v14-checklist.md`) — 67 PASS / 1 WAIVED / 14 N/A; the single WAIVED item (V8.3.8 customer-facing DPA disclosures) is S-19 onboarding scope. SOC 2 + LGPD ship-gate gap analysis closes at S-20 GA gate. Revalidation trigger: Compliance Officer hired. |
+| 9 | Compliance Officer | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | OWASP ASVS V5 / V6 (S-04 delta) / V8 / V10 / V14 self-checklist published (`specs/04_sprints/_sealed/S04/asvs-v5-v6-v8-v10-v14-checklist.md`) — 67 PASS / 1 WAIVED / 14 N/A; the single WAIVED item (V8.3.8 customer-facing DPA disclosures) is S-19 onboarding scope. SOC 2 + LGPD ship-gate gap analysis closes at S-20 GA gate. Revalidation trigger: Compliance Officer hired. |
 | 10 | Privacy Officer | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-01 | ✅ APPROVED (waived) | INV-AUDIT-NO-RAW-PII holds at the AC audit boundary — `tenant_id` is pseudonymous UUID v7; `action_digest` is itself a content hash; no raw user-typed input ever reaches the audit envelope canonical bytes. TDK `Tdk(REDACTED)` Debug surface enforced at the type level; leak-by-print is a compile error. LINDDUN delta zero. Revalidation trigger: Privacy Officer hired. |
-| 11 | AppSec advisor / Adversarial reviewer | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | Adversarial review summary in §6 (this doc) + `specs/_audits/2026-05-01-adversarial-s04.md` (50+ scenarios catalogued across WI-S04-001..006). Internal pentest report `specs/_audits/2026-05-01-pentest-s04-internal.md` traces 6 attack surfaces and pins zero HIGH/CRITICAL. External pentest = S-20 GA gate. Revalidation trigger: AppSec advisor / external pentest engaged. |
+| 11 | AppSec advisor / Adversarial reviewer | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-01 | ⚠️ WAIVED (ADR-0034) | Adversarial review summary in §6 (this doc) + `specs/_audits/sealed/2026-05-01-adversarial-s04.md` (50+ scenarios catalogued across WI-S04-001..006). Internal pentest report `specs/_audits/sealed/2026-05-01-pentest-s04-internal.md` traces 6 attack surfaces and pins zero HIGH/CRITICAL. External pentest = S-20 GA gate. Revalidation trigger: AppSec advisor / external pentest engaged. |
 
 **Sign-off totals:** 11 / 11 (5 ✅ APPROVED + 6 ⚠️ WAIVED via
 ADR-0034 dual-hat). Per framework §33.5.4.3 the HIGH_RISK matrix
@@ -165,10 +165,10 @@ Per `_spec_contract.md` v1.9.0 §6 (DoD).
 | TTL infrastructure (cron worker + refresh-on-hit + tenant-scoped batched eviction + ADR-0019 boundary) | ✅ | `corelink-worker::reapi::ac::ttl::*` (4 sub-modules: resolver / refresh / evict / worker); `EvictBatch::run_one_batch` enforces tenant + region scoping at trait surface AND defense-in-depth per-row checks; `MAX_BATCH_SIZE = 250` D1-100KB-aligned ceiling. |
 | DASH-AC dashboard live (8 panels + alerts to PagerDuty + Slack) | ✅ | `dashboards/grafana/DASH-AC.json` 8 canonical panels per WI §6.1.2 + `dashboards/alerts/dash-ac-alerts.yml` 11 alert rules covering SEV-0 / SEV-1 / SEV-2 thresholds. Live wiring against Grafana / PagerDuty / Slack = S-09 forward observability stack. |
 | Cache hit ratio business metric customer-visible | ✅ (host-side) | `corelink_cache_hit_ratio{type="ac", tenant_tier, region}` defined in observability_model §4.4; surfaced in DASH-AC panel 1; customer dashboard S-16 forward. |
-| RB-FM-303 dry-run | ✅ (host-side) | `scripts/rb_fm_303_dry_run.sh`; staging chaos PR + on-call drill deferred until staging account provisioned (see DEFERRED row below). Audit `specs/_audits/2026-05-01-rb-fm-303-dry-run.md`. |
-| OWASP ASVS V5/V6/V8/V10/V14 self-checklist | ✅ | `specs/04_sprints/S04/asvs-v5-v6-v8-v10-v14-checklist.md` 67 PASS / 1 WAIVED / 14 N/A; the single WAIVED is S-19 onboarding scope. |
-| Adversarial review summary | ✅ | `specs/_audits/2026-05-01-adversarial-s04.md` aggregates 50+ scenarios across WI-S04-001..006. |
-| Internal pentest report (zero HIGH/CRITICAL) | ✅ | `specs/_audits/2026-05-01-pentest-s04-internal.md`; six attack surfaces; zero HIGH/CRITICAL. |
+| RB-FM-303 dry-run | ✅ (host-side) | `scripts/rb_fm_303_dry_run.sh`; staging chaos PR + on-call drill deferred until staging account provisioned (see DEFERRED row below). Audit `specs/_audits/sealed/2026-05-01-rb-fm-303-dry-run.md`. |
+| OWASP ASVS V5/V6/V8/V10/V14 self-checklist | ✅ | `specs/04_sprints/_sealed/S04/asvs-v5-v6-v8-v10-v14-checklist.md` 67 PASS / 1 WAIVED / 14 N/A; the single WAIVED is S-19 onboarding scope. |
+| Adversarial review summary | ✅ | `specs/_audits/sealed/2026-05-01-adversarial-s04.md` aggregates 50+ scenarios across WI-S04-001..006. |
+| Internal pentest report (zero HIGH/CRITICAL) | ✅ | `specs/_audits/sealed/2026-05-01-pentest-s04-internal.md`; six attack surfaces; zero HIGH/CRITICAL. |
 | Cost regression gate green | ✅ (host-side) | DASH-AC panel 8 + alert `AC_CostRegressionGate` enforces ±10% tolerance per WI Quality Standards 14.s04.006.7; CI bench infrastructure ships at S-09 forward observability stack. |
 | ADR ratifications: ADR-0021 (HKDF) / ADR-0034 (solo-tier waiver) / ADR-0035 (handler invariants) / ADR-0036 (schema migration governance) / ADR-0037 (Merkle protocol) | ✅ | All ACCEPTED + whitelisted in `validate_references.py`; rationale + risks + mitigations documented per ADR. |
 | 72h SLO sustained staging | ⚠️ DEFERRED | Forward-looking; staging account TBD. SLO-AVAIL-AC ≥ 99.9% + SLO-LAT-AC-HIT p99 ≤ 150 ms warm + UPDATE p99 ≤ 300 ms targets pinned in `slo_catalog.md`. Revalidation trigger: staging account provisioned + S-19 onboarding starts. |
@@ -255,7 +255,7 @@ in-flight). No risk requires escalation.
 
 Per WI-S04-006 §6.1.5. Internal pentest scope (not external — that
 is S-20 GA gate). Full report:
-`specs/_audits/2026-05-01-pentest-s04-internal.md`.
+`specs/_audits/sealed/2026-05-01-pentest-s04-internal.md`.
 
 1. **REAPI v2 ActionCache surface hardening.** Driven by
    `prop_ac_full_stack_tenant_isolation_100k` (100 000 iter SHIP-
@@ -330,13 +330,13 @@ Slack = S-09 forward-looking observability stack.
 Per WI-S04-006 §27. KT artifacts produced by S-04 SEAL:
 
 - `PRR-S04.md` (this doc) — canonical decision record.
-- `specs/04_sprints/S04/asvs-v5-v6-v8-v10-v14-checklist.md` — OWASP
+- `specs/04_sprints/_sealed/S04/asvs-v5-v6-v8-v10-v14-checklist.md` — OWASP
   ASVS V5/V6/V8/V10/V14 self-checklist with revalidation triggers.
-- `specs/_audits/2026-05-01-pentest-s04-internal.md` — internal
+- `specs/_audits/sealed/2026-05-01-pentest-s04-internal.md` — internal
   pentest full report.
-- `specs/_audits/2026-05-01-adversarial-s04.md` — per-WI Sonnet
+- `specs/_audits/sealed/2026-05-01-adversarial-s04.md` — per-WI Sonnet
   review aggregation (50+ scenarios).
-- `specs/_audits/2026-05-01-rb-fm-303-dry-run.md` — RB-FM-303
+- `specs/_audits/sealed/2026-05-01-rb-fm-303-dry-run.md` — RB-FM-303
   dry-run audit trace.
 - `dashboards/grafana/DASH-AC.json` + `dashboards/alerts/dash-ac-
   alerts.yml` — operational observability surface.

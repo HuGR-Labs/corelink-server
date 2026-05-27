@@ -1,6 +1,6 @@
 # Per-crate STRIDE deep dives — INDEX
 
-**Purpose:** depth-2 STRIDE analysis for the 12 most security-critical crates / surfaces, prepared for the external pentest engagement scheduled **2026-06-15** (D+0 baseline `specs/_pentest/PENTEST-EVIDENCE-PACKAGE.md` v2.0.0).
+**Purpose:** depth-2 STRIDE analysis for the 12 most security-critical crates / surfaces, prepared for the external pentest engagement scheduled **2026-06-15** (D+0 baseline `specs/_audits/sealed/pentest/PENTEST-EVIDENCE-PACKAGE.md` v2.0.0).
 
 **Method:** the coarse, asset-level STRIDE matrix (`specs/_audits/matrix-stride-ctrl.csv`) and the domain-level STRIDE tables in `PENTEST-EVIDENCE-PACKAGE §3` cover platform-wide threats. These per-crate deep dives go one level deeper: each crate is decomposed into its trust boundaries (TB-*-N) and every STRIDE category is exercised against each boundary with an attacker scenario, the control/invariant that blocks it, and a pointer to the adversarial / property / TLA+ test that kills it.
 

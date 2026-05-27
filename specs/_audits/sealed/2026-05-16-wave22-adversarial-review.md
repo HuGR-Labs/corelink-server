@@ -67,14 +67,14 @@ None.
 
 #### W22-P2-03 — DEBT-008 wave-22 "projected 100%" is not empirically re-measured
 - **Stream:** debt-008-mutation-wave22 (`51d082b`).
-- **File:** `specs/_audits/2026-05-16-debt-008-wave22-mutation-sweep.md §6` + DEBT register §3 row 51.
+- **File:** `specs/_audits/sealed/2026-05-16-debt-008-wave22-mutation-sweep.md §6` + DEBT register §3 row 51.
 - **Concern.** `corelink-handler-cas` (57.7% → 100% projected) and `corelink-auth-schema` (72.4% → 100% projected) ship +6 / +10 mutation_kills tests claiming 1:1 coverage of 11 / 21 surviving mutants. Spot-check of `mutation_kills.rs` confirms each test is annotated with the exact mutant target and the substitution semantics are sound (sampled tests reviewed: handler-cas `audit.rs:45 slug -> ""`, `handler.rs:214 && -> ||`, `fake_hash padding loop`; all are well-formed adversarial assertions). However, a cargo-mutants re-sweep is required to confirm no mutant slips through assertion gaps. The audit acknowledges this (§7.1) and queues it for wave-23.
 - **Mitigation.** Wave-23 dispatch already has "re-sweep verification" pinned in DEBT register §3 row 51 closure plan.
 - **Severity:** P2 (projection is conservative; tests are well-targeted; empirical confirmation pending).
 
 #### W22-P2-04 — DEBT-015-BUILD residual is real webpack/SSG internals work, T+14d ETA is optimistic
 - **Stream:** debt-015-build-closure (`20c707e`).
-- **File:** `specs/_audits/2026-05-16-debt-015-build-closure.md §ETA`.
+- **File:** `specs/_audits/sealed/2026-05-16-debt-015-build-closure.md §ETA`.
 - **Concern.** Blockers (a)+(b)+(c) are CLOSED; the residual is `@site/docs/*.mdx` + `@generated/*.json` literal-string `require()` calls in the webpack server-bundle clientModule chunk registry. The audit correctly diagnoses this as a *new instance* of the same externalisation class (not the original P2 issue), but T+14d (2026-05-30) assumes a Sonnet with Docusaurus-3 webpack internals familiarity. Historical evidence from DEBT-015 / DEBT-015-BUILD waves 17–22 suggests Docusaurus internals routinely surprise — the original DEBT-015 estimate was T+21d and consumed three waves (21, 22).
 - **Mitigation.** Carry T+14d as nominal but pre-authorise a second-pass extension to T+30d in DEBT register §3 row 64 with the option to fall back to a static-site fallback (skip Docusaurus SSG, ship pre-rendered HTML via `pnpm build` on Node 20 with the existing engine pin lift). This row is **NOT GA-blocking** per the register; docs P2 portion is already CLOSED.
 - **Severity:** P2 (build-side cosmetic; GA decision tree unaffected).
@@ -126,7 +126,7 @@ Arithmetic mean: 9.48/10. With penalty `(10 − 1.5·0 − 0.5·0 − 0.15·4 �
 
 ## 5. Charter compliance
 
-- **No source changes:** confirmed — `git diff 043428a..HEAD --stat` shows only `specs/_audits/2026-05-16-wave22-adversarial-review.md`.
+- **No source changes:** confirmed — `git diff 043428a..HEAD --stat` shows only `specs/_audits/sealed/2026-05-16-wave22-adversarial-review.md`.
 - **Sign-off + Co-Authored-By:** included in commit trailer.
 - **Synchronous bash only:** all tool calls were synchronous.
 - **No `run_in_background`:** confirmed.

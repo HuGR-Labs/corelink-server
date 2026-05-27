@@ -21,7 +21,7 @@ name: dependabot-policy (license + status-check enforcement)
 # Cross-references:
 #   - License source of truth: deny.toml [licenses] (R1-9 + WI-S12-004).
 #   - Runbook on failure:      specs/_runbooks/RB-DEPENDABOT-INCIDENT.md §4.
-#   - Audit baseline:          specs/_audits/2026-05-15-dependabot-policy.md.
+#   - Audit baseline:          specs/_audits/sealed/2026-05-15-dependabot-policy.md.
 #
 # Implements: WI-S12-004 §6.1.5 (ST-005) + R-PREP audit policy gate.
 # SHA-pinned per HIGH_RISK lane FF-HR-005.

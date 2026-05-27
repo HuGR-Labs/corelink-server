@@ -5,7 +5,7 @@
 //! drop in behind the same surface.
 //!
 //! Pattern reference (canonical for next 3 providers):
-//! `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+//! `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md`.
 
 #![forbid(unsafe_code)]
 

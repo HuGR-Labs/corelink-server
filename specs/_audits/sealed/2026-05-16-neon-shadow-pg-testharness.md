@@ -132,4 +132,4 @@ When stream #2 lands, the compensation patch becomes redundant. Lifting it is a 
 - `crates/corelink-audit-chain/Cargo.toml` — `live-pg` feature + dev-deps.
 - `migrations/neon/0001_audit_events_shadow.sql` — wave-18 canonical migration (referenced via `include_str!` by the harness).
 - `crates/corelink-audit-chain/src/neon_shadow/real.rs` — `RealNeonShadowSink` + SQL constants exercised by the suite.
-- `specs/_audits/2026-05-16-neon-shadow-real-driver.md` — wave-19 driver cutover doc (this harness is its test-infra follow-on).
+- `specs/_audits/sealed/2026-05-16-neon-shadow-real-driver.md` — wave-19 driver cutover doc (this harness is its test-infra follow-on).

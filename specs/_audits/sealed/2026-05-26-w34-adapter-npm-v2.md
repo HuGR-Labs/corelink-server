@@ -43,7 +43,7 @@ v2 was redrafted with the inline-ports mandate (see `specs/_proposals/adapters/n
 | State-mutation audit BEFORE return | `tarball.rs::serve_tarball` calls `emit_npm_audit(TARBALL_STORED)` BEFORE `cas.put`; `metadata.rs::refresh_from_upstream` calls `emit_npm_audit(METADATA_REFRESHED)` BEFORE `kv.put` |
 | PAT `SecretString` + constant-time compare | `auth.rs::extract_pat` returns `secrecy::SecretString`; `FixedTenant` test resolver uses `subtle::ConstantTimeEq`; resolver trait contract documents the same requirement |
 | L2.10 (no file >500 LOC; sweet-spot ≤200) | top 3: 372 (`tarball.rs`) / 331 (`server.rs`) / 235 (`metadata.rs`) — every file under 500 cap |
-| SEAL audit doc | this file (`specs/_audits/2026-05-26-w34-adapter-npm-v2.md`) |
+| SEAL audit doc | this file (`specs/_audits/sealed/2026-05-26-w34-adapter-npm-v2.md`) |
 | DCO + Co-Authored-By | applied at commit time |
 
 # §3. Trait-surface gap and parallel-safety decision (mirrors pip §3)
@@ -132,7 +132,7 @@ Evaluated each hard pause trigger:
 - `crates/corelink-adapter-npm/tests/smoke.rs`
 - `crates/corelink-adapter-npm/tests/adversarial.rs`
 - `crates/corelink-adapter-npm/tests/prop_metadata.rs`
-- `specs/_audits/2026-05-26-w34-adapter-npm-v2.md` (this file)
+- `specs/_audits/sealed/2026-05-26-w34-adapter-npm-v2.md` (this file)
 
 Shared (UNION-resolvable) workspace edits:
 

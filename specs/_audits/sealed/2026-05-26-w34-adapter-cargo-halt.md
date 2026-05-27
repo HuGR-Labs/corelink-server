@@ -11,13 +11,13 @@ owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
-superseded_by: "specs/_audits/2026-05-26-w34-adapter-cargo-v2.md"
+superseded_by: "specs/_audits/sealed/2026-05-26-w34-adapter-cargo-v2.md"
 tags: ["audit", "wave-34", "adapter", "cargo", "halt", "hard-pause", "trigger-4"]
 references:
   - "specs/_proposals/adapters/cargo.md"
-  - "specs/_audits/2026-05-22-w33-stage2-c-adapter-splits.md"
-  - "specs/_audits/2026-05-22-w33-stream-a-data-path.md"
-  - "specs/_audits/2026-05-26-w34-adapter-cargo-v2.md"
+  - "specs/_audits/sealed/2026-05-22-w33-stage2-c-adapter-splits.md"
+  - "specs/_audits/sealed/2026-05-22-w33-stream-a-data-path.md"
+  - "specs/_audits/sealed/2026-05-26-w34-adapter-cargo-v2.md"
 ---
 
 **Title:** Wave 34 Adapter Campaign — Cargo (sccache-compatible) — HALT (preserved historical record)

@@ -15,8 +15,8 @@ tags:
   - container
   - worker-shim
 references:
-  - "specs/_audits/2026-05-22-wave32-prod-deploy-spec.md"
-  - "specs/_audits/2026-05-22-w32-phaseA-betterstack-live.md"
+  - "specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md"
+  - "specs/_audits/sealed/2026-05-22-w32-phaseA-betterstack-live.md"
   - "wrangler.toml"
   - "worker/src/index.ts"
   - "worker/src/durable_object.ts"
@@ -41,7 +41,7 @@ Phase B of Wave 32 delivers the Cloudflare Worker shim + Durable Object that fro
 traffic and the Rust container, implementing auth, routing, CORS, timing-padding, and container
 lifecycle management.
 
-All acceptance criteria from `specs/_audits/2026-05-22-wave32-prod-deploy-spec.md §4 Phase B`
+All acceptance criteria from `specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md §4 Phase B`
 were verified. No hard pause triggers were fired.
 
 ---
@@ -106,7 +106,7 @@ corelink-server Rust binary      (gRPC/HTTP2, tonic-web, port 50051)
 | `python3 scripts/validate_specs.py` green | **PASS** | 464 docs validated, 0 errors |
 | `python3 scripts/validate_references.py` green | **PASS** | 0 dangling references |
 | No new lint issues | **PASS** | `tsc --noEmit --skipLibCheck` → 0 errors |
-| SEAL audit at `specs/_audits/2026-05-26-w32-phaseB-worker-shim.md` | **PASS** | This document |
+| SEAL audit at `specs/_audits/sealed/2026-05-26-w32-phaseB-worker-shim.md` | **PASS** | This document |
 | DCO sign-off + Co-Authored-By on every commit | **PASS** | See §7 |
 
 ---
@@ -211,7 +211,7 @@ Revert: `worker/` directory + `main = "worker/src/index.ts"` line in `wrangler.t
 
 ## 12. References
 
-- `specs/_audits/2026-05-22-wave32-prod-deploy-spec.md` — Phase B scope + gates
+- `specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md` — Phase B scope + gates
 - `docs/internal/design-patterns/01-constant-time-response-with-statistical-verification.md` — timing-pad pattern
 - `specs/_audits/2026-05-22-w33-stage2-b-container.md` — Container binary (`corelink-server`)
 - `crates/corelink-adapter-oci/src/lib.rs` — OCI route surface mirrored at edge

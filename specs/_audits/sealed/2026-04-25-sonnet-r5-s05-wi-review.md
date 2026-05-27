@@ -1,7 +1,7 @@
 ---
 id: AUDIT-SONNET-R5-S05-WI-REVIEW
-parent_audit: specs/_audits/2026-04-25-agent-r4-s05-part1-wi-review.md
-sprint_contract: specs/04_sprints/S05/_spec_contract.md
+parent_audit: specs/_audits/sealed/2026-04-25-agent-r4-s05-part1-wi-review.md
+sprint_contract: specs/04_sprints/_sealed/S05/_spec_contract.md
 tags: [audit, sota, lote-10.5, s-05, sonnet-r5, independent]
 ---
 

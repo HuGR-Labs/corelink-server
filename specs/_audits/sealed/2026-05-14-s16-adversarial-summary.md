@@ -96,7 +96,7 @@ test-mode tokens land post-S-16 per the PRR waiver.
 
 ### F4 — UX workshop participants synthetic (DEFERRED)
 
-`specs/_audits/2026-05-14-s16-ux-workshop.md` carries the
+`specs/_audits/sealed/2026-05-14-s16-ux-workshop.md` carries the
 `DRAFT — synthetic personas` marker. Real recruitment + session is queued
 for D+10 with the same SUS instrument + remediation cadence already
 agreed.

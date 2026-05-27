@@ -53,7 +53,7 @@ pub use ac_core::*;
 ///
 /// `corelink-handler-ac` is NOT yet physically absorbed (out of scope
 /// for Wave-35 Phase 2 batch §1 — see
-/// `specs/_audits/2026-05-26-wave-33-34-closure-followups.md` §4).
+/// `specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md` §4).
 pub mod handler {
     pub use corelink_handler_ac::*;
 }

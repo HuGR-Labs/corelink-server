@@ -4,7 +4,7 @@
 //! [`ClerkOrgId`], and [`ClerkSessionId`] post-`Arc<str>` migration
 //! vs the `String::clone` baseline of the pre-OPT-07 storage shape.
 //!
-//! Audit reference: `specs/_audits/2026-05-15-perf-optimization-audit.md
+//! Audit reference: `specs/_audits/sealed/2026-05-15-perf-optimization-audit.md
 //! §4 anti-pattern #1` — "String::clone() in tower middleware ...
 //! convert hot-path String fields on shared contexts to Arc<str>".
 //!

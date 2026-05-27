@@ -13,24 +13,24 @@ supersedes: null
 superseded_by: null
 reviewer: "R5 Sonnet persona (Sonnet 4.6, different model lineage than R4 Opus — Wave 14 Lote 10.6 review dispatch; testability + observability focus)"
 scope: "Lote 10.6 — Sprint S-06 Part 2 (WI-S06-005 .. WI-S06-007) on FROZEN v1.3.0 corpus post Lote 10.6bis + 10.6-tris remediation"
-parent_audit: "specs/04_sprints/S06/_review_R4_opus_part2.md"
-sprint_contract: "specs/04_sprints/S06/_spec_contract.md v2.0.0"
+parent_audit: "specs/04_sprints/_sealed/S06/_review_R4_opus_part2.md"
+sprint_contract: "specs/04_sprints/_sealed/S06/_spec_contract.md v2.0.0"
 calibration_baselines:
-  - "specs/_audits/2026-04-25-sonnet-r5-s06-wi-review.md (post-bis 9.1/10 target)"
-  - "specs/_audits/2026-04-25-agent-r4-s06-part2a-wi-review.md (pre-bis 8.0/10)"
-  - "specs/_audits/2026-04-25-agent-r4-s06-part2b-wi-review.md (pre-bis 8.0/10)"
+  - "specs/_audits/sealed/2026-04-25-sonnet-r5-s06-wi-review.md (post-bis 9.1/10 target)"
+  - "specs/_audits/sealed/2026-04-25-agent-r4-s06-part2a-wi-review.md (pre-bis 8.0/10)"
+  - "specs/_audits/sealed/2026-04-25-agent-r4-s06-part2b-wi-review.md (pre-bis 8.0/10)"
 files_reviewed:
-  - "specs/04_sprints/S06/work_items/WI-S06-005-refcount-reconciliation-auto-fix.md (393 lines, v1.3.0 FROZEN)"
-  - "specs/04_sprints/S06/work_items/WI-S06-006-tla-ci-gate-property-test-100k-race.md (517 lines, v1.3.0 FROZEN)"
-  - "specs/04_sprints/S06/work_items/WI-S06-007-dash-gc-rb-dry-runs-prr-ship-gate.md (642 lines, v1.3.0 FROZEN)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-005-refcount-reconciliation-auto-fix.md (393 lines, v1.3.0 FROZEN)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-006-tla-ci-gate-property-test-100k-race.md (517 lines, v1.3.0 FROZEN)"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-007-dash-gc-rb-dry-runs-prr-ship-gate.md (642 lines, v1.3.0 FROZEN)"
 cross_references:
   - "crates/corelink-gc/src/reconcile.rs (~1700 LOC + tests)"
   - "crates/corelink-gc/tests/prop_inv_gc_004_race.rs (~530 LOC; 10k PR / 100k nightly)"
   - "dashboards/grafana/DASH-GC.json (10 panels)"
   - "dashboards/alerts/dash-gc-alerts.yml (11 rules, 4-tier SEV)"
   - "scripts/rb_fm_{300,404,305}_dry_run.sh"
-  - "specs/_audits/2026-05-02-pentest-s06-internal.md (zero HIGH/CRITICAL)"
-  - "specs/_audits/2026-05-02-adversarial-s06.md (40 scenarios)"
+  - "specs/_audits/sealed/2026-05-02-pentest-s06-internal.md (zero HIGH/CRITICAL)"
+  - "specs/_audits/sealed/2026-05-02-adversarial-s06.md (40 scenarios)"
   - ".github/workflows/tla_check.yml + nightly.yml + gc-ship-gate.yml"
 tags: ["audit", "r5", "sonnet", "lote-10.6", "s-06", "wave-14", "dispatch", "review", "part2", "testability", "observability"]
 ---

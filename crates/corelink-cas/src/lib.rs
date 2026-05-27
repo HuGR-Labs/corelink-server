@@ -20,10 +20,10 @@
 //!
 //! ## Stage 1 absorption strategy — Option-A aggregator
 //!
-//! Per `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §6 Stream
+//! Per `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md` §6 Stream
 //! A sub-step A.1, this crate "absorbs" 10 existing crates. Stage 0
 //! sub-steps 2 + 3 + 4 established the Option-A aggregator pattern
-//! (see `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4): the
+//! (see `specs/_audits/sealed/2026-05-22-w33-stage0-foundation.md` §4): the
 //! new umbrella crate `pub use`s each absorbed crate at the canonical
 //! submodule path while the originals remain the source of truth
 //! unchanged. This keeps every existing `INV-CAS-*` test green and

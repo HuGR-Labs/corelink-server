@@ -34,7 +34,7 @@ tags: ["wi", "s20", "ga", "soc-2", "drata", "vanta", "gap-analysis", "type-i-roa
 > - D2 Gap analysis report — `specs/_compliance/SOC2-GAP-ANALYSIS.md` (33 GAPs; 1 blocking-GA closing D+30 + fallback; 9 major; 23 minor).
 > - D3 Fix timeline per GAP-XX — embedded em D2 com owner/ETA/remediation.
 > - D4 Roadmap Type I 6m pós-GA — `specs/_compliance/SOC2-ROADMAP.md` (Schellman primary; $40-85k Type I; Type II T+12m..T+18m).
-> - D5 Readiness score — `specs/_audits/2026-05-14-soc2-readiness-score.md` (internal 83.7%; Drata 96.4%; projected Type I pass-rate 95%).
+> - D5 Readiness score — `specs/_audits/sealed/2026-05-14-soc2-readiness-score.md` (internal 83.7%; Drata 96.4%; projected Type I pass-rate 95%).
 
 ---
 

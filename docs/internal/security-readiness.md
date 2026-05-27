@@ -12,31 +12,31 @@ This page is the canonical entry point to the CoreLink GA security readiness cor
 
 | Doc | Purpose | Canonical path |
 |---|---|---|
-| Consolidated scope brief | Executive scope, attacker model, ASVS matrix, attack chains, handover artifacts | [`specs/_audits/2026-05-16-pre-ga-pentest-scope.md`](../../specs/_audits/2026-05-16-pre-ga-pentest-scope.md) |
-| Statement of work | Contractual SOW (countersigned by vendor + Legal) | [`specs/_pentest/SOW-S20-EXTERNAL-PENTEST.md`](../../specs/_pentest/SOW-S20-EXTERNAL-PENTEST.md) |
-| Evidence package | Day-1 deliverable for vendor kickoff | [`specs/_pentest/PENTEST-EVIDENCE-PACKAGE.md`](../../specs/_pentest/PENTEST-EVIDENCE-PACKAGE.md) |
-| Vendor onboarding | Playbook for vendor onboarding (T-28 → T-0) | [`specs/_pentest/VENDOR-ONBOARDING.md`](../../specs/_pentest/VENDOR-ONBOARDING.md) |
-| Access provisioning | Credentials + VPN + endpoint catalogue | [`specs/_pentest/access-provisioning.md`](../../specs/_pentest/access-provisioning.md) |
+| Consolidated scope brief | Executive scope, attacker model, ASVS matrix, attack chains, handover artifacts | [`specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md`](../../specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md) |
+| Statement of work | Contractual SOW (countersigned by vendor + Legal) | [`specs/_audits/sealed/pentest/SOW-S20-EXTERNAL-PENTEST.md`](../../specs/_audits/sealed/pentest/SOW-S20-EXTERNAL-PENTEST.md) |
+| Evidence package | Day-1 deliverable for vendor kickoff | [`specs/_audits/sealed/pentest/PENTEST-EVIDENCE-PACKAGE.md`](../../specs/_audits/sealed/pentest/PENTEST-EVIDENCE-PACKAGE.md) |
+| Vendor onboarding | Playbook for vendor onboarding (T-28 → T-0) | [`specs/_audits/sealed/pentest/VENDOR-ONBOARDING.md`](../../specs/_audits/sealed/pentest/VENDOR-ONBOARDING.md) |
+| Access provisioning | Credentials + VPN + endpoint catalogue | [`specs/_audits/sealed/pentest/access-provisioning.md`](../../specs/_audits/sealed/pentest/access-provisioning.md) |
 | Findings template | Machine-readable finding format | [`specs/_pentest/findings-template.md`](../../specs/_pentest/findings-template.md) |
-| Vendor shortlist | Schellman / A-LIGN / Bishop Fox candidates | [`specs/_pentest/vendor-shortlist.md`](../../specs/_pentest/vendor-shortlist.md) |
+| Vendor shortlist | Schellman / A-LIGN / Bishop Fox candidates | [`specs/_audits/sealed/pentest/vendor-shortlist.md`](../../specs/_audits/sealed/pentest/vendor-shortlist.md) |
 | Engagement checklist | Operational checklist for the 7-week engagement | [`pentest-engagement-checklist.md`](pentest-engagement-checklist.md) |
 
 ---
 
 ## Internal pentest corpus (S-01 .. S-20)
 
-See [`specs/_audits/2026-05-16-pre-ga-pentest-scope.md`](../../specs/_audits/2026-05-16-pre-ga-pentest-scope.md) §5 for the full coverage matrix mapping each report to its §2 in-scope asset and the §7 attack chain(s) the external vendor must re-validate.
+See [`specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md`](../../specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md) §5 for the full coverage matrix mapping each report to its §2 in-scope asset and the §7 attack chain(s) the external vendor must re-validate.
 
 Per-sprint internal pentests (8):
 
-- `specs/_audits/2026-04-30-pentest-s02-internal.md` — CAS plane
-- `specs/_audits/2026-05-01-pentest-s03-internal.md` — Auth real (Clerk / PAT / WebAuthn / audit chain)
-- `specs/_audits/2026-05-01-pentest-s04-internal.md` — Multipart upload
-- `specs/_audits/2026-05-01-pentest-s05-internal.md` — Action Cache
-- `specs/_audits/2026-05-02-pentest-s06-internal.md` — REAPI gRPC
-- `specs/_audits/2026-05-14-pentest-s14-byok.md` — BYOK envelope (4 KMS providers)
-- `specs/_audits/2026-05-14-security-walkthrough-s12.md` — Supply chain
-- `specs/_audits/2026-05-14-security-walkthrough-s13.md` — Admin plane
+- `specs/_audits/sealed/2026-04-30-pentest-s02-internal.md` — CAS plane
+- `specs/_audits/sealed/2026-05-01-pentest-s03-internal.md` — Auth real (Clerk / PAT / WebAuthn / audit chain)
+- `specs/_audits/sealed/2026-05-01-pentest-s04-internal.md` — Multipart upload
+- `specs/_audits/sealed/2026-05-01-pentest-s05-internal.md` — Action Cache
+- `specs/_audits/sealed/2026-05-02-pentest-s06-internal.md` — REAPI gRPC
+- `specs/_audits/sealed/2026-05-14-pentest-s14-byok.md` — BYOK envelope (4 KMS providers)
+- `specs/_audits/sealed/2026-05-14-security-walkthrough-s12.md` — Supply chain
+- `specs/_audits/sealed/2026-05-14-security-walkthrough-s13.md` — Admin plane
 
 Adversarial summaries (16) and cross-cutting hardening audits (7) are enumerated in scope doc §5.
 

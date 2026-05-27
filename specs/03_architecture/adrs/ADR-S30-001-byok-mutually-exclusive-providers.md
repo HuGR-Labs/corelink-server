@@ -15,8 +15,8 @@ supersedes: null
 superseded_by: null
 tags: ["adr", "s30", "byok", "feature-flags", "compile-error", "ap-11", "techlead", "wave-30", "singleton", "audit"]
 references:
-  - "specs/_audits/2026-05-15-byok-real-provider-pattern.md"
-  - "specs/_audits/2026-05-16-byok-ap11-adr-formalization.md"
+  - "specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md"
+  - "specs/_audits/sealed/2026-05-16-byok-ap11-adr-formalization.md"
   - "apps/server/src/byok_orchestrator.rs"
   - ".claude/skills/techlead/SKILL.md"
 inv: ["INV-BYOK-CRYPTO-SOVEREIGNTY", "INV-KEY-OVERLAP"]
@@ -42,7 +42,7 @@ build regression.
 ### The 4-provider BYOK surface
 
 CoreLink GA ships envelope-encryption support across four KMS providers
-(see `specs/_audits/2026-05-15-byok-real-provider-pattern.md`):
+(see `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md`):
 
 | Provider | Adapter crate | Real-provider feature flag |
 |---|---|---|
@@ -138,7 +138,7 @@ diagnostic names the exact two flags in conflict, e.g.:
 error: BYOK orchestrator: features `byok-aws-real` AND `byok-gcp-real`
        are mutually exclusive — only one BYOK real provider may be
        enabled at a time (the orchestrator is a singleton trait
-       object). See specs/_audits/2026-05-15-byok-real-provider-pattern.md §7.
+       object). See specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §7.
 ```
 
 A single "more than one set" guard would be cheaper to write but
@@ -303,7 +303,7 @@ Cargo does not natively support "exactly one of" on the
 ## Implementation
 
 The decision is already implemented (since wave-15 commit `818c055`,
-documented at `specs/_audits/2026-05-15-byok-real-provider-pattern.md
+documented at `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md
 §7.2`). The implementation lives in
 `apps/server/src/byok_orchestrator.rs`:
 
@@ -326,7 +326,7 @@ adds:
    `--all-features` failure by removing the macros).
 3. Wave-15 baseline audit §7 updated to point at this ADR as the
    ratification.
-4. Audit doc `specs/_audits/2026-05-16-byok-ap11-adr-formalization.md`
+4. Audit doc `specs/_audits/sealed/2026-05-16-byok-ap11-adr-formalization.md`
    records the formalization event itself.
 
 ## Validation gates
@@ -344,9 +344,9 @@ adds:
 
 ## References
 
-- `specs/_audits/2026-05-15-byok-real-provider-pattern.md` §7
+- `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md` §7
   (wave-15 baseline; this ADR's parent).
-- `specs/_audits/2026-05-16-byok-ap11-adr-formalization.md`
+- `specs/_audits/sealed/2026-05-16-byok-ap11-adr-formalization.md`
   (formalization event audit; this ADR's child).
 - `specs/03_architecture/adrs/ADR-S14-004-byok-trait-envelope-encryption.md`
   (`KmsProvider` trait contract).

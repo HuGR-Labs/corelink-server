@@ -6,23 +6,23 @@ audit_status: ACTIVE
 created: 2026-04-25
 reviewer: Sonnet 4.6 (independent adversarial reviewer — round 5, different model from Opus R4)
 scope: Lote 10.4 — Sprint S-04 all 6 WIs (WI-S04-001 through WI-S04-006) + post-Lote-10.4bis patches
-sprint_contract: specs/04_sprints/S04/_spec_contract.md v1.1.0
-parent_audit: specs/_audits/2026-04-25-agent-r4-s04-part1-wi-review.md
+sprint_contract: specs/04_sprints/_sealed/S04/_spec_contract.md v1.1.0
+parent_audit: specs/_audits/sealed/2026-04-25-agent-r4-s04-part1-wi-review.md
 tags: [audit, sota, lote-10.4, s-04, sonnet-r5, independent]
 calibration_baseline:
   - WI-S04-003 = 8.6/10 (best in S-04 per R4)
   - WI-S03-003 = 8.5/10 (program best-in-class baseline)
 files_reviewed:
-  - specs/04_sprints/S04/_spec_contract.md
-  - specs/04_sprints/S04/work_items/WI-S04-001-reapi-actioncache-handlers.md
-  - specs/04_sprints/S04/work_items/WI-S04-002-d1-ac-meta-r2-bucket.md
-  - specs/04_sprints/S04/work_items/WI-S04-003-corelink-ac-merkle-dual-side.md
-  - specs/04_sprints/S04/work_items/WI-S04-004-hkdf-digest-signing-adr-0021.md
-  - specs/04_sprints/S04/work_items/WI-S04-005-ttl-worker-cron-do-adr-0019.md
-  - specs/04_sprints/S04/work_items/WI-S04-006-reapi-conformance-prr-ship-gate.md
+  - specs/04_sprints/_sealed/S04/_spec_contract.md
+  - specs/04_sprints/_sealed/S04/work_items/WI-S04-001-reapi-actioncache-handlers.md
+  - specs/04_sprints/_sealed/S04/work_items/WI-S04-002-d1-ac-meta-r2-bucket.md
+  - specs/04_sprints/_sealed/S04/work_items/WI-S04-003-corelink-ac-merkle-dual-side.md
+  - specs/04_sprints/_sealed/S04/work_items/WI-S04-004-hkdf-digest-signing-adr-0021.md
+  - specs/04_sprints/_sealed/S04/work_items/WI-S04-005-ttl-worker-cron-do-adr-0019.md
+  - specs/04_sprints/_sealed/S04/work_items/WI-S04-006-reapi-conformance-prr-ship-gate.md
 cross_references:
-  - specs/_audits/2026-04-25-agent-r4-s04-part1-wi-review.md
-  - specs/_audits/2026-04-25-agent-r4-s04-part2-wi-review.md
+  - specs/_audits/sealed/2026-04-25-agent-r4-s04-part1-wi-review.md
+  - specs/_audits/sealed/2026-04-25-agent-r4-s04-part2-wi-review.md
   - specs/03_architecture/invariant_registry.md (§3.15 promoted)
   - specs/03_architecture/adrs/ADR-0019-ttl-ownership-s04-s07.md
   - specs/03_architecture/adrs/ADR-0020-quota-ownership-s07-s08.md

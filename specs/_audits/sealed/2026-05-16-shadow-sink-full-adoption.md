@@ -42,7 +42,7 @@ Out of scope:
 2. **`AnalyticsAuditRow::region_source`** — `apps/server/src/routes/audit_analytics.rs`. New `Option<String>` field carrying the canonical telemetry value (`"prelude"` / `"fallback"`). Additive — `#[non_exhaustive]` is preserved; existing call sites default to `None` via the canonical `AnalyticsAuditRow::new` constructor; resolver-path emits decorate via the new `AnalyticsAuditRow::with_region_source` builder.
 3. **`REGION_SOURCE_PRELUDE` + `REGION_SOURCE_FALLBACK` constants** — `apps/server/src/routes/audit_analytics.rs`. Public stable labels for the dashboard widget filters.
 4. **`resolve_shadow_via_prelude` tuple return** — `apps/server/src/routes/audit_analytics.rs`. The helper now returns `Result<(Arc<dyn NeonShadowSink>, &'static str), &'static str>` so the canonical success-path emit in both `handle_event_count` + `handle_timeline` threads the `region_source` tag through `.with_region_source(...)` decoration.
-5. **Wave-27 audit doc caveat update** — `specs/_audits/2026-05-16-shadow-sink-consumer-adoption.md` §9 caveat #2 → **CLOSED-WAVE-29** with forward pointer to this doc.
+5. **Wave-27 audit doc caveat update** — `specs/_audits/sealed/2026-05-16-shadow-sink-consumer-adoption.md` §9 caveat #2 → **CLOSED-WAVE-29** with forward pointer to this doc.
 6. **Net-new tests (4)**:
    - **`tokio_pg_shadow_sink_factory_for_tenant_in_region_skips_resolver_lookup`** — `apps/server/src/neon_shadow_factory.rs::tests`. A counting `TenantRegionResolver` fake asserts that `for_tenant_in_region` invokes the resolver ZERO times (and `for_tenant` invokes it exactly once on the symmetric `tokio_pg_shadow_sink_factory_for_tenant_still_invokes_resolver` test).
    - **`tokio_pg_shadow_sink_factory_for_tenant_still_invokes_resolver`** — symmetric pin so the wave-21 fallback path doesn't regress.
@@ -127,4 +127,4 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>.
 
 ## Wave-29 closure relationship to wave-27 audit doc
 
-This wave-29 audit doc is the canonical closure for the wave-27 §9 caveat #2 ("Production `TokioPgShadowSinkFactory` override") in `specs/_audits/2026-05-16-shadow-sink-consumer-adoption.md`. The wave-27 doc is updated in the same commit to flip the §9 caveat to **CLOSED-WAVE-29** with a forward pointer to this doc.
+This wave-29 audit doc is the canonical closure for the wave-27 §9 caveat #2 ("Production `TokioPgShadowSinkFactory` override") in `specs/_audits/sealed/2026-05-16-shadow-sink-consumer-adoption.md`. The wave-27 doc is updated in the same commit to flip the §9 caveat to **CLOSED-WAVE-29** with a forward pointer to this doc.

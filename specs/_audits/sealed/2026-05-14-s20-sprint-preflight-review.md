@@ -12,7 +12,7 @@ tags: ["audit", "preflight", "s20", "ga", "high-risk"]
 
 # AUDIT-S20-PREFLIGHT — Adversarial Pre-flight Review of S-20 GA Readiness
 
-S-20 is the **FINAL SPRINT** (HIGH_RISK lane, 4 weeks, 8 WIs anticipated with 7 engineering gate + 1 launch deferred to wave-12). This audit interrogates the spec corpus at `specs/04_sprints/S20/_spec_contract.md` + 7 engineering gate WI specs (WI-001..007). WI-008 (launch orchestration marketing) is explicitly deferred from the engineering gate per spec contract §5.2 R-S20-9 and §6.2.
+S-20 is the **FINAL SPRINT** (HIGH_RISK lane, 4 weeks, 8 WIs anticipated with 7 engineering gate + 1 launch deferred to wave-12). This audit interrogates the spec corpus at `specs/04_sprints/_sealed/S20/_spec_contract.md` + 7 engineering gate WI specs (WI-001..007). WI-008 (launch orchestration marketing) is explicitly deferred from the engineering gate per spec contract §5.2 R-S20-9 and §6.2.
 
 ---
 

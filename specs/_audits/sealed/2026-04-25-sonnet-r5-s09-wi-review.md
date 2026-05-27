@@ -36,7 +36,7 @@ pattern: numeric claims stated in narrative are not verified against the impleme
 
 ### P0-1 — WI-S09-001: Prometheus histogram cardinality under-counted by ~13x (math error)
 
-**File:** `specs/04_sprints/S09/work_items/WI-S09-001-worker-analytics-engine-red-metrics-cardinality-validator.md` §6.1 + §1.5 completeness criteria
+**File:** `specs/04_sprints/_sealed/S09/work_items/WI-S09-001-worker-analytics-engine-red-metrics-cardinality-validator.md` §6.1 + §1.5 completeness criteria
 
 **Finding:** WI-S09-001 §6.1 claims `corelink.cas.put.duration_seconds` has **150 series** (5 tier × 30 region = 150 label combinations). This is wrong: Prometheus histograms produce one series **per bucket per label combination**, not one series per label combination. With a default histogram bucket set of ~10 custom buckets + `+Inf`, each label combination yields 13 series (`_bucket{le=X}` × 11 + `_sum` + `_count`). Correct cardinality: 150 × 13 = **1950 series** for `cas.put.duration_seconds` alone — already exceeding the claimed total of ~1780 series across ALL 15 metrics.
 
@@ -48,7 +48,7 @@ pattern: numeric claims stated in narrative are not verified against the impleme
 
 ### P0-2 — WI-S09-004: `AuditEvent.data: serde_json::Value` makes compile-time PII redaction structurally impossible
 
-**File:** `specs/04_sprints/S09/work_items/WI-S09-004-cloudevents-audit-r2-hash-chain-daily-verify.md` §1.5 (invariants) + §6.1.7
+**File:** `specs/04_sprints/_sealed/S09/work_items/WI-S09-004-cloudevents-audit-r2-hash-chain-daily-verify.md` §1.5 (invariants) + §6.1.7
 
 **Finding:** WI-S09-004 §1.5 claims "compile-time enforcement: `redact!` macro requires types implementing `Redact` trait; raw `String` rejected at compile time" and asserts inheritance from WI-S09-002's type system. However, `AuditEvent.data` is typed `serde_json::Value` — an untyped JSON container. `serde_json::Value` accepts `json!({"email": "user@example.com"})` at compile time with no trait bound. The `redact!` macro cannot enforce type constraints over an untyped `Value` field. Compile-time enforcement as claimed is **structurally impossible** with this type.
 
@@ -60,7 +60,7 @@ pattern: numeric claims stated in narrative are not verified against the impleme
 
 ### P0-3 — WI-S09-007: Synthetic canary loop count 38880 is exactly 3× inflated (triple-counting math error)
 
-**File:** `specs/04_sprints/S09/work_items/WI-S09-007-synthetic-canary-3-regions-runbook-dry-run.md` §1.1 + §2 (narrative) + §8 Gherkin + §10.s09.007.5 completeness criterion
+**File:** `specs/04_sprints/_sealed/S09/work_items/WI-S09-007-synthetic-canary-3-regions-runbook-dry-run.md` §1.1 + §2 (narrative) + §8 Gherkin + §10.s09.007.5 completeness criterion
 
 **Finding:** The spec claims "4320 loops/dia/region = 12960/dia total" and then "12960 × 3 = 38880 successful canary loops" as the 72-hour target. This is internally contradictory and arithmetically wrong.
 
@@ -102,7 +102,7 @@ The spec also internally states "4320 loops/3-dias/region" (correct: 4320 is the
 
 ### P1-3 — WI-S09-006: PagerDuty 5-service count contradicts sprint contract §5.5 R-S09-14 (3 services)
 
-**File:** `specs/04_sprints/S09/work_items/WI-S09-006-multi-burn-rate-slo-alerts-pagerduty.md` §1.3 vs `specs/04_sprints/S09/_spec_contract.md` §5.5 R-S09-14
+**File:** `specs/04_sprints/_sealed/S09/work_items/WI-S09-006-multi-burn-rate-slo-alerts-pagerduty.md` §1.3 vs `specs/04_sprints/_sealed/S09/_spec_contract.md` §5.5 R-S09-14
 
 **Finding:** Sprint contract §5.5 R-S09-14 explicitly says "PagerDuty service per environment (staging, prod-us, prod-eu)" — 3 environments, 3 services. WI-S09-006 §0 and §6.1.2 claim 5 services (adding prod-sam, prod-iad) and cites "sprint contract §5.5 R-S09-14" as the authority. This is false attribution: the sprint contract specifies 3, not 5. WI-S09-006 is silently expanding scope without a formal sprint contract amendment.
 

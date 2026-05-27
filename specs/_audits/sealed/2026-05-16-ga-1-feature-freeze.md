@@ -7,7 +7,7 @@
 > **Scope:** declare a formal **GA-1 feature freeze** over the spec corpus, invariant registry, ADR set, public API surface, OpenAPI envelope, runbooks, and dashboards. From the effective date below forward, only the §3 exception classes are permitted to merge into `main`. Every commit landing on `main` after the effective date must be auditable against the §3 allowlist; the §5 monitor records each such commit with its rationale and DEFER/exception class.
 >
 > **Companion docs:**
-> - `specs/_audits/2026-05-16-ga-readiness-final.md` §1.2 freeze-status row → **ACTIVE** (updated this commit).
+> - `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §1.2 freeze-status row → **ACTIVE** (updated this commit).
 > - `specs/_runbooks/RB-GA-CUTOVER.md` §1 (cutover freeze window operationalisation — this declaration *precedes* and *enables* §1).
 > - `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` (2-key governance path for exceptional unfreeze decisions).
 > - `scripts/check-ga-freeze-allowed.py` (mechanical gate that scans a diff against the §3 allowlist).
@@ -34,7 +34,7 @@ The following surfaces enter freeze on the effective date. Any change that adds,
 
 | # | Surface | Path / artefact | Frozen-state evidence |
 |---|---|---|---|
-| 2.1 | **Spec corpus** | `specs/**/*.md` (excluding `specs/_audits/`, `specs/_archive/`, `specs/_compliance/`, `specs/_schemas/`, `specs/_templates/`) | `specs/_audits/2026-05-16-ga-readiness-final.md` §1.2 row "Spec corpus" ✅ GREEN; 262 docs / 197 INVs declared per wave-23 sweep. |
+| 2.1 | **Spec corpus** | `specs/**/*.md` (excluding `specs/_audits/`, `specs/_archive/`, `specs/_compliance/`, `specs/_schemas/`, `specs/_templates/`) | `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §1.2 row "Spec corpus" ✅ GREEN; 262 docs / 197 INVs declared per wave-23 sweep. |
 | 2.2 | **Invariant registry** | `specs/03_architecture/invariant_registry.md` | 197 INVs declared / 143 WI-coverage / 0 orphan; further additions deferred to wave-27+ unless P0 security or P1 GA-blocker. |
 | 2.3 | **ADR set** | `specs/03_architecture/adrs/ADR-*.md` | ADR-0001 … ADR-0034b SEALED; new ADRs only via §3.b (P1 GA-blocker) or §3.a (P0 security) classes with 2-key per §4. |
 | 2.4 | **Public API surface** | `crates/corelink-api/`, `apps/server/src/routes/**`, public Rust re-exports under `crates/*/src/lib.rs` | All routes wired wave-23 → wave-25; tenant-config + CF-prod wired wave-25 (commit `2a4e00c`). |
@@ -79,7 +79,7 @@ Only the following three exception classes may merge to `main` after the effecti
 
 - Issue tagged `priority:P1` + `track:ga-blocker`.
 - 2-key approval per §4 mandatory (Owner + on-call SRE).
-- Must reference `specs/_audits/2026-05-16-ga-readiness-final.md` §13.1 (the pre-condition gate row that flips from `true` to `false`).
+- Must reference `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §13.1 (the pre-condition gate row that flips from `true` to `false`).
 - Commit subject must start with `fix(ga-blocker): ` and body must contain `FREEZE-EXCEPTION: P1-ga-blocker`.
 
 ### §3.c — Cosmetic doc fix
@@ -152,7 +152,7 @@ The freeze terminates ("thaws") when **all** the following are satisfied:
    - cross-references this declaration's §1 anchor commit SHA;
    - asserts the cutover post-mortem is SEALED;
    - asserts the T+7d clean window has elapsed (with the PagerDuty query result attached);
-   - re-classifies the surfaces in §2.1 → §2.9 as **post-GA mutable** (with the wave-27+ framework promotion path already documented in `specs/_audits/2026-05-16-ga-readiness-final.md` §17 firing on the Owner key).
+   - re-classifies the surfaces in §2.1 → §2.9 as **post-GA mutable** (with the wave-27+ framework promotion path already documented in `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §17 firing on the Owner key).
 4. **`scripts/check-ga-freeze-allowed.py` retired or made permissive.** Either the script is deleted from `scripts/` or it gains a `--post-thaw` mode that short-circuits to exit 0; the choice is at the Owner's discretion and is recorded in the thaw declaration.
 
 **Until all four conditions are met, the freeze is ACTIVE.** A partial thaw (e.g. "API surface only") is not provided for in this declaration; if the Owner needs a partial thaw before T+7d (e.g. to ship a wave-27 framework v1.0.0 promotion that touches §2.1 spec corpus), the §3.b P1-ga-blocker exception class applies and the framework promotion is recorded as the rationale.
@@ -163,7 +163,7 @@ The freeze terminates ("thaws") when **all** the following are satisfied:
 
 ## §7. Cross-references
 
-- `specs/_audits/2026-05-16-ga-readiness-final.md` §1.2 (freeze-status row → **ACTIVE**, set this commit).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §1.2 (freeze-status row → **ACTIVE**, set this commit).
 - `specs/_runbooks/RB-GA-CUTOVER.md` §0 (greenlight criteria — operates *within* the freeze) and §1 (cutover freeze window — narrower T-72h window nested inside this freeze).
 - `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` §3 (dual-hat 2-key path).
 - `scripts/check-ga-freeze-allowed.py` (mechanical gate; this audit is the authoritative spec).

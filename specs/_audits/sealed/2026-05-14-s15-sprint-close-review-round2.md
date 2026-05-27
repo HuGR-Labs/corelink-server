@@ -135,7 +135,7 @@ require a single 1M-iter CI run before SEAL.
 ### P1
 
 **P1-NEW-1 — Spec contract `doc_status: DRAFT` despite full changelog
-row for WI-S15-006.** `specs/04_sprints/S15/_spec_contract.md:4`. Round-1
+row for WI-S15-006.** `specs/04_sprints/_sealed/S15/_spec_contract.md:4`. Round-1
 P1-2 flagged the missing changelog; the changelog is now present with a
 row for the WI-S15-006 close, but the frontmatter `doc_status` was not
 promoted in the same commit. One-line fix.

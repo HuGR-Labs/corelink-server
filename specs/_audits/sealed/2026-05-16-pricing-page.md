@@ -25,7 +25,7 @@ the GA rate card lands, without misleading the buyer.
 | `apps/docs/src/pages/pricing/calculator.tsx` | Interactive calculator: 6 usage inputs, 5 per-tier results, break-even headroom, pilot CTA. |
 | `apps/docs/src/pages/pricing.module.css` | CSS module shared by both pages. |
 | `apps/docs/i18n/{en-US,pt-BR,es-419,de}/docusaurus-plugin-content-pages/pricing/README.md` | i18n stubs for 4 locales (canonical glossary + honest pre-GA disclosure per locale). |
-| `specs/_audits/2026-05-16-pricing-page.md` | This audit doc. |
+| `specs/_audits/sealed/2026-05-16-pricing-page.md` | This audit doc. |
 
 ## Tier taxonomy — deviation note
 

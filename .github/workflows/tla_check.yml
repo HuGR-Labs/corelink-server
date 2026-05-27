@@ -116,7 +116,7 @@ jobs:
         run: bash scripts/run_tlc_corelink.sh audit_immutability
 
       - name: TLC verify auth_revocation (R-PREP 2026-05-15; auth-revocation cluster)
-        # Added by `specs/_audits/2026-05-15-tla-coverage-audit.md` closing the
+        # Added by `specs/_audits/sealed/2026-05-15-tla-coverage-audit.md` closing the
         # 3 CRITICAL gaps (INV-AUTH-REVOCATION-IDEMPOTENT, INV-AUTH-REVOCATION-
         # SLO-60S, INV-AUTH-MASS-REVOKE-ATOMIC) + 1 HIGH (INV-AUTH-PROPAGATION-
         # AT-LEAST-ONCE) per invariant_registry.md §3.14 obligation matrix.
@@ -124,7 +124,7 @@ jobs:
 
       - name: TLC verify auth_pat_hybrid (DEBT-014 FT-1)
         # Added by DEBT-014 dispatch 2026-05-15 closing FT-1
-        # (`specs/_audits/tla-followup-tickets.md`): proves the PAT verify
+        # (`specs/_audits/sealed/tla-followup-tickets.md`): proves the PAT verify
         # hybrid path short-circuits BEFORE DB hit on HMAC mismatch.
         # Closes INV-AUTH-PAT-HMAC-SIG-VERIFIED (CRITICAL) +
         # INV-AUTH-PAT-VERIFY-CONSTANT-TIME + INV-AUTH-PAT-HASH-ARGON2ID-2024.
@@ -132,7 +132,7 @@ jobs:
 
       - name: TLC verify auth_pat_revoke (Wave-24 R-PREP — INV-PAT-REVOKE-PROPAGATION)
         # Added by Wave-24 R-PREP dispatch 2026-05-16
-        # (`specs/_audits/2026-05-16-auth-pat-revoke-tla.md`): closes the
+        # (`specs/_audits/sealed/2026-05-16-auth-pat-revoke-tla.md`): closes the
         # Wave-23 INV-DRAFT sweep CRITICAL PLANNED obligation
         # INV-PAT-REVOKE-PROPAGATION (registry §3.28). Proves the verify
         # path short-circuits to 401 on a revoked SoT regardless of region
@@ -182,7 +182,7 @@ jobs:
 
       - name: TLC verify signup_token_idempotent (Wave-30 R-PREP — INV-SIGNUP-TOKEN-IDEMPOTENT)
         # Added by Wave-30 stream-4 R-PREP dispatch 2026-05-16
-        # (`specs/_audits/2026-05-16-inv-signup-token-tla.md`): promotes the
+        # (`specs/_audits/sealed/2026-05-16-inv-signup-token-tla.md`): promotes the
         # wave-29 stream-10 closure §6.2 DRAFT candidate to PROMOTED +
         # TLA-VERIFIED. Proves the pilot signup route (POST /v1/signup/
         # pilot/{token}, wave-29 stream-1 commit b3c359f) exhibits

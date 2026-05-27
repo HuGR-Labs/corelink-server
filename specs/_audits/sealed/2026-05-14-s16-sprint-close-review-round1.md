@@ -24,16 +24,16 @@ The implementation ships a remarkably complete, well-tested admin UI: 244 tests 
 ## 2. P0 (must-fix before SEAL)
 
 1. **WI frontmatter promotion not applied.** All six WIs ship with `doc_status: "DRAFT"`, `work_status: "READY"` — they are not SEALED on disk. The brief asserts they are merged + SEALED; the spec store contradicts that.
-   - `specs/04_sprints/S16/work_items/WI-S16-001-nextjs-skeleton-clerk-csp-i18n-base.md:3-4`
-   - `specs/04_sprints/S16/work_items/WI-S16-002-tenant-onboarding-flow-self-service-first-pat.md:3-4`
-   - `specs/04_sprints/S16/work_items/WI-S16-003-consent-ui-6-field-screenshot-evidence.md:3-4`
-   - `specs/04_sprints/S16/work_items/WI-S16-004-dsr-self-service-form-6-direitos-mfa-jwt-receipt.md:3-4`
-   - `specs/04_sprints/S16/work_items/WI-S16-005-admin-ops-ui-audit-viewer-dual-approval.md:3-4`
-   - `specs/04_sprints/S16/work_items/WI-S16-006-component-library-a11y-wcag-2-2-aa-i18n-privacy-pages.md:3-4`
+   - `specs/04_sprints/_sealed/S16/work_items/WI-S16-001-nextjs-skeleton-clerk-csp-i18n-base.md:3-4`
+   - `specs/04_sprints/_sealed/S16/work_items/WI-S16-002-tenant-onboarding-flow-self-service-first-pat.md:3-4`
+   - `specs/04_sprints/_sealed/S16/work_items/WI-S16-003-consent-ui-6-field-screenshot-evidence.md:3-4`
+   - `specs/04_sprints/_sealed/S16/work_items/WI-S16-004-dsr-self-service-form-6-direitos-mfa-jwt-receipt.md:3-4`
+   - `specs/04_sprints/_sealed/S16/work_items/WI-S16-005-admin-ops-ui-audit-viewer-dual-approval.md:3-4`
+   - `specs/04_sprints/_sealed/S16/work_items/WI-S16-006-component-library-a11y-wcag-2-2-aa-i18n-privacy-pages.md:3-4`
 
 2. **Spec contract still DRAFT and reflects the wrong WI mapping.** The contract was never reconciled with the actual WI re-mapping (Lote 10.16 deferred dashboard/Grafana, repurposed 003 to consent). The WI table in the contract still describes the pre-pivot scope. There is no changelog section in the contract recording the SEAL events for WI-S16-001..006.
-   - `specs/04_sprints/S16/_spec_contract.md:3` — `doc_status: "DRAFT"`
-   - `specs/04_sprints/S16/_spec_contract.md:210-216` — WI table shows old mapping (003 = "Usage dashboard + Grafana proxy + PAT management"; code ships consent UI under that ID)
+   - `specs/04_sprints/_sealed/S16/_spec_contract.md:3` — `doc_status: "DRAFT"`
+   - `specs/04_sprints/_sealed/S16/_spec_contract.md:210-216` — WI table shows old mapping (003 = "Usage dashboard + Grafana proxy + PAT management"; code ships consent UI under that ID)
    - No `## Changelog` / `## Spec Changes` section anywhere in the 313-line file.
 
 3. **Duplicate `next.config.mjs` removes hardened headers + next-intl plugin.** `next.config.mjs` exists alongside `next.config.ts`. The `.mjs` file is a minimal `nextConfig = { reactStrictMode: true }` — it strips the static-CSP `headers()` override and the `withNextIntl` wrapper. Next.js 15 picks `.ts` first so the live build is unaffected today, but a future tooling change (or downstream `next-on-pages`) that reads `.mjs` would silently disable CSP fallback and break i18n routing.

@@ -20,14 +20,14 @@ tags: ["audit", "secrets", "r-prep", "wave-21", "small-closure", "validator-tigh
 > **Reviewer:** Gustavo Schneiter
 > **Files touched:** `scripts/secrets-checklist-verify.sh`
 > **Base commit:** `30e5f66` (main, post-wave-20 merge)
-> **Cross-ref:** `specs/_audits/2026-05-16-secrets-matrix-tighten.md` (wave-20 sibling — Python validator tighten)
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-secrets-matrix-tighten.md` (wave-20 sibling — Python validator tighten)
 > **Disposition:** Tightens the env-var name regex in the bash deploy-gate from `[A-Z][A-Z0-9_]*` (≥1 char) to `[A-Z][A-Z0-9_]+` (≥2 chars) to eliminate the single-letter `X` false-positive injected by the `${{ secrets.X }}` documentation placeholder in `.github/workflows/_TEMPLATE.yml.md`. Adds a `--self-test` mode that exercises the new shape against canonical accept/reject fixtures. No production code touched.
 
 ---
 
 ## 1. Context
 
-Wave-20's secrets-matrix-tighten audit (`specs/_audits/2026-05-16-secrets-matrix-tighten.md`, commit `c590a67`) flagged a pre-existing inconsistency between the two parallel secret validators:
+Wave-20's secrets-matrix-tighten audit (`specs/_audits/sealed/2026-05-16-secrets-matrix-tighten.md`, commit `c590a67`) flagged a pre-existing inconsistency between the two parallel secret validators:
 
 - **`scripts/validate_secrets_matrix.py`** — the daily-cron Python validator. Uses AST/string-literal extraction; never flags `X`.
 - **`scripts/secrets-checklist-verify.sh`** — the GitHub Actions deploy-gate bash validator wired into `.github/workflows/cf-deploy-prod.yml`. Uses `grep -oE` over five patterns; was flagging `X` as a `code_only` drift.
@@ -172,6 +172,6 @@ Before: `103 unique non-allowlisted env vars`. After: `102`. Delta: `-1`, exactl
 ## 6. Files changed
 
 - `scripts/secrets-checklist-verify.sh` — tightened env-var name regex from `[A-Z][A-Z0-9_]*` → `[A-Z][A-Z0-9_]+` across all five extractor patterns; added `--self-test` mode (~50 lines, hermetic); added top-of-file doc comment documenting the canonical shape and pointing here.
-- `specs/_audits/2026-05-16-secrets-x-false-positive-fix.md` — this audit.
+- `specs/_audits/sealed/2026-05-16-secrets-x-false-positive-fix.md` — this audit.
 
 No production code touched. No spec touched. No runbook touched. Closure is deploy-gate-validator-only.

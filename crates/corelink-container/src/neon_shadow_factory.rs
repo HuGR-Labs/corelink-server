@@ -20,8 +20,8 @@
 //!
 //! ## Audit-doc reference
 //!
-//! `specs/_audits/2026-05-16-shadow-sink-full-adoption.md` (this wave;
-//! wave-29 closure) and `specs/_audits/2026-05-16-shadow-sink-consumer-adoption.md`
+//! `specs/_audits/sealed/2026-05-16-shadow-sink-full-adoption.md` (this wave;
+//! wave-29 closure) and `specs/_audits/sealed/2026-05-16-shadow-sink-consumer-adoption.md`
 //! §9 caveat #2 → CLOSED-WAVE-29.
 //!
 //! ## Charter

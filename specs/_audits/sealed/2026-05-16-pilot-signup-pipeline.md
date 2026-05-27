@@ -5,7 +5,7 @@
 > **Author:** wave-27 R-prep pilot-signup-pipeline agent (Claude Opus 4.7) — branch `wt/r-prep-pilot-signup-pipeline`.
 > **Base:** `main` @ `a48bbec`.
 > **Scope:** land the engineering-side artefacts (admin tooling + dashboard placeholder + DEBT register row) that make the GA-blocking "pilot signups ≥ 3" gate executable. The actual signups remain Owner-bound (announcement + outreach + closing); engineering's job is to remove every operator-side blocker on the path from "tenant clicks signup link" to "pilot ACTIVE with first blob committed inside 24h".
-> **Cross-ref:** `specs/_audits/2026-05-16-pilot-onboarding-e2e.md` (wave-23 17-test journey + 5 binaries), `docs/internal/customer-success-playbook.md` (wave-23 CS playbook), `docs/internal/pilot-comms-templates.md` (wave-23 canned-email pack), `docs/internal/pilot-dashboard-checklist.md` (wave-23 10-metric tile spec), `specs/_audits/2026-05-15-debt-register.md` (DEBT-027 row added below).
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-pilot-onboarding-e2e.md` (wave-23 17-test journey + 5 binaries), `docs/internal/customer-success-playbook.md` (wave-23 CS playbook), `docs/internal/pilot-comms-templates.md` (wave-23 canned-email pack), `docs/internal/pilot-dashboard-checklist.md` (wave-23 10-metric tile spec), `specs/_audits/sealed/2026-05-15-debt-register.md` (DEBT-027 row added below).
 
 ---
 
@@ -148,7 +148,7 @@ The dashboard depends on the `corelink_pilot_*` Prometheus metric family being w
 
 ## 5. Wave-23 audit cross-reference
 
-`specs/_audits/2026-05-16-pilot-onboarding-e2e.md` documents the 17-test journey across signup → first CAS → audit export → DSR → offboarding (5 stages, 5 test binaries). Wave-27 extends that contract with the **operator-side** tooling that surrounds it — the wave-23 audit is *journey-shape*, wave-27 is *operator-action-shape*. Both close together to make GA cutover's "pilot signups ≥ 3" gate executable.
+`specs/_audits/sealed/2026-05-16-pilot-onboarding-e2e.md` documents the 17-test journey across signup → first CAS → audit export → DSR → offboarding (5 stages, 5 test binaries). Wave-27 extends that contract with the **operator-side** tooling that surrounds it — the wave-23 audit is *journey-shape*, wave-27 is *operator-action-shape*. Both close together to make GA cutover's "pilot signups ≥ 3" gate executable.
 
 Section §pilot-signup-pipeline-wave-27-prep references this audit from wave-23's open-questions tail (§7).
 
@@ -156,7 +156,7 @@ Section §pilot-signup-pipeline-wave-27-prep references this audit from wave-23'
 
 ## 6. DEBT register
 
-A new row `DEBT-027 Pilot signups (≥3 to GA)` is added to `specs/_audits/2026-05-15-debt-register.md`. The row encodes:
+A new row `DEBT-027 Pilot signups (≥3 to GA)` is added to `specs/_audits/sealed/2026-05-15-debt-register.md`. The row encodes:
 
 - engineering-side artefacts COMPLETE this wave (the 3 admin scripts + dashboard placeholder + this audit),
 - the actual signup count is Owner-bound (announcement + outreach + closing),

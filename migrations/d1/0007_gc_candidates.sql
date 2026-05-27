@@ -2,8 +2,8 @@
 -- (S-06 Garbage Collection: mark phase output table; WI-S06-002 §1).
 --
 -- Canonical sources:
---   - specs/04_sprints/S06/work_items/WI-S06-002-mark-phase-multi-pass-scan-mark-started-at.md §1 + §6
---   - specs/04_sprints/S06/_spec_contract.md §5.2 (R-S06-4..5)
+--   - specs/04_sprints/_sealed/S06/work_items/WI-S06-002-mark-phase-multi-pass-scan-mark-started-at.md §1 + §6
+--   - specs/04_sprints/_sealed/S06/_spec_contract.md §5.2 (R-S06-4..5)
 --   - specs/03_architecture/invariant_registry.md INV-GC-MARK-STARTED-AT-IMMUTABLE +
 --     INV-GC-001 + INV-GC-004 + INV-TENANT-ISOLATION
 --   - specs/03_architecture/adrs/ADR-0036-d1-schema-migration-governance.md

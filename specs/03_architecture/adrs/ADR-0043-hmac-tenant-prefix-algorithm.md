@@ -15,7 +15,7 @@ superseded_by: null
 deciders: ["Gustavo Schneiter (Owner)", "Security Reviewer (TBD per WI-S01-001 §30)"]
 status_history: [{"date": "2026-04-29", "status": "FROZEN", "by": "Gustavo Schneiter (S-01 implementation phase, tenant-path crate)"}]
 context_links:
-  - "specs/04_sprints/S01/work_items/WI-S01-001-tenant-path-hmac.md"
+  - "specs/04_sprints/_sealed/S01/work_items/WI-S01-001-tenant-path-hmac.md"
   - "specs/03_architecture/remote_cache_product_profile.md"
   - "specs/03_architecture/storage_semantics_matrix.md"
   - "specs/03_architecture/auth_model.md"

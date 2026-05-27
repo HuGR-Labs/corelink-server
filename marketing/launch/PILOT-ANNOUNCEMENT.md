@@ -1,6 +1,6 @@
 # CoreLink Pilot Announcement — Executive Summary (PILOT-COMMS-001)
 
-> **Status:** READY FOR OWNER PUBLICATION. Pilot program is **pre-GA**; CoreLink reaches General Availability per the engineering gate in `specs/_audits/2026-05-16-ga-1-feature-freeze.md` + `specs/_compliance/GA-GATE-CRITERIA.md`. All claims below are verified against the spec corpus or labelled as pre-GA pilot scope.
+> **Status:** READY FOR OWNER PUBLICATION. Pilot program is **pre-GA**; CoreLink reaches General Availability per the engineering gate in `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md` + `specs/_compliance/GA-GATE-CRITERIA.md`. All claims below are verified against the spec corpus or labelled as pre-GA pilot scope.
 > **Trace:** wave-28 step-7 pilot-comms-package · DEBT-027 (pilot-signup pipeline; ≥3 ACTIVE pilots required to GA) · wave-23 customer-success-playbook · wave-27 signup pipeline + admin scripts.
 > **Freeze posture:** §3.b P1-GA-blocker prep (DEBT-027 ≥3 ACTIVE pilots) + §3.d cosmetic-doc; no engineering surface modified.
 

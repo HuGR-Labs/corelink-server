@@ -30,7 +30,7 @@ contraparte de evidência do runbook
 | `scripts/run_24h_endurance.sh`                                      | runner Bash     | orchestra smoke / nightly / full runs com preflight + artefato layout |
 | `scripts/analyze_endurance_run.py`                                  | analyser Python | emite veredito G1–G6 → `GREENLIGHT` / `MANUAL-REVIEW` / `BLOCK` |
 | `specs/_runbooks/RB-24H-ENDURANCE-LOAD.md`                          | runbook         | how-to-run / how-to-interpret / regression playbook          |
-| `specs/_audits/2026-05-16-24h-endurance-harness.md`                 | audit           | este doc — captura das decisões de design                    |
+| `specs/_audits/sealed/2026-05-16-24h-endurance-harness.md`                 | audit           | este doc — captura das decisões de design                    |
 
 ## Decisões de design
 

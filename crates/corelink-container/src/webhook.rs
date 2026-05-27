@@ -5,7 +5,7 @@
 //! 10-event taxonomy dispatch → audit emit → SLI emit) is owned by
 //! [`corelink_stripe_real::webhook_dispatch::WebhookDispatcher`], the
 //! canonical pipeline shipped in wave 15 (commit `654cbbb`,
-//! `specs/_audits/2026-05-15-stripe-webhook-production.md`).
+//! `specs/_audits/sealed/2026-05-15-stripe-webhook-production.md`).
 //!
 //! # Responsibilities of this file
 //!

@@ -163,7 +163,7 @@ DR drill execution WI + production-binding integration test WI; STANDARD lane.
    - New `--full-dr16` flag chains: heartbeat-staleness chaos inject → coordinator promote → request-path flip → verify → wait-24h-stub → coordinator failback → request-path failback → verify.
    - Existing 3-mode (`--simulate` / `--staging` / `--prod`) preserved; `--prod` still requires `CONFIRM=I_UNDERSTAND_ACTIVE_FAILOVER_PROD` env.
 
-2. **Quarterly cadence calendar** documented in `specs/04_sprints/S17/dr_drill_cadence.md` (semestral generic) + cross-ref'd to `BCP-DR-DRILL-CADENCE.md §DR-16` (weekly `--simulate` CI + monthly `--staging` + quarterly real-scenario stretch).
+2. **Quarterly cadence calendar** documented in `specs/04_sprints/_sealed/S17/dr_drill_cadence.md` (semestral generic) + cross-ref'd to `BCP-DR-DRILL-CADENCE.md §DR-16` (weekly `--simulate` CI + monthly `--staging` + quarterly real-scenario stretch).
 
 3. **Quarterly drill execution** in staging (≥ 1 promote + failback round per quarter):
    - Phase 1: coordinator-layer flip per `RB-REPLICA-FAILOVER.md`.
@@ -335,7 +335,7 @@ Feature: DR-16 active-failover drill rehearsal (quarterly cadence)
 | Quarterly drill script | `infra/dr_drills/dr16_active_failover_quarterly.ts` | TypeScript |
 | Quarterly drill report (first execution before GA) | `specs/_compliance/drill-evidence/2026-Q3-dr16-active-failover-staging.md` | Markdown |
 | E2E scenario 7 | `tests/e2e-replication-failover/scenarios/scenario_7_quarterly_drill_dry_run.rs` | Rust |
-| Cadence calendar update | `specs/04_sprints/S17/dr_drill_cadence.md` (DR-16 quarterly row added) | Markdown |
+| Cadence calendar update | `specs/04_sprints/_sealed/S17/dr_drill_cadence.md` (DR-16 quarterly row added) | Markdown |
 | Drill archive | R2 `evidence-dr-drills/dr16/2026-Q3.json` (7y retention) | JSON |
 
 ## 14. Quality Standards

@@ -13,8 +13,8 @@
 > **owner:** Gustavo Schneiter (Security + Release Lead)
 > **tags:** wave-32, phase-f, cf-pages, next-on-pages, edge-runtime, admin-ui
 > **references:**
->   - `specs/_audits/2026-05-26-w32-phaseF-apply.md` (prior PARTIAL; this doc closes the admin-ui blocker)
->   - `specs/_audits/2026-05-22-wave32-prod-deploy-spec.md` §3 Phase F
+>   - `specs/_audits/sealed/2026-05-26-w32-phaseF-apply.md` (prior PARTIAL; this doc closes the admin-ui blocker)
+>   - `specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md` §3 Phase F
 
 ---
 

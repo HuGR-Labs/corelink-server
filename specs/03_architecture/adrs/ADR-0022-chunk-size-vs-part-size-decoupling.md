@@ -17,10 +17,10 @@ status_history:
   - {date: "2026-04-25", status: "DRAFT", by: "Gustavo Schneiter (forward-looking ADR cited from WI-S05-002 + spec contract S-05)"}
   - {date: "2026-05-01", status: "FROZEN", by: "Gustavo Schneiter (via Claude Opus 4.7) — ratified at WI-S05-002 SEAL; corelink-chunker bounds + mask seeds pinned in code"}
 context_links:
-  - "specs/04_sprints/S05/work_items/WI-S05-002-corelink-chunker-fastcdc-adr-0022.md"
-  - "specs/04_sprints/S05/work_items/WI-S05-001-reapi-splitblob-spliceblob-handlers.md"
-  - "specs/04_sprints/S05/work_items/WI-S05-005-merkle-manifest-builder-verifier.md"
-  - "specs/04_sprints/S05/_spec_contract.md"
+  - "specs/04_sprints/_sealed/S05/work_items/WI-S05-002-corelink-chunker-fastcdc-adr-0022.md"
+  - "specs/04_sprints/_sealed/S05/work_items/WI-S05-001-reapi-splitblob-spliceblob-handlers.md"
+  - "specs/04_sprints/_sealed/S05/work_items/WI-S05-005-merkle-manifest-builder-verifier.md"
+  - "specs/04_sprints/_sealed/S05/_spec_contract.md"
   - "crates/corelink-chunker/spec/chunker_protocol.md"
 tags: ["adr", "s05", "chunker", "multipart", "fastcdc", "r2", "cripto-load-bearing"]
 ---

@@ -40,13 +40,13 @@ Pace acordado: ~5-6 WIs por sessão. Não é corrida — é "esculpindo an engin
 ## Codex backgrounds em curso
 
 ### codex r4-S01 (Lote 10.1 review) — DONE com problema
-- **Status**: terminou (exit 0) mas **NÃO escreveu o arquivo final** `specs/_audits/2026-04-25-codex-r4-s01-wi-review.md`
+- **Status**: terminou (exit 0) mas **NÃO escreveu o arquivo final** `specs/_audits/sealed/2026-04-25-codex-r4-s01-wi-review.md`
 - **Log**: `/tmp/codex-r4-s01/gpt.log` (4846 linhas — codex leu specs mas não fechou o relatório)
 - **Action item após retomar**: re-disparar com prompt mais enxuto, ou ler log e extrair findings manualmente
 - **Prompt original**: `/tmp/codex-r4-s01/prompt.md`
 
 ### codex r4-S02 (Lote 10.2 review) — DONE com mesmo problema
-- **Status**: terminou (exit 0) mas **NÃO escreveu o arquivo final** `specs/_audits/2026-04-25-codex-r4-s02-wi-review.md`
+- **Status**: terminou (exit 0) mas **NÃO escreveu o arquivo final** `specs/_audits/sealed/2026-04-25-codex-r4-s02-wi-review.md`
 - **Log**: `/tmp/codex-r4-s02/gpt.log` (697 linhas — leu specs mas não fechou síntese)
 - **Action item após retomar**: igual S-01 — re-disparar com prompt mais enxuto OU mudar pra `claude-code-guide`/agente diferente OU extrair manualmente do log
 

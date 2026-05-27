@@ -6,7 +6,7 @@
 > **Base:** `main` @ `30e5f66` (wave-20 tip: "merge wt/r-prep-wave18-codex-p2-p3-closure into main (wave-20)").
 > **Scope:** Independent SOTA bar review of the 10 wave-20 streams merged into main across `2eec064..30e5f66` (11 inbound commits + L7 reconciliation pass).
 > **Charter:** review-only — no source code changes (this audit doc is the sole deliverable).
-> **Cross-ref:** `specs/_audits/2026-05-16-wave20-closure.md` (hygiene roll-up); `specs/_audits/2026-05-16-wave19-adversarial-review.md` (prior pass — 8.78 PASS); `specs/_audits/2026-05-16-stripe-wasm32-gate-lift.md`; `specs/_audits/2026-05-16-neon-shadow-real-driver.md`; `specs/_audits/2026-05-16-neon-shadow-pg-testharness.md`.
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-wave20-closure.md` (hygiene roll-up); `specs/_audits/sealed/2026-05-16-wave19-adversarial-review.md` (prior pass — 8.78 PASS); `specs/_audits/sealed/2026-05-16-stripe-wasm32-gate-lift.md`; `specs/_audits/sealed/2026-05-16-neon-shadow-real-driver.md`; `specs/_audits/sealed/2026-05-16-neon-shadow-pg-testharness.md`.
 
 ---
 

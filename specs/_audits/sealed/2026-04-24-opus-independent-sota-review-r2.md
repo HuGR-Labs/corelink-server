@@ -63,8 +63,8 @@ Auditoria independente do codex/GPT (não li o output do Round 2 do codex). Foco
 ### C-03: S-04 CAP-AC-004 (TTL 90d default) vs S-07 CAP-EVICT-002 (TTL per-tier free=7d/solo=30d/team=90d/business=365d) — semântica TTL contraditória
 - **Sprint(s)**: S-04 vs S-07.
 - **File:line**:
-  - `specs/04_sprints/S04/_spec_contract.md:59,68,79` define `AC TTL default 90d; refresh on hit` + R-S04-5 TTL worker expira `> expires_at`.
-  - `specs/04_sprints/S07/_spec_contract.md:64` redefine `TTL-based AC entry expiry per-tier (free=7d, solo=30d, team=90d, business=365d, enterprise=customer-configurable)`.
+  - `specs/04_sprints/_sealed/S04/_spec_contract.md:59,68,79` define `AC TTL default 90d; refresh on hit` + R-S04-5 TTL worker expira `> expires_at`.
+  - `specs/04_sprints/_sealed/S07/_spec_contract.md:64` redefine `TTL-based AC entry expiry per-tier (free=7d, solo=30d, team=90d, business=365d, enterprise=customer-configurable)`.
 - **Descrição**: codex Round 1 flaggou ownership clash mas focou em quem owna. Mais grave: as semânticas TTL **diferem materialmente** — free tier passa de 90d → 7d (12.8× redução). Customer free criado em S-04 staging vai perder AC entries que o spec original prometeu durar 90d. Não há migration plan; não há ADR; não há override declaration. Cliente em GA pode entrar em estado inconsistente (cobrança baseada em S-07 mas SDK/docs S-04 prometem 90d).
 - **Impacto**: customer trust + compliance (SLA published em S-18 R-S18-9 promete tier semantics). Sem reconciliação, S-07 ship efetivamente quebra contract de S-04.
 - **Sugestão**: ADR formal "S-07 supersedes S-04 CAP-AC-004 TTL semantics; default tier semantics published in pricing page S-18". Atualizar S-04 com `local_deltas: ["TTL semantics overridden by S-07 CAP-EVICT-002"]`. Bump major se S-04 já SEALED.
@@ -72,11 +72,11 @@ Auditoria independente do codex/GPT (não li o output do Round 2 do codex). Foco
 ### C-04: S-20 GA gate exige `30d sustained staging` + `pentest 2w + retest 1w` + `lighthouse 30d observation` mas duração total = 4 semanas com buffer 10d (factor crunch impossível)
 - **Sprint(s)**: S-20.
 - **File:line**:
-  - `specs/04_sprints/S20/_spec_contract.md:108-110` "30d sustained staging…concurrent ao S-17 chaos automation".
-  - `specs/04_sprints/S20/_spec_contract.md:99-100` "lighthouse migration plan + 30d observation".
-  - `specs/04_sprints/S20/_spec_contract.md:90-91` "pentest 2 semanas + retest 1 semana".
-  - `specs/04_sprints/S20/_spec_contract.md:218` PERT total `~213h ≈ 27 dias work`.
-  - `specs/04_sprints/S20/_spec_contract.md:232` "Duração: 4 semanas (20 dias úteis) + buffer 10 dias".
+  - `specs/04_sprints/_sealed/S20/_spec_contract.md:108-110` "30d sustained staging…concurrent ao S-17 chaos automation".
+  - `specs/04_sprints/_sealed/S20/_spec_contract.md:99-100` "lighthouse migration plan + 30d observation".
+  - `specs/04_sprints/_sealed/S20/_spec_contract.md:90-91` "pentest 2 semanas + retest 1 semana".
+  - `specs/04_sprints/_sealed/S20/_spec_contract.md:218` PERT total `~213h ≈ 27 dias work`.
+  - `specs/04_sprints/_sealed/S20/_spec_contract.md:232` "Duração: 4 semanas (20 dias úteis) + buffer 10 dias".
 - **Descrição**: aritmética: pentest scheduling (engagement firm, NDA, scope = 1-2 semanas pre-start) + 2w teste + 1w retest = **5 semanas mínimo só pentest**. 30d staging = 30d. 30d lighthouse observation = 30d. Mesmo totalmente paralelos, são **30 dias** de wall-clock observation period. Sprint declarado 30 dias (4w + 10d buffer = 30d). Resultado: zero margem, e **engineering sprint work** (213h PERT) compete pelo mesmo wall-clock — então engineer está fazendo PRR sign-offs + lighthouse migration + 30d obs supervision em **paralelo** com 213h de novo trabalho. Realmente impossível 1 engineer.
 - **Mitigação textual** ("concurrent ao S-17 chaos automation 4w") só funciona se S-17 já termina na D-30 antes do S-20 começar; S-17 timeline (S17:222 sustained chaos extends post-S-17 sprint into S-18..S-20) já consome esse parallel. Logo não há benefit de concurrency real.
 - **Impacto**: S-20 vai slipar 4-8 semanas com alta probabilidade. Pior: pressure para "dispensar" 30d obs sustained pode quebrar invariant-de-confiança que o framework inteiro aspira proteger.
@@ -85,8 +85,8 @@ Auditoria independente do codex/GPT (não li o output do Round 2 do codex). Foco
 ### C-05: S-12 DoD aceita `bit-identical OU documented sources com ADR` — DoD não-binário viola meta-contract §6.3
 - **Sprint(s)**: S-12.
 - **File:line**:
-  - `specs/04_sprints/S12/_spec_contract.md:142,153` "Reproducible build: 2 runners produzem binário com diff ≤ 5% bytes (release builds); fontes de non-determinism documentadas".
-  - `specs/04_sprints/S12/_spec_contract.md:159` `10.s12.4 Reproducible build 2-runner diff: 100% bit-identical OU documented sources com ADR`.
+  - `specs/04_sprints/_sealed/S12/_spec_contract.md:142,153` "Reproducible build: 2 runners produzem binário com diff ≤ 5% bytes (release builds); fontes de non-determinism documentadas".
+  - `specs/04_sprints/_sealed/S12/_spec_contract.md:159` `10.s12.4 Reproducible build 2-runner diff: 100% bit-identical OU documented sources com ADR`.
   - `specs/04_sprints/_sprint_creation_contract.md:177` "DoD §7 é checklist binário (`[ ]`) — nenhuma cláusula 'best effort'".
 - **Descrição**: o item DoD aceita explicitamente "OR documented sources" — o que qualquer engenheiro razoável vai escolher (documentação > 100% bit-identical em Rust+LLVM real). Mais que um wording bug, é o pattern AP-019 do meta-contract ("rigor superficial em scope creep"). Codex Round 1 catched isso só pra S-12 §10.s12.4 mas não para o §6 DoD line 142 que tem mesmo problema com `≤ 5% bytes` (o `≤ 5%` é justamente um soft-target).
 - **Impacto**: SLSA L3 attestation está OK, mas reproducible build claim no `/security` (S-18) será misleading; auditor exigente bate. Pior: senta precedente para outros sprints copiarem `OU` em DoD.
@@ -107,9 +107,9 @@ Auditoria independente do codex/GPT (não li o output do Round 2 do codex). Foco
 ### H-02: S-09 cardinality budget (20k/métrica) vs S-19 funnel (105 series) é coerente, mas S-08 + S-09 + S-14 explodem em interação
 - **Sprint(s)**: S-08, S-09, S-14, S-19.
 - **File:line**:
-  - `specs/04_sprints/S09/_spec_contract.md:91` "20k séries por métrica em produção, 100k global".
+  - `specs/04_sprints/_sealed/S09/_spec_contract.md:91` "20k séries por métrica em produção, 100k global".
   - `specs/04_sprints/S08/_spec_contract.md:87-88` métricas com label `tenant_tier` × `region` × `result` × `reason` (4-D cartesian).
-  - `specs/04_sprints/S09/_spec_contract.md:88` métricas billing usam `region` × `tenant_tier` × `type`.
+  - `specs/04_sprints/_sealed/S09/_spec_contract.md:88` métricas billing usam `region` × `tenant_tier` × `type`.
   - `specs/04_sprints/S14/_spec_contract.md:88` "Hot blob replica detector usa métrica `corelink.cas.get.bytes_total{tenant_id}`".
 - **Descrição**: `tenant_id` em label é red-flag explícito (`14.s09.4 Tracing cardinality from trace_id labels`). S-14 R-S14-3 propõe `corelink.cas.get.bytes_total{tenant_id}` para hot-blob detection — em GA com 1k tenants × 4 regiões × dimensões existentes do S-09, **passa de 100k global em 1 dimensão**. Cardinality budget validator do S-09 (`R-S09-2`) provavelmente vai bloquear PR mas nenhum spec declara o conflito. Codex flaggou cardinality budget mas não detectou que S-14 introduz tenant_id-em-label.
 - **Impacto**: S-14 worker `hot blob detector` vai falhar em CI cardinality validator. Workaround silencioso (e.g., agregar offline) reduz fidelity de detecção. Não há plano.
@@ -129,9 +129,9 @@ Auditoria independente do codex/GPT (não li o output do Round 2 do codex). Foco
 ### H-04: S-09 (4 weeks chaos) + S-17 (4 weeks chaos) + S-20 (30d staging) = 90+ dias de gating cumulativos não-articulados
 - **Sprint(s)**: S-09, S-17, S-20.
 - **File:line**:
-  - `specs/04_sprints/S09/_spec_contract.md:137` "Synthetic canary 24/7 sustentado 72h".
-  - `specs/04_sprints/S17/_spec_contract.md:133,210,222` "4 weeks chaos tests …concurrent post-sprint observation".
-  - `specs/04_sprints/S20/_spec_contract.md:128` "30d sustained staging".
+  - `specs/04_sprints/_sealed/S09/_spec_contract.md:137` "Synthetic canary 24/7 sustentado 72h".
+  - `specs/04_sprints/_sealed/S17/_spec_contract.md:133,210,222` "4 weeks chaos tests …concurrent post-sprint observation".
+  - `specs/04_sprints/_sealed/S20/_spec_contract.md:128` "30d sustained staging".
 - **Descrição**: cada sprint declara observation period concurrent com sprints subsequentes. Mas timeline real depende de S-X actually running para concurrent observation count. Se S-17 começa T0 (chaos D+1), 4 semanas de chaos terminam em T+28d. S-20 começa após S-19 SEALED — vamos supor T+50d. Então no D+50 a 4-week chaos já terminou; só restam 0 dias dos "4 weeks chaos" reaproveitáveis. S-20 30d obs começa do zero. Cumulativo: ~58 dias adicionais pós-S-19 SEALED. Mas roadmap (S-00 R-S00-1) pretende 12 meses total — não há 58 dias livres.
 - **Impacto**: roadmap mainline ou desliza GA, ou viola DoD declarado, ou faz "observation paralela com on-going dev work" que não é real (não há reset de baseline em rolling staging).
 - **Sugestão**: declarar explicit em S-20 §13 "observation period D-30 to D+0 = D requires S-17 chaos + S-19 SEALED concurrent — gate deslocado **não compute** observation cumulativo de pre-D-30". E criar `specs/04_sprints/timing-gates-cumulative.md` calendarizando observation gates.
@@ -141,7 +141,7 @@ Auditoria independente do codex/GPT (não li o output do Round 2 do codex). Foco
 - **File:line**:
   - `specs/04_sprints/S11/_spec_contract.md:103-105` schema consent_ledger captura granted=true; revoke não captura mesma estrutura.
   - `specs/04_sprints/S11/_spec_contract.md:84` "DSR consent_revoke" só "revoga consents granted; cascade unsubscribe".
-  - `specs/04_sprints/S19/_spec_contract.md:65-66` DPA acceptance segue mesmo padrão; revoke (DPA re-acceptance fail) silently degrade read-only sem proof event.
+  - `specs/04_sprints/_sealed/S19/_spec_contract.md:65-66` DPA acceptance segue mesmo padrão; revoke (DPA re-acceptance fail) silently degrade read-only sem proof event.
 - **Descrição**: GDPR Art. 7 requer "withdrawal as easy as giving consent". Sem schema simétrico (revoke proof = ts + wording_id + signed receipt), customer não pode provar quando revogou. Enforcement asymmetry: granting é cryptographically attested, revoking é apenas DELETE + cascade — não defensível em court se data continued processed por bug.
 - **Impacto**: regulatory finding em ANPD/DPC inspection. Pior: contradição inter-spec — S-19 INV-CONSENT-PROOF-VERIFIABLE inherits a S-11 (`S-19:159`) que fornece proof apenas para grant, não revoke.
 - **Sugestão**: S-11 R-S11-8 adicionar `consent_revocation` table com mesma 6-field structure; INV-CONSENT-REVOCATION-PROOF-VERIFIABLE (HIGH) novo. Cadastro no registry §3.12.
@@ -159,8 +159,8 @@ Auditoria independente do codex/GPT (não li o output do Round 2 do codex). Foco
 ### H-07: S-15 ADR-0016 escolhe "FFI wrappers" (Rust truth) mas não trata performance overhead Python (pyO3 GIL) e bundle size JS (WASM ≥ 1MB risk em §15) — escolha pode regredir UX
 - **Sprint(s)**: S-15.
 - **File:line**:
-  - `specs/04_sprints/S15/_spec_contract.md:111` "rejected porque duplica client-verify logic" — único rationale.
-  - `specs/04_sprints/S15/_spec_contract.md:239` Risco "JS WASM bundle size > 1MB | M | L | LOW".
+  - `specs/04_sprints/_sealed/S15/_spec_contract.md:111` "rejected porque duplica client-verify logic" — único rationale.
+  - `specs/04_sprints/_sealed/S15/_spec_contract.md:239` Risco "JS WASM bundle size > 1MB | M | L | LOW".
   - `specs/03_architecture/adrs/ADR-0016-ffi-wrappers-vs-native-http.md` (66 lines, stub).
 - **Descrição**: o trade-off real entre FFI vs native HTTP-thin é maturo em ML community: pyO3 + GIL release pattern é OK pra I/O bound mas custo de import (`corelink-py` package size) e cold-start (Python interpreter loading native lib) são significativos pra serverless workloads. ADR-0016 stub não cobre. JS WASM ≥ 1MB é pior — bundle size em Bazel/Buck2 CI é constraint.
 - **Impacto**: time-to-first-cache-hit ≤ 5 min (R-S15-2) talvez não atinja em JS/TS/Python; competitive disadvantage vs NativeLink CLI (Linux-only mas binary é < 30MB).
@@ -184,8 +184,8 @@ Auditoria independente do codex/GPT (não li o output do Round 2 do codex). Foco
 - **Sprint(s)**: S-11, S-09, S-10.
 - **File:line**:
   - `specs/04_sprints/S11/_spec_contract.md:90-97` 7 backends (D1 / Neon / R2 / KV / DO / Loki / Stripe). 
-  - `specs/04_sprints/S09/_spec_contract.md:69` audit R2 com Object Lock Governance Mode 7y.
-  - `specs/04_sprints/S09/_spec_contract.md:99` log lifecycle "cold 400d (R2 Glacier-equivalent)".
+  - `specs/04_sprints/_sealed/S09/_spec_contract.md:69` audit R2 com Object Lock Governance Mode 7y.
+  - `specs/04_sprints/_sealed/S09/_spec_contract.md:99` log lifecycle "cold 400d (R2 Glacier-equivalent)".
   - `specs/04_sprints/S10/_spec_contract.md:64,103` billing-events R2 Object Lock 7y.
 - **Descrição**: GDPR Art. 17 vs Object Lock = conflito famoso. Spec S-11 R-S11-4 enumera Loki (warm 90d) — mas log retention é 400d cold (S-09 R-S09-5). Audit R2 Object Lock 7y NÃO PODE ser deleted by erasure (legal hold). Solução é pseudonymization (S-10 §14.s10.4 mencion). Mas S-11 §6 DoD diz "0 records cross-backend"; não declara pseudonymization escape valve. Audit log + billing log retention = 7y immutable PII. Customer DSR erasure = 30d "erasure complete" claim.
 - **Impacto**: claim "erasure complete em 30d" é falso para audit trail; customer/auditor pegam. Regulatory exposure se promete e não cumpre.
@@ -202,31 +202,31 @@ Auditoria independente do codex/GPT (não li o output do Round 2 do codex). Foco
 `specs/04_sprints/S02/_spec_contract.md:131-138`. Já capturado por codex como pattern global; reforço explícito S-02 não foi remediado em Lote 9.1.
 
 ### M-03: S-15 doctor diagnostic 8 checks (`R-S15-5`) lista 6 não 8 (network/auth/storage/BYOK/region/quota = 6); inconsistência interna
-`specs/04_sprints/S15/_spec_contract.md:86-92` enumera 6 checks; `S15:81-83` diz "8 checks" e DoD em `:134` diz "8/8 checks pass". Falta 2.
+`specs/04_sprints/_sealed/S15/_spec_contract.md:86-92` enumera 6 checks; `S15:81-83` diz "8 checks" e DoD em `:134` diz "8/8 checks pass". Falta 2.
 
 ### M-04: S-13 secret rotation lista 4 asset types mas S-09 audit chain key (`R-S09-10`) = "per-region" implica multi-key (e.g., 4 regions × audit = 4 keys); rotation schedule é "overlap 24h global" ou "per-region staggered"?
 `specs/04_sprints/S13/_spec_contract.md:91`. Per-region staggered é menos disruptive; non-staggered = 24h all-region simultaneous = blast risk. Spec ambíguo.
 
 ### M-05: S-07 R-S07-3 `last_accessed_at update on every GET` em hot path — escala para 10k QPS é problem (D1 row write storm)
-`specs/04_sprints/S07/_spec_contract.md:72`. Spec mitiga com "atomic D1 UPDATE ou DO singleton batch" mas não declara batch window. Codex SOTA enrichment "open-loop wrk2/k6" sugere; reforço — explicit batch SLO em DoD.
+`specs/04_sprints/_sealed/S07/_spec_contract.md:72`. Spec mitiga com "atomic D1 UPDATE ou DO singleton batch" mas não declara batch window. Codex SOTA enrichment "open-loop wrk2/k6" sugere; reforço — explicit batch SLO em DoD.
 
 ### M-06: S-09 PII redaction `redact!` macro tipo-driven em Rust — ótimo para Rust workers, mas Logpush (R-S09-5) emite raw worker logs que NÃO passam por `redact!` se logado via println/eprintln
-`specs/04_sprints/S09/_spec_contract.md:99-103`. Risk R-S09-Risk-002 captura "PII leak em log" mas não distingue redact! macro path vs raw stderr path. CSP-style "no-stderr-in-prod" enforcement não declarado.
+`specs/04_sprints/_sealed/S09/_spec_contract.md:99-103`. Risk R-S09-Risk-002 captura "PII leak em log" mas não distingue redact! macro path vs raw stderr path. CSP-style "no-stderr-in-prod" enforcement não declarado.
 
 ### M-07: S-11 §10 anti-scope "Schrems II TIA templates pós-GA se EU tenants materializarem" — mas S-14 R-S14-5 entrega Schrems II TIA template. Cross-sprint contradição
 `specs/04_sprints/S11/_spec_contract.md:200` vs `specs/04_sprints/S14/_spec_contract.md:90`. S-11 anti-scope diz "TIA pós-GA"; S-14 entrega TIA pré-GA. Resolver pela narrativa: S-14 é o owner correto (S-14 = enterprise residency); S-11 §10 anti-scope deveria dizer "TIA owned by S-14".
 
 ### M-08: S-12 SLSA L3 declara `slsa-github-generator/generator_generic_slsa3.yml@v1.10.0` versão pinada — pinning a tag versão exata sem `@sha256:...` é supply-chain hole (mesmo problema que cargo-deny resolve para deps)
-`specs/04_sprints/S12/_spec_contract.md:71`. Action pinned by tag = mutable; deve ser pinned by commit SHA per OpenSSF Scorecard.
+`specs/04_sprints/_sealed/S12/_spec_contract.md:71`. Action pinned by tag = mutable; deve ser pinned by commit SHA per OpenSSF Scorecard.
 
 ### M-09: S-16 anti-scope `❌ Admin panel operacional interno` (`S16:177`) cita `admin.corelink.humangr.com` separado mas nenhum sprint cobre `admin.corelink.humangr.com` — orphan ownership
-`specs/04_sprints/S16/_spec_contract.md:177`. Internal admin tooling é gap visível pré-GA — incident response oncall (S-17) precisa de quê pra ack/manage?
+`specs/04_sprints/_sealed/S16/_spec_contract.md:177`. Internal admin tooling é gap visível pré-GA — incident response oncall (S-17) precisa de quê pra ack/manage?
 
 ### M-10: S-19 `R-S19-9` first-run renders "CLI install command" + quickstart docs link — spec assume `corelink.humangr.com/cli` e `docs.corelink.humangr.com/quickstart` existem; S-15 + S-18 entregam, mas S-19 não declara dep. CLI install URL deveria vir de config (env-aware staging vs prod)
-`specs/04_sprints/S19/_spec_contract.md:110-112`.
+`specs/04_sprints/_sealed/S19/_spec_contract.md:110-112`.
 
 ### M-11: S-17 chaos catalog `≥ 8 FMs` (`S17:84`) cobre 8 de 26 P0/P1 FMs — 18 FMs sem chaos test pré-GA. Spec não justifica seleção dos 8 nem promete "remaining 18 covered post-GA"
-`specs/04_sprints/S17/_spec_contract.md:84,148`. Codex SOTA enrichment "cargo-mutants" para kill-rate é adjacente; aqui é cobertura de FM space.
+`specs/04_sprints/_sealed/S17/_spec_contract.md:84,148`. Codex SOTA enrichment "cargo-mutants" para kill-rate é adjacente; aqui é cobertura de FM space.
 
 ---
 

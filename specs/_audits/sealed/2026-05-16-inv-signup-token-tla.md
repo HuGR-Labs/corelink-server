@@ -5,13 +5,13 @@
 > **Author:** Wave-30 stream-4 R-PREP `signup_token_idempotent.tla` agent (Claude Opus 4.7) — branch `wt/r-prep-inv-signup-token-promotion`.
 > **Base:** `main` @ `04f2dff` (wave-29 SEAL tip — "merge wt/r-prep-perf-baseline-ga-freeze into main (wave-29)").
 > **Scope:** promote `INV-SIGNUP-TOKEN-IDEMPOTENT` from DRAFT (wave-29 stream-10 closure §6.2 candidate) to PROMOTED + TLA-VERIFIED in `specs/03_architecture/invariant_registry.md` by authoring the TLA+ spec + PR/nightly cfgs + CI matrix wiring + INV registry domain §3.29 + cross-ref into the §4.1 TLA+ coverage table + wave-29 closure §6 update.
-> **Cross-ref:** `specs/03_architecture/invariant_registry.md §3.29` (new domain), `specs/_audits/2026-05-16-wave29-closure.md §6.2` (DRAFT candidate carrying-forward), `apps/server/src/routes/signup.rs` (wave-29 stream-1 commit `b3c359f`, canonical source), `apps/server/tests/signup_pilot.rs` (wire-level integration tests), `specs/tla/signup_resignup.tla` (DEBT-014 FT-9 disjoint sibling — production-onboarding path), `specs/tla/audit_emit_atomic.tla` (DEBT-005 batch 2 — pattern parent).
+> **Cross-ref:** `specs/03_architecture/invariant_registry.md §3.29` (new domain), `specs/_audits/sealed/2026-05-16-wave29-closure.md §6.2` (DRAFT candidate carrying-forward), `apps/server/src/routes/signup.rs` (wave-29 stream-1 commit `b3c359f`, canonical source), `apps/server/tests/signup_pilot.rs` (wire-level integration tests), `specs/tla/signup_resignup.tla` (DEBT-014 FT-9 disjoint sibling — production-onboarding path), `specs/tla/audit_emit_atomic.tla` (DEBT-005 batch 2 — pattern parent).
 
 ---
 
 ## 1. Mandate
 
-The Wave-29 stream-10 closure sweep (`specs/_audits/2026-05-16-wave29-closure.md` commit on wave-29 SEAL tip) surveyed `INV-SIGNUP-TOKEN-IDEMPOTENT` introduced inline by the wave-29 stream-1 pilot signup backend (commit `b3c359f`) and **deferred** its promotion to wave-30 per the registry promotion charter (`_spec_contract §14`) — an INV is promoted when its canonical source SEALs, and stream-1 was SEALed at wave-29 close. The deferral text from §6.2:
+The Wave-29 stream-10 closure sweep (`specs/_audits/sealed/2026-05-16-wave29-closure.md` commit on wave-29 SEAL tip) surveyed `INV-SIGNUP-TOKEN-IDEMPOTENT` introduced inline by the wave-29 stream-1 pilot signup backend (commit `b3c359f`) and **deferred** its promotion to wave-30 per the registry promotion charter (`_spec_contract §14`) — an INV is promoted when its canonical source SEALs, and stream-1 was SEALed at wave-29 close. The deferral text from §6.2:
 
 > **INV-SIGNUP-TOKEN-IDEMPOTENT (DRAFT, candidate)** — "Consumption of a signup token MUST be exactly-once across replays within the 24h dedup window; replays after the 24h window are observably distinguishable from in-window replays (different audit event ID, same tenant binding); failed consumptions never burn the token."
 
@@ -159,13 +159,13 @@ Both lanes prove all 5 safety invariants + 1 liveness property under WF on Route
 
 ### 6.3 Charter compliance
 
-- §3.b GA-blocker classification (per `specs/_audits/2026-05-16-ga-1-feature-freeze.md`): This INV promotion is a `P1-ga-blocker` freeze exception class — Wave-23 invariant-draft sweep + Wave-29 stream-10 closure §6.2 both flagged the DRAFT candidate as **needing wave-30 absorption pre-GA**. The promotion lands the §3.29 row + TLA-VERIFIED status, closing the GA-blocker per the freeze exception protocol §3.b.
+- §3.b GA-blocker classification (per `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md`): This INV promotion is a `P1-ga-blocker` freeze exception class — Wave-23 invariant-draft sweep + Wave-29 stream-10 closure §6.2 both flagged the DRAFT candidate as **needing wave-30 absorption pre-GA**. The promotion lands the §3.29 row + TLA-VERIFIED status, closing the GA-blocker per the freeze exception protocol §3.b.
 - DCO sign-off + Co-Authored-By: enforced at commit creation.
 - SYNCHRONOUS BASH ONLY: enforced (no `&`-suspended commands except a single bounded find for the local tla2tools.jar discovery; killed cleanly via SIGTERM after TLC nightly profiling).
 
 ## 7. Wave-29 closure cross-ref update
 
-`specs/_audits/2026-05-16-wave29-closure.md §6` originally read "0 promotions warranted from this audit stream. Wave-30 absorbs the DRAFT promotion." This dispatch flips that to **"1 promotion absorbed by wave-30"** with a forward pointer to this audit doc — see the closure §6.2 update line "Wave-30 stream-4 absorbed: see `specs/_audits/2026-05-16-inv-signup-token-tla.md`."
+`specs/_audits/sealed/2026-05-16-wave29-closure.md §6` originally read "0 promotions warranted from this audit stream. Wave-30 absorbs the DRAFT promotion." This dispatch flips that to **"1 promotion absorbed by wave-30"** with a forward pointer to this audit doc — see the closure §6.2 update line "Wave-30 stream-4 absorbed: see `specs/_audits/sealed/2026-05-16-inv-signup-token-tla.md`."
 
 ## 8. Open followups
 

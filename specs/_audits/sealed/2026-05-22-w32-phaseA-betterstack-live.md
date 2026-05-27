@@ -4,7 +4,7 @@
 >
 > **Owner:** Gustavo Schneiter.
 >
-> **Parent:** `specs/_audits/2026-05-22-wave32-prod-deploy-spec.md` §4 Phase A.
+> **Parent:** `specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md` §4 Phase A.
 
 ## 1. Scope (delivered)
 
@@ -63,7 +63,7 @@ Phase A SEALed. Owner approval required to proceed with Phase B (Worker shim + D
 
 ## 7. Cross-references
 
-- Parent: `specs/_audits/2026-05-22-wave32-prod-deploy-spec.md`
+- Parent: `specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md`
 - Bucket-2 credentials: `.env.local` (gitignored)
 - Statuspage runbook: `specs/_runbooks/STATUSPAGE-INIT.md`
 - Statuspage spec: `marketing/launch/STATUS-PAGE-SPEC.md`

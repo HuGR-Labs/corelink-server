@@ -6,7 +6,7 @@ Scope:
 
 The GA-1 feature-freeze gate enumerates commits in a `--range A..B` and
 requires every commit that touches a frozen surface (per
-`specs/_audits/2026-05-16-ga-1-feature-freeze.md §2`) to carry a recognised
+`specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md §2`) to carry a recognised
 `FREEZE-EXCEPTION:` trailer in its body. The regression target of this test
 suite is **W26-P2-01** — pre-fix the gate passed `--no-merges` to `git log`,
 which silently dropped any `FREEZE-EXCEPTION` trailer that lived only on a

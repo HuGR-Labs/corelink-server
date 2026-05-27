@@ -8,14 +8,14 @@ created: "2026-04-25"
 updated: "2026-05-27"
 reviewer: "Agent R4 (Claude Opus 4.7, 1M context, independent reviewer)"
 scope: "Lote 10.4 — Sprint S-04 Part 2 (WI-S04-004 .. WI-S04-006)"
-sprint_contract: "specs/04_sprints/S04/_spec_contract.md v1.1.0"
+sprint_contract: "specs/04_sprints/_sealed/S04/_spec_contract.md v1.1.0"
 calibration_baselines:
-  - "specs/_audits/2026-04-25-agent-r4-s03-part1-wi-review.md (S-03 part1, 7.6/10)"
-  - "specs/_audits/2026-04-25-agent-r4-s03-part2-wi-review.md (S-03 part2, 7.95/10; WI-S03-007 best-in-class 8.5)"
+  - "specs/_audits/sealed/2026-04-25-agent-r4-s03-part1-wi-review.md (S-03 part1, 7.6/10)"
+  - "specs/_audits/sealed/2026-04-25-agent-r4-s03-part2-wi-review.md (S-03 part2, 7.95/10; WI-S03-007 best-in-class 8.5)"
 files_reviewed:
-  - "specs/04_sprints/S04/work_items/WI-S04-004-hkdf-digest-signing-adr-0021.md (1007 lines)"
-  - "specs/04_sprints/S04/work_items/WI-S04-005-ttl-worker-cron-do-adr-0019.md (859 lines)"
-  - "specs/04_sprints/S04/work_items/WI-S04-006-reapi-conformance-prr-ship-gate.md (878 lines)"
+  - "specs/04_sprints/_sealed/S04/work_items/WI-S04-004-hkdf-digest-signing-adr-0021.md (1007 lines)"
+  - "specs/04_sprints/_sealed/S04/work_items/WI-S04-005-ttl-worker-cron-do-adr-0019.md (859 lines)"
+  - "specs/04_sprints/_sealed/S04/work_items/WI-S04-006-reapi-conformance-prr-ship-gate.md (878 lines)"
 cross_references:
   - "WI-S04-001..003 (read for cross-WI consistency)"
   - "_spec_contract.md S-04 v1.1.0"
@@ -417,5 +417,5 @@ If Lote 10.4bis lands all 12 P0s + the high-leverage system fixes, the trio reac
 ---
 
 **Reviewer**: Agent R4 (Claude Opus 4.7, 1M context)
-**File**: `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/_audits/2026-04-25-agent-r4-s04-part2-wi-review.md`
+**File**: `/Users/gustavoschneiter/Documents/HuGR/corelink-server/specs/_audits/sealed/2026-04-25-agent-r4-s04-part2-wi-review.md`
 **Status**: COMPLETE

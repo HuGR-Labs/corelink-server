@@ -5,7 +5,7 @@
 > **Author:** wave-21 hygiene agent (Claude Opus 4.7) — branch `wt/r-prep-inv-registry-wave21-sweep`.
 > **Base:** `main` @ `30e5f66` (wave-20 SEAL tip: "merge wt/r-prep-wave18-codex-p2-p3-closure into main (wave-20)").
 > **Scope:** INV registry hygiene + DEBT register survey + wave-21 stream catalogue + GA-readiness snapshot post wave-20 streams cataloguing + wave-22 candidate streams.
-> **Cross-ref:** `specs/_audits/2026-05-16-wave20-closure.md` (predecessor), `specs/_audits/2026-05-15-debt-register.md` v1.2.0, `specs/03_architecture/invariant_registry.md`.
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-wave20-closure.md` (predecessor), `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.0, `specs/03_architecture/invariant_registry.md`.
 
 ---
 
@@ -56,7 +56,7 @@ Additional wave-21 streams beyond the wave-20 caveat backlog: #5 (secrets X fals
 
 ## 3. DEBT register state post-wave-21 dispatch (pre-SEAL)
 
-Per `specs/_audits/2026-05-15-debt-register.md` v1.2.0 (last reconciled in wave-20). No DEBT closures performed by this stream (survey-only, per charter). The state below reflects the post-wave-20 canonical OPEN rows; wave-21 in-flight streams have **not yet** flipped to CLOSED in the register.
+Per `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.0 (last reconciled in wave-20). No DEBT closures performed by this stream (survey-only, per charter). The state below reflects the post-wave-20 canonical OPEN rows; wave-21 in-flight streams have **not yet** flipped to CLOSED in the register.
 
 ### 3.1 Open count + per-priority breakdown (canonical rows; pre-wave-21-SEAL)
 
@@ -218,10 +218,10 @@ Per the wave-21 sweep charter:
 
 ## 9. Cross-references
 
-- `specs/_audits/2026-05-16-wave20-closure.md` (wave-20 closure; predecessor).
-- `specs/_audits/2026-05-15-debt-register.md` v1.2.0 (DEBT register canonical state; no new changelog entry this wave — survey-only).
+- `specs/_audits/sealed/2026-05-16-wave20-closure.md` (wave-20 closure; predecessor).
+- `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.0 (DEBT register canonical state; no new changelog entry this wave — survey-only).
 - `specs/03_architecture/invariant_registry.md` (unchanged this wave; full coverage maintained).
-- `specs/_audits/2026-05-15-canonical-consistency-baseline.md` (CI ratchet floor; DEBT-004 closure log §3.1).
+- `specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md` (CI ratchet floor; DEBT-004 closure log §3.1).
 - Wave-19/20 audit docs (cross-referenced via wave-20 closure §10).
 - `RB-GA-CUTOVER.md` (wave-19 cutover runbook; greenlight dashboard).
-- `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` (wave-19 pentest scope; engagement checklist).
+- `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` (wave-19 pentest scope; engagement checklist).

@@ -1,7 +1,7 @@
 //! `corelink-core` — apex cross-cutting types for the CoreLink Rust
 //! workspace.
 //!
-//! Wave-33 Stage 0 (per `specs/_audits/2026-05-22-wave33-code-reorg-spec.md`
+//! Wave-33 Stage 0 (per `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md`
 //! §3 + §6) lands this crate as the apex of the dependency graph: it
 //! depends on NO other `corelink-*` crate, so every context crate can
 //! freely import it without creating cycles. Stage 3 will enforce this
@@ -43,7 +43,7 @@
 //! documenting how `Region` participates in the data-residency
 //! invariant, not a load-bearing property test. Per
 //! WI-PROPTEST-FU-W33-001 closure
-//! (`specs/_audits/2026-05-26-w36-proptest-fu-001-seal.md`), the
+//! (`specs/_audits/sealed/2026-05-26-w36-proptest-fu-001-seal.md`), the
 //! property test lives in the owning crate listed below; this crate
 //! is listed in `scripts/proptest-density-allowlist.txt` as an
 //! "INV-pin documentation" exemption:

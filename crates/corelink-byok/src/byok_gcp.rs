@@ -103,7 +103,7 @@ pub(crate) mod key_resource;
 mod adc;
 
 /// Canonical BYOK GCP KMS real-mode entry point — see
-/// `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+/// `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md`.
 ///
 /// The module ships JCS-canonicalization helpers + wasm32 stub
 /// unconditionally; the native HTTPS / ADC client is gated by the

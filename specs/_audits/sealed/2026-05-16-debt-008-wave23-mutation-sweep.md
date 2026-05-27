@@ -8,8 +8,8 @@ created: "2026-05-16"
 updated: "2026-05-16"
 sprint: "Wave-23 (post-043428a DEBT-008 dispatch)"
 parent_wi: "WI-DEBT-008-MUTATION-FULL-SWEEP"
-parent_audit: "specs/_audits/2026-05-16-debt-008-wave22-mutation-sweep.md"
-superseded_by: "specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md"
+parent_audit: "specs/_audits/sealed/2026-05-16-debt-008-wave22-mutation-sweep.md"
+superseded_by: "specs/_audits/sealed/2026-05-16-debt-008-wave24-mutation-sweep.md"
 owner: "Gustavo Schneiter"
 tags: ["audit", "mutation-testing", "cargo-mutants", "debt-008", "wave-23"]
 ---
@@ -25,12 +25,12 @@ tags: ["audit", "mutation-testing", "cargo-mutants", "debt-008", "wave-23"]
 > hardened post mask-selection digest pin); multipart-schema
 > **97.44 % raw / 100 % of killable** (114/117 viable; +10
 > lifecycle kills landed). See
-> `specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md` for
+> `specs/_audits/sealed/2026-05-16-debt-008-wave24-mutation-sweep.md` for
 > the canonical figures. The pre-additions empirical numbers in
 > this doc (chunker 79.79 % pre, multipart-schema 77.78 % pre)
 > remain canonical for the wave-23 snapshot. This reconciliation
 > closes finding P2-04 of
-> `specs/_audits/2026-05-16-wave23-adversarial-review.md`.
+> `specs/_audits/sealed/2026-05-16-wave23-adversarial-review.md`.
 
 > **doc_status:** REVIEW · **scope:** Continue the per-crate
 > mutation sweep launched in waves 21 and 22. Wave-23 dispatch was:
@@ -366,7 +366,7 @@ verification) adds `{chunker, multipart-schema}` (2 crates).
   this doc against the wave-24 empirical canonical figures. The
   pre-additions empirical numbers (79.79 % / 77.78 %) remain
   canonical for the wave-23 snapshot. See
-  `specs/_audits/2026-05-16-debt-008-number-discrepancy-fix.md`.
+  `specs/_audits/sealed/2026-05-16-debt-008-number-discrepancy-fix.md`.
 
 ## 10. Test count summary
 

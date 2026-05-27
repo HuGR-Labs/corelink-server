@@ -5,9 +5,9 @@
 > **Author:** Claude Opus 4.7 (W26-P2-01 closure agent) — branch `wt/r-prep-w26-p2-01-freeze-merge-trailer`.
 > **Base:** `main` @ `0f77f48` (parent worktree tip at agent start).
 > **Cross-refs:**
-> - `specs/_audits/2026-05-16-wave26-adversarial-review.md §3 P2 finding "--range excludes merge commits"` (source).
-> - `specs/_audits/2026-05-16-p2-absorption-sweep-w25-28.md` row W26-P2-01 (`DEFER-POST-GA` classification).
-> - `specs/_audits/2026-05-16-ga-1-feature-freeze.md` (gate's canonical declaration).
+> - `specs/_audits/sealed/2026-05-16-wave26-adversarial-review.md §3 P2 finding "--range excludes merge commits"` (source).
+> - `specs/_audits/sealed/2026-05-16-p2-absorption-sweep-w25-28.md` row W26-P2-01 (`DEFER-POST-GA` classification).
+> - `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md` (gate's canonical declaration).
 > - `scripts/check-ga-freeze-allowed.py` (gate implementation).
 > - `tests/test_check_ga_freeze_allowed.py` (regression net landed in this commit).
 

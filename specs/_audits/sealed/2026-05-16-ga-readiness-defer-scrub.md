@@ -7,8 +7,8 @@
 > **Scope:** scrub the stale "Docs CI billing reinstatement" DEFER row from the two GA-readiness sign-off docs and add a drift detector that catches equivalent stale signals on every future PR.
 >
 > **Companion docs:**
-> - `specs/_audits/2026-05-16-ga-readiness-final.md` (the audit whose §11 DEFER counter was decremented 8 → 7).
-> - `specs/_audits/2026-05-16-ga-final-checklist.md` (the operator-runnable checklist whose §G row was removed; G-08 promoted to G-07).
+> - `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` (the audit whose §11 DEFER counter was decremented 8 → 7).
+> - `specs/_audits/sealed/2026-05-16-ga-final-checklist.md` (the operator-runnable checklist whose §G row was removed; G-08 promoted to G-07).
 > - `scripts/ga-readiness-defer-drift.py` (the new drift detector).
 > - `.github/workflows/spec_validation.yml` (the workflow that wires the detector as an advisory CI step).
 > - User memory: `feedback_ci_local` (the source-of-truth stance: CI runs locally; GHA infra is not the canonical CI surface).
@@ -27,7 +27,7 @@ Wave-25 removes the row, decrements the §11 counter, and re-classifies the resi
 
 ## §2. What changed
 
-### §2.1 `specs/_audits/2026-05-16-ga-readiness-final.md`
+### §2.1 `specs/_audits/sealed/2026-05-16-ga-readiness-final.md`
 
 - §1.1 recommendation prose: "5 user-bound + 3 vendor-bound external dependencies" → "5 user-bound + 1 vendor-bound + 1 mixed external dependencies"; "those 8 external items" → "those 7 external items"; appended inline scrub annotation.
 - §1.2 state-of-the-world table: External-dependencies row "8 DEFER (5 user-bound + 3 vendor-bound)" → "7 DEFER (5 user-bound + 1 vendor-bound + 1 mixed)".
@@ -37,7 +37,7 @@ Wave-25 removes the row, decrements the §11 counter, and re-classifies the resi
 - §11 trailer: "Total DEFER counter: 8 (5 user-bound + 2 vendor-bound + 1 mixed)" → "Total DEFER counter: 7 (5 user-bound + 1 vendor-bound + 1 mixed)"; appended inline scrub annotation.
 - Final-line sign-off banner: "the 8 external DEFER items in §11" → "the 7 external DEFER items in §11".
 
-### §2.2 `specs/_audits/2026-05-16-ga-final-checklist.md`
+### §2.2 `specs/_audits/sealed/2026-05-16-ga-final-checklist.md`
 
 - Lead rule callout: "(the 8 external DEFER items)" → "(the 7 external DEFER items, scrubbed wave-25)".
 - §G checklist: G-07 ("Docs CI billing reinstatement (§11#7)") removed; former G-08 ("Owner sign-off (ADR-0034b 2-key) … (§11#8)") promoted to G-07 (and re-pointed to §11#7); inline scrub annotation appended on the promoted row.
@@ -85,8 +85,8 @@ If a future agent is tempted to re-add a "Docs CI billing" / "GHA billing" / "Wo
 
 ## §5. Sealed artifacts
 
-- `specs/_audits/2026-05-16-ga-readiness-final.md` — scrubbed (8 → 7 DEFER).
-- `specs/_audits/2026-05-16-ga-final-checklist.md` — scrubbed (G-07 removed, G-08 → G-07).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` — scrubbed (8 → 7 DEFER).
+- `specs/_audits/sealed/2026-05-16-ga-final-checklist.md` — scrubbed (G-07 removed, G-08 → G-07).
 - `scripts/ga-readiness-defer-drift.py` — new drift detector (synchronous, stdlib).
 - `.github/workflows/spec_validation.yml` — advisory step wired in.
-- `specs/_audits/2026-05-16-ga-readiness-defer-scrub.md` — this audit.
+- `specs/_audits/sealed/2026-05-16-ga-readiness-defer-scrub.md` — this audit.

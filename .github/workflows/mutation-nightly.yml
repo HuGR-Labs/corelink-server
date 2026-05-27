@@ -5,17 +5,17 @@ name: mutation-nightly (R2 baseline + 5-crate expansion + wave-24 large-crate la
 # - corelink-signup (atomic provisioning orchestrator)      [baseline 2026-05-14]
 # - corelink-tier-selection (INV-ONBOARD-DPA-FIRST)         [baseline 2026-05-14]
 # - corelink-audit-chain (BLAKE3 chain integrity)           [expansion 2026-05-15; empirically CLOSED wave-13 @ 84.24 %]
-# - corelink-pat (PAT mint/verify + Argon2id)               [expansion 2026-05-15; wave-24 empirical partial-lift 2026-05-16 — see `specs/_audits/2026-05-16-pat-clerk-mutation-sweep.md`; nightly is the empirical SEAL gate per wave-14 precedent]
-# - corelink-clerk (SSO JWT validation + JWKS)              [expansion 2026-05-15; wave-24 empirical partial-lift 2026-05-16 — see `specs/_audits/2026-05-16-pat-clerk-mutation-sweep.md`; nightly is the empirical SEAL gate per wave-14 precedent]
+# - corelink-pat (PAT mint/verify + Argon2id)               [expansion 2026-05-15; wave-24 empirical partial-lift 2026-05-16 — see `specs/_audits/sealed/2026-05-16-pat-clerk-mutation-sweep.md`; nightly is the empirical SEAL gate per wave-14 precedent]
+# - corelink-clerk (SSO JWT validation + JWKS)              [expansion 2026-05-15; wave-24 empirical partial-lift 2026-05-16 — see `specs/_audits/sealed/2026-05-16-pat-clerk-mutation-sweep.md`; nightly is the empirical SEAL gate per wave-14 precedent]
 # - corelink-dual-approval (admin op gate + collusion)      [expansion 2026-05-15]
 # - corelink-ratelimit (token bucket + Retry-After)         [expansion 2026-05-15]
 # - corelink-r2-multipart (150 mutants; large surface)      [wave-24 2026-05-16]
 # - corelink-billing (350 mutants; large surface; quota-cas absorbed)  [wave-24 2026-05-16; renamed wave-35]
 # - corelink-auth (369 mutants; large surface; webauthn absorbed)      [wave-24 2026-05-16; renamed wave-35]
 #
-# Per `specs/_audits/2026-05-14-mutation-baseline.md` +
-# `specs/_audits/2026-05-15-mutation-expansion.md` +
-# `specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md`
+# Per `specs/_audits/sealed/2026-05-14-mutation-baseline.md` +
+# `specs/_audits/sealed/2026-05-15-mutation-expansion.md` +
+# `specs/_audits/sealed/2026-05-16-debt-008-wave24-mutation-sweep.md`
 # baseline: kill rate ≥ 75 % per crate; build fails if kill rate
 # drops > 5 % vs the recorded baseline so a PR cannot silently
 # regress mutation coverage on critical security paths. The 3
@@ -302,7 +302,7 @@ jobs:
           - Crates below floor: ${{ steps.build.outputs.below_summary }}
           - Artifact: reports/mutation/latest.json
 
-          Closure protocol: see specs/_audits/2026-05-15-mutation-full-sweep.md §7.6.
+          Closure protocol: see specs/_audits/sealed/2026-05-15-mutation-full-sweep.md §7.6.
           EOF
           )
           gh issue create \

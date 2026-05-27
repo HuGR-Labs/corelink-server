@@ -5,7 +5,7 @@
 > **Author:** wave-23 hygiene agent (Claude Opus 4.7) — branch `wt/r-prep-inv-registry-wave23-sweep`.
 > **Base:** `main` @ `043428a` ("merge wt/r-prep-debt-008-mutation-wave22 into main (wave-22)" — wave-22 SEAL tip).
 > **Scope:** INV registry hygiene + DEBT register survey (wave-23 in-flight — DO NOT close from this stream) + wave-23 stream catalogue + DEBT-008 wave-22→wave-23 batch state narrative + GA-readiness snapshot post wave-22 streams cataloguing + wave-24 candidate streams + GA cutover dry-run readiness assessment.
-> **Cross-ref:** `specs/_audits/2026-05-16-wave22-closure.md` (predecessor), `specs/_audits/2026-05-15-debt-register.md` v1.2.0, `specs/03_architecture/invariant_registry.md`, `specs/_audits/2026-05-16-debt-008-wave22-mutation-sweep.md` (wave-22 expansion baseline).
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-wave22-closure.md` (predecessor), `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.0, `specs/03_architecture/invariant_registry.md`, `specs/_audits/sealed/2026-05-16-debt-008-wave22-mutation-sweep.md` (wave-22 expansion baseline).
 
 ---
 
@@ -32,7 +32,7 @@ Streams #1–#9 are dispatched in parallel by the orchestrator; this stream (#10
 
 ## 2. DEBT-008 progress narrative (wave-22 + wave-23 batch state)
 
-Per `specs/_audits/2026-05-15-debt-register.md` row §51 (DEBT-008 progressive expansion ledger) and `specs/_audits/2026-05-16-debt-008-wave22-mutation-sweep.md` (wave-22 expansion baseline). The wave-23 stream #2 batch continues the cadence established in wave-15 (`corelink-audit-chain`), wave-21 (`corelink-hash`), and wave-22 (`corelink-dedup` + `corelink-tenant-path` empirical CLOSED; `corelink-handler-cas` + `corelink-auth-schema` PARTIAL with projected 100 %).
+Per `specs/_audits/sealed/2026-05-15-debt-register.md` row §51 (DEBT-008 progressive expansion ledger) and `specs/_audits/sealed/2026-05-16-debt-008-wave22-mutation-sweep.md` (wave-22 expansion baseline). The wave-23 stream #2 batch continues the cadence established in wave-15 (`corelink-audit-chain`), wave-21 (`corelink-hash`), and wave-22 (`corelink-dedup` + `corelink-tenant-path` empirical CLOSED; `corelink-handler-cas` + `corelink-auth-schema` PARTIAL with projected 100 %).
 
 ### 2.1 DEBT-008 closure ledger (cumulative — pre-wave-23-SEAL)
 
@@ -183,7 +183,7 @@ No structural-new INVs added wave-22 → no DRAFT-staging intermediates created 
 
 ## 5. DEBT register survey — pre-wave-23-SEAL state
 
-Per `specs/_audits/2026-05-15-debt-register.md` v1.2.0 (last reconciled in wave-22 close). No DEBT closures performed by this stream (charter-bound survey-only). The state below reflects post-wave-22 canonical OPEN rows; wave-23 in-flight streams have **not yet** flipped to CLOSED in the register.
+Per `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.0 (last reconciled in wave-22 close). No DEBT closures performed by this stream (charter-bound survey-only). The state below reflects post-wave-22 canonical OPEN rows; wave-23 in-flight streams have **not yet** flipped to CLOSED in the register.
 
 ### 5.1 Open count + per-priority breakdown (canonical rows; pre-wave-23-SEAL)
 
@@ -197,7 +197,7 @@ Per `specs/_audits/2026-05-15-debt-register.md` v1.2.0 (last reconciled in wave-
 | **P2** | DEBT-016 (Statuspage go-live — user-bound) | 1 | Pending human (no wave-23 stream) |
 
 **Post-wave-22-SEAL closures actually landed** (verified against `git log` commits between `bccdd97` and `043428a`):
-- ✅ DEBT-008 wave-22 expansion (4 crates: dedup empirical CLOSED, tenant-path empirical CLOSED, handler-cas + auth-schema PARTIAL with +16 targeted tests). Audits: `specs/_audits/2026-05-16-debt-008-wave22-mutation-sweep.md`. Commits `51d082b` + `d7b9eea` + merge `043428a` + `c2fe3aa`.
+- ✅ DEBT-008 wave-22 expansion (4 crates: dedup empirical CLOSED, tenant-path empirical CLOSED, handler-cas + auth-schema PARTIAL with +16 targeted tests). Audits: `specs/_audits/sealed/2026-05-16-debt-008-wave22-mutation-sweep.md`. Commits `51d082b` + `d7b9eea` + merge `043428a` + `c2fe3aa`.
 - ✅ DEBT-015-BUILD wave-22 PARTIAL (`wt/r-prep-debt-015-build-closure` → `f356985`): blockers (a) `draft: true` removal + (b) MDX extensionless cross-links + (c) theme-alias patch APPLIED; new same-class residual (server-bundle `@site/*` / `@generated/*` externalisation) carried forward to wave-23 stream #3.
 - ✅ Wave-21 adversarial review (wave-22 stream #1) — CLOSED `caaa537` (9.55/10 PASS).
 - ✅ Stripe MatClock wasm32 follow-on — CLOSED `dfe394e` + merge `a7b5927`.
@@ -287,15 +287,15 @@ Per the wave-23 sweep charter:
 
 ## 9. Cross-references
 
-- `specs/_audits/2026-05-16-wave22-closure.md` (wave-22 closure; predecessor).
-- `specs/_audits/2026-05-16-wave21-closure.md` (wave-21 closure; structural patterns continued).
-- `specs/_audits/2026-05-16-wave20-closure.md` (wave-20 closure; baseline cadence).
-- `specs/_audits/2026-05-15-debt-register.md` v1.2.0 (DEBT register canonical state; no new changelog entry this wave — survey-only).
+- `specs/_audits/sealed/2026-05-16-wave22-closure.md` (wave-22 closure; predecessor).
+- `specs/_audits/sealed/2026-05-16-wave21-closure.md` (wave-21 closure; structural patterns continued).
+- `specs/_audits/sealed/2026-05-16-wave20-closure.md` (wave-20 closure; baseline cadence).
+- `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.0 (DEBT register canonical state; no new changelog entry this wave — survey-only).
 - `specs/03_architecture/invariant_registry.md` (stable wave-23 — full coverage maintained at 192 declared / 143 WI-coverage).
-- `specs/_audits/2026-05-15-canonical-consistency-baseline.md` (CI ratchet floor; DEBT-004 closure log §3.1).
-- `specs/_audits/2026-05-16-debt-008-wave22-mutation-sweep.md` (wave-22 expansion baseline for DEBT-008; sets equivalent-mutation analysis pattern for wave-23 stream #2).
-- `specs/_audits/2026-05-16-debt-008-mutation-sweep.md` (wave-21 `corelink-hash` expansion baseline; §11 wave-22 narrative addendum).
-- `specs/_audits/2026-05-15-mutation-full-sweep.md` (wave-15 `corelink-audit-chain` empirical baseline; sets methodology continuum).
+- `specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md` (CI ratchet floor; DEBT-004 closure log §3.1).
+- `specs/_audits/sealed/2026-05-16-debt-008-wave22-mutation-sweep.md` (wave-22 expansion baseline for DEBT-008; sets equivalent-mutation analysis pattern for wave-23 stream #2).
+- `specs/_audits/sealed/2026-05-16-debt-008-mutation-sweep.md` (wave-21 `corelink-hash` expansion baseline; §11 wave-22 narrative addendum).
+- `specs/_audits/sealed/2026-05-15-mutation-full-sweep.md` (wave-15 `corelink-audit-chain` empirical baseline; sets methodology continuum).
 - `RB-GA-CUTOVER.md` (cutover runbook; greenlight dashboard — dry-run readiness assessment §3.4 anchors wave-24 #1 priority).
-- `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` (pentest scope; engagement checklist — RFP prep deferred to wave-24).
+- `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` (pentest scope; engagement checklist — RFP prep deferred to wave-24).
 - `.github/workflows/mutation-nightly.yml` (CI-nightly artifact precedence; `TD-DEBT-008-WAVE-14-EMPIRICAL` SEAL mechanism — covers `{pat, clerk, dual-approval, ratelimit}` continuously).

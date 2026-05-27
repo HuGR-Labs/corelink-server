@@ -13,8 +13,8 @@ supersedes: null
 superseded_by: null
 tags: ["audit", "wave-36", "trigger-a", "dep-graph-cycle", "traits-extraction", "seal"]
 references:
-  - "specs/_audits/2026-05-26-w36-stage2c-closure.md"
-  - "specs/_audits/2026-05-26-wave-33-34-closure-followups.md"
+  - "specs/_audits/sealed/2026-05-26-w36-stage2c-closure.md"
+  - "specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md"
 ---
 
 # Wave 36 — Trigger A SEAL (materializer dep-graph cycle resolved via traits extraction)

@@ -5,7 +5,7 @@
 > **Author:** wave-28 pilot-comms-package agent (Claude Opus 4.7) — branch `wt/r-prep-pilot-announcement-comms`.
 > **Base:** `main` @ `f5ff683` ("merge wt/r-prep-shadow-sink-consumer-adoption into main (wave-27)" — wave-27 SEAL tip).
 > **Scope:** author the 7 copy-paste-ready pilot-announcement comms artefacts requested by Owner for wave-28 step-7 + this audit doc.
-> **Cross-ref:** `specs/_audits/2026-05-16-wave27-closure.md` (wave-27 closure — DEBT-027 ≥3 ACTIVE pilots called out as P1 GA-blocker), `docs/internal/customer-success-playbook.md` (wave-23), `marketing/launch/PRESS-RELEASE.md` (GA press; pre-existing), `marketing/launch/SOCIAL/TWITTER-THREAD.md` + `LINKEDIN-POST.md` + `HACKERNEWS-SHOW-HN.md` (GA-day social; pre-existing — this audit's artefacts are **pilot-day** counterparts; explicitly different content + different gate).
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-wave27-closure.md` (wave-27 closure — DEBT-027 ≥3 ACTIVE pilots called out as P1 GA-blocker), `docs/internal/customer-success-playbook.md` (wave-23), `marketing/launch/PRESS-RELEASE.md` (GA press; pre-existing), `marketing/launch/SOCIAL/TWITTER-THREAD.md` + `LINKEDIN-POST.md` + `HACKERNEWS-SHOW-HN.md` (GA-day social; pre-existing — this audit's artefacts are **pilot-day** counterparts; explicitly different content + different gate).
 
 ---
 
@@ -22,7 +22,7 @@ Owner-issued wave-28 step-7 charge: author the pilot announcement comms package 
 | 5 | Outbound email template (Mustache `{{lead_name}}` / `{{lead_company}}`) | `marketing/launch/PILOT-EMAIL-BLAST.md` | DELIVERED |
 | 6 | Landing-page copy for `signup.corelink.humangr.com/pilot` | `marketing/launch/PILOT-LANDING-PAGE-COPY.md` | DELIVERED |
 | 7 | 30-candidate direct-outreach target list | `docs/internal/pilot-target-list.md` | DELIVERED |
-| 8 | This audit doc | `specs/_audits/2026-05-16-pilot-comms-package.md` | (this file) |
+| 8 | This audit doc | `specs/_audits/sealed/2026-05-16-pilot-comms-package.md` | (this file) |
 
 All 8 are present on branch `wt/r-prep-pilot-announcement-comms` at the SEAL commit.
 
@@ -30,7 +30,7 @@ All 8 are present on branch `wt/r-prep-pilot-announcement-comms` at the SEAL com
 
 ## 2. Freeze posture
 
-GA-1 feature-freeze is ACTIVE per `specs/_audits/2026-05-16-ga-1-feature-freeze.md`. This branch's changes are:
+GA-1 feature-freeze is ACTIVE per `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md`. This branch's changes are:
 
 - **No `crates/` modifications.** No `apps/` modifications. No engineering surface modified.
 - **No `specs/03_architecture/` modifications.** No INV registry modifications. No ADR modifications. No spec corpus modifications.
@@ -38,14 +38,14 @@ GA-1 feature-freeze is ACTIVE per `specs/_audits/2026-05-16-ga-1-feature-freeze.
 
 **Freeze classification:**
 
-- `marketing/launch/PILOT-*.md` (6 new files) → **§3.b P1-GA-blocker prep.** Direct support for DEBT-027 (≥3 ACTIVE pilots to GA, per `specs/_audits/2026-05-16-wave27-closure.md`). Without the pilot-comms package, the pilot-signup pipeline (wave-27) has no demand-generation surface and DEBT-027 cannot close.
+- `marketing/launch/PILOT-*.md` (6 new files) → **§3.b P1-GA-blocker prep.** Direct support for DEBT-027 (≥3 ACTIVE pilots to GA, per `specs/_audits/sealed/2026-05-16-wave27-closure.md`). Without the pilot-comms package, the pilot-signup pipeline (wave-27) has no demand-generation surface and DEBT-027 cannot close.
 - `docs/internal/pilot-target-list.md` (1 new file) → **§3.b P1-GA-blocker prep.** Same rationale; the target list is the operational counterpart to the pilot-comms-package and is required to actually source the ≥3 ACTIVE pilots.
-- `specs/_audits/2026-05-16-pilot-comms-package.md` (this file) → **§3.d implicitly-allowed.** Audit docs are explicitly listed as freeze-permissible.
+- `specs/_audits/sealed/2026-05-16-pilot-comms-package.md` (this file) → **§3.d implicitly-allowed.** Audit docs are explicitly listed as freeze-permissible.
 
 **Commit-message tokens (required by `scripts/check-ga-freeze-allowed.py` per the freeze decl):**
 
 - Squash-merge commit subject: `marketing: add pilot-announcement comms package (wave-28 step-7)`
-- Body MUST contain: `FREEZE-EXCEPTION: P1-ga-blocker` + 2-key authorisation per ADR-0034b §3 (Owner + on-call SRE). The audit doc itself (`§3.d implicitly-allowed`) is folded into the same commit; the freeze gate allows `P1-ga-blocker` to encompass adjacent `§3.d` changes per `specs/_audits/2026-05-16-ga-1-feature-freeze.md §3.d`.
+- Body MUST contain: `FREEZE-EXCEPTION: P1-ga-blocker` + 2-key authorisation per ADR-0034b §3 (Owner + on-call SRE). The audit doc itself (`§3.d implicitly-allowed`) is folded into the same commit; the freeze gate allows `P1-ga-blocker` to encompass adjacent `§3.d` changes per `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md §3.d`.
 
 ---
 

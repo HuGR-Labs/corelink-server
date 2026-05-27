@@ -20,7 +20,7 @@ tags: ["compliance", "asvs", "owasp", "s04", "action-cache", "checklist"]
 > **Date:** 2026-05-01 · **Mode:** internal self-checklist (external audit deferred to S-20 GA gate)
 
 ASVS chapter scope per WI-S04-006 §6.1.5 + S-03 ASVS precedent
-(`specs/04_sprints/S03/asvs-v2-v3-v4-v6-v8-checklist.md`): **V5
+(`specs/04_sprints/_sealed/S03/asvs-v2-v3-v4-v6-v8-checklist.md`): **V5
 (Validation, Sanitization, Encoding) / V6 (Stored Cryptography —
 re-scoped from S-03 with AC-specific additions) / V8 (Data Protection)
 / V10 (Malicious Code) / V14 (Configuration)**. V2/V3/V4 already

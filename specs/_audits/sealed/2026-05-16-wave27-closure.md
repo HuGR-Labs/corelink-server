@@ -5,13 +5,13 @@
 > **Author:** wave-27 hygiene agent (Claude Opus 4.7) — branch `wt/r-prep-inv-registry-wave27-sweep`.
 > **Base:** `main` @ `a48bbec` ("merge wt/r-prep-cf-worker-prefetch-wire into main (wave-26)" — wave-26 SEAL tip).
 > **Scope:** **Final pre-GA hygiene sweep.** INV registry final-state confirmation + DEBT register survey (7 OPEN at wave-26 close + 1 new DEBT-027 wave-27 pilot-signup = 8 OPEN; all engineering-CLOSED with operator-bound action enumerated) + wave-27 stream catalogue + cutover dependency map summary (cross-ref stream #7) + final cutover-readiness verdict (cross-ref stream #8) + adversarial-review trend across last-5 SEALED waves + GA-cutover D-day pre-conditions checklist (Owner-tickable). This is the **last hygiene sweep before GA cutover**; wave-28 (post-cutover wave) absorbs cutover-day retrospective.
-> **Cross-ref:** `specs/_audits/2026-05-16-wave26-closure.md` (predecessor), `specs/_audits/2026-05-15-debt-register.md` v1.2.3, `specs/03_architecture/invariant_registry.md` v0.2.2, `specs/_audits/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 CONDITIONAL GO), `specs/_audits/2026-05-16-wave25-adversarial-review.md` (wave-26 stream #7 — 9.00/10 PASS), `specs/_runbooks/RB-GA-CUTOVER.md`, `specs/_compliance/GA-GATE-CRITERIA.md`, `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md`.
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-wave26-closure.md` (predecessor), `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.3, `specs/03_architecture/invariant_registry.md` v0.2.2, `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 CONDITIONAL GO), `specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md` (wave-26 stream #7 — 9.00/10 PASS), `specs/_runbooks/RB-GA-CUTOVER.md`, `specs/_compliance/GA-GATE-CRITERIA.md`, `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md`.
 
 ---
 
 ## 1. Wave-27 scope — 10 streams catalogued
 
-Wave-27 is the **GA cutover wave** — per `specs/_audits/2026-05-16-wave26-closure.md §9` candidate streams + the autonomous-execution charter §"anchor: GA cutover D-day execution". Dispatched on `main` @ `a48bbec` (wave-26 SEAL tip after 11 wave-26 merges: GA-1 feature freeze, INV-CRITICAL TLA final audit, Lote 6 v1.0.0 GA RC2, wave-26 INV sweep, release notes v1.0.0 GA draft, production-tier dress-run + v1.0.0-GA tag draft, wave-25 adversarial review 9.00/10 PASS, DEBT-026 RFP tracker, Lote 7 follow-ons, wasm32 baseline getrandom fix, CF Worker prefetch wire). Ten parallel streams catalogued (this stream is #10).
+Wave-27 is the **GA cutover wave** — per `specs/_audits/sealed/2026-05-16-wave26-closure.md §9` candidate streams + the autonomous-execution charter §"anchor: GA cutover D-day execution". Dispatched on `main` @ `a48bbec` (wave-26 SEAL tip after 11 wave-26 merges: GA-1 feature freeze, INV-CRITICAL TLA final audit, Lote 6 v1.0.0 GA RC2, wave-26 INV sweep, release notes v1.0.0 GA draft, production-tier dress-run + v1.0.0-GA tag draft, wave-25 adversarial review 9.00/10 PASS, DEBT-026 RFP tracker, Lote 7 follow-ons, wasm32 baseline getrandom fix, CF Worker prefetch wire). Ten parallel streams catalogued (this stream is #10).
 
 | # | Stream | Branch / worktree | Disposition |
 |---|---|---|---|
@@ -98,7 +98,7 @@ Stream #8 produces the standalone CONDITIONAL-GO/NO-GO verdict; this section is 
 
 ### 3.1 Verdict
 
-**CONDITIONAL GO — preserved from wave-24 final audit (`specs/_audits/2026-05-16-ga-readiness-final.md`).**
+**CONDITIONAL GO — preserved from wave-24 final audit (`specs/_audits/sealed/2026-05-16-ga-readiness-final.md`).**
 
 Engineering corpus is GA-ready at `a48bbec`. Cutover ceremony is **operator-paced** by a single hard dependency (DEBT-026 retest letter, earliest 2026-07-29) plus 4 operator-bound DEBT items that are scheduled to close at their natural cadence (T-7d, T+21d, retest delivery, pilot-recruitment window).
 
@@ -136,7 +136,7 @@ Engineering corpus is GA-ready at `a48bbec`. Cutover ceremony is **operator-pace
 
 ## 4. DEBT register POST — 8 OPEN; all engineering-CLOSED with operator-bound action enumerated
 
-Per `specs/_audits/2026-05-15-debt-register.md` v1.2.3 (DEBT-025/026 added wave-23/25; DEBT-027 declared in this audit for wave-27 spawn — register row pending wave-27 stream #X authoring commit). No DEBT closures performed by this stream (charter-bound survey-only).
+Per `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.3 (DEBT-025/026 added wave-23/25; DEBT-027 declared in this audit for wave-27 spawn — register row pending wave-27 stream #X authoring commit). No DEBT closures performed by this stream (charter-bound survey-only).
 
 ### 4.1 Wave-27 OPEN inventory (8 rows)
 
@@ -224,13 +224,13 @@ For the GA-cutover D-day execution meeting:
 
 | Wave | Aggregate score | Verdict | Source audit |
 |---|---|---|---|
-| wave-19 | 8.78 / 10 | PASS | `specs/_audits/2026-05-16-wave19-adversarial-review.md` |
-| wave-20 | 9.40 / 10 | PASS | `specs/_audits/2026-05-16-wave20-adversarial-review.md` |
-| wave-21 | 9.55 / 10 | PASS | `specs/_audits/2026-05-16-wave21-adversarial-review.md` |
-| wave-22 | 9.45 / 10 | PASS | `specs/_audits/2026-05-16-wave22-adversarial-review.md` |
-| wave-23 | 9.20 / 10 | PASS | `specs/_audits/2026-05-16-wave23-adversarial-review.md` |
-| wave-24 | 6.95 / 10 | CONDITIONAL (recovered via cherry-picks `d172a4a` + `8fa1c22` wave-25 P0) | `specs/_audits/2026-05-16-wave24-adversarial-review.md` |
-| wave-25 | 9.00 / 10 | PASS | `specs/_audits/2026-05-16-wave25-adversarial-review.md` |
+| wave-19 | 8.78 / 10 | PASS | `specs/_audits/sealed/2026-05-16-wave19-adversarial-review.md` |
+| wave-20 | 9.40 / 10 | PASS | `specs/_audits/sealed/2026-05-16-wave20-adversarial-review.md` |
+| wave-21 | 9.55 / 10 | PASS | `specs/_audits/sealed/2026-05-16-wave21-adversarial-review.md` |
+| wave-22 | 9.45 / 10 | PASS | `specs/_audits/sealed/2026-05-16-wave22-adversarial-review.md` |
+| wave-23 | 9.20 / 10 | PASS | `specs/_audits/sealed/2026-05-16-wave23-adversarial-review.md` |
+| wave-24 | 6.95 / 10 | CONDITIONAL (recovered via cherry-picks `d172a4a` + `8fa1c22` wave-25 P0) | `specs/_audits/sealed/2026-05-16-wave24-adversarial-review.md` |
+| wave-25 | 9.00 / 10 | PASS | `specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md` |
 
 ### 6.2 Last-5 SEALED waves rolling-mean framings
 
@@ -294,17 +294,17 @@ Per the wave-27 sweep charter:
 
 ## 10. Cross-references
 
-- `specs/_audits/2026-05-16-wave26-closure.md` (wave-26 closure; immediate predecessor).
-- `specs/_audits/2026-05-16-wave25-closure.md` + `2026-05-16-wave24-closure.md` (wave-25/24 closures).
-- `specs/_audits/2026-05-15-debt-register.md` v1.2.3 (canonical DEBT state; DEBT-027 added by wave-27 stream #X spawn commit).
+- `specs/_audits/sealed/2026-05-16-wave26-closure.md` (wave-26 closure; immediate predecessor).
+- `specs/_audits/sealed/2026-05-16-wave25-closure.md` + `2026-05-16-wave24-closure.md` (wave-25/24 closures).
+- `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.3 (canonical DEBT state; DEBT-027 added by wave-27 stream #X spawn commit).
 - `specs/03_architecture/invariant_registry.md` v0.2.2 (197 declared at wave-27 base; 61 CRITICAL all TLA+-proved — Z = 0 milestone preserved).
-- `specs/_audits/2026-05-16-wave25-adversarial-review.md` (wave-26 stream #7 — 9.00/10 PASS).
-- `specs/_audits/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 — CONDITIONAL GO; 8-item DEFER counter).
-- `specs/_audits/2026-05-16-ga-readiness-defer-scrub.md` (wave-25 stream #4 — DEFER drift detector; counter locked at 8).
-- `specs/_audits/2026-05-16-ga-cutover-dryrun.md` (wave-24 stream #1 G1..G6 all GREEN).
-- `specs/_audits/2026-05-16-pre-ga-security-attestation.md` (wave-25 stream #8 SEAL).
-- `specs/_audits/2026-05-16-debt-026-rfp-tracker.md` (wave-26 stream #4 RFP tracker stack).
-- `specs/_audits/2026-05-16-pre-cutover-state-snapshot.md` (companion snapshot doc; same wave-27 sweep).
+- `specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md` (wave-26 stream #7 — 9.00/10 PASS).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` (wave-24 stream #8 — CONDITIONAL GO; 8-item DEFER counter).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-defer-scrub.md` (wave-25 stream #4 — DEFER drift detector; counter locked at 8).
+- `specs/_audits/sealed/2026-05-16-ga-cutover-dryrun.md` (wave-24 stream #1 G1..G6 all GREEN).
+- `specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md` (wave-25 stream #8 SEAL).
+- `specs/_audits/sealed/2026-05-16-debt-026-rfp-tracker.md` (wave-26 stream #4 RFP tracker stack).
+- `specs/_audits/sealed/2026-05-16-pre-cutover-state-snapshot.md` (companion snapshot doc; same wave-27 sweep).
 - `specs/_compliance/GA-GATE-CRITERIA.md` (59 criteria across 6 tracks).
 - `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md` (GA-GO/NO-GO meeting template).
 - `specs/_runbooks/RB-GA-CUTOVER.md` (cutover runbook; wave-27 stream #1 anchor consumes §3 G1..G6).

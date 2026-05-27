@@ -7,11 +7,11 @@
 - **Closes:** **DEBT-027** engineering-side (pilot signups ≥ 3 to GA;
   GA-cutover gate per `RB-GA-CUTOVER.md`).
 - **Cross-refs:**
-    - `specs/_audits/2026-05-16-pilot-signup-pipeline.md` (wave-27
+    - `specs/_audits/sealed/2026-05-16-pilot-signup-pipeline.md` (wave-27
       enablement bundle — admin scripts + Grafana panels)
     - `docs/internal/pilot-comms-templates.md` (wave-28 pilot-outreach
       email templates referencing `https://signup.corelink.humangr.com/pilot/<token>`)
-    - `specs/_audits/2026-05-15-debt-register.md §DEBT-027` (row update)
+    - `specs/_audits/sealed/2026-05-15-debt-register.md §DEBT-027` (row update)
 
 ## 1. Why
 
@@ -35,8 +35,8 @@ outreach was blocked on the backend: every pilot signup would have
 | 2 | D1 migration — `pilot_signups` table | `migrations/d1/0053_pilot_signups.sql` |
 | 3 | Token-mint CLI | `scripts/admin/mint-pilot-token.sh` |
 | 4 | Integration tests (8 cases) | `apps/server/tests/signup_pilot.rs` |
-| 5 | This audit doc | `specs/_audits/2026-05-16-signup-corelink-dev-backend.md` |
-| 6 | DEBT-027 row → engineering-CLOSED | `specs/_audits/2026-05-15-debt-register.md` |
+| 5 | This audit doc | `specs/_audits/sealed/2026-05-16-signup-corelink-dev-backend.md` |
+| 6 | DEBT-027 row → engineering-CLOSED | `specs/_audits/sealed/2026-05-15-debt-register.md` |
 
 ## 3. Token format + verify discipline
 
@@ -305,7 +305,7 @@ trait-objects lands at the T-7d PRR ship gate.
 DEBT-027 → **engineering-CLOSED**. Owner-side row (announcement +
 ≥ 3 signup collection + per-tenant 8-step pre-flight) remains OPEN
 pending the wave-28 pilot-comms package send. The DEBT-027 row in
-`specs/_audits/2026-05-15-debt-register.md` is updated to reflect
+`specs/_audits/sealed/2026-05-15-debt-register.md` is updated to reflect
 the engineering-side closure with the wave-29 stream-1 commit ref.
 
 ## 15. Closure note — live-D1 tests added wave-30
@@ -322,7 +322,7 @@ exercises the SQLite UNIQUE INDEX duplicate-email contract, pins
 the wave-29 fail-CLOSED ordering (§6) against a durable backing
 store, and asserts migration idempotency under
 `INV-AUTH-MIGRATION-ADDITIVE`. See
-`specs/_audits/2026-05-16-signup-live-d1-tests.md` for the full
+`specs/_audits/sealed/2026-05-16-signup-live-d1-tests.md` for the full
 design rationale and test matrix.
 
 ---

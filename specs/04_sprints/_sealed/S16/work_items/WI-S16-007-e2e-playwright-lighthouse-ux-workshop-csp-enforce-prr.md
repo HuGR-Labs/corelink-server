@@ -89,7 +89,7 @@ Deliverables 6-fold:
    - SEV-3 alert se violations > 50/dia (potencial false-positive surge).
 
 6. **Closing PRR STANDARD doc S-16** + adversarial summary aggregation + evidence pack:
-   - **PRR doc** `specs/04_sprints/S16/PRR-S16.md` covering:
+   - **PRR doc** `specs/04_sprints/_sealed/S16/PRR-S16.md` covering:
      - DoD §6 + §7 criteria status (single-phase SEAL D+18; STANDARD lane no observation window).
      - CTRLs trace verified (CTRL-AUTH-010 + CTRL-CRED-001 + CTRL-PRIV-001 + CTRL-PRIV-CONSENT-001..006 reflection enforced).
      - All 7 WIs SEALED state precondition.
@@ -223,7 +223,7 @@ Sprint ship gate; STANDARD lane; closing WI single-phase SEAL D+18.
    - Monitor 30d enforce prod com < 5 violations/dia threshold.
    - SEV-3 alert se violations > 50/dia (potencial false-positive surge).
 
-6. **Closing PRR doc** em `specs/04_sprints/S16/PRR-S16.md`:
+6. **Closing PRR doc** em `specs/04_sprints/_sealed/S16/PRR-S16.md`:
    - Front matter per `prr` schema: feature_wi + capabilities + prod_target_date + work_status (NOT_STARTED → IN_REVIEW → APPROVED).
    - Body covering DoD + §7 + CTRLs trace + all 7 WIs SEALED state + Playwright E2E + Lighthouse + cross-browser + UX SUS + CSP enforce + LINDDUN + métricas Prometheus + adversarial summary aggregation 30+ scenarios.
    - Promotion gate decision (APPROVED | CONDITIONALLY_APPROVED | REJECTED) + waivers se applicable.
@@ -437,7 +437,7 @@ Feature: S-16 ship gate — Playwright E2E + Lighthouse + cross-browser + UX SUS
 | Lighthouse 30d sustained report | `specs/_audits/2026-XX-XX-lighthouse-s16-30d.md` | Markdown |
 | CSP enforce sustained report | `specs/_audits/2026-XX-XX-csp-enforce-s16-30d.md` | Markdown |
 | Adversarial summary | `specs/_audits/2026-XX-XX-adversarial-summary-s16.md` | Markdown |
-| PRR doc S-16 | `specs/04_sprints/S16/PRR-S16.md` | Markdown |
+| PRR doc S-16 | `specs/04_sprints/_sealed/S16/PRR-S16.md` | Markdown |
 | Release notes S-16 | `specs/04_sprints/S16/RELEASE_NOTES.md` | Markdown |
 | Conditionally approved waivers + ADRs | `specs/_decisions/ADR-XXXX-*.md` (if applicable) | Markdown |
 
@@ -637,7 +637,7 @@ Pré-PRR mandatory check: confirmed canonical reviewers vs pending. Sprint S-16 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S16-007 (cycle 12.S16.0; STANDARD lane single-phase SEAL D+18; Playwright E2E + Lighthouse CI ≥ 95 + cross-browser matrix + UX SUS ≥ 75 + CSP enforce + PRR 5-8 canonical). |
-| 1.1.0 | 2026-05-14 | Gustavo (via Sonnet builder) | SEAL — Playwright e2e suite (23 tests across 11 spec files; 9 PASS / 14 FIXME / 0 FAIL on local chromium); Lighthouse CI config + workflow SHA-pinned; @axe-core/playwright full-page sweep (public pages 0 serious/critical); CSP_ENFORCEMENT report-only→enforce env flag wired (next.config.ts + middleware.ts + README rollout doc); `specs/_audits/2026-05-14-s16-ux-workshop.md` + `2026-05-14-s16-adversarial-summary.md` committed; PRR-S16 `CONDITIONALLY_APPROVED` (5 waivers W1..W5); spec contract bumped to v1.4.0; ship-gate-discovered HIGH finding F1 (nested `<html>` in merged admin-ui) queued as HF-S17-001. |
+| 1.1.0 | 2026-05-14 | Gustavo (via Sonnet builder) | SEAL — Playwright e2e suite (23 tests across 11 spec files; 9 PASS / 14 FIXME / 0 FAIL on local chromium); Lighthouse CI config + workflow SHA-pinned; @axe-core/playwright full-page sweep (public pages 0 serious/critical); CSP_ENFORCEMENT report-only→enforce env flag wired (next.config.ts + middleware.ts + README rollout doc); `specs/_audits/sealed/2026-05-14-s16-ux-workshop.md` + `2026-05-14-s16-adversarial-summary.md` committed; PRR-S16 `CONDITIONALLY_APPROVED` (5 waivers W1..W5); spec contract bumped to v1.4.0; ship-gate-discovered HIGH finding F1 (nested `<html>` in merged admin-ui) queued as HF-S17-001. |
 
 ## 30. Anti-patterns evitados
 
@@ -667,8 +667,8 @@ keys, real-Clerk e2e execution, HF-S17-001 nested-`<html>` hotfix). All
 prerequisite gates green: `pnpm install --frozen-lockfile`, `typecheck`,
 `lint`, `test` (244 / 244), `build`, `e2e:list` (23 tests), `e2e`
 (9 PASS / 14 FIXME / 0 FAIL on local chromium). Evidence pack:
-`specs/_audits/2026-05-14-s16-ux-workshop.md`,
-`specs/_audits/2026-05-14-s16-adversarial-summary.md`,
-`specs/04_sprints/S16/PRR-S16.md`. Cross-WI 36 adversarial scenarios
+`specs/_audits/sealed/2026-05-14-s16-ux-workshop.md`,
+`specs/_audits/sealed/2026-05-14-s16-adversarial-summary.md`,
+`specs/04_sprints/_sealed/S16/PRR-S16.md`. Cross-WI 36 adversarial scenarios
 catalogued; 100% mitigation rate with one ship-gate-discovered HIGH
 finding (F1) queued for S-17 hotfix HF-S17-001.

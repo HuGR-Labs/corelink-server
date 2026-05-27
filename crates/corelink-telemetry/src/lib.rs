@@ -16,7 +16,7 @@
 //!
 //! ## Stage 0 absorption strategy — Option-A aggregator
 //!
-//! Per `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §6 sub-step
+//! Per `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md` §6 sub-step
 //! 3, this crate "absorbs" 7 existing telemetry crates. Following the
 //! same Option-A pattern established by sub-step 2 (`corelink-crypto`),
 //! this Stage 0 commit lands corelink-telemetry as a re-export

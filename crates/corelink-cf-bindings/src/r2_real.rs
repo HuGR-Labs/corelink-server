@@ -66,7 +66,7 @@
 //! - ≥ 6 unit tests covering tenant-prefix validation, idempotency,
 //!   and error-path mapping.
 //!
-//! See `specs/_audits/2026-05-15-cf-binding-real-pattern.md` for the
+//! See `specs/_audits/sealed/2026-05-15-cf-binding-real-pattern.md` for the
 //! step-by-step recipe.
 
 use bytes::Bytes;

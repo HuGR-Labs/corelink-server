@@ -381,7 +381,7 @@ cargo test --workspace --no-run 2>&1 | tail -3
 #
 # Canonical case (BYOK orchestrator, 4-provider mutually-exclusive features):
 #   adr ref:   specs/03_architecture/adrs/ADR-S30-001-byok-mutually-exclusive-providers.md
-#   audit ref: specs/_audits/2026-05-15-byok-real-provider-pattern.md §7
+#   audit ref: specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §7
 
 # L1.4: no function-level #[allow] smuggled
 grep -rn "^[[:space:]]*#\[allow(clippy" "$TARGET_DIR/crates/<new-crate>/src/" 2>/dev/null | grep -v "^#!\[allow"
@@ -880,7 +880,7 @@ These are MY personal failures from 30 days of execution. The skill exists to re
 
 **Canonical ratification (BYOK orchestrator case):**
 - ADR: `specs/03_architecture/adrs/ADR-S30-001-byok-mutually-exclusive-providers.md` (ACCEPTED 2026-05-16).
-- Baseline audit: `specs/_audits/2026-05-15-byok-real-provider-pattern.md §7`.
+- Baseline audit: `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §7`.
 - Implementation: `apps/server/src/byok_orchestrator.rs` lines 76–117 (6 pairwise `compile_error!` macros for the AWS/GCP/Azure/Vault feature flags).
 - Regression guard: `scripts/byok-feature-validate.sh` (re-asserts macros + per-provider build matrix).
 

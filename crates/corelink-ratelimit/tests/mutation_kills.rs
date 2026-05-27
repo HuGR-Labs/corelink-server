@@ -8,7 +8,7 @@
 //! surviving mutant from MISSED → CAUGHT so the nightly CI gate
 //! enforces the higher bar.
 //!
-//! See `specs/_audits/2026-05-15-mutation-expansion.md` for the per-
+//! See `specs/_audits/sealed/2026-05-15-mutation-expansion.md` for the per-
 //! mutant classification.
 
 #![forbid(unsafe_code)]

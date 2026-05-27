@@ -14,7 +14,7 @@ tags: ["audit", "sprint-close", "s17", "adversarial"]
 
 **Target.** S-17 Ops Maturity — 6 WIs all SEALED in `main` at commit `101f916`.
 **Scope.** Re-verify the 4 P0 spec gaps surfaced in the pre-flight audit
-(`specs/_audits/2026-05-14-s17-sprint-preflight-review.md`, commit `9e666b4`)
+(`specs/_audits/sealed/2026-05-14-s17-sprint-preflight-review.md`, commit `9e666b4`)
 against the delivered code + docs; check pre-merge gates; verify charter
 constraints; surface new findings; score 0–10; render verdict.
 
@@ -66,7 +66,7 @@ invariants reconciliation).
 | 1 | Chaos catalog covers only 37 % of P0/P1 FMs (8 of 22) | **PARTIAL** | `failure_modes.md` now lists **23** P0/P1 FMs (1 P0 `FM-451` + 22 P1). `RB-CHAOS-CATALOG.md` references 17 distinct FM-IDs, but the intersection with the P0/P1 set is **9** (FM-051, FM-054, FM-156, FM-202, FM-254, FM-300, FM-302, FM-400, FM-101 via §1 cross-ref). Coverage = **9/23 = 39 %**. Pre-flight bar was implicitly ~80 %. Catalog also still self-reports "Distinct FM-IDs covered: 8 — AC gate ≥ 8 satisfied" (runtime view §5), i.e. WI-001's AC gate of "≥ 8 FMs" was the *floor*, not the *target*. Net: the gap is essentially unchanged. |
 | 2 | Runbook count drift (40 / 47 / 25 / 55) | **REGRESSED** | `find specs/_runbooks specs/05_runbooks specs/05_quality/runbooks -name "RB-*.md" -not -name "*INDEX*"` → **62** files. Contract `S17/_spec_contract.md` R-S17-8 still says "All **40** runbooks dry-run executed em últimos 90d". `RB-RUNBOOK-DRILL-INDEX.md` §1 says "25 of **47** total". Repo physical count is now 62. The drift expanded from 3-way to 4-way. No reconciling RFC / spec-contract bump. |
 | 3 | SLO catalog has zero RTO/RPO entries | **NOT-ADDRESSED** | `grep -ni "RTO\|RPO" specs/03_architecture/slo_catalog.md` → 0 hits in any §4.x SLO entry (only `§ Nobl9` external reference). Yet `crates/corelink-dr-drill/src/outage.rs:17` references *"SLO catalog `SLO-RTO-REGION-FAILOVER`"* and `outage.rs:30` references *"`SLO-RPO-REGION`"* — both string ids that do **not** exist in the catalog. DR drill pass/fail criteria thus live only in source code constants `RTO_CEIL_SECONDS=1800` + `RPO_CEIL_SECONDS=60`, not in the canonical SLO spec. **Hard blocker for D+50 GA evidence gate.** |
-| 4 | No cross-WI invariants in `_spec_contract.md §8` | **PARTIAL** | `S17/_spec_contract.md §8` still reads literally *"Não cria invariants novas (sprint operational; invariants são em outros sprints)"*. However, the adversarial summary (`specs/_audits/2026-05-14-s17-adversarial-summary.md §7`) **does** enumerate 6 cross-WI integration scenarios (chaos↔PD page routing, DR↔chaos calendar collision, runbook drill↔chaos feedback loop, tabletop finding↔tracker handoff, game day↔blameless culture, PRR conditional↔D+50 gate logic). So the *thinking* is captured at audit-doc level; what is missing is promotion of those rules to enforceable invariants in §8 (which is what the pre-flight asked for). |
+| 4 | No cross-WI invariants in `_spec_contract.md §8` | **PARTIAL** | `S17/_spec_contract.md §8` still reads literally *"Não cria invariants novas (sprint operational; invariants são em outros sprints)"*. However, the adversarial summary (`specs/_audits/sealed/2026-05-14-s17-adversarial-summary.md §7`) **does** enumerate 6 cross-WI integration scenarios (chaos↔PD page routing, DR↔chaos calendar collision, runbook drill↔chaos feedback loop, tabletop finding↔tracker handoff, game day↔blameless culture, PRR conditional↔D+50 gate logic). So the *thinking* is captured at audit-doc level; what is missing is promotion of those rules to enforceable invariants in §8 (which is what the pre-flight asked for). |
 
 ---
 
@@ -81,7 +81,7 @@ invariants reconciliation).
   Update `crates/corelink-dr-drill/src/outage.rs` doc-comments to point to
   the real SLO ids once landed. (Fixes pre-flight P0 #3.)
 - **P0-CLOSE-02** — Canonicalise the runbook count in one source of truth.
-  Recommend: `specs/04_sprints/S17/_spec_contract.md` R-S17-8 → "All P0/P1
+  Recommend: `specs/04_sprints/_sealed/S17/_spec_contract.md` R-S17-8 → "All P0/P1
   runbooks (currently 25 of 62 physical files; canonical list in
   `RB-RUNBOOK-DRILL-INDEX.md`) dry-run executed em últimos 90d". Update
   `RB-RUNBOOK-DRILL-INDEX.md §1` to read "25 of 62 total" (or whatever the

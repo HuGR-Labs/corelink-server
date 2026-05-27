@@ -12,7 +12,7 @@ debts_touched:
 
 ## Scope
 
-The DEBT-015-BUILD inline addendum on `specs/_audits/2026-05-15-debt-register.md`
+The DEBT-015-BUILD inline addendum on `specs/_audits/sealed/2026-05-15-debt-register.md`
 (row DEBT-015) called out three residual build-side blockers carried over
 from the wave-21 P2 docs closure:
 
@@ -180,8 +180,8 @@ docs webpack config to force-inline those aliases in the server bundle.
 - `apps/docs/docs/**/*.mdx` (90 files, .mdx extension stripping)
 - `apps/docs/i18n/{pt-BR,de,es-419}/docusaurus-plugin-content-docs/current/how-to/export-audit-log.mdx`
 - `patches/@docusaurus__core@3.10.1.patch`
-- `specs/_audits/2026-05-15-debt-register.md` (DEBT-015-BUILD addendum updated to PARTIAL with new ETA + precise residual)
-- `specs/_audits/2026-05-16-debt-015-build-closure.md` (this file)
+- `specs/_audits/sealed/2026-05-15-debt-register.md` (DEBT-015-BUILD addendum updated to PARTIAL with new ETA + precise residual)
+- `specs/_audits/sealed/2026-05-16-debt-015-build-closure.md` (this file)
 
 ## ETA for follow-on
 

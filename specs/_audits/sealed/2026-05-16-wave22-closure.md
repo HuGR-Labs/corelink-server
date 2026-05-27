@@ -5,7 +5,7 @@
 > **Author:** wave-22 hygiene agent (Claude Opus 4.7) — branch `wt/r-prep-inv-registry-wave22-sweep`.
 > **Base:** `main` @ `bccdd97` ("merge wt/r-prep-tenant-config-region-resolver into main (wave-21)" — wave-21 SEAL tip).
 > **Scope:** INV registry hygiene + DEBT register survey (wave-22 in-flight — DO NOT close from this stream) + wave-22 stream catalogue + DEBT-008 wave-22 8-crate batch state + DEBT-015-BUILD closure verification + GA-readiness snapshot post wave-21 streams cataloguing + wave-23 candidate streams.
-> **Cross-ref:** `specs/_audits/2026-05-16-wave21-closure.md` (predecessor), `specs/_audits/2026-05-15-debt-register.md` v1.2.0, `specs/03_architecture/invariant_registry.md`, `specs/_audits/2026-05-16-debt-008-mutation-sweep.md` (wave-21 expansion baseline).
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-wave21-closure.md` (predecessor), `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.0, `specs/03_architecture/invariant_registry.md`, `specs/_audits/sealed/2026-05-16-debt-008-mutation-sweep.md` (wave-21 expansion baseline).
 
 ---
 
@@ -32,14 +32,14 @@ Streams #1–#9 are dispatched in parallel by the orchestrator; this stream (#10
 
 ## 2. DEBT-008 wave-22 expanded closure — verification
 
-Per `specs/_audits/2026-05-15-debt-register.md` row §51 (DEBT-008 wave-22 dispatch directive), the wave-22 stream #2 batch targets eight additional crates beyond the wave-21 `corelink-hash` closure (which itself reached **97.22 %** empirical kill rate per `specs/_audits/2026-05-16-debt-008-mutation-sweep.md`).
+Per `specs/_audits/sealed/2026-05-15-debt-register.md` row §51 (DEBT-008 wave-22 dispatch directive), the wave-22 stream #2 batch targets eight additional crates beyond the wave-21 `corelink-hash` closure (which itself reached **97.22 %** empirical kill rate per `specs/_audits/sealed/2026-05-16-debt-008-mutation-sweep.md`).
 
 ### 2.1 DEBT-008 closure ledger (cumulative — pre-wave-22-SEAL)
 
 | Crate | Empirical kill % | Closure status | Source |
 |---|---|---|---|
-| `corelink-audit-chain` | 84.24 % (165 viable; 139 caught; 26 missed → +5 targeted tests; 96 % pop coverage) | **CLOSED** (wave-15, `wt/debt-008-mutation-full-sweep-v2`) | `specs/_audits/2026-05-15-mutation-full-sweep.md` |
-| `corelink-hash` | 97.22 % (35/36; sole remainder is documented-equivalent `(hi << 4) \| lo → (hi << 4) ^ lo` on non-overlapping nibbles) | **CLOSED** (wave-21, `wt/r-prep-debt-008-mutation-sweep` → `49b1f48`) | `specs/_audits/2026-05-16-debt-008-mutation-sweep.md` |
+| `corelink-audit-chain` | 84.24 % (165 viable; 139 caught; 26 missed → +5 targeted tests; 96 % pop coverage) | **CLOSED** (wave-15, `wt/debt-008-mutation-full-sweep-v2`) | `specs/_audits/sealed/2026-05-15-mutation-full-sweep.md` |
+| `corelink-hash` | 97.22 % (35/36; sole remainder is documented-equivalent `(hi << 4) \| lo → (hi << 4) ^ lo` on non-overlapping nibbles) | **CLOSED** (wave-21, `wt/r-prep-debt-008-mutation-sweep` → `49b1f48`) | `specs/_audits/sealed/2026-05-16-debt-008-mutation-sweep.md` |
 | `corelink-pat` | CI-nightly matrix (75 % floor) | OPEN-deferred (CI artifact is SEAL gate per `TD-DEBT-008-WAVE-14-EMPIRICAL`) | `.github/workflows/mutation-nightly.yml` |
 | `corelink-clerk` | CI-nightly matrix (75 % floor) | OPEN-deferred (CI artifact is SEAL gate) | same |
 | `corelink-dual-approval` | CI-nightly matrix (75 % floor) | OPEN-deferred (CI artifact is SEAL gate) | same |
@@ -73,7 +73,7 @@ The `corelink-tenant-path` mutation sweep is blocked on the `Uuid::now_v7` compi
 
 ## 3. DEBT-015-BUILD closure verification
 
-Per `specs/_audits/2026-05-15-debt-register.md` row §71 — DEBT-015 P2 docs portion CLOSED in wave-21 (`wt/r-prep-debt-015-node22-esm` → `8ab8786`); the build-side residual is carried as an inline addendum **DEBT-015-BUILD**, with closure gate:
+Per `specs/_audits/sealed/2026-05-15-debt-register.md` row §71 — DEBT-015 P2 docs portion CLOSED in wave-21 (`wt/r-prep-debt-015-node22-esm` → `8ab8786`); the build-side residual is carried as an inline addendum **DEBT-015-BUILD**, with closure gate:
 
 > Build-side CLOSED gate is green `pnpm build` on Node 22 with engine pin honoured.
 
@@ -182,7 +182,7 @@ The +1 declared INV addition is structural (registry §3 row added in `wt/r-prep
 
 ## 6. DEBT register survey — pre-wave-22-SEAL state
 
-Per `specs/_audits/2026-05-15-debt-register.md` v1.2.0 (last reconciled in wave-21 close). No DEBT closures performed by this stream (charter-bound survey-only). The state below reflects post-wave-21 canonical OPEN rows; wave-22 in-flight streams have **not yet** flipped to CLOSED in the register.
+Per `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.0 (last reconciled in wave-21 close). No DEBT closures performed by this stream (charter-bound survey-only). The state below reflects post-wave-21 canonical OPEN rows; wave-22 in-flight streams have **not yet** flipped to CLOSED in the register.
 
 ### 6.1 Open count + per-priority breakdown (canonical rows; pre-wave-22-SEAL)
 
@@ -282,13 +282,13 @@ Per the wave-22 sweep charter:
 
 ## 10. Cross-references
 
-- `specs/_audits/2026-05-16-wave21-closure.md` (wave-21 closure; predecessor).
-- `specs/_audits/2026-05-16-wave20-closure.md` (wave-20 closure; structural patterns continued).
-- `specs/_audits/2026-05-15-debt-register.md` v1.2.0 (DEBT register canonical state; no new changelog entry this wave — survey-only).
+- `specs/_audits/sealed/2026-05-16-wave21-closure.md` (wave-21 closure; predecessor).
+- `specs/_audits/sealed/2026-05-16-wave20-closure.md` (wave-20 closure; structural patterns continued).
+- `specs/_audits/sealed/2026-05-15-debt-register.md` v1.2.0 (DEBT register canonical state; no new changelog entry this wave — survey-only).
 - `specs/03_architecture/invariant_registry.md` (updated wave-21; stable wave-22 — full coverage maintained).
-- `specs/_audits/2026-05-15-canonical-consistency-baseline.md` (CI ratchet floor; DEBT-004 closure log §3.1).
-- `specs/_audits/2026-05-16-debt-008-mutation-sweep.md` (wave-21 expansion baseline for DEBT-008; sets equivalent-mutation analysis pattern for wave-22 stream #2).
-- `specs/_audits/2026-05-15-mutation-full-sweep.md` (wave-15 `corelink-audit-chain` empirical baseline; sets methodology for wave-22 stream #2 crates).
+- `specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md` (CI ratchet floor; DEBT-004 closure log §3.1).
+- `specs/_audits/sealed/2026-05-16-debt-008-mutation-sweep.md` (wave-21 expansion baseline for DEBT-008; sets equivalent-mutation analysis pattern for wave-22 stream #2).
+- `specs/_audits/sealed/2026-05-15-mutation-full-sweep.md` (wave-15 `corelink-audit-chain` empirical baseline; sets methodology for wave-22 stream #2 crates).
 - `RB-GA-CUTOVER.md` (cutover runbook; greenlight dashboard updated post-wave-22-SEAL).
-- `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` (pentest scope; engagement checklist).
+- `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md` (pentest scope; engagement checklist).
 - `.github/workflows/mutation-nightly.yml` (CI-nightly artifact precedence; `TD-DEBT-008-WAVE-14-EMPIRICAL` SEAL mechanism).

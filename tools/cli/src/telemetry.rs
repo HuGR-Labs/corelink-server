@@ -12,7 +12,7 @@
 //!
 //! # LINDDUN compliance
 //!
-//! See `specs/_audits/2026-05-14-linddun-cli-telemetry.md` for full review.
+//! See `specs/_audits/sealed/2026-05-14-linddun-cli-telemetry.md` for full review.
 
 #![allow(clippy::print_stderr)]
 

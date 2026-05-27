@@ -428,7 +428,7 @@ PRR ship-gate sign-off matrix (12 HIGH_RISK roles).
 - `specs/03_architecture/adrs/ADR-S11-002` (audit fail-CLOSED vs billing fail-OPEN split-tier).
 - `specs/03_architecture/adrs/ADR-S11-003` (erasure_salt interim D1 vault).
 - `specs/03_architecture/adrs/ADR-S11-004` (cross-backend eventual consistency).
-- `specs/_audits/2026-05-14-slo-instrumentation-gaps.md` (SLI-binding pattern).
+- `specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md` (SLI-binding pattern).
 - `crates/corelink-privacy-erasure-worker/` (canonical worker crate).
 - `crates/corelink-privacy-pseudonymize/` (canonical pseudonymization helper).
 - `crates/corelink-dsr/` (DSR API surface — WI-S11-001).

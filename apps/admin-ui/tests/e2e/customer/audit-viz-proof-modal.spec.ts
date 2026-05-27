@@ -3,7 +3,7 @@
  * in-browser verifier passes.
  *
  * Verifies Component C of the customer audit-chain visualization spec
- * (`specs/_audits/2026-05-15-audit-viz-spec.md`):
+ * (`specs/_audits/sealed/2026-05-15-audit-viz-spec.md`):
  *   - "Show proof" on a row opens the inclusion-proof modal
  *   - the modal renders leaf hash + expected root + algorithm + sibling
  *     count

@@ -14,7 +14,7 @@ superseded_by: null
 inv: []
 gap: null
 references:
-  - "specs/_audits/2026-05-16-lote-7-raci-detail.md"
+  - "specs/_audits/sealed/2026-05-16-lote-7-raci-detail.md"
   - "specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md"
   - "specs/_proposals/2026-05-16-framework-reviewer-roles.md"
   - "specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md"
@@ -25,7 +25,7 @@ tags: ["audit", "lote-7", "wave-26", "governance", "reviewers", "raci", "sla", "
 
 # Lote 7 follow-ons closure — wave-26 (CI SLA wire-up + per-row INV binding + pairing selection heuristics)
 
-> **Purpose.** Close the three wave-25 follow-on items deferred in `specs/_audits/2026-05-16-lote-7-raci-detail.md §8`. Wave-26 lands the deliverables in a single commit on top of main `2a4e00c`. None of the three items modify `00_framework.md` semantics; all three operate downstream of the addendum's existing §3 / §6 clauses.
+> **Purpose.** Close the three wave-25 follow-on items deferred in `specs/_audits/sealed/2026-05-16-lote-7-raci-detail.md §8`. Wave-26 lands the deliverables in a single commit on top of main `2a4e00c`. None of the three items modify `00_framework.md` semantics; all three operate downstream of the addendum's existing §3 / §6 clauses.
 
 ---
 
@@ -195,8 +195,8 @@ This wave-26 work updates:
 | `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md` | Add INV column to §6.2 (5/15 rows bound); add new §6.4 pairing selection heuristics (5 sub-subsections); renumber §6.4→§6.5 (disambiguating), §6.5→§6.6 (cross-refs); add wave-26 tag + sla tag; add v0.1.3 change-log entry. | 0.1.2 → 0.1.3 |
 | `scripts/check-raci-sla.py` | New advisory CI gate. Parses §6.2 + lanes; emits conformance line. `--dry-run` and `--since <iso-date>` modes. | (new file) |
 | `.github/workflows/spec_validation.yml` | Add trailing advisory step running `check-raci-sla.py --dry-run`. | (workflow edit) |
-| `specs/_audits/2026-05-16-lote-7-raci-detail.md` | Mark §8 items 1-3 as CLOSED with pointer to this wave-26 audit doc. | 1.0.0 → 1.0.1 |
-| `specs/_audits/2026-05-16-lote-7-followons-closure.md` (this file) | Initial creation. | 1.0.0 |
+| `specs/_audits/sealed/2026-05-16-lote-7-raci-detail.md` | Mark §8 items 1-3 as CLOSED with pointer to this wave-26 audit doc. | 1.0.0 → 1.0.1 |
+| `specs/_audits/sealed/2026-05-16-lote-7-followons-closure.md` (this file) | Initial creation. | 1.0.0 |
 
 ### §6.1 Upstream documents (this audit references but does not modify)
 
@@ -221,4 +221,4 @@ None. The three wave-25 deferrals are closed. Possible future extensions (not de
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 1.0.0 | 2026-05-16 | Claude Opus 4.7 (wave-26 Lote 7 follow-ons closure agent) | Initial audit doc closing the three wave-25 follow-on items deferred in `specs/_audits/2026-05-16-lote-7-raci-detail.md §8`: (1) CI SLA wire-up via new `scripts/check-raci-sla.py` advisory gate wired into `.github/workflows/spec_validation.yml`; (2) Per-row INV binding column added to addendum §6.2 with 6 of 15 rows bound (rows 3, 8, 9, 10, 11, 13); (3) New §6.4 in addendum with Pairing-Alpha vs Pairing-Beta selection heuristics including decision tree, pre-GA default (Pairing-Beta), re-pairing criteria, anti-patterns, and audit-trail format. §6.4 renumbers prior §6.4 → §6.5 (disambiguating rules) and §6.5 → §6.6 (cross-refs); §7+ unchanged. Addendum bumps 0.1.2 → 0.1.3. The wave-25 audit doc is updated to mark §8 items 1-3 as CLOSED with pointer to this audit doc. |
+| 1.0.0 | 2026-05-16 | Claude Opus 4.7 (wave-26 Lote 7 follow-ons closure agent) | Initial audit doc closing the three wave-25 follow-on items deferred in `specs/_audits/sealed/2026-05-16-lote-7-raci-detail.md §8`: (1) CI SLA wire-up via new `scripts/check-raci-sla.py` advisory gate wired into `.github/workflows/spec_validation.yml`; (2) Per-row INV binding column added to addendum §6.2 with 6 of 15 rows bound (rows 3, 8, 9, 10, 11, 13); (3) New §6.4 in addendum with Pairing-Alpha vs Pairing-Beta selection heuristics including decision tree, pre-GA default (Pairing-Beta), re-pairing criteria, anti-patterns, and audit-trail format. §6.4 renumbers prior §6.4 → §6.5 (disambiguating rules) and §6.5 → §6.6 (cross-refs); §7+ unchanged. Addendum bumps 0.1.2 → 0.1.3. The wave-25 audit doc is updated to mark §8 items 1-3 as CLOSED with pointer to this audit doc. |

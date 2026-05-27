@@ -1,7 +1,7 @@
 //! Wave-16 DSR completion statuspage publish job — pure aggregator.
 //!
 //! Closes the status-page wiring deferred at wave-15 per
-//! `specs/_audits/2026-05-15-dsr-worker-production.md` §5 +
+//! `specs/_audits/sealed/2026-05-15-dsr-worker-production.md` §5 +
 //! WI-S11-002 §6.
 //!
 //! # Surface

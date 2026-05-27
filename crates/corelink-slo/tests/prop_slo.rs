@@ -79,7 +79,7 @@ const ALL_WINDOWS: &[BurnRateWindow] = &[
 #[test]
 fn canonical_slis_count_pinned() {
     // Bumped 7 -> 12 by audit 2026-05-14 P0 closures
-    // (`specs/_audits/2026-05-14-slo-instrumentation-gaps.md §5`):
+    // (`specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md §5`):
     // +AvailControlPlane, +LatencyCasPutP99, +LatencyAcHitP99,
     // +CorrectnessCas, +CorrectnessTenantIsolation.
     //
@@ -89,7 +89,7 @@ fn canonical_slis_count_pinned() {
     // +ReplicationLagKv, +ReplicationLagNeon.
     //
     // Bumped 17 -> 18 by audit
-    // `specs/_audits/2026-05-15-dsr-worker-production.md §3`
+    // `specs/_audits/sealed/2026-05-15-dsr-worker-production.md §3`
     // (S-11 / WI-S11-002 SLI binding closure):
     // +FreshDsrErasure (`slo_catalog.md §4.12`).
     assert_eq!(canonical_slis().len(), 18);

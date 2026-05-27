@@ -70,9 +70,9 @@ markdown link breakages only when the spec actually wrote them as
 
 | Source file | Captured text | Reason it's not a real breakage |
 |---|---|---|
-| `specs/_audits/2026-05-16-debt-015-build-closure.md` L54 | `` [`permissions.mdx`](./permissions) `` | Inside an inline code-span prose passage describing a path; the captured "link" is a quoted code fragment, not a renderable link target |
-| `specs/_audits/2026-05-16-wave24-adversarial-review.md` L10/172 | `` [0,10](10 - 1.5·P0 - 0.5·P1 - 0.15·P2 - 0.05·P3) `` | Mathematical interval notation `[0,10]` followed by a parenthesised score formula; markdown parser will NOT render this as a link (the bracket-paren pair contains a space-bearing math expression, not a URL) |
-| `specs/_audits/2026-05-16-wave25-adversarial-review.md` L? | same `[0,10](10 - 1.5·…)` | same — score formula notation duplicated across review docs |
+| `specs/_audits/sealed/2026-05-16-debt-015-build-closure.md` L54 | `` [`permissions.mdx`](./permissions) `` | Inside an inline code-span prose passage describing a path; the captured "link" is a quoted code fragment, not a renderable link target |
+| `specs/_audits/sealed/2026-05-16-wave24-adversarial-review.md` L10/172 | `` [0,10](10 - 1.5·P0 - 0.5·P1 - 0.15·P2 - 0.05·P3) `` | Mathematical interval notation `[0,10]` followed by a parenthesised score formula; markdown parser will NOT render this as a link (the bracket-paren pair contains a space-bearing math expression, not a URL) |
+| `specs/_audits/sealed/2026-05-16-wave25-adversarial-review.md` L? | same `[0,10](10 - 1.5·…)` | same — score formula notation duplicated across review docs |
 
 ### §1.5 Historical-FROZEN sprint-contract → `sprint.md` chain (40 hits, NO ACTION)
 
@@ -81,7 +81,7 @@ markdown link breakages only when the spec actually wrote them as
 never authored — the canonical doc became `_spec_contract.md`. This
 was acknowledged at SEAL time:
 
-> `specs/04_sprints/S07/_spec_contract.md` v1.6.0 changelog: "Parent:
+> `specs/04_sprints/_sealed/S07/_spec_contract.md` v1.6.0 changelog: "Parent:
 > `[S-07](../sprint.md)` → `../_spec_contract.md` across all 5 WIs
 > (sprint.md not authored)"
 
@@ -122,28 +122,28 @@ Files containing such inline references:
 | `specs/03_architecture/adrs/ADR-0032-webauthn-level3.md` | **FROZEN** | `corelink-webauthn` | **ESCALATED §5** |
 | `specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md` | **FROZEN** | `corelink-chunker` | **ESCALATED §5** |
 | `specs/tla/multipart_determinism.tla` | (no frontmatter — TLA+ source) | `corelink-chunker` (comment annotation) | **ESCALATED §5** — out of audit scope (`.tla` not `.md`) |
-| `specs/04_sprints/S05/work_items/WI-S05-002-corelink-chunker-fastcdc-adr-0022.md` | **FROZEN** | `corelink-chunker` | **ESCALATED §5** |
-| `specs/04_sprints/S05/sprint.md` | (locked at S05 seal) | `corelink-chunker` | **ESCALATED §5** |
-| `specs/04_sprints/S05/_spec_contract.md` | **FROZEN** | `corelink-chunker` | **ESCALATED §5** |
-| `specs/04_sprints/S03/_spec_contract.md` | **FROZEN** | `corelink-webauthn` | **ESCALATED §5** |
-| `specs/04_sprints/S03/work_items/WI-S03-006-webauthn-level3-admin.md` | **FROZEN** | `corelink-webauthn` (12+ sites — all of file 's anchors) | **ESCALATED §5** |
-| `specs/04_sprints/S07/_spec_contract.md` | **FROZEN** | `corelink-quota` | **ESCALATED §5** |
-| `specs/04_sprints/S07/PRR-S07.md` | **FROZEN** | `corelink-quota` | **ESCALATED §5** |
-| `specs/04_sprints/S07/work_items/WI-S07-003-quota-enforcement-middleware.md` | **FROZEN** | `corelink-quota` | **ESCALATED §5** |
+| `specs/04_sprints/_sealed/S05/work_items/WI-S05-002-corelink-chunker-fastcdc-adr-0022.md` | **FROZEN** | `corelink-chunker` | **ESCALATED §5** |
+| `specs/04_sprints/_sealed/S05/sprint.md` | (locked at S05 seal) | `corelink-chunker` | **ESCALATED §5** |
+| `specs/04_sprints/_sealed/S05/_spec_contract.md` | **FROZEN** | `corelink-chunker` | **ESCALATED §5** |
+| `specs/04_sprints/_sealed/S03/_spec_contract.md` | **FROZEN** | `corelink-webauthn` | **ESCALATED §5** |
+| `specs/04_sprints/_sealed/S03/work_items/WI-S03-006-webauthn-level3-admin.md` | **FROZEN** | `corelink-webauthn` (12+ sites — all of file 's anchors) | **ESCALATED §5** |
+| `specs/04_sprints/_sealed/S07/_spec_contract.md` | **FROZEN** | `corelink-quota` | **ESCALATED §5** |
+| `specs/04_sprints/_sealed/S07/PRR-S07.md` | **FROZEN** | `corelink-quota` | **ESCALATED §5** |
+| `specs/04_sprints/_sealed/S07/work_items/WI-S07-003-quota-enforcement-middleware.md` | **FROZEN** | `corelink-quota` | **ESCALATED §5** |
 | `specs/04_sprints/S08/_spec_contract.md` | **FROZEN** | `corelink-quota`, `corelink-abuse` | **ESCALATED §5** |
 | `specs/04_sprints/S08/PRR-S08.md` | **FROZEN** | `corelink-quota`, `corelink-abuse` | **ESCALATED §5** |
 | `specs/04_sprints/S08/work_items/WI-S08-003-quota-checker-middleware-atomic-cas.md` | **FROZEN** | `corelink-quota` | **ESCALATED §5** |
 | `specs/04_sprints/S08/work_items/WI-S08-004-abuse-detection-heuristica-scoring.md` | **FROZEN** | `corelink-abuse` | **ESCALATED §5** |
-| `specs/04_sprints/S09/_spec_contract.md` | **FROZEN** | `corelink-canary` | **ESCALATED §5** |
-| `specs/04_sprints/S09/PRR-S09.md` | **FROZEN** | `corelink-canary` | **ESCALATED §5** |
-| `specs/04_sprints/S09/work_items/WI-S09-007-synthetic-canary-3-regions-runbook-dry-run.md` | **FROZEN** | `corelink-canary` | **ESCALATED §5** |
+| `specs/04_sprints/_sealed/S09/_spec_contract.md` | **FROZEN** | `corelink-canary` | **ESCALATED §5** |
+| `specs/04_sprints/_sealed/S09/PRR-S09.md` | **FROZEN** | `corelink-canary` | **ESCALATED §5** |
+| `specs/04_sprints/_sealed/S09/work_items/WI-S09-007-synthetic-canary-3-regions-runbook-dry-run.md` | **FROZEN** | `corelink-canary` | **ESCALATED §5** |
 | `specs/04_sprints/S10/_spec_contract.md` | **FROZEN** | `corelink-quota` | **ESCALATED §5** |
 | `specs/04_sprints/S10/PRR-S10.md` | **FROZEN** | `corelink-quota` | **ESCALATED §5** |
 | `specs/04_sprints/S10/work_items/WI-S10-005-quota-state-machine-overage-email.md` | **FROZEN** | `corelink-quota` | **ESCALATED §5** |
-| `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` | (audit doc — historical) | all 7 absorbed | **ESCALATED §5** — by design (charter spec describing the absorption itself) |
+| `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md` | (audit doc — historical) | all 7 absorbed | **ESCALATED §5** — by design (charter spec describing the absorption itself) |
 | `specs/_audits/2026-05-26-w35-p2-{ac,telemetry,billing,ops,cas}-absorption.md` (5 files) | SEALED audits | all absorbed (by design — these audits *document* the absorption) | **NO ACTION** (intentional historical mention) |
 | `specs/_audits/2026-05-16-debt-008-wave2{3,4}-mutation-sweep.md`, `2026-05-16-pre-ga-pentest-scope.md`, `2026-05-16-inv-draft-sweep.md`, `2026-05-22-w33-stream-a-data-path.md`, `2026-05-01-pentest-s03-internal.md` | sealed audits | various | **NO ACTION** (sealed historical audit content) |
-| `specs/_audits/stride-per-crate/STRIDE-corelink-rate-limit.md` | sealed | `corelink-quota` | **NO ACTION** (sealed) |
+| `specs/_audits/sealed/stride-per-crate/STRIDE-corelink-rate-limit.md` | sealed | `corelink-quota` | **NO ACTION** (sealed) |
 
 ## §3. Method
 

@@ -704,7 +704,7 @@ pub use native::AwsKmsRealProvider;
 /// `BYOKError::Provider("AWS KMS real provider unsupported on wasm32; ...")`.
 /// In production CF Worker deployments envelope operations are forwarded to
 /// the native server process via the internal control-plane RPC — see
-/// `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+/// `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md`.
 #[cfg(target_arch = "wasm32")]
 #[derive(Debug, Clone)]
 #[non_exhaustive]

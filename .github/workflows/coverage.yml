@@ -8,7 +8,7 @@ name: coverage (R7-1 supply-quality rollup)
 #
 # SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin policy.
 #
-# Reference: scripts/coverage.sh, specs/_audits/2026-05-14-coverage-baseline.md
+# Reference: scripts/coverage.sh, specs/_audits/sealed/2026-05-14-coverage-baseline.md
 
 on:
   pull_request:

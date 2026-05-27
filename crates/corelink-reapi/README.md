@@ -124,7 +124,7 @@ wall-clock, same logical event). Ingest timestamp lives in
 
 ## Cross-references
 
-- `specs/04_sprints/S01/work_items/WI-S01-005-reapi-batchupdateblobs.md`
+- `specs/04_sprints/_sealed/S01/work_items/WI-S01-005-reapi-batchupdateblobs.md`
 - `specs/03_architecture/auth_stub_contract.md` (S-02↔S-03 bridge)
 - `specs/03_architecture/error_taxonomy.md` (v0.2.0+ for the 4 new
   CAS codes registered by this WI)

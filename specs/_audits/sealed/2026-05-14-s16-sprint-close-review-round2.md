@@ -66,7 +66,7 @@ and ADR backing; they are not P0 equivalents in disguise.
 | # | Round-1 P0 | Status | Evidence |
 |---|---|---|---|
 | 1 | All 6 WI frontmatter still DRAFT / READY (should be SEALED / DONE) | **FIXED** | `for f in specs/04_sprints/S16/work_items/*.md; head -20 $f` shows `doc_status: "SEALED"` + `work_status: "DONE"` for all 6 WIs; WI-S16-007 also `SEALED` / `DONE` at version `1.1.0` (frontmatter dump above) |
-| 2 | Spec contract DRAFT, stale WI mapping (003 still labelled "Usage dashboard"), no changelog | **FIXED** | `specs/04_sprints/S16/_spec_contract.md:3` → `doc_status: "SEALED"`; `:5` → `version: "1.4.0"`; §20 Changelog (line 313+) contains rows for 1.0.0 → 1.4.0 covering WI-001..007 with the 003 pivot explicitly recorded in the 1.2.0 row |
+| 2 | Spec contract DRAFT, stale WI mapping (003 still labelled "Usage dashboard"), no changelog | **FIXED** | `specs/04_sprints/_sealed/S16/_spec_contract.md:3` → `doc_status: "SEALED"`; `:5` → `version: "1.4.0"`; §20 Changelog (line 313+) contains rows for 1.0.0 → 1.4.0 covering WI-001..007 with the 003 pivot explicitly recorded in the 1.2.0 row |
 | 3 | Duplicate `next.config.mjs` removed CSP `headers()` override + `withNextIntl` | **FIXED** | `find apps/admin-ui -name "next.config.mjs"` → empty; only `apps/admin-ui/next.config.ts` remains |
 
 ## 4. F1 Hotfix Verification (HF-S17-001)

@@ -886,7 +886,7 @@ proptest! {
 
 // ---- prop_rate_limit_body_always_consistent_with_headers ------------
 //
-// Audit `specs/_audits/2026-05-15-ratelimit-ux-audit.md` §6 invariant:
+// Audit `specs/_audits/sealed/2026-05-15-ratelimit-ux-audit.md` §6 invariant:
 // on EVERY 429, the canonical JSON body's fields mirror the headers
 // byte-for-byte — `error.kind` == `X-Rate-Limit-Type`,
 // `error.retry_after_seconds` == `Retry-After`,

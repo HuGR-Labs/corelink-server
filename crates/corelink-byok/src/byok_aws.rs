@@ -3,7 +3,7 @@
 //! # Modules
 //!
 //! - [`real`] — `AwsKmsRealProvider` (native, production AWS SDK client)
-//!   and `AwsKmsWasmStub` (wasm32). See `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+//!   and `AwsKmsWasmStub` (wasm32). See `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md`.
 //! - Top-level — arch-agnostic helpers (ARN validation, FIPS endpoint
 //!   constants, hostname resolution) and the original `AwsKmsProvider`
 //!   (native-only mock-or-real provider, retained for backward

@@ -8,7 +8,7 @@
 > branch `wt/r-prep-debt-029-route-syntax`.
 > **Base:** `main` @ `04f2dff` ("merge wt/r-prep-perf-baseline-ga-freeze into main (wave-29)").
 > **Scope:** Close the latent route-syntax bug surfaced as follow-up #1 in
-> `specs/_audits/2026-05-16-signup-corelink-dev-backend.md §13`. The path
+> `specs/_audits/sealed/2026-05-16-signup-corelink-dev-backend.md §13`. The path
 > constants in `apps/server/src/routes/ac.rs` (`AC_LOOKUP_ROUTE`,
 > `AC_UPDATE_ROUTE`) and `apps/server/src/routes/admin.rs`
 > (`ADMIN_READ_ROUTE`) declared the `{name}` placeholder form used by
@@ -21,8 +21,8 @@
 > fired). The bug was silent because no `oneshot`-based integration
 > test exercised either route prior to wave-30.
 >
-> **Cross-ref:** `specs/_audits/2026-05-15-debt-register.md` (DEBT-029 row
-> appended below), `specs/_audits/2026-05-16-signup-corelink-dev-backend.md §13`
+> **Cross-ref:** `specs/_audits/sealed/2026-05-15-debt-register.md` (DEBT-029 row
+> appended below), `specs/_audits/sealed/2026-05-16-signup-corelink-dev-backend.md §13`
 > (latent-bug discovery + capture), `apps/server/Cargo.toml` (axum 0.7 pin).
 
 ---
@@ -35,7 +35,7 @@ SLOs:
 * `SLO-AVAIL-AC` + `SLO-LAT-AC-HIT-P99` (AC lookup / update) — both
   named in `apps/server/src/routes/ac.rs §SLO emit` doc-comment and
   cross-linked from the audit closure list at
-  `specs/_audits/2026-05-15-debt-register.md`.
+  `specs/_audits/sealed/2026-05-15-debt-register.md`.
 * `SLO-AVAIL-CP` (admin control plane) — named in
   `apps/server/src/routes/admin.rs §SLO emit`.
 
@@ -100,7 +100,7 @@ The wave-29 stream-1 signup agent (which landed `signup.rs` with the
 correct `:token` form per `SIGNUP_PILOT_ROUTE: &str =
 "/v1/signup/pilot/:token"`) noticed the inconsistency while
 cross-referencing the route conventions and surfaced it as
-follow-up #1 in `specs/_audits/2026-05-16-signup-corelink-dev-backend.md §13`,
+follow-up #1 in `specs/_audits/sealed/2026-05-16-signup-corelink-dev-backend.md §13`,
 captured as **DEBT-029-engineering** to be added in wave-30.
 
 ## 3. Out-of-scope: `cas.rs`
@@ -167,7 +167,7 @@ distinguish "route reached the handler" from "matchit treated
 
 ### 4.4 DEBT register row update
 
-`specs/_audits/2026-05-15-debt-register.md` — DEBT-029 added as
+`specs/_audits/sealed/2026-05-15-debt-register.md` — DEBT-029 added as
 CLOSED in the §2 P1 table with the closure-commit reference; row
 24 → 25 in the totals; v1.2.8 change-log entry appended to §7
 mirroring the wave-29 v1.2.7 format.

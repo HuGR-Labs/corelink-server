@@ -59,7 +59,7 @@ infrastructure follow-up.
 
 ## FT-3 — TLC jar SHA-256 pin drift — **CLOSED 2026-05-15** (WAIVER, DEBT-014)
 
-- Waiver: `specs/_audits/2026-05-15-debt-014-ft3-ft4-waivers.md` §FT-3.
+- Waiver: `specs/_audits/sealed/2026-05-15-debt-014-ft3-ft4-waivers.md` §FT-3.
 - Rationale: closure requires Security WG + Architect + ADR-0042 §A1
   amendment. Dispatch CANNOT autonomously update the pin (doing so
   would bypass the supply-chain control). FAIL mode is fail-CLOSED
@@ -84,7 +84,7 @@ infrastructure follow-up.
 
 ## FT-4 — `.cfg` function-literal parser brittleness — **CLOSED 2026-05-15** (WAIVER, DEBT-014)
 
-- Waiver: `specs/_audits/2026-05-15-debt-014-ft3-ft4-waivers.md` §FT-4.
+- Waiver: `specs/_audits/sealed/2026-05-15-debt-014-ft3-ft4-waivers.md` §FT-4.
 - Rationale: closure requires S-14 owner refactor of `region_residency.tla`
   to lift `PrimaryRegionOf` from `.cfg` to TLA-level operator. FAIL
   mode is fail-CLOSED at config parse time. `region_residency` is
@@ -222,7 +222,7 @@ infrastructure follow-up.
   margin.
 - CI matrix: PR `.github/workflows/tla_check.yml` row added after the
   `auth_pat_hybrid` step (sibling pairing).
-- Audit doc: `specs/_audits/2026-05-16-auth-pat-revoke-tla.md`.
+- Audit doc: `specs/_audits/sealed/2026-05-16-auth-pat-revoke-tla.md`.
 - Branch: `wt/r-prep-auth-pat-revoke-tla`.
 
 - **Severity:** CRITICAL
@@ -298,7 +298,7 @@ Total followup count: **9** (1 CRITICAL net-new + 1 CRITICAL upgrade + 5 HIGH
 ## Addendum 2026-05-15 — DEBT-005 partial closure (5 / 40)
 
 A separate dispatch (DEBT-005 row in
-`specs/_audits/2026-05-15-debt-register.md`) targeted the canonical-
+`specs/_audits/sealed/2026-05-15-debt-register.md`) targeted the canonical-
 consistency-baseline `critical_no_tla` counter (40 → 35) by writing **5
 net-new TLA+ specs**. These are not the FT-1..FT-9 backlog above; they
 close CRITICAL INVs registered as `(planned ...)` in

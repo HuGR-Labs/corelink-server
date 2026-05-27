@@ -27,7 +27,7 @@ tags: ["runbook", "load-test", "endurance", "24h", "wave-22", "r-prep", "ga-evid
 > **Companion script:** `tests/load/k6/scenarios/endurance-24h-w22.js`.
 > **Runner:** `scripts/run_24h_endurance.sh`.
 > **Analysis:** `scripts/analyze_endurance_run.py`.
-> **Audit:** `specs/_audits/2026-05-16-24h-endurance-harness.md`.
+> **Audit:** `specs/_audits/sealed/2026-05-16-24h-endurance-harness.md`.
 
 ## 1. Scope and intent
 
@@ -67,7 +67,7 @@ exercises the 10-min profile (2-min ramp-up to 100 RPS, 6-min sustain,
 binary in InMemory wiring. It is **not** a substitute for the 24h drill;
 its sole purpose is end-to-end wiring validation (k6 → summary →
 analyzer → verdict) before the full pre-GA drill is scheduled. See
-§10 dress-run history and `specs/_audits/2026-05-16-endurance-10min-dressrun.md`.
+§10 dress-run history and `specs/_audits/sealed/2026-05-16-endurance-10min-dressrun.md`.
 
 ## 3. Drift floors (per route p99)
 
@@ -201,8 +201,8 @@ even if the gate metric itself is green.
 - `scripts/run_24h_endurance.sh`
 - `scripts/analyze_endurance_run.py`
 - `scripts/_dressrun_mock_target.py`
-- `specs/_audits/2026-05-16-24h-endurance-harness.md`
-- `specs/_audits/2026-05-16-endurance-10min-dressrun.md`
+- `specs/_audits/sealed/2026-05-16-24h-endurance-harness.md`
+- `specs/_audits/sealed/2026-05-16-endurance-10min-dressrun.md`
 - `specs/_runbooks/RB-ENDURANCE-24H-DRILL.md`
 - `specs/_runbooks/RB-GA-CUTOVER.md`
 - `specs/_runbooks/RB-PERF-REGRESSION.md`
@@ -225,4 +225,4 @@ Each entry represents a `dressrun` invocation that validated the harness
 
 | Date       | Wave | Operator           | Target                  | Profile | Verdict (real run) | GREENLIGHT path | Regression-flip (5x) | Notes                                                              |
 |------------|------|--------------------|-------------------------|---------|--------------------|-----------------|----------------------|--------------------------------------------------------------------|
-| 2026-05-16 | w25  | gustavoschneiter   | 127.0.0.1:8787 (mock)   | 10min   | BLOCK              | PASS            | PASS                 | 45 109 iterations / mock saturated cas/upload → real RED on G1 stdout-tail. Audit: `specs/_audits/2026-05-16-endurance-10min-dressrun.md`. Analyzer fixes: p99 numeric fallback + stdout-breach override. |
+| 2026-05-16 | w25  | gustavoschneiter   | 127.0.0.1:8787 (mock)   | 10min   | BLOCK              | PASS            | PASS                 | 45 109 iterations / mock saturated cas/upload → real RED on G1 stdout-tail. Audit: `specs/_audits/sealed/2026-05-16-endurance-10min-dressrun.md`. Analyzer fixes: p99 numeric fallback + stdout-breach override. |

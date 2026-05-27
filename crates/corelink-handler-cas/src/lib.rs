@@ -3,7 +3,7 @@
 //!
 //! # Why this crate
 //!
-//! Per `specs/_audits/2026-05-14-slo-instrumentation-gaps.md §6`, the
+//! Per `specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md §6`, the
 //! `apps/server` binary currently exposes only the Stripe webhook
 //! route. None of the CAS read/write SLOs (`SLO-AVAIL-CAS-GET`,
 //! `SLO-AVAIL-CAS-PUT`, `SLO-LAT-CAS-GET`, `SLO-LAT-CAS-PUT`,

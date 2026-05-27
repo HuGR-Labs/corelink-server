@@ -5,7 +5,7 @@
 > **Wave / Stream:** Wave-27 R-PREP / `wt/r-prep-v1-tag-application-prep` (agent: Claude Opus 4.7 background worker).
 > **Base:** `main` @ `a48bbec` (wave-26 SEAL tip — "merge wt/r-prep-cf-worker-prefetch-wire into main (wave-26)").
 > **Scope:** Author the D-day Owner-action artefact bundle for applying the `v1.0.0-GA` annotated tag to `main` after the 2-key sign-off ceremony: (a) `scripts/cut-v1-0-0-ga-tag.sh`, (b) `scripts/thaw-release-notes.sh`, (c) `docs/release/v1.0.0-GA-tag-draft-final.txt` with explicit `__OWNER_SHA__` / `__SREL_SHA__` placeholder slots for Owner D-day fill-in, (d) this audit. Cross-cuts with the lote-6 framework-v1-0-0-ga Owner sign-off prep stream (which produces the analogous prep artefacts for the framework FROZEN cut).
-> **Cross-ref:** `docs/release/v1.0.0-GA-tag-draft.txt` (wave-26 prod-deploy dressrun pre-authored tag draft; this audit produces the `-final.txt` variant with explicit placeholder slots), `RELEASE-NOTES-v1.0.0-GA.md` (wave-26 release-notes DRAFT; this audit's thaw script flips it to ACTIVE post-tag), `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` (2-key dual-hat fallback policy), `specs/_audits/2026-05-16-prod-deploy-dressrun.md` (wave-26 production-tier dress-run that pre-authored the wave-26 tag draft text), `specs/_runbooks/RB-GA-CUTOVER.md` §8 (2-key sign-off mechanics).
+> **Cross-ref:** `docs/release/v1.0.0-GA-tag-draft.txt` (wave-26 prod-deploy dressrun pre-authored tag draft; this audit produces the `-final.txt` variant with explicit placeholder slots), `RELEASE-NOTES-v1.0.0-GA.md` (wave-26 release-notes DRAFT; this audit's thaw script flips it to ACTIVE post-tag), `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` (2-key dual-hat fallback policy), `specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md` (wave-26 production-tier dress-run that pre-authored the wave-26 tag draft text), `specs/_runbooks/RB-GA-CUTOVER.md` §8 (2-key sign-off mechanics).
 
 ---
 
@@ -27,7 +27,7 @@ Wave-27 picks up the explicit Owner-handoff: produce the single-command script t
 | 1 | Cutover script | `scripts/cut-v1-0-0-ga-tag.sh` | bash | ~270 |
 | 2 | Thaw script | `scripts/thaw-release-notes.sh` | bash + inline python3 | ~190 |
 | 3 | Tag draft (final form, placeholder slots) | `docs/release/v1.0.0-GA-tag-draft-final.txt` | text (tag message body) | ~135 |
-| 4 | This audit | `specs/_audits/2026-05-16-v1-tag-application-prep.md` | audit | this doc |
+| 4 | This audit | `specs/_audits/sealed/2026-05-16-v1-tag-application-prep.md` | audit | this doc |
 
 Total wave-27 stream LOC: ~600 lines (3 new scripts/docs + this audit).
 
@@ -119,7 +119,7 @@ If a future wave decides the placeholder replacement should be working-tree-only
 
 ## 5. Cross-reference to lote-6 framework-v1-0-0-ga Owner sign-off prep
 
-This stream's mandate names a sibling stream `specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md` which prepares the analogous Owner-action artefacts for the **framework v1.0.0-GA tag** (the spec-corpus FROZEN cut, distinct from the product `v1.0.0-GA` tag). The two streams sequence as:
+This stream's mandate names a sibling stream `specs/_audits/sealed/2026-05-16-lote-6-owner-signoff-prep.md` which prepares the analogous Owner-action artefacts for the **framework v1.0.0-GA tag** (the spec-corpus FROZEN cut, distinct from the product `v1.0.0-GA` tag). The two streams sequence as:
 
 ```
 lote-6-owner-signoff-prep      (prepares: framework-v1-0-0-ga tag + §42 changelog template)
@@ -141,7 +141,7 @@ The lote-6 sibling stream is expected to author the analogous `scripts/cut-frame
 
 This stream consequently emits the following cross-ref obligation:
 
-> When `specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md` lands, that audit's §"post-cut" section MUST cross-reference this audit and note: "This script (the lote-6 cut script) unfreezes after `framework-v1-0-0-ga` is tagged; the analogous downstream unfreeze for the product corpus runs after `v1.0.0-GA` is tagged via `scripts/cut-v1-0-0-ga-tag.sh` (see `specs/_audits/2026-05-16-v1-tag-application-prep.md` §1)."
+> When `specs/_audits/sealed/2026-05-16-lote-6-owner-signoff-prep.md` lands, that audit's §"post-cut" section MUST cross-reference this audit and note: "This script (the lote-6 cut script) unfreezes after `framework-v1-0-0-ga` is tagged; the analogous downstream unfreeze for the product corpus runs after `v1.0.0-GA` is tagged via `scripts/cut-v1-0-0-ga-tag.sh` (see `specs/_audits/sealed/2026-05-16-v1-tag-application-prep.md` §1)."
 
 This is a forward-reference; the lote-6 stream is responsible for honouring it on its own landing.
 

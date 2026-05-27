@@ -1,12 +1,12 @@
 # Lote 6 v1.0.0 GA — Owner sign-off prep package — 2026-05-16 (wave-27)
 
-> **Doc kind:** Owner-action prep package (no canonical front matter required — `_audits/` excluded from `validate_specs.py::SKIP_ALL`; also explicitly out-of-scope of the GA-1 feature freeze per `specs/_audits/2026-05-16-ga-1-feature-freeze.md` §2 last bullet; commit carries `FREEZE-EXCEPTION: implicit-allow` per §3.d).
+> **Doc kind:** Owner-action prep package (no canonical front matter required — `_audits/` excluded from `validate_specs.py::SKIP_ALL`; also explicitly out-of-scope of the GA-1 feature freeze per `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md` §2 last bullet; commit carries `FREEZE-EXCEPTION: implicit-allow` per §3.d).
 >
 > **Author:** wave-27 Lote 6 Owner-sign-off prep agent (Claude Opus 4.7) — branch `wt/r-prep-lote-6-owner-signoff`.
 > **Base:** `main` @ `a48bbec` ("merge wt/r-prep-cf-worker-prefetch-wire into main (wave-26)" — wave-26 SEAL tip).
 > **Mandate:** wave-27 final prep — collapse the wave-26 `DEFER-with-Owner-sign-off-only-remaining` state into a **single ~30-min Owner read package** that takes the program from "framework v1.0.0-rc2 ready" to "tag `framework-v1-0-0-ga` cut".
 >
-> **Cross-ref:** `specs/_audits/2026-05-16-lote-6-v1-rc2-ready.md` (wave-26 readiness; this doc supersedes it as Owner-action-surface front door), `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §11.8` (wave-26 closure), `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §11.9` (wave-27 prep — added this commit), `specs/_audits/2026-05-16-ga-readiness-final.md §13` (Lote-6-Owner-prep row — added this commit), `specs/00_framework.md` §42 TEMPLATE entry + §43.1 placeholder convention.
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-lote-6-v1-rc2-ready.md` (wave-26 readiness; this doc supersedes it as Owner-action-surface front door), `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §11.8` (wave-26 closure), `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §11.9` (wave-27 prep — added this commit), `specs/_audits/sealed/2026-05-16-ga-readiness-final.md §13` (Lote-6-Owner-prep row — added this commit), `specs/00_framework.md` §42 TEMPLATE entry + §43.1 placeholder convention.
 
 ---
 
@@ -25,8 +25,8 @@ The four discovery documents are arranged so the cumulative read time is bounded
 | 1 | `specs/_proposals/2026-05-16-framework-reviewer-roles.md` | Defines the **WHAT** of each FW-H-* slot (role profiles §2.1–§2.4; acceptance deliverables §3; sign-off cadence §5; RACI §6; backup §7; open questions §8 incl. OQ-1 staffing-options A/B/C). Sets the role grammar the rest of the chain references. | **10 min** |
 | 2 | `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md` | Defines the **HOW** — operating-policy clauses needed in a small-org regime: dual-hat fallback (§1), cross-veto (§2), SLA (§3), training pack budget (§4), 90-day rolling cadence (§5), RACI detail incl. §6.4 Pairing-Alpha vs Pairing-Beta selection heuristics (added wave-26), COI (§7). | **8 min** |
 | 3 | `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` | The **authorization artifact** if Option C is chosen. Reads quickly: §Eligibility (5 conditions), §Permitted pairings (Alpha + Beta), §Forbidden pairings (3 prohibited combos), §Cross-veto under dual-hat, §Quorum 3-of-3 effective seats, §Sign-off mechanics, §Auto-expiration (4 triggers), §Alternatives 1–4 with explicit-cost rejection. | **5 min** |
-| 4 | `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §11.8` | The wave-26 closure entry — verdict text narrowed to `DEFER-with-Owner-sign-off-only-remaining` and the 5-step Owner action surface enumerated. Single subsection; reads fast. | **3 min** |
-| 5 | `specs/_audits/2026-05-16-lote-6-v1-rc2-ready.md` | The wave-26 readiness summary — single-page consolidated view of what landed (§1), why no premature promotion (§2), Owner action surface table (§3), the two FROZEN-cut shapes A vs C (§4), pre-commit gates (§5), verdict (§6). | **4 min** |
+| 4 | `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §11.8` | The wave-26 closure entry — verdict text narrowed to `DEFER-with-Owner-sign-off-only-remaining` and the 5-step Owner action surface enumerated. Single subsection; reads fast. | **3 min** |
+| 5 | `specs/_audits/sealed/2026-05-16-lote-6-v1-rc2-ready.md` | The wave-26 readiness summary — single-page consolidated view of what landed (§1), why no premature promotion (§2), Owner action surface table (§3), the two FROZEN-cut shapes A vs C (§4), pre-commit gates (§5), verdict (§6). | **4 min** |
 
 **Total: 30 minutes.** No code, no greps, no spec-corpus navigation — every clause is contained in those five documents.
 
@@ -41,7 +41,7 @@ The Owner must pick between two paths. Both end at the same tag (`framework-v1-0
 | **A** | 4-distinct staffing | 4 nominated external/internal individuals — one per slot | none (§42 fills `authorizing_adr: <none — Option A>`) | Org ≥ 12 engineers OR SOC2/ISO27001 separation-of-duty contractually required OR 4 candidates already retained with §3 acceptance deliverables filed |
 | **C** | ADR-0034b dual-hat fallback | Owner on two slots + 2 external advisors on the other two | **ADR-0034b** (§42 fills `authorizing_adr: ADR-0034b`, `pairing: alpha\|beta`, `owner_conflict_disclosed: ...`) | All 5 of ADR-0034b §Eligibility conditions hold: (1) headcount < 12; (2) no SOC2/ISO27001 SoD contractually required; (3) ≥ 2 external advisors retained; (4) Owner self-attests competence in the two dual-hat slots; (5) ADR-0034b cited in §42 entry |
 
-**Current-state recommendation** (per `specs/_audits/2026-05-16-lote-6-v1-rc2-ready.md §4.3` and addendum §6.4.2 default-for-SaaS-pre-GA): **Option C, Pairing-Beta** — Owner takes FW-H-2 (Compliance/Privacy) + FW-H-4 (Production Ops); externals fill FW-H-1 (Architecture) + FW-H-3 (Security). Heuristic per addendum §6.4.2: the trailing 90-day work mix is compliance- and ops-heavy (GA cutover row 13, region rollouts row 9, weekly sprint impl sign-off row 4, runbook approvals row 6, DEBT register row 5) — all FW-H-2 or FW-H-4 R-status; Architecture has plateaued post-S-14 TLA+ landing rate.
+**Current-state recommendation** (per `specs/_audits/sealed/2026-05-16-lote-6-v1-rc2-ready.md §4.3` and addendum §6.4.2 default-for-SaaS-pre-GA): **Option C, Pairing-Beta** — Owner takes FW-H-2 (Compliance/Privacy) + FW-H-4 (Production Ops); externals fill FW-H-1 (Architecture) + FW-H-3 (Security). Heuristic per addendum §6.4.2: the trailing 90-day work mix is compliance- and ops-heavy (GA cutover row 13, region rollouts row 9, weekly sprint impl sign-off row 4, runbook approvals row 6, DEBT register row 5) — all FW-H-2 or FW-H-4 R-status; Architecture has plateaued post-S-14 TLA+ landing rate.
 
 If the Owner has not retained ≥ 2 external advisors yet, Option C eligibility item 3 fails — in that case the program waits at RC2 until either (a) advisors are retained, or (b) Option A is fully staffed. There is no "Owner-only" path — the framework's own §7 promotion rule prohibits a single-signer cut.
 
@@ -156,7 +156,7 @@ The Owner moves through this list top-to-bottom. Each step is binary; no step sk
 - [ ] **Step 5.** `specs/00_framework.md` §43.1 placeholders replaced per §3 (Option A) or §4.2 / §4.3 (Option C). All 5 lines now carry `<Name> — <YYYY-MM-DD> — sha:<7>`.
 - [ ] **Step 6.** `specs/00_framework.md` §42 — unused Shape (A or C) deleted; remaining Shape's placeholder fields filled per §3 (Option A) or §4.4 (Option C). New RC2 row immediately below preserved as historical record.
 - [ ] **Step 7.** `specs/00_framework.md` frontmatter — `doc_status: "DRAFT" → "FROZEN"`, `version: "1.0.0-rc2" → "1.0.0"`, `updated: "2026-05-16" → "<today's YYYY-MM-DD>"`.
-- [ ] **Step 8.** Promotion audit doc authored at `specs/_audits/<YYYY-MM-DD>-framework-v1.0.0-promotion.md` (per `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §11.8` step 5).
+- [ ] **Step 8.** Promotion audit doc authored at `specs/_audits/<YYYY-MM-DD>-framework-v1.0.0-promotion.md` (per `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §11.8` step 5).
 - [ ] **Step 9.** Quality gates green pre-commit: `python3 scripts/validate_specs.py` exit 0; `python3 scripts/validate_references.py` exit 0.
 - [ ] **Step 10.** Commit (DCO sign-off + Co-Authored-By for each reviewer present at sign-off) + tag `framework-v1-0-0-ga` (annotated) + push origin main + push origin tag. Announcement (Slack / email / changelog as appropriate).
 
@@ -196,8 +196,8 @@ Co-Authored-By: <ext-or-internal-reviewer-4 if Option A> <email>
 
 FREEZE-EXCEPTION: P1-ga-blocker
 
-Refs: specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md
-Refs: specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §11.8
+Refs: specs/_audits/sealed/2026-05-16-lote-6-owner-signoff-prep.md
+Refs: specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §11.8
 EOF
 )"
 
@@ -215,7 +215,7 @@ git push origin framework-v1-0-0-ga
 
 Each §43.1 sign-off line carries a `sha:<7-char>` field. That SHA is the commit's own short SHA — which doesn't exist until after Step B. Two acceptable resolutions:
 
-1. **Two-commit shape** (cleaner audit trail): Step B-1 commits with `sha:PENDING` placeholders; Step B-2 amends with the now-known short SHA filled in; Step C tags B-2. Used when the §42 TEMPLATE row's "Tag at this SHA" rigour matters for the SOC2 readiness exercise (`specs/_audits/2026-05-14-soc2-readiness-score.md`).
+1. **Two-commit shape** (cleaner audit trail): Step B-1 commits with `sha:PENDING` placeholders; Step B-2 amends with the now-known short SHA filled in; Step C tags B-2. Used when the §42 TEMPLATE row's "Tag at this SHA" rigour matters for the SOC2 readiness exercise (`specs/_audits/sealed/2026-05-14-soc2-readiness-score.md`).
 2. **Single-commit shape** (pragmatic): Step B commits with `sha:<commit-sha>` filled in retroactively as a follow-up cosmetic-doc `FREEZE-EXCEPTION: cosmetic-doc` patch. The tag still points at the original cut; the SHA-fill commit lands T+0 to T+1 day after.
 
 The pre-authored §42 TEMPLATE supports either shape — `sha:<7>` is a literal placeholder.
@@ -236,13 +236,13 @@ The `framework-v1-0-0-ga` tag is the inflection point. Several downstream gates 
 | `specs/00_framework.md` `version` | 1.0.0-rc2 | 1.0.0 |
 | Framework §41 evolution policy | Inert | **Active** — trimestral review cadence anchored at this commit date per addendum §5.1; first quarterly review due at T+90 days |
 | Wave-18 audit §6.3 Path A/B/C | Path C ("DEFER and continue") active | **Path A (or A-via-C-dual-hat) closed.** §6.3 narrows to "post-promotion residual — see §41 framework-evolution policy" |
-| `specs/_audits/2026-05-16-ga-readiness-final.md` §1.2 row "Spec corpus" | GREEN with caveat "framework still RC2" | GREEN unconditional |
+| `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §1.2 row "Spec corpus" | GREEN with caveat "framework still RC2" | GREEN unconditional |
 | Release notes publication | Held pending framework GA | **Eligible to publish.** The `ROADMAP-TO-GA.md` R-3 → R-4 boundary snapshot becomes consistent — framework freeze gate (independent of GA tag per audit §6.4) is now CLOSED |
-| **v1.0.0-GA tag (product GA)** | Blocked on framework freeze prerequisite | **Eligible to cut at wave-27 D-day** — the framework freeze was the last upstream gate for the `v1.0.0-GA` product tag per `specs/_audits/2026-05-16-ga-readiness-final.md §13.1` row "Wave-23 streams SEALED" + §11 DEFER counter |
+| **v1.0.0-GA tag (product GA)** | Blocked on framework freeze prerequisite | **Eligible to cut at wave-27 D-day** — the framework freeze was the last upstream gate for the `v1.0.0-GA` product tag per `specs/_audits/sealed/2026-05-16-ga-readiness-final.md §13.1` row "Wave-23 streams SEALED" + §11 DEFER counter |
 | ADR-0034b operational status | PROPOSED | **ACCEPTED** (if Option C invoked) — auto-expiration triggers begin monitoring at the first trimestral review (T+90 days) per addendum §5.2 |
 | `_proposals/` doc_status | DRAFT | **ACTIVE** (both proposal + addendum transition jointly per proposal §9 + addendum §9) |
 
-**Wave-27 D-day timeline.** The framework v1.0.0 GA tag is a prerequisite for the product `v1.0.0-GA` tag, not a co-dependency. The product GA tag may follow on the same day (subject to `RB-GA-CUTOVER.md` §0 pre-cutover checklist + §13.1 pre-condition gate boolean satisfaction) or on a later day inside the wave-27 window per `specs/_audits/2026-05-16-ga-readiness-final.md` §13.4 cutover authorization.
+**Wave-27 D-day timeline.** The framework v1.0.0 GA tag is a prerequisite for the product `v1.0.0-GA` tag, not a co-dependency. The product GA tag may follow on the same day (subject to `RB-GA-CUTOVER.md` §0 pre-cutover checklist + §13.1 pre-condition gate boolean satisfaction) or on a later day inside the wave-27 window per `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §13.4 cutover authorization.
 
 **Trimestral cadence anchor.** Whatever date the Owner cuts the framework GA tag becomes the **anchor for all subsequent 90-day quarterly framework reviews** per addendum §5.1. Off-quarter cuts are fine — the cadence is rolling, not calendar-aligned. The first quarterly review delta-doc is due at `specs/_audits/<cut-date+90d>-framework-quarterly-review-Q1.md` per addendum §5.2.
 
@@ -272,12 +272,12 @@ The §6 DEFER verdict itself remains unchanged — the §7 / §43.1 promotion ru
 ## §9. References
 
 - `specs/00_framework.md` — RC2 baseline; §42 TEMPLATE entry + §43.1 placeholder convention pre-authored at wave-26.
-- `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §11.8` (wave-26 closure) + §11.9 (wave-27 prep cross-ref, added this commit).
-- `specs/_audits/2026-05-16-lote-6-v1-rc2-ready.md` — wave-26 readiness summary (this doc supersedes it as front door but it remains canonical for §4.1–§4.3 shape detail and §3 Owner-action surface table).
-- `specs/_audits/2026-05-16-ga-readiness-final.md §13` (Lote-6-Owner-prep row, added this commit).
+- `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §11.8` (wave-26 closure) + §11.9 (wave-27 prep cross-ref, added this commit).
+- `specs/_audits/sealed/2026-05-16-lote-6-v1-rc2-ready.md` — wave-26 readiness summary (this doc supersedes it as front door but it remains canonical for §4.1–§4.3 shape detail and §3 Owner-action surface table).
+- `specs/_audits/sealed/2026-05-16-ga-readiness-final.md §13` (Lote-6-Owner-prep row, added this commit).
 - `specs/_proposals/2026-05-16-framework-reviewer-roles.md` v0.1.0+wave22 — FW-H-1..4 role profiles.
 - `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md` v0.1.3 — operating policy (§1 dual-hat / §2 cross-veto + quorum / §3 SLA / §4 training pack / §5 90-day cadence / §6 RACI detail incl. §6.4 pairing heuristics / §7 COI).
 - `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` v0.1.1 — small-org dual-hat authorization.
-- `specs/_audits/2026-05-16-ga-1-feature-freeze.md` §2 (out-of-scope: `_audits/` subtree) + §3.d (implicit-allow class) — confirms this commit is freeze-compliant.
+- `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md` §2 (out-of-scope: `_audits/` subtree) + §3.d (implicit-allow class) — confirms this commit is freeze-compliant.
 - `specs/_governance/reviewer_staffing_strategy.md §7.2` — Founder-only-sign-off prior art (origin of the Pairing-Beta pattern).
 - `ROADMAP-TO-GA.md` — R-3 → R-4 boundary snapshot; framework freeze gate is the last R-3 milestone independent of the v1.0.0-GA product tag.

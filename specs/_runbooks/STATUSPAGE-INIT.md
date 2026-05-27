@@ -20,9 +20,9 @@ tags: ["runbook", "statuspage", "operator", "ga-cutover", "provisioning", "debt-
 escalation: "SRE Lead → Incident Commander → CTO"
 review_cadence: "annual + post-incident"
 related:
-  - "specs/_audits/2026-05-16-debt-016-statuspage-urls.md"
-  - "specs/_audits/2026-05-16-statuspage-init-dressrun.md"
-  - "specs/_audits/2026-05-16-cutover-dependency-map.md"
+  - "specs/_audits/sealed/2026-05-16-debt-016-statuspage-urls.md"
+  - "specs/_audits/sealed/2026-05-16-statuspage-init-dressrun.md"
+  - "specs/_audits/sealed/2026-05-16-cutover-dependency-map.md"
   - "specs/_runbooks/RB-GA-CUTOVER.md"
   - "marketing/launch/STATUS-PAGE-SPEC.md"
   - "specs/_runbooks/RB-DSR-STATUSPAGE-PUBLISH-FAILED.md"
@@ -40,7 +40,7 @@ Atlassian Statuspage tenant and bind it to the canonical hostname
 **before T-7d pre-launch**.
 
 **Owner:** SRE Lead (operator-side). Engineering side closed per
-`specs/_audits/2026-05-16-debt-016-statuspage-urls.md` (DEBT-016 engineering
+`specs/_audits/sealed/2026-05-16-debt-016-statuspage-urls.md` (DEBT-016 engineering
 closure, R-prep wave-24).
 
 **Severity:** GA-blocker if neither provisioning path is complete by T-7d.
@@ -125,7 +125,7 @@ checklist row for "Statuspage provisioned (Option A — CNAME)".
 The wave-24 cut of this runbook stated only "before T-7d" without
 propagation analysis. Wave-27 hardens the timing per the canonical
 dependency map at
-`specs/_audits/2026-05-16-cutover-dependency-map.md` (nodes N-S-1 +
+`specs/_audits/sealed/2026-05-16-cutover-dependency-map.md` (nodes N-S-1 +
 N-S-2).
 
 **Recommended Option A schedule:**
@@ -237,7 +237,7 @@ Include the chosen domain + commit SHA of the substitution branch.
 ### 3.6 Timing relative to GA-cutover sequence
 
 Per the wave-27 dependency map
-(`specs/_audits/2026-05-16-cutover-dependency-map.md` node N-S-1b):
+(`specs/_audits/sealed/2026-05-16-cutover-dependency-map.md` node N-S-1b):
 
 | Anchor | Action | Owner |
 |---|---|---|
@@ -250,7 +250,7 @@ Per the wave-27 dependency map
 The 1d verify window is tighter than Option A's 3d buffer because the
 wave-25 dress-run already proved the substitution mechanism is
 regression-free (S3 PASS, see
-`specs/_audits/2026-05-16-statuspage-init-dressrun.md` §3). The verify
+`specs/_audits/sealed/2026-05-16-statuspage-init-dressrun.md` §3). The verify
 window therefore covers operator-domain DNS resolution + docs-build
 re-run only, not the substitution mechanism itself.
 
@@ -292,9 +292,9 @@ review.
 
 ## 6. Cross-references
 
-- Engineering-side closure audit: `specs/_audits/2026-05-16-debt-016-statuspage-urls.md`
-- Dress-run audit (wave-25): `specs/_audits/2026-05-16-statuspage-init-dressrun.md`
-- Cutover dependency map (wave-27): `specs/_audits/2026-05-16-cutover-dependency-map.md`
+- Engineering-side closure audit: `specs/_audits/sealed/2026-05-16-debt-016-statuspage-urls.md`
+- Dress-run audit (wave-25): `specs/_audits/sealed/2026-05-16-statuspage-init-dressrun.md`
+- Cutover dependency map (wave-27): `specs/_audits/sealed/2026-05-16-cutover-dependency-map.md`
 - Wave-28 Option A automation bundle (§2.6):
   - Quickstart: `docs/internal/statuspage-tenant-signup-quickstart.md`
   - Components config: `config/statuspage/components.yml`
@@ -307,4 +307,4 @@ review.
 - Build config wiring: `apps/docs/docusaurus.config.ts customFields.statuspageUrl`
 - DSR-channel runbook: `specs/_runbooks/RB-DSR-STATUSPAGE-PUBLISH-FAILED.md`
 - Launch spec: `marketing/launch/STATUS-PAGE-SPEC.md`
-- Debt-register row: `specs/_audits/2026-05-15-debt-register.md` (DEBT-016)
+- Debt-register row: `specs/_audits/sealed/2026-05-15-debt-register.md` (DEBT-016)

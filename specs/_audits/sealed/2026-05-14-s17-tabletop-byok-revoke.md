@@ -133,8 +133,8 @@ blocker — all are post-SEAL action items.
 - Primary runbook walked: `specs/05_quality/runbooks/RB-BYOK-REVOKE.md`
 - Collateral runbook: `specs/05_quality/runbooks/RB-FM-160-auth-invalid-storm.md`
 - Chaos catalog cleanup pass: `specs/_runbooks/RB-CHAOS-CATALOG.md`
-- Adversarial summary: `specs/_audits/2026-05-14-s17-adversarial-summary.md`
-- PRR: `specs/04_sprints/S17/PRR-S17.md`
+- Adversarial summary: `specs/_audits/sealed/2026-05-14-s17-adversarial-summary.md`
+- PRR: `specs/04_sprints/_sealed/S17/PRR-S17.md`
 - INV: INV-BYOK-CRYPTO-SOVEREIGNTY (CRITICAL §3.12) · CTRL-KEY-011
 
 ---

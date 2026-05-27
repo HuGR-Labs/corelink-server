@@ -231,7 +231,7 @@ All 6 mandated quality-gate validators executed against the worktree HEAD post-r
 
 Ter audit SEALED. Deliverables:
 
-- ✅ Audit doc landed at `specs/_audits/2026-05-15-s11-legal-citation-revalidation.md` (this file).
+- ✅ Audit doc landed at `specs/_audits/sealed/2026-05-15-s11-legal-citation-revalidation.md` (this file).
 - ✅ Concrete remediation applied to 12 files (18 inline edits) — all surgical citation-string corrections; no substance changes to retention / SLA / rights / operational obligations.
 - ✅ Cross-jurisdiction translation table §5 normalised — LGPD ↔ GDPR ↔ CCPA per concept (22 rows).
 - ✅ Effective-date pin §6 normalised — CCPA AB-375 + CPRA Prop 24 explicit pin documented as canonical source-of-truth (gap closed).

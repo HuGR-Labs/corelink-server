@@ -19,9 +19,9 @@ tags:
   - "real-state-change"
   - "hard-pause"
 references:
-  - "specs/_audits/2026-05-22-wave32-prod-deploy-spec.md"
-  - "specs/_audits/2026-05-26-w32-phaseD-apply.md"
-  - "specs/_audits/2026-05-26-w32-phaseE-prep.md"
+  - "specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseD-apply.md"
+  - "specs/_audits/sealed/2026-05-26-w32-phaseE-prep.md"
   - "commit f86bb490 (security hardening: workers_dev=false, cpu_ms=30)"
   - "commit bc4eb236 (docker fix: apps/migrate-single-to-multi-region)"
   - "commit 837aa21c (docker fix: tests/ workspace members)"

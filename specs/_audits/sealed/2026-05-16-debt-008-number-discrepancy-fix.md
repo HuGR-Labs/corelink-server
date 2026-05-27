@@ -8,7 +8,7 @@ created: "2026-05-16"
 updated: "2026-05-16"
 sprint: "Wave-25 (P2-04 closure from wave-23 adversarial review)"
 parent_wi: "WI-DEBT-008-MUTATION-FULL-SWEEP"
-parent_audit: "specs/_audits/2026-05-16-wave23-adversarial-review.md"
+parent_audit: "specs/_audits/sealed/2026-05-16-wave23-adversarial-review.md"
 owner: "Gustavo Schneiter"
 tags: ["audit", "mutation-testing", "cargo-mutants", "debt-008", "wave-25", "reconciliation", "p2-04"]
 ---
@@ -16,12 +16,12 @@ tags: ["audit", "mutation-testing", "cargo-mutants", "debt-008", "wave-25", "rec
 # DEBT-008 wave-23 vs wave-24 number discrepancy — reconciliation (P2-04 closure)
 
 > **doc_status:** REVIEW · **scope:** Close finding **P2-04** of
-> `specs/_audits/2026-05-16-wave23-adversarial-review.md` —
+> `specs/_audits/sealed/2026-05-16-wave23-adversarial-review.md` —
 > reconcile the projected post-additions kill-rate figures in
-> `specs/_audits/2026-05-16-debt-008-wave23-mutation-sweep.md`
+> `specs/_audits/sealed/2026-05-16-debt-008-wave23-mutation-sweep.md`
 > against the canonical empirical figures produced by the wave-24
 > re-sweep in
-> `specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md`.
+> `specs/_audits/sealed/2026-05-16-debt-008-wave24-mutation-sweep.md`.
 > Adversarial review also surfaced a chunker projection
 > disagreement (97.9 % of killable vs 100 % projected) — both
 > figures are superseded by the wave-24 empirical number.
@@ -50,7 +50,7 @@ ledger.
 ## 2. Canonical post-wave-24 figures
 
 The wave-24 re-sweep audit
-(`specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md`)
+(`specs/_audits/sealed/2026-05-16-debt-008-wave24-mutation-sweep.md`)
 provides the **canonical empirical post-additions kill rates**:
 
 | Crate | Wave-23 pre (canonical, snapshot) | Wave-24 empirical raw | Wave-24 empirical of killable |
@@ -70,7 +70,7 @@ guard dominated by pattern arm). All documented in wave-24 §3.3.
 
 ## 3. Reconciliation actions taken
 
-1. **Wave-23 audit doc** (`specs/_audits/2026-05-16-debt-008-wave23-mutation-sweep.md`)
+1. **Wave-23 audit doc** (`specs/_audits/sealed/2026-05-16-debt-008-wave23-mutation-sweep.md`)
    reconciled in-place at version `1.1.0`:
    - Top-of-doc reconciliation note added pointing at this audit
      + the wave-24 audit for canonical figures.
@@ -90,11 +90,11 @@ guard dominated by pattern arm). All documented in wave-24 §3.3.
    - Pre-additions empirical numbers (79.79 % / 77.78 %) are
      preserved unchanged as the canonical wave-23 snapshot.
 
-2. **Adversarial review** (`specs/_audits/2026-05-16-wave23-adversarial-review.md`)
+2. **Adversarial review** (`specs/_audits/sealed/2026-05-16-wave23-adversarial-review.md`)
    §3.6 P2-4 paragraph extended with an inline **CLOSED** note
    citing the wave-25 branch and this audit.
 
-3. **Debt-register** (`specs/_audits/2026-05-15-debt-register.md`):
+3. **Debt-register** (`specs/_audits/sealed/2026-05-15-debt-register.md`):
    verified — the DEBT-008 row already records the canonical
    wave-24 empirical figures (95.79 % / 97.44 %) under
    "WAVE-24 DUAL EXPANSION" + the empirically-closed subset
@@ -135,11 +135,11 @@ running cargo-mutants a second time.
 
 ## 7. References
 
-- `specs/_audits/2026-05-16-debt-008-wave23-mutation-sweep.md` —
+- `specs/_audits/sealed/2026-05-16-debt-008-wave23-mutation-sweep.md` —
   the in-place reconciled wave-23 audit (v1.1.0).
-- `specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md` —
+- `specs/_audits/sealed/2026-05-16-debt-008-wave24-mutation-sweep.md` —
   source of canonical empirical figures.
-- `specs/_audits/2026-05-16-wave23-adversarial-review.md` —
+- `specs/_audits/sealed/2026-05-16-wave23-adversarial-review.md` —
   finding P2-04 (§3.6 + §5 register row).
-- `specs/_audits/2026-05-15-debt-register.md` — DEBT-008 row
+- `specs/_audits/sealed/2026-05-15-debt-register.md` — DEBT-008 row
   (already consistent with canonical figures).

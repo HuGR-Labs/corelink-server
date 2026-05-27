@@ -8,8 +8,8 @@ created: "2026-04-25"
 updated: "2026-05-27"
 reviewer: "agent-r4 (Claude Opus 4.7 1M)"
 scope: "S-06 Part 2a — WI-S06-004, WI-S06-005 (focused 2 WIs)"
-parent_audit: "specs/_audits/2026-04-25-agent-r4-s06-part1-wi-review.md"
-sprint_contract: "specs/04_sprints/S06/_spec_contract.md v1.1.0"
+parent_audit: "specs/_audits/sealed/2026-04-25-agent-r4-s06-part1-wi-review.md"
+sprint_contract: "specs/04_sprints/_sealed/S06/_spec_contract.md v1.1.0"
 tags: ["audit", "r4", "s06", "part2a", "wi-004", "wi-005", "adversarial"]
 ---
 

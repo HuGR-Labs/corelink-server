@@ -159,7 +159,7 @@
 //!
 //! # Customer-facing 429 UX (audit 2026-05-15)
 //!
-//! The audit `specs/_audits/2026-05-15-ratelimit-ux-audit.md` closed
+//! The audit `specs/_audits/sealed/2026-05-15-ratelimit-ux-audit.md` closed
 //! the 429 customer-UX gap; this crate now additionally ships:
 //!
 //! - Three CoreLink-vendor informational headers alongside the

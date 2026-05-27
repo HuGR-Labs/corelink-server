@@ -8,7 +8,7 @@
 //! Cloudflare Worker target (`wasm32-unknown-unknown`) ships
 //! production stripe webhook + portal code paths that previously called
 //! `SystemTime::now()` directly (see wave-19 audit
-//! `specs/_audits/2026-05-16-stripe-wasm32-gate-lift.md §8`). Wave-20
+//! `specs/_audits/sealed/2026-05-16-stripe-wasm32-gate-lift.md §8`). Wave-20
 //! introduces this [`Clock`] trait so:
 //!
 //! - **native** callers inject [`SystemClock`] (wraps `SystemTime::now`)

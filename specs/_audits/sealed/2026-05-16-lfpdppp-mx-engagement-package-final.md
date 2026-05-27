@@ -16,10 +16,10 @@ parent_wi: "WI-S11-004"
 wave: "wave-28"
 inv: []
 references:
-  - "specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md"
-  - "specs/_audits/2026-05-15-debt-register.md"
-  - "specs/_audits/pentest-vendor-shortlist.md"
-  - "specs/_audits/2026-05-16-pentest-engagement-scope-freeze.md"
+  - "specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md"
+  - "specs/_audits/sealed/2026-05-15-debt-register.md"
+  - "specs/_audits/sealed/pentest-vendor-shortlist.md"
+  - "specs/_audits/sealed/2026-05-16-pentest-engagement-scope-freeze.md"
   - "docs/legal/lfpdppp-mx-engagement-letter-template.md"
   - "docs/legal/lfpdppp-mx-attorney-shortlist.md"
   - "docs/legal/lfpdppp-mx-engagement-email-template.md"
@@ -40,7 +40,7 @@ tags: ["audit", "s11", "wave-28", "lfpdppp", "mexico", "engagement-package-final
 
 > **Status:** Engineering-side preparation COMPLETE. The Owner is now down to **3 emails + 1 contract signature** to retain a Mexican attorney + receive the written opinion + 3 EVT-044 PDFs that close DEBT-025 and unblock the pre-GA LFPDPPP local-review gate per `WI-S11-004 §6.1.4`.
 >
-> **Cross-ref:** `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md` (wave-23 scoping packet — the binding work statement); `specs/_audits/2026-05-15-debt-register.md DEBT-025` (open; target wave-26+ close on absorption).
+> **Cross-ref:** `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md` (wave-23 scoping packet — the binding work statement); `specs/_audits/sealed/2026-05-15-debt-register.md DEBT-025` (open; target wave-26+ close on absorption).
 
 ---
 
@@ -56,7 +56,7 @@ The 4 new deliverables consolidate the procurement workflow proven at wave-25/26
 | 2 | Engagement email template (Mustache) | `docs/legal/lfpdppp-mx-engagement-email-template.md` | 184 | NEW |
 | 3 | Tracker script + JSON | `scripts/admin/lfpdppp-mx-tracker.py` + `reports/lfpdppp-mx-tracker.json` | 376 + 87 | NEW |
 | 4 | Retainer template (engineering-side draft) | `docs/legal/lfpdppp-mx-retainer-template.md` | 213 | NEW |
-| 5 | This consolidation audit | `specs/_audits/2026-05-16-lfpdppp-mx-engagement-package-final.md` | (this doc) | NEW |
+| 5 | This consolidation audit | `specs/_audits/sealed/2026-05-16-lfpdppp-mx-engagement-package-final.md` | (this doc) | NEW |
 
 **Pending Owner action:** 3 emails (tier-1 parallel send to OLIVARES / Basham / Sánchez Devanny) + 1 retainer signature (with the selected attorney). See §4 below for the step-by-step.
 
@@ -300,7 +300,7 @@ After selecting a firm (state `IN_NEGOTIATION`):
 
 ## §6 — DEBT-025 disposition
 
-`DEBT-025` in `specs/_audits/2026-05-15-debt-register.md` was added by wave-23 to track this engagement. Engineering-side state at this commit:
+`DEBT-025` in `specs/_audits/sealed/2026-05-15-debt-register.md` was added by wave-23 to track this engagement. Engineering-side state at this commit:
 
 - **Engineering-side preparation:** COMPLETE (4 deliverables + this audit; nothing further to ship).
 - **Owner action:** 3 emails + 1 contract signature (§3 + §4 above).
@@ -312,11 +312,11 @@ After selecting a firm (state `IN_NEGOTIATION`):
 
 ## §7 — Cross-references
 
-- **Wave-23 scoping packet (the binding work statement):** `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md`
+- **Wave-23 scoping packet (the binding work statement):** `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md`
 - **Wave-23 engagement letter (the binding scope freeze):** `docs/legal/lfpdppp-mx-engagement-letter-template.md`
-- **Debt-register row:** `specs/_audits/2026-05-15-debt-register.md DEBT-025`
+- **Debt-register row:** `specs/_audits/sealed/2026-05-15-debt-register.md DEBT-025`
 - **Pentest precedent stack (same shortlist→tracker→email→contract pattern):**
-  - `specs/_audits/pentest-vendor-shortlist.md` (shortlist precedent)
+  - `specs/_audits/sealed/pentest-vendor-shortlist.md` (shortlist precedent)
   - `reports/pentest-rfp-tracker.json` + `scripts/pentest-rfp-tracker.py` (tracker precedent)
   - `docs/legal/pentest-rfp-email-template.md` (email precedent)
   - `docs/legal/pentest-engagement-contract-template.md` (contract precedent)

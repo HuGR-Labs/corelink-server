@@ -2,7 +2,7 @@
 //! coverage gaps identified by
 //! `cargo mutants -p corelink-tier-selection` on 2026-05-14.
 //!
-//! See `specs/_audits/2026-05-14-mutation-baseline.md` for full
+//! See `specs/_audits/sealed/2026-05-14-mutation-baseline.md` for full
 //! mutant-by-mutant classification.
 
 #![forbid(unsafe_code)]

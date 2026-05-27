@@ -4,7 +4,7 @@
 //! # Why this module exists
 //!
 //! Closes the P0 gaps surfaced in
-//! `specs/_audits/2026-05-15-webhook-retry-dlq.md`:
+//! `specs/_audits/sealed/2026-05-15-webhook-retry-dlq.md`:
 //!
 //! - **GAP-P0-1**: Stripe-side retries top out after 3 days. A
 //!   persistently-failing handler (tier-ledger bug, transient backend

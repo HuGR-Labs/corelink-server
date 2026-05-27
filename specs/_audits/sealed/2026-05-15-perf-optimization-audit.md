@@ -299,10 +299,10 @@ Defer to post-GA: OPT-03(b), OPT-08 (cold-start prefix persistence).
 
 ## 7. References
 
-- `specs/_audits/2026-05-14-perf-baseline.md` — criterion baseline.
-- `specs/_audits/2026-05-14-mutation-baseline.md` — kill-rate bar
+- `specs/_audits/sealed/2026-05-14-perf-baseline.md` — criterion baseline.
+- `specs/_audits/sealed/2026-05-14-mutation-baseline.md` — kill-rate bar
   preserved by every optimization WI.
-- `specs/_audits/2026-05-14-coverage-baseline.md` — coverage floor
+- `specs/_audits/sealed/2026-05-14-coverage-baseline.md` — coverage floor
   preserved by every optimization WI.
 - `specs/03_architecture/slo_catalog.md` — SLO targets we project
   against.
@@ -310,7 +310,7 @@ Defer to post-GA: OPT-03(b), OPT-08 (cold-start prefix persistence).
   cadence that constrains OPT-01 cache invalidation.
 - `docs/internal/PERFORMANCE-PLAYBOOK.md` — engineering patterns
   derived from this audit (companion doc).
-- `specs/_audits/perf-optimization-followup-tickets.md` — Sprint-ready
+- `specs/_audits/sealed/perf-optimization-followup-tickets.md` — Sprint-ready
   WI candidates.
 
 ---

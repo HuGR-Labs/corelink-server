@@ -37,7 +37,7 @@ use corelink_billing_stripe_materializer::{
 // the concrete dispatcher + test fakes (`WebhookDispatcher`,
 // `FixedClock`, `RecordingSliRecorder`) remain in `corelink-stripe-real`.
 // Test code is allowed to depend on both (per
-// `specs/_audits/2026-05-27-w36-trigger-a-seal.md`).
+// `specs/_audits/sealed/2026-05-27-w36-trigger-a-seal.md`).
 use corelink_billing_stripe_traits::{
     CanonicalWebhookEventType, DispatchResponse, StateMaterializer, StripeWebhookEnvelope,
 };

@@ -128,7 +128,7 @@ pub(crate) mod key_resource;
 // `wasm32-unknown-unknown` we always expose the `AzureKeyVaultWasmStub`
 // regardless of feature flags (the underlying `reqwest` / `regex` / `tokio`
 // stack does not target wasm32). See
-// `specs/_audits/2026-05-15-byok-real-provider-pattern.md` §4.
+// `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md` §4.
 #[cfg(all(feature = "production-azure", not(target_arch = "wasm32")))]
 mod entra;
 #[cfg(any(

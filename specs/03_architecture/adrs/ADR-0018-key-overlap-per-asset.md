@@ -72,4 +72,4 @@ Resultado: o invariante canônico é violado pelos sprints que dizem segui-lo. P
 - NIST SP 800-57 Pt 1 Rev 5 Table 4 (cryptoperiods).
 - `specs/03_architecture/key_management.md §3.2.1` (canonical table).
 - `specs/03_architecture/invariant_registry.md §3.13` (registry entry).
-- Opus Round 2 audit C-01 finding (`specs/_audits/2026-04-24-opus-independent-sota-review-r2.md:40-50`).
+- Opus Round 2 audit C-01 finding (`specs/_audits/sealed/2026-04-24-opus-independent-sota-review-r2.md:40-50`).
