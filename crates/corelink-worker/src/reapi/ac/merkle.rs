@@ -26,7 +26,7 @@
 //! handler never imports a different verifier type when WI-S04-003
 //! lands.
 
-use corelink_ac_core::MerkleVerifier as _CorelinkAcMerkleVerifier;
+use corelink_ac::MerkleVerifier as _CorelinkAcMerkleVerifier;
 use thiserror::Error;
 
 use super::types::ActionResult;
@@ -220,7 +220,7 @@ impl MerkleError {
 ///
 /// Converts the worker's local [`ActionResult`] shape into the
 /// `corelink-ac` wire shape, runs the canonical verifier, and maps
-/// the canonical [`corelink_ac_core::MerkleError`] variants back to this
+/// the canonical [`corelink_ac::MerkleError`] variants back to this
 /// crate's [`MerkleError`] enum (preserving the `audit_code`
 /// short-id contract).
 ///
@@ -229,7 +229,7 @@ impl MerkleError {
 /// fake.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CanonicalAcMerkleVerifier {
-    inner: corelink_ac_core::CanonicalMerkleVerifier,
+    inner: corelink_ac::CanonicalMerkleVerifier,
 }
 
 impl CanonicalAcMerkleVerifier {
@@ -237,25 +237,25 @@ impl CanonicalAcMerkleVerifier {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            inner: corelink_ac_core::CanonicalMerkleVerifier::new(),
+            inner: corelink_ac::CanonicalMerkleVerifier::new(),
         }
     }
 
     /// Project the worker's [`ActionResult`] into the
     /// `corelink-ac` wire shape. Cheap clone — the `digest` field is
     /// `Copy`, only the `Vec<...>` digest references allocate.
-    fn project(result: &ActionResult) -> corelink_ac_core::ActionResult {
-        let files: Vec<corelink_ac_core::OutputFileDigest> = result
+    fn project(result: &ActionResult) -> corelink_ac::ActionResult {
+        let files: Vec<corelink_ac::OutputFileDigest> = result
             .output_files
             .iter()
-            .map(|f| corelink_ac_core::OutputFileDigest::new(f.digest, f.size_bytes))
+            .map(|f| corelink_ac::OutputFileDigest::new(f.digest, f.size_bytes))
             .collect();
-        let dirs: Vec<corelink_ac_core::OutputDirectoryDigest> = result
+        let dirs: Vec<corelink_ac::OutputDirectoryDigest> = result
             .output_directories
             .iter()
-            .map(|d| corelink_ac_core::OutputDirectoryDigest::new(d.digest, d.size_bytes))
+            .map(|d| corelink_ac::OutputDirectoryDigest::new(d.digest, d.size_bytes))
             .collect();
-        corelink_ac_core::ActionResult::new(
+        corelink_ac::ActionResult::new(
             files,
             dirs,
             result.exit_code,
@@ -281,39 +281,39 @@ impl MerkleVerifier for CanonicalAcMerkleVerifier {
 /// [`MerkleError::MalformedTree`] with a canonical-reason prefix so
 /// the audit-code dashboard split still surfaces the underlying
 /// failure mode via the message body.
-fn map_canonical_error(err: corelink_ac_core::MerkleError) -> MerkleError {
+fn map_canonical_error(err: corelink_ac::MerkleError) -> MerkleError {
     match err {
-        corelink_ac_core::MerkleError::DepthExceeded { depth, bound } => {
+        corelink_ac::MerkleError::DepthExceeded { depth, bound } => {
             MerkleError::DepthExceeded { depth, bound }
         }
-        corelink_ac_core::MerkleError::FanoutExceeded { fanout, bound } => {
+        corelink_ac::MerkleError::FanoutExceeded { fanout, bound } => {
             MerkleError::FanoutExceeded { fanout, bound }
         }
-        corelink_ac_core::MerkleError::TooManyOutputFiles { len, bound } => {
+        corelink_ac::MerkleError::TooManyOutputFiles { len, bound } => {
             MerkleError::TooManyOutputFiles { len, bound }
         }
-        corelink_ac_core::MerkleError::TooManyOutputDirectories { len, bound } => {
+        corelink_ac::MerkleError::TooManyOutputDirectories { len, bound } => {
             MerkleError::TooManyOutputDirectories { len, bound }
         }
-        corelink_ac_core::MerkleError::Malformed { reason } => MerkleError::MalformedTree(reason),
-        corelink_ac_core::MerkleError::RootMismatch => {
+        corelink_ac::MerkleError::Malformed { reason } => MerkleError::MalformedTree(reason),
+        corelink_ac::MerkleError::RootMismatch => {
             MerkleError::MalformedTree("root_mismatch".to_string())
         }
-        corelink_ac_core::MerkleError::CycleDetected { digest } => {
+        corelink_ac::MerkleError::CycleDetected { digest } => {
             MerkleError::MalformedTree(format!("cycle_detected:{digest}"))
         }
-        corelink_ac_core::MerkleError::NodeCountExceeded { count, bound } => MerkleError::MalformedTree(
+        corelink_ac::MerkleError::NodeCountExceeded { count, bound } => MerkleError::MalformedTree(
             format!("node_count_exceeded:found={count},bound={bound}"),
         ),
-        corelink_ac_core::MerkleError::PayloadExceeded { found_bytes, bound } => {
+        corelink_ac::MerkleError::PayloadExceeded { found_bytes, bound } => {
             MerkleError::MalformedTree(format!(
                 "payload_exceeded:found={found_bytes},bound={bound}"
             ))
         }
-        corelink_ac_core::MerkleError::VersionUnsupported(v) => {
+        corelink_ac::MerkleError::VersionUnsupported(v) => {
             MerkleError::MalformedTree(format!("version_unsupported:{v}"))
         }
-        corelink_ac_core::MerkleError::DecodeError(s) => {
+        corelink_ac::MerkleError::DecodeError(s) => {
             MerkleError::MalformedTree(format!("decode_error:{s}"))
         }
         // Forward-compat for additive variants in `corelink-ac`.

@@ -41,7 +41,7 @@
     reason = "test target"
 )]
 
-use corelink_ac_schema::{
+use corelink_ac::schema::{
     AcRegion, AcSchema, AcUpsertOutcome, AcUpsertRequest, SigAlg, SimError, BLOB_REFS_COUNT_MAX,
     BLOB_REFS_SIZE_MAX, RESULT_SIZE_BYTES_MAX,
 };

@@ -95,17 +95,9 @@ members = [
     # physically absorbed into `corelink-auth` umbrella as inline
     # submodules; workspace members removed.
     "crates/corelink-audit",
-    "crates/corelink-ac-schema",
-    # Wave-33 Stage 1 Stream A sub-step A.2a — renamed from
-    # `corelink-ac` to free the `corelink-ac` package name for the
-    # Stream A umbrella aggregator landing in A.2b. The crate itself
-    # is the unchanged AC Merkle codec + dual-side verifier
-    # (WI-S04-003); only the package name + Cargo.toml location moved.
-    "crates/corelink-ac-core",
-    # Wave-33 Stage 1 Stream A sub-step A.2b — canonical AC bounded-
-    # context aggregator. Option-A re-export façade over the 3
-    # absorbed AC crates (`corelink-ac-core`, `corelink-ac-schema`,
-    # `corelink-handler-ac`) per spec §4 + §6 Stream A.
+    # Wave 35 Phase 2 — `corelink-ac-core` + `corelink-ac-schema`
+    # physically absorbed into `corelink-ac` umbrella as inline
+    # submodules; workspace members removed.
     "crates/corelink-ac",
     "crates/corelink-r2-multipart",
     "crates/corelink-gc",
@@ -395,7 +387,9 @@ exclude = [
     # workspace resolver and cargo-fuzz drives them stand-alone.
     "crates/corelink-byok-core/fuzz",
     "crates/corelink-audit-chain/fuzz",
-    "crates/corelink-ac-core/fuzz",
+    # Wave 35 Phase 2 — fuzz harness moved alongside the absorbed
+    # ac-core submodule into the `corelink-ac` umbrella.
+    "crates/corelink-ac/fuzz",
 ]
 
 [workspace.package]
@@ -530,13 +524,9 @@ corelink-pat = { path = "crates/corelink-pat" }
 # physically absorbed into `corelink-auth` umbrella as inline
 # submodules; workspace.dependencies entries removed.
 corelink-audit = { path = "crates/corelink-audit" }
-corelink-ac-schema = { path = "crates/corelink-ac-schema" }
-# Wave-33 Stage 1 Stream A sub-step A.2a — renamed from `corelink-ac`
-# to free the `corelink-ac` package name for the Stream A umbrella
-# aggregator landing in A.2b. Crate body unchanged.
-corelink-ac-core = { path = "crates/corelink-ac-core" }
-# Wave-33 Stage 1 Stream A sub-step A.2b — canonical AC bounded-
-# context aggregator (3 absorbed AC crates per spec §4 + §6 Stream A).
+# Wave 35 Phase 2 — `corelink-ac-core` + `corelink-ac-schema`
+# physically absorbed into `corelink-ac` umbrella as inline
+# submodules; workspace.dependencies entries removed.
 corelink-ac = { path = "crates/corelink-ac" }
 corelink-r2-multipart = { path = "crates/corelink-r2-multipart" }
 corelink-gc = { path = "crates/corelink-gc" }

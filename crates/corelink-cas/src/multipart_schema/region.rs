@@ -23,7 +23,7 @@ use thiserror::Error;
 /// One of the canonical 5 multipart regions WI-S05-004 freezes at S-05 GA.
 ///
 /// The variant order matches the SQL `CHECK` constraint list left-to-right,
-/// and matches `corelink_ac_schema::AcRegion` (intentional — the same 5
+/// and matches `corelink_ac::schema::AcRegion` (intentional — the same 5
 /// regions host AC envelopes + multipart chunks + manifests). `Display` /
 /// [`MultipartRegion::as_str`] yield the lower-case bucket suffix used in
 /// canonical R2 keys (`corelink-{chunk,manifest}-<suffix>/...`) and in the

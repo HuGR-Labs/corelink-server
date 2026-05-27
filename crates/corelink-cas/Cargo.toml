@@ -41,7 +41,7 @@ corelink-handler-cas = { workspace = true }
 
 # Wave 35 Phase 2 absorbed-source deps (union of the 6 absorbed crates'
 # [dependencies] after physical move into `corelink-cas`).
-corelink-ac-core = { workspace = true }
+corelink-ac = { workspace = true }
 corelink-hash = { workspace = true }
 blake3 = { workspace = true }
 hex = { workspace = true }

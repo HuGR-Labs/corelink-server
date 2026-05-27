@@ -39,7 +39,7 @@
     reason = "test target"
 )]
 
-use corelink_ac_schema::{ac_schema_version, AcRegion, MIGRATION_0002_AC_META, REGION_LIST};
+use corelink_ac::schema::{ac_schema_version, AcRegion, MIGRATION_0002_AC_META, REGION_LIST};
 
 /// Strip `-- …` line comments before scanning so prose comments cannot
 /// produce false positives on the destructive-token regression checks.

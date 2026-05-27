@@ -20,9 +20,9 @@ pub enum MerkleError {
     /// Tree depth exceeded the canonical bound.
     #[error("merkle tree depth {depth} exceeds bound {bound}")]
     DepthExceeded {
-        /// Observed depth (after potential clamp at [`crate::bounds::MAX_TREE_DEPTH`]).
+        /// Observed depth (after potential clamp at [`crate::ac_core::bounds::MAX_TREE_DEPTH`]).
         depth: usize,
-        /// Bound — always [`crate::bounds::MAX_TREE_DEPTH`].
+        /// Bound — always [`crate::ac_core::bounds::MAX_TREE_DEPTH`].
         bound: usize,
     },
     /// Tree fanout exceeded the canonical bound.
@@ -30,7 +30,7 @@ pub enum MerkleError {
     FanoutExceeded {
         /// Observed fanout.
         fanout: usize,
-        /// Bound — always [`crate::bounds::MAX_TREE_FANOUT`].
+        /// Bound — always [`crate::ac_core::bounds::MAX_TREE_FANOUT`].
         bound: usize,
     },
     /// Total node count exceeded the canonical bound.
@@ -38,7 +38,7 @@ pub enum MerkleError {
     NodeCountExceeded {
         /// Observed node count.
         count: usize,
-        /// Bound — always [`crate::bounds::MAX_NODE_COUNT`].
+        /// Bound — always [`crate::ac_core::bounds::MAX_NODE_COUNT`].
         bound: usize,
     },
     /// Cumulative envelope payload bytes exceeded the canonical bound.
@@ -46,7 +46,7 @@ pub enum MerkleError {
     PayloadExceeded {
         /// Observed payload size.
         found_bytes: usize,
-        /// Bound — always [`crate::bounds::MAX_PAYLOAD_BYTES`].
+        /// Bound — always [`crate::ac_core::bounds::MAX_PAYLOAD_BYTES`].
         bound: usize,
     },
     /// `output_files` slice exceeds the canonical bound.
@@ -54,7 +54,7 @@ pub enum MerkleError {
     TooManyOutputFiles {
         /// Observed length.
         len: usize,
-        /// Bound — always [`crate::bounds::MAX_OUTPUT_FILES`].
+        /// Bound — always [`crate::ac_core::bounds::MAX_OUTPUT_FILES`].
         bound: usize,
     },
     /// `output_directories` slice exceeds the canonical bound.
@@ -62,7 +62,7 @@ pub enum MerkleError {
     TooManyOutputDirectories {
         /// Observed length.
         len: usize,
-        /// Bound — always [`crate::bounds::MAX_OUTPUT_DIRECTORIES`].
+        /// Bound — always [`crate::ac_core::bounds::MAX_OUTPUT_DIRECTORIES`].
         bound: usize,
     },
     /// The Merkle root computed from the result does not match the
@@ -177,7 +177,7 @@ mod tests {
         assert_eq!(
             MerkleError::DepthExceeded {
                 depth: 99,
-                bound: crate::bounds::MAX_TREE_DEPTH,
+                bound: crate::ac_core::bounds::MAX_TREE_DEPTH,
             }
             .audit_code(),
             "depth_exceeded"

@@ -233,7 +233,7 @@ pub const RESULT_HASH_LEN: usize = 32;
 
 /// CoreLink Action Cache envelope (WI-S04-003 §1 + ADR-0037).
 ///
-/// Serializes to / deserializes from JSON via [`crate::codec`]; the
+/// Serializes to / deserializes from JSON via [`crate::ac_core::codec`]; the
 /// Merkle root is the canonical authority for the output binding,
 /// `result_hash` is the index-column derivation
 /// (`BLAKE3(merkle_root)`) per ADR-0037 §Decision. Forward-compat
@@ -269,7 +269,7 @@ pub struct AcEnvelope {
 impl AcEnvelope {
     /// Construct a fresh envelope with `version = v1`. Public for
     /// tests + integration adapters; the canonical builder is
-    /// [`crate::merkle::build`].
+    /// [`crate::ac_core::merkle::build`].
     #[must_use]
     #[allow(
         clippy::too_many_arguments,

@@ -35,7 +35,7 @@
 use std::cell::Cell;
 use std::sync::Arc;
 
-use corelink_ac_core::sig::{MockTdkHandle, TdkHandle};
+use corelink_ac::sig::{MockTdkHandle, TdkHandle};
 use corelink_cas::manifest::{
     build_root, verify_streaming, ChunkInput, ChunkRef, ChunkRefSource, ChunkerAlgorithm,
     CollectingVerifiedSink, InMemoryChunkBytesSource, ManifestBuilder, ManifestSigner,

@@ -16,7 +16,7 @@
 
 use std::sync::Arc;
 
-use corelink_ac_core::sig::{MockTdkHandle, TdkHandle};
+use corelink_ac::sig::{MockTdkHandle, TdkHandle};
 use corelink_cas::manifest::{
     build_root, hash_inner, hash_leaf, ChunkInput, ChunkRef, ChunkerAlgorithm, ManifestBuilder,
     ManifestSigner, ManifestVerifierSig, INNER_PREFIX, LEAF_PREFIX, MANIFEST_PREIMAGE_LEN,
@@ -36,8 +36,8 @@ fn rfc_6962_prefix_bytes_match_ac_merkle() {
     assert_eq!(LEAF_PREFIX, 0x00);
     assert_eq!(INNER_PREFIX, 0x01);
     // Same byte values as corelink-ac::merkle (the worker's AC pipe).
-    assert_eq!(LEAF_PREFIX, corelink_ac_core::merkle::LEAF_PREFIX);
-    assert_eq!(INNER_PREFIX, corelink_ac_core::merkle::INNER_PREFIX);
+    assert_eq!(LEAF_PREFIX, corelink_ac::merkle::LEAF_PREFIX);
+    assert_eq!(INNER_PREFIX, corelink_ac::merkle::INNER_PREFIX);
 }
 
 /// Pinned MAX_CHUNKS_PER_BLOB cross-crate alignment with
@@ -217,7 +217,7 @@ fn chunker_algo_wire_bytes_pinned() {
 /// produces DIFFERENT sigs across `b"manifest-sig"` and `b"ac-sig"`.
 #[test]
 fn sig_domain_separation_pinned() {
-    let tdk = corelink_ac_core::sig::derive_default_mock_tdk(
+    let tdk = corelink_ac::sig::derive_default_mock_tdk(
         Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
         1,
     );
@@ -226,6 +226,6 @@ fn sig_domain_separation_pinned() {
     let manifest_sig =
         corelink_cas::manifest::compute_signature(&tdk, 1, &bytes).unwrap();
     // AC-domain sig (canonical helper from corelink-ac).
-    let ac_sig = corelink_ac_core::sig::compute_signature(&tdk, 1, &bytes).unwrap();
+    let ac_sig = corelink_ac::sig::compute_signature(&tdk, 1, &bytes).unwrap();
     assert_ne!(manifest_sig, ac_sig);
 }

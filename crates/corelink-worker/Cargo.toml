@@ -56,7 +56,7 @@ tower-middleware = [
 [dependencies]
 corelink-hash = { workspace = true }
 corelink-tenant-path = { workspace = true }
-corelink-ac-core = { workspace = true }
+corelink-ac = { workspace = true }
 bytes = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }

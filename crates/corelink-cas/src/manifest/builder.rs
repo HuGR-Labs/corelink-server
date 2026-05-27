@@ -72,7 +72,7 @@ impl ManifestBuilder {
     ///   [`ManifestError::ChunkSizeZero`] when bounds are violated.
     /// - [`ManifestError::ChunkIndexOutOfOrder`] when the input is not
     ///   strictly index-ascending `0..N`.
-    /// - propagates [`corelink_ac_core::sig::SigError`] (wrapped via
+    /// - propagates [`corelink_ac::sig::SigError`] (wrapped via
     ///   [`ManifestError::Empty`]?? — see below) when the sig fails.
     ///
     /// To keep the error taxonomy clean, sig failures surface via
@@ -173,7 +173,7 @@ pub enum BuildError {
     Structure(ManifestError),
     /// HKDF / BLAKE3 sig failure.
     #[error("manifest sig failure: {0}")]
-    Sig(corelink_ac_core::sig::SigError),
+    Sig(corelink_ac::sig::SigError),
 }
 
 impl BuildError {
@@ -197,7 +197,7 @@ impl BuildError {
 )]
 mod tests {
     use super::*;
-    use corelink_ac_core::sig::{MockTdkHandle, TdkHandle};
+    use corelink_ac::sig::{MockTdkHandle, TdkHandle};
     use std::sync::Arc;
 
     fn fresh_signer(tenant: Uuid, kid: u32) -> ManifestSigner {
@@ -416,7 +416,7 @@ mod tests {
             )
             .unwrap_err();
         match err {
-            BuildError::Sig(corelink_ac_core::sig::SigError::KeyIdReserved) => {}
+            BuildError::Sig(corelink_ac::sig::SigError::KeyIdReserved) => {}
             _ => panic!("unexpected error: {err:?}"),
         }
     }

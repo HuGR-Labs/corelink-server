@@ -10,8 +10,8 @@
 
 use thiserror::Error;
 
-/// Errors surfaced by [`crate::sig::SignatureSigner::sign`] /
-/// [`crate::sig::SignatureVerifier::verify`].
+/// Errors surfaced by [`crate::ac_core::sig::SignatureSigner::sign`] /
+/// [`crate::ac_core::sig::SignatureVerifier::verify`].
 ///
 /// `#[non_exhaustive]` — additive forward-compatibility for future
 /// rotation-policy variants (Lote 10.4-tris P0-R5-001 added
@@ -22,7 +22,7 @@ pub enum SigError {
     /// Signature input is the wrong length (length is public — fast
     /// fail before the constant-time compare).
     ///
-    /// `expected` is always [`crate::sig::AC_ENVELOPE_SIG_LEN`] (32).
+    /// `expected` is always [`crate::ac_core::sig::AC_ENVELOPE_SIG_LEN`] (32).
     #[error("ac envelope signature length invalid: expected {expected}, got {got}")]
     LengthMismatch {
         /// Expected byte length (always 32).
@@ -54,7 +54,7 @@ pub enum SigError {
         /// `accepted_key_ids` whitelist.
         oldest_active: u32,
     },
-    /// [`crate::sig::TdkHandle::fetch`] returned an error (KMS / CF
+    /// [`crate::ac_core::sig::TdkHandle::fetch`] returned an error (KMS / CF
     /// Secrets backend fault). Maps to 503 + `COR_AC_BACKEND_UNAVAILABLE`.
     #[error("ac sig backend error: {0}")]
     BackendError(String),

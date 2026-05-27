@@ -1064,19 +1064,11 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 name = "corelink-ac"
 version = "0.1.0"
 dependencies = [
- "corelink-ac-core",
- "corelink-ac-schema",
+ "blake3",
  "corelink-audit",
  "corelink-core",
  "corelink-crypto",
  "corelink-handler-ac",
-]
-
-[[package]]
-name = "corelink-ac-core"
-version = "0.1.0"
-dependencies = [
- "blake3",
  "corelink-hash",
  "hex",
  "hkdf",
@@ -1090,16 +1082,6 @@ dependencies = [
  "thiserror 2.0.18",
  "uuid",
  "zeroize",
-]
-
-[[package]]
-name = "corelink-ac-schema"
-version = "0.1.0"
-dependencies = [
- "hex",
- "proptest",
- "thiserror 2.0.18",
- "uuid",
 ]
 
 [[package]]
@@ -1549,7 +1531,7 @@ name = "corelink-cas"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "corelink-ac-core",
+ "corelink-ac",
  "corelink-audit",
  "corelink-core",
  "corelink-crypto",
@@ -2629,7 +2611,7 @@ dependencies = [
  "async-trait",
  "base64",
  "bytes",
- "corelink-ac-core",
+ "corelink-ac",
  "corelink-audit",
  "corelink-clerk",
  "corelink-hash",

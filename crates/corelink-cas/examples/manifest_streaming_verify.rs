@@ -18,7 +18,7 @@
 
 use std::sync::Arc;
 
-use corelink_ac_core::sig::{MockTdkHandle, TdkHandle};
+use corelink_ac::sig::{MockTdkHandle, TdkHandle};
 use corelink_cas::manifest::{
     verify_streaming, ChunkInput, ChunkerAlgorithm, CollectingVerifiedSink,
     InMemoryChunkBytesSource, InMemoryChunkRefSource, ManifestBuilder, ManifestSigner,
