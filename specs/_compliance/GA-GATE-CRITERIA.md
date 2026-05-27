@@ -3,9 +3,9 @@ id: "GA-GATE-CRITERIA"
 type: "compliance_criteria_checklist"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 sprint: "R-7"
 parent_wave: "R-7"
 parent: "ROADMAP-TO-GA"
@@ -16,6 +16,8 @@ supersedes: null
 superseded_by: null
 tags: ["ga", "gate", "criteria", "checklist", "go-nogo", "r7", "engineering-gate", "soc2", "lighthouse", "pentest", "launch"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-lighthouse-tracker` was absorbed into `corelink-telemetry` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-telemetry-absorption.md. Canonical consumer path is now `corelink_telemetry::lighthouse_tracker::*`.
 
 # GA-GATE-CRITERIA — Formal GA Gate Criteria Checklist
 

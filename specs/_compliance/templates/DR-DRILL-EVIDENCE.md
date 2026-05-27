@@ -3,9 +3,9 @@ id: "TEMPLATE-DR-DRILL-EVIDENCE"
 type: "template"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-14"
-updated: "2026-05-14"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -13,6 +13,8 @@ supersedes: null
 superseded_by: null
 tags: ["template", "dr-drill", "evidence", "soc2-cc7-5", "soc2-cc9-1", "iso-27031", "bcp-dr", "wt-r6-3"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-dr-drill` was absorbed into `corelink-ops` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md. Canonical consumer path for the `require_staging`, `RTO_CEIL_SECONDS`, `RPO_CEIL_SECONDS` symbols referenced in this template is now `corelink_ops::dr::drill::*`. Already-FROZEN drill-evidence copies of this template remain valid as-is (audit-trail).
 
 # DR Drill Evidence — Auditor-ready form (per-run)
 

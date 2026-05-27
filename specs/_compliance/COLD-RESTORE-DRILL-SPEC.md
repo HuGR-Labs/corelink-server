@@ -3,9 +3,9 @@ id: "COLD-RESTORE-DRILL-SPEC-2026-05-15"
 type: "compliance_drill_spec"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 sprint: "R-6"
 parent_wi: "GAP-15"
 owner: "SRE Lead"
@@ -15,6 +15,8 @@ supersedes: null
 superseded_by: null
 tags: ["compliance", "dr", "cold-restore", "gap-15", "soc2-cc7-5", "soc2-cc9-1", "soc2-a1-2", "soc2-a1-3", "iso-27031", "rb-cold-restore", "dr-15", "r-6"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-dr-drill` and `corelink-drata-sync` were absorbed into `corelink-ops` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md. Canonical consumer paths are now `corelink_ops::dr::drill::*` and `corelink_ops::drata::*`. The legacy `crates/corelink-dr-drill/` and `crates/corelink-drata-sync/` directories no longer exist; the wrangler worker / CLI binary names may persist post-absorption.
 
 # Cold Restore Drill Spec — Zero-Infrastructure Region Recovery
 
