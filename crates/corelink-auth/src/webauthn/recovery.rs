@@ -17,7 +17,7 @@
 //!   **`MagicLink` is intentionally absent** (sprint contract §10
 //!   anti-scope).
 //!
-//! Every fallible surface yields a [`crate::WebAuthnError`] variant
+//! Every fallible surface yields a [`super::WebAuthnError`] variant
 //! per the canonical taxonomy.
 
 use std::fmt;
@@ -31,8 +31,8 @@ use subtle::ConstantTimeEq;
 use uuid::Uuid;
 use zeroize::Zeroize;
 
-use crate::types::UserAccountId;
-use crate::WebAuthnError;
+use super::types::UserAccountId;
+use super::WebAuthnError;
 
 /// Number of decimal digits (W3C-style 6).
 pub const RECOVERY_OTP_DIGITS: usize = 6;

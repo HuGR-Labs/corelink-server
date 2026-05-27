@@ -32,7 +32,7 @@ use std::time::Duration;
 
 use proptest::prelude::*;
 
-use corelink_webauthn::{
+use corelink_auth::webauthn::{
     sign_count::{assess, SignCountSeverity},
     Aaguid, AaguidPolicy, AuthenticatorAttachment, AuthenticatorFlags, ChallengeId, CredentialId,
     EngineConfig, FixedClock, InMemoryEngine, InMemoryRecoveryOtpStore, Origin, OriginAllowlist,
@@ -179,7 +179,7 @@ fn prop_recovery_otp_single_use_100() {
 
     for _ in 0..100 {
         let user = UserAccountId::new_v7();
-        let minted = corelink_webauthn::recovery::mint_otp(
+        let minted = corelink_auth::webauthn::recovery::mint_otp(
             user,
             now_ms,
             Duration::from_secs(600),

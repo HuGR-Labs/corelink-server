@@ -40,10 +40,24 @@ corelink-clerk = { workspace = true }
 # See lib.rs `#[cfg(target_arch = "wasm32")]` gate on the `clerk_cf`
 # submodule.
 corelink-clerk-cf = { workspace = true }
-corelink-auth-schema = { workspace = true }
-corelink-webauthn = { workspace = true }
 corelink-pat = { workspace = true }
 corelink-tenant-path = { workspace = true }
+
+# Wave 35 Phase 2 — webauthn absorbed inline (corelink-webauthn crate
+# removed from workspace; source physically resides under
+# `src/webauthn/` + `src/webauthn.rs`).
+argon2 = { version = "0.5", default-features = false, features = ["alloc", "password-hash"] }
+password-hash = { version = "0.5", default-features = false, features = ["alloc", "rand_core"] }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+zeroize = { workspace = true }
+rand_core = { version = "0.6", default-features = false, features = ["getrandom"] }
+uuid = { workspace = true, features = ["v7", "rng-getrandom", "serde"] }
 
 # Wave 33 Stage 2.A-v2 additive aggregator (per 2.A HALT audit §9(b)):
 # expose corelink-worker's middleware + auth submodules under canonical
@@ -65,3 +79,62 @@ clerk-jwt-adapter = ["corelink-clerk/jwt-adapter"]
 # (http/tower/tokio NOT pulled). Consumers wanting these canonical
 # paths must opt in via `corelink-auth/tower-middleware`.
 tower-middleware = ["corelink-worker/tower-middleware"]
+
+[dev-dependencies]
+# Wave 35 Phase 2 — needed by absorbed webauthn property + adversarial tests
+# and (after schema absorption) the schema simulator property tests.
+proptest = { workspace = true }
+serde_json = { workspace = true }
+# Wave 35 Phase 2 — needed by absorbed auth-schema DSR PAT export
+# integration test for pseudonym-stability assertions across the
+# erasure boundary (WI-S03-008 §6.1.3).
+corelink-audit = { workspace = true }
+
+# Wave 35 Phase 2 — explicit test/example binaries preserved from absorbed
+# corelink-webauthn crate (Cargo would auto-discover, but pinning is
+# explicit for traceability across the absorption).
+[[example]]
+name = "webauthn_passkey_enroll"
+path = "examples/webauthn_passkey_enroll.rs"
+
+[[example]]
+name = "webauthn_yubikey_admin_op"
+path = "examples/webauthn_yubikey_admin_op.rs"
+
+[[example]]
+name = "webauthn_cross_browser_test"
+path = "examples/webauthn_cross_browser_test.rs"
+
+[[example]]
+name = "webauthn_recovery_flow"
+path = "examples/webauthn_recovery_flow.rs"
+
+[[test]]
+name = "webauthn_prop_webauthn"
+path = "tests/webauthn_prop_webauthn.rs"
+
+[[test]]
+name = "webauthn_adversarial"
+path = "tests/webauthn_adversarial.rs"
+
+[[test]]
+name = "webauthn_canonical_vectors"
+path = "tests/webauthn_canonical_vectors.rs"
+
+# Wave 35 Phase 2 — auth-schema absorbed (corelink-auth-schema removed
+# from workspace; source physically resides under `src/schema/` + `src/schema.rs`).
+[[test]]
+name = "schema_prop_schema"
+path = "tests/schema_prop_schema.rs"
+
+[[test]]
+name = "schema_migration_canonical"
+path = "tests/schema_migration_canonical.rs"
+
+[[test]]
+name = "schema_integration_dsr_pat_export"
+path = "tests/schema_integration_dsr_pat_export.rs"
+
+[[test]]
+name = "schema_mutation_kills"
+path = "tests/schema_mutation_kills.rs"

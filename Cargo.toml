@@ -91,8 +91,9 @@ members = [
     "crates/corelink-client-verify",
     "crates/corelink-clerk",
     "crates/corelink-pat",
-    "crates/corelink-auth-schema",
-    "crates/corelink-webauthn",
+    # Wave 35 Phase 2 — `corelink-auth-schema` + `corelink-webauthn`
+    # physically absorbed into `corelink-auth` umbrella as inline
+    # submodules; workspace members removed.
     "crates/corelink-audit",
     "crates/corelink-ac-schema",
     # Wave-33 Stage 1 Stream A sub-step A.2a — renamed from
@@ -523,8 +524,9 @@ corelink-client-verify = { path = "crates/corelink-client-verify" }
 # `corelink-clerk-cf` omits that feature to stay wasm32-clean.
 corelink-clerk = { path = "crates/corelink-clerk", default-features = false }
 corelink-pat = { path = "crates/corelink-pat" }
-corelink-auth-schema = { path = "crates/corelink-auth-schema" }
-corelink-webauthn = { path = "crates/corelink-webauthn" }
+# Wave 35 Phase 2 — `corelink-auth-schema` + `corelink-webauthn`
+# physically absorbed into `corelink-auth` umbrella as inline
+# submodules; workspace.dependencies entries removed.
 corelink-audit = { path = "crates/corelink-audit" }
 corelink-ac-schema = { path = "crates/corelink-ac-schema" }
 # Wave-33 Stage 1 Stream A sub-step A.2a — renamed from `corelink-ac`

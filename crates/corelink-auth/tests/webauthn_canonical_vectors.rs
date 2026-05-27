@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use corelink_webauthn::{
+use corelink_auth::webauthn::{
     parse_cose_algorithm, Aaguid, AaguidPolicy, AuthenticationResponse, AuthenticatorAttachment,
     AuthenticatorFlags, Ceremony, ChallengeTtl, CredentialId, EngineConfig, FixedClock,
     InMemoryEngine, Origin, OriginAllowlist, RegistrationResponse, RpId, SignCount, UserAccountId,

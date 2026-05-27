@@ -1253,24 +1253,23 @@ dependencies = [
 name = "corelink-auth"
 version = "0.1.0"
 dependencies = [
- "corelink-auth-schema",
+ "argon2",
+ "base64",
+ "corelink-audit",
  "corelink-clerk",
  "corelink-clerk-cf",
  "corelink-pat",
  "corelink-tenant-path",
- "corelink-webauthn",
  "corelink-worker",
-]
-
-[[package]]
-name = "corelink-auth-schema"
-version = "0.1.0"
-dependencies = [
- "corelink-audit",
  "hex",
  "hmac 0.12.1",
+ "password-hash",
  "proptest",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
  "sha2 0.10.9",
+ "subtle",
  "thiserror 2.0.18",
  "uuid",
  "zeroize",
@@ -2694,26 +2693,6 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
-]
-
-[[package]]
-name = "corelink-webauthn"
-version = "0.1.0"
-dependencies = [
- "argon2",
- "base64",
- "hex",
- "hmac 0.12.1",
- "password-hash",
- "proptest",
- "rand_core 0.6.4",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "subtle",
- "thiserror 2.0.18",
- "uuid",
- "zeroize",
 ]
 
 [[package]]

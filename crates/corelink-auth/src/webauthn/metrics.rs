@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use crate::Aaguid;
+use super::Aaguid;
 
 /// Result label for a ceremony (matches the canonical
 /// `result ∈ {ok, attestation_failed, aaguid_denied, …}`

@@ -16,7 +16,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::WebAuthnError;
+use super::WebAuthnError;
 
 /// 128-bit Authenticator Attestation GUID (W3C WebAuthn §6.4.1).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

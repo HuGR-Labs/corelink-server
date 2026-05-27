@@ -14,9 +14,9 @@ use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-use crate::types::UserAccountId;
-use crate::Origin;
-use crate::{
+use super::types::UserAccountId;
+use super::Origin;
+use super::{
     aaguid::Aaguid, store::AuthenticatorAttachment, CredentialId, RpId, WebAuthnError,
 };
 
@@ -314,7 +314,7 @@ impl AuthenticationChallenge {
     }
 }
 
-/// Stored challenge record (used by [`crate::ChallengeStore`]).
+/// Stored challenge record (used by [`super::ChallengeStore`]).
 #[derive(Debug, Clone)]
 pub struct StoredChallenge {
     /// Lookup id.

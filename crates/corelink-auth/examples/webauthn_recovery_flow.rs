@@ -12,7 +12,7 @@
 
 use std::time::Duration;
 
-use corelink_webauthn::{
+use corelink_auth::webauthn::{
     InMemoryRecoveryOtpStore, RecoveryChannel, RecoveryOtpStore, RecoveryOtpVerifyOutcome,
     RecoveryRateLimit, UserAccountId,
 };
@@ -22,7 +22,7 @@ fn main() {
     let user = UserAccountId::new_v7();
     let now_ms: u64 = 1_700_000_000_000;
 
-    let minted = corelink_webauthn::recovery::mint_otp(
+    let minted = corelink_auth::webauthn::recovery::mint_otp(
         user,
         now_ms,
         Duration::from_secs(600),

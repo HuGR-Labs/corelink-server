@@ -14,9 +14,9 @@
 
 use uuid::Uuid;
 
-use corelink_auth_schema::email_hash::{compute_email_hash, EmailHashKey};
-use corelink_auth_schema::pseudonymize::{pseudonymize_account_id, pseudonymize_user_id};
-use corelink_auth_schema::sim::{
+use corelink_auth::schema::email_hash::{compute_email_hash, EmailHashKey};
+use corelink_auth::schema::pseudonymize::{pseudonymize_account_id, pseudonymize_user_id};
+use corelink_auth::schema::sim::{
     AccountRow, AuthSchema, PatRow, RevocationLogRow, RevocationReason, TenantRow, TenantTier,
     UserAccountRow,
 };

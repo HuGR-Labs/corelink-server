@@ -16,9 +16,9 @@ use subtle::ConstantTimeEq;
 use uuid::Uuid;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::credential::CredentialId;
-use crate::types::UserAccountId;
-use crate::WebAuthnError;
+use super::credential::CredentialId;
+use super::types::UserAccountId;
+use super::WebAuthnError;
 
 /// Default step-up TTL — 5 min per `WI-S03-006 §6.1.4`.
 pub const STEP_UP_TTL_DEFAULT: Duration = Duration::from_secs(300);

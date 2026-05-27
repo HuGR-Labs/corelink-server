@@ -27,7 +27,7 @@
 
 use std::time::Duration;
 
-use corelink_webauthn::{
+use corelink_auth::webauthn::{
     Aaguid, AaguidPolicy, AuthenticationResponse, AuthenticatorAttachment, AuthenticatorFlags,
     Ceremony, CredentialId, EngineConfig, FixedClock, InMemoryEngine, InMemoryRecoveryOtpStore,
     Origin, OriginAllowlist, RecoveryChannel, RecoveryOtpStore, RecoveryOtpVerifyOutcome,
@@ -300,7 +300,7 @@ fn test_recovery_otp_single_use() {
     let store = InMemoryRecoveryOtpStore::new(RecoveryRateLimit::canonical());
     let user = UserAccountId::new_v7();
     let now_ms: u64 = 1_700_000_000_000;
-    let minted = corelink_webauthn::recovery::mint_otp(
+    let minted = corelink_auth::webauthn::recovery::mint_otp(
         user,
         now_ms,
         Duration::from_secs(600),
@@ -328,7 +328,7 @@ fn test_recovery_otp_verify_attempts_exhaustion() {
     let store = InMemoryRecoveryOtpStore::new(RecoveryRateLimit::canonical());
     let user = UserAccountId::new_v7();
     let now_ms: u64 = 1_700_000_000_000;
-    let minted = corelink_webauthn::recovery::mint_otp(
+    let minted = corelink_auth::webauthn::recovery::mint_otp(
         user,
         now_ms,
         Duration::from_secs(600),
@@ -370,7 +370,7 @@ fn test_step_up_token_op_class_binding() {
     let user = UserAccountId::new_v7();
     let cred = CredentialId::new(vec![0xEE; 32]).unwrap();
     let now_ms: u64 = 1_700_000_000_000;
-    let token = corelink_webauthn::step_up::StepUpToken::new(
+    let token = corelink_auth::webauthn::step_up::StepUpToken::new(
         user,
         cred,
         "mass_revoke",
