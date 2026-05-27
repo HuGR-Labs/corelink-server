@@ -11,6 +11,16 @@ description = "cargo-fuzz harnesses for corelink-cli (WI-S15-006 ship gate; 1M i
 [package.metadata]
 cargo-fuzz = true
 
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+
 [dependencies]
 libfuzzer-sys = "0.4"
 corelink-cli = { path = ".." }

@@ -354,9 +354,6 @@ exclude = [
     "crates/corelink-meta/fuzz",
     "crates/corelink-reapi/fuzz",
     "crates/corelink-client-verify/fuzz",
-    # WI-S15-006: CLI ship-gate fuzz targets (cli_input / config_toml /
-    # json_deserialize / auth_resolution / secret_redaction_check).
-    "crates/corelink-cli/fuzz",
     # Fuzz expansion across BYOK envelope + tenant-path extended + audit-chain
     # Merkle/JCS + HKDF (pre-pentest hardening lane). Each fuzz crate carries
     # its own [workspace] inner toml so they are excluded from the outer
@@ -374,6 +371,23 @@ edition = "2021"
 rust-version = "1.80"
 license = "UNLICENSED"
 publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
 
 [workspace.dependencies]
 # Async trait support
