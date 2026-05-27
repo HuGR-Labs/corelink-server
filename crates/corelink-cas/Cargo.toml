@@ -31,18 +31,26 @@ corelink-core = { workspace = true }
 corelink-crypto = { workspace = true }
 corelink-audit = { workspace = true }
 
-# Re-export targets (Stage 1 Stream A sub-step A.1 Option-A aggregator:
-# physical absorption deferred to Stage 2).
-corelink-chunker = { workspace = true }
-corelink-dedup = { workspace = true }
-corelink-edge = { workspace = true }
+# Re-export targets (Stage 1 Stream A sub-step A.1 Option-A aggregator).
+# Wave 35 Phase 2 in-progress — chunker physically absorbed; remaining
+# 5 still re-exported pending absorption later in this branch.
 corelink-eviction = { workspace = true }
-corelink-lru-tracker = { workspace = true }
 corelink-r2-multipart = { workspace = true }
-corelink-multipart-schema = { workspace = true }
 corelink-meta = { workspace = true }
-corelink-manifest = { workspace = true }
 corelink-handler-cas = { workspace = true }
+
+# Wave 35 Phase 2 absorbed-source deps (union of the 6 absorbed crates'
+# [dependencies] after physical move into `corelink-cas`).
+corelink-ac-core = { workspace = true }
+corelink-hash = { workspace = true }
+blake3 = { workspace = true }
+hex = { workspace = true }
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
+zeroize = { workspace = true }
 
 # Wave 33 Stage 2.A-v2 additive aggregator (per 2.A HALT audit §9(b)):
 # expose corelink-worker's storage::r2 + cache submodules under canonical
@@ -51,3 +59,9 @@ corelink-handler-cas = { workspace = true }
 # aggregator façade is paper-thin Option-A; re-exporting via pub use
 # preserves the architecture intent without breaking 63 consumers.
 corelink-worker = { workspace = true }
+
+[dev-dependencies]
+# Wave 35 Phase 2 — union of dev-deps from the 6 absorbed crates.
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"

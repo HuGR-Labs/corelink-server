@@ -106,19 +106,13 @@ members = [
     # absorbed AC crates (`corelink-ac-core`, `corelink-ac-schema`,
     # `corelink-handler-ac`) per spec §4 + §6 Stream A.
     "crates/corelink-ac",
-    "crates/corelink-chunker",
     "crates/corelink-r2-multipart",
-    "crates/corelink-multipart-schema",
-    "crates/corelink-manifest",
     "crates/corelink-gc",
-    "crates/corelink-dedup",
     "crates/corelink-deploy-verifier",
     "crates/corelink-eviction",
     "crates/corelink-quota",
     "crates/corelink-quota-cas",
-    "crates/corelink-lru-tracker",
     "crates/corelink-ratelimit",
-    "crates/corelink-edge",
     "crates/corelink-abuse",
     "crates/corelink-rate-headers",
     "crates/corelink-analytics",
@@ -545,19 +539,13 @@ corelink-ac-core = { path = "crates/corelink-ac-core" }
 # Wave-33 Stage 1 Stream A sub-step A.2b — canonical AC bounded-
 # context aggregator (3 absorbed AC crates per spec §4 + §6 Stream A).
 corelink-ac = { path = "crates/corelink-ac" }
-corelink-chunker = { path = "crates/corelink-chunker" }
 corelink-r2-multipart = { path = "crates/corelink-r2-multipart" }
-corelink-multipart-schema = { path = "crates/corelink-multipart-schema" }
-corelink-manifest = { path = "crates/corelink-manifest" }
 corelink-gc = { path = "crates/corelink-gc" }
-corelink-dedup = { path = "crates/corelink-dedup" }
 corelink-deploy-verifier = { path = "crates/corelink-deploy-verifier" }
 corelink-eviction = { path = "crates/corelink-eviction" }
 corelink-quota = { path = "crates/corelink-quota" }
 corelink-quota-cas = { path = "crates/corelink-quota-cas" }
-corelink-lru-tracker = { path = "crates/corelink-lru-tracker" }
 corelink-ratelimit = { path = "crates/corelink-ratelimit" }
-corelink-edge = { path = "crates/corelink-edge" }
 corelink-abuse = { path = "crates/corelink-abuse" }
 corelink-rate-headers = { path = "crates/corelink-rate-headers" }
 corelink-analytics = { path = "crates/corelink-analytics" }
