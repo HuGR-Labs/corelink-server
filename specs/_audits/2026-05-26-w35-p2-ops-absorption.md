@@ -437,7 +437,8 @@ $ for c in corelink-admin-api corelink-admin-dry-run corelink-backup-verify core
 
 ## §8. Commit SHA
 
-Recorded post-commit; see W35-P2-OPS branch HEAD.
+`823ff003722b18133d8640826b1159698d7fdb5f` (W35-P2-OPS branch HEAD
+on `worktree-agent-af8bf3686ef4a01c9`).
 
 ## §9. DCO sign-off
 
