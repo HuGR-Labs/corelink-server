@@ -77,7 +77,7 @@ Checklist:
 ## 4. Fatigue threshold response
 
 The canonical threshold matrix (Lote 10.17 codex P1 fix; see
-`crates/corelink-oncall/src/threshold.rs`):
+`crates/corelink-ops/src/oncall/threshold.rs`, absorbed Wave 35 P2 from `corelink-oncall` into `corelink-ops` umbrella):
 
 | Counter                          | Soft (alert + 1:1)     | HARD (auto-handoff or block)           |
 | -------------------------------- | ---------------------- | -------------------------------------- |

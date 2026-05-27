@@ -21,7 +21,7 @@ tags: ["runbook", "oncall", "escalation", "matrix", "3-tier", "sev1", "sev2", "s
 
 > **Parent:** `specs/_compliance/BCP-DR-DRILL-CADENCE.md` (R-6 90-day cadence companion).
 >
-> **Anchors:** `crates/corelink-oncall` (WI-S17-005 PD schedule + fatigue), `specs/_runbooks/RB-ONCALL-POLICY.md` (rotation policy + Tier 1/2/3 names), `specs/03_architecture/failure_modes.md` §FM-202/203/258, spec contract §5.5 R-S17-12/13.
+> **Anchors:** `crates/corelink-ops/src/oncall/` (WI-S17-005 PD schedule + fatigue; absorbed Wave 35 P2 from `corelink-oncall`), `specs/_runbooks/RB-ONCALL-POLICY.md` (rotation policy + Tier 1/2/3 names), `specs/03_architecture/failure_modes.md` §FM-202/203/258, spec contract §5.5 R-S17-12/13.
 >
 > **doc_status:** DRAFT · **audit_status:** ACTIVE · **scope:** canonical escalation behaviour for all CoreLink production + staging incidents, mapped to PagerDuty schedule slugs + comms templates.
 >
@@ -242,5 +242,5 @@ Each drill in `BCP-DR-DRILL-CADENCE.md` exercises this matrix:
 - `specs/_runbooks/RB-BYOK-REVOKE.md` — L3-auth CMK revoke
 - `specs/_compliance/BCP-DR-DRILL-CADENCE.md` — drill cadence parent
 - `specs/_compliance/templates/DR-DRILL-EVIDENCE.md` — evidence template
-- `crates/corelink-oncall/` — PD schedule + fatigue + page audit ledger
+- `crates/corelink-ops/src/oncall/` — PD schedule + fatigue + page audit ledger (absorbed Wave 35 P2 from `corelink-oncall`)
 - `ROADMAP-TO-GA.md` §6 — R-6 Wave; H-3 PagerDuty account provisioning
