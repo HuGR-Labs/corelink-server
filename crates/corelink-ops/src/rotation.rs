@@ -1,13 +1,9 @@
-//! Key rotation — wave-33 canonical ops aggregator.
+//! Key rotation — wave-33 canonical ops aggregator (W35-P2 update).
 //!
-//! Two rotation-context crates folded under the canonical `rotation`
-//! submodule as two sub-submodules (Stage 1 Stream C sub-step C.2
-//! Option-A aggregator pattern):
-//!
-//! - [`adapters`] — `corelink-rotation-adapters`: per-provider
-//!   rotation adapters.
-//! - [`worker`] — `corelink-rotation-worker`: rotation worker
-//!   orchestrator.
+//! - [`adapters`] — `corelink-rotation-adapters` (still external):
+//!   per-provider rotation adapters.
+//! - [`worker`] — physically absorbed (W35-P2-OPS): rotation worker
+//!   orchestrator. Was `corelink-rotation-worker`.
 
 /// Per-provider rotation adapters.
 ///
@@ -16,9 +12,4 @@ pub mod adapters {
     pub use corelink_rotation_adapters::*;
 }
 
-/// Rotation worker orchestrator.
-///
-/// Re-exports the entire public API of `corelink-rotation-worker`.
-pub mod worker {
-    pub use corelink_rotation_worker::*;
-}
+pub mod worker;

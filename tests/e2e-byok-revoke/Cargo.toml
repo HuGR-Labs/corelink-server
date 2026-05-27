@@ -30,7 +30,7 @@ path = "src/lib.rs"
 [dependencies]
 corelink-byok = { path = "../../crates/corelink-byok" }
 corelink-byok-revocation = { path = "../../crates/corelink-byok-revocation" }
-corelink-customer-alerts = { path = "../../crates/corelink-customer-alerts" }
+corelink-ops = { path = "../../crates/corelink-ops" }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

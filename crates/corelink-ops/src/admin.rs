@@ -1,31 +1,23 @@
-//! Admin surface — wave-33 canonical ops aggregator.
+//! Admin surface — wave-33 canonical ops aggregator (W35-P2 update).
 //!
 //! Four admin-context crates folded under the canonical `admin`
 //! submodule as four sub-submodules so consumers can target the exact
-//! granularity they need (Stage 1 Stream C sub-step C.2 Option-A
-//! aggregator pattern):
+//! granularity they need:
 //!
-//! - [`api`] — `corelink-admin-api`: admin REST API surface.
-//! - [`dry_run`] — `corelink-admin-dry-run`: admin dry-run preview
-//!   (diff-only mode for mutating ops).
-//! - [`handler`] — `corelink-handler-admin`: admin handler trait +
-//!   InMemoryFake + per-handler SliObserver.
-//! - [`dual_approval`] — `corelink-dual-approval`: 2-of-N approval
-//!   gate (`require_two_distinct_approvers`).
+//! - [`api`] — physically absorbed (W35-P2-OPS): admin REST API surface
+//!   (was `corelink-admin-api`). Lives at
+//!   `crates/corelink-ops/src/admin/api.rs` plus its sibling files under
+//!   `crates/corelink-ops/src/admin/api/`.
+//! - [`dry_run`] — physically absorbed (W35-P2-OPS): admin dry-run
+//!   preview (diff-only mode for mutating ops). Was
+//!   `corelink-admin-dry-run`.
+//! - [`handler`] — `corelink-handler-admin` (still external):
+//!   admin handler trait + InMemoryFake + per-handler SliObserver.
+//! - [`dual_approval`] — `corelink-dual-approval` (still external):
+//!   2-of-N approval gate (`require_two_distinct_approvers`).
 
-/// Admin REST API surface.
-///
-/// Re-exports the entire public API of `corelink-admin-api`.
-pub mod api {
-    pub use corelink_admin_api::*;
-}
-
-/// Admin dry-run preview (diff-only mode for mutating ops).
-///
-/// Re-exports the entire public API of `corelink-admin-dry-run`.
-pub mod dry_run {
-    pub use corelink_admin_dry_run::*;
-}
+pub mod api;
+pub mod dry_run;
 
 /// Admin handler trait + InMemoryFake + per-handler SliObserver.
 ///

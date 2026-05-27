@@ -109,7 +109,6 @@ members = [
     "crates/corelink-ac",
     "crates/corelink-r2-multipart",
     "crates/corelink-gc",
-    "crates/corelink-deploy-verifier",
     "crates/corelink-eviction",
     "crates/corelink-ratelimit",
     "crates/corelink-rate-headers",
@@ -117,7 +116,6 @@ members = [
     "crates/corelink-tracing",
     "crates/corelink-audit-chain",
     "crates/corelink-slo",
-    "crates/corelink-supply-verify",
     "crates/corelink-billing-emit",
     "crates/corelink-billing-aggregator",
     "crates/corelink-billing-stripe",
@@ -127,7 +125,6 @@ members = [
     # individual-erasure surface with the canonical tenant-level
     # ACTIVE→CANCEL_REQUESTED→GRACE_PERIOD→READ_ONLY→SUSPENDED→ERASED
     # 5-state machine + 30d grace export + 90d cryptographic erasure).
-    "crates/corelink-tenant-offboarding",
     # Wave-35 Phase 2: corelink-privacy-{breach-emit, consent-ledger,
     # notice-emit, residency-enforcement, sub-processor-emit} absorbed
     # into the corelink-privacy umbrella per
@@ -138,17 +135,12 @@ members = [
     "crates/corelink-privacy-erasure-worker",
     "crates/corelink-privacy-pseudonymize",
     "tools/sbom-publish",
-    "crates/corelink-supply-chain-policy",
-    "crates/corelink-config-api",
     "crates/corelink-config-do",
     "tools/dt-cli",
     "tools/dt-reconcile",
     "crates/corelink-dt-webhook",
     "crates/corelink-dual-approval",
-    "crates/corelink-admin-api",
-    "crates/corelink-admin-dry-run",
     "crates/corelink-rotation-adapters",
-    "crates/corelink-rotation-worker",
     "crates/corelink-terraform-drift-consumer",
     # Wave 35 Phase 2: `corelink-rollout-controller` absorbed into
     # `corelink-replication::rollout_controller` per
@@ -190,17 +182,14 @@ members = [
     # unused; the 3 integration-test files preserve every cell of the
     # 16-combination matrix + adversarial + property surface unchanged.
     "crates/corelink-byok-revocation",
-    "crates/corelink-customer-alerts",
     # WI-S14-007 Ed25519 erasure attestation
     "crates/corelink-erasure-attestation",
     # WI-S17-002 DR drill scheduler + CF region outage simulator
-    "crates/corelink-dr-drill",
     # R-prep continuous (daily) backup verification harness — complements
     # GAP-15 cold-restore drill (which runs only on schedule). Catches
     # silent backup corruption / freshness regressions / restore-failures
     # between drill cycles. Trait + InMemory fake only; real R2/D1/KV
     # handler deferred per autonomous-execution charter trait-abstraction-defer.
-    "crates/corelink-backup-verify",
     # WI-S15-001 CLI 7 subcommands + WI-S15-005 telemetry opt-in (same crate)
     "tools/cli",
     # WI-S15-004 FFI wrappers (Python pyO3 + Go cgo + JS/TS WASM)
@@ -213,7 +202,6 @@ members = [
     # WI-S17-003 runbook dry-run tracker (PAT-RUNBOOK-DRILL-001 + FM-202)
     "crates/corelink-runbook-tracker",
     # WI-S17-005 oncall scheduler + fatigue tracking + PagerDuty integration trait
-    "crates/corelink-oncall",
     # WI-S19-002 DPA click-through 6-field consent + RS256 JWT receipt + 3 locales
     "crates/corelink-dpa-acceptance",
     # WI-S19-001 signup orchestration backend + atomic D1 provisioning + chaos Stripe outage
@@ -256,7 +244,6 @@ members = [
     # R2-13 D1 migration replay harness (rusqlite-backed; CI gate that every
     # migrations/d1/*.sql applies cleanly in numeric order against a fresh
     # in-memory SQLite. Catches ordering bugs + schema dependency hazards.)
-    "crates/corelink-d1-migrations",
     # R2-10 CF Worker binding adapters (R2 / D1 / KV / DO) implementing the
     # trait surfaces from corelink-worker. wasm32-unknown-unknown ONLY —
     # the crate root carries `#![cfg(target_arch = "wasm32")]` so native
@@ -266,7 +253,6 @@ members = [
     # audit_outbox / tenants RBAC / PAT issuance / GH PR-merge / PD incident
     # timeline / pentest findings → POSTs to Drata REST API with Bearer auth,
     # SHA-256 idempotency dedup, retry, fail-CLOSED audit emit.
-    "crates/corelink-drata-sync",
     # R3-1 end-to-end signup happy-path harness: signup → DPA → tier → Stripe
     # Checkout → first PAT → R2 CAS write + BLAKE3 verify. In-memory fakes by
     # default; live `STRIPE_SECRET_KEY_TEST`-gated tests behind `--ignored`.
@@ -350,7 +336,6 @@ members = [
     # record path + in-memory fake. Anti-abuse runbook RB-SURVEY-ABUSE +
     # additive migration 0046_survey_responses + analyst protocol live
     # under marketing/retention/customer-health/.
-    "crates/corelink-survey",
     # Wave-17 follow-on to corelink-stripe-real WebhookDispatcher: ships the
     # production `StateMaterializer` impl (`D1SubscriptionStateHandler`) that
     # writes Stripe-derived rows into the canonical D1 billing tables, plus
@@ -540,7 +525,6 @@ corelink-ac-core = { path = "crates/corelink-ac-core" }
 corelink-ac = { path = "crates/corelink-ac" }
 corelink-r2-multipart = { path = "crates/corelink-r2-multipart" }
 corelink-gc = { path = "crates/corelink-gc" }
-corelink-deploy-verifier = { path = "crates/corelink-deploy-verifier" }
 corelink-eviction = { path = "crates/corelink-eviction" }
 corelink-ratelimit = { path = "crates/corelink-ratelimit" }
 corelink-rate-headers = { path = "crates/corelink-rate-headers" }
@@ -548,7 +532,6 @@ corelink-analytics = { path = "crates/corelink-analytics" }
 corelink-tracing = { path = "crates/corelink-tracing" }
 corelink-audit-chain = { path = "crates/corelink-audit-chain" }
 corelink-slo = { path = "crates/corelink-slo" }
-corelink-supply-verify = { path = "crates/corelink-supply-verify" }
 # W35-P2-TELEMETRY (2026-05-26) absorbed corelink-canary, corelink-logpush,
 # corelink-otel-export, corelink-synthetic-pager, corelink-lighthouse-tracker
 # as inline modules of corelink-telemetry.
@@ -582,7 +565,6 @@ corelink-billing-stripe = { path = "crates/corelink-billing-stripe" }
 corelink-billing-reconcile = { path = "crates/corelink-billing-reconcile" }
 corelink-dsr = { path = "crates/corelink-dsr" }
 # R-prep tenant offboarding state machine.
-corelink-tenant-offboarding = { path = "crates/corelink-tenant-offboarding" }
 corelink-clerk-cf = { path = "crates/corelink-clerk-cf" }
 # R2-10 CF Worker R2/D1/KV/DO binding adapters (wasm32 only).
 corelink-cf-bindings = { path = "crates/corelink-cf-bindings" }
@@ -591,15 +573,11 @@ corelink-cf-bindings = { path = "crates/corelink-cf-bindings" }
 corelink-privacy-erasure-worker = { path = "crates/corelink-privacy-erasure-worker" }
 corelink-privacy-pseudonymize = { path = "crates/corelink-privacy-pseudonymize" }
 corelink-config-do = { path = "crates/corelink-config-do" }
-corelink-config-api = { path = "crates/corelink-config-api" }
 corelink-dt-webhook = { path = "crates/corelink-dt-webhook" }
 corelink-dt-cli = { path = "tools/dt-cli" }
 corelink-dt-reconcile = { path = "tools/dt-reconcile" }
 corelink-dual-approval = { path = "crates/corelink-dual-approval" }
-corelink-admin-api = { path = "crates/corelink-admin-api" }
-corelink-admin-dry-run = { path = "crates/corelink-admin-dry-run" }
 corelink-rotation-adapters = { path = "crates/corelink-rotation-adapters" }
-corelink-rotation-worker = { path = "crates/corelink-rotation-worker" }
 # Wave 35 Phase 2: `corelink-rollout-controller` absorbed into
 # `corelink-replication::rollout_controller`; consumers reach it via the
 # umbrella `corelink-replication` workspace dep.
@@ -624,17 +602,13 @@ corelink-byok-gcp = { path = "crates/corelink-byok-gcp" }
 corelink-byok-azure = { path = "crates/corelink-byok-azure" }
 corelink-byok-vault = { path = "crates/corelink-byok-vault" }
 corelink-byok-revocation = { path = "crates/corelink-byok-revocation" }
-corelink-customer-alerts = { path = "crates/corelink-customer-alerts" }
 corelink-erasure-attestation = { path = "crates/corelink-erasure-attestation" }
-corelink-dr-drill = { path = "crates/corelink-dr-drill" }
-corelink-backup-verify = { path = "crates/corelink-backup-verify" }
 corelink-chaos-scheduler = { path = "crates/corelink-chaos-scheduler" }
 corelink-tier-selection = { path = "crates/corelink-tier-selection" }
 corelink-stripe-real = { path = "crates/corelink-stripe-real" }
 corelink-billing-stripe-materializer = { path = "crates/corelink-billing-stripe-materializer" }
 corelink-statuspage-real = { path = "crates/corelink-statuspage-real" }
 corelink-dsr-statuspage-scheduler = { path = "crates/corelink-dsr-statuspage-scheduler" }
-corelink-drata-sync = { path = "crates/corelink-drata-sync" }
 corelink-openapi = { path = "tools/openapi" }
 # R-prep handler-crate skeletons (CAS / AC / Admin).
 corelink-handler-cas = { path = "crates/corelink-handler-cas" }
@@ -645,14 +619,10 @@ corelink-handler-admin = { path = "crates/corelink-handler-admin" }
 # workspace-level dependency line (they were each pulled in only by
 # apps/server or sibling crates via relative path). The ops umbrella
 # now needs to consume them via `{ workspace = true }`.
-corelink-oncall = { path = "crates/corelink-oncall" }
 corelink-slack-real = { path = "crates/corelink-slack-real" }
 corelink-enterprise-inquiry = { path = "crates/corelink-enterprise-inquiry" }
-corelink-survey = { path = "crates/corelink-survey" }
 corelink-runbook-tracker = { path = "crates/corelink-runbook-tracker" }
 corelink-terraform-drift-consumer = { path = "crates/corelink-terraform-drift-consumer" }
-corelink-supply-chain-policy = { path = "crates/corelink-supply-chain-policy" }
-corelink-d1-migrations = { path = "crates/corelink-d1-migrations" }
 # Wave-35 Phase 2 — adapter-host umbrella crate (absorbs Wave-34
 # corelink-adapter-{brew,cargo,npm,oci,pip} as inline submodules).
 corelink-adapter-host = { path = "crates/corelink-adapter-host" }

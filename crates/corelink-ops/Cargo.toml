@@ -1,6 +1,6 @@
 [package]
 name = "corelink-ops"
-description = "Wave-33 Stage 1 Stream C sub-step C.2 — canonical ops-context aggregator façade. Re-exports the 28 absorbed ops-context crates (oncall + statuspage + slack + 4 admin crates + customer-alerts + enterprise-inquiry + survey + runbook + tenant-offboarding + deploy-verifier + terraform-drift + 2 DR crates + chaos + 2 rotation + 3 DT + drata + 2 supply-chain + 2 config + d1-migrations) under a single canonical import surface (`corelink_ops::{oncall, statuspage, slack, admin, alerts, enterprise, survey, runbook, tenant_offboarding, deploy, terraform, dr, chaos, rotation, dt, drata, supply_chain, config, migrations}`). LARGEST absorption of Wave-33 (28 → 1). Option-A aggregator (per `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4): absorbed crates remain canonical sources of truth, retaining their own tests/benches; consumer migration proceeds incrementally. Preserves admin dual-approval flow, runbook-drill PAT-RUNBOOK-DRILL-001 invariant, oncall PagerDuty trait, statuspage 1-per-5-min rate-limiter, customer-alerts multi-channel emit, audit-emit-BEFORE-mutation fail-CLOSED envelopes across every absorbed crate by reference. Note: the HTTPS portions of `corelink-statuspage-real` and `corelink-slack-real` are also re-exported by `corelink-adapters-cloud` (Stage 1 Stream C sub-step C.3); the pure-logic vs. binding decomposition is deferred to Stage 2."
+description = "Wave-33 Stage 1 Stream C sub-step C.2 — canonical ops-context aggregator façade. W35-P2 update: 15 of the 28 absorbed ops crates flipped to Option-B physical absorption (oncall, drata, deploy, customer-alerts, d1-migrations, survey, tenant-offboarding, admin-api, admin-dry-run, config-api, dr-drill, backup-verify, rotation-worker, supply-chain-policy, supply-verify). 13 still re-exported (statuspage, slack, handler-admin, dual-approval, enterprise-inquiry, runbook-tracker, terraform-drift-consumer, chaos-scheduler, rotation-adapters, dt-webhook, config-do; dt-cli + dt-reconcile are binary-only)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -25,36 +25,268 @@ print_stderr = "deny"
 mod_module_files = "deny"
 
 [dependencies]
-# Re-export targets (Stage 1 Stream C Option-A aggregator: physical
-# absorption deferred; absorbed crates remain canonical sources of
-# truth. See Stream C SEAL audit §1.)
-corelink-oncall = { workspace = true }
+# Re-export targets (Stage 1 Stream C Option-A aggregator: still-external
+# crates re-exported as thin façades from `corelink_ops::<mod>`).
 corelink-statuspage-real = { workspace = true }
 corelink-slack-real = { workspace = true }
-corelink-admin-api = { workspace = true }
-corelink-admin-dry-run = { workspace = true }
 corelink-handler-admin = { workspace = true }
 corelink-dual-approval = { workspace = true }
-corelink-customer-alerts = { workspace = true }
 corelink-enterprise-inquiry = { workspace = true }
-corelink-survey = { workspace = true }
 corelink-runbook-tracker = { workspace = true }
-corelink-tenant-offboarding = { workspace = true }
-corelink-deploy-verifier = { workspace = true }
 corelink-terraform-drift-consumer = { workspace = true }
-corelink-dr-drill = { workspace = true }
-corelink-backup-verify = { workspace = true }
 corelink-chaos-scheduler = { workspace = true }
 corelink-rotation-adapters = { workspace = true }
-corelink-rotation-worker = { workspace = true }
 # `corelink-dt-cli` and `corelink-dt-reconcile` are binary-only crates
 # (no `src/lib.rs`) so they cannot be re-exported into the umbrella's
 # library surface. They remain workspace binary targets; see
 # `src/dt.rs` for the canonical-import audit trail.
 corelink-dt-webhook = { workspace = true }
-corelink-drata-sync = { workspace = true }
-corelink-supply-chain-policy = { workspace = true }
-corelink-supply-verify = { workspace = true }
-corelink-config-api = { workspace = true }
 corelink-config-do = { workspace = true }
-corelink-d1-migrations = { workspace = true }
+
+# Cross-crate dependencies of the absorbed (W35-P2-OPS) modules:
+corelink-byok-core = { workspace = true }
+corelink-byok-revocation = { workspace = true }
+corelink-failover-router = { workspace = true }
+corelink-replica-worker = { workspace = true }
+corelink-audit = { workspace = true }
+
+# Direct third-party deps merged from the 15 absorbed crates:
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+async-trait = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+subtle = { workspace = true }
+base64 = { workspace = true }
+zeroize = { workspace = true }
+anyhow = { workspace = true }
+# tokio is required by customer-alerts + admin-dry-run library surfaces.
+# Host-only on wasm32 (gated below).
+tokio = { workspace = true }
+# admin-dry-run binaries use tracing_subscriber + tokio_test runners.
+tracing-subscriber = { workspace = true }
+tokio-test = { workspace = true }
+# d1-migrations: rusqlite with bundled libsqlite3 (CI host-only).
+rusqlite = { version = "0.32", features = ["bundled"] }
+# drata-sync: synchronous blocking HTTPS client (no tokio in src/).
+reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }
+# supply-verify CLI deps:
+clap = { version = "4", features = ["derive"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { workspace = true, features = ["v7", "serde", "js"] }
+
+[features]
+default = []
+# `production` enables the real PagerDuty Events API v2 HTTPS client +
+# Slack webhook fallback on retry exhaustion (R2-3). Gated behind a
+# feature so the pure-logic skeleton (WI-S17-005 default surface)
+# stays I/O-free. Inherited from absorbed `corelink-oncall`.
+production = []
+
+[dev-dependencies]
+proptest = { workspace = true }
+mockito = "1"
+wiremock = "0.6"
+rand = "0.9"
+rand_chacha = "0.9"
+# Cross-crate SLI binding tests (DR-16 wave-14, dr_backup_verify_sli_binding.rs):
+corelink-slo = { workspace = true }
+
+# Binary targets inherited from absorbed admin-dry-run + supply-verify:
+
+[[bin]]
+name = "rb_fm_205_dry_run"
+path = "src/admin/dry_run/bin/rb_fm_205_dry_run.rs"
+
+[[bin]]
+name = "rb_fm_201_dry_run"
+path = "src/admin/dry_run/bin/rb_fm_201_dry_run.rs"
+
+[[bin]]
+name = "rb_fm_206_dry_run"
+path = "src/admin/dry_run/bin/rb_fm_206_dry_run.rs"
+
+[[bin]]
+name = "corelink-supply-verify"
+path = "src/supply_chain/verify/bin/cli.rs"
+
+# Test targets inherited from absorbed crates (renamed with <mod>_ prefix):
+
+[[test]]
+name = "oncall_pagerduty_events_http"
+path = "tests/oncall_pagerduty_events_http.rs"
+
+[[test]]
+name = "oncall_prop_oncall"
+path = "tests/oncall_prop_oncall.rs"
+
+[[test]]
+name = "drata_proptest_idempotency"
+path = "tests/drata_proptest_idempotency.rs"
+
+[[test]]
+name = "drata_wiremock_drata_client"
+path = "tests/drata_wiremock_drata_client.rs"
+
+[[test]]
+name = "deploy_prop_verify"
+path = "tests/deploy_prop_verify.rs"
+
+[[test]]
+name = "deploy_adversarial"
+path = "tests/deploy_adversarial.rs"
+
+[[test]]
+name = "deploy_chaos"
+path = "tests/deploy_chaos.rs"
+
+[[test]]
+name = "migrations_d1_migration_integration"
+path = "tests/migrations_d1_migration_integration.rs"
+
+[[test]]
+name = "migrations_prop_migration_additivity"
+path = "tests/migrations_prop_migration_additivity.rs"
+
+[[test]]
+name = "survey_prop_survey"
+path = "tests/survey_prop_survey.rs"
+
+[[test]]
+name = "tenant_offboarding_prop_tenant_offboarding"
+path = "tests/tenant_offboarding_prop_tenant_offboarding.rs"
+
+[[test]]
+name = "admin_api_e2e_admin_dual_approval"
+path = "tests/admin_api_e2e_admin_dual_approval.rs"
+
+[[test]]
+name = "admin_api_cross_wi_integration_s13"
+path = "tests/admin_api_cross_wi_integration_s13.rs"
+
+[[test]]
+name = "admin_dry_run_prop_dual_approval_invariants"
+path = "tests/admin_dry_run_prop_dual_approval_invariants.rs"
+
+[[test]]
+name = "config_api_adversarial"
+path = "tests/config_api_adversarial.rs"
+
+[[test]]
+name = "config_api_prop_mfa_freshness"
+path = "tests/config_api_prop_mfa_freshness.rs"
+
+[[test]]
+name = "dr_drill_prop_dr_drill"
+path = "tests/dr_drill_prop_dr_drill.rs"
+
+[[test]]
+name = "dr_backup_verify_prop_backup_verify"
+path = "tests/dr_backup_verify_prop_backup_verify.rs"
+
+[[test]]
+name = "dr_backup_verify_sli_binding"
+path = "tests/dr_backup_verify_sli_binding.rs"
+
+[[test]]
+name = "rotation_worker_prop_rotation"
+path = "tests/rotation_worker_prop_rotation.rs"
+
+[[test]]
+name = "rotation_worker_adversarial"
+path = "tests/rotation_worker_adversarial.rs"
+
+[[test]]
+name = "supply_chain_policy_prop_cargo_deny"
+path = "tests/supply_chain_policy_prop_cargo_deny.rs"
+
+[[test]]
+name = "supply_chain_policy_adversarial_dep_policy"
+path = "tests/supply_chain_policy_adversarial_dep_policy.rs"
+
+[[test]]
+name = "supply_chain_policy_e2e_dependabot"
+path = "tests/supply_chain_policy_e2e_dependabot.rs"
+
+[[test]]
+name = "supply_chain_verify_prop_verify"
+path = "tests/supply_chain_verify_prop_verify.rs"
+
+[[test]]
+name = "supply_chain_verify_adversarial"
+path = "tests/supply_chain_verify_adversarial.rs"
+
+# Example targets inherited from absorbed crates:
+
+[[example]]
+name = "admin_api_basic_2admin"
+path = "examples/admin_api_basic_2admin.rs"
+
+[[example]]
+name = "admin_api_collusion_demo"
+path = "examples/admin_api_collusion_demo.rs"
+
+[[example]]
+name = "admin_api_audit_inspection"
+path = "examples/admin_api_audit_inspection.rs"
+
+[[example]]
+name = "config_api_crud_basic"
+path = "examples/config_api_crud_basic.rs"
+
+[[example]]
+name = "config_api_cas_retry"
+path = "examples/config_api_cas_retry.rs"
+
+[[example]]
+name = "config_api_rollback_drill"
+path = "examples/config_api_rollback_drill.rs"
+
+[[example]]
+name = "deploy_verify_signed_deploy"
+path = "examples/deploy_verify_signed_deploy.rs"
+
+[[example]]
+name = "deploy_unsigned_deploy_blocked"
+path = "examples/deploy_unsigned_deploy_blocked.rs"
+
+[[example]]
+name = "deploy_audit_fail_closed"
+path = "examples/deploy_audit_fail_closed.rs"
+
+[[example]]
+name = "rotation_worker_pat_rotation"
+path = "examples/rotation_worker_pat_rotation.rs"
+
+[[example]]
+name = "rotation_worker_tdk_rotation"
+path = "examples/rotation_worker_tdk_rotation.rs"
+
+[[example]]
+name = "rotation_worker_audit_chain_rotation"
+path = "examples/rotation_worker_audit_chain_rotation.rs"
+
+[[example]]
+name = "rotation_worker_byok_rotation_stub"
+path = "examples/rotation_worker_byok_rotation_stub.rs"
+
+[[example]]
+name = "supply_chain_verify_verify_basic"
+path = "examples/supply_chain_verify_verify_basic.rs"
+
+[[example]]
+name = "supply_chain_verify_paranoid_mode"
+path = "examples/supply_chain_verify_paranoid_mode.rs"
+
+[[example]]
+name = "supply_chain_verify_lookup"
+path = "examples/supply_chain_verify_lookup.rs"
+
+[[example]]
+name = "survey_sign_and_record"
+path = "examples/survey_sign_and_record.rs"

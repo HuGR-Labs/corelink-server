@@ -453,7 +453,7 @@ impl AuditSink {
 /// the real `corelink-customer-alerts` code path.
 #[derive(Debug)]
 pub struct CustomerAlertSink {
-    inner: corelink_customer_alerts::MultiChannelAlerter,
+    inner: corelink_ops::alerts::MultiChannelAlerter,
     alerts: Arc<Mutex<Vec<RevocationAlertPayload>>>,
     recoveries: Arc<Mutex<Vec<(KmsProviderKind, KmsKeyId, u64)>>>,
 }
@@ -463,14 +463,14 @@ impl CustomerAlertSink {
     /// in stub mode (all channels succeed silently — matches CI).
     #[must_use]
     pub fn new() -> Self {
-        let cfg = corelink_customer_alerts::AlerterConfig::default();
+        let cfg = corelink_ops::alerts::AlerterConfig::default();
         debug_assert!(
             cfg.stub_mode,
             "AlerterConfig::default() must set stub_mode=true for CI; \
              production overrides explicitly."
         );
         Self {
-            inner: corelink_customer_alerts::MultiChannelAlerter::new(cfg),
+            inner: corelink_ops::alerts::MultiChannelAlerter::new(cfg),
             alerts: Arc::new(Mutex::new(Vec::new())),
             recoveries: Arc::new(Mutex::new(Vec::new())),
         }

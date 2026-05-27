@@ -1159,39 +1159,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "corelink-admin-api"
-version = "0.1.0"
-dependencies = [
- "corelink-dual-approval",
- "proptest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "corelink-admin-dry-run"
-version = "0.1.0"
-dependencies = [
- "corelink-config-do",
- "corelink-dual-approval",
- "corelink-terraform-drift-consumer",
- "proptest",
- "rand 0.9.4",
- "rand_chacha 0.9.0",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "corelink-analytics"
 version = "0.1.0"
 dependencies = [
@@ -1273,16 +1240,6 @@ dependencies = [
  "thiserror 2.0.18",
  "uuid",
  "zeroize",
-]
-
-[[package]]
-name = "corelink-backup-verify"
-version = "0.1.0"
-dependencies = [
- "corelink-slo",
- "proptest",
- "serde",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1701,24 +1658,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "corelink-config-api"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "corelink-config-do",
- "proptest",
- "rand 0.9.4",
- "rand_chacha 0.9.0",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "corelink-config-do"
 version = "0.1.0"
 dependencies = [
@@ -1760,48 +1699,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "corelink-customer-alerts"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "corelink-byok-core",
- "corelink-byok-revocation",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tracing",
-]
-
-[[package]]
-name = "corelink-d1-migrations"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "rand 0.9.4",
- "rand_chacha 0.9.0",
- "rusqlite",
-]
-
-[[package]]
-name = "corelink-deploy-verifier"
-version = "0.1.0"
-dependencies = [
- "hex",
- "hmac 0.12.1",
- "proptest",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "subtle",
- "thiserror 2.0.18",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "corelink-dpa-acceptance"
 version = "0.1.0"
 dependencies = [
@@ -1818,32 +1715,6 @@ dependencies = [
  "subtle",
  "thiserror 2.0.18",
  "uuid",
-]
-
-[[package]]
-name = "corelink-dr-drill"
-version = "0.1.0"
-dependencies = [
- "corelink-failover-router",
- "corelink-replica-worker",
- "proptest",
- "serde",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "corelink-drata-sync"
-version = "0.1.0"
-dependencies = [
- "hex",
- "proptest",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror 2.0.18",
- "tokio",
- "wiremock",
 ]
 
 [[package]]
@@ -2062,18 +1933,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "corelink-oncall"
-version = "0.1.0"
-dependencies = [
- "mockito",
- "proptest",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "corelink-openapi"
 version = "0.1.0"
 dependencies = [
@@ -2085,32 +1944,47 @@ dependencies = [
 name = "corelink-ops"
 version = "0.1.0"
 dependencies = [
- "corelink-admin-api",
- "corelink-admin-dry-run",
- "corelink-backup-verify",
+ "anyhow",
+ "async-trait",
+ "base64",
+ "clap",
+ "corelink-audit",
+ "corelink-byok-core",
+ "corelink-byok-revocation",
  "corelink-chaos-scheduler",
- "corelink-config-api",
  "corelink-config-do",
- "corelink-customer-alerts",
- "corelink-d1-migrations",
- "corelink-deploy-verifier",
- "corelink-dr-drill",
- "corelink-drata-sync",
  "corelink-dt-webhook",
  "corelink-dual-approval",
  "corelink-enterprise-inquiry",
+ "corelink-failover-router",
  "corelink-handler-admin",
- "corelink-oncall",
+ "corelink-replica-worker",
  "corelink-rotation-adapters",
- "corelink-rotation-worker",
  "corelink-runbook-tracker",
  "corelink-slack-real",
+ "corelink-slo",
  "corelink-statuspage-real",
- "corelink-supply-chain-policy",
- "corelink-supply-verify",
- "corelink-survey",
- "corelink-tenant-offboarding",
  "corelink-terraform-drift-consumer",
+ "hex",
+ "hmac 0.12.1",
+ "mockito",
+ "proptest",
+ "rand 0.9.4",
+ "rand_chacha 0.9.0",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "subtle",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "wiremock",
+ "zeroize",
 ]
 
 [[package]]
@@ -2337,19 +2211,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "corelink-rotation-worker"
-version = "0.1.0"
-dependencies = [
- "corelink-rotation-adapters",
- "proptest",
- "rand 0.9.4",
- "rand_chacha 0.9.0",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "corelink-runbook-tracker"
 version = "0.1.0"
 dependencies = [
@@ -2486,48 +2347,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "corelink-supply-chain-policy"
-version = "0.1.0"
-dependencies = [
- "proptest",
-]
-
-[[package]]
-name = "corelink-supply-verify"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64",
- "clap",
- "hex",
- "proptest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "corelink-survey"
-version = "0.1.0"
-dependencies = [
- "base64",
- "corelink-audit",
- "hex",
- "hmac 0.12.1",
- "proptest",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "subtle",
- "thiserror 2.0.18",
- "uuid",
- "zeroize",
-]
-
-[[package]]
 name = "corelink-telemetry"
 version = "0.1.0"
 dependencies = [
@@ -2543,16 +2362,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "corelink-tenant-offboarding"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -3017,7 +2826,7 @@ dependencies = [
  "async-trait",
  "corelink-byok",
  "corelink-byok-revocation",
- "corelink-customer-alerts",
+ "corelink-ops",
  "proptest",
  "serde_json",
  "thiserror 2.0.18",
