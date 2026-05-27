@@ -1,0 +1,20 @@
+engineering:
+  label: Engineering
+  permalink: /engineering
+  description: Engineering deep-dives.
+build-cache:
+  label: Build Cache
+  permalink: /build-cache
+  description: Content-addressable build caches.
+cloudflare-workers:
+  label: Cloudflare Workers
+  permalink: /cloudflare-workers
+  description: Building on the Cloudflare developer platform.
+rust:
+  label: Rust
+  permalink: /rust
+  description: Rust internals and patterns.
+blake3:
+  label: BLAKE3
+  permalink: /blake3
+  description: BLAKE3 hashing.
