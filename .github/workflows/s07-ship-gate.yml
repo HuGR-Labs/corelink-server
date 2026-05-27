@@ -24,10 +24,9 @@ name: S-07 ship gate (WI-S07-005)
 on:
   pull_request:
     paths:
-      - 'crates/corelink-dedup/**'
+      - 'crates/corelink-cas/**'
       - 'crates/corelink-eviction/**'
-      - 'crates/corelink-quota/**'
-      - 'crates/corelink-lru-tracker/**'
+      - 'crates/corelink-billing/**'
       - 'specs/05_quality/runbooks/RB-FM-059-do-quota-exceeded.md'
       - 'specs/05_quality/runbooks/RB-FM-305-tombstone-lost.md'
       - 'scripts/rb_fm_059_dry_run.sh'
@@ -39,10 +38,9 @@ on:
   push:
     branches: [main]
     paths:
-      - 'crates/corelink-dedup/**'
+      - 'crates/corelink-cas/**'
       - 'crates/corelink-eviction/**'
-      - 'crates/corelink-quota/**'
-      - 'crates/corelink-lru-tracker/**'
+      - 'crates/corelink-billing/**'
       - 'specs/05_quality/runbooks/RB-FM-059-do-quota-exceeded.md'
       - 'specs/05_quality/runbooks/RB-FM-305-tombstone-lost.md'
       - 'scripts/rb_fm_059_dry_run.sh'
@@ -72,7 +70,7 @@ jobs:
   # 1. Cross-component property tests + lib unit at PR speed.
   # --------------------------------------------------------------------
   prop-and-tests:
-    name: corelink-{dedup,eviction,quota,lru-tracker} tests (lib + prop @ 10k iter)
+    name: corelink-{cas,eviction,billing} tests (lib + prop @ 10k iter)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -88,17 +86,14 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: cargo test -p corelink-dedup --all-targets
-        run: cargo test -p corelink-dedup --all-targets
+      - name: cargo test -p corelink-cas --all-targets
+        run: cargo test -p corelink-cas --all-targets
 
       - name: cargo test -p corelink-eviction --all-targets
         run: cargo test -p corelink-eviction --all-targets
 
-      - name: cargo test -p corelink-quota --all-targets
-        run: cargo test -p corelink-quota --all-targets
-
-      - name: cargo test -p corelink-lru-tracker --all-targets
-        run: cargo test -p corelink-lru-tracker --all-targets
+      - name: cargo test -p corelink-billing --all-targets
+        run: cargo test -p corelink-billing --all-targets
 
       - name: cargo clippy -- -D warnings
         run: cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings

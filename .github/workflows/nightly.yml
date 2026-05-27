@@ -236,10 +236,10 @@ jobs:
         # DoD §6 gate.
         run: |
           set -euo pipefail
-          cargo test --release --package corelink-dedup --test prop_dedup
+          cargo test --release --package corelink-cas --test prop_dedup
           cargo test --release --package corelink-eviction --test prop_eviction
-          cargo test --release --package corelink-quota --test prop_quota
-          cargo test --release --package corelink-lru-tracker --test prop_lru
+          cargo test --release --package corelink-billing --test prop_quota
+          cargo test --release --package corelink-cas --test prop_lru
 
       - name: proptest 100k iter — S-08 ratelimit + edge + quota-cas + abuse + rate-headers (WI-S08-006 nightly tier)
         env:
@@ -258,9 +258,9 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --release --package corelink-ratelimit --test prop_ratelimit
-          cargo test --release --package corelink-edge --test prop_edge
-          cargo test --release --package corelink-quota-cas --test prop_quota_cas
-          cargo test --release --package corelink-abuse --test prop_abuse
+          cargo test --release --package corelink-cas --test prop_edge
+          cargo test --release --package corelink-billing --test prop_quota_cas
+          cargo test --release --package corelink-billing --test prop_abuse
           cargo test --release --package corelink-rate-headers --test prop_rate_headers
 
       - name: proptest 100k iter — S-09 analytics + logpush + tracing + audit-chain + slo + canary (WI-S09-007 nightly tier)
@@ -280,11 +280,11 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --release --package corelink-analytics --test prop_analytics
-          cargo test --release --package corelink-logpush --test prop_logpush
+          cargo test --release --package corelink-telemetry --test prop_logpush
           cargo test --release --package corelink-tracing --test prop_tracing
           cargo test --release --package corelink-audit-chain --test prop_audit_chain
           cargo test --release --package corelink-slo --test prop_slo
-          cargo test --release --package corelink-canary --test prop_canary
+          cargo test --release --package corelink-telemetry --test prop_canary
 
       - name: proptest 100k iter — S-10 billing-emit + aggregator + stripe + reconcile + quota-fsm + replay (WI-S10-007 nightly tier)
         env:
@@ -311,8 +311,8 @@ jobs:
           cargo test --release --package corelink-billing-aggregator --test prop_billing_aggregator
           cargo test --release --package corelink-billing-stripe --test prop_billing_stripe
           cargo test --release --package corelink-billing-reconcile --test prop_billing_reconcile
-          cargo test --release --package corelink-quota-fsm --test prop_quota_fsm
-          cargo test --release --package corelink-billing-replay --test prop_billing_replay
+          cargo test --release --package corelink-billing --test prop_quota_fsm
+          cargo test --release --package corelink-billing --test prop_billing_replay
 
   # ---------------------------------------------------------------------
   # 3. Fuzz matrix — all 9 targets across 5 SEALed crates, 1h each parallel.

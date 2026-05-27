@@ -12,7 +12,7 @@ name: subprocessors sync (auto-regen public page from VENDOR-RISK-REGISTER + 30-
 #    opens an auto-PR labelled `legal-review-required` and assigns the
 #    legal team. Also runs the notify script and uploads the resulting
 #    JSONL CloudEvents envelope as an artifact so the production
-#    `corelink-privacy-sub-processor-emit` consumer can pick it up
+#    `corelink-privacy` consumer can pick it up
 #    (replicates the InMemorySubProcessorEmitter test-fake until the
 #    CD-pipeline fan-out lands).
 # 3. Nightly schedule: catches drift even when no human-authored PR has

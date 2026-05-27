@@ -5,7 +5,7 @@ name: d1-migration-validate (R2-13)
 # Three steps, all offline (no Cloudflare auth required):
 #   1. python3 scripts/check_migrations_additive.py     — INV-AUTH-MIGRATION-ADDITIVE
 #   2. python3 scripts/d1-migration-verify.py --schema-only — schema parser sanity
-#   3. cargo test -p corelink-d1-migrations --test d1_migration_integration
+#   3. cargo test -p corelink-ops --test d1_migration_integration
 #      — full SQL replay against in-memory SQLite (catches ordering bugs +
 #        schema dependency hazards before they reach D1)
 #
@@ -23,13 +23,13 @@ on:
       - 'scripts/d1-migration-runner.sh'
       - 'scripts/d1-migration-verify.py'
       - 'scripts/check_migrations_additive.py'
-      - 'crates/corelink-d1-migrations/**'
+      - 'crates/corelink-ops/**'
       - '.github/workflows/d1-migration-validate.yml'
   push:
     branches: [main]
     paths:
       - 'migrations/d1/**'
-      - 'crates/corelink-d1-migrations/**'
+      - 'crates/corelink-ops/**'
 
 permissions:
   contents: read
@@ -76,7 +76,7 @@ jobs:
 
       - name: Run D1 migration replay integration test
         run: |
-          cargo test -p corelink-d1-migrations \
+          cargo test -p corelink-ops \
             --test d1_migration_integration -- --nocapture
 
       - name: Run runner shell-script dry-run smoke

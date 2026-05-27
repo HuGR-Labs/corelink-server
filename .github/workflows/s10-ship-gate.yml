@@ -29,8 +29,7 @@ on:
       - 'crates/corelink-billing-aggregator/**'
       - 'crates/corelink-billing-stripe/**'
       - 'crates/corelink-billing-reconcile/**'
-      - 'crates/corelink-quota-fsm/**'
-      - 'crates/corelink-billing-replay/**'
+      - 'crates/corelink-billing/**'
       - 'migrations/d1/0017_usage_event_idem.sql'
       - 'migrations/d1/0018_stripe_idem_keys.sql'
       - 'migrations/d1/0019_billing_reconciliation_drift.sql'
@@ -52,8 +51,7 @@ on:
       - 'crates/corelink-billing-aggregator/**'
       - 'crates/corelink-billing-stripe/**'
       - 'crates/corelink-billing-reconcile/**'
-      - 'crates/corelink-quota-fsm/**'
-      - 'crates/corelink-billing-replay/**'
+      - 'crates/corelink-billing/**'
       - 'migrations/d1/0017_usage_event_idem.sql'
       - 'migrations/d1/0018_stripe_idem_keys.sql'
       - 'migrations/d1/0019_billing_reconciliation_drift.sql'
@@ -89,7 +87,7 @@ jobs:
   # 1. Cross-component property tests + lib unit at PR speed.
   # --------------------------------------------------------------------
   prop-and-tests:
-    name: corelink-billing-{emit,aggregator,stripe,reconcile,replay}+quota-fsm tests (lib + prop @ 10k iter)
+    name: corelink-billing-{emit,aggregator,stripe,reconcile}+billing(umbrella) tests (lib + prop @ 10k iter)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -117,11 +115,8 @@ jobs:
       - name: cargo test -p corelink-billing-reconcile --all-targets
         run: cargo test -p corelink-billing-reconcile --all-targets
 
-      - name: cargo test -p corelink-quota-fsm --all-targets
-        run: cargo test -p corelink-quota-fsm --all-targets
-
-      - name: cargo test -p corelink-billing-replay --all-targets
-        run: cargo test -p corelink-billing-replay --all-targets
+      - name: cargo test -p corelink-billing --all-targets
+        run: cargo test -p corelink-billing --all-targets
 
       - name: cargo clippy -- -D warnings
         run: cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings

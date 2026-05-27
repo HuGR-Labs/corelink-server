@@ -24,9 +24,8 @@ on:
   pull_request:
     paths:
       - 'crates/corelink-ratelimit/**'
-      - 'crates/corelink-edge/**'
-      - 'crates/corelink-quota-cas/**'
-      - 'crates/corelink-abuse/**'
+      - 'crates/corelink-cas/**'
+      - 'crates/corelink-billing/**'
       - 'crates/corelink-rate-headers/**'
       - 'specs/05_quality/runbooks/RB-FM-250-ddos-volumetric.md'
       - 'scripts/rb_fm_250_dry_run.sh'
@@ -38,9 +37,8 @@ on:
     branches: [main]
     paths:
       - 'crates/corelink-ratelimit/**'
-      - 'crates/corelink-edge/**'
-      - 'crates/corelink-quota-cas/**'
-      - 'crates/corelink-abuse/**'
+      - 'crates/corelink-cas/**'
+      - 'crates/corelink-billing/**'
       - 'crates/corelink-rate-headers/**'
       - 'specs/05_quality/runbooks/RB-FM-250-ddos-volumetric.md'
       - 'scripts/rb_fm_250_dry_run.sh'
@@ -69,7 +67,7 @@ jobs:
   # 1. Cross-component property tests + lib unit at PR speed.
   # --------------------------------------------------------------------
   prop-and-tests:
-    name: corelink-{ratelimit,edge,quota-cas,abuse,rate-headers} tests (lib + prop @ 10k iter)
+    name: corelink-{ratelimit,cas,billing,rate-headers} tests (lib + prop @ 10k iter)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -88,14 +86,11 @@ jobs:
       - name: cargo test -p corelink-ratelimit --all-targets
         run: cargo test -p corelink-ratelimit --all-targets
 
-      - name: cargo test -p corelink-edge --all-targets
-        run: cargo test -p corelink-edge --all-targets
+      - name: cargo test -p corelink-cas --all-targets
+        run: cargo test -p corelink-cas --all-targets
 
-      - name: cargo test -p corelink-quota-cas --all-targets
-        run: cargo test -p corelink-quota-cas --all-targets
-
-      - name: cargo test -p corelink-abuse --all-targets
-        run: cargo test -p corelink-abuse --all-targets
+      - name: cargo test -p corelink-billing --all-targets
+        run: cargo test -p corelink-billing --all-targets
 
       - name: cargo test -p corelink-rate-headers --all-targets
         run: cargo test -p corelink-rate-headers --all-targets
