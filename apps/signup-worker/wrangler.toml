@@ -1,0 +1,37 @@
+# Signup / webhook worker.
+#
+# Phase 0.G of execution plan seeded this app with the analytics emit calls
+# the metrics audit requires. Auto-provision logic + Clerk/Stripe signature
+# verification land in Phase 0.F + Phase 0.C respectively.
+
+name = "corelink-signup"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+workers_dev = false
+
+[vars]
+ENVIRONMENT = "dev"
+ANALYTICS_ENDPOINT = "https://corelink-analytics.humangr.com/v1/event"
+
+# Secrets (`wrangler secret put`):
+#   CLERK_SECRET_KEY       — Clerk backend SDK key
+#   CLERK_WEBHOOK_SECRET   — Svix signing secret
+#   STRIPE_SECRET_KEY      — Stripe SK
+#   STRIPE_WEBHOOK_SECRET  — Stripe webhook signing secret
+#   ANALYTICS_INGEST_KEY   — shared with @corelink/analytics-worker INGEST_KEY
+
+[env.prod]
+name = "corelink-signup-prod"
+vars = { ENVIRONMENT = "prod", ANALYTICS_ENDPOINT = "https://corelink-analytics.humangr.com/v1/event" }
+
+[[env.prod.routes]]
+pattern = "corelink-signup.humangr.com/webhooks/*"
+zone_name = "humangr.com"
+
+[[env.prod.routes]]
+pattern = "corelink-signup.humangr.com/healthz"
+zone_name = "humangr.com"
+
+[env.staging]
+name = "corelink-signup-staging"
+vars = { ENVIRONMENT = "staging", ANALYTICS_ENDPOINT = "https://corelink-analytics.humangr.com/v1/event" }

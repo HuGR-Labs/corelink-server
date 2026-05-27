@@ -79,6 +79,25 @@ const config: Config = {
     },
   },
 
+  // ── Phase 0.G — Plausible analytics ───────────────────────────────────
+  // Lightweight, cookieless web analytics for the marketing-site funnel
+  // (landing → /pricing → /sign-up) per metrics audit §3 + §8.1.
+  // `defer` so the script never blocks first paint, and the noscript Image
+  // fallback ensures the visit still counts when JS is blocked.
+  //
+  // Consent gating: Plausible is cookieless (no PII, no fingerprint), which
+  // makes it lawful as "necessary measurement" under both ePrivacy and LGPD
+  // without an opt-in dialog. We still document the choice in the privacy
+  // page; the admin-ui dashboard uses the existing cookie-consent gate on a
+  // separate Plausible domain (`corelink-admin.humangr.com`).
+  scripts: [
+    {
+      src: "https://plausible.io/js/script.js",
+      defer: true,
+      "data-domain": "corelink-docs.humangr.com",
+    },
+  ],
+
   presets: [
     [
       "classic",

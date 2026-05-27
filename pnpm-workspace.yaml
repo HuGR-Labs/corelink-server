@@ -1,4 +1,7 @@
 packages:
   - "apps/admin-ui"
   - "apps/docs"
+  - "apps/analytics-worker"
+  - "apps/get-corelink-worker"
+  - "apps/signup-worker"
   - "worker"
