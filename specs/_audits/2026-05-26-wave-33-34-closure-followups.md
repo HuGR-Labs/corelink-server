@@ -263,7 +263,7 @@ Total effort: 2.0d. GA non-blocking.
 
 | Wave | Status | Closes |
 |---|---|---|
-| 32 Phase B+ | PAUSED 2026-05-22 (pending Wave 33) | (unblocked 2026-05-26 by this audit; decision needed — see §8) |
+| 32 Phase B+ | **SEALED 2026-05-26** (Phases B–I all CLOSED; tag `corelink-prod-deploy-v1` commit `5848230e`) | Phases H+I APPLY sealed; 5/5 customer endpoints live |
 | 33 Stage 0+1 | SEAL'd | foundation + 4 streams + mega-file decomp |
 | 33 Stage 2 | SEAL'd 2026-05-26 (`wave-33-stage2-sealed` tag) | A-v2 + B + C(HALT, scheduled) + D + E(partial, scheduled) |
 | 34 | SEAL'd 2026-05-26 (`wave-34-adapters-sealed` tag) | 5 adapters with inline-ports (cargo+npm+pip+brew+oci) |
