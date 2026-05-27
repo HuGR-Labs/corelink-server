@@ -1,7 +1,20 @@
 /**
  * Sign-in route. Clerk SDK renders the SignIn component if configured;
  * otherwise we fall back to a static notice so the page never 500s in dev.
+ *
+ * Option B: override `runtime = "nodejs"` to prevent the
+ * "Disallowed operation called within global scope" crash on Cloudflare
+ * Workers edge runtime. @clerk/nextjs initialises internal state at module
+ * scope which is not permitted in the CF Workers sandbox. Node.js runtime
+ * (enabled via CF Pages `nodejs_compat` flag) is the correct choice here:
+ * the auth UI pages are pure client-rendered React and have no edge-only
+ * requirements. See matching fix in apps/admin-ui/src/app/sign-up/.
  */
+"use client";
+
+// Route-segment runtime override: must be nodejs so that @clerk/nextjs module-scope
+// initialisation does not fire inside the CF Workers edge sandbox.
+export const runtime = "nodejs";
 
 import { SignIn } from "@clerk/nextjs";
 import { useTranslations } from "next-intl";
