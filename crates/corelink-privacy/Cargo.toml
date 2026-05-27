@@ -1,6 +1,6 @@
 [package]
 name = "corelink-privacy"
-description = "Wave-33 Stage 1 Stream B sub-step B.5 — canonical privacy-context aggregator façade. Re-exports the 11 absorbed privacy-context crates (DSR + DSR Statuspage scheduler + breach-emit + consent-ledger + erasure-worker + notice-emit + pseudonymize + residency-enforcement + sub-processor-emit + DPA acceptance + DPA versioning) under a single canonical import surface (`corelink_privacy::{dsr, breach, consent, erasure, notice, pseudonymize, residency, sub_processor, dpa}`). Stage 1 Stream B ships this crate as a re-export aggregator (Option-A least-invasive interpretation per `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4) so consumer migration can proceed incrementally. Absorbed crates remain canonical sources of truth, retaining their own tests/benches/fuzz. The Ed25519 erasure-attestation signing path lives in `corelink-erasure-attestation` (absorbed in Stage 0 by `corelink-crypto`); the erasure-worker re-export here pulls in the worker scheduler + 12-backend per-row erasure path while leaving the cryptographic primitive at its canonical Stage-0 location."
+description = "Wave-35 Phase 2 canonical privacy umbrella. Physically absorbs 6 privacy-context sub-crates (corelink-privacy-{breach-emit, consent-ledger, notice-emit, residency-enforcement, sub-processor-emit} + corelink-dpa-versioning) into a single workspace member exposing the canonical import surface `corelink_privacy::{dsr, breach, consent, dpa, erasure, notice, pseudonymize, residency, sub_processor}`. Still re-exports (as thin facades) the 4 privacy-related crates kept external for charter / blocker reasons: corelink-dsr + corelink-dsr-statuspage-scheduler (W36 Trigger B — wasm32 tokio leak — handled in dedicated platform-gating sprint), corelink-privacy-erasure-worker (kept separate per W35 inventory; couples to Ed25519 attestation signing path at `corelink_crypto::ed25519::attestation`), corelink-privacy-pseudonymize (kept separate per W35 inventory), and corelink-dpa-acceptance (kept separate per W35 inventory). Charter preserved: INV-AUDIT (privacy emits → audit chain BEFORE state mutation), INV-NO-PII-IN-LOGS (privacy crates handle PII; tracing macros verified leak-free), 7y R2 Object Lock retention, pseudonymization HMAC-SHA-256 + subtle::ConstantTimeEq, DSR / erasure flows. Public-API surface preserved at the umbrella import path — every absorbed crate's symbols remain reachable at `corelink_privacy::<mod>::*`."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -25,18 +25,27 @@ print_stderr = "deny"
 mod_module_files = "deny"
 
 [dependencies]
-# Re-export targets (Stage 1 Stream B Option-A aggregator: physical
-# absorption deferred to consumer-migration stream that owns the
-# `apps/server` route layer + D1 migration runner atomically; see
-# Stream B SEAL audit §1).
+# External re-exports kept as workspace deps (charter / blocker reasons —
+# see crate-level doc above).
 corelink-dsr = { workspace = true }
 corelink-dsr-statuspage-scheduler = { workspace = true }
-corelink-privacy-breach-emit = { workspace = true }
-corelink-privacy-consent-ledger = { workspace = true }
 corelink-privacy-erasure-worker = { workspace = true }
-corelink-privacy-notice-emit = { workspace = true }
 corelink-privacy-pseudonymize = { workspace = true }
-corelink-privacy-residency-enforcement = { workspace = true }
-corelink-privacy-sub-processor-emit = { workspace = true }
 corelink-dpa-acceptance = { workspace = true }
-corelink-dpa-versioning = { workspace = true }
+
+# Absorbed-module deps (merged union of the 6 absorbed crates).
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["serde"] }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+hkdf = { workspace = true }
+hex = { workspace = true }
+subtle = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+uuid = { workspace = true, features = ["v7", "serde"] }

@@ -128,14 +128,15 @@ members = [
     # ACTIVE→CANCEL_REQUESTED→GRACE_PERIOD→READ_ONLY→SUSPENDED→ERASED
     # 5-state machine + 30d grace export + 90d cryptographic erasure).
     "crates/corelink-tenant-offboarding",
-    "crates/corelink-privacy-sub-processor-emit",
+    # Wave-35 Phase 2: corelink-privacy-{breach-emit, consent-ledger,
+    # notice-emit, residency-enforcement, sub-processor-emit} absorbed
+    # into the corelink-privacy umbrella per
+    # `specs/_audits/2026-05-26-w35-p2-privacy-absorption.md`.
+    # corelink-privacy-{erasure-worker, pseudonymize} preserved
+    # external (not in W35-P2 absorb scope).
     "crates/corelink-clerk-cf",
-    "crates/corelink-privacy-consent-ledger",
-    "crates/corelink-privacy-breach-emit",
     "crates/corelink-privacy-erasure-worker",
-    "crates/corelink-privacy-notice-emit",
     "crates/corelink-privacy-pseudonymize",
-    "crates/corelink-privacy-residency-enforcement",
     "tools/sbom-publish",
     "crates/corelink-supply-chain-policy",
     "crates/corelink-config-api",
@@ -217,8 +218,9 @@ members = [
     "crates/corelink-dpa-acceptance",
     # WI-S19-001 signup orchestration backend + atomic D1 provisioning + chaos Stripe outage
     "crates/corelink-signup",
-    # WI-S19-003 DPA versioning + 30d grace + read-only degrade middleware
-    "crates/corelink-dpa-versioning",
+    # Wave-35 Phase 2: corelink-dpa-versioning absorbed into
+    # corelink-privacy::dpa::versioning per
+    # `specs/_audits/2026-05-26-w35-p2-privacy-absorption.md`.
     # WI-S19-004 tier selection + Stripe Checkout + INV-ONBOARD-DPA-FIRST D1 lock
     "crates/corelink-tier-selection",
     # WI-S19-005 enterprise inquiry form + Slack/CRM atomic outbox + 24h auto-reply SLA
@@ -571,10 +573,9 @@ corelink-adapters-cloud = { path = "crates/corelink-adapters-cloud" }
 # Wave-33 Stage 1 Stream C sub-step C.4: canonical Vault-adapters aggregator
 # (1 absorbed: corelink-byok-vault — HTTPS / mTLS binding portion).
 corelink-adapters-vault = { path = "crates/corelink-adapters-vault" }
-# Wave-33 Stage 1 Stream B sub-step B.5: DPA acceptance + versioning deps
-# (consumed by the `corelink-privacy::dpa::{acceptance, versioning}` façade).
+# DPA acceptance dep (still external; consumed by the `corelink-privacy::dpa::acceptance` façade).
+# Wave-35 Phase 2: corelink-dpa-versioning absorbed into corelink-privacy.
 corelink-dpa-acceptance = { path = "crates/corelink-dpa-acceptance" }
-corelink-dpa-versioning = { path = "crates/corelink-dpa-versioning" }
 corelink-billing-emit = { path = "crates/corelink-billing-emit" }
 corelink-billing-aggregator = { path = "crates/corelink-billing-aggregator" }
 corelink-billing-stripe = { path = "crates/corelink-billing-stripe" }
@@ -582,16 +583,13 @@ corelink-billing-reconcile = { path = "crates/corelink-billing-reconcile" }
 corelink-dsr = { path = "crates/corelink-dsr" }
 # R-prep tenant offboarding state machine.
 corelink-tenant-offboarding = { path = "crates/corelink-tenant-offboarding" }
-corelink-privacy-sub-processor-emit = { path = "crates/corelink-privacy-sub-processor-emit" }
 corelink-clerk-cf = { path = "crates/corelink-clerk-cf" }
 # R2-10 CF Worker R2/D1/KV/DO binding adapters (wasm32 only).
 corelink-cf-bindings = { path = "crates/corelink-cf-bindings" }
-corelink-privacy-consent-ledger = { path = "crates/corelink-privacy-consent-ledger" }
-corelink-privacy-breach-emit = { path = "crates/corelink-privacy-breach-emit" }
+# Wave-35 Phase 2: privacy sub-crates absorbed into corelink-privacy.
+# Only the 2 NOT in W35-P2 absorb scope keep workspace dep entries:
 corelink-privacy-erasure-worker = { path = "crates/corelink-privacy-erasure-worker" }
-corelink-privacy-notice-emit = { path = "crates/corelink-privacy-notice-emit" }
 corelink-privacy-pseudonymize = { path = "crates/corelink-privacy-pseudonymize" }
-corelink-privacy-residency-enforcement = { path = "crates/corelink-privacy-residency-enforcement" }
 corelink-config-do = { path = "crates/corelink-config-do" }
 corelink-config-api = { path = "crates/corelink-config-api" }
 corelink-dt-webhook = { path = "crates/corelink-dt-webhook" }
