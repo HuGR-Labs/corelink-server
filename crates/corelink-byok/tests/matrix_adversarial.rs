@@ -27,10 +27,10 @@
 //!  15. Vault wrapped DEK presented to Azure → rejected
 //!  16. All providers: wrap with ctx=None, unwrap with ctx=Some → rejected (ctx added)
 
-use corelink_byok_core::{BYOKError, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek, FipsLevel};
-use corelink_byok_gcp::GcpKmsProvider;
-use corelink_byok_azure::AzureKeyVaultProvider;
-use corelink_byok_vault::VaultProvider;
+use corelink_byok::{BYOKError, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek, FipsLevel};
+use corelink_byok::gcp::GcpKmsProvider;
+use corelink_byok::azure::AzureKeyVaultProvider;
+use corelink_byok::vault::VaultProvider;
 use async_trait::async_trait;
 
 // ──────────────────────────────────────────────────────────────────────────────

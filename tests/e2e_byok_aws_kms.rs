@@ -34,7 +34,7 @@ mod e2e_aws_kms {
         types::{KmsAccessStatus, KmsKeyId, KmsProviderKind},
         KmsProvider,
     };
-    use corelink_byok_aws::AwsKmsProvider;
+    use corelink_byok::aws::AwsKmsProvider;
 
     fn get_test_key_arn() -> Option<String> {
         env::var("AWS_KMS_TEST_KEY_ARN").ok()

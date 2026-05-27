@@ -1155,7 +1155,7 @@ dependencies = [
 name = "corelink-adapters-vault"
 version = "0.1.0"
 dependencies = [
- "corelink-byok-vault",
+ "corelink-byok",
 ]
 
 [[package]]
@@ -1403,132 +1403,16 @@ dependencies = [
 name = "corelink-byok"
 version = "0.1.0"
 dependencies = [
- "async-trait",
- "corelink-byok-aws",
- "corelink-byok-azure",
- "corelink-byok-core",
- "corelink-byok-gcp",
- "corelink-byok-revocation",
- "corelink-byok-vault",
- "proptest",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "corelink-byok-aws"
-version = "0.1.0"
-dependencies = [
+ "aes-gcm",
  "async-trait",
  "aws-config",
  "aws-sdk-kms",
- "corelink-byok-core",
- "futures",
- "getrandom 0.2.17",
- "proptest",
- "serde",
- "serde_jcs",
- "serde_json",
- "subtle",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tracing",
-]
-
-[[package]]
-name = "corelink-byok-azure"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "async-trait",
  "base64",
- "corelink-byok-core",
- "futures",
- "getrandom 0.2.17",
- "proptest",
- "regex",
- "reqwest",
- "serde",
- "serde_jcs",
- "serde_json",
- "subtle",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tracing",
- "wiremock",
- "zeroize",
-]
-
-[[package]]
-name = "corelink-byok-core"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "async-trait",
  "criterion",
- "getrandom 0.2.17",
- "lru",
- "proptest",
- "serde",
- "serde_json",
- "subtle",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tracing",
- "zeroize",
-]
-
-[[package]]
-name = "corelink-byok-gcp"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64",
- "corelink-byok-core",
  "futures",
  "getrandom 0.2.17",
  "jsonwebtoken",
- "proptest",
- "regex",
- "reqwest",
- "serde",
- "serde_jcs",
- "serde_json",
- "subtle",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tracing",
- "wiremock",
- "zeroize",
-]
-
-[[package]]
-name = "corelink-byok-revocation"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "corelink-byok-core",
- "proptest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tracing",
-]
-
-[[package]]
-name = "corelink-byok-vault"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64",
- "corelink-byok-core",
- "futures",
+ "lru",
  "proptest",
  "regex",
  "reqwest",
@@ -1764,8 +1648,7 @@ name = "corelink-customer-alerts"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "corelink-byok-core",
- "corelink-byok-revocation",
+ "corelink-byok",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -2374,10 +2257,6 @@ dependencies = [
  "corelink-billing",
  "corelink-billing-stripe-materializer",
  "corelink-byok",
- "corelink-byok-aws",
- "corelink-byok-azure",
- "corelink-byok-gcp",
- "corelink-byok-vault",
  "corelink-cf-bindings",
  "corelink-handler-ac",
  "corelink-handler-admin",
@@ -3016,7 +2895,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "corelink-byok",
- "corelink-byok-revocation",
  "corelink-customer-alerts",
  "proptest",
  "serde_json",

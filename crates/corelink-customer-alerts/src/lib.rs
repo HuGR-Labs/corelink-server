@@ -17,9 +17,9 @@
 //!
 //! ```rust
 //! use corelink_customer_alerts::{MultiChannelAlerter, AlerterConfig};
-//! use corelink_byok_core::KmsKeyId;
-//! use corelink_byok_revocation::alerter::RevocationAlertPayload;
-//! use corelink_byok_revocation::CustomerAlerter;
+//! use corelink_byok::KmsKeyId;
+//! use corelink_byok::revocation::alerter::RevocationAlertPayload;
+//! use corelink_byok::revocation::CustomerAlerter;
 //!
 //! # tokio_test::block_on(async {
 //! let config = AlerterConfig::default();
@@ -28,7 +28,7 @@
 //! let payload = RevocationAlertPayload {
 //!     provider: "aws".to_string(),
 //!     kms_key_id: KmsKeyId {
-//!         provider: corelink_byok_core::KmsProviderKind::AwsKms,
+//!         provider: corelink_byok::KmsProviderKind::AwsKms,
 //!         key_arn_or_id: "k1".to_string(),
 //!         region: "us-east-1".to_string(),
 //!     },

@@ -1,6 +1,6 @@
 [package]
 name = "corelink-byok"
-description = "Wave-33 Stage 1 Stream B sub-step B.2b — canonical BYOK microkernel umbrella aggregator. Re-exports `corelink-byok-core` (KmsProvider trait + envelope encryption + DekCache) at the crate root for backwards-compatible consumer paths (`use corelink_byok::KmsProvider;`), and exposes per-provider adapter modules behind 4 cargo features (`aws` / `gcp` / `azure` / `vault`) that are MUTUALLY EXCLUSIVE at compile time. The `revocation` submodule is always-on (it composes with whatever provider is enabled). This is the modular monolith × microkernel boundary per `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §3: one provider per deployment, selected at build time, with `compile_error!` denial of multi-provider builds (charter Hard Pause Trigger 2 — BYOK mutual-exclusion enforcement at compile time)."
+description = "Wave-35 Phase 2 — physically absorbs the 6 former byok-* sub-crates (core / revocation / aws / gcp / azure / vault) into a single canonical umbrella. Preserves the Wave-33 microkernel public surface: `corelink_byok::*` re-exports the BYOK core (KmsProvider trait + envelope encryption + DekCache + types), `corelink_byok::revocation::*` exposes the always-on CMK kill-switch detector, and the 4 per-provider namespaces (`corelink_byok::{aws,gcp,azure,vault}`) remain MUTUALLY EXCLUSIVE at compile time behind cargo features (`aws` / `gcp` / `azure` / `vault`). The `compile_error!` denial of multi-provider builds (charter Hard Pause Trigger 2) is preserved unchanged on the public namespace surface. Internal `byok_<provider>` modules are unconditionally compiled so the matrix integration tests can exercise the full 4-provider × 4-op surface without activating mutually-exclusive features; this matches the pre-absorption behaviour where matrix tests linked all 4 provider crates as dev-dependencies (dev-deps never trigger umbrella feature gates). cargo-deny enforces the single-provider-SDK contract per binary."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -25,68 +25,260 @@ print_stderr = "deny"
 mod_module_files = "deny"
 
 [features]
-# Default = no provider selected. Builds the trait surface + revocation
-# detector only, which is what apps/server consumes when wiring tests
-# against InMemoryFake providers; matches the pre-wave-33 default
-# build behaviour of the original `corelink-byok` crate.
+# Default = no provider namespace re-exported. The core trait
+# surface + revocation detector are always reachable.
 default = []
 
-# Provider features — MUTUALLY EXCLUSIVE at compile time (see lib.rs
-# `compile_error!` gate). Selecting more than one is a build error,
-# preserving the wave-33 reorg spec §3 microkernel contract.
-aws = ["dep:corelink-byok-aws"]
-gcp = ["dep:corelink-byok-gcp"]
-azure = ["dep:corelink-byok-azure"]
-vault = ["dep:corelink-byok-vault"]
+# ── Public provider namespace features ────────────────────────────────────
+# MUTUALLY EXCLUSIVE at compile time (see lib.rs `compile_error!`
+# gates). Selecting more than one is a build error, preserving the
+# wave-33 reorg spec §3 microkernel contract on the public API
+# surface. Each public feature transitively activates the matching
+# `_internal-<provider>` module-compile feature plus the
+# real/production sub-feature; the mutual-exclusion guard checks
+# ONLY the public features, so combining `_internal-*` flags for
+# matrix-test purposes does NOT trip the guard.
+aws = ["_internal-aws", "real-aws"]
+gcp = ["_internal-gcp", "production-gcp"]
+azure = ["_internal-azure", "production-azure"]
+vault = ["_internal-vault", "real-vault"]
 
-# Wave-33 Stage 1 Stream B sub-step B.2c — preserved from the
-# absorbed `corelink-byok-matrix-test` crate. These features opt the
-# matrix integration tests (`tests/matrix.rs`, `tests/matrix_prop.rs`,
-# `tests/matrix_adversarial.rs`) into REAL provider mode when the
-# matching env var (`GCP_TEST_KEY_RESOURCE` / `AZURE_TEST_KEY_RESOURCE`)
-# is set. Default off — CI runs in mock mode without provider creds.
-# These features DO NOT enable the matching provider's main `aws` /
-# `gcp` / `azure` / `vault` feature on the umbrella, so they do not
-# trigger the mutual-exclusion `compile_error!` gates. The integration
-# tests reference the provider crates as direct dev-dependencies; the
-# `corelink-byok-{gcp,azure}/production` sub-feature is forwarded so
-# the real HTTPS client is linkable inside the test crate.
-production-gcp = ["corelink-byok-gcp/production"]
-production-azure = ["corelink-byok-azure/production"]
+# ── Internal module-compile gates ─────────────────────────────────────────
+# These exist solely to drive `#[cfg(feature = "_internal-<X>")]` on
+# the `mod byok_<X>;` declarations. They are an implementation
+# detail and intentionally underscored — downstream consumers must
+# NEVER activate them directly. The matrix integration tests
+# (`tests/matrix*.rs`) declare `required-features` against all four
+# `_internal-*` flags so the mock-mode provider trait surface is
+# reachable in a single test binary without engaging the public
+# mutual-exclusion gates.
+_internal-aws = []
+_internal-gcp = []
+_internal-azure = []
+_internal-vault = []
+_matrix-test = ["_internal-aws", "_internal-gcp", "_internal-azure", "_internal-vault"]
+
+# Production / real flavour sub-features for the absorbed providers.
+# `production-gcp` activates the live Cloud KMS HTTPS client
+# (reqwest + jsonwebtoken + base64 + regex); `production-azure`
+# activates the live Key Vault REST client (reqwest + regex).
+# `real-vault` opts in to the live Vault Transit HTTPS path.
+# `real-aws` is currently a no-op flavour gate (AWS SDK is
+# unconditional on native targets; preserved for forward-compat).
+# The original `corelink-byok-{gcp,azure}/production` and
+# `corelink-byok-vault/real` pass-through features from the
+# pre-absorption umbrella are folded into these.
+production-gcp = ["_internal-gcp", "dep:jsonwebtoken"]
+production-azure = ["_internal-azure"]
+real-vault = ["_internal-vault"]
+real-aws = ["_internal-aws"]
 
 [dependencies]
-# Core trait + types (always present; re-exported at crate root for
-# backwards-compatible `use corelink_byok::KmsProvider;` paths).
-corelink-byok-core = { workspace = true }
+# Wave-35 Phase 2 absorbed-crate union — formerly split across
+# `corelink-byok-{core,revocation,aws,gcp,azure,vault}`. Direct
+# dependency on the workspace, third-party-only.
 
-# Revocation detector — always-on; composes with whichever provider is
-# enabled (or none, in InMemoryFake test wiring).
-corelink-byok-revocation = { workspace = true }
+# Error handling
+thiserror = { workspace = true }
 
-# Provider adapters — optional, gated by mutually-exclusive features.
-corelink-byok-aws = { workspace = true, optional = true }
-corelink-byok-gcp = { workspace = true, optional = true }
-corelink-byok-azure = { workspace = true, optional = true }
-corelink-byok-vault = { workspace = true, optional = true }
+# Serde
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Async (trait — wasm32-safe, header-only proc-macro)
+async-trait = { workspace = true }
+
+# Crypto — AES-256-GCM body encryption (envelope + Azure composite AAD wrap)
+aes-gcm = { workspace = true }
+
+# Crypto — memory safety
+zeroize = { workspace = true }
+subtle = { workspace = true }
+
+# Observability
+tracing = { workspace = true }
+
+# LRU cache (byok_core::dek_cache)
+lru = { workspace = true }
+
+# RFC 8785 JCS canonical JSON — AAD canonicalization shared by every
+# provider (AWS / GCP / Azure / Vault). INV-BYOK-CRYPTO-SOVEREIGNTY:
+# the same canonical bytes must be reproducible across native and
+# wasm32 so AAD-bound ciphertext can be verified anywhere.
+serde_jcs = { workspace = true }
+
+# Base64 — Azure RSA-OAEP wrapped-key body + Vault transit context.
+base64 = { workspace = true }
+
+# ── Native (non-wasm32) deps ──────────────────────────────────────────────
+# Workspace `tokio = { features = ["full"] }` pulls `mio` + `net` +
+# `rt-multi-thread` which do not compile for `wasm32-unknown-unknown`.
+# Gating native preserves `tokio = "full"` on all server / native paths
+# while letting wasm32 link a minimal `sync`-only tokio.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true }
+getrandom = { workspace = true }
+
+# Vault HTTP path is always linked on native (matches pre-absorption
+# behaviour of `corelink-byok-vault`, where `reqwest` was unconditional
+# on the non-wasm32 dep block). Vault Enterprise FIPS mTLS binding
+# preserved.
+reqwest = { workspace = true }
+regex = "1"
+
+# AWS SDK stack — always linked on native (matches pre-absorption
+# behaviour of `corelink-byok-aws`, where `aws-sdk-kms` + `aws-config`
+# were unconditional non-wasm32 deps; the `real` feature was a no-op).
+aws-config = { workspace = true }
+aws-sdk-kms = { workspace = true }
+
+# GCP production deps — gated by `production-gcp` (or transitively
+# by the public `gcp` namespace feature). Without `production-gcp`,
+# `byok_gcp::real::*` falls back to the mock stub.
+jsonwebtoken = { version = "9.3", optional = true }
+
+# ── wasm32 enablement (R-prep BYOK unblock 2026-05-15) ────────────────────
+# `getrandom` 0.2 fails to compile on `wasm32-unknown-unknown` unless the
+# `js` feature is enabled (routes CSPRNG calls through WebCrypto via
+# `js-sys`). `tokio` is reduced to the `sync` feature only — the lib
+# touches `tokio::sync::Mutex` and nothing else from tokio at runtime
+# (no `net` / `rt-multi-thread` / `time`). All HTTP clients (aws-sdk-kms,
+# reqwest, jsonwebtoken) are native-only; wasm32 links the matching
+# `*WasmStub` types instead. See specs/_audits/2026-05-15-byok-real-provider-pattern.md.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+tokio = { version = "1", default-features = false, features = ["sync"] }
 
 [dev-dependencies]
-# Wave-33 Stage 1 Stream B sub-step B.2c — folded matrix tests
-# (formerly `corelink-byok-matrix-test`, 31 LOC src/ shell dropped
-# as unused). The 3 matrix test files (`matrix.rs`,
-# `matrix_adversarial.rs`, `matrix_prop.rs`) exercise the full
-# 4-provider × 4-op matrix + adversarial + property-test surface.
-# They directly link every provider adapter — this DOES NOT
-# violate the BYOK microkernel mutual-exclusion contract because
-# the `compile_error!` guards live in this crate's `lib.rs` (gated
-# by FEATURES of `corelink-byok`, not by direct dependencies of
-# integration tests). Integration test crates have their own
-# crate boundary and do not activate the umbrella's feature flags.
-corelink-byok-core = { workspace = true }
-corelink-byok-aws = { workspace = true }
-corelink-byok-gcp = { workspace = true }
-corelink-byok-azure = { workspace = true }
-corelink-byok-vault = { workspace = true }
+proptest = { workspace = true }
+tokio-test = { workspace = true }
+tokio = { workspace = true }
+getrandom = { workspace = true }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
-proptest = { workspace = true }
+criterion = { workspace = true }
+# Wasm32 stub tests use `futures::executor::block_on` to drive the
+# non-yielding stub future without a full async runtime.
+futures = { workspace = true }
+# Native HTTP mock harness for byok_gcp / byok_azure / byok_vault real
+# provider unit tests.
+wiremock = "0.6"
+
+[[bench]]
+name = "envelope_roundtrip"
+harness = false
+
+[[example]]
+name = "write_aws"
+path = "examples/write_aws.rs"
+
+[[example]]
+name = "read_aws"
+path = "examples/read_aws.rs"
+
+[[example]]
+name = "wrap_dek"
+path = "examples/wrap_dek.rs"
+
+[[example]]
+name = "unwrap_dek"
+path = "examples/unwrap_dek.rs"
+
+# ── Integration tests (wave-35 phase-2 absorbed) ─────────────────────────
+# Test names use a `byok_<provider>_` prefix preserving cargo's
+# per-file binary-per-test convention. All tests reference symbols
+# via the canonical `corelink_byok::*` paths post-absorption.
+
+[[test]]
+name = "byok_core_prop_byok"
+path = "tests/byok_core_prop_byok.rs"
+
+[[test]]
+name = "byok_core_adversarial"
+path = "tests/byok_core_adversarial.rs"
+
+[[test]]
+name = "byok_core_matrix_framework"
+path = "tests/byok_core_matrix_framework.rs"
+
+[[test]]
+name = "byok_core_mutation_kills"
+path = "tests/byok_core_mutation_kills.rs"
+
+[[test]]
+name = "byok_revocation_prop_revocation"
+path = "tests/byok_revocation_prop_revocation.rs"
+
+[[test]]
+name = "byok_revocation_adversarial"
+path = "tests/byok_revocation_adversarial.rs"
+
+[[test]]
+name = "byok_aws_unit"
+path = "tests/byok_aws_unit.rs"
+required-features = ["_internal-aws"]
+
+[[test]]
+name = "byok_aws_real_unit"
+path = "tests/byok_aws_real_unit.rs"
+required-features = ["_internal-aws"]
+
+[[test]]
+name = "byok_aws_e2e_kms"
+path = "tests/byok_aws_e2e_kms.rs"
+required-features = ["_internal-aws"]
+
+[[test]]
+name = "byok_aws_wasm32_stub"
+path = "tests/byok_aws_wasm32_stub.rs"
+required-features = ["_internal-aws"]
+
+[[test]]
+name = "byok_gcp_real_unit"
+path = "tests/byok_gcp_real_unit.rs"
+required-features = ["_internal-gcp"]
+
+[[test]]
+name = "byok_gcp_wasm32_stub"
+path = "tests/byok_gcp_wasm32_stub.rs"
+required-features = ["_internal-gcp"]
+
+[[test]]
+name = "byok_azure_real_unit"
+path = "tests/byok_azure_real_unit.rs"
+required-features = ["_internal-azure"]
+
+[[test]]
+name = "byok_azure_wasm32_stub"
+path = "tests/byok_azure_wasm32_stub.rs"
+required-features = ["_internal-azure"]
+
+[[test]]
+name = "byok_vault_real_unit"
+path = "tests/byok_vault_real_unit.rs"
+required-features = ["_internal-vault"]
+
+[[test]]
+name = "byok_vault_wasm32_stub"
+path = "tests/byok_vault_wasm32_stub.rs"
+required-features = ["_internal-vault"]
+
+# Cross-provider matrix integration tests — require all 4 internal
+# provider modules to be compiled simultaneously (mock-mode only;
+# the public mutual-exclusion gate is NOT engaged because no public
+# namespace feature is activated). Drive the 4 providers × 4 ops
+# matrix + adversarial regressions + property tests.
+[[test]]
+name = "matrix"
+path = "tests/matrix.rs"
+required-features = ["_matrix-test"]
+
+[[test]]
+name = "matrix_adversarial"
+path = "tests/matrix_adversarial.rs"
+required-features = ["_matrix-test"]
+
+[[test]]
+name = "matrix_prop"
+path = "tests/matrix_prop.rs"
+required-features = ["_matrix-test"]

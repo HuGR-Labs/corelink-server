@@ -26,7 +26,7 @@
 use std::sync::Arc;
 
 use corelink_byok::{Dek, KmsProvider, KmsProviderKind};
-use corelink_byok_revocation::{
+use corelink_byok::revocation::{
     event::EVENT_TYPE_CMK_REVOKED, store::TenantByokStatus, testutil::NoopAlerter,
     RevocationConfig, RevocationDetector,
 };
@@ -131,8 +131,8 @@ async fn happy_revoke_detector_run_one_cycle_smoke() {
     let detector = RevocationDetector::new(
         vec![Arc::clone(&bundle.provider) as Arc<dyn KmsProvider>],
         Arc::clone(&bundle.dek_cache),
-        Arc::clone(&bundle.tenant_store) as Arc<dyn corelink_byok_revocation::TenantStatusStore>,
-        Arc::new(NoopAlerter) as Arc<dyn corelink_byok_revocation::CustomerAlerter>,
+        Arc::clone(&bundle.tenant_store) as Arc<dyn corelink_byok::revocation::TenantStatusStore>,
+        Arc::new(NoopAlerter) as Arc<dyn corelink_byok::revocation::CustomerAlerter>,
         RevocationConfig::default(),
     );
     detector

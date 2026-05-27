@@ -25,8 +25,12 @@ print_stderr = "deny"
 mod_module_files = "deny"
 
 [dependencies]
-corelink-byok-core = { path = "../corelink-byok-core" }
-corelink-byok-revocation = { path = "../corelink-byok-revocation" }
+# Wave-35 Phase 2 — `corelink-byok-core` and `corelink-byok-revocation`
+# were physically absorbed into the `corelink-byok` umbrella. Symbols
+# reached at `corelink_byok::{KmsKeyId, KmsProviderKind}` (core re-export)
+# and `corelink_byok::revocation::{CustomerAlerter, RevocationError,
+# alerter::RevocationAlertPayload}` (always-on submodule).
+corelink-byok = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

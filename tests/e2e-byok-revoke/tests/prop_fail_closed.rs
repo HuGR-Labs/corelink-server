@@ -35,7 +35,7 @@
 )]
 
 use corelink_byok::{Dek, KmsAccessStatus, KmsProviderKind};
-use corelink_byok_revocation::{event::EVENT_TYPE_CMK_REVOKED, store::TenantByokStatus};
+use corelink_byok::revocation::{event::EVENT_TYPE_CMK_REVOKED, store::TenantByokStatus};
 use e2e_byok_revoke::helpers::{
     make_wrapped_for, KillSwitchRunner, KmsBehaviour, ALL_PROVIDER_KINDS,
 };

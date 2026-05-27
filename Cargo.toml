@@ -169,27 +169,13 @@ members = [
     # S-14 BYOK (WI-S14-004 trait canonical + WI-S14-005 adapters + matrix
     # test + WI-S14-006 revocation/alerts ported to canonical per sprint-
     # close P0-1 + P0-2 fixes)
-    # Wave-33 Stage 1 Stream B sub-step B.2a — renamed from
-    # `corelink-byok` for collision avoidance with the umbrella
-    # aggregator at `crates/corelink-byok` (B.2b). Behaviour unchanged.
-    "crates/corelink-byok-core",
-    # Wave-33 Stage 1 Stream B sub-step B.2b — BYOK microkernel
-    # umbrella. Re-exports `corelink-byok-core` at the crate root
-    # (backwards-compatible `use corelink_byok::KmsProvider;`) and
-    # exposes per-provider modules behind 4 mutually-exclusive cargo
-    # features (aws / gcp / azure / vault). See
-    # `specs/_audits/2026-05-22-w33-stream-b-policy.md`.
+    # Wave-35 Phase 2 — physical absorption of the 6 former byok-*
+    # sub-crates (core / revocation / aws / gcp / azure / vault) into
+    # the canonical `corelink-byok` umbrella. Public surface preserved
+    # 1:1: `corelink_byok::*` (core), `corelink_byok::revocation::*`,
+    # and per-provider namespaces feature-gated + mutually exclusive.
+    # See `specs/_audits/2026-05-26-w35-p2-byok-absorption.md`.
     "crates/corelink-byok",
-    "crates/corelink-byok-aws",
-    "crates/corelink-byok-gcp",
-    "crates/corelink-byok-azure",
-    "crates/corelink-byok-vault",
-    # Wave-33 Stage 1 Stream B sub-step B.2c — `corelink-byok-matrix-test`
-    # absorbed into `corelink-byok/tests/{matrix,matrix_adversarial,matrix_prop}.rs`.
-    # The src/ shell (31 LOC) is dropped as the helper consts/types were
-    # unused; the 3 integration-test files preserve every cell of the
-    # 16-combination matrix + adversarial + property surface unchanged.
-    "crates/corelink-byok-revocation",
     "crates/corelink-customer-alerts",
     # WI-S14-007 Ed25519 erasure attestation
     "crates/corelink-erasure-attestation",
@@ -393,7 +379,7 @@ exclude = [
     # Merkle/JCS + HKDF (pre-pentest hardening lane). Each fuzz crate carries
     # its own [workspace] inner toml so they are excluded from the outer
     # workspace resolver and cargo-fuzz drives them stand-alone.
-    "crates/corelink-byok-core/fuzz",
+    "crates/corelink-byok/fuzz",
     "crates/corelink-audit-chain/fuzz",
     "crates/corelink-ac-core/fuzz",
 ]
@@ -607,23 +593,16 @@ corelink-region = { path = "crates/corelink-region" }
 corelink-replica-worker = { path = "crates/corelink-replica-worker" }
 corelink-failover-router = { path = "crates/corelink-failover-router" }
 corelink-replication-coordinator = { path = "crates/corelink-replication-coordinator" }
-# S-14 BYOK (canonical from WI-S14-004; consolidated dupes from -005 and -006)
-# Wave-33 Stage 1 Stream B sub-step B.2a — renamed from `corelink-byok`.
-corelink-byok-core = { path = "crates/corelink-byok-core" }
-# Wave-33 Stage 1 Stream B sub-step B.2b — BYOK microkernel umbrella
-# aggregator. Re-exports `corelink-byok-core` at the crate root and
-# gates per-provider adapter modules behind 4 mutually-exclusive cargo
-# features. Default = no provider (trait + InMemoryFake only). Consumers
-# that pre-wave-33 said `corelink-byok = { workspace = true }` now
-# resolve to this umbrella; their `use corelink_byok::KmsProvider;`
-# call sites continue to compile unchanged (re-export pattern preserves
-# the public surface, per charter "behaviour-preserving refactor ONLY").
+# S-14 BYOK — Wave-35 Phase 2 physically absorbs the 6 former
+# sub-crates (core / revocation / aws / gcp / azure / vault) into the
+# canonical `corelink-byok` umbrella. Consumers reach every absorbed
+# symbol through the umbrella: `corelink_byok::*` (core trait + types
+# + DEK cache + envelope encryption), `corelink_byok::revocation::*`
+# (always-on kill-switch detector), `corelink_byok::{aws,gcp,azure,vault}`
+# (per-provider namespaces; feature-gated, MUTUALLY EXCLUSIVE at
+# compile time per charter Hard Pause Trigger 2). See
+# `specs/_audits/2026-05-26-w35-p2-byok-absorption.md`.
 corelink-byok = { path = "crates/corelink-byok" }
-corelink-byok-aws = { path = "crates/corelink-byok-aws" }
-corelink-byok-gcp = { path = "crates/corelink-byok-gcp" }
-corelink-byok-azure = { path = "crates/corelink-byok-azure" }
-corelink-byok-vault = { path = "crates/corelink-byok-vault" }
-corelink-byok-revocation = { path = "crates/corelink-byok-revocation" }
 corelink-customer-alerts = { path = "crates/corelink-customer-alerts" }
 corelink-erasure-attestation = { path = "crates/corelink-erasure-attestation" }
 corelink-dr-drill = { path = "crates/corelink-dr-drill" }

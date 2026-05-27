@@ -28,8 +28,10 @@ mod_module_files = "deny"
 path = "src/lib.rs"
 
 [dependencies]
+# Wave-35 Phase 2 — `corelink-byok-revocation` was physically absorbed
+# into the `corelink-byok` umbrella; the always-on detector surface is
+# now reached at `corelink_byok::revocation::*`.
 corelink-byok = { path = "../../crates/corelink-byok" }
-corelink-byok-revocation = { path = "../../crates/corelink-byok-revocation" }
 corelink-customer-alerts = { path = "../../crates/corelink-customer-alerts" }
 async-trait = { workspace = true }
 serde_json = { workspace = true }

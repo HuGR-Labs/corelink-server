@@ -27,14 +27,14 @@
 //! real `aws-sdk-kms` client end-to-end.
 
 #![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
-use corelink_byok_core::{
+use corelink_byok::{
     BYOKError, DekCache, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, FipsLevel,
     WrappedDek,
 };
-use corelink_byok_aws::AwsKmsProvider;
-use corelink_byok_gcp::GcpKmsProvider;
-use corelink_byok_azure::AzureKeyVaultProvider;
-use corelink_byok_vault::VaultProvider;
+use corelink_byok::aws::AwsKmsProvider;
+use corelink_byok::gcp::GcpKmsProvider;
+use corelink_byok::azure::AzureKeyVaultProvider;
+use corelink_byok::vault::VaultProvider;
 use serde_json::json;
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -220,7 +220,7 @@ async fn run_gcp_cells(ctx: &serde_json::Value) -> [MatrixResult; 4] {
     {
         if let Ok(resource) = std::env::var("GCP_TEST_KEY_RESOURCE") {
             let region = std::env::var("GCP_TEST_REGION").unwrap_or_else(|_| "us-east1".to_string());
-            if let Ok(real) = corelink_byok_gcp::GcpKmsRealProvider::new(&region).await {
+            if let Ok(real) = corelink_byok::gcp::GcpKmsRealProvider::new(&region).await {
                 let key_id = KmsKeyId {
                     provider: KmsProviderKind::GcpKms,
                     key_arn_or_id: resource,
@@ -257,7 +257,7 @@ async fn run_azure_cells(ctx: &serde_json::Value) -> [MatrixResult; 4] {
         if let Ok(resource) = std::env::var("AZURE_TEST_KEY_RESOURCE") {
             let region =
                 std::env::var("AZURE_TEST_REGION").unwrap_or_else(|_| "eastus".to_string());
-            if let Ok(real) = corelink_byok_azure::AzureKeyVaultRealProvider::new(&region) {
+            if let Ok(real) = corelink_byok::azure::AzureKeyVaultRealProvider::new(&region) {
                 let key_id = KmsKeyId {
                     provider: KmsProviderKind::AzureKeyVault,
                     key_arn_or_id: resource,

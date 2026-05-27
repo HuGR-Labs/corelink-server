@@ -18,7 +18,7 @@
 )]
 
 use corelink_byok::{Dek, KmsProviderKind};
-use corelink_byok_revocation::{
+use corelink_byok::revocation::{
     event::{EVENT_TYPE_CMK_RESTORED, EVENT_TYPE_CMK_REVOKED},
     store::TenantByokStatus,
 };

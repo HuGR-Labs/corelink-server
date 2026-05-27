@@ -13,4 +13,4 @@
 //! behind the `vault` cargo feature. The decomposition between
 //! pure-logic and HTTPS / mTLS portions is deferred to Stage 2.
 
-pub use corelink_byok_vault::*;
+pub use corelink_byok::vault::*;
