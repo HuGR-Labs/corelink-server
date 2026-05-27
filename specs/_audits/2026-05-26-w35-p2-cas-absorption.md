@@ -128,7 +128,7 @@ src trees).
   `manifest_` prefix.
 - All other absorbed crates had no README / spec / examples sub-dirs.
 
-**Commit SHA:** `<filled-in by §9 commit step>`
+**Commit SHA:** `8c8e597f3a93dcf31320494fa15c28ac360c9d92`
 
 ## §4. DCO sign-off
 DCO sign-off: Gustavo Schneiter <gustavo@humangr.com>.
