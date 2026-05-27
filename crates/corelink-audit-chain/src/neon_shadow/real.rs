@@ -535,6 +535,27 @@ impl NeonShadowSink for RealNeonShadowSink {
         rows: &[ShadowEventRow],
         now_ms: u64,
     ) -> Result<ShadowSyncReceipt, NeonShadowError> {
+        // INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER scope clarification
+        // (audit-ordering-high-risk-seal §Escalation 5, 2026-05-27):
+        // the failure-arm audits at lines 605/621/650/666 fire AFTER
+        // the `executor.execute(...)` call they observe a failure of.
+        // The INV cannot logically apply: you cannot audit
+        // "BEGIN failed" before BEGIN was attempted. The success-arm
+        // audit at line 685 fires after COMMIT.
+        //
+        // The shadow-sync layer is the AUDIT-CHAIN's mirror to Neon
+        // Postgres; it is OBSERVATIONAL of the primary audit emit
+        // (which itself is INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER
+        // governed by the D1 batch pattern at the primary write
+        // site). Moving `emit_audit` (itself a SQL INSERT into
+        // `shadow_audit`) inside the per-row INSERT txn would
+        // change commit semantics (audit-of-sync becomes part of
+        // sync atomicity), violating the layered defence
+        // separation per RB-REPLICA-FAILOVER §audit-chain layered
+        // defences. The txn-bracketed `BEGIN → SET → INSERT … →
+        // COMMIT` is the canonical observability envelope for
+        // shadow-sync; failure audits report SQL outcomes.
+        //
         // 1. Tenant + residency pre-checks (mirrors the in-memory fake
         //    — fail-CLOSED + audit emit BEFORE returning err).
         if !Self::tenant_eq_ct(receipt.tenant_id, self.tenant_id) {

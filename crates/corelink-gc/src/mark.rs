@@ -921,6 +921,23 @@ where
         self.metrics
             .record_phase_duration_ms(GcPhase::Mark, tenant_id, region, duration_ms)?;
         // 10. Audit emit phase-completed.
+        //
+        // INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER scope clarification
+        // (audit-ordering-high-risk-seal §Escalation 2, 2026-05-27):
+        // this emit fires AFTER `candidates.insert_candidate` (loop
+        // line 887), `runs.checkpoint` (line 909), and
+        // `metrics.record_phase_duration_ms` (line 921) because the
+        // payload (`reachable_count`, `candidates_count`,
+        // `duration_ms`, `phase_end_now`) is computed FROM those
+        // mutations. The two-event (intent + outcome) pattern is
+        // satisfied by the `PhaseStarted` emit at line 815, which
+        // fires BEFORE any mutation and is the canonical fail-CLOSED
+        // envelope (mirrors drata `Sent` post-fix pattern in
+        // `specs/_audits/2026-05-27-drata-fail-closed-fix.md` +
+        // `corelink-replica-worker::ReplicationStarted`). If this
+        // emit fails the orchestrator surfaces the audit error;
+        // the started-pair invariant ensures observability of the
+        // run-was-attempted regardless.
         self.audit.emit(GcAuditRecord {
             event_type: GcEventType::PhaseTransitioned,
             run_id,

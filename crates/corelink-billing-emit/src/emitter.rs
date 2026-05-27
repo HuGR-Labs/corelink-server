@@ -225,9 +225,32 @@ where
         let tenant_id = event.data.tenant_id;
 
         // Step 3: idempotency check.
+        //
+        // INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER scope clarification
+        // (audit-ordering-high-risk-seal §Escalation 1, 2026-05-27):
+        // the four `audit.emit` variants below fire AFTER
+        // `idempotency.insert(...)` because the audit event TYPE is
+        // discriminated by the insert's return value
+        // (Accepted / DuplicateRejected / IdempotencyCollision /
+        // other). Splitting into a pre-decision "AttemptStarted" emit
+        // is explicitly NOT used here because:
+        //   (a) WI-S10-001 §5.1 R-S10-2 designates billing-emit as
+        //       fail-OPEN at the hot path (distinct from WI-S09-004
+        //       audit fail-CLOSED tier; SLO emit overhead ≤ 50µs p99
+        //       hot path per §5.7);
+        //   (b) the idempotency staging table `(tenant_id, request_id)
+        //       UNIQUE` IS the canonical commit-of-intent (replay-safe;
+        //       INV-BILLING-NO-LOSS + INV-BILLING-NO-DUP foundation);
+        //   (c) doubling cardinality with a per-call "Started" event
+        //       would violate the cardinality budget inherited from
+        //       WI-S09-001 (canonical enum event types only).
+        // The audit-emit on every arm (including failure) preserves
+        // the observability surface; staging-table retry queue
+        // (SLO-FRESH-BILLING ≤ 15min) is the eventual reconciliation
+        // backstop for emit failures.
         match self.idempotency.insert(tenant_id, derived, &canonical) {
             Ok(IdempotencyDecision::Accepted) => {
-                // Step 4: audit emit BEFORE R2 mutation.
+                // Step 4: audit emit BEFORE R2 mutation (sink.append).
                 let rec = Self::audit_record(
                     BillingAuditEventType::UsageEmitted,
                     &event,
