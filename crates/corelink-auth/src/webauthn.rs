@@ -98,14 +98,14 @@
 //!
 //! let challenge = engine.start_registration(user, AuthenticatorAttachment::Platform)?;
 //! let response = RegistrationResponse::synthetic_for_test(
-//!     challenge.id(), Aaguid::touch_id(), CredentialId::synthetic([1u8; 32].to_vec()),
+//!     challenge.id().clone(), Aaguid::touch_id(), CredentialId::synthetic([1u8; 32].to_vec()),
 //!     COSE_ALG_ES256, AuthenticatorFlags::up_uv(), 0, Origin::parse("https://app.corelink.humangr.com")?,
 //! );
 //! let cred_id = engine.finish_registration(challenge.id(), response)?;
 //!
 //! let auth_challenge = engine.start_authentication(user, Ceremony::AdminStepUp)?;
 //! let auth_response = AuthenticationResponse::synthetic_for_test(
-//!     auth_challenge.id(), cred_id.clone(), AuthenticatorFlags::up_uv(), SignCount::new(1),
+//!     auth_challenge.id().clone(), cred_id.clone(), AuthenticatorFlags::up_uv(), SignCount::new(1),
 //!     Origin::parse("https://admin.corelink.humangr.com")?,
 //! );
 //! let outcome = engine.finish_authentication(auth_challenge.id(), auth_response)?;
