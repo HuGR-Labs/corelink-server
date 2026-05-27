@@ -3,9 +3,9 @@ id: "RB-SYSTEM-CMK-ROTATION"
 type: "runbook"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-14"
-updated: "2026-05-14"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -13,6 +13,8 @@ supersedes: null
 superseded_by: null
 tags: ["runbook", "s19", "cmk", "rotation", "byok", "envelope-encryption", "enterprise-inquiry", "r2-11"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-byok-aws` and `corelink-byok-gcp` were absorbed into `corelink-byok` via inline `mod aws;` / `mod gcp;` (feature-gated) per SEAL `specs/_audits/sealed/2026-05-26-w35-p2-byok-absorption.md`. Canonical consumer paths are now `corelink_byok::aws::*` and `corelink_byok::gcp::*` (R2-6 / R2-7 KMS providers). Operational references using the absorbed crate paths still work for HISTORICAL log/grep reference but new automation should use the umbrella with the relevant `byok-{aws,gcp}-real` feature flags.
 
 <!-- forensics-backlink -->
 > **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §7.

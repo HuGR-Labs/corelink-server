@@ -3,9 +3,9 @@ id: "RB-D1-MIGRATION-APPLY"
 type: "runbook"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-14"
-updated: "2026-05-14"
+updated: "2026-05-27"
 owner: "SRE Lead"
 final_approver: "SRE Lead"
 reviewers: []
@@ -13,6 +13,8 @@ supersedes: null
 superseded_by: null
 tags: ["runbook", "r2-13", "d1", "migrations", "schema-change", "deploy"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-d1-migrations` was absorbed into `corelink-ops` via inline `mod migrations;` per SEAL `specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md`. Canonical consumer path is now `corelink_ops::migrations::*`. The `cargo test -p corelink-d1-migrations` invocation still resolves for HISTORICAL log/grep reference but new automation should use `cargo test -p corelink-ops --test d1_migration_integration`.
 
 <!-- forensics-backlink -->
 > **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §4.

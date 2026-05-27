@@ -3,9 +3,9 @@ id: "RB-LIGHTHOUSE-CUSTOMER-INCIDENT"
 type: "runbook"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-14"
-updated: "2026-05-14"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -14,6 +14,8 @@ superseded_by: null
 parent: "WI-S20-004"
 tags: ["runbook", "p0", "lighthouse", "incident", "sla", "s20", "30d-observation"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-lighthouse-tracker` was absorbed into `corelink-telemetry` via inline `mod lighthouse;` per SEAL `specs/_audits/sealed/2026-05-26-w35-p2-telemetry-absorption.md`. Canonical consumer path is now `corelink_telemetry::lighthouse::*` (e.g. `corelink_telemetry::lighthouse::LifecycleState::allowed_next`). Operational references using the absorbed crate name still work for HISTORICAL log/grep reference but new automation should use the umbrella.
 
 <!-- forensics-backlink -->
 > **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §1, §6.

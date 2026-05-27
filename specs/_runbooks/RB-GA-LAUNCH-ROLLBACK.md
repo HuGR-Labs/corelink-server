@@ -3,9 +3,9 @@ id: "RB-GA-LAUNCH-ROLLBACK"
 type: "runbook"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -14,6 +14,8 @@ superseded_by: null
 parent: "GA-GATE-CRITERIA"
 tags: ["runbook", "p0", "ga", "launch", "rollback", "private-preview", "r7", "r8", "decision-tree", "comms"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-lighthouse-tracker` was absorbed into `corelink-telemetry` via inline `mod lighthouse;` per SEAL `specs/_audits/sealed/2026-05-26-w35-p2-telemetry-absorption.md`. Canonical consumer path is now `corelink_telemetry::lighthouse::*`. Operational references using the absorbed crate name still work for HISTORICAL log/grep reference but new automation should use the umbrella.
 
 <!-- forensics-backlink -->
 > **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §2.2.

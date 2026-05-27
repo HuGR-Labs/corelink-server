@@ -3,9 +3,9 @@ id: "RB-COLD-RESTORE-FROM-ZERO"
 type: "runbook"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 owner: "SRE Lead"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -13,6 +13,8 @@ supersedes: null
 superseded_by: null
 tags: ["runbook", "dr", "cold-restore", "gap-15", "soc2-a1-2", "soc2-a1-3", "rto-4h-read", "rto-8h-write", "rpo-15m", "dr-15"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-drata-sync` was absorbed into `corelink-ops` via inline `mod drata;` per SEAL `specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md`. Canonical consumer path is now `corelink_ops::drata::*`. The `corelink-drata-sync upload` CLI invocation in §evidence-upload still resolves as a HISTORICAL log/grep reference; new automation should use the umbrella binary target.
 
 <!-- forensics-backlink -->
 > **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §3.3, §10.

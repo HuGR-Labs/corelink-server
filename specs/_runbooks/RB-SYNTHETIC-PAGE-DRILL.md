@@ -3,9 +3,9 @@ id: "RB-SYNTHETIC-PAGE-DRILL"
 type: "runbook"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-14"
-updated: "2026-05-14"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -13,6 +13,8 @@ supersedes: null
 superseded_by: null
 tags: ["runbook", "oncall", "synthetic-page", "drill", "mtta", "rb-synthetic-page-drill", "wi-s20-006", "24-7"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-synthetic-pager` was absorbed into `corelink-telemetry` via inline `mod synthetic_pager;` per SEAL `specs/_audits/sealed/2026-05-26-w35-p2-telemetry-absorption.md`. Canonical consumer path is now `corelink_telemetry::synthetic_pager::*` (e.g. `corelink_telemetry::synthetic_pager::Region`). Operational commands (`cargo run -p corelink-synthetic-pager-cli`, CF Worker bindings) using the absorbed crate name still work for HISTORICAL log/grep reference but new automation should use the umbrella.
 
 <!-- forensics-backlink -->
 > **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §2.

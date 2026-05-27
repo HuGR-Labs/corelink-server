@@ -3,9 +3,9 @@ id: "RB-CANONICAL-DRIFT"
 type: "runbook"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 sprint: "R-PREP"
 parent_wi: "WT-R-PREP-CANONICAL-LINT"
 owner: "Gustavo Schneiter"
@@ -15,6 +15,8 @@ supersedes: null
 superseded_by: null
 tags: ["runbook", "spec-hygiene", "canonical-consistency", "INV", "drift"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-backup-verify` was absorbed into `corelink-ops` via inline `mod dr::backup_verify;` per SEAL `specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md`. The §2 BACKUP-domain worked example cites `corelink-backup-verify/src/lib.rs` as a 2026-05-15 historical example (see `INV-BACKUP-FRESH` discovery in §2); the canonical path for new invariant-registry × code drift hunts is now `corelink_ops::dr::backup_verify::*`. The worked-example text is preserved verbatim for procedure illustration.
 
 # RB-CANONICAL-DRIFT — Triaging INV registry × TLA × code × test drift
 
