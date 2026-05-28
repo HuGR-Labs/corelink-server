@@ -115,7 +115,7 @@ The preamble-strip (`sed -n '/^\[/,$p'`) is also applied to the
 3. ✅ `shellcheck scripts/pre-cutover-wave32-extension.sh` exits 0
 4. ✅ `bash scripts/pre-cutover-wave32-extension.sh --dry-run` exits 0
 5. ✅ This SEAL document created at `specs/_audits/2026-05-28-w32-smoke-accuracy-fix-seal.md`
-6. Commit SHA: (populated post-commit)
+6. ✅ Commit SHA: `9d26484f`
 
 ---
 
