@@ -1,0 +1,316 @@
+---
+title: "CoreLink vs Turborepo Remote Cache: which build cache to pick"
+description: "Honest comparison of CoreLink and Turborepo Remote Cache (Vercel). If you deploy to Vercel, Turbo wins — it's already on. If you don't, or you need multi-language caching and a verifiable audit trail, here is the case for CoreLink."
+keywords:
+  - "turborepo"
+  - "turborepo remote cache"
+  - "turborepo alternative"
+  - "vercel remote cache"
+  - "monorepo cache"
+  - "remote cache"
+  - "js monorepo cache"
+  - "byok build cache"
+  - "turborepo non-vercel"
+last_updated: "2026-05-27"
+---
+
+# CoreLink vs Turborepo Remote Cache
+
+**The honest headline first:** if your team deploys to Vercel and your
+entire codebase is JavaScript or TypeScript, Turborepo Remote Cache is
+already on, already free, and already working. You should use it. Do
+not pay for CoreLink in that situation.
+
+This page exists for everyone else — teams that are not on Vercel, or
+that run a polyglot stack (Rust + Go + JS), or that have a compliance
+requirement (SOC 2, HIPAA, FedRAMP) that makes "7-day artifact expiry
+inside Vercel's infrastructure" an auditor conversation you'd rather not
+have. We will name the tradeoffs directly.
+
+Dated **2026-05-27**. Prices and quotas change — verify before quoting.
+
+## TL;DR
+
+- **Pick Turborepo Remote Cache if** you are already deploying to Vercel
+  and your build toolchain is exclusively Turborepo (JavaScript / TypeScript
+  monorepos). It is bundled, free within fair-use limits, and requires zero
+  configuration. CoreLink cannot beat "zero setup and already on."
+- **Pick CoreLink if** you are not on Vercel (or Vercel is one of several
+  deployment targets), you have a polyglot stack that spans Bazel, Buck2,
+  Cargo, or OCI alongside your npm/Turborepo builds, or you have a compliance
+  requirement around artifact residency, BYOK encryption, or an auditor-facing
+  tamper-evident cache log.
+- **The lose-segment is real.** Competitive audit §3.4 explicitly states
+  CoreLink cannot beat Turborepo's "already on by default." The remainder
+  of this page is for the buyer for whom Turborepo is not the right answer.
+
+## At a glance
+
+| Capability | CoreLink | Turborepo Remote Cache |
+|---|---|---|
+| Pricing | Free (10 GB / 500k req/mo); Pro $25/mo flat (500 GB, 20M req); Enterprise custom | Bundled with Vercel plans; "fair use" Hobby (100 GB upload/mo, 100 art-req/min), Pro (1 TB/mo, 10k req/min), Enterprise (4 TB/mo, 10k req/min) |
+| Requires Vercel deployment | No | Effectively yes — self-hosting the cache layer is community-unofficial and unsupported |
+| Artifact expiry | Configurable; no 7-day hard eviction on paid tiers | **7-day artifact expiry** by default (per Vercel docs 2026-05-27) |
+| Wire protocol | REAPI v2 (CAS + ActionCache + Capabilities) | Turborepo-native artifact protocol (REST-based, proprietary) — not REAPI |
+| Build-tool coverage | Bazel, Buck2, Pants, Please, BuildStream, recc + Cargo / npm / pip / brew / OCI adapters | Turborepo (JS/TS monorepos); community plugins for Rush; not REAPI-compatible |
+| BYOK across 4 KMS (AWS / GCP / Azure / Vault) | Yes — customer-held KEK, 5-min DEK cap, Ed25519 erasure attest | Not advertised |
+| Audit chain (RFC 6962 / RFC 3161) | Yes — re-derivable Merkle root; auditor-independent verification | Not advertised |
+| TLA+-verified tenant isolation | Yes — counterexamples block CI merge | Not advertised |
+| Artifact residency choice | 4 named regions (ord, iad, lhr, nrt); honest sub-processor documentation | Vercel's global edge network; residency docs reference Vercel's data-center inventory |
+| Analytics / dashboard | No (lean cache product) | Build durations + cache-hit ratio visible in Vercel dashboard |
+| Self-host | No (CLI is open-source; data plane is SaaS) | Community OSS implementations exist (e.g., `ducktors/turborepo-remote-cache`); officially unsupported by Vercel |
+| Free tier | Yes, no credit card | Yes, bundled with Vercel Hobby |
+| Company shape | Solo founder, bootstrapped | Vercel-owned (Vercel acquired Turborepo Dec 2021) |
+| Source | corelink.humangr.com | [https://vercel.com/docs/monorepos/remote-caching](https://vercel.com/docs/monorepos/remote-caching) |
+
+## Where Turborepo Remote Cache wins
+
+Be direct about when Turborepo is the better answer.
+
+1. **Zero-setup for Vercel deployments.** If you are already on Vercel,
+   the remote cache is a single environment variable (`TURBO_TOKEN`) or a
+   Vercel-linked project. There is no provisioning step, no bucket to create,
+   no auth to wire. CoreLink requires signing up and configuring the endpoint.
+   For a small team already deployed to Vercel, the CoreLink integration cost
+   is pure overhead.
+
+2. **Free at the Vercel Hobby and Pro tiers.** Turborepo's cache is bundled
+   into every Vercel plan at no marginal cost within fair-use limits. At
+   Hobby you get 100 GB upload/month and 100 artifact requests/minute. At Pro
+   you get 1 TB/month and 10k req/min. CoreLink Free tops out at 10 GB / 500k
+   req/mo. For a mid-sized JS team that is already paying Vercel Pro ($20/seat
+   for deployment), the cache is included. Adding CoreLink is an incremental
+   $25/mo for a benefit you already have.
+
+3. **Native Turborepo DX.** Turborepo's task graph, hashing, and cache
+   pipeline are designed as a unit. The CLI knows which artifacts are
+   cache-eligible, how to hash the input fingerprint, and when to restore from
+   the remote. The integration is invisible in day-to-day use. CoreLink
+   provides a Turborepo-compatible shim (see Migration section), but it is a
+   layer on top of the native flow.
+
+4. **Vercel dashboard gives you cache analytics for free.** Build duration
+   trends, cache-hit ratio per pipeline, and time-saved estimates are visible
+   in the Vercel project dashboard without any extra setup. CoreLink does not
+   ship a build-analytics dashboard (we are a trust-and-cache product, not a
+   CI visualization product).
+
+## Where CoreLink wins
+
+Honest differentiation for the buyer Turborepo is not built for.
+
+1. **Not Vercel-coupled.** CoreLink runs on Cloudflare's global edge and
+   has no opinion about where you deploy your applications. GitHub Actions,
+   Buildkite, CircleCI, GitLab CI, self-hosted runners on AWS, GCP, Azure —
+   CoreLink works identically in all of them. The Turborepo remote cache is
+   functionally only useful when you are deploying to Vercel; a self-hosted
+   community server exists but is explicitly unsupported by Vercel and carries
+   all the operational burden you were presumably trying to avoid.
+
+2. **No 7-day artifact expiry.** Per Vercel's documentation (fetched
+   2026-05-27), remote cache artifacts expire after 7 days. For a team with
+   a CI pipeline that re-runs infrequently touched branches — a long-lived
+   release branch, a large refactor branch, a compliance-review fork —
+   7-day expiry means cold rebuilds precisely when you most wanted a warm one.
+   CoreLink's paid tiers do not impose a 7-day hard eviction; retention is
+   configurable and visible.
+
+3. **Polyglot stack in one cache.** A team running Turborepo for the JS
+   monorepo, Cargo for Rust services, and Bazel for the data pipeline cannot
+   unify those three caches under one Turborepo roof. Turborepo's protocol is
+   JS-native; it does not speak REAPI v2. CoreLink's Cargo adapter, REAPI v2
+   surface, and npm adapter let you put all three workloads on the same cache
+   cluster with a single bill, a single audit log, and a single BYOK key
+   hierarchy. Audit §3.3 identifies this as the clearest CoreLink win.
+
+4. **BYOK by default, across four KMS providers.** AWS KMS, GCP KMS, Azure
+   Key Vault, HashiCorp Vault. Customer-held key-encryption key; 5-minute
+   data-encryption key in-memory cap; Ed25519-signed erasure attestation on
+   revocation. Turborepo Remote Cache's public documentation does not
+   describe an equivalent customer-managed key model at the cache layer. For
+   a regulated buyer (fintech, healthtech, government contractor) who needs
+   to point an SOC 2 auditor at a BYOK configuration document, this is a
+   structural difference.
+
+5. **RFC 6962 / RFC 3161 tamper-evident audit log.** Every cache read,
+   write, eviction, and key rotation is emitted into a Merkle-chained audit
+   log. Your external auditor can download the log shard, replay every event,
+   and recompute the published root — independently, without CoreLink's
+   involvement. The same trust model underpins Certificate Transparency. This
+   is not a feature Turborepo Remote Cache was designed to provide; it is a
+   compliance product need that Turborepo never needed to address because
+   Vercel's buyers do not typically bring an external auditor to a JS build
+   cache.
+
+6. **Honest artifact residency with named regions.** CoreLink exposes four
+   named regions (ord = Chicago, iad = Washington DC, lhr = London, nrt =
+   Tokyo) and documents sub-processors per region. You can constrain a
+   workspace to a single region. Vercel's edge network routes to the nearest
+   POP by default; region pinning is available on Enterprise. For a European
+   company with GDPR data-residency obligations on build artifacts (metadata
+   can include code structure), CoreLink's explicit region choice is a simpler
+   conversation with a DPO.
+
+7. **TLA+-verified tenant isolation.** CoreLink's multi-tenant boundary is
+   specified in TLA+ and model-checked in CI; counterexamples block merge to
+   main. This is an engineering-trust signal for a specific set of buyers —
+   teams that read the model before signing the PO. Turborepo Remote Cache's
+   tenant model is Vercel's standard infrastructure isolation; no comparable
+   published model-checked specification.
+
+## Cost comparison
+
+### Scenario A: pure JS/TS monorepo on Vercel
+
+40 engineers. Turborepo. All deployments go to Vercel. ~80 GB warm
+cache, ~2M cache artifact operations/month.
+
+**Turborepo Remote Cache:** $0 incremental cost. Bundled with Vercel
+Pro at $20/seat. The cache is inside the seat fee you are already paying
+for deployments.
+
+**CoreLink:** $25/mo (Pro: 500 GB, 20M req). You would pay $25/mo for
+a benefit already included in your Vercel bill.
+
+**Verdict for this scenario: Turborepo wins cleanly.** There is no
+CoreLink pitch here.
+
+---
+
+### Scenario B: polyglot team, not all on Vercel
+
+80 engineers. JS monorepo (Turborepo) + Rust services (sccache or Cargo)
++ Bazel data pipeline. Deployments split: frontend to Vercel, backend to
+AWS ECS, ML pipeline on-prem. ~300 GB warm cache combined, ~8M
+cache operations/month across all stacks.
+
+**Turborepo Remote Cache:** covers only the JS leg. You still need sccache
++ S3 for Rust (~$7–$15/mo S3 storage + ops + ops overhead), bazel-remote
++ S3 for Bazel (~$10–$25/mo + ops), plus an ops budget to keep those
+three running (rotate creds, watch eviction, monitor hit rates). Three
+systems, three billing relationships, three audit postures.
+
+**CoreLink (Pro):** $25/mo flat. REAPI v2 covers the Bazel pipeline.
+Cargo adapter covers Rust. npm adapter covers the JS layer (including
+Turborepo workspaces via the REAPI shim — see Migration). 300 GB is
+inside the 500 GB Pro quota. One bill, one audit log, one BYOK envelope.
+
+**Differential: ~$0–$40/mo in direct costs** (Turborepo + self-hosted
+alternatives vs. CoreLink Pro), but the polyglot ops overhead is the
+real cost that spreadsheet does not show.
+
+---
+
+### Scenario C: regulated org, SOC 2 on the calendar
+
+120 engineers, Series B SaaS. JS/TS monorepo + Go microservices + some
+Bazel. SOC 2 Type II audit starting in 4 months. Legal is asking whether
+build artifacts with source-code fingerprints are covered by the data
+retention policy.
+
+**Turborepo Remote Cache:** 7-day artifact expiry by default. Vercel
+infrastructure. Customer-managed keys not advertised. Responding to an
+SOC 2 auditor's question about "where do build artifacts live and who
+holds the encryption keys" will require a Vercel Enterprise conversation.
+
+**CoreLink (Enterprise):** BYOK on your choice of AWS/GCP/Azure/Vault.
+Named region residency. Merkle-chained audit log the auditor can
+re-derive. 7-day artifact expiry is a configuration parameter, not a
+hard limit. The audit-log question has a two-sentence answer.
+Enterprise anchor range: $500–$5,000/mo depending on scale and SLA tier.
+
+**Verdict for this scenario:** CoreLink has a prepared answer; Turborepo's
+answer requires a Vercel sales conversation with an unknown timeline.
+
+## When NOT to choose CoreLink
+
+We lose the Turborepo comparison in clear situations and will name them.
+
+1. **Your monorepo is pure JS/TS and you are deploying to Vercel.** This
+   is Turborepo's designed-for segment. The cache is free, the integration
+   is native, and CoreLink is an unnecessary complication.
+
+2. **Your team has no compliance requirement on build artifacts.** If you
+   do not need BYOK, residency pinning, or an auditor-visible log, the
+   Turborepo + Vercel dashboard is a cleaner product for a pure JS team.
+
+3. **You are a solo developer or very small team (5 or fewer) shipping to
+   Vercel.** CoreLink Free gives you 10 GB / 500k req/mo. Turborepo
+   Hobby gives you 100 GB / 100 req/min — significantly more headroom on
+   storage — at $0. The math favors Turborepo for this profile.
+
+4. **Turborepo's 7-day expiry is fine for your branching strategy.** If
+   your team uses short-lived feature branches and merges frequently (the
+   majority of well-run JS teams), the 7-day window is unlikely to cost
+   you a single cold rebuild. The expiry concern is real only for teams
+   with long-lived branches.
+
+We will not pretend Turborepo Remote Cache is a bad product. For the
+buyer it was designed for — the JS/TS team deploying to Vercel — it is
+the right product. The question is whether your team is that buyer.
+
+## Migration path: Turborepo workspaces to CoreLink
+
+This path is for teams that decide CoreLink fits better. It assumes you
+are currently using Turborepo Remote Cache (Vercel-hosted) and want to
+move to CoreLink while keeping Turborepo as the build tool.
+
+**Step 1 — Provision a CoreLink workspace.** Sign up at
+`https://corelink-app.humangr.com/sign-up`. Free tier requires no credit
+card. Copy your API token from the workspace settings.
+
+**Step 2 — Stand up the Turborepo REAPI shim.** CoreLink ships a
+Turborepo-compatible remote-cache adapter. In your `turbo.json`:
+
+```json
+{
+  "remoteCache": {
+    "apiUrl": "https://corelink-api.humangr.com/turbo",
+    "teamId": "your-workspace-id",
+    "signature": true
+  }
+}
+```
+
+Set the environment variable `TURBO_TOKEN=<your-corelink-token>` in your
+CI environment. Turborepo's client does not need to change — it speaks
+the same artifact REST protocol; CoreLink's shim translates to the
+internal REAPI CAS layer.
+
+**Step 3 — Run both caches in parallel for two weeks.** Keep the Vercel
+token active. The first `turbo build` after the switch will populate
+CoreLink's cache from scratch (cold start); subsequent runs in the same
+pipeline will hit CoreLink. Compare cache-hit ratio and p95 restore
+latency against your Vercel baseline. They should be similar; CoreLink's
+edge POPs are co-located with the major CI runner regions.
+
+**Step 4 — Migrate non-JS caches to the same workspace.** Once
+Turborepo is confirmed green on CoreLink, configure Cargo / Bazel / OCI
+to use the same CoreLink workspace. One workspace, one token, one quota.
+
+**Step 5 — Revoke the Vercel token.** When CoreLink has been warm for
+two weeks and the cache-hit numbers match, remove `TURBO_REMOTE_CACHE_TOKEN`
+from your CI environment and close the Vercel remote cache configuration.
+Your Turborepo CLI continues to work — it now writes to CoreLink.
+
+**Step 6 — Enable BYOK (Enterprise, optional).** Configure your KMS
+provider in the CoreLink workspace settings. All subsequent artifacts are
+encrypted under your key-encryption key.
+
+**Idempotency note:** running `turbo build` with both cache sources active
+is safe. A hit from either source is a hit; the parallel-run period is
+read-only from Vercel's side.
+
+## Sources
+
+- Turborepo Remote Cache documentation (Vercel): [https://vercel.com/docs/monorepos/remote-caching](https://vercel.com/docs/monorepos/remote-caching)
+- Vercel pricing page: [https://vercel.com/pricing](https://vercel.com/pricing)
+- CoreLink competitive landscape audit: `specs/_audits/2026-05-27-competitive-landscape.md` §1, §3.4
+- CoreLink pricing benchmarks audit: `specs/_audits/2026-05-27-pricing-benchmarks.md` §2, §4
+- CoreLink product docs: [/docs](/docs/)
+- CoreLink pricing: [/pricing](/pricing/)
+- Capability matrix (BuildBuddy, EngFlow, Nx Cloud, bazel-remote alongside Turborepo):
+  [/docs/pricing/comparison](/docs/pricing/comparison)
+
+If you find a factual error on this page, open an issue on
+`humangr-labs/corelink-server`. Correctness wins over rhetoric.
