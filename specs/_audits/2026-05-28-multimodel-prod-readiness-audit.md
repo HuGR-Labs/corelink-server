@@ -74,6 +74,41 @@ system reached opposite-seeming conclusions, and both are right:
 Both true. The libraries are solid; the deployment wires almost none of
 them. **The gap is "wiring + deploy", not "rewrite".**
 
+## §1.5 Sonnet (2nd holistic, independent) — also DO-NOT-SHIP + a THIRD break
+
+Sonnet independently reached DO-NOT-SHIP and found a break neither Opus nor
+the Haiku panel caught:
+
+- **P0-NEW: Protocol mismatch — the DO→container health handshake itself is
+  broken.** The DO sends HTTP/1.1 `GET /_health` to port 50051
+  (`worker/src/durable_object.ts:509`), but the container serves a
+  **pure gRPC (tonic, HTTP/2-only)** server there — no `tonic-web`, no
+  `accept_http1` (zero `tonic-web` in any Cargo.toml; the
+  `durable_object.ts:200` comment claiming "tonic + tonic-web" is a
+  documentation lie). tonic rejects the HTTP/1.1 probe →
+  `waitForContainerHealth()` polls 30s, fails, returns
+  `{ok:false, reason:"container_health_check_failed"}` → **every
+  authenticated request returns 503 CONTAINER_UNAVAILABLE.**
+
+- **This explains the `/health` 200 I observed during Phase E.** That 200
+  is the **Worker** answering directly (`{"status":"ok","env":"prod"}`) —
+  it never touches the container. Sonnet: "correctly serves /health
+  (Worker-only, no container)... Nothing that a paying customer would use
+  works." The "11 healthy instances" is CF process-liveness, not an
+  HTTP/gRPC request verification.
+
+- Additional Sonnet P1: `cpu_ms=30` (`wrangler.toml:33`) too low for the
+  HMAC auth path (5-15ms) → 1102 CPU-Exceeded under load. Container
+  startup 30s races the DO request 30s timeout → first request per tenant
+  times out. RolloutController DO is a 501 stub (canary infra
+  non-functional). `timingSafeEqual` uses a zero HMAC key (technically
+  safe, confused design).
+
+**Three INDEPENDENT breaks in the authenticated path:** (1) container
+health probe protocol-mismatch [Sonnet], (2) no PAT validation at any tier
+[Opus+Sonnet], (3) composed router never bound to a listener [Opus+Sonnet].
+Any one alone = no working product.
+
 ## §2 P0 — blocks ship (the product isn't there)
 
 | # | Finding | Evidence | Fix |
@@ -83,6 +118,8 @@ them. **The gap is "wiring + deploy", not "rewrite".**
 | P0-3 | No tenant isolation on the live path — all authenticated traffic → single `_pending_auth` DO. The tenant-derivation code is correct (Haiku-10) but unrouted. | `worker/src/index.ts:492-493`, `durable_object.ts:234` (tenantId hardcoded null) | Resolve tenant from validated PAT; derive DO id from real tenant id. |
 | P0-4 | Container has no R2/D1/KV bindings — cannot read/write a blob even if routed. | `wrangler.toml` `[[env.prod.containers]]` (no storage bindings); container env = RUST_LOG+PORT only | Thread storage to the data plane (Worker-side handlers OR container bindings). |
 | P0-5 | `enableInternet:false` on the container → BYOK cannot reach AWS/GCP/Azure/Vault KMS. Headline feature unreachable. | `worker/src/durable_object.ts:400` | Enable egress (scoped) OR move BYOK to the Worker side. |
+| P0-6 | **Protocol mismatch [Sonnet]** — DO health probe sends HTTP/1.1 to gRPC-only (HTTP/2) port 50051; no tonic-web/accept_http1. Container health handshake fails → every auth request 503. (The `/health` 200 seen in Phase E is Worker-only, never touches container.) | `worker/src/durable_object.ts:509`, `crates/corelink-container/src/main.rs:344-346` | Add tonic-web/HTTP-1 OR a separate HTTP /_health listener; align the DO probe target. |
+| P0-7 | **Route handlers are InMemory fakes [Sonnet]** — `build_handler()` returns `InMemoryCasHandler`/`InMemoryAcHandler`/`InMemoryAdminHandler`; the real CF-R2/D1 adapters are `compile_error!()`-gated (deferred). Even if routed, all data is ephemeral per-instance RAM. | `crates/corelink-container/src/routes/{cas,ac,admin}.rs` | Implement + feature-enable the real CF binding adapters. |
 
 ## §3 P1 — real bugs (fix before/with the wiring)
 
