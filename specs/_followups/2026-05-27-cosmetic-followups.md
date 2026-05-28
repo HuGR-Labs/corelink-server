@@ -1,8 +1,8 @@
 ---
 id: "FOLLOWUP-2026-05-27-COSMETIC"
-type: "audit"
+type: "followup"
 doc_status: "ACTIVE"
-audit_status: "ACTIVE"
+followup_status: "OPEN"
 version: "1.0.0"
 created: "2026-05-27"
 updated: "2026-05-27"
