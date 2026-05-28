@@ -107,10 +107,18 @@ pub fn build_handler() -> Arc<dyn CasReadHandler> {
             let region = std::env::var("R2_CAS_REGION")
                 .unwrap_or_else(|_| "iad".to_owned());
 
-            // We are inside a tokio runtime (axum server); use
-            // Handle::current().block_on() to drive the async setup.
+            // We are inside the tokio multi-thread runtime that drives the
+            // axum server, so a bare `Handle::current().block_on(...)` panics
+            // ("Cannot start a runtime from within a runtime"). The canonical
+            // bridge is `tokio::task::block_in_place`, which tells the runtime
+            // to release the current worker so the inner `block_on` is legal.
+            // Caveat: only valid on the multi-thread runtime — `#[tokio::main]`
+            // gives us that here.
             let handle = tokio::runtime::Handle::current();
-            match handle.block_on(r2_s3::build_r2_cas_handler_from_env(&bucket, &region)) {
+            let built = tokio::task::block_in_place(|| {
+                handle.block_on(r2_s3::build_r2_cas_handler_from_env(&bucket, &region))
+            });
+            match built {
                 Some(Ok(handler)) => {
                     tracing::info!(
                         bucket = %bucket,
