@@ -1,0 +1,28 @@
+[package]
+name = "e2e-user-journeys"
+description = "BLACK-BOX end-to-end user-journey suite — the real ship gate. Tests simulate a paying customer using only the public HTTP API and CLI binary. Zero internal-crate deps. Expected RED until the P0 remediation wave lands."
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+license = "UNLICENSED"
+publish = false
+
+# ── HARD CONSTRAINT ────────────────────────────────────────────────────────────
+# This crate MUST NOT depend on any corelink-* internal crate.
+# No path dependencies pointing into ../../crates/... are permitted.
+# Acceptance gate: zero matches for path deps into internal crates.
+# ───────────────────────────────────────────────────────────────────────────────
+
+[dependencies]
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "blocking"], default-features = false }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+hex = "0.4"
+
+[dev-dependencies]
+# None — the binary itself is the test runner.
+
+[[bin]]
+name = "e2e-user-journeys"
+path = "src/main.rs"

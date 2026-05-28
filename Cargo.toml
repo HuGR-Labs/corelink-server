@@ -346,6 +346,12 @@ members = [
     # AuditEmitter). Closes follow-up #4 from
     # `specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md §4`.
     "crates/corelink-adapter-host",
+    # Black-box E2E user-journey suite — the real ship gate.
+    # ZERO internal-crate deps: uses only reqwest + std::process::Command
+    # + serde_json. Simulates a paying customer hitting the live API.
+    # Expected RED until the P0 remediation wave lands.
+    # See tests/e2e-user-journeys/README.md for full context.
+    "tests/e2e-user-journeys",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
