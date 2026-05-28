@@ -22,3 +22,15 @@ cryptography:
   label: Cryptography
   permalink: /cryptography
   description: Cryptographic primitives, hash functions, and security properties.
+audit:
+  label: Audit
+  permalink: /audit
+  description: Audit chain design and tamper-evidence.
+merkle:
+  label: Merkle
+  permalink: /merkle
+  description: Merkle hash trees and inclusion proofs.
+rfc-6962:
+  label: RFC 6962
+  permalink: /rfc-6962
+  description: Certificate Transparency and append-only log design.
