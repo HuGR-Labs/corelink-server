@@ -97,6 +97,51 @@ ALLOWLIST_REGEX = re.compile(
     # production secret — the production per-region DSN lives at
     # `NEON_DB_URL_<REGION>` (matrix rows 120–124).
     r"|NEON_TEST_DSN$"
+    # Wave-33 secrets-matrix drift triage (2026-05-27) — 17 non-secret env
+    # vars consumed by wrangler.toml [vars] bindings, build metadata
+    # injection, e2e test configuration, or Sentry build-time metadata.
+    # None of these carry credential material.
+    #
+    # CF Pages / git build metadata — injected by Cloudflare Pages or CI;
+    # no secrets, pure build provenance.
+    #   Consumer: apps/docs/docusaurus.config.ts (SENTRY_DOCS_RELEASE build label)
+    r"|CF_PAGES_COMMIT_SHA$"
+    r"|GIT_SHA$"
+    # wrangler.toml [vars] public config — committed in plaintext in
+    # wrangler.toml; no credential material.
+    #   Consumer: apps/analytics-worker/src/ingest.ts (CORS allow-list)
+    r"|ALLOWED_ORIGINS$"
+    #   Consumer: apps/analytics-worker/src/types.ts (Plausible domain label)
+    r"|PLAUSIBLE_DOMAIN$"
+    #   Consumer: apps/analytics-worker/src/cron/weekly-email.ts (From address)
+    r"|DIGEST_FROM$"
+    #   Consumer: apps/analytics-worker/src/cron/weekly-email.ts (recipient)
+    r"|DIGEST_RECIPIENT$"
+    #   Consumer: apps/get-corelink-worker/src/index.ts (install script origin)
+    r"|RELEASE_ORIGIN$"
+    #   Consumer: apps/get-corelink-worker/src/index.ts (default API endpoint)
+    r"|DEFAULT_API_ENDPOINT$"
+    # E2E test configuration — CI-only overrides; no secrets.
+    #   Consumer: apps/admin-ui/e2e/signup-welcome.spec.ts (auth storage path)
+    r"|E2E_AUTH_STORAGE_STATE$"
+    #   Consumer: apps/admin-ui/e2e/signup-welcome.spec.ts (docs URL)
+    r"|E2E_DOCS_URL$"
+    #   Consumer: apps/admin-ui/e2e/get-install-worker.spec.ts (install URL)
+    r"|E2E_INSTALL_URL$"
+    # Sentry build metadata — non-credential config injected at build/deploy
+    # time; environment label, release tag, org/project names.
+    #   Consumer: apps/admin-ui/sentry.client.config.ts / sentry.server.config.ts
+    r"|NEXT_PUBLIC_SENTRY_ENVIRONMENT$"
+    r"|NEXT_PUBLIC_SENTRY_RELEASE$"
+    r"|SENTRY_ENVIRONMENT$"
+    r"|SENTRY_RELEASE$"
+    #   Consumer: apps/admin-ui/next.config.ts (withSentryConfig org/project)
+    r"|SENTRY_ORG$"
+    r"|SENTRY_PROJECT$"
+    # Admin-ui analytics endpoint override — public URL; default is hardcoded
+    # in source. No credential material.
+    #   Consumer: apps/admin-ui/src/lib/analytics.ts
+    r"|NEXT_PUBLIC_ANALYTICS_ENDPOINT$"
     r")"
 )
 
