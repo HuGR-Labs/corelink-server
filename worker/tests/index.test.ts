@@ -478,6 +478,127 @@ describe("INV-NO-BODY-IN-LOGS", () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Auth middleware — invalid character paths
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("auth middleware — invalid token characters", () => {
+  it("returns 401 for token containing a space character (0x20 < 0x21)", async () => {
+    // Token with an embedded space — must be caught by the printable-ASCII guard
+    const tokenWithSpace = "validstart-" + "a".repeat(20) + " " + "a".repeat(20);
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${tokenWithSpace}` },
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("returns 401 for token containing a tab character (0x09 < 0x21)", async () => {
+    const tokenWithTab = "validstart-" + "a".repeat(20) + "\t" + "a".repeat(20);
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${tokenWithTab}` },
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("returns 401 for token containing a DEL character (0x7F > 0x7E)", async () => {
+    const tokenWithDel = "validstart-" + "a".repeat(20) + "\x7F" + "a".repeat(20);
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${tokenWithDel}` },
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("error body for invalid-char token does not echo the token", async () => {
+    const evilToken = "INVALID\x01CHARS" + "x".repeat(32);
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${evilToken}` },
+    });
+    const text = await resp.text();
+    expect(text).not.toContain("INVALID");
+    expect(text).not.toContain("\x01");
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// OCI error status code mapping — ociStatusForCode branch coverage
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("OCI status-for-code mapping", () => {
+  // We test ociStatusForCode indirectly by having the DO stub return a response
+  // that the worker processes. The worker calls ociError() directly for auth
+  // failures — we already cover UNAUTHORIZED. The other codes are exercised
+  // when the DO returns error envelopes for authenticated OCI requests.
+
+  it("DO returning OCI BLOB_UNKNOWN envelope passes through with correct request-id", async () => {
+    const blobUnknownEnv: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (_n: string) => ({ toString: () => "id" }),
+        get: () => ({
+          fetch: async (req: Request) =>
+            new Response(
+              JSON.stringify({ errors: [{ code: "BLOB_UNKNOWN", message: "blob not found", detail: null }] }),
+              {
+                status: 404,
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-Request-Id": req.headers.get("x-request-id") ?? "stub",
+                },
+              },
+            ),
+        }),
+        idFromString: (_s: string) => ({ toString: () => "id" }),
+        newUniqueId: () => ({ toString: () => "id" }),
+        jurisdiction: (_j: string) => blobUnknownEnv.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+    const token = "a".repeat(64);
+    const resp = await workerFetch(
+      "http://localhost/v2/repo/blobs/sha256:deadbeef",
+      { headers: { Authorization: `Bearer ${token}` } },
+      blobUnknownEnv,
+    );
+    // DO returns 404; worker passes it through with x-request-id
+    expect(resp.status).toBe(404);
+    expect(resp.headers.get("x-request-id")).not.toBeNull();
+  });
+
+  it("worker returns UNAUTHORIZED OCI error (code path: UNAUTHORIZED → 401)", async () => {
+    // This exercises ociStatusForCode('UNAUTHORIZED') = 401 directly via the
+    // worker's auth middleware for OCI routes.
+    const resp = await workerFetch("http://localhost/v2/repo/blobs/sha256:abc");
+    expect(resp.status).toBe(401);
+    const body = await resp.json() as { errors: Array<{ code: string }> };
+    expect(body.errors[0]?.code).toBe("UNAUTHORIZED");
+  });
+
+  it("worker returns UNKNOWN OCI error (500) when DO fetch throws on OCI path", async () => {
+    // This exercises ociStatusForCode default branch (unknown code → 500)
+    const throwingEnv: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (_n: string) => ({ toString: () => "id" }),
+        get: () => ({
+          fetch: async (_req: Request): Promise<Response> => {
+            throw new Error("simulated network failure");
+          },
+        }),
+        idFromString: (_s: string) => ({ toString: () => "id" }),
+        newUniqueId: () => ({ toString: () => "id" }),
+        jurisdiction: (_j: string) => throwingEnv.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+    const token = "b".repeat(64);
+    const resp = await workerFetch(
+      "http://localhost/v2/repo/manifests/latest",
+      { headers: { Authorization: `Bearer ${token}` } },
+      throwingEnv,
+    );
+    // ociError("UNKNOWN", ...) → ociStatusForCode('UNKNOWN') → default 500
+    expect(resp.status).toBe(500);
+    const body = await resp.json() as { errors: Array<{ code: string }> };
+    expect(body.errors[0]?.code).toBe("UNKNOWN");
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Request-Id forwarding to DO
 // ──────────────────────────────────────────────────────────────────────────────
 

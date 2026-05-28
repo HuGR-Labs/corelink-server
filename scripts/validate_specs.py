@@ -61,9 +61,13 @@ SCHEMA_PATH = SPECS_DIR / "_schemas" / "front_matter.schema.json"
 SKIP_ALL = {"_audits", "_archive", "_schemas", "_compliance"}
 
 # Diretórios que passam apenas em yaml.safe_load (não em JSON Schema).
-# Motivo: templates têm placeholders intencionais (ex: "S-XX-REPLACE",
-# "YYYY-MM-DD") que não são valores reais.
-SKIP_SCHEMA = SKIP_ALL | {"_templates"}
+# Motivo 1: templates têm placeholders intencionais (ex: "S-XX-REPLACE",
+#            "YYYY-MM-DD") que não são valores reais.
+# Motivo 2: _followups/ são notas operacionais de acompanhamento (não specs
+#            canônicas); o tipo "followup" e audit_status "OPEN" são intentionais
+#            para esses documentos de tracking e não devem ser obrigados a
+#            conformar com o schema de specs normativos.
+SKIP_SCHEMA = SKIP_ALL | {"_templates", "_followups"}
 
 FRONT_MATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 
@@ -178,8 +182,8 @@ def main() -> int:
     ok_schema = ok_yaml_only = 0
 
     for path in all_files:
-        is_template = any(part == "_templates" for part in path.parts)
-        run_schema = not is_template or args.strict
+        skip_schema_dir = any(part in SKIP_SCHEMA for part in path.parts)
+        run_schema = not skip_schema_dir or args.strict
 
         ok, errors = validate_file(path, validator, run_schema=run_schema)
         rel = path.relative_to(REPO_ROOT)
@@ -199,7 +203,7 @@ def main() -> int:
         else:
             ok_yaml_only += 1
             if args.verbose:
-                print(f"🟡 {rel} (template — YAML OK, schema skipped)")
+                print(f"🟡 {rel} (YAML OK, schema skipped)")
 
     if warnings:
         print("\n⚠️  AVISOS R12 (não bloqueiam — retroativos; ERROR para docs novos):")
