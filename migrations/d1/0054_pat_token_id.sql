@@ -23,15 +23,19 @@
 -- Additive policy (INV-ONBOARD-ATOMIC-PROVISIONING): no DROP, no destructive
 -- ALTER.  This is a pure ADD COLUMN migration.
 --
--- D1 note: D1 does not support `ALTER TABLE ADD COLUMN IF NOT EXISTS`.  The
--- statement is safe on a fresh prod DB (Phase C provisioned 2026-05-26) and
--- on any dev/staging DB that was not yet seeded with PAT rows.
+-- D1 note: D1/SQLite does not support `ALTER TABLE ADD COLUMN IF NOT EXISTS`,
+-- nor does it allow `ALTER TABLE ADD COLUMN ... UNIQUE` (SQLITE_ERROR 7500 —
+-- the original migration tried this and failed on the real prod D1; corrected
+-- 2026-05-28 to add the column nullable, then enforce uniqueness via a
+-- separate UNIQUE INDEX, which is the SQLite-idiomatic equivalent).
+-- The statement is safe on a fresh prod DB (Phase C provisioned 2026-05-26)
+-- and on any dev/staging DB that was not yet seeded with PAT rows.
 
-ALTER TABLE pat ADD COLUMN token_id TEXT UNIQUE;
+ALTER TABLE pat ADD COLUMN token_id TEXT;
 
--- Back-fill index for O(1) auth lookup (the UNIQUE constraint above creates
--- an implicit unique index; a secondary covering index speeds the equality
--- scan on the non-primary-key column for the Worker hot-path query
+-- Enforce uniqueness via a UNIQUE INDEX (the SQLite-idiomatic equivalent of
+-- inline UNIQUE on an ALTER ADD COLUMN). Also serves as the covering index
+-- for the Worker hot-path query:
 -- `SELECT tenant_id, pat_hash, expires_ms FROM pat WHERE token_id = ?1
---  AND expires_ms > unixepoch('now', 'subsec') * 1000`).
-CREATE INDEX IF NOT EXISTS idx_pat_token_id ON pat (token_id);
+--  AND expires_ms > unixepoch('now', 'subsec') * 1000`.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pat_token_id ON pat (token_id);
