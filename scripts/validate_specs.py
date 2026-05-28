@@ -15,6 +15,11 @@ Executa duas camadas de validação:
 Templates (_templates/) têm placeholders que legitimamente não parseiam
 como valores reais; são isentos do schema mas DEVEM parsear como YAML.
 
+Regras de uplift:
+  R12 (references) — docs com type=audit DEVEM ter campo `references:`.
+    Retroativo: WARNING (não bloqueia exit code) para docs existentes.
+    Novos docs: violação de R12 é tratada como ERROR pelo revisor/CI.
+
 Uso:
     python3 scripts/validate_specs.py            # valida tudo
     python3 scripts/validate_specs.py --strict   # trata templates como docs reais (falhará)
@@ -110,6 +115,40 @@ def validate_file(
     return True, []
 
 
+def check_r12_references(path: Path) -> str | None:
+    """R12: type=audit docs MUST have a top-level `references:` field.
+
+    Returns a warning string if the rule is violated, None if OK.
+    This check is retroactively WARNING-only (non-blocking exit code) for
+    existing docs. New docs submitted after R12 lands should be treated as
+    ERROR by the reviewer / CI pipeline (escalate manually until a future
+    pass promotes this to ERROR).
+    """
+    content = path.read_text()
+    match = FRONT_MATTER_RE.match(content)
+    if not match:
+        return None  # malformed doc already caught by validate_file
+
+    try:
+        data = yaml.safe_load(match.group(1))
+    except yaml.YAMLError:
+        return None  # YAML error already caught by validate_file
+
+    if not isinstance(data, dict):
+        return None
+
+    if data.get("type") != "audit":
+        return None
+
+    if "references" not in data:
+        return (
+            f"R12 WARNING: type=audit doc missing `references:` field "
+            f"(retroactive warning — treat as ERROR for new docs)"
+        )
+
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -135,6 +174,7 @@ def main() -> int:
         sys.exit(f"ERRO: nenhum .md encontrado em {SPECS_DIR}")
 
     failed: list[tuple[Path, list[str]]] = []
+    warnings: list[tuple[Path, str]] = []
     ok_schema = ok_yaml_only = 0
 
     for path in all_files:
@@ -147,6 +187,11 @@ def main() -> int:
             failed.append((path, errors))
             continue
 
+        # R12 uplift: warn on audit docs missing references (non-blocking)
+        r12_warn = check_r12_references(path)
+        if r12_warn:
+            warnings.append((path, r12_warn))
+
         if run_schema:
             ok_schema += 1
             if args.verbose:
@@ -155,6 +200,13 @@ def main() -> int:
             ok_yaml_only += 1
             if args.verbose:
                 print(f"🟡 {rel} (template — YAML OK, schema skipped)")
+
+    if warnings:
+        print("\n⚠️  AVISOS R12 (não bloqueiam — retroativos; ERROR para docs novos):")
+        for path, msg in warnings:
+            rel = path.relative_to(REPO_ROOT)
+            print(f"  ⚠️  {rel}: {msg}")
+        print(f"\nTotal avisos R12: {len(warnings)}")
 
     if failed:
         print("\n❌ FALHAS:")

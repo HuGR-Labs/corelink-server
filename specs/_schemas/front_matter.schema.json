@@ -4,7 +4,7 @@
   "title": "CoreLink Spec — Front Matter Schema",
   "description": "Valida o YAML front matter obrigatório de todos os documentos de spec do CoreLink. Referência normativa: 00_framework.md §7.11.",
   "type": "object",
-  "required": ["id", "type", "doc_status", "audit_status", "version", "created", "updated", "owner", "final_approver", "reviewers", "supersedes", "superseded_by", "tags"],
+  "required": ["id", "type", "doc_status", "version", "created", "updated", "owner", "final_approver", "reviewers", "supersedes", "superseded_by", "tags"],
   "additionalProperties": true,
   "properties": {
     "id": {
@@ -53,8 +53,14 @@
         "waiver",
         "architecture",
         "governance",
-        "audit"
+        "audit",
+        "followup"
       ]
+    },
+    "followup_status": {
+      "type": "string",
+      "enum": ["OPEN", "IN_PROGRESS", "CLOSED"],
+      "description": "Estado do followup. Obrigatório quando type=followup. Proibido em outros types."
     },
     "doc_status": {
       "type": "string",
@@ -236,6 +242,29 @@
     }
   },
   "allOf": [
+    {
+      "comment": "audit_status obrigatório quando type != followup",
+      "if": {
+        "not": {
+          "properties": { "type": { "const": "followup" } },
+          "required": ["type"]
+        }
+      },
+      "then": {
+        "required": ["audit_status"]
+      }
+    },
+    {
+      "comment": "followup: followup_status obrigatório; audit_status proibido",
+      "if": {
+        "properties": { "type": { "const": "followup" } },
+        "required": ["type"]
+      },
+      "then": {
+        "required": ["followup_status"],
+        "not": { "required": ["audit_status"] }
+      }
+    },
     {
       "comment": "Regras cross-field por type — work artifact types DEVEM ter work_status",
       "if": {

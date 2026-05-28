@@ -2,10 +2,15 @@
 id: "FOLLOWUP-2026-05-27-COSMETIC"
 type: "followup"
 doc_status: "ACTIVE"
-audit_status: "OPEN"
+followup_status: "OPEN"
 version: "1.0.0"
 created: "2026-05-27"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
 tags: ["followup", "cosmetic", "manual-action", "launch-polish"]
 ---
 
