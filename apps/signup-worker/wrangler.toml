@@ -3,6 +3,14 @@ main = "src/index.ts"
 compatibility_date = "2026-05-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Security hardening (2026-05-28): NOT reachable at *.workers.dev. The other
+# three workers (root, get-corelink, analytics) already set this; signup-worker
+# was the lone gap — bot wildcard scans of *.workers.dev could otherwise find
+# it. Customer traffic arrives ONLY via the proxied custom domain
+# (corelink-signup.humangr.com) behind zone-level Bot Fight Mode.
+# Lesson: a prior public *.workers.dev staging URL drew a $36 bot bill.
+workers_dev = false
+
 # Bindings below are placeholders — actual values are configured per
 # environment via `wrangler secret put` and Pages dashboard.
 #
