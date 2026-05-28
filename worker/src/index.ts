@@ -67,12 +67,15 @@ interface RouteMatch {
 /** Canonical route kinds that this worker handles. */
 type RouteKind =
   | "health"
+  | "health_serving"
   | "oci_v2"
   | "npm"
   | "pip"
   | "brew"
   | "cargo"
   | "reapi_v2"
+  | "reapi_v1"
+  | "signup"
   | "not_found";
 
 /** Auth extraction result from the Authorization header. */
@@ -161,29 +164,56 @@ function handlePreflight(request: Request): Response | null {
  * Match the request URL against the CoreLink route surface.
  *
  * Route priority (first match wins):
- *   /health                 → health check
+ *   /health                 → health check (legacy body: {"status":"ok",...})
+ *   /api/health             → health check alias (body: {"status":"SERVING",...})
+ *                              — matches e2e suite Journey 1 exact-string assertion
+ *                              `assert_eq!(body["status"], "SERVING")`
+ *                              (tests/e2e-user-journeys/src/main.rs:151).
  *   /v2/*                   → OCI Distribution Spec v1.1
  *   /npm/*                  → npm registry proxy
  *   /pip/*                  → PyPI proxy
  *   /brew/*                 → Homebrew tap proxy
  *   /cargo/*                → Cargo registry proxy
  *   /api/v2/*               → REAPI v2 (CoreLink native HTTP API)
+ *   /v1/users/me            → REAPI v1 — tenant comes from PAT (urlTenant=_anonymous)
+ *   /v1/cas/*               → REAPI v1 CAS — tenant from PAT
+ *   /v1/admin/*             → REAPI v1 admin — tenant from PAT (admin scope enforced
+ *                              in container)
+ *   /v1/signup/*            → Pre-tenant signup flow (token in path IS the auth
+ *                              artifact, not a Bearer PAT). tenantId=_anonymous.
  *   *                       → not_found
  *
  * Tenant extraction:
  *   - For OCI/npm/pip/brew/cargo: first path segment after the protocol
  *     prefix is the tenant namespace (e.g., `/v2/<tenant>/…`).
  *   - For REAPI v2: `X-Corelink-Tenant-Id` header or first path segment.
+ *   - For REAPI v1 (/v1/*): tenant is NOT in URL — resolved by DO from PAT;
+ *     Worker uses urlTenant="_anonymous" which preserves any downstream
+ *     path-spoof gate semantics (the gate only fires when urlTenant is a
+ *     real tenant id; "_anonymous" means "Worker is deferring to PAT").
+ *   - For /v1/signup/*: pre-tenant (customer has no tenant yet), so
+ *     urlTenant="_anonymous"; DO pins all anon signup traffic to one DO
+ *     instance keyed by "_anonymous" (simplest dispatch — no per-anon DO
+ *     proliferation; signup throughput is low and rate-limited upstream).
  *   - For /health: tenant = "_system".
+ *   - For /api/health: tenant = "_system" (alias).
  */
 function matchRoute(url: URL): RouteMatch {
   const path = url.pathname;
 
-  // Health: both /health (CF/customer liveness) and /_health (smoke-prod check
-  // [2]; the container's DO-side probe uses the same path on the container's
-  // private port via getTcpPort, not via this public route).
+  // Health: /health (legacy CF/customer liveness) + /_health (smoke-prod check
+  // [2]; the container's DO-side probe uses /_health on the container's private
+  // port via getTcpPort, not via this public route — independent paths).
+  // Both return the legacy {"status":"ok",...} body; the SERVING alias lives at
+  // /api/health below to match the e2e suite's exact-string assertion.
   if (path === "/health" || path === "/health/" || path === "/_health" || path === "/_health/") {
     return { tenantId: "_system", pathSuffix: path, routeKind: "health" };
+  }
+
+  // Health alias — /api/health (body: {"status":"SERVING",...})
+  // Matches e2e Journey 1 exact-string assertion on "SERVING".
+  if (path === "/api/health" || path === "/api/health/") {
+    return { tenantId: "_system", pathSuffix: "/api/health", routeKind: "health_serving" };
   }
 
   // OCI v2 — /v2[/…]
@@ -226,6 +256,22 @@ function matchRoute(url: URL): RouteMatch {
     const rest = path.slice(8);
     const tenant = extractFirstSegment("/" + rest) ?? "_anonymous";
     return { tenantId: tenant, pathSuffix: path, routeKind: "reapi_v2" };
+  }
+
+  // REAPI v1 signup — /v1/signup/… (pre-tenant flow; token in path is the auth artifact)
+  // Checked BEFORE the generic /v1/* arms so signup never falls into the
+  // PAT-required reapi_v1 bucket. tenantId=_anonymous pins all anon signup
+  // traffic to one DO instance.
+  if (path.startsWith("/v1/signup/") || path === "/v1/signup") {
+    return { tenantId: "_anonymous", pathSuffix: path, routeKind: "signup" };
+  }
+
+  // REAPI v1 — /v1/users/me, /v1/cas/blobs/<digest>/<size>, /v1/admin/audit/events, …
+  // Tenant is NOT in the URL — resolved by the DO from the PAT.
+  // urlTenant="_anonymous" preserves the future path-spoof gate semantics
+  // (gate only fires when urlTenant is a concrete tenant id).
+  if (path.startsWith("/v1/")) {
+    return { tenantId: "_anonymous", pathSuffix: path, routeKind: "reapi_v1" };
   }
 
   return { tenantId: "_system", pathSuffix: path, routeKind: "not_found" };
@@ -806,8 +852,12 @@ const handler: ExportedHandler<Env> = {
     const route = matchRoute(url);
 
     // Health check — no auth required, no DO forwarding
-    if (route.routeKind === "health") {
-      const body = JSON.stringify({ status: "ok", env: env.ENVIRONMENT });
+    // Legacy /health keeps {"status":"ok",...}; /api/health returns "SERVING"
+    // to match the e2e suite's Journey 1 exact-string assertion
+    // (tests/e2e-user-journeys/src/main.rs:151).
+    if (route.routeKind === "health" || route.routeKind === "health_serving") {
+      const statusLiteral = route.routeKind === "health_serving" ? "SERVING" : "ok";
+      const body = JSON.stringify({ status: statusLiteral, env: env.ENVIRONMENT });
       const resp = new Response(body, {
         status: 200,
         headers: {
@@ -830,23 +880,34 @@ const handler: ExportedHandler<Env> = {
       return applyCors(resp, request);
     }
 
-    // Auth gate — all other routes require a valid Bearer PAT.
-    // extractAuth performs: parse format → HMAC fast-fail (if key bound) →
-    // D1 existence + expiry check → resolve tenant_id.
-    // Any token not in the D1 store → 401 (P0-2 fix).
-    const auth = await extractAuth(request, env);
-    if (!auth.ok) {
-      // Timing-pad auth failures on OCI routes to match the OCI error envelope shape
-      if (route.routeKind === "oci_v2") {
+    // Auth gate — all other routes require a valid Bearer PAT, EXCEPT signup
+    // which is pre-tenant: the :token in /v1/signup/pilot/:token IS the auth
+    // artifact, not a Bearer PAT. The container validates the path token against
+    // the signup-tokens store.
+    //
+    // For everything else: extractAuth performs parse format → HMAC fast-fail
+    // (if PAT_SIGNING_KEY bound) → D1 existence + expiry check → resolve
+    // tenant_id. Any token not in the D1 store → 401 (WP-A1 P0-2 fix).
+    type AuthOk = Extract<AuthResult, { ok: true }>;
+    let auth: AuthOk;
+    if (route.routeKind === "signup") {
+      auth = { ok: true, tenantId: "_anonymous", tokenPrefix: "signup" };
+    } else {
+      const result = await extractAuth(request, env);
+      if (!result.ok) {
+        // Timing-pad auth failures on OCI routes to match the OCI error envelope shape
+        if (route.routeKind === "oci_v2") {
+          return applyCors(
+            ociError("UNAUTHORIZED", "authentication required", requestId),
+            request,
+          );
+        }
         return applyCors(
-          ociError("UNAUTHORIZED", "authentication required", requestId),
+          reapiError("UNAUTHORIZED", "authentication required", 401, requestId),
           request,
         );
       }
-      return applyCors(
-        reapiError("UNAUTHORIZED", "authentication required", 401, requestId),
-        request,
-      );
+      auth = result;
     }
 
     // ── Tenant routing (WP-T1) ────────────────────────────────────────────────

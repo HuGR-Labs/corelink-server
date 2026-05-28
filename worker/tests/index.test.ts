@@ -733,6 +733,142 @@ describe("OCI status-for-code mapping", () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
+// /api/health alias (e2e Journey 1)
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("GET /api/health (e2e Journey 1 alias)", () => {
+  it("returns 200 with status:SERVING (matches Journey 1 exact-string assertion)", async () => {
+    // Reference: tests/e2e-user-journeys/src/main.rs:151
+    //   if health_body["status"].as_str() != Some("SERVING") { ... }
+    const resp = await workerFetch("http://localhost/api/health");
+    expect(resp.status).toBe(200);
+    const body = await resp.json() as { status: string };
+    expect(body.status).toBe("SERVING");
+  });
+
+  it("does not require Authorization header", async () => {
+    const resp = await workerFetch("http://localhost/api/health");
+    expect(resp.status).toBe(200);
+  });
+
+  it("legacy /health remains unchanged (status:ok)", async () => {
+    // Backward-compat guard: /health MUST keep "ok" — otherwise existing
+    // monitors/probes will break.
+    const resp = await workerFetch("http://localhost/health");
+    const body = await resp.json() as { status: string };
+    expect(body.status).toBe("ok");
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// /v1/* route family (e2e user-journeys suite)
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("route resolution — /v1/* family", () => {
+  // Capture the route-kind and tenant the worker forwards to the DO so we can
+  // assert that /v1/* paths resolve to reapi_v1 / signup with tenantId=_anonymous
+  // (preserving any future path-spoof gate that only fires when urlTenant is a
+  // real tenant id).
+  function makeCapturingEnv(): { env: Partial<Env>; captured: { routeKind?: string; auth?: string | null } } {
+    const captured: { routeKind?: string; auth?: string | null } = {};
+    const env: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (_n: string) => ({ toString: () => "stub-id" }),
+        get: () => ({
+          fetch: async (req: Request): Promise<Response> => {
+            captured.routeKind = req.headers.get("x-corelink-route-kind") ?? undefined;
+            captured.auth = req.headers.get("authorization");
+            return new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          },
+        }),
+        idFromString: (_s: string) => ({ toString: () => "stub-id" }),
+        newUniqueId: () => ({ toString: () => "stub-id" }),
+        jurisdiction: (_j: string) => env.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+    return { env, captured };
+  }
+
+  it("GET /v1/users/me forwards to DO as routeKind=reapi_v1 (PAT required)", async () => {
+    const { env, captured } = makeCapturingEnv();
+    const token = TEST_PAT_TOKEN;
+    const resp = await workerFetch(
+      "http://localhost/v1/users/me",
+      { headers: { Authorization: `Bearer ${token}` } },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(captured.routeKind).toBe("reapi_v1");
+    // Authorization MUST be forwarded so the DO can validate the PAT
+    expect(captured.auth).toBe(`Bearer ${token}`);
+  });
+
+  it("GET /v1/users/me without Authorization returns 401 (REAPI envelope)", async () => {
+    // Journey 2 negative-path assertion (tests/e2e-user-journeys/src/main.rs:288)
+    //   if resp_no_auth.status() != 401 { ... }
+    const resp = await workerFetch("http://localhost/v1/users/me");
+    expect(resp.status).toBe(401);
+    const body = await resp.json() as { error: string };
+    expect(body.error).toBe("UNAUTHORIZED");
+  });
+
+  it("PUT /v1/cas/blobs/<digest>/<size> forwards as reapi_v1 (no urlTenant)", async () => {
+    const { env, captured } = makeCapturingEnv();
+    const token = TEST_PAT_TOKEN;
+    const resp = await workerFetch(
+      "http://localhost/v1/cas/blobs/sha256:deadbeef/1024",
+      { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: "x" },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(captured.routeKind).toBe("reapi_v1");
+  });
+
+  it("GET /v1/admin/audit/events forwards as reapi_v1 (admin scope enforced downstream)", async () => {
+    const { env, captured } = makeCapturingEnv();
+    const token = TEST_PAT_TOKEN;
+    const resp = await workerFetch(
+      "http://localhost/v1/admin/audit/events",
+      { headers: { Authorization: `Bearer ${token}` } },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(captured.routeKind).toBe("reapi_v1");
+  });
+
+  it("POST /v1/signup/pilot/:token forwards as signup WITHOUT requiring a Bearer PAT", async () => {
+    // Signup is pre-tenant — the :token in the path IS the auth artifact.
+    // The Worker MUST NOT require Authorization here; the DO/container
+    // validates the path token against the signup-tokens store.
+    const { env, captured } = makeCapturingEnv();
+    const resp = await workerFetch(
+      "http://localhost/v1/signup/pilot/abc123-signup-token",
+      { method: "POST", body: JSON.stringify({ email: "x@example.com" }) },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(captured.routeKind).toBe("signup");
+    // No Authorization header should have been added or required
+    expect(captured.auth).toBeNull();
+  });
+
+  it("legacy /api/v2/<tenant>/* still resolves to reapi_v2 (no regression)", async () => {
+    const { env, captured } = makeCapturingEnv();
+    const token = TEST_PAT_TOKEN;
+    const resp = await workerFetch(
+      `http://localhost/api/v2/${TEST_TENANT_ID}/blobs/sha256:abc`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(captured.routeKind).toBe("reapi_v2");
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Request-Id forwarding to DO
 // ──────────────────────────────────────────────────────────────────────────────
 
