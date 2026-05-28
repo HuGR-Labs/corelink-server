@@ -220,6 +220,18 @@ skip = [
     { crate = "sha2@0.10.9", reason = "transitive via RustCrypto 0.10 line (0.11.0 newer); resolves with RustCrypto 0.11 migration" },
     { crate = "wasm-streams@0.4.2", reason = "transitive via older wasm-bindgen-futures (0.5.0 newer); resolves with wasm-bindgen ecosystem bump" },
     { crate = "webpki-roots@0.26.11", reason = "transitive via rustls 0.23 stack (1.0.7 newer via rustls 0.24+); resolves with rustls major bump" },
+    # ----- 2026-05-28 WP-S1 Phase 1 — aws-sdk-s3 v1 transitive dupes -----
+    # aws-sdk-s3 v1.133.0 pulls lru 0.16.4 (workspace was already on
+    # lru 0.18.0 from corelink-byok), which in turn pulls hashbrown 0.16.1
+    # (workspace prefers 0.17.1). Both older versions are the OLDER duplicate.
+    # sha1 0.11.0 (from aws-sdk-s3 checksum helpers) conflicts with sha1 0.10.6
+    # (from aws-config; resolved once aws-config 2.x lands).
+    # spin 0.10.0 (from crc-fast via aws-smithy-checksums) conflicts with
+    # spin 0.9.8 (from lazy_static; resolved with lazy_static 2.x / OnceLock).
+    { crate = "hashbrown@0.16.1", reason = "transitive via aws-sdk-s3→lru 0.16 (0.17.1 newer via workspace); resolves when aws-sdk-s3 bumps lru to 0.18" },
+    { crate = "lru@0.16.4", reason = "transitive via aws-sdk-s3 v1.133 (0.18.0 newer in workspace via corelink-byok); resolves with aws-sdk-s3 v1 lru bump" },
+    { crate = "sha1@0.10.6", reason = "transitive via aws-config v1 (0.11.0 newer via aws-sdk-s3 checksums); resolves with aws-config v2" },
+    { crate = "spin@0.9.8", reason = "transitive via lazy_static (0.10.0 newer via crc-fast→aws-smithy-checksums); resolves with lazy_static 2.x / std OnceLock migration" },
 ]
 skip-tree = []
 

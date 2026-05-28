@@ -80,12 +80,30 @@ impl core::fmt::Debug for AdminRouteState {
 
 /// Build the canonical
 /// `(Arc<dyn AdminReadHandler>, Arc<dyn AdminMutateHandler>)` pair
-/// for the current build target. See [`crate::routes::ac::build_handlers`]
-/// for the trait-abstraction-defer rationale.
+/// for the current build target.
+///
+/// # Runtime selection (WP-S1 Phase 1)
+///
+/// On native targets this returns one shared `InMemoryAdminHandler`
+/// instance behind both trait objects. A real D1-backed admin handler
+/// is scheduled for a follow-on WP; this function logs whether storage
+/// credentials are configured. See
+/// [`crate::routes::ac::build_handlers`] for the
+/// trait-abstraction-defer rationale.
 #[must_use]
 pub fn build_handlers() -> (Arc<dyn AdminReadHandler>, Arc<dyn AdminMutateHandler>) {
     #[cfg(not(target_arch = "wasm32"))]
     {
+        // Log whether real storage creds are present (real admin
+        // handler lands in WP-S1 Phase 2).
+        if crate::storage::StorageEnv::from_env().is_some() {
+            tracing::info!(
+                "Admin handler: InMemory (real D1 admin handler lands in WP-S1 Phase 2; \
+                 storage env is configured)"
+            );
+        } else {
+            tracing::info!("Admin handler: InMemory (no storage credentials configured)");
+        }
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
         let shared: Arc<InMemoryAdminHandler> =

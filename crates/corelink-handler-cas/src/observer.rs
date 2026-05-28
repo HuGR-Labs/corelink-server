@@ -26,6 +26,21 @@ pub struct SliObservation {
     pub latency_us: u64,
 }
 
+impl SliObservation {
+    /// Construct an [`SliObservation`] from its fields.
+    ///
+    /// Provided because the struct is `#[non_exhaustive]`, which
+    /// prevents struct-literal construction from outside this crate.
+    #[must_use]
+    pub fn new(sli: Sli, is_error: bool, latency_us: u64) -> Self {
+        Self {
+            sli,
+            is_error,
+            latency_us,
+        }
+    }
+}
+
 /// Sink the handler emits SLI observations to. Production wiring
 /// adapts this to the `corelink-slo::BurnRateCalculator` input
 /// stream + prometheus histogram registry.

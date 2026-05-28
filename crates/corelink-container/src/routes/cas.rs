@@ -65,23 +65,74 @@ impl core::fmt::Debug for CasRouteState {
 }
 
 /// Build the canonical `Arc<dyn CasReadHandler>` for the current
-/// build target.
+/// build target and runtime environment.
 ///
-/// On native targets (Linux/Darwin where `apps/server` runs as a
-/// container), this returns an `InMemoryCasHandler` wrapping
-/// in-memory audit + SLI sinks — production wiring replaces those
-/// sinks with the durable `corelink-audit::OutboxEmitter` and a
-/// real Prometheus-backed `SliObserver` (forthcoming WI).
+/// # Runtime selection (WP-S1 Phase 1)
 ///
-/// On `wasm32-unknown-unknown` (Cloudflare Worker target) this
-/// would build a `CfWorkerCasHandler` against R2 + KV bindings.
-/// That impl is **deferred** per the autonomous-execution charter
-/// `trait-abstraction-defer` rule; the cfg-gate site below shows
-/// the slot.
+/// On native targets the function probes for storage credentials at
+/// runtime:
+///
+/// - When `R2_S3_ACCESS_KEY_ID`, `R2_S3_SECRET_ACCESS_KEY`,
+///   `R2_S3_ENDPOINT`, `CLOUDFLARE_ACCOUNT_ID`, `CF_API_TOKEN`, and
+///   `D1_DATABASE_ID` are all present in the environment,
+///   [`R2CasHandler`](crate::storage::r2_s3::R2CasHandler) is
+///   constructed against `corelink-cas-prod` (override via
+///   `R2_CAS_BUCKET`). This is the **production path**.
+///
+/// - When credentials are absent (unit tests, local dev, CI) the
+///   function falls back to `InMemoryCasHandler`. No network I/O
+///   occurs.
+///
+/// On `wasm32-unknown-unknown` (Cloudflare Worker target) a
+/// compile-error placeholder is emitted per the
+/// `trait-abstraction-defer` rule; the wasm32 binding is out of
+/// scope for WP-S1.
+///
+/// # Panics
+///
+/// Does not panic. If the R2 client cannot be constructed
+/// (malformed endpoint URL, etc.) an error is logged and the
+/// function falls back to `InMemoryCasHandler`.
 #[must_use]
 pub fn build_handler() -> Arc<dyn CasReadHandler> {
     #[cfg(not(target_arch = "wasm32"))]
     {
+        use crate::storage::{r2_s3, StorageEnv};
+
+        // Probe for storage credentials.
+        if StorageEnv::from_env().is_some() {
+            // Credentials are present — try to build the real handler.
+            let bucket = std::env::var("R2_CAS_BUCKET")
+                .unwrap_or_else(|_| "corelink-cas-prod".to_owned());
+            let region = std::env::var("R2_CAS_REGION")
+                .unwrap_or_else(|_| "iad".to_owned());
+
+            // We are inside a tokio runtime (axum server); use
+            // Handle::current().block_on() to drive the async setup.
+            let handle = tokio::runtime::Handle::current();
+            match handle.block_on(r2_s3::build_r2_cas_handler_from_env(&bucket, &region)) {
+                Some(Ok(handler)) => {
+                    tracing::info!(
+                        bucket = %bucket,
+                        region = %region,
+                        "CAS handler: R2S3 (real storage)"
+                    );
+                    return Arc::new(handler);
+                }
+                Some(Err(e)) => {
+                    tracing::error!(
+                        error = %e,
+                        "CAS handler: R2S3 build failed, falling back to InMemory"
+                    );
+                }
+                None => {
+                    // Should not happen: we already checked is_some().
+                }
+            }
+        }
+
+        // Fallback: InMemory (no creds or build failure).
+        tracing::info!("CAS handler: InMemory (no storage credentials configured)");
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
         Arc::new(InMemoryCasHandler::new(audit, sli))

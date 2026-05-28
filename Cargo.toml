@@ -476,6 +476,12 @@ lru = "0.18"
 # modern `rustls-aws-lc` runtime pulls rustls 0.23 + rustls-webpki 0.103.
 aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso", "default-https-client"] }
 aws-sdk-kms = { version = "1", default-features = false, features = ["rt-tokio", "default-https-client"] }
+# WP-S1 Phase 1 — R2 S3-compatible API client for the native container.
+# R2 is accessed via the standard S3-compatible endpoint using static
+# access-key credentials (DECISION-GATE-1 Option A). Same major-version
+# pin as aws-sdk-kms to share the existing smithy/runtime infrastructure
+# (aws-smithy-*, aws-runtime, aws-credential-types) already in Cargo.lock.
+aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio", "default-https-client"] }
 
 # RFC 8785 JCS canonical JSON for AAD / encryption_context binding
 # (used by BYOK providers + audit-chain link hashing).

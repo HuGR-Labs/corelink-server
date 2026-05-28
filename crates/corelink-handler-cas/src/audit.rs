@@ -73,6 +73,29 @@ pub struct AuditEvent {
     pub at_unix_ms: u64,
 }
 
+impl AuditEvent {
+    /// Construct an [`AuditEvent`] from its fields.
+    ///
+    /// Provided because the struct is `#[non_exhaustive]`, which
+    /// prevents struct-literal construction from outside this crate.
+    #[must_use]
+    pub fn new(
+        kind: AuditEventKind,
+        tenant: impl Into<String>,
+        hash: impl Into<String>,
+        principal: impl Into<String>,
+        at_unix_ms: u64,
+    ) -> Self {
+        Self {
+            kind,
+            tenant: tenant.into(),
+            hash: hash.into(),
+            principal: principal.into(),
+            at_unix_ms,
+        }
+    }
+}
+
 /// Sink the handler emits audit rows to. Fail-CLOSED — every emit
 /// returns `Err` if the sink cannot durably accept the event; the
 /// handler aborts the mutation/response on that error.

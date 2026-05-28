@@ -84,14 +84,32 @@ impl core::fmt::Debug for AcRouteState {
 /// Build the canonical `(Arc<dyn AcLookupHandler>, Arc<dyn AcUpdateHandler>)`
 /// pair for the current build target.
 ///
+/// # Runtime selection (WP-S1 Phase 1)
+///
 /// On native targets this returns one shared `InMemoryAcHandler`
-/// instance behind both trait objects. The wasm32 CF-Worker impl
-/// is deferred per the autonomous-execution charter
-/// `trait-abstraction-defer` rule (tracked as `WI-S04-CF-WIRING`).
+/// instance behind both trait objects. A real R2/D1-backed AC handler
+/// is scheduled for a follow-on WP; this function logs whether storage
+/// credentials are configured so the operator can verify the env is
+/// correct even before the real handler lands.
+///
+/// The wasm32 CF-Worker impl is deferred per the autonomous-execution
+/// charter `trait-abstraction-defer` rule (tracked as
+/// `WI-S04-CF-WIRING`).
 #[must_use]
 pub fn build_handlers() -> (Arc<dyn AcLookupHandler>, Arc<dyn AcUpdateHandler>) {
     #[cfg(not(target_arch = "wasm32"))]
     {
+        // Log whether real storage creds are present so the operator
+        // can confirm the env is wired correctly (real AC handler
+        // lands in WP-S1 Phase 2).
+        if crate::storage::StorageEnv::from_env().is_some() {
+            tracing::info!(
+                "AC handler: InMemory (real R2/D1 AC handler lands in WP-S1 Phase 2; \
+                 storage env is configured)"
+            );
+        } else {
+            tracing::info!("AC handler: InMemory (no storage credentials configured)");
+        }
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
         let shared: Arc<InMemoryAcHandler> = Arc::new(InMemoryAcHandler::new(audit, sli));
