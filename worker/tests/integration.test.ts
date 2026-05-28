@@ -11,12 +11,57 @@
  */
 
 import { describe, it, expect } from "vitest";
+import type { D1Database } from "@cloudflare/workers-types";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────────────────────────────────────
+
+// Canonical test PAT — format-valid CoreLink PAT; D1 mock recognises its
+// token_id (AAAAAAAAAAAAAAAA) and returns a non-expired row for it.
+// Format: corelink_pat_<16-char-Crockford-b32>.<43-char-base64url>.<22-char-base64url>
+const TEST_TOKEN_ID = "AAAAAAAAAAAAAAAA";
+const TEST_TENANT_ID = "00000000-0000-0000-0000-000000000001";
+const VALID_TOKEN =
+  "corelink_pat_" +
+  TEST_TOKEN_ID +
+  "." +
+  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+  "." +
+  "AAAAAAAAAAAAAAAAAAAAAA"; // total 96 chars
+
+/**
+ * Build a minimal D1 mock that recognises the test token_id and returns a
+ * non-expired tenant row. All other token_ids return null (→ 401).
+ */
+function makeTestD1(): D1Database {
+  return {
+    prepare: (_sql: string) => ({
+      bind: (...args: unknown[]) => ({
+        first: async <T>() => {
+          const tokenId = args[0] as string;
+          if (tokenId === TEST_TOKEN_ID) {
+            return { tenant_id: TEST_TENANT_ID, expires_ms: Date.now() + 3_600_000 } as T;
+          }
+          return null as T | null;
+        },
+        all: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
+        run: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
+        raw: async <T>() => [] as T[],
+      }),
+      first: async <T>() => null as T | null,
+      all: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
+      run: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
+      raw: async <T>() => [] as T[],
+    }),
+    batch: async () => [],
+    exec: async () => ({ count: 0, duration: 0 }),
+    withSession: () => null as never,
+    dump: async () => new ArrayBuffer(0),
+  } as unknown as D1Database;
+}
 
 function makeCtx(): ExecutionContext {
   return {
@@ -54,6 +99,7 @@ function makeEnvWithStub(
       jurisdiction: (_j: string) => ({}) as DurableObjectNamespace,
     } as unknown as DurableObjectNamespace,
     ENVIRONMENT: "test",
+    CONFIG_DB: makeTestD1(),
   };
 }
 
@@ -87,10 +133,9 @@ describe("full pipeline smoke", () => {
 
   it("authenticated OCI v2 check — pipeline reaches DO and returns DO response", async () => {
     const env = makeEnvWithStub(200, { ok: true }, { "x-corelink-from-do": "1" });
-    const validToken = "a".repeat(64);
     const resp = await workerHandler.fetch!(
       new Request("http://localhost/v2/", {
-        headers: { Authorization: `Bearer ${validToken}` },
+        headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
       env,
       makeCtx(),
@@ -101,10 +146,9 @@ describe("full pipeline smoke", () => {
 
   it("authenticated REAPI v2 — pipeline reaches DO", async () => {
     const env = makeEnvWithStub(200, { blobs: [] });
-    const validToken = "b".repeat(64);
     const resp = await workerHandler.fetch!(
       new Request("http://localhost/api/v2/tenant/blobs", {
-        headers: { Authorization: `Bearer ${validToken}` },
+        headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
       env,
       makeCtx(),
@@ -114,10 +158,9 @@ describe("full pipeline smoke", () => {
 
   it("authenticated npm — pipeline reaches DO", async () => {
     const env = makeEnvWithStub(200, { name: "my-package" });
-    const validToken = "c".repeat(64);
     const resp = await workerHandler.fetch!(
       new Request("http://localhost/npm/tenant/my-package", {
-        headers: { Authorization: `Bearer ${validToken}` },
+        headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
       env,
       makeCtx(),
@@ -127,10 +170,9 @@ describe("full pipeline smoke", () => {
 
   it("authenticated cargo — pipeline reaches DO", async () => {
     const env = makeEnvWithStub(200, { crates: [] });
-    const validToken = "d".repeat(64);
     const resp = await workerHandler.fetch!(
       new Request("http://localhost/cargo/tenant/api/v1/crates/my-crate", {
-        headers: { Authorization: `Bearer ${validToken}` },
+        headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
       env,
       makeCtx(),
@@ -140,10 +182,9 @@ describe("full pipeline smoke", () => {
 
   it("brew path reaches DO", async () => {
     const env = makeEnvWithStub(200, { formulae: [] });
-    const validToken = "e".repeat(64);
     const resp = await workerHandler.fetch!(
       new Request("http://localhost/brew/tenant/api/formula", {
-        headers: { Authorization: `Bearer ${validToken}` },
+        headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
       env,
       makeCtx(),
@@ -153,10 +194,9 @@ describe("full pipeline smoke", () => {
 
   it("pip path reaches DO", async () => {
     const env = makeEnvWithStub(200, { packages: [] });
-    const validToken = "f".repeat(64);
     const resp = await workerHandler.fetch!(
       new Request("http://localhost/pip/tenant/simple/my-pkg", {
-        headers: { Authorization: `Bearer ${validToken}` },
+        headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
       env,
       makeCtx(),
@@ -223,10 +263,9 @@ describe("timing-pad on 404", () => {
 describe("DO 404 response timing-pad", () => {
   it("DO 404 response is passed through with x-request-id and completes", async () => {
     const env = makeEnvWithStub(404, { errors: [{ code: "BLOB_UNKNOWN", message: "not found", detail: null }] });
-    const validToken = "g".repeat(64);
     const resp = await workerHandler.fetch!(
       new Request("http://localhost/v2/repo/blobs/sha256:deadbeef", {
-        headers: { Authorization: `Bearer ${validToken}` },
+        headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
       env,
       makeCtx(),
@@ -273,11 +312,10 @@ describe("security headers", () => {
 describe("HTTP method handling", () => {
   it("POST to authenticated route reaches DO", async () => {
     const env = makeEnvWithStub(201, { upload_url: "/v2/repo/blobs/uploads/uuid" });
-    const validToken = "h".repeat(64);
     const resp = await workerHandler.fetch!(
       new Request("http://localhost/v2/repo/blobs/uploads/", {
         method: "POST",
-        headers: { Authorization: `Bearer ${validToken}` },
+        headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
       env,
       makeCtx(),
@@ -287,12 +325,11 @@ describe("HTTP method handling", () => {
 
   it("PUT to authenticated route reaches DO", async () => {
     const env = makeEnvWithStub(200, { digest: "sha256:abc" });
-    const validToken = "i".repeat(64);
     const resp = await workerHandler.fetch!(
       new Request("http://localhost/v2/repo/manifests/latest", {
         method: "PUT",
         headers: {
-          Authorization: `Bearer ${validToken}`,
+          Authorization: `Bearer ${VALID_TOKEN}`,
           "Content-Type": "application/vnd.oci.image.manifest.v1+json",
         },
         body: JSON.stringify({ schemaVersion: 2 }),

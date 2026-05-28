@@ -1,0 +1,37 @@
+-- Migration 0054: Add token_id lookup column to the D1 `pat` table (WP-A1).
+--
+-- The WP-A1 PAT auth wiring (P0 wave Phase 1) validates tokens in the CF
+-- Worker before forwarding to the DO. The Worker extracts the `token_id`
+-- segment from the PAT plaintext (16-char Crockford b32 per `auth_model.md
+-- §2.2`) and does an O(1) D1 lookup.  Migration 0037 created `pat` with
+-- `pat_id` (UUID) as PK but omitted the `token_id` lookup column — this
+-- migration adds it additivley.
+--
+-- Column contract:
+--   token_id  TEXT  NOT NULL UNIQUE
+--     16-character Crockford base32 — the indexed lookup key embedded in the
+--     PAT plaintext segment `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>`.
+--     Non-secret: safe to index and log (it is the discovery key; the
+--     secret is in the `random_secret` + `hmac_sig` segments verified by the
+--     Argon2id + HMAC layers).
+--
+-- The column is NOT NULL and UNIQUE.  Existing rows (dev/staging seeded
+-- by the signup orchestrator) must have token_id populated before this
+-- migration is applied.  On a fresh DB (production) the column is always
+-- present before any PAT INSERT.
+--
+-- Additive policy (INV-ONBOARD-ATOMIC-PROVISIONING): no DROP, no destructive
+-- ALTER.  This is a pure ADD COLUMN migration.
+--
+-- D1 note: D1 does not support `ALTER TABLE ADD COLUMN IF NOT EXISTS`.  The
+-- statement is safe on a fresh prod DB (Phase C provisioned 2026-05-26) and
+-- on any dev/staging DB that was not yet seeded with PAT rows.
+
+ALTER TABLE pat ADD COLUMN token_id TEXT UNIQUE;
+
+-- Back-fill index for O(1) auth lookup (the UNIQUE constraint above creates
+-- an implicit unique index; a secondary covering index speeds the equality
+-- scan on the non-primary-key column for the Worker hot-path query
+-- `SELECT tenant_id, pat_hash, expires_ms FROM pat WHERE token_id = ?1
+--  AND expires_ms > unixepoch('now', 'subsec') * 1000`).
+CREATE INDEX IF NOT EXISTS idx_pat_token_id ON pat (token_id);
