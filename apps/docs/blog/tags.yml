@@ -18,3 +18,7 @@ blake3:
   label: BLAKE3
   permalink: /blake3
   description: BLAKE3 hashing.
+cryptography:
+  label: Cryptography
+  permalink: /cryptography
+  description: Cryptographic primitives, hash functions, and security properties.
