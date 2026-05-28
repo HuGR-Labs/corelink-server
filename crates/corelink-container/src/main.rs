@@ -26,7 +26,8 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::http::StatusCode;
+use axum::http::{header, HeaderValue, StatusCode};
+use axum::response::IntoResponse;
 use axum::routing::get;
 use corelink_billing_stripe_materializer::{
     BillingD1Writer, D1IdempotencyStore, D1SubscriptionStateHandler, InMemoryBillingAuditEmitter,
@@ -41,10 +42,17 @@ use corelink_billing::stripe::real::webhook_dispatch::{
 use corelink_tier_selection::tier::TierKind;
 use tracing::{info, warn};
 
-/// Liveness probe for the DO's `waitForContainerHealth` (it only checks for a
-/// 200). Returns once the HTTP router is up and serving.
-async fn health_handler() -> StatusCode {
-    StatusCode::OK
+/// Liveness probe for two callers:
+/// (1) the DO's `waitForContainerHealth` — only checks status === 200;
+/// (2) `scripts/smoke-prod-corelink.sh` check [2] — asserts 200 *and*
+///     `content-type: application/json`.
+/// We serve `200 {"status":"ok"}` to satisfy both with a single canonical body.
+async fn health_handler() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, HeaderValue::from_static("application/json"))],
+        r#"{"status":"ok"}"#,
+    )
 }
 
 #[tokio::main]
