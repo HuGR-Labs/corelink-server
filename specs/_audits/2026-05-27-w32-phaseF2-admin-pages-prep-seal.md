@@ -174,7 +174,7 @@ Options:
 
 | Field | Value |
 |-------|-------|
-| SHA | _populated post-commit_ |
+| SHA | `6d5a1c46` |
 | Files | `scripts/f-day-deploy-pages-admin.sh`, `scripts/f-day-smoke-admin.sh`, `specs/_audits/2026-05-27-w32-phaseF2-admin-pages-prep-seal.md` |
 | Message | `prep(w32-phaseF2): admin-ui Pages deploy script + smoke` |
 
