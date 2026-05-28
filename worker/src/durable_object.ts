@@ -268,6 +268,23 @@ export class CoreLinkServer implements DurableObject {
       return this.handleStop(requestId);
     }
 
+    // ── Tenant resolution (WP-T1) ─────────────────────────────────────────────
+    // The Worker sets x-corelink-tenant-id to the PAT-resolved tenant before
+    // forwarding. Bind it into the lifecycle state the first time we see it
+    // (or on every request — idempotent since DO ID is already tenant-derived).
+    // This resolves the null tenantId that was hardcoded before WP-T1.
+    const incomingTenantId = request.headers.get("x-corelink-tenant-id");
+    if (
+      incomingTenantId !== null &&
+      incomingTenantId.length > 0 &&
+      incomingTenantId !== this.lifecycleState.tenantId
+    ) {
+      await this.updateLifecycleState({
+        ...this.lifecycleState,
+        tenantId: incomingTenantId,
+      });
+    }
+
     // Ensure container is running before forwarding
     const started = await this.ensureContainerRunning(requestId);
     if (!started.ok) {

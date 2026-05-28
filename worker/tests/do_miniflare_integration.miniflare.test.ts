@@ -107,6 +107,15 @@ beforeAll(async () => {
     TEST_TOKEN_ID,
     Date.now() + 7_200_000, // +2h
   ).run();
+  // Second tenant for cross-tenant isolation tests (distinct token_id + tenant_id).
+  await d1.prepare(
+    "INSERT OR IGNORE INTO pat (pat_id, tenant_id, token_id, expires_ms) VALUES (?1, ?2, ?3, ?4)"
+  ).bind(
+    "00000000-0000-0000-0000-000000000043",
+    SECOND_TENANT_ID,
+    SECOND_TOKEN_ID,
+    Date.now() + 7_200_000, // +2h
+  ).run();
 
   // Warm up: dispatch a health check to confirm the worker is ready
   const health = await mf.dispatchFetch("https://corelink.test/health");
@@ -129,6 +138,17 @@ const TEST_TENANT_ID = "00000000-0000-0000-0000-000000000001";
 const VALID_TOKEN =
   "corelink_pat_" +
   TEST_TOKEN_ID +
+  "." +
+  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" + // 43 base64url
+  "." +
+  "AAAAAAAAAAAAAAAAAAAAAA"; // 22 base64url (total 96)
+
+// Second tenant — distinct token_id + tenant_id — for cross-tenant isolation.
+const SECOND_TOKEN_ID = "BBBBBBBBBBBBBBBB"; // 16 Crockford b32
+const SECOND_TENANT_ID = "00000000-0000-0000-0000-000000000002";
+const SECOND_TOKEN =
+  "corelink_pat_" +
+  SECOND_TOKEN_ID +
   "." +
   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" + // 43 base64url
   "." +
@@ -227,7 +247,7 @@ describe("miniflare: auth middleware in workerd", () => {
 
 describe("miniflare: authenticated request → DO dispatch in workerd", () => {
   it("authenticated OCI request reaches DO — returns 503 CONTAINER_UNAVAILABLE", async () => {
-    const resp = await dispatchFetch("/v2/myrepo/blobs/sha256:abc", {
+    const resp = await dispatchFetch(`/v2/${TEST_TENANT_ID}/blobs/sha256:abc`, {
       headers: { Authorization: `Bearer ${VALID_TOKEN}` },
     });
     expect(resp.status).toBe(503);
@@ -236,21 +256,21 @@ describe("miniflare: authenticated request → DO dispatch in workerd", () => {
   });
 
   it("authenticated REAPI request reaches DO — returns 503", async () => {
-    const resp = await dispatchFetch("/api/v2/tenant/blobs", {
+    const resp = await dispatchFetch(`/api/v2/${TEST_TENANT_ID}/blobs`, {
       headers: { Authorization: `Bearer ${VALID_TOKEN}` },
     });
     expect(resp.status).toBe(503);
   });
 
   it("authenticated npm request reaches DO — returns 503", async () => {
-    const resp = await dispatchFetch("/npm/tenant/package", {
+    const resp = await dispatchFetch(`/npm/${TEST_TENANT_ID}/package`, {
       headers: { Authorization: `Bearer ${VALID_TOKEN}` },
     });
     expect(resp.status).toBe(503);
   });
 
   it("x-request-id is set on DO 503 response", async () => {
-    const resp = await dispatchFetch("/api/v2/tenant/path", {
+    const resp = await dispatchFetch(`/api/v2/${TEST_TENANT_ID}/path`, {
       headers: {
         Authorization: `Bearer ${VALID_TOKEN}`,
         "x-request-id": "mf3-do-req-id-test",
@@ -322,17 +342,18 @@ describe("miniflare: security invariants in workerd", () => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 describe("miniflare: DO tenant isolation in workerd", () => {
-  it("different tenant paths reach different DO instances (separate request IDs)", async () => {
-    // Both requests use the same VALID_TOKEN (same tenant from D1), but different
-    // route paths. WP-T1 (tenant routing) will differentiate DO instances by
-    // path tenant; for now both route to the same tenant_id from D1 (which is
-    // the WP-A1 scope: resolve tenant, not route by URL segment). Both reach
-    // the same DO and return 503.  The test verifies DO dispatch happens (no 401).
-    const respA = await dispatchFetch("/api/v2/tenant-alpha/blobs", {
+  it("two distinct tenants each reach their own DO namespace (cross-tenant isolation)", async () => {
+    // Post-WP-T1: DO routing is keyed on the PAT-resolved tenant, and the
+    // path-spoof gate requires the URL tenant segment to match the token's
+    // tenant. Two DIFFERENT tenant tokens, each hitting their OWN namespace,
+    // must both authenticate and dispatch to the DO (503 CONTAINER_UNAVAILABLE).
+    // (Cross-tenant access — token of tenant A on tenant B's path — is rejected
+    // with 403 and is covered by the spoof-gate unit tests.)
+    const respA = await dispatchFetch(`/api/v2/${TEST_TENANT_ID}/blobs`, {
       headers: { Authorization: `Bearer ${VALID_TOKEN}` },
     });
-    const respB = await dispatchFetch("/api/v2/tenant-beta/blobs", {
-      headers: { Authorization: `Bearer ${VALID_TOKEN}` },
+    const respB = await dispatchFetch(`/api/v2/${SECOND_TENANT_ID}/blobs`, {
+      headers: { Authorization: `Bearer ${SECOND_TOKEN}` },
     });
     expect(respA.status).toBe(503);
     expect(respB.status).toBe(503);
@@ -341,8 +362,19 @@ describe("miniflare: DO tenant isolation in workerd", () => {
     const bodyB = await respB.json() as { error: string; request_id: string };
     expect(bodyA.error).toBe("CONTAINER_UNAVAILABLE");
     expect(bodyB.error).toBe("CONTAINER_UNAVAILABLE");
-    // request IDs must be different (different DO invocations)
+    // Each request gets its own request id (independent DO invocations).
     expect(bodyA.request_id).not.toBe(bodyB.request_id);
+  });
+
+  it("cross-tenant access is rejected — tenant A token on tenant B path → 403", async () => {
+    // tenant A's valid token used against tenant B's namespace must be denied
+    // by the path-spoof gate, never reaching the DO.
+    const resp = await dispatchFetch(`/api/v2/${SECOND_TENANT_ID}/blobs`, {
+      headers: { Authorization: `Bearer ${VALID_TOKEN}` },
+    });
+    expect(resp.status).toBe(403);
+    const body = await resp.json() as { error: string };
+    expect(body.error).toBe("FORBIDDEN");
   });
 });
 

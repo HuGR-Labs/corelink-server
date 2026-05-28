@@ -147,7 +147,7 @@ describe("full pipeline smoke", () => {
   it("authenticated REAPI v2 — pipeline reaches DO", async () => {
     const env = makeEnvWithStub(200, { blobs: [] });
     const resp = await workerHandler.fetch!(
-      new Request("http://localhost/api/v2/tenant/blobs", {
+      new Request(`http://localhost/api/v2/${TEST_TENANT_ID}/blobs`, {
         headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
       env,
@@ -159,7 +159,7 @@ describe("full pipeline smoke", () => {
   it("authenticated npm — pipeline reaches DO", async () => {
     const env = makeEnvWithStub(200, { name: "my-package" });
     const resp = await workerHandler.fetch!(
-      new Request("http://localhost/npm/tenant/my-package", {
+      new Request(`http://localhost/npm/${TEST_TENANT_ID}/my-package`, {
         headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
       env,
@@ -171,7 +171,7 @@ describe("full pipeline smoke", () => {
   it("authenticated cargo — pipeline reaches DO", async () => {
     const env = makeEnvWithStub(200, { crates: [] });
     const resp = await workerHandler.fetch!(
-      new Request("http://localhost/cargo/tenant/api/v1/crates/my-crate", {
+      new Request(`http://localhost/cargo/${TEST_TENANT_ID}/api/v1/crates/my-crate`, {
         headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
       env,
@@ -183,7 +183,7 @@ describe("full pipeline smoke", () => {
   it("brew path reaches DO", async () => {
     const env = makeEnvWithStub(200, { formulae: [] });
     const resp = await workerHandler.fetch!(
-      new Request("http://localhost/brew/tenant/api/formula", {
+      new Request(`http://localhost/brew/${TEST_TENANT_ID}/api/formula`, {
         headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
       env,
@@ -195,7 +195,7 @@ describe("full pipeline smoke", () => {
   it("pip path reaches DO", async () => {
     const env = makeEnvWithStub(200, { packages: [] });
     const resp = await workerHandler.fetch!(
-      new Request("http://localhost/pip/tenant/simple/my-pkg", {
+      new Request(`http://localhost/pip/${TEST_TENANT_ID}/simple/my-pkg`, {
         headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
       env,
@@ -264,7 +264,7 @@ describe("DO 404 response timing-pad", () => {
   it("DO 404 response is passed through with x-request-id and completes", async () => {
     const env = makeEnvWithStub(404, { errors: [{ code: "BLOB_UNKNOWN", message: "not found", detail: null }] });
     const resp = await workerHandler.fetch!(
-      new Request("http://localhost/v2/repo/blobs/sha256:deadbeef", {
+      new Request(`http://localhost/v2/${TEST_TENANT_ID}/blobs/sha256:deadbeef`, {
         headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
       env,
@@ -313,7 +313,7 @@ describe("HTTP method handling", () => {
   it("POST to authenticated route reaches DO", async () => {
     const env = makeEnvWithStub(201, { upload_url: "/v2/repo/blobs/uploads/uuid" });
     const resp = await workerHandler.fetch!(
-      new Request("http://localhost/v2/repo/blobs/uploads/", {
+      new Request(`http://localhost/v2/${TEST_TENANT_ID}/blobs/uploads/`, {
         method: "POST",
         headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
@@ -326,7 +326,7 @@ describe("HTTP method handling", () => {
   it("PUT to authenticated route reaches DO", async () => {
     const env = makeEnvWithStub(200, { digest: "sha256:abc" });
     const resp = await workerHandler.fetch!(
-      new Request("http://localhost/v2/repo/manifests/latest", {
+      new Request(`http://localhost/v2/${TEST_TENANT_ID}/manifests/latest`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${VALID_TOKEN}`,

@@ -262,7 +262,7 @@ describe("auth middleware", () => {
 
   it("passes valid canonical PAT (found in D1) to DO (expects non-401)", async () => {
     // TEST_PAT_TOKEN has token_id AAAAAAAAAAAAAAAA which the default D1 mock recognises.
-    const resp = await workerFetch("http://localhost/api/v2/tenant/path", {
+    const resp = await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/path`, {
       headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
     });
     expect(resp.status).not.toBe(401);
@@ -339,7 +339,7 @@ describe("auth middleware", () => {
         idFromName: (_n: string) => ({ toString: () => "stub-id" }),
         get: () => ({
           fetch: async (req: Request): Promise<Response> => {
-            capturedTenantId = req.headers.get("x-corelink-resolved-tenant-id");
+            capturedTenantId = req.headers.get("x-corelink-tenant-id");
             return new Response(JSON.stringify({ ok: true }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
@@ -352,7 +352,7 @@ describe("auth middleware", () => {
       } as unknown as DurableObjectNamespace,
     };
 
-    await workerFetch("http://localhost/api/v2/tenant/path", {
+    await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/path`, {
       headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
     }, capturingDO);
 
@@ -481,7 +481,7 @@ describe("route resolution — non-OCI paths", () => {
 
 describe("DO error mapping", () => {
   it("DO 503 on OCI path returns valid JSON with error field", async () => {
-    const resp = await workerFetch("http://localhost/v2/myrepo/manifests/latest", {
+    const resp = await workerFetch(`http://localhost/v2/${TEST_TENANT_ID}/manifests/latest`, {
       headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
     });
     const body = await resp.json() as Record<string, unknown>;
@@ -491,7 +491,7 @@ describe("DO error mapping", () => {
   });
 
   it("DO 503 on REAPI path returns REAPI envelope", async () => {
-    const resp = await workerFetch("http://localhost/api/v2/tenant/blobs", {
+    const resp = await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/blobs`, {
       headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
     });
     // DO returns 503, Worker passes it through with x-request-id added
@@ -514,7 +514,7 @@ describe("DO error mapping", () => {
       } as unknown as DurableObjectNamespace,
     };
 
-    const resp = await workerFetch("http://localhost/api/v2/tenant/path", {
+    const resp = await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/path`, {
       headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
     }, throwingEnv);
     expect(resp.status).toBe(500);
@@ -537,7 +537,7 @@ describe("DO error mapping", () => {
       } as unknown as DurableObjectNamespace,
     };
 
-    const resp = await workerFetch("http://localhost/v2/repo/blobs/sha256:abc", {
+    const resp = await workerFetch(`http://localhost/v2/${TEST_TENANT_ID}/blobs/sha256:abc`, {
       headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
     }, throwingEnv);
     expect(resp.status).toBe(500);
@@ -597,7 +597,7 @@ describe("INV-NO-BODY-IN-LOGS", () => {
   it("POST body content NOT reflected in error response", async () => {
     const sensitiveBody = "secret-payload-that-must-not-leak=true&token=abc123";
 
-    const resp = await workerFetch("http://localhost/api/v2/tenant/blobs", {
+    const resp = await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/blobs`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${TEST_PAT_TOKEN}`,
@@ -687,7 +687,7 @@ describe("OCI status-for-code mapping", () => {
       } as unknown as DurableObjectNamespace,
     };
     const resp = await workerFetch(
-      "http://localhost/v2/repo/blobs/sha256:deadbeef",
+      `http://localhost/v2/${TEST_TENANT_ID}/blobs/sha256:deadbeef`,
       { headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` } },
       blobUnknownEnv,
     );
@@ -721,7 +721,7 @@ describe("OCI status-for-code mapping", () => {
       } as unknown as DurableObjectNamespace,
     };
     const resp = await workerFetch(
-      "http://localhost/v2/repo/manifests/latest",
+      `http://localhost/v2/${TEST_TENANT_ID}/manifests/latest`,
       { headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` } },
       throwingEnv,
     );
@@ -759,7 +759,7 @@ describe("X-Request-Id forwarding to DO", () => {
       } as unknown as DurableObjectNamespace,
     };
 
-    await workerFetch("http://localhost/api/v2/tenant/path", {
+    await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/path`, {
       headers: {
         Authorization: `Bearer ${TEST_PAT_TOKEN}`,
         "x-request-id": requestId,
@@ -791,7 +791,7 @@ describe("PAT format validation — parsePat edge cases", () => {
     // Build a ci-env PAT with TEST_TOKEN_ID — the D1 mock recognises it.
     const ciPat = makePat("ci");
     expect(ciPat.length).toBe(95);
-    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+    const resp = await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/p`, {
       headers: { Authorization: `Bearer ${ciPat}` },
     });
     // Should reach the DO (503 from stub), not 401
@@ -801,7 +801,7 @@ describe("PAT format validation — parsePat edge cases", () => {
   it("accepts env=ro (95 chars, token in D1) → 503 (reaches DO)", async () => {
     const roPat = makePat("ro");
     expect(roPat.length).toBe(95);
-    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+    const resp = await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/p`, {
       headers: { Authorization: `Bearer ${roPat}` },
     });
     expect(resp.status).toBe(503);
@@ -899,14 +899,14 @@ describe("PAT format validation — parsePat edge cases", () => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 describe("resolved tenant_id forwarding (WP-A1 DoD 3)", () => {
-  it("x-corelink-resolved-tenant-id header is set to the D1 tenant_id on authenticated request", async () => {
+  it("x-corelink-tenant-id header is set to the D1 tenant_id on authenticated request", async () => {
     let capturedHeader: string | null = null;
     const capturingDO: Partial<Env> = {
       CORELINK_SERVER: {
         idFromName: (_n: string) => ({ toString: () => "id" }),
         get: () => ({
           fetch: async (req: Request) => {
-            capturedHeader = req.headers.get("x-corelink-resolved-tenant-id");
+            capturedHeader = req.headers.get("x-corelink-tenant-id");
             return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
           },
         }),
@@ -915,10 +915,208 @@ describe("resolved tenant_id forwarding (WP-A1 DoD 3)", () => {
         jurisdiction: (_j: string) => capturingDO.CORELINK_SERVER,
       } as unknown as DurableObjectNamespace,
     };
-    await workerFetch("http://localhost/api/v2/t/path", {
+    await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/path`, {
       headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
     }, capturingDO);
     expect(capturedHeader).toBe(TEST_TENANT_ID);
     expect(capturedHeader).not.toContain("_pending");
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// WP-T1: Tenant-derived DO routing
+// DoD 2: two different tenants get different DO ids; URL-tenant≠PAT-tenant → 403
+// DoD 3: No _pending_auth shared-DO path for authenticated requests
+// DoD 4: DO tenantId resolved (not null) via x-corelink-tenant-id header
+//
+// NOTE on path-spoof (P1-2): the spoof check is gated on
+// `auth.tenantId !== "_pending"`. WP-A1 (parallel work item) resolves the real
+// tenant from D1 and writes it to auth.tenantId. Until WP-A1 merges,
+// extractAuth() returns "_pending" and the spoof check is intentionally
+// bypassed. The tests below cover:
+//   (a) WP-A1 stub state: "_pending" → DO routing works, no spoof rejection
+//   (b) Post-A1 state (simulated via a custom env that tests routing logic):
+//       idFromName receives auth.tenantId, not URL tenant
+//   (c) Regression: "_pending_auth" is never used
+//   (d) Path-spoof 403 with a real resolved tenant (simulates post-A1 behavior
+//       by having the worker use the auth tenant from a crafted request path)
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("WP-T1: tenant-derived DO routing", () => {
+  it("forwards x-corelink-tenant-id header to DO (DoD 4)", async () => {
+    // The DO receives the PAT-resolved tenant via x-corelink-tenant-id so it
+    // can bind tenantId in lifecycle state (resolves the null tenantId).
+    let capturedTenantHeader: string | null = null;
+    const capturingEnv: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (_name: string) => ({ toString: () => "stub-id" }),
+        get: (_id: unknown) => ({
+          fetch: async (req: Request): Promise<Response> => {
+            capturedTenantHeader = req.headers.get("x-corelink-tenant-id");
+            return new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          },
+        }),
+        idFromString: (_s: string) => ({ toString: () => "stub-id" }),
+        newUniqueId: () => ({ toString: () => "stub-unique-id" }),
+        jurisdiction: (_j: string) => capturingEnv.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+
+    // TEST_PAT_TOKEN resolves to TEST_TENANT_ID via the default D1 mock (WP-A1).
+    // URL tenant segment matches TEST_TENANT_ID so the spoof gate lets it through.
+    await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/path`, {
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
+    }, capturingEnv);
+
+    // Worker forwards the PAT-resolved tenant via x-corelink-tenant-id (DoD 4).
+    expect(capturedTenantHeader).not.toBeNull();
+    expect(capturedTenantHeader).toBe(TEST_TENANT_ID);
+    expect(capturedTenantHeader).not.toBe("_pending");
+  });
+
+  it("idFromName receives auth.tenantId (not URL segment) — DoD routing logic", async () => {
+    // The routing must call idFromName(auth.tenantId), NOT idFromName(url-segment).
+    // Request 1: URL tenant matches TEST_TENANT_ID → reaches DO; idFromName must
+    //   be called with TEST_TENANT_ID (the auth tenant), never the URL string.
+    // Request 2: an "_anonymous" route (bare /v2/) carries no URL tenant → the
+    //   spoof gate is bypassed and routing still uses the auth tenant. This proves
+    //   the routing parameter is auth-derived regardless of the URL path shape.
+    const namesUsed: string[] = [];
+    const capturingEnv: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (name: string) => {
+          namesUsed.push(name);
+          return { toString: () => `do-${name}` };
+        },
+        get: (_id: unknown) => ({
+          fetch: async (_req: Request): Promise<Response> =>
+            new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+        }),
+        idFromString: (_s: string) => ({ toString: () => "stub-id" }),
+        newUniqueId: () => ({ toString: () => "stub-unique-id" }),
+        jurisdiction: (_j: string) => capturingEnv.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+
+    // Request 1: matching URL tenant. Request 2: bare /v2/ (_anonymous route).
+    await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/blobs`, {
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
+    }, capturingEnv);
+    await workerFetch("http://localhost/v2/", {
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
+    }, capturingEnv);
+
+    // idFromName must have been called twice, each with the auth tenant
+    // (TEST_TENANT_ID) — NOT a URL string. This proves T1 routes by auth, not URL.
+    expect(namesUsed).toHaveLength(2);
+    expect(namesUsed[0]).toBe(TEST_TENANT_ID);
+    expect(namesUsed[1]).toBe(TEST_TENANT_ID);
+    // The old "_pending_auth" shared-DO key must NEVER appear (DoD 3).
+    expect(namesUsed).not.toContain("_pending_auth");
+    expect(namesUsed).not.toContain("_pending");
+    // The "_anonymous" URL marker must NOT be used directly for DO routing.
+    expect(namesUsed).not.toContain("_anonymous");
+  });
+
+  it("no _pending_auth shared DO is used for authenticated requests (DoD 3)", async () => {
+    // Regression: before WP-T1, auth failures fell back to
+    // idFromName("_pending_auth") — a single shared DO for ALL tenants.
+    // After WP-T1 this key must never appear in any idFromName call.
+    const namesUsed: string[] = [];
+    const capturingEnv: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (name: string) => {
+          namesUsed.push(name);
+          return { toString: () => `do-${name}` };
+        },
+        get: (_id: unknown) => ({
+          fetch: async (_req: Request): Promise<Response> =>
+            new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+        }),
+        idFromString: (_s: string) => ({ toString: () => "stub-id" }),
+        newUniqueId: () => ({ toString: () => "stub-unique-id" }),
+        jurisdiction: (_j: string) => capturingEnv.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+
+    // npm route: first segment is the tenant namespace; match TEST_TENANT_ID.
+    await workerFetch(`http://localhost/npm/${TEST_TENANT_ID}/my-package`, {
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
+    }, capturingEnv);
+
+    // "_pending_auth" must never be passed to idFromName.
+    expect(namesUsed).not.toContain("_pending_auth");
+    // Routing key must be the auth-resolved tenant (TEST_TENANT_ID), not a stub.
+    expect(namesUsed).toContain(TEST_TENANT_ID);
+    expect(namesUsed).not.toContain("_pending");
+  });
+
+  it("path-spoof: real-resolved tenant ≠ URL tenant → 403 FORBIDDEN (REAPI)", async () => {
+    // The spoof gate is ACTIVE now that WP-A1 resolves a real tenant.
+    // TEST_PAT_TOKEN resolves to TEST_TENANT_ID; the URL claims "attacker-tenant".
+    // PAT tenant ≠ URL tenant → the request must be rejected with 403 and the DO
+    // must NOT be contacted (P1-2 path-spoof defence).
+    let doContacted = false;
+    const spyEnv: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (_name: string) => ({ toString: () => "stub-id" }),
+        get: (_id: unknown) => ({
+          fetch: async (_req: Request): Promise<Response> => {
+            doContacted = true;
+            return new Response("{}", { status: 200 });
+          },
+        }),
+        idFromString: (_s: string) => ({ toString: () => "stub-id" }),
+        newUniqueId: () => ({ toString: () => "stub-unique-id" }),
+        jurisdiction: (_j: string) => spyEnv.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+
+    const resp = await workerFetch("http://localhost/api/v2/attacker-tenant/path", {
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
+    }, spyEnv);
+
+    // PAT tenant (TEST_TENANT_ID) ≠ URL tenant ("attacker-tenant") → 403, DO untouched.
+    expect(doContacted).toBe(false);
+    expect(resp.status).toBe(403);
+    const body = await resp.json() as { error?: string };
+    expect(body.error).toBe("FORBIDDEN");
+  });
+
+  it("path-spoof guard: URL tenant matches auth.tenantId → request reaches DO", async () => {
+    // Happy path: when the URL tenant matches auth.tenantId exactly, the request
+    // must pass through to the DO without spoof rejection.
+    let doContacted = false;
+    const spyEnv: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (_name: string) => ({ toString: () => "stub-id" }),
+        get: (_id: unknown) => ({
+          fetch: async (_req: Request): Promise<Response> => {
+            doContacted = true;
+            return new Response("{}", { status: 200 });
+          },
+        }),
+        idFromString: (_s: string) => ({ toString: () => "stub-id" }),
+        newUniqueId: () => ({ toString: () => "stub-unique-id" }),
+        jurisdiction: (_j: string) => spyEnv.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+
+    // URL tenant segment == TEST_TENANT_ID == the PAT-resolved tenant → match.
+    const resp = await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/blobs`, {
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
+    }, spyEnv);
+
+    expect(doContacted).toBe(true);
+    expect(resp.status).toBe(200);
   });
 });
