@@ -43,6 +43,18 @@ export interface Env {
   // Key derivation: HKDF-SHA256(CORELINK_MASTER_KEY, "corelink-pat-signing-salt-v1",
   //   b"corelink-v1-pat-signing-key", 32) per key_management.md §3.2.1.
   PAT_SIGNING_KEY?: string;
+  // Container storage credentials (WP-S1 StorageEnv contract). The DO forwards
+  // these to the native container via container.start({ env }) so it can reach
+  // R2 (S3 API) + D1 (HTTP API). Absent → container falls back to InMemory
+  // (dev/CI). R2_S3_ENDPOINT + D1_DATABASE_ID are non-secret vars; the two R2
+  // keys + CF_API_TOKEN are secrets (wrangler secret put). CLOUDFLARE_ACCOUNT_ID
+  // is an existing secret reused here.
+  R2_S3_ENDPOINT?: string;
+  R2_S3_ACCESS_KEY_ID?: string;
+  R2_S3_SECRET_ACCESS_KEY?: string;
+  CF_API_TOKEN?: string;
+  D1_DATABASE_ID?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
 }
 
 /** Parsed route context derived from matching the request URL. */

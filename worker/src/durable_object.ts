@@ -414,11 +414,24 @@ export class CoreLinkServer implements DurableObject {
     try {
       // Start container — returns void; container begins asynchronously
       container.start({
-        enableInternet: false,
+        // Egress required (P0-5): the native container reaches R2 (S3 API) and
+        // D1 (HTTP API) over the public internet — DECISION-GATE-1 Option A.
+        // CF Workers has no VPC-style internal route to R2 for native containers.
+        enableInternet: true,
         entrypoint: ["/usr/local/bin/corelink-server"],
         env: {
           RUST_LOG: "info",
           PORT: String(CONTAINER_PORT),
+          // WP-S1 StorageEnv contract: all six must be present + non-empty for
+          // the container to use real R2/D1 storage. Any missing/empty → the
+          // container falls back to InMemory (dev/CI without secrets). These are
+          // sourced from Worker vars (endpoint, db id) + secrets (keys, token).
+          R2_S3_ENDPOINT: this.env.R2_S3_ENDPOINT ?? "",
+          R2_S3_ACCESS_KEY_ID: this.env.R2_S3_ACCESS_KEY_ID ?? "",
+          R2_S3_SECRET_ACCESS_KEY: this.env.R2_S3_SECRET_ACCESS_KEY ?? "",
+          CLOUDFLARE_ACCOUNT_ID: this.env.CLOUDFLARE_ACCOUNT_ID ?? "",
+          CF_API_TOKEN: this.env.CF_API_TOKEN ?? "",
+          D1_DATABASE_ID: this.env.D1_DATABASE_ID ?? "",
         },
       });
 

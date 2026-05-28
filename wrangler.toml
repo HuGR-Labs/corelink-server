@@ -227,7 +227,10 @@ crons = [
 # Produção (rodar com --env prod)
 [env.prod]
 name = "corelink-prod"
-vars = { ENVIRONMENT = "prod" }
+# R2_S3_ENDPOINT + D1_DATABASE_ID are non-secret container-storage config: the
+# DO forwards them (plus the R2/CF_API_TOKEN secrets) into container.start({env}).
+# Account-scoped R2 S3 endpoint; D1 id = corelink-config-prod (CONFIG_DB binding).
+vars = { ENVIRONMENT = "prod", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562" }
 
 # ── Worker route bindings (Wave 32 Phase G+ — DNS cutover) ────────────────
 #
@@ -334,29 +337,15 @@ class_name = "CoreLinkServer"
 image = "./Dockerfile"
 max_instances = 20
 instance_type = "standard-1"
-# P0-5 / WP-C1 — DECISION-GATE-1 Option A: container reaches R2 via S3 API
-# over egress (no VPC-style internal route on CF Workers platform).
-# enableInternet = true is scoped to this prod container only; the default-env
-# [[containers]] block retains the original (no enableInternet key = false).
-enableInternet = true
-
-# R2 S3 credentials for the native container (WP-C1 / WP-S1 pairing).
-# Non-secret config (endpoint template + account ID ref) lives here as [vars].
-# Actual key material is injected at runtime via wrangler secrets (see
-# scripts/d-day-r2-s3-creds-runbook.md for the minting + put procedure).
-#
-# Env vars the container runtime will see:
-#   R2_S3_ENDPOINT          — https://<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com
-#   CLOUDFLARE_ACCOUNT_ID   — CF account ID (already a secret; see row #49-equivalent)
-#   R2_S3_ACCESS_KEY_ID     — R2 S3 access key (wrangler secret; see secrets-checklist row 139)
-#   R2_S3_SECRET_ACCESS_KEY — R2 S3 secret key (wrangler secret; see secrets-checklist row 140)
-[env.prod.containers.vars]
-R2_S3_ENDPOINT = "https://CLOUDFLARE_ACCOUNT_ID_PLACEHOLDER.r2.cloudflarestorage.com"
-
-[env.prod.containers.secrets]
-CLOUDFLARE_ACCOUNT_ID = "CLOUDFLARE_ACCOUNT_ID"
-R2_S3_ACCESS_KEY_ID = "R2_S3_ACCESS_KEY_ID"
-R2_S3_SECRET_ACCESS_KEY = "R2_S3_SECRET_ACCESS_KEY"
+# P0-5 — DECISION-GATE-1 Option A: the container reaches R2 (S3 API) + D1 (HTTP
+# API) over egress. NOTE: wrangler's `[[containers]]` schema does NOT accept
+# `enableInternet`, `vars`, or `secrets` fields (they were silently ignored +
+# warned on). Container egress + env are configured where the platform actually
+# reads them: the DO's `container.start({ enableInternet: true, env: {...} })`
+# in worker/src/durable_object.ts. The Worker holds the values as vars (endpoint,
+# db id — below in [env.prod.vars]) + secrets (R2 keys, CF_API_TOKEN via
+# `wrangler secret put`), and the DO forwards them into the container at start.
+# See scripts/d-day-r2-s3-creds-runbook.md for the cred-minting + put procedure.
 
 # R2-10 — prod KV / D1 / DO bindings. IDs are placeholders pending
 # the `wrangler kv namespace create --env prod` / `wrangler d1 create
