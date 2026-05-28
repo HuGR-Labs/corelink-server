@@ -2807,6 +2807,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "e2e-user-journeys"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "reqwest",
+ "serde_json",
+ "sha2 0.10.9",
+ "uuid",
+]
+
+[[package]]
 name = "ed25519"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
