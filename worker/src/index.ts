@@ -484,13 +484,43 @@ const handler: ExportedHandler<Env> = {
       );
     }
 
-    // Forward to Durable Object
-    // DO ID is derived solely from tenant_id (resolved by the DO from the PAT).
-    // At the Worker edge we use a combined key so the routing is stable even
-    // before the DO resolves the final tenant — the DO will reject mismatched
-    // PATs after D1 lookup.
-    const tenantKey = route.tenantId === "_pending" ? "_pending_auth" : route.tenantId;
-    const doId = env.CORELINK_SERVER.idFromName(tenantKey);
+    // ── Tenant routing (WP-T1) ────────────────────────────────────────────────
+    // auth.tenantId is the PAT-resolved tenant produced by WP-A1's D1 lookup.
+    // We use it exclusively for DO routing — never the raw URL path segment.
+    //
+    // WP-A1 contract: resolves real tenant → stores in auth.tenantId.
+    // Until WP-A1 lands the value is "_pending" (WP-A1 stub in extractAuth).
+    // Once WP-A1 is merged, auth.tenantId will carry the real tenant ID.
+    const resolvedTenantId = auth.tenantId;
+
+    // Path-spoof defence (P1-2): if the URL path carries a tenant namespace
+    // AND the PAT has been resolved to a real tenant (not the "_pending" stub),
+    // the URL tenant MUST match the PAT tenant. Mismatch → 403.
+    //
+    // The guard `resolvedTenantId !== "_pending"` is the WP-A1 activation gate:
+    //   - "_pending" = WP-A1 not yet merged → skip spoof check (transitional)
+    //   - Any other value = WP-A1 resolved → enforce tenant match
+    const urlTenant = route.tenantId;
+    const isRealTenant = resolvedTenantId !== "_pending";
+
+    if (isRealTenant && urlTenant !== "_anonymous" && urlTenant !== resolvedTenantId) {
+      // PAT tenant ≠ URL path tenant — potential path-spoof.
+      // Return 403 without leaking which side mismatched.
+      if (route.routeKind === "oci_v2") {
+        return applyCors(
+          ociError("DENIED", "tenant mismatch", requestId),
+          request,
+        );
+      }
+      return applyCors(
+        reapiError("FORBIDDEN", "tenant mismatch", 403, requestId),
+        request,
+      );
+    }
+
+    // Route to the per-tenant DO. idFromName(resolvedTenantId) guarantees
+    // each tenant gets its own isolated DO — never the shared "_pending_auth".
+    const doId = env.CORELINK_SERVER.idFromName(resolvedTenantId);
     const stub = env.CORELINK_SERVER.get(doId);
 
     // Augment request with correlation headers (no body inspection — INV-NO-BODY-IN-LOGS)
@@ -501,6 +531,9 @@ const handler: ExportedHandler<Env> = {
         h.set("x-corelink-route-kind", route.routeKind);
         // Pass token prefix for DO-side audit correlation (NOT the raw token)
         h.set("x-corelink-token-prefix", auth.tokenPrefix);
+        // Pass the PAT-resolved tenant to the DO so it can bind tenantId
+        // in lifecycle state (resolves the null tenantId — WP-T1 DoD 4).
+        h.set("x-corelink-tenant-id", resolvedTenantId);
         // Remove raw Authorization before forwarding? NO — the DO needs it to
         // validate against D1 PAT store. The DO is trusted; it never logs the
         // raw value (INV-NO-PII-IN-LOGS enforced in durable_object.ts).
