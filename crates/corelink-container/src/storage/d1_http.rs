@@ -222,6 +222,110 @@ impl D1HttpClient {
     }
 }
 
+/// Tenant admin record sourced from the `tier_selections` D1 table.
+///
+/// Mirrors the operational tier+subscription columns used by the
+/// admin plane (`migrations/d1/0039_tier_selection.sql`). Fields are
+/// `#[non_exhaustive]` so additive column changes don't break callers.
+#[non_exhaustive]
+#[derive(Debug, Clone, Serialize)]
+pub struct TenantAdminRecord {
+    /// Opaque tenant id (matches `tenant.tenant_id`).
+    pub tenant_id: String,
+    /// Selected tier: free | starter | team | pro | enterprise.
+    pub tier: String,
+    /// Canonical subscription state.
+    pub subscription_state: String,
+    /// Stripe customer id (mapped atomically with the tier write).
+    pub stripe_customer_id: Option<String>,
+}
+
+impl D1HttpClient {
+    /// Look up a tenant admin record by tenant id.
+    ///
+    /// Returns `Ok(Some(record))` when found, `Ok(None)` when the row
+    /// does not exist, and `Err(String)` on query error.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` on D1 communication errors.
+    pub async fn tenant_admin_lookup(
+        &self,
+        tenant_id: &str,
+    ) -> Result<Option<TenantAdminRecord>, String> {
+        let rows = self
+            .query(
+                "SELECT tenant_id, tier, subscription_state, stripe_customer_id \
+                 FROM tier_selections WHERE tenant_id = ?1 LIMIT 1",
+                &[serde_json::Value::String(tenant_id.to_owned())],
+            )
+            .await?;
+
+        let Some(row) = rows.into_iter().next() else {
+            return Ok(None);
+        };
+
+        let tenant_id = row
+            .get("tenant_id")
+            .and_then(|v| v.as_str())
+            .ok_or("D1 tier_selections: missing `tenant_id` column")?
+            .to_owned();
+        let tier = row
+            .get("tier")
+            .and_then(|v| v.as_str())
+            .ok_or("D1 tier_selections: missing `tier` column")?
+            .to_owned();
+        let subscription_state = row
+            .get("subscription_state")
+            .and_then(|v| v.as_str())
+            .ok_or("D1 tier_selections: missing `subscription_state` column")?
+            .to_owned();
+        let stripe_customer_id = row
+            .get("stripe_customer_id")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned);
+
+        Ok(Some(TenantAdminRecord {
+            tenant_id,
+            tier,
+            subscription_state,
+            stripe_customer_id,
+        }))
+    }
+
+    /// Set the tier for a tenant in `tier_selections`.
+    ///
+    /// Returns `Ok(true)` if a row was updated, `Ok(false)` if no row
+    /// matched (tenant does not exist), or `Err(String)` on D1 error.
+    /// The write is additive — `subscription_state` is preserved.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` on D1 communication errors.
+    pub async fn tenant_set_tier(
+        &self,
+        tenant_id: &str,
+        tier: &str,
+    ) -> Result<bool, String> {
+        // First confirm the row exists — D1 HTTP `success` does not
+        // discriminate "0 rows updated" from "1 row updated".
+        let pre = self.tenant_admin_lookup(tenant_id).await?;
+        if pre.is_none() {
+            return Ok(false);
+        }
+        let _ = self
+            .query(
+                "UPDATE tier_selections SET tier = ?1 WHERE tenant_id = ?2",
+                &[
+                    serde_json::Value::String(tier.to_owned()),
+                    serde_json::Value::String(tenant_id.to_owned()),
+                ],
+            )
+            .await?;
+        Ok(true)
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -277,6 +381,21 @@ mod tests {
             .cas_meta_lookup("00000000-0000-0000-0000-000000000000", "__no_such_digest__")
             .await
             .expect("query");
+        assert!(result.is_none());
+    }
+
+    /// Live D1 tenant admin lookup — requires real credentials.
+    /// WP-S1 Phase 2 (Admin half) acceptance probe.
+    #[tokio::test]
+    #[ignore = "requires live CF D1 credentials"]
+    async fn d1_http_tenant_admin_lookup_round_trip() {
+        let env = StorageEnv::from_env().expect("all env vars must be set");
+        let client = D1HttpClient::new(&env).expect("client");
+        let result = client
+            .tenant_admin_lookup("00000000-0000-0000-0000-000000000000")
+            .await
+            .expect("query");
+        // No such tenant — Ok(None).
         assert!(result.is_none());
     }
 }
