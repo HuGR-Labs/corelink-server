@@ -14,8 +14,11 @@ crates/*/fuzz/artifacts/
 
 # SBOM outputs (CI uploads via actions/upload-artifact; local rebuilds
 # always regen from Cargo.lock per WI-S01-007 §6.1.4 — never commit).
+# WP-7.2: .sbom/ contains committed CycloneDX artifacts; per-binary ephemeral
+# *.cdx.json files emitted by cargo-cyclonedx are excluded (merged into workspace SBOM).
 sbom/
 **/bom.json
+**/*.cdx.json
 
 # IDE
 .vscode/

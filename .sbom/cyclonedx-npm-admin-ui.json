@@ -1,0 +1,664 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:1ac599ee-d82e-4f0a-ae37-bff53b9deb8a",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-05-28T00:32:49Z",
+    "tools": {
+      "components": [
+        {
+          "group": "@cyclonedx",
+          "name": "cdxgen",
+          "version": "12.4.4",
+          "type": "application",
+          "purl": "pkg:npm/%40cyclonedx/cdxgen@12.4.4"
+        }
+      ]
+    },
+    "component": {
+      "type": "application",
+      "name": "@corelink/admin-ui",
+      "version": "0.1.0",
+      "bom-ref": "pkg:npm/corelink%2Fadmin-ui@0.1.0"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "'@axe-core/playwright'",
+      "version": "4.11.3",
+      "purl": "pkg:npm/'@axe-core/playwright'@4.11.3",
+      "bom-ref": "pkg:npm/'@axe-core/playwright'@4.11.3"
+    },
+    {
+      "type": "library",
+      "name": "'@clerk/nextjs'",
+      "version": "6.39.3",
+      "purl": "pkg:npm/'@clerk/nextjs'@6.39.3",
+      "bom-ref": "pkg:npm/'@clerk/nextjs'@6.39.3"
+    },
+    {
+      "type": "library",
+      "name": "'@cloudflare/next-on-pages'",
+      "version": "1.13.7",
+      "purl": "pkg:npm/'@cloudflare/next-on-pages'@1.13.7",
+      "bom-ref": "pkg:npm/'@cloudflare/next-on-pages'@1.13.7"
+    },
+    {
+      "type": "library",
+      "name": "'@lhci/cli'",
+      "version": "0.14.0",
+      "purl": "pkg:npm/'@lhci/cli'@0.14.0",
+      "bom-ref": "pkg:npm/'@lhci/cli'@0.14.0"
+    },
+    {
+      "type": "library",
+      "name": "'@playwright/test'",
+      "version": "1.60.0",
+      "purl": "pkg:npm/'@playwright/test'@1.60.0",
+      "bom-ref": "pkg:npm/'@playwright/test'@1.60.0"
+    },
+    {
+      "type": "library",
+      "name": "'@radix-ui/react-checkbox'",
+      "version": "1.3.3",
+      "purl": "pkg:npm/'@radix-ui/react-checkbox'@1.3.3",
+      "bom-ref": "pkg:npm/'@radix-ui/react-checkbox'@1.3.3"
+    },
+    {
+      "type": "library",
+      "name": "'@radix-ui/react-dialog'",
+      "version": "1.1.15",
+      "purl": "pkg:npm/'@radix-ui/react-dialog'@1.1.15",
+      "bom-ref": "pkg:npm/'@radix-ui/react-dialog'@1.1.15"
+    },
+    {
+      "type": "library",
+      "name": "'@radix-ui/react-label'",
+      "version": "2.1.8",
+      "purl": "pkg:npm/'@radix-ui/react-label'@2.1.8",
+      "bom-ref": "pkg:npm/'@radix-ui/react-label'@2.1.8"
+    },
+    {
+      "type": "library",
+      "name": "'@radix-ui/react-radio-group'",
+      "version": "1.3.8",
+      "purl": "pkg:npm/'@radix-ui/react-radio-group'@1.3.8",
+      "bom-ref": "pkg:npm/'@radix-ui/react-radio-group'@1.3.8"
+    },
+    {
+      "type": "library",
+      "name": "'@radix-ui/react-select'",
+      "version": "2.2.6",
+      "purl": "pkg:npm/'@radix-ui/react-select'@2.2.6",
+      "bom-ref": "pkg:npm/'@radix-ui/react-select'@2.2.6"
+    },
+    {
+      "type": "library",
+      "name": "'@radix-ui/react-slot'",
+      "version": "1.2.4",
+      "purl": "pkg:npm/'@radix-ui/react-slot'@1.2.4",
+      "bom-ref": "pkg:npm/'@radix-ui/react-slot'@1.2.4"
+    },
+    {
+      "type": "library",
+      "name": "'@radix-ui/react-switch'",
+      "version": "1.2.6",
+      "purl": "pkg:npm/'@radix-ui/react-switch'@1.2.6",
+      "bom-ref": "pkg:npm/'@radix-ui/react-switch'@1.2.6"
+    },
+    {
+      "type": "library",
+      "name": "'@radix-ui/react-tabs'",
+      "version": "1.1.13",
+      "purl": "pkg:npm/'@radix-ui/react-tabs'@1.1.13",
+      "bom-ref": "pkg:npm/'@radix-ui/react-tabs'@1.1.13"
+    },
+    {
+      "type": "library",
+      "name": "'@radix-ui/react-toast'",
+      "version": "1.2.15",
+      "purl": "pkg:npm/'@radix-ui/react-toast'@1.2.15",
+      "bom-ref": "pkg:npm/'@radix-ui/react-toast'@1.2.15"
+    },
+    {
+      "type": "library",
+      "name": "'@radix-ui/react-tooltip'",
+      "version": "1.2.8",
+      "purl": "pkg:npm/'@radix-ui/react-tooltip'@1.2.8",
+      "bom-ref": "pkg:npm/'@radix-ui/react-tooltip'@1.2.8"
+    },
+    {
+      "type": "library",
+      "name": "'@sentry/nextjs'",
+      "version": "8.55.2",
+      "purl": "pkg:npm/'@sentry/nextjs'@8.55.2",
+      "bom-ref": "pkg:npm/'@sentry/nextjs'@8.55.2"
+    },
+    {
+      "type": "library",
+      "name": "'@stripe/stripe-js'",
+      "version": "4.10.0",
+      "purl": "pkg:npm/'@stripe/stripe-js'@4.10.0",
+      "bom-ref": "pkg:npm/'@stripe/stripe-js'@4.10.0"
+    },
+    {
+      "type": "library",
+      "name": "'@tailwindcss/postcss'",
+      "version": "4.0.9",
+      "purl": "pkg:npm/'@tailwindcss/postcss'@4.0.9",
+      "bom-ref": "pkg:npm/'@tailwindcss/postcss'@4.0.9"
+    },
+    {
+      "type": "library",
+      "name": "'@testing-library/dom'",
+      "version": "10.4.1",
+      "purl": "pkg:npm/'@testing-library/dom'@10.4.1",
+      "bom-ref": "pkg:npm/'@testing-library/dom'@10.4.1"
+    },
+    {
+      "type": "library",
+      "name": "'@testing-library/jest-dom'",
+      "version": "6.9.1",
+      "purl": "pkg:npm/'@testing-library/jest-dom'@6.9.1",
+      "bom-ref": "pkg:npm/'@testing-library/jest-dom'@6.9.1"
+    },
+    {
+      "type": "library",
+      "name": "'@testing-library/react'",
+      "version": "16.3.2",
+      "purl": "pkg:npm/'@testing-library/react'@16.3.2",
+      "bom-ref": "pkg:npm/'@testing-library/react'@16.3.2"
+    },
+    {
+      "type": "library",
+      "name": "'@testing-library/user-event'",
+      "version": "14.6.1",
+      "purl": "pkg:npm/'@testing-library/user-event'@14.6.1",
+      "bom-ref": "pkg:npm/'@testing-library/user-event'@14.6.1"
+    },
+    {
+      "type": "library",
+      "name": "'@types/node'",
+      "version": "22.13.10",
+      "purl": "pkg:npm/'@types/node'@22.13.10",
+      "bom-ref": "pkg:npm/'@types/node'@22.13.10"
+    },
+    {
+      "type": "library",
+      "name": "'@types/react'",
+      "version": "19.0.12",
+      "purl": "pkg:npm/'@types/react'@19.0.12",
+      "bom-ref": "pkg:npm/'@types/react'@19.0.12"
+    },
+    {
+      "type": "library",
+      "name": "'@types/react-dom'",
+      "version": "19.0.4",
+      "purl": "pkg:npm/'@types/react-dom'@19.0.4",
+      "bom-ref": "pkg:npm/'@types/react-dom'@19.0.4"
+    },
+    {
+      "type": "library",
+      "name": "'@types/uuid'",
+      "version": "10.0.0",
+      "purl": "pkg:npm/'@types/uuid'@10.0.0",
+      "bom-ref": "pkg:npm/'@types/uuid'@10.0.0"
+    },
+    {
+      "type": "library",
+      "name": "'@vitejs/plugin-react'",
+      "version": "4.3.4",
+      "purl": "pkg:npm/'@vitejs/plugin-react'@4.3.4",
+      "bom-ref": "pkg:npm/'@vitejs/plugin-react'@4.3.4"
+    },
+    {
+      "type": "library",
+      "name": "'@vitest/coverage-v8'",
+      "version": "3.2.4",
+      "purl": "pkg:npm/'@vitest/coverage-v8'@3.2.4",
+      "bom-ref": "pkg:npm/'@vitest/coverage-v8'@3.2.4"
+    },
+    {
+      "type": "library",
+      "name": "autoprefixer",
+      "version": "10.4.20",
+      "purl": "pkg:npm/autoprefixer@10.4.20",
+      "bom-ref": "pkg:npm/autoprefixer@10.4.20",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-XY25y5xSv/wEoqzDyXXME4AFfkZI0P23z6Fs3YgymDnKJkCGOnkL0iTxCa85UTqaSgfcqyf3UA6+c7wUvx/16g==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "axe-core",
+      "version": "4.11.4",
+      "purl": "pkg:npm/axe-core@4.11.4",
+      "bom-ref": "pkg:npm/axe-core@4.11.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "MPL-2.0"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-KunSNx+TVpkAw/6ULfhnx+HWRecjqZGTOyquAoWHYLRSdK1tB5Ihce1ZW+UY3fj33bYAFWPu7W/GRSmmrCGuxA==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "clsx",
+      "version": "2.1.1",
+      "purl": "pkg:npm/clsx@2.1.1",
+      "bom-ref": "pkg:npm/clsx@2.1.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "eslint",
+      "version": "9.21.0",
+      "purl": "pkg:npm/eslint@9.21.0",
+      "bom-ref": "pkg:npm/eslint@9.21.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-KjeihdFqTPhOMXTt7StsDxriV4n66ueuF/jfPNC3j/lduHwr/ijDwJMsF+wyMJethgiKi5wniIE243vi07d3pg==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "eslint-config-next",
+      "version": "15.5.18",
+      "purl": "pkg:npm/eslint-config-next@15.5.18",
+      "bom-ref": "pkg:npm/eslint-config-next@15.5.18",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-HuoJU6uUPD00eyiud78IBnT4HLhztFj2V+ild2Uon5ZUrYZKe0Olu2QRD99e9IgL4/H1eg5Onka3BsfRW2U0Xw==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "happy-dom",
+      "version": "20.9.0",
+      "purl": "pkg:npm/happy-dom@20.9.0",
+      "bom-ref": "pkg:npm/happy-dom@20.9.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-GZZ9mKe8r646NUAf/zemnGbjYh4Bt8/MqASJY+pSm5ZDtc3YQox+4gsLI7yi1hba6o+eCsGxpHn5+iEVn31/FQ==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "html2canvas",
+      "version": "1.4.1",
+      "purl": "pkg:npm/html2canvas@1.4.1",
+      "bom-ref": "pkg:npm/html2canvas@1.4.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-fPU6BHNpsyIhr8yyMpTLLxAbkaK8ArIBcmZIRiBLiDhjeqvXolaEmDGmELFuX9I4xDcaKKcJl+TKZLqruBbmWA==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "jest-axe",
+      "version": "9.0.0",
+      "purl": "pkg:npm/jest-axe@9.0.0",
+      "bom-ref": "pkg:npm/jest-axe@9.0.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-Xt7O0+wIpW31lv0SO1wQZUTyJE7DEmnDEZeTt9/S9L5WUywxrv8BrgvTuQEqujtfaQOcJ70p4wg7UUgK1E2F5g==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "jsdom",
+      "version": "26.1.0",
+      "purl": "pkg:npm/jsdom@26.1.0",
+      "bom-ref": "pkg:npm/jsdom@26.1.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-Cvc9WUhxSMEo4McES3P7oK3QaXldCfNWp7pl2NNeiIFlCoLr3kfq9kb1fxftiwk1FLV7CvpvDfonxtzUDeSOPg==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "next",
+      "version": "15.5.18",
+      "purl": "pkg:npm/next@15.5.18",
+      "bom-ref": "pkg:npm/next@15.5.18",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-eKL8zUJkX9Y5lE+RX/2YJoItVdGlIscyVyboeD9wSpp0PaGqjoA4tTpT2qPqz9ax+5IzGESyLSeZ/RCwbSZ2uQ==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "next-intl",
+      "version": "4.12.0",
+      "purl": "pkg:npm/next-intl@4.12.0",
+      "bom-ref": "pkg:npm/next-intl@4.12.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-v8KpppWG0yLLlChJ3Of6uoPew9LeRDBAtY6vpJmF7YJmBZlHEzzoEL4w1g1dAU+VleEPNoXNm9hg1eEsKWV5hw==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "postcss",
+      "version": "8.5.14",
+      "purl": "pkg:npm/postcss@8.5.14",
+      "bom-ref": "pkg:npm/postcss@8.5.14",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-SoSL4+OSEtR99LHFZQiJLkT59C5B1amGO1NzTwj7TT1qCUgUO6hxOvzkOYxD+vMrXBM3XJIKzokoERdqQq/Zmg==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "react",
+      "version": "19.0.3",
+      "purl": "pkg:npm/react@19.0.3",
+      "bom-ref": "pkg:npm/react@19.0.3",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-owzQanTgpB8GF7pVL6mUwZZyhKzFePi9++GkFk54i9PRU0jq+z7v9Mwg7PAZJYCiYl5YwcyQGGq5/PLkesd8nw==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "react-dom",
+      "version": "19.0.3",
+      "purl": "pkg:npm/react-dom@19.0.3",
+      "bom-ref": "pkg:npm/react-dom@19.0.3",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-a7ezLfxibhu6fZBVLwy6WEd3Jn/4H8JYVO8K8GtBfRf1Pl+ox7KFoMCzAGlxLZUXo0t44YZShzhhoDH3yMVdxQ==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "react-markdown",
+      "version": "9.1.0",
+      "purl": "pkg:npm/react-markdown@9.1.0",
+      "bom-ref": "pkg:npm/react-markdown@9.1.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-xaijuJB0kzGiUdG7nc2MOMDUDBWPyGAjZtUrow9XxUeua8IqeP+VlIfAZ3bphpcLTnSZXz6z9jcVC/TCwbfgdw==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "remark-gfm",
+      "version": "4.0.1",
+      "purl": "pkg:npm/remark-gfm@4.0.1",
+      "bom-ref": "pkg:npm/remark-gfm@4.0.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-1quofZ2RQ9EWdeN34S79+KExV1764+wCUGop5CPL1WGdD0ocPpu91lzPGbwWMECpEpd42kJGQwzRfyov9j4yNg==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "swr",
+      "version": "2.4.1",
+      "purl": "pkg:npm/swr@2.4.1",
+      "bom-ref": "pkg:npm/swr@2.4.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-2CC6CiKQtEwaEeNiqWTAw9PGykW8SR5zZX8MZk6TeAvEAnVS7Visz8WzphqgtQ8v2xz/4Q5K+j+SeMaKXeeQIA==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tailwindcss",
+      "version": "4.0.9",
+      "purl": "pkg:npm/tailwindcss@4.0.9",
+      "bom-ref": "pkg:npm/tailwindcss@4.0.9",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-12laZu+fv1ONDRoNR9ipTOpUD7RN9essRVkX36sjxuRUInpN7hIiHN4lBd/SIFjbISvnXzp8h/hXzmU8SQQYhw==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "typescript",
+      "version": "5.7.3",
+      "purl": "pkg:npm/typescript@5.7.3",
+      "bom-ref": "pkg:npm/typescript@5.7.3",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-84MVSjMEHP+FQRPy3pX9sTVV/INIex71s9TL2Gm5FG/WG1SqXeKyZ0k7/blY/4FdOzI12CBy1vGc4og/eus0fw==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "uuid",
+      "version": "10.0.0",
+      "purl": "pkg:npm/uuid@10.0.0",
+      "bom-ref": "pkg:npm/uuid@10.0.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-8XkAphELsDnEGrDxUOHB3RGvXz6TeuYSGEZBOjtTtPm2lwhGBjLgOzLHB63IUWfBpNucQjND6d3AOudO+H3RWQ==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "vitest",
+      "version": "3.0.7",
+      "purl": "pkg:npm/vitest@3.0.7",
+      "bom-ref": "pkg:npm/vitest@3.0.7",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-IP7gPK3LS3Fvn44x30X1dM9vtawm0aesAa2yBIZ9vQf+qB69NXC5776+Qmcr7ohUXIQuLhk7xQR0aSUIDPqavg==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zustand",
+      "version": "5.0.13",
+      "purl": "pkg:npm/zustand@5.0.13",
+      "bom-ref": "pkg:npm/zustand@5.0.13",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-efI2tVaVQPqtOh114loML/Z80Y4NP3yc+Ff0fYiZJPauNeWZeIp/bRFD7I9bfmCOYBh/PHxlglQ9+wvlwnPikQ==}"
+        }
+      ]
+    }
+  ]
+}
