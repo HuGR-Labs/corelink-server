@@ -17,6 +17,13 @@ inherits_from:
   - "INVARIANT-REGISTRY"
   - "PRIVACY-MODEL"
 tags: ["audit", "review", "r5", "sonnet", "s09", "observability", "testability", "lote-10.9", "part1", "wi-001-to-004"]
+references:
+  - "specs/04_sprints/_sealed/S09/_spec_contract.md"
+  - "specs/04_sprints/_sealed/S09/_review_R4_opus_part1.md"
+  - "specs/04_sprints/_sealed/S09/work_items/WI-S09-001-worker-analytics-engine-red-metrics-cardinality-validator.md"
+  - "specs/04_sprints/_sealed/S09/work_items/WI-S09-002-logpush-r2-loki-log-schema-pii-redaction.md"
+  - "specs/04_sprints/_sealed/S09/work_items/WI-S09-003-otlp-tracing-w3c-sampling-exemplars.md"
+  - "specs/04_sprints/_sealed/S09/work_items/WI-S09-004-cloudevents-audit-r2-hash-chain-daily-verify.md"
 ---
 
 # R5 (Sonnet) — S-09 Testability + Validator Coverage Review · Part 1 (WI-S09-001..004)

@@ -13,6 +13,9 @@ reviewers: []
 supersedes: null
 superseded_by: null
 tags: ["checklist", "owasp-asvs", "ssdf", "eo14028", "compliance", "s12", "supply-chain", "wi-s12-007"]
+references:
+  - "specs/04_sprints/_sealed/S12/_spec_contract.md"
+  - "specs/04_sprints/_sealed/S12/work_items/WI-S12-007-rb-fm-156-rb-fm-157-prr-ship-gate.md"
 ---
 
 # OWASP ASVS V14 + V11.1 + SSDF + EO 14028 Compliance Checklist — S-12

@@ -18,6 +18,9 @@ inherits_from:
   - "INVARIANT-REGISTRY"
   - "COMPLIANCE-MATRIX"
 tags: ["finance-walkthrough", "soc2", "cc1.4", "gaap-asc606", "audit-grade-replay", "s10", "wi-s10-007"]
+references:
+  - "specs/04_sprints/S10/_spec_contract.md"
+  - "specs/04_sprints/S10/work_items/WI-S10-007-tla-billing-atomicity-runbooks-finance-walkthrough.md"
 ---
 
 # S-10 Finance Walkthrough — Audit-Grade Invoice Reconstruction Exhibit

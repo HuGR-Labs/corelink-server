@@ -13,6 +13,9 @@ reviewers: []
 supersedes: null
 superseded_by: null
 tags: ["release-notes", "s13", "admin-plane", "config-singleton", "dual-approval", "secret-rotation", "terraform-drift", "progressive-rollout"]
+references:
+  - "specs/04_sprints/S13/_spec_contract.md"
+  - "specs/04_sprints/S13/PRR-S13.md"
 ---
 
 # Release Notes — S-13: Admin Plane

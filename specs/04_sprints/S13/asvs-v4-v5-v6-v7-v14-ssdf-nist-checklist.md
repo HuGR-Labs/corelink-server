@@ -13,6 +13,9 @@ reviewers: []
 supersedes: null
 superseded_by: null
 tags: ["checklist", "owasp-asvs", "ssdf", "nist", "compliance", "s13", "admin-plane", "wi-s13-006"]
+references:
+  - "specs/04_sprints/S13/_spec_contract.md"
+  - "specs/04_sprints/S13/work_items/WI-S13-006-property-tests-mfa-freshness-rotation-overlap-rb-fm-205-prr.md"
 ---
 
 # OWASP ASVS V4 + V5 + V6 + V7 + V14 + SSDF + NIST SP 800-53 + NIST SP 800-57 Checklist — S-13
