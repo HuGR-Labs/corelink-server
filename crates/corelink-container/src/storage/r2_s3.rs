@@ -443,6 +443,260 @@ pub async fn build_r2_cas_handler_from_env(
     )))
 }
 
+/// A sync `AcLookupHandler` + `AcUpdateHandler` backed by [`R2S3Client`].
+///
+/// Mirrors `R2CasHandler` exactly — bridges async S3 I/O to the sync
+/// AC handler trait surface via `tokio::runtime::Handle::current().block_on(...)`.
+/// Wired through `routes::ac::build_handlers` when storage credentials
+/// are configured; otherwise the route falls back to `InMemoryAcHandler`.
+///
+/// # Key scheme
+///
+/// AC entries reuse the canonical
+/// `<region>/<tenant_prefix_16>/<action_digest>` key layout from CAS,
+/// only the bucket differs (`R2_AC_BUCKET` / default `corelink-ac-iad`).
+/// Per-tenant prefix isolation (layer 5 of `INV-TENANT-ISOLATION`)
+/// applies identically.
+pub struct R2AcHandler {
+    client: R2S3Client,
+    /// The R2 region string (e.g. `"iad"`) used as key prefix.
+    ac_region: String,
+    /// Tenant derivation key — see [`R2CasHandler`].
+    tdk: Option<TenantDerivationKey>,
+    audit: Arc<dyn corelink_handler_ac::AuditSink>,
+    sli: Arc<dyn corelink_handler_ac::SliObserver>,
+}
+
+impl core::fmt::Debug for R2AcHandler {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("R2AcHandler")
+            .field("ac_region", &self.ac_region)
+            .finish_non_exhaustive()
+    }
+}
+
+impl R2AcHandler {
+    /// Construct an `R2AcHandler`. See [`R2CasHandler::new`] for the
+    /// `tdk_bytes` semantics (pass `None` in tests with a dev/zero TDK).
+    #[must_use]
+    pub fn new(
+        client: R2S3Client,
+        ac_region: impl Into<String>,
+        tdk_bytes: Option<Zeroizing<[u8; 32]>>,
+        audit: Arc<dyn corelink_handler_ac::AuditSink>,
+        sli: Arc<dyn corelink_handler_ac::SliObserver>,
+    ) -> Self {
+        let tdk = tdk_bytes.map(TenantDerivationKey::from_bytes);
+        Self {
+            client,
+            ac_region: ac_region.into(),
+            tdk,
+            audit,
+            sli,
+        }
+    }
+
+    /// Derive the R2 key for a (tenant, action_digest) pair. Mirrors
+    /// `R2CasHandler::r2_key`; the AC bucket uses the same layout.
+    fn r2_key(&self, tenant: &str, action_digest: &str) -> String {
+        let prefix = match &self.tdk {
+            Some(tdk) => {
+                if let Ok(uid) = Uuid::try_parse(tenant) {
+                    derive_prefix(tdk, uid).to_string()
+                } else {
+                    let mut p = tenant.to_owned();
+                    p.truncate(16);
+                    while p.len() < 16 {
+                        p.push('0');
+                    }
+                    p
+                }
+            }
+            None => {
+                let mut p = tenant.to_owned();
+                p.truncate(16);
+                while p.len() < 16 {
+                    p.push('0');
+                }
+                p
+            }
+        };
+        R2S3Client::blob_key(&self.ac_region, &prefix, action_digest)
+    }
+
+    /// Emit the (avail, latency) SLI pair for the lookup path. The
+    /// update path folds availability into `AvailAcLookup` per the
+    /// canonical-15 metric registry discipline (see
+    /// `InMemoryAcHandler::update`).
+    fn emit_lookup_sli(&self, is_error: bool) {
+        use corelink_handler_ac::{Sli, SliObservation};
+        self.sli.observe(SliObservation::new(Sli::AvailAcLookup, is_error, 0));
+        self.sli.observe(SliObservation::new(Sli::LatencyAcHitP99, is_error, 0));
+    }
+
+    fn emit_update_sli(&self, is_error: bool) {
+        use corelink_handler_ac::{Sli, SliObservation};
+        self.sli.observe(SliObservation::new(Sli::AvailAcLookup, is_error, 0));
+    }
+}
+
+impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
+    fn lookup(
+        &self,
+        req: corelink_handler_ac::AcLookupRequest,
+    ) -> Result<corelink_handler_ac::AcLookupResponse, corelink_handler_ac::AcHandlerError> {
+        use corelink_handler_ac::{
+            AcHandlerError, AcLookupResponse, AuditEvent as AcAuditEvent,
+            AuditEventKind as AcAuditEventKind,
+        };
+
+        // Cross-tenant denial — audit BEFORE returning.
+        if req.tenant != req.caller_tenant {
+            self.audit
+                .emit(AcAuditEvent::new(AcAuditEventKind::LookupDenied, req.tenant.clone(), req.action_digest.clone(), req.principal.clone(), req.at_unix_ms))
+                .map_err(AcHandlerError::AuditFailed)?;
+            self.emit_lookup_sli(true);
+            return Err(AcHandlerError::CrossTenantDenied {
+                caller: req.caller_tenant,
+                requested_tenant: req.tenant,
+            });
+        }
+
+        // LookupAttempted audit BEFORE storage read.
+        self.audit
+            .emit(AcAuditEvent::new(AcAuditEventKind::LookupAttempted, req.tenant.clone(), req.action_digest.clone(), req.principal.clone(), req.at_unix_ms))
+            .map_err(AcHandlerError::AuditFailed)?;
+
+        let key = self.r2_key(&req.tenant, &req.action_digest);
+        debug!(key = %key, "R2AcHandler::lookup");
+
+        let handle = tokio::runtime::Handle::current();
+        let result = handle.block_on(self.client.get(&key));
+
+        match result {
+            Ok(Some(bytes)) => {
+                self.audit
+                    .emit(AcAuditEvent::new(AcAuditEventKind::LookupHit, req.tenant.clone(), req.action_digest.clone(), req.principal.clone(), req.at_unix_ms))
+                    .map_err(AcHandlerError::AuditFailed)?;
+                self.emit_lookup_sli(false);
+                Ok(AcLookupResponse::new(req.action_digest, bytes))
+            }
+            Ok(None) => {
+                self.audit
+                    .emit(AcAuditEvent::new(AcAuditEventKind::LookupMiss, req.tenant.clone(), req.action_digest.clone(), req.principal.clone(), req.at_unix_ms))
+                    .map_err(AcHandlerError::AuditFailed)?;
+                // Miss is NOT an availability error — handler served
+                // correctly (mirrors `InMemoryAcHandler::lookup`).
+                self.emit_lookup_sli(false);
+                Err(AcHandlerError::Miss {
+                    tenant: req.tenant,
+                    action_digest: req.action_digest,
+                })
+            }
+            Err(e) => {
+                warn!(error = %e, key = %key, "R2AcHandler::lookup error");
+                self.emit_lookup_sli(true);
+                Err(AcHandlerError::Internal(e))
+            }
+        }
+    }
+}
+
+impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
+    fn update(
+        &self,
+        req: corelink_handler_ac::AcUpdateRequest,
+    ) -> Result<corelink_handler_ac::AcUpdateResponse, corelink_handler_ac::AcHandlerError> {
+        use corelink_handler_ac::{
+            AcHandlerError, AcUpdateResponse, AuditEvent as AcAuditEvent,
+            AuditEventKind as AcAuditEventKind,
+        };
+
+        // Cross-tenant denial — audit BEFORE returning.
+        if req.tenant != req.caller_tenant {
+            self.audit
+                .emit(AcAuditEvent::new(AcAuditEventKind::UpdateDenied, req.tenant.clone(), req.action_digest.clone(), req.principal.clone(), req.at_unix_ms))
+                .map_err(AcHandlerError::AuditFailed)?;
+            self.emit_update_sli(true);
+            return Err(AcHandlerError::CrossTenantDenied {
+                caller: req.caller_tenant,
+                requested_tenant: req.tenant,
+            });
+        }
+
+        // UpdateAttempted audit BEFORE mutation.
+        self.audit
+            .emit(AcAuditEvent::new(AcAuditEventKind::UpdateAttempted, req.tenant.clone(), req.action_digest.clone(), req.principal.clone(), req.at_unix_ms))
+            .map_err(AcHandlerError::AuditFailed)?;
+
+        let key = self.r2_key(&req.tenant, &req.action_digest);
+        debug!(
+            key = %key,
+            bytes = req.result_payload.len(),
+            "R2AcHandler::update"
+        );
+
+        let handle = tokio::runtime::Handle::current();
+
+        // `durable=true` mirrors `InMemoryAcHandler::update` — only set
+        // on a fresh insert. Probe existence via GET before PUT;
+        // any GET error other than NoSuchKey is treated as
+        // pre-existing (conservative — never claim durable on
+        // ambiguous state).
+        let pre_existed = matches!(handle.block_on(self.client.get(&key)), Ok(Some(_)));
+
+        let result = handle.block_on(self.client.put(&key, req.result_payload));
+
+        match result {
+            Ok(()) => {
+                self.audit
+                    .emit(AcAuditEvent::new(AcAuditEventKind::UpdateCommitted, req.tenant.clone(), req.action_digest.clone(), req.principal.clone(), req.at_unix_ms))
+                    .map_err(AcHandlerError::AuditFailed)?;
+                self.emit_update_sli(false);
+                Ok(AcUpdateResponse::new(req.action_digest, !pre_existed))
+            }
+            Err(e) => {
+                warn!(error = %e, key = %key, "R2AcHandler::update error");
+                self.emit_update_sli(true);
+                Err(AcHandlerError::Internal(e))
+            }
+        }
+    }
+}
+
+/// Build an `R2AcHandler` from environment variables.
+///
+/// Returns `None` when storage credentials are not configured (dev /
+/// unit-test mode). Callers fall back to `InMemoryAcHandler`.
+///
+/// Mirrors [`build_r2_cas_handler_from_env`] exactly; only the bucket
+/// + region defaults and the handler type differ.
+///
+/// # Errors
+///
+/// Returns `Err(String)` if credentials are present but the S3 client
+/// cannot be constructed (e.g. endpoint URL is malformed).
+pub async fn build_r2_ac_handler_from_env(
+    bucket: &str,
+    ac_region: &str,
+) -> Option<Result<R2AcHandler, String>> {
+    let env = super::StorageEnv::from_env()?;
+    let tdk_bytes = load_tdk_from_env();
+    let client = match R2S3Client::new(&env, bucket).await {
+        Ok(c) => c,
+        Err(e) => return Some(Err(e)),
+    };
+    let audit = Arc::new(corelink_handler_ac::InMemoryAuditSink::new());
+    let sli = Arc::new(corelink_handler_ac::InMemorySliObserver::new());
+    Some(Ok(R2AcHandler::new(
+        client,
+        ac_region,
+        tdk_bytes,
+        audit,
+        sli,
+    )))
+}
+
 /// Load the tenant derivation key from `R2_TDK_HEX` env var (64 hex chars =
 /// 32 bytes). Returns `None` when not set, causing `R2CasHandler` to use
 /// the raw-padded fallback (dev/test mode).

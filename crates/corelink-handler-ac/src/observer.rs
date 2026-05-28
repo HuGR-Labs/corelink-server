@@ -16,6 +16,16 @@ pub struct SliObservation {
     pub latency_us: u64,
 }
 
+impl SliObservation {
+    /// Construct from fields. The struct is `#[non_exhaustive]` so this is the
+    /// only out-of-crate construction path (required by out-of-crate AC handler
+    /// impls like the R2-backed one in `corelink-container`).
+    #[must_use]
+    pub const fn new(sli: Sli, is_error: bool, latency_us: u64) -> Self {
+        Self { sli, is_error, latency_us }
+    }
+}
+
 /// SLI observer trait (infallible).
 pub trait SliObserver: Send + Sync + core::fmt::Debug {
     /// Record one observation.

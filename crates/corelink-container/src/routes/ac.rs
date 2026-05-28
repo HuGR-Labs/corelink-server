@@ -99,17 +99,55 @@ impl core::fmt::Debug for AcRouteState {
 pub fn build_handlers() -> (Arc<dyn AcLookupHandler>, Arc<dyn AcUpdateHandler>) {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        // Log whether real storage creds are present so the operator
-        // can confirm the env is wired correctly (real AC handler
-        // lands in WP-S1 Phase 2).
-        if crate::storage::StorageEnv::from_env().is_some() {
-            tracing::info!(
-                "AC handler: InMemory (real R2/D1 AC handler lands in WP-S1 Phase 2; \
-                 storage env is configured)"
-            );
-        } else {
-            tracing::info!("AC handler: InMemory (no storage credentials configured)");
+        use crate::storage::{r2_s3, StorageEnv};
+
+        // Probe for storage credentials. When present, construct the
+        // real R2-backed handler; otherwise fall back to InMemory.
+        // Mirrors `routes::cas::build_handler` exactly (see
+        // crate-level docs + commit 832c7884 for the
+        // `block_in_place` rationale).
+        if StorageEnv::from_env().is_some() {
+            let bucket = std::env::var("R2_AC_BUCKET")
+                .unwrap_or_else(|_| "corelink-ac-iad".to_owned());
+            let region = std::env::var("R2_AC_REGION")
+                .unwrap_or_else(|_| "iad".to_owned());
+
+            // `routes::build_with_factory` is called from inside
+            // `#[tokio::main]`, so a bare
+            // `Handle::current().block_on(...)` panics with "Cannot
+            // start a runtime from within a runtime". Wrap with
+            // `tokio::task::block_in_place` (multi-thread runtime
+            // only — `#[tokio::main]` guarantees that).
+            let handle = tokio::runtime::Handle::current();
+            let built = tokio::task::block_in_place(|| {
+                handle.block_on(r2_s3::build_r2_ac_handler_from_env(&bucket, &region))
+            });
+            match built {
+                Some(Ok(handler)) => {
+                    tracing::info!(
+                        bucket = %bucket,
+                        region = %region,
+                        "AC handler: R2S3 (real storage)"
+                    );
+                    let shared: Arc<r2_s3::R2AcHandler> = Arc::new(handler);
+                    let lookup: Arc<dyn AcLookupHandler> = shared.clone();
+                    let update: Arc<dyn AcUpdateHandler> = shared;
+                    return (lookup, update);
+                }
+                Some(Err(e)) => {
+                    tracing::error!(
+                        error = %e,
+                        "AC handler: R2S3 build failed, falling back to InMemory"
+                    );
+                }
+                None => {
+                    // Should not happen: we already checked is_some().
+                }
+            }
         }
+
+        // Fallback: InMemory (no creds or build failure).
+        tracing::info!("AC handler: InMemory (no storage credentials configured)");
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
         let shared: Arc<InMemoryAcHandler> = Arc::new(InMemoryAcHandler::new(audit, sli));
