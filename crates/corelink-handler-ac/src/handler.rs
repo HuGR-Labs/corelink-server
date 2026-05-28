@@ -54,6 +54,19 @@ pub struct AcLookupResponse {
     pub result_payload: Vec<u8>,
 }
 
+impl AcLookupResponse {
+    /// Construct from fields. `#[non_exhaustive]` means this is the only
+    /// out-of-crate construction path (required by out-of-crate AC handler
+    /// impls like the R2-backed one in `corelink-container`).
+    #[must_use]
+    pub fn new(action_digest: impl Into<String>, result_payload: impl Into<Vec<u8>>) -> Self {
+        Self {
+            action_digest: action_digest.into(),
+            result_payload: result_payload.into(),
+        }
+    }
+}
+
 /// AC update request — `PUT /v1/ac/{tenant}/{action_digest}`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -102,6 +115,19 @@ pub struct AcUpdateResponse {
     pub action_digest: String,
     /// True if the entry was a fresh insert.
     pub durable: bool,
+}
+
+impl AcUpdateResponse {
+    /// Construct from fields. `#[non_exhaustive]` means this is the only
+    /// out-of-crate construction path (required by out-of-crate AC handler
+    /// impls like the R2-backed one in `corelink-container`).
+    #[must_use]
+    pub fn new(action_digest: impl Into<String>, durable: bool) -> Self {
+        Self {
+            action_digest: action_digest.into(),
+            durable,
+        }
+    }
 }
 
 /// Trait every AC lookup handler implements.

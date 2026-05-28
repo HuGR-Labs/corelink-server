@@ -54,6 +54,28 @@ pub struct AuditEvent {
     pub at_unix_ms: u64,
 }
 
+impl AuditEvent {
+    /// Construct from fields. The struct is `#[non_exhaustive]` so this
+    /// is the only out-of-crate construction path (required by out-of-crate
+    /// AC handler impls like the R2-backed one in `corelink-container`).
+    #[must_use]
+    pub fn new(
+        kind: AuditEventKind,
+        tenant: impl Into<String>,
+        action_digest: impl Into<String>,
+        principal: impl Into<String>,
+        at_unix_ms: u64,
+    ) -> Self {
+        Self {
+            kind,
+            tenant: tenant.into(),
+            action_digest: action_digest.into(),
+            principal: principal.into(),
+            at_unix_ms,
+        }
+    }
+}
+
 /// Fail-CLOSED audit sink trait.
 pub trait AuditSink: Send + Sync + core::fmt::Debug {
     /// Persist a single row.
