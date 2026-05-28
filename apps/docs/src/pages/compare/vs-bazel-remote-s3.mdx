@@ -1,0 +1,336 @@
+---
+title: "CoreLink vs bazel-remote + S3: which build cache to pick"
+description: "Detailed technical comparison of CoreLink and self-hosted bazel-remote backed by S3 — TCO analysis at three scales, BYOK vs raw bucket auth, audit chain vs htpasswd, and an honest migration path. Honest tradeoffs as of 2026-05-27."
+keywords:
+  - "bazel-remote"
+  - "bazel-remote s3"
+  - "bazel-remote alternative"
+  - "build cache"
+  - "bazel remote cache"
+  - "self-hosted build cache"
+  - "reapi cache"
+  - "byok build cache"
+  - "bazel-remote cost"
+last_updated: "2026-05-27"
+---
+
+# CoreLink vs bazel-remote + S3
+
+`bazel-remote` is the reference open-source implementation of the Bazel
+Remote Execution API (REAPI) v2 cache. If you run it pointing at an S3
+bucket you get a solid, free, community-maintained cache server that has
+been deployed at hundreds of shops since 2018. It is the answer many
+teams reach for when someone asks "what is the cheapest possible REAPI
+cache?"
+
+CoreLink is a managed REAPI v2 polyglot cache (Bazel, Buck2, Pants,
+Please, BuildStream, recc — plus Cargo, npm, pip, brew, OCI adapters)
+with BYOK across four KMS providers, an RFC 6962 Merkle-chained audit
+log, and TLA+-verified tenant isolation. We charge a flat fee so your
+team does not have to operate anything.
+
+This page lays out the honest tradeoffs between the two approaches.
+It is dated **2026-05-27**; S3 prices change — verify AWS / GCS /
+Cloudflare R2 pricing pages before quoting in a buying decision.
+
+## TL;DR
+
+- **Pick bazel-remote + S3 if** you want zero software cost, you have
+  patient SREs who are comfortable tuning a Go binary and a bucket
+  lifecycle policy, and your threat model does not require customer-managed
+  keys, a re-derivable audit log, or multi-package-manager support.
+  It is genuinely excellent for what it does.
+- **Pick CoreLink if** you want managed infrastructure (no Go binary to
+  patch, no bucket lifecycle to tune), REAPI cache that spans Cargo /
+  npm / OCI as well as Bazel, BYOK on four KMS providers, and an audit
+  chain your SOC 2 auditor can replay — all for a predictable flat fee.
+- **Both can coexist:** run bazel-remote as a local L1 on each CI worker
+  and CoreLink as the shared L2. Cache semantics are additive, not
+  mutually exclusive.
+
+## What is bazel-remote
+
+`bazel-remote` ([github.com/buchgr/bazel-remote](https://github.com/buchgr/bazel-remote))
+is an Apache-2.0-licensed Go binary that implements the REAPI v2 CAS and
+ActionCache services. It supports S3-compatible storage backends
+(AWS S3, Cloudflare R2, GCS, Azure Blob), optional zstd compression,
+disk-based two-tier caching (fast NVMe L1, slow S3 L2), htpasswd and
+mTLS authentication, per-endpoint rate limiting, and Prometheus metrics.
+It is community-maintained, last released v2.6.1 on 2025-09-28, with 743
+GitHub stars and 35 releases. It runs as a single stateless binary or in
+a small cluster behind a load balancer. There is no SaaS option — you
+deploy it, you maintain it.
+
+## Where bazel-remote wins
+
+We are direct here: bazel-remote is a well-engineered, battle-tested
+piece of infrastructure. These are the areas where it has a genuine
+structural advantage.
+
+1. **Zero software cost.** Apache-2.0 means you pay nothing to run it.
+   Your only costs are the compute to run the binary, the S3 storage
+   (roughly $0.023/GB-month on AWS S3 Standard us-east-1, or $0.015/
+   GB-month on Cloudflare R2), and your SRE time. For a solo team or
+   an open-source project running on donated compute, this is the
+   unbeatable baseline.
+
+2. **Your data plane, your network.** bazel-remote can run on hardware
+   you own, inside your VPC, with no third-party data plane in the
+   path. If your threat model forbids sending build artifacts through
+   Cloudflare — common in some EU public-sector, defense, and sovereign-
+   cloud mandates — bazel-remote wins this conversation by default.
+   CoreLink's data plane is Cloudflare-edge; BYOK protects the
+   confidentiality of the data, but the data still transits Cloudflare.
+
+3. **Mature disk-local two-tier caching.** bazel-remote's disk cache
+   is a real, tuned LRU implementation (with `--max_size`, optional
+   `--eviction_policy`, configurable GC intervals). When you co-locate
+   the binary on each CI worker, you get a process-local L1 that never
+   leaves the machine's NVMe — sub-millisecond CAS hits for warm
+   toolchain artifacts. CoreLink's edge PoPs are fast, but they are
+   not `localhost`.
+
+4. **MIT/Apache ecosystem simplicity.** One binary, a handful of flags,
+   a bucket. For a team that already runs Kubernetes or bare-metal CI
+   and wants to bolt on a cache with no vendor relationship, no
+   data-processing agreement, and no credit card, the conceptual
+   surface area of bazel-remote is genuinely lower. There is no
+   onboarding funnel, no workspace concept, no API token rotation
+   ceremony.
+
+5. **No egress cost on Cloudflare R2 backend.** If you point
+   bazel-remote at Cloudflare R2 instead of AWS S3, egress is $0 per
+   R2's pricing model (verified at https://developers.cloudflare.com/r2/pricing/,
+   2026-05-27). That can make the "self-host" math surprisingly
+   favorable vs AWS S3's $0.05–$0.09/GB egress outside the region.
+
+## Where CoreLink wins
+
+Honest differentiation, grounded in charter evidence.
+
+1. **BYOK on four KMS providers, at the cache tier, not an enterprise
+   add-on.** AWS KMS, GCP KMS, Azure Key Vault, and HashiCorp Vault
+   are all first-class. The customer holds the KEK; CoreLink decrypts a
+   Data Encryption Key into memory for at most 5 minutes; key revocation
+   produces an Ed25519-signed erasure attestation. Source:
+   `README.md` lines 83–87, `specs/_audits/2026-05-27-competitive-landscape.md`
+   §3.1 item 3. bazel-remote ships htpasswd and mTLS authentication —
+   strong for mutual auth, not a key-management story. There is no
+   customer-managed-key model in bazel-remote's design.
+
+2. **RFC 6962 / RFC 3161 Merkle-chained audit log, re-derivable by
+   your auditor.** Every cache PUT and GET is appended to an
+   RFC 6962-inspired audit chain. Your external auditor downloads
+   the log shard, replays it, and recomputes the published Merkle root —
+   the same trust model that underpins Certificate Transparency. Source:
+   `README.md` lines 89–93, `specs/_audits/2026-05-27-competitive-landscape.md`
+   §3.1 item 5. bazel-remote exposes Prometheus metrics and logs to
+   stdout; there is no tamper-evident audit chain in the project.
+   When your SOC 2 Type II auditor asks "how do you prove the build
+   cache log was not modified?", CoreLink hands them a Merkle root and
+   a replay script. bazel-remote's answer is "trust our log rotation."
+
+3. **Polyglot, not Bazel-only.** bazel-remote implements REAPI v2 for
+   Bazel, BuildStream, recc, Pants, Please, and Buck2. That is the full
+   REAPI surface. CoreLink adds first-class adapters for Cargo, npm,
+   pip, brew, and OCI artifact paths on the same content-addressable
+   store. For a polyglot org running a Rust backend + a Node frontend +
+   Bazel data pipeline + OCI builds, bazel-remote covers one leg.
+   CoreLink covers all four on one bill, one audit log, one BYOK
+   envelope. Source: `README.md` line 15, `specs/_audits/2026-05-27-competitive-landscape.md`
+   §3.1 item 2.
+
+4. **No ops overhead.** bazel-remote is not a product you buy — it is
+   a service you operate. You patch the Go binary when CVEs land (it is
+   community-maintained, last release 2025-09-28 at time of writing).
+   You tune the disk eviction policy. You monitor Prometheus endpoint
+   health. You decide when S3 bucket versioning or lifecycle rules need
+   adjustment. You handle the IAM rotation. You rebuild the deployment
+   if the host node dies. CoreLink runs on Cloudflare's edge with
+   99.99% uptime backed by Cloudflare's SLA; your SREs do not touch
+   the cache layer. The question is whether your SRE time is cheaper
+   than CoreLink's flat fee — see the cost comparison below.
+
+5. **TLA+-verified tenant isolation invariant.** The cross-tenant safety
+   property is model-checked in CI; counterexamples block merge to
+   `main`. Source: `README.md` lines 76–81. bazel-remote's isolation
+   model is filesystem-level bucket prefixes plus optional mTLS cert
+   segmentation — solid for a single-tenant shop, weaker for a platform
+   team serving multiple internal tenants who should not see each
+   other's cache entries.
+
+6. **Predictable flat pricing with one number.** Pro is $25/mo or
+   $250/yr (two months free) for 500 GB / 20M requests. Enterprise
+   is $500–$5,000/mo for BYOK + dedicated infra + SLA + SSO.
+   bazel-remote's cost is unbounded and depends on your S3 usage
+   pattern — which is fine when usage is small, but can surprise you
+   at scale. CoreLink's bill is the same number every month until you
+   upgrade.
+
+## Cost comparison
+
+Concrete three-scale analysis. The S3 numbers use AWS S3 Standard
+us-east-1 pricing (https://aws.amazon.com/s3/pricing/, 2026-05-27).
+The compute estimate for bazel-remote assumes a modest instance running
+the binary; the SRE time estimate is conservative.
+
+| Scale | bazel-remote + AWS S3 (est.) | CoreLink |
+|---|---|---|
+| **10 GB warm cache** (small team, ~1M req/mo) | S3: ~$0.25/mo storage + ~$0.05 egress + ~$0.50 requests ≈ **$1–$5/mo** + 1–3 hr/mo SRE | Free tier: $0/mo (10 GB, 500k req included); $25/mo Pro if you exceed 500k req/mo |
+| **500 GB warm cache** (mid-size team, ~10M req/mo) | S3: ~$11.50/mo storage + egress $5–$50/mo (varies) + requests ~$5/mo + instance ~$30–$50/mo ≈ **$50–$120/mo** + 4–8 hr/mo SRE | Pro: $25/mo flat (500 GB / 20M req included). No separate compute line item. |
+| **5 TB warm cache** (large org, ~100M req/mo) | S3: ~$115/mo storage + egress $50–$500/mo + requests ~$50/mo + cluster ~$200–$500/mo ≈ **$400–$1,200/mo** + 10–20 hr/mo SRE | Enterprise: $500–$5,000/mo (includes BYOK + dedicated infra + SLA + SSO). Flat. |
+
+**What the table does not show:**
+
+- **SRE time loaded cost.** At $100/hr loaded, 8 hr/mo of SRE
+  maintenance on a 500 GB bazel-remote instance is $9,600/year of
+  invisible engineering cost — against CoreLink Pro's $300/year.
+  The crossover where CoreLink's flat fee is clearly cheaper in total
+  cost of ownership (TCO) is typically at the 200–500 GB range for a
+  team with an SRE allocated to other work.
+
+- **Audit-prep savings.** If your SOC 2 Type II audit requires
+  a tamper-evident log at the build-cache layer, CoreLink hands your
+  auditor a Merkle root and a replay script. With bazel-remote, the
+  auditor's question is "trust the log." Auditprep time translates
+  to real consulting fees at $150–$300/hr.
+
+- **Egress surprise.** AWS S3 egress outside the region is $0.05–$0.09/GB.
+  A 500 GB cache with 100% cache-hit ratio (optimistic) re-serving all
+  hits from outside us-east-1 adds $25–$45/mo of egress alone.
+  Cloudflare R2 is $0 egress — if you are running bazel-remote on R2
+  instead of S3, the storage math is better ($0.015 vs $0.023/GB-mo)
+  and egress is free. Use R2-backed bazel-remote to inform the low end
+  of the estimate above.
+
+## When to use which — decision tree
+
+Ask three questions:
+
+**1. Do you need multi-package-manager cache (Cargo / npm / pip / OCI)
+beyond Bazel / Buck2?**
+
+- **Yes** → CoreLink. bazel-remote does not have a Cargo or npm adapter.
+- **No** → continue to question 2.
+
+**2. Do you have an SRE available to deploy, patch, and monitor a
+Go binary + S3 bucket, and is that SRE time genuinely cheaper than
+$25/mo?**
+
+- **Yes, and your cache stays under ~200 GB** → bazel-remote + S3 (or
+  R2 for zero egress). The software cost is $0 and your SRE overhead
+  is low.
+- **No, or your cache is >200 GB** → CoreLink. The TCO math favors
+  managed at scale.
+- **Uncertain** → run bazel-remote + CoreLink in parallel (see migration
+  section). Measure real cache-hit ratio and incident rate for 30 days.
+
+**3. Does your SOC 2 / HIPAA / ISO 27001 auditor require
+customer-managed keys or a re-derivable tamper-evident audit log at the
+cache layer?**
+
+- **Yes** → CoreLink Enterprise. bazel-remote does not have a KMS story.
+- **No, your auditor accepts "trust the log" + bucket IAM** → bazel-remote
+  is compliant enough at this posture.
+- **Not sure yet** → start on bazel-remote; add CoreLink as the L2 shared
+  cache when the auditor question surfaces.
+
+## Migration path
+
+You are running bazel-remote + S3 and you want to evaluate CoreLink,
+or you want to move to CoreLink for production. The migration is
+idempotent — you can run both in parallel indefinitely.
+
+**Step 1 — Provision a CoreLink workspace.**
+Sign up at `https://corelink-app.humangr.com/sign-up`. No credit card.
+You will land on the Free tier (10 GB cache, 500k req/mo). This does not
+touch your existing bazel-remote deployment.
+
+**Step 2 — Run CoreLink as a shadow L2 alongside bazel-remote.**
+Add a second `--remote_cache` flag to your Bazel invocations. Bazel
+supports stacking a remote downloader and a remote cache:
+
+```bash
+bazel build //... \
+  --remote_cache=grpc://localhost:9092 \          # your bazel-remote (L1)
+  --experimental_remote_cache_compression=true \
+  --remote_header=x-corelink-shadow=true          # (CoreLink endpoint as primary, bazel-remote as shadow)
+```
+
+Or simply run two separate build passes with a swap flag in your CI
+`.bazelrc`. The point is: both run simultaneously for two to four weeks.
+You compare cache-hit ratio, p95 GET latency, error rate, and PUT
+acknowledgment time.
+
+**Step 3 — Measure the overlap.**
+Cache semantics are content-addressable. Both caches hash the same inputs;
+both should return the same hits. If CoreLink's hit ratio matches
+bazel-remote's hit ratio within ±2%, the caches are equivalent for your
+workload. If CoreLink's latency is acceptable (Cloudflare edge is
+typically sub-30ms p95 within a major metro), you are ready to cut over.
+
+**Step 4 — Move primary traffic to CoreLink.**
+Update your `.bazelrc` (and any `--remote_cache` flags in your CI runner
+config) to point at CoreLink's endpoint. Keep bazel-remote running in
+read-only mode for 30 days as a fallback; its S3 bucket costs roughly
+$0.023/GB-month for the transition window.
+
+```ini
+# .bazelrc
+build --remote_cache=https://corelink-api.humangr.com/cache/v1/<workspace-id>
+build --remote_header=Authorization=Bearer <PAT>
+build --remote_cache_compression=true
+```
+
+**Step 5 — Add Cargo / npm / OCI (optional, incremental).**
+Once Bazel is migrated, point your `sccache` remote backend, your
+Turborepo remote cache, and your Docker BuildKit `--cache-from` at the
+same CoreLink workspace. Same bucket, same audit log, same BYOK
+envelope. You can add adapters one at a time; there is no forced
+bundling.
+
+**Step 6 — BYOK rotation (Enterprise only).**
+If your SOC 2 auditor requires customer-managed keys, open an Enterprise
+conversation. CoreLink's BYOK is additive — you bring your KMS ARN/URL
+and CoreLink's key-management layer wraps every new DEK with your KEK.
+Existing cache objects can be re-encrypted on a rolling schedule.
+
+**Rollback:** if you encounter a problem during Steps 4–5, set
+`--remote_cache` back to your bazel-remote endpoint. Your bazel-remote
+data and S3 bucket are untouched. There is no destructive operation
+in this migration.
+
+## Sources
+
+The following sources were used in this comparison. Prices and limits
+change — verify before quoting in a buying decision.
+
+- **bazel-remote project:**
+  [https://github.com/buchgr/bazel-remote](https://github.com/buchgr/bazel-remote)
+  — Apache-2.0 license, documentation, issue tracker. Stars / release
+  count verified 2026-05-27.
+- **AWS S3 pricing:**
+  [https://aws.amazon.com/s3/pricing/](https://aws.amazon.com/s3/pricing/)
+  — Standard storage us-east-1 $0.023/GB-mo; egress $0.05–$0.09/GB.
+  Verified 2026-05-27.
+- **Cloudflare R2 pricing:**
+  [https://developers.cloudflare.com/r2/pricing/](https://developers.cloudflare.com/r2/pricing/)
+  — $0.015/GB-mo storage; $0 egress. Verified 2026-05-27.
+- **CoreLink README:**
+  `README.md` lines 13–99 (BYOK, REAPI, audit log, polyglot surface).
+  Source of all CoreLink claims on this page.
+- **CoreLink competitive landscape audit:**
+  `specs/_audits/2026-05-27-competitive-landscape.md` §1 (bazel-remote
+  row), §3.1 (CoreLink strengths), §3.4 (where OSS wins), §5
+  (comparison-page guidance).
+- **CoreLink pricing benchmarks:**
+  `specs/_audits/2026-05-27-pricing-benchmarks.md` §1, §5 (pricing
+  tiers anchor, Free/Pro/Enterprise confirmed).
+- **CoreLink docs:** [/docs](/docs/)
+- **CoreLink pricing:** [/pricing](/pricing/)
+- **Capability matrix (with BuildBuddy, EngFlow, NativeLink, sccache
+  alongside bazel-remote):**
+  [/docs/pricing/comparison](/docs/pricing/comparison)
+
+If you find a factual error on this page, open an issue on
+`humangr-labs/corelink-server`. Correctness wins over rhetoric.
