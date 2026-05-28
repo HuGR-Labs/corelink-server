@@ -583,9 +583,9 @@ fn journey_cache_miss_hit(cfg: &Config, client: &Client) -> JourneyResult {
     if returned_bytes2.as_ref() != blob_bytes {
         return JourneyResult {
             name,
-            status: JourneyStatus::Fail(format!(
-                "GET blob (2nd) bytes don't match. P0-7: ephemeral in-memory storage.",
-            )),
+            status: JourneyStatus::Fail(
+                "GET blob (2nd) bytes don't match. P0-7: ephemeral in-memory storage.".to_string(),
+            ),
             duration_ms: start.elapsed().as_millis() as u64,
             p0_gates,
         };
@@ -1082,12 +1082,13 @@ fn journey_audit_export(cfg: &Config, client: &Client) -> JourneyResult {
     if audit_status == 403 {
         return JourneyResult {
             name,
-            status: JourneyStatus::Fail(format!(
+            status: JourneyStatus::Fail(
                 "GET /v1/admin/audit/events returned 403. \
                  PAT may not have `admin` scope. \
                  If the endpoint returned 404 instead, P0-1 is confirmed (route not bound). \
                  Provide an admin-scoped PAT to complete this journey."
-            )),
+                    .to_string(),
+            ),
             duration_ms: start.elapsed().as_millis() as u64,
             p0_gates,
         };
@@ -1096,10 +1097,11 @@ fn journey_audit_export(cfg: &Config, client: &Client) -> JourneyResult {
     if audit_status == 401 {
         return JourneyResult {
             name,
-            status: JourneyStatus::Fail(format!(
+            status: JourneyStatus::Fail(
                 "GET /v1/admin/audit/events returned 401. \
                  Auth not working on this endpoint."
-            )),
+                    .to_string(),
+            ),
             duration_ms: start.elapsed().as_millis() as u64,
             p0_gates,
         };
