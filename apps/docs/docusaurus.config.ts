@@ -371,6 +371,15 @@ const config: Config = {
           ],
         },
         {
+          title: "Compare",
+          items: [
+            { label: "vs BuildBuddy", to: "/compare/vs-buildbuddy" },
+            { label: "vs EngFlow", to: "/compare/vs-engflow" },
+            { label: "vs Nx Cloud", to: "/compare/vs-nx-cloud" },
+            { label: "vs bazel-remote + S3", to: "/compare/vs-bazel-remote-s3" },
+          ],
+        },
+        {
           title: "Community",
           items: [
             { label: "GitHub", href: `https://github.com/${ORG}/${REPO}` },
