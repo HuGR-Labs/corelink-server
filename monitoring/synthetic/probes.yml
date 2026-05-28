@@ -1,0 +1,177 @@
+# CoreLink BetterStack synthetic monitoring probes
+#
+# Status page: https://uptime.betterstack.com/api/v2/status-pages/247652
+# Custom domain: https://status.corelink.humangr.com
+#
+# Apply with: scripts/apply-betterstack-probes.sh --dry-run
+# Live apply (Owner-only): scripts/apply-betterstack-probes.sh --apply
+#
+# Probe targets per Wave 32 §G DNS inventory (flat-rename canonical hostnames).
+# R27 extends base 5 probes with admin + get endpoints (7 total).
+#
+# BetterStack Monitor API reference:
+#   POST /api/v2/monitors
+#   Fields: monitor_type, url, pronounceable_name, check_frequency,
+#           request_timeout, expected_status_codes, regions,
+#           request_headers, confirmation_period, paused
+
+version: "1"
+betterstack:
+  page_id: "247652"
+
+probes:
+  # Probe 1: API health — core worker health check
+  - name: "corelink-api-health"
+    pronounceable_name: "CoreLink API Health"
+    url: "https://corelink-api.humangr.com/health"
+    method: "GET"
+    monitor_type: "status"
+    check_frequency_seconds: 30
+    request_timeout_seconds: 10
+    expected_status_codes:
+      - 200
+    body_assertions:
+      - type: "json_body"
+        path: "$.status"
+        value: "ok"
+    regions:
+      - "us-east"
+      - "eu"
+      - "ap"
+    confirmation_period_seconds: 0
+    paused: false
+    tags:
+      - "api"
+      - "core"
+      - "wave32"
+
+  # Probe 2: App (Admin UI) — Clerk-gated Next.js frontend
+  - name: "corelink-app-ui"
+    pronounceable_name: "CoreLink App UI"
+    url: "https://corelink-app.humangr.com"
+    method: "GET"
+    monitor_type: "status"
+    check_frequency_seconds: 60
+    request_timeout_seconds: 15
+    expected_status_codes:
+      - 200
+    body_assertions: []
+    regions:
+      - "us-east"
+      - "eu"
+      - "ap"
+    confirmation_period_seconds: 0
+    paused: false
+    tags:
+      - "app"
+      - "clerk"
+      - "wave32"
+
+  # Probe 3: Docs — Docusaurus CF Pages site
+  - name: "corelink-docs"
+    pronounceable_name: "CoreLink Docs"
+    url: "https://corelink-docs.humangr.com"
+    method: "GET"
+    monitor_type: "status"
+    check_frequency_seconds: 60
+    request_timeout_seconds: 15
+    expected_status_codes:
+      - 200
+    body_assertions: []
+    regions:
+      - "us-east"
+      - "eu"
+      - "ap"
+    confirmation_period_seconds: 0
+    paused: false
+    tags:
+      - "docs"
+      - "wave32"
+
+  # Probe 4: Signup worker health
+  - name: "corelink-signup-health"
+    pronounceable_name: "CoreLink Signup Health"
+    url: "https://corelink-signup.humangr.com"
+    method: "GET"
+    monitor_type: "status"
+    check_frequency_seconds: 60
+    request_timeout_seconds: 15
+    expected_status_codes:
+      - 200
+    body_assertions: []
+    regions:
+      - "us-east"
+      - "eu"
+      - "ap"
+    confirmation_period_seconds: 0
+    paused: false
+    tags:
+      - "signup"
+      - "wave32"
+
+  # Probe 5: CLI install endpoint — expects text/plain response
+  - name: "corelink-get-install"
+    pronounceable_name: "CoreLink CLI Install Endpoint"
+    url: "https://corelink-get.humangr.com"
+    method: "GET"
+    monitor_type: "status"
+    check_frequency_seconds: 60
+    request_timeout_seconds: 15
+    expected_status_codes:
+      - 200
+    content_type_assertion: "text/plain"
+    body_assertions: []
+    regions:
+      - "us-east"
+      - "eu"
+      - "ap"
+    confirmation_period_seconds: 0
+    paused: false
+    tags:
+      - "cli"
+      - "install"
+      - "wave32"
+
+  # Probe 6 (R27): Admin worker health — BetterStack operator endpoint
+  - name: "corelink-admin-health"
+    pronounceable_name: "CoreLink Admin Worker Health"
+    url: "https://corelink-admin.humangr.com/health"
+    method: "GET"
+    monitor_type: "status"
+    check_frequency_seconds: 60
+    request_timeout_seconds: 15
+    expected_status_codes:
+      - 200
+    body_assertions: []
+    regions:
+      - "us-east"
+      - "eu"
+      - "ap"
+    confirmation_period_seconds: 0
+    paused: false
+    tags:
+      - "admin"
+      - "r27"
+      - "wave32"
+
+  # Probe 7 (R27): CLI get endpoint — HEAD check (no body download)
+  - name: "corelink-get-head"
+    pronounceable_name: "CoreLink CLI Get HEAD Check"
+    url: "https://corelink-get.humangr.com"
+    method: "HEAD"
+    monitor_type: "status"
+    check_frequency_seconds: 60
+    request_timeout_seconds: 10
+    expected_status_codes:
+      - 200
+    body_assertions: []
+    regions:
+      - "us-east"
+      - "eu"
+      - "ap"
+    confirmation_period_seconds: 0
+    paused: false
+    tags:
+      - "cli"
+      - "r27"
+      - "wave32"
