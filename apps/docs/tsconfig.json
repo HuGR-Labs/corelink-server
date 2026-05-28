@@ -21,6 +21,7 @@
   "include": [
     "src/**/*",
     "tests/**/*",
+    "functions/**/*",
     "docusaurus.config.ts",
     "sidebars.ts"
   ],

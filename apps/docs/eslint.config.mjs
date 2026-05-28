@@ -35,6 +35,13 @@ export default [
         // browser
         window: "readonly",
         document: "readonly",
+        // Fetch API (Node 18+ globals; needed for the Pages-Functions
+        // contract tests under tests/middleware-pages.test.ts).
+        Request: "readonly",
+        Response: "readonly",
+        URL: "readonly",
+        Headers: "readonly",
+        fetch: "readonly",
         // node
         process: "readonly",
         console: "readonly",
@@ -43,6 +50,7 @@ export default [
         describe: "readonly",
         it: "readonly",
         expect: "readonly",
+        vi: "readonly",
         beforeAll: "readonly",
         afterAll: "readonly",
         beforeEach: "readonly",
