@@ -27,10 +27,11 @@ workers_dev = false
 
 # [limits] cpu_ms cap per request — hard upper bound that aborts runaway
 # request handlers before CF bills extra CPU. Default is 50ms on Workers
-# Paid plan; pinning to 30ms gives headroom while bounding worst case.
-# Aborted requests still cost a single invocation but no DO/R2/D1 followup.
+# Paid plan; raised to 100ms (P1-3: HMAC auth path 5-15ms overhead caused
+# CPU-Exceeded 1102 errors under load at 30ms; 100ms provides adequate
+# headroom for the Sonnet HMAC auth path without unbounded runaway risk).
 [limits]
-cpu_ms = 30
+cpu_ms = 100
 
 # Container com o servidor gRPC Rust
 [[containers]]
@@ -328,6 +329,29 @@ class_name = "CoreLinkServer"
 image = "./Dockerfile"
 max_instances = 20
 instance_type = "standard-1"
+# P0-5 / WP-C1 — DECISION-GATE-1 Option A: container reaches R2 via S3 API
+# over egress (no VPC-style internal route on CF Workers platform).
+# enableInternet = true is scoped to this prod container only; the default-env
+# [[containers]] block retains the original (no enableInternet key = false).
+enableInternet = true
+
+# R2 S3 credentials for the native container (WP-C1 / WP-S1 pairing).
+# Non-secret config (endpoint template + account ID ref) lives here as [vars].
+# Actual key material is injected at runtime via wrangler secrets (see
+# scripts/d-day-r2-s3-creds-runbook.md for the minting + put procedure).
+#
+# Env vars the container runtime will see:
+#   R2_S3_ENDPOINT          — https://<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com
+#   CLOUDFLARE_ACCOUNT_ID   — CF account ID (already a secret; see row #49-equivalent)
+#   R2_S3_ACCESS_KEY_ID     — R2 S3 access key (wrangler secret; see secrets-checklist row 139)
+#   R2_S3_SECRET_ACCESS_KEY — R2 S3 secret key (wrangler secret; see secrets-checklist row 140)
+[env.prod.containers.vars]
+R2_S3_ENDPOINT = "https://CLOUDFLARE_ACCOUNT_ID_PLACEHOLDER.r2.cloudflarestorage.com"
+
+[env.prod.containers.secrets]
+CLOUDFLARE_ACCOUNT_ID = "CLOUDFLARE_ACCOUNT_ID"
+R2_S3_ACCESS_KEY_ID = "R2_S3_ACCESS_KEY_ID"
+R2_S3_SECRET_ACCESS_KEY = "R2_S3_SECRET_ACCESS_KEY"
 
 # R2-10 — prod KV / D1 / DO bindings. IDs are placeholders pending
 # the `wrangler kv namespace create --env prod` / `wrangler d1 create

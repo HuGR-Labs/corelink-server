@@ -142,6 +142,12 @@ ALLOWLIST_REGEX = re.compile(
     # in source. No credential material.
     #   Consumer: apps/admin-ui/src/lib/analytics.ts
     r"|NEXT_PUBLIC_ANALYTICS_ENDPOINT$"
+    # WP-C1 (2026-05-28) — R2 S3 endpoint URL template for the native container.
+    # Declared in [[env.prod.containers]] [vars] (non-secret; the URL itself is
+    # public knowledge: https://<account_id>.r2.cloudflarestorage.com).
+    # The actual account ID is supplied at runtime via the CLOUDFLARE_ACCOUNT_ID
+    # secret (matrix row #49-equivalent). No credential material here.
+    r"|R2_S3_ENDPOINT$"
     r")"
 )
 
