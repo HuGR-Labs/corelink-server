@@ -30,9 +30,10 @@
     "docs:typecheck": "pnpm --filter @corelink/docs typecheck",
     "docs:gen": "pnpm --filter @corelink/docs docs:gen",
     "docs:gen:check": "pnpm --filter @corelink/docs docs:gen:check",
-    "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint",
-    "test": "pnpm -r test",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "lint": "pnpm -r --parallel lint",
+    "test": "pnpm -r --parallel test",
+    "test:coverage": "pnpm -r test:coverage",
     "build": "pnpm -r build"
   }
 }

@@ -9,8 +9,10 @@
   },
   "scripts": {
     "dev": "wrangler dev --local --config ../wrangler.toml",
-    "test": "vitest run --coverage",
-    "test:watch": "vitest --coverage",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "test:file": "vitest run",
     "test:miniflare": "vitest run --config vitest.miniflare.config.mts",
     "build": "wrangler deploy --dry-run --outdir ../dist",
     "typecheck": "tsc --noEmit",

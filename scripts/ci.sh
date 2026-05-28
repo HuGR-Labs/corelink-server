@@ -31,6 +31,18 @@ cd "$REPO_ROOT"
 LOG_DIR="target/ci-logs"
 mkdir -p "$LOG_DIR"
 
+# Optional compile cache (opt-in). sccache routes rustc through a shared cache
+# so the redundant recompiles across build/clippy/test gates — and across runs
+# — are served from cache instead of rebuilt. OFF by default: the cache needs
+# several GB of free disk, and this box runs tight. Enable once disk is freed:
+#   CORELINK_SCCACHE=1 scripts/ci.sh
+if [ "${CORELINK_SCCACHE:-0}" = 1 ] && command -v sccache >/dev/null 2>&1; then
+    export RUSTC_WRAPPER=sccache
+    export SCCACHE_CACHE_SIZE="${SCCACHE_CACHE_SIZE:-4G}"
+    sccache --start-server >/dev/null 2>&1 || true
+    echo "[sccache enabled — cache cap ${SCCACHE_CACHE_SIZE}]" >&2
+fi
+
 # --- arg parse ----------------------------------------------------------------
 RUN_RUST=1
 RUN_VALIDATORS=1
@@ -68,7 +80,15 @@ RUST_GATES=(
     "cargo-clippy|cargo clippy --workspace --all-targets -- -D warnings"
 )
 if [ "$RUN_TEST_COMPILE" = 1 ]; then
-    RUST_GATES+=("cargo-test-compile|cargo test --workspace --no-run")
+    # nextest RUNS the suite (not just --no-run compile) and parallelises test
+    # execution across all cores via the `ci` profile (.config/nextest.toml).
+    # Falls back to `cargo test` if nextest is unavailable. This is strictly
+    # MORE rigorous than the old --no-run gate, which never executed a test.
+    if command -v cargo-nextest >/dev/null 2>&1; then
+        RUST_GATES+=("cargo-nextest|cargo nextest run --workspace --profile ci")
+    else
+        RUST_GATES+=("cargo-test|cargo test --workspace")
+    fi
 fi
 if [ "$RUN_WASM32" = 1 ]; then
     RUST_GATES+=("cargo-wasm32|cargo build --target wasm32-unknown-unknown -p corelink-clerk-cf")

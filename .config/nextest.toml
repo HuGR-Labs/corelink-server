@@ -1,0 +1,41 @@
+# cargo-nextest configuration — CoreLink workspace.
+#
+# nextest runs every test as its own process and schedules them across all
+# cores by default, so a full `cargo nextest run` is materially faster than
+# `cargo test` (which runs each crate's tests serially within one binary).
+#
+# Sharding: split the suite across N machines/agents with
+#   cargo nextest run --partition count:1/3   (shard 1 of 3)
+#   cargo nextest run --partition count:2/3   (shard 2 of 3)
+#   cargo nextest run --partition count:3/3   (shard 3 of 3)
+# Same total work, divided — pay parallel compute, win wall-clock. Rigor is
+# unchanged: the union of the shards is the whole suite.
+
+[profile.default]
+# Use all cores. nextest defaults to num-cpus; pin it explicit for clarity.
+test-threads = "num-cpus"
+# Surface slow tests (warn every 60s) WITHOUT killing them: some crypto
+# proptests (Argon2id in corelink-pat/byok) legitimately run for minutes because
+# the KDF is deliberately expensive and proptest exercises it hundreds of times.
+# terminate-after=10 → only a genuinely hung test (>600s) is killed. We do NOT
+# lower PROPTEST_CASES, which would reduce input-space coverage (rigor).
+slow-timeout = { period = "60s", terminate-after = 10 }
+# Dev loop: stop on first failure for fast feedback.
+fail-fast = true
+final-status-level = "fail"
+
+[profile.ci]
+# Pre-merge gate profile: run the WHOLE suite (no fail-fast — we want the
+# complete failure list, not just the first), retry genuinely-flaky tests
+# a bounded number of times, and emit JUnit for tooling.
+test-threads = "num-cpus"
+fail-fast = false
+retries = 2
+# Warn on slow tests but only kill a real hang (>900s). Crypto proptests run
+# for minutes by design; the gate must not false-fail on them.
+slow-timeout = { period = "120s", terminate-after = 7 }
+failure-output = "immediate-final"
+final-status-level = "flaky"
+
+[profile.ci.junit]
+path = "junit.xml"
