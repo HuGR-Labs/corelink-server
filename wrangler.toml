@@ -334,7 +334,14 @@ bucket_name = "corelink-manifest-syd"
 
 [[env.prod.containers]]
 class_name = "CoreLinkServer"
-image = "./Dockerfile"
+# Pinned to the explicit registry image because wrangler v4's default deploy
+# path silently skipped the container rebuild when only container source
+# changed (no Worker delta). Built via `docker build --no-cache` + pushed via
+# `wrangler containers push`. Tag 832c7884e = WP-I1 router + WP-S2 env wiring +
+# WP-S1.2 real AC R2 handler + WP-S1.2 real D1 Admin handler + cas.rs
+# block_in_place fix. Once 2aa2be6f's Dockerfile cache invalidation fix proves
+# itself end-to-end in CI, revert to "./Dockerfile".
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-corelinkserver-prod:832c7884e"
 max_instances = 20
 instance_type = "standard-1"
 # P0-5 — DECISION-GATE-1 Option A: the container reaches R2 (S3 API) + D1 (HTTP

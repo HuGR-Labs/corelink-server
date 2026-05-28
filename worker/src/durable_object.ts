@@ -78,7 +78,13 @@ const HEALTH_CHECK_INTERVAL_MS = 30_000;
 /** Max consecutive health-check failures before marking degraded. */
 const MAX_HEALTH_FAILURES = 3;
 /** Container startup health-poll timeout (ms). */
-const STARTUP_TIMEOUT_MS = 30_000;
+// Bumped to 90s on 2026-05-28: the container's routes-build path now eagerly
+// constructs both the R2 CAS S3 client and the R2 AC S3 client (block_in_place
+// + block_on against the real R2 endpoint), each ~10-15s for DNS + SigV4 +
+// initial connection. 30s wasn't enough on cold start; observed real failures
+// at 26s. Per-handler lazy init would cut this back, but the bump is the
+// surgical worker-only fix.
+const STARTUP_TIMEOUT_MS = 90_000;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Hashing helpers (INV-NO-PII-IN-LOGS)
