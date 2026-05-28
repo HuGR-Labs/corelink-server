@@ -120,4 +120,4 @@ it, be isolated from other tenants, and have their operations audited.
 
 ## Commit
 
-Commit SHA: to be set after `git commit`.
+Commit SHA: `ee03e05f`
