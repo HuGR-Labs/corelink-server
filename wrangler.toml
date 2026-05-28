@@ -248,6 +248,18 @@ zone_name = "humangr.com"
 pattern = "corelink-admin.humangr.com/*"
 zone_name = "humangr.com"
 
+[[env.prod.routes]]
+pattern = "corelink-app.humangr.com/*"
+zone_name = "humangr.com"
+
+[[env.prod.routes]]
+pattern = "corelink-docs.humangr.com/*"
+zone_name = "humangr.com"
+
+[[env.prod.routes]]
+pattern = "corelink-get.humangr.com/*"
+zone_name = "humangr.com"
+
 [[env.prod.r2_buckets]]
 binding = "CAS_BUCKET"
 bucket_name = "corelink-cas-prod"
