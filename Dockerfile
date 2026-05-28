@@ -15,7 +15,11 @@
 # quando o código real muda.
 
 # ---- Build stage ----
-FROM rust:1.91-slim-bookworm AS builder
+# HO-1: digest-pinned per Wave-32 Phase E audit (supply-chain integrity).
+# Tag rust:1.91-slim-bookworm is preserved alongside the digest for human
+# readability; the digest is the authoritative reference. Refresh both
+# together when bumping the Rust toolchain.
+FROM rust:1.91-slim-bookworm@sha256:ac77791dbc2ab3cd3ab732fe9b45b0414a794743da99e679fa99e8faa3b6c1e3 AS builder
 
 # Deps pra compilar protos e linkagem
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -69,7 +73,8 @@ COPY crates/corelink-container/src ./crates/corelink-container/src
 RUN cargo build --release -p corelink-server --bin corelink-server
 
 # ---- Runtime stage ----
-FROM debian:bookworm-slim
+# HO-1: digest-pinned per Wave-32 Phase E audit (supply-chain integrity).
+FROM debian:bookworm-slim@sha256:b29f74a267526ae6ea104eed6c46133b0ca70ce812525df8cd5817698f0a624a
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -83,8 +88,9 @@ COPY --from=builder /build/target/release/corelink-server /usr/local/bin/corelin
 
 USER corelink
 
-ENV RUST_LOG=info
-ENV PORT=50051
+# Consolidated runtime env (HO-3a — per Wave-32 Phase E audit).
+ENV RUST_LOG=info \
+    PORT=50051
 
 EXPOSE 50051
 

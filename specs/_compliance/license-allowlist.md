@@ -91,7 +91,7 @@ dependency; the hosted service agreement is a separate contract.
 |---|---|---|
 | MIT-0 | Acceptable (not yet in deny.toml) | Zero-attribution MIT variant. `constant_time_eq@0.4.2`, `dunce@1.0.5` use `CC0-1.0 OR MIT-0 OR Apache-2.0`. Since expressions include CC0-1.0 or Apache-2.0 (both allowed), these crates are permissible. Follow-up: add MIT-0 to deny.toml allowlist. |
 | Unlicense | Acceptable (not yet in deny.toml) | Public domain dedication. `aho-corasick@1.1.4`, `memchr@2.8.0` use `Unlicense OR MIT`. Since expressions include MIT (allowed), these crates are permissible. Follow-up: add Unlicense to deny.toml allowlist. |
-| BSL-1.0 | REVIEW REQUIRED | Boost Software License 1.0. `ryu@1.0.23`, `ryu-js@0.2.2` use `Apache-2.0 OR BSL-1.0`. BSL-1.0 is a permissive license with minimal requirements. However it is not yet in the allowlist. Since the expression includes Apache-2.0 (allowed), `cargo-deny` should be able to satisfy either clause. ADR recommended before next SBOM refresh. |
+| BSL-1.0 | **Allowed (in deny.toml; ratified 2026-05-27)** | Boost Software License 1.0. Strictly less restrictive than Apache-2.0 in compiled form (no NOTICE file requirement, no patent retaliation clause). Ratified by [ADR-S32-001](../03_architecture/adrs/ADR-S32-001-bsl-1.0-license-allowlist.md). Clears `ryu@1.0.23` + `ryu-js@0.2.2` (dual `Apache-2.0 OR BSL-1.0`) and future small algorithmic Rust ports that adopt this dual-license pattern. |
 | Apache-2.0 WITH LLVM-exception | Allowed (in deny.toml) | Parser false-positive in audit script: `target-lexicon@0.13.5` and `rustix@1.1.4` carry this. Already in `deny.toml allow[]`. |
 
 ## §5 Audit history

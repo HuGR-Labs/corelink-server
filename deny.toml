@@ -82,6 +82,12 @@ allow = [
     "Zlib",
     "CC0-1.0",
     "0BSD",
+    # BSL-1.0 — Boost Software License 1.0. Strictly less restrictive than
+    # Apache-2.0 in compiled form (no NOTICE file requirement, no patent
+    # retaliation clause). Ratified by ADR-S32-001 (2026-05-27) to clear
+    # ryu + ryu-js (dual Apache-2.0 OR BSL-1.0) and future small
+    # algorithmic Rust ports that adopt this dual-license pattern.
+    "BSL-1.0",
     # CDLA-Permissive-2.0 — Community Data License Agreement (Permissive).
     # Functionally equivalent to MIT/Apache for software use (permissive, no
     # copyleft, no patent traps). Added 2026-05-14 (R1-9 emergency dep
