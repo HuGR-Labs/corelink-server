@@ -127,8 +127,10 @@ pub fn build() -> Router {
 /// in a Neon-backed factory while keeping every other route shape
 /// identical.
 pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router {
+    let (cas_read, cas_write) = cas::build_handlers();
     let cas_state = cas::CasRouteState {
-        handler: cas::build_handler(),
+        read: cas_read,
+        write: cas_write,
     };
     let (ac_lookup, ac_update) = ac::build_handlers();
     let ac_state = ac::AcRouteState {

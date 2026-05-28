@@ -40,15 +40,19 @@ use axum::{
     body::{to_bytes, Body},
     http::{Request, StatusCode},
 };
-use corelink_handler_cas::{InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver};
+use corelink_handler_cas::{
+    CasReadHandler, CasWriteHandler, InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver,
+};
 use corelink_server::routes::cas::{self, CasRouteState, CAS_READ_ROUTE};
 use tower::ServiceExt;
 
 fn fresh_state() -> CasRouteState {
     let audit = Arc::new(InMemoryAuditSink::new());
     let sli = Arc::new(InMemorySliObserver::new());
-    let handler = Arc::new(InMemoryCasHandler::new(audit, sli));
-    CasRouteState { handler }
+    let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
+    let read: Arc<dyn CasReadHandler> = shared.clone();
+    let write: Arc<dyn CasWriteHandler> = shared;
+    CasRouteState { read, write }
 }
 
 /// CAS read against a fresh handler MUST reach the handler and
@@ -121,4 +125,49 @@ async fn cas_read_route_does_not_match_literal_braces_uri() {
 #[tokio::test]
 async fn cas_route_state_constructs_without_panic_on_native() {
     let _router = cas::router(fresh_state());
+}
+
+/// PUT then GET round-trip through the axum router — pins that:
+///   1. The PUT route is wired (matchit captures :tenant/:hash on PUT).
+///   2. The body bytes round-trip through the handler back to the GET.
+///   3. The PUT returns 201 Created on fresh insert (not 200).
+#[tokio::test]
+async fn cas_put_then_get_round_trip_through_router() {
+    let app = cas::router(fresh_state());
+
+    // Hash for the body bytes — we use fake_hash so the InMemory
+    // handler's hash-equality check passes.
+    let bytes: Vec<u8> = b"corelink-cas-route-put-then-get".to_vec();
+    let hash = corelink_handler_cas::handler::fake_hash(&bytes);
+
+    // PUT
+    let put_req = Request::builder()
+        .uri(format!("/v1/cas/tenant-a/{hash}"))
+        .method("PUT")
+        .body(Body::from(bytes.clone()))
+        .expect("build PUT req");
+    let put_resp = app.clone().oneshot(put_req).await.expect("PUT oneshot");
+    assert_eq!(
+        put_resp.status(),
+        StatusCode::CREATED,
+        "fresh insert must return 201 Created"
+    );
+    let put_body_bytes = to_bytes(put_resp.into_body(), 1 << 20).await.expect("body");
+    let put_body = String::from_utf8(put_body_bytes.to_vec()).expect("utf8 body");
+    assert_eq!(put_body, hash, "PUT response body must echo the content hash");
+
+    // GET — must return the SAME bytes
+    let get_req = Request::builder()
+        .uri(format!("/v1/cas/tenant-a/{hash}"))
+        .method("GET")
+        .body(Body::empty())
+        .expect("build GET req");
+    let get_resp = app.oneshot(get_req).await.expect("GET oneshot");
+    assert_eq!(
+        get_resp.status(),
+        StatusCode::OK,
+        "GET after PUT must return 200 OK with the stored bytes"
+    );
+    let got = to_bytes(get_resp.into_body(), 1 << 20).await.expect("body");
+    assert_eq!(got.to_vec(), bytes, "GET bytes must equal PUT bytes");
 }
