@@ -67,6 +67,11 @@ pub mod cas;
 /// signed token + per-IP rate-limit + fail-CLOSED audit emit. See
 /// `specs/_audits/sealed/2026-05-16-signup-corelink-dev-backend.md`.
 pub mod signup;
+/// Caller-identity reflection route: `GET /v1/users/me` reads the
+/// Worker-injected `x-corelink-tenant-id` / `-token-prefix` /
+/// `-route-kind` headers and echoes them as JSON. Lets clients verify
+/// PAT wiring without exercising any data-plane (CAS/AC) surface.
+pub mod users;
 
 /// Per-tenant in-memory shadow-sink factory. Production wiring
 /// replaces this with a Neon-backed factory (see
@@ -159,6 +164,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         .merge(audit_export::router(audit_export_state))
         .merge(audit_analytics::router(audit_analytics_state))
         .merge(signup::router(signup_state))
+        .merge(users::router())
 }
 
 #[cfg(test)]
