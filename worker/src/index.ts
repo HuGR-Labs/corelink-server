@@ -179,9 +179,11 @@ function handlePreflight(request: Request): Response | null {
 function matchRoute(url: URL): RouteMatch {
   const path = url.pathname;
 
-  // Health
-  if (path === "/health" || path === "/health/") {
-    return { tenantId: "_system", pathSuffix: "/health", routeKind: "health" };
+  // Health: both /health (CF/customer liveness) and /_health (smoke-prod check
+  // [2]; the container's DO-side probe uses the same path on the container's
+  // private port via getTcpPort, not via this public route).
+  if (path === "/health" || path === "/health/" || path === "/_health" || path === "/_health/") {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "health" };
   }
 
   // OCI v2 — /v2[/…]
