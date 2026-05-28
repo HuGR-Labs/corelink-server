@@ -83,14 +83,19 @@ impl R2S3Client {
         // is done by the endpoint URL.
         let region = Region::new("auto");
 
-        let config = aws_config::defaults(BehaviorVersion::latest())
-            .region(region.clone())
+        // CRITICAL — DO NOT call `aws_config::defaults(...).load().await`.
+        // That helper triggers the AWS credential-provider chain (IMDS,
+        // ECS, STS) which performs blocking outbound metadata probes.
+        // In CF Containers there is no IMDS endpoint, so each probe runs
+        // to its full retry budget — observed 60-90s cold-start in prod
+        // versus ~85ms locally. We already have explicit static R2
+        // credentials, so we build the S3 config directly and bypass the
+        // auto-detection path entirely (zero I/O).
+        let s3_config = aws_sdk_s3::Config::builder()
+            .behavior_version(BehaviorVersion::latest())
+            .region(region)
             .endpoint_url(&env.r2_endpoint)
             .credentials_provider(credentials)
-            .load()
-            .await;
-
-        let s3_config = aws_sdk_s3::config::Builder::from(&config)
             .force_path_style(false) // R2 supports virtual-hosted style
             .build();
 
