@@ -15,12 +15,16 @@
 #   CTRL-CRED-001 — no token value in any committed file.
 #   INV-DATA-RESIDENCY — each R2 bucket pinned to its region via locationHint.
 #
+# SAFETY: Default mode is DRY-RUN. Pass --live to make real API calls.
+#         Only the account Owner should run --live.
+#
 # Usage:
-#   bash scripts/provision-cf-corelink-prod.sh [--dry-run]
+#   bash scripts/provision-cf-corelink-prod.sh [--dry-run] [--validate-token]
+#   bash scripts/provision-cf-corelink-prod.sh --live [--validate-token]
 #
 # Exit codes:
-#   0 — all resources provisioned or already exist
-#   1 — provisioning failure
+#   0 — all resources provisioned or already exist (or dry-run completed)
+#   1 — provisioning failure or token-scope check failed
 #   2 — pre-flight error (missing credentials, curl unavailable, etc.)
 
 set -euo pipefail
@@ -35,41 +39,68 @@ ENV_FILE="$REPO_ROOT/.env.local"
 WRANGLER_TOML="$REPO_ROOT/wrangler.toml"
 CF_API="https://api.cloudflare.com/client/v4"
 
-DRY_RUN=false
-if [[ "${1:-}" == "--dry-run" ]]; then
-    DRY_RUN=true
-    echo "[DRY-RUN] No real resources will be created."
+# Default: DRY-RUN (safe). Operator must pass --live to execute real API calls.
+DRY_RUN=true
+VALIDATE_TOKEN=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --live)
+            DRY_RUN=false
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            ;;
+        --validate-token)
+            VALIDATE_TOKEN=true
+            ;;
+        *)
+            echo "Unknown argument: $arg" >&2
+            echo "Usage: $0 [--dry-run|--live] [--validate-token]" >&2
+            exit 2
+            ;;
+    esac
+done
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[DRY-RUN] No real resources will be created. Pass --live to execute."
 fi
 
 # ----------------------------------------------------------------------------
 # Load credentials
 # ----------------------------------------------------------------------------
 
-if [[ ! -f "$ENV_FILE" ]]; then
-    echo "FATAL: .env.local not found at $ENV_FILE" >&2
-    exit 2
-fi
-
 # Source only the CF_ vars — do not export arbitrary env.
 CLOUDFLARE_API_TOKEN=""
 CLOUDFLARE_ACCOUNT_ID=""
 
-while IFS='=' read -r key val; do
-    [[ "$key" =~ ^# ]] && continue
-    [[ -z "$key" ]] && continue
-    val="${val%\"}"
-    val="${val#\"}"
-    val="${val%\'}"
-    val="${val#\'}"
-    case "$key" in
-        CLOUDFLARE_API_TOKEN)  CLOUDFLARE_API_TOKEN="$val"  ;;
-        CLOUDFLARE_ACCOUNT_ID) CLOUDFLARE_ACCOUNT_ID="$val" ;;
-    esac
-done < "$ENV_FILE"
+if [[ -f "$ENV_FILE" ]]; then
+    while IFS='=' read -r key val; do
+        [[ "$key" =~ ^# ]] && continue
+        [[ -z "$key" ]] && continue
+        val="${val%\"}"
+        val="${val#\"}"
+        val="${val%\'}"
+        val="${val#\'}"
+        case "$key" in
+            CLOUDFLARE_API_TOKEN)  CLOUDFLARE_API_TOKEN="$val"  ;;
+            CLOUDFLARE_ACCOUNT_ID) CLOUDFLARE_ACCOUNT_ID="$val" ;;
+        esac
+    done < "$ENV_FILE"
+fi
 
 if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
-    echo "FATAL: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be set in $ENV_FILE" >&2
-    exit 2
+    if [[ "$VALIDATE_TOKEN" == "true" ]]; then
+        echo "ERROR: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be set in $ENV_FILE" >&2
+        echo "       Token-scope check requires valid credentials." >&2
+        exit 1
+    fi
+    if [[ "$DRY_RUN" == "false" ]]; then
+        echo "FATAL: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be set in $ENV_FILE" >&2
+        exit 2
+    fi
+    # Dry-run without credentials: allowed — print plan only.
+    CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-<not-set>}"
 fi
 
 if ! command -v curl >/dev/null 2>&1; then
@@ -79,6 +110,31 @@ fi
 if ! command -v python3 >/dev/null 2>&1; then
     echo "FATAL: python3 not found in PATH (needed for JSON parsing)" >&2
     exit 2
+fi
+
+# ----------------------------------------------------------------------------
+# Optional: token-scope pre-flight via wrangler whoami
+# ----------------------------------------------------------------------------
+
+if [[ "$VALIDATE_TOKEN" == "true" ]]; then
+    if ! command -v wrangler >/dev/null 2>&1; then
+        echo "ERROR: wrangler CLI not found in PATH — required for --validate-token" >&2
+        exit 1
+    fi
+    echo "[VALIDATE-TOKEN] Running wrangler whoami to verify token scope..."
+    # Export the token so wrangler picks it up
+    CLOUDFLARE_API_TOKEN_ORIG="$CLOUDFLARE_API_TOKEN"
+    export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN_ORIG"
+    if ! wrangler whoami 2>&1; then
+        echo "ERROR: wrangler whoami failed — check that your token has:" >&2
+        echo "  - Account:D1:Edit" >&2
+        echo "  - Account:KV:Edit (Workers KV Storage:Edit)" >&2
+        echo "  - Account:R2:Edit (R2 Storage:Edit)" >&2
+        exit 1
+    fi
+    echo "[VALIDATE-TOKEN] wrangler whoami succeeded. Token appears valid."
+    echo "[VALIDATE-TOKEN] NOTE: wrangler whoami does not enumerate scope grants;" >&2
+    echo "  verify manually that the token has D1:Edit + KV:Edit + R2:Edit." >&2
 fi
 
 echo "============================================================"
@@ -187,6 +243,12 @@ provision_d1() {
     echo ""
     echo "--- D1 Database: $name ---"
 
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [DRY-RUN] Would list D1 databases and create '$name' if absent"
+        echo "  [DRY-RUN] Would replace wrangler.toml '$placeholder_id' with real UUID"
+        return 0
+    fi
+
     local list_resp
     list_resp=$(cf_api GET "/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database")
     if ! check_success "$list_resp" "D1 list"; then return 1; fi
@@ -209,10 +271,6 @@ for db in d.get('result', []):
     fi
 
     echo "  Creating D1 database: $name"
-    if [[ "$DRY_RUN" == "true" ]]; then
-        echo "  [DRY-RUN] Would POST to create D1 database"
-        return 0
-    fi
 
     local create_resp
     create_resp=$(cf_api POST "/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database" \
@@ -247,6 +305,16 @@ provision_kv() {
     echo ""
     echo "--- KV Namespace: $title ---"
 
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [DRY-RUN] Would list KV namespaces and create '$title' if absent"
+        if [[ "$placeholder_id" != "NO_WRANGLER_PLACEHOLDER" ]]; then
+            echo "  [DRY-RUN] Would replace wrangler.toml '$placeholder_id' with real ID"
+        else
+            echo "  [DRY-RUN] No wrangler.toml placeholder — ID echoed to stdout only (Phase B)"
+        fi
+        return 0
+    fi
+
     local list_resp
     list_resp=$(cf_api GET "/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces")
     if ! check_success "$list_resp" "KV list"; then return 1; fi
@@ -269,10 +337,6 @@ for ns in d.get('result', []):
     fi
 
     echo "  Creating KV namespace: $title"
-    if [[ "$DRY_RUN" == "true" ]]; then
-        echo "  [DRY-RUN] Would POST to create KV namespace"
-        return 0
-    fi
 
     local create_resp
     create_resp=$(cf_api POST "/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces" \
@@ -316,6 +380,14 @@ provision_r2() {
     echo ""
     echo "--- R2 Bucket: $bucket_name (location=${location_hint:-global}) ---"
 
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [DRY-RUN] Would GET/check R2 bucket '$bucket_name' and create if absent"
+        if [[ -n "$location_hint" ]]; then
+            echo "  [DRY-RUN] Would set locationHint=$location_hint (INV-DATA-RESIDENCY)"
+        fi
+        return 0
+    fi
+
     # Check if bucket exists via individual GET (list API omits location field)
     local get_resp
     get_resp=$(cf_api GET "/accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets/$bucket_name")
@@ -346,10 +418,6 @@ print(d.get('result', {}).get('location', 'no-location'))
     fi
 
     echo "  Creating R2 bucket: $bucket_name"
-    if [[ "$DRY_RUN" == "true" ]]; then
-        echo "  [DRY-RUN] Would POST to create R2 bucket"
-        return 0
-    fi
 
     local body
     if [[ -n "$location_hint" ]]; then
@@ -388,21 +456,55 @@ print(d.get('result', {}).get('location', 'no-location'))
 # Main provisioning sequence
 # ----------------------------------------------------------------------------
 
+if [[ "$DRY_RUN" == "true" ]]; then
+    echo ""
+    echo "=== DRY-RUN: 12 resources this script WOULD provision ==="
+    echo ""
+    echo "  D1 Databases (1):"
+    echo "    corelink-prod-d1  [wrangler.toml placeholder: PLACEHOLDER_D1_CONFIG_DB_ID]"
+    echo ""
+    echo "  KV Namespaces (5):"
+    echo "    corelink-prod-jwks-kv         [binding: CLERK_JWKS_KV    → PLACEHOLDER_CLERK_JWKS_KV_ID]"
+    echo "    corelink-prod-cache-kv        [binding: METADATA_KV      → TODO_KV_NAMESPACE_ID]"
+    echo "    corelink-prod-rate-limit-kv   [binding: NEGATIVE_CACHE_KV → PLACEHOLDER_NEG_CACHE_KV_ID]"
+    echo "    corelink-prod-session-kv      [no wrangler.toml placeholder — Phase B]"
+    echo "    corelink-prod-pilot-signup-kv [no wrangler.toml placeholder — Phase B]"
+    echo ""
+    echo "  R2 Buckets (6):"
+    echo "    corelink-cas-prod  [global, no locationHint]"
+    echo "    corelink-ac-sam    [locationHint=enam (Eastern North America — CF R2 closest to SAM)]"
+    echo "    corelink-ac-iad    [locationHint=enam (Eastern North America — Washington DC)]"
+    echo "    corelink-ac-lhr    [locationHint=weur (Western Europe — London)]"
+    echo "    corelink-ac-nrt    [locationHint=apac (Asia Pacific — Tokyo)]"
+    echo "    corelink-ac-syd    [locationHint=oc   (Oceania — Sydney)]"
+    echo ""
+    echo "  No API calls are made in dry-run. Pass --live to execute (Owner-only)."
+    echo "======================================================="
+fi
+
 echo ""
 echo "=== Step 1: D1 Database ==="
-provision_d1 "corelink-prod-d1" "PLACEHOLDER_PROD_D1_CONFIG_DB_ID"
+# HIGH-2 fix: placeholder names aligned to wrangler.toml authoritative values.
+# wrangler.toml [d1_databases] dev binding has: database_id = "PLACEHOLDER_D1_CONFIG_DB_ID"
+provision_d1 "corelink-prod-d1" "PLACEHOLDER_D1_CONFIG_DB_ID"
 
 echo ""
 echo "=== Step 2: KV Namespaces ==="
-# Spec names → wrangler.toml prod binding mapping:
-#   corelink-prod-jwks-kv       → CLERK_JWKS_KV    (PLACEHOLDER_PROD_CLERK_JWKS_KV_ID)
-#   corelink-prod-cache-kv      → METADATA_KV       (PLACEHOLDER_PROD_METADATA_KV_ID)
-#   corelink-prod-rate-limit-kv → NEGATIVE_CACHE_KV (PLACEHOLDER_PROD_NEG_CACHE_KV_ID)
+# HIGH-2 fix: placeholder names aligned to wrangler.toml authoritative values.
+# wrangler.toml [kv_namespaces] dev bindings:
+#   CLERK_JWKS_KV      id = "PLACEHOLDER_CLERK_JWKS_KV_ID"
+#   METADATA_KV        id = "TODO_KV_NAMESPACE_ID"
+#   NEGATIVE_CACHE_KV  id = "PLACEHOLDER_NEG_CACHE_KV_ID"
+#
+# Spec names → wrangler.toml dev binding → placeholder (authoritative):
+#   corelink-prod-jwks-kv       → CLERK_JWKS_KV    → PLACEHOLDER_CLERK_JWKS_KV_ID
+#   corelink-prod-cache-kv      → METADATA_KV       → TODO_KV_NAMESPACE_ID
+#   corelink-prod-rate-limit-kv → NEGATIVE_CACHE_KV → PLACEHOLDER_NEG_CACHE_KV_ID
 #   corelink-prod-session-kv    → no current wrangler.toml placeholder (provisioned for Phase B)
 #   corelink-prod-pilot-signup-kv → no current wrangler.toml placeholder (provisioned for Phase B)
-provision_kv "corelink-prod-jwks-kv"       "PLACEHOLDER_PROD_CLERK_JWKS_KV_ID"
-provision_kv "corelink-prod-cache-kv"      "PLACEHOLDER_PROD_METADATA_KV_ID"
-provision_kv "corelink-prod-rate-limit-kv" "PLACEHOLDER_PROD_NEG_CACHE_KV_ID"
+provision_kv "corelink-prod-jwks-kv"       "PLACEHOLDER_CLERK_JWKS_KV_ID"
+provision_kv "corelink-prod-cache-kv"      "TODO_KV_NAMESPACE_ID"
+provision_kv "corelink-prod-rate-limit-kv" "PLACEHOLDER_NEG_CACHE_KV_ID"
 provision_kv "corelink-prod-session-kv"    "NO_WRANGLER_PLACEHOLDER"
 provision_kv "corelink-prod-pilot-signup-kv" "NO_WRANGLER_PLACEHOLDER"
 
