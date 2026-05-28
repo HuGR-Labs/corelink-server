@@ -1,8 +1,8 @@
 ---
 id: quickstart-10min
-title: Quickstart — store and retrieve in 10 minutes
-sidebar_label: 10-minute quickstart
-description: From zero to a stored + retrieved + audited CAS object in under 10 minutes. The fastest path from "never heard of CoreLink" to "it works on my box".
+title: Quickstart — cadastro até o primeiro cache hit em 10 minutos
+sidebar_label: Quickstart (10 min)
+description: Do zero a um cache hit no Bazel em menos de 10 minutos. Cadastre-se, instale o corelink, rode o doctor, inicie o Bazel, compile duas vezes — pronto.
 ---
 
 <!-- i18n:MT (pt-BR) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
@@ -11,362 +11,249 @@ description: From zero to a stored + retrieved + audited CAS object in under 10 
 >
 > Canonical EN source: `docs/tutorials/quickstart-10min.mdx`
 
-
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
-# Quickstart — store and retrieve in 10 minutes
+# Quickstart — cadastro até o primeiro cache hit em 10 minutos
 
-**Goal:** install the CLI, store an artifact, retrieve it as if from another
-machine, see it in the audit trail, and call CoreLink from your language
-of choice. **Total budget: ≤ 10 minutes for an experienced engineer.**
+**Objetivo:** cadastre-se, instale a CLI, verifique a conectividade com
+`corelink doctor`, configure seu repositório Bazel e veja os cache HITs
+aparecerem na segunda build.
+**Orçamento total: ≤ 10 minutos para um engenheiro experiente.**
 
-Every command below is canonical and verified against the actual
-`corelink-cli` subcommand surface (see [`crates/corelink-cli/src/main.rs`](https://github.com/humangr-labs/corelink-server/blob/main/crates/corelink-cli/src/main.rs)).
-You can use a sandbox PAT against a 24-hour scratch tenant — no credit
-card required.
+Todos os comandos são canônicos e verificados contra o MVP do `corelink-cli`
+(commit [`71d7f6a9`](https://github.com/humangr-labs/corelink-cli/commit/71d7f6a9),
+subcomandos: `ping`, `bazel-init`; `doctor` chega na próxima release da CLI —
+a documentação reflete o UX planejado antes do binário).
 
-:::tip Sandbox vs production
-A **sandbox** tenant is a free, 24h-TTL scratch namespace. Storage,
-egress, and audit retention work exactly like production but the tenant
-is garbage-collected automatically. You can convert to a real (paid)
-tenant any time — see [What's next](#step-7--whats-next-30s).
+:::tip Sem cartão de crédito
+Uma conta iniciante é gratuita até 10 GB. O wizard de cadastro provisiona
+seu tenant, região e um PAT inicial no servidor — sem etapa de cobrança.
 :::
 
 ---
 
-## Step 0 — Install the CLI <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
+## Antes de começar
 
-The `corelink` CLI is a single statically-linked binary. Pick your platform.
-
-<Tabs groupId="install-os">
-<TabItem value="macos" label="macOS" default>
-
-```bash
-brew install humangr-labs/tap/corelink
-```
-
-Or, if you don't use Homebrew:
-
-```bash
-curl -fsSL https://releases.corelink.humangr.com/cli/latest/corelink-darwin-arm64.tar.gz \
-  | tar -xz -C /usr/local/bin
-```
-
-</TabItem>
-<TabItem value="linux" label="Linux">
-
-```bash
-curl -fsSL https://releases.corelink.humangr.com/cli/latest/corelink-linux-amd64.tar.gz \
-  | sudo tar -xz -C /usr/local/bin
-```
-
-</TabItem>
-<TabItem value="windows" label="Windows">
-
-```powershell
-winget install humangr-labs.corelink
-```
-
-</TabItem>
-</Tabs>
-
-Verify the install:
-
-```bash
-corelink version
-# corelink 1.0.0 (build sha=... slsa=https://...)
-```
-
-If you see a version string, you're good. If not, jump to the
-[FAQ](./quickstart-faq.mdx).
+- **Bazel 7+** instalado e no `PATH`
+- Um navegador para o cadastro (Clerk, aceita Google / GitHub / e-mail)
+- macOS, Linux ou Windows (WSL2 recomendado para Windows)
 
 ---
 
-## Step 1 — Sandbox sign-in <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
+## Passo 1 — Cadastre-se <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
 
-CoreLink authenticates every operation with a **Personal Access Token
-(PAT)**. For the quickstart we use a *sandbox* PAT that auto-creates a
-24h-TTL tenant on first use — no billing setup required.
+1. Abra **[https://corelink-app.humangr.com](https://corelink-app.humangr.com)** no navegador.
+2. Conclua o wizard de cadastro em 2 passos (escolha sua região primária — `ord`
+   (US-Central) é um bom padrão para a maioria dos times).
+3. O wizard leva à página **`/welcome`**, onde seu PAT inicial é exibido
+   **uma única vez**. Copie-o antes de fechar a aba.
+   Formato: `ct_live_xxx…xxx`
 
-1. Visit **[https://app.corelink.humangr.com/sandbox](https://app.corelink.humangr.com/sandbox)** and sign in with Google, GitHub, or email (Clerk-backed; no credit card prompted).
-2. Click **Create sandbox PAT**. The PAT format is `corelink_sandbox_t_xxx.xxx.xxx`.
-3. Export it in your shell — the CLI reads from `CORELINK_PAT` by design (PAT flags are rejected per security control CTRL-CRED-001):
-
-```bash
-export CORELINK_PAT="corelink_sandbox_t_xxx.xxx.xxx"   # paste your token
-```
-
-:::warning Never paste a real PAT into shared docs, slack, or source code
-The placeholder `corelink_sandbox_t_xxx.xxx.xxx` is intentional. Real
-tokens belong in environment variables, a secret manager (`direnv`,
-`1password`, `op`), or your CI provider's secret store.
+:::warning Copie seu PAT em /welcome — ele é exibido apenas uma vez
+Se fechar a aba sem copiar, regenere em **Settings → Access tokens → Regenerate**.
+Nunca cole um PAT real em docs compartilhados, Slack ou código-fonte.
 :::
 
-Verify the token works:
+---
+
+## Passo 2 — Instale a CLI <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
+
+Execute o script de instalação. Passe o PAT copiado no Passo 1 e a região escolhida.
+
+```bash
+curl -fsSL https://corelink-get.humangr.com | sh -s -- \
+  --token=ct_live_xxx…xxx \
+  --region=ord
+```
+
+O script:
+1. Detecta sua plataforma (macOS arm64/amd64, Linux amd64/arm64).
+2. Baixa o binário estático `corelink` para `/usr/local/bin`
+   (fallback para `~/.local/bin` se `/usr/local/bin` não for gravável).
+3. Escreve `~/.config/corelink/config.toml` com seu PAT e tenant ID.
+4. Executa `corelink ping` contra a região CAS mais próxima e imprime o RTT.
+
+Saída esperada:
+
+```text
+corelink-get: detected darwin/arm64
+corelink-get: downloading corelink 0.1.0 ...
+corelink-get: installed /usr/local/bin/corelink
+corelink-get: writing ~/.config/corelink/config.toml
+corelink ping: ok (region=cf-ord, rtt=22ms, tenant=acme-prod)
+```
+
+Se `corelink ping` imprimir `ok`, avance para o Passo 3.
+
+---
+
+## Passo 3 — `corelink doctor` <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30 s)</span>
+
+`corelink doctor` executa 8 verificações de conectividade e autenticação:
 
 ```bash
 corelink doctor
-# 8/8 checks PASS — net OK, auth OK (tenant=sandbox-xxxx, ttl=23h59m), …
 ```
 
----
+Saída saudável:
 
-## Step 2 — Configure your project <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30s)</span>
-
-The CLI stores its defaults in `~/.corelink/config.toml`. Set your
-sandbox tenant as the default — you'll get it from the previous
-`doctor` output:
-
-```bash
-corelink config set defaults.tenant_id sandbox-xxxx
-corelink config list
-# auth.pat     = ***REDACTED***
-# defaults.tenant_id = sandbox-xxxx
-# telemetry.enabled = false
+```text
+[1/8] config file found              ✓  ~/.config/corelink/config.toml
+[2/8] PAT format valid               ✓  prefix=ct_live, length=ok
+[3/8] PAT not expired                ✓  ttl=365d (tenant=acme-prod)
+[4/8] DNS resolution                 ✓  cas.corelink.humangr.com → <IP>
+[5/8] TLS handshake                  ✓  TLSv1.3, 0-RTT=off
+[6/8] API ping (HTTP/2)              ✓  200 OK (rtt=18ms, region=cf-ord)
+[7/8] gRPC channel (REAPI v2)        ✓  capabilities handshake ok
+[8/8] tenant write permission        ✓  can upload 1-byte probe blob
+8/8 checks PASS
 ```
 
-That's it — no project-local file required for the quickstart. (Build
-systems like Bazel/Buck2 use their own remote-cache config; see the
-[Bazel quickstart](../tutorial/03-bazel-quickstart.mdx) and
-[Buck2 quickstart](../tutorial/04-buck2-quickstart.mdx).)
+Se alguma verificação mostrar `✗`, a saída inclui uma dica de correção.
+Os problemas mais comuns estão na seção [Solução de problemas](#solucao-de-problemas) abaixo.
 
----
-
-## Step 3 — Store your first artifact <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
-
-Pick any file. A release binary is a realistic example — substitute any
-local file you have handy.
-
-```bash
-# Make a sample artifact if you don't have one yet:
-echo "hello, corelink — $(date)" > /tmp/hello.txt
-
-# Upload it. corelink computes the BLAKE3 digest client-side
-# (the digest IS the storage key — that's what content-addressable means).
-corelink put /tmp/hello.txt
-# digest=af1c…3e9b  size=43 bytes  uploaded=ok
-```
-
-**Save the digest** for the next step — copy it to your clipboard or
-into an env var:
-
-```bash
-DIGEST=$(corelink put /tmp/hello.txt --output json | jq -r .digest)
-echo "stored as: $DIGEST"
-```
-
-You can confirm storage with `stat`:
-
-```bash
-corelink stat "$DIGEST"
-# digest=af1c…3e9b  size=43  exists=true  last_seen=2026-05-15T12:34:56Z
-```
-
----
-
-## Step 4 — Retrieve it from "another machine" <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
-
-The whole point of content-addressable storage is that *anyone* who
-knows the digest can fetch the bytes — that's the cache-hit semantic on
-build farms and ML clusters.
-
-Simulate "another machine" by downloading to a fresh path and diffing:
-
-```bash
-corelink get "$DIGEST" --output /tmp/restored.txt
-# downloaded 43 bytes, blake3 verified ok
-
-diff -q /tmp/hello.txt /tmp/restored.txt
-# Files /tmp/hello.txt and /tmp/restored.txt are identical
-```
-
-The `get` subcommand performs a **client-side BLAKE3 re-hash** before
-handing you the bytes (security control CTRL-CAS-002). A mismatch
-raises `COR_CAS_DIGEST_MISMATCH` and exits non-zero — you never see
-silently-corrupted data.
-
----
-
-## Step 5 — View the audit trail <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~2 min)</span>
-
-Every put + get against your tenant is recorded. List your tenant's
-recent CAS entries to confirm both events appear:
-
-```bash
-corelink ls --tenant "$(corelink config get defaults.tenant_id)" --limit 10
-# digest                                                            size  age      tags
-# af1c…3e9b                                                         43 B  47s ago  -
-# …
-```
-
-For the per-blob detail (size + age + first-seen + last-seen + access
-counts), use `stat`:
-
-```bash
-corelink stat "$DIGEST" --output json
-```
-
-That JSON includes the timestamps and counters that the admin UI
-surfaces in **Audit → Events**. For a full audit-trail dashboard with
-actor identity and IP, sign in to [app.corelink.humangr.com](https://app.corelink.humangr.com) and open
-your tenant → **Audit** tab. The same data is available via the
-[REST API `/v1/audit/events`](../reference/api/openapi.mdx) endpoint
-(see the FAQ for the exact filter syntax).
-
-:::note Audit retention
-Sandbox tenants retain audit events for the full 24h TTL. Production
-tenants retain for **365 days** (Lighthouse + Enterprise plans) or
-**90 days** (Team plan) — see [pricing](/pricing) for full SLA terms.
+:::note Nota de release da CLI
+`corelink doctor` chega na próxima release. Se seu binário for anterior,
+use `corelink ping` como substituto mais leve (verifica apenas os itens 4–6).
 :::
 
 ---
 
-## Step 6 — Use CoreLink from your language <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~2 min)</span>
+## Passo 4 — `corelink bazel-init` <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30 s)</span>
 
-The CLI is convenient for scripts, but most of you will call CoreLink
-from inside an application. All four official SDKs share the same
-canonical Rust verifier (`corelink-client-verify`) via FFI — there is
-zero per-language drift on BLAKE3 verify.
-
-<Tabs groupId="lang">
-<TabItem value="rust" label="Rust" default>
-
-```toml
-# Cargo.toml
-[dependencies]
-corelink-client-verify = "1.0"
-```
-
-```rust
-use corelink_client_verify::{ClientVerifier, Digest, VerifyConfig};
-
-fn main() -> anyhow::Result<()> {
-    let verifier = ClientVerifier::new(VerifyConfig::new());
-    let bytes = b"hello, corelink";
-    let digest = Digest::compute(bytes);
-    println!("digest={}", digest.to_hex());
-
-    // After a network GET, re-verify before trusting the body:
-    verifier.verify(bytes, &digest)?;
-    println!("verified OK");
-    Ok(())
-}
-```
-
-</TabItem>
-<TabItem value="python" label="Python">
+Entre na raiz do seu repositório Bazel e execute:
 
 ```bash
-pip install corelink-py
+cd /caminho/para/seu-repo-bazel
+corelink bazel-init
 ```
 
-```python
-import os
-from corelink import CoreLinkClient
+`corelink bazel-init` adiciona as linhas de remote-cache ao `.bazelrc`
+e escreve um arquivo `.corelink/credentials` (modo `0600`) com escopo
+para a raiz do repositório:
 
-client = CoreLinkClient(
-    pat=os.environ["CORELINK_PAT"],
-    tenant_id=os.environ["CORELINK_TENANT_ID"],
-)
-digest = client.put(b"hello, corelink")
-print(f"digest={digest}")
-
-data = client.get(digest)             # client-verify default-on
-stat = client.stat(digest)            # -> StatResult{digest,size_bytes,exists}
-assert data == b"hello, corelink"
-print(f"size={stat.size_bytes} exists={stat.exists}")
+```text
+corelink bazel-init: appended to .bazelrc:
+  build --remote_cache=grpcs://cas.corelink.humangr.com:443
+  build --remote_header=x-corelink-tenant=acme-prod
+  build --remote_header=authorization=Bearer ${CORELINK_PAT}
+  build --remote_upload_local_results=true
+corelink bazel-init: wrote .corelink/credentials (mode 0600)
 ```
 
-</TabItem>
-<TabItem value="go" label="Go">
+`bazel-init` é **idempotente**: executá-lo uma segunda vez detecta a
+linha marcadora existente no `.bazelrc` e encerra com `0` sem duplicatas.
 
-```bash
-go get go.corelink.humangr.com/corelink-go@latest
-```
-
-```go
-package main
-
-import (
-    "fmt"
-    "os"
-
-    corelink "go.corelink.humangr.com/corelink-go"
-)
-
-func main() {
-    client, err := corelink.NewClient(corelink.Config{
-        PAT:      os.Getenv("CORELINK_PAT"),
-        TenantID: os.Getenv("CORELINK_TENANT_ID"),
-    })
-    if err != nil { panic(err) }
-    defer client.Close()
-
-    digest, err := client.Put([]byte("hello, corelink"))
-    if err != nil { panic(err) }
-    blob, err := client.Get(digest)       // client-verify default-on
-    if err != nil { panic(err) }
-    fmt.Printf("digest=%s size=%d\n", digest, len(blob))
-}
-```
-
-</TabItem>
-<TabItem value="wasm" label="JS / WASM">
-
-```bash
-pnpm add @corelink/client
-```
-
-```ts
-import { CoreLinkClient } from "@corelink/client";
-
-const client = new CoreLinkClient({
-  pat: process.env.CORELINK_PAT!,
-  tenantId: process.env.CORELINK_TENANT_ID!,
-});
-
-const digest = await client.put(new TextEncoder().encode("hello, corelink"));
-const data   = await client.get(digest);            // client-verify default-on
-const stat   = await client.stat(digest);           // { digest, sizeBytes, exists }
-console.log(`digest=${digest} size=${stat.sizeBytes}`);
-```
-
-</TabItem>
-</Tabs>
-
-All four snippets do the same thing: `put → get → stat`, with
-client-side BLAKE3 verification enabled by default.
+:::tip Commit .bazelrc, não .corelink/credentials
+Adicione `.bazelrc` ao git para que a equipe compartilhe a configuração.
+Adicione `.corelink/credentials` ao `.gitignore` — o arquivo contém
+um PAT por desenvolvedor.
+:::
 
 ---
 
-## Step 7 — What's next <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30s)</span>
+## Passo 5 — Primeira build (cache frio) <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~3 min)</span>
 
-You've stored, retrieved, audited, and SDK-called against CoreLink in
-under 10 minutes. Pick the next path that matches your team:
+Execute a build Bazel pela primeira vez. Isso popula o cache remoto.
 
-- **Wire it into your build system** — [Bazel](../tutorial/03-bazel-quickstart.mdx) or [Buck2](../tutorial/04-buck2-quickstart.mdx) quickstart (≈ 5 min each).
-- **Migrate from an existing cache or store** — [Migration overview](../how-to/migrate/index.mdx) → self-serve guides for `bazel-remote` / BuildBuddy, S3-only, and Harbor / Quay (1–3 engineer-days each).
-- **Verify your cache-hit ratio** — [Verify cache hit](../tutorial/06-verify-cache-hit.mdx) walks through the metrics endpoint.
-- **Move to production** — [Pricing](/pricing) for paid tier limits, [How-to: production setup](../how-to/index.mdx) for the full checklist (custom domain, BYOK, regions, SLA).
-- **BYOK (Bring Your Own Key)** — Enterprise plan only; see [BYOK setup](../how-to/index.mdx) for AWS/GCP/Azure/Vault provider matrix.
-- **Sandbox quirks + billing triggers** — read the [Quickstart FAQ](./quickstart-faq.mdx) (15 questions, ~3 minutes).
+```bash
+bazel build //...
+```
+
+Esta é a execução **fria** que envia seus artefatos para o cache.
 
 ---
 
-## Time budget recap
+## Passo 6 — Segunda build (cache HITs) <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
 
-| Step | Budget | Cumulative |
+Execute a mesma build novamente:
+
+```bash
+bazel build //...
+```
+
+Desta vez o Bazel busca do cache CoreLink em vez de recompilar:
+
+```text
+INFO: 42 processes: 38 remote cache hit, 4 internal.
+```
+
+Esse contador `remote cache hit` é o **evento de ativação** — seu
+primeiro cache hit CoreLink bem-sucedido.
+
+:::note Por que compilar duas vezes?
+A primeira build popula o cache (MISS → UPLOAD). A segunda lê dele
+(HIT → DOWNLOAD). O cache é mais valioso no segundo run do seu pipeline
+de CI e para colegas que compilam o mesmo commit.
+:::
+
+---
+
+## Solução de problemas {#solucao-de-problemas}
+
+### Incompatibilidade de região — latência alta ou erros gRPC `UNAVAILABLE`
+
+**Sintoma:** RTT > 200 ms no `corelink doctor` passo 6, ou Bazel registra `UNAVAILABLE`.
+
+**Correção:**
+```bash
+corelink config set defaults.region <região-correta>
+corelink bazel-init --force
+```
+
+Regiões disponíveis: `ord` (US-Central), `iad` (US-East), `lhr` (EU-West),
+`nrt` (AP-Northeast), `syd` (AP-Southeast).
+
+### Token ausente — `UNAUTHENTICATED` em todas as ações Bazel
+
+**Sintoma:** Bazel registra `UNAUTHENTICATED`.
+
+**Correção:** verifique `echo $CORELINK_PAT` ou defina via config:
+
+```bash
+corelink config set auth.pat "ct_live_xxx…xxx"
+```
+
+### Aviso de linha duplicada no `.bazelrc`
+
+**Sintoma:** `WARNING: Duplicate rc option: --remote_cache`.
+
+**Correção:** remova as linhas duplicadas manualmente e confirme com `corelink doctor`.
+
+### Verificação 8 do `corelink doctor` falha — `PERMISSION_DENIED`
+
+**Sintoma:** `[8/8] tenant write permission  ✗  PERMISSION_DENIED`.
+
+**Correção:** verifique o tenant ID e regenere o PAT com escopo `write` se necessário:
+
+```bash
+corelink config set defaults.tenant_id <seu-tenant-id>
+```
+
+---
+
+## Passo 7 — Próximos passos <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30 s)</span>
+
+- **Explore o repositório de demonstração** — clone o
+  [corelink-bazel-example](https://github.com/humangr-labs/corelink-bazel-example).
+- **Leia o post do blog de arquitetura** — [Como o CoreLink usa Cloudflare
+  Workers para um cache content-addressable sem operações](../blog/2026-05-27-content-addressable-cache-cloudflare-workers).
+- **Compare com alternativas** — [vs bazel-remote + S3](../compare/vs-bazel-remote-s3),
+  [vs sccache + S3](../compare/vs-sccache-s3), [vs Turborepo Remote Cache](../compare/vs-turborepo).
+- **Configure o Buck2** — [Quickstart Buck2](../tutorial/04-buck2-quickstart) (5 min).
+- **Mover para produção** — [How-to: configuração de produção](../how-to/index).
+
+---
+
+## Resumo do orçamento de tempo
+
+| Passo | Orçamento | Acumulado |
 | --- | --- | --- |
-| 0 — Install | 1 min | 1 min |
-| 1 — Sandbox sign-in | 1 min | 2 min |
-| 2 — Configure project | 30 s | 2 min 30 s |
-| 3 — Store first artifact | 1 min | 3 min 30 s |
-| 4 — Retrieve elsewhere | 1 min | 4 min 30 s |
-| 5 — View audit trail | 2 min | 6 min 30 s |
-| 6 — Language SDK | 2 min | 8 min 30 s |
-| 7 — What's next | 30 s | **9 min total** |
-
-**Built-in slack:** ~1 minute for terminal context-switching. The
-target — *first put + first get + audit visible* in under 10 minutes —
-holds even with a real network round-trip.
+| 1 — Cadastro | 1 min | 1 min |
+| 2 — Instalar CLI | 1 min | 2 min |
+| 3 — `corelink doctor` | 30 s | 2 min 30 s |
+| 4 — `corelink bazel-init` | 30 s | 3 min |
+| 5 — Primeira build (fria) | 3 min | 6 min |
+| 6 — Segunda build (HITs) | 1 min | 7 min |
+| 7 — Próximos passos | 30 s | **7 min 30 s total** |
