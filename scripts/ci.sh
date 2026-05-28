@@ -31,16 +31,20 @@ cd "$REPO_ROOT"
 LOG_DIR="target/ci-logs"
 mkdir -p "$LOG_DIR"
 
-# Optional compile cache (opt-in). sccache routes rustc through a shared cache
-# so the redundant recompiles across build/clippy/test gates — and across runs
-# — are served from cache instead of rebuilt. OFF by default: the cache needs
-# several GB of free disk, and this box runs tight. Enable once disk is freed:
-#   CORELINK_SCCACHE=1 scripts/ci.sh
-if [ "${CORELINK_SCCACHE:-0}" = 1 ] && command -v sccache >/dev/null 2>&1; then
+# Compile cache. sccache only helps when incremental is OFF (it can't cache
+# `-C incremental`), so we enable it HERE — in the CI regime — by exporting
+# RUSTC_WRAPPER + CARGO_INCREMENTAL=0. This dedupes the redundant recompiles
+# across the build/clippy/test gates and caches across CI runs. The dev loop
+# (plain `cargo build`/`nextest`) stays incremental and does NOT use sccache.
+# Hard-capped at 4G (this box is disk-tight) so the cache can never overflow.
+# Bypass with CORELINK_NO_SCCACHE=1 (e.g. when chasing a cache-masked miscompile).
+if [ "${CORELINK_NO_SCCACHE:-0}" != 1 ] && command -v sccache >/dev/null 2>&1; then
     export RUSTC_WRAPPER=sccache
+    export CARGO_INCREMENTAL=0
     export SCCACHE_CACHE_SIZE="${SCCACHE_CACHE_SIZE:-4G}"
     sccache --start-server >/dev/null 2>&1 || true
-    echo "[sccache enabled — cache cap ${SCCACHE_CACHE_SIZE}]" >&2
+    sccache --zero-stats >/dev/null 2>&1 || true
+    echo "[sccache active — cap ${SCCACHE_CACHE_SIZE}, incremental off]" >&2
 fi
 
 # --- arg parse ----------------------------------------------------------------
@@ -201,6 +205,10 @@ FAIL_COUNT=$(grep -c '|FAIL|' "$RESULTS_FILE" 2>/dev/null); [ -z "$FAIL_COUNT" ]
 echo "  PASS: $PASS_COUNT" >&2
 echo "  FAIL: $FAIL_COUNT" >&2
 echo "  Wall: ${TOTAL_MS} ms" >&2
+if [ "${CORELINK_NO_SCCACHE:-0}" != 1 ] && command -v sccache >/dev/null 2>&1; then
+    echo "  --- sccache ---" >&2
+    sccache --show-stats 2>/dev/null | grep -E 'Compile requests|Cache hits|Cache misses|Cache size|Max cache size' | sed 's/^/  /' >&2
+fi
 
 if [ "$FAIL_COUNT" -gt 0 ]; then
     echo "" >&2

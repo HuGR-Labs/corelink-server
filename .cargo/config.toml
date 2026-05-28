@@ -25,3 +25,13 @@
 # for any package inside the workspace).
 [target.wasm32-unknown-unknown]
 rustflags = ['--cfg=getrandom_backend="wasm_js"']
+
+# NOTE on sccache: NOT wired globally here on purpose. sccache cannot cache
+# incremental builds (it skips `-C incremental`), and the `dev` profile is
+# incremental by default — so a global rustc-wrapper would add wrapper overhead
+# to the incremental dev loop for ZERO cache hits. sccache only helps when
+# incremental is OFF, which is the CI gate's regime. It is therefore enabled
+# *inside* scripts/ci.sh (RUSTC_WRAPPER=sccache + CARGO_INCREMENTAL=0), where it
+# dedupes the build/clippy/test recompiles and caches across runs. The dev loop
+# keeps cargo incremental (faster for edit-rebuild). Verified 2026-05-28:
+# incremental ON → 0% sccache hit; incremental OFF → cache hits as expected.
