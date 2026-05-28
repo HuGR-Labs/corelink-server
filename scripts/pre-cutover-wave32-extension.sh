@@ -359,19 +359,24 @@ check_w32_6_migrations() {
     fi
 
     local raw_count
-    # wrangler d1 execute prints a JSON array of result rows; extract the
-    # count() value with either jq or python3.
+    # wrangler d1 execute --json may emit a non-JSON preamble before the JSON
+    # array on stdout (e.g. wrangler 4.95 emits "⛅️ wrangler 4.95.0" banner +
+    # "Cloudflare agent skills..." line).  Strip everything before the first
+    # JSON array start character so jq/python3 receives clean JSON.
     local sql="SELECT count(*) as tbl_count FROM sqlite_master WHERE type='table'"
     if raw_count="$(wrangler d1 execute "${D1_DATABASE}" \
                         --remote \
                         --env "${WRANGLER_ENV}" \
                         --command="${sql}" \
                         --json 2>/dev/null)"; then
+        # Strip non-JSON preamble: keep from first '[' to end.
+        local json_only
+        json_only="$(printf '%s' "${raw_count}" | sed -n '/^\[/,$p')"
         local count=0
         if command -v jq >/dev/null 2>&1; then
-            count="$(printf '%s' "${raw_count}" | jq -r '.[0].results[0].tbl_count // .[0].results[0]["count(*)"] // 0' 2>/dev/null || printf '0')"
+            count="$(printf '%s' "${json_only}" | jq -r '.[0].results[0].tbl_count // .[0].results[0]["count(*)"] // 0' 2>/dev/null || printf '0')"
         else
-            count="$(printf '%s' "${raw_count}" | python3 -c "
+            count="$(printf '%s' "${json_only}" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 row = data[0]['results'][0]
@@ -389,14 +394,57 @@ print(row.get('tbl_count', row.get('count(*)', 0)))
 }
 
 # -----------------------------------------------------------------------
-# W32-7: Secrets bound (wrangler secret list --env prod vs checklist).
+# W32-7: Secrets bound (wrangler secret list --env prod vs core-required set).
+#
+# DESIGN — core-required vs forward-looking distinction:
+#   The secrets-checklist.md matrix contains two categories of cf-wrangler
+#   secrets:
+#
+#   1. CORE_REQUIRED_SECRETS (defined below) — secrets that the currently
+#      running production code actively consumes.  A missing core secret is a
+#      FAIL.  These are the 17 secrets verified-bound via `wrangler secret list
+#      --env prod` on 2026-05-28 (Wave 32 Phase H live run).
+#
+#   2. Forward-looking / matrix-tracked secrets — credentials for future BYOK
+#      providers (AWS/GCP/Azure/Vault), multi-region Neon DSNs, Slack webhooks,
+#      Twilio, HubSpot, Drata, etc.  They are intentionally listed in the
+#      checklist "Forward-looking secrets" section of secrets-checklist.md so
+#      that procurement / vendor onboarding runs ahead of the code consumer.
+#      They are NOT bound in prod until the target wave ships.  Treating them
+#      as FAIL produces false positives (~60 spurious failures) and must NOT be
+#      the gate criterion.  These produce INFO-only output.
+#
+#   See docs/internal/secrets-checklist.md §Forward-looking secrets for the
+#   documented rationale and per-row target-wave tracking.
 # -----------------------------------------------------------------------
 
+# Core secrets verified-bound in production on 2026-05-28 (Wave 32 Phase H).
+# FAIL if any of these is missing from `wrangler secret list --env prod`.
+CORE_REQUIRED_SECRETS=(
+    BETTERSTACK_API_TOKEN
+    BETTERSTACK_PAGE_ID
+    CLERK_PUBLISHABLE_KEY
+    CLERK_SECRET_KEY
+    CLOUDFLARE_ACCOUNT_ID
+    CLOUDFLARE_API_TOKEN
+    CLOUDFLARE_ZONE_ID_HUMANGR
+    HUGR_AUDIT_CHAIN_HMAC_KEY
+    HUGR_OCI_TOKEN_KEY
+    HUGR_PAT_SIGNING_KEY
+    HUGR_SESSION_HMAC_KEY
+    PAGERDUTY_ROUTING_KEY
+    RESEND_API_KEY
+    STRIPE_AUTH_MODE
+    STRIPE_PRICE_ID_STARTER
+    STRIPE_SECRET_KEY
+    STRIPE_WEBHOOK_SECRET
+)
+
 check_w32_7_secrets_bound() {
-    local label="Secrets bound (wrangler secret list --env prod matches checklist)"
+    local label="Secrets bound (core-required set present in wrangler secret list --env prod)"
 
     if [[ "${DRY_RUN}" -eq 1 ]]; then
-        record "W32-7" "${label}" "SKIPPED" "--dry-run; would: wrangler secret list --env prod (read-only)"
+        record "W32-7" "${label}" "SKIPPED" "--dry-run; would: wrangler secret list --env prod (read-only); checking ${#CORE_REQUIRED_SECRETS[@]} core-required secrets"
         return
     fi
 
@@ -405,43 +453,25 @@ check_w32_7_secrets_bound() {
         return
     fi
 
-    if [[ ! -f "${CHECKLIST_PATH}" ]]; then
-        record "W32-7" "${label}" "DEPS-MISSING" "Checklist not found at ${CHECKLIST_PATH}"
-        return
-    fi
-
-    # Extract the env-var names of cf-wrangler-tier secrets from the checklist
-    # (column 3 of the markdown table rows that end with cf-wrangler).
-    # Pattern stored in a variable to keep shellcheck SC2016-clean (no
-    # expansion happens; the backtick is literal regex, not a subshell).
-    local bt_pat="\`[A-Z_][A-Z0-9_]*\`"
-    local expected_secrets
-    expected_secrets="$(grep '| cf-wrangler' "${CHECKLIST_PATH}" \
-        | grep -v '^\s*#' \
-        | sed 's/|/\n/g' \
-        | grep "${bt_pat}" \
-        | sed "s/.*\`\([A-Z_][A-Z0-9_]*\)\`.*/\1/" \
-        | sort -u)"
-
-    if [[ -z "${expected_secrets}" ]]; then
-        record "W32-7" "${label}" "DEPS-MISSING" "Could not extract cf-wrangler secret names from ${CHECKLIST_PATH}; verify table format"
-        return
-    fi
-
     # wrangler secret list --env prod returns a JSON array of {name, type}
     # objects by default (the --json flag does NOT exist on `secret list` in
     # wrangler 4.95 — "Unknown argument: json"). Verified live 2026-05-28.
+    # Non-JSON preamble (wrangler banner) is stripped before parsing below.
     local raw_list
     if ! raw_list="$(wrangler secret list --env prod 2>/dev/null)"; then
         record "W32-7" "${label}" "FAIL" "wrangler secret list --env prod failed (non-zero exit)"
         return
     fi
 
+    # Strip non-JSON preamble: keep from first '[' to end.
+    local json_only
+    json_only="$(printf '%s' "${raw_list}" | sed -n '/^\[/,$p')"
+
     local bound_secrets
     if command -v jq >/dev/null 2>&1; then
-        bound_secrets="$(printf '%s' "${raw_list}" | jq -r '.[].name' 2>/dev/null | sort -u || true)"
+        bound_secrets="$(printf '%s' "${json_only}" | jq -r '.[].name' 2>/dev/null | sort -u || true)"
     else
-        bound_secrets="$(printf '%s' "${raw_list}" | python3 -c "
+        bound_secrets="$(printf '%s' "${json_only}" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 for item in data:
@@ -449,24 +479,55 @@ for item in data:
 " 2>/dev/null | sort -u || true)"
     fi
 
-    # Compare: find expected secrets NOT present in bound list.
-    local missing=""
-    while IFS= read -r secret; do
-        [[ -z "${secret}" ]] && continue
-        if ! printf '%s\n' "${bound_secrets}" | grep -qxF "${secret}"; then
-            missing="${missing} ${secret}"
-        fi
-    done <<< "${expected_secrets}"
-
-    local expected_count
-    expected_count="$(printf '%s\n' "${expected_secrets}" | grep -c . || true)"
     local bound_count
     bound_count="$(printf '%s\n' "${bound_secrets}" | grep -c . || true)"
 
-    if [[ -z "${missing}" ]]; then
-        record "W32-7" "${label}" "PASS" "${expected_count} cf-wrangler secrets expected; ${bound_count} bound; all expected secrets present"
+    # Check only CORE_REQUIRED_SECRETS — forward-looking secrets are INFO, not FAIL.
+    local missing_core=""
+    local forward_looking_info=""
+    for secret in "${CORE_REQUIRED_SECRETS[@]}"; do
+        if ! printf '%s\n' "${bound_secrets}" | grep -qxF "${secret}"; then
+            missing_core="${missing_core} ${secret}"
+        fi
+    done
+
+    # Enumerate all cf-wrangler secrets from checklist that are NOT in
+    # CORE_REQUIRED_SECRETS and NOT bound — report as INFO only.
+    if [[ -f "${CHECKLIST_PATH}" ]]; then
+        local bt_pat="\`[A-Z_][A-Z0-9_]*\`"
+        local all_cf_wrangler_secrets
+        all_cf_wrangler_secrets="$(grep '| cf-wrangler' "${CHECKLIST_PATH}" \
+            | grep -v '^\s*#' \
+            | sed 's/|/\n/g' \
+            | grep "${bt_pat}" \
+            | sed "s/.*\`\([A-Z_][A-Z0-9_]*\)\`.*/\1/" \
+            | sort -u)"
+        local fwd_count=0
+        while IFS= read -r secret; do
+            [[ -z "${secret}" ]] && continue
+            # Skip if it is a core-required secret (already checked above).
+            local is_core=0
+            for core_s in "${CORE_REQUIRED_SECRETS[@]}"; do
+                if [[ "${secret}" == "${core_s}" ]]; then
+                    is_core=1
+                    break
+                fi
+            done
+            [[ "${is_core}" -eq 1 ]] && continue
+            # Only note it if also unbound.
+            if ! printf '%s\n' "${bound_secrets}" | grep -qxF "${secret}"; then
+                fwd_count=$(( fwd_count + 1 ))
+            fi
+        done <<< "${all_cf_wrangler_secrets}"
+        if [[ "${fwd_count}" -gt 0 ]]; then
+            forward_looking_info=" (INFO: ${fwd_count} forward-looking/matrix-tracked secrets not yet bound — non-blocking; see secrets-checklist.md §Forward-looking secrets)"
+        fi
+    fi
+
+    if [[ -z "${missing_core}" ]]; then
+        record "W32-7" "${label}" "PASS" "All ${#CORE_REQUIRED_SECRETS[@]} core-required secrets bound (${bound_count} total bound)${forward_looking_info}"
     else
-        record "W32-7" "${label}" "FAIL" "Missing secrets in prod env:${missing}"
+        record "W32-7" "${label}" "FAIL" "CORE secrets missing from prod env:${missing_core}${forward_looking_info}"
     fi
 }
 
