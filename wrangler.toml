@@ -218,6 +218,11 @@ crons = [
 # - CLERK_SECRET_KEY
 # - STRIPE_SECRET_KEY
 # - DATABASE_URL (Neon Postgres)
+# - PAT_SIGNING_KEY  — hex-encoded HMAC-SHA256 signing key (≥ 32 bytes decoded).
+#   Used by WP-A1 PAT fast-fail layer. Derivation:
+#   HKDF-SHA256(CORELINK_MASTER_KEY, "corelink-pat-signing-salt-v1",
+#     b"corelink-v1-pat-signing-key", 32)
+#   Set via: wrangler secret put PAT_SIGNING_KEY --env prod
 
 # Produção (rodar com --env prod)
 [env.prod]

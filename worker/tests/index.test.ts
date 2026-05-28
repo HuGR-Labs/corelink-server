@@ -12,6 +12,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
+import type { D1Database } from "@cloudflare/workers-types";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
 
@@ -27,8 +28,61 @@ function makeCtx(): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Canonical test PAT (format only — not cryptographically valid; HMAC fast-fail
+// is skipped because PAT_SIGNING_KEY is absent in the test env).
+//
+// Format: corelink_pat_<16-char-Crockford-b32>.<43-char-base64url>.<22-char-base64url>
+// Total:  9 + 3 + 1 + 16 + 1 + 43 + 1 + 22 = 96 chars
+// ──────────────────────────────────────────────────────────────────────────────
+const TEST_TOKEN_ID = "AAAAAAAAAAAAAAAA"; // 16 Crockford b32 chars
+const TEST_PAT_TOKEN =
+  "corelink_pat_" +
+  TEST_TOKEN_ID +
+  "." +
+  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" + // 43 base64url chars
+  "." +
+  "AAAAAAAAAAAAAAAAAAAAAA"; // 22 base64url chars
+// Sanity: 96 chars total
+if (TEST_PAT_TOKEN.length !== 96) {
+  throw new Error(`TEST_PAT_TOKEN length ${TEST_PAT_TOKEN.length} !== 96`);
+}
+
+const TEST_TENANT_ID = "00000000-0000-0000-0000-000000000001";
+
+/**
+ * Build a mock D1 database that returns the given row (or null) for the
+ * token_id query. Used to simulate D1 PAT store responses in unit tests.
+ */
+function makeD1Mock(
+  tokenIdToRow: Map<string, { tenant_id: string; expires_ms: number }>,
+): D1Database {
+  return {
+    prepare: (sql: string) => ({
+      bind: (...args: unknown[]) => ({
+        first: async <T>() => {
+          const tokenId = args[0] as string;
+          const row = tokenIdToRow.get(tokenId);
+          return (row ?? null) as T | null;
+        },
+        all: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
+        run: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
+        raw: async <T>() => [] as T[],
+      }),
+      first: async <T>() => null as T | null,
+      all: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
+      run: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
+      raw: async <T>() => [] as T[],
+    }),
+    batch: async () => [],
+    exec: async () => ({ count: 0, duration: 0 }),
+    withSession: () => null as never,
+    dump: async () => new ArrayBuffer(0),
+  } as unknown as D1Database;
+}
+
 /** Mock Env with a CORELINK_SERVER DO namespace that returns an error stub */
-function makeEnv(doStubStatus = 503): Env {
+function makeEnv(doStubStatus = 503, d1Override?: D1Database): Env {
   const stub = {
     fetch: async (_req: Request): Promise<Response> => {
       return new Response(
@@ -46,9 +100,15 @@ function makeEnv(doStubStatus = 503): Env {
     jurisdiction: (_j: string) => namespace,
   } as unknown as DurableObjectNamespace;
 
+  // Default D1 mock: recognises TEST_TOKEN_ID as a valid, non-expired PAT.
+  const d1 = d1Override ?? makeD1Mock(new Map([
+    [TEST_TOKEN_ID, { tenant_id: TEST_TENANT_ID, expires_ms: Date.now() + 3_600_000 }],
+  ]));
+
   return {
     CORELINK_SERVER: namespace,
     ENVIRONMENT: "test",
+    CONFIG_DB: d1,
   };
 }
 
@@ -200,10 +260,10 @@ describe("auth middleware", () => {
     expect(resp.status).toBe(401);
   });
 
-  it("passes valid 64-char token to DO (expects non-401)", async () => {
-    const validToken = "a".repeat(64);
+  it("passes valid canonical PAT (found in D1) to DO (expects non-401)", async () => {
+    // TEST_PAT_TOKEN has token_id AAAAAAAAAAAAAAAA which the default D1 mock recognises.
     const resp = await workerFetch("http://localhost/api/v2/tenant/path", {
-      headers: { Authorization: `Bearer ${validToken}` },
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
     });
     expect(resp.status).not.toBe(401);
     // DO mock returns 503
@@ -218,6 +278,87 @@ describe("auth middleware", () => {
     const text = await resp.text();
     expect(text).not.toContain(sensitiveToken);
     expect(text).not.toContain("MYSECRETTOKEN");
+  });
+
+  // ── WP-A1 new tests (DoD 2) ────────────────────────────────────────────────
+
+  it("returns 401 for a random 64-char printable-ASCII string (not canonical PAT format)", async () => {
+    // Before WP-A1 this would have returned 503 (passed format check, forwarded to DO).
+    // After WP-A1 it must return 401 because it is not `corelink_<env>_…` format.
+    const randomJunk = "x".repeat(64);
+    const resp = await workerFetch("http://localhost/api/v2/t/path", {
+      headers: { Authorization: `Bearer ${randomJunk}` },
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("returns 401 for valid-format PAT whose token_id is not in the D1 store", async () => {
+    // Build a canonically-shaped PAT with a token_id that the D1 mock does NOT recognise.
+    const unknownTokenId = "BBBBBBBBBBBBBBBB"; // 16 valid Crockford b32 chars, not in D1
+    const patNotInD1 =
+      "corelink_pat_" +
+      unknownTokenId +
+      "." +
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" + // 43 base64url
+      "." +
+      "AAAAAAAAAAAAAAAAAAAAAA"; // 22 base64url
+    expect(patNotInD1.length).toBe(96); // sanity
+
+    // The default D1 mock only knows AAAAAAAAAAAAAAAA, so BBBBBBBBBBBBBBBB → 401.
+    const resp = await workerFetch("http://localhost/api/v2/t/path", {
+      headers: { Authorization: `Bearer ${patNotInD1}` },
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("returns 401 for valid-format PAT that is expired in D1", async () => {
+    const expiredTokenId = "CCCCCCCCCCCCCCCC"; // 16 Crockford b32 chars
+    const patExpired =
+      "corelink_ci_" + // env=ci → 95 chars total
+      expiredTokenId +
+      "." +
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" + // 43 base64url
+      "." +
+      "AAAAAAAAAAAAAAAAAAAAAA"; // 22 base64url
+    expect(patExpired.length).toBe(95); // ci → 95
+
+    // D1 mock with expired row for CCCCCCCCCCCCCCCC (expires_ms in the past).
+    const d1WithExpired = makeD1Mock(new Map([
+      [expiredTokenId, { tenant_id: TEST_TENANT_ID, expires_ms: Date.now() - 1000 }],
+    ]));
+    const resp = await workerFetch("http://localhost/api/v2/t/path", {
+      headers: { Authorization: `Bearer ${patExpired}` },
+    }, { CONFIG_DB: d1WithExpired });
+    expect(resp.status).toBe(401);
+  });
+
+  it("resolves real tenant_id from D1 and passes it to the DO via trusted header", async () => {
+    let capturedTenantId: string | null = null;
+    const capturingDO: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (_n: string) => ({ toString: () => "stub-id" }),
+        get: () => ({
+          fetch: async (req: Request): Promise<Response> => {
+            capturedTenantId = req.headers.get("x-corelink-resolved-tenant-id");
+            return new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          },
+        }),
+        idFromString: (_s: string) => ({ toString: () => "stub-id" }),
+        newUniqueId: () => ({ toString: () => "stub-unique-id" }),
+        jurisdiction: (_j: string) => capturingDO.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+
+    await workerFetch("http://localhost/api/v2/tenant/path", {
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
+    }, capturingDO);
+
+    // The DO should receive the resolved tenant_id from D1 (not "_pending").
+    expect(capturedTenantId).toBe(TEST_TENANT_ID);
+    expect(capturedTenantId).not.toBe("_pending");
   });
 });
 
@@ -340,9 +481,8 @@ describe("route resolution — non-OCI paths", () => {
 
 describe("DO error mapping", () => {
   it("DO 503 on OCI path returns valid JSON with error field", async () => {
-    const validToken = "f".repeat(64);
     const resp = await workerFetch("http://localhost/v2/myrepo/manifests/latest", {
-      headers: { Authorization: `Bearer ${validToken}` },
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
     });
     const body = await resp.json() as Record<string, unknown>;
     const hasErrors = Array.isArray(body["errors"]);
@@ -351,9 +491,8 @@ describe("DO error mapping", () => {
   });
 
   it("DO 503 on REAPI path returns REAPI envelope", async () => {
-    const validToken = "g".repeat(64);
     const resp = await workerFetch("http://localhost/api/v2/tenant/blobs", {
-      headers: { Authorization: `Bearer ${validToken}` },
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
     });
     // DO returns 503, Worker passes it through with x-request-id added
     expect(resp.status).toBe(503);
@@ -375,9 +514,8 @@ describe("DO error mapping", () => {
       } as unknown as DurableObjectNamespace,
     };
 
-    const validToken = "h".repeat(64);
     const resp = await workerFetch("http://localhost/api/v2/tenant/path", {
-      headers: { Authorization: `Bearer ${validToken}` },
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
     }, throwingEnv);
     expect(resp.status).toBe(500);
     const body = await resp.json() as { error: string };
@@ -399,9 +537,8 @@ describe("DO error mapping", () => {
       } as unknown as DurableObjectNamespace,
     };
 
-    const validToken = "i".repeat(64);
     const resp = await workerFetch("http://localhost/v2/repo/blobs/sha256:abc", {
-      headers: { Authorization: `Bearer ${validToken}` },
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
     }, throwingEnv);
     expect(resp.status).toBe(500);
     const body = await resp.json() as Record<string, unknown>;
@@ -459,12 +596,11 @@ describe("security invariants", () => {
 describe("INV-NO-BODY-IN-LOGS", () => {
   it("POST body content NOT reflected in error response", async () => {
     const sensitiveBody = "secret-payload-that-must-not-leak=true&token=abc123";
-    const validToken = "j".repeat(64);
 
     const resp = await workerFetch("http://localhost/api/v2/tenant/blobs", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${validToken}`,
+        Authorization: `Bearer ${TEST_PAT_TOKEN}`,
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: sensitiveBody,
@@ -550,10 +686,9 @@ describe("OCI status-for-code mapping", () => {
         jurisdiction: (_j: string) => blobUnknownEnv.CORELINK_SERVER,
       } as unknown as DurableObjectNamespace,
     };
-    const token = "a".repeat(64);
     const resp = await workerFetch(
       "http://localhost/v2/repo/blobs/sha256:deadbeef",
-      { headers: { Authorization: `Bearer ${token}` } },
+      { headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` } },
       blobUnknownEnv,
     );
     // DO returns 404; worker passes it through with x-request-id
@@ -585,10 +720,9 @@ describe("OCI status-for-code mapping", () => {
         jurisdiction: (_j: string) => throwingEnv.CORELINK_SERVER,
       } as unknown as DurableObjectNamespace,
     };
-    const token = "b".repeat(64);
     const resp = await workerFetch(
       "http://localhost/v2/repo/manifests/latest",
-      { headers: { Authorization: `Bearer ${token}` } },
+      { headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` } },
       throwingEnv,
     );
     // ociError("UNKNOWN", ...) → ociStatusForCode('UNKNOWN') → default 500
@@ -625,14 +759,166 @@ describe("X-Request-Id forwarding to DO", () => {
       } as unknown as DurableObjectNamespace,
     };
 
-    const validToken = "k".repeat(64);
     await workerFetch("http://localhost/api/v2/tenant/path", {
       headers: {
-        Authorization: `Bearer ${validToken}`,
+        Authorization: `Bearer ${TEST_PAT_TOKEN}`,
         "x-request-id": requestId,
       },
     }, capturingEnv);
 
     expect(capturedRequestId).toBe(requestId);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// PAT format parser — coverage for parsePat edge cases (WP-A1)
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("PAT format validation — parsePat edge cases", () => {
+  // Helper: build a PAT-shaped token with a specific env and token_id
+  function makePat(env: "pat" | "ci" | "ro", tokenId = TEST_TOKEN_ID): string {
+    return (
+      "corelink_" + env + "_" +
+      tokenId +
+      "." +
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+      "." +
+      "AAAAAAAAAAAAAAAAAAAAAA"
+    );
+  }
+
+  it("accepts env=ci (95 chars, token in D1) → 503 (reaches DO)", async () => {
+    // Build a ci-env PAT with TEST_TOKEN_ID — the D1 mock recognises it.
+    const ciPat = makePat("ci");
+    expect(ciPat.length).toBe(95);
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${ciPat}` },
+    });
+    // Should reach the DO (503 from stub), not 401
+    expect(resp.status).toBe(503);
+  });
+
+  it("accepts env=ro (95 chars, token in D1) → 503 (reaches DO)", async () => {
+    const roPat = makePat("ro");
+    expect(roPat.length).toBe(95);
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${roPat}` },
+    });
+    expect(resp.status).toBe(503);
+  });
+
+  it("rejects wrong prefix (not corelink_)", async () => {
+    // Replace 'corelink_' with 'wrongpfx_'
+    const bad = "wrongpfx_pat_" + TEST_TOKEN_ID + "." + "A".repeat(43) + "." + "A".repeat(22);
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${bad}` },
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("rejects unknown env segment (e.g. 'xx')", async () => {
+    // 95 chars with env='xx' (invalid)
+    const bad = "corelink_xx_" + TEST_TOKEN_ID + "." + "A".repeat(43) + "." + "A".repeat(22);
+    expect(bad.length).toBe(95);
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${bad}` },
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("rejects wrong separator after env (dot instead of underscore)", async () => {
+    const bad = "corelink_pat." + TEST_TOKEN_ID + "." + "A".repeat(43) + "." + "A".repeat(22);
+    expect(bad.length).toBe(96);
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${bad}` },
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("rejects invalid Crockford b32 in token_id (contains 'I' which is excluded)", async () => {
+    // Replace one char in token_id with 'I' (excluded from Crockford b32)
+    const badTokenId = "IIIIIIIIIIIIIIII"; // 16 'I' chars — invalid
+    const bad = makePat("pat", badTokenId);
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${bad}` },
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("rejects invalid base64url in random_secret (contains '=')", async () => {
+    // '=' is NOT valid in base64url-no-pad
+    const badSecret = "=".repeat(43);
+    const bad = "corelink_pat_" + TEST_TOKEN_ID + "." + badSecret + "." + "A".repeat(22);
+    expect(bad.length).toBe(96);
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${bad}` },
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("rejects wrong separator between random_secret and hmac_sig", async () => {
+    // Replace the '.' between random_secret and hmac_sig with '_'
+    const bad = "corelink_pat_" + TEST_TOKEN_ID + "." + "A".repeat(43) + "_" + "A".repeat(22);
+    expect(bad.length).toBe(96);
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${bad}` },
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("HMAC fast-fail: rejects if PAT_SIGNING_KEY is set but sig is wrong", async () => {
+    // Provide a signing key (32 hex bytes = 64 hex chars) but the token has all-A hmac_sig
+    // which won't match the HMAC-SHA256 of the preimage with this key.
+    const signingKey = "00".repeat(32); // 64 hex chars = 32 bytes (all-zero key)
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
+    }, { PAT_SIGNING_KEY: signingKey });
+    // The HMAC will not match (test token's hmac_sig is all-A, not a real MAC)
+    expect(resp.status).toBe(401);
+  });
+
+  it("D1 lookup error (throws) → 401 (fail-closed)", async () => {
+    // D1 mock that throws on prepare/bind/first
+    const throwingD1 = {
+      prepare: () => ({
+        bind: () => ({
+          first: async () => { throw new Error("D1 connection refused"); },
+        }),
+      }),
+    } as unknown as D1Database;
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
+    }, { CONFIG_DB: throwingD1 });
+    // D1 error must fail-closed → 401, not 500
+    expect(resp.status).toBe(401);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Resolved tenant header forwarded to DO (DoD 3: no "_pending" reaching DO)
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("resolved tenant_id forwarding (WP-A1 DoD 3)", () => {
+  it("x-corelink-resolved-tenant-id header is set to the D1 tenant_id on authenticated request", async () => {
+    let capturedHeader: string | null = null;
+    const capturingDO: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (_n: string) => ({ toString: () => "id" }),
+        get: () => ({
+          fetch: async (req: Request) => {
+            capturedHeader = req.headers.get("x-corelink-resolved-tenant-id");
+            return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+          },
+        }),
+        idFromString: (_s: string) => ({ toString: () => "id" }),
+        newUniqueId: () => ({ toString: () => "id" }),
+        jurisdiction: (_j: string) => capturingDO.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+    await workerFetch("http://localhost/api/v2/t/path", {
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
+    }, capturingDO);
+    expect(capturedHeader).toBe(TEST_TENANT_ID);
+    expect(capturedHeader).not.toContain("_pending");
   });
 });

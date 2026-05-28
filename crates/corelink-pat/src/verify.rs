@@ -7,6 +7,8 @@
 //! scenario where caller already has the stored hash + token id in
 //! hand (test harness, integration test, calibration tool).
 
+use subtle::ConstantTimeEq;
+
 use crate::argon::verify_argon2id;
 use crate::error::PatError;
 use crate::format::{parse_plaintext, PatPlaintextParts};
@@ -49,9 +51,16 @@ pub fn verify_with_hash(
 ) -> Result<VerifiedPat, PatError> {
     let parts: PatPlaintextParts = parse_plaintext(plaintext)?;
 
-    // Token id must match the one looked up from the DB. This is
-    // a trivial constant-time comparison over a fixed length.
-    if parts.token_id.as_str() != expected_token_id.as_str() {
+    // Token id must match the one looked up from the DB.
+    // P1-4 fix: use constant-time byte comparison via `subtle::ConstantTimeEq`
+    // so the rejection latency does not leak whether and where the strings
+    // differ (timing oracle defence; auth_model.md §2.3 invariant).
+    // Both token_ids are canonical 16-char Crockford b32 ASCII strings, so
+    // byte-level comparison is correct (UTF-8 multi-byte codepoints do not
+    // occur; the PAT parser enforces the charset in `parse_plaintext`).
+    if !bool::from(
+        parts.token_id.as_str().as_bytes().ct_eq(expected_token_id.as_str().as_bytes())
+    ) {
         return Err(PatError::InvalidPat);
     }
 
