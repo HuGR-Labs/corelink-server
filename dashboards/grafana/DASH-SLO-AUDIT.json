@@ -1,0 +1,340 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "CoreLink Audit-Chain SLO datasource (Prometheus / VictoriaMetrics / Grafana Cloud Mimir tenant)",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "uid": "DASH-SLO-AUDIT",
+  "title": "CoreLink — Audit-Chain SLO (DASH-SLO-AUDIT)",
+  "description": "WP-6.1 Phase 1 observability surface. Audit-chain SLO dashboard: emit latency (corelink_cas_put_duration_seconds proxy for emit path), chain integrity verification cadence (corelink_audit_chain_verify_runs_total / corelink_audit_chain_break_detected_total from WI-S09 spec §6.1.10), storage growth rate (corelink_r2_ops_total + corelink_do_storage_size_bytes), per-tenant breakdown (R15). Metric names verified against crates/corelink-analytics/src/canonical.rs RedMetricKind::as_str() for the 15 RED+USE canonical names; audit-chain-specific metric names from crates/corelink-audit-chain/src/error.rs + verifier.rs WI §6.1.10 spec references.",
+  "tags": ["corelink", "slo", "audit", "audit-chain", "integrity", "per-tenant", "sota"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "annotations": {
+    "list": [
+      {
+        "name": "lastUpdated",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": false,
+        "iconColor": "blue"
+      },
+      {
+        "name": "Audit chain SEV-0 incidents",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": true,
+        "iconColor": "red",
+        "expr": "ALERTS{alertname=~\"AuditChain.*\", severity=~\"sev0|sev1\"}"
+      }
+    ],
+    "lastUpdated": "2026-05-27T00:00:00Z",
+    "cardinality_budget_used": "6800/100000"
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "tenant_tier",
+        "type": "custom",
+        "label": "Tenant Tier",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "Free", "value": "free" },
+          { "text": "Solo", "value": "solo" },
+          { "text": "Team", "value": "team" },
+          { "text": "Business", "value": "business" },
+          { "text": "Enterprise", "value": "enterprise" }
+        ],
+        "query": "all,free,solo,team,business,enterprise"
+      },
+      {
+        "name": "tenant",
+        "type": "query",
+        "label": "Tenant (AdminCtx only — per-tenant audit chain health)",
+        "datasource": "$DS_PROMETHEUS",
+        "query": "label_values(corelink_cas_put_requests_total, tenant_id)",
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "all", "value": "all" }
+      },
+      {
+        "name": "region",
+        "type": "custom",
+        "label": "Region",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "SAM", "value": "sam" },
+          { "text": "IAD", "value": "iad" },
+          { "text": "LHR", "value": "lhr" },
+          { "text": "NRT", "value": "nrt" },
+          { "text": "SYD", "value": "syd" }
+        ],
+        "query": "all,sam,iad,lhr,nrt,syd"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Audit chain integrity — chain break SEV-0 counter (MUST = 0 always)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WP-6.1 panel 1 — corelink_audit_chain_break_detected_total. Sourced from AuditChainError::ChainBreak variant (crates/corelink-audit-chain/src/error.rs:66 + verifier.rs:71). ANY non-zero value = SEV-0; RB-AUDIT-CHAIN-001 runbook trigger. Threshold: 0 = green, ≥ 1 = red.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "CLEAN", "color": "green" } } }
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(corelink_audit_chain_break_detected_total[1h]))",
+          "legendFormat": "chain breaks (1h)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Audit emit failure rate — R2 sink + JCS canonicalization failures (SLO: < 0.01%)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WP-6.1 panel 2 — corelink_audit_emit_failures_total{reason}. Sourced from R2AuditSinkError::Backend (crates/corelink-audit-chain/src/error.rs:34) + AuditChainError::Canonicalization. Emit failure = fail-CLOSED transaction abort (WI §6.1.9). SLO: < 0.01% sustained. > 0.01% = SEV-1.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 0.01 },
+              { "color": "red", "value": 0.1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (reason) (rate(corelink_audit_emit_failures_total[5m]))",
+          "legendFormat": "emit fail / {{reason}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Daily verifier runs — ok vs break cadence (SLO: 1 run/day UTC 02:00, 100% ok)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WP-6.1 panel 3 — corelink_audit_chain_verify_runs_total{result}. Sourced from verifier.rs §3 WI §6.1 SLA (crates/corelink-audit-chain/src/verifier.rs:184). Daily-verify cadence: 1 run per tenant per day at UTC 02:00. SLO: result=ok rate = 100%; any result=break = SEV-0.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(corelink_audit_chain_verify_runs_total[1h]))",
+          "legendFormat": "verify run / {{result}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "R2 audit storage ops per bucket — growth rate (corelink_r2_ops_total)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WP-6.1 panel 4 — corelink_r2_ops_total{bucket, op_type}. RedMetricKind::R2OpsTotal (canonical.rs:111). Audit chain writes to R2 bucket with path prefix `audit/{tenant_id}/{date}/`. High PutObject rate = high audit event volume (capacity signal). Sustained > 10k ops/min per bucket = cost alert.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (bucket, op_type) (rate(corelink_r2_ops_total{region=~\"$region\"}[5m]))",
+          "legendFormat": "{{bucket}} / {{op_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Durable Object audit storage size by DO class — growth trend",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WP-6.1 panel 5 — corelink_do_storage_size_bytes{do_class}. RedMetricKind::DoStorageSizeBytes (canonical.rs gauge). Tracks DO storage size for audit chain head state per DO class (per-tenant chain-builder ledger in Arc<Mutex>). DO 1 GiB hard limit; sustained growth > 900 MiB = SEV-3 migration ticket.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 12 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 536870912 },
+              { "color": "red", "value": 943718400 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (do_class) (corelink_do_storage_size_bytes)",
+          "legendFormat": "{{do_class}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Per-tenant audit event emit rate — top 10 tenants (AdminCtx, R15)",
+      "type": "table",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WP-6.1 panel 6 — top-10 tenants by CAS PUT volume (proxy for audit emit rate — 1:1 emit per CAS PUT per WI §3 audit ordering). RedMetricKind::CasPutRequestsTotal (canonical.rs). R15 per-tenant: AdminCtx-gated; pseudonymous tenant_id only (INV-OBS-NO-PII). Identifies tenants at risk of exhausting per-tenant DO storage budget.",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (tenant_id) (rate(corelink_cas_put_requests_total{tenant_tier=~\"$tenant_tier\", region=~\"$region\"}[5m])))",
+          "legendFormat": "{{tenant_id}}",
+          "refId": "A",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "footer": {
+          "show": false
+        },
+        "sortBy": [{ "displayName": "Value", "desc": true }]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "tenant_id": "Tenant ID (pseudonymous)",
+              "Value": "Audit events/s (proxy)"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Audit chain 7d rolling clean gauge (DASH-SLO-CATALOG cross-link)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WP-6.1 panel 7 — corelink_audit_chain_verify_pass_7d (cross-link from DASH-SLO-CATALOG panel 15 + sprint contract §10.s09.8). 1 = 7d rolling clean (no break detected in any daily verify run); 0 = BREAK within 7d = ship-block trigger. WI-S09-004 inheritance.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 19 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "GREEN 7d", "color": "green" } } },
+            { "type": "value", "options": { "0": { "text": "BREAK DETECTED", "color": "red" } } }
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "min(corelink_audit_chain_verify_pass_7d)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Privacy DSR active requests (active audit obligations) — gauge",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WP-6.1 panel 8 — corelink_privacy_dsr_active_total{dsr_type}. RedMetricKind::PrivacyDsrActiveTotal (canonical.rs gauge). Tracks in-flight Data Subject Requests (S-11); audit chain must generate a `dsr_action` event per DSR lifecycle step per INV-AUDIT-* ordering. Sustained > 100 concurrent DSRs = ops load signal.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 19 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 100 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (dsr_type) (corelink_privacy_dsr_active_total)",
+          "legendFormat": "DSR active / {{dsr_type}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "title": "WP-6.1 spec — 2026-05-27-15-agent-dispatch-matrix.md §2",
+      "url": "../../specs/_audits/2026-05-27-15-agent-dispatch-matrix.md",
+      "type": "link",
+      "icon": "doc"
+    },
+    {
+      "title": "DASH-SLO-CATALOG (multi-burn-rate alerts cross-link)",
+      "url": "/d/DASH-SLO-CATALOG",
+      "type": "link",
+      "icon": "dashboard"
+    },
+    {
+      "title": "DASH-PRIVACY (DSR detail)",
+      "url": "/d/DASH-PRIVACY",
+      "type": "link",
+      "icon": "dashboard"
+    },
+    {
+      "title": "DASH-CAS (CAS hot path — audit emit co-path)",
+      "url": "/d/DASH-CAS",
+      "type": "link",
+      "icon": "dashboard"
+    }
+  ]
+}
