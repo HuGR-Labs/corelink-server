@@ -65,5 +65,14 @@ pub mod byok_orchestrator;
 #[cfg(feature = "neon-real")]
 pub mod neon_shadow_factory;
 pub mod routes;
+/// Native-container storage adapters (R2 S3-compatible API + D1 HTTP).
+///
+/// WP-S1 Phase 1 — provides [`storage::r2_s3::R2CasHandler`] (real
+/// CAS read/write against Cloudflare R2 via `aws-sdk-s3`) and
+/// [`storage::d1_http::D1HttpClient`] (metadata reads via the CF D1
+/// HTTP API). Runtime selection: when `R2_S3_ACCESS_KEY_ID` etc. are
+/// present the real adapters are used; otherwise the InMemory fakes
+/// remain active for tests + local dev.
+pub mod storage;
 pub mod wall_clock;
 pub mod webhook;

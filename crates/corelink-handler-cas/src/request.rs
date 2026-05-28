@@ -51,6 +51,20 @@ pub struct CasReadResponse {
     pub content_hash: String,
 }
 
+impl CasReadResponse {
+    /// Construct a [`CasReadResponse`] from its fields.
+    ///
+    /// Provided because the struct is `#[non_exhaustive]`, which
+    /// prevents struct-literal construction from outside this crate.
+    #[must_use]
+    pub fn new(bytes: impl Into<Vec<u8>>, content_hash: impl Into<String>) -> Self {
+        Self {
+            bytes: bytes.into(),
+            content_hash: content_hash.into(),
+        }
+    }
+}
+
 /// Write request — `PUT /v1/cas/{tenant}/{hash}` canonical shape.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -100,4 +114,18 @@ pub struct CasWriteResponse {
     /// True if the write was a fresh insert; false if the object
     /// already existed (idempotent re-write).
     pub durable: bool,
+}
+
+impl CasWriteResponse {
+    /// Construct a [`CasWriteResponse`] from its fields.
+    ///
+    /// Provided because the struct is `#[non_exhaustive]`, which
+    /// prevents struct-literal construction from outside this crate.
+    #[must_use]
+    pub fn new(content_hash: impl Into<String>, durable: bool) -> Self {
+        Self {
+            content_hash: content_hash.into(),
+            durable,
+        }
+    }
 }

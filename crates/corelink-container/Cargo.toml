@@ -102,6 +102,22 @@ cf-billing-real = ["corelink-billing-stripe-materializer/cf-billing-real"]
 [dependencies]
 # R-PREP-CF-R2-REAL — gated by the `cf-r2-real` feature (see [features]).
 corelink-cf-bindings = { workspace = true, optional = true }
+# WP-S1 Phase 1 — R2 S3-compatible API client (DECISION-GATE-1 Option A).
+# Used by `crates/corelink-container/src/storage/r2_s3.rs` to reach R2
+# from the native Firecracker container. Same major version as aws-sdk-kms
+# to share the existing smithy/runtime infrastructure already in Cargo.lock.
+aws-sdk-s3 = { workspace = true }
+# aws-config is already transitively available via corelink-byok/aws but we
+# need an explicit dep here because `storage/r2_s3.rs` calls
+# `aws_config::defaults(BehaviorVersion::latest())` directly.
+aws-config = { workspace = true }
+# reqwest is already in the workspace (corelink-stripe-real et al.) —
+# added here for `storage/d1_http.rs` (D1 HTTP API client).
+reqwest = { workspace = true }
+# tenant-path for `derive_prefix` (tenant-scoped R2 keys).
+corelink-tenant-path = { workspace = true }
+# zeroize for TDK bytes handling.
+zeroize = { workspace = true }
 tonic = { workspace = true }
 prost = { workspace = true }
 tokio = { workspace = true }
