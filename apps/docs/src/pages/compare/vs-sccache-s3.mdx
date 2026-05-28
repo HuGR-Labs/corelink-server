@@ -1,0 +1,334 @@
+---
+title: "CoreLink vs sccache + S3: which compiler cache to pick"
+description: "Detailed technical comparison of CoreLink and sccache + S3 — self-hosted ops overhead vs managed, polyglot REAPI cache vs compiler-only, BYOK on four KMS providers, and the hidden cost of running your own S3 bucket. Honest tradeoffs as of 2026-05-27."
+keywords:
+  - "sccache"
+  - "sccache s3"
+  - "sccache alternative"
+  - "compiler cache"
+  - "rust build cache"
+  - "cargo cache"
+  - "remote compiler cache"
+  - "byok build cache"
+  - "sccache vs corelink"
+last_updated: "2026-05-27"
+---
+
+# CoreLink vs sccache + S3
+
+sccache and CoreLink solve overlapping pain — slow Rust and C++ builds on CI — from different starting points. sccache is Mozilla's open-source compiler-caching daemon: it intercepts compiler invocations, caches the object files, and, when you add an S3 (or GCS or Azure Blob) bucket, becomes a shared distributed cache for your entire build fleet. It is free software, widely used, and does exactly what it advertises.
+
+CoreLink is a REAPI v2 polyglot cache with a managed data plane on Cloudflare edge. It covers Bazel, Buck2, Pants, and Please via the standard Remote Execution API, plus first-class adapters for Cargo, npm, pip, brew, and OCI on the same content-addressable store. BYOK across four KMS providers and an RFC 6962 Merkle-chained audit log are at the Enterprise tier.
+
+This page lays out the honest tradeoffs. It is dated **2026-05-27**; S3 pricing changes — verify the AWS pricing calculator before quoting in a buying decision.
+
+## TL;DR
+
+- **Pick sccache + S3 if** you have a pure Rust, C++, or Swift build
+  fleet, you do not need REAPI compatibility, your ops team is
+  comfortable managing S3 bucket policies and sccache daemon rollouts,
+  and the budget is zero for tooling.
+- **Pick CoreLink if** you want a managed cache that speaks REAPI v2
+  (Bazel, Buck2, Pants, Please) in addition to Cargo, has BYOK on four
+  KMS providers, ships a tamper-evident audit chain, and does not
+  require you to operate S3 bucket policies, sccache daemon configs, or
+  GHA cache invalidation scripts.
+- **Either is fine if** your stack is pure Rust / C++, your team is
+  comfortable with self-hosted infra, and you have no compliance
+  requirements beyond "the build must be fast."
+
+## At a glance
+
+| Capability | CoreLink | sccache + S3 |
+|---|---|---|
+| Pricing (smallest paid tier) | $25/mo flat (Pro: 500 GB / 20M req included) | $0 software + AWS S3 storage (~$0.023/GB/mo) + transfer (~$0.09/GB egress beyond free tier) |
+| Free tier | 10 GB cache, 500k req/mo, 1 workspace, no card | Unlimited (your bucket cost) |
+| Wire protocol | REAPI v2 (CAS + ActionCache + Capabilities) | Compiler-interception protocol (non-REAPI) |
+| Bazel / Buck2 / Pants / Please | Yes (any REAPI client) | No — compiler cache only; Bazel integration is manual and partial |
+| Cargo / Rust compiler caching | Yes — Cargo adapter + REAPI CAS | Yes — native: intercepts `rustc` invocations via `RUSTC_WRAPPER` |
+| C++ / Clang / GCC caching | Via REAPI (bazel-built C++ works; standalone `clang` or `gcc` requires REAPI client) | Yes — native: GCC, Clang, MSVC all supported |
+| Swift caching | Via REAPI (if build tool is REAPI-capable) | Yes — native Swift support in sccache >= 0.4 |
+| npm / pip / brew / OCI | Yes — first-class adapters | No |
+| BYOK across 4 KMS (AWS / GCP / Azure / Vault) | Yes — Enterprise: customer-held KEK, 5-min DEK cap, Ed25519 erasure attest | No — S3 bucket owner controls; SSE-KMS is AWS-managed, not customer-held-key at the cache layer |
+| Audit chain (RFC 6962 / RFC 3161) | Yes — Enterprise: re-derivable Merkle root | No |
+| TLA+-verified tenant isolation | Yes — counterexamples block CI merge | N/A (single-tenant by default; multi-tenant is your S3 prefix policy) |
+| Ops overhead | Zero (managed data plane) | Medium: IAM roles, bucket policies, lifecycle rules, sccache.conf per worker, daemon crash recovery |
+| Self-host | No (Cloudflare edge data plane) | Yes — fully self-hosted by definition |
+| Hosting | Cloudflare Workers + R2 edge | Your S3 bucket (AWS / GCS / Azure Blob / R2 supported by sccache) |
+| Source for sccache | https://github.com/mozilla/sccache | — |
+| Source for CoreLink prices | corelink.humangr.com (this site) | AWS pricing calculator (https://aws.amazon.com/s3/pricing/) |
+
+## Where sccache wins
+
+sccache is a mature, well-understood tool. These are its genuine strengths.
+
+1. **Native compiler interception.** sccache acts as a drop-in
+   `RUSTC_WRAPPER` or `CC` / `CXX` replacement. There is no build-tool
+   requirement: any `cargo build`, `cmake ..`, or `clang foo.c` is
+   automatically cached without modifying a `.bazelrc` or adding a
+   REAPI backend. If your CI is "run `cargo build` on 40 workers and
+   share cached `.rlib` files", sccache is three environment variables
+   and a bucket ARN away from working.
+
+2. **Free software, no monthly bill.** The sccache binary is MIT-licensed
+   and free. An S3 bucket at 50 GB of cached objects costs roughly
+   $1.15/mo in storage, plus egress. For an early-stage startup or an
+   OSS project with no compliance requirements, the total cost of sccache
+   is a rounding error on your AWS bill. CoreLink Free covers 10 GB and
+   500k requests/mo; past that you are looking at $25/mo Pro.
+
+3. **Wide compiler support.** sccache handles Rust (`rustc`), GCC, Clang,
+   MSVC, NVCC (CUDA), and Swift out of the box with one daemon config.
+   CoreLink reaches bare-compiler workloads only when they run behind a
+   REAPI-capable build tool (Bazel or Buck2); standalone `clang` / `gcc`
+   invocations are not intercepted today.
+
+4. **Cloud-agnostic storage backend.** sccache supports S3, GCS, Azure
+   Blob, and R2 as backends — plug into whichever bucket your
+   infrastructure already has. CoreLink's data plane is Cloudflare edge;
+   the storage choice is R2 (or your BYOK bucket on Enterprise).
+
+5. **Active Mozilla / Rust community.** sccache is maintained by Mozilla
+   and a broad contributor base with a long track record of stability.
+   For a team where "what does the Rust community use for caching" is
+   the decision criterion, sccache is the answer everyone around you
+   already has.
+
+## Where CoreLink wins
+
+These are deliberate design decisions; they are also the places where sccache + S3 creates hidden ops tax.
+
+1. **Zero ops overhead: no daemon, no IAM policy, no cache invalidation
+   script.** Running sccache at scale means configuring the sccache
+   daemon on every CI worker, managing `SCCACHE_BUCKET` / `SCCACHE_REGION`
+   / `AWS_ACCESS_KEY_ID` env vars in every GHA / Buildkite / CircleCI
+   pipeline, writing S3 lifecycle rules to evict stale objects, debugging
+   cache misses when a new worker lacks permissions, and restarting a
+   crashed daemon that silently falls back to uncached compilation.
+   CoreLink is a REAPI endpoint and a token; there is no daemon process
+   to manage, no lifecycle rule to tune, no IAM role to debug when your
+   fresh CI runner lacks S3 permissions.
+
+2. **REAPI v2: Bazel, Buck2, Pants, Please, BuildStream, recc — all
+   work natively.** sccache is not a REAPI cache. If your monorepo uses
+   Bazel or Buck2, you cannot point `--remote_cache` at sccache; you
+   need a separate REAPI backend. That means two cache tiers: sccache
+   for your raw `cargo build` paths and a REAPI cache (bazel-remote,
+   EngFlow, BuildBuddy, or CoreLink) for your Bazel / Buck2 paths. A
+   CoreLink workspace handles both on the same content-addressable store,
+   one bill, one audit log, one BYOK envelope.
+
+3. **Polyglot: Cargo + npm + pip + brew + OCI on one workspace.** Your
+   sccache instance caches compiler outputs; it does not cache your
+   `npm ci` dependencies, your `pip install` virtualenv, or your Docker
+   layer rebuilds. A platform team running a Rust backend + a Node
+   frontend + Docker images typically stitches sccache (Rust) + GitHub
+   Actions Cache or Turborepo (npm) + an OCI registry cache (Docker)
+   — three separate cache planes, each with its own quota, ops story,
+   and audit surface. CoreLink collapses those into one.
+
+4. **BYOK across four KMS providers, at the cache layer.** S3 SSE-KMS
+   encrypts objects at rest, but the key is AWS-managed; the cache layer
+   does not perform envelope encryption with a customer-held KEK.
+   CoreLink Enterprise ships customer-held KEK across AWS KMS, GCP KMS,
+   Azure Key Vault, and HashiCorp Vault; the DEK lives in memory for at
+   most 5 minutes; revocation produces a signed Ed25519 erasure
+   attestation. For a SOC 2 / HIPAA / PCI audit, the difference is
+   between "our CI cache is on S3 SSE" and "we proved customer-managed
+   key revocation with a timestamped cryptographic receipt."
+
+5. **RFC 6962 Merkle-chained audit log, re-derivable from raw entries.**
+   Your external auditor downloads the log shard, replays every event,
+   and recomputes the published Merkle root. sccache has no audit log;
+   S3 CloudTrail records which IP called `GetObject`, not whether the
+   cached object was replaced between reads. If "prove the CI cache was
+   not tampered with during the 6-month SOC 2 window" is a real auditor
+   question, CoreLink answers it; sccache does not.
+
+6. **TLA+-verified multi-tenant isolation.** sccache's "multi-tenant"
+   story is S3 prefix separation — you trust your IAM policies.
+   CoreLink's cross-tenant isolation invariant is model-checked in TLA+;
+   counterexamples block merge to `main`. Meaningful at platform-team
+   or MSP scale where dozens of tenants share one cache service.
+
+## Cost comparison
+
+Three scale points. These are honest illustrative numbers; your actual
+bill depends on cache-hit ratio, object size distribution, and egress
+pattern. Verify with the AWS pricing calculator before committing.
+
+### 10 GB warm cache
+
+**sccache + S3 (AWS us-east-1, Standard):**
+- Storage: 10 GB × $0.023/GB = **$0.23/mo**
+- Requests: 100k PUT + 1M GET at S3 rates = ~$0.50/mo
+- Egress (if workers are outside AWS, e.g., GitHub Actions):
+  10 GB × $0.09/GB = **$0.90/mo**
+- Total: ~**$1.63/mo** (storage + requests + egress)
+- Ops overhead: ~1 hr/week of SRE time per pipeline initially, then
+  ~0.5 hr/week maintenance (lifecycle rules, daemon updates, IAM drift)
+
+**CoreLink Free:**
+- $0/mo for up to 10 GB cache / 500k requests
+- Zero ops overhead
+- No BYOK, no audit chain
+
+**Verdict at 10 GB:** sccache + S3 wins on pure dollar cost. CoreLink
+Free is competitive if the 500k request limit fits your build pattern.
+For a small team with no compliance requirements, sccache is cheaper.
+
+### 500 GB warm cache
+
+**sccache + S3 (AWS us-east-1, Standard):**
+- Storage: 500 GB × $0.023/GB = **$11.50/mo**
+- Requests: ~10M GET + ~1M PUT = ~$5/mo
+- Egress: 200 GB × $0.09/GB = **$18/mo** (typical CI egress at this
+  scale; varies sharply with your runner topology and AWS data-transfer
+  pricing tiers)
+- S3 lifecycle rules, versioning, cross-region replication (if your CI
+  spans regions): add $5–15/mo
+- Ops overhead: 1–3 hr/week SRE time (multi-region bucket policy, IAM
+  credential rotation, sccache daemon version upgrades across fleet)
+- Total: ~**$35–$50/mo** (excluding SRE labor at any loaded rate)
+
+**CoreLink Pro:**
+- **$25/mo flat.** 500 GB / 20M requests included. Zero ops overhead.
+- No BYOK, no audit chain at Pro tier.
+- One bill for Cargo + Bazel CAS + npm + pip if you consolidate.
+
+**Verdict at 500 GB:** CoreLink Pro at $25/mo is less than a typical
+sccache + S3 bill at this scale once you account for S3 storage,
+requests, egress, and lifecycle maintenance. If you are already paying
+$35–$50/mo for sccache + S3 and spending SRE hours on it, Pro is the
+lower-friction path. If you have zero egress cost (all CI runs in EC2
+same-region), S3 is cheaper on the raw bill — but Pro eliminates the
+ops burden.
+
+### 5 TB warm cache
+
+**sccache + S3:** ~$375–$425/mo in storage + requests + egress
+(Standard tier, same-region egress excluded; add $50–$100/mo for
+cross-region replication). Ops overhead at this scale is 4–8 hr/week
+SRE time — cache eviction tuning, multi-account IAM, daemon startup
+failures on ephemeral runners.
+
+**CoreLink Enterprise:** $500–$5,000/mo (published band) depending on
+storage, dedicated infra, BYOK, SSO, SLA, and audit-chain retention.
+Open a conversation for a scoped number.
+
+**Verdict at 5 TB:** S3 raw cost is lower. But compliance requirements
+(BYOK, tamper-evident audit log) are not addressable by sccache + S3
+at any price. For a regulated buyer, the comparison stops being
+apples-to-apples.
+
+## When to use which
+
+Three questions resolve most buying conversations:
+
+1. **Do you need REAPI (Bazel, Buck2, Pants, Please)?**
+   - YES → sccache alone is not sufficient; you need a REAPI cache
+     layer. Use CoreLink, bazel-remote, or another REAPI backend.
+     If you also have Rust/C++, CoreLink handles both on one workspace.
+   - NO → continue to question 2.
+
+2. **Do you have compliance requirements (SOC 2, HIPAA, PCI, FedRAMP)?**
+   - YES → You will need BYOK and an auditor-defensible audit log.
+     sccache + S3 SSE-KMS is defensible for data-at-rest; it does not
+     provide tamper-evident log re-derivation. CoreLink Enterprise
+     answers both. Evaluate if Enterprise pricing fits your budget
+     vs the compliance engineering cost of instrumenting sccache
+     + CloudTrail into a defensible story.
+   - NO → continue to question 3.
+
+3. **Is your stack compiler-only (Rust / C++ / Swift), no Bazel, no
+   npm/pip/OCI, no multi-tenancy, and your ops team is comfortable
+   with S3?**
+   - YES → **sccache + S3 is the right tool.** You get a proven, free,
+     well-documented compiler cache that your whole language community
+     uses. Save the $25/mo.
+   - NO → Evaluate CoreLink. A polyglot stack, a platform team serving
+     multiple internal tenants, or a compliance requirement each shifts
+     the balance.
+
+## Migration path: sccache → CoreLink (parallel-run pattern)
+
+You are running sccache + S3 today and want to evaluate CoreLink. The
+safest pattern is a parallel run — both caches active simultaneously —
+so you can compare cache-hit ratios and latency without a flag day.
+
+**Step 1: Provision a CoreLink workspace.**
+
+Sign up at `https://corelink-app.humangr.com/sign-up`. No credit card.
+Free tier (10 GB, 500k req/mo) is sufficient for the trial phase. You
+will get a workspace token (`ct_xxx`) and a regional endpoint.
+
+**Step 2: Install the CoreLink CLI and run `corelink ping`.**
+
+```bash
+curl -fsSL https://corelink-get.humangr.com | sh -s -- \
+  --token=ct_xxx --region=ord
+corelink ping
+# Expected: latency <50ms, 200 OK
+```
+
+**Step 3: Add CoreLink as a Cargo cache backend.**
+
+Run the CoreLink CLI init command — it appends idempotent config to
+`.cargo/config.toml`. If the marker line is already present, it exits
+0 without modification:
+
+```bash
+corelink cargo-init --token=ct_xxx --region=ord
+```
+
+**Step 4: Run your CI in shadow mode for one week.**
+
+Keep sccache as the local cache while CoreLink populates its CAS from
+the same builds. Compare cache-hit ratio (`sccache --show-stats` vs
+the CoreLink dashboard), p95 build time, and error rate.
+
+**Step 5: Cut over.**
+
+When the shadow week confirms cache-hit parity: remove
+`RUSTC_WRAPPER=sccache` from your CI env, let the CoreLink Cargo
+adapter become primary, and stop the sccache daemon on your workers.
+Keep the S3 bucket alive for 30 days (one TTL window) in case you
+need to roll back.
+
+**Step 6: Migrate other workloads.**
+
+Once Cargo is on CoreLink, add Bazel (`--remote_cache` in `.bazelrc`),
+then npm, pip, and Docker layer caches via the respective CoreLink
+adapter init commands. One workspace, one bill, one audit log.
+
+**Step 7 (optional): BYOK for compliance.**
+
+On Enterprise, attach your KMS with `corelink kms attach`. CoreLink
+signs an Ed25519 attestation on every cached object and on revocation.
+Rotation is operator-controlled.
+
+Most teams complete steps 1–5 in a single sprint.
+
+## Sources
+
+- sccache GitHub repository (Mozilla, MIT license):
+  [https://github.com/mozilla/sccache](https://github.com/mozilla/sccache)
+- sccache documentation — storage backends, S3 configuration:
+  [https://github.com/mozilla/sccache/blob/main/docs/S3.md](https://github.com/mozilla/sccache/blob/main/docs/S3.md)
+- AWS S3 pricing (verify before quoting):
+  [https://aws.amazon.com/s3/pricing/](https://aws.amazon.com/s3/pricing/)
+- AWS S3 request pricing (GET, PUT, LIST):
+  [https://aws.amazon.com/s3/pricing/#Request_and_data_retrieval_pricing](https://aws.amazon.com/s3/pricing/#Request_and_data_retrieval_pricing)
+- AWS data transfer pricing (egress):
+  [https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer](https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer)
+- CoreLink docs: [/docs](/docs/)
+- CoreLink pricing: [/pricing](/pricing/)
+- Capability matrix (with BuildBuddy, NativeLink, EngFlow, bazel-remote,
+  Turborepo alongside sccache):
+  [/docs/pricing/comparison](/docs/pricing/comparison)
+- Source for the comparisons on this page: the CoreLink competitive
+  landscape audit (`specs/_audits/2026-05-27-competitive-landscape.md`)
+  and pricing benchmarks (`specs/_audits/2026-05-27-pricing-benchmarks.md`).
+
+If you find a factual error, open an issue on
+`humangr-labs/corelink-server`. Correctness wins over rhetoric.
