@@ -103,18 +103,25 @@ EOF
   exit 0
 }
 
+# now_ms — wall-clock ms via python3.
+# BSD `date` (macOS default) does NOT support `%3N`; it leaves "3N" as a
+# literal suffix, producing e.g. "17799864333N" and breaking the
+# arithmetic in time_curl. python3 is in PATH on every supported runner
+# (CI + local dev) and gives reliable millisecond precision.
+now_ms() { python3 -c 'import time; print(int(time.time()*1000))'; }
+
 # time_curl NAME URL [EXTRA_CURL_ARGS...]
 # Returns HTTP status code; prints timing.
 time_curl() {
   local name="$1" url="$2"
   shift 2
   local t0 http_code elapsed
-  t0=$(date +%s%3N)
+  t0=$(now_ms)
   http_code=$(curl -sS -o /dev/null -w "%{http_code}" \
     --max-time "${TIMEOUT_CURL}" \
     --connect-timeout 10 \
     "$@" "$url" 2>/dev/null || echo "000")
-  elapsed=$(( $(date +%s%3N) - t0 ))
+  elapsed=$(( $(now_ms) - t0 ))
   printf '  %s: HTTP %s (%dms)\n' "$name" "$http_code" "$elapsed"
   echo "$http_code"
 }
