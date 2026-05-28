@@ -117,10 +117,10 @@
 //! 2026-05-26), 5 of the Wave-33 Option-A re-export tenants were
 //! physically absorbed into this crate as inline submodules (14,873
 //! LOC moved in-tree); workspace.members dropped by 5. Public-API
-//! paths (`corelink_billing::<mod>::*`) are preserved 1:1; INV-BILL-*
-//! + Stripe wallet broker dual-mode + audit fail-CLOSED + soft/hard
-//! quota FSM + token-bucket+circuit-breaker semantics + abuse
-//! reputation invariants all preserved by reference.
+//! paths (`corelink_billing::<mod>::*`) are preserved 1:1; INV-BILL-* +
+//! Stripe wallet broker dual-mode + audit fail-CLOSED + soft/hard quota
+//! FSM + token-bucket+circuit-breaker semantics + abuse reputation
+//! invariants all preserved by reference.
 //!
 //! Absorbed crates (5):
 //!

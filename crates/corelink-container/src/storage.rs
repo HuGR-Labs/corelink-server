@@ -121,9 +121,8 @@ mod tests {
         let env = StorageEnv::from_env();
         // We can't guarantee R2_S3_ACCESS_KEY_ID is absent in all CI
         // environments, so we just assert the result is consistent.
-        if env.is_some() {
+        if let Some(e) = env {
             // All vars were present — valid configuration.
-            let e = env.unwrap();
             assert!(!e.r2_endpoint.is_empty());
             assert!(!e.r2_access_key_id.is_empty());
         }

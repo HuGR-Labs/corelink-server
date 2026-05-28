@@ -1,15 +1,21 @@
 //! CoreLink server binary entry point.
 //!
-//! Hosts:
-//! - gRPC stack on `PORT` (default 50051): Health + (TODO) CAS / AC /
-//!   ByteStream / Capabilities.
-//! - HTTP stack on `HTTP_PORT` (default 50052): R2-12 Stripe webhook
-//!   route at `/v1/billing/stripe-webhook` (only mounted when
-//!   `STRIPE_WEBHOOK_SECRET` is set; absent → HTTP listener is not
-//!   started so dev/CI runs without billing wiring stay green).
+//! Hosts a single HTTP/1.1 stack on `PORT` (default 50051) — the port the
+//! Cloudflare Durable Object talks to via `container.getTcpPort()` (an HTTP
+//! fetcher). It serves:
+//! - the composed data-plane router (CAS / AC / Admin / audit-export /
+//!   audit-analytics / signup),
+//! - `GET /_health` for the DO's container-readiness probe,
+//! - and the R2-12 Stripe webhook route at `/v1/billing/stripe-webhook`
+//!   (merged in only when `STRIPE_WEBHOOK_SECRET` is set).
+//!
+//! Historical note: this binary previously bound a tonic gRPC server on
+//! 50051 that served only the Health service, while the composed axum router
+//! was built and DISCARDED (`_composed_router`) — so the product data plane
+//! was never reachable. The DO only ever speaks HTTP to this port, so the
+//! gRPC server was dead weight blocking the port; it has been removed in
+//! favour of serving the real HTTP data plane here.
 #![forbid(unsafe_code)]
-// The tonic-generated proto module emits structs without docstrings;
-// allow at the crate root since the lint is `deny` workspace-wide.
 #![allow(missing_docs)]
 #![allow(
     clippy::uninlined_format_args,
@@ -20,6 +26,8 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use axum::http::StatusCode;
+use axum::routing::get;
 use corelink_billing_stripe_materializer::{
     BillingD1Writer, D1IdempotencyStore, D1SubscriptionStateHandler, InMemoryBillingAuditEmitter,
     InMemoryBillingD1, InMemoryTierSelector, RealStripeAuditEmitter,
@@ -31,29 +39,12 @@ use corelink_billing::stripe::real::webhook_dispatch::{
     RecordingSliRecorder, StateMaterializer, SystemClock, WebhookDispatcher,
 };
 use corelink_tier_selection::tier::TierKind;
-use tonic::{transport::Server, Request, Response, Status};
 use tracing::{info, warn};
 
-#[allow(missing_docs, reason = "tonic-generated code does not emit docstrings")]
-pub mod health {
-    tonic::include_proto!("corelink.health.v1");
-}
-
-use health::health_server::{Health, HealthServer};
-use health::{health_check_response::ServingStatus, HealthCheckRequest, HealthCheckResponse};
-
-struct HealthService;
-
-#[tonic::async_trait]
-impl Health for HealthService {
-    async fn check(
-        &self,
-        _req: Request<HealthCheckRequest>,
-    ) -> Result<Response<HealthCheckResponse>, Status> {
-        Ok(Response::new(HealthCheckResponse {
-            status: ServingStatus::Serving as i32,
-        }))
-    }
+/// Liveness probe for the DO's `waitForContainerHealth` (it only checks for a
+/// 200). Returns once the HTTP router is up and serving.
+async fn health_handler() -> StatusCode {
+    StatusCode::OK
 }
 
 #[tokio::main]
@@ -70,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(50051u16);
 
-    let grpc_addr: SocketAddr = format!("0.0.0.0:{}", port).parse()?;
+    let serve_addr: SocketAddr = format!("0.0.0.0:{}", port).parse()?;
 
     // Wave-19 + Wave-20: Neon analytics shadow per-region project
     // resolution + `TokioPostgresExecutor` binder.
@@ -243,25 +234,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     };
 
     info!(
-        "wave-20 routes: building composed router (CAS + AC + Admin + audit-export + audit-analytics)"
+        "routes: building composed data-plane router (CAS + AC + Admin + audit-export + audit-analytics + signup) + /_health"
     );
-    // The composed router is constructed but not yet bound to an
-    // HTTP listener — the gRPC server is the canonical surface; the
-    // axum router is wired into the future HTTP listener (the same
-    // HTTP listener that hosts the Stripe webhook below when the
-    // secret is present).
-    let _composed_router = routes::build_with_factory(shadow_factory);
+    // The composed data-plane router is the product surface. We bind it to the
+    // HTTP listener on PORT (50051) — the exact port the DO forwards HTTP to and
+    // probes for /_health. `/_health` is added here so the DO's container
+    // readiness probe (GET /_health, expects 200) succeeds.
+    let mut app = routes::build_with_factory(shadow_factory).route("/_health", get(health_handler));
 
-    // R2-12: HTTP server with Stripe webhook route. Only started when
-    // STRIPE_WEBHOOK_SECRET is present; otherwise we log and skip so
-    // local dev / CI don't fail without billing config.
+    // R2-12: the Stripe webhook route is MERGED onto the same listener when
+    // STRIPE_WEBHOOK_SECRET is present; absent → skip (dev/CI without billing
+    // config stays green). Either way the data plane above is always served.
     if let Ok(secret) = std::env::var("STRIPE_WEBHOOK_SECRET") {
-        let http_port: u16 = std::env::var("HTTP_PORT")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(50052u16);
-        let http_addr: SocketAddr = format!("0.0.0.0:{}", http_port).parse()?;
-
         // Wave 17 + 18: the HTTP shell binds the production
         // materializer + audit emitter + D1-backed idempotency store
         // from `corelink-billing-stripe-materializer`. The native
@@ -326,25 +310,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Arc::new(SystemClock),
         ));
         let state = Arc::new(WebhookState::new(dispatcher));
-        info!(%http_addr, route = corelink_server::webhook::STRIPE_WEBHOOK_ROUTE,
-            "CoreLink HTTP listener starting (Stripe webhook)");
-        let app = webhook_router(state);
-        let listener = tokio::net::TcpListener::bind(http_addr).await?;
-        tokio::spawn(async move {
-            if let Err(e) = axum::serve(listener, app).await {
-                tracing::error!(error = %e, "HTTP listener exited");
-            }
-        });
+        info!(route = corelink_server::webhook::STRIPE_WEBHOOK_ROUTE,
+            "Stripe webhook route mounted on the data-plane listener");
+        app = app.merge(webhook_router(state));
     } else {
         warn!("STRIPE_WEBHOOK_SECRET unset; Stripe webhook route NOT mounted (dev/CI mode)");
     }
 
-    info!(%grpc_addr, "CoreLink gRPC server starting");
-
-    Server::builder()
-        .add_service(HealthServer::new(HealthService))
-        .serve(grpc_addr)
-        .await?;
+    // Single HTTP/1.1 listener on PORT (50051) — the DO's getTcpPort target.
+    let listener = tokio::net::TcpListener::bind(serve_addr).await?;
+    info!(%serve_addr, "CoreLink HTTP data-plane server starting");
+    axum::serve(listener, app).await?;
 
     Ok(())
 }
