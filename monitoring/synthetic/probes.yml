@@ -89,9 +89,12 @@ probes:
       - "wave32"
 
   # Probe 4: Signup worker health
+  # /health is the signup worker's healthcheck; its root (/) legitimately
+  # 404s (worker serves only /webhooks/clerk + /health). Verified live
+  # 2026-05-28 Phase E: /health → 200, / → 404.
   - name: "corelink-signup-health"
     pronounceable_name: "CoreLink Signup Health"
-    url: "https://corelink-signup.humangr.com"
+    url: "https://corelink-signup.humangr.com/health"
     method: "GET"
     monitor_type: "status"
     check_frequency_seconds: 60

@@ -102,8 +102,12 @@ SUBDOMAINS=(
 # conservative: ≥ EXPECTED_TABLE_COUNT tables must exist.
 EXPECTED_TABLE_COUNT=20   # production-safe lower bound
 
-# D1 database name (prod).
-D1_DATABASE="corelink-prod-d1"
+# D1 database binding (prod). The wrangler.toml [[env.prod.d1_databases]]
+# binding is CONFIG_DB (database_name corelink-config-prod, uuid d64742ea);
+# it MUST be referenced by binding name + `--env prod` (the top-level binding
+# carries a PLACEHOLDER uuid). Verified live 2026-05-28 Phase E: 78 tables.
+D1_DATABASE="CONFIG_DB"
+WRANGLER_ENV="prod"
 
 # cf-wrangler tier string as it appears in secrets-checklist.md.
 CHECKLIST_PATH="docs/internal/secrets-checklist.md"
@@ -360,6 +364,7 @@ check_w32_6_migrations() {
     local sql="SELECT count(*) as tbl_count FROM sqlite_master WHERE type='table'"
     if raw_count="$(wrangler d1 execute "${D1_DATABASE}" \
                         --remote \
+                        --env "${WRANGLER_ENV}" \
                         --command="${sql}" \
                         --json 2>/dev/null)"; then
         local count=0
@@ -423,9 +428,11 @@ check_w32_7_secrets_bound() {
         return
     fi
 
-    # wrangler secret list --env prod returns JSON array of {name, type} objects
+    # wrangler secret list --env prod returns a JSON array of {name, type}
+    # objects by default (the --json flag does NOT exist on `secret list` in
+    # wrangler 4.95 — "Unknown argument: json"). Verified live 2026-05-28.
     local raw_list
-    if ! raw_list="$(wrangler secret list --env prod --json 2>/dev/null)"; then
+    if ! raw_list="$(wrangler secret list --env prod 2>/dev/null)"; then
         record "W32-7" "${label}" "FAIL" "wrangler secret list --env prod failed (non-zero exit)"
         return
     fi
