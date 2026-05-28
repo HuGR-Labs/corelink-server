@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # d-day-migrations-apply-prod.sh — Wave 32 Phase D D-day migration runner.
 #
-# Applies 52 D1 migrations to corelink-prod-d1 via wrangler.
+# Applies 52 D1 migrations to corelink-config-prod (binding: CONFIG_DB) via wrangler.
 #
 # DEFAULT MODE: --dry-run  (no live CF API calls; prints plan and exits 0)
 #
@@ -15,6 +15,23 @@
 #   INV-AUTH-MIGRATION-ADDITIVE (HIGH): additive guard wraps check_migrations_additive.py.
 #   CTRL-AUDIT-EMIT-BEFORE-MUTATION: migration plan emitted to stdout before
 #               any wrangler invocation.
+#
+# WRANGLER v4 REQUIREMENT:
+#   wrangler.toml uses [[containers]] array syntax which requires wrangler v4+.
+#   Bare `npx wrangler` or `npx wrangler@latest` may resolve to a stale v3
+#   cache and fail with: "containers" should be an object, but got an array.
+#   The default WRANGLER_CMD therefore prefers the worker-local v4 binary at
+#   worker/node_modules/.bin/wrangler (v4.95.0), falling back to npx wrangler@4
+#   only if the local binary is absent. Override via WRANGLER env var.
+#
+# D1 BINDING / ENV CLARIFICATION (BUG 1 fix — 2026-05-28):
+#   The prod D1 database lives under [[env.prod.d1_databases]] in wrangler.toml:
+#     binding = "CONFIG_DB"
+#     database_name = "corelink-config-prod"
+#     database_id = "d64742ea-e102-40b2-a844-ff02e3f94562"
+#   The top-level [[d1_databases]] binding (line 169) is the dev binding with a
+#   PLACEHOLDER uuid. Invoking without --env prod would silently target the dev
+#   binding and fail. Correct invocation: CONFIG_DB --remote --env prod.
 #
 # Exit codes:
 #   0   — success (dry-run printed plan, or live apply completed)
@@ -34,7 +51,15 @@ readonly SCRIPT_NAME
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 readonly REPO_ROOT
 readonly MIGRATIONS_DIR="${REPO_ROOT}/migrations/d1"
-readonly DB_NAME="corelink-prod-d1"
+# BUG 1 fix (2026-05-28): The prod D1 lives under [[env.prod.d1_databases]] with
+# binding = "CONFIG_DB" (database_name = "corelink-config-prod",
+# uuid = d64742ea-e102-40b2-a844-ff02e3f94562).  The wrangler CLI takes the
+# *binding name* (CONFIG_DB), not the database_name string.  Without --env prod
+# the command would target the top-level dev binding (PLACEHOLDER uuid) and fail.
+readonly DB_BINDING="CONFIG_DB"
+readonly DB_ENV="prod"
+# DB_NAME retained for log messages / backwards-compat references only.
+readonly DB_NAME="corelink-config-prod"
 readonly EXPECTED_FILE_COUNT=52
 readonly ADDITIVE_AUDIT_SCRIPT="${REPO_ROOT}/scripts/d-day-migrations-additive-audit.sh"
 readonly ADDITIVE_CHECK_SCRIPT="${REPO_ROOT}/scripts/check_migrations_additive.py"
@@ -60,7 +85,8 @@ FLAGS:
                      wrangler command that WOULD be executed. No live CF API
                      calls. Exits 0 on success.
 
-  --live             Execute the migrations for real against corelink-prod-d1.
+  --live             Execute the migrations for real against corelink-config-prod
+                     (binding CONFIG_DB, --env prod, uuid d64742ea).
                      Requires CLOUDFLARE_API_TOKEN env var to be set with
                      D1:Write + Account:Read scopes. Additive guard runs first;
                      aborts if any non-additive pattern is detected (W4).
@@ -78,7 +104,12 @@ FLAGS:
 ENVIRONMENT:
   CLOUDFLARE_API_TOKEN   Required for --live and --validate-token.
                          Scopes needed: D1:Write, Account:Read.
-  WRANGLER               Override wrangler binary path (default: npx wrangler@latest).
+  WRANGLER               Override wrangler binary path.
+                         Default: worker/node_modules/.bin/wrangler (v4, local)
+                         Fallback: npx wrangler@4 (wrangler v4 required for
+                         [[containers]] array syntax in wrangler.toml).
+                         Do NOT use bare npx wrangler or npx wrangler@latest —
+                         stale cache may resolve to v3 which rejects [[containers]].
 
 SPEC REF:
   specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md line 149
@@ -120,7 +151,15 @@ warn() { printf '%s [%s] WARN: %s\n'  "${LOG_PREFIX}" "$(date -u +%H:%M:%SZ)" "$
 
 if "${VALIDATE_TOKEN_MODE}"; then
     log "mode=VALIDATE-TOKEN"
-    WRANGLER_CMD="${WRANGLER:-npx wrangler@latest}"
+    # BUG 2 fix (2026-05-28): prefer worker-local wrangler v4.95.0; bare
+    # npx wrangler or npx wrangler@latest may resolve to v3 from stale cache.
+    # wrangler.toml uses [[containers]] array syntax which requires v4+.
+    _LOCAL_WRANGLER="${REPO_ROOT}/worker/node_modules/.bin/wrangler"
+    if [[ -z "${WRANGLER:-}" ]] && [[ -x "${_LOCAL_WRANGLER}" ]]; then
+        WRANGLER_CMD="${_LOCAL_WRANGLER}"
+    else
+        WRANGLER_CMD="${WRANGLER:-npx wrangler@4}"
+    fi
     if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
         err "CLOUDFLARE_API_TOKEN is not set."
         err "Required scopes for Phase D:"
@@ -145,7 +184,7 @@ fi
 
 log "Phase D migration runner starting"
 log "  mode=$(if "${LIVE_MODE}"; then printf 'LIVE'; else printf 'DRY-RUN'; fi)"
-log "  db=${DB_NAME}"
+log "  db_binding=${DB_BINDING}  db_name=${DB_NAME}  env=${DB_ENV}"
 log "  migrations_dir=${MIGRATIONS_DIR}"
 log "  timestamp=${TIMESTAMP}"
 
@@ -213,15 +252,15 @@ for fname in "${SQL_FILES[@]}"; do
 done
 log ""
 log "wrangler command:"
-log "  wrangler d1 migrations apply ${DB_NAME} --remote"
+log "  wrangler d1 migrations apply ${DB_BINDING} --remote --env ${DB_ENV}"
 log ""
 
 # ── Dry-run exit ──────────────────────────────────────────────────────────────
 
 if "${DRY_RUN}"; then
     log "DRY-RUN complete. ${ACTUAL_COUNT} migration files listed above would be applied"
-    log "to ${DB_NAME} via:"
-    log "  wrangler d1 migrations apply ${DB_NAME} --remote"
+    log "to ${DB_NAME} (binding=${DB_BINDING}, env=${DB_ENV}) via:"
+    log "  wrangler d1 migrations apply ${DB_BINDING} --remote --env ${DB_ENV}"
     log ""
     log "To apply for real (D-day): $0 --live"
     log "To validate CF token first: $0 --validate-token"
@@ -230,7 +269,7 @@ fi
 
 # ── Live apply path ───────────────────────────────────────────────────────────
 
-log "LIVE MODE engaged — this will mutate corelink-prod-d1 IRREVERSIBLY."
+log "LIVE MODE engaged — this will mutate ${DB_NAME} IRREVERSIBLY."
 log "WARNING: D1 schema changes cannot be rolled back."
 log "         Rollback path = delete + re-provision D1 from Phase C."
 log "         See: specs/_runbooks/RB-D1-MIGRATION-APPLY.md"
@@ -241,7 +280,15 @@ if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
     exit 1
 fi
 
-WRANGLER_CMD="${WRANGLER:-npx wrangler@latest}"
+# BUG 2 fix (2026-05-28): prefer worker-local wrangler v4.95.0; bare
+# npx wrangler or npx wrangler@latest may resolve to v3 from stale cache.
+# wrangler.toml uses [[containers]] array syntax which requires v4+.
+_LOCAL_WRANGLER="${REPO_ROOT}/worker/node_modules/.bin/wrangler"
+if [[ -z "${WRANGLER:-}" ]] && [[ -x "${_LOCAL_WRANGLER}" ]]; then
+    WRANGLER_CMD="${_LOCAL_WRANGLER}"
+else
+    WRANGLER_CMD="${WRANGLER:-npx wrangler@4}"
+fi
 
 if ! "${WRANGLER_CMD}" --version >/dev/null 2>&1; then
     err "wrangler CLI not reachable via: ${WRANGLER_CMD}"
@@ -252,12 +299,12 @@ fi
 WRANGLER_VER="$("${WRANGLER_CMD}" --version 2>/dev/null || printf 'unknown')"
 log "wrangler version: ${WRANGLER_VER}"
 
-log "invoking: ${WRANGLER_CMD} d1 migrations apply ${DB_NAME} --remote"
-if ! "${WRANGLER_CMD}" d1 migrations apply "${DB_NAME}" --remote; then
+log "invoking: ${WRANGLER_CMD} d1 migrations apply ${DB_BINDING} --remote --env ${DB_ENV}"
+if ! "${WRANGLER_CMD}" d1 migrations apply "${DB_BINDING}" --remote --env "${DB_ENV}"; then
     err "wrangler d1 migrations apply FAILED."
     err "Partial migration state is possible. Do NOT re-run blindly."
     err "Recovery steps:"
-    err "  1. wrangler d1 migrations list ${DB_NAME} --remote"
+    err "  1. wrangler d1 migrations list ${DB_BINDING} --remote --env ${DB_ENV}"
     err "  2. Identify last successfully applied migration."
     err "  3. Investigate the failing SQL file."
     err "  4. If schema is corrupt: restore from R2 snapshot (RB-D1-MIGRATION-APPLY.md §4)."
@@ -267,7 +314,7 @@ fi
 log "wrangler d1 migrations apply: OK"
 log ""
 log "Phase D migration apply COMPLETE."
-log "  db=${DB_NAME}"
+log "  db_binding=${DB_BINDING}  db_name=${DB_NAME}  env=${DB_ENV}"
 log "  migrations_applied=${ACTUAL_COUNT}"
 log "  timestamp=${TIMESTAMP}"
 log ""

@@ -161,7 +161,7 @@ Comment-stripping rationale: files `0001`, `0028`, `0029`, `0052` contain DROP/A
 $ bash scripts/d-day-migrations-apply-prod.sh --dry-run | head -20
 [d-day-migrations-apply-prod.sh] Phase D migration runner starting
 [d-day-migrations-apply-prod.sh]   mode=DRY-RUN
-[d-day-migrations-apply-prod.sh]   db=corelink-prod-d1
+[d-day-migrations-apply-prod.sh]   db_binding=CONFIG_DB  db_name=corelink-config-prod  env=prod
 [d-day-migrations-apply-prod.sh] migration file count: 52 (matches spec expectation of 52)
 [d-day-migrations-apply-prod.sh] running additive guard (Wave-32 W4)
 [d-day-migrations-additive-audit.sh] PASS: 52 migration file(s) scanned — all strictly additive.
@@ -170,10 +170,18 @@ $ bash scripts/d-day-migrations-apply-prod.sh --dry-run | head -20
 [d-day-migrations-apply-prod.sh]   [01/52] 0001_blob_meta.sql  (~10 stmt)
   ... (52 entries)
 [d-day-migrations-apply-prod.sh] wrangler command:
-[d-day-migrations-apply-prod.sh]   wrangler d1 migrations apply corelink-prod-d1 --remote
+[d-day-migrations-apply-prod.sh]   wrangler d1 migrations apply CONFIG_DB --remote --env prod
 [d-day-migrations-apply-prod.sh] DRY-RUN complete.
 Exit: 0
 ```
+
+> **AMENDED 2026-05-28 (live execution findings):** Original dry-run showed
+> `db=corelink-prod-d1` and invocation `wrangler d1 migrations apply
+> corelink-prod-d1 --remote`. That was incorrect — wrangler takes the D1
+> *binding name* (CONFIG_DB), not the database_name string, and requires
+> `--env prod` to target the prod binding (uuid d64742ea). Script corrected
+> in-place. See `specs/_audits/2026-05-28-w32-phaseD-live-execution-findings.md`
+> for the full bug report.
 
 ---
 
@@ -225,9 +233,15 @@ Exit: 0
 
 4. **Rollback path (if apply fails mid-way):**
    - Do NOT re-run blindly.
-   - `wrangler d1 migrations list corelink-prod-d1 --remote` — identify last applied.
+   - `wrangler d1 migrations list CONFIG_DB --remote --env prod` — identify last applied.
    - If schema corrupt: delete + re-provision D1 from Phase C snapshot.
    - See `specs/_runbooks/RB-D1-MIGRATION-APPLY.md §4`.
+
+> **NOTE (2026-05-28):** Phase D was already COMPLETE when live execution was
+> attempted during 2026-05-28 session — 52/52 migrations applied, 78 tables
+> present, 17 secrets bound. The bugs above were invisible to dry-run but
+> would have failed any future re-run or re-provisioning attempt. Corrected
+> per `specs/_audits/2026-05-28-w32-phaseD-live-execution-findings.md`.
 
 ---
 
