@@ -6,16 +6,20 @@
 #   - 5 KV namespaces: corelink-prod-{jwks,cache,rate-limit,session,pilot-signup}-kv
 #   - 6 R2 buckets:    corelink-cas-prod + corelink-ac-{sam,iad,lhr,nrt,syd}
 #
-# MANDATORY CONFIRMATION: operator must type DESTROY at the prompt.
+# MANDATORY CONFIRMATION: operator must type DESTROY at the prompt (--live mode).
 # Re-running after all resources are deleted is a no-op.
+#
+# SAFETY: Default mode is DRY-RUN. Pass --live to make real API calls.
+#         Only the account Owner should run --live.
 #
 # Credentials: loaded from .env.local (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID).
 #
 # Usage:
 #   bash scripts/teardown-cf-corelink-prod.sh [--dry-run]
+#   bash scripts/teardown-cf-corelink-prod.sh --live
 #
 # Exit codes:
-#   0 — all targeted resources deleted (or already absent)
+#   0 — all targeted resources deleted (or already absent, or dry-run completed)
 #   1 — deletion failure
 #   2 — pre-flight error or operator cancelled
 
@@ -30,40 +34,58 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$REPO_ROOT/.env.local"
 CF_API="https://api.cloudflare.com/client/v4"
 
-DRY_RUN=false
-if [[ "${1:-}" == "--dry-run" ]]; then
-    DRY_RUN=true
-    echo "[DRY-RUN] No real resources will be deleted."
+# Default: DRY-RUN (safe). Operator must pass --live to execute real API calls.
+DRY_RUN=true
+
+for arg in "$@"; do
+    case "$arg" in
+        --live)
+            DRY_RUN=false
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            ;;
+        *)
+            echo "Unknown argument: $arg" >&2
+            echo "Usage: $0 [--dry-run|--live]" >&2
+            exit 2
+            ;;
+    esac
+done
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[DRY-RUN] No real resources will be deleted. Pass --live to execute."
 fi
 
 # ----------------------------------------------------------------------------
 # Load credentials
 # ----------------------------------------------------------------------------
 
-if [[ ! -f "$ENV_FILE" ]]; then
-    echo "FATAL: .env.local not found at $ENV_FILE" >&2
-    exit 2
-fi
-
 CLOUDFLARE_API_TOKEN=""
 CLOUDFLARE_ACCOUNT_ID=""
 
-while IFS='=' read -r key val; do
-    [[ "$key" =~ ^# ]] && continue
-    [[ -z "$key" ]] && continue
-    val="${val%\"}"
-    val="${val#\"}"
-    val="${val%\'}"
-    val="${val#\'}"
-    case "$key" in
-        CLOUDFLARE_API_TOKEN)  CLOUDFLARE_API_TOKEN="$val"  ;;
-        CLOUDFLARE_ACCOUNT_ID) CLOUDFLARE_ACCOUNT_ID="$val" ;;
-    esac
-done < "$ENV_FILE"
+if [[ -f "$ENV_FILE" ]]; then
+    while IFS='=' read -r key val; do
+        [[ "$key" =~ ^# ]] && continue
+        [[ -z "$key" ]] && continue
+        val="${val%\"}"
+        val="${val#\"}"
+        val="${val%\'}"
+        val="${val#\'}"
+        case "$key" in
+            CLOUDFLARE_API_TOKEN)  CLOUDFLARE_API_TOKEN="$val"  ;;
+            CLOUDFLARE_ACCOUNT_ID) CLOUDFLARE_ACCOUNT_ID="$val" ;;
+        esac
+    done < "$ENV_FILE"
+fi
 
 if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
-    echo "FATAL: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be set in $ENV_FILE" >&2
-    exit 2
+    if [[ "$DRY_RUN" == "false" ]]; then
+        echo "FATAL: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be set in $ENV_FILE" >&2
+        exit 2
+    fi
+    # Dry-run without credentials: allowed — print DELETE plan only.
+    CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-<not-set>}"
 fi
 
 if ! command -v curl >/dev/null 2>&1; then
@@ -134,7 +156,7 @@ echo ""
 
 if [[ "$DRY_RUN" == "true" ]]; then
     echo "[DRY-RUN] Skipping confirmation prompt. Above is the DELETE plan."
-    echo "[DRY-RUN] Re-run without --dry-run to execute (confirmation required)."
+    echo "[DRY-RUN] Re-run with --live to execute (DESTROY confirmation required)."
     exit 0
 fi
 
