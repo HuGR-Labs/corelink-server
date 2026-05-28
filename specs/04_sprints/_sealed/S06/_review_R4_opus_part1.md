@@ -31,6 +31,13 @@ cross_references:
   - "specs/03_architecture/adrs/ADR-0042 (TLC SHA + scope limitations)"
   - "crates/corelink-gc/ (worker shipped v0.1.0..v2.0.0)"
 tags: ["audit", "r4", "opus", "lote-10.6", "s-06", "wave-14", "dispatch", "review", "part1"]
+references:
+  - "specs/04_sprints/_sealed/S06/_spec_contract.md"
+  - "specs/04_sprints/_sealed/S06/PRR-S06.md"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-001-worker-gc-binary-scheduler-degrade-mode.md"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-002-mark-phase-multi-pass-scan-mark-started-at.md"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-003-sweep-phase-soft-delete-inv-gc-004.md"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-004-physical-delete-post-grace-r2-idempotent.md"
 ---
 
 # R4 Opus — Lote 10.6 S-06 Part 1 (WIs 001–004) Adversarial Review

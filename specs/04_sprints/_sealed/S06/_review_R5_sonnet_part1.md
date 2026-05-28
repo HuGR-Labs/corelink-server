@@ -29,6 +29,13 @@ cross_references:
   - "specs/tla/gc_correctness.tla"
   - "migrations/d1/0006_gc_run.sql + 0007_gc_candidates.sql"
 tags: ["audit", "r5", "sonnet", "lote-10.6", "s-06", "wave-14", "dispatch", "review", "part1", "testability"]
+references:
+  - "specs/04_sprints/_sealed/S06/_spec_contract.md"
+  - "specs/04_sprints/_sealed/S06/_review_R4_opus_part1.md"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-001-worker-gc-binary-scheduler-degrade-mode.md"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-002-mark-phase-multi-pass-scan-mark-started-at.md"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-003-sweep-phase-soft-delete-inv-gc-004.md"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-004-physical-delete-post-grace-r2-idempotent.md"
 ---
 
 # R5 Sonnet — Lote 10.6 S-06 Part 1 (WIs 001–004) Adversarial Review (Testability + Observability)

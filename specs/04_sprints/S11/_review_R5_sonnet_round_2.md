@@ -17,6 +17,10 @@ inherits_from:
   - "COMPLIANCE-MATRIX"
   - "INVARIANT-REGISTRY"
 tags: ["audit", "review", "r5", "sonnet", "s11", "privacy", "round-2", "lote-10.11-tris", "validation", "ga-gate"]
+references:
+  - "specs/04_sprints/S11/_spec_contract.md"
+  - "specs/_audits/sealed/2026-05-15-s11-truth-table-sweep-v2.md"
+  - "specs/_audits/sealed/2026-05-15-s11-legal-citation-revalidation.md"
 ---
 
 # R5 (Sonnet) — S-11 Privacy Pipeline Round-2 Adversarial Validation (Lote 10.11-tris)

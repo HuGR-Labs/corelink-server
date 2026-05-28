@@ -17,6 +17,13 @@ inherits_from:
   - "INVARIANT-REGISTRY"
   - "PRIVACY-MODEL"
 tags: ["audit", "review", "r5", "sonnet", "s09", "observability", "testability", "lote-10.9", "round-2", "cycle-close", "wave-18"]
+references:
+  - "specs/04_sprints/_sealed/S09/_spec_contract.md"
+  - "specs/04_sprints/_sealed/S09/_review_R4_opus_part1.md"
+  - "specs/04_sprints/_sealed/S09/_review_R4_opus_part2.md"
+  - "specs/04_sprints/_sealed/S09/_review_R5_sonnet_part1.md"
+  - "specs/04_sprints/_sealed/S09/_review_R5_sonnet_part2.md"
+  - "specs/04_sprints/_sealed/S06/_spec_contract.md"
 ---
 
 # R5 (Sonnet) — S-09 Round-2 Cycle-Close Review (Wave-18 Lote 10.9-cycle-close)

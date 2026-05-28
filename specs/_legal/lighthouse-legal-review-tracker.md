@@ -20,6 +20,13 @@ inherits_from:
   - "PRIVACY-MODEL"
   - "COMPLIANCE-MATRIX"
 tags: ["legal", "s20", "ga", "dpa", "sla", "lighthouse", "wi-s20-005"]
+references:
+  - "legal/sla/v1.0.0.md"
+  - "legal/dpa/v1.0.0.en-US.md"
+  - "legal/dpa/v1.0.0.pt-BR.md"
+  - "legal/dpa/v1.0.0.es-419.md"
+  - "apps/docs/src/pages/legal/privacy.tsx"
+  - "apps/docs/src/pages/legal/terms.tsx"
 ---
 
 # Lighthouse Customers — Legal Review Tracker (WI-S20-005)

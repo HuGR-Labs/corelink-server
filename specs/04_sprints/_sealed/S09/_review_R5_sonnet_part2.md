@@ -17,6 +17,13 @@ inherits_from:
   - "SLO-CATALOG"
   - "INVARIANT-REGISTRY"
 tags: ["audit", "review", "r5", "sonnet", "s09", "observability", "testability", "lote-10.9", "part2", "wi-005-to-007"]
+references:
+  - "specs/04_sprints/_sealed/S09/_spec_contract.md"
+  - "specs/04_sprints/_sealed/S09/_review_R5_sonnet_part1.md"
+  - "specs/04_sprints/_sealed/S09/_review_R4_opus_part2.md"
+  - "specs/04_sprints/_sealed/S09/work_items/WI-S09-005-12-grafana-dashboards-as-code.md"
+  - "specs/04_sprints/_sealed/S09/work_items/WI-S09-006-multi-burn-rate-slo-alerts-pagerduty.md"
+  - "specs/04_sprints/_sealed/S09/work_items/WI-S09-007-synthetic-canary-3-regions-runbook-dry-run.md"
 ---
 
 # R5 (Sonnet) — S-09 Testability + Validator Coverage Review · Part 2 (WI-S09-005..007)

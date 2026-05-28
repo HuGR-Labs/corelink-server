@@ -35,6 +35,13 @@ cross_references:
   - ".github/workflows/nightly.yml"
   - ".github/workflows/gc-ship-gate.yml"
 tags: ["audit", "r4", "opus", "lote-10.6", "s-06", "wave-14", "dispatch", "review", "part2"]
+references:
+  - "specs/04_sprints/_sealed/S06/_spec_contract.md"
+  - "specs/04_sprints/_sealed/S06/PRR-S06.md"
+  - "specs/04_sprints/_sealed/S06/asvs-v5-v6-v8-v10-v14-checklist.md"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-005-refcount-reconciliation-auto-fix.md"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-006-tla-ci-gate-property-test-100k-race.md"
+  - "specs/04_sprints/_sealed/S06/work_items/WI-S06-007-dash-gc-rb-dry-runs-prr-ship-gate.md"
 ---
 
 # R4 Opus — Lote 10.6 S-06 Part 2 (WIs 005–007) Adversarial Review
