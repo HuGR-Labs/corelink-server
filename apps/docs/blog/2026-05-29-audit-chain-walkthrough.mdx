@@ -1,0 +1,615 @@
+---
+slug: audit-chain-walkthrough
+title: "How CoreLink's audit chain works: re-derivation from scratch"
+authors: [gustavo]
+tags: [engineering, audit, merkle, rfc-6962]
+date: 2026-05-29T08:00:00.000Z
+description: A step-by-step walkthrough of the RFC-6962-inspired hash chain that makes CoreLink's audit log independently verifiable by customers and auditors — including what attacks it resists and what attacks it does not.
+---
+
+An auditor asked us a question we had not been asked before: "If I
+download your audit log, how do I know you haven't changed it?" The
+question is reasonable. We have the signing keys. We operate the
+infrastructure. We could, in theory, silently rewrite events.
+
+The answer we built is in `crates/corelink-audit-chain`. This post
+walks through it end to end — how we construct the chain at emit time,
+how customers re-derive the root hash independently, and — honestly —
+what the construction resists and what it still can't stop.
+
+<!-- truncate -->
+
+## §1 — The compliance problem
+
+SOC 2 Type II requires that your audit log is tamper-evident. The
+control text (CC7.2) says "monitoring mechanisms detect anomalies in a
+timely manner." What the control text does not say is *how* you
+demonstrate tamper-evidence to an outside auditor who does not trust
+your own attestations.
+
+The naive answer is "we'll send you a signed export." But that places
+the entire trust chain on our signing key. If we were compromised — or
+if an insider wanted to cover their tracks — a signed export proves
+nothing except that someone who had the signing key signed it.
+
+What customers and auditors need is a construction where:
+
+1. Every event is cryptographically tied to every previous event.
+2. The tying is done with a function that cannot be reversed.
+3. An auditor can re-derive the end-state digest from any downloaded
+   slice of events, without trusting us.
+4. Any gap or modification in the slice changes the derived digest and
+   is immediately visible.
+
+This is precisely what RFC 6962 (Certificate Transparency) was designed
+to solve for TLS certificates. We adapted the same core idea for build
+cache audit events.
+
+---
+
+## §2 — What RFC 6962 actually does
+
+RFC 6962 defines a *Merkle tree over an append-only log* so that
+certificate consumers can ask a log server for a *Merkle consistency
+proof* between two tree states, and independently verify the answer.
+
+The key insight from Certificate Transparency: **the log server cannot
+silently insert, reorder, or delete a certificate without changing the
+tree root hash**. Anyone who has previously observed the root hash will
+notice. This property is called *append-only* and *inclusion-provable*.
+
+CoreLink's audit chain is a simplified, degenerate variant of this:
+
+- Instead of a balanced binary Merkle tree (O(log n) proof size), we
+  use a **linear hash chain** — a linked list of BLAKE3 hashes.
+- The "root" is the chain head: the BLAKE3 digest of the most recent
+  event's canonical form hashed together with the digest of the
+  previous event. Walk backwards and you reconstruct every link.
+- Insertion, deletion, or modification of any event changes the chain
+  head from that point forward.
+
+We did not implement CT's full balanced-tree proof (O(log n) siblings)
+because our event volumes are smaller and our operational complexity
+budget is tighter. The `exporter` module ships the groundwork — see
+[`InclusionProof`] — that lifts to a balanced tree when volume demands
+it, without breaking the `AuditExporter` contract.
+
+---
+
+## §3 — CoreLink's audit chain design
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Emit-side construction (per tenant × region)       │
+│                                                     │
+│  Event 0 (genesis)                                  │
+│  ┌─────────────────────────────────┐                │
+│  │ prev_hash = 0x00..00 (32 bytes) │                │
+│  │ sequence_number = 0             │                │
+│  │ tenant_id, region, kind, data   │                │
+│  └────────────────┬────────────────┘                │
+│                   │ JCS (RFC 8785) canonicalize      │
+│                   │ BLAKE3(prev_hash || jcs_bytes)   │
+│                   ▼                                  │
+│              link_hash_0                            │
+│                   │                                  │
+│  Event 1          ▼                                  │
+│  ┌─────────────────────────────────┐                │
+│  │ prev_hash = link_hash_0         │                │
+│  │ sequence_number = 1             │                │
+│  └────────────────┬────────────────┘                │
+│                   │ BLAKE3(prev_hash || jcs_bytes)   │
+│                   ▼                                  │
+│              link_hash_1                            │
+│                                                     │
+│  ... and so on, one link per event ...              │
+└─────────────────────────────────────────────────────┘
+```
+
+Three primitives drive everything, all in
+`crates/corelink-audit-chain/src/chain.rs`:
+
+**`compute_canonical_bytes(event)`** — serializes the full
+`AuditEvent` struct to RFC 8785 JSON Canonicalization Scheme (JCS)
+bytes using `serde_jcs`. JCS sorts JSON object keys lexicographically
+and encodes floats without loss of precision, so the same event value
+always produces the same byte sequence across platforms, OS versions,
+and serde releases. The JCS bytes are stable: a property test
+(`prop_jcs_canonicalization_deterministic`, 10 000 iterations) pins
+this across every CI run.
+
+**`link_chain_hash(prev_hash, event)`** — computes the link hash for
+the next event. The formula is:
+
+```
+link_hash = BLAKE3( prev_hash_bytes || jcs_canonical_bytes(event) )
+```
+
+Where `||` is byte concatenation. `prev_hash` is 32 bytes; `jcs_bytes`
+is the UTF-8 output of `serde_jcs`. The 32-byte BLAKE3 digest becomes
+the `prev_hash` field of the next event in the chain.
+
+**`HashChainBuilder`** — the per-tenant state machine. Tracks the
+running chain head (`head: ChainHash`) and the monotonic sequence
+counter (`next_sequence: u64`). The `append` method enforces two
+invariants before computing the link:
+
+1. `event.sequence_number == self.next_sequence` — no gaps, no
+   reordering.
+2. `event.prev_hash == self.head` — no splice of a foreign event into
+   an existing chain.
+
+Both checks fire *before* any chain mutation, so a partially-applied
+tamper attempt surfaces an error and the chain head stays unmodified.
+
+The genesis event has `prev_hash = [0u8; 32]` (32 zero bytes). This
+follows the Bitcoin genesis-block convention: no special sentinel
+branch is needed in the verifier because the zero value is just another
+deterministic constant.
+
+### The emit pipeline
+
+Before an event reaches the chain, the production wiring runs it
+through two pre-conditions. First, PII redaction: the
+`corelink-logpush::PiiRedactor` walks the `data` JSON tree and
+substitutes matches for `email`, `ip`, `bearer`, and `digest` fields
+with canonical redaction tokens. The chain emit itself does not
+re-redact; if a non-redacted body reaches the chain, it lands in the
+7-year immutable R2 archive (a compliance gap). Pre-redaction is
+enforced at the WI-S09-002 wiring layer, not inside the crate.
+
+Second, the audit-of-audit envelope fires *before* any state mutation.
+For every emit, before the chain head advances, the
+`InMemoryAuditChainAuditSink` records a `corelink.audit_chain.event_appended`
+meta-event. If the meta-sink rejects (e.g., the sink is at capacity),
+the chain emit aborts and returns `AuditChainError::Audit` — the
+originating request transaction must fail-closed. This ordering
+(`INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER`) means the audit trail of the
+audit trail itself can never observe a partial state: either both the
+primary event and the meta-event are recorded, or neither is.
+
+### Storage shape
+
+Every event is persisted as a single NDJSON line at a canonical R2
+key:
+
+```
+audit/{tenant_id}/{YYYY-MM-DD}/{seq:08}.cloudevent.ndjson
+```
+
+- `tenant_id` — hyphenated lowercase UUIDv7 (the per-tenant chain
+  partition key).
+- `YYYY-MM-DD` — UTC calendar date of the event's `time_ms` (Howard
+  Hinnant's civil calendar algorithm, pure Rust, no `chrono`
+  dependency).
+- `seq:08` — 8-digit zero-padded sequence number. Lexicographic R2 key
+  sort equals chronological event order. The daily verifier walks
+  events in a single R2 list scan.
+
+The event envelope is CloudEvents 1.0:
+
+```json
+{
+  "specversion": "1.0",
+  "type": "dev.hugr.corelink.cas.put.v1",
+  "source": "corelink/region/iad",
+  "subject": "cas:put",
+  "id": "019123ab-...",
+  "time_ms": 1700000000000,
+  "datacontenttype": "application/json",
+  "tenant_id": "019123aa-...",
+  "region": "iad",
+  "sequence_number": 42,
+  "prev_hash": "a3f7e2...<64 hex chars>...",
+  "data": { "digest_truncated": "b94..." }
+}
+```
+
+The `prev_hash` and `sequence_number` are CoreLink extensions to the
+CloudEvents 1.0 spec (allowed per §3.1.5). Every SIEM that speaks
+CloudEvents (Splunk, Datadog, Sumo Logic) can ingest these events
+without a custom adapter.
+
+---
+
+## §4 — The re-derivation procedure
+
+Re-derivation means: given a downloaded slice of events, can a third
+party independently compute the chain head and confirm it matches the
+published digest? Yes, and here is exactly how.
+
+### What you need
+
+1. The NDJSON export file(s) for a tenant and time window.
+2. The `corelink audit verify` binary (ships as `crates/corelink-audit-chain/src/bin/verifier.rs`; 116 lines of `std`-only Rust).
+3. Optional: `cargo` to build from source so you can verify the verifier itself.
+
+### Step 1 — Download the NDJSON chunks
+
+```bash
+# Using wrangler (CF R2 list + object get):
+wrangler r2 object list AUDIT_BUCKET \
+  --prefix "audit/<TENANT_UUID>/2026-04-" \
+  --output json \
+  | jq -r '.[].key' \
+  > chunk_keys.txt
+
+while read key; do
+  wrangler r2 object get AUDIT_BUCKET "$key" \
+    --file "./chunks/$(basename $key)"
+done < chunk_keys.txt
+```
+
+Or, using the CoreLink export API directly:
+
+```bash
+curl -s \
+  -H "Authorization: Bearer $CORELINK_PAT" \
+  "https://corelink-api.humangr.com/v1/audit/export/window\
+?since=2026-04-01T00:00:00Z&until=2026-05-01T00:00:00Z" \
+  > april_export.ndjson
+```
+
+The export endpoint returns the canonical NDJSON format — one event
+per line — which is the same format the R2 chunks use.
+
+### Step 2 — Build the verifier from source
+
+```bash
+git clone https://github.com/humangr-labs/corelink-server
+cd corelink-server
+cargo build -p corelink-audit-chain --bin verifier --release
+# Binary at: target/release/verifier
+```
+
+The verifier has zero non-`std` dependencies at runtime (BLAKE3 +
+`serde_json` + `serde_jcs`; no network, no tokio, no Cloudflare
+bindings). You can audit all 116 lines of `src/bin/verifier.rs` in
+five minutes.
+
+### Step 3 — Run the verifier
+
+```bash
+./target/release/verifier ./chunks/*.ndjson
+```
+
+Expected output when the chain is intact:
+
+```
+AUDIT_CHAIN_VERIFY_OK: tenants_verified=1 events_verified=12483
+```
+
+Exit code 0. Any chain break exits 1 and writes to stderr:
+
+```
+AUDIT_CHAIN_BREAK_DETECTED: tenant=019123aa-...: chain break at sequence 4821
+```
+
+### Step 4 — What the verifier actually does (annotated)
+
+```rust
+// 1. Parse every NDJSON line into an AuditEvent.
+let ev = AuditEvent::from_ndjson_line(trimmed)?;
+by_tenant.entry(ev.tenant_id).or_default().push(ev);
+
+// 2. Sort each tenant's events by sequence_number.
+events.sort_by_key(|e| e.sequence_number);
+
+// 3. Walk the chain from genesis.
+verifier.verify_chain_from_genesis(
+    &events,
+    tenant_id,
+    "daily-verify-cron",
+    now_ms,
+)?;
+```
+
+Inside `verify_chain_from_genesis`, for each event at position `i`:
+
+```rust
+// a. Tenant isolation guard.
+if ev.tenant_id != expected_tenant_id { return Err(...) }
+
+// b. Sequence monotonicity guard.
+if ev.sequence_number != current_seq { return Err(...) }
+
+// c. Claimed prev_hash must equal the running chain head.
+if ev.prev_hash != current_prev_hash { 
+    emit_chain_break_audit(...);
+    return Err(ChainBreak { at_sequence })
+}
+
+// d. Recompute the link hash.
+let next_link = link_chain_hash(&current_prev_hash, ev)?;
+current_prev_hash = next_link;
+```
+
+The final `current_prev_hash` is the independently re-derived chain
+head. To confirm against the published digest:
+
+```bash
+# Retrieve the published head (signed by CoreLink at export time):
+curl -s "https://corelink-api.humangr.com/v1/audit/chain-head\
+?tenant=<UUID>&at=2026-05-01T00:00:00Z" \
+  | jq -r '.chain_head_hex'
+# => a3f7e2...
+
+# The verifier prints the last verified hash:
+./target/release/verifier chunks/*.ndjson --print-head
+# => AUDIT_CHAIN_HEAD: a3f7e2...
+```
+
+If they match, the chain you downloaded is byte-for-byte identical to
+what CoreLink persisted.
+
+### A note on the verifier's trust model
+
+The verifier binary is the full trust boundary. If you want to be
+absolutely certain you are running the right code, build it from
+source at the commit you audit. The binary has no network calls, no
+telemetry, no environment-variable back-channels. Everything it does
+is visible in 116 lines. In particular:
+
+- It does not phone home to CoreLink.
+- It does not read any credential files.
+- It does not need R2 access once you have downloaded the chunks.
+- Its only external inputs are the NDJSON file paths on the command line.
+
+The `--print-head` flag (added in Wave 15) writes the final
+`last_verified_hash` to stdout in hex so you can compare it to the
+published chain-head digest without parsing the structured output
+yourself.
+
+### Step 5 — Verifying a single event's inclusion
+
+If an auditor wants to check that one specific event (say sequence 4200
+for a `cas:put` operation) is authentically part of the chain, the
+export API returns an **inclusion proof** alongside the event:
+
+```json
+{
+  "event": { ...full CloudEvents envelope... },
+  "proof": {
+    "prev_hash": "7a2b...",
+    "link_hash": "f9d1...",
+    "siblings": [
+      { "sequence": 4201, "link_hash": "c3e8..." },
+      { "sequence": 4202, "link_hash": "08ab..." }
+    ]
+  }
+}
+```
+
+Verification (`crates/corelink-audit-chain/src/exporter.rs:418`):
+
+```rust
+// 1. Re-derive the event's link from its claimed prev_hash.
+let recomputed = BLAKE3(event.prev_hash || JCS(event));
+assert_eq!(recomputed, proof.link_hash);
+
+// 2. Walk siblings forward until we reach the anchor head.
+//    Each sibling's position is strictly monotonically increasing.
+let final_link = proof.siblings.last().link_hash;
+assert_eq!(final_link, manifest.chain_head_at_export);
+```
+
+The audit trail is self-contained: the export file alone — no
+CoreLink servers required after download — is enough to verify every
+event's membership.
+
+---
+
+## §5 — What attacks this resists
+
+### 5.1 — Retroactive data tampering
+
+If anyone (CoreLink operator, compromised service account, rogue
+insider with R2 write access) modifies the `data` payload of a
+persisted event, the JCS-canonical bytes of that event change. The
+BLAKE3 link hash for that event changes. Every subsequent event's
+`prev_hash` field then no longer matches the re-derived chain head. The
+daily verifier catches this within 24 hours (cron at UTC 02:00); the
+export verifier catches it immediately on download.
+
+The property test `prop_chain_break_detected_on_tamper` (10 000
+iterations) exercises this for every event kind and position in a
+chain of up to 32 events.
+
+### 5.2 — Event reordering
+
+`sequence_number` is embedded in the event's canonical bytes and is
+part of the JCS input. Swapping events N and M changes the link hash
+at position N, which cascades to every subsequent `prev_hash`. The
+verifier's sequence-monotonicity guard catches this even before the
+hash check fires.
+
+### 5.3 — Selective event deletion
+
+Deleting event N creates a gap: the verifier expects `sequence_number`
+N but sees N+1 and immediately returns
+`AuditChainError::SequenceOrderingViolation`. The R2 Object Lock
+Governance Mode (7-year retention) makes this additional defense —
+deletion from R2 under Governance Mode requires an explicit override
+token that only an account owner can issue, creating an auditable
+administrative action.
+
+### 5.4 — Replay of an old chain head
+
+An attacker who convinces a customer "your chain head is X" when the
+actual current head is Y cannot insert a chain at a different starting
+point without producing a `prev_hash` mismatch at the genesis event.
+The zero-hash genesis convention (`prev_hash = [0u8; 32]` for
+`sequence_number == 0`) is a deterministic anchor: any attempt to
+splice a different chain's events at position 0 must also produce a
+valid zero genesis, which is cryptographically infeasible.
+
+### 5.5 — Cross-tenant event injection
+
+Every event carries a `tenant_id` field that is part of the JCS
+canonical bytes. The verifier's tenant isolation guard rejects any
+event whose `tenant_id` does not match the expected tenant before
+computing any hashes. The property test `prop_tenant_isolation` (10 000
+iterations) pins this invariant.
+
+### 5.6 — Timing oracle on hash comparison
+
+All chain-head comparisons in the export verifier path use
+`subtle::ConstantTimeEq` (`hashes_eq_ct` in `exporter.rs:406`). This
+prevents timing-side-channel attacks where an adversary could
+distinguish a 1-byte prefix match from a 0-byte match and use the
+timing difference to narrow the search space for a forged hash.
+
+---
+
+## §6 — What attacks this does NOT resist
+
+Honesty matters more than marketing copy. Here are the three categories
+of attacks the current construction explicitly does not stop.
+
+### 6.1 — Total-loss of the R2 bucket
+
+If the entire R2 bucket is deleted (e.g., a catastrophic
+misconfiguration or a CF account takeover), the audit log is gone.
+Object Lock Governance Mode raises the operational bar significantly —
+deletion requires an account-level override token — but it is not
+equivalent to physical immutability.
+
+**Mitigation in progress:** we are evaluating cross-account R2
+replication + customer-controlled bucket mirrors as a follow-on. For
+now, the control is "administrative deletion requires account-owner
+MFA" + "CF's Object Lock is logged in CF audit logs."
+
+### 6.2 — Time-of-check / time-of-write races on the chain head
+
+Between the moment the chain head is read from the durable D1 mirror
+and the moment the new event is appended, a concurrent write from a
+different region could advance the head. The production wiring uses
+per-tenant Durable Object actors (one DO per tenant per region) to
+serialize writes, but if two DOs for the same tenant in different
+regions race, one of them will fail the `prev_hash` check and the
+event will be retried with the correct head.
+
+The important nuance: **events are not lost** in this scenario —
+they are retried with the current head. But if the retry logic is
+buggy (e.g., stale-cache bug), an event could be silently dropped
+without a chain break. The current fail-CLOSED architecture surfaces
+this as an error, but the error is returned to the caller — not
+persisted as a break in the chain. An auditor would see a lower total
+event count but no hash mismatch.
+
+### 6.3 — Insider operator with R2 write access AND the signing key
+
+If an adversary controls both (a) the ability to write new NDJSON lines
+to the R2 bucket **and** (b) knowledge of the current chain head, they
+can construct a syntactically valid chain that covers up a deletion.
+They replace event N through M with a freshly re-derived chain starting
+from N-1's link hash, updating every `prev_hash` correctly. The hash
+chain would verify clean.
+
+We want to be explicit about this because we have seen vendors
+describe linear hash chains as if they are equivalent to external
+transparency logs. They are not. A hash chain is tamper-*evident*
+given a trusted checkpoint. It is not tamper-*proof* against an
+adversary who controls both the chain and the checkpoint.
+
+This attack requires:
+
+- R2 write-plus-delete credentials (account-level; requires Governance
+  override + leaves CF account audit trail).
+- Knowledge of the current chain head at the re-write point (public if
+  the head is published; requires key material if we move to
+  threshold-signed heads).
+
+**Mitigation in progress:** threshold-signed daily snapshots of the
+chain head by two independent signers (one CoreLink, one
+customer-held), published to a public transparency log, are on the
+roadmap. Once a chain-head snapshot is externally witnessed, an
+attacker would also need to rewrite the external witness record — which
+is a much harder bar.
+
+This is identical to the problem Certificate Transparency was designed
+to solve for TLS: a CA with signing capability could mint rogue
+certificates without external witnesses. CT's Monitors and Auditors are
+the structural answer. We are building CoreLink's equivalent.
+
+---
+
+## §7 — Performance and cost
+
+### Proof size
+
+A linear-chain inclusion proof for an event at position `i` in a
+window of `n` events carries `n - i - 1` siblings. For a window of
+1000 events, the worst-case proof (for event 0) carries 999 sibling
+`(sequence, link_hash)` pairs — 999 × (8 bytes + 32 bytes) = ~39 KB.
+
+A balanced Merkle tree over the same 1000 events would need O(log₂
+1000) ≈ 10 siblings per proof — ~400 bytes. The follow-on WI
+(`tree_hash` over O(log n) siblings) addresses this; the
+`InclusionProof.siblings` field is designed to hold both shapes.
+
+For typical audit workloads (compliance spot-check of a single event
+in a 30-day window of ~44 000 events), the linear-chain proof is
+~1.6 MB. Large, but acceptable for a once-per-audit request.
+
+### Storage overhead
+
+Each `AuditEvent` serialized as NDJSON is approximately 400-600 bytes
+(UUID fields + hex hash + JSON envelopes). The chain metadata
+(`prev_hash`, `sequence_number`) adds ~130 bytes per event vs a chainless
+design. At 1 million events per day (high-volume tenant), the overhead
+is ~130 MB/day — negligible against R2 pricing ($0.015/GB/month).
+
+### Emit latency
+
+BLAKE3 on a 600-byte input runs in ~200 ns on modern commodity CPUs
+(3-5 GB/s throughput per the BLAKE3 paper). JCS canonicalization of a
+typical `AuditEvent` (12 fields, one JSON object in `data`) runs in
+~800 ns on the same hardware. Total per-emit overhead: ~1 µs. The
+`SLO-LATENCY-AUDIT-EMIT` target is p99 < 5 ms; the algorithmic cost is
+200× under budget. The optimization `DEBT-013 OPT-05` (thread-local
+BLAKE3 hasher template, cloned per call) shaves another 30-50 ns on
+the hash step.
+
+---
+
+## §8 — References
+
+- **RFC 6962** — Ben Laurie, Adam Langley, Emilia Kasper (2013).
+  *Certificate Transparency.* <https://datatracker.ietf.org/doc/html/rfc6962>
+- **RFC 8785** — JSON Canonicalization Scheme (JCS).
+  <https://datatracker.ietf.org/doc/html/rfc8785>
+- **BLAKE3 paper** — Jack O'Connor, Jean-Philippe Aumasson, Samuel Neves,
+  Zooko Wilcox-O'Hearn (2020). *BLAKE3: one function, fast everywhere.*
+  <https://github.com/BLAKE3-team/BLAKE3-specs/blob/master/blake3.pdf>
+- **CoreLink invariant INV-OBS-AUDIT-CHAIN-INTEGRITY** (HIGH; SOC 2 CC7.2):
+  per-tenant hash chain unbroken; daily verifier walks chain start→end.
+  Source: `crates/corelink-audit-chain/src/lib.rs:86`.
+- **CoreLink invariant INV-AUDIT-APPEND-ONLY** (CRITICAL; TLA+ proven):
+  R2 Object Lock + hash chain integrity. Source:
+  `crates/corelink-audit-chain/src/lib.rs:89`.
+- **CoreLink invariant INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER** (HIGH):
+  audit-of-audit emit BEFORE state mutation on every decision arm.
+  Source: `crates/corelink-audit-chain/src/lib.rs:96`.
+- **CoreLink invariant INV-TENANT-ISOLATION** (CRITICAL; TLA+):
+  per-tenant chain partitioning; no cross-tenant reference.
+  Source: `crates/corelink-audit-chain/src/lib.rs:103`.
+- **Chain primitives** — `crates/corelink-audit-chain/src/chain.rs`:
+  `compute_canonical_bytes` (line 97), `link_chain_hash` (line 118),
+  `HashChainBuilder::append` (line 285).
+- **Verifier** — `crates/corelink-audit-chain/src/verifier.rs`:
+  `ChainVerifier::verify_chain` (line 126).
+- **CLI binary** — `crates/corelink-audit-chain/src/bin/verifier.rs`
+  (116 lines, zero non-std runtime deps).
+- **Inclusion proof verifier** —
+  `crates/corelink-audit-chain/src/exporter.rs`:
+  `verify_inclusion_proof` (line 418).
+- **Constant-time hash compare** —
+  `crates/corelink-audit-chain/src/exporter.rs`:
+  `hashes_eq_ct` (line 406).
+- **subtle crate** — Dalek Cryptography (2017).
+  *subtle: pure-Rust traits and utilities for constant-time cryptographic
+  implementations.* <https://github.com/dalek-cryptography/subtle>
+- **Howard Hinnant civil calendar** — "Date Algorithms" §6 inverse
+  (public domain, 2018). Used in `canonical_date_yyyy_mm_dd`.
+  `crates/corelink-audit-chain/src/sink.rs:124`.

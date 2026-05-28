@@ -18,3 +18,15 @@ blake3:
   label: BLAKE3
   permalink: /blake3
   description: BLAKE3 hashing.
+audit:
+  label: Audit
+  permalink: /audit
+  description: Audit chain design and tamper-evidence.
+merkle:
+  label: Merkle
+  permalink: /merkle
+  description: Merkle hash trees and inclusion proofs.
+rfc-6962:
+  label: RFC 6962
+  permalink: /rfc-6962
+  description: Certificate Transparency and append-only log design.
