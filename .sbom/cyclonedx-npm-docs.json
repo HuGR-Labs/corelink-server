@@ -1,0 +1,346 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:83e79c20-27c6-45c2-9987-e1fd1ef2c965",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-05-28T00:32:49Z",
+    "tools": {
+      "components": [
+        {
+          "group": "@cyclonedx",
+          "name": "cdxgen",
+          "version": "12.4.4",
+          "type": "application",
+          "purl": "pkg:npm/%40cyclonedx/cdxgen@12.4.4"
+        }
+      ]
+    },
+    "component": {
+      "type": "application",
+      "name": "@corelink/docs",
+      "version": "0.1.0",
+      "bom-ref": "pkg:npm/corelink%2Fdocs@0.1.0"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "'@axe-core/cli'",
+      "version": "4.11.3",
+      "purl": "pkg:npm/'@axe-core/cli'@4.11.3",
+      "bom-ref": "pkg:npm/'@axe-core/cli'@4.11.3"
+    },
+    {
+      "type": "library",
+      "name": "'@docusaurus/core'",
+      "version": "3.10.1",
+      "purl": "pkg:npm/'@docusaurus/core'@3.10.1",
+      "bom-ref": "pkg:npm/'@docusaurus/core'@3.10.1"
+    },
+    {
+      "type": "library",
+      "name": "'@docusaurus/module-type-aliases'",
+      "version": "3.10.1",
+      "purl": "pkg:npm/'@docusaurus/module-type-aliases'@3.10.1",
+      "bom-ref": "pkg:npm/'@docusaurus/module-type-aliases'@3.10.1"
+    },
+    {
+      "type": "library",
+      "name": "'@docusaurus/plugin-client-redirects'",
+      "version": "3.10.1",
+      "purl": "pkg:npm/'@docusaurus/plugin-client-redirects'@3.10.1",
+      "bom-ref": "pkg:npm/'@docusaurus/plugin-client-redirects'@3.10.1"
+    },
+    {
+      "type": "library",
+      "name": "'@docusaurus/preset-classic'",
+      "version": "3.10.1",
+      "purl": "pkg:npm/'@docusaurus/preset-classic'@3.10.1",
+      "bom-ref": "pkg:npm/'@docusaurus/preset-classic'@3.10.1"
+    },
+    {
+      "type": "library",
+      "name": "'@docusaurus/tsconfig'",
+      "version": "3.10.1",
+      "purl": "pkg:npm/'@docusaurus/tsconfig'@3.10.1",
+      "bom-ref": "pkg:npm/'@docusaurus/tsconfig'@3.10.1"
+    },
+    {
+      "type": "library",
+      "name": "'@docusaurus/types'",
+      "version": "3.10.1",
+      "purl": "pkg:npm/'@docusaurus/types'@3.10.1",
+      "bom-ref": "pkg:npm/'@docusaurus/types'@3.10.1"
+    },
+    {
+      "type": "library",
+      "name": "'@eslint/js'",
+      "version": "9.39.4",
+      "purl": "pkg:npm/'@eslint/js'@9.39.4",
+      "bom-ref": "pkg:npm/'@eslint/js'@9.39.4"
+    },
+    {
+      "type": "library",
+      "name": "'@mdx-js/react'",
+      "version": "3.1.1",
+      "purl": "pkg:npm/'@mdx-js/react'@3.1.1",
+      "bom-ref": "pkg:npm/'@mdx-js/react'@3.1.1"
+    },
+    {
+      "type": "library",
+      "name": "'@sentry/browser'",
+      "version": "8.55.2",
+      "purl": "pkg:npm/'@sentry/browser'@8.55.2",
+      "bom-ref": "pkg:npm/'@sentry/browser'@8.55.2"
+    },
+    {
+      "type": "library",
+      "name": "'@types/node'",
+      "version": "22.13.10",
+      "purl": "pkg:npm/'@types/node'@22.13.10",
+      "bom-ref": "pkg:npm/'@types/node'@22.13.10"
+    },
+    {
+      "type": "library",
+      "name": "'@types/react'",
+      "version": "19.0.12",
+      "purl": "pkg:npm/'@types/react'@19.0.12",
+      "bom-ref": "pkg:npm/'@types/react'@19.0.12"
+    },
+    {
+      "type": "library",
+      "name": "'@typescript-eslint/eslint-plugin'",
+      "version": "8.59.3",
+      "purl": "pkg:npm/'@typescript-eslint/eslint-plugin'@8.59.3",
+      "bom-ref": "pkg:npm/'@typescript-eslint/eslint-plugin'@8.59.3"
+    },
+    {
+      "type": "library",
+      "name": "'@typescript-eslint/parser'",
+      "version": "8.59.3",
+      "purl": "pkg:npm/'@typescript-eslint/parser'@8.59.3",
+      "bom-ref": "pkg:npm/'@typescript-eslint/parser'@8.59.3"
+    },
+    {
+      "type": "library",
+      "name": "clsx",
+      "version": "2.1.1",
+      "purl": "pkg:npm/clsx@2.1.1",
+      "bom-ref": "pkg:npm/clsx@2.1.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "eslint",
+      "version": "9.21.0",
+      "purl": "pkg:npm/eslint@9.21.0",
+      "bom-ref": "pkg:npm/eslint@9.21.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-KjeihdFqTPhOMXTt7StsDxriV4n66ueuF/jfPNC3j/lduHwr/ijDwJMsF+wyMJethgiKi5wniIE243vi07d3pg==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "eslint-plugin-react",
+      "version": "7.37.5",
+      "purl": "pkg:npm/eslint-plugin-react@7.37.5",
+      "bom-ref": "pkg:npm/eslint-plugin-react@7.37.5",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-Qteup0SqU15kdocexFNAJMvCJEfa2xUKNV4CC1xsVMrIIqEy3SQ/rqyxCWNzfrd3/ldy6HMlD2e0JDVpDg2qIA==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "gray-matter",
+      "version": "4.0.3",
+      "purl": "pkg:npm/gray-matter@4.0.3",
+      "bom-ref": "pkg:npm/gray-matter@4.0.3",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-5v6yZd4JK3eMI3FqqCouswVqwugaA9r4dNZB1wwcmrD02QkV5H0y7XBQW8QwQqEaZY1pM9aqORSORhJRdNK44Q==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "prism-react-renderer",
+      "version": "2.4.1",
+      "purl": "pkg:npm/prism-react-renderer@2.4.1",
+      "bom-ref": "pkg:npm/prism-react-renderer@2.4.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-ey8Ls/+Di31eqzUxC46h8MksNuGx/n0AAC8uKpwFau4RPDYLuE3EXTp8N8G2vX2N7UC/+IXeNUnlWBGGcAG+Ig==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "protobufjs",
+      "version": "7.5.8",
+      "purl": "pkg:npm/protobufjs@7.5.8",
+      "bom-ref": "pkg:npm/protobufjs@7.5.8",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-dvpCIeLPbXZS/Ete7yLaO7RenOdken2NHKykBXbsaGxZT0UTltcarBciw+A78SRQs9iMAAVpsYA+l8b1hTePIA==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "react",
+      "version": "18.3.1",
+      "purl": "pkg:npm/react@18.3.1",
+      "bom-ref": "pkg:npm/react@18.3.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "react-dom",
+      "version": "18.3.1",
+      "purl": "pkg:npm/react-dom@18.3.1",
+      "bom-ref": "pkg:npm/react-dom@18.3.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tsx",
+      "version": "4.21.0",
+      "purl": "pkg:npm/tsx@4.21.0",
+      "bom-ref": "pkg:npm/tsx@4.21.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-5C1sg4USs1lfG0GFb2RLXsdpXqBSEhAaA/0kPL01wxzpMqLILNxIxIOKiILz+cdg/pLnOUxFYOR5yhHU666wbw==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "typescript",
+      "version": "5.6.3",
+      "purl": "pkg:npm/typescript@5.6.3",
+      "bom-ref": "pkg:npm/typescript@5.6.3",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-hjcS1mhfuyi4WW8IWtjP7brDrG2cuDZukyrYrSauoXGNgx0S7zceP07adYkJycEr56BOUTNPzbInooiN3fn1qw==}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "vitest",
+      "version": "2.1.9",
+      "purl": "pkg:npm/vitest@2.1.9",
+      "bom-ref": "pkg:npm/vitest@2.1.9",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "sha512-MSmPM9REYqDGBI8439mA4mWhV5sKmDlBKWIYbA3lRb2PTHACE0mgKwA8yQ2xq9vxDTuk4iPrECBAEW2aoFXY0Q==}"
+        }
+      ]
+    }
+  ]
+}
