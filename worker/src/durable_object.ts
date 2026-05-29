@@ -370,6 +370,22 @@ export class CoreLinkServer implements DurableObject {
       return { ok: true };
     }
 
+    // STALE-RUNNING DETECTION:
+    // If our persisted lifecycle says "running" but the Container binding
+    // is gone or no longer running, we hit this case after a wrangler
+    // deploy rotation (CF tears down the old container; lifecycleState
+    // still has the pre-rotation status). The previous logic fell through
+    // to "unexpected_lifecycle_state" and never self-healed — clients got
+    // permanent 503 until manual intervention. Treat this exactly like
+    // "stopped" and restart the container.
+    if (this.lifecycleState.containerStatus === "running") {
+      console.warn(
+        `[${requestId}] lifecycleState=running but container is not — treating as stopped`,
+      );
+      await this.transitionStatus("stopped", requestId);
+      return this.startContainer(requestId);
+    }
+
     if (
       this.lifecycleState.containerStatus === "degraded" ||
       this.lifecycleState.containerStatus === "stopped"
