@@ -249,9 +249,11 @@ vars = { ENVIRONMENT = "prod", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b
 pattern = "corelink-api.humangr.com/*"
 zone_name = "humangr.com"
 
-[[env.prod.routes]]
-pattern = "corelink-signup.humangr.com/*"
-zone_name = "humangr.com"
+# corelink-signup.humangr.com/* is served by apps/signup-worker
+# (Phase 1 / Stream A4). The route was previously misassigned to this
+# Worker which has no Clerk/Stripe webhook handlers; moved to the
+# dedicated signup-worker so the route binding aligns with the code
+# that handles those webhooks.
 
 # NOTE (Stream 3.11, 2026-05-29): corelink-admin.humangr.com is served by
 # the CF Pages project `corelink-admin-ui`, NOT by this Worker.  The route
