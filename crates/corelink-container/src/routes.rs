@@ -68,6 +68,16 @@ pub mod cas;
 /// forwards these paths to the container; this module is the final link
 /// that makes them return real responses instead of 404.
 pub mod customer;
+/// REAPI v2 Bazel remote-cache routes (Phase 0 Stream B1):
+/// `GET/PUT /bazel/v2/:instance/blobs/:hash/:size`,
+/// `PUT /bazel/v2/:instance/uploads/:uuid/blobs/:hash/:size`,
+/// `GET/PUT /bazel/v2/:instance/blobs/ac/:hash/:size`, and
+/// `POST /bazel/v2/:instance/findMissingBlobs`.
+///
+/// Enables `--remote_cache=https://corelink-api.humangr.com/bazel/v2`
+/// for any Bazel user; backed by the same R2 CAS/AC blobs as the
+/// native `/v1/cas` and `/v1/ac` routes.
+pub mod bazel_v2;
 /// Pilot signup route (wave-29 stream-1; closes DEBT-027 engineering-side).
 /// Surfaces `POST /v1/signup/pilot/{token}` over an HMAC-SHA256
 /// signed token + per-IP rate-limit + fail-CLOSED audit emit. See
@@ -147,14 +157,18 @@ pub fn build() -> Router {
 pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router {
     let (cas_read, cas_write) = cas::build_handlers();
     let cas_state = cas::CasRouteState {
-        read: cas_read,
-        write: cas_write,
+        read: cas_read.clone(),
+        write: cas_write.clone(),
     };
     let (ac_lookup, ac_update) = ac::build_handlers();
     let ac_state = ac::AcRouteState {
-        lookup: ac_lookup,
-        update: ac_update,
+        lookup: ac_lookup.clone(),
+        update: ac_update.clone(),
     };
+    // Phase 0 Stream B1: Bazel REAPI v2 routes share the same CAS/AC
+    // trait objects so all four route surfaces read from / write to the
+    // same backing store. No new R2 connections are opened.
+    let bazel_state = bazel_v2::build_handlers_from(cas_read, cas_write, ac_lookup, ac_update);
     let (admin_read, admin_mutate) = admin::build_handlers();
     let admin_state = admin::AdminRouteState {
         read: admin_read,
@@ -180,6 +194,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         .merge(signup::router(signup_state))
         .merge(users::router())
         .merge(customer::router(customer_state))
+        .merge(bazel_v2::router(bazel_state))
 }
 
 #[cfg(test)]

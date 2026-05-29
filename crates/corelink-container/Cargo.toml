@@ -167,6 +167,10 @@ corelink-billing-stripe-materializer = { workspace = true }
 corelink-handler-cas = { workspace = true }
 corelink-handler-ac = { workspace = true }
 corelink-handler-admin = { workspace = true }
+# Phase 0 Stream B1 — REAPI v2 Bazel remote-cache bridge.
+# Routes `/bazel/v2/*` to the CAS/AC handler surfaces so any Bazel user
+# can set `--remote_cache=https://corelink-api.humangr.com/bazel/v2`.
+corelink-bazel-bridge = { workspace = true }
 # Stream-2.6 — customer self-serve handler surface wired into
 # `apps/server::routes::customer` (`/v1/customer/*` endpoints).
 corelink-handler-customer = { workspace = true }
