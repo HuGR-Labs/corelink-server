@@ -352,6 +352,16 @@ members = [
     # Expected RED until the P0 remediation wave lands.
     # See tests/e2e-user-journeys/README.md for full context.
     "tests/e2e-user-journeys",
+    # Stream-4 Turborepo remote-cache bridge. Exposes the Vercel
+    # /v8/artifacts/:hash HTTP API so Turbo monorepos use CoreLink CAS
+    # as their remote cache (TURBO_API=https://corelink-api.humangr.com).
+    # Opaque-hash semantics: Turbo's native hash (xxhash / sha512-prefix)
+    # is stored verbatim as the object key — no hash verification at
+    # CoreLink's CAS layer. Ships TurboArtifactHandler trait +
+    # InMemoryTurboHandler fake + CasAdapterTurboHandler adapter +
+    # telemetry (events accept-and-drop) + status endpoints + 5-variant
+    # audit surface.
+    "crates/corelink-turbo-bridge",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
