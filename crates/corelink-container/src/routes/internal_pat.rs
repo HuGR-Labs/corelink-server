@@ -176,7 +176,7 @@ async fn handle_mint(
     let len_ok = (expected.len() == provided_bytes.len()) as u8;
     // Pad provided to expected length to run ct_eq on equal-length slices.
     let provided_padded: Vec<u8> = if provided_bytes.len() >= expected.len() {
-        provided_bytes[..expected.len()].to_vec()
+        provided_bytes.get(..expected.len()).unwrap_or(&[]).to_vec()
     } else {
         let mut v = provided_bytes.to_vec();
         v.resize(expected.len(), 0);
@@ -287,8 +287,8 @@ fn hex_decode(s: &str) -> Option<Vec<u8>> {
     let bytes = s.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        let hi = hex_nibble(bytes[i])?;
-        let lo = hex_nibble(bytes[i + 1])?;
+        let hi = hex_nibble(*bytes.get(i)?)?;
+        let lo = hex_nibble(*bytes.get(i + 1)?)?;
         out.push((hi << 4) | lo);
         i += 2;
     }
