@@ -114,10 +114,37 @@ jobs:
           SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
           echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" >> "$GITHUB_ENV"
 
+      # Windows fix: the `windows_x86_64_gnu` crate ships a static archive
+      # (libwindows.0.52.0.a) inside its source distribution that lld-link
+      # consumes at build time. Swatinem/rust-cache occasionally restores
+      # the partial registry src without the `lib/` subdir — re-extract
+      # the package to guarantee the .a is present.
+      - name: Re-fetch windows-rs deps (cache integrity fix)
+        if: matrix.target.triple == 'x86_64-pc-windows-gnu'
+        run: |
+          rm -rf "$HOME"/.cargo/registry/src/index.crates.io-*/windows_x86_64_gnu-*
+          rm -rf "$HOME"/.cargo/registry/src/index.crates.io-*/windows-targets-*
+          cargo fetch --target "${{ matrix.target.triple }}"
+
+      # Strip absolute dev-host paths from the binary (CTRL-PATH-HYGIENE).
+      # Without this, `strings` on the binary exposes
+      # `/Users/<runner-user>/.cargo/registry/...` and similar — username
+      # leak with no functional value. Map all known prefixes to short
+      # placeholders so debug strings carry semantics but not paths.
+      - name: Set RUSTFLAGS path-remap
+        run: |
+          REMAP=""
+          REMAP="$REMAP --remap-path-prefix=$HOME/.cargo/registry=cargo-registry"
+          REMAP="$REMAP --remap-path-prefix=$HOME/.cargo/git=cargo-git"
+          REMAP="$REMAP --remap-path-prefix=$HOME/.rustup=rustup"
+          REMAP="$REMAP --remap-path-prefix=$GITHUB_WORKSPACE=corelink"
+          echo "RUSTFLAGS=$REMAP" >> "$GITHUB_ENV"
+
       - name: Build (cargo zigbuild) — Linux + Windows
         if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
         env:
           SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
+          RUSTFLAGS: ${{ env.RUSTFLAGS }}
         run: |
           cargo zigbuild \
             -p corelink-cli \
@@ -132,6 +159,7 @@ jobs:
         if: ${{ contains(matrix.target.triple, 'apple-darwin') }}
         env:
           SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
+          RUSTFLAGS: ${{ env.RUSTFLAGS }}
         run: |
           cargo build \
             -p corelink-cli \
