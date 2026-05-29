@@ -1,0 +1,18 @@
+[package]
+name = "corelink-turbo-bridge"
+description = "CoreLink Turborepo remote-cache bridge. Exposes the Vercel /v8/artifacts/:hash HTTP API so Turborepo monorepos can use CoreLink CAS as a drop-in remote cache (set TURBO_API=https://corelink-api.humangr.com). Accepts any Turbo-native opaque hash (xxhash, sha512-prefix, etc.) as a raw storage key without verifying the hash against bytes — Turborepo owns the hash algorithm; CoreLink owns the durability. Ships the `TurboArtifactHandler` trait, an `InMemoryTurboHandler` fake for tests, an adapter for delegation to `corelink-handler-cas` style stores, and the telemetry endpoints POST /events + POST /status."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
