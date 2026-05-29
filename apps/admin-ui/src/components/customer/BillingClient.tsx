@@ -1,10 +1,12 @@
 // Customer-side billing — subscription, payment method, invoices, portal link.
+// Stream 2.10: free-tier tenants see <UpgradeButton /> to open Stripe Checkout.
 
 "use client";
 
 import React from "react";
 import { CustomerClient } from "@/lib/customer-client";
 import type { CustomerBilling } from "@/lib/customer-types";
+import { UpgradeButton } from "@/components/UpgradeButton";
 
 const client = new CustomerClient();
 
@@ -56,6 +58,11 @@ export function BillingClient(): React.ReactElement {
             {money(data.amount_due_cents, data.currency)}
           </strong>
         </p>
+        {data.plan === "free" ? (
+          <div data-testid="billing-upgrade-section">
+            <UpgradeButton tier="starter" locale="en" />
+          </div>
+        ) : null}
       </section>
 
       <section data-testid="billing-payment-method">
