@@ -3,20 +3,27 @@
  *
  * Routes:
  *   POST /webhooks/clerk  → Clerk `user.created` auto-provision handler
- *
- * Future routes (out of Phase-0 scope, owned by agent C):
- *   POST /webhooks/stripe → `checkout.session.completed` plan-flip handler
+ *   POST /webhooks/stripe → Stripe subscription lifecycle webhook handler
+ *                           (checkout.session.completed → tenant_billing paid;
+ *                            customer.subscription.updated / deleted — Stream 2.10)
  */
 
 import * as Sentry from "@sentry/cloudflare";
 import { handleClerkWebhook, defaultApiClient } from "./webhooks/clerk.js";
 import type { AutoProvisionEnv } from "./webhooks/clerk.js";
+import { handleStripeWebhook } from "./webhooks/stripe.js";
+import type { StripeWebhookEnv } from "./webhooks/stripe.js";
 import { withSecurityHeaders } from "./security-headers.js";
 
-async function route(request: Request, env: AutoProvisionEnv): Promise<Response> {
+type WorkerEnv = AutoProvisionEnv & StripeWebhookEnv;
+
+async function route(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === "/webhooks/clerk") {
     return handleClerkWebhook(request, env, defaultApiClient);
+  }
+  if (url.pathname === "/webhooks/stripe") {
+    return handleStripeWebhook(request, env, ctx);
   }
   if (url.pathname === "/health") {
     return Response.json({ ok: true, worker: "signup-worker" });
@@ -29,21 +36,22 @@ async function route(request: Request, env: AutoProvisionEnv): Promise<Response>
  * (Clerk → tenant provision); errors here have outsized blast radius
  * so we capture every throw + every webhook signature-failure. The
  * Authorization scrub is critical for this Worker — Clerk webhooks
- * carry a `svix-signature` header which is a HMAC secret-bearing token.
+ * carry a `svix-signature` header which is a HMAC secret-bearing token;
+ * Stripe webhooks carry a `stripe-signature` header with HMAC material.
  *
  * All responses are additionally wrapped in `withSecurityHeaders`
  * (pre-HN-launch hardening).
  */
-type SignupEnv = AutoProvisionEnv & {
+type SignupEnv = WorkerEnv & {
   SENTRY_DSN?: string;
   SENTRY_RELEASE?: string;
   ENVIRONMENT?: string;
 };
 
 const baseHandler: ExportedHandler<SignupEnv> = {
-  async fetch(request: Request, env: SignupEnv): Promise<Response> {
+  async fetch(request: Request, env: SignupEnv, ctx: ExecutionContext): Promise<Response> {
     try {
-      return withSecurityHeaders(await route(request, env));
+      return withSecurityHeaders(await route(request, env, ctx));
     } catch (err) {
       Sentry.captureException(err);
       return withSecurityHeaders(new Response("internal_error", { status: 500 }));
@@ -52,7 +60,7 @@ const baseHandler: ExportedHandler<SignupEnv> = {
 };
 
 const SENSITIVE_HEADER_PATTERN =
-  /^(authorization|cookie|set-cookie|x-api-key|proxy-authorization|svix-signature|svix-id|svix-timestamp)$/i;
+  /^(authorization|cookie|set-cookie|x-api-key|proxy-authorization|svix-signature|svix-id|svix-timestamp|stripe-signature)$/i;
 
 function scrubAuthorization(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
   if (event.request?.headers) {
