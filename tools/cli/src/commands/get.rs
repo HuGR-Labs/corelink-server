@@ -1,12 +1,15 @@
-//! `corelink get` — download a blob by digest (WI-S15-001).
+//! `corelink get` — download a blob by SHA-256 digest (WI-S15-001 + Stream-1).
 //!
-//! Client-verify default-on: BLAKE3 hash of downloaded bytes is compared
-//! against the requested digest (CTRL-CAS-002 + INV-CAS-INTEGRITY).
+//! Client-verify default-on: SHA-256 of downloaded bytes is compared against
+//! the requested digest (CTRL-CAS-002 + INV-CAS-INTEGRITY).
+//!
+//! API: `GET /v1/cas/<tenant>/<sha256>` (Stream-1 prod contract).
 
 use std::fmt;
 use std::path::PathBuf;
 
 use serde::Serialize;
+use sha2::{Digest as _, Sha256};
 
 use crate::client::CorelinkClient;
 use crate::error::CliError;
@@ -37,26 +40,30 @@ impl fmt::Display for GetResult {
 }
 
 /// Run `corelink get <digest> [-o <file>]`.
+///
+/// Uses `GET /v1/cas/<tenant>/<sha256>` via the Stream-1 client method.
+/// Performs client-side SHA-256 verify against the requested digest.
 pub async fn run(
     client: &CorelinkClient,
     digest: &str,
     output_path: Option<PathBuf>,
     format: OutputFormat,
 ) -> Result<(), CliError> {
-    let path = format!("/v1/cas/download/{digest}");
-    let data = client.get_bytes(&path).await?;
+    // Strip any `sha256:` prefix the user may have supplied.
+    let bare_digest = digest.trim_start_matches("sha256:");
 
-    // Client-verify: BLAKE3 the downloaded bytes against the requested digest.
+    let data = client.cas_get(bare_digest).await?;
+
+    // Client-verify: SHA-256 the downloaded bytes against the requested digest.
     let computed = {
-        let mut hasher = blake3::Hasher::new();
+        let mut hasher = Sha256::new();
         hasher.update(&data);
-        hasher.finalize().to_hex().to_string()
+        hex::encode(hasher.finalize())
     };
-    // The digest may be bare BLAKE3 hex or prefixed with "blake3:".
-    let expected = digest.trim_start_matches("blake3:");
-    if computed != expected {
+    if computed != bare_digest {
         return Err(CliError::Other(format!(
-            "Client verify FAILED: expected digest {expected}, got {computed}. Possible data corruption (INV-CAS-INTEGRITY)."
+            "Client verify FAILED: expected sha256:{bare_digest}, got sha256:{computed}. \
+             Possible data corruption (INV-CAS-INTEGRITY)."
         )));
     }
 
@@ -67,7 +74,7 @@ pub async fn run(
             p.display().to_string()
         }
         None => {
-            // Write raw bytes to stdout via eprintln avoidance.
+            // Write raw bytes to stdout.
             use std::io::Write as _;
             std::io::stdout().write_all(&data)?;
             "-".to_owned()
@@ -91,7 +98,12 @@ pub async fn run(
 }
 
 #[cfg(test)]
-#[allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args
+)]
 mod tests {
     use super::*;
 
@@ -118,5 +130,12 @@ mod tests {
         };
         let json = serde_json::to_string(&r).unwrap();
         assert!(json.contains("\"client_verify\""));
+    }
+
+    #[test]
+    fn sha256_prefix_strip() {
+        let digest = "sha256:abcdef0123456789";
+        let bare = digest.trim_start_matches("sha256:");
+        assert_eq!(bare, "abcdef0123456789");
     }
 }

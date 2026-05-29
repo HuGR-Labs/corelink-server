@@ -83,30 +83,6 @@ impl CorelinkClient {
         })
     }
 
-    /// Build a client with an explicit tenant_id (used after login/whoami).
-    pub fn new_with_tenant(pat: String, tenant_id: String) -> Result<Self, CliError> {
-        let base_url = std::env::var("CORELINK_BASE_URL")
-            .unwrap_or_else(|_| DEFAULT_BASE_URL.to_owned());
-        let http = Client::builder()
-            .use_rustls_tls()
-            .timeout(Duration::from_secs(30))
-            .build()?;
-        Ok(Self {
-            inner: Arc::new(ClientInner {
-                http,
-                base_url,
-                pat,
-                tenant_id: Some(tenant_id),
-            }),
-        })
-    }
-
-    /// Returns the cached tenant_id if set.
-    #[must_use]
-    pub fn tenant_id(&self) -> Option<&str> {
-        self.inner.tenant_id.as_deref()
-    }
-
     /// Call `GET /v1/users/me` and return the parsed response.
     pub async fn whoami(&self) -> Result<WhoamiResp, CliError> {
         let url = format!("{}/v1/users/me", self.inner.base_url);

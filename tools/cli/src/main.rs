@@ -153,6 +153,32 @@ enum Commands {
         #[command(subcommand)]
         action: AuditAction,
     },
+
+    // -----------------------------------------------------------------------
+    // Stream-1 "ridiculously easy to use" additions
+    // -----------------------------------------------------------------------
+
+    /// Show identity: tenant_id, token_prefix, route_kind.
+    ///
+    /// Calls `GET /v1/users/me` and caches tenant_id in
+    /// `~/.corelink/config.toml` for use by `put`/`get`/`ac`.
+    Whoami,
+
+    /// Save a PAT and cache your tenant_id.
+    ///
+    /// Writes the PAT to `~/.corelink/config.toml` (0600 perms), then
+    /// calls `GET /v1/users/me` to resolve and cache the tenant_id.
+    Login {
+        /// Personal Access Token (`corelink_<env>_<id>.<secret>.<sig>`).
+        #[arg(long = "token", value_name = "PAT", hide_env_values = true)]
+        token: String,
+    },
+
+    /// Action cache operations: `put <digest> <result>` / `get <digest>`.
+    Ac {
+        #[command(subcommand)]
+        action: AcAction,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -279,6 +305,27 @@ enum RunbookDrillAction {
     },
 }
 
+/// Subcommands for `corelink ac`.
+#[derive(Debug, Subcommand)]
+#[non_exhaustive]
+enum AcAction {
+    /// Store an action result: `ac put <digest> <result-file>`.
+    Put {
+        /// Action digest key (e.g. a sha256 of the action inputs).
+        digest: String,
+        /// Path to the result file to store under `digest`.
+        result: std::path::PathBuf,
+    },
+    /// Retrieve an action result: `ac get <digest> [-o <file>]`.
+    Get {
+        /// Action digest key.
+        digest: String,
+        /// Output file path. Defaults to stdout if not specified.
+        #[arg(short = 'o', long, value_name = "FILE")]
+        output: Option<std::path::PathBuf>,
+    },
+}
+
 #[derive(Debug, Subcommand)]
 #[non_exhaustive]
 enum ConfigAction {
@@ -380,6 +427,10 @@ async fn run() -> (&'static str, Result<(), CliError>) {
         Commands::Audit { action } => {
             return (label, run_audit(action, format).await);
         }
+        // Login does not read a PAT from env/config — it receives it explicitly.
+        Commands::Login { token } => {
+            return (label, commands::login::run(token, format).await);
+        }
         _ => {}
     }
 
@@ -418,11 +469,15 @@ async fn run() -> (&'static str, Result<(), CliError>) {
         Commands::Doctor { json } => {
             commands::doctor_cmd::run(&client, json, format).await
         }
-        // Version + Config + RunbookDrill + Audit already handled above; unreachable.
+        // Stream-1 additions.
+        Commands::Whoami => commands::whoami::run(&client, format).await,
+        Commands::Ac { action } => run_ac(&client, &action, format).await,
+        // Version + Config + RunbookDrill + Audit + Login already handled above; unreachable.
         Commands::Version
         | Commands::Config { .. }
         | Commands::RunbookDrill { .. }
-        | Commands::Audit { .. } => unreachable!(),
+        | Commands::Audit { .. }
+        | Commands::Login { .. } => unreachable!(),
     };
     (label, res)
 }
@@ -439,6 +494,9 @@ fn subcommand_label(cmd: &Commands) -> &'static str {
         Commands::Config { .. } => "config",
         Commands::RunbookDrill { .. } => "runbook-drill",
         Commands::Audit { .. } => "audit",
+        Commands::Whoami => "whoami",
+        Commands::Login { .. } => "login",
+        Commands::Ac { .. } => "ac",
     }
 }
 
@@ -571,6 +629,21 @@ fn run_runbook_drill(action: &RunbookDrillAction, format: OutputFormat) -> Resul
             notes.as_deref(),
             format,
         ),
+    }
+}
+
+async fn run_ac(
+    client: &CorelinkClient,
+    action: &AcAction,
+    format: OutputFormat,
+) -> Result<(), CliError> {
+    match action {
+        AcAction::Put { digest, result } => {
+            commands::ac::run_put(client, digest, result, format).await
+        }
+        AcAction::Get { digest, output } => {
+            commands::ac::run_get(client, digest, output.clone(), format).await
+        }
     }
 }
 
