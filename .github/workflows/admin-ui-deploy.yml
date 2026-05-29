@@ -1,0 +1,128 @@
+name: admin-ui — CF Pages deploy
+
+# Stream 3.11 — deploys apps/admin-ui to Cloudflare Pages (project: corelink-admin-ui)
+# on every push to main that touches the admin-ui subtree.
+#
+# Required GH Secrets:
+#   CF_API_TOKEN          — Cloudflare API token with "Cloudflare Pages: Edit" permission
+#   CF_ACCOUNT_ID         — Cloudflare account ID (humangr-labs)
+#
+# Required GH Variables (non-secret, set in repo Settings → Variables):
+#   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+#   NEXT_PUBLIC_CORELINK_API_URL        (https://corelink-api.humangr.com)
+#   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+#   NEXT_PUBLIC_SENTRY_DSN
+#
+# Runtime secrets (set once via wrangler pages secret put — NOT via this workflow):
+#   CLERK_SECRET_KEY
+#   STRIPE_SECRET_KEY
+#   SENTRY_AUTH_TOKEN  (optional — enables source-map upload)
+#
+# Custom domain (manual operator step):
+#   CF Pages dashboard → corelink-admin-ui → Custom domains → Add
+#   → corelink-admin.humangr.com
+#   (Also remove the Worker route from root wrangler.toml first — done in this wave.)
+#
+# Routing note: CF Worker routes take precedence over Pages custom domains
+# on the same zone.  The corelink-admin.humangr.com/* Worker route was removed
+# from wrangler.toml in this same wave to let Pages serve the hostname.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/admin-ui/**"
+      - ".github/workflows/admin-ui-deploy.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment (production or preview)'
+        required: false
+        default: production
+        type: choice
+        options:
+          - production
+          - preview
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: admin-ui-deploy-${{ github.ref }}
+  cancel-in-progress: false  # don't cancel in-flight deploys; queue instead
+
+jobs:
+  build-and-deploy:
+    name: build + deploy to CF Pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/admin-ui
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        with:
+          version: 10.32.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      # pages:build = `next build && npx @cloudflare/next-on-pages`
+      # Injects NEXT_PUBLIC_* vars at build time so Next.js can inline them
+      # into client bundles.  Server-side secrets (CLERK_SECRET_KEY etc.) are
+      # NOT needed at build time — they are injected by the CF Pages runtime
+      # via `wrangler pages secret put` (one-time operator step).
+      - name: Build for CF Pages
+        run: pnpm pages:build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          NODE_ENV: production
+          # NEXT_PUBLIC_* vars inlined at build time.
+          # Values sourced from GH Variables (non-secret).
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          NEXT_PUBLIC_CORELINK_API_URL: ${{ vars.NEXT_PUBLIC_CORELINK_API_URL || 'https://corelink-api.humangr.com' }}
+          NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+          NEXT_PUBLIC_SENTRY_DSN: ${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
+          # Sentry source-map upload at build time (optional; no-op if unset).
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: "corelink"
+          SENTRY_PROJECT: "corelink-admin-ui"
+          CSP_ENFORCEMENT: "enforce"
+
+      # Deploy .vercel/output/static to the CF Pages project.
+      # --branch main → marks this as a production deployment.
+      # --commit-dirty=false → fail if working tree is dirty (shouldn't be in CI).
+      - name: Deploy to Cloudflare Pages
+        working-directory: apps/admin-ui
+        run: |
+          npx wrangler pages deploy .vercel/output/static \
+            --project-name corelink-admin-ui \
+            --branch main \
+            --commit-hash "${{ github.sha }}" \
+            --commit-message "${{ github.event.head_commit.message }}"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Print deployment URL
+        if: success()
+        run: |
+          echo "Deployed to: https://corelink-admin-ui.pages.dev (blocked on *.pages.dev by middleware)"
+          echo "Production URL: https://corelink-admin.humangr.com"
+          echo "Commit: ${{ github.sha }}"

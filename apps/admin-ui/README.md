@@ -107,7 +107,103 @@ typecheck time via next-intl's strict mode.
 `.github/workflows/admin-ui-ci.yml` runs typecheck, lint, vitest, and the
 Next build. SHA-pinned actions per repo policy.
 
-## Cloudflare Pages
+## Deploy — Cloudflare Pages
 
-`pnpm build:cf` runs `@cloudflare/next-on-pages` to emit the Pages
-artifact. Deploy is wired in the orchestrator's Pages project.
+### Architecture
+
+`apps/admin-ui` deploys to the CF Pages project **`corelink-admin-ui`** (humangr-labs org)
+via `@cloudflare/next-on-pages`. The GH Action `.github/workflows/admin-ui-deploy.yml`
+builds and deploys automatically on every push to `main` that touches `apps/admin-ui/**`.
+
+Routing precedence note: CF Worker routes take precedence over Pages custom domains on
+the same CF zone. The `corelink-admin.humangr.com/*` route was removed from the root
+`wrangler.toml` (Stream 3.11) so the Pages CNAME can resolve. Do NOT re-add a Worker
+route for `corelink-admin.humangr.com` — it would shadow the Pages deployment.
+
+### Build commands
+
+```bash
+# from inside apps/admin-ui
+pnpm pages:build    # next build && npx @cloudflare/next-on-pages
+                    # emits .vercel/output/static
+
+pnpm pages:deploy   # wrangler pages deploy .vercel/output/static \
+                    #   --project-name corelink-admin-ui
+```
+
+### One-time operator setup (manual steps)
+
+#### 1. Create the CF Pages project
+
+```bash
+# Only needed once; the GH Action deploy step creates it if it doesn't exist.
+wrangler pages project create corelink-admin-ui --production-branch main
+```
+
+#### 2. Set runtime secrets (server-side; never committed to git)
+
+```bash
+# Run once per secret; CF Pages runtime injects these into the Pages Functions.
+wrangler pages secret put CLERK_SECRET_KEY        --project-name corelink-admin-ui
+wrangler pages secret put STRIPE_SECRET_KEY       --project-name corelink-admin-ui
+wrangler pages secret put SENTRY_AUTH_TOKEN       --project-name corelink-admin-ui  # optional
+```
+
+#### 3. Set build-time env vars (NEXT_PUBLIC_* — inlined into client bundle)
+
+In the CF Pages dashboard (or GH Actions Settings → Variables):
+
+| Variable | Value |
+|---|---|
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | `pk_live_…` (from Clerk dashboard) |
+| `NEXT_PUBLIC_CORELINK_API_URL` | `https://corelink-api.humangr.com` |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_live_…` (from Stripe dashboard) |
+| `NEXT_PUBLIC_SENTRY_DSN` | `https://…@sentry.io/…` |
+
+These are set as GH Repo Variables (`vars.*`) so the GH Action can inject them at build time.
+
+#### 4. Wire the custom domain (MANUAL — CF Pages dashboard)
+
+1. In the [CF Pages dashboard](https://dash.cloudflare.com) → Workers & Pages → `corelink-admin-ui`
+2. Go to **Custom domains** → **Set up a custom domain**
+3. Enter `corelink-admin.humangr.com` → Continue
+4. CF will verify DNS; accept the suggested CNAME or create it manually:
+   ```
+   corelink-admin.humangr.com  CNAME  corelink-admin-ui.pages.dev  (proxied)
+   ```
+5. Wait for the "Active" badge (usually < 5 min; CF provisions a TLS cert automatically).
+
+Prerequisite: the Worker route `corelink-admin.humangr.com/*` must be absent from the
+main worker's wrangler.toml (done in Stream 3.11). If the route exists, CF Edge invokes
+the Worker first and the Pages deployment is never reached.
+
+#### 5. Update Clerk allowed redirect URLs (MANUAL — Clerk dashboard)
+
+In [Clerk dashboard](https://dashboard.clerk.com) → Your application → **Domains**:
+
+- Add `https://corelink-admin.humangr.com` as an **Allowed redirect origin**
+- Ensure `https://corelink-admin.humangr.com/sign-in` and
+  `https://corelink-admin.humangr.com/sign-up` are listed under redirect URLs.
+
+Without this step, Clerk will block sign-in redirects from the custom domain.
+
+#### 6. Smoke test
+
+```bash
+# After custom domain is active:
+curl -I https://corelink-admin.humangr.com/api/health
+# Expected: 200 OK with X-Content-Type-Options: nosniff
+
+# pages.dev must 404 (E1 BLOCK middleware gate):
+curl -I https://corelink-admin-ui.pages.dev/
+# Expected: 404 Not Found
+```
+
+### Security
+
+`functions/_middleware.ts` runs on every CF Pages Function request and **blocks** all
+`*.pages.dev` traffic with `404 Not Found` before any downstream handler runs. This
+prevents secret-exposure via the raw Pages subdomain (E1 security gate,
+`specs/_audits/2026-05-28-security-exposure-review.md §E1`).
+
+Production traffic must arrive exclusively via `corelink-admin.humangr.com`.

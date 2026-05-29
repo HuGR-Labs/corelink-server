@@ -1,0 +1,44 @@
+# Cloudflare Pages config for the CoreLink Admin UI.
+#
+# Project name: corelink-admin-ui  (humangr-labs org)
+# Custom domain: corelink-admin.humangr.com  (manual: Pages dashboard → Custom domains)
+#
+# Build: pnpm pages:build  (next build && npx @cloudflare/next-on-pages)
+# Deploy: pnpm pages:deploy
+#
+# Secrets (set via `wrangler pages secret put <NAME> --project-name corelink-admin-ui`):
+#   CLERK_SECRET_KEY
+#   STRIPE_SECRET_KEY
+#   SENTRY_AUTH_TOKEN      (optional — enables source-map upload at build time)
+#
+# Routing precedence: CF Pages custom domains take precedence over Worker routes
+# on the same zone ONLY after the Worker route for corelink-admin.humangr.com is
+# removed from the main worker (root wrangler.toml [[env.prod.routes]]).  The
+# Worker route was removed in this same wave — see commit message.
+
+name = "corelink-admin-ui"
+compatibility_date = "2026-04-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
+
+# ── Public (build-time) env vars ─────────────────────────────────────────────
+#
+# NEXT_PUBLIC_* vars are inlined at build time by Next.js.  They must be set
+# in the CF Pages dashboard (Settings → Environment variables → Production)
+# or injected by the GH Action via --env flags.  They are NOT secrets and NOT
+# embedded in this file to avoid false-positive secret detection; document
+# them here for operator reference only.
+#
+#   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY  — Clerk publishable key (pk_live_…)
+#   NEXT_PUBLIC_CORELINK_API_URL       — https://corelink-api.humangr.com
+#   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY — Stripe publishable key (pk_live_…)
+#   NEXT_PUBLIC_SENTRY_DSN             — Sentry DSN (https://…@sentry.io/…)
+#   CSP_ENFORCEMENT                    — "enforce" (production default)
+#
+# Server-side (injected at runtime — NOT at build time, NOT in this file):
+#   CLERK_SECRET_KEY       — wrangler pages secret put
+#   STRIPE_SECRET_KEY      — wrangler pages secret put
+#   SENTRY_AUTH_TOKEN      — wrangler pages secret put (build-time source maps)
+
+[env.production]
+name = "corelink-admin-ui"
