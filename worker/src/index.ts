@@ -80,6 +80,8 @@ type RouteKind =
   | "reapi_v2"
   | "customer_v1"
   | "reapi_v1"
+  | "bazel_v2"
+  | "turbo_v8"
   | "signup"
   | "internal"
   | "not_found";
@@ -230,6 +232,23 @@ function matchRoute(url: URL): RouteMatch {
     const rest = path.slice(3); // strip "/v2"
     const tenant = extractFirstSegment(rest) ?? "_anonymous";
     return { tenantId: tenant, pathSuffix: path, routeKind: "oci_v2" };
+  }
+
+  // Bazel remote cache (REAPI v2) — /bazel/v2/<instance>/...
+  // <instance> = tenant_id per CoreLink convention. The container
+  // (`crates/corelink-container/src/routes/bazel_v2.rs`) enforces
+  // caller_tenant equality against the URL :instance.
+  if (path.startsWith("/bazel/v2/")) {
+    const rest = path.slice("/bazel/v2/".length);
+    const tenant = extractFirstSegment("/" + rest) ?? "_anonymous";
+    return { tenantId: tenant, pathSuffix: path, routeKind: "bazel_v2" };
+  }
+
+  // Vercel /v8/artifacts (Turborepo remote cache).
+  // Hash is the URL leaf; tenant comes from `?teamId=...` query string,
+  // resolved by the container handler against caller_tenant.
+  if (path.startsWith("/v8/artifacts")) {
+    return { tenantId: "_anonymous", pathSuffix: path, routeKind: "turbo_v8" };
   }
 
   // npm — /npm/<tenant>/…
