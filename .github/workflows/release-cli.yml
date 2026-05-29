@@ -1,169 +1,237 @@
-# CoreLink CLI cross-OS release pipeline (WI-S15-001).
-#
-# Triggers on version tags `v*`. Builds reproducible binaries for 5 targets:
-#   - macOS arm64   (macos-14 / Apple Silicon)
-#   - macOS x86_64  (macos-13 / Intel)
-#   - Linux x86_64  (ubuntu-22.04)
-#   - Linux arm64   (ubuntu-22.04-arm)
-#   - Windows x86_64 (windows-2022)
-#
-# Reproducible builds: SOURCE_DATE_EPOCH set to git commit timestamp +
-# cargo --frozen --locked (S-12 supply chain alignment).
-#
-# Signing placeholders:
-#   - Apple notarization (WI-S15-006 — cert acquisition deferred)
-#   - Linux GPG signing  (WI-S15-006 — key acquisition deferred)
-#   - Windows Authenticode (WI-S15-006 — cert acquisition deferred)
-
 name: release-cli
+
+# CoreLink CLI cross-platform release pipeline (Stream 2.8).
+#
+# Triggers on version tags cli-v* in humangr-labs/corelink-server.
+# Builds 5 platform binaries via cargo-zigbuild (Option A: single
+# ubuntu-22.04 runner, zig cross-compile toolchain), then creates a
+# GitHub Release in the SEPARATE repo humangr-labs/corelink-cli.
+#
+# Binary names match the install script contract:
+#   URL="${RELEASE_ORIGIN}/corelink-${OS}-${ARCH}"
+#   (apps/get-corelink-worker/src/install.ts)
+#
+# Platforms:
+#   corelink-linux-x86_64       x86_64-unknown-linux-gnu
+#   corelink-linux-aarch64      aarch64-unknown-linux-gnu
+#   corelink-darwin-x86_64      x86_64-apple-darwin
+#   corelink-darwin-aarch64     aarch64-apple-darwin
+#   corelink-windows-x86_64.exe x86_64-pc-windows-gnu
+#
+# Required GH Secret (set MANUALLY by operator):
+#   CORELINK_CLI_RELEASE_TOKEN  PAT with `repo` scope on
+#                               humangr-labs/corelink-cli
+#
+# TODO (v2): cosign keyless signing via GH OIDC.
+#   Wired as a placeholder below; un-stub when ready.
+#   Ref: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409
 
 on:
   push:
     tags:
-      - "v*"
+      - "cli-v*"
 
+# Workflow-level least-privilege.
+# The cross-repo release write is handled by CORELINK_CLI_RELEASE_TOKEN.
+# id-token: write is reserved for cosign keyless (v2 TODO).
 permissions:
-  contents: write  # Needed to create GitHub Release assets.
-  id-token: write  # For SLSA attestation (future).
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release-cli-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
 jobs:
+  # -------------------------------------------------------------------
+  # build — cargo-zigbuild matrix (Option A: 5 targets, 1 runner type)
+  # -------------------------------------------------------------------
   build:
-    name: build (${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
+    name: build (${{ matrix.target.name }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-14
-            target: aarch64-apple-darwin
-            binary_name: corelink
-            asset_suffix: darwin-arm64
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
-            binary_name: corelink
-            asset_suffix: darwin-x86_64
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-musl
-            binary_name: corelink
-            asset_suffix: linux-x86_64
-          - os: ubuntu-22.04-arm
-            target: aarch64-unknown-linux-musl
-            binary_name: corelink
-            asset_suffix: linux-arm64
-          - os: windows-2022
-            target: x86_64-pc-windows-msvc
-            binary_name: corelink.exe
-            asset_suffix: windows-x86_64
+        target:
+          - triple: x86_64-unknown-linux-gnu
+            name: corelink-linux-x86_64
+            ext: ""
+          - triple: aarch64-unknown-linux-gnu
+            name: corelink-linux-aarch64
+            ext: ""
+          - triple: x86_64-apple-darwin
+            name: corelink-darwin-x86_64
+            ext: ""
+          - triple: aarch64-apple-darwin
+            name: corelink-darwin-aarch64
+            ext: ""
+          - triple: x86_64-pc-windows-gnu
+            name: corelink-windows-x86_64
+            ext: ".exe"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
-      # -----------------------------------------------------------------------
+      - name: Install Rust toolchain (stable, pinned)
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable 2026-04-29
+        with:
+          targets: ${{ matrix.target.triple }}
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c  # v2.7.7
+        with:
+          workspaces: ". -> target"
+          shared-key: cli-release-${{ matrix.target.triple }}
+
+      # zig cross-toolchain: provides libc headers + linker for all targets.
+      # OPERATOR: verify SHA for mlugg/setup-zig@v2 at
+      # https://github.com/mlugg/setup-zig/releases/tag/v2 before first run.
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+
+      - name: Install cargo-zigbuild (pinned version, locked)
+        run: cargo install --locked --version "0.19.8" cargo-zigbuild
+
       # Reproducible build: SOURCE_DATE_EPOCH from git commit timestamp.
-      # Aligns with S-12 supply chain baseline (WI-S12-006).
-      # -----------------------------------------------------------------------
       - name: Set SOURCE_DATE_EPOCH
-        shell: bash
         run: |
           SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
           echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" >> "$GITHUB_ENV"
-          echo "GIT_COMMIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
-      - name: Install Rust toolchain (pinned)
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
-        with:
-          # Pin to the workspace rust-toolchain.toml channel.
-          toolchain: "1.91.1"
-          targets: ${{ matrix.target }}
-
-      # Linux musl target needs musl-tools.
-      - name: Install musl-tools (Linux)
-        if: contains(matrix.target, 'linux-musl')
-        run: sudo apt-get install -y musl-tools
-
-      # -----------------------------------------------------------------------
-      # Reproducible build with --frozen --locked.
-      # -----------------------------------------------------------------------
-      - name: Build (release, frozen, locked)
+      - name: Build (cargo zigbuild, release, frozen, locked)
         env:
           SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
-          GIT_COMMIT_SHA: ${{ env.GIT_COMMIT_SHA }}
-          TARGET: ${{ matrix.target }}
         run: |
-          cargo build --release --frozen --locked -p corelink-cli --target ${{ matrix.target }}
+          cargo zigbuild \
+            -p corelink-cli \
+            --release \
+            --frozen \
+            --locked \
+            --target ${{ matrix.target.triple }}
 
-      - name: Strip binary (Linux / macOS)
-        if: runner.os != 'Windows'
-        run: |
-          strip "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" || true
-
-      # -----------------------------------------------------------------------
-      # SHA256 checksum for reproducible build verification gate.
-      # -----------------------------------------------------------------------
-      - name: Compute SHA256
+      # Binary stripping is handled by [profile.release] strip = true
+      # in the workspace Cargo.toml — no explicit strip step needed.
+      - name: Prepare artifact (rename + SHA-256 checksum)
         shell: bash
         run: |
-          BINARY="target/${{ matrix.target }}/release/${{ matrix.binary_name }}"
+          SRC="target/${{ matrix.target.triple }}/release/corelink"
+          SRC="${SRC}${{ matrix.target.ext }}"
+          ASSET="${{ matrix.target.name }}${{ matrix.target.ext }}"
+          mkdir -p out
+          cp "$SRC" "out/${ASSET}"
+          # sha256sum (Linux); shasum -a 256 fallback (macOS).
           if command -v sha256sum > /dev/null 2>&1; then
-            sha256sum "$BINARY" > "$BINARY.sha256"
+            (cd out && sha256sum "${ASSET}" > "${ASSET}.sha256")
           else
-            shasum -a 256 "$BINARY" > "$BINARY.sha256"
+            (cd out && shasum -a 256 "${ASSET}" > "${ASSET}.sha256")
+          fi
+          echo "ASSET=${ASSET}" >> "$GITHUB_ENV"
+
+      # TODO (v2): cosign keyless signing
+      # Ref: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409
+      - name: "[TODO v2] cosign sign (placeholder)"
+        run: |
+          echo "SIGNING PLACEHOLDER: cosign keyless signing not yet wired."
+          echo "Tracked as Stream 2.8 v2 TODO."
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b  # v4.5.0
+        with:
+          name: ${{ matrix.target.name }}
+          path: out/
+          retention-days: 1
+
+  # -------------------------------------------------------------------
+  # release — collect artifacts, create GH Release in corelink-cli repo
+  # -------------------------------------------------------------------
+  release:
+    name: create release (humangr-labs/corelink-cli)
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: read  # CORELINK_CLI_RELEASE_TOKEN handles cross-repo write
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Verify artifact count (expect 10 = 5 binaries + 5 checksums)
+        shell: bash
+        run: |
+          echo "=== dist/ contents ==="
+          find dist/ -maxdepth 1 -type f | sort
+          EXPECTED=10
+          ACTUAL=$(find dist/ -maxdepth 1 -type f | wc -l | tr -d ' ')
+          if [ "$ACTUAL" -ne "$EXPECTED" ]; then
+            echo "ERROR: expected ${EXPECTED} files, got ${ACTUAL}" >&2
+            exit 1
           fi
 
-      # -----------------------------------------------------------------------
-      # Signing PLACEHOLDERS — acquisition deferred to WI-S15-006.
-      # When certs are acquired, replace these echo steps with real signing.
-      # -----------------------------------------------------------------------
-      - name: "[PLACEHOLDER] Apple notarization"
-        if: runner.os == 'macOS'
+      - name: Build combined checksums.txt
         run: |
-          echo "SIGNING PLACEHOLDER: Apple notarization not yet configured."
-          echo "Cert acquisition tracked in WI-S15-006."
-          echo "When ready: xcrun notarytool submit ... --apple-id ... --team-id ..."
+          cat dist/*.sha256 > dist/checksums.txt
+          echo "=== checksums.txt ==="
+          cat dist/checksums.txt
 
-      - name: "[PLACEHOLDER] Linux GPG signing"
-        if: runner.os == 'Linux'
-        run: |
-          echo "SIGNING PLACEHOLDER: Linux GPG signing not yet configured."
-          echo "Key acquisition tracked in WI-S15-006."
-
-      - name: "[PLACEHOLDER] Windows Authenticode signing"
-        if: runner.os == 'Windows'
+      - name: Write release notes
         shell: bash
         run: |
-          echo "SIGNING PLACEHOLDER: Windows Authenticode signing not yet configured."
-          echo "Cert acquisition tracked in WI-S15-006."
+          # Static section (single-quoted heredoc: no variable expansion).
+          cat > /tmp/release-notes.md << 'NOTES_EOF'
+          ## Install
 
-      # -----------------------------------------------------------------------
-      # Rename binary to include OS/arch suffix for release asset.
-      # -----------------------------------------------------------------------
-      - name: Rename binary for release
-        shell: bash
-        run: |
-          BINARY="target/${{ matrix.target }}/release/${{ matrix.binary_name }}"
-          EXT="${{ matrix.binary_name == 'corelink.exe' && '.exe' || '' }}"
-          ASSET="corelink-${{ env.RELEASE_TAG }}-${{ matrix.asset_suffix }}${EXT}"
-          cp "$BINARY" "$ASSET"
-          cp "$BINARY.sha256" "$ASSET.sha256"
-          echo "ASSET_NAME=${ASSET}" >> "$GITHUB_ENV"
-          echo "ASSET_SHA256=${ASSET}.sha256" >> "$GITHUB_ENV"
+          ```sh
+          curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=<PAT>
+          ```
+
+          ## Platforms
+
+          | Binary | OS | Arch |
+          |--------|-----|------|
+          | `corelink-linux-x86_64`      | Linux   | x86_64  |
+          | `corelink-linux-aarch64`     | Linux   | aarch64 |
+          | `corelink-darwin-x86_64`     | macOS   | x86_64  |
+          | `corelink-darwin-aarch64`    | macOS   | aarch64 |
+          | `corelink-windows-x86_64.exe`| Windows | x86_64  |
+
+          ## Checksums
+
+          See `checksums.txt` for SHA-256 digests of all artifacts.
+
+          ## Source
+          NOTES_EOF
+          # Dynamic line: GITHUB_REF_NAME expands at runtime.
+          # shellcheck disable=SC2016
+          echo "Built from \`humangr-labs/corelink-server\` tag \`${GITHUB_REF_NAME}\`." \
+            >> /tmp/release-notes.md
+
+      - name: Create GitHub Release in humangr-labs/corelink-cli
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#cli-}"
+          gh release create "$VERSION" \
+            --repo humangr-labs/corelink-cli \
+            --title "CoreLink CLI ${VERSION}" \
+            --notes-file /tmp/release-notes.md
 
-      # -----------------------------------------------------------------------
-      # Upload artifacts to GitHub Release.
-      # -----------------------------------------------------------------------
-      - name: Upload release assets
-        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
-        with:
-          files: |
-            ${{ env.ASSET_NAME }}
-            ${{ env.ASSET_SHA256 }}
-          generate_release_notes: true
+      - name: Upload binaries + checksums to release
+        env:
+          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#cli-}"
+          gh release upload "$VERSION" dist/* \
+            --repo humangr-labs/corelink-cli \
+            --clobber

@@ -47,6 +47,82 @@ The `get.corelink.io` DNS + CF custom-domain mapping is set up via a
 `pnpm dev` exposes the script on a local `wrangler dev` URL for E2E
 testing the install flow.
 
+## CLI Release Procedure
+
+The install Worker at `https://corelink-get.humangr.com` serves binaries
+from `https://github.com/humangr-labs/corelink-cli/releases/latest/download`.
+Releases in that repo are created automatically by
+`.github/workflows/release-cli.yml` in `humangr-labs/corelink-server`
+whenever a `cli-v*` tag is pushed.
+
+### One-time operator setup (do this once, before the first release)
+
+1. **Create a GitHub PAT** with `repo` scope scoped to
+   `humangr-labs/corelink-cli` (or a fine-grained token with
+   "Contents: write" on that repo).
+
+2. **Store the PAT as a repository secret** in
+   `humangr-labs/corelink-server`:
+   - Name: `CORELINK_CLI_RELEASE_TOKEN`
+   - Value: the PAT from step 1
+
+3. **Verify the `mlugg/setup-zig@v2` SHA pin** in the workflow:
+   - Open https://github.com/mlugg/setup-zig/releases/tag/v2
+   - Copy the commit SHA from the release page
+   - Replace `uses: mlugg/setup-zig@v2` in
+     `.github/workflows/release-cli.yml` with the pinned form:
+     `uses: mlugg/setup-zig@<40-char-SHA>  # v2.x.y`
+   - Commit the pin to `main` before the first production release.
+
+### Releasing a new CLI version
+
+```bash
+# 1. Ensure the version in Cargo.toml workspace is bumped (e.g. 0.1.0)
+# 2. Commit all changes to main
+# 3. Push the release tag — the workflow fires automatically
+git tag cli-v0.1.0
+git push origin cli-v0.1.0
+```
+
+The workflow will:
+1. Build 5 binaries via `cargo-zigbuild` on ubuntu-22.04
+2. Compute SHA-256 checksums
+3. Create a release in `humangr-labs/corelink-cli` tagged `v0.1.0`
+4. Upload 11 files: 5 binaries + 5 `.sha256` files + `checksums.txt`
+
+### Expected artifact list (per release)
+
+| File | Platform |
+|------|----------|
+| `corelink-linux-x86_64`      | Linux x86_64   |
+| `corelink-linux-x86_64.sha256` | checksum     |
+| `corelink-linux-aarch64`     | Linux aarch64  |
+| `corelink-linux-aarch64.sha256` | checksum    |
+| `corelink-darwin-x86_64`     | macOS x86_64   |
+| `corelink-darwin-x86_64.sha256` | checksum    |
+| `corelink-darwin-aarch64`    | macOS aarch64  |
+| `corelink-darwin-aarch64.sha256` | checksum   |
+| `corelink-windows-x86_64.exe` | Windows x86_64 |
+| `corelink-windows-x86_64.exe.sha256` | checksum |
+| `checksums.txt`               | all digests combined |
+
+### Tag format
+
+| Tag | Meaning |
+|-----|---------|
+| `cli-v0.1.0` | CLI release 0.1.0 (triggers the workflow) |
+| `v*` | Server/other releases (does NOT trigger release-cli.yml) |
+
+### Troubleshooting
+
+- **Release job fails with 401**: `CORELINK_CLI_RELEASE_TOKEN` is missing
+  or expired — regenerate and update the secret.
+- **cargo-zigbuild fails on a target**: check if the target uses `ring`
+  assembly bootstrap (unlikely with `rustls` + `ring` — no `aws-lc-sys`).
+  If it persists, fall back to Option B (native matrix per-OS runner) per
+  the Stream 2.8 runbook.
+- **mlugg/setup-zig fails**: pin to a known-good SHA (see step 3 above).
+
 ## Acceptance (Phase 0.H)
 
 1. `GET https://get.corelink.io` returns `Content-Type: text/x-shellscript`
