@@ -74,6 +74,7 @@ type RouteKind =
   | "brew"
   | "cargo"
   | "reapi_v2"
+  | "customer_v1"
   | "reapi_v1"
   | "signup"
   | "not_found";
@@ -175,6 +176,9 @@ function handlePreflight(request: Request): Response | null {
  *   /brew/*                 → Homebrew tap proxy
  *   /cargo/*                → Cargo registry proxy
  *   /api/v2/*               → REAPI v2 (CoreLink native HTTP API)
+ *   /v1/customer/*          → Customer portal (overview, usage, billing, keys, team,
+ *                              audit) — PAT required; tenant from PAT. Checked BEFORE
+ *                              the generic /v1/* arm (specificity order).
  *   /v1/users/me            → REAPI v1 — tenant comes from PAT (urlTenant=_anonymous)
  *   /v1/cas/*               → REAPI v1 CAS — tenant from PAT
  *   /v1/admin/*             → REAPI v1 admin — tenant from PAT (admin scope enforced
@@ -266,7 +270,22 @@ function matchRoute(url: URL): RouteMatch {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "signup" };
   }
 
+  // REAPI v1 customer portal — /v1/customer/* (overview, usage, billing, keys, team, audit)
+  // Checked BEFORE the generic /v1/* arm so customer paths never fall into the
+  // reapi_v1 bucket. Tenant is NOT in the URL — resolved by the DO from the PAT
+  // (same pattern as reapi_v1 / /v1/users/me). The spoof gate doesn't fire because
+  // urlTenant="_anonymous" (no path tenant in /v1/customer/<resource> URLs).
+  // Auth: PAT required — customer routes are NOT pre-tenant (unlike signup).
+  if (path.startsWith("/v1/customer/") || path === "/v1/customer") {
+    return { tenantId: "_anonymous", pathSuffix: path, routeKind: "customer_v1" };
+  }
+
   // REAPI v1 — /v1/users/me, /v1/cas/blobs/<digest>/<size>, /v1/admin/audit/events, …
+  // Generic /v1/* fallthrough — only reached when no more-specific arm matched above.
+  // Arms checked before this one (specificity order, most-specific first):
+  //   1. /v1/signup/*    → "signup"      (pre-tenant, no PAT required)
+  //   2. /v1/customer/*  → "customer_v1" (PAT required, tenant from PAT)
+  //   3. /v1/*           → "reapi_v1"    ← this arm (PAT required, tenant from PAT)
   // Tenant is NOT in the URL — resolved by the DO from the PAT.
   // urlTenant="_anonymous" preserves the future path-spoof gate semantics
   // (gate only fires when urlTenant is a concrete tenant id).
