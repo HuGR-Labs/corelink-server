@@ -2225,6 +2225,7 @@ dependencies = [
  "corelink-handler-ac",
  "corelink-handler-admin",
  "corelink-handler-cas",
+ "corelink-handler-customer",
  "corelink-pat",
  "corelink-ratelimit",
  "corelink-stripe-real",
@@ -2398,6 +2399,15 @@ dependencies = [
  "proptest",
  "rand 0.9.4",
  "rand_chacha 0.9.0",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "corelink-turbo-bridge"
+version = "0.1.0"
+dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
