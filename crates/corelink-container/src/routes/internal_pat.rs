@@ -116,7 +116,7 @@ pub struct MintRequest {
 }
 
 /// JSON response body. NEVER log `token_plaintext`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MintResponse {
     /// The PAT plaintext. Returned ONCE to the caller; caller writes to
     /// Clerk metadata and then discards.
