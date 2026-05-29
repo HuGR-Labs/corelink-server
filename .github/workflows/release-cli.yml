@@ -45,6 +45,17 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # sccache: shared compilation cache across matrix targets.
+  # Pre-installed on the self-hosted runner host (`/usr/local/bin/sccache`).
+  # Cache dir is host-wide so multiple matrix jobs (one per runner) share
+  # crate-compilation results — `tokio`, `reqwest`, `rustls` etc. compile
+  # ONCE total instead of N times per target.
+  RUSTC_WRAPPER: sccache
+  SCCACHE_DIR: /Users/gustavoschneiter/.cache/sccache-corelink-cli
+  SCCACHE_CACHE_SIZE: "20G"
+  # CARGO_INCREMENTAL=0 is required for sccache to deduplicate properly;
+  # without it cargo embeds per-invocation timestamps that bust the cache.
+  CARGO_INCREMENTAL: "0"
 
 jobs:
   # -------------------------------------------------------------------
@@ -53,14 +64,20 @@ jobs:
   build:
     name: build (${{ matrix.target.name }})
     runs-on: [self-hosted, mac, corelink-builder]
-    # 60 min: with 5 cargo builds running in parallel on a single Mac
-    # (one self-hosted runner per matrix entry), CPU + I/O contention
-    # slows each build vs running alone. Cold-cache first build of
-    # corelink-cli's dep tree (reqwest + tokio + rustls + axum-style
-    # deps via workspace) takes ~25-40 min per target under contention.
-    timeout-minutes: 60
+    timeout-minutes: 45
     strategy:
       fail-fast: false
+      # max-parallel: 3 instead of unbounded.
+      #
+      # The 5-runner host is one physical Mac (12 cores / 16 GB). Running
+      # all 5 builds simultaneously drives load average to >100 and per-
+      # job wall time to 30+ minutes (vs ~10 min unblocked). Cap to 3 in
+      # parallel so the host has CPU/RAM headroom and each build proceeds
+      # at native speed. Total wall clock for 5 jobs:
+      #   5/3 = 2 batches (3 jobs, then 2 jobs).
+      #   batch 1 ~10 min cold cache, batch 2 ~5 min warm (sccache hits).
+      #   total ≈ 15 min vs ≈ 30 min with full parallelism + contention.
+      max-parallel: 3
       matrix:
         target:
           - triple: x86_64-unknown-linux-gnu
@@ -100,13 +117,36 @@ jobs:
       # SKIPPED for darwin targets: on a macOS host, native `cargo build`
       # cross-compiles fine using the system linker; using zigcc for
       # darwin-on-darwin triggers an upstream iconv/charset linker bug.
-      - name: Install Zig (Linux + Windows only)
+      #
+      # Optimization: skip the action download/install if `zig` is already
+      # on PATH (self-hosted runner host has it via `brew install zig`).
+      - name: Install Zig (Linux + Windows only, if not present)
         if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
-        uses: mlugg/setup-zig@v2
+        shell: bash
+        run: |
+          if command -v zig > /dev/null 2>&1; then
+            echo "  zig found at $(command -v zig) — skipping setup-zig"
+          else
+            echo "  zig not in PATH; falling back to setup-zig"
+            # Fallback action would go here; for now hard-fail with a
+            # clear message so the operator knows to `brew install zig`.
+            echo "ERROR: zig is required but not installed. On the self-hosted runner host, run: brew install zig" >&2
+            exit 1
+          fi
 
-      - name: Install cargo-zigbuild (Linux + Windows only)
+      # Optimization: cargo-zigbuild is pinned and stays the same between
+      # builds. Install it ONCE per host (under ~/.cargo/bin) and reuse.
+      - name: Install cargo-zigbuild (Linux + Windows only, if not present)
         if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
-        run: cargo install --locked --version "0.19.8" cargo-zigbuild
+        shell: bash
+        run: |
+          PINNED=0.19.8
+          if cargo-zigbuild --version 2>&1 | grep -q "$PINNED"; then
+            echo "  cargo-zigbuild $PINNED already installed — skipping"
+          else
+            echo "  installing cargo-zigbuild $PINNED"
+            cargo install --locked --version "$PINNED" cargo-zigbuild
+          fi
 
       # Reproducible build: SOURCE_DATE_EPOCH from git commit timestamp.
       - name: Set SOURCE_DATE_EPOCH
