@@ -150,15 +150,26 @@ jobs:
           retention-days: 1
 
   # -------------------------------------------------------------------
-  # release — collect artifacts, create GH Release in corelink-cli repo
+  # release — collect artifacts, create GH Release in THIS repo
+  #
+  # Same-repo release simplification (2026-05-29):
+  # - Original design used a separate humangr-labs/corelink-cli repo +
+  #   CORELINK_CLI_RELEASE_TOKEN PAT for cross-repo upload. That required
+  #   a manual operator step (PAT creation + secret config) per the
+  #   release-procedure runbook.
+  # - Switched to publishing in this repo's Releases. The default
+  #   GITHUB_TOKEN (with contents:write below) handles upload. Zero
+  #   secret config. corelink-cli repo can be archived / repurposed.
+  # - The install script (apps/get-corelink-worker) is updated in lock-
+  #   step to point at humangr-labs/corelink-server/releases/latest.
   # -------------------------------------------------------------------
   release:
-    name: create release (humangr-labs/corelink-cli)
+    name: create release (humangr-labs/corelink-server)
     needs: build
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     permissions:
-      contents: read  # CORELINK_CLI_RELEASE_TOKEN handles cross-repo write
+      contents: write  # default GITHUB_TOKEN writes to this repo's Releases
 
     steps:
       - name: Download all build artifacts
@@ -217,21 +228,16 @@ jobs:
           echo "Built from \`humangr-labs/corelink-server\` tag \`${GITHUB_REF_NAME}\`." \
             >> /tmp/release-notes.md
 
-      - name: Create GitHub Release in humangr-labs/corelink-cli
+      - name: Create GitHub Release in this repo
         env:
-          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION="${GITHUB_REF_NAME#cli-}"
-          gh release create "$VERSION" \
-            --repo humangr-labs/corelink-cli \
-            --title "CoreLink CLI ${VERSION}" \
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "CoreLink CLI ${GITHUB_REF_NAME#cli-}" \
             --notes-file /tmp/release-notes.md
 
       - name: Upload binaries + checksums to release
         env:
-          GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION="${GITHUB_REF_NAME#cli-}"
-          gh release upload "$VERSION" dist/* \
-            --repo humangr-labs/corelink-cli \
-            --clobber
+          gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
