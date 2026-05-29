@@ -12,6 +12,7 @@ const items = [
     region: "Global",
     certifications: ["ISO 27001", "SOC 2"],
     last_audit: "2026-02-12",
+    dpa_url: "https://www.cloudflare.com/cloudflare-customer-dpa/",
   },
   {
     id: "clerk",
@@ -20,6 +21,7 @@ const items = [
     region: "US",
     certifications: ["SOC 2"],
     last_audit: "2026-01-30",
+    dpa_url: "https://clerk.com/legal/dpa",
   },
 ];
 
