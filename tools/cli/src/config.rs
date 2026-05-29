@@ -73,13 +73,25 @@ impl AuthConfig {
 #[non_exhaustive]
 pub struct DefaultsConfig {
     /// Default tenant ID used when `--tenant` is not provided.
+    /// Populated automatically by `corelink login` and `corelink whoami`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tenant_id: Option<String>,
 
     /// Default output format (`text` or `json`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_format: Option<String>,
+
+    /// API endpoint base URL.
+    ///
+    /// Defaults to `https://corelink-api.humangr.com` when not set.
+    /// Override via `CORELINK_BASE_URL` env var or `corelink config set
+    /// defaults.endpoint <url>`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
 }
+
+/// Canonical default API endpoint for the CoreLink production service.
+pub const DEFAULT_ENDPOINT: &str = "https://corelink-api.humangr.com";
 
 /// `[telemetry]` section. Default off (privacy-first).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -238,6 +250,9 @@ fn apply_key(cfg: &mut CorelinkConfig, key: &str, value: &str) -> Result<(), Con
             }
             cfg.defaults.output_format = Some(value.to_owned());
         }
+        "defaults.endpoint" => {
+            cfg.defaults.endpoint = Some(value.to_owned());
+        }
         "telemetry.enabled" => {
             cfg.telemetry.enabled = parse_bool(value, key)?;
         }
@@ -265,6 +280,11 @@ fn read_key(cfg: &CorelinkConfig, key: &str) -> Result<String, ConfigError> {
             .output_format
             .clone()
             .unwrap_or_else(|| "text".to_owned())),
+        "defaults.endpoint" => Ok(cfg
+            .defaults
+            .endpoint
+            .clone()
+            .unwrap_or_else(|| DEFAULT_ENDPOINT.to_owned())),
         "telemetry.enabled" => Ok(cfg.telemetry.enabled.to_string()),
         "telemetry.anonymized_id" => Ok(cfg.telemetry.anonymized_id.to_string()),
         _ => Err(ConfigError::UnknownKey(key.to_owned())),

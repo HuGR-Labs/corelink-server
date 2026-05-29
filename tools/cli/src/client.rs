@@ -1,20 +1,43 @@
 //! Thin HTTP client wrapper for `corelink-cli` (WI-S15-001).
 //!
 //! Wraps `reqwest` with the PAT bearer auth header and a base URL resolved
-//! from `CORELINK_BASE_URL` env var (default `https://corelink.humangr.com`).
+//! from `CORELINK_BASE_URL` env var (default `https://corelink-api.humangr.com`).
 //! Retry with exponential backoff (FM-150) is implemented here.
+//!
+//! Stream-1 additions: `whoami`, `cas_put`, `cas_get`, `ac_put`, `ac_get`
+//! wrapping the production API at the canonical tenant-scoped paths.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
 use reqwest::{Client, StatusCode};
+use serde::Deserialize;
 use tracing::warn;
 
+use crate::config::DEFAULT_ENDPOINT;
 use crate::error::CliError;
 
-/// Default base URL.
-const DEFAULT_BASE_URL: &str = "https://corelink.humangr.com";
+/// Default base URL — overridden by `CORELINK_BASE_URL` env var or config.
+const DEFAULT_BASE_URL: &str = DEFAULT_ENDPOINT;
+
+/// Response from `GET /v1/users/me`.
+#[derive(Debug, Deserialize)]
+pub struct WhoamiResp {
+    /// Tenant identifier (used in API paths: `/v1/cas/<tenant_id>/<sha256>`).
+    pub tenant_id: String,
+    /// PAT prefix shown in audit logs (e.g. `corelink_pat_ABCDEF***`).
+    pub token_prefix: String,
+    /// Route kind: `pat`, `ci`, or `ro`.
+    pub route_kind: String,
+}
+
+/// Response for PUT CAS/AC operations (201 fresh or 200 idempotent).
+#[derive(Debug, Deserialize)]
+pub struct PutResp {
+    /// The SHA-256 hex digest echoed by the server.
+    pub hash: Option<String>,
+}
 
 /// Maximum retry attempts for transient failures (FM-150).
 const MAX_RETRIES: u32 = 3;
@@ -36,19 +59,155 @@ struct ClientInner {
     http: Client,
     base_url: String,
     pat: String,
+    /// Cached tenant_id; populated from config or whoami response.
+    tenant_id: Option<String>,
 }
 
 impl CorelinkClient {
     /// Build a new client from a resolved PAT.
+    /// Reads base_url from env `CORELINK_BASE_URL`, then config, then default.
+    /// Reads tenant_id from config if available.
     pub fn new(pat: String) -> Result<Self, CliError> {
         let base_url = std::env::var("CORELINK_BASE_URL")
             .unwrap_or_else(|_| DEFAULT_BASE_URL.to_owned());
+        // Load tenant_id from config (best-effort; None if not set).
+        let tenant_id = crate::config::load()
+            .ok()
+            .and_then(|c| c.defaults.tenant_id);
         let http = Client::builder()
             .use_rustls_tls()
             .timeout(Duration::from_secs(30))
             .build()?;
         Ok(Self {
-            inner: Arc::new(ClientInner { http, base_url, pat }),
+            inner: Arc::new(ClientInner { http, base_url, pat, tenant_id }),
+        })
+    }
+
+    /// Call `GET /v1/users/me` and return the parsed response.
+    pub async fn whoami(&self) -> Result<WhoamiResp, CliError> {
+        let url = format!("{}/v1/users/me", self.inner.base_url);
+        let resp = self
+            .inner
+            .http
+            .get(&url)
+            .bearer_auth(&self.inner.pat)
+            .send()
+            .await?;
+        if resp.status().is_success() {
+            let body: WhoamiResp = resp.json().await?;
+            Ok(body)
+        } else {
+            Err(CliError::Other(format!(
+                "whoami: HTTP {} from /v1/users/me",
+                resp.status()
+            )))
+        }
+    }
+
+    /// `PUT /v1/cas/<tenant>/<sha256>` — upload raw bytes.
+    ///
+    /// Returns `CliError::Other("tenant_id not set")` if tenant is unknown.
+    pub async fn cas_put(&self, sha256_hex: &str, body: Bytes) -> Result<PutResp, CliError> {
+        let tenant = self.require_tenant()?;
+        let url = format!("{}/v1/cas/{tenant}/{sha256_hex}", self.inner.base_url);
+        let mut attempt = 0u32;
+        loop {
+            let resp = self
+                .inner
+                .http
+                .put(&url)
+                .bearer_auth(&self.inner.pat)
+                .header("content-type", "application/octet-stream")
+                .body(body.clone())
+                .send()
+                .await;
+            match resp {
+                Ok(r) if r.status().is_success() => {
+                    // Drain body; ignore parse error (server may return empty 201).
+                    let put_resp: PutResp = r
+                        .json()
+                        .await
+                        .unwrap_or(PutResp { hash: Some(sha256_hex.to_owned()) });
+                    return Ok(put_resp);
+                }
+                Ok(r) if is_transient(r.status()) => {
+                    attempt += 1;
+                    if attempt > MAX_RETRIES {
+                        return Err(CliError::Other(format!(
+                            "cas_put: HTTP {} after {MAX_RETRIES} retries",
+                            r.status()
+                        )));
+                    }
+                    let backoff = backoff_ms(attempt);
+                    warn!(attempt, backoff_ms = backoff, "transient error, retrying");
+                    tokio::time::sleep(Duration::from_millis(backoff)).await;
+                }
+                Ok(r) => {
+                    return Err(CliError::Other(format!(
+                        "cas_put: HTTP {} for /v1/cas/{tenant}/{sha256_hex}",
+                        r.status()
+                    )));
+                }
+                Err(e) if attempt < MAX_RETRIES => {
+                    attempt += 1;
+                    let backoff = backoff_ms(attempt);
+                    warn!(attempt, backoff_ms = backoff, error = %e, "network error, retrying");
+                    tokio::time::sleep(Duration::from_millis(backoff)).await;
+                }
+                Err(e) => return Err(CliError::Network(e)),
+            }
+        }
+    }
+
+    /// `GET /v1/cas/<tenant>/<sha256>` — download bytes.
+    pub async fn cas_get(&self, sha256_hex: &str) -> Result<Bytes, CliError> {
+        let tenant = self.require_tenant()?;
+        let path = format!("/v1/cas/{tenant}/{sha256_hex}");
+        self.get_bytes(&path).await
+    }
+
+    /// `PUT /v1/ac/<tenant>/<digest>` — store action cache result.
+    pub async fn ac_put(&self, digest: &str, payload: Bytes) -> Result<PutResp, CliError> {
+        let tenant = self.require_tenant()?;
+        let url = format!("{}/v1/ac/{tenant}/{digest}", self.inner.base_url);
+        let resp = self
+            .inner
+            .http
+            .put(&url)
+            .bearer_auth(&self.inner.pat)
+            .header("content-type", "application/octet-stream")
+            .body(payload)
+            .send()
+            .await?;
+        if resp.status().is_success() {
+            let put_resp = resp
+                .json()
+                .await
+                .unwrap_or(PutResp { hash: Some(digest.to_owned()) });
+            Ok(put_resp)
+        } else {
+            Err(CliError::Other(format!(
+                "ac_put: HTTP {} for /v1/ac/{tenant}/{digest}",
+                resp.status()
+            )))
+        }
+    }
+
+    /// `GET /v1/ac/<tenant>/<digest>` — retrieve action cache result.
+    pub async fn ac_get(&self, digest: &str) -> Result<Bytes, CliError> {
+        let tenant = self.require_tenant()?;
+        let path = format!("/v1/ac/{tenant}/{digest}");
+        self.get_bytes(&path).await
+    }
+
+    /// Require tenant_id or return an informative error.
+    fn require_tenant(&self) -> Result<&str, CliError> {
+        self.inner.tenant_id.as_deref().ok_or_else(|| {
+            CliError::Other(
+                "tenant_id not set — run `corelink login --token=<PAT>` or \
+                 `corelink whoami` to cache your tenant ID."
+                    .to_owned(),
+            )
         })
     }
 
