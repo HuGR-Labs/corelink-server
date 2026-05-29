@@ -95,6 +95,17 @@ pub mod internal_pat;
 /// `-route-kind` headers and echoes them as JSON. Lets clients verify
 /// PAT wiring without exercising any data-plane (CAS/AC) surface.
 pub mod users;
+/// Turborepo remote-cache routes (Phase 0 / Stream B2):
+/// `GET/PUT /v8/artifacts/:hash`, `POST /v8/artifacts/events`,
+/// `POST /v8/artifacts/status`.
+///
+/// Wires [`corelink_turbo_bridge`] into the container router so Turborepo
+/// users can set `TURBO_API=https://corelink-api.humangr.com` and use
+/// CoreLink CAS as their remote build cache.
+///
+/// Phase 0 backing store: `InMemoryKvStore` (non-persistent).
+/// TODO(v2): swap for `R2KvStore` — see module doc.
+pub mod turbo_v8;
 
 /// Per-tenant in-memory shadow-sink factory. Production wiring
 /// replaces this with a Neon-backed factory (see
@@ -184,6 +195,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     let audit_analytics_state = audit_analytics::build_state(shadow_factory);
     let signup_state = signup::build_state();
     let customer_state = customer::build_handlers();
+    let turbo_state = turbo_v8::build_handlers();
     Router::new()
         .merge(cas::router(cas_state))
         .merge(ac::router(ac_state))
@@ -195,6 +207,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         .merge(users::router())
         .merge(customer::router(customer_state))
         .merge(bazel_v2::router(bazel_state))
+        .merge(turbo_v8::router(turbo_state))
 }
 
 #[cfg(test)]
