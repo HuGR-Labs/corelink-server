@@ -52,7 +52,7 @@ jobs:
   # -------------------------------------------------------------------
   build:
     name: build (${{ matrix.target.name }})
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -166,7 +166,7 @@ jobs:
   release:
     name: create release (humangr-labs/corelink-server)
     needs: build
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 15
     permissions:
       contents: write  # default GITHUB_TOKEN writes to this repo's Releases
