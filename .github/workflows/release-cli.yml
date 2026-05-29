@@ -91,13 +91,16 @@ jobs:
           workspaces: ". -> target"
           shared-key: cli-release-${{ matrix.target.triple }}
 
-      # zig cross-toolchain: provides libc headers + linker for all targets.
-      # OPERATOR: verify SHA for mlugg/setup-zig@v2 at
-      # https://github.com/mlugg/setup-zig/releases/tag/v2 before first run.
-      - name: Install Zig
+      # zig cross-toolchain: provides libc headers + linker for Linux + Windows.
+      # SKIPPED for darwin targets: on a macOS host, native `cargo build`
+      # cross-compiles fine using the system linker; using zigcc for
+      # darwin-on-darwin triggers an upstream iconv/charset linker bug.
+      - name: Install Zig (Linux + Windows only)
+        if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
         uses: mlugg/setup-zig@v2
 
-      - name: Install cargo-zigbuild (pinned version, locked)
+      - name: Install cargo-zigbuild (Linux + Windows only)
+        if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
         run: cargo install --locked --version "0.19.8" cargo-zigbuild
 
       # Reproducible build: SOURCE_DATE_EPOCH from git commit timestamp.
@@ -106,15 +109,26 @@ jobs:
           SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
           echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" >> "$GITHUB_ENV"
 
-      - name: Build (cargo zigbuild, release, locked)
-        # --locked = exit if Cargo.lock would change (pins exact deps);
-        # --frozen would ALSO disable network access, which breaks first-
-        # time builds where cargo-zigbuild + zig need to fetch glibc/musl
-        # cross-compile artifacts. Lockfile is still pinned by --locked.
+      - name: Build (cargo zigbuild) — Linux + Windows
+        if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
         env:
           SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
         run: |
           cargo zigbuild \
+            -p corelink-cli \
+            --release \
+            --locked \
+            --target ${{ matrix.target.triple }}
+
+      - name: Build (cargo build, native) — macOS targets
+        # The runner host is macOS x86_64. cargo can natively cross-compile
+        # to x86_64-apple-darwin (no-op) and aarch64-apple-darwin using the
+        # system linker (ld). No cargo-zigbuild dependency.
+        if: ${{ contains(matrix.target.triple, 'apple-darwin') }}
+        env:
+          SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
+        run: |
+          cargo build \
             -p corelink-cli \
             --release \
             --locked \
