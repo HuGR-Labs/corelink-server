@@ -246,6 +246,9 @@ async fn handle_write(
 
 /// Map a [`CasHandlerError`] to the canonical HTTP response.
 fn map_err(e: CasHandlerError) -> axum::response::Response {
+    // Log the full error before mapping — `tracing` captures the
+    // `Debug` form which preserves the underlying S3 / R2 details.
+    tracing::warn!(error = ?e, "CAS handler error");
     match e {
         CasHandlerError::NotFound { .. } => {
             (StatusCode::NOT_FOUND, "not found").into_response()
@@ -263,7 +266,23 @@ fn map_err(e: CasHandlerError) -> axum::response::Response {
             // bytes / commit writes without the audit row.
             (StatusCode::SERVICE_UNAVAILABLE, "audit closed").into_response()
         }
-        _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal").into_response(),
+        // PROD-DEBUG (revert after R2 wiring proven stable): include
+        // the error Debug-string so the operator can see the underlying
+        // R2/S3 failure without a separate logging pipe. Trade-off: a
+        // small information disclosure to authenticated callers (we
+        // already gate auth at the Worker), in exchange for the ability
+        // to diagnose end-to-end PUT/GET failures. Plain `internal`
+        // string is preserved as the prefix for grep-ability.
+        CasHandlerError::Internal(msg) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("internal: {msg}"),
+        )
+            .into_response(),
+        other => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("internal: {other:?}"),
+        )
+            .into_response(),
     }
 }
 
