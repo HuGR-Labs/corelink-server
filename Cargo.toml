@@ -254,6 +254,11 @@ members = [
     # onto CoreLink CAS + AC handlers. No gRPC/tonic dependency — pure REST
     # shape. Enables every Bazel user to point --remote_cache at CoreLink.
     "crates/corelink-bazel-bridge",
+    # Stream-2 customer self-serve handler skeleton — 6 endpoint traits
+    # (Overview / Usage / Billing / Keys / Team / Audit) + InMemoryCustomerHandler
+    # fake + SliObserver (AvailControlPlane) + audit-fail-CLOSED envelope.
+    # Wired into `corelink-container::routes::customer` by sibling Wave 2.
+    "crates/corelink-handler-customer",
     # R3-2 BYOK CMK revoke → kill switch → audit E2E harness (WI-S14-006).
     # In-memory `KmsProvider` per provider kind + `RevocationDetector` cycle +
     # `MultiChannelAlerter` stub-mode by default; `AWS_TEST_KEY_ARN` /
@@ -630,6 +635,7 @@ corelink-handler-cas = { path = "crates/corelink-handler-cas" }
 corelink-handler-ac = { path = "crates/corelink-handler-ac" }
 corelink-handler-admin = { path = "crates/corelink-handler-admin" }
 corelink-bazel-bridge = { path = "crates/corelink-bazel-bridge" }
+corelink-handler-customer = { path = "crates/corelink-handler-customer" }
 # Wave-33 Stage 1 Stream C sub-step C.2 — workspace dep entries for the
 # 7 ops-aggregator absorbed crates that previously had no shared
 # workspace-level dependency line (they were each pulled in only by
