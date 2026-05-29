@@ -96,6 +96,16 @@ pub struct InternalPatRouteState {
     pub signing_key_id: u32,
 }
 
+impl std::fmt::Debug for InternalPatRouteState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InternalPatRouteState")
+            .field("internal_auth_key", &"[REDACTED]")
+            .field("signing_key", &"[REDACTED]")
+            .field("signing_key_id", &self.signing_key_id)
+            .finish()
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Request / response shapes
 // ──────────────────────────────────────────────────────────────────────────────
