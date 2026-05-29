@@ -281,10 +281,14 @@ function matchRoute(url: URL): RouteMatch {
   }
 
   // REAPI v1 — /v1/users/me, /v1/cas/blobs/<digest>/<size>, /v1/admin/audit/events, …
+  // Generic /v1/* fallthrough — only reached when no more-specific arm matched above.
+  // Arms checked before this one (specificity order, most-specific first):
+  //   1. /v1/signup/*    → "signup"      (pre-tenant, no PAT required)
+  //   2. /v1/customer/*  → "customer_v1" (PAT required, tenant from PAT)
+  //   3. /v1/*           → "reapi_v1"    ← this arm (PAT required, tenant from PAT)
   // Tenant is NOT in the URL — resolved by the DO from the PAT.
   // urlTenant="_anonymous" preserves the future path-spoof gate semantics
   // (gate only fires when urlTenant is a concrete tenant id).
-  // NOTE: /v1/customer/* and /v1/signup/* are handled above this arm (specificity order).
   if (path.startsWith("/v1/")) {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "reapi_v1" };
   }
