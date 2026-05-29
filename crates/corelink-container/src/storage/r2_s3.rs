@@ -126,7 +126,7 @@ impl R2S3Client {
             .content_length(len)
             .send()
             .await
-            .map_err(|e| format!("R2 put failed for key {key}: {e}"))?;
+            .map_err(|e| format!("R2 put failed for key {key}: {e:?}"))?;
         Ok(())
     }
 
@@ -166,7 +166,7 @@ impl R2S3Client {
                         return Ok(None);
                     }
                 }
-                Err(format!("R2 get failed for key {key}: {sdk_err}"))
+                Err(format!("R2 get failed for key {key}: {sdk_err:?}"))
             }
         }
     }
