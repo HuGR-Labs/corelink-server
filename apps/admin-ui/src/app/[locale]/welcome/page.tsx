@@ -1,5 +1,6 @@
 import * as React from "react";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import type { Locale } from "@/i18n/messages";
 import { InstallOneLiner } from "@/components/InstallOneLiner";
 import { WelcomeStream } from "./WelcomeStream";
@@ -82,24 +83,24 @@ export default async function WelcomePage(props: {
         >
           <p className="text-sm">
             Your token was already retrieved. Rotate it from{" "}
-            <a
+            <Link
               href="/customer/keys"
               className="underline"
               data-testid="rotate-keys-link"
             >
               /customer/keys
-            </a>{" "}
+            </Link>{" "}
             if you need a new one.
           </p>
         </div>
         <div className="mt-4">
-          <a
+          <Link
             href="/customer"
             className="text-sm underline"
             data-testid="go-to-customer-link"
           >
             Go to dashboard
-          </a>
+          </Link>
         </div>
       </main>
     );
