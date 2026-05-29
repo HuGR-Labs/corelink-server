@@ -46,13 +46,13 @@ cpu_ms = 10
 # one-liner).
 [vars]
 ENVIRONMENT = "dev"
-RELEASE_ORIGIN = "https://github.com/humangr-labs/corelink-server/releases/latest/download"
+RELEASE_ORIGIN = "https://github.com/humangr-labs/corelink-cli/releases/latest/download"
 DEFAULT_API_ENDPOINT = "https://corelink-api.humangr.com"
 
 # ── Production environment (deploy with --env prod) ──────────────────────
 [env.prod]
 name = "corelink-get-cli-prod"
-vars = { ENVIRONMENT = "prod", RELEASE_ORIGIN = "https://github.com/humangr-labs/corelink-server/releases/latest/download", DEFAULT_API_ENDPOINT = "https://corelink-api.humangr.com" }
+vars = { ENVIRONMENT = "prod", RELEASE_ORIGIN = "https://github.com/humangr-labs/corelink-cli/releases/latest/download", DEFAULT_API_ENDPOINT = "https://corelink-api.humangr.com" }
 
 # `corelink-get.humangr.com/*` route binding. Reuses existing humangr.com
 # CF zone with FLAT subdomain pattern (CF Universal SSL Free covers

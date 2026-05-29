@@ -5,7 +5,7 @@
  * Two placeholders are interpolated at render time from `Env`:
  *
  *   - `__RELEASE_ORIGIN__` → `env.RELEASE_ORIGIN`
- *     (e.g. `https://github.com/humangr-labs/corelink-server/releases/latest/download`)
+ *     (e.g. `https://github.com/humangr-labs/corelink-cli/releases/latest/download`)
  *   - `__DEFAULT_API_ENDPOINT__` → `env.DEFAULT_API_ENDPOINT`
  *     (e.g. `https://corelink-api.humangr.com`)
  *
@@ -70,7 +70,7 @@ export function renderInstallScript(config: InstallScriptConfig): string {
  */
 const INSTALL_SCRIPT_TEMPLATE = `#!/bin/sh
 # CoreLink CLI installer — served from https://get.corelink.io.
-# Source: github.com/humangr-labs/corelink-server :: apps/get-corelink-worker.
+# Source: github.com/humangr-labs/corelink-cli :: apps/get-corelink-worker.
 # Re-run is safe: writes to /usr/local/bin/corelink and ~/.corelink/config.toml.
 set -eu
 
@@ -99,7 +99,7 @@ URL="__RELEASE_ORIGIN__/corelink-\${OS}-\${ARCH}"
 echo "Downloading CoreLink CLI from $URL ..."
 if ! curl -fsSL "$URL" -o /tmp/corelink; then
   echo "FATAL: failed to download $URL" >&2
-  echo "Check https://github.com/humangr-labs/corelink-server/releases for available binaries." >&2
+  echo "Check https://github.com/humangr-labs/corelink-cli/releases for available binaries." >&2
   exit 3
 fi
 chmod +x /tmp/corelink
