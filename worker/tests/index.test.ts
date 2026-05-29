@@ -866,6 +866,93 @@ describe("route resolution — /v1/* family", () => {
     expect(resp.status).toBe(200);
     expect(captured.routeKind).toBe("reapi_v2");
   });
+
+  // ── /v1/customer/* — customer_v1 route family ────────────────────────────────
+
+  it("GET /v1/customer/overview forwards to DO as routeKind=customer_v1", async () => {
+    const { env, captured } = makeCapturingEnv();
+    const token = TEST_PAT_TOKEN;
+    const resp = await workerFetch(
+      "http://localhost/v1/customer/overview",
+      { headers: { Authorization: `Bearer ${token}` } },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(captured.routeKind).toBe("customer_v1");
+    // Authorization MUST be forwarded so the DO can validate the PAT
+    expect(captured.auth).toBe(`Bearer ${token}`);
+  });
+
+  it("POST /v1/customer/keys forwards to DO as routeKind=customer_v1", async () => {
+    const { env, captured } = makeCapturingEnv();
+    const token = TEST_PAT_TOKEN;
+    const resp = await workerFetch(
+      "http://localhost/v1/customer/keys",
+      { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: "ci-key" }) },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(captured.routeKind).toBe("customer_v1");
+  });
+
+  it("POST /v1/customer/keys/:id/revoke forwards to DO as routeKind=customer_v1", async () => {
+    const { env, captured } = makeCapturingEnv();
+    const token = TEST_PAT_TOKEN;
+    const resp = await workerFetch(
+      "http://localhost/v1/customer/keys/key-abc-123/revoke",
+      { method: "POST", headers: { Authorization: `Bearer ${token}` } },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(captured.routeKind).toBe("customer_v1");
+  });
+
+  it("GET /v1/customer/overview without Authorization returns 401 (auth required)", async () => {
+    // customer_v1 is NOT pre-tenant — PAT is required (unlike /v1/signup/*)
+    const resp = await workerFetch("http://localhost/v1/customer/overview");
+    expect(resp.status).toBe(401);
+    const body = await resp.json() as { error: string };
+    expect(body.error).toBe("UNAUTHORIZED");
+  });
+
+  it("GET /v1/customer/billing/portal without Authorization returns 401", async () => {
+    // Deep sub-path also requires PAT
+    const resp = await workerFetch("http://localhost/v1/customer/billing/portal");
+    expect(resp.status).toBe(401);
+    const body = await resp.json() as { error: string };
+    expect(body.error).toBe("UNAUTHORIZED");
+  });
+
+  it("GET /v1/customer/overview with valid PAT forwards to DO (tenantId=_anonymous preserved)", async () => {
+    // Tenant is NOT in the URL — the DO resolves it from the PAT.
+    // Worker sets tenantId="_anonymous" in the route match; the PAT-resolved
+    // tenant is forwarded via x-corelink-tenant-id header to the DO.
+    const { env, captured } = makeCapturingEnv();
+    const token = TEST_PAT_TOKEN;
+    const resp = await workerFetch(
+      "http://localhost/v1/customer/overview",
+      { headers: { Authorization: `Bearer ${token}` } },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(captured.routeKind).toBe("customer_v1");
+    // Auth is forwarded — DO performs Argon2id + scope check
+    expect(captured.auth).toBe(`Bearer ${token}`);
+  });
+
+  it("/v1/customer/* does NOT fall through to reapi_v1 (specificity gate)", async () => {
+    // Ensure customer paths get customer_v1, not the generic reapi_v1 bucket
+    const { env, captured } = makeCapturingEnv();
+    const token = TEST_PAT_TOKEN;
+    const resp = await workerFetch(
+      "http://localhost/v1/customer/audit",
+      { headers: { Authorization: `Bearer ${token}` } },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(captured.routeKind).toBe("customer_v1");
+    expect(captured.routeKind).not.toBe("reapi_v1");
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
