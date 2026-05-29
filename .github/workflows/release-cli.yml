@@ -106,14 +106,17 @@ jobs:
           SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
           echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" >> "$GITHUB_ENV"
 
-      - name: Build (cargo zigbuild, release, frozen, locked)
+      - name: Build (cargo zigbuild, release, locked)
+        # --locked = exit if Cargo.lock would change (pins exact deps);
+        # --frozen would ALSO disable network access, which breaks first-
+        # time builds where cargo-zigbuild + zig need to fetch glibc/musl
+        # cross-compile artifacts. Lockfile is still pinned by --locked.
         env:
           SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
         run: |
           cargo zigbuild \
             -p corelink-cli \
             --release \
-            --frozen \
             --locked \
             --target ${{ matrix.target.triple }}
 
