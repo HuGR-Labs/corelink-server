@@ -662,11 +662,15 @@ tempfile = "3"
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [profile.release]
-# Build otimizado pra Cloudflare Containers
+# Build otimizado pra Cloudflare Containers + CoreLink CLI release binary.
+# panic = "abort": removes unwinding machinery (saves ~5-10% binary size).
+# lto = "fat": cross-crate inlining at link time (best size + perf, slow link).
+# strip = true: removes debug symbols from final binary.
 lto = "fat"
 codegen-units = 1
 strip = true
 opt-level = 3
+panic = "abort"
 
 [profile.dev]
 opt-level = 0
