@@ -167,6 +167,9 @@ corelink-billing-stripe-materializer = { workspace = true }
 corelink-handler-cas = { workspace = true }
 corelink-handler-ac = { workspace = true }
 corelink-handler-admin = { workspace = true }
+# Phase 0 — Turborepo remote-cache bridge; see
+# `crates/corelink-container/src/routes/turbo_v8.rs`.
+corelink-turbo-bridge = { workspace = true }
 # Stream-2.6 — customer self-serve handler surface wired into
 # `apps/server::routes::customer` (`/v1/customer/*` endpoints).
 corelink-handler-customer = { workspace = true }
