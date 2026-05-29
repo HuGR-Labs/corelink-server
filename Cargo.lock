@@ -1297,6 +1297,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-bazel-bridge"
+version = "0.1.0"
+dependencies = [
+ "corelink-handler-ac",
+ "corelink-handler-cas",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "corelink-billing"
 version = "0.1.0"
 dependencies = [
