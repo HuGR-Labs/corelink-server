@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "path";
 import { withSentryConfig } from "@sentry/nextjs";
 import createNextIntlPlugin from "next-intl/plugin";
 import { buildCspHeaderValue, STATIC_SECURITY_HEADERS } from "./src/lib/csp";
@@ -49,6 +50,11 @@ const nextConfig: NextConfig = {
   //     overrides (sign-in, sign-up) are the correct pattern for next-on-pages builds.
   //   - `pnpm pages:build` runs `next build && npx @cloudflare/next-on-pages`; output
   //     lands in `.vercel/output/static` (consumed by `pnpm pages:deploy`).
+  //   - `outputFileTracingRoot`: points Next.js at the pnpm monorepo root so
+  //     file-tracing resolves shared packages correctly.  Without this, Next.js
+  //     warns "inferred workspace root may not be correct" and may miss
+  //     transitive deps when building in a pnpm workspace or git worktree.
+  outputFileTracingRoot: path.join(__dirname, "../../"),
   // We use middleware for the real per-request CSP nonce.
   async headers() {
     return [
