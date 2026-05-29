@@ -250,6 +250,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // readiness probe (GET /_health, expects 200) succeeds.
     let mut app = routes::build_with_factory(shadow_factory).route("/_health", get(health_handler));
 
+    // Stream-5: `POST /_internal/pat/mint` — gated by shared secret.
+    // Mounted when CORELINK_INTERNAL_AUTH_KEY + PAT_SIGNING_KEY are both set.
+    if let Some(internal_pat_state) = corelink_server::routes::internal_pat::build_state_from_env()
+    {
+        info!("routes: /_internal/pat/mint route mounted (internal auth key + PAT signing key present)");
+        app = app.merge(corelink_server::routes::internal_pat::router(internal_pat_state));
+    } else {
+        warn!(
+            "CORELINK_INTERNAL_AUTH_KEY or PAT_SIGNING_KEY unset; \
+             /_internal/pat/mint route NOT mounted (dev/CI mode)"
+        );
+    }
+
     // R2-12: the Stripe webhook route is MERGED onto the same listener when
     // STRIPE_WEBHOOK_SECRET is present; absent → skip (dev/CI without billing
     // config stays green). Either way the data plane above is always served.

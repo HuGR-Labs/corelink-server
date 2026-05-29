@@ -2192,6 +2192,7 @@ dependencies = [
  "corelink-handler-ac",
  "corelink-handler-admin",
  "corelink-handler-cas",
+ "corelink-pat",
  "corelink-ratelimit",
  "corelink-stripe-real",
  "corelink-tenant-path",

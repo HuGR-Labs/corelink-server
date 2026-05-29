@@ -175,6 +175,8 @@ corelink-handler-admin = { workspace = true }
 # binary shape across the native / wasm32 CF-Worker swap.
 corelink-audit-chain = { workspace = true }
 corelink-ratelimit = { workspace = true }
+# Stream-5: internal PAT mint route (`/_internal/pat/mint`).
+corelink-pat = { workspace = true }
 subtle = { workspace = true }
 uuid = { workspace = true }
 
