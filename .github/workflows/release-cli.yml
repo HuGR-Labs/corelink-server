@@ -53,7 +53,12 @@ jobs:
   build:
     name: build (${{ matrix.target.name }})
     runs-on: [self-hosted, mac, corelink-builder]
-    timeout-minutes: 30
+    # 60 min: with 5 cargo builds running in parallel on a single Mac
+    # (one self-hosted runner per matrix entry), CPU + I/O contention
+    # slows each build vs running alone. Cold-cache first build of
+    # corelink-cli's dep tree (reqwest + tokio + rustls + axum-style
+    # deps via workspace) takes ~25-40 min per target under contention.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
