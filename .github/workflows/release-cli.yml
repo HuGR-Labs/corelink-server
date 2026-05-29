@@ -148,6 +148,23 @@ jobs:
             cargo install --locked --version "$PINNED" cargo-zigbuild
           fi
 
+      # Exit-126 fix: cargo-zigbuild writes zigcc-*.sh linker wrapper scripts to
+      # ~/Library/Caches/cargo-zigbuild/<version>/. Swatinem/rust-cache restores
+      # these files but macOS tar strips the execute bit on restore. The scripts
+      # are tiny (~100 bytes) so we unconditionally chmod +x rather than trying
+      # to detect whether they were cache-restored vs. freshly created.
+      # Ref: https://github.com/rust-cross/cargo-zigbuild/issues/XXX
+      - name: Fix zigcc linker-script permissions (exit-126 guard)
+        if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
+        run: |
+          ZIGBUILD_CACHE="$HOME/Library/Caches/cargo-zigbuild"
+          if [ -d "$ZIGBUILD_CACHE" ]; then
+            find "$ZIGBUILD_CACHE" -name '*.sh' -exec chmod +x {} +
+            echo "Permissions fixed for zigcc wrapper scripts in $ZIGBUILD_CACHE"
+          else
+            echo "No zigcc cache dir yet — scripts will be created fresh by zigbuild"
+          fi
+
       # Reproducible build: SOURCE_DATE_EPOCH from git commit timestamp.
       - name: Set SOURCE_DATE_EPOCH
         run: |
