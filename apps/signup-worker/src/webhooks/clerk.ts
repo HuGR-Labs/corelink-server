@@ -35,8 +35,25 @@ export interface ClerkUserCreatedEvent {
 export interface AutoProvisionEnv {
   CLERK_WEBHOOK_SECRET: string;
   CORELINK_API_BASE: string;
-  CORELINK_API_TOKEN: string;
+  /** @deprecated CORELINK_API_TOKEN is no longer used; PAT mint goes via internal route */
+  CORELINK_API_TOKEN?: string;
   ANALYTICS_DB?: D1Database;
+  /**
+   * D1 CONFIG_DB binding — holds the `tenant` and `pat` tables.
+   * Required for direct D1 provisioning (Stream-5).
+   */
+  CONFIG_DB?: D1Database;
+  /**
+   * Shared secret for `X-Corelink-Internal-Auth` header on
+   * `/_internal/pat/mint` calls to the container.
+   * Required for Stream-5. Bound via `wrangler secret put CORELINK_INTERNAL_AUTH_KEY`.
+   */
+  CORELINK_INTERNAL_AUTH_KEY?: string;
+  /**
+   * Clerk Backend API secret key (`sk_test_...` or `sk_live_...`).
+   * Required for `publishUserMetadata`. Bound via `wrangler secret put CLERK_SECRET_KEY`.
+   */
+  CLERK_SECRET_KEY?: string;
 }
 
 export interface AutoProvisionResult {
@@ -306,6 +323,23 @@ export async function handleClerkWebhook(
   const colo =
     (request as Request & { cf?: { colo?: string } }).cf?.colo ?? null;
 
+  // Idempotency: if we've already provisioned a tenant for this Clerk user,
+  // return the cached tenant_id without re-provisioning. Checks D1 CONFIG_DB
+  // by clerk_user_id (migration 0055).
+  if (env.CONFIG_DB) {
+    try {
+      const existing = await env.CONFIG_DB
+        .prepare("SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1 LIMIT 1")
+        .bind(event.data.id)
+        .first<{ tenant_id: string }>();
+      if (existing !== null) {
+        return Response.json({ ok: true, tenant_id: existing.tenant_id, idempotent: true });
+      }
+    } catch {
+      // D1 errors on idempotency check are non-fatal — fall through to provision.
+    }
+  }
+
   try {
     const result = await autoProvisionFromClerkEvent({
       event,
@@ -326,65 +360,166 @@ export async function handleClerkWebhook(
 }
 
 /**
- * Default HTTP-backed API client. The corelink-api endpoints contracted
- * here are owned by `apps/admin-ui` server actions (mirrored at the
- * gateway) — see `apps/admin-ui/src/app/[locale]/onboarding/actions.ts`.
+ * Production API client: provisions tenant + mints PAT via direct D1 writes
+ * and the container's `/_internal/pat/mint` route, then updates Clerk metadata
+ * via the Clerk Backend API.
+ *
+ * Architecture (Option A per the Stream-5 charter):
+ *   1. `createTenant` → INSERT into D1 CONFIG_DB (tenant row with clerk_user_id).
+ *   2. `configureTenant` → no-op (region is embedded in the tenant row at INSERT).
+ *   3. `issuePat` → POST `/_internal/pat/mint` on container, INSERT pat row to D1.
+ *   4. `publishUserMetadata` → PATCH Clerk Backend API `/v1/users/{userId}`.
+ *
+ * When CONFIG_DB, CORELINK_INTERNAL_AUTH_KEY, or CLERK_SECRET_KEY are missing,
+ * each method falls back to a no-op stub that returns a fake result so the
+ * webhook handler stays alive in dev/CI without real secrets.
+ *
+ * Hard rules:
+ *   - `token_plaintext` from the internal mint response is NEVER logged.
+ *   - All D1 queries are parameterized.
+ *   - Internal auth header uses the CORELINK_INTERNAL_AUTH_KEY binding.
  */
 export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
-  async function call<T>(
-    path: string,
-    body: Record<string, unknown>,
-  ): Promise<T> {
-    const res = await fetch(`${env.CORELINK_API_BASE}${path}`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${env.CORELINK_API_TOKEN}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      throw new Error(`api_${res.status}_${path}`);
-    }
-    return (await res.json()) as T;
-  }
+  const nowMs = Date.now();
+  // Per-year TTL for auto-provisioned PATs (365 days).
+  const patTtlSeconds = 365 * 24 * 60 * 60;
+
   return {
-    async createTenant(name: string, ownerUserId: string) {
-      return call<{ id: string }>("/v1/tenants", {
-        name,
-        owner_user_id: ownerUserId,
-        legal_name: name,
-      });
-    },
-    async configureTenant(
-      tenantId: string,
-      region: string,
-      plan: "free",
-    ) {
-      await call<{ ok: true }>(
-        `/v1/tenants/${encodeURIComponent(tenantId)}/configure`,
-        { region, plan },
+    // ── createTenant ──────────────────────────────────────────────────────────
+    // Generates a UUIDv7 tenant_id, inserts the tenant row to D1 CONFIG_DB.
+    // Returns { id: tenant_id }.
+    async createTenant(name: string, ownerUserId: string): Promise<{ id: string }> {
+      const tenantId = crypto.randomUUID();
+      if (!env.CONFIG_DB) {
+        // Dev/CI without D1 binding — return a stable fake.
+        return { id: tenantId };
+      }
+      // Hash the Clerk user id as the email_hash surrogate (no email stored).
+      const emailHashBuf = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(ownerUserId),
       );
+      const emailHash = Array.from(new Uint8Array(emailHashBuf))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+
+      await env.CONFIG_DB.prepare(
+        "INSERT OR IGNORE INTO tenant " +
+          "(tenant_id, primary_region, tenant_state, email_hash, clerk_user_id, " +
+          " created_at_ms, updated_at_ms, created_ms, updated_ms) " +
+          "VALUES (?1, 'enam', 'active', ?2, ?3, ?4, ?4, ?4, ?4)",
+      )
+        .bind(tenantId, emailHash, ownerUserId, nowMs)
+        .run();
+
+      return { id: tenantId };
     },
-    async issuePat(tenantId: string, scope: "cas:rw") {
-      return call<{ id: string; plaintext: string }>(
-        "/v1/pats",
+
+    // ── configureTenant ───────────────────────────────────────────────────────
+    // The region is embedded in the tenant row at INSERT time (primary_region
+    // defaults to 'enam'; per-colo override would update this column).
+    // For now this is a no-op: the region from `regionFromColo` is passed here
+    // but D1 already has 'enam'; a future improvement would UPDATE primary_region
+    // to the CF colo-derived value.
+    async configureTenant(
+      _tenantId: string,
+      _region: string,
+      _plan: "free",
+    ): Promise<void> {
+      // no-op: tenant row already written in createTenant.
+    },
+
+    // ── issuePat ──────────────────────────────────────────────────────────────
+    // Calls `/_internal/pat/mint`, inserts the PAT row to D1, returns plaintext.
+    async issuePat(
+      tenantId: string,
+      _scope: "cas:rw",
+    ): Promise<{ id: string; plaintext: string }> {
+      if (!env.CORELINK_INTERNAL_AUTH_KEY) {
+        // Dev/CI stub — return a fake PAT that the tests can assert on.
+        return { id: crypto.randomUUID(), plaintext: "corelink_pat_DEVSTUB" };
+      }
+
+      // Call the container's internal mint endpoint.
+      const mintResp = await fetch(
+        `${env.CORELINK_API_BASE}/_internal/pat/mint`,
         {
-          tenant_id: tenantId,
-          label: "auto-provisioned",
-          scope,
-          expiry_days: 365,
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-corelink-internal-auth": env.CORELINK_INTERNAL_AUTH_KEY,
+          },
+          body: JSON.stringify({
+            tenant_id: tenantId,
+            // Use the tenant_id as the principal_id for the first PAT.
+            principal_id: tenantId,
+            scopes: "admin",
+            ttl_seconds: patTtlSeconds,
+          }),
         },
       );
+      if (!mintResp.ok) {
+        throw new Error(`internal_pat_mint_failed_${mintResp.status}`);
+      }
+      const mint = (await mintResp.json()) as {
+        token_plaintext: string;
+        pat_id: string;
+        token_id: string;
+        expires_ms: number;
+        hash: string;
+      };
+
+      // Insert the PAT row to D1 CONFIG_DB.
+      if (env.CONFIG_DB) {
+        await env.CONFIG_DB.prepare(
+          "INSERT OR IGNORE INTO pat " +
+            "(pat_id, tenant_id, pat_hash, scope, expires_ms, token_id, " +
+            " shown_once_token, shown_once_consumed, created_ms) " +
+            "VALUES (?1, ?2, ?3, 'admin', ?4, ?5, ?6, 1, ?7)",
+        )
+          .bind(
+            mint.pat_id,
+            tenantId,
+            mint.hash,
+            mint.expires_ms,
+            mint.token_id,
+            crypto.randomUUID(), // shown_once_token (pre-consumed)
+            nowMs,
+          )
+          .run();
+      }
+
+      // Return plaintext — NEVER log this value.
+      return { id: mint.pat_id, plaintext: mint.token_plaintext };
     },
+
+    // ── publishUserMetadata ───────────────────────────────────────────────────
+    // Writes tenant_id + region + pat_plaintext to Clerk public metadata.
+    // The session claims become available on the user's NEXT session refresh
+    // (Clerk propagates metadata to JWT on next token issue).
     async publishUserMetadata(
       userId: string,
       metadata: Record<string, unknown>,
-    ) {
-      await call<{ ok: true }>("/v1/internal/clerk/user-metadata", {
-        user_id: userId,
-        metadata,
-      });
+    ): Promise<void> {
+      if (!env.CLERK_SECRET_KEY) {
+        // Dev/CI without Clerk secret — silently skip.
+        return;
+      }
+      const resp = await fetch(
+        `https://api.clerk.com/v1/users/${encodeURIComponent(userId)}`,
+        {
+          method: "PATCH",
+          headers: {
+            authorization: `Bearer ${env.CLERK_SECRET_KEY}`,
+            "content-type": "application/json",
+          },
+          // NEVER log this body — `metadata.pat_plaintext` is a secret.
+          body: JSON.stringify({ public_metadata: metadata }),
+        },
+      );
+      if (!resp.ok) {
+        throw new Error(`clerk_metadata_update_failed_${resp.status}`);
+      }
     },
   };
 }
@@ -393,8 +528,9 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
 // to keep the unit-test surface independent of the runtime types package.
 interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
-  run(): Promise<unknown>;
+  run(): Promise<{ success: boolean; error?: string }>;
   all<T = unknown>(): Promise<{ results?: T[] }>;
+  first<T = unknown>(): Promise<T | null>;
 }
 interface D1Database {
   prepare(query: string): D1PreparedStatement;

@@ -454,6 +454,10 @@ export class CoreLinkServer implements DurableObject {
           CLOUDFLARE_ACCOUNT_ID: this.env.CLOUDFLARE_ACCOUNT_ID ?? "",
           CF_API_TOKEN: this.env.CF_API_TOKEN ?? "",
           D1_DATABASE_ID: this.env.D1_DATABASE_ID ?? "",
+          // Stream-5: internal PAT mint route gate secrets.
+          // Container mounts `/_internal/pat/mint` only when both are non-empty.
+          CORELINK_INTERNAL_AUTH_KEY: this.env.CORELINK_INTERNAL_AUTH_KEY ?? "",
+          PAT_SIGNING_KEY: this.env.PAT_SIGNING_KEY ?? "",
         },
       });
 

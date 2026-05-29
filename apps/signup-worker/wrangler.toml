@@ -14,11 +14,32 @@ workers_dev = false
 # Bindings below are placeholders — actual values are configured per
 # environment via `wrangler secret put` and Pages dashboard.
 #
-#   CLERK_WEBHOOK_SECRET    — svix signing key from Clerk dashboard.
-#   ANALYTICS_DB            — D1 binding owned by `apps/analytics-worker/`.
-#   CORELINK_API_BASE       — base URL of the tenant + PAT issuance API.
-#   CORELINK_API_TOKEN      — service-to-service bearer for the API above.
+# Secrets (bind via `wrangler secret put`):
+#   CLERK_WEBHOOK_SECRET         — svix signing key from Clerk dashboard.
+#   CLERK_SECRET_KEY             — Clerk Backend API secret key (sk_test_... or sk_live_...).
+#                                  Used to write tenant_id + region + pat_plaintext to
+#                                  Clerk public metadata for the /welcome session claim.
+#   CORELINK_INTERNAL_AUTH_KEY   — shared secret for X-Corelink-Internal-Auth header.
+#                                  Must match the container + main worker binding.
+#                                  Used to call /_internal/pat/mint on the container.
 #
+# D1 bindings (bind in wrangler.toml per environment):
+#   CONFIG_DB        — corelink-prod-d1 (holds tenant + pat tables).
+#                      Required for Stream-5 self-serve provisioning.
+#   ANALYTICS_DB     — D1 binding owned by `apps/analytics-worker/`.
+#                      Optional; analytics events are no-op when absent.
+#
+# Vars (non-secret, set in [vars]):
+#   CORELINK_API_BASE — base URL of the CoreLink API (container host).
+
+# Stream-5: CONFIG_DB binding for direct tenant + PAT provisioning.
+# Uncomment and fill in database_id after running:
+#   wrangler d1 list  # find the corelink-prod-d1 database id
+# [[d1_databases]]
+# binding = "CONFIG_DB"
+# database_name = "corelink-prod-d1"
+# database_id = "<from wrangler d1 list>"
+
 # [[d1_databases]]
 # binding = "ANALYTICS_DB"
 # database_name = "corelink-analytics"

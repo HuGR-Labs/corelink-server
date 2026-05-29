@@ -67,6 +67,13 @@ pub mod cas;
 /// signed token + per-IP rate-limit + fail-CLOSED audit emit. See
 /// `specs/_audits/sealed/2026-05-16-signup-corelink-dev-backend.md`.
 pub mod signup;
+/// Internal PAT mint route (Stream-5): `POST /_internal/pat/mint`.
+/// Only reachable from the Cloudflare Durable Object via
+/// `container.getTcpPort(50051)`. Gated by the `X-Corelink-Internal-Auth`
+/// shared-secret header. Mints a fresh PAT plaintext using
+/// `corelink_pat::mint::mint(...)` and returns the hash + plaintext
+/// for the signup-worker to write to D1 and Clerk session metadata.
+pub mod internal_pat;
 /// Caller-identity reflection route: `GET /v1/users/me` reads the
 /// Worker-injected `x-corelink-tenant-id` / `-token-prefix` /
 /// `-route-kind` headers and echoes them as JSON. Lets clients verify
