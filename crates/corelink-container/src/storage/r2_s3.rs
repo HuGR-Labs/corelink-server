@@ -317,8 +317,20 @@ impl CasReadHandler for R2CasHandler {
         let key = self.r2_key(&req.tenant, &req.hash);
         debug!(key = %key, "R2CasHandler::read");
 
+        // CRITICAL — must wrap in `block_in_place`.
+        //
+        // This trait method is `fn read(...)` (sync), but it is invoked
+        // from inside an async axum handler that is itself being polled
+        // on the tokio multi-thread runtime. A bare
+        // `handle.block_on(future)` from inside a running future on the
+        // SAME runtime hangs forever (observed: 60s curl timeout in prod
+        // before this fix). `tokio::task::block_in_place` tells the
+        // runtime to release the current worker so the inner `block_on`
+        // can drive the future to completion. Valid only on the
+        // multi-thread runtime — `#[tokio::main]` gives us that.
         let handle = tokio::runtime::Handle::current();
-        let result = handle.block_on(self.client.get(&key));
+        let result =
+            tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
 
         match result {
             Ok(Some(bytes)) => {
@@ -391,8 +403,12 @@ impl CasWriteHandler for R2CasHandler {
         let key = self.r2_key(&req.tenant, &req.claimed_hash);
         debug!(key = %key, bytes = req.bytes.len(), "R2CasHandler::write");
 
+        // CRITICAL — `block_in_place` rationale: see the matching
+        // comment in `<Self as CasReadHandler>::read` above.
         let handle = tokio::runtime::Handle::current();
-        let result = handle.block_on(self.client.put(&key, req.bytes));
+        let result = tokio::task::block_in_place(|| {
+            handle.block_on(self.client.put(&key, req.bytes))
+        });
 
         match result {
             Ok(()) => {
@@ -575,8 +591,14 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
         let key = self.r2_key(&req.tenant, &req.action_digest);
         debug!(key = %key, "R2AcHandler::lookup");
 
+        // CRITICAL — `block_in_place` rationale: this sync trait method
+        // is invoked from inside an async axum handler on the tokio
+        // multi-thread runtime; a bare `handle.block_on(future)` from
+        // inside a running future on the SAME runtime hangs forever
+        // (observed: 60s curl timeout in prod before this fix).
         let handle = tokio::runtime::Handle::current();
-        let result = handle.block_on(self.client.get(&key));
+        let result =
+            tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
 
         match result {
             Ok(Some(bytes)) => {
@@ -641,6 +663,8 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
             "R2AcHandler::update"
         );
 
+        // CRITICAL — `block_in_place` rationale: see the matching
+        // comment in `<R2AcHandler as AcLookupHandler>::lookup` above.
         let handle = tokio::runtime::Handle::current();
 
         // `durable=true` mirrors `InMemoryAcHandler::update` — only set
@@ -648,9 +672,14 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
         // any GET error other than NoSuchKey is treated as
         // pre-existing (conservative — never claim durable on
         // ambiguous state).
-        let pre_existed = matches!(handle.block_on(self.client.get(&key)), Ok(Some(_)));
+        let pre_existed = matches!(
+            tokio::task::block_in_place(|| handle.block_on(self.client.get(&key))),
+            Ok(Some(_))
+        );
 
-        let result = handle.block_on(self.client.put(&key, req.result_payload));
+        let result = tokio::task::block_in_place(|| {
+            handle.block_on(self.client.put(&key, req.result_payload))
+        });
 
         match result {
             Ok(()) => {
