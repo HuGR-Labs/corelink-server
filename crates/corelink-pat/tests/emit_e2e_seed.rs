@@ -18,7 +18,13 @@
 //! --file=<emitted.sql>`. The PAT plaintext is printed to stdout so the caller
 //! can capture it without it touching the filesystem.
 
-#![allow(clippy::expect_used, clippy::unwrap_used, clippy::print_stdout)]
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::print_stdout,
+    clippy::indexing_slicing,
+    reason = "test harness — local-only side-effect script"
+)]
 
 use std::time::Duration;
 use uuid::Uuid;

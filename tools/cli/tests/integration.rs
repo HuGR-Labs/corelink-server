@@ -6,6 +6,14 @@
 //!
 //! Gate: `cargo test -p corelink-cli --lib --tests` (all green, no network).
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "tests are allowed to use these primitives"
+)]
+
 use corelink_cli::{
     auth::validate_pat_shape,
     config::{
