@@ -167,6 +167,9 @@ corelink-billing-stripe-materializer = { workspace = true }
 corelink-handler-cas = { workspace = true }
 corelink-handler-ac = { workspace = true }
 corelink-handler-admin = { workspace = true }
+# Stream-2.6 — customer self-serve handler surface wired into
+# `apps/server::routes::customer` (`/v1/customer/*` endpoints).
+corelink-handler-customer = { workspace = true }
 
 # Wave-15.3 — customer-facing `GET /v1/audit/export` route
 # (WI-S09-008 wiring). The route ships in
