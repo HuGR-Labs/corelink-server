@@ -253,18 +253,16 @@ zone_name = "humangr.com"
 pattern = "corelink-signup.humangr.com/*"
 zone_name = "humangr.com"
 
-[[env.prod.routes]]
-pattern = "corelink-admin.humangr.com/*"
-zone_name = "humangr.com"
-
-# NOTE (Wave-32 Phase E, 2026-05-28): app/docs/get are NOT main-worker
-# routes. corelink-app + corelink-docs are Pages custom domains
-# (projects corelink-admin-ui + corelink-docs); corelink-get is a
-# dedicated Worker (corelink-get-cli-prod). The WP-G.1 additions of
-# these 3 to the main worker were reverted — they caused
-# "Can't deploy routes that are assigned to another worker" on
-# corelink-get.humangr.com (owned by corelink-get-cli-prod). The main
-# worker (corelink-prod) owns only the API-plane routes: api/signup/admin.
+# NOTE (Stream 3.11, 2026-05-29): corelink-admin.humangr.com is served by
+# the CF Pages project `corelink-admin-ui`, NOT by this Worker.  The route
+# was removed here so Pages custom-domain routing takes effect (Worker routes
+# take precedence over Pages custom domains when both match the same hostname;
+# removing the Worker route lets the Pages CNAME resolve correctly).
+#
+# app/docs/get are also NOT main-worker routes:
+#   corelink-app + corelink-docs → CF Pages custom domains
+#   corelink-get                 → dedicated Worker (corelink-get-cli-prod)
+# The main Worker (corelink-prod) owns only: api/signup.
 
 [[env.prod.r2_buckets]]
 binding = "CAS_BUCKET"
