@@ -6,7 +6,7 @@ import * as React from "react";
  * InstallOneLiner — single copy-paste block that bootstraps the CoreLink CLI.
  *
  * Per Phase-0 PLG framework §4 step 4 + §5 row "Copy-paste one-liner install":
- *   curl -fsSL https://get.corelink.io | sh -s -- --token=ct_xxx --region=ord
+ *   curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=corelink_pat_xxx --region=ord
  *
  * Token is shown only on this page once (CTRL-CRED-001 holds: the token is
  * delivered server-rendered by the parent and is **never** persisted to
@@ -21,8 +21,8 @@ export interface InstallOneLinerProps {
 }
 
 export function InstallOneLiner(props: InstallOneLinerProps): React.ReactElement {
-  const host = props.installHost ?? "get.corelink.io";
-  const command = `curl -fsSL https://${host} | sh -s -- --token=${props.token} --region=${props.region}`;
+  const host = props.installHost ?? "corelink-get.humangr.com";
+  const command = `curl -fsSL https://${host} | \\\n  sh -s -- --token=${props.token} --region=${props.region}`;
   const [copied, setCopied] = React.useState(false);
 
   async function copy(): Promise<void> {
