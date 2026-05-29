@@ -43,6 +43,10 @@ export interface Env {
   // Key derivation: HKDF-SHA256(CORELINK_MASTER_KEY, "corelink-pat-signing-salt-v1",
   //   b"corelink-v1-pat-signing-key", 32) per key_management.md §3.2.1.
   PAT_SIGNING_KEY?: string;
+  // Stream-5: shared secret for `/_internal/pat/mint` (passed to container
+  // at boot + verified before forwarding). Bound via:
+  // `wrangler secret put CORELINK_INTERNAL_AUTH_KEY`
+  CORELINK_INTERNAL_AUTH_KEY?: string;
   // Container storage credentials (WP-S1 StorageEnv contract). The DO forwards
   // these to the native container via container.start({ env }) so it can reach
   // R2 (S3 API) + D1 (HTTP API). Absent → container falls back to InMemory
@@ -76,6 +80,7 @@ type RouteKind =
   | "reapi_v2"
   | "reapi_v1"
   | "signup"
+  | "internal"
   | "not_found";
 
 /** Auth extraction result from the Authorization header. */
@@ -264,6 +269,15 @@ function matchRoute(url: URL): RouteMatch {
   // traffic to one DO instance.
   if (path.startsWith("/v1/signup/") || path === "/v1/signup") {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "signup" };
+  }
+
+  // Internal routes — /_internal/* — gated by X-Corelink-Internal-Auth shared
+  // secret. NOT gated by PAT auth. Only reachable from Worker-to-Worker calls
+  // (signup-worker → this Worker → DO → container). The shared-secret check
+  // is performed in the fetch handler (not in matchRoute) so the route is
+  // never accidentally skipped on 404-padding paths.
+  if (path.startsWith("/_internal/")) {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "internal" };
   }
 
   // REAPI v1 — /v1/users/me, /v1/cas/blobs/<digest>/<size>, /v1/admin/audit/events, …
@@ -866,6 +880,75 @@ const handler: ExportedHandler<Env> = {
         },
       });
       return applyCors(resp, request);
+    }
+
+    // Internal routes — `/_internal/*` — authenticated by X-Corelink-Internal-Auth.
+    // Bypasses PAT auth entirely; DO forwards directly to the container.
+    // Security: CORELINK_INTERNAL_AUTH_KEY must be set; if absent, deny all
+    // internal requests (fail-CLOSED — never open an unauthenticated proxy).
+    if (route.routeKind === "internal") {
+      const internalAuthKey = env.CORELINK_INTERNAL_AUTH_KEY;
+      if (!internalAuthKey || internalAuthKey.length === 0) {
+        // Key not bound on this Worker — deny (fail-CLOSED).
+        return applyCors(
+          reapiError("FORBIDDEN", "internal route unavailable", 403, requestId),
+          request,
+        );
+      }
+      // Verify the caller supplied the correct shared secret (constant-time).
+      const provided = request.headers.get("x-corelink-internal-auth") ?? "";
+      const enc2 = new TextEncoder();
+      const expectedBytes = enc2.encode(internalAuthKey);
+      const providedBytes = enc2.encode(provided);
+      let authOk = false;
+      if (providedBytes.length === expectedBytes.length) {
+        authOk = crypto.subtle.timingSafeEqual(providedBytes, expectedBytes);
+      } else {
+        // Different lengths — run a dummy comparison to prevent timing oracle.
+        crypto.subtle.timingSafeEqual(expectedBytes, expectedBytes);
+      }
+      if (!authOk) {
+        return applyCors(
+          reapiError("UNAUTHORIZED", "internal auth required", 401, requestId),
+          request,
+        );
+      }
+      // Route to the _system DO which hosts the container.
+      const systemDoId = env.CORELINK_SERVER.idFromName("_system");
+      const systemStub = env.CORELINK_SERVER.get(systemDoId);
+      const internalAugmented = new Request(request, {
+        headers: (() => {
+          const h = new Headers(request.headers);
+          h.set("x-request-id", requestId);
+          h.set("x-corelink-route-kind", "internal");
+          h.set("x-corelink-tenant-id", "_system");
+          h.set("x-corelink-token-prefix", "internal");
+          return h;
+        })(),
+      });
+      let internalResp: Response;
+      try {
+        internalResp = await systemStub.fetch(internalAugmented);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        console.error(`[${requestId}] internal DO fetch failed: ${message.slice(0, 80)}`);
+        return applyCors(
+          reapiError("INTERNAL_ERROR", "internal upstream error", 500, requestId),
+          request,
+        );
+      }
+      const internalHeaders = new Headers(internalResp.headers);
+      if (!internalHeaders.has("x-request-id")) {
+        internalHeaders.set("x-request-id", requestId);
+      }
+      return applyCors(
+        new Response(internalResp.body, {
+          status: internalResp.status,
+          statusText: internalResp.statusText,
+          headers: internalHeaders,
+        }),
+        request,
+      );
     }
 
     // Not found — timing-padded to prevent cross-tenant enumeration
