@@ -62,6 +62,12 @@ pub mod audit_analytics;
 pub mod audit_export;
 /// CAS HTTP routes (R-prep example wire-up; wave-8).
 pub mod cas;
+/// Customer self-serve HTTP routes (Stream-2.6): `/v1/customer/*` endpoints
+/// (overview, usage, billing, keys, team, audit) wired via
+/// `corelink-handler-customer` trait objects. Worker matchRoute already
+/// forwards these paths to the container; this module is the final link
+/// that makes them return real responses instead of 404.
+pub mod customer;
 /// Pilot signup route (wave-29 stream-1; closes DEBT-027 engineering-side).
 /// Surfaces `POST /v1/signup/pilot/{token}` over an HMAC-SHA256
 /// signed token + per-IP rate-limit + fail-CLOSED audit emit. See
@@ -163,6 +169,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     let audit_export_state = audit_export::build_state();
     let audit_analytics_state = audit_analytics::build_state(shadow_factory);
     let signup_state = signup::build_state();
+    let customer_state = customer::build_handlers();
     Router::new()
         .merge(cas::router(cas_state))
         .merge(ac::router(ac_state))
@@ -172,6 +179,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         .merge(audit_analytics::router(audit_analytics_state))
         .merge(signup::router(signup_state))
         .merge(users::router())
+        .merge(customer::router(customer_state))
 }
 
 #[cfg(test)]
