@@ -1,0 +1,22 @@
+[package]
+name = "corelink-handler-customer"
+description = "CoreLink customer self-serve handler skeleton. Ships trait surface for the 6 customer dashboard endpoints (Overview / Usage / Billing / Keys / Team / Audit) + InMemoryCustomerHandler fake, per-handler SliObserver integration emitting Sli::AvailControlPlane observations on every entry, and audit-fail-CLOSED ordering envelope (AuditSink::emit BEFORE mutate / response). Real CF-Worker wasm32 impl deferred per autonomous-execution charter trait-abstraction-defer rule."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+corelink-slo = { workspace = true }
+
+[dev-dependencies]
+corelink-slo = { workspace = true }
+
+[[test]]
+name = "handler_customer"
+path = "tests/handler_customer.rs"
