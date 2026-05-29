@@ -118,7 +118,8 @@ impl R2S3Client {
             "R2S3Client::put"
         );
         let len = bytes.len() as i64;
-        self.inner
+        match self
+            .inner
             .put_object()
             .bucket(&self.bucket)
             .key(key)
@@ -126,8 +127,10 @@ impl R2S3Client {
             .content_length(len)
             .send()
             .await
-            .map_err(|e| format!("R2 put failed for key {key}: {e:?}"))?;
-        Ok(())
+        {
+            Ok(_) => Ok(()),
+            Err(sdk_err) => Err(format_sdk_err("put", key, &sdk_err)),
+        }
     }
 
     /// Download the bytes stored under `key`.
@@ -166,10 +169,12 @@ impl R2S3Client {
                         return Ok(None);
                     }
                 }
-                Err(format!("R2 get failed for key {key}: {sdk_err:?}"))
+                Err(format_sdk_err("get", key, &sdk_err))
             }
         }
     }
+
+    // Format helper — see [`format_sdk_err`] below for rationale.
 
     /// Compute the R2 object key for a blob.
     ///
@@ -729,6 +734,49 @@ pub async fn build_r2_ac_handler_from_env(
         audit,
         sli,
     )))
+}
+
+/// Format an `aws_sdk_s3::error::SdkError` with as much detail as is
+/// available in the variant. The default Display impl collapses to
+/// "service error" / "dispatch failure" without showing the underlying
+/// HTTP status, error code, or message — useless for ops diagnosis.
+///
+/// This helper unpacks the variants and surfaces:
+/// - `ServiceError` → variant code (NoSuchBucket / AccessDenied / etc.)
+///   + the inner `Display` (which often does include the parsed S3
+///   error response when present).
+/// - `DispatchFailure` → the connector error (DNS, TLS, connect).
+/// - `ResponseError` → HTTP status + body excerpt.
+/// - Other variants → the variant name + Debug snapshot.
+fn format_sdk_err<E: core::fmt::Debug + std::error::Error + 'static>(
+    op: &str,
+    key: &str,
+    err: &aws_sdk_s3::error::SdkError<E>,
+) -> String {
+    use aws_sdk_s3::error::SdkError;
+    match err {
+        SdkError::ServiceError(se) => {
+            let inner = se.err();
+            // `inner` Display often surfaces "AccessDenied" / "NoSuchBucket"
+            // etc. from the parsed response.
+            format!(
+                "R2 {op} failed for key {key}: service_error[{inner}] debug=[{inner:?}]"
+            )
+        }
+        SdkError::DispatchFailure(df) => {
+            format!("R2 {op} failed for key {key}: dispatch_failure[{df:?}]")
+        }
+        SdkError::ResponseError(re) => {
+            format!("R2 {op} failed for key {key}: response_error[{re:?}]")
+        }
+        SdkError::TimeoutError(_) => {
+            format!("R2 {op} failed for key {key}: timeout")
+        }
+        SdkError::ConstructionFailure(cf) => {
+            format!("R2 {op} failed for key {key}: construction_failure[{cf:?}]")
+        }
+        other => format!("R2 {op} failed for key {key}: unknown[{other:?}]"),
+    }
 }
 
 /// Load the tenant derivation key from `R2_TDK_HEX` env var (64 hex chars =
