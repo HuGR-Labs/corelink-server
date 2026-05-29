@@ -332,6 +332,7 @@ const config: Config = {
         src: "img/logo.svg",
       },
       items: [
+        { to: "/quickstart", label: "Quickstart", position: "left" },
         { to: "/tutorial/", label: "Tutorial", position: "left" },
         { to: "/how-to/", label: "How-to", position: "left" },
         { to: "/reference/", label: "Reference", position: "left" },
@@ -343,6 +344,11 @@ const config: Config = {
         {
           href: `https://github.com/${ORG}/${REPO}`,
           label: "GitHub",
+          position: "right",
+        },
+        {
+          href: "https://admin.corelink.humangr.com",
+          label: "Admin",
           position: "right",
         },
         { type: "localeDropdown", position: "right" },

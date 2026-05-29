@@ -2,7 +2,7 @@
 id: tenancy
 title: Tenant model and PAT scoping
 sidebar_position: 2
-description: How CoreLink isolates tenants, how PATs are scoped, and what cross-tenant access looks like (answer: impossible).
+description: "How CoreLink isolates tenants, how PATs are scoped, and what cross-tenant access looks like (answer: impossible)."
 ---
 
 # Tenant model and PAT scoping

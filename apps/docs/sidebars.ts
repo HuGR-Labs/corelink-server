@@ -19,6 +19,19 @@ const sidebars: SidebarsConfig = {
       id: "index",
       label: "Welcome",
     },
+    // Customer-facing entry points — overview + 5-min quickstart — placed
+    // above the Diátaxis tutorial/how-to quadrants so first-time visitors
+    // land here before the full structured learning path.
+    {
+      type: "doc",
+      id: "intro",
+      label: "What is CoreLink?",
+    },
+    {
+      type: "doc",
+      id: "quickstart",
+      label: "5-minute quickstart",
+    },
     {
       type: "category",
       label: "Get Started",
@@ -36,6 +49,36 @@ const sidebars: SidebarsConfig = {
         "tutorial/04-buck2-quickstart",
         "tutorial/05-native-ffi-quickstart",
         "tutorial/06-verify-cache-hit",
+      ],
+    },
+    // Integrations — one page per build tool, each with a Verify section.
+    {
+      type: "category",
+      label: "Integrations",
+      collapsed: false,
+      items: [
+        "integrations/bazel",
+        "integrations/turborepo",
+        "integrations/raw-curl",
+      ],
+    },
+    // Concepts — CAS vs AC, tenancy/PAT model.
+    {
+      type: "category",
+      label: "Concepts",
+      collapsed: true,
+      items: [
+        "concepts/cas-vs-ac",
+        "concepts/tenancy",
+      ],
+    },
+    // API reference — HTTP REST.
+    {
+      type: "category",
+      label: "API",
+      collapsed: true,
+      items: [
+        "api/http",
       ],
     },
     {
@@ -173,6 +216,17 @@ const sidebars: SidebarsConfig = {
           ],
         },
       ],
+    },
+    // Troubleshooting + Security — top-level docs, not nested under a category.
+    {
+      type: "doc",
+      id: "troubleshooting",
+      label: "Troubleshooting",
+    },
+    {
+      type: "doc",
+      id: "security",
+      label: "Security model",
     },
     // Customer-facing Trust Center — top-level category alongside the
     // Diátaxis quadrants so procurement / DPO traffic can find compliance
