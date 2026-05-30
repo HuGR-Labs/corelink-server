@@ -2,9 +2,18 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
-import { ClerkProvider } from "@clerk/nextjs";
 import { PlausibleScript } from "@/components/analytics/PlausibleScript";
 import "./globals.css";
+
+// NOTE: `ClerkProvider` is intentionally NOT imported at module scope.
+// On Cloudflare Workers edge runtime, `@clerk/nextjs` runs initialisation
+// in module-scope code that is rejected by the sandbox
+// ("Disallowed operation called within global scope"). Pages that need
+// the Clerk React context (useUser/useAuth/etc) wrap themselves in a
+// client-side `ClerkProvider` from their own layout in
+// `src/app/(authenticated)/`. The SignIn/SignUp widgets used by the
+// /sign-in and /sign-up routes do not require an outer ClerkProvider —
+// they use the publishable key directly.
 
 export const metadata: Metadata = {
   title: "CoreLink Admin",
@@ -32,8 +41,7 @@ export default async function RootLayout({
   const h = await headers();
   const nonce = h.get("x-nonce") ?? undefined;
 
-  const publishableKey = process.env["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"];
-  const body = (
+  return (
     <html lang={locale} suppressHydrationWarning>
       <body data-nonce={nonce ?? ""}>
         <NextIntlClientProvider locale={locale} messages={messages}>
@@ -44,9 +52,4 @@ export default async function RootLayout({
       </body>
     </html>
   );
-
-  // Wrap with ClerkProvider only when a publishable key is configured. This
-  // keeps `pnpm build` and local boot working without Clerk credentials.
-  if (!publishableKey) return body;
-  return <ClerkProvider>{body}</ClerkProvider>;
 }

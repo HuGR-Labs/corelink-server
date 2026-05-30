@@ -1,28 +1,24 @@
 /**
- * Option B: override `runtime = "nodejs"` on this route to prevent the
- * "Disallowed operation called within global scope" crash on Cloudflare
- * Workers edge runtime. @clerk/nextjs initialises internal state at module
- * scope (e.g. `createClerkClient` config reads) which is not legal in the
- * CF Workers / Next.js edge runtime. Switching this route to Node.js runtime
- * (supported via CF Pages `nodejs_compat`) is the correct fix because the
- * auth UI routes carry no edge-only requirements; they render a pure React
- * component tree. Option A (lazy import) was considered but would require
- * wrapping every Clerk component in a dynamic() call and loses RSC benefits
- * without any upside for a purely client-rendered page.
- *
- * Override the `runtime = "edge"` exported by apps/admin-ui/src/app/layout.tsx.
- * Cloudflare Pages supports Node.js compat via the `nodejs_compat` compatibility flag.
+ * Sign-up route — Clerk widget is dynamic-imported with `ssr: false` so the
+ * `@clerk/nextjs` module never loads during the edge-runtime SSR pass. Clerk
+ * initialises state at module scope, which Cloudflare Workers' edge sandbox
+ * rejects ("Disallowed operation called within global scope"). Loading the
+ * widget only after hydration sidesteps the constraint while keeping this
+ * route on the Edge runtime (required by `@cloudflare/next-on-pages`).
  */
 "use client";
 
-// Route-segment runtime override: must be nodejs so that @clerk/nextjs module-scope
-// initialisation does not fire inside the CF Workers edge sandbox.
-export const runtime = "edge";
-
-import { SignUp } from "@clerk/nextjs";
+import dynamic from "next/dynamic";
 import { useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { track } from "@/lib/analytics";
+
+export const runtime = "edge";
+
+const SignUp = dynamic(
+  () => import("@clerk/nextjs").then((m) => m.SignUp),
+  { ssr: false },
+);
 
 export default function SignUpPage(): React.ReactElement {
   const t = useTranslations("auth");
