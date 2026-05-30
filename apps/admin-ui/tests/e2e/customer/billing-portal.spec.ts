@@ -48,7 +48,7 @@ test.describe("customer billing portal redirect", () => {
     });
 
     await page.goto("/en/customer/billing");
-    await expect(page.locator("h1#billing-heading")).toBeVisible();
+    await expect(page.locator("h1#customer-billing-heading")).toBeVisible();
     await expect(page.getByTestId("portal-open-button")).toBeEnabled();
 
     // --- First click: triggers POST + redirect to Stripe-stub. -------
