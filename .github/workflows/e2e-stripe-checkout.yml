@@ -1,0 +1,203 @@
+name: e2e-stripe-checkout (scheduled prod)
+
+# Programmatic Stripe billing chain end-to-end smoke against PROD, running
+# every 6 h.
+#
+# Drives scripts/e2e-stripe-checkout.sh which:
+#   1. Verifies tenant_billing table in D1 BILLING_DB
+#   2. Creates a Stripe test-mode customer + subscription (with 1-day trial)
+#   3. POSTs a signed checkout.session.completed event to
+#      https://corelink-signup.humangr.com/webhooks/stripe
+#   4. Polls D1 tenant_billing until status=paid row appears (≤30 s)
+#   5. Cleans up: cancel subscription, delete customer, delete D1 row
+#
+# On failure: opens a GitHub issue tagged `e2e-regression` + pages
+# on-call via PagerDuty Events API v2 (PAGERDUTY_ROUTING_KEY).
+#
+# Schedule: every 6 h (0 */6 * * *). No more frequent than hourly — each
+# run creates real Stripe test-mode objects. Stripe test-mode has no hard
+# rate limit for object creation but cleanup is idempotent; running more
+# than once per hour is wasteful rather than harmful.
+#
+# NOTE: runs are intentionally offset from e2e-clerk-signup.yml (minutes=30)
+# so the two workflows do not compete for the same D1 write window.
+#
+# Required repo secrets (Settings → Secrets → Actions):
+#   STRIPE_SECRET_KEY       — Stripe secret key (sk_test_... for test mode)
+#   STRIPE_WEBHOOK_SECRET   — whsec_... from Stripe webhook endpoint config
+#   CLOUDFLARE_API_TOKEN    — Cloudflare API token with D1 + Worker read/exec
+#   PAGERDUTY_ROUTING_KEY   — PagerDuty Events v2 routing key for on-call page
+#
+# Optional repo variable (Settings → Variables → Actions):
+#   STRIPE_PRICE_ID_STARTER — recurring price ID; if absent the script lists
+#                             active recurring prices and picks the first.
+#
+# Action SHAs are pinned (no floating tags) — supply-chain security requirement
+# per ADR-0044 + FF-HR-005.
+
+on:
+  schedule:
+    # Every 6 h at :30 — offset from e2e-clerk-signup (which runs at :00).
+    - cron: "30 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write   # Post regression issue on failure
+
+concurrency:
+  group: e2e-stripe-checkout
+  cancel-in-progress: false   # Never cancel a running E2E; let it finish+cleanup
+
+jobs:
+  e2e:
+    name: Stripe checkout E2E (prod)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Mask secrets at the env layer so they never appear in logs
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        with:
+          version: 10.32.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies (pnpm workspace — installs apps/signup-worker)
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify required tools present
+        # python3 + curl are pre-installed on ubuntu-latest; assert so we fail
+        # fast if the image ever drops them rather than failing mid-script.
+        run: |
+          set -euo pipefail
+          for cmd in curl python3 node; do
+            command -v "$cmd" || { echo "::error::required tool not found: $cmd"; exit 1; }
+          done
+          # Verify wrangler.js is present at the path the script expects
+          if [[ ! -f "apps/signup-worker/node_modules/wrangler/bin/wrangler.js" ]]; then
+            echo "::error::wrangler.js not found at apps/signup-worker/node_modules/wrangler/bin/wrangler.js"
+            exit 1
+          fi
+          echo "::add-mask::${STRIPE_SECRET_KEY}"
+          echo "::add-mask::${STRIPE_WEBHOOK_SECRET}"
+          echo "::add-mask::${CLOUDFLARE_API_TOKEN}"
+          echo "All required tools present."
+
+      - name: Write .env.local from secrets
+        # The script sources .env.local at $REPO_ROOT.
+        # We synthesise the file here — no secret values appear in workflow YAML.
+        run: |
+          set -euo pipefail
+          cat > .env.local <<EOF
+          STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+          STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+          CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+          EOF
+          chmod 600 .env.local
+          echo ".env.local written (STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET + CLOUDFLARE_API_TOKEN)"
+
+      - name: Run Stripe checkout E2E
+        id: e2e
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          bash scripts/e2e-stripe-checkout.sh
+
+      - name: Open GitHub issue on failure
+        if: steps.e2e.outcome == 'failure'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `E2E REGRESSION: Stripe checkout smoke failed (run ${context.runId})`,
+              labels: ['e2e-regression', 'sev-1'],
+              body: [
+                `## Stripe checkout E2E regression`,
+                ``,
+                `The scheduled Stripe billing chain smoke test against **prod** failed.`,
+                ``,
+                `**Workflow run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                `**Triggered by:** ${context.eventName}`,
+                ``,
+                `### What to investigate`,
+                `1. Open the run log above and look for \`ERROR:\` lines.`,
+                `2. Step 1 fail → tenant_billing table missing or D1 binding broken.`,
+                `3. Step 3 fail (customer create) → STRIPE_SECRET_KEY invalid or test-mode disabled.`,
+                `4. Step 4 fail (subscription create) → no recurring price in Stripe test mode; set STRIPE_PRICE_ID_STARTER.`,
+                `5. Step 5 fail (webhook 400) → STRIPE_WEBHOOK_SECRET mismatch with deployed Worker secret.`,
+                `6. Step 5 fail (webhook 401/403) → WAF rule or auth blocking the test POST.`,
+                `7. Step 6 fail (D1 poll timeout) → signup-worker webhook handler not writing to BILLING_DB.`,
+                ``,
+                `### Runbook`,
+                `See \`docs/operator/e2e-ci-2026-05-30.md\` for full on-call runbook.`,
+              ].join('\n'),
+            });
+
+      - name: Page on-call via PagerDuty on failure
+        if: steps.e2e.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          : "${PAGERDUTY_ROUTING_KEY:?PAGERDUTY_ROUTING_KEY not set — cannot page on-call}"
+          echo "::add-mask::${PAGERDUTY_ROUTING_KEY}"
+          export RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          python3 > /tmp/pd-payload.json <<'PY'
+          import json, os, sys
+          event = {
+              "routing_key": os.environ["PAGERDUTY_ROUTING_KEY"],
+              "event_action": "trigger",
+              "dedup_key": "e2e-stripe-checkout-" + os.environ.get("GITHUB_RUN_ID", "unknown"),
+              "payload": {
+                  "summary": "E2E REGRESSION: Stripe checkout smoke failed (prod)",
+                  "source": "e2e-stripe-checkout cron (GHA)",
+                  "severity": "critical",
+                  "component": "stripe-checkout",
+                  "group": "e2e",
+                  "class": "smoke-failure",
+                  "custom_details": {
+                      "run_url": os.environ.get("RUN_URL", ""),
+                      "runbook": "docs/operator/e2e-ci-2026-05-30.md",
+                  },
+              },
+              "links": [
+                  {"href": os.environ.get("RUN_URL", ""), "text": "GHA run"},
+              ],
+          }
+          sys.stdout.write(json.dumps(event))
+          PY
+          HTTP_CODE=$(curl --silent --show-error \
+            -o /tmp/pd-resp.json -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            --data @/tmp/pd-payload.json \
+            "https://events.pagerduty.com/v2/enqueue" || echo "000")
+          if [[ "${HTTP_CODE}" != "202" ]]; then
+            echo "::error::PagerDuty enqueue returned HTTP ${HTTP_CODE} — manual page required"
+            cat /tmp/pd-resp.json || true
+            exit 1
+          fi
+          echo "PagerDuty SEV-1 dispatched (HTTP ${HTTP_CODE})"
+
+      - name: Propagate failure
+        if: steps.e2e.outcome == 'failure'
+        run: |
+          echo "::error::Stripe checkout E2E failed — see issue + PagerDuty page dispatched above"
+          exit 1

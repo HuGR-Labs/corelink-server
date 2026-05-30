@@ -1,0 +1,184 @@
+name: e2e-clerk-signup (scheduled prod)
+
+# Programmatic Clerk signup end-to-end smoke against PROD, running every 6 h.
+#
+# Drives scripts/e2e-clerk-signup.sh which:
+#   1. Creates a real Clerk user via the Clerk Backend API
+#   2. Polls D1 for the tenant row (up to 30 s)
+#   3. Verifies the PAT row + publicMetadata populated
+#   4. Exercises /v1/users/me with the minted PAT
+#   5. Cleans up: DELETE Clerk user + D1 rows (idempotent)
+#
+# On failure: opens a GitHub issue tagged `e2e-regression` + pages
+# on-call via PagerDuty Events API v2 (PAGERDUTY_ROUTING_KEY).
+#
+# Schedule: every 6 h (0 */6 * * *). No more frequent than hourly — each
+# run creates a real Clerk test user; over-running incurs quota costs.
+# Clerk Backend API rate limit: 100 req/s per key — a single run uses
+# ~5 requests; 4 runs/day per key is well within limits.
+#
+# Required repo secrets (Settings → Secrets → Actions):
+#   CLERK_SECRET_KEY        — Clerk Backend API key (sk_live_... or sk_test_...)
+#   CLOUDFLARE_API_TOKEN    — Cloudflare API token with D1 + Worker read/exec
+#   PAGERDUTY_ROUTING_KEY   — PagerDuty Events v2 routing key for on-call page
+#
+# Action SHAs are pinned (no floating tags) — supply-chain security requirement
+# per ADR-0044 + FF-HR-005.
+
+on:
+  schedule:
+    # Every 6 h — four runs per day, well under Clerk API rate limits.
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write   # Post regression issue on failure
+
+concurrency:
+  group: e2e-clerk-signup
+  cancel-in-progress: false   # Never cancel a running E2E; let it finish+cleanup
+
+jobs:
+  e2e:
+    name: Clerk signup E2E (prod)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Mask secrets at the env layer so they never appear in logs
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        with:
+          version: 10.32.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies (pnpm workspace — installs worker/ + apps/signup-worker)
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify required tools present
+        # jq is pre-installed on ubuntu-latest; assert so we fail fast if the
+        # image ever drops it rather than failing mid-script with a confusing error.
+        run: |
+          set -euo pipefail
+          for cmd in curl jq python3 node; do
+            command -v "$cmd" || { echo "::error::required tool not found: $cmd"; exit 1; }
+          done
+          echo "::add-mask::${CLERK_SECRET_KEY}"
+          echo "::add-mask::${CLOUDFLARE_API_TOKEN}"
+          echo "All required tools present."
+
+      - name: Write .env.local from secrets
+        # The script reads credentials from .env.local at $REPO_ROOT.
+        # We synthesise the file here — no secret values appear in workflow YAML.
+        run: |
+          set -euo pipefail
+          cat > .env.local <<EOF
+          CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
+          CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+          EOF
+          chmod 600 .env.local
+          echo ".env.local written (CLERK_SECRET_KEY + CLOUDFLARE_API_TOKEN)"
+
+      - name: Run Clerk signup E2E
+        id: e2e
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          bash scripts/e2e-clerk-signup.sh
+
+      - name: Open GitHub issue on failure
+        if: steps.e2e.outcome == 'failure'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `E2E REGRESSION: Clerk signup smoke failed (run ${context.runId})`,
+              labels: ['e2e-regression', 'sev-1'],
+              body: [
+                `## Clerk signup E2E regression`,
+                ``,
+                `The scheduled Clerk signup smoke test against **prod** failed.`,
+                ``,
+                `**Workflow run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                `**Triggered by:** ${context.eventName}`,
+                ``,
+                `### What to investigate`,
+                `1. Open the run log above and look for \`[FAIL]\` lines.`,
+                `2. Stage 1 fail → Clerk Backend API issue or key rotation needed.`,
+                `3. Stage 2 fail (tenant row timeout) → check signup-worker deploy + Clerk webhook secret.`,
+                `4. Stage 3 fail (PAT row missing) → signup orchestration incomplete.`,
+                `5. Stage 4 fail (publicMetadata) → Clerk metadata patch in signup-worker failing.`,
+                `6. Stage 5 fail (/v1/users/me 4xx) → corelink-api deploy or PAT auth regression.`,
+                ``,
+                `### Runbook`,
+                `See \`docs/operator/e2e-ci-2026-05-30.md\` for full on-call runbook.`,
+              ].join('\n'),
+            });
+
+      - name: Page on-call via PagerDuty on failure
+        if: steps.e2e.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          : "${PAGERDUTY_ROUTING_KEY:?PAGERDUTY_ROUTING_KEY not set — cannot page on-call}"
+          echo "::add-mask::${PAGERDUTY_ROUTING_KEY}"
+          export RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          python3 > /tmp/pd-payload.json <<'PY'
+          import json, os, sys
+          event = {
+              "routing_key": os.environ["PAGERDUTY_ROUTING_KEY"],
+              "event_action": "trigger",
+              "dedup_key": "e2e-clerk-signup-" + os.environ.get("GITHUB_RUN_ID", "unknown"),
+              "payload": {
+                  "summary": "E2E REGRESSION: Clerk signup smoke failed (prod)",
+                  "source": "e2e-clerk-signup cron (GHA)",
+                  "severity": "critical",
+                  "component": "clerk-signup",
+                  "group": "e2e",
+                  "class": "smoke-failure",
+                  "custom_details": {
+                      "run_url": os.environ.get("RUN_URL", ""),
+                      "runbook": "docs/operator/e2e-ci-2026-05-30.md",
+                  },
+              },
+              "links": [
+                  {"href": os.environ.get("RUN_URL", ""), "text": "GHA run"},
+              ],
+          }
+          sys.stdout.write(json.dumps(event))
+          PY
+          HTTP_CODE=$(curl --silent --show-error \
+            -o /tmp/pd-resp.json -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            --data @/tmp/pd-payload.json \
+            "https://events.pagerduty.com/v2/enqueue" || echo "000")
+          if [[ "${HTTP_CODE}" != "202" ]]; then
+            echo "::error::PagerDuty enqueue returned HTTP ${HTTP_CODE} — manual page required"
+            cat /tmp/pd-resp.json || true
+            exit 1
+          fi
+          echo "PagerDuty SEV-1 dispatched (HTTP ${HTTP_CODE})"
+
+      - name: Propagate failure
+        if: steps.e2e.outcome == 'failure'
+        run: |
+          echo "::error::Clerk signup E2E failed — see issue + PagerDuty page dispatched above"
+          exit 1
