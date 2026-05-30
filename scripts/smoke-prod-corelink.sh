@@ -404,15 +404,17 @@ for NAME in "${DNS_NAMES[@]}"; do
     fail "[${CHECK_NUM}] dig ${NAME} → NXDOMAIN (expected to resolve toward ${EXPECTED})"
     append_log "- [FAIL] [${CHECK_NUM}] DNS ${NAME} → NXDOMAIN"
   else
-    # Extra check: for DNS-only record (status), expected to resolve toward betteruptime CNAME.
-    # Downgraded to WARN (not FAIL): deployed CNAME may differ pending status-page rewiring.
+    # Extra check: for DNS-only record (status), must resolve via hugrl.betteruptime.com CNAME.
+    # Use `dig CNAME +short` because `dig +short | tail -1` returns the final resolved IP
+    # (CF IPs from BetterStack's CDN), not the CNAME itself.  Ticket: smoke-check-14-cname-fix.
     if [[ "$NAME" == "status.corelink.humangr.com" ]]; then
-      if echo "$RESOLVED" | grep -q "betteruptime"; then
-        pass "[${CHECK_NUM}] dig ${NAME} → ${RESOLVED} (DNS-only, BetterUptime)"
-        append_log "- [PASS] [${CHECK_NUM}] DNS ${NAME} → BetterUptime"
+      CNAME_TARGET=$(dig CNAME +short +time="${TIMEOUT_DNS}" "$NAME" 2>/dev/null | head -1 || echo "")
+      if echo "$CNAME_TARGET" | grep -q "betteruptime"; then
+        pass "[${CHECK_NUM}] dig CNAME ${NAME} → ${CNAME_TARGET} (DNS-only, BetterUptime)"
+        append_log "- [PASS] [${CHECK_NUM}] DNS ${NAME} → BetterUptime CNAME (${CNAME_TARGET})"
       else
-        warn "[${CHECK_NUM}] dig ${NAME} → ${RESOLVED} (expected betteruptime target; WARN — status-page rewiring pending)"
-        append_log "- [WARN] [${CHECK_NUM}] DNS ${NAME} → ${RESOLVED} (betteruptime rewiring pending)"
+        fail "[${CHECK_NUM}] dig CNAME ${NAME} → '${CNAME_TARGET}' (expected betteruptime CNAME; resolved=${RESOLVED})"
+        append_log "- [FAIL] [${CHECK_NUM}] DNS ${NAME} → CNAME='${CNAME_TARGET}' resolved=${RESOLVED}"
       fi
     else
       pass "[${CHECK_NUM}] dig ${NAME} → ${RESOLVED} (resolved OK)"

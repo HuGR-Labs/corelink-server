@@ -96,7 +96,7 @@ Before this run, the Betterstack account was in the following state:
 |----------|------------------------------------------------------------------------------------------------------------------------------------------------------|
 | HIGH     | **Check frequency is 180 s, not 30 s** — the free/starter Betterstack plan enforces a 3-minute minimum. Upgrade to a paid plan to reduce to 30 s.    |
 | MEDIUM   | **Add an on-call policy / escalation policy** — `policy_id` is currently `null`. Alerts go only to email. Wire PagerDuty or SMS for P1 coverage.     |
-| MEDIUM   | **Verify `status.corelink.humangr.com` DNS** — custom domain is configured in Betterstack but DNS CNAME must point to `hugrl.betterstatuspage.com`.  |
+| RESOLVED | **`status.corelink.humangr.com` DNS verified (2026-05-30)** — CF CNAME correctly points to `hugrl.betteruptime.com` (DNS-only). The operator doc previously said `hugrl.betterstatuspage.com` — that was incorrect; `betteruptime.com` is BetterStack's live CDN domain. Smoke check [14] fix: script now uses `dig CNAME +short` instead of `dig +short \| tail -1` to verify the CNAME target rather than the resolved IP. See `wt/c10-status-page-rewire`. |
 | LOW      | **Add additional monitors** for worker endpoints (Cloudflare Worker), CAS API, admin API, and key gRPC probes once those planes are wired.            |
 | LOW      | **Enable PagerDuty integration** — Wave 32 memo mentions PagerDuty was configured; cross-check that the Betterstack<>PagerDuty webhook is active.     |
 | INFO     | Monitor `check_frequency` returned 180 s from API even though 30 was requested; this is a plan-tier cap, not a bug.                                  |
@@ -109,5 +109,8 @@ Before this run, the Betterstack account was in the following state:
 - [x] Monitor status is `up`
 - [x] Monitor linked to status page 247652 under section "API"
 - [x] Status page public URL: `https://status.corelink.humangr.com`
+- [x] CF DNS CNAME `status.corelink.humangr.com` → `hugrl.betteruptime.com` (DNS-only, record ID `e7853992353f74b09258b1011c747704`)
+- [x] Smoke check [14] fix landed in `wt/c10-status-page-rewire` — uses `dig CNAME +short` to verify CNAME target
+- [ ] `https://status.corelink.humangr.com` returning 000 (SSL handshake failure) — BetterStack TLS provisioning pending; tracked as KNOWN-EXCEPTION in check [22]
 - [x] SLA today: 100% availability, 0 incidents
 - [x] No secret values in this document
