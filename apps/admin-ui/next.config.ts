@@ -42,25 +42,21 @@ const CSP_HEADER_KEY =
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  // CF Pages compat (@cloudflare/next-on-pages v1.13.7):
-  //   - No `output: 'export'` or `output: 'standalone'` — both break next-on-pages.
-  //   - Default server mode + nodejs_compat flag (declared in apps/admin-ui/wrangler.toml)
-  //     enables Node.js APIs in the Pages Functions runtime.
-  //   - Per-route `export const runtime = "edge"` (layout.tsx) + selective `"nodejs"`
-  //     overrides (sign-in, sign-up) are the correct pattern for next-on-pages builds.
-  //   - `pnpm pages:build` runs `next build && npx @cloudflare/next-on-pages`; output
-  //     lands in `.vercel/output/static` (consumed by `pnpm pages:deploy`).
-  //   - `outputFileTracingRoot`: points Next.js at the pnpm monorepo root so
-  //     file-tracing resolves shared packages correctly.  Without this, Next.js
-  //     warns "inferred workspace root may not be correct" and may miss
-  //     transitive deps when building in a pnpm workspace or git worktree.
-  //
-  // 2026-05-29 fix: with `outputFileTracingRoot: ../../`, `npx
-  // @cloudflare/next-on-pages` constructs Vercel build paths by joining
-  // the workspace-relative path AGAIN with the build cwd, producing
-  // `apps/admin-ui/apps/admin-ui/.next/routes-manifest.json` and an
-  // ENOENT failure. Anchor to the app dir so paths are single-prefixed.
-  outputFileTracingRoot: __dirname,
+  // OpenNext (@opennextjs/cloudflare) compat:
+  //   - `output: "standalone"` is REQUIRED — OpenNext expects
+  //     `.next/standalone/apps/admin-ui/.next/server/pages-manifest.json`.
+  //     Without it the build throws ENOENT on that path.
+  //   - `outputFileTracingRoot` must be the monorepo root (../../) so that
+  //     OpenNext resolves the monorepo-relative `.next/standalone/apps/admin-ui/`
+  //     path correctly. Using __dirname (the next-on-pages workaround) is wrong
+  //     for OpenNext and produces a double-prefix path.
+  //   - All `export const runtime = "edge"` declarations are stripped from page/
+  //     layout/api files — OpenNext requires edge functions to be defined in
+  //     separate functions; it cannot process pages tagged as edge runtime.
+  //   - Build: `pnpm cf:build` runs `opennextjs-cloudflare build`; output
+  //     lands in `.open-next/` (worker.js + assets/).
+  output: "standalone",
+  outputFileTracingRoot: path.join(__dirname, "../../"),
   // We use middleware for the real per-request CSP nonce.
   async headers() {
     return [
