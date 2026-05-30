@@ -190,7 +190,7 @@ Check inventory:
 
 (e) Status page
   [17] GET  ${STATUS_URL}                 → expect 200
-  [18] GET  ${STATUS_CORELINK_URL}        → KNOWN EXCEPTION: 000 (Phase A 2-level subdomain SSL gap)
+  [18] GET  ${STATUS_CORELINK_URL}        → KNOWN EXCEPTION: 000 (BetterStack TLS not provisioned; operator must Enable SSL in BetterStack console for page 247652)
 
 Total active checks: 18 (down from 22; 4 deleted hosts removed)
 Exit code will equal number of failures.
@@ -504,9 +504,18 @@ else
 fi
 
 # [22] status.corelink.humangr.com (Phase A custom domain)
-# KNOWN EXCEPTION: returns 000 due to 2-level subdomain TLS gap (Phase A → flat migration deferred).
-# Documented exception per Wave 32 Phase H APPLY audit §6. NOT a failure.
-log "CHECK [22] GET ${STATUS_CORELINK_URL} (KNOWN EXCEPTION: 000 expected)"
+# KNOWN EXCEPTION: returns 000 due to TLS cert not issued for this 2-level subdomain.
+# Root cause (investigated 2026-05-30): BetterStack's CDN edge sees the domain (HTTP 80 → 301 works)
+# but has no TLS cert for status.corelink.humangr.com. ACME HTTP-01 is blocked (403) so auto-
+# provisioning never completes. BetterStack requires a manual "Enable SSL" click in their web
+# console (Settings → Custom domain) to issue the cert via Cloudflare for Platforms.
+# CF Universal SSL covers *.humangr.com only (1-level wildcard; Free plan — no Advanced certs).
+# Operator action required: BetterStack console → page 247652 → Settings → Custom domain → Enable SSL.
+# See: docs/operator/betterstack-state-2026-05-29.md § TLS Provisioning
+# Once operator clicks "Enable SSL" and curl returns 200, remove this KNOWN EXCEPTION block and
+# change the elif ["$SCL_CODE" == "000"] branch to: fail "[22] ... → 000 (expected 200)".
+# Documented exception per Wave 32 Phase H APPLY audit §6. NOT a failure until cert is issued.
+log "CHECK [22] GET ${STATUS_CORELINK_URL} (KNOWN EXCEPTION: 000 until operator enables SSL in BetterStack console)"
 SCL_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
   --max-time "${TIMEOUT_CURL}" "${STATUS_CORELINK_URL}" 2>/dev/null || true)
 printf '  status-corelink: HTTP %s\n' "$SCL_CODE"
@@ -514,8 +523,8 @@ if [[ "$SCL_CODE" == "200" ]]; then
   pass "[22] ${STATUS_CORELINK_URL} → 200"
   append_log "- [PASS] [22] ${STATUS_CORELINK_URL} → 200"
 elif [[ "$SCL_CODE" == "000" ]]; then
-  warn "[22] ${STATUS_CORELINK_URL} → 000 (KNOWN EXCEPTION — Phase A 2-level subdomain SSL gap; not a failure)"
-  append_log "- [KNOWN-EXCEPTION] [22] ${STATUS_CORELINK_URL} → 000 (Phase A SSL gap; expected)"
+  warn "[22] ${STATUS_CORELINK_URL} → 000 (KNOWN EXCEPTION — BetterStack TLS not provisioned; operator must click 'Enable SSL' in BetterStack console for page 247652)"
+  append_log "- [KNOWN-EXCEPTION] [22] ${STATUS_CORELINK_URL} → 000 (BetterStack SSL not activated; operator action required)"
 else
   fail "[22] ${STATUS_CORELINK_URL} → HTTP=${SCL_CODE} (unexpected; expected 200 or 000)"
   append_log "- [FAIL] [22] ${STATUS_CORELINK_URL} → HTTP=${SCL_CODE}"
