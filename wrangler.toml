@@ -541,8 +541,8 @@ R2_CHUNK_BUCKET = "corelink-chunk-sam"
 R2_CHUNK_REGION = "sam"
 
 [[env.prod-sam.routes]]
-pattern = "sam.corelink-api.humangr.com/*"
-zone_name = "humangr.com"
+pattern = "sam.corelink-api.humangr.com"
+custom_domain = true
 
 [[env.prod-sam.r2_buckets]]
 binding = "CAS_BUCKET"
@@ -655,8 +655,8 @@ R2_CHUNK_BUCKET = "corelink-chunk-lhr"
 R2_CHUNK_REGION = "lhr"
 
 [[env.prod-lhr.routes]]
-pattern = "lhr.corelink-api.humangr.com/*"
-zone_name = "humangr.com"
+pattern = "lhr.corelink-api.humangr.com"
+custom_domain = true
 
 [[env.prod-lhr.r2_buckets]]
 binding = "CAS_BUCKET"
@@ -769,8 +769,8 @@ R2_CHUNK_BUCKET = "corelink-chunk-nrt"
 R2_CHUNK_REGION = "nrt"
 
 [[env.prod-nrt.routes]]
-pattern = "nrt.corelink-api.humangr.com/*"
-zone_name = "humangr.com"
+pattern = "nrt.corelink-api.humangr.com"
+custom_domain = true
 
 [[env.prod-nrt.r2_buckets]]
 binding = "CAS_BUCKET"
@@ -883,8 +883,8 @@ R2_CHUNK_BUCKET = "corelink-chunk-syd"
 R2_CHUNK_REGION = "syd"
 
 [[env.prod-syd.routes]]
-pattern = "syd.corelink-api.humangr.com/*"
-zone_name = "humangr.com"
+pattern = "syd.corelink-api.humangr.com"
+custom_domain = true
 
 [[env.prod-syd.r2_buckets]]
 binding = "CAS_BUCKET"
