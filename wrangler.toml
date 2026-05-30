@@ -249,6 +249,26 @@ vars = { ENVIRONMENT = "prod", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b
 pattern = "corelink-api.humangr.com/*"
 zone_name = "humangr.com"
 
+# WI-MULTI-REGION-V1 Service Bindings: prod worker can fan-out to regional
+# workers via per-tenant routing. Worker code reads tenant.primary_region
+# from D1 and forwards to the matching regional Service Binding when
+# primary_region != "iad" (or null). See ADR-MULTI-REGION-V1.
+[[env.prod.services]]
+binding = "PROD_SAM"
+service = "corelink-prod-sam"
+
+[[env.prod.services]]
+binding = "PROD_LHR"
+service = "corelink-prod-lhr"
+
+[[env.prod.services]]
+binding = "PROD_NRT"
+service = "corelink-prod-nrt"
+
+[[env.prod.services]]
+binding = "PROD_SYD"
+service = "corelink-prod-syd"
+
 # corelink-signup.humangr.com/* is served by apps/signup-worker
 # (Phase 1 / Stream A4). The route was previously misassigned to this
 # Worker which has no Clerk/Stripe webhook handlers; moved to the

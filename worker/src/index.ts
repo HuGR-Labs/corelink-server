@@ -77,6 +77,14 @@ export interface Env {
   R2_AC_REGION?: string;
   R2_CHUNK_BUCKET?: string;
   R2_CHUNK_REGION?: string;
+  // WI-MULTI-REGION-V1 Service Bindings: prod env can fan-out to the 4
+  // regional Workers. Set in [[env.prod.services]] blocks. Used by the
+  // per-tenant routing logic: tenant.primary_region in D1 → dispatch via
+  // the matching binding. Absent → request stays on IAD (default).
+  PROD_SAM?: { fetch: typeof fetch };
+  PROD_LHR?: { fetch: typeof fetch };
+  PROD_NRT?: { fetch: typeof fetch };
+  PROD_SYD?: { fetch: typeof fetch };
 }
 
 /** Parsed route context derived from matching the request URL. */
@@ -1212,6 +1220,52 @@ const handler: ExportedHandler<Env> = {
           ),
           request,
         );
+      }
+    }
+
+    // WI-MULTI-REGION-V1: per-tenant region routing. Look up tenant.primary_region
+    // from D1 and fan-out to the regional Worker via Service Binding when set to
+    // a non-IAD region. The regional Worker's container reads the same request
+    // path + writes/reads its regional R2 bucket. Fail-open: if the lookup throws
+    // or the binding is missing, fall through to local IAD DO (preserves
+    // availability over strict regional pinning).
+    if (
+      resolvedTenantId !== "_anonymous" &&
+      resolvedTenantId !== "_system" &&
+      resolvedTenantId !== "_pending"
+    ) {
+      try {
+        const row = await env.CONFIG_DB
+          .prepare("SELECT primary_region FROM tenant WHERE tenant_id = ?1 LIMIT 1")
+          .bind(resolvedTenantId)
+          .first<{ primary_region: string }>();
+        const region = row?.primary_region;
+        let regionalBinding: { fetch: typeof fetch } | undefined;
+        if (region === "sam") regionalBinding = env.PROD_SAM;
+        else if (region === "lhr") regionalBinding = env.PROD_LHR;
+        else if (region === "nrt") regionalBinding = env.PROD_NRT;
+        else if (region === "syd") regionalBinding = env.PROD_SYD;
+        if (regionalBinding !== undefined) {
+          // Forward verbatim to the regional Worker. The regional Worker re-runs
+          // PAT validation (PAT_SIGNING_KEY is shared across envs) + writes to
+          // its regional R2 bucket. Service Binding bypasses CF edge error 1014
+          // (CNAME Cross-User Banned). See cf_worker_to_worker_service_binding.
+          const regionalReq = new Request(request, {
+            headers: (() => {
+              const h = new Headers(request.headers);
+              h.set("x-request-id", requestId);
+              h.set("x-corelink-route-kind", route.routeKind);
+              h.set("x-corelink-token-prefix", auth.tokenPrefix);
+              h.set("x-corelink-tenant-id", resolvedTenantId);
+              h.set("x-corelink-fanout-from", "prod");
+              return h;
+            })(),
+          });
+          const regionalResp = await regionalBinding.fetch(regionalReq);
+          return applyCors(regionalResp, request);
+        }
+      } catch (_err) {
+        // Fail-open: D1 hiccup or binding misconfigured → stay on IAD path.
       }
     }
 
