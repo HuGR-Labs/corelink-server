@@ -127,6 +127,59 @@ describe("autoProvisionFromClerkEvent", () => {
     ]);
     // svix_id propagates for idempotency.
     expect(emits.every((e) => e.props["svix_id"] === "msg_xyz")).toBe(true);
+    // Default happy path: metadata write succeeded.
+    expect(result.metadata_published).toBe(true);
+  });
+
+  it("tolerates Clerk metadata 4xx (dead-letter; keeps tenant+PAT)", async () => {
+    const api = {
+      async createTenant(_name: string, _userId: string) {
+        return { id: "t_dead" };
+      },
+      async configureTenant() {},
+      async issuePat() {
+        return { id: "pat_dead", plaintext: "ct_dead" };
+      },
+      async publishUserMetadata() {
+        throw new Error("clerk_metadata_update_failed_404");
+      },
+    };
+    const analytics = { async emit() {} };
+    const result = await autoProvisionFromClerkEvent({
+      event: fakeUser(),
+      colo: "ORD",
+      svixId: "msg_dl",
+      api,
+      analytics,
+    });
+    expect(result.tenant_id).toBe("t_dead");
+    expect(result.pat_plaintext).toBe("ct_dead");
+    expect(result.metadata_published).toBe(false);
+  });
+
+  it("re-throws Clerk metadata 5xx (transient; let Svix retry)", async () => {
+    const api = {
+      async createTenant(_name: string, _userId: string) {
+        return { id: "t_retry" };
+      },
+      async configureTenant() {},
+      async issuePat() {
+        return { id: "pat_retry", plaintext: "ct_retry" };
+      },
+      async publishUserMetadata() {
+        throw new Error("clerk_metadata_update_failed_503");
+      },
+    };
+    const analytics = { async emit() {} };
+    await expect(
+      autoProvisionFromClerkEvent({
+        event: fakeUser(),
+        colo: "ORD",
+        svixId: "msg_retry",
+        api,
+        analytics,
+      }),
+    ).rejects.toThrow(/_503$/);
   });
 });
 

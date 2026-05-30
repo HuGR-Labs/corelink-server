@@ -70,6 +70,15 @@ export interface AutoProvisionResult {
   plan: "free";
   pat_id: string;
   pat_plaintext: string;
+  /**
+   * Whether Clerk publicMetadata was successfully patched with
+   * `{ tenant_id, region, pat_plaintext }`. False means the Clerk PATCH
+   * returned a 4xx (typically 404 — user deleted between webhook emit and
+   * handler run). Tenant + PAT rows are still persisted in D1; the metadata
+   * gap can be reconciled out-of-band. 5xx Clerk failures are re-thrown so
+   * Svix retries the whole webhook.
+   */
+  metadata_published: boolean;
 }
 
 interface VerifyContext {
@@ -273,11 +282,35 @@ export async function autoProvisionFromClerkEvent(input: {
   //    the user's first session — for Phase-0 it lives there until they
   //    log out (acceptable per CTRL-CRED-001 because (a) it's shown once,
   //    (b) Clerk metadata is encrypted at rest, (c) admin-ui never logs it).
-  await input.api.publishUserMetadata(user.id, {
-    tenant_id: tenant.id,
-    region,
-    pat_plaintext: pat.plaintext,
-  });
+  //
+  // Idempotency: tenant + PAT are already persisted in D1 above. If Clerk
+  // rejects the metadata patch with a 4xx (404 = user deleted between webhook
+  // emit and handler run; 4xx-others = permanent client error), we log and
+  // proceed — re-driving the webhook would only INSERT-OR-IGNORE the same
+  // tenant/PAT rows and re-attempt the same failing PATCH. 5xx is transient
+  // and re-thrown so Svix retries the whole event with backoff.
+  let metadataPublished = false;
+  try {
+    await input.api.publishUserMetadata(user.id, {
+      tenant_id: tenant.id,
+      region,
+      pat_plaintext: pat.plaintext,
+    });
+    metadataPublished = true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const statusMatch = msg.match(/_(\d{3})$/);
+    const status = statusMatch ? parseInt(statusMatch[1] as string, 10) : 0;
+    if (status >= 500 || status === 0) {
+      // Transient / unknown — let Svix retry.
+      throw err;
+    }
+    // 4xx: dead-letter the metadata write, keep tenant+PAT.
+    console.log(
+      `[clerk-metadata-skipped] status=${status} user_id=${user.id} ` +
+      `tenant_id=${tenant.id} svix_id=${input.svixId}`,
+    );
+  }
 
   return {
     tenant_id: tenant.id,
@@ -285,6 +318,7 @@ export async function autoProvisionFromClerkEvent(input: {
     plan: "free",
     pat_id: pat.id,
     pat_plaintext: pat.plaintext,
+    metadata_published: metadataPublished,
   };
 }
 
@@ -356,7 +390,11 @@ export async function handleClerkWebhook(
       api: apiFactory(env),
       analytics: d1AnalyticsEmitter(env.ANALYTICS_DB),
     });
-    return Response.json({ ok: true, tenant_id: result.tenant_id });
+    return Response.json({
+      ok: true,
+      tenant_id: result.tenant_id,
+      metadata_published: result.metadata_published,
+    });
   } catch (err) {
     // Webhook returns 500 so Svix retries with backoff. Do not leak error
     // body — log a redacted summary upstream.
