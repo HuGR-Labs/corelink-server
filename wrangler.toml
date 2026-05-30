@@ -499,3 +499,485 @@ crons = [
     "0 6 * * 1",
     "0 14 * * 1",
 ]
+
+# ============================================================================
+# ADR-MULTI-REGION-V1 — Regional production environments (Approach A).
+#
+# Four new worker envs, one per non-IAD region. Each deploys:
+#   - A distinct worker name (`corelink-prod-<region>`)
+#   - A distinct CF Container app (`corelink-prod-<region>-corelinkserver-prod`)
+#   - The same container image tag as IAD (`:6b816156-r2`) — same binary,
+#     different region bucket config injected via env vars at container start.
+#   - Regional R2 bucket vars forwarded to the container: R2_AC_BUCKET,
+#     R2_AC_REGION, R2_CHUNK_BUCKET, R2_CHUNK_REGION.
+#   - CAS bucket = corelink-cas-prod (IAD-only global bucket, shared by all regions)
+#   - Same global D1 (corelink-config-prod) + KV bindings as [env.prod]
+#   - Route: <region>.corelink-api.humangr.com/*
+#
+# WEUR/LHR compliance note (ADR-S14-002): DO jurisdictional restriction = "eu"
+# is a Cloudflare account-API concern, not set in wrangler.toml. Track separately.
+#
+# Secret provisioning (per-region, same set as [env.prod]):
+#   wrangler secret put R2_S3_ACCESS_KEY_ID --env prod-<region>
+#   wrangler secret put R2_S3_SECRET_ACCESS_KEY --env prod-<region>
+#   wrangler secret put CF_API_TOKEN --env prod-<region>
+#   wrangler secret put PAT_SIGNING_KEY --env prod-<region>
+#   wrangler secret put CORELINK_INTERNAL_AUTH_KEY --env prod-<region>
+#   wrangler secret put CLOUDFLARE_ACCOUNT_ID --env prod-<region>
+# ============================================================================
+
+# ── SAM (São Paulo / South America East) ─────────────────────────────────────
+[env.prod-sam]
+name = "corelink-prod-sam"
+workers_dev = false
+
+[env.prod-sam.vars]
+ENVIRONMENT = "prod-sam"
+R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
+D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562"
+R2_AC_BUCKET = "corelink-ac-sam"
+R2_AC_REGION = "sam"
+R2_CHUNK_BUCKET = "corelink-chunk-sam"
+R2_CHUNK_REGION = "sam"
+
+[[env.prod-sam.routes]]
+pattern = "sam.corelink-api.humangr.com/*"
+zone_name = "humangr.com"
+
+[[env.prod-sam.r2_buckets]]
+binding = "CAS_BUCKET"
+bucket_name = "corelink-cas-prod"
+
+[[env.prod-sam.r2_buckets]]
+binding = "AC_BUCKET_SAM"
+bucket_name = "corelink-ac-sam"
+
+[[env.prod-sam.r2_buckets]]
+binding = "AC_BUCKET_IAD"
+bucket_name = "corelink-ac-iad"
+
+[[env.prod-sam.r2_buckets]]
+binding = "AC_BUCKET_LHR"
+bucket_name = "corelink-ac-lhr"
+
+[[env.prod-sam.r2_buckets]]
+binding = "AC_BUCKET_NRT"
+bucket_name = "corelink-ac-nrt"
+
+[[env.prod-sam.r2_buckets]]
+binding = "AC_BUCKET_SYD"
+bucket_name = "corelink-ac-syd"
+
+[[env.prod-sam.r2_buckets]]
+binding = "CHUNK_BUCKET_SAM"
+bucket_name = "corelink-chunk-sam"
+
+[[env.prod-sam.r2_buckets]]
+binding = "CHUNK_BUCKET_IAD"
+bucket_name = "corelink-chunk-iad"
+
+[[env.prod-sam.r2_buckets]]
+binding = "CHUNK_BUCKET_LHR"
+bucket_name = "corelink-chunk-lhr"
+
+[[env.prod-sam.r2_buckets]]
+binding = "CHUNK_BUCKET_NRT"
+bucket_name = "corelink-chunk-nrt"
+
+[[env.prod-sam.r2_buckets]]
+binding = "CHUNK_BUCKET_SYD"
+bucket_name = "corelink-chunk-syd"
+
+[[env.prod-sam.r2_buckets]]
+binding = "MANIFEST_BUCKET_SAM"
+bucket_name = "corelink-manifest-sam"
+
+[[env.prod-sam.r2_buckets]]
+binding = "MANIFEST_BUCKET_IAD"
+bucket_name = "corelink-manifest-iad"
+
+[[env.prod-sam.r2_buckets]]
+binding = "MANIFEST_BUCKET_LHR"
+bucket_name = "corelink-manifest-lhr"
+
+[[env.prod-sam.r2_buckets]]
+binding = "MANIFEST_BUCKET_NRT"
+bucket_name = "corelink-manifest-nrt"
+
+[[env.prod-sam.r2_buckets]]
+binding = "MANIFEST_BUCKET_SYD"
+bucket_name = "corelink-manifest-syd"
+
+[[env.prod-sam.kv_namespaces]]
+binding = "METADATA_KV"
+id = "56f8e99f36ad4ec2aa3b876562409ccc"
+
+[[env.prod-sam.kv_namespaces]]
+binding = "CLERK_JWKS_KV"
+id = "924c6c0f9ee4439f96ec3a75a98eef8b"
+
+[[env.prod-sam.kv_namespaces]]
+binding = "NEGATIVE_CACHE_KV"
+id = "b024aef6d57f4a49a4c1715563794392"
+
+[[env.prod-sam.d1_databases]]
+binding = "CONFIG_DB"
+database_name = "corelink-config-prod"
+database_id = "d64742ea-e102-40b2-a844-ff02e3f94562"
+migrations_dir = "migrations/d1"
+
+[[env.prod-sam.durable_objects.bindings]]
+name = "CORELINK_SERVER"
+class_name = "CoreLinkServer"
+
+[[env.prod-sam.durable_objects.bindings]]
+name = "ROLLOUT_DO"
+class_name = "RolloutController"
+
+[[env.prod-sam.containers]]
+class_name = "CoreLinkServer"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-sam-corelinkserver-prod:6b816156-r2"
+max_instances = 10
+instance_type = "standard-1"
+
+# ── LHR (London / Europe West) ───────────────────────────────────────────────
+[env.prod-lhr]
+name = "corelink-prod-lhr"
+workers_dev = false
+
+[env.prod-lhr.vars]
+ENVIRONMENT = "prod-lhr"
+R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
+D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562"
+R2_AC_BUCKET = "corelink-ac-lhr"
+R2_AC_REGION = "lhr"
+R2_CHUNK_BUCKET = "corelink-chunk-lhr"
+R2_CHUNK_REGION = "lhr"
+
+[[env.prod-lhr.routes]]
+pattern = "lhr.corelink-api.humangr.com/*"
+zone_name = "humangr.com"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "CAS_BUCKET"
+bucket_name = "corelink-cas-prod"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "AC_BUCKET_SAM"
+bucket_name = "corelink-ac-sam"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "AC_BUCKET_IAD"
+bucket_name = "corelink-ac-iad"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "AC_BUCKET_LHR"
+bucket_name = "corelink-ac-lhr"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "AC_BUCKET_NRT"
+bucket_name = "corelink-ac-nrt"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "AC_BUCKET_SYD"
+bucket_name = "corelink-ac-syd"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "CHUNK_BUCKET_SAM"
+bucket_name = "corelink-chunk-sam"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "CHUNK_BUCKET_IAD"
+bucket_name = "corelink-chunk-iad"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "CHUNK_BUCKET_LHR"
+bucket_name = "corelink-chunk-lhr"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "CHUNK_BUCKET_NRT"
+bucket_name = "corelink-chunk-nrt"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "CHUNK_BUCKET_SYD"
+bucket_name = "corelink-chunk-syd"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "MANIFEST_BUCKET_SAM"
+bucket_name = "corelink-manifest-sam"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "MANIFEST_BUCKET_IAD"
+bucket_name = "corelink-manifest-iad"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "MANIFEST_BUCKET_LHR"
+bucket_name = "corelink-manifest-lhr"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "MANIFEST_BUCKET_NRT"
+bucket_name = "corelink-manifest-nrt"
+
+[[env.prod-lhr.r2_buckets]]
+binding = "MANIFEST_BUCKET_SYD"
+bucket_name = "corelink-manifest-syd"
+
+[[env.prod-lhr.kv_namespaces]]
+binding = "METADATA_KV"
+id = "56f8e99f36ad4ec2aa3b876562409ccc"
+
+[[env.prod-lhr.kv_namespaces]]
+binding = "CLERK_JWKS_KV"
+id = "924c6c0f9ee4439f96ec3a75a98eef8b"
+
+[[env.prod-lhr.kv_namespaces]]
+binding = "NEGATIVE_CACHE_KV"
+id = "b024aef6d57f4a49a4c1715563794392"
+
+[[env.prod-lhr.d1_databases]]
+binding = "CONFIG_DB"
+database_name = "corelink-config-prod"
+database_id = "d64742ea-e102-40b2-a844-ff02e3f94562"
+migrations_dir = "migrations/d1"
+
+[[env.prod-lhr.durable_objects.bindings]]
+name = "CORELINK_SERVER"
+class_name = "CoreLinkServer"
+
+[[env.prod-lhr.durable_objects.bindings]]
+name = "ROLLOUT_DO"
+class_name = "RolloutController"
+
+[[env.prod-lhr.containers]]
+class_name = "CoreLinkServer"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-lhr-corelinkserver-prod:6b816156-r2"
+max_instances = 10
+instance_type = "standard-1"
+
+# ── NRT (Tokyo / Asia Pacific Northeast) ─────────────────────────────────────
+[env.prod-nrt]
+name = "corelink-prod-nrt"
+workers_dev = false
+
+[env.prod-nrt.vars]
+ENVIRONMENT = "prod-nrt"
+R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
+D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562"
+R2_AC_BUCKET = "corelink-ac-nrt"
+R2_AC_REGION = "nrt"
+R2_CHUNK_BUCKET = "corelink-chunk-nrt"
+R2_CHUNK_REGION = "nrt"
+
+[[env.prod-nrt.routes]]
+pattern = "nrt.corelink-api.humangr.com/*"
+zone_name = "humangr.com"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "CAS_BUCKET"
+bucket_name = "corelink-cas-prod"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "AC_BUCKET_SAM"
+bucket_name = "corelink-ac-sam"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "AC_BUCKET_IAD"
+bucket_name = "corelink-ac-iad"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "AC_BUCKET_LHR"
+bucket_name = "corelink-ac-lhr"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "AC_BUCKET_NRT"
+bucket_name = "corelink-ac-nrt"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "AC_BUCKET_SYD"
+bucket_name = "corelink-ac-syd"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "CHUNK_BUCKET_SAM"
+bucket_name = "corelink-chunk-sam"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "CHUNK_BUCKET_IAD"
+bucket_name = "corelink-chunk-iad"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "CHUNK_BUCKET_LHR"
+bucket_name = "corelink-chunk-lhr"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "CHUNK_BUCKET_NRT"
+bucket_name = "corelink-chunk-nrt"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "CHUNK_BUCKET_SYD"
+bucket_name = "corelink-chunk-syd"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "MANIFEST_BUCKET_SAM"
+bucket_name = "corelink-manifest-sam"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "MANIFEST_BUCKET_IAD"
+bucket_name = "corelink-manifest-iad"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "MANIFEST_BUCKET_LHR"
+bucket_name = "corelink-manifest-lhr"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "MANIFEST_BUCKET_NRT"
+bucket_name = "corelink-manifest-nrt"
+
+[[env.prod-nrt.r2_buckets]]
+binding = "MANIFEST_BUCKET_SYD"
+bucket_name = "corelink-manifest-syd"
+
+[[env.prod-nrt.kv_namespaces]]
+binding = "METADATA_KV"
+id = "56f8e99f36ad4ec2aa3b876562409ccc"
+
+[[env.prod-nrt.kv_namespaces]]
+binding = "CLERK_JWKS_KV"
+id = "924c6c0f9ee4439f96ec3a75a98eef8b"
+
+[[env.prod-nrt.kv_namespaces]]
+binding = "NEGATIVE_CACHE_KV"
+id = "b024aef6d57f4a49a4c1715563794392"
+
+[[env.prod-nrt.d1_databases]]
+binding = "CONFIG_DB"
+database_name = "corelink-config-prod"
+database_id = "d64742ea-e102-40b2-a844-ff02e3f94562"
+migrations_dir = "migrations/d1"
+
+[[env.prod-nrt.durable_objects.bindings]]
+name = "CORELINK_SERVER"
+class_name = "CoreLinkServer"
+
+[[env.prod-nrt.durable_objects.bindings]]
+name = "ROLLOUT_DO"
+class_name = "RolloutController"
+
+[[env.prod-nrt.containers]]
+class_name = "CoreLinkServer"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-nrt-corelinkserver-prod:6b816156-r2"
+max_instances = 10
+instance_type = "standard-1"
+
+# ── SYD (Sydney / Asia Pacific Southeast) ────────────────────────────────────
+[env.prod-syd]
+name = "corelink-prod-syd"
+workers_dev = false
+
+[env.prod-syd.vars]
+ENVIRONMENT = "prod-syd"
+R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
+D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562"
+R2_AC_BUCKET = "corelink-ac-syd"
+R2_AC_REGION = "syd"
+R2_CHUNK_BUCKET = "corelink-chunk-syd"
+R2_CHUNK_REGION = "syd"
+
+[[env.prod-syd.routes]]
+pattern = "syd.corelink-api.humangr.com/*"
+zone_name = "humangr.com"
+
+[[env.prod-syd.r2_buckets]]
+binding = "CAS_BUCKET"
+bucket_name = "corelink-cas-prod"
+
+[[env.prod-syd.r2_buckets]]
+binding = "AC_BUCKET_SAM"
+bucket_name = "corelink-ac-sam"
+
+[[env.prod-syd.r2_buckets]]
+binding = "AC_BUCKET_IAD"
+bucket_name = "corelink-ac-iad"
+
+[[env.prod-syd.r2_buckets]]
+binding = "AC_BUCKET_LHR"
+bucket_name = "corelink-ac-lhr"
+
+[[env.prod-syd.r2_buckets]]
+binding = "AC_BUCKET_NRT"
+bucket_name = "corelink-ac-nrt"
+
+[[env.prod-syd.r2_buckets]]
+binding = "AC_BUCKET_SYD"
+bucket_name = "corelink-ac-syd"
+
+[[env.prod-syd.r2_buckets]]
+binding = "CHUNK_BUCKET_SAM"
+bucket_name = "corelink-chunk-sam"
+
+[[env.prod-syd.r2_buckets]]
+binding = "CHUNK_BUCKET_IAD"
+bucket_name = "corelink-chunk-iad"
+
+[[env.prod-syd.r2_buckets]]
+binding = "CHUNK_BUCKET_LHR"
+bucket_name = "corelink-chunk-lhr"
+
+[[env.prod-syd.r2_buckets]]
+binding = "CHUNK_BUCKET_NRT"
+bucket_name = "corelink-chunk-nrt"
+
+[[env.prod-syd.r2_buckets]]
+binding = "CHUNK_BUCKET_SYD"
+bucket_name = "corelink-chunk-syd"
+
+[[env.prod-syd.r2_buckets]]
+binding = "MANIFEST_BUCKET_SAM"
+bucket_name = "corelink-manifest-sam"
+
+[[env.prod-syd.r2_buckets]]
+binding = "MANIFEST_BUCKET_IAD"
+bucket_name = "corelink-manifest-iad"
+
+[[env.prod-syd.r2_buckets]]
+binding = "MANIFEST_BUCKET_LHR"
+bucket_name = "corelink-manifest-lhr"
+
+[[env.prod-syd.r2_buckets]]
+binding = "MANIFEST_BUCKET_NRT"
+bucket_name = "corelink-manifest-nrt"
+
+[[env.prod-syd.r2_buckets]]
+binding = "MANIFEST_BUCKET_SYD"
+bucket_name = "corelink-manifest-syd"
+
+[[env.prod-syd.kv_namespaces]]
+binding = "METADATA_KV"
+id = "56f8e99f36ad4ec2aa3b876562409ccc"
+
+[[env.prod-syd.kv_namespaces]]
+binding = "CLERK_JWKS_KV"
+id = "924c6c0f9ee4439f96ec3a75a98eef8b"
+
+[[env.prod-syd.kv_namespaces]]
+binding = "NEGATIVE_CACHE_KV"
+id = "b024aef6d57f4a49a4c1715563794392"
+
+[[env.prod-syd.d1_databases]]
+binding = "CONFIG_DB"
+database_name = "corelink-config-prod"
+database_id = "d64742ea-e102-40b2-a844-ff02e3f94562"
+migrations_dir = "migrations/d1"
+
+[[env.prod-syd.durable_objects.bindings]]
+name = "CORELINK_SERVER"
+class_name = "CoreLinkServer"
+
+[[env.prod-syd.durable_objects.bindings]]
+name = "ROLLOUT_DO"
+class_name = "RolloutController"
+
+[[env.prod-syd.containers]]
+class_name = "CoreLinkServer"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-syd-corelinkserver-prod:6b816156-r2"
+max_instances = 10
+instance_type = "standard-1"

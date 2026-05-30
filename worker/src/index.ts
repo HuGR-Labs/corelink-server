@@ -65,6 +65,18 @@ export interface Env {
   CF_API_TOKEN?: string;
   D1_DATABASE_ID?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
+  // ADR-MULTI-REGION-V1 — per-region container bucket + region vars.
+  // Set in each [env.prod-<region>] block's `vars`. The DO forwards these to
+  // container.start({ env }) so the Rust binary writes to the correct regional
+  // R2 bucket. Absent → container defaults to IAD (corelink-ac-iad / iad).
+  // R2_AC_BUCKET:    AC envelope bucket for this region (e.g. corelink-ac-lhr)
+  // R2_AC_REGION:    AC bucket region code (e.g. lhr)
+  // R2_CHUNK_BUCKET: Multipart chunk bucket for this region (e.g. corelink-chunk-lhr)
+  // R2_CHUNK_REGION: Chunk bucket region code (e.g. lhr)
+  R2_AC_BUCKET?: string;
+  R2_AC_REGION?: string;
+  R2_CHUNK_BUCKET?: string;
+  R2_CHUNK_REGION?: string;
 }
 
 /** Parsed route context derived from matching the request URL. */

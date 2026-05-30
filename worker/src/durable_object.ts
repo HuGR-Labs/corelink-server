@@ -458,6 +458,13 @@ export class CoreLinkServer implements DurableObject {
           // Container mounts `/_internal/pat/mint` only when both are non-empty.
           CORELINK_INTERNAL_AUTH_KEY: this.env.CORELINK_INTERNAL_AUTH_KEY ?? "",
           PAT_SIGNING_KEY: this.env.PAT_SIGNING_KEY ?? "",
+          // ADR-MULTI-REGION-V1 — per-region R2 bucket overrides.
+          // Absent/empty → container defaults to IAD (corelink-ac-iad / iad).
+          // Set by [env.prod-<region>].vars in wrangler.toml.
+          R2_AC_BUCKET: this.env.R2_AC_BUCKET ?? "",
+          R2_AC_REGION: this.env.R2_AC_REGION ?? "",
+          R2_CHUNK_BUCKET: this.env.R2_CHUNK_BUCKET ?? "",
+          R2_CHUNK_REGION: this.env.R2_CHUNK_REGION ?? "",
         },
       });
 
