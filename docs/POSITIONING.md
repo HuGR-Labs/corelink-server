@@ -82,8 +82,10 @@ demands:
    articles = invisible to the SMB buyer.
 2. **DX as a differentiator.** Vercel/Stripe-grade docs, dashboards,
    onboarding.
-3. **OSS strategy.** Probably open-source the client SDK or a Bazel
-   adapter to seed attention without giving away the platform.
+3. **OSS strategy.** Decisions made: open client-side primitives (hash
+   verifier, PAT verify, audit proof verifier, CLI, SDKs, bridge traits);
+   keep server closed (replication, BYOK, billing, deploy code). Full
+   decision matrix: [OSS_STRATEGY.md](./OSS_STRATEGY.md).
 4. **Free tier generous enough to be useful.** Vercel hobby tier as
    the reference.
 5. **Self-serve everything.** Signup, checkout, upgrade, downgrade.
