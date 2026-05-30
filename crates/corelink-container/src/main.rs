@@ -24,7 +24,7 @@
 )]
 
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
@@ -42,16 +42,34 @@ use corelink_billing::stripe::real::webhook_dispatch::{
 use corelink_tier_selection::tier::TierKind;
 use tracing::{info, warn};
 
+/// Storage backing kind captured once at boot by `main()`.
+///
+/// `"r2"` when `R2_S3_*` env vars are all non-empty (durable store).
+/// `"inmemory"` otherwise (ephemeral fallback — operator action required).
+///
+/// The `OnceLock` is set exactly once during `main()`, before the listener
+/// binds, so every subsequent call to `health_handler` sees a fully
+/// initialised value.  On the (impossible in production) path where the
+/// lock is read before it is set, we fall back to the literal `"unknown"`
+/// so the health endpoint remains available.
+static STORAGE_BACKING: OnceLock<&'static str> = OnceLock::new();
+
 /// Liveness probe for two callers:
 /// (1) the DO's `waitForContainerHealth` — only checks status === 200;
 /// (2) `scripts/smoke-prod-corelink.sh` check [2] — asserts 200 *and*
 ///     `content-type: application/json`.
-/// We serve `200 {"status":"ok"}` to satisfy both with a single canonical body.
+///
+/// Body: `{"status":"ok","storage":"r2"|"inmemory"}` — the `storage` field
+/// lets operators detect the InMemory silent fallback without tailing logs.
+/// The `status` and `content-type` fields are preserved for backward compat.
 async fn health_handler() -> impl IntoResponse {
+    let backing = STORAGE_BACKING.get().copied().unwrap_or("unknown");
+    // Build the JSON inline — no serde dependency in main.rs.
+    let body = format!(r#"{{"status":"ok","storage":"{}"}}"#, backing);
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, HeaderValue::from_static("application/json"))],
-        r#"{"status":"ok"}"#,
+        body,
     )
 }
 
@@ -63,6 +81,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .unwrap_or_else(|_| "info,corelink_server=debug".into()),
         )
         .init();
+
+    // Determine storage backing once at boot so `/_health` can surface it.
+    // This mirrors the decision gate in `routes/cas.rs` and `routes/ac.rs`
+    // without touching those files (they are owned by agent A3).
+    let storage_backing: &'static str =
+        if corelink_server::storage::StorageEnv::from_env().is_some() {
+            "r2"
+        } else {
+            warn!(
+                storage = "inmemory",
+                "CAS/AC falling back to InMemory store — set R2_S3_* env vars for durable storage"
+            );
+            "inmemory"
+        };
+    // Unwrap is safe: this is the only setter and it runs before the listener.
+    let _ = STORAGE_BACKING.set(storage_backing);
+    info!(storage = storage_backing, "storage backing selected");
 
     let port: u16 = std::env::var("PORT")
         .ok()
