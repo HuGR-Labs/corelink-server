@@ -54,7 +54,13 @@ const nextConfig: NextConfig = {
   //     file-tracing resolves shared packages correctly.  Without this, Next.js
   //     warns "inferred workspace root may not be correct" and may miss
   //     transitive deps when building in a pnpm workspace or git worktree.
-  outputFileTracingRoot: path.join(__dirname, "../../"),
+  //
+  // 2026-05-29 fix: with `outputFileTracingRoot: ../../`, `npx
+  // @cloudflare/next-on-pages` constructs Vercel build paths by joining
+  // the workspace-relative path AGAIN with the build cwd, producing
+  // `apps/admin-ui/apps/admin-ui/.next/routes-manifest.json` and an
+  // ENOENT failure. Anchor to the app dir so paths are single-prefixed.
+  outputFileTracingRoot: __dirname,
   // We use middleware for the real per-request CSP nonce.
   async headers() {
     return [

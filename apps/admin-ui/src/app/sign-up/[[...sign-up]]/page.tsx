@@ -17,7 +17,7 @@
 
 // Route-segment runtime override: must be nodejs so that @clerk/nextjs module-scope
 // initialisation does not fire inside the CF Workers edge sandbox.
-export const runtime = "nodejs";
+export const runtime = "edge";
 
 import { SignUp } from "@clerk/nextjs";
 import { useEffect } from "react";
