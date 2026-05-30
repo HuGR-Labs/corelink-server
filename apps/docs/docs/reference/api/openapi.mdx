@@ -37,21 +37,34 @@ npx @redocly/cli build-docs https://docs.corelink.humangr.com/openapi-corelink-v
 
 ## Endpoint coverage
 
-| Tag | Path |
-| --- | --- |
-| signup | `POST /v1/signup` |
-| dpa | `POST /v1/dpa/accept` |
-| dpa | `POST /v1/dpa/re-accept` |
-| tier | `POST /v1/onboarding/tier-select` |
-| pat | `POST /v1/pats`, `GET /v1/pats`, `DELETE /v1/pats/{pat_id}` |
-| billing | `POST /v1/billing/stripe-webhook` |
-| privacy-dsr | `POST /v1/privacy/dsr/{action}` (6 actions), `GET /v1/privacy/dsr/{request_id}/status` |
-| privacy-consent | `POST /v1/consent/{purpose}`, `DELETE /v1/consent/{purpose}`, `GET /v1/consent`, `GET /v1/consent/verify`, `GET /v1/consent/revocation/verify` |
-| admin | `POST /v1/admin/ops`, `GET /v1/admin/ops/{op_id}`, `POST /v1/admin/ops/{op_id}/approve`, `POST /v1/admin/ops/{op_id}/reject`, `GET /v1/admin/audit/events`, `GET /v1/admin/tenants` |
-| enterprise | `POST /v1/enterprise/inquire` |
-| users | `GET /v1/users/me`, `PATCH /v1/users/me` |
-| data-categories | `GET /v1/data-categories` |
-| ops | `GET /api/health`, `POST /api/csp-report` |
+Routes marked **live** are deployed and verified in production today.
+Routes marked **planned** are specified but not yet wired (CF Worker entry crate pending).
+
+| Tag | Status | Path |
+| --- | --- | --- |
+| ops | **live** | `GET /_health` |
+| users | **live** | `GET /v1/users/me` |
+| reapi-http | **live** | `GET /v1/cas/{tenant}/{hash}`, `PUT /v1/cas/{tenant}/{hash}` |
+| reapi-http | **live** | `GET /v1/ac/{tenant}/{action_digest}`, `PUT /v1/ac/{tenant}/{action_digest}` |
+| turbo-v8 | **live** | `GET /v8/artifacts/{hash}`, `PUT /v8/artifacts/{hash}`, `POST /v8/artifacts/events`, `POST /v8/artifacts/status` |
+| bazel-v2 | **live** | `GET /bazel/v2/{instance}/blobs/{hash}/{size}`, `PUT /bazel/v2/{instance}/uploads/{uuid}/blobs/{hash}/{size}` |
+| bazel-v2 | **live** | `GET /bazel/v2/{instance}/blobs/ac/{hash}/{size}`, `PUT /bazel/v2/{instance}/blobs/ac/{hash}/{size}`, `POST /bazel/v2/{instance}/findMissingBlobs` |
+| audit-export | **live** | `GET /v1/audit/export` |
+| audit-analytics | **live** | `GET /v1/audit/analytics/event-count`, `GET /v1/audit/analytics/timeline` |
+| signup-pilot | **live** | `POST /v1/signup/pilot/{token}` |
+| admin-pilot | **live** | `GET /v1/admin/pilots`, `POST /v1/admin/pilots/{tenant_id}/grant-tier`, `POST /v1/admin/pilots/{tenant_id}/checkin` |
+| admin-read-mutate | **live** | `GET /v1/admin/read/{resource}`, `POST /v1/admin/mutate` |
+| signup | planned | `POST /v1/signup` |
+| dpa | planned | `POST /v1/dpa/accept`, `POST /v1/dpa/re-accept` |
+| tier | planned | `POST /v1/onboarding/tier-select` |
+| pat | planned | `POST /v1/pats`, `GET /v1/pats`, `DELETE /v1/pats/{pat_id}` |
+| billing | planned | `POST /v1/billing/stripe-webhook` |
+| privacy-dsr | planned | `POST /v1/privacy/dsr/{action}` (6 actions), `GET /v1/privacy/dsr/{request_id}/status` |
+| privacy-consent | planned | `POST /v1/consent/{purpose}`, `DELETE /v1/consent/{purpose}`, `GET /v1/consent`, `GET /v1/consent/verify`, `GET /v1/consent/revocation/verify` |
+| admin | planned | `POST /v1/admin/ops`, `GET /v1/admin/ops/{op_id}`, `POST /v1/admin/ops/{op_id}/approve`, `POST /v1/admin/ops/{op_id}/reject`, `GET /v1/admin/audit/events`, `GET /v1/admin/tenants` |
+| enterprise | planned | `POST /v1/enterprise/inquire` |
+| data-categories | planned | `GET /v1/data-categories` |
+| ops | planned | `GET /api/health`, `POST /api/csp-report` |
 
 ## Authentication
 

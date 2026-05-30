@@ -364,6 +364,7 @@ const config: Config = {
             { label: "Tutorial", to: "/tutorial/" },
             { label: "How-to", to: "/how-to/" },
             { label: "Reference", to: "/reference/" },
+            { label: "API Reference", to: "/reference/api" },
             { label: "Pricing", to: "/pricing" },
           ],
         },

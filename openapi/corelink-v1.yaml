@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: CoreLink Customer & Privacy REST API
-  version: v1
+  version: 0.1.0
   summary: REST surface for CoreLink customer onboarding, privacy (DSR / consent / DPA),
     billing webhooks, admin operations and health.
   description: |
@@ -27,10 +27,10 @@ info:
     name: Proprietary
     url: https://corelink.humangr.com/legal/terms
 servers:
-  - url: https://api.corelink.humangr.com
-    description: Production
-  - url: https://api.staging.corelink.humangr.com
-    description: Staging
+  - url: https://corelink-api.humangr.com
+    description: Production (Cloudflare Durable Object + container)
+  - url: http://localhost:50051
+    description: Local dev (axum container, PORT env default)
 tags:
   - name: signup
     description: Customer onboarding orchestration (atomic tenant + DPA + first PAT
@@ -69,9 +69,12 @@ tags:
   - name: audit-analytics
     description: Audit-event analytics aggregates (event-count + timeline).
   - name: reapi-http
-    description: HTTP fakes for the Remote Execution API v2 (CAS / AC). Native
-      build wires in-memory handlers for dev / integration testing; production
-      reads come over gRPC (see `docs/reference/reapi/`).
+    description: HTTP surface for the Remote Execution API v2 (CAS / AC). Backed
+      by R2 storage in production; falls back to in-memory for local dev.
+  - name: turbo-v8
+    description: Turborepo remote-cache bridge (Vercel v8 protocol) — `GET/PUT /v8/artifacts/{hash}`, events, status.
+  - name: bazel-v2
+    description: Bazel REAPI v2 HTTP bridge — `/bazel/v2/{instance}/blobs/...` and `/bazel/v2/{instance}/findMissingBlobs`.
 security:
   - BearerPAT: []
   - ClerkSessionCookie: []
@@ -837,40 +840,47 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/users/me:
-    x-status: planned
-    x-binding: cf-worker-pending
-    x-implementing-crate: pending (Clerk-authenticated profile read)
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/users.rs (handle_me)
+    x-reconciliation-note: |
+      Live in production. Returns the PAT-resolved caller identity that the
+      Worker injected via `x-corelink-tenant-id`, `x-corelink-token-prefix`,
+      `x-corelink-route-kind` headers before proxying to the Durable Object.
+      PATCH is NOT wired — `users.rs` registers only GET.
     get:
       tags: [users]
-      summary: Current user profile.
+      summary: Reflect the authenticated caller's PAT identity.
       operationId: usersMeGet
+      security:
+        - BearerPAT: []
+      description: |
+        Returns the PAT-resolved identity injected by the Worker into three
+        trusted headers. Clients call this to verify their PAT is wired
+        correctly without exercising the CAS/AC data plane. The raw PAT is
+        never reflected.
       responses:
         "200":
-          description: Profile.
+          description: Caller identity.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/UserProfile"
+                type: object
+                required: [tenant_id, token_prefix, route_kind]
+                properties:
+                  tenant_id:
+                    type: string
+                    description: PAT-resolved tenant UUID (or `_unknown` if header absent).
+                  token_prefix:
+                    type: string
+                    description: Token prefix for audit correlation (NOT the raw PAT secret).
+                  route_kind:
+                    type: string
+                    description: Route family (e.g. `reapi_v1`).
+              example:
+                tenant_id: "550e8400-e29b-41d4-a716-446655440000"
+                token_prefix: "clpat_abcd"
+                route_kind: "reapi_v1"
         "401": { $ref: "#/components/responses/Unauthorized" }
-    patch:
-      tags: [users]
-      summary: Update mutable profile fields.
-      operationId: usersMePatch
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UserProfilePatch"
-      responses:
-        "200":
-          description: Updated profile.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserProfile"
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "422": { $ref: "#/components/responses/Unprocessable" }
   /v1/data-categories:
     x-status: planned
     x-binding: cf-worker-pending
@@ -1292,13 +1302,12 @@ paths:
 
   /v1/cas/{tenant}/{hash}:
     x-status: implemented
-    x-implementing-handler: crates/corelink-container/src/routes/cas.rs (handle_read)
+    x-implementing-handler: crates/corelink-container/src/routes/cas.rs (handle_read, handle_write)
     x-binding-note: |
-      REAPI HTTP fake — production CAS reads land on the gRPC ByteStream
-      surface (docs/reference/reapi/). This HTTP route exists for the
-      native-build dev / integration-test loop and the wave-11 end-to-end
-      wire-up demonstration. Cross-tenant denials enforced at the
-      route boundary in addition to the handler layer.
+      Backed by R2 storage in production (falls back to InMemory when creds
+      absent). Cross-tenant denials are enforced at the route boundary and
+      emit audit rows before the 403. Route constant:
+      `CAS_READ_ROUTE = "/v1/cas/:tenant/:hash"`.
     get:
       tags: [reapi-http]
       summary: Read a CAS blob by `(tenant, content-hash)`.
@@ -1324,8 +1333,47 @@ paths:
               schema: { type: string, format: binary }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403":
-          description: Cross-tenant attempt.
+          description: Cross-tenant attempt — audit row emitted before 403.
         "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [reapi-http]
+      summary: Write a CAS blob by `(tenant, content-hash)`.
+      operationId: casWrite
+      security:
+        - BearerPAT: []
+      parameters:
+        - name: tenant
+          in: path
+          required: true
+          schema: { type: string }
+        - name: hash
+          in: path
+          required: true
+          schema:
+            type: string
+            description: Hex BLAKE3 digest the caller claims for this body.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+        description: Raw blob bytes. The handler verifies the hash against the path parameter before committing.
+      responses:
+        "201":
+          description: Blob stored (durable commit). Body echoes the content hash.
+          content:
+            text/plain:
+              schema: { type: string }
+        "200":
+          description: Idempotent re-write — blob already existed with identical hash.
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Cross-tenant attempt.
+        "422":
+          description: Hash mismatch — body bytes do not match the claimed digest.
 
   /v1/cas/{digest}:
     x-status: implemented
@@ -1411,16 +1459,369 @@ paths:
       requestBody:
         required: true
         content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+        description: Raw ActionResult bytes.
+      responses:
+        "201":
+          description: Stored durably (fresh insert). Body echoes the action digest.
+          content:
+            text/plain:
+              schema: { type: string }
+        "200":
+          description: Idempotent re-write (already existed).
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Cross-tenant attempt — audit row emitted before 403.
+
+  # ============================================================
+  # HEALTH — server-only liveness probe
+  # ============================================================
+
+  /_health:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/main.rs (health_handler)
+    x-reconciliation-note: |
+      Mounted directly in main.rs as `.route("/_health", get(health_handler))`.
+      Used by the Cloudflare Durable Object `waitForContainerHealth` probe
+      (expects HTTP 200 + application/json) and by `scripts/smoke-prod-corelink.sh`.
+      Returns `{"status":"ok"}` — no storage field yet (A4 may add it).
+    get:
+      tags: [ops]
+      summary: Container liveness / readiness probe for the DO health check.
+      operationId: containerHealth
+      security: []
+      responses:
+        "200":
+          description: Container is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+              example:
+                status: ok
+
+  # ============================================================
+  # TURBO v8 — Turborepo remote-cache bridge
+  # ============================================================
+
+  /v8/artifacts/events:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/turbo_v8.rs (handle_events)
+    post:
+      tags: [turbo-v8]
+      summary: Accept-and-drop Turborepo telemetry events.
+      operationId: turboEvents
+      security:
+        - BearerPAT: []
+      requestBody:
+        required: true
+        content:
           application/json:
             schema:
               type: object
               additionalProperties: true
       responses:
-        "204":
-          description: Stored.
+        "200":
+          description: Events acknowledged (dropped — telemetry is fire-and-forget).
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v8/artifacts/status:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/turbo_v8.rs (handle_status)
+    post:
+      tags: [turbo-v8]
+      summary: Static remote-cache enabled check (Turbo status probe).
+      operationId: turboStatus
+      security:
+        - BearerPAT: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Remote cache is enabled.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v8/artifacts/{hash}:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/turbo_v8.rs (handle_get, handle_put)
+    x-reconciliation-note: |
+      Route constants `TURBO_GET_ROUTE`/`TURBO_PUT_ROUTE` = `/v8/artifacts/:hash`.
+      Query parameter `teamId` is **required**; must match the authenticated
+      caller's tenant (cross-tenant guard). `slug` is optional/informational.
+    get:
+      tags: [turbo-v8]
+      summary: Download a Turborepo build artifact.
+      operationId: turboArtifactGet
+      security:
+        - BearerPAT: []
+      parameters:
+        - name: hash
+          in: path
+          required: true
+          schema: { type: string }
+          description: Artifact hash (Turborepo-generated key).
+        - name: teamId
+          in: query
+          required: true
+          schema: { type: string }
+          description: Vercel team identifier — used as the storage partition key.
+        - name: slug
+          in: query
+          required: false
+          schema: { type: string }
+          description: Informational repo slug (logged, not partitioned).
+      responses:
+        "200":
+          description: Artifact bytes.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400":
+          description: Missing required `teamId` query parameter.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Cross-tenant attempt (teamId does not match authenticated tenant).
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [turbo-v8]
+      summary: Upload a Turborepo build artifact.
+      operationId: turboArtifactPut
+      security:
+        - BearerPAT: []
+      parameters:
+        - name: hash
+          in: path
+          required: true
+          schema: { type: string }
+        - name: teamId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: slug
+          in: query
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Artifact stored. Body is `{"urls":["..."]}` per Vercel spec.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [urls]
+                properties:
+                  urls:
+                    type: array
+                    items: { type: string }
+        "400":
+          description: Missing required `teamId` query parameter.
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403":
           description: Cross-tenant attempt.
+
+  # ============================================================
+  # BAZEL v2 — REAPI HTTP bridge
+  # ============================================================
+
+  /bazel/v2/{instance}/blobs/{hash}/{size}:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/bazel_v2.rs (handle_cas_read, handle_cas_write via uploads sub-path)
+    x-reconciliation-note: |
+      Axum resolves `/blobs/ac/:hash/:size` before `/blobs/:hash/:size`
+      because the literal `ac` segment wins the matchit priority.
+      Tenant is resolved from the `:instance` path segment (treated as
+      the storage partition key); cross-tenant guard enforced.
+    get:
+      tags: [bazel-v2]
+      summary: Read a CAS blob (Bazel REAPI ByteStream GET).
+      operationId: bazelCasRead
+      security:
+        - BearerPAT: []
+      parameters:
+        - name: instance
+          in: path
+          required: true
+          schema: { type: string }
+          description: Bazel instance name (used as tenant partition key).
+        - name: hash
+          in: path
+          required: true
+          schema: { type: string }
+          description: Hex SHA-256 digest.
+        - name: size
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+          description: Expected blob size in bytes (REAPI digest component).
+      responses:
+        "200":
+          description: Blob bytes.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Cross-tenant attempt.
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /bazel/v2/{instance}/uploads/{uuid}/blobs/{hash}/{size}:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/bazel_v2.rs (handle_cas_write)
+    put:
+      tags: [bazel-v2]
+      summary: Write a CAS blob (Bazel REAPI ByteStream PUT).
+      operationId: bazelCasWrite
+      security:
+        - BearerPAT: []
+      parameters:
+        - name: instance
+          in: path
+          required: true
+          schema: { type: string }
+        - name: uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: Upload UUID (REAPI upload id, used for dedup).
+        - name: hash
+          in: path
+          required: true
+          schema: { type: string }
+        - name: size
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Blob stored.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Cross-tenant attempt.
+        "413":
+          description: Batch / blob too large.
+
+  /bazel/v2/{instance}/blobs/ac/{hash}/{size}:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/bazel_v2.rs (handle_ac_read, handle_ac_write)
+    get:
+      tags: [bazel-v2]
+      summary: Read an Action Cache result (Bazel REAPI AC GET).
+      operationId: bazelAcRead
+      security:
+        - BearerPAT: []
+      parameters:
+        - name: instance
+          in: path
+          required: true
+          schema: { type: string }
+        - name: hash
+          in: path
+          required: true
+          schema: { type: string }
+        - name: size
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: ActionResult bytes.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Cross-tenant attempt.
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [bazel-v2]
+      summary: Write an Action Cache result (Bazel REAPI AC PUT).
+      operationId: bazelAcWrite
+      security:
+        - BearerPAT: []
+      parameters:
+        - name: instance
+          in: path
+          required: true
+          schema: { type: string }
+        - name: hash
+          in: path
+          required: true
+          schema: { type: string }
+        - name: size
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: ActionResult stored.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Cross-tenant attempt.
+
+  /bazel/v2/{instance}/findMissingBlobs:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/bazel_v2.rs (handle_find_missing)
+    post:
+      tags: [bazel-v2]
+      summary: Find missing blobs (Bazel REAPI FindMissingBlobs POST).
+      operationId: bazelFindMissingBlobs
+      security:
+        - BearerPAT: []
+      parameters:
+        - name: instance
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: REAPI FindMissingBlobsRequest (JSON-encoded proto).
+      responses:
+        "200":
+          description: List of digests not present in the cache.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Cross-tenant attempt.
+        "413":
+          description: Batch too large.
 
 components:
   securitySchemes:
