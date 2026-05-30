@@ -23,28 +23,39 @@ workers_dev = false
 #                                  Must match the container + main worker binding.
 #                                  Used to call /_internal/pat/mint on the container.
 #
-# D1 bindings (bind in wrangler.toml per environment):
-#   CONFIG_DB        — corelink-prod-d1 (holds tenant + pat tables).
-#                      Required for Stream-5 self-serve provisioning.
-#   ANALYTICS_DB     — D1 binding owned by `apps/analytics-worker/`.
-#                      Optional; analytics events are no-op when absent.
+# D1 bindings:
+#   CONFIG_DB  — corelink-prod-d1 (tenant, pat, tenant_billing tables).
+#   BILLING_DB — alias to same corelink-prod-d1; required by stripe.ts webhook handler.
 #
 # Vars (non-secret, set in [vars]):
 #   CORELINK_API_BASE — base URL of the CoreLink API (container host).
 
-# Stream-5: CONFIG_DB binding for direct tenant + PAT provisioning.
-# Same database (corelink-config-prod, id d64742ea-...) bound by the main
-# worker so signup-worker can INSERT into `tenant` + `pat` tables that the
-# main worker reads on authenticated requests.
+# D1 bindings: same physical database (corelink-prod-d1, id d64742ea-...)
+# bound under two names. CONFIG_DB carries tenant + pat tables (read by the
+# main worker + written by signup-worker chain). BILLING_DB alias is required
+# by apps/signup-worker/src/webhooks/stripe.ts which writes the
+# tenant_billing table; without the alias the stripe webhook silently no-ops.
 [[d1_databases]]
 binding = "CONFIG_DB"
-database_name = "corelink-config-prod"
+database_name = "corelink-prod-d1"
+database_id = "d64742ea-e102-40b2-a844-ff02e3f94562"
+
+[[d1_databases]]
+binding = "BILLING_DB"
+database_name = "corelink-prod-d1"
 database_id = "d64742ea-e102-40b2-a844-ff02e3f94562"
 
 # [[d1_databases]]
 # binding = "ANALYTICS_DB"
 # database_name = "corelink-analytics"
 # database_id = "<assigned-by-agent-G>"
+
+# Route binding — signup-worker owns this hostname exclusively.
+# The main corelink worker (wrangler.toml at root) had this route but does not
+# implement /webhooks/clerk or /webhooks/stripe; moved here 2026-05-29 (Phase A4).
+[[routes]]
+pattern = "corelink-signup.humangr.com/*"
+zone_name = "humangr.com"
 
 [vars]
 CORELINK_API_BASE = "https://corelink-api.humangr.com"
