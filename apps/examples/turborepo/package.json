@@ -1,0 +1,19 @@
+{
+  "name": "corelink-turbo-example",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Minimal Turborepo workspace showing CoreLink as the remote cache backend.",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0"
+  }
+}

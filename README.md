@@ -303,6 +303,21 @@ flowchart LR
     cp -->|usage| billing[Stripe meter]
 ```
 
+## Examples
+
+Copy-paste runnable examples that connect popular build toolchains to CoreLink
+as the remote cache backend.
+
+| Example | Toolchain | Location |
+|---------|-----------|----------|
+| Turborepo remote cache | Turborepo v2 + pnpm | [`apps/examples/turborepo/`](./apps/examples/turborepo/) |
+
+Each example ships a `.env.example`, a `README.md` with a full runbook
+(set-env → first build → second build → expected cache-hit output), and the
+minimal config files needed to wire the toolchain to CoreLink.
+
+---
+
 ## License
 
 Dual-licensed under your choice of:

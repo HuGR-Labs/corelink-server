@@ -1,0 +1,11 @@
+{
+  "name": "@corelink-example/web",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "@corelink-example/shared": "workspace:*"
+  },
+  "scripts": {
+    "build": "mkdir -p dist && echo 'web built at '\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > dist/output.txt"
+  }
+}

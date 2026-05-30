@@ -1,0 +1,8 @@
+{
+  "name": "@corelink-example/shared",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "mkdir -p dist && echo 'shared built at '\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > dist/output.txt"
+  }
+}
