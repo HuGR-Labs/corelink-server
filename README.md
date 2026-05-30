@@ -10,6 +10,12 @@
 
 ---
 
+> 📍 **Contributors / agents reading this for the first time:** read
+> [`docs/POSITIONING.md`](./docs/POSITIONING.md) BEFORE proposing any
+> market angle, pivot, or feature framing. CoreLink is repeatedly
+> reduced to "build cache" by fresh readers — it is a multi-tenant
+> CAS + governance platform with build-cache as ONE protocol surface.
+
 ## TL;DR
 
 CoreLink is a multi-tenant, content-addressable cache for software builds, package indices, container layers, and ML artifacts — a [Remote Execution API v2 (REAPI)](./specs/03_architecture/) implementation in Rust on Cloudflare's edge. It commits to four invariant guarantees (integrity, tenant isolation, confidentiality, append-only audit) verified by TLA+ model checking, property-based tests, and runtime assertions. The same managed service ships BYOK envelope encryption across four KMS providers, RFC 6962 Merkle-chained audit logs, residency-honest multi-region storage, and a published OpenAPI contract — so customers do not have to choose between operational simplicity and the controls a regulated business actually needs.
