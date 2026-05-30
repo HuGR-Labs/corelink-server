@@ -63,7 +63,7 @@ async fn cross_tenant_reject_returns_503_on_audit_sink_failure() {
     };
     let app = router(state);
     let uri = format!(
-        "/v1/audit/export?from=0&to=1000&tenant={attempted}",
+        "/v1/audit/{auth_tenant}/export?from=0&to=1000&tenant={attempted}",
     );
     let req = axum::http::Request::builder()
         .uri(uri)
@@ -109,7 +109,7 @@ async fn rate_limit_deny_returns_503_on_audit_sink_failure() {
     // First request: consume the token (200 expected; no failure
     // injected yet so emit succeeds).
     let req1 = axum::http::Request::builder()
-        .uri("/v1/audit/export?from=0&to=1000")
+        .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
         .body(axum::body::Body::empty())
         .expect("req1");
@@ -119,7 +119,7 @@ async fn rate_limit_deny_returns_503_on_audit_sink_failure() {
     // emit hits the failing sink.
     sink.inject_failure("pipeline down").expect("inject");
     let req2 = axum::http::Request::builder()
-        .uri("/v1/audit/export?from=0&to=1000")
+        .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
         .body(axum::body::Body::empty())
         .expect("req2");
@@ -174,7 +174,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
 
     // First request — burst=1 → consumes the token, 200 expected.
     let req1 = axum::http::Request::builder()
-        .uri("/v1/audit/export?from=0&to=1000")
+        .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
         .body(axum::body::Body::empty())
         .expect("req1");
@@ -188,7 +188,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
     // Second request immediately — wall clock still pinned, bucket
     // empty, refill floor not reached → 429.
     let req2 = axum::http::Request::builder()
-        .uri("/v1/audit/export?from=0&to=1000")
+        .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
         .body(axum::body::Body::empty())
         .expect("req2");
@@ -204,7 +204,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
     // token / 60s; 61s ≥ 60s floor). The next request MUST allow.
     fake.advance(std::time::Duration::from_secs(61));
     let req3 = axum::http::Request::builder()
-        .uri("/v1/audit/export?from=0&to=1000")
+        .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
         .body(axum::body::Body::empty())
         .expect("req3");
@@ -258,7 +258,7 @@ async fn wall_clock_saturated_to_zero_returns_503_and_emits_clock_unavailable_ro
     let app = router(state);
 
     let req = axum::http::Request::builder()
-        .uri("/v1/audit/export?from=0&to=1000")
+        .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
         .body(axum::body::Body::empty())
         .expect("req");

@@ -40,7 +40,7 @@ use corelink_ratelimit::{
 };
 use corelink_server::routes::audit_export::{
     audit_export_rate_limit_config, router, AuditExportRouteState, ExportAuditRow,
-    ExportAuditSink, InMemoryExportAuditSink, AUDIT_EXPORT_ROUTE,
+    ExportAuditSink, InMemoryExportAuditSink,
     EVENT_TYPE_CROSS_TENANT_ATTEMPT, EVENT_TYPE_EXPORT_REQUEST,
     EVENT_TYPE_VERIFY_FAILED, EXIT_STATUS_VERIFY_FAILED_MID_STREAM, HEADER_EXPORT_ABORTED,
     R2_LIST_PAGE_SIZE, TENANT_ID_HEADER,
@@ -100,10 +100,8 @@ fn fixture_with_chain(
 }
 
 fn build_request(tenant: Uuid, from_ms: u64, to_ms: u64) -> Request<Body> {
-    let uri = format!(
-        "{}?from={from_ms}&to={to_ms}",
-        AUDIT_EXPORT_ROUTE
-    );
+    // Wave-37: tenant is now a path segment, not a header.
+    let uri = format!("/v1/audit/{tenant}/export?from={from_ms}&to={to_ms}");
     Request::builder()
         .method("GET")
         .uri(uri)
@@ -118,9 +116,10 @@ fn build_request_with_attempted_tenant(
     from_ms: u64,
     to_ms: u64,
 ) -> Request<Body> {
+    // Wave-37: auth tenant in path; attempted tenant in query param for
+    // cross-tenant-attempt detection.
     let uri = format!(
-        "{}?from={from_ms}&to={to_ms}&tenant={attempted}",
-        AUDIT_EXPORT_ROUTE
+        "/v1/audit/{auth_tenant}/export?from={from_ms}&to={to_ms}&tenant={attempted}",
     );
     Request::builder()
         .method("GET")
@@ -324,21 +323,26 @@ async fn chain_tamper_emits_verify_failed_sev0() {
     assert_eq!(request_row.exit_status, "verify_failed");
 }
 
-/// AC-5 (bonus): Unauthenticated request (missing `X-Tenant-Id`) → 401.
+/// AC-5 (bonus): Request with an invalid (non-UUID) tenant in the path → 400.
+///
+/// Wave-37: tenant auth now comes from the `:tenant` path segment, not the
+/// `X-Tenant-Id` header. A malformed tenant UUID in the path returns 400
+/// Bad Request before any exporter/rate-limit logic runs.
 #[tokio::test]
-async fn missing_tenant_header_returns_401() {
+async fn invalid_tenant_in_path_returns_400() {
     let tenant = Uuid::now_v7();
     let (state, _exporter, _audit_sink) = fixture_with_chain(tenant, 1, 100);
     let app = router(state);
 
+    // Use a non-UUID string in the :tenant segment — handler must reject with 400.
     let req = Request::builder()
         .method("GET")
-        .uri(format!("{AUDIT_EXPORT_ROUTE}?from=0&to=1000"))
+        .uri("/v1/audit/not-a-valid-uuid/export?from=0&to=1000")
         .body(Body::empty())
         .expect("req");
 
     let resp = app.oneshot(req).await.expect("oneshot");
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 /// AC-6 (bonus): Rate-limit second-within-minute → 429 + audit emit

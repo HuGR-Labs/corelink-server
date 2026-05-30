@@ -1,9 +1,15 @@
-//! Axum handler for `GET /v1/audit/export` and its private path
+//! Axum handler for `GET /v1/audit/:tenant/export` and its private path
 //! helpers.
 //!
 //! Split from monolithic `audit_export.rs` (wave-33 stage 2.PRE-B.1.c).
 //! Verbatim move of `handle_export`; supporting parse / serialize
 //! helpers live in [`super::parse`].
+//!
+//! Wave-37 (fix): tenant is now extracted from the `:tenant` path
+//! parameter following the `/v1/cas/:tenant/:hash` pattern. The Worker
+//! extracts the PAT-resolved tenant id, routes the request to the
+//! per-tenant DO, and forwards the full URL path to the container —
+//! so the path tenant is the canonical authenticated tenant.
 
 #![forbid(unsafe_code)]
 
@@ -11,8 +17,8 @@ use std::sync::Arc;
 
 use axum::{
     body::Body,
-    extract::{Query, State},
-    http::{HeaderMap, HeaderName, HeaderValue, StatusCode},
+    extract::{Path, Query, State},
+    http::{HeaderName, HeaderValue, StatusCode},
     response::IntoResponse,
 };
 use corelink_audit_chain::{verify_export_result, ExportWindow};
@@ -26,28 +32,28 @@ use super::state::{AuditExportQuery, AuditExportRouteState};
 use super::stream::{build_audit_export_async_stream, InMemoryR2ListPager};
 use super::types::{
     ExportAuditRow, EVENT_TYPE_CROSS_TENANT_ATTEMPT, EVENT_TYPE_EXPORT_REQUEST,
-    EVENT_TYPE_VERIFY_FAILED, HEADER_CHAIN_HEAD_ANCHOR, HEADER_EXPORT_ABORTED, TENANT_ID_HEADER,
+    EVENT_TYPE_VERIFY_FAILED, HEADER_CHAIN_HEAD_ANCHOR, HEADER_EXPORT_ABORTED,
 };
 
-/// `GET /v1/audit/export` axum handler.
+/// `GET /v1/audit/:tenant/export` axum handler.
+///
+/// The `:tenant` path parameter is the canonical authenticated tenant
+/// following the `/v1/cas/:tenant/:hash` pattern. The Worker extracts
+/// the PAT-resolved tenant id, routes the request to the per-tenant DO,
+/// and forwards the full URL path (including the tenant segment) to the
+/// container — so the path tenant is the authoritative source of truth.
 pub(super) async fn handle_export(
     State(state): State<AuditExportRouteState>,
-    headers: HeaderMap,
+    Path(path_tenant_str): Path<String>,
     Query(query): Query<AuditExportQuery>,
 ) -> axum::response::Response {
-    // 1. Auth — JWT-validated tenant arrives via `X-Tenant-Id` header.
-    //    The production middleware injects this AFTER verifying the
-    //    JWT signature; native-target tests stub the header directly.
-    let authenticated_tenant = match headers
-        .get(TENANT_ID_HEADER)
-        .and_then(|v| v.to_str().ok())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(Uuid::parse_str)
-    {
-        Some(Ok(t)) => t,
-        _ => {
-            return (StatusCode::UNAUTHORIZED, "missing or invalid X-Tenant-Id").into_response();
+    // 1. Auth — tenant from the `:tenant` path segment (canonical,
+    //    following /v1/cas/:tenant/:hash). The Worker injects the
+    //    PAT-resolved tenant into the URL path before forwarding.
+    let authenticated_tenant = match Uuid::parse_str(path_tenant_str.trim()) {
+        Ok(t) => t,
+        Err(_) => {
+            return (StatusCode::BAD_REQUEST, "tenant: invalid uuid in path").into_response();
         }
     };
 
