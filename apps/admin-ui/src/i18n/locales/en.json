@@ -108,5 +108,16 @@
     "heading": "CoreLink Admin",
     "subheading": "Manage your tenant, PATs, and compliance posture.",
     "cta": "Sign in to continue"
+  },
+  "pricing": {
+    "title": "Simple, transparent pricing",
+    "subtitle": "R2 zero-egress means you pay for storage, not bandwidth.",
+    "mostPopular": "Most popular",
+    "footerNote": "All paid tiers include R2 zero-egress bandwidth. Prices in USD. Billed monthly.",
+    "cta": {
+      "signUpFree": "Sign up free",
+      "signUp": "Sign up",
+      "talkToUs": "Talk to us"
+    }
   }
 }
