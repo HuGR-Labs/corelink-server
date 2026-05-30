@@ -22,9 +22,12 @@ CoreLink is a multi-tenant, content-addressable cache for software builds, packa
 
 ## 30-second demo
 
-Install, store, retrieve, and audit in under a minute. The full
-[10-minute quickstart](./apps/docs/docs/tutorials/quickstart-10min.mdx)
-walks each step in detail.
+Install, store, retrieve, and audit in under a minute.
+
+**New?** Try the [5-minute quickstart](./apps/docs/docs/tutorials/quickstart-5min.mdx) —
+sign up, export your PAT, run two `curl` commands, done. No CLI install required.
+The full [10-minute quickstart](./apps/docs/docs/tutorials/quickstart-10min.mdx)
+adds the CLI, Bazel wiring, and cache HITs.
 
 ```bash
 # 1. Install the CLI (macOS shown; Linux/Windows in the quickstart).

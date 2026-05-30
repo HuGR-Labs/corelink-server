@@ -1,0 +1,245 @@
+---
+id: quickstart-5min
+title: Quickstart — first CAS PUT/GET in 5 minutes
+sidebar_label: 5-minute quickstart
+description: From zero to a verified blob roundtrip in under 5 minutes. Sign up, export your PAT, run two curl commands, done.
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart — first CAS PUT/GET in 5 minutes
+
+**Goal:** sign up, get a PAT, push a blob to the CoreLink CAS, pull it back,
+and verify the bytes are identical — all in under 5 minutes wall-clock.
+
+No CLI to install. No Bazel required. Just `curl`, `shasum`/`sha256sum`, and a
+shell. The [10-minute quickstart](./quickstart-10min) adds the full CLI, Bazel
+wiring, and cache HITs once you have the basics down.
+
+:::tip No credit card required
+A starter account is free up to 10 GB. Sign-up provisions your tenant and a
+starter PAT — no billing step.
+:::
+
+---
+
+## Time budget
+
+| Step | Budget | Cumulative |
+|---|---|---|
+| 1 — Sign up | 30 s | 30 s |
+| 2 — Copy your PAT | 10 s | 40 s |
+| 3 — Export env vars | 10 s | 50 s |
+| 4 — PUT a blob | 1 min | ~2 min |
+| 5 — GET it back | 30 s | ~2.5 min |
+| 6 — Next steps | 30 s | **~3 min total** |
+
+---
+
+## Step 1 — Sign up <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30 s)</span>
+
+Open **[https://corelink-admin.humangr.com/sign-up](https://corelink-admin.humangr.com/sign-up)**
+in your browser and complete the two-step sign-up (Google or email accepted).
+
+After sign-up you land on the **`/welcome`** page. Keep it open.
+
+---
+
+## Step 2 — Copy your PAT <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~10 s)</span>
+
+On the `/welcome` page you will see your **Personal Access Token (PAT)** and
+your **Tenant ID**. Both are shown exactly once on this screen.
+
+Your PAT looks like:
+
+```text
+corelink_pat_XXXXXXXXXXXXXXXX.YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY.ZZZZZZZZZZZZZZZZZZZZ
+```
+
+Your Tenant ID is a UUID:
+
+```text
+xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+:::warning One-time reveal — copy both values now
+If you close the tab without copying, regenerate via **Settings → Access
+tokens → Regenerate**. Never paste a real PAT into shared docs, Slack,
+or source code — store it in a secret manager (`direnv`, `1Password`,
+your CI provider's secret store).
+:::
+
+---
+
+## Step 3 — Export env vars <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~10 s)</span>
+
+Open a terminal and export both values you copied from the `/welcome` page:
+
+```bash
+export CORELINK_PAT="corelink_pat_XXXXXXXXXXXXXXXX.YYYYYYYYYYYYYYY.ZZZZZZZZZZ"
+export CORELINK_TENANT="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+```
+
+Replace the placeholders with your actual PAT and Tenant ID.
+All commands below reference only `$CORELINK_PAT` and `$CORELINK_TENANT` — no
+secret ever appears in a command literal.
+
+---
+
+## Step 4 — PUT a blob <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
+
+Create a small test payload, compute its SHA-256, and upload it.
+
+<Tabs groupId="os">
+<TabItem value="macos" label="macOS" default>
+
+```bash
+# Create a test payload
+echo "hello corelink $(date)" > /tmp/cl-test.txt
+
+# Compute the SHA-256 digest (macOS uses shasum -a 256)
+DIGEST=$(shasum -a 256 /tmp/cl-test.txt | awk '{print $1}')
+echo "digest: $DIGEST"
+
+# Upload — 201 Created means success
+curl -sSf -X PUT \
+  -H "Authorization: Bearer $CORELINK_PAT" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @/tmp/cl-test.txt \
+  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST"
+```
+
+</TabItem>
+<TabItem value="linux" label="Linux">
+
+```bash
+# Create a test payload
+echo "hello corelink $(date)" > /tmp/cl-test.txt
+
+# Compute the SHA-256 digest (Linux uses sha256sum)
+DIGEST=$(sha256sum /tmp/cl-test.txt | awk '{print $1}')
+echo "digest: $DIGEST"
+
+# Upload — 201 Created means success
+curl -sSf -X PUT \
+  -H "Authorization: Bearer $CORELINK_PAT" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @/tmp/cl-test.txt \
+  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST"
+```
+
+</TabItem>
+</Tabs>
+
+Expected response (HTTP 201):
+
+```json
+{"hash":"sha256:<your-digest-here>"}
+```
+
+If you see `401 Unauthorized`, double-check that `CORELINK_PAT` is exported
+correctly in your current shell session (`echo $CORELINK_PAT`).
+
+:::note SHA-256 matches the URL
+CoreLink is a content-addressable store — the sha256 digest **is** the storage
+key. The server verifies the body hash matches the URL; a mismatch returns 422.
+:::
+
+---
+
+## Step 5 — GET the blob back <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30 s)</span>
+
+Fetch the blob you just uploaded and verify it is byte-identical to the
+original:
+
+```bash
+curl -sSf \
+  -H "Authorization: Bearer $CORELINK_PAT" \
+  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST" \
+  -o /tmp/cl-test-downloaded.txt
+
+diff /tmp/cl-test.txt /tmp/cl-test-downloaded.txt && echo "PASS — byte-exact roundtrip"
+```
+
+Expected output:
+
+```text
+PASS — byte-exact roundtrip
+```
+
+That `PASS` line is your activation event — a blob written and read back from
+the CoreLink CAS, verified byte-exact on your machine.
+
+:::tip Automate it
+The companion script `scripts/quickstart.sh` in the CoreLink repo runs this
+exact PUT/GET roundtrip automatically and prints a wall-clock summary. See
+[the script source](https://github.com/humangr-labs/corelink-server/blob/main/scripts/quickstart.sh)
+for reference.
+:::
+
+---
+
+## Step 6 — Next steps <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30 s)</span>
+
+You have a working PAT and a verified roundtrip. Where to go next:
+
+### Wire your build tool
+
+<Tabs groupId="build-tool">
+<TabItem value="bazel" label="Bazel" default>
+
+Add these three lines to your `.bazelrc`:
+
+```bash
+build --remote_cache=https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT
+build --remote_header=authorization=Bearer\ $CORELINK_PAT
+build --remote_upload_local_results=true
+```
+
+Run `bazel build //...` twice — the second run fetches from CoreLink.
+Full guide: [Bazel integration](../integrations/bazel).
+
+</TabItem>
+<TabItem value="turborepo" label="Turborepo">
+
+In `turbo.json` set your remote cache endpoint:
+
+```json
+{
+  "remoteCache": {
+    "apiUrl": "https://corelink-api.humangr.com",
+    "teamId": "<your-tenant-id>",
+    "token": "<set TURBO_TOKEN=$CORELINK_PAT in CI>"
+  }
+}
+```
+
+Full guide: [Turborepo integration](../integrations/turborepo).
+
+</TabItem>
+</Tabs>
+
+### Go deeper
+
+- **[10-minute quickstart](./quickstart-10min)** — CLI install, `corelink doctor`,
+  `corelink bazel-init`, and first cache HITs end-to-end.
+- **[What is CoreLink?](../intro)** — architecture, tenancy model, invariant
+  guarantees.
+- **[Concepts: CAS vs AC](../concepts/cas-vs-ac)** — when to use the
+  Content-Addressable Store vs the Action Cache.
+- **[API reference](../api/http)** — full HTTP endpoint spec.
+
+---
+
+## Troubleshooting
+
+| Error | Cause | Fix |
+|---|---|---|
+| `401 Unauthorized` | PAT not exported or expired | `echo $CORELINK_PAT` — re-export if empty; regenerate from **Settings → Access tokens** |
+| `403 Forbidden` | PAT scoped to a different tenant | Confirm `$CORELINK_TENANT` matches your PAT's tenant (shown on the welcome page) |
+| `404 Not Found` on GET | Blob not uploaded yet, or wrong tenant | PUT first; double-check `$CORELINK_TENANT` |
+| `422 Unprocessable Entity` | SHA-256 in URL does not match body | Recompute: `shasum -a 256 /tmp/cl-test.txt` and re-export `DIGEST` |
+| `curl: (22)` / non-2xx | General request failure with `-sSf` | Remove `-f`, re-run, read the full JSON error body |
+
+Full error reference: [Troubleshooting](../troubleshooting).
