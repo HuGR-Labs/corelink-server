@@ -48,14 +48,30 @@ set -euo pipefail
 # ── Constants ──────────────────────────────────────────────────────────────
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IMAGE_NAME="corelink-server"
+
+# CF Containers auto-names the registry path as:
+#   <worker-name>-<class-name>-<env>   (all lowercased, hyphens only)
+#
+# Derivation from wrangler.toml:
+#   worker name  (env.prod)    : corelink-prod   ← [env.prod] name = "corelink-prod"
+#   DO class name              : CoreLinkServer  ← [[containers]] class_name = "CoreLinkServer"
+#   env                        : prod
+#   lowercased concatenation   : corelink-prod-corelinkserver-prod
+#
+# Full registry path:
+#   registry.cloudflare.com/<account-id>/corelink-prod-corelinkserver-prod:<tag>
+#
+# IF you rename the worker or the DO class, update this constant AND the
+# image = "..." in wrangler.toml [[env.prod.containers]] together.
+IMAGE_NAME="corelink-prod-corelinkserver-prod"
+
 IMAGE_TAG_PROD="prod"
 FULL_TAG_PROD="${IMAGE_NAME}:${IMAGE_TAG_PROD}"
 
 # CF Containers registry push command (wrangler containers push).
 # As of wrangler 4.x (2026-05-22 beta), the subcommand is:
 #   wrangler containers push <image-ref> [--env <environment>]
-# The worker name comes from wrangler.toml `name = "corelink"`.
+# The worker name comes from wrangler.toml `name = "corelink-prod"` (env.prod).
 WRANGLER_ENV="prod"
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -88,6 +104,29 @@ log "Repo root: $REPO_ROOT"
 log "HEAD: $(git rev-parse HEAD)"
 SHORT_SHA="$(git rev-parse --short HEAD)"
 FULL_TAG_SHA="${IMAGE_NAME}:${SHORT_SHA}"
+
+# ── Step 0b: Sanity gate — IMAGE_NAME must match wrangler.toml ────────────
+#
+# wrangler.toml [[env.prod.containers]] image = "registry.cloudflare.com/<acct>/<name>:<tag>"
+# Extract <name> from that line and verify it matches IMAGE_NAME above.
+# This prevents silent drift if the worker or class is renamed in one place only.
+
+EXPECTED_IMAGE_NAME="$(grep -E '^image = "registry\.cloudflare\.com/[^/]+/[^:"]+'  \
+    "$REPO_ROOT/wrangler.toml" | head -1 | sed -E 's|.*registry\.cloudflare\.com/[^/]+/([^:]+):.*|\1|')"
+
+if [ -z "$EXPECTED_IMAGE_NAME" ]; then
+    die "Could not extract image name from wrangler.toml. Is the [[env.prod.containers]] image= line present?"
+fi
+
+if [ "$IMAGE_NAME" != "$EXPECTED_IMAGE_NAME" ]; then
+    die "IMAGE_NAME drift detected!
+     Script has:       IMAGE_NAME=$IMAGE_NAME
+     wrangler.toml has: $EXPECTED_IMAGE_NAME
+     Update IMAGE_NAME in this script (and the derivation comment) to match wrangler.toml,
+     or fix wrangler.toml if you renamed the worker/class."
+fi
+
+log "Sanity gate (IMAGE_NAME vs wrangler.toml): PASS  ($IMAGE_NAME)"
 
 # ── Step 1: Pre-push gate — image MUST exist locally ──────────────────────
 
