@@ -10,7 +10,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { checkRateLimit } from "@/lib/rate-limit";
 
-export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 function clientIp(req: NextRequest): string {

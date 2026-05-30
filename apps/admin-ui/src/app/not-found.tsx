@@ -13,7 +13,6 @@
 //
 // The body must remain pure JSX with no client hooks, no `headers()`, no
 // dynamic imports — anything that forces SSR would defeat force-static.
-export const runtime = "edge";
 export const dynamic = "force-static";
 
 export default function NotFound() {

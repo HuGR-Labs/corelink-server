@@ -23,7 +23,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getFixtureResponse } from "@/lib/e2e-mock-fixtures";
 
 // Edge Runtime — no Node.js APIs used; in production this route returns 503.
-export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 function disabled(): NextResponse {

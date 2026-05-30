@@ -62,7 +62,6 @@ import { apiPost, ApiClientError } from "@/lib/api-client";
 // pattern below; the same approach is used in `/api/welcome/stream`
 // and `/api/v1/[...path]`. JWT decode uses Web Crypto (`crypto.subtle`)
 // which is available in the edge runtime — no Buffer dependency.
-export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 /** Canonical paid tiers accepted by this route. */

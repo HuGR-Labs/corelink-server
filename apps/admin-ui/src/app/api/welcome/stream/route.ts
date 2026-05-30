@@ -26,7 +26,6 @@
 
 import { NextResponse } from "next/server";
 
-export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 const POLL_INTERVAL_MS = 1500;

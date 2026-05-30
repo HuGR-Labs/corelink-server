@@ -11,7 +11,6 @@
 import dynamic from "next/dynamic";
 import { useTranslations } from "next-intl";
 
-export const runtime = "edge";
 
 const SignIn = dynamic(
   () => import("@clerk/nextjs").then((m) => m.SignIn),
