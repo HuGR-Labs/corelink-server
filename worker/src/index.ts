@@ -90,6 +90,7 @@ type RouteKind =
   | "turbo_v8"
   | "signup"
   | "internal"
+  | "health_container"
   | "not_found";
 
 /** Auth extraction result from the Authorization header. */
@@ -217,6 +218,14 @@ function handlePreflight(request: Request): Response | null {
  */
 function matchRoute(url: URL): RouteMatch {
   const path = url.pathname;
+
+  // Container health deep-probe — /_health/container forwards through the
+  // _system DO to the container's own /_health endpoint, exposing A4's
+  // `storage` field (r2 vs inmemory) that the Worker's fast-path /_health
+  // never returns.  Publicly probeable, no auth required.
+  if (path === "/_health/container" || path === "/_health/container/") {
+    return { tenantId: "_system", pathSuffix: "/_health", routeKind: "health_container" };
+  }
 
   // Health: /health (legacy CF/customer liveness) + /_health (smoke-prod check
   // [2]; the container's DO-side probe uses /_health on the container's private
@@ -924,6 +933,49 @@ const handler: ExportedHandler<Env> = {
         },
       });
       return applyCors(resp, request);
+    }
+
+    // Container health deep-probe — /_health/container — no auth required.
+    // Forwards to the container's /_health via the _system DO, exposing the
+    // full health body including the A4 `storage` field (r2 vs inmemory).
+    if (route.routeKind === "health_container") {
+      const systemDoId = env.CORELINK_SERVER.idFromName("_system");
+      const systemStub = env.CORELINK_SERVER.get(systemDoId);
+      const containerHealthUrl = new URL(request.url);
+      containerHealthUrl.pathname = "/_health";
+      const containerReq = new Request(containerHealthUrl.toString(), {
+        method: "GET",
+        headers: (() => {
+          const h = new Headers();
+          h.set("x-request-id", requestId);
+          h.set("x-corelink-route-kind", "health_container");
+          h.set("x-corelink-tenant-id", "_system");
+          return h;
+        })(),
+      });
+      let containerResp: Response;
+      try {
+        containerResp = await systemStub.fetch(containerReq);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        console.error(`[${requestId}] health_container DO fetch failed: ${message.slice(0, 80)}`);
+        return applyCors(
+          reapiError("INTERNAL_ERROR", "container health upstream error", 500, requestId),
+          request,
+        );
+      }
+      const containerHeaders = new Headers(containerResp.headers);
+      if (!containerHeaders.has("x-request-id")) {
+        containerHeaders.set("x-request-id", requestId);
+      }
+      return applyCors(
+        new Response(containerResp.body, {
+          status: containerResp.status,
+          statusText: containerResp.statusText,
+          headers: containerHeaders,
+        }),
+        request,
+      );
     }
 
     // Internal routes — `/_internal/*` — authenticated by X-Corelink-Internal-Auth.
