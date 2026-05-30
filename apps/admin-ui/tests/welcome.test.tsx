@@ -24,7 +24,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 }));
 
 // Mock the welcome actions module for CopyPatButton isolation
-vi.mock("@/app/[locale]/welcome/actions", () => ({
+vi.mock("@/app/[locale]/(authenticated)/welcome/actions", () => ({
   clearPatPlaintext: vi.fn(),
 }));
 
@@ -39,7 +39,7 @@ describe("CopyPatButton", () => {
   let writeTextMock: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
-    const actions = await import("@/app/[locale]/welcome/actions");
+    const actions = await import("@/app/[locale]/(authenticated)/welcome/actions");
     vi.mocked(actions.clearPatPlaintext).mockReset();
 
     writeTextMock = vi.fn().mockResolvedValue(undefined);
@@ -63,7 +63,7 @@ describe("CopyPatButton", () => {
 
   it("renders the copy button and the saved-token button", async () => {
     const { CopyPatButton } = await import(
-      "@/app/[locale]/welcome/CopyPatButton"
+      "@/app/[locale]/(authenticated)/welcome/CopyPatButton"
     );
     render(<CopyPatButton pat="corelink_pat_test123" />);
 
@@ -74,7 +74,7 @@ describe("CopyPatButton", () => {
   it("copies the PAT to clipboard: clicking copy triggers 'Copied!' feedback", async () => {
     const user = userEvent.setup();
     const { CopyPatButton } = await import(
-      "@/app/[locale]/welcome/CopyPatButton"
+      "@/app/[locale]/(authenticated)/welcome/CopyPatButton"
     );
     render(<CopyPatButton pat="corelink_pat_abc" />);
 
@@ -93,7 +93,7 @@ describe("CopyPatButton", () => {
   it("shows 'Copied!' feedback after clipboard write", async () => {
     const user = userEvent.setup();
     const { CopyPatButton } = await import(
-      "@/app/[locale]/welcome/CopyPatButton"
+      "@/app/[locale]/(authenticated)/welcome/CopyPatButton"
     );
     render(<CopyPatButton pat="corelink_pat_feedback" />);
 
@@ -105,12 +105,12 @@ describe("CopyPatButton", () => {
   });
 
   it("calls clearPatPlaintext action when saved-token button is clicked", async () => {
-    const actions = await import("@/app/[locale]/welcome/actions");
+    const actions = await import("@/app/[locale]/(authenticated)/welcome/actions");
     vi.mocked(actions.clearPatPlaintext).mockResolvedValue(undefined);
 
     const user = userEvent.setup();
     const { CopyPatButton } = await import(
-      "@/app/[locale]/welcome/CopyPatButton"
+      "@/app/[locale]/(authenticated)/welcome/CopyPatButton"
     );
     render(<CopyPatButton pat="corelink_pat_save" />);
 
@@ -122,7 +122,7 @@ describe("CopyPatButton", () => {
   });
 
   it("disables saved-token button while action is pending", async () => {
-    const actions = await import("@/app/[locale]/welcome/actions");
+    const actions = await import("@/app/[locale]/(authenticated)/welcome/actions");
     let resolve!: () => void;
     vi.mocked(actions.clearPatPlaintext).mockReturnValue(
       new Promise<void>((r) => {
@@ -132,7 +132,7 @@ describe("CopyPatButton", () => {
 
     const user = userEvent.setup();
     const { CopyPatButton } = await import(
-      "@/app/[locale]/welcome/CopyPatButton"
+      "@/app/[locale]/(authenticated)/welcome/CopyPatButton"
     );
     render(<CopyPatButton pat="corelink_pat_pending" />);
 
@@ -177,7 +177,7 @@ describe("WelcomePage rendering branches", () => {
       },
     } as never);
 
-    const pageModule = await import("@/app/[locale]/welcome/page");
+    const pageModule = await import("@/app/[locale]/(authenticated)/welcome/page");
     const WelcomePage = pageModule.default;
 
     const element = await WelcomePage({
@@ -208,7 +208,7 @@ describe("WelcomePage rendering branches", () => {
       },
     } as never);
 
-    const pageModule = await import("@/app/[locale]/welcome/page");
+    const pageModule = await import("@/app/[locale]/(authenticated)/welcome/page");
     const WelcomePage = pageModule.default;
 
     const element = await WelcomePage({
@@ -236,7 +236,7 @@ describe("WelcomePage rendering branches", () => {
       },
     } as never);
 
-    const pageModule = await import("@/app/[locale]/welcome/page");
+    const pageModule = await import("@/app/[locale]/(authenticated)/welcome/page");
     const WelcomePage = pageModule.default;
 
     await expect(

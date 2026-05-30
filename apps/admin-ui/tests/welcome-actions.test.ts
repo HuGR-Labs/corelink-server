@@ -2,8 +2,8 @@
  * Tests for clearPatPlaintext server action (welcome/actions.ts).
  *
  * Separate file from welcome.test.tsx because the CopyPatButton tests
- * need `vi.mock("@/app/[locale]/welcome/actions")` while these tests
- * import the REAL actions module.
+ * need `vi.mock("@/app/[locale]/(authenticated)/welcome/actions")` while these
+ * tests import the REAL actions module.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -61,7 +61,7 @@ describe("clearPatPlaintext action", () => {
 
   it("calls Clerk PATCH API with null pat_plaintext", async () => {
     const { clearPatPlaintext } = await import(
-      "@/app/[locale]/welcome/actions"
+      "@/app/[locale]/(authenticated)/welcome/actions"
     );
 
     await expect(clearPatPlaintext()).rejects.toThrow("NEXT_REDIRECT");
@@ -85,7 +85,7 @@ describe("clearPatPlaintext action", () => {
 
   it("revalidates /customer and redirects after clearing PAT", async () => {
     const { clearPatPlaintext } = await import(
-      "@/app/[locale]/welcome/actions"
+      "@/app/[locale]/(authenticated)/welcome/actions"
     );
     const cache = await import("next/cache");
     const nav = await import("next/navigation");
@@ -104,7 +104,7 @@ describe("clearPatPlaintext action", () => {
     } as never);
 
     const { clearPatPlaintext } = await import(
-      "@/app/[locale]/welcome/actions"
+      "@/app/[locale]/(authenticated)/welcome/actions"
     );
 
     await expect(clearPatPlaintext()).rejects.toThrow("no_active_session");
@@ -116,7 +116,7 @@ describe("clearPatPlaintext action", () => {
       status: 500,
     });
     const { clearPatPlaintext } = await import(
-      "@/app/[locale]/welcome/actions"
+      "@/app/[locale]/(authenticated)/welcome/actions"
     );
 
     await expect(clearPatPlaintext()).rejects.toThrow(
@@ -127,7 +127,7 @@ describe("clearPatPlaintext action", () => {
   it("throws if CLERK_SECRET_KEY is missing", async () => {
     delete process.env.CLERK_SECRET_KEY;
     const { clearPatPlaintext } = await import(
-      "@/app/[locale]/welcome/actions"
+      "@/app/[locale]/(authenticated)/welcome/actions"
     );
 
     await expect(clearPatPlaintext()).rejects.toThrow(
