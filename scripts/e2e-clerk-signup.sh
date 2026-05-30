@@ -29,7 +29,7 @@ set -euo pipefail
 # ─────────────────────────────────────────────────────────────────────────────
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${REPO_ROOT}/.env.local"
-D1_DATABASE="corelink-config-prod"
+D1_DATABASE="corelink-prod-d1"
 D1_ENV="prod"
 API_BASE="https://corelink-api.humangr.com"
 CLERK_API="https://api.clerk.com/v1"
@@ -147,6 +147,8 @@ done
 # Resolve wrangler: prefer global, fall back to repo-local node_modules
 if command -v wrangler &>/dev/null; then
   WRANGLER_CMD="wrangler"
+elif [[ -x "${REPO_ROOT}/worker/node_modules/.bin/wrangler" ]]; then
+  WRANGLER_CMD="${REPO_ROOT}/worker/node_modules/.bin/wrangler"
 elif [[ -x "${REPO_ROOT}/node_modules/.bin/wrangler" ]]; then
   WRANGLER_CMD="${REPO_ROOT}/node_modules/.bin/wrangler"
 elif command -v npx &>/dev/null; then
