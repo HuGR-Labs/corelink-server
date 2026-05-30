@@ -205,6 +205,14 @@ Then:
   crates stay closed (counts re-balanced after the Wave 33-36 reorg
   consolidated 149 packages into 87).
 
+## Examples
+
+Working, clone-and-run examples under [`apps/examples/`](./apps/examples/):
+
+| Example | Description |
+|---------|-------------|
+| [`apps/examples/bazel/`](./apps/examples/bazel/) | Bazel remote cache via REAPI v2 — one `cc_library` + one `cc_binary`, `.bazelrc` with CoreLink flags, 3-step runbook |
+
 ## Workspace layout
 
 The Cargo workspace ships 87 packages organized around **11 umbrella

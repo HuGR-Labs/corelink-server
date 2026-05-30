@@ -1,0 +1,15 @@
+# cc_library and cc_binary are built-in Bazel rules; no load() required.
+# A tiny C++ library with a single greeting function.
+cc_library(
+    name = "greeting",
+    srcs = ["greeting.cc"],
+    hdrs = ["greeting.h"],
+    visibility = ["//visibility:public"],
+)
+
+# A binary that uses the greeting library.
+cc_binary(
+    name = "hello",
+    srcs = ["hello.cc"],
+    deps = [":greeting"],
+)

@@ -1,0 +1,33 @@
+# ─── CoreLink remote cache configuration ─────────────────────────────────────
+#
+# These flags tell Bazel to use CoreLink as a remote cache.
+# Set two environment variables before running `bazel build`:
+#
+#   export CORELINK_PAT="<your Personal Access Token>"
+#   export CORELINK_TENANT="<your tenant UUID>"
+#
+# Then run:
+#   bazel build //...
+
+# Point Bazel at the CoreLink REAPI v2 endpoint.
+# The base URL must include the /bazel/v2 prefix — CoreLink routes
+# requests under that prefix to the REAPI v2 handler.
+build --remote_cache=https://corelink-api.humangr.com/bazel/v2
+
+# Authenticate with your Personal Access Token.
+# The Cloudflare Worker validates the Bearer token and injects the
+# x-corelink-tenant-id header before the request reaches the cache.
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+
+# Tenant isolation: the instance name is used as the `:instance` path
+# segment in the REAPI v2 route (e.g. /bazel/v2/<tenant-uuid>/blobs/…).
+# Set this to your tenant UUID from the CoreLink dashboard.
+build --remote_instance_name=${CORELINK_TENANT}
+
+# How long to wait for a cache read or write before falling back to a
+# local build. 30 s is generous; reduce to 10 s on fast networks.
+build --remote_timeout=30s
+
+# (Optional) Upload locally-built outputs so other team members can
+# reuse them.  Remove this flag if you want read-only cache access.
+build --remote_upload_local_results=true

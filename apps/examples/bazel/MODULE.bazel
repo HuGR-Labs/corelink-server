@@ -1,0 +1,7 @@
+module(
+    name = "corelink_bazel_example",
+    version = "0.1.0",
+)
+
+# This example uses only Bazel's built-in C++ rules.
+# No additional module dependencies are required.

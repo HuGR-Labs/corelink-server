@@ -1,0 +1,4 @@
+# WORKSPACE is intentionally minimal — this example uses Bzlmod (MODULE.bazel).
+# Bazel 7+ loads MODULE.bazel first; this file satisfies the workspace root
+# requirement for legacy tooling that looks for a WORKSPACE file.
+workspace(name = "corelink_bazel_example")
