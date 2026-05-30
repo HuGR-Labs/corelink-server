@@ -54,7 +54,6 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // Edge runtime — `fetch` is the only outbound call we make, and the
 // Resend Audience API is purely HTTPS. No Node-only dependency required.
-export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 // Conservative email check: a local-part with no whitespace / @, an @,

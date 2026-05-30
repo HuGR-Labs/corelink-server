@@ -22,7 +22,6 @@ export const metadata: Metadata = {
 
 // Cloudflare Pages Edge Runtime — required by @cloudflare/next-on-pages.
 // All child routes inherit this unless they explicitly opt out.
-export const runtime = "edge";
 
 // next-intl uses `headers()` for locale detection which is dynamic. Static
 // rendering optimization (via `setRequestLocale` + per-locale segments) is

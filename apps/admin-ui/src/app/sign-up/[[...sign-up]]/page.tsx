@@ -13,7 +13,6 @@ import { useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { track } from "@/lib/analytics";
 
-export const runtime = "edge";
 
 const SignUp = dynamic(
   () => import("@clerk/nextjs").then((m) => m.SignUp),
