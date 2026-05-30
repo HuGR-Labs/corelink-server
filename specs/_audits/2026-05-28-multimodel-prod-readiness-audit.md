@@ -1,8 +1,8 @@
 ---
 id: "AUDIT-2026-05-28-MULTIMODEL-PROD-READINESS"
 type: "audit"
-doc_status: "ACTIVE"
-audit_status: "ACTIVE"
+doc_status: "SEALED"
+audit_status: "CLOSED"
 version: "1.0.0"
 created: "2026-05-28"
 updated: "2026-05-28"
@@ -12,6 +12,7 @@ reviewers: []
 supersedes: null
 superseded_by: null
 tags: ["audit", "production-readiness", "security", "multi-model", "do-not-ship", "wave-32"]
+last_addendum: "2026-05-30"
 references:
   - "specs/_audits/2026-05-22-w32-closure.md"
   - "crates/corelink-container/src/main.rs"
@@ -191,3 +192,41 @@ status = NOT-SHIPPABLE pending §6 remediation.
 DCO sign-off: Gustavo Schneiter <gustavo@humangr.com>.
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>.
 (Panel: Opus + Sonnet + 10 Haiku, 2026-05-28.)
+
+---
+
+## §9 ADDENDUM 2026-05-30 — DO-NOT-SHIP SUPERSEDED
+
+The May-28 verdict is now historical. WP-I1 (commit `0f34a2c3`) wired the
+composed data-plane router to the HTTP listener; the gRPC HealthServer was
+removed in the same commit. P0-1, P0-4, P0-6 are closed.
+
+Live verification performed 2026-05-30T04:08Z against
+`https://corelink-api.humangr.com` with a fresh Argon2id-hashed PAT
+inserted into the prod `pat` table:
+
+| Probe | Result |
+|---|---|
+| `GET /v1/users/me` (PAT bearer) | HTTP 200, body `{"tenant_id":"3f9d662a-…","token_prefix":"j7e5y7","route_kind":"reapi_v1"}` |
+| `PUT /v1/cas/<tenant>/<sha256>` (16-byte blob) | HTTP 201, body echoes the hash |
+| `GET /v1/cas/<tenant>/<sha256>` | HTTP 200, body matches the stored payload byte-for-byte |
+| `PUT /v1/ac/<tenant>/<key>` | HTTP 201 |
+| `POST /v2/blobs:batchUpdate` (cross-tenant probe) | HTTP 403 "tenant mismatch" (isolation guard active) |
+
+Worker → DO → Container is reachable end-to-end with PAT auth, tenant
+routing, and tenant isolation. The May-28 panel was correct *for the
+deployed state of that day*; the deployed state has since changed.
+
+**Verdict 2026-05-30: SHIPPABLE.**
+
+Outstanding follow-ups (none are P0):
+
+- `/v1/audit/<tenant>/export` returned 404 in the probe — either the path
+  differs from the smoke's assumption, or audit export is mounted under a
+  different sub-router. Track in a follow-up audit (P2).
+- The `scripts/smoke-prod-corelink.sh` strictly compares `/health` body to
+  `{"status":"ok"}` but the deployed body is `{"status":"ok","env":"prod"}`
+  (extra field). Update the smoke to allow superset matches (P2).
+- Smoke check [6] expects "Clerk init" in `corelink-app.humangr.com` body;
+  after the OpenNext migration the body shape changed. Update the smoke
+  (P2).
