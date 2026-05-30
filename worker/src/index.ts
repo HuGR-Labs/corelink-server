@@ -22,6 +22,7 @@
 import type { D1Database, DurableObjectNamespace, ExecutionContext, ExportedHandler } from "@cloudflare/workers-types";
 import { CoreLinkServer } from "./durable_object.js";
 import { RolloutController } from "./rollout_controller.js";
+import { getTierForTenant, checkStorageQuota, checkRequestQuota } from "./lib/quota.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -47,6 +48,11 @@ export interface Env {
   // at boot + verified before forwarding). Bound via:
   // `wrangler secret put CORELINK_INTERNAL_AUTH_KEY`
   CORELINK_INTERNAL_AUTH_KEY?: string;
+  // Per-tier quota enforcement (worker/src/lib/quota.ts).
+  // Storage quota is always enforced for finite-quota tiers.
+  // Request quota is deferred until a monthly counter table is wired;
+  // set REQUEST_QUOTA_ENABLED=true once the table exists.
+  REQUEST_QUOTA_ENABLED?: string;
   // Container storage credentials (WP-S1 StorageEnv contract). The DO forwards
   // these to the native container via container.start({ env }) so it can reach
   // R2 (S3 API) + D1 (HTTP API). Absent → container falls back to InMemory
@@ -1063,6 +1069,86 @@ const handler: ExportedHandler<Env> = {
         reapiError("FORBIDDEN", "tenant mismatch", 403, requestId),
         request,
       );
+    }
+
+    // ── Per-tier quota enforcement ────────────────────────────────────────────
+    // Quota checks run AFTER auth and BEFORE forwarding to the DO.
+    // Skip for system/anonymous tenants (no billing record exists for them).
+    //
+    // Storage quota: enforced from SUM(tenant_storage_state.bytes_used).
+    // Request quota: deferred (TODO) — see worker/src/lib/quota.ts.
+    //
+    // Fail-open on D1 errors to preserve availability; the DO's CAS quota
+    // enforcement (quota_fsm_state) provides the safety net on mutations.
+    if (resolvedTenantId !== "_anonymous" && resolvedTenantId !== "_system" && resolvedTenantId !== "_pending") {
+      const quotaTier = await getTierForTenant(env.CONFIG_DB, resolvedTenantId);
+      const requestQuotaEnabled = env.REQUEST_QUOTA_ENABLED === "true";
+
+      // Storage quota check
+      const storageCheck = await checkStorageQuota(env.CONFIG_DB, resolvedTenantId, quotaTier);
+      if (!storageCheck.ok) {
+        const retryAfter = String(storageCheck.retryAfterSec);
+        if (route.routeKind === "oci_v2") {
+          return applyCors(
+            new Response(
+              JSON.stringify({
+                errors: [{ code: "DENIED", message: storageCheck.reason }],
+              }),
+              {
+                status: 429,
+                headers: {
+                  "Content-Type": "application/json",
+                  "Retry-After": retryAfter,
+                  "X-Request-Id": requestId,
+                },
+              },
+            ),
+            request,
+          );
+        }
+        return applyCors(
+          new Response(
+            JSON.stringify({
+              error: "QUOTA_EXCEEDED",
+              message: storageCheck.reason,
+              request_id: requestId,
+            }),
+            {
+              status: 429,
+              headers: {
+                "Content-Type": "application/json",
+                "Retry-After": retryAfter,
+                "X-Request-Id": requestId,
+              },
+            },
+          ),
+          request,
+        );
+      }
+
+      // Request quota check (currently no-op until counter table is wired)
+      const requestCheck = checkRequestQuota(quotaTier, requestQuotaEnabled);
+      if (!requestCheck.ok) {
+        const retryAfter = String(requestCheck.retryAfterSec);
+        return applyCors(
+          new Response(
+            JSON.stringify({
+              error: "QUOTA_EXCEEDED",
+              message: requestCheck.reason,
+              request_id: requestId,
+            }),
+            {
+              status: 429,
+              headers: {
+                "Content-Type": "application/json",
+                "Retry-After": retryAfter,
+                "X-Request-Id": requestId,
+              },
+            },
+          ),
+          request,
+        );
+      }
     }
 
     // Route to the per-tenant DO. idFromName(resolvedTenantId) guarantees
