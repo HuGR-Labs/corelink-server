@@ -3,9 +3,9 @@ id: "COMPLIANCE-MATRIX"
 type: "compliance_matrix"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.2.0"
+version: "0.3.0"
 created: "2026-04-23"
-updated: "2026-04-24"
+updated: "2026-05-30"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -18,13 +18,38 @@ tags: ["architecture", "compliance", "soc2", "iso27001", "lgpd", "gdpr"]
 # Compliance Matrix — SOC 2, ISO 27001, LGPD, GDPR
 
 > **doc_status:** DRAFT
-> **Versão:** 0.2.0
-> **Última atualização:** 2026-04-24
+> **Versão:** 0.3.0
+> **Última atualização:** 2026-05-30
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
 > **Revisores:** ⚠️ **staffing-blocked** — promoção a `doc_status: FROZEN` bloqueada até ≥ 2 reviewers nomeados conforme roles indicados (endereça F-09 audit Lote 3+4)
 > **Supersedes:** —
 > **Superseded By:** —
+
+> **REALITY ANCHOR (2026-05-30):** This document was first written 2026-04-24 in
+> aspirational mode before any production wiring existed. As of 2026-05-30 the
+> data plane is LIVE and SHIPPABLE (verified by multi-model panel + live smoke —
+> see `specs/_audits/2026-05-28-multimodel-prod-readiness-audit.md §9`). This
+> v0.3.0 update reclassifies every control using the honest SOC 2 audit
+> vocabulary:
+>
+> | Status label | Meaning in SOC 2 audit language |
+> |---|---|
+> | **IMPLEMENTED + EVIDENCED** | Control exists in code AND a verifiable artifact backs it (live probe, property-test run, signed report). An auditor can obtain evidence today. |
+> | **IMPLEMENTED — needs evidence** | Control logic is in production code but no formal artifact exists yet (no screenshot, no drill log, no signed report). An auditor would need to wait for evidence collection. |
+> | **DESIGNED — not implemented** | Spec and/or code skeleton exists; the control is NOT active on the live request path. An auditor would mark this "not yet in place." |
+> | **DEFERRED** | Out of scope for current cycle; acknowledged, tracked, not claimed. |
+>
+> SOC 2 auditors distinguish **designed vs. implemented vs. operating**. A control
+> that exists only in a spec is DESIGNED. A control in deployed code is
+> IMPLEMENTED. A control with 6+ months of continuous evidence is OPERATING
+> (required for Type II; not required for Type I "point-in-time design review").
+>
+> **Honest net readiness gap:** data plane just reached IMPLEMENTED state
+> (2026-05-30). The earliest a Type I observation window can open is
+> GA + 30 days (evidence collection baseline). Type I fieldwork target remains
+> T+6 months per the roadmap. No control should be claimed as OPERATING until
+> 2026-07-01 at the earliest.
 
 > **Propósito:** fonte canônica (Nível 3) do mapeamento entre frameworks regulatórios/de auditoria e os controles internos do CoreLink (`CTRL-XXX` em `security_model.md` + `CTRL-PRIV-XXX` em `privacy_model.md`). Consumido por:
 > - `specs/_templates/production_readiness_review.md §11` (verificação de controles em produção)
@@ -45,22 +70,29 @@ tags: ["architecture", "compliance", "soc2", "iso27001", "lgpd", "gdpr"]
 7. [Sub-processor compliance posture](#7-sub-processor-compliance-posture)
 8. [Evidence collection strategy](#8-evidence-collection-strategy)
 9. [Gap analysis](#9-gap-analysis)
-10. [Referências](#10-referências)
+10. [Gap to SOC 2 Type I readiness — honest checklist](#10-gap-to-soc-2-type-i-readiness--honest-checklist)
+11. [Referências](#11-referências)
 
 ---
 
 ## 1. Estado atual e roadmap de certificações
 
-| Framework              | Escopo                                | Estado (hoje)           | Target                                       |
+> **v0.3.0 honest update:** states below reflect 2026-05-30 reality after the
+> multi-model production audit and live smoke verification. "Compliance by design"
+> is now upgraded to "Controls IMPLEMENTED; evidence accumulation begins" for the
+> in-scope frameworks. Certification timeline starts from the GA date (2026-05-30
+> is treated as Day 0).
+
+| Framework              | Escopo                                | Estado (2026-05-30)     | Target                                       |
 |------------------------|----------------------------------------|-------------------------|-----------------------------------------------|
-| SOC 2 Type I           | Security + Availability + Confidentiality | Planejado              | 6 meses após GA (audit gap analysis + 3m readiness) |
-| SOC 2 Type II          | Acima + Privacy + Processing Integrity | Planejado              | 12–18 meses após Type I (6m observation)      |
-| ISO/IEC 27001:2022      | ISMS — escopo CoreLink CAS/AC          | Planejado              | 18 meses após Type II                         |
-| LGPD                   | Brasil (operações sam region)          | **Compliance by design** | Fase 1 (GA)                                   |
-| GDPR                   | UE (operações weur region)             | **Compliance by design** | Fase 1 (GA)                                   |
-| HIPAA                  | Saúde US (opcional, plano enterprise)  | Conditional              | Sob demanda cliente (BAA + audit)             |
-| PCI-DSS v4.0 SAQ-A      | Card-not-present merchant, all CHD outsourced to Stripe | **Compliant (self-attested)** | SAQ-A signed 2026-05-15 · next 2027-05-15 · see `specs/_compliance/PCI-DSS-SAQ-A-2026-05-15.md`, `PCI-DSS-BOUNDARY-DIAGRAM.md`, `PCI-DSS-ANNUAL-RECERTIFY.md` |
-| FedRAMP                | US gov                                  | **Not-in-scope** (informational crosswalk only) | Sob demanda + sponsorship (12-18 meses); ver `specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md` + `FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md` (~85% Moderate baseline coberto via SOC 2 + ISO 27001) + `apps/docs/docs/trust/fedramp-info.mdx` |
+| SOC 2 Type I           | Security + Availability + Confidentiality | **Controls IMPLEMENTED; 0-day operating window.** Type I requires design review only — observation window can open now. Internal readiness 83.7% / Drata 96.4% (snapshot 2026-05-14; see `specs/_audits/sealed/2026-05-14-soc2-readiness-score.md`). 33 open GAPs; 1 was blocking-GA (GAP-02 BYOK FIPS attestation — remediation in-flight per `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md`). | Type I fieldwork: T+6m (target 2026-11-30). Must close GAP-02 before fieldwork. |
+| SOC 2 Type II          | Acima + Privacy + Processing Integrity | **Not yet started.** Requires 6+ months of continuous operating evidence post Type I. | 12–18 meses após Type I clean opinion. |
+| ISO/IEC 27001:2022      | ISMS — escopo CoreLink CAS/AC          | **Crosswalk only.** Full 93-control SoA at `specs/_compliance/ISO27001-STATEMENT-OF-APPLICABILITY-2026-05-15.md`; 91% SOC 2 overlap; 7 ISO-unique gaps. No ISMS established. | Phased roadmap to Q1-2027 per `specs/_compliance/ISO27001-ROADMAP.md`. |
+| LGPD                   | Brasil (operações sam region)          | **Controls IMPLEMENTED.** DSR (crates/corelink-dsr), consent ledger, erasure pipeline (12 backends), residency pinning (Art. 33 §1º), DPO appointed (interim). Full article-by-article audit: `specs/_compliance/LGPD-FULL-AUDIT-2026-05-15.md`. | Operating; evidence accumulation begins D+0. |
+| GDPR                   | UE (operações weur region)             | **Controls IMPLEMENTED.** Same surface as LGPD + SCC 2021/914 module mapping, Art. 35 DPIA library. `specs/_compliance/GDPR-FULL-AUDIT-2026-05-15.md`. | Operating; evidence accumulation begins D+0. |
+| HIPAA                  | Saúde US (opcional, plano enterprise)  | **Conditional / not activated.** BYOK available; 6+ year audit log retention in design. No BAA signed. | Sob demanda cliente (BAA + audit). |
+| PCI-DSS v4.0 SAQ-A      | Card-not-present merchant, all CHD outsourced to Stripe | **Compliant (self-attested).** SAQ-A signed 2026-05-15. | Next renewal 2027-05-15. See `specs/_compliance/PCI-DSS-SAQ-A-2026-05-15.md`. |
+| FedRAMP                | US gov                                  | **Not-in-scope.** Informational crosswalk only (~85% Moderate baseline covered via SOC 2 + ISO 27001). | Sob demanda + sponsorship. See `specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md`. |
 
 > **Princípio:** construir os controles **agora**, certificar quando houver demanda. Controles sem certificação ainda valem (clientes pedem SIG ou CAIQ para diligence).
 
@@ -72,60 +104,71 @@ tags: ["architecture", "compliance", "soc2", "iso27001", "lgpd", "gdpr"]
 
 Planejamento: **Security + Availability + Confidentiality + Privacy + Processing Integrity**.
 
+> **v0.3.0 honest update:** each row now carries an honest implementation status
+> using the four-tier vocabulary defined in the REALITY ANCHOR above. Readiness
+> score source: `specs/_audits/sealed/2026-05-14-soc2-readiness-score.md`
+> (83.7% internal / 96.4% Drata as of 2026-05-14). Live verification:
+> `specs/_audits/2026-05-28-multimodel-prod-readiness-audit.md §9`
+> (SHIPPABLE verdict 2026-05-30).
+
 ### 2.2 Mapping — Common Criteria (CC)
 
-| TSC Criterion | Requisito resumido                                | CTRLs internos                                | Evidence                              |
-|---------------|---------------------------------------------------|-----------------------------------------------|----------------------------------------|
-| CC1.1         | Demonstrar comprometimento com integridade/ética   | Code of Conduct, HR onboarding                | EVT-032                        |
-| CC1.2..1.5    | Governança, autoridade, competência                | Org chart, RACI, training                     | EVT-033                    |
-| CC2.1..2.3    | Informação + comunicação (policies, ethics)         | Public policies; incident disclosure          | EVT-013 (status)        |
-| CC3.1..3.4    | Risk assessment                                     | `failure_modes.md`; annual risk review         | EVT-034                         |
-| CC4.1..4.2    | Monitoring activities                                | Observability stack (§observability_model)     | EVT-013                 |
-| CC5.1..5.3    | Control activities                                  | All CTRL-* catalogs                           | CTRL-AUDIT-001..005                     |
-| CC6.1         | Logical access / authentication                     | CTRL-AUTH-001, -004, -007, -010               | EVT-025                    |
-| CC6.2         | Authorization                                        | CTRL-AUTHZ-001, -002                          | EVT-022                   |
-| CC6.3         | Access provisioning                                  | `auth_model.md §5`; quarterly review           | EVT-035                     |
-| CC6.6         | Logical/physical boundaries                           | Trust boundaries §3 security_model            | EVT-036                   |
-| CC6.7         | Transmission / in-flight                             | CTRL-CRYPTO-001                                | EVT-037 (SSL Labs)            |
-| CC6.8         | Malicious code / unauthorized software               | CTRL-SUPPLY-001..005                           | EVT-011                   |
-| CC7.1..7.5    | Detection + incident response                        | Observability + runbooks + incident template   | EVT-019               |
-| CC8.1         | Change management                                    | PR review, progressive rollout, dual-approval  | EVT-001 + EVT-038           |
-| CC9.1         | Risk mitigation                                      | Compensating controls via `waiver.md`          | EVT-039                     |
-| CC9.2         | Vendor management                                    | `§7 sub-processors` + `specs/_compliance/VENDOR-RISK-REGISTER.md` (19 vendors; methodology + DD files + quarterly review runbook) | EVT-040                     |
+| TSC Criterion | Requisito resumido | CTRLs internos | Crate / artifact | Status (2026-05-30) |
+|---|---|---|---|---|
+| CC1.1 | Commitment to integrity/ethics | Code of Conduct, policies | `legal/`, `README.md §contributing` | **IMPLEMENTED — needs evidence** (owner-attested; no third-party review yet) |
+| CC1.2..1.5 | Governance, authority, competence | Org chart, RACI, advisor pool | `specs/_governance/`; `legal/legal-externo-engagement-contract.md` | **IMPLEMENTED — needs evidence** (GAP-04 advisor pool TBD; GAP-05 competence attestations not yet collected) |
+| CC2.1..2.3 | Information + communication (policies, ethics) | Public policies; incident disclosure | `apps/docs/`, status page | **IMPLEMENTED — needs evidence** (policies public; no 6-month operating log yet) |
+| CC3.1..3.4 | Risk assessment | `failure_modes.md`; annual risk review | `specs/_governance/`, `specs/_audits/` | **IMPLEMENTED — needs evidence** (GAP-07 closed via Drata; risk review cadence not yet operating for 6m) |
+| CC4.1..4.2 | Monitoring activities | Observability stack | `crates/corelink-audit-chain/src/lib.rs` (BLAKE3 Merkle chain, 10k property tests); Grafana Cloud | **IMPLEMENTED + EVIDENCED** (audit chain live; Drata continuous monitoring 96.4% green) |
+| CC5.1..5.3 | Control activities | All CTRL-* catalogs | `specs/03_architecture/security_model.md` | **IMPLEMENTED + EVIDENCED** (100% in readiness score; all CTRL-* catalog present) |
+| CC6.1 | Logical access / authentication | CTRL-AUTH-001, -004, -007, -010 | `crates/corelink-auth/`, `crates/corelink-pat/` (Argon2id two-stage PAT); live probe 2026-05-30: `GET /v1/users/me` HTTP 200 with fresh PAT | **IMPLEMENTED + EVIDENCED** (live-verified; ⚠️ P1-4: `crates/corelink-pat/src/verify.rs:54` token_id compare is non-constant-time — fix tracked; GAP-02 BYOK FIPS attestation in-flight) |
+| CC6.2 | Authorization | CTRL-AUTHZ-001, -002 | `worker/src/`, `crates/corelink-worker/src/middleware/auth.rs` | **IMPLEMENTED + EVIDENCED** (live cross-tenant probe returned 403 "tenant mismatch" 2026-05-30) |
+| CC6.3 | Access provisioning | `auth_model.md §5`; quarterly review | `specs/03_architecture/auth_model.md` | **IMPLEMENTED — needs evidence** (GAP-01: quarterly access review not yet run; first review due T+1m) |
+| CC6.6 | Logical/physical boundaries | Trust boundaries §3 security_model | `crates/tenant-path/src/lib.rs` (HMAC-SHA256 prefix derivation); `crates/corelink-worker/src/middleware/` | **IMPLEMENTED + EVIDENCED** (HMAC tenant isolation 5-layer defense confirmed by Haiku-10 panel + live 403 cross-tenant probe) |
+| CC6.7 | Transmission / in-flight | CTRL-CRYPTO-001 | TLS termination at Cloudflare edge; no plaintext path | **IMPLEMENTED + EVIDENCED** (SSL Labs A+ from previous scan; Cloudflare-managed TLS) |
+| CC6.8 | Malicious code / unauthorized software | CTRL-SUPPLY-001..005 | `deny.toml` strict allowlist; digest-pinned base images; non-root container; `semgrep.yml` | **IMPLEMENTED + EVIDENCED** (Haiku-container panel: supply chain EXCELLENT; deny.toml enforced in CI) |
+| CC7.1..7.5 | Detection + incident response | Observability + runbooks + incident template | `crates/corelink-audit-chain/src/lib.rs`; `specs/_compliance/IR-TABLETOP-PLAYBOOK.md`; `specs/_runbooks/` | **IMPLEMENTED — needs evidence** (audit chain live; incident runbooks exist; no real incidents run through them yet; GAP-12 IR procedure evidence gap) |
+| CC8.1 | Change management | PR review, progressive rollout, dual-approval | GitHub PR + branch protection; `scripts/` deploy runbooks | **IMPLEMENTED + EVIDENCED** (every commit gated by PR; branch protection enforced) |
+| CC9.1 | Risk mitigation | Compensating controls via `waiver.md` | `specs/_governance/`, `specs/_audits/waiver*` | **IMPLEMENTED — needs evidence** (compensating control framework exists; no waiver countersignatures collected yet) |
+| CC9.2 | Vendor management | `§7 sub-processors` + `VENDOR-RISK-REGISTER.md` | `specs/_compliance/VENDOR-RISK-REGISTER.md` (19 vendors + DD files); `scripts/subprocessor-change-notify.py` | **IMPLEMENTED + EVIDENCED** (19 vendors logged; DD files exist; quarterly review runbook written; 30-day notify clock automated) |
 
 ### 2.3 Mapping — Availability (A series)
 
-| TSC Criterion | Requisito resumido | CTRLs internos | Evidence |
-|---------------|---------------------|----------------|----------|
-| A1.1         | Identify/monitor availability                        | SLOs `slo_catalog.md` + alerts                | EVT-013                |
-| A1.2         | Recovery + contingency                               | Runbooks + chaos tests                         | EVT-023 + EVT-017 |
-| A1.3         | Recovery infrastructure testing                      | DR drill semestral                             | EVT-041                          |
+| TSC Criterion | Requisito resumido | CTRLs internos | Crate / artifact | Status (2026-05-30) |
+|---|---|---|---|---|
+| A1.1 | Identify/monitor availability | SLOs `slo_catalog.md` + alerts | `specs/03_architecture/slo_catalog.md`; Grafana Cloud; BetterStack uptime probes | **IMPLEMENTED + EVIDENCED** (SLOs defined; Grafana dashboards live; BetterStack smoke passed 2026-05-30) |
+| A1.2 | Recovery + contingency | Runbooks + chaos tests | `specs/_compliance/BCP-DR-DRILL-CADENCE.md` (14 drills documented); `specs/_runbooks/` | **IMPLEMENTED — needs evidence** (DR runbooks written; 14 drill cadence documented; GAP-15: cold restore drill not yet executed against production data) |
+| A1.3 | Recovery infrastructure testing | DR drill semestral | `specs/_compliance/COLD-RESTORE-DRILL-SPEC.md` | **DESIGNED — not implemented** (spec written; production cold-restore drill not yet executed; GAP-15 open) |
 
 ### 2.4 Mapping — Confidentiality (C series)
 
-| TSC Criterion | Requisito resumido | CTRLs internos | Evidence |
-|---------------|---------------------|----------------|----------|
-| C1.1         | Identify + classify confidential                      | `privacy_model.md §2`                          | EVT-043           |
-| C1.2         | Protection controls                                   | CTRL-CRYPTO-002, CTRL-ISO-001..005             | EVT-005                         |
+| TSC Criterion | Requisito resumido | CTRLs internos | Crate / artifact | Status (2026-05-30) |
+|---|---|---|---|---|
+| C1.1 | Identify + classify confidential | `privacy_model.md §2`; CTRL-CRYPTO-002 | `crates/corelink-byok/src/lib.rs` (BYOK umbrella: AWS/GCP/Azure/Vault all 4 providers, compile-time mutual exclusion); `crates/corelink-erasure-attestation/src/lib.rs` (Ed25519/FIPS 186-5 signed erasure receipts) | **IMPLEMENTED — needs evidence** (⚠️ GAP-02: BYOK FIPS attestation letters in-flight per `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md`; ⚠️ P1-1: Azure/GCP/Vault BYOK use non-canonical AAD serialization — `serde_json` not `serde_jcs` — potential DEK unrecoverability, tracked as data-loss risk pre-GA+30) |
+| C1.2 | Disposal | CTRL-CRYPTO-002, CTRL-ISO-001..005 | `crates/corelink-privacy-erasure-worker/src/lib.rs` (12-backend erasure pipeline); `crates/corelink-erasure-attestation/src/lib.rs` (signed attestation, 7-year R2 retention); `crates/corelink-dsr/src/lib.rs` (erasure orchestration) | **IMPLEMENTED + EVIDENCED** (12-backend erasure pipeline exists with Ed25519-signed completion report; property-tested; DSR end-to-end runbook `specs/_runbooks/RB-DSR-LGPD-FULL.md`) |
 
 ### 2.5 Mapping — Processing Integrity (PI series)
 
-| TSC Criterion | Requisito resumido | CTRLs internos | Evidence |
-|---------------|---------------------|----------------|----------|
-| PI1.1..1.5   | Inputs/processing/outputs correctness                 | CTRL-CAS-001, -002; CTRL-AC-001, -002; input validation CTRL-INPUT-001..004; reconciliation PAT-RECONCILE-001 | EVT-022 + EVT-002 |
+| TSC Criterion | Requisito resumido | CTRLs internos | Crate / artifact | Status (2026-05-30) |
+|---|---|---|---|---|
+| PI1.1 | Inputs complete/valid | CTRL-INPUT-001..004 | `crates/corelink-worker/src/middleware/`; input validation on PUT/GET paths | **IMPLEMENTED + EVIDENCED** (live probe: `PUT /v1/cas/<tenant>/<sha256>` with 16-byte blob returned HTTP 201, body echoes hash — 2026-05-30) |
+| PI1.2 | Processing complete/accurate | CTRL-CAS-001, -002 | `crates/corelink-cas/`; BLAKE3 content-addressing guarantees bit-exact retrieval | **IMPLEMENTED + EVIDENCED** (live probe: `GET /v1/cas/<tenant>/<sha256>` body matched stored payload byte-for-byte — 2026-05-30) |
+| PI1.3 | Outputs accurate | CTRL-AC-001, -002; PAT-RECONCILE-001 | `crates/corelink-ac/`; live `PUT /v1/ac/<tenant>/<key>` returned HTTP 201 | **IMPLEMENTED + EVIDENCED** (live probe passes; audit export endpoint returned 404 in probe — P2 follow-up) |
+| PI1.4 | Authorized parties only | CTRL-AUTHZ-001; tenant isolation | `crates/tenant-path/src/lib.rs`; `crates/corelink-worker/src/middleware/auth.rs` | **IMPLEMENTED + EVIDENCED** (cross-tenant probe: HTTP 403 "tenant mismatch" live 2026-05-30) |
+| PI1.5 | Storage completeness | Audit chain + R2 Object Lock | `crates/corelink-audit-chain/src/chain.rs` (BLAKE3 Merkle); R2 Object Lock Governance 7-year | **IMPLEMENTED — needs evidence** (⚠️ P1-3: `crates/corelink-audit-chain/src/verifier.rs:162` chain-break compare uses `!=` non-constant-time — timing oracle; tracked; fix required before Type I fieldwork) |
 
 ### 2.6 Mapping — Privacy (P series)
 
-| TSC Criterion | Requisito resumido | CTRLs internos | Evidence |
-|---------------|---------------------|----------------|----------|
-| P1.1         | Privacy notice                                        | `/privacy` page; versioned                     | EVT-044                       |
-| P2.1         | Consent                                               | CTRL-PRIV-CONSENT-001..004 (privacy_model §5.6) | EVT-049 (consent events) + EVT-046 (LIA quando aplicável) |
-| P3.1..3.2    | Collection limited to purpose                         | CTRL-PRIV-003                                  | EVT-026                 |
-| P4.1..4.3    | Use, retention, disposal                              | `privacy_model.md §8`                          | EVT-042                      |
-| P5.1..5.2    | Access + correction                                   | CTRL-PRIV-022 DSR self-service                 | EVT-048 (DSR_EVIDENCE)          |
-| P6.1..6.7    | Disclosure + notification                             | DPA + breach runbook                           | EVT-017                |
-| P7.1         | Data quality                                          | Reconciliation                                 | EVT-002              |
-| P8.1         | Monitoring + enforcement                              | Privacy Officer role + quarterly review        | EVT-034                        |
+| TSC Criterion | Requisito resumido | CTRLs internos | Crate / artifact | Status (2026-05-30) |
+|---|---|---|---|---|
+| P1.1 | Privacy notice | `/privacy` page; versioned | `apps/docs/docs/trust/` public privacy pages | **IMPLEMENTED + EVIDENCED** (pages live; versioned) |
+| P2.1 | Consent | CTRL-PRIV-CONSENT-001..004 | `crates/corelink-privacy/src/consent/` (absorbed from corelink-privacy-consent-ledger) | **IMPLEMENTED — needs evidence** (consent ledger in code; no production consent event log exists yet — operating window 0 days) |
+| P3.1..3.2 | Collection limited to purpose | CTRL-PRIV-003 | `crates/corelink-privacy/src/` (purpose_tag enforcement) | **IMPLEMENTED — needs evidence** (design enforced in code; evidence log starts D+0) |
+| P4.1..4.3 | Use, retention, disposal | `privacy_model.md §8` | `crates/corelink-privacy/src/erasure/` (12-backend pipeline); R2 retention policies | **IMPLEMENTED + EVIDENCED** (erasure pipeline exists; R2 Object Lock 7y configured; retention schedules documented) |
+| P5.1..5.2 | Access + correction (DSR) | CTRL-PRIV-022 DSR self-service | `crates/corelink-dsr/src/lib.rs` (6 DSR rights: access/portability/rectification/erasure/restriction/objection; 10k property-tested); `specs/_runbooks/RB-DSR-LGPD-FULL.md` | **IMPLEMENTED + EVIDENCED** (DSR orchestrator has 10k property tests against all 6 rights; end-to-end runbook complete; Art. 18 I-IX mapped) |
+| P6.1..6.7 | Disclosure + notification | DPA + breach runbook | `crates/corelink-privacy/src/breach/` (GDPR Art. 33 72h timer); `specs/_runbooks/RB-BREACH-NOTIF.md`; `legal/dpa/` | **IMPLEMENTED — needs evidence** (breach emit crate + runbook exist; no real breach events to point to; 72h timer validated by code review only) |
+| P7.1 | Data quality | Reconciliation | `crates/corelink-audit-chain/` (BLAKE3 chain integrity); CAS content-addressing | **IMPLEMENTED + EVIDENCED** (BLAKE3 content-addressing is a cryptographic data-quality guarantee; live GET matched stored bytes 2026-05-30) |
+| P8.1 | Monitoring + enforcement | Privacy Officer role + quarterly review | `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md`; interim DPO appointed (Gustavo Schneiter); `DPO-RESPONSIBILITIES-MATRIX.md` | **IMPLEMENTED — needs evidence** (interim DPO formally designated per LGPD Art. 41; GAP-01 quarterly review cadence not yet operating) |
 
 ---
 
@@ -309,25 +352,101 @@ Ver `observability_model.md §7`. Imutabilidade: R2 Object Lock Governance Mode;
 
 ## 9. Gap analysis
 
-Este doc é o acordo atual de roadmap. Gaps conhecidos:
+> **v0.3.0 update (2026-05-30):** Original §9 rows were folded into the
+> canonical 33-GAP register at `specs/_compliance/SOC2-GAP-ANALYSIS.md`
+> per the 2026-05-15 R5-3 update. This section is now a delta view:
+> status changes since 2026-05-14 readiness score + new gaps surfaced by
+> the 2026-05-28 multi-model production audit.
+>
+> **Full 33-GAP register:** `specs/_compliance/SOC2-GAP-ANALYSIS.md` (FROZEN
+> 2026-05-14 snapshot). **New security gaps found 2026-05-28** are NOT in
+> that register — they are itemized below as GAP-34..GAP-38.
 
-> **Status update 2026-05-15 (R5-3):** the original §9 rows below are now folded into the canonical 33-GAP register at `specs/_compliance/SOC2-GAP-ANALYSIS.md`. Status changes (no new controls): row GAP-04 (SOC 2 readiness gap analysis) → **DONE** (delivered 2026-05-14, sealed); row GAP-07 (evidence collection automation end-to-end) → **DONE** (Drata pipeline shipped via `crates/corelink-drata-sync/`; 90.7% strict / 95.3% effective auto-coverage; see `specs/_compliance/DRATA-INTEGRATION-COVERAGE.md`). Consolidated rollup snapshot: `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md` (83.7% internal / 96.4% Drata · 33 GAPs · 1 blocking-GA closing D+30).
+| Gap ID | Descrição | Source | Status (2026-05-30) |
+|---|---|---|---|
+| GAP-01 | DPO formal vs. interim | `DPO-APPOINTMENT-2026-05-15.md` | In progress — interim designated; 90-day handoff plan to permanent DPO per `DPO-HANDOFF-PLAN.md` |
+| GAP-02 | BYOK FIPS attestation letters from all 4 KMS providers | `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md` | **Blocking Type I** — in-flight; target D+30 |
+| GAP-05 | ISO 27001 SoA | `specs/_audits/iso27001-soa.csv` | Partial — 2022 crosswalk done; ISMS not established |
+| GAP-06 | Legal hold process automation | `specs/_compliance/` | Open (T+3m) |
+| GAP-15 | Cold restore drill execution against production | `specs/_compliance/COLD-RESTORE-DRILL-SPEC.md` | DESIGNED — not executed; production data restore untested |
+| GAP-34 | P1-1: BYOK AAD non-canonical serialization (Azure/GCP/Vault use `serde_json` not `serde_jcs` RFC 8785) → potential DEK unrecoverability / data-loss under cross-arch deployment | Multi-model audit P1-1: `crates/corelink-byok/src/byok_{azure,gcp,vault}.rs` | **Open — fix required before Type I fieldwork** (data integrity risk) |
+| GAP-35 | P1-3: Audit-chain verifier uses non-constant-time `!=` compare (`verifier.rs:162`) → timing oracle | Multi-model audit P1-3: `crates/corelink-audit-chain/src/verifier.rs:162` | **Open — fix required before Type I fieldwork** |
+| GAP-36 | P1-4: PAT token_id compare non-constant-time (`verify.rs:54`) → token-id enumeration oracle; violates module's own INV-AUTH-CONSTANT-TIME-COLD-PAD | Multi-model audit P1-4: `crates/corelink-pat/src/verify.rs:54` | **Open — fix required before Type I fieldwork** |
+| GAP-37 | P1-5: Rate-limit/quota race — free-tier quota race (concurrent writes both pass check); unbounded per-IP buckets | Multi-model audit P1-5: `crates/corelink-billing/src/quota/cas/cas.rs` | Open — T+1m hardening sprint |
+| GAP-38 | P2: Audit export endpoint 404 in live probe — `/v1/audit/<tenant>/export` not mounted or path wrong | Multi-model audit §9 follow-up: deployed path unknown | Open — P2 follow-up audit |
 
-| Gap ID | Descrição                                                     | Plano                                         | Owner            | Status (2026-05-15) |
-|--------|---------------------------------------------------------------|-----------------------------------------------|------------------|----------------------|
-| GAP-01 | DPO formal vs. interim Privacy Officer                         | Contratar DPO antes de ingressar EU enterprise | Gustavo         | **In progress (2026-05-15)** — interim DPO formally designated via `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md` (LGPD Art. 41 + ANPD Resolução 18/2024); RACI in `DPO-RESPONSIBILITIES-MATRIX.md`; escalation in `RB-DPO-ESCALATION.md`; 90-day handoff plan to permanent DPO in `DPO-HANDOFF-PLAN.md`; closes on permanent appointment ceremony per handoff plan §7 |
-| GAP-02 | BCP/DRP documentado                                             | WI em fase "pré-GA hardening"                 | SRE Lead        | Done (`BCP-DR-DRILL-CADENCE.md` + 14 drills) |
-| GAP-03 | TIA template                                                    | Criar junto com primeiro tenant EU             | Legal           | Done (`legal/tia/` template) |
-| GAP-04 | SOC 2 readiness gap analysis                                    | Mês 3 pós GA                                  | Compliance Officer | **Done** (delivered 2026-05-14; sealed) |
-| GAP-05 | ISO 27001 SoA                                                   | Depende de SOC 2 Type II                       | Compliance Officer | Partial (`specs/_audits/iso27001-soa.csv` 2022 baseline) |
-| GAP-06 | Legal hold process automation                                   | WI explícito pós GA                           | Legal + SRE      | Open (T+3m) |
-| GAP-07 | Evidence collection automation end-to-end                       | Mês 6 pós GA (Drata/Vanta integração avaliada) | Compliance Officer | **Done** (Drata pipeline live; 90.7% auto) |
+**GAPs closed since 2026-05-14 snapshot:**
+
+| Gap ID | Closed | How |
+|---|---|---|
+| GAP-04 | 2026-05-14 | SOC 2 readiness score delivered + sealed |
+| GAP-07 | 2026-05-14 | Drata pipeline live (90.7% auto-coverage) |
+| P0-1..P0-6 (prod wiring) | 2026-05-30 | WP-I1 commit `0f34a2c3` wired composed router; live smoke verified |
 
 ---
 
-## 10. Referências
+## 10. Gap to SOC 2 Type I readiness — honest checklist
 
-### 10.1 Frameworks
+> This section is new in v0.3.0. It answers the question an auditor asks at
+> a Type I readiness assessment: *"What work remains before we can open the
+> observation window?"* A Type I audit is a design-effectiveness review —
+> the auditor checks whether controls are **designed and implemented**, not
+> whether they have been operating for 6 months (that's Type II). The window
+> can open once the blocking items below are resolved.
+
+### 10.1 Must-close before Type I fieldwork (blocking)
+
+| # | Gap | Control area | Crate / path | Notes |
+|---|---|---|---|---|
+| 1 | GAP-02: BYOK FIPS attestation letters missing | C1.1 Confidentiality | `crates/corelink-byok/src/` | AWS/GCP/Azure/Vault must supply written FIPS 140-2/3 attestation letters for key operations. Without these CC6.1 + C1.1 earn at best a qualified opinion. |
+| 2 | GAP-34: BYOK AAD non-canonical serialization (P1-1) | PI1.2, C1.1 | `crates/corelink-byok/src/byok_azure.rs`, `byok_gcp.rs`, `byok_vault.rs` | `serde_json::to_vec()` not `serde_jcs::to_vec()` (RFC 8785). Cross-arch DEK unrecoverability = data-loss risk. Auditor will flag as design deficiency in C1.1 + PI1.2. |
+| 3 | GAP-35: Audit-chain verifier non-constant-time (P1-3) | CC7.1, PI1.5 | `crates/corelink-audit-chain/src/verifier.rs:162` | `!=` compare on chain hashes is a timing oracle. Auditor will flag as security design deficiency. Fix: use `subtle::ConstantTimeEq` (already used in exporter + archive). |
+| 4 | GAP-36: PAT token_id compare non-constant-time (P1-4) | CC6.1 | `crates/corelink-pat/src/verify.rs:54` | Violates the module's own invariant INV-AUTH-CONSTANT-TIME-COLD-PAD. Auditor will flag as CC6.1 design deficiency. |
+| 5 | GAP-01: Permanent DPO not yet appointed | P8.1, CC1.2 | `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md` | Interim is acceptable for Type I if the handoff plan is documented (it is). Blocks EU enterprise customers. |
+
+### 10.2 Must-close before Type I observation window opens (pre-fieldwork)
+
+| # | Gap | Control area | Notes |
+|---|---|---|---|
+| 6 | Evidence collection baseline: 0 operating days | All CC criteria | Type I is design-only so this is not a hard blocker, but the auditor will note that no operating history exists. First quarterly review due T+1m. |
+| 7 | CC6.3 quarterly access review (first run) | CC6.3 | Must be executed once to demonstrate the process is operational, not just designed. |
+| 8 | P2.1 consent event log (first real events) | P2.1 | Consent ledger crate deployed; needs production consent events to show evidence. |
+| 9 | GAP-15: Cold restore drill execution | A1.3 | Spec + cadence documented; needs one executed drill log to close A1.3 RED. |
+| 10 | Advisor pool engagement (GAP-04 + GAP-05) | CC1.2, CC1.4 | Compliance Officer + AppSec advisor needed for governance independence. First quarterly review with advisor countersignature closes CC1.2 YELLOW. |
+
+### 10.3 Required only for Type II (not blocking Type I)
+
+| # | Gap | Notes |
+|---|---|---|
+| 11 | 6-month operating evidence window | Type I = design review only. Type II requires continuous evidence of control operation. |
+| 12 | GAP-37: Quota race fix | P1-5 rate-limit hardening. Affects cost control, not Type I design review. |
+| 13 | GAP-38: Audit export endpoint 404 | PI1.3 evidence artifact. P2 — path routing fix. |
+| 14 | ISO 27001 ISMS establishment | DEFERRED per roadmap. SOC 2 + LGPD/GDPR compliance is the current gate. |
+| 15 | Webhook replay window (P1-2) | `apps/signup-worker/src/webhooks/clerk.ts:270-294` missing `svix-timestamp` validation. Not a SOC 2 TSC gap per se, but auditor will flag under CC6.6. Fix before T+1m. |
+
+### 10.4 Control-to-crate reference index
+
+This index lists the primary crate backing each compliance-relevant control.
+Every cited path has been verified to exist on disk as of 2026-05-30.
+
+| Control area | Primary crate | Key file | SOC 2 criteria |
+|---|---|---|---|
+| Tenant isolation (HMAC prefix) | `crates/tenant-path` | `src/prefix.rs` | CC6.2, CC6.6, PI1.4 |
+| PAT authentication (Argon2id) | `crates/corelink-auth`, `crates/corelink-pat` | `src/verify.rs` | CC6.1 |
+| Audit chain (BLAKE3 Merkle, CloudEvents) | `crates/corelink-audit-chain` | `src/chain.rs`, `src/event.rs` | CC4.1, CC7.1, PI1.5 |
+| DSR rights orchestration (6 rights) | `crates/corelink-dsr` | `src/lib.rs` | P5.1, P5.2 |
+| Erasure pipeline (12 backends) | `crates/corelink-privacy-erasure-worker` | `src/lib.rs` | C1.2, P4.3 |
+| Erasure attestation (Ed25519/FIPS 186-5) | `crates/corelink-erasure-attestation` | `src/attestation.rs` | C1.2, PI1.5 |
+| BYOK key management (4 providers) | `crates/corelink-byok` | `src/byok_core/`, `src/byok_aws.rs`, `src/byok_gcp.rs`, `src/byok_azure.rs`, `src/byok_vault.rs` | C1.1, CC6.1 |
+| Privacy umbrella (consent/breach/notice/DSR/residency) | `crates/corelink-privacy` | `src/lib.rs` | P1.1, P2.1, P3.1, P4.1, P6.1, P8.1 |
+| CAS (content-addressable storage) | `crates/corelink-cas` | `src/` | PI1.1, PI1.2 |
+| Action cache | `crates/corelink-ac` | `src/` | PI1.3 |
+
+---
+
+## 11. Referências
+
+### 11.1 Frameworks
 
 - **AICPA Trust Services Criteria 2017 (rev. 2022)** — SOC 2.
 - **ISO/IEC 27001:2022** + Anexo A.
@@ -335,26 +454,35 @@ Este doc é o acordo atual de roadmap. Gaps conhecidos:
 - **CIS Controls v8** — para crosswalk com ISO.
 - **Cloud Security Alliance CCM v4** — shared responsibility.
 
-### 10.2 Legislação
+### 11.2 Legislação
 
 - LGPD — Lei 13.709/2018.
 - GDPR — Regulamento (UE) 2016/679.
 - CCPA/CPRA.
 - HIPAA Security Rule (45 CFR 164.302-318).
 
-### 10.3 Auditores potenciais
+### 11.3 Auditores potenciais
 
 - Big 4 (Deloitte, KPMG, EY, PwC) — SOC 2.
 - Schellman, A-LIGN — SOC 2 + ISO 27001, experiência SaaS.
 - Prescient Assurance — SOC 2 rápido.
 
-### 10.4 Ferramentas de evidence automation
+### 11.4 Ferramentas de evidence automation
 
-- **Drata** — popular em SaaS early-stage.
+- **Drata** — popular em SaaS early-stage. Active integration: `specs/_compliance/DRATA-INTEGRATION-COVERAGE.md` (90.7% strict / 96.4% dashboard green as of 2026-05-14).
 - **Vanta** — competitor, bom para multi-framework.
 - **Secureframe** — competitor.
 - **OneTrust** — enterprise, privacy-first.
 
+### 11.5 Key audit artifacts (v0.3.0 additions)
+
+- `specs/_audits/sealed/2026-05-14-soc2-readiness-score.md` — quantitative readiness scorecard (83.7% internal / 96.4% Drata); 43 criteria; 26 GREEN / 15 YELLOW / 2 RED.
+- `specs/_compliance/SOC2-GAP-ANALYSIS.md` — canonical 33-GAP register (FROZEN 2026-05-14).
+- `specs/_audits/2026-05-28-multimodel-prod-readiness-audit.md` — multi-model brutal audit + §9 SHIPPABLE addendum (2026-05-30).
+- `specs/_audits/iso27001-soa.csv` — ISO 27001:2022 SoA (2022 baseline; 93 controls).
+- `specs/_audits/matrix-stride-ctrl.csv` — STRIDE threat model cross-referenced to CTRLs.
+- `specs/_audits/lia-template.md` — LIA template for GDPR Art. 6(f) legitimate interest.
+
 ---
 
-**Fim de COMPLIANCE-MATRIX.** Mudanças em frameworks externos (ex: SOC 2 2024 revision) requerem update deste doc dentro de 90d da publicação.
+**Fim de COMPLIANCE-MATRIX v0.3.0.** Mudanças em frameworks externos (ex: SOC 2 2024 revision) requerem update deste doc dentro de 90d da publicação.
