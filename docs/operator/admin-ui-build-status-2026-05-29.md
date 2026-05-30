@@ -1,43 +1,64 @@
-# admin-ui CF Pages build state — 2026-05-29
+# admin-ui CF Pages build state — 2026-05-29 (RESOLVED)
 
 ## Status
-**Build NOT shippable** at HEAD `0c665b83`. Two issues fixed (committed), one blocker remains.
+**Build shippable.** `pnpm run pages:build` produces a deployable
+`.vercel/output/static` tree with the synthetic `/_not-found` and `/_error`
+routes converted to Edge runtime via a post-build patch.
 
-## What was fixed (committed)
-1. `next.config.ts`: `outputFileTracingRoot` was `path.join(__dirname, "../../")` causing `@cloudflare/next-on-pages` to construct doubled paths `apps/admin-ui/apps/admin-ui/.next/...`. Anchored to `__dirname` so paths single-prefix.
-2. `src/app/sign-in/[[...sign-in]]/page.tsx` + `sign-up/[[...sign-up]]/page.tsx`: changed `runtime = "nodejs"` → `"edge"` so the Vercel build → next-on-pages chain accepts these routes.
+## Root cause (corrected — was NOT Sentry)
+Next.js 15 always emits internal `/_not-found.func` and `/_error.func`
+as `nodejs24.x` runtime, regardless of:
 
-## Remaining blocker — `/_not-found` not in Edge Runtime
+- `not-found.tsx` exporting `runtime = "edge"`
+- The root layout being `runtime = "edge"`
+- `dynamic = "force-static"` on the not-found route
 
-`pnpm run pages:build` exits with:
+The launcher (`___next_launcher.cjs`) requires `async_hooks` — Node-only.
+`@cloudflare/next-on-pages` then rejects the build because not every
+function is Edge.
+
+Verified by removing the Sentry wrapper entirely: same error. Sentry was
+exonerated.
+
+## Fix
+Two scripts run between `vercel build` and `next-on-pages`:
+
+1. `scripts/seed-vercel-project.mjs` — writes `.vercel/project.json` so
+   `vercel build` skips its auth check (we never deploy to Vercel; we
+   only need its build output for next-on-pages to consume).
+2. `scripts/patch-vercel-synthetic-routes.mjs` — overwrites
+   `_not-found.func`, `_not-found.rsc.func`, `_error.func`, and
+   `_error.rsc.func` with minimal Edge-runtime handlers returning 404/500
+   HTML (or JSON for the `.rsc` variants). Inherits the `environment`
+   block from a sibling Edge function so build IDs stay consistent.
+
+Updated `pages:build`:
 ```
-The following routes were not configured to run with the Edge Runtime:
-  - /_not-found
+vercel build && node scripts/patch-vercel-synthetic-routes.mjs && next-on-pages --skip-build
 ```
-
-`src/app/not-found.tsx` already exports `runtime = "edge"`, but the Vercel build step generates an INTERNAL `/_not-found` handler (note the underscore prefix) that doesn't inherit the runtime export from `not-found.tsx`.
-
-Root cause hypothesis: **Sentry's Next.js instrumentation** (`@sentry/nextjs` 8.55.x) wraps `notFound()` calls with error-capture handlers + emits an internal `/_not-found` route at Node.js runtime to keep error reporting alive.
-
-## Workarounds to try (next session)
-
-1. **Remove Sentry temporarily**: comment out `withSentryConfig` wrapper in `next.config.ts`, rebuild. If build succeeds, Sentry is the cause.
-2. **Use OpenNext.js Cloudflare adapter** (`@opennextjs/cloudflare`) instead of `@cloudflare/next-on-pages` — newer, handles internal routes better.
-3. **Pin Sentry to a version with edge-aware not-found instrumentation** if such exists.
-4. **Drop @sentry/nextjs entirely**, use a manual `init()` call in `instrumentation.ts` with edge-runtime guard.
 
 ## Currently live
-- Pages project `corelink-admin-ui` exists (created by Stream B3)
+- Pages project `corelink-admin-ui` exists
 - Custom domain `corelink-admin.humangr.com` provisioned
 - DNS CNAME points at `corelink-admin-ui.pages.dev`
-- Nothing actually deployed to the project yet — visiting the domain shows the Pages "not configured" placeholder
+- Nothing actually deployed yet — next step is `pnpm pages:deploy`
 
-## Operator action
-- Pick a workaround above
-- `cd apps/admin-ui && pnpm run pages:build` until `.vercel/output/static` exists
-- `worker/node_modules/.bin/wrangler pages deploy .vercel/output/static --project-name corelink-admin-ui`
+## Future cleanup
+- When `@opennextjs/cloudflare` matures (handles synthetic routes
+  natively), drop the patch script. Track the next-on-pages migration
+  guide.
+- When Next.js exposes a route-segment knob for `/_not-found` runtime,
+  drop the patch as well.
 
-## Files touched in fix attempts (committed)
-- `apps/admin-ui/next.config.ts` — outputFileTracingRoot
-- `apps/admin-ui/src/app/sign-in/[[...sign-in]]/page.tsx` — edge
-- `apps/admin-ui/src/app/sign-up/[[...sign-up]]/page.tsx` — edge
+## Files touched in this fix (all committed)
+- `apps/admin-ui/scripts/seed-vercel-project.mjs` (new)
+- `apps/admin-ui/scripts/patch-vercel-synthetic-routes.mjs` (new)
+- `apps/admin-ui/package.json` — `pages:build` pipeline updated
+- `apps/admin-ui/src/app/not-found.tsx` — added `dynamic = "force-static"`
+  (defensive; not strictly required after the patch lands but cheap and
+  keeps the page out of SSR if future Next versions respect it)
+- `apps/admin-ui/next.config.ts` — confirmed Sentry wrapper is fine
+
+## Prior fixes still relevant (already committed earlier)
+- `next.config.ts`: `outputFileTracingRoot: __dirname` (was `../../`)
+- `sign-in` + `sign-up` route pages: `runtime = "edge"` (was `nodejs`)

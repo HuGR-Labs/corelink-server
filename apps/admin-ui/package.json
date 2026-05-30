@@ -7,8 +7,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:cf": "pnpm dlx vercel@latest build --yes && node -e \"const fs=require('fs');const rm=p=>{try{fs.rmSync(p,{recursive:true})}catch{}};rm('.vercel/output/functions/_not-found.func');rm('.vercel/output/functions/_not-found.rsc.func');rm('.vercel/output/functions/_error.func')\" && next-on-pages --skip-build",
-    "pages:build": "next build && npx @cloudflare/next-on-pages",
+    "pages:build": "node scripts/seed-vercel-project.mjs && pnpm dlx vercel@latest build && node scripts/patch-vercel-synthetic-routes.mjs && npx @cloudflare/next-on-pages --skip-build",
     "pages:deploy": "wrangler pages deploy .vercel/output/static --project-name corelink-admin-ui",
     "start": "next start",
     "lint": "next lint",
