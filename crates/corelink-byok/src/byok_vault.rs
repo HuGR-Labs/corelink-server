@@ -217,13 +217,17 @@ impl VaultProvider {
         &self.transit_engine_path
     }
 
-    /// Encode `encryption_context` as base64-encoded JSON bytes for
+    /// Encode `encryption_context` as base64-encoded JCS-canonical JSON bytes for
     /// Vault Transit `context` parameter.
+    ///
+    /// Uses RFC 8785 JCS canonicalization so the same logical context always
+    /// produces byte-identical AAD bytes regardless of JSON serializer field order
+    /// (GAP-34 — SOC 2 Type I fix; INV-BYOK-CRYPTO-SOVEREIGNTY).
     fn context_to_vault_context(ctx: Option<&serde_json::Value>) -> String {
         match ctx {
             None => String::new(),
             Some(v) => {
-                let json_bytes = serde_json::to_vec(v).unwrap_or_default();
+                let json_bytes = serde_jcs::to_vec(v).unwrap_or_default();
                 BASE64.encode(&json_bytes)
             }
         }
@@ -524,5 +528,26 @@ mod tests {
         let dek = Dek::generate().expect("entropy");
         let result = p.wrap_dek(&dek, &bad_key_id, None).await;
         assert!(result.is_err());
+    }
+
+    // GAP-34: verify JCS vault context is deterministic regardless of JSON key order.
+    // The Vault Transit `context` parameter is base64(JCS-canonical-JSON); any
+    // permutation of the same logical object must produce byte-identical output.
+    #[test]
+    fn context_to_vault_context_jcs_deterministic_across_key_order() {
+        let v1 = serde_json::json!({"tenant_id": "T1", "blob_hash": "H3"});
+        let v2 = serde_json::json!({"blob_hash": "H3", "tenant_id": "T1"});
+        let ctx1 = VaultProvider::context_to_vault_context(Some(&v1));
+        let ctx2 = VaultProvider::context_to_vault_context(Some(&v2));
+        assert_eq!(
+            ctx1, ctx2,
+            "JCS Vault context must be byte-identical regardless of JSON key insertion order"
+        );
+        assert!(!ctx1.is_empty());
+    }
+
+    #[test]
+    fn context_to_vault_context_none_is_empty() {
+        assert_eq!(VaultProvider::context_to_vault_context(None), String::new());
     }
 }

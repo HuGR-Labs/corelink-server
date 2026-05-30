@@ -180,14 +180,14 @@ impl GcpKmsProvider {
         })
     }
 
-    /// Serialize `encryption_context` to GCP `additional_authenticated_data` bytes.
-    ///
-    /// GCP accepts raw bytes; CoreLink serializes to UTF-8 JSON for a
-    /// canonical, deterministic encoding.
+    /// Serialize `encryption_context` to GCP `additional_authenticated_data` bytes
+    /// using RFC 8785 JCS canonicalization so the same logical context always
+    /// produces byte-identical AAD regardless of JSON serializer field order
+    /// (GAP-34 — SOC 2 Type I fix; INV-BYOK-CRYPTO-SOVEREIGNTY).
     fn context_to_aad(ctx: Option<&serde_json::Value>) -> Vec<u8> {
         match ctx {
             None => vec![],
-            Some(v) => serde_json::to_vec(v).unwrap_or_default(),
+            Some(v) => serde_jcs::to_vec(v).unwrap_or_default(),
         }
     }
 
@@ -437,5 +437,25 @@ mod tests {
         };
         let result = p.unwrap_dek(&wrapped).await;
         assert!(result.is_err());
+    }
+
+    // GAP-34: verify JCS AAD is deterministic regardless of JSON key order.
+    #[test]
+    fn context_to_aad_jcs_deterministic_across_key_order() {
+        let v1 = serde_json::json!({"tenant_id": "T1", "blob_hash": "H1"});
+        let v2 = serde_json::json!({"blob_hash": "H1", "tenant_id": "T1"});
+        let aad1 = GcpKmsProvider::context_to_aad(Some(&v1));
+        let aad2 = GcpKmsProvider::context_to_aad(Some(&v2));
+        assert_eq!(
+            aad1, aad2,
+            "JCS AAD must be byte-identical regardless of JSON key insertion order"
+        );
+        assert!(!aad1.is_empty());
+    }
+
+    #[test]
+    fn context_to_aad_none_is_empty() {
+        let empty: Vec<u8> = vec![];
+        assert_eq!(GcpKmsProvider::context_to_aad(None), empty);
     }
 }

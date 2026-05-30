@@ -406,11 +406,14 @@ impl KmsProvider for AzureKeyVaultProvider {
     }
 }
 
-/// Serialize `encryption_context` to AAD bytes (UTF-8 JSON).
+/// Serialize `encryption_context` to AAD bytes using RFC 8785 JCS
+/// canonicalization so the same logical context always produces
+/// byte-identical AAD regardless of JSON serializer field order
+/// (GAP-34 — SOC 2 Type I fix; INV-BYOK-CRYPTO-SOVEREIGNTY).
 fn context_to_aad(ctx: Option<&serde_json::Value>) -> Vec<u8> {
     match ctx {
         None => vec![],
-        Some(v) => serde_json::to_vec(v).unwrap_or_default(),
+        Some(v) => serde_jcs::to_vec(v).unwrap_or_default(),
     }
 }
 
@@ -495,5 +498,30 @@ mod tests {
         let p = AzureKeyVaultProvider::new_mock("eastus");
         let status = p.check_access(&gcp_key_id()).await.expect("check");
         assert_eq!(status, KmsAccessStatus::Ok);
+    }
+
+    // GAP-34: verify JCS AAD is deterministic regardless of JSON key order.
+    // `serde_json::Value::Object` preserves insertion order on round-trip
+    // but serde_jcs MUST produce the same bytes for any permutation of the
+    // same logical object.
+    #[test]
+    fn context_to_aad_jcs_deterministic_across_key_order() {
+        // Two JSON objects with the same keys/values but different insertion order.
+        let v1 = serde_json::json!({"tenant_id": "T1", "blob_hash": "H2"});
+        let v2 = serde_json::json!({"blob_hash": "H2", "tenant_id": "T1"});
+        let aad1 = context_to_aad(Some(&v1));
+        let aad2 = context_to_aad(Some(&v2));
+        assert_eq!(
+            aad1, aad2,
+            "JCS AAD must be byte-identical regardless of JSON key insertion order"
+        );
+        // Also confirm non-empty.
+        assert!(!aad1.is_empty());
+    }
+
+    #[test]
+    fn context_to_aad_none_is_empty() {
+        let empty: Vec<u8> = vec![];
+        assert_eq!(context_to_aad(None), empty);
     }
 }

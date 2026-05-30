@@ -28,6 +28,8 @@
 //! each position + assert the claimed `prev_hash` matches the
 //! recomputed hash. Real R2 binding lands at WI-S09-007 PRR ship gate.
 
+use subtle::ConstantTimeEq;
+
 use crate::audit::{
     AuditChainAuditEventType, AuditChainAuditRecord, AuditChainAuditSink,
 };
@@ -159,7 +161,12 @@ where
             // they diverge, the chain is broken at THIS event (the
             // FIRST event whose claimed prev_hash doesn't match the
             // running chain head).
-            if ev.prev_hash.as_bytes() != current_prev_hash.as_bytes() {
+            //
+            // GAP-35 — SOC 2 Type I fix: use constant-time comparison via
+            // `subtle::ConstantTimeEq` so the rejection latency does not
+            // leak whether and where the 32-byte BLAKE3 hashes differ
+            // (timing oracle defence; INV-AUTH-CONSTANT-TIME-COLD-PAD).
+            if ev.prev_hash.as_bytes().ct_eq(current_prev_hash.as_bytes()).unwrap_u8() == 0 {
                 self.emit_chain_break_audit(
                     ev.subject.subject(),
                     expected_tenant_id,
@@ -485,5 +492,38 @@ mod tests {
         // chain head; this is the falsifiability target of the
         // INV-OBS-AUDIT-CHAIN-INTEGRITY invariant).
         assert_eq!(outcome.last_verified_hash, s.chain_head(tenant).unwrap());
+    }
+
+    // GAP-35 — constant-time hash compare correctness:
+    // The `subtle::ConstantTimeEq` branch must accept identical hashes and
+    // reject divergent ones. This is a logical correctness test, not a
+    // timing test (actual timing guarantees come from the `subtle` crate).
+    #[test]
+    fn constant_time_hash_compare_accepts_equal_chain() {
+        let (s, v, _audit) = fresh_setup();
+        let tenant = Uuid::now_v7();
+        // An intact 3-event chain must verify successfully (equal hashes pass).
+        let chain = build_chain(&s, tenant, 3);
+        let outcome = v
+            .verify_chain_from_genesis(&chain, tenant, "verifier", 1)
+            .unwrap();
+        assert_eq!(outcome.events_verified_count, 3);
+        assert_eq!(outcome.first_break_at_seq, None);
+    }
+
+    #[test]
+    fn constant_time_hash_compare_rejects_tampered_prev_hash() {
+        let (s, v, _audit) = fresh_setup();
+        let tenant = Uuid::now_v7();
+        let mut chain = build_chain(&s, tenant, 3);
+        // Tamper event 0's prev_hash → must be rejected (unequal hashes fail).
+        chain[0].prev_hash = ChainHash([0xDE; 32]);
+        let err = v
+            .verify_chain_from_genesis(&chain, tenant, "verifier", 1)
+            .unwrap_err();
+        assert!(
+            matches!(err, AuditChainError::ChainBreak { at_sequence: 0, .. }),
+            "tampered prev_hash must produce ChainBreak at seq 0"
+        );
     }
 }
