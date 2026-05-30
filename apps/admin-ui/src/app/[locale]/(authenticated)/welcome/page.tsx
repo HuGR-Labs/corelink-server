@@ -3,8 +3,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import type { Locale } from "@/i18n/messages";
 import { InstallOneLiner } from "@/components/InstallOneLiner";
+import { PatRevealCard } from "@/components/PatRevealCard";
 import { WelcomeStream } from "./WelcomeStream";
-import { CopyPatButton } from "./CopyPatButton";
 
 /**
  * /welcome — the single post-signup screen (PLG framework §4 step 3).
@@ -15,7 +15,7 @@ import { CopyPatButton } from "./CopyPatButton";
  *
  * Three rendering branches:
  *  1. `pat_plaintext` present: one-time reveal panel (PAT + install one-liner
- *     + CopyPatButton which triggers clearPatPlaintext server action on save)
+ *     + PatRevealCard for blurred/reveal UX + next-step CTA cards)
  *  2. `tenant_id` present but no `pat_plaintext`: "already retrieved" panel
  *     with link to /customer/keys for rotation
  *  3. Neither present: redirect to /sign-up (webhook still running or session
@@ -119,18 +119,7 @@ export default async function WelcomePage(props: {
 
       {/* One-time PAT reveal */}
       <section className="mt-6" data-testid="pat-reveal-section">
-        <div
-          className="rounded border border-amber-300 bg-amber-50 p-3 text-sm"
-          role="alert"
-          data-testid="pat-warning"
-        >
-          This is your personal access token. It is shown{" "}
-          <strong>once</strong>. Store it in a secret manager.
-        </div>
-
-        <div className="mt-4">
-          <CopyPatButton pat={pat} />
-        </div>
+        <PatRevealCard patPlaintext={pat} />
       </section>
 
       {/* Install one-liner */}
@@ -159,6 +148,55 @@ export default async function WelcomePage(props: {
           <code>bazel build //...</code> twice — the second build should
           report cache hits.
         </p>
+      </section>
+
+      {/* Next-step CTA cards */}
+      <section className="mt-10" data-testid="next-steps-section">
+        <h2 className="text-lg font-medium">Next steps</h2>
+        <div
+          className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3"
+          data-testid="next-steps-cards"
+        >
+          <Link
+            href="https://docs.humangr.com/corelink/quickstart"
+            className="flex flex-col rounded border border-gray-200 p-4 hover:border-blue-400 hover:shadow-sm"
+            data-testid="next-step-quickstart"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span className="font-medium">Try the quickstart</span>
+            <span className="mt-1 text-sm text-gray-500">
+              Authenticate the CLI and run your first cached build.
+            </span>
+          </Link>
+
+          <Link
+            href="https://docs.humangr.com/corelink/bazel"
+            className="flex flex-col rounded border border-gray-200 p-4 hover:border-blue-400 hover:shadow-sm"
+            data-testid="next-step-bazel"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span className="font-medium">Configure Bazel</span>
+            <span className="mt-1 text-sm text-gray-500">
+              Point your <code>.bazelrc</code> at the CoreLink remote cache.
+            </span>
+          </Link>
+
+          <Link
+            href="https://docs.humangr.com/corelink/turborepo"
+            className="flex flex-col rounded border border-gray-200 p-4 hover:border-blue-400 hover:shadow-sm"
+            data-testid="next-step-turbo"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span className="font-medium">Configure Turborepo</span>
+            <span className="mt-1 text-sm text-gray-500">
+              Enable remote cache in your <code>turbo.json</code> with one
+              flag.
+            </span>
+          </Link>
+        </div>
       </section>
     </main>
   );

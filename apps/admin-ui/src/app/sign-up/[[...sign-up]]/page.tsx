@@ -47,7 +47,18 @@ export default function SignUpPage(): React.ReactElement {
   }
   return (
     <main className="mx-auto max-w-md p-8">
-      <SignUp />
+      {/*
+       * forceRedirectUrl: always land on /en/welcome after Clerk completes
+       * sign-up, regardless of the Clerk dashboard "redirect URL" setting.
+       * fallbackRedirectUrl: safety net if Clerk ignores forceRedirectUrl
+       * (e.g. email-verification flows that redirect independently).
+       * /en/welcome is used because next-intl requires the locale prefix;
+       * the default locale is "en" (src/i18n/request.ts).
+       */}
+      <SignUp
+        forceRedirectUrl="/en/welcome"
+        fallbackRedirectUrl="/en/welcome"
+      />
     </main>
   );
 }
