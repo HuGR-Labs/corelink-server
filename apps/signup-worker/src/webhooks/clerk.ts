@@ -49,6 +49,14 @@ export interface AutoProvisionEnv {
    * Required for Stream-5. Bound via `wrangler secret put CORELINK_INTERNAL_AUTH_KEY`.
    */
   CORELINK_INTERNAL_AUTH_KEY?: string;
+
+  /**
+   * Service binding to the main CoreLink Worker. Set in wrangler.toml under
+   * `[[services]] binding = "CORELINK_API_SVC"`. When present, used for the
+   * `/_internal/pat/mint` call to bypass Cloudflare edge error 1014
+   * (CNAME Cross-User Banned) that blocks Worker→Worker custom-domain fetches.
+   */
+  CORELINK_API_SVC?: { fetch: typeof fetch };
   /**
    * Clerk Backend API secret key (`sk_test_...` or `sk_live_...`).
    * Required for `publishUserMetadata`. Bound via `wrangler secret put CLERK_SECRET_KEY`.
@@ -440,8 +448,10 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
         return { id: crypto.randomUUID(), plaintext: "corelink_pat_DEVSTUB" };
       }
 
-      // Call the container's internal mint endpoint.
-      const mintResp = await fetch(
+      // Call the container's internal mint endpoint. Prefer the service
+      // binding (bypasses CF edge error 1014); fall back to the public URL
+      // when the binding is absent (local dev).
+      const mintReq = new Request(
         `${env.CORELINK_API_BASE}/_internal/pat/mint`,
         {
           method: "POST",
@@ -458,6 +468,9 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
           }),
         },
       );
+      const mintResp = env.CORELINK_API_SVC
+        ? await env.CORELINK_API_SVC.fetch(mintReq)
+        : await fetch(mintReq);
       if (!mintResp.ok) {
         throw new Error(`internal_pat_mint_failed_${mintResp.status}`);
       }
