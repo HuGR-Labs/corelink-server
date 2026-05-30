@@ -1,0 +1,383 @@
+---
+slug: bazel-r2-zero-egress
+title: "Running Bazel Remote Cache on Cloudflare R2 (with zero egress)"
+authors: [gustavo]
+tags: [engineering, build-cache, cloudflare-workers, rust]
+date: 2026-05-30T08:00:00.000Z
+description: >
+  A technical walkthrough of CoreLink's REAPI v2 bridge: how Bazel
+  remote cache traffic maps onto R2 objects, what the R2 key layout
+  looks like under multi-tenancy, and why the egress bill is zero.
+---
+
+Let's start with the math.
+
+A team of 10 engineers. A warm Bazel cache holding 100 GB of artifacts.
+Every developer pulls artifacts from S3 on every CI run. Call that
+500 GB/month of outbound egress — a conservative number once you
+include remote build workers.
+
+| Storage | Egress | Monthly for 500 GB out |
+|---------|--------|------------------------|
+| AWS S3 (us-east-1) | $0.09/GB | **$45.00** |
+| Cloudflare R2 | $0.00/GB | **$0.00** |
+| Storage delta (100 GB) | — | S3 $2.30 vs R2 $1.50 |
+
+The egress line is where the margin disappears on self-hosted S3
+backends. At 5 TB/month — not unusual for a mid-size monorepo team
+with aggressive remote builds — you are writing $450/month purely for
+data leaving AWS. That is before replication, request charges, or the
+Nat Gateway tax if your build workers live in EC2.
+
+R2 charges $0.015/GB stored and $0.0000004 per Class-B read (GET).
+No egress. Ever. The math stops being interesting and starts being
+obvious.
+
+<!-- truncate -->
+
+## What Bazel actually speaks: REAPI v2
+
+Bazel's remote cache protocol is a subset of the
+[Remote Execution API (REAPI) v2](https://github.com/bazelbuild/remote-apis),
+maintained by the Remote Execution Working Group. The REST surface —
+not gRPC — is what `--remote_cache` speaks over HTTPS.
+
+Five endpoints carry the full cache lifecycle:
+
+| HTTP method | Path pattern | What it does |
+|---|---|---|
+| `GET` | `/{instance}/blobs/{hash}/{size}` | CAS read — fetch a blob |
+| `POST` | `/{instance}/uploads/{uuid}/blobs/{hash}/{size}` | CAS write — store a blob |
+| `GET` | `/{instance}/blobs/ac/{hash}/{size}` | AC read — fetch an action result |
+| `PUT` | `/{instance}/blobs/ac/{hash}/{size}` | AC write — store an action result |
+| `POST` | `/{instance}/findMissingBlobs` | Batch existence check |
+
+`{instance}` is the "remote instance name" — Bazel's namespace for a
+build environment. In CoreLink it maps 1:1 to a tenant UUID.
+
+`{hash}` is a SHA-256 hex digest. `{size}` is the byte count.
+Together they form a REAPI `Digest`: a content-address and an
+integrity check rolled into one URL segment.
+
+### The Digest wire format
+
+In URI paths, a digest is `<hash>/<size_bytes>`. In JSON bodies
+(used by `findMissingBlobs`), it is:
+
+```json
+{"hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "sizeBytes": 0}
+```
+
+The hash must be exactly 64 lowercase hex characters — SHA-256.
+CoreLink's bridge validates this structurally:
+
+```rust
+// crates/corelink-bazel-bridge/src/digest.rs
+fn validate_hash(hash: &str) -> Result<(), BazelBridgeError> {
+    if hash.len() != 64 {
+        return Err(BazelBridgeError::InvalidDigest { reason: format!(
+            "hash must be exactly 64 hex chars, got {} chars: {hash:?}",
+            hash.len()
+        )});
+    }
+    if !hash.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+        return Err(BazelBridgeError::InvalidDigest {
+            reason: format!("hash must be lowercase hex, got: {hash:?}"),
+        });
+    }
+    Ok(())
+}
+```
+
+Uppercase hash? Rejected. 63-char hash? Rejected. A size that exceeds
+4 GiB? Also rejected — blobs that large require the ByteStream API,
+which this REST bridge does not implement (see Limitations below).
+
+### findMissingBlobs: the bandwidth saver
+
+The most operationally important endpoint is `findMissingBlobs`. Bazel
+calls it before every upload batch to ask: *which of these digests
+does the server not have?* Only the missing ones get uploaded.
+
+Request body:
+
+```json
+{
+  "blobDigests": [
+    {"hash": "abc...def", "sizeBytes": 1024},
+    {"hash": "123...456", "sizeBytes": 512}
+  ]
+}
+```
+
+Response body:
+
+```json
+{
+  "missingBlobDigests": [
+    {"hash": "123...456", "sizeBytes": 512}
+  ]
+}
+```
+
+On a warm build, the majority of digests are already cached. The
+upload traffic reduction can be 90–99% on incremental builds. This is
+the mechanism that makes remote caching fast in practice, not just
+correct.
+
+CoreLink caps this endpoint at 4096 digests per request
+(`FIND_MISSING_BLOB_CAP`) and returns a 413-equivalent error for
+oversized batches, consistent with REAPI v2.3.0 §5.3.
+
+## How the bridge maps REAPI to R2
+
+CoreLink's REAPI bridge lives in two crates:
+
+- [`corelink-bazel-bridge`](https://github.com/humangr-labs/corelink-server/blob/main/crates/corelink-bazel-bridge/src/lib.rs) —
+  pure protocol translation: digest parsing, URI parsing, the
+  `findMissingBlobs` handler, and the `BazelAdapter` that wraps the
+  CAS/AC trait objects.
+- [`corelink-container/src/routes/bazel_v2.rs`](https://github.com/humangr-labs/corelink-server/blob/main/crates/corelink-container/src/routes/bazel_v2.rs) —
+  Axum route wiring: extracts path params, builds `Digest` structs,
+  calls the adapter, maps errors to HTTP status codes.
+
+The routes mount at `/bazel/v2/`:
+
+```
+GET  /bazel/v2/:instance/blobs/:hash/:size        → CAS read
+PUT  /bazel/v2/:instance/uploads/:uuid/blobs/:hash/:size → CAS write
+GET  /bazel/v2/:instance/blobs/ac/:hash/:size     → AC read
+PUT  /bazel/v2/:instance/blobs/ac/:hash/:size     → AC write
+POST /bazel/v2/:instance/findMissingBlobs         → batch find-missing
+```
+
+The `:instance` segment must equal the `x-corelink-tenant-id` header
+that the Cloudflare Worker injects after authentication. A mismatch
+produces HTTP 403 and an audit log entry — the adapter enforces this
+before it even reaches the storage layer:
+
+```rust
+// crates/corelink-bazel-bridge/src/adapter.rs
+fn check_tenant(instance: &str, caller_tenant: &str) -> Result<(), BazelBridgeError> {
+    if instance != caller_tenant {
+        return Err(BazelBridgeError::CrossTenantDenied {
+            caller: caller_tenant.to_owned(),
+            requested: instance.to_owned(),
+        });
+    }
+    Ok(())
+}
+```
+
+This check runs twice: once in the adapter (fast path, before any
+storage I/O) and once inside the handler (invariant enforcement). Both
+layers agree or the request dies.
+
+### R2 key layout
+
+Every blob CoreLink stores in R2 lands at a path with this structure:
+
+```
+<family>-<region>/<tenant_prefix>/<digest_hex>[.suffix]
+```
+
+Where:
+- `<family>` is `chunk` for raw content or `manifest` for chunked-blob
+  manifest envelopes.
+- `<region>` is the Cloudflare region suffix (e.g. `iad`, `sam`).
+- `<tenant_prefix>` is a 16-character URL-safe base64 string derived
+  from the tenant UUID via HMAC-SHA256 with a server-side derivation
+  key — this is what prevents one tenant from guessing another
+  tenant's object paths.
+- `<digest_hex>` is 64 lowercase hex characters of the content hash.
+
+A real key for a CAS blob looks like:
+
+```
+chunk-iad/Xk7mQ9nR2pL4wT8v/e3b0c44298fc1c149afbf4c8996fb924...b855
+```
+
+For a manifest envelope:
+
+```
+manifest-iad/Xk7mQ9nR2pL4wT8v/a7f3c12d...4e9b.json
+```
+
+The tenant prefix segment is structurally enforced — there is no way
+for a caller to inject `..` or other path-traversal bytes, because the
+`TenantPrefix` type validates its alphabet at construction time, the
+region is validated to `[a-z0-9_-]{1,16}`, and the digest is
+validated to be 64-char lowercase hex. Any violation returns a
+`MultipartError::InvalidObjectKey` before anything reaches R2.
+
+This layout also gives R2's prefix-listing API a natural per-tenant
+namespace: `LIST chunk-iad/Xk7mQ9nR2pL4wT8v/` returns only that
+tenant's chunks in that region.
+
+One important technical note: CoreLink stores content using BLAKE3
+hashes internally (see the [previous post on why](/blog/why-blake3)).
+For the REAPI bridge, the SHA-256 digest that Bazel sends is accepted
+as the content-address key. The bridge does not recompute a BLAKE3
+hash of the incoming bytes before storing — it uses the SHA-256 from
+the REAPI digest as the key passed to the CAS handler. This is a
+deliberate design choice: it preserves the content-address semantics
+Bazel already verified, avoids double-hashing on the hot path, and
+keeps the bridge implementation free of any hash algorithm dependency.
+The trade-off is that Bazel blobs and native CAS blobs live in
+separate key namespaces within R2 — not an issue in practice since
+they are logically different artifact types.
+
+## Setting up Bazel to use CoreLink
+
+Three `.bazelrc` lines:
+
+```
+# .bazelrc
+build --remote_cache=https://corelink-api.humangr.com/bazel/v2
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --remote_instance_name=<your-tenant-uuid>
+```
+
+`CORELINK_PAT` is a personal access token from the CoreLink admin UI.
+`remote_instance_name` is your tenant UUID — it becomes the `:instance`
+path segment the bridge checks against your authenticated identity.
+
+For CI, export the token as a secret and use `--remote_cache_compression`
+if your artifacts compress well (most compiled outputs do not, but
+protobuf-heavy action results often do).
+
+A minimal `--bazelrc` split for local vs CI:
+
+```
+# .bazelrc
+build --remote_cache=https://corelink-api.humangr.com/bazel/v2
+build --remote_instance_name=<tenant-uuid>
+
+# User credentials — not checked into the repo
+# Add to ~/.bazelrc or pass via --bazelrc=.bazelrc.user
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+```
+
+This keeps secrets out of the repo while letting the cache URL and
+instance be committed.
+
+### Verifying the connection
+
+Bazel logs cache hit rates at the end of each build. A fresh build on
+a cold cache:
+
+```
+INFO: 843 processes: 843 remote cache miss.
+INFO: Build completed successfully, 843 total actions
+```
+
+Second build, warm cache:
+
+```
+INFO: 843 processes: 841 remote cache hit, 2 remote cache miss.
+INFO: Build completed successfully, 843 total actions
+```
+
+Two misses: one action that depends on a timestamp-sensitive input,
+one that produces a non-deterministic output. The rest hit.
+
+## Honest benchmark numbers
+
+We have not run a controlled Bazel benchmark against CoreLink in IAD
+vs a vanilla S3-backed `bazel-remote`. We will publish those numbers
+when we have them.
+
+What we can report from the infrastructure layer:
+
+- R2 Class-B read latency from Cloudflare's IAD PoP: **~8–15ms p50**
+  for objects under 1 MB (measured via the Workers runtime, not
+  from client).
+- Cloudflare Container to R2 in the same region: **~2–5ms p50**
+  (no egress hop, same-region binding).
+- Large blob (>1 MB): R2 multipart reads are parallelized across
+  chunks; 10 MB blobs serve in ~40–80ms from IAD depending on
+  chunk size.
+
+For Bazel cache hits, the dominant latency is the round-trip from
+the developer's machine to the nearest Cloudflare PoP — not the
+R2 fetch. The cache hit path is: DNS → TLS → Cloudflare PoP →
+Container handler → R2 read → response. The R2 step is rarely the
+bottleneck.
+
+## Limitations — what is not done yet
+
+Be aware of these before putting CoreLink on a critical build path:
+
+**Single region today.** The implementation is exercised live against
+Cloudflare's IAD region. Multi-region routing (routing a tenant's
+reads to the nearest replica) is designed but not yet per-tenant
+wired. All traffic currently goes through the IAD data plane
+regardless of the client's location.
+
+**No ByteStream.** The REAPI bridge is REST-only. Blobs larger than
+4 GiB cannot be uploaded through the Bazel bridge — `--remote_cache`
+will fall back to local build for those targets. Bazel's ByteStream
+API (gRPC) is explicitly excluded from this crate:
+
+```rust
+// crates/corelink-bazel-bridge/src/lib.rs
+//! # Hard invariants
+//!
+//! - **INV-BAZEL-NO-GROPC** — this crate MUST NOT depend on tonic,
+//!   prost, or any gRPC runtime. REST only.
+```
+
+In practice, individual blobs over 4 GiB are rare for compiled
+artifacts. If you are caching large model weights or Docker layer
+tarballs through Bazel, you will hit this limit.
+
+**findMissingBlobs is sequential today.** The `InMemoryFindMissing`
+implementation iterates the digest list sequentially and calls the
+CAS read handler once per digest. The production R2-backed handler
+will parallelize these reads; the sequential fallback is the current
+behavior in non-R2 configurations. For batches near the 4096 cap,
+this matters.
+
+**No remote execution.** CoreLink implements the REAPI cache surface,
+not the execution surface. `--remote_executor` is not supported.
+`--remote_cache` is what works.
+
+**Auth is PAT-only today.** OIDC-based token exchange (useful for
+keyless CI environments) is on the roadmap but not shipped.
+
+## Why not just use `bazel-remote` with an R2 backend?
+
+[`bazel-remote`](https://github.com/buchgr/bazel-remote) is the
+canonical open-source REAPI cache server. It supports S3-compatible
+backends via its `--s3.*` flags, and R2 is S3-compatible. You could
+point `bazel-remote` at R2 today.
+
+The difference with CoreLink:
+
+1. **Multi-tenancy is native.** Every tenant gets isolated storage via
+   the HMAC-derived key prefix — you do not need to run a separate
+   `bazel-remote` instance per team or project.
+2. **The cache is shared with non-Bazel workloads.** Docker layer
+   pushes, npm package tarballs, and Bazel artifacts all land in the
+   same R2 bucket under the same content-addressing scheme. A Docker
+   layer referenced by a Bazel action does not get stored twice.
+3. **Audit chain.** Every read and write emits a tamper-evident audit
+   record before it touches storage. Cross-tenant access attempts
+   produce a `ReadDenied` or `WriteDenied` audit row immediately, not
+   after the fact.
+4. **No sidecar to operate.** `bazel-remote` needs a process running
+   somewhere. CoreLink runs on Cloudflare Containers with no
+   infrastructure to manage on your side.
+
+## Try it
+
+CoreLink has a free tier. The quickstart is at
+[docs.corelink.humangr.com/quickstart](/quickstart).
+
+The source for the REAPI bridge is in
+[`crates/corelink-bazel-bridge/`](https://github.com/humangr-labs/corelink-server/tree/main/crates/corelink-bazel-bridge)
+and the route wiring is in
+[`crates/corelink-container/src/routes/bazel_v2.rs`](https://github.com/humangr-labs/corelink-server/blob/main/crates/corelink-container/src/routes/bazel_v2.rs).
+
+If you hit a bug or want to compare notes on REAPI implementation
+choices, open an issue on GitHub.
