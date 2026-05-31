@@ -25,6 +25,13 @@ services:
   corelink-linux-runner:
     image: myoung34/github-runner:latest   # pin to a digest for supply-chain hygiene before relying on it
     container_name: corelink-linux-runner
+    # RAM/CPU caps so the runner never starves the Mac. Docker Desktop's Linux VM
+    # is the hard ceiling (~3.8 GiB here); these bound the container well within it
+    # and leave room for the sibling container actionlint spawns via docker://.
+    # Bump mem_limit if a heavy job (buck2 C++ / valgrind) OOMs.
+    mem_limit: 2g
+    mem_reservation: 512m
+    cpus: 2.5
     environment:
       REPO_URL: https://github.com/humangr-labs/corelink-server
       RUNNER_NAME: corelink-linux-1
