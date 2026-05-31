@@ -4,8 +4,9 @@ description = "CoreLink client-side digest verify SDK helper — default-on BLAK
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
-publish.workspace = true
+license = "MIT OR Apache-2.0"
+publish = true
+repository = "https://github.com/humangr-labs/corelink"
 
 [lib]
 # `rlib` for direct Rust consumers (corelink-server, corelink-cli).

@@ -4,8 +4,9 @@ description = "CoreLink CAS digest types — BLAKE3 + constant-time verify (CTRL
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
-publish.workspace = true
+license = "MIT OR Apache-2.0"
+publish = true
+repository = "https://github.com/humangr-labs/corelink"
 
 [lints]
 workspace = true

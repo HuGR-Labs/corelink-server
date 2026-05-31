@@ -116,3 +116,33 @@ cargo metadata --format-version 1 --no-deps \
 - 13 OSS crates tagged `license = "MIT OR Apache-2.0"` in Cargo.toml.
 
 Update debt register: DEBT-002 → CLOSED 2026-05-15 (commit pending).
+
+---
+
+## Reconciliation (2026-05-31) — post-reorg drift + DEBT-002 reopened
+
+> Append-only. The 2026-05-15 matrix above is preserved as the historical
+> decision. This section records where the codebase diverged from it after
+> the Wave 33-36 reorg (149→87 crates) and the corrections applied on branch
+> `oss/license-tags-prep-2026-05-31`. Full audit:
+> `specs/_audits/2026-05-31-oss-split-prep.md`.
+
+**DEBT-002 REOPENED.** The "13 OSS crates tagged `MIT OR Apache-2.0`" closure
+evidence was false in tree: the reorg standardized every member to
+`license.workspace = true` (= `UNLICENSED`), wiping all OSS tags. 0 crates
+were literally tagged. Now re-tagged for the pre-launch batch + guarded by
+`scripts/check-oss-license-tags.sh` (wired into `license-policy.yml`).
+
+**Name/decision drift corrected:**
+
+| Matrix entry (2026-05-15) | Reality (2026-05-31) | Action |
+|---|---|---|
+| `tenant-path` | renamed `corelink-tenant-path` | tagged OSS ✅ |
+| `corelink-ac-schema` / `corelink-auth-schema` / `corelink-multipart-schema` | absorbed in reorg — gone | drop from OSS list |
+| `corelink-audit` (OSS — "schema split") | `pub use` re-export facade over closed `corelink-audit-chain` + `corelink-analytics`; split never done | **reclassified CLOSED**; schema-extraction = deferred WI |
+| `corelink-rate-headers` (OSS) | carried dead `corelink-ratelimit` (closed) dep | dep removed; tagged OSS ✅ |
+
+**Pre-launch crates.io batch (publishable, verified rust 1.91.1):**
+`corelink-hash`, `corelink-client-verify`, `corelink-tenant-path`,
+`corelink-rate-headers`. Later phases (openapi, wasm, py, go, cli) tag per
+the `OSS_STRATEGY.md` roadmap.
