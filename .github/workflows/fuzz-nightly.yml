@@ -33,7 +33,7 @@ env:
 jobs:
   fuzz-matrix-expansion:
     name: fuzz 30m (${{ matrix.crate }}::${{ matrix.target }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 40
     strategy:
       fail-fast: false

@@ -32,7 +32,7 @@ concurrency:
 jobs:
   size:
     name: Compute size bucket
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     steps:
       - name: Apply size:* label
         uses: codelytv/pr-size-labeler@4ec67706cd878fbc1c8db0a5dcd28b6bb412e85a # v1.10.2

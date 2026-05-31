@@ -19,12 +19,14 @@ on:
     paths:
       - '.github/workflows/**'
       - '.actionlint.yaml'
+      - '.github/actionlint.yaml'
       - '.github/workflows/actionlint.yml'
   push:
     branches: [main]
     paths:
       - '.github/workflows/**'
       - '.actionlint.yaml'
+      - '.github/actionlint.yaml'
 
 permissions:
   contents: read

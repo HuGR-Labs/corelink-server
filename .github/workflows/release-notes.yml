@@ -57,7 +57,7 @@ permissions:
 jobs:
   generate:
     name: Generate release notes draft
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     steps:
       - name: Checkout full history

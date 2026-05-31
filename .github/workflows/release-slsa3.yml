@@ -43,7 +43,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build-artifacts:
     name: Build Worker WASM Bundle
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, mac, corelink-builder]
     # Permissions for this job only:
     permissions:
       contents: read
@@ -164,7 +164,7 @@ jobs:
   attach-release-assets:
     name: Attach Artifacts + Validate Provenance
     needs: [build-artifacts, slsa-provenance]
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, mac, corelink-builder]
     permissions:
       contents: write
 

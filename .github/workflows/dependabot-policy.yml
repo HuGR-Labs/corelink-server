@@ -46,7 +46,7 @@ jobs:
   # -----------------------------------------------------------------------
   sentinel:
     name: dependabot-policy sentinel
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 1
     if: github.actor != 'dependabot[bot]'
     steps:
@@ -59,7 +59,7 @@ jobs:
   # -----------------------------------------------------------------------
   policy-gate:
     name: Dependabot policy gate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
 

@@ -33,7 +33,7 @@ concurrency:
 jobs:
   stale:
     name: Apply stale + close policy
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     steps:
       - name: Mark + close stale items
         uses: actions/stale@5bef64f19d7facfb25b37b414482c7164d639639 # v9.1.0

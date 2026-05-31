@@ -37,7 +37,7 @@ concurrency:
 jobs:
   lint-and-validate:
     name: lint + meta-schema + JSON sync
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -69,7 +69,7 @@ jobs:
   breaking-change-detection:
     name: breaking-change detection (vs base branch)
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

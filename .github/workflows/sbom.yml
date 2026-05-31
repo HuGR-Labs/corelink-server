@@ -41,7 +41,7 @@ jobs:
   # ---------------------------------------------------------------------------
   sbom-generate:
     name: "Generate SBOM (cargo-cyclonedx)"
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, mac, corelink-builder]
     outputs:
       version: ${{ steps.version.outputs.version }}
       sbom_path: sbom.cdx.json
@@ -106,7 +106,7 @@ jobs:
   # ---------------------------------------------------------------------------
   sbom-ntia-validate:
     name: "NTIA minimum elements check"
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, mac, corelink-builder]
     needs: sbom-generate
 
     steps:
@@ -144,7 +144,7 @@ jobs:
   # ---------------------------------------------------------------------------
   sbom-tsa-attest:
     name: "RFC 3161 TSA timestamp (Sigstore)"
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, mac, corelink-builder]
     needs: sbom-ntia-validate
     outputs:
       tsr_present: ${{ steps.tsa.outputs.tsr_present }}
@@ -192,7 +192,7 @@ jobs:
   # ---------------------------------------------------------------------------
   sbom-dt-ingest:
     name: "Dependency-Track ingestion"
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, mac, corelink-builder]
     needs: [sbom-generate, sbom-ntia-validate]
     # DT ingestion is non-blocking: continue even if DT is down
     continue-on-error: true
@@ -235,7 +235,7 @@ jobs:
   # ---------------------------------------------------------------------------
   sbom-release-upload:
     name: "Upload release assets"
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, mac, corelink-builder]
     needs: [sbom-tsa-attest, sbom-dt-ingest]
     if: github.event_name == 'release'
 

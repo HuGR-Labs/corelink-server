@@ -53,7 +53,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   sign-release:
     name: build, push & cosign-sign
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 30
 
     outputs:
@@ -157,7 +157,7 @@ jobs:
   trigger-cf-deploy:
     name: trigger CF deploy webhook
     needs: sign-release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
 
     steps:

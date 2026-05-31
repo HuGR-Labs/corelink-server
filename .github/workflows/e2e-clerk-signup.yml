@@ -42,7 +42,7 @@ concurrency:
 jobs:
   e2e:
     name: Clerk signup E2E (prod)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     env:
       # Mask secrets at the env layer so they never appear in logs

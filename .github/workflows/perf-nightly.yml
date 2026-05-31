@@ -49,7 +49,7 @@ jobs:
     # on shared runners. Upgrade to a larger runner when org-policy allows
     # (the spec calls for `ubuntu-latest-large`; we soft-fall-back to the
     # default to keep the workflow runnable on standard plans).
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -102,7 +102,7 @@ jobs:
     name: Rotate baseline (manual)
     needs: bench
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.update_baseline == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     permissions:
       contents: write
     steps:
