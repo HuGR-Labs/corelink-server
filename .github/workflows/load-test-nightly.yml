@@ -40,7 +40,7 @@ concurrency:
 jobs:
   k6-staging:
     name: k6 load suite (staging)
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, Linux, X64]
     environment: staging        # binds the staging secrets scope
     timeout-minutes: 45
     strategy:
@@ -139,7 +139,7 @@ jobs:
 
   baseline-regression:
     name: baseline regression check (p99 ≤ +20% week-over-week)
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, Linux, X64]
     needs: k6-staging
     if: always()
     permissions:

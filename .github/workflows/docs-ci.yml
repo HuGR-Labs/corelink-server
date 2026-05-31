@@ -59,7 +59,7 @@ env:
 jobs:
   build:
     name: typecheck + lint + test + build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 20
     defaults:
       run:
@@ -128,7 +128,7 @@ jobs:
   lighthouse:
     name: lighthouse-ci (Perf ≥ 95, A11y = 100, BP ≥ 95, SEO ≥ 90)
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -189,7 +189,7 @@ jobs:
   axe:
     name: axe-core a11y scan (WCAG 2.2 AA)
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -237,7 +237,7 @@ jobs:
   broken-links:
     name: lychee broken-link check
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -257,7 +257,7 @@ jobs:
 
   vale:
     name: Vale prose lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -282,7 +282,7 @@ jobs:
   a11y-playwright:
     name: axe-core WCAG 2.2 AA sweep (0 serious/critical)
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
     defaults:
       run:
@@ -332,7 +332,7 @@ jobs:
   a11y-baseline-diff:
     name: axe-core/cli diff vs A11Y-BASELINE
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 25
     defaults:
       run:
@@ -406,7 +406,7 @@ jobs:
   # i18n coverage ≥ 80 % en → {pt-BR, es-419}. Per S-18 §5.6 R-S18-12.
   i18n-coverage:
     name: i18n coverage (>=80% en -> {pt-BR, es-419})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -436,7 +436,7 @@ jobs:
   # docs-gen-check script).
   reapi-gen-drift:
     name: REAPI .proto -> MDX zero-drift
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -476,7 +476,7 @@ jobs:
     name: lighthouse-ci baseline (lighthouserc.cjs)
     needs: build
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
     defaults:
       run:

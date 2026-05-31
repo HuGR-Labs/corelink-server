@@ -60,7 +60,7 @@ jobs:
     name: Semgrep scan
     # Use the official Semgrep container — avoids host-level Python deps
     # and pins the rule-engine binary alongside the action.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     container:
       # returntocorp/semgrep:1.x — pin via the action below; image tag is
       # informational only (action controls the actual binary version).

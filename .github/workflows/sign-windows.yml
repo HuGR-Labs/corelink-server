@@ -47,7 +47,7 @@ env:
 jobs:
   windows-cert-present:
     name: gate — Windows cert present
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, Linux, X64]
     outputs:
       ready: ${{ steps.check.outputs.ready }}
     steps:
@@ -64,16 +64,25 @@ jobs:
           fi
 
   sign:
-    name: signtool authenticode (windows-x86_64)
+    name: osslsigncode authenticode (windows-x86_64, cross-signed on Linux)
     needs: windows-cert-present
     if: needs.windows-cert-present.outputs.ready == 'true'
-    runs-on: windows-2022
+    runs-on: [self-hosted, Linux, X64]
 
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 1
+
+      - name: Install osslsigncode + p7zip (self-hosted Linux runner)
+        shell: bash
+        run: |
+          if ! command -v osslsigncode >/dev/null 2>&1 || ! command -v 7z >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends osslsigncode p7zip-full
+          fi
+          osslsigncode --version | head -1 || true
 
       - name: Resolve release tag
         id: tag
@@ -107,29 +116,28 @@ jobs:
           echo "${WINDOWS_CODE_SIGNING_CERT}" | base64 --decode > /tmp/cert.pfx
           echo "CERT_PATH=/tmp/cert.pfx" >> "${GITHUB_ENV}"
 
-      - name: signtool sign
-        shell: powershell
+      - name: osslsigncode sign (Authenticode, RFC 3161 timestamp)
+        shell: bash
         env:
           CERT_PATH: ${{ env.CERT_PATH }}
           WINDOWS_CODE_SIGNING_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_PASSWORD }}
         run: |
-          $signtool = (Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" | Where-Object { $_.FullName -match 'x64' } | Select-Object -First 1).FullName
-          Write-Host "Using signtool at: $signtool"
-          & "$signtool" sign `
-            /f "$env:CERT_PATH" `
-            /p "$env:WINDOWS_CODE_SIGNING_PASSWORD" `
-            /tr "http://timestamp.digicert.com" `
-            /td sha256 `
-            /fd sha256 `
-            ".\assets\extracted\corelink.exe"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # signtool /fd sha256 /tr <rfc3161> /td sha256  ->  osslsigncode -h sha256 -ts <rfc3161>
+          osslsigncode sign \
+            -pkcs12 "${CERT_PATH}" \
+            -pass "${WINDOWS_CODE_SIGNING_PASSWORD}" \
+            -n "CoreLink CLI" \
+            -i "https://corelink.io" \
+            -ts "http://timestamp.digicert.com" \
+            -h sha256 \
+            -in "./assets/extracted/corelink.exe" \
+            -out "./assets/extracted/corelink-signed.exe"
+          mv -f "./assets/extracted/corelink-signed.exe" "./assets/extracted/corelink.exe"
 
-      - name: signtool verify
-        shell: powershell
+      - name: osslsigncode verify
+        shell: bash
         run: |
-          $signtool = (Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" | Where-Object { $_.FullName -match 'x64' } | Select-Object -First 1).FullName
-          & "$signtool" verify /pa /v ".\assets\extracted\corelink.exe"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          osslsigncode verify -in "./assets/extracted/corelink.exe"
 
       - name: Re-pack signed binary
         shell: bash
