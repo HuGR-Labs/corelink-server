@@ -115,8 +115,12 @@ jobs:
             --project-name corelink-admin-ui \
             --branch main \
             --commit-hash "${{ github.sha }}" \
-            --commit-message "${{ github.event.head_commit.message }}"
+            --commit-message "$DEPLOY_COMMIT_MESSAGE"
         env:
+          # Pass the (attacker-controllable) commit message via env, never
+          # interpolated into the shell — avoids script injection (actionlint
+          # [expression] / GitHub secure-use guidance).
+          DEPLOY_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
 

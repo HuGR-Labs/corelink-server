@@ -46,7 +46,7 @@ ID_PATTERNS = {
     "FM": re.compile(r"\bFM-\d{3}\b"),
     "INV": re.compile(r"\bINV-[A-Za-z][A-Za-z0-9_-]+\b"),  # v2 Lote 6.3: aceita CamelCase legados (G-04)
     "FF-HR": re.compile(r"\bFF-HR-\d{3}\b"),
-    "SLO": re.compile(r"\bSLO-[A-Z][A-Z0-9-]+\b"),
+    "SLO": re.compile(r"(?<!DASH-)\bSLO-[A-Z][A-Z0-9-]+\b"),  # neg-lookbehind: don't extract SLO-X out of Grafana dashboard names (DASH-SLO-API / DASH-SLO-AUDIT) — those are dashboard uids, not SLO catalog IDs
     "RB": re.compile(r"\bRB-[A-Z][A-Z0-9-]*[A-Z0-9]\b"),
     "ADR": re.compile(r"\bADR-\d{4}\b"),
     "WAIVER": re.compile(r"\bWAIVER-\d{8}-\d{3}\b"),
