@@ -37,9 +37,12 @@ jobs:
     strategy:
       matrix:
         runner: [runner-1, runner-2]
-        os:     [ubuntu-22.04]    # pinned LTS — do NOT use ubuntu-latest
       fail-fast: false            # collect both artefacts even on failure
-    runs-on: ${{ matrix.os }}
+    # Was the ubuntu-22.04 matrix-OS (hosted); now the self-hosted Linux fleet
+    # (off GitHub billing). The OS matrix dim was dropped — both runners land on
+    # the same self-hosted Linux env, which is internally consistent for the
+    # 2-runner byte-diff. Re-baseline the reproducibility check on first run.
+    runs-on: [self-hosted, Linux, X64]
 
     steps:
       - name: Checkout (full history for SOURCE_DATE_EPOCH)
@@ -108,7 +111,7 @@ jobs:
   diff-check:
     name: Diff check (2-runner compare)
     needs: build
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, Linux, X64]
 
     outputs:
       bit_identical:   ${{ steps.diff.outputs.BIT_IDENTICAL }}

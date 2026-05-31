@@ -38,7 +38,7 @@ concurrency:
 jobs:
   endurance-2h:
     name: k6 endurance 2h (staging)
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, Linux, X64]
     environment: staging
     # Budget: 2h script + 5min ramp-up + 5min ramp-down + ~10min for k6
     # boot / artifact upload / baseline compare = 140 minutes ceiling.
@@ -125,7 +125,7 @@ jobs:
 
   baseline-drift-check:
     name: 7-day rolling p99 drift (≤ +20% per SLO)
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, Linux, X64]
     needs: endurance-2h
     if: always()
     permissions:

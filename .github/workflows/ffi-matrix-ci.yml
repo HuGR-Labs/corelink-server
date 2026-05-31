@@ -35,7 +35,7 @@ jobs:
   # ── Rust unit tests (all 3 FFI crates) ────────────────────────────────────
   rust-unit:
     name: Rust unit tests (FFI crates)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -76,7 +76,7 @@ jobs:
   # ── Python × maturin × multiple Python versions ───────────────────────────
   python-matrix:
     name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     needs: rust-unit
     strategy:
       fail-fast: false
@@ -154,7 +154,7 @@ jobs:
   # ── Go × cgo × multiple Go versions ──────────────────────────────────────
   go-matrix:
     name: Go ${{ matrix.go-version }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     needs: rust-unit
     strategy:
       fail-fast: false
@@ -204,7 +204,7 @@ jobs:
   # ── JS/TS × WASM × multiple Node.js versions ──────────────────────────────
   js-matrix:
     name: Node.js ${{ matrix.node-version }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     needs: rust-unit
     strategy:
       fail-fast: false
@@ -275,7 +275,7 @@ jobs:
   # ── Client-verify same hash across 3 languages (single Rust truth) ────────
   cross-language-verify:
     name: Cross-language BLAKE3 verify (single Rust truth)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     needs: [python-matrix, go-matrix, js-matrix]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

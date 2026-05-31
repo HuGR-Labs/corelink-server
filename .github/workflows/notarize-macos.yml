@@ -52,7 +52,7 @@ env:
 jobs:
   apple-cert-present:
     name: gate — Apple cert present
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     outputs:
       ready: ${{ steps.check.outputs.ready }}
     steps:
@@ -72,7 +72,7 @@ jobs:
     name: codesign + notarytool + staple (${{ matrix.asset_suffix }})
     needs: apple-cert-present
     if: needs.apple-cert-present.outputs.ready == 'true'
-    runs-on: macos-14
+    runs-on: [self-hosted, mac, corelink-builder]
     strategy:
       fail-fast: false
       matrix:
