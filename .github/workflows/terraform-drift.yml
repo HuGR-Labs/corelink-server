@@ -51,7 +51,7 @@ jobs:
   # -----------------------------------------------------------------------
   drift-check:
     name: Drift — ${{ matrix.region }}
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 15
 
     strategy:
@@ -291,7 +291,7 @@ jobs:
   # -----------------------------------------------------------------------
   drift-aggregator:
     name: Drift aggregator summary
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 5
     needs: drift-check
     if: always()
@@ -351,7 +351,7 @@ jobs:
   # -----------------------------------------------------------------------
   no-apply-guard:
     name: Auto-apply forbidden check
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 3
     if: github.event_name != 'schedule'
 

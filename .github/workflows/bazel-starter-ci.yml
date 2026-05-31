@@ -41,7 +41,7 @@ jobs:
   # ---------------------------------------------------------------------------
   bazel-cache-hit:
     name: Bazel cache hit (≥ 80%)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 20
     defaults:
       run:
@@ -187,7 +187,7 @@ jobs:
   # ---------------------------------------------------------------------------
   negative-scenarios:
     name: Negative scenarios (4)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     defaults:
       run:
@@ -263,7 +263,7 @@ jobs:
   # ---------------------------------------------------------------------------
   weekly-benchmark:
     name: Weekly benchmark (com/sem cache)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 30
     if: github.event_name == 'schedule'
     defaults:

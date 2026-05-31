@@ -49,7 +49,7 @@ permissions:
 jobs:
   cargo-deny:
     name: cargo-deny (license + advisories + sources + bans)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 15
     steps:
       - name: Checkout

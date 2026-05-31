@@ -34,7 +34,7 @@ concurrency:
 jobs:
   fmt:
     name: terraform fmt
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -50,7 +50,7 @@ jobs:
 
   validate:
     name: terraform validate (${{ matrix.env }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     strategy:
       fail-fast: false
       matrix:
@@ -76,7 +76,7 @@ jobs:
 
   tflint:
     name: tflint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -97,7 +97,7 @@ jobs:
 
   tfsec:
     name: tfsec
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

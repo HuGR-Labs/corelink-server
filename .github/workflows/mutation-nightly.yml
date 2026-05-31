@@ -71,7 +71,7 @@ env:
 jobs:
   mutants:
     name: cargo-mutants kill-rate gate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     strategy:
       fail-fast: false
       matrix:
@@ -209,7 +209,7 @@ jobs:
     name: Aggregate per-crate JSON → reports/mutation/latest.json
     needs: mutants
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     permissions:
       contents: write       # least-privilege: write only on the aggregator
       issues: write         # open a regression issue if any crate < 75 %

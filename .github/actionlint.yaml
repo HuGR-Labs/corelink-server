@@ -1,0 +1,13 @@
+# actionlint config — declare the self-hosted runner labels so actionlint
+# does not flag them as unknown (rhysd/actionlint [runner-label] check).
+#
+# Fleet: 5x macOS X64 runners registered as `corelink-builder-1..5`, label
+# set `[self-hosted, macOS, X64, mac, corelink-builder]`. `self-hosted`,
+# `macos`, `x64` are built-in known labels; `mac` and `corelink-builder`
+# are custom and must be declared here. Used by the 84 workflows migrated
+# to the self-hosted mac fleet (see specs/_audits/2026-05-31-oss-split-prep.md
+# sibling — CI runner migration) plus release-cli.yml.
+self-hosted-runner:
+  labels:
+    - mac
+    - corelink-builder

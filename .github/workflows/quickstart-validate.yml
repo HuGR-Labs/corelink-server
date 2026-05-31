@@ -31,7 +31,7 @@ permissions:
 jobs:
   validate-quickstart:
     name: validate quickstart MDX vs CLI surface
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 5
     # Soft-fail: surface as a warning annotation, do not block merges.
     continue-on-error: true

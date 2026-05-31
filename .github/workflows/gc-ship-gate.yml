@@ -67,7 +67,7 @@ jobs:
   # --------------------------------------------------------------------
   prop-and-tests:
     name: corelink-gc tests (lib + prop @ 10k iter + chaos)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -96,7 +96,7 @@ jobs:
   # --------------------------------------------------------------------
   rb-dry-runs:
     name: RB-FM-300 / RB-FM-404 / RB-FM-305 host-side dry-runs
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 25
     needs: [prop-and-tests]
     steps:
@@ -126,7 +126,7 @@ jobs:
   # --------------------------------------------------------------------
   dashboard-smoke:
     name: DASH-GC parse smoke
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -150,7 +150,7 @@ jobs:
   # --------------------------------------------------------------------
   gc-ship-gate:
     name: GC ship gate (aggregate)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 1
     needs: [prop-and-tests, rb-dry-runs, dashboard-smoke]
     steps:

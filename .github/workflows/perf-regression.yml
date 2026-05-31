@@ -82,7 +82,7 @@ jobs:
   # the `paths:` filter), or (c) workflow_dispatch.
   perf-regression:
     name: criterion regression gate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 45
     if: >-
       github.event_name == 'workflow_dispatch'

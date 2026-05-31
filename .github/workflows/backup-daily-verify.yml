@@ -32,7 +32,7 @@ concurrency:
 jobs:
   verify:
     name: Verify backups (daily)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 35
 
     env:

@@ -68,7 +68,7 @@ permissions:
 
 jobs:
   tla-billing-check:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 30
     steps:
       - name: Checkout

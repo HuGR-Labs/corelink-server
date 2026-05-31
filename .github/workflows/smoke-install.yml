@@ -11,7 +11,7 @@ on:
 
 jobs:
   smoke:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4

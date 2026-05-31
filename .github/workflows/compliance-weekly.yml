@@ -51,7 +51,7 @@ env:
 jobs:
   digest:
     name: Generate weekly compliance digest
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 15
     outputs:
       regression: ${{ steps.digest.outputs.regression }}

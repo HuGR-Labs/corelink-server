@@ -26,7 +26,7 @@ permissions:
 jobs:
   welcome:
     name: Post welcome comment
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     steps:
       - name: Greet first-time contributor
         uses: actions/first-interaction@34f15e814fe48ac9312ccf29db4e74fa767cbab7 # v1.3.0

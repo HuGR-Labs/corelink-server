@@ -45,7 +45,7 @@ env:
 jobs:
   gpg-key-present:
     name: gate — GPG key present
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, mac, corelink-builder]
     outputs:
       ready: ${{ steps.check.outputs.ready }}
     steps:
@@ -65,7 +65,7 @@ jobs:
     name: gpg detach-sign (${{ matrix.asset_suffix }})
     needs: gpg-key-present
     if: needs.gpg-key-present.outputs.ready == 'true'
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, mac, corelink-builder]
     strategy:
       fail-fast: false
       matrix:
