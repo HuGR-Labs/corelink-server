@@ -66,6 +66,13 @@ jobs:
         id: audit
         run: bash scripts/license-audit.sh
 
+      - name: Check OSS crate license tags
+        # Inverse of the dep-license audit: verify OUR OWN OSS-designated
+        # crates carry the literal `license = "MIT OR Apache-2.0"` instead of
+        # silently inheriting the UNLICENSED workspace default (the Wave
+        # 33-36 regression that wiped the DEBT-002 tags).
+        run: bash scripts/check-oss-license-tags.sh
+
       - name: Upload license artifacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

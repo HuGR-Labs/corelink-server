@@ -4,8 +4,9 @@ description = "CoreLink RFC 9331 rate-limit headers + 5-arm response-code taxono
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
-publish.workspace = true
+license = "MIT OR Apache-2.0"
+publish = true
+repository = "https://github.com/humangr-labs/corelink"
 
 [lints]
 workspace = true
@@ -13,7 +14,6 @@ workspace = true
 [dependencies]
 thiserror = { workspace = true }
 uuid = { workspace = true, features = ["v7"] }
-corelink-ratelimit = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

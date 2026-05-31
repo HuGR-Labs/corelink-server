@@ -206,3 +206,4 @@ Key requirements:
 |---|---|---|
 | 2026-05-15 | 13 OSS crates identified, license tags applied | DEBT-002 closure; see `docs/internal/OSS-VS-CLOSED-MATRIX.md` |
 | 2026-05-30 | OSS_STRATEGY.md written as founder decision doc | Pre-launch gate: explicit record before public announcement |
+| 2026-05-31 | DEBT-002 reopened; 4 pre-launch crates re-tagged + CI guard added; `corelink-audit` reclassified closed | Reorg had silently wiped all OSS license tags (0 of 13 tagged). See `specs/_audits/2026-05-31-oss-split-prep.md` + matrix Reconciliation section |

@@ -2077,7 +2077,6 @@ dependencies = [
 name = "corelink-rate-headers"
 version = "0.1.0"
 dependencies = [
- "corelink-ratelimit",
  "proptest",
  "thiserror 2.0.18",
  "uuid",
