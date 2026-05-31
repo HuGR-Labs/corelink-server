@@ -251,10 +251,16 @@ deploy_pages_project() {
 
   log_step "Running wrangler pages deploy..."
   # Wrangler 4.x removed --env for pages deploy; use --branch instead.
-  # cf_env "prod" maps to branch "production" (CF Pages convention).
+  # cf_env "prod" must map to the project's production_branch (typically
+  # "main"); passing literal "production" creates a PREVIEW deployment
+  # unless that string happens to match production_branch. Both
+  # corelink-docs and corelink-app are configured with
+  # production_branch=main. The previous "production" string silently
+  # produced preview deployments that never promoted to the custom domain
+  # alias (caught 2026-05-31 after a docs deploy didn't land on prod).
   local branch="${cf_env}"
   if [ "${cf_env}" = "prod" ]; then
-    branch="production"
+    branch="main"
   fi
   "${WRANGLER}" pages deploy "${dist_dir}" \
     --project-name "${project_name}" \
