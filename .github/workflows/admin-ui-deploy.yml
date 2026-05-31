@@ -32,7 +32,6 @@ on:
     branches: [main]
     paths:
       - "apps/admin-ui/**"
-      - ".github/workflows/admin-ui-deploy.yml"
   workflow_dispatch:
     inputs:
       environment:
@@ -55,7 +54,7 @@ concurrency:
 jobs:
   build-and-deploy:
     name: build + deploy to CF Pages
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 20
     defaults:
       run:

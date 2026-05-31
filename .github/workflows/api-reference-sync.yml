@@ -27,7 +27,6 @@ on:
     paths:
       - "openapi/corelink-v1.yaml"
       - "scripts/gen-api-reference.py"
-      - ".github/workflows/api-reference-sync.yml"
   workflow_dispatch:
 
 permissions:
@@ -42,7 +41,7 @@ jobs:
   drift-check:
     name: drift check (PR-side)
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -73,7 +72,7 @@ jobs:
   regenerate-and-pr:
     name: regenerate + open PR (main-side)
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 15
     steps:
       - name: Checkout
