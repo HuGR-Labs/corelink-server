@@ -34,7 +34,6 @@ on:
       - "specs/_compliance/VENDOR-RISK-REGISTER.md"
       - "scripts/gen-public-subprocessors.py"
       - "scripts/subprocessor-change-notify.py"
-      - ".github/workflows/subprocessors-sync.yml"
   schedule:
     # Nightly drift catch at 06:13 UTC (≈ 03:13 BRT / 08:13 CEST).
     - cron: "13 6 * * *"
@@ -52,7 +51,7 @@ jobs:
   drift-check:
     name: drift check (PR-side)
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -92,7 +91,7 @@ jobs:
   regenerate-and-pr:
     name: regenerate + open PR (post-merge / nightly)
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 15
     steps:
       - name: Checkout
