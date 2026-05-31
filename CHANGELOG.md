@@ -70,6 +70,16 @@ Each entry cross-references:
 
 ### Fixed
 
+- **OSS license-tag regression (DEBT-002 reopened)** — the Wave 33-36 reorg
+  silently re-inherited every crate to the `UNLICENSED` workspace default,
+  wiping the `MIT OR Apache-2.0` tags on the OSS crates (0 of 13 actually
+  tagged). Re-tagged the 4 pre-launch crates (`corelink-hash`,
+  `corelink-client-verify`, `corelink-tenant-path`, `corelink-rate-headers`)
+  with literal license + `publish = true` + `repository`; removed the dead
+  `corelink-ratelimit` dep from `corelink-rate-headers` (publish blocker since
+  ratelimit is closed); reclassified `corelink-audit` closed (re-export
+  facade); added `scripts/check-oss-license-tags.sh` + a `license-policy.yml`
+  guard step. See `specs/_audits/2026-05-31-oss-split-prep.md`.
 - **Wave-36 Trigger A** — resolved `corelink-stripe-real ↔
   corelink-billing-materializer` dep-graph cycle by inverting the
   dependency direction onto the new leaf `corelink-billing-stripe-traits`
