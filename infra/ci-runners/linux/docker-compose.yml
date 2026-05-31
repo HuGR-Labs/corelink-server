@@ -1,0 +1,45 @@
+# CoreLink CI — self-hosted Linux runner (free; runs in Docker, e.g. on a Mac
+# via Colima or Docker Desktop). Handles the 29 Linux jobs that cannot run on
+# the macOS fleet: valgrind (ffi-matrix), clang-14/libc++ (buck2), k6
+# (load/endurance), semgrep, actionlint's `docker://` action, osslsigncode
+# (sign-windows), and the reproducible-build byte-diff.
+#
+# The built-in labels `Linux` + `X64` match `runs-on: [self-hosted, Linux, X64]`
+# in the workflows — no custom label required.
+#
+# --- Setup (one-time) ---
+#   1. brew install colima docker docker-compose   # if on a Mac without Docker
+#      colima start --cpu 4 --memory 8
+#   2. GitHub → repo Settings → Actions → Runners → "New self-hosted runner"
+#      → Linux/x64 → copy the registration token (valid ~1h).
+#   3. cp .env.example .env   and paste the token into RUNNER_TOKEN.
+#   4. docker compose up -d
+#   5. Confirm it shows up idle under Settings → Actions → Runners,
+#      or:  gh api repos/humangr-labs/corelink-server/actions/runners \
+#             --jq '.runners[] | {name, os, status}'
+#
+# Scale to 2+ runners (reproducible-build wants 2) by copying the service block
+# with a distinct RUNNER_NAME, or run `docker compose up -d --scale ...` with a
+# templated name.
+services:
+  corelink-linux-runner:
+    image: myoung34/github-runner:latest   # pin to a digest for supply-chain hygiene before relying on it
+    container_name: corelink-linux-runner
+    environment:
+      REPO_URL: https://github.com/humangr-labs/corelink-server
+      RUNNER_NAME: corelink-linux-1
+      RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN in .env (repo Settings > Actions > Runners > New)}
+      RUNNER_SCOPE: repo
+      LABELS: self-hosted,Linux,X64,corelink-linux
+      RUNNER_WORKDIR: /tmp/runner/work
+      DISABLE_AUTO_UPDATE: "true"
+      EPHEMERAL: "false"
+    # actionlint.yml uses `uses: docker://rhysd/actionlint` — the runner needs a
+    # Docker socket to run container actions (Docker-out-of-Docker).
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - corelink-runner-work:/tmp/runner
+    restart: unless-stopped
+
+volumes:
+  corelink-runner-work:

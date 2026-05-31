@@ -113,6 +113,14 @@ jobs:
         env:
           WINDOWS_CODE_SIGNING_CERT: ${{ secrets.WINDOWS_CODE_SIGNING_CERT }}
         run: |
+          # WINDOWS_CODE_SIGNING_CERT = base64 of a legacy-cipher PKCS#12 (.pfx) —
+          # the standard format for CA-issued code-signing certs. osslsigncode reads
+          # these directly; verified locally 2026-05-31 (sign + verify + RFC-3161
+          # DigiCert timestamp all pass). NOTE: a PFX exported with modern OpenSSL-3
+          # AES PKCS#12 ciphers makes osslsigncode fail with a passphrase/UI callback
+          # error. If that happens, re-export the cert as legacy and re-base64 it:
+          #   openssl pkcs12 -in m.pfx -nodes -provider legacy -provider default \
+          #     | openssl pkcs12 -export -legacy -out legacy.pfx
           echo "${WINDOWS_CODE_SIGNING_CERT}" | base64 --decode > /tmp/cert.pfx
           echo "CERT_PATH=/tmp/cert.pfx" >> "${GITHUB_ENV}"
 
