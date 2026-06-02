@@ -37,17 +37,29 @@ concurrency:
 
 jobs:
   actionlint:
-    name: actionlint (rhysd/actionlint, Docker SHA-pinned)
-    runs-on: [self-hosted, Linux, X64]
+    name: actionlint (native, SHA-pinned tool)
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # actions/checkout@v4.3.1
 
-      # Docker action pinned to image digest (not floating tag) per
-      # ADR-0044 supply-chain SHA-pin policy. The :1.7.12 tag is the
-      # human-readable comment; the digest is the immutable identifier.
-      # When bumping: re-resolve via Docker Hub API and update both refs.
-      - name: Run actionlint
-        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667  # rhysd/actionlint:1.7.12
-        with:
-          args: -color -verbose
+      # Native actionlint on the macOS self-hosted fleet. The previous
+      # docker://rhysd/actionlint is a Docker container action (Linux-only)
+      # AND this job was pinned to [self-hosted, Linux, X64] — a label set
+      # matching ZERO runners on our macOS-only fleet — so it hung pending
+      # forever, jamming the pre-merge gate-check. The fleet ships actionlint
+      # on PATH (1.7.12, built from source); taiki-e/install-action does NOT
+      # package actionlint (it is not a cargo crate), so we run the host
+      # binary, falling back to the official pinned 1.7.12 release installer
+      # if a runner lacks it. (2026-06-02)
+      - name: Run actionlint (native binary)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v actionlint >/dev/null 2>&1; then
+            echo "actionlint not on PATH — fetching pinned 1.7.12 release"
+            bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+            export PATH="$PWD:$PATH"
+          fi
+          actionlint -version
+          actionlint -color -verbose

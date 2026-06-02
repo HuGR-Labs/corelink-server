@@ -80,6 +80,35 @@ Each entry cross-references:
 
 ### Fixed
 
+- **macOS self-hosted CI-fleet hardening — migrate-to-self-hosted
+  regressions.** The 2026-05-31 cutover to the macOS self-hosted runner fleet
+  (5× `corelink-builder`, all macOS, zero Linux) left several gates silently
+  broken; the new pre-merge gate-check surfaced them. Each had been failing at
+  an *infra* step *before* its real check could run — masking both the
+  breakage and, in one case, a real finding underneath:
+  - **`actionlint` hung pending forever** — pinned to `runs-on:
+    [self-hosted, Linux, X64]`, a label set matching ZERO runners. Re-targeted
+    to the mac fleet. Its `docker://rhysd/actionlint` action is Linux-only and
+    `taiki-e/install-action` does not package actionlint (it is not a cargo
+    crate), so it now runs the fleet's host `actionlint` binary (1.7.12),
+    falling back to the official pinned-release installer if a runner lacks it.
+  - **`action-sha-audit` + `secrets-drift` failed at `actions/setup-python`**
+    with `mkdir: /Users/runner: Permission denied` — the self-hosted runners
+    have no working `RUNNER_TOOL_CACHE`, so `setup-python` cannot provision an
+    interpreter and falls back to the unwritable hosted-runner path (it is the
+    interpreter *provisioning*, not the Python version, that fails). Dropped
+    `setup-python` from both — they only need `python3`, which ships on every
+    runner. With `action-sha-audit` finally able to run, it caught a genuine
+    masked violation: `smoke-install.yml` referenced `actions/checkout@v4`
+    (a tag, not a 40-char SHA) — now pinned.
+  - Cleared the one `SC2129` shellcheck finding `actionlint` flagged in
+    `release-notes.yml` once it could finally run (grouped the
+    `$GITHUB_OUTPUT` redirects).
+  Same fallout class as the earlier `size-label` container-action fix. The
+  remaining broken gates — the repo-wide `setup-python` → system-`python3`
+  migration, the Docker-on-mac `cargo-deny` / tfsec / welcome conversions, and
+  the supply-chain findings the broken `cargo-deny` was masking — land in a
+  dedicated follow-up rather than a per-PR avalanche on the 5-runner Mac.
 - **Secrets-matrix verify-gate scanned build output** — both validators
   (`scripts/secrets-checklist-verify.sh`, `scripts/validate_secrets_matrix.py`)
   walked gitignored `.open-next`/`.wrangler` bundles, whose embedded

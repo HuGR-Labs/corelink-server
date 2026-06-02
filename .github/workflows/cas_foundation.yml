@@ -27,25 +27,14 @@ name: CAS Foundation CI (WI-S01-007)
 # per-crate Rust diff; this workflow is the sprint-level convergence point.
 
 on:
-  pull_request:
-    paths:
-      - 'crates/**'
-      - 'apps/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'deny.toml'
-      - 'specs/tla/**'
-      - 'scripts/run_tlc_corelink.sh'
-      - '.github/workflows/cas_foundation.yml'
+  # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
+  # nightly (staggered) + on main + on-demand. Re-add pull_request only if
+  # this must block PRs again.
+  schedule:
+    - cron: '0 9 * * *'
   push:
     branches: [main]
-    paths:
-      - 'crates/**'
-      - 'apps/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'deny.toml'
-      - 'specs/tla/**'
+  workflow_dispatch:
 
 permissions:
   contents: read

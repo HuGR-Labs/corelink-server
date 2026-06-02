@@ -35,6 +35,16 @@ It already exposes multiple cache surfaces: native CAS/AC, **Bazel REAPI v2**
 - Branch protection `required checks = []`, but **merge only when CI is green** (impeccable).
 - `corelink-container` (pkg `corelink-server`) is on the **proptest-density allowlist**.
 
+## ⛔ Before merging ANY PR — do not skip
+
+**Run `bash scripts/pre-merge-gate-check.sh <PR>` and merge ONLY if it prints
+all-green.** The heavy gates (coverage / CodeQL / the TLA+ model-checks /
+ffi-matrix / reproducible-build / cas-foundation / s10-ship-gate) were moved OFF
+per-PR (2026-06-02) and now run **nightly (staggered) + on `main` + on-demand** —
+so the checks that REMAIN on a PR are the fast, load-bearing ones and they MUST be
+green. Never blind `--admin` merge; if you must `--admin`, state the documented
+infra/flake reason explicitly. (A green PR now takes minutes, not 30+.)
+
 ## Workflow
 
 - Owner mandate: **zero debt, no loose ends, impeccable repo.** Verify claims; never

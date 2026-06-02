@@ -43,11 +43,10 @@ jobs:
           # Shallow clone is fine — we only read .github/workflows tree.
           fetch-depth: 1
 
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # actions/setup-python@v5.6.0
-        with:
-          python-version: "3.12"
-
+      # No actions/setup-python: the self-hosted mac fleet can't reliably
+      # provision Python via setup-python (RUNNER_TOOL_CACHE is unset, so it
+      # falls back to the unwritable /Users/runner hosted path). This script
+      # only needs `python3`, which ships on every runner. (2026-06-02)
       - name: Run SHA pinning verifier
         run: |
           python3 scripts/verify-action-sha-pinning.py

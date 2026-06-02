@@ -24,34 +24,14 @@ name: TLA+ region_residency Model Check (WI-S14-009)
 # Reference: WI-S14-009 §6.1 + §9.1 + invariant_registry.md §3.11/§3.12.
 
 on:
-  pull_request:
-    paths:
-      - 'specs/tla/region_residency.tla'
-      - 'specs/tla/region_residency.cfg'
-      - 'scripts/run_tlc_corelink.sh'
-      - '.github/workflows/tla_region_residency_check.yml'
-      # S-14 implementation surface that the model abstracts:
-      - 'crates/corelink-region-router/**'
-      - 'crates/corelink-region-pinning/**'
-      - 'crates/corelink-hot-blob-replica/**'
-      # Architecture + invariant docs:
-      - 'specs/03_architecture/invariant_registry.md'
-      - 'specs/03_architecture/privacy_model.md'
-      - 'specs/04_sprints/S14/_spec_contract.md'
-      - 'specs/04_sprints/S14/work_items/WI-S14-009-tla-region-residency-rb-byok-revoke-pentest-prr.md'
+  # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
+  # nightly (staggered) + on main + on-demand. Re-add pull_request only if
+  # this must block PRs again.
+  schedule:
+    - cron: '0 8 * * *'
   push:
     branches: [main]
-    paths:
-      - 'specs/tla/region_residency.tla'
-      - 'specs/tla/region_residency.cfg'
-      - 'scripts/run_tlc_corelink.sh'
-      - '.github/workflows/tla_region_residency_check.yml'
-      - 'crates/corelink-region-router/**'
-      - 'crates/corelink-region-pinning/**'
-      - 'crates/corelink-hot-blob-replica/**'
-      - 'specs/03_architecture/invariant_registry.md'
-      - 'specs/03_architecture/privacy_model.md'
-      - 'specs/04_sprints/S14/_spec_contract.md'
+  workflow_dispatch:
 
 permissions:
   contents: read
