@@ -28,40 +28,14 @@ name: TLA+ dsr_erasure_atomicity Model Check (WI-S11-008)
 #            L452 (INV-CONSENT-PROOF-VERIFIABLE) — PLANNED → green after this workflow first passes.
 
 on:
-  pull_request:
-    paths:
-      - 'specs/tla/dsr_erasure_atomicity.tla'
-      - 'specs/tla/dsr_erasure_atomicity.cfg'
-      - 'scripts/run_tlc_corelink.sh'
-      - '.github/workflows/tla_dsr_erasure_check.yml'
-      # S-11 WI-S11-008 contract trigger surface:
-      - 'crates/corelink-privacy-erasure-worker/**'
-      - 'crates/corelink-privacy/**'
-      # Schema + architecture docs that the model abstracts:
-      - 'specs/03_architecture/invariant_registry.md'
-      - 'specs/03_architecture/privacy_model.md'
-      - 'specs/04_sprints/S11/_spec_contract.md'
-      - 'specs/04_sprints/S11/work_items/WI-S11-008-dpia-lia-3-filled-tla-dsr-erasure-atomicity.md'
-      # DPIA/LIA docs (DPIA CI hook companion):
-      - 'legal/dpia/**'
-      - 'legal/lia/**'
-      - 'scripts/validate_dpia.py'
+  # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
+  # nightly (staggered) + on main + on-demand. Re-add pull_request only if
+  # this must block PRs again.
+  schedule:
+    - cron: '40 7 * * *'
   push:
     branches: [main]
-    paths:
-      # Mirror PR trigger surface (post-merge must observe same surface):
-      - 'specs/tla/dsr_erasure_atomicity.tla'
-      - 'specs/tla/dsr_erasure_atomicity.cfg'
-      - 'scripts/run_tlc_corelink.sh'
-      - '.github/workflows/tla_dsr_erasure_check.yml'
-      - 'crates/corelink-privacy-erasure-worker/**'
-      - 'crates/corelink-privacy/**'
-      - 'specs/03_architecture/invariant_registry.md'
-      - 'specs/03_architecture/privacy_model.md'
-      - 'specs/04_sprints/S11/_spec_contract.md'
-      - 'legal/dpia/**'
-      - 'legal/lia/**'
-      - 'scripts/validate_dpia.py'
+  workflow_dispatch:
 
 permissions:
   contents: read

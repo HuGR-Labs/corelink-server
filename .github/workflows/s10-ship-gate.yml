@@ -23,49 +23,13 @@ name: S-10 ship gate (WI-S10-007)
 # contract.
 
 on:
-  pull_request:
-    paths:
-      - 'crates/corelink-billing-emit/**'
-      - 'crates/corelink-billing-aggregator/**'
-      - 'crates/corelink-billing-stripe/**'
-      - 'crates/corelink-billing-reconcile/**'
-      - 'crates/corelink-billing/**'
-      - 'migrations/d1/0017_usage_event_idem.sql'
-      - 'migrations/d1/0018_stripe_idem_keys.sql'
-      - 'migrations/d1/0019_billing_reconciliation_drift.sql'
-      - 'migrations/d1/0020_quota_fsm_state.sql'
-      - 'migrations/d1/0021_billing_replay_audit.sql'
-      - 'specs/tla/billing_atomicity.tla'
-      - 'specs/tla/billing_atomicity.cfg'
-      - 'specs/tla/billing_atomicity_nightly.cfg'
-      - 'scripts/rb_billing_001_replay_forensic_dry_run.sh'
-      - 'scripts/rb_fm_151_stripe_outage_dry_run.sh'
-      - 'scripts/rb_fm_302_billing_drift_dry_run.sh'
-      - 'specs/04_sprints/S10/**'
-      - '.github/workflows/tla_billing_check.yml'
-      - '.github/workflows/s10-ship-gate.yml'
+  # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
+  # nightly (staggered) + on main + on-demand. Re-add pull_request only if
+  # this must block PRs again.
+  schedule:
+    - cron: '30 9 * * *'
   push:
     branches: [main]
-    paths:
-      - 'crates/corelink-billing-emit/**'
-      - 'crates/corelink-billing-aggregator/**'
-      - 'crates/corelink-billing-stripe/**'
-      - 'crates/corelink-billing-reconcile/**'
-      - 'crates/corelink-billing/**'
-      - 'migrations/d1/0017_usage_event_idem.sql'
-      - 'migrations/d1/0018_stripe_idem_keys.sql'
-      - 'migrations/d1/0019_billing_reconciliation_drift.sql'
-      - 'migrations/d1/0020_quota_fsm_state.sql'
-      - 'migrations/d1/0021_billing_replay_audit.sql'
-      - 'specs/tla/billing_atomicity.tla'
-      - 'specs/tla/billing_atomicity.cfg'
-      - 'specs/tla/billing_atomicity_nightly.cfg'
-      - 'scripts/rb_billing_001_replay_forensic_dry_run.sh'
-      - 'scripts/rb_fm_151_stripe_outage_dry_run.sh'
-      - 'scripts/rb_fm_302_billing_drift_dry_run.sh'
-      - 'specs/04_sprints/S10/**'
-      - '.github/workflows/tla_billing_check.yml'
-      - '.github/workflows/s10-ship-gate.yml'
   workflow_dispatch:
 
 permissions:

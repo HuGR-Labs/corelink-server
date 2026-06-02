@@ -7,23 +7,14 @@ name: FFI Matrix CI (Python × Go × JS)
 # WASM bundle size ≤ 1MB gate.
 
 on:
+  # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
+  # nightly (staggered) + on main + on-demand. Re-add pull_request only if
+  # this must block PRs again.
+  schedule:
+    - cron: '30 6 * * *'
   push:
-    branches: ["main", "wt/wi-s15-004"]
-    paths:
-      - "tools/sdks/python/**"
-      - "tools/sdks/go/**"
-      - "crates/corelink-wasm/**"
-      - "crates/corelink-client-verify/**"
-      - "corelink-go/**"
-      - ".github/workflows/ffi-matrix-ci.yml"
-  pull_request:
-    paths:
-      - "tools/sdks/python/**"
-      - "tools/sdks/go/**"
-      - "crates/corelink-wasm/**"
-      - "crates/corelink-client-verify/**"
-      - "corelink-go/**"
-      - ".github/workflows/ffi-matrix-ci.yml"
+    branches: [main]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always

@@ -11,20 +11,14 @@ name: TLA+ Model Check — Runbooks (DEBT-014 FT-8)
 # CI block on any spec failure (exit code != 0).
 
 on:
-  pull_request:
-    paths:
-      - 'specs/03_architecture/tla+/runbooks/**'
-      - '.github/workflows/tla_runbooks_check.yml'
-      # Mirror trigger surface for the invariants these runbooks cover:
-      - 'specs/03_architecture/invariant_registry.md'
-      - 'specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md'
+  # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
+  # nightly (staggered) + on main + on-demand. Re-add pull_request only if
+  # this must block PRs again.
+  schedule:
+    - cron: '20 8 * * *'
   push:
     branches: [main]
-    paths:
-      - 'specs/03_architecture/tla+/runbooks/**'
-      - '.github/workflows/tla_runbooks_check.yml'
-      - 'specs/03_architecture/invariant_registry.md'
-      - 'specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md'
+  workflow_dispatch:
 
 permissions:
   contents: read

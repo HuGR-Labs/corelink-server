@@ -16,51 +16,14 @@ name: TLA+ billing_atomicity Model Check (WI-S10-007)
 #   - INV_LAYER_1_RECONCILE            (Layer-1 sub-property of INV-BILLING-RECONCILE-3-LAYER)
 
 on:
-  pull_request:
-    paths:
-      - 'specs/tla/billing_atomicity.tla'
-      - 'specs/tla/billing_atomicity.cfg'
-      - 'specs/tla/billing_atomicity_nightly.cfg'
-      - 'scripts/run_tlc_corelink.sh'
-      - '.github/workflows/tla_billing_check.yml'
-      # S-10 contract trigger surface (WI-S10-007 §6.1.2):
-      - 'crates/corelink-billing-emit/**'
-      - 'crates/corelink-billing-aggregator/**'
-      - 'crates/corelink-billing-stripe/**'
-      - 'crates/corelink-billing-reconcile/**'
-      - 'crates/corelink-billing/**'
-      # Schema migrations + canonical docs that the model abstracts:
-      - 'migrations/d1/0017_usage_event_idem.sql'
-      - 'migrations/d1/0018_stripe_idem_keys.sql'
-      - 'migrations/d1/0019_billing_reconciliation_drift.sql'
-      - 'migrations/d1/0020_quota_fsm_state.sql'
-      - 'migrations/d1/0021_billing_replay_audit.sql'
-      - 'specs/03_architecture/data_model.md'
-      - 'specs/03_architecture/invariant_registry.md'
-      - 'specs/04_sprints/S10/_spec_contract.md'
+  # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
+  # nightly (staggered) + on main + on-demand. Re-add pull_request only if
+  # this must block PRs again.
+  schedule:
+    - cron: '20 7 * * *'
   push:
     branches: [main]
-    paths:
-      # Mirror PR trigger surface (Lote 10.6 cycle 4 fix CAP-GC-008): post-merge
-      # history must observe same surface as PR gate.
-      - 'specs/tla/billing_atomicity.tla'
-      - 'specs/tla/billing_atomicity.cfg'
-      - 'specs/tla/billing_atomicity_nightly.cfg'
-      - 'scripts/run_tlc_corelink.sh'
-      - '.github/workflows/tla_billing_check.yml'
-      - 'crates/corelink-billing-emit/**'
-      - 'crates/corelink-billing-aggregator/**'
-      - 'crates/corelink-billing-stripe/**'
-      - 'crates/corelink-billing-reconcile/**'
-      - 'crates/corelink-billing/**'
-      - 'migrations/d1/0017_usage_event_idem.sql'
-      - 'migrations/d1/0018_stripe_idem_keys.sql'
-      - 'migrations/d1/0019_billing_reconciliation_drift.sql'
-      - 'migrations/d1/0020_quota_fsm_state.sql'
-      - 'migrations/d1/0021_billing_replay_audit.sql'
-      - 'specs/03_architecture/data_model.md'
-      - 'specs/03_architecture/invariant_registry.md'
-      - 'specs/04_sprints/S10/_spec_contract.md'
+  workflow_dispatch:
 
 permissions:
   contents: read

@@ -11,14 +11,13 @@ name: coverage (R7-1 supply-quality rollup)
 # Reference: scripts/coverage.sh, specs/_audits/sealed/2026-05-14-coverage-baseline.md
 
 on:
-  pull_request:
-    paths:
-      - 'crates/**'
-      - 'apps/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'scripts/coverage.sh'
-      - '.github/workflows/coverage.yml'
+  # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
+  # nightly (staggered) + on main + on-demand. Re-add pull_request only if
+  # this must block PRs again.
+  schedule:
+    - cron: '0 5 * * *'
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
