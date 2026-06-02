@@ -1,8 +1,18 @@
 version: 2
 # Dependabot weekly grouped PRs — WI-S12-004 §6.1.4 (ST-004) + R-PREP refinement.
 #
-# Enforces: CAP-SUPPLY-004 Dependabot weekly cadence.
-# Schedule: Monday 08:00 BRT (America/Sao_Paulo) = Monday 11:00 UTC.
+# Enforces: CAP-SUPPLY-004 Dependabot weekly cadence (weekly PER ECOSYSTEM).
+# Schedule: weekly, STAGGERED across Mon–Thu 08:00 BRT (America/Sao_Paulo) so the
+#   self-hosted runner fleet (5 macOS runners = one Mac) never absorbs every
+#   ecosystem's CI in a single burst (root cause of a near-OOM on 2026-06-02 when
+#   ~9 grouped dep PRs landed at once). Heaviest lanes isolated on their own day:
+#     Mon — cargo (full Rust rebuild + proptest-density-gate) + github-actions
+#     Tue — npm /apps/admin-ui (Next build + Lighthouse)
+#     Wed — npm /apps/docs + npm /crates/corelink-wasm
+#     Thu — npm / (root tooling) + pip / + pip /tools/sdks/python
+#   Each ecosystem stays weekly (CAP-SUPPLY-004 intact). See ADR-S12-045 §Schedule.
+#   Security-updates are NOT bound to the staggered day — opened immediately per
+#   advisory (see per-ecosystem policy below).
 # Rate limit: per-ecosystem (DoS protection — §26 security STRIDE delta).
 #
 # Per-ecosystem policy:
@@ -91,7 +101,7 @@ updates:
     directory: "/apps/admin-ui"
     schedule:
       interval: weekly
-      day: monday
+      day: tuesday
       time: "08:00"
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 5
@@ -121,7 +131,7 @@ updates:
     directory: "/apps/docs"
     schedule:
       interval: weekly
-      day: monday
+      day: wednesday
       time: "08:00"
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 5
@@ -151,7 +161,7 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
-      day: monday
+      day: thursday
       time: "08:00"
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 3
@@ -183,7 +193,7 @@ updates:
     directory: "/crates/corelink-wasm"
     schedule:
       interval: weekly
-      day: monday
+      day: wednesday
       time: "08:00"
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 3
@@ -213,7 +223,7 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
-      day: monday
+      day: thursday
       time: "08:00"
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 3
@@ -242,7 +252,7 @@ updates:
     directory: "/tools/sdks/python"
     schedule:
       interval: weekly
-      day: monday
+      day: thursday
       time: "08:00"
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 3

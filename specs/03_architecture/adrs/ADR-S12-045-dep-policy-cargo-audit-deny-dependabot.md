@@ -3,9 +3,9 @@ id: "ADR-S12-045"
 type: "adr"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-13"
-updated: "2026-05-13"
+updated: "2026-06-02"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -55,7 +55,14 @@ No single tool covers all three axes.  The Rust ecosystem provides:
 
 ### Dependabot
 
-- **Schedule**: weekly Monday 08:00 BRT.
+- **Schedule**: weekly per ecosystem, **staggered Mon–Thu 08:00 BRT** (v1.1.0,
+  2026-06-02): cargo + github-actions Mon, npm/admin-ui Tue, npm/docs + npm/wasm
+  Wed, npm-root + pip Thu. Rationale: the original single-Monday batch overwhelmed
+  the self-hosted runner fleet (5 macOS runners = one Mac, post CI-migration) when
+  ~9 grouped dep PRs triggered CI simultaneously (near-OOM 2026-06-02). Each
+  ecosystem stays **weekly**, so CAP-SUPPLY-004 cadence is intact; security-updates
+  remain immediate (not bound to the staggered day). Canonical config:
+  `.github/dependabot.yml` header.
 - **Groups**: security-updates / non-security-minor-patch / non-security-major.
 - **Auto-merge policy**: patch + minor non-security + CI green → auto-merge squash.
   Major and security updates → manual review (NEVER auto-merged).
