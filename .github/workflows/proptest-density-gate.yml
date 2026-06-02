@@ -18,6 +18,18 @@ on:
       - '.github/workflows/proptest-density-gate.yml'
   push:
     branches: [main]
+    # Match the pull_request paths above: proptest density only changes when Rust
+    # crates or the gate's own scripts change. Without this filter EVERY merge to
+    # main (incl. docs/config/dependabot) re-ran the full proptest build on the
+    # self-hosted fleet (5 macOS runners = one Mac) — a recurring near-OOM driver
+    # (2026-06-02; see ADR-S12-045 §Schedule). Skipped runs cost nothing here;
+    # density is unaffected by non-crate changes.
+    paths:
+      - 'crates/**'
+      - 'scripts/audit_proptest_density.sh'
+      - 'scripts/check_proptest_density_gate.sh'
+      - 'scripts/proptest-density-allowlist.txt'
+      - '.github/workflows/proptest-density-gate.yml'
 
 permissions:
   contents: read
