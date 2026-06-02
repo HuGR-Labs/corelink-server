@@ -125,7 +125,22 @@ fi
 # - TODO_*: placeholder names in wrangler.toml
 # - NODE_ENV: standard Node knob
 # - ENVIRONMENT: wrangler-injected (vars block), not a secret
-ALLOWLIST_REGEX='^(PROPTEST_|HOME$|USERPROFILE$|CARGO_|GITHUB_(TOKEN|OUTPUT|ENV|PATH|STEP_SUMMARY|ACTIONS|REPOSITORY|SHA|REF|WORKFLOW|RUN_ID|RUN_NUMBER|ACTOR|EVENT_NAME|EVENT_PATH|JOB|API_URL|SERVER_URL|GRAPHQL_URL|WORKSPACE)$|RUNNER_|GH_TOKEN$|GNUPGHOME$|SOURCE_DATE_EPOCH$|PATH$|PWD$|USER$|SHELL$|TERM$|CI$|TZ$|LANG$|LC_|NODE_ENV$|ENVIRONMENT$|RUST_|TODO_|DOCS_BASE_URL$|LH_BASE_URL$|LH_START_COMMAND$|E2E_BASE_URL$|NEXT_PUBLIC_E2E_TEST_MODE$|PROJECTS$|SKIP_WEBSERVER$|GCP_TEST_KEY_RESOURCE$|GCP_TEST_REGION$|DT_API_KEY_TEST_|DT_MOCK_INJECTION_ENABLED$)'
+# - CORELINK_PAT_SIGNING_KEY_HEX: test-only alt form of the PAT key, read in
+#   crates/corelink-pat/tests/emit_e2e_seed.rs (not prod-read) — added 2026-06-02.
+#   (OpenNext/Sentry build-flag vars are NOT listed here: extract_code_vars now
+#   excludes .open-next/.wrangler, so the Sentry CI-detection bundle never enters
+#   the scan in the first place — fixed at the source, not allowlisted.)
+# - E2E_* / CORELINK_E2E_*: e2e test-harness config + test-minted PATs (test
+#   infra, runtime-generated — not stored prod secrets)
+# - NEXT_PUBLIC_*: Next.js browser-exposed vars, public by definition (compiled
+#   into client bundles) — never secret
+# - CF_PAGES_* / GIT_SHA: build-time commit/release metadata, not secrets
+# - SENTRY_ENVIRONMENT/ORG/PROJECT/RELEASE: Sentry identifiers/slugs; the actual
+#   secret SENTRY_AUTH_TOKEN IS a matrix row (these four are not)
+# - R2_(AC|CAS)_BUCKET / _REGION + R2_TEST_BUCKET: R2 bucket names + regions
+#   (deploy config, not credentials — the R2 access keys are matrix rows #139/140)
+# - NEON_TEST_DSN: Neon shadow-reconcile TEST DSN (test-only; prod Neon deferred)
+ALLOWLIST_REGEX='^(PROPTEST_|HOME$|USERPROFILE$|CARGO_|GITHUB_(TOKEN|OUTPUT|ENV|PATH|STEP_SUMMARY|ACTIONS|REPOSITORY|SHA|REF|WORKFLOW|RUN_ID|RUN_NUMBER|ACTOR|EVENT_NAME|EVENT_PATH|JOB|API_URL|SERVER_URL|GRAPHQL_URL|WORKSPACE)$|RUNNER_|GH_TOKEN$|GNUPGHOME$|SOURCE_DATE_EPOCH$|PATH$|PWD$|USER$|SHELL$|TERM$|CI$|TZ$|LANG$|LC_|NODE_ENV$|ENVIRONMENT$|RUST_|TODO_|DOCS_BASE_URL$|LH_BASE_URL$|LH_START_COMMAND$|E2E_|NEXT_PUBLIC_|PROJECTS$|SKIP_WEBSERVER$|GCP_TEST_KEY_RESOURCE$|GCP_TEST_REGION$|DT_API_KEY_TEST_|DT_MOCK_INJECTION_ENABLED$|CORELINK_PAT_SIGNING_KEY_HEX$|CORELINK_E2E_|CF_PAGES_|GIT_SHA$|NEON_TEST_DSN$|SENTRY_(ENVIRONMENT|ORG|PROJECT|RELEASE)$|R2_(AC|CAS)_(BUCKET|REGION)$|R2_TEST_BUCKET$)'
 
 # -----------------------------------------------------------------------------
 # Extract env-var names from the matrix.
@@ -183,6 +198,8 @@ extract_code_vars() {
             --include='*.js' --include='*.jsx' --include='*.mjs' --include='*.cjs' \
             --exclude-dir=node_modules \
             --exclude-dir=.next \
+            --exclude-dir=.open-next \
+            --exclude-dir=.wrangler \
             --exclude-dir=dist \
             --exclude-dir=build \
             --exclude-dir=_archive \
@@ -197,6 +214,8 @@ extract_code_vars() {
             --include='*.js' --include='*.jsx' --include='*.mjs' --include='*.cjs' \
             --exclude-dir=node_modules \
             --exclude-dir=.next \
+            --exclude-dir=.open-next \
+            --exclude-dir=.wrangler \
             --exclude-dir=dist \
             --exclude-dir=build \
             --exclude-dir=_archive \
