@@ -90,6 +90,12 @@ pub mod signup;
 /// `corelink_pat::mint::mint(...)` and returns the hash + plaintext
 /// for the signup-worker to write to D1 and Clerk session metadata.
 pub mod internal_pat;
+/// `POST /v1/onboarding/tier-select` — server-side Stripe Checkout
+/// Session creation for self-serve tier upgrades. Internal-auth gated
+/// (constant-time) + edge-verified `x-corelink-tenant-id` (fail-CLOSED);
+/// INV-ONBOARD-DPA-FIRST + durable 60s lock + hosted Stripe Checkout.
+/// WI-S19-004 production wiring.
+pub mod tier_select;
 /// Caller-identity reflection route: `GET /v1/users/me` reads the
 /// Worker-injected `x-corelink-tenant-id` / `-token-prefix` /
 /// `-route-kind` headers and echoes them as JSON. Lets clients verify
