@@ -34,41 +34,59 @@ jobs:
     name: Compute size bucket
     runs-on: [self-hosted, mac, corelink-builder]
     steps:
+      # Native implementation (no container action). The previous
+      # `codelytv/pr-size-labeler` is a Docker container action — Linux-only —
+      # which HARD-FAILS on the macOS self-hosted fleet ("Container action is
+      # only supported on Linux"), red-flagging every PR. This step computes the
+      # same buckets via `gh` and runs on any runner. (2026-06-02)
       - name: Apply size:* label
-        uses: codelytv/pr-size-labeler@4ec67706cd878fbc1c8db0a5dcd28b6bb412e85a # v1.10.2
-        with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          xs_label: "size:XS"
-          xs_max_size: "9"
-          s_label: "size:S"
-          s_max_size: "49"
-          m_label: "size:M"
-          m_max_size: "199"
-          l_label: "size:L"
-          l_max_size: "499"
-          xl_label: "size:XL"
-          message_if_xl: |
-            This PR is labelled **`size:XL`** (>= 500 lines changed,
-            excluding lockfiles and generated artifacts).
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Sum additions+deletions, excluding lockfiles + generated artifacts
+          # (same ignore set as the old action) so a Cargo.lock/pnpm regen
+          # doesn't inflate a legitimately small change.
+          total=0
+          while IFS=$'\t' read -r file add del; do
+            case "$file" in
+              Cargo.lock|pnpm-lock.yaml|package-lock.json|yarn.lock) continue ;;
+              *.snap|*.lock) continue ;;
+              */generated/*|*/__generated__/*) continue ;;
+              docs/api/reference/*) continue ;;
+            esac
+            total=$(( total + add + del ))
+          done < <(gh api --paginate "repos/$REPO/pulls/$PR/files" \
+                     --jq '.[] | [.filename, .additions, .deletions] | @tsv')
 
-            Reviewers: per `docs/internal/CODE-REVIEW-CHECKLIST.md` row
-            **L0.2**, a PR should be < 2000 LoC *or* clearly partitioned.
-            Please consider asking the author to split this into:
+          # Thresholds: XS<10  S<50  M<200  L<500  XL>=500.
+          if   [ "$total" -lt 10  ]; then bucket="size:XS"
+          elif [ "$total" -lt 50  ]; then bucket="size:S"
+          elif [ "$total" -lt 200 ]; then bucket="size:M"
+          elif [ "$total" -lt 500 ]; then bucket="size:L"
+          else bucket="size:XL"; fi
+          echo "changed (excl. lockfiles/generated) = $total -> $bucket"
 
-            - one PR per logical concern (refactor → feature → tests),
-            - one PR per crate or app surface, or
-            - a stacked-PR chain (`main` ← `wt/foo-1` ← `wt/foo-2`).
+          gh label create "$bucket" --repo "$REPO" --color ededed 2>/dev/null || true
+          # Drop any stale size:* label, then apply the computed one.
+          for l in $(gh pr view "$PR" --repo "$REPO" --json labels \
+                       --jq '.labels[].name | select(startswith("size:"))'); do
+            [ "$l" = "$bucket" ] || gh pr edit "$PR" --repo "$REPO" --remove-label "$l" || true
+          done
+          gh pr edit "$PR" --repo "$REPO" --add-label "$bucket"
 
-            If the size is genuinely unavoidable (e.g. mechanical rename,
-            generated code regeneration, vendored dependency), leave a
-            comment explaining why and proceed with review.
-          files_to_ignore: |
-            "Cargo.lock"
-            "pnpm-lock.yaml"
-            "package-lock.json"
-            "yarn.lock"
-            "**/*.snap"
-            "**/*.lock"
-            "**/generated/**"
-            "**/__generated__/**"
-            "docs/api/reference/**"
+          # XL → leave the split-it-up guidance once (idempotent via marker).
+          if [ "$bucket" = "size:XL" ]; then
+            marker="<!-- size-xl-note -->"
+            if ! gh pr view "$PR" --repo "$REPO" --json comments \
+                  --jq '.comments[].body' | grep -qF "$marker"; then
+              gh pr comment "$PR" --repo "$REPO" --body "$marker
+          This PR is labelled **\`size:XL\`** (>= 500 lines changed, excluding
+          lockfiles and generated artifacts). Per
+          \`docs/internal/CODE-REVIEW-CHECKLIST.md\` L0.2, consider splitting
+          (one PR per concern / per crate, or a stacked-PR chain)."
+            fi
+          fi

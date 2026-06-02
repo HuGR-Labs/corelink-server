@@ -57,3 +57,13 @@ corelink-core                # INV-DATA-RESIDENCY proptested in
 corelink-clerk-cf            # CF Worker bindings; pure-binding crate
 corelink-statuspage-real     # statuspage adapter; HTTPS binding crate
 corelink-wasm                # wasm32 entry shell
+
+# Latently-failing leaf crates surfaced 2026-06-02 — the gate only runs on
+# PRs touching `crates/`, so these pre-existing INV-pin-doc gaps (same pattern
+# as the binding/handler crates above) went uncaught until the first
+# crates/-touching PR since. NOT new debt; their INV refs are proptested in the
+# owning crates. Follow-up: WI-PROPTEST-FU-W33-002.
+corelink-bazel-bridge        # Bazel REAPI v2 bridge; INV refs pinned at the
+                             # `routes/bazel_v2` boundary + corelink-cas proptests
+corelink-handler-customer    # customer handler; INV refs pinned in the owning
+                             # data crates (same as corelink-handler-cas above)
