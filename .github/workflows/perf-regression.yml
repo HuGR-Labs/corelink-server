@@ -91,7 +91,7 @@ jobs:
               || github.event.label.name == 'perf-sensitive'))
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 1
 
@@ -104,7 +104,7 @@ jobs:
           shared-key: perf-regression
 
       - name: Cache criterion target dir
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target/criterion
           key: criterion-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
@@ -112,7 +112,7 @@ jobs:
             criterion-${{ runner.os }}-
 
       - name: Setup Python (for regression check)
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.11'
 
@@ -185,7 +185,7 @@ jobs:
       - name: Upload flame-graph artifact
         if: failure()
         continue-on-error: true
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: perf-flames-${{ github.run_id }}
           path: perf-flames
@@ -194,7 +194,7 @@ jobs:
 
       - name: Upload criterion HTML + JSON artifact
         if: always()
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: criterion-report-${{ github.run_id }}
           path: |

@@ -14,7 +14,7 @@ jobs:
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build smoke image
         run: docker build -f apps/get-corelink-worker/test/smoke-install.Dockerfile -t corelink-smoke .
