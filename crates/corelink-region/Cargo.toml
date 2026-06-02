@@ -20,7 +20,7 @@ uuid = { workspace = true, features = ["v7", "serde", "js"] }
 [dev-dependencies]
 proptest = { workspace = true }
 rand = "0.9"
-rand_chacha = "0.9"
+rand_chacha = "0.10"
 # Cross-crate SLI binding tests (DR-16 wave-14): assert that
 # canonical metric-name constants in this crate match the
 # `Sli::*::prometheus_metric_base()` taxonomy in `corelink-slo`.

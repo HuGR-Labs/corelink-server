@@ -83,7 +83,7 @@ futures = { workspace = true }
 # Host-server runtime (gated behind feature).
 tonic = { workspace = true, optional = true }
 prost = { workspace = true, optional = true }
-prost-types = { version = "0.13", optional = true }
+prost-types = { version = "0.14", optional = true }
 tokio = { workspace = true, optional = true }
 tokio-stream = { workspace = true, optional = true }
 async-trait = { version = "0.1", optional = true }
@@ -91,7 +91,7 @@ tower = { version = "0.5", features = ["util"], optional = true }
 tower-layer = { version = "0.3", optional = true }
 http = { version = "1", optional = true }
 # HTTP REST surface (`GET /v1/cas/<digest>`) — host-server feature only.
-axum = { version = "0.7", default-features = false, features = ["http1", "http2", "tokio"], optional = true }
+axum = { version = "0.8", default-features = false, features = ["http1", "http2", "tokio"], optional = true }
 http-body-util = { version = "0.1", optional = true }
 
 [dev-dependencies]
