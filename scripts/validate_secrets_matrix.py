@@ -148,6 +148,29 @@ ALLOWLIST_REGEX = re.compile(
     # The actual account ID is supplied at runtime via the CLOUDFLARE_ACCOUNT_ID
     # secret (matrix row #49-equivalent). No credential material here.
     r"|R2_S3_ENDPOINT$"
+    # 2026-06-02 secrets-matrix reconciliation — non-secret env vars surfaced
+    # after excluding .open-next/.wrangler build output from the scan. None carry
+    # credential material (test config, R2 bucket names/regions, CF resource IDs).
+    #   Test-only alt PAT key — crates/corelink-pat/tests/emit_e2e_seed.rs
+    r"|CORELINK_PAT_SIGNING_KEY_HEX$"
+    #   E2E user-journey harness config + test-minted PATs (tests/e2e-user-journeys)
+    r"|CORELINK_E2E_BAZEL_TEST$"
+    r"|CORELINK_E2E_ENDPOINT$"
+    r"|CORELINK_E2E_QUOTA_TEST$"
+    r"|CORELINK_E2E_TOKEN$"
+    r"|CORELINK_E2E_TOKEN_TENANT_B$"
+    #   Cloudflare D1 database UUID — committed in wrangler.toml [[d1_databases]];
+    #   a resource identifier, not a credential (CF_API_TOKEN gates access).
+    r"|D1_DATABASE_ID$"
+    #   R2 bucket names + regions — wrangler.toml [vars] deploy config; the R2
+    #   access keys (matrix rows #139/#140) are the actual credentials.
+    r"|R2_AC_BUCKET$"
+    r"|R2_AC_REGION$"
+    r"|R2_CAS_BUCKET$"
+    r"|R2_CAS_REGION$"
+    r"|R2_CHUNK_BUCKET$"
+    r"|R2_CHUNK_REGION$"
+    r"|R2_TEST_BUCKET$"
     r")"
 )
 
@@ -155,6 +178,12 @@ EXCLUDE_DIR_PARTS = {
     "target",
     "node_modules",
     ".next",
+    # OpenNext + Wrangler build output: gitignored, generated bundles that embed
+    # third-party SDK code (Sentry CI-provider detection → Vercel/Zeit/Azure/CI
+    # env-var references). Scanning these surfaced ~130 false-positive vendor env
+    # vars that are not CoreLink secrets. Source dirs only — see 2026-06-02 audit.
+    ".open-next",
+    ".wrangler",
     "dist",
     "build",
     ".git",

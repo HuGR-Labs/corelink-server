@@ -70,6 +70,20 @@ Each entry cross-references:
 
 ### Fixed
 
+- **Secrets-matrix verify-gate scanned build output** — both validators
+  (`scripts/secrets-checklist-verify.sh`, `scripts/validate_secrets_matrix.py`)
+  walked gitignored `.open-next`/`.wrangler` bundles, whose embedded
+  Sentry/OpenNext SDK references ~130–148 vendor CI-detection env vars
+  (`CIRCLE_SHA1`, `VERCEL_*`, `ZEIT_*`, …) — masking the real matrix↔code drift
+  (the gate was red only on a machine where admin-ui had been built). Excluded
+  build output from the scan; added 5 previously-undocumented secret rows
+  (#141–#145: `PAT_SIGNING_KEY`, `CORELINK_INTERNAL_AUTH_KEY`, `R2_TDK_HEX`,
+  `CORELINK_CLI_RELEASE_TOKEN`, `SENTRY_AUTH_TOKEN`); reconciled the
+  `CF_API_TOKEN`/`CLOUDFLARE_API_TOKEN` dual-name drift; classified ~23
+  non-secret vars into the allowlists; removed 2 deleted orphans
+  (`HUGR_AUDIT_CHAIN_HMAC_KEY`, `HUGR_SESSION_HMAC_KEY`, confirmed absent on all
+  5 prod workers). Both gates green; `validate_specs.py` 463/0. See
+  `specs/_audits/2026-06-02-secrets-naming-reconciliation.md`.
 - **OSS license-tag regression (DEBT-002 reopened)** — the Wave 33-36 reorg
   silently re-inherited every crate to the `UNLICENSED` workspace default,
   wiping the `MIT OR Apache-2.0` tags on the OSS crates (0 of 13 actually
