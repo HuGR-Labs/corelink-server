@@ -1,0 +1,853 @@
+//! `POST /v1/onboarding/tier-select` — server-side Stripe Checkout
+//! Session creation for self-serve tier upgrades (WI-S19-004 production
+//! wiring; the `corelink-tier-selection` charter deferred this to the
+//! PRR ship gate).
+//!
+//! # Security model (IRONCLAD — this is a payment + auth boundary)
+//!
+//! 1. **Not publicly reachable.** Mounted on the container's HTTP
+//!    listener (port 50051), reachable ONLY from the Cloudflare Durable
+//!    Object via `container.getTcpPort(50051)`. The DO/Worker forwards
+//!    only requests whose caller supplies `X-Corelink-Internal-Auth`
+//!    matching the shared secret (`CORELINK_INTERNAL_AUTH_KEY`). Absent
+//!    or mismatched → 401. **Constant-time** comparison (`subtle`).
+//!    Mirrors `internal_pat.rs`.
+//!
+//! 2. **Tenant identity is never trusted from the client.** `tenant_id`
+//!    is taken ONLY from the `x-corelink-tenant-id` header, which the
+//!    edge Worker sets AFTER verifying the Clerk session JWT (JWKS, via
+//!    `corelink-clerk`). The request body carries NO tenant field. Absent
+//!    or empty header → 401 (fail-CLOSED; there is deliberately NO
+//!    `_unknown` default — a missing verified tenant must never proceed
+//!    to a billing mutation).
+//!
+//! 3. **INV-ONBOARD-DPA-FIRST.** DPA acceptance is checked in D1 BEFORE
+//!    any Stripe API call, for ALL tiers (WI §6.5). Not accepted → 403.
+//!
+//! 4. **Durable double-checkout prevention.** A 60s row lock in
+//!    `tier_selection_locks` (`INSERT OR IGNORE`) is the cross-isolate
+//!    mutex held across the Stripe call; the UNIQUE partial index
+//!    `idx_tenant_active_subscription` is defense-in-depth against a
+//!    second active subscription (migration 0039). Concurrent caller →
+//!    409 `lock_held`.
+//!
+//! 5. **Stripe owns PCI.** We create a *hosted* Checkout Session and
+//!    return its URL; CoreLink never sees card data.
+//!
+//! 6. **Enterprise is not self-serve.** `enterprise` is rejected with
+//!    422 `use_inquiry_form` (the UI hint alone is bypassable).
+//!
+//! 7. **Audit before mutation.** Every state-mutating step emits its
+//!    audit record BEFORE the mutation (fail-CLOSED;
+//!    INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER).
+//!
+//! The pure-logic invariants are pinned by the 10k-iter property tests
+//! in `corelink-tier-selection`; this module is the production transport
+//! + durable-store wiring that must satisfy the same invariants.
+
+use std::sync::Arc;
+
+use axum::{
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    Json,
+};
+use serde::{Deserialize, Serialize};
+use subtle::ConstantTimeEq;
+
+/// Header carrying the internal shared secret (worker → container trust
+/// boundary). Identical mechanism to `internal_pat.rs`.
+pub const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
+
+/// Header carrying the edge-verified tenant id (set by the Worker AFTER
+/// Clerk JWT verification). The canonical container tenant header.
+pub const TENANT_HEADER: &str = "x-corelink-tenant-id";
+
+/// Canonical self-serve paid tiers accepted by this route. `free` is an
+/// instant activation (no Stripe); `enterprise` is rejected here and
+/// routed to the inquiry form. Kept in lockstep with
+/// `corelink_tier_selection::tier::TierKind`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestedTier {
+    /// Free tier — instant activation, no Checkout Session.
+    Free,
+    /// Starter paid tier.
+    Starter,
+    /// Team paid tier.
+    Team,
+    /// Pro paid tier.
+    Pro,
+}
+
+impl RequestedTier {
+    /// Parse the wire `tier` string (case-insensitive). Returns `None`
+    /// for `enterprise` (handled separately → 422) and unknown values.
+    #[must_use]
+    pub fn parse_self_serve(s: &str) -> ParsedTier {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "free" => ParsedTier::Tier(Self::Free),
+            "starter" => ParsedTier::Tier(Self::Starter),
+            "team" => ParsedTier::Tier(Self::Team),
+            "pro" => ParsedTier::Tier(Self::Pro),
+            "enterprise" => ParsedTier::Enterprise,
+            _ => ParsedTier::Invalid,
+        }
+    }
+
+    /// `true` for tiers that require a Stripe Checkout Session.
+    #[must_use]
+    pub const fn is_paid(self) -> bool {
+        !matches!(self, Self::Free)
+    }
+}
+
+/// Outcome of parsing the wire `tier` string. Distinguishes the
+/// enterprise route (422) from genuinely invalid input (400).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParsedTier {
+    /// A valid self-serve tier.
+    Tier(RequestedTier),
+    /// `enterprise` — must use the inquiry form (422).
+    Enterprise,
+    /// Unknown / malformed tier (400).
+    Invalid,
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Request / response shapes
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// JSON request body. `deny_unknown_fields` rejects anything unexpected
+/// (defense-in-depth: a client cannot smuggle e.g. a `tenant_id`).
+///
+/// NOTE the deliberate ABSENCE of any tenant field — the tenant is taken
+/// only from the edge-verified header (see security model §2).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TierSelectRequest {
+    /// Requested tier: `free` | `starter` | `team` | `pro`. (`enterprise`
+    /// → 422.)
+    pub tier: String,
+    /// Post-payment success redirect (Stripe appends the session id). The
+    /// Worker builds this from a trusted origin — never user-supplied.
+    pub success_url: String,
+    /// Checkout-cancel redirect.
+    pub cancel_url: String,
+}
+
+/// JSON success response (200). Mirrors the `TierSelectResponse` the
+/// admin-ui `/api/checkout/session` bridge expects.
+#[derive(Debug, Clone, Serialize)]
+pub struct TierSelectResponse {
+    /// The Stripe-hosted Checkout URL the client redirects to. Always
+    /// `https://`. (For `free`, this is omitted — see [`FreeActivated`].)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkout_url: Option<String>,
+    /// The Stripe Checkout Session id (`cs_...`), or the activation id for
+    /// the free tier.
+    pub session_id: String,
+}
+
+/// Typed error → HTTP status mapping for this route. Kept in lockstep
+/// with `corelink_tier_selection::error::TierError`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TierSelectHttpError {
+    /// Missing/invalid internal-auth header → 401.
+    Unauthenticated,
+    /// Missing/empty verified tenant header → 401.
+    NoVerifiedTenant,
+    /// Malformed body / invalid tier → 400.
+    BadRequest,
+    /// `enterprise` requested → 422 (use inquiry form).
+    UseInquiryForm,
+    /// DPA not accepted → 403 (INV-ONBOARD-DPA-FIRST).
+    DpaRequired,
+    /// Concurrent tier-select in flight → 409.
+    LockHeld,
+    /// Tenant already has an active subscription → 409.
+    AlreadyActive,
+    /// Stripe transport / config failure → 502.
+    StripeUnavailable,
+    /// Audit-sink failure (fail-CLOSED) or other internal fault → 500.
+    Internal,
+}
+
+impl TierSelectHttpError {
+    /// The wire status + machine-readable error code.
+    #[must_use]
+    pub const fn parts(self) -> (StatusCode, &'static str) {
+        match self {
+            Self::Unauthenticated => (StatusCode::UNAUTHORIZED, "unauthenticated"),
+            Self::NoVerifiedTenant => (StatusCode::UNAUTHORIZED, "no_verified_tenant"),
+            Self::BadRequest => (StatusCode::BAD_REQUEST, "bad_request"),
+            Self::UseInquiryForm => (StatusCode::UNPROCESSABLE_ENTITY, "use_inquiry_form"),
+            Self::DpaRequired => (StatusCode::FORBIDDEN, "dpa_required"),
+            Self::LockHeld => (StatusCode::CONFLICT, "lock_held"),
+            Self::AlreadyActive => (StatusCode::CONFLICT, "already_active"),
+            Self::StripeUnavailable => (StatusCode::BAD_GATEWAY, "stripe_unavailable"),
+            Self::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
+        }
+    }
+}
+
+impl IntoResponse for TierSelectHttpError {
+    fn into_response(self) -> Response {
+        let (status, code) = self.parts();
+        (status, Json(serde_json::json!({ "error": code }))).into_response()
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Auth boundary (the ironclad core — fully implemented + unit-tested here)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Verify the internal-auth shared secret in **constant time**. Returns
+/// `Err(Unauthenticated)` on a missing or mismatched header — fail-CLOSED.
+///
+/// Constant-time compare prevents a timing side-channel from leaking the
+/// secret (mirrors `internal_pat.rs`).
+fn verify_internal_auth(
+    headers: &HeaderMap,
+    expected_secret: &str,
+) -> Result<(), TierSelectHttpError> {
+    let presented = headers
+        .get(INTERNAL_AUTH_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .ok_or(TierSelectHttpError::Unauthenticated)?;
+
+    // Length-independent constant-time equality. `ConstantTimeEq` on
+    // unequal-length slices returns 0 without early-exit on length.
+    let ok: bool = presented
+        .as_bytes()
+        .ct_eq(expected_secret.as_bytes())
+        .into();
+    if ok {
+        Ok(())
+    } else {
+        Err(TierSelectHttpError::Unauthenticated)
+    }
+}
+
+/// Extract the edge-verified tenant id. Fail-CLOSED: a missing or empty
+/// header is a hard 401 — a billing mutation MUST NOT proceed without a
+/// verified tenant. Never falls back to a default.
+fn extract_verified_tenant(headers: &HeaderMap) -> Result<String, TierSelectHttpError> {
+    let raw = headers
+        .get(TENANT_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or(TierSelectHttpError::NoVerifiedTenant)?;
+    Ok(raw.to_owned())
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Route state (collaborators wired at boot — see PR2)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Route state injected at boot. The durable-store + Stripe + DPA-gate
+/// collaborators are wired in the follow-up increment (PR2: D1-over-HTTP
+/// transaction + `StripeRealClient` via `spawn_blocking`).
+#[derive(Clone)]
+pub struct TierSelectRouteState {
+    /// Shared secret for `X-Corelink-Internal-Auth` (constant-time compare).
+    pub internal_auth_key: Arc<str>,
+    // PR2 collaborators (wired at boot):
+    //   pub d1: Arc<D1HttpClient>,            // durable lock / DPA / persist
+    //   pub stripe: Arc<StripeRealClient>,    // hosted Checkout (blocking → spawn_blocking)
+    //   pub audit: Arc<dyn TierSelectionAuditSink>,
+    //   pub current_dpa_version: Arc<str>,
+}
+
+impl std::fmt::Debug for TierSelectRouteState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TierSelectRouteState")
+            .field("internal_auth_key", &"[REDACTED]")
+            .finish()
+    }
+}
+
+/// Validate the request envelope: auth → verified tenant → typed tier.
+/// This is the fully-implemented, side-effect-free security gate that
+/// every request crosses BEFORE any D1/Stripe work. Returned to the
+/// handler (PR2) which performs the durable orchestration.
+fn authorize_and_validate(
+    state: &TierSelectRouteState,
+    headers: &HeaderMap,
+    body: &TierSelectRequest,
+) -> Result<(String, RequestedTier), TierSelectHttpError> {
+    // (1) internal-auth boundary (constant-time).
+    verify_internal_auth(headers, &state.internal_auth_key)?;
+    // (2) verified tenant (fail-CLOSED; never from the body).
+    let tenant_id = extract_verified_tenant(headers)?;
+    // (3) tier parse + enterprise routing.
+    let tier = match RequestedTier::parse_self_serve(&body.tier) {
+        ParsedTier::Tier(t) => t,
+        ParsedTier::Enterprise => return Err(TierSelectHttpError::UseInquiryForm),
+        ParsedTier::Invalid => return Err(TierSelectHttpError::BadRequest),
+    };
+    // (4) redirect URLs must be https (the Worker builds these from a
+    // trusted origin; this is defense-in-depth against a misconfigured
+    // caller — never redirect a paid customer to a non-TLS URL).
+    if tier.is_paid()
+        && (!body.success_url.starts_with("https://") || !body.cancel_url.starts_with("https://"))
+    {
+        return Err(TierSelectHttpError::BadRequest);
+    }
+    Ok((tenant_id, tier))
+}
+
+// NOTE (PR2 — durable orchestration, async handler):
+//   pub async fn handle(State(state), headers, Json(body)) -> Response {
+//       let (tenant_id, tier) = authorize_and_validate(&state, &headers, &body)?;
+//       // audit `tier_select_attempted` (BEFORE any mutation)
+//       // D1: INSERT OR IGNORE tier_selection_locks (→ 409 lock_held); evict expired
+//       // D1: DPA-first check (→ 403); D1: active-subscription check (→ 409)
+//       // free → instant activate; paid → spawn_blocking(StripeRealClient.create_checkout_session)
+//       // D1: persist (UPDATE tier_selections pending_checkout + INSERT stripe_checkout_sessions)
+//       // release lock; return { checkout_url, session_id }
+//   }
+//   + router(state) merging POST /v1/onboarding/tier-select, mounted in main.rs
+//     when CORELINK_INTERNAL_AUTH_KEY is present (same gate as internal_pat).
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Durable orchestration (the ironclad heart) — store trait + fail-closed order.
+//
+// The store trait isolates the durable D1-over-HTTP effects so the
+// orchestration ORDER (the load-bearing invariants) is testable natively
+// against an in-memory store. The production `D1HttpTierSelectStore`
+// (next increment) implements the same trait against D1 via
+// `INSERT OR IGNORE ... RETURNING` (lock) + `SELECT` (DPA / active) +
+// `UPDATE`/`INSERT` (persist). Generic (not `dyn`) to keep `async fn` in
+// trait object-safety out of scope.
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// The price/customer details returned by Stripe for a paid checkout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckoutCreated {
+    /// Stripe-hosted Checkout URL (always `https://`).
+    pub checkout_url: String,
+    /// Stripe Checkout Session id (`cs_...`).
+    pub session_id: String,
+    /// Stripe customer id (`cus_...`).
+    pub stripe_customer_id: String,
+}
+
+/// Durable effects backing the orchestration. Every method is fail-CLOSED:
+/// an `Err` aborts the orchestration WITHOUT partial state (the caller
+/// maps it to 500/502/409 as appropriate).
+pub trait TierSelectStore {
+    /// Acquire the 60s row lock for `tenant_id` (`INSERT OR IGNORE ...
+    /// RETURNING`). Returns `Ok(true)` if acquired, `Ok(false)` if a live
+    /// lock is already held (→ 409 `lock_held`).
+    fn acquire_lock(
+        &self,
+        tenant_id: &str,
+        now_ms: i64,
+        correlation_id: &str,
+    ) -> impl std::future::Future<Output = Result<bool, String>> + Send;
+
+    /// `true` iff `tenant_id` has accepted `dpa_version` (INV-ONBOARD-DPA-FIRST).
+    fn is_dpa_accepted(
+        &self,
+        tenant_id: &str,
+        dpa_version: &str,
+    ) -> impl std::future::Future<Output = Result<bool, String>> + Send;
+
+    /// `true` iff `tenant_id` already has an `active` subscription.
+    fn has_active_subscription(
+        &self,
+        tenant_id: &str,
+    ) -> impl std::future::Future<Output = Result<bool, String>> + Send;
+
+    /// Persist a paid-tier pending-checkout: UPDATE `tier_selections` to
+    /// `pending_checkout` + map `stripe_customer_id` + INSERT the
+    /// `stripe_checkout_sessions` row — atomically per WI §6.7.
+    fn persist_pending_checkout(
+        &self,
+        tenant_id: &str,
+        tier: RequestedTier,
+        created: &CheckoutCreated,
+        now_ms: i64,
+        correlation_id: &str,
+    ) -> impl std::future::Future<Output = Result<(), String>> + Send;
+
+    /// Persist an instant free-tier activation.
+    fn persist_free_active(
+        &self,
+        tenant_id: &str,
+        now_ms: i64,
+        correlation_id: &str,
+    ) -> impl std::future::Future<Output = Result<(), String>> + Send;
+
+    /// Release the row lock (best-effort; lock also self-expires at 60s).
+    fn release_lock(
+        &self,
+        tenant_id: &str,
+    ) -> impl std::future::Future<Output = Result<(), String>> + Send;
+}
+
+/// Create a Stripe Checkout Session for a paid tier. Isolated so the
+/// orchestration is testable without real HTTP. The production adapter
+/// calls `corelink_stripe_real::StripeRealClient` (sync, `reqwest::blocking`)
+/// via `tokio::task::spawn_blocking`.
+pub trait CheckoutCreator {
+    /// Create the hosted Checkout Session, or `Err` (→ 502 `stripe_unavailable`).
+    fn create(
+        &self,
+        tenant_id: &str,
+        tier: RequestedTier,
+        success_url: &str,
+        cancel_url: &str,
+    ) -> impl std::future::Future<Output = Result<CheckoutCreated, String>> + Send;
+}
+
+/// Minimal audit seam — the production sink writes the durable audit-chain
+/// record. The orchestration calls `emit` BEFORE every state mutation; an
+/// `Err` ABORTS (fail-CLOSED, INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER).
+pub trait TierSelectAudit {
+    /// Emit `event` for `tenant_id`. `Err` aborts the orchestration.
+    fn emit(
+        &self,
+        event: &'static str,
+        tenant_id: &str,
+        correlation_id: &str,
+    ) -> impl std::future::Future<Output = Result<(), String>> + Send;
+}
+
+/// The fail-CLOSED orchestration. Order (identical to
+/// `corelink_tier_selection::ledger::select_tier`, whose 10k-iter property
+/// tests pin these invariants):
+///   1. audit `tier_select_attempted` BEFORE any state read/mutation
+///   2. acquire durable lock        → `LockHeld` (409) if held
+///   3. INV-ONBOARD-DPA-FIRST       → `DpaRequired` (403) if not accepted
+///   4. UNIQUE active subscription  → `AlreadyActive` (409) if active
+///   5. free → instant activate; paid → Stripe Checkout (only AFTER DPA)
+///   6. persist; release lock
+/// The lock is released on every terminal error path so the tenant can retry.
+#[allow(clippy::too_many_arguments)]
+pub async fn orchestrate_tier_select<S, C, A>(
+    store: &S,
+    checkout: &C,
+    audit: &A,
+    tenant_id: &str,
+    tier: RequestedTier,
+    success_url: &str,
+    cancel_url: &str,
+    dpa_version: &str,
+    now_ms: i64,
+    correlation_id: &str,
+) -> Result<TierSelectResponse, TierSelectHttpError>
+where
+    S: TierSelectStore + Sync,
+    C: CheckoutCreator + Sync,
+    A: TierSelectAudit + Sync,
+{
+    // (1) Audit BEFORE any state read/mutation (fail-CLOSED).
+    audit
+        .emit("tier_select_attempted", tenant_id, correlation_id)
+        .await
+        .map_err(|_| TierSelectHttpError::Internal)?;
+
+    // (2) Durable lock — cross-isolate mutex held across the Stripe call.
+    let acquired = store
+        .acquire_lock(tenant_id, now_ms, correlation_id)
+        .await
+        .map_err(|_| TierSelectHttpError::Internal)?;
+    if !acquired {
+        return Err(TierSelectHttpError::LockHeld);
+    }
+
+    // From here, ALWAYS release the lock on a terminal error.
+    let result =
+        orchestrate_locked(store, checkout, audit, tenant_id, tier, success_url, cancel_url, dpa_version, now_ms, correlation_id)
+            .await;
+    if result.is_err() {
+        // Best-effort release; the 60s window also self-expires.
+        let _ = store.release_lock(tenant_id).await;
+    }
+    result
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn orchestrate_locked<S, C, A>(
+    store: &S,
+    checkout: &C,
+    audit: &A,
+    tenant_id: &str,
+    tier: RequestedTier,
+    success_url: &str,
+    cancel_url: &str,
+    dpa_version: &str,
+    now_ms: i64,
+    correlation_id: &str,
+) -> Result<TierSelectResponse, TierSelectHttpError>
+where
+    S: TierSelectStore + Sync,
+    C: CheckoutCreator + Sync,
+    A: TierSelectAudit + Sync,
+{
+    // (3) INV-ONBOARD-DPA-FIRST — BEFORE any Stripe call, ALL tiers.
+    let dpa_ok = store
+        .is_dpa_accepted(tenant_id, dpa_version)
+        .await
+        .map_err(|_| TierSelectHttpError::Internal)?;
+    if !dpa_ok {
+        audit
+            .emit("dpa_first_violation_attempt", tenant_id, correlation_id)
+            .await
+            .map_err(|_| TierSelectHttpError::Internal)?;
+        return Err(TierSelectHttpError::DpaRequired);
+    }
+
+    // (4) At most one active subscription per tenant.
+    let active = store
+        .has_active_subscription(tenant_id)
+        .await
+        .map_err(|_| TierSelectHttpError::Internal)?;
+    if active {
+        return Err(TierSelectHttpError::AlreadyActive);
+    }
+
+    // (5) Dispatch.
+    if tier.is_paid() {
+        // Stripe call ONLY after the DPA gate passed.
+        let created = checkout
+            .create(tenant_id, tier, success_url, cancel_url)
+            .await
+            .map_err(|_| TierSelectHttpError::StripeUnavailable)?;
+        // Defense-in-depth: never hand back a non-TLS Checkout URL.
+        if !created.checkout_url.starts_with("https://") {
+            return Err(TierSelectHttpError::StripeUnavailable);
+        }
+        // Audit BEFORE the mirror mutation.
+        audit
+            .emit("stripe_checkout_session_created", tenant_id, correlation_id)
+            .await
+            .map_err(|_| TierSelectHttpError::Internal)?;
+        store
+            .persist_pending_checkout(tenant_id, tier, &created, now_ms, correlation_id)
+            .await
+            .map_err(|_| TierSelectHttpError::Internal)?;
+        let _ = store.release_lock(tenant_id).await;
+        Ok(TierSelectResponse {
+            checkout_url: Some(created.checkout_url),
+            session_id: created.session_id,
+        })
+    } else {
+        // Free — instant activation, no Stripe.
+        audit
+            .emit("tier_activated_free", tenant_id, correlation_id)
+            .await
+            .map_err(|_| TierSelectHttpError::Internal)?;
+        store
+            .persist_free_active(tenant_id, now_ms, correlation_id)
+            .await
+            .map_err(|_| TierSelectHttpError::Internal)?;
+        let _ = store.release_lock(tenant_id).await;
+        Ok(TierSelectResponse {
+            checkout_url: None,
+            session_id: format!("free_activation:{tenant_id}"),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    fn state() -> TierSelectRouteState {
+        TierSelectRouteState {
+            internal_auth_key: Arc::from("super-secret-internal-key"),
+        }
+    }
+
+    fn req(tier: &str) -> TierSelectRequest {
+        TierSelectRequest {
+            tier: tier.to_owned(),
+            success_url: "https://app.corelink.humangr.com/en/upgraded?session_id={CHECKOUT_SESSION_ID}".to_owned(),
+            cancel_url: "https://app.corelink.humangr.com/en/pricing".to_owned(),
+        }
+    }
+
+    fn headers(auth: Option<&str>, tenant: Option<&str>) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        if let Some(a) = auth {
+            h.insert(INTERNAL_AUTH_HEADER, HeaderValue::from_str(a).unwrap());
+        }
+        if let Some(t) = tenant {
+            h.insert(TENANT_HEADER, HeaderValue::from_str(t).unwrap());
+        }
+        h
+    }
+
+    #[test]
+    fn rejects_missing_internal_auth() {
+        let h = headers(None, Some("tenant-abc"));
+        let e = authorize_and_validate(&state(), &h, &req("pro")).unwrap_err();
+        assert_eq!(e, TierSelectHttpError::Unauthenticated);
+    }
+
+    #[test]
+    fn rejects_wrong_internal_auth() {
+        let h = headers(Some("wrong-key"), Some("tenant-abc"));
+        let e = authorize_and_validate(&state(), &h, &req("pro")).unwrap_err();
+        assert_eq!(e, TierSelectHttpError::Unauthenticated);
+    }
+
+    #[test]
+    fn rejects_missing_verified_tenant_even_with_valid_auth() {
+        // Fail-CLOSED: valid internal auth but NO verified tenant header
+        // must NOT proceed (no `_unknown` default).
+        let h = headers(Some("super-secret-internal-key"), None);
+        let e = authorize_and_validate(&state(), &h, &req("pro")).unwrap_err();
+        assert_eq!(e, TierSelectHttpError::NoVerifiedTenant);
+    }
+
+    #[test]
+    fn rejects_empty_verified_tenant() {
+        let h = headers(Some("super-secret-internal-key"), Some("   "));
+        let e = authorize_and_validate(&state(), &h, &req("pro")).unwrap_err();
+        assert_eq!(e, TierSelectHttpError::NoVerifiedTenant);
+    }
+
+    #[test]
+    fn enterprise_routes_to_inquiry_form() {
+        let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
+        let e = authorize_and_validate(&state(), &h, &req("enterprise")).unwrap_err();
+        assert_eq!(e, TierSelectHttpError::UseInquiryForm);
+    }
+
+    #[test]
+    fn rejects_unknown_tier() {
+        let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
+        let e = authorize_and_validate(&state(), &h, &req("platinum")).unwrap_err();
+        assert_eq!(e, TierSelectHttpError::BadRequest);
+    }
+
+    #[test]
+    fn rejects_non_https_redirect_for_paid_tier() {
+        let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
+        let mut bad = req("pro");
+        bad.success_url = "http://evil.example/upgraded".to_owned();
+        let e = authorize_and_validate(&state(), &h, &bad).unwrap_err();
+        assert_eq!(e, TierSelectHttpError::BadRequest);
+    }
+
+    #[test]
+    fn accepts_valid_paid_request() {
+        let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
+        let (tenant, tier) = authorize_and_validate(&state(), &h, &req("pro")).unwrap();
+        assert_eq!(tenant, "tenant-abc");
+        assert_eq!(tier, RequestedTier::Pro);
+        assert!(tier.is_paid());
+    }
+
+    #[test]
+    fn accepts_free_without_https_constraint() {
+        // free does not hit Stripe → the https redirect constraint is not
+        // applied (the free path has no Checkout redirect).
+        let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
+        let mut free = req("free");
+        free.success_url = "http://localhost:3000/welcome".to_owned();
+        let (_t, tier) = authorize_and_validate(&state(), &h, &free).unwrap();
+        assert_eq!(tier, RequestedTier::Free);
+        assert!(!tier.is_paid());
+    }
+
+    #[test]
+    fn tier_parse_is_case_insensitive_and_trims() {
+        assert_eq!(RequestedTier::parse_self_serve("  PRO "), ParsedTier::Tier(RequestedTier::Pro));
+        assert_eq!(RequestedTier::parse_self_serve("Enterprise"), ParsedTier::Enterprise);
+        assert_eq!(RequestedTier::parse_self_serve(""), ParsedTier::Invalid);
+    }
+
+    // ── orchestration (durable heart) — adversarial coverage ───────────────
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct MemStore {
+        /// Tenants holding a live lock.
+        locks: Mutex<HashSet<String>>,
+        /// Tenants that have accepted the current DPA.
+        dpa_accepted: HashSet<String>,
+        /// Tenants with an active subscription.
+        active: HashSet<String>,
+        /// Persisted side-effects (for assertions).
+        persisted: Mutex<Vec<String>>,
+        /// Force `acquire_lock` to report "already held".
+        lock_already_held: bool,
+    }
+
+    impl TierSelectStore for MemStore {
+        async fn acquire_lock(&self, t: &str, _now: i64, _cid: &str) -> Result<bool, String> {
+            if self.lock_already_held {
+                return Ok(false);
+            }
+            let mut g = self.locks.lock().unwrap();
+            Ok(g.insert(t.to_owned()))
+        }
+        async fn is_dpa_accepted(&self, t: &str, _v: &str) -> Result<bool, String> {
+            Ok(self.dpa_accepted.contains(t))
+        }
+        async fn has_active_subscription(&self, t: &str) -> Result<bool, String> {
+            Ok(self.active.contains(t))
+        }
+        async fn persist_pending_checkout(
+            &self,
+            t: &str,
+            _tier: RequestedTier,
+            _c: &CheckoutCreated,
+            _now: i64,
+            _cid: &str,
+        ) -> Result<(), String> {
+            self.persisted.lock().unwrap().push(format!("paid:{t}"));
+            Ok(())
+        }
+        async fn persist_free_active(&self, t: &str, _now: i64, _cid: &str) -> Result<(), String> {
+            self.persisted.lock().unwrap().push(format!("free:{t}"));
+            Ok(())
+        }
+        async fn release_lock(&self, t: &str) -> Result<(), String> {
+            self.locks.lock().unwrap().remove(t);
+            Ok(())
+        }
+    }
+
+    /// Checkout creator that records whether it was called (to prove the
+    /// DPA-first ordering: Stripe MUST NOT be hit when DPA is not accepted).
+    #[derive(Default)]
+    struct SpyCheckout {
+        called: Mutex<bool>,
+        fail: bool,
+    }
+    impl CheckoutCreator for SpyCheckout {
+        async fn create(
+            &self,
+            _t: &str,
+            _tier: RequestedTier,
+            _s: &str,
+            _c: &str,
+        ) -> Result<CheckoutCreated, String> {
+            *self.called.lock().unwrap() = true;
+            if self.fail {
+                return Err("stripe down".into());
+            }
+            Ok(CheckoutCreated {
+                checkout_url: "https://checkout.stripe.com/c/pay/cs_test_123".into(),
+                session_id: "cs_test_123".into(),
+                stripe_customer_id: "cus_123".into(),
+            })
+        }
+    }
+
+    #[derive(Default)]
+    struct SpyAudit {
+        events: Mutex<Vec<String>>,
+        fail_on: Option<&'static str>,
+    }
+    impl TierSelectAudit for SpyAudit {
+        async fn emit(&self, e: &'static str, _t: &str, _c: &str) -> Result<(), String> {
+            if self.fail_on == Some(e) {
+                return Err("audit sink down".into());
+            }
+            self.events.lock().unwrap().push(e.to_owned());
+            Ok(())
+        }
+    }
+
+    async fn run(
+        store: MemStore,
+        checkout: SpyCheckout,
+        audit: SpyAudit,
+        tier: RequestedTier,
+    ) -> (Result<TierSelectResponse, TierSelectHttpError>, MemStore, SpyCheckout, SpyAudit) {
+        let r = orchestrate_tier_select(
+            &store, &checkout, &audit, "tenant-x", tier,
+            "https://app/upgraded", "https://app/pricing", "v3", 1_700_000_000_000, "corr-1",
+        )
+        .await;
+        (r, store, checkout, audit)
+    }
+
+    #[tokio::test]
+    async fn paid_happy_path_returns_checkout_url_and_persists() {
+        let mut store = MemStore::default();
+        store.dpa_accepted.insert("tenant-x".into());
+        let (r, store, checkout, _a) = run(store, SpyCheckout::default(), SpyAudit::default(), RequestedTier::Pro).await;
+        let resp = r.unwrap();
+        assert_eq!(resp.checkout_url.as_deref(), Some("https://checkout.stripe.com/c/pay/cs_test_123"));
+        assert_eq!(resp.session_id, "cs_test_123");
+        assert!(*checkout.called.lock().unwrap());
+        assert_eq!(*store.persisted.lock().unwrap(), vec!["paid:tenant-x"]);
+        assert!(store.locks.lock().unwrap().is_empty(), "lock released after success");
+    }
+
+    #[tokio::test]
+    async fn dpa_not_accepted_blocks_before_stripe() {
+        // INV-ONBOARD-DPA-FIRST: no DPA acceptance → 403 and Stripe is NEVER called.
+        let (r, store, checkout, _a) =
+            run(MemStore::default(), SpyCheckout::default(), SpyAudit::default(), RequestedTier::Pro).await;
+        assert_eq!(r.unwrap_err(), TierSelectHttpError::DpaRequired);
+        assert!(!*checkout.called.lock().unwrap(), "Stripe MUST NOT be called when DPA not accepted");
+        assert!(store.persisted.lock().unwrap().is_empty());
+        assert!(store.locks.lock().unwrap().is_empty(), "lock released on DPA reject");
+    }
+
+    #[tokio::test]
+    async fn lock_held_returns_409_without_touching_stripe() {
+        let mut store = MemStore::default();
+        store.dpa_accepted.insert("tenant-x".into());
+        store.lock_already_held = true;
+        let (r, _s, checkout, _a) = run(store, SpyCheckout::default(), SpyAudit::default(), RequestedTier::Pro).await;
+        assert_eq!(r.unwrap_err(), TierSelectHttpError::LockHeld);
+        assert!(!*checkout.called.lock().unwrap());
+    }
+
+    #[tokio::test]
+    async fn already_active_blocks_without_touching_stripe() {
+        let mut store = MemStore::default();
+        store.dpa_accepted.insert("tenant-x".into());
+        store.active.insert("tenant-x".into());
+        let (r, _s, checkout, _a) = run(store, SpyCheckout::default(), SpyAudit::default(), RequestedTier::Team).await;
+        assert_eq!(r.unwrap_err(), TierSelectHttpError::AlreadyActive);
+        assert!(!*checkout.called.lock().unwrap());
+    }
+
+    #[tokio::test]
+    async fn stripe_failure_maps_to_502_and_releases_lock() {
+        let mut store = MemStore::default();
+        store.dpa_accepted.insert("tenant-x".into());
+        let checkout = SpyCheckout { fail: true, ..Default::default() };
+        let (r, store, _c, _a) = run(store, checkout, SpyAudit::default(), RequestedTier::Starter).await;
+        assert_eq!(r.unwrap_err(), TierSelectHttpError::StripeUnavailable);
+        assert!(store.persisted.lock().unwrap().is_empty());
+        assert!(store.locks.lock().unwrap().is_empty(), "lock released on Stripe failure");
+    }
+
+    #[tokio::test]
+    async fn audit_failure_aborts_before_any_mutation() {
+        // Fail-CLOSED: a failing audit on the FIRST event aborts → 500, no lock, no Stripe.
+        let mut store = MemStore::default();
+        store.dpa_accepted.insert("tenant-x".into());
+        let audit = SpyAudit { fail_on: Some("tier_select_attempted"), ..Default::default() };
+        let (r, store, checkout, _a) = run(store, SpyCheckout::default(), audit, RequestedTier::Pro).await;
+        assert_eq!(r.unwrap_err(), TierSelectHttpError::Internal);
+        assert!(!*checkout.called.lock().unwrap());
+        assert!(store.persisted.lock().unwrap().is_empty());
+        assert!(store.locks.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn free_tier_activates_instantly_without_stripe() {
+        let mut store = MemStore::default();
+        store.dpa_accepted.insert("tenant-x".into());
+        let (r, store, checkout, _a) = run(store, SpyCheckout::default(), SpyAudit::default(), RequestedTier::Free).await;
+        let resp = r.unwrap();
+        assert!(resp.checkout_url.is_none());
+        assert!(!*checkout.called.lock().unwrap(), "free tier never calls Stripe");
+        assert_eq!(*store.persisted.lock().unwrap(), vec!["free:tenant-x"]);
+    }
+}

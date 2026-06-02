@@ -24,6 +24,16 @@ Each entry cross-references:
 
 ### Added
 
+- **Self-serve tier-select checkout backend — ironclad core** (WI-S19-004 PRR
+  wiring). `crates/corelink-container/src/routes/tier_select.rs`: the
+  transport-agnostic, fail-CLOSED core of `POST /v1/onboarding/tier-select`.
+  Constant-time internal-auth gate + edge-verified `x-corelink-tenant-id` only
+  (no client-supplied tenant) + the durable orchestration behind
+  `TierSelectStore` / `CheckoutCreator` / `TierSelectAudit` trait seams:
+  audit-before-mutate; INV-ONBOARD-DPA-FIRST (Stripe is never called without DPA,
+  proven by spy); durable 60s lock → 409; UNIQUE active subscription → 409;
+  Stripe failure → 502 + lock release; free → instant. 17 adversarial tests.
+  Production D1/Stripe adapters + the route mount land in a follow-up.
 - Customer-facing CHANGELOG generation tooling (`scripts/generate-changelog.sh`)
   and PR-level enforcement workflow (`.github/workflows/changelog-validate.yml`).
 - Customer-facing **release-notes auto-generator** (`scripts/generate-release-notes.py`)
