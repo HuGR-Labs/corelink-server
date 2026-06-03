@@ -109,6 +109,17 @@ Each entry cross-references:
   (today … today-6) the downstream paginated CF-API-v4 R2 walk consumes
   unchanged. Date computation only — the audit-chain verification logic is
   untouched. (`.github/workflows/audit-chain-daily-verify.yml`.)
+- **`ffi-matrix-ci` pyo3 build → system python3 (≥ 3.10).** The Rust
+  unit-test job (`rust-unit`, plus `cross-language-verify`) in
+  `.github/workflows/ffi-matrix-ci.yml` compiles `corelink-py`, which pulls
+  `pyo3` with `abi3-py310` and therefore requires an interpreter ≥ 3.10. The
+  job had no working Python pin (setup-python is broken on the self-hosted
+  fleet — it provisions into an unwritable `/Users/runner`), so pyo3
+  auto-detected a stale 3.8 on PATH and failed with `cannot set a minimum
+  Python version 3.10 higher than the interpreter version 3.8 (abi3-py310)`.
+  Set `PYO3_PYTHON: python3` at job level so pyo3 builds against the fleet's
+  system `python3` (3.14), which satisfies the abi3-py310 floor. FFI matrix
+  logic unchanged.
 - **Welcome greeting → native `gh` (Docker-on-mac keystone).** The
   first-PR welcome workflow used `actions/first-interaction` — a Docker
   *container action* (Linux-only) that hard-failed `Container action is only
