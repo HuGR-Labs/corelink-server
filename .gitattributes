@@ -1,0 +1,2 @@
+# Append-only changelog: auto-resolve parallel-PR conflicts by keeping both sides.
+CHANGELOG.md merge=union
