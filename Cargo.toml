@@ -529,7 +529,13 @@ corelink-crypto = { path = "crates/corelink-crypto" }
 # aggregator (10 absorbed crates per spec §4 + §6 Stream A).
 corelink-cas = { path = "crates/corelink-cas" }
 corelink-tenant-path = { path = "crates/tenant-path" }
-corelink-hash = { path = "crates/corelink-hash" }
+# `version` is REQUIRED here (not just `path`): both corelink-hash and its
+# consumer corelink-client-verify are `publish = true` (OSS SDK crates), and
+# crates.io rejects a publishable crate that depends on a path-only dep with
+# no version. cargo-deny `bans.wildcards` enforces this (allow-wildcard-paths
+# does not apply to public crates). Keep in lockstep with the workspace
+# [package].version (0.1.0).
+corelink-hash = { path = "crates/corelink-hash", version = "0.1.0" }
 corelink-worker = { path = "crates/corelink-worker" }
 corelink-meta = { path = "crates/corelink-meta" }
 corelink-reapi = { path = "crates/corelink-reapi" }

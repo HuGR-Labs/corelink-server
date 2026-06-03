@@ -371,6 +371,26 @@ Each entry cross-references:
   §14.s12.004.1 tooling-pin review) was **ratified by Owner + techlead on
   2026-06-02** — required for CVSS-4.0 parsing, MSRV 1.85 ≤ repo 1.91.1; this
   satisfies the §14.s12.004.1 ADR + Security review for the bump.
+- **`cargo-deny` CI gate native-ized on the macOS fleet + masked supply-chain
+  findings closed** (the promised `cargo-deny` follow-up above). The
+  `EmbarkStudios/cargo-deny-action` is a Docker container action (Linux-only)
+  and hard-failed on every macOS runner with "Container action is only
+  supported on Linux" — so the gate had been RED at an *infra* step before its
+  real policy check ever ran. Replaced that step in both `cargo-deny.yml` and
+  `cas_foundation.yml::cargo-deny` with the same native path
+  `dependabot-policy.yml` already uses (`dtolnay/rust-toolchain` +
+  `taiki-e/install-action` pinning `cargo-deny@0.16.4`, all SHA-pinned). With
+  the gate finally able to run, it surfaced TWO genuine findings it had been
+  masking, both now closed: (1) `RUSTSEC-2025-0119` — `number_prefix` 0.4.0
+  unmaintained-ONLY (no vuln), reached solely via `indicatif 0.17.11 →
+  corelink-cli` with no safe upgrade available; added to `deny.toml`
+  `[advisories].ignore` with a re-evaluate-on-indicatif-bump justification.
+  (2) a `bans.wildcards` violation — the publishable `corelink-client-verify`
+  (`publish = true`, OSS SDK) depended on `corelink-hash` via a path-only
+  workspace dep, which crates.io disallows for public crates; added `version =
+  "0.1.0"` to the `corelink-hash` workspace dep (in lockstep with the
+  workspace `[package].version`). No `publish = false` anywhere. cargo-deny now
+  exits 0 (`advisories ok, bans ok, licenses ok, sources ok`).
 - **Secrets-matrix verify-gate scanned build output** — both validators
   (`scripts/secrets-checklist-verify.sh`, `scripts/validate_secrets_matrix.py`)
   walked gitignored `.open-next`/`.wrangler` bundles, whose embedded
