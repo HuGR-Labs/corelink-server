@@ -80,6 +80,25 @@ Each entry cross-references:
 
 ### Fixed
 
+- **Key Python CI validators → system `python3` (setup-python is unprovisionable
+  on the mac fleet).** Five validation workflows — `spec_validation`,
+  `openapi-validate`, `canonical-consistency`, `dashboard_validation`,
+  `api-deprecation-check` — used `actions/setup-python`, which hard-failed
+  fleet-wide with `mkdir: /Users/runner: Permission denied`: on the self-hosted
+  macOS runners `RUNNER_TOOL_CACHE` is unset, so the action falls back to the
+  GitHub-hosted default `/Users/runner` tool-cache path, which is unwritable and
+  not overridable without sudo. Every one of these jobs died at the *Set up
+  Python* step before reaching its `python3 scripts/*.py` payload. Dropped the
+  `setup-python` step from each and run on the system `python3` (3.14.5, present
+  on every runner) — the same fix proven green on `main` since #75 for
+  `action-sha-audit` + `secrets-drift`. The three workflows that `pip install`
+  deps (`spec_validation` → `requirements-ci.txt`; `openapi-validate` →
+  `pyyaml`/`openapi-spec-validator`; `api-deprecation-check` → `pyyaml`) now
+  isolate those deps in a repo-local venv (system Python is externally-managed)
+  and prepend the venv `bin` to `$GITHUB_PATH` so subsequent steps resolve it;
+  the two stdlib-only workflows (`canonical-consistency`, `dashboard_validation`)
+  just drop the step. `python3 scripts/validate_specs.py` → 463/0 on the system
+  interpreter; all five `actionlint` clean.
 - **Welcome greeting → native `gh` (Docker-on-mac keystone).** The
   first-PR welcome workflow used `actions/first-interaction` — a Docker
   *container action* (Linux-only) that hard-failed `Container action is only
