@@ -11,8 +11,18 @@ name: cargo-audit (WI-S12-004)
 # Implements: WI-S12-004 §6.1.1 (ST-001)
 # Cap: CAP-SUPPLY-004 (cargo-audit daily + cargo-deny policy + Dependabot)
 #
+# Advisory waivers: cargo-audit auto-loads `.cargo/audit.toml` from the repo
+# root (this job's working dir). Its `[advisories].ignore` list MIRRORS
+# `deny.toml` `[advisories].ignore` — both gates waive the SAME already-ratified
+# RUSTSEC ids (rsa Marvin RUSTSEC-2023-0071, number_prefix RUSTSEC-2025-0119,
+# rustls-pemfile RUSTSEC-2025-0134), keeping a single logical source of truth.
+# `--deny warnings` still fails on ANY advisory NOT in that list. To add/remove
+# a waiver: ADR + Security review, and update BOTH `.cargo/audit.toml` + deny.toml.
+#
 # SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin policy.
-# Version bump requires ADR + Security review (§14.s12.004.1).
+# Version bump requires ADR + Security review (§14.s12.004.1) — the 0.21.2→0.22.1
+# bump below was ratified by Owner + techlead 2026-06-02 (§14.s12.004.1 review;
+# needed for CVSS-4.0 parsing, MSRV 1.85 ≤ repo 1.91.1).
 
 on:
   pull_request:
@@ -22,6 +32,7 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'deny.toml'
+      - '.cargo/audit.toml'   # advisory-waiver list — re-run the gate if it changes
       - '.github/workflows/cargo-audit.yml'
   push:
     branches: [main]
@@ -49,7 +60,22 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   # Pinned cargo-audit version — bump via ADR + Security review (§14.s12.004.1).
-  CARGO_AUDIT_VERSION: "0.21.2"
+  #
+  # Bumped 0.21.2 → 0.22.1 (2026-06-02): 0.21.2's bundled `cvss` crate predates
+  # CVSS-4.0 support (added in `cvss` 2.1.0, 2025-06-06), so it ABORTED the
+  # ENTIRE advisory-DB load on the first CVSS-4.0 advisory now present upstream
+  # (RUSTSEC-2026-0073, `cvss = "CVSS:4.0/…"` → "TOML parse error at line 5,
+  # col 8 — unsupported CVSS version: 4.0"). `rustsec` propagates that first
+  # per-advisory parse error and stops, so one modern advisory left this repo
+  # silently UN-AUDITED — NOT a real CVE in our deps. cargo-audit 0.22.1
+  # (rustsec lib 0.32 / `cvss` 2.2.0) parses CVSS 4.0. MSRV 1.85 ≤ repo 1.91.1.
+  CARGO_AUDIT_VERSION: "0.22.1"
+  # SHA-pinned RUSTSEC advisory database for deterministic, reproducible audits
+  # (defense-in-depth + so a PR result never flakes on upstream DB churn). This
+  # commit was verified loadable by the pinned cargo-audit above (all 1082
+  # advisories, incl. the CVSS-4.0 ones). Bump deliberately to advance the floor.
+  ADVISORY_DB_REPO: "https://github.com/rustsec/advisory-db"
+  ADVISORY_DB_COMMIT: "501c03f38eadd16a79d6712df424fd7d38369088" # 2026-06-02
 
 jobs:
   # -----------------------------------------------------------------------
@@ -75,11 +101,27 @@ jobs:
           cargo install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked --quiet
           cargo audit --version
 
+      - name: Fetch pinned advisory database
+        # Check out the SHA-pinned advisory DB into a workspace-local path so the
+        # audit is deterministic + reproducible and cannot be broken by a
+        # malformed file that may land on the live upstream tip. Partial clone
+        # keeps it cheap; we then pin to the exact vetted commit.
+        run: |
+          rm -rf advisory-db
+          git clone --filter=blob:none --no-checkout "$ADVISORY_DB_REPO" advisory-db
+          git -C advisory-db checkout --quiet "$ADVISORY_DB_COMMIT"
+          echo "advisory-db pinned to $(git -C advisory-db rev-parse HEAD)"
+
       - name: Run cargo-audit (PR mode — deny warnings)
         # `--deny warnings` maps advisory `unmaintained`, `notice`, `yanked`
         # to exit-code 1.  Any CRITICAL or HIGH advisory (vulnerability) also
         # fails. This is the INV-SUPPLY-NO-YANKED enforcement gate.
-        run: cargo audit --deny warnings
+        # `--db` + `--no-fetch` + `--stale` use the SHA-pinned DB checked out
+        # above (no live fetch), so the gate is fully reproducible.
+        # Waivers come from `.cargo/audit.toml` `[advisories].ignore` (auto-loaded
+        # from the repo root), which mirrors deny.toml — only the 3 already-
+        # ratified ids are skipped; any NEW advisory still exits 1.
+        run: cargo audit --db advisory-db --no-fetch --stale --deny warnings
 
   # -----------------------------------------------------------------------
   # Daily cron: advisory scan + JSON classification + SEV alerting.
@@ -104,13 +146,41 @@ jobs:
           cargo install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked --quiet
           cargo audit --version
 
+      - name: Fetch pinned advisory database (resilience fallback)
+        # Checked-out as a guaranteed-parseable fallback for the cron: the daily
+        # scan still tries the LIVE upstream DB first (so newly-published
+        # advisories are detected within SLA), but if the live DB fails to load
+        # (e.g. a malformed upstream advisory file — the bug this gate hit), it
+        # falls back to this SHA-pinned vetted-good DB so the repo is NEVER left
+        # un-audited. Real advisories present in the pinned DB still fail/alert.
+        run: |
+          rm -rf advisory-db
+          git clone --filter=blob:none --no-checkout "$ADVISORY_DB_REPO" advisory-db
+          git -C advisory-db checkout --quiet "$ADVISORY_DB_COMMIT"
+          echo "advisory-db pinned to $(git -C advisory-db rev-parse HEAD)"
+
       - name: Run cargo-audit (cron mode — JSON output)
         id: audit
-        # Exit code 0 = clean; non-zero = findings present.
-        # We capture both and parse below; failure is surfaced via alert.
+        # Try the LIVE upstream DB first for freshest detection. If its load
+        # fails (parse error / fetch failure), fall back to the SHA-pinned DB so
+        # the cron always produces a parseable report instead of going dark.
+        # A valid report (clean or with findings) is JSON; a DB-load failure is
+        # a non-JSON error string — that is how we detect the fallback case.
+        # The same `.cargo/audit.toml` waivers (mirroring deny.toml) apply here,
+        # so the 3 already-ratified ids do not fire false SEV alerts; any NEW
+        # upstream advisory is still surfaced + classified as before.
         run: |
-          cargo audit --json > /tmp/audit-report.json 2>&1 || true
-          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          set +e
+          cargo audit --json > /tmp/audit-report.json 2>/tmp/audit-stderr.txt
+          live_exit=$?
+          if ! python3 -c 'import json,sys; json.load(open("/tmp/audit-report.json"))' 2>/dev/null; then
+            echo "::warning::Live advisory DB failed to load (exit $live_exit) — falling back to SHA-pinned DB ${ADVISORY_DB_COMMIT}"
+            cat /tmp/audit-stderr.txt || true
+            cargo audit --db advisory-db --no-fetch --stale --json > /tmp/audit-report.json 2>/tmp/audit-stderr.txt
+            echo "db_source=pinned" >> "$GITHUB_OUTPUT"
+          else
+            echo "db_source=live" >> "$GITHUB_OUTPUT"
+          fi
           cat /tmp/audit-report.json
 
       - name: Classify findings + emit SEV alerts

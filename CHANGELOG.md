@@ -328,6 +328,49 @@ Each entry cross-references:
   migration, the Docker-on-mac `cargo-deny` / tfsec / welcome conversions, and
   the supply-chain findings the broken `cargo-deny` was masking — land in a
   dedicated follow-up rather than a per-PR avalanche on the 5-runner Mac.
+- **`cargo-audit` supply-chain gate was un-auditable — pinned tool too old for
+  CVSS-4.0 advisories.** The daily cron (and PR gate) hard-failed at advisory-DB
+  load with `error loading advisory database: … RUSTSEC-2026-0073.md: TOML parse
+  error at line 5, column 8 — unsupported CVSS version: 4.0`. Root cause: the
+  pinned `cargo-audit` `0.21.2` bundles a pre-4.0 `cvss` crate (CVSS-4.0 support
+  landed in `cvss` 2.1.0, 2025-06-06), so it rejected the `cvss = "CVSS:4.0/…"`
+  field on the first CVSS-4.0 advisory now present upstream. `rustsec`'s DB
+  loader propagates that first per-advisory parse error and aborts the *entire*
+  load (`Entries::load_file(path)?` in `database.rs`), so one modern advisory
+  silently left the whole repo **un-audited** — NOT a real CVE in our dependency
+  tree, and NOT fixable by pinning advisory-db (no DB commit is loadable by an
+  older-than-CVSS-4.0 tool). Fix: bump `cargo-audit` `0.21.2 → 0.22.1` (rustsec
+  lib 0.32 / `cvss` 2.2.0, which parses CVSS 4.0; MSRV 1.85 ≤ repo 1.91.1) —
+  governed by ADR-S12-045 §6 / §14.s12.004.1 (tooling-pin bump → ADR + Security
+  review; this PR's `/techlead` + Owner sign-off is that review). Additionally
+  SHA-pinned the advisory DB for deterministic, reproducible audits (both jobs
+  `git clone` + `git checkout` a vetted-good `rustsec/advisory-db` commit,
+  `501c03f38eadd16a79d6712df424fd7d38369088`, 2026-06-02 — verified loadable by
+  the bumped tool across all 1082 advisories incl. CVSS-4.0) and run
+  `cargo audit --db <pinned> --no-fetch --stale`. The PR gate stays fail-closed
+  (`--deny warnings`); the cron tries the live upstream DB first (fresh detection
+  within SLA) and falls back to the pinned DB only if the live load fails, so it
+  is never dark again. The CRITICAL→exit-1 / HIGH→warn classifier is unchanged —
+  real RUSTSEC advisories in our deps still fail/alert exactly as before. Bump
+  the pinned commit when refreshing the advisory floor.
+  Un-blinding the gate surfaced 3 advisories that are ALREADY waived in
+  `deny.toml` `[advisories].ignore` (so cargo-deny and cargo-audit must agree):
+  `RUSTSEC-2023-0071` (rsa Marvin sidechannel — signing-only on operator inputs,
+  mitigated, ADR-S20-RSA-MARVIN-MITIGATION), `RUSTSEC-2025-0119` (number_prefix
+  unmaintained, via `indicatif → corelink-cli`, operator tool only; also added
+  to `deny.toml` by #77), and `RUSTSEC-2025-0134` (rustls-pemfile unmaintained,
+  dev/test-only via `bollard → testcontainers`). Mirrored those exact 3 ids
+  (with the same justifications) into a new committed **`.cargo/audit.toml`**
+  `[advisories].ignore` — auto-loaded by `cargo audit` from the repo root — so
+  cargo-audit waives EXACTLY what `deny.toml` already waives (one logical source
+  of truth, two tools), with a header cross-reference keeping the two in sync.
+  Nothing not already in `deny.toml` is ignored; any NEW/unwaived advisory still
+  exits 1 (verified: `.cargo/audit.toml` ignoring an unrelated id still fails on
+  the live finding).
+  Ratification: the `cargo-audit` `0.21.2 → 0.22.1` bump (ADR-S12-045 §6 /
+  §14.s12.004.1 tooling-pin review) was **ratified by Owner + techlead on
+  2026-06-02** — required for CVSS-4.0 parsing, MSRV 1.85 ≤ repo 1.91.1; this
+  satisfies the §14.s12.004.1 ADR + Security review for the bump.
 - **Secrets-matrix verify-gate scanned build output** — both validators
   (`scripts/secrets-checklist-verify.sh`, `scripts/validate_secrets_matrix.py`)
   walked gitignored `.open-next`/`.wrangler` bundles, whose embedded
