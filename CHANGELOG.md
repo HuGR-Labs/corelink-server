@@ -129,6 +129,15 @@ Each entry cross-references:
   the customer-facing `bazel-starter-ci` quickstart gate. Added a `MODULE.bazel`
   with `bazel_dep(name = "rules_cc", version = "0.0.17")` (the WORKSPACE
   `http_archive` is kept only as a legacy `--enable_workspace` fallback).
+- **Phantom-Linux-runner nightlies → `workflow_dispatch`-only.**
+  `endurance-2h-nightly` and `load-test-nightly` are pinned to
+  `runs-on: [self-hosted, Linux, X64]`, but the self-hosted fleet is all-macOS
+  (zero Linux runners), so their `schedule:` crons queued forever — perpetually
+  pending / red, never executing. Dropped the `schedule` trigger from both
+  (kept `workflow_dispatch:` so the k6 endurance/load suites can still be run on
+  demand). The `runs-on` pin is intentionally unchanged — these k6 suites are
+  too heavy for the macOS builder fleet (the Mac *is* the fleet). Re-add the
+  nightly `schedule` once a Linux self-hosted runner is registered.
 - **Welcome greeting → native `gh` (Docker-on-mac keystone).** The
   first-PR welcome workflow used `actions/first-interaction` — a Docker
   *container action* (Linux-only) that hard-failed `Container action is only

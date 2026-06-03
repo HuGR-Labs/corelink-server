@@ -1,5 +1,10 @@
 name: load-test-nightly (R3-prep)
 
+# Pinned to [self-hosted, Linux, X64] — no Linux runner currently exists on the
+# fleet; converted to workflow_dispatch-only to stop perpetual queuing. Re-add
+# the nightly `schedule` once a Linux self-hosted runner is registered (these k6
+# suites are too heavy for the macOS builder fleet).
+#
 # R3-prep load test suite — nightly run against staging.
 #
 # Five k6 scenarios cover the critical paths:
@@ -17,10 +22,13 @@ name: load-test-nightly (R3-prep)
 # SHA-pinned per ADR-S12-045 §6 tooling-pin policy.
 
 on:
-  schedule:
-    # Sundays 02:00 UTC — out of normal business + after the weekly
-    # staging redeploy completes (Sat 22:00 UTC).
-    - cron: '0 2 * * 0'
+  # schedule disabled: pinned to [self-hosted, Linux, X64] but no Linux runner
+  # exists on the fleet, so the weekly cron queued forever. Re-add once a Linux
+  # self-hosted runner is registered:
+  #   schedule:
+  #     # Sundays 02:00 UTC — out of normal business + after the weekly
+  #     # staging redeploy completes (Sat 22:00 UTC).
+  #     - cron: '0 2 * * 0'
   workflow_dispatch:
     inputs:
       scenarios:
