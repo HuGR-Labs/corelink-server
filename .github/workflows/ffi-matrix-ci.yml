@@ -27,6 +27,14 @@ jobs:
   rust-unit:
     name: Rust unit tests (FFI crates)
     runs-on: [self-hosted, Linux, X64]
+    # corelink-py pulls pyo3 with abi3-py310, which needs an interpreter
+    # >= 3.10. This job has no setup-python step, so pyo3 auto-detected a
+    # stale 3.8 on the fleet PATH and failed ("cannot set a minimum Python
+    # version 3.10 higher than the interpreter version 3.8"). Pin pyo3 to the
+    # system python3 (3.14 on the self-hosted fleet) — setup-python is broken
+    # on this fleet (provisions into unwritable /Users/runner).
+    env:
+      PYO3_PYTHON: python3
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -268,6 +276,12 @@ jobs:
     name: Cross-language BLAKE3 verify (single Rust truth)
     runs-on: [self-hosted, Linux, X64]
     needs: [python-matrix, go-matrix, js-matrix]
+    # Same pyo3 abi3-py310 build as rust-unit (cargo test -p corelink-py
+    # below). The setup-python 3.12 step is unreliable on this fleet
+    # (provisions into unwritable /Users/runner), so pin pyo3 to the system
+    # python3 (>= 3.10) rather than risk auto-detecting a stale 3.8.
+    env:
+      PYO3_PYTHON: python3
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
