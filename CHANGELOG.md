@@ -80,10 +80,21 @@ Each entry cross-references:
 
 ### Fixed
 
-- **Docker-on-mac CI conversions, part 2 — tfsec / welcome / smoke-install**
-  (follow-up to the macOS self-hosted fleet hardening below). The 2026-05-31
-  cutover left three more workflows wired to Docker container actions / a Docker
-  daemon, which the Linux-less mac fleet cannot run:
+- **Welcome greeting → native `gh` (Docker-on-mac keystone).** The
+  first-PR welcome workflow used `actions/first-interaction` — a Docker
+  *container action* (Linux-only) that hard-failed `Container action is only
+  supported on Linux` on the all-macOS fleet, on **every** PR. Because it runs
+  via `pull_request_target` (base-branch workflow), that single red blocked the
+  pre-merge gate-check on every open PR at once. Replaced with a native `gh`
+  first-timer greeter (same idiom as `size-label.yml`), keeping
+  `pull_request_target` for the fork-PR write token. (This is the keystone that
+  un-jams the merge queue; the sibling tfsec/smoke Docker-on-mac conversions
+  land in #78.)
+- **Docker-on-mac CI conversions, part 2 — tfsec / smoke-install**
+  (follow-up to the macOS self-hosted fleet hardening below; the sibling
+  `welcome-first-pr.yml` keystone landed separately — see the entry above). The
+  2026-05-31 cutover left more workflows wired to Docker container actions / a
+  Docker daemon, which the Linux-less mac fleet cannot run:
   - **`terraform-lint.yml` (tfsec)** — replaced the Linux-only
     `aquasecurity/tfsec-sarif-action` with the pinned `tfsec` darwin binary
     (v1.28.14), downloaded from GitHub Releases and SHA-256-verified
@@ -93,16 +104,13 @@ Each entry cross-references:
     the root `main.tf` (3 blocks) the old default would have read — i.e. the
     gate had been effectively a no-op. With the gate finally exercising the IaC
     it surfaced **1 real HIGH finding** (`aws-iam-no-policy-wildcards`,
-    `modules/byok-providers/aws-kms/main.tf:51` — the IAM policy uses the
-    `kms:ReEncrypt*` action wildcard, though scoped to specific
-    `customer_kms_key_arns`). Left unsuppressed: the job fail-and-reports and
-    the SARIF still uploads (`if: always()`) so it lands in the Security tab —
-    owner to decide pin-exact vs. accept.
-  - **`welcome-first-pr.yml`** — replaced the Linux-only
-    `actions/first-interaction` with a native `gh` step (search-API first-timer
-    count + `gh pr/issue comment`), same greeting text, bot-filtered and
-    idempotent. Kept the `pull_request_target` trigger (write token for fork
-    PRs).
+    `modules/byok-providers/aws-kms/main.tf` — the BYOK IAM policy uses the
+    `kms:ReEncrypt*` action wildcard). It is mitigated — scoped to specific
+    `customer_kms_key_arns`, **not** `resources = ["*"]` — so per owner review
+    (2026-06-02) it is recorded as an **accepted, documented exception**: an
+    inline `#tfsec:ignore:aws-iam-no-policy-wildcards` directive carrying a
+    justification (visible, not silently removed) suppresses it and flags
+    pinning the exact `kms:` actions post-launch. tfsec now exits 0.
   - **`smoke-install.yml`** — added a `docker info` preflight that skips the
     container smoke test with a `::notice::` when no Docker daemon is present
     (the fleet has no guaranteed one), instead of hard-failing; flagged an owner
