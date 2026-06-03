@@ -137,6 +137,32 @@ Each entry cross-references:
   `setup-terraform` → `b9cd54a3c349d3f38e8881555d616ced269862dd` (`v3.1.2`);
   `slack-github-action` → `485a9d42d3a73031f12ec201c457e2162c45d02d` (`v2.0.0`).
   Every `uses:` remains SHA-pinned (supply-chain constraint WI-S01-007 / WI-S13-004).
+- **`mutation-nightly` gate reported false `0.0%` kill-rates on large/slow
+  crates.** The run step invoked `cargo mutants --output ./mutants.out`, and
+  cargo-mutants *unconditionally* creates a subdirectory literally named
+  `mutants.out` **inside** the `--output` directory (`in_dir.join("mutants.out")`,
+  doc: *"Create `mutants.out` within this directory"*) — so results actually
+  landed at `./mutants.out/mutants.out/`. The gate's read path was internally
+  consistent with that, so the doubled path was not itself the defect. The real
+  defect: cargo-mutants writes `mutants.json` *before* the baseline build and
+  *before* any scenario, but the `caught/missed/unviable/timeout.txt` lists only
+  as scenarios complete; when a large crate's baseline build/test fails (or the
+  run is killed before a single scenario finishes), `total>0` with **zero**
+  recorded outcomes — which the harness silently reported as a fake `0.0%`
+  *kill-rate regression* (e.g. `corelink-auth` 454-mutant / `corelink-pat`
+  203-mutant lanes), while crates whose baseline completed read correctly
+  (`corelink-billing` 96.89%). Fix: (1) pass `--output .` so results land at the
+  plain `./mutants.out/` and both the gate and summary read that single path
+  (removing the confusing nesting); (2) when `total>0` but no outcomes are
+  recorded, fail with a **distinct "Incomplete mutation run — HARNESS failure"**
+  error instead of a fake `0.0%` regression, and mark the per-crate summary
+  `incomplete` (`kill_rate_pct: null`) so the aggregator never opens a false
+  sub-floor regression issue; (3) count `timeout.txt` survivors and guard
+  `mutants.json` with a clear diagnostic. The `≥80%`/`baseline − 5pp` gate
+  threshold is unchanged — a genuine sub-floor kill-rate still fails. NOTE: the
+  large crates additionally need a higher per-mutant `--timeout` (and may need a
+  package-scoped baseline) to actually *complete* a sweep on the self-hosted Mac;
+  that capacity work is tracked separately and is out of scope for this path fix.
 - **macOS self-hosted CI-fleet hardening — migrate-to-self-hosted
   regressions.** The 2026-05-31 cutover to the macOS self-hosted runner fleet
   (5× `corelink-builder`, all macOS, zero Linux) left several gates silently
