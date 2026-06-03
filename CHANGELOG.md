@@ -108,6 +108,33 @@ Each entry cross-references:
   on `environments/staging` (the gate target, TF 1.7.5) now exits 0;
   `terraform fmt -check` stays clean. (`cloudflare-base`'s `for_each` over the
   non-sensitive `dkim_records` map was already valid — untouched.)
+- **Owner-key-gated CI gates now pass-or-skip cleanly pre-launch instead of
+  falsely red.** Four checks were reddening on owner secrets / a paid feature
+  that intentionally do not exist before launch; each is now gated gracefully
+  and reactivates the instant the owner provides the key/feature — no test was
+  weakened. (1) **CodeQL** (`codeql.yml`): the SARIF upload to the Security tab
+  requires **GitHub Advanced Security** (code scanning), which is not enabled on
+  this private repo, so the upload returned "Code scanning is not enabled for
+  this repository" and reddened the whole job even though the scan passed. Split
+  the upload out of `analyze` (now `upload: never`, writing SARIF locally for the
+  severity gate) into a dedicated `github/codeql-action/upload-sarif` step marked
+  `continue-on-error: true` (`if: always()`) — mirroring the existing tfsec
+  pattern in `terraform-lint.yml`. The job status now tracks the actual scan +
+  severity gate; once GHAS is enabled the SARIF populates the Security tab with
+  no further change. (2) Same one-line `continue-on-error: true` on the
+  `upload-sarif` step in **`semgrep.yml`** (its scan already drives pass/fail via
+  its own exit code). (3) **`e2e-clerk-signup.yml`** + (4) **`e2e-stripe-checkout.yml`**
+  hit LIVE Clerk/Stripe prod via launch-day secrets (`CLERK_SECRET_KEY`;
+  `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET`) that are unset pre-launch — added
+  a tiny `gate` job that routes the secret(s) through `env` (the `secrets` context
+  is not usable in a job-level `if:`) and emits a `run` output; the `e2e` job now
+  `needs: gate` + `if: needs.gate.outputs.run == 'true'`, so it **skips** (not
+  fails) when the key is absent and runs once set (mirrors the needs-output gate
+  in `pentest-findings-sync.yml`). **`smoke-install.yml`**'s existing Docker
+  preflight was extended to also skip (green, with a `::notice::`) when its repo
+  secret `CORELINK_TEST_TOKEN_CI` is unset. All five workflows `actionlint`-clean.
+  GHAS (paid) + the live Clerk/Stripe keys remain the owner's to provide for full
+  coverage.
 - **Terraform CI cluster — un-broke the whole `terraform-lint` gate.** Three
   tangled fixes landed together: (1) native `tfsec` (the Docker action is
   Linux-only) with the one real finding (BYOK aws-kms `kms:ReEncrypt*` wildcard,
