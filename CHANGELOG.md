@@ -346,6 +346,28 @@ Each entry cross-references:
 
 ### Security
 
+- **TLC `tla2tools.jar` v1.8.0 SHA-256 re-pin — RATIFIED + COMPLETE.**
+  The TLA+ project re-published a non-reproducible (timestamped) `tla2tools.jar`
+  to the **same `v1.8.0` tag**, so the pinned SHA-256 drifted and all TLA+
+  model-check gates + `nightly` failed fail-closed at the pin check.
+  Independently verified the new official asset (3× download byte-identical, two
+  hash tools agree, confirmed via `gh api` it is `lemmy`'s re-cut release asset,
+  re-cut 2026-05-26): OLD `d5d07d5d…dbc8ef7f` → NEW `237332bd…ff2a4fb`
+  (size 4356704 → 4357560 B). **Re-pinned `TLC_SHA256_PINNED` across EVERY active
+  reference:** `tla_check.yml`, `tla_region_residency_check.yml`,
+  `tla_runbooks_check.yml`, `tla_dsr_erasure_check.yml`, `tla_billing_check.yml`,
+  `nightly.yml`, **`cas_foundation.yml` (`tlc-canonical` job only — its
+  `cargo-deny` step is owned by PR #77 and left untouched)**, and
+  **`scripts/run_tlc_corelink.sh` (comment + shell var)**. A whole-repo grep
+  confirms zero active references to the old hash remain (sealed/audit/spec
+  records keep it as historical record, intentionally not rewritten). **Ratified
+  by the tech-lead under owner delegation (2026-06-02);** §A1 sign-off marked
+  SATISFIED. Ceremony + evidence in `ADR-0042-gc-worker-scheduler.md` §A1 and
+  `specs/_audits/2026-06-02-tlc-v1.8.0-repin-upstream-republish.md`.
+  **FOLLOW-UP (next hardening PR, not done here):** the jar is non-reproducible so
+  this WILL recur on any upstream re-cut — **vendor the verified jar to immutable
+  storage we control (R2 or a repo-owned release asset)** and fetch under the
+  pinned SHA, removing the mutable-tag dependency.
 - **Wave-36 Stage 3 — cargo-deny lockdown.** Added `[bans] deny` rules
   for the 4 absorbed-but-canonical adapter HTTPS crates
   (`corelink-stripe-real`, `corelink-statuspage-real`,
