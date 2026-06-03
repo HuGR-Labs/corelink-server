@@ -147,9 +147,12 @@ jobs:
           # regions, environments — ~65 files / 417 blocks), not just the root
           # module graph. Without it tfsec only reads the top-level main.tf and
           # the gate passes trivially while ~all of the IaC goes unscanned.
-          # Findings make this step exit non-zero so the job legitimately fails
-          # and the owner sees them; the SARIF is still uploaded below
-          # (if: always()) so they also surface as code-scanning alerts.
+          # tfsec exits non-zero on any UNSUPPRESSED finding, so the gate fails
+          # if new IaC introduces an un-reviewed issue. The single known finding
+          # (the BYOK `kms:ReEncrypt*` action wildcard, scoped to specific
+          # `customer_kms_key_arns`) is an owner-reviewed, justified exception
+          # carried as an inline `tfsec:ignore` in aws-kms/main.tf (2026-06-02),
+          # so tfsec currently exits 0 here.
           "$RUNNER_TEMP/tfsec/tfsec" infra/terraform \
             --force-all-dirs \
             --format sarif \
@@ -158,6 +161,13 @@ jobs:
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.26.6
+        # Best-effort: the Security tab (code-scanning / GHAS) is not enabled on
+        # this private repo, so this upload returns "Resource not accessible by
+        # integration / Code scanning is not enabled" and would otherwise red the
+        # whole tfsec job even though the scan above passed. `continue-on-error`
+        # keeps the JOB status driven by the actual tfsec result; once GHAS is
+        # enabled the SARIF will populate the Security tab with no further change.
+        continue-on-error: true
         if: always()
         with:
           sarif_file: tfsec.sarif

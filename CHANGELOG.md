@@ -110,7 +110,13 @@ Each entry cross-references:
     (2026-06-02) it is recorded as an **accepted, documented exception**: an
     inline `#tfsec:ignore:aws-iam-no-policy-wildcards` directive carrying a
     justification (visible, not silently removed) suppresses it and flags
-    pinning the exact `kms:` actions post-launch. tfsec now exits 0.
+    pinning the exact `kms:` actions post-launch. tfsec now exits 0. Also made
+    the SARIF `upload-sarif` step `continue-on-error` — the Security tab
+    (code-scanning / GHAS) is not enabled on this private repo, so the upload
+    returns "Resource not accessible by integration" and would otherwise red the
+    whole tfsec job despite the scan passing; the job status now follows the
+    actual scan result (upload still attempted `if: always()` for when GHAS is
+    enabled).
   - **`smoke-install.yml`** — added a `docker info` preflight that skips the
     container smoke test with a `::notice::` when no Docker daemon is present
     (the fleet has no guaranteed one), instead of hard-failing; flagged an owner
