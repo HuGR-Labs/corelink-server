@@ -6,8 +6,17 @@
 #  - SECURITY.md (NEVER file security via public issue)
 #  - DCO / signed-off-by reminder (we require `git commit -s`)
 #
-# Uses actions/first-interaction. Runs only when the actor has zero prior
-# contributions to the repo (the action filters internally).
+# Native `gh` implementation (no container action). The previous
+# `actions/first-interaction` is a Docker container action — Linux-only —
+# which HARD-FAILS on the macOS self-hosted fleet ("Container action is only
+# supported on Linux"). We reproduce the same "first issue / first PR" greeting
+# by counting the author's prior items via the GitHub search API and posting
+# with `gh`, so it runs on any runner. (2026-06-02)
+#
+# `pull_request_target` is intentional: a first-time contributor's PR comes from
+# a fork, and only `pull_request_target` grants the write-scoped token needed to
+# comment. We never check out or run the PR's code here — this job only reads the
+# event metadata and posts a comment, so the elevated token is safe.
 #
 # Cross-link: CONTRIBUTING.md, SECURITY.md, .github/PULL_REQUEST_TEMPLATE.md.
 
@@ -23,16 +32,31 @@ permissions:
   issues: write
   pull-requests: write
 
+concurrency:
+  group: welcome-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   welcome:
     name: Post welcome comment
     runs-on: [self-hosted, mac, corelink-builder]
     steps:
       - name: Greet first-time contributor
-        uses: actions/first-interaction@34f15e814fe48ac9312ccf29db4e74fa767cbab7 # v1.3.0
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          issue-message: |
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          # `issues` events expose .issue; `pull_request_target` exposes
+          # .pull_request — exactly one of each pair is non-empty per run.
+          NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.issue.user.login || github.event.pull_request.user.login }}
+          # Greeting bodies as block scalars so YAML strips the indentation and
+          # the posted Markdown is flush-left (10-space-indented text would
+          # otherwise render as a code block). The leading marker makes the
+          # post idempotent. Mirrors the old action's issue-message / pr-message.
+          ISSUE_MESSAGE: |
+            <!-- welcome-first-timer -->
             Thanks for opening your first issue on **CoreLink**! A maintainer
             will triage shortly.
 
@@ -48,7 +72,8 @@ jobs:
               use the GitHub *Report a vulnerability* private advisory flow).
 
             Welcome aboard!
-          pr-message: |
+          PR_MESSAGE: |
+            <!-- welcome-first-timer -->
             Welcome — and thank you for your first pull request to
             **CoreLink**! Here is what reviewers will look for:
 
@@ -71,3 +96,49 @@ jobs:
 
             A maintainer (auto-assigned via `CODEOWNERS`) will be in touch.
             Thank you for contributing!
+        run: |
+          set -euo pipefail
+
+          # `pr` for pull_request_target, `issue` otherwise. The search API
+          # `type:` filter and the `gh ... comment` subcommand both key off this.
+          if [ "$EVENT" = "pull_request_target" ]; then
+            KIND="pr"; BODY="$PR_MESSAGE"
+          else
+            KIND="issue"; BODY="$ISSUE_MESSAGE"
+          fi
+          echo "event=$EVENT kind=$KIND author=$AUTHOR #$NUMBER repo=$REPO"
+
+          # Bots never get the welcome (mirror first-interaction, which only
+          # fires for human first-timers and would otherwise greet dependabot).
+          case "$AUTHOR" in
+            *"[bot]" | dependabot | dependabot-preview | github-actions)
+              echo "author is a bot — skipping"
+              exit 0
+              ;;
+          esac
+
+          # First-timer test: count this author's items of this KIND in the repo.
+          # `actions/first-interaction` greets the FIRST pr and FIRST issue
+          # independently, so we filter by type. total_count<=1 means the only
+          # such item is the one that just triggered us → first-timer.
+          # `-X GET -f q=` sends a properly URL-encoded search query string.
+          COUNT="$(gh api -X GET search/issues \
+                     -f q="repo:${REPO} type:${KIND} author:${AUTHOR}" \
+                     --jq '.total_count')"
+          echo "prior ${KIND}s by ${AUTHOR} (incl. this one): ${COUNT}"
+          if [ "${COUNT:-0}" -gt 1 ]; then
+            echo "not a first-time ${KIND} — skipping"
+            exit 0
+          fi
+
+          # Idempotency guard: never double-post if the workflow re-runs (search
+          # indexing lag could momentarily report total_count<=1 again).
+          MARKER="<!-- welcome-first-timer -->"
+          if gh "$KIND" view "$NUMBER" --repo "$REPO" --json comments \
+               --jq '.comments[].body' 2>/dev/null | grep -qF "$MARKER"; then
+            echo "welcome already posted — skipping"
+            exit 0
+          fi
+
+          gh "$KIND" comment "$NUMBER" --repo "$REPO" --body "$BODY"
+          echo "posted welcome ${KIND} comment on #${NUMBER}"
