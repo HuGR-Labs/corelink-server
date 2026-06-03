@@ -60,13 +60,17 @@ concurrency:
 jobs:
   semgrep:
     name: Semgrep scan
-    # Use the official Semgrep container — avoids host-level Python deps
-    # and pins the rule-engine binary alongside the action.
-    runs-on: [self-hosted, Linux, X64]
-    container:
-      # returntocorp/semgrep:1.x — pin via the action below; image tag is
-      # informational only (action controls the actual binary version).
-      image: returntocorp/semgrep@sha256:0000000000000000000000000000000000000000000000000000000000000000 # TBD-SHA replace post-baseline
+    # macOS self-hosted fleet. The previous `runs-on: [self-hosted, Linux, X64]`
+    # matched ZERO runners after the 2026-05-31 macOS-only cutover (the same
+    # fault class the actionlint fix closed), so the job hung pending forever;
+    # and the dead `returntocorp/semgrep@sha256:000…0` placeholder image + the
+    # deprecated `returntocorp/semgrep-action` (returntocorp rebranded to
+    # `semgrep/semgrep`) could never have run regardless. Job-`container:` also
+    # needs Docker-on-Linux, which the fleet lacks, so we drop the container and
+    # run Semgrep natively via the host `python3`/`pip3` — NOT
+    # `actions/setup-python`, whose RUNNER_TOOL_CACHE provisioning is unwritable
+    # on the fleet. (2026-06-02)
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 20
 
     # Skip duplicate runs on dependabot push events (PR already covers them).
@@ -79,30 +83,50 @@ jobs:
 
       - name: Run Semgrep (bundled rulesets + CoreLink custom pack)
         id: semgrep
-        # returntocorp/semgrep-action v1 — SHA TBD pin (replace after the
-        # first green run on main; ADR + Security review required for any
-        # subsequent bump per §14.s12.004.1).
-        uses: returntocorp/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d  # returntocorp/semgrep-action@v1
+        shell: bash
+        # Semgrep 1.164.0 installed via the host pip3 into a throwaway venv (no
+        # Docker, no setup-python). Pinned per HIGH_RISK FF-HR-005 + ADR-S12-045
+        # §6 — bump only via ADR + Security review (§14.s12.004.1).
+        #
+        # The `--config` flags mirror the former SEMGREP_RULES list: bundled
+        # rulepacks first, the repo-local CoreLink pack LAST (local wins
+        # duplicate-rule-ID tie-breaks). `--sarif --output` feeds the upload
+        # step below; we capture semgrep's exit code, expose `outputs.sarif`,
+        # then re-exit with it so a blocking ERROR-severity finding (`--error`)
+        # fails the job — replacing the old SEMGREP_FAIL_OPEN=false — WHILE the
+        # SARIF still uploads (the upload step is `if: always()`).
+        run: |
+          set -uo pipefail
+          PYBIN="$(command -v python3)"
+          echo "Using interpreter: ${PYBIN} ($(${PYBIN} --version 2>&1))"
+          "${PYBIN}" -m venv .semgrep-venv
+          # shellcheck disable=SC1091
+          source .semgrep-venv/bin/activate
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet "semgrep==1.164.0"
+          semgrep --version
+          set +e
+          semgrep scan \
+            --config p/security-audit \
+            --config p/rust \
+            --config p/typescript \
+            --config p/python \
+            --config p/owasp-top-ten \
+            --config p/cwe-top-25 \
+            --config ./semgrep.yml \
+            --error \
+            --sarif --output semgrep.sarif \
+            --metrics off
+          SEMGREP_RC=$?
+          set -e
+          if [ -f semgrep.sarif ]; then
+            echo "sarif=semgrep.sarif" >> "$GITHUB_OUTPUT"
+          fi
+          exit "${SEMGREP_RC}"
         env:
-          # SEMGREP_RULES = space-separated list of bundled rulepacks +
-          # the local custom pack.  Order matters only for tie-break on
-          # duplicate rule IDs — local pack wins via being listed last.
-          SEMGREP_RULES: >-
-            p/security-audit
-            p/rust
-            p/typescript
-            p/python
-            p/owasp-top-ten
-            p/cwe-top-25
-            ./semgrep.yml
-          # Generate SARIF for upload to the GHA Security tab.
-          SEMGREP_SARIF_OUTPUT: semgrep.sarif
-          # PR comment with findings (action posts via GH API using
-          # SEMGREP_GITHUB_TOKEN — granted via the workflow `permissions`
-          # block above; semgrep-action picks it up from GITHUB_TOKEN).
-          SEMGREP_PR_COMMENT: "true"
-          # Fail the job on ERROR-severity findings (default in v1 action).
-          SEMGREP_FAIL_OPEN: "false"
+          # Consumed by `semgrep scan` for any GitHub-API interactions; granted
+          # via the workflow `permissions` block above.
+          SEMGREP_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload SARIF to GitHub Security tab
         # github/codeql-action/upload-sarif@v3.27.0 — TBD-SHA (same pin as

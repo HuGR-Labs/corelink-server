@@ -163,6 +163,30 @@ Each entry cross-references:
   large crates additionally need a higher per-mutant `--timeout` (and may need a
   package-scoped baseline) to actually *complete* a sweep on the self-hosted Mac;
   that capacity work is tracked separately and is out of scope for this path fix.
+- **Semgrep SAST gate produced ZERO signal — dead `returntocorp` placeholder +
+  zero-runner label.** `.github/workflows/semgrep.yml` could never run, so the
+  static-analysis security gate was silently blind. Two compounding faults:
+  (1) it ran in a job `container:` pinned to
+  `docker.io/returntocorp/semgrep@sha256:000…0` — a PLACEHOLDER zeroed digest
+  (`failed to resolve reference … not found` → `Value cannot be null
+  (ContainerId)`) — and invoked the deprecated `returntocorp/semgrep-action`
+  (returntocorp rebranded to `semgrep/semgrep` long ago; the action repo is
+  archived); (2) it was pinned to `runs-on: [self-hosted, Linux, X64]`, a label
+  set matching ZERO runners after the 2026-05-31 macOS-only cutover — the same
+  fault class as the `actionlint` / `action-sha-audit` regressions below — so it
+  would have hung pending even with a valid image, and a job `container:` cannot
+  run on the Docker-less mac fleet anyway. Repointed to a native Semgrep
+  invocation: re-targeted to `[self-hosted, mac, corelink-builder]`, dropped the
+  container, and run pinned `semgrep==1.164.0` via the host `python3`/`pip3` in a
+  throwaway venv (no Docker; not `actions/setup-python`, whose
+  `RUNNER_TOOL_CACHE` provisioning is unwritable on the fleet). The same bundled
+  rulepacks + repo-local CoreLink custom pack (`p/security-audit`, `p/rust`,
+  `p/typescript`, `p/python`, `p/owasp-top-ten`, `p/cwe-top-25`, `./semgrep.yml`)
+  now drive `semgrep scan --error --sarif`; the existing
+  `codeql-action/upload-sarif` upload + findings-summary steps are preserved
+  (`outputs.sarif` is now set by the new step). Expect first-run Security-tab
+  alerts: this gate has been emitting no findings, so its first real execution
+  may surface a backlog. (2026-06-02)
 - **macOS self-hosted CI-fleet hardening — migrate-to-self-hosted
   regressions.** The 2026-05-31 cutover to the macOS self-hosted runner fleet
   (5× `corelink-builder`, all macOS, zero Linux) left several gates silently
