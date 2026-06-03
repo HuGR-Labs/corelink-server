@@ -2,6 +2,11 @@ workspace(name = "corelink_bazel_starter")
 
 # Bazel starter project for CoreLink remote cache integration (WI-S15-002 / WI-S15-005).
 # See .bazelrc for remote cache configuration.
+#
+# NOTE: Bzlmod (MODULE.bazel) is the source of truth for dependencies — modern
+# Bazel does NOT load this WORKSPACE file on a default build. rules_cc is declared
+# via bazel_dep in MODULE.bazel. The http_archive below is retained only as a
+# fallback for legacy `--enable_workspace` (WORKSPACE-mode) invocations.
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 

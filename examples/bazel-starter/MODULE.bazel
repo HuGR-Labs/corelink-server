@@ -1,0 +1,12 @@
+module(
+    name = "corelink_bazel_starter",
+    version = "0.1.0",
+)
+
+# Bazel starter project for CoreLink remote cache integration (WI-S15-002 / WI-S15-005).
+# See .bazelrc for remote cache configuration.
+#
+# Bzlmod is the default dependency mode in modern Bazel (the WORKSPACE file is no
+# longer loaded on a default build), so the C++ rules must be declared here. The
+# BUILD.bazel targets load cc_binary / cc_library from @rules_cc//cc:defs.bzl.
+bazel_dep(name = "rules_cc", version = "0.0.17")
