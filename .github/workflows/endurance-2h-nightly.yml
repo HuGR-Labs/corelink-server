@@ -1,5 +1,10 @@
 name: endurance-2h-nightly (R-prep)
 
+# Pinned to [self-hosted, Linux, X64] — no Linux runner currently exists on the
+# fleet; converted to workflow_dispatch-only to stop perpetual queuing. Re-add
+# the nightly `schedule` once a Linux self-hosted runner is registered (these k6
+# suites are too heavy for the macOS builder fleet).
+#
 # R-prep endurance load — 2-hour variant of the 24h endurance drill.
 #
 # The full 24h exercise (manual; see specs/_runbooks/RB-ENDURANCE-24H-DRILL)
@@ -15,10 +20,13 @@ name: endurance-2h-nightly (R-prep)
 # SHA-pinned per ADR-S12-045 §6 tooling-pin policy.
 
 on:
-  schedule:
-    # 03:00 UTC daily — well after the 02:00 UTC weekly load-test-nightly
-    # so they don't contend for staging.
-    - cron: '0 3 * * *'
+  # schedule disabled: pinned to [self-hosted, Linux, X64] but no Linux runner
+  # exists on the fleet, so the nightly cron queued forever. Re-add once a Linux
+  # self-hosted runner is registered:
+  #   schedule:
+  #     # 03:00 UTC daily — well after the 02:00 UTC weekly load-test-nightly
+  #     # so they don't contend for staging.
+  #     - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
       duration:
