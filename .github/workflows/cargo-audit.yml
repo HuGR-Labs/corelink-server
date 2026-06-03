@@ -11,8 +11,18 @@ name: cargo-audit (WI-S12-004)
 # Implements: WI-S12-004 §6.1.1 (ST-001)
 # Cap: CAP-SUPPLY-004 (cargo-audit daily + cargo-deny policy + Dependabot)
 #
+# Advisory waivers: cargo-audit auto-loads `.cargo/audit.toml` from the repo
+# root (this job's working dir). Its `[advisories].ignore` list MIRRORS
+# `deny.toml` `[advisories].ignore` — both gates waive the SAME already-ratified
+# RUSTSEC ids (rsa Marvin RUSTSEC-2023-0071, number_prefix RUSTSEC-2025-0119,
+# rustls-pemfile RUSTSEC-2025-0134), keeping a single logical source of truth.
+# `--deny warnings` still fails on ANY advisory NOT in that list. To add/remove
+# a waiver: ADR + Security review, and update BOTH `.cargo/audit.toml` + deny.toml.
+#
 # SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin policy.
-# Version bump requires ADR + Security review (§14.s12.004.1).
+# Version bump requires ADR + Security review (§14.s12.004.1) — the 0.21.2→0.22.1
+# bump below was ratified by Owner + techlead 2026-06-02 (§14.s12.004.1 review;
+# needed for CVSS-4.0 parsing, MSRV 1.85 ≤ repo 1.91.1).
 
 on:
   pull_request:
@@ -22,6 +32,7 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'deny.toml'
+      - '.cargo/audit.toml'   # advisory-waiver list — re-run the gate if it changes
       - '.github/workflows/cargo-audit.yml'
   push:
     branches: [main]
@@ -107,6 +118,9 @@ jobs:
         # fails. This is the INV-SUPPLY-NO-YANKED enforcement gate.
         # `--db` + `--no-fetch` + `--stale` use the SHA-pinned DB checked out
         # above (no live fetch), so the gate is fully reproducible.
+        # Waivers come from `.cargo/audit.toml` `[advisories].ignore` (auto-loaded
+        # from the repo root), which mirrors deny.toml — only the 3 already-
+        # ratified ids are skipped; any NEW advisory still exits 1.
         run: cargo audit --db advisory-db --no-fetch --stale --deny warnings
 
   # -----------------------------------------------------------------------
@@ -152,6 +166,9 @@ jobs:
         # the cron always produces a parseable report instead of going dark.
         # A valid report (clean or with findings) is JSON; a DB-load failure is
         # a non-JSON error string — that is how we detect the fallback case.
+        # The same `.cargo/audit.toml` waivers (mirroring deny.toml) apply here,
+        # so the 3 already-ratified ids do not fire false SEV alerts; any NEW
+        # upstream advisory is still surfaced + classified as before.
         run: |
           set +e
           cargo audit --json > /tmp/audit-report.json 2>/tmp/audit-stderr.txt

@@ -353,6 +353,24 @@ Each entry cross-references:
   is never dark again. The CRITICAL→exit-1 / HIGH→warn classifier is unchanged —
   real RUSTSEC advisories in our deps still fail/alert exactly as before. Bump
   the pinned commit when refreshing the advisory floor.
+  Un-blinding the gate surfaced 3 advisories that are ALREADY waived in
+  `deny.toml` `[advisories].ignore` (so cargo-deny and cargo-audit must agree):
+  `RUSTSEC-2023-0071` (rsa Marvin sidechannel — signing-only on operator inputs,
+  mitigated, ADR-S20-RSA-MARVIN-MITIGATION), `RUSTSEC-2025-0119` (number_prefix
+  unmaintained, via `indicatif → corelink-cli`, operator tool only; also added
+  to `deny.toml` by #77), and `RUSTSEC-2025-0134` (rustls-pemfile unmaintained,
+  dev/test-only via `bollard → testcontainers`). Mirrored those exact 3 ids
+  (with the same justifications) into a new committed **`.cargo/audit.toml`**
+  `[advisories].ignore` — auto-loaded by `cargo audit` from the repo root — so
+  cargo-audit waives EXACTLY what `deny.toml` already waives (one logical source
+  of truth, two tools), with a header cross-reference keeping the two in sync.
+  Nothing not already in `deny.toml` is ignored; any NEW/unwaived advisory still
+  exits 1 (verified: `.cargo/audit.toml` ignoring an unrelated id still fails on
+  the live finding).
+  Ratification: the `cargo-audit` `0.21.2 → 0.22.1` bump (ADR-S12-045 §6 /
+  §14.s12.004.1 tooling-pin review) was **ratified by Owner + techlead on
+  2026-06-02** — required for CVSS-4.0 parsing, MSRV 1.85 ≤ repo 1.91.1; this
+  satisfies the §14.s12.004.1 ADR + Security review for the bump.
 - **Secrets-matrix verify-gate scanned build output** — both validators
   (`scripts/secrets-checklist-verify.sh`, `scripts/validate_secrets_matrix.py`)
   walked gitignored `.open-next`/`.wrangler` bundles, whose embedded
