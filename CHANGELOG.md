@@ -120,6 +120,15 @@ Each entry cross-references:
   Set `PYO3_PYTHON: python3` at job level so pyo3 builds against the fleet's
   system `python3` (3.14), which satisfies the abi3-py310 floor. FFI matrix
   logic unchanged.
+- **Bazel starter cold build → add missing `rules_cc` bzlmod dep** (WI-S15-002).
+  `examples/bazel-starter` declared `rules_cc` only via `http_archive` in
+  `WORKSPACE`, but modern Bazel (Bazelisk's default, no `.bazelversion`) runs in
+  Bzlmod mode and does not load `WORKSPACE`, so the `cc_binary`/`cc_library` loads
+  from `@rules_cc//cc:defs.bzl` failed with
+  `@rules_cc could not be resolved: No repository visible as '@rules_cc'`, breaking
+  the customer-facing `bazel-starter-ci` quickstart gate. Added a `MODULE.bazel`
+  with `bazel_dep(name = "rules_cc", version = "0.0.17")` (the WORKSPACE
+  `http_archive` is kept only as a legacy `--enable_workspace` fallback).
 - **Welcome greeting → native `gh` (Docker-on-mac keystone).** The
   first-PR welcome workflow used `actions/first-interaction` — a Docker
   *container action* (Linux-only) that hard-failed `Container action is only
