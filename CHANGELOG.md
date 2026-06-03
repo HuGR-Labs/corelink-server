@@ -80,6 +80,15 @@ Each entry cross-references:
 
 ### Fixed
 
+- **Terraform CI cluster — un-broke the whole `terraform-lint` gate.** Three
+  tangled fixes landed together: (1) native `tfsec` (the Docker action is
+  Linux-only) with the one real finding (BYOK aws-kms `kms:ReEncrypt*` wildcard,
+  scoped to customer ARNs) justified-ignored + flagged for review; (2) resolved
+  the pre-existing `tflint` warnings (unused decls, missing provider/version
+  constraints) across the terraform modules; (3) repinned the **non-existent**
+  `hashicorp/setup-terraform@e9ce11f7` (the `# v3.0.0` SHA 404s — broke
+  `terraform fmt`/`validate` at "Set up job") to the real `@b9cd54a3` (v3.1.2).
+  Plus a `docker info` preflight guard on `smoke-install`. (Consolidates #78 + #83.)
 - **Key Python CI validators → system `python3` (setup-python is unprovisionable
   on the mac fleet).** Five validation workflows — `spec_validation`,
   `openapi-validate`, `canonical-consistency`, `dashboard_validation`,
