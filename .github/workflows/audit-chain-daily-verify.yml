@@ -189,11 +189,22 @@ jobs:
             exit 1
           fi
           echo "Window: $WINDOW_DAYS day(s)"
-          DATES=""
-          for ((i=0; i<WINDOW_DAYS; i++)); do
-            D=$(date -u -d "$i days ago" +%Y-%m-%d)
-            DATES="$DATES $D"
-          done
+          # Portable UTC date math: GNU `date -d "$i days ago"` is not
+          # available on the BSD `date` shipped on the macOS self-hosted
+          # fleet (BSD uses `-v-Nd`). Compute the window in system python3
+          # (>=3.14 on every runner) so the math is identical on GNU/BSD.
+          # Emits the same space-separated YYYY-MM-DD set, descending from
+          # today (UTC) to today-(WINDOW_DAYS-1).
+          DATES=$(WINDOW_DAYS="$WINDOW_DAYS" python3 -c '
+          import os, datetime
+          n = int(os.environ["WINDOW_DAYS"])
+          today = datetime.datetime.now(datetime.timezone.utc).date()
+          print(" ".join((today - datetime.timedelta(days=i)).isoformat() for i in range(n)))
+          ')
+          # Preserve the old accumulator's leading-space convention
+          # (harmless — unquoted `for D in $DATES` word-splits it away)
+          # so the emitted `dates=` output is byte-identical in shape.
+          DATES=" ${DATES}"
           echo "dates=$DATES" >> "$GITHUB_OUTPUT"
           echo "Daily-verify window dates: $DATES"
 

@@ -99,6 +99,16 @@ Each entry cross-references:
   the two stdlib-only workflows (`canonical-consistency`, `dashboard_validation`)
   just drop the step. `python3 scripts/validate_specs.py` → 463/0 on the system
   interpreter; all five `actionlint` clean.
+- **`audit-chain-daily-verify` 7-day window → portable date math
+  (BSD/macOS `date`).** The `Compute 7-day window date set` step used
+  GNU-only `date -u -d "$i days ago"`; BSD `date` on the all-macOS
+  self-hosted fleet rejects `-d` (`date: illegal option -- d`), and under
+  `set -euo pipefail` that hard-failed the `seven-day-verify` job before any
+  R2 list/verify ran. Replaced the GNU-date loop with system `python3`
+  (`datetime` + UTC), emitting the identical descending `YYYY-MM-DD` set
+  (today … today-6) the downstream paginated CF-API-v4 R2 walk consumes
+  unchanged. Date computation only — the audit-chain verification logic is
+  untouched. (`.github/workflows/audit-chain-daily-verify.yml`.)
 - **Welcome greeting → native `gh` (Docker-on-mac keystone).** The
   first-PR welcome workflow used `actions/first-interaction` — a Docker
   *container action* (Linux-only) that hard-failed `Container action is only
