@@ -346,6 +346,22 @@ Each entry cross-references:
 
 ### Security
 
+- **TLC `tla2tools.jar` v1.8.0 SHA-256 re-pin (DRAFT — NEEDS §A1 SIGN-OFF).**
+  The TLA+ project re-published a non-reproducible (timestamped) `tla2tools.jar`
+  to the **same `v1.8.0` tag**, so the pinned SHA-256 drifted and all 5 TLA+
+  model-check gates + `nightly` now fail fail-closed at the pin check.
+  Independently verified the new official asset (3× download byte-identical, two
+  hash tools agree, confirmed via `gh api` it is `lemmy`'s re-cut release asset):
+  OLD `d5d07d5d…dbc8ef7f` → NEW `237332bd…ff2a4fb` (size 4356704 → 4357560 B).
+  Updated `TLC_SHA256_PINNED` across `tla_check.yml`,
+  `tla_region_residency_check.yml`, `tla_runbooks_check.yml`,
+  `tla_dsr_erasure_check.yml`, `tla_billing_check.yml`, `nightly.yml`. Ceremony +
+  evidence in `ADR-0042-gc-worker-scheduler.md` §A1 and
+  `specs/_audits/2026-06-02-tlc-v1.8.0-repin-upstream-republish.md`. **This is a
+  supply-chain pin change — NOT merged until Security/Crypto-SME + Architect
+  re-verify.** Follow-ups: `cas_foundation.yml` (PR #77) and
+  `scripts/run_tlc_corelink.sh` still carry the old pin; **recommend vendoring
+  the jar to R2** as the permanent fix (this will recur on every upstream re-cut).
 - **Wave-36 Stage 3 — cargo-deny lockdown.** Added `[bans] deny` rules
   for the 4 absorbed-but-canonical adapter HTTPS crates
   (`corelink-stripe-real`, `corelink-statuspage-real`,
