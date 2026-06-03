@@ -111,6 +111,23 @@ Each entry cross-references:
   into a per-language matrix value — empty (default `codeql/rust-queries`) for
   rust, `security-extended,security-and-quality` for the mature js/ts + python
   packs — wired via `with: queries: ${{ matrix.queries }}`.
+- **BYOK key-provider-isolation matrix gate had silently never run.**
+  `.github/workflows/byok_matrix_weekly.yml` invoked
+  `cargo test --package corelink-byok-matrix-test --test {byok_matrix_test,
+  prop_byok_per_provider,adversarial_byok_per_provider}` across all three jobs,
+  but that crate was physically absorbed into `crates/corelink-byok/tests/`
+  (wave-33 stream-b.2c, commits `cfda9f26` / `ea7e7e12`). Every run died at the
+  build-config step with `package ID specification 'corelink-byok-matrix-test'
+  did not match any packages` — never reaching a single matrix cell, so the
+  weekly 4-providers × 4-ops isolation gate (and its proptest + adversarial
+  tiers) had **never actually executed**. Re-pointed all three jobs at the real
+  targets in the `corelink-byok` umbrella: `--package corelink-byok --features
+  _matrix-test --test {matrix,matrix_prop,matrix_adversarial}` (the
+  `_matrix-test` feature is mandatory — it is the `required-features` gate that
+  compiles all four internal provider modules into one binary). No test logic
+  changed; only the build-config invocation. (The job's `SEV-2 matrix cell
+  break` echo was a red herring — the failure was a build-config error, not a
+  cell failure.)
 - **macOS self-hosted CI-fleet hardening — migrate-to-self-hosted
   regressions.** The 2026-05-31 cutover to the macOS self-hosted runner fleet
   (5× `corelink-builder`, all macOS, zero Linux) left several gates silently

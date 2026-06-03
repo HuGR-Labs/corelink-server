@@ -66,8 +66,9 @@ jobs:
         run: |
           set -euo pipefail
           cargo test \
-            --package corelink-byok-matrix-test \
-            --test byok_matrix_test \
+            --package corelink-byok \
+            --features _matrix-test \
+            --test matrix \
             -- --nocapture 2>&1 | tee /tmp/byok_matrix_16_report.txt
 
       - name: Upload matrix test report
@@ -113,8 +114,9 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --release \
-            --package corelink-byok-matrix-test \
-            --test prop_byok_per_provider
+            --package corelink-byok \
+            --features _matrix-test \
+            --test matrix_prop
 
   # ────────────────────────────────────────────────────────────────────
   # 3. Adversarial regression test (all 16 scenarios).
@@ -141,8 +143,9 @@ jobs:
         run: |
           set -euo pipefail
           cargo test \
-            --package corelink-byok-matrix-test \
-            --test adversarial_byok_per_provider \
+            --package corelink-byok \
+            --features _matrix-test \
+            --test matrix_adversarial \
             -- --nocapture
 
   # ────────────────────────────────────────────────────────────────────
