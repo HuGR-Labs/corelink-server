@@ -102,6 +102,15 @@ Each entry cross-references:
   NTIA validate, TSA attest, DT ingest, release upload) already
   references. Matches the `--override-filename` convention used by
   `scripts/sbom-aggregate.sh` / `sbom-consolidated.yml`.
+- **CodeQL gate — scope extended query suites per-language.**
+  `.github/workflows/codeql.yml` applied `queries:
+  security-extended,security-and-quality` to *every* matrix leg, but the Rust
+  CodeQL pack (`codeql/rust-queries`) ships no `*-security-extended` /
+  `*-security-and-quality` suites, so the rust leg failed `Initialize CodeQL`
+  with `Query pack rust-security-extended cannot be found`. Moved `queries:`
+  into a per-language matrix value — empty (default `codeql/rust-queries`) for
+  rust, `security-extended,security-and-quality` for the mature js/ts + python
+  packs — wired via `with: queries: ${{ matrix.queries }}`.
 - **macOS self-hosted CI-fleet hardening — migrate-to-self-hosted
   regressions.** The 2026-05-31 cutover to the macOS self-hosted runner fleet
   (5× `corelink-builder`, all macOS, zero Linux) left several gates silently
