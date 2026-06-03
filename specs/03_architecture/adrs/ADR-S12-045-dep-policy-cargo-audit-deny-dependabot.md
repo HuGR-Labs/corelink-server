@@ -50,7 +50,10 @@ No single tool covers all three axes.  The Rust ecosystem provides:
 
 - **Trigger**: PR gate + daily cron (30 min offset from cargo-audit to avoid DB contention).
 - **Policy canonical source**: `deny.toml` at workspace root.
-- **Action**: EmbarkStudios/cargo-deny-action SHA-pinned.
+- **Install**: cargo-deny CLI installed natively via taiki-e/install-action (SHA-pinned).
+  The EmbarkStudios/cargo-deny-action is a Linux-only Docker container action and
+  hard-fails on the macOS self-hosted fleet, so it was retired in favour of the
+  native install (2026-06-02).
 - **Version**: `0.16.x`; bump via ADR + Security review.
 
 ### Dependabot
@@ -110,7 +113,7 @@ No single tool covers all three axes.  The Rust ecosystem provides:
 | Tool | Pinned version | Current SHA (action) | Bump policy |
 |---|---|---|---|
 | cargo-audit | 0.21.x | installed via cargo install | Quarterly + ADR |
-| cargo-deny | 0.16.x | EmbarkStudios/cargo-deny-action@df3b2489... | Quarterly + ADR |
+| cargo-deny | 0.16.4 | installed via taiki-e/install-action@daa3c1f1... | Quarterly + ADR |
 | actions/checkout | v4.2.2 | @11bd71901bbe5b1630ceea73d27597364c9af683 | Dependabot auto-merge |
 | dtolnay/rust-toolchain | stable | @29eef336d9b2848a0b548edc03f92a220660cdb8 | ADR |
 | Swatinem/rust-cache | v2.7.7 | @400e7407cfd7a091e5fbb6afec01ec146c432b7c | Dependabot auto-merge |

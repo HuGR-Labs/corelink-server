@@ -52,9 +52,12 @@ jobs:
 
       - name: Install cargo-deny (pinned) for license check
         run: |
-          # cargo-deny 0.16.x — pinned per §14.s12.004.1.
-          # Using the EmbarkStudios action in cargo-deny.yml; here we install
-          # the CLI directly for the license summary step.
+          # cargo-deny 0.16.4 — pinned per §14.s12.004.1.
+          # cargo-deny.yml installs the CLI natively via
+          # taiki-e/install-action cargo-deny@0.16.4 (the EmbarkStudios
+          # container action is Linux-only and hard-fails on the macOS
+          # fleet); here we install the same pinned CLI directly for the
+          # license summary step.
           cargo install cargo-deny --version "0.16.4" --locked --quiet
 
       - name: Generate Cargo.lock diff
