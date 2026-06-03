@@ -187,6 +187,22 @@ Each entry cross-references:
   (`outputs.sarif` is now set by the new step). Expect first-run Security-tab
   alerts: this gate has been emitting no findings, so its first real execution
   may surface a backlog. (2026-06-02)
+- **`license-policy` gate false positive — first-party UNLICENSED crates.**
+  `scripts/license-audit.sh` ran `cargo license --json` over the whole
+  workspace and flagged every first-party crate as a license violation
+  (e.g. `corelink-failover-router`, `e2e-failover-router`,
+  `e2e-replication-failover` — ≈87 reported), because each workspace member
+  inherits the intentional `license = "UNLICENSED"` default from
+  `[workspace.package]` (correct for the ~85 proprietary server crates) and
+  `cargo-license` has no concept of private workspace members. The audit now
+  enumerates workspace members via `cargo metadata --no-deps` and excludes
+  them before the allow-list check, so only THIRD-PARTY dependencies are
+  license-checked — mirroring `cargo deny check licenses`, which already skips
+  them via `[licenses.private] ignore = true` in `deny.toml`. No crate was
+  relicensed; the allow-list semantics for third-party crates are unchanged,
+  so a genuinely-forbidden copyleft dep (GPL/AGPL/SSPL) is still caught. OUR
+  OWN OSS-tagged crates' literal `MIT OR Apache-2.0` tags remain asserted by
+  the companion `scripts/check-oss-license-tags.sh`.
 - **macOS self-hosted CI-fleet hardening — migrate-to-self-hosted
   regressions.** The 2026-05-31 cutover to the macOS self-hosted runner fleet
   (5× `corelink-builder`, all macOS, zero Linux) left several gates silently
