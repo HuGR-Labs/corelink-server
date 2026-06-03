@@ -50,25 +50,37 @@ locals {
 # ---------------------------------------------------------------------------
 
 resource "null_resource" "wrangler_secret_put" {
-  for_each = var.secrets
+  # Iterate over secret NAMES only — never the sensitive map itself.
+  # Terraform forbids a sensitive value (or anything derived from one) as a
+  # for_each argument, because the resulting instance keys surface in plan
+  # output and could leak the secret. The NAMES are not sensitive, so we strip
+  # the sensitivity off the key set with `nonsensitive(toset(keys(...)))` and
+  # look the actual (still-sensitive) VALUE up by key inside the resource body
+  # via `var.secrets[each.key]`. The plaintext values therefore never enter
+  # for_each / instance keys / plan output. (each.key == the secret name.)
+  for_each = nonsensitive(toset(keys(var.secrets)))
 
   triggers = {
     worker_name = var.worker_name
     environment = var.environment
     secret_key  = each.key
     # Hash of the value so a change re-triggers. We hash the value rather
-    # than store it so Terraform state never contains the plaintext.
-    value_hash = sha256(each.value)
+    # than store it so Terraform state never contains the plaintext. The
+    # value is looked up by key (each.key is the secret NAME) so the
+    # sensitive value never lands in for_each / instance keys.
+    value_hash = sha256(var.secrets[each.key])
   }
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
 
     # Read the secret value from an env var; do NOT interpolate it on the
-    # command line. The env var name is namespaced per key to avoid
-    # collisions.
+    # command line. The value is looked up by key (each.key is the secret
+    # NAME) because for_each iterates over names, not the sensitive map — so
+    # each.value would be the name, not the secret. The lookup keeps the
+    # value sensitive and out of for_each / instance keys.
     environment = {
-      SECRET_VALUE = each.value
+      SECRET_VALUE = var.secrets[each.key]
     }
 
     command = <<-EOT
