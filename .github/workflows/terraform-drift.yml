@@ -80,10 +80,10 @@ jobs:
       # ----------------------------------------------------------------
       # 2. Setup Terraform (SHA-pinned)
       # hashicorp/setup-terraform@v3.1.2
-      # SHA: e9ce11f7a4dbf26943aa5e9aefa4dfa8c8e27a1d
+      # SHA: b9cd54a3c349d3f38e8881555d616ced269862dd
       # ----------------------------------------------------------------
       - name: Setup Terraform ${{ env.TF_VERSION }}
-        uses: hashicorp/setup-terraform@e9ce11f7a4dbf26943aa5e9aefa4dfa8c8e27a1d
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false  # raw exit codes; wrapper would swallow exit code 2
@@ -204,8 +204,8 @@ jobs:
       - name: "[SEV-3] Slack alert — drift detected — ${{ matrix.region }}"
         if: steps.plan.outputs.exitcode == '2'
         # slackapi/slack-github-action@v2.0.0
-        # SHA: 485a9d42d3a73031f12ec201c457e2a47625a28f
-        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2a47625a28f
+        # SHA: 485a9d42d3a73031f12ec201c457e2162c45d02d
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d
         with:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -252,7 +252,7 @@ jobs:
       # ----------------------------------------------------------------
       - name: "[SEV-2] Slack alert — terraform error — ${{ matrix.region }}"
         if: steps.plan.outputs.exitcode == '1'
-        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2a47625a28f
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d
         with:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -319,7 +319,7 @@ jobs:
 
       - name: "[SEV-3] Multi-region drift summary"
         if: needs.drift-check.result == 'failure'
-        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2a47625a28f
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d
         with:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
