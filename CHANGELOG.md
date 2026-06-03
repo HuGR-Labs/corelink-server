@@ -90,6 +90,18 @@ Each entry cross-references:
   `pull_request_target` for the fork-PR write token. (This is the keystone that
   un-jams the merge queue; the sibling tfsec/smoke Docker-on-mac conversions
   land in #78.)
+- **SBOM workflow `cargo-cyclonedx` output flag** — the `Generate SBOM`
+  step in `sbom.yml` (pinned `cargo-cyclonedx 0.5.4`) passed
+  `--output-cdx sbom.cdx.json`, a flag that does not exist in the 0.5.x
+  CLI (it was dropped with the `--output-prefix`/`--output-pattern`
+  removal in 0.5.0), so the gate failed with
+  `error: unexpected argument '--output-cdx' found`. Switched to the
+  0.5.x-supported `--override-filename sbom.cdx`; with `--format json`
+  the tool appends the format extension to the override, emitting the
+  literal `sbom.cdx.json` that every downstream job (artifact upload,
+  NTIA validate, TSA attest, DT ingest, release upload) already
+  references. Matches the `--override-filename` convention used by
+  `scripts/sbom-aggregate.sh` / `sbom-consolidated.yml`.
 - **macOS self-hosted CI-fleet hardening — migrate-to-self-hosted
   regressions.** The 2026-05-31 cutover to the macOS self-hosted runner fleet
   (5× `corelink-builder`, all macOS, zero Linux) left several gates silently

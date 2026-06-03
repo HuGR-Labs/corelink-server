@@ -89,7 +89,7 @@ jobs:
             --all \
             --format json \
             --spec-version 1.5 \
-            --output-cdx sbom.cdx.json
+            --override-filename sbom.cdx
           echo "SBOM generation complete"
           ls -lh sbom.cdx.json
 
