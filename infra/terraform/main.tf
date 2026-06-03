@@ -34,10 +34,8 @@ provider "cloudflare" {
 # Placeholder — real Worker resources declared per sprint rollout.
 # WI-S13-004 establishes drift detection framework; resources added
 # incrementally as infrastructure expands.
-
-locals {
-  # WI-S14-001: canonical 4-region set (replaces S-13 placeholder geographic names).
-  # Maps: wnam=us-west, enam=us-east, weur=eu-west, sam=sa-east.
-  # Per-region resources defined in infra/terraform/regions/{wnam,enam,weur,sam}.tf
-  regions = ["wnam", "enam", "weur", "sam"]
-}
+#
+# WI-S14-001: canonical 4-region set is wnam (us-west), enam (us-east),
+# weur (eu-west), sam (sa-east). The per-region resources live in the
+# separate root module infra/terraform/regions/{wnam,enam,weur,sam}.tf,
+# so no region list is materialised here.

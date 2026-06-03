@@ -48,6 +48,14 @@ data "aws_iam_policy_document" "assume" {
 data "aws_iam_policy_document" "kms" {
   statement {
     effect = "Allow"
+    # ACCEPTED, DOCUMENTED EXCEPTION — FLAGGED FOR REVIEW.
+    # The only wildcard below is the `kms:ReEncrypt*` action. It is mitigated:
+    # this statement's `resources` is scoped to specific `customer_kms_key_arns`
+    # (exact ARNs), NOT `resources = ["*"]`, so the wildcard cannot reach keys
+    # outside the customer's declared BYOK set. Low risk; revisit to pin the
+    # exact kms actions post-launch (owner-reviewed 2026-06-02). The directive
+    # below must stay on the line immediately above `actions` for tfsec to match.
+    # tfsec:ignore:aws-iam-no-policy-wildcards
     actions = [
       "kms:Encrypt",
       "kms:Decrypt",

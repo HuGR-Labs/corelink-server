@@ -17,6 +17,16 @@
 
 terraform {
   required_version = ">= 1.7.0, < 2.0.0"
+
+  required_providers {
+    # This module only drives wrangler via null_resource + local-exec; the
+    # null provider is the sole provider dependency. Pinned per WI-S01-007
+    # (all provider versions constrained).
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
+    }
+  }
 }
 
 locals {

@@ -1,3 +1,24 @@
+# smoke-install — end-to-end smoke test of the `corelink` install one-liner.
+# -----------------------------------------------------------------------------
+# Builds a clean Debian container, runs the public install script, and asserts
+# `corelink --version` / `corelink ping`. This is a Docker-DAEMON workflow (plain
+# `docker build`/`docker run` `run:` steps — NOT a container action), so it does
+# NOT hit the "Container action is only supported on Linux" failure. It instead
+# requires a working Docker daemon on the macOS self-hosted runner.
+#
+# ⚠️ OWNER DECISION NEEDED (TODO, 2026-06-02):
+#   The 5-runner macOS fleet has NO guaranteed Docker daemon. Docker Desktop was
+#   confirmed working on the primary builder Mac (Docker 28.3.2, `desktop-linux`
+#   context, `docker info` OK) — but Docker Desktop needs the GUI app actively
+#   running and is not present/started on every runner. Rather than hard-fail
+#   the job on Docker-less runners, the preflight step below SKIPS the smoke test
+#   (green, with a ::notice::) when `docker info` fails. Decide one of:
+#     (a) install + auto-start Colima (headless Docker) on all runners and drop
+#         this guard so the smoke test always runs, or
+#     (b) retire this Docker-based smoke test in favour of a native one.
+#   Only `push:main` + schedule trigger this (NOT pull_request), so it never
+#   blocks PRs — lowest urgency.
+
 name: smoke-install
 on:
   push:
@@ -16,10 +37,27 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Preflight — Docker daemon available?
+        id: docker
+        shell: bash
+        run: |
+          set -uo pipefail
+          # `docker info` exits non-zero if the CLI is missing OR the daemon is
+          # not reachable — exactly the two ways this fleet can lack Docker.
+          if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Docker daemon reachable — running smoke test."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=smoke-install skipped::No Docker daemon on this runner; skipping the container smoke test (see workflow header TODO — owner decision: Colima fleet-wide vs. drop)."
+          fi
+
       - name: Build smoke image
+        if: steps.docker.outputs.available == 'true'
         run: docker build -f apps/get-corelink-worker/test/smoke-install.Dockerfile -t corelink-smoke .
 
       - name: Run install one-liner (corelink --version)
+        if: steps.docker.outputs.available == 'true'
         env:
           CORELINK_TEST_TOKEN: ${{ secrets.CORELINK_TEST_TOKEN_CI }}
         run: |
@@ -28,6 +66,7 @@ jobs:
             corelink-smoke
 
       - name: Verify corelink ping returns 200
+        if: steps.docker.outputs.available == 'true'
         env:
           CORELINK_TEST_TOKEN: ${{ secrets.CORELINK_TEST_TOKEN_CI }}
         run: |

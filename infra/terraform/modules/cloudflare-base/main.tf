@@ -25,19 +25,6 @@ terraform {
 }
 
 # ---------------------------------------------------------------------------
-# Locals
-# ---------------------------------------------------------------------------
-
-locals {
-  base_tags = {
-    module      = "cloudflare-base"
-    environment = var.environment
-    managed_by  = "terraform"
-    roadmap     = "R-2 / R-6"
-  }
-}
-
-# ---------------------------------------------------------------------------
 # DNS records — DKIM / SPF / DMARC for transactional mail
 # Email deliverability hardening — see docs/internal/secrets-checklist.md
 # rows referencing SendGrid / Twilio.
@@ -50,7 +37,7 @@ resource "cloudflare_record" "spf" {
   type    = "TXT"
   value   = var.spf_record_value
   ttl     = 3600
-  comment = "cloudflare-base: SPF for transactional mail. Managed by Terraform."
+  comment = "cloudflare-base (${var.environment}): SPF for transactional mail. Managed by Terraform."
 }
 
 resource "cloudflare_record" "dkim" {

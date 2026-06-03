@@ -38,14 +38,6 @@ locals {
 
   # DO Worker script name: corelink-do-{region}
   do_worker_name = "corelink-do-${var.region_name}"
-
-  # Common tags for resource lifecycle tracking
-  region_tags = {
-    region      = var.region_name
-    environment = var.environment
-    managed_by  = "terraform"
-    wi          = "WI-S14-001"
-  }
 }
 
 # ---------------------------------------------------------------------------
@@ -143,7 +135,7 @@ resource "cloudflare_record" "region_api_dns" {
   type    = "CNAME"
   proxied = true # Cloudflare proxy; SSL termination at CF edge
 
-  comment = "WI-S14-001: Region ${var.region_name} API route. Managed by Terraform."
+  comment = "WI-S14-001: Region ${var.region_name} API route (${var.environment}). Managed by Terraform."
 }
 
 # ---------------------------------------------------------------------------
