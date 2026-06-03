@@ -147,6 +147,17 @@ Each entry cross-references:
   boundary + interior-space tokens) and the EXACT echoed `x-request-id` (present
   case) plus the minted-UUID invariant (absent case), so each killable mutant now
   changes asserted output and fails. Tests only — no production-logic change.
+- **`admin-ui lighthouse` gate — probed 404 routes (`/en`, `/onboarding/tenant`).**
+  `apps/admin-ui/lighthouserc.cjs` collected `http://localhost:3000/en` and
+  `/en/onboarding/tenant`, both of which 404 (`ERRORED_DOCUMENT_REQUEST`), failing
+  the gate on every `apps/admin-ui/**` PR. The admin-ui serves its homepage
+  un-prefixed at `/` (`src/app/page.tsx`; locale is resolved per-request in the
+  root layout — the `[locale]` segment has **no** root `page.tsx`, so `/en` itself
+  has never been a route), and the legacy `/onboarding/tenant` wizard was collapsed
+  into a `/welcome` redirect by the Phase-0 PLG change. Re-pointed the URL list at
+  four routes that actually return 200 — `/`, `/en/privacy`, `/en/consent/new`,
+  `/en/admin/audit` — matching the S-16 §6 DoD canonical set. Config-only; no
+  workflow or app change. (WI-S16-007 deliverable 2.)
 - **Welcome greeting → native `gh` (Docker-on-mac keystone).** The
   first-PR welcome workflow used `actions/first-interaction` — a Docker
   *container action* (Linux-only) that hard-failed `Container action is only
