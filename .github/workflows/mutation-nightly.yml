@@ -106,12 +106,15 @@ jobs:
       - name: Run cargo-mutants on ${{ matrix.crate }}
         run: |
           set -euo pipefail
-          mkdir -p mutants.out
+          # cargo-mutants ALWAYS creates a subdir literally named `mutants.out`
+          # *inside* the `--output` directory (src: `in_dir.join("mutants.out")`).
+          # Passing `--output .` therefore writes results to `./mutants.out/`
+          # (NOT `./mutants.out/mutants.out/`). The gate below reads `mutants.out/`.
           cargo mutants \
             --package ${{ matrix.crate }} \
             --no-shuffle \
             --in-place \
-            --output ./mutants.out \
+            --output . \
             --timeout 180 \
             || true   # We compute the gate ourselves from the JSON
 
@@ -138,18 +141,49 @@ jobs:
           }
           tolerance = int(os.environ["REGRESSION_TOLERANCE_PP"])
 
-          out = pathlib.Path("mutants.out/mutants.out")
-          mutants = json.loads((out / "mutants.json").read_text())
+          # cargo-mutants writes its outcomes under `mutants.out/` (the run step
+          # passes `--output .`; cargo-mutants joins the literal `mutants.out`).
+          out = pathlib.Path("mutants.out")
+
+          def count_lines(name):
+              p = out / name
+              return len(p.read_text().strip().splitlines()) if p.exists() else 0
+
+          mutants_json = out / "mutants.json"
+          if not mutants_json.exists():
+              print(f"::error::Harness failure: {mutants_json} not found — cargo-mutants did not produce any output for {crate}.")
+              sys.exit(1)
+          mutants = json.loads(mutants_json.read_text())
           total = len(mutants)
-          caught = len((out / "caught.txt").read_text().strip().splitlines()) if (out / "caught.txt").exists() else 0
-          missed = len((out / "missed.txt").read_text().strip().splitlines()) if (out / "missed.txt").exists() else 0
-          unviable = len((out / "unviable.txt").read_text().strip().splitlines()) if (out / "unviable.txt").exists() else 0
+          caught = count_lines("caught.txt")
+          missed = count_lines("missed.txt")
+          unviable = count_lines("unviable.txt")
+          timeout = count_lines("timeout.txt")  # timed-out mutants are survivors, not kills
+          recorded = caught + missed + unviable + timeout
           viable = total - unviable
-          kill_rate = (caught / viable * 100) if viable > 0 else 0.0
 
           baseline = baseline_map[crate]
           floor = baseline - tolerance
-          print(f"crate={crate} total={total} caught={caught} missed={missed} unviable={unviable}")
+
+          # Distinguish a genuine 0% kill-rate from an INCOMPLETE run. cargo-mutants
+          # writes mutants.json BEFORE the baseline build + before any scenario, but
+          # the caught/missed/... lists only as scenarios complete and outcomes.json
+          # only on finish(). So if the baseline build/test fails (or the run is
+          # killed before a single scenario finishes) we get total>0 with ZERO
+          # recorded outcomes — which the old harness silently reported as a fake
+          # 0.0% "regression" (the false-0.0% bug on large/slow crates). Fail LOUD
+          # and DISTINCT instead of masquerading as a surviving-mutant regression.
+          if total > 0 and recorded == 0:
+              print(f"crate={crate} total={total} caught=0 missed=0 unviable=0 timeout=0")
+              print(f"::error::Incomplete mutation run for {crate}: {total} mutants generated but ZERO outcomes recorded "
+                    f"(no outcomes.json={'present' if (out / 'outcomes.json').exists() else 'MISSING'}). "
+                    f"Likely the baseline build/test failed or the run was killed before any scenario completed "
+                    f"(per-mutant --timeout may be too low for this crate). This is a HARNESS failure, not a kill-rate regression.")
+              sys.exit(1)
+
+          kill_rate = (caught / viable * 100) if viable > 0 else 0.0
+
+          print(f"crate={crate} total={total} caught={caught} missed={missed} unviable={unviable} timeout={timeout}")
           print(f"kill_rate={kill_rate:.1f}% baseline={baseline}% floor={floor}%")
 
           if kill_rate < floor:
@@ -165,24 +199,36 @@ jobs:
           python3 - <<'PY'
           import json, os, pathlib
           crate = "${{ matrix.crate }}"
-          out = pathlib.Path("mutants.out/mutants.out")
+          out = pathlib.Path("mutants.out")
+
+          def count_lines(name):
+              p = out / name
+              return len(p.read_text().strip().splitlines()) if p.exists() else 0
+
           summary = {
             "crate": crate,
             "kill_rate_pct": None,
-            "total": 0, "caught": 0, "missed": 0, "unviable": 0, "viable": 0,
+            "total": 0, "caught": 0, "missed": 0, "unviable": 0, "timeout": 0, "viable": 0,
             "source": "ci-nightly",
           }
           try:
               mutants = json.loads((out / "mutants.json").read_text())
               total = len(mutants)
-              caught = len((out / "caught.txt").read_text().strip().splitlines()) if (out / "caught.txt").exists() else 0
-              missed = len((out / "missed.txt").read_text().strip().splitlines()) if (out / "missed.txt").exists() else 0
-              unviable = len((out / "unviable.txt").read_text().strip().splitlines()) if (out / "unviable.txt").exists() else 0
+              caught = count_lines("caught.txt")
+              missed = count_lines("missed.txt")
+              unviable = count_lines("unviable.txt")
+              timeout = count_lines("timeout.txt")
+              recorded = caught + missed + unviable + timeout
               viable = total - unviable
               kill = (caught / viable * 100) if viable > 0 else 0.0
               summary.update(total=total, caught=caught, missed=missed,
-                             unviable=unviable, viable=viable,
+                             unviable=unviable, timeout=timeout, viable=viable,
                              kill_rate_pct=round(kill, 2))
+              # Flag incomplete runs so the aggregate never treats a harness
+              # failure (total>0, zero outcomes recorded) as a real 0.0%.
+              if total > 0 and recorded == 0:
+                  summary["kill_rate_pct"] = None
+                  summary["incomplete"] = True
           except Exception as e:
               summary["error"] = str(e)
           pathlib.Path(f"mutation-summary-{crate}.json").write_text(json.dumps(summary, indent=2))
