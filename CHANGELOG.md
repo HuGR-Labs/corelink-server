@@ -80,6 +80,16 @@ Each entry cross-references:
 
 ### Fixed
 
+- **Welcome greeting → native `gh` (Docker-on-mac keystone).** The
+  first-PR welcome workflow used `actions/first-interaction` — a Docker
+  *container action* (Linux-only) that hard-failed `Container action is only
+  supported on Linux` on the all-macOS fleet, on **every** PR. Because it runs
+  via `pull_request_target` (base-branch workflow), that single red blocked the
+  pre-merge gate-check on every open PR at once. Replaced with a native `gh`
+  first-timer greeter (same idiom as `size-label.yml`), keeping
+  `pull_request_target` for the fork-PR write token. (This is the keystone that
+  un-jams the merge queue; the sibling tfsec/smoke Docker-on-mac conversions
+  land in #78.)
 - **macOS self-hosted CI-fleet hardening — migrate-to-self-hosted
   regressions.** The 2026-05-31 cutover to the macOS self-hosted runner fleet
   (5× `corelink-builder`, all macOS, zero Linux) left several gates silently
