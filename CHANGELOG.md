@@ -158,6 +158,24 @@ Each entry cross-references:
   four routes that actually return 200 — `/`, `/en/privacy`, `/en/consent/new`,
   `/en/admin/audit` — matching the S-16 §6 DoD canonical set. Config-only; no
   workflow or app change. (WI-S16-007 deliverable 2.)
+- **`dtolnay/rust-toolchain` ↔ host rustup `bin/cargo` conflict on the
+  self-hosted Macs.** The cargo-fuzz / cargo-mutants jobs (and the
+  `region_pinning.yml` Rust jobs) used `dtolnay/rust-toolchain@…` to
+  provision a toolchain, but the self-hosted Macs already ship
+  rustup+cargo, so the action's component install collided with
+  `error: failed to install component: 'cargo-x86_64-apple-darwin',
+  detected conflict: 'bin/cargo'` (with a companion `cargo: command not
+  found` downstream). Replaced those provisioning steps with a `run:` that
+  puts the **pre-installed host toolchain** on `$GITHUB_PATH` (the CLAUDE.md
+  "rustup proxy is broken" pattern) — `nightly-x86_64-apple-darwin` for the
+  cargo-fuzz jobs (cargo-fuzz needs nightly) and `1.91.1-x86_64-apple-darwin`
+  (the `rust-toolchain.toml`-pinned channel) for the cargo-mutants +
+  region-pinning jobs. Touches the offending jobs only in
+  `corelink-worker.yml`, `corelink-meta.yml`, `corelink-hash.yml`,
+  `corelink-reapi.yml`, `tenant-path.yml`, and `region_pinning.yml`; the
+  `pr-gate`/`wasm-build` steps (which request `components`/`targets`) are
+  left untouched, and the heavy nightly fuzz/mutants jobs stay
+  `if: schedule`-gated.
 - **Welcome greeting → native `gh` (Docker-on-mac keystone).** The
   first-PR welcome workflow used `actions/first-interaction` — a Docker
   *container action* (Linux-only) that hard-failed `Container action is only
