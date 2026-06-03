@@ -80,6 +80,17 @@ Each entry cross-references:
 
 ### Fixed
 
+- **TLA+ `region_residency` (and sibling) model-check gates -- ASCII-only `.cfg`
+  comments.** TLC's configuration-file parser is not UTF-8-robust and choked on
+  non-ASCII Unicode in comment bodies (`TLC found an error in the configuration
+  file ... It was expecting ], but did not find it`), failing the
+  `region_residency` gate on the macOS fleet. Replaced the offending characters in
+  comments across all 69 affected `specs/tla/*.cfg` files with ASCII equivalents
+  (`->`, `--`, `-`, `x`, `sec `, `<=`, `>=`, `~`, and de-accented Portuguese) --
+  pre-empting the same failure on every sibling TLA gate. No config semantics
+  changed: CONSTANTS, INVARIANTS, PROPERTIES, and the `PrimaryRegionOf` map are
+  byte-for-byte intact (the `|->` function tokens were already ASCII and were
+  preserved).
 - **Terraform CI cluster — un-broke the whole `terraform-lint` gate.** Three
   tangled fixes landed together: (1) native `tfsec` (the Docker action is
   Linux-only) with the one real finding (BYOK aws-kms `kms:ReEncrypt*` wildcard,
