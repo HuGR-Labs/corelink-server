@@ -56,6 +56,16 @@ ignore = [
     # migrates to rustls-pki-types directly. Mitigation: PEM parsing only
     # happens at test-container boot, never against external input in prod.
     "RUSTSEC-2025-0134",
+    # 2026-06-02 — number_prefix 0.4.0 RUSTSEC-2025-0119 (unmaintained-ONLY;
+    # no vuln, no CVE). Reached solely via `indicatif 0.17.11 → corelink-cli`
+    # (the dev/ops CLI progress bars in tools/cli). Upstream advisory states
+    # "No safe upgrade is available!" — number_prefix has no maintained
+    # replacement wired into indicatif yet (indicatif must migrate to
+    # `unit-prefix` first). Zero production/runtime exposure: corelink-cli is
+    # an operator tool, not shipped in the CF Workers runtime. Re-evaluate
+    # when indicatif cuts a release dropping number_prefix (track an indicatif
+    # bump that switches to unit-prefix), then remove this ignore.
+    "RUSTSEC-2025-0119",
 ]
 # CVSS threshold not applied: HIGH_RISK lane treats EVERY advisory as
 # blocking until explicitly waived via ADR.
