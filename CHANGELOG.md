@@ -128,6 +128,15 @@ Each entry cross-references:
   changed; only the build-config invocation. (The job's `SEV-2 matrix cell
   break` echo was a red herring — the failure was a build-config error, not a
   cell failure.)
+- **Unresolvable action SHA pins in `terraform-drift.yml`** — the drift-detection
+  workflow failed at "Set up job" with `Unable to resolve action … unable to find
+  version` because `hashicorp/setup-terraform` and `slackapi/slack-github-action`
+  were pinned to non-existent commit SHAs (a bad SHA-pinning pass; both returned
+  HTTP 404 from the GitHub git-refs API). Repinned each `uses:` (and its trailing
+  comment) to the real commit SHA for the version in the comment:
+  `setup-terraform` → `b9cd54a3c349d3f38e8881555d616ced269862dd` (`v3.1.2`);
+  `slack-github-action` → `485a9d42d3a73031f12ec201c457e2162c45d02d` (`v2.0.0`).
+  Every `uses:` remains SHA-pinned (supply-chain constraint WI-S01-007 / WI-S13-004).
 - **macOS self-hosted CI-fleet hardening — migrate-to-self-hosted
   regressions.** The 2026-05-31 cutover to the macOS self-hosted runner fleet
   (5× `corelink-builder`, all macOS, zero Linux) left several gates silently
