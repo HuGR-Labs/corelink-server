@@ -721,6 +721,78 @@ mod tests {
         assert!(extract_bearer_http(&h).is_err());
     }
 
+    /// Pin the EXACT extracted token so the `s[space_pos + 1..]` slice
+    /// arithmetic is asserted byte-for-byte. This kills the index-offset
+    /// mutants on the token slice that the prefix-only assertions above
+    /// miss:
+    ///
+    /// - `+` → `-` ⇒ `s[space_pos - 1..]` = `"r corelink-pat-AbC123"`
+    ///   (the trailing `r` of the scheme leaks in); `.trim_start()` is a
+    ///   no-op (leading char is `r`, not whitespace) ⇒ wrong token ⇒ killed.
+    /// - literal `1` → `2` ⇒ `s[space_pos + 2..]` = `"orelink-pat-AbC123"`
+    ///   (first token char is dropped) ⇒ wrong token ⇒ killed.
+    ///
+    /// (`+` → `*` and `1` → `0` both collapse to `s[space_pos..]`, whose
+    /// only extra leading char is the matched ASCII space — `trim_start()`
+    /// removes it, so those two are EQUIVALENT mutants, unkillable by any
+    /// value assertion; documented so future readers don't chase a ghost.)
+    #[test]
+    fn extract_bearer_http_exact_token_value() {
+        let mut h = HeaderMap::new();
+        h.insert(
+            header::AUTHORIZATION,
+            "Bearer corelink-pat-AbC123".parse().unwrap(),
+        );
+        assert_eq!(extract_bearer_http(&h).unwrap(), "corelink-pat-AbC123");
+    }
+
+    /// Lock the scheme/token boundary from both sides:
+    ///   - a single-char token immediately after the space (`"Bearer Z"`
+    ///     ⇒ `"Z"`) pins the right edge of the slice;
+    ///   - a token that itself contains interior spaces (`"a b c"`)
+    ///     proves ONLY the scheme + its one delimiter space is stripped —
+    ///     the `+` → `-` mutant would yield `"r a b c"` here ⇒ killed.
+    #[test]
+    fn extract_bearer_http_prefix_boundary_exact() {
+        let mut h = HeaderMap::new();
+        h.insert(header::AUTHORIZATION, "Bearer Z".parse().unwrap());
+        assert_eq!(extract_bearer_http(&h).unwrap(), "Z");
+
+        let mut h2 = HeaderMap::new();
+        h2.insert(header::AUTHORIZATION, "Bearer a b c".parse().unwrap());
+        assert_eq!(extract_bearer_http(&h2).unwrap(), "a b c");
+    }
+
+    /// `extract_request_id_http` must echo the client-supplied
+    /// `x-request-id` verbatim. Asserting the EXACT value kills both
+    /// return-value mutants:
+    ///   - `String::new()`  ⇒ returns `""`      ⇒ `!= "req-2026-..."` ⇒ killed.
+    ///   - `"xyzzy".into()` ⇒ returns `"xyzzy"` ⇒ `!= "req-2026-..."` ⇒ killed.
+    #[test]
+    fn extract_request_id_http_present_exact() {
+        let mut h = HeaderMap::new();
+        h.insert("x-request-id", "req-2026-06-03-abc".parse().unwrap());
+        assert_eq!(extract_request_id_http(&h), "req-2026-06-03-abc");
+    }
+
+    /// Absent `x-request-id` ⇒ a freshly minted UUIDv7 correlation id.
+    /// We can't pin the exact value (it's random), but asserting it parses
+    /// as a UUID is a tight-enough invariant to ALSO kill both mutants:
+    ///   - `String::new()`  ⇒ `""`      ⇒ `Uuid::parse_str` fails ⇒ killed.
+    ///   - `"xyzzy".into()` ⇒ `"xyzzy"` ⇒ `Uuid::parse_str` fails ⇒ killed.
+    #[test]
+    fn extract_request_id_http_absent_is_fresh_uuid() {
+        let h = HeaderMap::new();
+        let id = extract_request_id_http(&h);
+        assert!(!id.is_empty());
+        assert_ne!(id, "xyzzy");
+        // A real UUIDv7 string round-trips through the parser.
+        assert!(
+            uuid::Uuid::parse_str(&id).is_ok(),
+            "absent x-request-id must mint a parseable UUID, got {id:?}"
+        );
+    }
+
     #[test]
     fn grpc_status_to_http_canonical() {
         assert_eq!(grpc_status_to_http(5), StatusCode::NOT_FOUND);

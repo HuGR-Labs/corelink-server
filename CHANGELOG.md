@@ -138,6 +138,15 @@ Each entry cross-references:
   demand). The `runs-on` pin is intentionally unchanged — these k6 suites are
   too heavy for the macOS builder fleet (the Mac *is* the fleet). Re-add the
   nightly `schedule` once a Linux self-hosted runner is registered.
+- **`corelink-reapi` mutation-coverage gap — `http_read` auth extractors.**
+  `cargo mutants -p corelink-reapi` reported surviving mutants in
+  `crates/corelink-reapi/src/http_read.rs`: the `extract_bearer_http` token-slice
+  arithmetic and both `extract_request_id_http` return-value mutants
+  (`String::new()` / `"xyzzy".into()`) were never asserted. Added four targeted
+  unit tests that pin the EXACT extracted bearer token (incl. scheme/token
+  boundary + interior-space tokens) and the EXACT echoed `x-request-id` (present
+  case) plus the minted-UUID invariant (absent case), so each killable mutant now
+  changes asserted output and fails. Tests only — no production-logic change.
 - **Welcome greeting → native `gh` (Docker-on-mac keystone).** The
   first-PR welcome workflow used `actions/first-interaction` — a Docker
   *container action* (Linux-only) that hard-failed `Container action is only
