@@ -98,15 +98,63 @@ jobs:
   tfsec:
     name: tfsec
     runs-on: [self-hosted, mac, corelink-builder]
+    # Native tfsec (no container action). `aquasecurity/tfsec-sarif-action` is a
+    # Docker container action — Linux-only — which HARD-FAILS on the macOS
+    # self-hosted fleet ("Container action is only supported on Linux"). We
+    # download the pinned tfsec darwin binary from GitHub Releases (SHA-256
+    # verified, mirroring the supply-chain pin pattern in tla_check.yml) and run
+    # it directly. (2026-06-02)
+    env:
+      TFSEC_VERSION: "1.28.14"
+      # SHA-256 of the RAW `tfsec-darwin-amd64` release asset for the version
+      # above. The published checksums.txt only covers the .tar.gz archives, so
+      # this hash was captured + verified out-of-band against two independent
+      # downloads. Re-pin requires re-deriving this hash for the new version.
+      TFSEC_SHA256_PINNED: "99e5a17e6b3cff458998f252212064c3bb156a9d3fb67760d12ff26e46ea2e1a"
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Install tfsec (pinned, SHA-256 verified)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tfsec"
+          BIN="$RUNNER_TEMP/tfsec/tfsec"
+          curl -fsSL -o "$BIN" \
+            "https://github.com/aquasecurity/tfsec/releases/download/v${TFSEC_VERSION}/tfsec-darwin-amd64"
+          # sha256sum (Linux) with shasum -a 256 fallback (macOS host).
+          if command -v sha256sum >/dev/null 2>&1; then
+            ACTUAL_SHA="$(sha256sum "$BIN" | awk '{print $1}')"
+          else
+            ACTUAL_SHA="$(shasum -a 256 "$BIN" | awk '{print $1}')"
+          fi
+          echo "tfsec SHA-256 actual: ${ACTUAL_SHA}"
+          echo "tfsec SHA-256 expect: ${TFSEC_SHA256_PINNED}"
+          # HARD-FAIL on hash drift (supply-chain pin per WI-S01-007).
+          if [ "${ACTUAL_SHA}" != "${TFSEC_SHA256_PINNED}" ]; then
+            echo "::error::tfsec SHA-256 supply-chain pin violation (WI-S01-007)" >&2
+            echo "::error::expected: ${TFSEC_SHA256_PINNED}" >&2
+            echo "::error::actual:   ${ACTUAL_SHA}" >&2
+            exit 1
+          fi
+          chmod +x "$BIN"
+          "$BIN" --version
+
       - name: tfsec
-        uses: aquasecurity/tfsec-sarif-action@9a83b5c3524f825c020e356335855741fd02745f # v0.1.4
-        with:
-          working_directory: infra/terraform
-          sarif_file: tfsec.sarif
+        run: |
+          set -euo pipefail
+          # `--force-all-dirs`: scan EVERY .tf under infra/terraform (modules,
+          # regions, environments — ~65 files / 417 blocks), not just the root
+          # module graph. Without it tfsec only reads the top-level main.tf and
+          # the gate passes trivially while ~all of the IaC goes unscanned.
+          # Findings make this step exit non-zero so the job legitimately fails
+          # and the owner sees them; the SARIF is still uploaded below
+          # (if: always()) so they also surface as code-scanning alerts.
+          "$RUNNER_TEMP/tfsec/tfsec" infra/terraform \
+            --force-all-dirs \
+            --format sarif \
+            --out tfsec.sarif \
+            --no-color
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.26.6

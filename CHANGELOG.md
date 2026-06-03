@@ -80,6 +80,34 @@ Each entry cross-references:
 
 ### Fixed
 
+- **Docker-on-mac CI conversions, part 2 — tfsec / welcome / smoke-install**
+  (follow-up to the macOS self-hosted fleet hardening below). The 2026-05-31
+  cutover left three more workflows wired to Docker container actions / a Docker
+  daemon, which the Linux-less mac fleet cannot run:
+  - **`terraform-lint.yml` (tfsec)** — replaced the Linux-only
+    `aquasecurity/tfsec-sarif-action` with the pinned `tfsec` darwin binary
+    (v1.28.14), downloaded from GitHub Releases and SHA-256-verified
+    (`99e5a17e…`, hard-fail on drift, mirroring the `tla_check.yml` supply-chain
+    pin). Switched the scan to `--force-all-dirs` so it actually walks all 65
+    `.tf` files / 417 blocks (modules, regions, environments) instead of only
+    the root `main.tf` (3 blocks) the old default would have read — i.e. the
+    gate had been effectively a no-op. With the gate finally exercising the IaC
+    it surfaced **1 real HIGH finding** (`aws-iam-no-policy-wildcards`,
+    `modules/byok-providers/aws-kms/main.tf:51` — the IAM policy uses the
+    `kms:ReEncrypt*` action wildcard, though scoped to specific
+    `customer_kms_key_arns`). Left unsuppressed: the job fail-and-reports and
+    the SARIF still uploads (`if: always()`) so it lands in the Security tab —
+    owner to decide pin-exact vs. accept.
+  - **`welcome-first-pr.yml`** — replaced the Linux-only
+    `actions/first-interaction` with a native `gh` step (search-API first-timer
+    count + `gh pr/issue comment`), same greeting text, bot-filtered and
+    idempotent. Kept the `pull_request_target` trigger (write token for fork
+    PRs).
+  - **`smoke-install.yml`** — added a `docker info` preflight that skips the
+    container smoke test with a `::notice::` when no Docker daemon is present
+    (the fleet has no guaranteed one), instead of hard-failing; flagged an owner
+    decision (Colima fleet-wide vs. retire). Only `push:main` + schedule trigger
+    it, so it never blocks PRs.
 - **macOS self-hosted CI-fleet hardening — migrate-to-self-hosted
   regressions.** The 2026-05-31 cutover to the macOS self-hosted runner fleet
   (5× `corelink-builder`, all macOS, zero Linux) left several gates silently
