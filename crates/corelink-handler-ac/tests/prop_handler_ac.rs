@@ -27,7 +27,11 @@ fn proptest_cases() -> u32 {
         .unwrap_or(256)
 }
 
-fn fixture() -> (Arc<InMemoryAuditSink>, Arc<InMemorySliObserver>, InMemoryAcHandler) {
+fn fixture() -> (
+    Arc<InMemoryAuditSink>,
+    Arc<InMemorySliObserver>,
+    InMemoryAcHandler,
+) {
     let a = Arc::new(InMemoryAuditSink::new());
     let s = Arc::new(InMemorySliObserver::new());
     let h = InMemoryAcHandler::new(a.clone(), s.clone());

@@ -349,13 +349,13 @@ mod tests {
     use std::sync::Arc;
 
     use bytes::Bytes;
+    use corelink_cas::r2_storage::{InMemoryR2, R2Writer};
     use corelink_meta::InMemoryMetaStore;
     use corelink_meta::{
         AuditEvent, AuditEventType, CommitPutRequest, CommitSoftDeleteRequest, RequestId,
     };
-    use corelink_tenant_path::TenantDerivationKey;
-    use corelink_cas::r2_storage::{InMemoryR2, R2Writer};
     use corelink_replication::region_resolver::Region;
+    use corelink_tenant_path::TenantDerivationKey;
     use uuid::Uuid;
     use zeroize::Zeroizing;
 

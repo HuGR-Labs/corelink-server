@@ -248,9 +248,7 @@ fn lookup_user_by_email_hash_filters_exact_match() {
 
     // Looking up alice must return alice, NOT bob (kills `== -> !=`
     // which would return bob's row when asked for alice).
-    let found = s
-        .lookup_user_by_email_hash(&alice)
-        .expect("alice found");
+    let found = s.lookup_user_by_email_hash(&alice).expect("alice found");
     assert_eq!(found.clerk_user_id, "u_alice");
     let found_bob = s.lookup_user_by_email_hash(&bob).expect("bob found");
     assert_eq!(found_bob.clerk_user_id, "u_bob");
@@ -300,7 +298,8 @@ fn insert_user_rejects_empty_and_over_200_clerk_id() {
 fn lookup_pat_by_token_id_matches_exactly() {
     let mut s = AuthSchema::new();
     s.insert_account(account_row(0x40)).expect("acct");
-    s.insert_tenant(tenant_row(0x41, 0x40, "team-z")).expect("tnt");
+    s.insert_tenant(tenant_row(0x41, 0x40, "team-z"))
+        .expect("tnt");
     s.insert_pat(pat_row(0x42, 0x41, "tok_aaaa00000000", vec![0xA1; 16]))
         .expect("pat a");
     s.insert_pat(pat_row(0x43, 0x41, "tok_bbbb00000000", vec![0xB2; 16]))
@@ -335,7 +334,8 @@ fn lookup_pat_by_token_id_matches_exactly() {
 fn revoke_pat_returns_supplied_timestamp_and_is_idempotent() {
     let mut s = AuthSchema::new();
     s.insert_account(account_row(0x50)).expect("acct");
-    s.insert_tenant(tenant_row(0x51, 0x50, "team-y")).expect("tnt");
+    s.insert_tenant(tenant_row(0x51, 0x50, "team-y"))
+        .expect("tnt");
     let pat = pat_row(0x52, 0x51, "tok_x00000000000", vec![0xC3; 16]);
     let pat_id = pat.pat_id;
     s.insert_pat(pat).expect("pat");
@@ -386,9 +386,12 @@ fn counts_reflect_inserted_rows() {
 
     s.insert_account(account_row(0x60)).expect("acct");
     // 3 tenants (kills Ok(0)).
-    s.insert_tenant(tenant_row(0x61, 0x60, "team-aa")).expect("t1");
-    s.insert_tenant(tenant_row(0x62, 0x60, "team-bb")).expect("t2");
-    s.insert_tenant(tenant_row(0x63, 0x60, "team-cc")).expect("t3");
+    s.insert_tenant(tenant_row(0x61, 0x60, "team-aa"))
+        .expect("t1");
+    s.insert_tenant(tenant_row(0x62, 0x60, "team-bb"))
+        .expect("t2");
+    s.insert_tenant(tenant_row(0x63, 0x60, "team-cc"))
+        .expect("t3");
     assert_eq!(s.tenant_count(), 3, "kills tenant_count -> 0");
 
     // 2 pats (kills pat_count -> 0).
@@ -443,7 +446,9 @@ fn is_valid_slug_rejects_leading_or_trailing_dash() {
     // Leading-dash slug: alnum-last, non-alnum-first. Kills ||→&&
     // (the && mutant accepts this).
     let bad_leading = tenant_row(0x71, 0x70, "-leadingdash");
-    let err = s.insert_tenant(bad_leading).expect_err("leading - rejected");
+    let err = s
+        .insert_tenant(bad_leading)
+        .expect_err("leading - rejected");
     assert!(format!("{err}").contains("tenant.slug"));
 
     // Trailing-dash slug: alnum-first, non-alnum-last. Kills ||→&&

@@ -17,8 +17,8 @@
 )]
 
 use corelink_privacy::notice::{
-    emitter::{InMemoryNoticeEmitter, NoticeEmitter, NoticePublishRequest},
     audit::FailingNoticeAuditSink,
+    emitter::{InMemoryNoticeEmitter, NoticeEmitter, NoticePublishRequest},
     error::NoticeEmitterError,
     event::{NoticeLocale, NoticeVersion},
     store::{InMemoryNoticeStateStore, NoticePublicationState, NoticeStateStore},

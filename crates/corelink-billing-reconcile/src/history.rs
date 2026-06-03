@@ -138,7 +138,11 @@ impl DriftHistoryLedger for InMemoryDriftHistoryLedger {
                 "billing-reconcile drift history mutex poisoned".to_string(),
             )
         })?;
-        let key = (row.tenant_id, row.billing_period.clone(), row.run_started_at);
+        let key = (
+            row.tenant_id,
+            row.billing_period.clone(),
+            row.run_started_at,
+        );
         if let Some(existing) = guard.get(&key) {
             if existing == row {
                 return Ok(DriftHistoryInsertOutcome::AlreadyExistsIdempotent);

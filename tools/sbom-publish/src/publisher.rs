@@ -134,7 +134,10 @@ pub trait SbomPublisher: Send + Sync + std::fmt::Debug {
     ) -> Result<DtProjectUuid, SbomError>;
 
     /// Validate NTIA minimum elements on a raw CycloneDX JSON value.
-    async fn validate_ntia(&self, sbom_json: &serde_json::Value) -> Result<NtiaValidation, SbomError>;
+    async fn validate_ntia(
+        &self,
+        sbom_json: &serde_json::Value,
+    ) -> Result<NtiaValidation, SbomError>;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,11 +182,7 @@ impl DefaultSbomPublisher {
     /// let tsa = Url::parse("https://tsa.sigstore.dev/api/v1/timestamp").unwrap();
     /// let pub_ = DefaultSbomPublisher::new(tsa, &[], &[]);
     /// ```
-    pub fn new(
-        tsa_url: Url,
-        workspace_members: &[&str],
-        patched_crates: &[&str],
-    ) -> Self {
+    pub fn new(tsa_url: Url, workspace_members: &[&str], patched_crates: &[&str]) -> Self {
         // reqwest::ClientBuilder::build() only fails when TLS is misconfigured;
         // with default rustls feature this is infallible at runtime.
         // We use unwrap_or_else with a known-safe fallback instead of expect.
@@ -387,7 +386,10 @@ impl SbomPublisher for DefaultSbomPublisher {
         .await
     }
 
-    async fn validate_ntia(&self, sbom_json: &serde_json::Value) -> Result<NtiaValidation, SbomError> {
+    async fn validate_ntia(
+        &self,
+        sbom_json: &serde_json::Value,
+    ) -> Result<NtiaValidation, SbomError> {
         let span = info_span!("sbom.validate_ntia");
         async move {
             let result = validate_ntia_json(sbom_json, ValidationMode::Strict);

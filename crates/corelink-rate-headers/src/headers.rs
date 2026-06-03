@@ -98,10 +98,7 @@ impl XRateLimitTypeKind {
     /// Callers MUST pass `true` only when the underlying trip reason is
     /// `ManualOverride`.
     #[must_use]
-    pub const fn counts_against_sli(
-        self,
-        is_manual_override: bool,
-    ) -> bool {
+    pub const fn counts_against_sli(self, is_manual_override: bool) -> bool {
         match self {
             Self::TenantQuota => true,
             Self::GlobalCircuitOpen => !is_manual_override,
@@ -375,8 +372,7 @@ impl RateLimitHeaderBuilder {
         tier: String,
         quota_reset_utc: String,
     ) -> RateLimitHeaders {
-        let clamped_retry_after =
-            retry_after_secs.min(RETRY_AFTER_HARD_CEILING_SECS);
+        let clamped_retry_after = retry_after_secs.min(RETRY_AFTER_HARD_CEILING_SECS);
         // remaining is structurally clamped to ≤ limit per RFC 9331 §2.
         let clamped_remaining = remaining.min(limit);
         RateLimitHeaders {
@@ -396,9 +392,7 @@ impl RateLimitHeaderBuilder {
     /// limit + remaining are both 0 (system-wide reject); reset = 60s
     /// (canonical hysteresis sample interval); retry_after = 60s.
     #[must_use]
-    pub fn for_global_circuit_open(
-        policies: Vec<RateLimitPolicy>,
-    ) -> RateLimitHeaders {
+    pub fn for_global_circuit_open(policies: Vec<RateLimitPolicy>) -> RateLimitHeaders {
         Self::build(
             0,
             0,
@@ -471,11 +465,7 @@ impl RateLimitErrorBody {
     /// reset_seconds / reset_utc` mirror the headers byte-for-byte;
     /// `tier_upgrade_url / docs_url` are the frozen canonical URLs.
     #[must_use]
-    pub fn from_headers(
-        headers: &RateLimitHeaders,
-        message: String,
-        request_id: String,
-    ) -> Self {
+    pub fn from_headers(headers: &RateLimitHeaders, message: String, request_id: String) -> Self {
         Self {
             code: ERROR_CODE_RATE_LIMIT_EXCEEDED,
             kind: headers.x_rate_limit_type,
@@ -511,27 +501,12 @@ impl RateLimitErrorBody {
             false,
         );
         push_json_string_field(&mut out, "tier", &self.tier, false);
-        push_json_string_field(
-            &mut out,
-            "tier_upgrade_url",
-            self.tier_upgrade_url,
-            false,
-        );
+        push_json_string_field(&mut out, "tier_upgrade_url", self.tier_upgrade_url, false);
         push_json_string_field(&mut out, "docs_url", self.docs_url, false);
-        push_json_string_field(
-            &mut out,
-            "request_id",
-            &self.request_id,
-            false,
-        );
+        push_json_string_field(&mut out, "request_id", &self.request_id, false);
         push_json_u64_field(&mut out, "limit", self.limit, false);
         push_json_u64_field(&mut out, "remaining", self.remaining, false);
-        push_json_u64_field(
-            &mut out,
-            "reset_seconds",
-            self.reset_seconds,
-            false,
-        );
+        push_json_u64_field(&mut out, "reset_seconds", self.reset_seconds, false);
         push_json_string_field(&mut out, "reset_utc", &self.reset_utc, false);
         out.push_str("}}");
         out
@@ -541,12 +516,7 @@ impl RateLimitErrorBody {
 /// Append a `"key":"value"` JSON field with optional leading comma.
 /// Performs the minimal RFC 8259 escaping required for the value:
 /// `"` `\` `\n` `\r` `\t` and control chars < 0x20.
-fn push_json_string_field(
-    out: &mut String,
-    key: &str,
-    value: &str,
-    first: bool,
-) {
+fn push_json_string_field(out: &mut String, key: &str, value: &str, first: bool) {
     if !first {
         out.push(',');
     }
@@ -639,12 +609,8 @@ mod tests {
         assert!(!XRateLimitTypeKind::OverQuota.counts_against_sli(false));
         // GlobalCircuitOpen: counted UNLESS ManualOverride (Lote 10.8bis
         // P1-3 R5 planned-drill exclusion):
-        assert!(
-            XRateLimitTypeKind::GlobalCircuitOpen.counts_against_sli(false)
-        );
-        assert!(
-            !XRateLimitTypeKind::GlobalCircuitOpen.counts_against_sli(true)
-        );
+        assert!(XRateLimitTypeKind::GlobalCircuitOpen.counts_against_sli(false));
+        assert!(!XRateLimitTypeKind::GlobalCircuitOpen.counts_against_sli(true));
     }
 
     #[test]
@@ -686,35 +652,19 @@ mod tests {
             60,
             XRateLimitTypeKind::TenantQuota,
         );
-        assert_eq!(
-            h.render_rate_limit_policy(),
-            "100;w=60, 1000;w=3600"
-        );
+        assert_eq!(h.render_rate_limit_policy(), "100;w=60, 1000;w=3600");
     }
 
     #[test]
     fn render_x_rate_limit_type_returns_canonical() {
-        let h = RateLimitHeaderBuilder::build(
-            100,
-            0,
-            60,
-            vec![],
-            60,
-            XRateLimitTypeKind::PerIp,
-        );
+        let h = RateLimitHeaderBuilder::build(100, 0, 60, vec![], 60, XRateLimitTypeKind::PerIp);
         assert_eq!(h.render_x_rate_limit_type(), "per_ip");
     }
 
     #[test]
     fn render_retry_after_seconds_form() {
-        let h = RateLimitHeaderBuilder::build(
-            100,
-            0,
-            60,
-            vec![],
-            42,
-            XRateLimitTypeKind::TenantQuota,
-        );
+        let h =
+            RateLimitHeaderBuilder::build(100, 0, 60, vec![], 42, XRateLimitTypeKind::TenantQuota);
         assert_eq!(h.render_retry_after(), "42");
     }
 
@@ -733,22 +683,15 @@ mod tests {
 
     #[test]
     fn build_clamps_remaining_to_limit() {
-        let h = RateLimitHeaderBuilder::build(
-            100,
-            500,
-            60,
-            vec![],
-            5,
-            XRateLimitTypeKind::TenantQuota,
-        );
+        let h =
+            RateLimitHeaderBuilder::build(100, 500, 60, vec![], 5, XRateLimitTypeKind::TenantQuota);
         assert_eq!(h.remaining, 100);
     }
 
     #[test]
     fn for_global_circuit_open_canonical_60s() {
-        let h = RateLimitHeaderBuilder::for_global_circuit_open(vec![
-            RateLimitPolicy::new(100, 60),
-        ]);
+        let h =
+            RateLimitHeaderBuilder::for_global_circuit_open(vec![RateLimitPolicy::new(100, 60)]);
         assert_eq!(h.limit, 0);
         assert_eq!(h.remaining, 0);
         assert_eq!(h.reset_secs, 60);
@@ -764,14 +707,8 @@ mod tests {
 
     #[test]
     fn empty_policies_render_to_empty_string() {
-        let h = RateLimitHeaderBuilder::build(
-            100,
-            0,
-            60,
-            vec![],
-            5,
-            XRateLimitTypeKind::TenantQuota,
-        );
+        let h =
+            RateLimitHeaderBuilder::build(100, 0, 60, vec![], 5, XRateLimitTypeKind::TenantQuota);
         assert_eq!(h.render_rate_limit_policy(), "");
     }
 
@@ -789,14 +726,8 @@ mod tests {
     fn build_default_vendor_fields_empty() {
         // `build` (legacy entrypoint) defaults the vendor fields to
         // empty strings + the frozen upgrade URL.
-        let h = RateLimitHeaderBuilder::build(
-            100,
-            0,
-            60,
-            vec![],
-            5,
-            XRateLimitTypeKind::TenantQuota,
-        );
+        let h =
+            RateLimitHeaderBuilder::build(100, 0, 60, vec![], 5, XRateLimitTypeKind::TenantQuota);
         assert_eq!(h.corelink_tier, "");
         assert_eq!(h.corelink_quota_reset_utc, "");
         assert_eq!(h.corelink_tier_upgrade_url, TIER_UPGRADE_URL);
@@ -895,9 +826,7 @@ mod tests {
         assert!(json.contains("\"kind\":\"tenant_quota\""));
         assert!(json.contains("\"retry_after_seconds\":5"));
         assert!(json.contains("\"tier\":\"free\""));
-        assert!(json.contains(
-            "\"tier_upgrade_url\":\"https://corelink.humangr.com/pricing\""
-        ));
+        assert!(json.contains("\"tier_upgrade_url\":\"https://corelink.humangr.com/pricing\""));
         assert!(json.contains(
             "\"docs_url\":\"https://docs.corelink.humangr.com/explanation/rate-limits\""
         ));
@@ -912,14 +841,7 @@ mod tests {
     fn body_render_json_escapes_user_message() {
         // Audit §2: `message` is human-readable; an adversarial message
         // containing `"` `\` `\n` MUST NOT break the JSON envelope.
-        let h = RateLimitHeaderBuilder::build(
-            10,
-            0,
-            5,
-            vec![],
-            5,
-            XRateLimitTypeKind::TenantQuota,
-        );
+        let h = RateLimitHeaderBuilder::build(10, 0, 5, vec![], 5, XRateLimitTypeKind::TenantQuota);
         let body = RateLimitErrorBody::from_headers(
             &h,
             String::from("oops \"quotes\" and \\ and \nnewlines"),
@@ -935,14 +857,7 @@ mod tests {
     #[test]
     fn body_per_ip_arm_has_empty_tier_acceptable() {
         // `per_ip` is pre-auth; tier may legitimately be empty.
-        let h = RateLimitHeaderBuilder::build(
-            0,
-            0,
-            60,
-            vec![],
-            60,
-            XRateLimitTypeKind::PerIp,
-        );
+        let h = RateLimitHeaderBuilder::build(0, 0, 60, vec![], 60, XRateLimitTypeKind::PerIp);
         let body = RateLimitErrorBody::from_headers(
             &h,
             String::from("IP rate limit exceeded"),
@@ -962,19 +877,8 @@ mod tests {
         // for ALL 5 arms (the audit §6 property test pins this at
         // 10k iterations; here we pin the 5 deterministic cases).
         for kind in canonical_kind_list() {
-            let h = RateLimitHeaderBuilder::build(
-                10,
-                0,
-                5,
-                vec![],
-                5,
-                kind,
-            );
-            let body = RateLimitErrorBody::from_headers(
-                &h,
-                String::from("denied"),
-                String::new(),
-            );
+            let h = RateLimitHeaderBuilder::build(10, 0, 5, vec![], 5, kind);
+            let body = RateLimitErrorBody::from_headers(&h, String::from("denied"), String::new());
             assert_eq!(body.kind, kind);
             assert_eq!(body.kind.as_str(), h.render_x_rate_limit_type());
         }

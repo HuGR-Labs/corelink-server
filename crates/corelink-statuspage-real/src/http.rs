@@ -174,7 +174,10 @@ impl StatuspageBackend for StatuspageHttpClient {
             .rate_limiter
             .decide(&self.page_id, &self.metric_id, now_epoch_ms)
         {
-            RateLimitDecision::DenyBackoff { retry_after, jitter } => {
+            RateLimitDecision::DenyBackoff {
+                retry_after,
+                jitter,
+            } => {
                 let retry_after_ms = u64::try_from(retry_after.as_millis()).unwrap_or(u64::MAX);
                 let jitter_ms = u64::try_from(jitter.as_millis()).unwrap_or(u64::MAX);
                 self.emit_audit(

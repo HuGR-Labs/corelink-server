@@ -113,14 +113,14 @@
 //! # });
 //! ```
 
-
-use async_trait::async_trait;
-use aes_gcm::{
-    Aes256Gcm,
-    aead::{Aead, KeyInit, generic_array::GenericArray},
+use crate::{
+    BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
 };
-use crate::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
-                    KmsProviderKind, WrappedDek};
+use aes_gcm::{
+    aead::{generic_array::GenericArray, Aead, KeyInit},
+    Aes256Gcm,
+};
+use async_trait::async_trait;
 
 pub(crate) mod key_resource;
 
@@ -239,7 +239,10 @@ impl AzureKeyVaultProvider {
     ) -> Result<Vec<u8>, BYOKError> {
         let cipher = Aes256Gcm::new(GenericArray::from_slice(key));
         let nonce_ga = GenericArray::from_slice(nonce);
-        let payload = aes_gcm::aead::Payload { msg: plaintext, aad };
+        let payload = aes_gcm::aead::Payload {
+            msg: plaintext,
+            aad,
+        };
         let ct = cipher
             .encrypt(nonce_ga, payload)
             .map_err(|e| BYOKError::AesGcm(format!("azure inner AES-GCM encrypt: {e}")))?;
@@ -261,9 +264,11 @@ impl AzureKeyVaultProvider {
         let nonce = GenericArray::from_slice(nonce_bytes);
         let cipher = Aes256Gcm::new(GenericArray::from_slice(key));
         let payload = aes_gcm::aead::Payload { msg: ct, aad };
-        cipher
-            .decrypt(nonce, payload)
-            .map_err(|e| BYOKError::AesGcm(format!("azure inner AES-GCM decrypt (AAD mismatch or corrupt): {e}")))
+        cipher.decrypt(nonce, payload).map_err(|e| {
+            BYOKError::AesGcm(format!(
+                "azure inner AES-GCM decrypt (AAD mismatch or corrupt): {e}"
+            ))
+        })
     }
 
     /// Mock Azure wrapKey: identity copy of key bytes.
@@ -328,7 +333,8 @@ impl KmsProvider for AzureKeyVaultProvider {
             Self::mock_wrap_key(&inner_key)
         } else {
             return Err(BYOKError::Provider(
-                "AzureKeyVaultProvider production mode not wired (SDK deferred; use mock for CI)".to_string(),
+                "AzureKeyVaultProvider production mode not wired (SDK deferred; use mock for CI)"
+                    .to_string(),
             ));
         };
 
@@ -459,7 +465,10 @@ mod tests {
         let dek = Dek::generate().expect("entropy");
         let orig = dek.bytes;
         let ctx = serde_json::json!({"tenant_id": "T1", "blob_hash": "H2"});
-        let wrapped = p.wrap_dek(&dek, &gcp_key_id(), Some(&ctx)).await.expect("wrap");
+        let wrapped = p
+            .wrap_dek(&dek, &gcp_key_id(), Some(&ctx))
+            .await
+            .expect("wrap");
         let unwrapped = p.unwrap_dek(&wrapped).await.expect("unwrap");
         assert_eq!(orig, unwrapped.bytes);
     }
@@ -469,7 +478,10 @@ mod tests {
         let p = AzureKeyVaultProvider::new_mock("eastus");
         let dek = Dek::generate().expect("entropy");
         let ctx_a = serde_json::json!({"tenant_id": "T1"});
-        let wrapped = p.wrap_dek(&dek, &gcp_key_id(), Some(&ctx_a)).await.expect("wrap");
+        let wrapped = p
+            .wrap_dek(&dek, &gcp_key_id(), Some(&ctx_a))
+            .await
+            .expect("wrap");
 
         // Tamper: change encryption_context → AES-GCM tag mismatch on unwrap.
         let tampered = WrappedDek {
@@ -477,7 +489,10 @@ mod tests {
             ..wrapped
         };
         let result = p.unwrap_dek(&tampered).await;
-        assert!(result.is_err(), "AES-GCM AAD binding must reject tampered context");
+        assert!(
+            result.is_err(),
+            "AES-GCM AAD binding must reject tampered context"
+        );
     }
 
     #[tokio::test]

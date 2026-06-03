@@ -38,12 +38,10 @@ use super::handler_timeline::handle_timeline;
 use super::shadow_factory::ShadowSinkFactory;
 use super::state::build_state;
 use super::tests_common::{
-    AggregateTimelineFailsShadow, FailingAnalyticsAuditSink, OneTenantFactory,
-    state_with_tenant_mismatch_and_failing_audit,
+    state_with_tenant_mismatch_and_failing_audit, AggregateTimelineFailsShadow,
+    FailingAnalyticsAuditSink, OneTenantFactory,
 };
-use super::types::{
-    EventCountQuery, TimelineQuery, EVENT_TYPE_ANALYTICS_QUERY, TENANT_ID_HEADER,
-};
+use super::types::{EventCountQuery, TimelineQuery, EVENT_TYPE_ANALYTICS_QUERY, TENANT_ID_HEADER};
 
 /// Wave-20 fix-stream (finding B-P1-02 + B-P1-03 closure).
 ///
@@ -117,10 +115,7 @@ async fn handle_timeline_error_arm_returns_503_on_audit_sink_failure() {
         tenant_id: tenant,
         region,
     });
-    let factory: Arc<dyn ShadowSinkFactory> = Arc::new(OneTenantFactory {
-        tenant,
-        shadow,
-    });
+    let factory: Arc<dyn ShadowSinkFactory> = Arc::new(OneTenantFactory { tenant, shadow });
     let mut state = build_state(factory);
     state.audit_sink = Arc::new(FailingAnalyticsAuditSink);
 
@@ -171,10 +166,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
         Region::Iad,
         Arc::new(InMemoryShadowSyncAuditSink::new()),
     ));
-    let factory: Arc<dyn ShadowSinkFactory> = Arc::new(OneTenantFactory {
-        tenant,
-        shadow,
-    });
+    let factory: Arc<dyn ShadowSinkFactory> = Arc::new(OneTenantFactory { tenant, shadow });
     let mut state = build_state(factory);
 
     // Pin the wall clock at a known instant well past unix epoch
@@ -236,14 +228,9 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
     // refilled (refill=1 token/s × 60s = 60 tokens, clamped to
     // burst=10). The next request MUST allow.
     fake.advance(std::time::Duration::from_secs(60));
-    let resp_after_advance = handle_event_count(
-        State(state),
-        None,
-        headers,
-        Query(query),
-    )
-    .await
-    .into_response();
+    let resp_after_advance = handle_event_count(State(state), None, headers, Query(query))
+        .await
+        .into_response();
     assert_eq!(
         resp_after_advance.status(),
         StatusCode::OK,
@@ -274,15 +261,11 @@ async fn analytics_wall_clock_saturated_to_zero_returns_503_and_emits_clock_unav
         Region::Iad,
         Arc::new(InMemoryShadowSyncAuditSink::new()),
     ));
-    let factory: Arc<dyn ShadowSinkFactory> = Arc::new(OneTenantFactory {
-        tenant,
-        shadow,
-    });
+    let factory: Arc<dyn ShadowSinkFactory> = Arc::new(OneTenantFactory { tenant, shadow });
     let mut state = build_state(factory);
 
     // Capture-sink swap so we can snapshot the emitted row.
-    let capture: Arc<InMemoryAnalyticsAuditSink> =
-        Arc::new(InMemoryAnalyticsAuditSink::new());
+    let capture: Arc<InMemoryAnalyticsAuditSink> = Arc::new(InMemoryAnalyticsAuditSink::new());
     state.audit_sink = capture.clone() as Arc<dyn AnalyticsAuditSink>;
 
     // Pin the wall clock at the saturating value (unix_ms == 0).
@@ -303,14 +286,9 @@ async fn analytics_wall_clock_saturated_to_zero_returns_503_and_emits_clock_unav
         event_type: None,
     };
 
-    let resp = handle_event_count(
-        State(state.clone()),
-        None,
-        headers.clone(),
-        Query(query),
-    )
-    .await
-    .into_response();
+    let resp = handle_event_count(State(state.clone()), None, headers.clone(), Query(query))
+        .await
+        .into_response();
     assert_eq!(
         resp.status(),
         StatusCode::SERVICE_UNAVAILABLE,

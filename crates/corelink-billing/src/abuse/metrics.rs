@@ -104,10 +104,7 @@ pub trait AbuseMetricsObserver: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Backend transport failures.
-    fn record_tier(
-        &self,
-        tier: AbuseTierLabel,
-    ) -> Result<(), AbuseMetricsObserverError>;
+    fn record_tier(&self, tier: AbuseTierLabel) -> Result<(), AbuseMetricsObserverError>;
 
     /// Record an `auto_suspend_attempts_total{tenant_id}` increment.
     /// SEV-1 LGPD violation canary; production wiring fires the
@@ -116,20 +113,15 @@ pub trait AbuseMetricsObserver: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Backend transport failures.
-    fn record_auto_suspend_attempt(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), AbuseMetricsObserverError>;
+    fn record_auto_suspend_attempt(&self, tenant_id: Uuid)
+        -> Result<(), AbuseMetricsObserverError>;
 
     /// Record a `downgrade_applied_total{tenant_id}` increment.
     ///
     /// # Errors
     ///
     /// Backend transport failures.
-    fn record_downgrade_applied(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), AbuseMetricsObserverError>;
+    fn record_downgrade_applied(&self, tenant_id: Uuid) -> Result<(), AbuseMetricsObserverError>;
 
     /// Record a `cross_tenant_feature_leak_total{tenant_id}` increment.
     /// SEV-1 INV-TENANT-ISOLATION canary; production wiring fires the
@@ -149,8 +141,7 @@ pub trait AbuseMetricsObserver: Send + Sync + core::fmt::Debug {
 pub struct InMemoryAbuseMetrics {
     counters: std::sync::Arc<Mutex<HashMap<(AbuseMetricKind, Uuid), u64>>>,
     tier_by_label: std::sync::Arc<Mutex<HashMap<AbuseTierLabel, u64>>>,
-    score_observations:
-        std::sync::Arc<Mutex<HashMap<Uuid, (AbuseTierLabel, f64)>>>,
+    score_observations: std::sync::Arc<Mutex<HashMap<Uuid, (AbuseTierLabel, f64)>>>,
 }
 
 impl InMemoryAbuseMetrics {
@@ -175,11 +166,7 @@ impl InMemoryAbuseMetrics {
 
     /// Counter for a specific tenant.
     #[must_use]
-    pub fn counter_for_tenant(
-        &self,
-        kind: AbuseMetricKind,
-        tenant_id: Uuid,
-    ) -> u64 {
+    pub fn counter_for_tenant(&self, kind: AbuseMetricKind, tenant_id: Uuid) -> u64 {
         let g = match self.counters.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -199,10 +186,7 @@ impl InMemoryAbuseMetrics {
 
     /// Latest observed score for a tenant.
     #[must_use]
-    pub fn score_for_tenant(
-        &self,
-        tenant_id: Uuid,
-    ) -> Option<(AbuseTierLabel, f64)> {
+    pub fn score_for_tenant(&self, tenant_id: Uuid) -> Option<(AbuseTierLabel, f64)> {
         let g = match self.score_observations.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -227,24 +211,17 @@ impl AbuseMetricsObserver for InMemoryAbuseMetrics {
         Ok(())
     }
 
-    fn record_tier(
-        &self,
-        tier: AbuseTierLabel,
-    ) -> Result<(), AbuseMetricsObserverError> {
+    fn record_tier(&self, tier: AbuseTierLabel) -> Result<(), AbuseMetricsObserverError> {
         let mut g = self.tier_by_label.lock().map_err(|_| {
-            AbuseMetricsObserverError::Backend(
-                "metrics tier_by_label mutex poisoned".to_string(),
-            )
+            AbuseMetricsObserverError::Backend("metrics tier_by_label mutex poisoned".to_string())
         })?;
         *g.entry(tier).or_insert(0) += 1;
         drop(g);
         let mut g = self.counters.lock().map_err(|_| {
-            AbuseMetricsObserverError::Backend(
-                "metrics counter mutex poisoned".to_string(),
-            )
+            AbuseMetricsObserverError::Backend("metrics counter mutex poisoned".to_string())
         })?;
-        *g.entry((AbuseMetricKind::TierCountTotal, Uuid::nil())).or_insert(0) +=
-            1;
+        *g.entry((AbuseMetricKind::TierCountTotal, Uuid::nil()))
+            .or_insert(0) += 1;
         Ok(())
     }
 
@@ -253,23 +230,16 @@ impl AbuseMetricsObserver for InMemoryAbuseMetrics {
         tenant_id: Uuid,
     ) -> Result<(), AbuseMetricsObserverError> {
         let mut g = self.counters.lock().map_err(|_| {
-            AbuseMetricsObserverError::Backend(
-                "metrics counter mutex poisoned".to_string(),
-            )
+            AbuseMetricsObserverError::Backend("metrics counter mutex poisoned".to_string())
         })?;
         *g.entry((AbuseMetricKind::AutoSuspendAttemptsTotal, tenant_id))
             .or_insert(0) += 1;
         Ok(())
     }
 
-    fn record_downgrade_applied(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), AbuseMetricsObserverError> {
+    fn record_downgrade_applied(&self, tenant_id: Uuid) -> Result<(), AbuseMetricsObserverError> {
         let mut g = self.counters.lock().map_err(|_| {
-            AbuseMetricsObserverError::Backend(
-                "metrics counter mutex poisoned".to_string(),
-            )
+            AbuseMetricsObserverError::Backend("metrics counter mutex poisoned".to_string())
         })?;
         *g.entry((AbuseMetricKind::DowngradeAppliedTotal, tenant_id))
             .or_insert(0) += 1;
@@ -281,9 +251,7 @@ impl AbuseMetricsObserver for InMemoryAbuseMetrics {
         tenant_id: Uuid,
     ) -> Result<(), AbuseMetricsObserverError> {
         let mut g = self.counters.lock().map_err(|_| {
-            AbuseMetricsObserverError::Backend(
-                "metrics counter mutex poisoned".to_string(),
-            )
+            AbuseMetricsObserverError::Backend("metrics counter mutex poisoned".to_string())
         })?;
         *g.entry((AbuseMetricKind::CrossTenantFeatureLeakTotal, tenant_id))
             .or_insert(0) += 1;
@@ -315,28 +283,16 @@ impl AbuseMetricsObserver for FailingAbuseMetrics {
     ) -> Result<(), AbuseMetricsObserverError> {
         Err(AbuseMetricsObserverError::Backend("induced".to_string()))
     }
-    fn record_tier(
-        &self,
-        _l: AbuseTierLabel,
-    ) -> Result<(), AbuseMetricsObserverError> {
+    fn record_tier(&self, _l: AbuseTierLabel) -> Result<(), AbuseMetricsObserverError> {
         Err(AbuseMetricsObserverError::Backend("induced".to_string()))
     }
-    fn record_auto_suspend_attempt(
-        &self,
-        _t: Uuid,
-    ) -> Result<(), AbuseMetricsObserverError> {
+    fn record_auto_suspend_attempt(&self, _t: Uuid) -> Result<(), AbuseMetricsObserverError> {
         Err(AbuseMetricsObserverError::Backend("induced".to_string()))
     }
-    fn record_downgrade_applied(
-        &self,
-        _t: Uuid,
-    ) -> Result<(), AbuseMetricsObserverError> {
+    fn record_downgrade_applied(&self, _t: Uuid) -> Result<(), AbuseMetricsObserverError> {
         Err(AbuseMetricsObserverError::Backend("induced".to_string()))
     }
-    fn record_cross_tenant_feature_leak(
-        &self,
-        _t: Uuid,
-    ) -> Result<(), AbuseMetricsObserverError> {
+    fn record_cross_tenant_feature_leak(&self, _t: Uuid) -> Result<(), AbuseMetricsObserverError> {
         Err(AbuseMetricsObserverError::Backend("induced".to_string()))
     }
 }
@@ -417,10 +373,7 @@ mod tests {
         let t = Uuid::from_u128(0xc);
         m.record_cross_tenant_feature_leak(t).unwrap();
         assert_eq!(
-            m.counter_for_tenant(
-                AbuseMetricKind::CrossTenantFeatureLeakTotal,
-                t
-            ),
+            m.counter_for_tenant(AbuseMetricKind::CrossTenantFeatureLeakTotal, t),
             1
         );
     }

@@ -13,9 +13,7 @@
     reason = "test target"
 )]
 
-use corelink_ac::schema::{
-    AcRegion, AcSchema, AcUpsertOutcome, AcUpsertRequest, SigAlg,
-};
+use corelink_ac::schema::{AcRegion, AcSchema, AcUpsertOutcome, AcUpsertRequest, SigAlg};
 use uuid::Uuid;
 
 fn tenant_a() -> Uuid {
@@ -54,10 +52,7 @@ fn first_insert_then_idempotent_refresh_emits_correct_outcomes() {
     assert_eq!(s.upsert(r1.clone()).unwrap(), AcUpsertOutcome::Inserted);
     let mut r2 = r1.clone();
     r2.now_ms = 5_000;
-    assert_eq!(
-        s.upsert(r2).unwrap(),
-        AcUpsertOutcome::IdempotentRefresh
-    );
+    assert_eq!(s.upsert(r2).unwrap(), AcUpsertOutcome::IdempotentRefresh);
 }
 
 #[test]

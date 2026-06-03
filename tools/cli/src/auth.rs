@@ -45,7 +45,10 @@ pub fn resolve_pat() -> Result<String, CliError> {
 
 fn load_from_config() -> Result<String, CliError> {
     let cfg = crate::config::load()?;
-    cfg.auth.pat.filter(|p| !p.is_empty()).ok_or(CliError::PatNotFound)
+    cfg.auth
+        .pat
+        .filter(|p| !p.is_empty())
+        .ok_or(CliError::PatNotFound)
 }
 
 /// Validates the structural shape of a PAT plaintext.
@@ -77,10 +80,7 @@ pub fn validate_pat_shape(pat: &str) -> Result<(), CliError> {
         return Err(CliError::PatMalformed);
     }
     let token_id = &after_env[..PAT_TOKEN_ID_LEN];
-    if !token_id
-        .bytes()
-        .all(|b| b.is_ascii_alphanumeric())
-    {
+    if !token_id.bytes().all(|b| b.is_ascii_alphanumeric()) {
         return Err(CliError::PatMalformed);
     }
 
@@ -129,7 +129,12 @@ pub fn validate_pat_shape(pat: &str) -> Result<(), CliError> {
 }
 
 #[cfg(test)]
-#[allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used)]
+#[allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used
+)]
 mod tests {
     use super::*;
 
@@ -153,13 +158,19 @@ mod tests {
     #[test]
     fn invalid_prefix_rejected() {
         let pat = make_pat("pat").replace("corelink_", "badprefix_");
-        assert!(matches!(validate_pat_shape(&pat), Err(CliError::PatMalformed)));
+        assert!(matches!(
+            validate_pat_shape(&pat),
+            Err(CliError::PatMalformed)
+        ));
     }
 
     #[test]
     fn invalid_env_rejected() {
         let pat = make_pat("dev"); // 'dev' not in allowlist
-        assert!(matches!(validate_pat_shape(&pat), Err(CliError::PatMalformed)));
+        assert!(matches!(
+            validate_pat_shape(&pat),
+            Err(CliError::PatMalformed)
+        ));
     }
 
     #[test]
@@ -168,22 +179,34 @@ mod tests {
         let short_secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"[..42].to_owned();
         let sig = "AAAAAAAAAAAAAAAAAAAAAA";
         let pat = format!("corelink_pat_{token_id}.{short_secret}.{sig}");
-        assert!(matches!(validate_pat_shape(&pat), Err(CliError::PatMalformed)));
+        assert!(matches!(
+            validate_pat_shape(&pat),
+            Err(CliError::PatMalformed)
+        ));
     }
 
     #[test]
     fn wrong_separator_rejected() {
         let pat = make_pat("pat").replace('.', "_");
-        assert!(matches!(validate_pat_shape(&pat), Err(CliError::PatMalformed)));
+        assert!(matches!(
+            validate_pat_shape(&pat),
+            Err(CliError::PatMalformed)
+        ));
     }
 
     #[test]
     fn empty_rejected() {
-        assert!(matches!(validate_pat_shape(""), Err(CliError::PatMalformed)));
+        assert!(matches!(
+            validate_pat_shape(""),
+            Err(CliError::PatMalformed)
+        ));
     }
 
     #[test]
     fn literal_rejected() {
-        assert!(matches!(validate_pat_shape("--pat=secret"), Err(CliError::PatMalformed)));
+        assert!(matches!(
+            validate_pat_shape("--pat=secret"),
+            Err(CliError::PatMalformed)
+        ));
     }
 }

@@ -332,14 +332,8 @@ impl PagerDutyEvent {
             details.insert("tenant_id_hash".to_string(), JsonValue::String(h.clone()));
         }
         if let PageContext::Synthetic { region } = &self.context {
-            details.insert(
-                "region".to_string(),
-                JsonValue::String(region.clone()),
-            );
-            details.insert(
-                "drill".to_string(),
-                JsonValue::Bool(true),
-            );
+            details.insert("region".to_string(), JsonValue::String(region.clone()));
+            details.insert("drill".to_string(), JsonValue::Bool(true));
         }
 
         let envelope = WireEnvelope {
@@ -592,9 +586,10 @@ impl HttpPagerDutyClient {
     /// synthetic drill).
     fn routing_key_for(&self, ctx: &PageContext) -> &RoutingKey {
         match ctx {
-            PageContext::Synthetic { .. } => {
-                self.synthetic_routing_key.as_ref().unwrap_or(&self.routing_key)
-            }
+            PageContext::Synthetic { .. } => self
+                .synthetic_routing_key
+                .as_ref()
+                .unwrap_or(&self.routing_key),
             PageContext::Production { .. } => &self.routing_key,
         }
     }
@@ -896,7 +891,10 @@ mod tests {
 
     #[test]
     fn acknowledge_reuses_dedup_key() {
-        let t = Arc::new(ScriptedTransport::new(vec![Ok(ok_response()), Ok(ok_response())]));
+        let t = Arc::new(ScriptedTransport::new(vec![
+            Ok(ok_response()),
+            Ok(ok_response()),
+        ]));
         let audit = Arc::new(CapturingAudit::new());
         let client = mk_client(
             Box::new(ScriptedTransport {
@@ -912,7 +910,11 @@ mod tests {
             .send(&prod_event(EventAction::Trigger, "shared", Severity::Sev1))
             .unwrap();
         client
-            .send(&prod_event(EventAction::Acknowledge, "shared", Severity::Sev1))
+            .send(&prod_event(
+                EventAction::Acknowledge,
+                "shared",
+                Severity::Sev1,
+            ))
             .unwrap();
         // both http calls used the same dedup_key in the body.
         let calls = t.calls.lock().unwrap();

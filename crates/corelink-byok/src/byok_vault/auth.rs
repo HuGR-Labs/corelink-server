@@ -119,7 +119,8 @@ impl VaultAuth {
             return Err(BYOKError::Provider(
                 "Vault auth: no auth method configured. Set one of \
                  VAULT_TOKEN | VAULT_APPROLE_ROLE_ID+VAULT_APPROLE_SECRET_ID | \
-                 VAULT_K8S_SERVICE_ACCOUNT_TOKEN | VAULT_AWS_ROLE".to_string(),
+                 VAULT_K8S_SERVICE_ACCOUNT_TOKEN | VAULT_AWS_ROLE"
+                    .to_string(),
             ));
         };
 
@@ -193,7 +194,13 @@ impl VaultAuth {
                     "role": role,
                     "jwt": sa_jwt,
                 });
-                login(&self.inner.http, &self.inner.vault_addr, "kubernetes", &body).await?
+                login(
+                    &self.inner.http,
+                    &self.inner.vault_addr,
+                    "kubernetes",
+                    &body,
+                )
+                .await?
             }
             AuthSource::AwsIam { role } => {
                 // NOTE: production Vault AWS IAM login requires a signed
@@ -267,7 +274,9 @@ async fn login(
 
     let lease = lr.auth.lease_duration.max(REFRESH_MARGIN_SECS * 2);
     let refresh_at = Instant::now()
-        .checked_add(Duration::from_secs(lease.saturating_sub(REFRESH_MARGIN_SECS)))
+        .checked_add(Duration::from_secs(
+            lease.saturating_sub(REFRESH_MARGIN_SECS),
+        ))
         .unwrap_or_else(Instant::now);
 
     Ok(CachedToken {

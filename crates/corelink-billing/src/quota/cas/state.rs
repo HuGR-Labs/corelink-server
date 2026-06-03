@@ -62,9 +62,7 @@ pub enum AtomicCasStateError {
     /// CAS version mismatch — write would clobber a mid-flight bump.
     /// Caller MUST surface this as a retry signal (NOT a hard error);
     /// the orchestrator handles the retry-loop.
-    #[error(
-        "atomic cas version mismatch: observed={observed} actual={actual}"
-    )]
+    #[error("atomic cas version mismatch: observed={observed} actual={actual}")]
     VersionMismatch {
         /// Version the caller observed (stale).
         observed: u64,
@@ -131,10 +129,7 @@ pub trait AtomicCasState: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Backend transport failures.
-    fn seed_row(
-        &self,
-        state: AtomicTenantBytesState,
-    ) -> Result<(), AtomicCasStateError>;
+    fn seed_row(&self, state: AtomicTenantBytesState) -> Result<(), AtomicCasStateError>;
 }
 
 /// In-memory atomic CAS state. Mirrors the canonical DO actor model
@@ -171,9 +166,7 @@ impl AtomicCasState for InMemoryAtomicCasState {
         region: EvictionRegion,
     ) -> Result<Option<AtomicTenantBytesState>, AtomicCasStateError> {
         let g = self.inner.lock().map_err(|_| {
-            AtomicCasStateError::Backend(
-                "atomic cas state mutex poisoned".to_string(),
-            )
+            AtomicCasStateError::Backend("atomic cas state mutex poisoned".to_string())
         })?;
         Ok(g.get(&(tenant_id, region)).copied())
     }
@@ -186,9 +179,7 @@ impl AtomicCasState for InMemoryAtomicCasState {
         delta_bytes: u64,
     ) -> Result<AtomicTenantBytesState, AtomicCasStateError> {
         let mut g = self.inner.lock().map_err(|_| {
-            AtomicCasStateError::Backend(
-                "atomic cas state mutex poisoned".to_string(),
-            )
+            AtomicCasStateError::Backend("atomic cas state mutex poisoned".to_string())
         })?;
         let cur_opt = g.get(&(tenant_id, region)).copied();
         let cur = match cur_opt {
@@ -206,12 +197,13 @@ impl AtomicCasState for InMemoryAtomicCasState {
                 actual: cur.cas_version,
             });
         }
-        let new_used = cur.bytes_used.checked_add(delta_bytes).ok_or(
-            AtomicCasStateError::Overflow {
-                current: cur.bytes_used,
-                delta: delta_bytes,
-            },
-        )?;
+        let new_used =
+            cur.bytes_used
+                .checked_add(delta_bytes)
+                .ok_or(AtomicCasStateError::Overflow {
+                    current: cur.bytes_used,
+                    delta: delta_bytes,
+                })?;
         let new_version = cur.cas_version.saturating_add(1);
         let new_state = AtomicTenantBytesState {
             tenant_id: cur.tenant_id,
@@ -224,14 +216,9 @@ impl AtomicCasState for InMemoryAtomicCasState {
         Ok(new_state)
     }
 
-    fn seed_row(
-        &self,
-        state: AtomicTenantBytesState,
-    ) -> Result<(), AtomicCasStateError> {
+    fn seed_row(&self, state: AtomicTenantBytesState) -> Result<(), AtomicCasStateError> {
         let mut g = self.inner.lock().map_err(|_| {
-            AtomicCasStateError::Backend(
-                "atomic cas state mutex poisoned".to_string(),
-            )
+            AtomicCasStateError::Backend("atomic cas state mutex poisoned".to_string())
         })?;
         g.insert((state.tenant_id, state.region), state);
         Ok(())
@@ -249,12 +236,7 @@ impl AtomicCasState for InMemoryAtomicCasState {
 mod tests {
     use super::*;
 
-    fn fresh_state(
-        tenant: Uuid,
-        used: u64,
-        quota: u64,
-        ver: u64,
-    ) -> AtomicTenantBytesState {
+    fn fresh_state(tenant: Uuid, used: u64, quota: u64, ver: u64) -> AtomicTenantBytesState {
         AtomicTenantBytesState {
             tenant_id: tenant,
             region: EvictionRegion::Sam,
@@ -267,10 +249,7 @@ mod tests {
     #[test]
     fn lookup_empty_returns_none() {
         let s = InMemoryAtomicCasState::new();
-        assert_eq!(
-            s.lookup(Uuid::nil(), EvictionRegion::Sam).unwrap(),
-            None
-        );
+        assert_eq!(s.lookup(Uuid::nil(), EvictionRegion::Sam).unwrap(), None);
     }
 
     #[test]
@@ -288,9 +267,7 @@ mod tests {
         let s = InMemoryAtomicCasState::new();
         let t = Uuid::from_u128(0xa);
         s.seed_row(fresh_state(t, 50, 100, 0)).unwrap();
-        let new_state = s
-            .try_commit_delta(t, EvictionRegion::Sam, 0, 10)
-            .unwrap();
+        let new_state = s.try_commit_delta(t, EvictionRegion::Sam, 0, 10).unwrap();
         assert_eq!(new_state.bytes_used, 60);
         assert_eq!(new_state.cas_version, 1);
     }
@@ -349,9 +326,7 @@ mod tests {
         let t = Uuid::from_u128(0xa);
         s.seed_row(fresh_state(t, 0, 1_000, 0)).unwrap();
         for i in 0u64..5 {
-            let st = s
-                .try_commit_delta(t, EvictionRegion::Sam, i, 1)
-                .unwrap();
+            let st = s.try_commit_delta(t, EvictionRegion::Sam, i, 1).unwrap();
             assert_eq!(st.cas_version, i + 1);
             assert_eq!(st.bytes_used, i + 1);
         }

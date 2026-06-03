@@ -71,8 +71,7 @@ fn verify_rejects_wrong_public_key() {
     let receipt = svc.accept(&c, build_req(0)).unwrap();
     // Generate a foreign keypair and try to verify with its public key.
     let foreign_pub: RsaPublicKeyPem = common::gen_keys().public;
-    let err = verify_receipt(&foreign_pub, Some("kid-test-01"), &receipt.jwt_receipt)
-        .unwrap_err();
+    let err = verify_receipt(&foreign_pub, Some("kid-test-01"), &receipt.jwt_receipt).unwrap_err();
     assert!(format!("{}", err).to_lowercase().contains("invalid"));
 }
 

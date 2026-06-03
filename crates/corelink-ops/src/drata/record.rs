@@ -120,23 +120,16 @@ mod tests {
     fn hash_changes_with_payload() {
         let mut r = fixture();
         r.source_id = "audit-outbox#2".into();
-        assert_ne!(record_sha256(&r).unwrap(), record_sha256(&fixture()).unwrap());
+        assert_ne!(
+            record_sha256(&r).unwrap(),
+            record_sha256(&fixture()).unwrap()
+        );
     }
 
     #[test]
     fn metadata_key_order_does_not_affect_hash() {
-        let r1 = EvidenceRecord::new(
-            EvidenceStream::AuditLogs,
-            "x",
-            0,
-            [("a", "1"), ("b", "2")],
-        );
-        let r2 = EvidenceRecord::new(
-            EvidenceStream::AuditLogs,
-            "x",
-            0,
-            [("b", "2"), ("a", "1")],
-        );
+        let r1 = EvidenceRecord::new(EvidenceStream::AuditLogs, "x", 0, [("a", "1"), ("b", "2")]);
+        let r2 = EvidenceRecord::new(EvidenceStream::AuditLogs, "x", 0, [("b", "2"), ("a", "1")]);
         assert_eq!(record_sha256(&r1).unwrap(), record_sha256(&r2).unwrap());
     }
 

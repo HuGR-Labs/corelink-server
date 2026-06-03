@@ -23,9 +23,7 @@ use crate::config::ClerkConfig;
 use crate::error::AuthError;
 use crate::jwks::{Jwks, JwksFetcher};
 use crate::jwks_cache::{is_fresh, CachedJwks, KvJwksCache};
-use crate::principal::{
-    ClerkOrgId, ClerkPrincipal, ClerkRole, ClerkSessionId, ClerkUserId, Email,
-};
+use crate::principal::{ClerkOrgId, ClerkPrincipal, ClerkRole, ClerkSessionId, ClerkUserId, Email};
 
 /// Refresh trigger for `corelink_auth_clerk_jwks_refresh_total{trigger=…}` (WI §6.1.6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -154,16 +152,13 @@ impl AudienceClaim {
         let mut hit = false;
         match self {
             AudienceClaim::Single(s) => {
-                if s.len() == expected_bytes.len()
-                    && s.as_bytes().ct_eq(expected_bytes).into()
-                {
+                if s.len() == expected_bytes.len() && s.as_bytes().ct_eq(expected_bytes).into() {
                     hit = true;
                 }
             }
             AudienceClaim::Multi(vs) => {
                 for v in vs {
-                    if v.len() == expected_bytes.len()
-                        && v.as_bytes().ct_eq(expected_bytes).into()
+                    if v.len() == expected_bytes.len() && v.as_bytes().ct_eq(expected_bytes).into()
                     {
                         hit = true;
                     }
@@ -342,10 +337,8 @@ impl ClerkAdapter {
         };
 
         // 3. Build the DecodingKey from the JWKS key components.
-        let decoding_key =
-            DecodingKey::from_rsa_components(&key.n_b64url, &key.e_b64url).map_err(|e| {
-                AuthError::Malformed(format!("RSA components rejected: {e}"))
-            })?;
+        let decoding_key = DecodingKey::from_rsa_components(&key.n_b64url, &key.e_b64url)
+            .map_err(|e| AuthError::Malformed(format!("RSA components rejected: {e}")))?;
 
         // 4. Build Validation with explicit RS256 allowlist. We
         // disable jsonwebtoken's built-in `exp`/`nbf`/`aud`/`iss`
@@ -364,8 +357,8 @@ impl ClerkAdapter {
         validation.iss = None;
 
         // 5. Verify signature + decode claims.
-        let token_data = decode::<Claims>(raw_jwt, &decoding_key, &validation).map_err(
-            |e| match *e.kind() {
+        let token_data =
+            decode::<Claims>(raw_jwt, &decoding_key, &validation).map_err(|e| match *e.kind() {
                 jsonwebtoken::errors::ErrorKind::InvalidSignature => AuthError::SignatureInvalid,
                 jsonwebtoken::errors::ErrorKind::InvalidAlgorithm => AuthError::AlgNotAllowed,
                 jsonwebtoken::errors::ErrorKind::InvalidAlgorithmName => AuthError::AlgNotAllowed,
@@ -382,8 +375,7 @@ impl ClerkAdapter {
                     AuthError::Malformed(format!("utf8 decode: {e}"))
                 }
                 _ => AuthError::SignatureInvalid,
-            },
-        )?;
+            })?;
         let claims = token_data.claims;
 
         // 5a. Clock-bound checks against the adapter's injected clock.
@@ -404,9 +396,7 @@ impl ClerkAdapter {
             let nbf_time = timestamp_to_systemtime(nbf)
                 .map_err(|e| AuthError::Malformed(format!("nbf: {e}")))?;
             // Token rejected if `now < nbf - leeway`.
-            let nbf_threshold = nbf_time
-                .checked_sub(leeway)
-                .unwrap_or(nbf_time);
+            let nbf_threshold = nbf_time.checked_sub(leeway).unwrap_or(nbf_time);
             if now < nbf_threshold {
                 return Err(AuthError::NotYetValid);
             }
@@ -441,8 +431,8 @@ impl ClerkAdapter {
         let email_raw = claims
             .email
             .ok_or_else(|| AuthError::Malformed("missing email claim".into()))?;
-        let email = Email::parse(&email_raw)
-            .map_err(|e| AuthError::Malformed(format!("email: {e}")))?;
+        let email =
+            Email::parse(&email_raw).map_err(|e| AuthError::Malformed(format!("email: {e}")))?;
         let role_claim = claims.clerk_role.or(claims.role);
         let clerk_role = ClerkRole::from_claim(role_claim.as_deref());
 
@@ -551,9 +541,7 @@ fn issuer_allowed(got: &str, allowlist: &[String]) -> bool {
     let got_bytes = got.as_bytes();
     let mut hit = false;
     for candidate in allowlist {
-        if candidate.len() == got_bytes.len()
-            && candidate.as_bytes().ct_eq(got_bytes).into()
-        {
+        if candidate.len() == got_bytes.len() && candidate.as_bytes().ct_eq(got_bytes).into() {
             hit = true;
         }
     }
@@ -595,8 +583,8 @@ fn decode_header_json(raw_jwt: &str) -> Result<serde_json::Value, AuthError> {
 /// adversarial-regression coverage.
 #[doc(hidden)]
 pub fn extract_kid(raw_jwt: &str) -> Result<String, AuthError> {
-    let header = decode_header(raw_jwt)
-        .map_err(|e| AuthError::Malformed(format!("header decode: {e}")))?;
+    let header =
+        decode_header(raw_jwt).map_err(|e| AuthError::Malformed(format!("header decode: {e}")))?;
     header
         .kid
         .ok_or_else(|| AuthError::Malformed("missing kid header".into()))
@@ -611,8 +599,8 @@ pub fn extract_kid(raw_jwt: &str) -> Result<String, AuthError> {
     reason = "test-only doc-hidden helper; errors are AuthError::Malformed"
 )]
 pub fn decode_alg_for_test(raw_jwt: &str) -> Result<Algorithm, AuthError> {
-    let header = decode_header(raw_jwt)
-        .map_err(|e| AuthError::Malformed(format!("header decode: {e}")))?;
+    let header =
+        decode_header(raw_jwt).map_err(|e| AuthError::Malformed(format!("header decode: {e}")))?;
     Ok(header.alg)
 }
 

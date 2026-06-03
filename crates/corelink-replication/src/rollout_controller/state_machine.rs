@@ -5,7 +5,9 @@
 //! for each decision arm.
 
 use super::error::RolloutError;
-use super::types::{AutoRollbackTrigger, GateMetrics, NextAction, RolloutDecision, RolloutStage, RolloutStatus};
+use super::types::{
+    AutoRollbackTrigger, GateMetrics, NextAction, RolloutDecision, RolloutStage, RolloutStatus,
+};
 
 /// Result of a validated state-machine transition.
 #[derive(Debug, Clone)]

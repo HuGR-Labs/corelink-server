@@ -12,9 +12,7 @@
 //! State is never mutated if audit emit fails (ResidencyViolation::AuditEmitFailure).
 
 use super::{
-    audit_emit::{
-        RequestRoutedPayload, ResidencyAuditRecord, ResidencyAuditSink, RoutingOutcome,
-    },
+    audit_emit::{RequestRoutedPayload, ResidencyAuditRecord, ResidencyAuditSink, RoutingOutcome},
     error::ResidencyViolation,
     Region, TenantCtx,
 };
@@ -43,8 +41,7 @@ pub fn region_from_host(host: &str) -> Option<Region> {
         let second_last = parts.get(n - 2).copied().unwrap_or("");
         let third_last = parts.get(n - 3).copied().unwrap_or("");
         let region_candidate = parts.get(n - 4).copied().unwrap_or("");
-        let suffix_ok =
-            third_last == "corelink" && second_last == "humangr" && last == "com";
+        let suffix_ok = third_last == "corelink" && second_last == "humangr" && last == "com";
         if suffix_ok {
             return Region::parse_canonical(region_candidate);
         }

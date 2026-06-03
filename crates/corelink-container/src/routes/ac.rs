@@ -107,10 +107,9 @@ pub fn build_handlers() -> (Arc<dyn AcLookupHandler>, Arc<dyn AcUpdateHandler>) 
         // crate-level docs + commit 832c7884 for the
         // `block_in_place` rationale).
         if StorageEnv::from_env().is_some() {
-            let bucket = std::env::var("R2_AC_BUCKET")
-                .unwrap_or_else(|_| "corelink-ac-iad".to_owned());
-            let region = std::env::var("R2_AC_REGION")
-                .unwrap_or_else(|_| "iad".to_owned());
+            let bucket =
+                std::env::var("R2_AC_BUCKET").unwrap_or_else(|_| "corelink-ac-iad".to_owned());
+            let region = std::env::var("R2_AC_REGION").unwrap_or_else(|_| "iad".to_owned());
 
             // `routes::build_with_factory` is called from inside
             // `#[tokio::main]`, so a bare
@@ -227,9 +226,7 @@ async fn handle_update(
 /// Map an [`AcHandlerError`] to the canonical HTTP response.
 fn map_err(e: AcHandlerError) -> axum::response::Response {
     match e {
-        AcHandlerError::Miss { .. } => {
-            (StatusCode::NOT_FOUND, "ac miss").into_response()
-        }
+        AcHandlerError::Miss { .. } => (StatusCode::NOT_FOUND, "ac miss").into_response(),
         AcHandlerError::CrossTenantDenied { .. } => {
             (StatusCode::FORBIDDEN, "cross-tenant").into_response()
         }
@@ -256,7 +253,11 @@ mod tests {
 
     /// Test fixture: returns the route state plus the underlying
     /// audit + SLI sinks so each test can verify emit ordering.
-    fn fixture() -> (Arc<InMemoryAuditSink>, Arc<InMemorySliObserver>, AcRouteState) {
+    fn fixture() -> (
+        Arc<InMemoryAuditSink>,
+        Arc<InMemorySliObserver>,
+        AcRouteState,
+    ) {
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
         let shared = Arc::new(InMemoryAcHandler::new(audit.clone(), sli.clone()));
@@ -287,9 +288,7 @@ mod tests {
     fn put_then_get_round_trip_emits_audit_and_sli() {
         let (audit, sli, st) = fixture();
         // Update path.
-        let upd_req = AcUpdateRequest::new(
-            "t1", "d1", b"result".to_vec(), "anon@t1", "t1", 1,
-        );
+        let upd_req = AcUpdateRequest::new("t1", "d1", b"result".to_vec(), "anon@t1", "t1", 1);
         let upd_resp = st.update.update(upd_req).expect("update");
         assert!(upd_resp.durable);
         // Lookup path.
@@ -299,14 +298,24 @@ mod tests {
         assert_eq!(lk_resp.result_payload, b"result".to_vec());
         // Audit rows: UpdateAttempted + UpdateCommitted + LookupAttempted + LookupHit.
         let rows = audit.snapshot().expect("audit");
-        assert!(rows.iter().any(|r| r.kind == AuditEventKind::UpdateAttempted));
-        assert!(rows.iter().any(|r| r.kind == AuditEventKind::UpdateCommitted));
-        assert!(rows.iter().any(|r| r.kind == AuditEventKind::LookupAttempted));
+        assert!(rows
+            .iter()
+            .any(|r| r.kind == AuditEventKind::UpdateAttempted));
+        assert!(rows
+            .iter()
+            .any(|r| r.kind == AuditEventKind::UpdateCommitted));
+        assert!(rows
+            .iter()
+            .any(|r| r.kind == AuditEventKind::LookupAttempted));
         assert!(rows.iter().any(|r| r.kind == AuditEventKind::LookupHit));
         // SLI: at least one AvailAcLookup + one LatencyAcHitP99 non-error.
         let obs = sli.snapshot().expect("sli");
-        assert!(obs.iter().any(|o| o.sli == Sli::AvailAcLookup && !o.is_error));
-        assert!(obs.iter().any(|o| o.sli == Sli::LatencyAcHitP99 && !o.is_error));
+        assert!(obs
+            .iter()
+            .any(|o| o.sli == Sli::AvailAcLookup && !o.is_error));
+        assert!(obs
+            .iter()
+            .any(|o| o.sli == Sli::LatencyAcHitP99 && !o.is_error));
     }
 
     /// Cross-tenant lookup MUST emit `LookupDenied` BEFORE the error.
@@ -314,13 +323,7 @@ mod tests {
     #[test]
     fn cross_tenant_lookup_denied_audits_before_rejection() {
         let (audit, _sli, st) = fixture();
-        let req = AcLookupRequest::new(
-            "victim",
-            "d1",
-            "attacker@attacker_t",
-            "attacker_t",
-            1,
-        );
+        let req = AcLookupRequest::new("victim", "d1", "attacker@attacker_t", "attacker_t", 1);
         let err = st.lookup.lookup(req).expect_err("denied");
         assert!(matches!(err, AcHandlerError::CrossTenantDenied { .. }));
         let rows = audit.snapshot().expect("audit");
@@ -337,9 +340,7 @@ mod tests {
     fn audit_failure_aborts_update_and_maps_to_audit_closed() {
         let (audit, _sli, st) = fixture();
         audit.inject_failure("audit pipeline down").expect("inject");
-        let upd = AcUpdateRequest::new(
-            "t1", "d1", b"r".to_vec(), "anon@t1", "t1", 1,
-        );
+        let upd = AcUpdateRequest::new("t1", "d1", b"r".to_vec(), "anon@t1", "t1", 1);
         let err = st.update.update(upd).expect_err("audit closed");
         assert!(matches!(err, AcHandlerError::AuditFailed(_)));
         // Verify the route-layer `map_err` translates this to 503.
@@ -353,14 +354,10 @@ mod tests {
     #[test]
     fn idempotent_retry_keeps_state_stable() {
         let (audit, sli, st) = fixture();
-        let req1 = AcUpdateRequest::new(
-            "t1", "d1", b"r".to_vec(), "anon@t1", "t1", 1,
-        );
+        let req1 = AcUpdateRequest::new("t1", "d1", b"r".to_vec(), "anon@t1", "t1", 1);
         let r1 = st.update.update(req1).expect("first put");
         assert!(r1.durable, "fresh insert");
-        let req2 = AcUpdateRequest::new(
-            "t1", "d1", b"r".to_vec(), "anon@t1", "t1", 2,
-        );
+        let req2 = AcUpdateRequest::new("t1", "d1", b"r".to_vec(), "anon@t1", "t1", 2);
         let r2 = st.update.update(req2).expect("retry put");
         assert!(!r2.durable, "retry MUST NOT be durable=true");
         // Audit rows: two UpdateAttempted + two UpdateCommitted.

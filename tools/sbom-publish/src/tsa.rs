@@ -209,4 +209,3 @@ fn build_tsa_request_body(sha256: &[u8], nonce: &[u8; 8]) -> String {
     })
     .to_string()
 }
-

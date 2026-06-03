@@ -5,7 +5,9 @@
 
 use corelink_privacy::residency::{
     assert_request::region_from_host,
-    enforcement::{FailClosedResidencyEnforcement, InMemoryResidencyEnforcement, ResidencyEnforcement},
+    enforcement::{
+        FailClosedResidencyEnforcement, InMemoryResidencyEnforcement, ResidencyEnforcement,
+    },
     error::ResidencyViolation,
     migration::{InMemoryMigrationStore, MigrationStatus, RegionMigrationRequest},
     BackendKind, Region, TenantCtx,
@@ -196,7 +198,11 @@ fn test_all_backend_kinds_enforce_residency() {
     for backend in backends {
         // Correct region — must succeed
         let ok = enf.assert_write_residency(&ctx, backend, Region::Enam);
-        assert!(ok.is_ok(), "backend {:?} should accept correct region", backend);
+        assert!(
+            ok.is_ok(),
+            "backend {:?} should accept correct region",
+            backend
+        );
 
         // Wrong region — must reject
         let err = enf.assert_write_residency(&ctx, backend, Region::Weur);
@@ -228,7 +234,10 @@ fn test_migration_cooldown_enforced() {
     // not 30 days elapsed from set_at_ms=1 to now_ms=30d  => still within cooldown
     // 30d in ms = 2_592_000_000; now_ms = 2_592_000_000; elapsed = 2_591_999_999 < 2_592_000_000
     assert!(
-        matches!(result, Err(ResidencyViolation::MigrationCooldownNotElapsed { .. })),
+        matches!(
+            result,
+            Err(ResidencyViolation::MigrationCooldownNotElapsed { .. })
+        ),
         "expected cooldown error, got {:?}",
         result
     );
@@ -253,7 +262,11 @@ fn test_migration_succeeds_after_cooldown() {
     };
 
     let result = store.submit(ticket, set_at_ms, now_ms);
-    assert!(result.is_ok(), "expected Ok after cooldown, got {:?}", result);
+    assert!(
+        result.is_ok(),
+        "expected Ok after cooldown, got {:?}",
+        result
+    );
 
     if let Ok(ticket_id) = result {
         let fetched = store.get(&ticket_id);
@@ -330,7 +343,11 @@ fn test_region_from_custom_domain_host() {
 
     for (host, expected) in cases {
         let got = region_from_host(host);
-        assert_eq!(got, expected, "host='{}' expected={:?} got={:?}", host, expected, got);
+        assert_eq!(
+            got, expected,
+            "host='{}' expected={:?} got={:?}",
+            host, expected, got
+        );
     }
 }
 

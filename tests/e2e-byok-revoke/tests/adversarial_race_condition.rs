@@ -71,7 +71,9 @@ async fn concurrent_encrypt_during_revoke_fails_closed() {
                 "tenant_id": "r3-2-race",
                 "blob_hash": format!("sha256:race-{iter:08}"),
             });
-            let result = provider_for_loop.wrap_dek(&dek, &key_for_loop, Some(&aad)).await;
+            let result = provider_for_loop
+                .wrap_dek(&dek, &key_for_loop, Some(&aad))
+                .await;
             // Read deny flag indirectly by re-checking via check_access
             // would race; instead bucket results by error variant.
             match result {
@@ -117,7 +119,10 @@ async fn concurrent_encrypt_during_revoke_fails_closed() {
         .await
         .unwrap()
         .expect("audit event emitted");
-    assert!(event.evicted_dek_count >= 16, "cache pre-seeded with 16 entries");
+    assert!(
+        event.evicted_dek_count >= 16,
+        "cache pre-seeded with 16 entries"
+    );
 
     // Let the encrypt loop observe denial for a moment then stop.
     tokio::time::sleep(Duration::from_millis(20)).await;

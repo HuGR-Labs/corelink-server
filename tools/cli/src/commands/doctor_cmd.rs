@@ -27,8 +27,16 @@ impl fmt::Display for DoctorReport {
             writeln!(f, "{check}")?;
         }
 
-        let fails: Vec<&DoctorCheck> = self.0.iter().filter(|c| c.status == CheckStatus::Fail).collect();
-        let skips: Vec<&DoctorCheck> = self.0.iter().filter(|c| c.status == CheckStatus::Skip).collect();
+        let fails: Vec<&DoctorCheck> = self
+            .0
+            .iter()
+            .filter(|c| c.status == CheckStatus::Fail)
+            .collect();
+        let skips: Vec<&DoctorCheck> = self
+            .0
+            .iter()
+            .filter(|c| c.status == CheckStatus::Skip)
+            .collect();
 
         writeln!(f)?;
         if fails.is_empty() {
@@ -76,7 +84,12 @@ pub async fn run(
 }
 
 #[cfg(test)]
-#[allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used)]
+#[allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used
+)]
 mod tests {
     use super::*;
     use crate::doctor::DoctorCheck;
@@ -84,8 +97,20 @@ mod tests {
     #[test]
     fn doctor_report_display_all_ok() {
         let checks = vec![
-            DoctorCheck { check: "network".to_owned(), status: CheckStatus::Ok, latency_ms: Some(5), error_code: None, next_action: None },
-            DoctorCheck { check: "auth".to_owned(), status: CheckStatus::Ok, latency_ms: Some(10), error_code: None, next_action: None },
+            DoctorCheck {
+                check: "network".to_owned(),
+                status: CheckStatus::Ok,
+                latency_ms: Some(5),
+                error_code: None,
+                next_action: None,
+            },
+            DoctorCheck {
+                check: "auth".to_owned(),
+                status: CheckStatus::Ok,
+                latency_ms: Some(10),
+                error_code: None,
+                next_action: None,
+            },
         ];
         let report = DoctorReport(checks);
         let s = format!("{report}");
@@ -94,9 +119,13 @@ mod tests {
 
     #[test]
     fn doctor_report_display_with_fail() {
-        let checks = vec![
-            DoctorCheck { check: "network".to_owned(), status: CheckStatus::Fail, latency_ms: Some(5000), error_code: Some("COR_NET_UNREACHABLE".to_owned()), next_action: Some("Check DNS".to_owned()) },
-        ];
+        let checks = vec![DoctorCheck {
+            check: "network".to_owned(),
+            status: CheckStatus::Fail,
+            latency_ms: Some(5000),
+            error_code: Some("COR_NET_UNREACHABLE".to_owned()),
+            next_action: Some("Check DNS".to_owned()),
+        }];
         let report = DoctorReport(checks);
         let s = format!("{report}");
         assert!(s.contains("1 check(s) failed"));
@@ -104,9 +133,13 @@ mod tests {
 
     #[test]
     fn doctor_report_serialises_to_json() {
-        let checks = vec![
-            DoctorCheck { check: "auth".to_owned(), status: CheckStatus::Ok, latency_ms: Some(3), error_code: None, next_action: None },
-        ];
+        let checks = vec![DoctorCheck {
+            check: "auth".to_owned(),
+            status: CheckStatus::Ok,
+            latency_ms: Some(3),
+            error_code: None,
+            next_action: None,
+        }];
         let report = DoctorReport(checks);
         let json = serde_json::to_string(&report).unwrap();
         assert!(json.contains("\"check\""));
@@ -117,13 +150,15 @@ mod tests {
     fn doctor_report_8_checks_count() {
         // Validate that in a real doctor run we always get exactly 8 results.
         // We test with a mocked set.
-        let checks: Vec<DoctorCheck> = (0..8).map(|i| DoctorCheck {
-            check: format!("check_{i}"),
-            status: CheckStatus::Ok,
-            latency_ms: Some(i as u64),
-            error_code: None,
-            next_action: None,
-        }).collect();
+        let checks: Vec<DoctorCheck> = (0..8)
+            .map(|i| DoctorCheck {
+                check: format!("check_{i}"),
+                status: CheckStatus::Ok,
+                latency_ms: Some(i as u64),
+                error_code: None,
+                next_action: None,
+            })
+            .collect();
         assert_eq!(checks.len(), 8);
     }
 }

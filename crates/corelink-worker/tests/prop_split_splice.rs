@@ -37,10 +37,9 @@ use corelink_tenant_path::TenantDerivationKey;
 use corelink_worker::middleware::auth_ctx::__test_helpers::make_auth_ctx;
 use corelink_worker::middleware::auth_ctx::{AuthCtx, AuthMethod, PrincipalId};
 use corelink_worker::reapi::cas::{
-    BlobDigest, ChunkIndex, CollectingSink, FakeClock, InMemoryAuditSink,
-    InMemoryBlobAssembler, InMemoryChunkStore, InMemorySessionStore, InitSplitOutcome,
-    SpliceError, SplitError, SplitSpliceHandler, SplitSpliceHandlerBuilder,
-    SplitSpliceHandlerImpl,
+    BlobDigest, ChunkIndex, CollectingSink, FakeClock, InMemoryAuditSink, InMemoryBlobAssembler,
+    InMemoryChunkStore, InMemorySessionStore, InitSplitOutcome, SpliceError, SplitError,
+    SplitSpliceHandler, SplitSpliceHandlerBuilder, SplitSpliceHandlerImpl,
 };
 use corelink_worker::Region;
 use proptest::prelude::*;

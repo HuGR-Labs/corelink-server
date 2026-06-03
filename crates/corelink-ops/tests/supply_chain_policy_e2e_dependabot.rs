@@ -166,7 +166,12 @@ fn e2e_auto_merge_security_update_requires_manual_review() {
 /// **§6.1.5**: auto-merge requires all CI checks green.
 #[test]
 fn e2e_auto_merge_blocked_when_ci_not_green() {
-    for update_type in [UpdateType::Patch, UpdateType::Minor, UpdateType::Major, UpdateType::Security] {
+    for update_type in [
+        UpdateType::Patch,
+        UpdateType::Minor,
+        UpdateType::Major,
+        UpdateType::Security,
+    ] {
         let decision = evaluate_auto_merge(update_type, false);
         assert!(
             matches!(decision, AutoMergeDecision::ManualReview { .. }),
@@ -246,11 +251,27 @@ fn e2e_medium_low_cves_no_oncall_alert() {
 /// Validates the classification thresholds are inclusive at boundaries.
 #[test]
 fn e2e_cvss_boundary_conditions() {
-    assert_eq!(classify_cvss(9.0), Severity::Critical, "CVSS 9.0 should be CRITICAL");
-    assert_eq!(classify_cvss(7.0), Severity::High, "CVSS 7.0 should be HIGH");
-    assert_eq!(classify_cvss(4.0), Severity::Medium, "CVSS 4.0 should be MEDIUM");
+    assert_eq!(
+        classify_cvss(9.0),
+        Severity::Critical,
+        "CVSS 9.0 should be CRITICAL"
+    );
+    assert_eq!(
+        classify_cvss(7.0),
+        Severity::High,
+        "CVSS 7.0 should be HIGH"
+    );
+    assert_eq!(
+        classify_cvss(4.0),
+        Severity::Medium,
+        "CVSS 4.0 should be MEDIUM"
+    );
     assert_eq!(classify_cvss(0.1), Severity::Low, "CVSS 0.1 should be LOW");
-    assert_eq!(classify_cvss(0.0), Severity::None, "CVSS 0.0 should be None");
+    assert_eq!(
+        classify_cvss(0.0),
+        Severity::None,
+        "CVSS 0.0 should be None"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -278,11 +299,23 @@ fn e2e_sla_constants_documented() {
     const DEPENDABOT_HOUR_BRT: u32 = 8;
 
     // Assertions against spec §3 SLA addendum values.
-    assert_eq!(DETECTION_LATENCY_H, 24, "SLA: cargo-audit detection latency must be ≤ 24h");
+    assert_eq!(
+        DETECTION_LATENCY_H, 24,
+        "SLA: cargo-audit detection latency must be ≤ 24h"
+    );
     assert_eq!(SEV2_ALERT_LATENCY_S, 30, "SLA: SEV-2 on-call paged ≤ 30s");
-    assert_eq!(SEV3_ALERT_LATENCY_MIN, 5, "SLA: SEV-3 Slack notification ≤ 5 min");
-    assert_eq!(CRON_UTC_HOUR, 6, "cron: daily at 06:00 UTC (matches cargo-audit.yml)");
-    assert_eq!(DEPENDABOT_DAY, "monday", "Dependabot: weekly Monday schedule");
+    assert_eq!(
+        SEV3_ALERT_LATENCY_MIN, 5,
+        "SLA: SEV-3 Slack notification ≤ 5 min"
+    );
+    assert_eq!(
+        CRON_UTC_HOUR, 6,
+        "cron: daily at 06:00 UTC (matches cargo-audit.yml)"
+    );
+    assert_eq!(
+        DEPENDABOT_DAY, "monday",
+        "Dependabot: weekly Monday schedule"
+    );
     assert_eq!(DEPENDABOT_HOUR_BRT, 8, "Dependabot: 08:00 BRT");
 }
 

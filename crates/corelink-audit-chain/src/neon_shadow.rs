@@ -143,8 +143,7 @@ pub const SHADOW_LAG_SEV2_THRESHOLD_MS: u64 = 60 * 60 * 1_000;
 pub const EVENT_TYPE_SHADOW_SYNCED: &str = "corelink.audit.neon_shadow_synced.v1";
 
 /// Canonical CloudEvents `type` for the failed shadow-sync emit.
-pub const EVENT_TYPE_SHADOW_SYNC_FAILED: &str =
-    "corelink.audit.neon_shadow_sync_failed.v1";
+pub const EVENT_TYPE_SHADOW_SYNC_FAILED: &str = "corelink.audit.neon_shadow_sync_failed.v1";
 
 /// One row of the `audit_events_shadow` Neon table — analytics-only
 /// projection of one chain link. The R2 NDJSON archive remains the
@@ -638,11 +637,7 @@ impl InMemoryNeonShadowSink {
     /// Construct a sink bound to `(tenant_id, region)`. Every
     /// `sync_chunk` call asserts both pins.
     #[must_use]
-    pub fn new(
-        tenant_id: Uuid,
-        region: Region,
-        audit_sink: Arc<dyn ShadowSyncAuditSink>,
-    ) -> Self {
+    pub fn new(tenant_id: Uuid, region: Region, audit_sink: Arc<dyn ShadowSyncAuditSink>) -> Self {
         Self {
             tenant_id,
             region,
@@ -780,10 +775,7 @@ impl NeonShadowSink for InMemoryNeonShadowSink {
         //    to the caller-supplied `now_ms`. The lag is informational
         //    on the failure paths; load-bearing on the success path
         //    (drives the SEV-2 alert).
-        let first_event_time_ms = rows
-            .first()
-            .map(|r| r.event_time_ms)
-            .unwrap_or(0);
+        let first_event_time_ms = rows.first().map(|r| r.event_time_ms).unwrap_or(0);
         let observed_lag_ms = now_ms.saturating_sub(first_event_time_ms);
 
         // 3. Injected failure check (after pre-validation, before
@@ -792,9 +784,7 @@ impl NeonShadowSink for InMemoryNeonShadowSink {
             let inj = self
                 .injected_failure
                 .lock()
-                .map_err(|_| {
-                    NeonShadowError::Internal("inject mutex poisoned".to_string())
-                })?
+                .map_err(|_| NeonShadowError::Internal("inject mutex poisoned".to_string()))?
                 .clone();
             if let Some(msg) = inj {
                 self.audit_sink
@@ -982,7 +972,10 @@ mod tests {
 
     #[test]
     fn audit_event_type_constants_match_spec() {
-        assert_eq!(EVENT_TYPE_SHADOW_SYNCED, "corelink.audit.neon_shadow_synced.v1");
+        assert_eq!(
+            EVENT_TYPE_SHADOW_SYNCED,
+            "corelink.audit.neon_shadow_synced.v1"
+        );
         assert_eq!(
             EVENT_TYPE_SHADOW_SYNC_FAILED,
             "corelink.audit.neon_shadow_sync_failed.v1"
@@ -1017,8 +1010,20 @@ mod tests {
         let audit = Arc::new(InMemoryShadowSyncAuditSink::new());
         let sink = InMemoryNeonShadowSink::new(tenant, Region::Iad, audit.clone());
         let rows = vec![
-            dummy_row(tenant, Region::Iad, 0, 1_000, "dev.hugr.corelink.cas.put.v1"),
-            dummy_row(tenant, Region::Iad, 1, 2_000, "dev.hugr.corelink.cas.get.v1"),
+            dummy_row(
+                tenant,
+                Region::Iad,
+                0,
+                1_000,
+                "dev.hugr.corelink.cas.put.v1",
+            ),
+            dummy_row(
+                tenant,
+                Region::Iad,
+                1,
+                2_000,
+                "dev.hugr.corelink.cas.get.v1",
+            ),
         ];
         let receipt = sink
             .sync_chunk(&dummy_receipt(tenant, 0, 1), &rows, 3_000)
@@ -1046,7 +1051,10 @@ mod tests {
         let err = sink
             .sync_chunk(&dummy_receipt(tenant_b, 0, 0), &rows, 2_000)
             .expect_err("must reject cross-tenant");
-        assert!(matches!(err, NeonShadowError::TenantIsolationViolation { .. }));
+        assert!(matches!(
+            err,
+            NeonShadowError::TenantIsolationViolation { .. }
+        ));
         // No rows persisted.
         assert_eq!(sink.row_count(), 0);
         // Failure audit emitted.
@@ -1073,7 +1081,8 @@ mod tests {
         let tenant = Uuid::now_v7();
         let audit = Arc::new(InMemoryShadowSyncAuditSink::new());
         let sink = InMemoryNeonShadowSink::new(tenant, Region::Iad, audit.clone());
-        sink.inject_failure(Some("neon connection lost".into())).unwrap();
+        sink.inject_failure(Some("neon connection lost".into()))
+            .unwrap();
         let rows = vec![dummy_row(tenant, Region::Iad, 0, 1_000, "x")];
         let err = sink
             .sync_chunk(&dummy_receipt(tenant, 0, 0), &rows, 2_000)
@@ -1094,7 +1103,8 @@ mod tests {
             dummy_row(tenant, Region::Iad, 1, 2_000, "cas.put"),
             dummy_row(tenant, Region::Iad, 2, 3_000, "cas.get"),
         ];
-        sink.sync_chunk(&dummy_receipt(tenant, 0, 2), &rows, 4_000).unwrap();
+        sink.sync_chunk(&dummy_receipt(tenant, 0, 2), &rows, 4_000)
+            .unwrap();
         let buckets = sink.aggregate_event_count(0, 10_000, None).unwrap();
         let put = buckets.iter().find(|b| b.event_type == "cas.put").unwrap();
         let get = buckets.iter().find(|b| b.event_type == "cas.get").unwrap();
@@ -1112,7 +1122,8 @@ mod tests {
             dummy_row(tenant, Region::Iad, 1, 1_500, "x"),
             dummy_row(tenant, Region::Iad, 2, 5_000, "x"),
         ];
-        sink.sync_chunk(&dummy_receipt(tenant, 0, 2), &rows, 6_000).unwrap();
+        sink.sync_chunk(&dummy_receipt(tenant, 0, 2), &rows, 6_000)
+            .unwrap();
         // 2s granularity → bucket [0..2000) has 2 rows, [4000..6000) has 1.
         let timeline = sink.aggregate_timeline(0, 6_000, 2_000).unwrap();
         assert_eq!(timeline.len(), 2);
@@ -1127,7 +1138,9 @@ mod tests {
         let tenant = Uuid::now_v7();
         let audit = Arc::new(InMemoryShadowSyncAuditSink::new());
         let sink = InMemoryNeonShadowSink::new(tenant, Region::Iad, audit);
-        let err = sink.aggregate_timeline(0, 1, 0).expect_err("zero granularity");
+        let err = sink
+            .aggregate_timeline(0, 1, 0)
+            .expect_err("zero granularity");
         assert!(matches!(err, NeonShadowError::Internal(_)));
     }
 
@@ -1170,11 +1183,8 @@ mod tests {
         };
 
         // 1. Garbage (not valid JSON at all).
-        let garbage = ShadowEventRow::from_persisted_line(
-            &mk("this is not json"),
-            Region::Iad,
-        )
-        .expect_err("non-JSON must reject");
+        let garbage = ShadowEventRow::from_persisted_line(&mk("this is not json"), Region::Iad)
+            .expect_err("non-JSON must reject");
         assert!(matches!(garbage, ParseError::InvalidJson(_)));
 
         // 2. JSON missing `time_ms`.
@@ -1194,11 +1204,9 @@ mod tests {
         assert!(matches!(no_type, ParseError::MissingField("type")));
 
         // 4. JSON missing `prev_hash`.
-        let no_prev = ShadowEventRow::from_persisted_line(
-            &mk("{\"time_ms\":1,\"type\":\"x\"}"),
-            Region::Iad,
-        )
-        .expect_err("missing prev_hash must reject");
+        let no_prev =
+            ShadowEventRow::from_persisted_line(&mk("{\"time_ms\":1,\"type\":\"x\"}"), Region::Iad)
+                .expect_err("missing prev_hash must reject");
         assert!(matches!(no_prev, ParseError::MissingField("prev_hash")));
 
         // 5. Invalid hex in prev_hash.
@@ -1244,7 +1252,8 @@ mod tests {
             dummy_row(tenant, Region::Iad, 0, 100, "a"),
             dummy_row(tenant, Region::Iad, 1, 200, "b"),
         ];
-        sink.sync_chunk(&dummy_receipt(tenant, 0, 1), &rows, 300).unwrap();
+        sink.sync_chunk(&dummy_receipt(tenant, 0, 1), &rows, 300)
+            .unwrap();
         let only_a = sink.aggregate_event_count(0, 1_000, Some("a")).unwrap();
         assert_eq!(only_a.len(), 1);
         assert_eq!(only_a[0].event_type, "a");
@@ -1260,7 +1269,9 @@ mod tests {
         // now_ms = first_event_time + 60 min (3_600_000 ms)
         let now_ms = first_event_time + SHADOW_LAG_SEV2_THRESHOLD_MS;
         let rows = vec![dummy_row(tenant, Region::Iad, 0, first_event_time, "x")];
-        let receipt = sink.sync_chunk(&dummy_receipt(tenant, 0, 0), &rows, now_ms).unwrap();
+        let receipt = sink
+            .sync_chunk(&dummy_receipt(tenant, 0, 0), &rows, now_ms)
+            .unwrap();
         assert!(receipt.breaches_sev2_threshold());
         let audit_snap = audit.snapshot().unwrap();
         assert_eq!(audit_snap[0].event_type, EVENT_TYPE_SHADOW_SYNCED);
@@ -1273,8 +1284,10 @@ mod tests {
         let audit = Arc::new(InMemoryShadowSyncAuditSink::new());
         let sink = InMemoryNeonShadowSink::new(tenant, Region::Iad, audit);
         let rows = vec![dummy_row(tenant, Region::Iad, 0, 100, "x")];
-        sink.sync_chunk(&dummy_receipt(tenant, 0, 0), &rows, 200).unwrap();
-        sink.sync_chunk(&dummy_receipt(tenant, 0, 0), &rows, 250).unwrap();
+        sink.sync_chunk(&dummy_receipt(tenant, 0, 0), &rows, 200)
+            .unwrap();
+        sink.sync_chunk(&dummy_receipt(tenant, 0, 0), &rows, 250)
+            .unwrap();
         // PRIMARY KEY (tenant_id, seq) dedup: still 1 row.
         assert_eq!(sink.row_count(), 1);
     }
@@ -1301,9 +1314,11 @@ mod tests {
     fn neon_shadow_sink_trait_is_object_safe() {
         let tenant = Uuid::now_v7();
         let audit = Arc::new(InMemoryShadowSyncAuditSink::new());
-        let sinks: Vec<Arc<dyn NeonShadowSink>> = vec![Arc::new(
-            InMemoryNeonShadowSink::new(tenant, Region::Iad, audit),
-        )];
+        let sinks: Vec<Arc<dyn NeonShadowSink>> = vec![Arc::new(InMemoryNeonShadowSink::new(
+            tenant,
+            Region::Iad,
+            audit,
+        ))];
         assert_eq!(sinks.len(), 1);
     }
 }

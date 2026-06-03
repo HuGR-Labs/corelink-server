@@ -60,13 +60,11 @@ pub const DLQ_DEPTH_GAUGE: &str = "corelink_stripe_webhook_dlq_depth";
 
 /// Gauge metric: age in seconds of the oldest un-replayed DLQ row
 /// (now_ms - first_seen_at_ms). Target = 0.
-pub const DLQ_OLDEST_AGE_SECONDS_GAUGE: &str =
-    "corelink_stripe_webhook_dlq_oldest_age_seconds";
+pub const DLQ_OLDEST_AGE_SECONDS_GAUGE: &str = "corelink_stripe_webhook_dlq_oldest_age_seconds";
 
 /// Counter metric: total events quarantined into the DLQ since
 /// process boot. Labels: `event_type`.
-pub const DLQ_QUARANTINED_TOTAL: &str =
-    "corelink_stripe_webhook_dlq_quarantined_total";
+pub const DLQ_QUARANTINED_TOTAL: &str = "corelink_stripe_webhook_dlq_quarantined_total";
 
 /// Counter metric: total replay attempts. Labels:
 /// `outcome ∈ {succeeded,failed,abandoned}`.
@@ -269,10 +267,7 @@ pub trait WebhookDlqStore: core::fmt::Debug + Send + Sync {
     ///
     /// Returns [`DlqError`] on backend transient failure or mutex
     /// poisoning.
-    fn try_quarantine(
-        &self,
-        row: WebhookDlqRow,
-    ) -> Result<DlqQuarantineOutcome, DlqError>;
+    fn try_quarantine(&self, row: WebhookDlqRow) -> Result<DlqQuarantineOutcome, DlqError>;
 
     /// Record a replay outcome on an existing row. No-op if
     /// `event_id` is not in the DLQ.
@@ -362,10 +357,7 @@ fn is_active(row: &WebhookDlqRow, now_ms: u64) -> bool {
 }
 
 impl WebhookDlqStore for InMemoryWebhookDlqStore {
-    fn try_quarantine(
-        &self,
-        row: WebhookDlqRow,
-    ) -> Result<DlqQuarantineOutcome, DlqError> {
+    fn try_quarantine(&self, row: WebhookDlqRow) -> Result<DlqQuarantineOutcome, DlqError> {
         let mut g = self.rows.lock().map_err(|_| DlqError::MutexPoisoned)?;
         if let Some(existing) = g.get_mut(&row.event_id) {
             existing.attempt_count = existing.attempt_count.saturating_add(1);
@@ -457,7 +449,9 @@ mod tests {
         let store = InMemoryWebhookDlqStore::new();
         let now = 1_715_000_000_000_u64;
         let out1 = store.try_quarantine(fresh_row("evt_1", now)).unwrap();
-        let out2 = store.try_quarantine(fresh_row("evt_1", now + 1_000)).unwrap();
+        let out2 = store
+            .try_quarantine(fresh_row("evt_1", now + 1_000))
+            .unwrap();
         assert_eq!(out1, DlqQuarantineOutcome::Inserted);
         assert_eq!(out2, DlqQuarantineOutcome::Updated);
         let row = store.get("evt_1").unwrap().expect("row");

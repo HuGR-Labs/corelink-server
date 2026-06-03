@@ -180,15 +180,12 @@ pub use audit::{
 };
 pub use error::{QuotaFsmAuditSinkError, QuotaFsmError, QuotaFsmStoreError};
 pub use event::{
-    canonical_quota_states, utilization_bucket, InvoiceFailureCount, QuotaFsmConfig,
-    QuotaState, QuotaTransition, UtilizationPct, OVER_QUOTA_100PCT_THRESHOLD,
-    SOFT_WARNING_80PCT_THRESHOLD, SOFT_WARNING_95PCT_THRESHOLD,
-    SUSPENSION_INVOICE_FAILURE_THRESHOLD,
+    canonical_quota_states, utilization_bucket, InvoiceFailureCount, QuotaFsmConfig, QuotaState,
+    QuotaTransition, UtilizationPct, OVER_QUOTA_100PCT_THRESHOLD, SOFT_WARNING_80PCT_THRESHOLD,
+    SOFT_WARNING_95PCT_THRESHOLD, SUSPENSION_INVOICE_FAILURE_THRESHOLD,
 };
 pub use fsm::{InMemoryQuotaStateMachine, QuotaStateMachine};
-pub use store::{
-    FailingQuotaFsmStore, InMemoryQuotaFsmStore, QuotaFsmStateRow, QuotaFsmStore,
-};
+pub use store::{FailingQuotaFsmStore, InMemoryQuotaFsmStore, QuotaFsmStateRow, QuotaFsmStore};
 
 /// Crate canonical schema version constant. Mirrors the canonical D1
 /// migration slot for the follow-on `quota_fsm_state` table (next slot

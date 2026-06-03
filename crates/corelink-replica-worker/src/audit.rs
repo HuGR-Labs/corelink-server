@@ -159,10 +159,7 @@ impl Default for InMemoryReplicaAuditSink {
 
 impl ReplicaAuditSink for InMemoryReplicaAuditSink {
     fn emit(&self, record: ReplicaAuditRecord) -> Result<(), String> {
-        self.records
-            .lock()
-            .map_err(|e| e.to_string())?
-            .push(record);
+        self.records.lock().map_err(|e| e.to_string())?.push(record);
         Ok(())
     }
 }

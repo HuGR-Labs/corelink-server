@@ -192,7 +192,9 @@ fn registration_happy_path_persists_credential() {
         0,
         Origin::parse("https://app.corelink.humangr.com").unwrap(),
     );
-    let cred_id = engine.finish_registration(challenge.id(), response).unwrap();
+    let cred_id = engine
+        .finish_registration(challenge.id(), response)
+        .unwrap();
     assert_eq!(engine.credential_store().list_for_user(user).len(), 1);
     let stored = engine
         .credential_store()
@@ -255,7 +257,9 @@ fn challenge_is_single_use() {
         0,
         Origin::parse("https://app.corelink.humangr.com").unwrap(),
     );
-    let _ = engine.finish_registration(reg.id(), response.clone()).unwrap();
+    let _ = engine
+        .finish_registration(reg.id(), response.clone())
+        .unwrap();
     // Replaying the same challenge id MUST fail (single-use store).
     assert!(matches!(
         engine.finish_registration(reg.id(), response),

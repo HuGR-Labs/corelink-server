@@ -196,10 +196,7 @@ impl InMemoryBillingAuditSink {
 
     /// Filter snapshot down to records of a single event type.
     #[must_use]
-    pub fn snapshot_of(
-        &self,
-        event_type: BillingAuditEventType,
-    ) -> Vec<BillingAuditRecord> {
+    pub fn snapshot_of(&self, event_type: BillingAuditEventType) -> Vec<BillingAuditRecord> {
         self.snapshot()
             .into_iter()
             .filter(|r| r.event_type == event_type)
@@ -302,14 +299,16 @@ mod tests {
         let sink = InMemoryBillingAuditSink::new();
         assert!(sink.is_empty());
         sink.emit(rec(BillingAuditEventType::UsageEmitted)).unwrap();
-        sink.emit(rec(BillingAuditEventType::DuplicateRejected)).unwrap();
+        sink.emit(rec(BillingAuditEventType::DuplicateRejected))
+            .unwrap();
         assert_eq!(sink.len(), 2);
         assert_eq!(
             sink.snapshot_of(BillingAuditEventType::UsageEmitted).len(),
             1
         );
         assert_eq!(
-            sink.snapshot_of(BillingAuditEventType::DuplicateRejected).len(),
+            sink.snapshot_of(BillingAuditEventType::DuplicateRejected)
+                .len(),
             1
         );
     }

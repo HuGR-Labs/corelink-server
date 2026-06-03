@@ -193,8 +193,7 @@ impl TenantId {
         for ch in s.chars() {
             if ch == '\'' || ch == '"' || ch == '\\' || ch == '\0' || ch.is_whitespace() {
                 return Err(D1Error::Backend(
-                    "tenant_id: tenant-id contains forbidden character"
-                        .to_owned(),
+                    "tenant_id: tenant-id contains forbidden character".to_owned(),
                 ));
             }
         }
@@ -288,8 +287,7 @@ impl TenantScopedQuery {
 /// Production wires a closure that fans into `apps/server`'s audit
 /// chain (Workers Analytics + structured audit log). Tests use the
 /// default no-op or a recording closure.
-pub type AuditFn =
-    Arc<dyn Fn(D1Op, &str) -> Result<(), D1Error> + Send + Sync + 'static>;
+pub type AuditFn = Arc<dyn Fn(D1Op, &str) -> Result<(), D1Error> + Send + Sync + 'static>;
 
 fn noop_audit() -> AuditFn {
     Arc::new(|_op, _sql| Ok(()))
@@ -392,8 +390,7 @@ impl CfD1DatabaseReal {
             "insert" => {
                 if !mentions_tenant_id_column(&lower) {
                     return Err(D1Error::Backend(
-                        "tenant_scope: INSERT SQL must list 'tenant_id' as a column"
-                            .to_owned(),
+                        "tenant_scope: INSERT SQL must list 'tenant_id' as a column".to_owned(),
                     ));
                 }
             }
@@ -435,7 +432,10 @@ impl CfD1DatabaseReal {
     /// (`scoped_query` + direct audit invocation) for finer-grained
     /// op labelling; the combined helper is the test-side surface
     /// exposed via [`Self::audit_and_scope_for_tests`].
-    #[allow(dead_code, reason = "used by audit_and_scope_for_tests; wasm32 splits the call sites for finer op labelling")]
+    #[allow(
+        dead_code,
+        reason = "used by audit_and_scope_for_tests; wasm32 splits the call sites for finer op labelling"
+    )]
     fn audit_and_scope(&self, op: D1Op, sql: &str) -> Result<TenantScopedQuery, D1Error> {
         let scoped = self.scoped_query(sql)?;
         (self.audit)(op, scoped.as_str())?;
@@ -586,13 +586,9 @@ impl CfD1DatabaseReal {
         stmt: worker::D1PreparedStatement,
         string_params: &[&str],
     ) -> Result<worker::D1PreparedStatement, D1Error> {
-        let first = string_params
-            .first()
-            .ok_or_else(|| {
-                D1Error::Backend(
-                    "tenant_bind: bind called with empty parameter list".to_owned(),
-                )
-            })?;
+        let first = string_params.first().ok_or_else(|| {
+            D1Error::Backend("tenant_bind: bind called with empty parameter list".to_owned())
+        })?;
         self.verify_first_bind(first)?;
         (self.audit)(D1Op::Bind, "(bind)")?;
         let js_values: Vec<worker::wasm_bindgen::JsValue> = string_params
@@ -686,9 +682,7 @@ impl CfD1DatabaseReal {
     /// `WasmOnly`.
     pub fn bind(&self, string_params: &[&str]) -> Result<(), D1Error> {
         let first = string_params.first().ok_or_else(|| {
-            D1Error::Backend(
-                "tenant_bind: bind called with empty parameter list".to_owned(),
-            )
+            D1Error::Backend("tenant_bind: bind called with empty parameter list".to_owned())
         })?;
         self.verify_first_bind(first)?;
         (self.audit)(D1Op::Bind, "(bind)")?;
@@ -853,8 +847,10 @@ mod tests {
     #[test]
     fn scoped_query_accepts_update_with_where_tenant_id() {
         let d = db("tnt");
-        d.scoped_query("UPDATE blobs SET refcount = refcount + 1 WHERE tenant_id = ? AND digest = ?")
-            .expect("valid UPDATE must be accepted");
+        d.scoped_query(
+            "UPDATE blobs SET refcount = refcount + 1 WHERE tenant_id = ? AND digest = ?",
+        )
+        .expect("valid UPDATE must be accepted");
     }
 
     #[test]
@@ -967,9 +963,7 @@ mod tests {
     #[tokio::test]
     async fn bind_rejects_empty_param_list() {
         let d = db("tnt");
-        let err = d
-            .bind(&[])
-            .expect_err("empty param list must be rejected");
+        let err = d.bind(&[]).expect_err("empty param list must be rejected");
         let msg = backend_msg(&err);
 
         assert!(msg.contains("empty parameter list"), "got: {msg}");
@@ -1025,7 +1019,9 @@ mod tests {
     #[tokio::test]
     async fn audit_hook_fail_closed_blocks_run() {
         let audit: AuditFn = Arc::new(|_op, _sql| {
-            Err(D1Error::Backend("audit: mutation denied by policy".to_owned()))
+            Err(D1Error::Backend(
+                "audit: mutation denied by policy".to_owned(),
+            ))
         });
         let d = db("tnt").with_audit(audit);
         let err = d.run().await.expect_err("audit deny must block");
@@ -1040,8 +1036,7 @@ mod tests {
     async fn audit_hook_fail_closed_blocks_prepare_validation_first() {
         // scoped_query failure surfaces BEFORE audit (tenant_scope:),
         // proving the validation order: scope first, audit second.
-        let audit: AuditFn =
-            Arc::new(|_op, _sql| Err(D1Error::Backend("audit: deny".to_owned())));
+        let audit: AuditFn = Arc::new(|_op, _sql| Err(D1Error::Backend("audit: deny".to_owned())));
         let d = db("tnt").with_audit(audit);
         let err = d
             .scoped_query("SELECT * FROM blobs")
@@ -1127,11 +1122,7 @@ mod tests {
         }
 
         fn entries(&self) -> Vec<(D1Op, String)> {
-            self.log
-                .lock()
-                .ok()
-                .map(|g| g.clone())
-                .unwrap_or_default()
+            self.log.lock().ok().map(|g| g.clone()).unwrap_or_default()
         }
     }
 
@@ -1140,7 +1131,9 @@ mod tests {
         let fake = Arc::new(FakeD1::default());
         let d = db("tnt0123456789abcd").with_audit(Arc::clone(&fake).audit_fn());
         let q = d
-            .scoped_query("UPDATE blobs SET refcount = refcount + 1 WHERE tenant_id = ? AND digest = ?")
+            .scoped_query(
+                "UPDATE blobs SET refcount = refcount + 1 WHERE tenant_id = ? AND digest = ?",
+            )
             .expect("valid scope");
         let _ = d.prepare(&q);
         let _ = d.bind(&["tnt0123456789abcd", "blake3:deadbeef"]);

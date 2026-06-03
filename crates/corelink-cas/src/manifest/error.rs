@@ -15,7 +15,7 @@
 use corelink_ac::sig::SigError;
 use thiserror::Error;
 
-use crate::manifest::bounds::{MAX_CHUNK_SIZE_BYTES, MAX_CHUNKS_PER_BLOB, MAX_TOTAL_SIZE_BYTES};
+use crate::manifest::bounds::{MAX_CHUNKS_PER_BLOB, MAX_CHUNK_SIZE_BYTES, MAX_TOTAL_SIZE_BYTES};
 
 /// Errors surfaced by [`crate::manifest::ManifestBuilder`] and the structural
 /// path of [`crate::manifest::ManifestVerifier`]. Sig-only failures route through
@@ -43,7 +43,10 @@ pub enum ManifestError {
     },
 
     /// A single chunk size exceeds the per-chunk bound.
-    #[error("chunk size {size_bytes} at index {index} exceeds bound {}", MAX_CHUNK_SIZE_BYTES)]
+    #[error(
+        "chunk size {size_bytes} at index {index} exceeds bound {}",
+        MAX_CHUNK_SIZE_BYTES
+    )]
     ChunkSizeExceeded {
         /// Offending index.
         index: u32,
@@ -139,7 +142,9 @@ pub enum VerifyError {
     /// declared `size_bytes` for that chunk. Surfaced separately from
     /// the hash mismatch arm so audit dashboards can split "wire
     /// truncation" from "tamper detected".
-    #[error("streaming chunk size mismatch at index {index}: declared {declared}, observed {observed}")]
+    #[error(
+        "streaming chunk size mismatch at index {index}: declared {declared}, observed {observed}"
+    )]
     StreamingChunkSizeMismatch {
         /// Offending chunk index.
         index: u32,

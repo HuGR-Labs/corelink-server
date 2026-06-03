@@ -14,10 +14,10 @@
 )]
 
 use corelink_cas::multipart_schema::{
-    ChunkUpsertOutcome, ChunkUpsertRequest, ManifestChunkInsertOutcome,
-    ManifestChunkInsertRequest, MultipartFinalizeOutcome, MultipartFinalizeRequest,
-    MultipartInitiateOutcome, MultipartInitiateRequest, MultipartRegion, MultipartSchema,
-    MultipartSessionState, SessionId, SimError, DEFAULT_SESSION_TTL_MS,
+    ChunkUpsertOutcome, ChunkUpsertRequest, ManifestChunkInsertOutcome, ManifestChunkInsertRequest,
+    MultipartFinalizeOutcome, MultipartFinalizeRequest, MultipartInitiateOutcome,
+    MultipartInitiateRequest, MultipartRegion, MultipartSchema, MultipartSessionState, SessionId,
+    SimError, DEFAULT_SESSION_TTL_MS,
 };
 use uuid::Uuid;
 
@@ -112,10 +112,7 @@ fn chunks_idempotent_preserves_immutable_columns() {
     s.upsert_chunk(r2).unwrap();
     let row = s.get_chunk(&ten_a(), &r1.chunk_digest).unwrap();
     assert_eq!(row.created_by_pat_id.as_deref(), Some("pat-original"));
-    assert_eq!(
-        row.r2_object_key,
-        format!("chunk-sam/abcd/{}", hex64(1))
-    );
+    assert_eq!(row.r2_object_key, format!("chunk-sam/abcd/{}", hex64(1)));
 }
 
 #[test]

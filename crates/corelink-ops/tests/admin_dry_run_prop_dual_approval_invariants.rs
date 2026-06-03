@@ -245,8 +245,11 @@ fn uuid_identity_independent_of_display_string() {
     let alice = actor(1);
     let alice_lookalike = actor(2); // same display "alice" hypothetically, distinct UUID
     let p1 = dual_approval_preflight(req, &[alice, alice_lookalike]);
-    assert_eq!(p1, DualApprovalPreflight::Accepted,
-        "distinct UUIDs must accept regardless of display string");
+    assert_eq!(
+        p1,
+        DualApprovalPreflight::Accepted,
+        "distinct UUIDs must accept regardless of display string"
+    );
 
     // Same UUID twice → DuplicateApprovers, regardless of any external
     // name binding.

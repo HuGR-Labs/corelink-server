@@ -29,9 +29,7 @@ use super::types::{AnalyticsAuditRow, EVENT_TYPE_ANALYTICS_QUERY, TENANT_ID_HEAD
 /// header map (one of the few large-on-stack types in axum), accepted
 /// trade-off for call-site ergonomics. Tracked as cosmetic follow-on.
 #[allow(clippy::result_large_err)]
-pub(super) fn parse_tenant_header(
-    headers: &HeaderMap,
-) -> Result<Uuid, axum::response::Response> {
+pub(super) fn parse_tenant_header(headers: &HeaderMap) -> Result<Uuid, axum::response::Response> {
     match headers
         .get(TENANT_ID_HEADER)
         .and_then(|v| v.to_str().ok())
@@ -40,9 +38,7 @@ pub(super) fn parse_tenant_header(
         .map(Uuid::parse_str)
     {
         Some(Ok(t)) => Ok(t),
-        _ => Err(
-            (StatusCode::UNAUTHORIZED, "missing or invalid X-Tenant-Id").into_response(),
-        ),
+        _ => Err((StatusCode::UNAUTHORIZED, "missing or invalid X-Tenant-Id").into_response()),
     }
 }
 
@@ -92,8 +88,7 @@ pub(super) fn rate_limit_check(
         // bytes (`to_ms`), even on the structurally-unreachable
         // pre-epoch branch. Mirrors the wave-23 closure of
         // `W21-R-P2-01` on `audit_export.rs`.
-        let resp = (StatusCode::SERVICE_UNAVAILABLE, "wall clock unavailable")
-            .into_response();
+        let resp = (StatusCode::SERVICE_UNAVAILABLE, "wall clock unavailable").into_response();
         return Some(emit_or_503(
             state,
             AnalyticsAuditRow::new(
@@ -109,7 +104,10 @@ pub(super) fn rate_limit_check(
         ));
     }
     let now_ms = wall_now_ms;
-    match state.rate_limiter.try_acquire(tenant, bucket_key, 1, now_ms) {
+    match state
+        .rate_limiter
+        .try_acquire(tenant, bucket_key, 1, now_ms)
+    {
         Ok(outcome) => match outcome.decision {
             RateLimitDecision::Allow { .. } => None,
             RateLimitDecision::Deny429 {

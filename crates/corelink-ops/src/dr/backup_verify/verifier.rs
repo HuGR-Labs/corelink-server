@@ -4,9 +4,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use super::error::BackupVerifyError;
-use super::outcome::{
-    IntegrityVerdict, RestoreVerdict, VerificationOutcome, VerificationStatus,
-};
+use super::outcome::{IntegrityVerdict, RestoreVerdict, VerificationOutcome, VerificationStatus};
 use super::snapshot::{BackupSnapshot, BlobSample, Namespace};
 use super::tier::{rpo_seconds, BackupTier};
 use super::{MAX_INTEGRITY_SAMPLES_PER_TENANT, MAX_SAMPLE_RESTORE_OBJECTS};
@@ -110,10 +108,7 @@ impl InMemoryBackupVerifier {
     ///
     /// Returns [`BackupVerifyError::Internal`] if the internal lock is
     /// poisoned.
-    pub fn record_snapshot(
-        &self,
-        snapshot: BackupSnapshot,
-    ) -> Result<(), BackupVerifyError> {
+    pub fn record_snapshot(&self, snapshot: BackupSnapshot) -> Result<(), BackupVerifyError> {
         let mut guard = self.lock_state()?;
         let tier = snapshot.tier;
         let entry = guard.entry(tier).or_default();
@@ -180,8 +175,7 @@ impl InMemoryBackupVerifier {
 
     fn lock_state(
         &self,
-    ) -> Result<std::sync::MutexGuard<'_, HashMap<BackupTier, TierState>>, BackupVerifyError>
-    {
+    ) -> Result<std::sync::MutexGuard<'_, HashMap<BackupTier, TierState>>, BackupVerifyError> {
         self.tiers
             .lock()
             .map_err(|_| BackupVerifyError::Internal("tier state lock poisoned".into()))
@@ -391,14 +385,20 @@ mod tests {
     use super::*;
 
     fn fresh_snapshot(tier: BackupTier, now: u64) -> BackupSnapshot {
-        BackupSnapshot::new(tier, now - 60, format!("snap-{}", tier.as_str()), "f".repeat(64))
+        BackupSnapshot::new(
+            tier,
+            now - 60,
+            format!("snap-{}", tier.as_str()),
+            "f".repeat(64),
+        )
     }
 
     #[test]
     fn freshness_ok_when_within_rpo() {
         let v = InMemoryBackupVerifier::new();
         let now = 2_000_000_000;
-        v.record_snapshot(fresh_snapshot(BackupTier::R2, now)).expect("ok");
+        v.record_snapshot(fresh_snapshot(BackupTier::R2, now))
+            .expect("ok");
         let out = v.verify_freshness(BackupTier::R2, now).expect("ok");
         assert_eq!(out.status, VerificationStatus::Ok);
         assert!(out.snapshot_age_seconds <= rpo_seconds(BackupTier::R2));
@@ -423,14 +423,20 @@ mod tests {
     fn freshness_no_snapshot_errors() {
         let v = InMemoryBackupVerifier::new();
         let err = v.verify_freshness(BackupTier::Kv, 100).unwrap_err();
-        assert_eq!(err, BackupVerifyError::NoSnapshot { tier: BackupTier::Kv });
+        assert_eq!(
+            err,
+            BackupVerifyError::NoSnapshot {
+                tier: BackupTier::Kv
+            }
+        );
     }
 
     #[test]
     fn integrity_clean_when_all_hashes_match() {
         let v = InMemoryBackupVerifier::new();
         let now = 2_000_000_000;
-        v.record_snapshot(fresh_snapshot(BackupTier::R2, now)).expect("ok");
+        v.record_snapshot(fresh_snapshot(BackupTier::R2, now))
+            .expect("ok");
         for i in 0..3 {
             let h = format!("{:0>64}", i);
             v.record_live_blob(
@@ -438,7 +444,8 @@ mod tests {
                 BlobSample::new("t1", format!("b{i}"), h.clone(), 1024),
             )
             .expect("ok");
-            v.record_backup_hash(BackupTier::R2, "t1", format!("b{i}"), h).expect("ok");
+            v.record_backup_hash(BackupTier::R2, "t1", format!("b{i}"), h)
+                .expect("ok");
         }
         let out = v.verify_integrity(BackupTier::R2, 100, now).expect("ok");
         assert_eq!(out.status, VerificationStatus::Ok);
@@ -450,7 +457,8 @@ mod tests {
     fn integrity_corrupt_when_hash_mismatch() {
         let v = InMemoryBackupVerifier::new();
         let now = 2_000_000_000;
-        v.record_snapshot(fresh_snapshot(BackupTier::R2, now)).expect("ok");
+        v.record_snapshot(fresh_snapshot(BackupTier::R2, now))
+            .expect("ok");
         v.record_live_blob(
             BackupTier::R2,
             BlobSample::new("t1", "b1", "a".repeat(64), 1024),
@@ -476,7 +484,8 @@ mod tests {
     fn integrity_per_tenant_cap_enforced() {
         let v = InMemoryBackupVerifier::new();
         let now = 2_000_000_000;
-        v.record_snapshot(fresh_snapshot(BackupTier::R2, now)).expect("ok");
+        v.record_snapshot(fresh_snapshot(BackupTier::R2, now))
+            .expect("ok");
         // 10 blobs per tenant, 2 tenants
         for tenant in ["t1", "t2"] {
             for i in 0..10 {
@@ -500,7 +509,8 @@ mod tests {
     fn sample_restore_clean_returns_ok() {
         let v = InMemoryBackupVerifier::new();
         let now = 2_000_000_000;
-        v.record_snapshot(fresh_snapshot(BackupTier::R2, now)).expect("ok");
+        v.record_snapshot(fresh_snapshot(BackupTier::R2, now))
+            .expect("ok");
         for i in 0..7 {
             let h = format!("{:0>64}", i);
             v.record_live_blob(
@@ -509,7 +519,9 @@ mod tests {
             )
             .expect("ok");
         }
-        let out = v.sample_restore(BackupTier::R2, Namespace::Ephemeral, now).expect("ok");
+        let out = v
+            .sample_restore(BackupTier::R2, Namespace::Ephemeral, now)
+            .expect("ok");
         assert_eq!(out.status, VerificationStatus::Ok);
         assert_eq!(out.restore.restored, MAX_SAMPLE_RESTORE_OBJECTS);
         assert!(out.restore.is_clean());
@@ -519,7 +531,8 @@ mod tests {
     fn sample_restore_byte_mismatch_returns_restore_failed() {
         let v = InMemoryBackupVerifier::new();
         let now = 2_000_000_000;
-        v.record_snapshot(fresh_snapshot(BackupTier::R2, now)).expect("ok");
+        v.record_snapshot(fresh_snapshot(BackupTier::R2, now))
+            .expect("ok");
         v.record_live_blob(
             BackupTier::R2,
             BlobSample::new("t1", "b1", "a".repeat(64), 1024),
@@ -527,7 +540,9 @@ mod tests {
         .expect("ok");
         v.inject_restore_mismatch(BackupTier::R2, "t1", "b1", "z".repeat(64))
             .expect("ok");
-        let out = v.sample_restore(BackupTier::R2, Namespace::Ephemeral, now).expect("ok");
+        let out = v
+            .sample_restore(BackupTier::R2, Namespace::Ephemeral, now)
+            .expect("ok");
         assert_eq!(out.status, VerificationStatus::RestoreFailed);
         assert_eq!(out.restore.byte_mismatched, 1);
     }
@@ -536,7 +551,8 @@ mod tests {
     fn sample_restore_refuses_non_ephemeral_target() {
         let v = InMemoryBackupVerifier::new();
         let now = 2_000_000_000;
-        v.record_snapshot(fresh_snapshot(BackupTier::R2, now)).expect("ok");
+        v.record_snapshot(fresh_snapshot(BackupTier::R2, now))
+            .expect("ok");
         let err = v
             .sample_restore(BackupTier::R2, Namespace::Production, now)
             .unwrap_err();

@@ -303,10 +303,7 @@ impl AuditExporter for InMemoryAuditExporter {
         // a customer with zero audit events still deserves a valid empty
         // export for SOC 2 coverage).
         let empty: Vec<AuditEvent> = Vec::new();
-        let chain = self
-            .events_by_tenant
-            .get(tenant_id)
-            .unwrap_or(&empty);
+        let chain = self.events_by_tenant.get(tenant_id).unwrap_or(&empty);
 
         // Filter to window; preserve sequence order (already sorted).
         let in_window: Vec<&AuditEvent> = chain
@@ -566,7 +563,10 @@ mod tests {
             .unwrap();
         assert_eq!(result.rows.len(), 1);
         assert!(result.rows[0].proof.siblings.is_empty());
-        assert_eq!(result.rows[0].proof.link_hash, result.manifest.chain_head_at_export);
+        assert_eq!(
+            result.rows[0].proof.link_hash,
+            result.manifest.chain_head_at_export
+        );
     }
 
     #[test]
@@ -606,7 +606,11 @@ mod tests {
             .export_window(&tenant.to_string(), ExportWindow::new(105, 108).unwrap())
             .unwrap();
         assert_eq!(result.rows.len(), 3);
-        let seqs: Vec<u64> = result.rows.iter().map(|r| r.event.sequence_number).collect();
+        let seqs: Vec<u64> = result
+            .rows
+            .iter()
+            .map(|r| r.event.sequence_number)
+            .collect();
         assert_eq!(seqs, vec![5, 6, 7]);
     }
 

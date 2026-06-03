@@ -13,8 +13,7 @@
 )]
 
 use corelink_pat::{
-    mint, verify_with_hash, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId,
-    SCOPE_CACHE_RW,
+    mint, verify_with_hash, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId, SCOPE_CACHE_RW,
 };
 use std::time::Duration;
 use uuid::Uuid;
@@ -51,7 +50,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Plaintext length = {} chars", pt_string.len());
 
     let verified = verify_with_hash(&pt_string, &pat.token_id, &pat.hash, &signing_key)?;
-    println!("Verified env={:?} token_id={}", verified.env, verified.token_id);
+    println!(
+        "Verified env={:?} token_id={}",
+        verified.env, verified.token_id
+    );
 
     // Print the full plaintext at the end so the user can paste it
     // into their CLI config — production would do this exactly once

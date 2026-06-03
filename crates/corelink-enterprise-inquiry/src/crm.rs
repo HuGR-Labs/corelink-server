@@ -21,9 +21,7 @@ use std::sync::{Arc, Mutex};
 
 use thiserror::Error;
 
-use crate::encryption::{
-    InquiryEncryptionError, InquiryPayloadEncryptor, SealedInquiry,
-};
+use crate::encryption::{InquiryEncryptionError, InquiryPayloadEncryptor, SealedInquiry};
 use crate::form::InquiryId;
 
 /// Opaque CRM entry id (HubSpot deal id / Salesforce opportunity id).
@@ -308,7 +306,10 @@ mod tests {
         assert_eq!(c.snapshot()[0].entry_id, id);
         assert!(!c.snapshot()[0].compensated);
         // Decryption boundary recovered the email.
-        assert_eq!(c.last_unsealed_email().as_deref(), Some("ciso@acme.example"));
+        assert_eq!(
+            c.last_unsealed_email().as_deref(),
+            Some("ciso@acme.example")
+        );
     }
 
     #[test]

@@ -50,9 +50,7 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use crate::audit::{
-    CircuitAuditRecord, CircuitAuditSink, CircuitEventType,
-};
+use crate::audit::{CircuitAuditRecord, CircuitAuditSink, CircuitEventType};
 use crate::error::CircuitError;
 use crate::metrics::CircuitMetricsObserver;
 
@@ -236,10 +234,7 @@ pub const RECOVERY_SAMPLE_SUCCESS_FLOOR: f64 = 0.9;
 /// the probe schedule per request — the production wiring sources
 /// `observation_id` from a monotonic per-instance counter.
 #[must_use]
-pub const fn allow_halfopen_request(
-    observation_id: u64,
-    sample_pct: u8,
-) -> bool {
+pub const fn allow_halfopen_request(observation_id: u64, sample_pct: u8) -> bool {
     let cap = if sample_pct > 100 { 100 } else { sample_pct };
     (observation_id % 10) < cap as u64 / 10
 }
@@ -288,23 +283,15 @@ pub fn evaluate_signals(
         .count();
     let error_5xx_rate = error_5xx_count as f64 / total_f;
 
-    let p99_latency_us = window
-        .iter()
-        .map(|o| o.latency_p99_us)
-        .max()
-        .unwrap_or(0);
+    let p99_latency_us = window.iter().map(|o| o.latency_p99_us).max().unwrap_or(0);
 
-    let do_error_rate = window
-        .last()
-        .map(|o| o.do_error_rate_5m)
-        .unwrap_or(0.0);
+    let do_error_rate = window.last().map(|o| o.do_error_rate_5m).unwrap_or(0.0);
 
     let signal_a = error_5xx_rate > thresholds.error_5xx_rate;
     let signal_b = p99_latency_us > thresholds.p99_latency_us;
     let signal_c = do_error_rate > thresholds.do_error_rate;
 
-    let signals_tripped =
-        u8::from(signal_a) + u8::from(signal_b) + u8::from(signal_c);
+    let signals_tripped = u8::from(signal_a) + u8::from(signal_b) + u8::from(signal_c);
 
     let trip_reason = if signals_tripped >= 2 {
         Some(TripReason::MultiSignalCombined)
@@ -416,11 +403,7 @@ pub trait GlobalCircuitBreaker: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Surface as [`CircuitError`].
-    fn check(
-        &self,
-        observation_id: u64,
-        now_ms: u64,
-    ) -> Result<CircuitDecision, CircuitError>;
+    fn check(&self, observation_id: u64, now_ms: u64) -> Result<CircuitDecision, CircuitError>;
 
     /// Record a fresh health observation + re-evaluate trip predicate.
     /// Drives the canonical state machine:
@@ -450,10 +433,7 @@ pub trait GlobalCircuitBreaker: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Surface as [`CircuitError`].
-    fn record_probe_outcome(
-        &self,
-        success: bool,
-    ) -> Result<(), CircuitError>;
+    fn record_probe_outcome(&self, success: bool) -> Result<(), CircuitError>;
 
     /// Manual override (admin S-13): force the circuit Open or Closed.
     /// Audit + metrics fail-closed; SEV-2 alert per sprint contract
@@ -559,11 +539,7 @@ where
 {
     /// Construct with the canonical default thresholds.
     #[must_use]
-    pub fn with_defaults(
-        audit: Arc<A>,
-        metrics: Arc<M>,
-        region: impl Into<String>,
-    ) -> Self {
+    pub fn with_defaults(audit: Arc<A>, metrics: Arc<M>, region: impl Into<String>) -> Self {
         Self::new(audit, metrics, region, CircuitThresholds::canonical())
     }
 
@@ -603,15 +579,12 @@ where
     }
 
     fn lock_inner(&self) -> Result<std::sync::MutexGuard<'_, CircuitInner>, CircuitError> {
-        self.inner.lock().map_err(|_| {
-            CircuitError::Backend("circuit inner mutex poisoned".to_string())
-        })
+        self.inner
+            .lock()
+            .map_err(|_| CircuitError::Backend("circuit inner mutex poisoned".to_string()))
     }
 
-    fn audit_fail_closed(
-        &self,
-        record: CircuitAuditRecord,
-    ) -> Result<(), CircuitError> {
+    fn audit_fail_closed(&self, record: CircuitAuditRecord) -> Result<(), CircuitError> {
         self.audit.emit(record).map_err(CircuitError::Audit)
     }
 }
@@ -622,15 +595,11 @@ fn signals_below_ratio(
     ratio: f64,
 ) -> bool {
     eval.error_5xx_rate < thresholds.error_5xx_rate * ratio
-        && (eval.p99_latency_us as f64)
-            < (thresholds.p99_latency_us as f64) * ratio
+        && (eval.p99_latency_us as f64) < (thresholds.p99_latency_us as f64) * ratio
         && eval.do_error_rate < thresholds.do_error_rate * ratio
 }
 
-fn any_signal_breaches(
-    eval: &SignalEvaluation,
-    thresholds: &CircuitThresholds,
-) -> bool {
+fn any_signal_breaches(eval: &SignalEvaluation, thresholds: &CircuitThresholds) -> bool {
     eval.error_5xx_rate > thresholds.error_5xx_rate
         || eval.p99_latency_us > thresholds.p99_latency_us
         || eval.do_error_rate > thresholds.do_error_rate
@@ -641,11 +610,7 @@ where
     A: CircuitAuditSink,
     M: CircuitMetricsObserver,
 {
-    fn check(
-        &self,
-        observation_id: u64,
-        now_ms: u64,
-    ) -> Result<CircuitDecision, CircuitError> {
+    fn check(&self, observation_id: u64, now_ms: u64) -> Result<CircuitDecision, CircuitError> {
         let inner = self.lock_inner()?;
 
         match inner.state.clone() {
@@ -653,8 +618,7 @@ where
                 state_label: "closed",
             }),
             CircuitState::Open { reason, .. } => {
-                let is_manual_override =
-                    matches!(reason, TripReason::ManualOverride { .. });
+                let is_manual_override = matches!(reason, TripReason::ManualOverride { .. });
                 self.audit_fail_closed(CircuitAuditRecord {
                     event_type: CircuitEventType::RequestRejected,
                     region: self.region.clone(),
@@ -664,44 +628,34 @@ where
                     manual_override_admin_id: None,
                 })?;
                 drop(inner);
-                let _ = self.metrics.record_within_quota(
-                    "global_circuit_open",
-                    &self.region,
-                );
+                let _ = self
+                    .metrics
+                    .record_within_quota("global_circuit_open", &self.region);
                 Ok(CircuitDecision::Reject {
                     reason,
                     is_manual_override,
                 })
             }
             CircuitState::HalfOpen { reason, .. } => {
-                let allowed = allow_halfopen_request(
-                    observation_id,
-                    HALFOPEN_SAMPLE_PCT,
-                );
+                let allowed = allow_halfopen_request(observation_id, HALFOPEN_SAMPLE_PCT);
                 if allowed {
                     Ok(CircuitDecision::Allow {
                         state_label: "half_open",
                     })
                 } else {
-                    let is_manual_override = matches!(
-                        reason,
-                        TripReason::ManualOverride { .. }
-                    );
+                    let is_manual_override = matches!(reason, TripReason::ManualOverride { .. });
                     self.audit_fail_closed(CircuitAuditRecord {
                         event_type: CircuitEventType::RequestRejected,
                         region: self.region.clone(),
                         trip_reason: Some(reason.as_label().to_string()),
                         now_ms,
-                        created_by_request_id: format!(
-                            "obs-{observation_id}"
-                        ),
+                        created_by_request_id: format!("obs-{observation_id}"),
                         manual_override_admin_id: None,
                     })?;
                     drop(inner);
-                    let _ = self.metrics.record_within_quota(
-                        "global_circuit_open",
-                        &self.region,
-                    );
+                    let _ = self
+                        .metrics
+                        .record_within_quota("global_circuit_open", &self.region);
                     Ok(CircuitDecision::Reject {
                         reason,
                         is_manual_override,
@@ -729,11 +683,7 @@ where
                 break;
             }
         }
-        let eval = evaluate_signals(
-            &inner.observations,
-            &self.thresholds,
-            now_ms,
-        );
+        let eval = evaluate_signals(&inner.observations, &self.thresholds, now_ms);
 
         let new_state = match inner.state.clone() {
             CircuitState::Closed => {
@@ -747,10 +697,7 @@ where
                         manual_override_admin_id: None,
                     })?;
                     inner.trips_count = inner.trips_count.saturating_add(1);
-                    let _ = self.metrics.record_trip(
-                        &self.region,
-                        reason.as_label(),
-                    );
+                    let _ = self.metrics.record_trip(&self.region, reason.as_label());
                     CircuitState::Open {
                         tripped_at_ms: now_ms,
                         reason,
@@ -764,10 +711,9 @@ where
                         } else {
                             "do_error_rate"
                         };
-                        let _ = self.metrics.record_single_signal_alarm(
-                            &self.region,
-                            signal_label,
-                        );
+                        let _ = self
+                            .metrics
+                            .record_single_signal_alarm(&self.region, signal_label);
                     }
                     CircuitState::Closed
                 }
@@ -776,8 +722,7 @@ where
                 tripped_at_ms,
                 reason,
             } => {
-                let dwell_met = now_ms.saturating_sub(tripped_at_ms)
-                    >= HALFOPEN_DWELL_MS;
+                let dwell_met = now_ms.saturating_sub(tripped_at_ms) >= HALFOPEN_DWELL_MS;
                 let signals_recovered = !eval.insufficient_data
                     && signals_below_ratio(
                         &eval,
@@ -815,33 +760,26 @@ where
                 probe_success,
                 probe_failure,
             } => {
-                if !eval.insufficient_data
-                    && any_signal_breaches(&eval, &self.thresholds)
-                {
-                    let revert_reason =
-                        eval.trip_reason.clone().unwrap_or(reason);
+                if !eval.insufficient_data && any_signal_breaches(&eval, &self.thresholds) {
+                    let revert_reason = eval.trip_reason.clone().unwrap_or(reason);
                     self.audit_fail_closed(CircuitAuditRecord {
                         event_type: CircuitEventType::Tripped,
                         region: self.region.clone(),
-                        trip_reason: Some(
-                            revert_reason.as_label().to_string(),
-                        ),
+                        trip_reason: Some(revert_reason.as_label().to_string()),
                         now_ms,
                         created_by_request_id: format!("obs-{now_ms}"),
                         manual_override_admin_id: None,
                     })?;
                     inner.trips_count = inner.trips_count.saturating_add(1);
-                    let _ = self.metrics.record_trip(
-                        &self.region,
-                        revert_reason.as_label(),
-                    );
+                    let _ = self
+                        .metrics
+                        .record_trip(&self.region, revert_reason.as_label());
                     CircuitState::Open {
                         tripped_at_ms: now_ms,
                         reason: revert_reason,
                     }
                 } else {
-                    let dwell_met = now_ms.saturating_sub(since_ms)
-                        >= HALFOPEN_DWELL_MS;
+                    let dwell_met = now_ms.saturating_sub(since_ms) >= HALFOPEN_DWELL_MS;
                     let signals_recovered = !eval.insufficient_data
                         && signals_below_ratio(
                             &eval,
@@ -854,8 +792,7 @@ where
                     } else {
                         probe_success as f64 / total_probes as f64
                     };
-                    let probe_floor_met =
-                        success_rate >= RECOVERY_SAMPLE_SUCCESS_FLOOR;
+                    let probe_floor_met = success_rate >= RECOVERY_SAMPLE_SUCCESS_FLOOR;
                     if dwell_met && signals_recovered && probe_floor_met {
                         self.audit_fail_closed(CircuitAuditRecord {
                             event_type: CircuitEventType::ClosedRecovery,
@@ -865,8 +802,7 @@ where
                             created_by_request_id: format!("obs-{now_ms}"),
                             manual_override_admin_id: None,
                         })?;
-                        inner.recoveries_count =
-                            inner.recoveries_count.saturating_add(1);
+                        inner.recoveries_count = inner.recoveries_count.saturating_add(1);
                         let _ = self.metrics.record_recovery(&self.region);
                         CircuitState::Closed
                     } else {
@@ -886,10 +822,7 @@ where
         Ok(new_state)
     }
 
-    fn record_probe_outcome(
-        &self,
-        success: bool,
-    ) -> Result<(), CircuitError> {
+    fn record_probe_outcome(&self, success: bool) -> Result<(), CircuitError> {
         let mut inner = self.lock_inner()?;
         if let CircuitState::HalfOpen {
             since_ms,
@@ -898,10 +831,16 @@ where
             probe_failure,
         } = inner.state.clone()
         {
-            let new_success =
-                if success { probe_success.saturating_add(1) } else { probe_success };
-            let new_failure =
-                if success { probe_failure } else { probe_failure.saturating_add(1) };
+            let new_success = if success {
+                probe_success.saturating_add(1)
+            } else {
+                probe_success
+            };
+            let new_failure = if success {
+                probe_failure
+            } else {
+                probe_failure.saturating_add(1)
+            };
             inner.state = CircuitState::HalfOpen {
                 since_ms,
                 reason,
@@ -944,9 +883,11 @@ where
                 }
             }
             ManualOverrideTarget::Closed => {
-                if matches!(inner.state, CircuitState::Open { .. } | CircuitState::HalfOpen { .. }) {
-                    inner.recoveries_count =
-                        inner.recoveries_count.saturating_add(1);
+                if matches!(
+                    inner.state,
+                    CircuitState::Open { .. } | CircuitState::HalfOpen { .. }
+                ) {
+                    inner.recoveries_count = inner.recoveries_count.saturating_add(1);
                 }
                 CircuitState::Closed
             }
@@ -984,15 +925,10 @@ where
 )]
 mod tests {
     use super::*;
-    use crate::audit::{
-        FailingCircuitAuditSink, InMemoryCircuitAuditSink,
-    };
+    use crate::audit::{FailingCircuitAuditSink, InMemoryCircuitAuditSink};
     use crate::metrics::{CircuitMetricKind, InMemoryCircuitMetrics};
 
-    type Brk = InMemoryGlobalCircuitBreaker<
-        InMemoryCircuitAuditSink,
-        InMemoryCircuitMetrics,
-    >;
+    type Brk = InMemoryGlobalCircuitBreaker<InMemoryCircuitAuditSink, InMemoryCircuitMetrics>;
 
     fn fresh() -> (
         Brk,
@@ -1086,11 +1022,7 @@ mod tests {
         assert!(matches!(snap.state, CircuitState::Closed));
         assert_eq!(audit.snapshot_of(CircuitEventType::Tripped).len(), 0);
         assert_eq!(metrics.counter_total(CircuitMetricKind::TripsTotal), 0);
-        assert!(
-            metrics.counter_total(
-                CircuitMetricKind::SingleSignalAlarmTotal
-            ) > 0
-        );
+        assert!(metrics.counter_total(CircuitMetricKind::SingleSignalAlarmTotal) > 0);
     }
 
     #[test]
@@ -1101,9 +1033,7 @@ mod tests {
         assert!(matches!(snap.state, CircuitState::Closed));
         assert_eq!(metrics.counter_total(CircuitMetricKind::TripsTotal), 0);
         assert_eq!(
-            metrics.counter_total(
-                CircuitMetricKind::SingleSignalAlarmTotal
-            ),
+            metrics.counter_total(CircuitMetricKind::SingleSignalAlarmTotal),
             0
         );
     }
@@ -1162,11 +1092,9 @@ mod tests {
             "expected HalfOpen got {:?}",
             snap.state
         );
-        assert!(
-            !audit
-                .snapshot_of(CircuitEventType::HalfOpenProbe)
-                .is_empty()
-        );
+        assert!(!audit
+            .snapshot_of(CircuitEventType::HalfOpenProbe)
+            .is_empty());
     }
 
     #[test]
@@ -1181,8 +1109,7 @@ mod tests {
         let _ = flood(&breaker, 200, 150, 6_000_000, 0.5, later2);
         let snap = breaker.snapshot().unwrap();
         assert!(matches!(snap.state, CircuitState::Open { .. }));
-        let trip_count =
-            audit.snapshot_of(CircuitEventType::Tripped).len();
+        let trip_count = audit.snapshot_of(CircuitEventType::Tripped).len();
         assert!(trip_count >= 2, "expected ≥ 2 trips; got {trip_count}");
     }
 
@@ -1201,10 +1128,7 @@ mod tests {
         let _ = flood(&breaker, 200, 0, 50_000, 0.01, later);
         let snap = breaker.snapshot().unwrap();
         assert!(matches!(snap.state, CircuitState::Closed));
-        assert_eq!(
-            audit.snapshot_of(CircuitEventType::ClosedRecovery).len(),
-            1
-        );
+        assert_eq!(audit.snapshot_of(CircuitEventType::ClosedRecovery).len(), 1);
         assert!(metrics.counter_total(CircuitMetricKind::RecoveriesTotal) >= 1);
     }
 
@@ -1256,23 +1180,13 @@ mod tests {
             .unwrap();
         match new_state {
             CircuitState::Open { reason, .. } => {
-                assert!(matches!(
-                    reason,
-                    TripReason::ManualOverride { .. }
-                ));
+                assert!(matches!(reason, TripReason::ManualOverride { .. }));
             }
             _ => panic!("expected Open"),
         }
+        assert_eq!(audit.snapshot_of(CircuitEventType::ManualOverride).len(), 1);
         assert_eq!(
-            audit.snapshot_of(CircuitEventType::ManualOverride).len(),
-            1
-        );
-        assert_eq!(
-            metrics.counter_for_labels(
-                CircuitMetricKind::ManualOverrideTotal,
-                "iad",
-                "open"
-            ),
+            metrics.counter_for_labels(CircuitMetricKind::ManualOverrideTotal, "iad", "open"),
             1
         );
     }
@@ -1297,10 +1211,7 @@ mod tests {
             )
             .unwrap();
         assert!(matches!(new_state, CircuitState::Closed));
-        assert_eq!(
-            audit.snapshot_of(CircuitEventType::ManualOverride).len(),
-            2
-        );
+        assert_eq!(audit.snapshot_of(CircuitEventType::ManualOverride).len(), 2);
     }
 
     #[test]
@@ -1415,11 +1326,7 @@ mod tests {
         for t in 0..50 {
             buf.push_back(obs(t, ObservationStatus::ServerError5xx));
         }
-        let eval = evaluate_signals(
-            &buf,
-            &CircuitThresholds::canonical(),
-            100,
-        );
+        let eval = evaluate_signals(&buf, &CircuitThresholds::canonical(), 100);
         assert!(eval.insufficient_data);
         assert!(eval.trip_reason.is_none());
     }
@@ -1439,11 +1346,7 @@ mod tests {
             o.latency_p99_us = 6_000_000;
             buf.push_back(o);
         }
-        let eval = evaluate_signals(
-            &buf,
-            &CircuitThresholds::canonical(),
-            300,
-        );
+        let eval = evaluate_signals(&buf, &CircuitThresholds::canonical(), 300);
         assert!(eval.signal_a);
         assert!(eval.signal_b);
         assert!(matches!(
@@ -1468,11 +1371,7 @@ mod tests {
             o.do_error_rate_5m = 0.5;
             buf.push_back(o);
         }
-        let eval = evaluate_signals(
-            &buf,
-            &CircuitThresholds::canonical(),
-            300,
-        );
+        let eval = evaluate_signals(&buf, &CircuitThresholds::canonical(), 300);
         assert!(eval.signal_a);
         assert!(eval.signal_b);
         assert!(eval.signal_c);
@@ -1485,11 +1384,7 @@ mod tests {
         for t in 0..200 {
             buf.push_back(obs(t, ObservationStatus::Success));
         }
-        let eval = evaluate_signals(
-            &buf,
-            &CircuitThresholds::canonical(),
-            300,
-        );
+        let eval = evaluate_signals(&buf, &CircuitThresholds::canonical(), 300);
         assert!(!eval.signal_a);
         assert!(!eval.signal_b);
         assert!(!eval.signal_c);
@@ -1507,11 +1402,7 @@ mod tests {
             o.do_error_rate_5m = if t == 199 { 0.9 } else { 0.0 };
             buf.push_back(o);
         }
-        let eval = evaluate_signals(
-            &buf,
-            &CircuitThresholds::canonical(),
-            300,
-        );
+        let eval = evaluate_signals(&buf, &CircuitThresholds::canonical(), 300);
         assert_eq!(eval.do_error_rate, 0.9);
         assert!(eval.signal_c);
     }

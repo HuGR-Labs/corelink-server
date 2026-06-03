@@ -138,8 +138,7 @@ mod tests {
 
     #[test]
     fn audit_displays_lifted_inner() {
-        let e: QuotaFsmError =
-            QuotaFsmAuditSinkError::Store("inner-msg".to_string()).into();
+        let e: QuotaFsmError = QuotaFsmAuditSinkError::Store("inner-msg".to_string()).into();
         let s = format!("{e}");
         assert!(s.contains("audit envelope failure"));
     }

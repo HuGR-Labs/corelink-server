@@ -35,7 +35,10 @@ fn chaos_cpu_pressure_sustained() {
     }
     let events = tele.audit_events();
     assert_canonical_audit_sequence(&events).unwrap();
-    assert_eq!(events, vec![ChaosAuditEvent::Started, ChaosAuditEvent::Completed]);
+    assert_eq!(
+        events,
+        vec![ChaosAuditEvent::Started, ChaosAuditEvent::Completed]
+    );
     assert_eq!(tele.slo_violation_total(), 0);
 
     // Adversarial: 1 bps over blast radius → SteadyStateBreached + counter increment.

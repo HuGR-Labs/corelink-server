@@ -57,9 +57,7 @@ use uuid::Uuid;
 use corelink_eviction::Tier;
 use corelink_ratelimit::{BucketKey, KeyDimension, RateLimiter};
 
-use super::audit::{
-    AbuseAuditRecord, AbuseAuditSink, AbuseEventType,
-};
+use super::audit::{AbuseAuditRecord, AbuseAuditSink, AbuseEventType};
 use super::config::AbuseConfig;
 use super::error::AbuseError;
 use super::features::AbuseFeatures;
@@ -155,11 +153,7 @@ pub trait AbuseScorer: Send + Sync + core::fmt::Debug {
     ///
     /// Always returns [`AbuseError::AutoSuspendForbidden`] — the only
     /// surfaceable typed error from this method.
-    fn auto_suspend(
-        &self,
-        tenant_id: Uuid,
-        score: AbuseScore,
-    ) -> Result<(), AbuseError>;
+    fn auto_suspend(&self, tenant_id: Uuid, score: AbuseScore) -> Result<(), AbuseError>;
 
     /// Snapshot the current rolling window for a tenant (for
     /// diagnostic / customer self-service endpoint). Returns
@@ -168,10 +162,7 @@ pub trait AbuseScorer: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Surface as [`AbuseError`].
-    fn snapshot_window(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<Option<AbuseRollingWindow>, AbuseError>;
+    fn snapshot_window(&self, tenant_id: Uuid) -> Result<Option<AbuseRollingWindow>, AbuseError>;
 }
 
 /// In-memory abuse scorer (the canonical pure-logic orchestrator).
@@ -212,11 +203,7 @@ where
 {
     /// Construct with the canonical default config.
     #[must_use]
-    pub fn with_defaults(
-        audit: Arc<A>,
-        metrics: Arc<M>,
-        rate_limiter: Arc<R>,
-    ) -> Self {
+    pub fn with_defaults(audit: Arc<A>, metrics: Arc<M>, rate_limiter: Arc<R>) -> Self {
         Self {
             audit,
             metrics,
@@ -228,12 +215,7 @@ where
 
     /// Construct with explicit config.
     #[must_use]
-    pub fn new(
-        audit: Arc<A>,
-        metrics: Arc<M>,
-        rate_limiter: Arc<R>,
-        config: AbuseConfig,
-    ) -> Self {
+    pub fn new(audit: Arc<A>, metrics: Arc<M>, rate_limiter: Arc<R>, config: AbuseConfig) -> Self {
         Self {
             audit,
             metrics,
@@ -255,9 +237,10 @@ where
     ///
     /// Returns [`AbuseError::Backend`] on mutex poisoning.
     pub fn tenant_count(&self) -> Result<usize, AbuseError> {
-        let g = self.state.lock().map_err(|_| {
-            AbuseError::Backend("scorer state mutex poisoned".to_string())
-        })?;
+        let g = self
+            .state
+            .lock()
+            .map_err(|_| AbuseError::Backend("scorer state mutex poisoned".to_string()))?;
         Ok(g.len())
     }
 }
@@ -337,20 +320,14 @@ where
                 let snap = self
                     .rate_limiter
                     .snapshot_bucket(&bucket_key)
-                    .map_err(|e| AbuseError::Backend(format!(
-                        "snapshot_bucket failed: {e}"
-                    )))?;
+                    .map_err(|e| AbuseError::Backend(format!("snapshot_bucket failed: {e}")))?;
                 let (current_rate, current_burst) = match snap {
-                    Some(s) => (
-                        s.refill_rate_per_sec.floor() as u32,
-                        s.burst_capacity,
-                    ),
+                    Some(s) => (s.refill_rate_per_sec.floor() as u32, s.burst_capacity),
                     None => {
                         // Tenant has no bucket yet — materialise via
                         // tier defaults then halve. Use the canonical
                         // 5-tier ladder via corelink-ratelimit::tier.
-                        let (rate, burst) =
-                            corelink_ratelimit::refill_rate_for_tier(tier);
+                        let (rate, burst) = corelink_ratelimit::refill_rate_for_tier(tier);
                         (rate, burst)
                     }
                 };
@@ -366,9 +343,7 @@ where
                         new_burst,
                         window_end_ms,
                     )
-                    .map_err(|e| AbuseError::Backend(format!(
-                        "update_plan failed: {e}"
-                    )))?;
+                    .map_err(|e| AbuseError::Backend(format!("update_plan failed: {e}")))?;
 
                 self.audit.emit(AbuseAuditRecord {
                     event_type: AbuseEventType::DowngradeApplied,
@@ -404,9 +379,10 @@ where
         }
 
         // Step 5: commit the rolling-window state.
-        let mut g = self.state.lock().map_err(|_| {
-            AbuseError::Backend("scorer state mutex poisoned".to_string())
-        })?;
+        let mut g = self
+            .state
+            .lock()
+            .map_err(|_| AbuseError::Backend("scorer state mutex poisoned".to_string()))?;
         g.insert(
             tenant_id,
             AbuseRollingWindow {
@@ -422,7 +398,8 @@ where
 
         // Step 6: metrics emit (after audit + state commit succeeded).
         let label = tier_to_label(decision);
-        self.metrics.observe_score(tenant_id, label, score.as_f64())?;
+        self.metrics
+            .observe_score(tenant_id, label, score.as_f64())?;
         self.metrics.record_tier(label)?;
         if matches!(decision, AbuseDecision::Suspicious) {
             self.metrics.record_downgrade_applied(tenant_id)?;
@@ -437,11 +414,7 @@ where
         })
     }
 
-    fn auto_suspend(
-        &self,
-        tenant_id: Uuid,
-        score: AbuseScore,
-    ) -> Result<(), AbuseError> {
+    fn auto_suspend(&self, tenant_id: Uuid, score: AbuseScore) -> Result<(), AbuseError> {
         // ALWAYS bump the SEV-1 LGPD violation canary BEFORE returning
         // the typed error so the production observability surface
         // catches even the attempted bypass.
@@ -452,13 +425,11 @@ where
         })
     }
 
-    fn snapshot_window(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<Option<AbuseRollingWindow>, AbuseError> {
-        let g = self.state.lock().map_err(|_| {
-            AbuseError::Backend("scorer state mutex poisoned".to_string())
-        })?;
+    fn snapshot_window(&self, tenant_id: Uuid) -> Result<Option<AbuseRollingWindow>, AbuseError> {
+        let g = self
+            .state
+            .lock()
+            .map_err(|_| AbuseError::Backend("scorer state mutex poisoned".to_string()))?;
         Ok(g.get(&tenant_id).copied())
     }
 }
@@ -473,12 +444,11 @@ where
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
-    use super::*;
     use super::super::audit::{FailingAbuseAuditSink, InMemoryAbuseAuditSink};
     use super::super::metrics::{AbuseMetricKind, InMemoryAbuseMetrics};
+    use super::*;
     use corelink_ratelimit::{
-        InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics,
-        InMemoryTokenBucketRateLimiter,
+        InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics, InMemoryTokenBucketRateLimiter,
     };
 
     fn ten_a() -> Uuid {
@@ -492,22 +462,14 @@ mod tests {
     type ScorerType = InMemoryAbuseScorer<
         InMemoryAbuseAuditSink,
         InMemoryAbuseMetrics,
-        InMemoryTokenBucketRateLimiter<
-            InMemoryRateLimitAuditSink,
-            InMemoryRateLimitMetrics,
-        >,
+        InMemoryTokenBucketRateLimiter<InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics>,
     >;
 
     type Fixture = (
         ScorerType,
         Arc<InMemoryAbuseAuditSink>,
         Arc<InMemoryAbuseMetrics>,
-        Arc<
-            InMemoryTokenBucketRateLimiter<
-                InMemoryRateLimitAuditSink,
-                InMemoryRateLimitMetrics,
-            >,
-        >,
+        Arc<InMemoryTokenBucketRateLimiter<InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics>>,
     );
 
     fn fresh() -> Fixture {
@@ -538,26 +500,14 @@ mod tests {
             .unwrap();
         assert_eq!(out.decision, AbuseDecision::Benign);
         assert!(!out.downgrade_applied);
-        assert_eq!(
-            audit.snapshot_of(AbuseEventType::ScoreComputed).len(),
-            1
-        );
-        assert_eq!(
-            audit.snapshot_of(AbuseEventType::DecisionBenign).len(),
-            1
-        );
+        assert_eq!(audit.snapshot_of(AbuseEventType::ScoreComputed).len(), 1);
+        assert_eq!(audit.snapshot_of(AbuseEventType::DecisionBenign).len(), 1);
         assert_eq!(
             audit.snapshot_of(AbuseEventType::DecisionSuspicious).len(),
             0
         );
-        assert_eq!(
-            audit.snapshot_of(AbuseEventType::DowngradeApplied).len(),
-            0
-        );
-        assert_eq!(
-            metrics.tier_total_for_label(AbuseTierLabel::Benign),
-            1
-        );
+        assert_eq!(audit.snapshot_of(AbuseEventType::DowngradeApplied).len(), 0);
+        assert_eq!(metrics.tier_total_for_label(AbuseTierLabel::Benign), 1);
     }
 
     // ---- Suspicious path ------------------------------------------------
@@ -589,28 +539,16 @@ mod tests {
         assert_eq!(out.decision, AbuseDecision::Suspicious);
         assert!(out.downgrade_applied);
         // Audit: ScoreComputed + DecisionSuspicious + DowngradeApplied.
-        assert_eq!(
-            audit.snapshot_of(AbuseEventType::ScoreComputed).len(),
-            1
-        );
+        assert_eq!(audit.snapshot_of(AbuseEventType::ScoreComputed).len(), 1);
         assert_eq!(
             audit.snapshot_of(AbuseEventType::DecisionSuspicious).len(),
             1
         );
-        assert_eq!(
-            audit.snapshot_of(AbuseEventType::DowngradeApplied).len(),
-            1
-        );
+        assert_eq!(audit.snapshot_of(AbuseEventType::DowngradeApplied).len(), 1);
         // Metrics: tier + downgrade counter.
+        assert_eq!(metrics.tier_total_for_label(AbuseTierLabel::Suspicious), 1);
         assert_eq!(
-            metrics.tier_total_for_label(AbuseTierLabel::Suspicious),
-            1
-        );
-        assert_eq!(
-            metrics.counter_for_tenant(
-                AbuseMetricKind::DowngradeAppliedTotal,
-                ten_a()
-            ),
+            metrics.counter_for_tenant(AbuseMetricKind::DowngradeAppliedTotal, ten_a()),
             1
         );
         // Limiter saw the downgrade — bucket materialised + rate halved.
@@ -646,14 +584,8 @@ mod tests {
             1
         );
         // No suspend-applied audit (LGPD Art. 20 humane response).
-        assert_eq!(
-            audit.snapshot_of(AbuseEventType::SuspendApplied).len(),
-            0
-        );
-        assert_eq!(
-            metrics.tier_total_for_label(AbuseTierLabel::Malicious),
-            1
-        );
+        assert_eq!(audit.snapshot_of(AbuseEventType::SuspendApplied).len(), 0);
+        assert_eq!(metrics.tier_total_for_label(AbuseTierLabel::Malicious), 1);
     }
 
     // ---- AutoSuspendForbidden -----------------------------------------
@@ -668,10 +600,7 @@ mod tests {
         }
         // SEV-1 canary bumped 5 times — one per attempted bypass.
         assert_eq!(
-            metrics.counter_for_tenant(
-                AbuseMetricKind::AutoSuspendAttemptsTotal,
-                ten_a()
-            ),
+            metrics.counter_for_tenant(AbuseMetricKind::AutoSuspendAttemptsTotal, ten_a()),
             5
         );
     }
@@ -712,13 +641,7 @@ mod tests {
 
     fn scorer_apply<S: AbuseScorer>(scorer: &S, tenant_id: Uuid) {
         let _ = scorer
-            .score_and_apply(
-                tenant_id,
-                AbuseFeatures::zero(),
-                Tier::Team,
-                0,
-                300_000,
-            )
+            .score_and_apply(tenant_id, AbuseFeatures::zero(), Tier::Team, 0, 300_000)
             .unwrap();
     }
 
@@ -749,10 +672,7 @@ mod tests {
         let snap = limiter.snapshot_bucket(&bucket).unwrap();
         assert!(snap.is_none(), "limiter must not have materialised bucket");
         // No tier metrics recorded (audit fired BEFORE metrics).
-        assert_eq!(
-            metrics.tier_total_for_label(AbuseTierLabel::Suspicious),
-            0
-        );
+        assert_eq!(metrics.tier_total_for_label(AbuseTierLabel::Suspicious), 0);
     }
 
     // ---- Score idempotence (same window → same score) ----------------

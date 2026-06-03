@@ -162,29 +162,24 @@ pub mod reservation;
 pub mod retry_after;
 
 pub use audit::{
-    canonical_audit_event_strings, InMemoryQuotaAuditSink, QuotaAuditRecord,
-    QuotaAuditSink, QuotaAuditSinkError, QuotaEventType, FailingQuotaAuditSink,
+    canonical_audit_event_strings, FailingQuotaAuditSink, InMemoryQuotaAuditSink, QuotaAuditRecord,
+    QuotaAuditSink, QuotaAuditSinkError, QuotaEventType,
 };
-pub use check::{
-    InMemoryQuotaCheck, QuotaCheck, QuotaCheckOutcome, QuotaDecision, RequestKind,
-};
+pub use check::{InMemoryQuotaCheck, QuotaCheck, QuotaCheckOutcome, QuotaDecision, RequestKind};
 pub use config::{
     QuotaConfig, DEFAULT_DENY_THRESHOLD_PCT, DEFAULT_RETRY_AFTER_FLOOR_SECS,
     DEFAULT_TRIGGER_THRESHOLD_PCT,
 };
 pub use error::QuotaError;
 pub use metrics::{
-    canonical_metric_names, InMemoryQuotaMetrics, QuotaCheckResultLabel,
+    canonical_metric_names, FailingQuotaMetrics, InMemoryQuotaMetrics, QuotaCheckResultLabel,
     QuotaMetricKind, QuotaMetricsObserver, QuotaMetricsObserverError,
-    FailingQuotaMetrics,
 };
 pub use reservation::{
-    InMemoryReservationTracker, ReservationId, ReservationRow,
-    ReservationTracker, ReservationTrackerError,
+    InMemoryReservationTracker, ReservationId, ReservationRow, ReservationTracker,
+    ReservationTrackerError,
 };
-pub use retry_after::{
-    provisional_retry_after_secs, RETRY_AFTER_HARD_CEILING_SECS,
-};
+pub use retry_after::{provisional_retry_after_secs, RETRY_AFTER_HARD_CEILING_SECS};
 
 /// Returns the canonical schema version recorded by the latest
 /// migration in the D1 `quota` domain.

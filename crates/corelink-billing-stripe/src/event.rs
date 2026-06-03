@@ -342,7 +342,10 @@ mod tests {
             WebhookEventKind::SubscriptionUpdated.as_str(),
             "customer.subscription.updated"
         );
-        assert_eq!(WebhookEventKind::CustomerCreated.as_str(), "customer.created");
+        assert_eq!(
+            WebhookEventKind::CustomerCreated.as_str(),
+            "customer.created"
+        );
     }
 
     #[test]
@@ -363,10 +366,7 @@ mod tests {
 
     #[test]
     fn webhook_event_kind_display_matches_str() {
-        assert_eq!(
-            format!("{}", WebhookEventKind::InvoicePaid),
-            "invoice.paid"
-        );
+        assert_eq!(format!("{}", WebhookEventKind::InvoicePaid), "invoice.paid");
     }
 
     #[test]

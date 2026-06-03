@@ -76,14 +76,12 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-use crate::audit::{
-    BillingAuditEventType, BillingAuditRecord, BillingAuditSink,
-};
+use crate::audit::{BillingAuditEventType, BillingAuditRecord, BillingAuditSink};
 use crate::error::BillingEmitError;
 use crate::event::{IdemKey, UsageEvent};
 use crate::idempotency::{
-    compute_canonical_bytes_for_idem, derive_idem_key_from_canonical,
-    IdempotencyDecision, IdempotencyTracker,
+    compute_canonical_bytes_for_idem, derive_idem_key_from_canonical, IdempotencyDecision,
+    IdempotencyTracker,
 };
 use crate::sink::{InMemoryR2UsageSink, PersistedUsageLine};
 
@@ -157,11 +155,7 @@ where
     I: IdempotencyTracker + 'static,
 {
     /// Construct with explicit audit / idempotency / R2 sink handles.
-    pub fn new(
-        audit: Arc<A>,
-        idempotency: Arc<I>,
-        sink: Arc<InMemoryR2UsageSink>,
-    ) -> Self {
+    pub fn new(audit: Arc<A>, idempotency: Arc<I>, sink: Arc<InMemoryR2UsageSink>) -> Self {
         Self {
             audit,
             idempotency,
@@ -298,7 +292,10 @@ where
                     idem_key: derived,
                 })
             }
-            Err(BillingEmitError::IdempotencyCollision { tenant_id: t, idem_key: k }) => {
+            Err(BillingEmitError::IdempotencyCollision {
+                tenant_id: t,
+                idem_key: k,
+            }) => {
                 let rec = Self::audit_record(
                     BillingAuditEventType::IdempotencyCollision,
                     &event,
@@ -332,8 +329,7 @@ mod tests {
     use crate::idempotency::InMemoryIdempotencyTracker;
     use corelink_analytics::Region;
 
-    type Emitter =
-        InMemoryUsageEventEmitter<InMemoryBillingAuditSink, InMemoryIdempotencyTracker>;
+    type Emitter = InMemoryUsageEventEmitter<InMemoryBillingAuditSink, InMemoryIdempotencyTracker>;
 
     fn fresh_emitter() -> (
         Emitter,
@@ -381,13 +377,13 @@ mod tests {
         assert_eq!(line.sequence_number, 0);
         assert!(line.r2_key.contains("2026-05"));
         assert!(line.r2_key.ends_with("00000000.usage.ndjson"));
-        assert!(line.ndjson.contains(&format!("\"type\":\"{USAGE_EVENT_TYPE}\"")));
+        assert!(line
+            .ndjson
+            .contains(&format!("\"type\":\"{USAGE_EVENT_TYPE}\"")));
         assert_eq!(sink.len(), 1);
         // Audit fired exactly one usage_emitted record.
         assert_eq!(
-            audit
-                .snapshot_of(BillingAuditEventType::UsageEmitted)
-                .len(),
+            audit.snapshot_of(BillingAuditEventType::UsageEmitted).len(),
             1
         );
     }
@@ -463,15 +459,11 @@ mod tests {
         // Two audit emits: usage_emitted (BEFORE sink call) +
         // sink_failure (AFTER sink call returns Err).
         assert_eq!(
-            audit
-                .snapshot_of(BillingAuditEventType::UsageEmitted)
-                .len(),
+            audit.snapshot_of(BillingAuditEventType::UsageEmitted).len(),
             1
         );
         assert_eq!(
-            audit
-                .snapshot_of(BillingAuditEventType::SinkFailure)
-                .len(),
+            audit.snapshot_of(BillingAuditEventType::SinkFailure).len(),
             1
         );
     }

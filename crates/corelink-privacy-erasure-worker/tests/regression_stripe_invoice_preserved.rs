@@ -21,8 +21,8 @@ use std::sync::Arc;
 
 use corelink_privacy_erasure_worker::{
     canonical_in_memory_adapters, BackendErasureAdapter, BackendErasureOutcome, BackendKind,
-    ErasureIdempotencyLedger, ErasureRequest, ErasureSalt, ErasureWorker, InMemoryRow,
-    InMemoryErasureAuditSink, InMemoryErasureIdempotencyLedger, InMemoryErasureWorker,
+    ErasureIdempotencyLedger, ErasureRequest, ErasureSalt, ErasureWorker, InMemoryErasureAuditSink,
+    InMemoryErasureIdempotencyLedger, InMemoryErasureWorker, InMemoryRow,
 };
 use uuid::Uuid;
 
@@ -73,7 +73,11 @@ fn stripe_adapter_pseudonymizes_does_not_delete_canonical_arm() {
     //   2. The canonical outcome arm is `Erased` for the in-memory
     //      fake (PII fields nullified; customer object preserved on
     //      the live binding).
-    stripe.insert_rows(tenant, subject, vec![InMemoryRow::new(b"customer".to_vec())]);
+    stripe.insert_rows(
+        tenant,
+        subject,
+        vec![InMemoryRow::new(b"customer".to_vec())],
+    );
     worker.process_erasure(&req, 1_000).unwrap();
 
     let snap = ledger.snapshot(req.dsr_id).unwrap();

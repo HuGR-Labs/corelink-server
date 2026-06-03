@@ -29,15 +29,14 @@ use std::sync::Arc;
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
 use corelink_ratelimit::{
-    InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics,
-    InMemoryTokenBucketRateLimiter, RateLimiter,
+    InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics, InMemoryTokenBucketRateLimiter,
+    RateLimiter,
 };
 use corelink_server::routes::signup::{
     mint_pilot_token, pilot_signup_rate_limit_config, router, InMemorySignupAuditSink,
-    InMemorySignupStore, PilotSignupResponse, SignupAuditSink, SignupRouteState,
-    SignupStore, TokenEnv, DEFAULT_ACTIVATION_URL_BASE,
-    EVENT_TYPE_PILOT_RATE_LIMITED, EVENT_TYPE_PILOT_RESERVED,
-    EVENT_TYPE_PILOT_TOKEN_REJECTED, PILOT_TOKEN_TTL_MS,
+    InMemorySignupStore, PilotSignupResponse, SignupAuditSink, SignupRouteState, SignupStore,
+    TokenEnv, DEFAULT_ACTIVATION_URL_BASE, EVENT_TYPE_PILOT_RATE_LIMITED,
+    EVENT_TYPE_PILOT_RESERVED, EVENT_TYPE_PILOT_TOKEN_REJECTED, PILOT_TOKEN_TTL_MS,
 };
 use corelink_server::wall_clock::InMemoryFakeWallClock;
 use serde_json::{json, Value};
@@ -104,13 +103,8 @@ fn build_request(token: &str, ip: &str, body: &Value) -> Request<Body> {
 #[tokio::test]
 async fn happy_path_valid_token_returns_201() {
     let (state, audit_sink, store, _clock) = build_state();
-    let token = mint_pilot_token(
-        TokenEnv::Prod,
-        BASE_NOW_MS,
-        "0123456789abcdef",
-        TEST_KEY,
-    )
-    .unwrap();
+    let token =
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "0123456789abcdef", TEST_KEY).unwrap();
     let app = router(state);
     let resp = app
         .oneshot(build_request(&token, "203.0.113.10", &body_json()))
@@ -120,7 +114,9 @@ async fn happy_path_valid_token_returns_201() {
     let bytes = to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
     let parsed: PilotSignupResponse = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(parsed.state, "RESERVED");
-    assert!(parsed.activation_url.starts_with(DEFAULT_ACTIVATION_URL_BASE));
+    assert!(parsed
+        .activation_url
+        .starts_with(DEFAULT_ACTIVATION_URL_BASE));
     // Audit emit captured the canonical event_type before the response.
     let rows = audit_sink.snapshot().unwrap();
     assert_eq!(rows.len(), 1);
@@ -137,13 +133,8 @@ async fn happy_path_valid_token_returns_201() {
 #[tokio::test]
 async fn forged_hmac_returns_401() {
     let (state, audit_sink, store, _clock) = build_state();
-    let mut token = mint_pilot_token(
-        TokenEnv::Prod,
-        BASE_NOW_MS,
-        "deadbeefcafebabe",
-        TEST_KEY,
-    )
-    .unwrap();
+    let mut token =
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "deadbeefcafebabe", TEST_KEY).unwrap();
     // Flip the final hex char of the signature.
     let mut chars: Vec<char> = token.chars().collect();
     let last = chars.len() - 1;
@@ -167,13 +158,8 @@ async fn forged_hmac_returns_401() {
 async fn expired_token_returns_401() {
     let (state, audit_sink, _store, clock) = build_state();
     let minted_at_ms = BASE_NOW_MS;
-    let token = mint_pilot_token(
-        TokenEnv::Prod,
-        minted_at_ms,
-        "ffffffff00000000",
-        TEST_KEY,
-    )
-    .unwrap();
+    let token =
+        mint_pilot_token(TokenEnv::Prod, minted_at_ms, "ffffffff00000000", TEST_KEY).unwrap();
     // Advance the wall clock past the TTL.
     clock.advance(std::time::Duration::from_millis(PILOT_TOKEN_TTL_MS + 1));
     let app = router(state);
@@ -197,8 +183,7 @@ async fn rate_limit_kicks_in_at_sixth_request_same_ip() {
     // request in the same window hits the 429 floor.
     for i in 0..5 {
         let rand = format!("aaaa{i:04}bbbbcccc");
-        let token =
-            mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, &rand, TEST_KEY).unwrap();
+        let token = mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, &rand, TEST_KEY).unwrap();
         let body = body_json_with_email(&format!("pilot{i}@example.com"));
         let resp = app
             .clone()
@@ -213,8 +198,7 @@ async fn rate_limit_kicks_in_at_sixth_request_same_ip() {
     }
     // 6th request from the same IP → 429.
     let token =
-        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "abababababababab", TEST_KEY)
-            .unwrap();
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "abababababababab", TEST_KEY).unwrap();
     let resp = app
         .oneshot(build_request(
             &token,
@@ -239,8 +223,7 @@ async fn rate_limit_isolated_across_ips() {
     // Drain IP-A's bucket.
     for i in 0..5 {
         let rand = format!("1111{i:04}aaaabbbb");
-        let token =
-            mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, &rand, TEST_KEY).unwrap();
+        let token = mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, &rand, TEST_KEY).unwrap();
         let body = body_json_with_email(&format!("a-{i}@example.com"));
         let resp = app
             .clone()
@@ -251,18 +234,20 @@ async fn rate_limit_isolated_across_ips() {
     }
     // IP-A's 6th hits 429.
     let token =
-        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "1111ffffaaaabbbb", TEST_KEY)
-            .unwrap();
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "1111ffffaaaabbbb", TEST_KEY).unwrap();
     let resp = app
         .clone()
-        .oneshot(build_request(&token, "1.1.1.1", &body_json_with_email("a-late@example.com")))
+        .oneshot(build_request(
+            &token,
+            "1.1.1.1",
+            &body_json_with_email("a-late@example.com"),
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
     // IP-B with a fresh bucket still gets 201.
     let token =
-        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "2222aaaaaaaabbbb", TEST_KEY)
-            .unwrap();
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "2222aaaaaaaabbbb", TEST_KEY).unwrap();
     let resp = app
         .oneshot(build_request(
             &token,
@@ -280,13 +265,8 @@ async fn rate_limit_isolated_across_ips() {
 async fn audit_emit_failure_returns_503_fail_closed() {
     let (state, audit_sink, store, _clock) = build_state();
     audit_sink.inject_failure("forced").unwrap();
-    let token = mint_pilot_token(
-        TokenEnv::Prod,
-        BASE_NOW_MS,
-        "abcdef0123456789",
-        TEST_KEY,
-    )
-    .unwrap();
+    let token =
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "abcdef0123456789", TEST_KEY).unwrap();
     let app = router(state);
     let resp = app
         .oneshot(build_request(&token, "203.0.113.20", &body_json()))
@@ -314,8 +294,7 @@ async fn duplicate_email_returns_original_tenant_id() {
     let (state, audit_sink, store, _clock) = build_state();
     let app = router(state);
     let tok_a =
-        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "aaaa1111bbbb2222", TEST_KEY)
-            .unwrap();
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "aaaa1111bbbb2222", TEST_KEY).unwrap();
     let resp_a = app
         .clone()
         .oneshot(build_request(
@@ -330,8 +309,7 @@ async fn duplicate_email_returns_original_tenant_id() {
     let parsed_a: PilotSignupResponse = serde_json::from_slice(&body_a).unwrap();
 
     let tok_b =
-        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "cccc3333dddd4444", TEST_KEY)
-            .unwrap();
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "cccc3333dddd4444", TEST_KEY).unwrap();
     let resp_b = app
         .oneshot(build_request(
             &tok_b,
@@ -362,13 +340,8 @@ async fn duplicate_email_returns_original_tenant_id() {
 #[tokio::test]
 async fn bad_request_body_returns_400() {
     let (state, audit_sink, _store, _clock) = build_state();
-    let token = mint_pilot_token(
-        TokenEnv::Prod,
-        BASE_NOW_MS,
-        "0000aaaa1111bbbb",
-        TEST_KEY,
-    )
-    .unwrap();
+    let token =
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "0000aaaa1111bbbb", TEST_KEY).unwrap();
     let body = json!({
         "email": "",
         "company_name": "X",
@@ -385,8 +358,5 @@ async fn bad_request_body_returns_400() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].event_type, EVENT_TYPE_PILOT_TOKEN_REJECTED);
     assert_eq!(rows[0].exit_status, "bad_request");
-    assert_eq!(
-        rows[0].payload.as_deref(),
-        Some("invalid_field=email"),
-    );
+    assert_eq!(rows[0].payload.as_deref(), Some("invalid_field=email"),);
 }

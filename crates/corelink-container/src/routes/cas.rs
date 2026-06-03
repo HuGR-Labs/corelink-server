@@ -108,10 +108,9 @@ pub fn build_handlers() -> (Arc<dyn CasReadHandler>, Arc<dyn CasWriteHandler>) {
         // Probe for storage credentials.
         if StorageEnv::from_env().is_some() {
             // Credentials are present — try to build the real handler.
-            let bucket = std::env::var("R2_CAS_BUCKET")
-                .unwrap_or_else(|_| "corelink-cas-prod".to_owned());
-            let region = std::env::var("R2_CAS_REGION")
-                .unwrap_or_else(|_| "iad".to_owned());
+            let bucket =
+                std::env::var("R2_CAS_BUCKET").unwrap_or_else(|_| "corelink-cas-prod".to_owned());
+            let region = std::env::var("R2_CAS_REGION").unwrap_or_else(|_| "iad".to_owned());
 
             // Construction is now sync-only (commit ead0f37a removed the
             // aws_config::defaults() IMDS probe). We keep block_in_place +
@@ -153,8 +152,7 @@ pub fn build_handlers() -> (Arc<dyn CasReadHandler>, Arc<dyn CasWriteHandler>) {
         tracing::info!("CAS handler: InMemory (no storage credentials configured)");
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
-        let shared: Arc<InMemoryCasHandler> =
-            Arc::new(InMemoryCasHandler::new(audit, sli));
+        let shared: Arc<InMemoryCasHandler> = Arc::new(InMemoryCasHandler::new(audit, sli));
         let read: Arc<dyn CasReadHandler> = shared.clone();
         let write: Arc<dyn CasWriteHandler> = shared;
         (read, write)
@@ -251,14 +249,10 @@ fn map_err(e: CasHandlerError) -> axum::response::Response {
     // the caller.
     tracing::warn!(error = ?e, "CAS handler error");
     match e {
-        CasHandlerError::NotFound { .. } => {
-            (StatusCode::NOT_FOUND, "not found").into_response()
+        CasHandlerError::NotFound { .. } => (StatusCode::NOT_FOUND, "not found").into_response(),
+        CasHandlerError::HashMismatch { .. } => {
+            (StatusCode::UNPROCESSABLE_ENTITY, "content hash mismatch").into_response()
         }
-        CasHandlerError::HashMismatch { .. } => (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "content hash mismatch",
-        )
-            .into_response(),
         CasHandlerError::CrossTenantDenied { .. } => {
             (StatusCode::FORBIDDEN, "cross-tenant").into_response()
         }
@@ -323,13 +317,7 @@ mod tests {
         // we drive the read against a known-empty handler and assert
         // it returns NotFound. The full wire-up is exercised via
         // the handler-crate's own unit tests.
-        let res = read.read(CasReadRequest::new(
-            "t1",
-            hash,
-            "anon",
-            "t1",
-            0,
-        ));
+        let res = read.read(CasReadRequest::new("t1", hash, "anon", "t1", 0));
         assert!(matches!(res, Err(CasHandlerError::NotFound { .. })));
         // Build state to satisfy the router constructor.
         let _router = router(fixture());
@@ -347,9 +335,7 @@ mod tests {
         let hash = fake_hash(&bytes);
 
         // PUT
-        let upd = CasWriteRequest::new(
-            "t1", hash.clone(), bytes.clone(), "anon@t1", "t1", 1,
-        );
+        let upd = CasWriteRequest::new("t1", hash.clone(), bytes.clone(), "anon@t1", "t1", 1);
         let upd_resp = st.write.write(upd).expect("write");
         assert!(upd_resp.durable, "fresh insert must be durable=true");
 
@@ -368,13 +354,9 @@ mod tests {
         let st = fixture();
         let bytes = b"r".to_vec();
         let hash = fake_hash(&bytes);
-        let req1 = CasWriteRequest::new(
-            "t1", hash.clone(), bytes.clone(), "anon@t1", "t1", 1,
-        );
+        let req1 = CasWriteRequest::new("t1", hash.clone(), bytes.clone(), "anon@t1", "t1", 1);
         assert!(st.write.write(req1).expect("first").durable);
-        let req2 = CasWriteRequest::new(
-            "t1", hash, bytes, "anon@t1", "t1", 2,
-        );
+        let req2 = CasWriteRequest::new("t1", hash, bytes, "anon@t1", "t1", 2);
         assert!(!st.write.write(req2).expect("retry").durable);
     }
 }

@@ -156,21 +156,17 @@ pub mod metrics;
 pub mod tracker;
 
 pub use audit::{
-    canonical_audit_event_strings, FailingLruAuditSink, InMemoryLruAuditSink,
-    LruAuditRecord, LruAuditSink, LruAuditSinkError, LruEventType,
+    canonical_audit_event_strings, FailingLruAuditSink, InMemoryLruAuditSink, LruAuditRecord,
+    LruAuditSink, LruAuditSinkError, LruEventType,
 };
 pub use clock::{CountingLruClock, FrozenLruClock, LruClock};
 pub use config::{
-    LruConfig, DEFAULT_BATCH_SIZE, DEFAULT_DRIFT_VIOLATION_THRESHOLD_MS,
-    DEFAULT_FLUSH_INTERVAL_MS, DEFAULT_QUEUE_SIZE_MAX,
-    DEFAULT_REFRESH_THRESHOLD_MS,
+    LruConfig, DEFAULT_BATCH_SIZE, DEFAULT_DRIFT_VIOLATION_THRESHOLD_MS, DEFAULT_FLUSH_INTERVAL_MS,
+    DEFAULT_QUEUE_SIZE_MAX, DEFAULT_REFRESH_THRESHOLD_MS,
 };
 pub use error::LruError;
 pub use metrics::{
-    canonical_metric_names, FailingLruMetrics, InMemoryLruMetrics,
-    LruDropReason, LruMetricKind, LruMetricsObserver,
-    LruMetricsObserverError,
+    canonical_metric_names, FailingLruMetrics, InMemoryLruMetrics, LruDropReason, LruMetricKind,
+    LruMetricsObserver, LruMetricsObserverError,
 };
-pub use tracker::{
-    InMemoryLruTracker, LruDecision, LruFlushResult, LruTracker,
-};
+pub use tracker::{InMemoryLruTracker, LruDecision, LruFlushResult, LruTracker};

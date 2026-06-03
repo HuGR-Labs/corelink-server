@@ -923,9 +923,7 @@ mod tests {
             (GcPhase::Reconcile, 600),
             (GcPhase::Completed, 700),
         ] {
-            store
-                .transition_phase(run_id(1), tenant(1), to, t)
-                .unwrap();
+            store.transition_phase(run_id(1), tenant(1), to, t).unwrap();
         }
         store
             .finalize(run_id(1), tenant(1), GcStatus::Succeeded, 800, None)

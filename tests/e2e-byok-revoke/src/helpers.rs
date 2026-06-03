@@ -41,16 +41,16 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use async_trait::async_trait;
-use corelink_byok::{
-    BYOKError, Dek, DekCache, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
-    KmsProviderKind, WrappedDek,
-};
 use corelink_byok::revocation::{
     alerter::{CustomerAlerter, RevocationAlertPayload},
     error::RevocationError,
     event::{EVENT_TYPE_CMK_RESTORED, EVENT_TYPE_CMK_REVOKED},
     store::{TenantByokStatus, TenantStatusStore},
     RevocationAuditEvent,
+};
+use corelink_byok::{
+    BYOKError, Dek, DekCache, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind,
+    WrappedDek,
 };
 
 // ---------------------------------------------------------------------------
@@ -170,7 +170,12 @@ pub struct BoundedKmsProvider {
 impl BoundedKmsProvider {
     /// Construct with a provider kind, region and FIPS level.
     #[must_use]
-    pub fn new(kind: KmsProviderKind, region: &str, fips: FipsLevel, behaviour: KmsBehaviour) -> Self {
+    pub fn new(
+        kind: KmsProviderKind,
+        region: &str,
+        fips: FipsLevel,
+        behaviour: KmsBehaviour,
+    ) -> Self {
         Self {
             kind,
             region: region.to_string(),
@@ -620,10 +625,7 @@ impl TenantStatusStore for InMemoryTenantStatusStore {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
-        s.insert(
-            kms_key_id.key_arn_or_id.clone(),
-            TenantByokStatus::Active,
-        );
+        s.insert(kms_key_id.key_arn_or_id.clone(), TenantByokStatus::Active);
         let mut h = match self.history.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -723,10 +725,7 @@ pub fn setup_byok_env(provider_kind: KmsProviderKind) -> RevokeBundle {
         audit: AuditSink::new(),
         alert,
         key_id,
-        tenant_id_hashed: format!(
-            "blake3:tenant-{}-r3-2-e2e",
-            provider_kind.as_str()
-        ),
+        tenant_id_hashed: format!("blake3:tenant-{}-r3-2-e2e", provider_kind.as_str()),
     }
 }
 
@@ -817,10 +816,7 @@ impl KillSwitchRunner {
             KmsAccessStatus::Ok => {
                 // Recovery path: only act if tenant was previously
                 // degraded.
-                let cur = bundle
-                    .tenant_store
-                    .current_status(&bundle.key_id)
-                    .await?;
+                let cur = bundle.tenant_store.current_status(&bundle.key_id).await?;
                 if cur == Some(TenantByokStatus::DegradedReadOnly) {
                     bundle
                         .tenant_store

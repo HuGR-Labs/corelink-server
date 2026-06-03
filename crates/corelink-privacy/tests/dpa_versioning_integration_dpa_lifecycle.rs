@@ -16,10 +16,14 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-use corelink_privacy::dpa::versioning::broadcast::{BroadcastKind, BroadcastSink, InMemoryBroadcastSink};
+use corelink_privacy::dpa::versioning::broadcast::{
+    BroadcastKind, BroadcastSink, InMemoryBroadcastSink,
+};
 use corelink_privacy::dpa::versioning::cron::GraceExpirationCron;
 use corelink_privacy::dpa::versioning::error::DpaVersioningError;
-use corelink_privacy::dpa::versioning::middleware::{GateDecision, HttpMethod, ReadOnlyDegradeGate};
+use corelink_privacy::dpa::versioning::middleware::{
+    GateDecision, HttpMethod, ReadOnlyDegradeGate,
+};
 use corelink_privacy::dpa::versioning::re_accept::ReAcceptHandler;
 use corelink_privacy::dpa::versioning::schema::{
     TenantDpaState, GRACE_PERIOD_SECONDS, REMINDER_WINDOW_SECONDS,
@@ -68,9 +72,7 @@ fn full_v1_to_v2_lifecycle() {
     assert!(receipt.broadcast_dispatched);
     let env = sink.captured().unwrap();
     assert_eq!(env.len(), 2);
-    assert!(env
-        .iter()
-        .all(|e| e.kind == BroadcastKind::MajorBumpNotice));
+    assert!(env.iter().all(|e| e.kind == BroadcastKind::MajorBumpNotice));
     assert!(env.iter().all(|e| e.version == v2));
 
     // Tenants both have grace_expires_at = publish_at + 30d, both pending.
@@ -129,12 +131,7 @@ fn full_v1_to_v2_lifecycle() {
     let b = store.read_tenant(tenant_b).unwrap().unwrap();
     assert!(!b.re_acceptance_pending);
     assert_eq!(
-        ReadOnlyDegradeGate::evaluate(
-            &b,
-            HttpMethod::Post,
-            "/v1/objects/x",
-            degrade_now + 60
-        ),
+        ReadOnlyDegradeGate::evaluate(&b, HttpMethod::Post, "/v1/objects/x", degrade_now + 60),
         GateDecision::Allow
     );
 }

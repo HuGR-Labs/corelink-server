@@ -129,16 +129,28 @@ mod tests {
         let p = RetryPolicy::r2_4_default();
         // 4 total attempts: 0, 1, 2, 3 (last → GiveUp because attempt
         // == max_retries).
-        assert!(matches!(p.decide(Some(503), 0), RetryDecision::Retry { .. }));
-        assert!(matches!(p.decide(Some(503), 1), RetryDecision::Retry { .. }));
-        assert!(matches!(p.decide(Some(503), 2), RetryDecision::Retry { .. }));
+        assert!(matches!(
+            p.decide(Some(503), 0),
+            RetryDecision::Retry { .. }
+        ));
+        assert!(matches!(
+            p.decide(Some(503), 1),
+            RetryDecision::Retry { .. }
+        ));
+        assert!(matches!(
+            p.decide(Some(503), 2),
+            RetryDecision::Retry { .. }
+        ));
         assert_eq!(p.decide(Some(503), 3), RetryDecision::GiveUp);
     }
 
     #[test]
     fn retry_on_429() {
         let p = RetryPolicy::r2_4_default();
-        assert!(matches!(p.decide(Some(429), 0), RetryDecision::Retry { .. }));
+        assert!(matches!(
+            p.decide(Some(429), 0),
+            RetryDecision::Retry { .. }
+        ));
     }
 
     #[test]

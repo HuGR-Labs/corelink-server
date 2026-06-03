@@ -63,14 +63,10 @@ use uuid::Uuid;
 
 use corelink_eviction::EvictionRegion;
 
-use super::audit::{
-    QuotaCasAuditRecord, QuotaCasAuditSink, QuotaCasEventType,
-};
+use super::audit::{QuotaCasAuditRecord, QuotaCasAuditSink, QuotaCasEventType};
 use super::config::QuotaCasConfig;
 use super::error::QuotaCasError;
-use super::metrics::{
-    QuotaCasMetricsObserver, QuotaCasResultLabel,
-};
+use super::metrics::{QuotaCasMetricsObserver, QuotaCasResultLabel};
 use super::retry_after::days_until_month_reset_secs;
 use super::state::{AtomicCasState, AtomicCasStateError};
 
@@ -188,12 +184,7 @@ where
     }
 
     /// Construct with explicit config.
-    pub fn new(
-        state: Arc<S>,
-        audit: Arc<A>,
-        metrics: Arc<M>,
-        config: QuotaCasConfig,
-    ) -> Self {
+    pub fn new(state: Arc<S>, audit: Arc<A>, metrics: Arc<M>, config: QuotaCasConfig) -> Self {
         Self {
             state,
             audit,
@@ -247,13 +238,12 @@ where
         // Step 1: idempotent zero-byte check (read path / no-op write).
         if request_bytes == 0 {
             // Snapshot for the bytes_used / quota / version fields.
-            let row = self
-                .state
-                .lookup(tenant_id, region)?
-                .ok_or(QuotaCasError::TenantStorageStateMissing {
+            let row = self.state.lookup(tenant_id, region)?.ok_or(
+                QuotaCasError::TenantStorageStateMissing {
                     tenant_id,
                     region: region.as_str(),
-                })?;
+                },
+            )?;
             // Audit emit BEFORE returning (fail-closed envelope).
             self.audit.emit(QuotaCasAuditRecord {
                 event_type: QuotaCasEventType::CasCheckPassed,
@@ -368,12 +358,9 @@ where
                 now_ms,
             })?;
 
-            let commit_result = self.state.try_commit_delta(
-                tenant_id,
-                region,
-                row.cas_version,
-                request_bytes,
-            );
+            let commit_result =
+                self.state
+                    .try_commit_delta(tenant_id, region, row.cas_version, request_bytes);
             match commit_result {
                 Ok(new_state) => {
                     self.audit.emit(QuotaCasAuditRecord {
@@ -388,15 +375,12 @@ where
                         now_ms,
                     })?;
                     self.metrics.record_check(QuotaCasResultLabel::Allow)?;
-                    self.metrics.record_check_duration_us(
-                        QuotaCasResultLabel::Allow,
-                        0,
-                    )?;
+                    self.metrics
+                        .record_check_duration_us(QuotaCasResultLabel::Allow, 0)?;
                     let utilization_pct = if new_state.bytes_quota == 0 {
                         0.0
                     } else {
-                        (new_state.bytes_used as f64)
-                            / (new_state.bytes_quota as f64)
+                        (new_state.bytes_used as f64) / (new_state.bytes_quota as f64)
                     };
                     return Ok(QuotaCasOutcome {
                         decision: QuotaCasDecision::Allow {
@@ -425,10 +409,8 @@ where
                     self.metrics.record_check(QuotaCasResultLabel::Race)?;
                     self.metrics.record_race_detected(tenant_id)?;
                     if attempt >= max_attempts {
-                        self.metrics.record_check_duration_us(
-                            QuotaCasResultLabel::Race,
-                            0,
-                        )?;
+                        self.metrics
+                            .record_check_duration_us(QuotaCasResultLabel::Race, 0)?;
                         return Err(QuotaCasError::CasRaceExhausted {
                             tenant_id,
                             attempts: attempt,
@@ -454,10 +436,10 @@ where
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
-    use super::*;
     use super::super::audit::{FailingQuotaCasAuditSink, InMemoryQuotaCasAuditSink};
     use super::super::metrics::{InMemoryQuotaCasMetrics, QuotaCasMetricKind};
     use super::super::state::{AtomicTenantBytesState, InMemoryAtomicCasState};
+    use super::*;
 
     fn ten_a() -> Uuid {
         Uuid::from_u128(0xa)
@@ -531,21 +513,17 @@ mod tests {
             1
         );
         assert_eq!(
-            audit.snapshot_of(QuotaCasEventType::CasCommitSucceeded).len(),
+            audit
+                .snapshot_of(QuotaCasEventType::CasCommitSucceeded)
+                .len(),
             1
         );
         assert!(audit
             .snapshot_of(QuotaCasEventType::CasDenied429HardBlock)
             .is_empty());
         // Metrics: 1 allow on aggregate counter.
-        assert_eq!(
-            metrics.counter_total(QuotaCasMetricKind::CheckTotal),
-            1
-        );
-        assert_eq!(
-            metrics.check_total_for_label(QuotaCasResultLabel::Allow),
-            1
-        );
+        assert_eq!(metrics.counter_total(QuotaCasMetricKind::CheckTotal), 1);
+        assert_eq!(metrics.check_total_for_label(QuotaCasResultLabel::Allow), 1);
     }
 
     // ---- Idempotent zero-byte check -------------------------------
@@ -620,10 +598,7 @@ mod tests {
             1
         );
         // Metrics: deny + denial counter + retry-after observation.
-        assert_eq!(
-            metrics.counter_total(QuotaCasMetricKind::DenialsTotal),
-            1
-        );
+        assert_eq!(metrics.counter_total(QuotaCasMetricKind::DenialsTotal), 1);
         assert_eq!(metrics.retry_after_snapshot().len(), 1);
     }
 
@@ -780,8 +755,7 @@ mod tests {
             &self,
             tenant_id: Uuid,
             region: EvictionRegion,
-        ) -> Result<Option<AtomicTenantBytesState>, AtomicCasStateError>
-        {
+        ) -> Result<Option<AtomicTenantBytesState>, AtomicCasStateError> {
             self.inner.lookup(tenant_id, region)
         }
         fn try_commit_delta(
@@ -794,39 +768,33 @@ mod tests {
             // First call: silently bump the inner version (simulating a
             // mid-flight commit by another actor) THEN attempt the
             // delta — which now fires VersionMismatch.
-            let mut g = self.bumped.lock().map_err(|_| {
-                AtomicCasStateError::Backend("bumped poisoned".to_string())
-            })?;
+            let mut g = self
+                .bumped
+                .lock()
+                .map_err(|_| AtomicCasStateError::Backend("bumped poisoned".to_string()))?;
             if !*g {
                 *g = true;
                 drop(g);
                 // Simulate concurrent commit: bump version by adding 0
                 // bytes via a direct seed (the in-memory state allows
                 // overwrite via seed_row).
-                let cur = self
-                    .inner
-                    .lookup(tenant_id, region)?
-                    .ok_or(AtomicCasStateError::Missing {
-                        tenant_id,
-                        region: region.as_str(),
-                    })?;
+                let cur =
+                    self.inner
+                        .lookup(tenant_id, region)?
+                        .ok_or(AtomicCasStateError::Missing {
+                            tenant_id,
+                            region: region.as_str(),
+                        })?;
                 self.inner.seed_row(AtomicTenantBytesState {
                     cas_version: cur.cas_version.saturating_add(1),
                     ..cur
                 })?;
                 // Now the orchestrator's expected_version is stale.
             }
-            self.inner.try_commit_delta(
-                tenant_id,
-                region,
-                expected_version,
-                delta_bytes,
-            )
+            self.inner
+                .try_commit_delta(tenant_id, region, expected_version, delta_bytes)
         }
-        fn seed_row(
-            &self,
-            state: AtomicTenantBytesState,
-        ) -> Result<(), AtomicCasStateError> {
+        fn seed_row(&self, state: AtomicTenantBytesState) -> Result<(), AtomicCasStateError> {
             self.inner.seed_row(state)
         }
     }
@@ -859,7 +827,9 @@ mod tests {
             2
         );
         assert_eq!(
-            audit.snapshot_of(QuotaCasEventType::CasCommitSucceeded).len(),
+            audit
+                .snapshot_of(QuotaCasEventType::CasCommitSucceeded)
+                .len(),
             1
         );
         // Metrics: race counter bumped.
@@ -887,8 +857,7 @@ mod tests {
             &self,
             tenant_id: Uuid,
             region: EvictionRegion,
-        ) -> Result<Option<AtomicTenantBytesState>, AtomicCasStateError>
-        {
+        ) -> Result<Option<AtomicTenantBytesState>, AtomicCasStateError> {
             self.inner.lookup(tenant_id, region)
         }
         fn try_commit_delta(
@@ -899,22 +868,19 @@ mod tests {
             _delta_bytes: u64,
         ) -> Result<AtomicTenantBytesState, AtomicCasStateError> {
             // Bump the version, then return mismatch.
-            let cur = self
-                .inner
-                .lookup(tenant_id, region)?
-                .ok_or(AtomicCasStateError::Missing {
-                    tenant_id,
-                    region: region.as_str(),
-                })?;
+            let cur =
+                self.inner
+                    .lookup(tenant_id, region)?
+                    .ok_or(AtomicCasStateError::Missing {
+                        tenant_id,
+                        region: region.as_str(),
+                    })?;
             Err(AtomicCasStateError::VersionMismatch {
                 observed: 0,
                 actual: cur.cas_version.saturating_add(1),
             })
         }
-        fn seed_row(
-            &self,
-            state: AtomicTenantBytesState,
-        ) -> Result<(), AtomicCasStateError> {
+        fn seed_row(&self, state: AtomicTenantBytesState) -> Result<(), AtomicCasStateError> {
             self.inner.seed_row(state)
         }
     }
@@ -988,12 +954,8 @@ mod tests {
         let state = Arc::new(InMemoryAtomicCasState::new());
         let audit = Arc::new(InMemoryQuotaCasAuditSink::new());
         let metrics = Arc::new(InMemoryQuotaCasMetrics::new());
-        let checker = InMemoryAtomicQuotaChecker::new(
-            state,
-            audit,
-            metrics,
-            QuotaCasConfig::new(0.95, 3),
-        );
+        let checker =
+            InMemoryAtomicQuotaChecker::new(state, audit, metrics, QuotaCasConfig::new(0.95, 3));
         assert_eq!(checker.effective_ceiling(100), 95);
         assert_eq!(checker.effective_ceiling(1_000), 950);
     }
@@ -1028,7 +990,9 @@ mod tests {
             .try_acquire(ten_a(), EvictionRegion::Sam, 1, 1_000, 1_700_000_000)
             .unwrap();
         match out.decision {
-            QuotaCasDecision::Deny429 { retry_after_secs, .. } => {
+            QuotaCasDecision::Deny429 {
+                retry_after_secs, ..
+            } => {
                 assert!(retry_after_secs >= 1);
                 assert!(retry_after_secs <= 31 * 86_400);
             }

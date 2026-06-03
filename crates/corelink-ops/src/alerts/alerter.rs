@@ -1,9 +1,9 @@
 //! [`MultiChannelAlerter`] — production multi-channel customer alert delivery.
 
-use corelink_byok::{KmsKeyId, KmsProviderKind};
 use corelink_byok::revocation::alerter::RevocationAlertPayload;
 use corelink_byok::revocation::error::RevocationError;
 use corelink_byok::revocation::CustomerAlerter;
+use corelink_byok::{KmsKeyId, KmsProviderKind};
 use tracing::{info, warn};
 
 use super::channel::{AlertDispatchSummary, ChannelOutcome};
@@ -130,10 +130,7 @@ impl MultiChannelAlerter {
         }
         // Production: D1 INSERT into customer_alerts + WebSocket fanout.
         // Stub for now; production wiring in deployment.
-        ChannelOutcome::Success(format!(
-            "dashboard:{}",
-            payload.tenant_id_hashed
-        ))
+        ChannelOutcome::Success(format!("dashboard:{}", payload.tenant_id_hashed))
     }
 
     async fn dispatch_email(&self, _payload: &RevocationAlertPayload) -> ChannelOutcome {
@@ -144,9 +141,7 @@ impl MultiChannelAlerter {
             return ChannelOutcome::Success("stub:email".to_string());
         }
         // Production: SendGrid / SES.
-        warn!(
-            "email channel not wired in this build (production: configure sendgrid_api_key)"
-        );
+        warn!("email channel not wired in this build (production: configure sendgrid_api_key)");
         ChannelOutcome::Failed("email not wired".to_string())
     }
 

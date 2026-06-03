@@ -331,7 +331,12 @@ mod tests {
     fn fixture(
         region: GcRegion,
     ) -> InMemoryGcScheduler<
-        InMemoryGcWorker<InMemoryGcRunStore, InMemoryDegradeProbe, InMemoryGcAuditSink, InMemoryGcMetrics>,
+        InMemoryGcWorker<
+            InMemoryGcRunStore,
+            InMemoryDegradeProbe,
+            InMemoryGcAuditSink,
+            InMemoryGcMetrics,
+        >,
         InMemoryGcRunStore,
         InMemoryDegradeProbe,
         InMemoryGcAuditSink,

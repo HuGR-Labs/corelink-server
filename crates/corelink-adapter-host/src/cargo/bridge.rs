@@ -70,11 +70,7 @@ impl CargoCasBridge {
 
 #[async_trait]
 impl CasStore for CargoCasBridge {
-    async fn get(
-        &self,
-        tenant_id: &str,
-        digest_hex: &str,
-    ) -> Result<Option<Vec<u8>>, CasError> {
+    async fn get(&self, tenant_id: &str, digest_hex: &str) -> Result<Option<Vec<u8>>, CasError> {
         let handler = Arc::clone(&self.read_handler);
         let req = CasReadRequest::new(
             tenant_id,
@@ -93,12 +89,7 @@ impl CasStore for CargoCasBridge {
         }
     }
 
-    async fn put(
-        &self,
-        tenant_id: &str,
-        digest_hex: &str,
-        bytes: Vec<u8>,
-    ) -> Result<(), CasError> {
+    async fn put(&self, tenant_id: &str, digest_hex: &str, bytes: Vec<u8>) -> Result<(), CasError> {
         let handler = Arc::clone(&self.write_handler);
         let req = CasWriteRequest::new(
             tenant_id,
@@ -111,7 +102,9 @@ impl CasStore for CargoCasBridge {
         let result = tokio::task::spawn_blocking(move || handler.write(req))
             .await
             .map_err(|e| CasError::Backend(format!("spawn_blocking join: {e}")))?;
-        result.map(|_| ()).map_err(|e| CasError::Backend(format!("handler: {e:?}")))
+        result
+            .map(|_| ())
+            .map_err(|e| CasError::Backend(format!("handler: {e:?}")))
     }
 }
 
@@ -146,10 +139,7 @@ impl CargoTenantBridge {
 
 #[async_trait]
 impl TenantResolver for CargoTenantBridge {
-    async fn resolve(
-        &self,
-        pat_plaintext: &str,
-    ) -> Result<String, TenantResolveError> {
+    async fn resolve(&self, pat_plaintext: &str) -> Result<String, TenantResolveError> {
         let validator = Arc::clone(&self.validator);
         let token = pat_plaintext.to_owned();
         let result = tokio::task::spawn_blocking(move || {

@@ -235,10 +235,7 @@ impl AcSchema {
         }
         // sig_alg is `SigAlg` enum so `chk_ac_sig_alg` is type-system enforced.
 
-        let expires_after_created = req
-            .ttl_ms
-            .map(|delta| delta >= 0)
-            .unwrap_or(true);
+        let expires_after_created = req.ttl_ms.map(|delta| delta >= 0).unwrap_or(true);
         if !expires_after_created {
             return Err(SimError::CheckViolation("chk_ac_lifecycle"));
         }
@@ -451,10 +448,7 @@ mod tests {
         let mut r2 = r1.clone();
         r2.now_ms = 5_000;
         r2.created_by_pat_id = Some("pat-other".into()); // ignored on idempotent
-        assert_eq!(
-            s.upsert(r2).unwrap(),
-            AcUpsertOutcome::IdempotentRefresh
-        );
+        assert_eq!(s.upsert(r2).unwrap(), AcUpsertOutcome::IdempotentRefresh);
         let row = s.get(&fixed_tenant_a(), &r1.action_digest).unwrap();
         assert_eq!(row.last_hit_at, 5_000);
         assert_eq!(row.created_at, 1_000);
@@ -467,10 +461,7 @@ mod tests {
         let r1 = req(fixed_tenant_a(), 1, 0xaa, 1_000);
         s.upsert(r1.clone()).unwrap();
         let r2 = req(fixed_tenant_a(), 1, 0xbb, 2_000);
-        assert_eq!(
-            s.upsert(r2).unwrap(),
-            AcUpsertOutcome::ResultHashMismatch
-        );
+        assert_eq!(s.upsert(r2).unwrap(), AcUpsertOutcome::ResultHashMismatch);
         let row = s.get(&fixed_tenant_a(), &r1.action_digest).unwrap();
         assert_eq!(row.result_hash, r1.result_hash);
         assert_eq!(row.last_hit_at, 1_000); // not refreshed

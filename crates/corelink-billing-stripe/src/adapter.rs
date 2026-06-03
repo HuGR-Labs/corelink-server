@@ -63,13 +63,9 @@ use std::sync::Arc;
 
 use corelink_billing_aggregator::AggregatedCounter;
 
-use crate::audit::{
-    StripeAuditEventType, StripeAuditRecord, StripeAuditSink,
-};
+use crate::audit::{StripeAuditEventType, StripeAuditRecord, StripeAuditSink};
 use crate::error::StripeError;
-use crate::event::{
-    IdempotencyKey, StripeAdapterDecision, SubscriptionItemId, UsageRecordRequest,
-};
+use crate::event::{IdempotencyKey, StripeAdapterDecision, SubscriptionItemId, UsageRecordRequest};
 use crate::idempotency::{
     compute_canonical_aggregate_bytes, derive_idempotency_key_from_canonical,
 };
@@ -111,10 +107,8 @@ pub trait StripeBillingAdapter: Send + Sync + core::fmt::Debug {
     ///
     /// Returns the canonical [`StripeError::Ledger`] on backend
     /// failure.
-    fn get_recorded(
-        &self,
-        key: &IdempotencyKey,
-    ) -> Result<Option<UsageRecordRequest>, StripeError>;
+    fn get_recorded(&self, key: &IdempotencyKey)
+        -> Result<Option<UsageRecordRequest>, StripeError>;
 }
 
 /// In-memory Stripe billing adapter orchestrator. Composes the audit
@@ -289,10 +283,7 @@ mod tests {
     use corelink_billing_emit::{IdemKey, UsageEventKind};
     use uuid::Uuid;
 
-    type Adapter = InMemoryStripeBillingAdapter<
-        InMemoryStripeAuditSink,
-        InMemoryStripeUsageLedger,
-    >;
+    type Adapter = InMemoryStripeBillingAdapter<InMemoryStripeAuditSink, InMemoryStripeUsageLedger>;
 
     fn fresh_adapter() -> (
         Adapter,
@@ -360,7 +351,9 @@ mod tests {
         assert!(dup);
         assert_eq!(ledger.len(), 1);
         assert_eq!(
-            audit.snapshot_of(StripeAuditEventType::DuplicateRejected).len(),
+            audit
+                .snapshot_of(StripeAuditEventType::DuplicateRejected)
+                .len(),
             1
         );
         assert_eq!(
@@ -409,8 +402,10 @@ mod tests {
         let t2 = Uuid::now_v7();
         let agg1 = fresh_aggregate(t1, "2026-05", UsageEventKind::CasPut, 100);
         let agg2 = fresh_aggregate(t2, "2026-05", UsageEventKind::CasPut, 100);
-        a.record_usage(&agg1, SubscriptionItemId::new("si_x"), 1).unwrap();
-        a.record_usage(&agg2, SubscriptionItemId::new("si_y"), 1).unwrap();
+        a.record_usage(&agg1, SubscriptionItemId::new("si_x"), 1)
+            .unwrap();
+        a.record_usage(&agg2, SubscriptionItemId::new("si_y"), 1)
+            .unwrap();
         // Two distinct keys → two ledger entries.
         assert_eq!(ledger.len(), 2);
     }
@@ -423,8 +418,10 @@ mod tests {
         agg1.id = Uuid::now_v7();
         let mut agg2 = fresh_aggregate(tenant, "2026-06", UsageEventKind::CasPut, 100);
         agg2.id = Uuid::now_v7();
-        a.record_usage(&agg1, SubscriptionItemId::new("si_x"), 1).unwrap();
-        a.record_usage(&agg2, SubscriptionItemId::new("si_x"), 1).unwrap();
+        a.record_usage(&agg1, SubscriptionItemId::new("si_x"), 1)
+            .unwrap();
+        a.record_usage(&agg2, SubscriptionItemId::new("si_x"), 1)
+            .unwrap();
         assert_eq!(ledger.len(), 2);
     }
 
@@ -437,7 +434,9 @@ mod tests {
             .record_usage(&agg, SubscriptionItemId::new("si_x"), 1)
             .unwrap();
         let key = match dec {
-            StripeAdapterDecision::UsageRecorded { idempotency_key, .. } => idempotency_key,
+            StripeAdapterDecision::UsageRecorded {
+                idempotency_key, ..
+            } => idempotency_key,
             other => unreachable!("{other:?}"),
         };
         let got = a.get_recorded(&key).unwrap().unwrap();

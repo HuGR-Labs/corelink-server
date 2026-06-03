@@ -15,8 +15,8 @@
 )]
 
 use corelink_erasure_attestation::{
-    ErasureAttestationPayload, ErasureAttestationSigner, ErasureSigningKey, EvidenceBundle,
-    Region, verify_attestation_signature,
+    verify_attestation_signature, ErasureAttestationPayload, ErasureAttestationSigner,
+    ErasureSigningKey, EvidenceBundle, Region,
 };
 use proptest::prelude::*;
 
@@ -39,8 +39,8 @@ fn arb_region() -> impl Strategy<Value = Region> {
 
 fn arb_payload() -> impl Strategy<Value = ErasureAttestationPayload> {
     (
-        "[a-z0-9-]{8,32}",       // tenant_id
-        "[a-z0-9-]{8,36}",       // request_id
+        "[a-z0-9-]{8,32}",                          // tenant_id
+        "[a-z0-9-]{8,36}",                          // request_id
         1_600_000_000_000u64..2_000_000_000_000u64, // destroyed_ts
         prop_oneof![
             Just("aws_kms"),
@@ -48,13 +48,22 @@ fn arb_payload() -> impl Strategy<Value = ErasureAttestationPayload> {
             Just("azure_kv"),
             Just("vault"),
         ],
-        "[a-z0-9:/-]{8,60}",     // kms_key_id
-        "[a-f0-9]{64}",           // evidence_hash (sha256 hex pattern)
+        "[a-z0-9:/-]{8,60}", // kms_key_id
+        "[a-f0-9]{64}",      // evidence_hash (sha256 hex pattern)
         arb_region(),
-        1u64..=100u64,            // attestation_key_id
+        1u64..=100u64, // attestation_key_id
     )
         .prop_map(
-            |(tenant_id, request_id, destroyed_ts, kms_provider, kms_key_id, evidence_hash, region, attestation_key_id)| {
+            |(
+                tenant_id,
+                request_id,
+                destroyed_ts,
+                kms_provider,
+                kms_key_id,
+                evidence_hash,
+                region,
+                attestation_key_id,
+            )| {
                 ErasureAttestationPayload {
                     tenant_id,
                     request_id,

@@ -293,9 +293,8 @@ mod tests {
         let before = corelink_client_verify::opt_out_total();
         let pat = b"p";
         let tid = b"t";
-        let handle = unsafe {
-            corelink_go_client_new(pat.as_ptr(), pat.len(), tid.as_ptr(), tid.len(), 0)
-        };
+        let handle =
+            unsafe { corelink_go_client_new(pat.as_ptr(), pat.len(), tid.as_ptr(), tid.len(), 0) };
         assert!(!handle.is_null());
         let after = corelink_client_verify::opt_out_total();
         // opt_out_total ticks (once from our warn path + once from the
@@ -322,9 +321,8 @@ mod tests {
         let pat = b"p";
         let tid = b"t";
         let body = b"test data";
-        let handle = unsafe {
-            corelink_go_client_new(pat.as_ptr(), pat.len(), tid.as_ptr(), tid.len(), 1)
-        };
+        let handle =
+            unsafe { corelink_go_client_new(pat.as_ptr(), pat.len(), tid.as_ptr(), tid.len(), 1) };
         let digest = Digest::compute(body).to_hex();
         let rc = unsafe {
             corelink_go_client_verify_get(
@@ -344,9 +342,8 @@ mod tests {
         let pat = b"p";
         let tid = b"t";
         let body = b"real data";
-        let handle = unsafe {
-            corelink_go_client_new(pat.as_ptr(), pat.len(), tid.as_ptr(), tid.len(), 1)
-        };
+        let handle =
+            unsafe { corelink_go_client_new(pat.as_ptr(), pat.len(), tid.as_ptr(), tid.len(), 1) };
         let wrong_digest = Digest::compute(b"different data").to_hex();
         let rc = unsafe {
             corelink_go_client_verify_get(

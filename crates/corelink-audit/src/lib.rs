@@ -112,10 +112,10 @@
 // `link_chain_hash` / `ContentHash` / `ChainHash` /
 // `CONTENT_HASH_HEX_LEN` remain reachable at the crate root — no
 // public-API breakage.
-pub mod link_hash;
 pub mod emitter;
 pub mod error;
 pub mod events;
+pub mod link_hash;
 pub mod metrics;
 pub mod redact;
 pub mod retention;
@@ -134,15 +134,14 @@ pub mod ports;
 pub mod analytics;
 pub mod chain;
 
-pub use link_hash::{
-    compute_content_hash, link_chain_hash, ChainHash, ContentHash, CONTENT_HASH_HEX_LEN,
-};
 pub use emitter::{Emitter, EmitterError, InMemoryEmitter};
 pub use error::AuditError;
 pub use events::{
     AuthEvent, AuthEventData, AuthEventType, ClerkSubject, DenyReason, MembershipRole, RegionTag,
-    SessionId, TokenKind, WebAuthnCredentialIdHash, CLOUDEVENTS_SPECVERSION,
-    EVENT_DATACONTENTTYPE,
+    SessionId, TokenKind, WebAuthnCredentialIdHash, CLOUDEVENTS_SPECVERSION, EVENT_DATACONTENTTYPE,
+};
+pub use link_hash::{
+    compute_content_hash, link_chain_hash, ChainHash, ContentHash, CONTENT_HASH_HEX_LEN,
 };
 pub use metrics::{InMemoryMetrics, MetricsObserver, NoopMetrics};
 pub use redact::{redact_pat_str, EmailHash, PatIdHash, PrincipalIdHash, REDACTED_PAT_PLACEHOLDER};

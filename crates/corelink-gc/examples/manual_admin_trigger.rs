@@ -65,8 +65,5 @@ fn main() {
     println!("admitted: {admitted:?}");
     assert!(matches!(admitted, AdminTriggerOutcome::Admitted { .. }));
 
-    println!(
-        "audit events emitted total: {}",
-        audit.snapshot().len(),
-    );
+    println!("audit events emitted total: {}", audit.snapshot().len(),);
 }

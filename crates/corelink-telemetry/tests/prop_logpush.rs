@@ -31,16 +31,13 @@
 use std::sync::Arc;
 
 use corelink_analytics::{
-    AnalyticsConfig, CardinalityValidator,
-    InMemoryAnalyticsAuditSink, Region, Tier,
+    AnalyticsConfig, CardinalityValidator, InMemoryAnalyticsAuditSink, Region, Tier,
 };
 use corelink_telemetry::logpush::{
-    canonical_audit_event_strings, canonical_log_event_types,
-    canonical_pii_pattern_kinds, FailingLogAuditSink,
-    InMemoryLogAuditSink, InMemoryLogSink, InMemoryPiiRedactor,
-    LogAuditEventType, LogEventType, LogRecord, LogpushError,
-    PiiPatternKind, PiiRedactor, MIGRATION_0016_LOG_SCHEMA,
-    SCHEMA_VERSION,
+    canonical_audit_event_strings, canonical_log_event_types, canonical_pii_pattern_kinds,
+    FailingLogAuditSink, InMemoryLogAuditSink, InMemoryLogSink, InMemoryPiiRedactor,
+    LogAuditEventType, LogEventType, LogRecord, LogpushError, PiiPatternKind, PiiRedactor,
+    MIGRATION_0016_LOG_SCHEMA, SCHEMA_VERSION,
 };
 use proptest::prelude::*;
 use serde_json::json;
@@ -60,28 +57,18 @@ type Sink = InMemoryLogSink<InMemoryPiiRedactor, InMemoryLogAuditSink>;
 fn fresh_sink() -> (Sink, Arc<InMemoryLogAuditSink>) {
     let r = Arc::new(InMemoryPiiRedactor::new());
     let audit = Arc::new(InMemoryLogAuditSink::new());
-    let cardinality_audit =
-        Arc::new(InMemoryAnalyticsAuditSink::new());
-    let cardinality = Arc::new(CardinalityValidator::with_defaults(
-        cardinality_audit,
-    ));
+    let cardinality_audit = Arc::new(InMemoryAnalyticsAuditSink::new());
+    let cardinality = Arc::new(CardinalityValidator::with_defaults(cardinality_audit));
     let s = InMemoryLogSink::new(r, Arc::clone(&audit), cardinality);
     (s, audit)
 }
 
-fn fresh_sink_with_budget(
-    per_metric: u64,
-    global: u64,
-) -> (Sink, Arc<InMemoryLogAuditSink>) {
+fn fresh_sink_with_budget(per_metric: u64, global: u64) -> (Sink, Arc<InMemoryLogAuditSink>) {
     let r = Arc::new(InMemoryPiiRedactor::new());
     let audit = Arc::new(InMemoryLogAuditSink::new());
-    let cardinality_audit =
-        Arc::new(InMemoryAnalyticsAuditSink::new());
+    let cardinality_audit = Arc::new(InMemoryAnalyticsAuditSink::new());
     let cfg = AnalyticsConfig::with_budgets(per_metric, global);
-    let cardinality = Arc::new(CardinalityValidator::new(
-        cardinality_audit,
-        cfg,
-    ));
+    let cardinality = Arc::new(CardinalityValidator::new(cardinality_audit, cfg));
     let s = InMemoryLogSink::new(r, Arc::clone(&audit), cardinality);
     (s, audit)
 }
@@ -167,10 +154,8 @@ fn canonical_pii_pattern_kinds_pinned() {
 
 #[test]
 fn migration_0016_is_embedded() {
-    assert!(MIGRATION_0016_LOG_SCHEMA
-        .contains("log_schema_versions"));
-    assert!(MIGRATION_0016_LOG_SCHEMA
-        .contains("log_redaction_patterns"));
+    assert!(MIGRATION_0016_LOG_SCHEMA.contains("log_schema_versions"));
+    assert!(MIGRATION_0016_LOG_SCHEMA.contains("log_redaction_patterns"));
     assert!(MIGRATION_0016_LOG_SCHEMA.contains("WI-S09-002"));
 }
 
@@ -186,18 +171,12 @@ fn pii_pattern_kind_default_placeholders_pinned() {
         PiiPatternKind::Email.default_placeholder(),
         "<EMAIL_REDACTED>"
     );
-    assert_eq!(
-        PiiPatternKind::Ip.default_placeholder(),
-        "<IP_REDACTED>"
-    );
+    assert_eq!(PiiPatternKind::Ip.default_placeholder(), "<IP_REDACTED>");
     assert_eq!(
         PiiPatternKind::Token.default_placeholder(),
         "<TOKEN_REDACTED>"
     );
-    assert_eq!(
-        PiiPatternKind::Pan.default_placeholder(),
-        "<PAN_REDACTED>"
-    );
+    assert_eq!(PiiPatternKind::Pan.default_placeholder(), "<PAN_REDACTED>");
     assert_eq!(
         PiiPatternKind::CpfCnpj.default_placeholder(),
         "<CPF_REDACTED>"
@@ -507,11 +486,8 @@ proptest! {
 fn audit_fail_closed_aborts_emit_no_buffer_mutation() {
     let r = Arc::new(InMemoryPiiRedactor::new());
     let audit = Arc::new(FailingLogAuditSink::new());
-    let cardinality_audit =
-        Arc::new(InMemoryAnalyticsAuditSink::new());
-    let cardinality = Arc::new(CardinalityValidator::with_defaults(
-        cardinality_audit,
-    ));
+    let cardinality_audit = Arc::new(InMemoryAnalyticsAuditSink::new());
+    let cardinality = Arc::new(CardinalityValidator::with_defaults(cardinality_audit));
     let s = InMemoryLogSink::new(r, audit, cardinality);
     let rec = LogRecord::new(
         LogEventType::RequestServed,

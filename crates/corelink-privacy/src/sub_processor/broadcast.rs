@@ -26,10 +26,7 @@ pub struct BroadcastUniqueKey {
 /// Trait for broadcast log persistence (D1 `sub_processor_broadcast_log`).
 pub trait BroadcastStore: std::fmt::Debug + Send + Sync {
     /// Insert a new broadcast log entry (fail if UNIQUE constraint violated).
-    fn insert(
-        &self,
-        entry: BroadcastLogEntry,
-    ) -> Result<(), SubProcessorBroadcastStoreError>;
+    fn insert(&self, entry: BroadcastLogEntry) -> Result<(), SubProcessorBroadcastStoreError>;
 
     /// Update delivery status for an existing entry (webhook callback path).
     fn update_delivery_status(
@@ -75,10 +72,7 @@ impl InMemoryBroadcastStore {
     /// Return the total number of entries in the store.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.entries
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .len()
+        self.entries.lock().unwrap_or_else(|p| p.into_inner()).len()
     }
 
     /// Return true if the store is empty.
@@ -106,10 +100,7 @@ impl Default for InMemoryBroadcastStore {
 }
 
 impl BroadcastStore for InMemoryBroadcastStore {
-    fn insert(
-        &self,
-        entry: BroadcastLogEntry,
-    ) -> Result<(), SubProcessorBroadcastStoreError> {
+    fn insert(&self, entry: BroadcastLogEntry) -> Result<(), SubProcessorBroadcastStoreError> {
         let uk = BroadcastUniqueKey {
             broadcast_id: entry.broadcast_id.clone(),
             tenant_id: entry.tenant_id.clone(),
@@ -192,10 +183,7 @@ impl BroadcastStore for InMemoryBroadcastStore {
 pub struct FailingBroadcastStore;
 
 impl BroadcastStore for FailingBroadcastStore {
-    fn insert(
-        &self,
-        _entry: BroadcastLogEntry,
-    ) -> Result<(), SubProcessorBroadcastStoreError> {
+    fn insert(&self, _entry: BroadcastLogEntry) -> Result<(), SubProcessorBroadcastStoreError> {
         Err(SubProcessorBroadcastStoreError::Unavailable(
             "FailingBroadcastStore always fails".into(),
         ))

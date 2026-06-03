@@ -115,9 +115,7 @@ pub fn run_verify_chain_public(
             }
         }
         let recomputed = link_chain_hash(&row.event.prev_hash, &row.event).map_err(|e| {
-            CliError::Other(format!(
-                "link recompute failed at line {line_number}: {e}"
-            ))
+            CliError::Other(format!("link recompute failed at line {line_number}: {e}"))
         })?;
         if !chain_hashes_eq_ct(&recomputed, &row.proof.link_hash) {
             return Err(structured_chain_break_label(
@@ -208,9 +206,17 @@ impl fmt::Display for VerifyNdjsonOutcome {
         writeln!(f, "NDJSON audit-export verify:")?;
         writeln!(f, "  Path:                {}", self.file_path)?;
         writeln!(f, "  Events verified:     {}", self.events_verified)?;
-        writeln!(f, "  Expected anchor:     {}", self.expected_chain_head_anchor)?;
+        writeln!(
+            f,
+            "  Expected anchor:     {}",
+            self.expected_chain_head_anchor
+        )?;
         writeln!(f, "  Manifest head:       {}", self.manifest_chain_head)?;
-        writeln!(f, "  Observed final:      {}", self.final_observed_chain_head)?;
+        writeln!(
+            f,
+            "  Observed final:      {}",
+            self.final_observed_chain_head
+        )?;
         write!(
             f,
             "  Status:              {}",
@@ -273,8 +279,9 @@ pub fn run_verify_ndjson(
             }
         }
         // Recompute link hash from canonical bytes; compare CT.
-        let recomputed = link_chain_hash(&row.event.prev_hash, &row.event)
-            .map_err(|e| CliError::Other(format!("link recompute failed at line {line_number}: {e}")))?;
+        let recomputed = link_chain_hash(&row.event.prev_hash, &row.event).map_err(|e| {
+            CliError::Other(format!("link recompute failed at line {line_number}: {e}"))
+        })?;
         if !chain_hashes_eq_ct(&recomputed, &row.proof.link_hash) {
             return Err(structured_chain_break(
                 line_number,
@@ -329,8 +336,11 @@ fn parse_anchor_hex(hex_str: &str) -> Result<ChainHash, CliError> {
             trimmed.len()
         )));
     }
-    let bytes = hex::decode(trimmed)
-        .map_err(|e| CliError::Other(format!("audit verify-ndjson: --chain-head-anchor hex decode failed: {e}")))?;
+    let bytes = hex::decode(trimmed).map_err(|e| {
+        CliError::Other(format!(
+            "audit verify-ndjson: --chain-head-anchor hex decode failed: {e}"
+        ))
+    })?;
     if bytes.len() != 32 {
         return Err(CliError::Other(format!(
             "audit verify-ndjson: --chain-head-anchor decoded to {} bytes; expected 32",
@@ -520,7 +530,10 @@ mod tests {
         // Replace `"fixture_seq":2` with `"fixture_seq":7` (a 1-digit
         // flip in the JSON body — distinct from line 0/1/3/4's seqs).
         let tampered = target.replace("\"fixture_seq\":2", "\"fixture_seq\":7");
-        assert_ne!(tampered, *target, "fixture must include a fixture_seq=2 to flip");
+        assert_ne!(
+            tampered, *target,
+            "fixture must include a fixture_seq=2 to flip"
+        );
         *target = tampered;
         fs::write(&path, lines.join("\n")).unwrap();
         let err = run_verify_ndjson(&path, &anchor, OutputFormat::Json).unwrap_err();
@@ -556,7 +569,10 @@ mod tests {
         fs::write(&path, b"").unwrap();
         let err = run_verify_ndjson(&path, &"a".repeat(64), OutputFormat::Json).unwrap_err();
         let msg = format!("{err}");
-        assert!(msg.contains("empty"), "empty-file error must mention emptiness: {msg}");
+        assert!(
+            msg.contains("empty"),
+            "empty-file error must mention emptiness: {msg}"
+        );
         drop(tmp);
     }
 
@@ -598,8 +614,7 @@ mod tests {
         let lines: Vec<&str> = body.lines().filter(|l| !l.trim().is_empty()).collect();
         assert_eq!(lines.len(), 13, "12 row lines + 1 manifest line");
         // The last line decodes as the manifest envelope.
-        let footer: serde_json::Value =
-            serde_json::from_str(lines[lines.len() - 1]).unwrap();
+        let footer: serde_json::Value = serde_json::from_str(lines[lines.len() - 1]).unwrap();
         assert!(footer.get("manifest").is_some());
         // Every prior line decodes as a `{event, proof}` row.
         for line in &lines[..lines.len() - 1] {
@@ -697,7 +712,10 @@ mod tests {
         };
         let tampered = format!("\"chain_head_at_export\":\"{flipped_anchor}\"");
         let new_body = body.replace(&original, &tampered);
-        assert_ne!(new_body, body, "fixture must contain the manifest anchor field to flip");
+        assert_ne!(
+            new_body, body,
+            "fixture must contain the manifest anchor field to flip"
+        );
         fs::write(&path, new_body).unwrap();
         let err = run_verify_ndjson(&path, &anchor, OutputFormat::Json).unwrap_err();
         let msg = format!("{err}");

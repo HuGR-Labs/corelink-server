@@ -74,16 +74,18 @@ fn backend_kind_strategy() -> impl Strategy<Value = BackendKind> {
 fn outcome_strategy() -> impl Strategy<Value = BackendErasureOutcome> {
     prop_oneof![
         any::<u64>().prop_map(|n| BackendErasureOutcome::Erased { records_deleted: n }),
-        any::<u64>()
-            .prop_map(|n| BackendErasureOutcome::Pseudonymized { records_redacted: n }),
+        any::<u64>().prop_map(|n| BackendErasureOutcome::Pseudonymized {
+            records_redacted: n
+        }),
         (any::<u64>(), any::<u64>()).prop_map(|(s, f)| {
             BackendErasureOutcome::PartialFailure {
                 records_succeeded: s,
                 records_failed: f,
             }
         }),
-        any::<u64>()
-            .prop_map(|s| BackendErasureOutcome::Failed { retry_after_seconds: s }),
+        any::<u64>().prop_map(|s| BackendErasureOutcome::Failed {
+            retry_after_seconds: s
+        }),
         Just(BackendErasureOutcome::NotApplicable),
     ]
 }

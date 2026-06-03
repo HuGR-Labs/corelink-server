@@ -12,7 +12,7 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
+    clippy::indexing_slicing
 )]
 
 use std::sync::Arc;
@@ -20,9 +20,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use corelink_dual_approval::{
-    AdminOpRequest, AdminOpType, DualApprovalError, DualApprovalGate, DualApprovalGateImpl,
-    AdminSigningKey, FailingAdminOpAuditSink, InMemoryAdminOpAuditSink, InMemoryAdminRoleStore,
-    InMemoryCollusionStore, InMemoryNonceStore, compute_hmac,
+    compute_hmac, AdminOpRequest, AdminOpType, AdminSigningKey, DualApprovalError,
+    DualApprovalGate, DualApprovalGateImpl, FailingAdminOpAuditSink, InMemoryAdminOpAuditSink,
+    InMemoryAdminRoleStore, InMemoryCollusionStore, InMemoryNonceStore,
 };
 
 fn make_valid_req(
@@ -79,11 +79,13 @@ fn adversarial_collusion_3_cycle_third_op_rejected() {
 
     // Op 1: caller=B, approver=A → succeeds
     let req1 = make_valid_req(caller_b, caller_a, tenant, &key, [1u8; 16], now);
-    gate.verify(&req1, now - 5 * 60_000, now).expect("op1 must succeed");
+    gate.verify(&req1, now - 5 * 60_000, now)
+        .expect("op1 must succeed");
 
     // Op 2: caller=A, approver=B → succeeds
     let req2 = make_valid_req(caller_a, caller_b, tenant, &key, [2u8; 16], now + 1);
-    gate.verify(&req2, now - 5 * 60_000, now + 1).expect("op2 must succeed");
+    gate.verify(&req2, now - 5 * 60_000, now + 1)
+        .expect("op2 must succeed");
 
     // Op 3: caller=B, approver=A → MUST fail (A ∈ {A, B})
     let req3 = make_valid_req(caller_b, caller_a, tenant, &key, [3u8; 16], now + 2);
@@ -191,7 +193,8 @@ fn adversarial_nonce_replay_rejected() {
 
     // First request succeeds.
     let req1 = make_nondest_req(nonce, now);
-    gate.verify(&req1, now - 5 * 60_000, now).expect("first request ok");
+    gate.verify(&req1, now - 5 * 60_000, now)
+        .expect("first request ok");
 
     // Replay same nonce.
     let req2 = make_nondest_req(nonce, now + 1);

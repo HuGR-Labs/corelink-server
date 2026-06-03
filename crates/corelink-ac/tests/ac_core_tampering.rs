@@ -44,8 +44,7 @@ fn replace_one_file_digest_changes_root() {
     let baseline = fresh_result(8, 3);
     let baseline_root = build_root(&baseline).unwrap();
     let mut tampered = baseline.clone();
-    tampered.output_files[2] =
-        OutputFileDigest::new(Digest::compute(b"replacement"), 99);
+    tampered.output_files[2] = OutputFileDigest::new(Digest::compute(b"replacement"), 99);
     let tampered_root = build_root(&tampered).unwrap();
     assert_ne!(baseline_root, tampered_root);
     // verify_root catches the mismatch.
@@ -101,8 +100,7 @@ fn move_file_to_directory_with_same_digest_preserves_root() {
     b.output_directories
         .push(OutputDirectoryDigest::new(f.digest, f.size_bytes));
     let root_a_only_one_file = build_root(&a).unwrap();
-    let root_b_one_file_one_dir_with_same_digest_set_post_move =
-        build_root(&b).unwrap();
+    let root_b_one_file_one_dir_with_same_digest_set_post_move = build_root(&b).unwrap();
     // a has 1 file; b has 1 file + 1 dir with the popped digest →
     // the digest sets differ (a has 1 leaf, b has 2 leaves) so
     // roots MUST differ. This pins that the pop+push surface

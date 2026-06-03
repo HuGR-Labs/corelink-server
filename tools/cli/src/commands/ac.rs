@@ -31,7 +31,11 @@ pub struct AcPutResult {
 
 impl fmt::Display for AcPutResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "AC stored {} bytes under digest: {}", self.bytes_stored, self.digest)
+        write!(
+            f,
+            "AC stored {} bytes under digest: {}",
+            self.bytes_stored, self.digest
+        )
     }
 }
 

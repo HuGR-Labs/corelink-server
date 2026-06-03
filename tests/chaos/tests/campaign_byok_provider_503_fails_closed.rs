@@ -14,8 +14,7 @@
 )]
 
 use chaos_campaign::{
-    assert_alert_fired, assert_audit_emitted_once, ByokOutcome, ByokProvider,
-    CampaignByokModel,
+    assert_alert_fired, assert_audit_emitted_once, ByokOutcome, ByokProvider, CampaignByokModel,
 };
 
 #[test]
@@ -46,8 +45,7 @@ fn all_providers_unavailable_fails_closed_with_503() {
     );
 
     // (2) Audit event emitted.
-    assert_audit_emitted_once(byok.audit_events(), "corelink.byok.provider.unavailable")
-        .unwrap();
+    assert_audit_emitted_once(byok.audit_events(), "corelink.byok.provider.unavailable").unwrap();
 
     // (3) SEV-1 alert fired.
     assert_alert_fired(byok.sev1_alerts(), "byok_provider_unavailable").unwrap();

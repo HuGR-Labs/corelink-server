@@ -26,7 +26,10 @@ fn sla_breach_fires_sev1_after_24h() {
     // Verification sweep WITHOUT calling process_erasure first (the
     // worker stalled before even starting the fanout). At
     // now = queued + 24h + 1, the canonical SLA gate trips.
-    let breach_time = env.now_ms.saturating_add(VERIFICATION_SLA_MS).saturating_add(1);
+    let breach_time = env
+        .now_ms
+        .saturating_add(VERIFICATION_SLA_MS)
+        .saturating_add(1);
     let outcome = match env.verification_job.run_24h_sweep(&erasure, breach_time) {
         Ok(o) => o,
         Err(e) => panic!("verification sweep failed: {e:?}"),
@@ -36,7 +39,10 @@ fn sla_breach_fires_sev1_after_24h() {
             unverified_count,
             elapsed_ms,
         } => {
-            assert_eq!(unverified_count, BACKEND_COUNT, "all 12 canonical backends unverified");
+            assert_eq!(
+                unverified_count, BACKEND_COUNT,
+                "all 12 canonical backends unverified"
+            );
             assert!(
                 elapsed_ms > VERIFICATION_SLA_MS,
                 "elapsed_ms ({elapsed_ms}) must exceed SLA"

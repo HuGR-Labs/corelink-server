@@ -32,7 +32,10 @@ use super::types::{
 fn route_constants_match_spec() {
     assert_eq!(ROUTE_EVENT_COUNT, "/v1/audit/analytics/event-count");
     assert_eq!(ROUTE_TIMELINE, "/v1/audit/analytics/timeline");
-    assert_eq!(EVENT_TYPE_ANALYTICS_QUERY, "corelink.audit.analytics_query.v1");
+    assert_eq!(
+        EVENT_TYPE_ANALYTICS_QUERY,
+        "corelink.audit.analytics_query.v1"
+    );
 }
 
 #[test]
@@ -46,11 +49,8 @@ fn rate_limit_config_pins_10_per_minute() {
 fn router_compiles_for_known_state() {
     let tenant = Uuid::now_v7();
     let audit = Arc::new(InMemoryShadowSyncAuditSink::new());
-    let shadow: Arc<dyn NeonShadowSink> = Arc::new(InMemoryNeonShadowSink::new(
-        tenant,
-        Region::Iad,
-        audit,
-    ));
+    let shadow: Arc<dyn NeonShadowSink> =
+        Arc::new(InMemoryNeonShadowSink::new(tenant, Region::Iad, audit));
     let factory: Arc<dyn ShadowSinkFactory> = Arc::new(OneTenantFactory { tenant, shadow });
     let state = build_state(factory);
     let _router = router(state);

@@ -25,6 +25,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
 use corelink_hash::Digest;
 use corelink_meta::InMemoryMetaStore;
 use corelink_reapi::handler::{HandlerCore, SystemClock};
@@ -37,9 +38,8 @@ use corelink_reapi::{
     canonical_grpc_padding_layer, AuthScope, ByteStreamService, CapabilitiesService,
     CasWriteService, StubPatValidator,
 };
-use corelink_tenant_path::TenantDerivationKey;
-use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
 use corelink_replication::region_resolver::Region;
+use corelink_tenant_path::TenantDerivationKey;
 use tokio::net::TcpListener;
 use tonic::metadata::MetadataValue;
 use tonic::transport::{Channel, Server};
@@ -170,7 +170,10 @@ async fn grpc_not_found_is_padded_at_layer_boundary() {
     let v: MetadataValue<_> = format!("Bearer {TOKEN_RW}").parse().unwrap();
     caps_req.metadata_mut().insert("authorization", v);
     let start = std::time::Instant::now();
-    let _ok = caps_client.get_capabilities(caps_req).await.expect("Capabilities is happy-path");
+    let _ok = caps_client
+        .get_capabilities(caps_req)
+        .await
+        .expect("Capabilities is happy-path");
     let elapsed_ok = start.elapsed().as_millis();
     // No padding ⇒ wall-clock should be well under the 200 ms p99
     // target. 100 ms is a generous ceiling for transport + handler

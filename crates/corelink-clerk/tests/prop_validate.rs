@@ -110,8 +110,8 @@ fn baseline_claims() -> TestClaims {
 fn sign(key: &TestRsaKey, claims: &TestClaims) -> String {
     let mut header = Header::new(Algorithm::RS256);
     header.kid = Some(key.kid.clone());
-    let encoding = EncodingKey::from_rsa_pem(key.private_pem.as_bytes())
-        .expect("test rsa pem accepted");
+    let encoding =
+        EncodingKey::from_rsa_pem(key.private_pem.as_bytes()).expect("test rsa pem accepted");
     encode(&header, claims, &encoding).expect("test sign")
 }
 

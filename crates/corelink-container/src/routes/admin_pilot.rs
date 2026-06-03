@@ -471,7 +471,8 @@ pub struct PilotAdminRouteState {
 
 impl fmt::Debug for PilotAdminRouteState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PilotAdminRouteState").finish_non_exhaustive()
+        f.debug_struct("PilotAdminRouteState")
+            .finish_non_exhaustive()
     }
 }
 
@@ -786,8 +787,7 @@ async fn handle_checkin(
 /// hyphenated UUID.
 #[allow(clippy::result_large_err)]
 fn parse_tenant_uuid(raw: &str) -> Result<Uuid, Response> {
-    Uuid::parse_str(raw)
-        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid tenant_id").into_response())
+    Uuid::parse_str(raw).map_err(|_| (StatusCode::BAD_REQUEST, "invalid tenant_id").into_response())
 }
 
 /// L2 + L3 + L5: enforce that the caller carries
@@ -875,11 +875,7 @@ fn require_admin_scope(
 /// Emit an audit row; on failure, return a `503` response (the
 /// caller's intended response is discarded). Mirrors the wave-20
 /// closure pattern from `audit_export.rs`.
-fn emit_or_503(
-    state: &PilotAdminRouteState,
-    row: PilotAuditRow,
-    happy: Response,
-) -> Response {
+fn emit_or_503(state: &PilotAdminRouteState, row: PilotAuditRow, happy: Response) -> Response {
     match state.audit_sink.emit(row) {
         Ok(()) => happy,
         Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "audit pipeline closed").into_response(),
@@ -971,9 +967,7 @@ mod tests {
         store.seed(a.clone()).expect("seed");
         store.seed(b.clone()).expect("seed");
         store.seed(c.clone()).expect("seed");
-        let rows = store
-            .list_by_state(PilotState::New, 0, 50)
-            .expect("list");
+        let rows = store.list_by_state(PilotState::New, 0, 50).expect("list");
         assert_eq!(rows.len(), 2);
         // Sorted by signup_at_ms ASC.
         assert_eq!(rows[0].slug, "c");

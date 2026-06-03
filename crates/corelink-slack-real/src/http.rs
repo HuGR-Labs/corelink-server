@@ -9,9 +9,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::audit::{
-    SlackAuditEvent, SlackAuditOutcome, SlackAuditSink,
-};
+use crate::audit::{SlackAuditEvent, SlackAuditOutcome, SlackAuditSink};
 use crate::channel::WebhookRegistry;
 use crate::client::{SendOutcome, SharedSlackClient, SlackClientError};
 use crate::message::SlackMessage;
@@ -137,17 +135,17 @@ impl SharedSlackClient for SlackHttpClient {
                     // Best-effort thread_ts extraction — incoming
                     // webhooks return `ok` text on success, but if the
                     // body is JSON with a `ts` field we pick it up.
-                    let thread_ts = send_result
-                        .ok()
-                        .and_then(|resp| resp.text().ok())
-                        .and_then(|body| {
-                            serde_json::from_str::<serde_json::Value>(&body)
-                                .ok()
-                                .and_then(|v| {
-                                    v.get("ts")
-                                        .and_then(|t| t.as_str().map(str::to_string))
-                                })
-                        });
+                    let thread_ts =
+                        send_result
+                            .ok()
+                            .and_then(|resp| resp.text().ok())
+                            .and_then(|body| {
+                                serde_json::from_str::<serde_json::Value>(&body)
+                                    .ok()
+                                    .and_then(|v| {
+                                        v.get("ts").and_then(|t| t.as_str().map(str::to_string))
+                                    })
+                            });
                     self.emit_audit(
                         SlackAuditOutcome::Sent,
                         message,
@@ -187,10 +185,7 @@ impl SharedSlackClient for SlackHttpClient {
                         Some(s) if s == 429 || (500..600).contains(&s) => {
                             SlackClientError::TransportExhausted { attempts, reason }
                         }
-                        Some(s) => SlackClientError::PermanentReject {
-                            status: s,
-                            reason,
-                        },
+                        Some(s) => SlackClientError::PermanentReject { status: s, reason },
                         None => SlackClientError::TransportExhausted { attempts, reason },
                     });
                 }

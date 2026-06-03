@@ -16,7 +16,6 @@
 //! 3. On miss: call [`KmsProvider::unwrap_dek`]; cache result.
 //! 4. Decrypt body with AES-256-GCM.
 
-
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Key, Nonce,
@@ -169,9 +168,7 @@ impl<P: KmsProvider> EnvelopeEncryptor<P> {
                 let dek_for_cache = Dek {
                     bytes: fresh_dek.bytes,
                 };
-                self.dek_cache
-                    .put(&blob.wrapped_dek, dek_for_cache)
-                    .await?;
+                self.dek_cache.put(&blob.wrapped_dek, dek_for_cache).await?;
 
                 fresh_dek
             }
@@ -223,10 +220,17 @@ fn build_aad(tenant_id: &str, blob_hash: &str) -> serde_json::Value {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, clippy::indexing_slicing, clippy::uninlined_format_args, clippy::format_in_format_args)]
+#[allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args
+)]
 mod tests {
-    use super::*;
     use super::super::types::{KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek};
+    use super::*;
     use async_trait::async_trait;
 
     // ── Stub KMS provider for unit tests ──────────────────────────────────────
@@ -296,10 +300,7 @@ mod tests {
             .await
             .unwrap();
 
-        let recovered = enc
-            .decrypt(&blob, "tenant_1", "sha256:abc")
-            .await
-            .unwrap();
+        let recovered = enc.decrypt(&blob, "tenant_1", "sha256:abc").await.unwrap();
 
         assert_eq!(recovered, plaintext);
     }
@@ -317,7 +318,9 @@ mod tests {
             .unwrap();
 
         // First decrypt — populates cache.
-        enc.decrypt(&blob, "tenant_cache", "hash:xyz").await.unwrap();
+        enc.decrypt(&blob, "tenant_cache", "hash:xyz")
+            .await
+            .unwrap();
         // Second decrypt — should hit cache (no KMS call).
         let recovered = enc
             .decrypt(&blob, "tenant_cache", "hash:xyz")

@@ -36,9 +36,7 @@ use uuid::Uuid;
 /// `ConsentRevoke` is intentionally OUT of the 6-arm trait surface
 /// here because it lands as its own surface in WI-S11-003 consent
 /// ledger).
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[non_exhaustive]
 #[serde(rename_all = "snake_case")]
 pub enum DsrRequestKind {
@@ -132,9 +130,7 @@ pub const fn is_destructive_arm(kind: DsrRequestKind) -> bool {
 /// `#[non_exhaustive]` reserves additive growth for follow-on WIs
 /// (e.g. WI-S11-002 may add `LegalHoldPaused` for the cross-backend
 /// erasure cascade).
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[non_exhaustive]
 #[serde(rename_all = "snake_case")]
 pub enum DsrStatus {
@@ -282,9 +278,7 @@ impl DsrDecision {
 /// Canonical reject-reason taxonomy. Per WI-S11-001 §6.1.7 + AC-005:
 /// every rejection lands one of these mnemonics so the dashboard +
 /// runbook surface filters cleanly.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[non_exhaustive]
 #[serde(rename_all = "snake_case")]
 pub enum DsrRejectReason {
@@ -336,9 +330,7 @@ impl core::fmt::Display for DsrRejectReason {
 /// `#[non_exhaustive]` reserves additive growth for follow-on
 /// jurisdictions (e.g. PIPL China, LGPD-equivalent UK Data Protection
 /// Act, Quebec Law 25).
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[non_exhaustive]
 #[serde(rename_all = "snake_case")]
 pub enum DsrJurisdiction {

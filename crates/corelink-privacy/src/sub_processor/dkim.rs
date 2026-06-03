@@ -60,11 +60,7 @@ pub fn derive_dkim_key(
 ///
 /// Used by property tests to verify cross-tenant isolation.
 #[must_use]
-pub fn dkim_keys_differ(
-    master_secret: &[u8],
-    tenant_a: &str,
-    tenant_b: &str,
-) -> bool {
+pub fn dkim_keys_differ(master_secret: &[u8], tenant_a: &str, tenant_b: &str) -> bool {
     if tenant_a == tenant_b {
         return false; // same tenant → same key, trivially
     }

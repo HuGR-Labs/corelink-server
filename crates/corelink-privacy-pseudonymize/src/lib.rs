@@ -173,7 +173,10 @@ impl core::fmt::Display for PseudonymHash {
 /// the salt + this surface re-derives the pseudonym + asserts whether
 /// the audit row corresponds to a given subject).
 #[must_use]
-pub fn pseudonymize(subject_id_bytes: &[u8], erasure_salt: &[u8; ERASURE_SALT_LEN]) -> PseudonymHash {
+pub fn pseudonymize(
+    subject_id_bytes: &[u8],
+    erasure_salt: &[u8; ERASURE_SALT_LEN],
+) -> PseudonymHash {
     let mut hasher = Sha256::new();
     hasher.update(subject_id_bytes);
     hasher.update(erasure_salt);
@@ -266,7 +269,9 @@ mod tests {
         let hash = pseudonymize(b"x", &salt);
         let hex = hash.to_hex();
         assert_eq!(hex.len(), PSEUDONYM_HEX_LEN);
-        assert!(hex.chars().all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()));
+        assert!(hex
+            .chars()
+            .all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()));
     }
 
     #[test]

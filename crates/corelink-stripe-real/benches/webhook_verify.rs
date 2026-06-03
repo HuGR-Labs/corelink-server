@@ -17,11 +17,9 @@
 )]
 
 use corelink_stripe_real::{
-    webhook::compute_signature, verify_webhook_signature, DEFAULT_TOLERANCE_SECONDS,
+    verify_webhook_signature, webhook::compute_signature, DEFAULT_TOLERANCE_SECONDS,
 };
-use criterion::{
-    black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput,
-};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 const SECRET: &[u8] = b"whsec_bench_super_secret_value_32_bytes_minimum";
 const TS: u64 = 1_700_000_000;

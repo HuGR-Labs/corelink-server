@@ -186,15 +186,13 @@ impl InMemoryPagerDutyDispatcher {
     pub fn snapshot_open_incidents(&self) -> Vec<(String, PagerDutyEvent)> {
         match self.open_incidents.lock() {
             Ok(g) => {
-                let mut v: Vec<_> =
-                    g.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                let mut v: Vec<_> = g.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                 v.sort_by(|a, b| a.0.cmp(&b.0));
                 v
             }
             Err(p) => {
                 let g = p.into_inner();
-                let mut v: Vec<_> =
-                    g.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                let mut v: Vec<_> = g.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                 v.sort_by(|a, b| a.0.cmp(&b.0));
                 v
             }
@@ -382,9 +380,12 @@ mod tests {
     #[test]
     fn snapshot_open_incidents_sorted_by_key() {
         let d = InMemoryPagerDutyDispatcher::new();
-        d.dispatch(ev("zebra", PagerDutyEventAction::Trigger)).unwrap();
-        d.dispatch(ev("alpha", PagerDutyEventAction::Trigger)).unwrap();
-        d.dispatch(ev("mango", PagerDutyEventAction::Trigger)).unwrap();
+        d.dispatch(ev("zebra", PagerDutyEventAction::Trigger))
+            .unwrap();
+        d.dispatch(ev("alpha", PagerDutyEventAction::Trigger))
+            .unwrap();
+        d.dispatch(ev("mango", PagerDutyEventAction::Trigger))
+            .unwrap();
         let v = d.snapshot_open_incidents();
         let keys: Vec<&str> = v.iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(keys, vec!["alpha", "mango", "zebra"]);
@@ -403,7 +404,8 @@ mod tests {
     fn cloned_dispatcher_shares_buffer() {
         let d1 = InMemoryPagerDutyDispatcher::new();
         let d2 = d1.clone();
-        d1.dispatch(ev("k1", PagerDutyEventAction::Trigger)).unwrap();
+        d1.dispatch(ev("k1", PagerDutyEventAction::Trigger))
+            .unwrap();
         assert_eq!(d2.attempt_count(), 1);
         assert_eq!(d2.open_incident_count(), 1);
     }

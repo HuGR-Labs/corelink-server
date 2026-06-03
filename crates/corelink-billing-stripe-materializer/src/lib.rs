@@ -73,7 +73,7 @@ pub use audit::{
 pub use clock::SystemMatClock;
 #[cfg(target_arch = "wasm32")]
 pub use clock::WasmWorkerMatClock;
-pub use clock::{InMemoryFakeMatClock, MatClock, default_mat_clock};
+pub use clock::{default_mat_clock, InMemoryFakeMatClock, MatClock};
 pub use d1::{BillingD1Error, BillingD1Writer, InMemoryBillingD1, MaterializedRow};
 pub use handler::{D1SubscriptionStateHandler, EVENT_MATERIALIZATION_MATRIX};
 pub use idempotency::D1IdempotencyStore;

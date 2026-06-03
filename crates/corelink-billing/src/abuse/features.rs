@@ -85,9 +85,7 @@ impl AbuseFeatures {
         Self {
             cpu_wallclock_ratio: sanitize_f64(cpu_wallclock_ratio),
             egress_bytes_per_min,
-            action_digest_entropy_bits: sanitize_f64(
-                action_digest_entropy_bits,
-            ),
+            action_digest_entropy_bits: sanitize_f64(action_digest_entropy_bits),
             concurrent_exec_count,
         }
     }

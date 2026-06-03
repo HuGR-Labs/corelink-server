@@ -87,10 +87,7 @@ struct ObjectionUniqueKey {
 /// Trait for objection ticket persistence (D1 `sub_processor_objection`).
 pub trait ObjectionStore: std::fmt::Debug + Send + Sync {
     /// Insert a new objection ticket.
-    fn insert(
-        &self,
-        ticket: ObjectionTicket,
-    ) -> Result<(), SubProcessorObjectionStoreError>;
+    fn insert(&self, ticket: ObjectionTicket) -> Result<(), SubProcessorObjectionStoreError>;
 
     /// Retrieve an objection ticket by ID.
     fn get(
@@ -134,10 +131,7 @@ impl InMemoryObjectionStore {
     /// Return the number of tickets in the store.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.tickets
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .len()
+        self.tickets.lock().unwrap_or_else(|p| p.into_inner()).len()
     }
 
     /// Return true if no tickets are stored.
@@ -154,10 +148,7 @@ impl Default for InMemoryObjectionStore {
 }
 
 impl ObjectionStore for InMemoryObjectionStore {
-    fn insert(
-        &self,
-        ticket: ObjectionTicket,
-    ) -> Result<(), SubProcessorObjectionStoreError> {
+    fn insert(&self, ticket: ObjectionTicket) -> Result<(), SubProcessorObjectionStoreError> {
         let uk = ObjectionUniqueKey {
             tenant_id: ticket.tenant_id.clone(),
             subject_id: ticket.subject_id.clone(),
@@ -237,10 +228,7 @@ impl ObjectionStore for InMemoryObjectionStore {
 pub struct FailingObjectionStore;
 
 impl ObjectionStore for FailingObjectionStore {
-    fn insert(
-        &self,
-        _ticket: ObjectionTicket,
-    ) -> Result<(), SubProcessorObjectionStoreError> {
+    fn insert(&self, _ticket: ObjectionTicket) -> Result<(), SubProcessorObjectionStoreError> {
         Err(SubProcessorObjectionStoreError::Unavailable(
             "FailingObjectionStore always fails".into(),
         ))

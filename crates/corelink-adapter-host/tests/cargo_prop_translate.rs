@@ -25,8 +25,11 @@ use proptest::prelude::*;
 
 /// Generate a random 64-char lowercase hex string.
 fn hex_key_strategy() -> impl Strategy<Value = String> {
-    proptest::collection::vec(proptest::sample::select(b"0123456789abcdef"), DIGEST_HEX_LEN)
-        .prop_map(|v| v.iter().map(|b| *b as char).collect())
+    proptest::collection::vec(
+        proptest::sample::select(b"0123456789abcdef"),
+        DIGEST_HEX_LEN,
+    )
+    .prop_map(|v| v.iter().map(|b| *b as char).collect())
 }
 
 /// Generate a random 64-char mixed-case hex string.

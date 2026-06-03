@@ -70,10 +70,9 @@ fn idempotency_conflict_on_diverging_payload() {
     let _r1 = svc.accept(&c, req_a).unwrap();
     let err = svc.accept(&c, req_b).unwrap_err();
     assert!(matches!(err, DpaAcceptanceError::IdempotencyConflict));
-    assert!(
-        svc.audit_sink()
-            .contains(|e| matches!(e, DpaAuditEvent::IdempotencyConflict { .. }))
-    );
+    assert!(svc
+        .audit_sink()
+        .contains(|e| matches!(e, DpaAuditEvent::IdempotencyConflict { .. })));
 }
 
 #[test]
@@ -83,9 +82,7 @@ fn distinct_signups_get_distinct_records() {
     let r1 = svc
         .accept(&ctx("sig-A", LocaleBcp47::EnUs), req.clone())
         .unwrap();
-    let r2 = svc
-        .accept(&ctx("sig-B", LocaleBcp47::EnUs), req)
-        .unwrap();
+    let r2 = svc.accept(&ctx("sig-B", LocaleBcp47::EnUs), req).unwrap();
     assert_ne!(r1.jti, r2.jti);
     assert_eq!(svc.store().len(), 2);
 }

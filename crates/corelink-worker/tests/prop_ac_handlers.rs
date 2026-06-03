@@ -35,14 +35,13 @@ use corelink_worker::cache::kv::InMemoryKv;
 use corelink_worker::middleware::auth_ctx::__test_helpers::make_auth_ctx;
 use corelink_worker::middleware::auth_ctx::{AuthCtx, AuthMethod, PrincipalId};
 use corelink_worker::reapi::ac::handler::{
-    ActionCacheHandler, ActionCacheHandlerBuilder, ActionCacheHandlerImpl, AcError,
-    Clock, FakeClock, GetActionResult, InMemoryAcEnvelopeStore,
-    DEFAULT_AC_TTL_EXTEND_MS,
+    AcError, ActionCacheHandler, ActionCacheHandlerBuilder, ActionCacheHandlerImpl, Clock,
+    FakeClock, GetActionResult, InMemoryAcEnvelopeStore, DEFAULT_AC_TTL_EXTEND_MS,
 };
 use corelink_worker::reapi::ac::{
-    AcEventType, AcMetaUpsertOutcome, AcNegCache, ActionDigest, ActionResult,
-    InMemoryAcMetaStore, InMemoryAuditSink, InMemoryFakeSigner, InMemoryMerkleVerifier,
-    InMemoryOutputsCheck, OutputFileDigest,
+    AcEventType, AcMetaUpsertOutcome, AcNegCache, ActionDigest, ActionResult, InMemoryAcMetaStore,
+    InMemoryAuditSink, InMemoryFakeSigner, InMemoryMerkleVerifier, InMemoryOutputsCheck,
+    OutputFileDigest,
 };
 use corelink_worker::Region;
 use proptest::prelude::*;
@@ -128,12 +127,7 @@ fn synthesize_action_result(seed: u64) -> (ActionDigest, ActionResult) {
     let ad = ActionDigest::new(action_hash, action_bytes.len() as i64);
     let proto = format!("proto-{seed}").into_bytes();
     let out = Digest::compute(format!("out-{seed}").as_bytes());
-    let ar = ActionResult::new(
-        vec![OutputFileDigest::new(out, 64)],
-        Vec::new(),
-        0,
-        proto,
-    );
+    let ar = ActionResult::new(vec![OutputFileDigest::new(out, 64)], Vec::new(), 0, proto);
     (ad, ar)
 }
 

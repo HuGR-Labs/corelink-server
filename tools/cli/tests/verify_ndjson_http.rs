@@ -65,9 +65,7 @@ fn init_rustls_provider() {
 use corelink_audit_chain::{AuditExporter, ExportWindow};
 use corelink_cli::audit_export::build_fixture_exporter;
 use corelink_cli::output::OutputFormat;
-use corelink_cli::verify_ndjson_http::{
-    run_verify_ndjson_http, HttpVerifyOutcome, EXIT_DATAERR,
-};
+use corelink_cli::verify_ndjson_http::{run_verify_ndjson_http, HttpVerifyOutcome, EXIT_DATAERR};
 
 /// Build a deterministic NDJSON body (one `{event, proof}` line per
 /// row + a trailing `{"manifest": ...}` line) plus the recovered
@@ -106,7 +104,10 @@ enum Scenario {
     CleanHappyPath { body: String, anchor: String },
     /// NDJSON body bytes followed by a chunked-transfer trailer
     /// carrying `x-corelink-audit-export-aborted: <payload>`.
-    AbortTrailer { body: String, trailer_payload: String },
+    AbortTrailer {
+        body: String,
+        trailer_payload: String,
+    },
     /// Accept the TCP connection and immediately drop it (simulates
     /// network / server-side failure mid-request).
     DropConnection,
@@ -323,7 +324,9 @@ async fn network_failure_surfaces_structured_error() {
     let err = res.expect_err("dropped connection must surface a structured error");
     let msg = format!("{err}");
     assert!(
-        msg.contains("verify-ndjson --url") || msg.contains("HTTP request failed") || msg.contains("body stream error"),
+        msg.contains("verify-ndjson --url")
+            || msg.contains("HTTP request failed")
+            || msg.contains("body stream error"),
         "expected structured network error, got: {msg}"
     );
     // The error MUST NOT carry the bearer token (CTRL-CRED-001).

@@ -18,8 +18,8 @@
 //! payload — SEV-1 tampering signal). A `bool` collapses these into
 //! a silent loss.
 
-use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use uuid::Uuid;
 
@@ -89,10 +89,7 @@ pub trait ErasureIdempotencyLedger: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// - [`ErasureIdempotencyError::Backend`] for transport failures.
-    fn snapshot(
-        &self,
-        dsr_id: Uuid,
-    ) -> Result<Vec<BackendCompletion>, ErasureIdempotencyError>;
+    fn snapshot(&self, dsr_id: Uuid) -> Result<Vec<BackendCompletion>, ErasureIdempotencyError>;
 
     /// Wave-19: persist the canonical `outcome_json` snapshot column
     /// against every tombstone row for `dsr_id`. The verification job
@@ -165,9 +162,10 @@ impl ErasureIdempotencyLedger for InMemoryErasureIdempotencyLedger {
         completion: BackendCompletion,
     ) -> Result<LedgerOutcome, ErasureIdempotencyError> {
         let key = (completion.dsr_id, completion.backend);
-        let mut guard = self.inner.lock().map_err(|_| {
-            ErasureIdempotencyError::Backend("ledger mutex poisoned".to_string())
-        })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| ErasureIdempotencyError::Backend("ledger mutex poisoned".to_string()))?;
         match guard.get(&key) {
             Some(prior) => {
                 // Compare on canonical typed payload (excludes the
@@ -195,19 +193,18 @@ impl ErasureIdempotencyLedger for InMemoryErasureIdempotencyLedger {
         dsr_id: Uuid,
         backend: BackendKind,
     ) -> Result<Option<BackendCompletion>, ErasureIdempotencyError> {
-        let guard = self.inner.lock().map_err(|_| {
-            ErasureIdempotencyError::Backend("ledger mutex poisoned".to_string())
-        })?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| ErasureIdempotencyError::Backend("ledger mutex poisoned".to_string()))?;
         Ok(guard.get(&(dsr_id, backend)).cloned())
     }
 
-    fn snapshot(
-        &self,
-        dsr_id: Uuid,
-    ) -> Result<Vec<BackendCompletion>, ErasureIdempotencyError> {
-        let guard = self.inner.lock().map_err(|_| {
-            ErasureIdempotencyError::Backend("ledger mutex poisoned".to_string())
-        })?;
+    fn snapshot(&self, dsr_id: Uuid) -> Result<Vec<BackendCompletion>, ErasureIdempotencyError> {
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| ErasureIdempotencyError::Backend("ledger mutex poisoned".to_string()))?;
         let mut out: Vec<BackendCompletion> = crate::event::canonical_backend_kinds()
             .iter()
             .filter_map(|k| guard.get(&(dsr_id, *k)).cloned())
@@ -235,9 +232,7 @@ impl ErasureIdempotencyLedger for InMemoryErasureIdempotencyLedger {
         outcome_json: &str,
     ) -> Result<(), ErasureIdempotencyError> {
         let mut guard = self.outcome_snapshots.lock().map_err(|_| {
-            ErasureIdempotencyError::Backend(
-                "outcome-snapshot mutex poisoned".to_string(),
-            )
+            ErasureIdempotencyError::Backend("outcome-snapshot mutex poisoned".to_string())
         })?;
         guard.insert(dsr_id, outcome_json.to_owned());
         Ok(())
@@ -248,9 +243,7 @@ impl ErasureIdempotencyLedger for InMemoryErasureIdempotencyLedger {
         dsr_id: Uuid,
     ) -> Result<Option<String>, ErasureIdempotencyError> {
         let guard = self.outcome_snapshots.lock().map_err(|_| {
-            ErasureIdempotencyError::Backend(
-                "outcome-snapshot mutex poisoned".to_string(),
-            )
+            ErasureIdempotencyError::Backend("outcome-snapshot mutex poisoned".to_string())
         })?;
         Ok(guard.get(&dsr_id).cloned())
     }
@@ -289,10 +282,7 @@ impl ErasureIdempotencyLedger for FailingErasureIdempotencyLedger {
         ))
     }
 
-    fn snapshot(
-        &self,
-        _dsr_id: Uuid,
-    ) -> Result<Vec<BackendCompletion>, ErasureIdempotencyError> {
+    fn snapshot(&self, _dsr_id: Uuid) -> Result<Vec<BackendCompletion>, ErasureIdempotencyError> {
         Err(ErasureIdempotencyError::Backend(
             "induced ledger failure (test fixture)".to_string(),
         ))
@@ -324,14 +314,8 @@ mod tests {
             dsr_id: dsr,
             tenant_id: fixed_uuid(99),
             backend,
-            outcome: BackendErasureOutcome::Erased {
-                records_deleted: 1,
-            },
-            idempotency_key: format!(
-                "corelink-{}-{}-000",
-                "abcdef01",
-                backend.as_str()
-            ),
+            outcome: BackendErasureOutcome::Erased { records_deleted: 1 },
+            idempotency_key: format!("corelink-{}-{}-000", "abcdef01", backend.as_str()),
             started_at_ms: 1_000,
             completed_at_ms: 2_000,
             retry_count: 0,
@@ -366,9 +350,7 @@ mod tests {
         let dsr = fixed_uuid(1);
         let mut c1 = completion(dsr, BackendKind::D1);
         let mut c2 = completion(dsr, BackendKind::D1);
-        c1.outcome = BackendErasureOutcome::Erased {
-            records_deleted: 1,
-        };
+        c1.outcome = BackendErasureOutcome::Erased { records_deleted: 1 };
         c2.outcome = BackendErasureOutcome::Erased {
             records_deleted: 99,
         };
@@ -391,7 +373,8 @@ mod tests {
         let dsr = fixed_uuid(1);
         l.upsert(completion(dsr, BackendKind::Stripe)).unwrap();
         l.upsert(completion(dsr, BackendKind::NeonMain)).unwrap();
-        l.upsert(completion(dsr, BackendKind::R2EvidencePseudo)).unwrap();
+        l.upsert(completion(dsr, BackendKind::R2EvidencePseudo))
+            .unwrap();
         let snap = l.snapshot(dsr).unwrap();
         assert_eq!(snap.len(), 3);
         // canonical ordering: NeonMain (idx 0), Stripe (idx 6),
@@ -404,7 +387,9 @@ mod tests {
     #[test]
     fn failing_ledger_propagates() {
         let l = FailingErasureIdempotencyLedger::new();
-        let err = l.upsert(completion(fixed_uuid(1), BackendKind::D1)).unwrap_err();
+        let err = l
+            .upsert(completion(fixed_uuid(1), BackendKind::D1))
+            .unwrap_err();
         let backend = matches!(err, ErasureIdempotencyError::Backend(_));
         assert!(backend);
     }

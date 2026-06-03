@@ -378,7 +378,10 @@ struct PairOutcome {
     ci: BootstrapTrimmedCi,
 }
 
-fn run_gate(trials: &[[Vec<f64>; 3]], bootstrap_seed_offset: u64) -> Vec<(usize, usize, PairOutcome)> {
+fn run_gate(
+    trials: &[[Vec<f64>; 3]],
+    bootstrap_seed_offset: u64,
+) -> Vec<(usize, usize, PairOutcome)> {
     let mut out = Vec::with_capacity(PER_TEST_TOTAL);
     for (trial_idx, arms) in trials.iter().enumerate() {
         let pairs: [(usize, usize); 3] = [(0, 1), (0, 2), (1, 2)];
@@ -403,9 +406,7 @@ fn run_gate(trials: &[[Vec<f64>; 3]], bootstrap_seed_offset: u64) -> Vec<(usize,
 #[cfg_attr(debug_assertions, ignore)]
 fn three_arm_indistinguishability_cripto_grade() {
     let alpha_prime = sidak_per_test_alpha(ALPHA, PER_TEST_TOTAL).unwrap();
-    eprintln!(
-        "Šidák per-test α' for k={PER_TEST_TOTAL}: {alpha_prime:.6} (the strict gate)"
-    );
+    eprintln!("Šidák per-test α' for k={PER_TEST_TOTAL}: {alpha_prime:.6} (the strict gate)");
 
     let mut all_arms = Vec::with_capacity(TRIALS);
     for trial in 0..TRIALS {

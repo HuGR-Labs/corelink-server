@@ -130,8 +130,9 @@ pub async fn handle_health_real(
         .await
         .map_err(|e| HealthError::Kv(e.to_string()))?;
     let kv_value = match kv_value_bytes {
-        Some(bytes) => String::from_utf8(bytes)
-            .map_err(|e| HealthError::Kv(format!("utf8: {e}")))?,
+        Some(bytes) => {
+            String::from_utf8(bytes).map_err(|e| HealthError::Kv(format!("utf8: {e}")))?
+        }
         None => "none".to_owned(),
     };
 
@@ -152,9 +153,7 @@ pub async fn handle_health_real(
     // 4. D1 insert with explicit tenant_id column + bind anchor.
     let scoped = bindings
         .d1
-        .scoped_query(
-            "INSERT INTO clerk_audit_health (tenant_id, ts, note) VALUES (?1, ?2, ?3)",
-        )
+        .scoped_query("INSERT INTO clerk_audit_health (tenant_id, ts, note) VALUES (?1, ?2, ?3)")
         .map_err(|e| HealthError::D1(e.to_string()))?;
     let stmt = bindings
         .d1
@@ -357,10 +356,7 @@ pub async fn main(
     let tenant_raw = match headers.get(TENANT_HEADER) {
         Ok(Some(v)) => v,
         _ => {
-            return worker::Response::error(
-                format!("missing {TENANT_HEADER} header"),
-                400,
-            );
+            return worker::Response::error(format!("missing {TENANT_HEADER} header"), 400);
         }
     };
     let tenant = match crate::prod_wiring::TenantContext::from_header_value(&tenant_raw) {

@@ -71,11 +71,8 @@ use crate::event::{AggregatedCounter, ChainHash};
 ///   tree never contains non-finite floats by construction (every
 ///   field is `u64` / `u128` / `String` / `Vec<IdemKey>`); this is a
 ///   defensive guard.
-pub fn compute_canonical_bytes(
-    aggregate: &AggregatedCounter,
-) -> Result<Vec<u8>, AggregatorError> {
-    serde_jcs::to_vec(aggregate)
-        .map_err(|e| AggregatorError::Canonicalization(format!("{e}")))
+pub fn compute_canonical_bytes(aggregate: &AggregatedCounter) -> Result<Vec<u8>, AggregatorError> {
+    serde_jcs::to_vec(aggregate).map_err(|e| AggregatorError::Canonicalization(format!("{e}")))
 }
 
 /// Compute the chain link hash from `(prev_hash, aggregate)`.
@@ -102,10 +99,7 @@ pub fn link_chain_hash(
 /// Used by the verifier when the canonical bytes were already computed
 /// (or read off the persisted store) so we don't re-run JCS.
 #[must_use]
-pub fn link_chain_hash_from_canonical(
-    prev_hash: &ChainHash,
-    canonical_bytes: &[u8],
-) -> ChainHash {
+pub fn link_chain_hash_from_canonical(prev_hash: &ChainHash, canonical_bytes: &[u8]) -> ChainHash {
     let mut h = Hasher::new();
     h.update(prev_hash.as_bytes());
     h.update(canonical_bytes);
@@ -172,7 +166,10 @@ impl HashChainBuilder {
     /// chain head from the durable mirror after a worker restart.
     #[must_use]
     pub const fn resume(head: ChainHash, next_sequence: u64) -> Self {
-        Self { head, next_sequence }
+        Self {
+            head,
+            next_sequence,
+        }
     }
 
     /// Borrow the current chain head (the `prev_hash` slot of the next
@@ -202,10 +199,7 @@ impl HashChainBuilder {
     ///   tamper would surface immediately at append time).
     /// - [`AggregatorError::Canonicalization`] when JCS canonicalization
     ///   of `aggregate` fails.
-    pub fn append(
-        &mut self,
-        aggregate: &AggregatedCounter,
-    ) -> Result<ChainHash, AggregatorError> {
+    pub fn append(&mut self, aggregate: &AggregatedCounter) -> Result<ChainHash, AggregatorError> {
         if aggregate.sequence_number != self.next_sequence {
             return Err(AggregatorError::ChainBreak(format!(
                 "sequence ordering violation: expected {} observed {}",

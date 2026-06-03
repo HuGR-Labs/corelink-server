@@ -94,9 +94,7 @@ impl EvictionMetricKind {
             Self::CascadePrevented => "corelink.evict.cascade_prevented_total",
             Self::QuotaTriggerFired => "corelink.evict.quota_trigger_fired_total",
             Self::DurationMs => "corelink.evict.duration_ms",
-            Self::GcInvariantViolation => {
-                "corelink.evict.gc_invariant_violation_total"
-            }
+            Self::GcInvariantViolation => "corelink.evict.gc_invariant_violation_total",
         }
     }
 }
@@ -111,10 +109,8 @@ pub trait EvictionMetricsObserver: Send + Sync + core::fmt::Debug {
     ///
     /// Returns [`EvictionMetricsObserverError::Backend`] on backend
     /// failure.
-    fn record_cron_fired(
-        &self,
-        region: EvictionRegion,
-    ) -> Result<(), EvictionMetricsObserverError>;
+    fn record_cron_fired(&self, region: EvictionRegion)
+        -> Result<(), EvictionMetricsObserverError>;
 
     /// Increment `corelink.evict.candidates_scanned_total{tenant_id}`
     /// by `n` per scan pass.
@@ -147,10 +143,7 @@ pub trait EvictionMetricsObserver: Send + Sync + core::fmt::Debug {
     ///
     /// Returns [`EvictionMetricsObserverError::Backend`] on backend
     /// failure.
-    fn record_lru_evicted(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), EvictionMetricsObserverError>;
+    fn record_lru_evicted(&self, tenant_id: Uuid) -> Result<(), EvictionMetricsObserverError>;
 
     /// Increment `corelink.evict.bytes_reclaimed_total{tenant_id,
     /// tier}` by `bytes`.
@@ -174,10 +167,8 @@ pub trait EvictionMetricsObserver: Send + Sync + core::fmt::Debug {
     ///
     /// Returns [`EvictionMetricsObserverError::Backend`] on backend
     /// failure.
-    fn record_cascade_prevented(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), EvictionMetricsObserverError>;
+    fn record_cascade_prevented(&self, tenant_id: Uuid)
+        -> Result<(), EvictionMetricsObserverError>;
 
     /// Increment `corelink.evict.quota_trigger_fired_total{tenant_id}`.
     ///
@@ -210,9 +201,7 @@ pub trait EvictionMetricsObserver: Send + Sync + core::fmt::Debug {
     ///
     /// Returns [`EvictionMetricsObserverError::Backend`] on backend
     /// failure.
-    fn record_gc_invariant_violation(
-        &self,
-    ) -> Result<(), EvictionMetricsObserverError>;
+    fn record_gc_invariant_violation(&self) -> Result<(), EvictionMetricsObserverError>;
 }
 
 /// In-memory metrics observer. Captures every recorded metric for
@@ -284,9 +273,7 @@ impl InMemoryEvictionMetrics {
 
     fn bump(&self, label: String, by: u64) -> Result<(), EvictionMetricsObserverError> {
         let mut guard = self.inner.lock().map_err(|_| {
-            EvictionMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            EvictionMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         let entry = guard.counters.entry(label).or_insert(0);
         *entry = entry.saturating_add(by);
@@ -332,10 +319,7 @@ impl EvictionMetricsObserver for InMemoryEvictionMetrics {
         self.bump(label, 1)
     }
 
-    fn record_lru_evicted(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), EvictionMetricsObserverError> {
+    fn record_lru_evicted(&self, tenant_id: Uuid) -> Result<(), EvictionMetricsObserverError> {
         let label = format!(
             "{}{{tenant={tenant_id}}}",
             EvictionMetricKind::LruEvicted.as_str()
@@ -391,9 +375,7 @@ impl EvictionMetricsObserver for InMemoryEvictionMetrics {
             region.as_str()
         );
         let mut guard = self.inner.lock().map_err(|_| {
-            EvictionMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            EvictionMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         let entry = guard.counters.entry(label).or_insert(0);
         *entry = entry.saturating_add(duration_ms);
@@ -403,10 +385,10 @@ impl EvictionMetricsObserver for InMemoryEvictionMetrics {
         Ok(())
     }
 
-    fn record_gc_invariant_violation(
-        &self,
-    ) -> Result<(), EvictionMetricsObserverError> {
-        let label = EvictionMetricKind::GcInvariantViolation.as_str().to_string();
+    fn record_gc_invariant_violation(&self) -> Result<(), EvictionMetricsObserverError> {
+        let label = EvictionMetricKind::GcInvariantViolation
+            .as_str()
+            .to_string();
         self.bump(label, 1)
     }
 }
@@ -454,10 +436,7 @@ impl EvictionMetricsObserver for FailingEvictionMetrics {
         ))
     }
 
-    fn record_lru_evicted(
-        &self,
-        _tenant_id: Uuid,
-    ) -> Result<(), EvictionMetricsObserverError> {
+    fn record_lru_evicted(&self, _tenant_id: Uuid) -> Result<(), EvictionMetricsObserverError> {
         Err(EvictionMetricsObserverError::Backend(
             "induced metrics failure (test fixture)".to_string(),
         ))
@@ -502,9 +481,7 @@ impl EvictionMetricsObserver for FailingEvictionMetrics {
         ))
     }
 
-    fn record_gc_invariant_violation(
-        &self,
-    ) -> Result<(), EvictionMetricsObserverError> {
+    fn record_gc_invariant_violation(&self) -> Result<(), EvictionMetricsObserverError> {
         Err(EvictionMetricsObserverError::Backend(
             "induced metrics failure (test fixture)".to_string(),
         ))
@@ -538,8 +515,7 @@ mod tests {
         assert!(names.contains(&EvictionMetricKind::CascadePrevented.as_str()));
         assert!(names.contains(&EvictionMetricKind::QuotaTriggerFired.as_str()));
         assert!(names.contains(&EvictionMetricKind::DurationMs.as_str()));
-        assert!(names
-            .contains(&EvictionMetricKind::GcInvariantViolation.as_str()));
+        assert!(names.contains(&EvictionMetricKind::GcInvariantViolation.as_str()));
     }
 
     #[test]
@@ -586,10 +562,7 @@ mod tests {
         let m = InMemoryEvictionMetrics::new();
         m.record_bytes_reclaimed(ten(), Tier::Free, 1000).unwrap();
         m.record_bytes_reclaimed(ten(), Tier::Free, 5000).unwrap();
-        assert_eq!(
-            m.counter_total(EvictionMetricKind::BytesReclaimed),
-            6000
-        );
+        assert_eq!(m.counter_total(EvictionMetricKind::BytesReclaimed), 6000);
     }
 
     #[test]
@@ -604,15 +577,9 @@ mod tests {
     #[test]
     fn gc_invariant_violation_canary_starts_at_zero() {
         let m = InMemoryEvictionMetrics::new();
-        assert_eq!(
-            m.counter_total(EvictionMetricKind::GcInvariantViolation),
-            0
-        );
+        assert_eq!(m.counter_total(EvictionMetricKind::GcInvariantViolation), 0);
         m.record_gc_invariant_violation().unwrap();
-        assert_eq!(
-            m.counter_total(EvictionMetricKind::GcInvariantViolation),
-            1
-        );
+        assert_eq!(m.counter_total(EvictionMetricKind::GcInvariantViolation), 1);
     }
 
     #[test]
@@ -623,10 +590,7 @@ mod tests {
         m.record_cascade_prevented(a).unwrap();
         m.record_cascade_prevented(a).unwrap();
         m.record_cascade_prevented(b).unwrap();
-        assert_eq!(
-            m.counter_total(EvictionMetricKind::CascadePrevented),
-            3
-        );
+        assert_eq!(m.counter_total(EvictionMetricKind::CascadePrevented), 3);
     }
 
     #[test]

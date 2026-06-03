@@ -24,8 +24,8 @@ use corelink_tier_selection::{
     compute_stripe_signature, parse_stripe_signature_header,
     stripe::StripeCheckoutSessionCompletedEvent,
     tier::{canonical_tiers, TierKind},
-    tier_selection_schema_version, verify_stripe_signature, AlwaysDenyDpaGate,
-    DpaAcceptanceGate, InMemoryDpaGate, InMemoryStripeClient, StripeClient, StripeCustomerId,
+    tier_selection_schema_version, verify_stripe_signature, AlwaysDenyDpaGate, DpaAcceptanceGate,
+    InMemoryDpaGate, InMemoryStripeClient, StripeClient, StripeCustomerId,
     SubscriptionActivationReceipt, SubscriptionState, TenantCtx, TenantId, TierError,
     TierSelectionLedger, TierSelectionReceipt, STRIPE_REPLAY_WINDOW_MS,
     TIER_SELECTION_LOCK_WINDOW_MS,
@@ -232,13 +232,11 @@ fn stripe_signature_compute_is_deterministic_and_hex_64() {
 
 #[test]
 fn parse_stripe_signature_header_extracts_t_and_v1() {
-    let (ts, sig) =
-        parse_stripe_signature_header("t=1700000000,v1=deadbeefcafe").expect("parse");
+    let (ts, sig) = parse_stripe_signature_header("t=1700000000,v1=deadbeefcafe").expect("parse");
     assert_eq!(ts, 1_700_000_000);
     assert_eq!(sig, "deadbeefcafe");
     // Whitespace tolerated.
-    let (ts2, sig2) =
-        parse_stripe_signature_header(" t=42 , v1=abcd ").expect("parse with ws");
+    let (ts2, sig2) = parse_stripe_signature_header(" t=42 , v1=abcd ").expect("parse with ws");
     assert_eq!(ts2, 42);
     assert_eq!(sig2, "abcd");
 }

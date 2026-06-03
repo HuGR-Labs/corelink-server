@@ -324,7 +324,10 @@ fn test_chaos_terraform_state_drift_detected() {
         .drift_findings_total
         .iter()
         .any(|(_, sev, _)| sev == "high");
-    assert!(has_high_severity, "High-severity drift must trigger SEV-2 alert path");
+    assert!(
+        has_high_severity,
+        "High-severity drift must trigger SEV-2 alert path"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -334,10 +337,7 @@ fn test_chaos_terraform_state_drift_detected() {
 #[test]
 fn test_chaos_kv_namespace_per_region_scoping() {
     // Each region must have a distinct KV namespace title (FM-054 prevention)
-    let namespaces: Vec<String> = Region::ALL
-        .iter()
-        .map(|r| r.kv_namespace_title())
-        .collect();
+    let namespaces: Vec<String> = Region::ALL.iter().map(|r| r.kv_namespace_title()).collect();
 
     // All namespace titles must be unique
     let unique_count = {

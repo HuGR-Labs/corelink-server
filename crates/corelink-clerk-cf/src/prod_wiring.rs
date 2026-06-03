@@ -205,10 +205,7 @@ pub fn build_real_bindings(
 /// sink. Used by `tests/prod_wiring.rs` to exercise the boot path
 /// without the wasm32 toolchain.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn build_real_bindings_for_tests(
-    tenant: &TenantContext,
-    audit: AuditSink,
-) -> CfRealBindings {
+pub fn build_real_bindings_for_tests(tenant: &TenantContext, audit: AuditSink) -> CfRealBindings {
     let r2 = CfR2BucketReal::stub_for_native_tests(tenant.r2.clone()).with_audit(audit.r2());
     let d1 = CfD1DatabaseReal::stub_for_native_tests(tenant.d1.clone()).with_audit(audit.d1());
     let kv = CfKvNamespaceReal::stub_for_native_tests(tenant.kv.clone()).with_audit(audit.kv());
@@ -258,9 +255,8 @@ pub struct CfBillingRealBindings {
     pub billing_d1: std::sync::Arc<corelink_billing_stripe_materializer::CfD1BillingWriter>,
     /// `BillingAuditEmitter` impl routing through `ArchiveProducer` +
     /// `R2AuditSink`.
-    pub billing_audit: std::sync::Arc<
-        corelink_billing_stripe_materializer::ArchiveProducerBillingEmitter,
-    >,
+    pub billing_audit:
+        std::sync::Arc<corelink_billing_stripe_materializer::ArchiveProducerBillingEmitter>,
     /// Borrow of the underlying producer for shutdown-drain hooks.
     pub archive_producer: std::sync::Arc<corelink_audit_chain::ArchiveProducer>,
 }
@@ -368,8 +364,7 @@ pub fn build_tenant_region_resolver(
         Some(store) => {
             // Wrap the concrete `D1TenantConfigStore` as a
             // trait-object `TenantConfigStore` for the resolver.
-            let trait_store: std::sync::Arc<dyn corelink_audit_chain::TenantConfigStore> =
-                store;
+            let trait_store: std::sync::Arc<dyn corelink_audit_chain::TenantConfigStore> = store;
             std::sync::Arc::new(corelink_audit_chain::D1TenantRegionResolver::new(
                 trait_store,
                 fallback_region,

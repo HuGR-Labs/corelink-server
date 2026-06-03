@@ -35,7 +35,12 @@ use corelink_clerk_cf::prod_wiring::{build_real_bindings_for_tests, TenantContex
 const TENANT_A: &str = "0123456789abcdef";
 const TENANT_B: &str = "fedcba9876543210";
 
-fn build_wired(tenant: &str) -> (corelink_clerk_cf::prod_wiring::CfRealBindings, Arc<Mutex<Vec<AuditEvent>>>) {
+fn build_wired(
+    tenant: &str,
+) -> (
+    corelink_clerk_cf::prod_wiring::CfRealBindings,
+    Arc<Mutex<Vec<AuditEvent>>>,
+) {
     let (sink, buf) = AuditSink::recorder(tenant);
     let ctx = TenantContext::from_header_value(tenant).expect("valid tenant");
     let bindings = build_real_bindings_for_tests(&ctx, sink);
@@ -60,7 +65,10 @@ async fn boot_path_emits_audit_for_all_four_surfaces() {
     let kv_put = probe.kv_put_err.as_ref().expect("kv_put WasmOnly");
     assert!(kv_put.contains("WasmOnly"), "kv_put diagnostic: {kv_put}");
     let r2_head = probe.r2_head_err.as_ref().expect("r2_head WasmOnly");
-    assert!(r2_head.contains("WasmOnly"), "r2_head diagnostic: {r2_head}");
+    assert!(
+        r2_head.contains("WasmOnly"),
+        "r2_head diagnostic: {r2_head}"
+    );
     let do_resolve = probe.do_resolve_err.as_ref().expect("do_resolve WasmOnly");
     assert!(
         do_resolve.contains("WasmOnly"),
@@ -74,10 +82,7 @@ async fn boot_path_emits_audit_for_all_four_surfaces() {
         "d1 scoped_query ok: {:?}",
         probe.d1_scope_err
     );
-    let d1_prepare = probe
-        .d1_prepare_err
-        .as_ref()
-        .expect("d1 prepare WasmOnly");
+    let d1_prepare = probe.d1_prepare_err.as_ref().expect("d1 prepare WasmOnly");
     assert!(
         d1_prepare.contains("WasmOnly"),
         "d1 prepare diagnostic: {d1_prepare}"
@@ -230,8 +235,11 @@ async fn audit_sink_emits_canonical_ndjson_shape() {
     // wire shape on host CI.
     let (sink, buf) = AuditSink::recorder(TENANT_A);
     let r2 = sink.r2();
-    r2(corelink_cf_bindings::R2Op::Head, "0123456789abcdef/health/probe")
-        .expect("audit ok");
+    r2(
+        corelink_cf_bindings::R2Op::Head,
+        "0123456789abcdef/health/probe",
+    )
+    .expect("audit ok");
     let captured = buf.lock().expect("lock");
     assert_eq!(captured.len(), 1);
     let line = captured[0].to_ndjson();

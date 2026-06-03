@@ -35,9 +35,7 @@ async fn main() {
 
     match adapter.semaphore().try_acquire(tenant) {
         Err(MultipartError::ConcurrencyLimitReached { tenant_id, limit }) => {
-            println!(
-                "9th try_acquire tripped: tenant={tenant_id} limit={limit}"
-            );
+            println!("9th try_acquire tripped: tenant={tenant_id} limit={limit}");
         }
         other => panic!("expected ConcurrencyLimitReached; got {other:?}"),
     }

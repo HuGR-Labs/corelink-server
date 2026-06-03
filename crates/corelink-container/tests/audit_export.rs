@@ -29,24 +29,23 @@ use std::sync::Arc;
 
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
-use http_body_util::BodyExt; // .collect() for body+trailers
+use corelink_analytics::Region;
 use corelink_audit_chain::{
-    AuditEvent, AuditEventKind, AuditExporter, ChainHash, ExportedAuditEvent,
-    HashChainBuilder, InMemoryAuditExporter,
+    AuditEvent, AuditEventKind, AuditExporter, ChainHash, ExportedAuditEvent, HashChainBuilder,
+    InMemoryAuditExporter,
 };
 use corelink_ratelimit::{
-    InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics,
-    InMemoryTokenBucketRateLimiter, RateLimiter,
+    InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics, InMemoryTokenBucketRateLimiter,
+    RateLimiter,
 };
 use corelink_server::routes::audit_export::{
-    audit_export_rate_limit_config, router, AuditExportRouteState, ExportAuditRow,
-    ExportAuditSink, InMemoryExportAuditSink,
-    EVENT_TYPE_CROSS_TENANT_ATTEMPT, EVENT_TYPE_EXPORT_REQUEST,
+    audit_export_rate_limit_config, router, AuditExportRouteState, ExportAuditRow, ExportAuditSink,
+    InMemoryExportAuditSink, EVENT_TYPE_CROSS_TENANT_ATTEMPT, EVENT_TYPE_EXPORT_REQUEST,
     EVENT_TYPE_VERIFY_FAILED, EXIT_STATUS_VERIFY_FAILED_MID_STREAM, HEADER_EXPORT_ABORTED,
     R2_LIST_PAGE_SIZE, TENANT_ID_HEADER,
 };
 use corelink_server::wall_clock::default_wall_clock;
-use corelink_analytics::Region;
+use http_body_util::BodyExt; // .collect() for body+trailers
 use serde_json::{json, Value};
 use tower::ServiceExt; // .oneshot
 use uuid::Uuid;
@@ -118,9 +117,8 @@ fn build_request_with_attempted_tenant(
 ) -> Request<Body> {
     // Wave-37: auth tenant in path; attempted tenant in query param for
     // cross-tenant-attempt detection.
-    let uri = format!(
-        "/v1/audit/{auth_tenant}/export?from={from_ms}&to={to_ms}&tenant={attempted}",
-    );
+    let uri =
+        format!("/v1/audit/{auth_tenant}/export?from={from_ms}&to={to_ms}&tenant={attempted}",);
     Request::builder()
         .method("GET")
         .uri(uri)
@@ -472,7 +470,9 @@ async fn streaming_response_does_not_buffer() {
     // the total length upfront and therefore doesn't emit
     // Content-Length.
     assert!(
-        resp.headers().get(axum::http::header::CONTENT_LENGTH).is_none(),
+        resp.headers()
+            .get(axum::http::header::CONTENT_LENGTH)
+            .is_none(),
         "wave-18 streaming response must NOT carry a Content-Length; got headers={:?}",
         resp.headers()
     );
@@ -488,7 +488,11 @@ async fn streaming_response_does_not_buffer() {
     // And the body still parses as NDJSON line-by-line per wave-16.
     let body = read_body(resp).await;
     let lines: Vec<&str> = body.split('\n').filter(|l| !l.is_empty()).collect();
-    assert_eq!(lines.len(), 6, "5 row lines + 1 manifest line; got body={body}");
+    assert_eq!(
+        lines.len(),
+        6,
+        "5 row lines + 1 manifest line; got body={body}"
+    );
 }
 
 /// Wave-18 AC-2 — induced chain-break MID-STREAM surfaces the
@@ -517,9 +521,15 @@ async fn abort_trailer_emitted_on_mid_stream_chain_break() {
         .await
         .expect("oneshot");
 
-    assert_eq!(resp.status(), StatusCode::OK, "tampered export still flushes a 200");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "tampered export still flushes a 200"
+    );
     // Drain the body + the trailers via http_body_util::BodyExt::collect.
-    let collected = BodyExt::collect(resp.into_body()).await.expect("collect body");
+    let collected = BodyExt::collect(resp.into_body())
+        .await
+        .expect("collect body");
     let trailers = collected
         .trailers()
         .cloned()
@@ -531,7 +541,10 @@ async fn abort_trailer_emitted_on_mid_stream_chain_break() {
     // Payload is canonical JSON with all four keys.
     let parsed: Value = serde_json::from_str(payload).expect("trailer payload parses");
     assert!(parsed.get("break_at_seq").and_then(Value::as_u64).is_some());
-    assert!(parsed.get("break_at_chunk").and_then(Value::as_u64).is_some());
+    assert!(parsed
+        .get("break_at_chunk")
+        .and_then(Value::as_u64)
+        .is_some());
     assert_eq!(
         parsed.get("observed").and_then(Value::as_str).map(str::len),
         Some(64),
@@ -563,8 +576,14 @@ async fn abort_trailer_emitted_on_mid_stream_chain_break() {
         .payload
         .as_ref()
         .expect("wave-19 payload column populated on mid-stream break");
-    assert_eq!(audit_payload.get("break_at_seq"), parsed.get("break_at_seq"));
-    assert_eq!(audit_payload.get("break_at_chunk"), parsed.get("break_at_chunk"));
+    assert_eq!(
+        audit_payload.get("break_at_seq"),
+        parsed.get("break_at_seq")
+    );
+    assert_eq!(
+        audit_payload.get("break_at_chunk"),
+        parsed.get("break_at_chunk")
+    );
     assert_eq!(audit_payload.get("observed"), parsed.get("observed"));
     assert_eq!(audit_payload.get("expected"), parsed.get("expected"));
 }
@@ -682,8 +701,7 @@ struct CliCompatDiagnostic {
 }
 
 fn cli_compat_diagnostic_from_trailer(payload: &str) -> CliCompatDiagnostic {
-    let parsed: Value =
-        serde_json::from_str(payload).expect("trailer payload is canonical JSON");
+    let parsed: Value = serde_json::from_str(payload).expect("trailer payload is canonical JSON");
     let seq = parsed
         .get("break_at_seq")
         .and_then(Value::as_u64)
@@ -729,8 +747,7 @@ async fn streaming_response_yields_all_rows_across_multiple_pages() {
     // covers the symmetric N×N case at the HTTP wire-level.
     let tenant = Uuid::now_v7();
     let row_count: u64 = 9;
-    let (mut state, _exporter, _audit_sink) =
-        fixture_with_chain(tenant, row_count, 100);
+    let (mut state, _exporter, _audit_sink) = fixture_with_chain(tenant, row_count, 100);
     state.pager_page_size = 3;
     assert!(
         R2_LIST_PAGE_SIZE > state.pager_page_size,
@@ -748,7 +765,9 @@ async fn streaming_response_yields_all_rows_across_multiple_pages() {
     // Streaming wire shape preserved across multi-page: no
     // Content-Length, Trailer: advertised upfront.
     assert!(
-        resp.headers().get(axum::http::header::CONTENT_LENGTH).is_none(),
+        resp.headers()
+            .get(axum::http::header::CONTENT_LENGTH)
+            .is_none(),
         "multi-page response must remain Content-Length-less (chunked / streamed)"
     );
     let trailer_decl = resp
@@ -778,9 +797,11 @@ async fn streaming_response_yields_all_rows_across_multiple_pages() {
     // First line parses as `{event, proof}`; last line parses as `{manifest}`.
     let first: Value = serde_json::from_str(lines[0]).expect("first row json");
     assert!(first.get("event").is_some(), "first line is a row envelope");
-    assert!(first.get("proof").is_some(), "first line carries inclusion proof");
-    let last: Value =
-        serde_json::from_str(lines[row_count as usize]).expect("manifest json");
+    assert!(
+        first.get("proof").is_some(),
+        "first line carries inclusion proof"
+    );
+    let last: Value = serde_json::from_str(lines[row_count as usize]).expect("manifest json");
     assert!(last.get("manifest").is_some(), "last line is the manifest");
 }
 
@@ -873,10 +894,7 @@ async fn wave19_audit_row_payload_and_trailer_payload_byte_identical() {
         trailer_val.len(),
         "audit payload + trailer payload byte lengths differ: audit={audit_bytes}, trailer={trailer_val}"
     );
-    let eq: bool = audit_bytes
-        .as_bytes()
-        .ct_eq(trailer_val.as_bytes())
-        .into();
+    let eq: bool = audit_bytes.as_bytes().ct_eq(trailer_val.as_bytes()).into();
     assert!(
         eq,
         "wave-19: audit-row payload bytes (re-encoded via the canonical formatter) and HTTP trailer payload bytes must be byte-identical; \
@@ -887,8 +905,20 @@ async fn wave19_audit_row_payload_and_trailer_payload_byte_identical() {
     // payload disagree on the SHAPE (not just the byte ordering).
     let trailer_parsed: Value =
         serde_json::from_str(&trailer_val).expect("trailer payload parses as JSON");
-    assert_eq!(audit_payload.get("break_at_seq"), trailer_parsed.get("break_at_seq"));
-    assert_eq!(audit_payload.get("break_at_chunk"), trailer_parsed.get("break_at_chunk"));
-    assert_eq!(audit_payload.get("observed"), trailer_parsed.get("observed"));
-    assert_eq!(audit_payload.get("expected"), trailer_parsed.get("expected"));
+    assert_eq!(
+        audit_payload.get("break_at_seq"),
+        trailer_parsed.get("break_at_seq")
+    );
+    assert_eq!(
+        audit_payload.get("break_at_chunk"),
+        trailer_parsed.get("break_at_chunk")
+    );
+    assert_eq!(
+        audit_payload.get("observed"),
+        trailer_parsed.get("observed")
+    );
+    assert_eq!(
+        audit_payload.get("expected"),
+        trailer_parsed.get("expected")
+    );
 }

@@ -45,9 +45,7 @@ pub enum RateLimitError {
     /// (programmer wiring error; INV-AVAIL-ISOLATION canary —
     /// orchestrator MUST also bump
     /// `corelink.ratelimit.cross_tenant_violation_total`).
-    #[error(
-        "ratelimit tenant mismatch: caller={caller_tenant_id}, bucket={bucket_tenant_id}"
-    )]
+    #[error("ratelimit tenant mismatch: caller={caller_tenant_id}, bucket={bucket_tenant_id}")]
     TenantMismatch {
         /// Tenant id the caller (TenantCtx-extracted) supplied.
         caller_tenant_id: Uuid,

@@ -50,9 +50,7 @@ use crate::BYOKError;
 use async_trait::async_trait;
 
 #[cfg(target_arch = "wasm32")]
-use crate::{
-    Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
-};
+use crate::{Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek};
 
 /// Default (non-FIPS-regional) Cloud KMS REST endpoint hostname.
 ///
@@ -119,9 +117,7 @@ pub fn canonicalize_aad_to_string_map(
     let mut map = BTreeMap::new();
     for (k, v) in obj {
         let s = v.as_str().ok_or_else(|| {
-            BYOKError::EnvelopeError(format!(
-                "encryption_context.{k} value must be a string"
-            ))
+            BYOKError::EnvelopeError(format!("encryption_context.{k} value must be a string"))
         })?;
         map.insert(k.clone(), s.to_string());
     }
@@ -175,12 +171,12 @@ mod native {
         aad_fingerprint, canonicalize_aad_to_string_map, resolve_endpoint_hostname,
         DEFAULT_GCP_KMS_HOST,
     };
-    use async_trait::async_trait;
-    use base64::Engine as _;
     use crate::{
         BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind,
         WrappedDek,
     };
+    use async_trait::async_trait;
+    use base64::Engine as _;
     use serde::{Deserialize, Serialize};
     use serde_json::Value;
     use subtle::ConstantTimeEq;
@@ -364,7 +360,10 @@ mod native {
     #[derive(Debug, Serialize)]
     struct EncryptRequest {
         plaintext: String,
-        #[serde(rename = "additionalAuthenticatedData", skip_serializing_if = "String::is_empty")]
+        #[serde(
+            rename = "additionalAuthenticatedData",
+            skip_serializing_if = "String::is_empty"
+        )]
         additional_authenticated_data: String,
     }
 
@@ -379,7 +378,10 @@ mod native {
     #[derive(Debug, Serialize)]
     struct DecryptRequest {
         ciphertext: String,
-        #[serde(rename = "additionalAuthenticatedData", skip_serializing_if = "String::is_empty")]
+        #[serde(
+            rename = "additionalAuthenticatedData",
+            skip_serializing_if = "String::is_empty"
+        )]
         additional_authenticated_data: String,
     }
 
@@ -466,11 +468,7 @@ mod native {
 
     /// Map an HTTP error response into a [`BYOKError`] variant, emitting a
     /// fail-CLOSED audit event BEFORE returning.
-    async fn map_http_error(
-        resp: reqwest::Response,
-        key_id: &KmsKeyId,
-        op: &str,
-    ) -> BYOKError {
+    async fn map_http_error(resp: reqwest::Response, key_id: &KmsKeyId, op: &str) -> BYOKError {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         let api = parse_api_error(&body);
@@ -638,11 +636,7 @@ mod native {
                 BYOKError::EncryptionContextMissing
             })?;
             Self::validate_key_resource(&wrapped.key_id.key_arn_or_id).inspect_err(|_| {
-                emit_audit(
-                    "unwrap_dek",
-                    &wrapped.key_id.key_arn_or_id,
-                    "malformed_arn",
-                );
+                emit_audit("unwrap_dek", &wrapped.key_id.key_arn_or_id, "malformed_arn");
             })?;
             let (_ec_map, canonical_aad) = canonicalize_aad_to_string_map(ctx)?;
 
@@ -658,7 +652,8 @@ mod native {
 
             // Decrypt MUST target the parent CryptoKey (Cloud KMS auto-selects
             // the version from the ciphertext header).
-            let parent = super::super::key_resource::strip_version_suffix(&wrapped.key_id.key_arn_or_id);
+            let parent =
+                super::super::key_resource::strip_version_suffix(&wrapped.key_id.key_arn_or_id);
             let token = self.bearer().await?;
             let url = format!("{}/v1/{}:decrypt", self.endpoint, parent);
             let body = DecryptRequest {
@@ -674,7 +669,11 @@ mod native {
                 .send()
                 .await
                 .map_err(|e| {
-                    emit_audit("unwrap_dek", &wrapped.key_id.key_arn_or_id, "provider_error");
+                    emit_audit(
+                        "unwrap_dek",
+                        &wrapped.key_id.key_arn_or_id,
+                        "provider_error",
+                    );
                     BYOKError::Provider(format!("gcp kms decrypt POST: {e}"))
                 })?;
 
@@ -683,7 +682,11 @@ mod native {
             }
 
             let dr: DecryptResponse = resp.json().await.map_err(|e| {
-                emit_audit("unwrap_dek", &wrapped.key_id.key_arn_or_id, "provider_error");
+                emit_audit(
+                    "unwrap_dek",
+                    &wrapped.key_id.key_arn_or_id,
+                    "provider_error",
+                );
                 BYOKError::Provider(format!("gcp kms decrypt JSON parse: {e}"))
             })?;
             let plaintext = b64_decode(&dr.plaintext)?;
@@ -694,7 +697,9 @@ mod native {
                     &wrapped.key_id.key_arn_or_id,
                     "dek_length_invalid",
                 );
-                return Err(BYOKError::DekLengthInvalid { got: plaintext.len() });
+                return Err(BYOKError::DekLengthInvalid {
+                    got: plaintext.len(),
+                });
             }
             let mut bytes = [0u8; 32];
             bytes.copy_from_slice(&plaintext);
@@ -760,12 +765,7 @@ mod native {
 
     // ── Mock-mode wrap / unwrap (in-process, AAD-binding enforced) ──────────
 
-    fn mock_wrap(
-        dek: &Dek,
-        key_id: &KmsKeyId,
-        ctx: &Value,
-        canonical_aad: &[u8],
-    ) -> WrappedDek {
+    fn mock_wrap(dek: &Dek, key_id: &KmsKeyId, ctx: &Value, canonical_aad: &[u8]) -> WrappedDek {
         let fp = aad_fingerprint(canonical_aad);
         let mut ct = Vec::with_capacity(8 + 32);
         ct.extend_from_slice(&fp);
@@ -819,13 +819,19 @@ mod native {
         fn state_mapping_smoke() {
             assert_eq!(map_state_to_access("ENABLED"), KmsAccessStatus::Ok);
             assert_eq!(map_state_to_access("DISABLED"), KmsAccessStatus::Revoked);
-            assert_eq!(map_state_to_access("DESTROY_SCHEDULED"), KmsAccessStatus::Revoked);
+            assert_eq!(
+                map_state_to_access("DESTROY_SCHEDULED"),
+                KmsAccessStatus::Revoked
+            );
             assert_eq!(map_state_to_access("DESTROYED"), KmsAccessStatus::NotFound);
             assert!(matches!(
                 map_state_to_access("PENDING_GENERATION"),
                 KmsAccessStatus::ApiError(_)
             ));
-            assert!(matches!(map_state_to_access("unknown"), KmsAccessStatus::ApiError(_)));
+            assert!(matches!(
+                map_state_to_access("unknown"),
+                KmsAccessStatus::ApiError(_)
+            ));
         }
 
         #[test]
@@ -841,7 +847,10 @@ mod native {
 
         #[test]
         fn hostname_of_handles_scheme_and_path() {
-            assert_eq!(hostname_of("https://cloudkms.googleapis.com"), "cloudkms.googleapis.com");
+            assert_eq!(
+                hostname_of("https://cloudkms.googleapis.com"),
+                "cloudkms.googleapis.com"
+            );
             assert_eq!(
                 hostname_of("https://cloudkms.us-east1.rep.googleapis.com/"),
                 "cloudkms.us-east1.rep.googleapis.com"
@@ -925,10 +934,7 @@ impl KmsProvider for GcpKmsWasmStub {
         Err(BYOKError::Provider(WASM_UNSUPPORTED_MSG.to_string()))
     }
 
-    async fn check_access(
-        &self,
-        _key_id: &KmsKeyId,
-    ) -> Result<KmsAccessStatus, BYOKError> {
+    async fn check_access(&self, _key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
         Err(BYOKError::Provider(WASM_UNSUPPORTED_MSG.to_string()))
     }
 }

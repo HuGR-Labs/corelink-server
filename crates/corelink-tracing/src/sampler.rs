@@ -32,9 +32,7 @@
 
 use std::sync::Arc;
 
-use crate::audit::{
-    TracingAuditEventType, TracingAuditRecord, TracingAuditSink,
-};
+use crate::audit::{TracingAuditEventType, TracingAuditRecord, TracingAuditSink};
 use crate::context::TraceId;
 use crate::error::TracingError;
 
@@ -134,17 +132,13 @@ where
 
     /// Construct a sampler at the canonical 1% production rate
     /// (WI §1 invariant 2; sprint contract §5.3 R-S09-8).
-    pub fn at_canonical_production_rate(
-        audit: Arc<A>,
-    ) -> Result<Self, TracingError> {
+    pub fn at_canonical_production_rate(audit: Arc<A>) -> Result<Self, TracingError> {
         Self::new(0.01, audit)
     }
 
     /// Construct a sampler at the canonical 100% staging rate (WI
     /// §1; staging accepts full ingest because volume is low).
-    pub fn at_canonical_staging_rate(
-        audit: Arc<A>,
-    ) -> Result<Self, TracingError> {
+    pub fn at_canonical_staging_rate(audit: Arc<A>) -> Result<Self, TracingError> {
         Self::new(1.0, audit)
     }
 
@@ -215,8 +209,7 @@ where
         // loss on huge trace_ids by dividing in u128 space.
         let value_u128 = u128::from(value);
         let max_u128 = u128::from(u64::MAX);
-        let threshold =
-            ((self.rate * max_u128 as f64) as u128).min(max_u128);
+        let threshold = ((self.rate * max_u128 as f64) as u128).min(max_u128);
         if value_u128 < threshold {
             SamplingDecision::HeadSampled
         } else {
@@ -254,9 +247,7 @@ fn hex_digit(nibble: u8) -> char {
 )]
 mod tests {
     use super::*;
-    use crate::audit::{
-        FailingTracingAuditSink, InMemoryTracingAuditSink,
-    };
+    use crate::audit::{FailingTracingAuditSink, InMemoryTracingAuditSink};
 
     fn fresh_sampler(
         rate: f64,
@@ -271,14 +262,8 @@ mod tests {
 
     #[test]
     fn decision_canonical_strings_pinned() {
-        assert_eq!(
-            SamplingDecision::HeadSampled.as_str(),
-            "head_sampled"
-        );
-        assert_eq!(
-            SamplingDecision::TailSampled.as_str(),
-            "tail_sampled"
-        );
+        assert_eq!(SamplingDecision::HeadSampled.as_str(), "head_sampled");
+        assert_eq!(SamplingDecision::TailSampled.as_str(), "tail_sampled");
         assert_eq!(SamplingDecision::Drop.as_str(), "dropped");
     }
 
@@ -303,10 +288,7 @@ mod tests {
         let (s, _) = fresh_sampler(1.0);
         for byte in 0_u8..=255 {
             let trace_id = [byte; 16];
-            assert_eq!(
-                s.should_sample(&trace_id),
-                SamplingDecision::HeadSampled
-            );
+            assert_eq!(s.should_sample(&trace_id), SamplingDecision::HeadSampled);
         }
     }
 
@@ -314,8 +296,8 @@ mod tests {
     fn deterministic_per_trace_id() {
         let (s, _) = fresh_sampler(0.01);
         let trace_id = [
-            0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6,
-            0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e, 0x47, 0x36,
+            0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6, 0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e,
+            0x47, 0x36,
         ];
         let d1 = s.should_sample(&trace_id);
         let d2 = s.should_sample(&trace_id);
@@ -327,40 +309,25 @@ mod tests {
     #[test]
     fn rate_out_of_bounds_rejected() {
         let audit = Arc::new(InMemoryTracingAuditSink::new());
-        let err =
-            RateBasedSampler::new(1.5, Arc::clone(&audit)).unwrap_err();
-        assert!(matches!(
-            err,
-            TracingError::SamplerRateOutOfBounds { .. }
-        ));
-        let err2 =
-            RateBasedSampler::new(-0.1, Arc::clone(&audit)).unwrap_err();
-        assert!(matches!(
-            err2,
-            TracingError::SamplerRateOutOfBounds { .. }
-        ));
-        let err3 =
-            RateBasedSampler::new(f64::NAN, audit).unwrap_err();
-        assert!(matches!(
-            err3,
-            TracingError::SamplerRateOutOfBounds { .. }
-        ));
+        let err = RateBasedSampler::new(1.5, Arc::clone(&audit)).unwrap_err();
+        assert!(matches!(err, TracingError::SamplerRateOutOfBounds { .. }));
+        let err2 = RateBasedSampler::new(-0.1, Arc::clone(&audit)).unwrap_err();
+        assert!(matches!(err2, TracingError::SamplerRateOutOfBounds { .. }));
+        let err3 = RateBasedSampler::new(f64::NAN, audit).unwrap_err();
+        assert!(matches!(err3, TracingError::SamplerRateOutOfBounds { .. }));
     }
 
     #[test]
     fn canonical_production_rate_is_one_percent() {
         let audit = Arc::new(InMemoryTracingAuditSink::new());
-        let s =
-            RateBasedSampler::at_canonical_production_rate(audit)
-                .unwrap();
+        let s = RateBasedSampler::at_canonical_production_rate(audit).unwrap();
         assert_eq!(s.rate(), 0.01);
     }
 
     #[test]
     fn canonical_staging_rate_is_full() {
         let audit = Arc::new(InMemoryTracingAuditSink::new());
-        let s =
-            RateBasedSampler::at_canonical_staging_rate(audit).unwrap();
+        let s = RateBasedSampler::at_canonical_staging_rate(audit).unwrap();
         assert_eq!(s.rate(), 1.0);
     }
 
@@ -368,12 +335,9 @@ mod tests {
     fn evaluate_with_audit_emits_record() {
         let (s, audit) = fresh_sampler(1.0);
         let trace_id = [0xAA; 16];
-        let d = s
-            .evaluate_with_audit(&trace_id, "req-1", 1)
-            .unwrap();
+        let d = s.evaluate_with_audit(&trace_id, "req-1", 1).unwrap();
         assert_eq!(d, SamplingDecision::HeadSampled);
-        let recs = audit
-            .snapshot_of(TracingAuditEventType::SamplerDecision);
+        let recs = audit.snapshot_of(TracingAuditEventType::SamplerDecision);
         assert_eq!(recs.len(), 1);
         assert_eq!(
             recs.first().unwrap().trace_id_hex,
@@ -385,9 +349,7 @@ mod tests {
     fn evaluate_with_audit_fails_closed_when_audit_fails() {
         let audit = Arc::new(FailingTracingAuditSink::new());
         let s = RateBasedSampler::new(1.0, audit).unwrap();
-        let err = s
-            .evaluate_with_audit(&[0xAA; 16], "req-1", 1)
-            .unwrap_err();
+        let err = s.evaluate_with_audit(&[0xAA; 16], "req-1", 1).unwrap_err();
         assert!(matches!(err, TracingError::Audit(_)));
     }
 
@@ -405,15 +367,10 @@ mod tests {
             // mixer so we sample the full u64 range.
             for j in 8..16 {
                 if let Some(slot) = trace_id.get_mut(j) {
-                    *slot = ((i.wrapping_mul(2654435761)
-                        >> ((j - 8) * 4))
-                        & 0xFF) as u8;
+                    *slot = ((i.wrapping_mul(2654435761) >> ((j - 8) * 4)) & 0xFF) as u8;
                 }
             }
-            if matches!(
-                s.should_sample(&trace_id),
-                SamplingDecision::HeadSampled
-            ) {
+            if matches!(s.should_sample(&trace_id), SamplingDecision::HeadSampled) {
                 sampled = sampled.saturating_add(1);
             }
         }

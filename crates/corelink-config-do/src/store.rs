@@ -195,10 +195,7 @@ struct InMemoryState {
 impl InMemoryConfigSingletonStore {
     /// Create a new store initialized at version 0 with a genesis payload.
     #[must_use]
-    pub fn new(
-        audit: Arc<dyn ConfigAuditSink>,
-        metrics: Arc<dyn MetricsObserver>,
-    ) -> Self {
+    pub fn new(audit: Arc<dyn ConfigAuditSink>, metrics: Arc<dyn MetricsObserver>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(InMemoryState {
                 current_version: 0,
@@ -281,8 +278,7 @@ impl ConfigSingletonStore for InMemoryConfigSingletonStore {
         state.current_version = new_version;
         state.current_payload = new_payload;
 
-        self.metrics
-            .set_history_size(state.history.len() as u64);
+        self.metrics.set_history_size(state.history.len() as u64);
         self.metrics.record_update(UpdateOutcome::Ok);
 
         info!(version = new_version, "config updated");
@@ -313,7 +309,8 @@ impl ConfigSingletonStore for InMemoryConfigSingletonStore {
         let target_entry = match target_entry {
             Some(e) => e,
             None => {
-                self.metrics.record_rollback(RollbackOutcome::VersionUnknown);
+                self.metrics
+                    .record_rollback(RollbackOutcome::VersionUnknown);
                 return Err(ConfigError::VersionUnknown(to_version));
             }
         };
@@ -321,7 +318,8 @@ impl ConfigSingletonStore for InMemoryConfigSingletonStore {
         // 2. Check 90d retention window.
         let age_ms = now_ms.saturating_sub(target_entry.created_at_ms);
         if age_ms > RETENTION_90D_MS {
-            self.metrics.record_rollback(RollbackOutcome::VersionExpired);
+            self.metrics
+                .record_rollback(RollbackOutcome::VersionExpired);
             return Err(ConfigError::VersionExpired(to_version));
         }
 
@@ -358,20 +356,17 @@ impl ConfigSingletonStore for InMemoryConfigSingletonStore {
         self.audit.emit(&entry)?;
 
         // 7. Mutate.
-        state.payloads.insert(new_version, historical_payload.clone());
+        state
+            .payloads
+            .insert(new_version, historical_payload.clone());
         state.history.insert(new_version, entry);
         state.current_version = new_version;
         state.current_payload = historical_payload;
 
-        self.metrics
-            .set_history_size(state.history.len() as u64);
+        self.metrics.set_history_size(state.history.len() as u64);
         self.metrics.record_rollback(RollbackOutcome::Ok);
 
-        info!(
-            new_version,
-            rollback_to = to_version,
-            "config rolled back"
-        );
+        info!(new_version, rollback_to = to_version, "config rolled back");
         Ok(new_version)
     }
 

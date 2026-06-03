@@ -40,7 +40,8 @@
 )]
 
 use corelink_cas::multipart_schema::{
-    multipart_schema_version, MultipartRegion, MIGRATION_0003_MULTIPART_CHUNKS_MANIFEST, REGION_LIST,
+    multipart_schema_version, MultipartRegion, MIGRATION_0003_MULTIPART_CHUNKS_MANIFEST,
+    REGION_LIST,
 };
 
 /// Strip `-- …` line comments before scanning so prose comments cannot
@@ -71,7 +72,10 @@ fn three_canonical_tables_created_idempotently() {
         "CREATE TABLE IF NOT EXISTS manifest_chunks",
         "CREATE TABLE IF NOT EXISTS multipart_sessions",
     ] {
-        assert!(sql.contains(needle), "missing idempotent CREATE TABLE: {needle}");
+        assert!(
+            sql.contains(needle),
+            "missing idempotent CREATE TABLE: {needle}"
+        );
     }
 }
 
@@ -253,7 +257,9 @@ fn refcount_zero_index_is_partial() {
 fn tenant_id_is_not_null_everywhere() {
     let sql = migration_sql_no_comments();
     // tenant_id NULLABLE = INV-TENANT-ISOLATION CRITICAL violated.
-    let occurrences = sql.matches("tenant_id           TEXT        NOT NULL").count();
+    let occurrences = sql
+        .matches("tenant_id           TEXT        NOT NULL")
+        .count();
     assert!(
         occurrences >= 3,
         "tenant_id must be NOT NULL on every table that has it (chunks, manifest_chunks, multipart_sessions); found {occurrences}"

@@ -5,9 +5,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::audit::{
-    StatuspageAuditEvent, StatuspageAuditOutcome, StatuspageAuditSink,
-};
+use crate::audit::{StatuspageAuditEvent, StatuspageAuditOutcome, StatuspageAuditSink};
 use crate::backend::{PublishOutcome, StatuspageBackend, StatuspageClientError};
 use crate::rate_limit::{RateLimitDecision, StatuspageRateLimiter};
 use crate::redact::redact_api_key;
@@ -93,7 +91,10 @@ impl StatuspageBackend for InMemoryStatuspageBackend {
             .rate_limiter
             .decide(&self.page_id, &self.metric_id, now_epoch_ms)
         {
-            RateLimitDecision::DenyBackoff { retry_after, jitter } => {
+            RateLimitDecision::DenyBackoff {
+                retry_after,
+                jitter,
+            } => {
                 let retry_after_ms = u64::try_from(retry_after.as_millis()).unwrap_or(u64::MAX);
                 let jitter_ms = u64::try_from(jitter.as_millis()).unwrap_or(u64::MAX);
                 let evt = StatuspageAuditEvent {
@@ -181,7 +182,10 @@ mod tests {
         assert_eq!(b.len(), 1);
         assert_eq!(audit.len(), 1);
         let evt = audit.snapshot();
-        assert_eq!(evt.first().unwrap().outcome, StatuspageAuditOutcome::Published);
+        assert_eq!(
+            evt.first().unwrap().outcome,
+            StatuspageAuditOutcome::Published
+        );
         assert_eq!(evt.first().unwrap().api_key_redacted, "OAuth ***7890");
     }
 
@@ -209,9 +213,7 @@ mod tests {
         let r = sample_report();
         let _ = b.publish_dsr_metric(&r, 0).unwrap();
         // 5 min + 1 ms — should allow.
-        let out = b
-            .publish_dsr_metric(&r, 5 * 60 * 1_000 + 1)
-            .unwrap();
+        let out = b.publish_dsr_metric(&r, 5 * 60 * 1_000 + 1).unwrap();
         assert_eq!(out.status, 201);
         assert_eq!(b.len(), 2);
     }

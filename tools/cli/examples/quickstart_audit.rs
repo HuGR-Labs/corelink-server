@@ -41,8 +41,14 @@ async fn main() -> Result<()> {
         anyhow::bail!("server returned {status}: {body}");
     }
     let body: serde_json::Value = resp.json().await.context("decode body")?;
-    let events = body.get("events").and_then(|v| v.as_array()).map_or(0, Vec::len);
-    let head = body.get("chain_head_hash").and_then(|v| v.as_str()).unwrap_or("<none>");
+    let events = body
+        .get("events")
+        .and_then(|v| v.as_array())
+        .map_or(0, Vec::len);
+    let head = body
+        .get("chain_head_hash")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<none>");
     println!("status={status} events={events} chain_head={head}");
     Ok(())
 }

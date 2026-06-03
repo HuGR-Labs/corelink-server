@@ -29,6 +29,9 @@ use std::sync::{Arc, OnceLock};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
+use corelink_billing::stripe::real::webhook_dispatch::{
+    RecordingSliRecorder, StateMaterializer, SystemClock, WebhookDispatcher,
+};
 use corelink_billing_stripe_materializer::{
     BillingD1Writer, D1IdempotencyStore, D1SubscriptionStateHandler, InMemoryBillingAuditEmitter,
     InMemoryBillingD1, InMemoryTierSelector, RealStripeAuditEmitter,
@@ -36,9 +39,6 @@ use corelink_billing_stripe_materializer::{
 use corelink_server::routes;
 use corelink_server::routes::audit_analytics::ShadowSinkFactory;
 use corelink_server::webhook::{router as webhook_router, WebhookState};
-use corelink_billing::stripe::real::webhook_dispatch::{
-    RecordingSliRecorder, StateMaterializer, SystemClock, WebhookDispatcher,
-};
 use corelink_tier_selection::tier::TierKind;
 use tracing::{info, warn};
 
@@ -68,7 +68,10 @@ async fn health_handler() -> impl IntoResponse {
     let body = format!(r#"{{"status":"ok","storage":"{}"}}"#, backing);
     (
         StatusCode::OK,
-        [(header::CONTENT_TYPE, HeaderValue::from_static("application/json"))],
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        )],
         body,
     )
 }
@@ -290,7 +293,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Some(internal_pat_state) = corelink_server::routes::internal_pat::build_state_from_env()
     {
         info!("routes: /_internal/pat/mint route mounted (internal auth key + PAT signing key present)");
-        app = app.merge(corelink_server::routes::internal_pat::router(internal_pat_state));
+        app = app.merge(corelink_server::routes::internal_pat::router(
+            internal_pat_state,
+        ));
     } else {
         warn!(
             "CORELINK_INTERNAL_AUTH_KEY or PAT_SIGNING_KEY unset; \
@@ -366,8 +371,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Arc::new(SystemClock),
         ));
         let state = Arc::new(WebhookState::new(dispatcher));
-        info!(route = corelink_server::webhook::STRIPE_WEBHOOK_ROUTE,
-            "Stripe webhook route mounted on the data-plane listener");
+        info!(
+            route = corelink_server::webhook::STRIPE_WEBHOOK_ROUTE,
+            "Stripe webhook route mounted on the data-plane listener"
+        );
         app = app.merge(webhook_router(state));
     } else {
         warn!("STRIPE_WEBHOOK_SECRET unset; Stripe webhook route NOT mounted (dev/CI mode)");

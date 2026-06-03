@@ -103,8 +103,7 @@ impl std::fmt::Debug for NpmAdapterConfig {
 ///
 /// Returns the `url::ParseError` rendered as a `String`.
 pub fn parse_upstream(url_str: &str) -> Result<Url, String> {
-    Url::parse(url_str)
-        .map_err(|e| format!("invalid HUGR_NPM_ADAPTER_UPSTREAM `{url_str}`: {e}"))
+    Url::parse(url_str).map_err(|e| format!("invalid HUGR_NPM_ADAPTER_UPSTREAM `{url_str}`: {e}"))
 }
 
 #[cfg(test)]

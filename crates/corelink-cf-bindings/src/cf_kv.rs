@@ -84,10 +84,7 @@ impl KvBackend for CfKvNamespaceAdapter {
         })
     }
 
-    fn delete<'a>(
-        &'a self,
-        key: &'a str,
-    ) -> impl Future<Output = Result<(), KvError>> + Send + 'a {
+    fn delete<'a>(&'a self, key: &'a str) -> impl Future<Output = Result<(), KvError>> + Send + 'a {
         worker::send::SendFuture::new(async move {
             self.store
                 .delete(key)

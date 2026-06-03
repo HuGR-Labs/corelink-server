@@ -34,8 +34,7 @@ async fn declared_digest_mismatch_rejects_and_audits() {
     let bearer = rig.mint_token(&OciScope::new("foo", vec![String::from("push")]));
     let payload = b"actual-bytes";
     let _real = OciDigest::compute(OciDigestAlgo::Sha256, payload).expect("compute");
-    let fake_declared =
-        "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+    let fake_declared = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
     let req = Request::builder()
         .method(Method::POST)

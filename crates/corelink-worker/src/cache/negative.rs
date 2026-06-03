@@ -636,10 +636,7 @@ mod unit_tests {
 
     #[tokio::test]
     async fn kv_outage_softfails_lookup_to_none() {
-        let cache = NegativeCache::new(
-            Region::Wnam,
-            AlwaysFailingKv::new("simulated KV outage"),
-        );
+        let cache = NegativeCache::new(Region::Wnam, AlwaysFailingKv::new("simulated KV outage"));
         let ctx_a = ctx(Region::Wnam, nil_uuid_a());
         let digest = Digest::compute(b"x");
         // Soft-miss policy: KV outage MUST NOT block the read.
@@ -649,10 +646,7 @@ mod unit_tests {
 
     #[tokio::test]
     async fn kv_outage_softfails_put_miss_ok() {
-        let cache = NegativeCache::new(
-            Region::Wnam,
-            AlwaysFailingKv::new("simulated KV outage"),
-        );
+        let cache = NegativeCache::new(Region::Wnam, AlwaysFailingKv::new("simulated KV outage"));
         let ctx_a = ctx(Region::Wnam, nil_uuid_a());
         let digest = Digest::compute(b"x");
         // put_miss soft-fails: never blocks the populate path.
@@ -664,10 +658,7 @@ mod unit_tests {
 
     #[tokio::test]
     async fn kv_outage_softfails_invalidate_ok() {
-        let cache = NegativeCache::new(
-            Region::Wnam,
-            AlwaysFailingKv::new("simulated KV outage"),
-        );
+        let cache = NegativeCache::new(Region::Wnam, AlwaysFailingKv::new("simulated KV outage"));
         let ctx_a = ctx(Region::Wnam, nil_uuid_a());
         let digest = Digest::compute(b"x");
         cache.invalidate_on_write(&ctx_a, &digest).await.unwrap();
@@ -727,4 +718,3 @@ mod unit_tests {
         );
     }
 }
-

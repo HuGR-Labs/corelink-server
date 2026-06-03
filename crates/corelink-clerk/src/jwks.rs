@@ -217,7 +217,8 @@ mod tests {
             {"kid": "k1", "kty": "RSA", "alg": "HS256", "use": "sig", "n": "abc", "e": "AQAB"},
             {"kid": "k2", "kty": "EC", "alg": "ES256", "use": "sig", "n": "abc", "e": "AQAB"},
             jwk("k3"),
-        ]}).to_string();
+        ]})
+        .to_string();
         let jwks = Jwks::parse(body.as_bytes()).unwrap();
         assert_eq!(jwks.keys().len(), 1);
         assert!(jwks.find("k3").is_some());

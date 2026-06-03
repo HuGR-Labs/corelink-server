@@ -111,11 +111,7 @@ pub(super) fn seed_blob(
     );
 }
 
-pub(super) fn seed_ac_row(
-    source: &InMemoryRefcountSource,
-    tenant: Uuid,
-    refs: Vec<BlobDigest>,
-) {
+pub(super) fn seed_ac_row(source: &InMemoryRefcountSource, tenant: Uuid, refs: Vec<BlobDigest>) {
     source.push_ac_row(
         tenant,
         AcMetaReconcileRow {
@@ -145,10 +141,7 @@ fn config_default_canonical() {
         cfg.sev1_per_tenant_drift_percent(),
         SEV1_PER_TENANT_DRIFT_PERCENT
     );
-    assert_eq!(
-        cfg.sev2_global_drift_percent(),
-        SEV2_GLOBAL_DRIFT_PERCENT
-    );
+    assert_eq!(cfg.sev2_global_drift_percent(), SEV2_GLOBAL_DRIFT_PERCENT);
     assert_eq!(cfg.phase_budget_ms(), CANONICAL_RECONCILE_PHASE_BUDGET_MS);
 }
 
@@ -235,17 +228,12 @@ fn happy_path_no_drift() {
     assert_eq!(result.drifts_detected, 0);
     assert_eq!(result.sev_level, SevLevel::None);
     assert_eq!(audit.snapshot_of(GcEventType::RefcountReconciled).len(), 1);
-    assert!(audit
-        .snapshot_of(GcEventType::RefcountAutoFixed)
-        .is_empty());
+    assert!(audit.snapshot_of(GcEventType::RefcountAutoFixed).is_empty());
     assert!(audit
         .snapshot_of(GcEventType::RefcountManualReviewRequired)
         .is_empty());
     // blob_meta stored refcount untouched.
-    assert_eq!(
-        blob_meta.snapshot(tenant, &d).unwrap().stored_refcount,
-        1
-    );
+    assert_eq!(blob_meta.snapshot(tenant, &d).unwrap().stored_refcount, 1);
 }
 
 #[test]
@@ -305,7 +293,10 @@ fn manual_review_drift_percent_gate_fails() {
     assert_eq!(result.sev_level, SevLevel::Sev1);
     // Stored refcount UNTOUCHED on manual review.
     assert_eq!(
-        blob_meta.snapshot(tenant, &drift_d).unwrap().stored_refcount,
+        blob_meta
+            .snapshot(tenant, &drift_d)
+            .unwrap()
+            .stored_refcount,
         0
     );
     assert_eq!(
@@ -368,10 +359,9 @@ fn json_each_semantics_substring_collision_ignored() {
     // Both digests are canonical 64-char hex; the prefix is
     // shared but the suffix differs — substring `LIKE` would
     // match both.
-    let target = BlobDigest::parse(
-        "abcdef0123456789000000000000000000000000000000000000000000000000",
-    )
-    .unwrap();
+    let target =
+        BlobDigest::parse("abcdef0123456789000000000000000000000000000000000000000000000000")
+            .unwrap();
     // Same prefix + different suffix; "abcdef0123" appears as a
     // prefix in both — `LIKE '%target%'` would NOT collision but
     // a different attack vector is "target appears as substring

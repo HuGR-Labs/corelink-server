@@ -34,12 +34,11 @@
 use std::sync::Arc;
 
 use corelink_cas::edge::{
-    canonical_audit_event_strings, canonical_metric_names,
-    edge_schema_version, longest_match, Cidr, CidrBlocklist, EdgeClock,
-    EdgeConfig, EdgeDecision, EdgeEventType, EdgeMetricKind, EdgePolicy,
-    EdgeResultLabel, FailingEdgeAuditSink, InMemoryCidrBlocklist,
-    InMemoryEdgeAuditSink, InMemoryEdgeMetrics, InMemoryEdgePolicy,
-    IpAddr, MIGRATION_0011_EDGE_BLOCKLIST,
+    canonical_audit_event_strings, canonical_metric_names, edge_schema_version, longest_match,
+    Cidr, CidrBlocklist, EdgeClock, EdgeConfig, EdgeDecision, EdgeEventType, EdgeMetricKind,
+    EdgePolicy, EdgeResultLabel, FailingEdgeAuditSink, InMemoryCidrBlocklist,
+    InMemoryEdgeAuditSink, InMemoryEdgeMetrics, InMemoryEdgePolicy, IpAddr,
+    MIGRATION_0011_EDGE_BLOCKLIST,
 };
 use proptest::prelude::*;
 use uuid::Uuid;
@@ -153,12 +152,7 @@ fn audit_failure_aborts_decision_and_state_unchanged() {
         Arc::clone(&metrics),
     ));
     let clock = Arc::new(FixedClock(1));
-    let pol = InMemoryEdgePolicy::with_defaults(
-        bl,
-        Arc::clone(&pol_audit),
-        metrics,
-        clock,
-    );
+    let pol = InMemoryEdgePolicy::with_defaults(bl, Arc::clone(&pol_audit), metrics, clock);
     let ip = ipv4_addr(203, 0, 113, 5);
     let err = pol.evaluate(ten_a(), ip, "rid").unwrap_err();
     assert!(matches!(err, corelink_cas::edge::EdgeError::Audit(_)));
@@ -372,7 +366,8 @@ fn decision_total_counts_per_label() {
     let _ = pol.evaluate(ten_a(), ip, "rid").unwrap();
     // Deny-blocklist path.
     let cidr = Cidr::parse("9.9.9.0/24").unwrap();
-    bl.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1).unwrap();
+    bl.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1)
+        .unwrap();
     let blocked = ipv4_addr(9, 9, 9, 1);
     let _ = pol.evaluate(ten_a(), blocked, "rid").unwrap();
     // Deny-abuse path.
@@ -426,19 +421,11 @@ fn family_gauge_tracks_blocklist_size() {
     let cidr = Cidr::parse("203.0.113.0/24").unwrap();
     bl.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1)
         .unwrap();
-    let label = format!(
-        "{}{{family=4}}",
-        EdgeMetricKind::CidrBlocklistSize.as_str()
-    );
+    let label = format!("{}{{family=4}}", EdgeMetricKind::CidrBlocklistSize.as_str());
     assert_eq!(metrics.gauge(&label), 1);
-    let _ = bl
-        .remove_prefix(ten_a(), cidr, admin(), "rid", 2)
-        .unwrap();
+    let _ = bl.remove_prefix(ten_a(), cidr, admin(), "rid", 2).unwrap();
     assert_eq!(metrics.gauge(&label), 0);
     // IPv6 gauge unchanged at 0.
-    let v6_label = format!(
-        "{}{{family=6}}",
-        EdgeMetricKind::CidrBlocklistSize.as_str()
-    );
+    let v6_label = format!("{}{{family=6}}", EdgeMetricKind::CidrBlocklistSize.as_str());
     assert_eq!(metrics.gauge(&v6_label), 0);
 }

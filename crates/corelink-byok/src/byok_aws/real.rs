@@ -35,7 +35,6 @@
 //! from every method. CoreLink Workers proxy envelope operations to the
 //! native server process, which holds the actual AWS SDK client.
 
-
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -45,9 +44,7 @@ use crate::BYOKError;
 use async_trait::async_trait;
 
 #[cfg(target_arch = "wasm32")]
-use crate::{
-    Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
-};
+use crate::{Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek};
 
 /// Canonicalize an AAD JSON value to the `EncryptionContext` string map that
 /// AWS KMS accepts.
@@ -85,9 +82,7 @@ pub fn canonicalize_aad_to_string_map(
     let mut map = BTreeMap::new();
     for (k, v) in obj {
         let s = v.as_str().ok_or_else(|| {
-            BYOKError::EnvelopeError(format!(
-                "encryption_context.{k} value must be a string"
-            ))
+            BYOKError::EnvelopeError(format!("encryption_context.{k} value must be a string"))
         })?;
         map.insert(k.clone(), s.to_string());
     }
@@ -128,13 +123,13 @@ pub fn aad_fingerprint(canonical_aad: &[u8]) -> [u8; 8] {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
-    use super::{aad_fingerprint, canonicalize_aad_to_string_map};
     use super::super::{resolve_endpoint_hostname, validate_aws_kms_key_arn};
-    use async_trait::async_trait;
+    use super::{aad_fingerprint, canonicalize_aad_to_string_map};
     use crate::{
         BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind,
         WrappedDek,
     };
+    use async_trait::async_trait;
     use aws_sdk_kms::{
         config::{Builder as KmsConfigBuilder, Region},
         primitives::Blob,
@@ -260,11 +255,7 @@ mod native {
             encryption_context: &Value,
         ) -> Result<(Dek, Vec<u8>), BYOKError> {
             if key_id.provider != KmsProviderKind::AwsKms {
-                emit_audit(
-                    "generate_data_key",
-                    &key_id.key_arn_or_id,
-                    "wrong_provider",
-                );
+                emit_audit("generate_data_key", &key_id.key_arn_or_id, "wrong_provider");
                 return Err(BYOKError::EnvelopeError(format!(
                     "AwsKmsRealProvider received key_id with wrong provider: {:?}",
                     key_id.provider
@@ -291,11 +282,9 @@ mod native {
                 req = req.encryption_context(k, v);
             }
 
-            let resp = req.send().await.map_err(|e| map_sdk_error(
-                "generate_data_key",
-                &key_id.key_arn_or_id,
-                &e.to_string(),
-            ))?;
+            let resp = req.send().await.map_err(|e| {
+                map_sdk_error("generate_data_key", &key_id.key_arn_or_id, &e.to_string())
+            })?;
 
             let plaintext = resp
                 .plaintext()
@@ -315,7 +304,9 @@ mod native {
                     &key_id.key_arn_or_id,
                     "dek_length_invalid",
                 );
-                return Err(BYOKError::DekLengthInvalid { got: plaintext.len() });
+                return Err(BYOKError::DekLengthInvalid {
+                    got: plaintext.len(),
+                });
             }
             let mut bytes = [0u8; 32];
             bytes.copy_from_slice(&plaintext);
@@ -346,7 +337,10 @@ mod native {
         /// # Errors
         ///
         /// Any KMS error surfaces as [`BYOKError::Provider`].
-        pub async fn list_aliases(&self, key_id: Option<&KmsKeyId>) -> Result<Vec<String>, BYOKError> {
+        pub async fn list_aliases(
+            &self,
+            key_id: Option<&KmsKeyId>,
+        ) -> Result<Vec<String>, BYOKError> {
             if let Some(k) = key_id {
                 validate_aws_kms_key_arn(&k.key_arn_or_id).inspect_err(|_| {
                     emit_audit("list_aliases", &k.key_arn_or_id, "malformed_arn");
@@ -488,17 +482,16 @@ mod native {
             for (k, v) in &ec_map {
                 req = req.encryption_context(k, v);
             }
-            let resp = req.send().await.map_err(|e| {
-                map_sdk_error("wrap_dek", &key_id.key_arn_or_id, &e.to_string())
-            })?;
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| map_sdk_error("wrap_dek", &key_id.key_arn_or_id, &e.to_string()))?;
 
             let ciphertext = resp
                 .ciphertext_blob()
                 .ok_or_else(|| {
                     emit_audit("wrap_dek", &key_id.key_arn_or_id, "missing_ciphertext");
-                    BYOKError::Provider(
-                        "aws kms encrypt: missing ciphertext".to_string(),
-                    )
+                    BYOKError::Provider("aws kms encrypt: missing ciphertext".to_string())
                 })?
                 .clone()
                 .into_inner();
@@ -513,7 +506,11 @@ mod native {
 
         async fn unwrap_dek(&self, wrapped: &WrappedDek) -> Result<Dek, BYOKError> {
             if wrapped.provider != KmsProviderKind::AwsKms {
-                emit_audit("unwrap_dek", &wrapped.key_id.key_arn_or_id, "wrong_provider");
+                emit_audit(
+                    "unwrap_dek",
+                    &wrapped.key_id.key_arn_or_id,
+                    "wrong_provider",
+                );
                 return Err(BYOKError::EnvelopeError(format!(
                     "AwsKmsRealProvider received WrappedDek with wrong provider: {:?}",
                     wrapped.provider
@@ -568,7 +565,9 @@ mod native {
                     &wrapped.key_id.key_arn_or_id,
                     "dek_length_invalid",
                 );
-                return Err(BYOKError::DekLengthInvalid { got: plaintext.len() });
+                return Err(BYOKError::DekLengthInvalid {
+                    got: plaintext.len(),
+                });
             }
             let mut bytes = [0u8; 32];
             bytes.copy_from_slice(&plaintext);
@@ -644,12 +643,7 @@ mod native {
 
     // ── Mock-mode wrap / unwrap (in-process, AAD-binding enforced) ────────
 
-    fn mock_wrap(
-        dek: &Dek,
-        key_id: &KmsKeyId,
-        ctx: &Value,
-        canonical_aad: &[u8],
-    ) -> WrappedDek {
+    fn mock_wrap(dek: &Dek, key_id: &KmsKeyId, ctx: &Value, canonical_aad: &[u8]) -> WrappedDek {
         let fp = aad_fingerprint(canonical_aad);
         let mut ct = Vec::with_capacity(8 + 32);
         ct.extend_from_slice(&fp);
@@ -717,7 +711,9 @@ impl AwsKmsWasmStub {
     /// Construct the wasm32 stub for `region`. Does not contact AWS.
     #[must_use]
     pub fn new(region: &str) -> Self {
-        Self { region: region.to_string() }
+        Self {
+            region: region.to_string(),
+        }
     }
 
     /// Same shape as the native [`AwsKmsRealProvider::resolved_fips_endpoint`].
@@ -761,10 +757,7 @@ impl KmsProvider for AwsKmsWasmStub {
         Err(BYOKError::Provider(WASM_UNSUPPORTED_MSG.to_string()))
     }
 
-    async fn check_access(
-        &self,
-        _key_id: &KmsKeyId,
-    ) -> Result<KmsAccessStatus, BYOKError> {
+    async fn check_access(&self, _key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
         Err(BYOKError::Provider(WASM_UNSUPPORTED_MSG.to_string()))
     }
 }

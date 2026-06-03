@@ -255,12 +255,10 @@ mod tests {
         let sink = InMemoryErasureAuditSink::new();
         assert!(sink.is_empty());
         sink.emit(rec(ErasureCloudEventType::Started)).unwrap();
-        sink.emit(rec(ErasureCloudEventType::BackendCompleted)).unwrap();
+        sink.emit(rec(ErasureCloudEventType::BackendCompleted))
+            .unwrap();
         assert_eq!(sink.len(), 2);
-        assert_eq!(
-            sink.snapshot_of(ErasureCloudEventType::Started).len(),
-            1
-        );
+        assert_eq!(sink.snapshot_of(ErasureCloudEventType::Started).len(), 1);
     }
 
     #[test]

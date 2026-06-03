@@ -41,9 +41,7 @@
     reason = "test target"
 )]
 
-use corelink_cas::edge::{
-    edge_schema_version, MIGRATION_0011_EDGE_BLOCKLIST,
-};
+use corelink_cas::edge::{edge_schema_version, MIGRATION_0011_EDGE_BLOCKLIST};
 
 /// Strip `-- …` line comments before scanning.
 fn migration_sql_no_comments() -> String {
@@ -71,12 +69,8 @@ fn migration_is_non_empty_and_versioned() {
 fn create_table_and_indexes_are_idempotent() {
     let sql = migration_sql_no_comments();
     assert!(sql.contains("CREATE TABLE IF NOT EXISTS edge_blocklist"));
-    assert!(sql.contains(
-        "CREATE INDEX IF NOT EXISTS idx_edge_blocklist_active_family_prefix"
-    ));
-    assert!(
-        sql.contains("CREATE INDEX IF NOT EXISTS idx_edge_blocklist_unsynced")
-    );
+    assert!(sql.contains("CREATE INDEX IF NOT EXISTS idx_edge_blocklist_active_family_prefix"));
+    assert!(sql.contains("CREATE INDEX IF NOT EXISTS idx_edge_blocklist_unsynced"));
 }
 
 #[test]
@@ -118,9 +112,7 @@ fn source_check_lists_canonical_2_literals() {
             "SQL CHECK missing canonical source literal {canonical}"
         );
     }
-    assert!(
-        sql.contains("CHECK (source IN ('Manual', 'AutomatedSuggestionApproved'))")
-    );
+    assert!(sql.contains("CHECK (source IN ('Manual', 'AutomatedSuggestionApproved'))"));
 }
 
 #[test]
@@ -132,12 +124,8 @@ fn check_constraint_coverage_matches_wi_spec() {
     assert!(sql.contains("(cidr_family = 6 AND cidr_prefix_len <= 128)"));
     // Timestamp envelopes.
     assert!(sql.contains("CHECK (added_at_ms >= 0)"));
-    assert!(sql.contains(
-        "CHECK (expires_at_ms IS NULL OR expires_at_ms > added_at_ms)"
-    ));
-    assert!(sql.contains(
-        "CHECK (deleted_at_ms IS NULL OR deleted_at_ms >= added_at_ms)"
-    ));
+    assert!(sql.contains("CHECK (expires_at_ms IS NULL OR expires_at_ms > added_at_ms)"));
+    assert!(sql.contains("CHECK (deleted_at_ms IS NULL OR deleted_at_ms >= added_at_ms)"));
     // cidr_text non-empty.
     assert!(sql.contains("CHECK (length(cidr_text) >= 1)"));
 }

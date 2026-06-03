@@ -114,9 +114,7 @@ where
 )]
 mod tests {
     use super::*;
-    use crate::dedup::metrics::{
-        DedupMetricKind, FailingDedupMetrics, InMemoryDedupMetrics,
-    };
+    use crate::dedup::metrics::{DedupMetricKind, FailingDedupMetrics, InMemoryDedupMetrics};
 
     fn ten() -> Uuid {
         Uuid::from_u128(0x1)

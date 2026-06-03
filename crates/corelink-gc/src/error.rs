@@ -84,9 +84,7 @@ pub enum GcError {
     },
     /// Caller supplied a tenant batch size > [`crate::scheduler::MAX_TENANTS_PER_TICK`].
     /// Programmer wiring error.
-    #[error(
-        "tenants_per_tick {requested} exceeds canonical ceiling {ceiling}"
-    )]
+    #[error("tenants_per_tick {requested} exceeds canonical ceiling {ceiling}")]
     TenantsPerTickExceeded {
         /// Caller-requested batch size.
         requested: usize,
@@ -95,9 +93,7 @@ pub enum GcError {
     },
     /// Scheduler config has invalid jitter (>
     /// [`crate::schedule::MAX_JITTER_MINUTES`]).
-    #[error(
-        "jitter_minutes {requested} exceeds canonical ceiling {ceiling}"
-    )]
+    #[error("jitter_minutes {requested} exceeds canonical ceiling {ceiling}")]
     JitterMinutesExceeded {
         /// Requested jitter.
         requested: u32,

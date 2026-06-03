@@ -37,7 +37,10 @@ fn chaos_latency_injection_p99_bounded() {
     }
     let events = tele.audit_events();
     assert_canonical_audit_sequence(&events).unwrap();
-    assert_eq!(events, vec![ChaosAuditEvent::Started, ChaosAuditEvent::Completed]);
+    assert_eq!(
+        events,
+        vec![ChaosAuditEvent::Started, ChaosAuditEvent::Completed]
+    );
     assert_eq!(tele.slo_violation_total(), 0);
 
     // Boundary: impact exactly at blast_radius_bps still Passes.

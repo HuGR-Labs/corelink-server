@@ -11,8 +11,7 @@
 //! 1k generated cases.
 
 use corelink_adapter_host::pip::pep503_html::{
-    encode_html, is_valid_sha256_hex, normalise_project_name, parse_html, IndexFile,
-    ProjectIndex,
+    encode_html, is_valid_sha256_hex, normalise_project_name, parse_html, IndexFile, ProjectIndex,
 };
 use proptest::prelude::*;
 
@@ -48,9 +47,7 @@ fn index_file_strategy() -> impl Strategy<Value = IndexFile> {
         any::<bool>(),
     )
         .prop_map(|(filename, sha256, requires_python, yanked)| {
-            let url = format!(
-                "https://files.pythonhosted.org/packages/{filename}#sha256={sha256}"
-            );
+            let url = format!("https://files.pythonhosted.org/packages/{filename}#sha256={sha256}");
             IndexFile::new(filename, url, sha256, requires_python, yanked)
         })
 }

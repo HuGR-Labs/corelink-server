@@ -67,8 +67,7 @@ use crate::event::IdempotencyKey;
 pub fn compute_canonical_aggregate_bytes(
     aggregate: &AggregatedCounter,
 ) -> Result<Vec<u8>, StripeError> {
-    serde_jcs::to_vec(aggregate)
-        .map_err(|e| StripeError::Canonicalization(format!("{e}")))
+    serde_jcs::to_vec(aggregate).map_err(|e| StripeError::Canonicalization(format!("{e}")))
 }
 
 /// Derive the canonical Stripe `Idempotency-Key` from an aggregated

@@ -8,7 +8,6 @@
 //!
 //! Run with: `cargo run --example basic -p corelink-clerk`.
 
-
 #![allow(clippy::print_stdout, reason = "example demonstrates console output")]
 
 use corelink_clerk::fakes::{InMemoryKvCache, StaticJwksFetcher};

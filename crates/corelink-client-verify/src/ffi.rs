@@ -295,8 +295,7 @@ pub unsafe extern "C" fn corelink_verifier_verify(
 
     // SAFETY: digest_hex_ptr is non-null + length is exactly 64
     // (both checked above). 64 ≤ isize::MAX trivially.
-    let hex_bytes: &[u8] =
-        unsafe { core::slice::from_raw_parts(digest_hex_ptr, DIGEST_HEX_LEN) };
+    let hex_bytes: &[u8] = unsafe { core::slice::from_raw_parts(digest_hex_ptr, DIGEST_HEX_LEN) };
     let Ok(hex_str) = core::str::from_utf8(hex_bytes) else {
         unsafe { write_out(out_error_code, COR_VERIFY_ERR_INVALID_DIGEST) };
         return COR_VERIFY_ERR_INVALID_DIGEST;

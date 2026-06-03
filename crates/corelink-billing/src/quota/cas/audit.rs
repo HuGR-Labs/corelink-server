@@ -77,17 +77,11 @@ impl QuotaCasEventType {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::CasCheckPassed => "corelink.quota.cas_check_passed",
-            Self::CasDenied429HardBlock => {
-                "corelink.quota.cas_denied_429_hard_block"
-            }
+            Self::CasDenied429HardBlock => "corelink.quota.cas_denied_429_hard_block",
             Self::CasRaceDetected => "corelink.quota.cas_race_detected",
             Self::CasCommitSucceeded => "corelink.quota.cas_commit_succeeded",
-            Self::CasReleaseIdempotent => {
-                "corelink.quota.cas_release_idempotent"
-            }
-            Self::CasRetryAfterEmitted => {
-                "corelink.quota.cas_retry_after_emitted"
-            }
+            Self::CasReleaseIdempotent => "corelink.quota.cas_release_idempotent",
+            Self::CasRetryAfterEmitted => "corelink.quota.cas_retry_after_emitted",
         }
     }
 
@@ -182,10 +176,7 @@ pub trait QuotaCasAuditSink: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`QuotaCasAuditSinkError::Store`] on any backend failure.
-    fn emit(
-        &self,
-        record: QuotaCasAuditRecord,
-    ) -> Result<(), QuotaCasAuditSinkError>;
+    fn emit(&self, record: QuotaCasAuditRecord) -> Result<(), QuotaCasAuditSinkError>;
 }
 
 /// In-memory test audit sink. Cloning shares the underlying buffer.
@@ -227,10 +218,7 @@ impl InMemoryQuotaCasAuditSink {
 
     /// Filter snapshot down to records of a single event type.
     #[must_use]
-    pub fn snapshot_of(
-        &self,
-        event_type: QuotaCasEventType,
-    ) -> Vec<QuotaCasAuditRecord> {
+    pub fn snapshot_of(&self, event_type: QuotaCasEventType) -> Vec<QuotaCasAuditRecord> {
         self.snapshot()
             .into_iter()
             .filter(|r| r.event_type == event_type)
@@ -239,15 +227,11 @@ impl InMemoryQuotaCasAuditSink {
 }
 
 impl QuotaCasAuditSink for InMemoryQuotaCasAuditSink {
-    fn emit(
-        &self,
-        record: QuotaCasAuditRecord,
-    ) -> Result<(), QuotaCasAuditSinkError> {
-        let mut guard = self.inner.lock().map_err(|_| {
-            QuotaCasAuditSinkError::Store(
-                "audit sink mutex poisoned".to_string(),
-            )
-        })?;
+    fn emit(&self, record: QuotaCasAuditRecord) -> Result<(), QuotaCasAuditSinkError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| QuotaCasAuditSinkError::Store("audit sink mutex poisoned".to_string()))?;
         guard.push(record);
         Ok(())
     }
@@ -268,10 +252,7 @@ impl FailingQuotaCasAuditSink {
 }
 
 impl QuotaCasAuditSink for FailingQuotaCasAuditSink {
-    fn emit(
-        &self,
-        _record: QuotaCasAuditRecord,
-    ) -> Result<(), QuotaCasAuditSinkError> {
+    fn emit(&self, _record: QuotaCasAuditRecord) -> Result<(), QuotaCasAuditSinkError> {
         Err(QuotaCasAuditSinkError::Store(
             "induced quota CAS audit sink failure (test fixture)".to_string(),
         ))
@@ -350,10 +331,7 @@ mod tests {
         sink.emit(rec(QuotaCasEventType::CasDenied429HardBlock))
             .unwrap();
         assert_eq!(sink.len(), 2);
-        assert_eq!(
-            sink.snapshot_of(QuotaCasEventType::CasCheckPassed).len(),
-            1
-        );
+        assert_eq!(sink.snapshot_of(QuotaCasEventType::CasCheckPassed).len(), 1);
         assert_eq!(
             sink.snapshot_of(QuotaCasEventType::CasDenied429HardBlock)
                 .len(),
@@ -364,7 +342,9 @@ mod tests {
     #[test]
     fn failing_sink_returns_store_error() {
         let sink = FailingQuotaCasAuditSink::new();
-        let err = sink.emit(rec(QuotaCasEventType::CasCheckPassed)).unwrap_err();
+        let err = sink
+            .emit(rec(QuotaCasEventType::CasCheckPassed))
+            .unwrap_err();
         assert!(matches!(err, QuotaCasAuditSinkError::Store(_)));
     }
 

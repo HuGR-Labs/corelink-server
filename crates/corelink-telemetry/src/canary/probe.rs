@@ -163,7 +163,8 @@ where
             .ledger
             .lock()
             .map_err(|_| CanaryError::Internal("per-region ledger mutex poisoned".to_string()))?;
-        Ok(g.get(&region).map_or_else(RegionProbeStats::default, |e| e.stats))
+        Ok(g.get(&region)
+            .map_or_else(RegionProbeStats::default, |e| e.stats))
     }
 
     /// Sum every region's `pass_loops` count to expose the cumulative
@@ -224,7 +225,9 @@ where
         match decision {
             CanaryDecision::Pass => {}
             CanaryDecision::Degraded => {
-                let breach = latencies.first_breach(self.ceilings).unwrap_or_default_breach();
+                let breach = latencies
+                    .first_breach(self.ceilings)
+                    .unwrap_or_default_breach();
                 self.emit_audit(CanaryAuditRecord::assertion_failed(
                     region,
                     decision,
@@ -317,8 +320,7 @@ where
                     entry.stats.consecutive_non_pass.saturating_add(1);
             }
             CanaryDecision::FailedRegion => {
-                entry.stats.failed_region_loops =
-                    entry.stats.failed_region_loops.saturating_add(1);
+                entry.stats.failed_region_loops = entry.stats.failed_region_loops.saturating_add(1);
                 entry.stats.consecutive_non_pass =
                     entry.stats.consecutive_non_pass.saturating_add(1);
             }
@@ -381,7 +383,9 @@ impl CanaryProbe for FailingCanaryProbe {
 )]
 mod tests {
     use super::*;
-    use crate::canary::audit::{CanaryAuditEventType, FailingCanaryAuditSink, InMemoryCanaryAuditSink};
+    use crate::canary::audit::{
+        CanaryAuditEventType, FailingCanaryAuditSink, InMemoryCanaryAuditSink,
+    };
     use crate::canary::result::HealthComponent;
 
     fn fresh_probe() -> InMemoryCanaryProbe<InMemoryCanaryAuditSink> {
@@ -424,7 +428,10 @@ mod tests {
             .unwrap();
         let snap = sink.snapshot_of(CanaryAuditEventType::AssertionFailed);
         assert_eq!(snap.len(), 1);
-        assert_eq!(snap.first().map(|r| r.assertion_slug), Some("cas_put_p99_ms"));
+        assert_eq!(
+            snap.first().map(|r| r.assertion_slug),
+            Some("cas_put_p99_ms")
+        );
         let stats = p.stats(CanaryRegion::Enam).unwrap();
         assert_eq!(stats.degraded_loops, 1);
         assert_eq!(stats.consecutive_non_pass, 1);
@@ -570,10 +577,7 @@ mod tests {
                 2,
             )
             .unwrap();
-        assert_eq!(
-            p.stats(CanaryRegion::Enam).unwrap().consecutive_non_pass,
-            2
-        );
+        assert_eq!(p.stats(CanaryRegion::Enam).unwrap().consecutive_non_pass, 2);
         // Third: pass — reset.
         let _ = p
             .execute_canary_loop(
@@ -585,10 +589,7 @@ mod tests {
                 3,
             )
             .unwrap();
-        assert_eq!(
-            p.stats(CanaryRegion::Enam).unwrap().consecutive_non_pass,
-            0
-        );
+        assert_eq!(p.stats(CanaryRegion::Enam).unwrap().consecutive_non_pass, 0);
     }
 
     #[test]

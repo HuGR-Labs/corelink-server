@@ -85,18 +85,13 @@ impl core::fmt::Display for LogEventType {
 }
 
 impl Serialize for LogEventType {
-    fn serialize<S: serde::Serializer>(
-        &self,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())
     }
 }
 
 impl<'de> Deserialize<'de> for LogEventType {
-    fn deserialize<D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Self, D::Error> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let s = String::deserialize(deserializer)?;
         match s.as_str() {
             "request_served" => Ok(Self::RequestServed),
@@ -122,19 +117,13 @@ pub const fn canonical_log_event_types() -> &'static [LogEventType; 4] {
     ]
 }
 
-fn serialize_region<S: serde::Serializer>(
-    region: &Region,
-    s: S,
-) -> Result<S::Ok, S::Error> {
+fn serialize_region<S: serde::Serializer>(region: &Region, s: S) -> Result<S::Ok, S::Error> {
     s.serialize_str(region.as_str())
 }
 
-fn deserialize_region<'de, D: serde::Deserializer<'de>>(
-    d: D,
-) -> Result<Region, D::Error> {
+fn deserialize_region<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Region, D::Error> {
     let s = String::deserialize(d)?;
-    region_from_str(&s)
-        .ok_or_else(|| serde::de::Error::custom(format!("unknown Region: {s}")))
+    region_from_str(&s).ok_or_else(|| serde::de::Error::custom(format!("unknown Region: {s}")))
 }
 
 fn region_from_str(s: &str) -> Option<Region> {
@@ -271,9 +260,7 @@ impl LogRecord {
     ///
     /// Returns the underlying `serde_json::Error` when the embedded
     /// `data` value cannot be serialized (e.g. a non-finite float).
-    pub fn to_ndjson_line(
-        &self,
-    ) -> Result<String, serde_json::Error> {
+    pub fn to_ndjson_line(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
     }
 
@@ -283,9 +270,7 @@ impl LogRecord {
     ///
     /// Returns the underlying `serde_json::Error` when the line is
     /// not a valid `LogRecord` JSON object.
-    pub fn from_ndjson_line(
-        line: &str,
-    ) -> Result<Self, serde_json::Error> {
+    pub fn from_ndjson_line(line: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(line)
     }
 }
@@ -325,16 +310,10 @@ mod tests {
 
     #[test]
     fn event_type_strings_pinned() {
-        assert_eq!(
-            LogEventType::RequestServed.as_str(),
-            "request_served"
-        );
+        assert_eq!(LogEventType::RequestServed.as_str(), "request_served");
         assert_eq!(LogEventType::AuthAttempt.as_str(), "auth_attempt");
         assert_eq!(LogEventType::AdminAction.as_str(), "admin_action");
-        assert_eq!(
-            LogEventType::BillingEvent.as_str(),
-            "billing_event"
-        );
+        assert_eq!(LogEventType::BillingEvent.as_str(), "billing_event");
     }
 
     #[test]
@@ -413,9 +392,6 @@ mod tests {
 
     #[test]
     fn display_matches_as_str() {
-        assert_eq!(
-            format!("{}", LogEventType::AdminAction),
-            "admin_action"
-        );
+        assert_eq!(format!("{}", LogEventType::AdminAction), "admin_action");
     }
 }

@@ -88,10 +88,7 @@ pub trait QuotaCasMetricsObserver: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Backend transport failures.
-    fn record_check(
-        &self,
-        label: QuotaCasResultLabel,
-    ) -> Result<(), QuotaCasMetricsObserverError>;
+    fn record_check(&self, label: QuotaCasResultLabel) -> Result<(), QuotaCasMetricsObserverError>;
 
     /// Record a `cas_denials_total{tenant_id}` increment (canonical
     /// 100% hard-block fired).
@@ -99,20 +96,14 @@ pub trait QuotaCasMetricsObserver: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Backend transport failures.
-    fn record_denial(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), QuotaCasMetricsObserverError>;
+    fn record_denial(&self, tenant_id: Uuid) -> Result<(), QuotaCasMetricsObserverError>;
 
     /// Record a `cas_race_detected_total{tenant_id}` increment.
     ///
     /// # Errors
     ///
     /// Backend transport failures.
-    fn record_race_detected(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), QuotaCasMetricsObserverError>;
+    fn record_race_detected(&self, tenant_id: Uuid) -> Result<(), QuotaCasMetricsObserverError>;
 
     /// Record a `cas_retry_after_secs` histogram observation.
     ///
@@ -140,11 +131,9 @@ pub trait QuotaCasMetricsObserver: Send + Sync + core::fmt::Debug {
 #[derive(Clone, Default, Debug)]
 pub struct InMemoryQuotaCasMetrics {
     counters: std::sync::Arc<Mutex<HashMap<(QuotaCasMetricKind, Uuid), u64>>>,
-    check_by_label:
-        std::sync::Arc<Mutex<HashMap<QuotaCasResultLabel, u64>>>,
+    check_by_label: std::sync::Arc<Mutex<HashMap<QuotaCasResultLabel, u64>>>,
     retry_after_observations: std::sync::Arc<Mutex<Vec<u64>>>,
-    duration_observations:
-        std::sync::Arc<Mutex<Vec<(QuotaCasResultLabel, u64)>>>,
+    duration_observations: std::sync::Arc<Mutex<Vec<(QuotaCasResultLabel, u64)>>>,
 }
 
 impl InMemoryQuotaCasMetrics {
@@ -169,11 +158,7 @@ impl InMemoryQuotaCasMetrics {
 
     /// Counter for a specific tenant.
     #[must_use]
-    pub fn counter_for_tenant(
-        &self,
-        kind: QuotaCasMetricKind,
-        tenant_id: Uuid,
-    ) -> u64 {
+    pub fn counter_for_tenant(&self, kind: QuotaCasMetricKind, tenant_id: Uuid) -> u64 {
         let g = match self.counters.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -213,10 +198,7 @@ impl InMemoryQuotaCasMetrics {
 }
 
 impl QuotaCasMetricsObserver for InMemoryQuotaCasMetrics {
-    fn record_check(
-        &self,
-        label: QuotaCasResultLabel,
-    ) -> Result<(), QuotaCasMetricsObserverError> {
+    fn record_check(&self, label: QuotaCasResultLabel) -> Result<(), QuotaCasMetricsObserverError> {
         // Bump the per-label counter.
         let mut g = self.check_by_label.lock().map_err(|_| {
             QuotaCasMetricsObserverError::Backend(
@@ -227,37 +209,25 @@ impl QuotaCasMetricsObserver for InMemoryQuotaCasMetrics {
         drop(g);
         // Bump the aggregate CheckTotal counter (tenant nil — aggregate).
         let mut g = self.counters.lock().map_err(|_| {
-            QuotaCasMetricsObserverError::Backend(
-                "metrics counter mutex poisoned".to_string(),
-            )
+            QuotaCasMetricsObserverError::Backend("metrics counter mutex poisoned".to_string())
         })?;
-        *g.entry((QuotaCasMetricKind::CheckTotal, Uuid::nil())).or_insert(0) +=
-            1;
+        *g.entry((QuotaCasMetricKind::CheckTotal, Uuid::nil()))
+            .or_insert(0) += 1;
         Ok(())
     }
 
-    fn record_denial(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), QuotaCasMetricsObserverError> {
+    fn record_denial(&self, tenant_id: Uuid) -> Result<(), QuotaCasMetricsObserverError> {
         let mut g = self.counters.lock().map_err(|_| {
-            QuotaCasMetricsObserverError::Backend(
-                "metrics counter mutex poisoned".to_string(),
-            )
+            QuotaCasMetricsObserverError::Backend("metrics counter mutex poisoned".to_string())
         })?;
-        *g.entry((QuotaCasMetricKind::DenialsTotal, tenant_id)).or_insert(0) +=
-            1;
+        *g.entry((QuotaCasMetricKind::DenialsTotal, tenant_id))
+            .or_insert(0) += 1;
         Ok(())
     }
 
-    fn record_race_detected(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), QuotaCasMetricsObserverError> {
+    fn record_race_detected(&self, tenant_id: Uuid) -> Result<(), QuotaCasMetricsObserverError> {
         let mut g = self.counters.lock().map_err(|_| {
-            QuotaCasMetricsObserverError::Backend(
-                "metrics counter mutex poisoned".to_string(),
-            )
+            QuotaCasMetricsObserverError::Backend("metrics counter mutex poisoned".to_string())
         })?;
         *g.entry((QuotaCasMetricKind::RaceDetectedTotal, tenant_id))
             .or_insert(0) += 1;
@@ -269,9 +239,7 @@ impl QuotaCasMetricsObserver for InMemoryQuotaCasMetrics {
         retry_after_secs: u64,
     ) -> Result<(), QuotaCasMetricsObserverError> {
         let mut g = self.retry_after_observations.lock().map_err(|_| {
-            QuotaCasMetricsObserverError::Backend(
-                "metrics retry_after mutex poisoned".to_string(),
-            )
+            QuotaCasMetricsObserverError::Backend("metrics retry_after mutex poisoned".to_string())
         })?;
         g.push(retry_after_secs);
         Ok(())
@@ -283,9 +251,7 @@ impl QuotaCasMetricsObserver for InMemoryQuotaCasMetrics {
         duration_us: u64,
     ) -> Result<(), QuotaCasMetricsObserverError> {
         let mut g = self.duration_observations.lock().map_err(|_| {
-            QuotaCasMetricsObserverError::Backend(
-                "metrics duration mutex poisoned".to_string(),
-            )
+            QuotaCasMetricsObserverError::Backend("metrics duration mutex poisoned".to_string())
         })?;
         g.push((label, duration_us));
         Ok(())
@@ -316,38 +282,21 @@ impl QuotaCasMetricsObserver for FailingQuotaCasMetrics {
             "induced quota CAS metric failure (test fixture)".to_string(),
         ))
     }
-    fn record_denial(
-        &self,
-        _t: Uuid,
-    ) -> Result<(), QuotaCasMetricsObserverError> {
-        Err(QuotaCasMetricsObserverError::Backend(
-            "induced".to_string(),
-        ))
+    fn record_denial(&self, _t: Uuid) -> Result<(), QuotaCasMetricsObserverError> {
+        Err(QuotaCasMetricsObserverError::Backend("induced".to_string()))
     }
-    fn record_race_detected(
-        &self,
-        _t: Uuid,
-    ) -> Result<(), QuotaCasMetricsObserverError> {
-        Err(QuotaCasMetricsObserverError::Backend(
-            "induced".to_string(),
-        ))
+    fn record_race_detected(&self, _t: Uuid) -> Result<(), QuotaCasMetricsObserverError> {
+        Err(QuotaCasMetricsObserverError::Backend("induced".to_string()))
     }
-    fn record_retry_after_secs(
-        &self,
-        _r: u64,
-    ) -> Result<(), QuotaCasMetricsObserverError> {
-        Err(QuotaCasMetricsObserverError::Backend(
-            "induced".to_string(),
-        ))
+    fn record_retry_after_secs(&self, _r: u64) -> Result<(), QuotaCasMetricsObserverError> {
+        Err(QuotaCasMetricsObserverError::Backend("induced".to_string()))
     }
     fn record_check_duration_us(
         &self,
         _l: QuotaCasResultLabel,
         _d: u64,
     ) -> Result<(), QuotaCasMetricsObserverError> {
-        Err(QuotaCasMetricsObserverError::Backend(
-            "induced".to_string(),
-        ))
+        Err(QuotaCasMetricsObserverError::Backend("induced".to_string()))
     }
 }
 
@@ -403,10 +352,7 @@ mod tests {
         let t = Uuid::from_u128(0xa);
         m.record_denial(t).unwrap();
         m.record_denial(t).unwrap();
-        assert_eq!(
-            m.counter_for_tenant(QuotaCasMetricKind::DenialsTotal, t),
-            2
-        );
+        assert_eq!(m.counter_for_tenant(QuotaCasMetricKind::DenialsTotal, t), 2);
     }
 
     #[test]

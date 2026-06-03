@@ -4,13 +4,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Canonical set of CoreLink regions for terraform matrix.
-pub const REGIONS: &[&str] = &[
-    "us-east",
-    "us-west",
-    "eu-west",
-    "ap-southeast",
-    "sa-east",
-];
+pub const REGIONS: &[&str] = &["us-east", "us-west", "eu-west", "ap-southeast", "sa-east"];
 
 /// Severity classification for a drift finding.
 ///

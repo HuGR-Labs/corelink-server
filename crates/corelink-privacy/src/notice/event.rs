@@ -324,9 +324,7 @@ impl NoticePublishedCloudEvent {
             r#type: alloc::string::String::from(
                 NoticeCloudEventType::Published.as_cloud_event_type(),
             ),
-            source: alloc::string::String::from(
-                "dev.hugr.corelink/privacy-notice-emit",
-            ),
+            source: alloc::string::String::from("dev.hugr.corelink/privacy-notice-emit"),
             id,
             data_content_type: alloc::string::String::from("application/json"),
             data,
@@ -361,9 +359,7 @@ impl NoticeDeprecatedCloudEvent {
             r#type: alloc::string::String::from(
                 NoticeCloudEventType::Deprecated.as_cloud_event_type(),
             ),
-            source: alloc::string::String::from(
-                "dev.hugr.corelink/privacy-notice-emit",
-            ),
+            source: alloc::string::String::from("dev.hugr.corelink/privacy-notice-emit"),
             id,
             data_content_type: alloc::string::String::from("application/json"),
             data,

@@ -217,13 +217,8 @@ mod tests {
 
     #[test]
     fn jitter_above_ceiling_rejected() {
-        let err = ScheduleConfig::new(
-            DEFAULT_CRON_EXPR,
-            MAX_JITTER_MINUTES + 1,
-            GcRegion::Lhr,
-            4,
-        )
-        .unwrap_err();
+        let err = ScheduleConfig::new(DEFAULT_CRON_EXPR, MAX_JITTER_MINUTES + 1, GcRegion::Lhr, 4)
+            .unwrap_err();
         assert!(matches!(
             err,
             ScheduleConfigError::JitterMinutesExceeded { ceiling, .. } if ceiling == MAX_JITTER_MINUTES

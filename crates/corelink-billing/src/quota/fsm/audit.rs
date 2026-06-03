@@ -75,9 +75,7 @@ impl QuotaAuditEventType {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::StateChanged => "corelink.billing_quota.state_changed",
-            Self::OverageTelemetryRecorded => {
-                "corelink.billing_quota.overage_telemetry_recorded"
-            }
+            Self::OverageTelemetryRecorded => "corelink.billing_quota.overage_telemetry_recorded",
             Self::Suspended => "corelink.billing_quota.suspended",
             Self::Reinstated => "corelink.billing_quota.reinstated",
         }
@@ -172,9 +170,7 @@ pub const fn audit_event_for_transition(
         QuotaTransition::NoChange { .. } => None,
         QuotaTransition::TransitionedTo80pct { .. }
         | QuotaTransition::TransitionedTo95pct { .. }
-        | QuotaTransition::TransitionedTo100pct { .. } => {
-            Some(QuotaAuditEventType::StateChanged)
-        }
+        | QuotaTransition::TransitionedTo100pct { .. } => Some(QuotaAuditEventType::StateChanged),
         QuotaTransition::Suspended { .. } => Some(QuotaAuditEventType::Suspended),
         QuotaTransition::Reinstated { .. } => Some(QuotaAuditEventType::Reinstated),
     }
@@ -187,8 +183,7 @@ pub const fn audit_event_for_transition(
 pub const fn transition_emits_overage_telemetry(transition: QuotaTransition) -> bool {
     matches!(
         transition,
-        QuotaTransition::TransitionedTo80pct { .. }
-            | QuotaTransition::TransitionedTo95pct { .. }
+        QuotaTransition::TransitionedTo80pct { .. } | QuotaTransition::TransitionedTo95pct { .. }
     )
 }
 
@@ -264,9 +259,7 @@ impl InMemoryQuotaAuditSink {
 impl QuotaAuditSink for InMemoryQuotaAuditSink {
     fn emit(&self, record: QuotaAuditRecord) -> Result<(), QuotaFsmAuditSinkError> {
         let mut guard = self.inner.lock().map_err(|_| {
-            QuotaFsmAuditSinkError::Store(
-                "quota-fsm audit sink mutex poisoned".to_string(),
-            )
+            QuotaFsmAuditSinkError::Store("quota-fsm audit sink mutex poisoned".to_string())
         })?;
         guard.push(record);
         Ok(())
@@ -357,10 +350,7 @@ mod tests {
         sink.emit(rec(QuotaAuditEventType::OverageTelemetryRecorded))
             .unwrap();
         assert_eq!(sink.len(), 2);
-        assert_eq!(
-            sink.snapshot_of(QuotaAuditEventType::StateChanged).len(),
-            1
-        );
+        assert_eq!(sink.snapshot_of(QuotaAuditEventType::StateChanged).len(), 1);
     }
 
     #[test]

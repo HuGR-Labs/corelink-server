@@ -1,5 +1,14 @@
 //! Example: Paranoid mode — verify with exact builder SAN URI + Rekor log consistency (WI-S12-001).
-#![allow(clippy::print_stdout, clippy::print_stderr, clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 //!
 //! Demonstrates the strictest verification mode:
 //! - Exact SAN URI match (specific release tag, not org pattern).
@@ -71,8 +80,14 @@ async fn main() {
             println!("  artifact_digest_sha256:  {}", prov.artifact_digest);
             println!();
             println!("Manual Rekor verification:");
-            println!("  rekor-cli get --rekor_server https://rekor.sigstore.dev --log-index {}", prov.rekor_log_index);
-            println!("  rekor-cli verify --rekor_server https://rekor.sigstore.dev --log-index {}", prov.rekor_log_index);
+            println!(
+                "  rekor-cli get --rekor_server https://rekor.sigstore.dev --log-index {}",
+                prov.rekor_log_index
+            );
+            println!(
+                "  rekor-cli verify --rekor_server https://rekor.sigstore.dev --log-index {}",
+                prov.rekor_log_index
+            );
             println!();
             println!("Rekor entry URL (publicly auditable):");
             println!("  {}", prov.rekor_inclusion_proof_url);

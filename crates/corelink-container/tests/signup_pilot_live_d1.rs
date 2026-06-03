@@ -61,14 +61,14 @@ use std::sync::Arc;
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
 use corelink_ratelimit::{
-    InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics,
-    InMemoryTokenBucketRateLimiter, RateLimiter,
+    InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics, InMemoryTokenBucketRateLimiter,
+    RateLimiter,
 };
 use corelink_server::routes::signup::{
     mint_pilot_token, pilot_signup_rate_limit_config, router, InMemorySignupAuditSink,
     PilotSignupResponse, SignupAuditSink, SignupRouteState, SignupStore, TokenEnv,
-    DEFAULT_ACTIVATION_URL_BASE, EVENT_TYPE_PILOT_RATE_LIMITED,
-    EVENT_TYPE_PILOT_RESERVED, EVENT_TYPE_PILOT_TOKEN_REJECTED,
+    DEFAULT_ACTIVATION_URL_BASE, EVENT_TYPE_PILOT_RATE_LIMITED, EVENT_TYPE_PILOT_RESERVED,
+    EVENT_TYPE_PILOT_TOKEN_REJECTED,
 };
 use corelink_server::wall_clock::InMemoryFakeWallClock;
 use serde_json::{json, Value};
@@ -143,13 +143,8 @@ fn build_request(token: &str, ip: &str, body: &Value) -> Request<Body> {
 #[tokio::test]
 async fn happy_path_persists_row_with_correct_schema() {
     let (state, audit_sink, harness, _store, _clock) = build_live_state();
-    let token = mint_pilot_token(
-        TokenEnv::Prod,
-        BASE_NOW_MS,
-        "0123456789abcdef",
-        TEST_KEY,
-    )
-    .unwrap();
+    let token =
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "0123456789abcdef", TEST_KEY).unwrap();
     let app = router(state);
     let resp = app
         .oneshot(build_request(&token, "203.0.113.10", &body_json()))
@@ -159,7 +154,9 @@ async fn happy_path_persists_row_with_correct_schema() {
     let bytes = to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
     let parsed: PilotSignupResponse = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(parsed.state, "RESERVED");
-    assert!(parsed.activation_url.starts_with(DEFAULT_ACTIVATION_URL_BASE));
+    assert!(parsed
+        .activation_url
+        .starts_with(DEFAULT_ACTIVATION_URL_BASE));
 
     // The audit sink captured the reserved emit BEFORE we sent the
     // response — same fail-CLOSED contract as the in-memory suite.
@@ -185,13 +182,8 @@ async fn happy_path_persists_row_with_correct_schema() {
 #[tokio::test]
 async fn hmac_tampered_no_row_inserted() {
     let (state, audit_sink, harness, _store, _clock) = build_live_state();
-    let mut token = mint_pilot_token(
-        TokenEnv::Prod,
-        BASE_NOW_MS,
-        "deadbeefcafebabe",
-        TEST_KEY,
-    )
-    .unwrap();
+    let mut token =
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "deadbeefcafebabe", TEST_KEY).unwrap();
     // Flip the final hex char of the signature to forge the HMAC.
     let mut chars: Vec<char> = token.chars().collect();
     let last = chars.len() - 1;
@@ -231,8 +223,7 @@ async fn rate_limit_hit_then_clock_rolls_over_allows_again() {
 
     for i in 0..5 {
         let rand = format!("aaaa{i:04}bbbbcccc");
-        let token =
-            mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, &rand, TEST_KEY).unwrap();
+        let token = mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, &rand, TEST_KEY).unwrap();
         let body = body_json_with_email(&format!("pilot{i}@example.com"));
         let resp = app
             .clone()
@@ -243,8 +234,7 @@ async fn rate_limit_hit_then_clock_rolls_over_allows_again() {
     }
     // 6th request — same IP, same hour → 429.
     let token =
-        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "abababababababab", TEST_KEY)
-            .unwrap();
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "abababababababab", TEST_KEY).unwrap();
     let resp = app
         .clone()
         .oneshot(build_request(
@@ -308,13 +298,8 @@ async fn audit_emit_fail_closed_after_store_write_per_wave29_contract() {
     // same against a `Vec`).
     let (state, audit_sink, harness, _store, _clock) = build_live_state();
     audit_sink.inject_failure("forced").unwrap();
-    let token = mint_pilot_token(
-        TokenEnv::Prod,
-        BASE_NOW_MS,
-        "abcdef0123456789",
-        TEST_KEY,
-    )
-    .unwrap();
+    let token =
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "abcdef0123456789", TEST_KEY).unwrap();
     let app = router(state);
     let resp = app
         .oneshot(build_request(&token, "203.0.113.20", &body_json()))
@@ -339,8 +324,7 @@ async fn duplicate_email_returns_existing_row_no_duplicate_insert() {
     let (state, audit_sink, harness, _store, _clock) = build_live_state();
     let app = router(state);
     let tok_a =
-        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "aaaa1111bbbb2222", TEST_KEY)
-            .unwrap();
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "aaaa1111bbbb2222", TEST_KEY).unwrap();
     let resp_a = app
         .clone()
         .oneshot(build_request(
@@ -357,8 +341,7 @@ async fn duplicate_email_returns_existing_row_no_duplicate_insert() {
     // Second signup, different token, same email — must return the
     // SAME tenant_id off the SQLite-side UNIQUE INDEX on `email`.
     let tok_b =
-        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "cccc3333dddd4444", TEST_KEY)
-            .unwrap();
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "cccc3333dddd4444", TEST_KEY).unwrap();
     let resp_b = app
         .oneshot(build_request(
             &tok_b,
@@ -398,8 +381,7 @@ async fn cross_ip_distinct_tenant_ids_no_region_leak() {
     let app = router(state);
 
     let tok_a =
-        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "1010101010101010", TEST_KEY)
-            .unwrap();
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "1010101010101010", TEST_KEY).unwrap();
     let resp_a = app
         .clone()
         .oneshot(build_request(
@@ -411,12 +393,10 @@ async fn cross_ip_distinct_tenant_ids_no_region_leak() {
         .unwrap();
     assert_eq!(resp_a.status(), StatusCode::CREATED);
     let parsed_a: PilotSignupResponse =
-        serde_json::from_slice(&to_bytes(resp_a.into_body(), 1024).await.unwrap())
-            .unwrap();
+        serde_json::from_slice(&to_bytes(resp_a.into_body(), 1024).await.unwrap()).unwrap();
 
     let tok_b =
-        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "2020202020202020", TEST_KEY)
-            .unwrap();
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "2020202020202020", TEST_KEY).unwrap();
     let resp_b = app
         .oneshot(build_request(
             &tok_b,
@@ -427,8 +407,7 @@ async fn cross_ip_distinct_tenant_ids_no_region_leak() {
         .unwrap();
     assert_eq!(resp_b.status(), StatusCode::CREATED);
     let parsed_b: PilotSignupResponse =
-        serde_json::from_slice(&to_bytes(resp_b.into_body(), 1024).await.unwrap())
-            .unwrap();
+        serde_json::from_slice(&to_bytes(resp_b.into_body(), 1024).await.unwrap()).unwrap();
 
     assert_ne!(
         parsed_a.tenant_id, parsed_b.tenant_id,
@@ -452,13 +431,8 @@ async fn migration_0053_reapplies_idempotently_with_data_present() {
     let (state, _audit_sink, harness, _store, _clock) = build_live_state();
 
     // Land one row so re-apply runs against non-empty state.
-    let token = mint_pilot_token(
-        TokenEnv::Prod,
-        BASE_NOW_MS,
-        "fedcba9876543210",
-        TEST_KEY,
-    )
-    .unwrap();
+    let token =
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "fedcba9876543210", TEST_KEY).unwrap();
     let app = router(state);
     let resp = app
         .oneshot(build_request(
@@ -496,13 +470,8 @@ async fn unique_constraint_collision_rolls_back_cleanly() {
     let (state, _audit_sink, harness, store, _clock) = build_live_state();
 
     // First, prime the store with a row through the route.
-    let token = mint_pilot_token(
-        TokenEnv::Prod,
-        BASE_NOW_MS,
-        "0001000200030004",
-        TEST_KEY,
-    )
-    .unwrap();
+    let token =
+        mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "0001000200030004", TEST_KEY).unwrap();
     let app = router(state);
     let resp = app
         .oneshot(build_request(
@@ -514,8 +483,7 @@ async fn unique_constraint_collision_rolls_back_cleanly() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
     let parsed: PilotSignupResponse =
-        serde_json::from_slice(&to_bytes(resp.into_body(), 1024).await.unwrap())
-            .unwrap();
+        serde_json::from_slice(&to_bytes(resp.into_body(), 1024).await.unwrap()).unwrap();
     let original_tenant = parsed.tenant_id;
 
     // Now drive the store DIRECTLY with a fresh record carrying the

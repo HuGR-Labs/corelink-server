@@ -239,7 +239,10 @@ fn compute_instance_hash(jwks_url: &str, audience: &str) -> String {
     hasher.update(b"\x00");
     hasher.update(audience.as_bytes());
     let digest = hasher.finalize();
-    let first8: [u8; 8] = digest.get(..8).and_then(|s| s.try_into().ok()).unwrap_or_default();
+    let first8: [u8; 8] = digest
+        .get(..8)
+        .and_then(|s| s.try_into().ok())
+        .unwrap_or_default();
     hex::encode(first8)
 }
 

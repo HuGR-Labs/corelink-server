@@ -354,7 +354,10 @@ fn forbidden_prefix_detector_handles_case_and_whitespace() {
     let sql = "DROP\nTABLE foo;";
     let canon = normalize_for_scan(sql);
     let viol = find_violations(&canon);
-    assert!(!viol.is_empty(), "newline-separated DROP TABLE not detected");
+    assert!(
+        !viol.is_empty(),
+        "newline-separated DROP TABLE not detected"
+    );
 }
 
 /// Unit canary: comment-aware lexer prevents false positives from
@@ -364,14 +367,18 @@ fn comment_aware_lexer_no_false_positives() {
     let sql = "-- DROP this later\nCREATE TABLE IF NOT EXISTS foo (id INT);";
     let canon = normalize_for_scan(sql);
     let viol = find_violations(&canon);
-    assert!(viol.is_empty(),
-        "false positive on line-comment DROP: {viol:?}");
+    assert!(
+        viol.is_empty(),
+        "false positive on line-comment DROP: {viol:?}"
+    );
 
     let sql = "/* DROP COLUMN x */ CREATE TABLE IF NOT EXISTS bar (id INT);";
     let canon = normalize_for_scan(sql);
     let viol = find_violations(&canon);
-    assert!(viol.is_empty(),
-        "false positive on block-comment DROP: {viol:?}");
+    assert!(
+        viol.is_empty(),
+        "false positive on block-comment DROP: {viol:?}"
+    );
 }
 
 /// Unit canary: a real DROP COLUMN is detected (true positive).

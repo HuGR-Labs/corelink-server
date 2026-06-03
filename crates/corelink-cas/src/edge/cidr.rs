@@ -213,16 +213,14 @@ impl Cidr {
     ///
     /// Surface [`CidrParseError`] on any malformed input.
     pub fn parse(s: &str) -> Result<Self, CidrParseError> {
-        let (addr_str, prefix_str) =
-            s.split_once('/').ok_or(CidrParseError::MissingPrefix)?;
+        let (addr_str, prefix_str) = s.split_once('/').ok_or(CidrParseError::MissingPrefix)?;
         let prefix: u32 = prefix_str
             .parse()
             .map_err(|_| CidrParseError::MalformedPrefix)?;
         let ip = IpAddr::parse(addr_str).ok_or(CidrParseError::MalformedAddress)?;
         let max = ip.family.max_prefix();
-        let prefix_u8 = u8::try_from(prefix).map_err(|_| {
-            CidrParseError::PrefixOutOfRange { prefix, max }
-        })?;
+        let prefix_u8 =
+            u8::try_from(prefix).map_err(|_| CidrParseError::PrefixOutOfRange { prefix, max })?;
         if prefix_u8 > max {
             return Err(CidrParseError::PrefixOutOfRange { prefix, max });
         }
@@ -285,10 +283,7 @@ impl Cidr {
                     let shift = (7 - i) * 16;
                     *slot = ((self.bits >> shift) & 0xffff) as u16;
                 }
-                let parts: Vec<String> = groups
-                    .iter()
-                    .map(|g| format!("{g:x}"))
-                    .collect();
+                let parts: Vec<String> = groups.iter().map(|g| format!("{g:x}")).collect();
                 format!("{}/{}", parts.join(":"), self.prefix_len)
             }
         }
@@ -390,7 +385,10 @@ fn parse_ipv4(s: &str) -> Option<u32> {
     Some((o0 << 24) | (o1 << 16) | (o2 << 8) | o3)
 }
 
-#[allow(clippy::cast_possible_truncation, reason = "the explicit bounds check above guarantees <= 0xffff fits in u16")]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the explicit bounds check above guarantees <= 0xffff fits in u16"
+)]
 fn parse_ipv6(s: &str) -> Option<u128> {
     let parts: Vec<&str> = s.split("::").collect();
     let groups: Vec<u16> = match parts.len() {
@@ -559,7 +557,13 @@ mod tests {
     #[test]
     fn cidr_parse_rejects_overlong_prefix() {
         let err = Cidr::parse("192.0.2.0/40").unwrap_err();
-        assert!(matches!(err, CidrParseError::PrefixOutOfRange { prefix: 40, max: 32 }));
+        assert!(matches!(
+            err,
+            CidrParseError::PrefixOutOfRange {
+                prefix: 40,
+                max: 32
+            }
+        ));
         let err = Cidr::parse("2001:db8::/200").unwrap_err();
         assert!(matches!(err, CidrParseError::PrefixOutOfRange { .. }));
     }

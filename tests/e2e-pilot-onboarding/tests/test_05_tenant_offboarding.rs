@@ -21,8 +21,8 @@
 
 use e2e_pilot_onboarding::{
     canonical_blob_payloads, canonical_pilot_tenant, OffboardingError, PilotHarness,
-    PilotHarnessError, SubscriptionState, TenantLifecycleState, FIXED_NOW_MS,
-    OFFBOARDING_GRACE_MS, ONE_DAY_MS,
+    PilotHarnessError, SubscriptionState, TenantLifecycleState, FIXED_NOW_MS, OFFBOARDING_GRACE_MS,
+    ONE_DAY_MS,
 };
 
 #[test]
@@ -37,10 +37,7 @@ fn wave23_pilot_offboarding_full_lifecycle() {
 
     // Cancel subscription.
     h.cancel_subscription(&tenant).unwrap();
-    assert_eq!(
-        h.subscription_state(&tenant),
-        SubscriptionState::Cancelled
-    );
+    assert_eq!(h.subscription_state(&tenant), SubscriptionState::Cancelled);
     match h.lifecycle_state(&tenant) {
         Some(TenantLifecycleState::CancelledInGrace { grace_ends_at_ms }) => {
             assert_eq!(grace_ends_at_ms, FIXED_NOW_MS + OFFBOARDING_GRACE_MS);

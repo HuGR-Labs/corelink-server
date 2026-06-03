@@ -125,8 +125,7 @@ fn test_rp_id_confusion_via_unrelated_host() {
     // `https://corelink.example` (different eTLD), the engine's
     // builder enforces consistency with the canonical RP-ID and
     // returns Malformed before construction.
-    let res =
-        OriginAllowlist::from_strings(["https://corelink.example", "https://attacker.com"]);
+    let res = OriginAllowlist::from_strings(["https://corelink.example", "https://attacker.com"]);
     let allow = res.unwrap();
     let consistency = allow.require_consistency_with(&RpId::new("corelink.humangr.com").unwrap());
     assert!(matches!(consistency, Err(WebAuthnError::Malformed(_))));
@@ -386,7 +385,12 @@ fn test_step_up_token_op_class_binding() {
     ));
     // Wrong user — rejected.
     assert!(matches!(
-        token.validate(&secret, UserAccountId::new_v7(), "mass_revoke", now_ms + 1_000),
+        token.validate(
+            &secret,
+            UserAccountId::new_v7(),
+            "mass_revoke",
+            now_ms + 1_000
+        ),
         Err(WebAuthnError::StepUpRequired)
     ));
     // Wrong secret — rejected.

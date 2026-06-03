@@ -176,7 +176,9 @@ impl AdcCredentials {
 
         // Refresh.
         let fresh = match &self.inner.source {
-            AdcSource::ServiceAccount(sa) => mint_token_service_account(&self.inner.http, sa).await?,
+            AdcSource::ServiceAccount(sa) => {
+                mint_token_service_account(&self.inner.http, sa).await?
+            }
             AdcSource::MetadataServer => fetch_token_metadata_server(&self.inner.http).await?,
             AdcSource::Static(tok) => CachedToken {
                 access_token: tok.clone(),
@@ -263,7 +265,9 @@ async fn mint_token_service_account(
         .map_err(|e| BYOKError::Provider(format!("ADC: token JSON parse: {e}")))?;
 
     let refresh_at = Instant::now()
-        .checked_add(Duration::from_secs(tr.expires_in.max(60).saturating_sub(60) as u64))
+        .checked_add(Duration::from_secs(
+            tr.expires_in.max(60).saturating_sub(60) as u64,
+        ))
         .unwrap_or_else(Instant::now);
 
     Ok(CachedToken {
@@ -300,7 +304,9 @@ async fn fetch_token_metadata_server(http: &reqwest::Client) -> Result<CachedTok
         .map_err(|e| BYOKError::Provider(format!("ADC: metadata JSON parse: {e}")))?;
 
     let refresh_at = Instant::now()
-        .checked_add(Duration::from_secs(tr.expires_in.max(60).saturating_sub(60) as u64))
+        .checked_add(Duration::from_secs(
+            tr.expires_in.max(60).saturating_sub(60) as u64,
+        ))
         .unwrap_or_else(Instant::now);
 
     Ok(CachedToken {

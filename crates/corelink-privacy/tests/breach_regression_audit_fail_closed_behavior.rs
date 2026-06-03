@@ -140,7 +140,8 @@ fn multiple_retry_attempts_all_captured() {
     let sink = InMemoryBreachAuditSink::new();
 
     for attempt in 0..5u32 {
-        sink.emit(sev1_dispatch("BREACH-MULTI-RETRY", attempt)).unwrap();
+        sink.emit(sev1_dispatch("BREACH-MULTI-RETRY", attempt))
+            .unwrap();
     }
 
     let records = sink.snapshot_for_breach("BREACH-MULTI-RETRY");
@@ -183,7 +184,11 @@ fn sev1_dispatch_has_3_mandatory_locales() {
         "SEV-1 dispatch must have exactly 3 customer locales"
     );
 
-    let locale_strs: Vec<_> = dispatch.customer_locales.iter().map(|l| l.as_str()).collect();
+    let locale_strs: Vec<_> = dispatch
+        .customer_locales
+        .iter()
+        .map(|l| l.as_str())
+        .collect();
     assert!(locale_strs.contains(&"pt-BR"), "must include pt-BR locale");
     assert!(locale_strs.contains(&"en-US"), "must include en-US locale");
     assert!(locale_strs.contains(&"es-MX"), "must include es-MX locale");

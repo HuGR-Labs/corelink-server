@@ -147,8 +147,7 @@ where
         *self
             .now_ms
             .lock()
-            .map_err(|e| RolloutError::Internal(format!("now_ms mutex poisoned: {e}")))? =
-            now_ms;
+            .map_err(|e| RolloutError::Internal(format!("now_ms mutex poisoned: {e}")))? = now_ms;
         Ok(())
     }
 
@@ -210,9 +209,7 @@ where
             .map_err(|e| RolloutError::Internal(format!("session mutex poisoned: {e}")))?;
 
         if let Some(existing) = session_guard.as_ref() {
-            return Err(RolloutError::RolloutInFlight(
-                existing.handle.handle_id,
-            ));
+            return Err(RolloutError::RolloutInFlight(existing.handle.handle_id));
         }
 
         let now_ms = self.current_now_ms()?;
@@ -300,11 +297,9 @@ where
         // Observe metrics in auto-rollback driver
         let sustained_trigger = session.rollback_driver.observe(&metrics, 60);
 
-        let decision = self.state_machine.evaluate(
-            session.handle.current_stage,
-            metrics,
-            sustained_trigger,
-        );
+        let decision =
+            self.state_machine
+                .evaluate(session.handle.current_stage, metrics, sustained_trigger);
 
         let now_ms = self.current_now_ms()?;
 
@@ -415,7 +410,10 @@ where
             RolloutAuditEventType::AutoRollback,
             &new_handle,
             Some(trigger),
-            &format!("explicit auto_rollback trigger={}", trigger.as_metric_label()),
+            &format!(
+                "explicit auto_rollback trigger={}",
+                trigger.as_metric_label()
+            ),
         )?;
         let mut session_guard = self
             .active_session
@@ -469,16 +467,12 @@ where
 }
 
 /// Convenience alias: in-memory controller with in-memory audit + budget.
-pub type DefaultInMemoryController = InMemoryRolloutController<
-    InMemoryRolloutAuditSink,
-    super::budget::InMemoryBudgetTracker,
->;
+pub type DefaultInMemoryController =
+    InMemoryRolloutController<InMemoryRolloutAuditSink, super::budget::InMemoryBudgetTracker>;
 
 /// Convenience alias: controller with failing audit (for fail-CLOSED tests).
-pub type FailingAuditController = InMemoryRolloutController<
-    FailingRolloutAuditSink,
-    super::budget::InMemoryBudgetTracker,
->;
+pub type FailingAuditController =
+    InMemoryRolloutController<FailingRolloutAuditSink, super::budget::InMemoryBudgetTracker>;
 
 /// Construct a default in-memory controller (convenient for tests).
 #[must_use]
@@ -603,7 +597,10 @@ mod tests {
         let records = audit.records().unwrap();
         assert_eq!(records.len(), 1);
         let first = records.first().expect("expected at least one audit record");
-        assert_eq!(first.event_type, super::super::audit::RolloutAuditEventType::Start);
+        assert_eq!(
+            first.event_type,
+            super::super::audit::RolloutAuditEventType::Start
+        );
     }
 
     #[test]

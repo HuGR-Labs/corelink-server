@@ -27,16 +27,16 @@
 
 use std::sync::Arc;
 
-use corelink_audit_chain::{
-    audit_chain_schema_version, canonical_audit_event_kinds,
-    canonical_audit_event_strings, canonical_date_yyyy_mm_dd, canonical_r2_key,
-    link_chain_hash_from_canonical, AuditChainAuditEventType, AuditEvent, AuditEventKind,
-    AuditExporter, ChainHash, ExportWindow, FailingAuditChainAuditSink, HashChainBuilder,
-    InMemoryAuditChainAuditSink, InMemoryAuditExporter, InMemoryR2AuditSink,
-    AuditChainAuditSink, GENESIS_PREV_HASH, GENESIS_SEQUENCE_NUMBER,
-    CLOUDEVENTS_DATACONTENTTYPE, CLOUDEVENTS_SPECVERSION, EVENT_TYPE_PREFIX,
-};
 use corelink_analytics::Region;
+use corelink_audit_chain::{
+    audit_chain_schema_version, canonical_audit_event_kinds, canonical_audit_event_strings,
+    canonical_date_yyyy_mm_dd, canonical_r2_key, link_chain_hash_from_canonical,
+    AuditChainAuditEventType, AuditChainAuditSink, AuditEvent, AuditEventKind, AuditExporter,
+    ChainHash, ExportWindow, FailingAuditChainAuditSink, HashChainBuilder,
+    InMemoryAuditChainAuditSink, InMemoryAuditExporter, InMemoryR2AuditSink,
+    CLOUDEVENTS_DATACONTENTTYPE, CLOUDEVENTS_SPECVERSION, EVENT_TYPE_PREFIX, GENESIS_PREV_HASH,
+    GENESIS_SEQUENCE_NUMBER,
+};
 use uuid::Uuid;
 
 // =====================================================================
@@ -105,13 +105,25 @@ fn audit_event_kind_subjects_distinct_and_eight_in_count() {
 fn audit_event_kind_event_type_canonical_dev_hugr_prefix() {
     for k in canonical_audit_event_kinds() {
         let t = k.event_type();
-        assert!(t.starts_with("dev.hugr.corelink."), "event_type must use canonical prefix: {t}");
+        assert!(
+            t.starts_with("dev.hugr.corelink."),
+            "event_type must use canonical prefix: {t}"
+        );
         assert!(t.ends_with(".v1"), "event_type must be v1-suffixed: {t}");
     }
     // Pin specific mappings.
-    assert_eq!(AuditEventKind::Tenant.event_type(), "dev.hugr.corelink.tenant.v1");
-    assert_eq!(AuditEventKind::CasPut.event_type(), "dev.hugr.corelink.cas.put.v1");
-    assert_eq!(AuditEventKind::AbuseDetected.event_type(), "dev.hugr.corelink.abuse.detected.v1");
+    assert_eq!(
+        AuditEventKind::Tenant.event_type(),
+        "dev.hugr.corelink.tenant.v1"
+    );
+    assert_eq!(
+        AuditEventKind::CasPut.event_type(),
+        "dev.hugr.corelink.cas.put.v1"
+    );
+    assert_eq!(
+        AuditEventKind::AbuseDetected.event_type(),
+        "dev.hugr.corelink.abuse.detected.v1"
+    );
 }
 
 #[test]
@@ -156,7 +168,10 @@ fn meta_audit_event_type_canonical_list_matches_variants() {
         AuditChainAuditEventType::SinkFailure.as_str(),
     ];
     for s in canonical.iter() {
-        assert!(variant_strings.contains(s), "canonical {s} missing from variants");
+        assert!(
+            variant_strings.contains(s),
+            "canonical {s} missing from variants"
+        );
     }
     // Distinct.
     let mut sorted: Vec<&str> = canonical.to_vec();
@@ -186,7 +201,10 @@ fn meta_audit_sev_classification_canonical() {
         AuditChainAuditEventType::ChainBreakDetected,
         AuditChainAuditEventType::SinkFailure,
     ] {
-        assert!(!(v.is_sev0() && v.is_sev1()), "{v:?} cannot be both sev0+sev1");
+        assert!(
+            !(v.is_sev0() && v.is_sev1()),
+            "{v:?} cannot be both sev0+sev1"
+        );
     }
 }
 
@@ -271,17 +289,11 @@ fn canonical_date_yyyy_mm_dd_pins_canonical_vectors() {
     assert_eq!(canonical_date_yyyy_mm_dd(86_400_000), "1970-01-02");
     // 2024-01-01 — 54 years × ~365.25 ≈ 19_723 days from epoch.
     // Concrete: 2024-01-01 00:00:00 UTC = 1_704_067_200_000 ms.
-    assert_eq!(
-        canonical_date_yyyy_mm_dd(1_704_067_200_000),
-        "2024-01-01"
-    );
+    assert_eq!(canonical_date_yyyy_mm_dd(1_704_067_200_000), "2024-01-01");
     // 2026-05-15 (today reference).
     // 2026-05-15 00:00:00 UTC = 1_778_803_200_000 ms
     // (1_778_889_600_000 ms = 2026-05-16 — verified empirically).
-    assert_eq!(
-        canonical_date_yyyy_mm_dd(1_778_889_600_000),
-        "2026-05-16"
-    );
+    assert_eq!(canonical_date_yyyy_mm_dd(1_778_889_600_000), "2026-05-16");
 }
 
 #[test]
@@ -306,10 +318,7 @@ fn canonical_r2_key_format_pinned() {
     // audit/{uuid}/1970-01-01/00000000.cloudevent.ndjson
     assert_eq!(
         key,
-        format!(
-            "audit/{}/1970-01-01/00000000.cloudevent.ndjson",
-            tenant
-        )
+        format!("audit/{}/1970-01-01/00000000.cloudevent.ndjson", tenant)
     );
     // Sequence zero-padded to 8 digits.
     let key_42 = canonical_r2_key(tenant, 0, 42);
@@ -341,12 +350,15 @@ fn in_memory_meta_audit_sink_is_empty_false_after_emit_and_len_tracks() {
     let sink = InMemoryAuditChainAuditSink::new();
     assert!(sink.is_empty());
     assert_eq!(sink.len(), 0);
-    sink.emit(rec(AuditChainAuditEventType::EventAppended)).expect("emit");
+    sink.emit(rec(AuditChainAuditEventType::EventAppended))
+        .expect("emit");
     // Kills `is_empty -> true`.
     assert!(!sink.is_empty());
     assert_eq!(sink.len(), 1);
-    sink.emit(rec(AuditChainAuditEventType::ChainVerifiedOk)).expect("emit");
-    sink.emit(rec(AuditChainAuditEventType::ChainBreakDetected)).expect("emit");
+    sink.emit(rec(AuditChainAuditEventType::ChainVerifiedOk))
+        .expect("emit");
+    sink.emit(rec(AuditChainAuditEventType::ChainBreakDetected))
+        .expect("emit");
     // Kills `len -> 0` / `len -> 1`.
     assert_eq!(sink.len(), 3);
 }
@@ -354,10 +366,14 @@ fn in_memory_meta_audit_sink_is_empty_false_after_emit_and_len_tracks() {
 #[test]
 fn in_memory_meta_audit_sink_snapshot_of_filters_by_event_type() {
     let sink = InMemoryAuditChainAuditSink::new();
-    sink.emit(rec(AuditChainAuditEventType::EventAppended)).expect("emit");
-    sink.emit(rec(AuditChainAuditEventType::EventAppended)).expect("emit");
-    sink.emit(rec(AuditChainAuditEventType::ChainVerifiedOk)).expect("emit");
-    sink.emit(rec(AuditChainAuditEventType::SinkFailure)).expect("emit");
+    sink.emit(rec(AuditChainAuditEventType::EventAppended))
+        .expect("emit");
+    sink.emit(rec(AuditChainAuditEventType::EventAppended))
+        .expect("emit");
+    sink.emit(rec(AuditChainAuditEventType::ChainVerifiedOk))
+        .expect("emit");
+    sink.emit(rec(AuditChainAuditEventType::SinkFailure))
+        .expect("emit");
 
     let appended = sink.snapshot_of(AuditChainAuditEventType::EventAppended);
     assert_eq!(appended.len(), 2);
@@ -373,20 +389,27 @@ fn in_memory_meta_audit_sink_snapshot_of_filters_by_event_type() {
 fn cloned_in_memory_meta_audit_sink_shares_buffer() {
     let s1 = InMemoryAuditChainAuditSink::new();
     let s2: Arc<dyn AuditChainAuditSink> = Arc::new(s1.clone());
-    s1.emit(rec(AuditChainAuditEventType::EventAppended)).expect("emit on s1");
+    s1.emit(rec(AuditChainAuditEventType::EventAppended))
+        .expect("emit on s1");
     assert_eq!(s1.len(), 1);
     // The clone shares the buffer; emitting on s2 also reflects in s1.
-    s2.emit(rec(AuditChainAuditEventType::ChainVerifiedOk)).expect("emit on s2");
+    s2.emit(rec(AuditChainAuditEventType::ChainVerifiedOk))
+        .expect("emit on s2");
     assert_eq!(s1.len(), 2);
 }
 
 #[test]
 fn failing_meta_audit_sink_returns_store_error_with_message() {
     let sink = FailingAuditChainAuditSink::new();
-    let err = sink.emit(rec(AuditChainAuditEventType::EventAppended)).unwrap_err();
+    let err = sink
+        .emit(rec(AuditChainAuditEventType::EventAppended))
+        .unwrap_err();
     // Kills `emit -> Ok(())` mutation.
     let s = format!("{err}");
-    assert!(s.contains("induced") || s.contains("audit"), "diagnostic must mention induced/audit: {s}");
+    assert!(
+        s.contains("induced") || s.contains("audit"),
+        "diagnostic must mention induced/audit: {s}"
+    );
 }
 
 // =====================================================================
@@ -469,11 +492,28 @@ fn region_ndjson_round_trip_covers_every_variant() {
 #[test]
 fn region_ndjson_round_trip_distinguishes_all_22_variants() {
     let regions = [
-        Region::Iad, Region::Sjc, Region::Dfw, Region::Sea, Region::Ord,
-        Region::Lhr, Region::Fra, Region::Ams, Region::Cdg, Region::Mad,
-        Region::Gru, Region::Eze, Region::Bog, Region::Nrt, Region::Sin,
-        Region::Syd, Region::Hkg, Region::Bom, Region::Icn, Region::Jnb,
-        Region::Cpt, Region::Dxb,
+        Region::Iad,
+        Region::Sjc,
+        Region::Dfw,
+        Region::Sea,
+        Region::Ord,
+        Region::Lhr,
+        Region::Fra,
+        Region::Ams,
+        Region::Cdg,
+        Region::Mad,
+        Region::Gru,
+        Region::Eze,
+        Region::Bog,
+        Region::Nrt,
+        Region::Sin,
+        Region::Syd,
+        Region::Hkg,
+        Region::Bom,
+        Region::Icn,
+        Region::Jnb,
+        Region::Cpt,
+        Region::Dxb,
     ];
     let tenant = Uuid::from_u128(1);
     let id = Uuid::from_u128(2);
@@ -520,7 +560,10 @@ fn exporter_audit_emitted_count_reflects_real_emit_count() {
         .expect("export");
     // Kills `-> Ok(0)` AND `-> Ok(1)`: actual count is exactly 2.
     let count = exp.audit_emitted_count().expect("guard");
-    assert_eq!(count, 2, "two export_window calls => two audit-of-audit records");
+    assert_eq!(
+        count, 2,
+        "two export_window calls => two audit-of-audit records"
+    );
     // Cross-check via the snapshot path.
     let snap = exp.audit_emitted_snapshot().expect("snap");
     assert_eq!(snap.len(), 2);

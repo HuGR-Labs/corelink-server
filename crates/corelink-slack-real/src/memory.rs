@@ -7,9 +7,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::audit::{
-    InMemorySlackAuditSink, SlackAuditEvent, SlackAuditOutcome, SlackAuditSink,
-};
+use crate::audit::{InMemorySlackAuditSink, SlackAuditEvent, SlackAuditOutcome, SlackAuditSink};
 use crate::channel::SlackChannel;
 use crate::client::{SendOutcome, SharedSlackClient, SlackClientError};
 use crate::message::SlackMessage;

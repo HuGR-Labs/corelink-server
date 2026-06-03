@@ -78,8 +78,7 @@ impl FakeClock {
 
     /// Pin the clock to an absolute value.
     pub fn set_ms(&self, abs_ms: u64) {
-        self.now
-            .store(abs_ms, std::sync::atomic::Ordering::Release);
+        self.now.store(abs_ms, std::sync::atomic::Ordering::Release);
     }
 }
 

@@ -16,15 +16,15 @@
 
 use std::sync::Arc;
 
+use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
 use corelink_meta::InMemoryMetaStore;
 use corelink_reapi::handler::{HandlerCore, SystemClock};
 use corelink_reapi::orchestrator::NoopOrphanReconciler;
 use corelink_reapi::proto::reapi::capabilities_client::CapabilitiesClient;
 use corelink_reapi::proto::reapi::GetCapabilitiesRequest;
 use corelink_reapi::{CapabilitiesService, StubPatValidator};
-use corelink_tenant_path::TenantDerivationKey;
-use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
 use corelink_replication::region_resolver::Region;
+use corelink_tenant_path::TenantDerivationKey;
 use tokio::net::TcpListener;
 use tonic::transport::Server;
 use zeroize::Zeroizing;

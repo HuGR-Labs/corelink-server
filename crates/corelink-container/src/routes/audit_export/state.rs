@@ -63,7 +63,8 @@ pub struct AuditExportRouteState {
 /// the captured-emit Vec directly via the sink, NOT via this `Debug`.
 impl core::fmt::Debug for AuditExportRouteState {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("AuditExportRouteState").finish_non_exhaustive()
+        f.debug_struct("AuditExportRouteState")
+            .finish_non_exhaustive()
     }
 }
 
@@ -80,13 +81,11 @@ pub fn build_state() -> AuditExportRouteState {
         let exporter: Arc<dyn AuditExporter> = Arc::new(InMemoryAuditExporter::new());
         let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
         let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
-        let rate_limiter: Arc<dyn RateLimiter> = Arc::new(
-            InMemoryTokenBucketRateLimiter::new(
-                rl_audit,
-                rl_metrics,
-                audit_export_rate_limit_config(),
-            ),
-        );
+        let rate_limiter: Arc<dyn RateLimiter> = Arc::new(InMemoryTokenBucketRateLimiter::new(
+            rl_audit,
+            rl_metrics,
+            audit_export_rate_limit_config(),
+        ));
         let audit_sink: Arc<dyn ExportAuditSink> = Arc::new(InMemoryExportAuditSink::new());
         let wall_clock = default_wall_clock();
         AuditExportRouteState {
@@ -124,7 +123,10 @@ pub fn audit_export_rate_limit_config() -> RateLimitConfig {
     // canceled ≥ ceiling). On a misconfiguration we fall back to
     // `canonical()` to keep the route construction infallible.
     RateLimitConfig::with_overrides(
-        1, 1, 60, RETRY_AFTER_HARD_CEILING_SECS_FOR_EXPORT,
+        1,
+        1,
+        60,
+        RETRY_AFTER_HARD_CEILING_SECS_FOR_EXPORT,
         RETRY_AFTER_CANCELED_FOR_EXPORT,
     )
     .unwrap_or_else(RateLimitConfig::canonical)

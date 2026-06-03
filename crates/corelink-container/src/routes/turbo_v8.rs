@@ -155,11 +155,8 @@ impl core::fmt::Debug for TurboRouteState {
 pub fn build_handlers() -> TurboRouteState {
     let audit = Arc::new(InMemoryTurboAuditSink::new());
     let store = Arc::new(InMemoryKvStore::new());
-    let handler: Arc<dyn TurboArtifactHandler> = Arc::new(CasAdapterTurboHandler::new(
-        store.clone(),
-        store,
-        audit,
-    ));
+    let handler: Arc<dyn TurboArtifactHandler> =
+        Arc::new(CasAdapterTurboHandler::new(store.clone(), store, audit));
     TurboRouteState { handler }
 }
 
@@ -180,10 +177,7 @@ pub fn router(state: TurboRouteState) -> Router {
         // capture.
         .route(TURBO_EVENTS_ROUTE, post(handle_events))
         .route(TURBO_STATUS_ROUTE, post(handle_status))
-        .route(
-            TURBO_GET_ROUTE,
-            get(handle_get).put(handle_put),
-        )
+        .route(TURBO_GET_ROUTE, get(handle_get).put(handle_put))
         .with_state(state)
 }
 
@@ -288,9 +282,7 @@ async fn handle_status(
 fn map_err(e: TurboBridgeError) -> axum::response::Response {
     tracing::warn!(error = ?e, "turbo bridge error");
     match e {
-        TurboBridgeError::NotFound { .. } => {
-            (StatusCode::NOT_FOUND, "not found").into_response()
-        }
+        TurboBridgeError::NotFound { .. } => (StatusCode::NOT_FOUND, "not found").into_response(),
         TurboBridgeError::HashTooLong { .. } => {
             (StatusCode::BAD_REQUEST, "hash too long").into_response()
         }
@@ -447,16 +439,18 @@ mod tests {
         // we test the handler-level rejection directly to keep the route test
         // focused on HTTP status mapping.
         let state = fixture();
-        let err = state.handler.put(corelink_turbo_bridge::TurboPutRequest::new(
-            "h1",
-            "victim",      // team_id
-            "s",
-            b"x".to_vec(),
-            None,
-            "evil",
-            "attacker",    // caller_tenant != team_id → CrossTenantDenied
-            1,
-        ));
+        let err = state
+            .handler
+            .put(corelink_turbo_bridge::TurboPutRequest::new(
+                "h1",
+                "victim", // team_id
+                "s",
+                b"x".to_vec(),
+                None,
+                "evil",
+                "attacker", // caller_tenant != team_id → CrossTenantDenied
+                1,
+            ));
         assert!(matches!(
             err.unwrap_err(),
             corelink_turbo_bridge::TurboBridgeError::CrossTenantDenied { .. }
@@ -520,10 +514,7 @@ mod tests {
 
     #[test]
     fn hash_too_long_maps_to_400() {
-        let resp = map_err(TurboBridgeError::HashTooLong {
-            len: 129,
-            max: 128,
-        });
+        let resp = map_err(TurboBridgeError::HashTooLong { len: 129, max: 128 });
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 

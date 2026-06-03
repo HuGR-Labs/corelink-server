@@ -30,9 +30,9 @@
 //! - `INTERNAL` (13) — unexpected backend / programmer errors.
 //! - `UNAVAILABLE` (14) — transient backend failures recommending retry.
 
+use corelink_cas::r2_storage::R2Error;
 use corelink_hash::HashMismatch;
 use corelink_meta::MetaError;
-use corelink_cas::r2_storage::R2Error;
 
 /// `error_taxonomy.md` code for `AuthStubError::PatInvalid`.
 pub const COR_AUTH_PAT_INVALID: &str = "COR_AUTH_PAT_INVALID";

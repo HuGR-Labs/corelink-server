@@ -21,11 +21,9 @@ use uuid::Uuid;
 use crate::audit::{AdminOpAuditSink, AdminOpCloudEvent, AdminOpCloudEventBuilder};
 use crate::collusion::InMemoryCollusionStore;
 use crate::error::DualApprovalError;
-use crate::hmac_verify::{AdminSigningKey, verify_hmac};
+use crate::hmac_verify::{verify_hmac, AdminSigningKey};
 use crate::nonce::InMemoryNonceStore;
-use crate::types::{
-    ActorIdentity, AdminOpRequest, ApprovalOutcome, VerifiedApproval,
-};
+use crate::types::{ActorIdentity, AdminOpRequest, ApprovalOutcome, VerifiedApproval};
 
 /// MFA freshness hard limit (ms).
 const MFA_MAX_AGE_MS: u64 = 30 * 60 * 1_000; // 30 min
@@ -169,7 +167,13 @@ impl DualApprovalGate for DualApprovalGateImpl {
         // ── 1. Clock-skew check ─────────────────────────────────────────
         let skew = now_ms.abs_diff(req.ts_ms);
         if skew > CLOCK_SKEW_MAX_MS {
-            emit_denial(self, req, ApprovalOutcome::DeniedClockSkew, now_ms, caller_mfa_ts_ms);
+            emit_denial(
+                self,
+                req,
+                ApprovalOutcome::DeniedClockSkew,
+                now_ms,
+                caller_mfa_ts_ms,
+            );
             return Err(DualApprovalError::ClockSkew {
                 req_ms: req.ts_ms,
                 srv_ms: now_ms,
@@ -179,7 +183,13 @@ impl DualApprovalGate for DualApprovalGateImpl {
         // ── 2. MFA freshness check ──────────────────────────────────────
         let mfa_age_ms = now_ms.saturating_sub(caller_mfa_ts_ms);
         if mfa_age_ms > MFA_MAX_AGE_MS {
-            emit_denial(self, req, ApprovalOutcome::DeniedMfaStale, now_ms, caller_mfa_ts_ms);
+            emit_denial(
+                self,
+                req,
+                ApprovalOutcome::DeniedMfaStale,
+                now_ms,
+                caller_mfa_ts_ms,
+            );
             let age_min = (mfa_age_ms / 60_000) as u32;
             return Err(DualApprovalError::MfaStale { age_min });
         }
@@ -187,13 +197,25 @@ impl DualApprovalGate for DualApprovalGateImpl {
         // ── 3. Separation of duties: caller ≠ approver ─────────────────
         // INV-ADMIN-DUAL-APPROVAL CRITICAL — enforced unconditionally.
         if req.caller_user_id == req.approver_user_id {
-            emit_denial(self, req, ApprovalOutcome::DeniedCallerEq, now_ms, caller_mfa_ts_ms);
+            emit_denial(
+                self,
+                req,
+                ApprovalOutcome::DeniedCallerEq,
+                now_ms,
+                caller_mfa_ts_ms,
+            );
             return Err(DualApprovalError::CallerEqualsApprover);
         }
 
         // ── 4. Approver admin role check ────────────────────────────────
         if !self.role_store.is_admin(req.approver_user_id) {
-            emit_denial(self, req, ApprovalOutcome::DeniedApproverNotAdmin, now_ms, caller_mfa_ts_ms);
+            emit_denial(
+                self,
+                req,
+                ApprovalOutcome::DeniedApproverNotAdmin,
+                now_ms,
+                caller_mfa_ts_ms,
+            );
             return Err(DualApprovalError::ApproverNotAdmin);
         }
 
@@ -206,7 +228,13 @@ impl DualApprovalGate for DualApprovalGateImpl {
             &req.approver_signature,
         )
         .inspect_err(|_| {
-            emit_denial(self, req, ApprovalOutcome::DeniedSig, now_ms, caller_mfa_ts_ms);
+            emit_denial(
+                self,
+                req,
+                ApprovalOutcome::DeniedSig,
+                now_ms,
+                caller_mfa_ts_ms,
+            );
         })?;
 
         // ── 6. Collusion-rotation check (destructive ops only) ──────────
@@ -214,7 +242,13 @@ impl DualApprovalGate for DualApprovalGateImpl {
             self.collusion_store
                 .check_collusion(req.tenant_id, req.approver_user_id, now_ms)
                 .inspect_err(|_| {
-                    emit_denial(self, req, ApprovalOutcome::DeniedCollusion, now_ms, caller_mfa_ts_ms);
+                    emit_denial(
+                        self,
+                        req,
+                        ApprovalOutcome::DeniedCollusion,
+                        now_ms,
+                        caller_mfa_ts_ms,
+                    );
                 })?;
         }
 
@@ -222,7 +256,13 @@ impl DualApprovalGate for DualApprovalGateImpl {
         self.nonce_store
             .check_and_record(req.caller_user_id, req.nonce, now_ms)
             .inspect_err(|_| {
-                emit_denial(self, req, ApprovalOutcome::DeniedNonceReplay, now_ms, caller_mfa_ts_ms);
+                emit_denial(
+                    self,
+                    req,
+                    ApprovalOutcome::DeniedNonceReplay,
+                    now_ms,
+                    caller_mfa_ts_ms,
+                );
             })?;
 
         // ── 8. Success: compute prev_state_hash + emit audit ────────────

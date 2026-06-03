@@ -10,9 +10,9 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
+use corelink_cas::r2_storage::R2Backend;
 use corelink_hash::Digest;
 use corelink_meta::MetaStore;
-use corelink_cas::r2_storage::R2Backend;
 use tonic::{async_trait, Code, Request, Response, Status, Streaming};
 
 use crate::capabilities::MAX_CAS_BLOB_SIZE_BYTES;
@@ -20,7 +20,9 @@ use crate::error_map::{
     HashErrorMapping, MetaErrorMapping, R2ErrorMapping, COR_CAS_BAD_DIGEST,
     COR_CAS_BAD_RESOURCE_NAME, COR_CAS_BLOB_TOO_LARGE,
 };
-use crate::orchestrator::{CasWriteOrchestrator, CommitPutPlan, OrchestratorError, OrphanReconciler};
+use crate::orchestrator::{
+    CasWriteOrchestrator, CommitPutPlan, OrchestratorError, OrphanReconciler,
+};
 use crate::pat::{AuthScope, PatValidator};
 use crate::proto::bytestream::byte_stream_server::{ByteStream, ByteStreamServer};
 use crate::proto::bytestream::{

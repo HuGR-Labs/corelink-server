@@ -240,9 +240,8 @@ impl std::fmt::Display for HealthDoOp {
 /// The `subject` argument is `tenant:<id>:<correlation_id>` so the audit
 /// trail records the exact `(tenant, correlation_id)` coordinate without
 /// further parsing.
-pub type AuditFn = Arc<
-    dyn Fn(HealthDoOp, &str) -> Result<(), HealthDoError> + Send + Sync + 'static,
->;
+pub type AuditFn =
+    Arc<dyn Fn(HealthDoOp, &str) -> Result<(), HealthDoError> + Send + Sync + 'static>;
 
 /// Default audit hook — emits to `worker::console_log!` on wasm32, no-op
 /// on native. Production wires a recorder via [`ClerkHealthLogic::with_audit`].
@@ -312,16 +311,12 @@ impl ParsedRoute {
         let mut segments = tail.splitn(2, '/');
         let tenant_id = segments
             .next()
-            .ok_or_else(|| {
-                HealthDoError::ValidationFailed(format!("missing tenant in '{path}'"))
-            })?
+            .ok_or_else(|| HealthDoError::ValidationFailed(format!("missing tenant in '{path}'")))?
             .to_owned();
         let correlation_id = segments
             .next()
             .ok_or_else(|| {
-                HealthDoError::ValidationFailed(format!(
-                    "missing correlation_id in '{path}'"
-                ))
+                HealthDoError::ValidationFailed(format!("missing correlation_id in '{path}'"))
             })?
             .to_owned();
 
@@ -680,14 +675,16 @@ const ALARM_INTERVAL_MS: i64 = DEFAULT_TTL_MS / 4;
 /// emission fans into `worker::console_log!` (Logpush ingest).
 #[cfg(target_arch = "wasm32")]
 fn console_audit() -> AuditFn {
-    Arc::new(|op: HealthDoOp, subject: &str| -> Result<(), HealthDoError> {
-        worker::console_log!(
-            "{{\"surface\":\"clerk_health_do\",\"op\":\"{}\",\"subject\":\"{}\"}}",
-            op.as_str(),
-            subject,
-        );
-        Ok(())
-    })
+    Arc::new(
+        |op: HealthDoOp, subject: &str| -> Result<(), HealthDoError> {
+            worker::console_log!(
+                "{{\"surface\":\"clerk_health_do\",\"op\":\"{}\",\"subject\":\"{}\"}}",
+                op.as_str(),
+                subject,
+            );
+            Ok(())
+        },
+    )
 }
 
 /// `ClerkHealthDo` — production Durable Object actor backing the
@@ -729,17 +726,13 @@ impl ClerkHealthDo {
         let entries = js_sys::Array::from(&map.entries().into());
         for entry in entries.iter() {
             let pair = js_sys::Array::from(&entry);
-            if let (Some(k), Some(v)) = (pair.get(0).as_string(), pair.get(1).as_string())
-            {
+            if let (Some(k), Some(v)) = (pair.get(0).as_string(), pair.get(1).as_string()) {
                 if let Some(cid) = k.strip_prefix(RECORD_KEY_PREFIX) {
                     if let Ok(rec) = serde_json::from_str::<HealthRecord>(&v) {
                         // Manual insert: bypass the audit hook
                         // (hydration is not a mutation event).
-                        hydrated_state = ClerkHealthLogic::seed_state(
-                            hydrated_state,
-                            cid.to_owned(),
-                            rec,
-                        );
+                        hydrated_state =
+                            ClerkHealthLogic::seed_state(hydrated_state, cid.to_owned(), rec);
                     }
                 }
             }
@@ -753,9 +746,7 @@ impl ClerkHealthDo {
     /// `tenant:<id>:<purpose>` — we strip both ceremony segments.
     async fn actor_tenant_id(&self) -> Result<String, HealthDoError> {
         let name = self.state.id().name().ok_or_else(|| {
-            HealthDoError::Backend(
-                "actor name unavailable (idFromName required)".to_owned(),
-            )
+            HealthDoError::Backend("actor name unavailable (idFromName required)".to_owned())
         })?;
         // Expect `tenant:<id>:<purpose>` — split on `:` and take the
         // middle segment.
@@ -775,10 +766,7 @@ impl ClerkHealthDo {
     }
 
     /// Persist a single record under the canonical key.
-    async fn persist_record(
-        &self,
-        record: &HealthRecord,
-    ) -> Result<(), HealthDoError> {
+    async fn persist_record(&self, record: &HealthRecord) -> Result<(), HealthDoError> {
         let key = format!("{RECORD_KEY_PREFIX}{}", record.correlation_id);
         let json = serde_json::to_string(record)
             .map_err(|e| HealthDoError::Backend(format!("serialize: {e}")))?;
@@ -833,10 +821,7 @@ impl ClerkHealthDo {
 
     /// Inner dispatch: parse the request, invoke the matching logic
     /// op, persist, return the response.
-    async fn dispatch(
-        &self,
-        req: worker::Request,
-    ) -> Result<worker::Response, HealthDoError> {
+    async fn dispatch(&self, req: worker::Request) -> Result<worker::Response, HealthDoError> {
         let method = req.method().to_string();
         let url = req
             .url()
@@ -988,8 +973,7 @@ mod tests {
 
     #[test]
     fn parsed_route_happy_path() {
-        let r =
-            ParsedRoute::parse("POST", "/record/tnt0123/cid-xyz").expect("happy parse");
+        let r = ParsedRoute::parse("POST", "/record/tnt0123/cid-xyz").expect("happy parse");
         assert_eq!(r.tenant_id, "tnt0123");
         assert_eq!(r.correlation_id, "cid-xyz");
         assert_eq!(r.method, HealthMethod::Post);
@@ -998,12 +982,9 @@ mod tests {
 
     #[test]
     fn parsed_route_rejects_missing_segments() {
-        ParsedRoute::parse("GET", "/record/onlyTenant")
-            .expect_err("missing cid rejected");
-        ParsedRoute::parse("GET", "/record//cid")
-            .expect_err("empty tenant rejected");
-        ParsedRoute::parse("GET", "/wrongprefix/a/b")
-            .expect_err("non /record/ prefix rejected");
+        ParsedRoute::parse("GET", "/record/onlyTenant").expect_err("missing cid rejected");
+        ParsedRoute::parse("GET", "/record//cid").expect_err("empty tenant rejected");
+        ParsedRoute::parse("GET", "/wrongprefix/a/b").expect_err("non /record/ prefix rejected");
     }
 
     #[test]
@@ -1013,12 +994,9 @@ mod tests {
 
     #[test]
     fn tenant_assertion_constant_time_path() {
-        let r =
-            ParsedRoute::parse("GET", "/record/tnt0123/cid").expect("parse");
+        let r = ParsedRoute::parse("GET", "/record/tnt0123/cid").expect("parse");
         r.assert_tenant("tnt0123").expect("match");
-        let err = r
-            .assert_tenant("tntFFFF")
-            .expect_err("mismatch rejected");
+        let err = r.assert_tenant("tntFFFF").expect_err("mismatch rejected");
         assert!(err.to_string().contains("tenant_scope"));
     }
 
@@ -1039,9 +1017,7 @@ mod tests {
         assert_eq!(got, rec);
 
         let removed = logic
-            .tombstone(&ParsedRoute::parse("DELETE", "/record/tnt0123/cid1").expect(
-                "parse",
-            ))
+            .tombstone(&ParsedRoute::parse("DELETE", "/record/tnt0123/cid1").expect("parse"))
             .expect("delete");
         assert!(removed, "first delete returns true");
 
@@ -1064,8 +1040,7 @@ mod tests {
     #[test]
     fn cross_tenant_upsert_rejected_close() {
         let mut logic = ClerkHealthLogic::new("tntAAAA").expect("ctor");
-        let route =
-            ParsedRoute::parse("POST", "/record/tntBBBB/cidX").expect("parse");
+        let route = ParsedRoute::parse("POST", "/record/tntBBBB/cidX").expect("parse");
         let err = logic
             .upsert(&route, "spoof", 1_000)
             .expect_err("cross-tenant rejected");
@@ -1074,9 +1049,8 @@ mod tests {
 
     #[test]
     fn audit_fail_closed_blocks_mutation() {
-        let deny: AuditFn = Arc::new(|_op, _subj| {
-            Err(HealthDoError::AuditDenied("policy".to_owned()))
-        });
+        let deny: AuditFn =
+            Arc::new(|_op, _subj| Err(HealthDoError::AuditDenied("policy".to_owned())));
         let mut logic = ClerkHealthLogic::new("tnt0123")
             .expect("ctor")
             .with_audit(deny);

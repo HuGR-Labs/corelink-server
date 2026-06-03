@@ -158,9 +158,7 @@ pub use config::{
     CRON_INTERVAL_SECS, DISPATCH_LAG_SEV3_MS, SUSTAINED_72H_LOOP_TARGET, SYNTHETIC_CANARY_TENANT_ID,
 };
 pub use error::CanaryError;
-pub use probe::{
-    CanaryProbe, FailingCanaryProbe, InMemoryCanaryProbe, RegionProbeStats,
-};
+pub use probe::{CanaryProbe, FailingCanaryProbe, InMemoryCanaryProbe, RegionProbeStats};
 pub use region::{canonical_canary_regions, CanaryRegion};
 pub use result::{
     canonical_canary_decisions, canonical_health_components, CanaryDecision, CanaryLoopResult,

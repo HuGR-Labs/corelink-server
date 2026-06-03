@@ -19,9 +19,7 @@ use std::fs;
 use corelink_audit_chain::{
     AuditEvent, AuditEventKind, ChainHash, HashChainBuilder, InMemoryAuditExporter,
 };
-use corelink_cli::audit_export::{
-    build_fixture_exporter, run_export, run_verify, ExportFormat,
-};
+use corelink_cli::audit_export::{build_fixture_exporter, run_export, run_verify, ExportFormat};
 use corelink_cli::output::OutputFormat;
 use proptest::prelude::*;
 use tempfile::TempDir;
@@ -56,11 +54,8 @@ fn export_n_events_jsonld_roundtrip_passes_verify() {
     )
     .unwrap();
     assert_eq!(outcome.event_count, 25);
-    let verified = run_verify(
-        std::path::Path::new(&outcome.file_path),
-        OutputFormat::Json,
-    )
-    .unwrap();
+    let verified =
+        run_verify(std::path::Path::new(&outcome.file_path), OutputFormat::Json).unwrap();
     assert!(verified.ok);
     assert_eq!(verified.events_verified, 25);
 }
@@ -148,10 +143,17 @@ fn merkle_proof_inclusion_each_row_links_to_anchor() {
     for i in 0..events.len() - 1 {
         let cur_link = events[i]["proof"]["link_hash"].as_str().unwrap();
         let next_prev = events[i + 1]["event"]["prev_hash"].as_str().unwrap();
-        assert_eq!(cur_link, next_prev, "link/prev mismatch between row {i} and {}", i + 1);
+        assert_eq!(
+            cur_link,
+            next_prev,
+            "link/prev mismatch between row {i} and {}",
+            i + 1
+        );
     }
     // Final row's link_hash == chain head.
-    let last_link = events[events.len() - 1]["proof"]["link_hash"].as_str().unwrap();
+    let last_link = events[events.len() - 1]["proof"]["link_hash"]
+        .as_str()
+        .unwrap();
     assert_eq!(last_link, chain_head);
 }
 
@@ -211,7 +213,10 @@ fn export_window_filters_strictly_to_time_bounds() {
 
 // =============== Property test (100 cases) ===============
 
-fn build_random_chain(tenant: Uuid, events: Vec<(u64, AuditEventKind, String)>) -> InMemoryAuditExporter {
+fn build_random_chain(
+    tenant: Uuid,
+    events: Vec<(u64, AuditEventKind, String)>,
+) -> InMemoryAuditExporter {
     let mut exporter = InMemoryAuditExporter::new();
     let mut builder = HashChainBuilder::new();
     let mut prev = ChainHash::genesis();

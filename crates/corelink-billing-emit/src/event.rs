@@ -287,9 +287,8 @@ impl Serialize for IdemKey {
 impl<'de> Deserialize<'de> for IdemKey {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s = String::deserialize(d)?;
-        let bytes = hex::decode(&s).map_err(|e| {
-            serde::de::Error::custom(format!("IdemKey hex decode failed: {e}"))
-        })?;
+        let bytes = hex::decode(&s)
+            .map_err(|e| serde::de::Error::custom(format!("IdemKey hex decode failed: {e}")))?;
         if bytes.len() != 32 {
             return Err(serde::de::Error::custom(format!(
                 "IdemKey expected 32 bytes; got {}",
@@ -314,8 +313,7 @@ fn serialize_region<S: serde::Serializer>(region: &Region, s: S) -> Result<S::Ok
 
 fn deserialize_region<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Region, D::Error> {
     let s = String::deserialize(d)?;
-    region_from_str(&s)
-        .ok_or_else(|| serde::de::Error::custom(format!("unknown Region: {s}")))
+    region_from_str(&s).ok_or_else(|| serde::de::Error::custom(format!("unknown Region: {s}")))
 }
 
 fn region_from_str(s: &str) -> Option<Region> {
@@ -552,9 +550,9 @@ pub fn validate_billing_period(s: &str) -> Result<(), InvalidBillingPeriod> {
         return Err(InvalidBillingPeriod::WrongShape(s.to_string()));
     }
     // Parse the month part (chars 5..7) into u8 + validate range.
-    let month_str = s.get(5..7).ok_or_else(|| {
-        InvalidBillingPeriod::WrongShape(s.to_string())
-    })?;
+    let month_str = s
+        .get(5..7)
+        .ok_or_else(|| InvalidBillingPeriod::WrongShape(s.to_string()))?;
     let month: u8 = month_str
         .parse()
         .map_err(|_| InvalidBillingPeriod::WrongShape(s.to_string()))?;
@@ -613,7 +611,10 @@ mod tests {
 
     #[test]
     fn kind_strings_pinned() {
-        assert_eq!(UsageEventKind::StorageBytesHourly.as_str(), "storage_bytes_hourly");
+        assert_eq!(
+            UsageEventKind::StorageBytesHourly.as_str(),
+            "storage_bytes_hourly"
+        );
         assert_eq!(UsageEventKind::EgressBytes.as_str(), "egress_bytes");
         assert_eq!(UsageEventKind::AcLookup.as_str(), "ac_lookup");
         assert_eq!(UsageEventKind::CasGet.as_str(), "cas_get");
@@ -623,12 +624,24 @@ mod tests {
 
     #[test]
     fn canonical_units_pinned_per_kind() {
-        assert_eq!(UsageEventKind::StorageBytesHourly.canonical_unit(), UsageUnit::Bytes);
-        assert_eq!(UsageEventKind::EgressBytes.canonical_unit(), UsageUnit::Bytes);
-        assert_eq!(UsageEventKind::AcLookup.canonical_unit(), UsageUnit::OpCount);
+        assert_eq!(
+            UsageEventKind::StorageBytesHourly.canonical_unit(),
+            UsageUnit::Bytes
+        );
+        assert_eq!(
+            UsageEventKind::EgressBytes.canonical_unit(),
+            UsageUnit::Bytes
+        );
+        assert_eq!(
+            UsageEventKind::AcLookup.canonical_unit(),
+            UsageUnit::OpCount
+        );
         assert_eq!(UsageEventKind::CasGet.canonical_unit(), UsageUnit::OpCount);
         assert_eq!(UsageEventKind::CasPut.canonical_unit(), UsageUnit::OpCount);
-        assert_eq!(UsageEventKind::ReplayRequest.canonical_unit(), UsageUnit::OpCount);
+        assert_eq!(
+            UsageEventKind::ReplayRequest.canonical_unit(),
+            UsageUnit::OpCount
+        );
     }
 
     #[test]

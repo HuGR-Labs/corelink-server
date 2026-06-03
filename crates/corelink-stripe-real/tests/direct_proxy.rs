@@ -24,9 +24,7 @@
     reason = "integration tests are allowed to use these primitives"
 )]
 
-use corelink_stripe_real::{
-    RetryPolicy, StripeClientConfig, StripeError, StripeRealClient,
-};
+use corelink_stripe_real::{RetryPolicy, StripeClientConfig, StripeError, StripeRealClient};
 use secrecy::SecretString;
 use wiremock::matchers::{header, header_exists, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -53,7 +51,10 @@ async fn direct_mode_uses_api_stripe_com_url() {
     let cfg = direct_config_for(&server, "sk_test_url");
     let base = cfg.effective_base_url();
     let cust = tokio::task::spawn_blocking(move || {
-        let client = StripeRealClient::builder().config(cfg).build().expect("build");
+        let client = StripeRealClient::builder()
+            .config(cfg)
+            .build()
+            .expect("build");
         // Sanity: the base URL on the client matches what we computed
         // pre-spawn (i.e. no wallet-broker mutation slipped in).
         assert_eq!(client.effective_base_url(), base);
@@ -98,7 +99,10 @@ async fn direct_mode_uses_sk_token_auth() {
 
     let cfg = direct_config_for(&server, "sk_test_auth");
     let cust = tokio::task::spawn_blocking(move || {
-        let client = StripeRealClient::builder().config(cfg).build().expect("build");
+        let client = StripeRealClient::builder()
+            .config(cfg)
+            .build()
+            .expect("build");
         client.create_customer("a@example.test", "tenant_direct_auth", "idem-direct-auth-1")
     })
     .await

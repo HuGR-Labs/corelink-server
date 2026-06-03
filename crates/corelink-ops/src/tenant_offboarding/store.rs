@@ -79,10 +79,7 @@ pub trait TenantOffboardingStore: Send + Sync + core::fmt::Debug {
     ///
     /// Returns [`TenantOffboardingStoreError::Backend`] on transport
     /// failure or unique-violation collision.
-    fn insert(
-        &self,
-        record: TenantOffboardingRecord,
-    ) -> Result<(), TenantOffboardingStoreError>;
+    fn insert(&self, record: TenantOffboardingRecord) -> Result<(), TenantOffboardingStoreError>;
 
     /// Advance the state for an existing record. The canonical
     /// orchestrator pre-validates that the `(from, trigger) → to`
@@ -150,10 +147,7 @@ impl TenantOffboardingStore for InMemoryTenantOffboardingStore {
         Ok(guard.get(tenant_id).cloned())
     }
 
-    fn insert(
-        &self,
-        record: TenantOffboardingRecord,
-    ) -> Result<(), TenantOffboardingStoreError> {
+    fn insert(&self, record: TenantOffboardingRecord) -> Result<(), TenantOffboardingStoreError> {
         let mut guard = self.inner.lock().map_err(|_| {
             TenantOffboardingStoreError::Backend("store mutex poisoned".to_string())
         })?;
@@ -208,10 +202,7 @@ impl TenantOffboardingStore for FailingTenantOffboardingStore {
         ))
     }
 
-    fn insert(
-        &self,
-        _record: TenantOffboardingRecord,
-    ) -> Result<(), TenantOffboardingStoreError> {
+    fn insert(&self, _record: TenantOffboardingRecord) -> Result<(), TenantOffboardingStoreError> {
         Err(TenantOffboardingStoreError::Backend(
             "induced store insert failure".to_string(),
         ))

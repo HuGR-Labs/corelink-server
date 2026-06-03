@@ -176,7 +176,10 @@ mod tests {
         // Tenant A is saturated; tenant B is not.
         let _p2 = s.try_acquire(t_b).unwrap();
         let r = s.try_acquire(t_a);
-        assert!(matches!(r, Err(MultipartError::ConcurrencyLimitReached { .. })));
+        assert!(matches!(
+            r,
+            Err(MultipartError::ConcurrencyLimitReached { .. })
+        ));
     }
 
     #[tokio::test]

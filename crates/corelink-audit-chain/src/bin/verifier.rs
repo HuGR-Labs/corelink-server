@@ -44,9 +44,7 @@
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 
-use corelink_audit_chain::{
-    AuditEvent, ChainVerifier, InMemoryAuditChainAuditSink,
-};
+use corelink_audit_chain::{AuditEvent, ChainVerifier, InMemoryAuditChainAuditSink};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -74,16 +72,14 @@ fn run(paths: &[String]) -> Result<String, String> {
     let mut by_tenant: BTreeMap<uuid::Uuid, Vec<AuditEvent>> = BTreeMap::new();
     let mut total_events: u64 = 0;
     for p in paths {
-        let body = std::fs::read_to_string(p)
-            .map_err(|e| format!("read {}: {}", p, e))?;
+        let body = std::fs::read_to_string(p).map_err(|e| format!("read {}: {}", p, e))?;
         for (i, line) in body.lines().enumerate() {
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
             }
-            let ev = AuditEvent::from_ndjson_line(trimmed).map_err(|e| {
-                format!("parse {} line {}: {}", p, i.saturating_add(1), e)
-            })?;
+            let ev = AuditEvent::from_ndjson_line(trimmed)
+                .map_err(|e| format!("parse {} line {}: {}", p, i.saturating_add(1), e))?;
             by_tenant.entry(ev.tenant_id).or_default().push(ev);
             total_events = total_events.saturating_add(1);
         }

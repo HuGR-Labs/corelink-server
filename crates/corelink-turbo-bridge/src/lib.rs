@@ -67,8 +67,8 @@ pub use audit::{TurboAuditEvent, TurboAuditEventKind, TurboAuditSink};
 pub use error::TurboBridgeError;
 pub use events::{TurboEventsRequest, TurboEventsResponse};
 pub use handler::{
-    InMemoryTurboHandler, TurboArtifactHandler, TurboGetRequest, TurboGetResponse,
-    TurboPutRequest, TurboPutResponse, TurboStatusResponse,
+    InMemoryTurboHandler, TurboArtifactHandler, TurboGetRequest, TurboGetResponse, TurboPutRequest,
+    TurboPutResponse, TurboStatusResponse,
 };
 pub use status::TurboStatusRequest;
 

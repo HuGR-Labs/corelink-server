@@ -240,7 +240,9 @@ impl AcLookupHandler for InMemoryAcHandler {
             .entries
             .lock()
             .map_err(|_| AcHandlerError::Internal("entry lock poisoned".into()))?;
-        let payload = g.get(&(req.tenant.clone(), req.action_digest.clone())).cloned();
+        let payload = g
+            .get(&(req.tenant.clone(), req.action_digest.clone()))
+            .cloned();
         drop(g);
 
         match payload {
@@ -367,7 +369,11 @@ mod tests {
     use crate::audit::InMemoryAuditSink;
     use crate::observer::InMemorySliObserver;
 
-    fn fixture() -> (Arc<InMemoryAuditSink>, Arc<InMemorySliObserver>, InMemoryAcHandler) {
+    fn fixture() -> (
+        Arc<InMemoryAuditSink>,
+        Arc<InMemorySliObserver>,
+        InMemoryAcHandler,
+    ) {
         let a = Arc::new(InMemoryAuditSink::new());
         let s = Arc::new(InMemorySliObserver::new());
         let h = InMemoryAcHandler::new(a.clone(), s.clone());
@@ -399,11 +405,17 @@ mod tests {
         assert_eq!(resp.result_payload, b"r".to_vec());
 
         let obs = sli.snapshot().expect("sli");
-        assert!(obs.iter().any(|o| o.sli == Sli::AvailAcLookup && !o.is_error));
-        assert!(obs.iter().any(|o| o.sli == Sli::LatencyAcHitP99 && !o.is_error));
+        assert!(obs
+            .iter()
+            .any(|o| o.sli == Sli::AvailAcLookup && !o.is_error));
+        assert!(obs
+            .iter()
+            .any(|o| o.sli == Sli::LatencyAcHitP99 && !o.is_error));
 
         let rows = audit.snapshot().expect("audit");
-        assert!(rows.iter().any(|r| r.kind == AuditEventKind::LookupAttempted));
+        assert!(rows
+            .iter()
+            .any(|r| r.kind == AuditEventKind::LookupAttempted));
         assert!(rows.iter().any(|r| r.kind == AuditEventKind::LookupHit));
     }
 

@@ -35,13 +35,12 @@
 
 use std::sync::Arc;
 
+use corelink_cas::lru_tracker::{
+    canonical_audit_event_strings, canonical_metric_names, FrozenLruClock, InMemoryLruAuditSink,
+    InMemoryLruMetrics, InMemoryLruTracker, LruConfig, LruEventType, LruMetricKind, LruTracker,
+};
 use corelink_eviction::{
     BlobLruRow, EvictionBlobDigest, EvictionRegion, InMemoryBlobMetaSoftDeleteStore,
-};
-use corelink_cas::lru_tracker::{
-    canonical_audit_event_strings, canonical_metric_names, FrozenLruClock,
-    InMemoryLruAuditSink, InMemoryLruMetrics, InMemoryLruTracker, LruConfig,
-    LruEventType, LruMetricKind, LruTracker,
 };
 use proptest::prelude::*;
 use uuid::Uuid;
@@ -183,12 +182,7 @@ fn boundary_queue_cap_plus_one_drops_one() {
     let (tracker, _b, _a, metrics) = fresh_with_config(1000, cfg);
     for i in 1_u8..=3 {
         tracker
-            .record_access(
-                ten_a(),
-                EvictionRegion::Sam,
-                &dig(i),
-                1000 + u64::from(i),
-            )
+            .record_access(ten_a(), EvictionRegion::Sam, &dig(i), 1000 + u64::from(i))
             .unwrap();
     }
     // 4th NEW key triggers drop-oldest.
@@ -228,9 +222,7 @@ fn boundary_drift_one_ms_above_threshold_fires_violation() {
         .unwrap();
     let r = tracker.flush_batch(60_001).unwrap();
     assert!(r.consistency_violations >= 1);
-    assert!(
-        metrics.counter_total(LruMetricKind::ConsistencyViolationTotal) >= 1
-    );
+    assert!(metrics.counter_total(LruMetricKind::ConsistencyViolationTotal) >= 1);
 }
 
 #[test]
@@ -240,12 +232,7 @@ fn boundary_batch_size_250_caps_drain() {
     for i in 0_u8..251 {
         blob.push_row(ten_a(), row(i, 1)).unwrap();
         tracker
-            .record_access(
-                ten_a(),
-                EvictionRegion::Sam,
-                &dig(i),
-                1000 + u64::from(i),
-            )
+            .record_access(ten_a(), EvictionRegion::Sam, &dig(i), 1000 + u64::from(i))
             .unwrap();
     }
     assert_eq!(tracker.queue_size(), 251);

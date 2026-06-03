@@ -15,7 +15,10 @@
 //!
 //! Cadence: **monthly** (per `failure_modes.md §RB cadence`).
 
-#![allow(clippy::print_stdout, reason = "binary harnesses produce human-readable PASS/FAIL output to stdout; print_stdout-deny inherited from the umbrella library does not apply")]
+#![allow(
+    clippy::print_stdout,
+    reason = "binary harnesses produce human-readable PASS/FAIL output to stdout; print_stdout-deny inherited from the umbrella library does not apply"
+)]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
@@ -23,9 +26,11 @@
 use std::sync::Arc;
 
 use corelink_config_do::{
-    AdminActor, ConfigPayload, RateLimitKey, RateLimitTunable,
     metrics::NoopMetrics,
-    store::{ConfigAuditSink, ConfigSingletonStore, InMemoryAuditSink, InMemoryConfigSingletonStore},
+    store::{
+        ConfigAuditSink, ConfigSingletonStore, InMemoryAuditSink, InMemoryConfigSingletonStore,
+    },
+    AdminActor, ConfigPayload, RateLimitKey, RateLimitTunable,
 };
 use uuid::Uuid;
 
@@ -46,8 +51,14 @@ fn actor() -> AdminActor {
 fn payload_with_rate(refill: u32) -> ConfigPayload {
     let mut p = ConfigPayload::genesis();
     p.rate_limits.insert(
-        RateLimitKey { layer: "cas_put".into(), tier: "Solo".into() },
-        RateLimitTunable { refill_rate_per_sec: refill, burst: 100 },
+        RateLimitKey {
+            layer: "cas_put".into(),
+            tier: "Solo".into(),
+        },
+        RateLimitTunable {
+            refill_rate_per_sec: refill,
+            burst: 100,
+        },
     );
     p
 }
@@ -73,11 +84,19 @@ fn step_config_update_dual_approval_gate(store: &InMemoryConfigSingletonStore) -
 
 /// Step 2: Propagation event emitted — verify config version advanced and
 /// audit event present (≤ 5s in production DO pub-sub; in-memory = instant).
-fn step_propagation_emitted(store: &InMemoryConfigSingletonStore, audit: &InMemoryAuditSink) -> Step {
-    let (v, payload) = tokio_test::block_on(store.current()).unwrap_or((0, ConfigPayload::genesis()));
+fn step_propagation_emitted(
+    store: &InMemoryConfigSingletonStore,
+    audit: &InMemoryAuditSink,
+) -> Step {
+    let (v, payload) =
+        tokio_test::block_on(store.current()).unwrap_or((0, ConfigPayload::genesis()));
     let audit_events = audit.snapshot();
-    let rate = payload.rate_limits
-        .get(&RateLimitKey { layer: "cas_put".into(), tier: "Solo".into() })
+    let rate = payload
+        .rate_limits
+        .get(&RateLimitKey {
+            layer: "cas_put".into(),
+            tier: "Solo".into(),
+        })
         .map(|r| r.refill_rate_per_sec)
         .unwrap_or(100);
     Step {
@@ -92,9 +111,14 @@ fn step_propagation_emitted(store: &InMemoryConfigSingletonStore, audit: &InMemo
 
 /// Step 3: Customer impact alert — refill_rate < 10/s is customer-visible DoS.
 fn step_customer_impact_alert(store: &InMemoryConfigSingletonStore) -> Step {
-    let (_, payload) = tokio_test::block_on(store.current()).unwrap_or((0, ConfigPayload::genesis()));
-    let rate = payload.rate_limits
-        .get(&RateLimitKey { layer: "cas_put".into(), tier: "Solo".into() })
+    let (_, payload) =
+        tokio_test::block_on(store.current()).unwrap_or((0, ConfigPayload::genesis()));
+    let rate = payload
+        .rate_limits
+        .get(&RateLimitKey {
+            layer: "cas_put".into(),
+            tier: "Solo".into(),
+        })
         .map(|r| r.refill_rate_per_sec)
         .unwrap_or(100);
     let alert_fires = rate < 10;
@@ -116,9 +140,14 @@ fn step_rollback(store: &InMemoryConfigSingletonStore) -> Step {
     let result = tokio_test::block_on(store.rollback_to(0, &actor, 2_000_000));
     match result {
         Ok(new_v) => {
-            let (cur, payload) = tokio_test::block_on(store.current()).unwrap_or((0, ConfigPayload::genesis()));
-            let rate = payload.rate_limits
-                .get(&RateLimitKey { layer: "cas_put".into(), tier: "Solo".into() })
+            let (cur, payload) =
+                tokio_test::block_on(store.current()).unwrap_or((0, ConfigPayload::genesis()));
+            let rate = payload
+                .rate_limits
+                .get(&RateLimitKey {
+                    layer: "cas_put".into(),
+                    tier: "Solo".into(),
+                })
                 .map(|r| r.refill_rate_per_sec);
             Step {
                 name: "rollback-to-previous-version",
@@ -143,7 +172,10 @@ fn step_audit_chain(audit: &InMemoryAuditSink) -> Step {
     Step {
         name: "audit-chain-integrity",
         passed: events.len() >= 2,
-        detail: format!("{} audit events captured (update + rollback; chain unbroken)", events.len()),
+        detail: format!(
+            "{} audit events captured (update + rollback; chain unbroken)",
+            events.len()
+        ),
     }
 }
 
@@ -176,7 +208,10 @@ async fn main() {
     }
 
     println!();
-    println!("=== RB-FM-201 dry-run result: {} ===", if all_pass { "PASS" } else { "FAIL" });
+    println!(
+        "=== RB-FM-201 dry-run result: {} ===",
+        if all_pass { "PASS" } else { "FAIL" }
+    );
 
     if !all_pass {
         std::process::exit(1);

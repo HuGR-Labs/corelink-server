@@ -17,9 +17,9 @@
 use proptest::prelude::*;
 
 use corelink_telemetry::synthetic_pager::{
-    decide_drill_outcome, AckOutcome, AckVector, DrillRecord, DrillRecorder,
-    FailingDrillRecorder, InMemoryDrillRecorder, MttaMs, Region, SyntheticDrillError,
-    SyntheticDrillId, MTTA_BUDGET_MS, UNACK_HARD_WINDOW_MS,
+    decide_drill_outcome, AckOutcome, AckVector, DrillRecord, DrillRecorder, FailingDrillRecorder,
+    InMemoryDrillRecorder, MttaMs, Region, SyntheticDrillError, SyntheticDrillId, MTTA_BUDGET_MS,
+    UNACK_HARD_WINDOW_MS,
 };
 
 /// Resolve PROPTEST_CASES at runtime per charter constraint #15 — the

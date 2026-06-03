@@ -84,14 +84,16 @@ pub mod rollback;
 pub mod state_machine;
 
 pub use corelink_rotation_adapters::{
-    is_valid_read_state, is_valid_write_state, AdminSigningRotationAdapter,
-    AuditChainRotationAdapter, AssetClass, ByokRotationAdapter, KeyHandle, KeyState,
-    PatSigningRotationAdapter, RotationAdapter, RotationError, TdkRotationAdapter,
+    is_valid_read_state, is_valid_write_state, AdminSigningRotationAdapter, AssetClass,
+    AuditChainRotationAdapter, ByokRotationAdapter, KeyHandle, KeyState, PatSigningRotationAdapter,
+    RotationAdapter, RotationError, TdkRotationAdapter,
 };
 pub use metrics::{RotationMetrics, RotationMetricsSink};
 pub use orchestrator::{RotationOrchestrator, RotationOutcome};
 pub use rollback::{ProbeContext, RollbackConfig, RollbackDriver, RollbackOutcome};
-pub use state_machine::{InMemoryRotationStateMachine, RotationPhase, RotationRecord, RotationStateMachine};
+pub use state_machine::{
+    InMemoryRotationStateMachine, RotationPhase, RotationRecord, RotationStateMachine,
+};
 
 /// Crate canonical schema version.
 #[must_use]

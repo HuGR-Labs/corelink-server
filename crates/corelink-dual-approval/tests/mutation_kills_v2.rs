@@ -19,13 +19,13 @@
 
 use std::sync::Arc;
 
-use corelink_dual_approval::{
-    AdminOpAuditSink, AdminOpRequest, AdminOpType, AdminSigningKey, AUDIT_TYPE_DENIED,
-    AUDIT_TYPE_EXECUTED, DualApprovalError, DualApprovalGate, DualApprovalGateImpl,
-    InMemoryAdminOpAuditSink, InMemoryAdminRoleStore, InMemoryCollusionStore,
-    InMemoryNonceStore, compute_hmac,
-};
 use corelink_dual_approval::types::ApprovalOutcome;
+use corelink_dual_approval::{
+    compute_hmac, AdminOpAuditSink, AdminOpRequest, AdminOpType, AdminSigningKey,
+    DualApprovalError, DualApprovalGate, DualApprovalGateImpl, InMemoryAdminOpAuditSink,
+    InMemoryAdminRoleStore, InMemoryCollusionStore, InMemoryNonceStore, AUDIT_TYPE_DENIED,
+    AUDIT_TYPE_EXECUTED,
+};
 use uuid::Uuid;
 
 // =====================================================================
@@ -48,7 +48,10 @@ fn approval_outcome_as_str_pins_every_variant_to_canonical_d1_label() {
         (ApprovalOutcome::DeniedCallerEq, "denied_caller_eq"),
         (ApprovalOutcome::DeniedCollusion, "denied_collusion"),
         (ApprovalOutcome::DeniedMfaStale, "denied_mfa_stale"),
-        (ApprovalOutcome::DeniedApproverNotAdmin, "denied_approver_not_admin"),
+        (
+            ApprovalOutcome::DeniedApproverNotAdmin,
+            "denied_approver_not_admin",
+        ),
         (ApprovalOutcome::DeniedNonceReplay, "denied_nonce_replay"),
         (ApprovalOutcome::DeniedClockSkew, "denied_clock_skew"),
     ];
@@ -67,7 +70,11 @@ fn approval_outcome_as_str_pins_every_variant_to_canonical_d1_label() {
     let mut seen: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
     for (outcome, _) in pairs {
         let s = outcome.as_str();
-        assert!(seen.insert(s), "outcome strings must be unique; duplicate: {}", s);
+        assert!(
+            seen.insert(s),
+            "outcome strings must be unique; duplicate: {}",
+            s
+        );
     }
     assert_eq!(seen.len(), pairs.len());
 }
@@ -90,12 +97,28 @@ fn admin_signing_key_debug_redacts_raw_and_pins_shape() {
     let key = AdminSigningKey::new(raw);
     let dbg = format!("{:?}", key);
     // Shape: the redacted Debug impl shows the struct name + REDACTED.
-    assert!(dbg.contains("AdminSigningKey"), "missing struct name: {:?}", dbg);
-    assert!(dbg.contains("REDACTED"), "missing redaction marker: {:?}", dbg);
+    assert!(
+        dbg.contains("AdminSigningKey"),
+        "missing struct name: {:?}",
+        dbg
+    );
+    assert!(
+        dbg.contains("REDACTED"),
+        "missing redaction marker: {:?}",
+        dbg
+    );
     // Negative: no raw byte leak (any of 0x00..0x1f would appear if
     // raw was printed via the derived Debug).
-    assert!(!dbg.contains("0, 1, 2, 3"), "raw byte sequence leaked: {:?}", dbg);
-    assert!(!dbg.contains("[0, 1, 2"), "raw array prefix leaked: {:?}", dbg);
+    assert!(
+        !dbg.contains("0, 1, 2, 3"),
+        "raw byte sequence leaked: {:?}",
+        dbg
+    );
+    assert!(
+        !dbg.contains("[0, 1, 2"),
+        "raw array prefix leaked: {:?}",
+        dbg
+    );
     // Negative: mutant body → Ok(Default::default()) would yield "()".
     assert_ne!(dbg, "()", "Debug must not collapse to unit");
     assert!(!dbg.is_empty(), "Debug output must never be empty");
@@ -136,9 +159,7 @@ fn make_signed_request(
     }
 }
 
-fn make_gate_with_sink(
-    admins: Vec<Uuid>,
-) -> (DualApprovalGateImpl, Arc<InMemoryAdminOpAuditSink>) {
+fn make_gate_with_sink(admins: Vec<Uuid>) -> (DualApprovalGateImpl, Arc<InMemoryAdminOpAuditSink>) {
     let sink = Arc::new(InMemoryAdminOpAuditSink::new());
     let role_store = Arc::new(InMemoryAdminRoleStore::new(admins));
     let gate = DualApprovalGateImpl::new(
@@ -441,10 +462,20 @@ fn collusion_record_skips_non_destructive_ops() {
 
     // Non-destructive ops MUST NOT enter the log.
     store
-        .record_approval(tenant, user, &AdminOpType::FeatureFlagToggleSafe, now_ms - 10_000)
+        .record_approval(
+            tenant,
+            user,
+            &AdminOpType::FeatureFlagToggleSafe,
+            now_ms - 10_000,
+        )
         .unwrap();
     store
-        .record_approval(tenant, user, &AdminOpType::RateLimitAdjustUp, now_ms - 5_000)
+        .record_approval(
+            tenant,
+            user,
+            &AdminOpType::RateLimitAdjustUp,
+            now_ms - 5_000,
+        )
         .unwrap();
 
     let recent = store.recent_approvers(tenant, now_ms).unwrap();
@@ -705,7 +736,11 @@ fn in_memory_audit_sink_emit_pushes_into_captured() {
     .build();
     sink.emit(ev.clone()).expect("emit ok");
     let cap = sink.captured();
-    assert_eq!(cap.len(), 1, "emit must push into captured (kills Ok(()) noop mutant)");
+    assert_eq!(
+        cap.len(),
+        1,
+        "emit must push into captured (kills Ok(()) noop mutant)"
+    );
     // Content-level assertion: the captured event matches what we built.
     // This kills `captured → vec![Default::default()]` since a default
     // event would have empty region/outcome strings.

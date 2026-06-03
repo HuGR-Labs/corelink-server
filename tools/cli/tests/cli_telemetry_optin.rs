@@ -55,11 +55,26 @@ impl TelemetryPayload {
 /// Assert the JSON payload contains no PII / forbidden fields.
 fn assert_no_pii(payload: &TelemetryPayload) {
     let json = serde_json::to_string(payload).expect("serialise");
-    assert!(!json.contains("tenant_id"), "INVARIANT: tenant_id must never be in payload");
-    assert!(!json.contains("\"pat\""), "INVARIANT: PAT must never be in payload");
-    assert!(!json.contains("digest"), "INVARIANT: blob digest must never be in payload");
-    assert!(!json.contains("file_path"), "INVARIANT: file path must never be in payload");
-    assert!(!json.contains("ip"), "INVARIANT: IP address must never be in payload");
+    assert!(
+        !json.contains("tenant_id"),
+        "INVARIANT: tenant_id must never be in payload"
+    );
+    assert!(
+        !json.contains("\"pat\""),
+        "INVARIANT: PAT must never be in payload"
+    );
+    assert!(
+        !json.contains("digest"),
+        "INVARIANT: blob digest must never be in payload"
+    );
+    assert!(
+        !json.contains("file_path"),
+        "INVARIANT: file path must never be in payload"
+    );
+    assert!(
+        !json.contains("ip"),
+        "INVARIANT: IP address must never be in payload"
+    );
 }
 
 /// Subcommand strategy: sample from the 8 canonical CoreLink subcommands.
@@ -151,7 +166,9 @@ proptest! {
 
 #[test]
 fn all_subcommands_produce_pii_free_payloads() {
-    let subcommands = ["ls", "get", "put", "stat", "bench", "doctor", "version", "config"];
+    let subcommands = [
+        "ls", "get", "put", "stat", "bench", "doctor", "version", "config",
+    ];
     let outcomes = ["ok", "err"];
     for &sub in &subcommands {
         for &out in &outcomes {
@@ -181,6 +198,8 @@ fn missing_config_file_telemetry_is_false() {
     // Simulate what Config::load_from returns for a missing path.
     // The canonical default value must be false.
     let default_telemetry: bool = false;
-    assert!(!default_telemetry,
-        "INVARIANT: missing config file must default to telemetry = false");
+    assert!(
+        !default_telemetry,
+        "INVARIANT: missing config file must default to telemetry = false"
+    );
 }

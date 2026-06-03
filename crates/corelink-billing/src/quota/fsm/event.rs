@@ -63,9 +63,7 @@ use serde::{Deserialize, Serialize};
 /// (e.g. an `EnterpriseGracePeriod` flag carved as the 6th state at
 /// S-13 admin plane; we ship 5 canonical here per the orchestrator
 /// brief).
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum QuotaState {
     /// `[0%, 80%)` utilization — silent normal operation.
@@ -334,14 +332,8 @@ impl QuotaFsmConfig {
         suspension_invoice_failure_threshold: u32,
     ) -> Result<Self, super::error::QuotaFsmError> {
         for (name, v) in [
-            (
-                "soft_warning_80pct_threshold",
-                soft_warning_80pct_threshold,
-            ),
-            (
-                "soft_warning_95pct_threshold",
-                soft_warning_95pct_threshold,
-            ),
+            ("soft_warning_80pct_threshold", soft_warning_80pct_threshold),
+            ("soft_warning_95pct_threshold", soft_warning_95pct_threshold),
             ("over_quota_100pct_threshold", over_quota_100pct_threshold),
         ] {
             if !v.is_finite() || v < 0.0 {
@@ -466,7 +458,10 @@ mod tests {
 
     #[test]
     fn state_display_matches_str() {
-        assert_eq!(format!("{}", QuotaState::OverQuota100pct), "over_quota_100pct");
+        assert_eq!(
+            format!("{}", QuotaState::OverQuota100pct),
+            "over_quota_100pct"
+        );
     }
 
     #[test]
@@ -480,8 +475,14 @@ mod tests {
     #[test]
     fn config_default_matches_canonical_constants() {
         let c = QuotaFsmConfig::default();
-        assert_eq!(c.soft_warning_80pct_threshold(), SOFT_WARNING_80PCT_THRESHOLD);
-        assert_eq!(c.soft_warning_95pct_threshold(), SOFT_WARNING_95PCT_THRESHOLD);
+        assert_eq!(
+            c.soft_warning_80pct_threshold(),
+            SOFT_WARNING_80PCT_THRESHOLD
+        );
+        assert_eq!(
+            c.soft_warning_95pct_threshold(),
+            SOFT_WARNING_95PCT_THRESHOLD
+        );
         assert_eq!(c.over_quota_100pct_threshold(), OVER_QUOTA_100PCT_THRESHOLD);
         assert_eq!(
             c.suspension_invoice_failure_threshold(),
@@ -492,25 +493,37 @@ mod tests {
     #[test]
     fn config_rejects_non_finite() {
         let r = QuotaFsmConfig::new(f64::NAN, 95.0, 100.0, 3);
-        assert!(matches!(r, Err(super::super::error::QuotaFsmError::Config(_))));
+        assert!(matches!(
+            r,
+            Err(super::super::error::QuotaFsmError::Config(_))
+        ));
     }
 
     #[test]
     fn config_rejects_negative() {
         let r = QuotaFsmConfig::new(-1.0, 95.0, 100.0, 3);
-        assert!(matches!(r, Err(super::super::error::QuotaFsmError::Config(_))));
+        assert!(matches!(
+            r,
+            Err(super::super::error::QuotaFsmError::Config(_))
+        ));
     }
 
     #[test]
     fn config_rejects_non_monotonic_ladder() {
         let r = QuotaFsmConfig::new(95.0, 90.0, 100.0, 3);
-        assert!(matches!(r, Err(super::super::error::QuotaFsmError::Config(_))));
+        assert!(matches!(
+            r,
+            Err(super::super::error::QuotaFsmError::Config(_))
+        ));
     }
 
     #[test]
     fn config_rejects_zero_suspension_threshold() {
         let r = QuotaFsmConfig::new(80.0, 95.0, 100.0, 0);
-        assert!(matches!(r, Err(super::super::error::QuotaFsmError::Config(_))));
+        assert!(matches!(
+            r,
+            Err(super::super::error::QuotaFsmError::Config(_))
+        ));
     }
 
     #[test]

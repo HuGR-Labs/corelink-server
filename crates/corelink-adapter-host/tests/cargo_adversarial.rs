@@ -26,7 +26,10 @@ mod common;
 
 use std::sync::Arc;
 
-use common::{default_body_limit, spin_adapter, FailingCas, InMemoryCas, StaticTenantResolver, test_key, test_key_b};
+use common::{
+    default_body_limit, spin_adapter, test_key, test_key_b, FailingCas, InMemoryCas,
+    StaticTenantResolver,
+};
 use corelink_adapter_host::cargo::audit::{EVENT_TYPE_AUTH_FAILED, EVENT_TYPE_CACHE_WRITE};
 use corelink_audit::ports::InMemoryAuditEmitter;
 
@@ -41,13 +44,8 @@ async fn forged_pat_returns_401() {
     let resolver = Arc::new(StaticTenantResolver::new().with(PAT_A, TENANT_A));
     let audit = Arc::new(InMemoryAuditEmitter::new());
 
-    let (addr, _adapter) = spin_adapter(
-        cas.clone(),
-        resolver,
-        audit.clone(),
-        default_body_limit(),
-    )
-    .await;
+    let (addr, _adapter) =
+        spin_adapter(cas.clone(), resolver, audit.clone(), default_body_limit()).await;
 
     let key = test_key();
     let client = reqwest::Client::new();
@@ -110,13 +108,7 @@ async fn oversize_put_body_returns_413() {
 
     // Cap to 256 KiB; PUT 1 MiB.
     let cap: u64 = 262_144;
-    let (addr, _adapter) = spin_adapter(
-        cas.clone(),
-        resolver,
-        audit.clone(),
-        cap,
-    )
-    .await;
+    let (addr, _adapter) = spin_adapter(cas.clone(), resolver, audit.clone(), cap).await;
 
     let big_body = vec![0u8; 1_048_576]; // 1 MiB
     let key = test_key();
@@ -137,7 +129,11 @@ async fn oversize_put_body_returns_413() {
         .iter()
         .filter(|e| e.event_type == EVENT_TYPE_CACHE_WRITE)
         .collect();
-    assert_eq!(writes.len(), 0, "no cache-write audit row on oversized body");
+    assert_eq!(
+        writes.len(),
+        0,
+        "no cache-write audit row on oversized body"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -150,13 +146,8 @@ async fn tenant_isolation_holds() {
     );
     let audit = Arc::new(InMemoryAuditEmitter::new());
 
-    let (addr, _adapter) = spin_adapter(
-        cas.clone(),
-        resolver,
-        audit.clone(),
-        default_body_limit(),
-    )
-    .await;
+    let (addr, _adapter) =
+        spin_adapter(cas.clone(), resolver, audit.clone(), default_body_limit()).await;
 
     let key = test_key();
     let bytes_a = b"artifact-for-tenant-a".to_vec();
@@ -180,7 +171,11 @@ async fn tenant_isolation_holds() {
         .send()
         .await
         .unwrap();
-    assert_eq!(get_b.status(), 404, "tenant B must not see tenant A's entry");
+    assert_eq!(
+        get_b.status(),
+        404,
+        "tenant B must not see tenant A's entry"
+    );
 
     // Tenant A GET → must HIT.
     let get_a = client
@@ -220,13 +215,7 @@ async fn cas_failure_returns_502() {
     let resolver = Arc::new(StaticTenantResolver::new().with(PAT_A, TENANT_A));
     let audit = Arc::new(InMemoryAuditEmitter::new());
 
-    let (addr, _adapter) = spin_adapter(
-        cas,
-        resolver,
-        audit.clone(),
-        default_body_limit(),
-    )
-    .await;
+    let (addr, _adapter) = spin_adapter(cas, resolver, audit.clone(), default_body_limit()).await;
 
     let key = test_key();
     let client = reqwest::Client::new();
@@ -256,13 +245,7 @@ async fn invalid_key_format_returns_400() {
     let resolver = Arc::new(StaticTenantResolver::new().with(PAT_A, TENANT_A));
     let audit = Arc::new(InMemoryAuditEmitter::new());
 
-    let (addr, _adapter) = spin_adapter(
-        cas,
-        resolver,
-        audit,
-        default_body_limit(),
-    )
-    .await;
+    let (addr, _adapter) = spin_adapter(cas, resolver, audit, default_body_limit()).await;
 
     let client = reqwest::Client::new();
 
@@ -282,13 +265,8 @@ async fn different_keys_are_independent_entries() {
     let resolver = Arc::new(StaticTenantResolver::new().with(PAT_A, TENANT_A));
     let audit = Arc::new(InMemoryAuditEmitter::new());
 
-    let (addr, _adapter) = spin_adapter(
-        cas.clone(),
-        resolver,
-        audit.clone(),
-        default_body_limit(),
-    )
-    .await;
+    let (addr, _adapter) =
+        spin_adapter(cas.clone(), resolver, audit.clone(), default_body_limit()).await;
 
     let key1 = test_key();
     let key2 = test_key_b();

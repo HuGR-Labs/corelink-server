@@ -33,9 +33,7 @@
 
 use uuid::Uuid;
 
-use crate::manifest::bounds::{
-    MAX_CHUNK_SIZE_BYTES, MAX_CHUNKS_PER_BLOB, MAX_TOTAL_SIZE_BYTES,
-};
+use crate::manifest::bounds::{MAX_CHUNKS_PER_BLOB, MAX_CHUNK_SIZE_BYTES, MAX_TOTAL_SIZE_BYTES};
 use crate::manifest::error::ManifestError;
 use crate::manifest::merkle::build_root;
 use crate::manifest::sig::ManifestSigner;
@@ -112,12 +110,12 @@ impl ManifestBuilder {
         let mut total_size: u64 = 0;
         for (slot, c) in chunks.iter().enumerate() {
             let slot_u32 = u32::try_from(slot).map_err(|_| {
-                BuildError::Structure(ManifestError::ChunkCountExceeded {
-                    found: u32::MAX,
-                })
+                BuildError::Structure(ManifestError::ChunkCountExceeded { found: u32::MAX })
             })?;
             if c.size_bytes == 0 {
-                return Err(BuildError::Structure(ManifestError::ChunkSizeZero(slot_u32)));
+                return Err(BuildError::Structure(ManifestError::ChunkSizeZero(
+                    slot_u32,
+                )));
             }
             if c.size_bytes > MAX_CHUNK_SIZE_BYTES {
                 return Err(BuildError::Structure(ManifestError::ChunkSizeExceeded {

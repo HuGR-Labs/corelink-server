@@ -286,11 +286,11 @@ impl D1TenantRegionResolver {
 impl TenantRegionResolver for D1TenantRegionResolver {
     fn resolve_region(&self, tenant_id: &Uuid) -> Result<Region, TenantRegionError> {
         match self.store.region_label(tenant_id) {
-            Ok(Some(label)) => parse_region_label(&label).ok_or_else(|| {
-                TenantRegionError::BackendUnavailable {
+            Ok(Some(label)) => {
+                parse_region_label(&label).ok_or_else(|| TenantRegionError::BackendUnavailable {
                     diagnostic: format!("region_label_invalid label={label}"),
-                }
-            }),
+                })
+            }
             Ok(None) => Ok(self.fallback),
             Err(diag) => Err(TenantRegionError::BackendUnavailable { diagnostic: diag }),
         }
@@ -403,10 +403,7 @@ mod tests {
                 Err("d1: connection refused".to_owned())
             }
         }
-        let resolver = D1TenantRegionResolver::new(
-            std::sync::Arc::new(FailingStore),
-            Region::Iad,
-        );
+        let resolver = D1TenantRegionResolver::new(std::sync::Arc::new(FailingStore), Region::Iad);
         let outcome = resolver.resolve_region(&Uuid::now_v7());
         match outcome {
             Err(TenantRegionError::BackendUnavailable { diagnostic }) => {
@@ -430,8 +427,7 @@ mod tests {
                 Ok(None)
             }
         }
-        let resolver =
-            D1TenantRegionResolver::new(std::sync::Arc::new(EmptyStore), Region::Iad);
+        let resolver = D1TenantRegionResolver::new(std::sync::Arc::new(EmptyStore), Region::Iad);
         assert_eq!(resolver.resolve_region(&Uuid::now_v7()), Ok(Region::Iad));
         assert_eq!(resolver.fallback_region(), Region::Iad);
     }
@@ -448,8 +444,7 @@ mod tests {
                 Ok(Some("mars".to_owned()))
             }
         }
-        let resolver =
-            D1TenantRegionResolver::new(std::sync::Arc::new(WeirdStore), Region::Iad);
+        let resolver = D1TenantRegionResolver::new(std::sync::Arc::new(WeirdStore), Region::Iad);
         match resolver.resolve_region(&Uuid::now_v7()) {
             Err(TenantRegionError::BackendUnavailable { diagnostic }) => {
                 assert!(diagnostic.contains("region_label_invalid"));
@@ -470,8 +465,7 @@ mod tests {
                 Ok(Some("IAD".to_owned()))
             }
         }
-        let resolver =
-            D1TenantRegionResolver::new(std::sync::Arc::new(UpperStore), Region::Fra);
+        let resolver = D1TenantRegionResolver::new(std::sync::Arc::new(UpperStore), Region::Fra);
         assert_eq!(resolver.resolve_region(&Uuid::now_v7()), Ok(Region::Iad));
     }
 

@@ -53,21 +53,41 @@ fn parse_rfc3339_utc_ms(s: &str) -> Option<u64> {
     // Shape: YYYY-MM-DDTHH:MM:SSZ
     //        0123456789012345678901
     let y = parse_u32_digits(b.get(0..4)?)?;
-    if *b.get(4)? != b'-' { return None; }
+    if *b.get(4)? != b'-' {
+        return None;
+    }
     let mo = parse_u32_digits(b.get(5..7)?)?;
-    if *b.get(7)? != b'-' { return None; }
+    if *b.get(7)? != b'-' {
+        return None;
+    }
     let d = parse_u32_digits(b.get(8..10)?)?;
-    if *b.get(10)? != b'T' { return None; }
+    if *b.get(10)? != b'T' {
+        return None;
+    }
     let h = parse_u32_digits(b.get(11..13)?)?;
-    if *b.get(13)? != b':' { return None; }
+    if *b.get(13)? != b':' {
+        return None;
+    }
     let mi = parse_u32_digits(b.get(14..16)?)?;
-    if *b.get(16)? != b':' { return None; }
+    if *b.get(16)? != b':' {
+        return None;
+    }
     let se = parse_u32_digits(b.get(17..19)?)?;
-    if *b.get(19)? != b'Z' { return None; }
-    if !(1970..=9999).contains(&y) { return None; }
-    if !(1..=12).contains(&mo) { return None; }
-    if !(1..=31).contains(&d) { return None; }
-    if h >= 24 || mi >= 60 || se >= 60 { return None; }
+    if *b.get(19)? != b'Z' {
+        return None;
+    }
+    if !(1970..=9999).contains(&y) {
+        return None;
+    }
+    if !(1..=12).contains(&mo) {
+        return None;
+    }
+    if !(1..=31).contains(&d) {
+        return None;
+    }
+    if h >= 24 || mi >= 60 || se >= 60 {
+        return None;
+    }
 
     // Days from Unix epoch (1970-01-01) using the canonical
     // proleptic Gregorian formula. Reference: Howard Hinnant's
@@ -85,12 +105,19 @@ fn parse_rfc3339_utc_ms(s: &str) -> Option<u64> {
         + d_i
         - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days_since_epoch: i64 = era.checked_mul(146_097)?.checked_add(doe)?.checked_sub(719_468)?;
-    if days_since_epoch < 0 { return None; }
+    let days_since_epoch: i64 = era
+        .checked_mul(146_097)?
+        .checked_add(doe)?
+        .checked_sub(719_468)?;
+    if days_since_epoch < 0 {
+        return None;
+    }
     let secs: i64 = days_since_epoch
         .checked_mul(86_400)?
         .checked_add(i64::from(h) * 3_600 + i64::from(mi) * 60 + i64::from(se))?;
-    if secs < 0 { return None; }
+    if secs < 0 {
+        return None;
+    }
     let ms = u64::try_from(secs).ok()?.checked_mul(1_000)?;
     Some(ms)
 }
@@ -98,7 +125,9 @@ fn parse_rfc3339_utc_ms(s: &str) -> Option<u64> {
 fn parse_u32_digits(b: &[u8]) -> Option<u32> {
     let mut out: u32 = 0;
     for &c in b {
-        if !c.is_ascii_digit() { return None; }
+        if !c.is_ascii_digit() {
+            return None;
+        }
         out = out.checked_mul(10)?.checked_add(u32::from(c - b'0'))?;
     }
     Some(out)
@@ -120,7 +149,10 @@ fn parse_u32_digits(b: &[u8]) -> Option<u32> {
 /// remains. A future cleanup may delete it once external callers (none
 /// exist today) confirm. Marked `#[allow(dead_code)]` so the rest of
 /// the crate keeps clippy-clean; deletion is a separate cosmetic step.
-#[allow(dead_code, reason = "wave-23: superseded by fail-CLOSED branch at callsite; retained for archival reference until next hygiene sweep")]
+#[allow(
+    dead_code,
+    reason = "wave-23: superseded by fail-CLOSED branch at callsite; retained for archival reference until next hygiene sweep"
+)]
 #[must_use]
 pub(super) fn now_ms_from_window(window: ExportWindow) -> u64 {
     window.until_ms

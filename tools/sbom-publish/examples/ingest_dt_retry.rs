@@ -33,11 +33,31 @@ async fn main() {
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--input"           => { if let Some(v) = args.next() { input = v; } }
-            "--dt-url"          => { if let Some(v) = args.next() { dt_url_str = v; } }
-            "--api-key-env"     => { if let Some(v) = args.next() { api_key_env = v; } }
-            "--project-name"    => { if let Some(v) = args.next() { project_name = v; } }
-            "--project-version" => { if let Some(v) = args.next() { project_version = v; } }
+            "--input" => {
+                if let Some(v) = args.next() {
+                    input = v;
+                }
+            }
+            "--dt-url" => {
+                if let Some(v) = args.next() {
+                    dt_url_str = v;
+                }
+            }
+            "--api-key-env" => {
+                if let Some(v) = args.next() {
+                    api_key_env = v;
+                }
+            }
+            "--project-name" => {
+                if let Some(v) = args.next() {
+                    project_name = v;
+                }
+            }
+            "--project-version" => {
+                if let Some(v) = args.next() {
+                    project_version = v;
+                }
+            }
             _ => {}
         }
     }
@@ -57,7 +77,16 @@ async fn main() {
         std::process::exit(1);
     });
 
-    match ingest_into_dt(&sbom_bytes, &dt_url, &api_key, &project_name, &project_version, None).await {
+    match ingest_into_dt(
+        &sbom_bytes,
+        &dt_url,
+        &api_key,
+        &project_name,
+        &project_version,
+        None,
+    )
+    .await
+    {
         Ok(uuid) => {
             println!("{{\"project_uuid\":\"{uuid}\"}}");
         }

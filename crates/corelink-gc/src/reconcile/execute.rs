@@ -159,9 +159,9 @@ where
             return Ok(ReconcileDecision::SkippedSoftDeleted);
         }
         // Compute expected via json_each-equivalent membership.
-        let expected = self
-            .refcount_source
-            .expected_refcount(tenant_id, &row.digest, snapshot_at_ms)?;
+        let expected =
+            self.refcount_source
+                .expected_refcount(tenant_id, &row.digest, snapshot_at_ms)?;
 
         // Orphan R2 detection (WI §1.4). Surface BEFORE the drift
         // comparison so refcount mutation never amplifies an
@@ -354,8 +354,7 @@ where
                     audit_events_emitted = audit_events_emitted.saturating_add(1);
                 }
                 ReconcileDecision::SkippedSoftDeleted => {
-                    skipped_soft_deleted_count =
-                        skipped_soft_deleted_count.saturating_add(1);
+                    skipped_soft_deleted_count = skipped_soft_deleted_count.saturating_add(1);
                 }
                 ReconcileDecision::OrphanR2Detected { .. } => {
                     orphan_r2_count = orphan_r2_count.saturating_add(1);
@@ -384,16 +383,16 @@ where
         // 5. Checkpoint counters in gc_run.
         let phase_end = self.clock.now_ms();
         let duration_ms = phase_end.saturating_sub(phase_start);
-        self.runs.checkpoint(
-            run_id,
-            tenant_id,
-            phase_end,
-            CheckpointDeltas::default(),
-        )?;
+        self.runs
+            .checkpoint(run_id, tenant_id, phase_end, CheckpointDeltas::default())?;
 
         // 6. Phase duration histogram (canonical metric).
-        self.metrics
-            .record_phase_duration_ms(GcPhase::Reconcile, tenant_id, region, duration_ms)?;
+        self.metrics.record_phase_duration_ms(
+            GcPhase::Reconcile,
+            tenant_id,
+            region,
+            duration_ms,
+        )?;
 
         Ok(ReconcileResult {
             blobs_scanned,

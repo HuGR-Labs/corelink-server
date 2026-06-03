@@ -26,10 +26,7 @@ impl UpstreamFetcher {
     /// could not be constructed (e.g. system TLS init failure).
     pub fn new(upstream_domain: Url) -> Result<Self, BrewAdapterError> {
         let client = reqwest::Client::builder()
-            .user_agent(concat!(
-                "corelink-adapter-brew/",
-                env!("CARGO_PKG_VERSION")
-            ))
+            .user_agent(concat!("corelink-adapter-brew/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|err| BrewAdapterError::Upstream(format!("client build: {err}")))?;
         Ok(Self {
@@ -96,8 +93,7 @@ impl UpstreamFetcher {
                 .len()
                 .checked_add(chunk.len())
                 .ok_or(BrewAdapterError::BottleOversized(u64::MAX))?;
-            let new_total_u64 =
-                u64::try_from(new_total).unwrap_or(u64::MAX);
+            let new_total_u64 = u64::try_from(new_total).unwrap_or(u64::MAX);
             if new_total_u64 > bottle_size_limit_bytes {
                 return Err(BrewAdapterError::BottleOversized(new_total_u64));
             }

@@ -136,7 +136,12 @@ async fn body_of_401_includes_auth_text() {
         )
         .await
         .expect("response");
-    let body = resp.into_body().collect().await.expect("collect").to_bytes();
+    let body = resp
+        .into_body()
+        .collect()
+        .await
+        .expect("collect")
+        .to_bytes();
     let body_str = std::str::from_utf8(&body).expect("utf8");
     assert!(body_str.to_lowercase().contains("auth"));
 }

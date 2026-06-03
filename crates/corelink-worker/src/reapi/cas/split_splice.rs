@@ -111,6 +111,4 @@ pub use builder::{Clock, FakeClock, SplitSpliceHandlerBuilder, SystemClock};
 pub use errors::{SpliceError, SplitError};
 pub use handler::SplitSpliceHandlerImpl;
 pub use handler_trait::SplitSpliceHandler;
-pub use types::{
-    FinalizeSplitOutcome, InitSplitOutcome, SpliceOutcome, MAX_CHUNK_BYTES,
-};
+pub use types::{FinalizeSplitOutcome, InitSplitOutcome, SpliceOutcome, MAX_CHUNK_BYTES};

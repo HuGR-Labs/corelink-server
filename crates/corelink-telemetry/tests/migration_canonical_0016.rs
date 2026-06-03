@@ -24,12 +24,8 @@ use corelink_telemetry::logpush::MIGRATION_0016_LOG_SCHEMA;
 #[test]
 fn migration_includes_both_canonical_tables() {
     let sql = MIGRATION_0016_LOG_SCHEMA;
-    assert!(sql.contains(
-        "CREATE TABLE IF NOT EXISTS log_schema_versions"
-    ));
-    assert!(sql.contains(
-        "CREATE TABLE IF NOT EXISTS log_redaction_patterns"
-    ));
+    assert!(sql.contains("CREATE TABLE IF NOT EXISTS log_schema_versions"));
+    assert!(sql.contains("CREATE TABLE IF NOT EXISTS log_redaction_patterns"));
 }
 
 #[test]
@@ -84,12 +80,8 @@ fn migration_does_not_use_underscore_ms_column_suffix() {
 #[test]
 fn migration_includes_recent_index_and_region_index() {
     let sql = MIGRATION_0016_LOG_SCHEMA;
-    assert!(sql.contains(
-        "CREATE INDEX IF NOT EXISTS idx_log_redaction_patterns_recent"
-    ));
-    assert!(sql.contains(
-        "CREATE INDEX IF NOT EXISTS idx_log_redaction_patterns_region"
-    ));
+    assert!(sql.contains("CREATE INDEX IF NOT EXISTS idx_log_redaction_patterns_recent"));
+    assert!(sql.contains("CREATE INDEX IF NOT EXISTS idx_log_redaction_patterns_region"));
 }
 
 #[test]

@@ -203,10 +203,7 @@ impl InMemoryQuotaAuditSink {
 
     /// Filter snapshot down to records of a single event type.
     #[must_use]
-    pub fn snapshot_of(
-        &self,
-        event_type: QuotaEventType,
-    ) -> Vec<QuotaAuditRecord> {
+    pub fn snapshot_of(&self, event_type: QuotaEventType) -> Vec<QuotaAuditRecord> {
         self.snapshot()
             .into_iter()
             .filter(|r| r.event_type == event_type)
@@ -216,9 +213,10 @@ impl InMemoryQuotaAuditSink {
 
 impl QuotaAuditSink for InMemoryQuotaAuditSink {
     fn emit(&self, record: QuotaAuditRecord) -> Result<(), QuotaAuditSinkError> {
-        let mut guard = self.inner.lock().map_err(|_| {
-            QuotaAuditSinkError::Store("audit sink mutex poisoned".to_string())
-        })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| QuotaAuditSinkError::Store("audit sink mutex poisoned".to_string()))?;
         guard.push(record);
         Ok(())
     }

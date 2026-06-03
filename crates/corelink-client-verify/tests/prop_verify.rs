@@ -379,14 +379,23 @@ fn constant_time_variance_on_verify() {
         let kept = core.len() as f64;
         core.iter().map(|&x| x as f64).sum::<f64>() / kept
     };
-    #[allow(clippy::indexing_slicing, reason = "fixed indices match the probes array")]
+    #[allow(
+        clippy::indexing_slicing,
+        reason = "fixed indices match the probes array"
+    )]
     let baseline_mean = trimmed_mean(&samples[0]);
 
     for (i, (label, _)) in probes.iter().enumerate() {
-        #[allow(clippy::indexing_slicing, reason = "iterating in lockstep with samples")]
+        #[allow(
+            clippy::indexing_slicing,
+            reason = "iterating in lockstep with samples"
+        )]
         let m = trimmed_mean(&samples[i]);
         let delta = (m - baseline_mean).abs() / baseline_mean.max(m);
-        eprintln!("ct-variance(verify): {label}={m:.0}ns delta_vs_zero={:.3}%", delta * 100.0);
+        eprintln!(
+            "ct-variance(verify): {label}={m:.0}ns delta_vs_zero={:.3}%",
+            delta * 100.0
+        );
         // The 5% gate is a release-mode statistical check; in
         // practice subtle::ConstantTimeEq holds well below this
         // threshold on all amd64 / aarch64 hosts we have measured.

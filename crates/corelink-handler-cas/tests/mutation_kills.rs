@@ -114,8 +114,10 @@ fn correctness_injection_requires_both_tenant_and_hash_match() {
     );
 
     // Seed BOTH entries so the lookup path is reachable; inject for A.
-    h.seed("tenant-x", &hash_a, bytes_a.clone()).expect("seed-a");
-    h.seed("tenant-x", &hash_b, bytes_b.clone()).expect("seed-b");
+    h.seed("tenant-x", &hash_a, bytes_a.clone())
+        .expect("seed-a");
+    h.seed("tenant-x", &hash_b, bytes_b.clone())
+        .expect("seed-b");
     h.inject_correctness_mismatch("tenant-x", &hash_a, "f".repeat(64))
         .expect("inject");
 
@@ -143,7 +145,8 @@ fn correctness_injection_requires_both_tenant_and_hash_match() {
     // via the inject-fire branch.)
     let obs = sli.snapshot().expect("snapshot");
     assert!(
-        !obs.iter().any(|o| o.sli == Sli::CorrectnessCas && o.is_error),
+        !obs.iter()
+            .any(|o| o.sli == Sli::CorrectnessCas && o.is_error),
         "no CorrectnessCas-ERROR SLI on non-matching read; got {obs:?}"
     );
 }

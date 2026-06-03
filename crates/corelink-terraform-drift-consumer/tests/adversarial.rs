@@ -25,7 +25,7 @@ use corelink_terraform_drift_consumer::{
     error::DriftConsumerError,
     event::{DriftPlanEvent, DriftSeverity, DriftStatus, RemediationDecision, REGIONS},
     metrics::DriftMetricOutcome,
-    store::{DriftFindingStore, InMemoryDriftFindingStore, check_immutable_fields_unchanged},
+    store::{check_immutable_fields_unchanged, DriftFindingStore, InMemoryDriftFindingStore},
 };
 use uuid::Uuid;
 
@@ -41,11 +41,8 @@ fn make_event(region: &str, exit_code: i32, diff_count: u32) -> DriftPlanEvent {
     }
 }
 
-fn make_consumer() -> DriftConsumer<
-    DefaultDriftClassifier,
-    InMemoryDriftAuditSink,
-    InMemoryDriftFindingStore,
-> {
+fn make_consumer(
+) -> DriftConsumer<DefaultDriftClassifier, InMemoryDriftAuditSink, InMemoryDriftFindingStore> {
     DriftConsumer::new(
         DefaultDriftClassifier,
         InMemoryDriftAuditSink::default(),
@@ -202,7 +199,11 @@ fn adv_05_clean_run_no_drift_alert() {
     );
 
     // Cron outcome is Ok
-    let (label, _) = consumer.metrics().cron_runs_total.first().expect("cron run");
+    let (label, _) = consumer
+        .metrics()
+        .cron_runs_total
+        .first()
+        .expect("cron run");
     assert_eq!(label.as_str(), "ok");
 }
 
@@ -393,7 +394,10 @@ fn adv_10_remediation_decision_tree_revert() {
         )
         .unwrap();
     let after = (*consumer.store().all_findings().first().expect("finding")).clone();
-    assert_eq!(after.remediation_decision, Some(RemediationDecision::Revert));
+    assert_eq!(
+        after.remediation_decision,
+        Some(RemediationDecision::Revert)
+    );
 }
 
 // -----------------------------------------------------------------------

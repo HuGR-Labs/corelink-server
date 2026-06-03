@@ -59,12 +59,11 @@ use corelink_billing_emit::{
 use corelink_billing_stripe::{
     canonical_stripe_audit_event_strings, compute_canonical_aggregate_bytes, compute_signature,
     derive_idempotency_key, derive_idempotency_key_from_canonical, stripe_schema_version,
-    verify_stripe_signature, FailingStripeAuditSink, FailingStripeUsageLedger,
-    IdempotencyKey, InMemoryStripeAuditSink, InMemoryStripeBillingAdapter,
-    InMemoryStripeUsageLedger, InMemoryStripeWebhookHandler, InMemoryStripeWebhookLog,
-    StripeAdapterDecision, StripeAuditEventType, StripeBillingAdapter, StripeError,
-    StripeWebhookHandler, SubscriptionItemId, WebhookEvent, WebhookEventKind,
-    WebhookHandleRequest, REPLAY_WINDOW_MS,
+    verify_stripe_signature, FailingStripeAuditSink, FailingStripeUsageLedger, IdempotencyKey,
+    InMemoryStripeAuditSink, InMemoryStripeBillingAdapter, InMemoryStripeUsageLedger,
+    InMemoryStripeWebhookHandler, InMemoryStripeWebhookLog, StripeAdapterDecision,
+    StripeAuditEventType, StripeBillingAdapter, StripeError, StripeWebhookHandler,
+    SubscriptionItemId, WebhookEvent, WebhookEventKind, WebhookHandleRequest, REPLAY_WINDOW_MS,
 };
 use proptest::prelude::*;
 use rand::{RngCore, SeedableRng};
@@ -279,10 +278,7 @@ fn build_valid_signature_header(payload: &[u8], ts_seconds: u64) -> String {
     format!("t={ts_seconds},v1={}", hex::encode(tag))
 }
 
-type Adapter = InMemoryStripeBillingAdapter<
-    InMemoryStripeAuditSink,
-    InMemoryStripeUsageLedger,
->;
+type Adapter = InMemoryStripeBillingAdapter<InMemoryStripeAuditSink, InMemoryStripeUsageLedger>;
 
 fn fresh_adapter() -> (
     Adapter,
@@ -295,10 +291,7 @@ fn fresh_adapter() -> (
     (a, audit, ledger)
 }
 
-type Handler = InMemoryStripeWebhookHandler<
-    InMemoryStripeAuditSink,
-    InMemoryStripeWebhookLog,
->;
+type Handler = InMemoryStripeWebhookHandler<InMemoryStripeAuditSink, InMemoryStripeWebhookLog>;
 
 fn fresh_handler() -> (
     Handler,
@@ -675,7 +668,11 @@ fn aggregator_to_adapter_canonical_pipeline() {
     let agg = fresh_aggregate_via_aggregator(tenant, "2026-05", UsageEventKind::CasPut, &evs);
     let (adapter, _audit, ledger) = fresh_adapter();
     let dec = adapter
-        .record_usage(&agg, SubscriptionItemId::new("si_canonical"), 1_700_000_000_000)
+        .record_usage(
+            &agg,
+            SubscriptionItemId::new("si_canonical"),
+            1_700_000_000_000,
+        )
         .unwrap();
     let recorded = matches!(dec, StripeAdapterDecision::UsageRecorded { .. });
     assert!(recorded);
@@ -684,7 +681,11 @@ fn aggregator_to_adapter_canonical_pipeline() {
     // Re-recording the same canonical aggregate is idempotent at
     // the Stripe API surface (single charge).
     let dec2 = adapter
-        .record_usage(&agg, SubscriptionItemId::new("si_canonical"), 1_700_000_000_000)
+        .record_usage(
+            &agg,
+            SubscriptionItemId::new("si_canonical"),
+            1_700_000_000_000,
+        )
         .unwrap();
     let dup = matches!(dec2, StripeAdapterDecision::DuplicateRejected { .. });
     assert!(dup);
@@ -707,8 +708,10 @@ fn end_to_end_chain_link_canonical_via_aggregator_to_adapter_to_chain() {
     )];
     let agg = fresh_aggregate_via_aggregator(tenant, "2026-05", UsageEventKind::CasPut, &evs);
     let canonical = compute_canonical_aggregate_bytes(&agg).unwrap();
-    let _link =
-        link_chain_hash_from_canonical(&corelink_billing_aggregator::ChainHash::genesis(), &canonical);
+    let _link = link_chain_hash_from_canonical(
+        &corelink_billing_aggregator::ChainHash::genesis(),
+        &canonical,
+    );
     let key1 = derive_idempotency_key(&agg).unwrap();
     let key2 = derive_idempotency_key_from_canonical(&canonical);
     assert_eq!(key1, key2);

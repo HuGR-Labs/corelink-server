@@ -38,8 +38,8 @@
 use std::sync::Arc;
 
 use corelink_gc::{
-    admin_trigger, AdminTriggerOutcome, FailureContext, GcEventType, GcPhase, GcRegion,
-    GcRunStore, GcRunStoreError, GcScheduler, GcStatus, InMemoryDegradeProbe, InMemoryGcAuditSink,
+    admin_trigger, AdminTriggerOutcome, FailureContext, GcEventType, GcPhase, GcRegion, GcRunStore,
+    GcRunStoreError, GcScheduler, GcStatus, InMemoryDegradeProbe, InMemoryGcAuditSink,
     InMemoryGcMetrics, InMemoryGcRunStore, InMemoryGcScheduler, InMemoryGcWorker, RunId,
     ScheduleConfig,
 };

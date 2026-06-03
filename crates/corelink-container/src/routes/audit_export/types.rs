@@ -34,14 +34,12 @@ pub const EVENT_TYPE_CROSS_TENANT_ATTEMPT: &str =
 
 /// Canonical event type for the SEV-0 audit-export verify failure
 /// emit.
-pub const EVENT_TYPE_VERIFY_FAILED: &str =
-    "corelink.audit.export_verify_failed.v1";
+pub const EVENT_TYPE_VERIFY_FAILED: &str = "corelink.audit.export_verify_failed.v1";
 
 /// Canonical chain-head anchor response header (mirrors the
 /// wave-17 customer-CLI doc reference). Lower-case per HTTP/2 wire
 /// convention.
-pub const HEADER_CHAIN_HEAD_ANCHOR: &str =
-    "x-corelink-audit-export-chain-head-anchor";
+pub const HEADER_CHAIN_HEAD_ANCHOR: &str = "x-corelink-audit-export-chain-head-anchor";
 
 /// Wave-18 HTTP trailer name surfaced on the response when the
 /// streaming verifier detects a chain-break MID-STREAM. The trailer
@@ -56,8 +54,7 @@ pub const HEADER_CHAIN_HEAD_ANCHOR: &str =
 /// unknown trailers know to preserve this one; we always advertise
 /// the trailer name even on the happy path so the wire shape is
 /// stable.
-pub const HEADER_EXPORT_ABORTED: &str =
-    "x-corelink-audit-export-aborted";
+pub const HEADER_EXPORT_ABORTED: &str = "x-corelink-audit-export-aborted";
 
 /// Wave-19 — environment variable tuning the maximum per-row body
 /// buffer size (in bytes) the async streaming generator will hold

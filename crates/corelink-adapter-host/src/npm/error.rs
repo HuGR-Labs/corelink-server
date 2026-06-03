@@ -74,9 +74,7 @@ impl NpmAdapterError {
             Self::Bind(_) => 500,
             Self::Auth(_) => 401,
             Self::Cas(_) | Self::Kv(_) | Self::Audit(_) => 503,
-            Self::Upstream(_)
-            | Self::IntegrityMismatch { .. }
-            | Self::MetadataParse(_) => 502,
+            Self::Upstream(_) | Self::IntegrityMismatch { .. } | Self::MetadataParse(_) => 502,
             Self::TarballOversized(_) => 413,
         }
     }
@@ -100,7 +98,10 @@ mod tests {
         assert_eq!(NpmAdapterError::Kv("x".into()).status_code(), 503);
         assert_eq!(NpmAdapterError::Audit("x".into()).status_code(), 503);
         assert_eq!(NpmAdapterError::Upstream("x".into()).status_code(), 502);
-        assert_eq!(NpmAdapterError::MetadataParse("x".into()).status_code(), 502);
+        assert_eq!(
+            NpmAdapterError::MetadataParse("x".into()).status_code(),
+            502
+        );
         assert_eq!(
             NpmAdapterError::IntegrityMismatch {
                 expected: "a".into(),

@@ -47,11 +47,7 @@ pub trait CasReadStore: Send + Sync + core::fmt::Debug {
     ///
     /// - [`TurboBridgeError::NotFound`] — no object at this key.
     /// - [`TurboBridgeError::Internal`] — backend error.
-    fn read(
-        &self,
-        tenant: &str,
-        key: &str,
-    ) -> Result<Vec<u8>, TurboBridgeError>;
+    fn read(&self, tenant: &str, key: &str) -> Result<Vec<u8>, TurboBridgeError>;
 }
 
 /// Opaque KV write port.  Implementations store bytes under `(tenant, key)`
@@ -62,12 +58,7 @@ pub trait CasWriteStore: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`TurboBridgeError::Internal`] on backend error.
-    fn write(
-        &self,
-        tenant: &str,
-        key: &str,
-        bytes: Vec<u8>,
-    ) -> Result<(), TurboBridgeError>;
+    fn write(&self, tenant: &str, key: &str, bytes: Vec<u8>) -> Result<(), TurboBridgeError>;
 }
 
 // ── InMemoryKvStore ───────────────────────────────────────────────────────────
@@ -107,7 +98,9 @@ impl CasReadStore for InMemoryKvStore {
             .map_err(|_| TurboBridgeError::Internal("kv lock poisoned".into()))?
             .get(&(tenant.to_owned(), key.to_owned()))
             .cloned()
-            .ok_or_else(|| TurboBridgeError::NotFound { hash: key.to_owned() })
+            .ok_or_else(|| TurboBridgeError::NotFound {
+                hash: key.to_owned(),
+            })
     }
 }
 
@@ -139,7 +132,8 @@ pub struct CasAdapterTurboHandler {
 
 impl core::fmt::Debug for CasAdapterTurboHandler {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("CasAdapterTurboHandler").finish_non_exhaustive()
+        f.debug_struct("CasAdapterTurboHandler")
+            .finish_non_exhaustive()
     }
 }
 
@@ -322,7 +316,12 @@ mod tests {
         .expect("put");
         let resp = h
             .get(TurboGetRequest::new(
-                "hash_abc", "team_x", "my-repo", "ci_runner", "team_x", 2,
+                "hash_abc",
+                "team_x",
+                "my-repo",
+                "ci_runner",
+                "team_x",
+                2,
             ))
             .expect("get");
         assert_eq!(resp.bytes, data);
@@ -352,7 +351,9 @@ mod tests {
     fn adapter_cross_tenant_get_denied() {
         let (audit, _, h) = fixture();
         let err = h
-            .get(TurboGetRequest::new("h1", "victim", "s", "evil", "attacker", 1))
+            .get(TurboGetRequest::new(
+                "h1", "victim", "s", "evil", "attacker", 1,
+            ))
             .expect_err("denied");
         assert!(matches!(err, TurboBridgeError::CrossTenantDenied { .. }));
         let rows = audit.snapshot().expect("snap");

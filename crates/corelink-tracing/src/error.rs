@@ -79,34 +79,28 @@ mod tests {
 
     #[test]
     fn trace_context_parse_error_displays_diagnostic() {
-        let e = TracingError::TraceContextParseError(
-            "invalid hex".into(),
-        );
+        let e = TracingError::TraceContextParseError("invalid hex".into());
         let s = format!("{e}");
         assert!(s.contains("traceparent"));
     }
 
     #[test]
     fn from_audit_sink_error_lifts_cleanly() {
-        let inner =
-            TracingAuditSinkError::Store("induced".to_string());
+        let inner = TracingAuditSinkError::Store("induced".to_string());
         let e: TracingError = inner.into();
         assert!(matches!(e, TracingError::Audit(_)));
     }
 
     #[test]
     fn from_exporter_error_lifts_cleanly() {
-        let inner =
-            OtlpExporterError::Backend("induced".to_string());
+        let inner = OtlpExporterError::Backend("induced".to_string());
         let e: TracingError = inner.into();
         assert!(matches!(e, TracingError::Exporter(_)));
     }
 
     #[test]
     fn sampler_rate_out_of_bounds_displays_diagnostic() {
-        let e = TracingError::SamplerRateOutOfBounds {
-            observed_rate: 1.5,
-        };
+        let e = TracingError::SamplerRateOutOfBounds { observed_rate: 1.5 };
         let s = format!("{e}");
         assert!(s.contains("1.5"));
     }

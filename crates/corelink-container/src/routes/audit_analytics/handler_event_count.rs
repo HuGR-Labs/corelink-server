@@ -99,29 +99,26 @@ pub(super) async fn handle_event_count(
                 .into_response(),
         );
     }
-    let buckets = match shadow.aggregate_event_count(
-        query.from,
-        query.to,
-        query.event_type.as_deref(),
-    ) {
-        Ok(v) => v,
-        Err(_) => {
-            return emit_or_503(
-                &state,
-                AnalyticsAuditRow::new(
-                    EVENT_TYPE_ANALYTICS_QUERY.to_string(),
-                    Some(tenant),
-                    "event_count".to_string(),
-                    query.from,
-                    query.to,
-                    0,
-                    "backend_error".to_string(),
-                )
-                .with_region_source(region_source),
-                (StatusCode::INTERNAL_SERVER_ERROR, "shadow aggregate failed").into_response(),
-            );
-        }
-    };
+    let buckets =
+        match shadow.aggregate_event_count(query.from, query.to, query.event_type.as_deref()) {
+            Ok(v) => v,
+            Err(_) => {
+                return emit_or_503(
+                    &state,
+                    AnalyticsAuditRow::new(
+                        EVENT_TYPE_ANALYTICS_QUERY.to_string(),
+                        Some(tenant),
+                        "event_count".to_string(),
+                        query.from,
+                        query.to,
+                        0,
+                        "backend_error".to_string(),
+                    )
+                    .with_region_source(region_source),
+                    (StatusCode::INTERNAL_SERVER_ERROR, "shadow aggregate failed").into_response(),
+                );
+            }
+        };
     let response = EventCountResponse {
         buckets: buckets
             .into_iter()

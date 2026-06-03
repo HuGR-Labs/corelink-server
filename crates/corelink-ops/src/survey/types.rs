@@ -160,7 +160,9 @@ impl SurveyResponse {
 /// Returns [`SurveyError::InvalidResponse`] if `score > 10`.
 pub fn validate_nps(score: u8) -> Result<(), SurveyError> {
     if score > 10 {
-        Err(SurveyError::InvalidResponse("nps score out of range 0..=10"))
+        Err(SurveyError::InvalidResponse(
+            "nps score out of range 0..=10",
+        ))
     } else {
         Ok(())
     }
@@ -191,9 +193,7 @@ pub fn validate_csat(score: u8) -> Result<(), SurveyError> {
 /// - duplicate option indices.
 pub fn validate_multi_choice(selected: &[u8]) -> Result<(), SurveyError> {
     if selected.is_empty() {
-        return Err(SurveyError::InvalidResponse(
-            "multi_choice selection empty",
-        ));
+        return Err(SurveyError::InvalidResponse("multi_choice selection empty"));
     }
     if selected.len() > MULTI_CHOICE_MAX_OPTIONS {
         return Err(SurveyError::InvalidResponse(
@@ -227,9 +227,7 @@ pub fn sanitize_free_text(raw: &str) -> Result<String, SurveyError> {
     // semantics applied by all CoreLink form-input layers.
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return Err(SurveyError::InvalidResponse(
-            "free_text empty after trim",
-        ));
+        return Err(SurveyError::InvalidResponse("free_text empty after trim"));
     }
     if trimmed.len() > FREE_TEXT_MAX_LEN {
         return Err(SurveyError::InvalidResponse(

@@ -30,9 +30,9 @@ use core::fmt;
 
 use corelink_hash::Digest;
 
+use crate::cache::kv::KvBackend;
 use crate::cache::miss_reason::MissReason;
 use crate::cache::negative::{NegativeCache, NegativeCacheError};
-use crate::cache::kv::KvBackend;
 use crate::Region;
 use crate::TenantCtx;
 
@@ -107,9 +107,7 @@ impl<K: KvBackend> AcNegCache<K> {
         ctx: &TenantCtx,
         digest: &Digest,
     ) -> Result<(), NegativeCacheError> {
-        self.inner
-            .put_miss(ctx, digest, MissReason::NotFound)
-            .await
+        self.inner.put_miss(ctx, digest, MissReason::NotFound).await
     }
 
     /// Invalidate the cache entry for `(ctx.tenant_id(), digest)` —

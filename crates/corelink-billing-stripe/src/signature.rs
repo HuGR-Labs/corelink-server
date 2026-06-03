@@ -119,9 +119,7 @@ impl StripeSignatureHeader {
             // the whole header if NO recognized field landed.
         }
         let timestamp_seconds = timestamp_seconds.ok_or_else(|| {
-            StripeError::SignatureRejected(
-                "Stripe-Signature missing t= field".to_string(),
-            )
+            StripeError::SignatureRejected("Stripe-Signature missing t= field".to_string())
         })?;
         if v1_signatures.is_empty() {
             return Err(StripeError::SignatureRejected(
@@ -152,9 +150,8 @@ pub fn compute_signature(
     payload: &[u8],
 ) -> Result<[u8; 32], StripeError> {
     type HmacSha256 = Hmac<Sha256>;
-    let mut mac = HmacSha256::new_from_slice(webhook_secret).map_err(|e| {
-        StripeError::Internal(format!("HMAC key length rejected: {e}"))
-    })?;
+    let mut mac = HmacSha256::new_from_slice(webhook_secret)
+        .map_err(|e| StripeError::Internal(format!("HMAC key length rejected: {e}")))?;
     let ts_str = timestamp_seconds.to_string();
     mac.update(ts_str.as_bytes());
     mac.update(b".");
@@ -407,7 +404,10 @@ mod tests {
         // now exactly 5 min after ts (boundary inclusive).
         let now_ms = ts.saturating_mul(1000).saturating_add(REPLAY_WINDOW_MS);
         let result = verify_stripe_signature(&header, payload, TEST_SECRET, now_ms);
-        assert!(result.is_ok(), "5min boundary should be accepted; got {result:?}");
+        assert!(
+            result.is_ok(),
+            "5min boundary should be accepted; got {result:?}"
+        );
     }
 
     #[test]
@@ -442,7 +442,10 @@ mod tests {
         let header = build_valid_header(payload, ts_seconds);
         let now_ms = 1_700_000_000_u64.saturating_mul(1000);
         let result = verify_stripe_signature(&header, payload, TEST_SECRET, now_ms);
-        assert!(result.is_ok(), "1min future drift should be accepted; got {result:?}");
+        assert!(
+            result.is_ok(),
+            "1min future drift should be accepted; got {result:?}"
+        );
     }
 
     #[test]
@@ -452,8 +455,8 @@ mod tests {
         let valid_tag = compute_signature(TEST_SECRET, ts, payload).unwrap();
         let header = format!(
             "t={ts},v1={},v1={}",
-            "ab".repeat(32),                  // bogus
-            hex::encode(valid_tag)            // canonical
+            "ab".repeat(32),        // bogus
+            hex::encode(valid_tag)  // canonical
         );
         let now_ms = ts.saturating_mul(1000);
         let result = verify_stripe_signature(&header, payload, TEST_SECRET, now_ms);

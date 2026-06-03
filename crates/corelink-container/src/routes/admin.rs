@@ -44,8 +44,8 @@ use axum::{
 };
 use corelink_handler_admin::{
     AdminHandlerError, AdminMutateHandler, AdminMutateRequest, AdminMutateResponse,
-    AdminReadHandler, AdminReadRequest, AdminReadResponse, DualApprovalToken,
-    InMemoryAdminHandler, InMemoryAuditSink, InMemorySliObserver, MutateOp,
+    AdminReadHandler, AdminReadRequest, AdminReadResponse, DualApprovalToken, InMemoryAdminHandler,
+    InMemoryAuditSink, InMemorySliObserver, MutateOp,
 };
 use serde::Deserialize;
 
@@ -116,8 +116,7 @@ pub fn build_handlers() -> (Arc<dyn AdminReadHandler>, Arc<dyn AdminMutateHandle
             // so future async-construction additions don't regress.
             let db_id = env.d1_database_id.clone();
             let built: Result<D1HttpClient, String> = tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current()
-                    .block_on(async { D1HttpClient::new(&env) })
+                tokio::runtime::Handle::current().block_on(async { D1HttpClient::new(&env) })
             });
             match built {
                 Ok(client) => {
@@ -146,8 +145,7 @@ pub fn build_handlers() -> (Arc<dyn AdminReadHandler>, Arc<dyn AdminMutateHandle
         tracing::info!("Admin handler: InMemory (no storage credentials configured)");
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
-        let shared: Arc<InMemoryAdminHandler> =
-            Arc::new(InMemoryAdminHandler::new(audit, sli));
+        let shared: Arc<InMemoryAdminHandler> = Arc::new(InMemoryAdminHandler::new(audit, sli));
         let read: Arc<dyn AdminReadHandler> = shared.clone();
         let mutate: Arc<dyn AdminMutateHandler> = shared;
         (read, mutate)
@@ -245,9 +243,7 @@ impl AdminReadHandler for D1AdminHandler {
                 match Self::block_on(self.client.tenant_admin_lookup(tenant_id)) {
                     Ok(Some(record)) => {
                         let body = serde_json::to_vec(&record).map_err(|e| {
-                            AdminHandlerError::Internal(format!(
-                                "admin read json encode: {e}"
-                            ))
+                            AdminHandlerError::Internal(format!("admin read json encode: {e}"))
                         })?;
                         self.inner.seed_read(req.resource.clone(), body)?;
                     }
@@ -256,9 +252,7 @@ impl AdminReadHandler for D1AdminHandler {
                         // (after emitting ReadAttempted).
                     }
                     Err(e) => {
-                        return Err(AdminHandlerError::Internal(format!(
-                            "D1 admin read: {e}"
-                        )));
+                        return Err(AdminHandlerError::Internal(format!("D1 admin read: {e}")));
                     }
                 }
             }
@@ -268,10 +262,7 @@ impl AdminReadHandler for D1AdminHandler {
 }
 
 impl AdminMutateHandler for D1AdminHandler {
-    fn mutate(
-        &self,
-        req: AdminMutateRequest,
-    ) -> Result<AdminMutateResponse, AdminHandlerError> {
+    fn mutate(&self, req: AdminMutateRequest) -> Result<AdminMutateResponse, AdminHandlerError> {
         // Pre-validate the D1-backed op surface BEFORE delegating, so
         // unsupported ops are rejected without polluting the audit log
         // with a MutateCommitted row.
@@ -286,9 +277,7 @@ impl AdminMutateHandler for D1AdminHandler {
         // Capture the op shape for the post-commit D1 mirror (the
         // inner handler consumes `req` by value).
         let mirror = match &req.op {
-            MutateOp::SetTenantTier { tenant, tier } => {
-                Some((tenant.clone(), tier.clone()))
-            }
+            MutateOp::SetTenantTier { tenant, tier } => Some((tenant.clone(), tier.clone())),
             _ => None,
         };
 
@@ -432,19 +421,13 @@ fn map_err(e: AdminHandlerError) -> axum::response::Response {
         AdminHandlerError::NotFound { .. } => {
             (StatusCode::NOT_FOUND, "admin not found").into_response()
         }
-        AdminHandlerError::Forbidden { .. } => {
-            (StatusCode::FORBIDDEN, "forbidden").into_response()
+        AdminHandlerError::Forbidden { .. } => (StatusCode::FORBIDDEN, "forbidden").into_response(),
+        AdminHandlerError::DualApprovalMissing => {
+            (StatusCode::FORBIDDEN, "dual-approval required").into_response()
         }
-        AdminHandlerError::DualApprovalMissing => (
-            StatusCode::FORBIDDEN,
-            "dual-approval required",
-        )
-            .into_response(),
-        AdminHandlerError::DualApprovalSelfApproval { .. } => (
-            StatusCode::FORBIDDEN,
-            "self-approval rejected",
-        )
-            .into_response(),
+        AdminHandlerError::DualApprovalSelfApproval { .. } => {
+            (StatusCode::FORBIDDEN, "self-approval rejected").into_response()
+        }
         AdminHandlerError::AuditFailed(_) => {
             // Fail-CLOSED: audit pipeline down = 503; never mutate.
             (StatusCode::SERVICE_UNAVAILABLE, "audit closed").into_response()
@@ -606,7 +589,9 @@ mod tests {
         assert_eq!(resp.approval_id, "a1");
         assert_eq!(shared.applied_snapshot().expect("snap").len(), 1);
         let rows = audit.snapshot().expect("audit");
-        assert!(rows.iter().any(|r| r.kind == AuditEventKind::MutateCommitted));
+        assert!(rows
+            .iter()
+            .any(|r| r.kind == AuditEventKind::MutateCommitted));
         assert!(sli
             .snapshot()
             .expect("sli")

@@ -94,7 +94,9 @@ impl InMemoryReplayArchive {
     ) -> Option<ReconstructedLayers> {
         match self.inner.lock() {
             Ok(mut g) => g.insert((tenant_id, billing_period.into()), layers),
-            Err(p) => p.into_inner().insert((tenant_id, billing_period.into()), layers),
+            Err(p) => p
+                .into_inner()
+                .insert((tenant_id, billing_period.into()), layers),
         }
     }
 

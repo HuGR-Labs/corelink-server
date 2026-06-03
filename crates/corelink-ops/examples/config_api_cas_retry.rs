@@ -5,16 +5,23 @@
 //! 2. Attempt CAS update.
 //! 3. On `VersionConflict` (409): back off exponentially, re-fetch, retry.
 //! 4. Abort after 3 attempts.
-#![allow(clippy::print_stdout, clippy::print_stderr, clippy::expect_used, clippy::unwrap_used)]
+#![allow(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::expect_used,
+    clippy::unwrap_used
+)]
 
 use std::sync::Arc;
 use uuid::Uuid;
 
-use corelink_ops::config::api::handlers::{AdminContext, PutConfigRequest, handle_get_current, handle_put};
 use corelink_config_do::{
-    AdminActor, ConfigError, ConfigPayload,
     metrics::NoopMetrics,
     store::{InMemoryAuditSink, InMemoryConfigSingletonStore},
+    AdminActor, ConfigError, ConfigPayload,
+};
+use corelink_ops::config::api::handlers::{
+    handle_get_current, handle_put, AdminContext, PutConfigRequest,
 };
 
 const MAX_RETRIES: u32 = 3;
@@ -28,7 +35,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let now_ms = 1_748_000_000_000u64;
     let ctx = AdminContext {
-        actor: AdminActor { user_id: Uuid::nil(), email_hash: [0u8; 32] },
+        actor: AdminActor {
+            user_id: Uuid::nil(),
+            email_hash: [0u8; 32],
+        },
         mfa_ts_ms: now_ms - 60 * 1000,
         is_admin: true,
         dual_approver_user_id: None,
@@ -65,7 +75,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(ref e)
                 if matches!(
                     e,
-                    corelink_ops::config::api::ApiError::Config(ConfigError::VersionConflict { .. })
+                    corelink_ops::config::api::ApiError::Config(
+                        ConfigError::VersionConflict { .. }
+                    )
                 ) =>
             {
                 // Exponential backoff (simulated — no sleep in example to stay wasm32-clean).

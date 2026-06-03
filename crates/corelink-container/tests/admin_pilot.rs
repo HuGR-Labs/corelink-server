@@ -27,10 +27,10 @@ use axum::{
     http::{Request, StatusCode},
 };
 use corelink_server::routes::admin_pilot::{
-    router, InMemoryPilotAuditSink, InMemoryPilotStore, PilotAdminRouteState,
-    PilotAuditSink, PilotState, PilotStore, PilotTenant, ADMIN_PRINCIPAL_HEADER,
-    ADMIN_SCOPE_HEADER, ADMIN_TENANT_HEADER, EVENT_TYPE_CHECKIN, EVENT_TYPE_CROSS_TENANT,
-    EVENT_TYPE_TIER_GRANTED, EVENT_TYPE_UNAUTHORIZED, REQUIRED_ADMIN_SCOPE,
+    router, InMemoryPilotAuditSink, InMemoryPilotStore, PilotAdminRouteState, PilotAuditSink,
+    PilotState, PilotStore, PilotTenant, ADMIN_PRINCIPAL_HEADER, ADMIN_SCOPE_HEADER,
+    ADMIN_TENANT_HEADER, EVENT_TYPE_CHECKIN, EVENT_TYPE_CROSS_TENANT, EVENT_TYPE_TIER_GRANTED,
+    EVENT_TYPE_UNAUTHORIZED, REQUIRED_ADMIN_SCOPE,
 };
 use corelink_server::wall_clock::InMemoryFakeWallClock;
 use serde_json::Value;
@@ -69,8 +69,16 @@ fn seed_tenant(
         .seed(PilotTenant {
             tenant_id: id,
             slug: slug.to_string(),
-            tier: if granted_at_ms.is_some() { "pilot".into() } else { "free".into() },
-            cap_bytes: if granted_at_ms.is_some() { 100_000_000_000 } else { 0 },
+            tier: if granted_at_ms.is_some() {
+                "pilot".into()
+            } else {
+                "free".into()
+            },
+            cap_bytes: if granted_at_ms.is_some() {
+                100_000_000_000
+            } else {
+                0
+            },
             pilot_state: state,
             signup_at_ms,
             tier_granted_at_ms: granted_at_ms,
@@ -161,7 +169,13 @@ async fn checkin_emits_alert_for_overdue_no_blob_tenant() {
     let grant_at: u64 = 1_700_000_000_000;
     let now: u64 = grant_at + 25 * 3_600_000; // +25h
     let (state, store, audit, _clock) = fixture(now);
-    let id = seed_tenant(&store, PilotState::Active, "silent-tenant", 1_000, Some(grant_at));
+    let id = seed_tenant(
+        &store,
+        PilotState::Active,
+        "silent-tenant",
+        1_000,
+        Some(grant_at),
+    );
 
     let app = router(state);
     let req = admin_headers(
@@ -358,7 +372,13 @@ async fn invalid_tenant_uuid_400() {
 #[tokio::test]
 async fn double_grant_tier_returns_conflict() {
     let (state, store, _audit, _clock) = fixture(1_700_000_000_000);
-    let id = seed_tenant(&store, PilotState::Active, "already-active", 1_000, Some(1_000));
+    let id = seed_tenant(
+        &store,
+        PilotState::Active,
+        "already-active",
+        1_000,
+        Some(1_000),
+    );
 
     let app = router(state);
     let body = serde_json::json!({"tier": "pilot", "cap_bytes": 100_000_000_000_u64});

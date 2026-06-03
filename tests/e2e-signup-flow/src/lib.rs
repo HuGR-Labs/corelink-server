@@ -41,8 +41,8 @@ pub mod helpers;
 pub mod r2;
 
 pub use helpers::{
-    make_test_tenant, setup_test_ledgers, verify_audit_chain, ExpectedAuditEvent, ProvisionedTenant,
-    TenantBundle, TestEnv,
+    make_test_tenant, setup_test_ledgers, verify_audit_chain, ExpectedAuditEvent,
+    ProvisionedTenant, TenantBundle, TestEnv,
 };
 pub use r2::{InMemoryR2Client, R2Error, R2StatReport};
 

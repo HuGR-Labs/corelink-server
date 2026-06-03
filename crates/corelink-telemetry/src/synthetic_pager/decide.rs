@@ -35,10 +35,7 @@ pub fn decide_drill_outcome(
     now_ms: i64,
 ) -> Result<(AckOutcome, Option<MttaMs>), SyntheticDrillError> {
     if emit_ts_ms > now_ms {
-        return Err(SyntheticDrillError::EmitTimestampInFuture {
-            emit_ts_ms,
-            now_ms,
-        });
+        return Err(SyntheticDrillError::EmitTimestampInFuture { emit_ts_ms, now_ms });
     }
 
     match ack_ts_ms {

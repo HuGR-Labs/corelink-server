@@ -180,10 +180,7 @@ thread_local! {
 /// output is byte-identical to a freshly `new`'d Hasher (asserted by
 /// the unit test `cloned_hasher_matches_fresh`).
 #[must_use]
-pub fn link_chain_hash_from_canonical(
-    prev_hash: &ChainHash,
-    canonical_bytes: &[u8],
-) -> ChainHash {
+pub fn link_chain_hash_from_canonical(prev_hash: &ChainHash, canonical_bytes: &[u8]) -> ChainHash {
     // DEBT-013 OPT-05: clone a pre-initialized thread-local Hasher
     // template instead of paying for a fresh `Hasher::new()` per call.
     // Property test `prop_cloned_hasher_matches_fresh` (10k cases) gates
@@ -251,7 +248,10 @@ impl HashChainBuilder {
     /// chain head from the durable mirror after a worker restart.
     #[must_use]
     pub const fn resume(head: ChainHash, next_sequence: u64) -> Self {
-        Self { head, next_sequence }
+        Self {
+            head,
+            next_sequence,
+        }
     }
 
     /// Borrow the current chain head (the `prev_hash` slot of the next
@@ -340,7 +340,12 @@ mod tests {
 
     #[test]
     fn jcs_canonicalization_byte_equal_on_repeated_compute() {
-        let e = fresh_event(0, ChainHash::genesis(), Uuid::now_v7(), AuditEventKind::Tenant);
+        let e = fresh_event(
+            0,
+            ChainHash::genesis(),
+            Uuid::now_v7(),
+            AuditEventKind::Tenant,
+        );
         let b1 = compute_canonical_bytes(&e).unwrap();
         let b2 = compute_canonical_bytes(&e).unwrap();
         assert_eq!(b1, b2);
@@ -348,7 +353,12 @@ mod tests {
 
     #[test]
     fn jcs_canonicalization_sorts_keys_lexicographically() {
-        let e = fresh_event(0, ChainHash::genesis(), Uuid::now_v7(), AuditEventKind::Tenant);
+        let e = fresh_event(
+            0,
+            ChainHash::genesis(),
+            Uuid::now_v7(),
+            AuditEventKind::Tenant,
+        );
         let bytes = compute_canonical_bytes(&e).unwrap();
         let s = String::from_utf8(bytes).unwrap();
         // JCS sorts keys lexicographically. The canonical event has
@@ -364,7 +374,12 @@ mod tests {
 
     #[test]
     fn link_chain_hash_deterministic() {
-        let e = fresh_event(0, ChainHash::genesis(), Uuid::now_v7(), AuditEventKind::Tenant);
+        let e = fresh_event(
+            0,
+            ChainHash::genesis(),
+            Uuid::now_v7(),
+            AuditEventKind::Tenant,
+        );
         let h1 = link_chain_hash(&ChainHash::genesis(), &e).unwrap();
         let h2 = link_chain_hash(&ChainHash::genesis(), &e).unwrap();
         assert_eq!(h1, h2);
@@ -382,7 +397,12 @@ mod tests {
 
     #[test]
     fn link_chain_hash_diverges_on_prev_change() {
-        let e = fresh_event(0, ChainHash::genesis(), Uuid::now_v7(), AuditEventKind::Tenant);
+        let e = fresh_event(
+            0,
+            ChainHash::genesis(),
+            Uuid::now_v7(),
+            AuditEventKind::Tenant,
+        );
         let h_genesis = link_chain_hash(&ChainHash::genesis(), &e).unwrap();
         let other = ChainHash([0xFF; 32]);
         let h_other = link_chain_hash(&other, &e).unwrap();
@@ -391,7 +411,12 @@ mod tests {
 
     #[test]
     fn link_chain_hash_from_canonical_matches_full_pipeline() {
-        let e = fresh_event(0, ChainHash::genesis(), Uuid::now_v7(), AuditEventKind::Tenant);
+        let e = fresh_event(
+            0,
+            ChainHash::genesis(),
+            Uuid::now_v7(),
+            AuditEventKind::Tenant,
+        );
         let canonical = compute_canonical_bytes(&e).unwrap();
         let h_full = link_chain_hash(&ChainHash::genesis(), &e).unwrap();
         let h_split = link_chain_hash_from_canonical(&ChainHash::genesis(), &canonical);
@@ -400,14 +425,24 @@ mod tests {
 
     #[test]
     fn verify_chain_link_accepts_correct_link() {
-        let e = fresh_event(0, ChainHash::genesis(), Uuid::now_v7(), AuditEventKind::Tenant);
+        let e = fresh_event(
+            0,
+            ChainHash::genesis(),
+            Uuid::now_v7(),
+            AuditEventKind::Tenant,
+        );
         let h = link_chain_hash(&ChainHash::genesis(), &e).unwrap();
         assert!(verify_chain_link(&ChainHash::genesis(), &e, &h).unwrap());
     }
 
     #[test]
     fn verify_chain_link_rejects_tampered_link() {
-        let e = fresh_event(0, ChainHash::genesis(), Uuid::now_v7(), AuditEventKind::Tenant);
+        let e = fresh_event(
+            0,
+            ChainHash::genesis(),
+            Uuid::now_v7(),
+            AuditEventKind::Tenant,
+        );
         let h = link_chain_hash(&ChainHash::genesis(), &e).unwrap();
         let mut tampered_bytes = *h.as_bytes();
         tampered_bytes[0] ^= 0xFF;
@@ -425,7 +460,12 @@ mod tests {
     #[test]
     fn builder_appends_genesis_event() {
         let mut b = HashChainBuilder::new();
-        let e = fresh_event(0, ChainHash::genesis(), Uuid::now_v7(), AuditEventKind::Tenant);
+        let e = fresh_event(
+            0,
+            ChainHash::genesis(),
+            Uuid::now_v7(),
+            AuditEventKind::Tenant,
+        );
         let after = b.append(&e).unwrap();
         assert_eq!(b.next_sequence(), 1);
         assert_eq!(b.head(), &after);
@@ -435,9 +475,17 @@ mod tests {
     #[test]
     fn builder_rejects_wrong_sequence() {
         let mut b = HashChainBuilder::new();
-        let e = fresh_event(5, ChainHash::genesis(), Uuid::now_v7(), AuditEventKind::Tenant);
+        let e = fresh_event(
+            5,
+            ChainHash::genesis(),
+            Uuid::now_v7(),
+            AuditEventKind::Tenant,
+        );
         let err = b.append(&e).unwrap_err();
-        assert!(matches!(err, AuditChainError::SequenceOrderingViolation { .. }));
+        assert!(matches!(
+            err,
+            AuditChainError::SequenceOrderingViolation { .. }
+        ));
     }
 
     #[test]
@@ -557,15 +605,15 @@ mod tests {
                 for &pat in &byte_patterns {
                     let payload = vec![pat; len];
                     // Cloned-template path (the optimized one):
-                    let cloned_digest =
-                        link_chain_hash_from_canonical(prev, &payload);
+                    let cloned_digest = link_chain_hash_from_canonical(prev, &payload);
                     // Fresh-hasher reference path:
                     let mut fresh = Hasher::new();
                     fresh.update(prev.as_bytes());
                     fresh.update(&payload);
                     let fresh_digest = ChainHash(*fresh.finalize().as_bytes());
                     assert_eq!(
-                        cloned_digest, fresh_digest,
+                        cloned_digest,
+                        fresh_digest,
                         "clone-vs-fresh mismatch at prev={:?} len={} pat=0x{:02X}",
                         prev.as_bytes(),
                         len,

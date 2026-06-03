@@ -66,10 +66,9 @@ use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
 use corelink_pat::{
-    mint::mint,
-    PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId,
-    SCOPE_ADMIN_AUDIT, SCOPE_ADMIN_BILLING, SCOPE_ADMIN_TENANT_R, SCOPE_ADMIN_TENANT_W,
-    SCOPE_ADMIN_TOKENS, SCOPE_ADMIN_USERS, SCOPE_CACHE_RW,
+    mint::mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId, SCOPE_ADMIN_AUDIT,
+    SCOPE_ADMIN_BILLING, SCOPE_ADMIN_TENANT_R, SCOPE_ADMIN_TENANT_W, SCOPE_ADMIN_TOKENS,
+    SCOPE_ADMIN_USERS, SCOPE_CACHE_RW,
 };
 
 /// Full admin scope: all admin + cache bits.

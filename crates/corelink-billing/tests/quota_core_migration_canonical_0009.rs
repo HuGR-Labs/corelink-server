@@ -32,10 +32,8 @@
     reason = "test target"
 )]
 
+use corelink_billing::quota::core::{quota_schema_version, MIGRATION_0009_QUOTA_RESERVATIONS};
 use corelink_eviction::EvictionRegion;
-use corelink_billing::quota::core::{
-    quota_schema_version, MIGRATION_0009_QUOTA_RESERVATIONS,
-};
 
 /// Strip `-- …` line comments before scanning.
 fn migration_sql_no_comments() -> String {
@@ -114,9 +112,7 @@ fn every_canonical_check_constraint_mnemonic_is_present() {
 fn tenant_region_index_present() {
     let sql = migration_sql_no_comments();
     assert!(
-        sql.contains(
-            "CREATE INDEX IF NOT EXISTS idx_quota_reservations_tenant_region"
-        ),
+        sql.contains("CREATE INDEX IF NOT EXISTS idx_quota_reservations_tenant_region"),
         "idx_quota_reservations_tenant_region must be present"
     );
 }
@@ -125,9 +121,7 @@ fn tenant_region_index_present() {
 fn expires_at_index_present() {
     let sql = migration_sql_no_comments();
     assert!(
-        sql.contains(
-            "CREATE INDEX IF NOT EXISTS idx_quota_reservations_expires_at_ms"
-        ),
+        sql.contains("CREATE INDEX IF NOT EXISTS idx_quota_reservations_expires_at_ms"),
         "idx_quota_reservations_expires_at_ms must be present (TTL sweep)"
     );
 }

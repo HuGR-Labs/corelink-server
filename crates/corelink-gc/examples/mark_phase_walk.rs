@@ -17,10 +17,9 @@
 use std::sync::Arc;
 
 use corelink_gc::{
-    AcMetaRow, BlobDigest, BlobMetaRow, CountingMarkClock, GcCandidatesStore, GcRegion,
-    GcRunStore, InMemoryGcAuditSink, InMemoryGcCandidatesStore, InMemoryGcMetrics,
-    InMemoryGcRunStore, InMemoryMarkPhase, InMemoryReachableSetSource, ManifestChunkRow,
-    MarkPhase, RunId,
+    AcMetaRow, BlobDigest, BlobMetaRow, CountingMarkClock, GcCandidatesStore, GcRegion, GcRunStore,
+    InMemoryGcAuditSink, InMemoryGcCandidatesStore, InMemoryGcMetrics, InMemoryGcRunStore,
+    InMemoryMarkPhase, InMemoryReachableSetSource, ManifestChunkRow, MarkPhase, RunId,
 };
 use uuid::Uuid;
 

@@ -160,13 +160,8 @@ impl BazelAdapter {
         at_unix_ms: u64,
     ) -> Result<Vec<u8>, BazelBridgeError> {
         check_tenant(instance, caller_tenant)?;
-        let req = AcLookupRequest::new(
-            instance,
-            &digest.hash,
-            principal,
-            caller_tenant,
-            at_unix_ms,
-        );
+        let req =
+            AcLookupRequest::new(instance, &digest.hash, principal, caller_tenant, at_unix_ms);
         self.ac_lookup
             .lookup(req)
             .map(|resp| resp.result_payload)
@@ -228,12 +223,13 @@ fn map_cas_error(e: CasHandlerError, tenant: &str, hash: &str) -> BazelBridgeErr
             tenant: tenant.to_owned(),
             hash: hash.to_owned(),
         },
-        CasHandlerError::CrossTenantDenied { caller, requested_tenant } => {
-            BazelBridgeError::CrossTenantDenied {
-                caller,
-                requested: requested_tenant,
-            }
-        }
+        CasHandlerError::CrossTenantDenied {
+            caller,
+            requested_tenant,
+        } => BazelBridgeError::CrossTenantDenied {
+            caller,
+            requested: requested_tenant,
+        },
         CasHandlerError::AuditFailed(msg) => BazelBridgeError::AuditFailed(msg),
         CasHandlerError::HashMismatch { claimed, actual } => BazelBridgeError::Internal(format!(
             "CAS hash mismatch on claimed={claimed} actual={actual}"
@@ -250,12 +246,13 @@ fn map_ac_error(e: AcHandlerError, tenant: &str, hash: &str) -> BazelBridgeError
             tenant: tenant.to_owned(),
             hash: hash.to_owned(),
         },
-        AcHandlerError::CrossTenantDenied { caller, requested_tenant } => {
-            BazelBridgeError::CrossTenantDenied {
-                caller,
-                requested: requested_tenant,
-            }
-        }
+        AcHandlerError::CrossTenantDenied {
+            caller,
+            requested_tenant,
+        } => BazelBridgeError::CrossTenantDenied {
+            caller,
+            requested: requested_tenant,
+        },
         AcHandlerError::AuditFailed(msg) => BazelBridgeError::AuditFailed(msg),
         AcHandlerError::Internal(msg) => BazelBridgeError::Internal(msg),
         _ => BazelBridgeError::Internal("unexpected AC error".into()),
@@ -272,11 +269,10 @@ fn map_ac_error(e: AcHandlerError, tenant: &str, hash: &str) -> BazelBridgeError
 mod tests {
     use super::*;
     use corelink_handler_ac::{
-        InMemoryAcHandler, InMemoryAuditSink as AcAuditSink,
-        InMemorySliObserver as AcSliObserver,
+        InMemoryAcHandler, InMemoryAuditSink as AcAuditSink, InMemorySliObserver as AcSliObserver,
     };
-    use corelink_handler_cas::{InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver};
     use corelink_handler_cas::handler::fake_hash;
+    use corelink_handler_cas::{InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver};
 
     fn make_adapter() -> BazelAdapter {
         // CAS and AC have separate trait definitions for AuditSink / SliObserver;

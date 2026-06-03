@@ -47,4 +47,7 @@ const _: () = assert!(
     MANIFEST_PREIMAGE_LEN == 102,
     "manifest canonical preimage MUST be 102 bytes per WI-S05-005 §6.1.5"
 );
-const _: () = assert!(MANIFEST_SIG_LEN == 32, "manifest sig MUST be 32 bytes (BLAKE3 keyed-hash)");
+const _: () = assert!(
+    MANIFEST_SIG_LEN == 32,
+    "manifest sig MUST be 32 bytes (BLAKE3 keyed-hash)"
+);

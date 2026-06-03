@@ -60,10 +60,7 @@ fn r3_5_happy_path_starter_signup_to_refund() {
 
     // --- (1) Signup + DPA accept ---
     let resp = harness.signup_and_accept_dpa(&tenant).unwrap();
-    assert!(matches!(
-        resp.outcome,
-        SignupOutcome::Provisioned { .. }
-    ));
+    assert!(matches!(resp.outcome, SignupOutcome::Provisioned { .. }));
 
     // --- (2) Tier select Starter (Stripe Checkout path) ---
     let receipt = harness.select_starter_tier(&tenant.name).unwrap();
@@ -147,12 +144,10 @@ fn r3_5_happy_path_starter_signup_to_refund() {
         .into_iter()
         .map(|r| r.event_type)
         .collect();
-    assert!(tier_events
-        .iter()
-        .any(|e| matches!(
-            e,
-            corelink_tier_selection::TierSelectionAuditEventType::TierSelectAttempted
-        )));
+    assert!(tier_events.iter().any(|e| matches!(
+        e,
+        corelink_tier_selection::TierSelectionAuditEventType::TierSelectAttempted
+    )));
     assert!(tier_events.iter().any(|e| matches!(
         e,
         corelink_tier_selection::TierSelectionAuditEventType::StripeSubscriptionActivated
@@ -243,17 +238,21 @@ fn r3_5_idempotent_webhook_replay_dedups_to_single_activation() {
         .collect();
     let activated = tier_events
         .iter()
-        .filter(|e| matches!(
-            e,
-            corelink_tier_selection::TierSelectionAuditEventType::StripeSubscriptionActivated
-        ))
+        .filter(|e| {
+            matches!(
+                e,
+                corelink_tier_selection::TierSelectionAuditEventType::StripeSubscriptionActivated
+            )
+        })
         .count();
     let duplicates = tier_events
         .iter()
-        .filter(|e| matches!(
-            e,
-            corelink_tier_selection::TierSelectionAuditEventType::StripeWebhookDuplicate
-        ))
+        .filter(|e| {
+            matches!(
+                e,
+                corelink_tier_selection::TierSelectionAuditEventType::StripeWebhookDuplicate
+            )
+        })
         .count();
     assert_eq!(activated, 1, "replay must not re-fire activation audit");
     assert_eq!(duplicates, 2, "each replay records a duplicate audit row");
@@ -295,9 +294,7 @@ fn r3_5_cancel_while_active_preserves_access_until_period_end() {
     // Harness gate log captured the cancel scheduling.
     let gates = harness.gate_log_snapshot();
     let cancel_event_period_end = gates.iter().find_map(|e| match e {
-        HarnessGateEvent::CancelScheduledAtPeriodEnd { period_end_ms, .. } => {
-            Some(*period_end_ms)
-        }
+        HarnessGateEvent::CancelScheduledAtPeriodEnd { period_end_ms, .. } => Some(*period_end_ms),
         _ => None,
     });
     assert_eq!(cancel_event_period_end, Some(period_end_ms));
@@ -444,7 +441,10 @@ fn r3_5_refund_webhook_with_tampered_hmac_is_rejected() {
         .position(|e| matches!(e, StripeAuditEventType::SignatureRejected));
     assert!(received_pos.is_some());
     assert!(rejected_pos.is_some());
-    assert!(received_pos.unwrap() < rejected_pos.unwrap(), "WebhookReceived MUST audit-emit BEFORE SignatureRejected");
+    assert!(
+        received_pos.unwrap() < rejected_pos.unwrap(),
+        "WebhookReceived MUST audit-emit BEFORE SignatureRejected"
+    );
 
     // The subscription state must NOT advance to Refunded — the
     // tampered webhook never landed.

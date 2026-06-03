@@ -105,8 +105,7 @@ pub const SQL_BEGIN_TXN: &str = "BEGIN";
 /// `tenant_isolation_audit_events_shadow` reads
 /// `current_setting('app.current_tenant')` so this SET is load-bearing
 /// for INV-AUTH-SCHEMA-RLS-DEFAULT-ON CRITICAL.
-pub const SQL_SET_RLS_TENANT_GUC: &str =
-    "SELECT set_config('app.current_tenant', $1, true)";
+pub const SQL_SET_RLS_TENANT_GUC: &str = "SELECT set_config('app.current_tenant', $1, true)";
 
 /// Idempotent batch INSERT for the shadow table.
 ///
@@ -170,8 +169,7 @@ pub const SQL_QUERY_TIMELINE: &str =
 /// `dashboards/alerts/dash-neon-shadow-alerts.yml`.
 ///
 /// Parameter ordering: `(from_ms, to_ms)`.
-pub const SQL_RECONCILE_COUNT: &str =
-    "SELECT COUNT(*)::bigint AS cnt FROM audit_events_shadow \
+pub const SQL_RECONCILE_COUNT: &str = "SELECT COUNT(*)::bigint AS cnt FROM audit_events_shadow \
      WHERE event_time >= to_timestamp($1::double precision / 1000.0) \
        AND event_time <  to_timestamp($2::double precision / 1000.0)";
 
@@ -344,9 +342,7 @@ pub enum NeonError {
     /// No DSN configured for the requested region. Surface as SEV-2
     /// (analytics lag — not a chain break). Production wiring fires
     /// the `NeonShadowProjectUnresolved` alert.
-    #[error(
-        "neon project unresolved: region={region}, env_var={env_var} not set"
-    )]
+    #[error("neon project unresolved: region={region}, env_var={env_var} not set")]
     ProjectUnresolved {
         /// Region label (`"iad"` / `"fra"` / ...).
         region: &'static str,
@@ -390,10 +386,9 @@ impl From<NeonError> for NeonShadowError {
                 region, env_var
             )),
             NeonError::Backend(msg) => NeonShadowError::Backend(msg),
-            NeonError::RowDecode { column, detail } => NeonShadowError::Backend(format!(
-                "row decode at col {}: {}",
-                column, detail
-            )),
+            NeonError::RowDecode { column, detail } => {
+                NeonShadowError::Backend(format!("row decode at col {}: {}", column, detail))
+            }
             NeonError::Internal(msg) => NeonShadowError::Internal(msg),
         }
     }
@@ -474,11 +469,7 @@ impl RealNeonShadowSink {
     ///
     /// Returns [`NeonShadowError::Backend`] when the executor errors
     /// or the count row decodes to a non-integer.
-    pub fn reconcile_count(
-        &self,
-        from_ms: u64,
-        to_ms: u64,
-    ) -> Result<u64, NeonShadowError> {
+    pub fn reconcile_count(&self, from_ms: u64, to_ms: u64) -> Result<u64, NeonShadowError> {
         // RLS GUC set inside the same txn so the read sees only the
         // bound tenant (defense in depth — the executor is also bound
         // per-region at construction).
@@ -510,12 +501,15 @@ impl RealNeonShadowSink {
         let first = rows.first().ok_or_else(|| {
             NeonShadowError::Internal("reconcile_count returned no rows".to_string())
         })?;
-        let cell = first.cells.first().and_then(|c| c.as_ref()).ok_or_else(|| {
-            NeonShadowError::Internal("reconcile_count: null count cell".to_string())
-        })?;
-        cell.parse::<u64>().map_err(|e| {
-            NeonShadowError::Backend(format!("reconcile count parse: {}", e))
-        })
+        let cell = first
+            .cells
+            .first()
+            .and_then(|c| c.as_ref())
+            .ok_or_else(|| {
+                NeonShadowError::Internal("reconcile_count: null count cell".to_string())
+            })?;
+        cell.parse::<u64>()
+            .map_err(|e| NeonShadowError::Backend(format!("reconcile count parse: {}", e)))
     }
 }
 
@@ -779,13 +773,9 @@ impl NeonShadowSink for RealNeonShadowSink {
                     ))
                 })?
                 .clone();
-            let count_str = row
-                .cells
-                .get(1)
-                .and_then(|c| c.as_ref())
-                .ok_or_else(|| {
-                    NeonShadowError::Backend(format!("event_count row {}: null count cell", idx))
-                })?;
+            let count_str = row.cells.get(1).and_then(|c| c.as_ref()).ok_or_else(|| {
+                NeonShadowError::Backend(format!("event_count row {}: null count cell", idx))
+            })?;
             let count: u64 = count_str
                 .parse()
                 .map_err(|e| NeonShadowError::Backend(format!("count parse: {}", e)))?;
@@ -831,20 +821,12 @@ impl NeonShadowSink for RealNeonShadowSink {
 
         let mut buckets = Vec::with_capacity(rows.len());
         for (idx, row) in rows.iter().enumerate() {
-            let bucket_str = row
-                .cells
-                .first()
-                .and_then(|c| c.as_ref())
-                .ok_or_else(|| {
-                    NeonShadowError::Backend(format!("timeline row {}: null bucket cell", idx))
-                })?;
-            let count_str = row
-                .cells
-                .get(1)
-                .and_then(|c| c.as_ref())
-                .ok_or_else(|| {
-                    NeonShadowError::Backend(format!("timeline row {}: null count cell", idx))
-                })?;
+            let bucket_str = row.cells.first().and_then(|c| c.as_ref()).ok_or_else(|| {
+                NeonShadowError::Backend(format!("timeline row {}: null bucket cell", idx))
+            })?;
+            let count_str = row.cells.get(1).and_then(|c| c.as_ref()).ok_or_else(|| {
+                NeonShadowError::Backend(format!("timeline row {}: null count cell", idx))
+            })?;
             let bucket_start_ms: u64 = bucket_str
                 .parse()
                 .map_err(|e| NeonShadowError::Backend(format!("bucket parse: {}", e)))?;
@@ -1133,7 +1115,10 @@ mod tests {
         let err = sink
             .sync_chunk(&dummy_receipt(tenant_b, 0, 0), &rows, 2_000)
             .expect_err("cross tenant");
-        assert!(matches!(err, NeonShadowError::TenantIsolationViolation { .. }));
+        assert!(matches!(
+            err,
+            NeonShadowError::TenantIsolationViolation { .. }
+        ));
         // No SQL emitted — the pre-check fires before BEGIN.
         assert!(exec.calls().is_empty());
         // SEV-2 audit emitted.

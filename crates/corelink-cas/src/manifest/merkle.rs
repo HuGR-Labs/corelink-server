@@ -51,9 +51,8 @@ pub const INNER_PREFIX: u8 = 0x01;
 ///   MAX_CHUNKS_PER_BLOB`.
 pub fn build_root(chunks: &[ChunkRef]) -> Result<[u8; DIGEST_LEN], ManifestError> {
     let count = chunks.len();
-    let count_u32 = u32::try_from(count).map_err(|_| ManifestError::ChunkCountExceeded {
-        found: u32::MAX,
-    })?;
+    let count_u32 =
+        u32::try_from(count).map_err(|_| ManifestError::ChunkCountExceeded { found: u32::MAX })?;
     if count_u32 > MAX_CHUNKS_PER_BLOB {
         return Err(ManifestError::ChunkCountExceeded { found: count_u32 });
     }
@@ -96,10 +95,7 @@ pub fn hash_leaf(chunk_digest: &[u8; DIGEST_LEN]) -> [u8; DIGEST_LEN] {
 /// Hash an inner node with the canonical `\x01` domain-separation
 /// prefix.
 #[must_use]
-pub fn hash_inner(
-    left: &[u8; DIGEST_LEN],
-    right: &[u8; DIGEST_LEN],
-) -> [u8; DIGEST_LEN] {
+pub fn hash_inner(left: &[u8; DIGEST_LEN], right: &[u8; DIGEST_LEN]) -> [u8; DIGEST_LEN] {
     let mut h = Hasher::new();
     h.update(&[INNER_PREFIX]);
     h.update(left);

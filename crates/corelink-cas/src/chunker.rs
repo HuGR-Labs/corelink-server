@@ -333,7 +333,9 @@ mod lib_tests {
 
     #[test]
     fn fastcdc_default_validates() {
-        ChunkerConfig::fastcdc_default().validate().expect("fastcdc default valid");
+        ChunkerConfig::fastcdc_default()
+            .validate()
+            .expect("fastcdc default valid");
     }
 
     #[test]
@@ -343,7 +345,10 @@ mod lib_tests {
             ..ChunkerConfig::default()
         };
         let err = cfg.validate().expect_err("zero size invalid");
-        assert!(matches!(err, ChunkerError::FixedChunkSizeInvalid { size: 0 }));
+        assert!(matches!(
+            err,
+            ChunkerError::FixedChunkSizeInvalid { size: 0 }
+        ));
     }
 
     #[test]

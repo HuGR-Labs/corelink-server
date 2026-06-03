@@ -18,8 +18,8 @@ use std::sync::Arc;
 
 use corelink_privacy_erasure_worker::{
     canonical_in_memory_adapters, BackendErasureAdapter, BackendKind, ErasureRequest, ErasureSalt,
-    ErasureWorker, InMemoryRow, InMemoryErasureAuditSink, InMemoryErasureIdempotencyLedger,
-    InMemoryErasureWorker,
+    ErasureWorker, InMemoryErasureAuditSink, InMemoryErasureIdempotencyLedger,
+    InMemoryErasureWorker, InMemoryRow,
 };
 use uuid::Uuid;
 

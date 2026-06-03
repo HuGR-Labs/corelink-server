@@ -77,8 +77,10 @@
 //!     --features tower-middleware --test prop_multipart_full
 //! ```
 
-#![allow(clippy::doc_lazy_continuation, reason = "agent-authored prose has wrap-style doc lists")]
-
+#![allow(
+    clippy::doc_lazy_continuation,
+    reason = "agent-authored prose has wrap-style doc lists"
+)]
 #![cfg(feature = "tower-middleware")]
 #![allow(
     clippy::unwrap_used,

@@ -265,9 +265,7 @@ impl InMemoryReplayAuditSink {
 impl ReplayAuditSink for InMemoryReplayAuditSink {
     fn emit(&self, record: ReplayAuditRecord) -> Result<(), ReplayAuditEmitErrorInner> {
         let mut guard = self.inner.lock().map_err(|_| {
-            ReplayAuditEmitErrorInner::Store(
-                "billing-replay audit sink mutex poisoned".to_string(),
-            )
+            ReplayAuditEmitErrorInner::Store("billing-replay audit sink mutex poisoned".to_string())
         })?;
         guard.push(record);
         Ok(())
@@ -359,11 +357,13 @@ mod tests {
     fn in_memory_sink_captures_records() {
         let sink = InMemoryReplayAuditSink::new();
         assert!(sink.is_empty());
-        sink.emit(rec(ReplayAuditEventType::RequestAuthorized)).unwrap();
+        sink.emit(rec(ReplayAuditEventType::RequestAuthorized))
+            .unwrap();
         sink.emit(rec(ReplayAuditEventType::Executed)).unwrap();
         assert_eq!(sink.len(), 2);
         assert_eq!(
-            sink.snapshot_of(ReplayAuditEventType::RequestAuthorized).len(),
+            sink.snapshot_of(ReplayAuditEventType::RequestAuthorized)
+                .len(),
             1
         );
     }
@@ -371,7 +371,9 @@ mod tests {
     #[test]
     fn failing_sink_returns_store_error() {
         let sink = FailingReplayAuditSink::new();
-        let err = sink.emit(rec(ReplayAuditEventType::RequestAuthorized)).unwrap_err();
+        let err = sink
+            .emit(rec(ReplayAuditEventType::RequestAuthorized))
+            .unwrap_err();
         assert!(matches!(err, ReplayAuditEmitErrorInner::Store(_)));
     }
 
@@ -379,7 +381,8 @@ mod tests {
     fn cloned_sink_shares_buffer() {
         let s1 = InMemoryReplayAuditSink::new();
         let s2 = s1.clone();
-        s1.emit(rec(ReplayAuditEventType::RequestAuthorized)).unwrap();
+        s1.emit(rec(ReplayAuditEventType::RequestAuthorized))
+            .unwrap();
         assert_eq!(s2.len(), 1);
     }
 

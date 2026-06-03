@@ -75,7 +75,9 @@ impl NeonShadowSink for AggregateTimelineFailsShadow {
         _to_ms: u64,
         _granularity_ms: u64,
     ) -> Result<Vec<TimelineBucket>, NeonShadowError> {
-        Err(NeonShadowError::Backend("injected aggregate_timeline failure".to_string()))
+        Err(NeonShadowError::Backend(
+            "injected aggregate_timeline failure".to_string(),
+        ))
     }
 }
 
@@ -100,10 +102,7 @@ pub(super) fn state_with_tenant_mismatch_and_failing_audit(
         shadow: Arc<dyn NeonShadowSink>,
     }
     impl ShadowSinkFactory for WrongBoundFactory {
-        fn for_tenant(
-            &self,
-            tenant_id: Uuid,
-        ) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
+        fn for_tenant(&self, tenant_id: Uuid) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
             if tenant_id == self.wanted {
                 Ok(self.shadow.clone())
             } else {
@@ -130,10 +129,7 @@ pub(super) struct OneTenantFactory {
 }
 
 impl ShadowSinkFactory for OneTenantFactory {
-    fn for_tenant(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
+    fn for_tenant(&self, tenant_id: Uuid) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
         if tenant_id == self.tenant {
             Ok(self.shadow.clone())
         } else {
@@ -168,10 +164,7 @@ impl RecordingShadowFactory {
 }
 
 impl ShadowSinkFactory for RecordingShadowFactory {
-    fn for_tenant(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
+    fn for_tenant(&self, tenant_id: Uuid) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
         *self.for_tenant_calls.lock().expect("legacy counter") += 1;
         if tenant_id == self.tenant {
             Ok(Arc::new(InMemoryNeonShadowSink::new(

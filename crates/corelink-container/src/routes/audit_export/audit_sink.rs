@@ -102,13 +102,7 @@ pub fn emit_or_503(
     row: ExportAuditRow,
 ) -> Option<axum::response::Response> {
     if sink.emit(row).is_err() {
-        return Some(
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "audit pipeline closed",
-            )
-                .into_response(),
-        );
+        return Some((StatusCode::SERVICE_UNAVAILABLE, "audit pipeline closed").into_response());
     }
     None
 }

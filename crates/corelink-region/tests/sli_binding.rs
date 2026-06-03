@@ -62,10 +62,7 @@ fn neon_replica_lag_metric_aligned_with_sli_taxonomy() {
         METRIC_NEON_REPLICA_LAG_SECONDS,
         Sli::ReplicationLagNeon.prometheus_metric_base()
     );
-    assert_eq!(
-        Sli::ReplicationLagNeon.slug(),
-        "SLO-REPLICATION-LAG-NEON"
-    );
+    assert_eq!(Sli::ReplicationLagNeon.slug(), "SLO-REPLICATION-LAG-NEON");
 }
 
 #[test]

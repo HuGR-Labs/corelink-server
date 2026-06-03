@@ -207,10 +207,7 @@ pub trait AdminMutateHandler: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// See [`AdminHandlerError`].
-    fn mutate(
-        &self,
-        req: AdminMutateRequest,
-    ) -> Result<AdminMutateResponse, AdminHandlerError>;
+    fn mutate(&self, req: AdminMutateRequest) -> Result<AdminMutateResponse, AdminHandlerError>;
 }
 
 /// Deterministic in-memory admin handler. Read side serves a
@@ -226,7 +223,8 @@ pub struct InMemoryAdminHandler {
 
 impl core::fmt::Debug for InMemoryAdminHandler {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("InMemoryAdminHandler").finish_non_exhaustive()
+        f.debug_struct("InMemoryAdminHandler")
+            .finish_non_exhaustive()
     }
 }
 
@@ -335,19 +333,14 @@ impl AdminReadHandler for InMemoryAdminHandler {
             }
             None => {
                 emit(true);
-                Err(AdminHandlerError::NotFound {
-                    what: req.resource,
-                })
+                Err(AdminHandlerError::NotFound { what: req.resource })
             }
         }
     }
 }
 
 impl AdminMutateHandler for InMemoryAdminHandler {
-    fn mutate(
-        &self,
-        req: AdminMutateRequest,
-    ) -> Result<AdminMutateResponse, AdminHandlerError> {
+    fn mutate(&self, req: AdminMutateRequest) -> Result<AdminMutateResponse, AdminHandlerError> {
         let resource = req.op.resource();
         let emit = |outcome_is_err: bool| {
             self.sli.observe(SliObservation {
@@ -588,7 +581,9 @@ mod tests {
 
         let rows = audit.snapshot().expect("audit");
         assert_eq!(rows[0].kind, AuditEventKind::MutateAttempted);
-        assert!(rows.iter().any(|r| r.kind == AuditEventKind::MutateCommitted));
+        assert!(rows
+            .iter()
+            .any(|r| r.kind == AuditEventKind::MutateCommitted));
         // Avail control plane emit present + non-error.
         assert!(sli
             .snapshot()

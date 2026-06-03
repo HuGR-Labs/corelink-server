@@ -19,9 +19,7 @@
 )]
 
 use corelink_hash::Digest;
-use criterion::{
-    black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput,
-};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 fn bench_blake3_sizes(c: &mut Criterion) {
     // Each tuple: (label, byte size). Use small sample size for the 100 MiB

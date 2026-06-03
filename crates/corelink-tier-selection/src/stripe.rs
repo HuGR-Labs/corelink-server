@@ -283,8 +283,8 @@ pub fn verify_stripe_signature(
     }
 
     let expected = compute_stripe_signature(secret, ts_seconds, payload);
-    let provided =
-        hex::decode(&sig_hex).map_err(|e| TierError::InvalidSignature(format!("hex decode: {e}")))?;
+    let provided = hex::decode(&sig_hex)
+        .map_err(|e| TierError::InvalidSignature(format!("hex decode: {e}")))?;
     let expected_bytes = hex::decode(&expected)
         .map_err(|e| TierError::InvalidSignature(format!("hex encode: {e}")))?;
     if provided.ct_eq(&expected_bytes).into() {

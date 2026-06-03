@@ -3,7 +3,7 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
+    clippy::indexing_slicing
 )]
 //!
 //! Each test validates a specific attack vector from WI-S12-003 §6.1.9:
@@ -32,10 +32,16 @@ fn make_webhook(tag: &str) -> CfDeployWebhook {
         tag,
         "deadbeef".repeat(5),
         format!("refs/tags/{tag}"),
-        DeployTarget::new("corelink-worker", "b".repeat(32), "api.corelink.humangr.com/*"),
+        DeployTarget::new(
+            "corelink-worker",
+            "b".repeat(32),
+            "api.corelink.humangr.com/*",
+        ),
         GitHubActor::new(
             "github-actions[bot]",
-            format!("humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{tag}"),
+            format!(
+                "humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{tag}"
+            ),
         ),
     )
 }
@@ -174,7 +180,11 @@ fn adversarial_replay_attack_toctou_blocked() {
         "replay attack (digest mismatch) must be blocked; got {result:?}"
     );
 
-    if let Err(DeployVerifyError::DigestMismatch { signed_digest, resolved_digest }) = &result {
+    if let Err(DeployVerifyError::DigestMismatch {
+        signed_digest,
+        resolved_digest,
+    }) = &result
+    {
         assert_eq!(signed_digest, old_digest);
         assert_eq!(resolved_digest, new_digest);
     }
@@ -251,7 +261,9 @@ fn all_adversarial_errors_map_to_blocking_http_status() {
 
     let errors = vec![
         DeployVerifyError::SignatureInvalid("unsigned".into()),
-        DeployVerifyError::RekorMissing { image: "img".into() },
+        DeployVerifyError::RekorMissing {
+            image: "img".into(),
+        },
         DeployVerifyError::FulcioChainInvalid("bad chain".into()),
         DeployVerifyError::IdentityMismatch {
             got: "attacker".into(),

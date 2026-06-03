@@ -163,9 +163,7 @@ impl BudgetTracker for InMemoryBudgetTracker {
         let records = self
             .records
             .lock()
-            .map_err(|e| {
-                RolloutError::Internal(format!("budget records mutex poisoned: {e}"))
-            })?;
+            .map_err(|e| RolloutError::Internal(format!("budget records mutex poisoned: {e}")))?;
         let window_start = now_ms.saturating_sub(self.window_ms);
         let total_bps: u64 = records
             .iter()

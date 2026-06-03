@@ -229,9 +229,7 @@ impl AggregatedCounterStore for InMemoryAggregatedCounterStore {
         recomputed_digest_hex: &str,
     ) -> Result<UpsertOutcome, AggregatedCounterStoreError> {
         let mut g = self.state.lock().map_err(|_| {
-            AggregatedCounterStoreError::Backend(
-                "counter store mutex poisoned".to_string(),
-            )
+            AggregatedCounterStoreError::Backend("counter store mutex poisoned".to_string())
         })?;
         let key = aggregate.group_key();
 
@@ -280,9 +278,7 @@ impl AggregatedCounterStore for InMemoryAggregatedCounterStore {
         billing_period: &str,
     ) -> Result<ChainHeadRecord, AggregatedCounterStoreError> {
         let g = self.state.lock().map_err(|_| {
-            AggregatedCounterStoreError::Backend(
-                "counter store mutex poisoned".to_string(),
-            )
+            AggregatedCounterStoreError::Backend("counter store mutex poisoned".to_string())
         })?;
         Ok(g.heads
             .get(&(tenant_id, billing_period.to_string()))
@@ -295,9 +291,7 @@ impl AggregatedCounterStore for InMemoryAggregatedCounterStore {
         key: &CounterGroupKey,
     ) -> Result<Option<AggregatedCounter>, AggregatedCounterStoreError> {
         let g = self.state.lock().map_err(|_| {
-            AggregatedCounterStoreError::Backend(
-                "counter store mutex poisoned".to_string(),
-            )
+            AggregatedCounterStoreError::Backend("counter store mutex poisoned".to_string())
         })?;
         Ok(g.rows.get(key).map(|s| s.aggregate.clone()))
     }
@@ -324,8 +318,7 @@ impl AggregatedCounterStore for FailingAggregatedCounterStore {
         _recomputed_digest_hex: &str,
     ) -> Result<UpsertOutcome, AggregatedCounterStoreError> {
         Err(AggregatedCounterStoreError::Backend(
-            "induced billing-aggregator counter store failure (test fixture)"
-                .to_string(),
+            "induced billing-aggregator counter store failure (test fixture)".to_string(),
         ))
     }
 
@@ -478,8 +471,14 @@ mod tests {
         s.upsert(&a_may, head_may, &"a".repeat(64)).unwrap();
         s.upsert(&a_jun, head_jun, &"b".repeat(64)).unwrap();
         // Per-period chains independent.
-        assert_eq!(s.chain_head(tenant, "2026-05").unwrap().current_head, head_may);
-        assert_eq!(s.chain_head(tenant, "2026-06").unwrap().current_head, head_jun);
+        assert_eq!(
+            s.chain_head(tenant, "2026-05").unwrap().current_head,
+            head_may
+        );
+        assert_eq!(
+            s.chain_head(tenant, "2026-06").unwrap().current_head,
+            head_jun
+        );
     }
 
     #[test]

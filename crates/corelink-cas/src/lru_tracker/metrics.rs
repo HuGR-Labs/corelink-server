@@ -78,9 +78,7 @@ impl LruMetricKind {
             Self::DroppedTotal => "corelink.lru.dropped_total",
             Self::BatchFlushDurationMs => "corelink.lru.batch_flush_duration_ms",
             Self::DriftMs => "corelink.lru.drift_ms",
-            Self::ConsistencyViolationTotal => {
-                "corelink.lru.consistency_violation_total"
-            }
+            Self::ConsistencyViolationTotal => "corelink.lru.consistency_violation_total",
         }
     }
 }
@@ -137,20 +135,14 @@ pub trait LruMetricsObserver: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`LruMetricsObserverError::Backend`] on backend failure.
-    fn record_dropped(
-        &self,
-        reason: LruDropReason,
-    ) -> Result<(), LruMetricsObserverError>;
+    fn record_dropped(&self, reason: LruDropReason) -> Result<(), LruMetricsObserverError>;
 
     /// Observe `corelink.lru.batch_flush_duration_ms` — histogram.
     ///
     /// # Errors
     ///
     /// Returns [`LruMetricsObserverError::Backend`] on backend failure.
-    fn observe_flush_duration_ms(
-        &self,
-        duration_ms: u64,
-    ) -> Result<(), LruMetricsObserverError>;
+    fn observe_flush_duration_ms(&self, duration_ms: u64) -> Result<(), LruMetricsObserverError>;
 
     /// Observe `corelink.lru.drift_ms` — histogram. Max
     /// `(now - oldest_pending_access_ms)` observed at flush start.
@@ -158,10 +150,7 @@ pub trait LruMetricsObserver: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`LruMetricsObserverError::Backend`] on backend failure.
-    fn observe_drift_ms(
-        &self,
-        drift_ms: u64,
-    ) -> Result<(), LruMetricsObserverError>;
+    fn observe_drift_ms(&self, drift_ms: u64) -> Result<(), LruMetricsObserverError>;
 
     /// Increment `corelink.lru.consistency_violation_total{tenant}` by 1.
     /// Alert SEV-1 when `> 0` (operator pager wake-up; INV-LRU-CONSISTENCY
@@ -170,10 +159,7 @@ pub trait LruMetricsObserver: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`LruMetricsObserverError::Backend`] on backend failure.
-    fn record_consistency_violation(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), LruMetricsObserverError>;
+    fn record_consistency_violation(&self, tenant_id: Uuid) -> Result<(), LruMetricsObserverError>;
 }
 
 /// In-memory metrics observer. Captures every recorded metric for
@@ -249,15 +235,9 @@ impl InMemoryLruMetrics {
         guard.flush_duration_samples.clone()
     }
 
-    fn bump_counter(
-        &self,
-        label: String,
-        by: u64,
-    ) -> Result<(), LruMetricsObserverError> {
+    fn bump_counter(&self, label: String, by: u64) -> Result<(), LruMetricsObserverError> {
         let mut guard = self.inner.lock().map_err(|_| {
-            LruMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            LruMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         let entry = guard.counters.entry(label).or_insert(0);
         *entry = entry.saturating_add(by);
@@ -284,10 +264,7 @@ impl LruMetricsObserver for InMemoryLruMetrics {
         self.bump_counter(label, 1)
     }
 
-    fn record_dropped(
-        &self,
-        reason: LruDropReason,
-    ) -> Result<(), LruMetricsObserverError> {
+    fn record_dropped(&self, reason: LruDropReason) -> Result<(), LruMetricsObserverError> {
         let label = format!(
             "{}{{reason={}}}",
             LruMetricKind::DroppedTotal.as_str(),
@@ -296,36 +273,23 @@ impl LruMetricsObserver for InMemoryLruMetrics {
         self.bump_counter(label, 1)
     }
 
-    fn observe_flush_duration_ms(
-        &self,
-        duration_ms: u64,
-    ) -> Result<(), LruMetricsObserverError> {
+    fn observe_flush_duration_ms(&self, duration_ms: u64) -> Result<(), LruMetricsObserverError> {
         let mut guard = self.inner.lock().map_err(|_| {
-            LruMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            LruMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         guard.flush_duration_samples.push(duration_ms);
         Ok(())
     }
 
-    fn observe_drift_ms(
-        &self,
-        drift_ms: u64,
-    ) -> Result<(), LruMetricsObserverError> {
+    fn observe_drift_ms(&self, drift_ms: u64) -> Result<(), LruMetricsObserverError> {
         let mut guard = self.inner.lock().map_err(|_| {
-            LruMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            LruMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         guard.drift_samples.push(drift_ms);
         Ok(())
     }
 
-    fn record_consistency_violation(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), LruMetricsObserverError> {
+    fn record_consistency_violation(&self, tenant_id: Uuid) -> Result<(), LruMetricsObserverError> {
         let label = format!(
             "{}{{tenant={tenant_id}}}",
             LruMetricKind::ConsistencyViolationTotal.as_str()
@@ -364,28 +328,19 @@ impl LruMetricsObserver for FailingLruMetrics {
         ))
     }
 
-    fn record_dropped(
-        &self,
-        _reason: LruDropReason,
-    ) -> Result<(), LruMetricsObserverError> {
+    fn record_dropped(&self, _reason: LruDropReason) -> Result<(), LruMetricsObserverError> {
         Err(LruMetricsObserverError::Backend(
             "induced lru metrics failure (test fixture)".to_string(),
         ))
     }
 
-    fn observe_flush_duration_ms(
-        &self,
-        _duration_ms: u64,
-    ) -> Result<(), LruMetricsObserverError> {
+    fn observe_flush_duration_ms(&self, _duration_ms: u64) -> Result<(), LruMetricsObserverError> {
         Err(LruMetricsObserverError::Backend(
             "induced lru metrics failure (test fixture)".to_string(),
         ))
     }
 
-    fn observe_drift_ms(
-        &self,
-        _drift_ms: u64,
-    ) -> Result<(), LruMetricsObserverError> {
+    fn observe_drift_ms(&self, _drift_ms: u64) -> Result<(), LruMetricsObserverError> {
         Err(LruMetricsObserverError::Backend(
             "induced lru metrics failure (test fixture)".to_string(),
         ))
@@ -425,9 +380,7 @@ mod tests {
         assert!(names.contains(&LruMetricKind::DroppedTotal.as_str()));
         assert!(names.contains(&LruMetricKind::BatchFlushDurationMs.as_str()));
         assert!(names.contains(&LruMetricKind::DriftMs.as_str()));
-        assert!(
-            names.contains(&LruMetricKind::ConsistencyViolationTotal.as_str())
-        );
+        assert!(names.contains(&LruMetricKind::ConsistencyViolationTotal.as_str()));
     }
 
     #[test]
@@ -512,10 +465,7 @@ mod tests {
         let m = InMemoryLruMetrics::new();
         m.record_consistency_violation(ten()).unwrap();
         m.record_consistency_violation(ten()).unwrap();
-        assert_eq!(
-            m.counter_total(LruMetricKind::ConsistencyViolationTotal),
-            2
-        );
+        assert_eq!(m.counter_total(LruMetricKind::ConsistencyViolationTotal), 2);
     }
 
     #[test]

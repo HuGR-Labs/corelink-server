@@ -37,7 +37,10 @@ async fn main() {
         ))
         .await
         .expect("initiate");
-    println!("initiated upload_id={} key={}", upload.upload_id, upload.object_key);
+    println!(
+        "initiated upload_id={} key={}",
+        upload.upload_id, upload.object_key
+    );
 
     let mut parts = Vec::new();
     for i in 1u32..=4 {

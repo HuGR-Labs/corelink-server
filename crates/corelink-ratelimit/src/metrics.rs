@@ -80,9 +80,7 @@ impl RateLimitMetricKind {
             Self::PlanSyncLagMs => "corelink.ratelimit.plan_sync_lag_ms",
             Self::DoColdStartTotal => "corelink.ratelimit.do_cold_start_total",
             Self::MiddlewareDurationUs => "corelink.ratelimit.middleware_duration_us",
-            Self::CrossTenantViolationTotal => {
-                "corelink.ratelimit.cross_tenant_violation_total"
-            }
+            Self::CrossTenantViolationTotal => "corelink.ratelimit.cross_tenant_violation_total",
         }
     }
 }
@@ -169,9 +167,7 @@ pub trait RateLimitMetricsObserver: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`RateLimitMetricsObserverError::Backend`] on backend failure.
-    fn record_cross_tenant_violation(
-        &self,
-    ) -> Result<(), RateLimitMetricsObserverError>;
+    fn record_cross_tenant_violation(&self) -> Result<(), RateLimitMetricsObserverError>;
 }
 
 /// In-memory metrics observer. Captures every recorded metric for
@@ -244,28 +240,19 @@ impl InMemoryRateLimitMetrics {
 
     /// Most-recently observed duration_us for a result label.
     #[must_use]
-    pub fn last_duration_us(
-        &self,
-        result: RateLimitResultLabel,
-    ) -> Option<u64> {
+    pub fn last_duration_us(&self, result: RateLimitResultLabel) -> Option<u64> {
         let guard = match self.inner.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
-        guard
-            .last_duration_per_result
-            .get(result.as_str())
-            .copied()
+        guard.last_duration_per_result.get(result.as_str()).copied()
     }
 
     /// Snapshot of every duration sample observed for the given result
     /// label (informational; the property test `prop_check_duration_under_3ms_p99`
     /// asserts the SLO bound).
     #[must_use]
-    pub fn duration_samples(
-        &self,
-        result: RateLimitResultLabel,
-    ) -> Vec<u64> {
+    pub fn duration_samples(&self, result: RateLimitResultLabel) -> Vec<u64> {
         let guard = match self.inner.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -277,15 +264,9 @@ impl InMemoryRateLimitMetrics {
             .unwrap_or_default()
     }
 
-    fn bump_counter(
-        &self,
-        label: String,
-        by: u64,
-    ) -> Result<(), RateLimitMetricsObserverError> {
+    fn bump_counter(&self, label: String, by: u64) -> Result<(), RateLimitMetricsObserverError> {
         let mut guard = self.inner.lock().map_err(|_| {
-            RateLimitMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            RateLimitMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         let entry = guard.counters.entry(label).or_insert(0);
         *entry = entry.saturating_add(by);
@@ -321,9 +302,7 @@ impl RateLimitMetricsObserver for InMemoryRateLimitMetrics {
             dimension.as_str(),
         );
         let mut guard = self.inner.lock().map_err(|_| {
-            RateLimitMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            RateLimitMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         guard.gauges.insert(label, count);
         Ok(())
@@ -341,9 +320,7 @@ impl RateLimitMetricsObserver for InMemoryRateLimitMetrics {
             dimension.as_str(),
         );
         let mut guard = self.inner.lock().map_err(|_| {
-            RateLimitMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            RateLimitMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         guard.gauges.insert(label, rate_per_sec);
         Ok(())
@@ -360,9 +337,7 @@ impl RateLimitMetricsObserver for InMemoryRateLimitMetrics {
             result.as_str()
         );
         let mut guard = self.inner.lock().map_err(|_| {
-            RateLimitMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            RateLimitMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         let entry = guard.counters.entry(label).or_insert(0);
         *entry = entry.saturating_add(duration_us);
@@ -377,9 +352,7 @@ impl RateLimitMetricsObserver for InMemoryRateLimitMetrics {
         Ok(())
     }
 
-    fn record_cross_tenant_violation(
-        &self,
-    ) -> Result<(), RateLimitMetricsObserverError> {
+    fn record_cross_tenant_violation(&self) -> Result<(), RateLimitMetricsObserverError> {
         let label = RateLimitMetricKind::CrossTenantViolationTotal
             .as_str()
             .to_string();
@@ -444,9 +417,7 @@ impl RateLimitMetricsObserver for FailingRateLimitMetrics {
         ))
     }
 
-    fn record_cross_tenant_violation(
-        &self,
-    ) -> Result<(), RateLimitMetricsObserverError> {
+    fn record_cross_tenant_violation(&self) -> Result<(), RateLimitMetricsObserverError> {
         Err(RateLimitMetricsObserverError::Backend(
             "induced ratelimit metrics failure (test fixture)".to_string(),
         ))
@@ -477,12 +448,8 @@ mod tests {
         assert!(names.contains(&RateLimitMetricKind::RefillRate.as_str()));
         assert!(names.contains(&RateLimitMetricKind::PlanSyncLagMs.as_str()));
         assert!(names.contains(&RateLimitMetricKind::DoColdStartTotal.as_str()));
-        assert!(names.contains(
-            &RateLimitMetricKind::MiddlewareDurationUs.as_str()
-        ));
-        assert!(names.contains(
-            &RateLimitMetricKind::CrossTenantViolationTotal.as_str()
-        ));
+        assert!(names.contains(&RateLimitMetricKind::MiddlewareDurationUs.as_str()));
+        assert!(names.contains(&RateLimitMetricKind::CrossTenantViolationTotal.as_str()));
     }
 
     #[test]
@@ -507,10 +474,18 @@ mod tests {
     #[test]
     fn check_total_increments_per_label() {
         let m = InMemoryRateLimitMetrics::new();
-        m.record_check(ten(), KeyDimension::PerTenant, RateLimitResultLabel::Allowed)
-            .unwrap();
-        m.record_check(ten(), KeyDimension::PerTenant, RateLimitResultLabel::Allowed)
-            .unwrap();
+        m.record_check(
+            ten(),
+            KeyDimension::PerTenant,
+            RateLimitResultLabel::Allowed,
+        )
+        .unwrap();
+        m.record_check(
+            ten(),
+            KeyDimension::PerTenant,
+            RateLimitResultLabel::Allowed,
+        )
+        .unwrap();
         m.record_check(ten(), KeyDimension::PerIp, RateLimitResultLabel::Denied)
             .unwrap();
         assert_eq!(m.counter_total(RateLimitMetricKind::CheckTotal), 3);
@@ -553,10 +528,7 @@ mod tests {
             .unwrap();
         m.record_middleware_duration_us(RateLimitResultLabel::Allowed, 200)
             .unwrap();
-        assert_eq!(
-            m.last_duration_us(RateLimitResultLabel::Allowed),
-            Some(200)
-        );
+        assert_eq!(m.last_duration_us(RateLimitResultLabel::Allowed), Some(200));
         let samples = m.duration_samples(RateLimitResultLabel::Allowed);
         assert_eq!(samples, vec![100, 200]);
     }
@@ -576,8 +548,12 @@ mod tests {
     fn failing_metrics_returns_backend_error() {
         let m = FailingRateLimitMetrics::new();
         assert!(matches!(
-            m.record_check(ten(), KeyDimension::PerTenant, RateLimitResultLabel::Allowed)
-                .unwrap_err(),
+            m.record_check(
+                ten(),
+                KeyDimension::PerTenant,
+                RateLimitResultLabel::Allowed
+            )
+            .unwrap_err(),
             RateLimitMetricsObserverError::Backend(_)
         ));
         assert!(matches!(

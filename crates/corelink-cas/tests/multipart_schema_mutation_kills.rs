@@ -46,7 +46,10 @@ fn chunk_index_max_is_max_chunks_minus_one_exact() {
     assert_eq!(CHUNK_INDEX_MAX, MAX_CHUNKS_PER_BLOB - 1);
     // `MAX_CHUNKS_PER_BLOB + 1` would yield 81_921; `/` would yield 1.
     assert_ne!(CHUNK_INDEX_MAX, MAX_CHUNKS_PER_BLOB + 1);
-    #[allow(clippy::identity_op, reason = "killing `- → /` mutant requires literal division-by-one")]
+    #[allow(
+        clippy::identity_op,
+        reason = "killing `- → /` mutant requires literal division-by-one"
+    )]
     let div_by_one = MAX_CHUNKS_PER_BLOB / 1;
     assert_ne!(CHUNK_INDEX_MAX, div_by_one);
     // Sanity: max chunks - 1 must be < max chunks.
@@ -98,7 +101,10 @@ fn multipart_session_state_as_str_pins_exact_literals() {
 fn session_id_display_writes_uuid_hyphenated() {
     let id = SessionId(Uuid::from_u128(0x4444_5555_6666_7777_8888_9999_aaaa_bbbb));
     let rendered = format!("{}", id);
-    assert!(!rendered.is_empty(), "Display must write the uuid (kills Ok(default))");
+    assert!(
+        !rendered.is_empty(),
+        "Display must write the uuid (kills Ok(default))"
+    );
     assert!(rendered.contains('-'), "uuid hyphenated form contains '-'");
     assert_eq!(rendered.len(), 36, "canonical uuid hyphenated len = 36");
     assert!(rendered.contains("4444"));
@@ -186,14 +192,20 @@ fn manifest_chunks_getters_reflect_actual_state() {
     // `with None` substitution).
     let row_0 = s.get_manifest_chunk(&tenant, &blob_digest, 0);
     let row_1 = s.get_manifest_chunk(&tenant, &blob_digest, 1);
-    assert!(row_0.is_some(), "expected manifest_chunks row at index 0 (kills None mutation)");
+    assert!(
+        row_0.is_some(),
+        "expected manifest_chunks row at index 0 (kills None mutation)"
+    );
     assert!(row_1.is_some(), "expected manifest_chunks row at index 1");
     assert_eq!(row_0.unwrap().chunk_digest, chunk_digest_a);
     assert_eq!(row_1.unwrap().chunk_digest, chunk_digest_b);
 
     // manifest_chunks_count MUST report 2 (kills `with 1` substitution).
     let count = s.manifest_chunks_count();
-    assert_eq!(count, 2, "expected exactly 2 manifest_chunks rows (kills `with 1`)");
+    assert_eq!(
+        count, 2,
+        "expected exactly 2 manifest_chunks rows (kills `with 1`)"
+    );
     assert_ne!(count, 1);
     assert_ne!(count, 0);
 }
@@ -237,7 +249,11 @@ fn list_sessions_for_tenant_filters_exact_match() {
     }
 
     let a_sessions = s.list_sessions_for_tenant(&tenant_a);
-    assert_eq!(a_sessions.len(), 2, "tenant_a must own exactly 2 sessions (kills vec![] and != mutations)");
+    assert_eq!(
+        a_sessions.len(),
+        2,
+        "tenant_a must own exactly 2 sessions (kills vec![] and != mutations)"
+    );
     assert!(a_sessions.iter().all(|s| s.tenant_id == tenant_a));
 
     let b_sessions = s.list_sessions_for_tenant(&tenant_b);
@@ -376,7 +392,9 @@ fn upsert_chunk_rejects_oversize_size_bytes() {
 
 fn canonical_initiate(seed: u8, path_key_id: i64, ttl_ms: Option<i64>) -> MultipartInitiateRequest {
     MultipartInitiateRequest {
-        session_id: SessionId(Uuid::from_u128(u128::from(seed) << 96 | u128::from(seed) << 64 | 1)),
+        session_id: SessionId(Uuid::from_u128(
+            u128::from(seed) << 96 | u128::from(seed) << 64 | 1,
+        )),
         tenant_id: ten(),
         tenant_prefix: [0xab; 16],
         path_key_id,
@@ -431,7 +449,9 @@ fn validate_session_path_key_id_gt_one_is_accepted() {
     assert!(
         matches!(
             rejected,
-            Err(SimError::CheckViolation("chk_multipart_path_key_id_positive"))
+            Err(SimError::CheckViolation(
+                "chk_multipart_path_key_id_positive"
+            ))
         ),
         "path_key_id == 0 must reject; got {:?}",
         rejected

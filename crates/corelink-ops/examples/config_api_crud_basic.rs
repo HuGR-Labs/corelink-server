@@ -6,13 +6,13 @@
 use std::sync::Arc;
 use uuid::Uuid;
 
-use corelink_ops::config::api::handlers::{
-    AdminContext, PutConfigRequest, handle_get_current, handle_get_history, handle_put,
-};
 use corelink_config_do::{
-    AdminActor, ConfigPayload, FeatureFlag,
     metrics::NoopMetrics,
     store::{InMemoryAuditSink, InMemoryConfigSingletonStore},
+    AdminActor, ConfigPayload, FeatureFlag,
+};
+use corelink_ops::config::api::handlers::{
+    handle_get_current, handle_get_history, handle_put, AdminContext, PutConfigRequest,
 };
 
 #[tokio::main]
@@ -22,7 +22,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let now_ms = 1_748_000_000_000u64; // 2025-05-23 ~UTC
     let ctx = AdminContext {
-        actor: AdminActor { user_id: Uuid::nil(), email_hash: [0u8; 32] },
+        actor: AdminActor {
+            user_id: Uuid::nil(),
+            email_hash: [0u8; 32],
+        },
         mfa_ts_ms: now_ms - 2 * 60 * 1000, // 2 min ago
         is_admin: true,
         dual_approver_user_id: None,
@@ -36,14 +39,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut payload = ConfigPayload::genesis();
     payload.feature_flags.insert(
         "dark-launch-new-cache".into(),
-        FeatureFlag { enabled: true, rollout_pct: 10, allowlist_tenants: vec![] },
+        FeatureFlag {
+            enabled: true,
+            rollout_pct: 10,
+            allowlist_tenants: vec![],
+        },
     );
 
     // CAS update (expected_version=0).
     let resp = handle_put(
         &store,
         &ctx,
-        PutConfigRequest { expected_version: 0, new_payload: payload },
+        PutConfigRequest {
+            expected_version: 0,
+            new_payload: payload,
+        },
         now_ms,
     )
     .await?;

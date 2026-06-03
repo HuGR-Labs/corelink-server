@@ -23,13 +23,13 @@ use corelink_worker::cache::kv::InMemoryKv;
 use corelink_worker::middleware::auth_ctx::__test_helpers::make_auth_ctx;
 use corelink_worker::middleware::auth_ctx::{AuthCtx, AuthMethod, PrincipalId};
 use corelink_worker::reapi::ac::handler::{
-    AcEnvelopeStore, ActionCacheHandler, ActionCacheHandlerBuilder, ActionCacheHandlerImpl,
-    AcError, Clock, FakeClock, InMemoryAcEnvelopeStore, DEFAULT_AC_TTL_EXTEND_MS,
+    AcEnvelopeStore, AcError, ActionCacheHandler, ActionCacheHandlerBuilder,
+    ActionCacheHandlerImpl, Clock, FakeClock, InMemoryAcEnvelopeStore, DEFAULT_AC_TTL_EXTEND_MS,
 };
 use corelink_worker::reapi::ac::{
-    AcEventType, AcMetaUpsertOutcome, AcNegCache, ActionDigest, ActionResult,
-    InMemoryAcMetaStore, InMemoryAuditSink, InMemoryFakeSigner, InMemoryMerkleVerifier,
-    InMemoryOutputsCheck, OutputFileDigest,
+    AcEventType, AcMetaUpsertOutcome, AcNegCache, ActionDigest, ActionResult, InMemoryAcMetaStore,
+    InMemoryAuditSink, InMemoryFakeSigner, InMemoryMerkleVerifier, InMemoryOutputsCheck,
+    OutputFileDigest,
 };
 use corelink_worker::Region;
 use uuid::Uuid;
@@ -146,7 +146,11 @@ async fn gherkin_get_action_result_hit_warm() {
         .await
         .unwrap();
     assert_eq!(upd.upsert_outcome, AcMetaUpsertOutcome::Inserted);
-    let g = w.handler.get_action_result(&ctx, &ad, "req-2").await.unwrap();
+    let g = w
+        .handler
+        .get_action_result(&ctx, &ad, "req-2")
+        .await
+        .unwrap();
     assert_eq!(g.action_result, ar);
     assert!(g.row.last_hit_at_ms >= w.clock.now_ms());
     // Audit: GetOk emitted.
@@ -315,11 +319,7 @@ async fn gherkin_update_action_result_happy_path() {
     // Envelope persisted.
     let prefix = *ctx.tenant_prefix();
     let hex = ad.hash.to_hex();
-    let env = w
-        .envelope
-        .get(Region::Wnam, &prefix, &hex)
-        .await
-        .unwrap();
+    let env = w.envelope.get(Region::Wnam, &prefix, &hex).await.unwrap();
     assert!(env.is_some());
     // ac_meta row materialized.
     assert_eq!(w.meta.len().unwrap(), 1);

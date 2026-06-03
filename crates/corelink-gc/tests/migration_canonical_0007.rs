@@ -37,9 +37,7 @@
     reason = "test target"
 )]
 
-use corelink_gc::{
-    gc_schema_version, CandidateStatus, MIGRATION_0007_GC_CANDIDATES,
-};
+use corelink_gc::{gc_schema_version, CandidateStatus, MIGRATION_0007_GC_CANDIDATES};
 
 /// Strip `-- …` line comments before scanning so prose comments cannot
 /// produce false positives on the destructive-token regression checks.

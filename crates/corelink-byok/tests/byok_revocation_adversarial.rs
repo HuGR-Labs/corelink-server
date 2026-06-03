@@ -7,12 +7,12 @@
 
 use std::sync::Arc;
 
-use corelink_byok::{DekCache, Dek, KmsKeyId, KmsProviderKind, WrappedDek};
+use corelink_byok::revocation::store::{TenantByokStatus, TenantStatusStore};
 use corelink_byok::revocation::testutil::{
     InMemoryTenantStore, NoopAlerter, RecordingAlerter, StubKmsProvider,
 };
 use corelink_byok::revocation::{CustomerAlerter, RevocationConfig, RevocationDetector};
-use corelink_byok::revocation::store::{TenantByokStatus, TenantStatusStore};
+use corelink_byok::{Dek, DekCache, KmsKeyId, KmsProviderKind, WrappedDek};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -53,7 +53,10 @@ fn adv_s1_dek_cache_ttl_bypass_rejected() {
         );
     }
     // Boundary: exactly 300s is accepted.
-    assert!(DekCache::new(300).is_ok(), "300s is the hard limit, must be accepted");
+    assert!(
+        DekCache::new(300).is_ok(),
+        "300s is the hard limit, must be accepted"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -71,7 +74,10 @@ async fn adv_s2_cache_extraction_post_eviction_returns_none() {
     let dek = Dek { bytes: [42u8; 32] };
 
     cache.put(&wrapped, dek).await.expect("put ok");
-    assert!(cache.get(&wrapped).await.is_some(), "entry must be present before eviction");
+    assert!(
+        cache.get(&wrapped).await.is_some(),
+        "entry must be present before eviction"
+    );
 
     let evicted = cache.evict_all_for_key(&key_id).await.expect("evict ok");
     assert_eq!(evicted, 1);
@@ -118,7 +124,11 @@ async fn adv_s3_replay_revocation_only_via_provider_signal() {
     assert_eq!(alerter.alert_count(), 0, "no alert for non-revoked tenant");
 
     // Cache not evicted (no revocation).
-    assert_eq!(cache.len().await, 1, "cache must be intact for non-revoked tenant");
+    assert_eq!(
+        cache.len().await,
+        1,
+        "cache must be intact for non-revoked tenant"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -262,7 +272,10 @@ async fn adv_s8_recovery_path_restores_tenant() {
     let store = Arc::new(InMemoryTenantStore::default());
     let key_id = make_key_id("recovery-key");
 
-    store.mark_degraded(&key_id, "vault", 1_000).await.expect("ok");
+    store
+        .mark_degraded(&key_id, "vault", 1_000)
+        .await
+        .expect("ok");
     assert_eq!(
         store.current_status(&key_id).await.expect("ok"),
         Some(TenantByokStatus::DegradedReadOnly)

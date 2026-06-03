@@ -80,6 +80,18 @@ Each entry cross-references:
 
 ### Fixed
 
+- **CAS Foundation CI — restored the `cargo fmt --all --check` gate to green.**
+  The fmt check (the first step of `cas_foundation.yml::workspace-build-test`,
+  the *only* place fmt runs — per-crate PR workflows are crate-scoped and do not
+  fmt) had accumulated pervasive drift while it was off the per-PR lane: 1014
+  source files across the workspace were unformatted under the pinned rustfmt
+  (1.8.0-stable, toolchain 1.91.1), not just the `migrate-single-to-multi-region`
+  tooling that surfaced it. Ran `cargo fmt --all` (whitespace/line-wrap/trailing-
+  comma reflow ONLY — every changed `.rs` file byte-matches `rustfmt` of its prior
+  contents; zero logic changes) plus one manual idempotency fix in
+  `crates/corelink-adapter-host/src/pip/server.rs` (a long `format!` arm rustfmt
+  could not converge in a single pass — added the inert trailing `;`).
+  `cargo fmt --all -- --check` now exits 0.
 - **Terraform CI cluster — un-broke the whole `terraform-lint` gate.** Three
   tangled fixes landed together: (1) native `tfsec` (the Docker action is
   Linux-only) with the one real finding (BYOK aws-kms `kms:ReEncrypt*` wildcard,

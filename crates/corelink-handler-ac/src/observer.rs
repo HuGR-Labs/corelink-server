@@ -22,7 +22,11 @@ impl SliObservation {
     /// impls like the R2-backed one in `corelink-container`).
     #[must_use]
     pub const fn new(sli: Sli, is_error: bool, latency_us: u64) -> Self {
-        Self { sli, is_error, latency_us }
+        Self {
+            sli,
+            is_error,
+            latency_us,
+        }
     }
 }
 

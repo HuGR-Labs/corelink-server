@@ -137,9 +137,7 @@ impl CoreLinkClient {
     pub fn get(&self, digest: String) -> Result<js_sys::Uint8Array, JsValue> {
         // Delegate to pure-Rust helper so tests can exercise verify logic
         // without a JS runtime.
-        let body = self
-            .get_inner(&digest)
-            .map_err(|e| JsValue::from_str(&e))?;
+        let body = self.get_inner(&digest).map_err(|e| JsValue::from_str(&e))?;
         Ok(js_sys::Uint8Array::from(body.as_slice()))
     }
 
@@ -177,8 +175,7 @@ impl CoreLinkClient {
 impl CoreLinkClient {
     /// Inner get: parse + verify, return owned bytes.
     fn get_inner(&self, digest: &str) -> Result<Vec<u8>, String> {
-        let expected =
-            Digest::from_hex(digest).map_err(|e| format!("invalid digest: {e}"))?;
+        let expected = Digest::from_hex(digest).map_err(|e| format!("invalid digest: {e}"))?;
 
         // Stub: production impl fetches from server.
         let body: Vec<u8> = Vec::new();

@@ -7,7 +7,9 @@ use thiserror::Error;
 #[non_exhaustive]
 pub enum CliError {
     /// PAT could not be resolved from env var or config file.
-    #[error("No PAT found. Set env var CORELINK_PAT or run `corelink config set auth.pat <value>`.")]
+    #[error(
+        "No PAT found. Set env var CORELINK_PAT or run `corelink config set auth.pat <value>`."
+    )]
     PatNotFound,
 
     /// PAT format is malformed (not `corelink_<env>_<token_id>.<secret>.<sig>`).

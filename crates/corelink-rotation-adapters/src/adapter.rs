@@ -146,11 +146,7 @@ pub trait RotationAdapter: core::fmt::Debug {
     ///
     /// This is a shared helper used by all adapters; override only if
     /// the asset class has a non-canonical transition graph.
-    fn validate_transition(
-        &self,
-        from: KeyState,
-        to: KeyState,
-    ) -> Result<(), RotationError> {
+    fn validate_transition(&self, from: KeyState, to: KeyState) -> Result<(), RotationError> {
         let valid = matches!(
             (from, to),
             (KeyState::Pending, KeyState::Active)

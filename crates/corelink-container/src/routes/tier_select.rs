@@ -459,9 +459,19 @@ where
     }
 
     // From here, ALWAYS release the lock on a terminal error.
-    let result =
-        orchestrate_locked(store, checkout, audit, tenant_id, tier, success_url, cancel_url, dpa_version, now_ms, correlation_id)
-            .await;
+    let result = orchestrate_locked(
+        store,
+        checkout,
+        audit,
+        tenant_id,
+        tier,
+        success_url,
+        cancel_url,
+        dpa_version,
+        now_ms,
+        correlation_id,
+    )
+    .await;
     if result.is_err() {
         // Best-effort release; the 60s window also self-expires.
         let _ = store.release_lock(tenant_id).await;
@@ -566,7 +576,9 @@ mod tests {
     fn req(tier: &str) -> TierSelectRequest {
         TierSelectRequest {
             tier: tier.to_owned(),
-            success_url: "https://app.corelink.humangr.com/en/upgraded?session_id={CHECKOUT_SESSION_ID}".to_owned(),
+            success_url:
+                "https://app.corelink.humangr.com/en/upgraded?session_id={CHECKOUT_SESSION_ID}"
+                    .to_owned(),
             cancel_url: "https://app.corelink.humangr.com/en/pricing".to_owned(),
         }
     }
@@ -658,8 +670,14 @@ mod tests {
 
     #[test]
     fn tier_parse_is_case_insensitive_and_trims() {
-        assert_eq!(RequestedTier::parse_self_serve("  PRO "), ParsedTier::Tier(RequestedTier::Pro));
-        assert_eq!(RequestedTier::parse_self_serve("Enterprise"), ParsedTier::Enterprise);
+        assert_eq!(
+            RequestedTier::parse_self_serve("  PRO "),
+            ParsedTier::Tier(RequestedTier::Pro)
+        );
+        assert_eq!(
+            RequestedTier::parse_self_serve("Enterprise"),
+            ParsedTier::Enterprise
+        );
         assert_eq!(RequestedTier::parse_self_serve(""), ParsedTier::Invalid);
     }
 
@@ -763,10 +781,23 @@ mod tests {
         checkout: SpyCheckout,
         audit: SpyAudit,
         tier: RequestedTier,
-    ) -> (Result<TierSelectResponse, TierSelectHttpError>, MemStore, SpyCheckout, SpyAudit) {
+    ) -> (
+        Result<TierSelectResponse, TierSelectHttpError>,
+        MemStore,
+        SpyCheckout,
+        SpyAudit,
+    ) {
         let r = orchestrate_tier_select(
-            &store, &checkout, &audit, "tenant-x", tier,
-            "https://app/upgraded", "https://app/pricing", "v3", 1_700_000_000_000, "corr-1",
+            &store,
+            &checkout,
+            &audit,
+            "tenant-x",
+            tier,
+            "https://app/upgraded",
+            "https://app/pricing",
+            "v3",
+            1_700_000_000_000,
+            "corr-1",
         )
         .await;
         (r, store, checkout, audit)
@@ -776,24 +807,47 @@ mod tests {
     async fn paid_happy_path_returns_checkout_url_and_persists() {
         let mut store = MemStore::default();
         store.dpa_accepted.insert("tenant-x".into());
-        let (r, store, checkout, _a) = run(store, SpyCheckout::default(), SpyAudit::default(), RequestedTier::Pro).await;
+        let (r, store, checkout, _a) = run(
+            store,
+            SpyCheckout::default(),
+            SpyAudit::default(),
+            RequestedTier::Pro,
+        )
+        .await;
         let resp = r.unwrap();
-        assert_eq!(resp.checkout_url.as_deref(), Some("https://checkout.stripe.com/c/pay/cs_test_123"));
+        assert_eq!(
+            resp.checkout_url.as_deref(),
+            Some("https://checkout.stripe.com/c/pay/cs_test_123")
+        );
         assert_eq!(resp.session_id, "cs_test_123");
         assert!(*checkout.called.lock().unwrap());
         assert_eq!(*store.persisted.lock().unwrap(), vec!["paid:tenant-x"]);
-        assert!(store.locks.lock().unwrap().is_empty(), "lock released after success");
+        assert!(
+            store.locks.lock().unwrap().is_empty(),
+            "lock released after success"
+        );
     }
 
     #[tokio::test]
     async fn dpa_not_accepted_blocks_before_stripe() {
         // INV-ONBOARD-DPA-FIRST: no DPA acceptance → 403 and Stripe is NEVER called.
-        let (r, store, checkout, _a) =
-            run(MemStore::default(), SpyCheckout::default(), SpyAudit::default(), RequestedTier::Pro).await;
+        let (r, store, checkout, _a) = run(
+            MemStore::default(),
+            SpyCheckout::default(),
+            SpyAudit::default(),
+            RequestedTier::Pro,
+        )
+        .await;
         assert_eq!(r.unwrap_err(), TierSelectHttpError::DpaRequired);
-        assert!(!*checkout.called.lock().unwrap(), "Stripe MUST NOT be called when DPA not accepted");
+        assert!(
+            !*checkout.called.lock().unwrap(),
+            "Stripe MUST NOT be called when DPA not accepted"
+        );
         assert!(store.persisted.lock().unwrap().is_empty());
-        assert!(store.locks.lock().unwrap().is_empty(), "lock released on DPA reject");
+        assert!(
+            store.locks.lock().unwrap().is_empty(),
+            "lock released on DPA reject"
+        );
     }
 
     #[tokio::test]
@@ -801,7 +855,13 @@ mod tests {
         let mut store = MemStore::default();
         store.dpa_accepted.insert("tenant-x".into());
         store.lock_already_held = true;
-        let (r, _s, checkout, _a) = run(store, SpyCheckout::default(), SpyAudit::default(), RequestedTier::Pro).await;
+        let (r, _s, checkout, _a) = run(
+            store,
+            SpyCheckout::default(),
+            SpyAudit::default(),
+            RequestedTier::Pro,
+        )
+        .await;
         assert_eq!(r.unwrap_err(), TierSelectHttpError::LockHeld);
         assert!(!*checkout.called.lock().unwrap());
     }
@@ -811,7 +871,13 @@ mod tests {
         let mut store = MemStore::default();
         store.dpa_accepted.insert("tenant-x".into());
         store.active.insert("tenant-x".into());
-        let (r, _s, checkout, _a) = run(store, SpyCheckout::default(), SpyAudit::default(), RequestedTier::Team).await;
+        let (r, _s, checkout, _a) = run(
+            store,
+            SpyCheckout::default(),
+            SpyAudit::default(),
+            RequestedTier::Team,
+        )
+        .await;
         assert_eq!(r.unwrap_err(), TierSelectHttpError::AlreadyActive);
         assert!(!*checkout.called.lock().unwrap());
     }
@@ -820,11 +886,18 @@ mod tests {
     async fn stripe_failure_maps_to_502_and_releases_lock() {
         let mut store = MemStore::default();
         store.dpa_accepted.insert("tenant-x".into());
-        let checkout = SpyCheckout { fail: true, ..Default::default() };
-        let (r, store, _c, _a) = run(store, checkout, SpyAudit::default(), RequestedTier::Starter).await;
+        let checkout = SpyCheckout {
+            fail: true,
+            ..Default::default()
+        };
+        let (r, store, _c, _a) =
+            run(store, checkout, SpyAudit::default(), RequestedTier::Starter).await;
         assert_eq!(r.unwrap_err(), TierSelectHttpError::StripeUnavailable);
         assert!(store.persisted.lock().unwrap().is_empty());
-        assert!(store.locks.lock().unwrap().is_empty(), "lock released on Stripe failure");
+        assert!(
+            store.locks.lock().unwrap().is_empty(),
+            "lock released on Stripe failure"
+        );
     }
 
     #[tokio::test]
@@ -832,8 +905,12 @@ mod tests {
         // Fail-CLOSED: a failing audit on the FIRST event aborts → 500, no lock, no Stripe.
         let mut store = MemStore::default();
         store.dpa_accepted.insert("tenant-x".into());
-        let audit = SpyAudit { fail_on: Some("tier_select_attempted"), ..Default::default() };
-        let (r, store, checkout, _a) = run(store, SpyCheckout::default(), audit, RequestedTier::Pro).await;
+        let audit = SpyAudit {
+            fail_on: Some("tier_select_attempted"),
+            ..Default::default()
+        };
+        let (r, store, checkout, _a) =
+            run(store, SpyCheckout::default(), audit, RequestedTier::Pro).await;
         assert_eq!(r.unwrap_err(), TierSelectHttpError::Internal);
         assert!(!*checkout.called.lock().unwrap());
         assert!(store.persisted.lock().unwrap().is_empty());
@@ -844,10 +921,19 @@ mod tests {
     async fn free_tier_activates_instantly_without_stripe() {
         let mut store = MemStore::default();
         store.dpa_accepted.insert("tenant-x".into());
-        let (r, store, checkout, _a) = run(store, SpyCheckout::default(), SpyAudit::default(), RequestedTier::Free).await;
+        let (r, store, checkout, _a) = run(
+            store,
+            SpyCheckout::default(),
+            SpyAudit::default(),
+            RequestedTier::Free,
+        )
+        .await;
         let resp = r.unwrap();
         assert!(resp.checkout_url.is_none());
-        assert!(!*checkout.called.lock().unwrap(), "free tier never calls Stripe");
+        assert!(
+            !*checkout.called.lock().unwrap(),
+            "free tier never calls Stripe"
+        );
         assert_eq!(*store.persisted.lock().unwrap(), vec!["free:tenant-x"]);
     }
 }

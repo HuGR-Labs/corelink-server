@@ -1,4 +1,12 @@
-#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, dead_code)]
+#![allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    dead_code
+)]
 //! Property tests: 4 props × all providers (10k iter PR gate; 100k nightly).
 //!
 //! Properties tested:
@@ -7,13 +15,13 @@
 //! 3. `prop_aad_binding_per_provider` — tampered encryption_context is rejected.
 //! 4. `prop_check_access_ok_mock` — check_access returns Ok in mock mode.
 
-use corelink_byok::{BYOKError, Dek, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek};
-use corelink_byok::gcp::GcpKmsProvider;
-use corelink_byok::azure::AzureKeyVaultProvider;
-use corelink_byok::vault::VaultProvider;
 use async_trait::async_trait;
-use proptest::prelude::*;
+use corelink_byok::azure::AzureKeyVaultProvider;
+use corelink_byok::gcp::GcpKmsProvider;
+use corelink_byok::vault::VaultProvider;
+use corelink_byok::{BYOKError, Dek, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek};
 use corelink_byok::{FipsLevel, KmsAccessStatus};
+use proptest::prelude::*;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // AWS mock (fills 4th provider slot)
@@ -24,25 +32,51 @@ struct AwsMockProvider;
 
 #[async_trait]
 impl KmsProvider for AwsMockProvider {
-    fn provider_kind(&self) -> KmsProviderKind { KmsProviderKind::AwsKms }
-    fn region(&self) -> &str { "us-east-1" }
-    fn fips_level(&self) -> FipsLevel { FipsLevel::Fips140_3_L1 }
+    fn provider_kind(&self) -> KmsProviderKind {
+        KmsProviderKind::AwsKms
+    }
+    fn region(&self) -> &str {
+        "us-east-1"
+    }
+    fn fips_level(&self) -> FipsLevel {
+        FipsLevel::Fips140_3_L1
+    }
 
-    async fn wrap_dek(&self, dek: &Dek, key_id: &KmsKeyId, encryption_context: Option<&serde_json::Value>) -> Result<WrappedDek, BYOKError> {
+    async fn wrap_dek(
+        &self,
+        dek: &Dek,
+        key_id: &KmsKeyId,
+        encryption_context: Option<&serde_json::Value>,
+    ) -> Result<WrappedDek, BYOKError> {
         let mut ct = dek.bytes.to_vec();
-        for b in &mut ct { *b ^= 0xBB; }
-        Ok(WrappedDek { provider: KmsProviderKind::AwsKms, key_id: key_id.clone(), ciphertext: ct, encryption_context: encryption_context.cloned() })
+        for b in &mut ct {
+            *b ^= 0xBB;
+        }
+        Ok(WrappedDek {
+            provider: KmsProviderKind::AwsKms,
+            key_id: key_id.clone(),
+            ciphertext: ct,
+            encryption_context: encryption_context.cloned(),
+        })
     }
 
     async fn unwrap_dek(&self, wrapped: &WrappedDek) -> Result<Dek, BYOKError> {
-        if wrapped.provider != KmsProviderKind::AwsKms { return Err(BYOKError::EnvelopeError("wrong provider".to_string())); }
-        if wrapped.ciphertext.len() != 32 { return Err(BYOKError::EnvelopeError("bad len".to_string())); }
+        if wrapped.provider != KmsProviderKind::AwsKms {
+            return Err(BYOKError::EnvelopeError("wrong provider".to_string()));
+        }
+        if wrapped.ciphertext.len() != 32 {
+            return Err(BYOKError::EnvelopeError("bad len".to_string()));
+        }
         let mut bytes = [0u8; 32];
-        for (i, &b) in wrapped.ciphertext.iter().enumerate() { bytes[i] = b ^ 0xBB; }
+        for (i, &b) in wrapped.ciphertext.iter().enumerate() {
+            bytes[i] = b ^ 0xBB;
+        }
         Ok(Dek { bytes })
     }
 
-    async fn check_access(&self, _key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> { Ok(KmsAccessStatus::Ok) }
+    async fn check_access(&self, _key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
+        Ok(KmsAccessStatus::Ok)
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

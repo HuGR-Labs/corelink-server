@@ -592,17 +592,29 @@ mod tests {
     fn layer_drift_summary_classifies_each_arm() {
         let r = ReconstructedLayers::new(100, 100, 100);
         let p = ReconstructedLayers::new(100, 100, 100);
-        assert_eq!(LayerDriftSummary::classify(r, p), LayerDriftSummary::AllLayersMatch);
+        assert_eq!(
+            LayerDriftSummary::classify(r, p),
+            LayerDriftSummary::AllLayersMatch
+        );
 
         let r = ReconstructedLayers::new(99, 100, 100);
         let p = ReconstructedLayers::new(100, 100, 100);
-        assert_eq!(LayerDriftSummary::classify(r, p), LayerDriftSummary::Layer1Diverged);
+        assert_eq!(
+            LayerDriftSummary::classify(r, p),
+            LayerDriftSummary::Layer1Diverged
+        );
 
         let r = ReconstructedLayers::new(100, 99, 100);
-        assert_eq!(LayerDriftSummary::classify(r, p), LayerDriftSummary::Layer2Diverged);
+        assert_eq!(
+            LayerDriftSummary::classify(r, p),
+            LayerDriftSummary::Layer2Diverged
+        );
 
         let r = ReconstructedLayers::new(100, 100, 99);
-        assert_eq!(LayerDriftSummary::classify(r, p), LayerDriftSummary::Layer3Diverged);
+        assert_eq!(
+            LayerDriftSummary::classify(r, p),
+            LayerDriftSummary::Layer3Diverged
+        );
 
         let r = ReconstructedLayers::new(99, 99, 100);
         assert_eq!(
@@ -645,7 +657,10 @@ mod tests {
     #[test]
     fn drift_summary_lifted_from_reconcile_no_drift() {
         let d = ReconcileDecision::NoDrift { max_drift_pct: 0.0 };
-        assert_eq!(drift_summary_from_reconcile(&d), LayerDriftSummary::AllLayersMatch);
+        assert_eq!(
+            drift_summary_from_reconcile(&d),
+            LayerDriftSummary::AllLayersMatch
+        );
     }
 
     #[test]
@@ -656,19 +671,28 @@ mod tests {
             primary_layer: ReconcileLayerKind::Layer3Stripe,
             pause_acked: true,
         };
-        assert_eq!(drift_summary_from_reconcile(&d), LayerDriftSummary::Layer3Diverged);
+        assert_eq!(
+            drift_summary_from_reconcile(&d),
+            LayerDriftSummary::Layer3Diverged
+        );
 
         let d = ReconcileDecision::TicketSev3 {
             max_drift_pct: 0.0005,
             primary_layer: ReconcileLayerKind::Layer1Emit,
         };
-        assert_eq!(drift_summary_from_reconcile(&d), LayerDriftSummary::Layer1Diverged);
+        assert_eq!(
+            drift_summary_from_reconcile(&d),
+            LayerDriftSummary::Layer1Diverged
+        );
 
         let d = ReconcileDecision::PageSev2 {
             max_drift_pct: 0.005,
             primary_layer: ReconcileLayerKind::Layer2Aggregate,
         };
-        assert_eq!(drift_summary_from_reconcile(&d), LayerDriftSummary::Layer2Diverged);
+        assert_eq!(
+            drift_summary_from_reconcile(&d),
+            LayerDriftSummary::Layer2Diverged
+        );
     }
 
     #[test]
@@ -695,6 +719,9 @@ mod tests {
 
     #[test]
     fn replay_reason_display_matches_as_str() {
-        assert_eq!(format!("{}", ReplayReason::CustomerDispute), "customer_dispute");
+        assert_eq!(
+            format!("{}", ReplayReason::CustomerDispute),
+            "customer_dispute"
+        );
     }
 }

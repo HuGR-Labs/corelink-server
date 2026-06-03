@@ -18,7 +18,7 @@
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stdout,
+    clippy::print_stdout
 )]
 
 use std::sync::Arc;
@@ -27,9 +27,9 @@ use proptest::prelude::*;
 use uuid::Uuid;
 
 use corelink_dual_approval::{
-    AdminOpRequest, AdminOpType, DualApprovalError, DualApprovalGate, DualApprovalGateImpl,
-    AdminSigningKey, InMemoryAdminOpAuditSink, InMemoryAdminRoleStore,
-    InMemoryCollusionStore, InMemoryNonceStore, compute_hmac,
+    compute_hmac, AdminOpRequest, AdminOpType, AdminSigningKey, DualApprovalError,
+    DualApprovalGate, DualApprovalGateImpl, InMemoryAdminOpAuditSink, InMemoryAdminRoleStore,
+    InMemoryCollusionStore, InMemoryNonceStore,
 };
 
 fn cases() -> u32 {

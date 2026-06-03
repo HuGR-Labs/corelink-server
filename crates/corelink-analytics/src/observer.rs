@@ -144,8 +144,7 @@ impl BucketHistogram {
     }
 
     fn observe(&mut self, value_seconds: f64) {
-        let v = if value_seconds.is_nan() || value_seconds.is_sign_negative()
-        {
+        let v = if value_seconds.is_nan() || value_seconds.is_sign_negative() {
             0.0
         } else {
             value_seconds
@@ -164,9 +163,7 @@ impl BucketHistogram {
         }
         if !placed {
             // `+Inf` bucket — always the last slot.
-            if let Some(slot) =
-                self.counts_per_bucket.last_mut()
-            {
+            if let Some(slot) = self.counts_per_bucket.last_mut() {
                 *slot = slot.saturating_add(1);
             }
         }
@@ -183,11 +180,7 @@ impl InMemoryRedMetrics {
 
     /// Snapshot the rate counter for a `metric` × `labels` tuple.
     #[must_use]
-    pub fn rate_counter(
-        &self,
-        metric: RedMetricKind,
-        labels: MetricLabelTuple,
-    ) -> u64 {
+    pub fn rate_counter(&self, metric: RedMetricKind, labels: MetricLabelTuple) -> u64 {
         let g = match self.rate_counters.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -199,11 +192,7 @@ impl InMemoryRedMetrics {
 
     /// Snapshot the error counter for a `metric` × `labels` tuple.
     #[must_use]
-    pub fn error_counter(
-        &self,
-        metric: RedMetricKind,
-        labels: MetricLabelTuple,
-    ) -> u64 {
+    pub fn error_counter(&self, metric: RedMetricKind, labels: MetricLabelTuple) -> u64 {
         let g = match self.error_counters.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -242,16 +231,13 @@ impl InMemoryRedMetrics {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
-        g.get(&MetricKey { metric, labels }).map(|h| (h.sum, h.count))
+        g.get(&MetricKey { metric, labels })
+            .map(|h| (h.sum, h.count))
     }
 
     /// Snapshot the gauge value for a `metric` × `labels` tuple.
     #[must_use]
-    pub fn gauge(
-        &self,
-        metric: RedMetricKind,
-        labels: MetricLabelTuple,
-    ) -> Option<f64> {
+    pub fn gauge(&self, metric: RedMetricKind, labels: MetricLabelTuple) -> Option<f64> {
         let g = match self.gauges.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -317,9 +303,7 @@ impl RedMetricsObserver for InMemoryRedMetrics {
         by: u64,
     ) -> Result<(), RedMetricsObserverError> {
         let mut g = self.rate_counters.lock().map_err(|_| {
-            RedMetricsObserverError::Backend(
-                "rate counter mutex poisoned".to_string(),
-            )
+            RedMetricsObserverError::Backend("rate counter mutex poisoned".to_string())
         })?;
         let entry = g.entry(MetricKey { metric, labels }).or_insert(0);
         *entry = entry.saturating_add(by);
@@ -333,9 +317,7 @@ impl RedMetricsObserver for InMemoryRedMetrics {
         by: u64,
     ) -> Result<(), RedMetricsObserverError> {
         let mut g = self.error_counters.lock().map_err(|_| {
-            RedMetricsObserverError::Backend(
-                "error counter mutex poisoned".to_string(),
-            )
+            RedMetricsObserverError::Backend("error counter mutex poisoned".to_string())
         })?;
         let entry = g.entry(MetricKey { metric, labels }).or_insert(0);
         *entry = entry.saturating_add(by);
@@ -349,17 +331,11 @@ impl RedMetricsObserver for InMemoryRedMetrics {
         value_seconds: f64,
     ) -> Result<(), RedMetricsObserverError> {
         let mut g = self.duration_buckets.lock().map_err(|_| {
-            RedMetricsObserverError::Backend(
-                "duration bucket mutex poisoned".to_string(),
-            )
+            RedMetricsObserverError::Backend("duration bucket mutex poisoned".to_string())
         })?;
-        let entry = g.entry(MetricKey { metric, labels }).or_insert_with(
-            || {
-                BucketHistogram::with_boundaries(
-                    &crate::config::CANONICAL_HISTOGRAM_BUCKET_BOUNDARIES,
-                )
-            },
-        );
+        let entry = g.entry(MetricKey { metric, labels }).or_insert_with(|| {
+            BucketHistogram::with_boundaries(&crate::config::CANONICAL_HISTOGRAM_BUCKET_BOUNDARIES)
+        });
         entry.observe(value_seconds);
         Ok(())
     }
@@ -370,11 +346,10 @@ impl RedMetricsObserver for InMemoryRedMetrics {
         labels: MetricLabelTuple,
         value: f64,
     ) -> Result<(), RedMetricsObserverError> {
-        let mut g = self.gauges.lock().map_err(|_| {
-            RedMetricsObserverError::Backend(
-                "gauge mutex poisoned".to_string(),
-            )
-        })?;
+        let mut g = self
+            .gauges
+            .lock()
+            .map_err(|_| RedMetricsObserverError::Backend("gauge mutex poisoned".to_string()))?;
         g.insert(MetricKey { metric, labels }, value);
         Ok(())
     }
@@ -471,10 +446,7 @@ mod tests {
             m.rate_counter(RedMetricKind::CasPutRequestsTotal, labels()),
             3
         );
-        assert_eq!(
-            m.rate_counter_total(RedMetricKind::CasPutRequestsTotal),
-            3
-        );
+        assert_eq!(m.rate_counter_total(RedMetricKind::CasPutRequestsTotal), 3);
     }
 
     #[test]
@@ -492,17 +464,10 @@ mod tests {
     fn duration_observation_lands_in_canonical_bucket() {
         let m = InMemoryRedMetrics::new();
         // 0.004s = 4ms; first canonical boundary is 0.005s → bucket 0.
-        m.record_duration(
-            RedMetricKind::CasPutDurationSeconds,
-            labels(),
-            0.004,
-        )
-        .unwrap();
+        m.record_duration(RedMetricKind::CasPutDurationSeconds, labels(), 0.004)
+            .unwrap();
         let buckets = m
-            .duration_buckets(
-                RedMetricKind::CasPutDurationSeconds,
-                labels(),
-            )
+            .duration_buckets(RedMetricKind::CasPutDurationSeconds, labels())
             .unwrap();
         // 11 boundaries + +Inf = 12 buckets.
         assert_eq!(buckets.len(), 12);
@@ -511,10 +476,7 @@ mod tests {
             assert_eq!(*c, 0, "non-zero count at bucket {idx}: {c}");
         }
         let (sum, count) = m
-            .duration_sum_count(
-                RedMetricKind::CasPutDurationSeconds,
-                labels(),
-            )
+            .duration_sum_count(RedMetricKind::CasPutDurationSeconds, labels())
             .unwrap();
         assert!((sum - 0.004).abs() < 1e-9);
         assert_eq!(count, 1);
@@ -523,17 +485,10 @@ mod tests {
     #[test]
     fn duration_above_all_boundaries_lands_in_inf_bucket() {
         let m = InMemoryRedMetrics::new();
-        m.record_duration(
-            RedMetricKind::CasPutDurationSeconds,
-            labels(),
-            999.0,
-        )
-        .unwrap();
+        m.record_duration(RedMetricKind::CasPutDurationSeconds, labels(), 999.0)
+            .unwrap();
         let buckets = m
-            .duration_buckets(
-                RedMetricKind::CasPutDurationSeconds,
-                labels(),
-            )
+            .duration_buckets(RedMetricKind::CasPutDurationSeconds, labels())
             .unwrap();
         let last = buckets.last().copied().unwrap_or(0);
         assert_eq!(last, 1);
@@ -542,17 +497,10 @@ mod tests {
     #[test]
     fn duration_negative_clamped_to_zero() {
         let m = InMemoryRedMetrics::new();
-        m.record_duration(
-            RedMetricKind::CasPutDurationSeconds,
-            labels(),
-            -1.0,
-        )
-        .unwrap();
+        m.record_duration(RedMetricKind::CasPutDurationSeconds, labels(), -1.0)
+            .unwrap();
         let (sum, _count) = m
-            .duration_sum_count(
-                RedMetricKind::CasPutDurationSeconds,
-                labels(),
-            )
+            .duration_sum_count(RedMetricKind::CasPutDurationSeconds, labels())
             .unwrap();
         assert_eq!(sum, 0.0);
     }
@@ -560,37 +508,21 @@ mod tests {
     #[test]
     fn gauge_overwrites_previous_value() {
         let m = InMemoryRedMetrics::new();
-        m.set_gauge(RedMetricKind::DedupRatio, labels(), 0.5).unwrap();
-        m.set_gauge(RedMetricKind::DedupRatio, labels(), 0.75).unwrap();
-        assert_eq!(
-            m.gauge(RedMetricKind::DedupRatio, labels()),
-            Some(0.75)
-        );
+        m.set_gauge(RedMetricKind::DedupRatio, labels(), 0.5)
+            .unwrap();
+        m.set_gauge(RedMetricKind::DedupRatio, labels(), 0.75)
+            .unwrap();
+        assert_eq!(m.gauge(RedMetricKind::DedupRatio, labels()), Some(0.75));
     }
 
     #[test]
     fn canonical_bucket_index_helper_matches_observation() {
         let bnd = &CANONICAL_HISTOGRAM_BUCKET_BOUNDARIES;
-        assert_eq!(
-            InMemoryRedMetrics::canonical_bucket_index(bnd, 0.001),
-            0
-        );
-        assert_eq!(
-            InMemoryRedMetrics::canonical_bucket_index(bnd, 0.005),
-            0
-        );
-        assert_eq!(
-            InMemoryRedMetrics::canonical_bucket_index(bnd, 0.006),
-            1
-        );
-        assert_eq!(
-            InMemoryRedMetrics::canonical_bucket_index(bnd, 999.0),
-            11
-        );
-        assert_eq!(
-            InMemoryRedMetrics::canonical_bucket_index(bnd, -1.0),
-            0
-        );
+        assert_eq!(InMemoryRedMetrics::canonical_bucket_index(bnd, 0.001), 0);
+        assert_eq!(InMemoryRedMetrics::canonical_bucket_index(bnd, 0.005), 0);
+        assert_eq!(InMemoryRedMetrics::canonical_bucket_index(bnd, 0.006), 1);
+        assert_eq!(InMemoryRedMetrics::canonical_bucket_index(bnd, 999.0), 11);
+        assert_eq!(InMemoryRedMetrics::canonical_bucket_index(bnd, -1.0), 0);
     }
 
     #[test]
@@ -607,12 +539,8 @@ mod tests {
             RedMetricsObserverError::Backend(_)
         ));
         assert!(matches!(
-            m.record_duration(
-                RedMetricKind::CasPutDurationSeconds,
-                labels(),
-                1.0
-            )
-            .unwrap_err(),
+            m.record_duration(RedMetricKind::CasPutDurationSeconds, labels(), 1.0)
+                .unwrap_err(),
             RedMetricsObserverError::Backend(_)
         ));
         assert!(matches!(
@@ -648,22 +576,12 @@ mod tests {
     #[test]
     fn label_tuples_distinct_under_metric_isolation() {
         let m = InMemoryRedMetrics::new();
-        let team_iad =
-            MetricLabelTuple::tenant_region(Tier::Team, Region::Iad);
-        let free_iad =
-            MetricLabelTuple::tenant_region(Tier::Free, Region::Iad);
-        m.record_rate(
-            RedMetricKind::CasPutRequestsTotal,
-            team_iad,
-            10,
-        )
-        .unwrap();
-        m.record_rate(
-            RedMetricKind::CasPutRequestsTotal,
-            free_iad,
-            5,
-        )
-        .unwrap();
+        let team_iad = MetricLabelTuple::tenant_region(Tier::Team, Region::Iad);
+        let free_iad = MetricLabelTuple::tenant_region(Tier::Free, Region::Iad);
+        m.record_rate(RedMetricKind::CasPutRequestsTotal, team_iad, 10)
+            .unwrap();
+        m.record_rate(RedMetricKind::CasPutRequestsTotal, free_iad, 5)
+            .unwrap();
         assert_eq!(
             m.rate_counter(RedMetricKind::CasPutRequestsTotal, team_iad),
             10
@@ -672,9 +590,6 @@ mod tests {
             m.rate_counter(RedMetricKind::CasPutRequestsTotal, free_iad),
             5
         );
-        assert_eq!(
-            m.rate_counter_total(RedMetricKind::CasPutRequestsTotal),
-            15
-        );
+        assert_eq!(m.rate_counter_total(RedMetricKind::CasPutRequestsTotal), 15);
     }
 }

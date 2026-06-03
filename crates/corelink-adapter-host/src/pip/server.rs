@@ -63,20 +63,13 @@ async fn handle_index(
     headers: HeaderMap,
 ) -> Response {
     let cfg = state.config.clone();
-    let tenant = match crate::pip::auth::authenticate(
-        &headers,
-        &cfg.tenant_resolver,
-        &cfg.auditor,
-    )
-    .await
-    {
-        Ok(t) => t,
-        Err(e) => return error_response(&e),
-    };
+    let tenant =
+        match crate::pip::auth::authenticate(&headers, &cfg.tenant_resolver, &cfg.auditor).await {
+            Ok(t) => t,
+            Err(e) => return error_response(&e),
+        };
     let format = IndexFormat::negotiate(
-        headers
-            .get(header::ACCEPT)
-            .and_then(|v| v.to_str().ok()),
+        headers.get(header::ACCEPT).and_then(|v| v.to_str().ok()),
         cfg.prefer_json_index,
     );
     match serve_index(
@@ -108,16 +101,11 @@ async fn handle_wheel(
     headers: HeaderMap,
 ) -> Response {
     let cfg = state.config.clone();
-    let tenant = match crate::pip::auth::authenticate(
-        &headers,
-        &cfg.tenant_resolver,
-        &cfg.auditor,
-    )
-    .await
-    {
-        Ok(t) => t,
-        Err(e) => return error_response(&e),
-    };
+    let tenant =
+        match crate::pip::auth::authenticate(&headers, &cfg.tenant_resolver, &cfg.auditor).await {
+            Ok(t) => t,
+            Err(e) => return error_response(&e),
+        };
     // To look up the upstream URL for a miss, we need the cached
     // index. We derive the project name from the filename (PEP 491
     // wheel-name spec: project is the first `-`-separated token,
@@ -129,7 +117,7 @@ async fn handle_wheel(
         Ok(None) => {
             return error_response(&PipAdapterError::IndexParse(format!(
                 "no cached index for project `{project}`; client must request /simple/{project}/ first"
-            )))
+            )));
         }
         Err(e) => return error_response(&e),
     };
@@ -161,10 +149,7 @@ async fn handle_wheel(
         HeaderValue::from_static("application/octet-stream"),
     );
     if let Ok(v) = HeaderValue::from_str(&resp.sha256) {
-        headers_out.insert(
-            http::HeaderName::from_static("x-corelink-cache-digest"),
-            v,
-        );
+        headers_out.insert(http::HeaderName::from_static("x-corelink-cache-digest"), v);
     }
     if let Ok(v) = HeaderValue::from_str(&format!("attachment; filename=\"{}\"", resp.filename)) {
         headers_out.insert(header::CONTENT_DISPOSITION, v);
@@ -192,11 +177,7 @@ fn error_response(err: &PipAdapterError) -> Response {
 /// Sdist filename: `{name}-{version}.tar.gz`. In both cases the
 /// distribution name is the slice up to the first `-`.
 fn derive_project(filename: &str) -> String {
-    let raw = filename
-        .split('-')
-        .next()
-        .unwrap_or(filename)
-        .to_owned();
+    let raw = filename.split('-').next().unwrap_or(filename).to_owned();
     crate::pip::pep503_html::normalise_project_name(&raw)
 }
 

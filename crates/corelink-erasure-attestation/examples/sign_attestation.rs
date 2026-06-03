@@ -11,8 +11,7 @@
 )]
 
 use corelink_erasure_attestation::{
-    ErasureAttestationPayload, ErasureAttestationSigner, ErasureSigningKey, EvidenceBundle,
-    Region,
+    ErasureAttestationPayload, ErasureAttestationSigner, ErasureSigningKey, EvidenceBundle, Region,
 };
 
 fn main() {
@@ -50,8 +49,14 @@ fn main() {
     println!("Attestation signed successfully.");
     println!("request_id:         {}", attestation.payload.request_id);
     println!("region:             {}", attestation.payload.region);
-    println!("attestation_key_id: {}", attestation.payload.attestation_key_id);
+    println!(
+        "attestation_key_id: {}",
+        attestation.payload.attestation_key_id
+    );
     println!("evidence_hash:      {}", attestation.payload.evidence_hash);
     println!("signature_ed25519:  {}", attestation.signature_ed25519);
-    println!("canonical_len:      {} bytes", attestation.canonical_payload_jcs.len());
+    println!(
+        "canonical_len:      {} bytes",
+        attestation.canonical_payload_jcs.len()
+    );
 }

@@ -108,10 +108,7 @@ impl R2Backend for CfR2BucketAdapter {
         })
     }
 
-    fn get<'a>(
-        &'a self,
-        key: &'a str,
-    ) -> impl Future<Output = Result<Bytes, R2Error>> + Send + 'a {
+    fn get<'a>(&'a self, key: &'a str) -> impl Future<Output = Result<Bytes, R2Error>> + Send + 'a {
         worker::send::SendFuture::new(async move {
             let object = self
                 .bucket
@@ -133,10 +130,7 @@ impl R2Backend for CfR2BucketAdapter {
         })
     }
 
-    fn head<'a>(
-        &'a self,
-        key: &'a str,
-    ) -> impl Future<Output = Result<bool, R2Error>> + Send + 'a {
+    fn head<'a>(&'a self, key: &'a str) -> impl Future<Output = Result<bool, R2Error>> + Send + 'a {
         worker::send::SendFuture::new(async move {
             let opt = self
                 .bucket

@@ -59,7 +59,11 @@ pub fn verify_with_hash(
     // byte-level comparison is correct (UTF-8 multi-byte codepoints do not
     // occur; the PAT parser enforces the charset in `parse_plaintext`).
     if !bool::from(
-        parts.token_id.as_str().as_bytes().ct_eq(expected_token_id.as_str().as_bytes())
+        parts
+            .token_id
+            .as_str()
+            .as_bytes()
+            .ct_eq(expected_token_id.as_str().as_bytes()),
     ) {
         return Err(PatError::InvalidPat);
     }

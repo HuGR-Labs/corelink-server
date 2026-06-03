@@ -81,18 +81,13 @@ impl core::fmt::Display for SpanKind {
 }
 
 impl Serialize for SpanKind {
-    fn serialize<S: serde::Serializer>(
-        &self,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())
     }
 }
 
 impl<'de> Deserialize<'de> for SpanKind {
-    fn deserialize<D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Self, D::Error> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let s = String::deserialize(deserializer)?;
         match s.as_str() {
             "SPAN_KIND_UNSPECIFIED" => Ok(Self::Unspecified),
@@ -166,18 +161,13 @@ impl core::fmt::Display for SpanStatus {
 }
 
 impl Serialize for SpanStatus {
-    fn serialize<S: serde::Serializer>(
-        &self,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())
     }
 }
 
 impl<'de> Deserialize<'de> for SpanStatus {
-    fn deserialize<D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Self, D::Error> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let s = String::deserialize(deserializer)?;
         match s.as_str() {
             "STATUS_CODE_UNSET" => Ok(Self::Unset),
@@ -214,10 +204,7 @@ pub struct Exemplar {
     pub time_ms: u64,
 }
 
-fn serialize_metric_kind<S: serde::Serializer>(
-    k: &RedMetricKind,
-    s: S,
-) -> Result<S::Ok, S::Error> {
+fn serialize_metric_kind<S: serde::Serializer>(k: &RedMetricKind, s: S) -> Result<S::Ok, S::Error> {
     s.serialize_str(k.as_str())
 }
 
@@ -225,50 +212,27 @@ fn deserialize_metric_kind<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> Result<RedMetricKind, D::Error> {
     let s = String::deserialize(d)?;
-    metric_kind_from_str(&s).ok_or_else(|| {
-        serde::de::Error::custom(format!("unknown RedMetricKind: {s}"))
-    })
+    metric_kind_from_str(&s)
+        .ok_or_else(|| serde::de::Error::custom(format!("unknown RedMetricKind: {s}")))
 }
 
 fn metric_kind_from_str(s: &str) -> Option<RedMetricKind> {
     Some(match s {
-        "corelink_cas_put_requests_total" => {
-            RedMetricKind::CasPutRequestsTotal
-        }
-        "corelink_cas_put_duration_seconds" => {
-            RedMetricKind::CasPutDurationSeconds
-        }
-        "corelink_cas_get_bytes_total" => {
-            RedMetricKind::CasGetBytesTotal
-        }
-        "corelink_ac_lookup_requests_total" => {
-            RedMetricKind::AcLookupRequestsTotal
-        }
+        "corelink_cas_put_requests_total" => RedMetricKind::CasPutRequestsTotal,
+        "corelink_cas_put_duration_seconds" => RedMetricKind::CasPutDurationSeconds,
+        "corelink_cas_get_bytes_total" => RedMetricKind::CasGetBytesTotal,
+        "corelink_ac_lookup_requests_total" => RedMetricKind::AcLookupRequestsTotal,
         "corelink_gc_runs_total" => RedMetricKind::GcRunsTotal,
         "corelink_dedup_ratio" => RedMetricKind::DedupRatio,
-        "corelink_rate_limit_rejects_total" => {
-            RedMetricKind::RateLimitRejectsTotal
-        }
-        "corelink_privacy_dsr_active_total" => {
-            RedMetricKind::PrivacyDsrActiveTotal
-        }
-        "corelink_billing_events_emitted_total" => {
-            RedMetricKind::BillingEventsEmittedTotal
-        }
+        "corelink_rate_limit_rejects_total" => RedMetricKind::RateLimitRejectsTotal,
+        "corelink_privacy_dsr_active_total" => RedMetricKind::PrivacyDsrActiveTotal,
+        "corelink_billing_events_emitted_total" => RedMetricKind::BillingEventsEmittedTotal,
         "corelink_cf_cpu_time_us" => RedMetricKind::CfCpuTimeUs,
         "corelink_r2_ops_total" => RedMetricKind::R2OpsTotal,
-        "corelink_d1_row_scans_total" => {
-            RedMetricKind::D1RowScansTotal
-        }
-        "corelink_kv_read_quota_used" => {
-            RedMetricKind::KvReadQuotaUsed
-        }
-        "corelink_kv_write_quota_used" => {
-            RedMetricKind::KvWriteQuotaUsed
-        }
-        "corelink_do_storage_size_bytes" => {
-            RedMetricKind::DoStorageSizeBytes
-        }
+        "corelink_d1_row_scans_total" => RedMetricKind::D1RowScansTotal,
+        "corelink_kv_read_quota_used" => RedMetricKind::KvReadQuotaUsed,
+        "corelink_kv_write_quota_used" => RedMetricKind::KvWriteQuotaUsed,
+        "corelink_do_storage_size_bytes" => RedMetricKind::DoStorageSizeBytes,
         _ => return None,
     })
 }
@@ -339,11 +303,7 @@ impl SpanRecord {
 
     /// Append a canonical key-value attribute. Caller is responsible
     /// for redaction discipline (raw PII FORBIDDEN per WI §6.1.9).
-    pub fn add_attribute(
-        &mut self,
-        key: impl Into<String>,
-        value: impl Into<String>,
-    ) {
+    pub fn add_attribute(&mut self, key: impl Into<String>, value: impl Into<String>) {
         self.attributes.push((key.into(), value.into()));
     }
 
@@ -406,8 +366,8 @@ mod tests {
 
     fn sample_trace_id() -> TraceId {
         [
-            0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6,
-            0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e, 0x47, 0x36,
+            0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6, 0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e,
+            0x47, 0x36,
         ]
     }
 
@@ -417,10 +377,7 @@ mod tests {
 
     #[test]
     fn span_kind_canonical_strings_pinned() {
-        assert_eq!(
-            SpanKind::Unspecified.as_str(),
-            "SPAN_KIND_UNSPECIFIED"
-        );
+        assert_eq!(SpanKind::Unspecified.as_str(), "SPAN_KIND_UNSPECIFIED");
         assert_eq!(SpanKind::Internal.as_str(), "SPAN_KIND_INTERNAL");
         assert_eq!(SpanKind::Server.as_str(), "SPAN_KIND_SERVER");
         assert_eq!(SpanKind::Client.as_str(), "SPAN_KIND_CLIENT");
@@ -515,26 +472,21 @@ mod tests {
             SpanKind::Internal,
             1,
         );
-        assert_eq!(
-            s.trace_id_hex(),
-            "4bf92f3577b34da6a3ce929d0e0e4736"
-        );
+        assert_eq!(s.trace_id_hex(), "4bf92f3577b34da6a3ce929d0e0e4736");
         assert_eq!(s.span_id_hex(), "00f067aa0ba902b7");
     }
 
     #[test]
     fn unknown_span_kind_deserialize_errors() {
         let line = r#""SPAN_KIND_BAD""#;
-        let err: serde_json::Result<SpanKind> =
-            serde_json::from_str(line);
+        let err: serde_json::Result<SpanKind> = serde_json::from_str(line);
         assert!(err.is_err());
     }
 
     #[test]
     fn unknown_span_status_deserialize_errors() {
         let line = r#""STATUS_CODE_BAD""#;
-        let err: serde_json::Result<SpanStatus> =
-            serde_json::from_str(line);
+        let err: serde_json::Result<SpanStatus> = serde_json::from_str(line);
         assert!(err.is_err());
     }
 
@@ -546,9 +498,7 @@ mod tests {
             time_ms: 1,
         };
         let json = serde_json::to_string(&e).unwrap();
-        assert!(json.contains(
-            "\"metric_kind\":\"corelink_cas_put_duration_seconds\""
-        ));
+        assert!(json.contains("\"metric_kind\":\"corelink_cas_put_duration_seconds\""));
         let parsed: Exemplar = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.metric_kind, e.metric_kind);
         assert_eq!(parsed.value, e.value);
@@ -557,10 +507,8 @@ mod tests {
 
     #[test]
     fn exemplar_unknown_metric_kind_deserialize_errors() {
-        let json =
-            r#"{"metric_kind":"corelink_unknown","value":0.0,"time_ms":1}"#;
-        let err: serde_json::Result<Exemplar> =
-            serde_json::from_str(json);
+        let json = r#"{"metric_kind":"corelink_unknown","value":0.0,"time_ms":1}"#;
+        let err: serde_json::Result<Exemplar> = serde_json::from_str(json);
         assert!(err.is_err());
     }
 

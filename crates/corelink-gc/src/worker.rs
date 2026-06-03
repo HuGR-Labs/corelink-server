@@ -40,9 +40,7 @@ use crate::audit::{GcAuditRecord, GcAuditSink, GcEventType};
 use crate::degrade::{DegradeKind, DegradeProbe};
 use crate::error::GcError;
 use crate::metrics::GcMetricsObserver;
-use crate::run::{
-    CheckpointDeltas, FailureContext, GcPhase, GcRun, GcRunStore, GcStatus, RunId,
-};
+use crate::run::{CheckpointDeltas, FailureContext, GcPhase, GcRun, GcRunStore, GcStatus, RunId};
 use crate::schedule::ScheduleConfig;
 
 /// Errors surfaced by [`GcWorker::execute_run`].
@@ -288,7 +286,13 @@ where
             // degrade mode flipped during the last batch). Lookup
             // current row to get the actual phase.
             wall_clock = wall_clock.saturating_add(1);
-            return self.finalize_aborted(run_id, tenant_id, config, wall_clock, GcPhase::Reconcile);
+            return self.finalize_aborted(
+                run_id,
+                tenant_id,
+                config,
+                wall_clock,
+                GcPhase::Reconcile,
+            );
         }
         // Clean completion.
         wall_clock = wall_clock.saturating_add(1);
@@ -398,10 +402,7 @@ mod tests {
         assert!(outcome.final_run.mark_started_at_ms.is_some());
 
         // Phase-transitioned events: 5 transitions in the chain.
-        assert_eq!(
-            audit.snapshot_of(GcEventType::PhaseTransitioned).len(),
-            5
-        );
+        assert_eq!(audit.snapshot_of(GcEventType::PhaseTransitioned).len(), 5);
         // Run-completed terminal event.
         assert_eq!(audit.snapshot_of(GcEventType::RunCompleted).len(), 1);
         // No aborted event on the happy path.

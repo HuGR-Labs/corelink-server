@@ -54,12 +54,8 @@ impl LogAuditEventType {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::RecordEmitted => "corelink.logpush.record_emitted",
-            Self::RedactionApplied => {
-                "corelink.logpush.redaction_applied"
-            }
-            Self::RedactionFailure => {
-                "corelink.logpush.redaction_failure"
-            }
+            Self::RedactionApplied => "corelink.logpush.redaction_applied",
+            Self::RedactionFailure => "corelink.logpush.redaction_failure",
             Self::SinkFailure => "corelink.logpush.sink_failure",
         }
     }
@@ -139,10 +135,7 @@ pub trait LogAuditSink: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`LogAuditEmitError::Store`] on any backend failure.
-    fn emit(
-        &self,
-        record: LogAuditRecord,
-    ) -> Result<(), LogAuditEmitError>;
+    fn emit(&self, record: LogAuditRecord) -> Result<(), LogAuditEmitError>;
 }
 
 /// In-memory test audit sink. Cloning shares the underlying buffer.
@@ -184,10 +177,7 @@ impl InMemoryLogAuditSink {
 
     /// Filter snapshot down to records of a single event type.
     #[must_use]
-    pub fn snapshot_of(
-        &self,
-        event_type: LogAuditEventType,
-    ) -> Vec<LogAuditRecord> {
+    pub fn snapshot_of(&self, event_type: LogAuditEventType) -> Vec<LogAuditRecord> {
         self.snapshot()
             .into_iter()
             .filter(|r| r.event_type == event_type)
@@ -196,15 +186,11 @@ impl InMemoryLogAuditSink {
 }
 
 impl LogAuditSink for InMemoryLogAuditSink {
-    fn emit(
-        &self,
-        record: LogAuditRecord,
-    ) -> Result<(), LogAuditEmitError> {
-        let mut guard = self.inner.lock().map_err(|_| {
-            LogAuditEmitError::Store(
-                "audit sink mutex poisoned".to_string(),
-            )
-        })?;
+    fn emit(&self, record: LogAuditRecord) -> Result<(), LogAuditEmitError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| LogAuditEmitError::Store("audit sink mutex poisoned".to_string()))?;
         guard.push(record);
         Ok(())
     }
@@ -224,13 +210,9 @@ impl FailingLogAuditSink {
 }
 
 impl LogAuditSink for FailingLogAuditSink {
-    fn emit(
-        &self,
-        _record: LogAuditRecord,
-    ) -> Result<(), LogAuditEmitError> {
+    fn emit(&self, _record: LogAuditRecord) -> Result<(), LogAuditEmitError> {
         Err(LogAuditEmitError::Store(
-            "induced logpush audit sink failure (test fixture)"
-                .to_string(),
+            "induced logpush audit sink failure (test fixture)".to_string(),
         ))
     }
 }
@@ -298,10 +280,7 @@ mod tests {
         sink.emit(rec(LogAuditEventType::RecordEmitted)).unwrap();
         sink.emit(rec(LogAuditEventType::RedactionApplied)).unwrap();
         assert_eq!(sink.len(), 2);
-        assert_eq!(
-            sink.snapshot_of(LogAuditEventType::RecordEmitted).len(),
-            1
-        );
+        assert_eq!(sink.snapshot_of(LogAuditEventType::RecordEmitted).len(), 1);
         assert_eq!(
             sink.snapshot_of(LogAuditEventType::RedactionApplied).len(),
             1

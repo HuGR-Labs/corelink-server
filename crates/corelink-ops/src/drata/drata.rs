@@ -101,7 +101,10 @@ impl DrataHttpClient {
     ///
     /// Returns the underlying `reqwest` error if the HTTP client
     /// builder fails (TLS init failure).
-    pub fn new(base_url: impl Into<String>, api_key: impl Into<String>) -> Result<Self, reqwest::Error> {
+    pub fn new(
+        base_url: impl Into<String>,
+        api_key: impl Into<String>,
+    ) -> Result<Self, reqwest::Error> {
         let http = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(15))
             .user_agent("corelink-drata-sync/0.1")
@@ -124,9 +127,8 @@ impl DrataHttpClient {
     /// - HTTP-builder failure wrapped as `Misconfigured` so the runner
     ///   can short-circuit cleanly without a fresh error variant.
     pub fn from_env() -> Result<Self, DrataClientError> {
-        let base = std::env::var("DRATA_API_BASE_URL").map_err(|_| {
-            DrataClientError::Misconfigured("DRATA_API_BASE_URL unset".to_string())
-        })?;
+        let base = std::env::var("DRATA_API_BASE_URL")
+            .map_err(|_| DrataClientError::Misconfigured("DRATA_API_BASE_URL unset".to_string()))?;
         let key = std::env::var("DRATA_API_KEY")
             .map_err(|_| DrataClientError::Misconfigured("DRATA_API_KEY unset".to_string()))?;
         Self::new(base, key).map_err(|e| DrataClientError::Misconfigured(e.to_string()))
@@ -364,16 +366,11 @@ impl DrataClient for InMemoryDrataClient {
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
-    use super::*;
     use super::super::record::record_sha256;
+    use super::*;
 
     fn rec() -> EvidenceRecord {
-        EvidenceRecord::new(
-            EvidenceStream::AuditLogs,
-            "src#1",
-            10,
-            [("k", "v")],
-        )
+        EvidenceRecord::new(EvidenceStream::AuditLogs, "src#1", 10, [("k", "v")])
     }
 
     #[test]

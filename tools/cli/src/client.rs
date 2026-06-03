@@ -68,8 +68,8 @@ impl CorelinkClient {
     /// Reads base_url from env `CORELINK_BASE_URL`, then config, then default.
     /// Reads tenant_id from config if available.
     pub fn new(pat: String) -> Result<Self, CliError> {
-        let base_url = std::env::var("CORELINK_BASE_URL")
-            .unwrap_or_else(|_| DEFAULT_BASE_URL.to_owned());
+        let base_url =
+            std::env::var("CORELINK_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_owned());
         // Load tenant_id from config (best-effort; None if not set).
         let tenant_id = crate::config::load()
             .ok()
@@ -79,7 +79,12 @@ impl CorelinkClient {
             .timeout(Duration::from_secs(30))
             .build()?;
         Ok(Self {
-            inner: Arc::new(ClientInner { http, base_url, pat, tenant_id }),
+            inner: Arc::new(ClientInner {
+                http,
+                base_url,
+                pat,
+                tenant_id,
+            }),
         })
     }
 
@@ -124,10 +129,9 @@ impl CorelinkClient {
             match resp {
                 Ok(r) if r.status().is_success() => {
                     // Drain body; ignore parse error (server may return empty 201).
-                    let put_resp: PutResp = r
-                        .json()
-                        .await
-                        .unwrap_or(PutResp { hash: Some(sha256_hex.to_owned()) });
+                    let put_resp: PutResp = r.json().await.unwrap_or(PutResp {
+                        hash: Some(sha256_hex.to_owned()),
+                    });
                     return Ok(put_resp);
                 }
                 Ok(r) if is_transient(r.status()) => {
@@ -180,10 +184,9 @@ impl CorelinkClient {
             .send()
             .await?;
         if resp.status().is_success() {
-            let put_resp = resp
-                .json()
-                .await
-                .unwrap_or(PutResp { hash: Some(digest.to_owned()) });
+            let put_resp = resp.json().await.unwrap_or(PutResp {
+                hash: Some(digest.to_owned()),
+            });
             Ok(put_resp)
         } else {
             Err(CliError::Other(format!(
@@ -272,7 +275,10 @@ impl CorelinkClient {
                 Ok(r) if is_transient(r.status()) => {
                     attempt += 1;
                     if attempt > MAX_RETRIES {
-                        return Err(CliError::Other(format!("HTTP {} after retries", r.status())));
+                        return Err(CliError::Other(format!(
+                            "HTTP {} after retries",
+                            r.status()
+                        )));
                     }
                     tokio::time::sleep(Duration::from_millis(backoff_ms(attempt))).await;
                 }
@@ -357,7 +363,10 @@ mod tests {
     fn backoff_within_bounds() {
         for i in 1..=10 {
             let b = backoff_ms(i);
-            assert!(b <= BACKOFF_MAX_MS, "backoff {b} exceeds max at attempt {i}");
+            assert!(
+                b <= BACKOFF_MAX_MS,
+                "backoff {b} exceeds max at attempt {i}"
+            );
         }
     }
 }

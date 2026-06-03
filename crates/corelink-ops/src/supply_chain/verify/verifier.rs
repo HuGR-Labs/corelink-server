@@ -32,12 +32,9 @@ use super::{
     error::VerifyError,
     metrics::{
         record_attestation_duration_ms, record_fulcio_validate, record_rekor_verify,
-        record_slsa_attestation, FulcioValidateOutcome, RekorVerifyOutcome,
-        SlsaAttestationOutcome,
+        record_slsa_attestation, FulcioValidateOutcome, RekorVerifyOutcome, SlsaAttestationOutcome,
     },
-    types::{
-        BuilderIdentity, InTotoStatement, SlsaAttestation, VerifiedProvenance,
-    },
+    types::{BuilderIdentity, InTotoStatement, SlsaAttestation, VerifiedProvenance},
 };
 
 /// Expected DSSE payload type for in-toto attestations.
@@ -47,8 +44,7 @@ const EXPECTED_DSSE_PAYLOAD_TYPE: &str = "application/vnd.in-toto+json";
 const EXPECTED_PREDICATE_TYPE: &str = "https://slsa.dev/provenance/v1";
 
 /// Expected SLSA L3 builder build type (from `slsa-github-generator/generic@v1`).
-const EXPECTED_BUILD_TYPE_PREFIX: &str =
-    "https://github.com/slsa-framework/slsa-github-generator/";
+const EXPECTED_BUILD_TYPE_PREFIX: &str = "https://github.com/slsa-framework/slsa-github-generator/";
 
 /// Default Rekor server URL.
 const REKOR_SERVER: &str = "https://rekor.sigstore.dev";
@@ -114,9 +110,7 @@ impl DefaultSlsaVerifier {
 
     /// Create a new verifier with the specified plan label.
     pub fn with_plan(plan: impl Into<String>) -> Self {
-        Self {
-            plan: plan.into(),
-        }
+        Self { plan: plan.into() }
     }
 }
 

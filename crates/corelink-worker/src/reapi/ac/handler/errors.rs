@@ -138,9 +138,10 @@ impl From<NegativeCacheError> for AcError {
         // RegionMismatch is the only variant the handler can
         // structurally trigger — it's a programmer wiring error.
         match value {
-            NegativeCacheError::RegionMismatch { cache, ctx } => {
-                Self::RegionMismatch { handler: cache, ctx }
-            }
+            NegativeCacheError::RegionMismatch { cache, ctx } => Self::RegionMismatch {
+                handler: cache,
+                ctx,
+            },
             other => Self::BackendUnavailable(format!("{other}")),
         }
     }

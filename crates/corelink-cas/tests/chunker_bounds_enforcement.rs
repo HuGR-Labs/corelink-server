@@ -202,11 +202,7 @@ fn fastcdc_invalid_bounds_rejected() {
         .with_fastcdc_bounds(1024, 512, 2048);
     let err = ChunkerKind::new(cfg).expect_err("invalid config");
     match err {
-        ChunkerError::FastCdcConfigInvalid {
-            min,
-            avg,
-            max,
-        } => {
+        ChunkerError::FastCdcConfigInvalid { min, avg, max } => {
             assert_eq!(min, 1024);
             assert_eq!(avg, 512);
             assert_eq!(max, 2048);
@@ -222,7 +218,10 @@ fn fixed_zero_size_rejected() {
         .with_algorithm(ChunkerAlgorithm::Fixed2MiB)
         .with_fixed_chunk_size(0);
     let err = ChunkerKind::new(cfg).expect_err("invalid config");
-    assert!(matches!(err, ChunkerError::FixedChunkSizeInvalid { size: 0 }));
+    assert!(matches!(
+        err,
+        ChunkerError::FixedChunkSizeInvalid { size: 0 }
+    ));
 }
 
 /// Reset clears all bounded-parser counters.

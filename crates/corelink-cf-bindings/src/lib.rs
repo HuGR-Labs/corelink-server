@@ -105,8 +105,8 @@ pub use cf_r2::CfR2BucketAdapter;
 pub use d1_real::{CfD1DatabaseReal, D1Error, D1Op, TenantId, TenantScopedQuery};
 pub use r2_real::{CfR2BucketReal, R2Op, TenantPrefix, TenantScopedKey};
 
-pub use kv_real::CfKvNamespaceReal;
 pub use do_real::{CfDurableObjectReal, DoError, DoOp, DoTenantPrefix, TenantScopedName};
+pub use kv_real::CfKvNamespaceReal;
 
 // Audit hook type aliases for each binding. Re-exported so consumers can
 // build a single `AuditSink` and adapt it to all 4 surfaces without

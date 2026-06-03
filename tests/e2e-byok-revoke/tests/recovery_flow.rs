@@ -16,11 +16,11 @@
     reason = "tests are allowed to use these primitives"
 )]
 
-use corelink_byok::{Dek, KmsProviderKind};
 use corelink_byok::revocation::{
     event::{EVENT_TYPE_CMK_RESTORED, EVENT_TYPE_CMK_REVOKED},
     store::TenantByokStatus,
 };
+use corelink_byok::{Dek, KmsProviderKind};
 use e2e_byok_revoke::helpers::{make_wrapped_for, KillSwitchRunner, KmsBehaviour};
 use e2e_byok_revoke::setup_byok_env;
 
@@ -76,23 +76,28 @@ async fn recovery_after_revoke_emits_cmk_restored() {
     );
 
     // Recovery alert dispatched.
-    assert_eq!(bundle.alert.recovery_count(), 1, "recovery alert dispatched");
+    assert_eq!(
+        bundle.alert.recovery_count(),
+        1,
+        "recovery alert dispatched"
+    );
     assert_eq!(bundle.alert.alert_count(), 1, "revoke alerts unchanged");
 
     // Subsequent Ok cycle is a no-op (already active).
     let event = KillSwitchRunner::run(&bundle).await.unwrap();
     assert!(event.is_none(), "Ok on already-active tenant is a no-op");
-    assert_eq!(bundle.alert.recovery_count(), 1, "no duplicate recovery alert");
+    assert_eq!(
+        bundle.alert.recovery_count(),
+        1,
+        "no duplicate recovery alert"
+    );
 
     // History records both transitions.
     let history = bundle.tenant_store.history();
     let kinds: Vec<TenantByokStatus> = history.iter().map(|(_, s, _)| *s).collect();
     assert_eq!(
         kinds,
-        vec![
-            TenantByokStatus::DegradedReadOnly,
-            TenantByokStatus::Active,
-        ]
+        vec![TenantByokStatus::DegradedReadOnly, TenantByokStatus::Active,]
     );
 }
 

@@ -38,15 +38,9 @@ impl CoordinatorAuditEventType {
     #[must_use]
     pub fn cloudevent_type(self) -> &'static str {
         match self {
-            CoordinatorAuditEventType::RegionPromoted => {
-                "corelink.failover.region_promoted.v1"
-            }
-            CoordinatorAuditEventType::RegionDemoted => {
-                "corelink.failover.region_demoted.v1"
-            }
-            CoordinatorAuditEventType::FailbackBlocked => {
-                "corelink.failover.failback_blocked.v1"
-            }
+            CoordinatorAuditEventType::RegionPromoted => "corelink.failover.region_promoted.v1",
+            CoordinatorAuditEventType::RegionDemoted => "corelink.failover.region_demoted.v1",
+            CoordinatorAuditEventType::FailbackBlocked => "corelink.failover.failback_blocked.v1",
             CoordinatorAuditEventType::FailbackCommitted => {
                 "corelink.failover.failback_committed.v1"
             }
@@ -116,10 +110,7 @@ impl CoordinatorAuditSink for InMemoryCoordinatorAuditSink {
     }
 
     fn records(&self) -> Vec<CoordinatorAuditRecord> {
-        self.inner
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or_default()
+        self.inner.lock().map(|g| g.clone()).unwrap_or_default()
     }
 }
 

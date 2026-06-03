@@ -227,11 +227,7 @@ impl SloDefinition {
     /// Returns [`SloError::InvalidSloDefinition`] when:
     /// - `target_pct` is NaN, infinite, ≤ 0.0, or > 1.0;
     /// - `window_days` is 0.
-    pub fn with_window_days(
-        sli: Sli,
-        target_pct: f64,
-        window_days: u32,
-    ) -> Result<Self, SloError> {
+    pub fn with_window_days(sli: Sli, target_pct: f64, window_days: u32) -> Result<Self, SloError> {
         if !target_pct.is_finite() || target_pct <= 0.0 || target_pct > 1.0 {
             return Err(SloError::InvalidSloDefinition(format!(
                 "target_pct must be in (0.0, 1.0]; got {target_pct}"
@@ -289,8 +285,7 @@ mod tests {
         // SLOs that lacked Sli enum binding; now bound with canonical
         // slugs matching `slo_catalog.md §4.22, §4.23, §4.24, §4.25, §4.27`.
         let v = canonical_slis();
-        let slugs: std::collections::HashSet<&str> =
-            v.iter().map(|s| s.slug()).collect();
+        let slugs: std::collections::HashSet<&str> = v.iter().map(|s| s.slug()).collect();
         assert!(slugs.contains("SLO-BACKUP-VERIFICATION"));
         assert!(slugs.contains("SLO-REPLICATION-LAG-R2"));
         assert!(slugs.contains("SLO-REPLICATION-LAG-D1"));
@@ -329,10 +324,22 @@ mod tests {
 
     #[test]
     fn audit_dr_16_wave_14_closures_display_matches_slug() {
-        assert_eq!(format!("{}", Sli::BackupVerification), "SLO-BACKUP-VERIFICATION");
-        assert_eq!(format!("{}", Sli::ReplicationLagR2), "SLO-REPLICATION-LAG-R2");
-        assert_eq!(format!("{}", Sli::ReplicationLagD1), "SLO-REPLICATION-LAG-D1");
-        assert_eq!(format!("{}", Sli::ReplicationLagKv), "SLO-REPLICATION-LAG-KV");
+        assert_eq!(
+            format!("{}", Sli::BackupVerification),
+            "SLO-BACKUP-VERIFICATION"
+        );
+        assert_eq!(
+            format!("{}", Sli::ReplicationLagR2),
+            "SLO-REPLICATION-LAG-R2"
+        );
+        assert_eq!(
+            format!("{}", Sli::ReplicationLagD1),
+            "SLO-REPLICATION-LAG-D1"
+        );
+        assert_eq!(
+            format!("{}", Sli::ReplicationLagKv),
+            "SLO-REPLICATION-LAG-KV"
+        );
         assert_eq!(
             format!("{}", Sli::ReplicationLagNeon),
             "SLO-REPLICATION-LAG-NEON"
@@ -344,17 +351,13 @@ mod tests {
         // S-11 / WI-S11-002 SLI binding closure shipped per
         // `specs/_audits/sealed/2026-05-15-dsr-worker-production.md §3`.
         let v = canonical_slis();
-        let slugs: std::collections::HashSet<&str> =
-            v.iter().map(|s| s.slug()).collect();
+        let slugs: std::collections::HashSet<&str> = v.iter().map(|s| s.slug()).collect();
         assert!(slugs.contains("SLO-FRESH-DSR-ERASURE"));
         assert_eq!(
             Sli::FreshDsrErasure.prometheus_metric_base(),
             "corelink_dsr_resolution_hours"
         );
-        assert_eq!(
-            format!("{}", Sli::FreshDsrErasure),
-            "SLO-FRESH-DSR-ERASURE"
-        );
+        assert_eq!(format!("{}", Sli::FreshDsrErasure), "SLO-FRESH-DSR-ERASURE");
     }
 
     #[test]
@@ -362,8 +365,7 @@ mod tests {
         // Five P0 closures shipped per
         // `specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md §5`.
         let v = canonical_slis();
-        let slugs: std::collections::HashSet<&str> =
-            v.iter().map(|s| s.slug()).collect();
+        let slugs: std::collections::HashSet<&str> = v.iter().map(|s| s.slug()).collect();
         assert!(slugs.contains("SLI-AVAIL-CP"));
         assert!(slugs.contains("SLI-LATENCY-CAS-PUT-P99"));
         assert!(slugs.contains("SLI-LATENCY-AC-HIT-P99"));
@@ -407,9 +409,7 @@ mod tests {
         let s_cas = SloDefinition::new(Sli::CorrectnessCas, 1.0).unwrap();
         assert_eq!(s_cas.target_pct, 1.0);
         assert_eq!(s_cas.error_budget_pct, 0.0);
-        let s_iso =
-            SloDefinition::new(Sli::CorrectnessTenantIsolation, 1.0)
-                .unwrap();
+        let s_iso = SloDefinition::new(Sli::CorrectnessTenantIsolation, 1.0).unwrap();
         assert_eq!(s_iso.target_pct, 1.0);
         assert_eq!(s_iso.error_budget_pct, 0.0);
     }
@@ -419,10 +419,7 @@ mod tests {
         // Display path is used in audit records + alert
         // annotations + PagerDuty dedup-key construction; pinning
         // here so a typo in `slug()` would break Display too.
-        assert_eq!(
-            format!("{}", Sli::AvailControlPlane),
-            "SLI-AVAIL-CP"
-        );
+        assert_eq!(format!("{}", Sli::AvailControlPlane), "SLI-AVAIL-CP");
         assert_eq!(
             format!("{}", Sli::LatencyCasPutP99),
             "SLI-LATENCY-CAS-PUT-P99"
@@ -431,10 +428,7 @@ mod tests {
             format!("{}", Sli::LatencyAcHitP99),
             "SLI-LATENCY-AC-HIT-P99"
         );
-        assert_eq!(
-            format!("{}", Sli::CorrectnessCas),
-            "SLO-CORRECT-CAS"
-        );
+        assert_eq!(format!("{}", Sli::CorrectnessCas), "SLO-CORRECT-CAS");
         assert_eq!(
             format!("{}", Sli::CorrectnessTenantIsolation),
             "SLO-CORRECT-ISO"
@@ -458,8 +452,7 @@ mod tests {
                 "first byte must be lowercase or _: {base}"
             );
             assert!(
-                bytes
-                    .all(|b| b == b'_' || b.is_ascii_lowercase() || b.is_ascii_digit()),
+                bytes.all(|b| b == b'_' || b.is_ascii_lowercase() || b.is_ascii_digit()),
                 "non-canonical char in {base}"
             );
         }
@@ -485,10 +478,7 @@ mod tests {
 
     #[test]
     fn slo_with_window_days_rejects_zero() {
-        assert!(
-            SloDefinition::with_window_days(Sli::AvailCasGet, 0.999, 0)
-                .is_err()
-        );
+        assert!(SloDefinition::with_window_days(Sli::AvailCasGet, 0.999, 0).is_err());
     }
 
     #[test]

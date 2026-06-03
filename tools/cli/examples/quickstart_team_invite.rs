@@ -28,8 +28,7 @@ async fn main() -> Result<()> {
     let api = env::var("CORELINK_API_URL")
         .unwrap_or_else(|_| "https://sandbox.corelink.humangr.com".to_string());
     let pat = env::var("CORELINK_PAT").context("CORELINK_PAT is required")?;
-    let invitee =
-        env::var("INVITEE_EMAIL").unwrap_or_else(|_| "newmember@example.com".to_string());
+    let invitee = env::var("INVITEE_EMAIL").unwrap_or_else(|_| "newmember@example.com".to_string());
     let idem = format!("idem-{}", Uuid::now_v7());
 
     let body = json!({

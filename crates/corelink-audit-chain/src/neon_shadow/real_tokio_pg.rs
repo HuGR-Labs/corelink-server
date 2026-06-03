@@ -187,9 +187,10 @@ mod native {
             // Eager liveness check — surface a misconfigured DSN at boot
             // time, not at first analytics query.
             {
-                let client = pool.get().await.map_err(|e| {
-                    NeonError::Backend(format!("eager pool checkout: {}", e))
-                })?;
+                let client = pool
+                    .get()
+                    .await
+                    .map_err(|e| NeonError::Backend(format!("eager pool checkout: {}", e)))?;
                 client
                     .simple_query("SELECT 1")
                     .await
@@ -351,7 +352,8 @@ mod native {
                     // `None` rather than panicking — the upstream caller
                     // surfaces a `Backend` error if a required cell is
                     // `None`.
-                    let cell: Option<String> = if let Ok(s) = row.try_get::<_, Option<String>>(idx) {
+                    let cell: Option<String> = if let Ok(s) = row.try_get::<_, Option<String>>(idx)
+                    {
                         s
                     } else if let Ok(n) = row.try_get::<_, Option<i64>>(idx) {
                         n.map(|v| v.to_string())
@@ -385,8 +387,7 @@ mod native {
         }
         if roots.is_empty() {
             return Err(NeonError::Backend(
-                "no TLS root certificates available (system + webpki-roots both empty)"
-                    .to_string(),
+                "no TLS root certificates available (system + webpki-roots both empty)".to_string(),
             ));
         }
         let cfg = ClientConfig::builder()
@@ -409,7 +410,9 @@ mod native {
     )]
     mod tests {
         use super::*;
-        use crate::neon_shadow::real::{ExecutorParam, SQL_SET_RLS_TENANT_GUC, SQL_INSERT_SHADOW_ROW};
+        use crate::neon_shadow::real::{
+            ExecutorParam, SQL_INSERT_SHADOW_ROW, SQL_SET_RLS_TENANT_GUC,
+        };
 
         #[test]
         fn owned_params_collapses_hexbytes_and_jsonb_to_text() {

@@ -21,11 +21,11 @@
     reason = "tests are allowed to use these primitives"
 )]
 
+use corelink_ops::dr::backup_verify::snapshot::BackupSnapshot;
 use corelink_ops::dr::backup_verify::{
     outcome::VerificationStatus, verifier::BackupVerifier, BackupTier, InMemoryBackupVerifier,
     METRIC_BACKUP_VERIFICATION_STATUS,
 };
-use corelink_ops::dr::backup_verify::snapshot::BackupSnapshot;
 use corelink_slo::Sli;
 
 #[test]
@@ -49,7 +49,12 @@ fn happy_path_verify_freshness_yields_ok_status() {
     let v = InMemoryBackupVerifier::new();
     let now: u64 = 2_000_000_000;
     for tier in [BackupTier::R2, BackupTier::D1, BackupTier::Kv] {
-        let snap = BackupSnapshot::new(tier, now - 60, format!("snap-{}", tier.as_str()), "f".repeat(64));
+        let snap = BackupSnapshot::new(
+            tier,
+            now - 60,
+            format!("snap-{}", tier.as_str()),
+            "f".repeat(64),
+        );
         v.record_snapshot(snap).expect("record snapshot");
         let out = v.verify_freshness(tier, now).expect("verify freshness");
         assert_eq!(out.status, VerificationStatus::Ok);

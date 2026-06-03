@@ -67,8 +67,7 @@ fn region_strategy() -> impl Strategy<Value = CanaryRegion> {
 }
 
 fn latencies_strategy() -> impl Strategy<Value = CanaryLatenciesMs> {
-    (0u32..=200, 0u32..=120, 0u32..=80)
-        .prop_map(|(a, b, c)| CanaryLatenciesMs::new(a, b, c))
+    (0u32..=200, 0u32..=120, 0u32..=80).prop_map(|(a, b, c)| CanaryLatenciesMs::new(a, b, c))
 }
 
 fn health_strategy() -> impl Strategy<Value = ObservabilityHealthReport> {
@@ -324,7 +323,10 @@ fn surface_pinning_canary_schema_version() {
 
 #[test]
 fn surface_pinning_72h_loop_target_lote_10_9bis_p0_a() {
-    assert_eq!(corelink_telemetry::canary::SUSTAINED_72H_LOOP_TARGET, 12_960);
+    assert_eq!(
+        corelink_telemetry::canary::SUSTAINED_72H_LOOP_TARGET,
+        12_960
+    );
 }
 
 #[test]

@@ -1,5 +1,14 @@
 //! Example: Basic SLSA L3 provenance verification (WI-S12-001).
-#![allow(clippy::print_stdout, clippy::print_stderr, clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 //!
 //! Demonstrates verifying a `provenance.intoto.bundle` file using an org-scoped
 //! builder pattern (`humangr-labs/corelink-server`).
@@ -16,7 +25,9 @@ use corelink_ops::supply_chain::verify::{
 #[tokio::main]
 async fn main() {
     // In production: read from the release asset download
-    let bundle_path = std::env::args().nth(2).unwrap_or_else(|| "provenance.intoto.bundle".to_string());
+    let bundle_path = std::env::args()
+        .nth(2)
+        .unwrap_or_else(|| "provenance.intoto.bundle".to_string());
 
     let bundle_json = match std::fs::read_to_string(&bundle_path) {
         Ok(s) => s,

@@ -112,10 +112,7 @@ impl BucketKey {
     /// Build a `PerTenantPerEndpoint` bucket key. The endpoint id is
     /// the canonical route literal (e.g. `"cas.put"` / `"ac.get"`).
     #[must_use]
-    pub fn per_tenant_per_endpoint(
-        tenant_id: Uuid,
-        endpoint_id: impl Into<String>,
-    ) -> Self {
+    pub fn per_tenant_per_endpoint(tenant_id: Uuid, endpoint_id: impl Into<String>) -> Self {
         Self {
             tenant_id,
             dimension: KeyDimension::PerTenantPerEndpoint,

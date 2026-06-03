@@ -63,8 +63,12 @@ static REGION_LEAK_FAILURES: AtomicU64 = AtomicU64::new(0);
 const S14_REGIONS: [Region; 4] = [Region::Wnam, Region::Enam, Region::Weur, Region::Sam];
 
 /// 4 backend operation kinds per WI-S14-002 coverage matrix.
-const S14_BACKENDS: [BackendKind; 4] =
-    [BackendKind::Cas, BackendKind::Kv, BackendKind::D1Metadata, BackendKind::Manifest];
+const S14_BACKENDS: [BackendKind; 4] = [
+    BackendKind::Cas,
+    BackendKind::Kv,
+    BackendKind::D1Metadata,
+    BackendKind::Manifest,
+];
 
 // ── Proptest strategies ───────────────────────────────────────────────────────
 
@@ -291,9 +295,15 @@ fn test_coverage_matrix_all_4_regions_x_4_ops() {
     }
 
     // 4 regions × 4 backends correct = 16 accepted
-    assert_eq!(accepted_cells, 16, "16 accepted cells (4 regions × 4 backends correct)");
+    assert_eq!(
+        accepted_cells, 16,
+        "16 accepted cells (4 regions × 4 backends correct)"
+    );
     // 4 regions × 3 wrong regions × 4 backends = 48 rejected
-    assert_eq!(rejected_cells, 48, "48 rejected cells (4 regions × 3 wrong × 4 backends)");
+    assert_eq!(
+        rejected_cells, 48,
+        "48 rejected cells (4 regions × 3 wrong × 4 backends)"
+    );
 }
 
 // ── All 4 S-14 regions: correct request accepted for each ─────────────────────
@@ -323,7 +333,10 @@ fn test_all_s14_region_pairs_cross_region_rejected() {
             let ctx = TenantCtx::new(format!("{}-pair-test", pinned.as_str()), pinned);
             let enf = InMemoryResidencyEnforcement::new();
             let result = enf.assert_request_residency(&ctx, wrong);
-            let valid = matches!(result, Err(ResidencyViolation::RequestRegionMismatch { .. }));
+            let valid = matches!(
+                result,
+                Err(ResidencyViolation::RequestRegionMismatch { .. })
+            );
             assert!(
                 valid,
                 "cross-region pair must be rejected: pinned={pinned:?} wrong={wrong:?} result={result:?}"
@@ -358,7 +371,11 @@ fn test_region_from_host_header_tampering_ignored() {
     // An enam tenant's correct domain
     let correct_host = "tenant-abc.enam.corelink.humangr.com";
     let parsed = region_from_host(correct_host);
-    assert_eq!(parsed, Some(Region::Enam), "must parse enam from correct host");
+    assert_eq!(
+        parsed,
+        Some(Region::Enam),
+        "must parse enam from correct host"
+    );
 
     // Attacker passes a fake X-Region header with "weur" — but region_from_host
     // only looks at the host; header is ignored at this layer.
@@ -389,7 +406,10 @@ fn test_tenant_id_ne_does_not_shortcircuit() {
     let enf2 = InMemoryResidencyEnforcement::new();
     let cross = enf2.assert_request_residency(&ctx_a, Region::Enam);
     let valid = matches!(cross, Err(ResidencyViolation::RequestRegionMismatch { .. }));
-    assert!(valid, "cross-region request on tenant_a must be rejected: {cross:?}");
+    assert!(
+        valid,
+        "cross-region request on tenant_a must be rejected: {cross:?}"
+    );
 }
 
 // ── PROPTEST_CASES runtime configurability ────────────────────────────────────
@@ -397,7 +417,10 @@ fn test_tenant_id_ne_does_not_shortcircuit() {
 #[test]
 fn test_proptest_cases_runtime_configurable_s14() {
     let cases = proptest_cases();
-    assert!(cases >= 1_000, "proptest_cases must be >= 1000; got {cases}");
+    assert!(
+        cases >= 1_000,
+        "proptest_cases must be >= 1000; got {cases}"
+    );
     // Default is 30_000 per WI-S14-002 §6.1.6 unless CI overrides
 }
 

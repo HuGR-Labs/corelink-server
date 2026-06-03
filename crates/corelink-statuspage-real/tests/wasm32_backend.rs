@@ -45,12 +45,8 @@ fn in_memory_backend_published_audit_shape_matches_wasm32_contract() {
     // with identical emit_audit semantics; the in-memory backend is
     // therefore the canonical contract pinned here.
     let audit = Arc::new(InMemoryStatuspageAuditSink::new());
-    let backend = InMemoryStatuspageBackend::new(
-        "page-1",
-        "metric-1",
-        "abcdef1234567890",
-        audit.clone(),
-    );
+    let backend =
+        InMemoryStatuspageBackend::new("page-1", "metric-1", "abcdef1234567890", audit.clone());
     let report = sample_report();
     let out = backend
         .publish_dsr_metric(&report, 1_000)
@@ -86,12 +82,7 @@ fn rate_limit_audit_shape_pinned_for_wasm32_parity() {
     // local rate-limiter denies a publish. Pin the in-memory
     // backend's emit shape so any drift fails CI.
     let audit = Arc::new(InMemoryStatuspageAuditSink::new());
-    let backend = InMemoryStatuspageBackend::new(
-        "p",
-        "m",
-        "abcdef1234567890",
-        audit.clone(),
-    );
+    let backend = InMemoryStatuspageBackend::new("p", "m", "abcdef1234567890", audit.clone());
     let report = sample_report();
     backend
         .publish_dsr_metric(&report, 0)

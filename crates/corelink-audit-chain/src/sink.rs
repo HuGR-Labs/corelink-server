@@ -71,9 +71,7 @@ use std::sync::{Arc, Mutex};
 
 use uuid::Uuid;
 
-use crate::audit::{
-    AuditChainAuditEventType, AuditChainAuditRecord, AuditChainAuditSink,
-};
+use crate::audit::{AuditChainAuditEventType, AuditChainAuditRecord, AuditChainAuditSink};
 use crate::chain::HashChainBuilder;
 use crate::error::{AuditChainError, R2AuditSinkError};
 use crate::event::{AuditEvent, ChainHash};
@@ -137,12 +135,20 @@ fn days_since_epoch_to_ymd(z: i64) -> (i64, u32, u32) {
     let z = z.saturating_add(719_468);
     let era = if z >= 0 { z } else { z.saturating_sub(146_096) } / 146_097;
     let doe = z.saturating_sub(era.saturating_mul(146_097)) as u64;
-    let yoe = (doe.saturating_sub(doe / 1460).saturating_sub(doe / 36524).saturating_add(doe / 146096)) / 365;
+    let yoe = (doe
+        .saturating_sub(doe / 1460)
+        .saturating_sub(doe / 36524)
+        .saturating_add(doe / 146096))
+        / 365;
     let y = (yoe as i64).saturating_add(era.saturating_mul(400));
     let doy = doe.saturating_sub(365 * yoe + yoe / 4 - yoe / 100);
     let mp = (5 * doy + 2) / 153;
     let d = (doy.saturating_sub((153 * mp + 2) / 5).saturating_add(1)) as u32;
-    let m = if mp < 10 { (mp + 3) as u32 } else { (mp - 9) as u32 };
+    let m = if mp < 10 {
+        (mp + 3) as u32
+    } else {
+        (mp - 9) as u32
+    };
     let y_final = if m <= 2 { y.saturating_add(1) } else { y };
     (y_final, m, d)
 }
@@ -273,7 +279,9 @@ where
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
-        g.chains.get(&tenant_id).map_or(0, HashChainBuilder::next_sequence)
+        g.chains
+            .get(&tenant_id)
+            .map_or(0, HashChainBuilder::next_sequence)
     }
 
     /// Compute the canonical (next_sequence, prev_hash) tuple the next
@@ -288,7 +296,8 @@ where
     pub fn next_link_inputs(&self, tenant_id: Uuid) -> (u64, ChainHash) {
         (
             self.next_sequence(tenant_id),
-            self.chain_head(tenant_id).unwrap_or_else(ChainHash::genesis),
+            self.chain_head(tenant_id)
+                .unwrap_or_else(ChainHash::genesis),
         )
     }
 
@@ -342,11 +351,13 @@ where
         // + prev_hash sanity check + JCS canonicalize + BLAKE3 link).
         // The append-or-resume sequence is INSIDE the critical section
         // so a parallel emit observer the freshly-advanced state.
-        let mut g = self
-            .state
-            .lock()
-            .map_err(|_| AuditChainError::Internal("audit-chain sink mutex poisoned".to_string()))?;
-        let builder = g.chains.entry(tenant_id).or_insert_with(HashChainBuilder::new);
+        let mut g = self.state.lock().map_err(|_| {
+            AuditChainError::Internal("audit-chain sink mutex poisoned".to_string())
+        })?;
+        let builder = g
+            .chains
+            .entry(tenant_id)
+            .or_insert_with(HashChainBuilder::new);
         let link_hash = builder.append(&event)?;
 
         // 3. Serialize NDJSON + canonical R2 key + buffer push (the
@@ -393,10 +404,11 @@ where
             now_ms,
             sequence_number,
         })?;
-        let mut g = self
-            .state
-            .lock()
-            .map_err(|_| AuditChainError::Internal("audit-chain sink mutex poisoned (sink_failure bump)".to_string()))?;
+        let mut g = self.state.lock().map_err(|_| {
+            AuditChainError::Internal(
+                "audit-chain sink mutex poisoned (sink_failure bump)".to_string(),
+            )
+        })?;
         g.sink_failure_count = g.sink_failure_count.saturating_add(1);
         Ok(())
     }
@@ -492,12 +504,7 @@ mod tests {
         )
     }
 
-    fn next_event_for(
-        sink: &Sink,
-        tenant: Uuid,
-        kind: AuditEventKind,
-        time_ms: u64,
-    ) -> AuditEvent {
+    fn next_event_for(sink: &Sink, tenant: Uuid, kind: AuditEventKind, time_ms: u64) -> AuditEvent {
         let (seq, prev) = sink.next_link_inputs(tenant);
         AuditEvent::new(
             kind,
@@ -633,7 +640,9 @@ mod tests {
             .unwrap();
         assert_eq!(s.sink_failure_count(), 1);
         assert_eq!(
-            audit.snapshot_of(AuditChainAuditEventType::SinkFailure).len(),
+            audit
+                .snapshot_of(AuditChainAuditEventType::SinkFailure)
+                .len(),
             1
         );
     }
@@ -653,8 +662,9 @@ mod tests {
     fn captured_r2_audit_sink_persists_line() {
         let captured = CapturedR2AuditSink::new();
         let line = PersistedAuditLine {
-            r2_key: "audit/00000000-0000-0000-0000-000000000000/2026-05-02/00000000.cloudevent.ndjson"
-                .to_string(),
+            r2_key:
+                "audit/00000000-0000-0000-0000-000000000000/2026-05-02/00000000.cloudevent.ndjson"
+                    .to_string(),
             ndjson: "{\"x\":1}".to_string(),
             tenant_id: Uuid::nil(),
             sequence_number: 0,
@@ -705,16 +715,10 @@ mod tests {
         // Anchor 1: epoch (1970-01-01).
         assert_eq!(canonical_date_yyyy_mm_dd(0), "1970-01-01");
         // Anchor 2: 2023-11-14 (1_700_000_000_000 ms).
-        assert_eq!(
-            canonical_date_yyyy_mm_dd(1_700_000_000_000),
-            "2023-11-14"
-        );
+        assert_eq!(canonical_date_yyyy_mm_dd(1_700_000_000_000), "2023-11-14");
         // Anchor 3: 2026-05-02 (charter date).
         // 2026-05-02T00:00:00Z = 1_777_680_000_000 ms.
-        assert_eq!(
-            canonical_date_yyyy_mm_dd(1_777_680_000_000),
-            "2026-05-02"
-        );
+        assert_eq!(canonical_date_yyyy_mm_dd(1_777_680_000_000), "2026-05-02");
     }
 
     #[test]
@@ -734,7 +738,10 @@ mod tests {
             json!({}),
         );
         let err = s.emit(bad, "req-1", 1000).unwrap_err();
-        assert!(matches!(err, AuditChainError::SequenceOrderingViolation { .. }));
+        assert!(matches!(
+            err,
+            AuditChainError::SequenceOrderingViolation { .. }
+        ));
         // Chain head untouched.
         assert_eq!(s.next_sequence(tenant), 0);
     }

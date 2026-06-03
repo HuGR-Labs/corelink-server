@@ -41,7 +41,9 @@ use corelink_server::byok_orchestrator::{
 )))]
 #[tokio::test]
 async fn default_dispatch_returns_in_memory_fake() {
-    let p = make_provider().await.expect("orchestrator must succeed in default mode");
+    let p = make_provider()
+        .await
+        .expect("orchestrator must succeed in default mode");
     // The fake reports `AwsKms` for downstream compatibility, but
     // `fips_level()` is `None` — that's the load-bearing assertion
     // that distinguishes the fake from any real provider.
@@ -229,11 +231,11 @@ async fn in_memory_fake_check_access_returns_ok() {
     let fake = InMemoryFake::with_region("custom-fake-region");
     assert_eq!(fake.region(), "custom-fake-region");
     let key = test_key_id();
-    let status = fake.check_access(&key).await.expect("check_access must succeed");
-    assert!(matches!(
-        status,
-        corelink_byok::types::KmsAccessStatus::Ok
-    ));
+    let status = fake
+        .check_access(&key)
+        .await
+        .expect("check_access must succeed");
+    assert!(matches!(status, corelink_byok::types::KmsAccessStatus::Ok));
 }
 
 #[tokio::test]

@@ -24,10 +24,10 @@ use super::types::R2_LIST_PAGE_SIZE;
 
 #[tokio::test]
 async fn in_memory_pager_returns_pages_then_none() {
+    use corelink_analytics::Region;
     use corelink_audit_chain::{
         AuditEvent, AuditEventKind, HashChainBuilder, InMemoryAuditExporter,
     };
-    use corelink_analytics::Region;
     use serde_json::json;
     // Seed 5 rows; ask for a pager with page_size=2 → expect
     // pages [2, 2, 1] then Some([]) (no rows left at boundary; the
@@ -86,10 +86,10 @@ async fn in_memory_pager_clamps_zero_page_size_to_default() {
 
 #[tokio::test]
 async fn async_stream_yields_rows_across_pages_then_manifest() {
+    use corelink_analytics::Region;
     use corelink_audit_chain::{
         AuditEvent, AuditEventKind, HashChainBuilder, InMemoryAuditExporter,
     };
-    use corelink_analytics::Region;
     use futures::StreamExt;
     use serde_json::json;
     let tenant = Uuid::from_u128(0x1234);
@@ -147,10 +147,10 @@ async fn async_stream_yields_rows_across_pages_then_manifest() {
 async fn async_stream_audit_anchor_emits_before_trailer_on_mid_page_break() {
     // Inject a tampered row in page 0; assert the audit sink
     // received the SEV-0 emit BEFORE the trailer frame is yielded.
+    use corelink_analytics::Region;
     use corelink_audit_chain::{
         AuditEvent, AuditEventKind, HashChainBuilder, InMemoryAuditExporter,
     };
-    use corelink_analytics::Region;
     use futures::StreamExt;
     use serde_json::json;
     let tenant = Uuid::from_u128(0xC001);
@@ -183,8 +183,7 @@ async fn async_stream_audit_anchor_emits_before_trailer_on_mid_page_break() {
     // Keep the manifest line for completeness even though we'll
     // never emit it (the abort path returns before manifest).
     let manifest_line = "irrelevant".to_string();
-    let sink: Arc<InMemoryExportAuditSink> =
-        Arc::new(InMemoryExportAuditSink::new());
+    let sink: Arc<InMemoryExportAuditSink> = Arc::new(InMemoryExportAuditSink::new());
     let sink_dyn: Arc<dyn ExportAuditSink> = sink.clone();
     // Pass `bogus_anchor` so verify fails on row 0.
     let _ = result.rows.iter_mut();
@@ -221,7 +220,10 @@ async fn async_stream_audit_anchor_emits_before_trailer_on_mid_page_break() {
         }
     }
     assert!(trailer_seen, "expected trailer on break path");
-    assert!(audit_seen_before_trailer, "audit-anchor-BEFORE-trailer invariant violated");
+    assert!(
+        audit_seen_before_trailer,
+        "audit-anchor-BEFORE-trailer invariant violated"
+    );
     // Sanity: the unused `real_anchor` keeps the seed deterministic.
     assert_ne!(real_anchor.to_hex(), bogus_anchor.to_hex());
 }

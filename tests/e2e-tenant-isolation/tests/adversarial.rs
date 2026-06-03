@@ -35,14 +35,14 @@
 
 use async_trait::async_trait;
 use corelink_byok::{
-    BYOKError, Dek, DekCache, EnvelopeEncryptor, FipsLevel, KmsAccessStatus, KmsKeyId,
-    KmsProvider, KmsProviderKind, WrappedDek,
+    BYOKError, Dek, DekCache, EnvelopeEncryptor, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
+    KmsProviderKind, WrappedDek,
 };
 use e2e_tenant_isolation::{
-    AuditCapture, AuditChain, AuditQueryEngine, CasStore, CmkRotationLedger,
-    ConstantTimeAuthProbe, DenyKind, DsrIntake, HierarchicalQuotaStore, IdempotencyStore,
-    KvReplicatedPatStore, MultipartBroker, PatRevokeLedger, PatStore, QuotaStore, RateLimiter,
-    RegionRouter, StripeWebhookLedger, TenantCtx,
+    AuditCapture, AuditChain, AuditQueryEngine, CasStore, CmkRotationLedger, ConstantTimeAuthProbe,
+    DenyKind, DsrIntake, HierarchicalQuotaStore, IdempotencyStore, KvReplicatedPatStore,
+    MultipartBroker, PatRevokeLedger, PatStore, QuotaStore, RateLimiter, RegionRouter,
+    StripeWebhookLedger, TenantCtx,
 };
 use uuid::Uuid;
 
@@ -111,15 +111,22 @@ fn s01_cas_read_other_tenant_denied_and_audited() {
     let b = TenantCtx::tenant_b().unwrap();
 
     // Tenant B seeds a private blob.
-    cas.seed(b.tenant_id(), b.prefix(), "blob_secret", b"secret_b".to_vec())
-        .unwrap();
+    cas.seed(
+        b.tenant_id(),
+        b.prefix(),
+        "blob_secret",
+        b"secret_b".to_vec(),
+    )
+    .unwrap();
 
     let before = audit.count();
     // Tenant A authenticated, hits the path bound to B's prefix.
     let r = cas.get(a.tenant_id(), b.prefix(), "blob_secret");
     assert!(matches!(
         r,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::AuthzTenantMismatch))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::AuthzTenantMismatch
+        ))
     ));
     // Audit emitted BEFORE rejection (fail-CLOSED ordering).
     assert_eq!(audit.count(), before + 1);
@@ -152,7 +159,9 @@ fn s02_cas_write_to_other_tenant_prefix_denied() {
     );
     assert!(matches!(
         r,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::AuthzTenantMismatch))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::AuthzTenantMismatch
+        ))
     ));
     assert_eq!(audit.count(), before + 1);
 
@@ -395,10 +404,15 @@ fn s07_d1_row_spoofing_rejected_jwt_wins() {
     );
     assert!(matches!(
         r,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::JwtBodyTenantConflict))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::JwtBodyTenantConflict
+        ))
     ));
     assert_eq!(audit.count(), before + 1);
-    assert_eq!(audit.last_deny().unwrap().kind, DenyKind::JwtBodyTenantConflict);
+    assert_eq!(
+        audit.last_deny().unwrap().kind,
+        DenyKind::JwtBodyTenantConflict
+    );
 }
 
 /// Scenario 8 — Idempotency key collision across tenants: same
@@ -434,7 +448,9 @@ fn s08_idempotency_key_collision_is_independent_per_tenant() {
     let r_a3 = idem.claim(a.tenant_id(), "key-1", 0xCCCC);
     assert!(matches!(
         r_a3,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::IdempotencyConflict))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::IdempotencyConflict
+        ))
     ));
     assert_eq!(audit.count(), 1);
 }
@@ -459,7 +475,9 @@ fn s09_quota_crosstalk_isolated() {
     let r_a = quota.try_consume(a.tenant_id());
     assert!(matches!(
         r_a,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::QuotaExhausted))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::QuotaExhausted
+        ))
     ));
     assert_eq!(audit.count(), 1);
 
@@ -493,7 +511,9 @@ fn s10_rate_limit_crosstalk_isolated() {
     let r = rl.try_take(a.tenant_id());
     assert!(matches!(
         r,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::RateLimited))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::RateLimited
+        ))
     ));
     assert_eq!(rl.remaining(a.tenant_id()), 0);
     // Tenant B is not throttled.
@@ -524,7 +544,9 @@ fn s11_stripe_webhook_replay_cross_tenant_rejected() {
     let r = ledger.process(b.tenant_id(), "evt_1234");
     assert!(matches!(
         r,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::StripeReplay))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::StripeReplay
+        ))
     ));
     assert_eq!(audit.count(), 1);
     let deny = audit.last_deny().unwrap();
@@ -558,7 +580,9 @@ fn s12_pat_cross_tenant_use_rejected() {
     let r = pats.authorize("pat_A_secret", b.tenant_id());
     assert!(matches!(
         r,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::PatSignatureInvalid))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::PatSignatureInvalid
+        ))
     ));
     assert_eq!(audit.count(), 1);
     let deny = audit.last_deny().unwrap();
@@ -570,7 +594,9 @@ fn s12_pat_cross_tenant_use_rejected() {
     let r2 = pats.authorize("pat_unknown", b.tenant_id());
     assert!(matches!(
         r2,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::PatSignatureInvalid))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::PatSignatureInvalid
+        ))
     ));
     assert_eq!(audit.count(), 2);
 }
@@ -636,7 +662,9 @@ fn s14_cas_cache_poisoning_cross_tenant_isolated() {
     let r_cross = cas.get(b.tenant_id(), a.prefix(), blob_key);
     assert!(matches!(
         r_cross,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::AuthzTenantMismatch))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::AuthzTenantMismatch
+        ))
     ));
     assert_eq!(audit.count(), 1);
 }
@@ -667,7 +695,9 @@ fn s15_cmk_rotation_race_no_half_state() {
     let r_half = ledger.read_with_version(a.tenant_id(), 9);
     assert!(matches!(
         r_half,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::CmkRotationInFlight))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::CmkRotationInFlight
+        ))
     ));
     assert_eq!(audit.count(), 1);
 
@@ -677,7 +707,9 @@ fn s15_cmk_rotation_race_no_half_state() {
     let r_old = ledger.read_with_version(a.tenant_id(), 7);
     assert!(matches!(
         r_old,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::CmkRotationInFlight))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::CmkRotationInFlight
+        ))
     ));
     assert_eq!(audit.count(), 2);
 }
@@ -708,13 +740,17 @@ fn s16_pat_revoke_toctou_no_window() {
     let r_boundary = ledger.authorize_at("pat_X", a.tenant_id(), 200);
     assert!(matches!(
         r_boundary,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::PatRevoked))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::PatRevoked
+        ))
     ));
     // After (250): also rejected — closed forever.
     let r_after = ledger.authorize_at("pat_X", a.tenant_id(), 250);
     assert!(matches!(
         r_after,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::PatRevoked))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::PatRevoked
+        ))
     ));
     assert_eq!(audit.count(), 2);
 }
@@ -756,7 +792,9 @@ fn s17_idempotency_collision_mixed_case_cross_tenant() {
     let r_collide = idem.claim(a.tenant_id(), "Key-1", 0xEEEE);
     assert!(matches!(
         r_collide,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::IdempotencyConflict))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::IdempotencyConflict
+        ))
     ));
     assert_eq!(audit.count(), 1);
 }
@@ -779,15 +817,21 @@ fn s18_audit_chain_leaf_forge_rejected() {
     chain.append(b.tenant_id(), b"leaf_b_1".to_vec()).unwrap();
 
     // Sanity: own-chain verify ok.
-    chain.verify(a.tenant_id(), a.tenant_id(), b"leaf_a_1").unwrap();
-    chain.verify(b.tenant_id(), b.tenant_id(), b"leaf_b_1").unwrap();
+    chain
+        .verify(a.tenant_id(), a.tenant_id(), b"leaf_a_1")
+        .unwrap();
+    chain
+        .verify(b.tenant_id(), b.tenant_id(), b"leaf_b_1")
+        .unwrap();
 
     // Adversarial: A constructs a forged leaf claiming B's chain.
     let forged = b"leaf_a_FORGED_AS_B".to_vec();
     let r = chain.verify(a.tenant_id(), b.tenant_id(), &forged);
     assert!(matches!(
         r,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::AuditChainForge))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::AuditChainForge
+        ))
     ));
     assert_eq!(audit.count(), 1);
     let last = audit.last_deny().unwrap();
@@ -799,7 +843,9 @@ fn s18_audit_chain_leaf_forge_rejected() {
     let r2 = chain.verify(a.tenant_id(), b.tenant_id(), b"leaf_a_1");
     assert!(matches!(
         r2,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::AuditChainForge))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::AuditChainForge
+        ))
     ));
     assert_eq!(audit.count(), 2);
 }
@@ -827,7 +873,9 @@ fn s19_cross_region_replay_residency_enforced() {
     let r = router.route(a.tenant_id(), "us-east");
     assert!(matches!(
         r,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::RegionResidencyViolation))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::RegionResidencyViolation
+        ))
     ));
     assert_eq!(audit.count(), 1);
     let deny = audit.last_deny().unwrap();
@@ -856,7 +904,9 @@ fn s20_dsr_cross_tenant_submission_rejected() {
     let r = dsr.submit(a.tenant_id(), b.tenant_id(), "bob@example.com");
     assert!(matches!(
         r,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::DsrAuthContextMismatch))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::DsrAuthContextMismatch
+        ))
     ));
     assert_eq!(audit.count(), 1);
     let deny = audit.last_deny().unwrap();
@@ -888,7 +938,9 @@ fn s21_quota_inheritance_siblings_isolated() {
     let r = quota.try_consume(child_a);
     assert!(matches!(
         r,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::QuotaInheritanceLeak))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::QuotaInheritanceLeak
+        ))
     ));
     assert_eq!(audit.count(), 1);
     // child_b is unaffected.
@@ -914,7 +966,9 @@ fn s22_multipart_upload_cross_tenant_forge_rejected() {
     let a = TenantCtx::tenant_a().unwrap();
     let b = TenantCtx::tenant_b().unwrap();
 
-    broker.create(a.tenant_id(), a.prefix(), "upload-xyz").unwrap();
+    broker
+        .create(a.tenant_id(), a.prefix(), "upload-xyz")
+        .unwrap();
     // Owner uploads part — ok.
     broker
         .upload_part(a.tenant_id(), a.prefix(), "upload-xyz", b"part1".to_vec())
@@ -925,7 +979,9 @@ fn s22_multipart_upload_cross_tenant_forge_rejected() {
     let r = broker.upload_part(b.tenant_id(), b.prefix(), "upload-xyz", b"evil".to_vec());
     assert!(matches!(
         r,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::MultipartUploadForge))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::MultipartUploadForge
+        ))
     ));
     assert_eq!(audit.count(), 1);
     let deny = audit.last_deny().unwrap();
@@ -936,7 +992,9 @@ fn s22_multipart_upload_cross_tenant_forge_rejected() {
     let r2 = broker.abort(b.tenant_id(), "upload-xyz");
     assert!(matches!(
         r2,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::MultipartUploadForge))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::MultipartUploadForge
+        ))
     ));
     assert_eq!(audit.count(), 2);
 }
@@ -963,7 +1021,9 @@ fn s23_stripe_webhook_cross_account_spoof_rejected() {
     let r = ledger.process(b.tenant_id(), "evt_spoof_001");
     assert!(matches!(
         r,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::StripeReplay))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::StripeReplay
+        ))
     ));
     assert_eq!(audit.count(), 1);
 
@@ -974,7 +1034,9 @@ fn s23_stripe_webhook_cross_account_spoof_rejected() {
     let r2 = ledger.process(b.tenant_id(), "evt_spoof_002");
     assert!(matches!(
         r2,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::StripeReplay))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::StripeReplay
+        ))
     ));
     assert_eq!(audit.count(), 2);
     let deny = audit.last_deny().unwrap();
@@ -1010,7 +1072,9 @@ fn s24_kv_partition_pat_revoke_fail_closed() {
     let r = store.authorize_remote("pat_P", a.tenant_id(), true);
     assert!(matches!(
         r,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::KvReplicationLag))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::KvReplicationLag
+        ))
     ));
     assert_eq!(audit.count(), 1);
 
@@ -1019,7 +1083,9 @@ fn s24_kv_partition_pat_revoke_fail_closed() {
     let r2 = store.authorize_remote("pat_P", a.tenant_id(), false);
     assert!(matches!(
         r2,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::KvReplicationLag))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::KvReplicationLag
+        ))
     ));
     assert_eq!(audit.count(), 2);
 
@@ -1028,7 +1094,9 @@ fn s24_kv_partition_pat_revoke_fail_closed() {
     let r3 = store.authorize_remote("pat_P", a.tenant_id(), false);
     assert!(matches!(
         r3,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::KvReplicationLag))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::KvReplicationLag
+        ))
     ));
     assert_eq!(audit.count(), 3);
 }
@@ -1065,7 +1133,9 @@ fn s25_audit_query_injection_rejected() {
     let r = q.query(a.tenant_id(), Some(b.tenant_id()));
     assert!(matches!(
         r,
-        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::AuditQueryInjection))
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(
+            DenyKind::AuditQueryInjection
+        ))
     ));
     assert_eq!(audit.count(), 1);
     let deny = audit.last_deny().unwrap();

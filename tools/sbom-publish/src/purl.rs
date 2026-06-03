@@ -17,8 +17,7 @@
 //!    when the component name appears in the supplied patch list.
 
 /// Canonical VCS URL for workspace member discriminator.
-pub const WORKSPACE_VCS_URL: &str =
-    "https://github.com/humangr-labs/corelink-server";
+pub const WORKSPACE_VCS_URL: &str = "https://github.com/humangr-labs/corelink-server";
 
 /// Normalise a single PURL string from cargo-cyclonedx output.
 ///
@@ -90,7 +89,11 @@ pub fn normalise_sbom_purls(
         let is_workspace = workspace_members.contains(&name.as_str());
         let is_patched = patched_crates.contains(&name.as_str());
 
-        if let Some(purl_val) = component.get("purl").and_then(|p| p.as_str()).map(|s| s.to_owned()) {
+        if let Some(purl_val) = component
+            .get("purl")
+            .and_then(|p| p.as_str())
+            .map(|s| s.to_owned())
+        {
             let (primary, alias) = normalise_purl(&purl_val, is_workspace);
             if let Some(obj) = component.as_object_mut() {
                 obj.insert("purl".to_owned(), serde_json::Value::String(primary));

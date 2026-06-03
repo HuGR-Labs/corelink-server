@@ -202,30 +202,22 @@ pub mod retry_after;
 pub mod state;
 
 pub use audit::{
-    canonical_audit_event_strings, FailingQuotaCasAuditSink,
-    InMemoryQuotaCasAuditSink, QuotaCasAuditRecord, QuotaCasAuditSink,
-    QuotaCasAuditSinkError, QuotaCasEventType,
+    canonical_audit_event_strings, FailingQuotaCasAuditSink, InMemoryQuotaCasAuditSink,
+    QuotaCasAuditRecord, QuotaCasAuditSink, QuotaCasAuditSinkError, QuotaCasEventType,
 };
-pub use cas::{
-    AtomicQuotaChecker, InMemoryAtomicQuotaChecker, QuotaCasDecision,
-    QuotaCasOutcome,
-};
-pub use config::{
-    QuotaCasConfig, DEFAULT_HARD_BLOCK_PCT, DEFAULT_MAX_CAS_ATTEMPTS,
-};
+pub use cas::{AtomicQuotaChecker, InMemoryAtomicQuotaChecker, QuotaCasDecision, QuotaCasOutcome};
+pub use config::{QuotaCasConfig, DEFAULT_HARD_BLOCK_PCT, DEFAULT_MAX_CAS_ATTEMPTS};
 pub use error::QuotaCasError;
 pub use metrics::{
-    canonical_metric_names, FailingQuotaCasMetrics, InMemoryQuotaCasMetrics,
-    QuotaCasMetricKind, QuotaCasMetricsObserver,
-    QuotaCasMetricsObserverError, QuotaCasResultLabel,
+    canonical_metric_names, FailingQuotaCasMetrics, InMemoryQuotaCasMetrics, QuotaCasMetricKind,
+    QuotaCasMetricsObserver, QuotaCasMetricsObserverError, QuotaCasResultLabel,
 };
 pub use retry_after::{
-    days_until_month_reset_secs, next_month_first_utc_midnight_secs,
-    MAX_SECS_PER_MONTH, RETRY_AFTER_MIN_SECS,
+    days_until_month_reset_secs, next_month_first_utc_midnight_secs, MAX_SECS_PER_MONTH,
+    RETRY_AFTER_MIN_SECS,
 };
 pub use state::{
-    AtomicCasState, AtomicCasStateError, AtomicTenantBytesState,
-    InMemoryAtomicCasState,
+    AtomicCasState, AtomicCasStateError, AtomicTenantBytesState, InMemoryAtomicCasState,
 };
 
 /// Returns the canonical schema version recorded by the latest

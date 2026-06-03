@@ -176,14 +176,7 @@ mod tests {
 
     #[test]
     fn with_overrides_accepts_valid() {
-        let c = RateLimitConfig::with_overrides(
-            100,
-            500,
-            5,
-            3600,
-            86_400,
-        )
-        .unwrap();
+        let c = RateLimitConfig::with_overrides(100, 500, 5, 3600, 86_400).unwrap();
         assert_eq!(c.default_refill_rate_per_sec(), 100);
         assert_eq!(c.default_burst_capacity(), 500);
         assert_eq!(c.retry_after_floor_secs(), 5);
@@ -200,12 +193,8 @@ mod tests {
     fn with_overrides_rejects_floor_at_or_above_ceiling() {
         // Inversion — floor MUST be strictly below the live-tenant
         // ceiling.
-        assert!(
-            RateLimitConfig::with_overrides(100, 500, 60, 60, 86_400).is_none()
-        );
-        assert!(
-            RateLimitConfig::with_overrides(100, 500, 600, 60, 86_400).is_none()
-        );
+        assert!(RateLimitConfig::with_overrides(100, 500, 60, 60, 86_400).is_none());
+        assert!(RateLimitConfig::with_overrides(100, 500, 600, 60, 86_400).is_none());
     }
 
     #[test]
@@ -213,8 +202,6 @@ mod tests {
         // Canceled tenant value MUST saturate strictly above the live
         // ceiling (matches the WI §6.1.3 7-day "effectively never"
         // canonical value).
-        assert!(
-            RateLimitConfig::with_overrides(100, 500, 1, 86_400, 3600).is_none()
-        );
+        assert!(RateLimitConfig::with_overrides(100, 500, 1, 86_400, 3600).is_none());
     }
 }

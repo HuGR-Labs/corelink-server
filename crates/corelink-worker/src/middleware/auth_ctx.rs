@@ -277,9 +277,7 @@ impl AuthCtxBuilder {
 /// paths.
 #[doc(hidden)]
 pub mod __test_helpers {
-    use super::{
-        AuthCtx, AuthCtxBuilder, AuthMethod, PrincipalId, Region, TenantDerivationKey,
-    };
+    use super::{AuthCtx, AuthCtxBuilder, AuthMethod, PrincipalId, Region, TenantDerivationKey};
     use corelink_pat::PatScopes;
     use std::sync::Arc;
     use uuid::Uuid;

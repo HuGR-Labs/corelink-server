@@ -91,10 +91,7 @@ impl SyntheticPageRequest {
         correlation_id: impl Into<String>,
     ) -> Result<Self, SyntheticDrillError> {
         if emit_ts_ms > now_ms {
-            return Err(SyntheticDrillError::EmitTimestampInFuture {
-                emit_ts_ms,
-                now_ms,
-            });
+            return Err(SyntheticDrillError::EmitTimestampInFuture { emit_ts_ms, now_ms });
         }
         Ok(Self {
             drill_id,

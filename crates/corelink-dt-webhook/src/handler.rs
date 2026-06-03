@@ -24,8 +24,8 @@ use crate::{
     metrics::{MetricsSnapshot, SLA_BUDGET_MS},
     severity::{classify_cvss, routing_channels},
     types::{
-        AlertChannel, AlertDelivered, DtProjectUuid, DtSeverity, DtWebhookError, DtWebhookEvent,
-        MockInjected, SyntheticCve, VulnerabilityMetadata, ComponentMetadata, DtEventType,
+        AlertChannel, AlertDelivered, ComponentMetadata, DtEventType, DtProjectUuid, DtSeverity,
+        DtWebhookError, DtWebhookEvent, MockInjected, SyntheticCve, VulnerabilityMetadata,
     },
     DtWebhookHandler,
 };
@@ -104,10 +104,7 @@ impl InMemoryDtWebhookHandler {
 
     /// Return a reference to the DLQ for test inspection.
     pub fn dlq(&self) -> InMemoryDlq {
-        self.inner
-            .lock()
-            .map(|g| g.dlq.clone())
-            .unwrap_or_default()
+        self.inner.lock().map(|g| g.dlq.clone()).unwrap_or_default()
     }
 
     /// Check whether a component's patch-locally annotation suppresses alerting.
@@ -199,17 +196,17 @@ impl DtWebhookHandler for InMemoryDtWebhookHandler {
             .map_err(|_| DtWebhookError::DtApiUnreachable("mutex poisoned".into()))?;
 
         // ── 1. HMAC verification ──────────────────────────────────────────────
-        let body_bytes = serde_json::to_vec(&event)
-            .map_err(|e| DtWebhookError::ParseError(e.to_string()))?;
+        let body_bytes =
+            serde_json::to_vec(&event).map_err(|e| DtWebhookError::ParseError(e.to_string()))?;
 
         match &guard.current_signature.clone() {
             Some(sig) => {
-                crate::hmac::verify_signature(&guard.webhook_secret, &body_bytes, sig)
-                    .map_err(|_| {
-                        guard.last_metrics.webhook_outcome =
-                            Some("hmac_invalid".into());
+                crate::hmac::verify_signature(&guard.webhook_secret, &body_bytes, sig).map_err(
+                    |_| {
+                        guard.last_metrics.webhook_outcome = Some("hmac_invalid".into());
                         DtWebhookError::HmacInvalid
-                    })?;
+                    },
+                )?;
             }
             None => {
                 guard.last_metrics.webhook_outcome = Some("hmac_invalid".into());
@@ -233,10 +230,10 @@ impl DtWebhookHandler for InMemoryDtWebhookHandler {
             match Self::deliver_to_channel(channel, &severity, &event.vulnerability.cve_id) {
                 Ok(()) => {
                     delivered_channels.push(channel.clone());
-                    guard.last_metrics.cve_alerts_by_severity_channel.push((
-                        severity.to_string(),
-                        channel.to_string(),
-                    ));
+                    guard
+                        .last_metrics
+                        .cve_alerts_by_severity_channel
+                        .push((severity.to_string(), channel.to_string()));
                 }
                 Err(e) => {
                     // Push to DLQ on delivery failure (exponential backoff up to 3 attempts).
@@ -326,8 +323,8 @@ impl DtWebhookHandler for InMemoryDtWebhookHandler {
         };
 
         // Generate a valid HMAC for the synthetic event.
-        let body_bytes = serde_json::to_vec(&event)
-            .map_err(|e| DtWebhookError::ParseError(e.to_string()))?;
+        let body_bytes =
+            serde_json::to_vec(&event).map_err(|e| DtWebhookError::ParseError(e.to_string()))?;
         let secret = self
             .inner
             .lock()
@@ -392,16 +389,12 @@ mod chrono_mini {
                 let a = (14 - m as i32) / 12;
                 let y2 = y + 4800 - a;
                 let m2 = m as i32 + 12 * a - 3;
-                d as i64
-                    + (153 * m2 + 2) as i64 / 5
-                    + 365 * y2 as i64
-                    + y2 as i64 / 4
+                d as i64 + (153 * m2 + 2) as i64 / 5 + 365 * y2 as i64 + y2 as i64 / 4
                     - y2 as i64 / 100
                     + y2 as i64 / 400
                     - 32045
             };
-            jd(self.year, self.month, self.day)
-                - jd(other.year, other.month, other.day)
+            jd(self.year, self.month, self.day) - jd(other.year, other.month, other.day)
         }
     }
 
@@ -441,7 +434,12 @@ mod chrono_mini {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
     use crate::{

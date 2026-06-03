@@ -39,8 +39,8 @@
 use std::sync::Arc;
 
 use corelink_audit_chain::{
-    ArchiveProducer, ChainHash, FlushPolicy, InMemoryArchiveSink, PersistedAuditLine,
-    R2AuditSink, R2AuditSinkError,
+    ArchiveProducer, ChainHash, FlushPolicy, InMemoryArchiveSink, PersistedAuditLine, R2AuditSink,
+    R2AuditSinkError,
 };
 use corelink_billing_stripe_materializer::{
     ArchiveProducerBillingEmitter, AuditSeverity, BillingAuditEmitter, BillingAuditError,
@@ -89,7 +89,9 @@ fn upsert_customer_passes_sync_gate_and_stages_pending() {
 #[test]
 fn upsert_subscription_passes_sync_gate_and_stages_pending() {
     let w = writer();
-    let err = w.upsert_subscription(row("stripe_subscriptions")).unwrap_err();
+    let err = w
+        .upsert_subscription(row("stripe_subscriptions"))
+        .unwrap_err();
     assert!(
         matches!(err, BillingD1Error::Transient(ref s) if s.contains("wasm32_async_dispatch_pending"))
     );
@@ -145,9 +147,7 @@ fn try_record_event_rejects_empty_event_id() {
 #[test]
 fn try_record_event_passes_sync_gate_and_stages_pending() {
     let w = writer();
-    let err = w
-        .try_record_event("evt_1", "invoice.paid", 1)
-        .unwrap_err();
+    let err = w.try_record_event("evt_1", "invoice.paid", 1).unwrap_err();
     assert!(
         matches!(err, BillingD1Error::Transient(ref s) if s.contains("wasm32_async_dispatch_pending"))
     );
@@ -181,9 +181,7 @@ fn read_tier_rejects_cross_tenant_id() {
 #[test]
 fn upsert_tier_rejects_cross_tenant_id() {
     let w = writer();
-    let err = w
-        .upsert_tier("other_tenant", "pro", "corr_1")
-        .unwrap_err();
+    let err = w.upsert_tier("other_tenant", "pro", "corr_1").unwrap_err();
     assert!(
         matches!(err, BillingD1Error::InvalidPayload(ref s) if s.contains("does not match anchored tenant"))
     );
@@ -193,9 +191,7 @@ fn upsert_tier_rejects_cross_tenant_id() {
 fn upsert_tier_rejects_empty_tier_wire() {
     let w = writer();
     let err = w.upsert_tier(TENANT, "", "corr_1").unwrap_err();
-    assert!(
-        matches!(err, BillingD1Error::InvalidPayload(ref s) if s.contains("empty tier_wire"))
-    );
+    assert!(matches!(err, BillingD1Error::InvalidPayload(ref s) if s.contains("empty tier_wire")));
 }
 
 // ---------------------------------------------------------------------------

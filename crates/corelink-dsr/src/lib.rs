@@ -238,8 +238,7 @@ pub use audit::{
     FailingDsrAuditSink, InMemoryDsrAuditSink,
 };
 pub use endpoint::{
-    DsrEndpoint, InMemoryDsrEndpoint, CANONICAL_RECEIPT_EXPIRY_DAYS,
-    CANONICAL_RECEIPT_EXPIRY_MS,
+    DsrEndpoint, InMemoryDsrEndpoint, CANONICAL_RECEIPT_EXPIRY_DAYS, CANONICAL_RECEIPT_EXPIRY_MS,
 };
 pub use error::{DsrAuditSinkError, DsrError, DsrMfaError, DsrReceiptError, DsrStoreError};
 pub use event::{

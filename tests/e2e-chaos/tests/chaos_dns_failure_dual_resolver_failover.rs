@@ -35,6 +35,9 @@ fn chaos_dns_failure_dual_resolver_failover() {
     }
     let events = tele.audit_events();
     assert_canonical_audit_sequence(&events).unwrap();
-    assert_eq!(events, vec![ChaosAuditEvent::Started, ChaosAuditEvent::Completed]);
+    assert_eq!(
+        events,
+        vec![ChaosAuditEvent::Started, ChaosAuditEvent::Completed]
+    );
     assert_eq!(tele.slo_violation_total(), 0);
 }

@@ -269,13 +269,7 @@ impl SurveyLinkSigner for InMemoryFake {
         ttl_ms: u64,
     ) -> Result<SurveyToken, SurveyError> {
         mint_token(
-            &self.key,
-            tenant,
-            recipient,
-            survey_id,
-            kind,
-            now_ms,
-            ttl_ms,
+            &self.key, tenant, recipient, survey_id, kind, now_ms, ttl_ms,
         )
     }
 }
@@ -327,9 +321,10 @@ impl SurveyResponseRecorder for InMemoryFake {
         // Lock for the replay-check + audit-emit + storage-insert
         // critical section. The fake's lock-scope mirrors the
         // production D1 BEGIN .. COMMIT transaction.
-        let mut state = self.state.lock().map_err(|_| {
-            SurveyError::Storage("in-memory fake mutex poisoned".to_owned())
-        })?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SurveyError::Storage("in-memory fake mutex poisoned".to_owned()))?;
 
         // Gate 5: replay.
         if state.seen_jtis.contains(&token.jti()) {
@@ -344,13 +339,7 @@ impl SurveyResponseRecorder for InMemoryFake {
         }
 
         // Audit emit BEFORE insert (fail-CLOSED).
-        Self::emit_audit_locked(
-            &mut state,
-            &token,
-            "ok",
-            "survey.response.recorded",
-            now_ms,
-        )?;
+        Self::emit_audit_locked(&mut state, &token, "ok", "survey.response.recorded", now_ms)?;
 
         // Storage insert.
         if state.storage_fail_once {
@@ -403,8 +392,14 @@ mod tests {
         let tok = f
             .sign_invite(t, r.clone(), s, SurveyKind::Nps, 100, 1_000)
             .unwrap();
-        f.record(tok.as_str(), SurveyResponse::Nps { score: 9 }, 200, [0; 32], [0; 32])
-            .unwrap();
+        f.record(
+            tok.as_str(),
+            SurveyResponse::Nps { score: 9 },
+            200,
+            [0; 32],
+            [0; 32],
+        )
+        .unwrap();
         assert_eq!(f.len(), 1);
         let audit = f.audit_snapshot();
         assert_eq!(audit.len(), 1);
@@ -415,11 +410,15 @@ mod tests {
     #[test]
     fn expired_rejects_and_audits() {
         let (f, t, r, s) = fake();
-        let tok = f
-            .sign_invite(t, r, s, SurveyKind::Nps, 100, 50)
-            .unwrap();
+        let tok = f.sign_invite(t, r, s, SurveyKind::Nps, 100, 50).unwrap();
         let err = f
-            .record(tok.as_str(), SurveyResponse::Nps { score: 5 }, 200, [0; 32], [0; 32])
+            .record(
+                tok.as_str(),
+                SurveyResponse::Nps { score: 5 },
+                200,
+                [0; 32],
+                [0; 32],
+            )
             .unwrap_err();
         assert!(matches!(err, SurveyError::TokenExpired));
         assert!(f.is_empty());
@@ -431,9 +430,7 @@ mod tests {
     #[test]
     fn kind_mismatch_rejects() {
         let (f, t, r, s) = fake();
-        let tok = f
-            .sign_invite(t, r, s, SurveyKind::Nps, 100, 1_000)
-            .unwrap();
+        let tok = f.sign_invite(t, r, s, SurveyKind::Nps, 100, 1_000).unwrap();
         let err = f
             .record(
                 tok.as_str(),
@@ -449,13 +446,23 @@ mod tests {
     #[test]
     fn replay_rejected() {
         let (f, t, r, s) = fake();
-        let tok = f
-            .sign_invite(t, r, s, SurveyKind::Nps, 100, 1_000)
-            .unwrap();
-        f.record(tok.as_str(), SurveyResponse::Nps { score: 9 }, 200, [0; 32], [0; 32])
-            .unwrap();
+        let tok = f.sign_invite(t, r, s, SurveyKind::Nps, 100, 1_000).unwrap();
+        f.record(
+            tok.as_str(),
+            SurveyResponse::Nps { score: 9 },
+            200,
+            [0; 32],
+            [0; 32],
+        )
+        .unwrap();
         let err = f
-            .record(tok.as_str(), SurveyResponse::Nps { score: 9 }, 250, [0; 32], [0; 32])
+            .record(
+                tok.as_str(),
+                SurveyResponse::Nps { score: 9 },
+                250,
+                [0; 32],
+                [0; 32],
+            )
             .unwrap_err();
         assert!(matches!(err, SurveyError::ReplayRejected));
         assert_eq!(f.len(), 1);
@@ -469,7 +476,13 @@ mod tests {
             .unwrap();
         f.fail_next_audit_emit();
         let err = f
-            .record(tok.as_str(), SurveyResponse::Csat { score: 5 }, 200, [0; 32], [0; 32])
+            .record(
+                tok.as_str(),
+                SurveyResponse::Csat { score: 5 },
+                200,
+                [0; 32],
+                [0; 32],
+            )
             .unwrap_err();
         assert!(matches!(err, SurveyError::AuditEmitFailed(_)));
         assert!(f.is_empty(), "storage MUST NOT insert when audit fails");
@@ -483,7 +496,13 @@ mod tests {
             .unwrap();
         f.fail_next_storage();
         let err = f
-            .record(tok.as_str(), SurveyResponse::Csat { score: 4 }, 200, [0; 32], [0; 32])
+            .record(
+                tok.as_str(),
+                SurveyResponse::Csat { score: 4 },
+                200,
+                [0; 32],
+                [0; 32],
+            )
             .unwrap_err();
         assert!(matches!(err, SurveyError::Storage(_)));
         // Audit emitted but row not inserted; jti should NOT be in
@@ -492,8 +511,14 @@ mod tests {
         assert_eq!(audit.len(), 1);
         assert_eq!(audit[0].outcome, "ok");
         // Retry should succeed (storage_fail_once consumed).
-        f.record(tok.as_str(), SurveyResponse::Csat { score: 4 }, 200, [0; 32], [0; 32])
-            .unwrap();
+        f.record(
+            tok.as_str(),
+            SurveyResponse::Csat { score: 4 },
+            200,
+            [0; 32],
+            [0; 32],
+        )
+        .unwrap();
         assert_eq!(f.len(), 1);
     }
 
@@ -522,7 +547,9 @@ mod tests {
         let resp = SurveyResponse::FreeText {
             text: "bad\x07input".to_owned(),
         };
-        let err = f.record(tok.as_str(), resp, 10, [0; 32], [0; 32]).unwrap_err();
+        let err = f
+            .record(tok.as_str(), resp, 10, [0; 32], [0; 32])
+            .unwrap_err();
         assert!(matches!(err, SurveyError::InvalidResponse(_)));
     }
 
@@ -535,16 +562,16 @@ mod tests {
         let resp = SurveyResponse::MultiChoice {
             selected: vec![1, 1, 2],
         };
-        let err = f.record(tok.as_str(), resp, 10, [0; 32], [0; 32]).unwrap_err();
+        let err = f
+            .record(tok.as_str(), resp, 10, [0; 32], [0; 32])
+            .unwrap_err();
         assert!(matches!(err, SurveyError::InvalidResponse(_)));
     }
 
     #[test]
     fn tampered_signature_rejects() {
         let (f, t, r, s) = fake();
-        let tok = f
-            .sign_invite(t, r, s, SurveyKind::Nps, 0, 1_000)
-            .unwrap();
+        let tok = f.sign_invite(t, r, s, SurveyKind::Nps, 0, 1_000).unwrap();
         // Forge a token signed with a different key.
         let other = InMemoryFake::new(SigningKey::from_bytes([0xff; 32]));
         let forged = other
@@ -560,7 +587,13 @@ mod tests {
         // Different jti so the forged token IS distinct from `tok`.
         assert_ne!(forged.jti(), tok.jti());
         let err = f
-            .record(forged.as_str(), SurveyResponse::Nps { score: 5 }, 10, [0; 32], [0; 32])
+            .record(
+                forged.as_str(),
+                SurveyResponse::Nps { score: 5 },
+                10,
+                [0; 32],
+                [0; 32],
+            )
             .unwrap_err();
         assert!(matches!(err, SurveyError::InvalidSignature));
     }
@@ -571,9 +604,7 @@ mod tests {
         let a = f
             .sign_invite(t, r.clone(), s.clone(), SurveyKind::Nps, 0, 1_000)
             .unwrap();
-        let b = f
-            .sign_invite(t, r, s, SurveyKind::Nps, 0, 1_000)
-            .unwrap();
+        let b = f.sign_invite(t, r, s, SurveyKind::Nps, 0, 1_000).unwrap();
         assert_ne!(a.jti(), b.jti());
     }
 }

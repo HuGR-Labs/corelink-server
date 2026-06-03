@@ -226,9 +226,8 @@
 /// `wrangler d1 migrations apply`. The simulator does not parse this
 /// string; the algorithmic invariants are re-implemented directly so
 /// test failures are easy to triage.
-pub const MIGRATION_0014_GLOBAL_CIRCUIT_STATE: &str = include_str!(
-    "../../../migrations/d1/0014_global_circuit_state.sql"
-);
+pub const MIGRATION_0014_GLOBAL_CIRCUIT_STATE: &str =
+    include_str!("../../../migrations/d1/0014_global_circuit_state.sql");
 
 pub mod audit;
 pub mod circuit;
@@ -237,31 +236,26 @@ pub mod headers;
 pub mod metrics;
 
 pub use audit::{
-    canonical_audit_event_strings, CircuitAuditRecord, CircuitAuditSink,
-    CircuitAuditSinkError, CircuitEventType, FailingCircuitAuditSink,
-    InMemoryCircuitAuditSink,
+    canonical_audit_event_strings, CircuitAuditRecord, CircuitAuditSink, CircuitAuditSinkError,
+    CircuitEventType, FailingCircuitAuditSink, InMemoryCircuitAuditSink,
 };
 pub use circuit::{
-    allow_halfopen_request, evaluate_signals, CircuitDecision,
-    CircuitState, CircuitStateSnapshot, CircuitThresholds,
-    GlobalCircuitBreaker, HealthObservation, InMemoryGlobalCircuitBreaker,
-    ManualOverrideTarget, ObservationStatus, SignalEvaluation, TripReason,
-    HALFOPEN_DWELL_MS, HALFOPEN_SAMPLE_PCT, OBSERVATION_BUFFER_CAP,
-    RECOVERY_RATIO_HALFOPEN_TO_CLOSED, RECOVERY_RATIO_OPEN_TO_HALFOPEN,
-    RECOVERY_SAMPLE_SUCCESS_FLOOR, ROLLING_WINDOW_MS,
+    allow_halfopen_request, evaluate_signals, CircuitDecision, CircuitState, CircuitStateSnapshot,
+    CircuitThresholds, GlobalCircuitBreaker, HealthObservation, InMemoryGlobalCircuitBreaker,
+    ManualOverrideTarget, ObservationStatus, SignalEvaluation, TripReason, HALFOPEN_DWELL_MS,
+    HALFOPEN_SAMPLE_PCT, OBSERVATION_BUFFER_CAP, RECOVERY_RATIO_HALFOPEN_TO_CLOSED,
+    RECOVERY_RATIO_OPEN_TO_HALFOPEN, RECOVERY_SAMPLE_SUCCESS_FLOOR, ROLLING_WINDOW_MS,
 };
 pub use error::CircuitError;
 pub use headers::{
-    canonical_kind_list, RateLimitErrorBody, RateLimitHeaderBuilder,
-    RateLimitHeaders, RateLimitPolicy, XRateLimitTypeKind, DOCS_URL,
-    ERROR_CODE_RATE_LIMIT_EXCEEDED, GLOBAL_CIRCUIT_RETRY_AFTER_SECS,
-    PER_IP_RETRY_AFTER_SECS, RETRY_AFTER_HARD_CEILING_SECS,
+    canonical_kind_list, RateLimitErrorBody, RateLimitHeaderBuilder, RateLimitHeaders,
+    RateLimitPolicy, XRateLimitTypeKind, DOCS_URL, ERROR_CODE_RATE_LIMIT_EXCEEDED,
+    GLOBAL_CIRCUIT_RETRY_AFTER_SECS, PER_IP_RETRY_AFTER_SECS, RETRY_AFTER_HARD_CEILING_SECS,
     TIER_UPGRADE_URL,
 };
 pub use metrics::{
-    canonical_metric_names, CircuitMetricKind, CircuitMetricsObserver,
-    CircuitMetricsObserverError, FailingCircuitMetrics,
-    InMemoryCircuitMetrics,
+    canonical_metric_names, CircuitMetricKind, CircuitMetricsObserver, CircuitMetricsObserverError,
+    FailingCircuitMetrics, InMemoryCircuitMetrics,
 };
 
 /// Returns the canonical schema version recorded by the latest

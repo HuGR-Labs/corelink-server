@@ -17,8 +17,8 @@
 )]
 
 use corelink_erasure_attestation::{
-    ErasureAttestationPayload, ErasureAttestationSigner, ErasureSigningKey, EvidenceBundle,
-    Region, verify_attestation_signature,
+    verify_attestation_signature, ErasureAttestationPayload, ErasureAttestationSigner,
+    ErasureSigningKey, EvidenceBundle, Region,
 };
 
 fn main() {
@@ -50,7 +50,10 @@ fn main() {
     let attestation = signer.sign(payload).expect("sign");
 
     // --- Simulate customer-side offline verification ---
-    println!("Verifying attestation for request_id: {}", attestation.payload.request_id);
+    println!(
+        "Verifying attestation for request_id: {}",
+        attestation.payload.request_id
+    );
     println!("Using public key fingerprint: {}", pk.fingerprint());
 
     match verify_attestation_signature(&attestation, &pk) {

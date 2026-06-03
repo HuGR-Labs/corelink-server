@@ -56,12 +56,7 @@ fn v1_empty_tree_is_all_zeros() {
 #[test]
 fn v2_single_leaf_canonical() {
     let d = Digest::compute(b"out1");
-    let r = ActionResult::new(
-        vec![OutputFileDigest::new(d, 1)],
-        Vec::new(),
-        0,
-        Vec::new(),
-    );
+    let r = ActionResult::new(vec![OutputFileDigest::new(d, 1)], Vec::new(), 0, Vec::new());
     let expected = hash_leaf(&d);
     let root = build_root(&r).unwrap();
     assert_eq!(root, expected);
@@ -73,12 +68,7 @@ fn v2_canonical_hex() {
     // upgrade (or a regression in the leaf-prefix contract) is
     // immediately visible.
     let d = Digest::compute(b"out1");
-    let r = ActionResult::new(
-        vec![OutputFileDigest::new(d, 1)],
-        Vec::new(),
-        0,
-        Vec::new(),
-    );
+    let r = ActionResult::new(vec![OutputFileDigest::new(d, 1)], Vec::new(), 0, Vec::new());
     let root = build_root(&r).unwrap();
     let canonical_hex = hex::encode(root);
     let expected_hex = hex::encode(hash_leaf(&d));
@@ -92,10 +82,7 @@ fn v3_two_leaves_after_lex_sort() {
     let d_a = Digest::compute(b"alpha");
     let d_b = Digest::compute(b"beta");
     let r = ActionResult::new(
-        vec![
-            OutputFileDigest::new(d_a, 1),
-            OutputFileDigest::new(d_b, 2),
-        ],
+        vec![OutputFileDigest::new(d_a, 1), OutputFileDigest::new(d_b, 2)],
         Vec::new(),
         0,
         Vec::new(),

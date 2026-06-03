@@ -149,9 +149,7 @@ fn adversarial_1_aad_bypass_1000_attempts() {
                 .unwrap();
 
             // Attempt decrypt with attacker's identity.
-            let result = enc
-                .decrypt(&blob, attacker_tenant, &attacker_hash)
-                .await;
+            let result = enc.decrypt(&blob, attacker_tenant, &attacker_hash).await;
 
             assert!(
                 matches!(result, Err(BYOKError::AadMismatch)),
@@ -168,7 +166,9 @@ fn adversarial_1_aad_bypass_1000_attempts() {
 fn adversarial_2_dek_zeroize_on_drop() {
     use zeroize::Zeroize;
     // Construct a DEK with known bytes, manually zeroize, verify cleared.
-    let mut dek = Dek { bytes: [0xABu8; 32] };
+    let mut dek = Dek {
+        bytes: [0xABu8; 32],
+    };
     assert_eq!(dek.bytes, [0xABu8; 32]);
     dek.zeroize();
     assert_eq!(dek.bytes, [0u8; 32]);
@@ -177,7 +177,9 @@ fn adversarial_2_dek_zeroize_on_drop() {
     // (We cannot directly observe memory post-drop in safe Rust, but the
     //  derive macro guarantees the zeroize() call happens in Drop::drop.)
     {
-        let _dek_dropped = Dek { bytes: [0xFFu8; 32] };
+        let _dek_dropped = Dek {
+            bytes: [0xFFu8; 32],
+        };
         // _dek_dropped drops here — ZeroizeOnDrop fires.
     }
     // Test passes: derive macro is compile-time verified.

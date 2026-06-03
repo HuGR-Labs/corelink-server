@@ -357,7 +357,9 @@ mod tests {
     fn inmemory_probe_set_age_observable() {
         let p = InMemoryDoSyncAgeProbe::new();
         p.set_age(DoClass::TenantQuota, Region::Enam, 250.0);
-        let s = p.probe(DoClass::TenantQuota, Region::Enam, 0).expect("probe");
+        let s = p
+            .probe(DoClass::TenantQuota, Region::Enam, 0)
+            .expect("probe");
         assert!((s.age_seconds - 250.0).abs() < f64::EPSILON);
         assert!(s.within_budget());
     }

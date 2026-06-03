@@ -39,8 +39,13 @@ fn main() {
     println!("Rollout aborted: status={:?}", aborted.status);
 
     // After abort, a new rollout can start (active session cleared)
-    let handle2 = ctrl.start(&artifact, &actor).expect("second start must succeed");
-    println!("New rollout started after abort: handle={}", handle2.handle_id);
+    let handle2 = ctrl
+        .start(&artifact, &actor)
+        .expect("second start must succeed");
+    println!(
+        "New rollout started after abort: handle={}",
+        handle2.handle_id
+    );
 
     let records = audit.records().expect("audit records");
     println!("Audit events:");

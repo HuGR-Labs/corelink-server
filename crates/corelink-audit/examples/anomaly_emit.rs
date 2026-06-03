@@ -28,7 +28,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         RequestId::new("req_anomaly_42"),
         RetentionHint::Enterprise7y,
         1_700_000_000_000,
-        AuthEventData::CrossRegionBurst { distinct_regions: 4 },
+        AuthEventData::CrossRegionBurst {
+            distinct_regions: 4,
+        },
     );
 
     println!("Event type        : {}", event.event_type);

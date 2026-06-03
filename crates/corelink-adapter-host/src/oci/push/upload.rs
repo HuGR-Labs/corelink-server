@@ -57,7 +57,10 @@ pub async fn open(
     repo: &str,
 ) -> Result<axum::response::Response, OciAdapterError> {
     check_repo_push(repo, scope)?;
-    let uuid = cas.open_upload(tenant).await.map_err(OciAdapterError::Cas)?;
+    let uuid = cas
+        .open_upload(tenant)
+        .await
+        .map_err(OciAdapterError::Cas)?;
     let location = format!("/v2/{repo}/blobs/uploads/{uuid}");
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -73,7 +76,8 @@ pub async fn open(
     );
     headers.insert(
         "Range",
-        "0-0".parse()
+        "0-0"
+            .parse()
             .map_err(|_| OciAdapterError::Cas(String::from("range header parse")))?,
     );
     Ok((StatusCode::ACCEPTED, headers, Body::empty()).into_response())

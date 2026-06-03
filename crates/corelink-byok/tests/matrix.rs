@@ -26,15 +26,22 @@
 //! With `AWS_TEST_KEY_ARN` set in staging the same matrix exercises the
 //! real `aws-sdk-kms` client end-to-end.
 
-#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
+use corelink_byok::aws::AwsKmsProvider;
+use corelink_byok::azure::AzureKeyVaultProvider;
+use corelink_byok::gcp::GcpKmsProvider;
+use corelink_byok::vault::VaultProvider;
 use corelink_byok::{
-    BYOKError, DekCache, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, FipsLevel,
+    BYOKError, Dek, DekCache, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind,
     WrappedDek,
 };
-use corelink_byok::aws::AwsKmsProvider;
-use corelink_byok::gcp::GcpKmsProvider;
-use corelink_byok::azure::AzureKeyVaultProvider;
-use corelink_byok::vault::VaultProvider;
 use serde_json::json;
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -81,10 +88,20 @@ struct MatrixResult {
 
 impl MatrixResult {
     fn pass(provider: &'static str, op: &'static str) -> Self {
-        Self { provider, op, passed: true, error: None }
+        Self {
+            provider,
+            op,
+            passed: true,
+            error: None,
+        }
     }
     fn fail(provider: &'static str, op: &'static str, err: String) -> Self {
-        Self { provider, op, passed: false, error: Some(err) }
+        Self {
+            provider,
+            op,
+            passed: false,
+            error: Some(err),
+        }
     }
 }
 
@@ -118,19 +135,17 @@ async fn run_provider_matrix<P: KmsProvider>(
 
     // ── unwrap ────────────────────────────────────────────────────────────────
     let unwrap_cell = match wrap_result {
-        Ok(ref wrapped) => {
-            match provider.unwrap_dek(wrapped).await {
-                Ok(unwrapped) if unwrapped.bytes == dek_bytes => {
-                    MatrixResult::pass(provider_name, "unwrap")
-                }
-                Ok(_) => MatrixResult::fail(
-                    provider_name,
-                    "unwrap",
-                    "unwrapped DEK bytes do not match original".to_string(),
-                ),
-                Err(e) => MatrixResult::fail(provider_name, "unwrap", e.to_string()),
+        Ok(ref wrapped) => match provider.unwrap_dek(wrapped).await {
+            Ok(unwrapped) if unwrapped.bytes == dek_bytes => {
+                MatrixResult::pass(provider_name, "unwrap")
             }
-        }
+            Ok(_) => MatrixResult::fail(
+                provider_name,
+                "unwrap",
+                "unwrapped DEK bytes do not match original".to_string(),
+            ),
+            Err(e) => MatrixResult::fail(provider_name, "unwrap", e.to_string()),
+        },
         Err(ref e) => MatrixResult::fail(
             provider_name,
             "unwrap",
@@ -139,14 +154,21 @@ async fn run_provider_matrix<P: KmsProvider>(
     };
 
     // ── write (verify wrap produces WrappedDek with correct provider) ──────────
-    let write_cell = match provider.wrap_dek(&Dek::generate().expect("entropy"), &key_id, Some(ctx)).await {
+    let write_cell = match provider
+        .wrap_dek(&Dek::generate().expect("entropy"), &key_id, Some(ctx))
+        .await
+    {
         Ok(w) if w.provider == provider.provider_kind() => {
             MatrixResult::pass(provider_name, "write")
         }
         Ok(w) => MatrixResult::fail(
             provider_name,
             "write",
-            format!("WrappedDek.provider {:?} != expected {:?}", w.provider, provider.provider_kind()),
+            format!(
+                "WrappedDek.provider {:?} != expected {:?}",
+                w.provider,
+                provider.provider_kind()
+            ),
         ),
         Err(e) => MatrixResult::fail(provider_name, "write", e.to_string()),
     };
@@ -157,31 +179,41 @@ async fn run_provider_matrix<P: KmsProvider>(
             // Also verify DEK cache roundtrip.
             let cache = match DekCache::new(300) {
                 Ok(c) => c,
-                Err(e) => return [
-                    write_cell,
-                    MatrixResult::fail(provider_name, "read", e.to_string()),
-                    wrap_cell,
-                    unwrap_cell,
-                ],
+                Err(e) => {
+                    return [
+                        write_cell,
+                        MatrixResult::fail(provider_name, "read", e.to_string()),
+                        wrap_cell,
+                        unwrap_cell,
+                    ]
+                }
             };
             let dek2 = match Dek::generate() {
                 Ok(d) => d,
-                Err(e) => return [
-                    write_cell,
-                    MatrixResult::fail(provider_name, "read", e.to_string()),
-                    wrap_cell,
-                    unwrap_cell,
-                ],
+                Err(e) => {
+                    return [
+                        write_cell,
+                        MatrixResult::fail(provider_name, "read", e.to_string()),
+                        wrap_cell,
+                        unwrap_cell,
+                    ]
+                }
             };
             let dek2_bytes = dek2.bytes;
             let wrapped2 = match provider.wrap_dek(&dek2, &key_id, Some(ctx)).await {
                 Ok(w) => w,
-                Err(e) => return [
-                    write_cell,
-                    MatrixResult::fail(provider_name, "read", format!("wrap for cache test: {e}")),
-                    wrap_cell,
-                    unwrap_cell,
-                ],
+                Err(e) => {
+                    return [
+                        write_cell,
+                        MatrixResult::fail(
+                            provider_name,
+                            "read",
+                            format!("wrap for cache test: {e}"),
+                        ),
+                        wrap_cell,
+                        unwrap_cell,
+                    ]
+                }
             };
             if let Err(e) = cache.put(&wrapped2, dek2).await {
                 return [
@@ -192,12 +224,26 @@ async fn run_provider_matrix<P: KmsProvider>(
                 ];
             }
             match cache.get(&wrapped2).await {
-                Some(cached) if cached.bytes == dek2_bytes => MatrixResult::pass(provider_name, "read"),
-                Some(_) => MatrixResult::fail(provider_name, "read", "cached DEK bytes mismatch".to_string()),
-                None => MatrixResult::fail(provider_name, "read", "DEK cache miss immediately after put".to_string()),
+                Some(cached) if cached.bytes == dek2_bytes => {
+                    MatrixResult::pass(provider_name, "read")
+                }
+                Some(_) => MatrixResult::fail(
+                    provider_name,
+                    "read",
+                    "cached DEK bytes mismatch".to_string(),
+                ),
+                None => MatrixResult::fail(
+                    provider_name,
+                    "read",
+                    "DEK cache miss immediately after put".to_string(),
+                ),
             }
         }
-        Ok(s) => MatrixResult::fail(provider_name, "read", format!("check_access returned {s:?}")),
+        Ok(s) => MatrixResult::fail(
+            provider_name,
+            "read",
+            format!("check_access returned {s:?}"),
+        ),
         Err(e) => MatrixResult::fail(provider_name, "read", e.to_string()),
     };
 
@@ -219,7 +265,8 @@ async fn run_gcp_cells(ctx: &serde_json::Value) -> [MatrixResult; 4] {
     #[cfg(feature = "production-gcp")]
     {
         if let Ok(resource) = std::env::var("GCP_TEST_KEY_RESOURCE") {
-            let region = std::env::var("GCP_TEST_REGION").unwrap_or_else(|_| "us-east1".to_string());
+            let region =
+                std::env::var("GCP_TEST_REGION").unwrap_or_else(|_| "us-east1".to_string());
             if let Ok(real) = corelink_byok::gcp::GcpKmsRealProvider::new(&region).await {
                 let key_id = KmsKeyId {
                     provider: KmsProviderKind::GcpKms,
@@ -234,7 +281,9 @@ async fn run_gcp_cells(ctx: &serde_json::Value) -> [MatrixResult; 4] {
     let gcp = GcpKmsProvider::new_mock("us-east1");
     let key_id = KmsKeyId {
         provider: KmsProviderKind::GcpKms,
-        key_arn_or_id: "projects/corelink-staging/locations/us-east1/keyRings/byok/cryptoKeys/matrix-key".to_string(),
+        key_arn_or_id:
+            "projects/corelink-staging/locations/us-east1/keyRings/byok/cryptoKeys/matrix-key"
+                .to_string(),
         region: "us-east1".to_string(),
     };
     run_provider_matrix(&gcp, "gcp_kms", key_id, ctx).await
@@ -321,7 +370,8 @@ async fn byok_matrix_16_combinations_all_green() {
     let aws_cells = run_provider_matrix(&aws, "aws_kms", aws_key_id, &ctx).await;
 
     // Collect all 16 cells.
-    let all_cells: Vec<MatrixResult> = gcp_cells.into_iter()
+    let all_cells: Vec<MatrixResult> = gcp_cells
+        .into_iter()
         .chain(azure_cells)
         .chain(vault_cells)
         .chain(aws_cells)
@@ -332,11 +382,24 @@ async fn byok_matrix_16_combinations_all_green() {
     // Report failures.
     let failures: Vec<&MatrixResult> = all_cells.iter().filter(|c| !c.passed).collect();
     if !failures.is_empty() {
-        let report: String = failures.iter()
-            .map(|c| format!("  FAIL [{}][{}]: {}", c.provider, c.op, c.error.as_deref().unwrap_or("unknown")))
+        let report: String = failures
+            .iter()
+            .map(|c| {
+                format!(
+                    "  FAIL [{}][{}]: {}",
+                    c.provider,
+                    c.op,
+                    c.error.as_deref().unwrap_or("unknown")
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
-        panic!("BYOK matrix test: {}/{} cells FAILED\n{}", failures.len(), 16, report);
+        panic!(
+            "BYOK matrix test: {}/{} cells FAILED\n{}",
+            failures.len(),
+            16,
+            report
+        );
     }
 
     // All 16 green.
@@ -353,10 +416,26 @@ async fn fips_level_const_per_provider() {
     let vault = VaultProvider::new_mock("us-east-1");
     let aws = build_aws_provider("us-east-1").await;
 
-    assert_eq!(aws.fips_level(), FipsLevel::Fips140_3_L1, "AWS KMS: FIPS 140-3 L1");
-    assert_eq!(gcp.fips_level(), FipsLevel::Fips140_2_L1, "GCP KMS: FIPS 140-2 L1");
-    assert_eq!(azure.fips_level(), FipsLevel::Fips140_2_L2, "Azure Key Vault Premium HSM: FIPS 140-2 L2");
-    assert_eq!(vault.fips_level(), FipsLevel::Fips140_3_L1, "Vault Enterprise FIPS: FIPS 140-3 L1");
+    assert_eq!(
+        aws.fips_level(),
+        FipsLevel::Fips140_3_L1,
+        "AWS KMS: FIPS 140-3 L1"
+    );
+    assert_eq!(
+        gcp.fips_level(),
+        FipsLevel::Fips140_2_L1,
+        "GCP KMS: FIPS 140-2 L1"
+    );
+    assert_eq!(
+        azure.fips_level(),
+        FipsLevel::Fips140_2_L2,
+        "Azure Key Vault Premium HSM: FIPS 140-2 L2"
+    );
+    assert_eq!(
+        vault.fips_level(),
+        FipsLevel::Fips140_3_L1,
+        "Vault Enterprise FIPS: FIPS 140-3 L1"
+    );
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -367,11 +446,17 @@ async fn fips_level_const_per_provider() {
 fn dek_cache_ttl_hard_limit_enforced() {
     assert!(DekCache::new(300).is_ok(), "300s is the max allowed TTL");
     assert!(
-        matches!(DekCache::new(301), Err(BYOKError::DekCacheTtlViolation { .. })),
+        matches!(
+            DekCache::new(301),
+            Err(BYOKError::DekCacheTtlViolation { .. })
+        ),
         "301s violates INV-BYOK-CRYPTO-SOVEREIGNTY"
     );
     assert!(
-        matches!(DekCache::new(u64::MAX), Err(BYOKError::DekCacheTtlViolation { .. })),
+        matches!(
+            DekCache::new(u64::MAX),
+            Err(BYOKError::DekCacheTtlViolation { .. })
+        ),
         "MAX TTL violates INV-BYOK-CRYPTO-SOVEREIGNTY"
     );
 }
@@ -388,12 +473,17 @@ async fn cross_provider_kms_provider_tampering_rejected() {
     let gcp = GcpKmsProvider::new_mock("us-east1");
     let gcp_key_id = KmsKeyId {
         provider: KmsProviderKind::GcpKms,
-        key_arn_or_id: "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk".to_string(),
+        key_arn_or_id:
+            "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk"
+                .to_string(),
         region: "us-east1".to_string(),
     };
     let dek = Dek::generate().expect("entropy");
     let ctx = json!({"tenant_id": "T-tamper"});
-    let gcp_wrapped = gcp.wrap_dek(&dek, &gcp_key_id, Some(&ctx)).await.expect("gcp wrap");
+    let gcp_wrapped = gcp
+        .wrap_dek(&dek, &gcp_key_id, Some(&ctx))
+        .await
+        .expect("gcp wrap");
 
     // Tamper: change provider field in WrappedDek to AzureKeyVault.
     let tampered = WrappedDek {
@@ -408,7 +498,10 @@ async fn cross_provider_kms_provider_tampering_rejected() {
     // Azure provider should reject: provider mismatch in WrappedDek.
     let azure = AzureKeyVaultProvider::new_mock("eastus");
     let result = azure.unwrap_dek(&tampered).await;
-    assert!(result.is_err(), "cross-provider tampering must be rejected by Azure adapter");
+    assert!(
+        result.is_err(),
+        "cross-provider tampering must be rejected by Azure adapter"
+    );
 
     // Vault provider should also reject.
     let vault = VaultProvider::new_mock("us-east-1");
@@ -426,7 +519,10 @@ async fn cross_provider_kms_provider_tampering_rejected() {
         encryption_context: Some(ctx.clone()),
     };
     let result_vault = vault.unwrap_dek(&tampered_vault).await;
-    assert!(result_vault.is_err(), "cross-provider tampering must be rejected by Vault adapter");
+    assert!(
+        result_vault.is_err(),
+        "cross-provider tampering must be rejected by Vault adapter"
+    );
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -444,7 +540,10 @@ async fn vault_mtls_cert_expiry_alert_30d() {
     };
     let result = vault.check_access(&key_id).await;
     assert!(
-        matches!(result, Err(BYOKError::MtlsCertExpiringSoon { days_remaining: 29 })),
+        matches!(
+            result,
+            Err(BYOKError::MtlsCertExpiringSoon { days_remaining: 29 })
+        ),
         "must alert on cert expiry < 30d"
     );
 }

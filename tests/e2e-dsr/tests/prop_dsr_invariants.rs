@@ -72,7 +72,14 @@ fn build_request(
     attach_mfa: bool,
     now_ms: u64,
 ) -> DsrRequest {
-    let mut r = DsrRequest::new(request_id, tenant.tenant_id, tenant.subject_id, kind, jur, now_ms);
+    let mut r = DsrRequest::new(
+        request_id,
+        tenant.tenant_id,
+        tenant.subject_id,
+        kind,
+        jur,
+        now_ms,
+    );
     if attach_mfa && kind.is_destructive() {
         r = r.with_mfa(MfaStepUpToken::synthetic_for_test("ok"));
     }

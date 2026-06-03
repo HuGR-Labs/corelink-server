@@ -61,9 +61,7 @@ impl LruEventType {
             Self::AccessRecorded => "corelink.lru.access_recorded",
             Self::BatchFlushed => "corelink.lru.batch_flushed",
             Self::BatchFailed => "corelink.lru.batch_failed",
-            Self::ConsistencyViolationDetected => {
-                "corelink.lru.consistency_violation_detected"
-            }
+            Self::ConsistencyViolationDetected => "corelink.lru.consistency_violation_detected",
         }
     }
 
@@ -188,10 +186,7 @@ impl InMemoryLruAuditSink {
 
     /// Filter snapshot down to records of a single event type.
     #[must_use]
-    pub fn snapshot_of(
-        &self,
-        event_type: LruEventType,
-    ) -> Vec<LruAuditRecord> {
+    pub fn snapshot_of(&self, event_type: LruEventType) -> Vec<LruAuditRecord> {
         self.snapshot()
             .into_iter()
             .filter(|r| r.event_type == event_type)
@@ -201,9 +196,10 @@ impl InMemoryLruAuditSink {
 
 impl LruAuditSink for InMemoryLruAuditSink {
     fn emit(&self, record: LruAuditRecord) -> Result<(), LruAuditSinkError> {
-        let mut guard = self.inner.lock().map_err(|_| {
-            LruAuditSinkError::Store("audit sink mutex poisoned".to_string())
-        })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| LruAuditSinkError::Store("audit sink mutex poisoned".to_string()))?;
         guard.push(record);
         Ok(())
     }

@@ -1,5 +1,14 @@
 //! Example: Standalone Rekor log entry lookup by log index (WI-S12-001).
-#![allow(clippy::print_stdout, clippy::print_stderr, clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 //!
 //! Demonstrates the `lookup` mode: given a `rekor_log_index` from a `VerifiedProvenance`,
 //! generate the public Rekor entry URL and print instructions for `rekor-cli` verification.

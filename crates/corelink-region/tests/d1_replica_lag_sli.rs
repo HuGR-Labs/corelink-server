@@ -18,8 +18,7 @@
 
 use corelink_region::replica_lag::{
     D1LagSample, D1ReplicaLagProbe, FailingD1ReplicaLagProbe, InMemoryD1ReplicaLagProbe,
-    D1_PROBE_CADENCE_SECONDS, D1_REPLICA_LAG_P99_CEILING_SECONDS,
-    METRIC_D1_REPLICA_LAG_SECONDS,
+    D1_PROBE_CADENCE_SECONDS, D1_REPLICA_LAG_P99_CEILING_SECONDS, METRIC_D1_REPLICA_LAG_SECONDS,
 };
 use corelink_region::Region;
 
@@ -39,9 +38,7 @@ fn probe_emits_zero_lag_by_default() {
 fn probe_emits_configured_lag() {
     let probe = InMemoryD1ReplicaLagProbe::new();
     probe.set_lag(Region::Wnam, Region::Enam, 3.0);
-    let s = probe
-        .probe(Region::Wnam, Region::Enam, 0)
-        .expect("probe");
+    let s = probe.probe(Region::Wnam, Region::Enam, 0).expect("probe");
     assert!((s.lag_seconds - 3.0).abs() < f64::EPSILON);
 }
 
@@ -50,9 +47,7 @@ fn probe_observes_sustained_over_budget_lag() {
     // Inject lag > 5 min (DR-16 declaration trigger).
     let probe = InMemoryD1ReplicaLagProbe::new();
     probe.set_lag(Region::Weur, Region::Sam, 360.0); // 6 min
-    let s = probe
-        .probe(Region::Weur, Region::Sam, 0)
-        .expect("probe");
+    let s = probe.probe(Region::Weur, Region::Sam, 0).expect("probe");
     assert!(s.lag_seconds > 300.0, "lag > 5 min triggers SEV-2 path");
     assert!(
         s.lag_seconds > (D1_REPLICA_LAG_P99_CEILING_SECONDS as f64),
@@ -83,8 +78,12 @@ fn probe_uses_deterministic_timing_per_sample() {
     let probe = InMemoryD1ReplicaLagProbe::new();
     probe.set_lag(Region::Wnam, Region::Enam, 5.0);
 
-    let s1 = probe.probe(Region::Wnam, Region::Enam, 1_000).expect("probe");
-    let s2 = probe.probe(Region::Wnam, Region::Enam, 31_000).expect("probe");
+    let s1 = probe
+        .probe(Region::Wnam, Region::Enam, 1_000)
+        .expect("probe");
+    let s2 = probe
+        .probe(Region::Wnam, Region::Enam, 31_000)
+        .expect("probe");
     // Cadence: 30s gap between consecutive samples (deterministic).
     assert_eq!(s2.probe_timestamp_ms - s1.probe_timestamp_ms, 30_000);
     // Same lag value (no drift in deterministic fixture).

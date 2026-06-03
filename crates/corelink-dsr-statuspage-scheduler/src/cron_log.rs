@@ -83,11 +83,7 @@ pub trait CronRunLog: core::fmt::Debug + Send + Sync {
     /// # Errors
     ///
     /// [`CronRunLogError::Backend`] on D1 / lock failures.
-    fn is_recorded(
-        &self,
-        date_yyyymmdd: u32,
-        metric_id: &str,
-    ) -> Result<bool, CronRunLogError>;
+    fn is_recorded(&self, date_yyyymmdd: u32, metric_id: &str) -> Result<bool, CronRunLogError>;
 }
 
 /// Error variants for the dedupe ledger.
@@ -165,11 +161,7 @@ impl CronRunLog for InMemoryCronRunLog {
         Ok(())
     }
 
-    fn is_recorded(
-        &self,
-        date_yyyymmdd: u32,
-        metric_id: &str,
-    ) -> Result<bool, CronRunLogError> {
+    fn is_recorded(&self, date_yyyymmdd: u32, metric_id: &str) -> Result<bool, CronRunLogError> {
         let g = self
             .rows
             .lock()

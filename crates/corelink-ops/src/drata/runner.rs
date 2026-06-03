@@ -249,11 +249,11 @@ fn drata_error_summary(e: &DrataClientError) -> (Option<u16>, String) {
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
-    use super::*;
     use super::super::audit::InMemorySyncAuditSink;
     use super::super::drata::InMemoryDrataClient;
     use super::super::ledger::InMemoryIdempotencyLedger;
     use super::super::stream::EvidenceStream;
+    use super::*;
 
     fn runner() -> (
         SyncRunner,
@@ -275,12 +275,7 @@ mod tests {
     }
 
     fn rec(id: &str) -> EvidenceRecord {
-        EvidenceRecord::new(
-            EvidenceStream::AuditLogs,
-            id,
-            1,
-            [("k", "v")],
-        )
+        EvidenceRecord::new(EvidenceStream::AuditLogs, id, 1, [("k", "v")])
     }
 
     #[test]

@@ -23,9 +23,9 @@ use corelink_privacy::sub_processor::{
         PublishRequest, ResolutionRequest, SubProcessorEmitter,
     },
     event::{
-        canonical_objection_statuses, EmailLocale, ObjectionDecision, ObjectionPayload,
-        ObjectionTicketStatus, SubProcessorChangedPayload, SubProcessorDiff,
-        SubProcessorInfo, SubProcessorPublishedPayload, hash_recipient_email,
+        canonical_objection_statuses, hash_recipient_email, EmailLocale, ObjectionDecision,
+        ObjectionPayload, ObjectionTicketStatus, SubProcessorChangedPayload, SubProcessorDiff,
+        SubProcessorInfo, SubProcessorPublishedPayload,
     },
     objection::{InMemoryObjectionStore, ObjectionStore},
 };
@@ -49,7 +49,6 @@ fn make_emitter() -> InMemorySubProcessorEmitter {
         Arc::new(InMemoryObjectionStore::new()),
     )
 }
-
 
 fn sample_sp_info(id: &str) -> SubProcessorInfo {
     SubProcessorInfo {
@@ -142,14 +141,16 @@ fn test_publish_emits_one_audit_event() {
     let sink = Arc::new(InMemorySubProcessorAuditSink::new());
     let broadcast_store = Arc::new(InMemoryBroadcastStore::new());
     let objection_store = Arc::new(InMemoryObjectionStore::new());
-    let emitter = InMemorySubProcessorEmitter::new(
-        sink.clone(),
-        broadcast_store.clone(),
-        objection_store,
-    );
-    emitter.publish(sample_publish_request()).expect("publish must succeed");
+    let emitter =
+        InMemorySubProcessorEmitter::new(sink.clone(), broadcast_store.clone(), objection_store);
+    emitter
+        .publish(sample_publish_request())
+        .expect("publish must succeed");
     assert_eq!(sink.len(), 1, "publish must emit exactly 1 audit event");
-    assert!(broadcast_store.is_empty(), "publish must NOT seed broadcast log");
+    assert!(
+        broadcast_store.is_empty(),
+        "publish must NOT seed broadcast log"
+    );
 }
 
 // ─── AC-007: fail-CLOSED on audit emit failure ───────────────────────────────
@@ -184,7 +185,10 @@ fn test_change_fail_closed_on_audit_failure() {
         objection_store,
     );
     let result = emitter.record_change(sample_change_request(5));
-    assert!(result.is_err(), "record_change must return Err when audit sink fails");
+    assert!(
+        result.is_err(),
+        "record_change must return Err when audit sink fails"
+    );
     assert!(
         broadcast_store.is_empty(),
         "broadcast log must NOT be seeded when audit emit fails (fail-CLOSED)"
@@ -201,7 +205,10 @@ fn test_objection_fail_closed_on_audit_failure() {
         objection_store.clone(),
     );
     let result = emitter.file_objection(sample_objection_request("t1", "s1", "sentry"));
-    assert!(result.is_err(), "file_objection must return Err when audit sink fails");
+    assert!(
+        result.is_err(),
+        "file_objection must return Err when audit sink fails"
+    );
     assert!(
         objection_store.is_empty(),
         "objection store must be UNCHANGED when audit fails (fail-CLOSED)"
@@ -307,7 +314,9 @@ fn test_objection_resolution_accepted() {
         resolved_at: Some("2026-05-20T10:00:00Z".into()),
         sub_processors_version: "2.0.0".into(),
     };
-    emitter.resolve_objection(resolution).expect("resolve_objection");
+    emitter
+        .resolve_objection(resolution)
+        .expect("resolve_objection");
 
     let ticket = objection_store
         .get(&objection_id)
@@ -338,7 +347,9 @@ fn test_objection_invalid_state_transition_rejected() {
         resolved_at: Some("2026-05-20T10:00:00Z".into()),
         sub_processors_version: "2.0.0".into(),
     };
-    emitter.resolve_objection(resolution.clone()).expect("first resolution");
+    emitter
+        .resolve_objection(resolution.clone())
+        .expect("first resolution");
 
     // Try to transition from Accepted (terminal) → Terminated (invalid)
     let bad_resolution = ResolutionRequest {
@@ -449,8 +460,7 @@ fn test_mandatory_all_plans_no_tier_gating() {
         .delivery_rate("BROADCAST_ALLPLANS_12345678")
         .expect("delivery_rate");
     assert_eq!(
-        total,
-        5,
+        total, 5,
         "ALL 5 canonical plans must be in broadcast log (GDPR Art. 28.2 + LGPD Art. 39)"
     );
 }

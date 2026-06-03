@@ -84,8 +84,10 @@
 //!     --test prop_auth_full
 //! ```
 
-#![allow(clippy::doc_overindented_list_items, reason = "agent-authored docs use 4-space indents")]
-
+#![allow(
+    clippy::doc_overindented_list_items,
+    reason = "agent-authored docs use 4-space indents"
+)]
 #![cfg(feature = "tower-middleware")]
 #![allow(
     clippy::expect_used,
@@ -234,9 +236,7 @@ impl Service<Request<Bytes>> for SpyHandler {
     type Response = Response<Bytes>;
     type Error = std::convert::Infallible;
     type Future = std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send,
-        >,
+        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>,
     >;
 
     fn poll_ready(
@@ -306,22 +306,14 @@ fn shared_runtime() -> &'static tokio::runtime::Runtime {
 /// `await`-shaped so the call composes without nested-runtime
 /// deadlocks. PROP 2 + 3 + 4 own their own outer `block_on` via
 /// `shared_runtime().block_on(...)`.
-async fn run_once_async(
-    state: AuthState,
-    spy: SpyHandler,
-    req: Request<Bytes>,
-) -> Response<Bytes> {
+async fn run_once_async(state: AuthState, spy: SpyHandler, req: Request<Bytes>) -> Response<Bytes> {
     let mut svc = AuthLayer::new(state).layer(spy);
     svc.ready().await.unwrap().call(req).await.unwrap()
 }
 
 /// Sync wrapper for use outside an async context (PROP 2 + 4 use
 /// this since they don't need to interleave orchestrator work).
-fn run_once(
-    state: AuthState,
-    spy: SpyHandler,
-    req: Request<Bytes>,
-) -> Response<Bytes> {
+fn run_once(state: AuthState, spy: SpyHandler, req: Request<Bytes>) -> Response<Bytes> {
     let rt = shared_runtime();
     rt.block_on(run_once_async(state, spy, req))
 }

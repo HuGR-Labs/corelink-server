@@ -173,13 +173,7 @@ pub fn run_export<E: AuditExporter + ?Sized>(
 
     let body = serialize_export(&result, format, include_merkle_proofs)?;
     let file_hash = blake3_hex_of(&body);
-    let file_name = build_filename(
-        tenant_id,
-        since_ms,
-        until_ms,
-        format,
-        &file_hash,
-    );
+    let file_name = build_filename(tenant_id, since_ms, until_ms, format, &file_hash);
     let file_path = output_dir.join(&file_name);
 
     // Ensure parent dir exists; ignore AlreadyExists.
@@ -241,10 +235,7 @@ struct JsonLdEventRow<'a> {
     proof: Option<&'a corelink_audit_chain::InclusionProof>,
 }
 
-fn render_json_ld(
-    result: &ExportResult,
-    include_proofs: bool,
-) -> Result<Vec<u8>, CliError> {
+fn render_json_ld(result: &ExportResult, include_proofs: bool) -> Result<Vec<u8>, CliError> {
     let rows: Vec<JsonLdEventRow<'_>> = result
         .rows
         .iter()
@@ -388,18 +379,66 @@ fn render_parquet_container(
         parquet_target: "corelink-audit-export-v1",
         schema: ParquetSchema {
             columns: vec![
-                ParquetColumn { name: "sequence_number", parquet_type: "INT64", repetition: "REQUIRED" },
-                ParquetColumn { name: "time_ms", parquet_type: "INT64", repetition: "REQUIRED" },
-                ParquetColumn { name: "tenant_id", parquet_type: "BYTE_ARRAY(UTF8)", repetition: "REQUIRED" },
-                ParquetColumn { name: "region", parquet_type: "BYTE_ARRAY(UTF8)", repetition: "REQUIRED" },
-                ParquetColumn { name: "subject", parquet_type: "BYTE_ARRAY(UTF8)", repetition: "REQUIRED" },
-                ParquetColumn { name: "event_type", parquet_type: "BYTE_ARRAY(UTF8)", repetition: "REQUIRED" },
-                ParquetColumn { name: "id", parquet_type: "BYTE_ARRAY(UTF8)", repetition: "REQUIRED" },
-                ParquetColumn { name: "source", parquet_type: "BYTE_ARRAY(UTF8)", repetition: "REQUIRED" },
-                ParquetColumn { name: "prev_hash", parquet_type: "BYTE_ARRAY(UTF8)", repetition: "REQUIRED" },
-                ParquetColumn { name: "link_hash", parquet_type: "BYTE_ARRAY(UTF8)", repetition: "REQUIRED" },
-                ParquetColumn { name: "proof_siblings", parquet_type: "BYTE_ARRAY(JSON)", repetition: "OPTIONAL" },
-                ParquetColumn { name: "data_json", parquet_type: "BYTE_ARRAY(JSON)", repetition: "REQUIRED" },
+                ParquetColumn {
+                    name: "sequence_number",
+                    parquet_type: "INT64",
+                    repetition: "REQUIRED",
+                },
+                ParquetColumn {
+                    name: "time_ms",
+                    parquet_type: "INT64",
+                    repetition: "REQUIRED",
+                },
+                ParquetColumn {
+                    name: "tenant_id",
+                    parquet_type: "BYTE_ARRAY(UTF8)",
+                    repetition: "REQUIRED",
+                },
+                ParquetColumn {
+                    name: "region",
+                    parquet_type: "BYTE_ARRAY(UTF8)",
+                    repetition: "REQUIRED",
+                },
+                ParquetColumn {
+                    name: "subject",
+                    parquet_type: "BYTE_ARRAY(UTF8)",
+                    repetition: "REQUIRED",
+                },
+                ParquetColumn {
+                    name: "event_type",
+                    parquet_type: "BYTE_ARRAY(UTF8)",
+                    repetition: "REQUIRED",
+                },
+                ParquetColumn {
+                    name: "id",
+                    parquet_type: "BYTE_ARRAY(UTF8)",
+                    repetition: "REQUIRED",
+                },
+                ParquetColumn {
+                    name: "source",
+                    parquet_type: "BYTE_ARRAY(UTF8)",
+                    repetition: "REQUIRED",
+                },
+                ParquetColumn {
+                    name: "prev_hash",
+                    parquet_type: "BYTE_ARRAY(UTF8)",
+                    repetition: "REQUIRED",
+                },
+                ParquetColumn {
+                    name: "link_hash",
+                    parquet_type: "BYTE_ARRAY(UTF8)",
+                    repetition: "REQUIRED",
+                },
+                ParquetColumn {
+                    name: "proof_siblings",
+                    parquet_type: "BYTE_ARRAY(JSON)",
+                    repetition: "OPTIONAL",
+                },
+                ParquetColumn {
+                    name: "data_json",
+                    parquet_type: "BYTE_ARRAY(JSON)",
+                    repetition: "REQUIRED",
+                },
             ],
         },
         manifest: &result.manifest,
@@ -456,7 +495,11 @@ impl fmt::Display for VerifyOutcome {
         writeln!(f, "  BLAKE3:         {}", self.file_blake3)?;
         writeln!(f, "  Events:         {}", self.events_verified)?;
         writeln!(f, "  Chain head:     {}", self.chain_head_at_export)?;
-        write!(f, "  Status:         {}", if self.ok { "OK" } else { "FAIL" })
+        write!(
+            f,
+            "  Status:         {}",
+            if self.ok { "OK" } else { "FAIL" }
+        )
     }
 }
 
@@ -470,8 +513,7 @@ impl fmt::Display for VerifyOutcome {
 pub fn run_verify(path: &Path, output_fmt: OutputFormat) -> Result<VerifyOutcome, CliError> {
     let body = fs::read(path).map_err(CliError::Io)?;
     let file_hash = blake3_hex_of(&body);
-    let parsed: JsonLdEnvelopeOwned =
-        serde_json::from_slice(&body).map_err(CliError::Json)?;
+    let parsed: JsonLdEnvelopeOwned = serde_json::from_slice(&body).map_err(CliError::Json)?;
 
     let rows: Vec<ExportedAuditEvent> = parsed
         .events
@@ -542,10 +584,8 @@ pub fn build_fixture_exporter(
     event_count: u32,
     start_time_ms: u64,
 ) -> Result<InMemoryAuditExporter, CliError> {
-    use corelink_audit_chain::{
-        AuditEvent, AuditEventKind, ChainHash, HashChainBuilder,
-    };
     use corelink_analytics::Region;
+    use corelink_audit_chain::{AuditEvent, AuditEventKind, ChainHash, HashChainBuilder};
 
     let mut exporter = InMemoryAuditExporter::new();
     let mut builder = HashChainBuilder::new();

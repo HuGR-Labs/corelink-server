@@ -100,8 +100,7 @@ pub(crate) fn is_valid_kv_resource(s: &str) -> bool {
         return false;
     }
     let parts: Vec<&str> = path.split('/').collect();
-    matches!(parts.as_slice(), ["keys", _] | ["keys", _, _])
-        && parts.iter().all(|p| !p.is_empty())
+    matches!(parts.as_slice(), ["keys", _] | ["keys", _, _]) && parts.iter().all(|p| !p.is_empty())
 }
 
 #[cfg(all(test, feature = "production-azure"))]
@@ -137,7 +136,9 @@ mod tests {
         // Wrong host.
         assert!(!is_valid_kv_resource("https://example.com/keys/mykey"));
         // Missing path segment.
-        assert!(!is_valid_kv_resource("https://myvault.vault.azure.net/secrets/mykey"));
+        assert!(!is_valid_kv_resource(
+            "https://myvault.vault.azure.net/secrets/mykey"
+        ));
         // Empty.
         assert!(!is_valid_kv_resource(""));
         // AWS ARN format.
@@ -147,7 +148,9 @@ mod tests {
             "https://myvault.vault.azure.net/keys/mykey/"
         ));
         // Vault name too short.
-        assert!(!is_valid_kv_resource("https://ab.vault.azure.net/keys/mykey"));
+        assert!(!is_valid_kv_resource(
+            "https://ab.vault.azure.net/keys/mykey"
+        ));
     }
 
     #[test]
@@ -174,8 +177,8 @@ mod tests {
 
     #[test]
     fn parse_managed_hsm() {
-        let r = parse_kv_resource("https://corp-hsm.managedhsm.azure.net/keys/customer-cmk")
-            .unwrap();
+        let r =
+            parse_kv_resource("https://corp-hsm.managedhsm.azure.net/keys/customer-cmk").unwrap();
         assert_eq!(r.base_url, "https://corp-hsm.managedhsm.azure.net");
         assert_eq!(r.key_name, "customer-cmk");
     }

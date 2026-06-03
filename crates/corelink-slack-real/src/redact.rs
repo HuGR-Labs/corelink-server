@@ -40,10 +40,7 @@ mod tests {
     #[test]
     fn redacts_secret_segment() {
         let s = redact_webhook("https://hooks.slack.com/services/T00ABCD/B0EFGHI/longsecret");
-        assert_eq!(
-            s,
-            "https://hooks.slack.com/services/T00ABCD/B0EFGHI/***"
-        );
+        assert_eq!(s, "https://hooks.slack.com/services/T00ABCD/B0EFGHI/***");
     }
 
     #[test]

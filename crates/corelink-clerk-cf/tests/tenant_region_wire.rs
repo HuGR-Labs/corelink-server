@@ -74,8 +74,7 @@ fn build_tenant_region_resolver_with_store_constructs_d1_resolver() {
 /// even without the `CLERK_DB` binding wired.
 #[test]
 fn build_tenant_region_resolver_without_store_falls_back_to_inmemory() {
-    let resolver: Arc<dyn TenantRegionResolver> =
-        build_tenant_region_resolver(None, Region::Iad);
+    let resolver: Arc<dyn TenantRegionResolver> = build_tenant_region_resolver(None, Region::Iad);
 
     // Every tenant resolves to the fallback (no pins, no D1 store).
     let tenant_a = Uuid::now_v7();

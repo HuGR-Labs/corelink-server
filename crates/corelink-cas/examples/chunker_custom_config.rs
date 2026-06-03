@@ -4,11 +4,15 @@
 //!
 //! Run with `cargo run --example custom_config -p corelink-chunker`.
 
-#![allow(clippy::print_stdout, clippy::expect_used, clippy::panic, clippy::indexing_slicing, reason = "example: demonstrative output + simplified error handling")]
+#![allow(
+    clippy::print_stdout,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "example: demonstrative output + simplified error handling"
+)]
 
-use corelink_cas::chunker::{
-    Chunker, ChunkerAlgorithm, ChunkerConfig, ChunkerKind, ChunkerStep,
-};
+use corelink_cas::chunker::{Chunker, ChunkerAlgorithm, ChunkerConfig, ChunkerKind, ChunkerStep};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = ChunkerConfig::default()

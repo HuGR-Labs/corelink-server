@@ -192,7 +192,8 @@ impl MetricsObserver for MetricsRecorder {
 
     fn record_duration_ms(&self, ceremony_label: &str, duration_ms: u64) {
         if let Ok(mut g) = self.inner.lock() {
-            g.duration_samples.push((ceremony_label.to_owned(), duration_ms));
+            g.duration_samples
+                .push((ceremony_label.to_owned(), duration_ms));
         }
     }
 
@@ -210,7 +211,9 @@ impl MetricsObserver for MetricsRecorder {
 
     fn record_admin_step_up(&self, op_label: &str) {
         if let Ok(mut g) = self.inner.lock() {
-            *g.admin_op_step_up_total.entry(op_label.to_owned()).or_insert(0) += 1;
+            *g.admin_op_step_up_total
+                .entry(op_label.to_owned())
+                .or_insert(0) += 1;
         }
     }
 }

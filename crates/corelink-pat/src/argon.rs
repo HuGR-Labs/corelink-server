@@ -126,8 +126,8 @@ pub fn hash_random_secret_with_salt(
 /// rejected as `HashError("argon2 params underprovisioned")` so a
 /// downgraded DB row never silently passes verification.
 pub fn verify_argon2id(random_secret_b64: &str, stored: &PatHash) -> Result<(), PatError> {
-    let phc = PasswordHash::new(stored.as_str())
-        .map_err(|_| PatError::HashError("argon2 phc parse"))?;
+    let phc =
+        PasswordHash::new(stored.as_str()).map_err(|_| PatError::HashError("argon2 phc parse"))?;
 
     // Defense in depth: even if a malicious DB swap downgrades the
     // params, reject before invoking the verifier.

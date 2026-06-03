@@ -121,10 +121,7 @@ pub trait DedupMetricsObserver: Send + Sync + core::fmt::Debug {
     ///
     /// Returns [`DedupMetricsObserverError::Backend`] on any backend
     /// failure.
-    fn record_chunks_inserted(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), DedupMetricsObserverError>;
+    fn record_chunks_inserted(&self, tenant_id: Uuid) -> Result<(), DedupMetricsObserverError>;
 
     /// Increment `corelink.dedup.chunks_reused_total{tenant_id}`.
     /// Called per ON CONFLICT (refcount increment) on the chunk
@@ -135,10 +132,7 @@ pub trait DedupMetricsObserver: Send + Sync + core::fmt::Debug {
     ///
     /// Returns [`DedupMetricsObserverError::Backend`] on any backend
     /// failure.
-    fn record_chunks_reused(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), DedupMetricsObserverError>;
+    fn record_chunks_reused(&self, tenant_id: Uuid) -> Result<(), DedupMetricsObserverError>;
 
     /// Increment `corelink.dedup.find_missing_blobs_total{tenant_id,
     /// result}` — bumped once per handler invocation (after the
@@ -182,7 +176,12 @@ impl InMemoryDedupMetrics {
     pub fn counter(&self, label: &str) -> u64 {
         match self.inner.lock() {
             Ok(g) => g.counters.get(label).copied().unwrap_or_default(),
-            Err(p) => p.into_inner().counters.get(label).copied().unwrap_or_default(),
+            Err(p) => p
+                .into_inner()
+                .counters
+                .get(label)
+                .copied()
+                .unwrap_or_default(),
         }
     }
 
@@ -228,36 +227,26 @@ impl InMemoryDedupMetrics {
 }
 
 impl DedupMetricsObserver for InMemoryDedupMetrics {
-    fn record_chunks_inserted(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), DedupMetricsObserverError> {
+    fn record_chunks_inserted(&self, tenant_id: Uuid) -> Result<(), DedupMetricsObserverError> {
         let label = format!(
             "{}{{tenant={tenant_id}}}",
             DedupMetricKind::ChunksInserted.as_str()
         );
         let mut guard = self.inner.lock().map_err(|_| {
-            DedupMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            DedupMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         let entry = guard.counters.entry(label).or_insert(0);
         *entry = entry.saturating_add(1);
         Ok(())
     }
 
-    fn record_chunks_reused(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), DedupMetricsObserverError> {
+    fn record_chunks_reused(&self, tenant_id: Uuid) -> Result<(), DedupMetricsObserverError> {
         let label = format!(
             "{}{{tenant={tenant_id}}}",
             DedupMetricKind::ChunksReused.as_str()
         );
         let mut guard = self.inner.lock().map_err(|_| {
-            DedupMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            DedupMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         let entry = guard.counters.entry(label).or_insert(0);
         *entry = entry.saturating_add(1);
@@ -275,9 +264,7 @@ impl DedupMetricsObserver for InMemoryDedupMetrics {
             result.as_str()
         );
         let mut guard = self.inner.lock().map_err(|_| {
-            DedupMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            DedupMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         let entry = guard.counters.entry(label).or_insert(0);
         *entry = entry.saturating_add(1);
@@ -299,19 +286,13 @@ impl FailingDedupMetrics {
 }
 
 impl DedupMetricsObserver for FailingDedupMetrics {
-    fn record_chunks_inserted(
-        &self,
-        _tenant_id: Uuid,
-    ) -> Result<(), DedupMetricsObserverError> {
+    fn record_chunks_inserted(&self, _tenant_id: Uuid) -> Result<(), DedupMetricsObserverError> {
         Err(DedupMetricsObserverError::Backend(
             "induced metrics failure (test fixture)".to_string(),
         ))
     }
 
-    fn record_chunks_reused(
-        &self,
-        _tenant_id: Uuid,
-    ) -> Result<(), DedupMetricsObserverError> {
+    fn record_chunks_reused(&self, _tenant_id: Uuid) -> Result<(), DedupMetricsObserverError> {
         Err(DedupMetricsObserverError::Backend(
             "induced metrics failure (test fixture)".to_string(),
         ))

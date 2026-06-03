@@ -167,9 +167,7 @@ impl CfD1BillingWriter {
         // its own `prepare` from it); this call's value is the
         // validation side-effect + the audit fence the wrapped
         // CfD1DatabaseReal fires inside the helper.
-        self.d1
-            .scoped_query(sql)
-            .map_err(map_d1_error_transient)?;
+        self.d1.scoped_query(sql).map_err(map_d1_error_transient)?;
         // Re-pin tenant ct-eq via the wrapper's helper (defense-in-depth;
         // we already checked above but the wrapped binding may use a
         // different anchor in edge cases — share one source of truth).

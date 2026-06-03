@@ -181,11 +181,7 @@ where
     ///
     /// [`RotationError::InvalidTransition`] if `old.state != Overlap`.
     /// [`RotationError::Audit`] on audit emit failure.
-    pub fn retire(
-        &self,
-        old: &KeyHandle,
-        now_ms: u64,
-    ) -> Result<RotationOutcome, RotationError> {
+    pub fn retire(&self, old: &KeyHandle, now_ms: u64) -> Result<RotationOutcome, RotationError> {
         let retired = self.adapter.retire(old, now_ms)?;
         self.state_machine.record_transition(
             &retired,

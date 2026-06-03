@@ -48,12 +48,10 @@ impl FixedClock {
         let mut current = self.cursor.load(Ordering::SeqCst);
         loop {
             let next = current.saturating_add(delta_ms);
-            match self.cursor.compare_exchange(
-                current,
-                next,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            ) {
+            match self
+                .cursor
+                .compare_exchange(current, next, Ordering::SeqCst, Ordering::SeqCst)
+            {
                 Ok(_) => break,
                 Err(observed) => current = observed,
             }

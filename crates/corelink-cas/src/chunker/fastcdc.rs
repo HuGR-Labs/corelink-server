@@ -43,8 +43,8 @@ use crate::chunker::bounds::{
     FASTCDC_DEFAULT_AVG, FASTCDC_DEFAULT_MAX, FASTCDC_DEFAULT_MIN, FASTCDC_MASK_L, FASTCDC_MASK_S,
     MAX_BLOB_SIZE, MAX_CHUNKS_PER_BLOB,
 };
-use crate::chunker::kind::{Chunker, ChunkerStep};
 use crate::chunker::error::ChunkerError;
+use crate::chunker::kind::{Chunker, ChunkerStep};
 use crate::chunker::Chunk;
 
 pub use gear::GEAR_TABLE;

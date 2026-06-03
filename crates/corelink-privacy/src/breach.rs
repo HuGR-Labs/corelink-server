@@ -90,18 +90,14 @@ pub mod error;
 pub mod event;
 pub mod metrics;
 
-pub use audit_emit::{
-    BreachAuditSink, FailingBreachAuditSink, InMemoryBreachAuditSink,
-};
+pub use audit_emit::{BreachAuditSink, FailingBreachAuditSink, InMemoryBreachAuditSink};
 pub use error::{BreachAuditSinkError, BreachEmitError};
 pub use event::{
     escalation_policy_for, BreachNotificationDispatch, BreachSeverity, CustomerLocale,
-    EscalationPolicy, EscalationStep, NotificationJurisdiction,
-    CUSTOMER_LOCALES_MANDATORY, JURISDICTION_COUNT, SEVERITY_COUNT,
+    EscalationPolicy, EscalationStep, NotificationJurisdiction, CUSTOMER_LOCALES_MANDATORY,
+    JURISDICTION_COUNT, SEVERITY_COUNT,
 };
 pub use metrics::{
-    METRIC_BREACH_CUSTOMER_NOTIFICATION_DELIVERY_TOTAL,
-    METRIC_BREACH_DRY_RUN_COMPLETION_TOTAL,
-    METRIC_BREACH_TIME_TO_DECISION_SECONDS,
-    METRIC_BREACH_TIME_TO_NOTIFICATION_SECONDS,
+    METRIC_BREACH_CUSTOMER_NOTIFICATION_DELIVERY_TOTAL, METRIC_BREACH_DRY_RUN_COMPLETION_TOTAL,
+    METRIC_BREACH_TIME_TO_DECISION_SECONDS, METRIC_BREACH_TIME_TO_NOTIFICATION_SECONDS,
 };

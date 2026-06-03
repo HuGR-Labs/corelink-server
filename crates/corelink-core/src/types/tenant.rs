@@ -25,9 +25,7 @@ use uuid::Uuid;
 ///
 /// Construct via [`Self::from_uuid`] or `From<Uuid>`; render canonical
 /// text via [`Self::to_canonical_text`] or [`fmt::Display`].
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 #[non_exhaustive]
 pub struct TenantId(Uuid);
@@ -81,7 +79,10 @@ mod tests {
         let raw = Uuid::nil();
         let t = TenantId::from_uuid(raw);
         assert_eq!(*t.as_uuid(), raw);
-        assert_eq!(t.to_canonical_text(), "00000000-0000-0000-0000-000000000000");
+        assert_eq!(
+            t.to_canonical_text(),
+            "00000000-0000-0000-0000-000000000000"
+        );
         assert_eq!(format!("{t}"), t.to_canonical_text());
     }
 

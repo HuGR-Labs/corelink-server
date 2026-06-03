@@ -58,8 +58,7 @@ pub const METRIC_REPLICATION_BATCH_TOTAL: &str = "corelink_replication_batch_tot
 /// Implementations that produce real Prometheus histograms MUST use these
 /// boundaries verbatim so that the verifier's `histogram_quantile(0.99, ...)`
 /// query has a meaningful SLO-aligned bucket.
-pub const REPLICATION_LAG_BUCKETS_SECONDS: [f64; 6] =
-    [5.0, 10.0, 30.0, 60.0, 120.0, 300.0];
+pub const REPLICATION_LAG_BUCKETS_SECONDS: [f64; 6] = [5.0, 10.0, 30.0, 60.0, 120.0, 300.0];
 
 /// Canonical replication-domain label for the lag SLI.
 ///
@@ -222,10 +221,7 @@ impl InMemoryReplicationLagSli {
 
     /// Snapshot of all lag observations recorded so far.
     pub fn observations(&self) -> Vec<LagObservation> {
-        self.lag
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone()
+        self.lag.lock().unwrap_or_else(|p| p.into_inner()).clone()
     }
 
     /// Snapshot of all batch-outcome observations recorded so far.

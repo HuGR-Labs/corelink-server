@@ -151,10 +151,7 @@ impl BottleService {
             .emit_bottle_cache_fill(tenant_id, &cas_key, &canonical, bytes.len() as u64)?;
 
         // Persist.
-        if let Err(CasError::Backend(msg)) = self
-            .cas
-            .put(tenant_id, &cas_key, bytes.clone())
-            .await
+        if let Err(CasError::Backend(msg)) = self.cas.put(tenant_id, &cas_key, bytes.clone()).await
         {
             return Err(BrewAdapterError::Cas(msg));
         }

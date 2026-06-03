@@ -66,10 +66,7 @@ impl CasStore for InMemCas {
             .inner
             .lock()
             .map_err(|_| NpmAdapterError::Cas("poisoned".into()))?;
-        map.insert(
-            (tenant.to_string(), hex::encode(digest.as_bytes())),
-            bytes,
-        );
+        map.insert((tenant.to_string(), hex::encode(digest.as_bytes())), bytes);
         Ok(())
     }
 }

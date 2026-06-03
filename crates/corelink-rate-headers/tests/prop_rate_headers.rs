@@ -38,16 +38,13 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use corelink_rate_headers::{
-    allow_halfopen_request, canonical_audit_event_strings,
-    canonical_kind_list, canonical_metric_names, evaluate_signals,
-    CircuitDecision, CircuitEventType, CircuitMetricKind, CircuitState,
-    CircuitThresholds, GlobalCircuitBreaker, HealthObservation,
-    InMemoryCircuitAuditSink, InMemoryCircuitMetrics,
-    InMemoryGlobalCircuitBreaker, ManualOverrideTarget,
-    ObservationStatus, RateLimitHeaderBuilder, RateLimitPolicy,
-    TripReason, XRateLimitTypeKind, HALFOPEN_DWELL_MS,
-    HALFOPEN_SAMPLE_PCT, MIGRATION_0014_GLOBAL_CIRCUIT_STATE,
-    RETRY_AFTER_HARD_CEILING_SECS, ROLLING_WINDOW_MS,
+    allow_halfopen_request, canonical_audit_event_strings, canonical_kind_list,
+    canonical_metric_names, evaluate_signals, CircuitDecision, CircuitEventType, CircuitMetricKind,
+    CircuitState, CircuitThresholds, GlobalCircuitBreaker, HealthObservation,
+    InMemoryCircuitAuditSink, InMemoryCircuitMetrics, InMemoryGlobalCircuitBreaker,
+    ManualOverrideTarget, ObservationStatus, RateLimitHeaderBuilder, RateLimitPolicy, TripReason,
+    XRateLimitTypeKind, HALFOPEN_DWELL_MS, HALFOPEN_SAMPLE_PCT,
+    MIGRATION_0014_GLOBAL_CIRCUIT_STATE, RETRY_AFTER_HARD_CEILING_SECS, ROLLING_WINDOW_MS,
 };
 use proptest::prelude::*;
 
@@ -58,12 +55,13 @@ fn proptest_cases() -> u32 {
         .unwrap_or(10_000)
 }
 
-type Brk = InMemoryGlobalCircuitBreaker<
-    InMemoryCircuitAuditSink,
-    InMemoryCircuitMetrics,
->;
+type Brk = InMemoryGlobalCircuitBreaker<InMemoryCircuitAuditSink, InMemoryCircuitMetrics>;
 
-fn fresh() -> (Brk, Arc<InMemoryCircuitAuditSink>, Arc<InMemoryCircuitMetrics>) {
+fn fresh() -> (
+    Brk,
+    Arc<InMemoryCircuitAuditSink>,
+    Arc<InMemoryCircuitMetrics>,
+) {
     let audit = Arc::new(InMemoryCircuitAuditSink::new());
     let metrics = Arc::new(InMemoryCircuitMetrics::new());
     let breaker = InMemoryGlobalCircuitBreaker::with_defaults(
@@ -87,13 +85,8 @@ const BASE_NOW: u64 = 10_000_000;
 fn migration_0014_is_embedded() {
     assert!(!MIGRATION_0014_GLOBAL_CIRCUIT_STATE.is_empty());
     assert!(MIGRATION_0014_GLOBAL_CIRCUIT_STATE.contains("CREATE TABLE"));
-    assert!(
-        MIGRATION_0014_GLOBAL_CIRCUIT_STATE.contains("global_circuit_state")
-    );
-    assert!(
-        MIGRATION_0014_GLOBAL_CIRCUIT_STATE
-            .contains("global_circuit_trips_history")
-    );
+    assert!(MIGRATION_0014_GLOBAL_CIRCUIT_STATE.contains("global_circuit_state"));
+    assert!(MIGRATION_0014_GLOBAL_CIRCUIT_STATE.contains("global_circuit_trips_history"));
 }
 
 #[test]
@@ -900,8 +893,7 @@ proptest! {
 // headers NEVER disagree, regardless of which camada emitted the 429
 // or which input values the upstream chose.
 
-fn kind_strategy() -> impl proptest::strategy::Strategy<Value = XRateLimitTypeKind>
-{
+fn kind_strategy() -> impl proptest::strategy::Strategy<Value = XRateLimitTypeKind> {
     use corelink_rate_headers::canonical_kind_list;
     let kinds = canonical_kind_list();
     (0_usize..kinds.len()).prop_map(move |i| kinds[i])

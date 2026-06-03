@@ -26,28 +26,22 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use corelink_rate_headers::{
-    audit::{
-        CircuitAuditRecord, CircuitAuditSink, CircuitAuditSinkError,
-        CircuitEventType,
-    },
+    audit::{CircuitAuditRecord, CircuitAuditSink, CircuitAuditSinkError, CircuitEventType},
     circuit::{
-        CircuitDecision, CircuitState, CircuitThresholds,
-        GlobalCircuitBreaker, HealthObservation,
-        InMemoryGlobalCircuitBreaker, ObservationStatus,
-        HALFOPEN_DWELL_MS, ROLLING_WINDOW_MS,
+        CircuitDecision, CircuitState, CircuitThresholds, GlobalCircuitBreaker, HealthObservation,
+        InMemoryGlobalCircuitBreaker, ObservationStatus, HALFOPEN_DWELL_MS, ROLLING_WINDOW_MS,
     },
     metrics::InMemoryCircuitMetrics,
     InMemoryCircuitAuditSink,
 };
 use corelink_ratelimit::{
     BucketKey, InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics,
-    InMemoryTokenBucketRateLimiter, RateLimitConfig, RateLimitDecision,
-    RateLimitEventType, RateLimiter, TokenBucketState,
+    InMemoryTokenBucketRateLimiter, RateLimitConfig, RateLimitDecision, RateLimitEventType,
+    RateLimiter, TokenBucketState,
 };
 
 use e2e_resilience::{
-    BackPressureQueue, HttpStatus, LogicalClock, ResilienceError,
-    ResilienceResponse,
+    BackPressureQueue, HttpStatus, LogicalClock, ResilienceError, ResilienceResponse,
 };
 
 // ---------------------------------------------------------------------
@@ -55,10 +49,7 @@ use e2e_resilience::{
 // ---------------------------------------------------------------------
 
 type RateLimitFixture = (
-    InMemoryTokenBucketRateLimiter<
-        InMemoryRateLimitAuditSink,
-        InMemoryRateLimitMetrics,
-    >,
+    InMemoryTokenBucketRateLimiter<InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics>,
     Arc<InMemoryRateLimitAuditSink>,
 );
 
@@ -70,11 +61,8 @@ fn fresh_rate_limiter(burst: u32, refill_rps: u32) -> RateLimitFixture {
     let audit = Arc::new(InMemoryRateLimitAuditSink::new());
     let metrics = Arc::new(InMemoryRateLimitMetrics::new());
     let cfg = RateLimitConfig::canonical();
-    let limiter = InMemoryTokenBucketRateLimiter::new(
-        Arc::clone(&audit),
-        Arc::clone(&metrics),
-        cfg,
-    );
+    let limiter =
+        InMemoryTokenBucketRateLimiter::new(Arc::clone(&audit), Arc::clone(&metrics), cfg);
     // Seed an explicit bucket so the test pins the exact (burst, refill)
     // shape regardless of `RateLimitConfig` default drift.
     let tenant = canonical_tenant();
@@ -91,10 +79,7 @@ fn canonical_tenant() -> Uuid {
 }
 
 type CircuitFixture = (
-    InMemoryGlobalCircuitBreaker<
-        InMemoryCircuitAuditSink,
-        InMemoryCircuitMetrics,
-    >,
+    InMemoryGlobalCircuitBreaker<InMemoryCircuitAuditSink, InMemoryCircuitMetrics>,
     Arc<InMemoryCircuitAuditSink>,
 );
 
@@ -361,8 +346,7 @@ fn circuit_breaker_half_open_probe_success_closes_failure_reopens() {
 // ---------------------------------------------------------------------
 
 #[test]
-fn back_pressure_rejects_when_queue_depth_exceeds_threshold_with_503_and_retry_after()
-{
+fn back_pressure_rejects_when_queue_depth_exceeds_threshold_with_503_and_retry_after() {
     let clock = LogicalClock::new(5_000_000_000_000);
     let queue = BackPressureQueue::with_capacity(4);
 
@@ -409,10 +393,7 @@ fn back_pressure_rejects_when_queue_depth_exceeds_threshold_with_503_and_retry_a
 struct AlwaysFailingCircuitAuditSink;
 
 impl CircuitAuditSink for AlwaysFailingCircuitAuditSink {
-    fn emit(
-        &self,
-        _record: CircuitAuditRecord,
-    ) -> Result<(), CircuitAuditSinkError> {
+    fn emit(&self, _record: CircuitAuditRecord) -> Result<(), CircuitAuditSinkError> {
         Err(CircuitAuditSinkError::Store(
             "scenario 6: failing sink".to_string(),
         ))
@@ -443,9 +424,7 @@ fn audit_fail_closed_at_circuit_layer_blocks_state_change_before_rejection() {
     );
     for _ in 0..5 {
         let now = clock.advance_ms(100).unwrap();
-        let _ = brk_healthy
-            .record_observation(five_xx(now), now)
-            .unwrap();
+        let _ = brk_healthy.record_observation(five_xx(now), now).unwrap();
     }
     assert!(matches!(
         brk_healthy.snapshot().unwrap().state,
@@ -486,7 +465,10 @@ fn audit_fail_closed_at_circuit_layer_blocks_state_change_before_rejection() {
         "audit failure MUST roll back state mutation; got {:?}",
         snap.state
     );
-    assert_eq!(snap.trips_count, 0, "trips_count MUST NOT advance on audit failure");
+    assert_eq!(
+        snap.trips_count, 0,
+        "trips_count MUST NOT advance on audit failure"
+    );
 
     // ---- Sub-case B: back-pressure-layer audit fail-CLOSED — pins
     //      the same envelope at a different layer.

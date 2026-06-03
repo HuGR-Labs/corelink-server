@@ -64,18 +64,15 @@
 //! method. CoreLink Workers proxy envelope operations to the native server
 //! process, which holds the actual REST client.
 
-
 use serde_json::Value;
 use std::collections::BTreeMap;
 
 use crate::BYOKError;
 
 #[cfg(target_arch = "wasm32")]
-use async_trait::async_trait;
+use crate::{Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek};
 #[cfg(target_arch = "wasm32")]
-use crate::{
-    Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
-};
+use async_trait::async_trait;
 
 /// Canonicalize an AAD JSON value to a deterministic `BTreeMap<String,String>`
 /// plus its RFC 8785 JCS canonical bytes.
@@ -113,9 +110,7 @@ pub fn canonicalize_aad_to_string_map(
     let mut map = BTreeMap::new();
     for (k, v) in obj {
         let s = v.as_str().ok_or_else(|| {
-            BYOKError::EnvelopeError(format!(
-                "encryption_context.{k} value must be a string"
-            ))
+            BYOKError::EnvelopeError(format!("encryption_context.{k} value must be a string"))
         })?;
         map.insert(k.clone(), s.to_string());
     }
@@ -170,9 +165,7 @@ pub fn resolve_fips_host(vault_url: &str) -> Result<(String, &'static str), BYOK
         "vault.microsoftazure.de",
     ];
     let after_scheme = vault_url.strip_prefix("https://").ok_or_else(|| {
-        BYOKError::Provider(
-            "Azure KV: vault URL must use https:// scheme".to_string(),
-        )
+        BYOKError::Provider("Azure KV: vault URL must use https:// scheme".to_string())
     })?;
     let host_end = after_scheme.find('/').unwrap_or(after_scheme.len());
     let host = match after_scheme.get(..host_end) {
@@ -205,7 +198,7 @@ pub fn resolve_fips_host(vault_url: &str) -> Result<(String, &'static str), BYOK
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use super::{aad_fingerprint, canonicalize_aad_to_string_map, resolve_fips_host};
-    use aes_gcm::aead::{Aead, KeyInit, generic_array::GenericArray};
+    use aes_gcm::aead::{generic_array::GenericArray, Aead, KeyInit};
     use aes_gcm::Aes256Gcm;
     use async_trait::async_trait;
     use base64::Engine as _;
@@ -451,7 +444,10 @@ mod native {
         ) -> Result<Vec<u8>, BYOKError> {
             let cipher = Aes256Gcm::new(GenericArray::from_slice(key));
             let nonce_ga = GenericArray::from_slice(nonce);
-            let payload = aes_gcm::aead::Payload { msg: plaintext, aad };
+            let payload = aes_gcm::aead::Payload {
+                msg: plaintext,
+                aad,
+            };
             let ct = cipher
                 .encrypt(nonce_ga, payload)
                 .map_err(|e| BYOKError::AesGcm(format!("azure inner AES-GCM encrypt: {e}")))?;
@@ -595,7 +591,10 @@ mod native {
         }
         if let Some(jwk) = kb.key.as_ref() {
             if !jwk.key_ops.is_empty()
-                && (!jwk.key_ops.iter().any(|o| o.eq_ignore_ascii_case("wrapKey"))
+                && (!jwk
+                    .key_ops
+                    .iter()
+                    .any(|o| o.eq_ignore_ascii_case("wrapKey"))
                     || !jwk
                         .key_ops
                         .iter()
@@ -682,12 +681,7 @@ mod native {
 
     // ── Mock-mode wrap / unwrap (in-process, AAD-binding enforced) ───────
 
-    fn mock_wrap(
-        dek: &Dek,
-        key_id: &KmsKeyId,
-        ctx: &Value,
-        canonical_aad: &[u8],
-    ) -> WrappedDek {
+    fn mock_wrap(dek: &Dek, key_id: &KmsKeyId, ctx: &Value, canonical_aad: &[u8]) -> WrappedDek {
         let fp = aad_fingerprint(canonical_aad);
         let mut ct = Vec::with_capacity(8 + 32);
         ct.extend_from_slice(&fp);
@@ -761,8 +755,8 @@ mod native {
                 emit_audit("wrap_dek", &key_id.key_arn_or_id, "aad_missing");
                 BYOKError::EncryptionContextMissing
             })?;
-            let (_ec_map, canonical_aad) = canonicalize_aad_to_string_map(ctx)
-                .inspect_err(|_| {
+            let (_ec_map, canonical_aad) =
+                canonicalize_aad_to_string_map(ctx).inspect_err(|_| {
                     emit_audit("wrap_dek", &key_id.key_arn_or_id, "aad_canonicalize");
                 })?;
 
@@ -786,8 +780,7 @@ mod native {
             let nonce = Self::gen_nonce()?;
 
             // Step 2: encrypt DEK with AES-256-GCM, AAD = JCS(ctx).
-            let inner_ct =
-                Self::aes_gcm_encrypt(&inner_key, &nonce, &dek.bytes, &canonical_aad)?;
+            let inner_ct = Self::aes_gcm_encrypt(&inner_key, &nonce, &dek.bytes, &canonical_aad)?;
 
             // Step 3: wrap inner_key via Azure wrapKey (RSA-OAEP-256).
             let token = self.bearer().await.inspect_err(|_| {
@@ -822,15 +815,11 @@ mod native {
             })?;
 
             // Step 4: ciphertext layout = [u32 BE outer-len] || outer || inner_ct.
-            let mut ciphertext =
-                Vec::with_capacity(4 + azure_wrapped_inner.len() + inner_ct.len());
-            let outer_len_u32: u32 =
-                azure_wrapped_inner.len().try_into().map_err(|_| {
-                    emit_audit("wrap_dek", &key_id.key_arn_or_id, "outer_len_overflow");
-                    BYOKError::EnvelopeError(
-                        "outer wrapped key length > u32::MAX".to_string(),
-                    )
-                })?;
+            let mut ciphertext = Vec::with_capacity(4 + azure_wrapped_inner.len() + inner_ct.len());
+            let outer_len_u32: u32 = azure_wrapped_inner.len().try_into().map_err(|_| {
+                emit_audit("wrap_dek", &key_id.key_arn_or_id, "outer_len_overflow");
+                BYOKError::EnvelopeError("outer wrapped key length > u32::MAX".to_string())
+            })?;
             ciphertext.extend_from_slice(&outer_len_u32.to_be_bytes());
             ciphertext.extend_from_slice(&azure_wrapped_inner);
             ciphertext.extend_from_slice(&inner_ct);
@@ -856,11 +845,7 @@ mod native {
                 )));
             }
             let ctx = wrapped.encryption_context.as_ref().ok_or_else(|| {
-                emit_audit(
-                    "unwrap_dek",
-                    &wrapped.key_id.key_arn_or_id,
-                    "aad_missing",
-                );
+                emit_audit("unwrap_dek", &wrapped.key_id.key_arn_or_id, "aad_missing");
                 BYOKError::EncryptionContextMissing
             })?;
             let (_ec_map, canonical_aad) =
@@ -882,15 +867,10 @@ mod native {
                 return mock_unwrap(wrapped, &canonical_aad);
             }
 
-            let resource = Self::parse_resource(&wrapped.key_id.key_arn_or_id).inspect_err(
-                |_| {
-                    emit_audit(
-                        "unwrap_dek",
-                        &wrapped.key_id.key_arn_or_id,
-                        "malformed_arn",
-                    );
-                },
-            )?;
+            let resource =
+                Self::parse_resource(&wrapped.key_id.key_arn_or_id).inspect_err(|_| {
+                    emit_audit("unwrap_dek", &wrapped.key_id.key_arn_or_id, "malformed_arn");
+                })?;
 
             // Parse ciphertext layout: [u32 BE outer-len] || outer || inner_ct.
             if wrapped.ciphertext.len() < 4 + NONCE_LEN + TAG_LEN {
@@ -997,11 +977,7 @@ mod native {
                             "invalid_ciphertext_aad_mismatch",
                         );
                     } else {
-                        emit_audit(
-                            "unwrap_dek",
-                            &wrapped.key_id.key_arn_or_id,
-                            "aes_gcm_error",
-                        );
+                        emit_audit("unwrap_dek", &wrapped.key_id.key_arn_or_id, "aes_gcm_error");
                     }
                 })?;
 
@@ -1037,11 +1013,7 @@ mod native {
                 emit_audit("check_access", &key_id.key_arn_or_id, "malformed_arn");
             })?;
             let token = self.bearer().await.inspect_err(|_| {
-                emit_audit(
-                    "check_access",
-                    &key_id.key_arn_or_id,
-                    "entra_token_failure",
-                );
+                emit_audit("check_access", &key_id.key_arn_or_id, "entra_token_failure");
             })?;
             let url = self.getkey_url(&resource);
 
@@ -1090,12 +1062,7 @@ mod native {
         fn fips_static_l2_for_test_constructor() {
             let http = reqwest::Client::new();
             let creds = EntraCredentials::for_test_static("t");
-            let p = AzureKeyVaultRealProvider::for_test(
-                http,
-                creds,
-                "eastus",
-                "https://x.invalid",
-            );
+            let p = AzureKeyVaultRealProvider::for_test(http, creds, "eastus", "https://x.invalid");
             assert_eq!(p.fips_level(), FipsLevel::Fips140_2_L2);
             assert_eq!(p.provider_kind(), KmsProviderKind::AzureKeyVault);
             assert_eq!(p.region(), "eastus");
@@ -1231,10 +1198,7 @@ impl KmsProvider for AzureKeyVaultWasmStub {
         Err(BYOKError::Provider(WASM_UNSUPPORTED_MSG.to_string()))
     }
 
-    async fn check_access(
-        &self,
-        _key_id: &KmsKeyId,
-    ) -> Result<KmsAccessStatus, BYOKError> {
+    async fn check_access(&self, _key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
         Err(BYOKError::Provider(WASM_UNSUPPORTED_MSG.to_string()))
     }
 }
@@ -1315,33 +1279,28 @@ mod tests {
 
     #[test]
     fn resolve_fips_host_accepts_premium_hsm() {
-        let (h, s) =
-            resolve_fips_host("https://myvault.vault.azure.net/keys/k").unwrap();
+        let (h, s) = resolve_fips_host("https://myvault.vault.azure.net/keys/k").unwrap();
         assert_eq!(h, "myvault.vault.azure.net");
         assert_eq!(s, "vault.azure.net");
     }
 
     #[test]
     fn resolve_fips_host_accepts_managed_hsm() {
-        let (h, s) =
-            resolve_fips_host("https://corp-hsm.managedhsm.azure.net/keys/k").unwrap();
+        let (h, s) = resolve_fips_host("https://corp-hsm.managedhsm.azure.net/keys/k").unwrap();
         assert_eq!(h, "corp-hsm.managedhsm.azure.net");
         assert_eq!(s, "managedhsm.azure.net");
     }
 
     #[test]
     fn resolve_fips_host_accepts_us_gov() {
-        let (h, s) =
-            resolve_fips_host("https://gov-vault.vault.usgovcloudapi.net/keys/k")
-                .unwrap();
+        let (h, s) = resolve_fips_host("https://gov-vault.vault.usgovcloudapi.net/keys/k").unwrap();
         assert_eq!(h, "gov-vault.vault.usgovcloudapi.net");
         assert_eq!(s, "vault.usgovcloudapi.net");
     }
 
     #[test]
     fn resolve_fips_host_rejects_non_https() {
-        let err = resolve_fips_host("http://myvault.vault.azure.net/keys/k")
-            .unwrap_err();
+        let err = resolve_fips_host("http://myvault.vault.azure.net/keys/k").unwrap_err();
         assert!(matches!(err, BYOKError::Provider(_)));
     }
 

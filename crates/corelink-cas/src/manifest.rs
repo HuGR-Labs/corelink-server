@@ -119,8 +119,8 @@ pub use types::{
 };
 pub use verifier::{
     verify_streaming, ChunkBytesSource, ChunkRefSource, CollectingVerifiedSink,
-    InMemoryChunkBytesSource, InMemoryChunkRefSource, ManifestVerifier,
-    StreamingManifestHeader, StreamingVerifyOutcome, VerifiedChunkSink,
+    InMemoryChunkBytesSource, InMemoryChunkRefSource, ManifestVerifier, StreamingManifestHeader,
+    StreamingVerifyOutcome, VerifiedChunkSink,
 };
 
 /// Crate version sourced from `Cargo.toml`.
