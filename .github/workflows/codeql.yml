@@ -67,15 +67,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # `queries` is per-language: the extended suites
+          # (security-extended, security-and-quality) only exist for the
+          # mature CodeQL packs (js/ts, python). The Rust pack
+          # (codeql/rust-queries) ships NO `*-security-extended` /
+          # `*-security-and-quality` suites — requesting them on the rust
+          # leg fails init with "Query pack rust-security-extended cannot
+          # be found". Rust therefore uses the empty/default query set
+          # (codeql/rust-queries). Wired through `with: queries:` below.
+          #
           # Rust is in experimental CodeQL support — enabled via the
           # `--language rust` opt-in. Build mode `manual` so cargo respects
           # the workspace toolchain pin (rust-toolchain.toml).
           - language: rust
             build-mode: manual
+            queries: ""
           - language: javascript-typescript
             build-mode: none
+            queries: security-extended,security-and-quality
           - language: python
             build-mode: none
+            queries: security-extended,security-and-quality
 
     steps:
       - name: Checkout
@@ -107,10 +119,12 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-          # Enable security-extended + security-and-quality query packs to
-          # surface CWE-top-25 + OWASP-top-10 patterns beyond the default
-          # "code-scanning" set.
-          queries: security-extended,security-and-quality
+          # Per-language query suite (see `matrix.queries` above). For
+          # js/ts + python this is `security-extended,security-and-quality`
+          # to surface CWE-top-25 + OWASP-top-10 patterns beyond the default
+          # "code-scanning" set; for rust it is empty (the Rust pack has no
+          # extended suites), so codeql/rust-queries (the default) is used.
+          queries: ${{ matrix.queries }}
 
       # -----------------------------------------------------------------
       # Rust manual build — CodeQL traces the workspace cargo build to
