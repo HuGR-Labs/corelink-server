@@ -22,7 +22,6 @@ terraform {
 locals {
   policy_name = "corelink-byok-${var.customer_tenant_id}"
   role_name   = "corelink-byok-${var.customer_tenant_id}"
-  namespace   = "corelink/byok/${var.customer_tenant_id}"
   policy_hcl  = <<-HCL
     path "transit/encrypt/${var.transit_key_name}" {
       capabilities = ["update"]

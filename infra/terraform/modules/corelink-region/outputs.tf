@@ -11,6 +11,11 @@ output "d1_instance_id" {
   value       = cloudflare_d1_database.corelink_meta.id
 }
 
+output "d1_location" {
+  description = "D1 primary location hint applied for this region (wnam/enam/weur/sam). Passthrough for verify_r2_location.sh-style D1 location drift checks (WI-S14-001 §2)."
+  value       = var.d1_location
+}
+
 output "do_namespace_id" {
   description = "DO Worker script name/namespace ID. Consumed by WI-S14-002 region_enforcer + WI-S14-006 kill switch."
   value       = cloudflare_workers_script.corelink_do_region.name

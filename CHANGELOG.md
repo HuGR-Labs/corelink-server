@@ -80,6 +80,27 @@ Each entry cross-references:
 
 ### Fixed
 
+- **`tflint` gate — real pre-existing warnings in `infra/terraform/**`.** The
+  `terraform-lint` workflow's `tflint --chdir=infra/terraform --recursive` had
+  been exiting non-zero on 7 genuine warnings that only surfaced once the gate's
+  other (infra-step) breakage was cleared — same "the gate never ran" class as
+  the CI-fleet hardening below. Fixed each at the source (no suppressions):
+  removed three dead `local` declarations (`local.regions` in `main.tf`,
+  `local.base_tags` in `cloudflare-base`, `local.region_tags` in
+  `corelink-region` — the Cloudflare 4.x resources expose no `tags` argument)
+  and the dead `local.namespace` in `byok-providers/vault`; kept the
+  `corelink-region` `environment` input wired (now stamped into the region DNS /
+  SPF record `comment`s) so removing the tag-locals did not orphan it; surfaced
+  the `corelink-region` `d1_location` input — passed by all four region
+  invocations + `cloudflare-storage` but never read in the module body — as a
+  `d1_location` passthrough output (mirrors the existing `do_jurisdiction` /
+  `region_name` / `zone_id` passthroughs), completing the interface; added the
+  missing `required_providers` constraint for `hashicorp/null` (`~> 3.2`) in
+  `cloudflare-secrets` (its sole provider, via `null_resource` + `local-exec`);
+  and added `infra/terraform/regions/terraform.tf` with the standard
+  `required_version` (`>= 1.7.0, < 2.0.0`) + pinned `cloudflare ~> 4.52.0` block
+  the regions root module was missing. `tflint --recursive` now exits 0;
+  `terraform fmt -recursive -check` clean.
 - **macOS self-hosted CI-fleet hardening — migrate-to-self-hosted
   regressions.** The 2026-05-31 cutover to the macOS self-hosted runner fleet
   (5× `corelink-builder`, all macOS, zero Linux) left several gates silently
