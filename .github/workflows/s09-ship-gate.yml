@@ -150,12 +150,18 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
-        with:
-          python-version: '3.12'
-
-      - name: Install Python deps (yaml + json)
-        run: pip install pyyaml
+      # No actions/setup-python: the self-hosted mac fleet cannot provision
+      # Python via setup-python (RUNNER_TOOL_CACHE is unset, falls back to
+      # the unwritable /Users/runner hosted path and dies with
+      # `mkdir: /Users/runner: Permission denied`). Use system python3
+      # and ensure pyyaml is available (mirrors spec_validation.yml). (2026-06-03)
+      - name: Ensure pyyaml (system python3)
+        run: |
+          set -euo pipefail
+          python3 -c "import yaml" 2>/dev/null && exit 0
+          python3 -m venv .venv-smoke
+          .venv-smoke/bin/pip install --quiet pyyaml
+          echo "$PWD/.venv-smoke/bin" >> "$GITHUB_PATH"
 
       - name: 12 canonical DASH-*.json parse smoke
         run: |

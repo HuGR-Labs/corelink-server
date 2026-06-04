@@ -533,6 +533,39 @@ Each entry cross-references:
   `dsr-statuspage-scheduler` consumption site; restores green wasm32
   build for `corelink-wasm` worker target. SEAL:
   `specs/_audits/sealed/2026-05-26-w36-trigger-b-seal.md`.
+- **Self-hosted parse-smoke jobs + CodeQL — two infra gates fixed
+  (system python3 + GHAS preflight).** Two unrelated red nightly gates
+  on the macOS self-hosted fleet:
+  (1) **`workflow-yaml-smoke`** in `s10-ship-gate.yml` (and the identical
+  `dashboard-smoke` job in `s07`, `s08`, `s09`, `gc-ship-gate`) used
+  `actions/setup-python` to provision Python 3.12 before calling
+  `python3 -c "import yaml; yaml.safe_load(...)"`. On the self-hosted mac
+  fleet `RUNNER_TOOL_CACHE` is unset so the action fell back to the
+  unwritable GitHub-hosted default `/Users/runner` path, dying with
+  `mkdir: /Users/runner: Permission denied` at "Set up Python" — before
+  reaching any parse logic. Dropped `actions/setup-python` and replaced
+  the dep-install step with a lightweight inline check: if `import yaml`
+  succeeds on the system `python3` (it does on every runner), the step
+  exits immediately; otherwise it creates a minimal repo-local venv and
+  prepends it to `$GITHUB_PATH`. Mirrors the established
+  `spec_validation.yml` pattern (2026-06-03 comment). pyyaml/json are
+  stdlib or already present; no version-specific Python requirement.
+  (2) **CodeQL** (`codeql.yml`) hard-failed at `database init` (exit
+  code 2: `There's no CodeQL extractor named 'rust' installed` + `Code
+  scanning is not enabled for this repository`). PR #113 (a72b4f6c)
+  already split the SARIF upload into a `continue-on-error` step, but
+  the `init` step itself was unguarded and still died first. Added a
+  `GHAS code-scanning preflight` step (id: `preflight`) that queries
+  `gh api repos/{repo}/code-scanning/alerts`; if the call fails (HTTP
+  403/404 = GHAS off) it sets `enabled=false` and emits a
+  `::notice::` log line. Every downstream heavy step (`Install Rust
+  toolchain`, `Cargo cache`, `Initialize CodeQL`, `Build Rust
+  workspace`, `Perform CodeQL Analysis`, `Upload SARIF`, `Severity
+  gate`) is now gated on `steps.preflight.outputs.enabled == 'true'`.
+  The job exits SUCCESS (all steps skipped) when GHAS is disabled, and
+  runs fully once the owner enables Advanced Security — no workflow
+  change needed at that point. No existing action SHA was altered; no
+  new third-party action introduced.
 
 ### Security
 
