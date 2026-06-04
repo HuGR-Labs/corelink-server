@@ -107,51 +107,52 @@ typecheck time via next-intl's strict mode.
 `.github/workflows/admin-ui-ci.yml` runs typecheck, lint, vitest, and the
 Next build. SHA-pinned actions per repo policy.
 
-## Deploy — Cloudflare Pages
+## Deploy — Cloudflare Worker
 
 ### Architecture
 
-`apps/admin-ui` deploys to the CF Pages project **`corelink-admin-ui`** (humangr-labs org)
-via `@cloudflare/next-on-pages`. The GH Action `.github/workflows/admin-ui-deploy.yml`
-builds and deploys automatically on every push to `main` that touches `apps/admin-ui/**`.
+`apps/admin-ui` deploys to the Cloudflare **Worker** named **`corelink-admin-ui`**
+(humangr-labs org) via `@opennextjs/cloudflare`. The GH Action
+`.github/workflows/admin-ui-deploy.yml` builds and deploys automatically on every
+push to `main` that touches `apps/admin-ui/**`.
 
-Routing precedence note: CF Worker routes take precedence over Pages custom domains on
-the same CF zone. The `corelink-admin.humangr.com/*` route was removed from the root
-`wrangler.toml` (Stream 3.11) so the Pages CNAME can resolve. Do NOT re-add a Worker
-route for `corelink-admin.humangr.com` — it would shadow the Pages deployment.
+> **Migrated Pages → Worker.** `@cloudflare/next-on-pages` 1.13.7 cannot render
+> Next 15 SSR with `next-intl` + middleware + `ClerkProvider` — every SSR page route
+> returned HTTP 500. The supported path is `@opennextjs/cloudflare` + `wrangler deploy`,
+> configured in [`wrangler.toml`](./wrangler.toml) (`main = .open-next/worker.js`).
+
+Routing note: the custom domain `corelink-admin.humangr.com` is bound **directly to
+this Worker** in `wrangler.toml`
+(`routes = [{ pattern = "corelink-admin.humangr.com", custom_domain = true }]`), so
+`wrangler deploy` provisions it. The legacy `corelink-admin-ui` Pages project no longer
+serves this hostname.
 
 ### Build commands
 
 ```bash
 # from inside apps/admin-ui
-pnpm pages:build    # next build && npx @cloudflare/next-on-pages
-                    # emits .vercel/output/static
+pnpm cf:build    # opennextjs-cloudflare build (next build + OpenNext adapter)
+                 # emits .open-next/worker.js + .open-next/assets
 
-pnpm pages:deploy   # wrangler pages deploy .vercel/output/static \
-                    #   --project-name corelink-admin-ui
+pnpm cf:deploy   # wrangler deploy  (reads name/main/routes from wrangler.toml)
+                 # orchestrator-only — do NOT run locally
 ```
 
 ### One-time operator setup (manual steps)
 
-#### 1. Create the CF Pages project
+#### 1. Set runtime secrets (server-side; never committed to git)
 
 ```bash
-# Only needed once; the GH Action deploy step creates it if it doesn't exist.
-wrangler pages project create corelink-admin-ui --production-branch main
+# Run once per secret; the Worker runtime injects these at request time.
+# The first `wrangler deploy` (or the lines below) creates the Worker.
+wrangler secret put CLERK_SECRET_KEY        # --name read from wrangler.toml
+wrangler secret put STRIPE_SECRET_KEY
+wrangler secret put SENTRY_AUTH_TOKEN       # optional
 ```
 
-#### 2. Set runtime secrets (server-side; never committed to git)
+#### 2. Set build-time env vars (NEXT_PUBLIC_* — inlined into client bundle)
 
-```bash
-# Run once per secret; CF Pages runtime injects these into the Pages Functions.
-wrangler pages secret put CLERK_SECRET_KEY        --project-name corelink-admin-ui
-wrangler pages secret put STRIPE_SECRET_KEY       --project-name corelink-admin-ui
-wrangler pages secret put SENTRY_AUTH_TOKEN       --project-name corelink-admin-ui  # optional
-```
-
-#### 3. Set build-time env vars (NEXT_PUBLIC_* — inlined into client bundle)
-
-In the CF Pages dashboard (or GH Actions Settings → Variables):
+In the CF Worker dashboard (or GH Actions Settings → Variables):
 
 | Variable | Value |
 |---|---|
@@ -162,22 +163,25 @@ In the CF Pages dashboard (or GH Actions Settings → Variables):
 
 These are set as GH Repo Variables (`vars.*`) so the GH Action can inject them at build time.
 
-#### 4. Wire the custom domain (MANUAL — CF Pages dashboard)
+#### 3. Custom domain (automatic via wrangler.toml)
 
-1. In the [CF Pages dashboard](https://dash.cloudflare.com) → Workers & Pages → `corelink-admin-ui`
-2. Go to **Custom domains** → **Set up a custom domain**
-3. Enter `corelink-admin.humangr.com` → Continue
-4. CF will verify DNS; accept the suggested CNAME or create it manually:
-   ```
-   corelink-admin.humangr.com  CNAME  corelink-admin-ui.pages.dev  (proxied)
-   ```
-5. Wait for the "Active" badge (usually < 5 min; CF provisions a TLS cert automatically).
+The custom domain is declared in [`wrangler.toml`](./wrangler.toml) as a Worker
+custom-domain route, so `wrangler deploy` (the GH Action deploy step) attaches it and
+CF provisions the TLS cert automatically — no manual dashboard step:
 
-Prerequisite: the Worker route `corelink-admin.humangr.com/*` must be absent from the
-main worker's wrangler.toml (done in Stream 3.11). If the route exists, CF Edge invokes
-the Worker first and the Pages deployment is never reached.
+```toml
+routes = [
+  { pattern = "corelink-admin.humangr.com", custom_domain = true }
+]
+```
 
-#### 5. Update Clerk allowed redirect URLs (MANUAL — Clerk dashboard)
+Prerequisite: the `humangr.com` zone must be on the same Cloudflare account
+(`CF_ACCOUNT_ID`). The hostname was previously owned by the `corelink-admin-ui` Pages
+project and detached on migration day, so it is free for the Worker to claim. Do NOT
+add a `corelink-admin.humangr.com/*` route to any *other* Worker (e.g. the root
+`wrangler.toml`) — a second route on the same hostname would shadow this one.
+
+#### 4. Update Clerk allowed redirect URLs (MANUAL — Clerk dashboard)
 
 In [Clerk dashboard](https://dashboard.clerk.com) → Your application → **Domains**:
 
@@ -187,23 +191,22 @@ In [Clerk dashboard](https://dashboard.clerk.com) → Your application → **Dom
 
 Without this step, Clerk will block sign-in redirects from the custom domain.
 
-#### 6. Smoke test
+#### 5. Smoke test
 
 ```bash
-# After custom domain is active:
+# After the custom domain is active:
 curl -I https://corelink-admin.humangr.com/api/health
 # Expected: 200 OK with X-Content-Type-Options: nosniff
-
-# pages.dev must 404 (E1 BLOCK middleware gate):
-curl -I https://corelink-admin-ui.pages.dev/
-# Expected: 404 Not Found
 ```
 
 ### Security
 
-`functions/_middleware.ts` runs on every CF Pages Function request and **blocks** all
-`*.pages.dev` traffic with `404 Not Found` before any downstream handler runs. This
-prevents secret-exposure via the raw Pages subdomain (E1 security gate,
-`specs/_audits/2026-05-28-security-exposure-review.md §E1`).
-
 Production traffic must arrive exclusively via `corelink-admin.humangr.com`.
+
+> **Open item (post Pages → Worker migration):** the default Worker subdomain
+> (`*.workers.dev`) is a secret-exposure surface and should be either disabled for
+> this Worker or blocked at the edge. The legacy `*.pages.dev` block lived in
+> `functions/_middleware.ts` — a **CF Pages Functions** file that does **not** execute
+> under the OpenNext Worker runtime. The root `middleware.ts` (CSP + Clerk only) does
+> not host-block. Tracked separately from the deploy fix; see the E1 security gate
+> (`specs/_audits/2026-05-28-security-exposure-review.md §E1`).

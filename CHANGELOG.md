@@ -127,6 +127,23 @@ Each entry cross-references:
 
 ### Fixed
 
+- **admin-ui deploy workflow pointed at the dead Cloudflare Pages path — would
+  fail on every run (launch blocker GAP-1).** `.github/workflows/admin-ui-deploy.yml`
+  invoked `pnpm pages:build` + `npx wrangler pages deploy .vercel/output/static`,
+  but `apps/admin-ui` migrated Pages → Worker (`@cloudflare/next-on-pages` returned
+  HTTP 500 on every Next 15 SSR route) and `apps/admin-ui/package.json` exposes only
+  `cf:build` (`opennextjs-cloudflare build`) and `cf:deploy` (`wrangler deploy`) — the
+  missing `pages:*` scripts meant the build step errored immediately. Rewrote the
+  workflow onto the Worker path that `package.json` + `wrangler.toml` actually support:
+  `pnpm cf:build` → `pnpm cf:deploy`, dropping the Pages-only `pages deploy` flags
+  (`--project-name`/`--branch`/`--commit-*`) since `wrangler deploy` reads name, entry
+  (`.open-next/worker.js`), assets, and the custom-domain route from `wrangler.toml`.
+  Trigger, runner, concurrency, timeout, permissions, the `NEXT_PUBLIC_*` build-arg
+  injection, and the CF secrets are preserved unchanged. `actionlint` clean. Also
+  refreshed the admin-ui README deploy section to the Worker path and flagged a
+  follow-up: the `*.pages.dev` host-block in `functions/_middleware.ts` (a CF Pages
+  Functions file) does not run under the OpenNext Worker, so default-subdomain
+  lockdown is now an open security item.
 - **L3 tier-select Stripe checkout — racy money-path bug fixed (caught by the
   live verification).** `StripeRealClient` wraps a persistent
   `reqwest::blocking::Client`, which reqwest forbids using inside a tokio

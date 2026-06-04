@@ -1,10 +1,17 @@
-name: admin-ui — CF Pages deploy
+name: admin-ui — CF Worker deploy
 
-# Stream 3.11 — deploys apps/admin-ui to Cloudflare Pages (project: corelink-admin-ui)
-# on every push to main that touches the admin-ui subtree.
+# Stream 3.11 — deploys apps/admin-ui to the Cloudflare Worker
+# (Worker name: corelink-admin-ui) on every push to main that touches the
+# admin-ui subtree.
+#
+# Migrated Pages → Worker: @cloudflare/next-on-pages 1.13.7 cannot render
+# Next 15 SSR with next-intl + middleware + ClerkProvider (every SSR route
+# returned HTTP 500). The supported path is @opennextjs/cloudflare
+# (`pnpm cf:build`) + `wrangler deploy` (`pnpm cf:deploy`), matching
+# apps/admin-ui/wrangler.toml (main = .open-next/worker.js).
 #
 # Required GH Secrets:
-#   CF_API_TOKEN          — Cloudflare API token with "Cloudflare Pages: Edit" permission
+#   CF_API_TOKEN          — Cloudflare API token with "Workers Scripts: Edit" permission
 #   CF_ACCOUNT_ID         — Cloudflare account ID (humangr-labs)
 #
 # Required GH Variables (non-secret, set in repo Settings → Variables):
@@ -13,19 +20,14 @@ name: admin-ui — CF Pages deploy
 #   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 #   NEXT_PUBLIC_SENTRY_DSN
 #
-# Runtime secrets (set once via wrangler pages secret put — NOT via this workflow):
+# Runtime secrets (set once via `wrangler secret put` — NOT via this workflow):
 #   CLERK_SECRET_KEY
 #   STRIPE_SECRET_KEY
 #   SENTRY_AUTH_TOKEN  (optional — enables source-map upload)
 #
-# Custom domain (manual operator step):
-#   CF Pages dashboard → corelink-admin-ui → Custom domains → Add
-#   → corelink-admin.humangr.com
-#   (Also remove the Worker route from root wrangler.toml first — done in this wave.)
-#
-# Routing note: CF Worker routes take precedence over Pages custom domains
-# on the same zone.  The corelink-admin.humangr.com/* Worker route was removed
-# from wrangler.toml in this same wave to let Pages serve the hostname.
+# Custom domain: bound directly to the Worker in apps/admin-ui/wrangler.toml
+# (`routes = [{ pattern = "corelink-admin.humangr.com", custom_domain = true }]`),
+# so `wrangler deploy` provisions it — no manual Pages-dashboard step.
 
 on:
   push:
@@ -53,7 +55,7 @@ concurrency:
 
 jobs:
   build-and-deploy:
-    name: build + deploy to CF Pages
+    name: build + deploy to CF Worker
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 20
     defaults:
@@ -82,13 +84,14 @@ jobs:
         working-directory: .
         run: pnpm install --frozen-lockfile
 
-      # pages:build = `next build && npx @cloudflare/next-on-pages`
+      # cf:build = `opennextjs-cloudflare build` (next build + the OpenNext
+      # Cloudflare adapter) — emits .open-next/worker.js + .open-next/assets.
       # Injects NEXT_PUBLIC_* vars at build time so Next.js can inline them
-      # into client bundles.  Server-side secrets (CLERK_SECRET_KEY etc.) are
-      # NOT needed at build time — they are injected by the CF Pages runtime
-      # via `wrangler pages secret put` (one-time operator step).
-      - name: Build for CF Pages
-        run: pnpm pages:build
+      # into client bundles. Server-side secrets (CLERK_SECRET_KEY etc.) are
+      # NOT needed at build time — they are injected by the Worker runtime
+      # via `wrangler secret put` (one-time operator step).
+      - name: Build for CF Worker
+        run: pnpm cf:build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
           NODE_ENV: production
@@ -104,28 +107,18 @@ jobs:
           SENTRY_PROJECT: "corelink-admin-ui"
           CSP_ENFORCEMENT: "enforce"
 
-      # Deploy .vercel/output/static to the CF Pages project.
-      # --branch main → marks this as a production deployment.
-      # --commit-dirty=false → fail if working tree is dirty (shouldn't be in CI).
-      - name: Deploy to Cloudflare Pages
-        working-directory: apps/admin-ui
-        run: |
-          npx wrangler pages deploy .vercel/output/static \
-            --project-name corelink-admin-ui \
-            --branch main \
-            --commit-hash "${{ github.sha }}" \
-            --commit-message "$DEPLOY_COMMIT_MESSAGE"
+      # Deploy the built Worker. `cf:deploy` = `wrangler deploy`, which reads
+      # the Worker name (corelink-admin-ui), entrypoint (.open-next/worker.js),
+      # assets, and the custom-domain route from apps/admin-ui/wrangler.toml.
+      - name: Deploy to Cloudflare Worker
+        run: pnpm cf:deploy
         env:
-          # Pass the (attacker-controllable) commit message via env, never
-          # interpolated into the shell — avoids script injection (actionlint
-          # [expression] / GitHub secure-use guidance).
-          DEPLOY_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
 
       - name: Print deployment URL
         if: success()
         run: |
-          echo "Deployed to: https://corelink-admin-ui.pages.dev (blocked on *.pages.dev by middleware)"
+          echo "Deployed Worker: corelink-admin-ui"
           echo "Production URL: https://corelink-admin.humangr.com"
           echo "Commit: ${{ github.sha }}"
