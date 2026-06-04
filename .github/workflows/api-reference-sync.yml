@@ -47,16 +47,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Set up Python
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
-        with:
-          python-version: "3.12"
-
-      - name: Install Python deps
+      # No actions/setup-python: the self-hosted mac fleet can't reliably
+      # provision Python via setup-python (RUNNER_TOOL_CACHE is unset -> it
+      # falls back to the unwritable /Users/runner hosted path and dies with
+      # `mkdir: /Users/runner: Permission denied`). Use system python3 with a
+      # repo-local venv for pyyaml. (2026-06-04)
+      - name: Install Python deps (venv on system python3)
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          pip install pyyaml
+          python3 -m venv .venv
+          .venv/bin/python3 -m pip install --upgrade pip
+          .venv/bin/python3 -m pip install pyyaml
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Run generator in --check mode
         run: |
@@ -82,16 +84,15 @@ jobs:
           # Need a writable token for the auto-PR branch push.
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Python
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
-        with:
-          python-version: "3.12"
-
-      - name: Install Python deps
+      # No actions/setup-python: system python3 on the mac fleet. pyyaml
+      # installed into a repo-local venv. (2026-06-04)
+      - name: Install Python deps (venv on system python3)
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          pip install pyyaml
+          python3 -m venv .venv
+          .venv/bin/python3 -m pip install --upgrade pip
+          .venv/bin/python3 -m pip install pyyaml
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Regenerate reference set
         run: |

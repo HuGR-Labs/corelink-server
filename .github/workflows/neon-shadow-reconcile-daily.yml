@@ -99,11 +99,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: "3.12"
-
+      # No actions/setup-python: the self-hosted mac fleet can't reliably
+      # provision Python via setup-python (RUNNER_TOOL_CACHE is unset -> it
+      # falls back to the unwritable /Users/runner hosted path and dies with
+      # `mkdir: /Users/runner: Permission denied`). Use system python3 with a
+      # repo-local venv for psycopg + requests. (2026-06-04)
       - name: Compute target date (UTC yesterday or input)
         id: date
         run: |
@@ -121,11 +121,13 @@ jobs:
           echo "target_date=$TARGET_DATE" >> "$GITHUB_OUTPUT"
           echo "Reconciling for UTC date: $TARGET_DATE"
 
-      - name: Install reconcile-script deps
+      - name: Install reconcile-script deps (venv on system python3)
         run: |
           set -euo pipefail
-          python3 -m pip install --upgrade pip
-          python3 -m pip install 'psycopg[binary]==3.2.3' 'requests==2.32.5'
+          python3 -m venv .venv
+          .venv/bin/python3 -m pip install --upgrade pip
+          .venv/bin/python3 -m pip install 'psycopg[binary]==3.2.3' 'requests==2.32.5'
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Run per-region reconciliation
         id: reconcile
