@@ -80,6 +80,23 @@ Each entry cross-references:
 
 ### Fixed
 
+- **`TLC region_residency` gate (WI-S14-009) — un-stuck the model check, fixed
+  two masked spec defects, and made it CI-tractable.** The gate had been failing
+  at *config parse* (`ConfigFileException: … expecting ]` at line 18): a TLC
+  `.cfg` cannot hold a function literal (`PrimaryRegionOf = [t1 |-> "WNAM", …]`).
+  Moved the concrete mapping into the spec as `PrimaryRegionOfImpl`, injected via
+  a `CONSTANT PrimaryRegionOf <- PrimaryRegionOfImpl` override. Because the model
+  had **never actually run**, fixing the parse un-masked two real defects: (1)
+  `NoCrossRegionLeak` flagged the *audit-log entry* of a correctly **rejected**
+  cross-region write — scoped the read-leak invariant to `{read, failover_read}`
+  (writes are covered at the storage level by `NoCrossRegionWrite`); (2)
+  `ReplicationEventuallyConverges` was violated because `replica_lag` (set to
+  `MaxLag` on write) could never drain once the single write-once blob was
+  replicated — added a fairness-driven `LagTick` that drains the abstract clock
+  independent of per-blob `ReplicaSync`. Tightened the never-validated bounds
+  (`MaxRequests` 20→2, `Blobs` 5→2) that exploded to >1e6 states; the full
+  exhaustive check now passes (34 282 distinct states, depth 11, ~21 s, under the
+  60 s CI budget). ASCII-normalised this `.cfg`'s comments while here.
 - **`TLA+ Model Check — Runbooks` gate — robust `tlc`-wrapper build on the macOS
   fleet.** `.github/workflows/tla_runbooks_check.yml` built its `tlc` wrapper with
   a quoted heredoc and then injected `$RUNNER_TEMP` via `sed`; the runner path's
