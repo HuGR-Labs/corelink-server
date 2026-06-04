@@ -77,6 +77,9 @@
 use std::sync::Arc;
 
 use corelink_stripe_real::StripeRealClient;
+use corelink_tier_selection::stripe::{CheckoutSessionRequest, StripeClient};
+use corelink_tier_selection::tenant::TenantId;
+use corelink_tier_selection::tier::TierKind;
 
 use crate::routes::tier_select::{CheckoutCreated, CheckoutCreator, RequestedTier};
 
@@ -153,20 +156,51 @@ impl std::fmt::Debug for StripeCheckoutCreator {
 impl CheckoutCreator for StripeCheckoutCreator {
     async fn create(
         &self,
-        _tenant_id: &str,
-        _tier: RequestedTier,
-        _success_url: &str,
-        _cancel_url: &str,
+        tenant_id: &str,
+        tier: RequestedTier,
+        success_url: &str,
+        cancel_url: &str,
     ) -> Result<CheckoutCreated, String> {
-        // WP-B: map RequestedTier → TierKind; build a
-        // CheckoutSessionRequest with `customer_email: String::new()` (see
-        // the EMAIL SEAM DECISION in this module's docs — Stripe's hosted
-        // page collects the email); run
-        // StripeRealClient::create_checkout_session under
-        // tokio::task::spawn_blocking; map the response into CheckoutCreated
-        // (checkout_url / session_id / stripe_customer_id). Any failure →
-        // Err(String) → 502 stripe_unavailable.
-        todo!("WP-B: real Stripe hosted Checkout via spawn_blocking(StripeRealClient)")
+        // Map the route tier → the billing-domain `TierKind`. `Free` never
+        // reaches this adapter (the orchestration activates free instantly,
+        // before any checkout), so treat it as an internal invariant
+        // violation rather than silently opening a paid session.
+        let tier_kind = match tier {
+            RequestedTier::Starter => TierKind::Starter,
+            RequestedTier::Team => TierKind::Team,
+            RequestedTier::Pro => TierKind::Pro,
+            RequestedTier::Free => {
+                return Err("invariant: free tier must not reach Stripe checkout".to_string());
+            }
+        };
+
+        // Email seam closed at the adapter (module docs / security model §2):
+        // an empty `customer_email` makes Stripe's hosted page collect the
+        // buyer email itself — no PII threaded through the container, and the
+        // request body stays tenant-id-only.
+        let req = CheckoutSessionRequest::new(
+            TenantId::new(tenant_id),
+            tier_kind,
+            String::new(),
+            success_url,
+            cancel_url,
+        );
+
+        // `StripeRealClient` is `reqwest::blocking`; drive it off the async
+        // runtime via `spawn_blocking`. A join failure (panic) AND a Stripe
+        // `TierError` both collapse to `Err` → 502 `stripe_unavailable`.
+        // CoreLink surfaces only the hosted URL (Stripe owns PCI).
+        let stripe = Arc::clone(&self.stripe);
+        let resp = tokio::task::spawn_blocking(move || stripe.create_checkout_session(&req))
+            .await
+            .map_err(|e| format!("checkout task failed to join: {e}"))?
+            .map_err(|e| format!("stripe checkout failed: {e}"))?;
+
+        Ok(CheckoutCreated {
+            checkout_url: resp.url,
+            session_id: resp.session_id,
+            stripe_customer_id: resp.stripe_customer_id.as_str().to_string(),
+        })
     }
 }
 

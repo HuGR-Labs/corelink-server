@@ -45,8 +45,25 @@
 
 use std::sync::Arc;
 
+use serde_json::json;
+
 use crate::routes::tier_select::{CheckoutCreated, RequestedTier, TierSelectStore};
 use crate::storage::d1_http::D1HttpClient;
+
+/// 60-second durable lock window — matches migration 0039's `lock_window_60s`
+/// CHECK (`expires_at_ms - acquired_at_ms <= 60000`) and WI §6.4.
+const LOCK_TTL_MS: i64 = 60_000;
+
+/// Map `RequestedTier` → the exact lower-case label the D1 `tier` CHECK
+/// constraints accept (`tier_selections` / `stripe_checkout_sessions`).
+const fn tier_column(tier: RequestedTier) -> &'static str {
+    match tier {
+        RequestedTier::Free => "free",
+        RequestedTier::Starter => "starter",
+        RequestedTier::Team => "team",
+        RequestedTier::Pro => "pro",
+    }
+}
 
 /// Production durable store for tier-select, backed by Cloudflare D1 over
 /// the REST API.
@@ -116,60 +133,138 @@ impl std::fmt::Debug for D1HttpTierSelectStore {
 impl TierSelectStore for D1HttpTierSelectStore {
     async fn acquire_lock(
         &self,
-        _tenant_id: &str,
-        _now_ms: i64,
-        _correlation_id: &str,
+        tenant_id: &str,
+        now_ms: i64,
+        correlation_id: &str,
     ) -> Result<bool, String> {
-        // WP-A: INSERT OR IGNORE INTO tier_selection_locks (...) RETURNING
-        // tenant_id — evict rows older than 60s first; Ok(true) iff inserted.
-        todo!("WP-A: D1 durable 60s lock acquire (INSERT OR IGNORE ... RETURNING)")
+        // Lazily evict THIS tenant's expired lock first so a stale row cannot
+        // masquerade as a live lock (the daily GC cron is the durable sweep).
+        // Best-effort — the INSERT OR IGNORE below makes the real decision.
+        self.d1
+            .query(
+                "DELETE FROM tier_selection_locks WHERE tenant_id = ?1 AND expires_at_ms < ?2",
+                &[json!(tenant_id), json!(now_ms)],
+            )
+            .await?;
+
+        // INSERT OR IGNORE is the atomic cross-isolate mutex: a RETURNING row
+        // comes back iff WE inserted (no live lock); a PK conflict (lock held)
+        // yields no row → Ok(false) → 409 lock_held.
+        let rows = self
+            .d1
+            .query(
+                "INSERT OR IGNORE INTO tier_selection_locks (tenant_id, acquired_at_ms, expires_at_ms, correlation_id) VALUES (?1, ?2, ?3, ?4) RETURNING tenant_id",
+                &[
+                    json!(tenant_id),
+                    json!(now_ms),
+                    json!(now_ms + LOCK_TTL_MS),
+                    json!(correlation_id),
+                ],
+            )
+            .await?;
+        Ok(!rows.is_empty())
     }
 
-    async fn is_dpa_accepted(
-        &self,
-        _tenant_id: &str,
-        _dpa_version: &str,
-    ) -> Result<bool, String> {
-        // WP-A: SELECT 1 FROM dpa_acceptances WHERE tenant_id=?1 AND
-        // dpa_version=?2 — fail-CLOSED (a read error is NOT "accepted").
-        todo!("WP-A: D1 INV-ONBOARD-DPA-FIRST acceptance check")
+    async fn is_dpa_accepted(&self, tenant_id: &str, dpa_version: &str) -> Result<bool, String> {
+        // INV-ONBOARD-DPA-FIRST. Fail-CLOSED: a transport error propagates as
+        // Err (never silently "accepted"); only a real acceptance row (migration
+        // 0038 `dpa_acceptances`) for the CURRENT version answers true.
+        let rows = self
+            .d1
+            .query(
+                "SELECT 1 FROM dpa_acceptances WHERE tenant_id = ?1 AND dpa_version = ?2 LIMIT 1",
+                &[json!(tenant_id), json!(dpa_version)],
+            )
+            .await?;
+        Ok(!rows.is_empty())
     }
 
-    async fn has_active_subscription(&self, _tenant_id: &str) -> Result<bool, String> {
-        // WP-A: SELECT 1 FROM tier_selections WHERE tenant_id=?1 AND
-        // subscription_state='active' (UNIQUE partial index is the backstop).
-        todo!("WP-A: D1 active-subscription check")
+    async fn has_active_subscription(&self, tenant_id: &str) -> Result<bool, String> {
+        // Primary check; the UNIQUE partial index `idx_tenant_active_subscription`
+        // is the defense-in-depth backstop. Fail-CLOSED on any error.
+        let rows = self
+            .d1
+            .query(
+                "SELECT 1 FROM tier_selections WHERE tenant_id = ?1 AND subscription_state = 'active' LIMIT 1",
+                &[json!(tenant_id)],
+            )
+            .await?;
+        Ok(!rows.is_empty())
     }
 
     async fn persist_pending_checkout(
         &self,
-        _tenant_id: &str,
-        _tier: RequestedTier,
-        _created: &CheckoutCreated,
-        _now_ms: i64,
-        _correlation_id: &str,
+        tenant_id: &str,
+        tier: RequestedTier,
+        created: &CheckoutCreated,
+        now_ms: i64,
+        correlation_id: &str,
     ) -> Result<(), String> {
-        // WP-A: UPDATE tier_selections → pending_checkout + map
-        // stripe_customer_id, then INSERT stripe_checkout_sessions —
-        // ATOMICALLY (WI §6.7).
-        todo!("WP-A: D1 persist paid-tier pending checkout (atomic UPDATE + INSERT)")
+        // (1) Map the Stripe customer id + paid tier onto the tenant row and
+        // move it to `pending_checkout`. UPSERT keeps this a SINGLE statement
+        // (all D1-over-HTTP offers — see `d1_http::query`) and tolerates a
+        // tenant with no prior `tier_selections` row.
+        self.d1
+            .query(
+                "INSERT INTO tier_selections (tenant_id, tier, subscription_state, stripe_customer_id, correlation_id) VALUES (?1, ?2, 'pending_checkout', ?3, ?4) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'pending_checkout', stripe_customer_id = excluded.stripe_customer_id, correlation_id = excluded.correlation_id",
+                &[
+                    json!(tenant_id),
+                    json!(tier_column(tier)),
+                    json!(created.stripe_customer_id),
+                    json!(correlation_id),
+                ],
+            )
+            .await?;
+
+        // (2) Mirror the in-flight Checkout Session. D1-over-HTTP cannot span a
+        // transaction across the two writes (single statement per request), so
+        // the daily reconciliation cron
+        // (`corelink_onboarding_stripe_customer_id_drift_total`) is the drift
+        // backstop for the (1)→(2) window; any failure here returns Err and the
+        // orchestration releases the lock so the tenant can retry.
+        self.d1
+            .query(
+                "INSERT INTO stripe_checkout_sessions (session_id, tenant_id, tier, created_at_ms, correlation_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+                &[
+                    json!(created.session_id),
+                    json!(tenant_id),
+                    json!(tier_column(tier)),
+                    json!(now_ms),
+                    json!(correlation_id),
+                ],
+            )
+            .await?;
+        Ok(())
     }
 
     async fn persist_free_active(
         &self,
-        _tenant_id: &str,
-        _now_ms: i64,
-        _correlation_id: &str,
+        tenant_id: &str,
+        now_ms: i64,
+        correlation_id: &str,
     ) -> Result<(), String> {
-        // WP-A: UPDATE tier_selections → tier='free',
-        // subscription_state='active'.
-        todo!("WP-A: D1 persist instant free-tier activation")
+        // Instant free activation. `subscription_started_at_ms` MUST be set when
+        // state = 'active' (migration 0039 `subscription_started_when_active`
+        // CHECK). UPSERT → single statement + idempotent on retry.
+        self.d1
+            .query(
+                "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?1, 'free', 'active', ?2, ?3) ON CONFLICT(tenant_id) DO UPDATE SET tier = 'free', subscription_state = 'active', subscription_started_at_ms = excluded.subscription_started_at_ms, correlation_id = excluded.correlation_id",
+                &[json!(tenant_id), json!(now_ms), json!(correlation_id)],
+            )
+            .await?;
+        Ok(())
     }
 
-    async fn release_lock(&self, _tenant_id: &str) -> Result<(), String> {
-        // WP-A: DELETE FROM tier_selection_locks WHERE tenant_id=?1
-        // (best-effort; the 60s window also self-expires).
-        todo!("WP-A: D1 release durable lock (best-effort DELETE)")
+    async fn release_lock(&self, tenant_id: &str) -> Result<(), String> {
+        // Best-effort release; the 60s window also self-expires, so a delete
+        // failure is not fatal to the already-completed orchestration.
+        self.d1
+            .query(
+                "DELETE FROM tier_selection_locks WHERE tenant_id = ?1",
+                &[json!(tenant_id)],
+            )
+            .await?;
+        Ok(())
     }
 }
 

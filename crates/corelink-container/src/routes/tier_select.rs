@@ -48,12 +48,16 @@
 use std::sync::Arc;
 
 use axum::{
+    body::Bytes,
+    extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
+    routing::post,
+    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
+use uuid::Uuid;
 
 /// Header carrying the internal shared secret (worker → container trust
 /// boundary). Identical mechanism to `internal_pat.rs`.
@@ -323,18 +327,92 @@ fn authorize_and_validate(
     Ok((tenant_id, tier))
 }
 
-// NOTE (PR2 — durable orchestration, async handler):
-//   pub async fn handle(State(state), headers, Json(body)) -> Response {
-//       let (tenant_id, tier) = authorize_and_validate(&state, &headers, &body)?;
-//       // audit `tier_select_attempted` (BEFORE any mutation)
-//       // D1: INSERT OR IGNORE tier_selection_locks (→ 409 lock_held); evict expired
-//       // D1: DPA-first check (→ 403); D1: active-subscription check (→ 409)
-//       // free → instant activate; paid → spawn_blocking(StripeRealClient.create_checkout_session)
-//       // D1: persist (UPDATE tier_selections pending_checkout + INSERT stripe_checkout_sessions)
-//       // release lock; return { checkout_url, session_id }
-//   }
-//   + router(state) merging POST /v1/onboarding/tier-select, mounted in main.rs
-//     when CORELINK_INTERNAL_AUTH_KEY is present (same gate as internal_pat).
+// ──────────────────────────────────────────────────────────────────────────────
+// HTTP transport (WP-E) — axum handler + router.
+//
+// This layer is deliberately thin: every security + durability invariant
+// lives in `authorize_and_validate` (the fail-CLOSED gate) and
+// `orchestrate_tier_select` (the durable ordering). The handler only adapts
+// bytes ⇄ typed values and the typed error ⇄ HTTP status, so it has no
+// branch a test of the gate/orchestration doesn't already cover.
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// `POST /v1/onboarding/tier-select`.
+///
+/// The body is taken as raw [`Bytes`] and parsed here rather than via the
+/// `Json` extractor so that EVERY failure — malformed JSON, an unknown field
+/// (`deny_unknown_fields`), or a typed orchestration error — returns the one
+/// `{ "error": <code> }` envelope instead of axum's default rejection shape.
+/// The route is internal-only (mounted behind the Durable Object + the
+/// constant-time `X-Corelink-Internal-Auth` gate) and axum's default body
+/// limit applies, so parsing the envelope before the auth check inside
+/// `authorize_and_validate` is bounded; auth is still step 1 of that gate and
+/// nothing downstream runs on a failed gate.
+pub async fn handle(
+    State(state): State<TierSelectRouteState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    // Parse the envelope (`deny_unknown_fields` blocks a smuggled tenant_id);
+    // any parse error is a 400 in the canonical shape.
+    let req: TierSelectRequest = match serde_json::from_slice(&body) {
+        Ok(req) => req,
+        Err(_) => return TierSelectHttpError::BadRequest.into_response(),
+    };
+
+    // Fail-CLOSED gate: internal-auth (constant-time) → verified tenant
+    // (header-only, never the body) → typed tier (+ https redirect check).
+    let (tenant_id, tier) = match authorize_and_validate(&state, &headers, &req) {
+        Ok(parts) => parts,
+        Err(e) => return e.into_response(),
+    };
+
+    // Time-sortable correlation id threading the request through the audit
+    // chain + durable store (mirrors the crate's `Uuid::now_v7` convention).
+    let correlation_id = Uuid::now_v7().to_string();
+    let now_ms = unix_millis_now();
+
+    // The durable orchestration owns the load-bearing order (audit-before-
+    // mutate → lock → DPA-first → active-sub → checkout → persist → release);
+    // map its typed result to HTTP.
+    match orchestrate_tier_select(
+        &*state.store,
+        &*state.checkout,
+        &*state.audit,
+        &tenant_id,
+        tier,
+        &req.success_url,
+        &req.cancel_url,
+        &state.current_dpa_version,
+        now_ms,
+        &correlation_id,
+    )
+    .await
+    {
+        Ok(resp) => (StatusCode::OK, Json(resp)).into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
+/// Epoch-millisecond clock for lock expiry + audit timestamps. A pre-epoch
+/// system clock is impossible on a deployed container; the saturating
+/// fallback keeps the handler total rather than letting it panic.
+fn unix_millis_now() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+}
+
+/// Build the tier-select router. `main.rs` mounts it via
+/// [`build_state_from_env`] only when the internal-auth + D1 + Stripe
+/// configuration is present (the same env gate as `internal_pat`), so the
+/// route is never reachable without its production collaborators wired.
+pub fn router(state: TierSelectRouteState) -> Router {
+    Router::new()
+        .route("/v1/onboarding/tier-select", post(handle))
+        .with_state(state)
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Durable orchestration (the ironclad heart) — store trait + fail-closed order.
@@ -450,6 +528,7 @@ pub trait TierSelectAudit {
 ///   4. UNIQUE active subscription  → `AlreadyActive` (409) if active
 ///   5. free → instant activate; paid → Stripe Checkout (only AFTER DPA)
 ///   6. persist; release lock
+///
 /// The lock is released on every terminal error path so the tenant can retry.
 #[allow(clippy::too_many_arguments)]
 pub async fn orchestrate_tier_select<S, C, A>(
@@ -485,9 +564,19 @@ where
     }
 
     // From here, ALWAYS release the lock on a terminal error.
-    let result =
-        orchestrate_locked(store, checkout, audit, tenant_id, tier, success_url, cancel_url, dpa_version, now_ms, correlation_id)
-            .await;
+    let result = orchestrate_locked(
+        store,
+        checkout,
+        audit,
+        tenant_id,
+        tier,
+        success_url,
+        cancel_url,
+        dpa_version,
+        now_ms,
+        correlation_id,
+    )
+    .await;
     if result.is_err() {
         // Best-effort release; the 60s window also self-expires.
         let _ = store.release_lock(tenant_id).await;
@@ -609,7 +698,9 @@ mod tests {
     fn req(tier: &str) -> TierSelectRequest {
         TierSelectRequest {
             tier: tier.to_owned(),
-            success_url: "https://app.corelink.humangr.com/en/upgraded?session_id={CHECKOUT_SESSION_ID}".to_owned(),
+            success_url:
+                "https://app.corelink.humangr.com/en/upgraded?session_id={CHECKOUT_SESSION_ID}"
+                    .to_owned(),
             cancel_url: "https://app.corelink.humangr.com/en/pricing".to_owned(),
         }
     }
@@ -701,8 +792,14 @@ mod tests {
 
     #[test]
     fn tier_parse_is_case_insensitive_and_trims() {
-        assert_eq!(RequestedTier::parse_self_serve("  PRO "), ParsedTier::Tier(RequestedTier::Pro));
-        assert_eq!(RequestedTier::parse_self_serve("Enterprise"), ParsedTier::Enterprise);
+        assert_eq!(
+            RequestedTier::parse_self_serve("  PRO "),
+            ParsedTier::Tier(RequestedTier::Pro)
+        );
+        assert_eq!(
+            RequestedTier::parse_self_serve("Enterprise"),
+            ParsedTier::Enterprise
+        );
         assert_eq!(RequestedTier::parse_self_serve(""), ParsedTier::Invalid);
     }
 
@@ -806,10 +903,23 @@ mod tests {
         checkout: SpyCheckout,
         audit: SpyAudit,
         tier: RequestedTier,
-    ) -> (Result<TierSelectResponse, TierSelectHttpError>, MemStore, SpyCheckout, SpyAudit) {
+    ) -> (
+        Result<TierSelectResponse, TierSelectHttpError>,
+        MemStore,
+        SpyCheckout,
+        SpyAudit,
+    ) {
         let r = orchestrate_tier_select(
-            &store, &checkout, &audit, "tenant-x", tier,
-            "https://app/upgraded", "https://app/pricing", "v3", 1_700_000_000_000, "corr-1",
+            &store,
+            &checkout,
+            &audit,
+            "tenant-x",
+            tier,
+            "https://app/upgraded",
+            "https://app/pricing",
+            "v3",
+            1_700_000_000_000,
+            "corr-1",
         )
         .await;
         (r, store, checkout, audit)
@@ -819,24 +929,47 @@ mod tests {
     async fn paid_happy_path_returns_checkout_url_and_persists() {
         let mut store = MemStore::default();
         store.dpa_accepted.insert("tenant-x".into());
-        let (r, store, checkout, _a) = run(store, SpyCheckout::default(), SpyAudit::default(), RequestedTier::Pro).await;
+        let (r, store, checkout, _a) = run(
+            store,
+            SpyCheckout::default(),
+            SpyAudit::default(),
+            RequestedTier::Pro,
+        )
+        .await;
         let resp = r.unwrap();
-        assert_eq!(resp.checkout_url.as_deref(), Some("https://checkout.stripe.com/c/pay/cs_test_123"));
+        assert_eq!(
+            resp.checkout_url.as_deref(),
+            Some("https://checkout.stripe.com/c/pay/cs_test_123")
+        );
         assert_eq!(resp.session_id, "cs_test_123");
         assert!(*checkout.called.lock().unwrap());
         assert_eq!(*store.persisted.lock().unwrap(), vec!["paid:tenant-x"]);
-        assert!(store.locks.lock().unwrap().is_empty(), "lock released after success");
+        assert!(
+            store.locks.lock().unwrap().is_empty(),
+            "lock released after success"
+        );
     }
 
     #[tokio::test]
     async fn dpa_not_accepted_blocks_before_stripe() {
         // INV-ONBOARD-DPA-FIRST: no DPA acceptance → 403 and Stripe is NEVER called.
-        let (r, store, checkout, _a) =
-            run(MemStore::default(), SpyCheckout::default(), SpyAudit::default(), RequestedTier::Pro).await;
+        let (r, store, checkout, _a) = run(
+            MemStore::default(),
+            SpyCheckout::default(),
+            SpyAudit::default(),
+            RequestedTier::Pro,
+        )
+        .await;
         assert_eq!(r.unwrap_err(), TierSelectHttpError::DpaRequired);
-        assert!(!*checkout.called.lock().unwrap(), "Stripe MUST NOT be called when DPA not accepted");
+        assert!(
+            !*checkout.called.lock().unwrap(),
+            "Stripe MUST NOT be called when DPA not accepted"
+        );
         assert!(store.persisted.lock().unwrap().is_empty());
-        assert!(store.locks.lock().unwrap().is_empty(), "lock released on DPA reject");
+        assert!(
+            store.locks.lock().unwrap().is_empty(),
+            "lock released on DPA reject"
+        );
     }
 
     #[tokio::test]
@@ -844,7 +977,13 @@ mod tests {
         let mut store = MemStore::default();
         store.dpa_accepted.insert("tenant-x".into());
         store.lock_already_held = true;
-        let (r, _s, checkout, _a) = run(store, SpyCheckout::default(), SpyAudit::default(), RequestedTier::Pro).await;
+        let (r, _s, checkout, _a) = run(
+            store,
+            SpyCheckout::default(),
+            SpyAudit::default(),
+            RequestedTier::Pro,
+        )
+        .await;
         assert_eq!(r.unwrap_err(), TierSelectHttpError::LockHeld);
         assert!(!*checkout.called.lock().unwrap());
     }
@@ -854,7 +993,13 @@ mod tests {
         let mut store = MemStore::default();
         store.dpa_accepted.insert("tenant-x".into());
         store.active.insert("tenant-x".into());
-        let (r, _s, checkout, _a) = run(store, SpyCheckout::default(), SpyAudit::default(), RequestedTier::Team).await;
+        let (r, _s, checkout, _a) = run(
+            store,
+            SpyCheckout::default(),
+            SpyAudit::default(),
+            RequestedTier::Team,
+        )
+        .await;
         assert_eq!(r.unwrap_err(), TierSelectHttpError::AlreadyActive);
         assert!(!*checkout.called.lock().unwrap());
     }
@@ -863,11 +1008,18 @@ mod tests {
     async fn stripe_failure_maps_to_502_and_releases_lock() {
         let mut store = MemStore::default();
         store.dpa_accepted.insert("tenant-x".into());
-        let checkout = SpyCheckout { fail: true, ..Default::default() };
-        let (r, store, _c, _a) = run(store, checkout, SpyAudit::default(), RequestedTier::Starter).await;
+        let checkout = SpyCheckout {
+            fail: true,
+            ..Default::default()
+        };
+        let (r, store, _c, _a) =
+            run(store, checkout, SpyAudit::default(), RequestedTier::Starter).await;
         assert_eq!(r.unwrap_err(), TierSelectHttpError::StripeUnavailable);
         assert!(store.persisted.lock().unwrap().is_empty());
-        assert!(store.locks.lock().unwrap().is_empty(), "lock released on Stripe failure");
+        assert!(
+            store.locks.lock().unwrap().is_empty(),
+            "lock released on Stripe failure"
+        );
     }
 
     #[tokio::test]
@@ -875,8 +1027,12 @@ mod tests {
         // Fail-CLOSED: a failing audit on the FIRST event aborts → 500, no lock, no Stripe.
         let mut store = MemStore::default();
         store.dpa_accepted.insert("tenant-x".into());
-        let audit = SpyAudit { fail_on: Some("tier_select_attempted"), ..Default::default() };
-        let (r, store, checkout, _a) = run(store, SpyCheckout::default(), audit, RequestedTier::Pro).await;
+        let audit = SpyAudit {
+            fail_on: Some("tier_select_attempted"),
+            ..Default::default()
+        };
+        let (r, store, checkout, _a) =
+            run(store, SpyCheckout::default(), audit, RequestedTier::Pro).await;
         assert_eq!(r.unwrap_err(), TierSelectHttpError::Internal);
         assert!(!*checkout.called.lock().unwrap());
         assert!(store.persisted.lock().unwrap().is_empty());
@@ -887,10 +1043,19 @@ mod tests {
     async fn free_tier_activates_instantly_without_stripe() {
         let mut store = MemStore::default();
         store.dpa_accepted.insert("tenant-x".into());
-        let (r, store, checkout, _a) = run(store, SpyCheckout::default(), SpyAudit::default(), RequestedTier::Free).await;
+        let (r, store, checkout, _a) = run(
+            store,
+            SpyCheckout::default(),
+            SpyAudit::default(),
+            RequestedTier::Free,
+        )
+        .await;
         let resp = r.unwrap();
         assert!(resp.checkout_url.is_none());
-        assert!(!*checkout.called.lock().unwrap(), "free tier never calls Stripe");
+        assert!(
+            !*checkout.called.lock().unwrap(),
+            "free tier never calls Stripe"
+        );
         assert_eq!(*store.persisted.lock().unwrap(), vec!["free:tenant-x"]);
     }
 }

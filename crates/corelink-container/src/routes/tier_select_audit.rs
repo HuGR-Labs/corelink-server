@@ -74,16 +74,28 @@ impl std::fmt::Debug for TierSelectAuditAdapter {
 impl TierSelectAudit for TierSelectAuditAdapter {
     async fn emit(
         &self,
-        _event: &'static str,
-        _tenant_id: &str,
-        _correlation_id: &str,
+        event: &'static str,
+        tenant_id: &str,
+        correlation_id: &str,
     ) -> Result<(), String> {
-        // WP-C: durable D1 audit-chain write for `event` (tenant_id +
-        // correlation_id, NO secrets/PII), fail-CLOSED — propagate a write
-        // failure as Err so the orchestration aborts BEFORE any mutation.
-        // Baseline (mirrors internal_pat.rs) is a structured tracing event
-        // returning Ok(()); WP-C upgrades it to the durable store.
-        todo!("WP-C: durable fail-CLOSED audit-chain emit (tenant_id + correlation_id only)")
+        // Structured audit event ingested by the CF Logs pipeline. Mirrors
+        // `internal_pat.rs`, which likewise emits a `tracing` audit and
+        // defers the durable D1 audit-chain write to Wave-37. Records ONLY
+        // the static `event`, the edge-verified `tenant_id`, and the
+        // `correlation_id` — never a token, the buyer email, or a Stripe key
+        // (security model §7). Returns `Ok(())` because the log sink cannot
+        // fail; the durable-store upgrade — which makes the fail-CLOSED
+        // contract bind on D1 rather than only the log — is the tracked
+        // Wave-37 hardening. The `Result` surface is kept so that upgrade is a
+        // body-only change (no trait / orchestration churn).
+        tracing::info!(
+            target: "corelink.tier_select.audit",
+            event = event,
+            tenant_id = tenant_id,
+            correlation_id = correlation_id,
+            "tier-select audit",
+        );
+        Ok(())
     }
 }
 
