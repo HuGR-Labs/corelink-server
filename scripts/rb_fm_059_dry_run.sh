@@ -70,9 +70,9 @@ emit ""
 emit "Step 1 — Detection: quota check property test asserts the DO actor"
 emit "  model Mutex<()> decision_lock serialises concurrent decisions"
 emit "  byte-for-byte and INV-QUOTA-ENFORCEMENT holds across 10k iter."
-emit "  Driving: cargo test -p corelink-quota --test prop_quota \\"
+emit "  Driving: cargo test -p corelink-billing --test quota_core_prop_quota \\"
 emit "            -- prop_quota_atomic_no_race"
-if cargo test -p corelink-quota --test prop_quota -- \
+if cargo test -p corelink-billing --test quota_core_prop_quota -- \
     prop_quota_atomic_no_race --quiet \
     >/tmp/rb_fm_059_step1.log 2>&1; then
     emit "  -> PASS: DO actor model serialisation canonical;"
@@ -114,9 +114,9 @@ emit "           min(7d, max(60s, req_bytes/1MB/s × 2)) (Lote 10.7bis"
 emit "           R5 P0-2). Multipart 160 GiB no longer over-quota mid-"
 emit "           upload."
 emit "  Driving: reservation expiry + tenant isolation:"
-emit "  Driving: cargo test -p corelink-quota --test prop_quota \\"
+emit "  Driving: cargo test -p corelink-billing --test quota_core_prop_quota \\"
 emit "            -- prop_reservation_expiry_releases_bytes prop_tenant_isolation"
-if cargo test -p corelink-quota --test prop_quota -- \
+if cargo test -p corelink-billing --test quota_core_prop_quota -- \
     prop_reservation_expiry_releases_bytes prop_tenant_isolation --quiet \
     >/tmp/rb_fm_059_step3.log 2>&1; then
     emit "  -> PASS: reservation expiry releases bytes + tenant isolation canonical"
@@ -137,9 +137,9 @@ emit "  Step 4c: cross-reference com tenant tier (free vs enterprise;"
 emit "           enterprise tem budget maior; per-tier defaults pinned"
 emit "           by WI-S07-002 EvictionConfig per ADR-0019)."
 emit "  Driving: per-tier TTL canonical pinning + reservation TTL monotone:"
-emit "  Driving: cargo test -p corelink-quota --test prop_quota \\"
+emit "  Driving: cargo test -p corelink-billing --test quota_core_prop_quota \\"
 emit "            -- prop_reservation_ttl_size_proportional"
-if cargo test -p corelink-quota --test prop_quota -- \
+if cargo test -p corelink-billing --test quota_core_prop_quota -- \
     prop_reservation_ttl_size_proportional --quiet \
     >/tmp/rb_fm_059_step4.log 2>&1; then
     emit "  -> PASS: size-proportional reservation TTL canonical"
@@ -159,9 +159,9 @@ emit "  Prevenção: property test + chaos test gerando 100k requests/seg"
 emit "           para DO única e medindo state growth — currently 10k iter"
 emit "           PR-gate; 100k iter nightly tier per WI-S07-005 §F."
 emit "  Driving: audit emit per decision arm (fail-closed envelope):"
-emit "  Driving: cargo test -p corelink-quota --test prop_quota \\"
+emit "  Driving: cargo test -p corelink-billing --test quota_core_prop_quota \\"
 emit "            -- prop_audit_emit_per_decision_arm prop_idempotent_reservation_lookup"
-if cargo test -p corelink-quota --test prop_quota -- \
+if cargo test -p corelink-billing --test quota_core_prop_quota -- \
     prop_audit_emit_per_decision_arm prop_idempotent_reservation_lookup --quiet \
     >/tmp/rb_fm_059_step5.log 2>&1; then
     emit "  -> PASS: audit fail-closed envelope + idempotent reservation lookup green"

@@ -80,6 +80,38 @@ Each entry cross-references:
 
 ### Fixed
 
+- **Complete Wave-35 rename-rot sweep — stale `cargo --test/--bench` target
+  names in CI workflows and runbook scripts.** Wave-35 absorption prefixed test
+  and bench filenames with a module name (e.g. `tests/prop_quota.rs` ->
+  `tests/quota_core_prop_quota.rs`), but 40+ `cargo test --test <X>` /
+  `cargo bench --bench <X>` invocations across `.github/` and `scripts/` still
+  used the old basenames, causing `error: no test target named <X>` (exit 101)
+  in ~1.5 s. PR #126 fixed 9; this sweep closes the remaining 13 distinct stale
+  refs (30+ invocation sites) across 8 files:
+  `nightly.yml` (8 refs), `region_pinning.yml` (3 refs),
+  `d1-migration-validate.yml` (1 ref + comment),
+  `scripts/rb_fm_250_dry_run.sh` (5 refs incl. package rename
+  `corelink-edge` -> `corelink-cas`, `corelink-quota-cas` -> `corelink-billing`,
+  `corelink-abuse` -> `corelink-billing`),
+  `scripts/rb_fm_059_dry_run.sh` (4 refs, `corelink-quota` -> `corelink-billing`),
+  `scripts/rb_billing_001_replay_forensic_dry_run.sh` (5 refs,
+  `corelink-billing-replay` -> `corelink-billing`),
+  `scripts/rb_fm_302_billing_drift_dry_run.sh` (1 ref),
+  `scripts/rb_region_leak_dry_run.sh` (4 refs,
+  `corelink-privacy-residency-enforcement` -> `corelink-privacy`).
+  Old -> new mapping: `prop_dedup` -> `dedup_prop`, `prop_quota` ->
+  `quota_core_prop_quota`, `prop_lru` -> `lru_tracker_prop`, `prop_edge` ->
+  `edge_prop`, `prop_quota_cas` -> `quota_cas_prop_quota_cas`, `prop_abuse` ->
+  `abuse_prop_abuse`, `prop_quota_fsm` -> `quota_fsm_prop_quota_fsm`,
+  `prop_billing_replay` -> `replay_prop_billing_replay`, `calibration_abuse` ->
+  `abuse_calibration_abuse`, `migration_canonical_0011` ->
+  `edge_migration_canonical_0011`, `d1_migration_integration` ->
+  `migrations_d1_migration_integration`, `property_region_pinning_30k` ->
+  `residency_property_region_pinning_30k`, `region_adversarial` ->
+  `residency_region_adversarial`. Zero stale refs remain; all 51 active
+  test/bench target refs validated against `find crates -path '*/tests/*.rs'`
+  and `find crates -path '*/benches/*.rs'`. Supersedes #123 + #126.
+
 - **`spec-validation` CI gate — `check_cost_regression.py` now resolves sealed
   sprint contracts.** S07 and S09 are real HIGH_RISK hot-path sprints (eviction +
   audit/metrics) that were sealed and moved to `specs/04_sprints/_sealed/`; their
