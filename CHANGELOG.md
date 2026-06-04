@@ -104,6 +104,23 @@ Each entry cross-references:
   not share the macOS fleet's constraint.
 - **`validate_canonical_consistency.py` — repoint BASELINE_PATH to `sealed/` and reconcile 18 orphan INV refs.** The script's `BASELINE_PATH` constant pointed to `specs/_audits/2026-05-15-canonical-consistency-baseline.md` but the file was archived to `specs/_audits/sealed/` (commit 689e5960). Fixed the constant to match the `sealed/` location documented in the script's own docstring. Separately, 18 INV IDs cited in code/tests had no registry §3 entry: 3 BAZEL bridge invariants (`INV-BAZEL-DIGEST-VALIDATE`, `INV-BAZEL-FIND-MISSING-CAP`, `INV-BAZEL-NO-GROPC`), 3 CLERK health-DO invariants (`INV-CLERK-TENANT-SCOPE`, `INV-CLERK-ROUNDTRIP`, `INV-CLERK-SWEEP-BOUNDARY`), 1 customer-handler cross-tenant invariant (`INV-CROSS-TENANT-DENIED`), 3 statuspage invariants (`INV-STATUSPAGE-WIRE-ROUNDTRIP`, `INV-STATUSPAGE-RATELIMIT-NO-DRIFT`, `INV-STATUSPAGE-RETRY-TOTAL-AND-MONOTONE`), 6 WASM invariants (`INV-WASM-PUT-HEX64`, `INV-WASM-PUT-DETERMINISTIC`, `INV-WASM-PUT-ROUNDTRIP`, `INV-WASM-GET-VERIFY-MATCH`, `INV-WASM-GET-PANIC-FREE`, `INV-WASM-STAT-ECHO`), and 2 false-positive prose tokens (`INV-OPS` extracted from `INV-OPS-*` glob notation in `corelink-ops/src/lib.rs`; `INV-pin` extracted from `"INV-pin documentation"` in `corelink-container` and `corelink-core`). The 16 real invariants are now registered in a new registry §3.31; the 2 false positives are fixed by rewording the prose. Gate now exits 0 with orphan_refs=0.
 
+- **`TLC region_residency` gate (WI-S14-009) — un-stuck the model check, fixed
+  two masked spec defects, and made it CI-tractable.** The gate had been failing
+  at *config parse* (`ConfigFileException: … expecting ]` at line 18): a TLC
+  `.cfg` cannot hold a function literal (`PrimaryRegionOf = [t1 |-> "WNAM", …]`).
+  Moved the concrete mapping into the spec as `PrimaryRegionOfImpl`, injected via
+  a `CONSTANT PrimaryRegionOf <- PrimaryRegionOfImpl` override. Because the model
+  had **never actually run**, fixing the parse un-masked two real defects: (1)
+  `NoCrossRegionLeak` flagged the *audit-log entry* of a correctly **rejected**
+  cross-region write — scoped the read-leak invariant to `{read, failover_read}`
+  (writes are covered at the storage level by `NoCrossRegionWrite`); (2)
+  `ReplicationEventuallyConverges` was violated because `replica_lag` (set to
+  `MaxLag` on write) could never drain once the single write-once blob was
+  replicated — added a fairness-driven `LagTick` that drains the abstract clock
+  independent of per-blob `ReplicaSync`. Tightened the never-validated bounds
+  (`MaxRequests` 20→2, `Blobs` 5→2) that exploded to >1e6 states; the full
+  exhaustive check now passes (34 282 distinct states, depth 11, ~21 s, under the
+  60 s CI budget). ASCII-normalised this `.cfg`'s comments while here.
 - **`TLA+ Model Check — Runbooks` gate — robust `tlc`-wrapper build on the macOS
   fleet.** `.github/workflows/tla_runbooks_check.yml` built its `tlc` wrapper with
   a quoted heredoc and then injected `$RUNNER_TEMP` via `sed`; the runner path's
