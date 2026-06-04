@@ -124,6 +124,7 @@ impl StripeCheckoutCreator {
     /// coverage of the real `spawn_blocking` path uses the `#[ignore]`
     /// live-Stripe harness, not this inert fixture.
     #[cfg(test)]
+    #[allow(clippy::panic, reason = "test-only constructor: panic on setup failure is fine")]
     #[must_use]
     pub(crate) fn for_test() -> Self {
         use corelink_stripe_real::{StripeClientConfig, StripeRealClient};
@@ -275,7 +276,6 @@ mod tests {
             ))
             .expect("create a real Stripe test-mode Checkout Session");
 
-        eprintln!("live Stripe session: {created:?}");
         assert!(
             created.checkout_url.starts_with("https://"),
             "checkout_url must be https: {}",
