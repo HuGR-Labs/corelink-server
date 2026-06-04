@@ -60,9 +60,6 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Install Python deps
-        run: python3 -m pip install --user -r requirements-ci.txt
-
       - name: check_migrations_additive.py
         run: python3 scripts/check_migrations_additive.py
 
@@ -177,9 +174,6 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Install pyyaml
-        run: python3 -m pip install --user pyyaml
 
       - name: region_pinning.yml parse smoke
         run: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/region_pinning.yml'))"
