@@ -80,6 +80,15 @@ Each entry cross-references:
 
 ### Fixed
 
+- **`spec-validation` CI gate — `check_cost_regression.py` now resolves sealed
+  sprint contracts.** S07 and S09 are real HIGH_RISK hot-path sprints (eviction +
+  audit/metrics) that were sealed and moved to `specs/04_sprints/_sealed/`; their
+  `_spec_contract.md` files already document the §14.10 cost regression gate.  The
+  script was only checking the active path `specs/04_sprints/<sprint>/` and therefore
+  reported "not found" for both, making the gate fail.  Added `find_sprint_contract()`
+  which checks the active path first then falls back to `_sealed/<sprint>/`; REQUIRED
+  set is unchanged (`S07 S08 S09 S10 S14`).
+
 - **`TLA+ Model Check — Runbooks` gate — robust `tlc`-wrapper build on the macOS
   fleet.** `.github/workflows/tla_runbooks_check.yml` built its `tlc` wrapper with
   a quoted heredoc and then injected `$RUNNER_TEMP` via `sed`; the runner path's

@@ -32,10 +32,26 @@ SPECS = REPO_ROOT / "specs"
 SPRINTS = SPECS / "04_sprints"
 META = SPRINTS / "_sprint_creation_contract.md"
 
-# Sprints onde cost regression gate é obrigatório (HIGH_RISK hot path)
+# Sprints onde cost regression gate e obrigatorio (HIGH_RISK hot path, per meta-contract §14.10).
+# S07 and S09 are real sealed sprints: their dirs live under _sealed/ after reaching SEALED
+# status (verified in specs/04_sprints/_sealed/S07/ and _sealed/S09/).  The gate still
+# applies to them -- find_sprint_contract() checks both paths.
+# Active sprint dirs as of 2026-06-03: S00 S02 S06 S08 S10 S11 S13 S14.
+# Sealed sprint dirs:  specs/04_sprints/_sealed/{S01,S03,S04,S05,S06,S07,S09,...}.
 REQUIRED = {"S07", "S08", "S09", "S10", "S14"}
 # Optional but recommended
 RECOMMENDED = {"S01", "S02", "S04", "S05", "S06", "S13"}
+
+
+def find_sprint_contract(sprint: str) -> "Path | None":
+    """Locate _spec_contract.md for a sprint, checking active path then _sealed/."""
+    direct = SPRINTS / sprint / "_spec_contract.md"
+    if direct.exists():
+        return direct
+    sealed = SPRINTS / "_sealed" / sprint / "_spec_contract.md"
+    if sealed.exists():
+        return sealed
+    return None
 
 
 def has_cost_gate(text: str) -> bool:
@@ -64,10 +80,10 @@ def main() -> int:
     # Check meta-contract has §14.10
     if META.exists() and not has_cost_gate(META.read_text()):
         errors.append("Meta-contract missing §14.10 cost regression gate definition")
-    # Check each required sprint
+    # Check each required sprint (active dir OR _sealed/ dir)
     for sprint in sorted(REQUIRED):
-        contract = SPRINTS / sprint / "_spec_contract.md"
-        if not contract.exists():
+        contract = find_sprint_contract(sprint)
+        if contract is None:
             errors.append(f"{sprint}: _spec_contract.md not found")
             continue
         text = contract.read_text()
@@ -77,10 +93,10 @@ def main() -> int:
             errors.append(
                 f"{sprint}: cost regression gate not documented (§14.10 required for hot path)"
             )
-    # Check recommended (warn only)
+    # Check recommended (warn only; also checks _sealed/)
     for sprint in sorted(RECOMMENDED):
-        contract = SPRINTS / sprint / "_spec_contract.md"
-        if not contract.exists():
+        contract = find_sprint_contract(sprint)
+        if contract is None:
             continue
         text = contract.read_text()
         has_gate = has_cost_gate(text)
