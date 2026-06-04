@@ -72,8 +72,8 @@ emit "Step 1 — Detection: edge per-IP CIDR longest-prefix-match property test 
 emit "  the camada-2 zero-cost drop of adversarial IPs. Per WI-S08-002 §6.1: longest-"
 emit "  prefix-match canonical (NOT linear scan); IPv4 + IPv6 supported; per-tenant"
 emit "  scoping + idempotent add + remove round-trip pinned at 10k iter."
-emit "  Driving: cargo test -p corelink-edge --test prop_edge"
-if cargo test -p corelink-edge --test prop_edge -- --quiet \
+emit "  Driving: cargo test -p corelink-cas --test edge_prop"
+if cargo test -p corelink-cas --test edge_prop -- --quiet \
     >/tmp/rb_fm_250_step1.log 2>&1; then
     emit "  -> PASS: edge CIDR longest-prefix-match canonical;"
     emit "          11 prop tests green @ 10k iter."
@@ -123,16 +123,16 @@ else
     emit "  -> FAIL: ratelimit path regressed — block production rollout"
     exit 1
 fi
-emit "  Driving: cargo test -p corelink-quota-cas --test prop_quota_cas"
-if cargo test -p corelink-quota-cas --test prop_quota_cas -- --quiet \
+emit "  Driving: cargo test -p corelink-billing --test quota_cas_prop_quota_cas"
+if cargo test -p corelink-billing --test quota_cas_prop_quota_cas -- --quiet \
     >/tmp/rb_fm_250_step3b.log 2>&1; then
     emit "  -> PASS: quota-cas camada-3 atomic check canonical (12 prop tests @ 10k)"
 else
     emit "  -> FAIL: quota-cas path regressed — block production rollout"
     exit 1
 fi
-emit "  Driving: cargo test -p corelink-abuse --test prop_abuse"
-if cargo test -p corelink-abuse --test prop_abuse -- --quiet \
+emit "  Driving: cargo test -p corelink-billing --test abuse_prop_abuse"
+if cargo test -p corelink-billing --test abuse_prop_abuse -- --quiet \
     >/tmp/rb_fm_250_step3c.log 2>&1; then
     emit "  -> PASS: abuse camada-4 heuristic canonical (15 prop tests @ 10k)"
 else
@@ -158,8 +158,8 @@ emit "    3. Single tenant abuse — corelink_abuse_score crosses Suspicious tie
 emit "       SEV-2 admin review;"
 emit "    4. Global circuit trip — multi-signal canonical (R-S08-004 mitigation)."
 emit "  Calibration sample asserts FP ≤ 5% upper-bound + TP ≥ 80% lower-bound."
-emit "  Driving: cargo test -p corelink-abuse --test calibration_abuse"
-if cargo test -p corelink-abuse --test calibration_abuse -- --quiet \
+emit "  Driving: cargo test -p corelink-billing --test abuse_calibration_abuse"
+if cargo test -p corelink-billing --test abuse_calibration_abuse -- --quiet \
     >/tmp/rb_fm_250_step4.log 2>&1; then
     emit "  -> PASS: abuse calibration Wilson CI canonical (7 calibration tests)"
 else
@@ -184,7 +184,7 @@ else
     emit "  -> FAIL: migration 0014 regressed"
     exit 1
 fi
-if cargo test -p corelink-edge --test migration_canonical_0011 -- --quiet \
+if cargo test -p corelink-cas --test edge_migration_canonical_0011 -- --quiet \
     >/tmp/rb_fm_250_step5b.log 2>&1; then
     emit "  -> PASS: 0011_edge_blocklist migration canonical (17 tests)"
 else

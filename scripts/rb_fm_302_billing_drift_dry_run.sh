@@ -124,8 +124,8 @@ emit "  prop_replay_deterministic + prop_layer_diverged_flagged 10k iter pin"
 emit "  the invariant that the same (tenant, billing_period) replay always"
 emit "  produces the same ReconstructedLayers and that a divergent layer is"
 emit "  classified per LayerDriftSummary 5-element taxonomy."
-emit "  Driving: cargo test -p corelink-billing-replay --test prop_billing_replay"
-if cargo test -p corelink-billing-replay --test prop_billing_replay -- --quiet \
+emit "  Driving: cargo test -p corelink-billing --test replay_prop_billing_replay"
+if cargo test -p corelink-billing --test replay_prop_billing_replay -- --quiet \
     >/tmp/rb_fm_302_step4.log 2>&1; then
     emit "  -> PASS: replay determinism + layer-diverged classification holds at 10k iter"
 else
