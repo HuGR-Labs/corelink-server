@@ -16,20 +16,18 @@ on:
       - 'scripts/check_proptest_density_gate.sh'
       - 'scripts/proptest-density-allowlist.txt'
       - '.github/workflows/proptest-density-gate.yml'
-  push:
-    branches: [main]
-    # Match the pull_request paths above: proptest density only changes when Rust
-    # crates or the gate's own scripts change. Without this filter EVERY merge to
-    # main (incl. docs/config/dependabot) re-ran the full proptest build on the
-    # self-hosted fleet (5 macOS runners = one Mac) — a recurring near-OOM driver
-    # (2026-06-02; see ADR-S12-045 §Schedule). Skipped runs cost nothing here;
-    # density is unaffected by non-crate changes.
-    paths:
-      - 'crates/**'
-      - 'scripts/audit_proptest_density.sh'
-      - 'scripts/check_proptest_density_gate.sh'
-      - 'scripts/proptest-density-allowlist.txt'
-      - '.github/workflows/proptest-density-gate.yml'
+  # NOTE: no `push: branches:[main]`. The density audit compiles the workspace on
+  # the self-hosted macOS fleet (5 runners = one Mac) and was a recurring near-OOM
+  # driver — EVEN path-filtered, a crate-touching merge re-ran the full proptest
+  # build on top of the rest of the heavy-gate fleet on every main merge (load
+  # 398/665, 2026-06-04). Moved to nightly + on-demand, matching the 977225d3
+  # "stop heavy-gate stampede" sweep (2026-06-02, ADR-S12-045 §Schedule). The PR
+  # `paths:` lane above still enforces density on every crate/script change.
+  schedule:
+    # Nightly at 04:31 UTC — staggered into the Rust-compile nightly band
+    # (between corelink-* component gates at 04:23 and 04:37) to spread fleet load.
+    - cron: '31 4 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read

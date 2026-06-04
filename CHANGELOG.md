@@ -154,6 +154,31 @@ Each entry cross-references:
   fast. `actionlint` clean across all 17. Files: `coverage`, `reproducible-build`,
   `ffi-matrix-ci`, `cas_foundation`, `codeql`, `semgrep`, `s07`–`s10`+`gc`
   ship-gates, `tla_*` (5), `region_pinning`.
+- **CI heavy-gate stampede — extension: removed `push: branches:[main]` from the
+  remaining Rust-COMPILING gates the first sweep missed.** After the 17-gate sweep
+  above (977225d3), a handful of cargo-compiling gates still carried
+  `push: branches:[main]` and re-fired (and had to be cancelled) on the next main
+  merge, re-loading the self-hosted macOS fleet (load 398/665, 2026-06-04). Moved
+  **9 gates** off `push: main` → **nightly (staggered) + targeted-PR + on-demand**:
+  `cargo-audit` (compiles the tool via `cargo install --locked`; keeps its 06:00
+  cron), `cargo-deny` (resolves + builds the full dep graph; keeps its 06:30 cron),
+  `proptest-density-gate` (compiles the workspace — the documented near-OOM driver;
+  had **no** cron, so gained a staggered `31 4 * * *` + `workflow_dispatch`), and
+  the six per-crate component gates that run `cargo clippy` + `cargo test`
+  (debug + release) on the Mac fleet — `corelink-hash` (04:37), `corelink-meta`
+  (04:47), `corelink-reapi` (04:53), `corelink-worker` (04:53),
+  `corelink-client-verify` (04:41), `tenant-path` (04:17) — each keeping its
+  existing nightly cron. Every one retains its `pull_request: paths:` lane (PR
+  rigor preserved where it is cheap + targeted). `push: branches:[main]` blocks
+  with nested `paths:` lists were removed whole (no orphaned `paths:`).
+  Deliberately **left on `push: main` for the orchestrator to review** (not
+  in-scope for a "Rust-compile/benchmark" move): `buck2-starter-ci` (runs on a
+  separate `[self-hosted, Linux, X64]` pool, and its push lane is load-bearing —
+  it auto-commits `BENCHMARK.md` on main) and `smoke-install` (a `docker build` +
+  `docker run` of a *prebuilt* binary — no cargo/source compile, and already
+  self-skips when Docker is absent). `perf-regression` already carried no
+  `push: main` (PR + `workflow_dispatch` only) — no change needed. Light gates
+  keep `push: main`. `actionlint` clean across all 9 changed files.
 - **`slo-instrumentation` gate — sealed audit-doc reference-rot.**
   `scripts/validate_slo_instrumentation.py` hardcoded
   `specs/_audits/2026-05-14-slo-instrumentation-gaps.md`, but the `_sealed/`

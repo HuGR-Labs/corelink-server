@@ -34,13 +34,12 @@ on:
       - 'deny.toml'
       - '.cargo/audit.toml'   # advisory-waiver list — re-run the gate if it changes
       - '.github/workflows/cargo-audit.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'crates/**'
-      - 'apps/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
+  # NOTE: no `push: branches:[main]` — `cargo install cargo-audit` compiles the
+  # tool from source on the self-hosted macOS fleet, so re-running it on every
+  # main merge fed the heavy-gate stampede (load 398/665, 2026-06-04; extends
+  # the 977225d3 "stop heavy-gate stampede" sweep). The daily cron below + the
+  # PR `paths:` lane above keep continuous + targeted coverage; on-demand via
+  # workflow_dispatch.
   schedule:
     # Daily at 06:00 UTC — RUSTSEC mirror typically refreshes by 05:00 UTC.
     # Detection latency SLA: ≤ 24h post-RUSTSEC publish (§3 SLA addendum).
