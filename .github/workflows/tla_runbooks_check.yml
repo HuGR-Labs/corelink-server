@@ -70,12 +70,17 @@ jobs:
             exit 1
           fi
           mkdir -p "$HOME/.local/bin"
-          cat > "$HOME/.local/bin/tlc" <<'EOF'
+          # Build the tlc wrapper via an UNQUOTED heredoc so $RUNNER_TEMP is
+          # expanded by the shell at write-time (\$@ stays literal in the file).
+          # This mirrors tla_check.yml / tla_billing_check.yml exactly and is
+          # robust to any character in the runner path — the prior `sed`-based
+          # injection broke because the RUNNER_TEMP path's `/` slashes collided
+          # with sed's substitution syntax ("sed: extra characters at the end of
+          # g command"). Letting the shell expand the path avoids sed entirely.
+          cat > "$HOME/.local/bin/tlc" <<EOF
           #!/usr/bin/env bash
-          exec java -cp "${RUNNER_TEMP}/tla/tla2tools.jar" tlc2.TLC "$@"
+          exec java -cp "$RUNNER_TEMP/tla/tla2tools.jar" tlc2.TLC "\$@"
           EOF
-          # The wrapper above uses ${RUNNER_TEMP} from env at run time.
-          sed -i "s|\${RUNNER_TEMP}|${RUNNER_TEMP}|g" "$HOME/.local/bin/tlc"
           chmod +x "$HOME/.local/bin/tlc"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           echo "TLC_JAR=$RUNNER_TEMP/tla/tla2tools.jar" >> "$GITHUB_ENV"

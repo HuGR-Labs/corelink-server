@@ -80,6 +80,15 @@ Each entry cross-references:
 
 ### Fixed
 
+- **`TLA+ Model Check — Runbooks` gate — robust `tlc`-wrapper build on the macOS
+  fleet.** `.github/workflows/tla_runbooks_check.yml` built its `tlc` wrapper with
+  a quoted heredoc and then injected `$RUNNER_TEMP` via `sed`; the runner path's
+  `/` slashes collided with sed's substitution syntax (`sed: extra characters at
+  the end of g command`), failing the step before any TLC run. Dropped `sed`
+  entirely and now build the wrapper with an unquoted heredoc (shell expands
+  `$RUNNER_TEMP` at write-time, `\$@` stays literal), mirroring the working
+  `tla_check.yml` / `tla_billing_check.yml` pattern. SHA-256 pin + run logic
+  unchanged.
 - **Terraform CI cluster — un-broke the whole `terraform-lint` gate.** Three
   tangled fixes landed together: (1) native `tfsec` (the Docker action is
   Linux-only) with the one real finding (BYOK aws-kms `kms:ReEncrypt*` wildcard,
