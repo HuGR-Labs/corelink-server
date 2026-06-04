@@ -64,6 +64,17 @@ Each entry cross-references:
   wireable 30-second-demo slot (env-driven `NEXT_PUBLIC_DEMO_URL`, no fabricated video),
   and a locale-aware footer linking `/pricing`, `/legal/terms`, `/privacy`. New
   `landing.*` i18n keys added at parity across all four locales (en/pt/es/de).
+- **admin-ui `/[locale]/upgraded` checkout-success page** (Launch L3). The Stripe
+  Checkout `success_url` minted by `apps/admin-ui/src/app/api/checkout/session/route.ts`
+  (`${origin}/${locale}/upgraded?session_id={CHECKOUT_SESSION_ID}`) had no matching
+  route, so customers hit a 404 immediately after paying. Adds the missing server
+  component (`apps/admin-ui/src/app/[locale]/upgraded/page.tsx`) mirroring the
+  `[locale]/pricing` conventions: a clean "Subscription started — your plan activates
+  in a moment" confirmation with links back to the dashboard and billing. Purely
+  informational by design — `session_id` is NOT treated as proof of payment; tier
+  activation stays owned by the idempotent `checkout.session.completed` webhook in
+  `corelink-tier-selection`. Adds the `upgraded.*` message keys to
+  `src/i18n/locales/en.json`.
 - **Self-serve tier-select checkout backend — ironclad core** (WI-S19-004 PRR
   wiring). `crates/corelink-container/src/routes/tier_select.rs`: the
   transport-agnostic, fail-CLOSED core of `POST /v1/onboarding/tier-select`.
