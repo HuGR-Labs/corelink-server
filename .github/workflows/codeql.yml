@@ -138,14 +138,40 @@ jobs:
 
       - name: Perform CodeQL Analysis
         id: analyze
-        # github/codeql-action/analyze v3.27.0 — TBD-SHA replace.
+        # github/codeql-action/analyze@v3.27.0 — same SHA pin as init above +
+        # semgrep.yml's upload-sarif (verified against the v3.27.0 commit).
         uses: github/codeql-action/analyze@662472033e021d55d94146f66f6058822b0b39fd  # github/codeql-action/analyze@v3.27.0
         with:
           category: "/language:${{ matrix.language }}"
-          # Upload SARIF to GHA Security tab (default behaviour); we also
-          # write a local copy for the gate step below.
+          # Write the SARIF to a local dir for BOTH the severity gate below and
+          # the (separate, non-fatal) upload step. `upload: never` so the
+          # analysis is judged ONLY on whether the scan/build succeeded — NOT on
+          # the GHAS-gated Security-tab upload, which is split out into the
+          # best-effort step below (mirrors the tfsec pattern in
+          # terraform-lint.yml). Previously `upload: always`, which folded the
+          # upload into this step and reddened the whole job when GHAS was off.
           output: codeql-results
-          upload: always
+          upload: never
+
+      - name: Upload SARIF to GitHub Security tab
+        # github/codeql-action/upload-sarif@v3.27.0 — same SHA pin as
+        # init/analyze above (matches semgrep.yml).
+        #
+        # SARIF upload requires GitHub Advanced Security (code scanning), which
+        # is NOT enabled on this private repo — the upload returns "Code scanning
+        # is not enabled for this repository" and would otherwise red the whole
+        # CodeQL job even though the scan above passed. `continue-on-error` keeps
+        # the JOB status driven by the actual CodeQL scan + severity gate; until
+        # GHAS is enabled this upload no-ops without failing the gate. The scan
+        # still runs. Once GHAS is enabled the SARIF populates the Security tab
+        # with no further change.
+        continue-on-error: true
+        if: always()
+        uses: github/codeql-action/upload-sarif@662472033e021d55d94146f66f6058822b0b39fd  # github/codeql-action/upload-sarif@v3.27.0
+        with:
+          # Directory of per-language SARIF emitted by the analyze step above.
+          sarif_file: codeql-results
+          category: "/language:${{ matrix.language }}"
 
       # -----------------------------------------------------------------
       # Severity gate — fail the PR if any finding ≥ HIGH (security-severity

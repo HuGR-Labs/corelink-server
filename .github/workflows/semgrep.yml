@@ -129,8 +129,19 @@ jobs:
           SEMGREP_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload SARIF to GitHub Security tab
-        # github/codeql-action/upload-sarif@v3.27.0 — TBD-SHA (same pin as
-        # codeql.yml init/analyze; bump together via single ADR).
+        # github/codeql-action/upload-sarif@v3.27.0 (same pin as codeql.yml
+        # init/analyze; bump together via single ADR).
+        #
+        # SARIF upload requires GitHub Advanced Security (code scanning), which
+        # is NOT enabled on this private repo — the upload returns "Code scanning
+        # is not enabled for this repository" and would otherwise red the whole
+        # Semgrep job even though the scan above (which sets the job's pass/fail
+        # via its own exit code) succeeded. `continue-on-error` keeps the JOB
+        # status driven by the actual Semgrep result; until GHAS is enabled this
+        # upload no-ops without failing the gate. The scan still runs. Once GHAS
+        # is enabled the SARIF populates the Security tab with no further change.
+        # (Mirrors the tfsec pattern in terraform-lint.yml + codeql.yml.)
+        continue-on-error: true
         if: always() && steps.semgrep.outputs.sarif != ''
         uses: github/codeql-action/upload-sarif@662472033e021d55d94146f66f6058822b0b39fd  # github/codeql-action/upload-sarif@v3.27.0
         with:

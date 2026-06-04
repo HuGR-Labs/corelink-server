@@ -40,8 +40,40 @@ concurrency:
   cancel-in-progress: false   # Never cancel a running E2E; let it finish+cleanup
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Secret-presence gate. This smoke hits LIVE Clerk prod via the Clerk Backend
+  # API key (CLERK_SECRET_KEY) — an owner-provided launch-day secret that does
+  # NOT exist pre-launch. The `secrets` context cannot be used in a job-level
+  # `if:`, so a tiny gate job routes the secret through `env`, emits a `run`
+  # output, and the `e2e` job below guards on `needs.gate.outputs.run` — SKIPPING
+  # (not failing) when the key is absent, and RUNNING automatically once the
+  # owner sets it. (Mirrors the needs-output gate in pentest-findings-sync.yml.)
+  gate:
+    name: Gate — CLERK_SECRET_KEY present?
+    runs-on: [self-hosted, mac, corelink-builder]
+    timeout-minutes: 2
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - name: Check CLERK_SECRET_KEY
+        id: check
+        shell: bash
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+        run: |
+          set -uo pipefail
+          if [ -n "${CLERK_SECRET_KEY:-}" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "CLERK_SECRET_KEY present — Clerk signup E2E will run."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=e2e-clerk-signup skipped::skipped: CLERK_SECRET_KEY not set — set it (Settings → Secrets → Actions) to enable this prod E2E gate."
+          fi
+
   e2e:
     name: Clerk signup E2E (prod)
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     env:
