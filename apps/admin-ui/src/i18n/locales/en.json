@@ -105,9 +105,56 @@
     "tagline": "Shared content-addressable cache for builds, packages, and ML."
   },
   "landing": {
-    "heading": "CoreLink Admin",
-    "subheading": "Manage your tenant, PATs, and compliance posture.",
-    "cta": "Sign in to continue"
+    "nav": {
+      "pricing": "Pricing",
+      "signIn": "Sign in"
+    },
+    "hero": {
+      "heading": "A shared content-addressable cache, finally built for multi-tenant teams.",
+      "subheading": "CoreLink deduplicates and audits the blobs your CI, your registries, and your model store re-upload a hundred times a day — across regions, across workloads, across teams — with cryptographic tenant isolation and an append-only Merkle audit chain.",
+      "ctaPrimary": "Start free",
+      "ctaSecondary": "Watch the demo",
+      "ctaSub": "No card required to start · Free tier with R2 zero-egress"
+    },
+    "demo": {
+      "title": "See it in 90 seconds",
+      "placeholder": "Demo coming soon",
+      "placeholderHint": "A 90-second walkthrough: point your build cache at CoreLink, watch a cold build go warm, and read the signed audit trail.",
+      "button": "Watch the 90-second demo"
+    },
+    "features": {
+      "isolation": {
+        "title": "Tenant isolation, modelled in TLA+.",
+        "body": "The difference between marketing-language multi-tenant and actually-multi-tenant is a formal proof. CoreLink keeps a TLA+ specification of cross-tenant byte non-leakage and runs it in CI on every change. If the safety property regresses, the build fails. We don't trust ourselves to get this right by code review alone.",
+        "b1": "BLAKE3 + SHA-256 content addressing",
+        "b2": "Per-tenant CAS namespace, isolation-by-construction",
+        "b3": "Tenant boundary verified in CI on every commit"
+      },
+      "audit": {
+        "title": "Audit you can actually prove.",
+        "body": "Every CAS read and write appends to a per-tenant append-only Merkle log. Each entry is Ed25519-signed. The full log is replayable. You can answer the auditor's question — what happened on this artefact, when, and has anything been retro-edited? — with a cryptographic proof, not a vendor's word.",
+        "b1": "Append-only Merkle log per tenant",
+        "b2": "Ed25519 signatures on every entry",
+        "b3": "Replayable from any verified anchor"
+      },
+      "multiRegion": {
+        "title": "Four regions. Residency you control.",
+        "body": "Active in US-East, EU-West, AP-Southeast, and AU-East on Cloudflare R2 + Workers + D1. Reads route locally; writes converge globally; residency policies are enforced per tenant — not assumed and not opt-in. EU bytes stay in EU. AU bytes stay in AU.",
+        "b1": "4 active regions on Cloudflare's edge",
+        "b2": "Per-tenant residency policy (region-pin or replicate)",
+        "b3": "Schrems-II-aware routing"
+      }
+    },
+    "closing": {
+      "heading": "Stop re-uploading the same bytes. Start with CoreLink.",
+      "ctaSecondary": "See pricing"
+    },
+    "footer": {
+      "tagline": "CoreLink is a HuGR Labs product. © 2026 HuGR Labs.",
+      "pricing": "Pricing",
+      "terms": "Terms",
+      "privacy": "Privacy"
+    }
   },
   "pricing": {
     "title": "Simple, transparent pricing",

@@ -41,6 +41,15 @@ Each entry cross-references:
   `CORELINK_INTERNAL_AUTH_KEY`/`CLERK_SECRET_KEY` → 403, bad token → 401, no
   tenant → 403. (Launch-day: confirm the live Clerk session `azp` matches the app
   origin `https://corelink-admin.humangr.com`.)
+- **Public landing page** (ROADMAP-TO-GA Phase 1 L1). `apps/admin-ui/src/app/page.tsx`
+  replaces the bare "CoreLink Admin" admin shell with a real first-visitor landing
+  page, porting positioning from `marketing/launch/PILOT-LANDING-PAGE-COPY.md`: hero
+  (what CoreLink IS — a shared, multi-tenant content-addressable cache for builds /
+  packages / ML), **primary CTA → sign-up** (secondary sign-in kept), three feature
+  blocks (TLA+ tenant isolation, Ed25519 Merkle audit chain, 4-region residency), a
+  wireable 30-second-demo slot (env-driven `NEXT_PUBLIC_DEMO_URL`, no fabricated video),
+  and a locale-aware footer linking `/pricing`, `/legal/terms`, `/privacy`. New
+  `landing.*` i18n keys added at parity across all four locales (en/pt/es/de).
 - **Self-serve tier-select checkout backend — ironclad core** (WI-S19-004 PRR
   wiring). `crates/corelink-container/src/routes/tier_select.rs`: the
   transport-agnostic, fail-CLOSED core of `POST /v1/onboarding/tier-select`.

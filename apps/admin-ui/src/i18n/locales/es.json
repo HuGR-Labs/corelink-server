@@ -105,8 +105,55 @@
     "tagline": "Caché compartido direccionado por contenido para builds, paquetes y ML."
   },
   "landing": {
-    "heading": "CoreLink Admin",
-    "subheading": "Gestione su tenant, PATs y cumplimiento normativo.",
-    "cta": "Inicie sesión para continuar"
+    "nav": {
+      "pricing": "Precios",
+      "signIn": "Iniciar sesión"
+    },
+    "hero": {
+      "heading": "Una caché direccionada por contenido, por fin diseñada para equipos multiinquilino.",
+      "subheading": "CoreLink deduplica y audita los blobs que su CI, sus registries y su almacén de modelos vuelven a subir cientos de veces al día — entre regiones, entre cargas de trabajo, entre equipos — con aislamiento criptográfico de inquilino y una cadena de auditoría Merkle de solo anexado.",
+      "ctaPrimary": "Empezar gratis",
+      "ctaSecondary": "Ver la demo",
+      "ctaSub": "Sin tarjeta para empezar · Plan gratuito con egreso cero de R2"
+    },
+    "demo": {
+      "title": "Véalo en 90 segundos",
+      "placeholder": "Demo próximamente",
+      "placeholderHint": "Un recorrido de 90 segundos: apunte su caché de compilación a CoreLink, vea cómo una compilación fría se vuelve caliente y lea el rastro de auditoría firmado.",
+      "button": "Ver la demo de 90 segundos"
+    },
+    "features": {
+      "isolation": {
+        "title": "Aislamiento de inquilino, modelado en TLA+.",
+        "body": "La diferencia entre multiinquilino de marketing y multiinquilino de verdad es una prueba formal. CoreLink mantiene una especificación TLA+ de no-fuga de bytes entre inquilinos y la ejecuta en CI en cada cambio. Si la propiedad de seguridad regresa, la compilación falla. No confiamos en nosotros mismos para acertar esto solo con revisión de código.",
+        "b1": "Direccionamiento por contenido BLAKE3 + SHA-256",
+        "b2": "Espacio de nombres CAS por inquilino, aislamiento por construcción",
+        "b3": "Frontera de inquilino verificada en CI en cada commit"
+      },
+      "audit": {
+        "title": "Auditoría que realmente puede probar.",
+        "body": "Cada lectura y escritura en el CAS se anexa a un registro Merkle de solo anexado por inquilino. Cada entrada está firmada con Ed25519. El registro completo es reproducible. Puede responder a la pregunta del auditor — qué pasó con este artefacto, cuándo, y si algo se reeditó — con una prueba criptográfica, no la palabra de un proveedor.",
+        "b1": "Registro Merkle de solo anexado por inquilino",
+        "b2": "Firmas Ed25519 en cada entrada",
+        "b3": "Reproducible desde cualquier ancla verificada"
+      },
+      "multiRegion": {
+        "title": "Cuatro regiones. Residencia que usted controla.",
+        "body": "Activo en US-East, EU-West, AP-Southeast y AU-East sobre Cloudflare R2 + Workers + D1. Las lecturas se enrutan localmente; las escrituras convergen globalmente; las políticas de residencia se aplican por inquilino — no se asumen ni son opcionales. Los bytes de la UE se quedan en la UE. Los bytes de Australia se quedan en Australia.",
+        "b1": "4 regiones activas en la edge de Cloudflare",
+        "b2": "Política de residencia por inquilino (fijar región o replicar)",
+        "b3": "Enrutamiento consciente de Schrems-II"
+      }
+    },
+    "closing": {
+      "heading": "Deje de volver a subir los mismos bytes. Empiece con CoreLink.",
+      "ctaSecondary": "Ver precios"
+    },
+    "footer": {
+      "tagline": "CoreLink es un producto de HuGR Labs. © 2026 HuGR Labs.",
+      "pricing": "Precios",
+      "terms": "Términos",
+      "privacy": "Privacidad"
+    }
   }
 }

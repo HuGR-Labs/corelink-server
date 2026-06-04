@@ -105,8 +105,55 @@
     "tagline": "Cache compartilhado endereçado por conteúdo para builds, pacotes e ML."
   },
   "landing": {
-    "heading": "CoreLink Admin",
-    "subheading": "Gerencie seu tenant, PATs e postura de conformidade.",
-    "cta": "Entre para continuar"
+    "nav": {
+      "pricing": "Preços",
+      "signIn": "Entrar"
+    },
+    "hero": {
+      "heading": "Um cache endereçado por conteúdo, finalmente feito para equipes multi-tenant.",
+      "subheading": "O CoreLink deduplica e audita os blobs que seu CI, seus registries e seu repositório de modelos reenviam centenas de vezes por dia — entre regiões, entre cargas de trabalho, entre equipes — com isolamento criptográfico de tenant e uma cadeia de auditoria Merkle somente-acréscimo.",
+      "ctaPrimary": "Começar grátis",
+      "ctaSecondary": "Ver o demo",
+      "ctaSub": "Sem cartão para começar · Plano gratuito com egress zero do R2"
+    },
+    "demo": {
+      "title": "Veja em 90 segundos",
+      "placeholder": "Demo em breve",
+      "placeholderHint": "Um tour de 90 segundos: aponte seu cache de build para o CoreLink, veja um build frio ficar quente e leia a trilha de auditoria assinada.",
+      "button": "Assistir ao demo de 90 segundos"
+    },
+    "features": {
+      "isolation": {
+        "title": "Isolamento de tenant, modelado em TLA+.",
+        "body": "A diferença entre multi-tenant de marketing e multi-tenant de verdade é uma prova formal. O CoreLink mantém uma especificação TLA+ de não-vazamento de bytes entre tenants e a executa no CI a cada mudança. Se a propriedade de segurança regredir, o build falha. Não confiamos em nós mesmos para acertar isso só por revisão de código.",
+        "b1": "Endereçamento por conteúdo BLAKE3 + SHA-256",
+        "b2": "Namespace CAS por tenant, isolamento por construção",
+        "b3": "Fronteira de tenant verificada no CI a cada commit"
+      },
+      "audit": {
+        "title": "Auditoria que você pode realmente provar.",
+        "body": "Cada leitura e escrita no CAS é acrescentada a um log Merkle somente-acréscimo por tenant. Cada entrada é assinada com Ed25519. O log completo é reproduzível. Você responde à pergunta do auditor — o que aconteceu com este artefato, quando, e algo foi reeditado? — com uma prova criptográfica, não a palavra de um fornecedor.",
+        "b1": "Log Merkle somente-acréscimo por tenant",
+        "b2": "Assinaturas Ed25519 em cada entrada",
+        "b3": "Reproduzível a partir de qualquer âncora verificada"
+      },
+      "multiRegion": {
+        "title": "Quatro regiões. Residência que você controla.",
+        "body": "Ativo em US-East, EU-West, AP-Southeast e AU-East na Cloudflare R2 + Workers + D1. As leituras roteiam localmente; as escritas convergem globalmente; as políticas de residência são aplicadas por tenant — não presumidas e não opcionais. Bytes da UE ficam na UE. Bytes da Austrália ficam na Austrália.",
+        "b1": "4 regiões ativas na edge da Cloudflare",
+        "b2": "Política de residência por tenant (fixar região ou replicar)",
+        "b3": "Roteamento ciente do Schrems-II"
+      }
+    },
+    "closing": {
+      "heading": "Pare de reenviar os mesmos bytes. Comece com o CoreLink.",
+      "ctaSecondary": "Ver preços"
+    },
+    "footer": {
+      "tagline": "CoreLink é um produto da HuGR Labs. © 2026 HuGR Labs.",
+      "pricing": "Preços",
+      "terms": "Termos",
+      "privacy": "Privacidade"
+    }
   }
 }
