@@ -276,6 +276,12 @@ impl TierSelectStore for D1HttpTierSelectStore {
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
+    use super::*;
+
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use crate::storage::StorageEnv;
+
     /// The secret-redacting `Debug` never surfaces the CF API token.
     /// (Construction of a real `D1HttpClient` requires env; WP-A adds the
     /// behavioural coverage of the SQL paths.)
@@ -285,5 +291,158 @@ mod tests {
         // the Debug impl prints for the collaborator field.
         let s = "[D1HttpClient]";
         assert!(!s.contains("token"));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Live D1 round-trip tests (`#[ignore]`).
+    //
+    // These exercise the REAL SQL of every `TierSelectStore` method against a
+    // live Cloudflare D1 **test** database. They are `#[ignore]` so normal CI
+    // never runs them; they document + enable the manual launch-day probe.
+    //
+    // Prerequisites:
+    //   * A D1 *test* DB with migrations `0038_dpa_acceptances.sql` +
+    //     `0039_tier_selection.sql` applied.
+    //   * All `StorageEnv` env vars exported (R2_S3_* are read by
+    //     `StorageEnv::from_env()` even though only the D1/CF ones are hit).
+    //
+    // Manual run:
+    //
+    // ```bash
+    // CLOUDFLARE_ACCOUNT_ID=<acc> CF_API_TOKEN=<tok> D1_DATABASE_ID=<id> \
+    //   R2_S3_ENDPOINT=<ep> R2_S3_ACCESS_KEY_ID=<akid> \
+    //   R2_S3_SECRET_ACCESS_KEY=<secret> \
+    //   cargo test -p corelink-server d1_ -- --ignored
+    // ```
+    //
+    // Each test uses a UNIQUE per-run tenant id (`process id` + a monotonic
+    // counter) so concurrent runs and re-runs against the same shared test DB
+    // never collide. Rows are left behind (it is a throwaway test DB); the
+    // lock row is released where it matters.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /// Monotonic suffix so multiple tests / repeats within one process never
+    /// reuse a tenant id (the PID disambiguates across concurrent processes).
+    static TENANT_SEQ: AtomicU64 = AtomicU64::new(0);
+
+    /// A fresh, collision-proof tenant id for a single live test run.
+    fn unique_tenant_id(label: &str) -> String {
+        let pid = std::process::id();
+        let seq = TENANT_SEQ.fetch_add(1, Ordering::Relaxed);
+        format!("test-{label}-{pid}-{seq}")
+    }
+
+    /// Build the live store from `StorageEnv::from_env()`. Panics with a clear
+    /// message if the credentials are not present (the test is `#[ignore]`d, so
+    /// this only fires when explicitly opted in).
+    fn live_store() -> D1HttpTierSelectStore {
+        let env = StorageEnv::from_env()
+            .expect("all StorageEnv env vars must be set (CLOUDFLARE_ACCOUNT_ID, CF_API_TOKEN, D1_DATABASE_ID, R2_S3_*)");
+        let client = D1HttpClient::new(&env).expect("build D1HttpClient");
+        D1HttpTierSelectStore::new(Arc::new(client))
+    }
+
+    /// `acquire_lock` is the cross-isolate mutex: the FIRST acquire wins
+    /// (`Ok(true)`), a SECOND within the 60s window sees the held lock
+    /// (`Ok(false)`), and after `release_lock` the lock is re-acquirable
+    /// (`Ok(true)`).
+    #[tokio::test]
+    #[ignore = "requires live CF D1 test database (StorageEnv env vars + migrations 0038/0039 applied)"]
+    async fn d1_acquire_lock_then_held_then_release() {
+        let store = live_store();
+        let tenant = unique_tenant_id("lock");
+        let cid = "corr-d1-acquire-lock";
+        // Use a fixed, non-clock "now" so the lock window is deterministic;
+        // the row is unique per run so a stale value cannot leak across runs.
+        let now_ms: i64 = 1_000_000_000_000;
+
+        // First acquire wins.
+        let first = store
+            .acquire_lock(&tenant, now_ms, cid)
+            .await
+            .expect("acquire_lock #1 query");
+        assert!(first, "first acquire on a fresh tenant must win");
+
+        // Second acquire within the 60s window sees the held lock.
+        let second = store
+            .acquire_lock(&tenant, now_ms + 1, cid)
+            .await
+            .expect("acquire_lock #2 query");
+        assert!(!second, "second acquire within the window must see lock_held");
+
+        // Release, then re-acquire succeeds again.
+        store.release_lock(&tenant).await.expect("release_lock query");
+
+        let third = store
+            .acquire_lock(&tenant, now_ms + 2, cid)
+            .await
+            .expect("acquire_lock #3 query");
+        assert!(third, "acquire after release must win again");
+
+        // Best-effort cleanup so the lock row does not linger.
+        store
+            .release_lock(&tenant)
+            .await
+            .expect("final release_lock query");
+    }
+
+    /// Fail-CLOSED reads return `Ok(false)` (NOT `Err`) when the row is simply
+    /// absent: a brand-new tenant has neither a DPA acceptance nor an active
+    /// subscription.
+    #[tokio::test]
+    #[ignore = "requires live CF D1 test database (StorageEnv env vars + migrations 0038/0039 applied)"]
+    async fn d1_dpa_and_active_subscription_reads() {
+        let store = live_store();
+        let tenant = unique_tenant_id("reads");
+
+        // No `dpa_acceptances` row → Ok(false), never Err.
+        let dpa = store
+            .is_dpa_accepted(&tenant, "1.0.0")
+            .await
+            .expect("is_dpa_accepted query");
+        assert!(!dpa, "a fresh tenant has not accepted the DPA");
+
+        // No `tier_selections` row → Ok(false), never Err.
+        let active = store
+            .has_active_subscription(&tenant)
+            .await
+            .expect("has_active_subscription query");
+        assert!(
+            !active,
+            "a fresh tenant has no active subscription"
+        );
+    }
+
+    /// `persist_free_active` flips a tenant to `tier='free' / state='active'`
+    /// (setting `subscription_started_at_ms`, per the
+    /// `subscription_started_when_active` CHECK) — after which
+    /// `has_active_subscription` reads `Ok(true)`.
+    #[tokio::test]
+    #[ignore = "requires live CF D1 test database (StorageEnv env vars + migrations 0038/0039 applied)"]
+    async fn d1_persist_free_active_then_active_true() {
+        let store = live_store();
+        let tenant = unique_tenant_id("free");
+        let cid = "corr-d1-free-active";
+        let now_ms: i64 = 1_000_000_000_000;
+
+        // Precondition: not active before the write.
+        let before = store
+            .has_active_subscription(&tenant)
+            .await
+            .expect("pre has_active_subscription query");
+        assert!(!before, "fresh tenant must not be active before activation");
+
+        // Instant free activation.
+        store
+            .persist_free_active(&tenant, now_ms, cid)
+            .await
+            .expect("persist_free_active query");
+
+        // Now active.
+        let after = store
+            .has_active_subscription(&tenant)
+            .await
+            .expect("post has_active_subscription query");
+        assert!(after, "tenant must be active after persist_free_active");
     }
 }
