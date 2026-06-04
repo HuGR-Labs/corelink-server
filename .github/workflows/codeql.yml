@@ -33,12 +33,10 @@ name: CodeQL (R-prep static analysis)
 
 on:
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # nightly (staggered) + on main + on-demand. Re-add pull_request only if
+  # nightly (staggered) + on-demand. Re-add pull_request only if
   # this must block PRs again.
   schedule:
     - cron: '30 5 * * *'
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:

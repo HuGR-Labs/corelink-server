@@ -33,19 +33,8 @@ on:
       - 'dashboards/alerts/dash-rate-alerts.yml'
       - 'specs/04_sprints/S08/**'
       - '.github/workflows/s08-ship-gate.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'crates/corelink-ratelimit/**'
-      - 'crates/corelink-cas/**'
-      - 'crates/corelink-billing/**'
-      - 'crates/corelink-rate-headers/**'
-      - 'specs/05_quality/runbooks/RB-FM-250-ddos-volumetric.md'
-      - 'scripts/rb_fm_250_dry_run.sh'
-      - 'dashboards/grafana/DASH-RATE.json'
-      - 'dashboards/alerts/dash-rate-alerts.yml'
-      - 'specs/04_sprints/S08/**'
-      - '.github/workflows/s08-ship-gate.yml'
+  schedule:
+    - cron: '30 8 * * *'
   workflow_dispatch:
 
 permissions:

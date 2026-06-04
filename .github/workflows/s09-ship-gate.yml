@@ -40,22 +40,8 @@ on:
       - 'dashboards/alerts/dash-slo-multi-burn.yml'
       - 'specs/04_sprints/S09/**'
       - '.github/workflows/s09-ship-gate.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'crates/corelink-analytics/**'
-      - 'crates/corelink-telemetry/**'
-      - 'crates/corelink-tracing/**'
-      - 'crates/corelink-audit-chain/**'
-      - 'crates/corelink-slo/**'
-      - 'specs/05_quality/runbooks/RB-FM-153-grafana-cloud-outage.md'
-      - 'specs/05_quality/runbooks/RB-OBS-CARDINALITY-001.md'
-      - 'scripts/rb_fm_153_dry_run.sh'
-      - 'scripts/rb_obs_cardinality_001_dry_run.sh'
-      - 'dashboards/grafana/DASH-*.json'
-      - 'dashboards/alerts/dash-slo-multi-burn.yml'
-      - 'specs/04_sprints/S09/**'
-      - '.github/workflows/s09-ship-gate.yml'
+  schedule:
+    - cron: '0 9 * * *'
   workflow_dispatch:
 
 permissions:
