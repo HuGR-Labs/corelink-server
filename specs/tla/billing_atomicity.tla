@@ -158,8 +158,17 @@ AggregateCounter(tenant, sku, bp) ==
                         evt[1] = tenant /\ evt[2] = sku /\ evt[3] = bp }
         key    == <<tenant, sku, bp>>
     IN  /\ bucket # {}
-        /\ \/ key \notin DOMAIN counters
-           \/ counters[key] # bucket
+        \* Idempotency / no-op guard: fire only if the (tenant,sku,bp) counter
+        \* is ABSENT or STALE. The domain check MUST gate the `counters[key]`
+        \* read via IF/THEN/ELSE — TLA+ `\/` is commutative, so TLC may evaluate
+        \* the second disjunct even when `key \notin DOMAIN counters` is TRUE,
+        \* applying the empty function `<<>>` to a key outside its domain. The
+        \* IF guard is lazily evaluated (matches the `counters'` write below and
+        \* GenerateInvoice's read pattern). Models the D1 UPSERT, which is
+        \* row-absent-safe by construction (INSERT ... ON CONFLICT DO UPDATE).
+        /\ IF key \in DOMAIN counters
+           THEN counters[key] # bucket
+           ELSE TRUE
         /\ counters' = IF key \in DOMAIN counters
                        THEN [counters EXCEPT ![key] = bucket]
                        ELSE counters @@ (key :> bucket)
@@ -172,8 +181,14 @@ AggregateCounter(tenant, sku, bp) ==
 GenerateInvoice(tenant, sku, bp) ==
     LET key == <<tenant, sku, bp>>
     IN  /\ key \in DOMAIN counters
-        /\ \/ key \notin DOMAIN invoice_line_items
-           \/ invoice_line_items[key] # counters[key]
+        \* Same IF/THEN/ELSE domain-guard discipline as AggregateCounter: the
+        \* `invoice_line_items[key]` read MUST be gated lazily. A `\/`-disjunct
+        \* guard is unsafe — TLA+ `\/` is commutative, so TLC may apply the
+        \* empty function `<<>>` to a key outside its domain. (`counters[key]`
+        \* is already safe: `key \in DOMAIN counters` is enforced above.)
+        /\ IF key \in DOMAIN invoice_line_items
+           THEN invoice_line_items[key] # counters[key]
+           ELSE TRUE
         /\ invoice_line_items' = IF key \in DOMAIN invoice_line_items
                                  THEN [invoice_line_items EXCEPT ![key] = counters[key]]
                                  ELSE invoice_line_items @@ (key :> counters[key])
@@ -287,23 +302,55 @@ INV_BILLING_NO_DUP ==
 \* Aggregator counters for (tenant, sku, bp) match the corresponding
 \* R2 event subset; Stripe-invoiced sets are subsets of R2; chain
 \* monotonicity by construction (counter is deterministic from R2).
+\*
+\* Layer counter<->invoice relationship is `\subseteq`, NOT `=`. The invoice
+\* line item is a SNAPSHOT taken by GenerateInvoice at generation time
+\* (invoice_line_items'[k] := counters[k]); the aggregator legitimately keeps
+\* advancing counters[k] as later R2 events drain in (events_in_r2 grows
+\* monotonically and AggregateCounter re-UPSERTs). So `invoice_line_items[k] =
+\* counters[k]` as a per-state invariant is UNSOUND in any async
+\* aggregate->invoice pipeline (TLC counterexample: AggregateCounter{e1} ->
+\* GenerateInvoice copies {e1} -> e2 drains -> AggregateCounter{e1,e2} leaves
+\* the invoice snapshot {e1} != counter {e1,e2}). This matches the PRODUCTION
+\* contract: corelink-billing-reconcile/src/drift.rs reconciles the 3 layers via
+\* a bounded relative-error DRIFT LADDER (no_drift/auto_fixed/ticket/page), i.e.
+\* transient inter-layer drift is expected + tolerated, NOT byte-equality every
+\* instant. The load-bearing SAFETY property the system actually guarantees is
+\* monotone containment: every invoiced event is a real aggregated counter event
+\* (no phantom / over-billing). The no-over-billing teeth at the Stripe layer
+\* are enforced by INV_LAYER_1_RECONCILE (cardinality bound vs R2).
 INV_BILLING_CHAIN_INTEGRITY ==
     /\ \A k \in DOMAIN counters :
          counters[k] \subseteq events_in_r2
     /\ \A k \in DOMAIN invoice_line_items :
-         invoice_line_items[k] = counters[k]
+         /\ k \in DOMAIN counters
+         /\ invoice_line_items[k] \subseteq counters[k]
     /\ \A k \in DOMAIN stripe_invoiced :
          stripe_invoiced[k] \subseteq events_in_r2
 
 \* INV-BILLING-RECONCILE-3-LAYER Layer-1 sub-property (HIGH; registry §3.12 line 166):
-\* For every Stripe-invoiced (tenant, billing_period), the count of
-\* events charged equals the sum of counter buckets for that
-\* (tenant, *, billing_period) — Layer 1 zero-drift sustained.
+\* For every Stripe-invoiced (tenant, billing_period), the count of events
+\* charged must NEVER EXCEED the live R2 bucket for that (tenant, *,
+\* billing_period) — Layer 1 zero-OVER-drift sustained (no phantom / inflated
+\* charge: Stripe is never billed for more events than physically exist in R2).
+\*
+\* `<=` not `=`: StripeChargeIdempotent captures a SNAPSHOT of R2 at charge time
+\* and freezes it (idempotent by key); events_in_r2 then keeps growing as more
+\* events drain in. So charged-count = R2-count-AT-CHARGE-TIME <= live-R2-count
+\* always (sound). Asserting strict `=` against the LIVE bucket is unsound — it
+\* breaks the instant any event drains to R2 after the charge froze (TLC
+\* counterexample: charge {e1} at R2={e1} -> e2 drains -> live R2={e1,e2},
+\* Cardinality 1 != 2). That transient under-count is exactly the bounded
+\* inter-layer drift the PRODUCTION reconciler (corelink-billing-reconcile/
+\* src/drift.rs) expects + reconciles via its relative-error ladder, NOT a
+\* defect. The load-bearing financial tooth is the OVER-billing bound: charging
+\* MORE than R2 holds is the real SEV — `<=` catches it; no-loss + no-dup are
+\* pinned separately by INV_BILLING_NO_LOSS / INV_BILLING_NO_DUP.
 \* Higher layers (counter <-> invoice_line_items <-> Stripe) follow from
-\* INV_BILLING_CHAIN_INTEGRITY.
+\* INV_BILLING_CHAIN_INTEGRITY's monotone-containment chain.
 INV_LAYER_1_RECONCILE ==
     \A k \in DOMAIN stripe_invoiced :
-        Cardinality(stripe_invoiced[k]) =
+        Cardinality(stripe_invoiced[k]) <=
             Cardinality({ evt \in events_in_r2 :
                               evt[1] = k[1] /\ evt[3] = k[2] })
 

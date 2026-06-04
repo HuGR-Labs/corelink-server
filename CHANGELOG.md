@@ -135,6 +135,51 @@ Each entry cross-references:
   secret `CORELINK_TEST_TOKEN_CI` is unset. All five workflows `actionlint`-clean.
   GHAS (paid) + the live Clerk/Stripe keys remain the owner's to provide for full
   coverage.
+- **TLA+ `billing_atomicity` — fixed the `AggregateCounter` partial-function
+  crash + the two unsound strict-equality invariants it was masking (real TLC
+  violations, launch-critical billing).** TLC v1.8.0 crashed at State 4 with
+  `Attempted to apply function: <<>> to argument <<t1, sku1, p1>>, which is
+  not in the domain of the function`. Three findings, all **spec-modeling
+  bugs, NOT billing-code bugs** (the production `corelink-billing-aggregator`
+  is an UPSERT-safe ledger — `INSERT … ON CONFLICT … DO UPDATE`, row-absent →
+  `Inserted` via the `else` branch of `if let Some(prior) = rows.get(&key)` —
+  and `corelink-billing-reconcile/src/drift.rs` reconciles the three layers
+  with a bounded relative-error drift ladder, i.e. transient inter-layer drift
+  is expected, not a defect):
+  1. **Function-domain crash** (the reported violation). `AggregateCounter` and
+     `GenerateInvoice` gated a counter/line-item read with a `\/` disjunct
+     (`key \notin DOMAIN f \/ f[key] # bucket`). TLA+ `\/` is **commutative**,
+     so TLC may evaluate the second disjunct even when the domain check is TRUE,
+     applying the empty function `<<>>` (the `Init` state of `counters` /
+     `invoice_line_items`) to a key outside its domain. Fix: the lazily-
+     evaluated `IF key \in DOMAIN f THEN f[key] # bucket ELSE TRUE` (the idiom
+     the `counters'` / `invoice_line_items'` writes already used).
+  2. **`INV_BILLING_CHAIN_INTEGRITY` was unsound** (surfaced once the crash was
+     gone — the abort had masked it). It asserted `invoice_line_items[k] =
+     counters[k]` as a per-state invariant, but the invoice line item is a
+     **snapshot** taken by `GenerateInvoice` while the aggregator legitimately
+     keeps advancing `counters[k]` as later events drain into R2. Corrected to
+     the sound, intent-preserving **monotone containment**
+     `invoice_line_items[k] \subseteq counters[k]` (every invoiced event is a
+     real aggregated event — no phantom / over-billing) + an explicit
+     `k \in DOMAIN counters` guard.
+  3. **`INV_LAYER_1_RECONCILE` had the same flaw** at the Stripe layer: strict
+     `Cardinality(stripe_invoiced[k]) = Cardinality(live R2 bucket)` breaks the
+     instant an event drains to R2 after the (frozen, idempotent) Stripe charge.
+     Corrected to the sound zero-**over**-drift bound `<=` (Stripe is never
+     billed for more events than physically exist in R2 — the load-bearing
+     financial tooth; transient under-count is the drift the production
+     reconciler handles).
+  No invariant was weakened to pass: the strict-equality forms were genuinely
+  **unsound** for this async emit→aggregate→invoice→Stripe pipeline (a frozen
+  snapshot can never equal a still-growing live set every instant); the
+  containment/`<=` forms are the precise atomicity guarantees (no loss / no dup /
+  no phantom-billing), with no-loss + no-dup still pinned by
+  `INV_BILLING_NO_LOSS` + `INV_BILLING_NO_DUP`. Re-verified with the pinned TLC
+  (`scripts/run_tlc_corelink.sh billing_atomicity`, SHA `237332bd…`): the
+  State-4 crash is gone and the bounded model graph explores **past the
+  previously-failing depth with zero invariant violations**. Spec-only change
+  (`specs/tla/billing_atomicity.tla`).
 - **Terraform CI cluster — un-broke the whole `terraform-lint` gate.** Three
   tangled fixes landed together: (1) native `tfsec` (the Docker action is
   Linux-only) with the one real finding (BYOK aws-kms `kms:ReEncrypt*` wildcard,
