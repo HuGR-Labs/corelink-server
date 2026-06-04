@@ -245,24 +245,50 @@ fn extract_verified_tenant(headers: &HeaderMap) -> Result<String, TierSelectHttp
 // Route state (collaborators wired at boot — see PR2)
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Route state injected at boot. The durable-store + Stripe + DPA-gate
-/// collaborators are wired in the follow-up increment (PR2: D1-over-HTTP
-/// transaction + `StripeRealClient` via `spawn_blocking`).
+/// Route state injected at boot. Holds the constant-time internal-auth
+/// secret plus the production collaborators wired by the build-state path:
+/// the durable D1-over-HTTP store, the hosted-Stripe checkout creator, the
+/// fail-CLOSED audit sink, and the current DPA version (for
+/// INV-ONBOARD-DPA-FIRST). The collaborator method bodies are stubbed
+/// (`todo!("WP-A/B/C")`) in this scaffold increment — the wiring + the
+/// security-relevant shape (constant-time auth, secret redaction) are
+/// frozen so WP-A/B/C fill the effects against a stable interface.
+///
+/// The adapters live in sibling modules
+/// ([`super::tier_select_store`] / [`super::tier_select_checkout`] /
+/// [`super::tier_select_audit`]) and each implements one of the three
+/// trait seams below.
 #[derive(Clone)]
 pub struct TierSelectRouteState {
     /// Shared secret for `X-Corelink-Internal-Auth` (constant-time compare).
+    /// NEVER logged (redacted in `Debug`).
     pub internal_auth_key: Arc<str>,
-    // PR2 collaborators (wired at boot):
-    //   pub d1: Arc<D1HttpClient>,            // durable lock / DPA / persist
-    //   pub stripe: Arc<StripeRealClient>,    // hosted Checkout (blocking → spawn_blocking)
-    //   pub audit: Arc<dyn TierSelectionAuditSink>,
-    //   pub current_dpa_version: Arc<str>,
+    /// Durable D1-over-HTTP store: lock / DPA / active-subscription /
+    /// persist (WP-A).
+    pub store: Arc<super::tier_select_store::D1HttpTierSelectStore>,
+    /// Hosted Stripe Checkout creator (`StripeRealClient` via
+    /// `spawn_blocking`) (WP-B).
+    pub checkout: Arc<super::tier_select_checkout::StripeCheckoutCreator>,
+    /// Fail-CLOSED audit sink — emit BEFORE every mutation (WP-C).
+    pub audit: Arc<super::tier_select_audit::TierSelectAuditAdapter>,
+    /// Current DPA version string checked by INV-ONBOARD-DPA-FIRST. Sourced
+    /// at boot (env / config); the orchestration passes it to
+    /// `store.is_dpa_accepted`.
+    pub current_dpa_version: Arc<str>,
 }
 
 impl std::fmt::Debug for TierSelectRouteState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `internal_auth_key` is the trust-boundary secret and is ALWAYS
+        // redacted. The collaborators carry their own credentials behind
+        // their own redacting `Debug` impls (the D1 / Stripe tokens never
+        // surface here).
         f.debug_struct("TierSelectRouteState")
             .field("internal_auth_key", &"[REDACTED]")
+            .field("store", &self.store)
+            .field("checkout", &self.checkout)
+            .field("audit", &self.audit)
+            .field("current_dpa_version", &self.current_dpa_version)
             .finish()
     }
 }
@@ -564,8 +590,19 @@ mod tests {
     use axum::http::HeaderValue;
 
     fn state() -> TierSelectRouteState {
+        // These tests exercise ONLY the side-effect-free auth/tier gate
+        // (`authorize_and_validate`), which reads ONLY `internal_auth_key`.
+        // The collaborators are INERT fixtures (never called here); the
+        // durable orchestration is covered separately by the in-memory
+        // `MemStore`/`SpyCheckout`/`SpyAudit` tests below.
         TierSelectRouteState {
             internal_auth_key: Arc::from("super-secret-internal-key"),
+            store: Arc::new(super::super::tier_select_store::D1HttpTierSelectStore::for_test()),
+            checkout: Arc::new(
+                super::super::tier_select_checkout::StripeCheckoutCreator::for_test(),
+            ),
+            audit: Arc::new(super::super::tier_select_audit::TierSelectAuditAdapter::new()),
+            current_dpa_version: Arc::from("v3"),
         }
     }
 
