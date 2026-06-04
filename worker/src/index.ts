@@ -38,6 +38,15 @@ export interface Env {
   // Secrets (bound via `wrangler secret put`)
   CLERK_SECRET_KEY?: string;
   STRIPE_SECRET_KEY?: string;
+  // L3 money path — forwarded to the container by the DO (see durable_object.ts);
+  // the tier-select route is unmounted (404) without CORELINK_DPA_VERSION, and
+  // Stripe checkout needs the per-tier price ids.
+  STRIPE_AUTH_MODE?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_PRICE_ID_STARTER?: string;
+  STRIPE_PRICE_ID_TEAM?: string;
+  STRIPE_PRICE_ID_PRO?: string;
+  CORELINK_DPA_VERSION?: string;
   // PAT HMAC signing key (raw hex, ≥ 32 bytes decoded) — used for the
   // HMAC-SHA256 fast-fail layer in PAT validation (WP-A1 step 2).
   // Bound via: `wrangler secret put PAT_SIGNING_KEY`
