@@ -93,21 +93,46 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # -----------------------------------------------------------------
+      # GHAS preflight — check whether code scanning is enabled for this
+      # repo. The `gh api` call returns HTTP 200 when GHAS is on; 403/404
+      # when it is off (private repo without Advanced Security). We set
+      # `enabled=true/false` as a step output and gate every heavy CodeQL
+      # step below on it. This means the job exits SUCCESS (all steps
+      # skipped) when GHAS is disabled, and runs fully once the owner
+      # enables it — no change required here. (2026-06-03)
+      # -----------------------------------------------------------------
+      - name: GHAS code-scanning preflight
+        id: preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/${{ github.repository }}/code-scanning/alerts" \
+               --jq 'length' > /dev/null 2>&1; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Code scanning is enabled — CodeQL will run."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Code scanning is not enabled for this repository — skipping CodeQL (re-enable when GHAS is on)."
+          fi
+
+      # -----------------------------------------------------------------
       # Rust build prerequisites (only for the `rust` matrix leg).
       # CodeQL Rust analyser instruments cargo build artefacts; we install
       # the workspace-pinned toolchain + cache to keep the run < 30 min.
       # -----------------------------------------------------------------
       - name: Install Rust toolchain (stable, pinned)
-        if: matrix.language == 'rust'
+        if: matrix.language == 'rust' && steps.preflight.outputs.enabled == 'true'
         # dtolnay/rust-toolchain stable @29eef336 — matches cargo-audit.yml.
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
 
       - name: Cargo cache
-        if: matrix.language == 'rust'
+        if: matrix.language == 'rust' && steps.preflight.outputs.enabled == 'true'
         # Swatinem/rust-cache v2.7.7 — SHA-pinned (matches cargo-audit.yml).
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c
 
       - name: Initialize CodeQL
+        if: steps.preflight.outputs.enabled == 'true'
         # github/codeql-action/init v3.27.0 — SHA TBD pin
         # (see issue: bump SHA after first green run on main, replace
         # the `# TBD` comment with the verified SHA from
@@ -130,11 +155,12 @@ jobs:
       # cover bin + lib + tests + examples in one pass.
       # -----------------------------------------------------------------
       - name: Build Rust workspace (manual mode for CodeQL trace)
-        if: matrix.language == 'rust'
+        if: matrix.language == 'rust' && steps.preflight.outputs.enabled == 'true'
         run: |
           cargo build --workspace --all-targets --locked
 
       - name: Perform CodeQL Analysis
+        if: steps.preflight.outputs.enabled == 'true'
         id: analyze
         # github/codeql-action/analyze@v3.27.0 — same SHA pin as init above +
         # semgrep.yml's upload-sarif (verified against the v3.27.0 commit).
@@ -164,7 +190,7 @@ jobs:
         # still runs. Once GHAS is enabled the SARIF populates the Security tab
         # with no further change.
         continue-on-error: true
-        if: always()
+        if: always() && steps.preflight.outputs.enabled == 'true'
         uses: github/codeql-action/upload-sarif@662472033e021d55d94146f66f6058822b0b39fd  # github/codeql-action/upload-sarif@v3.27.0
         with:
           # Directory of per-language SARIF emitted by the analyze step above.
@@ -179,7 +205,7 @@ jobs:
       # the cron — the Security tab + Slack notification handles triage.
       # -----------------------------------------------------------------
       - name: Severity gate (fail PR on HIGH/CRITICAL)
-        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+        if: steps.preflight.outputs.enabled == 'true' && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch')
         run: |
           set -euo pipefail
           shopt -s nullglob
