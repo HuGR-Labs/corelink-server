@@ -59,11 +59,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
-        with:
-          python-version: "3.12"
-
+      # No actions/setup-python: the self-hosted mac fleet can't reliably
+      # provision Python via setup-python (RUNNER_TOOL_CACHE is unset -> it
+      # falls back to the unwritable /Users/runner hosted path and dies with
+      # `mkdir: /Users/runner: Permission denied`). These scripts only need
+      # `python3` (stdlib only), which ships on every runner. (2026-06-04)
       - name: Run generator in --check mode
         run: |
           set -euo pipefail
@@ -100,11 +100,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Python
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
-        with:
-          python-version: "3.12"
-
+      # No actions/setup-python: system python3 on the mac fleet. (2026-06-04)
       - name: Regenerate public MDX
         run: |
           set -euo pipefail
