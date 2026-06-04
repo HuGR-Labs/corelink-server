@@ -414,6 +414,63 @@ pub fn router(state: TierSelectRouteState) -> Router {
         .with_state(state)
 }
 
+/// Assemble the production [`TierSelectRouteState`] from the environment, or
+/// `None` when the route must NOT be mounted. **Fail-safe:** the money path is
+/// mounted ONLY when the internal-auth secret (≥16 chars), the D1 config, the
+/// Stripe config, AND the current DPA version are all present; a missing/short
+/// secret or any client-init failure leaves `/v1/onboarding/tier-select`
+/// unmounted (404) rather than half-wired. Mirrors
+/// [`super::internal_pat::build_state_from_env`].
+#[must_use]
+pub fn build_state_from_env() -> Option<TierSelectRouteState> {
+    let auth_key = std::env::var("CORELINK_INTERNAL_AUTH_KEY").ok()?;
+    if auth_key.len() < 16 {
+        tracing::warn!(
+            "CORELINK_INTERNAL_AUTH_KEY too short (< 16 chars); \
+             /v1/onboarding/tier-select NOT mounted"
+        );
+        return None;
+    }
+
+    let Some(dpa_version) = std::env::var("CORELINK_DPA_VERSION")
+        .ok()
+        .filter(|v| !v.is_empty())
+    else {
+        tracing::warn!("CORELINK_DPA_VERSION unset; /v1/onboarding/tier-select NOT mounted");
+        return None;
+    };
+
+    // D1 config travels in `StorageEnv` (CF account / token / database id).
+    let storage_env = crate::storage::StorageEnv::from_env()?;
+    let d1 = match crate::storage::d1_http::D1HttpClient::new(&storage_env) {
+        Ok(client) => client,
+        Err(e) => {
+            tracing::warn!(error = %e, "D1HttpClient init failed; tier-select NOT mounted");
+            return None;
+        }
+    };
+
+    let stripe = match corelink_stripe_real::StripeRealClient::from_env() {
+        Ok(client) => client,
+        Err(e) => {
+            tracing::warn!(error = %e, "StripeRealClient init failed; tier-select NOT mounted");
+            return None;
+        }
+    };
+
+    Some(TierSelectRouteState {
+        internal_auth_key: Arc::from(auth_key),
+        store: Arc::new(super::tier_select_store::D1HttpTierSelectStore::new(
+            Arc::new(d1),
+        )),
+        checkout: Arc::new(super::tier_select_checkout::StripeCheckoutCreator::new(
+            Arc::new(stripe),
+        )),
+        audit: Arc::new(super::tier_select_audit::TierSelectAuditAdapter::new()),
+        current_dpa_version: Arc::from(dpa_version),
+    })
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Durable orchestration (the ironclad heart) — store trait + fail-closed order.
 //

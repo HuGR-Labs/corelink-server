@@ -63,9 +63,15 @@ Each entry cross-references:
   taken as raw `Bytes` and parsed so every failure returns the one
   `{ "error": code }` envelope. Adds `CheckoutSessionRequest::new` (the
   `#[non_exhaustive]` constructor downstream crates need, mirroring its siblings).
-  clippy `-D warnings` green; 20 lib tests pass. **Remaining before it serves
-  traffic:** the `main.rs` env-gated mount (WP-E.2) and the live-D1 / live-Stripe
-  `#[ignore]` integration tests.
+  clippy `-D warnings` green; 20 lib tests pass. **WP-E.2 (mount) now landed:**
+  `build_state_from_env` assembles the production `TierSelectRouteState`
+  (fail-safe — the route mounts ONLY when the internal-auth secret ≥16 chars +
+  D1 config + Stripe config + `CORELINK_DPA_VERSION` are ALL present; a missing
+  one leaves `/v1/onboarding/tier-select` unmounted, 404, rather than half-wired)
+  and `main.rs` merges `router()` behind the same env gate as `internal_pat`;
+  clippy `-D warnings` green on lib + bins. **Remaining before it serves
+  traffic:** the live-D1 / live-Stripe `#[ignore]` integration tests (need a test
+  D1 with migrations 0038/0039 + `sk_test_` keys).
 - Customer-facing CHANGELOG generation tooling (`scripts/generate-changelog.sh`)
   and PR-level enforcement workflow (`.github/workflows/changelog-validate.yml`).
 - Customer-facing **release-notes auto-generator** (`scripts/generate-release-notes.py`)
