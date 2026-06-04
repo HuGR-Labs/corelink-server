@@ -101,6 +101,7 @@ impl D1HttpTierSelectStore {
     /// behavioural coverage of the real SQL uses the standard `#[ignore]`
     /// live-D1 harness, not this inert fixture.
     #[cfg(test)]
+    #[allow(clippy::panic, reason = "test-only constructor: panic on setup failure is fine")]
     #[must_use]
     pub(crate) fn for_test() -> Self {
         let env = crate::storage::StorageEnv {
