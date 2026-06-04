@@ -34,6 +34,21 @@ Each entry cross-references:
   proven by spy); durable 60s lock → 409; UNIQUE active subscription → 409;
   Stripe failure → 502 + lock release; free → instant. 17 adversarial tests.
   Production D1/Stripe adapters + the route mount land in a follow-up.
+- **Tier-select production wiring — scaffold** (WI-S19-004; L3 money path).
+  Frozen adapter surfaces for the three `tier_select.rs` trait seams:
+  `routes/tier_select_store.rs` (`D1HttpTierSelectStore` over the durable
+  D1-over-HTTP transaction), `routes/tier_select_checkout.rs`
+  (`StripeCheckoutCreator` over `StripeRealClient` via `spawn_blocking`),
+  and `routes/tier_select_audit.rs` (`TierSelectAuditAdapter`,
+  fail-CLOSED). `TierSelectRouteState` now carries the wired collaborators
+  (`store` / `checkout` / `audit` / `current_dpa_version`) alongside the
+  redacted `internal_auth_key`; every adapter `Debug` redacts its
+  credential. Method bodies are `todo!()` stubs (the effects land in the
+  follow-up WPs). **Email-seam decision:** the `CheckoutCreator` trait
+  stays email-free and the production adapter passes an empty
+  `customer_email` — Stripe's hosted Checkout page collects the buyer email
+  itself (the SOTA pattern), so no PII is threaded from the Worker and
+  `CheckoutSessionRequest` is left unchanged.
 - Customer-facing CHANGELOG generation tooling (`scripts/generate-changelog.sh`)
   and PR-level enforcement workflow (`.github/workflows/changelog-validate.yml`).
 - Customer-facing **release-notes auto-generator** (`scripts/generate-release-notes.py`)

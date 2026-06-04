@@ -96,6 +96,17 @@ pub mod internal_pat;
 /// INV-ONBOARD-DPA-FIRST + durable 60s lock + hosted Stripe Checkout.
 /// WI-S19-004 production wiring.
 pub mod tier_select;
+/// Production [`tier_select::TierSelectStore`] adapter (WP-A scaffold):
+/// the durable D1-over-HTTP lock / DPA / active-subscription / persist
+/// transaction. Stub bodies (`todo!("WP-A")`) until WP-A fills the SQL.
+pub mod tier_select_store;
+/// Production [`tier_select::CheckoutCreator`] adapter (WP-B scaffold):
+/// hosted Stripe Checkout via `StripeRealClient` (`spawn_blocking`). Holds
+/// the email-seam decision (trait stays email-free; Stripe collects it).
+pub mod tier_select_checkout;
+/// Production [`tier_select::TierSelectAudit`] adapter (WP-C scaffold):
+/// fail-CLOSED audit-chain emit (mirrors `internal_pat` tracing-audit).
+pub mod tier_select_audit;
 /// Caller-identity reflection route: `GET /v1/users/me` reads the
 /// Worker-injected `x-corelink-tenant-id` / `-token-prefix` /
 /// `-route-kind` headers and echoes them as JSON. Lets clients verify
