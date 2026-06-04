@@ -125,9 +125,6 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Install Python deps (yaml)
-        run: python3 -m pip install --user pyyaml
-
       - name: tla_billing_check.yml parse smoke
         run: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/tla_billing_check.yml'))"
 
