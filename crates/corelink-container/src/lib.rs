@@ -41,7 +41,7 @@
 //! the property tests for each pinned INV live in the owning crate
 //! listed below; this crate is listed in
 //! `scripts/proptest-density-allowlist.txt` as an
-//! "INV-pin documentation" exemption:
+//! "inv-pin documentation" exemption:
 //!
 //! | INV ref pinned here              | Property-test owner crate(s)                         |
 //! |----------------------------------|------------------------------------------------------|
