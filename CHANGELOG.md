@@ -555,6 +555,21 @@ Each entry cross-references:
   `dsr-statuspage-scheduler` consumption site; restores green wasm32
   build for `corelink-wasm` worker target. SEAL:
   `specs/_audits/sealed/2026-05-26-w36-trigger-b-seal.md`.
+- **Stale `--test`/`--bench` target names in CI workflows** — 9 cargo
+  test invocations across `nightly.yml` and `d1-migration-validate.yml`
+  referenced test-target basenames that no longer exist after the
+  Wave-35 absorption campaign renamed files with module prefixes (e.g.
+  `tests/prop_dedup.rs` → `tests/dedup_prop.rs`). Every such job would
+  fail in ~1.5 s with `error: no test target named '<X>' in '<crate>'`.
+  Updated all 9 stale names to their real basenames:
+  `prop_dedup` → `dedup_prop`, `prop_quota` → `quota_core_prop_quota`,
+  `prop_lru` → `lru_tracker_prop`, `prop_edge` → `edge_prop`,
+  `prop_quota_cas` → `quota_cas_prop_quota_cas`,
+  `prop_abuse` → `abuse_prop_abuse`,
+  `prop_quota_fsm` → `quota_fsm_prop_quota_fsm`,
+  `prop_billing_replay` → `replay_prop_billing_replay`,
+  `d1_migration_integration` → `migrations_d1_migration_integration`.
+  Workflow-only change; no test logic altered.
 
 ### Security
 
