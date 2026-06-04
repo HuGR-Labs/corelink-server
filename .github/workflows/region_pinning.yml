@@ -60,12 +60,8 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
-        with:
-          python-version: '3.12'
-
       - name: Install Python deps
-        run: pip install -r requirements-ci.txt
+        run: python3 -m pip install --user -r requirements-ci.txt
 
       - name: check_migrations_additive.py
         run: python3 scripts/check_migrations_additive.py
@@ -182,12 +178,8 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
-        with:
-          python-version: '3.12'
-
       - name: Install pyyaml
-        run: pip install pyyaml
+        run: python3 -m pip install --user pyyaml
 
       - name: region_pinning.yml parse smoke
         run: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/region_pinning.yml'))"
