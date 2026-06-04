@@ -57,6 +57,15 @@ Each entry cross-references:
 
 ### Changed
 
+- **Public API-reference + subprocessors docs regenerated** to catch up with
+  sources that advanced without a docs refresh, greening the two `--check`
+  drift gates. `openapi/corelink-v1.yaml` was synced 2026-05-30 (f10f0c54) but
+  the 50-endpoint MDX set under `apps/docs/docs/reference/api/endpoints/` was
+  last regenerated 2026-05-16 (4094165b); `python3 scripts/gen-api-reference.py`
+  brings them current (+24 new endpoint pages, 27 updated, 1 stale removed).
+  `apps/docs/docs/trust/subprocessors.mdx` re-derived from the
+  `VENDOR-RISK-REGISTER` via `gen-public-subprocessors.py` (deterministic
+  `last_updated` from the register, not wall-clock).
 - **Wave-35 Phase-2 absorption campaign** — 9 absorption SEALs collapsed
   the bulk of Wave-33 satellite crates into umbrella canonical paths
   (CAS, TELEMETRY, ADAPTER-HOST, REPLICATION, BILLING, PRIVACY, OPS, AC,
@@ -80,6 +89,15 @@ Each entry cross-references:
 
 ### Fixed
 
+- **`slo-instrumentation` gate — sealed audit-doc reference-rot.**
+  `scripts/validate_slo_instrumentation.py` hardcoded
+  `specs/_audits/2026-05-14-slo-instrumentation-gaps.md`, but the `_sealed/`
+  archival reorg (2026-05-31) moved it under `_audits/sealed/`, so the gate
+  failed with `[FAIL] missing audit doc … (load-bearing reference)`. `AUDIT_DOC`
+  now resolves to whichever location exists (sealed-first), surviving a re-seal
+  in either direction. Gate green; the full validator passes (30 declared SLOs,
+  0 MISSING, 0 orphan SLI slugs). Same reference-rot class as the BASELINE_PATH
+  / sprint-contract repoints.
 - **`spec-validation` gate — §4 TLA+ obligation matrix completed for 16 reconciled INVs (completes #121).** The 15 HIGH proptest/algorithmic invariants (BAZEL, CLERK, STATUSPAGE, WASM families) from `specs/03_architecture/invariant_registry.md §3.31` now have §4.3 non-TLA+ obligation rows; `INV-CROSS-TENANT-DENIED` (CRITICAL) is placed in §4.3 as an algorithmic refinement of the GREEN `tenant_isolation.tla` spec with a `<!-- techlead-review -->` flag for confirmation. `check_tla_obligations.py` exits 0 (was 16 errors). Also carries PR #121 gate fixes: `validate_canonical_consistency.py` `BASELINE_PATH` repointed to `specs/_audits/sealed/`; false-positive `INV-OPS`/`INV-pin` prose tokens fixed in `corelink-ops`, `corelink-container`, `corelink-core`.
 - **Complete Wave-35 rename-rot sweep — stale `cargo --test/--bench` target
   names in CI workflows and runbook scripts.** Wave-35 absorption prefixed test

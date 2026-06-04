@@ -2,7 +2,7 @@
 id: get-v1-users-me
 title: "GET /v1/users/me"
 sidebar_label: "GET /v1/users/me"
-description: "Current user profile."
+description: "Reflect the authenticated caller's PAT identity."
 tags: [users, rest-api]
 ---
 
@@ -10,16 +10,22 @@ tags: [users, rest-api]
 
 # `GET` `/v1/users/me`
 
-> Current user profile.
+> Reflect the authenticated caller's PAT identity.
 
 - **Operation ID:** `usersMeGet`
 - **Tag:** `users`
 - **Rate-limit class:** default (600 req/min/PAT)
 
+## Description
+
+Returns the PAT-resolved identity injected by the Worker into three
+trusted headers. Clients call this to verify their PAT is wired
+correctly without exercising the CAS/AC data plane. The raw PAT is
+never reflected.
+
 ## Authentication
 
 - `BearerPAT`
-- `ClerkSessionCookie`
 
 ## Parameters
 
@@ -33,12 +39,12 @@ _No request body._
 
 | Status | Schema | Description |
 | --- | --- | --- |
-| `200` | [`UserProfile`](#schema-userprofile) | Profile. |
+| `200` | `object` | Caller identity. |
 | `401` | [`ErrorEnvelope`](#schema-errorenvelope) | Missing or invalid credentials. |
 
 ## Examples
 
-_Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` with a Personal Access Token issued via [`POST /v1/pats`](./post-v1-pats)._
+_Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` with a Personal Access Token issued via [`POST /v1/pats`](./post-v1-pats.mdx)._
 
 ### curl
 

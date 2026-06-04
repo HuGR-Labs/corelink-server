@@ -44,11 +44,20 @@ SLO_CATALOG = REPO / "specs" / "03_architecture" / "slo_catalog.md"
 DEFINITION_RS = (
     REPO / "crates" / "corelink-slo" / "src" / "definition.rs"
 )
-AUDIT_DOC = (
-    REPO
-    / "specs"
-    / "_audits"
-    / "2026-05-14-slo-instrumentation-gaps.md"
+# The audit doc was sealed into `_audits/sealed/` (archival reorg 2026-05-31).
+# Resolve to the first location that exists so the reference survives a
+# re-seal in either direction; fall back to the canonical sealed path for
+# the FAIL message when neither is present.
+AUDIT_DOC = next(
+    (
+        _p
+        for _p in (
+            REPO / "specs" / "_audits" / "sealed" / "2026-05-14-slo-instrumentation-gaps.md",
+            REPO / "specs" / "_audits" / "2026-05-14-slo-instrumentation-gaps.md",
+        )
+        if _p.exists()
+    ),
+    REPO / "specs" / "_audits" / "sealed" / "2026-05-14-slo-instrumentation-gaps.md",
 )
 
 # SLOs deliberately deferred to their owning sprint / Phase 2; each
