@@ -105,8 +105,55 @@
     "tagline": "Gemeinsamer, inhaltsadressierter Cache für Builds, Pakete und ML."
   },
   "landing": {
-    "heading": "CoreLink Admin",
-    "subheading": "Verwalten Sie Ihren Tenant, PATs und Ihre Compliance-Lage.",
-    "cta": "Anmelden, um fortzufahren"
+    "nav": {
+      "pricing": "Preise",
+      "signIn": "Anmelden"
+    },
+    "hero": {
+      "heading": "Ein inhaltsadressierter Cache, endlich für mandantenfähige Teams gebaut.",
+      "subheading": "CoreLink dedupliziert und auditiert die Blobs, die Ihr CI, Ihre Registries und Ihr Modellspeicher hundertmal am Tag erneut hochladen — über Regionen, über Workloads, über Teams hinweg — mit kryptografischer Mandantenisolation und einer Append-only-Merkle-Audit-Kette.",
+      "ctaPrimary": "Kostenlos starten",
+      "ctaSecondary": "Demo ansehen",
+      "ctaSub": "Keine Karte zum Start erforderlich · Kostenloser Tarif mit R2-Zero-Egress"
+    },
+    "demo": {
+      "title": "In 90 Sekunden ansehen",
+      "placeholder": "Demo folgt in Kürze",
+      "placeholderHint": "Ein 90-Sekunden-Rundgang: Richten Sie Ihren Build-Cache auf CoreLink, sehen Sie, wie ein kalter Build warm wird, und lesen Sie den signierten Audit-Trail.",
+      "button": "Die 90-Sekunden-Demo ansehen"
+    },
+    "features": {
+      "isolation": {
+        "title": "Mandantenisolation, in TLA+ modelliert.",
+        "body": "Der Unterschied zwischen Marketing-Mandantenfähigkeit und echter Mandantenfähigkeit ist ein formaler Beweis. CoreLink pflegt eine TLA+-Spezifikation der mandantenübergreifenden Byte-Nichtleckage und führt sie bei jeder Änderung in CI aus. Regrediert die Sicherheitseigenschaft, schlägt der Build fehl. Wir vertrauen nicht darauf, das allein durch Code-Review richtig zu machen.",
+        "b1": "BLAKE3- + SHA-256-Inhaltsadressierung",
+        "b2": "CAS-Namespace pro Mandant, Isolation durch Konstruktion",
+        "b3": "Mandantengrenze bei jedem Commit in CI verifiziert"
+      },
+      "audit": {
+        "title": "Audit, das Sie wirklich beweisen können.",
+        "body": "Jeder CAS-Lese- und -Schreibvorgang wird an ein Append-only-Merkle-Log pro Mandant angehängt. Jeder Eintrag ist Ed25519-signiert. Das vollständige Log ist wiederholbar. Sie beantworten die Frage des Prüfers — was geschah mit diesem Artefakt, wann, und wurde etwas nachträglich geändert? — mit einem kryptografischen Beweis, nicht dem Wort eines Anbieters.",
+        "b1": "Append-only-Merkle-Log pro Mandant",
+        "b2": "Ed25519-Signaturen für jeden Eintrag",
+        "b3": "Wiederholbar ab jedem verifizierten Anker"
+      },
+      "multiRegion": {
+        "title": "Vier Regionen. Datenresidenz, die Sie steuern.",
+        "body": "Aktiv in US-East, EU-West, AP-Southeast und AU-East auf Cloudflare R2 + Workers + D1. Lesevorgänge werden lokal geroutet; Schreibvorgänge konvergieren global; Residenzrichtlinien werden pro Mandant durchgesetzt — nicht angenommen und nicht optional. EU-Bytes bleiben in der EU. AU-Bytes bleiben in Australien.",
+        "b1": "4 aktive Regionen an Cloudflares Edge",
+        "b2": "Residenzrichtlinie pro Mandant (Region fixieren oder replizieren)",
+        "b3": "Schrems-II-bewusstes Routing"
+      }
+    },
+    "closing": {
+      "heading": "Schluss mit dem erneuten Hochladen derselben Bytes. Starten Sie mit CoreLink.",
+      "ctaSecondary": "Preise ansehen"
+    },
+    "footer": {
+      "tagline": "CoreLink ist ein Produkt von HuGR Labs. © 2026 HuGR Labs.",
+      "pricing": "Preise",
+      "terms": "Bedingungen",
+      "privacy": "Datenschutz"
+    }
   }
 }
