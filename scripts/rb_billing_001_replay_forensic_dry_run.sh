@@ -78,8 +78,8 @@ emit "  least-privilege-bounded audit-grade replay capability per WI-S10-006 §1
 emit "  MFA re-auth required (CTRL-AUTH-010 freshness 30 min)."
 emit "  corelink-billing-replay::ReplayEngine emits"
 emit "  corelink.billing_replay.request_authorized BEFORE Authorized return."
-emit "  Driving: cargo test -p corelink-billing-replay --test prop_billing_replay -- prop_authorized_role_only_executes prop_audit_emit_per_decision_arm"
-if cargo test -p corelink-billing-replay --test prop_billing_replay -- \
+emit "  Driving: cargo test -p corelink-billing --test replay_prop_billing_replay -- prop_authorized_role_only_executes prop_audit_emit_per_decision_arm"
+if cargo test -p corelink-billing --test replay_prop_billing_replay -- \
     prop_authorized_role_only_executes prop_audit_emit_per_decision_arm --quiet \
     >/tmp/rb_billing_001_step1.log 2>&1; then
     emit "  -> PASS: role-only-execute + audit-per-decision-arm canonical at 10k iter"
@@ -111,8 +111,8 @@ emit "    - Pricing rules from D1 plan snapshot at billing_period boundary"
 emit "    - Hash chain integrity verification (BLAKE3-256 link hash via"
 emit "      InMemoryAggregatedCounterStore::ChainHeadRecord)"
 emit "  Returns ReconstructedLayers (3-layer u128 totals snapshot)."
-emit "  Driving: cargo test -p corelink-billing-replay --test prop_billing_replay -- prop_replay_deterministic prop_idempotent_replay_same_request_id"
-if cargo test -p corelink-billing-replay --test prop_billing_replay -- \
+emit "  Driving: cargo test -p corelink-billing --test replay_prop_billing_replay -- prop_replay_deterministic prop_idempotent_replay_same_request_id"
+if cargo test -p corelink-billing --test replay_prop_billing_replay -- \
     prop_replay_deterministic prop_idempotent_replay_same_request_id --quiet \
     >/tmp/rb_billing_001_step3.log 2>&1; then
     emit "  -> PASS: replay determinism + idempotent re-fire on (request_id) PK at 10k iter"
@@ -131,8 +131,8 @@ emit "    - Layer1Diverged        -> R2 events ↔ counter D1 drift"
 emit "    - Layer2Diverged        -> counter D1 ↔ invoice_line_item D1 drift"
 emit "    - Layer3Diverged        -> invoice_line_item ↔ Stripe drift (CRITICAL)"
 emit "    - MultipleLayersDiverged -> SEV-1 escalate Finance + Legal + Compliance"
-emit "  Driving: cargo test -p corelink-billing-replay --test prop_billing_replay -- prop_layer_diverged_flagged prop_drift_summary_lifted_canonical prop_layer_drift_classify_consistent"
-if cargo test -p corelink-billing-replay --test prop_billing_replay -- \
+emit "  Driving: cargo test -p corelink-billing --test replay_prop_billing_replay -- prop_layer_diverged_flagged prop_drift_summary_lifted_canonical prop_layer_drift_classify_consistent"
+if cargo test -p corelink-billing --test replay_prop_billing_replay -- \
     prop_layer_diverged_flagged prop_drift_summary_lifted_canonical prop_layer_drift_classify_consistent --quiet \
     >/tmp/rb_billing_001_step4.log 2>&1; then
     emit "  -> PASS: layer-diverged classification + drift-summary lift canonical at 10k iter"
@@ -149,8 +149,8 @@ emit "  Stamp into compliance audit log (S-09 R2 audit bucket 7y Object Lock"
 emit "  Governance Mode retention)."
 emit "  Customer/auditor notification per RB-BILLING-001 §5: HTML + JSON"
 emit "  diff report; embedded in Finance walkthrough exhibit."
-emit "  Driving: cargo test -p corelink-billing-replay --test prop_billing_replay -- prop_chain_event_appended_per_replay prop_dry_run_no_state_mutation"
-if cargo test -p corelink-billing-replay --test prop_billing_replay -- \
+emit "  Driving: cargo test -p corelink-billing --test replay_prop_billing_replay -- prop_chain_event_appended_per_replay prop_dry_run_no_state_mutation"
+if cargo test -p corelink-billing --test replay_prop_billing_replay -- \
     prop_chain_event_appended_per_replay prop_dry_run_no_state_mutation --quiet \
     >/tmp/rb_billing_001_step5.log 2>&1; then
     emit "  -> PASS: per-replay chain extension + dry-run no-mutation canonical at 10k iter"
@@ -171,8 +171,8 @@ emit "    e) 7-year retention (R2 Object Lock Governance Mode + D1 billing_repla
 emit "       PRIMARY KEY (request_id) UNIQUE)"
 emit "  Auditor signs sign-off section in specs/04_sprints/S10/finance-walkthrough.md."
 emit "  Finance Officer signs sign-off section confirming reconstruction < 30min SLA met."
-emit "  Driving: cargo test -p corelink-billing-replay --test prop_billing_replay -- prop_tenant_isolation"
-if cargo test -p corelink-billing-replay --test prop_billing_replay -- \
+emit "  Driving: cargo test -p corelink-billing --test replay_prop_billing_replay -- prop_tenant_isolation"
+if cargo test -p corelink-billing --test replay_prop_billing_replay -- \
     prop_tenant_isolation --quiet \
     >/tmp/rb_billing_001_step6.log 2>&1; then
     emit "  -> PASS: per-tenant replay isolation INV-TENANT-ISOLATION at 10k iter"

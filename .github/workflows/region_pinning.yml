@@ -122,14 +122,14 @@ jobs:
         with:
           workspaces: ". -> target"
 
-      - name: 30k property test — property_region_pinning_30k
+      - name: 30k property test — residency_property_region_pinning_30k
         # PROPTEST_CASES defaults to 30_000 in code; CI env confirms it explicitly.
         env:
           PROPTEST_CASES: ${{ inputs.proptest_cases || '30000' }}
         run: >
           cargo test
           -p corelink-privacy
-          --test property_region_pinning_30k
+          --test residency_property_region_pinning_30k
           --release
 
   # ────────────────────────────────────────────────────────────────────────────
@@ -153,11 +153,11 @@ jobs:
         with:
           workspaces: ". -> target"
 
-      - name: adversarial regression tests — region_adversarial
+      - name: adversarial regression tests — residency_region_adversarial
         run: >
           cargo test
           -p corelink-privacy
-          --test region_adversarial
+          --test residency_region_adversarial
 
   # ────────────────────────────────────────────────────────────────────────────
   # 5. RB-region-leak dry-run script.
@@ -233,11 +233,11 @@ jobs:
         with:
           workspaces: ". -> target"
 
-      - name: 100k property test NIGHTLY — property_region_pinning_30k
+      - name: 100k property test NIGHTLY — residency_property_region_pinning_30k
         env:
           PROPTEST_CASES: ${{ inputs.proptest_cases || '100000' }}
         run: >
           cargo test
           -p corelink-privacy
-          --test property_region_pinning_30k
+          --test residency_property_region_pinning_30k
           --release
