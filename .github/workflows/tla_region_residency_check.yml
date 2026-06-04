@@ -25,12 +25,10 @@ name: TLA+ region_residency Model Check (WI-S14-009)
 
 on:
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # nightly (staggered) + on main + on-demand. Re-add pull_request only if
+  # nightly (staggered) + on-demand. Re-add pull_request only if
   # this must block PRs again.
   schedule:
     - cron: '0 8 * * *'
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:

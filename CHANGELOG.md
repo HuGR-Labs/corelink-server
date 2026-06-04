@@ -89,6 +89,21 @@ Each entry cross-references:
 
 ### Fixed
 
+- **CI heavy-gate stampede on every `main` merge — removed `push: main` from the
+  17 compute-heavy gates (root cause of the 2026-06-04 self-hosted-Mac load
+  meltdowns).** A docs-only merge (#131) fired the full heavy on-main suite at
+  once across the Mac runner fleet → load 398 (later 665, stacked with the
+  operator's own terraform + game). These gates already carry staggered nightly
+  `schedule:` crons + `workflow_dispatch`; the redundant `push: branches:[main]`
+  trigger is removed so a merge no longer stampedes them — they now run
+  **nightly (staggered) + on-demand** (the documented intent). The path-filtered
+  ship gates (`s07`/`s08`/`s09`/`gc`/`region_pinning`) keep their targeted
+  `pull_request: paths:` triggers (PR rigor preserved where it is cheap);
+  `s07`/`s08`/`s09`/`gc` gain staggered nightly crons (08:00/08:30/09:00/11:00,
+  matching `s10`). Light gates (lint/docs/validate) keep `push: main` — they are
+  fast. `actionlint` clean across all 17. Files: `coverage`, `reproducible-build`,
+  `ffi-matrix-ci`, `cas_foundation`, `codeql`, `semgrep`, `s07`–`s10`+`gc`
+  ship-gates, `tla_*` (5), `region_pinning`.
 - **`slo-instrumentation` gate — sealed audit-doc reference-rot.**
   `scripts/validate_slo_instrumentation.py` hardcoded
   `specs/_audits/2026-05-14-slo-instrumentation-gaps.md`, but the `_sealed/`

@@ -31,20 +31,8 @@ on:
       - 'dashboards/alerts/dash-gc-alerts.yml'
       - 'specs/04_sprints/S06/**'
       - '.github/workflows/gc-ship-gate.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'crates/corelink-gc/**'
-      - 'specs/05_quality/runbooks/RB-FM-300-gc-refcount-bug.md'
-      - 'specs/05_quality/runbooks/RB-FM-404-gc-write-race.md'
-      - 'specs/05_quality/runbooks/RB-FM-305-tombstone-lost.md'
-      - 'scripts/rb_fm_300_dry_run.sh'
-      - 'scripts/rb_fm_404_dry_run.sh'
-      - 'scripts/rb_fm_305_dry_run.sh'
-      - 'dashboards/grafana/DASH-GC.json'
-      - 'dashboards/alerts/dash-gc-alerts.yml'
-      - 'specs/04_sprints/S06/**'
-      - '.github/workflows/gc-ship-gate.yml'
+  schedule:
+    - cron: '0 11 * * *'
   workflow_dispatch:
 
 permissions:

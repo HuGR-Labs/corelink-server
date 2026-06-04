@@ -35,20 +35,8 @@ on:
       - 'dashboards/alerts/dash-dedup-alerts.yml'
       - 'specs/04_sprints/S07/**'
       - '.github/workflows/s07-ship-gate.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'crates/corelink-cas/**'
-      - 'crates/corelink-eviction/**'
-      - 'crates/corelink-billing/**'
-      - 'specs/05_quality/runbooks/RB-FM-059-do-quota-exceeded.md'
-      - 'specs/05_quality/runbooks/RB-FM-305-tombstone-lost.md'
-      - 'scripts/rb_fm_059_dry_run.sh'
-      - 'scripts/rb_fm_305_dry_run.sh'
-      - 'dashboards/grafana/DASH-DEDUP.json'
-      - 'dashboards/alerts/dash-dedup-alerts.yml'
-      - 'specs/04_sprints/S07/**'
-      - '.github/workflows/s07-ship-gate.yml'
+  schedule:
+    - cron: '0 8 * * *'
   workflow_dispatch:
 
 permissions:
