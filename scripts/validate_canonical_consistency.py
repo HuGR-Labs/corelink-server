@@ -76,7 +76,7 @@ SPECS = REPO_ROOT / "specs"
 REGISTRY = SPECS / "03_architecture" / "invariant_registry.md"
 TLA_DIR = SPECS / "tla"
 CRATES = REPO_ROOT / "crates"
-BASELINE_PATH = SPECS / "_audits" / "2026-05-15-canonical-consistency-baseline.md"
+BASELINE_PATH = SPECS / "_audits" / "sealed" / "2026-05-15-canonical-consistency-baseline.md"
 
 # Match any INV-* mention. We accept the legacy CamelCase form too because
 # the registry §5 still keeps a few aliases until 2026-10-24.

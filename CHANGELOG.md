@@ -80,6 +80,8 @@ Each entry cross-references:
 
 ### Fixed
 
+- **`spec-validation` gate — §4 TLA+ obligation matrix completed for 16 reconciled INVs (completes #121).** The 15 HIGH proptest/algorithmic invariants (BAZEL, CLERK, STATUSPAGE, WASM families) from `specs/03_architecture/invariant_registry.md §3.31` now have §4.3 non-TLA+ obligation rows; `INV-CROSS-TENANT-DENIED` (CRITICAL) is placed in §4.3 as an algorithmic refinement of the GREEN `tenant_isolation.tla` spec with a `<!-- techlead-review -->` flag for confirmation. `check_tla_obligations.py` exits 0 (was 16 errors). Also carries PR #121 gate fixes: `validate_canonical_consistency.py` `BASELINE_PATH` repointed to `specs/_audits/sealed/`; false-positive `INV-OPS`/`INV-pin` prose tokens fixed in `corelink-ops`, `corelink-container`, `corelink-core`.
+
 - **`spec-validation` CI gate — `check_cost_regression.py` now resolves sealed
   sprint contracts.** S07 and S09 are real HIGH_RISK hot-path sprints (eviction +
   audit/metrics) that were sealed and moved to `specs/04_sprints/_sealed/`; their
