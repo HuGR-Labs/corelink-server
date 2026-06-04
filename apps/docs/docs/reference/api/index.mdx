@@ -12,57 +12,85 @@ Auto-generated from [`openapi/corelink-v1.yaml`](https://github.com/humangr-labs
 
 Drift between this page set and the canonical YAML is gated by [`api-reference-sync.yml`](https://github.com/humangr-labs/corelink-server/blob/main/.github/workflows/api-reference-sync.yml) — every PR that edits the YAML must include the regenerated MDX.
 
-See also the raw spec page at [REST API spec](./openapi).
+See also the raw spec page at [REST API spec](./openapi.mdx).
 
 ## Admin
 
 | Endpoint | Tag | Summary |
 | --- | --- | --- |
-| [`GET /v1/admin/audit/events`](./endpoints/get-v1-admin-audit-events) | `admin` | Search the canonical audit chain (read-only). |
-| [`POST /v1/admin/ops`](./endpoints/post-v1-admin-ops) | `admin` | Submit a dual-approval-gated admin operation. |
-| [`GET /v1/admin/ops/{op_id}`](./endpoints/get-v1-admin-ops-by-op_id) | `admin` | Inspect an admin op (status + audit envelope). |
-| [`POST /v1/admin/ops/{op_id}/approve`](./endpoints/post-v1-admin-ops-by-op_id-approve) | `admin` | Approve a pending admin op (second-approver step). |
-| [`POST /v1/admin/ops/{op_id}/reject`](./endpoints/post-v1-admin-ops-by-op_id-reject) | `admin` | Reject a pending admin op. |
-| [`GET /v1/admin/tenants`](./endpoints/get-v1-admin-tenants) | `admin` | Search tenants (admin read). |
-| [`POST /v1/enterprise/inquire`](./endpoints/post-v1-enterprise-inquire) | `enterprise` | Submit an enterprise sales / BYOK inquiry. |
+| [`GET /v1/admin/audit/events`](./endpoints/get-v1-admin-audit-events.mdx) | `admin` | Search the canonical audit chain (read-only). |
+| [`POST /v1/admin/ops`](./endpoints/post-v1-admin-ops.mdx) | `admin` | Submit a dual-approval-gated admin operation. |
+| [`GET /v1/admin/ops/{op_id}`](./endpoints/get-v1-admin-ops-by-op_id.mdx) | `admin` | Inspect an admin op (status + audit envelope). |
+| [`POST /v1/admin/ops/{op_id}/approve`](./endpoints/post-v1-admin-ops-by-op_id-approve.mdx) | `admin` | Approve a pending admin op (second-approver step). |
+| [`POST /v1/admin/ops/{op_id}/reject`](./endpoints/post-v1-admin-ops-by-op_id-reject.mdx) | `admin` | Reject a pending admin op. |
+| [`GET /v1/admin/tenants`](./endpoints/get-v1-admin-tenants.mdx) | `admin` | Search tenants (admin read). |
+| [`POST /v1/enterprise/inquire`](./endpoints/post-v1-enterprise-inquire.mdx) | `enterprise` | Submit an enterprise sales / BYOK inquiry. |
 
 ## Auth & Onboarding
 
 | Endpoint | Tag | Summary |
 | --- | --- | --- |
-| [`POST /v1/dpa/accept`](./endpoints/post-v1-dpa-accept) | `dpa` | Record click-through acceptance of the current DPA version. |
-| [`POST /v1/dpa/re-accept`](./endpoints/post-v1-dpa-re-accept) | `dpa` | Re-accept a major-bumped DPA notice within the 30-day grace window. |
-| [`POST /v1/onboarding/tier-select`](./endpoints/post-v1-onboarding-tier-select) | `tier` | Select a subscription tier and receive a Stripe Checkout session URL. |
-| [`GET /v1/pats`](./endpoints/get-v1-pats) | `pat` | List the caller's Personal Access Tokens. |
-| [`POST /v1/pats`](./endpoints/post-v1-pats) | `pat` | Issue a new Personal Access Token. |
-| [`DELETE /v1/pats/{pat_id}`](./endpoints/delete-v1-pats-by-pat_id) | `pat` | Revoke a Personal Access Token by id. |
-| [`POST /v1/signup`](./endpoints/post-v1-signup) | `signup` | Provision a new tenant from a verified Clerk identity. |
-| [`GET /v1/users/me`](./endpoints/get-v1-users-me) | `users` | Current user profile. |
-| [`PATCH /v1/users/me`](./endpoints/patch-v1-users-me) | `users` | Update mutable profile fields. |
+| [`POST /v1/dpa/accept`](./endpoints/post-v1-dpa-accept.mdx) | `dpa` | Record click-through acceptance of the current DPA version. |
+| [`POST /v1/dpa/re-accept`](./endpoints/post-v1-dpa-re-accept.mdx) | `dpa` | Re-accept a major-bumped DPA notice within the 30-day grace window. |
+| [`POST /v1/onboarding/tier-select`](./endpoints/post-v1-onboarding-tier-select.mdx) | `tier` | Select a subscription tier and receive a Stripe Checkout session URL. |
+| [`GET /v1/pats`](./endpoints/get-v1-pats.mdx) | `pat` | List the caller's Personal Access Tokens. |
+| [`POST /v1/pats`](./endpoints/post-v1-pats.mdx) | `pat` | Issue a new Personal Access Token. |
+| [`DELETE /v1/pats/{pat_id}`](./endpoints/delete-v1-pats-by-pat_id.mdx) | `pat` | Revoke a Personal Access Token by id. |
+| [`POST /v1/signup`](./endpoints/post-v1-signup.mdx) | `signup` | Provision a new tenant from a verified Clerk identity. |
+| [`GET /v1/users/me`](./endpoints/get-v1-users-me.mdx) | `users` | Reflect the authenticated caller's PAT identity. |
 
 ## Billing
 
 | Endpoint | Tag | Summary |
 | --- | --- | --- |
-| [`POST /v1/billing/stripe-webhook`](./endpoints/post-v1-billing-stripe-webhook) | `billing` | Receive a Stripe webhook event (HMAC-SHA256 signature required). |
+| [`POST /v1/billing/stripe-webhook`](./endpoints/post-v1-billing-stripe-webhook.mdx) | `billing` | Receive a Stripe webhook event (HMAC-SHA256 signature required). |
 
 ## Ops
 
 | Endpoint | Tag | Summary |
 | --- | --- | --- |
-| [`POST /api/csp-report`](./endpoints/post-api-csp-report) | `ops` | Browser Content-Security-Policy violation report intake. |
-| [`GET /api/health`](./endpoints/get-api-health) | `ops` | Liveness / readiness probe. |
+| [`GET /_health`](./endpoints/get-_health.mdx) | `ops` | Container liveness / readiness probe for the DO health check. |
+| [`POST /api/csp-report`](./endpoints/post-api-csp-report.mdx) | `ops` | Browser Content-Security-Policy violation report intake. |
+| [`GET /api/health`](./endpoints/get-api-health.mdx) | `ops` | Liveness / readiness probe. |
+
+## Other
+
+| Endpoint | Tag | Summary |
+| --- | --- | --- |
+| [`GET /bazel/v2/{instance}/blobs/ac/{hash}/{size}`](./endpoints/get-bazel-v2-by-instance-blobs-ac-by-hash-by-size.mdx) | `bazel-v2` | Read an Action Cache result (Bazel REAPI AC GET). |
+| [`PUT /bazel/v2/{instance}/blobs/ac/{hash}/{size}`](./endpoints/put-bazel-v2-by-instance-blobs-ac-by-hash-by-size.mdx) | `bazel-v2` | Write an Action Cache result (Bazel REAPI AC PUT). |
+| [`GET /bazel/v2/{instance}/blobs/{hash}/{size}`](./endpoints/get-bazel-v2-by-instance-blobs-by-hash-by-size.mdx) | `bazel-v2` | Read a CAS blob (Bazel REAPI ByteStream GET). |
+| [`POST /bazel/v2/{instance}/findMissingBlobs`](./endpoints/post-bazel-v2-by-instance-findMissingBlobs.mdx) | `bazel-v2` | Find missing blobs (Bazel REAPI FindMissingBlobs POST). |
+| [`PUT /bazel/v2/{instance}/uploads/{uuid}/blobs/{hash}/{size}`](./endpoints/put-bazel-v2-by-instance-uploads-by-uuid-blobs-by-hash-by-size.mdx) | `bazel-v2` | Write a CAS blob (Bazel REAPI ByteStream PUT). |
+| [`GET /v1/ac/{tenant}/{action_digest}`](./endpoints/get-v1-ac-by-tenant-by-action_digest.mdx) | `reapi-http` | Look up an Action Cache result. |
+| [`PUT /v1/ac/{tenant}/{action_digest}`](./endpoints/put-v1-ac-by-tenant-by-action_digest.mdx) | `reapi-http` | Upsert an Action Cache result. |
+| [`POST /v1/admin/mutate`](./endpoints/post-v1-admin-mutate.mdx) | `admin-read-mutate` | Admin-plane mutate (dual-approval-gated). |
+| [`GET /v1/admin/pilots`](./endpoints/get-v1-admin-pilots.mdx) | `admin-pilot` | List pilot tenants filtered by lifecycle state. |
+| [`POST /v1/admin/pilots/{tenant_id}/checkin`](./endpoints/post-v1-admin-pilots-by-tenant_id-checkin.mdx) | `admin-pilot` | Run the 24-hour activation check-in. |
+| [`POST /v1/admin/pilots/{tenant_id}/grant-tier`](./endpoints/post-v1-admin-pilots-by-tenant_id-grant-tier.mdx) | `admin-pilot` | Grant pilot tier and cap. |
+| [`GET /v1/admin/read/{resource}`](./endpoints/get-v1-admin-read-by-resource.mdx) | `admin-read-mutate` | Admin-plane read of a typed resource. |
+| [`GET /v1/audit/analytics/event-count`](./endpoints/get-v1-audit-analytics-event-count.mdx) | `audit-analytics` | Event-type count aggregates over a time window. |
+| [`GET /v1/audit/analytics/timeline`](./endpoints/get-v1-audit-analytics-timeline.mdx) | `audit-analytics` | Event-count timeline bucketed at a chosen granularity. |
+| [`GET /v1/audit/export`](./endpoints/get-v1-audit-export.mdx) | `audit-export` | Stream a bulk audit-chain export from R2. |
+| [`GET /v1/cas/{digest}`](./endpoints/get-v1-cas-by-digest.mdx) | `reapi-http` | Read a CAS blob by canonical digest (REAPI binary). |
+| [`GET /v1/cas/{tenant}/{hash}`](./endpoints/get-v1-cas-by-tenant-by-hash.mdx) | `reapi-http` | Read a CAS blob by `(tenant, content-hash)`. |
+| [`PUT /v1/cas/{tenant}/{hash}`](./endpoints/put-v1-cas-by-tenant-by-hash.mdx) | `reapi-http` | Write a CAS blob by `(tenant, content-hash)`. |
+| [`POST /v1/signup/pilot/{token}`](./endpoints/post-v1-signup-pilot-by-token.mdx) | `signup-pilot` | Redeem an HMAC-signed pilot signup token. |
+| [`POST /v8/artifacts/events`](./endpoints/post-v8-artifacts-events.mdx) | `turbo-v8` | Accept-and-drop Turborepo telemetry events. |
+| [`POST /v8/artifacts/status`](./endpoints/post-v8-artifacts-status.mdx) | `turbo-v8` | Static remote-cache enabled check (Turbo status probe). |
+| [`GET /v8/artifacts/{hash}`](./endpoints/get-v8-artifacts-by-hash.mdx) | `turbo-v8` | Download a Turborepo build artifact. |
+| [`PUT /v8/artifacts/{hash}`](./endpoints/put-v8-artifacts-by-hash.mdx) | `turbo-v8` | Upload a Turborepo build artifact. |
 
 ## Privacy
 
 | Endpoint | Tag | Summary |
 | --- | --- | --- |
-| [`GET /v1/consent`](./endpoints/get-v1-consent) | `privacy-consent` | List all grants + revocations for the calling subject. |
-| [`GET /v1/consent/revocation/verify`](./endpoints/get-v1-consent-revocation-verify) | `privacy-consent` | Public stateless verify of a revocation signature. |
-| [`GET /v1/consent/verify`](./endpoints/get-v1-consent-verify) | `privacy-consent` | Public stateless verify of a grant signature. |
-| [`DELETE /v1/consent/{purpose}`](./endpoints/delete-v1-consent-by-purpose) | `privacy-consent` | Revoke consent for one canonical purpose (symmetric proof). |
-| [`POST /v1/consent/{purpose}`](./endpoints/post-v1-consent-by-purpose) | `privacy-consent` | Grant consent for one canonical purpose. |
-| [`GET /v1/data-categories`](./endpoints/get-v1-data-categories) | `data-categories` | List canonical data-category enums (privacy_model §5.6). |
-| [`POST /v1/privacy/dsr/{action}`](./endpoints/post-v1-privacy-dsr-by-action) | `privacy-dsr` | Submit a Data Subject Request (GDPR / LGPD / CCPA). |
-| [`GET /v1/privacy/dsr/{request_id}/status`](./endpoints/get-v1-privacy-dsr-by-request_id-status) | `privacy-dsr` | Poll the status of a previously submitted DSR. |
+| [`GET /v1/consent`](./endpoints/get-v1-consent.mdx) | `privacy-consent` | List all grants + revocations for the calling subject. |
+| [`GET /v1/consent/revocation/verify`](./endpoints/get-v1-consent-revocation-verify.mdx) | `privacy-consent` | Public stateless verify of a revocation signature. |
+| [`GET /v1/consent/verify`](./endpoints/get-v1-consent-verify.mdx) | `privacy-consent` | Public stateless verify of a grant signature. |
+| [`DELETE /v1/consent/{purpose}`](./endpoints/delete-v1-consent-by-purpose.mdx) | `privacy-consent` | Revoke consent for one canonical purpose (symmetric proof). |
+| [`POST /v1/consent/{purpose}`](./endpoints/post-v1-consent-by-purpose.mdx) | `privacy-consent` | Grant consent for one canonical purpose. |
+| [`GET /v1/data-categories`](./endpoints/get-v1-data-categories.mdx) | `data-categories` | List canonical data-category enums (privacy_model §5.6). |
+| [`POST /v1/privacy/dsr/{action}`](./endpoints/post-v1-privacy-dsr-by-action.mdx) | `privacy-dsr` | Submit a Data Subject Request (GDPR / LGPD / CCPA). |
+| [`GET /v1/privacy/dsr/{request_id}/status`](./endpoints/get-v1-privacy-dsr-by-request_id-status.mdx) | `privacy-dsr` | Poll the status of a previously submitted DSR. |
 
