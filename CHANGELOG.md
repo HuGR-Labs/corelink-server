@@ -127,6 +127,17 @@ Each entry cross-references:
 
 ### Fixed
 
+- **L3 money-path route 404'd in production — the Durable Object never forwarded
+  the Stripe + DPA env to the container (launch blocker GAP-4).** `/v1/onboarding/
+  tier-select` runs INSIDE the container and reads `STRIPE_SECRET_KEY`,
+  `STRIPE_PRICE_ID_{STARTER,TEAM,PRO}`, `STRIPE_AUTH_MODE`, `STRIPE_WEBHOOK_SECRET`,
+  and `CORELINK_DPA_VERSION` from its own process env (`build_state_from_env` +
+  `StripeRealClient::from_env`), but `worker/src/durable_object.ts`'s
+  `container.start({env})` allowlist forwarded only R2/CF/D1/PAT/internal-auth —
+  so `build_state_from_env` returned `None` (missing DPA version) and the route
+  stayed UNMOUNTED (404); paid checkout would also 500 (missing price ids). Added
+  all seven vars to the DO allowlist + declared them on the Worker `Env`
+  interface (`worker/src/index.ts`).
 - **admin-ui deploy workflow pointed at the dead Cloudflare Pages path — would
   fail on every run (launch blocker GAP-1).** `.github/workflows/admin-ui-deploy.yml`
   invoked `pnpm pages:build` + `npx wrangler pages deploy .vercel/output/static`,

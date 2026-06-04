@@ -458,6 +458,18 @@ export class CoreLinkServer implements DurableObject {
           // Container mounts `/_internal/pat/mint` only when both are non-empty.
           CORELINK_INTERNAL_AUTH_KEY: this.env.CORELINK_INTERNAL_AUTH_KEY ?? "",
           PAT_SIGNING_KEY: this.env.PAT_SIGNING_KEY ?? "",
+          // L3 money path: `POST /v1/onboarding/tier-select` runs INSIDE the
+          // container and reads these from its OWN process env
+          // (`tier_select::build_state_from_env` + `StripeRealClient::from_env`).
+          // They MUST be forwarded or the route stays unmounted (404, missing
+          // CORELINK_DPA_VERSION) and Stripe checkout 500s (missing price ids).
+          STRIPE_SECRET_KEY: this.env.STRIPE_SECRET_KEY ?? "",
+          STRIPE_AUTH_MODE: this.env.STRIPE_AUTH_MODE ?? "",
+          STRIPE_WEBHOOK_SECRET: this.env.STRIPE_WEBHOOK_SECRET ?? "",
+          STRIPE_PRICE_ID_STARTER: this.env.STRIPE_PRICE_ID_STARTER ?? "",
+          STRIPE_PRICE_ID_TEAM: this.env.STRIPE_PRICE_ID_TEAM ?? "",
+          STRIPE_PRICE_ID_PRO: this.env.STRIPE_PRICE_ID_PRO ?? "",
+          CORELINK_DPA_VERSION: this.env.CORELINK_DPA_VERSION ?? "",
           // ADR-MULTI-REGION-V1 — per-region R2 bucket overrides.
           // Absent/empty → container defaults to IAD (corelink-ac-iad / iad).
           // Set by [env.prod-<region>].vars in wrangler.toml.
