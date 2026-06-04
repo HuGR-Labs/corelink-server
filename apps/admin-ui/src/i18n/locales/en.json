@@ -166,5 +166,13 @@
       "signUp": "Sign up",
       "talkToUs": "Talk to us"
     }
+  },
+  "upgraded": {
+    "heading": "Subscription started",
+    "subtitle": "Thank you — your payment went through. Your plan activates in a moment. We're finishing the last step in the background; you don't need to do anything.",
+    "note": "Activation is confirmed by Stripe and can take a few seconds to appear. If your plan still shows the old tier, refresh your billing page shortly.",
+    "ctaDashboard": "Go to dashboard",
+    "ctaBilling": "View billing",
+    "reference": "Reference:"
   }
 }
