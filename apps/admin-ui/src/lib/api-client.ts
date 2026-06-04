@@ -46,7 +46,7 @@ function defaultBaseUrl(): string {
   // Read at call time so tests can stub process.env.
   const fromEnv =
     typeof process !== "undefined" ? process.env?.CORELINK_API_URL : undefined;
-  return fromEnv ?? "https://api.corelink.humangr.com";
+  return fromEnv ?? "https://corelink-api.humangr.com";
 }
 
 function buildHeaders(opts: ApiCallOptions): Headers {

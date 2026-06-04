@@ -50,7 +50,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const endpoint =
     process.env["CSP_REPORT_ENDPOINT"] ??
-    `${process.env["NEXT_PUBLIC_CORELINK_API_URL"] ?? "https://api.corelink.humangr.com"}/v1/csp-violations`;
+    `${process.env["NEXT_PUBLIC_CORELINK_API_URL"] ?? "https://corelink-api.humangr.com"}/v1/csp-violations`;
 
   try {
     const r = await fetch(endpoint, {

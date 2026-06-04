@@ -51,7 +51,7 @@ function defaultBaseUrl(): string {
     typeof process !== "undefined"
       ? process.env?.NEXT_PUBLIC_CORELINK_API_URL
       : undefined;
-  return fromEnv ?? "https://api.corelink.humangr.com";
+  return fromEnv ?? "https://corelink-api.humangr.com";
 }
 
 function headers(opts: DsrClientOptions): Headers {

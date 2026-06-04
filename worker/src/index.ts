@@ -139,9 +139,9 @@ const TIMING_PAD_JITTER_PCT = 15;
 const TIMING_PAD_MIN_MS = 5;
 
 const ALLOWED_ORIGINS = [
-  "https://app.corelink.humangr.com",
-  "https://admin.corelink.humangr.com",
-  "https://docs.corelink.humangr.com",
+  "https://corelink-admin.humangr.com",
+  "https://corelink-app.humangr.com",
+  "https://corelink-docs.humangr.com",
 ];
 
 const CORS_HEADERS: ReadonlyArray<readonly [string, string]> = [
