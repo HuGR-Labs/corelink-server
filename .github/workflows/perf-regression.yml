@@ -111,11 +111,12 @@ jobs:
           restore-keys: |
             criterion-${{ runner.os }}-
 
-      - name: Setup Python (for regression check)
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: '3.11'
-
+      # No actions/setup-python: the self-hosted mac fleet can't reliably
+      # provision Python via setup-python (RUNNER_TOOL_CACHE is unset -> it
+      # falls back to the unwritable /Users/runner hosted path and dies with
+      # `mkdir: /Users/runner: Permission denied`). The regression check
+      # script only needs `python3` (stdlib only), which ships on every
+      # runner. (2026-06-04)
       - name: Run criterion bench suite (scoped)
         env:
           # Keep measurement fast on CI; statistical noise is OK because

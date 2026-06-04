@@ -89,6 +89,19 @@ Each entry cross-references:
   which checks the active path first then falls back to `_sealed/<sprint>/`; REQUIRED
   set is unchanged (`S07 S08 S09 S10 S14`).
 
+- **Systemic `actions/setup-python` → system-python3 migration on self-hosted macOS
+  runners (11 workflows).** Every self-hosted mac job that called
+  `actions/setup-python` would die with `mkdir: /Users/runner: Permission denied`
+  because `RUNNER_TOOL_CACHE` is unset on the fleet and setup-python falls back to
+  the unwritable hosted path. Removed all `actions/setup-python` steps from the 11
+  remaining affected workflows (`d1-migration-validate`, `region_pinning` x2 jobs,
+  `slo-instrumentation`, `subprocessors-sync` x2 jobs, `api-reference-sync` x2
+  jobs, `release-notes`, `pentest-findings-sync`, `compliance-weekly`,
+  `pre-cutover-weekly-cron`, `neon-shadow-reconcile-daily`, `perf-regression`) and
+  replaced with system `python3` + repo-local venvs where pip packages are needed.
+  Jobs on `[self-hosted, Linux, X64]` (`endurance-2h-nightly`,
+  `load-test-nightly`, `ffi-matrix-ci`) were deliberately left unchanged as they do
+  not share the macOS fleet's constraint.
 - **`TLA+ Model Check — Runbooks` gate — robust `tlc`-wrapper build on the macOS
   fleet.** `.github/workflows/tla_runbooks_check.yml` built its `tlc` wrapper with
   a quoted heredoc and then injected `$RUNNER_TEMP` via `sed`; the runner path's
