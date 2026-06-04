@@ -756,9 +756,9 @@ mod tests {
         TierSelectRequest {
             tier: tier.to_owned(),
             success_url:
-                "https://app.corelink.humangr.com/en/upgraded?session_id={CHECKOUT_SESSION_ID}"
+                "https://corelink-admin.humangr.com/en/upgraded?session_id={CHECKOUT_SESSION_ID}"
                     .to_owned(),
-            cancel_url: "https://app.corelink.humangr.com/en/pricing".to_owned(),
+            cancel_url: "https://corelink-admin.humangr.com/en/pricing".to_owned(),
         }
     }
 

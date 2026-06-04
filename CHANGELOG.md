@@ -127,6 +127,24 @@ Each entry cross-references:
 
 ### Fixed
 
+- **Production hostname mismatch — runtime code pointed at the dead
+  `*.corelink.humangr.com` form while the live DNS is the flat `corelink-*`
+  pattern (launch blockers GAP-2/GAP-3).** `dig` confirms `api.corelink.humangr.com`
+  and `app.corelink.humangr.com` do **not** resolve, whereas `corelink-api`,
+  `corelink-admin`, `corelink-app`, `corelink-docs` are live (Wave-32 sign-off).
+  The admin-ui server API client (`api-client.ts`/`dsr-client.ts`) defaulted to
+  the dead `https://api.corelink.humangr.com`, so absent the `CORELINK_API_URL`
+  env the server could not reach the backend; the CSP `connect-src` and the
+  Worker CORS allowlist (`worker/src/index.ts`) likewise allowed only dead
+  origins. Repointed all runtime references to the live flat hosts: admin-ui API
+  client + DSR client defaults, CSP `connect-src` → `corelink-api`, CSP-report +
+  billing-portal return + newsletter CORS fallback, and the Worker CORS
+  allowlist → `corelink-admin`/`corelink-app`/`corelink-docs`. `clerk.corelink.humangr.com`
+  is intentionally retained (Clerk's required Frontend-API CNAME format). The
+  Stripe checkout redirect is origin-relative (`originFromRequest`) and already
+  self-corrects to the serving host. (Deferred to a post-launch follow-up:
+  WebAuthn RP origins, multi-region `{region}.api.*`, pilot-signup + rate-limit
+  doc links, and e2e/OpenAPI-JSON references — none on the launch path.)
 - **L3 money-path route 404'd in production — the Durable Object never forwarded
   the Stripe + DPA env to the container (launch blocker GAP-4).** `/v1/onboarding/
   tier-select` runs INSIDE the container and reads `STRIPE_SECRET_KEY`,

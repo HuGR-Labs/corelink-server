@@ -63,7 +63,7 @@ export function buildCspDirectives(nonce: string): string[] {
     //   https://checkout.stripe.com — required for Stripe Checkout session fetch
     //   https://billing.stripe.com  — required for Stripe Customer Portal redirect
     // Source: https://docs.stripe.com/security/guide#content-security-policy
-    "connect-src 'self' https://api.corelink.humangr.com https://clerk.corelink.humangr.com https://plausible.io https://api.stripe.com https://m.stripe.network https://checkout.stripe.com https://billing.stripe.com",
+    "connect-src 'self' https://corelink-api.humangr.com https://clerk.corelink.humangr.com https://plausible.io https://api.stripe.com https://m.stripe.network https://checkout.stripe.com https://billing.stripe.com",
     // frame-src addition: https://clerk.corelink.humangr.com for Clerk modal/popup auth steps
     // Source: https://clerk.com/docs/security/content-security-policy
     "frame-src https://js.stripe.com https://hooks.stripe.com https://challenges.cloudflare.com https://clerk.corelink.humangr.com",

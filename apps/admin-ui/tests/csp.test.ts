@@ -47,7 +47,7 @@ describe("CSP header generation", () => {
   it("allows clerk.corelink.humangr.com for script + connect", () => {
     const value = buildCspHeaderValue("n");
     expect(value).toContain("https://clerk.corelink.humangr.com");
-    expect(value).toContain("https://api.corelink.humangr.com");
+    expect(value).toContain("https://corelink-api.humangr.com");
   });
 
   it("allows Plausible Analytics on script-src + connect-src (pre-HN-launch)", () => {

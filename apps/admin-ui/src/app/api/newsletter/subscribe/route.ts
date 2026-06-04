@@ -94,7 +94,7 @@ function corsHeaders(origin: string | null): HeadersInit {
   const allow =
     origin && /^https:\/\/[a-z0-9-]+\.humangr\.com$/i.test(origin)
       ? origin
-      : "https://docs.corelink.humangr.com";
+      : "https://corelink-docs.humangr.com";
   return {
     "access-control-allow-origin": allow,
     "access-control-allow-methods": "POST, OPTIONS",
