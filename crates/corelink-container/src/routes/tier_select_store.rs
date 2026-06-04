@@ -276,8 +276,6 @@ impl TierSelectStore for D1HttpTierSelectStore {
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
-    use super::*;
-
     /// The secret-redacting `Debug` never surfaces the CF API token.
     /// (Construction of a real `D1HttpClient` requires env; WP-A adds the
     /// behavioural coverage of the SQL paths.)

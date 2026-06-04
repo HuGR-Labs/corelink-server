@@ -127,6 +127,18 @@ Each entry cross-references:
 
 ### Fixed
 
+- **L3 tier-select Stripe checkout — racy money-path bug fixed (caught by the
+  live verification).** `StripeRealClient` wraps a persistent
+  `reqwest::blocking::Client`, which reqwest forbids using inside a tokio
+  runtime; `tokio::spawn_blocking` does NOT make it safe (its pool threads still
+  carry the runtime context), so `StripeCheckoutCreator::create` intermittently
+  panicked at tokio's blocking-runtime shutdown. `create` now ferries the
+  blocking Stripe call to a DEDICATED `std::thread` (zero tokio context) and
+  awaits over a `oneshot` — reqwest's prescribed pattern for a blocking client in
+  async. Verified end-to-end: a real Stripe test-mode Checkout Session was
+  created (valid `cs_`/`cus_`/`https` response). Adds the `#[ignore]` live harness
+  documenting the manual command; removes an unused `use super::*` in the store
+  test module.
 - **CI heavy-gate stampede on every `main` merge — removed `push: main` from the
   17 compute-heavy gates (root cause of the 2026-06-04 self-hosted-Mac load
   meltdowns).** A docs-only merge (#131) fired the full heavy on-main suite at

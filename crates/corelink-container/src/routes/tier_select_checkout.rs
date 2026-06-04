@@ -186,14 +186,22 @@ impl CheckoutCreator for StripeCheckoutCreator {
             cancel_url,
         );
 
-        // `StripeRealClient` is `reqwest::blocking`; drive it off the async
-        // runtime via `spawn_blocking`. A join failure (panic) AND a Stripe
-        // `TierError` both collapse to `Err` → 502 `stripe_unavailable`.
+        // `StripeRealClient` wraps a persistent `reqwest::blocking::Client`,
+        // which MUST NOT run inside a tokio runtime — and `tokio::spawn_blocking`
+        // threads STILL carry the runtime context, so reqwest panics on its
+        // internal runtime there (caught by the live `#[ignore]` test). Run the
+        // call on a DEDICATED std thread (no tokio context whatsoever) and ferry
+        // the result back over a oneshot. A dropped sender (thread panic) AND a
+        // Stripe `TierError` both collapse to `Err` → 502 `stripe_unavailable`;
         // CoreLink surfaces only the hosted URL (Stripe owns PCI).
         let stripe = Arc::clone(&self.stripe);
-        let resp = tokio::task::spawn_blocking(move || stripe.create_checkout_session(&req))
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(stripe.create_checkout_session(&req));
+        });
+        let resp = rx
             .await
-            .map_err(|e| format!("checkout task failed to join: {e}"))?
+            .map_err(|e| format!("stripe checkout thread dropped: {e}"))?
             .map_err(|e| format!("stripe checkout failed: {e}"))?;
 
         Ok(CheckoutCreated {
@@ -221,5 +229,71 @@ mod tests {
         // the intent that no email is threaded through the trait surface.
         let threaded_email: Option<&str> = None;
         assert!(threaded_email.is_none());
+    }
+
+    /// Live WP-B verification — `create` against the REAL Stripe API in TEST
+    /// mode. Confirms the `spawn_blocking` path, `CheckoutSessionRequest::new`,
+    /// and the `CheckoutSessionResponse` → `CheckoutCreated` mapping all work
+    /// end-to-end against Stripe (not the in-memory fake).
+    ///
+    /// ```sh
+    /// STRIPE_AUTH_MODE=direct STRIPE_SECRET_KEY=sk_test_… \
+    ///   STRIPE_PRICE_ID_STARTER=price_… \
+    ///   cargo test -p corelink-server stripe_checkout_creator_live_test_mode -- --ignored --nocapture
+    /// ```
+    // `StripeRealClient` wraps a persistent `reqwest::blocking::Client`, which
+    // reqwest forbids using inside a tokio runtime. The adapter's `create`
+    // already ferries the actual HTTP call to a dedicated std thread; here we
+    // additionally BUILD and DROP the client entirely OUTSIDE any tokio runtime
+    // (on this plain std test thread), driving only the async `create` future on
+    // a throwaway current-thread runtime — so `reqwest::blocking` never touches a
+    // runtime context. (Production builds it at boot + drops at shutdown — the
+    // same "outside a live handler" shape.)
+    #[test]
+    #[ignore = "requires live Stripe test-mode key (STRIPE_SECRET_KEY=sk_test_… + STRIPE_PRICE_ID_STARTER)"]
+    fn stripe_checkout_creator_live_test_mode() {
+        use std::sync::Arc;
+
+        use corelink_stripe_real::StripeRealClient;
+
+        use crate::routes::tier_select::{CheckoutCreator, RequestedTier};
+
+        // Built OUTSIDE any tokio runtime (this plain std test thread).
+        let creator = super::StripeCheckoutCreator::new(Arc::new(
+            StripeRealClient::from_env()
+                .expect("StripeRealClient::from_env (set STRIPE_AUTH_MODE=direct + STRIPE_SECRET_KEY)"),
+        ));
+        let created = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("build runtime")
+            .block_on(creator.create(
+                "live-test-tenant",
+                RequestedTier::Starter,
+                "https://example.com/success",
+                "https://example.com/cancel",
+            ))
+            .expect("create a real Stripe test-mode Checkout Session");
+
+        eprintln!("live Stripe session: {created:?}");
+        assert!(
+            created.checkout_url.starts_with("https://"),
+            "checkout_url must be https: {}",
+            created.checkout_url
+        );
+        assert!(
+            created.session_id.starts_with("cs_"),
+            "session_id must be cs_…: {}",
+            created.session_id
+        );
+        assert!(
+            created.stripe_customer_id.starts_with("cus_"),
+            "stripe_customer_id must be cus_…: {}",
+            created.stripe_customer_id
+        );
+
+        // Drop the blocking-backed client off any tokio context (the throwaway
+        // current-thread runtime above already dropped here on the std thread).
+        std::thread::spawn(move || drop(creator)).join().unwrap();
     }
 }
