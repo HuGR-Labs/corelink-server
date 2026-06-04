@@ -89,6 +89,25 @@ Each entry cross-references:
   `$RUNNER_TEMP` at write-time, `\$@` stays literal), mirroring the working
   `tla_check.yml` / `tla_billing_check.yml` pattern. SHA-256 pin + run logic
   unchanged.
+- **`terraform validate` — sensitive `for_each` in `cloudflare-secrets`
+  (sealed the secret-leak vector).** With the `terraform-lint` gate finally
+  *running* validate (after the `setup-terraform` SHA repin above), the
+  staging env failed `Error: Invalid for_each argument` at
+  `infra/terraform/modules/cloudflare-secrets/main.tf:53` — `for_each =
+  var.secrets` fed the **sensitive** `map(string)` (secret name → value)
+  straight into `for_each`, which Terraform forbids because the resulting
+  resource-instance keys surface in plan output and could expose the secret.
+  Fixed the SOTA-secure way: iterate over the **names only** via
+  `for_each = nonsensitive(toset(keys(var.secrets)))` (names are not
+  sensitive; verified via `terraform console` to render as the plain key set)
+  and look the still-**sensitive** value up *by key* inside the resource —
+  `sha256(var.secrets[each.key])` for the re-trigger hash and
+  `SECRET_VALUE = var.secrets[each.key]` for the local-exec env (both confirmed
+  to render as `(sensitive value)`). The plaintext secret VALUES therefore
+  never enter `for_each` / instance keys / plan output. `terraform validate`
+  on `environments/staging` (the gate target, TF 1.7.5) now exits 0;
+  `terraform fmt -check` stays clean. (`cloudflare-base`'s `for_each` over the
+  non-sensitive `dkim_records` map was already valid — untouched.)
 - **Terraform CI cluster — un-broke the whole `terraform-lint` gate.** Three
   tangled fixes landed together: (1) native `tfsec` (the Docker action is
   Linux-only) with the one real finding (BYOK aws-kms `kms:ReEncrypt*` wildcard,
