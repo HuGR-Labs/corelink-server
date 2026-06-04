@@ -39,6 +39,30 @@ pub struct CheckoutSessionRequest {
     pub cancel_url: String,
 }
 
+impl CheckoutSessionRequest {
+    /// Construct a [`CheckoutSessionRequest`]. Downstream crates cannot
+    /// brace-init `#[non_exhaustive]` structs across the crate boundary, so
+    /// the real tier-select Checkout adapter in `corelink-container` needs
+    /// this constructor (mirrors [`CheckoutSessionResponse::new`] and
+    /// [`StripeCheckoutSessionCompletedEvent::new`]).
+    #[must_use]
+    pub fn new(
+        tenant_id: TenantId,
+        tier: TierKind,
+        customer_email: impl Into<String>,
+        success_url: impl Into<String>,
+        cancel_url: impl Into<String>,
+    ) -> Self {
+        Self {
+            tenant_id,
+            tier,
+            customer_email: customer_email.into(),
+            success_url: success_url.into(),
+            cancel_url: cancel_url.into(),
+        }
+    }
+}
+
 /// Stripe Checkout Session response (returned by the fake; production
 /// will return the parsed JSON from Stripe API).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -283,8 +307,8 @@ pub fn verify_stripe_signature(
     }
 
     let expected = compute_stripe_signature(secret, ts_seconds, payload);
-    let provided =
-        hex::decode(&sig_hex).map_err(|e| TierError::InvalidSignature(format!("hex decode: {e}")))?;
+    let provided = hex::decode(&sig_hex)
+        .map_err(|e| TierError::InvalidSignature(format!("hex decode: {e}")))?;
     let expected_bytes = hex::decode(&expected)
         .map_err(|e| TierError::InvalidSignature(format!("hex encode: {e}")))?;
     if provided.ct_eq(&expected_bytes).into() {

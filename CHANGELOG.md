@@ -49,6 +49,23 @@ Each entry cross-references:
   `customer_email` — Stripe's hosted Checkout page collects the buyer email
   itself (the SOTA pattern), so no PII is threaded from the Worker and
   `CheckoutSessionRequest` is left unchanged.
+- **Tier-select production wiring — adapters + handler implemented** (WI-S19-004;
+  L3 money path; the follow-up the scaffold deferred). The three trait seams now
+  carry real effects: `D1HttpTierSelectStore` runs the durable lock /
+  DPA-acceptance / active-subscription / persist statements via `D1HttpClient::query`
+  against migrations 0039/0038 (UPSERT keeps each write a single statement —
+  D1-over-HTTP has no cross-request transaction, so the daily reconciliation cron
+  is the UPDATE→INSERT drift backstop); `StripeCheckoutCreator` calls the real
+  `StripeRealClient::create_checkout_session` under `spawn_blocking` (empty
+  `customer_email`); `TierSelectAuditAdapter` emits a structured `tracing` audit
+  (durable D1 audit-chain write deferred to Wave-37, mirroring `internal_pat`).
+  The axum `handle` + `router` (WP-E.1) wire the gate + orchestration; the body is
+  taken as raw `Bytes` and parsed so every failure returns the one
+  `{ "error": code }` envelope. Adds `CheckoutSessionRequest::new` (the
+  `#[non_exhaustive]` constructor downstream crates need, mirroring its siblings).
+  clippy `-D warnings` green; 20 lib tests pass. **Remaining before it serves
+  traffic:** the `main.rs` env-gated mount (WP-E.2) and the live-D1 / live-Stripe
+  `#[ignore]` integration tests.
 - Customer-facing CHANGELOG generation tooling (`scripts/generate-changelog.sh`)
   and PR-level enforcement workflow (`.github/workflows/changelog-validate.yml`).
 - Customer-facing **release-notes auto-generator** (`scripts/generate-release-notes.py`)
