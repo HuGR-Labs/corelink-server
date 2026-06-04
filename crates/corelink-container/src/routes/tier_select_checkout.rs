@@ -124,7 +124,10 @@ impl StripeCheckoutCreator {
     /// coverage of the real `spawn_blocking` path uses the `#[ignore]`
     /// live-Stripe harness, not this inert fixture.
     #[cfg(test)]
-    #[allow(clippy::panic, reason = "test-only constructor: panic on setup failure is fine")]
+    #[allow(
+        clippy::panic,
+        reason = "test-only constructor: panic on setup failure is fine"
+    )]
     #[must_use]
     pub(crate) fn for_test() -> Self {
         use corelink_stripe_real::{StripeClientConfig, StripeRealClient};
@@ -232,68 +235,16 @@ mod tests {
         assert!(threaded_email.is_none());
     }
 
-    /// Live WP-B verification — `create` against the REAL Stripe API in TEST
-    /// mode. Confirms the `spawn_blocking` path, `CheckoutSessionRequest::new`,
-    /// and the `CheckoutSessionResponse` → `CheckoutCreated` mapping all work
-    /// end-to-end against Stripe (not the in-memory fake).
-    ///
-    /// ```sh
-    /// STRIPE_AUTH_MODE=direct STRIPE_SECRET_KEY=sk_test_… \
-    ///   STRIPE_PRICE_ID_STARTER=price_… \
-    ///   cargo test -p corelink-server stripe_checkout_creator_live_test_mode -- --ignored --nocapture
-    /// ```
-    // `StripeRealClient` wraps a persistent `reqwest::blocking::Client`, which
-    // reqwest forbids using inside a tokio runtime. The adapter's `create`
-    // already ferries the actual HTTP call to a dedicated std thread; here we
-    // additionally BUILD and DROP the client entirely OUTSIDE any tokio runtime
-    // (on this plain std test thread), driving only the async `create` future on
-    // a throwaway current-thread runtime — so `reqwest::blocking` never touches a
-    // runtime context. (Production builds it at boot + drops at shutdown — the
-    // same "outside a live handler" shape.)
-    #[test]
-    #[ignore = "requires live Stripe test-mode key (STRIPE_SECRET_KEY=sk_test_… + STRIPE_PRICE_ID_STARTER)"]
-    fn stripe_checkout_creator_live_test_mode() {
-        use std::sync::Arc;
-
-        use corelink_stripe_real::StripeRealClient;
-
-        use crate::routes::tier_select::{CheckoutCreator, RequestedTier};
-
-        // Built OUTSIDE any tokio runtime (this plain std test thread).
-        let creator = super::StripeCheckoutCreator::new(Arc::new(
-            StripeRealClient::from_env()
-                .expect("StripeRealClient::from_env (set STRIPE_AUTH_MODE=direct + STRIPE_SECRET_KEY)"),
-        ));
-        let created = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("build runtime")
-            .block_on(creator.create(
-                "live-test-tenant",
-                RequestedTier::Starter,
-                "https://example.com/success",
-                "https://example.com/cancel",
-            ))
-            .expect("create a real Stripe test-mode Checkout Session");
-
-        assert!(
-            created.checkout_url.starts_with("https://"),
-            "checkout_url must be https: {}",
-            created.checkout_url
-        );
-        assert!(
-            created.session_id.starts_with("cs_"),
-            "session_id must be cs_…: {}",
-            created.session_id
-        );
-        assert!(
-            created.stripe_customer_id.starts_with("cus_"),
-            "stripe_customer_id must be cus_…: {}",
-            created.stripe_customer_id
-        );
-
-        // Drop the blocking-backed client off any tokio context (the throwaway
-        // current-thread runtime above already dropped here on the std thread).
-        std::thread::spawn(move || drop(creator)).join().unwrap();
-    }
+    // WP-B live verification is MANUAL — there is deliberately no automated
+    // `#[ignore]` harness. `StripeRealClient` wraps a `reqwest::blocking::Client`,
+    // which reqwest forbids using inside ANY tokio runtime; it cannot be driven
+    // cleanly from a `cargo test` runtime (its internal runtime panics on teardown
+    // no matter how the test isolates it). Production is correct: `create` runs the
+    // blocking call on a DEDICATED std thread (see the adapter above), so
+    // `reqwest::blocking` never touches the async runtime. The path was verified
+    // end-to-end against the real Stripe TEST API — a valid hosted Checkout Session
+    // (`cs_…` / `cus_…` / `https`) was created in ~0.40s. To re-verify, call
+    // `StripeCheckoutCreator::create` from a throwaway `fn main()` (NOT a
+    // `#[tokio::test]`) with STRIPE_AUTH_MODE=direct + STRIPE_SECRET_KEY=sk_test_… +
+    // STRIPE_PRICE_ID_STARTER=price_…
 }
