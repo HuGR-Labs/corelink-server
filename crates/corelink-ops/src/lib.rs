@@ -160,7 +160,7 @@
 //! 2026-05-26), 15 of the original 28 Wave-33 Option-A re-export
 //! tenants were physically absorbed into this crate as inline
 //! submodules; workspace.members dropped 100 → 85 (-15). Public-API
-//! paths (`corelink_ops::<mod_path>::*`) are preserved 1:1; INV-OPS-*,
+//! paths (`corelink_ops::<mod_path>::*`) are preserved 1:1; the INV-S17-OPS family,
 //! admin 2-of-N dual-approval, oncall PagerDuty SecretString,
 //! supply-chain SBOM + attestation verification, drift-tracker webhook
 //! HMAC, D1 migrations replay determinism, audit-emit-BEFORE-mutation

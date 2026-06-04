@@ -618,6 +618,65 @@ INV introduced in `apps/server/src/routes/signup.rs` `insert_or_existing` (wave-
 
 **Aliases históricos:** nenhum. Declared inline in `signup.rs` `insert_or_existing` doc comment + wave-29 stream-10 closure §6.2 candidate registration, promoted to registry in Wave-30 stream-4 R-PREP (2026-05-16).
 
+---
+
+### 3.31 Orphan reconciliation batch (fix/inv-canonical-consistency-2026-06-03)
+
+INVs cited in code or tests but previously absent from the registry. Promoted here
+in batch as part of the canonical-consistency gate repair (2026-06-03). Each entry
+was verified against the citing source file before registration; no IDs are
+speculative.
+
+#### 3.31.1 Bazel REAPI bridge domain (domain BAZEL) — corelink-bazel-bridge
+
+| ID | Nome | Severidade | Descricao | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-BAZEL-DIGEST-VALIDATE** | REAPI Digest hash is exactly 64 lowercase hex chars; size_bytes matches actual bytes length on PUT | HIGH | `corelink-bazel-bridge::digest` rejects any Digest whose hash is not exactly 64 lowercase hex chars; size_bytes MUST be <= 4 GiB; on PUT the payload length MUST equal size_bytes, else `BazelBridgeError::SizeMismatch` | Validation in `corelink-bazel-bridge::digest::Digest::parse` + `corelink-bazel-bridge::adapter` PUT path | N/A (parser invariant) |
+| **INV-BAZEL-FIND-MISSING-CAP** | `findMissingBlobs` rejects batches larger than 4096 digests | HIGH | Server enforces `FIND_MISSING_BLOB_CAP = 4096`; over-limit requests return `BazelBridgeError::BatchTooLarge` (413-equivalent) immediately without issuing per-digest CAS queries | Batch guard in `corelink-bazel-bridge::find_missing::FindMissingHandler` | N/A (parser/bound invariant) |
+| **INV-BAZEL-NO-GROPC** | `corelink-bazel-bridge` MUST NOT depend on tonic, prost, or any gRPC runtime | HIGH | REST-only REAPI v2 surface; gRPC dependency would introduce a 10+ MB binary footprint and break the CF Workers size budget | `cargo-deny` + CI grep gate forbids `tonic`/`prost` in `corelink-bazel-bridge` Cargo.toml | N/A (dependency invariant) |
+
+#### 3.31.2 Clerk health DO domain (domain CLERK-HEALTH) — corelink-clerk-cf
+
+| ID | Nome | Severidade | Descricao | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-CLERK-TENANT-SCOPE** | Any URL tenant segment that differs byte-for-byte from the actor-anchored tenant id MUST trigger `HealthDoError::TenantScope` | HIGH | `ClerkHealthLogic::assert_tenant` performs an exact byte comparison; matching tenant passes, non-matching always returns `TenantScope` error variant (both directions asserted) | Property test `prop_inv_parsed_route_tenant_scope_rejects_mismatch` in `corelink-clerk-cf/tests/prop_clerk_health_logic.rs` | N/A (architecture invariant; subsumed by INV-TENANT-ISOLATION) |
+| **INV-CLERK-ROUNDTRIP** | `upsert(note, now_ms)` then `get` returns a record whose `correlation_id`, `note`, and `created_at_ms` are byte-equal to the upserted values | HIGH | `ClerkHealthLogic` state store must preserve all record fields without drift across the upsert → get boundary (canonical map) | Property test `prop_inv_upsert_get_roundtrip_preserves_record` in `corelink-clerk-cf/tests/prop_clerk_health_logic.rs` | N/A (algorithmic invariant) |
+| **INV-CLERK-SWEEP-BOUNDARY** | A health record is swept iff its expiry instant (`created_at_ms + ttl_ms`) is STRICTLY less than `now_ms` at sweep time; the exact boundary survives (half-open convention) | HIGH | `ClerkHealthState::sweep` uses strict `<` comparison; boundary record at `created_at_ms + ttl_ms == now_ms` is NOT swept | Property test `prop_inv_sweep_ttl_boundary_exact` in `corelink-clerk-cf/tests/prop_clerk_health_logic.rs` | N/A (algorithmic invariant) |
+
+#### 3.31.3 Customer handler domain (domain CUSTOMER-HANDLER) — corelink-handler-customer
+
+| ID | Nome | Severidade | Descricao | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-CROSS-TENANT-DENIED** | Every customer handler request carries `caller_tenant`; if `caller_tenant != tenant` the handler emits a `*Denied` audit event BEFORE returning `CrossTenantDenied` error | CRITICAL | Enforced in all `corelink-handler-customer` handler methods (overview, usage, billing, audit query, PAT create/revoke, team invite); read-only endpoints emit `ReadDenied`, mutation endpoints emit their respective `*Denied` variant; audit fail-CLOSED pattern | Property tests + integration tests in `corelink-handler-customer/tests/` | N/A (subsumed by INV-TENANT-ISOLATION at the customer control-plane boundary) |
+
+#### 3.31.4 Statuspage integration domain (domain STATUSPAGE) — corelink-statuspage-real
+
+| ID | Nome | Severidade | Descricao | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-STATUSPAGE-WIRE-ROUNDTRIP** | serde_json round-trip MUST preserve every field of the canonical 24h `DsrCompletionReport`; serde drift would silently corrupt the audit chain (CTRL-AUDIT-001) | HIGH | `DsrCompletionReport` serde derives; canonical JSON; field-by-field equality asserted (no `matches!` anti-pattern) | Property test `prop_inv_dsr_completion_report_serde_roundtrip` in `corelink-statuspage-real/tests/prop_statuspage_invariants.rs` | N/A (algorithmic invariant; serializer roundtrip) |
+| **INV-STATUSPAGE-RATELIMIT-NO-DRIFT** | A `DenyBackoff` decision MUST NOT advance `last_allowed`; the next `Allow` fires only at-or-after `t0 + RATE_LIMIT_WINDOW_MS` | HIGH | `StatuspageRateLimiter::decide` only updates `last_allowed_ms` on `Allow` decisions; `DenyBackoff` decisions leave `last_allowed_ms` unchanged | Property test `prop_inv_rate_limiter_denied_does_not_advance_window` in `corelink-statuspage-real/tests/prop_statuspage_invariants.rs` | N/A (algorithmic invariant) |
+| **INV-STATUSPAGE-RETRY-TOTAL-AND-MONOTONE** | `RetryPolicy::decide` is total over all u16 HTTP statuses AND `backoff_for(attempt)` is monotone non-decreasing in `attempt` up to `max_backoff` cap | HIGH | `RetryPolicy::wave16_default` covers every u16 status code in exactly one canonical variant; `backoff_for` is capped at `max_backoff` and never decreases | Property test `prop_inv_retry_policy_classification_total_and_monotone` in `corelink-statuspage-real/tests/prop_statuspage_invariants.rs` | N/A (algorithmic invariant) |
+
+#### 3.31.5 WASM CAS client domain (domain WASM) — corelink-wasm
+
+| ID | Nome | Severidade | Descricao | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-WASM-PUT-HEX64** | `put_inner` ALWAYS returns a 64-character lowercase hex BLAKE3 digest | HIGH | Every byte is `[0-9a-f]`; length is exactly 64; upper-case or base64 output is a regression (catches future hash-backend swap) | Property test `prop_put_inner_emits_lowercase_hex64` in `corelink-wasm/src/lib.rs` | N/A (algorithmic invariant; BLAKE3 32-byte → 64 hex) |
+| **INV-WASM-PUT-DETERMINISTIC** | `put_inner` is a pure function of its input bytes; two calls with identical input MUST yield identical digests | HIGH | Catches accidental non-determinism (salted hash, time-based seed) in any future swap of the hash backend; `client_verify` flag must not affect the hash | Property test `prop_put_inner_is_deterministic` in `corelink-wasm/src/lib.rs` | N/A (algorithmic invariant; deterministic BLAKE3) |
+| **INV-WASM-PUT-ROUNDTRIP** | `Digest::from_hex(put_inner(x)).to_hex() == put_inner(x)`; hex encode → parse → re-encode is identity | HIGH | Guards the hex codec at the WASM to JS boundary against silent corruption | Property test `prop_put_inner_roundtrip_hex` in `corelink-wasm/src/lib.rs` | N/A (algorithmic invariant; hex codec) |
+| **INV-WASM-GET-VERIFY-MATCH** | With `client_verify=true`, `get_inner` returns `Ok` iff the supplied digest matches the BLAKE3 of the body; otherwise returns `COR_CAS_DIGEST_MISMATCH` error string | HIGH | Exercises the production verify path on the WASM critical path; mismatch must always surface via canonical error taxonomy code | Property test `prop_get_inner_verify_match_or_mismatch` in `corelink-wasm/src/lib.rs` | N/A (algorithmic invariant; mirrors INV-CAS-INTEGRITY at WASM boundary) |
+| **INV-WASM-GET-PANIC-FREE** | `get_inner` must NEVER panic regardless of the shape of the digest string at the JS boundary (arbitrary UTF-8, oversized, mixed case, control chars) | HIGH | Any arbitrary string input to an FFI entry point must return `Ok` or a typed `Err`; never a panic; required of all WASM/FFI entry points | Property test `prop_get_inner_panic_free` in `corelink-wasm/src/lib.rs` (any UTF-8 string input) | N/A (FFI invariant; panic-free contract) |
+| **INV-WASM-STAT-ECHO** | `stat_inner` echoes the input digest into `StatResult.digest` whenever the digest parses; `size=0` and `exists=false` in the stub | HIGH | Field-by-field equality asserted (no `matches!` anti-pattern per S-08 P1-1) | Property test `prop_stat_inner_echoes_valid_digest` in `corelink-wasm/src/lib.rs` | N/A (algorithmic invariant; stub echo contract) |
+
+**Cross-references**:
+- `corelink-bazel-bridge/src/lib.rs` + `adapter.rs` + `digest.rs` — BAZEL INV citation sources.
+- `corelink-clerk-cf/tests/prop_clerk_health_logic.rs` — CLERK-HEALTH INV proptest sources.
+- `corelink-handler-customer/src/lib.rs` — CROSS-TENANT-DENIED citation source.
+- `corelink-statuspage-real/tests/prop_statuspage_invariants.rs` — STATUSPAGE INV proptest sources.
+- `corelink-wasm/src/lib.rs` — WASM INV proptest sources (inline test module).
+
+**Aliases historicos:** nenhum. Promoted in canonical-consistency gate repair (2026-06-03) from orphan refs surfaced by `validate_canonical_consistency.py`.
+
 ### 3.30 INV inheritance index (machine-readable structured field) — W26-P2-03 (2026-05-16)
 
 Wave-26 adversarial review (`specs/_audits/sealed/2026-05-16-p2-absorption-sweep-w25-28.md §49 W26-P2-03`) identified that inheritance chains (`INV-CAS-IDEMPOTENCY → cas_integrity.tla`, `INV-GC-004 → InvGCReRefProtected`) were asserted by prose only — a future regression dropping an inherited TLA property would not be caught mechanically. This section adds a **structured `inherits_from` field** that machines can read, plus a reciprocal `inherited_by` index. Validator `scripts/validate_inv_inheritance.py` parses this section and enforces:

@@ -46,7 +46,7 @@
 //! (`specs/_audits/sealed/2026-05-26-w36-proptest-fu-001-seal.md`), the
 //! property test lives in the owning crate listed below; this crate
 //! is listed in `scripts/proptest-density-allowlist.txt` as an
-//! "INV-pin documentation" exemption:
+//! "inv-pin documentation" exemption:
 //!
 //! | INV ref pinned here   | Property-test owner crate                       |
 //! |-----------------------|-------------------------------------------------|
