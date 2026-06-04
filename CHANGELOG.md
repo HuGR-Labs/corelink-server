@@ -89,6 +89,15 @@ Each entry cross-references:
   which checks the active path first then falls back to `_sealed/<sprint>/`; REQUIRED
   set is unchanged (`S07 S08 S09 S10 S14`).
 
+- **`corelink-billing` / `s10-ship-gate` lib-test gate — restored
+  `clippy::unwrap_used` discipline in `tier_select.rs` tests.** PR #70 landed the
+  tier-select ironclad core but its `#[cfg(test)] mod tests` block omitted the
+  crate-standard `#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic,
+  reason = …)]` attribute that every other `corelink-container` route test module
+  carries (`internal_pat`, `signup`, `cas`, `bazel_v2`, … — 10 siblings). Under the
+  ship-gate's restriction-lint lib-test compile this tripped 40 `unwrap_used`
+  errors ("could not compile `corelink-server` (lib test)"). Added the standard
+  allow block verbatim; no test logic changed.
 - **`TLA+ Model Check — Runbooks` gate — robust `tlc`-wrapper build on the macOS
   fleet.** `.github/workflows/tla_runbooks_check.yml` built its `tlc` wrapper with
   a quoted heredoc and then injected `$RUNNER_TEMP` via `sed`; the runner path's
