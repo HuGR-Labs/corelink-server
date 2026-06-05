@@ -59,7 +59,7 @@ env:
 jobs:
   build:
     name: typecheck + lint + test + build
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 20
     defaults:
       run:
@@ -68,7 +68,10 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        # Local composite (offline-first): prefers the runner's pre-installed
+        # pnpm to avoid the shared-$HOME race that `pnpm/action-setup` triggers
+        # on the single-Mac self-hosted fleet. Mirrors admin-ui-ci/lighthouse-ci.
+        uses: ./.github/actions/setup-pnpm
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -128,7 +131,7 @@ jobs:
   lighthouse:
     name: lighthouse-ci (Perf ≥ 95, A11y = 100, BP ≥ 95, SEO ≥ 90)
     needs: build
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -189,7 +192,7 @@ jobs:
   axe:
     name: axe-core a11y scan (WCAG 2.2 AA)
     needs: build
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -237,7 +240,7 @@ jobs:
   broken-links:
     name: lychee broken-link check
     needs: build
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -257,7 +260,7 @@ jobs:
 
   vale:
     name: Vale prose lint
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -282,7 +285,7 @@ jobs:
   a11y-playwright:
     name: axe-core WCAG 2.2 AA sweep (0 serious/critical)
     needs: build
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 30
     defaults:
       run:
@@ -291,7 +294,10 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        # Local composite (offline-first): prefers the runner's pre-installed
+        # pnpm to avoid the shared-$HOME race that `pnpm/action-setup` triggers
+        # on the single-Mac self-hosted fleet. Mirrors admin-ui-ci/lighthouse-ci.
+        uses: ./.github/actions/setup-pnpm
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -332,7 +338,7 @@ jobs:
   a11y-baseline-diff:
     name: axe-core/cli diff vs A11Y-BASELINE
     needs: build
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 25
     defaults:
       run:
@@ -341,7 +347,10 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        # Local composite (offline-first): prefers the runner's pre-installed
+        # pnpm to avoid the shared-$HOME race that `pnpm/action-setup` triggers
+        # on the single-Mac self-hosted fleet. Mirrors admin-ui-ci/lighthouse-ci.
+        uses: ./.github/actions/setup-pnpm
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -362,10 +371,24 @@ jobs:
           name: docs-build
           path: apps/docs/build
 
-      - name: Install Chromium for axe-core/cli
+      - name: Locate system Chrome for axe-core/cli
+        # The self-hosted Mac fleet ships Google Chrome pre-installed, so the
+        # old `apt-get install chromium-browser` (Linux-only; hard-fails on
+        # macOS) is unnecessary. @axe-core/cli drives Chrome via the bundled
+        # chromedriver, which honours $CHROME_PATH; point it at the system app
+        # and fail loudly (not silently) if Chrome is somehow absent.
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends chromium-browser
+          set -euo pipefail
+          chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+          if [ ! -x "$chrome" ]; then
+            chrome="$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || true)"
+          fi
+          if [ -z "$chrome" ] || [ ! -x "$chrome" ]; then
+            echo "::error::No system Chrome found for @axe-core/cli on the self-hosted Mac fleet (expected /Applications/Google Chrome.app)." >&2
+            exit 1
+          fi
+          echo "Using system Chrome: $chrome"
+          echo "CHROME_PATH=$chrome" >> "$GITHUB_ENV"
 
       - name: Serve built site (background)
         run: |
@@ -406,13 +429,16 @@ jobs:
   # i18n coverage ≥ 80 % en → {pt-BR, es-419}. Per S-18 §5.6 R-S18-12.
   i18n-coverage:
     name: i18n coverage (>=80% en -> {pt-BR, es-419})
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        # Local composite (offline-first): prefers the runner's pre-installed
+        # pnpm to avoid the shared-$HOME race that `pnpm/action-setup` triggers
+        # on the single-Mac self-hosted fleet. Mirrors admin-ui-ci/lighthouse-ci.
+        uses: ./.github/actions/setup-pnpm
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -436,12 +462,13 @@ jobs:
   # docs-gen-check script).
   reapi-gen-drift:
     name: REAPI .proto -> MDX zero-drift
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+      # Local composite (offline-first) — see note on the `build` job's pnpm step.
+      - uses: ./.github/actions/setup-pnpm
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -476,7 +503,7 @@ jobs:
     name: lighthouse-ci baseline (lighthouserc.cjs)
     needs: build
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 30
     defaults:
       run:
@@ -485,7 +512,10 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        # Local composite (offline-first): prefers the runner's pre-installed
+        # pnpm to avoid the shared-$HOME race that `pnpm/action-setup` triggers
+        # on the single-Mac self-hosted fleet. Mirrors admin-ui-ci/lighthouse-ci.
+        uses: ./.github/actions/setup-pnpm
         with:
           version: ${{ env.PNPM_VERSION }}
 
