@@ -1111,7 +1111,8 @@ const handler: ExportedHandler<Env> = {
       // Extract the Clerk session token from the Authorization header.
       const onbAuthz = request.headers.get("authorization") ?? "";
       const onbBearer = /^Bearer\s+(.+)$/i.exec(onbAuthz);
-      if (!onbBearer) {
+      const onbToken = onbBearer?.[1];
+      if (!onbToken) {
         return applyCors(
           reapiError("UNAUTHORIZED", "clerk session required", 401, requestId),
           request,
@@ -1122,7 +1123,7 @@ const handler: ExportedHandler<Env> = {
       // expired / wrong-azp token; `authorizedParties` pins it to our app origin.
       let onbClerkUserId: string;
       try {
-        const claims = await verifyToken(onbBearer[1], {
+        const claims = await verifyToken(onbToken, {
           secretKey: clerkSecretKey,
           authorizedParties: ["https://corelink-admin.humangr.com"],
         });
