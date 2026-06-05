@@ -23,6 +23,7 @@ import type { D1Database, DurableObjectNamespace, ExecutionContext, ExportedHand
 import { CoreLinkServer } from "./durable_object.js";
 import { RolloutController } from "./rollout_controller.js";
 import { getTierForTenant, checkStorageQuota, checkRequestQuota } from "./lib/quota.js";
+import { verifyToken } from "@clerk/backend";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -118,6 +119,7 @@ type RouteKind =
   | "bazel_v2"
   | "turbo_v8"
   | "signup"
+  | "onboarding"
   | "internal"
   | "health_container"
   | "not_found";
@@ -346,6 +348,16 @@ function matchRoute(url: URL): RouteMatch {
   // Auth: PAT required — customer routes are NOT pre-tenant (unlike signup).
   if (path.startsWith("/v1/customer/") || path === "/v1/customer") {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "customer_v1" };
+  }
+
+  // Onboarding — /v1/onboarding/* — Clerk-authenticated self-serve flow (tier
+  // select checkout, etc.). The browser presents a Clerk SESSION JWT, not a
+  // CoreLink PAT, so this arm is verified at the edge (Clerk JWKS) in the fetch
+  // handler — NOT via the PAT path. Tenant is resolved there from the verified
+  // Clerk user id (not the URL), so urlTenant stays "_anonymous". Checked BEFORE
+  // the generic /v1/* arm so onboarding never falls into the PAT-only bucket.
+  if (path.startsWith("/v1/onboarding/") || path === "/v1/onboarding") {
+    return { tenantId: "_anonymous", pathSuffix: path, routeKind: "onboarding" };
   }
 
   // Internal routes — /_internal/* — gated by X-Corelink-Internal-Auth shared
@@ -1071,6 +1083,128 @@ const handler: ExportedHandler<Env> = {
           status: internalResp.status,
           statusText: internalResp.statusText,
           headers: internalHeaders,
+        }),
+        request,
+      );
+    }
+
+    // Onboarding — /v1/onboarding/* — Clerk-authenticated self-serve (tier-select
+    // checkout). The browser holds a Clerk SESSION JWT, NOT a CoreLink PAT, so the
+    // EDGE is the trust boundary: verify the JWT against Clerk's JWKS (networkless
+    // via CLERK_SECRET_KEY), resolve the CoreLink tenant from the verified Clerk
+    // user id, then forward to the tenant's DO with the internal-auth contract the
+    // container's tier_select route requires (x-corelink-internal-auth +
+    // x-corelink-tenant-id). Fail-CLOSED on any missing binding or bad token. The
+    // internal-auth secret NEVER leaves the backend and is NEVER accepted from the
+    // client (inbound trust headers are stripped before injection).
+    if (route.routeKind === "onboarding") {
+      const internalAuthKey = env.CORELINK_INTERNAL_AUTH_KEY;
+      const clerkSecretKey = env.CLERK_SECRET_KEY;
+      if (!internalAuthKey || internalAuthKey.length === 0 || !clerkSecretKey) {
+        // A required server secret is unbound — deny (fail-CLOSED).
+        return applyCors(
+          reapiError("FORBIDDEN", "onboarding route unavailable", 403, requestId),
+          request,
+        );
+      }
+
+      // Extract the Clerk session token from the Authorization header.
+      const onbAuthz = request.headers.get("authorization") ?? "";
+      const onbBearer = /^Bearer\s+(.+)$/i.exec(onbAuthz);
+      if (!onbBearer) {
+        return applyCors(
+          reapiError("UNAUTHORIZED", "clerk session required", 401, requestId),
+          request,
+        );
+      }
+
+      // Verify the Clerk JWT at the edge. `verifyToken` throws on an invalid /
+      // expired / wrong-azp token; `authorizedParties` pins it to our app origin.
+      let onbClerkUserId: string;
+      try {
+        const claims = await verifyToken(onbBearer[1], {
+          secretKey: clerkSecretKey,
+          authorizedParties: ["https://corelink-admin.humangr.com"],
+        });
+        if (!claims.sub) {
+          return applyCors(
+            reapiError("UNAUTHORIZED", "clerk session missing subject", 401, requestId),
+            request,
+          );
+        }
+        onbClerkUserId = claims.sub;
+      } catch {
+        // Never surface the verification error detail to the client.
+        return applyCors(
+          reapiError("UNAUTHORIZED", "invalid clerk session", 401, requestId),
+          request,
+        );
+      }
+
+      // Resolve the CoreLink tenant from the verified Clerk user id. The
+      // signup-worker writes tenant.clerk_user_id at provision (migration 0056).
+      let onbTenantId: string;
+      try {
+        const row = await env.CONFIG_DB
+          .prepare("SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1 LIMIT 1")
+          .bind(onbClerkUserId)
+          .first<{ tenant_id: string }>();
+        if (!row || !row.tenant_id) {
+          return applyCors(
+            reapiError("FORBIDDEN", "no tenant for this session", 403, requestId),
+            request,
+          );
+        }
+        onbTenantId = row.tenant_id;
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        console.error(`[${requestId}] onboarding tenant lookup failed: ${message.slice(0, 80)}`);
+        return applyCors(
+          reapiError("INTERNAL_ERROR", "tenant resolution error", 500, requestId),
+          request,
+        );
+      }
+
+      // Forward to the tenant's DO. CRITICAL: strip ALL client-supplied trust
+      // headers FIRST (the browser must never spoof internal-auth or the tenant
+      // id), then set them from server-trusted values. Drop the Clerk JWT — the
+      // container authenticates via internal-auth, not the session token.
+      const onbDoId = env.CORELINK_SERVER.idFromName(onbTenantId);
+      const onbStub = env.CORELINK_SERVER.get(onbDoId);
+      const onbAugmented = new Request(request, {
+        headers: (() => {
+          const h = new Headers(request.headers);
+          h.delete("x-corelink-internal-auth");
+          h.delete("x-corelink-tenant-id");
+          h.delete("authorization");
+          h.set("x-request-id", requestId);
+          h.set("x-corelink-route-kind", "onboarding");
+          h.set("x-corelink-token-prefix", "clerk");
+          h.set("x-corelink-tenant-id", onbTenantId);
+          h.set("x-corelink-internal-auth", internalAuthKey);
+          return h;
+        })(),
+      });
+      let onbResp: Response;
+      try {
+        onbResp = await onbStub.fetch(onbAugmented);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        console.error(`[${requestId}] onboarding DO fetch failed: ${message.slice(0, 80)}`);
+        return applyCors(
+          reapiError("INTERNAL_ERROR", "onboarding upstream error", 500, requestId),
+          request,
+        );
+      }
+      const onbHeaders = new Headers(onbResp.headers);
+      if (!onbHeaders.has("x-request-id")) {
+        onbHeaders.set("x-request-id", requestId);
+      }
+      return applyCors(
+        new Response(onbResp.body, {
+          status: onbResp.status,
+          statusText: onbResp.statusText,
+          headers: onbHeaders,
         }),
         request,
       );
