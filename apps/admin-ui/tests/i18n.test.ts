@@ -10,8 +10,11 @@ const REQUIRED_KEYS = [
   "nav.dashboard",
   "nav.settings",
   "auth.signIn",
-  "landing.heading",
-  "landing.cta",
+  // The L1 public landing page restructured the flat `landing.heading` /
+  // `landing.cta` into a richer namespace; the hero headline + primary CTA
+  // now live under `landing.hero.*`.
+  "landing.hero.heading",
+  "landing.hero.ctaPrimary",
 ];
 
 function get(obj: unknown, dotted: string): unknown {
@@ -54,9 +57,9 @@ describe("i18n locale completeness", () => {
   });
 
   it("locales never share identical CTA (proves real translation)", () => {
-    const enCta = get(en, "landing.cta");
-    const ptCta = get(pt, "landing.cta");
-    const esCta = get(es, "landing.cta");
+    const enCta = get(en, "landing.hero.ctaPrimary");
+    const ptCta = get(pt, "landing.hero.ctaPrimary");
+    const esCta = get(es, "landing.hero.ctaPrimary");
     expect(enCta).not.toBe(ptCta);
     expect(enCta).not.toBe(esCta);
   });
