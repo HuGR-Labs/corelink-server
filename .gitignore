@@ -80,3 +80,7 @@ apps/admin-ui/tsconfig.tsbuildinfo
 tests/load/results/
 target-isolated
 worker-configuration.d.ts
+
+# TechLead orchestrator local state (machine-local; never committed — also
+# enforced by the techlead git-hygiene-guard hook).
+.techlead/
