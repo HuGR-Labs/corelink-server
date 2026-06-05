@@ -27,12 +27,32 @@ concurrency:
 
 jobs:
   ci:
-    name: typecheck + lint + test + build
+    # Sliced one-job-per-phase (matrix) so a runner that dies mid-`build` on the
+    # contended self-hosted Mac does NOT discard the phases that already passed:
+    # GitHub banks each green leg, and `gh run rerun --failed` re-runs only the
+    # leg that died — never re-doing a phase that already went green. Short legs
+    # (typecheck/lint ~1-2 min, test ~2-3 min, build ~3-5 min) also complete
+    # inside the brief low-load windows on the shared Mac, instead of needing
+    # one sustained ~10-min window like the old monolithic job did.
+    #   - fail-fast: false → a killed/failed leg must not cancel the others.
+    #   - max-parallel: 2  → cap peak load on the shared self-hosted Mac.
+    # NOTE: `next build` re-runs tsc + eslint internally, so the build leg
+    # overlaps the typecheck/lint legs; kept independent for banking. A future
+    # optimization can set typescript.ignoreBuildErrors / eslint.ignoreDuringBuilds
+    # in next.config since the dedicated legs already cover them.
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        task: [typecheck, lint, test, build]
+    name: ${{ matrix.task }}
     runs-on: [self-hosted, mac, corelink-builder]
-    timeout-minutes: 15
+    timeout-minutes: 12
     defaults:
       run:
         working-directory: apps/admin-ui
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -50,16 +70,5 @@ jobs:
         working-directory: .
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Unit tests
-        run: pnpm test
-
-      - name: Build
-        run: pnpm build
-        env:
-          NEXT_TELEMETRY_DISABLED: "1"
+      - name: ${{ matrix.task }}
+        run: pnpm ${{ matrix.task }}
