@@ -107,10 +107,10 @@ pub fn build_handlers() -> (Arc<dyn AcLookupHandler>, Arc<dyn AcUpdateHandler>) 
         // crate-level docs + commit 832c7884 for the
         // `block_in_place` rationale).
         if StorageEnv::from_env().is_some() {
-            let bucket = std::env::var("R2_AC_BUCKET")
-                .unwrap_or_else(|_| "corelink-ac-iad".to_owned());
-            let region = std::env::var("R2_AC_REGION")
-                .unwrap_or_else(|_| "iad".to_owned());
+            // Empty-or-absent → default (the DO forwards `?? ""`;
+            // see storage::env_or — prod AC-500 incident 2026-06-05).
+            let bucket = crate::storage::env_or("R2_AC_BUCKET", "corelink-ac-iad");
+            let region = crate::storage::env_or("R2_AC_REGION", "iad");
 
             // `routes::build_with_factory` is called from inside
             // `#[tokio::main]`, so a bare

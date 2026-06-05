@@ -22,6 +22,20 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **Container env contract: empty string now means "use default"** for
+  `R2_AC_BUCKET`/`R2_AC_REGION`/`R2_CAS_BUCKET`/`R2_CAS_REGION` (new
+  `storage::env_or` helper). The DO forwards `?? ""` with a documented
+  absent/empty→default contract that the Rust side violated — every
+  `/v1/ac/*` op in prod returned 500 ("failed to construct request" on an
+  empty bucket name) since the 2026-05-30 deploy. Found by clw dogfood
+  day-1; reproduced locally byte-for-byte. Also: `[env.prod]` now sets
+  `R2_AC_BUCKET`/`R2_AC_REGION` explicitly (codifies the 2026-06-05
+  API-applied hotfix so the next deploy cannot regress it);
+  `cf-deploy-prod.yml` installs wrangler@4 (v3 cannot parse the current
+  `[[env.*.containers]]` schema and would fail before deploying);
+  `mint-pilot-token.sh` header points at the live flat hostname.
+
 ### Added
 
 - **Clerk edge-verification bridge — completes the self-serve money path

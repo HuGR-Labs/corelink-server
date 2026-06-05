@@ -96,10 +96,41 @@ impl StorageEnv {
 }
 
 /// Return the value of `var` trimmed to a non-empty string, or `None`.
-fn non_empty_env(var: &str) -> Option<String> {
+pub(crate) fn non_empty_env(var: &str) -> Option<String> {
     let v = std::env::var(var).ok()?;
     let v = v.trim().to_owned();
     if v.is_empty() { None } else { Some(v) }
+}
+
+/// Read `var`, treating ABSENT **and EMPTY** as "use the default".
+///
+/// The Worker DO forwards container env via `this.env.X ?? ""`
+/// (`worker/src/durable_object.ts`), whose documented contract is
+/// "Absent/empty → container defaults". A bare `std::env::var(..)
+/// .unwrap_or_else(..)` violates that contract: `Ok("")` bypasses the
+/// default and (for bucket names) yields an S3 client that fails every
+/// request ("failed to construct request" → AC 500s in prod,
+/// 2026-06-05 dogfood incident). Route ALL bucket/region env reads
+/// through here.
+pub(crate) fn env_or(var: &str, default: &str) -> String {
+    pick_non_empty(std::env::var(var).ok(), default)
+}
+
+/// Pure core of [`env_or`]: absent OR blank → `default`. Split out so
+/// the contract is unit-testable without touching process env (which
+/// the secrets-matrix scanner audits).
+fn pick_non_empty(raw: Option<String>, default: &str) -> String {
+    match raw {
+        Some(v) => {
+            let t = v.trim();
+            if t.is_empty() {
+                default.to_owned()
+            } else {
+                t.to_owned()
+            }
+        }
+        None => default.to_owned(),
+    }
 }
 
 #[cfg(test)]
@@ -127,5 +158,23 @@ mod tests {
             assert!(!e.r2_access_key_id.is_empty());
         }
         // If None — correct: vars are absent.
+    }
+}
+
+#[cfg(test)]
+mod env_or_tests {
+    use super::pick_non_empty;
+
+    /// The 2026-06-05 prod incident contract: absent AND empty AND
+    /// whitespace-only all mean "use the default"; set means the value.
+    #[test]
+    fn pick_non_empty_absent_empty_blank_default_set_value() {
+        assert_eq!(pick_non_empty(None, "dflt"), "dflt");
+        assert_eq!(pick_non_empty(Some(String::new()), "dflt"), "dflt");
+        assert_eq!(pick_non_empty(Some("   ".to_owned()), "dflt"), "dflt");
+        assert_eq!(
+            pick_non_empty(Some("corelink-ac-iad".to_owned()), "dflt"),
+            "corelink-ac-iad"
+        );
     }
 }
