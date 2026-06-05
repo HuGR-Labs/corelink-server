@@ -24,6 +24,23 @@ Each entry cross-references:
 
 ### Added
 
+- **Clerk edge-verification bridge — completes the self-serve money path
+  (launch blocker GAP-5).** `worker/src/index.ts`: a new `/v1/onboarding/*`
+  Worker route arm. The browser presents a Clerk SESSION JWT (not a CoreLink
+  PAT), so the entire authenticated admin-ui→API surface was severed in prod —
+  the Worker only accepted PATs and had no Clerk verification, so every
+  onboarding/checkout call 401'd before the backend. The bridge verifies the
+  Clerk JWT at the edge (`@clerk/backend` `verifyToken` — signature + issuer +
+  expiry + `azp` pinned to the app origin), resolves the CoreLink tenant from the
+  verified Clerk user id (`CONFIG_DB`: `tenant.clerk_user_id`, migration 0056),
+  then forwards to the tenant Durable Object with `x-corelink-internal-auth` +
+  `x-corelink-tenant-id` injected — the exact contract the container `tier_select`
+  route requires. Inbound `x-corelink-internal-auth` / `x-corelink-tenant-id` /
+  `authorization` are STRIPPED before injection, so a client can never spoof the
+  internal-auth secret or the tenant id. Fail-CLOSED: missing
+  `CORELINK_INTERNAL_AUTH_KEY`/`CLERK_SECRET_KEY` → 403, bad token → 401, no
+  tenant → 403. (Launch-day: confirm the live Clerk session `azp` matches the app
+  origin `https://corelink-admin.humangr.com`.)
 - **Self-serve tier-select checkout backend — ironclad core** (WI-S19-004 PRR
   wiring). `crates/corelink-container/src/routes/tier_select.rs`: the
   transport-agnostic, fail-CLOSED core of `POST /v1/onboarding/tier-select`.
