@@ -24,8 +24,22 @@ test.describe("CSP", () => {
       headers["content-security-policy"] ??
       headers["content-security-policy-report-only"];
     expect(cspHeader, "CSP header present").toBeTruthy();
-    expect(cspHeader).not.toMatch(/'unsafe-inline'/);
-    expect(cspHeader).toMatch(/nonce-/);
+    // The security-critical property is that `script-src` (the XSS vector) is
+    // nonce-hardened with NO 'unsafe-inline'. 'unsafe-inline' is deliberately
+    // permitted on `style-src` only — required by Tailwind's JIT inline <style>
+    // blocks and Clerk's overlay styles, and harmless for styles (see
+    // src/lib/csp.ts, which documents "NEVER on script-src"). The previous
+    // whole-header check contradicted that intentional, documented design.
+    const scriptSrc =
+      cspHeader!
+        .split(";")
+        .map((d) => d.trim())
+        .find((d) => d.startsWith("script-src")) ?? "";
+    expect(scriptSrc, "script-src directive present").toBeTruthy();
+    expect(scriptSrc, "script-src must not allow unsafe-inline (XSS)").not.toMatch(
+      /'unsafe-inline'/,
+    );
+    expect(scriptSrc, "script-src must be nonce-hardened").toMatch(/'nonce-/);
     expect(cspHeader).toMatch(/default-src/);
     expect(cspHeader).toMatch(/report-uri/);
   });
