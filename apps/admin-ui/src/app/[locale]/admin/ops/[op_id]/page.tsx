@@ -8,7 +8,7 @@ import { getAuthContext, mfaFresh } from "@/lib/auth";
 import type { AdminOp } from "@/lib/types";
 
 export interface OpPageProps {
-  params: { locale: string; op_id: string };
+  params: Promise<{ locale: string; op_id: string }>;
 }
 
 async function loadOp(opId: string): Promise<AdminOp | null> {
@@ -22,13 +22,14 @@ async function loadOp(opId: string): Promise<AdminOp | null> {
 export default async function AdminOpDetailPage({
   params,
 }: OpPageProps): Promise<React.ReactElement> {
-  const op = await loadOp(params.op_id);
+  const { op_id } = await params;
+  const op = await loadOp(op_id);
   const auth = await getAuthContext();
 
   return (
     <RbacGuard>
       <main aria-labelledby="op-heading">
-        <h1 id="op-heading">Op {params.op_id}</h1>
+        <h1 id="op-heading">Op {op_id}</h1>
         {!op && <p role="alert">Op not found.</p>}
         {op && (
           <OpDetailViewClient

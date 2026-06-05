@@ -4,9 +4,10 @@
 import { WithdrawForm } from "@/components/consent/WithdrawForm";
 
 interface PageProps {
-  params: { locale: string; id: string };
+  params: Promise<{ locale: string; id: string }>;
 }
 
-export default function WithdrawPage({ params }: PageProps) {
-  return <WithdrawForm consentId={params.id} />;
+export default async function WithdrawPage({ params }: PageProps) {
+  const { id } = await params;
+  return <WithdrawForm consentId={id} />;
 }

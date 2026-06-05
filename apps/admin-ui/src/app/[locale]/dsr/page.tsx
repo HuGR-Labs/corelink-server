@@ -3,7 +3,7 @@ import { DSR_ACTIONS } from "@/lib/dsr-types";
 import { isLocale, tFor, type Locale } from "@/i18n";
 
 interface PageProps {
-  params: { locale: string };
+  params: Promise<{ locale: string }>;
 }
 
 /**
@@ -13,8 +13,9 @@ interface PageProps {
  * button per right. Pure server component — no Clerk session needed at
  * this level; identity re-auth is enforced inside each action route.
  */
-export default function DsrLandingPage({ params }: PageProps) {
-  const locale: Locale = isLocale(params.locale) ? params.locale : "en";
+export default async function DsrLandingPage({ params }: PageProps) {
+  const { locale: rawLocale } = await params;
+  const locale: Locale = isLocale(rawLocale) ? rawLocale : "en";
   const t = (k: string) => tFor(locale, k);
 
   return (

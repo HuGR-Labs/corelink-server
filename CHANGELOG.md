@@ -144,6 +144,23 @@ Each entry cross-references:
 
 ### Fixed
 
+- **admin-ui CI had been dark for 40+ runs, masking a backlog of real failures.**
+  Root cause: `pnpm/action-setup` installs pnpm into a shared `~/setup-pnpm`, and
+  all five self-hosted runners share one `$HOME` on the builder Mac — so
+  concurrent runs corrupted each other's pnpm (`MODULE_NOT_FOUND …/dist/worker.js`)
+  and `pnpm install` died before typecheck/lint/test/build ever ran. Fixed with a
+  `./.github/actions/setup-pnpm` composite that uses the runner's pre-installed
+  pnpm (offline, no shared-dir race; falls back to the pinned download only when a
+  runner lacks pnpm). With CI able to run again, three latent admin-ui breaks
+  surfaced and are fixed here: (1) **jest-dom matchers never registered** — jest-dom
+  (a single hoisted instance, no vitest peer) resolved `vitest@4.1.7`, the highest
+  in this multi-version monorepo, and extended the wrong `expect`, so 120 tests
+  failed with "Invalid Chai property"; the setup files now extend the local
+  vitest@3.0.7 `expect` directly (and a `matchers.d.ts` `import()` type-query fixes
+  the matching type side) — 316/316 green; (2) **nine `dsr`/`consent`/`admin`
+  routes read Next 15's now-`Promise` `params` synchronously** — migrated to
+  `await params`; (3) an invalid **`aria-readonly` on the consent third-parties
+  list** (a `list`-role `ul`) was an accessibility violation — removed.
 - **Paid subscriptions never reached the `active` state the money path reads —
   returning paid customers could open a second subscription (launch blocker
   GAP-6).** The live Stripe webhook (`apps/signup-worker/src/webhooks/stripe.ts`)
