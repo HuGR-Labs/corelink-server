@@ -1,7 +1,14 @@
-import "@testing-library/jest-dom/vitest";
+// Register jest-dom matchers against THIS package's vitest@3.0.7 `expect`.
+// `@testing-library/jest-dom/vitest` runs its own `expect.extend`, but in this
+// monorepo jest-dom is a single hoisted instance with no vitest peer dep, so it
+// resolves `vitest` to 4.1.7 — a DIFFERENT `expect` than admin-ui's 3.0.7. Its
+// matchers therefore never reach our tests ("Invalid Chai property:
+// toBeInTheDocument"). Import the raw matchers and extend our local expect.
+import * as jestDomMatchers from "@testing-library/jest-dom/matchers";
 import { expect } from "vitest";
 import { toHaveNoViolations } from "jest-axe";
 
+expect.extend(jestDomMatchers);
 expect.extend(toHaveNoViolations as never);
 
 // Polyfills for Radix in jsdom
