@@ -127,6 +127,21 @@ Each entry cross-references:
 
 ### Fixed
 
+- **Paid subscriptions never reached the `active` state the money path reads —
+  returning paid customers could open a second subscription (launch blocker
+  GAP-6).** The live Stripe webhook (`apps/signup-worker/src/webhooks/stripe.ts`)
+  wrote only `tenant_billing` on `checkout.session.completed`, but the container's
+  `has_active_subscription` guard reads `tier_selections.subscription_state =
+  'active'` — and nothing on the live path advanced it from `pending_checkout`
+  (the `corelink-tier-selection::ledger` that does is test-only). So a paid tenant
+  stayed `pending_checkout`, the `already_active` re-charge guard stayed inert, and
+  a returning customer who picked another tier opened a second Stripe subscription.
+  Added an idempotent `tier_selections` UPSERT → `active` in the webhook's
+  `checkout.session.completed` handler. Also fixed a latent bug there: it read the
+  never-set `metadata.plan` (recording `"starter"` for every customer) instead of
+  the real `metadata.tier`. (Follow-up hardening noted: the webhook writes are
+  `waitUntil` fire-and-forget; a failed write isn't retried — and a read-side
+  `tenant_billing` fallback would add defense-in-depth.)
 - **Production hostname mismatch — runtime code pointed at the dead
   `*.corelink.humangr.com` form while the live DNS is the flat `corelink-*`
   pattern (launch blockers GAP-2/GAP-3).** `dig` confirms `api.corelink.humangr.com`

@@ -257,6 +257,61 @@ async function cancelBilling(
         .run();
 }
 
+/**
+ * Advance `tier_selections.subscription_state` → 'active' on a completed paid
+ * checkout (GAP-6 reconciliation).
+ *
+ * The container persists the row as `pending_checkout` when checkout starts;
+ * THIS is the only writer on the live path that flips it to `active` (the
+ * in-process `corelink-tier-selection::ledger` that does so is test-only and
+ * never runs in production). Without this, a paid tenant stays
+ * `pending_checkout` forever, the container's `has_active_subscription` guard
+ * never fires, and a returning customer can open a SECOND subscription.
+ *
+ * Idempotent (`ON CONFLICT DO UPDATE`) so Stripe retries converge. Uses UPSERT
+ * (not a bare UPDATE) so that even if the container's `pending_checkout` persist
+ * was lost, a paid completion still yields an `active` row. `subscription_state`
+ * is only ever set to 'active' here with a non-null `subscription_started_at_ms`,
+ * satisfying the `subscription_started_when_active` CHECK.
+ *
+ * The ON CONFLICT UPDATE is guarded `WHERE subscription_state <> 'active'` and
+ * does NOT rewrite `subscription_started_at_ms`, so a duplicate or out-of-order
+ * `checkout.session.completed` can never downgrade an already-active tier or
+ * shift the original activation timestamp (review hardening — Stripe can
+ * redeliver and reorder webhook events).
+ */
+async function activatePaidTierSelection(
+    db: D1DatabaseLike,
+    opts: {
+        tenantId: string;
+        tier: string;
+        stripeCustomerId: string;
+        nowMs: number;
+        correlationId: string;
+    },
+): Promise<void> {
+    await db
+        .prepare(
+            `INSERT INTO tier_selections
+               (tenant_id, tier, subscription_state, stripe_customer_id,
+                subscription_started_at_ms, schema_version, correlation_id)
+             VALUES (?1, ?2, 'active', ?3, ?4, 1, ?5)
+             ON CONFLICT (tenant_id) DO UPDATE SET
+               tier               = excluded.tier,
+               subscription_state = 'active',
+               stripe_customer_id = excluded.stripe_customer_id
+             WHERE tier_selections.subscription_state <> 'active'`,
+        )
+        .bind(
+            opts.tenantId,
+            opts.tier,
+            opts.stripeCustomerId,
+            opts.nowMs,
+            opts.correlationId,
+        )
+        .run();
+}
+
 // ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
@@ -305,8 +360,13 @@ export async function handleStripeWebhook(
             // Extract Stripe IDs from the session object.
             const stripeCustomerId = obj["customer"] as string | null | undefined;
             const stripeSubscriptionId = obj["subscription"] as string | null | undefined;
-            const planMeta = (obj["metadata"] as Record<string, unknown> | undefined)?.["plan"];
-            const plan = typeof planMeta === "string" ? planMeta : "starter";
+            // The checkout session sets metadata[tier] (corelink-stripe-real
+            // client.rs:630) — there is NO metadata[plan]. Read the real tier so
+            // the billing row + the tier_selections activation record the right
+            // plan. (Previously this read [plan], which is always absent, and
+            // silently recorded "starter" for every team/pro customer.)
+            const tierMeta = (obj["metadata"] as Record<string, unknown> | undefined)?.["tier"];
+            const plan = typeof tierMeta === "string" ? tierMeta : "starter";
             // checkout.session does not carry current_period_end — that lives on
             // the subscription object. We leave it null here; it will be filled by
             // the subsequent customer.subscription.created / updated event Stripe
@@ -329,6 +389,28 @@ export async function handleStripeWebhook(
                             console.warn(`[stripe-webhook] D1 upsert failed: ${(e as Error).message}`);
                         }),
                     );
+                    // GAP-6: reconcile the canonical subscription FSM the money
+                    // path reads. Only a real paid tier may flip to 'active'
+                    // (free never reaches Stripe; enterprise uses the inquiry
+                    // form). An unrecognised tier is left un-activated rather
+                    // than written with a bogus value.
+                    const paidTier =
+                        plan === "starter" || plan === "team" || plan === "pro" ? plan : null;
+                    if (paidTier) {
+                        ctx.waitUntil(
+                            activatePaidTierSelection(env.BILLING_DB, {
+                                tenantId,
+                                tier: paidTier,
+                                stripeCustomerId,
+                                nowMs,
+                                correlationId: `stripe_checkout:${(obj["id"] as string | undefined) ?? stripeCustomerId}`,
+                            }).catch((e: unknown) => {
+                                console.warn(
+                                    `[stripe-webhook] tier_selections activation failed: ${(e as Error).message}`,
+                                );
+                            }),
+                        );
+                    }
                 }
                 ctx.waitUntil(
                     emit(env, {
