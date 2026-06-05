@@ -22,6 +22,18 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **Durable Turborepo remote cache** — `storage::r2_kv::R2KvStore` backs the
+  `/v8/artifacts/*` surface with R2 when storage creds are present (closes the
+  `turbo_v8` `TODO(v2)`: artifacts now persist across container restarts;
+  in-RAM `InMemoryKvStore` remains the dev/CI fallback). Per-tenant HMAC prefix
+  isolation; opaque keys (no content-hash verify); a `KvBackend` seam makes the
+  full behavioral suite runnable against an in-process fake (no network). Core
+  suite proves the merge-blockers: tenant isolation incl. path-traversal-as-
+  literal [P0], durability-across-rebuild, no-false-404 on backend error, and
+  proptest invariants (object-key determinism/injectivity/opacity). Full SOTA
+  scenario matrix (307 scenarios, 7 lenses) in `docs/TEST-PLAN-kv-cache.md`.
+
 ### Fixed
 - **Container env contract: empty string now means "use default"** for
   `R2_AC_BUCKET`/`R2_AC_REGION`/`R2_CAS_BUCKET`/`R2_CAS_REGION` (new

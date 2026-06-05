@@ -137,16 +137,15 @@ impl core::fmt::Debug for TurboRouteState {
 
 /// Build the [`TurboRouteState`] for the current build target and runtime.
 ///
-/// # Phase 0 / v1 — `InMemoryKvStore`
+/// # Runtime backing-store selection (v2)
 ///
-/// Artifacts are stored in RAM using [`InMemoryKvStore`] (does NOT persist
-/// across container restarts).  The audit sink is also in-memory.
-///
-/// **TODO(v2):** Swap `InMemoryKvStore` for a thin `R2KvStore` impl backed
-/// by R2 directly (separate bucket / prefix).  The route handlers and all
-/// audit/validation logic are unchanged — only the `Arc<dyn CasReadStore>` /
-/// `Arc<dyn CasWriteStore>` arguments to [`CasAdapterTurboHandler::new`] need
-/// to be replaced.  See `specs/TODO-turbo-r2-backing-store.md`.
+/// When storage credentials are configured (`StorageEnv::from_env()`), the
+/// handler is backed by the **durable** [`R2KvStore`](crate::storage::r2_kv::R2KvStore)
+/// (closes the former `TODO(v2)`: artifacts now persist across container
+/// restarts). Otherwise — dev / CI without secrets — it falls back to the
+/// in-RAM [`InMemoryKvStore`]. Mirrors the `cas`/`ac` `build_handlers`
+/// fallback convention; the route handlers and audit/validation logic are
+/// identical for both backings (opaque-key semantics, no hash verify).
 ///
 /// # Panics
 ///
@@ -154,12 +153,39 @@ impl core::fmt::Debug for TurboRouteState {
 #[must_use]
 pub fn build_handlers() -> TurboRouteState {
     let audit = Arc::new(InMemoryTurboAuditSink::new());
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use crate::storage::{r2_kv, StorageEnv};
+        if StorageEnv::from_env().is_some() {
+            // `block_in_place` rationale: build_handlers runs inside the
+            // `#[tokio::main]` multi-thread runtime; a bare `block_on`
+            // from a running future hangs. Mirrors `cas`/`ac` handlers.
+            let handle = tokio::runtime::Handle::current();
+            let built =
+                tokio::task::block_in_place(|| handle.block_on(r2_kv::build_r2_kv_from_env()));
+            match built {
+                Some(Ok(store)) => {
+                    let store = Arc::new(store);
+                    let read: Arc<dyn corelink_turbo_bridge::adapter::CasReadStore> = store.clone();
+                    let write: Arc<dyn corelink_turbo_bridge::adapter::CasWriteStore> = store;
+                    tracing::info!("Turbo handler: R2KvStore (durable storage)");
+                    let handler: Arc<dyn TurboArtifactHandler> =
+                        Arc::new(CasAdapterTurboHandler::new(read, write, audit));
+                    return TurboRouteState { handler };
+                }
+                Some(Err(e)) => {
+                    tracing::error!(error = %e, "Turbo R2KvStore build failed, falling back to InMemory");
+                }
+                None => {}
+            }
+        }
+    }
+
+    tracing::info!("Turbo handler: InMemoryKvStore (no storage credentials configured)");
     let store = Arc::new(InMemoryKvStore::new());
-    let handler: Arc<dyn TurboArtifactHandler> = Arc::new(CasAdapterTurboHandler::new(
-        store.clone(),
-        store,
-        audit,
-    ));
+    let handler: Arc<dyn TurboArtifactHandler> =
+        Arc::new(CasAdapterTurboHandler::new(store.clone(), store, audit));
     TurboRouteState { handler }
 }
 
@@ -180,10 +206,7 @@ pub fn router(state: TurboRouteState) -> Router {
         // capture.
         .route(TURBO_EVENTS_ROUTE, post(handle_events))
         .route(TURBO_STATUS_ROUTE, post(handle_status))
-        .route(
-            TURBO_GET_ROUTE,
-            get(handle_get).put(handle_put),
-        )
+        .route(TURBO_GET_ROUTE, get(handle_get).put(handle_put))
         .with_state(state)
 }
 
@@ -288,9 +311,7 @@ async fn handle_status(
 fn map_err(e: TurboBridgeError) -> axum::response::Response {
     tracing::warn!(error = ?e, "turbo bridge error");
     match e {
-        TurboBridgeError::NotFound { .. } => {
-            (StatusCode::NOT_FOUND, "not found").into_response()
-        }
+        TurboBridgeError::NotFound { .. } => (StatusCode::NOT_FOUND, "not found").into_response(),
         TurboBridgeError::HashTooLong { .. } => {
             (StatusCode::BAD_REQUEST, "hash too long").into_response()
         }
@@ -447,16 +468,18 @@ mod tests {
         // we test the handler-level rejection directly to keep the route test
         // focused on HTTP status mapping.
         let state = fixture();
-        let err = state.handler.put(corelink_turbo_bridge::TurboPutRequest::new(
-            "h1",
-            "victim",      // team_id
-            "s",
-            b"x".to_vec(),
-            None,
-            "evil",
-            "attacker",    // caller_tenant != team_id → CrossTenantDenied
-            1,
-        ));
+        let err = state
+            .handler
+            .put(corelink_turbo_bridge::TurboPutRequest::new(
+                "h1",
+                "victim", // team_id
+                "s",
+                b"x".to_vec(),
+                None,
+                "evil",
+                "attacker", // caller_tenant != team_id → CrossTenantDenied
+                1,
+            ));
         assert!(matches!(
             err.unwrap_err(),
             corelink_turbo_bridge::TurboBridgeError::CrossTenantDenied { .. }
@@ -520,10 +543,7 @@ mod tests {
 
     #[test]
     fn hash_too_long_maps_to_400() {
-        let resp = map_err(TurboBridgeError::HashTooLong {
-            len: 129,
-            max: 128,
-        });
+        let resp = map_err(TurboBridgeError::HashTooLong { len: 129, max: 128 });
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
