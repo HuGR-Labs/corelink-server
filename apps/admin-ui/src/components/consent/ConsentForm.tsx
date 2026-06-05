@@ -165,7 +165,6 @@ export function ConsentForm({ value, onChange, locale, capturedAtMs, readOnly, r
           <ul
             aria-labelledby="consent-third-parties-label"
             data-testid="field-third-parties"
-            aria-readonly="true"
           >
             {value.third_parties.length === 0 ? (
               <li data-testid="third-parties-empty">(none)</li>
