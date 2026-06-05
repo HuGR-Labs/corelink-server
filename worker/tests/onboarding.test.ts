@@ -194,4 +194,27 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
     expect(resp.status).toBe(403);
     expect(captured.req).toBeUndefined();
   });
+
+  it("preserves the request body when forwarding to the DO", async () => {
+    mockVerifyToken.mockResolvedValue({ sub: "user_abc" } as never);
+    const captured: { req?: Request } = {};
+    const env = makeOnbEnv({ captured, clerkUserToTenant: new Map([["user_abc", "acme-default"]]) });
+
+    await onbFetch(env, { Authorization: "Bearer clerk.jwt.token" });
+
+    expect(captured.req).toBeDefined();
+    const body = (await captured.req!.json()) as { tier: string };
+    expect(body.tier).toBe("starter");
+  });
+
+  it("returns 401 when the verified token carries no subject (sub)", async () => {
+    mockVerifyToken.mockResolvedValue({ sub: undefined } as never);
+    const captured: { req?: Request } = {};
+    const env = makeOnbEnv({ captured, clerkUserToTenant: new Map() });
+
+    const resp = await onbFetch(env, { Authorization: "Bearer clerk.jwt" });
+
+    expect(resp.status).toBe(401);
+    expect(captured.req).toBeUndefined();
+  });
 });

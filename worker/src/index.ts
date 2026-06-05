@@ -1090,8 +1090,8 @@ const handler: ExportedHandler<Env> = {
 
     // Onboarding — /v1/onboarding/* — Clerk-authenticated self-serve (tier-select
     // checkout). The browser holds a Clerk SESSION JWT, NOT a CoreLink PAT, so the
-    // EDGE is the trust boundary: verify the JWT against Clerk's JWKS (networkless
-    // via CLERK_SECRET_KEY), resolve the CoreLink tenant from the verified Clerk
+    // EDGE is the trust boundary: verify the JWT against Clerk's JWKS (fetched +
+    // cached per isolate, keyed by CLERK_SECRET_KEY), resolve the tenant from the
     // user id, then forward to the tenant's DO with the internal-auth contract the
     // container's tier_select route requires (x-corelink-internal-auth +
     // x-corelink-tenant-id). Fail-CLOSED on any missing binding or bad token. The
