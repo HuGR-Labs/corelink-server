@@ -6,15 +6,16 @@ import TenantDeepDive from "@/components/admin/TenantDeepDive";
 import { adminClient } from "@/lib/admin-client";
 
 export interface TenantPageProps {
-  params: { locale: string; tenant_id: string };
+  params: Promise<{ locale: string; tenant_id: string }>;
 }
 
 export default async function AdminTenantPage({
   params,
 }: TenantPageProps): Promise<React.ReactElement> {
+  const { tenant_id } = await params;
   let tenant;
   try {
-    tenant = await adminClient.getTenant(params.tenant_id);
+    tenant = await adminClient.getTenant(tenant_id);
   } catch {
     tenant = null;
   }
@@ -22,7 +23,7 @@ export default async function AdminTenantPage({
   return (
     <RbacGuard>
       <main>
-        <h1>Tenant {params.tenant_id}</h1>
+        <h1>Tenant {tenant_id}</h1>
         {!tenant && <p role="alert">Tenant not found.</p>}
         {tenant && <TenantDeepDive tenant={tenant} />}
       </main>

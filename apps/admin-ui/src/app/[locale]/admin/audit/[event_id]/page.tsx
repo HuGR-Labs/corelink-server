@@ -8,7 +8,7 @@ import { adminClient } from "@/lib/admin-client";
 import type { AuditEventDetail } from "@/lib/types";
 
 export interface AuditEventPageProps {
-  params: { locale: string; event_id: string };
+  params: Promise<{ locale: string; event_id: string }>;
 }
 
 async function loadEvent(eventId: string): Promise<AuditEventDetail | null> {
@@ -22,12 +22,13 @@ async function loadEvent(eventId: string): Promise<AuditEventDetail | null> {
 export default async function AuditEventPage({
   params,
 }: AuditEventPageProps): Promise<React.ReactElement> {
-  const event = await loadEvent(params.event_id);
+  const { event_id } = await params;
+  const event = await loadEvent(event_id);
 
   return (
     <RbacGuard>
       <main aria-labelledby="event-heading">
-        <h1 id="event-heading">Audit event {params.event_id}</h1>
+        <h1 id="event-heading">Audit event {event_id}</h1>
         {!event && <p role="alert">Event not found.</p>}
         {event && (
           <>

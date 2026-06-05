@@ -9,7 +9,7 @@
 import { ConsentCaptureFlow } from "@/components/consent/ConsentCaptureFlow";
 
 interface PageProps {
-  params: { locale: string };
+  params: Promise<{ locale: string }>;
 }
 
 // Stub notice + sub-processors so the scaffold compiles. WI-S16-006 will
@@ -19,10 +19,11 @@ const STUB_NOTICE_TEXT =
 const STUB_NOTICE_VERSION = "1.0.0";
 const STUB_SUBPROCESSORS = ["Cloudflare", "Stripe", "Clerk"];
 
-export default function ConsentNewPage({ params }: PageProps) {
+export default async function ConsentNewPage({ params }: PageProps) {
+  const { locale } = await params;
   return (
     <ConsentCaptureFlow
-      locale={params.locale}
+      locale={locale}
       noticeText={STUB_NOTICE_TEXT}
       noticeVersion={STUB_NOTICE_VERSION}
       thirdParties={STUB_SUBPROCESSORS}

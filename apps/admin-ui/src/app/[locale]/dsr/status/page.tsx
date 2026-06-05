@@ -2,10 +2,11 @@ import { isLocale, type Locale } from "@/i18n";
 import { DsrStatusListClient } from "./DsrStatusListClient";
 
 interface PageProps {
-  params: { locale: string };
+  params: Promise<{ locale: string }>;
 }
 
-export default function DsrStatusListPage({ params }: PageProps) {
-  const locale: Locale = isLocale(params.locale) ? params.locale : "en";
+export default async function DsrStatusListPage({ params }: PageProps) {
+  const { locale: rawLocale } = await params;
+  const locale: Locale = isLocale(rawLocale) ? rawLocale : "en";
   return <DsrStatusListClient locale={locale} />;
 }
