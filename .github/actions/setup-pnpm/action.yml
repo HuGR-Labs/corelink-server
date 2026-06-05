@@ -1,0 +1,47 @@
+name: Set up pnpm (offline-first)
+description: >-
+  Make pnpm available without the shared-directory race that corrupts it on our
+  self-hosted runners. `pnpm/action-setup` installs pnpm into a shared,
+  non-ephemeral location (~/setup-pnpm); because all of our self-hosted runners
+  share a single $HOME on one physical Mac, concurrent runs overwrite each
+  other's install mid-flight and leave it half-written (e.g. a missing
+  pnpm/dist/worker.js → MODULE_NOT_FOUND during `pnpm install`). That made
+  admin-ui CI fail nondeterministically for dozens of runs.
+
+  This action prefers the runner's pre-installed pnpm (pinned to the same
+  version as package.json's `packageManager`) — zero network, zero shared-dir
+  writes — and only falls back to the pinned `pnpm/action-setup` download when a
+  runner genuinely lacks pnpm (e.g. a future hosted/Linux runner). On runners
+  that already have pnpm, the fallback never runs, so the race is eliminated.
+
+inputs:
+  version:
+    description: pnpm version to require (and to download in the fallback).
+    required: false
+    default: "10.32.1"
+
+runs:
+  using: composite
+  steps:
+    - name: Use pre-installed pnpm if it matches the pinned version
+      id: preinstalled
+      shell: bash
+      run: |
+        set -euo pipefail
+        want="${{ inputs.version }}"
+        if command -v pnpm >/dev/null 2>&1 && [ "$(pnpm --version 2>/dev/null)" = "$want" ]; then
+          echo "Using pre-installed pnpm $want at $(command -v pnpm) — no network, no shared-dir race."
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+        else
+          found="$(command -v pnpm >/dev/null 2>&1 && pnpm --version 2>/dev/null || echo none)"
+          echo "pnpm $want not pre-installed (found: $found) — falling back to the pinned download."
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    # Insurance for runners without a system pnpm. Never executes on our
+    # self-hosted Mac fleet (which has pnpm), so it cannot reintroduce the race.
+    - name: Fall back to the pinned pnpm download
+      if: steps.preinstalled.outputs.ok != 'true'
+      uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+      with:
+        version: ${{ inputs.version }}
