@@ -108,10 +108,10 @@ pub fn build_handlers() -> (Arc<dyn CasReadHandler>, Arc<dyn CasWriteHandler>) {
         // Probe for storage credentials.
         if StorageEnv::from_env().is_some() {
             // Credentials are present — try to build the real handler.
-            let bucket = std::env::var("R2_CAS_BUCKET")
-                .unwrap_or_else(|_| "corelink-cas-prod".to_owned());
-            let region = std::env::var("R2_CAS_REGION")
-                .unwrap_or_else(|_| "iad".to_owned());
+            // Empty-or-absent → default (see storage::env_or; mirrors the
+            // AC fix for the 2026-06-05 prod incident — latent here).
+            let bucket = crate::storage::env_or("R2_CAS_BUCKET", "corelink-cas-prod");
+            let region = crate::storage::env_or("R2_CAS_REGION", "iad");
 
             // Construction is now sync-only (commit ead0f37a removed the
             // aws_config::defaults() IMDS probe). We keep block_in_place +

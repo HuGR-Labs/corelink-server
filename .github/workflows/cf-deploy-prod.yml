@@ -76,7 +76,7 @@ jobs:
           node-version: '20'
 
       - name: Install wrangler
-        run: npm install -g wrangler@3
+        run: npm install -g wrangler@4  # v3 cannot parse [[env.*.containers]] arrays (verified 2026-06-05)
 
       - name: List CF Worker secrets (prod env)
         env:
@@ -135,7 +135,7 @@ jobs:
           node-version: '20'
 
       - name: Install wrangler
-        run: npm install -g wrangler@3
+        run: npm install -g wrangler@4  # v3 cannot parse [[env.*.containers]] arrays (verified 2026-06-05)
 
       - name: Deploy Worker (prod)
         env:

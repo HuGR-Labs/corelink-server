@@ -3,7 +3,7 @@
 #
 # Wave-29 stream-1 deliverable #3, closes DEBT-027 engineering-side.
 #
-# Mints N pilot tokens for `https://signup.corelink.humangr.com/pilot/<token>`
+# Mints N pilot tokens for `https://corelink-signup.humangr.com/pilot/<token>`
 # redemption. Tokens are signed with the `SIGNUP_TOKEN_KEY` HMAC-SHA256
 # secret consumed by the production backend
 # (`apps/server/src/routes/signup.rs`).
