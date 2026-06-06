@@ -102,43 +102,60 @@ fn inmem_put_response_contains_url_with_team_id() {
 }
 
 #[test]
-fn inmem_put_cross_tenant_emits_denied_before_return() {
-    let (audit, h) = inmem_handler();
-    let err = h
-        .put(TurboPutRequest::new(
-            "hX",
-            "victim_team",
-            "s",
-            b"bytes".to_vec(),
-            None,
-            "attacker",
-            "attacker_team",
-            1,
-        ))
-        .expect_err("should be denied");
-    assert!(matches!(err, TurboBridgeError::CrossTenantDenied { .. }));
-    let rows = audit.snapshot().expect("snap");
-    assert_eq!(rows.len(), 1, "exactly one audit event emitted");
-    assert_eq!(rows[0].kind, TurboAuditEventKind::PutDenied);
-}
-
-#[test]
-fn inmem_get_cross_tenant_emits_denied_before_return() {
-    let (audit, h) = inmem_handler();
+fn inmem_cross_tenant_isolated_via_caller_tenant() {
+    // NEW invariant: isolation is the `caller_tenant` storage dimension, not a
+    // `team_id == caller_tenant` denial. An artifact PUT under
+    // caller_tenant="tenantA" is unreachable from caller_tenant="tenantB" with
+    // the SAME team_id+hash — a NotFound MISS, not a denial.
+    let (_, h) = inmem_handler();
+    h.put(TurboPutRequest::new(
+        "hX",
+        "shared_team",
+        "s",
+        b"tenantA bytes".to_vec(),
+        None,
+        "userA",
+        "tenantA",
+        1,
+    ))
+    .expect("put under tenantA");
     let err = h
         .get(TurboGetRequest::new(
             "hX",
-            "victim_team",
+            "shared_team",
             "s",
-            "attacker",
-            "attacker_team",
-            1,
+            "userB",
+            "tenantB",
+            2,
         ))
-        .expect_err("should be denied");
-    assert!(matches!(err, TurboBridgeError::CrossTenantDenied { .. }));
+        .expect_err("tenantB isolated from tenantA");
+    assert!(matches!(err, TurboBridgeError::NotFound { .. }));
+}
+
+#[test]
+fn inmem_no_denied_audit_rows_on_normal_path() {
+    // Repurposed: with the tautology gone there is no *Denied audit kind on the
+    // turbo path. A normal PUT then GET round-trip emits only Attempted/
+    // Committed/Served — never PutDenied/GetDenied.
+    let (audit, h) = inmem_handler();
+    h.put(TurboPutRequest::new(
+        "hX",
+        "team1",
+        "s",
+        b"bytes".to_vec(),
+        None,
+        "p",
+        "tenant1",
+        1,
+    ))
+    .expect("put");
+    h.get(TurboGetRequest::new("hX", "team1", "s", "p", "tenant1", 2))
+        .expect("get");
     let rows = audit.snapshot().expect("snap");
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].kind, TurboAuditEventKind::GetDenied);
+    assert!(rows
+        .iter()
+        .all(|r| r.kind != TurboAuditEventKind::PutDenied
+            && r.kind != TurboAuditEventKind::GetDenied));
 }
 
 #[test]
@@ -292,23 +309,32 @@ fn adapter_put_get_round_trip() {
 }
 
 #[test]
-fn adapter_cross_tenant_denied() {
-    let (audit, _, h) = adapter_handler();
+fn adapter_cross_tenant_isolated_via_caller_tenant() {
+    // NEW invariant on the adapter (port-trait) path: cross-tenant access is an
+    // isolation MISS via the `caller_tenant` storage dimension, not a denial.
+    let (_, _, h) = adapter_handler();
+    h.put(TurboPutRequest::new(
+        "h2",
+        "shared_team",
+        "s",
+        b"tenantA bytes".to_vec(),
+        None,
+        "userA",
+        "tenantA",
+        1,
+    ))
+    .expect("put under tenantA");
     let err = h
-        .put(TurboPutRequest::new(
+        .get(TurboGetRequest::new(
             "h2",
-            "victim",
+            "shared_team",
             "s",
-            b"x".to_vec(),
-            None,
-            "evil",
-            "hacker",
-            1,
+            "userB",
+            "tenantB",
+            2,
         ))
-        .expect_err("denied");
-    assert!(matches!(err, TurboBridgeError::CrossTenantDenied { .. }));
-    let rows = audit.snapshot().expect("snap");
-    assert_eq!(rows[0].kind, TurboAuditEventKind::PutDenied);
+        .expect_err("tenantB isolated from tenantA");
+    assert!(matches!(err, TurboBridgeError::NotFound { .. }));
 }
 
 #[test]

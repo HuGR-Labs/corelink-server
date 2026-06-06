@@ -62,6 +62,7 @@ async fn cross_tenant_reject_returns_503_on_audit_sink_failure() {
     let req = axum::http::Request::builder()
         .uri(uri)
         .header(TENANT_ID_HEADER, auth_tenant.to_string())
+        .header("x-corelink-tenant-id", auth_tenant.to_string())
         .body(axum::body::Body::empty())
         .expect("req");
     let resp = app.oneshot(req).await.expect("oneshot");
@@ -103,6 +104,7 @@ async fn rate_limit_deny_returns_503_on_audit_sink_failure() {
     let req1 = axum::http::Request::builder()
         .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
+        .header("x-corelink-tenant-id", tenant.to_string())
         .body(axum::body::Body::empty())
         .expect("req1");
     let resp1 = app.clone().oneshot(req1).await.expect("oneshot");
@@ -113,6 +115,7 @@ async fn rate_limit_deny_returns_503_on_audit_sink_failure() {
     let req2 = axum::http::Request::builder()
         .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
+        .header("x-corelink-tenant-id", tenant.to_string())
         .body(axum::body::Body::empty())
         .expect("req2");
     let resp2 = app.oneshot(req2).await.expect("oneshot");
@@ -166,6 +169,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
     let req1 = axum::http::Request::builder()
         .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
+        .header("x-corelink-tenant-id", tenant.to_string())
         .body(axum::body::Body::empty())
         .expect("req1");
     let resp1 = app.clone().oneshot(req1).await.expect("oneshot");
@@ -180,6 +184,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
     let req2 = axum::http::Request::builder()
         .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
+        .header("x-corelink-tenant-id", tenant.to_string())
         .body(axum::body::Body::empty())
         .expect("req2");
     let resp2 = app.clone().oneshot(req2).await.expect("oneshot");
@@ -196,6 +201,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
     let req3 = axum::http::Request::builder()
         .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
+        .header("x-corelink-tenant-id", tenant.to_string())
         .body(axum::body::Body::empty())
         .expect("req3");
     let resp3 = app.oneshot(req3).await.expect("oneshot");
@@ -247,6 +253,7 @@ async fn wall_clock_saturated_to_zero_returns_503_and_emits_clock_unavailable_ro
     let req = axum::http::Request::builder()
         .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
+        .header("x-corelink-tenant-id", tenant.to_string())
         .body(axum::body::Body::empty())
         .expect("req");
     let resp = app.oneshot(req).await.expect("oneshot");

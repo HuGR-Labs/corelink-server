@@ -61,6 +61,7 @@
 #[cfg(feature = "byok-aws-real")]
 pub mod byok;
 
+pub mod auth_tenant;
 pub mod byok_orchestrator;
 #[cfg(feature = "neon-real")]
 pub mod neon_shadow_factory;

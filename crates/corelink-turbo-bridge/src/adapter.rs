@@ -19,9 +19,12 @@
 //!
 //! # Tenant isolation
 //!
-//! `team_id` is used as the storage partition key.  The adapter enforces
-//! `team_id == caller_tenant` before any storage access (same invariant as
-//! `InMemoryTurboHandler`).
+//! The isolation/storage tenant is `caller_tenant` (the PAT-resolved
+//! authenticated tenant, threaded from the route's `AuthTenant`). `team_id` is
+//! a Turborepo team label demoted to a sub-namespace: the storage `key` is
+//! `"<team_id>/<hash>"`, keeping teams partitioned WITHIN one tenant. There is
+//! no `team_id == caller_tenant` check — `team_id` is not a tenant; isolation
+//! is provided solely by `tenant = caller_tenant` reaching the store.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -151,10 +154,6 @@ impl CasAdapterTurboHandler {
             audit,
         }
     }
-
-    fn check_tenant(team_id: &str, caller_tenant: &str) -> bool {
-        team_id == caller_tenant
-    }
 }
 
 impl TurboArtifactHandler for CasAdapterTurboHandler {
@@ -166,22 +165,10 @@ impl TurboArtifactHandler for CasAdapterTurboHandler {
             });
         }
 
-        if !Self::check_tenant(&req.team_id, &req.caller_tenant) {
-            self.audit
-                .emit(TurboAuditEvent::new(
-                    TurboAuditEventKind::PutDenied,
-                    req.team_id.clone(),
-                    req.hash.clone(),
-                    req.principal.clone(),
-                    req.at_unix_ms,
-                    req.slug.clone(),
-                ))
-                .map_err(|e| TurboBridgeError::AuditFailed(e.to_string()))?;
-            return Err(TurboBridgeError::CrossTenantDenied {
-                caller: req.caller_tenant,
-                requested_team_id: req.team_id,
-            });
-        }
+        // No `team_id == caller_tenant` check: `team_id` is a Turborepo team
+        // label, NOT the tenant. Isolation is provided solely by the storage
+        // `tenant = caller_tenant` (the authenticated tenant); `team_id` is a
+        // sub-namespace inside it via the storage key.
 
         // PutAttempted BEFORE mutation.
         self.audit
@@ -195,8 +182,15 @@ impl TurboArtifactHandler for CasAdapterTurboHandler {
             ))
             .map_err(|e| TurboBridgeError::AuditFailed(e.to_string()))?;
 
+        // Storage: tenant dimension is the authenticated `caller_tenant`; the
+        // key carries `team_id` as a sub-namespace so two teams under one tenant
+        // stay partitioned.
         self.writer
-            .write(&req.team_id, &req.hash, req.bytes)
+            .write(
+                &req.caller_tenant,
+                &format!("{}/{}", req.team_id, req.hash),
+                req.bytes,
+            )
             .map_err(|e| TurboBridgeError::Internal(e.to_string()))?;
 
         // PutCommitted AFTER durable store.
@@ -222,22 +216,8 @@ impl TurboArtifactHandler for CasAdapterTurboHandler {
             });
         }
 
-        if !Self::check_tenant(&req.team_id, &req.caller_tenant) {
-            self.audit
-                .emit(TurboAuditEvent::new(
-                    TurboAuditEventKind::GetDenied,
-                    req.team_id.clone(),
-                    req.hash.clone(),
-                    req.principal.clone(),
-                    req.at_unix_ms,
-                    req.slug.clone(),
-                ))
-                .map_err(|e| TurboBridgeError::AuditFailed(e.to_string()))?;
-            return Err(TurboBridgeError::CrossTenantDenied {
-                caller: req.caller_tenant,
-                requested_team_id: req.team_id,
-            });
-        }
+        // No `team_id == caller_tenant` check: isolation is the storage
+        // `tenant = caller_tenant`; `team_id` is a sub-namespace key prefix.
 
         self.audit
             .emit(TurboAuditEvent::new(
@@ -250,7 +230,11 @@ impl TurboArtifactHandler for CasAdapterTurboHandler {
             ))
             .map_err(|e| TurboBridgeError::AuditFailed(e.to_string()))?;
 
-        let bytes = self.reader.read(&req.team_id, &req.hash)?;
+        // Storage: tenant = authenticated `caller_tenant`; key carries the
+        // `team_id` sub-namespace (mirrors the write path).
+        let bytes = self
+            .reader
+            .read(&req.caller_tenant, &format!("{}/{}", req.team_id, req.hash))?;
 
         self.audit
             .emit(TurboAuditEvent::new(
@@ -328,36 +312,90 @@ mod tests {
     }
 
     #[test]
-    fn adapter_cross_tenant_put_denied() {
-        let (audit, _, h) = fixture();
+    fn adapter_cross_tenant_isolation_via_caller_tenant() {
+        // NEW invariant: isolation comes from `caller_tenant`, not a
+        // `team_id == caller_tenant` tautology. An artifact written under
+        // caller_tenant="tenantA" is NOT visible to caller_tenant="tenantB"
+        // even with the SAME team_id and hash (the storage tenant dimension
+        // differs), so the cross-tenant GET returns NotFound — there is no
+        // longer a denial path on the turbo adapter.
+        let (_, _, h) = fixture();
+        h.put(TurboPutRequest::new(
+            "h1",
+            "team_shared",
+            "s",
+            b"tenantA bytes".to_vec(),
+            None,
+            "userA",
+            "tenantA",
+            1,
+        ))
+        .expect("put under tenantA");
         let err = h
-            .put(TurboPutRequest::new(
+            .get(TurboGetRequest::new(
                 "h1",
-                "victim",
+                "team_shared",
                 "s",
-                b"x".to_vec(),
-                None,
-                "evil",
-                "attacker",
-                1,
+                "userB",
+                "tenantB",
+                2,
             ))
-            .expect_err("denied");
-        assert!(matches!(err, TurboBridgeError::CrossTenantDenied { .. }));
-        let rows = audit.snapshot().expect("snap");
-        assert_eq!(rows[0].kind, TurboAuditEventKind::PutDenied);
+            .expect_err("tenantB must not see tenantA's artifact");
+        assert!(matches!(err, TurboBridgeError::NotFound { .. }));
     }
 
     #[test]
-    fn adapter_cross_tenant_get_denied() {
-        let (audit, _, h) = fixture();
-        let err = h
+    fn adapter_same_tenant_different_team_partitioned() {
+        // NEW invariant: under ONE caller_tenant, two different team_ids with
+        // the same hash address different slots (key = "<team_id>/<hash>"), so
+        // they do not collide.
+        let (_, _, h) = fixture();
+        let data_x = b"team_x bytes".to_vec();
+        let data_y = b"team_y bytes".to_vec();
+        h.put(TurboPutRequest::new(
+            "shared_hash",
+            "team_x",
+            "s",
+            data_x.clone(),
+            None,
+            "p",
+            "tenant1",
+            1,
+        ))
+        .expect("put team_x");
+        h.put(TurboPutRequest::new(
+            "shared_hash",
+            "team_y",
+            "s",
+            data_y.clone(),
+            None,
+            "p",
+            "tenant1",
+            2,
+        ))
+        .expect("put team_y");
+        let rx = h
             .get(TurboGetRequest::new(
-                "h1", "victim", "s", "evil", "attacker", 1,
+                "shared_hash",
+                "team_x",
+                "s",
+                "p",
+                "tenant1",
+                3,
             ))
-            .expect_err("denied");
-        assert!(matches!(err, TurboBridgeError::CrossTenantDenied { .. }));
-        let rows = audit.snapshot().expect("snap");
-        assert_eq!(rows[0].kind, TurboAuditEventKind::GetDenied);
+            .expect("get team_x");
+        let ry = h
+            .get(TurboGetRequest::new(
+                "shared_hash",
+                "team_y",
+                "s",
+                "p",
+                "tenant1",
+                4,
+            ))
+            .expect("get team_y");
+        assert_eq!(rx.bytes, data_x);
+        assert_eq!(ry.bytes, data_y);
     }
 
     #[test]

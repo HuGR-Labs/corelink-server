@@ -105,6 +105,10 @@ fn build_request(tenant: Uuid, from_ms: u64, to_ms: u64) -> Request<Body> {
         .method("GET")
         .uri(uri)
         .header(TENANT_ID_HEADER, tenant.to_string())
+        // The `AuthTenant` extractor reads `x-corelink-tenant-id` (the
+        // DO-injected, PAT-resolved tenant) and the handler 403s unless it
+        // equals the `:tenant` path segment; mirror the path tenant here.
+        .header("x-corelink-tenant-id", tenant.to_string())
         .body(Body::empty())
         .expect("request")
 }
@@ -122,7 +126,12 @@ fn build_request_with_attempted_tenant(
     Request::builder()
         .method("GET")
         .uri(uri)
+        // Header == the authenticated `:tenant` path segment (`auth_tenant`),
+        // NOT the `attempted` query tenant — the cross-tenant attempt is the
+        // path-vs-query mismatch, which must still reach the handler (403),
+        // so `AuthTenant` must authenticate against the path tenant.
         .header(TENANT_ID_HEADER, auth_tenant.to_string())
+        .header("x-corelink-tenant-id", auth_tenant.to_string())
         .body(Body::empty())
         .expect("request")
 }
@@ -333,9 +342,14 @@ async fn invalid_tenant_in_path_returns_400() {
     let app = router(state);
 
     // Use a non-UUID string in the :tenant segment — handler must reject with 400.
+    // A valid `x-corelink-tenant-id` header is supplied so the fail-CLOSED
+    // `AuthTenant` extractor authenticates (otherwise it 401s first); the
+    // handler then parses the malformed `:tenant` path segment and returns 400
+    // BEFORE the path-vs-header cross-tenant check, preserving this test's intent.
     let req = Request::builder()
         .method("GET")
         .uri("/v1/audit/not-a-valid-uuid/export?from=0&to=1000")
+        .header("x-corelink-tenant-id", tenant.to_string())
         .body(Body::empty())
         .expect("req");
 

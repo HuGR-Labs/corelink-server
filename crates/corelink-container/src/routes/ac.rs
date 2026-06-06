@@ -177,17 +177,26 @@ pub fn router(state: AcRouteState) -> Router {
 async fn handle_lookup(
     State(state): State<AcRouteState>,
     Path((tenant, action_digest)): Path<(String, String)>,
+    auth: crate::auth_tenant::AuthTenant,
 ) -> impl IntoResponse {
+    // The authenticated tenant (DO-injected `x-corelink-tenant-id`,
+    // PAT-resolved by the Worker) is the SOLE isolation key. The path
+    // `:tenant` is a client-controllable echo that MUST match it;
+    // mismatch is a cross-tenant attempt and is denied 403 BEFORE any
+    // storage access (no tenant quoted in the body). Mirrors bazel_v2.
+    if tenant != auth.0 {
+        return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
     // Logical clock stand-in (handler is the source of truth in
     // production; see cas.rs for the same rationale).
     let now_ms = 0u64;
     let req = AcLookupRequest::new(
-        tenant.clone(),
+        auth.0.clone(),
         action_digest,
         // Principal is filled by an auth middleware in production;
         // demo wire-up mirrors cas.rs.
-        format!("anon@{tenant}"),
-        tenant,
+        format!("anon@{}", auth.0),
+        auth.0,
         now_ms,
     );
     match state.lookup.lookup(req) {
@@ -200,15 +209,22 @@ async fn handle_lookup(
 async fn handle_update(
     State(state): State<AcRouteState>,
     Path((tenant, action_digest)): Path<(String, String)>,
+    auth: crate::auth_tenant::AuthTenant,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
+    // See `handle_lookup`: the authenticated tenant is the sole
+    // isolation key; the path `:tenant` is a client echo that must
+    // match. Deny 403 BEFORE any storage access on mismatch.
+    if tenant != auth.0 {
+        return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
     let now_ms = 0u64;
     let req = AcUpdateRequest::new(
-        tenant.clone(),
+        auth.0.clone(),
         action_digest,
         body.to_vec(),
-        format!("anon@{tenant}"),
-        tenant,
+        format!("anon@{}", auth.0),
+        auth.0,
         now_ms,
     );
     match state.update.update(req) {
@@ -379,10 +395,11 @@ mod tests {
     }
 
     /// Auth-fail surrogate: a missing-entry lookup returns Miss; the
-    /// route layer maps Miss to HTTP 404. (The route does not yet
-    /// have an auth middleware — auth-fail here is exercised as the
-    /// cross-tenant denial above, which is the auth-equivalent
-    /// failure path until the auth middleware lands.)
+    /// route layer maps Miss to HTTP 404. Tenant binding is now done by
+    /// the `crate::auth_tenant::AuthTenant` extractor on the handlers
+    /// (path `:tenant` must equal the authenticated tenant else 403);
+    /// the remaining auth-fail surrogate here is the cross-tenant
+    /// denial above.
     #[test]
     fn miss_maps_to_404() {
         let (_audit, _sli, st) = fixture();

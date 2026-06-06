@@ -183,25 +183,34 @@ pub fn router(state: CasRouteState) -> Router {
 
 /// `GET /v1/cas/:tenant/:hash` handler.
 ///
-/// For demonstration purposes the route reads the tenant as both
-/// the path tenant and the caller's authenticated tenant. Production
-/// wiring threads the authenticated tenant from a tower middleware
-/// (which validates the bearer / mTLS / PAT upstream).
+/// The authenticated tenant (DO-injected `x-corelink-tenant-id`,
+/// PAT-resolved by the Worker) is bound by the
+/// [`crate::auth_tenant::AuthTenant`] extractor and is the SOLE
+/// isolation key. The path `:tenant` is a client-controllable echo
+/// that MUST match it (mismatch ⇒ 403 before any storage access).
 async fn handle_read(
     State(state): State<CasRouteState>,
     Path((tenant, hash)): Path<(String, String)>,
+    auth: crate::auth_tenant::AuthTenant,
 ) -> impl IntoResponse {
+    // The path `:tenant` is a client echo that MUST equal the
+    // authenticated tenant; mismatch is a cross-tenant attempt and is
+    // denied 403 BEFORE any storage access (no tenant quoted in the
+    // body). Mirrors bazel_v2 / ac.rs.
+    if tenant != auth.0 {
+        return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
     // Logical clock stand-in: production wiring threads a
     // `WallClock` collaborator. We use the handler-supplied
     // `at_unix_ms` to keep the route logic-free.
     let now_ms = 0u64;
     let req = CasReadRequest::new(
-        tenant.clone(),
+        auth.0.clone(),
         hash,
         // Principal is filled in by the auth middleware in
-        // production; demo wire-up uses the tenant as the principal.
-        format!("anon@{tenant}"),
-        tenant,
+        // production; demo wire-up mirrors ac.rs.
+        format!("anon@{}", auth.0),
+        auth.0,
         now_ms,
     );
     match state.read.read(req) {
@@ -219,15 +228,22 @@ async fn handle_read(
 async fn handle_write(
     State(state): State<CasRouteState>,
     Path((tenant, hash)): Path<(String, String)>,
+    auth: crate::auth_tenant::AuthTenant,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
+    // See `handle_read`: the authenticated tenant is the sole
+    // isolation key; the path `:tenant` is a client echo that must
+    // match. Deny 403 BEFORE any storage access on mismatch.
+    if tenant != auth.0 {
+        return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
     let now_ms = 0u64;
     let req = CasWriteRequest::new(
-        tenant.clone(),
+        auth.0.clone(),
         hash,
         body.to_vec(),
-        format!("anon@{tenant}"),
-        tenant,
+        format!("anon@{}", auth.0),
+        auth.0,
         now_ms,
     );
     match state.write.write(req) {
