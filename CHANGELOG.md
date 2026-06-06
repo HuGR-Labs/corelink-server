@@ -574,6 +574,18 @@ Each entry cross-references:
   `cf-deploy-prod.yml` installs wrangler@4 (v3 cannot parse the current
   `[[env.*.containers]]` schema and would fail before deploying);
   `mint-pilot-token.sh` header points at the live flat hostname.
+- **Lighthouse CI no longer orphans its server + headless Chrome onto the
+  shared self-hosted Mac.** `lighthouse-ci.yml` (admin-ui) runs LHCI with a
+  `startServerCommand` standalone `node server.js` (:3000) + headless Chrome but
+  had no teardown; with `concurrency: cancel-in-progress: true` on the sieged
+  single-Mac runner fleet, cancelled runs left those processes reparented to
+  launchd, accumulating across days (observed: a 6-day-old 186 MB server + 18
+  stranded Chrome, contributing to the RAM exhaustion + swap thrash that
+  inflated the host load average into the hundreds). Both `lighthouse-ci.yml`
+  and the `docs-ci.yml` lighthouse job gain an `if: always()` step that reaps
+  ONLY orphaned (PPID == 1) LHCI servers + headless Chrome — safe on the shared
+  host (a live sibling job's processes are never PPID == 1) and self-healing
+  (each run also sweeps prior runs' orphans).
 
 ### Added
 

@@ -68,3 +68,27 @@ jobs:
           name: lhci-report
           path: apps/admin-ui/.lighthouseci/
           retention-days: 14
+
+      - name: Reap orphaned LHCI server + headless Chrome
+        if: always()
+        shell: bash
+        run: |
+          # LHCI's startServerCommand brings up a standalone `node server.js`
+          # (:3000) and spawns headless Chrome. This gate uses concurrency
+          # cancel-in-progress:true, and the shared self-hosted Mac gets sieged,
+          # so runs are frequently cancelled mid-flight — LHCI then can't tear
+          # its children down and they reparent to launchd, piling up across
+          # days (observed: a 6-day-old 186 MB server + 18 stranded Chrome).
+          # Reap ONLY orphaned (PPID == 1) leftovers: a live sibling runner's
+          # job never has PPID == 1, so this is safe on the shared host and is
+          # self-healing — each run also sweeps prior runs' orphans. always()
+          # runs on cancellation too.
+          set +e
+          n=0
+          for pid in $(pgrep -f 'standalone/apps/admin-ui/server\.js') \
+                     $(pgrep -f 'Google Chrome.*--headless'); do
+            [ "$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')" = "1" ] \
+              && kill -9 "$pid" 2>/dev/null && n=$((n + 1))
+          done
+          echo "Reaped $n orphaned LHCI process(es)."
+          exit 0

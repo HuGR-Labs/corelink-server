@@ -182,12 +182,24 @@ jobs:
             --assert.assertions.categories:seo="[\"error\", {\"minScore\": 0.90}]" \
             || echo "::warning::Lighthouse-CI assertions failed (foundation budget; tightened by WI-S18-005)"
 
-      - name: Stop http-server
+      - name: Stop http-server + reap orphaned headless Chrome
         if: always()
         run: |
           if [ -f /tmp/http-server.pid ]; then
-            kill "$(cat /tmp/http-server.pid)" || true
+            kill "$(cat /tmp/http-server.pid)" 2>/dev/null || true
+            rm -f /tmp/http-server.pid
           fi
+          # `lhci autorun` spawns headless Chrome; on mid-run cancellation (the
+          # shared self-hosted Mac gets sieged) it can orphan to launchd. The
+          # PID-file kill above only handles http-server. Reap ONLY orphaned
+          # (PPID == 1) leftovers — safe on the shared host (a live sibling
+          # job's procs are never PPID == 1) and self-healing across runs.
+          set +e
+          for pid in $(pgrep -f 'http-server') $(pgrep -f 'Google Chrome.*--headless'); do
+            [ "$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')" = "1" ] \
+              && kill -9 "$pid" 2>/dev/null
+          done
+          exit 0
 
   axe:
     name: axe-core a11y scan (WCAG 2.2 AA)
