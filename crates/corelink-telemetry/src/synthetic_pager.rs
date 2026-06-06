@@ -97,9 +97,7 @@ pub mod vector;
 pub use decide::decide_drill_outcome;
 pub use error::SyntheticDrillError;
 pub use outcome::{AckOutcome, MttaMs, MTTA_BUDGET_MS, UNACK_HARD_WINDOW_MS};
-pub use record::{
-    DrillRecord, DrillRecorder, FailingDrillRecorder, InMemoryDrillRecorder,
-};
+pub use record::{DrillRecord, DrillRecorder, FailingDrillRecorder, InMemoryDrillRecorder};
 pub use region::{canonical_regions, Region};
 pub use request::{SyntheticDrillId, SyntheticPageRequest};
 pub use severity::{canonical_drill_severities, DrillSeverity};

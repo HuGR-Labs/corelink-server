@@ -113,10 +113,7 @@ impl InMemoryReplicationWorker {
     /// deterministic assertion or [`crate::metrics::FailingReplicationLagSli`]
     /// to verify that SLI emit failure does NOT block replication completion
     /// (best-effort observability per S-06 P0-2 — audit chain is canonical).
-    pub fn with_sli(
-        audit: Arc<dyn ReplicaAuditSink>,
-        sli: Arc<dyn ReplicationLagSli>,
-    ) -> Self {
+    pub fn with_sli(audit: Arc<dyn ReplicaAuditSink>, sli: Arc<dyn ReplicationLagSli>) -> Self {
         InMemoryReplicationWorker {
             r2: Arc::new(Mutex::new(HashMap::new())),
             audit,
@@ -164,8 +161,14 @@ impl InMemoryReplicationWorker {
 
         // 3. R2 GET from primary.
         let data = {
-            let r2 = self.r2.lock().map_err(|e| ReplicaError::R2Copy(e.to_string()))?;
-            let key = (blob.primary_region.as_str().to_owned(), blob.blob_hash.clone());
+            let r2 = self
+                .r2
+                .lock()
+                .map_err(|e| ReplicaError::R2Copy(e.to_string()))?;
+            let key = (
+                blob.primary_region.as_str().to_owned(),
+                blob.blob_hash.clone(),
+            );
             r2.get(&key).cloned().unwrap_or_else(|| {
                 // Synthetic default data for in-memory tests (hash = blob_hash).
                 blob.blob_hash.as_bytes().to_vec()
@@ -178,17 +181,27 @@ impl InMemoryReplicationWorker {
         for attempt in 1..=MAX_REPLICATION_RETRIES {
             // Simulate PUT.
             {
-                let mut r2 = self.r2.lock().map_err(|e| ReplicaError::R2Copy(e.to_string()))?;
-                let key = (blob.replica_region.as_str().to_owned(), blob.blob_hash.clone());
+                let mut r2 = self
+                    .r2
+                    .lock()
+                    .map_err(|e| ReplicaError::R2Copy(e.to_string()))?;
+                let key = (
+                    blob.replica_region.as_str().to_owned(),
+                    blob.blob_hash.clone(),
+                );
                 r2.insert(key, data.clone());
             }
             // Verify hash post-copy.
             let actual_hash = {
-                let r2 = self.r2.lock().map_err(|e| ReplicaError::R2Copy(e.to_string()))?;
-                let key = (blob.replica_region.as_str().to_owned(), blob.blob_hash.clone());
-                r2.get(&key)
-                    .map(|d| compute_hash(d))
-                    .unwrap_or_default()
+                let r2 = self
+                    .r2
+                    .lock()
+                    .map_err(|e| ReplicaError::R2Copy(e.to_string()))?;
+                let key = (
+                    blob.replica_region.as_str().to_owned(),
+                    blob.blob_hash.clone(),
+                );
+                r2.get(&key).map(|d| compute_hash(d)).unwrap_or_default()
             };
             if actual_hash == expected_hash {
                 // 5. Emit completed audit BEFORE Sli (audit is canonical).
@@ -246,9 +259,7 @@ impl InMemoryReplicationWorker {
                 primary_region: blob.primary_region.as_str().to_owned(),
                 replica_region: blob.replica_region.as_str().to_owned(),
                 timestamp_ms: ts_ms,
-                detail: format!(
-                    "retry_exhausted attempts={MAX_REPLICATION_RETRIES}: {last_err:?}"
-                ),
+                detail: format!("retry_exhausted attempts={MAX_REPLICATION_RETRIES}: {last_err:?}"),
             })
             .map_err(ReplicaError::Audit)?;
 

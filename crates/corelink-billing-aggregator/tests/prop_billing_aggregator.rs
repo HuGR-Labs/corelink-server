@@ -47,17 +47,15 @@ use std::sync::Arc;
 use corelink_analytics::Region;
 use corelink_billing_aggregator::{
     aggregator_schema_version, canonical_aggregator_audit_event_strings, compute_canonical_bytes,
-    deterministic_event_order, link_chain_hash, link_chain_hash_from_canonical,
-    verify_chain_link, AggregatedCounter, AggregatedCounterStore, AggregationDecision,
-    AggregationRequest, AggregatorAuditEventType, ChainHash, CounterAggregator,
-    CounterGroupKey, FailingAggregatorAuditSink, InMemoryAggregatedCounterStore,
-    InMemoryAggregatorAuditSink, InMemoryCounterAggregator, PeriodWindow,
-    CLOUDEVENTS_DATACONTENTTYPE, CLOUDEVENTS_SPECVERSION, COUNTER_AGGREGATED_EVENT_TYPE,
-    GENESIS_PREV_HASH, GENESIS_SEQUENCE_NUMBER,
+    deterministic_event_order, link_chain_hash, link_chain_hash_from_canonical, verify_chain_link,
+    AggregatedCounter, AggregatedCounterStore, AggregationDecision, AggregationRequest,
+    AggregatorAuditEventType, ChainHash, CounterAggregator, CounterGroupKey,
+    FailingAggregatorAuditSink, InMemoryAggregatedCounterStore, InMemoryAggregatorAuditSink,
+    InMemoryCounterAggregator, PeriodWindow, CLOUDEVENTS_DATACONTENTTYPE, CLOUDEVENTS_SPECVERSION,
+    COUNTER_AGGREGATED_EVENT_TYPE, GENESIS_PREV_HASH, GENESIS_SEQUENCE_NUMBER,
 };
 use corelink_billing_emit::{
-    compute_canonical_bytes_for_idem, derive_idem_key_from_canonical, UsageEvent,
-    UsageEventKind,
+    compute_canonical_bytes_for_idem, derive_idem_key_from_canonical, UsageEvent, UsageEventKind,
 };
 use proptest::prelude::*;
 use rand::{RngCore, SeedableRng};
@@ -727,10 +725,7 @@ fn audit_failure_aborts_run_no_state_mutation() {
         aggregate_id: Uuid::now_v7(),
     };
     let err = a.run(req).unwrap_err();
-    let is_audit_err = matches!(
-        err,
-        corelink_billing_aggregator::AggregatorError::Audit(_)
-    );
+    let is_audit_err = matches!(err, corelink_billing_aggregator::AggregatorError::Audit(_));
     assert!(is_audit_err);
     assert_eq!(store.len(), 0);
     let head = store.chain_head(tenant, "2026-05").unwrap();

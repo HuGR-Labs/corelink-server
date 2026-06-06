@@ -217,16 +217,16 @@ impl ConsentLedger for InMemoryConsentLedger {
         proof: ConsentProofPayload,
     ) -> Result<ConsentGrantReceipt, ConsentLedgerError> {
         // Step 1: locale enforcement (CTRL-PRIV-CONSENT-005; AC-007)
-        enforce_locale(accept_language, proof.locale).map_err(|e| {
-            ConsentLedgerError::LocaleMismatch(e.to_string())
-        })?;
+        enforce_locale(accept_language, proof.locale)
+            .map_err(|e| ConsentLedgerError::LocaleMismatch(e.to_string()))?;
 
         // Step 2: notice version check (CTRL-PRIV-CONSENT-005; AC-006)
-        check_notice_version(&self.current_notice_version, &proof.notice_version)
-            .map_err(|e| ConsentLedgerError::NoticeVersionStale {
+        check_notice_version(&self.current_notice_version, &proof.notice_version).map_err(|e| {
+            ConsentLedgerError::NoticeVersionStale {
                 current: e.current_major,
                 submitted: e.submitted_major,
-            })?;
+            }
+        })?;
 
         let seq = self.next_seq();
         let consent_id = new_ulid("grant", seq);
@@ -278,7 +278,9 @@ impl ConsentLedger for InMemoryConsentLedger {
 
         let verify_url = format!(
             "/v1/consent/verify?signature={}&consent_id={}&tenant_short={}",
-            sig.hex, stored.consent_id, &tenant_id[..tenant_id.len().min(8)]
+            sig.hex,
+            stored.consent_id,
+            &tenant_id[..tenant_id.len().min(8)]
         );
 
         Ok(ConsentGrantReceipt {
@@ -298,9 +300,8 @@ impl ConsentLedger for InMemoryConsentLedger {
         revoke_proof: ConsentProofPayload,
     ) -> Result<ConsentRevokeReceipt, ConsentLedgerError> {
         // Step 1: locale enforcement
-        enforce_locale(accept_language, revoke_proof.locale).map_err(|e| {
-            ConsentLedgerError::LocaleMismatch(e.to_string())
-        })?;
+        enforce_locale(accept_language, revoke_proof.locale)
+            .map_err(|e| ConsentLedgerError::LocaleMismatch(e.to_string()))?;
 
         // Step 2: validate purpose is revocable
         if !purpose.is_revocable() {
@@ -312,9 +313,9 @@ impl ConsentLedger for InMemoryConsentLedger {
         }
 
         // Step 3: lookup active grant (for FK — NULL-safe if never granted)
-        let active_grant = self
-            .store
-            .get_active_grant(tenant_id, subject_id, &purpose.to_string())?;
+        let active_grant =
+            self.store
+                .get_active_grant(tenant_id, subject_id, &purpose.to_string())?;
         let revokes_consent_id = active_grant.map(|r| r.consent_id);
 
         let seq = self.next_seq();
@@ -504,18 +505,17 @@ mod tests {
         store::InMemoryConsentStore,
     };
 
-    fn make_ledger() -> (InMemoryConsentLedger, Arc<InMemoryConsentAuditSink>, Arc<InMemoryCascadeSink>) {
+    fn make_ledger() -> (
+        InMemoryConsentLedger,
+        Arc<InMemoryConsentAuditSink>,
+        Arc<InMemoryCascadeSink>,
+    ) {
         let store = Arc::new(InMemoryConsentStore::new());
         let audit = Arc::new(InMemoryConsentAuditSink::new());
         let signer = Arc::new(InMemoryConsentHmacSigner::new_test());
         let cascade = Arc::new(InMemoryCascadeSink::new());
-        let ledger = InMemoryConsentLedger::new(
-            store,
-            audit.clone(),
-            signer,
-            cascade.clone(),
-            "1.0.0",
-        );
+        let ledger =
+            InMemoryConsentLedger::new(store, audit.clone(), signer, cascade.clone(), "1.0.0");
         (ledger, audit, cascade)
     }
 
@@ -574,7 +574,13 @@ mod tests {
         let (ledger, audit, cascade) = make_ledger();
         // First grant
         ledger
-            .grant_consent("t", "s", "pt-BR", ConsentPurpose::MarketingEmail, proof(LocaleBcp47::PtBr))
+            .grant_consent(
+                "t",
+                "s",
+                "pt-BR",
+                ConsentPurpose::MarketingEmail,
+                proof(LocaleBcp47::PtBr),
+            )
             .unwrap();
         // Then revoke
         let revoke_proof = ConsentProofPayload {
@@ -586,7 +592,13 @@ mod tests {
             submission_ts: "2026-05-13T11:00:02Z".to_owned(),
         };
         let receipt = ledger
-            .revoke_consent("t", "s", "pt-BR", ConsentPurpose::MarketingEmail, revoke_proof)
+            .revoke_consent(
+                "t",
+                "s",
+                "pt-BR",
+                ConsentPurpose::MarketingEmail,
+                revoke_proof,
+            )
             .unwrap();
         assert!(!receipt.revocation_id.is_empty());
         let events = audit.captured();
@@ -611,7 +623,10 @@ mod tests {
                 proof(LocaleBcp47::PtBr),
             )
             .unwrap_err();
-        let valid = matches!(err, super::super::error::ConsentLedgerError::NotRevocable(_));
+        let valid = matches!(
+            err,
+            super::super::error::ConsentLedgerError::NotRevocable(_)
+        );
         assert!(valid, "expected NotRevocable error");
     }
 
@@ -622,12 +637,15 @@ mod tests {
             .grant_consent(
                 "t",
                 "s",
-                "en-US",                              // header
+                "en-US", // header
                 ConsentPurpose::MarketingEmail,
-                proof(LocaleBcp47::PtBr),             // payload says pt-BR
+                proof(LocaleBcp47::PtBr), // payload says pt-BR
             )
             .unwrap_err();
-        let valid = matches!(err, super::super::error::ConsentLedgerError::LocaleMismatch(_));
+        let valid = matches!(
+            err,
+            super::super::error::ConsentLedgerError::LocaleMismatch(_)
+        );
         assert!(valid, "expected LocaleMismatch error");
     }
 

@@ -137,8 +137,9 @@ impl AutoRollbackDriver {
         metrics: &GateMetrics,
         probe_interval_secs: u64,
     ) -> Option<AutoRollbackTrigger> {
-        self.elapsed_since_start_secs =
-            self.elapsed_since_start_secs.saturating_add(probe_interval_secs);
+        self.elapsed_since_start_secs = self
+            .elapsed_since_start_secs
+            .saturating_add(probe_interval_secs);
         self.sustained.advance(metrics, probe_interval_secs)
     }
 
@@ -179,7 +180,7 @@ mod tests {
 
     fn error_rate_spike() -> GateMetrics {
         GateMetrics {
-            error_rate: 0.10,       // baseline 0.005 + 3×0.001 = 0.008; spike > threshold
+            error_rate: 0.10, // baseline 0.005 + 3×0.001 = 0.008; spike > threshold
             error_rate_baseline: 0.005,
             error_rate_sigma: 0.001,
             slo_burn_rate_1h: 0.5,

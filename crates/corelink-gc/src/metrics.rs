@@ -326,8 +326,14 @@ mod tests {
         m.record_cron_fired(GcRegion::Iad).unwrap();
         let prefix = "corelink.gc.scheduler.cron_fired_total";
         assert_eq!(m.counter_sum_prefix(prefix), 3);
-        assert_eq!(m.counter("corelink.gc.scheduler.cron_fired_total|region=sam"), 2);
-        assert_eq!(m.counter("corelink.gc.scheduler.cron_fired_total|region=iad"), 1);
+        assert_eq!(
+            m.counter("corelink.gc.scheduler.cron_fired_total|region=sam"),
+            2
+        );
+        assert_eq!(
+            m.counter("corelink.gc.scheduler.cron_fired_total|region=iad"),
+            1
+        );
     }
 
     #[test]
@@ -351,9 +357,8 @@ mod tests {
             .unwrap();
         m.record_phase_duration_ms(GcPhase::Mark, t, GcRegion::Sam, 1500)
             .unwrap();
-        let label = format!(
-            "corelink.gc.worker.phase_duration_ms|phase=mark|tenant_id={t}|region=sam"
-        );
+        let label =
+            format!("corelink.gc.worker.phase_duration_ms|phase=mark|tenant_id={t}|region=sam");
         let h = m.histogram(&label);
         assert_eq!(h, vec![1000, 1500]);
     }
@@ -363,14 +368,8 @@ mod tests {
         let m = InMemoryGcMetrics::new();
         m.record_degrade_mode_active(DegradeKind::Off).unwrap();
         m.record_degrade_mode_active(DegradeKind::GcPause).unwrap();
-        assert_eq!(
-            m.gauge("corelink.gc.degrade_mode_active|kind=off"),
-            0
-        );
-        assert_eq!(
-            m.gauge("corelink.gc.degrade_mode_active|kind=gc-pause"),
-            1
-        );
+        assert_eq!(m.gauge("corelink.gc.degrade_mode_active|kind=off"), 0);
+        assert_eq!(m.gauge("corelink.gc.degrade_mode_active|kind=gc-pause"), 1);
     }
 
     #[test]

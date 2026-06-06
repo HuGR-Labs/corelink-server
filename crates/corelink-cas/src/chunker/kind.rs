@@ -145,16 +145,18 @@ impl ChunkerKind {
     pub fn new(config: ChunkerConfig) -> Result<Self, ChunkerError> {
         config.validate()?;
         Ok(match config.algorithm {
-            ChunkerAlgorithm::Fixed2MiB => {
-                Self::Fixed(crate::chunker::fixed::FixedChunker::with_size(config.fixed_chunk_size))
+            ChunkerAlgorithm::Fixed2MiB => Self::Fixed(
+                crate::chunker::fixed::FixedChunker::with_size(config.fixed_chunk_size),
+            ),
+            ChunkerAlgorithm::FastCDC2MiB => {
+                Self::FastCdc(crate::chunker::fastcdc::FastCdcChunker::new(
+                    config.fastcdc_min,
+                    config.fastcdc_avg,
+                    config.fastcdc_max,
+                    config.fastcdc_mask_s,
+                    config.fastcdc_mask_l,
+                ))
             }
-            ChunkerAlgorithm::FastCDC2MiB => Self::FastCdc(crate::chunker::fastcdc::FastCdcChunker::new(
-                config.fastcdc_min,
-                config.fastcdc_avg,
-                config.fastcdc_max,
-                config.fastcdc_mask_s,
-                config.fastcdc_mask_l,
-            )),
         })
     }
 }

@@ -40,16 +40,15 @@
 
 use std::sync::Arc;
 
-use corelink_ratelimit::{
-    bucket::try_acquire as bucket_try_acquire,
-    canonical_audit_event_strings, canonical_metric_names, refill_rate_for_tier,
-    BucketDecision, BucketKey, InMemoryRateLimitAuditSink,
-    InMemoryRateLimitMetrics, InMemoryTokenBucketRateLimiter, KeyDimension,
-    RateLimitConfig, RateLimitDecision, RateLimitEventType, RateLimitMetricKind,
-    RateLimitResultLabel, RateLimiter, TokenBucketState,
-    MIGRATION_0010_RATELIMIT_BUCKETS, TIER_RATE_LADDER,
-};
 use corelink_eviction::Tier;
+use corelink_ratelimit::{
+    bucket::try_acquire as bucket_try_acquire, canonical_audit_event_strings,
+    canonical_metric_names, refill_rate_for_tier, BucketDecision, BucketKey,
+    InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics, InMemoryTokenBucketRateLimiter,
+    KeyDimension, RateLimitConfig, RateLimitDecision, RateLimitEventType, RateLimitMetricKind,
+    RateLimitResultLabel, RateLimiter, TokenBucketState, MIGRATION_0010_RATELIMIT_BUCKETS,
+    TIER_RATE_LADDER,
+};
 use proptest::prelude::*;
 use uuid::Uuid;
 
@@ -68,10 +67,7 @@ fn ten_b() -> Uuid {
     Uuid::from_u128(0xb)
 }
 
-type Limiter = InMemoryTokenBucketRateLimiter<
-    InMemoryRateLimitAuditSink,
-    InMemoryRateLimitMetrics,
->;
+type Limiter = InMemoryTokenBucketRateLimiter<InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics>;
 
 fn fresh_limiter() -> (
     Limiter,
@@ -80,10 +76,8 @@ fn fresh_limiter() -> (
 ) {
     let audit = Arc::new(InMemoryRateLimitAuditSink::new());
     let metrics = Arc::new(InMemoryRateLimitMetrics::new());
-    let lim = InMemoryTokenBucketRateLimiter::with_defaults(
-        Arc::clone(&audit),
-        Arc::clone(&metrics),
-    );
+    let lim =
+        InMemoryTokenBucketRateLimiter::with_defaults(Arc::clone(&audit), Arc::clone(&metrics));
     (lim, audit, metrics)
 }
 

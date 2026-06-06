@@ -42,7 +42,9 @@ pub enum DrillError {
     },
 
     /// SLO violation: RTO or RPO exceeded the canonical ceiling.
-    #[error("SLO violation: {slo} measured {measured_seconds}s exceeds ceiling {ceiling_seconds}s")]
+    #[error(
+        "SLO violation: {slo} measured {measured_seconds}s exceeds ceiling {ceiling_seconds}s"
+    )]
     SloViolation {
         /// Which SLO was violated (`"rto"` or `"rpo"`).
         slo: &'static str,

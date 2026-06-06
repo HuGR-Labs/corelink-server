@@ -229,9 +229,7 @@ fn scheduler_list_get_update_round_trip() {
     let fetched = sched.get("rt-1").unwrap().unwrap();
     assert_eq!(fetched.status, DrillStatus::InProgress);
 
-    sched
-        .update_status("rt-1", DrillStatus::Completed)
-        .unwrap();
+    sched.update_status("rt-1", DrillStatus::Completed).unwrap();
     let listed = sched.list().unwrap();
     assert_eq!(listed.len(), 1);
     assert!(listed[0].status.is_terminal());

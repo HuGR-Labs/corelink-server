@@ -170,8 +170,14 @@ async fn run_dry_run(args: &Args) -> anyhow::Result<()> {
     report.complete(completed_ms);
 
     println!("[DRY-RUN] --- Report ---");
-    println!("[DRY-RUN] Tenants to migrate: {}", report.count_by_decision(MigrationDecision::Migrate));
-    println!("[DRY-RUN] Tenants skipped (filtered): {}", report.count_by_decision(MigrationDecision::SkippedFiltered));
+    println!(
+        "[DRY-RUN] Tenants to migrate: {}",
+        report.count_by_decision(MigrationDecision::Migrate)
+    );
+    println!(
+        "[DRY-RUN] Tenants skipped (filtered): {}",
+        report.count_by_decision(MigrationDecision::SkippedFiltered)
+    );
     println!("[DRY-RUN] Total D1 rows: {}", report.total_d1_rows);
     println!("[DRY-RUN] Total R2 blobs: {}", report.total_r2_blobs);
     println!(
@@ -210,10 +216,8 @@ async fn run_execute(args: &Args) -> anyhow::Result<()> {
     // 3. Emits audit record per tenant (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER)
     // 4. Reports progress
 
-    let stub_tenants: Vec<(&str, u64, u64)> = vec![
-        ("tenant-001", 1_200, 85),
-        ("tenant-002", 340, 12),
-    ];
+    let stub_tenants: Vec<(&str, u64, u64)> =
+        vec![("tenant-001", 1_200, 85), ("tenant-002", 340, 12)];
 
     for (tid, d1_rows, r2_blobs) in &stub_tenants {
         println!("[EXECUTE] Migrating tenant: {}", tid);
@@ -241,7 +245,10 @@ async fn run_execute(args: &Args) -> anyhow::Result<()> {
             error: None,
         };
 
-        println!("[EXECUTE] Tenant {} migrated: {} D1 rows, {} R2 blobs, hash_verified=true", tid, d1_rows, r2_blobs);
+        println!(
+            "[EXECUTE] Tenant {} migrated: {} D1 rows, {} R2 blobs, hash_verified=true",
+            tid, d1_rows, r2_blobs
+        );
         report.add_tenant_result(result);
     }
 
@@ -252,16 +259,25 @@ async fn run_execute(args: &Args) -> anyhow::Result<()> {
     report.complete(completed_ms);
 
     println!("[EXECUTE] --- Results ---");
-    println!("[EXECUTE] Migrated: {}", report.count_by_decision(MigrationDecision::Migrate));
+    println!(
+        "[EXECUTE] Migrated: {}",
+        report.count_by_decision(MigrationDecision::Migrate)
+    );
     println!("[EXECUTE] Errors: {}", report.error_count);
     println!("[EXECUTE] Total D1 rows: {}", report.total_d1_rows);
     println!("[EXECUTE] Total R2 blobs: {}", report.total_r2_blobs);
-    println!("[EXECUTE] Audit records emitted: {}", audit_sink.records.len());
+    println!(
+        "[EXECUTE] Audit records emitted: {}",
+        audit_sink.records.len()
+    );
     println!("[EXECUTE] Run ID: {}", report.run_id);
 
     if report.has_failures() {
         println!("[EXECUTE] ERRORS detected — rollback recommended. Run: --rollback");
-        return Err(anyhow::anyhow!("Migration had {} failures", report.error_count));
+        return Err(anyhow::anyhow!(
+            "Migration had {} failures",
+            report.error_count
+        ));
     }
 
     println!("[EXECUTE] Migration complete. All tenants migrated successfully.");
@@ -271,22 +287,37 @@ async fn run_execute(args: &Args) -> anyhow::Result<()> {
 /// Rollback mode: signal Terraform state revert + D1 PITR + R2 backup restore.
 async fn run_rollback(args: &Args) -> anyhow::Result<()> {
     println!("[ROLLBACK] Starting rollback procedure...");
-    println!("[ROLLBACK] Target region (to revert): {}", args.target_region);
+    println!(
+        "[ROLLBACK] Target region (to revert): {}",
+        args.target_region
+    );
     println!("[ROLLBACK] RTO target: ≤ 4h (WI-S14-001 §3)");
     println!();
     println!("[ROLLBACK] Step 1: Terraform state revert");
     println!("  → Run: terraform state pull > backup.tfstate");
-    println!("  → Identify and revert region module state for '{}'", args.target_region);
-    println!("  → terraform state rm module.{}", args.target_region.as_str());
+    println!(
+        "  → Identify and revert region module state for '{}'",
+        args.target_region
+    );
+    println!(
+        "  → terraform state rm module.{}",
+        args.target_region.as_str()
+    );
     println!("  → See RB-region §5 for full procedure");
     println!();
     println!("[ROLLBACK] Step 2: D1 PITR restore");
-    println!("  → CF Dashboard → D1 → corelink-meta-{} → Point-in-time Recovery", args.target_region.as_str());
+    println!(
+        "  → CF Dashboard → D1 → corelink-meta-{} → Point-in-time Recovery",
+        args.target_region.as_str()
+    );
     println!("  → Restore to snapshot prior to migration start");
     println!("  → Verify row count matches pre-migration state");
     println!();
     println!("[ROLLBACK] Step 3: R2 backup restore");
-    println!("  → CF Dashboard → R2 → corelink-cas-{} → Versioning → Restore", args.target_region.as_str());
+    println!(
+        "  → CF Dashboard → R2 → corelink-cas-{} → Versioning → Restore",
+        args.target_region.as_str()
+    );
     println!("  → Restore objects to pre-migration versions");
     println!();
     println!("[ROLLBACK] NOTE: This script outputs the rollback playbook.");

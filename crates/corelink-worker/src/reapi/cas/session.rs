@@ -361,7 +361,8 @@ impl Default for InMemorySessionStore {
 
 impl fmt::Debug for InMemorySessionStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("InMemorySessionStore").finish_non_exhaustive()
+        f.debug_struct("InMemorySessionStore")
+            .finish_non_exhaustive()
     }
 }
 
@@ -498,15 +499,17 @@ impl SessionStore for InMemorySessionStore {
                     return Err(SessionStoreError::Aborted);
                 }
             }
-            let next_idx: u32 = snap
-                .chunks
-                .len()
-                .try_into()
-                .map_err(|_| SessionStoreError::Backend("chunk index overflow u32".to_string()))?;
+            let next_idx: u32 =
+                snap.chunks.len().try_into().map_err(|_| {
+                    SessionStoreError::Backend("chunk index overflow u32".to_string())
+                })?;
             let submitted = chunk_index.0;
             // Idempotent retry on the same slot — must match the prior
             // digest bit-for-bit.
-            let already_bound = g.bound_digests.get(&(tenant_id, session_id, submitted)).copied();
+            let already_bound = g
+                .bound_digests
+                .get(&(tenant_id, session_id, submitted))
+                .copied();
             if let Some(prior) = already_bound {
                 if prior == chunk_digest {
                     // True idempotent retry — no-op; return current
@@ -548,9 +551,10 @@ impl SessionStore for InMemorySessionStore {
                 digest: chunk_digest,
                 size_bytes,
             });
-            let new_count: u32 = snap.chunks.len().try_into().map_err(|_| {
-                SessionStoreError::Backend("chunk index overflow u32".to_string())
-            })?;
+            let new_count: u32 =
+                snap.chunks.len().try_into().map_err(|_| {
+                    SessionStoreError::Backend("chunk index overflow u32".to_string())
+                })?;
             g.bound_digests
                 .insert((tenant_id, session_id, submitted), chunk_digest);
             Ok(new_count)

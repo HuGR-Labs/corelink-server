@@ -82,14 +82,12 @@ pub mod store;
 pub use audit::{
     FailingNoticeAuditSink, InMemoryNoticeAuditSink, NoticeAuditRecord, NoticeAuditSink,
 };
-pub use emitter::{
-    InMemoryNoticeEmitter, NoticeEmitDecision, NoticeEmitter, NoticePublishRequest,
-};
+pub use emitter::{InMemoryNoticeEmitter, NoticeEmitDecision, NoticeEmitter, NoticePublishRequest};
 pub use error::{NoticeAuditSinkError, NoticeEmitterError, NoticeStoreError};
 pub use event::{
-    canonical_notice_locales, notice_text_hash, NoticeCloudEventType,
-    NoticeDeprecatedCloudEvent, NoticeDeprecatedPayload, NoticeLocale,
-    NoticePublishedCloudEvent, NoticePublishedPayload, NoticeVersion, VersionBump,
+    canonical_notice_locales, notice_text_hash, NoticeCloudEventType, NoticeDeprecatedCloudEvent,
+    NoticeDeprecatedPayload, NoticeLocale, NoticePublishedCloudEvent, NoticePublishedPayload,
+    NoticeVersion, VersionBump,
 };
 pub use store::{InMemoryNoticeStateStore, NoticePublicationState, NoticeStateStore};
 
@@ -103,8 +101,7 @@ pub const RE_CONSENT_GRACE_PERIOD_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 pub const RE_CONSENT_CAP_PERIOD_MS: u64 = 60 * 24 * 60 * 60 * 1_000;
 
 /// Canonical total window (ms) = 30d grace + 60d cap = 90d.
-pub const RE_CONSENT_TOTAL_WINDOW_MS: u64 =
-    RE_CONSENT_GRACE_PERIOD_MS + RE_CONSENT_CAP_PERIOD_MS;
+pub const RE_CONSENT_TOTAL_WINDOW_MS: u64 = RE_CONSENT_GRACE_PERIOD_MS + RE_CONSENT_CAP_PERIOD_MS;
 
 /// Diff publication SLA (ms) — p99 ≤ 24h per AC-007 and Prom metric
 /// `corelink_privacy_notice_diff_publication_lag_seconds`.

@@ -38,9 +38,9 @@ use proptest::prelude::*;
 
 use corelink_replica_worker::{
     AggregationEntry, InMemoryOfflineAggregator, InMemoryReplicaAuditSink,
-    InMemoryReplicationWorker, OfflineAggregator, Region, ReplicaAuditSink,
-    ResidencyGraph, ReplicationWorker, AGGREGATION_WINDOW_DAYS, LIVE_METRIC_LABEL_CARDINALITY,
-    NO_TENANT_ID_LABEL, REPLICATION_LAG_P99_SLO_SECS,
+    InMemoryReplicationWorker, OfflineAggregator, Region, ReplicaAuditSink, ReplicationWorker,
+    ResidencyGraph, AGGREGATION_WINDOW_DAYS, LIVE_METRIC_LABEL_CARDINALITY, NO_TENANT_ID_LABEL,
+    REPLICATION_LAG_P99_SLO_SECS,
 };
 
 fn proptest_cases() -> u32 {

@@ -365,8 +365,7 @@ fn test_proptest_failure_counter_is_zero() {
     // If any property found a leak, this will fail.
     let total = PROP_FAILURES.load(Ordering::Relaxed);
     assert_eq!(
-        total,
-        0,
+        total, 0,
         "corelink_residency_property_test_failures_total = {total} (expected 0)"
     );
 }

@@ -57,7 +57,9 @@ pub mod verifier;
 pub mod worker;
 
 use self::error::DeployVerifyError;
-use self::types::{CfDeployWebhook, CosignIdentityPattern, DeployAuditEvent, DeployPropagated, OciImageRef};
+use self::types::{
+    CfDeployWebhook, CosignIdentityPattern, DeployAuditEvent, DeployPropagated, OciImageRef,
+};
 
 /// Core trait for the deploy verify gate.
 ///
@@ -106,8 +108,5 @@ pub trait DeployVerifier: Send + Sync {
     /// # Errors
     ///
     /// Returns [`DeployVerifyError::AuditEmitFailed`] on any persistence failure.
-    fn emit_audit_event(
-        &self,
-        event: DeployAuditEvent,
-    ) -> Result<(), DeployVerifyError>;
+    fn emit_audit_event(&self, event: DeployAuditEvent) -> Result<(), DeployVerifyError>;
 }

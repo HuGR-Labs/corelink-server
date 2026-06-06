@@ -15,11 +15,11 @@
 
 use std::sync::Arc;
 
-use corelink_rotation_adapters::{AssetClass, ByokRotationAdapter, KeyHandle, KeyState};
 use corelink_ops::rotation::worker::{
-    InMemoryRotationStateMachine, RotationMetrics, RotationOrchestrator, RotationOutcome,
-    is_valid_read_state, is_valid_write_state,
+    is_valid_read_state, is_valid_write_state, InMemoryRotationStateMachine, RotationMetrics,
+    RotationOrchestrator, RotationOutcome,
 };
+use corelink_rotation_adapters::{AssetClass, ByokRotationAdapter, KeyHandle, KeyState};
 
 fn main() {
     let tenant_id = "tenant-enterprise-001";
@@ -43,7 +43,10 @@ fn main() {
         RotationOutcome::Ok { handle, .. } => handle,
         other => panic!("{other:?}"),
     };
-    println!("[BYOK] Generated key_id={} state={}", key_pending.key_id, key_pending.state);
+    println!(
+        "[BYOK] Generated key_id={} state={}",
+        key_pending.key_id, key_pending.state
+    );
 
     // First rotation: key1 Active.
     let prom = orch.promote(&key_pending, t0 + 1).expect("promote failed");
@@ -51,7 +54,10 @@ fn main() {
         RotationOutcome::Ok { handle, .. } => handle,
         other => panic!("{other:?}"),
     };
-    println!("[BYOK] Promoted key1_id={} state={}", key1_active.key_id, key1_active.state);
+    println!(
+        "[BYOK] Promoted key1_id={} state={}",
+        key1_active.key_id, key1_active.state
+    );
     println!(
         "[BYOK] Overlap window: {}s ({} days; customer notification window)",
         AssetClass::Byok.overlap_seconds(),
@@ -65,7 +71,9 @@ fn main() {
         RotationOutcome::Ok { handle, .. } => handle,
         other => panic!("{other:?}"),
     };
-    let prom2 = orch.promote(&key2_pending, t1 + 1).expect("promote 2 failed");
+    let prom2 = orch
+        .promote(&key2_pending, t1 + 1)
+        .expect("promote 2 failed");
     let key2_active = match prom2 {
         RotationOutcome::Ok { handle, .. } => handle,
         other => panic!("{other:?}"),
@@ -82,13 +90,15 @@ fn main() {
     assert!(is_valid_read_state(key1_overlap.state));
     assert!(is_valid_read_state(key2_active.state));
     assert!(!is_valid_write_state(key1_overlap.state)); // old: reads only
-    assert!(is_valid_write_state(key2_active.state));   // new: reads + writes
+    assert!(is_valid_write_state(key2_active.state)); // new: reads + writes
     println!("[BYOK] 7d overlap: key1 (reads only) + key2 (reads + writes) — INV-KEY-OVERLAP ✓");
 
     // Scenario: customer revokes old CMK mid-overlap → early retire.
     // INV-BYOK-CRYPTO-SOVEREIGNTY: intentional customer-triggered inaccessibility.
     let t_revoke = t1 + 3 * 24 * 3_600 * 1_000; // 3d into 7d overlap
-    let retired = orch.retire(&key1_overlap, t_revoke).expect("early retire failed");
+    let retired = orch
+        .retire(&key1_overlap, t_revoke)
+        .expect("early retire failed");
     let retired_key = match retired {
         RotationOutcome::Ok { handle, .. } => handle,
         other => panic!("{other:?}"),
@@ -99,6 +109,9 @@ fn main() {
     );
 
     println!("[BYOK] State machine records: {}", sm.len());
-    println!("[BYOK] Overlap observations: {:?}", metrics.overlap_observations(AssetClass::Byok));
+    println!(
+        "[BYOK] Overlap observations: {:?}",
+        metrics.overlap_observations(AssetClass::Byok)
+    );
     let _ = key2_active; // active key continues serving writes
 }

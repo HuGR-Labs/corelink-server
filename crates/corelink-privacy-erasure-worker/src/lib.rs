@@ -236,8 +236,8 @@ pub use event::{
     PSEUDONYMIZED_BACKEND_COUNT, VERIFICATION_SLA_HOURS, VERIFICATION_SLA_MS,
 };
 pub use idempotency::{
-    ErasureIdempotencyLedger, FailingErasureIdempotencyLedger,
-    InMemoryErasureIdempotencyLedger, LedgerOutcome,
+    ErasureIdempotencyLedger, FailingErasureIdempotencyLedger, InMemoryErasureIdempotencyLedger,
+    LedgerOutcome,
 };
 pub use orchestrator::{ErasureWorker, InMemoryErasureWorker};
 pub use report::{
@@ -245,9 +245,7 @@ pub use report::{
     InMemoryReportSigner, ReportSignature, ReportSigner, ReportSignerKey, REPORT_OBJECT_KEY_PREFIX,
     REPORT_SIGNATURE_LEN,
 };
-pub use statuspage_publish::{
-    aggregate_24h_window, p95_of_observations, DsrCompletionStats,
-};
+pub use statuspage_publish::{aggregate_24h_window, p95_of_observations, DsrCompletionStats};
 pub use verification_job::{
     dsr_resolution_hours, elapsed_dsr_ids, within_sla_window, VerificationJob, VerificationOutcome,
     METRIC_DSR_RESOLUTION_HOURS, SLA_WINDOW_HOURS,

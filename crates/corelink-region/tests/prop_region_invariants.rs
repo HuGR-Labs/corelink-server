@@ -53,11 +53,8 @@ fn proptest_cases() -> u32 {
         .unwrap_or(10_000)
 }
 
-const ALL_JURISDICTIONS: &[DoJurisdiction] = &[
-    DoJurisdiction::None,
-    DoJurisdiction::Eu,
-    DoJurisdiction::Us,
-];
+const ALL_JURISDICTIONS: &[DoJurisdiction] =
+    &[DoJurisdiction::None, DoJurisdiction::Eu, DoJurisdiction::Us];
 
 fn pick_region(rng: &mut ChaCha20Rng) -> Region {
     Region::ALL[rng.random_range(0..Region::ALL.len())]
@@ -115,10 +112,7 @@ fn adversarial_label_sample(rng: &mut ChaCha20Rng) -> (String, bool) {
             let c: u16 = rng.random();
             let d: u16 = rng.random();
             let e: u64 = rng.random_range(0..(1u64 << 48));
-            (
-                format!("{a:08x}-{b:04x}-{c:04x}-{d:04x}-{e:012x}"),
-                true,
-            )
+            (format!("{a:08x}-{b:04x}-{c:04x}-{d:04x}-{e:012x}"), true)
         }
         3 => {
             // Adversarial: email.
@@ -384,8 +378,6 @@ fn raw_identifier_classifier_pinned() {
     ));
     assert!(looks_like_raw_tenant_identifier("user42@example.com"));
     assert!(looks_like_raw_tenant_identifier("tenant_9999"));
-    assert!(!looks_like_raw_tenant_identifier(
-        "a3b4c5d6e7f80123"
-    ));
+    assert!(!looks_like_raw_tenant_identifier("a3b4c5d6e7f80123"));
     assert!(!looks_like_raw_tenant_identifier(""));
 }

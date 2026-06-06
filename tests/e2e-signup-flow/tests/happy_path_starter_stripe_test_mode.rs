@@ -60,7 +60,9 @@ fn run_in_memory() {
         .unwrap();
     let (session_id, _checkout_url) = match receipt {
         TierSelectionReceipt::CheckoutRedirect {
-            session_id, checkout_url, ..
+            session_id,
+            checkout_url,
+            ..
         } => (session_id, checkout_url),
         other => panic!("expected CheckoutRedirect, got {other:?}"),
     };
@@ -159,10 +161,13 @@ fn r3_1_happy_path_starter_live_stripe() {
     // Build a live Stripe client via env. The harness does not log
     // any secret material — both `sk_…` (direct) and `hugrw_…`
     // (wallet) tokens are held in redacting SecretStrings.
-    let client = corelink_stripe_real::StripeRealClient::from_env()
-        .expect("stripe live client build");
+    let client =
+        corelink_stripe_real::StripeRealClient::from_env().expect("stripe live client build");
     let base = client.effective_base_url();
-    assert!(base.starts_with("https://"), "base URL must be HTTPS: {base}");
+    assert!(
+        base.starts_with("https://"),
+        "base URL must be HTTPS: {base}"
+    );
     if mode == "wallet-broker" || mode == "wallet_broker" {
         assert!(
             base.contains("/_wallet/proxy/"),

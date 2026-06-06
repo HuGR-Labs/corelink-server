@@ -16,8 +16,8 @@ mod common;
 use common::{build_service, ctx, registry_three_locales};
 
 use corelink_dpa_acceptance::{
-    notice_text_hash, ConsentProofPayload, DpaAcceptanceError, DpaAcceptanceRequest,
-    DpaAuditEvent, LocaleBcp47,
+    notice_text_hash, ConsentProofPayload, DpaAcceptanceError, DpaAcceptanceRequest, DpaAuditEvent,
+    LocaleBcp47,
 };
 use proptest::prelude::*;
 
@@ -96,7 +96,9 @@ fn locale_mismatch_audit_carries_both_locales() {
     let events = svc.audit_sink().snapshot();
     assert_eq!(events.len(), 1);
     match &events[0] {
-        DpaAuditEvent::LocaleMismatch { server, payload, .. } => {
+        DpaAuditEvent::LocaleMismatch {
+            server, payload, ..
+        } => {
             assert_eq!(server, "pt-BR");
             assert_eq!(payload, "en-US");
         }

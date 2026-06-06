@@ -132,13 +132,11 @@ pub const EVENT_TYPE_PILOT_RESERVED: &str = "corelink.signup.pilot_reserved.v1";
 
 /// Canonical CloudEvents-1.0 `type` literal for the token-rejected
 /// audit emit (forged HMAC / malformed / expired token).
-pub const EVENT_TYPE_PILOT_TOKEN_REJECTED: &str =
-    "corelink.signup.pilot_token_rejected.v1";
+pub const EVENT_TYPE_PILOT_TOKEN_REJECTED: &str = "corelink.signup.pilot_token_rejected.v1";
 
 /// Canonical CloudEvents-1.0 `type` literal for the rate-limit-deny
 /// audit emit.
-pub const EVENT_TYPE_PILOT_RATE_LIMITED: &str =
-    "corelink.signup.pilot_rate_limited.v1";
+pub const EVENT_TYPE_PILOT_RATE_LIMITED: &str = "corelink.signup.pilot_rate_limited.v1";
 
 /// Pilot signup token TTL — tokens older than this (by mint
 /// timestamp) are rejected as expired. 14 days mirrors the operator
@@ -277,8 +275,8 @@ pub fn parse_and_verify_pilot_token(
     // 3) decode the signature hex.
     let sig_bytes = hex::decode(sig_hex).map_err(|_| TokenError::BadSignatureEncoding)?;
     // 4) compute the expected HMAC over the body.
-    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key)
-        .map_err(|_| TokenError::SignatureMismatch)?;
+    let mut mac =
+        <Hmac<Sha256> as Mac>::new_from_slice(key).map_err(|_| TokenError::SignatureMismatch)?;
     mac.update(body.as_bytes());
     let expected = mac.finalize().into_bytes();
     // 5) constant-time compare. Bail on length mismatch first
@@ -323,8 +321,7 @@ pub fn mint_pilot_token(
         return Err("rand_hex16 must be 16 lower-case ASCII hex chars");
     }
     let body = format!("pilot_{}_{}_{}", env.as_str(), minted_at_ms, rand_hex16);
-    let mut mac =
-        <Hmac<Sha256> as Mac>::new_from_slice(key).map_err(|_| "hmac key invalid")?;
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key).map_err(|_| "hmac key invalid")?;
     mac.update(body.as_bytes());
     let sig = mac.finalize().into_bytes();
     Ok(format!("{body}.{}", hex::encode(sig)))
@@ -359,9 +356,7 @@ impl PilotSignupBody {
         if !self.email.contains('@') {
             return Err("email");
         }
-        if self.company_name.is_empty()
-            || self.company_name.chars().count() > MAX_FIELD_LEN
-        {
+        if self.company_name.is_empty() || self.company_name.chars().count() > MAX_FIELD_LEN {
             return Err("company_name");
         }
         if self.tier_hint.is_empty() || self.tier_hint.chars().count() > MAX_FIELD_LEN {
@@ -513,15 +508,9 @@ impl SignupAuditSink for InMemorySignupAuditSink {
 
 /// Fail-CLOSED audit-emit helper. Mirrors `audit_export::emit_or_503`.
 #[must_use]
-pub fn emit_or_503(
-    sink: &Arc<dyn SignupAuditSink>,
-    row: SignupAuditRow,
-) -> Option<Response> {
+pub fn emit_or_503(sink: &Arc<dyn SignupAuditSink>, row: SignupAuditRow) -> Option<Response> {
     if sink.emit(row).is_err() {
-        return Some(
-            (StatusCode::SERVICE_UNAVAILABLE, "audit pipeline closed")
-                .into_response(),
-        );
+        return Some((StatusCode::SERVICE_UNAVAILABLE, "audit pipeline closed").into_response());
     }
     None
 }
@@ -605,8 +594,7 @@ impl SignupStore for InMemorySignupStore {
             .lock()
             .map_err(|_| "signup store mutex poisoned")?;
         for existing in g.iter() {
-            if existing.email == record.email || existing.token_id == record.token_id
-            {
+            if existing.email == record.email || existing.token_id == record.token_id {
                 return Ok(existing.clone());
             }
         }
@@ -670,8 +658,7 @@ impl core::fmt::Debug for SignupRouteState {
 
 /// Canonical activation-URL base (production wiring). Tests inject a
 /// fixture base via [`build_state_with_key`].
-pub const DEFAULT_ACTIVATION_URL_BASE: &str =
-    "https://signup.corelink.humangr.com/pilot/activate";
+pub const DEFAULT_ACTIVATION_URL_BASE: &str = "https://signup.corelink.humangr.com/pilot/activate";
 
 /// Construct the native dev/CI route state with the given HMAC key.
 ///
@@ -756,10 +743,15 @@ async fn handle_pilot_signup(
     //    token verify so an adversary cannot probe the HMAC space with
     //    high QPS.
     let rl_key = BucketKey::per_ip(PRE_AUTH_TENANT, client_ip.clone());
-    match state.rate_limiter.try_acquire(PRE_AUTH_TENANT, rl_key, 1, now_ms) {
+    match state
+        .rate_limiter
+        .try_acquire(PRE_AUTH_TENANT, rl_key, 1, now_ms)
+    {
         Ok(outcome) => match outcome.decision {
             RateLimitDecision::Allow { .. } => {}
-            RateLimitDecision::Deny429 { retry_after_secs, .. } => {
+            RateLimitDecision::Deny429 {
+                retry_after_secs, ..
+            } => {
                 let audit_row = SignupAuditRow {
                     event_type: EVENT_TYPE_PILOT_RATE_LIMITED.to_owned(),
                     tenant_id: None,
@@ -785,8 +777,7 @@ async fn handle_pilot_signup(
             }
         },
         Err(_) => {
-            return (StatusCode::SERVICE_UNAVAILABLE, "rate limiter unavailable")
-                .into_response();
+            return (StatusCode::SERVICE_UNAVAILABLE, "rate limiter unavailable").into_response();
         }
     }
 
@@ -842,15 +833,18 @@ async fn handle_pilot_signup(
     let stored = match state.store.insert_or_existing(record) {
         Ok(r) => r,
         Err(_) => {
-            return (StatusCode::SERVICE_UNAVAILABLE, "signup store unavailable")
-                .into_response();
+            return (StatusCode::SERVICE_UNAVAILABLE, "signup store unavailable").into_response();
         }
     };
 
     // 5) Audit emit BEFORE we serialise the response body. The
     //    `pilot_reserved.v1` emit fails CLOSED.
-    let exit_status =
-        if stored.id == signup_id { "reserved" } else { "duplicate" }.to_owned();
+    let exit_status = if stored.id == signup_id {
+        "reserved"
+    } else {
+        "duplicate"
+    }
+    .to_owned();
     let audit_row = SignupAuditRow {
         event_type: EVENT_TYPE_PILOT_RESERVED.to_owned(),
         tenant_id: Some(stored.tenant_id),
@@ -899,15 +893,10 @@ mod tests {
 
     #[test]
     fn mint_then_verify_roundtrips() {
-        let token = mint_pilot_token(
-            TokenEnv::Prod,
-            fixed_now_ms(),
-            "0123456789abcdef",
-            TEST_KEY,
-        )
-        .unwrap();
-        let parsed = parse_and_verify_pilot_token(&token, TEST_KEY, fixed_now_ms())
-            .expect("verify");
+        let token =
+            mint_pilot_token(TokenEnv::Prod, fixed_now_ms(), "0123456789abcdef", TEST_KEY).unwrap();
+        let parsed =
+            parse_and_verify_pilot_token(&token, TEST_KEY, fixed_now_ms()).expect("verify");
         assert_eq!(parsed.env, TokenEnv::Prod);
         assert_eq!(parsed.minted_at_ms, fixed_now_ms());
         assert_eq!(parsed.token_id, "0123456789abcdef");
@@ -934,13 +923,8 @@ mod tests {
 
     #[test]
     fn wrong_key_rejected() {
-        let token = mint_pilot_token(
-            TokenEnv::Prod,
-            fixed_now_ms(),
-            "ffffffff00000000",
-            TEST_KEY,
-        )
-        .unwrap();
+        let token =
+            mint_pilot_token(TokenEnv::Prod, fixed_now_ms(), "ffffffff00000000", TEST_KEY).unwrap();
         let err = parse_and_verify_pilot_token(&token, b"other-key-zzzz!!", fixed_now_ms())
             .expect_err("wrong key rejected");
         assert_eq!(err, TokenError::SignatureMismatch);
@@ -950,12 +934,11 @@ mod tests {
     fn expired_token_rejected() {
         let minted_at_ms = fixed_now_ms();
         let token =
-            mint_pilot_token(TokenEnv::Prod, minted_at_ms, "0000000011111111", TEST_KEY)
-                .unwrap();
+            mint_pilot_token(TokenEnv::Prod, minted_at_ms, "0000000011111111", TEST_KEY).unwrap();
         // Advance well beyond the TTL.
         let later = minted_at_ms + PILOT_TOKEN_TTL_MS + 1;
-        let err = parse_and_verify_pilot_token(&token, TEST_KEY, later)
-            .expect_err("expired rejected");
+        let err =
+            parse_and_verify_pilot_token(&token, TEST_KEY, later).expect_err("expired rejected");
         assert_eq!(err, TokenError::Expired);
     }
 
@@ -965,8 +948,7 @@ mod tests {
         // still verifies (operator may pre-mint for a launch).
         let minted_at_ms = fixed_now_ms() + 3_600_000;
         let token =
-            mint_pilot_token(TokenEnv::Prod, minted_at_ms, "aaaaaaaabbbbbbbb", TEST_KEY)
-                .unwrap();
+            mint_pilot_token(TokenEnv::Prod, minted_at_ms, "aaaaaaaabbbbbbbb", TEST_KEY).unwrap();
         let parsed = parse_and_verify_pilot_token(&token, TEST_KEY, fixed_now_ms())
             .expect("future-mint accepted");
         assert_eq!(parsed.minted_at_ms, minted_at_ms);

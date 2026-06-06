@@ -130,7 +130,10 @@ impl HttpVerifyOutcome {
     /// the same code in `main.rs`; this helper exists for lib
     /// consumers (integration tests + downstream SDKs that wrap the
     /// `run_verify_ndjson_http` call).
-    #[allow(dead_code, reason = "binary path uses CliError::AuditExportAborted; this helper is for lib consumers")]
+    #[allow(
+        dead_code,
+        reason = "binary path uses CliError::AuditExportAborted; this helper is for lib consumers"
+    )]
     #[must_use]
     pub fn exit_code(&self) -> i32 {
         match self {
@@ -403,9 +406,7 @@ where
 /// Tiny `frame()` shim — `http_body::Body::frame()` is on the trait
 /// but requires a `Pin<&mut Self>` and an async cradle; this helper
 /// keeps the call-site tidy + surfaces frame errors as `CliError`.
-async fn poll_next_frame<B>(
-    body: &mut Pin<Box<B>>,
-) -> Option<Result<Frame<Bytes>, CliError>>
+async fn poll_next_frame<B>(body: &mut Pin<Box<B>>) -> Option<Result<Frame<Bytes>, CliError>>
 where
     B: Body<Data = Bytes> + ?Sized,
     B::Error: std::fmt::Display,
@@ -444,7 +445,10 @@ impl HeaderNameLowerExt for HeaderName {
 ///
 /// Returns [`CliError::Json`] if JSON serialisation fails (should be
 /// unreachable — the outcome shape is pure POD).
-#[allow(dead_code, reason = "exposed for lib + future binary use; binary today emits inside run_verify_ndjson_http")]
+#[allow(
+    dead_code,
+    reason = "exposed for lib + future binary use; binary today emits inside run_verify_ndjson_http"
+)]
 pub fn emit_outcome(outcome: &HttpVerifyOutcome, fmt: OutputFormat) -> Result<(), CliError> {
     let f = Formatter::new(fmt);
     match outcome {
@@ -474,7 +478,8 @@ mod tests {
     /// diagnostic string round-trips the wave-18 wire shape verbatim.
     #[test]
     fn trailer_payload_parses_and_diagnostic_round_trips() {
-        let payload_json = r#"{"break_at_seq":42,"break_at_chunk":3,"observed":"deadbeef","expected":"cafef00d"}"#;
+        let payload_json =
+            r#"{"break_at_seq":42,"break_at_chunk":3,"observed":"deadbeef","expected":"cafef00d"}"#;
         let p: AbortTrailerPayload = serde_json::from_str(payload_json).unwrap();
         assert_eq!(p.break_at_seq, 42);
         assert_eq!(p.break_at_chunk, 3);

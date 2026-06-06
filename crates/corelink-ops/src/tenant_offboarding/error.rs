@@ -68,9 +68,7 @@ pub enum TenantOffboardingError {
     /// The requested `(from, trigger)` transition is not a legal
     /// transition in the canonical state machine table. The error
     /// carries both for forensic clarity.
-    #[error(
-        "tenant offboarding illegal transition: from={from} trigger={trigger}"
-    )]
+    #[error("tenant offboarding illegal transition: from={from} trigger={trigger}")]
     IllegalTransition {
         /// Source state at the time of the rejected request.
         from: TenantOffboardingState,

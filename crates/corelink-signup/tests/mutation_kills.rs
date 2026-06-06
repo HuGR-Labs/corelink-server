@@ -18,22 +18,26 @@
 
 use corelink_signup::{
     audit::{
-        canonical_signup_audit_event_strings, SignupAuditEventType, SignupAuditRecord,
-        SignupAuditSink, InMemorySignupAuditSink,
+        canonical_signup_audit_event_strings, InMemorySignupAuditSink, SignupAuditEventType,
+        SignupAuditRecord, SignupAuditSink,
     },
-    billing::{BillingClient, BillingError, InMemoryBillingClient, StripeCustomerId, StripeOutageBillingClient},
+    billing::{
+        BillingClient, BillingError, InMemoryBillingClient, StripeCustomerId,
+        StripeOutageBillingClient,
+    },
     correlation::CorrelationId,
     idempotency::IdempotencyKey,
     orchestrator::{InMemoryProvisionRecord, ProvisionRecord},
     outcome::{canonical_orchestration_steps, OrchestrationStep},
+    pat::{PatHash, ShownOnceToken},
     region::{canonical_regions, Bcp47Locale, PrimaryRegion},
+    signup_schema_version,
     store::{
-        AtomicSignupStore, DpaPendingRow, FailingAtomicSignupStore, PatRow,
-        StorageError, TenantRow, UsageCounterRow,
+        AtomicSignupStore, DpaPendingRow, FailingAtomicSignupStore, PatRow, StorageError,
+        TenantRow, UsageCounterRow,
     },
     tenant::{SignupId, TenantId, UserEmailHash},
-    pat::{PatHash, ShownOnceToken},
-    signup_schema_version, FIRST_PAT_EXPIRY_SECONDS, WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS,
+    FIRST_PAT_EXPIRY_SECONDS, WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS,
 };
 
 // =====================================================================
@@ -197,11 +201,7 @@ fn signup_newtype_as_str_and_display_round_trip() {
         ($T:ty, $val:expr) => {{
             let v = <$T>::new($val);
             assert_eq!(v.as_str(), $val, concat!(stringify!($T), "::as_str"));
-            assert_eq!(
-                format!("{}", v),
-                $val,
-                concat!(stringify!($T), "::Display")
-            );
+            assert_eq!(format!("{}", v), $val, concat!(stringify!($T), "::Display"));
             assert!(!v.as_str().is_empty());
         }};
     }
@@ -458,8 +458,14 @@ fn in_memory_provision_record_mints_distinct_monotonic_ids() {
         let s = rec.mint_signup_id();
         let p = rec.mint_first_pat_hash(&t);
         let tok = rec.mint_shown_once_token();
-        assert!(tenants.insert(t.as_str().to_string()), "tenant id duplicate");
-        assert!(signups.insert(s.as_str().to_string()), "signup id duplicate");
+        assert!(
+            tenants.insert(t.as_str().to_string()),
+            "tenant id duplicate"
+        );
+        assert!(
+            signups.insert(s.as_str().to_string()),
+            "signup id duplicate"
+        );
         assert!(pats.insert(p.as_str().to_string()), "pat hash duplicate");
         assert!(tokens.insert(tok.as_str().to_string()), "token duplicate");
     }

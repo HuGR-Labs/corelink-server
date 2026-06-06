@@ -442,7 +442,10 @@ fn hard_upper_bound_pinned_at_30d_across_asset_classes() {
             HARD_UPPER_BOUND_SECONDS,
             "{c:?} hard_upper_bound != 30d"
         );
-        assert!(c.overlap_seconds() <= HARD_UPPER_BOUND_SECONDS, "{c:?} overlap exceeds 30d");
+        assert!(
+            c.overlap_seconds() <= HARD_UPPER_BOUND_SECONDS,
+            "{c:?} overlap exceeds 30d"
+        );
         assert!(c.overlap_seconds() > 0, "{c:?} overlap is zero");
     }
 }

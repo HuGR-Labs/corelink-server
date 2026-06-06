@@ -43,9 +43,8 @@ use super::shadow_factory::ShadowSinkFactory;
 use super::state::build_state;
 use super::tests_common::RecordingShadowFactory;
 use super::types::{
-    AnalyticsAuditRow, EventCountQuery, RequestPrelude, TimelineQuery,
-    EVENT_TYPE_ANALYTICS_QUERY, REGION_SOURCE_FALLBACK, REGION_SOURCE_PRELUDE,
-    REQUEST_PRELUDE_MISSING_EXIT, TENANT_ID_HEADER,
+    AnalyticsAuditRow, EventCountQuery, RequestPrelude, TimelineQuery, EVENT_TYPE_ANALYTICS_QUERY,
+    REGION_SOURCE_FALLBACK, REGION_SOURCE_PRELUDE, REQUEST_PRELUDE_MISSING_EXIT, TENANT_ID_HEADER,
 };
 
 /// Wave-27 closure pin: when a `RequestPrelude` extension is attached
@@ -115,8 +114,7 @@ async fn request_prelude_missing_falls_back_with_warn_and_audit() {
     let mut state = build_state(factory);
 
     // Capture-sink swap so we can snapshot the emitted rows.
-    let capture: Arc<InMemoryAnalyticsAuditSink> =
-        Arc::new(InMemoryAnalyticsAuditSink::new());
+    let capture: Arc<InMemoryAnalyticsAuditSink> = Arc::new(InMemoryAnalyticsAuditSink::new());
     state.audit_sink = capture.clone() as Arc<dyn AnalyticsAuditSink>;
 
     let mut headers = HeaderMap::new();
@@ -194,8 +192,7 @@ async fn request_prelude_missing_emit_pinned_for_timeline_route() {
     let factory: Arc<dyn ShadowSinkFactory> = recording.clone();
     let mut state = build_state(factory);
 
-    let capture: Arc<InMemoryAnalyticsAuditSink> =
-        Arc::new(InMemoryAnalyticsAuditSink::new());
+    let capture: Arc<InMemoryAnalyticsAuditSink> = Arc::new(InMemoryAnalyticsAuditSink::new());
     state.audit_sink = capture.clone() as Arc<dyn AnalyticsAuditSink>;
 
     let mut headers = HeaderMap::new();
@@ -241,9 +238,8 @@ async fn request_prelude_missing_emit_pinned_for_timeline_route() {
 
     let rows = capture.snapshot().expect("snapshot");
     assert!(
-        rows.iter().any(|r| {
-            r.exit_status == REQUEST_PRELUDE_MISSING_EXIT && r.endpoint == "timeline"
-        }),
+        rows.iter()
+            .any(|r| { r.exit_status == REQUEST_PRELUDE_MISSING_EXIT && r.endpoint == "timeline" }),
         "wave-27: timeline route MUST emit `request_prelude_missing` on stale-prelude fallback; \
          saw {:?}",
         rows.iter()
@@ -266,8 +262,7 @@ async fn audit_analytics_consumes_prelude_region_without_extra_d1_round_trip() {
     let mut state = build_state(factory);
 
     // Capture-sink swap so we can introspect emitted rows.
-    let capture: Arc<InMemoryAnalyticsAuditSink> =
-        Arc::new(InMemoryAnalyticsAuditSink::new());
+    let capture: Arc<InMemoryAnalyticsAuditSink> = Arc::new(InMemoryAnalyticsAuditSink::new());
     state.audit_sink = capture.clone() as Arc<dyn AnalyticsAuditSink>;
 
     let mut headers = HeaderMap::new();
@@ -321,10 +316,7 @@ async fn audit_analytics_consumes_prelude_region_without_extra_d1_round_trip() {
     // `ok` emit (no `request_prelude_missing` row since the
     // prelude was present and matched the tenant).
     let rows = capture.snapshot().expect("snapshot");
-    let ok_rows: Vec<&AnalyticsAuditRow> = rows
-        .iter()
-        .filter(|r| r.exit_status == "ok")
-        .collect();
+    let ok_rows: Vec<&AnalyticsAuditRow> = rows.iter().filter(|r| r.exit_status == "ok").collect();
     assert_eq!(
         ok_rows.len(),
         1,
@@ -360,8 +352,7 @@ async fn audit_analytics_fallback_path_tags_region_source_fallback() {
     let factory: Arc<dyn ShadowSinkFactory> = recording.clone();
     let mut state = build_state(factory);
 
-    let capture: Arc<InMemoryAnalyticsAuditSink> =
-        Arc::new(InMemoryAnalyticsAuditSink::new());
+    let capture: Arc<InMemoryAnalyticsAuditSink> = Arc::new(InMemoryAnalyticsAuditSink::new());
     state.audit_sink = capture.clone() as Arc<dyn AnalyticsAuditSink>;
 
     let mut headers = HeaderMap::new();
@@ -381,10 +372,7 @@ async fn audit_analytics_fallback_path_tags_region_source_fallback() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let rows = capture.snapshot().expect("snapshot");
-    let ok_rows: Vec<&AnalyticsAuditRow> = rows
-        .iter()
-        .filter(|r| r.exit_status == "ok")
-        .collect();
+    let ok_rows: Vec<&AnalyticsAuditRow> = rows.iter().filter(|r| r.exit_status == "ok").collect();
     assert_eq!(ok_rows.len(), 1);
     assert_eq!(
         ok_rows[0].region_source.as_deref(),

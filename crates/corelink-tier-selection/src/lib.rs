@@ -113,8 +113,8 @@ pub use ledger::{
 };
 pub use stripe::{
     compute_stripe_signature, parse_stripe_signature_header, verify_stripe_signature,
-    CheckoutSessionRequest, CheckoutSessionResponse, InMemoryStripeClient, StripeCheckoutSessionCompletedEvent,
-    StripeClient, STRIPE_REPLAY_WINDOW_MS,
+    CheckoutSessionRequest, CheckoutSessionResponse, InMemoryStripeClient,
+    StripeCheckoutSessionCompletedEvent, StripeClient, STRIPE_REPLAY_WINDOW_MS,
 };
 pub use tenant::{StripeCustomerId, TenantCtx, TenantId};
 pub use tier::{canonical_tiers, TierKind};

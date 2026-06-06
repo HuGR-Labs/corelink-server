@@ -29,12 +29,9 @@ use corelink_ratelimit::audit::{
 use corelink_ratelimit::bucket::{try_acquire, BucketDecision, TokenBucketState};
 use corelink_ratelimit::config::RateLimitConfig;
 use corelink_ratelimit::key::{BucketKey, KeyDimension};
-use corelink_ratelimit::limiter::{
-    InMemoryTokenBucketRateLimiter, RateLimitDecision, RateLimiter,
-};
+use corelink_ratelimit::limiter::{InMemoryTokenBucketRateLimiter, RateLimitDecision, RateLimiter};
 use corelink_ratelimit::metrics::{
-    InMemoryRateLimitMetrics, RateLimitMetricKind, RateLimitMetricsObserver,
-    RateLimitResultLabel,
+    InMemoryRateLimitMetrics, RateLimitMetricKind, RateLimitMetricsObserver, RateLimitResultLabel,
 };
 use uuid::Uuid;
 
@@ -82,10 +79,13 @@ fn refilled_clamps_strictly_negative_projected_to_zero() {
     // mutate it directly.
     let mut s = TokenBucketState::new_full(100, 10, 1_000_000);
     s.available_tokens = -1.0; // Force negative — defensive guard input.
-    // refilled() must return 0.0 (clamped); if `<` mutated to `==`
-    // a tiny non-zero negative survives.
+                               // refilled() must return 0.0 (clamped); if `<` mutated to `==`
+                               // a tiny non-zero negative survives.
     let r = s.refilled(1_000_000);
-    assert_eq!(r, 0.0, "refilled must zero-clamp strictly-negative projected");
+    assert_eq!(
+        r, 0.0,
+        "refilled must zero-clamp strictly-negative projected"
+    );
 }
 
 // =====================================================================
@@ -122,7 +122,9 @@ fn try_acquire_deny_retry_after_uses_subtraction_in_needed() {
     // wait_secs = ceil(8 / 1.0) = 8 → clamp to [1, 3600] → 8.
     let decision = try_acquire(state, cost, 1_000_000, &cfg);
     match decision {
-        BucketDecision::Deny429 { retry_after_secs, .. } => {
+        BucketDecision::Deny429 {
+            retry_after_secs, ..
+        } => {
             // Mutations to detect:
             //   `-` → `+`: needed = 10+2 = 12 → wait=12 → retry_after=12
             //   `-` → `/`: needed = 10/2 = 5  → wait=5  → retry_after=5
@@ -153,7 +155,9 @@ fn try_acquire_deny_retry_after_divides_needed_by_rate() {
     };
     let decision = try_acquire(state, 10, 1_000_000, &cfg);
     match decision {
-        BucketDecision::Deny429 { retry_after_secs, .. } => {
+        BucketDecision::Deny429 {
+            retry_after_secs, ..
+        } => {
             // `/` → `*` mutation: wait = ceil(10*2) = 20 → retry_after=20
             assert_eq!(
                 retry_after_secs, 5,
@@ -212,7 +216,9 @@ fn try_acquire_deny_uses_floor_when_wait_would_be_negative_or_nan() {
     };
     let decision = try_acquire(state, 200, 1_000_000, &cfg);
     match decision {
-        BucketDecision::Deny429 { retry_after_secs, .. } => {
+        BucketDecision::Deny429 {
+            retry_after_secs, ..
+        } => {
             // Floor=1 per knobs_for_arith_test. With `||` mutated to
             // `&&` we'd require BOTH is_nan AND <0.0 — NaN<0.0 is
             // false, so the floor branch wouldn't fire and wait_secs_f
@@ -247,8 +253,7 @@ fn try_acquire_deny_clamps_wait_above_hard_ceiling() {
     // Use a tiny ceiling so 1 cost at rate=1 still produces wait > ceiling.
     // floor=1, ceiling=2, cancel=86_400*7 (must be > ceiling per
     // with_overrides invariants).
-    let cfg = RateLimitConfig::with_overrides(1, 100, 1, 2, 86_400 * 7)
-        .expect("knobs");
+    let cfg = RateLimitConfig::with_overrides(1, 100, 1, 2, 86_400 * 7).expect("knobs");
     // Bucket with rate=1, available=0 → needed=10, wait=ceil(10/1)=10 >
     // ceiling=2 → clamp to 2.
     let state = TokenBucketState {
@@ -259,7 +264,9 @@ fn try_acquire_deny_clamps_wait_above_hard_ceiling() {
     };
     let decision = try_acquire(state, 10, 1_000_000, &cfg);
     match decision {
-        BucketDecision::Deny429 { retry_after_secs, .. } => {
+        BucketDecision::Deny429 {
+            retry_after_secs, ..
+        } => {
             // `>` → `==`: only clamp at exact ceiling, so wait=10 NOT
             //   clamped → retry_after=10 (then post-clamp `.min(ceiling)`
             //   still applies → 2). Hmm: the trailing `.min(ceiling)`
@@ -272,10 +279,7 @@ fn try_acquire_deny_clamps_wait_above_hard_ceiling() {
             // The combined `.min(ceiling)` post-clamp masks these
             // mutations behaviourally. We still pin the canonical
             // value the production path emits.
-            assert_eq!(
-                retry_after_secs, 2,
-                "wait > ceiling must clamp to ceiling"
-            );
+            assert_eq!(retry_after_secs, 2, "wait > ceiling must clamp to ceiling");
         }
         other => panic!("expected Deny429, got {:?}", other),
     }
@@ -342,8 +346,7 @@ fn limiter_debug_renders_non_empty_struct_name() {
 fn limiter_emits_bucket_refilled_when_watermark_advances() {
     let audit = Arc::new(InMemoryRateLimitAuditSink::new());
     let metrics = Arc::new(InMemoryRateLimitMetrics::new());
-    let limiter =
-        InMemoryTokenBucketRateLimiter::with_defaults(audit.clone(), metrics);
+    let limiter = InMemoryTokenBucketRateLimiter::with_defaults(audit.clone(), metrics);
     let tenant = Uuid::from_u128(0x42);
     let key = BucketKey::per_tenant(tenant);
 

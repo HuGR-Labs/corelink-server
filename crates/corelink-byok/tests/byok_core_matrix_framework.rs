@@ -16,7 +16,16 @@
 //! fail — enforces WI-S14-005 completion before S-14 can ship.
 
 #![forbid(unsafe_code)]
-#![allow(clippy::panic, clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::print_stdout, clippy::print_stderr)]
+#![allow(
+    clippy::panic,
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::print_stdout,
+    clippy::print_stderr
+)]
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -137,11 +146,7 @@ fn make_key_id(provider: KmsProviderKind, region: &str) -> KmsKeyId {
     }
 }
 
-async fn run_cell(
-    provider: &dyn KmsProvider,
-    op: Op,
-    is_pending: bool,
-) -> MatrixCellStatus {
+async fn run_cell(provider: &dyn KmsProvider, op: Op, is_pending: bool) -> MatrixCellStatus {
     if is_pending {
         return MatrixCellStatus::Pending;
     }
@@ -192,7 +197,15 @@ async fn run_cell(
             let original_dek_bytes = dek.bytes;
 
             // Put into cache (simulates write path).
-            cache.put(&wrapped, Dek { bytes: original_dek_bytes }).await.ok();
+            cache
+                .put(
+                    &wrapped,
+                    Dek {
+                        bytes: original_dek_bytes,
+                    },
+                )
+                .await
+                .ok();
 
             // Unwrap (simulates read path).
             let recovered = match provider.unwrap_dek(&wrapped).await {
@@ -281,7 +294,11 @@ async fn byok_matrix_16_combinations() {
     type ProviderEntry = (KmsProviderKind, bool, &'static str);
     let providers: Vec<ProviderEntry> = vec![
         (KmsProviderKind::AwsKms, false, "AWS KMS stub (WI-S14-004)"),
-        (KmsProviderKind::GcpKms, true, "GCP KMS (WI-S14-005 pending)"),
+        (
+            KmsProviderKind::GcpKms,
+            true,
+            "GCP KMS (WI-S14-005 pending)",
+        ),
         (
             KmsProviderKind::AzureKeyVault,
             true,
@@ -344,9 +361,6 @@ async fn byok_matrix_16_combinations() {
     );
 
     if !failures.is_empty() {
-        panic!(
-            "BYOK matrix failures:\n{}",
-            failures.join("\n")
-        );
+        panic!("BYOK matrix failures:\n{}", failures.join("\n"));
     }
 }

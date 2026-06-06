@@ -7,7 +7,6 @@
 //! `Debug`, `Display`, `Serialize`, or `Clone` so that key bytes never appear
 //! in logs, traces, or serialised payloads.
 
-
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zeroize::{Zeroize, ZeroizeOnDrop};

@@ -51,8 +51,7 @@ impl AnalyticsConfig {
         Self {
             per_metric_budget: CANONICAL_PER_METRIC_BUDGET,
             global_budget: CANONICAL_GLOBAL_BUDGET,
-            histogram_bucket_boundaries:
-                CANONICAL_HISTOGRAM_BUCKET_BOUNDARIES.to_vec(),
+            histogram_bucket_boundaries: CANONICAL_HISTOGRAM_BUCKET_BOUNDARIES.to_vec(),
             cardinality_approaching_pct: 0.80,
         }
     }
@@ -94,10 +93,7 @@ impl AnalyticsConfig {
     /// the in-memory test surface returns the canonical default
     /// uniformly.
     #[must_use]
-    pub const fn budget_for_metric(
-        &self,
-        _metric: RedMetricKind,
-    ) -> u64 {
+    pub const fn budget_for_metric(&self, _metric: RedMetricKind) -> u64 {
         self.per_metric_budget
     }
 
@@ -118,8 +114,7 @@ impl AnalyticsConfig {
         Self {
             per_metric_budget: per_metric,
             global_budget: global,
-            histogram_bucket_boundaries:
-                CANONICAL_HISTOGRAM_BUCKET_BOUNDARIES.to_vec(),
+            histogram_bucket_boundaries: CANONICAL_HISTOGRAM_BUCKET_BOUNDARIES.to_vec(),
             cardinality_approaching_pct: 0.80,
         }
     }
@@ -130,7 +125,6 @@ impl Default for AnalyticsConfig {
         Self::canonical()
     }
 }
-
 
 #[cfg(test)]
 #[allow(
@@ -148,9 +142,7 @@ mod tests {
         let c = AnalyticsConfig::canonical();
         assert_eq!(c.per_metric_budget(), 20_000);
         assert_eq!(c.global_budget(), 100_000);
-        assert!(
-            (c.cardinality_approaching_pct() - 0.80).abs() < 1e-9
-        );
+        assert!((c.cardinality_approaching_pct() - 0.80).abs() < 1e-9);
     }
 
     #[test]

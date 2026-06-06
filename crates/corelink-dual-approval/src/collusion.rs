@@ -166,7 +166,12 @@ impl Default for InMemoryCollusionStore {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
 
@@ -208,13 +213,8 @@ mod tests {
             .unwrap();
 
         // Op 3: caller=B, proposes approver=A → should REJECT (A ∈ {A, B})
-        let err = store
-            .check_collusion(tenant, a, 5_000)
-            .unwrap_err();
-        assert!(matches!(
-            err,
-            DualApprovalError::CollusionRotation { .. }
-        ));
+        let err = store.check_collusion(tenant, a, 5_000).unwrap_err();
+        assert!(matches!(err, DualApprovalError::CollusionRotation { .. }));
     }
 
     #[test]

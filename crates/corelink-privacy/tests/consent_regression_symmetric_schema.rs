@@ -5,11 +5,7 @@
 //! that both [`ConsentRecord`] and [`ConsentRevocationRecord`] carry the
 //! same [`ConsentProofPayload`] 6-field struct.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::panic,
-    reason = "test code"
-)]
+#![allow(clippy::unwrap_used, clippy::panic, reason = "test code")]
 
 use corelink_privacy::consent::schema::{ConsentProofPayload, LocaleBcp47};
 use corelink_privacy::consent::store::{ConsentRecord, ConsentRevocationRecord};

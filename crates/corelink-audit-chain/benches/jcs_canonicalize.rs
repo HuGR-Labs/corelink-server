@@ -25,9 +25,7 @@ use corelink_audit_chain::{
     chain::compute_canonical_bytes,
     event::{AuditEvent, AuditEventKind, ChainHash},
 };
-use criterion::{
-    black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput,
-};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use serde_json::json;
 use uuid::Uuid;
 

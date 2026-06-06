@@ -19,7 +19,9 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-use crate::audit::{GcAuditRecord, GcAuditSink, GcAuditSinkError, GcEventType, InMemoryGcAuditSink};
+use crate::audit::{
+    GcAuditRecord, GcAuditSink, GcAuditSinkError, GcEventType, InMemoryGcAuditSink,
+};
 use crate::metrics::InMemoryGcMetrics;
 use crate::region::GcRegion;
 use crate::run::{InMemoryGcRunStore, RunId};
@@ -27,8 +29,8 @@ use crate::run::{InMemoryGcRunStore, RunId};
 use super::tests::{digest, fresh, seed_ac_row, seed_blob, seed_run_in_reconcile};
 use super::{
     AcMetaReconcileRow, BlobMetaReconcileRow, BlobMetaRefcountStore, CountingReconcileClock,
-    InMemoryBlobMetaRefcountStore, InMemoryReconcilePhase, InMemoryRefcountSource,
-    ReconcileError, ReconcilePhase,
+    InMemoryBlobMetaRefcountStore, InMemoryReconcilePhase, InMemoryRefcountSource, ReconcileError,
+    ReconcilePhase,
 };
 
 #[test]
@@ -116,10 +118,7 @@ fn idempotent_re_run_no_op() {
     // Re-run emits one RefcountReconciled per row (10001 of them).
     let audit_count_after_second = audit.len();
     assert!(audit_count_after_second > audit_count_after_first);
-    assert_eq!(
-        audit.snapshot_of(GcEventType::RefcountAutoFixed).len(),
-        1
-    );
+    assert_eq!(audit.snapshot_of(GcEventType::RefcountAutoFixed).len(), 1);
 }
 
 #[test]
@@ -191,10 +190,7 @@ fn audit_emit_failure_blocks_refcount_mutation() {
     let err = phase.execute(rid, tenant, GcRegion::Sam).unwrap_err();
     assert!(matches!(err, ReconcileError::AuditEmissionFailed(_)));
     // stored_refcount UNCHANGED (mutation skipped on audit fail).
-    assert_eq!(
-        blob_meta.snapshot(tenant, &d).unwrap().stored_refcount,
-        0
-    );
+    assert_eq!(blob_meta.snapshot(tenant, &d).unwrap().stored_refcount, 0);
 }
 
 #[test]
@@ -279,10 +275,7 @@ fn orphan_r2_detected_no_refcount_mutation() {
     let result = phase.execute(rid, tenant, GcRegion::Sam).unwrap();
     assert_eq!(result.orphan_r2_count, 1);
     // refcount preserved.
-    assert_eq!(
-        blob_meta.snapshot(tenant, &d).unwrap().stored_refcount,
-        5
-    );
+    assert_eq!(blob_meta.snapshot(tenant, &d).unwrap().stored_refcount, 5);
     // No reconcile audit event.
     assert!(audit
         .snapshot_of(GcEventType::RefcountReconciled)
@@ -358,9 +351,7 @@ fn conditional_set_refcount_skips_on_concurrent_winner() {
             r2_present: true,
         },
     );
-    let fired = store
-        .conditional_set_refcount(tenant, &d, 0, 1)
-        .unwrap();
+    let fired = store.conditional_set_refcount(tenant, &d, 0, 1).unwrap();
     assert!(!fired);
     assert_eq!(store.snapshot(tenant, &d).unwrap().stored_refcount, 7);
 }
@@ -381,9 +372,7 @@ fn conditional_set_refcount_skips_on_soft_deleted() {
             r2_present: true,
         },
     );
-    let fired = store
-        .conditional_set_refcount(tenant, &d, 0, 1)
-        .unwrap();
+    let fired = store.conditional_set_refcount(tenant, &d, 0, 1).unwrap();
     assert!(!fired);
 }
 
@@ -401,9 +390,7 @@ fn conditional_set_refcount_fires_on_match() {
             r2_present: true,
         },
     );
-    let fired = store
-        .conditional_set_refcount(tenant, &d, 3, 4)
-        .unwrap();
+    let fired = store.conditional_set_refcount(tenant, &d, 3, 4).unwrap();
     assert!(fired);
     assert_eq!(store.snapshot(tenant, &d).unwrap().stored_refcount, 4);
 }

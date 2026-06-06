@@ -43,9 +43,7 @@
     reason = "test target"
 )]
 
-use corelink_billing::quota::cas::{
-    quota_cas_schema_version, MIGRATION_0012_QUOTA_CAS_ATTEMPTS,
-};
+use corelink_billing::quota::cas::{quota_cas_schema_version, MIGRATION_0012_QUOTA_CAS_ATTEMPTS};
 
 /// Strip `-- …` line comments before scanning.
 fn migration_sql_no_comments() -> String {
@@ -73,15 +71,9 @@ fn migration_is_non_empty_and_versioned() {
 fn create_table_and_indexes_are_idempotent() {
     let sql = migration_sql_no_comments();
     assert!(sql.contains("CREATE TABLE IF NOT EXISTS quota_cas_attempts"));
-    assert!(sql.contains(
-        "CREATE INDEX IF NOT EXISTS idx_quota_cas_attempts_tenant_now_ms"
-    ));
-    assert!(sql.contains(
-        "CREATE INDEX IF NOT EXISTS idx_quota_cas_attempts_race_detected"
-    ));
-    assert!(sql.contains(
-        "CREATE INDEX IF NOT EXISTS idx_quota_cas_attempts_denied_429"
-    ));
+    assert!(sql.contains("CREATE INDEX IF NOT EXISTS idx_quota_cas_attempts_tenant_now_ms"));
+    assert!(sql.contains("CREATE INDEX IF NOT EXISTS idx_quota_cas_attempts_race_detected"));
+    assert!(sql.contains("CREATE INDEX IF NOT EXISTS idx_quota_cas_attempts_denied_429"));
 }
 
 #[test]

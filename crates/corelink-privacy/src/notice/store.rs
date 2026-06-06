@@ -46,9 +46,7 @@ pub trait NoticeStateStore: core::fmt::Debug + Send + Sync {
     /// # Errors
     ///
     /// Returns [`NoticeStoreError`] on infrastructure failure.
-    fn current_published(
-        &self,
-    ) -> Result<Option<NoticePublicationState>, NoticeStoreError>;
+    fn current_published(&self) -> Result<Option<NoticePublicationState>, NoticeStoreError>;
 
     /// Persist the newly published version. Called AFTER audit emit succeeds
     /// (canonical `lookup → emit_audit → mutate_state` ordering per AC-008).
@@ -56,10 +54,7 @@ pub trait NoticeStateStore: core::fmt::Debug + Send + Sync {
     /// # Errors
     ///
     /// Returns [`NoticeStoreError`] on infrastructure failure.
-    fn set_published(
-        &self,
-        state: NoticePublicationState,
-    ) -> Result<(), NoticeStoreError>;
+    fn set_published(&self, state: NoticePublicationState) -> Result<(), NoticeStoreError>;
 }
 
 /// In-memory store for tests. Per-instance `Arc<Mutex<>>` (F-001).
@@ -87,9 +82,7 @@ impl InMemoryNoticeStateStore {
 }
 
 impl NoticeStateStore for InMemoryNoticeStateStore {
-    fn current_published(
-        &self,
-    ) -> Result<Option<NoticePublicationState>, NoticeStoreError> {
+    fn current_published(&self) -> Result<Option<NoticePublicationState>, NoticeStoreError> {
         self.state
             .lock()
             .map(|g| g.clone())
@@ -98,10 +91,7 @@ impl NoticeStateStore for InMemoryNoticeStateStore {
             })
     }
 
-    fn set_published(
-        &self,
-        state: NoticePublicationState,
-    ) -> Result<(), NoticeStoreError> {
+    fn set_published(&self, state: NoticePublicationState) -> Result<(), NoticeStoreError> {
         *self.state.lock().map_err(|_| NoticeStoreError::Internal {
             reason: "mutex poisoned".into(),
         })? = Some(state);
@@ -118,8 +108,8 @@ impl NoticeStateStore for InMemoryNoticeStateStore {
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
-    use super::*;
     use super::super::event::NoticeVersion;
+    use super::*;
 
     #[test]
     fn empty_store_returns_none() {

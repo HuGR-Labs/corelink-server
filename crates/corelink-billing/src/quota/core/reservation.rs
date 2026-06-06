@@ -183,10 +183,7 @@ pub trait ReservationTracker: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Backend transport errors.
-    fn sweep_expired(
-        &self,
-        now_ms: u64,
-    ) -> Result<u64, ReservationTrackerError>;
+    fn sweep_expired(&self, now_ms: u64) -> Result<u64, ReservationTrackerError>;
 
     /// Total active row count (cross-tenant; for cardinality assertions
     /// in tests + DASH-DEDUP "active reservations" widget).
@@ -249,9 +246,7 @@ impl ReservationTracker for InMemoryReservationTracker {
             created_at_ms,
         };
         let mut g = self.inner.lock().map_err(|_| {
-            ReservationTrackerError::Backend(
-                "reservation tracker mutex poisoned".to_string(),
-            )
+            ReservationTrackerError::Backend("reservation tracker mutex poisoned".to_string())
         })?;
         g.insert((tenant_id, reservation_id), row.clone());
         Ok(row)
@@ -263,9 +258,7 @@ impl ReservationTracker for InMemoryReservationTracker {
         reservation_id: ReservationId,
     ) -> Result<Option<ReservationRow>, ReservationTrackerError> {
         let mut g = self.inner.lock().map_err(|_| {
-            ReservationTrackerError::Backend(
-                "reservation tracker mutex poisoned".to_string(),
-            )
+            ReservationTrackerError::Backend("reservation tracker mutex poisoned".to_string())
         })?;
         Ok(g.remove(&(tenant_id, reservation_id)))
     }
@@ -276,9 +269,7 @@ impl ReservationTracker for InMemoryReservationTracker {
         reservation_id: ReservationId,
     ) -> Result<Option<ReservationRow>, ReservationTrackerError> {
         let g = self.inner.lock().map_err(|_| {
-            ReservationTrackerError::Backend(
-                "reservation tracker mutex poisoned".to_string(),
-            )
+            ReservationTrackerError::Backend("reservation tracker mutex poisoned".to_string())
         })?;
         Ok(g.get(&(tenant_id, reservation_id)).cloned())
     }
@@ -290,9 +281,7 @@ impl ReservationTracker for InMemoryReservationTracker {
         now_ms: u64,
     ) -> Result<u64, ReservationTrackerError> {
         let g = self.inner.lock().map_err(|_| {
-            ReservationTrackerError::Backend(
-                "reservation tracker mutex poisoned".to_string(),
-            )
+            ReservationTrackerError::Backend("reservation tracker mutex poisoned".to_string())
         })?;
         let mut total: u64 = 0;
         for ((t, _), row) in g.iter() {
@@ -310,14 +299,9 @@ impl ReservationTracker for InMemoryReservationTracker {
         Ok(total)
     }
 
-    fn sweep_expired(
-        &self,
-        now_ms: u64,
-    ) -> Result<u64, ReservationTrackerError> {
+    fn sweep_expired(&self, now_ms: u64) -> Result<u64, ReservationTrackerError> {
         let mut g = self.inner.lock().map_err(|_| {
-            ReservationTrackerError::Backend(
-                "reservation tracker mutex poisoned".to_string(),
-            )
+            ReservationTrackerError::Backend("reservation tracker mutex poisoned".to_string())
         })?;
         let before = g.len();
         g.retain(|_, row| row.expires_at_ms > now_ms);
@@ -327,9 +311,7 @@ impl ReservationTracker for InMemoryReservationTracker {
 
     fn active_row_count(&self) -> Result<usize, ReservationTrackerError> {
         let g = self.inner.lock().map_err(|_| {
-            ReservationTrackerError::Backend(
-                "reservation tracker mutex poisoned".to_string(),
-            )
+            ReservationTrackerError::Backend("reservation tracker mutex poisoned".to_string())
         })?;
         Ok(g.len())
     }
@@ -378,13 +360,7 @@ mod tests {
         let t = InMemoryReservationTracker::new();
         // 100 MiB → above floor.
         let row = t
-            .insert(
-                ten_a(),
-                rid(1),
-                EvictionRegion::Sam,
-                100 * 1024 * 1024,
-                100,
-            )
+            .insert(ten_a(), rid(1), EvictionRegion::Sam, 100 * 1024 * 1024, 100)
             .unwrap();
         // 100 MiB / 1024 × 2 = 204_800 ms.
         assert_eq!(row.expires_at_ms, 100 + 204_800);

@@ -1,4 +1,11 @@
-#![allow(clippy::expect_used, clippy::unwrap_used, clippy::print_stdout, clippy::print_stderr, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 //! Example: inject a synthetic CVE for E2E alert path validation.
 //!
 //! Simulates the nightly CI mock CVE injection test.

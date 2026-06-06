@@ -77,8 +77,14 @@ mod tests {
 
     #[test]
     fn for_tier_canonical_mapping() {
-        assert_eq!(RetentionHint::for_tier(TenantTier::Solo), RetentionHint::Solo30d);
-        assert_eq!(RetentionHint::for_tier(TenantTier::Team), RetentionHint::Team90d);
+        assert_eq!(
+            RetentionHint::for_tier(TenantTier::Solo),
+            RetentionHint::Solo30d
+        );
+        assert_eq!(
+            RetentionHint::for_tier(TenantTier::Team),
+            RetentionHint::Team90d
+        );
         assert_eq!(
             RetentionHint::for_tier(TenantTier::Business),
             RetentionHint::Business1y

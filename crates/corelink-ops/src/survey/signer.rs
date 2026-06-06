@@ -133,7 +133,10 @@ pub fn mint_token(
 /// # Errors
 ///
 /// Bubbles [`SurveyError`] from `encode_token`.
-#[allow(clippy::too_many_arguments, reason = "test/property-test helper — every field is mandatory wire-shape data")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "test/property-test helper — every field is mandatory wire-shape data"
+)]
 pub fn mint_token_with_jti(
     key: &SigningKey,
     jti: Uuid,
@@ -166,8 +169,8 @@ pub fn mint_token_with_jti(
     reason = "test module — assertions panic by design"
 )]
 mod tests {
-    use super::*;
     use super::super::token::decode_and_verify;
+    use super::*;
 
     #[test]
     fn debug_redacts_key() {

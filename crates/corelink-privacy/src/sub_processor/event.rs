@@ -28,12 +28,8 @@ pub enum SubProcessorEventType {
 #[must_use]
 pub fn canonical_event_type_string(event_type: SubProcessorEventType) -> &'static str {
     match event_type {
-        SubProcessorEventType::Published => {
-            "dev.hugr.corelink.sub_processor.published.v1"
-        }
-        SubProcessorEventType::Changed => {
-            "dev.hugr.corelink.sub_processor.changed.v1"
-        }
+        SubProcessorEventType::Published => "dev.hugr.corelink.sub_processor.published.v1",
+        SubProcessorEventType::Changed => "dev.hugr.corelink.sub_processor.changed.v1",
         SubProcessorEventType::ObjectionFiled => {
             "dev.hugr.corelink.sub_processor.objection_filed.v1"
         }
@@ -262,13 +258,28 @@ impl ObjectionTicketStatus {
     pub fn can_transition_to(self, next: ObjectionTicketStatus) -> bool {
         matches!(
             (self, next),
-            (ObjectionTicketStatus::Pending, ObjectionTicketStatus::InReview)
-                | (ObjectionTicketStatus::Pending, ObjectionTicketStatus::Accepted)
-                | (ObjectionTicketStatus::Pending, ObjectionTicketStatus::Terminated)
-                | (ObjectionTicketStatus::Pending, ObjectionTicketStatus::Withdrawn)
-                | (ObjectionTicketStatus::InReview, ObjectionTicketStatus::Accepted)
-                | (ObjectionTicketStatus::InReview, ObjectionTicketStatus::Terminated)
-                | (ObjectionTicketStatus::InReview, ObjectionTicketStatus::Withdrawn)
+            (
+                ObjectionTicketStatus::Pending,
+                ObjectionTicketStatus::InReview
+            ) | (
+                ObjectionTicketStatus::Pending,
+                ObjectionTicketStatus::Accepted
+            ) | (
+                ObjectionTicketStatus::Pending,
+                ObjectionTicketStatus::Terminated
+            ) | (
+                ObjectionTicketStatus::Pending,
+                ObjectionTicketStatus::Withdrawn
+            ) | (
+                ObjectionTicketStatus::InReview,
+                ObjectionTicketStatus::Accepted
+            ) | (
+                ObjectionTicketStatus::InReview,
+                ObjectionTicketStatus::Terminated
+            ) | (
+                ObjectionTicketStatus::InReview,
+                ObjectionTicketStatus::Withdrawn
+            )
         )
     }
 }

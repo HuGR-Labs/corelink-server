@@ -54,8 +54,7 @@ pub const SLA_BUDGET_MS: u64 = 900_000;
 pub const DLQ_CAP: usize = 1_000;
 
 /// Prometheus histogram buckets for `corelink_supply_dt_alert_delivery_duration_seconds`.
-pub const ALERT_DELIVERY_BUCKETS_SECONDS: &[f64] =
-    &[30.0, 60.0, 120.0, 300.0, 600.0, 900.0];
+pub const ALERT_DELIVERY_BUCKETS_SECONDS: &[f64] = &[30.0, 60.0, 120.0, 300.0, 600.0, 900.0];
 
 /// In-memory metric snapshot produced by the handler on each call.
 ///

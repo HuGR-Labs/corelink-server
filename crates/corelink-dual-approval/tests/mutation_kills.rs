@@ -17,17 +17,13 @@
 
 use std::sync::Arc;
 
+use corelink_dual_approval::audit::{AdminOpCloudEventBuilder, FailingAdminOpAuditSink};
+use corelink_dual_approval::types::{ActorIdentity, ApprovalOutcome};
 use corelink_dual_approval::{
-    AdminOpAuditSink, AdminOpRequest, AdminOpType, AdminSigningKey,
-    AUDIT_TYPE_DENIED, AUDIT_TYPE_EXECUTED, DualApprovalError, DualApprovalGate,
-    DualApprovalGateImpl, InMemoryAdminOpAuditSink, InMemoryAdminRoleStore,
-    InMemoryCollusionStore, InMemoryNonceStore, compute_hmac, proptest_cases,
-};
-use corelink_dual_approval::audit::{
-    AdminOpCloudEventBuilder, FailingAdminOpAuditSink,
-};
-use corelink_dual_approval::types::{
-    ActorIdentity, ApprovalOutcome,
+    compute_hmac, proptest_cases, AdminOpAuditSink, AdminOpRequest, AdminOpType, AdminSigningKey,
+    DualApprovalError, DualApprovalGate, DualApprovalGateImpl, InMemoryAdminOpAuditSink,
+    InMemoryAdminRoleStore, InMemoryCollusionStore, InMemoryNonceStore, AUDIT_TYPE_DENIED,
+    AUDIT_TYPE_EXECUTED,
 };
 use uuid::Uuid;
 
@@ -103,7 +99,10 @@ fn audit_builder_time_field_is_non_empty_non_canary() {
     assert_ne!(ev.time, "xyzzy", "time field must not be canary string");
     assert_ne!(ev.time, "xyzzy.000Z");
     assert!(ev.time.ends_with('Z'), "time must end with Z (RFC3339 UTC)");
-    assert!(ev.time.contains('.'), "time must contain seconds.millis separator");
+    assert!(
+        ev.time.contains('.'),
+        "time must contain seconds.millis separator"
+    );
 }
 
 #[test]
@@ -241,12 +240,7 @@ fn collusion_trim_pops_entries_older_than_window_start() {
     // must pop the stale entry.
     let now_ms = 1_000_000 + 100 * day_ms;
     store
-        .record_approval(
-            tenant,
-            fresh_approver,
-            &AdminOpType::ConfigRollback,
-            now_ms,
-        )
+        .record_approval(tenant, fresh_approver, &AdminOpType::ConfigRollback, now_ms)
         .expect("record fresh");
 
     // Proposing the stale approver again must NOT collide — the trim
@@ -316,7 +310,11 @@ fn gate_clock_skew_max_const_is_60_seconds_precisely() {
     // would exceed and be rejected.
     let req59 = make_signed_request(caller, approver, tenant, now_ms - 59_000, &key);
     let res = gate.verify(&req59, mfa_ts_ms, now_ms);
-    assert!(res.is_ok(), "59s skew must be accepted; got {:?}", res.err());
+    assert!(
+        res.is_ok(),
+        "59s skew must be accepted; got {:?}",
+        res.err()
+    );
 
     // 61s in the past — must be REJECTED.
     // If CLOCK_SKEW_MAX_MS mutated to 60/1000 = 0ms, even 1ms skew
@@ -361,7 +359,10 @@ fn gate_audit_payload_hash_reflects_real_sha256() {
     gate_b.verify(&req_b, 999_000, 1_000_000).expect("verify B");
     let hash_b = sink_b.captured()[0].data.op_payload_hash.clone();
 
-    assert_ne!(hash_a, hash_b, "distinct payloads must produce distinct sha256 hashes");
+    assert_ne!(
+        hash_a, hash_b,
+        "distinct payloads must produce distinct sha256 hashes"
+    );
     // And known SHA-256 of "payload-A" lowercase hex prefix.
     // (We don't pin the exact hash to avoid coupling to encoding details;
     // distinct + non-zero + non-canary is sufficient to kill the constant

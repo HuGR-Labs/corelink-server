@@ -18,13 +18,13 @@
 
 use proptest::prelude::*;
 
+use corelink_signup::orchestrator::InMemoryProvisionRecord;
 use corelink_signup::{
     AtomicSignupStore, Bcp47Locale, BillingIntent, CorrelationId, IdempotencyKey,
     InMemoryAtomicSignupStore, InMemoryBillingClient, InMemorySignupAuditSink, OrchestrationError,
     OrchestrationStep, PrimaryRegion, SignupAuditEventType, SignupOrchestrator, SignupOutcome,
     SignupRequest, StripeOutageBillingClient, UserEmailHash,
 };
-use corelink_signup::orchestrator::InMemoryProvisionRecord;
 
 /// `PROPTEST_CASES` env var override (S-07 P1-2 nightly 100k pattern).
 fn proptest_cases() -> u32 {
@@ -338,6 +338,8 @@ proptest! {
 #[test]
 fn smoke_one_signup_provisioned() {
     let o = happy_orchestrator();
-    let r = o.provision(&req("idem-smoke", "smoke", "en-US", "evt_smoke")).unwrap();
+    let r = o
+        .provision(&req("idem-smoke", "smoke", "en-US", "evt_smoke"))
+        .unwrap();
     assert!(matches!(r.outcome, SignupOutcome::Provisioned { .. }));
 }

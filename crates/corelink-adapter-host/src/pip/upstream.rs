@@ -81,10 +81,7 @@ impl UpstreamClient {
             .join(&path)
             .map_err(|e| PipAdapterError::Upstream(format!("project URL join: {e}")))?;
         let mut headers = HeaderMap::new();
-        headers.insert(
-            ACCEPT,
-            HeaderValue::from_static(PEP691_ACCEPT),
-        );
+        headers.insert(ACCEPT, HeaderValue::from_static(PEP691_ACCEPT));
         headers.insert(USER_AGENT, HeaderValue::from_static(ADAPTER_USER_AGENT));
 
         let resp = self

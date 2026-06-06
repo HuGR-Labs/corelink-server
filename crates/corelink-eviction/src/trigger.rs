@@ -29,9 +29,7 @@
 
 use uuid::Uuid;
 
-use crate::phase::{
-    QUOTA_TARGET_HEADROOM_PCT, QUOTA_TRIGGER_THRESHOLD_PCT,
-};
+use crate::phase::{QUOTA_TARGET_HEADROOM_PCT, QUOTA_TRIGGER_THRESHOLD_PCT};
 use crate::storage_state::TenantStorageStateRow;
 
 /// Outcome of [`should_fire_quota_trigger`].
@@ -60,9 +58,7 @@ pub enum QuotaTriggerOutcome {
 /// - `bytes_used / bytes_quota == 0.95` → `Fire` (boundary inclusive).
 /// - `bytes_used / bytes_quota > 0.95` → `Fire`.
 #[must_use]
-pub fn should_fire_quota_trigger(
-    row: &TenantStorageStateRow,
-) -> QuotaTriggerOutcome {
+pub fn should_fire_quota_trigger(row: &TenantStorageStateRow) -> QuotaTriggerOutcome {
     if row.bytes_quota == 0 {
         return QuotaTriggerOutcome::BelowThreshold;
     }
@@ -258,22 +254,19 @@ mod tests {
         let r = row(one_gib * 96 / 100, one_gib);
         let target = target_bytes_to_reclaim(&r);
         // 6% of 1 GiB ≈ 64 MiB; allow ±1 byte for ceil rounding.
-        let expected_floor = ((one_gib as f64) * QUOTA_TARGET_HEADROOM_PCT)
-            .ceil() as u64;
+        let expected_floor = ((one_gib as f64) * QUOTA_TARGET_HEADROOM_PCT).ceil() as u64;
         assert_eq!(target, (one_gib * 96 / 100) - expected_floor);
     }
 
     #[test]
     fn spawn_handle_invoked_starts_false() {
-        let h: InMemorySpawnHandle<u32> =
-            spawn_quota_trigger_in_memory(ten(), 100, || 42);
+        let h: InMemorySpawnHandle<u32> = spawn_quota_trigger_in_memory(ten(), 100, || 42);
         assert!(!h.invoked());
     }
 
     #[test]
     fn spawn_handle_run_now_invokes_closure() {
-        let mut h: InMemorySpawnHandle<u32> =
-            spawn_quota_trigger_in_memory(ten(), 100, || 42);
+        let mut h: InMemorySpawnHandle<u32> = spawn_quota_trigger_in_memory(ten(), 100, || 42);
         let r = h.run_now().copied();
         assert_eq!(r, Some(42));
         assert!(h.invoked());
@@ -281,8 +274,7 @@ mod tests {
 
     #[test]
     fn spawn_handle_run_now_idempotent() {
-        let mut h: InMemorySpawnHandle<u32> =
-            spawn_quota_trigger_in_memory(ten(), 100, || 7);
+        let mut h: InMemorySpawnHandle<u32> = spawn_quota_trigger_in_memory(ten(), 100, || 7);
         h.run_now();
         // Second call surfaces the cached result.
         let r = h.run_now().copied();

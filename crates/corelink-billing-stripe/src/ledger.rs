@@ -85,10 +85,8 @@ pub trait StripeUsageLedger: Send + Sync + core::fmt::Debug {
     /// Returns [`StripeUsageLedgerError::Backend`] on any backend
     /// failure + [`StripeUsageLedgerError::IdempotencyKeyReuse`] on
     /// canonical-bytes divergence.
-    fn record(
-        &self,
-        request: &UsageRecordRequest,
-    ) -> Result<RecordOutcome, StripeUsageLedgerError>;
+    fn record(&self, request: &UsageRecordRequest)
+        -> Result<RecordOutcome, StripeUsageLedgerError>;
 
     /// Look up a recorded usage record by canonical idempotency key.
     /// Returns `None` if no record has been written for that key.

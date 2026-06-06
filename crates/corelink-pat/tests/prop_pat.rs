@@ -21,11 +21,11 @@
     reason = "test code: failures must be loud, not silenced"
 )]
 
-use corelink_pat::types::PAT_TOKEN_ID_LEN;
 use corelink_pat::mint::{mint_with_entropy, DeterministicMintInput};
 use corelink_pat::scopes::{
     PatScopes, SCOPE_ADMIN_AUDIT, SCOPE_CACHE_FIND, SCOPE_CACHE_RW, SCOPE_KNOWN_MASK,
 };
+use corelink_pat::types::PAT_TOKEN_ID_LEN;
 use corelink_pat::types::{PatEnv, PatSigningKey, PrincipalId, TenantId};
 use corelink_pat::{parse_env, parse_plaintext, verify_with_hash};
 use password_hash::Salt;
@@ -227,9 +227,6 @@ fn scope_admin_audit_disjoint_from_cache_find() {
 fn scope_union_intersection_smoke() {
     let a = PatScopes::from_u64(SCOPE_CACHE_RW);
     let b = PatScopes::from_u64(SCOPE_ADMIN_AUDIT);
-    assert_eq!(
-        (a | b).to_u64(),
-        SCOPE_CACHE_RW | SCOPE_ADMIN_AUDIT
-    );
+    assert_eq!((a | b).to_u64(), SCOPE_CACHE_RW | SCOPE_ADMIN_AUDIT);
     assert_eq!((a & b).to_u64(), 0);
 }

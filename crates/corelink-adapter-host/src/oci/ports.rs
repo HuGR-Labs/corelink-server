@@ -205,7 +205,8 @@ pub mod testing {
                 .remove(&(*tenant, upload_uuid.to_string()))
                 .ok_or_else(|| format!("upload session not found: {upload_uuid}"))?;
             let bytes = Bytes::from(buf);
-            g.blobs.insert((*tenant, blob_key.to_string()), bytes.clone());
+            g.blobs
+                .insert((*tenant, blob_key.to_string()), bytes.clone());
             Ok(bytes)
         }
 
@@ -215,11 +216,7 @@ pub mod testing {
             Ok(())
         }
 
-        async fn get_blob(
-            &self,
-            tenant: &TenantId,
-            blob_key: &str,
-        ) -> PortResult<Option<Bytes>> {
+        async fn get_blob(&self, tenant: &TenantId, blob_key: &str) -> PortResult<Option<Bytes>> {
             let g = self.inner.lock();
             Ok(g.blobs.get(&(*tenant, blob_key.to_string())).cloned())
         }
@@ -250,22 +247,13 @@ pub mod testing {
             Ok(g.get(&(*tenant, key.to_string())).cloned())
         }
 
-        async fn put(
-            &self,
-            tenant: &TenantId,
-            key: &str,
-            value: Bytes,
-        ) -> PortResult<()> {
+        async fn put(&self, tenant: &TenantId, key: &str, value: Bytes) -> PortResult<()> {
             let mut g = self.inner.lock();
             g.insert((*tenant, key.to_string()), value);
             Ok(())
         }
 
-        async fn list_prefix(
-            &self,
-            tenant: &TenantId,
-            prefix: &str,
-        ) -> PortResult<Vec<String>> {
+        async fn list_prefix(&self, tenant: &TenantId, prefix: &str) -> PortResult<Vec<String>> {
             let g = self.inner.lock();
             let mut out = Vec::new();
             for (k_tenant, k_str) in g.keys() {
@@ -302,7 +290,8 @@ pub mod testing {
 
     impl fmt::Debug for StaticTenantResolver {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.debug_struct("StaticTenantResolver").finish_non_exhaustive()
+            f.debug_struct("StaticTenantResolver")
+                .finish_non_exhaustive()
         }
     }
 

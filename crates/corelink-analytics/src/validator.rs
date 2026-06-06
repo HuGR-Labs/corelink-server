@@ -46,9 +46,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use crate::audit::{
-    AnalyticsAuditRecord, AnalyticsAuditSink, AnalyticsEventType,
-};
+use crate::audit::{AnalyticsAuditRecord, AnalyticsAuditSink, AnalyticsEventType};
 use crate::canonical::{canonical_metric_kinds, RedMetricKind};
 use crate::config::AnalyticsConfig;
 use crate::error::AnalyticsError;
@@ -148,10 +146,7 @@ where
     /// alert source per WI §6.1.11
     /// `corelink_metrics_cardinality_budget_violation_total`).
     #[must_use]
-    pub fn rejection_counter_for_metric(
-        &self,
-        metric: RedMetricKind,
-    ) -> u64 {
+    pub fn rejection_counter_for_metric(&self, metric: RedMetricKind) -> u64 {
         let g = match self.state.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -181,9 +176,8 @@ where
     pub fn is_approaching_budget(&self, metric: RedMetricKind) -> bool {
         let observed = self.unique_tuples_for_metric(metric);
         let budget = self.config.budget_for_metric(metric);
-        let threshold = (self.config.cardinality_approaching_pct()
-            * (budget as f64))
-            .floor() as u64;
+        let threshold =
+            (self.config.cardinality_approaching_pct() * (budget as f64)).floor() as u64;
         observed >= threshold
     }
 
@@ -207,11 +201,10 @@ where
     ) -> Result<ValidatorOutcome, AnalyticsError> {
         // Step 1: read the current per-metric + global counts under
         // the lock so the audit-then-mutate ordering is consistent.
-        let g = self.state.lock().map_err(|_| {
-            AnalyticsError::Internal(
-                "validator mutex poisoned".to_string(),
-            )
-        })?;
+        let g = self
+            .state
+            .lock()
+            .map_err(|_| AnalyticsError::Internal("validator mutex poisoned".to_string()))?;
 
         let already_registered = g
             .per_metric
@@ -224,8 +217,7 @@ where
             .get(&metric)
             .map(|s| s.len() as u64)
             .unwrap_or(0);
-        let global_observed: u64 =
-            g.per_metric.values().map(|s| s.len() as u64).sum();
+        let global_observed: u64 = g.per_metric.values().map(|s| s.len() as u64).sum();
         let per_metric_budget = self.config.budget_for_metric(metric);
         let global_budget = self.config.global_budget();
 
@@ -266,18 +258,11 @@ where
             // SEV-2 alert source). The audit sink is the canonical
             // ordering anchor: counter bump only after audit success.
             let mut g2 = self.state.lock().map_err(|_| {
-                AnalyticsError::Internal(
-                    "validator mutex poisoned (rejection bump)"
-                        .to_string(),
-                )
+                AnalyticsError::Internal("validator mutex poisoned (rejection bump)".to_string())
             })?;
-            let entry = g2
-                .rejection_counter_per_metric
-                .entry(metric)
-                .or_insert(0);
+            let entry = g2.rejection_counter_per_metric.entry(metric).or_insert(0);
             *entry = entry.saturating_add(1);
-            g2.rejection_counter_global =
-                g2.rejection_counter_global.saturating_add(1);
+            g2.rejection_counter_global = g2.rejection_counter_global.saturating_add(1);
             return Err(AnalyticsError::CardinalityBudgetExceeded {
                 metric: metric.as_str(),
                 observed: per_metric_observed,
@@ -298,13 +283,9 @@ where
                 now_ms,
             })?;
             let mut g2 = self.state.lock().map_err(|_| {
-                AnalyticsError::Internal(
-                    "validator mutex poisoned (global bump)"
-                        .to_string(),
-                )
+                AnalyticsError::Internal("validator mutex poisoned (global bump)".to_string())
             })?;
-            g2.rejection_counter_global =
-                g2.rejection_counter_global.saturating_add(1);
+            g2.rejection_counter_global = g2.rejection_counter_global.saturating_add(1);
             return Err(AnalyticsError::CardinalityBudgetExceeded {
                 metric: metric.as_str(),
                 observed: global_observed,
@@ -326,18 +307,12 @@ where
 
         // Step 3: register the tuple in the per-metric set.
         let mut g3 = self.state.lock().map_err(|_| {
-            AnalyticsError::Internal(
-                "validator mutex poisoned (register)".to_string(),
-            )
+            AnalyticsError::Internal("validator mutex poisoned (register)".to_string())
         })?;
         let set = g3.per_metric.entry(metric).or_default();
         set.insert(labels);
         let new_per_metric = set.len() as u64;
-        let new_global = g3
-            .per_metric
-            .values()
-            .map(|s| s.len() as u64)
-            .sum();
+        let new_global = g3.per_metric.values().map(|s| s.len() as u64).sum();
         Ok(ValidatorOutcome {
             decision: ValidatorDecision::Registered,
             observed_per_metric: new_per_metric,
@@ -357,11 +332,7 @@ where
         canonical_metric_kinds()
             .iter()
             .map(|k| {
-                let observed = g
-                    .per_metric
-                    .get(k)
-                    .map(|s| s.len() as u64)
-                    .unwrap_or(0);
+                let observed = g.per_metric.get(k).map(|s| s.len() as u64).unwrap_or(0);
                 (*k, observed)
             })
             .collect()
@@ -379,16 +350,12 @@ where
 )]
 mod tests {
     use super::*;
-    use crate::audit::{
-        AnalyticsEventType, FailingAnalyticsAuditSink,
-        InMemoryAnalyticsAuditSink,
-    };
+    use crate::audit::{AnalyticsEventType, FailingAnalyticsAuditSink, InMemoryAnalyticsAuditSink};
     use crate::labels::{Region, Tier};
 
     type Validator = CardinalityValidator<InMemoryAnalyticsAuditSink>;
 
-    fn fresh_validator(
-    ) -> (Validator, Arc<InMemoryAnalyticsAuditSink>) {
+    fn fresh_validator() -> (Validator, Arc<InMemoryAnalyticsAuditSink>) {
         let audit = Arc::new(InMemoryAnalyticsAuditSink::new());
         let v = CardinalityValidator::with_defaults(Arc::clone(&audit));
         (v, audit)
@@ -443,15 +410,11 @@ mod tests {
         assert_eq!(out.observed_per_metric, 1);
         assert_eq!(out.observed_global, 1);
         assert_eq!(
-            v.unique_tuples_for_metric(
-                RedMetricKind::CasPutRequestsTotal
-            ),
+            v.unique_tuples_for_metric(RedMetricKind::CasPutRequestsTotal),
             1
         );
         assert_eq!(
-            audit
-                .snapshot_of(AnalyticsEventType::MetricEmitted)
-                .len(),
+            audit.snapshot_of(AnalyticsEventType::MetricEmitted).len(),
             1
         );
     }
@@ -478,17 +441,13 @@ mod tests {
         assert_eq!(out1.decision, ValidatorDecision::Registered);
         assert_eq!(out2.decision, ValidatorDecision::AlreadyRegistered);
         assert_eq!(
-            v.unique_tuples_for_metric(
-                RedMetricKind::CasPutRequestsTotal
-            ),
+            v.unique_tuples_for_metric(RedMetricKind::CasPutRequestsTotal),
             1
         );
         // Both decisions emit MetricEmitted audit (idempotent repeat
         // still emits per the canonical fail-closed envelope).
         assert_eq!(
-            audit
-                .snapshot_of(AnalyticsEventType::MetricEmitted)
-                .len(),
+            audit.snapshot_of(AnalyticsEventType::MetricEmitted).len(),
             2
         );
     }
@@ -541,15 +500,11 @@ mod tests {
             1
         );
         assert_eq!(
-            v.unique_tuples_for_metric(
-                RedMetricKind::CasPutRequestsTotal
-            ),
+            v.unique_tuples_for_metric(RedMetricKind::CasPutRequestsTotal),
             2
         );
         assert_eq!(
-            v.rejection_counter_for_metric(
-                RedMetricKind::CasPutRequestsTotal
-            ),
+            v.rejection_counter_for_metric(RedMetricKind::CasPutRequestsTotal),
             1
         );
         assert_eq!(v.rejection_counter_global(), 1);
@@ -569,9 +524,7 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, AnalyticsError::Audit(_)));
         assert_eq!(
-            v.unique_tuples_for_metric(
-                RedMetricKind::CasPutRequestsTotal
-            ),
+            v.unique_tuples_for_metric(RedMetricKind::CasPutRequestsTotal),
             0
         );
     }
@@ -597,9 +550,7 @@ mod tests {
             )
             .unwrap();
         }
-        assert!(
-            !v.is_approaching_budget(RedMetricKind::CasPutRequestsTotal)
-        );
+        assert!(!v.is_approaching_budget(RedMetricKind::CasPutRequestsTotal));
         // 8th tuple = 80% → approaching trigger fires.
         v.validate_and_register(
             RedMetricKind::CasPutRequestsTotal,
@@ -608,9 +559,7 @@ mod tests {
             1000,
         )
         .unwrap();
-        assert!(
-            v.is_approaching_budget(RedMetricKind::CasPutRequestsTotal)
-        );
+        assert!(v.is_approaching_budget(RedMetricKind::CasPutRequestsTotal));
     }
 
     #[test]
@@ -634,9 +583,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            v.unique_tuples_for_metric(
-                RedMetricKind::CasPutRequestsTotal
-            ),
+            v.unique_tuples_for_metric(RedMetricKind::CasPutRequestsTotal),
             1
         );
         // CAS GET unaffected.
@@ -657,9 +604,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            v.rejection_counter_for_metric(
-                RedMetricKind::CasPutRequestsTotal
-            ),
+            v.rejection_counter_for_metric(RedMetricKind::CasPutRequestsTotal),
             0
         );
         assert_eq!(v.rejection_counter_global(), 0);
@@ -677,11 +622,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            v2.unique_tuples_for_metric(
-                RedMetricKind::CasPutRequestsTotal
-            ),
+            v2.unique_tuples_for_metric(RedMetricKind::CasPutRequestsTotal),
             1
         );
     }
 }
-

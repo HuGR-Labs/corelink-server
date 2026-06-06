@@ -200,7 +200,8 @@ pub struct InMemoryCustomerHandler {
 
 impl core::fmt::Debug for InMemoryCustomerHandler {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("InMemoryCustomerHandler").finish_non_exhaustive()
+        f.debug_struct("InMemoryCustomerHandler")
+            .finish_non_exhaustive()
     }
 }
 
@@ -353,7 +354,9 @@ impl InMemoryCustomerHandler {
         at_unix_ms: u64,
     ) -> Result<(), CustomerHandlerError> {
         self.audit
-            .emit(AuditEvent::new(kind, tenant, principal, resource, at_unix_ms))
+            .emit(AuditEvent::new(
+                kind, tenant, principal, resource, at_unix_ms,
+            ))
             .map_err(CustomerHandlerError::AuditFailed)
     }
 
@@ -530,7 +533,10 @@ impl CustomerKeysHandler for InMemoryCustomerHandler {
         drop(g);
 
         self.emit_sli(false);
-        Ok(KeysListResponse::new(pats, ByokStatus::new("none", None, None)))
+        Ok(KeysListResponse::new(
+            pats,
+            ByokStatus::new("none", None, None),
+        ))
     }
 
     fn create(&self, req: KeyCreateRequest) -> Result<KeyCreateResponse, CustomerHandlerError> {

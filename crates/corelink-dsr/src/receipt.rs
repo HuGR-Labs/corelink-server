@@ -189,11 +189,7 @@ pub trait JwtReceiptIssuer: Send + Sync + core::fmt::Debug {
     /// Returns [`DsrReceiptError::SignatureInvalid`] /
     /// [`DsrReceiptError::Expired`] /
     /// [`DsrReceiptError::Malformed`] per the canonical contract.
-    fn verify(
-        &self,
-        token: &JwtReceiptToken,
-        now_ms: u64,
-    ) -> Result<DsrReceipt, DsrReceiptError>;
+    fn verify(&self, token: &JwtReceiptToken, now_ms: u64) -> Result<DsrReceipt, DsrReceiptError>;
 }
 
 /// Deterministic in-memory JWT receipt issuer. Pins the canonical
@@ -304,11 +300,7 @@ impl JwtReceiptIssuer for InMemoryJwtReceiptIssuer {
         Ok(JwtReceiptToken { bytes: token })
     }
 
-    fn verify(
-        &self,
-        token: &JwtReceiptToken,
-        now_ms: u64,
-    ) -> Result<DsrReceipt, DsrReceiptError> {
+    fn verify(&self, token: &JwtReceiptToken, now_ms: u64) -> Result<DsrReceipt, DsrReceiptError> {
         let s = token.as_str();
         let parts: Vec<&str> = s.split('.').collect();
         if parts.len() != 3 {
@@ -416,8 +408,7 @@ fn b64url_encode(input: &[u8]) -> String {
         let a = chunk.first().copied().unwrap_or(0);
         let b = chunk.get(1).copied().unwrap_or(0);
         let c = chunk.get(2).copied().unwrap_or(0);
-        let n: u32 =
-            (u32::from(a) << 16) | (u32::from(b) << 8) | u32::from(c);
+        let n: u32 = (u32::from(a) << 16) | (u32::from(b) << 8) | u32::from(c);
         out.push(b64url_lookup(n >> 18));
         out.push(b64url_lookup(n >> 12));
         out.push(b64url_lookup(n >> 6));
@@ -463,10 +454,8 @@ fn b64url_decode(input: &str) -> Result<Vec<u8>, String> {
         let c1 = decode_char(bytes.get(i + 1).copied().unwrap_or(b'A'))?;
         let c2 = decode_char(bytes.get(i + 2).copied().unwrap_or(b'A'))?;
         let c3 = decode_char(bytes.get(i + 3).copied().unwrap_or(b'A'))?;
-        let n: u32 = (u32::from(c0) << 18)
-            | (u32::from(c1) << 12)
-            | (u32::from(c2) << 6)
-            | u32::from(c3);
+        let n: u32 =
+            (u32::from(c0) << 18) | (u32::from(c1) << 12) | (u32::from(c2) << 6) | u32::from(c3);
         out.push(((n >> 16) & 0xff) as u8);
         out.push(((n >> 8) & 0xff) as u8);
         out.push((n & 0xff) as u8);
@@ -485,9 +474,7 @@ fn b64url_decode(input: &str) -> Result<Vec<u8>, String> {
             let c0 = decode_char(bytes.get(i).copied().unwrap_or(b'A'))?;
             let c1 = decode_char(bytes.get(i + 1).copied().unwrap_or(b'A'))?;
             let c2 = decode_char(bytes.get(i + 2).copied().unwrap_or(b'A'))?;
-            let n: u32 = (u32::from(c0) << 18)
-                | (u32::from(c1) << 12)
-                | (u32::from(c2) << 6);
+            let n: u32 = (u32::from(c0) << 18) | (u32::from(c1) << 12) | (u32::from(c2) << 6);
             out.push(((n >> 16) & 0xff) as u8);
             out.push(((n >> 8) & 0xff) as u8);
         }
@@ -583,10 +570,10 @@ mod tests {
         let new_last = if last == 'A' { 'B' } else { 'A' };
         tampered_sig.push(new_last);
         let tampered = format!("{}.{}.{}", parts[0], parts[1], tampered_sig);
-        let tampered_token = JwtReceiptToken {
-            bytes: tampered,
-        };
-        let err = issuer.verify(&tampered_token, r.submitted_at_ms + 1).unwrap_err();
+        let tampered_token = JwtReceiptToken { bytes: tampered };
+        let err = issuer
+            .verify(&tampered_token, r.submitted_at_ms + 1)
+            .unwrap_err();
         assert!(matches!(err, DsrReceiptError::SignatureInvalid));
     }
 
@@ -596,7 +583,9 @@ mod tests {
         let r = fresh_request();
         let receipt = DsrReceipt::new(&r);
         let token = issuer.issue(&receipt).unwrap();
-        let err = issuer.verify(&token, receipt.expires_at_ms + 1).unwrap_err();
+        let err = issuer
+            .verify(&token, receipt.expires_at_ms + 1)
+            .unwrap_err();
         assert!(matches!(err, DsrReceiptError::Expired));
     }
 

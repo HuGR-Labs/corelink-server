@@ -74,14 +74,10 @@ use uuid::Uuid;
 
 use crate::audit::{GcAuditRecord, GcAuditSink, GcAuditSinkError, GcEventType};
 use crate::error::GcError;
-use crate::mark::{
-    BlobDigest, CandidateStatus, GcCandidate, GcCandidatesStore, MarkError,
-};
+use crate::mark::{BlobDigest, CandidateStatus, GcCandidate, GcCandidatesStore, MarkError};
 use crate::metrics::{GcMetricsObserver, GcMetricsObserverError};
 use crate::region::GcRegion;
-use crate::run::{
-    CheckpointDeltas, GcPhase, GcRunStore, GcRunStoreError, GcStatus, RunId,
-};
+use crate::run::{CheckpointDeltas, GcPhase, GcRunStore, GcRunStoreError, GcStatus, RunId};
 
 /// Canonical grace period for CAS blobs — 72 hours expressed as ms
 /// (sprint contract §5.3 R-S06-6). Physical-delete (WI-S06-004) does
@@ -843,7 +839,11 @@ where
                 // Concurrent winner; observe + surface as resolved.
                 let observed = self
                     .candidates
-                    .lookup(candidate.tenant_id, &candidate.digest, candidate.mark_run_id)?
+                    .lookup(
+                        candidate.tenant_id,
+                        &candidate.digest,
+                        candidate.mark_run_id,
+                    )?
                     .map_or(CandidateStatus::Candidate, |c| c.status);
                 return Ok(SweepDecision::AlreadyResolved {
                     observed_status: observed,
@@ -860,9 +860,9 @@ where
         // failure leaves blob_meta unchanged (fail-closed envelope on
         // the in-memory fake matches production D1 atomic batch
         // ROLLBACK semantics).
-        let Some(row) =
-            self.blob_meta
-                .lookup(candidate.tenant_id, &candidate.digest)?
+        let Some(row) = self
+            .blob_meta
+            .lookup(candidate.tenant_id, &candidate.digest)?
         else {
             return Ok(SweepDecision::AlreadyResolved {
                 observed_status: candidate.status,
@@ -913,7 +913,11 @@ where
         if !fired {
             let observed = self
                 .candidates
-                .lookup(candidate.tenant_id, &candidate.digest, candidate.mark_run_id)?
+                .lookup(
+                    candidate.tenant_id,
+                    &candidate.digest,
+                    candidate.mark_run_id,
+                )?
                 .map_or(CandidateStatus::Candidate, |c| c.status);
             return Ok(SweepDecision::AlreadyResolved {
                 observed_status: observed,
@@ -989,8 +993,7 @@ where
                     audit_events_emitted = audit_events_emitted.saturating_add(1);
                 }
                 SweepDecision::ProtectedReRef { .. } => {
-                    blobs_protected_re_ref_count =
-                        blobs_protected_re_ref_count.saturating_add(1);
+                    blobs_protected_re_ref_count = blobs_protected_re_ref_count.saturating_add(1);
                     audit_events_emitted = audit_events_emitted.saturating_add(1);
                 }
                 SweepDecision::AlreadyResolved { .. } => {
@@ -1537,6 +1540,9 @@ mod tests {
         // Mark phase budget is 10 min canonical; sweep is 5 min — they
         // are independent budget lines, sum ≤ 15 min total per
         // (tenant, region) cron tick.
-        assert_eq!(cfg.phase_budget_ms() + CANONICAL_SWEEP_PHASE_BUDGET_MS, 15 * 60 * 1000);
+        assert_eq!(
+            cfg.phase_budget_ms() + CANONICAL_SWEEP_PHASE_BUDGET_MS,
+            15 * 60 * 1000
+        );
     }
 }

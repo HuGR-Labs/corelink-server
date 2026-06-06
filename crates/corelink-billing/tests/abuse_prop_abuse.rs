@@ -35,12 +35,10 @@
 use std::sync::Arc;
 
 use corelink_billing::abuse::{
-    canonical_audit_event_strings, canonical_metric_names,
-    AbuseConfig, AbuseDecision, AbuseEventType, AbuseFeatureWeights,
-    AbuseFeatures, AbuseMetricKind, AbuseScore, AbuseScorer,
-    AbuseTierLabel, InMemoryAbuseAuditSink, InMemoryAbuseMetrics,
-    InMemoryAbuseScorer, MIGRATION_0013_ABUSE_SCORES,
-    MALICIOUS_THRESHOLD, SUSPICIOUS_THRESHOLD,
+    canonical_audit_event_strings, canonical_metric_names, AbuseConfig, AbuseDecision,
+    AbuseEventType, AbuseFeatureWeights, AbuseFeatures, AbuseMetricKind, AbuseScore, AbuseScorer,
+    AbuseTierLabel, InMemoryAbuseAuditSink, InMemoryAbuseMetrics, InMemoryAbuseScorer,
+    MALICIOUS_THRESHOLD, MIGRATION_0013_ABUSE_SCORES, SUSPICIOUS_THRESHOLD,
 };
 use corelink_eviction::Tier;
 use corelink_ratelimit::{
@@ -60,22 +58,14 @@ fn proptest_cases() -> u32 {
 type Scorer = InMemoryAbuseScorer<
     InMemoryAbuseAuditSink,
     InMemoryAbuseMetrics,
-    InMemoryTokenBucketRateLimiter<
-        InMemoryRateLimitAuditSink,
-        InMemoryRateLimitMetrics,
-    >,
+    InMemoryTokenBucketRateLimiter<InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics>,
 >;
 
 type Fixture = (
     Scorer,
     Arc<InMemoryAbuseAuditSink>,
     Arc<InMemoryAbuseMetrics>,
-    Arc<
-        InMemoryTokenBucketRateLimiter<
-            InMemoryRateLimitAuditSink,
-            InMemoryRateLimitMetrics,
-        >,
-    >,
+    Arc<InMemoryTokenBucketRateLimiter<InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics>>,
 );
 
 fn fixture() -> Fixture {

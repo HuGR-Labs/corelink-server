@@ -63,9 +63,7 @@ mod tests {
 
     #[test]
     fn admin_auth_format_carries_message() {
-        let e = CircuitError::AdminAuthFailed(
-            "admin token revoked".to_string(),
-        );
+        let e = CircuitError::AdminAuthFailed("admin token revoked".to_string());
         let s = format!("{e}");
         assert!(s.contains("admin token revoked"));
         assert!(s.contains("admin"));

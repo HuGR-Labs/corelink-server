@@ -76,11 +76,11 @@ mod live {
     use std::sync::Arc;
 
     use corelink_analytics::Region;
+    use corelink_audit_chain::neon_shadow::real_tokio_pg::TokioPostgresExecutor;
     use corelink_audit_chain::{
         ArchiveReceipt, ChainHash, EnvVarResolver, InMemoryShadowSyncAuditSink, NeonExecutor,
         NeonProjectResolver, NeonShadowSink, RealNeonShadowSink, ShadowEventRow,
     };
-    use corelink_audit_chain::neon_shadow::real_tokio_pg::TokioPostgresExecutor;
     use uuid::Uuid;
 
     fn test_dsn() -> Option<String> {
@@ -102,13 +102,7 @@ mod live {
         }
     }
 
-    fn dummy_row(
-        tenant: Uuid,
-        region: Region,
-        seq: u64,
-        time_ms: u64,
-        ty: &str,
-    ) -> ShadowEventRow {
+    fn dummy_row(tenant: Uuid, region: Region, seq: u64, time_ms: u64, ty: &str) -> ShadowEventRow {
         ShadowEventRow::new(
             tenant,
             seq,
@@ -128,7 +122,12 @@ mod live {
             .expect("connect to test Postgres");
         let executor: Arc<dyn NeonExecutor> = Arc::new(exec);
         let audit = Arc::new(InMemoryShadowSyncAuditSink::new());
-        Some(RealNeonShadowSink::new(tenant, Region::Iad, executor, audit))
+        Some(RealNeonShadowSink::new(
+            tenant,
+            Region::Iad,
+            executor,
+            audit,
+        ))
     }
 
     /// Integration test #1 — `sync_chunk` end-to-end against live
@@ -255,7 +254,10 @@ mod live {
             .aggregate_event_count(0, 10_000, None)
             .expect("B query");
         let b_total: u64 = b_buckets.iter().map(|b| b.count).sum();
-        assert_eq!(b_total, 0, "RLS policy must isolate tenant B from tenant A's rows");
+        assert_eq!(
+            b_total, 0,
+            "RLS policy must isolate tenant B from tenant A's rows"
+        );
     }
 
     /// Smoke test #6 — boot-time env-var resolution gate. ALWAYS runs

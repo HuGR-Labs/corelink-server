@@ -2,7 +2,16 @@
 //!
 //! Shows the mandatory AAD binding: `{"tenant_id": "...", "blob_hash": "..."}`.
 
-#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, clippy::print_stdout, clippy::print_stderr)]
+#![allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::print_stdout,
+    clippy::print_stderr
+)]
 use async_trait::async_trait;
 use serde_json::Value;
 
@@ -71,7 +80,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wrapped = provider.wrap_dek(&dek, &key_id, Some(&aad)).await?;
 
     println!("Wrap DEK complete:");
-    println!("  wrapped ciphertext len = {} bytes", wrapped.ciphertext.len());
+    println!(
+        "  wrapped ciphertext len = {} bytes",
+        wrapped.ciphertext.len()
+    );
     println!("  provider = {:?}", wrapped.provider);
     println!("  encryption_context = {:?}", wrapped.encryption_context);
 

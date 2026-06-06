@@ -49,11 +49,10 @@ pub mod ttl;
 pub mod types;
 
 pub use audit::{AcEventType, AuditSink, InMemoryAuditSink};
-pub use handler::{ActionCacheHandler, ActionCacheHandlerImpl, AcError};
+pub use handler::{AcError, ActionCacheHandler, ActionCacheHandlerImpl};
 pub use merkle::{InMemoryMerkleVerifier, MerkleError, MerkleVerifier};
 pub use meta::{
-    AcExpiredCandidate, AcKey, AcMetaRow, AcMetaStore, AcMetaUpsertOutcome,
-    InMemoryAcMetaStore,
+    AcExpiredCandidate, AcKey, AcMetaRow, AcMetaStore, AcMetaUpsertOutcome, InMemoryAcMetaStore,
 };
 pub use neg_cache::AcNegCache;
 pub use outputs::{InMemoryOutputsCheck, OutputsCheck, OutputsCheckError, OutputsCheckOutcome};
@@ -64,6 +63,4 @@ pub use ttl::{
     TtlWorker, TtlWorkerError, TtlWorkerTickOutcome, DEFAULT_REFRESH_THRESHOLD_MS,
     DEFAULT_TIER_TTL_MS, MAX_BATCH_SIZE,
 };
-pub use types::{
-    ActionDigest, ActionResult, OutputDirectoryDigest, OutputFileDigest, ResultHash,
-};
+pub use types::{ActionDigest, ActionResult, OutputDirectoryDigest, OutputFileDigest, ResultHash};

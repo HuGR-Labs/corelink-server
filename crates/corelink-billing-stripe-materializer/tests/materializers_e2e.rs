@@ -41,8 +41,8 @@ use corelink_billing_stripe_materializer::{
 use corelink_billing_stripe_traits::{
     CanonicalWebhookEventType, DispatchResponse, StateMaterializer, StripeWebhookEnvelope,
 };
-use corelink_stripe_real::webhook_dispatch::{FixedClock, RecordingSliRecorder, WebhookDispatcher};
 use corelink_stripe_real::webhook::compute_signature;
+use corelink_stripe_real::webhook_dispatch::{FixedClock, RecordingSliRecorder, WebhookDispatcher};
 use corelink_tier_selection::tier::TierKind;
 
 const SECRET: &[u8] = b"whsec_wave17_materializer_e2e";
@@ -69,7 +69,9 @@ fn build_bundle() -> Bundle {
         tier_selector,
     ));
     let dispatcher_audit = Arc::new(RealStripeAuditEmitter::new(audit_sink.clone()));
-    let idem = Arc::new(D1IdempotencyStore::new(d1.clone() as Arc<dyn BillingD1Writer>));
+    let idem = Arc::new(D1IdempotencyStore::new(
+        d1.clone() as Arc<dyn BillingD1Writer>
+    ));
     let sli = Arc::new(RecordingSliRecorder::new());
     let clock = Arc::new(FixedClock::new(FIXED_TS, 0.0));
     let dispatcher = Arc::new(WebhookDispatcher::new(
@@ -322,9 +324,9 @@ fn idempotency_replay_does_not_materialize_twice() {
 fn audit_failure_propagates_500_and_no_d1_write() {
     let bundle = build_bundle();
     // Arm the audit sink to fail.
-    bundle
-        .audit
-        .arm_failure(BillingAuditError::Transient("audit chain unavailable".into()));
+    bundle.audit.arm_failure(BillingAuditError::Transient(
+        "audit chain unavailable".into(),
+    ));
 
     let (body, hdr) = envelope_for("invoice.paid", "evt_audit_fail");
     let resp = bundle.dispatcher.process(&body, Some(&hdr));

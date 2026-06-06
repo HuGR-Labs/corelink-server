@@ -15,11 +15,11 @@
 
 use std::sync::Arc;
 
-use corelink_rotation_adapters::{AssetClass, AuditChainRotationAdapter, KeyHandle, KeyState};
 use corelink_ops::rotation::worker::{
-    InMemoryRotationStateMachine, RotationMetrics, RotationOrchestrator, RotationOutcome,
-    is_valid_read_state,
+    is_valid_read_state, InMemoryRotationStateMachine, RotationMetrics, RotationOrchestrator,
+    RotationOutcome,
 };
+use corelink_rotation_adapters::{AssetClass, AuditChainRotationAdapter, KeyHandle, KeyState};
 
 fn main() {
     let regions = ["us-east", "eu-west"];
@@ -45,7 +45,9 @@ fn main() {
             RotationOutcome::Ok { handle, .. } => handle,
             other => panic!("{other:?}"),
         };
-        let prom1 = orch.promote(&key1_pending, t0 + 1).expect("promote 1 failed");
+        let prom1 = orch
+            .promote(&key1_pending, t0 + 1)
+            .expect("promote 1 failed");
         let key1_active = match prom1 {
             RotationOutcome::Ok { handle, .. } => handle,
             other => panic!("{other:?}"),
@@ -58,7 +60,9 @@ fn main() {
             RotationOutcome::Ok { handle, .. } => handle,
             other => panic!("{other:?}"),
         };
-        let prom2 = orch.promote(&key2_pending, t1 + 1).expect("promote 2 failed");
+        let prom2 = orch
+            .promote(&key2_pending, t1 + 1)
+            .expect("promote 2 failed");
         let key2_active = match prom2 {
             RotationOutcome::Ok { handle, .. } => handle,
             other => panic!("{other:?}"),
@@ -72,8 +76,14 @@ fn main() {
         };
 
         // During 24h overlap: BOTH keys accepted for reads (INV-KEY-OVERLAP).
-        assert!(is_valid_read_state(key1_overlap.state), "old chain key must be valid for reads");
-        assert!(is_valid_read_state(key2_active.state), "new chain key must be valid for reads");
+        assert!(
+            is_valid_read_state(key1_overlap.state),
+            "old chain key must be valid for reads"
+        );
+        assert!(
+            is_valid_read_state(key2_active.state),
+            "new chain key must be valid for reads"
+        );
 
         println!(
             "[AuditChain][{region}] key1_id={} state={} (accepted for reads: ✓)",

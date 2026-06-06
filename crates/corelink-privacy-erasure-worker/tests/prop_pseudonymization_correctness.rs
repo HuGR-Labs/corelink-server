@@ -28,13 +28,13 @@
 
 use std::sync::Arc;
 
+use corelink_privacy_erasure_worker::pseudonymize::{pseudonymize_subject_id, PseudonymHash};
 use corelink_privacy_erasure_worker::{
     canonical_in_memory_adapters, BackendErasureAdapter, BackendErasureOutcome, BackendKind,
-    ErasureRequest, ErasureSalt, ErasureWorker, InMemoryBackendErasureAdapter, InMemoryRow,
-    InMemoryErasureAuditSink, InMemoryErasureIdempotencyLedger, InMemoryErasureWorker,
+    ErasureRequest, ErasureSalt, ErasureWorker, InMemoryBackendErasureAdapter,
+    InMemoryErasureAuditSink, InMemoryErasureIdempotencyLedger, InMemoryErasureWorker, InMemoryRow,
     VerificationContext, CANONICAL_EMPTY_TENANT_HASH,
 };
-use corelink_privacy_erasure_worker::pseudonymize::{pseudonymize_subject_id, PseudonymHash};
 use proptest::prelude::*;
 use uuid::Uuid;
 

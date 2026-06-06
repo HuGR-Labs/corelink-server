@@ -56,8 +56,7 @@ fn build_orchestrator<K: KvBackend + Send + Sync + 'static>(
     kv: K,
     broadcast: Arc<InMemoryBroadcast>,
 ) -> RevocationOrchestrator {
-    let cache: Arc<dyn SessionCacheInvalidator> =
-        Arc::new(KvSessionCacheInvalidator::new(kv));
+    let cache: Arc<dyn SessionCacheInvalidator> = Arc::new(KvSessionCacheInvalidator::new(kv));
     RevocationOrchestrator::new(region, peers, store, meta, cache, broadcast)
 }
 
@@ -285,13 +284,8 @@ async fn mass_revoke_atomicity_and_chunking() {
     for i in 0..2_500u32 {
         let pid = pat_id();
         ids.push(pid);
-        meta.seed_pat(
-            pid,
-            tid,
-            principal(),
-            key(&format!("{i:016x}")),
-        )
-        .await;
+        meta.seed_pat(pid, tid, principal(), key(&format!("{i:016x}")))
+            .await;
     }
     let resp = orch
         .mass_revoke(tid, RevocationReason::SecurityIncident, principal())

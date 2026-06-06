@@ -117,7 +117,9 @@ impl Origin {
             || after_scheme.contains('#')
             || after_scheme.contains('@')
         {
-            return Err(WebAuthnError::Malformed("origin must not contain path/query/userinfo"));
+            return Err(WebAuthnError::Malformed(
+                "origin must not contain path/query/userinfo",
+            ));
         }
         // canonical lowercase host; preserve port literal.
         let lowered = raw.to_ascii_lowercase();
@@ -133,10 +135,7 @@ impl Origin {
     /// Host portion (after `https://`, before optional `:port`).
     #[must_use]
     pub fn host(&self) -> &str {
-        let after_scheme = self
-            .0
-            .strip_prefix("https://")
-            .unwrap_or(self.0.as_str());
+        let after_scheme = self.0.strip_prefix("https://").unwrap_or(self.0.as_str());
         match after_scheme.find(':') {
             Some(idx) => after_scheme.get(..idx).unwrap_or(after_scheme),
             None => after_scheme,

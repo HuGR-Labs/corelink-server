@@ -30,13 +30,7 @@ fn make_ledger() -> (
     let audit = Arc::new(InMemoryConsentAuditSink::new());
     let signer = Arc::new(InMemoryConsentHmacSigner::new_test());
     let cascade = Arc::new(InMemoryCascadeSink::new());
-    let ledger = InMemoryConsentLedger::new(
-        store,
-        audit.clone(),
-        signer,
-        cascade.clone(),
-        "1.0.0",
-    );
+    let ledger = InMemoryConsentLedger::new(store, audit.clone(), signer, cascade.clone(), "1.0.0");
     (ledger, audit, cascade)
 }
 
@@ -76,9 +70,15 @@ fn ac001_grant_happy_path() {
         )
         .unwrap();
 
-    assert!(!receipt.consent_id.is_empty(), "consent_id must be populated");
+    assert!(
+        !receipt.consent_id.is_empty(),
+        "consent_id must be populated"
+    );
     assert_eq!(receipt.signature.len(), 64, "HMAC-SHA256 hex-64");
-    assert!(receipt.verify_url.contains("/v1/consent/verify"), "verify_url present");
+    assert!(
+        receipt.verify_url.contains("/v1/consent/verify"),
+        "verify_url present"
+    );
     assert!(!receipt.replay, "first grant is not a replay");
 
     let events = audit.captured();
@@ -118,7 +118,11 @@ fn ac002_symmetric_schema_grant_revoke() {
         .unwrap();
 
     assert!(!revoke_receipt.revocation_id.is_empty());
-    assert_eq!(revoke_receipt.signature.len(), 64, "revoke HMAC-SHA256 hex-64");
+    assert_eq!(
+        revoke_receipt.signature.len(),
+        64,
+        "revoke HMAC-SHA256 hex-64"
+    );
     assert!(!revoke_receipt.cascade_eta.is_empty());
     assert!(!grant_receipt.consent_id.is_empty());
 
@@ -245,9 +249,9 @@ fn ac007_locale_mismatch_rejects() {
         .grant_consent(
             "tenant-01",
             "subject-01",
-            "en-US",                           // header
+            "en-US", // header
             ConsentPurpose::MarketingEmail,
-            grant_proof(),                     // payload says pt-BR
+            grant_proof(), // payload says pt-BR
         )
         .unwrap_err();
 
@@ -268,14 +272,20 @@ fn ac008_idempotency_replay() {
     let p = grant_proof();
     let r1 = ledger
         .grant_consent(
-            "tenant-01", "subject-01", "pt-BR",
-            ConsentPurpose::BetaFeatures, p.clone(),
+            "tenant-01",
+            "subject-01",
+            "pt-BR",
+            ConsentPurpose::BetaFeatures,
+            p.clone(),
         )
         .unwrap();
     let r2 = ledger
         .grant_consent(
-            "tenant-01", "subject-01", "pt-BR",
-            ConsentPurpose::BetaFeatures, p,
+            "tenant-01",
+            "subject-01",
+            "pt-BR",
+            ConsentPurpose::BetaFeatures,
+            p,
         )
         .unwrap();
     assert!(!r1.replay);
@@ -290,7 +300,13 @@ fn ac010_list_consents() {
     let (ledger, _, _) = make_ledger();
     // Grant 2 purposes
     ledger
-        .grant_consent("t", "s", "pt-BR", ConsentPurpose::MarketingEmail, grant_proof())
+        .grant_consent(
+            "t",
+            "s",
+            "pt-BR",
+            ConsentPurpose::MarketingEmail,
+            grant_proof(),
+        )
         .unwrap();
     ledger
         .grant_consent("t", "s", "pt-BR", ConsentPurpose::BetaFeatures, {
@@ -301,7 +317,13 @@ fn ac010_list_consents() {
         .unwrap();
     // Revoke 1
     ledger
-        .revoke_consent("t", "s", "pt-BR", ConsentPurpose::MarketingEmail, revoke_proof())
+        .revoke_consent(
+            "t",
+            "s",
+            "pt-BR",
+            ConsentPurpose::MarketingEmail,
+            revoke_proof(),
+        )
         .unwrap();
 
     let list = ledger.list_consents("t", "s").unwrap();
@@ -341,14 +363,38 @@ fn schema_version_constant() {
 #[test]
 fn purpose_legal_basis_mapping() {
     use corelink_privacy::consent::schema::{ConsentPurpose, LegalBasis};
-    assert_eq!(ConsentPurpose::ServiceDelivery.legal_basis(), LegalBasis::Contract);
-    assert_eq!(ConsentPurpose::AccountManagement.legal_basis(), LegalBasis::Contract);
-    assert_eq!(ConsentPurpose::RegulatoryCompliance.legal_basis(), LegalBasis::LegalObligation);
-    assert_eq!(ConsentPurpose::SecurityMonitoring.legal_basis(), LegalBasis::LegitimateInterest);
-    assert_eq!(ConsentPurpose::AnalyticsAggregated.legal_basis(), LegalBasis::LegitimateInterest);
-    assert_eq!(ConsentPurpose::AnalyticsPersonalized.legal_basis(), LegalBasis::Consent);
-    assert_eq!(ConsentPurpose::MarketingEmail.legal_basis(), LegalBasis::Consent);
-    assert_eq!(ConsentPurpose::TrainingMlModels.legal_basis(), LegalBasis::Consent);
+    assert_eq!(
+        ConsentPurpose::ServiceDelivery.legal_basis(),
+        LegalBasis::Contract
+    );
+    assert_eq!(
+        ConsentPurpose::AccountManagement.legal_basis(),
+        LegalBasis::Contract
+    );
+    assert_eq!(
+        ConsentPurpose::RegulatoryCompliance.legal_basis(),
+        LegalBasis::LegalObligation
+    );
+    assert_eq!(
+        ConsentPurpose::SecurityMonitoring.legal_basis(),
+        LegalBasis::LegitimateInterest
+    );
+    assert_eq!(
+        ConsentPurpose::AnalyticsAggregated.legal_basis(),
+        LegalBasis::LegitimateInterest
+    );
+    assert_eq!(
+        ConsentPurpose::AnalyticsPersonalized.legal_basis(),
+        LegalBasis::Consent
+    );
+    assert_eq!(
+        ConsentPurpose::MarketingEmail.legal_basis(),
+        LegalBasis::Consent
+    );
+    assert_eq!(
+        ConsentPurpose::TrainingMlModels.legal_basis(),
+        LegalBasis::Consent
+    );
 }
 
 // Revocable purposes only for Consent basis

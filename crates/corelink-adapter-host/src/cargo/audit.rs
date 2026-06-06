@@ -79,32 +79,19 @@ impl AuditOrchestrator {
             "operation": "put",
         });
 
-        let event = AuditEvent::new(
-            EVENT_TYPE_CACHE_WRITE,
-            tenant_id,
-            (self.clock)(),
-            payload,
-        );
+        let event = AuditEvent::new(EVENT_TYPE_CACHE_WRITE, tenant_id, (self.clock)(), payload);
 
         self.emit_event(event)
     }
 
     /// Emit an auth-failed audit row. Best-effort (logged but not
     /// fail-CLOSED — auth itself already rejected the request).
-    pub fn emit_auth_failed(
-        &self,
-        reason: &str,
-    ) {
+    pub fn emit_auth_failed(&self, reason: &str) {
         let payload = json!({
             "reason": reason,
             "adapter": "cargo",
         });
-        let event = AuditEvent::new(
-            EVENT_TYPE_AUTH_FAILED,
-            "unknown",
-            (self.clock)(),
-            payload,
-        );
+        let event = AuditEvent::new(EVENT_TYPE_AUTH_FAILED, "unknown", (self.clock)(), payload);
         // Auth-failed audit is best-effort; ignore emitter errors here
         // (the request was already rejected; we log only).
         let _ = self.emitter.emit(event);
@@ -147,10 +134,8 @@ mod tests {
     #[test]
     fn emit_cache_write_appends_event_with_expected_shape() {
         let sink: Arc<InMemoryAuditEmitter> = Arc::new(InMemoryAuditEmitter::new());
-        let orchestrator = AuditOrchestrator::with_clock(
-            sink.clone(),
-            Arc::new(|| 1_716_700_000_000),
-        );
+        let orchestrator =
+            AuditOrchestrator::with_clock(sink.clone(), Arc::new(|| 1_716_700_000_000));
         orchestrator
             .emit_cache_write("tenant-abc", "deadbeef".repeat(8).as_str(), 4096)
             .unwrap();

@@ -114,20 +114,22 @@ fn session_initiate_strategy() -> impl Strategy<Value = MultipartInitiateRequest
         region_strategy(),
         1i64..1_000_000_i64,
     )
-        .prop_map(|(sid, tid, blob, region, now_ms)| MultipartInitiateRequest {
-            session_id: sid,
-            tenant_id: tid,
-            tenant_prefix: [0xab; 16],
-            path_key_id: 1,
-            blob_digest_expected: blob.clone(),
-            region,
-            bucket: format!("corelink-chunk-{region}"),
-            object_key: format!("chunk-{region}/abcd/{blob}"),
-            now_ms,
-            ttl_ms: None,
-            created_by_pat_id: None,
-            created_by_request_id: format!("req-{tid}"),
-        })
+        .prop_map(
+            |(sid, tid, blob, region, now_ms)| MultipartInitiateRequest {
+                session_id: sid,
+                tenant_id: tid,
+                tenant_prefix: [0xab; 16],
+                path_key_id: 1,
+                blob_digest_expected: blob.clone(),
+                region,
+                bucket: format!("corelink-chunk-{region}"),
+                object_key: format!("chunk-{region}/abcd/{blob}"),
+                now_ms,
+                ttl_ms: None,
+                created_by_pat_id: None,
+                created_by_request_id: format!("req-{tid}"),
+            },
+        )
 }
 
 // ---------------------------------------------------------------------------

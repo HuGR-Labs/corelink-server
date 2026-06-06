@@ -264,9 +264,7 @@ impl StripeClientConfig {
     #[must_use]
     pub fn effective_base_url(&self) -> String {
         match &self.mode {
-            StripeAuthMode::Direct { api_base, .. } => {
-                api_base.trim_end_matches('/').to_string()
-            }
+            StripeAuthMode::Direct { api_base, .. } => api_base.trim_end_matches('/').to_string(),
             StripeAuthMode::WalletBroker {
                 wallet_base,
                 stripe_ref,
@@ -400,7 +398,10 @@ pub struct StripeRealClient {
     // retention. Kept here as the canonical injection point so test
     // harnesses can pin time via `.with_clock(...)` once a clock-dependent
     // operation lands.
-    #[allow(dead_code, reason = "wave-20 injection scaffold; consumed by future timestamp ops")]
+    #[allow(
+        dead_code,
+        reason = "wave-20 injection scaffold; consumed by future timestamp ops"
+    )]
     clock: Arc<dyn Clock + Send + Sync>,
 }
 
@@ -641,11 +642,7 @@ impl StripeClient for StripeRealClient {
         // Idempotency key: deterministic per (tenant, tier).
         // 24h Stripe window matches the WI §6.4 60s lock — same caller
         // retrying within the lock window gets the identical session.
-        let idem = format!(
-            "checkout:{}:{}",
-            req.tenant_id.as_str(),
-            req.tier.as_str()
-        );
+        let idem = format!("checkout:{}:{}", req.tenant_id.as_str(), req.tier.as_str());
         // Production wiring resolves price_id per tier via env or a
         // config map; we pull from env for now so callers can override
         // without touching this crate.
@@ -697,7 +694,10 @@ fn map_api_error(http_status: u16, body: &str, retry_after_seconds: Option<u64>)
     let parsed: Option<ApiErr> = serde_json::from_str::<Envelope>(body)
         .ok()
         .and_then(|e| e.error);
-    let ty = parsed.as_ref().and_then(|p| p.ty.clone()).unwrap_or_default();
+    let ty = parsed
+        .as_ref()
+        .and_then(|p| p.ty.clone())
+        .unwrap_or_default();
     let code = parsed
         .as_ref()
         .and_then(|p| p.code.clone())
@@ -909,7 +909,10 @@ mod tests {
             .unwrap();
         let dbg = format!("{c_direct:?}");
         assert!(dbg.contains("<redacted>"));
-        assert!(!dbg.contains("sk_"), "Direct client Debug leaked sk_: {dbg}");
+        assert!(
+            !dbg.contains("sk_"),
+            "Direct client Debug leaked sk_: {dbg}"
+        );
         assert!(!dbg.contains("SECRET"));
 
         // Wallet client.

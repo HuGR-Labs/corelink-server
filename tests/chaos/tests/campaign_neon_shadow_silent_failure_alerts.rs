@@ -34,7 +34,11 @@ fn shadow_silent_failure_flags_drift_and_keeps_r2_writes() {
     assert_eq!(audit.emit("row-3"), SinkPersistResult::SilentDrop);
 
     // (1) R2 archive remains durable — primary fail-CLOSED property.
-    assert_eq!(audit.r2_archive().len(), 3, "R2 archive must keep accepting rows");
+    assert_eq!(
+        audit.r2_archive().len(),
+        3,
+        "R2 archive must keep accepting rows"
+    );
     assert_eq!(
         audit.neon_shadow().len(),
         1,

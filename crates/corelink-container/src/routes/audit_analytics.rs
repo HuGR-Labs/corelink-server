@@ -99,12 +99,10 @@ mod tests_prelude;
 
 pub use audit_sink::{AnalyticsAuditSink, InMemoryAnalyticsAuditSink};
 pub use shadow_factory::ShadowSinkFactory;
-pub use state::{
-    audit_analytics_rate_limit_config, build_state, router, AuditAnalyticsRouteState,
-};
+pub use state::{audit_analytics_rate_limit_config, build_state, router, AuditAnalyticsRouteState};
 pub use types::{
     AnalyticsAuditRow, EventCountEntry, EventCountQuery, EventCountResponse, RequestPrelude,
-    TimelineEntry, TimelineQuery, TimelineResponse, EVENT_TYPE_ANALYTICS_QUERY,
-    MAX_GRANULARITY_MS, MAX_TIMELINE_BUCKETS, REGION_SOURCE_FALLBACK, REGION_SOURCE_PRELUDE,
+    TimelineEntry, TimelineQuery, TimelineResponse, EVENT_TYPE_ANALYTICS_QUERY, MAX_GRANULARITY_MS,
+    MAX_TIMELINE_BUCKETS, REGION_SOURCE_FALLBACK, REGION_SOURCE_PRELUDE,
     REQUEST_PRELUDE_MISSING_EXIT, ROUTE_EVENT_COUNT, ROUTE_TIMELINE, TENANT_ID_HEADER,
 };

@@ -28,8 +28,8 @@
 
 use bytes::Bytes;
 use corelink_r2_multipart::{
-    Bucket, InMemoryMultipartAdapter, InitiateRequest, MultipartAdapter, MultipartError,
-    PartETag, PartNumber,
+    Bucket, InMemoryMultipartAdapter, InitiateRequest, MultipartAdapter, MultipartError, PartETag,
+    PartNumber,
 };
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey, TenantPrefix};
 use proptest::prelude::*;

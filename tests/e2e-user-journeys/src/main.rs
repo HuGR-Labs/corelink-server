@@ -55,8 +55,12 @@ impl Config {
                 .to_string(),
             token_a: env::var("CORELINK_E2E_TOKEN").ok(),
             token_b: env::var("CORELINK_E2E_TOKEN_TENANT_B").ok(),
-            quota_test: env::var("CORELINK_E2E_QUOTA_TEST").map(|v| v == "1").unwrap_or(false),
-            bazel_test: env::var("CORELINK_E2E_BAZEL_TEST").map(|v| v == "1").unwrap_or(false),
+            quota_test: env::var("CORELINK_E2E_QUOTA_TEST")
+                .map(|v| v == "1")
+                .unwrap_or(false),
+            bazel_test: env::var("CORELINK_E2E_BAZEL_TEST")
+                .map(|v| v == "1")
+                .unwrap_or(false),
         }
     }
 }
@@ -187,10 +191,7 @@ fn journey_onboarding_ping(cfg: &Config, client: &Client) -> JourneyResult {
         Err(e) => {
             return JourneyResult {
                 name,
-                status: JourneyStatus::Fail(format!(
-                    "GET /v1/users/me connection failed: {}",
-                    e
-                )),
+                status: JourneyStatus::Fail(format!("GET /v1/users/me connection failed: {}", e)),
                 duration_ms: start.elapsed().as_millis() as u64,
                 p0_gates,
             };
@@ -342,10 +343,7 @@ fn journey_auth_rejection(cfg: &Config, client: &Client) -> JourneyResult {
         Err(e) => {
             return JourneyResult {
                 name,
-                status: JourneyStatus::Fail(format!(
-                    "connection failed (fake-token probe): {}",
-                    e
-                )),
+                status: JourneyStatus::Fail(format!("connection failed (fake-token probe): {}", e)),
                 duration_ms: start.elapsed().as_millis() as u64,
                 p0_gates,
             };
@@ -392,7 +390,8 @@ fn journey_auth_rejection(cfg: &Config, client: &Client) -> JourneyResult {
 // ─────────────────────────────────────────────────────────────────────────────
 fn journey_cache_miss_hit(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "Journey 3: Cache miss→hit — PUT blob, GET bytes match, 2nd GET = cache hit";
-    let p0_gates = "P0-1 (router not bound), P0-4 (no R2 bindings), P0-7 (InMemory fakes, ephemeral)";
+    let p0_gates =
+        "P0-1 (router not bound), P0-4 (no R2 bindings), P0-7 (InMemory fakes, ephemeral)";
     let start = Instant::now();
 
     let token = match &cfg.token_a {
@@ -426,7 +425,9 @@ fn journey_cache_miss_hit(cfg: &Config, client: &Client) -> JourneyResult {
     // We try the most common pattern; a 404 here means the route doesn't exist (P0-1).
     let put_url = format!(
         "{}/v1/cas/blobs/{}/{}",
-        cfg.endpoint, digest_hex, blob_bytes.len()
+        cfg.endpoint,
+        digest_hex,
+        blob_bytes.len()
     );
 
     let put_resp = match client
@@ -465,7 +466,9 @@ fn journey_cache_miss_hit(cfg: &Config, client: &Client) -> JourneyResult {
     // GET the blob (first — should be a miss served from just-written data)
     let get_url = format!(
         "{}/v1/cas/blobs/{}/{}",
-        cfg.endpoint, digest_hex, blob_bytes.len()
+        cfg.endpoint,
+        digest_hex,
+        blob_bytes.len()
     );
 
     let get_resp1 = match client
@@ -493,7 +496,8 @@ fn journey_cache_miss_hit(cfg: &Config, client: &Client) -> JourneyResult {
             status: JourneyStatus::Fail(format!(
                 "GET blob (first) returned {} (expected 200). \
                  Likely P0-1/P0-4/P0-7: route missing or storage not bound. Digest: {}.",
-                get_resp1.status(), digest_with_size
+                get_resp1.status(),
+                digest_with_size
             )),
             duration_ms: start.elapsed().as_millis() as u64,
             p0_gates,
@@ -505,10 +509,7 @@ fn journey_cache_miss_hit(cfg: &Config, client: &Client) -> JourneyResult {
         Err(e) => {
             return JourneyResult {
                 name,
-                status: JourneyStatus::Fail(format!(
-                    "GET blob body read error: {}",
-                    e
-                )),
+                status: JourneyStatus::Fail(format!("GET blob body read error: {}", e)),
                 duration_ms: start.elapsed().as_millis() as u64,
                 p0_gates,
             };
@@ -522,7 +523,8 @@ fn journey_cache_miss_hit(cfg: &Config, client: &Client) -> JourneyResult {
                 "GET blob bytes don't match PUT bytes. \
                  PUT {} bytes, GET {} bytes. \
                  P0-7: InMemory fakes may be returning wrong data.",
-                blob_bytes.len(), returned_bytes.len()
+                blob_bytes.len(),
+                returned_bytes.len()
             )),
             duration_ms: start.elapsed().as_millis() as u64,
             p0_gates,
@@ -555,7 +557,8 @@ fn journey_cache_miss_hit(cfg: &Config, client: &Client) -> JourneyResult {
             status: JourneyStatus::Fail(format!(
                 "GET blob (second) returned {} (expected 200 with cache-hit semantics). \
                  Digest: {}.",
-                get_resp2.status(), digest_with_size
+                get_resp2.status(),
+                digest_with_size
             )),
             duration_ms: start.elapsed().as_millis() as u64,
             p0_gates,
@@ -570,10 +573,7 @@ fn journey_cache_miss_hit(cfg: &Config, client: &Client) -> JourneyResult {
         Err(e) => {
             return JourneyResult {
                 name,
-                status: JourneyStatus::Fail(format!(
-                    "GET blob (2nd) body read error: {}",
-                    e
-                )),
+                status: JourneyStatus::Fail(format!("GET blob (2nd) body read error: {}", e)),
                 duration_ms: start.elapsed().as_millis() as u64,
                 p0_gates,
             };
@@ -610,7 +610,8 @@ fn journey_cache_miss_hit(cfg: &Config, client: &Client) -> JourneyResult {
 // ─────────────────────────────────────────────────────────────────────────────
 fn journey_bazel_round_trip(cfg: &Config, _client: &Client) -> JourneyResult {
     let name = "Journey 4: Bazel round-trip — bazel-init + 2 builds → 2nd hits cache";
-    let p0_gates = "P0-1 (router not bound), P0-4 (no R2 bindings), P0-6 (container health mismatch)";
+    let p0_gates =
+        "P0-1 (router not bound), P0-4 (no R2 bindings), P0-6 (container health mismatch)";
     let start = Instant::now();
 
     if !cfg.bazel_test {
@@ -618,7 +619,8 @@ fn journey_bazel_round_trip(cfg: &Config, _client: &Client) -> JourneyResult {
             name,
             status: JourneyStatus::Gated(
                 "CORELINK_E2E_BAZEL_TEST=1 not set — Bazel round-trip skipped. \
-                 Set to enable (requires `bazel` on PATH and a valid PAT).".to_string(),
+                 Set to enable (requires `bazel` on PATH and a valid PAT)."
+                    .to_string(),
             ),
             duration_ms: start.elapsed().as_millis() as u64,
             p0_gates,
@@ -690,8 +692,11 @@ fn journey_bazel_round_trip(cfg: &Config, _client: &Client) -> JourneyResult {
     }
 
     // Minimal MODULE.bazel
-    std::fs::write(tmp_dir.join("MODULE.bazel"), "module(name = \"corelink_e2e_test\", version = \"0.0.1\")\n")
-        .expect("write MODULE.bazel");
+    std::fs::write(
+        tmp_dir.join("MODULE.bazel"),
+        "module(name = \"corelink_e2e_test\", version = \"0.0.1\")\n",
+    )
+    .expect("write MODULE.bazel");
 
     // Minimal BUILD.bazel with a genrule
     let build_content = r#"genrule(
@@ -700,8 +705,7 @@ fn journey_bazel_round_trip(cfg: &Config, _client: &Client) -> JourneyResult {
     cmd = "echo 'hello corelink e2e' > $@",
 )
 "#;
-    std::fs::write(tmp_dir.join("BUILD.bazel"), build_content)
-        .expect("write BUILD.bazel");
+    std::fs::write(tmp_dir.join("BUILD.bazel"), build_content).expect("write BUILD.bazel");
 
     // Run `corelink bazel-init` in the temp workspace
     let bazel_init = Command::new("corelink")
@@ -796,10 +800,7 @@ fn journey_bazel_round_trip(cfg: &Config, _client: &Client) -> JourneyResult {
         let stderr = String::from_utf8_lossy(&build2_output.stderr);
         return JourneyResult {
             name,
-            status: JourneyStatus::Fail(format!(
-                "Second `bazel build //...` failed: {}",
-                stderr
-            )),
+            status: JourneyStatus::Fail(format!("Second `bazel build //...` failed: {}", stderr)),
             duration_ms: start.elapsed().as_millis() as u64,
             p0_gates,
         };
@@ -849,7 +850,8 @@ fn journey_bazel_round_trip(cfg: &Config, _client: &Client) -> JourneyResult {
 // ─────────────────────────────────────────────────────────────────────────────
 fn journey_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "Journey 5: Tenant isolation — tenant A PUTs; tenant B GETs same addr → denied/miss";
-    let p0_gates = "P0-3 (no tenant isolation; all traffic → single _pending_auth DO; tenantId null)";
+    let p0_gates =
+        "P0-3 (no tenant isolation; all traffic → single _pending_auth DO; tenantId null)";
     let start = Instant::now();
 
     let token_a = match &cfg.token_a {
@@ -873,7 +875,8 @@ fn journey_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
                 name,
                 status: JourneyStatus::Gated(
                     "CORELINK_E2E_TOKEN_TENANT_B not set — cannot test cross-tenant isolation. \
-                     Set to a PAT belonging to a DIFFERENT tenant than CORELINK_E2E_TOKEN.".to_string(),
+                     Set to a PAT belonging to a DIFFERENT tenant than CORELINK_E2E_TOKEN."
+                        .to_string(),
                 ),
                 duration_ms: start.elapsed().as_millis() as u64,
                 p0_gates,
@@ -892,7 +895,9 @@ fn journey_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
 
     let cas_url = format!(
         "{}/v1/cas/blobs/{}/{}",
-        cfg.endpoint, digest_hex, blob_bytes.len()
+        cfg.endpoint,
+        digest_hex,
+        blob_bytes.len()
     );
 
     // Tenant A: PUT the blob
@@ -907,10 +912,7 @@ fn journey_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
         Err(e) => {
             return JourneyResult {
                 name,
-                status: JourneyStatus::Fail(format!(
-                    "Tenant A PUT connection failed: {}",
-                    e
-                )),
+                status: JourneyStatus::Fail(format!("Tenant A PUT connection failed: {}", e)),
                 duration_ms: start.elapsed().as_millis() as u64,
                 p0_gates,
             };
@@ -943,10 +945,7 @@ fn journey_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
         Err(e) => {
             return JourneyResult {
                 name,
-                status: JourneyStatus::Fail(format!(
-                    "Tenant B GET connection failed: {}",
-                    e
-                )),
+                status: JourneyStatus::Fail(format!("Tenant B GET connection failed: {}", e)),
                 duration_ms: start.elapsed().as_millis() as u64,
                 p0_gates,
             };
@@ -965,7 +964,8 @@ fn journey_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
                     status: JourneyStatus::Fail(
                         "Tenant B received 200 from tenant A's content address — \
                          P0-3 CONFIRMED: tenant isolation not enforced. \
-                         Could not read body for byte comparison.".to_string(),
+                         Could not read body for byte comparison."
+                            .to_string(),
                     ),
                     duration_ms: start.elapsed().as_millis() as u64,
                     p0_gates,
@@ -1143,7 +1143,8 @@ fn journey_audit_export(cfg: &Config, client: &Client) -> JourneyResult {
                 name,
                 status: JourneyStatus::Fail(
                     "GET /v1/admin/audit/events response missing 'items' array. \
-                     Response schema doesn't match OpenAPI AuditEventPage.".to_string(),
+                     Response schema doesn't match OpenAPI AuditEventPage."
+                        .to_string(),
                 ),
                 duration_ms: start.elapsed().as_millis() as u64,
                 p0_gates,
@@ -1158,7 +1159,8 @@ fn journey_audit_export(cfg: &Config, client: &Client) -> JourneyResult {
             status: JourneyStatus::Fail(
                 "Audit log returned 0 events after performing operations. \
                  Likely P0-4: D1 not bound to the container → no audit writes persisted. \
-                 Or P0-7: InMemory audit emitter is ephemeral per-instance RAM.".to_string(),
+                 Or P0-7: InMemory audit emitter is ephemeral per-instance RAM."
+                    .to_string(),
             ),
             duration_ms: start.elapsed().as_millis() as u64,
             p0_gates,
@@ -1183,7 +1185,9 @@ fn journey_audit_export(cfg: &Config, client: &Client) -> JourneyResult {
                 break;
             }
         }
-        if !chain_ok { break; }
+        if !chain_ok {
+            break;
+        }
 
         let occurred_at = event["occurred_at_ms"].as_i64().unwrap_or(0);
 
@@ -1258,7 +1262,8 @@ fn journey_quota_hard_cap(cfg: &Config, client: &Client) -> JourneyResult {
             status: JourneyStatus::Gated(
                 "CORELINK_E2E_QUOTA_TEST=1 not set — quota hard-cap test skipped. \
                  WARNING: this test uploads many blobs; set only against a test account. \
-                 We use small blobs (1KB) and stop at 10000 attempts or first 429.".to_string(),
+                 We use small blobs (1KB) and stop at 10000 attempts or first 429."
+                    .to_string(),
             ),
             duration_ms: start.elapsed().as_millis() as u64,
             p0_gates,
@@ -1303,7 +1308,9 @@ fn journey_quota_hard_cap(cfg: &Config, client: &Client) -> JourneyResult {
 
         let put_url = format!(
             "{}/v1/cas/blobs/{}/{}",
-            cfg.endpoint, digest_hex, blob.len()
+            cfg.endpoint,
+            digest_hex,
+            blob.len()
         );
 
         let resp = match client
@@ -1377,11 +1384,42 @@ fn main() {
     println!("╔══════════════════════════════════════════════════════════════════╗");
     println!("║       CoreLink E2E User-Journey Suite — Black-Box Ship Gate      ║");
     println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║  Endpoint: {:<55} ║", &cfg.endpoint[..cfg.endpoint.len().min(55)]);
-    println!("║  Token A:  {:<55} ║", if cfg.token_a.is_some() { "SET" } else { "NOT SET" });
-    println!("║  Token B:  {:<55} ║", if cfg.token_b.is_some() { "SET" } else { "NOT SET" });
-    println!("║  Bazel:    {:<55} ║", if cfg.bazel_test { "ENABLED" } else { "GATED (CORELINK_E2E_BAZEL_TEST=1)" });
-    println!("║  Quota:    {:<55} ║", if cfg.quota_test { "ENABLED" } else { "GATED (CORELINK_E2E_QUOTA_TEST=1)" });
+    println!(
+        "║  Endpoint: {:<55} ║",
+        &cfg.endpoint[..cfg.endpoint.len().min(55)]
+    );
+    println!(
+        "║  Token A:  {:<55} ║",
+        if cfg.token_a.is_some() {
+            "SET"
+        } else {
+            "NOT SET"
+        }
+    );
+    println!(
+        "║  Token B:  {:<55} ║",
+        if cfg.token_b.is_some() {
+            "SET"
+        } else {
+            "NOT SET"
+        }
+    );
+    println!(
+        "║  Bazel:    {:<55} ║",
+        if cfg.bazel_test {
+            "ENABLED"
+        } else {
+            "GATED (CORELINK_E2E_BAZEL_TEST=1)"
+        }
+    );
+    println!(
+        "║  Quota:    {:<55} ║",
+        if cfg.quota_test {
+            "ENABLED"
+        } else {
+            "GATED (CORELINK_E2E_QUOTA_TEST=1)"
+        }
+    );
     println!("╚══════════════════════════════════════════════════════════════════╝");
     println!();
 
@@ -1420,9 +1458,16 @@ fn main() {
             }
         };
 
-        println!("│ {} [{}] ({:>5}ms) {}",
-            icon, label, result.duration_ms,
-            if result.name.len() > 60 { &result.name[..60] } else { result.name }
+        println!(
+            "│ {} [{}] ({:>5}ms) {}",
+            icon,
+            label,
+            result.duration_ms,
+            if result.name.len() > 60 {
+                &result.name[..60]
+            } else {
+                result.name
+            }
         );
 
         match &result.status {
@@ -1432,17 +1477,26 @@ fn main() {
                 println!("│         DETAIL: {}", truncated);
             }
             JourneyStatus::Gated(reason) => {
-                let truncated = if reason.len() > 200 { &reason[..200] } else { reason };
+                let truncated = if reason.len() > 200 {
+                    &reason[..200]
+                } else {
+                    reason
+                };
                 println!("│         REASON: {}", truncated);
             }
             JourneyStatus::Pass => {}
         }
 
         println!("│         P0-GATE: {}", result.p0_gates);
-        println!("├──────────────────────────────────────────────────────────────────────────────┤");
+        println!(
+            "├──────────────────────────────────────────────────────────────────────────────┤"
+        );
     }
 
-    println!("│ Summary: {} PASS  {} FAIL  {} GATED (not silently skipped)                     │", pass, fail, gated);
+    println!(
+        "│ Summary: {} PASS  {} FAIL  {} GATED (not silently skipped)                     │",
+        pass, fail, gated
+    );
     println!("└──────────────────────────────────────────────────────────────────────────────┘");
     println!();
 

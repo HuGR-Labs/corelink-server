@@ -231,11 +231,9 @@ impl WebAuthnCredentialIdHash {
         use sha2::Digest;
         let digest = sha2::Sha256::digest(raw);
         let full = hex::encode(digest);
-        let prefix = full
-            .get(..16)
-            .ok_or(crate::AuditError::Canonicalization(
-                "sha256 hex output shorter than 16 chars (impossible)".to_string(),
-            ))?;
+        let prefix = full.get(..16).ok_or(crate::AuditError::Canonicalization(
+            "sha256 hex output shorter than 16 chars (impossible)".to_string(),
+        ))?;
         Ok(Self(prefix.to_string()))
     }
 
@@ -753,13 +751,13 @@ impl AuthEventData {
             Self::WebauthnRegistered { .. } => AuthEventType::WebauthnRegistered,
             Self::WebauthnAuthenticated { .. } => AuthEventType::WebauthnAuthenticated,
             Self::WebauthnDeleted { .. } => AuthEventType::WebauthnDeleted,
-            Self::WebauthnSignCountRegression { .. } => {
-                AuthEventType::WebauthnSignCountRegression
-            }
+            Self::WebauthnSignCountRegression { .. } => AuthEventType::WebauthnSignCountRegression,
             Self::WebauthnOriginAttackAttempt { .. } => AuthEventType::WebauthnOriginAttackAttempt,
             Self::WebauthnNewDeviceUsed { .. } => AuthEventType::WebauthnNewDeviceUsed,
             Self::PatScopeEscalated { .. } => AuthEventType::PatScopeEscalated,
-            Self::AdminOpWebauthnAuthenticated { .. } => AuthEventType::AdminOpWebauthnAuthenticated,
+            Self::AdminOpWebauthnAuthenticated { .. } => {
+                AuthEventType::AdminOpWebauthnAuthenticated
+            }
             Self::AdminOpMassRevoke { .. } => AuthEventType::AdminOpMassRevoke,
             Self::CrossRegionBurst { .. } => AuthEventType::CrossRegionBurst,
         }
@@ -1265,9 +1263,11 @@ pub fn synthetic_data_for(t: AuthEventType) -> Result<AuthEventData, crate::Audi
             previous_scope_bitset: 0b1,
             new_scope_bitset: 0b11,
         },
-        AuthEventType::AdminOpWebauthnAuthenticated => AuthEventData::AdminOpWebauthnAuthenticated {
-            op_class: "mass_revoke".to_string(),
-        },
+        AuthEventType::AdminOpWebauthnAuthenticated => {
+            AuthEventData::AdminOpWebauthnAuthenticated {
+                op_class: "mass_revoke".to_string(),
+            }
+        }
         AuthEventType::AdminOpMassRevoke => AuthEventData::AdminOpMassRevoke {
             revoked_count: 1000,
         },

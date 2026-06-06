@@ -26,9 +26,9 @@ use std::sync::Arc;
 use proptest::prelude::*;
 
 use corelink_failover_router::{
-    FailoverAuditSink, FailoverRouter, InMemoryFailoverAuditSink, InMemoryFailoverRouter,
-    InMemoryHealthProbe, HealthProbe, ReadMode, Region, ResidencyGraph, SLO_FAILOVER_OVERHEAD_MS,
-    WriteMode,
+    FailoverAuditSink, FailoverRouter, HealthProbe, InMemoryFailoverAuditSink,
+    InMemoryFailoverRouter, InMemoryHealthProbe, ReadMode, Region, ResidencyGraph, WriteMode,
+    SLO_FAILOVER_OVERHEAD_MS,
 };
 
 fn proptest_cases() -> u32 {

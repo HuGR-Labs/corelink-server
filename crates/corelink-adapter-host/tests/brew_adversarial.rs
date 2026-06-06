@@ -20,9 +20,7 @@ mod common;
 
 use std::sync::Arc;
 
-use common::{
-    default_bottle_limit, spin_adapter, InMemoryCas, StaticTenantResolver,
-};
+use common::{default_bottle_limit, spin_adapter, InMemoryCas, StaticTenantResolver};
 use corelink_audit::ports::InMemoryAuditEmitter;
 use url::Url;
 use wiremock::matchers::method;

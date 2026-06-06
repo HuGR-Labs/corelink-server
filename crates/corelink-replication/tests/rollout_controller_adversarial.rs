@@ -145,7 +145,10 @@ fn adv_004_budget_exceeded_freeze() {
     }
 
     let consumed = budget.consumed_ratio().unwrap();
-    assert!(consumed > 1.0, "ratio {consumed} should be > 1.0 (30% cap exceeded)");
+    assert!(
+        consumed > 1.0,
+        "ratio {consumed} should be > 1.0 (30% cap exceeded)"
+    );
 
     // 4th rollout attempt must fail with BudgetExceeded
     let actor = fresh_actor(0);

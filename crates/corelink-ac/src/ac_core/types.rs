@@ -323,10 +323,7 @@ mod tests {
     fn output_count_sums_files_and_directories() {
         let h = Digest::compute(b"x");
         let r = ActionResult::new(
-            vec![
-                OutputFileDigest::new(h, 1),
-                OutputFileDigest::new(h, 2),
-            ],
+            vec![OutputFileDigest::new(h, 1), OutputFileDigest::new(h, 2)],
             vec![OutputDirectoryDigest::new(h, 3)],
             0,
             Vec::new(),

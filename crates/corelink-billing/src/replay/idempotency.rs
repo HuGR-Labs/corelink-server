@@ -218,8 +218,8 @@ impl ReplayIdempotencyLedger for FailingReplayIdempotencyLedger {
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
-    use super::*;
     use super::super::event::{ReconstructedLayers, ReplayDecision, ReplayReason};
+    use super::*;
 
     fn req(rid: Uuid, t: Uuid, period: &str, reason: ReplayReason) -> ReplayRequest {
         ReplayRequest::new(
@@ -247,7 +247,12 @@ mod tests {
     fn first_sighting_inserts() {
         let l = InMemoryReplayIdempotencyLedger::new();
         let rid = Uuid::now_v7();
-        let r = req(rid, Uuid::now_v7(), "2026-05", ReplayReason::CustomerDispute);
+        let r = req(
+            rid,
+            Uuid::now_v7(),
+            "2026-05",
+            ReplayReason::CustomerDispute,
+        );
         let o = outcome(1);
         let r_out = l.record_outcome(&r, o.clone()).unwrap();
         assert!(matches!(r_out, RecordOutcome::Inserted));
@@ -260,7 +265,12 @@ mod tests {
     fn re_submission_returns_prior_outcome_idempotent() {
         let l = InMemoryReplayIdempotencyLedger::new();
         let rid = Uuid::now_v7();
-        let r = req(rid, Uuid::now_v7(), "2026-05", ReplayReason::CustomerDispute);
+        let r = req(
+            rid,
+            Uuid::now_v7(),
+            "2026-05",
+            ReplayReason::CustomerDispute,
+        );
         let o1 = outcome(1);
         let o2 = outcome(2);
         l.record_outcome(&r, o1.clone()).unwrap();
@@ -323,7 +333,12 @@ mod tests {
         let l1 = InMemoryReplayIdempotencyLedger::new();
         let l2 = l1.clone();
         let rid = Uuid::now_v7();
-        let r = req(rid, Uuid::now_v7(), "2026-05", ReplayReason::CustomerDispute);
+        let r = req(
+            rid,
+            Uuid::now_v7(),
+            "2026-05",
+            ReplayReason::CustomerDispute,
+        );
         l1.record_outcome(&r, outcome(1)).unwrap();
         assert_eq!(l2.len(), 1);
     }
@@ -338,7 +353,12 @@ mod tests {
     #[test]
     fn failing_ledger_returns_backend_error_on_record() {
         let l = FailingReplayIdempotencyLedger::new();
-        let r = req(Uuid::now_v7(), Uuid::now_v7(), "2026-05", ReplayReason::CustomerDispute);
+        let r = req(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            "2026-05",
+            ReplayReason::CustomerDispute,
+        );
         let err = l.record_outcome(&r, outcome(1)).unwrap_err();
         assert!(matches!(err, ReplayIdempotencyError::Backend(_)));
     }

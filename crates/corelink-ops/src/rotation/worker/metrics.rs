@@ -27,12 +27,10 @@ pub mod names {
         "corelink_admin_rotation_downstream_error_rate";
     /// Gauge: re-key progress ratio (0.0..=1.0) per asset type.
     /// Labels: `asset_type`.
-    pub const ROTATION_REKEY_PROGRESS_RATIO: &str =
-        "corelink_admin_rotation_rekey_progress_ratio";
+    pub const ROTATION_REKEY_PROGRESS_RATIO: &str = "corelink_admin_rotation_rekey_progress_ratio";
     /// Histogram: rotation duration per asset type + phase.
     /// Labels: `asset_type`, `phase` ∈ {generate, promote, rekey, retire, destroy}.
-    pub const ROTATION_DURATION_SECONDS: &str =
-        "corelink_admin_rotation_duration_seconds_bucket";
+    pub const ROTATION_DURATION_SECONDS: &str = "corelink_admin_rotation_duration_seconds_bucket";
 }
 
 /// Sink for rotation metrics emission.
@@ -96,14 +94,20 @@ impl RotationMetrics {
     /// Return the latest rekey progress for `asset_class`.
     #[must_use]
     pub fn rekey_progress(&self, asset_class: AssetClass) -> f64 {
-        let progress = self.rekey_progress.lock().unwrap_or_else(|e| e.into_inner());
+        let progress = self
+            .rekey_progress
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         *progress.get(asset_class.as_str()).unwrap_or(&0.0)
     }
 
     /// Return the overlap observations for `asset_class`.
     #[must_use]
     pub fn overlap_observations(&self, asset_class: AssetClass) -> Vec<u64> {
-        let obs = self.overlap_observations.lock().unwrap_or_else(|e| e.into_inner());
+        let obs = self
+            .overlap_observations
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         obs.get(asset_class.as_str()).cloned().unwrap_or_default()
     }
 }
@@ -122,12 +126,18 @@ impl RotationMetricsSink for RotationMetrics {
     }
 
     fn record_rekey_progress(&self, asset_class: AssetClass, ratio: f64) {
-        let mut progress = self.rekey_progress.lock().unwrap_or_else(|e| e.into_inner());
+        let mut progress = self
+            .rekey_progress
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         progress.insert(asset_class.as_str().to_string(), ratio);
     }
 
     fn observe_overlap_seconds(&self, asset_class: AssetClass, seconds: u64) {
-        let mut obs = self.overlap_observations.lock().unwrap_or_else(|e| e.into_inner());
+        let mut obs = self
+            .overlap_observations
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         obs.entry(asset_class.as_str().to_string())
             .or_default()
             .push(seconds);

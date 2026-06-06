@@ -33,8 +33,7 @@ pub fn canonical_catalog() -> Vec<ChaosExperiment> {
             blast_radius_bps: 500, // 5% SLO impact tolerance
             rollback_seconds_max: 300,
             preconditions: &["r2-healthy", "slo-burn-rate-nominal"],
-            steady_state_hypothesis:
-                "P99 GET latency ≤ baseline + 500ms; error rate unchanged",
+            steady_state_hypothesis: "P99 GET latency ≤ baseline + 500ms; error rate unchanged",
         },
         ChaosExperiment {
             id: ChaosExperimentId::new("lat-d1-query"),
@@ -44,8 +43,7 @@ pub fn canonical_catalog() -> Vec<ChaosExperiment> {
             blast_radius_bps: 400,
             rollback_seconds_max: 300,
             preconditions: &["d1-healthy", "slo-burn-rate-nominal"],
-            steady_state_hypothesis:
-                "P99 query latency ≤ baseline + 200ms; success rate unchanged",
+            steady_state_hypothesis: "P99 query latency ≤ baseline + 200ms; success rate unchanged",
         },
         ChaosExperiment {
             id: ChaosExperimentId::new("lat-neon-query"),
@@ -55,8 +53,7 @@ pub fn canonical_catalog() -> Vec<ChaosExperiment> {
             blast_radius_bps: 400,
             rollback_seconds_max: 300,
             preconditions: &["neon-primary-healthy"],
-            steady_state_hypothesis:
-                "P99 Neon latency ≤ baseline + 300ms; failover not triggered",
+            steady_state_hypothesis: "P99 Neon latency ≤ baseline + 300ms; failover not triggered",
         },
         ChaosExperiment {
             id: ChaosExperimentId::new("lat-kv"),
@@ -66,8 +63,7 @@ pub fn canonical_catalog() -> Vec<ChaosExperiment> {
             blast_radius_bps: 200,
             rollback_seconds_max: 300,
             preconditions: &["kv-healthy"],
-            steady_state_hypothesis:
-                "P99 KV latency ≤ baseline + 100ms; stale-window unchanged",
+            steady_state_hypothesis: "P99 KV latency ≤ baseline + 100ms; stale-window unchanged",
         },
         ChaosExperiment {
             id: ChaosExperimentId::new("fail-r2-5xx"),
@@ -88,8 +84,7 @@ pub fn canonical_catalog() -> Vec<ChaosExperiment> {
             blast_radius_bps: 50, // 0.5% D1 timeouts
             rollback_seconds_max: 300,
             preconditions: &["d1-healthy"],
-            steady_state_hypothesis:
-                "D1 timeouts ≤ 0.5%; circuit-breaker remains closed",
+            steady_state_hypothesis: "D1 timeouts ≤ 0.5%; circuit-breaker remains closed",
         },
         ChaosExperiment {
             id: ChaosExperimentId::new("res-do-storage"),
@@ -151,10 +146,7 @@ mod tests {
     fn catalog_covers_at_least_8_distinct_fms() {
         // AC gate — Lote 10.17 codex P1 canonical fix.
         let c = canonical_catalog();
-        assert!(
-            distinct_fm_count(&c) >= 8,
-            "must cover ≥ 8 distinct FM-IDs"
-        );
+        assert!(distinct_fm_count(&c) >= 8, "must cover ≥ 8 distinct FM-IDs");
     }
 
     #[test]
@@ -205,11 +197,7 @@ mod tests {
     #[test]
     fn catalog_all_ga_mandatory() {
         for e in canonical_catalog() {
-            assert!(
-                e.is_ga_mandatory(),
-                "{} not in GA-mandatory 8-set",
-                e.id
-            );
+            assert!(e.is_ga_mandatory(), "{} not in GA-mandatory 8-set", e.id);
         }
     }
 }

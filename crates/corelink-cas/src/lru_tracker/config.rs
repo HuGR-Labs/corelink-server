@@ -186,8 +186,7 @@ mod tests {
 
     #[test]
     fn with_overrides_accepts_valid() {
-        let c = LruConfig::with_overrides(100, 25, 5_000, 30_000, 30_000)
-            .unwrap();
+        let c = LruConfig::with_overrides(100, 25, 5_000, 30_000, 30_000).unwrap();
         assert_eq!(c.queue_size_max(), 100);
         assert_eq!(c.batch_size(), 25);
         assert_eq!(c.flush_interval_ms(), 5_000);
@@ -197,20 +196,17 @@ mod tests {
 
     #[test]
     fn with_overrides_rejects_zero_queue_size() {
-        assert!(LruConfig::with_overrides(0, 25, 5_000, 30_000, 30_000)
-            .is_none());
+        assert!(LruConfig::with_overrides(0, 25, 5_000, 30_000, 30_000).is_none());
     }
 
     #[test]
     fn with_overrides_rejects_zero_batch_size() {
-        assert!(LruConfig::with_overrides(100, 0, 5_000, 30_000, 30_000)
-            .is_none());
+        assert!(LruConfig::with_overrides(100, 0, 5_000, 30_000, 30_000).is_none());
     }
 
     #[test]
     fn with_overrides_rejects_batch_exceeding_queue() {
-        assert!(LruConfig::with_overrides(100, 101, 5_000, 30_000, 30_000)
-            .is_none());
+        assert!(LruConfig::with_overrides(100, 101, 5_000, 30_000, 30_000).is_none());
     }
 
     #[test]
@@ -220,16 +216,12 @@ mod tests {
 
     #[test]
     fn with_overrides_rejects_zero_drift_threshold() {
-        assert!(
-            LruConfig::with_overrides(100, 25, 5_000, 0, 30_000).is_none()
-        );
+        assert!(LruConfig::with_overrides(100, 25, 5_000, 0, 30_000).is_none());
     }
 
     #[test]
     fn with_overrides_rejects_zero_refresh_threshold() {
-        assert!(
-            LruConfig::with_overrides(100, 25, 5_000, 30_000, 0).is_none()
-        );
+        assert!(LruConfig::with_overrides(100, 25, 5_000, 30_000, 0).is_none());
     }
 
     #[test]

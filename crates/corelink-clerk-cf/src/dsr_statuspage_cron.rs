@@ -96,17 +96,13 @@ pub mod bindings {
 /// (the scheduler crate is native-only; the wasm32 cron replicates
 /// the canonical type strings here so the Logpush filter rules see
 /// the same envelope shape regardless of which target emitted it).
-pub const SCHEDULED_AUDIT_TYPE: &str =
-    "corelink.privacy.statuspage_publish_scheduled.v1";
+pub const SCHEDULED_AUDIT_TYPE: &str = "corelink.privacy.statuspage_publish_scheduled.v1";
 /// Canonical succeeded audit event type.
-pub const SUCCEEDED_AUDIT_TYPE: &str =
-    "corelink.privacy.statuspage_publish_succeeded.v1";
+pub const SUCCEEDED_AUDIT_TYPE: &str = "corelink.privacy.statuspage_publish_succeeded.v1";
 /// Canonical failed audit event type.
-pub const FAILED_AUDIT_TYPE: &str =
-    "corelink.privacy.statuspage_publish_failed.v1";
+pub const FAILED_AUDIT_TYPE: &str = "corelink.privacy.statuspage_publish_failed.v1";
 /// Canonical skipped audit event type.
-pub const SKIPPED_AUDIT_TYPE: &str =
-    "corelink.privacy.statuspage_publish_skipped.v1";
+pub const SKIPPED_AUDIT_TYPE: &str = "corelink.privacy.statuspage_publish_skipped.v1";
 
 /// Canonical skip reasons surfaced by the wasm32 cron handler.
 /// Mirrors `corelink-dsr-statuspage-scheduler::SkipReason` for the
@@ -215,8 +211,7 @@ pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
         }
     };
     let db = corelink_cf_bindings::d1_real::CfD1DatabaseReal::new(d1, tenant);
-    let row_source =
-        corelink_dsr_statuspage_scheduler::D1Wasm32RowSource::new(db);
+    let row_source = corelink_dsr_statuspage_scheduler::D1Wasm32RowSource::new(db);
 
     // 3. Fetch the 24h window.
     let outcomes = match row_source.fetch_window_async(window_start_unix_s).await {
@@ -231,10 +226,8 @@ pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
     let rows_read = outcomes.len() as u64;
 
     // 4. Aggregate.
-    let stats = corelink_privacy_erasure_worker::aggregate_24h_window(
-        &outcomes,
-        window_start_unix_s,
-    );
+    let stats =
+        corelink_privacy_erasure_worker::aggregate_24h_window(&outcomes, window_start_unix_s);
 
     // 5. Empty-window short-circuit (canonical wave-17 skip arm).
     if outcomes.is_empty() {
@@ -257,9 +250,7 @@ pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
 
     // 7. Build the wave-18 wasm32 Statuspage publisher + the audit
     //    sink that fans the wave-16 audit envelope into Logpush.
-    let audit = std::sync::Arc::new(
-        corelink_statuspage_real::InMemoryStatuspageAuditSink::new(),
-    );
+    let audit = std::sync::Arc::new(corelink_statuspage_real::InMemoryStatuspageAuditSink::new());
     let client = corelink_statuspage_real::StatuspageWasm32Client::new(
         page_id.clone(),
         metric_id.clone(),

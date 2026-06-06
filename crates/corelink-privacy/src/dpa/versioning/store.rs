@@ -202,4 +202,3 @@ impl DpaStore for FailingDpaStore {
         Err(DpaVersioningError::Store("simulated list failure".into()))
     }
 }
-

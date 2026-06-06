@@ -223,8 +223,7 @@ fn sig_domain_separation_pinned() {
     );
     let bytes = [0xAA; 102];
     // Manifest-domain sig.
-    let manifest_sig =
-        corelink_cas::manifest::compute_signature(&tdk, 1, &bytes).unwrap();
+    let manifest_sig = corelink_cas::manifest::compute_signature(&tdk, 1, &bytes).unwrap();
     // AC-domain sig (canonical helper from corelink-ac).
     let ac_sig = corelink_ac::sig::compute_signature(&tdk, 1, &bytes).unwrap();
     assert_ne!(manifest_sig, ac_sig);

@@ -25,13 +25,20 @@ use url::Url;
 #[tokio::main]
 async fn main() {
     // Minimal arg parsing for the example
-    let cargo_lock = std::env::args().nth(1).unwrap_or_else(|| "Cargo.lock".to_owned());
-    let cargo_toml = std::env::args().nth(2).unwrap_or_else(|| "Cargo.toml".to_owned());
-    let version    = std::env::args().nth(3).unwrap_or_else(|| "0.1.0".to_owned());
-    let output     = std::env::args().nth(4).unwrap_or_else(|| "/tmp/sbom.cdx.json".to_owned());
+    let cargo_lock = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "Cargo.lock".to_owned());
+    let cargo_toml = std::env::args()
+        .nth(2)
+        .unwrap_or_else(|| "Cargo.toml".to_owned());
+    let version = std::env::args()
+        .nth(3)
+        .unwrap_or_else(|| "0.1.0".to_owned());
+    let output = std::env::args()
+        .nth(4)
+        .unwrap_or_else(|| "/tmp/sbom.cdx.json".to_owned());
 
-    let tsa_url = Url::parse("https://tsa.sigstore.dev/api/v1/timestamp")
-        .expect("valid TSA URL");
+    let tsa_url = Url::parse("https://tsa.sigstore.dev/api/v1/timestamp").expect("valid TSA URL");
 
     let publisher = DefaultSbomPublisher::new(
         tsa_url,
@@ -56,8 +63,8 @@ async fn main() {
         .await
     {
         Ok(signed) => {
-            let sbom_bytes = serde_json::to_vec_pretty(&signed.sbom)
-                .expect("serialisation must not fail");
+            let sbom_bytes =
+                serde_json::to_vec_pretty(&signed.sbom).expect("serialisation must not fail");
             std::fs::write(&output, &sbom_bytes).expect("writing SBOM");
             println!("SBOM written to {output}");
             println!("  components  : {}", signed.component_count);

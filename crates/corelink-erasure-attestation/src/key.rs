@@ -63,7 +63,12 @@ impl ErasureSigningKey {
     /// - `overlap_until_ms`: end of the 30d overlap window (caller sets
     ///   `promoted_at_ms + 30d * 1000`).
     #[must_use]
-    pub fn generate(key_id: u64, region: Region, created_at_ms: u64, overlap_until_ms: u64) -> Self {
+    pub fn generate(
+        key_id: u64,
+        region: Region,
+        created_at_ms: u64,
+        overlap_until_ms: u64,
+    ) -> Self {
         let signing_key = SigningKey::generate(&mut OsRng);
         Self {
             key_id,
@@ -173,9 +178,9 @@ mod verifying_key_serde {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(&b64)
             .map_err(serde::de::Error::custom)?;
-        let arr: [u8; 32] = bytes.try_into().map_err(|_| {
-            serde::de::Error::custom("verifying key must be exactly 32 bytes")
-        })?;
+        let arr: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| serde::de::Error::custom("verifying key must be exactly 32 bytes"))?;
         VerifyingKey::from_bytes(&arr).map_err(serde::de::Error::custom)
     }
 }
@@ -215,7 +220,10 @@ mod tests {
         let sk = ErasureSigningKey::generate(1, Region::Weur, 0, 0);
         let debug_str = format!("{sk:?}");
         // REDACTED sentinel must appear where the key material would be.
-        assert!(debug_str.contains("[REDACTED]"), "debug must contain [REDACTED]: {debug_str}");
+        assert!(
+            debug_str.contains("[REDACTED]"),
+            "debug must contain [REDACTED]: {debug_str}"
+        );
         // Raw byte arrays (e.g. "[12, 34, ...]") MUST NOT appear for key material.
         // The signing_key field value is replaced with "[REDACTED]" in our impl.
         assert!(

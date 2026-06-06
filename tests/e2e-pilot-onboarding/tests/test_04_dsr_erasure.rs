@@ -38,9 +38,7 @@ fn wave23_pilot_dsr_erasure_full_lifecycle() {
     assert!(pre_audit_count > 100);
 
     // Submit DSR erasure.
-    let receipt = h
-        .request_dsr_erasure(&tenant, "dsr-req-pilot-001")
-        .unwrap();
+    let receipt = h.request_dsr_erasure(&tenant, "dsr-req-pilot-001").unwrap();
     assert_eq!(receipt.request_id, "dsr-req-pilot-001");
     assert_eq!(
         receipt.sla_deadline_ms,
@@ -83,7 +81,8 @@ fn wave23_pilot_dsr_duplicate_request_rejected() {
     let h = PilotHarness::new();
     let tenant = canonical_pilot_tenant("pilot-dsr-dupe");
     h.complete_signup(&tenant).unwrap();
-    h.request_dsr_erasure(&tenant, "dsr-pilot-dupe-001").unwrap();
+    h.request_dsr_erasure(&tenant, "dsr-pilot-dupe-001")
+        .unwrap();
     let err = h
         .request_dsr_erasure(&tenant, "dsr-pilot-dupe-001")
         .unwrap_err();

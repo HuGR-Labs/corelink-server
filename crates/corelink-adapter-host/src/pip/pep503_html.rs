@@ -131,8 +131,9 @@ pub fn parse_json_index(bytes: &[u8]) -> Result<ProjectIndex, PipAdapterError> {
         .map_err(|e| PipAdapterError::IndexParse(format!("json: {e}")))?;
     let mut out_files = Vec::with_capacity(wire.files.len());
     for f in wire.files {
-        let sha256 = extract_sha256(&f.url, f.hashes.as_ref())
-            .ok_or_else(|| PipAdapterError::IndexParse(format!("missing sha256 for {}", f.filename)))?;
+        let sha256 = extract_sha256(&f.url, f.hashes.as_ref()).ok_or_else(|| {
+            PipAdapterError::IndexParse(format!("missing sha256 for {}", f.filename))
+        })?;
         let yanked = match f.yanked {
             serde_json::Value::Bool(b) => b,
             serde_json::Value::String(_) => true,
@@ -287,9 +288,7 @@ pub fn parse_html(html: &str, project: &str) -> Result<ProjectIndex, PipAdapterE
         };
         let open = cursor + open_rel;
         let Some(close_tag_rel) = html[open..].find('>') else {
-            return Err(PipAdapterError::IndexParse(
-                "<a tag missing `>`".into(),
-            ));
+            return Err(PipAdapterError::IndexParse("<a tag missing `>`".into()));
         };
         let close_tag = open + close_tag_rel;
         let attrs = &html[open + 3..close_tag];
@@ -306,8 +305,9 @@ pub fn parse_html(html: &str, project: &str) -> Result<ProjectIndex, PipAdapterE
         let yanked = attrs.contains("data-yanked");
         let url = decode_attr(&href);
         let filename = decode_text(label);
-        let sha256 = extract_sha256(&url, None)
-            .ok_or_else(|| PipAdapterError::IndexParse(format!("href missing #sha256= for {filename}")))?;
+        let sha256 = extract_sha256(&url, None).ok_or_else(|| {
+            PipAdapterError::IndexParse(format!("href missing #sha256= for {filename}"))
+        })?;
         files.push(IndexFile {
             filename,
             url,
@@ -398,8 +398,7 @@ mod tests {
                 "yanked": false
             }]
         });
-        let parsed =
-            parse_json_index(payload.to_string().as_bytes()).expect("parse ok");
+        let parsed = parse_json_index(payload.to_string().as_bytes()).expect("parse ok");
         assert_eq!(parsed.name, "requests");
         assert_eq!(parsed.files.len(), 1);
         assert_eq!(parsed.files[0].sha256.len(), 64);
@@ -416,8 +415,7 @@ mod tests {
                 "yanked": false
             }]
         });
-        let parsed =
-            parse_json_index(payload.to_string().as_bytes()).expect("parse ok");
+        let parsed = parse_json_index(payload.to_string().as_bytes()).expect("parse ok");
         assert_eq!(parsed.files[0].sha256, "0".repeat(64));
     }
 
@@ -445,8 +443,7 @@ mod tests {
                 "yanked": "CVE-2025-9999 -- vulnerable, do not use"
             }]
         });
-        let parsed =
-            parse_json_index(payload.to_string().as_bytes()).expect("parse ok");
+        let parsed = parse_json_index(payload.to_string().as_bytes()).expect("parse ok");
         assert!(parsed.files[0].yanked);
     }
 

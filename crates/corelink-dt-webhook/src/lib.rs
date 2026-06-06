@@ -91,10 +91,8 @@ pub trait DtWebhookHandler: Send + Sync {
     /// Returns [`DtWebhookError::HmacInvalid`] (→ HTTP 401) if HMAC check fails.
     /// Returns [`DtWebhookError::SlaViolation`] (logged; not surfaced as HTTP 5xx)
     /// if delivery latency exceeds 900 000 ms.
-    async fn handle_webhook(
-        &self,
-        event: DtWebhookEvent,
-    ) -> Result<AlertDelivered, DtWebhookError>;
+    async fn handle_webhook(&self, event: DtWebhookEvent)
+        -> Result<AlertDelivered, DtWebhookError>;
 
     /// Mock CVE injection (test/staging only).
     ///

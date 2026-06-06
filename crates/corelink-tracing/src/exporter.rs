@@ -32,10 +32,7 @@ pub trait OtlpExporter: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`OtlpExporterError::Backend`] on any backend failure.
-    fn export(
-        &self,
-        spans: Vec<SpanRecord>,
-    ) -> Result<(), OtlpExporterError>;
+    fn export(&self, spans: Vec<SpanRecord>) -> Result<(), OtlpExporterError>;
 }
 
 /// In-memory exporter that captures every batch for assertion. Cloning
@@ -78,14 +75,9 @@ impl InMemoryOtlpExporter {
 }
 
 impl OtlpExporter for InMemoryOtlpExporter {
-    fn export(
-        &self,
-        spans: Vec<SpanRecord>,
-    ) -> Result<(), OtlpExporterError> {
+    fn export(&self, spans: Vec<SpanRecord>) -> Result<(), OtlpExporterError> {
         let mut g = self.inner.lock().map_err(|_| {
-            OtlpExporterError::Backend(
-                "in-memory OTLP exporter mutex poisoned".to_string(),
-            )
+            OtlpExporterError::Backend("in-memory OTLP exporter mutex poisoned".to_string())
         })?;
         g.extend(spans);
         Ok(())
@@ -106,10 +98,7 @@ impl FailingOtlpExporter {
 }
 
 impl OtlpExporter for FailingOtlpExporter {
-    fn export(
-        &self,
-        _spans: Vec<SpanRecord>,
-    ) -> Result<(), OtlpExporterError> {
+    fn export(&self, _spans: Vec<SpanRecord>) -> Result<(), OtlpExporterError> {
         Err(OtlpExporterError::Backend(
             "induced OTLP exporter failure (test fixture)".to_string(),
         ))

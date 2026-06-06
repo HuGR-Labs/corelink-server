@@ -83,14 +83,12 @@ use tower_service::Service;
 
 use corelink_clerk::{ClerkPrincipal, ClerkSessionId, ClerkUserId};
 use corelink_pat::{
-    dummy_verify_for_constant_time, parse_env, PatEnv, PatId, PatScopes, PrincipalId as PatPrincipal,
-    TenantId as PatTenantId,
+    dummy_verify_for_constant_time, parse_env, PatEnv, PatId, PatScopes,
+    PrincipalId as PatPrincipal, TenantId as PatTenantId,
 };
 use corelink_tenant_path::TenantDerivationKey;
 
-use crate::middleware::auth_ctx::{
-    AuthCtx, AuthCtxBuilder, AuthMethod, PrincipalId, RequestId,
-};
+use crate::middleware::auth_ctx::{AuthCtx, AuthCtxBuilder, AuthMethod, PrincipalId, RequestId};
 use crate::middleware::auth_error::AuthMiddlewareError;
 use crate::region::Region;
 
@@ -351,9 +349,7 @@ const fn is_base64url_byte(b: u8) -> bool {
 /// - [`AuthMiddlewareError::HeaderMalformed`] when the value does
 ///   not parse as `Bearer <non-empty-token>` (case-insensitive on
 ///   the scheme).
-pub fn extract_bearer(
-    headers: &http::HeaderMap,
-) -> Result<&str, AuthMiddlewareError> {
+pub fn extract_bearer(headers: &http::HeaderMap) -> Result<&str, AuthMiddlewareError> {
     let mut iter = headers.get_all(header::AUTHORIZATION).iter();
     let first = iter.next().ok_or(AuthMiddlewareError::HeaderMissing)?;
     if iter.next().is_some() {
@@ -468,12 +464,8 @@ pub fn map_pat_error(err: corelink_pat::PatError) -> AuthMiddlewareError {
 /// is cleanest in async sugar.
 type AuthFuture<S, ReqBody, ResBody> = Pin<
     Box<
-        dyn Future<
-                Output = Result<
-                    Response<ResBody>,
-                    <S as Service<Request<ReqBody>>>::Error,
-                >,
-            > + Send,
+        dyn Future<Output = Result<Response<ResBody>, <S as Service<Request<ReqBody>>>::Error>>
+            + Send,
     >,
 >;
 
@@ -639,12 +631,18 @@ async fn orchestrate_auth<ReqBody>(
 // hot path this is called once per request for `clerk_session_id`
 // and once for `user_id` — the win is ~100-200 ns/req saved off
 // `orchestrate_auth` plus reduced allocator pressure.
-#[allow(non_snake_case, reason = "pseudo-import alias for legibility at call site")]
+#[allow(
+    non_snake_case,
+    reason = "pseudo-import alias for legibility at call site"
+)]
 fn ClerkSessionId_clone(id: &ClerkSessionId) -> ClerkSessionId {
     id.clone()
 }
 
-#[allow(non_snake_case, reason = "pseudo-import alias for legibility at call site")]
+#[allow(
+    non_snake_case,
+    reason = "pseudo-import alias for legibility at call site"
+)]
 fn ClerkUserId_clone(id: &ClerkUserId) -> ClerkUserId {
     id.clone()
 }
@@ -736,8 +734,14 @@ mod tests {
     #[test]
     fn smuggled_match_canonical_uuid() {
         let id = uuid::Uuid::parse_str("01938af0-abcd-7123-8456-000000000001").expect("uuid");
-        assert!(smuggled_tenant_matches(id, "01938af0-abcd-7123-8456-000000000001"));
-        assert!(!smuggled_tenant_matches(id, "01938af0-abcd-7123-8456-000000000002"));
+        assert!(smuggled_tenant_matches(
+            id,
+            "01938af0-abcd-7123-8456-000000000001"
+        ));
+        assert!(!smuggled_tenant_matches(
+            id,
+            "01938af0-abcd-7123-8456-000000000002"
+        ));
         assert!(!smuggled_tenant_matches(id, ""));
     }
 

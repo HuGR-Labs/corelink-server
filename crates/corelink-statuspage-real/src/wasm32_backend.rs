@@ -234,7 +234,10 @@ impl StatuspageWasm32Client {
             .rate_limiter
             .decide(&self.page_id, &self.metric_id, now_epoch_ms)
         {
-            RateLimitDecision::DenyBackoff { retry_after, jitter } => {
+            RateLimitDecision::DenyBackoff {
+                retry_after,
+                jitter,
+            } => {
                 let retry_after_ms = u64::try_from(retry_after.as_millis()).unwrap_or(u64::MAX);
                 let jitter_ms = u64::try_from(jitter.as_millis()).unwrap_or(u64::MAX);
                 self.emit_audit(
@@ -342,11 +345,7 @@ impl StatuspageWasm32Client {
 /// the HTTP status code on a successful round-trip (any 1xx-5xx is
 /// considered "received" — the retry policy decides what to do with
 /// non-2xx) or a stable diagnostic string on a transport failure.
-async fn send_one_request(
-    url: &str,
-    auth_header: &str,
-    body: &str,
-) -> Result<u16, String> {
+async fn send_one_request(url: &str, auth_header: &str, body: &str) -> Result<u16, String> {
     let headers = worker::Headers::new();
     headers
         .set("authorization", auth_header)
@@ -364,8 +363,8 @@ async fn send_one_request(
         .with_headers(headers)
         .with_body(Some(body_jsvalue));
 
-    let req = worker::Request::new_with_init(url, &init)
-        .map_err(|e| format!("build request: {e}"))?;
+    let req =
+        worker::Request::new_with_init(url, &init).map_err(|e| format!("build request: {e}"))?;
 
     let response = worker::Fetch::Request(req)
         .send()

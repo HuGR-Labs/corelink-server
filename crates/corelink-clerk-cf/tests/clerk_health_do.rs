@@ -73,8 +73,8 @@ fn happy_path_get_post_delete_round_trip() {
         .expect("ctor")
         .with_audit(audit);
 
-    let post = ParsedRoute::parse("POST", &format!("/record/{TENANT_A}/{CID_1}"))
-        .expect("post parse");
+    let post =
+        ParsedRoute::parse("POST", &format!("/record/{TENANT_A}/{CID_1}")).expect("post parse");
     let rec = logic
         .upsert(&post, "hello-probe", 1_000_000)
         .expect("upsert");
@@ -82,18 +82,19 @@ fn happy_path_get_post_delete_round_trip() {
     assert_eq!(rec.note, "hello-probe");
     assert_eq!(rec.created_at_ms, 1_000_000);
 
-    let get = ParsedRoute::parse("GET", &format!("/record/{TENANT_A}/{CID_1}"))
-        .expect("get parse");
+    let get = ParsedRoute::parse("GET", &format!("/record/{TENANT_A}/{CID_1}")).expect("get parse");
     let got = logic.get(&get).expect("get");
     assert_eq!(got, rec);
 
-    let del = ParsedRoute::parse("DELETE", &format!("/record/{TENANT_A}/{CID_1}"))
-        .expect("del parse");
+    let del =
+        ParsedRoute::parse("DELETE", &format!("/record/{TENANT_A}/{CID_1}")).expect("del parse");
     let existed = logic.tombstone(&del).expect("delete");
     assert!(existed, "first delete must signal existence");
 
     // GET after delete returns NotFound (HTTP 404 at the actor layer).
-    let err = logic.get(&get).expect_err("after-delete get returns 404-equivalent");
+    let err = logic
+        .get(&get)
+        .expect_err("after-delete get returns 404-equivalent");
     assert!(matches!(err, HealthDoError::NotFound));
     assert_eq!(err.status(), 404);
 
@@ -127,11 +128,8 @@ fn cross_tenant_post_rejected_close() {
         .expect("ctor")
         .with_audit(audit);
 
-    let foreign = ParsedRoute::parse(
-        "POST",
-        &format!("/record/{TENANT_B}/{CID_1}"),
-    )
-    .expect("parse");
+    let foreign =
+        ParsedRoute::parse("POST", &format!("/record/{TENANT_B}/{CID_1}")).expect("parse");
     let err = logic
         .upsert(&foreign, "spoof", 5_000)
         .expect_err("cross-tenant rejected");
@@ -173,7 +171,9 @@ fn ttl_alarm_sweep_removes_expired_records() {
     let route2 =
         ParsedRoute::parse("POST", &format!("/record/{TENANT_A}/{CID_2}")).expect("parse 2");
     logic.upsert(&route1, "old-probe", 1_000).expect("upsert 1");
-    logic.upsert(&route2, "young-probe", 5_000).expect("upsert 2");
+    logic
+        .upsert(&route2, "young-probe", 5_000)
+        .expect("upsert 2");
     assert_eq!(logic.state().records().len(), 2);
 
     // Trigger the alarm at t=5_500ms. TTL=1000 → cutoff=4500. Record 1
@@ -207,12 +207,9 @@ fn audit_emission_count_equals_mutation_count() {
         .expect("ctor")
         .with_audit(audit);
 
-    let post1 = ParsedRoute::parse("POST", &format!("/record/{TENANT_A}/{CID_1}"))
-        .expect("p1");
-    let post2 = ParsedRoute::parse("POST", &format!("/record/{TENANT_A}/{CID_2}"))
-        .expect("p2");
-    let del1 = ParsedRoute::parse("DELETE", &format!("/record/{TENANT_A}/{CID_1}"))
-        .expect("d1");
+    let post1 = ParsedRoute::parse("POST", &format!("/record/{TENANT_A}/{CID_1}")).expect("p1");
+    let post2 = ParsedRoute::parse("POST", &format!("/record/{TENANT_A}/{CID_2}")).expect("p2");
+    let del1 = ParsedRoute::parse("DELETE", &format!("/record/{TENANT_A}/{CID_1}")).expect("d1");
 
     logic.upsert(&post1, "a", 1_000).expect("upsert 1");
     logic.upsert(&post2, "b", 2_000).expect("upsert 2");
@@ -234,23 +231,19 @@ fn audit_emission_count_equals_mutation_count() {
 fn audit_fail_closed_blocks_every_mutation() {
     // An audit hook that always denies MUST block every mutation. The
     // actor's storage stays empty.
-    let deny: AuditFn = Arc::new(|_op, _subj| {
-        Err(HealthDoError::AuditDenied("policy".to_owned()))
-    });
+    let deny: AuditFn = Arc::new(|_op, _subj| Err(HealthDoError::AuditDenied("policy".to_owned())));
     let mut logic = ClerkHealthLogic::new(TENANT_A)
         .expect("ctor")
         .with_audit(deny);
 
-    let post = ParsedRoute::parse("POST", &format!("/record/{TENANT_A}/{CID_1}"))
-        .expect("parse");
+    let post = ParsedRoute::parse("POST", &format!("/record/{TENANT_A}/{CID_1}")).expect("parse");
     let err = logic
         .upsert(&post, "x", 1_000)
         .expect_err("audit blocks upsert");
     assert!(matches!(err, HealthDoError::AuditDenied(_)));
     assert_eq!(err.status(), 403);
 
-    let del = ParsedRoute::parse("DELETE", &format!("/record/{TENANT_A}/{CID_1}"))
-        .expect("parse");
+    let del = ParsedRoute::parse("DELETE", &format!("/record/{TENANT_A}/{CID_1}")).expect("parse");
     let err = logic.tombstone(&del).expect_err("audit blocks delete");
     assert!(matches!(err, HealthDoError::AuditDenied(_)));
 

@@ -237,16 +237,10 @@ impl InMemoryDedupIndex {
     /// Returns [`DedupError::IndexBackend`] on mutex poisoning. The
     /// fake never poisons under normal use; this surfaces only if a
     /// caller panicked while holding the inner lock.
-    pub fn upsert_chunk(
-        &self,
-        tenant_id: Uuid,
-        digest: &BlobDigest,
-    ) -> Result<bool, DedupError> {
+    pub fn upsert_chunk(&self, tenant_id: Uuid, digest: &BlobDigest) -> Result<bool, DedupError> {
         let key = (tenant_id, digest.as_hex().to_string());
         let mut guard = self.inner.lock().map_err(|_| {
-            DedupError::IndexBackend(
-                "in-memory dedup index mutex poisoned".to_string(),
-            )
+            DedupError::IndexBackend("in-memory dedup index mutex poisoned".to_string())
         })?;
         match guard.get_mut(&key) {
             None => {
@@ -287,9 +281,7 @@ impl InMemoryDedupIndex {
     ) -> Result<bool, DedupError> {
         let key = (tenant_id, digest.as_hex().to_string());
         let mut guard = self.inner.lock().map_err(|_| {
-            DedupError::IndexBackend(
-                "in-memory dedup index mutex poisoned".to_string(),
-            )
+            DedupError::IndexBackend("in-memory dedup index mutex poisoned".to_string())
         })?;
         match guard.get_mut(&key) {
             None => Ok(false),
@@ -342,9 +334,7 @@ impl DedupIndex for InMemoryDedupIndex {
             });
         }
         let guard = self.inner.lock().map_err(|_| {
-            DedupError::IndexBackend(
-                "in-memory dedup index mutex poisoned".to_string(),
-            )
+            DedupError::IndexBackend("in-memory dedup index mutex poisoned".to_string())
         })?;
         let mut missing: Vec<BlobDigest> = Vec::with_capacity(digests.len());
         for d in digests {
@@ -460,9 +450,7 @@ mod tests {
         idx.upsert_chunk(ten_a(), &d1).unwrap();
         idx.upsert_chunk(ten_a(), &d2).unwrap();
         idx.upsert_chunk(ten_a(), &d3).unwrap();
-        let out = idx
-            .find_missing_blobs(ten_a(), &[d1, d2, d3])
-            .unwrap();
+        let out = idx.find_missing_blobs(ten_a(), &[d1, d2, d3]).unwrap();
         assert!(out.missing.is_empty());
         assert_eq!(out.queried_count, 3);
     }
@@ -489,13 +477,7 @@ mod tests {
         let a3 = dig(0x22);
         idx.upsert_chunk(ten_a(), &p1).unwrap();
         idx.upsert_chunk(ten_a(), &p2).unwrap();
-        let inputs = [
-            p1.clone(),
-            a1.clone(),
-            p2.clone(),
-            a2.clone(),
-            a3.clone(),
-        ];
+        let inputs = [p1.clone(), a1.clone(), p2.clone(), a2.clone(), a3.clone()];
         let out = idx.find_missing_blobs(ten_a(), &inputs).unwrap();
         assert_eq!(out.missing, vec![a1, a2, a3]);
         assert_eq!(out.queried_count, 5);
@@ -516,10 +498,7 @@ mod tests {
         idx.upsert_chunk(ten_a(), &d_a3).unwrap();
         // Tenant B asks for them — all surface as missing.
         let out = idx
-            .find_missing_blobs(
-                ten_b(),
-                &[d_a1.clone(), d_a2.clone(), d_a3.clone()],
-            )
+            .find_missing_blobs(ten_b(), &[d_a1.clone(), d_a2.clone(), d_a3.clone()])
             .unwrap();
         assert_eq!(out.missing, vec![d_a1, d_a2, d_a3]);
         assert_eq!(out.queried_count, 3);
@@ -574,9 +553,7 @@ mod tests {
     #[test]
     fn batch_at_max_completes() {
         let idx = InMemoryDedupIndex::new();
-        let digests: Vec<BlobDigest> = (0..MAX_FIND_MISSING_BATCH_SIZE as u8)
-            .map(dig)
-            .collect();
+        let digests: Vec<BlobDigest> = (0..MAX_FIND_MISSING_BATCH_SIZE as u8).map(dig).collect();
         let out = idx.find_missing_blobs(ten_a(), &digests).unwrap();
         assert_eq!(out.missing.len(), MAX_FIND_MISSING_BATCH_SIZE);
         assert_eq!(out.queried_count, MAX_FIND_MISSING_BATCH_SIZE);
@@ -587,8 +564,9 @@ mod tests {
         let idx = InMemoryDedupIndex::new();
         // 251 > MAX (250). We can't blow seed range u8 (0..=255), so
         // a generated batch of 251 distinct digests fits.
-        let digests: Vec<BlobDigest> =
-            (0..(MAX_FIND_MISSING_BATCH_SIZE + 1) as u8).map(dig).collect();
+        let digests: Vec<BlobDigest> = (0..(MAX_FIND_MISSING_BATCH_SIZE + 1) as u8)
+            .map(dig)
+            .collect();
         let err = idx.find_missing_blobs(ten_a(), &digests).unwrap_err();
         match err {
             DedupError::BatchTooLarge { got, limit } => {
@@ -606,7 +584,10 @@ mod tests {
         let inserted = idx.upsert_chunk(ten_a(), &d).unwrap();
         assert!(inserted, "first upsert should report inserted=true");
         let reused = idx.upsert_chunk(ten_a(), &d).unwrap();
-        assert!(!reused, "second upsert should report inserted=false (reused)");
+        assert!(
+            !reused,
+            "second upsert should report inserted=false (reused)"
+        );
         let reused_again = idx.upsert_chunk(ten_a(), &d).unwrap();
         assert!(!reused_again);
     }

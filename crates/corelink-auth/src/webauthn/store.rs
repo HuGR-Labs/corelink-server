@@ -306,9 +306,7 @@ impl RecoveryOtpStore for InMemoryRecoveryOtpStore {
             });
         }
         record.consumed_at_ms = Some(now_ms);
-        Ok(super::recovery::RecoveryOtpVerifyOutcome::Consumed {
-            otp_id: record.id,
-        })
+        Ok(super::recovery::RecoveryOtpVerifyOutcome::Consumed { otp_id: record.id })
     }
 
     fn record_generation(&self, user: UserAccountId, now_ms: u64) -> u32 {

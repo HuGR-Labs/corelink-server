@@ -123,10 +123,7 @@ mod tests {
         // testmode = 4× analogue — chosen to avoid penalising small Solo
         // tenants on bursty parallel uploads.
         for &(t, rate, burst) in TIER_RATE_LADDER.iter() {
-            assert!(
-                burst >= rate * 4,
-                "tier {t} burst {burst} < 4× rate {rate}"
-            );
+            assert!(burst >= rate * 4, "tier {t} burst {burst} < 4× rate {rate}");
         }
     }
 

@@ -23,8 +23,8 @@
 )]
 
 use corelink_stripe_real::dlq::{
-    DlqQuarantineOutcome, DlqReplayOutcome, InMemoryWebhookDlqStore,
-    WebhookDlqRow, WebhookDlqStore, DEFAULT_DLQ_TTL_MS,
+    DlqQuarantineOutcome, DlqReplayOutcome, InMemoryWebhookDlqStore, WebhookDlqRow,
+    WebhookDlqStore, DEFAULT_DLQ_TTL_MS,
 };
 use proptest::prelude::*;
 

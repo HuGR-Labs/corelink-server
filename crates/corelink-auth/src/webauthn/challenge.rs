@@ -16,9 +16,7 @@ use zeroize::Zeroize;
 
 use super::types::UserAccountId;
 use super::Origin;
-use super::{
-    aaguid::Aaguid, store::AuthenticatorAttachment, CredentialId, RpId, WebAuthnError,
-};
+use super::{aaguid::Aaguid, store::AuthenticatorAttachment, CredentialId, RpId, WebAuthnError};
 
 /// Canonical challenge byte length (W3C recommends ≥ 16; we pin to
 /// 32 bytes / 256 bits — collision probability for 100 k registrations
@@ -240,7 +238,10 @@ pub struct AuthenticationChallenge {
 
 impl AuthenticationChallenge {
     /// Internal constructor.
-    #[allow(clippy::too_many_arguments, reason = "internal-only constructor; readable param order")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "internal-only constructor; readable param order"
+    )]
     pub(crate) fn new(
         id: ChallengeId,
         bytes: ChallengeBytes,

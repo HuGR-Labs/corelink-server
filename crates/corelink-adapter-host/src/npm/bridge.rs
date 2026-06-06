@@ -81,7 +81,13 @@ impl CasStore for NpmCasBridge {
         let tenant_str = tenant.to_string();
         let hash_str = digest.to_hex();
         let principal = self.principal.clone();
-        let req = CasReadRequest::new(&tenant_str, &hash_str, &principal, &tenant_str, unix_ms_now());
+        let req = CasReadRequest::new(
+            &tenant_str,
+            &hash_str,
+            &principal,
+            &tenant_str,
+            unix_ms_now(),
+        );
         let result = tokio::task::spawn_blocking(move || handler.read(req))
             .await
             .map_err(|e| NpmAdapterError::Cas(format!("spawn_blocking: {e}")))?;
@@ -102,11 +108,20 @@ impl CasStore for NpmCasBridge {
         let tenant_str = tenant.to_string();
         let hash_str = digest.to_hex();
         let principal = self.principal.clone();
-        let req = CasWriteRequest::new(&tenant_str, &hash_str, bytes, &principal, &tenant_str, unix_ms_now());
+        let req = CasWriteRequest::new(
+            &tenant_str,
+            &hash_str,
+            bytes,
+            &principal,
+            &tenant_str,
+            unix_ms_now(),
+        );
         let result = tokio::task::spawn_blocking(move || handler.write(req))
             .await
             .map_err(|e| NpmAdapterError::Cas(format!("spawn_blocking: {e}")))?;
-        result.map(|_| ()).map_err(|e| NpmAdapterError::Cas(format!("handler: {e:?}")))
+        result
+            .map(|_| ())
+            .map_err(|e| NpmAdapterError::Cas(format!("handler: {e:?}")))
     }
 }
 
@@ -163,9 +178,9 @@ impl<K: KvBackend + Send + Sync + 'static> NpmKvBridge<K> {
 
     /// Decode the wire format back into `(bytes, inserted_at_unix_ms)`.
     fn decode(raw: Vec<u8>) -> Result<(Vec<u8>, u64), NpmAdapterError> {
-        let prefix = raw
-            .get(..8)
-            .ok_or_else(|| NpmAdapterError::Kv("stored value too short to decode timestamp".into()))?;
+        let prefix = raw.get(..8).ok_or_else(|| {
+            NpmAdapterError::Kv("stored value too short to decode timestamp".into())
+        })?;
         let ts_bytes: [u8; 8] = prefix
             .try_into()
             .map_err(|_| NpmAdapterError::Kv("timestamp decode failed".into()))?;
@@ -248,11 +263,10 @@ impl TenantResolver for NpmTenantBridge {
     async fn resolve(&self, pat_plaintext: &str) -> Result<TenantId, NpmAdapterError> {
         let validator = Arc::clone(&self.validator);
         let token = pat_plaintext.to_owned();
-        let result = tokio::task::spawn_blocking(move || {
-            validator.authenticate(&token, "npm-adapter-host")
-        })
-        .await
-        .map_err(|e| NpmAdapterError::Auth(format!("spawn_blocking: {e}")))?;
+        let result =
+            tokio::task::spawn_blocking(move || validator.authenticate(&token, "npm-adapter-host"))
+                .await
+                .map_err(|e| NpmAdapterError::Auth(format!("spawn_blocking: {e}")))?;
 
         match result {
             Ok(ctx) => {
@@ -343,7 +357,10 @@ mod tests {
         );
         let bytes = b"tarball-bytes".to_vec();
         let digest = make_digest_from_bytes(&bytes);
-        bridge.put(&tenant(1), &digest, bytes.clone()).await.unwrap();
+        bridge
+            .put(&tenant(1), &digest, bytes.clone())
+            .await
+            .unwrap();
         let got = bridge.get(&tenant(1), &digest).await.unwrap();
         assert_eq!(got, Some(bytes));
     }
@@ -357,7 +374,9 @@ mod tests {
             "svc-npm",
         );
         let wrong_digest = make_digest_from_bytes(b"something-else");
-        let err = bridge.put(&tenant(1), &wrong_digest, b"actual".to_vec()).await;
+        let err = bridge
+            .put(&tenant(1), &wrong_digest, b"actual".to_vec())
+            .await;
         assert!(err.is_err());
     }
 
@@ -370,7 +389,10 @@ mod tests {
         let t = tenant(2);
         let value = b"metadata-json".to_vec();
         let ts: u64 = 1_717_000_000_000;
-        bridge.put(&t, "pkg@1.0.0", value.clone(), ts).await.unwrap();
+        bridge
+            .put(&t, "pkg@1.0.0", value.clone(), ts)
+            .await
+            .unwrap();
         let got = bridge.get(&t, "pkg@1.0.0").await.unwrap();
         assert_eq!(got, Some((value, ts)));
     }
@@ -389,7 +411,10 @@ mod tests {
         let bridge = NpmKvBridge::new(kv);
         let ta = tenant(10);
         let tb = tenant(11);
-        bridge.put(&ta, "key", b"ta-value".to_vec(), 1).await.unwrap();
+        bridge
+            .put(&ta, "key", b"ta-value".to_vec(), 1)
+            .await
+            .unwrap();
         let result = bridge.get(&tb, "key").await.unwrap();
         assert!(result.is_none());
     }
@@ -400,7 +425,13 @@ mod tests {
     async fn tenant_valid_pat_returns_tenant_id() {
         let mut v = StubPatValidator::new();
         let tid = Uuid::from_u128(55);
-        v.insert("npm-token", tid, Uuid::from_u128(56), corelink_replication::region_resolver::Region::Wnam, [AuthScope::CacheRead]);
+        v.insert(
+            "npm-token",
+            tid,
+            Uuid::from_u128(56),
+            corelink_replication::region_resolver::Region::Wnam,
+            [AuthScope::CacheRead],
+        );
         let bridge = NpmTenantBridge::new(Arc::new(v));
         let resolved = bridge.resolve("npm-token").await.unwrap();
         assert_eq!(resolved, TenantId::from(tid));
@@ -426,6 +457,9 @@ mod tests {
         );
         let kv: Arc<InMemoryKv> = Arc::new(InMemoryKv::new());
         let _ = format!("{:?}", NpmKvBridge::new(kv));
-        let _ = format!("{:?}", NpmTenantBridge::new(Arc::new(StubPatValidator::new())));
+        let _ = format!(
+            "{:?}",
+            NpmTenantBridge::new(Arc::new(StubPatValidator::new()))
+        );
     }
 }

@@ -92,7 +92,10 @@ fn dirty_outbox_refuses_and_emits_observability() {
     // Canonical audit emit.
     let records = audit.records();
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].event_type, FailoverAuditEventType::FailoverResolved);
+    assert_eq!(
+        records[0].event_type,
+        FailoverAuditEventType::FailoverResolved
+    );
     assert!(records[0].detail.contains("audit_outbox_dirty"));
     assert!(records[0].detail.contains("undrained=4"));
     assert_eq!(records[0].primary_region, "wnam");
@@ -114,14 +117,8 @@ fn refusal_preserved_when_counter_fails_observability_best_effort() {
     let counter = FailingFailbackBlockedCounter::new("prometheus pushgateway down");
     outbox.seed_undrained(Region::Wnam, 1);
 
-    let r = assert_outbox_drained_or_block(
-        &outbox,
-        &audit,
-        &counter,
-        Region::Wnam,
-        Region::Enam,
-        0,
-    );
+    let r =
+        assert_outbox_drained_or_block(&outbox, &audit, &counter, Region::Wnam, Region::Enam, 0);
     assert!(
         matches!(r, Err(FailoverError::WriteBlockedDuringFailover { .. })),
         "counter failure must NOT mask refusal"
@@ -139,14 +136,8 @@ fn audit_emit_failure_surfaces_audit_error_never_silent_allow() {
     let counter = InMemoryFailbackBlockedCounter::new();
     outbox.seed_undrained(Region::Wnam, 1);
 
-    let r = assert_outbox_drained_or_block(
-        &outbox,
-        &audit,
-        &counter,
-        Region::Wnam,
-        Region::Enam,
-        0,
-    );
+    let r =
+        assert_outbox_drained_or_block(&outbox, &audit, &counter, Region::Wnam, Region::Enam, 0);
     match r {
         Err(FailoverError::Audit(msg)) => {
             assert!(msg.contains("audit-chain unreachable"));
@@ -161,14 +152,8 @@ fn outbox_query_failure_is_treated_as_dirty_fail_closed() {
     let audit = InMemoryFailoverAuditSink::new();
     let counter = InMemoryFailbackBlockedCounter::new();
 
-    let r = assert_outbox_drained_or_block(
-        &outbox,
-        &audit,
-        &counter,
-        Region::Wnam,
-        Region::Enam,
-        0,
-    );
+    let r =
+        assert_outbox_drained_or_block(&outbox, &audit, &counter, Region::Wnam, Region::Enam, 0);
     match r {
         Err(FailoverError::Internal(msg)) => {
             assert!(msg.contains("audit_outbox query failed"));
@@ -203,14 +188,8 @@ fn drill_matrix_scenario_dirty_then_drain_then_unblocked() {
     outbox.seed_undrained(Region::Wnam, 5);
 
     // Step 2 — refused
-    let r1 = assert_outbox_drained_or_block(
-        &outbox,
-        &audit,
-        &counter,
-        Region::Wnam,
-        Region::Enam,
-        1,
-    );
+    let r1 =
+        assert_outbox_drained_or_block(&outbox, &audit, &counter, Region::Wnam, Region::Enam, 1);
     assert!(matches!(
         r1,
         Err(FailoverError::WriteBlockedDuringFailover { .. })
@@ -220,14 +199,8 @@ fn drill_matrix_scenario_dirty_then_drain_then_unblocked() {
     outbox.mark_all_drained(Region::Wnam);
 
     // Step 4 — succeeds
-    let r2 = assert_outbox_drained_or_block(
-        &outbox,
-        &audit,
-        &counter,
-        Region::Wnam,
-        Region::Enam,
-        2,
-    );
+    let r2 =
+        assert_outbox_drained_or_block(&outbox, &audit, &counter, Region::Wnam, Region::Enam, 2);
     assert!(r2.is_ok());
 
     // Audit records: exactly the one refusal.
@@ -248,25 +221,13 @@ fn refusal_per_region_no_cross_contamination() {
     outbox.seed_undrained(Region::Wnam, 99);
 
     // WEUR → SAM (sibling pair, WEUR clean).
-    let r_ok = assert_outbox_drained_or_block(
-        &outbox,
-        &audit,
-        &counter,
-        Region::Weur,
-        Region::Sam,
-        0,
-    );
+    let r_ok =
+        assert_outbox_drained_or_block(&outbox, &audit, &counter, Region::Weur, Region::Sam, 0);
     assert!(r_ok.is_ok(), "clean WEUR must allow failback");
 
     // WNAM → ENAM (sibling pair, WNAM dirty).
-    let r_blocked = assert_outbox_drained_or_block(
-        &outbox,
-        &audit,
-        &counter,
-        Region::Wnam,
-        Region::Enam,
-        0,
-    );
+    let r_blocked =
+        assert_outbox_drained_or_block(&outbox, &audit, &counter, Region::Wnam, Region::Enam, 0);
     assert!(matches!(
         r_blocked,
         Err(FailoverError::WriteBlockedDuringFailover { .. })

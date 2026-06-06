@@ -148,18 +148,16 @@ impl Default for InMemoryAdminOpAuditSink {
 
 impl AdminOpAuditSink for InMemoryAdminOpAuditSink {
     fn emit(&self, event: AdminOpCloudEvent) -> Result<(), AdminAuditSinkError> {
-        let mut guard = self.captured.lock().map_err(|e| {
-            AdminAuditSinkError::SinkFailure(e.to_string())
-        })?;
+        let mut guard = self
+            .captured
+            .lock()
+            .map_err(|e| AdminAuditSinkError::SinkFailure(e.to_string()))?;
         guard.push(event);
         Ok(())
     }
 
     fn captured(&self) -> Vec<AdminOpCloudEvent> {
-        self.captured
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or_default()
+        self.captured.lock().map(|g| g.clone()).unwrap_or_default()
     }
 }
 

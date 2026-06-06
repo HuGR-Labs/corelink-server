@@ -25,9 +25,7 @@
     reason = "integration tests are allowed to use these primitives"
 )]
 
-use corelink_stripe_real::{
-    RetryPolicy, StripeClientConfig, StripeError, StripeRealClient,
-};
+use corelink_stripe_real::{RetryPolicy, StripeClientConfig, StripeError, StripeRealClient};
 use secrecy::SecretString;
 use wiremock::matchers::{header, header_exists, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -58,7 +56,10 @@ async fn client_uses_wallet_proxy_url() {
     let cfg = config_for(&server, "hugrw_url_test");
     let proxy_base = cfg.effective_base_url();
     let cust = tokio::task::spawn_blocking(move || {
-        let client = StripeRealClient::builder().config(cfg).build().expect("build");
+        let client = StripeRealClient::builder()
+            .config(cfg)
+            .build()
+            .expect("build");
         // Sanity: the effective base URL on the client matches what
         // we computed pre-spawn (i.e. the wallet ref is baked in
         // before any request hits the wire).
@@ -100,7 +101,10 @@ async fn client_uses_hugrw_token_auth() {
 
     let cfg = config_for(&server, "hugrw_auth_test");
     let cust = tokio::task::spawn_blocking(move || {
-        let client = StripeRealClient::builder().config(cfg).build().expect("build");
+        let client = StripeRealClient::builder()
+            .config(cfg)
+            .build()
+            .expect("build");
         client.create_customer("a@example.test", "tenant_auth_test", "idem-auth-1")
     })
     .await
@@ -138,11 +142,9 @@ async fn fails_closed_on_wallet_5xx() {
     // and the charter forbids it).
     Mock::given(method("POST"))
         .and(path("/_wallet/proxy/stripe-prod/v1/customers"))
-        .respond_with(
-            ResponseTemplate::new(503).set_body_string(
-                r#"{"error":{"type":"api_error","message":"wallet upstream unavailable"}}"#,
-            ),
-        )
+        .respond_with(ResponseTemplate::new(503).set_body_string(
+            r#"{"error":{"type":"api_error","message":"wallet upstream unavailable"}}"#,
+        ))
         .mount(&server)
         .await;
 

@@ -221,11 +221,10 @@ impl PagerDutyClient for InMemoryPagerDutyClient {
         as_of_ms: u64,
     ) -> Result<PagerDutyAssignment, OncallPagerDutyError> {
         let mut g = self.lock_state()?;
-        let roster_len = g
-            .rosters
-            .get(&schedule)
-            .map(Vec::len)
-            .ok_or_else(|| OncallPagerDutyError::NotFound(schedule.schedule_name().to_string()))?;
+        let roster_len =
+            g.rosters.get(&schedule).map(Vec::len).ok_or_else(|| {
+                OncallPagerDutyError::NotFound(schedule.schedule_name().to_string())
+            })?;
         if roster_len < 2 {
             return Err(OncallPagerDutyError::NotFound(format!(
                 "{} has no backup engineer in roster",
@@ -318,12 +317,18 @@ mod tests {
             pd.current_oncall(PagerDutyScheduleKey::Tier1, 0).unwrap(),
             Some(EngineerId::new("a"))
         );
-        let asn = pd.handoff_to_backup(PagerDutyScheduleKey::Tier1, 100).unwrap();
+        let asn = pd
+            .handoff_to_backup(PagerDutyScheduleKey::Tier1, 100)
+            .unwrap();
         assert_eq!(asn.engineer, EngineerId::new("b"));
-        let asn2 = pd.handoff_to_backup(PagerDutyScheduleKey::Tier1, 200).unwrap();
+        let asn2 = pd
+            .handoff_to_backup(PagerDutyScheduleKey::Tier1, 200)
+            .unwrap();
         assert_eq!(asn2.engineer, EngineerId::new("c"));
         // Wraps back to "a".
-        let asn3 = pd.handoff_to_backup(PagerDutyScheduleKey::Tier1, 300).unwrap();
+        let asn3 = pd
+            .handoff_to_backup(PagerDutyScheduleKey::Tier1, 300)
+            .unwrap();
         assert_eq!(asn3.engineer, EngineerId::new("a"));
     }
 
@@ -332,7 +337,9 @@ mod tests {
         let pd = InMemoryPagerDutyClient::new();
         pd.seed_roster(PagerDutyScheduleKey::Tier1, vec![EngineerId::new("a")])
             .unwrap();
-        let err = pd.handoff_to_backup(PagerDutyScheduleKey::Tier1, 0).unwrap_err();
+        let err = pd
+            .handoff_to_backup(PagerDutyScheduleKey::Tier1, 0)
+            .unwrap_err();
         assert!(matches!(err, OncallPagerDutyError::NotFound(_)));
     }
 

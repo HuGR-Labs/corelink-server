@@ -54,9 +54,8 @@ use corelink_dsr::{
     DsrEndpoint, DsrJurisdiction, DsrReceipt, DsrRejectReason, DsrRequest, DsrRequestKind,
     DsrStatus, InMemoryDsrAuditSink, InMemoryDsrEndpoint, InMemoryDsrRequestStore,
     InMemoryJwtReceiptIssuer, InMemoryMfaStepUpVerifier, JwtReceiptIssuer, JwtReceiptToken,
-    MfaStepUpToken, CANONICAL_RECEIPT_EXPIRY_DAYS, CANONICAL_RECEIPT_EXPIRY_MS,
-    RECEIPT_ALG_RS256, RECEIPT_EXPIRY_DAYS, RECEIPT_ISSUER, SLA_CCPA_DAYS, SLA_GDPR_DAYS,
-    SLA_LGPD_DAYS,
+    MfaStepUpToken, CANONICAL_RECEIPT_EXPIRY_DAYS, CANONICAL_RECEIPT_EXPIRY_MS, RECEIPT_ALG_RS256,
+    RECEIPT_EXPIRY_DAYS, RECEIPT_ISSUER, SLA_CCPA_DAYS, SLA_GDPR_DAYS, SLA_LGPD_DAYS,
 };
 use proptest::prelude::*;
 use rand::SeedableRng;
@@ -153,7 +152,11 @@ fn canonical_decision_taxonomy_pinned() {
     ];
     let mut set: HashSet<&'static str> = HashSet::new();
     for a in &arms {
-        assert!(set.insert(a.as_str()), "duplicate decision str: {}", a.as_str());
+        assert!(
+            set.insert(a.as_str()),
+            "duplicate decision str: {}",
+            a.as_str()
+        );
     }
 }
 

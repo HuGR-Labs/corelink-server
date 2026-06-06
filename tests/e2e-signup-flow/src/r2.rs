@@ -99,10 +99,7 @@ impl InMemoryR2Client {
     /// Returns [`R2Error::Unauthorized`] if `pat_hash` is not bound to
     /// a tenant.
     pub fn put(&self, pat_hash: &str, vb: &VerifiedBody) -> Result<Digest, R2Error> {
-        let mut g = self
-            .inner
-            .lock()
-            .map_err(|_| R2Error::Unauthorized)?;
+        let mut g = self.inner.lock().map_err(|_| R2Error::Unauthorized)?;
         let tenant_id = g
             .pat_to_tenant
             .get(pat_hash)
@@ -125,10 +122,7 @@ impl InMemoryR2Client {
     /// [`R2Error::NotFound`] if no object is present, and
     /// [`R2Error::DigestMismatch`] if the bytes have been corrupted.
     pub fn get(&self, pat_hash: &str, digest: &Digest) -> Result<Bytes, R2Error> {
-        let mut g = self
-            .inner
-            .lock()
-            .map_err(|_| R2Error::Unauthorized)?;
+        let mut g = self.inner.lock().map_err(|_| R2Error::Unauthorized)?;
         let tenant_id = g
             .pat_to_tenant
             .get(pat_hash)

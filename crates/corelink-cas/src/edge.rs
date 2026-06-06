@@ -144,27 +144,21 @@ pub mod metrics;
 pub mod policy;
 
 pub use audit::{
-    canonical_audit_event_strings, EdgeAuditRecord, EdgeAuditSink,
-    EdgeAuditSinkError, EdgeEventType, FailingEdgeAuditSink,
-    InMemoryEdgeAuditSink,
+    canonical_audit_event_strings, EdgeAuditRecord, EdgeAuditSink, EdgeAuditSinkError,
+    EdgeEventType, FailingEdgeAuditSink, InMemoryEdgeAuditSink,
 };
-pub use cidr::{
-    longest_match, overlaps, Cidr, CidrFamily, CidrParseError, IpAddr,
-};
+pub use cidr::{longest_match, overlaps, Cidr, CidrFamily, CidrParseError, IpAddr};
 pub use config::{
-    EdgeConfig, EdgeDefaultAction, DEFAULT_ALERT_THRESHOLD_SIZE,
-    DEFAULT_MAX_BLOCKLIST_SIZE,
+    EdgeConfig, EdgeDefaultAction, DEFAULT_ALERT_THRESHOLD_SIZE, DEFAULT_MAX_BLOCKLIST_SIZE,
 };
 pub use error::EdgeError;
 pub use metrics::{
-    canonical_metric_names, EdgeMetricKind, EdgeMetricsObserver,
-    EdgeMetricsObserverError, EdgeResultLabel, FailingEdgeMetrics,
-    InMemoryEdgeMetrics,
+    canonical_metric_names, EdgeMetricKind, EdgeMetricsObserver, EdgeMetricsObserverError,
+    EdgeResultLabel, FailingEdgeMetrics, InMemoryEdgeMetrics,
 };
 pub use policy::{
-    CidrBlocklist, EdgeClock, EdgeDecision, EdgePolicy,
-    InMemoryCidrBlocklist, InMemoryEdgePolicy, MatchedPrefix,
-    SystemEdgeClock,
+    CidrBlocklist, EdgeClock, EdgeDecision, EdgePolicy, InMemoryCidrBlocklist, InMemoryEdgePolicy,
+    MatchedPrefix, SystemEdgeClock,
 };
 
 /// Returns the canonical schema version recorded by the latest

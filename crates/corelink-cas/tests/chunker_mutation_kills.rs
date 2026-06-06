@@ -138,7 +138,11 @@ fn chunker_step_consumed_returns_actual_byte_count() {
     let mut chunker2 = ChunkerKind::new(ChunkerConfig::default()).expect("valid");
     let partial = [1u8, 2, 3, 4, 5, 6, 7];
     let step2 = chunker2.feed(&partial);
-    assert_eq!(step2.consumed(), 7, "NeedMore consumed must equal input.len()");
+    assert_eq!(
+        step2.consumed(),
+        7,
+        "NeedMore consumed must equal input.len()"
+    );
     assert_ne!(step2.consumed(), 0);
     assert_ne!(step2.consumed(), 1);
 }
@@ -222,8 +226,7 @@ fn fastcdc_scan_boundary_mask_selection_is_deterministic() {
         .map(|b| format!("{:02x}", b))
         .collect();
     assert_eq!(
-        first_digest_hex,
-        "ab0c43c584271bfa70b8224278d1f1aa629d2ab38acd4b002b337176b5e35c71",
+        first_digest_hex, "ab0c43c584271bfa70b8224278d1f1aa629d2ab38acd4b002b337176b5e35c71",
         "canonical first chunk digest pinned to unmutated baseline; \
          any mask-selection mutation shifts the boundary and changes \
          the digest"
@@ -280,9 +283,10 @@ fn fastcdc_boundary_uses_bitwise_and_with_mask() {
     // we have at least one chunk NOT equal to fastcdc_max and not
     // equal to the partial-final tail — i.e. a genuine soft
     // boundary was hit.
-    let has_soft_boundary = sizes.iter().take(sizes.len().saturating_sub(1)).any(|&s| {
-        s != FASTCDC_DEFAULT_MAX && s >= FASTCDC_DEFAULT_MIN && s < FASTCDC_DEFAULT_MAX
-    });
+    let has_soft_boundary = sizes
+        .iter()
+        .take(sizes.len().saturating_sub(1))
+        .any(|&s| s != FASTCDC_DEFAULT_MAX && s >= FASTCDC_DEFAULT_MIN && s < FASTCDC_DEFAULT_MAX);
     assert!(
         has_soft_boundary,
         "canonical FastCDC must produce at least one soft boundary (size in [min, max))"
@@ -323,7 +327,10 @@ fn fastcdc_reset_is_observable() {
     let _ = chunker.feed(&payload);
     let _ = chunker.finalize();
     assert!(chunker.bytes_absorbed() > 0, "must have absorbed bytes");
-    assert!(chunker.chunks_emitted() > 0, "must have emitted at least one chunk");
+    assert!(
+        chunker.chunks_emitted() > 0,
+        "must have emitted at least one chunk"
+    );
 
     // Reset MUST zero the counters.
     chunker.reset();

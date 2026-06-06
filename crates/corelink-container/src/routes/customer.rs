@@ -90,8 +90,7 @@ impl core::fmt::Debug for CustomerRouteState {
 pub fn build_handlers() -> CustomerRouteState {
     let audit = Arc::new(InMemoryAuditSink::new());
     let sli = Arc::new(InMemorySliObserver::new());
-    let shared: Arc<InMemoryCustomerHandler> =
-        Arc::new(InMemoryCustomerHandler::new(audit, sli));
+    let shared: Arc<InMemoryCustomerHandler> = Arc::new(InMemoryCustomerHandler::new(audit, sli));
     CustomerRouteState {
         overview: shared.clone(),
         usage: shared.clone(),
@@ -535,12 +534,10 @@ mod tests {
         body::{to_bytes, Body},
         http::Request,
     };
-    use corelink_handler_customer::{
-        BillingResponse, OverviewResponse, UsageResponse,
-    };
     use corelink_handler_customer::request::{
         ByokStatus, InvoiceRow, OverviewBilling, OverviewUsage, PatRow,
     };
+    use corelink_handler_customer::{BillingResponse, OverviewResponse, UsageResponse};
     use tower::ServiceExt;
 
     /// Build a fixture state backed by shared InMemoryCustomerHandler
@@ -552,11 +549,11 @@ mod tests {
             Arc::new(InMemoryCustomerHandler::new(audit, sli));
         let state = CustomerRouteState {
             overview: shared.clone(),
-            usage:    shared.clone(),
-            billing:  shared.clone(),
-            keys:     shared.clone(),
-            team:     shared.clone(),
-            audit:    shared.clone(),
+            usage: shared.clone(),
+            billing: shared.clone(),
+            keys: shared.clone(),
+            team: shared.clone(),
+            audit: shared.clone(),
         };
         (state, shared)
     }
@@ -583,7 +580,9 @@ mod tests {
         let (state, shared) = fixture();
         // Seed an overview for tenant-xyz so the handler returns OK.
         let overview = OverviewResponse::new(
-            "tenant-xyz", "XYZ Corp", "starter",
+            "tenant-xyz",
+            "XYZ Corp",
+            "starter",
             OverviewUsage::new("2026-05", 0, 1_000_000, 0, 0),
             OverviewBilling::new("active", "2026-06-01T00:00:00Z", 2900, "usd"),
             ByokStatus::new("none", None, None),
@@ -670,11 +669,19 @@ mod tests {
     async fn billing_route_returns_200() {
         let (state, shared) = fixture();
         let billing = BillingResponse::new(
-            "active", "starter", "2026-05-01", "2026-06-01",
-            2900, "usd", vec![
-                InvoiceRow::new("inv_001", "2026-05-01", 2900, "paid",
-                    "https://invoice.stripe.com/inv_001"),
-            ],
+            "active",
+            "starter",
+            "2026-05-01",
+            "2026-06-01",
+            2900,
+            "usd",
+            vec![InvoiceRow::new(
+                "inv_001",
+                "2026-05-01",
+                2900,
+                "paid",
+                "https://invoice.stripe.com/inv_001",
+            )],
         );
         shared.seed_billing("t2", billing).expect("seed");
 
@@ -702,8 +709,13 @@ mod tests {
         // up the billing store; it always returns a stub URL. However we
         // still seed billing to avoid any future path divergence.
         let billing = BillingResponse::new(
-            "active", "team", "2026-05-01", "2026-06-01",
-            4900, "usd", vec![],
+            "active",
+            "team",
+            "2026-05-01",
+            "2026-06-01",
+            4900,
+            "usd",
+            vec![],
         );
         shared.seed_billing("t3", billing).expect("seed");
 
@@ -754,8 +766,14 @@ mod tests {
     #[tokio::test]
     async fn keys_list_returns_seeded_pats() {
         let (state, shared) = fixture();
-        let pat = PatRow::new("pat_001", "my-key", vec!["cache:read".into()],
-            "2026-05-01T00:00:00Z", None, None);
+        let pat = PatRow::new(
+            "pat_001",
+            "my-key",
+            vec!["cache:read".into()],
+            "2026-05-01T00:00:00Z",
+            None,
+            None,
+        );
         shared.seed_pat("t5", pat).expect("seed");
 
         let app = router(state);
@@ -777,8 +795,14 @@ mod tests {
     #[tokio::test]
     async fn keys_revoke_returns_revoked_pat() {
         let (state, shared) = fixture();
-        let pat = PatRow::new("pat_rev", "revoke-me", vec![],
-            "2026-05-01T00:00:00Z", None, None);
+        let pat = PatRow::new(
+            "pat_rev",
+            "revoke-me",
+            vec![],
+            "2026-05-01T00:00:00Z",
+            None,
+            None,
+        );
         shared.seed_pat("t6", pat).expect("seed");
 
         let app = router(state);

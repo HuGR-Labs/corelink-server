@@ -19,9 +19,7 @@
     clippy::print_stderr
 )]
 
-use corelink_chaos_scheduler::{
-    canonical_catalog, distinct_fm_count, weekly_rotation, ChaosKind,
-};
+use corelink_chaos_scheduler::{canonical_catalog, distinct_fm_count, weekly_rotation, ChaosKind};
 
 #[test]
 fn catalog_has_at_least_8_entries() {
@@ -118,6 +116,10 @@ fn weekly_rotation_visits_every_experiment_once_per_cycle() {
 #[test]
 fn catalog_blast_radius_positive() {
     for e in canonical_catalog() {
-        assert!(e.blast_radius_bps > 0, "{} blast_radius_bps must be > 0", e.id);
+        assert!(
+            e.blast_radius_bps > 0,
+            "{} blast_radius_bps must be > 0",
+            e.id
+        );
     }
 }

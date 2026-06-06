@@ -28,7 +28,9 @@ pub enum PatError {
     /// Every shape mismatch folds to this single variant so callers
     /// cannot use the error to discriminate "wrong env" vs "wrong
     /// length" via timing or branching.
-    #[error("PAT format invalid (expected `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>`)")]
+    #[error(
+        "PAT format invalid (expected `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>`)"
+    )]
     Malformed,
 
     /// HMAC signature mismatch OR Argon2id verify mismatch. Returned

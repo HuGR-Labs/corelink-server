@@ -22,8 +22,7 @@
 )]
 
 use corelink_replica_worker::metrics::{
-    InMemoryReplicationLagSli, ReplicationDomain, ReplicationLagSli,
-    METRIC_REPLICATION_LAG_SECONDS,
+    InMemoryReplicationLagSli, ReplicationDomain, ReplicationLagSli, METRIC_REPLICATION_LAG_SECONDS,
 };
 use corelink_replica_worker::Region;
 use corelink_slo::Sli;

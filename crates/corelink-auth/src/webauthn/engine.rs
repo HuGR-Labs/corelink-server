@@ -278,9 +278,8 @@ impl EngineConfigBuilder {
             origins.require_consistency_with(&self.rp_id)?;
         }
         let aaguids = self.aaguids.unwrap_or_else(AaguidPolicy::empty);
-        let metrics: Arc<dyn MetricsObserver> = self
-            .metrics
-            .unwrap_or_else(|| Arc::new(NoopMetrics));
+        let metrics: Arc<dyn MetricsObserver> =
+            self.metrics.unwrap_or_else(|| Arc::new(NoopMetrics));
         Ok(EngineConfig {
             rp_id: self.rp_id,
             rp_name: self.rp_name,
@@ -538,20 +537,23 @@ impl<C: EngineClock> WebAuthnEngine for InMemoryEngine<C> {
         })?;
 
         // AAGUID policy.
-        self.config.aaguids.evaluate(response.aaguid).inspect_err(|e| match e {
-            WebAuthnError::AaguidDenied => self
-                .config
-                .metrics
-                .record_registration(CeremonyResult::AaguidDenied),
-            WebAuthnError::AaguidNotAllowed => self
-                .config
-                .metrics
-                .record_registration(CeremonyResult::AaguidNotAllowed),
-            _ => self
-                .config
-                .metrics
-                .record_registration(CeremonyResult::Other),
-        })?;
+        self.config
+            .aaguids
+            .evaluate(response.aaguid)
+            .inspect_err(|e| match e {
+                WebAuthnError::AaguidDenied => self
+                    .config
+                    .metrics
+                    .record_registration(CeremonyResult::AaguidDenied),
+                WebAuthnError::AaguidNotAllowed => self
+                    .config
+                    .metrics
+                    .record_registration(CeremonyResult::AaguidNotAllowed),
+                _ => self
+                    .config
+                    .metrics
+                    .record_registration(CeremonyResult::Other),
+            })?;
 
         let credential = Credential::from_registration(
             stored.user,
@@ -697,11 +699,8 @@ impl<C: EngineClock> WebAuthnEngine for InMemoryEngine<C> {
                 )?;
             }
             SignCountSeverity::PasskeyExempt => {
-                self.credentials.update_after_authentication(
-                    &response.credential_id,
-                    0,
-                    now,
-                )?;
+                self.credentials
+                    .update_after_authentication(&response.credential_id, 0, now)?;
             }
         }
 

@@ -12,14 +12,12 @@ pub const METRIC_ROLLOUT_STAGE_GAUGE: &str = "corelink_admin_rollout_stage_gauge
 /// Counter: auto-rollback events.
 /// Labels: `trigger` ∈ {error_rate, slo_burn, p99_latency},
 /// `plan` (tenant plan tier).
-pub const METRIC_ROLLOUT_AUTO_ROLLBACK_TOTAL: &str =
-    "corelink_admin_rollout_auto_rollback_total";
+pub const METRIC_ROLLOUT_AUTO_ROLLBACK_TOTAL: &str = "corelink_admin_rollout_auto_rollback_total";
 
 /// Gauge: monthly budget consumed ratio (0.0–1.0+).
 /// Alert threshold: > 0.30.
 /// Labels: `plan`.
-pub const METRIC_BUDGET_CONSUMED_RATIO: &str =
-    "corelink_admin_rollout_budget_consumed_ratio";
+pub const METRIC_BUDGET_CONSUMED_RATIO: &str = "corelink_admin_rollout_budget_consumed_ratio";
 
 /// Histogram: detection-to-rollback latency (seconds).
 /// SLO: ≤ 10 min p99 (600 s).

@@ -32,9 +32,7 @@ use crate::wall_clock::{default_wall_clock, WallClock};
 use super::audit_sink::{emit_or_503, ExportAuditSink, InMemoryExportAuditSink};
 use super::state::{audit_export_rate_limit_config, router, AuditExportRouteState};
 use super::stream::{build_audit_export_async_stream, InMemoryR2ListPager};
-use super::types::{
-    ExportAuditRow, EVENT_TYPE_VERIFY_FAILED, R2_LIST_PAGE_SIZE, TENANT_ID_HEADER,
-};
+use super::types::{ExportAuditRow, EVENT_TYPE_VERIFY_FAILED, R2_LIST_PAGE_SIZE, TENANT_ID_HEADER};
 
 /// A-P1-02 closure — cross-tenant-reject now fails CLOSED.
 #[tokio::test]
@@ -47,13 +45,11 @@ async fn cross_tenant_reject_returns_503_on_audit_sink_failure() {
     let exporter: Arc<dyn AuditExporter> = Arc::new(InMemoryAuditExporter::new());
     let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
     let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
-    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(
-        InMemoryTokenBucketRateLimiter::new(
-            rl_audit,
-            rl_metrics,
-            audit_export_rate_limit_config(),
-        ),
-    );
+    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(InMemoryTokenBucketRateLimiter::new(
+        rl_audit,
+        rl_metrics,
+        audit_export_rate_limit_config(),
+    ));
     let state = AuditExportRouteState {
         exporter,
         rate_limiter,
@@ -62,9 +58,7 @@ async fn cross_tenant_reject_returns_503_on_audit_sink_failure() {
         wall_clock: default_wall_clock(),
     };
     let app = router(state);
-    let uri = format!(
-        "/v1/audit/{auth_tenant}/export?from=0&to=1000&tenant={attempted}",
-    );
+    let uri = format!("/v1/audit/{auth_tenant}/export?from=0&to=1000&tenant={attempted}",);
     let req = axum::http::Request::builder()
         .uri(uri)
         .header(TENANT_ID_HEADER, auth_tenant.to_string())
@@ -91,13 +85,11 @@ async fn rate_limit_deny_returns_503_on_audit_sink_failure() {
     let exporter: Arc<dyn AuditExporter> = Arc::new(InMemoryAuditExporter::new());
     let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
     let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
-    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(
-        InMemoryTokenBucketRateLimiter::new(
-            rl_audit,
-            rl_metrics,
-            audit_export_rate_limit_config(),
-        ),
-    );
+    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(InMemoryTokenBucketRateLimiter::new(
+        rl_audit,
+        rl_metrics,
+        audit_export_rate_limit_config(),
+    ));
     let state = AuditExportRouteState {
         exporter,
         rate_limiter,
@@ -153,13 +145,11 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
     let exporter: Arc<dyn AuditExporter> = Arc::new(InMemoryAuditExporter::new());
     let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
     let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
-    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(
-        InMemoryTokenBucketRateLimiter::new(
-            rl_audit,
-            rl_metrics,
-            audit_export_rate_limit_config(),
-        ),
-    );
+    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(InMemoryTokenBucketRateLimiter::new(
+        rl_audit,
+        rl_metrics,
+        audit_export_rate_limit_config(),
+    ));
     // Pin the wall clock at a known instant well past unix epoch
     // so the fallback-on-zero arm is NOT exercised.
     let fake = Arc::new(InMemoryFakeWallClock::at_unix_ms(1_700_000_000_000));
@@ -230,19 +220,16 @@ async fn wall_clock_saturated_to_zero_returns_503_and_emits_clock_unavailable_ro
     use tower::ServiceExt;
 
     let tenant = Uuid::from_u128(0xF2);
-    let sink: Arc<InMemoryExportAuditSink> =
-        Arc::new(InMemoryExportAuditSink::new());
+    let sink: Arc<InMemoryExportAuditSink> = Arc::new(InMemoryExportAuditSink::new());
     let sink_dyn: Arc<dyn ExportAuditSink> = sink.clone();
     let exporter: Arc<dyn AuditExporter> = Arc::new(InMemoryAuditExporter::new());
     let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
     let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
-    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(
-        InMemoryTokenBucketRateLimiter::new(
-            rl_audit,
-            rl_metrics,
-            audit_export_rate_limit_config(),
-        ),
-    );
+    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(InMemoryTokenBucketRateLimiter::new(
+        rl_audit,
+        rl_metrics,
+        audit_export_rate_limit_config(),
+    ));
     // Pin the wall clock at the saturating value (unix_ms == 0).
     // SystemWallClock cannot reach this branch in production
     // (epoch is decades past), but InMemoryFakeWallClock can —
@@ -321,10 +308,10 @@ async fn verify_failed_sev0_returns_503_on_audit_sink_failure() {
 /// already yielded BEFORE the break-row are preserved.
 #[tokio::test]
 async fn mid_stream_break_surfaces_audit_failure_via_forced_close() {
+    use corelink_analytics::Region;
     use corelink_audit_chain::{
         AuditEvent, AuditEventKind, HashChainBuilder, InMemoryAuditExporter,
     };
-    use corelink_analytics::Region;
     use futures::StreamExt;
     use serde_json::json;
     let tenant = Uuid::from_u128(0xE1);

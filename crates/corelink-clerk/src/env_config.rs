@@ -81,8 +81,8 @@ impl ClerkEnvSecrets {
     ///
     /// Surfaces [`EnvLoadError::Missing`] if either var is unset.
     pub fn from_env() -> Result<Self, EnvLoadError> {
-        let publishable_key =
-            env::var(ENV_PUBLISHABLE_KEY).map_err(|_| EnvLoadError::Missing(ENV_PUBLISHABLE_KEY))?;
+        let publishable_key = env::var(ENV_PUBLISHABLE_KEY)
+            .map_err(|_| EnvLoadError::Missing(ENV_PUBLISHABLE_KEY))?;
         let secret_key =
             env::var(ENV_SECRET_KEY).map_err(|_| EnvLoadError::Missing(ENV_SECRET_KEY))?;
         if publishable_key.is_empty() {
@@ -154,20 +154,20 @@ impl ClerkConfig {
     ///
     /// See [`EnvLoadError`].
     pub fn from_env() -> Result<Self, EnvLoadError> {
-        let publishable_key =
-            env::var(ENV_PUBLISHABLE_KEY).map_err(|_| EnvLoadError::Missing(ENV_PUBLISHABLE_KEY))?;
+        let publishable_key = env::var(ENV_PUBLISHABLE_KEY)
+            .map_err(|_| EnvLoadError::Missing(ENV_PUBLISHABLE_KEY))?;
         if publishable_key.is_empty() {
             return Err(EnvLoadError::Missing(ENV_PUBLISHABLE_KEY));
         }
-        let audience =
-            env::var(ENV_AUDIENCE).map_err(|_| EnvLoadError::Missing(ENV_AUDIENCE))?;
+        let audience = env::var(ENV_AUDIENCE).map_err(|_| EnvLoadError::Missing(ENV_AUDIENCE))?;
         if audience.is_empty() {
             return Err(EnvLoadError::Missing(ENV_AUDIENCE));
         }
         let frontend_host = parse_publishable_key_frontend_host(&publishable_key)?;
-        let jwks_url = env::var(ENV_JWKS_URL).ok().filter(|s| !s.is_empty()).unwrap_or_else(
-            || format!("https://{frontend_host}/.well-known/jwks.json"),
-        );
+        let jwks_url = env::var(ENV_JWKS_URL)
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| format!("https://{frontend_host}/.well-known/jwks.json"));
         let issuer_allowlist: Vec<String> =
             match env::var(ENV_JWT_ISSUER).ok().filter(|s| !s.is_empty()) {
                 Some(raw) => raw

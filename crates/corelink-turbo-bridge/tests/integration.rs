@@ -19,11 +19,9 @@ use corelink_turbo_bridge::{
     adapter::{CasAdapterTurboHandler, InMemoryKvStore},
     audit::{InMemoryTurboAuditSink, TurboAuditEventKind},
     events::TurboEventsRequest,
-    handler::{
-        InMemoryTurboHandler, TurboArtifactHandler, TurboGetRequest, TurboPutRequest,
-    },
+    handler::{InMemoryTurboHandler, TurboArtifactHandler, TurboGetRequest, TurboPutRequest},
     status::TurboStatusRequest,
-    TurboBridgeError, VERCEL_API_VERSION, MAX_HASH_LEN,
+    TurboBridgeError, MAX_HASH_LEN, VERCEL_API_VERSION,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -169,7 +167,10 @@ fn inmem_hash_too_long_rejected_without_audit() {
         ))
         .expect_err("too long");
     assert!(matches!(err, TurboBridgeError::HashTooLong { .. }));
-    assert!(audit.snapshot().expect("snap").is_empty(), "no audit events for DoS path");
+    assert!(
+        audit.snapshot().expect("snap").is_empty(),
+        "no audit events for DoS path"
+    );
 }
 
 #[test]
@@ -230,10 +231,14 @@ fn inmem_two_teams_isolated_same_hash() {
     ))
     .expect("put b");
     let ra = h
-        .get(TurboGetRequest::new("shared", "team_a", "mono", "p", "team_a", 3))
+        .get(TurboGetRequest::new(
+            "shared", "team_a", "mono", "p", "team_a", 3,
+        ))
         .expect("get a");
     let rb = h
-        .get(TurboGetRequest::new("shared", "team_b", "mono", "p", "team_b", 4))
+        .get(TurboGetRequest::new(
+            "shared", "team_b", "mono", "p", "team_b", 4,
+        ))
         .expect("get b");
     assert_eq!(ra.bytes, data_a, "team_a gets its own data");
     assert_eq!(rb.bytes, data_b, "team_b gets its own data");
@@ -322,8 +327,16 @@ fn adapter_audit_ordering_attempted_before_committed() {
     .expect("put");
     let rows = audit.snapshot().expect("snap");
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].kind, TurboAuditEventKind::PutAttempted, "attempted must come first");
-    assert_eq!(rows[1].kind, TurboAuditEventKind::PutCommitted, "committed must come second");
+    assert_eq!(
+        rows[0].kind,
+        TurboAuditEventKind::PutAttempted,
+        "attempted must come first"
+    );
+    assert_eq!(
+        rows[1].kind,
+        TurboAuditEventKind::PutCommitted,
+        "committed must come second"
+    );
 }
 
 #[test]

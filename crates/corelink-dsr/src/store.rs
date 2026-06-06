@@ -42,11 +42,7 @@ pub trait DsrRequestStore: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`DsrStoreError::Backend`] on backend failure.
-    fn get(
-        &self,
-        tenant_id: Uuid,
-        request_id: Uuid,
-    ) -> Result<Option<DsrTicket>, DsrStoreError>;
+    fn get(&self, tenant_id: Uuid, request_id: Uuid) -> Result<Option<DsrTicket>, DsrStoreError>;
 
     /// Insert a fresh ticket. Returns `Ok(true)` on first-sighting;
     /// returns `Ok(false)` when a ticket with the same (tenant_id,
@@ -126,21 +122,19 @@ impl InMemoryDsrRequestStore {
 }
 
 impl DsrRequestStore for InMemoryDsrRequestStore {
-    fn get(
-        &self,
-        tenant_id: Uuid,
-        request_id: Uuid,
-    ) -> Result<Option<DsrTicket>, DsrStoreError> {
-        let guard = self.inner.lock().map_err(|_| {
-            DsrStoreError::Backend("dsr store mutex poisoned (get)".to_string())
-        })?;
+    fn get(&self, tenant_id: Uuid, request_id: Uuid) -> Result<Option<DsrTicket>, DsrStoreError> {
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| DsrStoreError::Backend("dsr store mutex poisoned (get)".to_string()))?;
         Ok(guard.get(&(tenant_id, request_id)).cloned())
     }
 
     fn insert(&self, ticket: DsrTicket) -> Result<bool, DsrStoreError> {
-        let mut guard = self.inner.lock().map_err(|_| {
-            DsrStoreError::Backend("dsr store mutex poisoned (insert)".to_string())
-        })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| DsrStoreError::Backend("dsr store mutex poisoned (insert)".to_string()))?;
         let key = (ticket.tenant_id, ticket.request_id);
         if let Some(existing) = guard.get(&key) {
             // Divergent-payload check: the canonical idempotency
@@ -178,11 +172,7 @@ impl FailingDsrRequestStore {
 }
 
 impl DsrRequestStore for FailingDsrRequestStore {
-    fn get(
-        &self,
-        _tenant_id: Uuid,
-        _request_id: Uuid,
-    ) -> Result<Option<DsrTicket>, DsrStoreError> {
+    fn get(&self, _tenant_id: Uuid, _request_id: Uuid) -> Result<Option<DsrTicket>, DsrStoreError> {
         Err(DsrStoreError::Backend(
             "induced dsr store failure (test fixture)".to_string(),
         ))
@@ -205,9 +195,7 @@ impl DsrRequestStore for FailingDsrRequestStore {
 )]
 mod tests {
     use super::*;
-    use crate::event::{
-        sla_for, DsrJurisdiction, DsrRequest, DsrRequestKind, DsrTicket,
-    };
+    use crate::event::{sla_for, DsrJurisdiction, DsrRequest, DsrRequestKind, DsrTicket};
     use crate::receipt::JwtReceiptToken;
 
     fn req(t: Uuid, sub: Uuid, kind: DsrRequestKind) -> DsrRequest {

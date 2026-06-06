@@ -26,8 +26,7 @@ pub trait HealthProbe: std::fmt::Debug + Send + Sync {
     /// Execute a synthetic GET probe for the given region.
     ///
     /// Returns a health snapshot based on current observed signals.
-    fn probe(&self, region: Region, timestamp_ms: u64)
-        -> Result<RegionHealthSnapshot, String>;
+    fn probe(&self, region: Region, timestamp_ms: u64) -> Result<RegionHealthSnapshot, String>;
 }
 
 /// In-memory health probe for tests and local orchestration.
@@ -95,7 +94,7 @@ impl InMemoryHealthProbe {
             states.insert(
                 region.as_str().to_owned(),
                 ProbeState {
-                    rate_5xx_pct: 5.0, // > 1% threshold
+                    rate_5xx_pct: 5.0,   // > 1% threshold
                     latency_p99_ms: 500, // > 300ms SLO
                     consecutive_failures: CONSECUTIVE_FAILURES_THRESHOLD + 1,
                 },
@@ -150,11 +149,7 @@ impl Default for InMemoryHealthProbe {
 }
 
 impl HealthProbe for InMemoryHealthProbe {
-    fn probe(
-        &self,
-        region: Region,
-        timestamp_ms: u64,
-    ) -> Result<RegionHealthSnapshot, String> {
+    fn probe(&self, region: Region, timestamp_ms: u64) -> Result<RegionHealthSnapshot, String> {
         let state = self
             .states
             .lock()

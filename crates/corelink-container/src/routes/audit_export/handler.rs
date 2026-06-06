@@ -112,17 +112,13 @@ pub(super) async fn handle_export(
             if let Some(resp) = emit_or_503(&state.audit_sink, row) {
                 return resp;
             }
-            return (StatusCode::FORBIDDEN, "cross-tenant audit-export denied")
-                .into_response();
+            return (StatusCode::FORBIDDEN, "cross-tenant audit-export denied").into_response();
         }
     }
 
     // 4. Rate-limit gate — 1 export per tenant per 60s
     //    (per WI-S09-008 §7 Q2 default + WI-S08-001 framework).
-    let bucket_key = BucketKey::per_tenant_per_endpoint(
-        authenticated_tenant,
-        "audit.export",
-    );
+    let bucket_key = BucketKey::per_tenant_per_endpoint(authenticated_tenant, "audit.export");
     // Wave-21 closure of A-P2-05: anchor the bucket `now_ms` to the
     // injected `WallClock` collaborator instead of the request window's
     // `until_ms`.
@@ -164,19 +160,13 @@ pub(super) async fn handle_export(
         if let Some(resp) = emit_or_503(&state.audit_sink, row) {
             return resp;
         }
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "wall clock unavailable",
-        )
-            .into_response();
+        return (StatusCode::SERVICE_UNAVAILABLE, "wall clock unavailable").into_response();
     }
     let now_ms = wall_now_ms;
-    match state.rate_limiter.try_acquire(
-        authenticated_tenant,
-        bucket_key,
-        1,
-        now_ms,
-    ) {
+    match state
+        .rate_limiter
+        .try_acquire(authenticated_tenant, bucket_key, 1, now_ms)
+    {
         Ok(outcome) => match outcome.decision {
             RateLimitDecision::Allow { .. } => {}
             // The decision enum is `#[non_exhaustive]`; the
@@ -208,7 +198,8 @@ pub(super) async fn handle_export(
                 let body = format!("rate-limited; retry after {retry_after_secs}s");
                 let mut resp = (StatusCode::TOO_MANY_REQUESTS, body).into_response();
                 if let Ok(val) = format!("{retry_after_secs}").parse() {
-                    resp.headers_mut().insert(axum::http::header::RETRY_AFTER, val);
+                    resp.headers_mut()
+                        .insert(axum::http::header::RETRY_AFTER, val);
                 }
                 return resp;
             }
@@ -302,11 +293,7 @@ pub(super) async fn handle_export(
     let row_lines = match serialize_ndjson_lines(&result.rows) {
         Ok(t) => t,
         Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "ndjson serialize failed",
-            )
-                .into_response();
+            return (StatusCode::INTERNAL_SERVER_ERROR, "ndjson serialize failed").into_response();
         }
     };
     let manifest_line = format!("{{\"manifest\":{manifest_json}}}");
@@ -346,11 +333,7 @@ pub(super) async fn handle_export(
         payload: None,
     };
     if state.audit_sink.emit(request_row).is_err() {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "audit pipeline closed",
-        )
-            .into_response();
+        return (StatusCode::SERVICE_UNAVAILABLE, "audit pipeline closed").into_response();
     }
 
     if verify_failed {

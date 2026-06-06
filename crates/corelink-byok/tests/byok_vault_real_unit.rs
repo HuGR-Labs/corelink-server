@@ -57,11 +57,11 @@
 )]
 
 use base64::Engine as _;
+use corelink_byok::vault::__test_support::VaultAuth;
+use corelink_byok::vault::{canonicalize_aad_to_string_map, VaultRealProvider};
 use corelink_byok::{
     BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
 };
-use corelink_byok::vault::__test_support::VaultAuth;
-use corelink_byok::vault::{canonicalize_aad_to_string_map, VaultRealProvider};
 use serde_json::json;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -212,8 +212,7 @@ async fn aad_canonicalization_encoded_as_vault_context() {
     Mock::given(method("POST"))
         .and(path(format!("/v1/{TEST_MOUNT}/encrypt/{TEST_KEY}")))
         .respond_with(move |req: &wiremock::Request| {
-            let body: serde_json::Value =
-                serde_json::from_slice(&req.body).expect("json body");
+            let body: serde_json::Value = serde_json::from_slice(&req.body).expect("json body");
             assert_eq!(body["plaintext"].as_str().unwrap(), expected_plaintext);
             assert_eq!(
                 body["context"].as_str().unwrap(),
@@ -255,8 +254,7 @@ async fn aad_canonicalization_context_order_independent_on_wire() {
     Mock::given(method("POST"))
         .and(path(format!("/v1/{TEST_MOUNT}/encrypt/{TEST_KEY}")))
         .respond_with(move |req: &wiremock::Request| {
-            let body: serde_json::Value =
-                serde_json::from_slice(&req.body).expect("json body");
+            let body: serde_json::Value = serde_json::from_slice(&req.body).expect("json body");
             assert_eq!(body["context"].as_str().unwrap(), expected_context);
             ResponseTemplate::new(200).set_body_json(json!({
                 "data": { "ciphertext": "vault:v1:OK==", "key_version": 1 }
@@ -511,7 +509,13 @@ async fn wrap_403_surfaces_as_cmk_revoked() {
         .await
         .unwrap_err();
     assert!(
-        matches!(err, BYOKError::CmkRevoked { provider: KmsProviderKind::HashicorpVault, .. }),
+        matches!(
+            err,
+            BYOKError::CmkRevoked {
+                provider: KmsProviderKind::HashicorpVault,
+                ..
+            }
+        ),
         "got: {err:?}"
     );
 }

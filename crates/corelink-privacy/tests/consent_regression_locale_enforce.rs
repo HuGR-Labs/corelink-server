@@ -4,11 +4,7 @@
 //! Mismatch → 422 LocaleMismatch error; NO consent row inserted; NO
 //! audit event emitted.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::panic,
-    reason = "test code"
-)]
+#![allow(clippy::unwrap_used, clippy::panic, reason = "test code")]
 
 use corelink_privacy::consent::locale_enforce::{enforce_locale, LocaleEnforceError};
 use corelink_privacy::consent::schema::LocaleBcp47;
@@ -80,7 +76,6 @@ fn error_display_contains_both_locales() {
 
 #[test]
 fn grant_locale_mismatch_no_audit_no_row() {
-    use std::sync::Arc;
     use corelink_privacy::consent::{
         audit_emit::InMemoryConsentAuditSink,
         cascade::InMemoryCascadeSink,
@@ -90,31 +85,27 @@ fn grant_locale_mismatch_no_audit_no_row() {
         store::{ConsentStore, InMemoryConsentStore},
         ConsentLedgerError,
     };
+    use std::sync::Arc;
 
     let store = Arc::new(InMemoryConsentStore::new());
     let audit = Arc::new(InMemoryConsentAuditSink::new());
     let signer = Arc::new(InMemoryConsentHmacSigner::new_test());
     let cascade = Arc::new(InMemoryCascadeSink::new());
-    let ledger = InMemoryConsentLedger::new(
-        store.clone(),
-        audit.clone(),
-        signer,
-        cascade,
-        "1.0.0",
-    );
+    let ledger = InMemoryConsentLedger::new(store.clone(), audit.clone(), signer, cascade, "1.0.0");
 
     let proof = ConsentProofPayload {
         notice_text_hash: "hash".to_owned(),
         notice_version: "1.0.0".to_owned(),
-        locale: LocaleBcp47::PtBr,          // payload says pt-BR
+        locale: LocaleBcp47::PtBr, // payload says pt-BR
         wording_id: "w".to_owned(),
         ui_capture_ts: "ts".to_owned(),
         submission_ts: "ts2".to_owned(),
     };
 
     let result = ledger.grant_consent(
-        "t", "s",
-        "en-US",                            // header says en-US
+        "t",
+        "s",
+        "en-US", // header says en-US
         ConsentPurpose::MarketingEmail,
         proof,
     );

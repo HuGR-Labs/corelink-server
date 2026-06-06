@@ -210,9 +210,10 @@ impl InMemoryDedupAuditSink {
 
 impl DedupAuditSink for InMemoryDedupAuditSink {
     fn emit(&self, record: DedupAuditRecord) -> Result<(), DedupAuditSinkError> {
-        let mut guard = self.inner.lock().map_err(|_| {
-            DedupAuditSinkError::Store("audit sink mutex poisoned".to_string())
-        })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| DedupAuditSinkError::Store("audit sink mutex poisoned".to_string()))?;
         guard.push(record);
         Ok(())
     }

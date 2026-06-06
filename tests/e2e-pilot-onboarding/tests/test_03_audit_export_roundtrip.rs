@@ -50,7 +50,10 @@ fn wave23_pilot_audit_export_24h_roundtrip() {
     assert_eq!(manifest.row_count, 4 + 1 + 100);
 
     // NDJSON line count matches manifest row count.
-    let line_count = body.split(|b| *b == b'\n').filter(|s| !s.is_empty()).count();
+    let line_count = body
+        .split(|b| *b == b'\n')
+        .filter(|s| !s.is_empty())
+        .count();
     assert_eq!(line_count, manifest.row_count);
 
     // Manifest body digest matches recomputed BLAKE3.

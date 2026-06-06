@@ -126,7 +126,13 @@ pub fn locate_migrations_dir() -> PathBuf {
         .parent()
         .and_then(Path::parent)
         .map(|w| w.join("migrations").join("d1"))
-        .unwrap_or_else(|| Path::new(manifest).join("..").join("..").join("migrations").join("d1"));
+        .unwrap_or_else(|| {
+            Path::new(manifest)
+                .join("..")
+                .join("..")
+                .join("migrations")
+                .join("d1")
+        });
     p
 }
 
@@ -211,8 +217,7 @@ pub fn split_statements(sql: &str) -> Vec<String> {
         // transition from word-char to non-word-char (so each token
         // is inspected at most once).
         if last_was_word && !is_word {
-            let trimmed = buf
-                .trim_end_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_');
+            let trimmed = buf.trim_end_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_');
             let last_word: String = trimmed
                 .chars()
                 .rev()
@@ -278,8 +283,7 @@ pub fn rewrite_d1_to_sqlite(stmt: &str) -> String {
 /// Apply every migration in `files` to a fresh in-memory database,
 /// returning a structured report. Never panics.
 pub fn replay_all(files: &[PathBuf]) -> Result<ReplayReport, String> {
-    let conn = Connection::open_in_memory()
-        .map_err(|e| format!("open_in_memory: {e}"))?;
+    let conn = Connection::open_in_memory().map_err(|e| format!("open_in_memory: {e}"))?;
 
     // Enable FK enforcement so ordering bugs (CREATE TABLE A
     // REFERENCES B before B is declared) surface.
@@ -296,8 +300,7 @@ pub fn replay_all(files: &[PathBuf]) -> Result<ReplayReport, String> {
             .and_then(|s| s.to_str())
             .unwrap_or("?")
             .to_string();
-        let raw = fs::read_to_string(path)
-            .map_err(|e| format!("read {fname}: {e}"))?;
+        let raw = fs::read_to_string(path).map_err(|e| format!("read {fname}: {e}"))?;
 
         let outcome = replay_file(&conn, &raw);
         match &outcome {
@@ -387,7 +390,10 @@ fn apply_single(conn: &Connection, stmt: &str) -> StatementOutcome {
                 };
             }
 
-            StatementOutcome::Failed { sql_excerpt: excerpt, error: msg }
+            StatementOutcome::Failed {
+                sql_excerpt: excerpt,
+                error: msg,
+            }
         }
     }
 }

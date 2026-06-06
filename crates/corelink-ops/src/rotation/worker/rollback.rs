@@ -144,7 +144,8 @@ impl RollbackDriver {
         M: RotationMetricsSink,
     {
         let rate = ctx.adapter.downstream_error_rate()?;
-        ctx.metrics.record_downstream_error_rate(ctx.adapter.asset_class(), rate);
+        ctx.metrics
+            .record_downstream_error_rate(ctx.adapter.asset_class(), rate);
 
         if rate > self.config.error_threshold {
             self.consecutive_above_threshold += 1;
@@ -152,7 +153,8 @@ impl RollbackDriver {
             if self.consecutive_above_threshold >= self.config.sustain_window_probes {
                 // Sustained threshold breach — trigger rollback.
                 let (rolled_back, _re_promoted) =
-                    ctx.adapter.rollback(ctx.new_key, ctx.previous_key, ctx.now_ms)?;
+                    ctx.adapter
+                        .rollback(ctx.new_key, ctx.previous_key, ctx.now_ms)?;
 
                 ctx.state_machine.record_transition(
                     &rolled_back,
@@ -162,7 +164,8 @@ impl RollbackDriver {
                     ctx.now_ms,
                 )?;
 
-                ctx.metrics.increment_rotation_total(ctx.adapter.asset_class(), "rolled_back");
+                ctx.metrics
+                    .increment_rotation_total(ctx.adapter.asset_class(), "rolled_back");
                 self.consecutive_above_threshold = 0;
 
                 return Err(RotationError::DownstreamErrorThreshold(rate));

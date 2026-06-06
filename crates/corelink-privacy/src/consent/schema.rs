@@ -138,9 +138,7 @@ impl ConsentPurpose {
         match self {
             Self::ServiceDelivery | Self::AccountManagement => LegalBasis::Contract,
             Self::RegulatoryCompliance => LegalBasis::LegalObligation,
-            Self::SecurityMonitoring | Self::AnalyticsAggregated => {
-                LegalBasis::LegitimateInterest
-            }
+            Self::SecurityMonitoring | Self::AnalyticsAggregated => LegalBasis::LegitimateInterest,
             Self::AnalyticsPersonalized
             | Self::MarketingEmail
             | Self::MarketingResearch

@@ -39,8 +39,7 @@ fn happy_path_three_locales() {
         let receipt = svc.accept(&c, req).unwrap();
 
         // (a) JWT verifies.
-        let claims =
-            verify_receipt(&pubkey, Some("kid-test-01"), &receipt.jwt_receipt).unwrap();
+        let claims = verify_receipt(&pubkey, Some("kid-test-01"), &receipt.jwt_receipt).unwrap();
         assert_eq!(claims.dpa_version, "1.0.0");
         assert_eq!(claims.jti, receipt.jti);
 
@@ -50,10 +49,9 @@ fn happy_path_three_locales() {
         assert_eq!(row, 1);
 
         // (c) accepted audit emitted.
-        assert!(
-            svc.audit_sink()
-                .contains(|e| matches!(e, DpaAuditEvent::Accepted { .. }))
-        );
+        assert!(svc
+            .audit_sink()
+            .contains(|e| matches!(e, DpaAuditEvent::Accepted { .. })));
 
         // (d) notification envelope captured.
         let envelopes = svc.notification_sink().snapshot();
@@ -80,10 +78,9 @@ fn hash_mismatch_emits_audit_and_rejects() {
     };
     let err = svc.accept(&c, req).unwrap_err();
     assert!(matches!(err, DpaAcceptanceError::NoticeHashMismatch { .. }));
-    assert!(
-        svc.audit_sink()
-            .contains(|e| matches!(e, DpaAuditEvent::HashMismatch { .. }))
-    );
+    assert!(svc
+        .audit_sink()
+        .contains(|e| matches!(e, DpaAuditEvent::HashMismatch { .. })));
     assert!(svc.store().is_empty(), "no record on hash mismatch");
 }
 

@@ -145,15 +145,11 @@ async fn thread_ts_round_trips() {
 
     let url = format!("{}/webhook", server.uri());
     let audit = Arc::new(InMemorySlackAuditSink::new());
-    let msg = SlackMessage::new(SlackChannel::AlertsSev2, "h", "f", "t")
-        .in_thread("1715607600.000100");
-    build_and_send(
-        registry_for(SlackChannel::AlertsSev2, &url),
-        audit,
-        msg,
-    )
-    .await
-    .unwrap();
+    let msg =
+        SlackMessage::new(SlackChannel::AlertsSev2, "h", "f", "t").in_thread("1715607600.000100");
+    build_and_send(registry_for(SlackChannel::AlertsSev2, &url), audit, msg)
+        .await
+        .unwrap();
     let received = server.received_requests().await.unwrap();
     let body: serde_json::Value = serde_json::from_slice(&received[0].body).unwrap();
     assert_eq!(
@@ -233,7 +229,9 @@ async fn give_up_on_4xx_no_retry() {
     );
     // Webhook URL in audit must be redacted (we used a 127.0.0.1 URL so
     // the redactor falls back to "<redacted>").
-    assert!(audit.snapshot()[0].webhook_redacted.starts_with("<redacted>"));
+    assert!(audit.snapshot()[0]
+        .webhook_redacted
+        .starts_with("<redacted>"));
 }
 
 #[tokio::test]

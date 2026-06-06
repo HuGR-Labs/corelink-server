@@ -10,7 +10,6 @@
 //! the underlying crate path directly.
 
 pub use corelink_privacy_pseudonymize::{
-    pseudonymize, pseudonymize_subject_id, verify_pseudonym, PseudonymHash,
-    PseudonymizationMarker, ERASURE_SALT_LEN, PII_REDACTED_MARKER_KEY,
-    PII_REDACTED_MARKER_VALUE, PSEUDONYM_HEX_LEN,
+    pseudonymize, pseudonymize_subject_id, verify_pseudonym, PseudonymHash, PseudonymizationMarker,
+    ERASURE_SALT_LEN, PII_REDACTED_MARKER_KEY, PII_REDACTED_MARKER_VALUE, PSEUDONYM_HEX_LEN,
 };

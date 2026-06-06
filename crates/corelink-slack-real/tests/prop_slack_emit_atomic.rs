@@ -34,9 +34,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use corelink_slack_real::{
-    InMemorySharedSlackClient, InMemorySlackAuditSink, RetryDecision, RetryPolicy, SharedSlackClient,
-    SlackAuditError, SlackAuditEvent, SlackAuditOutcome, SlackAuditSink, SlackChannel,
-    SlackClientError, SlackMessage,
+    InMemorySharedSlackClient, InMemorySlackAuditSink, RetryDecision, RetryPolicy,
+    SharedSlackClient, SlackAuditError, SlackAuditEvent, SlackAuditOutcome, SlackAuditSink,
+    SlackChannel, SlackClientError, SlackMessage,
 };
 use proptest::prelude::*;
 use proptest::test_runner::Config;

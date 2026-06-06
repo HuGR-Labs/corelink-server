@@ -198,10 +198,7 @@ impl RotationStateMachine for InMemoryRotationStateMachine {
     }
 
     fn snapshot(&self) -> Vec<RotationRecord> {
-        let records = self
-            .records
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let records = self.records.lock().unwrap_or_else(|e| e.into_inner());
         let mut all: Vec<RotationRecord> = records.values().flatten().cloned().collect();
         all.sort_by_key(|r| r.now_ms);
         all

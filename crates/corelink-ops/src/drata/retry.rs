@@ -111,7 +111,10 @@ mod tests {
     #[test]
     fn retry_then_give_up_on_5xx() {
         let p = RetryPolicy::r5p_default();
-        assert!(matches!(p.decide(Some(503), 0), RetryDecision::Retry { .. }));
+        assert!(matches!(
+            p.decide(Some(503), 0),
+            RetryDecision::Retry { .. }
+        ));
         assert_eq!(p.decide(Some(503), 3), RetryDecision::GiveUp);
     }
 

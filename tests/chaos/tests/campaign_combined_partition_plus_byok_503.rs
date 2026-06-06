@@ -27,8 +27,8 @@
 )]
 
 use chaos_campaign::{
-    assert_alert_fired, assert_audit_emitted_once, ByokOutcome, ByokProvider,
-    CampaignByokModel, CampaignFailoverModel, CampaignRegion, RouteOutcome,
+    assert_alert_fired, assert_audit_emitted_once, ByokOutcome, ByokProvider, CampaignByokModel,
+    CampaignFailoverModel, CampaignRegion, RouteOutcome,
 };
 
 #[test]
@@ -101,11 +101,8 @@ fn partition_plus_byok_503_both_fail_closed_with_dual_sev1_anchors() {
     );
 
     // --- Dual audit anchors — each emitted exactly once per incident.
-    assert_audit_emitted_once(
-        failover.audit_events(),
-        "corelink.failover.region.degraded",
-    )
-    .unwrap();
+    assert_audit_emitted_once(failover.audit_events(), "corelink.failover.region.degraded")
+        .unwrap();
     // BYOK audit fires once per failed acquire — assert it fired ≥ 1×
     // and the matching SEV-1 alert is present.
     assert!(

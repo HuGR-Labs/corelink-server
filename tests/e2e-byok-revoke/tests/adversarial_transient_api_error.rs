@@ -42,7 +42,9 @@ async fn three_cycles_api_error_no_kill_switch() {
     assert_eq!(pre_len, 7);
 
     // Simulate 3 consecutive ApiError(503) cycles.
-    bundle.provider.set_behaviour(KmsBehaviour::AlwaysApiError(503));
+    bundle
+        .provider
+        .set_behaviour(KmsBehaviour::AlwaysApiError(503));
     for _ in 0..3 {
         let event = KillSwitchRunner::run(&bundle).await.unwrap();
         assert!(
@@ -98,10 +100,16 @@ async fn mixed_transient_then_ok_no_audit() {
 
     for _ in 0..4 {
         let event = KillSwitchRunner::run(&bundle).await.unwrap();
-        assert!(event.is_none(), "no kill switch on transient or unprovoked Ok");
+        assert!(
+            event.is_none(),
+            "no kill switch on transient or unprovoked Ok"
+        );
     }
 
-    assert!(bundle.audit.is_empty(), "transient-only chain emits no audit");
+    assert!(
+        bundle.audit.is_empty(),
+        "transient-only chain emits no audit"
+    );
     assert_eq!(bundle.alert.alert_count(), 0);
     assert_eq!(bundle.alert.recovery_count(), 0);
 }

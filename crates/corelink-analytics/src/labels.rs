@@ -622,14 +622,8 @@ mod tests {
     #[test]
     fn red_result_label_canonical_strings() {
         assert_eq!(RedResultLabel::Success.as_str(), "success");
-        assert_eq!(
-            RedResultLabel::ClientError4xx.as_str(),
-            "client_error_4xx"
-        );
-        assert_eq!(
-            RedResultLabel::ServerError5xx.as_str(),
-            "server_error_5xx"
-        );
+        assert_eq!(RedResultLabel::ClientError4xx.as_str(), "client_error_4xx");
+        assert_eq!(RedResultLabel::ServerError5xx.as_str(), "server_error_5xx");
     }
 
     #[test]

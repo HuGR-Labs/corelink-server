@@ -139,27 +139,20 @@ pub use audit::{
     InMemoryAnalyticsAuditSink,
 };
 pub use canonical::{
-    canonical_metric_names, RedMetricKind, RedMetricKindSet,
-    CANONICAL_METRIC_COUNT,
+    canonical_metric_names, RedMetricKind, RedMetricKindSet, CANONICAL_METRIC_COUNT,
 };
 pub use config::{
-    AnalyticsConfig, CANONICAL_GLOBAL_BUDGET,
-    CANONICAL_HISTOGRAM_BUCKET_BOUNDARIES, CANONICAL_PER_METRIC_BUDGET,
+    AnalyticsConfig, CANONICAL_GLOBAL_BUDGET, CANONICAL_HISTOGRAM_BUCKET_BOUNDARIES,
+    CANONICAL_PER_METRIC_BUDGET,
 };
 pub use error::AnalyticsError;
 pub use labels::{
-    tier_canonical_list, AcHitMissLabel, BillingEventTypeLabel,
-    DoClassLabel, DsrTypeLabel, GcPhaseLabel, KvNamespaceLabel,
-    MetricLabelTuple, R2BucketLabel, R2OpTypeLabel, RateLimitLayerLabel,
-    RateLimitReasonLabel, RedResultLabel, Region, Tier,
-    FORBIDDEN_LABEL_NAMES,
+    tier_canonical_list, AcHitMissLabel, BillingEventTypeLabel, DoClassLabel, DsrTypeLabel,
+    GcPhaseLabel, KvNamespaceLabel, MetricLabelTuple, R2BucketLabel, R2OpTypeLabel,
+    RateLimitLayerLabel, RateLimitReasonLabel, RedResultLabel, Region, Tier, FORBIDDEN_LABEL_NAMES,
 };
-pub use observer::{
-    FailingRedMetrics, InMemoryRedMetrics, RedMetricsObserver,
-};
-pub use validator::{
-    CardinalityValidator, ValidatorDecision, ValidatorOutcome,
-};
+pub use observer::{FailingRedMetrics, InMemoryRedMetrics, RedMetricsObserver};
+pub use validator::{CardinalityValidator, ValidatorDecision, ValidatorOutcome};
 
 /// Canonical SQL DDL for the analytics cardinality budget + observed
 /// tuple count durable mirror (D1 migration 0015).
@@ -168,9 +161,7 @@ pub use validator::{
 /// `wrangler d1 migrations apply --remote`; the same DDL is replayed
 /// during local miniflare integration tests.
 pub const MIGRATION_0015_ANALYTICS_CARDINALITY_BUDGETS: &str =
-    include_str!(
-        "../../../migrations/d1/0015_analytics_cardinality_budgets.sql"
-    );
+    include_str!("../../../migrations/d1/0015_analytics_cardinality_budgets.sql");
 
 /// Canonical D1 schema version for the analytics emitter mirror tables.
 ///

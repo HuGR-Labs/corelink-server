@@ -226,8 +226,7 @@ impl BreachNotificationDispatch {
     /// Returns `None` if `breach_detected_at_ms` is unknown (zero).
     #[must_use]
     pub fn within_72h_sla(&self) -> Option<bool> {
-        self.elapsed_seconds_to_dispatch()
-            .map(|s| s <= 72 * 3600)
+        self.elapsed_seconds_to_dispatch().map(|s| s <= 72 * 3600)
     }
 }
 
@@ -259,27 +258,49 @@ pub struct EscalationPolicy {
 /// Privacy Officer (15m) → Legal (30m) → Security Lead (45m) → CEO interim (60m).
 /// Per RB-BREACH-NOTIF §8 + AC-006 property test.
 pub static SEV1_ESCALATION_STEPS: &[EscalationStep] = &[
-    EscalationStep { role: "Privacy Officer", timeout_minutes: 15 },
-    EscalationStep { role: "Legal", timeout_minutes: 30 },
-    EscalationStep { role: "Security Lead", timeout_minutes: 45 },
-    EscalationStep { role: "CEO interim", timeout_minutes: 60 },
+    EscalationStep {
+        role: "Privacy Officer",
+        timeout_minutes: 15,
+    },
+    EscalationStep {
+        role: "Legal",
+        timeout_minutes: 30,
+    },
+    EscalationStep {
+        role: "Security Lead",
+        timeout_minutes: 45,
+    },
+    EscalationStep {
+        role: "CEO interim",
+        timeout_minutes: 60,
+    },
 ];
 
 /// Canonical escalation steps for SEV-2.
 ///
 /// Privacy Officer (15m) → Legal (30m) → Security Lead (45m).
 pub static SEV2_ESCALATION_STEPS: &[EscalationStep] = &[
-    EscalationStep { role: "Privacy Officer", timeout_minutes: 15 },
-    EscalationStep { role: "Legal", timeout_minutes: 30 },
-    EscalationStep { role: "Security Lead", timeout_minutes: 45 },
+    EscalationStep {
+        role: "Privacy Officer",
+        timeout_minutes: 15,
+    },
+    EscalationStep {
+        role: "Legal",
+        timeout_minutes: 30,
+    },
+    EscalationStep {
+        role: "Security Lead",
+        timeout_minutes: 45,
+    },
 ];
 
 /// Canonical escalation steps for SEV-3.
 ///
 /// Privacy Officer only (60m).
-pub static SEV3_ESCALATION_STEPS: &[EscalationStep] = &[
-    EscalationStep { role: "Privacy Officer", timeout_minutes: 60 },
-];
+pub static SEV3_ESCALATION_STEPS: &[EscalationStep] = &[EscalationStep {
+    role: "Privacy Officer",
+    timeout_minutes: 60,
+}];
 
 /// Returns the canonical [`EscalationPolicy`] for the given severity.
 ///
@@ -319,7 +340,11 @@ mod tests {
 
     #[test]
     fn severity_str_representations_unique() {
-        let v = [BreachSeverity::Sev1, BreachSeverity::Sev2, BreachSeverity::Sev3];
+        let v = [
+            BreachSeverity::Sev1,
+            BreachSeverity::Sev2,
+            BreachSeverity::Sev3,
+        ];
         let mut seen = std::collections::HashSet::new();
         for s in v {
             assert!(seen.insert(s.as_str()), "duplicate severity str: {s}");
@@ -356,8 +381,10 @@ mod tests {
     #[test]
     fn mandatory_locales_count_is_3() {
         assert_eq!(CUSTOMER_LOCALES_MANDATORY.len(), 3);
-        let locales: std::collections::HashSet<_> =
-            CUSTOMER_LOCALES_MANDATORY.iter().map(|l| l.as_str()).collect();
+        let locales: std::collections::HashSet<_> = CUSTOMER_LOCALES_MANDATORY
+            .iter()
+            .map(|l| l.as_str())
+            .collect();
         assert!(locales.contains("pt-BR"));
         assert!(locales.contains("en-US"));
         assert!(locales.contains("es-MX"));
@@ -385,7 +412,11 @@ mod tests {
             BreachSeverity::Sev3.pagerduty_service(),
         ];
         let unique: std::collections::HashSet<_> = services.iter().collect();
-        assert_eq!(unique.len(), 3, "PagerDuty services must be distinct per severity");
+        assert_eq!(
+            unique.len(),
+            3,
+            "PagerDuty services must be distinct per severity"
+        );
     }
 
     #[test]
@@ -413,11 +444,18 @@ mod tests {
 
     #[test]
     fn escalation_steps_monotonically_increasing_timeouts() {
-        for sev in [BreachSeverity::Sev1, BreachSeverity::Sev2, BreachSeverity::Sev3] {
+        for sev in [
+            BreachSeverity::Sev1,
+            BreachSeverity::Sev2,
+            BreachSeverity::Sev3,
+        ] {
             let policy = escalation_policy_for(sev);
             let timeouts: Vec<_> = policy.steps.iter().map(|s| s.timeout_minutes).collect();
             for w in timeouts.windows(2) {
-                assert!(w[0] < w[1], "escalation timeouts must be strictly increasing for {sev}");
+                assert!(
+                    w[0] < w[1],
+                    "escalation timeouts must be strictly increasing for {sev}"
+                );
             }
         }
     }

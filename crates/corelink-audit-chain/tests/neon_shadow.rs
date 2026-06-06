@@ -272,7 +272,9 @@ fn tenant_isolation_cross_tenant_query_fails_closed() {
         bytes_written: 10,
         events_written: 1,
     };
-    shadow_a.sync_chunk(&receipt_a, &[row_a], BASE_MS + 10).unwrap();
+    shadow_a
+        .sync_chunk(&receipt_a, &[row_a], BASE_MS + 10)
+        .unwrap();
 
     // 1. A tenant_b shadow sink instance can NEVER ingest a tenant_a row.
     let shadow_b = InMemoryNeonShadowSink::new(tenant_b, region, audit_emit.clone());
@@ -293,7 +295,10 @@ fn tenant_isolation_cross_tenant_query_fails_closed() {
     let err = shadow_b
         .sync_chunk(&receipt_cross, &[cross_row], BASE_MS + 20)
         .expect_err("must reject cross-tenant write");
-    assert!(matches!(err, NeonShadowError::TenantIsolationViolation { .. }));
+    assert!(matches!(
+        err,
+        NeonShadowError::TenantIsolationViolation { .. }
+    ));
 
     // 2. A tenant_b aggregate query MUST NOT see tenant_a's row.
     //    (The InMemory sink scopes by self.tenant_id; the SQL-layer

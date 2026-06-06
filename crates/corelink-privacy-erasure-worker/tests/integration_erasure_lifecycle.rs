@@ -46,7 +46,10 @@ fn full_lifecycle_dsr_to_verified_complete() {
     // ----- Step 1: WI-S11-001 DSR API surface (predecessor crate) ----
     let dsr_audit = Arc::new(InMemoryDsrAuditSink::new());
     let dsr_store = Arc::new(InMemoryDsrRequestStore::new());
-    let dsr_receipt = Arc::new(InMemoryJwtReceiptIssuer::new("integration-key-1", &[7u8; 32]));
+    let dsr_receipt = Arc::new(InMemoryJwtReceiptIssuer::new(
+        "integration-key-1",
+        &[7u8; 32],
+    ));
     let dsr_mfa = Arc::new(InMemoryMfaStepUpVerifier::new());
     let dsr_endpoint = InMemoryDsrEndpoint::new(
         dsr_audit.clone(),
@@ -84,8 +87,7 @@ fn full_lifecycle_dsr_to_verified_complete() {
             d
         })
         .collect();
-    let worker =
-        InMemoryErasureWorker::try_new(er_audit, er_ledger.clone(), adapters_dyn).unwrap();
+    let worker = InMemoryErasureWorker::try_new(er_audit, er_ledger.clone(), adapters_dyn).unwrap();
 
     let er_req = ErasureRequest::new(
         request_id, // dsr_id == request_id (canonical mapping)
@@ -151,7 +153,9 @@ fn cross_tenant_attack_zero_effect() {
         adapter.insert_rows(
             tenant_b,
             subject_b,
-            vec![corelink_privacy_erasure_worker::InMemoryRow::new(b"tenant-b".to_vec())],
+            vec![corelink_privacy_erasure_worker::InMemoryRow::new(
+                b"tenant-b".to_vec(),
+            )],
         );
     }
 

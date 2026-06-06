@@ -10,17 +10,13 @@ use bytes::Bytes;
 use super::super::assembler::{BlobAssembler, ChunkSink, ManifestKey};
 use super::super::audit::{AuditSink, BlobEventType};
 use super::super::chunk_store::{ChunkKey, ChunkStore};
-use super::super::session::{
-    SessionFinalize, SessionInit, SessionKey, SessionState, SessionStore,
-};
+use super::super::session::{SessionFinalize, SessionInit, SessionKey, SessionState, SessionStore};
 use super::super::types::{
     BlobDigest, ChunkDigest, ChunkIndex, ManifestDigest, SessionId, MAX_CHUNKS_PER_BLOB,
 };
 use super::errors::{SpliceError, SplitError};
 use super::handler::SplitSpliceHandlerImpl;
-use super::types::{
-    FinalizeSplitOutcome, InitSplitOutcome, SpliceOutcome, MAX_CHUNK_BYTES,
-};
+use super::types::{FinalizeSplitOutcome, InitSplitOutcome, SpliceOutcome, MAX_CHUNK_BYTES};
 use crate::middleware::auth_ctx::AuthCtx;
 
 impl<S, C, B, A> SplitSpliceHandlerImpl<S, C, B, A>
@@ -224,11 +220,7 @@ where
         Self::require_split_scope(ctx)?;
 
         // Idempotent finalize — second call returns the cached digest.
-        if let Some(snap) = self
-            .sessions
-            .lookup(ctx.tenant_id(), session_id)
-            .await?
-        {
+        if let Some(snap) = self.sessions.lookup(ctx.tenant_id(), session_id).await? {
             if let SessionState::Finalized {
                 manifest_digest,
                 chunk_count,

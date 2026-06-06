@@ -25,9 +25,7 @@ pub enum CoordinatorError {
     /// No eligible replica found for promotion (every replica also
     /// breaches the SLO). Caller MUST escalate to the runbook —
     /// auto-promoting an unhealthy replica risks partition-split-brain.
-    #[error(
-        "no eligible replica for promotion from {primary:?} (all replicas breach SLO)"
-    )]
+    #[error("no eligible replica for promotion from {primary:?} (all replicas breach SLO)")]
     NoEligibleReplica {
         /// The primary that needed a replacement.
         primary: Region,

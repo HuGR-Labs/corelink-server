@@ -197,10 +197,7 @@ mod tests {
         reader.add("t", &d_b);
         let v = StrictOutputsValidator::new(reader);
         let r = ActionResult::new(
-            vec![
-                OutputFileDigest::new(d_a, 1),
-                OutputFileDigest::new(d_b, 2),
-            ],
+            vec![OutputFileDigest::new(d_a, 1), OutputFileDigest::new(d_b, 2)],
             Vec::new(),
             0,
             Vec::new(),
@@ -216,10 +213,7 @@ mod tests {
         reader.add("t", &d_a); // d_b NOT registered
         let v = StrictOutputsValidator::new(reader);
         let r = ActionResult::new(
-            vec![
-                OutputFileDigest::new(d_a, 1),
-                OutputFileDigest::new(d_b, 2),
-            ],
+            vec![OutputFileDigest::new(d_a, 1), OutputFileDigest::new(d_b, 2)],
             Vec::new(),
             0,
             Vec::new(),
@@ -235,12 +229,7 @@ mod tests {
         let d = Digest::compute(b"x");
         reader.add("A", &d);
         let v = StrictOutputsValidator::new(reader);
-        let r = ActionResult::new(
-            vec![OutputFileDigest::new(d, 1)],
-            Vec::new(),
-            0,
-            Vec::new(),
-        );
+        let r = ActionResult::new(vec![OutputFileDigest::new(d, 1)], Vec::new(), 0, Vec::new());
         let err = v.validate(&"B".to_string(), &r).unwrap_err();
         assert!(matches!(err, OutputsCheckError::BlobMissing { .. }));
     }

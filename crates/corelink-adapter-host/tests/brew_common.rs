@@ -54,11 +54,7 @@ impl InMemoryCas {
 
 #[async_trait]
 impl CasStore for InMemoryCas {
-    async fn get(
-        &self,
-        tenant_id: &str,
-        cas_key: &str,
-    ) -> Result<Option<Vec<u8>>, CasError> {
+    async fn get(&self, tenant_id: &str, cas_key: &str) -> Result<Option<Vec<u8>>, CasError> {
         Ok(self
             .inner
             .lock()
@@ -67,12 +63,7 @@ impl CasStore for InMemoryCas {
             .cloned())
     }
 
-    async fn put(
-        &self,
-        tenant_id: &str,
-        cas_key: &str,
-        bytes: Vec<u8>,
-    ) -> Result<(), CasError> {
+    async fn put(&self, tenant_id: &str, cas_key: &str, bytes: Vec<u8>) -> Result<(), CasError> {
         self.inner
             .lock()
             .unwrap()
@@ -88,20 +79,11 @@ pub struct FailingCas;
 
 #[async_trait]
 impl CasStore for FailingCas {
-    async fn get(
-        &self,
-        _tenant_id: &str,
-        _cas_key: &str,
-    ) -> Result<Option<Vec<u8>>, CasError> {
+    async fn get(&self, _tenant_id: &str, _cas_key: &str) -> Result<Option<Vec<u8>>, CasError> {
         Err(CasError::Backend("intentional get failure".to_owned()))
     }
 
-    async fn put(
-        &self,
-        _tenant_id: &str,
-        _cas_key: &str,
-        _bytes: Vec<u8>,
-    ) -> Result<(), CasError> {
+    async fn put(&self, _tenant_id: &str, _cas_key: &str, _bytes: Vec<u8>) -> Result<(), CasError> {
         Err(CasError::Backend("intentional put failure".to_owned()))
     }
 }
@@ -124,10 +106,7 @@ impl StaticTenantResolver {
 
 #[async_trait]
 impl TenantResolver for StaticTenantResolver {
-    async fn resolve(
-        &self,
-        pat_plaintext: &str,
-    ) -> Result<String, TenantResolveError> {
+    async fn resolve(&self, pat_plaintext: &str) -> Result<String, TenantResolveError> {
         self.map
             .get(pat_plaintext)
             .cloned()

@@ -356,10 +356,7 @@ mod tests {
         assert_eq!(HKDF_INFO_MANIFEST_SIG, b"manifest-sig");
         assert_eq!(HKDF_INFO_MANIFEST_SIG.len(), 12);
         // Distinct from corelink-ac sig info (b"ac-sig").
-        assert_ne!(
-            HKDF_INFO_MANIFEST_SIG,
-            corelink_ac::sig::HKDF_INFO_AC_SIG
-        );
+        assert_ne!(HKDF_INFO_MANIFEST_SIG, corelink_ac::sig::HKDF_INFO_AC_SIG);
         // No prefix relationship in either direction (truncation-attack
         // defense — see module rustdoc).
         assert!(!HKDF_INFO_MANIFEST_SIG.starts_with(corelink_ac::sig::HKDF_INFO_AC_SIG));
@@ -375,9 +372,7 @@ mod tests {
         let (signer, verifier, _) = fresh_signer_verifier(vec![1]);
         let bytes = [0xAB; 102];
         let sig = signer.sign(fixed_tenant(), 1, &bytes).unwrap();
-        verifier
-            .verify(fixed_tenant(), 1, &bytes, &sig)
-            .unwrap();
+        verifier.verify(fixed_tenant(), 1, &bytes, &sig).unwrap();
     }
 
     #[test]
@@ -393,13 +388,8 @@ mod tests {
         let manifest_sig = manifest_signer.sign(fixed_tenant(), 1, &bytes).unwrap();
         // AC-domain sig with the same inputs.
         let ac_signer = corelink_ac::sig::HkdfSigner::new(handle, 1).unwrap();
-        let ac_sig = corelink_ac::sig::SignatureSigner::sign(
-            &ac_signer,
-            fixed_tenant(),
-            1,
-            &bytes,
-        )
-        .unwrap();
+        let ac_sig =
+            corelink_ac::sig::SignatureSigner::sign(&ac_signer, fixed_tenant(), 1, &bytes).unwrap();
         assert_ne!(manifest_sig, ac_sig, "domain separation MUST diverge sigs");
     }
 

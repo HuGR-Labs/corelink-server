@@ -231,7 +231,11 @@ mod tests {
     #[test]
     fn test_weur_jurisdiction_mandatory_eu() {
         let j = DoJurisdiction::expected_for_region(Region::Weur);
-        assert_eq!(j, DoJurisdiction::Eu, "WEUR MUST have EU jurisdiction (Schrems II)");
+        assert_eq!(
+            j,
+            DoJurisdiction::Eu,
+            "WEUR MUST have EU jurisdiction (Schrems II)"
+        );
         assert!(DoJurisdiction::Eu.is_valid_for_region(Region::Weur));
         assert!(!DoJurisdiction::Us.is_valid_for_region(Region::Weur));
         assert!(!DoJurisdiction::None.is_valid_for_region(Region::Weur));
@@ -239,9 +243,18 @@ mod tests {
 
     #[test]
     fn test_jurisdiction_per_region() {
-        assert_eq!(DoJurisdiction::expected_for_region(Region::Wnam), DoJurisdiction::Us);
-        assert_eq!(DoJurisdiction::expected_for_region(Region::Enam), DoJurisdiction::Us);
-        assert_eq!(DoJurisdiction::expected_for_region(Region::Sam), DoJurisdiction::None);
+        assert_eq!(
+            DoJurisdiction::expected_for_region(Region::Wnam),
+            DoJurisdiction::Us
+        );
+        assert_eq!(
+            DoJurisdiction::expected_for_region(Region::Enam),
+            DoJurisdiction::Us
+        );
+        assert_eq!(
+            DoJurisdiction::expected_for_region(Region::Sam),
+            DoJurisdiction::None
+        );
     }
 
     #[test]

@@ -32,12 +32,12 @@
     clippy::panic
 )]
 
+use corelink_byok::aws::real::canonicalize_aad_to_string_map;
+use corelink_byok::aws::AwsKmsRealProvider;
 use corelink_byok::{
     types::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek},
     KmsProvider,
 };
-use corelink_byok::aws::real::canonicalize_aad_to_string_map;
-use corelink_byok::aws::AwsKmsRealProvider;
 use serde_json::json;
 
 const VALID_ARN: &str =
@@ -162,7 +162,10 @@ async fn missing_aad_rejected_on_wrap() {
     let p = AwsKmsRealProvider::new_mock("us-east-1");
     let key_id = fixture_key_id();
     let dek = Dek::generate().unwrap();
-    let err = p.wrap_dek(&dek, &key_id, None).await.expect_err("must reject");
+    let err = p
+        .wrap_dek(&dek, &key_id, None)
+        .await
+        .expect_err("must reject");
     assert!(matches!(err, BYOKError::EncryptionContextMissing));
 }
 

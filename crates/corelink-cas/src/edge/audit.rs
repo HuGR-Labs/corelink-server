@@ -201,9 +201,10 @@ impl InMemoryEdgeAuditSink {
 
 impl EdgeAuditSink for InMemoryEdgeAuditSink {
     fn emit(&self, record: EdgeAuditRecord) -> Result<(), EdgeAuditSinkError> {
-        let mut guard = self.inner.lock().map_err(|_| {
-            EdgeAuditSinkError::Store("audit sink mutex poisoned".to_string())
-        })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| EdgeAuditSinkError::Store("audit sink mutex poisoned".to_string()))?;
         guard.push(record);
         Ok(())
     }

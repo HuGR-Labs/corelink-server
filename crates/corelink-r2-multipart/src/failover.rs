@@ -255,10 +255,7 @@ impl InMemoryMultipartAuditSink {
 
 impl MultipartAuditSink for InMemoryMultipartAuditSink {
     fn emit(&self, event: MultipartAbortedEvent) -> Result<(), String> {
-        self.events
-            .lock()
-            .map_err(|e| e.to_string())?
-            .push(event);
+        self.events.lock().map_err(|e| e.to_string())?.push(event);
         Ok(())
     }
 }
@@ -527,10 +524,7 @@ mod tests {
         inv.seed_in_flight(make_row("u2", t, 1));
         let sink = FailingMultipartAuditSink::new("audit bus down");
         let r = inv.drain_and_inventory(&sink, SystemTime::UNIX_EPOCH);
-        assert!(matches!(
-            r,
-            Err(MultipartFailoverError::AuditEmitFailed(_))
-        ));
+        assert!(matches!(r, Err(MultipartFailoverError::AuditEmitFailed(_))));
     }
 
     #[test]
@@ -552,10 +546,7 @@ mod tests {
         assert_eq!(inv.in_flight_count(), 0);
         inv.seed_in_flight(make_row("u1", Uuid::new_v4(), 1));
         inv.seed_in_flight(make_row("u2", Uuid::new_v4(), 1));
-        inv.seed_terminal(
-            make_row("u3", Uuid::new_v4(), 1),
-            SessionState::Completed,
-        );
+        inv.seed_terminal(make_row("u3", Uuid::new_v4(), 1), SessionState::Completed);
         assert_eq!(inv.in_flight_count(), 2);
     }
 

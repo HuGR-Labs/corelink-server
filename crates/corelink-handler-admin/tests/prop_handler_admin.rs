@@ -16,9 +16,8 @@ use std::sync::Arc;
 
 use corelink_handler_admin::observer::Sli;
 use corelink_handler_admin::{
-    AdminHandlerError, AdminMutateHandler, AdminMutateRequest, AuditEventKind,
-    DualApprovalToken, InMemoryAdminHandler, InMemoryAuditSink, InMemorySliObserver,
-    MutateOp,
+    AdminHandlerError, AdminMutateHandler, AdminMutateRequest, AuditEventKind, DualApprovalToken,
+    InMemoryAdminHandler, InMemoryAuditSink, InMemorySliObserver, MutateOp,
 };
 
 use proptest::prelude::*;

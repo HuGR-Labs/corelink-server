@@ -43,9 +43,7 @@ use std::sync::{Arc, Mutex};
 
 use corelink_analytics::Tier;
 
-use crate::audit::{
-    TracingAuditEventType, TracingAuditRecord, TracingAuditSink,
-};
+use crate::audit::{TracingAuditEventType, TracingAuditRecord, TracingAuditSink};
 use crate::context::{SpanId, TraceId};
 use crate::error::TracingError;
 use crate::exporter::OtlpExporter;
@@ -189,10 +187,7 @@ where
     /// - [`TracingError::Audit`] when the audit sink fails.
     /// - [`TracingError::Internal`] when the per-instance mutex is
     ///   poisoned.
-    pub fn start_span(
-        &self,
-        input: StartSpanInput<'_>,
-    ) -> Result<SamplingDecision, TracingError> {
+    pub fn start_span(&self, input: StartSpanInput<'_>) -> Result<SamplingDecision, TracingError> {
         let StartSpanInput {
             trace_id,
             span_id,
@@ -205,14 +200,8 @@ where
             now_ms,
         } = input;
         let decision = self.sampler.should_sample(&trace_id);
-        let span_record = SpanRecord::new(
-            trace_id,
-            span_id,
-            parent_span_id,
-            name,
-            kind,
-            start_time_ns,
-        );
+        let span_record =
+            SpanRecord::new(trace_id, span_id, parent_span_id, name, kind, start_time_ns);
         let span_id_hex = span_record.span_id_hex();
         let trace_id_hex = span_record.trace_id_hex();
 
@@ -233,9 +222,7 @@ where
         })?;
 
         let mut g = self.state.lock().map_err(|_| {
-            TracingError::Internal(
-                "tracing service mutex poisoned (start_span)".to_string(),
-            )
+            TracingError::Internal("tracing service mutex poisoned (start_span)".to_string())
         })?;
         g.in_flight.insert(
             InFlightKey {
@@ -264,10 +251,7 @@ where
     /// - [`TracingError::Audit`] when the audit sink fails.
     /// - [`TracingError::Internal`] when the per-instance mutex is
     ///   poisoned OR the span is not in the in-flight ledger.
-    pub fn end_span(
-        &self,
-        input: EndSpanInput<'_>,
-    ) -> Result<SamplingDecision, TracingError> {
+    pub fn end_span(&self, input: EndSpanInput<'_>) -> Result<SamplingDecision, TracingError> {
         let EndSpanInput {
             span_id,
             tenant_tier,
@@ -284,21 +268,20 @@ where
         let trace_id_hex = {
             let g = self.state.lock().map_err(|_| {
                 TracingError::Internal(
-                    "tracing service mutex poisoned (end_span lookup)"
-                        .to_string(),
+                    "tracing service mutex poisoned (end_span lookup)".to_string(),
                 )
             })?;
-            let entry =
-                g.in_flight
-                    .get(&InFlightKey {
-                        tenant_tier,
-                        span_id_hex: span_id_hex.clone(),
-                    })
-                    .ok_or_else(|| {
-                        TracingError::Internal(format!(
-                            "span_id {span_id_hex} not in in-flight ledger for tier {tenant_tier:?}"
-                        ))
-                    })?;
+            let entry = g
+                .in_flight
+                .get(&InFlightKey {
+                    tenant_tier,
+                    span_id_hex: span_id_hex.clone(),
+                })
+                .ok_or_else(|| {
+                    TracingError::Internal(format!(
+                        "span_id {span_id_hex} not in in-flight ledger for tier {tenant_tier:?}"
+                    ))
+                })?;
             entry.record.trace_id_hex()
         };
         self.audit.emit(TracingAuditRecord {
@@ -313,8 +296,7 @@ where
         let (mut record, decision) = {
             let mut g = self.state.lock().map_err(|_| {
                 TracingError::Internal(
-                    "tracing service mutex poisoned (end_span mutate)"
-                        .to_string(),
+                    "tracing service mutex poisoned (end_span mutate)".to_string(),
                 )
             })?;
             let removed = g.in_flight.remove(&InFlightKey {
@@ -322,14 +304,10 @@ where
                 span_id_hex,
             });
             match removed {
-                Some(in_flight) => (
-                    in_flight.record,
-                    in_flight.decision,
-                ),
+                Some(in_flight) => (in_flight.record, in_flight.decision),
                 None => {
                     return Err(TracingError::Internal(
-                        "in-flight record removed concurrently"
-                            .to_string(),
+                        "in-flight record removed concurrently".to_string(),
                     ));
                 }
             }
@@ -345,10 +323,7 @@ where
         // Exporter dispatch IFF sampled. Fail-OPEN per WI §6.1.6.
         if decision.is_sampled() {
             if let Err(err) = self.exporter.export(vec![record]) {
-                self.record_exporter_failure(
-                    created_by_request_id,
-                    now_ms,
-                )?;
+                self.record_exporter_failure(created_by_request_id, now_ms)?;
                 // Production wiring records the failure + continues
                 // serving requests. The error is surfaced to the
                 // caller for visibility in the tests; production wraps
@@ -384,13 +359,9 @@ where
             span_id_hex: String::new(),
         })?;
         let mut g = self.state.lock().map_err(|_| {
-            TracingError::Internal(
-                "tracing service mutex poisoned (failure bump)"
-                    .to_string(),
-            )
+            TracingError::Internal("tracing service mutex poisoned (failure bump)".to_string())
         })?;
-        g.exporter_failure_count =
-            g.exporter_failure_count.saturating_add(1);
+        g.exporter_failure_count = g.exporter_failure_count.saturating_add(1);
         Ok(())
     }
 }
@@ -423,13 +394,9 @@ fn hex_digit(nibble: u8) -> char {
 )]
 mod tests {
     use super::*;
-    use crate::audit::{
-        FailingTracingAuditSink, InMemoryTracingAuditSink,
-    };
+    use crate::audit::{FailingTracingAuditSink, InMemoryTracingAuditSink};
     use crate::context::{TraceContext, TRACE_FLAGS_SAMPLED};
-    use crate::exporter::{
-        FailingOtlpExporter, InMemoryOtlpExporter,
-    };
+    use crate::exporter::{FailingOtlpExporter, InMemoryOtlpExporter};
     use crate::sampler::RateBasedSampler;
     use corelink_analytics::RedMetricKind;
 
@@ -445,23 +412,17 @@ mod tests {
         Arc<InMemoryOtlpExporter>,
     ) {
         let audit = Arc::new(InMemoryTracingAuditSink::new());
-        let sampler = Arc::new(
-            RateBasedSampler::new(1.0, Arc::clone(&audit)).unwrap(),
-        );
+        let sampler = Arc::new(RateBasedSampler::new(1.0, Arc::clone(&audit)).unwrap());
         let exporter = Arc::new(InMemoryOtlpExporter::new());
-        let svc = TracingService::new(
-            sampler,
-            Arc::clone(&audit),
-            Arc::clone(&exporter),
-        );
+        let svc = TracingService::new(sampler, Arc::clone(&audit), Arc::clone(&exporter));
         (svc, audit, exporter)
     }
 
     fn sample_trace_context() -> TraceContext {
         TraceContext::new(
             [
-                0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6,
-                0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e, 0x47, 0x36,
+                0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6, 0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e,
+                0x47, 0x36,
             ],
             [0x00, 0xf0, 0x67, 0xaa, 0x0b, 0xa9, 0x02, 0xb7],
             TRACE_FLAGS_SAMPLED,
@@ -491,13 +452,9 @@ mod tests {
             tenant_tier: Tier::Team,
             status: SpanStatus::Ok,
             end_time_ns: 200,
-            attributes: vec![(
-                "region".to_string(),
-                "iad".to_string(),
-            )],
+            attributes: vec![("region".to_string(), "iad".to_string())],
             exemplars: vec![Exemplar {
-                metric_kind:
-                    RedMetricKind::CasPutDurationSeconds,
+                metric_kind: RedMetricKind::CasPutDurationSeconds,
                 value: 0.004,
                 time_ms: 1_700_000_000_000,
             }],
@@ -507,22 +464,15 @@ mod tests {
         .unwrap();
         assert_eq!(svc.in_flight_count(), 0);
         assert_eq!(exporter.len(), 1);
-        let started =
-            audit.snapshot_of(TracingAuditEventType::SpanStarted);
-        let ended =
-            audit.snapshot_of(TracingAuditEventType::SpanEnded);
-        let decisions = audit
-            .snapshot_of(TracingAuditEventType::SamplerDecision);
+        let started = audit.snapshot_of(TracingAuditEventType::SpanStarted);
+        let ended = audit.snapshot_of(TracingAuditEventType::SpanEnded);
+        let decisions = audit.snapshot_of(TracingAuditEventType::SamplerDecision);
         assert_eq!(started.len(), 1);
         assert_eq!(ended.len(), 1);
         assert_eq!(decisions.len(), 1);
     }
 
-    fn input_start(
-        cx: &TraceContext,
-        name: &'static str,
-        tier: Tier,
-    ) -> StartSpanInput<'static> {
+    fn input_start(cx: &TraceContext, name: &'static str, tier: Tier) -> StartSpanInput<'static> {
         StartSpanInput {
             trace_id: cx.trace_id,
             span_id: cx.span_id,
@@ -536,11 +486,7 @@ mod tests {
         }
     }
 
-    fn input_end(
-        span_id: SpanId,
-        tier: Tier,
-        status: SpanStatus,
-    ) -> EndSpanInput<'static> {
+    fn input_end(span_id: SpanId, tier: Tier, status: SpanStatus) -> EndSpanInput<'static> {
         EndSpanInput {
             span_id,
             tenant_tier: tier,
@@ -556,11 +502,8 @@ mod tests {
     #[test]
     fn audit_fail_closed_aborts_start() {
         let audit = Arc::new(FailingTracingAuditSink::new());
-        let sampler_audit =
-            Arc::new(InMemoryTracingAuditSink::new());
-        let sampler = Arc::new(
-            RateBasedSampler::new(1.0, sampler_audit).unwrap(),
-        );
+        let sampler_audit = Arc::new(InMemoryTracingAuditSink::new());
+        let sampler = Arc::new(RateBasedSampler::new(1.0, sampler_audit).unwrap());
         let exporter = Arc::new(InMemoryOtlpExporter::new());
         let svc = TracingService::new(sampler, audit, exporter);
         let cx = sample_trace_context();
@@ -574,59 +517,34 @@ mod tests {
     #[test]
     fn dropped_span_not_exported() {
         let audit = Arc::new(InMemoryTracingAuditSink::new());
-        let sampler = Arc::new(
-            RateBasedSampler::new(0.0, Arc::clone(&audit)).unwrap(),
-        );
+        let sampler = Arc::new(RateBasedSampler::new(0.0, Arc::clone(&audit)).unwrap());
         let exporter = Arc::new(InMemoryOtlpExporter::new());
-        let svc = TracingService::new(
-            sampler,
-            Arc::clone(&audit),
-            Arc::clone(&exporter),
-        );
+        let svc = TracingService::new(sampler, Arc::clone(&audit), Arc::clone(&exporter));
         let cx = sample_trace_context();
-        let d = svc
-            .start_span(input_start(&cx, "x", Tier::Team))
-            .unwrap();
+        let d = svc.start_span(input_start(&cx, "x", Tier::Team)).unwrap();
         assert_eq!(d, SamplingDecision::Drop);
-        svc.end_span(input_end(
-            cx.span_id,
-            Tier::Team,
-            SpanStatus::Ok,
-        ))
-        .unwrap();
+        svc.end_span(input_end(cx.span_id, Tier::Team, SpanStatus::Ok))
+            .unwrap();
         assert_eq!(exporter.len(), 0);
     }
 
     #[test]
     fn exporter_failure_increments_counter_and_audits() {
         let audit = Arc::new(InMemoryTracingAuditSink::new());
-        let sampler_audit =
-            Arc::new(InMemoryTracingAuditSink::new());
-        let sampler = Arc::new(
-            RateBasedSampler::new(1.0, sampler_audit).unwrap(),
-        );
+        let sampler_audit = Arc::new(InMemoryTracingAuditSink::new());
+        let sampler = Arc::new(RateBasedSampler::new(1.0, sampler_audit).unwrap());
         let exporter = Arc::new(FailingOtlpExporter::new());
-        let svc = TracingService::new(
-            sampler,
-            Arc::clone(&audit),
-            exporter,
-        );
+        let svc = TracingService::new(sampler, Arc::clone(&audit), exporter);
         let cx = sample_trace_context();
         svc.start_span(input_start(&cx, "x", Tier::Team)).unwrap();
         let err = svc
-            .end_span(input_end(
-                cx.span_id,
-                Tier::Team,
-                SpanStatus::Ok,
-            ))
+            .end_span(input_end(cx.span_id, Tier::Team, SpanStatus::Ok))
             .unwrap_err();
         assert!(matches!(err, TracingError::Exporter(_)));
         assert_eq!(svc.exporter_failure_count(), 1);
         assert_eq!(
             audit
-                .snapshot_of(
-                    TracingAuditEventType::ExporterFailure
-                )
+                .snapshot_of(TracingAuditEventType::ExporterFailure)
                 .len(),
             1
         );
@@ -636,11 +554,7 @@ mod tests {
     fn end_span_unknown_id_returns_internal_error() {
         let (svc, _a, _e) = fresh_service_full_sample();
         let err = svc
-            .end_span(input_end(
-                [0xCC; 8],
-                Tier::Team,
-                SpanStatus::Ok,
-            ))
+            .end_span(input_end([0xCC; 8], Tier::Team, SpanStatus::Ok))
             .unwrap_err();
         assert!(matches!(err, TracingError::Internal(_)));
     }
@@ -661,19 +575,11 @@ mod tests {
         svc.start_span(input_start(&cx, "x", Tier::Team)).unwrap();
         // Same span_id, DIFFERENT tier → should fail to end.
         let err = svc
-            .end_span(input_end(
-                cx.span_id,
-                Tier::Free,
-                SpanStatus::Ok,
-            ))
+            .end_span(input_end(cx.span_id, Tier::Free, SpanStatus::Ok))
             .unwrap_err();
         assert!(matches!(err, TracingError::Internal(_)));
         // Now end with the correct tier; succeeds.
-        svc.end_span(input_end(
-            cx.span_id,
-            Tier::Team,
-            SpanStatus::Ok,
-        ))
-        .unwrap();
+        svc.end_span(input_end(cx.span_id, Tier::Team, SpanStatus::Ok))
+            .unwrap();
     }
 }

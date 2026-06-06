@@ -31,8 +31,8 @@
 use std::cell::RefCell;
 
 use corelink_chaos_scheduler::{
-    canonical_catalog, lookup, run_experiment, ChaosAuditEvent, ChaosOutcome, ChaosRun,
-    ChaosRunId, ChaosTarget, SafeModeSnapshot, Telemetry,
+    canonical_catalog, lookup, run_experiment, ChaosAuditEvent, ChaosOutcome, ChaosRun, ChaosRunId,
+    ChaosTarget, SafeModeSnapshot, Telemetry,
 };
 
 struct Recorder {

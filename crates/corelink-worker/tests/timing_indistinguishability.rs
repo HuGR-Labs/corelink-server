@@ -141,7 +141,11 @@ impl Service<Request<TestBody>> for FakeHandler {
     }
 
     fn call(&mut self, _req: Request<TestBody>) -> Self::Future {
-        let arm = self.arm.lock().unwrap().expect("arm must be set before call");
+        let arm = self
+            .arm
+            .lock()
+            .unwrap()
+            .expect("arm must be set before call");
         let mut rng = self.rng.lock().unwrap();
         let resolution_ms = simulated_handler_resolution_ms(arm, &mut rng);
         drop(rng);
@@ -235,8 +239,14 @@ async fn one_trial_padded(
         (handler_seed << 32) | 1,
     )
     .await;
-    let arm_or =
-        run_arm_padded(h_c, layer, Arm::R2OrphanRow, samples, (handler_seed << 32) | 2).await;
+    let arm_or = run_arm_padded(
+        h_c,
+        layer,
+        Arm::R2OrphanRow,
+        samples,
+        (handler_seed << 32) | 2,
+    )
+    .await;
     [arm_ne, arm_tb, arm_or]
 }
 
@@ -296,8 +306,7 @@ fn run_gate(
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn three_arm_indistinguishability_with_padding() {
-    let layer =
-        TimingPaddingLayer::new(TimingPaddingConfig::canonical(), JitterPolicy::Seeded);
+    let layer = TimingPaddingLayer::new(TimingPaddingConfig::canonical(), JitterPolicy::Seeded);
 
     let mut all_arms = Vec::with_capacity(TRIALS);
     for trial in 0..TRIALS {
@@ -311,12 +320,9 @@ async fn three_arm_indistinguishability_with_padding() {
     }
 
     let alpha_prime = sidak_per_test_alpha(ALPHA, PER_TEST_TOTAL).unwrap();
-    let (p_values, cis, n_failed_strict, n_failed_practical) =
-        run_gate(&all_arms, 0xC1A0_BEEF);
+    let (p_values, cis, n_failed_strict, n_failed_practical) = run_gate(&all_arms, 0xC1A0_BEEF);
 
-    eprintln!(
-        "Šidák per-test α' for k={PER_TEST_TOTAL}: {alpha_prime:.6} (the strict gate)"
-    );
+    eprintln!("Šidák per-test α' for k={PER_TEST_TOTAL}: {alpha_prime:.6} (the strict gate)");
     for (trial, pair, p) in &p_values {
         eprintln!("trial {trial} pair {pair} p = {p:.6}");
     }
@@ -358,8 +364,7 @@ async fn three_arm_distinguishability_without_padding_baseline() {
         all_arms.push(arms);
     }
     let alpha_prime = sidak_per_test_alpha(ALPHA, PER_TEST_TOTAL).unwrap();
-    let (_p_values, _cis, n_failed_strict, n_failed_practical) =
-        run_gate(&all_arms, 0xBAAD_F00D);
+    let (_p_values, _cis, n_failed_strict, n_failed_practical) = run_gate(&all_arms, 0xBAAD_F00D);
     eprintln!(
         "negative-control α' = {alpha_prime:.6}; strict failures = {n_failed_strict}; \
          practical-equivalence failures = {n_failed_practical}"
@@ -381,8 +386,7 @@ async fn three_arm_distinguishability_without_padding_baseline() {
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn padding_skipped_for_200_ok() {
-    let layer =
-        TimingPaddingLayer::new(TimingPaddingConfig::canonical(), JitterPolicy::Seeded);
+    let layer = TimingPaddingLayer::new(TimingPaddingConfig::canonical(), JitterPolicy::Seeded);
     let inner = tower::service_fn(|_: Request<()>| async move {
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         let mut resp = Response::new(());
@@ -404,8 +408,7 @@ async fn padding_skipped_for_200_ok() {
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn padding_skipped_for_403_pat_scope() {
-    let layer =
-        TimingPaddingLayer::new(TimingPaddingConfig::canonical(), JitterPolicy::Seeded);
+    let layer = TimingPaddingLayer::new(TimingPaddingConfig::canonical(), JitterPolicy::Seeded);
     let inner = tower::service_fn(|_: Request<()>| async move {
         tokio::time::sleep(std::time::Duration::from_millis(15)).await;
         let mut resp = Response::new(());
@@ -451,13 +454,13 @@ async fn padding_skipped_for_500_internal() {
 /// round-1 P0 fix asserting parity between HTTP 404 and gRPC NOT_FOUND.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn padding_applied_for_grpc_not_found() {
-    let layer =
-        TimingPaddingLayer::new(TimingPaddingConfig::canonical(), JitterPolicy::Seeded);
+    let layer = TimingPaddingLayer::new(TimingPaddingConfig::canonical(), JitterPolicy::Seeded);
     let inner = tower::service_fn(|_: Request<()>| async move {
         tokio::time::sleep(std::time::Duration::from_millis(60)).await;
         let mut resp = Response::new(());
         *resp.status_mut() = StatusCode::OK; // gRPC: HTTP 200 always
-        resp.headers_mut().insert("grpc-status", "5".parse().unwrap());
+        resp.headers_mut()
+            .insert("grpc-status", "5".parse().unwrap());
         Ok::<_, Infallible>(resp)
     });
     let mut svc = layer.layer(inner);
@@ -479,13 +482,13 @@ async fn padding_applied_for_grpc_not_found() {
 /// path stays unpadded.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn padding_skipped_for_grpc_ok() {
-    let layer =
-        TimingPaddingLayer::new(TimingPaddingConfig::canonical(), JitterPolicy::Seeded);
+    let layer = TimingPaddingLayer::new(TimingPaddingConfig::canonical(), JitterPolicy::Seeded);
     let inner = tower::service_fn(|_: Request<()>| async move {
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
         let mut resp = Response::new(());
         *resp.status_mut() = StatusCode::OK;
-        resp.headers_mut().insert("grpc-status", "0".parse().unwrap());
+        resp.headers_mut()
+            .insert("grpc-status", "0".parse().unwrap());
         Ok::<_, Infallible>(resp)
     });
     let mut svc = layer.layer(inner);
@@ -505,8 +508,7 @@ async fn padding_skipped_for_grpc_ok() {
 /// reverse-proxy stays unpadded since this stack doesn't emit it).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn predicate_grpc_only_excludes_http_404() {
-    let layer =
-        TimingPaddingLayer::new(TimingPaddingConfig::canonical(), JitterPolicy::Seeded);
+    let layer = TimingPaddingLayer::new(TimingPaddingConfig::canonical(), JitterPolicy::Seeded);
     let inner = tower::service_fn(|_: Request<()>| async move {
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         let mut resp = Response::new(());

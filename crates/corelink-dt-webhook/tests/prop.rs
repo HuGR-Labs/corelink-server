@@ -1,4 +1,9 @@
-#![allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 //! Property tests for the DT webhook handler (WI-S12-005).
 //!
 //! # Coverage

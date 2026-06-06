@@ -17,14 +17,8 @@ use corelink_auth::webauthn::{
 
 fn main() {
     let cfg = EngineConfig::builder(RpId::new("corelink.humangr.com").unwrap(), "CoreLink")
-        .origins(
-            OriginAllowlist::from_strings(["https://admin.corelink.humangr.com"]).unwrap(),
-        )
-        .aaguids(
-            AaguidPolicy::builder()
-                .allow(Aaguid::yubikey_5())
-                .build(),
-        )
+        .origins(OriginAllowlist::from_strings(["https://admin.corelink.humangr.com"]).unwrap())
+        .aaguids(AaguidPolicy::builder().allow(Aaguid::yubikey_5()).build())
         .build()
         .unwrap();
     let engine = InMemoryEngine::new(cfg, FixedClock::epoch());

@@ -91,21 +91,15 @@ impl TraceContext {
     ///
     /// - All-zero `trace_id` (W3C §3.2.2.2 violation).
     /// - All-zero `span_id` (W3C §3.2.2.3 violation).
-    pub fn new(
-        trace_id: TraceId,
-        span_id: SpanId,
-        flags: u8,
-    ) -> Result<Self, TracingError> {
+    pub fn new(trace_id: TraceId, span_id: SpanId, flags: u8) -> Result<Self, TracingError> {
         if trace_id == ALL_ZERO_TRACE_ID {
             return Err(TracingError::TraceContextParseError(
-                "all-zero trace_id rejected per W3C §3.2.2.2"
-                    .to_string(),
+                "all-zero trace_id rejected per W3C §3.2.2.2".to_string(),
             ));
         }
         if span_id == ALL_ZERO_SPAN_ID {
             return Err(TracingError::TraceContextParseError(
-                "all-zero span_id rejected per W3C §3.2.2.3"
-                    .to_string(),
+                "all-zero span_id rejected per W3C §3.2.2.3".to_string(),
             ));
         }
         Ok(Self {
@@ -160,40 +154,26 @@ pub fn parse_traceparent(s: &str) -> Result<TraceContext, TracingError> {
             bytes.len()
         )));
     }
-    if bytes.get(2) != Some(&b'-')
-        || bytes.get(35) != Some(&b'-')
-        || bytes.get(52) != Some(&b'-')
-    {
+    if bytes.get(2) != Some(&b'-') || bytes.get(35) != Some(&b'-') || bytes.get(52) != Some(&b'-') {
         return Err(TracingError::TraceContextParseError(
             "canonical dash positions invalid".to_string(),
         ));
     }
     let version_slice = bytes.get(0..2).ok_or_else(|| {
-        TracingError::TraceContextParseError(
-            "version slice out of range".to_string(),
-        )
+        TracingError::TraceContextParseError("version slice out of range".to_string())
     })?;
     let trace_slice = bytes.get(3..35).ok_or_else(|| {
-        TracingError::TraceContextParseError(
-            "trace_id slice out of range".to_string(),
-        )
+        TracingError::TraceContextParseError("trace_id slice out of range".to_string())
     })?;
     let span_slice = bytes.get(36..52).ok_or_else(|| {
-        TracingError::TraceContextParseError(
-            "span_id slice out of range".to_string(),
-        )
+        TracingError::TraceContextParseError("span_id slice out of range".to_string())
     })?;
     let flags_slice = bytes.get(53..55).ok_or_else(|| {
-        TracingError::TraceContextParseError(
-            "flags slice out of range".to_string(),
-        )
+        TracingError::TraceContextParseError("flags slice out of range".to_string())
     })?;
 
-    let version = parse_hex_byte(version_slice).ok_or_else(|| {
-        TracingError::TraceContextParseError(
-            "version hex malformed".to_string(),
-        )
-    })?;
+    let version = parse_hex_byte(version_slice)
+        .ok_or_else(|| TracingError::TraceContextParseError("version hex malformed".to_string()))?;
     if version != W3C_TRACE_CONTEXT_VERSION {
         return Err(TracingError::TraceContextParseError(format!(
             "unsupported version {version:#04x}; only 0x00 accepted"
@@ -202,21 +182,13 @@ pub fn parse_traceparent(s: &str) -> Result<TraceContext, TracingError> {
 
     let mut trace_id = [0u8; 16];
     parse_hex_into(trace_slice, &mut trace_id).ok_or_else(|| {
-        TracingError::TraceContextParseError(
-            "trace_id hex malformed".to_string(),
-        )
+        TracingError::TraceContextParseError("trace_id hex malformed".to_string())
     })?;
     let mut span_id = [0u8; 8];
-    parse_hex_into(span_slice, &mut span_id).ok_or_else(|| {
-        TracingError::TraceContextParseError(
-            "span_id hex malformed".to_string(),
-        )
-    })?;
-    let flags = parse_hex_byte(flags_slice).ok_or_else(|| {
-        TracingError::TraceContextParseError(
-            "flags hex malformed".to_string(),
-        )
-    })?;
+    parse_hex_into(span_slice, &mut span_id)
+        .ok_or_else(|| TracingError::TraceContextParseError("span_id hex malformed".to_string()))?;
+    let flags = parse_hex_byte(flags_slice)
+        .ok_or_else(|| TracingError::TraceContextParseError("flags hex malformed".to_string()))?;
 
     TraceContext::new(trace_id, span_id, flags)
 }
@@ -281,8 +253,8 @@ mod tests {
     fn sample_ctx() -> TraceContext {
         TraceContext::new(
             [
-                0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6,
-                0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e, 0x47, 0x36,
+                0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6, 0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e,
+                0x47, 0x36,
             ],
             [0x00, 0xf0, 0x67, 0xaa, 0x0b, 0xa9, 0x02, 0xb7],
             TRACE_FLAGS_SAMPLED,
@@ -305,10 +277,7 @@ mod tests {
         // Canonical example from W3C §3.2.4.
         let ctx = sample_ctx();
         let s = format_traceparent(&ctx);
-        assert_eq!(
-            s,
-            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
-        );
+        assert_eq!(s, "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
         assert_eq!(s.len(), 55);
     }
 
@@ -322,42 +291,29 @@ mod tests {
 
     #[test]
     fn parse_rejects_non_00_version() {
-        let s =
-            "01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        let s = "01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
         let err = parse_traceparent(s).unwrap_err();
-        assert!(matches!(
-            err,
-            TracingError::TraceContextParseError(_)
-        ));
+        assert!(matches!(err, TracingError::TraceContextParseError(_)));
     }
 
     #[test]
     fn parse_rejects_ff_version() {
-        let s =
-            "ff-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        let s = "ff-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
         let err = parse_traceparent(s).unwrap_err();
-        assert!(matches!(
-            err,
-            TracingError::TraceContextParseError(_)
-        ));
+        assert!(matches!(err, TracingError::TraceContextParseError(_)));
     }
 
     #[test]
     fn parse_rejects_uppercase_hex() {
         // W3C §3.2.2 mandates lowercase hex.
-        let s =
-            "00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0ba902b7-01";
+        let s = "00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0ba902b7-01";
         let err = parse_traceparent(s).unwrap_err();
-        assert!(matches!(
-            err,
-            TracingError::TraceContextParseError(_)
-        ));
+        assert!(matches!(err, TracingError::TraceContextParseError(_)));
     }
 
     #[test]
     fn parse_rejects_all_zero_trace_id() {
-        let s =
-            "00-00000000000000000000000000000000-00f067aa0ba902b7-01";
+        let s = "00-00000000000000000000000000000000-00f067aa0ba902b7-01";
         let err = parse_traceparent(s).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("all-zero trace_id"));
@@ -365,8 +321,7 @@ mod tests {
 
     #[test]
     fn parse_rejects_all_zero_span_id() {
-        let s =
-            "00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01";
+        let s = "00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01";
         let err = parse_traceparent(s).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("all-zero span_id"));
@@ -376,54 +331,35 @@ mod tests {
     fn parse_rejects_wrong_length() {
         let s = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7";
         let err = parse_traceparent(s).unwrap_err();
-        assert!(matches!(
-            err,
-            TracingError::TraceContextParseError(_)
-        ));
+        assert!(matches!(err, TracingError::TraceContextParseError(_)));
     }
 
     #[test]
     fn parse_rejects_missing_dash_separators() {
-        let s =
-            "00:4bf92f3577b34da6a3ce929d0e0e4736:00f067aa0ba902b7:01";
+        let s = "00:4bf92f3577b34da6a3ce929d0e0e4736:00f067aa0ba902b7:01";
         let err = parse_traceparent(s).unwrap_err();
-        assert!(matches!(
-            err,
-            TracingError::TraceContextParseError(_)
-        ));
+        assert!(matches!(err, TracingError::TraceContextParseError(_)));
     }
 
     #[test]
     fn parse_rejects_malformed_hex_in_trace_id() {
-        let s =
-            "00-zzzzzzzz3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        let s = "00-zzzzzzzz3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
         let err = parse_traceparent(s).unwrap_err();
-        assert!(matches!(
-            err,
-            TracingError::TraceContextParseError(_)
-        ));
+        assert!(matches!(err, TracingError::TraceContextParseError(_)));
     }
 
     #[test]
     fn parse_rejects_malformed_hex_in_span_id() {
-        let s =
-            "00-4bf92f3577b34da6a3ce929d0e0e4736-zzf067aa0ba902b7-01";
+        let s = "00-4bf92f3577b34da6a3ce929d0e0e4736-zzf067aa0ba902b7-01";
         let err = parse_traceparent(s).unwrap_err();
-        assert!(matches!(
-            err,
-            TracingError::TraceContextParseError(_)
-        ));
+        assert!(matches!(err, TracingError::TraceContextParseError(_)));
     }
 
     #[test]
     fn parse_rejects_malformed_hex_in_flags() {
-        let s =
-            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-zz";
+        let s = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-zz";
         let err = parse_traceparent(s).unwrap_err();
-        assert!(matches!(
-            err,
-            TracingError::TraceContextParseError(_)
-        ));
+        assert!(matches!(err, TracingError::TraceContextParseError(_)));
     }
 
     #[test]
@@ -434,37 +370,28 @@ mod tests {
             0,
         )
         .unwrap_err();
-        assert!(matches!(
-            err,
-            TracingError::TraceContextParseError(_)
-        ));
+        assert!(matches!(err, TracingError::TraceContextParseError(_)));
     }
 
     #[test]
     fn new_rejects_all_zero_span_id_constructor() {
         let err = TraceContext::new(
             [
-                0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6,
-                0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e, 0x47, 0x36,
+                0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6, 0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e,
+                0x47, 0x36,
             ],
             [0u8; 8],
             0,
         )
         .unwrap_err();
-        assert!(matches!(
-            err,
-            TracingError::TraceContextParseError(_)
-        ));
+        assert!(matches!(err, TracingError::TraceContextParseError(_)));
     }
 
     #[test]
     fn is_sampled_reflects_flag_bit() {
         let ctx = sample_ctx();
         assert!(ctx.is_sampled());
-        let unsampled = TraceContext::new(
-            ctx.trace_id, ctx.span_id, 0x00,
-        )
-        .unwrap();
+        let unsampled = TraceContext::new(ctx.trace_id, ctx.span_id, 0x00).unwrap();
         assert!(!unsampled.is_sampled());
     }
 
@@ -475,8 +402,8 @@ mod tests {
         // sampled bit only.
         let ctx = TraceContext::new(
             [
-                0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6,
-                0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e, 0x47, 0x36,
+                0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6, 0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e,
+                0x47, 0x36,
             ],
             [0x00, 0xf0, 0x67, 0xaa, 0x0b, 0xa9, 0x02, 0xb7],
             0xFF,

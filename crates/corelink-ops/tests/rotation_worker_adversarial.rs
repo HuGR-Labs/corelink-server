@@ -19,13 +19,13 @@
 
 use std::sync::Arc;
 
-use corelink_rotation_adapters::{
-    is_valid_read_state, is_valid_write_state, KeyHandle, KeyState, PatSigningRotationAdapter,
-    RotationAdapter as _, RotationError, TdkRotationAdapter,
-};
 use corelink_ops::rotation::worker::{
     InMemoryRotationStateMachine, ProbeContext, RollbackConfig, RollbackDriver, RollbackOutcome,
     RotationMetrics, RotationOrchestrator, RotationOutcome,
+};
+use corelink_rotation_adapters::{
+    is_valid_read_state, is_valid_write_state, KeyHandle, KeyState, PatSigningRotationAdapter,
+    RotationAdapter as _, RotationError, TdkRotationAdapter,
 };
 
 // ── Force bypass: promote from non-Pending state is rejected ──────────
@@ -51,7 +51,10 @@ fn force_promote_non_pending_rejected() {
             to: KeyState::Active,
         })
     );
-    assert!(is_invalid, "promote from Active must return InvalidTransition");
+    assert!(
+        is_invalid,
+        "promote from Active must return InvalidTransition"
+    );
 }
 
 // ── Replay old key after retired: writes rejected ─────────────────────
@@ -105,7 +108,10 @@ fn retire_non_overlap_key_rejected() {
             to: KeyState::Retired,
         })
     );
-    assert!(is_invalid, "retire from Active must return InvalidTransition");
+    assert!(
+        is_invalid,
+        "retire from Active must return InvalidTransition"
+    );
 }
 
 // ── Auto-rollback: inject 5% error rate sustained 5 probes ───────────
@@ -201,7 +207,10 @@ fn auto_rollback_triggers_after_sustained_error_rate() {
     assert!(triggered, "5th probe must trigger rollback");
 
     // Verify metrics incremented.
-    let rolled_back_count = metrics.total(corelink_rotation_adapters::AssetClass::PatSigning, "rolled_back");
+    let rolled_back_count = metrics.total(
+        corelink_rotation_adapters::AssetClass::PatSigning,
+        "rolled_back",
+    );
     assert_eq!(rolled_back_count, 1, "rolled_back counter must be 1");
 }
 
@@ -225,7 +234,11 @@ fn audit_failure_aborts_state_transition_fail_closed() {
     assert!(audit_err, "audit failure must abort generate (fail-CLOSED)");
 
     // State machine must have 0 records (no state mutation occurred).
-    assert_eq!(sm.len(), 0, "no state transitions must be recorded on audit failure");
+    assert_eq!(
+        sm.len(),
+        0,
+        "no state transitions must be recorded on audit failure"
+    );
 }
 
 // ── Concurrent rotation blocked ───────────────────────────────────────
@@ -263,7 +276,10 @@ fn destroy_non_retired_key_rejected() {
             to: KeyState::Destroyed,
         })
     );
-    assert!(is_invalid, "destroy from Overlap must return InvalidTransition");
+    assert!(
+        is_invalid,
+        "destroy from Overlap must return InvalidTransition"
+    );
 }
 
 // ── INV-KEY-OVERLAP: Active + Overlap both valid for reads ────────────
@@ -295,7 +311,9 @@ fn rollback_re_promotes_previous_active() {
         ..key1_active
     };
 
-    let (rolled_back, re_promoted) = adapter.rollback(&key2_active, &key1_overlap, t1 + 2).unwrap();
+    let (rolled_back, re_promoted) = adapter
+        .rollback(&key2_active, &key1_overlap, t1 + 2)
+        .unwrap();
 
     assert_eq!(rolled_back.state, KeyState::RolledBack);
     assert_eq!(re_promoted.state, KeyState::Active);

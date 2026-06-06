@@ -208,10 +208,14 @@ fn streaming_verify_root_matches_offline_build_root() {
         // over the same chunk digests in the same order). Cross-check:
         let manifest_chunks: Vec<ChunkRef> = m.chunks.clone();
         let recomputed_offline = build_root(&manifest_chunks).unwrap();
-        assert_eq!(offline_root, recomputed_offline,
-            "offline_root mismatch for n={n}");
-        assert_eq!(m.merkle_root, recomputed_offline,
-            "manifest.merkle_root mismatch for n={n}");
+        assert_eq!(
+            offline_root, recomputed_offline,
+            "offline_root mismatch for n={n}"
+        );
+        assert_eq!(
+            m.merkle_root, recomputed_offline,
+            "manifest.merkle_root mismatch for n={n}"
+        );
 
         // Streaming path: must succeed → streaming root EQUALS
         // m.merkle_root (which equals offline_root).
@@ -234,5 +238,6 @@ fn streaming_verify_does_not_pre_buffer_chunkrefs() {
     // added pre-buffering would have to add a different trait method
     // — caught at compile time.
     fn assert_chunk_ref_source_trait_is_one_at_a_time<T: ChunkRefSource>() {}
-    assert_chunk_ref_source_trait_is_one_at_a_time::<corelink_cas::manifest::InMemoryChunkRefSource>();
+    assert_chunk_ref_source_trait_is_one_at_a_time::<corelink_cas::manifest::InMemoryChunkRefSource>(
+    );
 }

@@ -47,13 +47,12 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use corelink_billing::quota::fsm::{
-    audit_event_for_transition, canonical_quota_audit_event_strings,
-    canonical_quota_states, quota_fsm_schema_version, transition_emits_overage_telemetry,
-    utilization_bucket, InMemoryQuotaAuditSink, InMemoryQuotaFsmStore,
-    InMemoryQuotaStateMachine, QuotaAuditEventType, QuotaFsmConfig, QuotaFsmStore,
-    QuotaState, QuotaStateMachine, QuotaTransition, UtilizationPct,
-    OVER_QUOTA_100PCT_THRESHOLD, SOFT_WARNING_80PCT_THRESHOLD,
-    SOFT_WARNING_95PCT_THRESHOLD, SUSPENSION_INVOICE_FAILURE_THRESHOLD,
+    audit_event_for_transition, canonical_quota_audit_event_strings, canonical_quota_states,
+    quota_fsm_schema_version, transition_emits_overage_telemetry, utilization_bucket,
+    InMemoryQuotaAuditSink, InMemoryQuotaFsmStore, InMemoryQuotaStateMachine, QuotaAuditEventType,
+    QuotaFsmConfig, QuotaFsmStore, QuotaState, QuotaStateMachine, QuotaTransition, UtilizationPct,
+    OVER_QUOTA_100PCT_THRESHOLD, SOFT_WARNING_80PCT_THRESHOLD, SOFT_WARNING_95PCT_THRESHOLD,
+    SUSPENSION_INVOICE_FAILURE_THRESHOLD,
 };
 use proptest::prelude::*;
 use rand::SeedableRng;
@@ -126,7 +125,11 @@ fn canonical_transition_taxonomy_pinned() {
     assert_eq!(arms.len(), 6);
     let mut set: HashSet<&'static str> = HashSet::new();
     for a in arms {
-        assert!(set.insert(a.as_str()), "duplicate transition: {}", a.as_str());
+        assert!(
+            set.insert(a.as_str()),
+            "duplicate transition: {}",
+            a.as_str()
+        );
     }
     assert_eq!(set.len(), 6);
 }

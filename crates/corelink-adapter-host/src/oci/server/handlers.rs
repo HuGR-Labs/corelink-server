@@ -100,7 +100,10 @@ pub async fn token(
     };
     let scope_str = uri
         .query()
-        .and_then(|q| q.split('&').find_map(|p| p.strip_prefix("scope=").map(urldecode)))
+        .and_then(|q| {
+            q.split('&')
+                .find_map(|p| p.strip_prefix("scope=").map(urldecode))
+        })
         .unwrap_or_default();
     let scope = match crate::oci::auth::OciScope::parse(&scope_str) {
         Ok(s) => s,
@@ -164,11 +167,8 @@ pub async fn dispatch_v2(
         );
     };
     let now_secs = (state.clock_unix_ms)() / 1000;
-    let verified = match crate::oci::auth::verify(
-        &state.config.token_signing_key,
-        bearer,
-        now_secs,
-    ) {
+    let verified = match crate::oci::auth::verify(&state.config.token_signing_key, bearer, now_secs)
+    {
         Ok(v) => v,
         Err(e) => {
             let now_ms = (state.clock_unix_ms)();
@@ -195,15 +195,7 @@ pub async fn dispatch_v2(
     };
     let now_ms = (state.clock_unix_ms)();
     let result = route_dispatch(
-        parsed,
-        method,
-        uri,
-        headers,
-        body,
-        &state,
-        &tenant,
-        scope,
-        now_ms,
+        parsed, method, uri, headers, body, &state, &tenant, scope, now_ms,
     )
     .await;
     match result {
@@ -231,18 +223,31 @@ async fn route_dispatch(
     match parsed {
         V2Path::Blob { repo, digest } => match method {
             Method::GET => {
-                crate::oci::pull::blob::get(state.config.cas.as_ref(), tenant, scope, &repo, &digest)
-                    .await
+                crate::oci::pull::blob::get(
+                    state.config.cas.as_ref(),
+                    tenant,
+                    scope,
+                    &repo,
+                    &digest,
+                )
+                .await
             }
             Method::HEAD => {
-                crate::oci::pull::blob::head(state.config.cas.as_ref(), tenant, scope, &repo, &digest)
-                    .await
+                crate::oci::pull::blob::head(
+                    state.config.cas.as_ref(),
+                    tenant,
+                    scope,
+                    &repo,
+                    &digest,
+                )
+                .await
             }
             _ => Err(OciAdapterError::NotFound),
         },
         V2Path::BlobUploadsOpen { repo } => match method {
             Method::POST => {
-                crate::oci::push::upload::open(state.config.cas.as_ref(), tenant, scope, &repo).await
+                crate::oci::push::upload::open(state.config.cas.as_ref(), tenant, scope, &repo)
+                    .await
             }
             _ => Err(OciAdapterError::NotFound),
         },
@@ -253,12 +258,15 @@ async fn route_dispatch(
             .await
         }
         V2Path::Manifest { repo, reference } => {
-            dispatch_manifest(state, tenant, scope, &repo, &reference, method, &headers, body, now_ms)
-                .await
+            dispatch_manifest(
+                state, tenant, scope, &repo, &reference, method, &headers, body, now_ms,
+            )
+            .await
         }
         V2Path::TagsList { repo } => match method {
             Method::GET => {
-                crate::oci::tags::list(state.config.metadata_kv.as_ref(), tenant, scope, &repo).await
+                crate::oci::tags::list(state.config.metadata_kv.as_ref(), tenant, scope, &repo)
+                    .await
             }
             _ => Err(OciAdapterError::NotFound),
         },

@@ -36,10 +36,7 @@ fn run() {
     // --- (1) Signup ---
     let resp = env.signup.provision(&tenant.signup_request).unwrap();
     let prov = ProvisionedTenant::from_response(resp.clone()).expect("provisioned");
-    assert!(matches!(
-        resp.outcome,
-        SignupOutcome::Provisioned { .. }
-    ));
+    assert!(matches!(resp.outcome, SignupOutcome::Provisioned { .. }));
 
     // --- (2) DPA accept ---
     let dpa_req = dpa_request_for(&env, corelink_dpa_acceptance::LocaleBcp47::EnUs);

@@ -37,14 +37,11 @@ use std::sync::Arc;
 
 use corelink_analytics::{RedMetricKind, Tier};
 use corelink_tracing::{
-    canonical_audit_event_strings, canonical_span_kinds,
-    format_traceparent, parse_traceparent, EndSpanInput, Exemplar,
-    InMemoryOtlpExporter, InMemoryTracingAuditSink,
-    RateBasedSampler, Sampler, SamplingDecision, SpanKind,
-    SpanRecord, SpanStatus, StartSpanInput, TraceContext,
-    TracingAuditEventType, TracingService, ALL_ZERO_SPAN_ID,
-    ALL_ZERO_TRACE_ID, TRACEPARENT_HEADER, TRACESTATE_HEADER,
-    TRACE_FLAGS_SAMPLED, W3C_TRACE_CONTEXT_VERSION,
+    canonical_audit_event_strings, canonical_span_kinds, format_traceparent, parse_traceparent,
+    EndSpanInput, Exemplar, InMemoryOtlpExporter, InMemoryTracingAuditSink, RateBasedSampler,
+    Sampler, SamplingDecision, SpanKind, SpanRecord, SpanStatus, StartSpanInput, TraceContext,
+    TracingAuditEventType, TracingService, ALL_ZERO_SPAN_ID, ALL_ZERO_TRACE_ID, TRACEPARENT_HEADER,
+    TRACESTATE_HEADER, TRACE_FLAGS_SAMPLED, W3C_TRACE_CONTEXT_VERSION,
 };
 use proptest::prelude::*;
 use rand::{RngCore, SeedableRng};
@@ -141,8 +138,7 @@ fn schema_version_pinned() {
 #[test]
 fn w3c_canonical_example_round_trip() {
     // Canonical example from W3C Trace Context §3.2.4.
-    let canonical =
-        "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    let canonical = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
     let ctx = parse_traceparent(canonical).unwrap();
     assert_eq!(format_traceparent(&ctx), canonical);
     assert_eq!(ctx.version, W3C_TRACE_CONTEXT_VERSION);
@@ -550,15 +546,9 @@ fn fresh_service_full_sample() -> (
     Arc<InMemoryOtlpExporter>,
 ) {
     let audit = Arc::new(InMemoryTracingAuditSink::new());
-    let sampler = Arc::new(
-        RateBasedSampler::new(1.0, Arc::clone(&audit)).unwrap(),
-    );
+    let sampler = Arc::new(RateBasedSampler::new(1.0, Arc::clone(&audit)).unwrap());
     let exporter = Arc::new(InMemoryOtlpExporter::new());
-    let svc = TracingService::new(
-        sampler,
-        Arc::clone(&audit),
-        Arc::clone(&exporter),
-    );
+    let svc = TracingService::new(sampler, Arc::clone(&audit), Arc::clone(&exporter));
     (svc, audit, exporter)
 }
 

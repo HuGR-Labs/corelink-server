@@ -77,9 +77,7 @@ fn vector_001_canonical_sign_verify_known_inputs() {
     let canonical_bytes =
         compose_canonical_bytes(1, 1, fixed_tenant_a(), &action_hash, 1234, &result_hash).unwrap();
 
-    let sig = signer
-        .sign(fixed_tenant_a(), 1, &canonical_bytes)
-        .unwrap();
+    let sig = signer.sign(fixed_tenant_a(), 1, &canonical_bytes).unwrap();
     assert_eq!(sig.len(), AC_ENVELOPE_SIG_LEN);
     verifier
         .verify(fixed_tenant_a(), 1, &canonical_bytes, &sig)
@@ -132,9 +130,7 @@ fn vector_004_byte_flip_in_canonical_bytes_breaks_verify() {
     let result_hash = [0xBB; 32];
     let mut canonical_bytes =
         compose_canonical_bytes(1, 1, fixed_tenant_a(), &action_hash, 1234, &result_hash).unwrap();
-    let sig = signer
-        .sign(fixed_tenant_a(), 1, &canonical_bytes)
-        .unwrap();
+    let sig = signer.sign(fixed_tenant_a(), 1, &canonical_bytes).unwrap();
     canonical_bytes[42] ^= 0x01;
     let err = verifier
         .verify(fixed_tenant_a(), 1, &canonical_bytes, &sig)
@@ -153,9 +149,7 @@ fn vector_005_byte_flip_in_signature_breaks_verify() {
     let result_hash = [0xBB; 32];
     let canonical_bytes =
         compose_canonical_bytes(1, 1, fixed_tenant_a(), &action_hash, 1234, &result_hash).unwrap();
-    let mut sig = signer
-        .sign(fixed_tenant_a(), 1, &canonical_bytes)
-        .unwrap();
+    let mut sig = signer.sign(fixed_tenant_a(), 1, &canonical_bytes).unwrap();
     for i in 0..AC_ENVELOPE_SIG_LEN {
         let mut tampered = sig;
         tampered[i] ^= 0x80;
@@ -205,9 +199,7 @@ fn vector_007_unknown_key_id_rejected_with_oldest_active() {
     let result_hash = [0xBB; 32];
     let canonical_bytes =
         compose_canonical_bytes(1, 5, fixed_tenant_a(), &action_hash, 1234, &result_hash).unwrap();
-    let sig = signer
-        .sign(fixed_tenant_a(), 5, &canonical_bytes)
-        .unwrap();
+    let sig = signer.sign(fixed_tenant_a(), 5, &canonical_bytes).unwrap();
     // Verify with key_id=4 (not in whitelist) → KeyIdUnknown,
     // oldest_active=2.
     let err = verifier
@@ -216,7 +208,10 @@ fn vector_007_unknown_key_id_rejected_with_oldest_active() {
     assert_eq!(err.audit_code(), "key_id_unknown");
     // Pin the structured detail: oldest_active = 2.
     let s = format!("{err}");
-    assert!(s.contains("oldest active: 2"), "expected oldest_active=2 in {s}");
+    assert!(
+        s.contains("oldest active: 2"),
+        "expected oldest_active=2 in {s}"
+    );
 }
 
 #[test]
@@ -253,9 +248,7 @@ fn vector_009_signature_is_independent_of_unsigned_padding_zero() {
     let result_hash = [0xBB; 32];
     let canonical_bytes =
         compose_canonical_bytes(1, 1, fixed_tenant_a(), &action_hash, 1234, &result_hash).unwrap();
-    let sig = signer
-        .sign(fixed_tenant_a(), 1, &canonical_bytes)
-        .unwrap();
+    let sig = signer.sign(fixed_tenant_a(), 1, &canonical_bytes).unwrap();
 
     // Smuggle data in the padding (offset 97..121).
     let mut tampered = canonical_bytes;
@@ -302,9 +295,7 @@ fn vector_011_compute_signature_matches_signer_byte_equal() {
     let result_hash = [0xBB; 32];
     let canonical_bytes =
         compose_canonical_bytes(1, 1, fixed_tenant_a(), &action_hash, 1234, &result_hash).unwrap();
-    let sig_via_signer = signer
-        .sign(fixed_tenant_a(), 1, &canonical_bytes)
-        .unwrap();
+    let sig_via_signer = signer.sign(fixed_tenant_a(), 1, &canonical_bytes).unwrap();
     let tdk = mock.fetch(fixed_tenant_a(), 1).unwrap();
     let mut tdk_arr = [0u8; TDK_LEN];
     tdk_arr.copy_from_slice(&tdk_as_bytes(&tdk));

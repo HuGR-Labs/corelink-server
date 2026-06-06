@@ -337,9 +337,7 @@ impl AuthSchema {
             return Err(SimError::CheckViolation("pat.token_id length must be 16"));
         }
         if row.scopes.is_empty() {
-            return Err(SimError::CheckViolation(
-                "pat.scopes: array_length >= 1",
-            ));
+            return Err(SimError::CheckViolation("pat.scopes: array_length >= 1"));
         }
         if !self.tenants.contains_key(&row.tenant_id) {
             return Err(SimError::ForeignKeyViolation(
@@ -639,7 +637,10 @@ mod tests {
             tier: TenantTier::Team,
             deleted_at: None,
         };
-        assert!(matches!(s.insert_tenant(bad), Err(SimError::CheckViolation(_))));
+        assert!(matches!(
+            s.insert_tenant(bad),
+            Err(SimError::CheckViolation(_))
+        ));
     }
 
     #[test]
@@ -654,8 +655,10 @@ mod tests {
         let id_b = t_b.tenant_id;
         s.insert_tenant(t_a).unwrap();
         s.insert_tenant(t_b).unwrap();
-        s.insert_pat(pat(1, id_a, "tokenidaaaaaaaaa", b"hash-a")).unwrap();
-        s.insert_pat(pat(2, id_b, "tokenidbbbbbbbbb", b"hash-b")).unwrap();
+        s.insert_pat(pat(1, id_a, "tokenidaaaaaaaaa", b"hash-a"))
+            .unwrap();
+        s.insert_pat(pat(2, id_b, "tokenidbbbbbbbbb", b"hash-b"))
+            .unwrap();
         let view_a = s.list_pats_for_tenant(&id_a);
         let view_b = s.list_pats_for_tenant(&id_b);
         assert_eq!(view_a.len(), 1);

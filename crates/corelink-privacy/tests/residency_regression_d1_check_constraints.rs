@@ -10,7 +10,9 @@
 //! Corresponds to AC-003, AC-007, C-1.5, S-5.2, S-5.3.
 
 use corelink_privacy::residency::{
-    enforcement::{FailClosedResidencyEnforcement, InMemoryResidencyEnforcement, ResidencyEnforcement},
+    enforcement::{
+        FailClosedResidencyEnforcement, InMemoryResidencyEnforcement, ResidencyEnforcement,
+    },
     error::ResidencyViolation,
     BackendKind, Region, TenantCtx,
 };
@@ -39,7 +41,11 @@ fn test_insert_check_all_5_paths_correct_region() {
         );
     }
     // No rejected-write audit events should be emitted
-    assert_eq!(enf.audit_sink().records().len(), 0, "no audit records for accepted writes");
+    assert_eq!(
+        enf.audit_sink().records().len(),
+        0,
+        "no audit records for accepted writes"
+    );
 }
 
 #[test]
@@ -123,12 +129,18 @@ fn test_cross_tenant_isolation() {
 
     // Cross-tenant: eu tenant cannot be "accepted" in sam
     let eu_err = enf.assert_request_residency(&tenant_eu, Region::Sam);
-    let valid = matches!(eu_err, Err(ResidencyViolation::RequestRegionMismatch { .. }));
+    let valid = matches!(
+        eu_err,
+        Err(ResidencyViolation::RequestRegionMismatch { .. })
+    );
     assert!(valid, "eu tenant must be rejected in sam region");
 
     // And br tenant in weur
     let br_err = enf.assert_request_residency(&tenant_br, Region::Weur);
-    let valid2 = matches!(br_err, Err(ResidencyViolation::RequestRegionMismatch { .. }));
+    let valid2 = matches!(
+        br_err,
+        Err(ResidencyViolation::RequestRegionMismatch { .. })
+    );
     assert!(valid2, "br tenant must be rejected in weur region");
 }
 
@@ -139,8 +151,19 @@ fn test_closed_enum_no_open_strings() {
     // Verify that known bad strings that look like regions but aren't canonical
     // are rejected (cardinality discipline anti-pattern §32)
     let bad_strings = [
-        "US", "EU", "us-east-1", "eu-west-1", "us-central", "brazil", "europe",
-        "northamerica", "southamerica", "asia", "africa", "wEUR", "WEUR",
+        "US",
+        "EU",
+        "us-east-1",
+        "eu-west-1",
+        "us-central",
+        "brazil",
+        "europe",
+        "northamerica",
+        "southamerica",
+        "asia",
+        "africa",
+        "wEUR",
+        "WEUR",
     ];
 
     for bad in bad_strings {
@@ -177,12 +200,21 @@ fn test_write_error_contains_regulatory_reference() {
 fn test_region_as_str_distinct() {
     use std::collections::HashSet;
     let strs: HashSet<&str> = Region::ALL.iter().map(|r| r.as_str()).collect();
-    assert_eq!(strs.len(), 6, "all 6 regions must have distinct as_str values");
+    assert_eq!(
+        strs.len(),
+        6,
+        "all 6 regions must have distinct as_str values"
+    );
 }
 
 #[test]
 fn test_region_display_equals_as_str() {
     for r in Region::ALL {
-        assert_eq!(r.to_string(), r.as_str(), "Display must match as_str for {:?}", r);
+        assert_eq!(
+            r.to_string(),
+            r.as_str(),
+            "Display must match as_str for {:?}",
+            r
+        );
     }
 }

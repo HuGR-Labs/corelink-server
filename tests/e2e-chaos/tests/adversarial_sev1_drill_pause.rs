@@ -84,5 +84,8 @@ fn adversarial_sev1_clears_drill_resumes() {
     );
     assert!(matches!(run.outcome, ChaosOutcome::Passed { .. }));
     let events = telemetry.audit_events();
-    assert_eq!(events, vec![ChaosAuditEvent::Started, ChaosAuditEvent::Completed]);
+    assert_eq!(
+        events,
+        vec![ChaosAuditEvent::Started, ChaosAuditEvent::Completed]
+    );
 }

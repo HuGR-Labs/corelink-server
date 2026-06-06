@@ -34,8 +34,8 @@
     reason = "tests are allowed to use these primitives"
 )]
 
-use corelink_byok::{Dek, KmsAccessStatus, KmsProviderKind};
 use corelink_byok::revocation::{event::EVENT_TYPE_CMK_REVOKED, store::TenantByokStatus};
+use corelink_byok::{Dek, KmsAccessStatus, KmsProviderKind};
 use e2e_byok_revoke::helpers::{
     make_wrapped_for, KillSwitchRunner, KmsBehaviour, ALL_PROVIDER_KINDS,
 };
@@ -130,9 +130,10 @@ async fn run_scenario(scenario: Scenario) {
     assert_eq!(pre_len, scenario.pre_seed as usize);
 
     // Script the provider; drive one cycle per status.
-    let any_revoke = scenario.sequence.iter().any(|s| {
-        matches!(s, KmsAccessStatus::Revoked | KmsAccessStatus::NotFound)
-    });
+    let any_revoke = scenario
+        .sequence
+        .iter()
+        .any(|s| matches!(s, KmsAccessStatus::Revoked | KmsAccessStatus::NotFound));
     let revoke_count = scenario
         .sequence
         .iter()

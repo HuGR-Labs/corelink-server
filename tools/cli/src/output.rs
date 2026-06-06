@@ -45,10 +45,7 @@ impl Formatter {
     ///
     /// JSON: prints the serialised form followed by a newline.
     /// Text: prints `display` followed by a newline.
-    pub fn emit<T: Serialize + fmt::Display>(
-        &self,
-        value: &T,
-    ) -> Result<(), serde_json::Error> {
+    pub fn emit<T: Serialize + fmt::Display>(&self, value: &T) -> Result<(), serde_json::Error> {
         match self.format {
             OutputFormat::Json => {
                 let json = serde_json::to_string_pretty(value)?;
@@ -85,7 +82,12 @@ impl Formatter {
 }
 
 #[cfg(test)]
-#[allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used)]
+#[allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used
+)]
 mod tests {
     use super::*;
 
@@ -103,7 +105,10 @@ mod tests {
 
     #[test]
     fn json_format_serialises() {
-        let s = Sample { key: "x".into(), value: 42 };
+        let s = Sample {
+            key: "x".into(),
+            value: 42,
+        };
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"key\""));
         assert!(json.contains("42"));
@@ -111,7 +116,10 @@ mod tests {
 
     #[test]
     fn text_format_display() {
-        let s = Sample { key: "hello".into(), value: 7 };
+        let s = Sample {
+            key: "hello".into(),
+            value: 7,
+        };
         let display = format!("{s}");
         assert_eq!(display, "hello: 7");
     }

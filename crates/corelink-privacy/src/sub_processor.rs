@@ -89,16 +89,14 @@ pub use audit::{
     FailingSubProcessorAuditSink, InMemorySubProcessorAuditSink, SubProcessorAuditRecord,
     SubProcessorAuditSink,
 };
-pub use broadcast::{
-    BroadcastStore, FailingBroadcastStore, InMemoryBroadcastStore,
-};
+pub use broadcast::{BroadcastStore, FailingBroadcastStore, InMemoryBroadcastStore};
 pub use dkim::derive_dkim_key;
 pub use emitter::{InMemorySubProcessorEmitter, SubProcessorEmitter};
 pub use error::SubProcessorEmitError;
 pub use event::{
     BroadcastLogEntry, DeliveryStatus, NotificationType, ObjectionDecision, ObjectionPayload,
-    ObjectionTicketStatus, SubProcessorDiff, SubProcessorEventType, SubProcessorInfo,
-    SubProcessorPublishedPayload, SubProcessorChangedPayload, SubProcessorObjectionPayload,
+    ObjectionTicketStatus, SubProcessorChangedPayload, SubProcessorDiff, SubProcessorEventType,
+    SubProcessorInfo, SubProcessorObjectionPayload, SubProcessorPublishedPayload,
     HKDF_INFO_DKIM_BROADCAST,
 };
 pub use objection::{FailingObjectionStore, InMemoryObjectionStore, ObjectionStore};

@@ -56,7 +56,10 @@ fn prop_challenge_uniqueness_10k() {
     for _ in 0..10_000 {
         let id = ChallengeId::generate().unwrap();
         let hex = id.as_hex();
-        assert!(seen.insert(hex), "challenge id collision (entropy regression)");
+        assert!(
+            seen.insert(hex),
+            "challenge id collision (entropy regression)"
+        );
     }
 }
 
@@ -141,14 +144,8 @@ proptest! {
 #[test]
 fn prop_replay_resistance_single_use() {
     let cfg = EngineConfig::builder(RpId::new("corelink.humangr.com").unwrap(), "CoreLink")
-        .origins(
-            OriginAllowlist::from_strings(["https://app.corelink.humangr.com"]).unwrap(),
-        )
-        .aaguids(
-            AaguidPolicy::builder()
-                .allow(Aaguid::touch_id())
-                .build(),
-        )
+        .origins(OriginAllowlist::from_strings(["https://app.corelink.humangr.com"]).unwrap())
+        .aaguids(AaguidPolicy::builder().allow(Aaguid::touch_id()).build())
         .build()
         .unwrap();
     let clock = FixedClock::epoch();
@@ -209,10 +206,7 @@ fn prop_recovery_otp_single_use_100() {
         let outcome = store
             .verify_and_consume(user, &plaintext, now_ms + 1_000)
             .unwrap();
-        assert!(matches!(
-            outcome,
-            RecoveryOtpVerifyOutcome::Consumed { .. }
-        ));
+        assert!(matches!(outcome, RecoveryOtpVerifyOutcome::Consumed { .. }));
 
         // Re-use rejected.
         assert!(matches!(
@@ -235,10 +229,10 @@ fn prop_origin_allowlist_no_prefix_bypass_10k() {
         "https://attacker.com/app.corelink.humangr.com",
         "https://app.corelink.humangr.com:8443",
         "https://APP.corelink.humangr.com", // case is normalized to lowercase, but
-                                    // would still be a different host port-shape
-                                    // — actually equals canonical after parse, so
-                                    // this MUST be true. We re-test the lowercase
-                                    // semantic explicitly below.
+                                            // would still be a different host port-shape
+                                            // — actually equals canonical after parse, so
+                                            // this MUST be true. We re-test the lowercase
+                                            // semantic explicitly below.
     ];
     for raw in cases {
         if let Ok(parsed) = Origin::parse(raw) {

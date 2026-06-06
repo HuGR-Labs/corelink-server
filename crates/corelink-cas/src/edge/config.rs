@@ -132,8 +132,7 @@ mod tests {
 
     #[test]
     fn with_overrides_accepts_valid() {
-        let c =
-            EdgeConfig::with_overrides(EdgeDefaultAction::Deny, 100, 80).unwrap();
+        let c = EdgeConfig::with_overrides(EdgeDefaultAction::Deny, 100, 80).unwrap();
         assert_eq!(c.default_action(), EdgeDefaultAction::Deny);
         assert_eq!(c.max_blocklist_size(), 100);
         assert_eq!(c.alert_threshold_size(), 80);
@@ -146,17 +145,12 @@ mod tests {
 
     #[test]
     fn with_overrides_rejects_alert_above_max() {
-        assert!(
-            EdgeConfig::with_overrides(EdgeDefaultAction::Allow, 100, 200).is_none()
-        );
+        assert!(EdgeConfig::with_overrides(EdgeDefaultAction::Allow, 100, 200).is_none());
     }
 
     #[test]
     fn alert_at_max_is_allowed() {
         // Boundary: alert == max is permitted (no separation).
-        assert!(
-            EdgeConfig::with_overrides(EdgeDefaultAction::Allow, 100, 100)
-                .is_some()
-        );
+        assert!(EdgeConfig::with_overrides(EdgeDefaultAction::Allow, 100, 100).is_some());
     }
 }

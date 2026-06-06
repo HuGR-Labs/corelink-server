@@ -13,10 +13,8 @@ fn main() -> Result<(), SurveyError> {
     let fake = InMemoryFake::new(key);
 
     let tenant = TenantId::from_uuid(Uuid::nil());
-    let recipient = RecipientHash::derive_with_salt(
-        "user@example.com",
-        b"survey-recipient-salt-v1",
-    );
+    let recipient =
+        RecipientHash::derive_with_salt("user@example.com", b"survey-recipient-salt-v1");
     let survey_id = SurveyId::new("nps-w1-2026q2");
 
     let token = fake.sign_invite(

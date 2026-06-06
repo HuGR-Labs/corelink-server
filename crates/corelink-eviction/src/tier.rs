@@ -108,9 +108,7 @@ pub enum TierTtlOverrideError {
     },
     /// Requested TTL exceeds the canonical 730d cap.
     /// INV-EVICT-TTL-CAP-RESPECTED enforcement point.
-    #[error(
-        "ttl override {requested_days}d exceeds Enterprise hard cap {max_days}d"
-    )]
+    #[error("ttl override {requested_days}d exceeds Enterprise hard cap {max_days}d")]
     ExceedsMaxTtl {
         /// Requested override (days).
         requested_days: u32,
@@ -142,9 +140,7 @@ pub fn ttl_for_tier_with_override(
         None => Ok(ttl_for_tier(tier)),
         Some(d) => {
             if tier != Tier::Enterprise {
-                return Err(TierTtlOverrideError::OverrideNotAllowedForTier {
-                    tier,
-                });
+                return Err(TierTtlOverrideError::OverrideNotAllowedForTier { tier });
             }
             if d > MAX_ENTERPRISE_TTL_DAYS {
                 return Err(TierTtlOverrideError::ExceedsMaxTtl {
@@ -232,21 +228,15 @@ mod tests {
 
     #[test]
     fn override_exactly_at_cap_accepted_for_enterprise() {
-        let v = ttl_for_tier_with_override(
-            Tier::Enterprise,
-            Some(MAX_ENTERPRISE_TTL_DAYS),
-        )
-        .unwrap();
+        let v =
+            ttl_for_tier_with_override(Tier::Enterprise, Some(MAX_ENTERPRISE_TTL_DAYS)).unwrap();
         assert_eq!(v, days_to_ms(MAX_ENTERPRISE_TTL_DAYS));
     }
 
     #[test]
     fn override_above_cap_rejected_for_enterprise() {
-        let err = ttl_for_tier_with_override(
-            Tier::Enterprise,
-            Some(MAX_ENTERPRISE_TTL_DAYS + 1),
-        )
-        .unwrap_err();
+        let err = ttl_for_tier_with_override(Tier::Enterprise, Some(MAX_ENTERPRISE_TTL_DAYS + 1))
+            .unwrap_err();
         match err {
             TierTtlOverrideError::ExceedsMaxTtl {
                 requested_days,

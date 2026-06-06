@@ -42,14 +42,11 @@
 use std::sync::{Arc, Mutex};
 
 use corelink_analytics::{
-    AnalyticsError, CardinalityValidator,
-    InMemoryAnalyticsAuditSink, MetricLabelTuple, RedMetricKind,
-    Region, Tier,
+    AnalyticsError, CardinalityValidator, InMemoryAnalyticsAuditSink, MetricLabelTuple,
+    RedMetricKind, Region, Tier,
 };
 
-use crate::logpush::audit::{
-    LogAuditEventType, LogAuditRecord, LogAuditSink,
-};
+use crate::logpush::audit::{LogAuditEventType, LogAuditRecord, LogAuditSink};
 use crate::logpush::error::{LogSinkError, LogpushError};
 use crate::logpush::record::{LogEventType, LogRecord};
 use crate::logpush::redaction::{PiiRedactor, RedactionOutcome};
@@ -81,10 +78,7 @@ pub trait LogSink: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`LogSinkError::Backend`] on any backend failure.
-    fn push(
-        &self,
-        line: PersistedLogLine,
-    ) -> Result<(), LogSinkError>;
+    fn push(&self, line: PersistedLogLine) -> Result<(), LogSinkError>;
 }
 
 /// In-memory log sink + redaction + cardinality orchestrator. Cloning
@@ -97,8 +91,7 @@ where
 {
     redactor: Arc<R>,
     audit: Arc<A>,
-    cardinality:
-        Arc<CardinalityValidator<InMemoryAnalyticsAuditSink>>,
+    cardinality: Arc<CardinalityValidator<InMemoryAnalyticsAuditSink>>,
     state: Arc<Mutex<SinkState>>,
 }
 
@@ -118,9 +111,7 @@ where
     pub fn new(
         redactor: Arc<R>,
         audit: Arc<A>,
-        cardinality: Arc<
-            CardinalityValidator<InMemoryAnalyticsAuditSink>,
-        >,
+        cardinality: Arc<CardinalityValidator<InMemoryAnalyticsAuditSink>>,
     ) -> Self {
         Self {
             redactor,
@@ -240,8 +231,7 @@ where
             self.audit.emit(LogAuditRecord {
                 event_type: LogAuditEventType::RedactionApplied,
                 log_event_type: record.event_type.as_str(),
-                created_by_request_id: created_by_request_id
-                    .to_string(),
+                created_by_request_id: created_by_request_id.to_string(),
                 now_ms,
                 redaction_count: outcome.total_hits(),
             })?;
@@ -255,11 +245,9 @@ where
             Ok(s) => s,
             Err(e) => {
                 self.audit.emit(LogAuditRecord {
-                    event_type:
-                        LogAuditEventType::RedactionFailure,
+                    event_type: LogAuditEventType::RedactionFailure,
                     log_event_type: record.event_type.as_str(),
-                    created_by_request_id: created_by_request_id
-                        .to_string(),
+                    created_by_request_id: created_by_request_id.to_string(),
                     now_ms,
                     redaction_count: outcome.total_hits(),
                 })?;
@@ -276,11 +264,10 @@ where
             event_type: event_type_for_line,
             region: region_for_line,
         };
-        let mut g = self.state.lock().map_err(|_| {
-            LogpushError::Internal(
-                "log sink mutex poisoned".to_string(),
-            )
-        })?;
+        let mut g = self
+            .state
+            .lock()
+            .map_err(|_| LogpushError::Internal("log sink mutex poisoned".to_string()))?;
         g.buffer.push(line);
         Ok(outcome)
     }
@@ -311,13 +298,9 @@ where
             redaction_count: 0,
         })?;
         let mut g = self.state.lock().map_err(|_| {
-            LogpushError::Internal(
-                "log sink mutex poisoned (sink_failure bump)"
-                    .to_string(),
-            )
+            LogpushError::Internal("log sink mutex poisoned (sink_failure bump)".to_string())
         })?;
-        g.sink_failure_count =
-            g.sink_failure_count.saturating_add(1);
+        g.sink_failure_count = g.sink_failure_count.saturating_add(1);
         Ok(())
     }
 }
@@ -335,10 +318,7 @@ impl FailingLogSink {
 }
 
 impl LogSink for FailingLogSink {
-    fn push(
-        &self,
-        _line: PersistedLogLine,
-    ) -> Result<(), LogSinkError> {
+    fn push(&self, _line: PersistedLogLine) -> Result<(), LogSinkError> {
         Err(LogSinkError::Backend(
             "induced log sink failure (test fixture)".to_string(),
         ))
@@ -371,15 +351,11 @@ impl CapturedLogSink {
 }
 
 impl LogSink for CapturedLogSink {
-    fn push(
-        &self,
-        line: PersistedLogLine,
-    ) -> Result<(), LogSinkError> {
-        let mut g = self.inner.lock().map_err(|_| {
-            LogSinkError::Backend(
-                "captured log sink mutex poisoned".to_string(),
-            )
-        })?;
+    fn push(&self, line: PersistedLogLine) -> Result<(), LogSinkError> {
+        let mut g = self
+            .inner
+            .lock()
+            .map_err(|_| LogSinkError::Backend("captured log sink mutex poisoned".to_string()))?;
         g.push(line);
         Ok(())
     }
@@ -395,24 +371,18 @@ impl LogSink for CapturedLogSink {
 )]
 mod tests {
     use super::*;
-    use crate::logpush::audit::{
-        FailingLogAuditSink, InMemoryLogAuditSink,
-    };
+    use crate::logpush::audit::{FailingLogAuditSink, InMemoryLogAuditSink};
     use crate::logpush::redaction::InMemoryPiiRedactor;
     use serde_json::json;
     use uuid::Uuid;
 
-    type Sink =
-        InMemoryLogSink<InMemoryPiiRedactor, InMemoryLogAuditSink>;
+    type Sink = InMemoryLogSink<InMemoryPiiRedactor, InMemoryLogAuditSink>;
 
     fn fresh_sink() -> (Sink, Arc<InMemoryLogAuditSink>) {
         let r = Arc::new(InMemoryPiiRedactor::new());
         let audit = Arc::new(InMemoryLogAuditSink::new());
-        let cardinality_audit =
-            Arc::new(InMemoryAnalyticsAuditSink::new());
-        let cardinality = Arc::new(
-            CardinalityValidator::with_defaults(cardinality_audit),
-        );
+        let cardinality_audit = Arc::new(InMemoryAnalyticsAuditSink::new());
+        let cardinality = Arc::new(CardinalityValidator::with_defaults(cardinality_audit));
         let s = InMemoryLogSink::new(r, Arc::clone(&audit), cardinality);
         (s, audit)
     }
@@ -445,8 +415,7 @@ mod tests {
     fn emit_redacts_data_and_persists_ndjson() {
         let (s, audit) = fresh_sink();
         let r = fresh_record();
-        let outcome =
-            s.emit(r, Tier::Team, "req-1", 1000).unwrap();
+        let outcome = s.emit(r, Tier::Team, "req-1", 1000).unwrap();
         assert_eq!(outcome.email_hits, 1);
         assert_eq!(outcome.ip_hits, 1);
         assert_eq!(s.len(), 1);
@@ -459,16 +428,9 @@ mod tests {
         assert_eq!(line.redaction_hits, 2);
         assert_eq!(line.event_type, LogEventType::RequestServed);
         // Audit: 1 RecordEmitted + 1 RedactionApplied.
+        assert_eq!(audit.snapshot_of(LogAuditEventType::RecordEmitted).len(), 1);
         assert_eq!(
-            audit
-                .snapshot_of(LogAuditEventType::RecordEmitted)
-                .len(),
-            1
-        );
-        assert_eq!(
-            audit
-                .snapshot_of(LogAuditEventType::RedactionApplied)
-                .len(),
+            audit.snapshot_of(LogAuditEventType::RedactionApplied).len(),
             1
         );
     }
@@ -477,11 +439,8 @@ mod tests {
     fn audit_failure_aborts_emit_no_buffer_mutation() {
         let r = Arc::new(InMemoryPiiRedactor::new());
         let audit = Arc::new(FailingLogAuditSink::new());
-        let cardinality_audit =
-            Arc::new(InMemoryAnalyticsAuditSink::new());
-        let cardinality = Arc::new(
-            CardinalityValidator::with_defaults(cardinality_audit),
-        );
+        let cardinality_audit = Arc::new(InMemoryAnalyticsAuditSink::new());
+        let cardinality = Arc::new(CardinalityValidator::with_defaults(cardinality_audit));
         let s = InMemoryLogSink::new(r, audit, cardinality);
         let err = s.emit(fresh_record(), Tier::Team, "req-1", 1000);
         let err = err.unwrap_err();
@@ -492,19 +451,10 @@ mod tests {
     #[test]
     fn record_sink_failure_increments_counter_and_audits() {
         let (s, audit) = fresh_sink();
-        s.record_sink_failure(
-            LogEventType::RequestServed,
-            "req-1",
-            1000,
-        )
-        .unwrap();
+        s.record_sink_failure(LogEventType::RequestServed, "req-1", 1000)
+            .unwrap();
         assert_eq!(s.sink_failure_count(), 1);
-        assert_eq!(
-            audit
-                .snapshot_of(LogAuditEventType::SinkFailure)
-                .len(),
-            1
-        );
+        assert_eq!(audit.snapshot_of(LogAuditEventType::SinkFailure).len(), 1);
     }
 
     #[test]
@@ -520,17 +470,10 @@ mod tests {
             json!({"path": "/healthz", "status": 200}),
         );
         s.emit(r, Tier::Team, "req-1", 1000).unwrap();
-        assert_eq!(
-            audit
-                .snapshot_of(LogAuditEventType::RecordEmitted)
-                .len(),
-            1
-        );
+        assert_eq!(audit.snapshot_of(LogAuditEventType::RecordEmitted).len(), 1);
         // No PII hits → no RedactionApplied audit.
         assert_eq!(
-            audit
-                .snapshot_of(LogAuditEventType::RedactionApplied)
-                .len(),
+            audit.snapshot_of(LogAuditEventType::RedactionApplied).len(),
             0
         );
     }
@@ -539,17 +482,9 @@ mod tests {
     fn cardinality_guard_rejects_over_budget_arm() {
         let r = Arc::new(InMemoryPiiRedactor::new());
         let audit = Arc::new(InMemoryLogAuditSink::new());
-        let cardinality_audit =
-            Arc::new(InMemoryAnalyticsAuditSink::new());
-        let cfg =
-            corelink_analytics::AnalyticsConfig::with_budgets(
-                1, 100,
-            );
-        let cardinality =
-            Arc::new(CardinalityValidator::new(
-                cardinality_audit,
-                cfg,
-            ));
+        let cardinality_audit = Arc::new(InMemoryAnalyticsAuditSink::new());
+        let cfg = corelink_analytics::AnalyticsConfig::with_budgets(1, 100);
+        let cardinality = Arc::new(CardinalityValidator::new(cardinality_audit, cfg));
         let s = InMemoryLogSink::new(r, audit, cardinality);
 
         // 1st emit (Team / Iad) → registered.

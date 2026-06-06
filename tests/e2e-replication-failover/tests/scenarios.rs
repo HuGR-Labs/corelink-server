@@ -56,21 +56,12 @@ fn scenario_1_primary_fail_then_failback_after_24h() -> Result<(), CoordinatorEr
     fix.coordinator.route_write(Region::Wnam, T0 + 1_000)?;
 
     // T0+89s: refresh secondary heartbeats (primary stays at T0 → stale at T0+90s).
-    fix.heartbeats.record(Heartbeat::new(
-        Region::Enam,
-        T0 + 89_000,
-        LagBundle::zero(),
-    ))?;
-    fix.heartbeats.record(Heartbeat::new(
-        Region::Weur,
-        T0 + 89_000,
-        LagBundle::zero(),
-    ))?;
-    fix.heartbeats.record(Heartbeat::new(
-        Region::Sam,
-        T0 + 89_000,
-        LagBundle::zero(),
-    ))?;
+    fix.heartbeats
+        .record(Heartbeat::new(Region::Enam, T0 + 89_000, LagBundle::zero()))?;
+    fix.heartbeats
+        .record(Heartbeat::new(Region::Weur, T0 + 89_000, LagBundle::zero()))?;
+    fix.heartbeats
+        .record(Heartbeat::new(Region::Sam, T0 + 89_000, LagBundle::zero()))?;
 
     // T0+90s: evaluate; primary heartbeat is 90s old → stale, promotion proposed.
     let decision = fix.coordinator.evaluate(Region::Wnam, T0 + 90_000)?;
@@ -83,7 +74,8 @@ fn scenario_1_primary_fail_then_failback_after_24h() -> Result<(), CoordinatorEr
     );
 
     // Execute promotion. Two audits emit BEFORE state mutation.
-    fix.coordinator.promote(Region::Wnam, Region::Enam, T0 + 90_001)?;
+    fix.coordinator
+        .promote(Region::Wnam, Region::Enam, T0 + 90_001)?;
     let records = fix.audit.records();
     assert_eq!(records.len(), 2);
     assert_eq!(
@@ -148,7 +140,8 @@ fn scenario_1_primary_fail_then_failback_after_24h() -> Result<(), CoordinatorEr
 fn scenario_2a_split_brain_at_registration_rejected() -> Result<(), CoordinatorError> {
     // Two regions try to register as Primary simultaneously.
     let fix = E2EFixture::new();
-    fix.coordinator.register(Region::Wnam, RegionRole::Primary)?;
+    fix.coordinator
+        .register(Region::Wnam, RegionRole::Primary)?;
     let err = fix
         .coordinator
         .register(Region::Enam, RegionRole::Primary)
@@ -234,7 +227,8 @@ fn scenario_3_replica_lag_slo_breach_triggers_reroute() -> Result<(), Coordinato
     );
 
     // After promotion writes succeed against the new primary.
-    fix.coordinator.promote(Region::Wnam, Region::Enam, T0 + 2_000)?;
+    fix.coordinator
+        .promote(Region::Wnam, Region::Enam, T0 + 2_000)?;
     fix.coordinator.route_write(Region::Enam, T0 + 3_000)?;
     assert_eq!(primary_count(&fix), 1);
     Ok(())
@@ -287,8 +281,7 @@ fn scenario_no_eligible_replica_escalates_to_runbook() -> Result<(), Coordinator
         ..LagBundle::zero()
     };
     for region in Region::ALL {
-        fix.heartbeats
-            .record(Heartbeat::new(region, T0, bad))?;
+        fix.heartbeats.record(Heartbeat::new(region, T0, bad))?;
     }
 
     let decision = fix.coordinator.evaluate(Region::Wnam, T0 + 1_000)?;

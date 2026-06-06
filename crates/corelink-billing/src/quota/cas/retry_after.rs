@@ -59,8 +59,7 @@ pub const fn days_in_month(year: i64, month: u32) -> Option<u32> {
         4 | 6 | 9 | 11 => Some(30),
         2 => {
             // Canonical Gregorian leap rule.
-            let leap =
-                (year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0));
+            let leap = (year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0));
             Some(if leap { 29 } else { 28 })
         }
         _ => None,
@@ -89,13 +88,16 @@ pub fn decompose_utc(now_secs: i64) -> (i64, u32, u32, u32, u32, u32) {
     let z_shifted = days + 719_468;
     let era = z_shifted.div_euclid(146_097);
     let doe = z_shifted.rem_euclid(146_097);
-    let yoe =
-        (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
     let y = yoe + era * 400;
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
     let mp = (5 * doy + 2) / 153;
     let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { (mp + 3) as u32 } else { (mp - 9) as u32 };
+    let m = if mp < 10 {
+        (mp + 3) as u32
+    } else {
+        (mp - 9) as u32
+    };
     let year = if m <= 2 { y + 1 } else { y };
 
     let hour = (secs_in_day / 3600) as u32;
@@ -111,16 +113,8 @@ pub fn decompose_utc(now_secs: i64) -> (i64, u32, u32, u32, u32, u32) {
 /// Returns 0 (1970-01-01) for any out-of-range component (month not in
 /// 1..=12; day not in 1..=days_in_month; hour/min/sec out of range).
 #[must_use]
-pub fn compose_utc(
-    year: i64,
-    month: u32,
-    day: u32,
-    hour: u32,
-    minute: u32,
-    second: u32,
-) -> i64 {
-    if !(1..=12).contains(&month) || hour >= 24 || minute >= 60 || second >= 60
-    {
+pub fn compose_utc(year: i64, month: u32, day: u32, hour: u32, minute: u32, second: u32) -> i64 {
+    if !(1..=12).contains(&month) || hour >= 24 || minute >= 60 || second >= 60 {
         return 0;
     }
     let dim = match days_in_month(year, month) {
@@ -140,10 +134,7 @@ pub fn compose_utc(
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     let days = era * 146_097 + doe - 719_468;
 
-    days * SECS_PER_DAY
-        + (hour as i64) * 3600
-        + (minute as i64) * 60
-        + (second as i64)
+    days * SECS_PER_DAY + (hour as i64) * 3600 + (minute as i64) * 60 + (second as i64)
 }
 
 /// Unix-epoch seconds of the next 1st-UTC-midnight strictly after
@@ -379,14 +370,8 @@ mod tests {
     fn always_within_canonical_bounds() {
         for now in [0i64, 1, 1_000_000, 1_700_000_000, 2_000_000_000] {
             let secs = days_until_month_reset_secs(now);
-            assert!(
-                secs >= RETRY_AFTER_MIN_SECS,
-                "below floor: {secs}"
-            );
-            assert!(
-                secs <= MAX_SECS_PER_MONTH,
-                "above ceiling: {secs}"
-            );
+            assert!(secs >= RETRY_AFTER_MIN_SECS, "below floor: {secs}");
+            assert!(secs <= MAX_SECS_PER_MONTH, "above ceiling: {secs}");
         }
     }
 

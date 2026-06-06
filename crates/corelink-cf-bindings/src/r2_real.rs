@@ -70,10 +70,10 @@
 //! step-by-step recipe.
 
 use bytes::Bytes;
-use corelink_cas::r2_storage::R2Error;
 use corelink_cas::r2_storage::BackendPutOutcome;
 #[cfg(target_arch = "wasm32")]
 use corelink_cas::r2_storage::R2Backend;
+use corelink_cas::r2_storage::R2Error;
 use std::fmt;
 #[cfg(target_arch = "wasm32")]
 use std::future::Future;
@@ -218,8 +218,7 @@ impl TenantScopedKey {
 /// Production wires a closure that fans into `apps/server`'s audit
 /// chain (Workers Analytics + R2 audit log). Tests use the default
 /// no-op or a recording closure (see unit tests below).
-pub type AuditFn =
-    Arc<dyn Fn(R2Op, &str) -> Result<(), R2Error> + Send + Sync + 'static>;
+pub type AuditFn = Arc<dyn Fn(R2Op, &str) -> Result<(), R2Error> + Send + Sync + 'static>;
 
 fn noop_audit() -> AuditFn {
     Arc::new(|_op, _key| Ok(()))
@@ -545,17 +544,11 @@ impl R2Backend for CfR2BucketReal {
         worker::send::SendFuture::new(async move { self.put_if_absent(key, body).await })
     }
 
-    fn get<'a>(
-        &'a self,
-        key: &'a str,
-    ) -> impl Future<Output = Result<Bytes, R2Error>> + Send + 'a {
+    fn get<'a>(&'a self, key: &'a str) -> impl Future<Output = Result<Bytes, R2Error>> + Send + 'a {
         worker::send::SendFuture::new(async move { self.get_bytes(key).await })
     }
 
-    fn head<'a>(
-        &'a self,
-        key: &'a str,
-    ) -> impl Future<Output = Result<bool, R2Error>> + Send + 'a {
+    fn head<'a>(&'a self, key: &'a str) -> impl Future<Output = Result<bool, R2Error>> + Send + 'a {
         worker::send::SendFuture::new(async move { CfR2BucketReal::head(self, key).await })
     }
 }
@@ -827,11 +820,9 @@ mod tests {
         // An audit closure that returns Err must prevent the mutation
         // from reaching the (stub) backend. We detect this by the fact
         // that we see the audit error, NOT WasmOnly.
-        let audit: AuditFn = Arc::new(|_op, _key| {
-            Err(R2Error::Backend("audit: write denied by policy".to_owned()))
-        });
-        let bucket =
-            CfR2BucketReal::stub_for_native_tests(tp("tnt")).with_audit(audit);
+        let audit: AuditFn =
+            Arc::new(|_op, _key| Err(R2Error::Backend("audit: write denied by policy".to_owned())));
+        let bucket = CfR2BucketReal::stub_for_native_tests(tp("tnt")).with_audit(audit);
         let err = bucket
             .put_if_absent("tnt/x", Bytes::from_static(b"hello"))
             .await
@@ -868,7 +859,11 @@ mod tests {
         let _ = bucket
             .put_if_absent("tnt/digest/x", Bytes::from_static(b"hi"))
             .await;
-        assert_eq!(count.load(Ordering::Acquire), 1, "audit must fire exactly once");
+        assert_eq!(
+            count.load(Ordering::Acquire),
+            1,
+            "audit must fire exactly once"
+        );
         let op = captured_op
             .lock()
             .ok()
@@ -889,7 +884,10 @@ mod tests {
         assert_eq!(R2Op::List.as_str(), "list");
         assert_eq!(R2Op::CreateMultipart.as_str(), "create_multipart_upload");
         assert_eq!(R2Op::UploadPart.as_str(), "upload_part");
-        assert_eq!(R2Op::CompleteMultipart.as_str(), "complete_multipart_upload");
+        assert_eq!(
+            R2Op::CompleteMultipart.as_str(),
+            "complete_multipart_upload"
+        );
         assert_eq!(R2Op::AbortMultipart.as_str(), "abort_multipart_upload");
     }
 }

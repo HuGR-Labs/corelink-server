@@ -181,9 +181,8 @@ pub mod tier;
 pub mod trigger;
 
 pub use audit::{
-    canonical_audit_event_strings, EvictionAuditRecord, EvictionAuditSink,
-    EvictionAuditSinkError, EvictionEventType, FailingEvictionAuditSink,
-    InMemoryEvictionAuditSink,
+    canonical_audit_event_strings, EvictionAuditRecord, EvictionAuditSink, EvictionAuditSinkError,
+    EvictionEventType, FailingEvictionAuditSink, InMemoryEvictionAuditSink,
 };
 pub use blob_meta::{
     BlobLruRow, BlobMetaError, BlobMetaSoftDeleteStore, EvictionBlobDigest,
@@ -195,13 +194,11 @@ pub use metrics::{
     EvictionMetricsObserverError, FailingEvictionMetrics, InMemoryEvictionMetrics,
 };
 pub use phase::{
-    CountingEvictionClock, EvictionClock, EvictionConfig, EvictionDecision,
-    EvictionPhase, EvictionResult, InMemoryEvictionPhase, EVICTION_COOLDOWN_MS,
-    QUOTA_TARGET_HEADROOM_PCT, QUOTA_TRIGGER_THRESHOLD_PCT,
+    CountingEvictionClock, EvictionClock, EvictionConfig, EvictionDecision, EvictionPhase,
+    EvictionResult, InMemoryEvictionPhase, EVICTION_COOLDOWN_MS, QUOTA_TARGET_HEADROOM_PCT,
+    QUOTA_TRIGGER_THRESHOLD_PCT,
 };
-pub use reachable::{
-    AcReferenceProbe, AcReferenceWitness, InMemoryAcReferenceProbe,
-};
+pub use reachable::{AcReferenceProbe, AcReferenceWitness, InMemoryAcReferenceProbe};
 pub use region::{EvictionRegion, UnknownRegion, REGION_LIST};
 pub use reservation::{
     reservation_ttl_ms, MAX_RESERVATION_TTL_MS, MIN_RESERVATION_TTL_MS,
@@ -212,9 +209,9 @@ pub use storage_state::{
     TenantStorageStateStore,
 };
 pub use tier::{
-    ttl_for_tier, ttl_for_tier_with_override, Tier, TierTtlOverrideError,
-    BUSINESS_TTL_DAYS, ENTERPRISE_TTL_DAYS_DEFAULT, FREE_TTL_DAYS, MAX_ENTERPRISE_TTL_DAYS,
-    SOLO_TTL_DAYS, TEAM_TTL_DAYS,
+    ttl_for_tier, ttl_for_tier_with_override, Tier, TierTtlOverrideError, BUSINESS_TTL_DAYS,
+    ENTERPRISE_TTL_DAYS_DEFAULT, FREE_TTL_DAYS, MAX_ENTERPRISE_TTL_DAYS, SOLO_TTL_DAYS,
+    TEAM_TTL_DAYS,
 };
 pub use trigger::{
     should_fire_quota_trigger, spawn_quota_trigger_in_memory, target_bytes_to_reclaim,

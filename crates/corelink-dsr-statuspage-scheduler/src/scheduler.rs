@@ -204,10 +204,7 @@ impl DsrStatuspagePublishScheduler {
         // 2. Dedupe pre-flight check — if the canonical
         // `(date, metric_id)` slot is already taken, short-circuit
         // with `Skipped / already_published_today`.
-        if self
-            .cron_log
-            .is_recorded(date_yyyymmdd, &self.metric_id)?
-        {
+        if self.cron_log.is_recorded(date_yyyymmdd, &self.metric_id)? {
             self.audit.emit(&SchedulerAuditEvent {
                 outcome: SchedulerAuditOutcome::Skipped,
                 page_id: self.page_id.clone(),
@@ -297,9 +294,7 @@ impl DsrStatuspagePublishScheduler {
         let p95_hours_observed = report.p95_resolution_hours;
 
         // 6. Publish (fail-CLOSED on any non-success outcome).
-        let publish_result = self
-            .backend
-            .publish_dsr_metric(&report, now_unix_ms);
+        let publish_result = self.backend.publish_dsr_metric(&report, now_unix_ms);
         match publish_result {
             Ok(outcome) => {
                 self.audit.emit(&SchedulerAuditEvent {
@@ -478,10 +473,7 @@ mod tests {
         let snap = audit.snapshot();
         assert_eq!(snap[0].outcome, SchedulerAuditOutcome::Scheduled);
         assert_eq!(snap[1].outcome, SchedulerAuditOutcome::Skipped);
-        assert_eq!(
-            snap[1].skip_reason,
-            Some(SkipReason::AlreadyPublishedToday)
-        );
+        assert_eq!(snap[1].skip_reason, Some(SkipReason::AlreadyPublishedToday));
     }
 
     #[test]

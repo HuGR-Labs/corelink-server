@@ -23,7 +23,9 @@ use corelink_ops::deploy::{
 
 fn main() {
     // Set up structured logging (optional in tests; useful for demo output).
-    let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).try_init();
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .try_init();
 
     let sink = Arc::new(InMemoryDeployAuditSink::new());
     let verifier = InMemoryDeployVerifier::new_signed_from(Arc::clone(&sink));
@@ -57,10 +59,22 @@ fn main() {
         Ok(propagated) => {
             println!("Deploy PROPAGATED:");
             println!("  release_tag:              {}", propagated.release_tag);
-            println!("  cosign_signature_verified: {}", propagated.cosign_signature_verified);
-            println!("  rekor_log_index:           {}", propagated.rekor_log_index);
-            println!("  fulcio_cert_san:           {}", propagated.fulcio_cert_san);
-            println!("  cf_deployment_id:          {}", propagated.cf_deployment_id);
+            println!(
+                "  cosign_signature_verified: {}",
+                propagated.cosign_signature_verified
+            );
+            println!(
+                "  rekor_log_index:           {}",
+                propagated.rekor_log_index
+            );
+            println!(
+                "  fulcio_cert_san:           {}",
+                propagated.fulcio_cert_san
+            );
+            println!(
+                "  cf_deployment_id:          {}",
+                propagated.cf_deployment_id
+            );
         }
         Err(e) => {
             eprintln!("Deploy BLOCKED: {e}");

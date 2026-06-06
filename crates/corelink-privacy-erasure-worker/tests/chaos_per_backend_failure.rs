@@ -116,8 +116,7 @@ fn audit_failure_state_unchanged_post_failure() {
             d
         })
         .collect();
-    let worker =
-        InMemoryErasureWorker::try_new(audit, ledger.clone(), adapters_dyn).unwrap();
+    let worker = InMemoryErasureWorker::try_new(audit, ledger.clone(), adapters_dyn).unwrap();
     let req = fresh_request(42);
     let err = worker.process_erasure(&req, 1_000).unwrap_err();
     let is_audit = matches!(err, ErasureWorkerError::Audit(_));
@@ -167,7 +166,9 @@ fn legal_hold_skips_effective_backends() {
         adapter.insert_rows(
             req.tenant_id,
             req.subject_id,
-            vec![corelink_privacy_erasure_worker::InMemoryRow::new(b"r".to_vec())],
+            vec![corelink_privacy_erasure_worker::InMemoryRow::new(
+                b"r".to_vec(),
+            )],
         );
     }
     worker.process_erasure(&req, 1_000).unwrap();
@@ -209,12 +210,16 @@ fn cross_tenant_attack_blocked_by_tenant_scoped_adapter() {
         adapter.insert_rows(
             req_a.tenant_id,
             req_a.subject_id,
-            vec![corelink_privacy_erasure_worker::InMemoryRow::new(b"a".to_vec())],
+            vec![corelink_privacy_erasure_worker::InMemoryRow::new(
+                b"a".to_vec(),
+            )],
         );
         adapter.insert_rows(
             req_b.tenant_id,
             req_b.subject_id,
-            vec![corelink_privacy_erasure_worker::InMemoryRow::new(b"b".to_vec())],
+            vec![corelink_privacy_erasure_worker::InMemoryRow::new(
+                b"b".to_vec(),
+            )],
         );
     }
     worker.process_erasure(&req_a, 1_000).unwrap();

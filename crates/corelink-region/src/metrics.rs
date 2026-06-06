@@ -67,8 +67,7 @@ impl RegionMetrics {
         {
             entry.1 = status.gauge_value();
         } else {
-            self.health_status
-                .push((region_str, status.gauge_value()));
+            self.health_status.push((region_str, status.gauge_value()));
         }
     }
 
@@ -138,7 +137,10 @@ mod tests {
         m.set_health_status(Region::Wnam, RegionHealthStatus::Healthy);
         m.set_health_status(Region::Wnam, RegionHealthStatus::Degraded);
         assert_eq!(m.health_status.len(), 1);
-        assert_eq!(m.health_status[0].1, RegionHealthStatus::Degraded.gauge_value());
+        assert_eq!(
+            m.health_status[0].1,
+            RegionHealthStatus::Degraded.gauge_value()
+        );
     }
 
     #[test]

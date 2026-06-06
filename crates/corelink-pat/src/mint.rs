@@ -33,9 +33,7 @@ use rand_core::{OsRng, RngCore};
 
 use crate::argon::hash_random_secret;
 use crate::error::PatError;
-use crate::format::{
-    PAT_HMAC_SIG_LEN, PAT_RANDOM_SECRET_LEN, PAT_RANDOM_SECRET_RAW_LEN,
-};
+use crate::format::{PAT_HMAC_SIG_LEN, PAT_RANDOM_SECRET_LEN, PAT_RANDOM_SECRET_RAW_LEN};
 use crate::scopes::PatScopes;
 use crate::sig::compute_hmac_sig;
 use crate::types::{
@@ -92,8 +90,7 @@ pub fn mint(
     debug_assert_eq!(random_secret_b64.len(), PAT_RANDOM_SECRET_LEN);
 
     // --- preimage = token_id || "." || random_secret ----------------------
-    let mut preimage =
-        Vec::with_capacity(PAT_TOKEN_ID_LEN + 1 + PAT_RANDOM_SECRET_LEN);
+    let mut preimage = Vec::with_capacity(PAT_TOKEN_ID_LEN + 1 + PAT_RANDOM_SECRET_LEN);
     preimage.extend_from_slice(token_id_str.as_bytes());
     preimage.push(b'.');
     preimage.extend_from_slice(random_secret_b64.as_bytes());

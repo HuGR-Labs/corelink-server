@@ -65,11 +65,7 @@ fn chunk_all(config: ChunkerConfig, payload: &[u8]) -> Vec<OwnedChunk> {
 
 /// Drive a chunker feeding `payload` in batches of exactly `batch_size`
 /// bytes (last batch may be shorter). Returns every emitted chunk.
-fn chunk_with_batches(
-    config: ChunkerConfig,
-    payload: &[u8],
-    batch_size: usize,
-) -> Vec<OwnedChunk> {
+fn chunk_with_batches(config: ChunkerConfig, payload: &[u8], batch_size: usize) -> Vec<OwnedChunk> {
     assert!(batch_size > 0, "batch_size must be positive");
     let mut chunker =
         ChunkerKind::new(config).expect("config validated by caller before this helper");

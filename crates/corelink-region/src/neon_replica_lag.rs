@@ -271,9 +271,7 @@ mod tests {
     fn inmemory_probe_set_lag_breach_observable() {
         let p = InMemoryNeonReplicaLagProbe::new();
         p.set_lag(Region::Enam, Region::Sam, 12.0);
-        let s = p
-            .probe(Region::Enam, Region::Sam, 0)
-            .expect("probe");
+        let s = p.probe(Region::Enam, Region::Sam, 0).expect("probe");
         assert!((s.lag_seconds - 12.0).abs() < f64::EPSILON);
         assert!(!s.within_soft_ceiling(), "12s > 5s soft ceiling");
     }
@@ -293,9 +291,7 @@ mod tests {
         let p = InMemoryNeonReplicaLagProbe::new();
         p.set_lag(Region::Enam, Region::Weur, 1.0);
         p.set_lag(Region::Enam, Region::Weur, 2.0);
-        let s = p
-            .probe(Region::Enam, Region::Weur, 0)
-            .expect("probe");
+        let s = p.probe(Region::Enam, Region::Weur, 0).expect("probe");
         assert!((s.lag_seconds - 2.0).abs() < f64::EPSILON);
     }
 

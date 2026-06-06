@@ -127,5 +127,8 @@ fn parse_plaintext_constant_time_variance_across_malformity_shapes() {
     // (they exit the length envelope fast). What we DO assert is
     // that no single shape stands out as a > 5x outlier — anything
     // pathological would be caught here.
-    assert!(rel <= 0.95, "extreme variance {rel:.4} suggests pathological branch; medians = {medians:?}");
+    assert!(
+        rel <= 0.95,
+        "extreme variance {rel:.4} suggests pathological branch; medians = {medians:?}"
+    );
 }

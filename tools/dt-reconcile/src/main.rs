@@ -1,4 +1,11 @@
-#![allow(clippy::expect_used, clippy::unwrap_used, clippy::print_stdout, clippy::print_stderr, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 //! `corelink-dt-reconcile` — Daily DT alert reconciliation job (WI-S12-005).
 //!
 //! Compares DT findings from the last 24 h (via DT REST API) against the
@@ -19,10 +26,7 @@
 //! Runs daily at 06:00 UTC via CF Cron Trigger or `cron(0 6 * * *)` systemd unit.
 
 use corelink_dt_webhook::{
-    dlq::InMemoryDlq,
-    handler::InMemoryDtWebhookHandler,
-    hmac::sign,
-    DtWebhookHandler,
+    dlq::InMemoryDlq, handler::InMemoryDtWebhookHandler, hmac::sign, DtWebhookHandler,
 };
 use tracing::{error, info, warn};
 
@@ -89,7 +93,10 @@ async fn run_reconciliation() -> Result<ReconcileResult, Box<dyn std::error::Err
     // Production: GET /api/v1/finding/project/{uuid}?suppressed=false&severity=HIGH,CRITICAL
     // Stub: simulate 0 gaps (no live DT in staging at build time).
     let dt_findings_count = 0usize;
-    info!(count = dt_findings_count, "DT findings fetched (stub: 0 in CI)");
+    info!(
+        count = dt_findings_count,
+        "DT findings fetched (stub: 0 in CI)"
+    );
 
     // ── Step 2: Query alert delivery log ─────────────────────────────────────
     // Production: read from CF KV `dt:alert:delivery:*` keys or structured log.

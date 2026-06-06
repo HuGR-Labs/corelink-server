@@ -329,8 +329,7 @@ impl CasReadHandler for R2CasHandler {
         // can drive the future to completion. Valid only on the
         // multi-thread runtime — `#[tokio::main]` gives us that.
         let handle = tokio::runtime::Handle::current();
-        let result =
-            tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
+        let result = tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
 
         match result {
             Ok(Some(bytes)) => {
@@ -343,7 +342,8 @@ impl CasReadHandler for R2CasHandler {
                         req.at_unix_ms,
                     ))
                     .map_err(CasHandlerError::AuditFailed)?;
-                self.sli.observe(SliObservation::new(Sli::CorrectnessCas, false, 0));
+                self.sli
+                    .observe(SliObservation::new(Sli::CorrectnessCas, false, 0));
                 emit(false);
                 Ok(CasReadResponse::new(bytes, req.hash))
             }
@@ -406,9 +406,8 @@ impl CasWriteHandler for R2CasHandler {
         // CRITICAL — `block_in_place` rationale: see the matching
         // comment in `<Self as CasReadHandler>::read` above.
         let handle = tokio::runtime::Handle::current();
-        let result = tokio::task::block_in_place(|| {
-            handle.block_on(self.client.put(&key, req.bytes))
-        });
+        let result =
+            tokio::task::block_in_place(|| handle.block_on(self.client.put(&key, req.bytes)));
 
         match result {
             Ok(()) => {
@@ -421,7 +420,8 @@ impl CasWriteHandler for R2CasHandler {
                         req.at_unix_ms,
                     ))
                     .map_err(CasHandlerError::AuditFailed)?;
-                self.sli.observe(SliObservation::new(Sli::CorrectnessCas, false, 0));
+                self.sli
+                    .observe(SliObservation::new(Sli::CorrectnessCas, false, 0));
                 emit(false);
                 Ok(CasWriteResponse::new(req.claimed_hash, true))
             }
@@ -456,11 +456,7 @@ pub async fn build_r2_cas_handler_from_env(
     let audit = Arc::new(InMemoryAuditSink::new());
     let sli = Arc::new(InMemorySliObserver::new());
     Some(Ok(R2CasHandler::new(
-        client,
-        cas_region,
-        tdk_bytes,
-        audit,
-        sli,
+        client, cas_region, tdk_bytes, audit, sli,
     )))
 }
 
@@ -551,13 +547,16 @@ impl R2AcHandler {
     /// `InMemoryAcHandler::update`).
     fn emit_lookup_sli(&self, is_error: bool) {
         use corelink_handler_ac::{Sli, SliObservation};
-        self.sli.observe(SliObservation::new(Sli::AvailAcLookup, is_error, 0));
-        self.sli.observe(SliObservation::new(Sli::LatencyAcHitP99, is_error, 0));
+        self.sli
+            .observe(SliObservation::new(Sli::AvailAcLookup, is_error, 0));
+        self.sli
+            .observe(SliObservation::new(Sli::LatencyAcHitP99, is_error, 0));
     }
 
     fn emit_update_sli(&self, is_error: bool) {
         use corelink_handler_ac::{Sli, SliObservation};
-        self.sli.observe(SliObservation::new(Sli::AvailAcLookup, is_error, 0));
+        self.sli
+            .observe(SliObservation::new(Sli::AvailAcLookup, is_error, 0));
     }
 }
 
@@ -574,7 +573,13 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
         // Cross-tenant denial — audit BEFORE returning.
         if req.tenant != req.caller_tenant {
             self.audit
-                .emit(AcAuditEvent::new(AcAuditEventKind::LookupDenied, req.tenant.clone(), req.action_digest.clone(), req.principal.clone(), req.at_unix_ms))
+                .emit(AcAuditEvent::new(
+                    AcAuditEventKind::LookupDenied,
+                    req.tenant.clone(),
+                    req.action_digest.clone(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                ))
                 .map_err(AcHandlerError::AuditFailed)?;
             self.emit_lookup_sli(true);
             return Err(AcHandlerError::CrossTenantDenied {
@@ -585,7 +590,13 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
 
         // LookupAttempted audit BEFORE storage read.
         self.audit
-            .emit(AcAuditEvent::new(AcAuditEventKind::LookupAttempted, req.tenant.clone(), req.action_digest.clone(), req.principal.clone(), req.at_unix_ms))
+            .emit(AcAuditEvent::new(
+                AcAuditEventKind::LookupAttempted,
+                req.tenant.clone(),
+                req.action_digest.clone(),
+                req.principal.clone(),
+                req.at_unix_ms,
+            ))
             .map_err(AcHandlerError::AuditFailed)?;
 
         let key = self.r2_key(&req.tenant, &req.action_digest);
@@ -597,20 +608,31 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
         // inside a running future on the SAME runtime hangs forever
         // (observed: 60s curl timeout in prod before this fix).
         let handle = tokio::runtime::Handle::current();
-        let result =
-            tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
+        let result = tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
 
         match result {
             Ok(Some(bytes)) => {
                 self.audit
-                    .emit(AcAuditEvent::new(AcAuditEventKind::LookupHit, req.tenant.clone(), req.action_digest.clone(), req.principal.clone(), req.at_unix_ms))
+                    .emit(AcAuditEvent::new(
+                        AcAuditEventKind::LookupHit,
+                        req.tenant.clone(),
+                        req.action_digest.clone(),
+                        req.principal.clone(),
+                        req.at_unix_ms,
+                    ))
                     .map_err(AcHandlerError::AuditFailed)?;
                 self.emit_lookup_sli(false);
                 Ok(AcLookupResponse::new(req.action_digest, bytes))
             }
             Ok(None) => {
                 self.audit
-                    .emit(AcAuditEvent::new(AcAuditEventKind::LookupMiss, req.tenant.clone(), req.action_digest.clone(), req.principal.clone(), req.at_unix_ms))
+                    .emit(AcAuditEvent::new(
+                        AcAuditEventKind::LookupMiss,
+                        req.tenant.clone(),
+                        req.action_digest.clone(),
+                        req.principal.clone(),
+                        req.at_unix_ms,
+                    ))
                     .map_err(AcHandlerError::AuditFailed)?;
                 // Miss is NOT an availability error — handler served
                 // correctly (mirrors `InMemoryAcHandler::lookup`).
@@ -642,7 +664,13 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
         // Cross-tenant denial — audit BEFORE returning.
         if req.tenant != req.caller_tenant {
             self.audit
-                .emit(AcAuditEvent::new(AcAuditEventKind::UpdateDenied, req.tenant.clone(), req.action_digest.clone(), req.principal.clone(), req.at_unix_ms))
+                .emit(AcAuditEvent::new(
+                    AcAuditEventKind::UpdateDenied,
+                    req.tenant.clone(),
+                    req.action_digest.clone(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                ))
                 .map_err(AcHandlerError::AuditFailed)?;
             self.emit_update_sli(true);
             return Err(AcHandlerError::CrossTenantDenied {
@@ -653,7 +681,13 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
 
         // UpdateAttempted audit BEFORE mutation.
         self.audit
-            .emit(AcAuditEvent::new(AcAuditEventKind::UpdateAttempted, req.tenant.clone(), req.action_digest.clone(), req.principal.clone(), req.at_unix_ms))
+            .emit(AcAuditEvent::new(
+                AcAuditEventKind::UpdateAttempted,
+                req.tenant.clone(),
+                req.action_digest.clone(),
+                req.principal.clone(),
+                req.at_unix_ms,
+            ))
             .map_err(AcHandlerError::AuditFailed)?;
 
         let key = self.r2_key(&req.tenant, &req.action_digest);
@@ -684,7 +718,13 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
         match result {
             Ok(()) => {
                 self.audit
-                    .emit(AcAuditEvent::new(AcAuditEventKind::UpdateCommitted, req.tenant.clone(), req.action_digest.clone(), req.principal.clone(), req.at_unix_ms))
+                    .emit(AcAuditEvent::new(
+                        AcAuditEventKind::UpdateCommitted,
+                        req.tenant.clone(),
+                        req.action_digest.clone(),
+                        req.principal.clone(),
+                        req.at_unix_ms,
+                    ))
                     .map_err(AcHandlerError::AuditFailed)?;
                 self.emit_update_sli(false);
                 Ok(AcUpdateResponse::new(req.action_digest, !pre_existed))
@@ -723,11 +763,7 @@ pub async fn build_r2_ac_handler_from_env(
     let audit = Arc::new(corelink_handler_ac::InMemoryAuditSink::new());
     let sli = Arc::new(corelink_handler_ac::InMemorySliObserver::new());
     Some(Ok(R2AcHandler::new(
-        client,
-        ac_region,
-        tdk_bytes,
-        audit,
-        sli,
+        client, ac_region, tdk_bytes, audit, sli,
     )))
 }
 
@@ -738,7 +774,10 @@ fn load_tdk_from_env() -> Option<Zeroizing<[u8; 32]>> {
     let hex_str = std::env::var("R2_TDK_HEX").ok()?;
     let hex_str = hex_str.trim();
     if hex_str.len() != 64 {
-        warn!(len = hex_str.len(), "R2_TDK_HEX has wrong length; ignoring TDK");
+        warn!(
+            len = hex_str.len(),
+            "R2_TDK_HEX has wrong length; ignoring TDK"
+        );
         return None;
     }
     let mut bytes = Zeroizing::new([0u8; 32]);
@@ -823,10 +862,9 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires live R2 credentials (R2_S3_ACCESS_KEY_ID etc.)"]
     async fn storage_r2_round_trip() {
-        let env = StorageEnv::from_env()
-            .expect("all R2 env vars must be set to run this test");
-        let bucket = std::env::var("R2_TEST_BUCKET")
-            .unwrap_or_else(|_| "corelink-cas-prod".to_owned());
+        let env = StorageEnv::from_env().expect("all R2 env vars must be set to run this test");
+        let bucket =
+            std::env::var("R2_TEST_BUCKET").unwrap_or_else(|_| "corelink-cas-prod".to_owned());
         let client = R2S3Client::new(&env, &bucket).await.expect("client");
 
         // Use a timestamped key so parallel test runs don't collide.

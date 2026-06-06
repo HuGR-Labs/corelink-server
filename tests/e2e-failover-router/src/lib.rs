@@ -83,10 +83,7 @@ impl LogicalClock {
     ///
     /// Same as [`LogicalClock::now_ms`].
     pub fn advance_ms(&self, delta_ms: u64) -> Result<(), HarnessError> {
-        let mut g = self
-            .inner
-            .lock()
-            .map_err(|_| HarnessError::ClockPoisoned)?;
+        let mut g = self.inner.lock().map_err(|_| HarnessError::ClockPoisoned)?;
         *g = g.saturating_add(delta_ms);
         Ok(())
     }

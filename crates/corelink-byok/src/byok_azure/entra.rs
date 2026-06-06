@@ -357,12 +357,8 @@ async fn fetch_with_workload_identity(
         ("client_assertion", assertion),
         ("scope", KV_SCOPE),
     ];
-    let resp = http
-        .post(&url)
-        .form(&params)
-        .send()
-        .await
-        .map_err(|e| {
+    let resp =
+        http.post(&url).form(&params).send().await.map_err(|e| {
             BYOKError::Provider(format!("Entra: workload-identity POST failed: {e}"))
         })?;
     finish_token(resp).await

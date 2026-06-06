@@ -23,14 +23,10 @@
 use serde::{Deserialize, Serialize};
 
 use corelink_config_do::{
-    AdminActor, ConfigPayload, ConfigVersionEntry,
-    store::ConfigSingletonStore,
+    store::ConfigSingletonStore, AdminActor, ConfigPayload, ConfigVersionEntry,
 };
 
-use super::{
-    error::ApiError,
-    middleware::mfa_freshness::check_mfa_freshness,
-};
+use super::{error::ApiError, middleware::mfa_freshness::check_mfa_freshness};
 
 /// Admin caller context extracted from the session token by the auth middleware.
 ///

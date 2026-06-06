@@ -187,28 +187,22 @@ pub mod score;
 pub mod scorer;
 
 pub use audit::{
-    canonical_audit_event_strings, AbuseAuditRecord, AbuseAuditSink,
-    AbuseAuditSinkError, AbuseEventType, FailingAbuseAuditSink,
-    InMemoryAbuseAuditSink,
+    canonical_audit_event_strings, AbuseAuditRecord, AbuseAuditSink, AbuseAuditSinkError,
+    AbuseEventType, FailingAbuseAuditSink, InMemoryAbuseAuditSink,
 };
 pub use config::{
-    egress_baseline_for_tier, exec_baseline_for_tier, AbuseConfig,
-    AbuseFeatureWeights, DEFAULT_CPU_WEIGHT, DEFAULT_EGRESS_WEIGHT,
-    DEFAULT_ENTROPY_WEIGHT, DEFAULT_EXEC_WEIGHT, MALICIOUS_THRESHOLD,
-    SUSPICIOUS_THRESHOLD,
+    egress_baseline_for_tier, exec_baseline_for_tier, AbuseConfig, AbuseFeatureWeights,
+    DEFAULT_CPU_WEIGHT, DEFAULT_EGRESS_WEIGHT, DEFAULT_ENTROPY_WEIGHT, DEFAULT_EXEC_WEIGHT,
+    MALICIOUS_THRESHOLD, SUSPICIOUS_THRESHOLD,
 };
 pub use error::AbuseError;
 pub use features::AbuseFeatures;
 pub use metrics::{
-    canonical_metric_names, AbuseMetricKind, AbuseMetricsObserver,
-    AbuseMetricsObserverError, AbuseTierLabel, FailingAbuseMetrics,
-    InMemoryAbuseMetrics,
+    canonical_metric_names, AbuseMetricKind, AbuseMetricsObserver, AbuseMetricsObserverError,
+    AbuseTierLabel, FailingAbuseMetrics, InMemoryAbuseMetrics,
 };
 pub use score::{compute_score, decide, AbuseDecision, AbuseScore};
-pub use scorer::{
-    AbuseRollingWindow, AbuseScoreOutcome, AbuseScorer,
-    InMemoryAbuseScorer,
-};
+pub use scorer::{AbuseRollingWindow, AbuseScoreOutcome, AbuseScorer, InMemoryAbuseScorer};
 
 /// Returns the canonical schema version recorded by the latest
 /// migration in the D1 `abuse` domain.

@@ -198,10 +198,7 @@ where
         session_id: SessionId,
         request_id: &'a str,
     ) -> impl Future<Output = Result<FinalizeSplitOutcome, SplitError>> + Send + 'a {
-        async move {
-            self.finalize_split_inner(ctx, session_id, request_id)
-                .await
-        }
+        async move { self.finalize_split_inner(ctx, session_id, request_id).await }
     }
 
     fn abort_split<'a>(

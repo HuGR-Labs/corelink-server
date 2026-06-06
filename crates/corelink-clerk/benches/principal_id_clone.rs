@@ -63,15 +63,12 @@ fn bench_clerk_org_id_clone(c: &mut Criterion) {
 
 fn bench_clerk_session_id_clone(c: &mut Criterion) {
     let id = make_session_id("sess_2foobar12345abc67890XYZ");
-    c.bench_function(
-        "clerk/principal_id_clone/clerk_session_id_arc_clone",
-        |b| {
-            b.iter(|| {
-                let c = black_box(&id).clone();
-                black_box(c);
-            });
-        },
-    );
+    c.bench_function("clerk/principal_id_clone/clerk_session_id_arc_clone", |b| {
+        b.iter(|| {
+            let c = black_box(&id).clone();
+            black_box(c);
+        });
+    });
 }
 
 criterion_group!(

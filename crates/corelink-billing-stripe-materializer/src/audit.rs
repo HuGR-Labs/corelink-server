@@ -170,7 +170,10 @@ impl InMemoryBillingAuditEmitter {
     /// Count rows whose `event_name` matches `name`.
     #[must_use]
     pub fn count_event(&self, name: &str) -> usize {
-        self.snapshot().iter().filter(|r| r.event_name == name).count()
+        self.snapshot()
+            .iter()
+            .filter(|r| r.event_name == name)
+            .count()
     }
 }
 

@@ -51,8 +51,7 @@ fn partition_routes_reads_to_partner_and_fails_writes_closed() {
     );
 
     // (2) Audit event emitted exactly once.
-    assert_audit_emitted_once(model.audit_events(), "corelink.failover.region.degraded")
-        .unwrap();
+    assert_audit_emitted_once(model.audit_events(), "corelink.failover.region.degraded").unwrap();
 
     // (3) SEV-1 alert fired.
     assert_alert_fired(model.sev1_alerts(), "region_isolated").unwrap();

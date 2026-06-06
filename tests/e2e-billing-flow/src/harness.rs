@@ -33,20 +33,20 @@ use corelink_billing_stripe::{
 };
 use corelink_dsr::{
     DsrDecision, DsrEndpoint, DsrError, DsrJurisdiction, DsrRequest, DsrRequestKind,
-    InMemoryDsrAuditSink, InMemoryDsrEndpoint, InMemoryDsrRequestStore,
-    InMemoryJwtReceiptIssuer, InMemoryMfaStepUpVerifier, MfaStepUpToken,
-};
-use corelink_signup::{
-    Bcp47Locale, CorrelationId, IdempotencyKey, InMemoryAtomicSignupStore,
-    InMemoryBillingClient, InMemorySignupAuditSink, SignupOrchestrator, SignupOutcome,
-    SignupRequest, SignupResponse, TenantId as SignupTenantId, UserEmailHash,
+    InMemoryDsrAuditSink, InMemoryDsrEndpoint, InMemoryDsrRequestStore, InMemoryJwtReceiptIssuer,
+    InMemoryMfaStepUpVerifier, MfaStepUpToken,
 };
 use corelink_signup::orchestrator::InMemoryProvisionRecord;
+use corelink_signup::{
+    Bcp47Locale, CorrelationId, IdempotencyKey, InMemoryAtomicSignupStore, InMemoryBillingClient,
+    InMemorySignupAuditSink, SignupOrchestrator, SignupOutcome, SignupRequest, SignupResponse,
+    TenantId as SignupTenantId, UserEmailHash,
+};
 use corelink_tier_selection::{
     InMemoryDpaGate, InMemoryStripeClient, InMemoryTierSelectionAuditSink,
     StripeCheckoutSessionCompletedEvent, StripeClient, StripeCustomerId,
-    SubscriptionActivationReceipt, TenantCtx as TierTenantCtx, TenantId as TierTenantId,
-    TierKind, TierSelectionLedger, TierSelectionReceipt,
+    SubscriptionActivationReceipt, TenantCtx as TierTenantCtx, TenantId as TierTenantId, TierKind,
+    TierSelectionLedger, TierSelectionReceipt,
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -328,7 +328,10 @@ where
 #[derive(Clone, Debug)]
 struct TenantState {
     name: String,
-    #[allow(dead_code, reason = "retained for cross-system tenant identity debugging")]
+    #[allow(
+        dead_code,
+        reason = "retained for cross-system tenant identity debugging"
+    )]
     signup_tenant_id: SignupTenantId,
     tier_tenant_id: TierTenantId,
     lifecycle: SubscriptionLifecycleState,
@@ -355,10 +358,8 @@ pub struct BillingHarness {
     dpa_gate: Arc<InMemoryDpaGate>,
     stripe_fake: Arc<InMemoryStripeClient>,
     tier_audit: InMemoryTierSelectionAuditSink,
-    webhook_handler: InMemoryStripeWebhookHandler<
-        InMemoryStripeAuditSink,
-        InMemoryStripeWebhookLog,
-    >,
+    webhook_handler:
+        InMemoryStripeWebhookHandler<InMemoryStripeAuditSink, InMemoryStripeWebhookLog>,
     webhook_audit: Arc<InMemoryStripeAuditSink>,
     dsr: InMemoryDsrEndpoint<
         InMemoryDsrAuditSink,
@@ -403,8 +404,7 @@ impl BillingHarness {
         // ---- Billing-stripe webhook handler ----
         let webhook_audit = Arc::new(InMemoryStripeAuditSink::new());
         let webhook_log = Arc::new(InMemoryStripeWebhookLog::new());
-        let webhook_handler =
-            InMemoryStripeWebhookHandler::new(webhook_audit.clone(), webhook_log);
+        let webhook_handler = InMemoryStripeWebhookHandler::new(webhook_audit.clone(), webhook_log);
 
         // ---- DSR endpoint ----
         let dsr_audit = Arc::new(InMemoryDsrAuditSink::new());
@@ -567,10 +567,7 @@ impl BillingHarness {
     ///
     /// Returns [`BillingHarnessError::Tier`] on a ledger rejection
     /// (e.g. DPA-not-accepted / lock-held).
-    pub fn select_starter_tier(
-        &self,
-        tenant_name: &str,
-    ) -> BillingError<TierSelectionReceipt> {
+    pub fn select_starter_tier(&self, tenant_name: &str) -> BillingError<TierSelectionReceipt> {
         let (ctx, customer_email) = self.with_tenants_mut(|tenants| {
             let st = tenants
                 .iter()
@@ -589,7 +586,9 @@ impl BillingHarness {
             Ok::<_, BillingHarnessError>((ctx, email))
         })??;
 
-        let receipt = self.tier.select_tier(&ctx, TierKind::Starter, &customer_email)?;
+        let receipt = self
+            .tier
+            .select_tier(&ctx, TierKind::Starter, &customer_email)?;
         if let TierSelectionReceipt::CheckoutRedirect {
             session_id,
             tenant_id,
@@ -725,11 +724,7 @@ impl BillingHarness {
     ///
     /// Returns [`BillingHarnessError::Invariant`] if the tenant is
     /// not currently `Active`.
-    pub fn cancel_subscription(
-        &self,
-        tenant_name: &str,
-        period_end_ms: u64,
-    ) -> BillingError<()> {
+    pub fn cancel_subscription(&self, tenant_name: &str, period_end_ms: u64) -> BillingError<()> {
         self.with_tenants_mut(|tenants| {
             let st = tenants
                 .iter_mut()
@@ -745,8 +740,7 @@ impl BillingHarness {
                     st.lifecycle
                 )));
             }
-            st.lifecycle =
-                SubscriptionLifecycleState::CancelScheduledAtPeriodEnd { period_end_ms };
+            st.lifecycle = SubscriptionLifecycleState::CancelScheduledAtPeriodEnd { period_end_ms };
             Ok(())
         })??;
         self.audit_emit_gate(HarnessGateEvent::CancelScheduledAtPeriodEnd {
@@ -879,8 +873,7 @@ impl BillingHarness {
         let state = self.lifecycle_state(tenant_name);
         let pass = matches!(
             state,
-            SubscriptionLifecycleState::PreCheckout
-                | SubscriptionLifecycleState::Refunded
+            SubscriptionLifecycleState::PreCheckout | SubscriptionLifecycleState::Refunded
         );
         if !pass {
             // Audit-emit the gate BEFORE returning.

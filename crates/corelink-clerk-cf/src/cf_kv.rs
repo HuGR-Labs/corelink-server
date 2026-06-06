@@ -26,8 +26,8 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use corelink_clerk::{CachedJwks, Jwks, KvJwksCacheError};
 use corelink_clerk::jwks_cache::{KvJwksCache, KvJwksCacheFuture};
+use corelink_clerk::{CachedJwks, Jwks, KvJwksCacheError};
 use worker::kv::KvStore;
 
 /// Minimum KV TTL enforced by Cloudflare (60 seconds).

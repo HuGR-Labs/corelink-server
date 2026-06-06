@@ -68,13 +68,10 @@ use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 use corelink_eviction::{
-    BlobMetaSoftDeleteStore, EvictionBlobDigest, EvictionRegion,
-    LruUpdateOutcome,
+    BlobMetaSoftDeleteStore, EvictionBlobDigest, EvictionRegion, LruUpdateOutcome,
 };
 
-use crate::lru_tracker::audit::{
-    LruAuditRecord, LruAuditSink, LruEventType,
-};
+use crate::lru_tracker::audit::{LruAuditRecord, LruAuditSink, LruEventType};
 use crate::lru_tracker::clock::LruClock;
 use crate::lru_tracker::config::LruConfig;
 use crate::lru_tracker::error::LruError;
@@ -281,12 +278,7 @@ where
     C: LruClock,
 {
     /// Construct with the canonical default config.
-    pub fn with_defaults(
-        blob_meta: Arc<B>,
-        audit: Arc<A>,
-        metrics: Arc<M>,
-        clock: Arc<C>,
-    ) -> Self {
+    pub fn with_defaults(blob_meta: Arc<B>, audit: Arc<A>, metrics: Arc<M>, clock: Arc<C>) -> Self {
         Self {
             blob_meta,
             audit,
@@ -372,9 +364,10 @@ where
             digest: digest.clone(),
         };
 
-        let mut state = self.state.lock().map_err(|_| {
-            LruError::Backend("lru state mutex poisoned".to_string())
-        })?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| LruError::Backend("lru state mutex poisoned".to_string()))?;
 
         // Refresh-threshold short-circuit + monotone-coalesce.
         // If an existing entry covers a write within the dedup window
@@ -383,9 +376,8 @@ where
         // audit succeeds).
         if let Some(existing) = state.queue.get(&key) {
             // Within refresh window: skip update entirely.
-            let within_refresh_window = now_ms.saturating_sub(
-                existing.accessed_at_ms,
-            ) < self.config.refresh_threshold_ms();
+            let within_refresh_window =
+                now_ms.saturating_sub(existing.accessed_at_ms) < self.config.refresh_threshold_ms();
             // Out-of-order or equal sample: coalesce.
             let not_strictly_newer = accessed_at_ms <= existing.accessed_at_ms;
             if within_refresh_window || not_strictly_newer {
@@ -410,8 +402,7 @@ where
         // The (tenant, region, digest) is either absent OR has an
         // older sample that we want to overwrite. Determine if we
         // need to drop-oldest before insert.
-        let queue_full =
-            Self::queue_size_locked(&state) >= self.config.queue_size_max();
+        let queue_full = Self::queue_size_locked(&state) >= self.config.queue_size_max();
         let already_present = state.queue.contains_key(&key);
 
         // Audit emit BEFORE state mutation (fail-closed envelope).
@@ -436,8 +427,7 @@ where
                 .map(|(k, _)| k.clone());
             if let Some(oldest_key) = oldest_key_opt {
                 let _ = state.queue.remove(&oldest_key);
-                self.metrics
-                    .record_dropped(LruDropReason::QueueFull)?;
+                self.metrics.record_dropped(LruDropReason::QueueFull)?;
             }
         }
 
@@ -470,9 +460,10 @@ where
     }
 
     fn flush_batch(&self, now_ms: u64) -> Result<LruFlushResult, LruError> {
-        let mut state = self.state.lock().map_err(|_| {
-            LruError::Backend("lru state mutex poisoned".to_string())
-        })?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| LruError::Backend("lru state mutex poisoned".to_string()))?;
 
         // Empty queue is a no-op (idempotent flush).
         if state.queue.is_empty() {
@@ -526,8 +517,7 @@ where
         // queue is failing to catch up to D1 (likely D1 backpressure
         // OR previous batch flush failure). Emit ONE
         // ConsistencyViolationDetected for the per-flush watermark.
-        let drift_watermark_violation =
-            drift_ms > self.config.drift_violation_threshold_ms();
+        let drift_watermark_violation = drift_ms > self.config.drift_violation_threshold_ms();
         if drift_watermark_violation {
             self.audit.emit(LruAuditRecord {
                 event_type: LruEventType::ConsistencyViolationDetected,
@@ -568,26 +558,22 @@ where
                     let lag = new_ms.saturating_sub(prev_ms);
                     if lag > self.config.drift_violation_threshold_ms() {
                         self.audit.emit(LruAuditRecord {
-                            event_type:
-                                LruEventType::ConsistencyViolationDetected,
+                            event_type: LruEventType::ConsistencyViolationDetected,
                             tenant_id: Some(key.tenant_id),
                             region: key.region,
                             rows: 1,
                             drift_ms: Some(lag),
                             now_ms,
                         })?;
-                        self.metrics
-                            .record_consistency_violation(key.tenant_id)?;
-                        consistency_violations =
-                            consistency_violations.saturating_add(1);
+                        self.metrics.record_consistency_violation(key.tenant_id)?;
+                        consistency_violations = consistency_violations.saturating_add(1);
                     }
                 }
                 LruUpdateOutcome::Skipped { .. } => {
                     rows_skipped = rows_skipped.saturating_add(1);
                 }
                 LruUpdateOutcome::AlreadyResolved => {
-                    rows_already_resolved =
-                        rows_already_resolved.saturating_add(1);
+                    rows_already_resolved = rows_already_resolved.saturating_add(1);
                 }
                 _ => {
                     // `LruUpdateOutcome` is `#[non_exhaustive]`; future
@@ -645,9 +631,7 @@ where
 )]
 mod tests {
     use super::*;
-    use corelink_eviction::{
-        BlobLruRow, InMemoryBlobMetaSoftDeleteStore,
-    };
+    use corelink_eviction::{BlobLruRow, InMemoryBlobMetaSoftDeleteStore};
 
     use crate::lru_tracker::audit::{FailingLruAuditSink, InMemoryLruAuditSink};
     use crate::lru_tracker::clock::{CountingLruClock, FrozenLruClock};
@@ -759,9 +743,7 @@ mod tests {
         // We can't swap clocks on the same tracker easily; use a
         // separate tracker constructed with the advanced clock and
         // pre-seeded queue via record then re-record approach.
-        let tracker2 = InMemoryLruTracker::with_defaults(
-            blob, audit2, metrics2, clock,
-        );
+        let tracker2 = InMemoryLruTracker::with_defaults(blob, audit2, metrics2, clock);
         // Pre-seed at the older clock value implicitly by recording
         // first.
         // Instead, exercise on a single tracker by stepping the clock
@@ -844,8 +826,7 @@ mod tests {
         assert_eq!(metrics.counter_total(LruMetricKind::CoalescedTotal), 1);
         // Queue still has the LATER sample.
         assert_eq!(
-            tracker
-                .buffered_accessed_at_ms(ten_a(), EvictionRegion::Sam, &dig(1)),
+            tracker.buffered_accessed_at_ms(ten_a(), EvictionRegion::Sam, &dig(1)),
             Some(5000)
         );
     }
@@ -873,8 +854,7 @@ mod tests {
 
     #[test]
     fn record_access_overflow_drops_oldest() {
-        let cfg = LruConfig::with_overrides(2, 2, 5_000, 60_000, 60_000)
-            .unwrap();
+        let cfg = LruConfig::with_overrides(2, 2, 5_000, 60_000, 60_000).unwrap();
         let (tracker, _b, _a, metrics) = fresh_with_config(1000, cfg);
         // Fill queue to cap (2).
         tracker
@@ -904,8 +884,7 @@ mod tests {
 
     #[test]
     fn record_access_overflow_existing_key_does_not_drop() {
-        let cfg = LruConfig::with_overrides(2, 2, 5_000, 60_000, 60_000)
-            .unwrap();
+        let cfg = LruConfig::with_overrides(2, 2, 5_000, 60_000, 60_000).unwrap();
         let (tracker, _b, _a, metrics) = fresh_with_config(1000, cfg);
         tracker
             .record_access(ten_a(), EvictionRegion::Sam, &dig(1), 1000)
@@ -979,12 +958,8 @@ mod tests {
     fn flush_batch_per_row_violation_when_prev_to_new_lag_exceeds_threshold() {
         // Custom config with small drift threshold so the per-row
         // guard fires.
-        let cfg = LruConfig::with_overrides(
-            100, 50, 5_000, 1_000, /* refresh */ 100,
-        )
-        .unwrap();
-        let (tracker, blob, audit, metrics) =
-            fresh_with_config(100_000, cfg);
+        let cfg = LruConfig::with_overrides(100, 50, 5_000, 1_000, /* refresh */ 100).unwrap();
+        let (tracker, blob, audit, metrics) = fresh_with_config(100_000, cfg);
         // Pre-seed blob_meta with an OLD value (100). The recorded
         // access at 5_000 advances by 4_900 — more than the
         // 1_000-ms drift threshold; per-row guard fires.
@@ -1003,10 +978,7 @@ mod tests {
         assert!(!audit
             .snapshot_of(LruEventType::ConsistencyViolationDetected)
             .is_empty());
-        assert!(
-            metrics.counter_total(LruMetricKind::ConsistencyViolationTotal)
-                >= 1
-        );
+        assert!(metrics.counter_total(LruMetricKind::ConsistencyViolationTotal) >= 1);
     }
 
     #[test]
@@ -1014,12 +986,8 @@ mod tests {
         // Custom config with small drift threshold so the per-flush
         // watermark guard fires when the oldest pending entry has
         // lingered.
-        let cfg = LruConfig::with_overrides(
-            100, 50, 5_000, 1_000, /* refresh */ 100,
-        )
-        .unwrap();
-        let (tracker, _blob, audit, metrics) =
-            fresh_with_config(100_000, cfg);
+        let cfg = LruConfig::with_overrides(100, 50, 5_000, 1_000, /* refresh */ 100).unwrap();
+        let (tracker, _blob, audit, metrics) = fresh_with_config(100_000, cfg);
         // Record at very old accessed_ms = 100 (no row in blob_meta).
         tracker
             .record_access(ten_a(), EvictionRegion::Sam, &dig(99), 100)
@@ -1030,10 +998,7 @@ mod tests {
         assert!(!audit
             .snapshot_of(LruEventType::ConsistencyViolationDetected)
             .is_empty());
-        assert!(
-            metrics.counter_total(LruMetricKind::ConsistencyViolationTotal)
-                >= 1
-        );
+        assert!(metrics.counter_total(LruMetricKind::ConsistencyViolationTotal) >= 1);
     }
 
     #[test]
@@ -1080,18 +1045,12 @@ mod tests {
 
     #[test]
     fn flush_batch_respects_batch_size_cap() {
-        let cfg =
-            LruConfig::with_overrides(100, 2, 5_000, 60_000, 60_000).unwrap();
+        let cfg = LruConfig::with_overrides(100, 2, 5_000, 60_000, 60_000).unwrap();
         let (tracker, blob, _a, _m) = fresh_with_config(1000, cfg);
         for i in 1..=5 {
             blob.push_row(ten_a(), row(i, 1)).unwrap();
             tracker
-                .record_access(
-                    ten_a(),
-                    EvictionRegion::Sam,
-                    &dig(i),
-                    1000 + u64::from(i),
-                )
+                .record_access(ten_a(), EvictionRegion::Sam, &dig(i), 1000 + u64::from(i))
                 .unwrap();
         }
         let r = tracker.flush_batch(2000).unwrap();
@@ -1102,18 +1061,12 @@ mod tests {
 
     #[test]
     fn flush_batch_fifo_order_preserved() {
-        let cfg =
-            LruConfig::with_overrides(100, 2, 5_000, 60_000, 60_000).unwrap();
+        let cfg = LruConfig::with_overrides(100, 2, 5_000, 60_000, 60_000).unwrap();
         let (tracker, blob, _a, _m) = fresh_with_config(1000, cfg);
         for i in 1..=5 {
             blob.push_row(ten_a(), row(i, 1)).unwrap();
             tracker
-                .record_access(
-                    ten_a(),
-                    EvictionRegion::Sam,
-                    &dig(i),
-                    1000 + u64::from(i),
-                )
+                .record_access(ten_a(), EvictionRegion::Sam, &dig(i), 1000 + u64::from(i))
                 .unwrap();
         }
         // First flush drains dig(1) + dig(2).
@@ -1165,8 +1118,7 @@ mod tests {
             .record_access(ten_a(), EvictionRegion::Sam, &dig(1), 5500)
             .unwrap();
         assert_eq!(
-            tracker
-                .buffered_accessed_at_ms(ten_a(), EvictionRegion::Sam, &dig(1)),
+            tracker.buffered_accessed_at_ms(ten_a(), EvictionRegion::Sam, &dig(1)),
             Some(5000)
         );
     }

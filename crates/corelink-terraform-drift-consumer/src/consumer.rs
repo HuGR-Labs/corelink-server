@@ -153,11 +153,9 @@ mod tests {
         }
     }
 
-    fn make_consumer() -> DriftConsumer<
-        DefaultDriftClassifier,
-        InMemoryDriftAuditSink,
-        InMemoryDriftFindingStore,
-    > {
+    fn make_consumer(
+    ) -> DriftConsumer<DefaultDriftClassifier, InMemoryDriftAuditSink, InMemoryDriftFindingStore>
+    {
         DriftConsumer::new(
             DefaultDriftClassifier,
             InMemoryDriftAuditSink::default(),

@@ -234,11 +234,7 @@ pub trait ArchiveSink: Send + Sync + core::fmt::Debug {
     ///
     /// Returns [`ArchiveProducerError::SinkBackend`] on backend failure
     /// (network / R2 reject / Object Lock denial / etc.). Fail-CLOSED.
-    fn put_chunk(
-        &self,
-        r2_key: &str,
-        ndjson_body: &[u8],
-    ) -> Result<(), ArchiveProducerError>;
+    fn put_chunk(&self, r2_key: &str, ndjson_body: &[u8]) -> Result<(), ArchiveProducerError>;
 }
 
 /// Canonical error surface for the archive producer pipeline.
@@ -556,9 +552,9 @@ impl ArchiveProducer {
         let age_ms = now_ms.saturating_sub(g.first_buffered_ms);
         let buffered_events = g.buffered.len() as u64;
         let buffered_bytes = g.buffered_bytes;
-        let should_flush =
-            self.policy
-                .should_flush(buffered_events, buffered_bytes, age_ms);
+        let should_flush = self
+            .policy
+            .should_flush(buffered_events, buffered_bytes, age_ms);
         if !should_flush {
             return Ok(None);
         }
@@ -610,12 +606,12 @@ fn drain_and_flush(
     // first / last anchors. The buffer is monotonic by construction
     // (sequence monotonicity check on every observe) so chunk[0] is
     // first and chunk[last] is last.
-    let first = chunk.first().ok_or_else(|| {
-        ArchiveProducerError::Internal("drain extracted empty chunk".to_string())
-    })?;
-    let last = chunk.last().ok_or_else(|| {
-        ArchiveProducerError::Internal("drain extracted empty chunk".to_string())
-    })?;
+    let first = chunk
+        .first()
+        .ok_or_else(|| ArchiveProducerError::Internal("drain extracted empty chunk".to_string()))?;
+    let last = chunk
+        .last()
+        .ok_or_else(|| ArchiveProducerError::Internal("drain extracted empty chunk".to_string()))?;
 
     let first_sequence_number = first.sequence_number;
     let last_sequence_number = last.sequence_number;
@@ -638,8 +634,7 @@ fn drain_and_flush(
     // The producer already paid for JCS canonicalisation at emit time so
     // this re-parse is cheap (1 KB/event × ≤ max_events_per_chunk events).
     let first_time_ms = extract_time_ms_from_ndjson(&first.ndjson).unwrap_or(0);
-    let last_time_ms =
-        extract_time_ms_from_ndjson(&last.ndjson).unwrap_or(first_time_ms);
+    let last_time_ms = extract_time_ms_from_ndjson(&last.ndjson).unwrap_or(first_time_ms);
     let r2_key = archive_chunk_key(first_time_ms, first_sequence_number);
 
     // Compose the NDJSON body: one event per line, '\n' separator (no
@@ -748,15 +743,9 @@ impl InMemoryArchiveSink {
 }
 
 impl ArchiveSink for InMemoryArchiveSink {
-    fn put_chunk(
-        &self,
-        r2_key: &str,
-        ndjson_body: &[u8],
-    ) -> Result<(), ArchiveProducerError> {
+    fn put_chunk(&self, r2_key: &str, ndjson_body: &[u8]) -> Result<(), ArchiveProducerError> {
         let mut g = self.inner.lock().map_err(|_| {
-            ArchiveProducerError::Internal(
-                "InMemoryArchiveSink mutex poisoned".to_string(),
-            )
+            ArchiveProducerError::Internal("InMemoryArchiveSink mutex poisoned".to_string())
         })?;
         g.push((r2_key.to_string(), ndjson_body.to_vec()));
         Ok(())
@@ -776,11 +765,7 @@ impl FailingArchiveSink {
 }
 
 impl ArchiveSink for FailingArchiveSink {
-    fn put_chunk(
-        &self,
-        _r2_key: &str,
-        _ndjson_body: &[u8],
-    ) -> Result<(), ArchiveProducerError> {
+    fn put_chunk(&self, _r2_key: &str, _ndjson_body: &[u8]) -> Result<(), ArchiveProducerError> {
         Err(ArchiveProducerError::SinkBackend(
             "induced archive sink failure (test fixture)".to_string(),
         ))
@@ -912,7 +897,10 @@ mod tests {
         let err = p.observe(lines[1].clone(), 1000).unwrap_err();
         assert!(matches!(
             err,
-            ArchiveProducerError::SequenceOrderingViolation { expected: 0, observed: 1 }
+            ArchiveProducerError::SequenceOrderingViolation {
+                expected: 0,
+                observed: 1
+            }
         ));
     }
 

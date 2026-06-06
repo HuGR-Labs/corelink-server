@@ -128,28 +128,19 @@ pub mod service;
 pub mod span;
 
 pub use audit::{
-    canonical_audit_event_strings, FailingTracingAuditSink,
-    InMemoryTracingAuditSink, TracingAuditEmitError,
-    TracingAuditEventType, TracingAuditRecord, TracingAuditSink,
+    canonical_audit_event_strings, FailingTracingAuditSink, InMemoryTracingAuditSink,
+    TracingAuditEmitError, TracingAuditEventType, TracingAuditRecord, TracingAuditSink,
 };
 pub use context::{
-    format_traceparent, parse_traceparent, SpanId, TraceContext,
-    TraceId, ALL_ZERO_SPAN_ID, ALL_ZERO_TRACE_ID, TRACEPARENT_HEADER,
-    TRACESTATE_HEADER, TRACE_FLAGS_SAMPLED, W3C_TRACE_CONTEXT_VERSION,
+    format_traceparent, parse_traceparent, SpanId, TraceContext, TraceId, ALL_ZERO_SPAN_ID,
+    ALL_ZERO_TRACE_ID, TRACEPARENT_HEADER, TRACESTATE_HEADER, TRACE_FLAGS_SAMPLED,
+    W3C_TRACE_CONTEXT_VERSION,
 };
-pub use error::{
-    OtlpExporterError, TracingAuditSinkError, TracingError,
-};
-pub use exporter::{
-    FailingOtlpExporter, InMemoryOtlpExporter, OtlpExporter,
-};
-pub use sampler::{
-    RateBasedSampler, Sampler, SamplingDecision,
-};
+pub use error::{OtlpExporterError, TracingAuditSinkError, TracingError};
+pub use exporter::{FailingOtlpExporter, InMemoryOtlpExporter, OtlpExporter};
+pub use sampler::{RateBasedSampler, Sampler, SamplingDecision};
 pub use service::{EndSpanInput, StartSpanInput, TracingService};
-pub use span::{
-    canonical_span_kinds, Exemplar, SpanKind, SpanRecord, SpanStatus,
-};
+pub use span::{canonical_span_kinds, Exemplar, SpanKind, SpanRecord, SpanStatus};
 
 /// Canonical schema version for the tracing emitter (mirrors the
 /// production OTLP HTTP wire shape; today FROZEN at 1 since the

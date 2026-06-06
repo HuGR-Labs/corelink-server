@@ -79,5 +79,9 @@ fn bench_provision_idempotent_replay(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_provision_new, bench_provision_idempotent_replay);
+criterion_group!(
+    benches,
+    bench_provision_new,
+    bench_provision_idempotent_replay
+);
 criterion_main!(benches);

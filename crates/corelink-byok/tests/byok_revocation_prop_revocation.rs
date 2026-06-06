@@ -16,13 +16,13 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use corelink_byok::{Dek, DekCache, KmsKeyId, KmsProviderKind, WrappedDek};
-use corelink_byok::revocation::{RevocationConfig, RevocationDetector};
+use corelink_byok::revocation::store::{TenantByokStatus, TenantStatusStore};
 use corelink_byok::revocation::testutil::{
     InMemoryTenantStore, NoopAlerter, RecordingAlerter, StubKmsProvider,
 };
-use corelink_byok::revocation::store::{TenantByokStatus, TenantStatusStore};
 use corelink_byok::revocation::CustomerAlerter;
+use corelink_byok::revocation::{RevocationConfig, RevocationDetector};
+use corelink_byok::{Dek, DekCache, KmsKeyId, KmsProviderKind, WrappedDek};
 use proptest::prelude::*;
 
 // ---------------------------------------------------------------------------
@@ -289,7 +289,10 @@ async fn throttled_does_not_trigger_kill_switch() {
 
     // list_active_byok_keys returns empty in stub, so cache is untouched.
     // This validates that the Throttled path does NOT evict the cache.
-    assert!(cache.len().await == 1, "cache must be untouched for throttled check (no active keys in stub)");
+    assert!(
+        cache.len().await == 1,
+        "cache must be untouched for throttled check (no active keys in stub)"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -301,13 +304,16 @@ async fn recording_alerter_receives_alert() {
     let alerter = Arc::new(RecordingAlerter::default());
     let key_id = make_key_id("alert-unit");
     use corelink_byok::revocation::alerter::RevocationAlertPayload;
-    alerter.alert(RevocationAlertPayload {
-        provider: "aws".to_string(),
-        kms_key_id: key_id.clone(),
-        tenant_id_hashed: "h1".to_string(),
-        detected_at_ms: 0,
-        kill_switch_duration_ms: 0,
-        recovery_instructions: "re-enable CMK".to_string(),
-    }).await.expect("alert ok");
+    alerter
+        .alert(RevocationAlertPayload {
+            provider: "aws".to_string(),
+            kms_key_id: key_id.clone(),
+            tenant_id_hashed: "h1".to_string(),
+            detected_at_ms: 0,
+            kill_switch_duration_ms: 0,
+            recovery_instructions: "re-enable CMK".to_string(),
+        })
+        .await
+        .expect("alert ok");
     assert_eq!(alerter.alert_count(), 1);
 }

@@ -302,11 +302,7 @@ impl D1HttpClient {
     /// # Errors
     ///
     /// Returns `Err(String)` on D1 communication errors.
-    pub async fn tenant_set_tier(
-        &self,
-        tenant_id: &str,
-        tier: &str,
-    ) -> Result<bool, String> {
+    pub async fn tenant_set_tier(&self, tenant_id: &str, tier: &str) -> Result<bool, String> {
         // First confirm the row exists — D1 HTTP `success` does not
         // discriminate "0 rows updated" from "1 row updated".
         let pre = self.tenant_admin_lookup(tenant_id).await?;

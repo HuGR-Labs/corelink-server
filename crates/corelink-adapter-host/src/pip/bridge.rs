@@ -77,7 +77,13 @@ impl CasStore for PipCasBridge {
         let tenant_str = tenant.to_string();
         let hash_str = digest.to_hex();
         let principal = self.principal.clone();
-        let req = CasReadRequest::new(&tenant_str, &hash_str, &principal, &tenant_str, unix_ms_now());
+        let req = CasReadRequest::new(
+            &tenant_str,
+            &hash_str,
+            &principal,
+            &tenant_str,
+            unix_ms_now(),
+        );
         let result = tokio::task::spawn_blocking(move || handler.read(req))
             .await
             .map_err(|e| PipAdapterError::Cas(format!("spawn_blocking: {e}")))?;
@@ -98,11 +104,20 @@ impl CasStore for PipCasBridge {
         let tenant_str = tenant.to_string();
         let hash_str = digest.to_hex();
         let principal = self.principal.clone();
-        let req = CasWriteRequest::new(&tenant_str, &hash_str, bytes, &principal, &tenant_str, unix_ms_now());
+        let req = CasWriteRequest::new(
+            &tenant_str,
+            &hash_str,
+            bytes,
+            &principal,
+            &tenant_str,
+            unix_ms_now(),
+        );
         let result = tokio::task::spawn_blocking(move || handler.write(req))
             .await
             .map_err(|e| PipAdapterError::Cas(format!("spawn_blocking: {e}")))?;
-        result.map(|_| ()).map_err(|e| PipAdapterError::Cas(format!("handler: {e:?}")))
+        result
+            .map(|_| ())
+            .map_err(|e| PipAdapterError::Cas(format!("handler: {e:?}")))
     }
 }
 
@@ -237,11 +252,10 @@ impl TenantResolver for PipTenantBridge {
     async fn resolve(&self, pat_plaintext: &str) -> Result<TenantId, PipAdapterError> {
         let validator = Arc::clone(&self.validator);
         let token = pat_plaintext.to_owned();
-        let result = tokio::task::spawn_blocking(move || {
-            validator.authenticate(&token, "pip-adapter-host")
-        })
-        .await
-        .map_err(|e| PipAdapterError::Auth(format!("spawn_blocking: {e}")))?;
+        let result =
+            tokio::task::spawn_blocking(move || validator.authenticate(&token, "pip-adapter-host"))
+                .await
+                .map_err(|e| PipAdapterError::Auth(format!("spawn_blocking: {e}")))?;
 
         match result {
             Ok(ctx) => Ok(TenantId::from(ctx.tenant_id())),
@@ -353,7 +367,10 @@ mod tests {
         let t = tid(5);
         let val = b"pypi-index".to_vec();
         let ts: u64 = 9_999_999;
-        bridge.put(&t, "simple/requests", val.clone(), ts).await.unwrap();
+        bridge
+            .put(&t, "simple/requests", val.clone(), ts)
+            .await
+            .unwrap();
         let got = bridge.get(&t, "simple/requests").await.unwrap();
         assert_eq!(got, Some((val, ts)));
     }
@@ -379,7 +396,13 @@ mod tests {
     async fn pip_tenant_valid_pat() {
         let mut v = StubPatValidator::new();
         let t = Uuid::from_u128(77);
-        v.insert("pip-tok", t, Uuid::from_u128(78), Region::Wnam, [AuthScope::CacheWrite]);
+        v.insert(
+            "pip-tok",
+            t,
+            Uuid::from_u128(78),
+            Region::Wnam,
+            [AuthScope::CacheWrite],
+        );
         let bridge = PipTenantBridge::new(Arc::new(v));
         let resolved = bridge.resolve("pip-tok").await.unwrap();
         assert_eq!(resolved, TenantId::from(t));
@@ -405,6 +428,9 @@ mod tests {
         );
         let kv: Arc<InMemoryKv> = Arc::new(InMemoryKv::new());
         let _ = format!("{:?}", PipKvBridge::new(kv));
-        let _ = format!("{:?}", PipTenantBridge::new(Arc::new(StubPatValidator::new())));
+        let _ = format!(
+            "{:?}",
+            PipTenantBridge::new(Arc::new(StubPatValidator::new()))
+        );
     }
 }

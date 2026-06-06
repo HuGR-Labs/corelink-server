@@ -51,9 +51,7 @@ fn main() {
     }
 
     let consumed = budget.consumed_ratio().unwrap();
-    println!(
-        "Budget consumed ratio: {consumed:.4} (cap threshold: 1.0 = 30%)"
-    );
+    println!("Budget consumed ratio: {consumed:.4} (cap threshold: 1.0 = 30%)");
     assert!(consumed > 1.0, "budget should be exceeded");
 
     // Attempt a 4th rollout start → BudgetExceeded

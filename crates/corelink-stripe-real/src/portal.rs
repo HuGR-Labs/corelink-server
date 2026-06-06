@@ -132,10 +132,7 @@ pub trait PortalAuditSink: fmt::Debug + Send + Sync {
     /// Returns an opaque string on failure. The string is propagated
     /// verbatim into `PortalSessionError::AuditFailed`; callers MUST
     /// NOT include secrets.
-    fn emit_portal_session_created(
-        &self,
-        event: &PortalAuditEvent<'_>,
-    ) -> Result<(), String>;
+    fn emit_portal_session_created(&self, event: &PortalAuditEvent<'_>) -> Result<(), String>;
 }
 
 /// Audit-event payload for portal session creation.
@@ -262,9 +259,7 @@ impl BillingPortalSessionCreator for InMemoryPortalSessionCreator {
             ));
         }
         if !return_url.starts_with("https://") {
-            return Err(PortalSessionError::InvalidReturnUrl(
-                return_url.to_string(),
-            ));
+            return Err(PortalSessionError::InvalidReturnUrl(return_url.to_string()));
         }
         if tenant_id.is_empty() {
             return Err(PortalSessionError::InvalidCustomerId(
@@ -291,9 +286,10 @@ impl BillingPortalSessionCreator for InMemoryPortalSessionCreator {
         // across calls — Stripe's portal URLs are single-use and a
         // collision would imply the cache deduped illegally.
         let seq = {
-            let mut g = self.next_seq.lock().map_err(|e| {
-                PortalSessionError::Stripe(format!("seq mutex poisoned: {e}"))
-            })?;
+            let mut g = self
+                .next_seq
+                .lock()
+                .map_err(|e| PortalSessionError::Stripe(format!("seq mutex poisoned: {e}")))?;
             *g = g.saturating_add(1);
             *g
         };
@@ -388,10 +384,7 @@ impl InMemoryPortalAuditSink {
 }
 
 impl PortalAuditSink for InMemoryPortalAuditSink {
-    fn emit_portal_session_created(
-        &self,
-        event: &PortalAuditEvent<'_>,
-    ) -> Result<(), String> {
+    fn emit_portal_session_created(&self, event: &PortalAuditEvent<'_>) -> Result<(), String> {
         let armed = match self.fail_next.lock() {
             Ok(mut g) => {
                 let v = *g;
@@ -436,9 +429,15 @@ mod tests {
     fn happy_path_emits_audit_before_url() {
         let (sink, creator) = make();
         let url = creator
-            .create_session("cus_abc", "https://app.corelink.humangr.com/billing", "tenant_acme")
+            .create_session(
+                "cus_abc",
+                "https://app.corelink.humangr.com/billing",
+                "tenant_acme",
+            )
             .unwrap();
-        assert!(url.as_str().starts_with("https://billing.stripe.com/p/session/"));
+        assert!(url
+            .as_str()
+            .starts_with("https://billing.stripe.com/p/session/"));
         let events = sink.events();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].customer_id, "cus_abc");
@@ -450,7 +449,11 @@ mod tests {
         let (sink, creator) = make();
         creator.arm_audit_failure();
         let err = creator
-            .create_session("cus_abc", "https://app.corelink.humangr.com/billing", "tenant_acme")
+            .create_session(
+                "cus_abc",
+                "https://app.corelink.humangr.com/billing",
+                "tenant_acme",
+            )
             .unwrap_err();
         assert!(matches!(err, PortalSessionError::AuditFailed(_)));
         // No URL handed out + no event recorded (audit-armed path
@@ -463,7 +466,11 @@ mod tests {
     fn rejects_non_https_return_url() {
         let (_sink, creator) = make();
         let err = creator
-            .create_session("cus_abc", "http://app.corelink.humangr.com/billing", "tenant_acme")
+            .create_session(
+                "cus_abc",
+                "http://app.corelink.humangr.com/billing",
+                "tenant_acme",
+            )
             .unwrap_err();
         assert!(matches!(err, PortalSessionError::InvalidReturnUrl(_)));
     }
@@ -472,7 +479,11 @@ mod tests {
     fn rejects_malformed_customer_id() {
         let (_sink, creator) = make();
         let err = creator
-            .create_session("not_a_customer", "https://app.corelink.humangr.com/billing", "tenant_acme")
+            .create_session(
+                "not_a_customer",
+                "https://app.corelink.humangr.com/billing",
+                "tenant_acme",
+            )
             .unwrap_err();
         assert!(matches!(err, PortalSessionError::InvalidCustomerId(_)));
     }
@@ -495,11 +506,14 @@ mod tests {
 
         let sink = Arc::new(InMemoryPortalAuditSink::new());
         let fake = Arc::new(InMemoryFakeClock::at_unix_seconds(1_700_000_000));
-        let creator = InMemoryPortalSessionCreator::new(sink.clone())
-            .with_clock(fake.clone());
+        let creator = InMemoryPortalSessionCreator::new(sink.clone()).with_clock(fake.clone());
 
         let url = creator
-            .create_session("cus_abc", "https://app.corelink.humangr.com/billing", "tenant_acme")
+            .create_session(
+                "cus_abc",
+                "https://app.corelink.humangr.com/billing",
+                "tenant_acme",
+            )
             .unwrap();
 
         // Audit row carries the injected unix seconds — proves the
@@ -523,7 +537,11 @@ mod tests {
         // injection.
         fake.advance(std::time::Duration::from_secs(7));
         let url2 = creator
-            .create_session("cus_abc", "https://app.corelink.humangr.com/billing", "tenant_acme")
+            .create_session(
+                "cus_abc",
+                "https://app.corelink.humangr.com/billing",
+                "tenant_acme",
+            )
             .unwrap();
         let expected_ms2_hex = format!("{:016x}", 1_700_000_007_000u64);
         assert!(

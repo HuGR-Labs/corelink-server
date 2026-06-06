@@ -485,9 +485,7 @@ impl AcMetaStore for InMemoryAcMetaStore {
                 .filter(|row| {
                     row.region == region
                         && row.tenant_id == tenant_id
-                        && row
-                            .expires_at_ms
-                            .is_some_and(|exp| exp < now_ms)
+                        && row.expires_at_ms.is_some_and(|exp| exp < now_ms)
                 })
                 .collect();
             hits.sort_by_key(|row| row.expires_at_ms.unwrap_or(u64::MAX));
@@ -514,9 +512,7 @@ impl AcMetaStore for InMemoryAcMetaStore {
             let guard = self.inner.lock();
             let mut tenants: std::collections::BTreeSet<Uuid> = std::collections::BTreeSet::new();
             for row in guard.values() {
-                if row.region == region
-                    && row.expires_at_ms.is_some_and(|exp| exp < now_ms)
-                {
+                if row.region == region && row.expires_at_ms.is_some_and(|exp| exp < now_ms) {
                     tenants.insert(row.tenant_id);
                 }
             }
@@ -855,11 +851,7 @@ mod tests {
         store.upsert(req_a.clone()).await.unwrap();
         store.upsert(req_b.clone()).await.unwrap();
         let removed = store
-            .delete_tenant_scoped(
-                fixed_tenant_a(),
-                req_a.key.action_digest(),
-                Region::Wnam,
-            )
+            .delete_tenant_scoped(fixed_tenant_a(), req_a.key.action_digest(), Region::Wnam)
             .await
             .unwrap();
         assert!(removed);

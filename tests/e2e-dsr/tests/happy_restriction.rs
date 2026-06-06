@@ -25,7 +25,10 @@ fn restriction_flips_policy_pauses_writes() {
     let tenant = make_test_tenant("restriction-tenant");
 
     // Pre-condition: tenant unrestricted; writes allowed.
-    assert_eq!(env.policy.evaluate_write(tenant.tenant_id), PolicyDecision::Allowed);
+    assert_eq!(
+        env.policy.evaluate_write(tenant.tenant_id),
+        PolicyDecision::Allowed
+    );
 
     let request = canonical_dsr_for(
         &tenant,
@@ -56,7 +59,10 @@ fn restriction_flips_policy_pauses_writes() {
     // We model the read path by checking the policy stays as a
     // `restriction` flag only; the read code path never calls
     // `evaluate_write`.
-    assert_eq!(env.policy.restriction(tenant.tenant_id), RestrictionFlag::Paused);
+    assert_eq!(
+        env.policy.restriction(tenant.tenant_id),
+        RestrictionFlag::Paused
+    );
 
     // No MFA gate hit.
     assert_eq!(env.dsr_mfa.verified_count(), 0);

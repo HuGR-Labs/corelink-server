@@ -177,10 +177,7 @@ impl InMemoryHotBlobCoverageSli {
 
     /// Snapshot of all observations recorded so far.
     pub fn observations(&self) -> Vec<CoverageObservation> {
-        self.obs
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone()
+        self.obs.lock().unwrap_or_else(|p| p.into_inner()).clone()
     }
 
     /// Count observations for a region (helper for tests).

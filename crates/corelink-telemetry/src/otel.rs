@@ -111,13 +111,12 @@ pub use audit::{
     EXPORT_FAILED_EVENT_TYPE,
 };
 pub use config::{
-    DatadogConfig, DatadogSite, GrafanaCloudConfig, OtelCollectorConfig,
-    OtlpProtocol,
+    DatadogConfig, DatadogSite, GrafanaCloudConfig, OtelCollectorConfig, OtlpProtocol,
 };
 pub use error::{ExporterError, SecretValidationError};
 pub use exporter::{
-    DatadogExporter, ExporterVariant, GrafanaCloudExporter, InMemoryFake,
-    MetricsExporter, OtelCollectorExporter,
+    DatadogExporter, ExporterVariant, GrafanaCloudExporter, InMemoryFake, MetricsExporter,
+    OtelCollectorExporter,
 };
 pub use metric::{MetricPoint, MetricValue, TraceSpan};
 pub use secret::{constant_time_secret_eq, validate_api_key_shape};

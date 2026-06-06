@@ -75,10 +75,7 @@ pub struct HmacParams<'a> {
 ///   forgery).
 /// - `ikm` = `master_key`.
 /// - `info` = [`HMAC_HKDF_INFO`].
-fn derive_tenant_key(
-    master_key: &[u8],
-    tenant_id: &str,
-) -> Result<[u8; 32], ConsentLedgerError> {
+fn derive_tenant_key(master_key: &[u8], tenant_id: &str) -> Result<[u8; 32], ConsentLedgerError> {
     let hk = Hkdf::<Sha256>::new(Some(tenant_id.as_bytes()), master_key);
     let mut okm = [0u8; 32];
     hk.expand(HMAC_HKDF_INFO, &mut okm)

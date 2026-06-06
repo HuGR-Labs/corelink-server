@@ -79,9 +79,7 @@ pub fn canonical_blob_payload(tenant_slug: &str, index: usize) -> Vec<u8> {
     let mut out = Vec::with_capacity(4096);
     let mut counter: u64 = 0;
     while out.len() < 4096 {
-        let chunk = blake3::hash(
-            format!("{tenant_slug}/{index}/{counter}").as_bytes(),
-        );
+        let chunk = blake3::hash(format!("{tenant_slug}/{index}/{counter}").as_bytes());
         out.extend_from_slice(chunk.as_bytes());
         counter = counter.saturating_add(1);
     }
@@ -743,18 +741,12 @@ impl PilotHarness {
             // wrote so the export is closed over the data-plane events
             // only, not over its own start marker. The seal event is
             // emitted AFTER the body is composed.
-            let cutoff_seq = state
-                .audit_rows
-                .last()
-                .map(|r| r.seq)
-                .unwrap_or(0);
+            let cutoff_seq = state.audit_rows.last().map(|r| r.seq).unwrap_or(0);
             let rows: Vec<AuditRecord> = state
                 .audit_rows
                 .iter()
                 .filter(|r| {
-                    r.seq < cutoff_seq
-                        && r.ts_ms >= window_start_ms
-                        && r.ts_ms < window_end_ms
+                    r.seq < cutoff_seq && r.ts_ms >= window_start_ms && r.ts_ms < window_end_ms
                 })
                 .cloned()
                 .collect();
@@ -854,10 +846,7 @@ impl PilotHarness {
     #[must_use]
     pub fn audit_row_count(&self, tenant: &PilotTenant) -> usize {
         match self.inner.lock() {
-            Ok(g) => g
-                .get(&tenant.slug)
-                .map(|s| s.audit_rows.len())
-                .unwrap_or(0),
+            Ok(g) => g.get(&tenant.slug).map(|s| s.audit_rows.len()).unwrap_or(0),
             Err(_) => 0,
         }
     }
@@ -928,10 +917,7 @@ impl PilotHarness {
             let requested_at = match state.erasure_requested_at_ms {
                 Some(v) => v,
                 None => {
-                    return Err(DsrErasureError::TenantNotProvisioned(
-                        tenant.slug.clone(),
-                    )
-                    .into())
+                    return Err(DsrErasureError::TenantNotProvisioned(tenant.slug.clone()).into())
                 }
             };
             let deadline = requested_at.saturating_add(DSR_ERASURE_WINDOW_MS);
@@ -1003,10 +989,7 @@ impl PilotHarness {
     /// - [`OffboardingError::TenantNotProvisioned`] if signup never ran.
     /// - [`OffboardingError::SubscriptionNotCancelled`] is never
     ///   returned here — this is the *cancelling* path.
-    pub fn cancel_subscription(
-        &self,
-        tenant: &PilotTenant,
-    ) -> Result<(), PilotHarnessError> {
+    pub fn cancel_subscription(&self, tenant: &PilotTenant) -> Result<(), PilotHarnessError> {
         self.with_tenant(&tenant.slug, |state| {
             if state.lifecycle.is_none() {
                 return Err(OffboardingError::TenantNotProvisioned(tenant.slug.clone()).into());
@@ -1048,10 +1031,9 @@ impl PilotHarness {
             let cancelled_at = match state.cancelled_at_ms {
                 Some(v) => v,
                 None => {
-                    return Err(OffboardingError::SubscriptionNotCancelled(
-                        tenant.slug.clone(),
+                    return Err(
+                        OffboardingError::SubscriptionNotCancelled(tenant.slug.clone()).into(),
                     )
-                    .into())
                 }
             };
             let deadline = cancelled_at.saturating_add(OFFBOARDING_GRACE_MS);

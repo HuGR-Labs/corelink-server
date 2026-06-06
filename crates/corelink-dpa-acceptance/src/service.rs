@@ -20,9 +20,7 @@ use crate::error::DpaAcceptanceError;
 use crate::jwt::{sign_receipt, JwtReceiptClaims, RsaPrivateKeyPem};
 use crate::locale::{accepted_ip_hash, enforce_locale_match, LocaleNoticeRegistry};
 use crate::notify::{NotificationEnvelope, NotificationSink};
-use crate::schema::{
-    ConsentProofPayload, DpaAcceptanceReceipt, DpaAcceptanceRequest, TenantCtx,
-};
+use crate::schema::{ConsentProofPayload, DpaAcceptanceReceipt, DpaAcceptanceRequest, TenantCtx};
 use crate::store::{DpaAcceptanceRecord, DpaAcceptanceStore};
 use crate::DEFAULT_IP_HASH_SALT;
 
@@ -132,12 +130,11 @@ where
         }
 
         // (2) Notice text hash recompute (CTRL-PRIV-CONSENT-001).
-        let expected_hash = self
-            .notice_registry
-            .hash_for(request.proof.locale)
-            .ok_or(DpaAcceptanceError::NoticeTextNotRegistered {
+        let expected_hash = self.notice_registry.hash_for(request.proof.locale).ok_or(
+            DpaAcceptanceError::NoticeTextNotRegistered {
                 locale: request.proof.locale.as_bcp47(),
-            })?;
+            },
+        )?;
         if !constant_time_hex_eq(&expected_hash, &request.proof.notice_text_hash) {
             self.audit.emit(DpaAuditEvent::HashMismatch {
                 tenant_id: ctx.tenant_id.clone(),
@@ -223,10 +220,7 @@ where
 /// Compare two payloads but allow `submission_ts` to drift — the
 /// server stamps it freshly and idempotent retries should still match
 /// the originally-recorded value.
-fn payloads_match_ignoring_submission_ts(
-    a: &ConsentProofPayload,
-    b: &ConsentProofPayload,
-) -> bool {
+fn payloads_match_ignoring_submission_ts(a: &ConsentProofPayload, b: &ConsentProofPayload) -> bool {
     a.notice_text_hash == b.notice_text_hash
         && a.notice_version == b.notice_version
         && a.dpa_version == b.dpa_version

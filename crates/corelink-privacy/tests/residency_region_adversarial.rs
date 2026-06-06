@@ -70,8 +70,7 @@ fn test_adversarial_subdomain_spoofing_rejected() {
     );
     let first_record = records.first().expect("at least 1 audit record expected");
     assert_eq!(
-        first_record.event_type,
-        "dev.hugr.corelink.residency.request_routed.v1",
+        first_record.event_type, "dev.hugr.corelink.residency.request_routed.v1",
         "audit event type must be request_routed for spoofing detection"
     );
 }
@@ -90,7 +89,11 @@ fn test_adversarial_header_tampering_ignored() {
     // Correct host: weur domain
     let host = "tenant-weur-sre-001.weur.corelink.humangr.com";
     let extracted = region_from_host(host);
-    assert_eq!(extracted, Some(Region::Weur), "correct weur host must extract weur");
+    assert_eq!(
+        extracted,
+        Some(Region::Weur),
+        "correct weur host must extract weur"
+    );
 
     // Attacker-supplied fake header value — this is NOT passed to region_from_host.
     // The X-Region header would have value "enam" but it's irrelevant:
@@ -105,7 +108,10 @@ fn test_adversarial_header_tampering_ignored() {
 
     // Cross-validate: if we had used the attacker's header, it would fail
     let result_if_header_used = enf.assert_request_residency(&ctx, Region::Enam);
-    let valid = matches!(result_if_header_used, Err(ResidencyViolation::RequestRegionMismatch { .. }));
+    let valid = matches!(
+        result_if_header_used,
+        Err(ResidencyViolation::RequestRegionMismatch { .. })
+    );
     assert!(
         valid,
         "sanity: using attacker's header region enam for weur tenant must fail: {result_if_header_used:?}"
@@ -161,7 +167,10 @@ fn test_adversarial_replay_to_wrong_region_rejected() {
     let enf = InMemoryResidencyEnforcement::new();
 
     let legitimate = enf.assert_request_residency(&ctx, Region::Weur);
-    assert!(legitimate.is_ok(), "legitimate weur request accepted: {legitimate:?}");
+    assert!(
+        legitimate.is_ok(),
+        "legitimate weur request accepted: {legitimate:?}"
+    );
 
     // Replay: same request, different endpoint (enam) → rejected
     let enf2 = InMemoryResidencyEnforcement::new();
@@ -195,7 +204,10 @@ fn test_adversarial_d1_region_mutation_semantics() {
 
     // Old weur requests now fail (re-routed)
     let old_region_request = enf.assert_request_residency(&ctx_after_bypass, Region::Weur);
-    let valid = matches!(old_region_request, Err(ResidencyViolation::RequestRegionMismatch { .. }));
+    let valid = matches!(
+        old_region_request,
+        Err(ResidencyViolation::RequestRegionMismatch { .. })
+    );
     assert!(
         valid,
         "after hypothetical region mutation: weur request for enam tenant must fail: {old_region_request:?}"
@@ -269,7 +281,12 @@ fn test_adversarial_weur_tenant_enam_endpoint_blocked() {
     );
 
     // Write injection also blocked
-    for backend in [BackendKind::Cas, BackendKind::D1Metadata, BackendKind::Kv, BackendKind::Manifest] {
+    for backend in [
+        BackendKind::Cas,
+        BackendKind::D1Metadata,
+        BackendKind::Kv,
+        BackendKind::Manifest,
+    ] {
         let wr = enf.assert_write_residency(&ctx, backend, Region::Enam);
         let wr_valid = matches!(wr, Err(ResidencyViolation::WriteRegionMismatch { .. }));
         assert!(
@@ -287,11 +304,11 @@ fn test_adversarial_malformed_tenant_id_enforcement_still_applies() {
     let long_id = "a".repeat(1000);
     let malformed_ids: &[&str] = &[
         "",
-        "' OR '1'='1",          // SQL injection pattern
-        "../../etc/passwd",      // path traversal
-        long_id.as_str(),        // absurdly long ID
-        "\0\n\r\t",             // control characters
-        "wnam",                  // region string as tenant_id
+        "' OR '1'='1",      // SQL injection pattern
+        "../../etc/passwd", // path traversal
+        long_id.as_str(),   // absurdly long ID
+        "\0\n\r\t",         // control characters
+        "wnam",             // region string as tenant_id
     ];
 
     for &tenant_id in malformed_ids {
@@ -330,13 +347,13 @@ fn test_adversarial_cross_region_write_always_emits_audit() {
     let _ = enf.assert_write_residency(&ctx, BackendKind::D1Metadata, Region::Weur);
 
     let records = enf.audit_sink().records();
-    let rejected_write_events = records.iter().filter(|r| {
-        r.event_type == "dev.hugr.corelink.residency.write_rejected_cross_region.v1"
-    }).count();
+    let rejected_write_events = records
+        .iter()
+        .filter(|r| r.event_type == "dev.hugr.corelink.residency.write_rejected_cross_region.v1")
+        .count();
 
     assert_eq!(
-        rejected_write_events,
-        3,
+        rejected_write_events, 3,
         "every cross-region write must emit audit event (forensic): got {rejected_write_events}"
     );
 }

@@ -21,9 +21,7 @@ use corelink_pat::mint::{mint_with_entropy, DeterministicMintInput};
 use corelink_pat::scopes::PatScopes;
 use corelink_pat::sig::compute_hmac_sig;
 use corelink_pat::types::{PatEnv, PatSigningKey, PrincipalId, TenantId, PAT_TOKEN_ID_LEN};
-use corelink_pat::{
-    parse_env, verify_argon2id, verify_hmac_sig, verify_with_hash, SCOPE_CACHE_RW,
-};
+use corelink_pat::{parse_env, verify_argon2id, verify_hmac_sig, verify_with_hash, SCOPE_CACHE_RW};
 use password_hash::Salt;
 use uuid::Uuid;
 
@@ -202,10 +200,7 @@ fn verify_argon2id_rejects_underprovisioned_params() {
         "$argon2id$v=19$m=32768,t=2,p=1$c2FsdHNhbHRzYWx0$abcdefghijklmnopqrstuvwxyz0123".to_owned(),
     );
     let res = verify_argon2id("any_input", &weak);
-    assert!(matches!(
-        res,
-        Err(corelink_pat::PatError::HashError(_))
-    ));
+    assert!(matches!(res, Err(corelink_pat::PatError::HashError(_))));
 }
 
 #[test]

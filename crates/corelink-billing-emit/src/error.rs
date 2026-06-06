@@ -70,9 +70,7 @@ pub enum R2UsageSinkError {
     /// Governance Mode + the canonical key pattern (existing key →
     /// PutObject rejected); the in-memory fake here pins it at the
     /// trait surface.
-    #[error(
-        "billing-emit R2 sink append-only violation at key {key} (INV-BILLING-APPEND-ONLY)"
-    )]
+    #[error("billing-emit R2 sink append-only violation at key {key} (INV-BILLING-APPEND-ONLY)")]
     AppendOnlyViolation {
         /// Canonical R2 object key the orchestrator attempted to
         /// overwrite.

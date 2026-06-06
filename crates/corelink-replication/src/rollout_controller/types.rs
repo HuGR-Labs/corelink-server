@@ -242,8 +242,7 @@ impl GateMetrics {
     /// Returns `true` if p99 latency > baseline + 50%.
     #[must_use]
     pub fn p99_latency_trigger(&self) -> bool {
-        self.p99_baseline_ms > 0.0
-            && self.p99_latency_ms > self.p99_baseline_ms * 1.5
+        self.p99_baseline_ms > 0.0 && self.p99_latency_ms > self.p99_baseline_ms * 1.5
     }
 
     /// Returns the first auto-rollback trigger that fires, if any.

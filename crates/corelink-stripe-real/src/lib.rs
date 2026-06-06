@@ -85,29 +85,28 @@ pub use client::{
     StripeAuthMode, StripeClientConfig, StripeRealClient, StripeRealClientBuilder,
     DEFAULT_HUGR_STRIPE_REF, DEFAULT_HUGR_WALLET_BASE, DEFAULT_STRIPE_API_BASE,
 };
-pub use clock::{Clock, InMemoryFakeClock};
 #[cfg(not(target_arch = "wasm32"))]
 pub use clock::SystemClock;
 #[cfg(target_arch = "wasm32")]
 pub use clock::WasmWorkerClock;
-pub use portal::{
-    BillingPortalSessionCreator, InMemoryPortalAuditSink, InMemoryPortalSessionCreator,
-    PortalAuditEvent, PortalAuditSink, PortalSessionError, PortalSessionUrl,
-    RecordedPortalEvent,
-};
+pub use clock::{Clock, InMemoryFakeClock};
 pub use dlq::{
-    DlqError, DlqQuarantineOutcome, DlqReplayOutcome, InMemoryWebhookDlqStore,
-    WebhookDlqRow, WebhookDlqStore, DEFAULT_DLQ_TTL_MS, DLQ_DEPTH_GAUGE,
-    DLQ_OLDEST_AGE_SECONDS_GAUGE, DLQ_PAGE_OLDEST_AGE_SECONDS, DLQ_PRUNED_TOTAL,
-    DLQ_QUARANTINED_TOTAL, DLQ_REPLAYED_TOTAL, DLQ_WARN_DEPTH,
+    DlqError, DlqQuarantineOutcome, DlqReplayOutcome, InMemoryWebhookDlqStore, WebhookDlqRow,
+    WebhookDlqStore, DEFAULT_DLQ_TTL_MS, DLQ_DEPTH_GAUGE, DLQ_OLDEST_AGE_SECONDS_GAUGE,
+    DLQ_PAGE_OLDEST_AGE_SECONDS, DLQ_PRUNED_TOTAL, DLQ_QUARANTINED_TOTAL, DLQ_REPLAYED_TOTAL,
+    DLQ_WARN_DEPTH,
 };
 pub use error::{StripeError, WebhookVerifyError};
+pub use portal::{
+    BillingPortalSessionCreator, InMemoryPortalAuditSink, InMemoryPortalSessionCreator,
+    PortalAuditEvent, PortalAuditSink, PortalSessionError, PortalSessionUrl, RecordedPortalEvent,
+};
 pub use retry::{RetryPolicy, DEFAULT_MAX_RETRIES};
 pub use webhook::{verify_webhook_signature, DEFAULT_TOLERANCE_SECONDS};
 pub use webhook_dispatch::{
-    AuditEmitter, AuditOutcome, AuditRecord, CanonicalWebhookEventType,
-    DispatchResponse, FixedClock, IdempotencyOutcome, IdempotencyStore, IdempotencyToken,
-    InMemoryIdempotencyStore, MaterializerError, RecordingAuditEmitter, RecordingSliRecorder,
-    RecordingStateMaterializer, SliObservation, SliRecorder, StateMaterializer,
-    StripeWebhookEnvelope, WebhookDispatcher, SLI_BILLING_STRIPE_EVENT_SECONDS,
+    AuditEmitter, AuditOutcome, AuditRecord, CanonicalWebhookEventType, DispatchResponse,
+    FixedClock, IdempotencyOutcome, IdempotencyStore, IdempotencyToken, InMemoryIdempotencyStore,
+    MaterializerError, RecordingAuditEmitter, RecordingSliRecorder, RecordingStateMaterializer,
+    SliObservation, SliRecorder, StateMaterializer, StripeWebhookEnvelope, WebhookDispatcher,
+    SLI_BILLING_STRIPE_EVENT_SECONDS,
 };

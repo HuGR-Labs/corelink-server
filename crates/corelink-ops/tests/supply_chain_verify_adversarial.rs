@@ -1,6 +1,14 @@
 //! Adversarial regression tests for SLSA L3 provenance verification (WI-S12-001).
 // Tests legitimately use panic!, unwrap, and expect for assertion purposes.
-#![allow(clippy::panic, clippy::unwrap_used, clippy::expect_used, clippy::uninlined_format_args, clippy::format_in_format_args, clippy::indexing_slicing, clippy::print_stdout)]
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::indexing_slicing,
+    clippy::print_stdout
+)]
 //!
 //! 5 CVE-class scenarios, each must be 100% rejected:
 //!
@@ -12,9 +20,7 @@
 
 use corelink_ops::supply_chain::verify::{
     error::VerifyError,
-    types::{
-        BuilderIdentity, DsseSignature, MerkleInclusionProof, RekorBundle, SlsaAttestation,
-    },
+    types::{BuilderIdentity, DsseSignature, MerkleInclusionProof, RekorBundle, SlsaAttestation},
     verifier::{DefaultSlsaVerifier, SlsaProvenanceVerifier},
 };
 
@@ -100,7 +106,9 @@ async fn adversarial_01_attestation_forge_fork_builder_mismatch() {
             );
         }
         Err(e) => panic!("CVE-class 1: Expected BuilderMismatch, got: {:?}", e),
-        Ok(_) => panic!("CVE-class 1: Fork attestation forge was NOT rejected — CRITICAL SECURITY BUG"),
+        Ok(_) => {
+            panic!("CVE-class 1: Fork attestation forge was NOT rejected — CRITICAL SECURITY BUG")
+        }
     }
 }
 
@@ -130,13 +138,17 @@ async fn adversarial_02_rekor_inclusion_proof_tampered() {
     match result {
         Err(VerifyError::RekorInclusionInvalid(msg)) => {
             assert!(
-                msg.contains("64-char hex") || msg.contains("Merkle root") || msg.contains("invalid"),
+                msg.contains("64-char hex")
+                    || msg.contains("Merkle root")
+                    || msg.contains("invalid"),
                 "Expected Merkle validation message, got: {}",
                 msg
             );
         }
         Err(e) => panic!("CVE-class 2: Expected RekorInclusionInvalid, got: {:?}", e),
-        Ok(_) => panic!("CVE-class 2: Tampered Rekor proof was NOT rejected — CRITICAL SECURITY BUG"),
+        Ok(_) => {
+            panic!("CVE-class 2: Tampered Rekor proof was NOT rejected — CRITICAL SECURITY BUG")
+        }
     }
 }
 
@@ -195,7 +207,8 @@ async fn adversarial_04_intoto_schema_v001_rejected() {
         }
     });
     use base64::Engine as _;
-    let payload = base64::engine::general_purpose::STANDARD.encode(old_schema_statement.to_string());
+    let payload =
+        base64::engine::general_purpose::STANDARD.encode(old_schema_statement.to_string());
 
     let mut att = valid_attestation();
     att.payload = payload;
@@ -206,7 +219,9 @@ async fn adversarial_04_intoto_schema_v001_rejected() {
     match result {
         Err(VerifyError::InTotoSchemaInvalid(msg)) => {
             assert!(
-                msg.contains("v0.0.1") || msg.contains("predicateType") || msg.contains("not accepted"),
+                msg.contains("v0.0.1")
+                    || msg.contains("predicateType")
+                    || msg.contains("not accepted"),
                 "Expected schema rejection message, got: {}",
                 msg
             );
@@ -242,7 +257,9 @@ async fn adversarial_05_dsse_alg_none_empty_signatures() {
             );
         }
         Err(e) => panic!("CVE-class 5a: Expected DsseEnvelopeInvalid, got: {:?}", e),
-        Ok(_) => panic!("CVE-class 5a: alg=none (no signatures) was NOT rejected — CRITICAL SECURITY BUG"),
+        Ok(_) => panic!(
+            "CVE-class 5a: alg=none (no signatures) was NOT rejected — CRITICAL SECURITY BUG"
+        ),
     }
 }
 
@@ -318,8 +335,13 @@ async fn adversarial_rekor_bundle_no_inclusion_proof() {
                 msg
             );
         }
-        Err(e) => panic!("Expected RekorInclusionInvalid (no inclusionProof), got: {:?}", e),
-        Ok(_) => panic!("Rekor bundle without inclusionProof was NOT rejected — CRITICAL SECURITY BUG"),
+        Err(e) => panic!(
+            "Expected RekorInclusionInvalid (no inclusionProof), got: {:?}",
+            e
+        ),
+        Ok(_) => {
+            panic!("Rekor bundle without inclusionProof was NOT rejected — CRITICAL SECURITY BUG")
+        }
     }
 }
 
@@ -351,7 +373,10 @@ async fn adversarial_rekor_log_index_exceeds_tree_size() {
                 msg
             );
         }
-        Err(e) => panic!("Expected RekorInclusionInvalid (log_index >= tree_size), got: {:?}", e),
+        Err(e) => panic!(
+            "Expected RekorInclusionInvalid (log_index >= tree_size), got: {:?}",
+            e
+        ),
         Ok(_) => panic!("Invalid Merkle proof geometry was NOT rejected"),
     }
 }

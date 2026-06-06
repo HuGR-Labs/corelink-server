@@ -101,23 +101,24 @@ pub use encryption::{
     InquiryEncryptionError, InquiryPayloadEncryptor, SanitizedInquiryMetadata, SealedInquiry,
     UnsealedInquiryPii, SYSTEM_CMK_TENANT_TAG,
 };
-pub use hubspot::{
-    classify_retry, is_residency_routable, HubSpotConfigError, HubSpotCrmClient, HubSpotHttp,
-    HubSpotHttpError, HubSpotMethod, HubSpotRegion, HubSpotRequest, HubSpotResponse, HubSpotSleeper,
-    HubSpotToken, NoopSleeper, RecordingHubSpotHttp, RetryDecision, BASE_BACKOFF_MS,
-    DEAL_STAGE_ENTERPRISE_INQUIRY, MAX_RETRIES, RETRY_AFTER_CAP_S,
-};
 pub use error::EnterpriseInquiryError;
 pub use form::{
     BYOKRequirementsKind, EnterpriseInquiryForm, IdempotencyKey, InquiryId, InquiryReceipt,
     InquiryStatus, ResidencyKind, Role,
 };
+pub use hubspot::{
+    classify_retry, is_residency_routable, HubSpotConfigError, HubSpotCrmClient, HubSpotHttp,
+    HubSpotHttpError, HubSpotMethod, HubSpotRegion, HubSpotRequest, HubSpotResponse,
+    HubSpotSleeper, HubSpotToken, NoopSleeper, RecordingHubSpotHttp, RetryDecision,
+    BASE_BACKOFF_MS, DEAL_STAGE_ENTERPRISE_INQUIRY, MAX_RETRIES, RETRY_AFTER_CAP_S,
+};
 pub use ledger::{EnterpriseInquiryLedger, InquiryRecord, LedgerEncryptionConfig, SlaBreach};
-pub use mailer::{AutoReplyError, AutoReplyMailer, FailingAutoReplyMailer, InMemoryAutoReplyMailer};
+pub use mailer::{
+    AutoReplyError, AutoReplyMailer, FailingAutoReplyMailer, InMemoryAutoReplyMailer,
+};
 pub use outbox::{OutboxRecord, OutboxStatus};
 pub use slack::{
-    FailingSlackClient, InMemorySlackClient, SlackClient, SlackError, SlackMessageId,
-    SlackPostKind,
+    FailingSlackClient, InMemorySlackClient, SlackClient, SlackError, SlackMessageId, SlackPostKind,
 };
 
 /// Crate canonical schema version constant.

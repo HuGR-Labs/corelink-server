@@ -50,9 +50,9 @@ where
             path_key_id: b.path_key_id,
             ttl_extend_ms: b.ttl_extend_ms,
             clock: b.clock,
-            action_result_stash: Arc::new(tokio::sync::Mutex::new(
-                std::collections::HashMap::new(),
-            )),
+            action_result_stash: Arc::new(
+                tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            ),
         }
     }
 
@@ -130,7 +130,10 @@ where
         action_digest: &'a ActionDigest,
         request_id: &'a str,
     ) -> impl Future<Output = Result<GetActionResult, AcError>> + Send + 'a {
-        async move { self.get_action_result_inner(ctx, action_digest, request_id).await }
+        async move {
+            self.get_action_result_inner(ctx, action_digest, request_id)
+                .await
+        }
     }
 
     fn update_action_result<'a>(

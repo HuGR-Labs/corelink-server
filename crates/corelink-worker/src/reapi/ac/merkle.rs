@@ -302,9 +302,9 @@ fn map_canonical_error(err: corelink_ac::MerkleError) -> MerkleError {
         corelink_ac::MerkleError::CycleDetected { digest } => {
             MerkleError::MalformedTree(format!("cycle_detected:{digest}"))
         }
-        corelink_ac::MerkleError::NodeCountExceeded { count, bound } => MerkleError::MalformedTree(
-            format!("node_count_exceeded:found={count},bound={bound}"),
-        ),
+        corelink_ac::MerkleError::NodeCountExceeded { count, bound } => {
+            MerkleError::MalformedTree(format!("node_count_exceeded:found={count},bound={bound}"))
+        }
         corelink_ac::MerkleError::PayloadExceeded { found_bytes, bound } => {
             MerkleError::MalformedTree(format!(
                 "payload_exceeded:found={found_bytes},bound={bound}"
@@ -331,7 +331,7 @@ fn map_canonical_error(err: corelink_ac::MerkleError) -> MerkleError {
 )]
 mod tests {
     use super::*;
-    use crate::reapi::ac::types::{OutputFileDigest};
+    use crate::reapi::ac::types::OutputFileDigest;
     use corelink_hash::Digest;
 
     fn fresh_result() -> ActionResult {

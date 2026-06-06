@@ -92,10 +92,10 @@
 //! # });
 //! ```
 
-
+use crate::{
+    BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
+};
 use async_trait::async_trait;
-use crate::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
-                    KmsProviderKind, WrappedDek};
 
 pub(crate) mod key_resource;
 
@@ -280,7 +280,8 @@ impl KmsProvider for GcpKmsProvider {
         // additional_authenticated_data = JSON-encoded encryption_context.
         let _aad = Self::context_to_aad(encryption_context);
         Err(BYOKError::Provider(
-            "GcpKmsProvider production mode not wired (SDK integration deferred; use mock for CI)".to_string(),
+            "GcpKmsProvider production mode not wired (SDK integration deferred; use mock for CI)"
+                .to_string(),
         ))
     }
 
@@ -303,20 +304,22 @@ impl KmsProvider for GcpKmsProvider {
             // Verify AAD binding: compare stored fingerprint with current context.
             let expected_aad = Self::context_to_aad(wrapped.encryption_context.as_ref());
             let expected_fingerprint = Self::aad_fingerprint(&expected_aad);
-            let stored_fingerprint = wrapped.ciphertext
-                .get(..8)
-                .ok_or(BYOKError::EnvelopeError("GCP mock: ciphertext too short for fingerprint".to_string()))?;
+            let stored_fingerprint =
+                wrapped.ciphertext.get(..8).ok_or(BYOKError::EnvelopeError(
+                    "GCP mock: ciphertext too short for fingerprint".to_string(),
+                ))?;
 
             if stored_fingerprint != expected_fingerprint.as_slice() {
                 return Err(BYOKError::EnvelopeError(
-                    "GCP KMS additional_authenticated_data mismatch: encryption_context tampered".to_string(),
+                    "GCP KMS additional_authenticated_data mismatch: encryption_context tampered"
+                        .to_string(),
                 ));
             }
 
             // Reverse the XOR marker.
-            let ct = wrapped.ciphertext
-                .get(8..)
-                .ok_or(BYOKError::EnvelopeError("GCP mock: ciphertext too short for DEK".to_string()))?;
+            let ct = wrapped.ciphertext.get(8..).ok_or(BYOKError::EnvelopeError(
+                "GCP mock: ciphertext too short for DEK".to_string(),
+            ))?;
             let mut bytes = [0u8; 32];
             for (b_out, &b_in) in bytes.iter_mut().zip(ct.iter()) {
                 *b_out = b_in ^ 0xAA;
@@ -386,7 +389,9 @@ mod tests {
         let p = GcpKmsProvider::new_mock("us-east1");
         let key_id = KmsKeyId {
             provider: KmsProviderKind::GcpKms,
-            key_arn_or_id: "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk".to_string(),
+            key_arn_or_id:
+                "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk"
+                    .to_string(),
             region: "us-east1".to_string(),
         };
         let dek = Dek::generate().expect("entropy");
@@ -402,7 +407,9 @@ mod tests {
         let p = GcpKmsProvider::new_mock("us-east1");
         let key_id = KmsKeyId {
             provider: KmsProviderKind::GcpKms,
-            key_arn_or_id: "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk".to_string(),
+            key_arn_or_id:
+                "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk"
+                    .to_string(),
             region: "us-east1".to_string(),
         };
         let status = p.check_access(&key_id).await.expect("check");

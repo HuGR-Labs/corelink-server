@@ -60,10 +60,12 @@ fn sli_emits_one_lag_observation_per_replicated_blob() {
     let obs = sli_inner.observations();
     assert_eq!(obs.len(), 2, "expected one lag observation per blob");
     assert!(obs.iter().all(|o| o.domain == ReplicationDomain::R2Hot));
-    assert!(obs.iter().any(|o| o.primary_region == Region::Wnam
-        && o.replica_region == Region::Enam));
-    assert!(obs.iter().any(|o| o.primary_region == Region::Weur
-        && o.replica_region == Region::Sam));
+    assert!(obs
+        .iter()
+        .any(|o| o.primary_region == Region::Wnam && o.replica_region == Region::Enam));
+    assert!(obs
+        .iter()
+        .any(|o| o.primary_region == Region::Weur && o.replica_region == Region::Sam));
 }
 
 #[test]
@@ -103,7 +105,11 @@ fn sli_batch_outcome_ok_when_all_replicated() {
         ])
         .expect("replicate");
     let batches = sli_inner.batch_observations();
-    assert_eq!(batches.len(), 1, "exactly one batch-outcome counter per batch");
+    assert_eq!(
+        batches.len(),
+        1,
+        "exactly one batch-outcome counter per batch"
+    );
     assert_eq!(batches[0].outcome, BatchOutcome::Ok);
 }
 
@@ -152,10 +158,7 @@ fn sli_emit_failure_does_not_block_replication() {
     assert!(
         has_sli_failed_trail,
         "audit chain must contain sli_emit_failed forensic trail; got: {:?}",
-        audit_records
-            .iter()
-            .map(|r| &r.detail)
-            .collect::<Vec<_>>()
+        audit_records.iter().map(|r| &r.detail).collect::<Vec<_>>()
     );
 }
 
@@ -225,8 +228,16 @@ fn sli_emit_count_matches_completed_audit_count() {
 
     let blobs: Vec<HotBlob> = (0..7)
         .map(|i| {
-            let primary = if i % 2 == 0 { Region::Wnam } else { Region::Weur };
-            let replica = if i % 2 == 0 { Region::Enam } else { Region::Sam };
+            let primary = if i % 2 == 0 {
+                Region::Wnam
+            } else {
+                Region::Weur
+            };
+            let replica = if i % 2 == 0 {
+                Region::Enam
+            } else {
+                Region::Sam
+            };
             make_blob(primary, replica, 0)
         })
         .collect();
@@ -236,10 +247,12 @@ fn sli_emit_count_matches_completed_audit_count() {
     let completed = sink_inner
         .records()
         .iter()
-        .filter(|r| matches!(
-            r.event_type,
-            corelink_replica_worker::ReplicaAuditEventType::ReplicationCompleted
-        ))
+        .filter(|r| {
+            matches!(
+                r.event_type,
+                corelink_replica_worker::ReplicaAuditEventType::ReplicationCompleted
+            )
+        })
         .filter(|r| !r.detail.contains("sli_emit_failed"))
         .count();
     let lag_emits = sli_inner.observations().len();

@@ -46,7 +46,6 @@
 //! from every method. CoreLink Workers proxy envelope operations to the
 //! native server process, which holds the actual Vault Transit client.
 
-
 use base64::Engine as _;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -57,9 +56,7 @@ use crate::BYOKError;
 use async_trait::async_trait;
 
 #[cfg(target_arch = "wasm32")]
-use crate::{
-    Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
-};
+use crate::{Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek};
 
 /// Default Vault Transit mount path (configurable per deployment).
 pub const DEFAULT_TRANSIT_MOUNT: &str = "transit";
@@ -93,9 +90,7 @@ pub fn canonicalize_aad_to_string_map(
     let mut map = BTreeMap::new();
     for (k, v) in obj {
         let s = v.as_str().ok_or_else(|| {
-            BYOKError::EnvelopeError(format!(
-                "encryption_context.{k} value must be a string"
-            ))
+            BYOKError::EnvelopeError(format!("encryption_context.{k} value must be a string"))
         })?;
         map.insert(k.clone(), s.to_string());
     }
@@ -126,15 +121,15 @@ pub fn encode_context_for_vault(canonical_aad: &[u8]) -> String {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
-    use super::{canonicalize_aad_to_string_map, encode_context_for_vault, DEFAULT_TRANSIT_MOUNT};
     use super::super::auth::VaultAuth;
     use super::super::key_name::{extract_key_name, is_valid_key_name};
-    use async_trait::async_trait;
-    use base64::Engine as _;
+    use super::{canonicalize_aad_to_string_map, encode_context_for_vault, DEFAULT_TRANSIT_MOUNT};
     use crate::{
         BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind,
         WrappedDek,
     };
+    use async_trait::async_trait;
+    use base64::Engine as _;
     use serde::{Deserialize, Serialize};
     use serde_json::Value;
     use subtle::ConstantTimeEq;
@@ -286,8 +281,7 @@ mod native {
                          (TLS verification is non-negotiable)"
                     );
                     return Err(BYOKError::Provider(
-                        "VAULT_SKIP_VERIFY=true is rejected in real-mode build"
-                            .to_string(),
+                        "VAULT_SKIP_VERIFY=true is rejected in real-mode build".to_string(),
                     ));
                 }
             }
@@ -435,11 +429,7 @@ mod native {
 
     /// Map an HTTP failure response from Vault Transit into a
     /// [`BYOKError`], emitting a fail-CLOSED audit event BEFORE returning.
-    async fn map_http_error(
-        resp: reqwest::Response,
-        key_id: &KmsKeyId,
-        op: &str,
-    ) -> BYOKError {
+    async fn map_http_error(resp: reqwest::Response, key_id: &KmsKeyId, op: &str) -> BYOKError {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         let err = parse_vault_error(&body);
@@ -533,8 +523,7 @@ mod native {
             })?;
 
             // Canonicalize AAD → base64(JCS bytes) → Vault `context`.
-            let (_string_map, canonical_aad) =
-                canonicalize_aad_to_string_map(ctx)?;
+            let (_string_map, canonical_aad) = canonicalize_aad_to_string_map(ctx)?;
             let context_b64 = encode_context_for_vault(&canonical_aad);
 
             let token = self.vault_token().await?;
@@ -589,7 +578,11 @@ mod native {
 
         async fn unwrap_dek(&self, wrapped: &WrappedDek) -> Result<Dek, BYOKError> {
             if wrapped.provider != KmsProviderKind::HashicorpVault {
-                emit_audit("unwrap_dek", &wrapped.key_id.key_arn_or_id, "wrong_provider");
+                emit_audit(
+                    "unwrap_dek",
+                    &wrapped.key_id.key_arn_or_id,
+                    "wrong_provider",
+                );
                 return Err(BYOKError::EnvelopeError(format!(
                     "VaultRealProvider received WrappedDek with wrong provider: {:?}",
                     wrapped.provider
@@ -601,8 +594,7 @@ mod native {
                 BYOKError::EncryptionContextMissing
             })?;
 
-            let (_string_map, canonical_aad) =
-                canonicalize_aad_to_string_map(ctx)?;
+            let (_string_map, canonical_aad) = canonicalize_aad_to_string_map(ctx)?;
             let context_b64 = encode_context_for_vault(&canonical_aad);
 
             let vault_ct = std::str::from_utf8(&wrapped.ciphertext).map_err(|_| {
@@ -659,17 +651,16 @@ mod native {
                     &wrapped.key_id.key_arn_or_id,
                     "dek_length_invalid",
                 );
-                return Err(BYOKError::DekLengthInvalid { got: plaintext.len() });
+                return Err(BYOKError::DekLengthInvalid {
+                    got: plaintext.len(),
+                });
             }
             let mut bytes = [0u8; 32];
             bytes.copy_from_slice(&plaintext);
             Ok(Dek { bytes })
         }
 
-        async fn check_access(
-            &self,
-            key_id: &KmsKeyId,
-        ) -> Result<KmsAccessStatus, BYOKError> {
+        async fn check_access(&self, key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
             let key_name = self.validate_key(key_id)?;
             let token = self.vault_token().await?;
             let url = format!(
@@ -704,11 +695,7 @@ mod native {
             let data = match env.data {
                 Some(d) => d,
                 None => {
-                    emit_audit(
-                        "check_access",
-                        &key_id.key_arn_or_id,
-                        "missing_data_block",
-                    );
+                    emit_audit("check_access", &key_id.key_arn_or_id, "missing_data_block");
                     return Ok(KmsAccessStatus::ApiError(0));
                 }
             };
@@ -834,10 +821,7 @@ impl KmsProvider for VaultWasmStub {
         Err(BYOKError::Provider(WASM_UNSUPPORTED_MSG.to_string()))
     }
 
-    async fn check_access(
-        &self,
-        _key_id: &KmsKeyId,
-    ) -> Result<KmsAccessStatus, BYOKError> {
+    async fn check_access(&self, _key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
         Err(BYOKError::Provider(WASM_UNSUPPORTED_MSG.to_string()))
     }
 }

@@ -60,11 +60,7 @@ pub const RETRY_AFTER_HARD_CEILING_SECS: u64 = 86_400;
 /// - `bytes_used > bytes_quota` → linearly scaled by the over-quota
 ///   ratio, clamped to `RETRY_AFTER_HARD_CEILING_SECS`.
 #[must_use]
-pub fn provisional_retry_after_secs(
-    floor_secs: u64,
-    bytes_used: u64,
-    bytes_quota: u64,
-) -> u64 {
+pub fn provisional_retry_after_secs(floor_secs: u64, bytes_used: u64, bytes_quota: u64) -> u64 {
     if floor_secs == 0 {
         // Defensive — caller should never pass 0; returning 60s preserves
         // a sensible client behaviour even on misconfiguration.
@@ -177,7 +173,10 @@ mod tests {
         for used in [0_u64, 50, 100, 150, 1000, u64::MAX] {
             for quota in [0_u64, 1, 100, u64::MAX] {
                 let v = provisional_retry_after_secs(60, used, quota);
-                assert!(v >= 60, "result {v} < floor 60 (used={used}, quota={quota})");
+                assert!(
+                    v >= 60,
+                    "result {v} < floor 60 (used={used}, quota={quota})"
+                );
             }
         }
     }

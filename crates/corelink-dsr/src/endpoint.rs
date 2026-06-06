@@ -98,8 +98,7 @@ pub const CANONICAL_RECEIPT_EXPIRY_DAYS: u32 = RECEIPT_EXPIRY_DAYS;
 
 /// Canonical receipt expiration window in milliseconds (90 days ×
 /// 86_400_000 ms/day).
-pub const CANONICAL_RECEIPT_EXPIRY_MS: u64 =
-    (CANONICAL_RECEIPT_EXPIRY_DAYS as u64) * 86_400_000;
+pub const CANONICAL_RECEIPT_EXPIRY_MS: u64 = (CANONICAL_RECEIPT_EXPIRY_DAYS as u64) * 86_400_000;
 
 /// DSR self-service endpoint trait. Production wiring composes the
 /// `DsrEndpointDO` Cloudflare Durable Object route at
@@ -159,11 +158,7 @@ pub trait DsrEndpoint: Send + Sync + core::fmt::Debug {
     /// - [`DsrError::Store`] when the canonical ticket store rejects
     ///   the lookup (Neon backend failure).
     /// - [`DsrError::Internal`] when a per-instance mutex is poisoned.
-    fn poll_status(
-        &self,
-        tenant_id: Uuid,
-        request_id: Uuid,
-    ) -> Result<DsrDecision, DsrError>;
+    fn poll_status(&self, tenant_id: Uuid, request_id: Uuid) -> Result<DsrDecision, DsrError>;
 }
 
 /// In-memory DSR self-service orchestrator. Composes the audit sink,
@@ -203,7 +198,8 @@ where
     M: MfaStepUpVerifier + 'static,
 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("InMemoryDsrEndpoint").finish_non_exhaustive()
+        f.debug_struct("InMemoryDsrEndpoint")
+            .finish_non_exhaustive()
     }
 }
 
@@ -284,8 +280,7 @@ where
             tenant_id,
             data_subject_id: ticket.map_or_else(Uuid::nil, |t| t.data_subject_id),
             request_kind: ticket.map_or(DsrRequestKind::Access, |t| t.request_kind),
-            jurisdiction: ticket
-                .map_or(crate::event::DsrJurisdiction::Lgpd, |t| t.jurisdiction),
+            jurisdiction: ticket.map_or(crate::event::DsrJurisdiction::Lgpd, |t| t.jurisdiction),
             reject_reason,
             status: ticket.map(|t| t.status),
             now_ms: 0,
@@ -422,11 +417,7 @@ where
         })
     }
 
-    fn poll_status(
-        &self,
-        tenant_id: Uuid,
-        request_id: Uuid,
-    ) -> Result<DsrDecision, DsrError> {
+    fn poll_status(&self, tenant_id: Uuid, request_id: Uuid) -> Result<DsrDecision, DsrError> {
         let _guard = self
             .mutex
             .lock()
@@ -537,10 +528,7 @@ mod tests {
             audit.snapshot_of(DsrAuditEventType::RequestAccepted).len(),
             1
         );
-        assert_eq!(
-            audit.snapshot_of(DsrAuditEventType::ReceiptIssued).len(),
-            1
-        );
+        assert_eq!(audit.snapshot_of(DsrAuditEventType::ReceiptIssued).len(), 1);
     }
 
     #[test]
@@ -579,7 +567,9 @@ mod tests {
         // Audit chain: 1 received + 1 mfa_step_up_required.
         assert_eq!(audit.len(), 2);
         assert_eq!(
-            audit.snapshot_of(DsrAuditEventType::MfaStepUpRequired).len(),
+            audit
+                .snapshot_of(DsrAuditEventType::MfaStepUpRequired)
+                .len(),
             1
         );
     }
@@ -748,10 +738,7 @@ mod tests {
     #[test]
     fn config_canonical_constants_pinned() {
         assert_eq!(CANONICAL_RECEIPT_EXPIRY_DAYS, 90);
-        assert_eq!(
-            CANONICAL_RECEIPT_EXPIRY_MS,
-            90 * 86_400_000
-        );
+        assert_eq!(CANONICAL_RECEIPT_EXPIRY_MS, 90 * 86_400_000);
     }
 
     #[test]

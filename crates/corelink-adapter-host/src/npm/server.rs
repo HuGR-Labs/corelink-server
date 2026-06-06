@@ -78,9 +78,7 @@ async fn handle_ping() -> Response {
 }
 
 /// `GET /-/v1/search` — not implemented (spec §1 out of scope).
-async fn handle_search_not_implemented(
-    _query: Query<SearchQuery>,
-) -> Response {
+async fn handle_search_not_implemented(_query: Query<SearchQuery>) -> Response {
     (
         StatusCode::NOT_IMPLEMENTED,
         "search is not implemented in this CoreLink adapter",
@@ -95,16 +93,11 @@ async fn handle_metadata(
     headers: HeaderMap,
 ) -> Response {
     let cfg = state.config.clone();
-    let tenant = match crate::npm::auth::authenticate(
-        &headers,
-        &cfg.tenant_resolver,
-        &cfg.auditor,
-    )
-    .await
-    {
-        Ok(t) => t,
-        Err(e) => return error_response(&e),
-    };
+    let tenant =
+        match crate::npm::auth::authenticate(&headers, &cfg.tenant_resolver, &cfg.auditor).await {
+            Ok(t) => t,
+            Err(e) => return error_response(&e),
+        };
 
     match serve_metadata(
         &pkg,
@@ -135,16 +128,11 @@ async fn handle_tarball(
     headers: HeaderMap,
 ) -> Response {
     let cfg = state.config.clone();
-    let tenant = match crate::npm::auth::authenticate(
-        &headers,
-        &cfg.tenant_resolver,
-        &cfg.auditor,
-    )
-    .await
-    {
-        Ok(t) => t,
-        Err(e) => return error_response(&e),
-    };
+    let tenant =
+        match crate::npm::auth::authenticate(&headers, &cfg.tenant_resolver, &cfg.auditor).await {
+            Ok(t) => t,
+            Err(e) => return error_response(&e),
+        };
 
     // To get dist.shasum we need the package metadata. Fetch from KV
     // (must have been cached by a prior metadata request) or from
@@ -176,17 +164,15 @@ async fn handle_tarball(
     // Derive version from tarball filename: <pkg>-<version>.tgz
     let version = derive_version_from_filename(&tarball_file, &pkg);
 
-    let dist_shasum = match version
-        .as_deref()
-        .and_then(|v| {
-            meta_json
-                .get("versions")
-                .and_then(|vs| vs.get(v))
-                .and_then(|vobj| vobj.get("dist"))
-                .and_then(|d| d.get("shasum"))
-                .and_then(|s| s.as_str())
-                .map(|s| s.to_owned())
-        }) {
+    let dist_shasum = match version.as_deref().and_then(|v| {
+        meta_json
+            .get("versions")
+            .and_then(|vs| vs.get(v))
+            .and_then(|vobj| vobj.get("dist"))
+            .and_then(|d| d.get("shasum"))
+            .and_then(|s| s.as_str())
+            .map(|s| s.to_owned())
+    }) {
         Some(s) => s,
         None => {
             return error_response(&NpmAdapterError::MetadataParse(format!(
@@ -221,14 +207,11 @@ async fn handle_tarball(
                 HeaderValue::from_static("application/octet-stream"),
             );
             if let Ok(v) = HeaderValue::from_str(&resp.digest_hex) {
-                headers_out.insert(
-                    http::HeaderName::from_static("x-corelink-cache-digest"),
-                    v,
-                );
+                headers_out.insert(http::HeaderName::from_static("x-corelink-cache-digest"), v);
             }
-            if let Ok(v) = HeaderValue::from_str(&format!(
-                "attachment; filename=\"{tarball_file}\""
-            )) {
+            if let Ok(v) =
+                HeaderValue::from_str(&format!("attachment; filename=\"{tarball_file}\""))
+            {
                 headers_out.insert(header::CONTENT_DISPOSITION, v);
             }
             (StatusCode::OK, headers_out, resp.body).into_response()
@@ -239,8 +222,7 @@ async fn handle_tarball(
 
 /// Map a [`NpmAdapterError`] to an HTTP response.
 fn error_response(err: &NpmAdapterError) -> Response {
-    let code =
-        StatusCode::from_u16(err.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let code = StatusCode::from_u16(err.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let body = err.to_string();
     let mut h = HeaderMap::new();
     h.insert(

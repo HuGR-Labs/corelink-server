@@ -13,9 +13,7 @@
 //! unchanged on audit failure.
 
 use super::error::NoticeAuditSinkError;
-use super::event::{
-    NoticeCloudEventType, NoticeDeprecatedPayload, NoticePublishedPayload,
-};
+use super::event::{NoticeCloudEventType, NoticeDeprecatedPayload, NoticePublishedPayload};
 use std::sync::{Arc, Mutex};
 
 /// 2-arm canonical audit record for privacy notice emit.
@@ -63,8 +61,12 @@ impl NoticeAuditRecord {
     #[must_use]
     pub const fn cloud_event_type(&self) -> &'static str {
         match self {
-            Self::Published { cloud_event_type, .. } => cloud_event_type,
-            Self::Deprecated { cloud_event_type, .. } => cloud_event_type,
+            Self::Published {
+                cloud_event_type, ..
+            } => cloud_event_type,
+            Self::Deprecated {
+                cloud_event_type, ..
+            } => cloud_event_type,
         }
     }
 }
@@ -118,10 +120,7 @@ impl InMemoryNoticeAuditSink {
     /// Snapshot the current record count without draining.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.records
-            .lock()
-            .map(|g| g.len())
-            .unwrap_or(0)
+        self.records.lock().map(|g| g.len()).unwrap_or(0)
     }
 
     /// Whether the sink is empty.
@@ -165,8 +164,8 @@ impl NoticeAuditSink for FailingNoticeAuditSink {
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
+    use super::super::event::{NoticePublishedPayload, NoticeVersion, VersionBump};
     use super::*;
-    use super::super::event::{NoticeVersion, NoticePublishedPayload, VersionBump};
     use std::collections::BTreeMap;
     use uuid::Uuid;
 

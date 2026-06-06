@@ -210,8 +210,7 @@ pub trait EvictionAuditSink: Send + Sync + core::fmt::Debug {
     ///
     /// Returns [`EvictionAuditSinkError::Store`] on any backend
     /// failure.
-    fn emit(&self, record: EvictionAuditRecord)
-        -> Result<(), EvictionAuditSinkError>;
+    fn emit(&self, record: EvictionAuditRecord) -> Result<(), EvictionAuditSinkError>;
 }
 
 /// In-memory test audit sink. Cloning shares the underlying buffer.
@@ -253,10 +252,7 @@ impl InMemoryEvictionAuditSink {
 
     /// Filter snapshot down to records of a single event type.
     #[must_use]
-    pub fn snapshot_of(
-        &self,
-        event_type: EvictionEventType,
-    ) -> Vec<EvictionAuditRecord> {
+    pub fn snapshot_of(&self, event_type: EvictionEventType) -> Vec<EvictionAuditRecord> {
         self.snapshot()
             .into_iter()
             .filter(|r| r.event_type == event_type)
@@ -265,15 +261,11 @@ impl InMemoryEvictionAuditSink {
 }
 
 impl EvictionAuditSink for InMemoryEvictionAuditSink {
-    fn emit(
-        &self,
-        record: EvictionAuditRecord,
-    ) -> Result<(), EvictionAuditSinkError> {
-        let mut guard = self.inner.lock().map_err(|_| {
-            EvictionAuditSinkError::Store(
-                "audit sink mutex poisoned".to_string(),
-            )
-        })?;
+    fn emit(&self, record: EvictionAuditRecord) -> Result<(), EvictionAuditSinkError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| EvictionAuditSinkError::Store("audit sink mutex poisoned".to_string()))?;
         guard.push(record);
         Ok(())
     }
@@ -294,10 +286,7 @@ impl FailingEvictionAuditSink {
 }
 
 impl EvictionAuditSink for FailingEvictionAuditSink {
-    fn emit(
-        &self,
-        _record: EvictionAuditRecord,
-    ) -> Result<(), EvictionAuditSinkError> {
+    fn emit(&self, _record: EvictionAuditRecord) -> Result<(), EvictionAuditSinkError> {
         Err(EvictionAuditSinkError::Store(
             "induced audit sink failure (test fixture)".to_string(),
         ))
@@ -378,10 +367,7 @@ mod tests {
             "skipped_reachable"
         );
         assert_eq!(EvictionReason::SkippedTtl.as_str(), "skipped_ttl");
-        assert_eq!(
-            EvictionReason::SkippedQuotaOk.as_str(),
-            "skipped_quota_ok"
-        );
+        assert_eq!(EvictionReason::SkippedQuotaOk.as_str(), "skipped_quota_ok");
         assert_eq!(
             EvictionReason::QuotaTriggerFired.as_str(),
             "quota_trigger_fired"
@@ -395,10 +381,7 @@ mod tests {
         sink.emit(rec(EvictionEventType::Evicted)).unwrap();
         sink.emit(rec(EvictionEventType::SkippedReachable)).unwrap();
         assert_eq!(sink.len(), 2);
-        assert_eq!(
-            sink.snapshot_of(EvictionEventType::Evicted).len(),
-            1
-        );
+        assert_eq!(sink.snapshot_of(EvictionEventType::Evicted).len(), 1);
         assert_eq!(
             sink.snapshot_of(EvictionEventType::SkippedReachable).len(),
             1

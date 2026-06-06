@@ -45,8 +45,8 @@ fn pseudonymize(key: &[u8], domain: &[u8], id: &Uuid) -> String {
         clippy::expect_used,
         reason = "Hmac<Sha256>::new_from_slice never returns Err for any byte slice"
     )]
-    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key)
-        .expect("HMAC-SHA256 accepts any key length");
+    let mut mac =
+        <Hmac<Sha256> as Mac>::new_from_slice(key).expect("HMAC-SHA256 accepts any key length");
     mac.update(domain);
     mac.update(id.as_bytes());
     let tag = mac.finalize().into_bytes();

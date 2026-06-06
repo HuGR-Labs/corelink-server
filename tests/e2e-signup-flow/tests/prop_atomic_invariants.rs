@@ -18,12 +18,12 @@
     reason = "tests are allowed to use these primitives"
 )]
 
+use corelink_signup::orchestrator::InMemoryProvisionRecord;
 use corelink_signup::{
     AtomicSignupStore, Bcp47Locale, CorrelationId, IdempotencyKey, InMemoryAtomicSignupStore,
     InMemoryBillingClient, InMemorySignupAuditSink, SignupAuditEventType, SignupOrchestrator,
     SignupOutcome, SignupRequest, UserEmailHash,
 };
-use corelink_signup::orchestrator::InMemoryProvisionRecord;
 
 use proptest::prelude::*;
 

@@ -60,7 +60,7 @@ use corelink_worker::cache::kv::InMemoryKv;
 use corelink_worker::middleware::auth_ctx::__test_helpers::make_auth_ctx;
 use corelink_worker::middleware::auth_ctx::{AuthCtx, AuthMethod, PrincipalId};
 use corelink_worker::reapi::ac::handler::{
-    ActionCacheHandler, ActionCacheHandlerBuilder, ActionCacheHandlerImpl, AcError, Clock,
+    AcError, ActionCacheHandler, ActionCacheHandlerBuilder, ActionCacheHandlerImpl, Clock,
     FakeClock, InMemoryAcEnvelopeStore, DEFAULT_AC_TTL_EXTEND_MS,
 };
 use corelink_worker::reapi::ac::{
@@ -171,12 +171,7 @@ fn synth(seed: u64) -> (ActionDigest, ActionResult) {
     let ad = ActionDigest::new(action_hash, action_bytes.len() as i64);
     let proto = format!("conformance-result-proto-{seed}").into_bytes();
     let out = Digest::compute(format!("conformance-out-{seed}").as_bytes());
-    let ar = ActionResult::new(
-        vec![OutputFileDigest::new(out, 64)],
-        Vec::new(),
-        0,
-        proto,
-    );
+    let ar = ActionResult::new(vec![OutputFileDigest::new(out, 64)], Vec::new(), 0, proto);
     (ad, ar)
 }
 
@@ -627,9 +622,7 @@ fn conformance_suite_summary() {
         "REAPI v2 Action Cache conformance suite — pinned bazelbuild/remote-apis commit: {}",
         PINNED_REMOTE_APIS_COMMIT
     );
-    eprintln!(
-        "  GetActionResult         — 4 canonical tests (hit / miss / cross-tenant / sig)"
-    );
+    eprintln!("  GetActionResult         — 4 canonical tests (hit / miss / cross-tenant / sig)");
     eprintln!(
         "  UpdateActionResult      — 6 canonical tests (success / idempotent / outputs_missing /"
     );

@@ -27,11 +27,7 @@ use common::TestRig;
 use corelink_adapter_host::oci::auth::OciScope;
 use corelink_adapter_host::oci::digest::{OciDigest, OciDigestAlgo};
 
-async fn seed_blob(
-    rig: &TestRig,
-    _repo: &str,
-    bytes: &[u8],
-) -> String {
+async fn seed_blob(rig: &TestRig, _repo: &str, bytes: &[u8]) -> String {
     // Skip the upload flow — seed directly via the in-memory port to
     // isolate the pull-side semantics from the push state machine.
     let digest = OciDigest::compute(OciDigestAlgo::Sha256, bytes).expect("compute");
@@ -39,11 +35,7 @@ async fn seed_blob(
     use corelink_adapter_host::oci::ports::BlobStore;
     // The fake's `finalize_upload` writes the slot; emulate by opening
     // → patching once → finalize.
-    let uuid = rig
-        .cas
-        .open_upload(&rig.tenant)
-        .await
-        .expect("open");
+    let uuid = rig.cas.open_upload(&rig.tenant).await.expect("open");
     rig.cas
         .append_chunk(&rig.tenant, &uuid, Bytes::copy_from_slice(bytes))
         .await

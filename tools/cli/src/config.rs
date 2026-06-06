@@ -214,7 +214,11 @@ pub fn save_to_path(path: &Path, cfg: &CorelinkConfig) -> Result<(), ConfigError
 
 /// Public wrapper around `apply_key` for test access.
 #[allow(dead_code)]
-pub fn apply_key_to_cfg(cfg: &mut CorelinkConfig, key: &str, value: &str) -> Result<(), ConfigError> {
+pub fn apply_key_to_cfg(
+    cfg: &mut CorelinkConfig,
+    key: &str,
+    value: &str,
+) -> Result<(), ConfigError> {
     apply_key(cfg, key, value)
 }
 

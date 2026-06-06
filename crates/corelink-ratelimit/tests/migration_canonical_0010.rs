@@ -62,12 +62,8 @@ fn migration_is_non_empty_and_versioned() {
 fn create_table_and_indexes_are_idempotent() {
     let sql = migration_sql_no_comments();
     assert!(sql.contains("CREATE TABLE IF NOT EXISTS ratelimit_buckets"));
-    assert!(
-        sql.contains("CREATE INDEX IF NOT EXISTS idx_ratelimit_buckets_tenant_dimension")
-    );
-    assert!(
-        sql.contains("CREATE INDEX IF NOT EXISTS idx_ratelimit_buckets_updated_at_ms")
-    );
+    assert!(sql.contains("CREATE INDEX IF NOT EXISTS idx_ratelimit_buckets_tenant_dimension"));
+    assert!(sql.contains("CREATE INDEX IF NOT EXISTS idx_ratelimit_buckets_updated_at_ms"));
 }
 
 #[test]
@@ -83,9 +79,8 @@ fn primary_key_is_tenant_leftmost() {
 #[test]
 fn key_dimension_check_lists_canonical_3_literals() {
     let sql = migration_sql_no_comments();
-    assert!(sql.contains(
-        "CHECK (key_dimension IN ('per_tenant', 'per_ip', 'per_tenant_per_endpoint'))"
-    ));
+    assert!(sql
+        .contains("CHECK (key_dimension IN ('per_tenant', 'per_ip', 'per_tenant_per_endpoint'))"));
     // Cross-check against the Rust enum.
     for d in [
         KeyDimension::PerTenant,

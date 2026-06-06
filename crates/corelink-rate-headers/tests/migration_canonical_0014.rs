@@ -43,9 +43,7 @@
     reason = "test target"
 )]
 
-use corelink_rate_headers::{
-    rate_headers_schema_version, MIGRATION_0014_GLOBAL_CIRCUIT_STATE,
-};
+use corelink_rate_headers::{rate_headers_schema_version, MIGRATION_0014_GLOBAL_CIRCUIT_STATE};
 
 /// Strip `-- …` line comments before scanning.
 fn migration_sql_no_comments() -> String {
@@ -85,9 +83,7 @@ fn create_state_table_uses_if_not_exists() {
 fn create_trips_history_table_uses_if_not_exists() {
     let sql = migration_sql_no_comments();
     assert!(
-        sql.contains(
-            "CREATE TABLE IF NOT EXISTS global_circuit_trips_history"
-        ),
+        sql.contains("CREATE TABLE IF NOT EXISTS global_circuit_trips_history"),
         "global_circuit_trips_history table must use IF NOT EXISTS"
     );
 }
@@ -129,17 +125,13 @@ fn state_check_lists_canonical_three_literals() {
 #[test]
 fn signal_5xx_rate_envelope_check_present() {
     let sql = migration_sql_no_comments();
-    assert!(
-        sql.contains("signal_5xx_rate >= 0.0 AND signal_5xx_rate <= 1.0")
-    );
+    assert!(sql.contains("signal_5xx_rate >= 0.0 AND signal_5xx_rate <= 1.0"));
 }
 
 #[test]
 fn signal_do_error_rate_envelope_check_present() {
     let sql = migration_sql_no_comments();
-    assert!(
-        sql.contains("signal_do_error_rate >= 0.0 AND signal_do_error_rate <= 1.0")
-    );
+    assert!(sql.contains("signal_do_error_rate >= 0.0 AND signal_do_error_rate <= 1.0"));
 }
 
 #[test]

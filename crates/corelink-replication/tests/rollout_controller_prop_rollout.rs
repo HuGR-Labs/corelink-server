@@ -24,13 +24,13 @@ use std::sync::Arc;
 
 use corelink_replication::rollout_controller::{
     budget::{BudgetRecord, InMemoryBudgetTracker},
-    BudgetTracker,
     controller::{
-        default_controller, fresh_actor, passing_metrics, signed_artifact, InMemoryRolloutController,
+        default_controller, fresh_actor, passing_metrics, signed_artifact,
+        InMemoryRolloutController,
     },
     error::RolloutError,
     types::{GateMetrics, NextAction, RolloutStage},
-    InMemoryRolloutAuditSink, RolloutController,
+    BudgetTracker, InMemoryRolloutAuditSink, RolloutController,
 };
 use proptest::prelude::*;
 use uuid::Uuid;
@@ -284,9 +284,18 @@ fn stage_dwell_minimums_canonical() {
 
 #[test]
 fn stage_next_chain_canonical() {
-    assert_eq!(RolloutStage::Stage1Pct.next(), Some(RolloutStage::Stage10Pct));
-    assert_eq!(RolloutStage::Stage10Pct.next(), Some(RolloutStage::Stage50Pct));
-    assert_eq!(RolloutStage::Stage50Pct.next(), Some(RolloutStage::Stage100Pct));
+    assert_eq!(
+        RolloutStage::Stage1Pct.next(),
+        Some(RolloutStage::Stage10Pct)
+    );
+    assert_eq!(
+        RolloutStage::Stage10Pct.next(),
+        Some(RolloutStage::Stage50Pct)
+    );
+    assert_eq!(
+        RolloutStage::Stage50Pct.next(),
+        Some(RolloutStage::Stage100Pct)
+    );
     assert_eq!(RolloutStage::Stage100Pct.next(), None);
 }
 

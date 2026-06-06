@@ -530,9 +530,12 @@ mod tests {
     async fn tick_aborts_orphans_older_than_age_cutoff() {
         let sessions = Arc::new(InMemorySessionStore::new());
         let audit = Arc::new(InMemoryAuditSink::new());
-        let sweeper =
-            InMemoryOrphanSweeper::with_defaults(Region::Wnam, Arc::clone(&sessions), Arc::clone(&audit))
-                .unwrap();
+        let sweeper = InMemoryOrphanSweeper::with_defaults(
+            Region::Wnam,
+            Arc::clone(&sessions),
+            Arc::clone(&audit),
+        )
+        .unwrap();
 
         let tenant = Uuid::from_u128(1);
         let _young = open_session(&sessions, tenant, b"young", Region::Wnam, 1).await;
@@ -562,11 +565,11 @@ mod tests {
         let _ = sessions.lookup(tenant, _young).await.unwrap().unwrap();
 
         let _ = old; // pin lifetime
-        // Bump young's last_activity by appending another chunk
-        // close to "now":
-        // (intentionally simple — InMemorySessionStore does not
-        // refresh on append by default; rely on default to keep
-        // young fresh by NOT performing any time-travel).
+                     // Bump young's last_activity by appending another chunk
+                     // close to "now":
+                     // (intentionally simple — InMemorySessionStore does not
+                     // refresh on append by default; rely on default to keep
+                     // young fresh by NOT performing any time-travel).
 
         let outcome = sweeper.tick(now_ms, "alarm-1").await.unwrap();
         // young was opened at created_at_ms=1 too; the InMemory fake
@@ -587,9 +590,12 @@ mod tests {
     async fn tick_skips_sessions_under_age_cutoff() {
         let sessions = Arc::new(InMemorySessionStore::new());
         let audit = Arc::new(InMemoryAuditSink::new());
-        let sweeper =
-            InMemoryOrphanSweeper::with_defaults(Region::Wnam, Arc::clone(&sessions), Arc::clone(&audit))
-                .unwrap();
+        let sweeper = InMemoryOrphanSweeper::with_defaults(
+            Region::Wnam,
+            Arc::clone(&sessions),
+            Arc::clone(&audit),
+        )
+        .unwrap();
         let tenant = Uuid::from_u128(1);
         let _ = open_session(&sessions, tenant, b"recent", Region::Wnam, 1_000_000).await;
         // now_ms = 1_000_000 + 1 hour; cutoff is 7 days; under cutoff.
@@ -603,9 +609,12 @@ mod tests {
     async fn tick_pinned_to_region_skips_other_regions() {
         let sessions = Arc::new(InMemorySessionStore::new());
         let audit = Arc::new(InMemoryAuditSink::new());
-        let sweeper =
-            InMemoryOrphanSweeper::with_defaults(Region::Wnam, Arc::clone(&sessions), Arc::clone(&audit))
-                .unwrap();
+        let sweeper = InMemoryOrphanSweeper::with_defaults(
+            Region::Wnam,
+            Arc::clone(&sessions),
+            Arc::clone(&audit),
+        )
+        .unwrap();
         let tenant = Uuid::from_u128(1);
         let _here = open_session(&sessions, tenant, b"here", Region::Wnam, 1).await;
         let _away = open_session(&sessions, tenant, b"away", Region::Weur, 1).await;
@@ -621,9 +630,12 @@ mod tests {
     async fn tick_idempotent_under_repeat() {
         let sessions = Arc::new(InMemorySessionStore::new());
         let audit = Arc::new(InMemoryAuditSink::new());
-        let sweeper =
-            InMemoryOrphanSweeper::with_defaults(Region::Wnam, Arc::clone(&sessions), Arc::clone(&audit))
-                .unwrap();
+        let sweeper = InMemoryOrphanSweeper::with_defaults(
+            Region::Wnam,
+            Arc::clone(&sessions),
+            Arc::clone(&audit),
+        )
+        .unwrap();
         let tenant = Uuid::from_u128(1);
         let _ = open_session(&sessions, tenant, b"x", Region::Wnam, 1).await;
         let now_ms = 8 * 24 * 60 * 60 * 1000_u64;
@@ -641,9 +653,12 @@ mod tests {
     async fn tick_cross_tenant_aborts_only_within_each_tenant_scope() {
         let sessions = Arc::new(InMemorySessionStore::new());
         let audit = Arc::new(InMemoryAuditSink::new());
-        let sweeper =
-            InMemoryOrphanSweeper::with_defaults(Region::Wnam, Arc::clone(&sessions), Arc::clone(&audit))
-                .unwrap();
+        let sweeper = InMemoryOrphanSweeper::with_defaults(
+            Region::Wnam,
+            Arc::clone(&sessions),
+            Arc::clone(&audit),
+        )
+        .unwrap();
         let tenant_a = Uuid::from_u128(1);
         let tenant_b = Uuid::from_u128(2);
         let sa = open_session(&sessions, tenant_a, b"a", Region::Wnam, 1).await;
@@ -657,10 +672,10 @@ mod tests {
         // session's owning tenant; cross-tenant audit emit is
         // structurally impossible because the abort path threads
         // `(tenant_id, session_id)` through every step.
-        let pairs: std::collections::BTreeSet<(Uuid, super::super::types::SessionId)> =
-            recs.into_iter()
-                .map(|r| (r.tenant_id, r.session_id.unwrap()))
-                .collect();
+        let pairs: std::collections::BTreeSet<(Uuid, super::super::types::SessionId)> = recs
+            .into_iter()
+            .map(|r| (r.tenant_id, r.session_id.unwrap()))
+            .collect();
         assert!(pairs.contains(&(tenant_a, sa)));
         assert!(pairs.contains(&(tenant_b, sb)));
     }
@@ -671,9 +686,14 @@ mod tests {
         let audit = Arc::new(InMemoryAuditSink::new());
         // Build a sweeper with batch_size=2 so we can drive the
         // ceiling deterministically.
-        let sweeper =
-            InMemoryOrphanSweeper::new(Region::Wnam, Arc::clone(&sessions), Arc::clone(&audit), ORPHAN_AGE_MS, 2)
-                .unwrap();
+        let sweeper = InMemoryOrphanSweeper::new(
+            Region::Wnam,
+            Arc::clone(&sessions),
+            Arc::clone(&audit),
+            ORPHAN_AGE_MS,
+            2,
+        )
+        .unwrap();
         let tenant = Uuid::from_u128(1);
         for i in 0..5_u32 {
             let _ = open_session(&sessions, tenant, &i.to_be_bytes(), Region::Wnam, 1).await;
@@ -715,9 +735,12 @@ mod tests {
     async fn finalized_session_under_age_cutoff_is_not_swept() {
         let sessions = Arc::new(InMemorySessionStore::new());
         let audit = Arc::new(InMemoryAuditSink::new());
-        let sweeper =
-            InMemoryOrphanSweeper::with_defaults(Region::Wnam, Arc::clone(&sessions), Arc::clone(&audit))
-                .unwrap();
+        let sweeper = InMemoryOrphanSweeper::with_defaults(
+            Region::Wnam,
+            Arc::clone(&sessions),
+            Arc::clone(&audit),
+        )
+        .unwrap();
         let tenant = Uuid::from_u128(1);
         let sid = open_session(&sessions, tenant, b"x", Region::Wnam, 1).await;
         // Append + finalize.
@@ -730,9 +753,9 @@ mod tests {
             .finalize(super::super::session::SessionFinalize {
                 tenant_id: tenant,
                 session_id: sid,
-                manifest_digest: super::super::types::ManifestDigest::from_digest(
-                    Digest::compute(b"m"),
-                ),
+                manifest_digest: super::super::types::ManifestDigest::from_digest(Digest::compute(
+                    b"m",
+                )),
                 chunk_count: 1,
                 finalized_at_ms: 2,
             })
@@ -761,9 +784,6 @@ mod tests {
         // `dyn Trait`, but keep this static smoke so a future
         // refactor towards `dyn` can be detected mechanically.
         fn _assert_send_sync<T: Send + Sync>() {}
-        let _ = _assert_send_sync::<
-            InMemoryOrphanSweeper<InMemorySessionStore, InMemoryAuditSink>,
-        >;
+        let _ = _assert_send_sync::<InMemoryOrphanSweeper<InMemorySessionStore, InMemoryAuditSink>>;
     }
-
 }

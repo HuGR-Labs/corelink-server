@@ -274,18 +274,16 @@ fn prng_seed_is_deterministic_across_invocations() {
 fn empty_and_single_byte_payloads_are_idempotent() {
     let backend = InMemoryR2::new();
 
-    let res1 = block_on(backend.put_if_none_match("t/empty", Bytes::new()))
-        .expect("put empty");
+    let res1 = block_on(backend.put_if_none_match("t/empty", Bytes::new())).expect("put empty");
     assert!(matches!(res1, BackendPutOutcome::Stored));
-    let res2 = block_on(backend.put_if_none_match("t/empty", Bytes::new()))
-        .expect("put empty 2");
+    let res2 = block_on(backend.put_if_none_match("t/empty", Bytes::new())).expect("put empty 2");
     assert!(matches!(res2, BackendPutOutcome::AlreadyExists));
 
-    let res3 = block_on(backend.put_if_none_match("t/one", Bytes::from(vec![0x42])))
-        .expect("put one");
+    let res3 =
+        block_on(backend.put_if_none_match("t/one", Bytes::from(vec![0x42]))).expect("put one");
     assert!(matches!(res3, BackendPutOutcome::Stored));
-    let res4 = block_on(backend.put_if_none_match("t/one", Bytes::from(vec![0x42])))
-        .expect("put one 2");
+    let res4 =
+        block_on(backend.put_if_none_match("t/one", Bytes::from(vec![0x42]))).expect("put one 2");
     assert!(matches!(res4, BackendPutOutcome::AlreadyExists));
 }
 

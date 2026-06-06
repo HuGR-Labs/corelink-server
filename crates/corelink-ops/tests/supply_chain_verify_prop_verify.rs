@@ -1,6 +1,14 @@
 //! Property tests for SLSA L3 provenance verification (WI-S12-001).
 // Tests legitimately use panic!, unwrap, and expect for assertion purposes.
-#![allow(clippy::panic, clippy::unwrap_used, clippy::expect_used, clippy::uninlined_format_args, clippy::format_in_format_args, clippy::indexing_slicing, clippy::print_stdout)]
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::indexing_slicing,
+    clippy::print_stdout
+)]
 //!
 //! 10k iterations on PR; 100k iterations nightly (controlled via PROPTEST_CASES env var).
 //! Per S-07 P1-2 lesson: PROPTEST_CASES is a runtime env var, not a const.
@@ -15,9 +23,7 @@
 
 use corelink_ops::supply_chain::verify::{
     error::VerifyError,
-    types::{
-        BuilderIdentity, DsseSignature, MerkleInclusionProof, RekorBundle, SlsaAttestation,
-    },
+    types::{BuilderIdentity, DsseSignature, MerkleInclusionProof, RekorBundle, SlsaAttestation},
     verifier::{DefaultSlsaVerifier, SlsaProvenanceVerifier},
 };
 use proptest::prelude::*;

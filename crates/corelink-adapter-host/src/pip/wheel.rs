@@ -250,7 +250,10 @@ mod tests {
         let bytes = b"hello world";
         let wrong = "0".repeat(64);
         let result = verify_sha256(bytes, &wrong);
-        assert!(matches!(result, Err(PipAdapterError::IntegrityMismatch { .. })));
+        assert!(matches!(
+            result,
+            Err(PipAdapterError::IntegrityMismatch { .. })
+        ));
     }
 
     #[test]
@@ -260,6 +263,9 @@ mod tests {
         let b = b"hello worlD";
         let hex = sha256_hex(b);
         let result = verify_sha256(a, &hex);
-        assert!(matches!(result, Err(PipAdapterError::IntegrityMismatch { .. })));
+        assert!(matches!(
+            result,
+            Err(PipAdapterError::IntegrityMismatch { .. })
+        ));
     }
 }

@@ -14,9 +14,7 @@ use std::sync::Mutex;
 use crate::audit::{AuditEvent, AuditEventKind, AuditSink};
 use crate::error::CasHandlerError;
 use crate::observer::{Sli, SliObservation, SliObserver};
-use crate::request::{
-    CasReadRequest, CasReadResponse, CasWriteRequest, CasWriteResponse,
-};
+use crate::request::{CasReadRequest, CasReadResponse, CasWriteRequest, CasWriteResponse};
 
 /// Trait every concrete CAS read handler implements.
 ///
@@ -96,10 +94,7 @@ impl core::fmt::Debug for InMemoryCasHandler {
 impl InMemoryCasHandler {
     /// Construct an empty handler bound to the supplied collaborators.
     #[must_use]
-    pub fn new(
-        audit: std::sync::Arc<dyn AuditSink>,
-        sli: std::sync::Arc<dyn SliObserver>,
-    ) -> Self {
+    pub fn new(audit: std::sync::Arc<dyn AuditSink>, sli: std::sync::Arc<dyn SliObserver>) -> Self {
         Self {
             objects: Mutex::new(HashMap::new()),
             audit,
@@ -489,8 +484,7 @@ mod tests {
         assert_eq!(rows[0].kind, AuditEventKind::ReadDenied);
         let obs = sli.snapshot().expect("sli");
         assert!(
-            obs.iter()
-                .any(|o| o.sli == Sli::AvailCasGet && o.is_error),
+            obs.iter().any(|o| o.sli == Sli::AvailCasGet && o.is_error),
             "AvailCasGet error observation emitted on denial path"
         );
     }
@@ -509,10 +503,7 @@ mod tests {
             .expect_err("not found");
         assert!(matches!(err, CasHandlerError::NotFound { .. }));
         let obs = sli.snapshot().expect("sli");
-        assert!(
-            obs.iter()
-                .any(|o| o.sli == Sli::AvailCasGet && o.is_error)
-        );
+        assert!(obs.iter().any(|o| o.sli == Sli::AvailCasGet && o.is_error));
     }
 
     #[test]
@@ -568,7 +559,9 @@ mod tests {
         let rows = audit.snapshot().expect("audit");
         // WriteAttempted then WriteCommitted — INV ordering.
         assert_eq!(rows[0].kind, AuditEventKind::WriteAttempted);
-        assert!(rows.iter().any(|r| r.kind == AuditEventKind::WriteCommitted));
+        assert!(rows
+            .iter()
+            .any(|r| r.kind == AuditEventKind::WriteCommitted));
         assert!(sli
             .snapshot()
             .expect("sli")
@@ -602,7 +595,9 @@ mod tests {
         }
         // No WriteCommitted row.
         let rows = audit.snapshot().expect("audit");
-        assert!(rows.iter().all(|r| r.kind != AuditEventKind::WriteCommitted));
+        assert!(rows
+            .iter()
+            .all(|r| r.kind != AuditEventKind::WriteCommitted));
         // CorrectnessViolation row present.
         assert!(rows
             .iter()

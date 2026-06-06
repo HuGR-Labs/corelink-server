@@ -54,9 +54,8 @@ pub fn build_version_info() -> VersionInfo {
     let target_triple = option_env!("TARGET")
         .unwrap_or(std::env::consts::ARCH)
         .to_owned();
-    let slsa_attestation = format!(
-        "https://corelink.humangr.com/attestations/cli/{version}/{git_rev}/slsa3.json"
-    );
+    let slsa_attestation =
+        format!("https://corelink.humangr.com/attestations/cli/{version}/{git_rev}/slsa3.json");
 
     VersionInfo {
         version,
@@ -68,7 +67,12 @@ pub fn build_version_info() -> VersionInfo {
 }
 
 #[cfg(test)]
-#[allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used)]
+#[allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used
+)]
 mod tests {
     use super::*;
 
@@ -82,7 +86,9 @@ mod tests {
     #[test]
     fn version_info_has_slsa_link() {
         let info = build_version_info();
-        assert!(info.slsa_attestation.starts_with("https://corelink.humangr.com/attestations/cli/"));
+        assert!(info
+            .slsa_attestation
+            .starts_with("https://corelink.humangr.com/attestations/cli/"));
     }
 
     #[test]

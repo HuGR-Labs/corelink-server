@@ -148,12 +148,10 @@ impl InMemoryFailoverRouter {
     }
 
     fn get_health(&self, region: Region, timestamp_ms: u64) -> RegionHealthSnapshot {
-        self.probe
-            .probe(region, timestamp_ms)
-            .unwrap_or_else(|_| {
-                // Probe failure = treat as degraded (fail-CLOSED / conservative).
-                RegionHealthSnapshot::evaluate(region, 100.0, 10_000, 100, timestamp_ms)
-            })
+        self.probe.probe(region, timestamp_ms).unwrap_or_else(|_| {
+            // Probe failure = treat as degraded (fail-CLOSED / conservative).
+            RegionHealthSnapshot::evaluate(region, 100.0, 10_000, 100, timestamp_ms)
+        })
     }
 }
 
@@ -203,10 +201,7 @@ impl FailoverRouter for InMemoryFailoverRouter {
                 primary_region: primary.as_str().to_owned(),
                 replica_region: sibling.as_str().to_owned(),
                 timestamp_ms,
-                detail: format!(
-                    "triggers=[{trigger_str}] health={:?}",
-                    snap.health
-                ),
+                detail: format!("triggers=[{trigger_str}] health={:?}", snap.health),
             })
             .map_err(FailoverError::Audit)?;
 

@@ -302,8 +302,8 @@ mod tests {
 
     #[test]
     fn otel_collector_rejects_bare_endpoint() {
-        let err =
-            OtelCollectorConfig::new("otel.example.com:4318", OtlpProtocol::Grpc, None).unwrap_err();
+        let err = OtelCollectorConfig::new("otel.example.com:4318", OtlpProtocol::Grpc, None)
+            .unwrap_err();
         assert!(matches!(err, ExporterError::InvalidConfig(_)));
     }
 
@@ -339,7 +339,8 @@ mod tests {
 
     #[test]
     fn grafana_cloud_rejects_empty_instance_id() {
-        let err = GrafanaCloudConfig::new("https://p", "https://t", "", "k".repeat(32)).unwrap_err();
+        let err =
+            GrafanaCloudConfig::new("https://p", "https://t", "", "k".repeat(32)).unwrap_err();
         assert!(matches!(err, ExporterError::InvalidConfig(_)));
     }
 }

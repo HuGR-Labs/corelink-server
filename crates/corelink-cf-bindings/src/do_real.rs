@@ -281,8 +281,7 @@ impl TenantScopedName {
 /// Production wires a closure that fans into `apps/server`'s audit
 /// chain. Tests use the default no-op or a recording closure (see the
 /// `tests/do_real.rs` integration tests).
-pub type AuditFn =
-    Arc<dyn Fn(DoOp, &str) -> Result<(), DoError> + Send + Sync + 'static>;
+pub type AuditFn = Arc<dyn Fn(DoOp, &str) -> Result<(), DoError> + Send + Sync + 'static>;
 
 fn noop_audit() -> AuditFn {
     Arc::new(|_op, _name| Ok(()))
@@ -331,9 +330,8 @@ impl FakeFetchResponse {
 /// Returning `Err` simulates a CF binding fault — the wrapper maps it
 /// onto [`DoError::Backend("do_fetch: …")`].
 #[cfg(not(target_arch = "wasm32"))]
-pub type FakeFetchHandler = Arc<
-    dyn Fn(&str, &str) -> Result<FakeFetchResponse, DoError> + Send + Sync + 'static,
->;
+pub type FakeFetchHandler =
+    Arc<dyn Fn(&str, &str) -> Result<FakeFetchResponse, DoError> + Send + Sync + 'static>;
 
 /// Native-only in-memory router that stands in for the `worker::*`
 /// stub-fetch path in unit tests.
@@ -380,9 +378,7 @@ impl FakeDoRouter {
     pub fn always_fail(reason: impl Into<String>) -> Self {
         let r = reason.into();
         Self {
-            handler: Arc::new(move |_name, _url| {
-                Err(DoError::Backend(format!("do_fetch: {r}")))
-            }),
+            handler: Arc::new(move |_name, _url| Err(DoError::Backend(format!("do_fetch: {r}")))),
         }
     }
 
@@ -409,11 +405,7 @@ impl FakeDoRouter {
 
     /// Invoke the routed handler. Called by [`CfDurableObjectReal`]
     /// internals on the native build only.
-    pub fn dispatch(
-        &self,
-        scoped_name: &str,
-        url: &str,
-    ) -> Result<FakeFetchResponse, DoError> {
+    pub fn dispatch(&self, scoped_name: &str, url: &str) -> Result<FakeFetchResponse, DoError> {
         (self.handler)(scoped_name, url)
     }
 }
@@ -578,11 +570,7 @@ impl CfDurableObjectReal {
     /// Helper: validate-or-derive the scoped name and emit the audit
     /// fence before any backend call. Returns the full scoped name for
     /// the downstream `worker::*` / `FakeDoRouter` invocation.
-    fn audit_and_scope(
-        &self,
-        op: DoOp,
-        name: &str,
-    ) -> Result<TenantScopedName, DoError> {
+    fn audit_and_scope(&self, op: DoOp, name: &str) -> Result<TenantScopedName, DoError> {
         let scoped = self.scoped_name(name)?;
         (self.audit)(op, scoped.as_str())?;
         Ok(scoped)
@@ -681,11 +669,7 @@ impl CfDurableObjectReal {
     ///
     /// Returns [`DoError::Backend`] if validation/audit fails, the
     /// stub resolution fails, or the fetch returns an error.
-    pub async fn fetch_with_str(
-        &self,
-        name: &str,
-        url: &str,
-    ) -> Result<worker::Response, DoError> {
+    pub async fn fetch_with_str(&self, name: &str, url: &str) -> Result<worker::Response, DoError> {
         let scoped = self.audit_and_scope(DoOp::FetchStr, name)?;
         let id = self
             .namespace
@@ -753,10 +737,7 @@ impl CfDurableObjectReal {
     /// tests can exercise the full round-trip (scope → audit →
     /// stub-fetch → response) without the wasm32 toolchain.
     #[must_use]
-    pub fn with_fake_router(
-        tenant: DoTenantPrefix,
-        router: FakeDoRouter,
-    ) -> Self {
+    pub fn with_fake_router(tenant: DoTenantPrefix, router: FakeDoRouter) -> Self {
         Self {
             tenant,
             audit: noop_audit(),

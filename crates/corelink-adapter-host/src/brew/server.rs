@@ -72,7 +72,9 @@ pub fn build_router(config: BrewAdapterConfig) -> Result<Router, BrewAdapterErro
     ));
     let state = BrewRouterState {
         bottle,
-        tenant_resolver: Arc::<dyn crate::brew::ports::TenantResolver>::clone(&config.tenant_resolver),
+        tenant_resolver: Arc::<dyn crate::brew::ports::TenantResolver>::clone(
+            &config.tenant_resolver,
+        ),
     };
     Ok(Router::new()
         .route("/", get(handle_bottle_request))
@@ -141,10 +143,7 @@ impl IntoResponse for BrewAdapterError {
                 format!("bottle exceeds limit: {bytes} bytes"),
             ),
             Self::Audit(msg) => (StatusCode::SERVICE_UNAVAILABLE, format!("audit: {msg}")),
-            Self::Bind(err) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("bind: {err}"),
-            ),
+            Self::Bind(err) => (StatusCode::INTERNAL_SERVER_ERROR, format!("bind: {err}")),
         };
         let mut response = Response::new(Body::from(body));
         *response.status_mut() = status;

@@ -87,8 +87,7 @@ mod tests {
 
     #[test]
     fn from_observer_error_lifts_cleanly() {
-        let inner =
-            RedMetricsObserverError::Backend("induced".to_string());
+        let inner = RedMetricsObserverError::Backend("induced".to_string());
         let e: AnalyticsError = inner.into();
         assert!(matches!(e, AnalyticsError::Observer(_)));
     }

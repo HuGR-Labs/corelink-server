@@ -76,7 +76,10 @@ fn wave23_pilot_upload_requires_active_subscription() {
     let payloads = canonical_blob_payloads(&tenant.slug);
     let err = h.batch_upload_blobs(&tenant, &payloads).unwrap_err();
     assert!(
-        matches!(err, PilotHarnessError::Cas(CasError::TenantNotProvisioned(_))),
+        matches!(
+            err,
+            PilotHarnessError::Cas(CasError::TenantNotProvisioned(_))
+        ),
         "got: {err:?}"
     );
     // No state, no audit.

@@ -81,15 +81,15 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use bytes::Bytes;
+use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
 use corelink_hash::Digest;
 use corelink_meta::{BlobMetaKey, InMemoryMetaStore, MetaStore};
 use corelink_reapi::orchestrator::{
     audit_request_id_for_blob, CasPutOutcome, CasWriteOrchestrator, CommitPutPlan,
     NoopOrphanReconciler, OrchestratorError,
 };
-use corelink_tenant_path::TenantDerivationKey;
-use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
 use corelink_replication::region_resolver::{Region, TenantCtx};
+use corelink_tenant_path::TenantDerivationKey;
 use proptest::prelude::*;
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -772,10 +772,7 @@ async fn boundary_blob_just_over_5_mib_rejects_e2e() {
     // so the test traps drift to a different size-limit code path
     // (e.g. RegionMismatch, Backend) without re-spec'ing the contract.
     match err {
-        OrchestratorError::R2(corelink_cas::r2_storage::R2Error::BlobTooLarge {
-            size,
-            limit,
-        }) => {
+        OrchestratorError::R2(corelink_cas::r2_storage::R2Error::BlobTooLarge { size, limit }) => {
             assert_eq!(
                 size,
                 corelink_worker::storage::r2::SINGLE_BLOB_LIMIT_BYTES + 1

@@ -56,10 +56,7 @@ fn metric_outcome_canonical_strings_match_per_variant() {
         .metric_outcome(),
         "iss_mismatch"
     );
-    assert_eq!(
-        AuthError::AudienceMismatch.metric_outcome(),
-        "aud_mismatch"
-    );
+    assert_eq!(AuthError::AudienceMismatch.metric_outcome(), "aud_mismatch");
     assert_eq!(
         AuthError::JwksFetchFailed("net".into()).metric_outcome(),
         "jwks_fetch_failed"
@@ -190,7 +187,11 @@ fn principal_hash_length_is_exactly_eight_and_hex_lowercase() {
         let h = principal_hash(inp);
         assert_eq!(h.len(), 8, "hash for {:?} must be 8 chars", inp);
         for c in h.chars() {
-            assert!(c.is_ascii_hexdigit() && (c.is_ascii_digit() || c.is_ascii_lowercase()), "hex lowercase for {:?}", inp);
+            assert!(
+                c.is_ascii_hexdigit() && (c.is_ascii_digit() || c.is_ascii_lowercase()),
+                "hex lowercase for {:?}",
+                inp
+            );
         }
         // Non-empty.
         assert!(!h.is_empty());
@@ -262,7 +263,10 @@ fn email_debug_redacts_local_keeps_domain() {
     let e = Email::parse("alice.smith@example.com").expect("valid");
     let d = format!("{:?}", e);
     assert!(d.contains("redacted"), "debug must redact local part");
-    assert!(d.contains("example.com"), "debug must keep domain for diagnosis");
+    assert!(
+        d.contains("example.com"),
+        "debug must keep domain for diagnosis"
+    );
     assert!(!d.contains("alice.smith"), "local part must NOT appear");
 }
 

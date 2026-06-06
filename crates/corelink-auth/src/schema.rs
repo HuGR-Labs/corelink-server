@@ -47,8 +47,7 @@
 /// The exact bytes ship to production via the migration runner. The
 /// simulator does not parse this string; the algorithmic invariants are
 /// re-implemented directly so test failures are easy to triage.
-pub const MIGRATION_002_AUTH_TABLES: &str =
-    include_str!("../../../migrations/002_auth_tables.sql");
+pub const MIGRATION_002_AUTH_TABLES: &str = include_str!("../../../migrations/002_auth_tables.sql");
 
 pub mod email_hash;
 pub mod pseudonymize;

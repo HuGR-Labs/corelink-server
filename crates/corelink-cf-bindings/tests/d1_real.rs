@@ -44,9 +44,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use corelink_cf_bindings::d1_real::{
-    AuditFn, CfD1DatabaseReal, D1Error, D1Op, TenantId,
-};
+use corelink_cf_bindings::d1_real::{AuditFn, CfD1DatabaseReal, D1Error, D1Op, TenantId};
 
 fn tid(s: &str) -> TenantId {
     TenantId::new(s).expect("test tenant-id must be valid")
@@ -89,9 +87,7 @@ impl FakeD1 {
     fn into_audit(self: Arc<Self>) -> AuditFn {
         Arc::new(move |op, payload| {
             if self.fail_next.swap(false, Ordering::AcqRel) {
-                return Err(D1Error::Backend(
-                    "audit: rejected by fake".to_owned(),
-                ));
+                return Err(D1Error::Backend("audit: rejected by fake".to_owned()));
             }
             if let Ok(mut log) = self.log.lock() {
                 log.push((op, payload.to_owned()));
@@ -101,11 +97,7 @@ impl FakeD1 {
     }
 
     fn entries(&self) -> Vec<(D1Op, String)> {
-        self.log
-            .lock()
-            .ok()
-            .map(|g| g.clone())
-            .unwrap_or_default()
+        self.log.lock().ok().map(|g| g.clone()).unwrap_or_default()
     }
 }
 
@@ -139,9 +131,7 @@ fn scoped_query_select_accepts_canonical_tenant_scope() {
 fn scoped_query_update_accepts_canonical_tenant_scope() {
     let d = db("tnt");
     let q = d
-        .scoped_query(
-            "UPDATE blobs SET refcount = refcount + 1 WHERE tenant_id = ? AND digest = ?",
-        )
+        .scoped_query("UPDATE blobs SET refcount = refcount + 1 WHERE tenant_id = ? AND digest = ?")
         .expect("canonical UPDATE scope must be accepted");
     assert!(q.as_str().contains("WHERE tenant_id = ?"));
 }

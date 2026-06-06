@@ -13,10 +13,10 @@
 
 use std::sync::Arc;
 
-use corelink_rotation_adapters::{AssetClass, TdkRotationAdapter};
 use corelink_ops::rotation::worker::{
     InMemoryRotationStateMachine, RotationMetrics, RotationOrchestrator, RotationOutcome,
 };
+use corelink_rotation_adapters::{AssetClass, TdkRotationAdapter};
 
 fn main() {
     let adapter = Arc::new(TdkRotationAdapter::new("us-east".to_string()));
@@ -37,7 +37,10 @@ fn main() {
         RotationOutcome::Ok { handle, .. } => handle,
         other => panic!("unexpected generate outcome: {other:?}"),
     };
-    println!("[TDK] Generated key_id={} state={}", key_pending.key_id, key_pending.state);
+    println!(
+        "[TDK] Generated key_id={} state={}",
+        key_pending.key_id, key_pending.state
+    );
 
     // Step 2: Promote (previous Active → Overlap; new Pending → Active).
     let prom = orch.promote(&key_pending, t0 + 1).expect("promote failed");
@@ -45,7 +48,10 @@ fn main() {
         RotationOutcome::Ok { handle, .. } => handle,
         other => panic!("unexpected promote outcome: {other:?}"),
     };
-    println!("[TDK] Promoted key_id={} state={}", key_active.key_id, key_active.state);
+    println!(
+        "[TDK] Promoted key_id={} state={}",
+        key_active.key_id, key_active.state
+    );
     println!(
         "[TDK] Overlap window: {}s ({} days; canonical per key_management.md §3.2.1)",
         AssetClass::Tdk.overlap_seconds(),
@@ -53,8 +59,12 @@ fn main() {
     );
 
     // Step 3: Re-key downstream envelopes (reports progress).
-    orch.rekey_downstream(&key_active, t0 + 2).expect("rekey_downstream failed");
-    println!("[TDK] Re-key downstream progress: {:.1}%", metrics.rekey_progress(AssetClass::Tdk) * 100.0);
+    orch.rekey_downstream(&key_active, t0 + 2)
+        .expect("rekey_downstream failed");
+    println!(
+        "[TDK] Re-key downstream progress: {:.1}%",
+        metrics.rekey_progress(AssetClass::Tdk) * 100.0
+    );
 
     println!("[TDK] Second rotation to create an Overlap key...");
     let t1 = t0 + AssetClass::Tdk.overlap_seconds() * 1_000 + 100;
@@ -63,7 +73,9 @@ fn main() {
         RotationOutcome::Ok { handle, .. } => handle,
         other => panic!("unexpected generate 2 outcome: {other:?}"),
     };
-    let prom2 = orch.promote(&key2_pending, t1 + 1).expect("promote 2 failed");
+    let prom2 = orch
+        .promote(&key2_pending, t1 + 1)
+        .expect("promote 2 failed");
     let key2_active = match prom2 {
         RotationOutcome::Ok { handle, .. } => handle,
         other => panic!("unexpected promote 2 outcome: {other:?}"),
@@ -72,7 +84,9 @@ fn main() {
     // Synthesize overlap handle for key1.
     let key1_overlap = corelink_rotation_adapters::KeyHandle {
         state: corelink_rotation_adapters::KeyState::Overlap,
-        overlap_until_ms: key2_active.promoted_at_ms.map(|ms| ms + AssetClass::Tdk.overlap_seconds() * 1_000),
+        overlap_until_ms: key2_active
+            .promoted_at_ms
+            .map(|ms| ms + AssetClass::Tdk.overlap_seconds() * 1_000),
         ..key_active.clone()
     };
 
@@ -83,7 +97,10 @@ fn main() {
         RotationOutcome::Ok { handle, .. } => handle,
         other => panic!("unexpected retire outcome: {other:?}"),
     };
-    println!("[TDK] Retired key_id={} state={}", retired_key.key_id, retired_key.state);
+    println!(
+        "[TDK] Retired key_id={} state={}",
+        retired_key.key_id, retired_key.state
+    );
 
     // Step 5: Destroy after 90d grace.
     let t3 = t2 + 90 * 24 * 3_600 * 1_000;
@@ -92,8 +109,14 @@ fn main() {
         RotationOutcome::Ok { handle, .. } => handle,
         other => panic!("unexpected destroy outcome: {other:?}"),
     };
-    println!("[TDK] Destroyed key_id={} state={}", destroyed_key.key_id, destroyed_key.state);
-    println!("[TDK] Rotation total ok: {}", metrics.total(AssetClass::Tdk, "ok"));
+    println!(
+        "[TDK] Destroyed key_id={} state={}",
+        destroyed_key.key_id, destroyed_key.state
+    );
+    println!(
+        "[TDK] Rotation total ok: {}",
+        metrics.total(AssetClass::Tdk, "ok")
+    );
     println!("[TDK] State machine records: {}", sm.len());
 
     let _ = key2_active; // used in overlap setup above

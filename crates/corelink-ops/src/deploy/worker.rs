@@ -121,7 +121,12 @@ pub fn error_to_http_response(err: &DeployVerifyError) -> (u16, String) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing, clippy::panic)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 mod tests {
     use super::*;
 

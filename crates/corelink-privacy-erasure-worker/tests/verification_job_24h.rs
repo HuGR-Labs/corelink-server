@@ -25,8 +25,8 @@ use std::sync::Arc;
 use corelink_privacy_erasure_worker::{
     canonical_cloudevent_types, canonical_in_memory_adapters, BackendErasureAdapter, BackendKind,
     ErasureCloudEventType, ErasureDecision, ErasureRequest, ErasureSalt, ErasureWorker,
-    InMemoryRow, InMemoryErasureAuditSink, InMemoryErasureIdempotencyLedger,
-    InMemoryErasureWorker, InMemoryReportSigner, ReportSignerKey, VerificationJob,
+    InMemoryErasureAuditSink, InMemoryErasureIdempotencyLedger, InMemoryErasureWorker,
+    InMemoryReportSigner, InMemoryRow, ReportSignerKey, VerificationJob,
 };
 use uuid::Uuid;
 
@@ -53,8 +53,7 @@ fn fresh_job() -> (
             d
         })
         .collect();
-    let worker =
-        InMemoryErasureWorker::try_new(audit.clone(), ledger, adapters_dyn).unwrap();
+    let worker = InMemoryErasureWorker::try_new(audit.clone(), ledger, adapters_dyn).unwrap();
     let signer = InMemoryReportSigner::new(ReportSignerKey::synthetic_for_test(7));
     let job = VerificationJob::new(worker, signer);
     (job, audit, adapters_typed)

@@ -63,7 +63,8 @@ fn fresh_worker() -> (
             d
         })
         .collect();
-    let worker = InMemoryErasureWorker::try_new(audit.clone(), ledger.clone(), adapters_dyn).unwrap();
+    let worker =
+        InMemoryErasureWorker::try_new(audit.clone(), ledger.clone(), adapters_dyn).unwrap();
     (worker, audit, ledger)
 }
 

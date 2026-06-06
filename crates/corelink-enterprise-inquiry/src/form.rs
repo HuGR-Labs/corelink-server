@@ -421,6 +421,9 @@ mod tests {
     #[test]
     fn status_canonical_strings() {
         assert_eq!(InquiryStatus::Committed.as_str(), "committed");
-        assert_eq!(InquiryStatus::PartialEscalated.as_str(), "partial_escalated");
+        assert_eq!(
+            InquiryStatus::PartialEscalated.as_str(),
+            "partial_escalated"
+        );
     }
 }

@@ -22,8 +22,8 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use corelink_byok::{BYOKError, Dek, KmsKeyId, KmsProvider, KmsProviderKind};
 use corelink_byok::aws::AwsKmsWasmStub;
+use corelink_byok::{BYOKError, Dek, KmsKeyId, KmsProvider, KmsProviderKind};
 use futures::executor::block_on;
 use serde_json::json;
 

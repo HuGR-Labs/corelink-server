@@ -105,10 +105,7 @@ impl RevocationOrchestrator {
     /// 3. KV session-cache invalidate (best-effort soft-degraded).
     /// 4. Cross-region broadcast enqueue (peer set; outcome
     ///    surfaced to the caller).
-    pub async fn revoke(
-        &self,
-        request: RevokeRequest,
-    ) -> Result<RevokeResponse, RevocationError> {
+    pub async fn revoke(&self, request: RevokeRequest) -> Result<RevokeResponse, RevocationError> {
         // Step 1 — Neon SoT.
         let meta_outcome = self
             .meta
@@ -142,14 +139,11 @@ impl RevocationOrchestrator {
         let _ = self.store.upsert(entry.clone()).await?;
 
         // Step 3 — KV session-cache invalidate (best-effort).
-        let session_cache_invalidate = match self
-            .session_cache
-            .invalidate(&request.token_hash_key)
-            .await
-        {
-            Ok(()) => HookOutcome::Ok,
-            Err(_) => HookOutcome::SoftDegraded,
-        };
+        let session_cache_invalidate =
+            match self.session_cache.invalidate(&request.token_hash_key).await {
+                Ok(()) => HookOutcome::Ok,
+                Err(_) => HookOutcome::SoftDegraded,
+            };
 
         // Step 4 — Cross-region broadcast.
         let broadcast_outcome = if self.peers.is_empty() {
@@ -181,10 +175,7 @@ impl RevocationOrchestrator {
         revoked_by: PatPrincipalId,
     ) -> Result<MassRevokeResponse, RevocationError> {
         let mass_revoke_id = MassRevokeId::new_v7();
-        let phase1 = self
-            .meta
-            .mass_revoke(tenant_id, reason, revoked_by)
-            .await?;
+        let phase1 = self.meta.mass_revoke(tenant_id, reason, revoked_by).await?;
         let revoked_at = phase1.revoked_at;
         let total = phase1.newly_revoked.len();
 
@@ -312,8 +303,10 @@ impl RevocationOrchestrator {
         neon_view: &[(PatId, SystemTime)],
     ) -> Result<ReconciliationSummary, RevocationError> {
         let do_view = self.store.list(None).await?;
-        let do_set: HashMap<PatId, SystemTime> =
-            do_view.into_iter().map(|e| (e.pat_id, e.revoked_at)).collect();
+        let do_set: HashMap<PatId, SystemTime> = do_view
+            .into_iter()
+            .map(|e| (e.pat_id, e.revoked_at))
+            .collect();
         let mut neon_only = Vec::new();
         let mut do_only = Vec::new();
         let mut timestamp_drift = Vec::new();

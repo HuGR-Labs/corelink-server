@@ -107,10 +107,7 @@ impl HkdfSigner {
     /// # Errors
     ///
     /// - [`SigError::KeyIdReserved`] when `current_key_id == 0`.
-    pub fn new(
-        tdk_handle: Arc<dyn TdkHandle>,
-        current_key_id: u32,
-    ) -> Result<Self, SigError> {
+    pub fn new(tdk_handle: Arc<dyn TdkHandle>, current_key_id: u32) -> Result<Self, SigError> {
         if current_key_id == RESERVED_SIG_KEY_ID {
             return Err(SigError::KeyIdReserved);
         }
@@ -534,7 +531,9 @@ mod tests {
         let (signer, verifier, _) = fresh_signer_verifier(vec![2, 3]);
         let bytes = sample_canonical_bytes(2);
         let sig = signer.sign(fixed_tenant(), 2, &bytes).unwrap();
-        let err = verifier.verify(fixed_tenant(), 1, &bytes, &sig).unwrap_err();
+        let err = verifier
+            .verify(fixed_tenant(), 1, &bytes, &sig)
+            .unwrap_err();
         match err {
             SigError::KeyIdUnknown {
                 sig_key_id: 1,
@@ -551,7 +550,10 @@ mod tests {
             .verify(fixed_tenant(), 1, &[0u8; 121], &[0u8; 16])
             .unwrap_err();
         match err {
-            SigError::LengthMismatch { expected: 32, got: 16 } => {}
+            SigError::LengthMismatch {
+                expected: 32,
+                got: 16,
+            } => {}
             _ => panic!("unexpected error: {err:?}"),
         }
     }
@@ -562,7 +564,9 @@ mod tests {
         let bytes = sample_canonical_bytes(1);
         let mut sig = signer.sign(fixed_tenant(), 1, &bytes).unwrap();
         sig[5] ^= 0x01;
-        let err = verifier.verify(fixed_tenant(), 1, &bytes, &sig).unwrap_err();
+        let err = verifier
+            .verify(fixed_tenant(), 1, &bytes, &sig)
+            .unwrap_err();
         assert_eq!(err, SigError::Invalid);
     }
 
@@ -571,7 +575,9 @@ mod tests {
         let (signer, verifier, _) = fresh_signer_verifier(vec![1]);
         let bytes = sample_canonical_bytes(1);
         let sig = signer.sign(fixed_tenant(), 1, &bytes).unwrap();
-        let err = verifier.verify(other_tenant(), 1, &bytes, &sig).unwrap_err();
+        let err = verifier
+            .verify(other_tenant(), 1, &bytes, &sig)
+            .unwrap_err();
         assert_eq!(err, SigError::Invalid);
     }
 
@@ -619,9 +625,7 @@ mod tests {
             .verify(fixed_tenant(), 1, &pre_bytes, &pre_sig)
             .unwrap_err();
         match err {
-            SigError::KeyIdUnknown {
-                sig_key_id: 1, ..
-            } => {}
+            SigError::KeyIdUnknown { sig_key_id: 1, .. } => {}
             _ => panic!("unexpected error: {err:?}"),
         }
     }
@@ -672,5 +676,4 @@ mod tests {
         let sig2 = s2.sign(fixed_tenant(), 2, &bytes).unwrap();
         assert_ne!(sig1, sig2);
     }
-
 }

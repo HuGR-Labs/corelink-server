@@ -59,7 +59,9 @@ fn rotation_lifecycle_admit_then_retire() {
     let post_sig = signer.sign(fixed_tenant(), 2, &post_bytes).unwrap();
 
     // Step 2: grace window — both verify OK.
-    verifier.verify(fixed_tenant(), 1, &pre_bytes, &pre_sig).unwrap();
+    verifier
+        .verify(fixed_tenant(), 1, &pre_bytes, &pre_sig)
+        .unwrap();
     verifier
         .verify(fixed_tenant(), 2, &post_bytes, &post_sig)
         .unwrap();
@@ -69,13 +71,20 @@ fn rotation_lifecycle_admit_then_retire() {
     assert_eq!(verifier.accepted_key_ids(), &[2]);
 
     // Pre-rotation envelopes now rejected.
-    let err = verifier.verify(fixed_tenant(), 1, &pre_bytes, &pre_sig).unwrap_err();
+    let err = verifier
+        .verify(fixed_tenant(), 1, &pre_bytes, &pre_sig)
+        .unwrap_err();
     match err {
-        SigError::KeyIdUnknown { sig_key_id: 1, oldest_active: 2 } => {}
+        SigError::KeyIdUnknown {
+            sig_key_id: 1,
+            oldest_active: 2,
+        } => {}
         _ => panic!("expected KeyIdUnknown, got {err:?}"),
     }
     // Post-rotation envelopes still OK.
-    verifier.verify(fixed_tenant(), 2, &post_bytes, &post_sig).unwrap();
+    verifier
+        .verify(fixed_tenant(), 2, &post_bytes, &post_sig)
+        .unwrap();
 }
 
 #[test]
@@ -154,8 +163,8 @@ fn forward_compat_sig_key_id_can_skip_versions() {
 
     let action_hash = [0xAA; 32];
     let result_hash = [0xBB; 32];
-    let bytes = compose_canonical_bytes(1, 42, fixed_tenant(), &action_hash, 100, &result_hash)
-        .unwrap();
+    let bytes =
+        compose_canonical_bytes(1, 42, fixed_tenant(), &action_hash, 100, &result_hash).unwrap();
     let sig = signer.sign(fixed_tenant(), 42, &bytes).unwrap();
     verifier.verify(fixed_tenant(), 42, &bytes, &sig).unwrap();
     // Oldest-active surfaces 5, not 1.

@@ -21,9 +21,7 @@ pub enum QuotaError {
     /// Either the row was never seeded (post-deploy backfill pending)
     /// OR a programmer wiring error misrouted the tenant. Mapped to 5xx
     /// by handler.
-    #[error(
-        "tenant_storage_state row missing for tenant={tenant_id} region={region}"
-    )]
+    #[error("tenant_storage_state row missing for tenant={tenant_id} region={region}")]
     TenantStorageStateMissing {
         /// Tenant scope.
         tenant_id: Uuid,

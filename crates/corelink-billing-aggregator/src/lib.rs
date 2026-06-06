@@ -183,23 +183,23 @@ pub mod event;
 pub mod store;
 
 pub use aggregator::{
-    deterministic_event_order, AggregationRequest, CounterAggregator,
-    InMemoryCounterAggregator, PeriodWindow,
+    deterministic_event_order, AggregationRequest, CounterAggregator, InMemoryCounterAggregator,
+    PeriodWindow,
 };
 pub use audit::{
-    canonical_aggregator_audit_event_strings, AggregatorAuditEmitError,
-    AggregatorAuditEventType, AggregatorAuditRecord, AggregatorAuditSink,
-    FailingAggregatorAuditSink, InMemoryAggregatorAuditSink,
+    canonical_aggregator_audit_event_strings, AggregatorAuditEmitError, AggregatorAuditEventType,
+    AggregatorAuditRecord, AggregatorAuditSink, FailingAggregatorAuditSink,
+    InMemoryAggregatorAuditSink,
 };
 pub use chain::{
-    compute_canonical_bytes, link_chain_hash, link_chain_hash_from_canonical,
-    verify_chain_link, HashChainBuilder,
+    compute_canonical_bytes, link_chain_hash, link_chain_hash_from_canonical, verify_chain_link,
+    HashChainBuilder,
 };
 pub use error::{AggregatedCounterStoreError, AggregatorAuditSinkError, AggregatorError};
 pub use event::{
-    AggregatedCounter, AggregatedCounterData, AggregationDecision, ChainHash,
-    CounterGroupKey, CLOUDEVENTS_DATACONTENTTYPE, CLOUDEVENTS_SPECVERSION,
-    COUNTER_AGGREGATED_EVENT_TYPE, GENESIS_PREV_HASH, GENESIS_SEQUENCE_NUMBER,
+    AggregatedCounter, AggregatedCounterData, AggregationDecision, ChainHash, CounterGroupKey,
+    CLOUDEVENTS_DATACONTENTTYPE, CLOUDEVENTS_SPECVERSION, COUNTER_AGGREGATED_EVENT_TYPE,
+    GENESIS_PREV_HASH, GENESIS_SEQUENCE_NUMBER,
 };
 pub use store::{
     AggregatedCounterStore, ChainHeadRecord, FailingAggregatedCounterStore,

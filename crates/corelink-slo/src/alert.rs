@@ -36,9 +36,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::audit::{
-    SloAuditEmitError, SloAuditEventType, SloAuditRecord, SloAuditSink,
-};
+use crate::audit::{SloAuditEmitError, SloAuditEventType, SloAuditRecord, SloAuditSink};
 use crate::calculator::{BurnRateCalculator, BurnRateSample};
 use crate::decision::AlertDecision;
 use crate::definition::SloDefinition;
@@ -195,14 +193,7 @@ where
                 now_ms,
             })?;
             if decision.is_page() {
-                self.dispatch_page(
-                    slo,
-                    window,
-                    tenant_id,
-                    decision,
-                    dedup_key.clone(),
-                    now_ms,
-                )?
+                self.dispatch_page(slo, window, tenant_id, decision, dedup_key.clone(), now_ms)?
             } else {
                 self.emit_audit(SloAuditRecord {
                     event_type: SloAuditEventType::TicketFiled,
@@ -273,9 +264,7 @@ where
                 };
                 let tenant_evaluation_count = {
                     let g = self.tenant_ledger.lock().map_err(|_| {
-                        SloError::Internal(
-                            "tenant ledger mutex poisoned".to_string(),
-                        )
+                        SloError::Internal("tenant ledger mutex poisoned".to_string())
                     })?;
                     g.get(tenant_id).map_or(0, |e| e.evaluation_count)
                 };
@@ -351,7 +340,10 @@ where
     pub fn tenant_evaluation_count(&self, tenant_id: &str) -> u64 {
         match self.tenant_ledger.lock() {
             Ok(g) => g.get(tenant_id).map_or(0, |e| e.evaluation_count),
-            Err(p) => p.into_inner().get(tenant_id).map_or(0, |e| e.evaluation_count),
+            Err(p) => p
+                .into_inner()
+                .get(tenant_id)
+                .map_or(0, |e| e.evaluation_count),
         }
     }
 }
@@ -401,10 +393,7 @@ mod tests {
         assert!(outcome.pagerduty_dedup_key.is_empty());
         let snap = audit.snapshot();
         assert_eq!(snap.len(), 2);
-        assert_eq!(
-            snap[0].event_type,
-            SloAuditEventType::BurnRateEvaluated
-        );
+        assert_eq!(snap[0].event_type, SloAuditEventType::BurnRateEvaluated);
         assert_eq!(snap[1].event_type, SloAuditEventType::AlertQuiet);
         assert_eq!(dispatcher.attempt_count(), 0);
     }
@@ -462,11 +451,8 @@ mod tests {
     fn audit_failure_aborts_fail_closed() {
         let audit = Arc::new(FailingSloAuditSink::new());
         let dispatcher = Arc::new(InMemoryPagerDutyDispatcher::new());
-        let alert = MultiBurnRateAlert::new(
-            audit,
-            Arc::clone(&dispatcher),
-            PagerDutyServiceKey::ProdUs,
-        );
+        let alert =
+            MultiBurnRateAlert::new(audit, Arc::clone(&dispatcher), PagerDutyServiceKey::ProdUs);
         let s = BurnRateSample::new(50, 1_000);
         let err = alert
             .evaluate(slo_999(), BurnRateWindow::Fast1h, "t1", s, 1)
@@ -483,11 +469,8 @@ mod tests {
     fn dispatcher_failure_returns_dispatcher_arm_audit_committed() {
         let audit = Arc::new(InMemorySloAuditSink::new());
         let dispatcher = Arc::new(FailingPagerDutyDispatcher::new());
-        let alert = MultiBurnRateAlert::new(
-            Arc::clone(&audit),
-            dispatcher,
-            PagerDutyServiceKey::ProdUs,
-        );
+        let alert =
+            MultiBurnRateAlert::new(Arc::clone(&audit), dispatcher, PagerDutyServiceKey::ProdUs);
         let s = BurnRateSample::new(50, 1_000);
         let err = alert
             .evaluate(slo_999(), BurnRateWindow::Fast1h, "t1", s, 1)
@@ -509,11 +492,8 @@ mod tests {
     fn dispatcher_failure_fail_open_variant_returns_canonical_outcome() {
         let audit = Arc::new(InMemorySloAuditSink::new());
         let dispatcher = Arc::new(FailingPagerDutyDispatcher::new());
-        let alert = MultiBurnRateAlert::new(
-            Arc::clone(&audit),
-            dispatcher,
-            PagerDutyServiceKey::ProdUs,
-        );
+        let alert =
+            MultiBurnRateAlert::new(Arc::clone(&audit), dispatcher, PagerDutyServiceKey::ProdUs);
         let s = BurnRateSample::new(50, 1_000);
         let outcome = alert
             .evaluate_dispatcher_fail_open(slo_999(), BurnRateWindow::Fast1h, "t1", s, 1)

@@ -49,8 +49,7 @@ fn fresh_router() -> RouterFixture {
     let probe: Arc<dyn corelink_failover_router::HealthProbe> =
         Arc::clone(&probe_inner) as Arc<dyn corelink_failover_router::HealthProbe>;
     let sink_inner = Arc::new(InMemoryFailoverAuditSink::new());
-    let sink: Arc<dyn FailoverAuditSink> =
-        Arc::clone(&sink_inner) as Arc<dyn FailoverAuditSink>;
+    let sink: Arc<dyn FailoverAuditSink> = Arc::clone(&sink_inner) as Arc<dyn FailoverAuditSink>;
     let router = InMemoryFailoverRouter::new(probe, sink);
     (router, probe_inner, sink_inner)
 }
@@ -127,11 +126,19 @@ fn primary_degraded_triggers_failover_routes_reads_to_sibling_and_blocks_writes(
         .iter()
         .filter(|r| r.event_type == FailoverAuditEventType::FailoverDetected)
         .collect();
-    assert_eq!(detected.len(), 1, "expected exactly 1 failover.detected; got {records:?}");
+    assert_eq!(
+        detected.len(),
+        1,
+        "expected exactly 1 failover.detected; got {records:?}"
+    );
     let det = detected[0];
     assert_eq!(det.primary_region, "weur");
     assert_eq!(det.replica_region, "sam");
-    assert!(det.detail.contains("triggers="), "detail missing triggers: {}", det.detail);
+    assert!(
+        det.detail.contains("triggers="),
+        "detail missing triggers: {}",
+        det.detail
+    );
 }
 
 // =====================================================================
@@ -147,7 +154,10 @@ fn split_brain_prevention_primary_never_accepts_writes_while_sibling_holds_lease
     // T+0:00 — primary healthy; lease on WNAM.
     assert_eq!(router.write_mode(Region::Wnam), WriteMode::Allowed);
     assert_eq!(
-        ledger.holder_at(clock.now_ms().unwrap()).unwrap().as_deref(),
+        ledger
+            .holder_at(clock.now_ms().unwrap())
+            .unwrap()
+            .as_deref(),
         Some("wnam")
     );
 
@@ -156,11 +166,15 @@ fn split_brain_prevention_primary_never_accepts_writes_while_sibling_holds_lease
     probe.inject_degraded(Region::Wnam);
     // Promote sibling — runbook step 4.
     let promote_at = clock.now_ms().unwrap();
-    ledger.handover("enam", promote_at, "failover.promoted").unwrap();
+    ledger
+        .handover("enam", promote_at, "failover.promoted")
+        .unwrap();
 
     // Drive a route_read on the (degraded) primary so the router's write_mode
     // reflects Blocked.
-    let _ = router.route_read(TENANT_ID, Region::Wnam, promote_at).unwrap();
+    let _ = router
+        .route_read(TENANT_ID, Region::Wnam, promote_at)
+        .unwrap();
 
     // CRITICAL: while sibling holds the lease, the primary MUST never report
     // WriteMode::Allowed.
@@ -207,10 +221,14 @@ fn failback_after_recovery_routes_back_to_primary_and_emits_resolved_audit() {
     clock.advance_ms(6_000).unwrap();
 
     let now_fail = clock.now_ms().unwrap();
-    let dec_fail = router.route_read(TENANT_ID, Region::Wnam, now_fail).unwrap();
+    let dec_fail = router
+        .route_read(TENANT_ID, Region::Wnam, now_fail)
+        .unwrap();
     assert!(dec_fail.failover_active);
     assert_eq!(dec_fail.read_region, Region::Enam);
-    ledger.handover("enam", now_fail, "failover.promoted").unwrap();
+    ledger
+        .handover("enam", now_fail, "failover.promoted")
+        .unwrap();
 
     // Step 7 (Reverse): primary recovers.
     clock.advance_ms(15 * 60 * 1_000).unwrap();
@@ -282,7 +300,12 @@ fn partial_region_health_does_not_short_circuit_region_level_failover() {
     // Simulate "partial" region: 2 signals breach, 1 does not.
     // Per the multi-signal rule (corelink_failover_router::health), failover
     // requires ALL 3 signals — so the region is treated Healthy.
-    probe.set_state(Region::Sam, 5.0 /* 5xx */, 500 /* p99 */, 0 /* failures */);
+    probe.set_state(
+        Region::Sam,
+        5.0, /* 5xx */
+        500, /* p99 */
+        0,   /* failures */
+    );
     clock.advance_ms(6_000).unwrap();
 
     let dec_partial = router

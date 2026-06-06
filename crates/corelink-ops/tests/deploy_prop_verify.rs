@@ -3,7 +3,7 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
+    clippy::indexing_slicing
 )]
 //!
 //! Runs at 10k iterations on PR (`PROPTEST_CASES=10000`; default) and 100k
@@ -25,7 +25,7 @@ use corelink_ops::deploy::{
     audit::{FailingDeployAuditSink, InMemoryDeployAuditSink},
     error::DeployVerifyError,
     types::{CfDeployWebhook, CosignIdentityPattern, DeployTarget, GitHubActor, OciImageRef},
-    verifier::{InMemoryDeployVerifier, VerificationMode, proptest_cases},
+    verifier::{proptest_cases, InMemoryDeployVerifier, VerificationMode},
     DeployVerifier,
 };
 
@@ -36,10 +36,16 @@ fn make_webhook(tag: &str) -> CfDeployWebhook {
         tag,
         "abc123def456abc123def456abc123def456abc1",
         format!("refs/tags/{tag}"),
-        DeployTarget::new("corelink-worker", "a".repeat(32), "api.corelink.humangr.com/*"),
+        DeployTarget::new(
+            "corelink-worker",
+            "a".repeat(32),
+            "api.corelink.humangr.com/*",
+        ),
         GitHubActor::new(
             "github-actions[bot]",
-            format!("humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{tag}"),
+            format!(
+                "humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{tag}"
+            ),
         ),
     )
 }

@@ -69,10 +69,10 @@
 
 use std::sync::Arc;
 
-use corelink_meta::MetaStore;
-use corelink_tenant_path::TenantDerivationKey;
 use corelink_cas::r2_storage::{R2Backend, R2Reader, R2Writer};
+use corelink_meta::MetaStore;
 use corelink_replication::region_resolver::TenantCtx as StorageTenantCtx;
+use corelink_tenant_path::TenantDerivationKey;
 use tonic::{Request, Status};
 
 use crate::orchestrator::OrphanReconciler;
@@ -274,8 +274,7 @@ where
         &self,
         req: &Request<T>,
     ) -> Result<(crate::pat::TenantContext, StorageTenantCtx), Status> {
-        let token =
-            helpers::extract_bearer(req).map_err(|e| helpers::pat_error_to_status(&e))?;
+        let token = helpers::extract_bearer(req).map_err(|e| helpers::pat_error_to_status(&e))?;
         let request_id = helpers::extract_request_id(req);
         let pat_ctx = self
             .pat

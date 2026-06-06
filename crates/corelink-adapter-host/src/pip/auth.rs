@@ -135,9 +135,7 @@ fn decode_base64_padded(s: &str) -> Result<Vec<u8>, String> {
     if remaining > 0 {
         // The trailing partial chunk (with `=` padding stripped).
         let start = core_len.saturating_sub(remaining);
-        let tail = bytes
-            .get(start..core_len)
-            .ok_or("tail slice oob")?;
+        let tail = bytes.get(start..core_len).ok_or("tail slice oob")?;
         let mut decoded = [0u8; 4];
         for (i, b) in tail.iter().enumerate() {
             if let Some(slot) = decoded.get_mut(i) {
@@ -234,8 +232,7 @@ mod tests {
     #[test]
     fn decodes_basic_with_correct_username() {
         // base64("hugr:hugr-pat_xyz") = "aHVncjpodWdyLXBhdF94eXo="
-        let pat =
-            extract_pat(&h("Basic aHVncjpodWdyLXBhdF94eXo=")).expect("basic ok");
+        let pat = extract_pat(&h("Basic aHVncjpodWdyLXBhdF94eXo=")).expect("basic ok");
         assert_eq!(pat.expose_secret(), "hugr-pat_xyz");
     }
 

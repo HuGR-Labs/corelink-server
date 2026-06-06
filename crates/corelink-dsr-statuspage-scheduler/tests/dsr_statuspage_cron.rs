@@ -32,8 +32,8 @@ use corelink_dsr_statuspage_scheduler::{
     CRON_EXPRESSION,
 };
 use corelink_privacy_erasure_worker::event::{
-    BackendCompletion, BackendErasureOutcome, BackendKind, ErasureDecision, ErasurePlan,
-    ErasureRequest, ErasureSalt, canonical_cloudevent_types,
+    canonical_cloudevent_types, BackendCompletion, BackendErasureOutcome, BackendKind,
+    ErasureDecision, ErasurePlan, ErasureRequest, ErasureSalt,
 };
 use corelink_privacy_erasure_worker::report::ErasureReport;
 use corelink_privacy_erasure_worker::verification_job::VerificationOutcome;
@@ -111,10 +111,7 @@ fn outcome_in_window() -> VerificationOutcome {
     }
 }
 
-fn build_client(
-    base_url: String,
-    audit: Arc<InMemoryStatuspageAuditSink>,
-) -> StatuspageHttpClient {
+fn build_client(base_url: String, audit: Arc<InMemoryStatuspageAuditSink>) -> StatuspageHttpClient {
     StatuspageHttpClient::with_overrides(
         base_url,
         PAGE_ID,

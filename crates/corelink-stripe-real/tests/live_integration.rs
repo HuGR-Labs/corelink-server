@@ -116,7 +116,10 @@ fn live_authentication_failure_bad_token() {
         SecretString::from("hugrw_INVALID_TOKEN".to_string()),
         env::var("HUGR_STRIPE_REF").unwrap_or_else(|_| "stripe-prod-test".to_string()),
     );
-    let c = StripeRealClient::builder().config(cfg).build().expect("builder");
+    let c = StripeRealClient::builder()
+        .config(cfg)
+        .build()
+        .expect("builder");
     let err = c.get_customer("cus_anything").unwrap_err();
     // Wallet broker rejects the invalid hugrw_ token before forwarding;
     // it returns an HTTP error mapped to either Authentication (401)

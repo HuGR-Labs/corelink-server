@@ -171,8 +171,13 @@ impl VerificationJob {
             ErasureDecision::VerifiedComplete { completions }
             | ErasureDecision::VerifiedPartial { completions, .. } => {
                 let plan = ErasurePlan::canonical(request, request.queued_at_ms);
-                let report = build_report(request, plan, completions.clone(), now_ms,
-                    matches!(decision, ErasureDecision::VerifiedComplete { .. }));
+                let report = build_report(
+                    request,
+                    plan,
+                    completions.clone(),
+                    now_ms,
+                    matches!(decision, ErasureDecision::VerifiedComplete { .. }),
+                );
                 let sig = self.signer.sign(&report)?;
                 let key = canonical_report_key(request.tenant_id, request.dsr_id);
                 (Some(report), Some(sig), Some(key))
@@ -262,10 +267,7 @@ fn build_report(
 /// and the canonical sweep should run. Pure-logic helper exposed for
 /// the production wiring at WI-S11-008 to enumerate the cron tick.
 #[must_use]
-pub fn elapsed_dsr_ids<'a>(
-    pending: &'a [(Uuid, &'a ErasureRequest)],
-    now_ms: u64,
-) -> Vec<Uuid> {
+pub fn elapsed_dsr_ids<'a>(pending: &'a [(Uuid, &'a ErasureRequest)], now_ms: u64) -> Vec<Uuid> {
     pending
         .iter()
         .filter(|(_, r)| now_ms >= r.verification_deadline_ms())
@@ -283,13 +285,13 @@ pub fn elapsed_dsr_ids<'a>(
 )]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use crate::audit_emit::InMemoryErasureAuditSink;
     use crate::backends::canonical_in_memory_adapters;
     use crate::event::ErasureSalt;
     use crate::idempotency::InMemoryErasureIdempotencyLedger;
     use crate::orchestrator::ErasureWorker;
     use crate::report::ReportSignerKey;
+    use std::sync::Arc;
 
     fn fixed_uuid(seed: u8) -> Uuid {
         let mut b = [0u8; 16];
@@ -306,8 +308,7 @@ mod tests {
         let adapters_dyn: Vec<Arc<dyn crate::backends::BackendErasureAdapter>> = adapters_typed
             .iter()
             .map(|a| {
-                let dyn_arc: Arc<dyn crate::backends::BackendErasureAdapter> =
-                    Arc::clone(a) as _;
+                let dyn_arc: Arc<dyn crate::backends::BackendErasureAdapter> = Arc::clone(a) as _;
                 dyn_arc
             })
             .collect();
@@ -403,7 +404,10 @@ mod tests {
         let outcome = job
             .run_24h_sweep(&req, req.verification_deadline_ms().saturating_add(1))
             .unwrap();
-        assert!(matches!(outcome.decision, ErasureDecision::SlaBreached { .. }));
+        assert!(matches!(
+            outcome.decision,
+            ErasureDecision::SlaBreached { .. }
+        ));
         assert!(outcome.sli_resolution_hours().is_none());
         assert!(outcome.sli_within_sla().is_none());
     }
@@ -437,10 +441,7 @@ mod tests {
             ErasureSalt::synthetic_for_test(8),
             1_000_000,
         );
-        let pending = vec![
-            (req_a.dsr_id, &req_a),
-            (req_b.dsr_id, &req_b),
-        ];
+        let pending = vec![(req_a.dsr_id, &req_a), (req_b.dsr_id, &req_b)];
         let now = req_a.verification_deadline_ms().saturating_add(1);
         let elapsed = elapsed_dsr_ids(&pending, now);
         assert!(elapsed.contains(&req_a.dsr_id));

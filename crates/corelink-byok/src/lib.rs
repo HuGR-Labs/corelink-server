@@ -180,10 +180,10 @@ mod byok_revocation;
 // two public features is a hard compile error.
 #[cfg(feature = "_internal-aws")]
 mod byok_aws;
-#[cfg(feature = "_internal-gcp")]
-mod byok_gcp;
 #[cfg(feature = "_internal-azure")]
 mod byok_azure;
+#[cfg(feature = "_internal-gcp")]
+mod byok_gcp;
 #[cfg(feature = "_internal-vault")]
 mod byok_vault;
 
@@ -291,12 +291,7 @@ mod tests {
     /// feature) and under a single-feature build. The presence of
     /// this test in `cargo test -p corelink-byok` (default features)
     /// proves the `cfg(not(any(...)))` path was taken.
-    #[cfg(not(any(
-        feature = "aws",
-        feature = "gcp",
-        feature = "azure",
-        feature = "vault"
-    )))]
+    #[cfg(not(any(feature = "aws", feature = "gcp", feature = "azure", feature = "vault")))]
     #[test]
     fn no_provider_feature_default_build() {
         // Use the kms-provider trait object's type-id as a structural

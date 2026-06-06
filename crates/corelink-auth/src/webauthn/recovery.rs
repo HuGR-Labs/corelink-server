@@ -297,7 +297,5 @@ pub fn verify_otp(candidate: &str, hash: &RecoveryOtpHash) -> bool {
         }
     };
     let argon = Argon2::default();
-    argon
-        .verify_password(candidate.as_bytes(), &parsed)
-        .is_ok()
+    argon.verify_password(candidate.as_bytes(), &parsed).is_ok()
 }

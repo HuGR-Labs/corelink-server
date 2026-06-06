@@ -10,19 +10,19 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
+    clippy::indexing_slicing
 )]
 
 use std::sync::Arc;
 
 use uuid::Uuid;
 
-use corelink_ops::admin::api::{AdminApiError, AdminApiPipeline};
 use corelink_dual_approval::{
-    AdminOpAuditSink, AdminOpRequest, AdminOpType, AdminSigningKey, DualApprovalError,
-    DualApprovalGateImpl, InMemoryAdminOpAuditSink, InMemoryAdminRoleStore,
-    InMemoryCollusionStore, InMemoryNonceStore, compute_hmac,
+    compute_hmac, AdminOpAuditSink, AdminOpRequest, AdminOpType, AdminSigningKey,
+    DualApprovalError, DualApprovalGateImpl, InMemoryAdminOpAuditSink, InMemoryAdminRoleStore,
+    InMemoryCollusionStore, InMemoryNonceStore,
 };
+use corelink_ops::admin::api::{AdminApiError, AdminApiPipeline};
 
 fn make_gate(
     key: AdminSigningKey,
@@ -33,12 +33,7 @@ fn make_gate(
 ) -> Arc<DualApprovalGateImpl> {
     let role_store = Arc::new(InMemoryAdminRoleStore::new(admins));
     Arc::new(DualApprovalGateImpl::new(
-        key,
-        role_store,
-        collusion,
-        nonces,
-        sink,
-        "enam",
+        key, role_store, collusion, nonces, sink, "enam",
     ))
 }
 
@@ -86,8 +81,18 @@ fn e2e_two_admins_success_audit_emitted() {
     );
     let pipeline = AdminApiPipeline::new(gate);
 
-    let req = make_req(caller, approver, tenant, &key, [1u8; 16], now, AdminOpType::ConfigRollback);
-    let result = pipeline.process(&req, mfa_fresh, now).expect("should succeed");
+    let req = make_req(
+        caller,
+        approver,
+        tenant,
+        &key,
+        [1u8; 16],
+        now,
+        AdminOpType::ConfigRollback,
+    );
+    let result = pipeline
+        .process(&req, mfa_fresh, now)
+        .expect("should succeed");
 
     assert_eq!(result.approval.caller_user_id, caller);
     assert_eq!(result.approval.approver_user_id, approver);
@@ -116,8 +121,18 @@ fn e2e_caller_eq_approver_rejected_403() {
     );
     let pipeline = AdminApiPipeline::new(gate);
 
-    let req = make_req(user, user, tenant, &key, [2u8; 16], now, AdminOpType::TenantTombstone);
-    let err = pipeline.process(&req, mfa_fresh, now).expect_err("must fail");
+    let req = make_req(
+        user,
+        user,
+        tenant,
+        &key,
+        [2u8; 16],
+        now,
+        AdminOpType::TenantTombstone,
+    );
+    let err = pipeline
+        .process(&req, mfa_fresh, now)
+        .expect_err("must fail");
 
     assert_eq!(err.http_status(), 403);
     assert!(matches!(
@@ -148,16 +163,42 @@ fn e2e_collusion_3_cycle_third_rejected() {
     let pipeline = AdminApiPipeline::new(gate);
 
     // Op 1: caller=B, approver=A
-    let req1 = make_req(b, a, tenant, &key, [1u8; 16], now, AdminOpType::ConfigRollback);
+    let req1 = make_req(
+        b,
+        a,
+        tenant,
+        &key,
+        [1u8; 16],
+        now,
+        AdminOpType::ConfigRollback,
+    );
     pipeline.process(&req1, mfa_fresh, now).expect("op1 ok");
 
     // Op 2: caller=A, approver=B
-    let req2 = make_req(a, b, tenant, &key, [2u8; 16], now + 1, AdminOpType::ConfigRollback);
+    let req2 = make_req(
+        a,
+        b,
+        tenant,
+        &key,
+        [2u8; 16],
+        now + 1,
+        AdminOpType::ConfigRollback,
+    );
     pipeline.process(&req2, mfa_fresh, now + 1).expect("op2 ok");
 
     // Op 3: caller=B, approver=A → MUST reject
-    let req3 = make_req(b, a, tenant, &key, [3u8; 16], now + 2, AdminOpType::ConfigRollback);
-    let err = pipeline.process(&req3, mfa_fresh, now + 2).expect_err("op3 must fail");
+    let req3 = make_req(
+        b,
+        a,
+        tenant,
+        &key,
+        [3u8; 16],
+        now + 2,
+        AdminOpType::ConfigRollback,
+    );
+    let err = pipeline
+        .process(&req3, mfa_fresh, now + 2)
+        .expect_err("op3 must fail");
     assert_eq!(err.http_status(), 403);
     assert!(
         matches!(
@@ -204,7 +245,9 @@ fn e2e_empty_payload_schema_400() {
         tenant_id: tenant,
     };
 
-    let err = pipeline.process(&req, mfa_fresh, now).expect_err("empty payload must fail");
+    let err = pipeline
+        .process(&req, mfa_fresh, now)
+        .expect_err("empty payload must fail");
     assert_eq!(err.http_status(), 400);
     assert!(matches!(err, AdminApiError::SchemaValidation(_)));
 }

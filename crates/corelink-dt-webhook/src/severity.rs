@@ -36,7 +36,11 @@ pub fn classify_cvss(score: f64) -> DtSeverity {
 /// Returns an empty slice for `Low` and `Info` (log-only; no channel delivery).
 pub fn routing_channels(severity: &DtSeverity) -> Vec<AlertChannel> {
     match severity {
-        DtSeverity::Critical => vec![AlertChannel::Slack, AlertChannel::Email, AlertChannel::PagerDuty],
+        DtSeverity::Critical => vec![
+            AlertChannel::Slack,
+            AlertChannel::Email,
+            AlertChannel::PagerDuty,
+        ],
         DtSeverity::High => vec![AlertChannel::Slack, AlertChannel::Email],
         DtSeverity::Medium => vec![AlertChannel::Slack],
         DtSeverity::Low | DtSeverity::Info => vec![],
@@ -44,7 +48,12 @@ pub fn routing_channels(severity: &DtSeverity) -> Vec<AlertChannel> {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
 

@@ -37,5 +37,5 @@ pub mod tsa;
 
 pub use error::SbomError;
 pub use ntia::{validate_ntia_json, NtiaValidation, ValidationMode};
-pub use publisher::{DefaultSbomPublisher, ReleaseMetadata, SignedSbom, SbomFormat, SbomPublisher};
+pub use publisher::{DefaultSbomPublisher, ReleaseMetadata, SbomFormat, SbomPublisher, SignedSbom};
 pub use tsa::TsrToken;

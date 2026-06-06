@@ -232,9 +232,8 @@ impl Serialize for ChainHash {
 impl<'de> Deserialize<'de> for ChainHash {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s = String::deserialize(d)?;
-        let bytes = hex::decode(&s).map_err(|e| {
-            serde::de::Error::custom(format!("ChainHash hex decode failed: {e}"))
-        })?;
+        let bytes = hex::decode(&s)
+            .map_err(|e| serde::de::Error::custom(format!("ChainHash hex decode failed: {e}")))?;
         if bytes.len() != 32 {
             return Err(serde::de::Error::custom(format!(
                 "ChainHash expected 32 bytes; got {}",
@@ -259,8 +258,7 @@ fn serialize_region<S: serde::Serializer>(region: &Region, s: S) -> Result<S::Ok
 
 fn deserialize_region<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Region, D::Error> {
     let s = String::deserialize(d)?;
-    region_from_str(&s)
-        .ok_or_else(|| serde::de::Error::custom(format!("unknown Region: {s}")))
+    region_from_str(&s).ok_or_else(|| serde::de::Error::custom(format!("unknown Region: {s}")))
 }
 
 fn region_from_str(s: &str) -> Option<Region> {
@@ -546,8 +544,14 @@ mod tests {
 
     #[test]
     fn event_type_strings_pinned() {
-        assert_eq!(AuditEventKind::Tenant.event_type(), "dev.hugr.corelink.tenant.v1");
-        assert_eq!(AuditEventKind::CasPut.event_type(), "dev.hugr.corelink.cas.put.v1");
+        assert_eq!(
+            AuditEventKind::Tenant.event_type(),
+            "dev.hugr.corelink.tenant.v1"
+        );
+        assert_eq!(
+            AuditEventKind::CasPut.event_type(),
+            "dev.hugr.corelink.cas.put.v1"
+        );
         assert_eq!(
             AuditEventKind::AbuseDetected.event_type(),
             "dev.hugr.corelink.abuse.detected.v1"
@@ -595,8 +599,7 @@ mod tests {
 
     #[test]
     fn chain_hash_wrong_length_rejected() {
-        let err =
-            serde_json::from_str::<ChainHash>("\"ab\"").unwrap_err();
+        let err = serde_json::from_str::<ChainHash>("\"ab\"").unwrap_err();
         assert!(format!("{err}").contains("expected 32 bytes"));
     }
 

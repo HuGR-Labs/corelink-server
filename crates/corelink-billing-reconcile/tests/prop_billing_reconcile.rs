@@ -133,7 +133,11 @@ fn canonical_decision_taxonomy_pinned() {
     assert_eq!(arms.len(), 5);
     let mut set: HashSet<&'static str> = HashSet::new();
     for a in arms {
-        assert!(set.insert(a.as_str()), "duplicate decision str: {}", a.as_str());
+        assert!(
+            set.insert(a.as_str()),
+            "duplicate decision str: {}",
+            a.as_str()
+        );
     }
     assert_eq!(set.len(), 5);
 }

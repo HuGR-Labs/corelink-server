@@ -2,7 +2,6 @@
 //!
 //! Run with: `cargo run --example rotation -p corelink-clerk`.
 
-
 #![allow(clippy::print_stdout, reason = "example demonstrates console output")]
 
 use corelink_clerk::fakes::{InMemoryKvCache, StaticJwksFetcher};
@@ -22,6 +21,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // In production, a control-plane signal (e.g. webhook from Clerk)
     // would invoke `refresh_jwks` on rotation events.
     adapter.refresh_jwks().await?;
-    println!("manual refresh complete; counters: {:?}", adapter.counters());
+    println!(
+        "manual refresh complete; counters: {:?}",
+        adapter.counters()
+    );
     Ok(())
 }

@@ -21,12 +21,11 @@
 
 use std::sync::Arc;
 
+use corelink_handler_cas::observer::Sli;
 use corelink_handler_cas::{
     handler::fake_hash, AuditEventKind, CasHandlerError, CasReadHandler, CasReadRequest,
-    CasWriteHandler, CasWriteRequest, InMemoryAuditSink, InMemoryCasHandler,
-    InMemorySliObserver,
+    CasWriteHandler, CasWriteRequest, InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver,
 };
-use corelink_handler_cas::observer::Sli;
 
 use proptest::prelude::*;
 
@@ -39,7 +38,11 @@ fn proptest_cases() -> u32 {
         .unwrap_or(256)
 }
 
-fn handler() -> (Arc<InMemoryAuditSink>, Arc<InMemorySliObserver>, InMemoryCasHandler) {
+fn handler() -> (
+    Arc<InMemoryAuditSink>,
+    Arc<InMemorySliObserver>,
+    InMemoryCasHandler,
+) {
     let a = Arc::new(InMemoryAuditSink::new());
     let s = Arc::new(InMemorySliObserver::new());
     let h = InMemoryCasHandler::new(a.clone(), s.clone());

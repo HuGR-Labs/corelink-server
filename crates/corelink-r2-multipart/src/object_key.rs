@@ -74,7 +74,13 @@ pub fn compose(
     let suffix_str = suffix.unwrap_or("");
 
     let mut out = String::with_capacity(
-        family.len() + region.len() + 1 + prefix_str.len() + 1 + digest_hex.len() + suffix_str.len(),
+        family.len()
+            + region.len()
+            + 1
+            + prefix_str.len()
+            + 1
+            + digest_hex.len()
+            + suffix_str.len(),
     );
     out.push_str(family);
     out.push_str(region);
@@ -190,7 +196,10 @@ mod tests {
         let dh = dummy_digest();
         for bad in ["", "SAM", "sam!", &"x".repeat(20), "sam/extra"] {
             let r = compose(Bucket::Chunk, bad, &p, &dh, None);
-            assert!(matches!(r, Err(MultipartError::InvalidObjectKey { .. })), "bad={bad}");
+            assert!(
+                matches!(r, Err(MultipartError::InvalidObjectKey { .. })),
+                "bad={bad}"
+            );
         }
     }
 
@@ -199,7 +208,10 @@ mod tests {
         let p = fixed_prefix(Uuid::nil());
         for bad in ["", "0123", &"g".repeat(64), &"0".repeat(63)] {
             let r = compose(Bucket::Chunk, "sam", &p, bad, None);
-            assert!(matches!(r, Err(MultipartError::InvalidObjectKey { .. })), "bad={bad}");
+            assert!(
+                matches!(r, Err(MultipartError::InvalidObjectKey { .. })),
+                "bad={bad}"
+            );
         }
     }
 
@@ -209,7 +221,10 @@ mod tests {
         let dh = dummy_digest();
         for bad in ["json", ".js/on", ".bad\\path"] {
             let r = compose(Bucket::Chunk, "sam", &p, &dh, Some(bad));
-            assert!(matches!(r, Err(MultipartError::InvalidObjectKey { .. })), "bad={bad}");
+            assert!(
+                matches!(r, Err(MultipartError::InvalidObjectKey { .. })),
+                "bad={bad}"
+            );
         }
     }
 

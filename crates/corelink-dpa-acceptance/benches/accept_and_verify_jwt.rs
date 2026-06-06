@@ -63,10 +63,7 @@ fn gen_keys() -> (RsaPrivateKeyPem, RsaPublicKeyPem) {
     let public_pem = public
         .to_public_key_pem(rsa::pkcs8::LineEnding::LF)
         .expect("pub pem");
-    (
-        RsaPrivateKeyPem(private_pem),
-        RsaPublicKeyPem(public_pem),
-    )
+    (RsaPrivateKeyPem(private_pem), RsaPublicKeyPem(public_pem))
 }
 
 fn registry() -> LocaleNoticeRegistry {

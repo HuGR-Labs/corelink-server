@@ -86,30 +86,28 @@ fn upsert_request_strategy() -> impl Strategy<Value = AcUpsertRequest> {
         hex64_strategy(),
         hex64_strategy(),
         region_strategy(),
-        0i64..1_000_000_i64,            // result_size_bytes
-        0i64..=BLOB_REFS_COUNT_MAX,     // blob_refs_count
-        1i64..1_000_000_i64,            // now_ms
+        0i64..1_000_000_i64,                       // result_size_bytes
+        0i64..=BLOB_REFS_COUNT_MAX,                // blob_refs_count
+        1i64..1_000_000_i64,                       // now_ms
         proptest::option::of(0i64..3_600_000_i64), // ttl_ms
     )
-        .prop_map(
-            |(tid, ad, rh, region, sz, cnt, now, ttl)| AcUpsertRequest {
-                tenant_id: tid,
-                action_digest: ad,
-                tenant_prefix: [0xab; 16],
-                path_key_id: 1,
-                result_hash: rh,
-                blob_refs: "[]".to_string(),
-                blob_refs_count: cnt,
-                result_size_bytes: sz,
-                sig_key_id: 1,
-                sig_alg: SigAlg::HkdfSha256,
-                region,
-                now_ms: now,
-                ttl_ms: ttl,
-                created_by_pat_id: None,
-                created_by_request_id: None,
-            },
-        )
+        .prop_map(|(tid, ad, rh, region, sz, cnt, now, ttl)| AcUpsertRequest {
+            tenant_id: tid,
+            action_digest: ad,
+            tenant_prefix: [0xab; 16],
+            path_key_id: 1,
+            result_hash: rh,
+            blob_refs: "[]".to_string(),
+            blob_refs_count: cnt,
+            result_size_bytes: sz,
+            sig_key_id: 1,
+            sig_alg: SigAlg::HkdfSha256,
+            region,
+            now_ms: now,
+            ttl_ms: ttl,
+            created_by_pat_id: None,
+            created_by_request_id: None,
+        })
 }
 
 // ---------------------------------------------------------------------------

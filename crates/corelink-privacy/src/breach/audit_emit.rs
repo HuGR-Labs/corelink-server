@@ -109,9 +109,7 @@ impl InMemoryBreachAuditSink {
 impl BreachAuditSink for InMemoryBreachAuditSink {
     fn emit(&self, dispatch: BreachNotificationDispatch) -> Result<(), BreachAuditSinkError> {
         let mut guard = self.inner.lock().map_err(|_| {
-            BreachAuditSinkError::Store(
-                "breach audit sink mutex poisoned".to_string(),
-            )
+            BreachAuditSinkError::Store("breach audit sink mutex poisoned".to_string())
         })?;
         guard.push(dispatch);
         Ok(())
@@ -149,8 +147,8 @@ impl BreachAuditSink for FailingBreachAuditSink {
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
-    use super::*;
     use super::super::event::{BreachSeverity, CustomerLocale, NotificationJurisdiction};
+    use super::*;
 
     fn sample_dispatch(breach_id: &str) -> BreachNotificationDispatch {
         BreachNotificationDispatch {
@@ -189,7 +187,11 @@ mod tests {
         sink.emit(sample_dispatch("BREACH-B")).unwrap();
         sink.emit(sample_dispatch("BREACH-A")).unwrap(); // retry
         let a = sink.snapshot_for_breach("BREACH-A");
-        assert_eq!(a.len(), 2, "BREACH-A should have 2 records (original + retry)");
+        assert_eq!(
+            a.len(),
+            2,
+            "BREACH-A should have 2 records (original + retry)"
+        );
         let b = sink.snapshot_for_breach("BREACH-B");
         assert_eq!(b.len(), 1);
     }
@@ -199,7 +201,11 @@ mod tests {
         let s1 = InMemoryBreachAuditSink::new();
         let s2 = s1.clone();
         s1.emit(sample_dispatch("BREACH-C")).unwrap();
-        assert_eq!(s2.len(), 1, "cloned sink must share the Arc<Mutex<>> buffer");
+        assert_eq!(
+            s2.len(),
+            1,
+            "cloned sink must share the Arc<Mutex<>> buffer"
+        );
     }
 
     #[test]
@@ -231,7 +237,10 @@ mod tests {
             confirmed_dispatches += 1;
         }
         // emit failed → state UNCHANGED
-        assert_eq!(confirmed_dispatches, 0, "state must be unchanged on audit emit failure");
+        assert_eq!(
+            confirmed_dispatches, 0,
+            "state must be unchanged on audit emit failure"
+        );
 
         // Control: succeeding sink → state updates
         in_memory_sink.emit(sample_dispatch("BREACH-F")).unwrap();

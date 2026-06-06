@@ -556,9 +556,7 @@ impl MultipartSchema {
     pub fn list_gc_candidates(&self, ctx_tenant: &Uuid) -> Vec<&ChunksRow> {
         self.chunks
             .iter()
-            .filter_map(|((t, _), row)| {
-                (t == ctx_tenant && row.refcount == 0).then_some(row)
-            })
+            .filter_map(|((t, _), row)| (t == ctx_tenant && row.refcount == 0).then_some(row))
             .collect()
     }
 
@@ -594,9 +592,7 @@ impl MultipartSchema {
             ));
         }
         if !(0..MAX_CHUNKS_PER_BLOB).contains(&req.chunk_index) {
-            return Err(SimError::CheckViolation(
-                "chk_manifest_chunk_index_bounded",
-            ));
+            return Err(SimError::CheckViolation("chk_manifest_chunk_index_bounded"));
         }
         Ok(())
     }
@@ -611,11 +607,7 @@ impl MultipartSchema {
         req: ManifestChunkInsertRequest,
     ) -> Result<ManifestChunkInsertOutcome, SimError> {
         Self::validate_manifest_chunk_check_constraints(&req)?;
-        let key = (
-            req.tenant_id,
-            req.blob_digest.clone(),
-            req.chunk_index,
-        );
+        let key = (req.tenant_id, req.blob_digest.clone(), req.chunk_index);
         match self.manifest_chunks.get(&key) {
             None => {
                 let row = ManifestChunkRow {
@@ -680,9 +672,7 @@ impl MultipartSchema {
 
     /// Apply the canonical CHECK constraint validation against an
     /// `initiate` request.
-    fn validate_session_check_constraints(
-        req: &MultipartInitiateRequest,
-    ) -> Result<(), SimError> {
+    fn validate_session_check_constraints(req: &MultipartInitiateRequest) -> Result<(), SimError> {
         if req.blob_digest_expected.len() != BLOB_DIGEST_HEX_LEN {
             return Err(SimError::CheckViolation("chk_multipart_blob_digest_len"));
         }
@@ -701,9 +691,7 @@ impl MultipartSchema {
         // state defaults to in_progress on initiate.
         if let Some(ttl) = req.ttl_ms {
             if ttl < 0 {
-                return Err(SimError::CheckViolation(
-                    "chk_multipart_lifecycle_expires",
-                ));
+                return Err(SimError::CheckViolation("chk_multipart_lifecycle_expires"));
             }
         }
         Ok(())
@@ -732,7 +720,9 @@ impl MultipartSchema {
         Self::validate_session_check_constraints(&req)?;
 
         // Partial UNIQUE INDEX uq_multipart_sessions_in_progress check.
-        if let Some(existing) = self.find_in_progress_session(&req.tenant_id, &req.blob_digest_expected) {
+        if let Some(existing) =
+            self.find_in_progress_session(&req.tenant_id, &req.blob_digest_expected)
+        {
             return Ok(MultipartInitiateOutcome::AlreadyInProgress {
                 existing: existing.session_id,
             });
@@ -766,14 +756,10 @@ impl MultipartSchema {
         };
         // chk_multipart_lifecycle_activity / _expires (post-write).
         if session.last_activity_at < session.started_at {
-            return Err(SimError::CheckViolation(
-                "chk_multipart_lifecycle_activity",
-            ));
+            return Err(SimError::CheckViolation("chk_multipart_lifecycle_activity"));
         }
         if session.expires_at_ms < session.started_at {
-            return Err(SimError::CheckViolation(
-                "chk_multipart_lifecycle_expires",
-            ));
+            return Err(SimError::CheckViolation("chk_multipart_lifecycle_expires"));
         }
         self.sessions.insert(session.session_id, session);
         Ok(MultipartInitiateOutcome::Inserted)
@@ -832,9 +818,7 @@ impl MultipartSchema {
         // Monotonic clamp: the column may NEVER roll back.
         let new_activity = session.last_activity_at.max(now_ms);
         if new_activity < session.started_at {
-            return Err(SimError::CheckViolation(
-                "chk_multipart_lifecycle_activity",
-            ));
+            return Err(SimError::CheckViolation("chk_multipart_lifecycle_activity"));
         }
         session.last_activity_at = new_activity;
         Ok(())
@@ -1163,8 +1147,14 @@ mod tests {
         let mut s = MultipartSchema::new();
         let r = chunk_req(ten_a(), 1, MultipartRegion::Sam);
         s.upsert_chunk(r.clone()).unwrap();
-        assert_eq!(s.decrement_chunk_refcount(&ten_a(), &r.chunk_digest), Some(0));
-        assert_eq!(s.decrement_chunk_refcount(&ten_a(), &r.chunk_digest), Some(0));
+        assert_eq!(
+            s.decrement_chunk_refcount(&ten_a(), &r.chunk_digest),
+            Some(0)
+        );
+        assert_eq!(
+            s.decrement_chunk_refcount(&ten_a(), &r.chunk_digest),
+            Some(0)
+        );
         assert_eq!(s.list_gc_candidates(&ten_a()).len(), 1);
     }
 

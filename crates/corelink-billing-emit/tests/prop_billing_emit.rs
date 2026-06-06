@@ -41,10 +41,9 @@ use corelink_analytics::Region;
 use corelink_billing_emit::{
     canonical_billing_audit_event_strings, canonical_usage_event_kinds,
     compute_canonical_bytes_for_idem, derive_idem_key, derive_idem_key_from_canonical,
-    BillingAuditEventType, EmitOutcome, IdemKey, IdempotencyTracker,
-    InMemoryBillingAuditSink, InMemoryIdempotencyTracker, InMemoryR2UsageSink,
-    InMemoryUsageEventEmitter, R2UsageSinkError, UsageEvent, UsageEventEmitter,
-    UsageEventKind,
+    BillingAuditEventType, EmitOutcome, IdemKey, IdempotencyTracker, InMemoryBillingAuditSink,
+    InMemoryIdempotencyTracker, InMemoryR2UsageSink, InMemoryUsageEventEmitter, R2UsageSinkError,
+    UsageEvent, UsageEventEmitter, UsageEventKind,
 };
 use proptest::prelude::*;
 use rand::{RngCore, SeedableRng};
@@ -155,11 +154,8 @@ fn fresh_emitter() -> (
     let audit = Arc::new(InMemoryBillingAuditSink::new());
     let idem = Arc::new(InMemoryIdempotencyTracker::new());
     let sink = Arc::new(InMemoryR2UsageSink::new());
-    let e = InMemoryUsageEventEmitter::new(
-        Arc::clone(&audit),
-        Arc::clone(&idem),
-        Arc::clone(&sink),
-    );
+    let e =
+        InMemoryUsageEventEmitter::new(Arc::clone(&audit), Arc::clone(&idem), Arc::clone(&sink));
     (e, audit, idem, sink)
 }
 

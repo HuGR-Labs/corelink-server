@@ -99,21 +99,23 @@ fn sha1_digest(data: &[u8]) -> String {
             }
         }
 
-        let (mut a, mut b, mut c, mut d, mut e) =
-            (*h.first().unwrap_or(&0),
-             *h.get(1).unwrap_or(&0),
-             *h.get(2).unwrap_or(&0),
-             *h.get(3).unwrap_or(&0),
-             *h.get(4).unwrap_or(&0));
+        let (mut a, mut b, mut c, mut d, mut e) = (
+            *h.first().unwrap_or(&0),
+            *h.get(1).unwrap_or(&0),
+            *h.get(2).unwrap_or(&0),
+            *h.get(3).unwrap_or(&0),
+            *h.get(4).unwrap_or(&0),
+        );
 
         for (i, &wi) in w.iter().enumerate() {
             let (f, k) = match i {
-                0..=19  => ((b & c) | ((!b) & d), 0x5A82_7999u32),
-                20..=39 => (b ^ c ^ d,             0x6ED9_EBA1u32),
+                0..=19 => ((b & c) | ((!b) & d), 0x5A82_7999u32),
+                20..=39 => (b ^ c ^ d, 0x6ED9_EBA1u32),
                 40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1B_BCDCu32),
-                _       => (b ^ c ^ d,             0xCA62_C1D6u32),
+                _ => (b ^ c ^ d, 0xCA62_C1D6u32),
             };
-            let temp = a.rotate_left(5)
+            let temp = a
+                .rotate_left(5)
                 .wrapping_add(f)
                 .wrapping_add(e)
                 .wrapping_add(k)
@@ -125,11 +127,21 @@ fn sha1_digest(data: &[u8]) -> String {
             a = temp;
         }
 
-        if let Some(h0) = h.get_mut(0) { *h0 = h0.wrapping_add(a); }
-        if let Some(h1) = h.get_mut(1) { *h1 = h1.wrapping_add(b); }
-        if let Some(h2) = h.get_mut(2) { *h2 = h2.wrapping_add(c); }
-        if let Some(h3) = h.get_mut(3) { *h3 = h3.wrapping_add(d); }
-        if let Some(h4) = h.get_mut(4) { *h4 = h4.wrapping_add(e); }
+        if let Some(h0) = h.get_mut(0) {
+            *h0 = h0.wrapping_add(a);
+        }
+        if let Some(h1) = h.get_mut(1) {
+            *h1 = h1.wrapping_add(b);
+        }
+        if let Some(h2) = h.get_mut(2) {
+            *h2 = h2.wrapping_add(c);
+        }
+        if let Some(h3) = h.get_mut(3) {
+            *h3 = h3.wrapping_add(d);
+        }
+        if let Some(h4) = h.get_mut(4) {
+            *h4 = h4.wrapping_add(e);
+        }
     }
 
     format!(

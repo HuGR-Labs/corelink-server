@@ -87,7 +87,7 @@ pub use scheduler::{
     DsrStatuspagePublishScheduler, RunOutcome, SchedulerError, CRON_EXPRESSION,
     PUBLISH_WINDOW_SECONDS,
 };
-pub use wasm32_row_source::CRON_OUTCOME_QUERY;
-pub use wasm32_row_source::{parse_outcome_json, render_outcome_json};
 #[cfg(target_arch = "wasm32")]
 pub use wasm32_row_source::D1Wasm32RowSource;
+pub use wasm32_row_source::CRON_OUTCOME_QUERY;
+pub use wasm32_row_source::{parse_outcome_json, render_outcome_json};

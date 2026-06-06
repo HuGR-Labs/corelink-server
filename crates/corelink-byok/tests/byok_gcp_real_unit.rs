@@ -50,12 +50,12 @@
     clippy::panic
 )]
 
+use corelink_byok::gcp::real::{canonicalize_aad_to_string_map, resolve_endpoint_hostname};
+use corelink_byok::gcp::GcpKmsRealProvider;
 use corelink_byok::{
     types::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek},
     KmsProvider,
 };
-use corelink_byok::gcp::real::{canonicalize_aad_to_string_map, resolve_endpoint_hostname};
-use corelink_byok::gcp::GcpKmsRealProvider;
 use serde_json::json;
 
 const VALID_KEY: &str =

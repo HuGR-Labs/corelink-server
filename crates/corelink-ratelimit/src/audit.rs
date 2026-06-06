@@ -139,10 +139,7 @@ pub trait RateLimitAuditSink: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`RateLimitAuditSinkError::Store`] on any backend failure.
-    fn emit(
-        &self,
-        record: RateLimitAuditRecord,
-    ) -> Result<(), RateLimitAuditSinkError>;
+    fn emit(&self, record: RateLimitAuditRecord) -> Result<(), RateLimitAuditSinkError>;
 }
 
 /// In-memory test audit sink. Cloning shares the underlying buffer.
@@ -184,10 +181,7 @@ impl InMemoryRateLimitAuditSink {
 
     /// Filter snapshot down to records of a single event type.
     #[must_use]
-    pub fn snapshot_of(
-        &self,
-        event_type: RateLimitEventType,
-    ) -> Vec<RateLimitAuditRecord> {
+    pub fn snapshot_of(&self, event_type: RateLimitEventType) -> Vec<RateLimitAuditRecord> {
         self.snapshot()
             .into_iter()
             .filter(|r| r.event_type == event_type)
@@ -196,15 +190,11 @@ impl InMemoryRateLimitAuditSink {
 }
 
 impl RateLimitAuditSink for InMemoryRateLimitAuditSink {
-    fn emit(
-        &self,
-        record: RateLimitAuditRecord,
-    ) -> Result<(), RateLimitAuditSinkError> {
-        let mut guard = self.inner.lock().map_err(|_| {
-            RateLimitAuditSinkError::Store(
-                "audit sink mutex poisoned".to_string(),
-            )
-        })?;
+    fn emit(&self, record: RateLimitAuditRecord) -> Result<(), RateLimitAuditSinkError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| RateLimitAuditSinkError::Store("audit sink mutex poisoned".to_string()))?;
         guard.push(record);
         Ok(())
     }
@@ -225,10 +215,7 @@ impl FailingRateLimitAuditSink {
 }
 
 impl RateLimitAuditSink for FailingRateLimitAuditSink {
-    fn emit(
-        &self,
-        _record: RateLimitAuditRecord,
-    ) -> Result<(), RateLimitAuditSinkError> {
+    fn emit(&self, _record: RateLimitAuditRecord) -> Result<(), RateLimitAuditSinkError> {
         Err(RateLimitAuditSinkError::Store(
             "induced ratelimit audit sink failure (test fixture)".to_string(),
         ))
@@ -303,14 +290,8 @@ mod tests {
         sink.emit(rec(RateLimitEventType::Allowed)).unwrap();
         sink.emit(rec(RateLimitEventType::Denied429)).unwrap();
         assert_eq!(sink.len(), 2);
-        assert_eq!(
-            sink.snapshot_of(RateLimitEventType::Allowed).len(),
-            1
-        );
-        assert_eq!(
-            sink.snapshot_of(RateLimitEventType::Denied429).len(),
-            1
-        );
+        assert_eq!(sink.snapshot_of(RateLimitEventType::Allowed).len(), 1);
+        assert_eq!(sink.snapshot_of(RateLimitEventType::Denied429).len(), 1);
     }
 
     #[test]

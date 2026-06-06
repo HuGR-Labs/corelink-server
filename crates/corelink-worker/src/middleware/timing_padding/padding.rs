@@ -54,7 +54,9 @@ pub fn canonical_pad_target(
     };
 
     let delta_ms = (i64::try_from(target_ms).unwrap_or(i64::MAX) * i64::from(signed_pct)) / 100;
-    let padded_ms = i64::try_from(target_ms).unwrap_or(i64::MAX).saturating_add(delta_ms);
+    let padded_ms = i64::try_from(target_ms)
+        .unwrap_or(i64::MAX)
+        .saturating_add(delta_ms);
     let padded_ms_u = u64::try_from(padded_ms.max(0)).unwrap_or(0);
     let padded = Duration::from_millis(padded_ms_u);
     if elapsed > padded {

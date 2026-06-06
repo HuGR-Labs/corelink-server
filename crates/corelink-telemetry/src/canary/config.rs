@@ -65,7 +65,10 @@ mod tests {
         // expressed in milliseconds so a single tick of expected
         // jitter never trips the SEV-3 alert source.
         let cron_ms: u64 = CRON_INTERVAL_SECS.saturating_mul(1_000);
-        assert!(DISPATCH_LAG_SEV3_MS > cron_ms, "DISPATCH_LAG_SEV3_MS must exceed cron_ms");
+        assert!(
+            DISPATCH_LAG_SEV3_MS > cron_ms,
+            "DISPATCH_LAG_SEV3_MS must exceed cron_ms"
+        );
     }
 
     #[test]

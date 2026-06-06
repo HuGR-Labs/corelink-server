@@ -22,8 +22,8 @@
 
 use base64::Engine as _;
 use corelink_erasure_attestation::{
-    ErasureAttestationPayload, ErasureAttestationSigner, ErasureSigningKey, EvidenceBundle,
-    Region, verify_attestation_signature,
+    verify_attestation_signature, ErasureAttestationPayload, ErasureAttestationSigner,
+    ErasureSigningKey, EvidenceBundle, Region,
 };
 
 fn sample_bundle() -> EvidenceBundle {
@@ -65,8 +65,7 @@ fn forge_signature_10k_attempts_zero_pass() {
         let mut forge_bytes = [0u8; 64];
         rng.fill_bytes(&mut forge_bytes);
         let mut forged = att.clone();
-        forged.signature_ed25519 =
-            base64::engine::general_purpose::STANDARD.encode(forge_bytes);
+        forged.signature_ed25519 = base64::engine::general_purpose::STANDARD.encode(forge_bytes);
         assert!(
             verify_attestation_signature(&forged, &pk).is_err(),
             "forge attempt must be rejected"
@@ -86,7 +85,10 @@ fn replay_request_id_canonical_is_identical() {
     let p2 = sample_payload(); // exact same request_id
     let c1 = serde_jcs::to_string(&p1).unwrap();
     let c2 = serde_jcs::to_string(&p2).unwrap();
-    assert_eq!(c1, c2, "replay: same payload must produce identical canonical");
+    assert_eq!(
+        c1, c2,
+        "replay: same payload must produce identical canonical"
+    );
 }
 
 /// Scenario 3: public key substitution.

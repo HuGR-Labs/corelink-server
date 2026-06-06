@@ -36,7 +36,10 @@ fn metric_name_matches_verifier() {
 fn slo_constants_match_catalog_4_23() {
     assert_eq!(R2_CRR_LAG_P99_CEILING_SECONDS, 24 * 3600);
     assert_eq!(R2_CRR_OBJECT_MISSING_INCIDENT_SECONDS, 24 * 3600);
-    assert_eq!(R2_CRR_PROBE_CADENCE_SECONDS, 300, "5 min cadence per P1-004 §1");
+    assert_eq!(
+        R2_CRR_PROBE_CADENCE_SECONDS, 300,
+        "5 min cadence per P1-004 §1"
+    );
 }
 
 #[test]
@@ -48,7 +51,10 @@ fn missing_object_never_within_ceiling_even_at_zero_lag() {
         object_present: false,
         probe_timestamp_ms: 0,
     };
-    assert!(!s.within_ceiling(), "missing object is never within ceiling");
+    assert!(
+        !s.within_ceiling(),
+        "missing object is never within ceiling"
+    );
 }
 
 #[test]
@@ -74,7 +80,10 @@ fn missing_object_24h_threshold_triggers_incident() {
         object_present: false,
         probe_timestamp_ms: 0,
     };
-    assert!(s.is_missing_incident(), "missing + 24h crosses incident threshold");
+    assert!(
+        s.is_missing_incident(),
+        "missing + 24h crosses incident threshold"
+    );
 }
 
 #[test]

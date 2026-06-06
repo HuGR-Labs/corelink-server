@@ -63,10 +63,7 @@ impl InMemoryCascadeSink {
 
     /// Return a snapshot of all enqueued tasks.
     pub fn captured(&self) -> Vec<CascadeTask> {
-        self.tasks
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone()
+        self.tasks.lock().unwrap_or_else(|p| p.into_inner()).clone()
     }
 }
 

@@ -23,8 +23,8 @@
 use super::audit::{NoticeAuditRecord, NoticeAuditSink};
 use super::error::{NoticeEmitterError, NoticeStoreError};
 use super::event::{
-    canonical_notice_locales, NoticeDeprecatedPayload, NoticeLocale,
-    NoticePublishedPayload, NoticeVersion, VersionBump,
+    canonical_notice_locales, NoticeDeprecatedPayload, NoticeLocale, NoticePublishedPayload,
+    NoticeVersion, VersionBump,
 };
 use super::store::{NoticePublicationState, NoticeStateStore};
 use std::collections::BTreeMap;
@@ -126,13 +126,17 @@ impl NoticeEmitDecision {
     /// The per-locale notice_text_hashes for downstream consent ledger
     /// cross-validation (INV-CONSENT-PROOF-VERIFIABLE).
     #[must_use]
-    pub fn notice_text_hashes(
-        &self,
-    ) -> &BTreeMap<alloc::string::String, alloc::string::String> {
+    pub fn notice_text_hashes(&self) -> &BTreeMap<alloc::string::String, alloc::string::String> {
         match self {
-            Self::MinorBumpPublished { notice_text_hashes, .. }
-            | Self::MajorBumpPublished { notice_text_hashes, .. }
-            | Self::InitialPublication { notice_text_hashes, .. } => notice_text_hashes,
+            Self::MinorBumpPublished {
+                notice_text_hashes, ..
+            }
+            | Self::MajorBumpPublished {
+                notice_text_hashes, ..
+            }
+            | Self::InitialPublication {
+                notice_text_hashes, ..
+            } => notice_text_hashes,
         }
     }
 }
@@ -200,7 +204,11 @@ impl NoticeEmitter for InMemoryNoticeEmitter {
 
         // --- VALIDATE native speaker review ---
         for locale in canonical {
-            let reviewed = request.native_speaker_reviewed.get(locale).copied().unwrap_or(false);
+            let reviewed = request
+                .native_speaker_reviewed
+                .get(locale)
+                .copied()
+                .unwrap_or(false);
             if !reviewed {
                 return Err(NoticeEmitterError::NativeSpeakerReviewMissing {
                     locale: locale.as_str().into(),
@@ -212,9 +220,11 @@ impl NoticeEmitter for InMemoryNoticeEmitter {
         let current = {
             self.store
                 .lock()
-                .map_err(|_| NoticeEmitterError::Store(NoticeStoreError::Internal {
-                    reason: "store mutex poisoned".into(),
-                }))?
+                .map_err(|_| {
+                    NoticeEmitterError::Store(NoticeStoreError::Internal {
+                        reason: "store mutex poisoned".into(),
+                    })
+                })?
                 .current_published()
                 .map_err(NoticeEmitterError::Store)?
         };
@@ -235,17 +245,16 @@ impl NoticeEmitter for InMemoryNoticeEmitter {
         };
 
         // --- COMPUTE notice_text_hashes (deterministic per AC-006) ---
-        let notice_text_hashes: BTreeMap<alloc::string::String, alloc::string::String> =
-            request
-                .locale_contents
-                .iter()
-                .map(|(locale, content)| {
-                    (
-                        locale.as_str().to_owned(),
-                        super::event::notice_text_hash(content),
-                    )
-                })
-                .collect();
+        let notice_text_hashes: BTreeMap<alloc::string::String, alloc::string::String> = request
+            .locale_contents
+            .iter()
+            .map(|(locale, content)| {
+                (
+                    locale.as_str().to_owned(),
+                    super::event::notice_text_hash(content),
+                )
+            })
+            .collect();
 
         // --- EMIT AUDIT (step 2: emit_audit BEFORE state mutation) ---
         // Determine the effective bump type for the published payload.
@@ -290,9 +299,11 @@ impl NoticeEmitter for InMemoryNoticeEmitter {
         {
             self.store
                 .lock()
-                .map_err(|_| NoticeEmitterError::Store(NoticeStoreError::Internal {
-                    reason: "store mutex poisoned (mutate)".into(),
-                }))?
+                .map_err(|_| {
+                    NoticeEmitterError::Store(NoticeStoreError::Internal {
+                        reason: "store mutex poisoned (mutate)".into(),
+                    })
+                })?
                 .set_published(NoticePublicationState::new(
                     request.new_version.clone(),
                     request.requested_at_ms,
@@ -339,9 +350,9 @@ extern crate alloc;
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
-    use super::*;
     use super::super::audit::{FailingNoticeAuditSink, InMemoryNoticeAuditSink};
     use super::super::store::InMemoryNoticeStateStore;
+    use super::*;
     use uuid::Uuid;
 
     fn make_request(
@@ -393,9 +404,10 @@ mod tests {
 
     #[test]
     fn minor_bump_emits_one_audit_record_no_deprecation() {
-        let store = InMemoryNoticeStateStore::with_state(
-            NoticePublicationState::new(NoticeVersion::new(1, 5), 0),
-        );
+        let store = InMemoryNoticeStateStore::with_state(NoticePublicationState::new(
+            NoticeVersion::new(1, 5),
+            0,
+        ));
         let (emitter, sink) = make_emitter_with_inmem_sink(store);
         let req = make_request(NoticeVersion::new(1, 6), None);
         let decision = emitter.publish(req).unwrap();
@@ -408,9 +420,10 @@ mod tests {
 
     #[test]
     fn major_bump_emits_two_audit_records_and_deprecated_decision() {
-        let store = InMemoryNoticeStateStore::with_state(
-            NoticePublicationState::new(NoticeVersion::new(1, 5), 0),
-        );
+        let store = InMemoryNoticeStateStore::with_state(NoticePublicationState::new(
+            NoticeVersion::new(1, 5),
+            0,
+        ));
         let (emitter, sink) = make_emitter_with_inmem_sink(store);
         let req = make_request(NoticeVersion::new(2, 0), None);
         let decision = emitter.publish(req).unwrap();
@@ -439,9 +452,10 @@ mod tests {
 
     #[test]
     fn no_bump_returns_err() {
-        let store = InMemoryNoticeStateStore::with_state(
-            NoticePublicationState::new(NoticeVersion::new(1, 5), 0),
-        );
+        let store = InMemoryNoticeStateStore::with_state(NoticePublicationState::new(
+            NoticeVersion::new(1, 5),
+            0,
+        ));
         let (emitter, _) = make_emitter_with_inmem_sink(store);
         // Same version as current → no bump.
         let req = make_request(NoticeVersion::new(1, 5), None);
@@ -512,7 +526,10 @@ mod tests {
         let hashes = decision.notice_text_hashes();
         assert_eq!(hashes.len(), 3);
         for locale in canonical_notice_locales() {
-            assert!(hashes.contains_key(locale.as_str()), "missing locale hash: {locale}");
+            assert!(
+                hashes.contains_key(locale.as_str()),
+                "missing locale hash: {locale}"
+            );
         }
     }
 }

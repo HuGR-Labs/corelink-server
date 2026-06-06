@@ -9,9 +9,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use corelink_dual_approval::{
-    AdminOpAuditSink, AdminOpRequest, AdminOpType, AdminSigningKey, DualApprovalGate,
-    DualApprovalGateImpl, InMemoryAdminOpAuditSink, InMemoryAdminRoleStore,
-    InMemoryCollusionStore, InMemoryNonceStore, compute_hmac,
+    compute_hmac, AdminOpAuditSink, AdminOpRequest, AdminOpType, AdminSigningKey, DualApprovalGate,
+    DualApprovalGateImpl, InMemoryAdminOpAuditSink, InMemoryAdminRoleStore, InMemoryCollusionStore,
+    InMemoryNonceStore,
 };
 
 fn main() {

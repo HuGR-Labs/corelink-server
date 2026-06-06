@@ -143,8 +143,7 @@ mod tests_stream;
 
 pub use audit_sink::{emit_or_503, ExportAuditSink, InMemoryExportAuditSink};
 pub use state::{
-    audit_export_rate_limit_config, build_state, router, AuditExportQuery,
-    AuditExportRouteState,
+    audit_export_rate_limit_config, build_state, router, AuditExportQuery, AuditExportRouteState,
 };
 pub use stream::{
     build_audit_export_async_stream, mid_stream_abort_trailer_value, InMemoryR2ListPager,

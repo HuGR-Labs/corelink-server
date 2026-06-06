@@ -99,7 +99,11 @@ impl StorageEnv {
 pub(crate) fn non_empty_env(var: &str) -> Option<String> {
     let v = std::env::var(var).ok()?;
     let v = v.trim().to_owned();
-    if v.is_empty() { None } else { Some(v) }
+    if v.is_empty() {
+        None
+    } else {
+        Some(v)
+    }
 }
 
 /// Read `var`, treating ABSENT **and EMPTY** as "use the default".

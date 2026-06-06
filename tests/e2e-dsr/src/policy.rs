@@ -66,16 +66,14 @@ impl TenantPolicyLedger {
 
     /// Flip the canonical restriction flag for `tenant_id`. Returns
     /// the prior flag (default [`RestrictionFlag::Allowed`]).
-    pub fn set_restriction(
-        &self,
-        tenant_id: Uuid,
-        flag: RestrictionFlag,
-    ) -> RestrictionFlag {
+    pub fn set_restriction(&self, tenant_id: Uuid, flag: RestrictionFlag) -> RestrictionFlag {
         let mut guard = match self.restriction.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
-        guard.insert(tenant_id, flag).unwrap_or(RestrictionFlag::Allowed)
+        guard
+            .insert(tenant_id, flag)
+            .unwrap_or(RestrictionFlag::Allowed)
     }
 
     /// Canonical restriction flag (default [`RestrictionFlag::Allowed`]).

@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
 use crate::{BYOKError, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek};
+use async_trait::async_trait;
 
 use super::alerter::{CustomerAlerter, RevocationAlertPayload};
 use super::error::RevocationError;
@@ -45,7 +45,10 @@ impl StubKmsProvider {
     /// Construct with a given provider kind and access status.
     #[must_use]
     pub fn new(kind: KmsProviderKind, access_status: KmsAccessStatus) -> Self {
-        Self { kind, access_status }
+        Self {
+            kind,
+            access_status,
+        }
     }
 
     /// Construct an AWS provider that returns `KmsAccessStatus::Ok`.
@@ -140,12 +143,13 @@ impl TenantStatusStore for InMemoryTenantStore {
         _provider: &str,
         _revoked_at_ms: u64,
     ) -> Result<usize, RevocationError> {
-        let mut map = self.inner.lock().map_err(|e| {
-            RevocationError::TenantDegradeFailed {
+        let mut map = self
+            .inner
+            .lock()
+            .map_err(|e| RevocationError::TenantDegradeFailed {
                 kms_key_id: kms_key_id.to_string(),
                 detail: e.to_string(),
-            }
-        })?;
+            })?;
         map.insert(kms_key_id.to_string(), TenantByokStatus::DegradedReadOnly);
         Ok(1)
     }
@@ -155,12 +159,13 @@ impl TenantStatusStore for InMemoryTenantStore {
         kms_key_id: &KmsKeyId,
         _restored_at_ms: u64,
     ) -> Result<usize, RevocationError> {
-        let mut map = self.inner.lock().map_err(|e| {
-            RevocationError::TenantDegradeFailed {
+        let mut map = self
+            .inner
+            .lock()
+            .map_err(|e| RevocationError::TenantDegradeFailed {
                 kms_key_id: kms_key_id.to_string(),
                 detail: e.to_string(),
-            }
-        })?;
+            })?;
         map.insert(kms_key_id.to_string(), TenantByokStatus::Active);
         Ok(1)
     }
@@ -169,9 +174,10 @@ impl TenantStatusStore for InMemoryTenantStore {
         &self,
         kms_key_id: &KmsKeyId,
     ) -> Result<Option<TenantByokStatus>, RevocationError> {
-        let map = self.inner.lock().map_err(|e| {
-            RevocationError::Internal(e.to_string())
-        })?;
+        let map = self
+            .inner
+            .lock()
+            .map_err(|e| RevocationError::Internal(e.to_string()))?;
         Ok(map.get(kms_key_id.as_str()).copied())
     }
 }
@@ -265,22 +271,20 @@ impl RecordingAlerter {
     /// Return the number of `alert` calls received.
     #[must_use]
     pub fn alert_count(&self) -> usize {
-        self.calls
-            .lock()
-            .map(|v| v.len())
-            .unwrap_or(0)
+        self.calls.lock().map(|v| v.len()).unwrap_or(0)
     }
 }
 
 #[async_trait]
 impl CustomerAlerter for RecordingAlerter {
     async fn alert(&self, payload: RevocationAlertPayload) -> Result<(), RevocationError> {
-        let mut calls = self.calls.lock().map_err(|e| {
-            RevocationError::AlertDeliveryFailed {
+        let mut calls = self
+            .calls
+            .lock()
+            .map_err(|e| RevocationError::AlertDeliveryFailed {
                 kms_key_id: payload.kms_key_id.to_string(),
                 detail: e.to_string(),
-            }
-        })?;
+            })?;
         calls.push(format!("alert:{}", payload.kms_key_id.as_str()));
         Ok(())
     }
@@ -292,12 +296,13 @@ impl CustomerAlerter for RecordingAlerter {
         _tenant_id_hashed: &str,
         _restored_at_ms: u64,
     ) -> Result<(), RevocationError> {
-        let mut calls = self.calls.lock().map_err(|e| {
-            RevocationError::AlertDeliveryFailed {
+        let mut calls = self
+            .calls
+            .lock()
+            .map_err(|e| RevocationError::AlertDeliveryFailed {
                 kms_key_id: kms_key_id.to_string(),
                 detail: e.to_string(),
-            }
-        })?;
+            })?;
         calls.push(format!("recovery:{}", kms_key_id.as_str()));
         Ok(())
     }

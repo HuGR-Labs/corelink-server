@@ -168,11 +168,7 @@ impl<A: OncallAuditSink, P: PagerDutyClient> RotationLedger<A, P> {
 
     /// True if `engineer` was in an active shift at `ts_ms` on any
     /// tier.
-    pub fn in_active_shift(
-        &self,
-        engineer: &EngineerId,
-        ts_ms: u64,
-    ) -> Result<bool, OncallError> {
+    pub fn in_active_shift(&self, engineer: &EngineerId, ts_ms: u64) -> Result<bool, OncallError> {
         Ok(self.tier_for_engineer(engineer, ts_ms)?.is_some())
     }
 
@@ -199,21 +195,13 @@ impl<A: OncallAuditSink, P: PagerDutyClient> RotationLedger<A, P> {
 
     /// Count Sev1 pages received during the active shift containing
     /// `as_of_ms` (returns 0 if the engineer is not on shift).
-    pub fn sev1_per_shift(
-        &self,
-        engineer: &EngineerId,
-        as_of_ms: u64,
-    ) -> Result<u64, OncallError> {
+    pub fn sev1_per_shift(&self, engineer: &EngineerId, as_of_ms: u64) -> Result<u64, OncallError> {
         self.sev_per_shift(engineer, as_of_ms, Severity::Sev1)
     }
 
     /// Count Sev2 pages received during the active shift containing
     /// `as_of_ms` (returns 0 if the engineer is not on shift).
-    pub fn sev2_per_shift(
-        &self,
-        engineer: &EngineerId,
-        as_of_ms: u64,
-    ) -> Result<u64, OncallError> {
+    pub fn sev2_per_shift(&self, engineer: &EngineerId, as_of_ms: u64) -> Result<u64, OncallError> {
         self.sev_per_shift(engineer, as_of_ms, Severity::Sev2)
     }
 
@@ -325,7 +313,9 @@ impl<A: OncallAuditSink, P: PagerDutyClient> RotationLedger<A, P> {
             }
         };
 
-        let tier = self.tier_for_engineer(engineer, as_of_ms)?.unwrap_or(Tier::Tier1);
+        let tier = self
+            .tier_for_engineer(engineer, as_of_ms)?
+            .unwrap_or(Tier::Tier1);
 
         if let Some(th) = threshold {
             let rec = OncallAuditRecord::new(
@@ -377,11 +367,11 @@ impl<A: OncallAuditSink, P: PagerDutyClient> RotationLedger<A, P> {
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
-    use super::*;
     use super::super::audit::{FailingOncallAuditSink, InMemoryOncallAuditSink};
     use super::super::pagerduty::{FailingPagerDutyClient, InMemoryPagerDutyClient};
     use super::super::rotation::ShiftId;
     use super::super::SHIFT_CAP_SECONDS;
+    use super::*;
 
     fn eng(id: &str) -> EngineerId {
         EngineerId::new(id)

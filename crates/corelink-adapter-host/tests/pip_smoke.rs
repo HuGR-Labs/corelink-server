@@ -59,9 +59,7 @@ impl CasStore for InMemCas {
             .inner
             .lock()
             .map_err(|_| PipAdapterError::Cas("poisoned".into()))?;
-        Ok(map
-            .get(&(tenant.to_string(), digest.to_hex()))
-            .cloned())
+        Ok(map.get(&(tenant.to_string(), digest.to_hex())).cloned())
     }
     async fn put(
         &self,
@@ -249,7 +247,12 @@ async fn body_of_401_includes_text_explanation() {
         )
         .await
         .expect("response");
-    let body = resp.into_body().collect().await.expect("collect").to_bytes();
+    let body = resp
+        .into_body()
+        .collect()
+        .await
+        .expect("collect")
+        .to_bytes();
     let body_str = std::str::from_utf8(&body).expect("utf8");
     assert!(body_str.to_lowercase().contains("auth"));
 }

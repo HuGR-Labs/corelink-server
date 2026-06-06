@@ -14,7 +14,10 @@
 //!
 //! Exit code 0 = all validations passed; non-zero = dry-run failure.
 
-#![allow(clippy::print_stdout, reason = "binary harnesses produce human-readable PASS/FAIL output to stdout; print_stdout-deny inherited from the umbrella library does not apply")]
+#![allow(
+    clippy::print_stdout,
+    reason = "binary harnesses produce human-readable PASS/FAIL output to stdout; print_stdout-deny inherited from the umbrella library does not apply"
+)]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
@@ -22,9 +25,9 @@
 use std::sync::Arc;
 
 use corelink_dual_approval::{
-    AdminOpAuditSink, AdminOpRequest, AdminOpType, DualApprovalError, DualApprovalGate,
-    DualApprovalGateImpl, AdminSigningKey, InMemoryAdminOpAuditSink, InMemoryAdminRoleStore,
-    InMemoryCollusionStore, InMemoryNonceStore, compute_hmac,
+    compute_hmac, AdminOpAuditSink, AdminOpRequest, AdminOpType, AdminSigningKey,
+    DualApprovalError, DualApprovalGate, DualApprovalGateImpl, InMemoryAdminOpAuditSink,
+    InMemoryAdminRoleStore, InMemoryCollusionStore, InMemoryNonceStore,
 };
 use uuid::Uuid;
 
@@ -128,7 +131,10 @@ fn step_caller_eq_approver(key: &AdminSigningKey) -> Step {
             Step {
                 name: "caller-eq-approver-403",
                 passed: true,
-                detail: format!("CallerEqualsApprover rejected; {} audit events", events.len()),
+                detail: format!(
+                    "CallerEqualsApprover rejected; {} audit events",
+                    events.len()
+                ),
             }
         }
         other => Step {
@@ -149,9 +155,13 @@ fn step_collusion_a_b_cycle(_key: &AdminSigningKey) -> Step {
     let collusion = InMemoryCollusionStore::new();
 
     // Op1: caller=B, approver=A
-    collusion.record_approval(tenant, a, &AdminOpType::TenantTombstone, now).ok();
+    collusion
+        .record_approval(tenant, a, &AdminOpType::TenantTombstone, now)
+        .ok();
     // Op2: caller=A, approver=B
-    collusion.record_approval(tenant, b, &AdminOpType::TenantTombstone, now + 1_000).ok();
+    collusion
+        .record_approval(tenant, b, &AdminOpType::TenantTombstone, now + 1_000)
+        .ok();
 
     // Op3 attempt: proposed approver=A (already in last 2 distinct approvers)
     let result = collusion.check_collusion(tenant, a, now + 2_000);
@@ -257,7 +267,10 @@ async fn main() {
     }
 
     println!();
-    println!("=== RB-FM-205 dry-run result: {} ===", if all_pass { "PASS" } else { "FAIL" });
+    println!(
+        "=== RB-FM-205 dry-run result: {} ===",
+        if all_pass { "PASS" } else { "FAIL" }
+    );
 
     if !all_pass {
         std::process::exit(1);

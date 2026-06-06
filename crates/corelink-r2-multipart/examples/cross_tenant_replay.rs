@@ -14,8 +14,7 @@
 
 use bytes::Bytes;
 use corelink_r2_multipart::{
-    Bucket, InMemoryMultipartAdapter, InitiateRequest, MultipartAdapter, MultipartError,
-    PartNumber,
+    Bucket, InMemoryMultipartAdapter, InitiateRequest, MultipartAdapter, MultipartError, PartNumber,
 };
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
 use uuid::Uuid;
@@ -69,7 +68,11 @@ async fn main() {
         .await
         .expect("upload_part");
     let object = adapter
-        .complete(tenant_a, &upload, vec![(PartNumber::new(1).expect("pn"), etag)])
+        .complete(
+            tenant_a,
+            &upload,
+            vec![(PartNumber::new(1).expect("pn"), etag)],
+        )
         .await
         .expect("complete");
     println!("tenant A completed: etag={}", object.etag);

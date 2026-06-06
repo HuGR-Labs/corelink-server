@@ -297,11 +297,10 @@ impl TenantResolver for OciTenantBridge {
     async fn resolve_pat(&self, pat: &SecretWrap) -> PortResult<TenantId> {
         let token = pat.expose().to_owned();
         let validator = Arc::clone(&self.validator);
-        let result = tokio::task::spawn_blocking(move || {
-            validator.authenticate(&token, "oci-adapter-host")
-        })
-        .await
-        .map_err(|e| format!("spawn_blocking: {e}"))?;
+        let result =
+            tokio::task::spawn_blocking(move || validator.authenticate(&token, "oci-adapter-host"))
+                .await
+                .map_err(|e| format!("spawn_blocking: {e}"))?;
 
         match result {
             Ok(ctx) => Ok(TenantId::from(ctx.tenant_id())),
@@ -398,7 +397,10 @@ mod tests {
         let data = b"layer-content".to_vec();
         let hash = fake_hash(&data);
         let uuid = bridge.open_upload(&t).await.unwrap();
-        bridge.append_chunk(&t, &uuid, Bytes::from(data.clone())).await.unwrap();
+        bridge
+            .append_chunk(&t, &uuid, Bytes::from(data.clone()))
+            .await
+            .unwrap();
         bridge.finalize_upload(&t, &uuid, &hash).await.unwrap();
         let got = bridge.get_blob(&t, &hash).await.unwrap();
         assert_eq!(got, Some(Bytes::from(data)));
@@ -410,7 +412,9 @@ mod tests {
         let t = tid(4);
         let uuid = bridge.open_upload(&t).await.unwrap();
         bridge.cancel_upload(&t, &uuid).await.unwrap();
-        let err = bridge.append_chunk(&t, &uuid, Bytes::from_static(b"x")).await;
+        let err = bridge
+            .append_chunk(&t, &uuid, Bytes::from_static(b"x"))
+            .await;
         assert!(err.is_err());
     }
 
@@ -429,7 +433,10 @@ mod tests {
         let bridge = OciManifestKvBridge::new(kv);
         let t = tid(10);
         let value = Bytes::from_static(b"{\"manifest\":true}");
-        bridge.put(&t, "oci_manifest:myrepo:v1.0", value.clone()).await.unwrap();
+        bridge
+            .put(&t, "oci_manifest:myrepo:v1.0", value.clone())
+            .await
+            .unwrap();
         let got = bridge.get(&t, "oci_manifest:myrepo:v1.0").await.unwrap();
         assert_eq!(got, Some(value));
     }
@@ -446,9 +453,15 @@ mod tests {
     async fn manifest_kv_list_prefix_returns_empty_in_bridge() {
         let kv = Arc::new(InMemoryKv::new());
         let bridge = OciManifestKvBridge::new(kv);
-        bridge.put(&tid(12), "oci_tags:myrepo", Bytes::from_static(b"v1")).await.unwrap();
+        bridge
+            .put(&tid(12), "oci_tags:myrepo", Bytes::from_static(b"v1"))
+            .await
+            .unwrap();
         let result = bridge.list_prefix(&tid(12), "oci_tags:").await.unwrap();
-        assert!(result.is_empty(), "bridge list_prefix always returns empty (documented limitation)");
+        assert!(
+            result.is_empty(),
+            "bridge list_prefix always returns empty (documented limitation)"
+        );
     }
 
     // ---- TenantResolver bridge ---------------------------------------------
@@ -457,7 +470,13 @@ mod tests {
     async fn oci_tenant_valid_pat() {
         let mut v = StubPatValidator::new();
         let t = Uuid::from_u128(99);
-        v.insert("oci-token", t, Uuid::from_u128(100), Region::Wnam, [AuthScope::CacheRead]);
+        v.insert(
+            "oci-token",
+            t,
+            Uuid::from_u128(100),
+            Region::Wnam,
+            [AuthScope::CacheRead],
+        );
         let bridge = OciTenantBridge::new(Arc::new(v));
         let secret = SecretWrap::new("oci-token".into());
         let resolved = bridge.resolve_pat(&secret).await.unwrap();
@@ -478,6 +497,9 @@ mod tests {
         let _ = format!("{:?}", make_blob_bridge(h));
         let kv: Arc<InMemoryKv> = Arc::new(InMemoryKv::new());
         let _ = format!("{:?}", OciManifestKvBridge::new(kv));
-        let _ = format!("{:?}", OciTenantBridge::new(Arc::new(StubPatValidator::new())));
+        let _ = format!(
+            "{:?}",
+            OciTenantBridge::new(Arc::new(StubPatValidator::new()))
+        );
     }
 }

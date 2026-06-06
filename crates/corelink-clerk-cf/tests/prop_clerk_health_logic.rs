@@ -44,9 +44,7 @@ use proptest::prelude::*;
 
 // Re-import the audit hook type from the crate. Not re-exported, so we
 // reconstruct it locally (same shape).
-type AuditFn = Arc<
-    dyn Fn(HealthDoOp, &str) -> Result<(), HealthDoError> + Send + Sync + 'static,
->;
+type AuditFn = Arc<dyn Fn(HealthDoOp, &str) -> Result<(), HealthDoError> + Send + Sync + 'static>;
 
 /// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 256 for
 /// the PR gate; CI nightly + the `PROPTEST_CASES=256` stress run in §3

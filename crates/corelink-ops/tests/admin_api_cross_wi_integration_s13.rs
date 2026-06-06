@@ -51,9 +51,9 @@
 use std::sync::Arc;
 
 use corelink_dual_approval::{
-    AdminOpAuditSink, AdminOpRequest, AdminOpType, DualApprovalError, DualApprovalGate,
-    DualApprovalGateImpl, AdminSigningKey, InMemoryAdminOpAuditSink, InMemoryAdminRoleStore,
-    InMemoryCollusionStore, InMemoryNonceStore, compute_hmac,
+    compute_hmac, AdminOpAuditSink, AdminOpRequest, AdminOpType, AdminSigningKey,
+    DualApprovalError, DualApprovalGate, DualApprovalGateImpl, InMemoryAdminOpAuditSink,
+    InMemoryAdminRoleStore, InMemoryCollusionStore, InMemoryNonceStore,
 };
 use proptest::prelude::*;
 use uuid::Uuid;
@@ -89,7 +89,11 @@ fn make_gate(key: AdminSigningKey, admins: Vec<Uuid>) -> GateFixture {
         sink.clone(),
         "enam",
     );
-    GateFixture { gate, sink, collusion }
+    GateFixture {
+        gate,
+        sink,
+        collusion,
+    }
 }
 
 fn make_req_for_op(
@@ -235,13 +239,32 @@ fn prop_cross_wi_atomic_batch_composition() {
 
         // Op 1 — SecretRotationStart (caller initiates, approver signs)
         let n1 = nonce_for(i, 10);
-        let req1 = make_req_for_op(caller, approver, tenant, &key, n1, now, AdminOpType::SecretRotationStart);
+        let req1 = make_req_for_op(
+            caller,
+            approver,
+            tenant,
+            &key,
+            n1,
+            now,
+            AdminOpType::SecretRotationStart,
+        );
         let r1 = fixture.gate.verify(&req1, mfa_ts, now);
-        assert!(r1.is_ok(), "iter {i}: SecretRotationStart must pass: {r1:?}");
+        assert!(
+            r1.is_ok(),
+            "iter {i}: SecretRotationStart must pass: {r1:?}"
+        );
 
         // Op 2 — FeatureFlagDisable (roles swapped: approver initiates, caller approves)
         let n2 = nonce_for(i, 11);
-        let req2 = make_req_for_op(approver, caller, tenant, &key, n2, now + 1, AdminOpType::FeatureFlagDisable);
+        let req2 = make_req_for_op(
+            approver,
+            caller,
+            tenant,
+            &key,
+            n2,
+            now + 1,
+            AdminOpType::FeatureFlagDisable,
+        );
         let r2 = fixture.gate.verify(&req2, mfa_ts, now + 1);
         assert!(r2.is_ok(), "iter {i}: FeatureFlagDisable must pass: {r2:?}");
 
@@ -252,20 +275,45 @@ fn prop_cross_wi_atomic_batch_composition() {
         // Give third admin the role.
         let fixture3 = make_gate(key.clone(), vec![caller, approver, third]);
         // But we also need ops 1+2 recorded in fixture3's collusion store.
-        fixture3.collusion.record_approval(tenant, approver, &AdminOpType::SecretRotationStart, now).unwrap();
-        fixture3.collusion.record_approval(tenant, caller, &AdminOpType::FeatureFlagDisable, now + 1).unwrap();
+        fixture3
+            .collusion
+            .record_approval(tenant, approver, &AdminOpType::SecretRotationStart, now)
+            .unwrap();
+        fixture3
+            .collusion
+            .record_approval(tenant, caller, &AdminOpType::FeatureFlagDisable, now + 1)
+            .unwrap();
 
         let n3 = nonce_for(i, 12);
-        let req3 = make_req_for_op(caller, third, tenant, &key, n3, now + 2, AdminOpType::ConfigRollback);
+        let req3 = make_req_for_op(
+            caller,
+            third,
+            tenant,
+            &key,
+            n3,
+            now + 2,
+            AdminOpType::ConfigRollback,
+        );
         let r3 = fixture3.gate.verify(&req3, mfa_ts, now + 2);
-        assert!(r3.is_ok(), "iter {i}: ConfigRollback with 3rd distinct approver must pass: {r3:?}");
+        assert!(
+            r3.is_ok(),
+            "iter {i}: ConfigRollback with 3rd distinct approver must pass: {r3:?}"
+        );
 
         // Audit chain: fixture sink has ops 1+2; fixture3 sink has op 3.
         let audit_f1 = fixture.sink.captured();
-        assert_eq!(audit_f1.len(), 2, "iter {i}: fixture1 must have 2 audit events");
+        assert_eq!(
+            audit_f1.len(),
+            2,
+            "iter {i}: fixture1 must have 2 audit events"
+        );
 
         let audit_f3 = fixture3.sink.captured();
-        assert_eq!(audit_f3.len(), 1, "iter {i}: fixture3 must have 1 audit event (op3)");
+        assert_eq!(
+            audit_f3.len(),
+            1,
+            "iter {i}: fixture3 must have 1 audit event (op3)"
+        );
 
         // INV-AUDIT-APPEND-ONLY: all captured events are EXECUTED type (not denied).
         for ev in audit_f1.iter().chain(audit_f3.iter()) {
@@ -288,10 +336,26 @@ fn prop_cross_wi_collusion_rotation_blocks_all_op_types() {
     let cases = proptest_cases();
 
     let op_triplets: &[(AdminOpType, AdminOpType, AdminOpType)] = &[
-        (AdminOpType::SecretRotationStart, AdminOpType::ConfigRollback, AdminOpType::TenantTombstone),
-        (AdminOpType::TenantTombstone, AdminOpType::FeatureFlagDisable, AdminOpType::ConfigRollback),
-        (AdminOpType::ConfigRollback, AdminOpType::TenantTombstone, AdminOpType::SecretRotationStart),
-        (AdminOpType::FeatureFlagDisable, AdminOpType::TenantTombstone, AdminOpType::SecretRotationStart),
+        (
+            AdminOpType::SecretRotationStart,
+            AdminOpType::ConfigRollback,
+            AdminOpType::TenantTombstone,
+        ),
+        (
+            AdminOpType::TenantTombstone,
+            AdminOpType::FeatureFlagDisable,
+            AdminOpType::ConfigRollback,
+        ),
+        (
+            AdminOpType::ConfigRollback,
+            AdminOpType::TenantTombstone,
+            AdminOpType::SecretRotationStart,
+        ),
+        (
+            AdminOpType::FeatureFlagDisable,
+            AdminOpType::TenantTombstone,
+            AdminOpType::SecretRotationStart,
+        ),
     ];
 
     for i in 0u64..cases as u64 {
@@ -305,7 +369,9 @@ fn prop_cross_wi_collusion_rotation_blocks_all_op_types() {
         // Op1: A approves triplet.0
         store.record_approval(tenant, a, &triplet.0, now).unwrap();
         // Op2: B approves triplet.1
-        store.record_approval(tenant, b, &triplet.1, now + 1_000).unwrap();
+        store
+            .record_approval(tenant, b, &triplet.1, now + 1_000)
+            .unwrap();
 
         // Op3: proposed approver=A for triplet.2 → must be rejected
         let check = store.check_collusion(tenant, a, now + 2_000);
@@ -315,7 +381,10 @@ fn prop_cross_wi_collusion_rotation_blocks_all_op_types() {
             triplet.2
         );
         assert!(
-            matches!(check.unwrap_err(), DualApprovalError::CollusionRotation { .. }),
+            matches!(
+                check.unwrap_err(),
+                DualApprovalError::CollusionRotation { .. }
+            ),
             "iter {i}: expected CollusionRotation"
         );
     }

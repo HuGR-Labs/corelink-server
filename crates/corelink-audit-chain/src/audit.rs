@@ -189,10 +189,7 @@ impl InMemoryAuditChainAuditSink {
 
     /// Filter snapshot down to records of a single event type.
     #[must_use]
-    pub fn snapshot_of(
-        &self,
-        event_type: AuditChainAuditEventType,
-    ) -> Vec<AuditChainAuditRecord> {
+    pub fn snapshot_of(&self, event_type: AuditChainAuditEventType) -> Vec<AuditChainAuditRecord> {
         self.snapshot()
             .into_iter()
             .filter(|r| r.event_type == event_type)
@@ -297,15 +294,19 @@ mod tests {
     fn in_memory_sink_captures_records() {
         let sink = InMemoryAuditChainAuditSink::new();
         assert!(sink.is_empty());
-        sink.emit(rec(AuditChainAuditEventType::EventAppended)).unwrap();
-        sink.emit(rec(AuditChainAuditEventType::ChainVerifiedOk)).unwrap();
+        sink.emit(rec(AuditChainAuditEventType::EventAppended))
+            .unwrap();
+        sink.emit(rec(AuditChainAuditEventType::ChainVerifiedOk))
+            .unwrap();
         assert_eq!(sink.len(), 2);
         assert_eq!(
-            sink.snapshot_of(AuditChainAuditEventType::EventAppended).len(),
+            sink.snapshot_of(AuditChainAuditEventType::EventAppended)
+                .len(),
             1
         );
         assert_eq!(
-            sink.snapshot_of(AuditChainAuditEventType::ChainVerifiedOk).len(),
+            sink.snapshot_of(AuditChainAuditEventType::ChainVerifiedOk)
+                .len(),
             1
         );
     }
@@ -323,7 +324,8 @@ mod tests {
     fn cloned_sink_shares_buffer() {
         let s1 = InMemoryAuditChainAuditSink::new();
         let s2 = s1.clone();
-        s1.emit(rec(AuditChainAuditEventType::EventAppended)).unwrap();
+        s1.emit(rec(AuditChainAuditEventType::EventAppended))
+            .unwrap();
         assert_eq!(s2.len(), 1);
     }
 

@@ -48,6 +48,7 @@ use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
 use corelink_worker::cache::kv::InMemoryKv;
 use corelink_worker::reapi::ac::handler::InMemoryAcEnvelopeStore;
 use corelink_worker::reapi::ac::meta::AcKey;
+use corelink_worker::reapi::ac::meta::AcUpsertRequest;
 use corelink_worker::reapi::ac::ttl::{
     refresh_if_needed, EvictBatch, InMemoryTtlWorker, TtlWorker,
 };
@@ -55,7 +56,6 @@ use corelink_worker::reapi::ac::{
     AcMetaStore, AcNegCache, ActionDigest, ActionResult, InMemoryAcMetaStore, InMemoryAuditSink,
     ResultHash,
 };
-use corelink_worker::reapi::ac::meta::AcUpsertRequest;
 use corelink_worker::Region;
 use proptest::prelude::*;
 use uuid::Uuid;

@@ -96,7 +96,10 @@ impl std::fmt::Debug for OciAdapterConfig {
             .field("bind_addr", &self.bind_addr)
             .field("bearer_realm", &self.bearer_realm)
             .field("blob_size_limit_bytes", &self.blob_size_limit_bytes)
-            .field("multipart_chunk_size_bytes", &self.multipart_chunk_size_bytes)
+            .field(
+                "multipart_chunk_size_bytes",
+                &self.multipart_chunk_size_bytes,
+            )
             .field("enable_catalog", &self.enable_catalog)
             .field("token_ttl_secs", &self.token_ttl_secs)
             .field("token_signing_key", &"<redacted>")
@@ -198,7 +201,9 @@ impl OciAdapterConfig {
 pub enum ConfigError {
     /// Catalog endpoint was enabled but per-tenant scoping is not
     /// implemented; would leak cross-tenant repo names.
-    #[error("`enable_catalog = true` is rejected until per-tenant catalog scoping ships (oci.md §6)")]
+    #[error(
+        "`enable_catalog = true` is rejected until per-tenant catalog scoping ships (oci.md §6)"
+    )]
     CatalogEnabledWithoutScoping,
 
     /// HMAC signing key is too short.

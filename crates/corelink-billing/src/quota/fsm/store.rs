@@ -56,10 +56,7 @@ pub trait QuotaFsmStore: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// [`QuotaFsmStoreError::Backend`] on backend transport failure.
-    fn lookup(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<Option<QuotaFsmStateRow>, QuotaFsmStoreError>;
+    fn lookup(&self, tenant_id: Uuid) -> Result<Option<QuotaFsmStateRow>, QuotaFsmStoreError>;
 
     /// UPSERT the per-tenant row (production wiring uses an atomic D1
     /// batch in the same transaction as the audit-outbox INSERT).
@@ -110,23 +107,16 @@ impl InMemoryQuotaFsmStore {
 }
 
 impl QuotaFsmStore for InMemoryQuotaFsmStore {
-    fn lookup(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<Option<QuotaFsmStateRow>, QuotaFsmStoreError> {
+    fn lookup(&self, tenant_id: Uuid) -> Result<Option<QuotaFsmStateRow>, QuotaFsmStoreError> {
         let guard = self.inner.lock().map_err(|_| {
-            QuotaFsmStoreError::Backend(
-                "quota-fsm store mutex poisoned".to_string(),
-            )
+            QuotaFsmStoreError::Backend("quota-fsm store mutex poisoned".to_string())
         })?;
         Ok(guard.get(&tenant_id).cloned())
     }
 
     fn upsert(&self, row: &QuotaFsmStateRow) -> Result<(), QuotaFsmStoreError> {
         let mut guard = self.inner.lock().map_err(|_| {
-            QuotaFsmStoreError::Backend(
-                "quota-fsm store mutex poisoned".to_string(),
-            )
+            QuotaFsmStoreError::Backend("quota-fsm store mutex poisoned".to_string())
         })?;
         guard.insert(row.tenant_id, row.clone());
         Ok(())
@@ -146,10 +136,7 @@ impl FailingQuotaFsmStore {
 }
 
 impl QuotaFsmStore for FailingQuotaFsmStore {
-    fn lookup(
-        &self,
-        _tenant_id: Uuid,
-    ) -> Result<Option<QuotaFsmStateRow>, QuotaFsmStoreError> {
+    fn lookup(&self, _tenant_id: Uuid) -> Result<Option<QuotaFsmStateRow>, QuotaFsmStoreError> {
         Err(QuotaFsmStoreError::Backend(
             "induced quota-fsm store failure (test fixture)".to_string(),
         ))

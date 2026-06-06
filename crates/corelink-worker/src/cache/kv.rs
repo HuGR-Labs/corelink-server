@@ -175,8 +175,7 @@ pub trait KvBackend: Send + Sync {
 
     /// DELETE `key`. No-op on missing key (idempotent — the negative
     /// cache invalidation hook may fire repeatedly under client retry).
-    fn delete<'a>(&'a self, key: &'a str)
-        -> impl Future<Output = Result<(), KvError>> + Send + 'a;
+    fn delete<'a>(&'a self, key: &'a str) -> impl Future<Output = Result<(), KvError>> + Send + 'a;
 }
 
 // ---------------------------------------------------------------------------
@@ -308,12 +307,7 @@ impl<C: Clock> KvBackend for InMemoryKv<C> {
         Ok(None)
     }
 
-    async fn put_with_ttl(
-        &self,
-        key: &str,
-        value: Vec<u8>,
-        ttl_secs: u64,
-    ) -> Result<(), KvError> {
+    async fn put_with_ttl(&self, key: &str, value: Vec<u8>, ttl_secs: u64) -> Result<(), KvError> {
         // parking_lot lock is infallible (no poisoning); the
         // `KvError::Backend` mutex-poisoned mapping is preserved on
         // the enum for production CF KV transport failures.
@@ -443,12 +437,7 @@ impl<B: KvBackend> KvBackend for CountingKv<B> {
         self.inner.get(key).await
     }
 
-    async fn put_with_ttl(
-        &self,
-        key: &str,
-        value: Vec<u8>,
-        ttl_secs: u64,
-    ) -> Result<(), KvError> {
+    async fn put_with_ttl(&self, key: &str, value: Vec<u8>, ttl_secs: u64) -> Result<(), KvError> {
         self.put_calls
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         self.inner.put_with_ttl(key, value, ttl_secs).await

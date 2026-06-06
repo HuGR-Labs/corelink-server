@@ -94,8 +94,7 @@ pub fn aggregate_24h_window(
                 if let Some(rep) = &o.report {
                     let ts_s = rep.verified_at_ms / 1_000;
                     if ts_s >= window_start_unix_s && ts_s < window_end_unix_s {
-                        verified_complete_count =
-                            verified_complete_count.saturating_add(1);
+                        verified_complete_count = verified_complete_count.saturating_add(1);
                         if let Some(h) =
                             dsr_resolution_hours(rep.plan.generated_at_ms, rep.verified_at_ms)
                         {
@@ -280,8 +279,14 @@ mod tests {
         let window_start_unix_s = 1_700_000_000;
         let window_start_ms = window_start_unix_s * 1_000;
         let one_h_ms: u64 = 3_600 * 1_000;
-        let a = make_outcome_verified_complete(window_start_ms + 1_000, window_start_ms + 1_000 + 5 * one_h_ms);
-        let b = make_outcome_verified_complete(window_start_ms + 1_000, window_start_ms + 1_000 + 15 * one_h_ms);
+        let a = make_outcome_verified_complete(
+            window_start_ms + 1_000,
+            window_start_ms + 1_000 + 5 * one_h_ms,
+        );
+        let b = make_outcome_verified_complete(
+            window_start_ms + 1_000,
+            window_start_ms + 1_000 + 15 * one_h_ms,
+        );
         let stats = aggregate_24h_window(&[a, b], window_start_unix_s);
         assert_eq!(stats.verified_complete_count, 2);
         assert_eq!(stats.verified_partial_count, 0);
@@ -296,9 +301,15 @@ mod tests {
         let window_start_ms = window_start_unix_s * 1_000;
         let one_h_ms: u64 = 3_600 * 1_000;
         // Outcome verified BEFORE window start.
-        let before = make_outcome_verified_complete(window_start_ms - 30 * one_h_ms, window_start_ms - one_h_ms);
+        let before = make_outcome_verified_complete(
+            window_start_ms - 30 * one_h_ms,
+            window_start_ms - one_h_ms,
+        );
         // Outcome verified AFTER window end.
-        let after = make_outcome_verified_complete(window_start_ms + 50 * one_h_ms, window_start_ms + 25 * 3_600 * 1_000);
+        let after = make_outcome_verified_complete(
+            window_start_ms + 50 * one_h_ms,
+            window_start_ms + 25 * 3_600 * 1_000,
+        );
         let stats = aggregate_24h_window(&[before, after], window_start_unix_s);
         assert_eq!(stats.verified_complete_count, 0);
     }

@@ -118,10 +118,7 @@ impl TokioPgShadowSinkFactory {
 }
 
 impl ShadowSinkFactory for TokioPgShadowSinkFactory {
-    fn for_tenant(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
+    fn for_tenant(&self, tenant_id: Uuid) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
         // Wave-21: route through the `TenantRegionResolver`. The
         // typed error variants surface as stable `&'static str`s the
         // route layer maps to 503 SERVICE_UNAVAILABLE.
@@ -195,10 +192,7 @@ mod tests {
     }
 
     impl TenantRegionResolver for CountingResolver {
-        fn resolve_region(
-            &self,
-            _tenant_id: &Uuid,
-        ) -> Result<Region, TenantRegionError> {
+        fn resolve_region(&self, _tenant_id: &Uuid) -> Result<Region, TenantRegionError> {
             *self.calls.lock().expect("counter lock") += 1;
             Ok(self.region)
         }
@@ -208,8 +202,7 @@ mod tests {
         let resolver = Arc::new(CountingResolver::new(region));
         let mut executors: BTreeMap<&'static str, Arc<dyn NeonExecutor>> = BTreeMap::new();
         executors.insert(region.as_str(), Arc::new(InMemoryExecutor::new()));
-        let audit_sink: Arc<dyn ShadowSyncAuditSink> =
-            Arc::new(InMemoryShadowSyncAuditSink::new());
+        let audit_sink: Arc<dyn ShadowSyncAuditSink> = Arc::new(InMemoryShadowSyncAuditSink::new());
         let resolver_dyn: Arc<dyn TenantRegionResolver> = resolver.clone();
         let factory = TokioPgShadowSinkFactory::new(executors, audit_sink, resolver_dyn);
         (factory, resolver)

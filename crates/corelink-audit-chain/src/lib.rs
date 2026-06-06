@@ -166,12 +166,6 @@ pub use event::{
     CLOUDEVENTS_DATACONTENTTYPE, CLOUDEVENTS_SPECVERSION, EVENT_TYPE_PREFIX, GENESIS_PREV_HASH,
     GENESIS_SEQUENCE_NUMBER,
 };
-pub use neon_shadow::{
-    EventCountBucket, InMemoryNeonShadowSink, InMemoryShadowSyncAuditSink, NeonShadowError,
-    NeonShadowSink, ShadowEventRow, ShadowSyncAuditRow, ShadowSyncAuditSink,
-    ShadowSyncReceipt, TimelineBucket, EVENT_TYPE_SHADOW_SYNCED,
-    EVENT_TYPE_SHADOW_SYNC_FAILED, SHADOW_LAG_NOMINAL_MAX_MS, SHADOW_LAG_SEV2_THRESHOLD_MS,
-};
 pub use neon_shadow::real::{
     EnvVarResolver, ExecutorParam, ExecutorRow, InMemoryExecutor, NeonError, NeonExecutor,
     NeonProjectResolver, RealNeonShadowSink, StaticResolver, SQL_BEGIN_TXN, SQL_COMMIT_TXN,
@@ -179,8 +173,14 @@ pub use neon_shadow::real::{
     SQL_QUERY_TIMELINE, SQL_RECONCILE_COUNT, SQL_SET_RLS_TENANT_GUC,
 };
 pub use neon_shadow::tenant_region::{
-    parse_region_label, D1TenantRegionResolver, InMemoryTenantRegionResolver,
-    TenantConfigStore, TenantRegionError, TenantRegionResolver,
+    parse_region_label, D1TenantRegionResolver, InMemoryTenantRegionResolver, TenantConfigStore,
+    TenantRegionError, TenantRegionResolver,
+};
+pub use neon_shadow::{
+    EventCountBucket, InMemoryNeonShadowSink, InMemoryShadowSyncAuditSink, NeonShadowError,
+    NeonShadowSink, ShadowEventRow, ShadowSyncAuditRow, ShadowSyncAuditSink, ShadowSyncReceipt,
+    TimelineBucket, EVENT_TYPE_SHADOW_SYNCED, EVENT_TYPE_SHADOW_SYNC_FAILED,
+    SHADOW_LAG_NOMINAL_MAX_MS, SHADOW_LAG_SEV2_THRESHOLD_MS,
 };
 // Wave-25 follow-on: re-export `Region` from `corelink-analytics` so
 // downstream callers of `D1TenantRegionResolver` (notably

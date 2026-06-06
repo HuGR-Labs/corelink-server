@@ -186,11 +186,26 @@ mod tests {
 
     #[test]
     fn chunk_bucket_naming_canonical() {
-        assert_eq!(MultipartRegion::Sam.chunk_bucket_name(), "corelink-chunk-sam");
-        assert_eq!(MultipartRegion::Iad.chunk_bucket_name(), "corelink-chunk-iad");
-        assert_eq!(MultipartRegion::Lhr.chunk_bucket_name(), "corelink-chunk-lhr");
-        assert_eq!(MultipartRegion::Nrt.chunk_bucket_name(), "corelink-chunk-nrt");
-        assert_eq!(MultipartRegion::Syd.chunk_bucket_name(), "corelink-chunk-syd");
+        assert_eq!(
+            MultipartRegion::Sam.chunk_bucket_name(),
+            "corelink-chunk-sam"
+        );
+        assert_eq!(
+            MultipartRegion::Iad.chunk_bucket_name(),
+            "corelink-chunk-iad"
+        );
+        assert_eq!(
+            MultipartRegion::Lhr.chunk_bucket_name(),
+            "corelink-chunk-lhr"
+        );
+        assert_eq!(
+            MultipartRegion::Nrt.chunk_bucket_name(),
+            "corelink-chunk-nrt"
+        );
+        assert_eq!(
+            MultipartRegion::Syd.chunk_bucket_name(),
+            "corelink-chunk-syd"
+        );
     }
 
     #[test]

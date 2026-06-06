@@ -101,7 +101,10 @@ impl D1HttpTierSelectStore {
     /// behavioural coverage of the real SQL uses the standard `#[ignore]`
     /// live-D1 harness, not this inert fixture.
     #[cfg(test)]
-    #[allow(clippy::panic, reason = "test-only constructor: panic on setup failure is fine")]
+    #[allow(
+        clippy::panic,
+        reason = "test-only constructor: panic on setup failure is fine"
+    )]
     #[must_use]
     pub(crate) fn for_test() -> Self {
         let env = crate::storage::StorageEnv {
@@ -369,10 +372,16 @@ mod tests {
             .acquire_lock(&tenant, now_ms + 1, cid)
             .await
             .expect("acquire_lock #2 query");
-        assert!(!second, "second acquire within the window must see lock_held");
+        assert!(
+            !second,
+            "second acquire within the window must see lock_held"
+        );
 
         // Release, then re-acquire succeeds again.
-        store.release_lock(&tenant).await.expect("release_lock query");
+        store
+            .release_lock(&tenant)
+            .await
+            .expect("release_lock query");
 
         let third = store
             .acquire_lock(&tenant, now_ms + 2, cid)
@@ -408,10 +417,7 @@ mod tests {
             .has_active_subscription(&tenant)
             .await
             .expect("has_active_subscription query");
-        assert!(
-            !active,
-            "a fresh tenant has no active subscription"
-        );
+        assert!(!active, "a fresh tenant has no active subscription");
     }
 
     /// `persist_free_active` flips a tenant to `tier='free' / state='active'`

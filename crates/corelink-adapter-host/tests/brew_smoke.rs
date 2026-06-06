@@ -18,9 +18,7 @@ mod common;
 
 use std::sync::Arc;
 
-use common::{
-    default_bottle_limit, spin_adapter, InMemoryCas, StaticTenantResolver,
-};
+use common::{default_bottle_limit, spin_adapter, InMemoryCas, StaticTenantResolver};
 use corelink_adapter_host::brew::audit::EVENT_TYPE_CACHE_FILL;
 use corelink_audit::ports::InMemoryAuditEmitter;
 use url::Url;
@@ -93,7 +91,10 @@ async fn second_request_is_a_cache_hit() {
         1,
         "expected ONE upstream hit total; saw {} ({:?})",
         received.len(),
-        received.iter().map(|r| r.url.path().to_owned()).collect::<Vec<_>>()
+        received
+            .iter()
+            .map(|r| r.url.path().to_owned())
+            .collect::<Vec<_>>()
     );
 
     // Audit: exactly one cache-fill row.
@@ -152,9 +153,5 @@ async fn url_variants_collapse_to_single_cache_entry() {
         assert_eq!(resp.status(), 200, "variant {v}");
     }
 
-    assert_eq!(
-        cas.len(),
-        1,
-        "URL variants MUST collapse to one CAS entry"
-    );
+    assert_eq!(cas.len(), 1, "URL variants MUST collapse to one CAS entry");
 }

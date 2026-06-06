@@ -84,10 +84,7 @@ pub enum RoapiOperation {
 /// Returns [`BazelBridgeError::InvalidDigest`] if the digest segment fails
 /// validation. Returns [`BazelBridgeError::Internal`] if the path does not
 /// match any known REAPI v2 pattern.
-pub fn parse_reapi_path(
-    method: &str,
-    path: &str,
-) -> Result<RoapiOperation, BazelBridgeError> {
+pub fn parse_reapi_path(method: &str, path: &str) -> Result<RoapiOperation, BazelBridgeError> {
     // Strip optional leading `/`.
     let path = path.trim_start_matches('/');
 
@@ -310,8 +307,7 @@ mod tests {
 
     #[test]
     fn parse_unknown_pattern_is_error() {
-        let err =
-            parse_reapi_path("GET", "/instance/unknownaction").expect_err("unknown pattern");
+        let err = parse_reapi_path("GET", "/instance/unknownaction").expect_err("unknown pattern");
         assert!(matches!(err, BazelBridgeError::Internal(_)));
     }
 }

@@ -117,9 +117,7 @@ mod tests;
 // ---------------------------------------------------------------------------
 
 pub use in_memory_broadcast::InMemoryBroadcast;
-pub use in_memory_meta::{
-    InMemoryMetaRevocationSink, MonotonicTestClock, TestAuditRow, TestClock,
-};
+pub use in_memory_meta::{InMemoryMetaRevocationSink, MonotonicTestClock, TestAuditRow, TestClock};
 pub use in_memory_store::InMemoryRevocationStore;
 pub use orchestrator::{
     DriftRow, IngestOutcome, MassRevokeResponse, ReconciliationSummary, RevocationOrchestrator,
@@ -131,7 +129,7 @@ pub use traits::{
 pub use types::{
     HookOutcome, MassRevokeId, MassRevokeRow, MetaMassRevokeOutcome, MetaRevokeOutcome,
     PropagationOutcome, PropagationStatus, RevocationDedupKey, RevocationError, RevocationReason,
-    RevokeRequest, RevokeResponse, RevokedEntry, SessionCacheKey,
-    MASS_REVOKE_BROADCAST_BATCH_SIZE, MASS_REVOKE_OUTBOX_CHUNK_SIZE,
-    MASS_REVOKE_RATE_PER_TENANT_PER_SEC, SESSION_CACHE_KEY_PREFIX, SESSION_CACHE_TOMB_TTL_SECS,
+    RevokeRequest, RevokeResponse, RevokedEntry, SessionCacheKey, MASS_REVOKE_BROADCAST_BATCH_SIZE,
+    MASS_REVOKE_OUTBOX_CHUNK_SIZE, MASS_REVOKE_RATE_PER_TENANT_PER_SEC, SESSION_CACHE_KEY_PREFIX,
+    SESSION_CACHE_TOMB_TTL_SECS,
 };

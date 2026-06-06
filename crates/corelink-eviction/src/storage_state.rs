@@ -79,8 +79,7 @@ impl TenantStorageStateRow {
     /// Whether the tenant has crossed the 95% trigger threshold.
     #[must_use]
     pub fn at_or_above_trigger(&self) -> bool {
-        self.utilization_pct()
-            >= crate::phase::QUOTA_TRIGGER_THRESHOLD_PCT
+        self.utilization_pct() >= crate::phase::QUOTA_TRIGGER_THRESHOLD_PCT
     }
 }
 
@@ -90,9 +89,7 @@ impl TenantStorageStateRow {
 pub enum StorageStateError {
     /// CHECK violation — `bytes_used` underflow / overflow / negative
     /// surfaced at the API surface.
-    #[error(
-        "CHECK violation: {column} value invalid (got={got}, reason={reason})"
-    )]
+    #[error("CHECK violation: {column} value invalid (got={got}, reason={reason})")]
     CheckViolation {
         /// Column that failed the CHECK.
         column: &'static str,
@@ -103,9 +100,7 @@ pub enum StorageStateError {
     },
     /// Lifecycle monotonic violation — `updated_at_ms < created_at_ms`
     /// (etc.).
-    #[error(
-        "lifecycle monotonic violation: {field} new={new_value} prev={prev_value}"
-    )]
+    #[error("lifecycle monotonic violation: {field} new={new_value} prev={prev_value}")]
     LifecycleMonotonic {
         /// Field that regressed.
         field: &'static str,
@@ -120,9 +115,7 @@ pub enum StorageStateError {
 }
 
 /// Trait surfaced by every `tenant_storage_state` backend.
-pub trait TenantStorageStateStore:
-    Send + Sync + core::fmt::Debug
-{
+pub trait TenantStorageStateStore: Send + Sync + core::fmt::Debug {
     /// Lookup the current row for `(tenant_id, region)`. Returns
     /// `Ok(None)` when the row does not exist (post-deploy backfill
     /// pending OR programmer wiring error).
@@ -194,16 +187,12 @@ impl InMemoryTenantStorageStateStore {
     /// # Errors
     ///
     /// Returns [`StorageStateError::Backend`] on mutex poisoning.
-    pub fn push_row(
-        &self,
-        row: TenantStorageStateRow,
-    ) -> Result<(), StorageStateError> {
+    pub fn push_row(&self, row: TenantStorageStateRow) -> Result<(), StorageStateError> {
         let key = (row.tenant_id, row.region);
-        let mut g = self.inner.lock().map_err(|_| {
-            StorageStateError::Backend(
-                "storage_state mutex poisoned".to_string(),
-            )
-        })?;
+        let mut g = self
+            .inner
+            .lock()
+            .map_err(|_| StorageStateError::Backend("storage_state mutex poisoned".to_string()))?;
         g.insert(key, row);
         Ok(())
     }
@@ -239,11 +228,10 @@ impl TenantStorageStateStore for InMemoryTenantStorageStateStore {
         tenant_id: Uuid,
         region: EvictionRegion,
     ) -> Result<Option<TenantStorageStateRow>, StorageStateError> {
-        let g = self.inner.lock().map_err(|_| {
-            StorageStateError::Backend(
-                "storage_state mutex poisoned".to_string(),
-            )
-        })?;
+        let g = self
+            .inner
+            .lock()
+            .map_err(|_| StorageStateError::Backend("storage_state mutex poisoned".to_string()))?;
         Ok(g.get(&(tenant_id, region)).cloned())
     }
 
@@ -254,11 +242,10 @@ impl TenantStorageStateStore for InMemoryTenantStorageStateStore {
         bytes_reclaimed: u64,
         now_ms: u64,
     ) -> Result<(), StorageStateError> {
-        let mut g = self.inner.lock().map_err(|_| {
-            StorageStateError::Backend(
-                "storage_state mutex poisoned".to_string(),
-            )
-        })?;
+        let mut g = self
+            .inner
+            .lock()
+            .map_err(|_| StorageStateError::Backend("storage_state mutex poisoned".to_string()))?;
         let Some(row) = g.get_mut(&(tenant_id, region)) else {
             return Err(StorageStateError::Backend(format!(
                 "tenant_storage_state row missing for tenant={tenant_id} region={region}"
@@ -293,9 +280,7 @@ impl TenantStorageStateStore for InMemoryTenantStorageStateStore {
             });
         }
         row.bytes_used = new_bytes_used;
-        row.bytes_reclaimed_lifetime = row
-            .bytes_reclaimed_lifetime
-            .saturating_add(bytes_reclaimed);
+        row.bytes_reclaimed_lifetime = row.bytes_reclaimed_lifetime.saturating_add(bytes_reclaimed);
         row.last_evict_at_ms = Some(now_ms);
         row.updated_at_ms = now_ms;
         row.bytes_used_updated_at_ms = now_ms;
@@ -308,11 +293,10 @@ impl TenantStorageStateStore for InMemoryTenantStorageStateStore {
         region: EvictionRegion,
         now_ms: u64,
     ) -> Result<(), StorageStateError> {
-        let mut g = self.inner.lock().map_err(|_| {
-            StorageStateError::Backend(
-                "storage_state mutex poisoned".to_string(),
-            )
-        })?;
+        let mut g = self
+            .inner
+            .lock()
+            .map_err(|_| StorageStateError::Backend("storage_state mutex poisoned".to_string()))?;
         let Some(row) = g.get_mut(&(tenant_id, region)) else {
             return Err(StorageStateError::Backend(format!(
                 "tenant_storage_state row missing for tenant={tenant_id} region={region}"
@@ -405,9 +389,7 @@ mod tests {
     #[test]
     fn lookup_returns_none_for_missing_row() {
         let store = InMemoryTenantStorageStateStore::new();
-        let r = store
-            .lookup(ten_a(), EvictionRegion::Sam)
-            .unwrap();
+        let r = store.lookup(ten_a(), EvictionRegion::Sam).unwrap();
         assert!(r.is_none());
     }
 
@@ -416,10 +398,7 @@ mod tests {
         let store = InMemoryTenantStorageStateStore::new();
         let row = fresh_row(ten_a(), EvictionRegion::Sam);
         store.push_row(row.clone()).unwrap();
-        let got = store
-            .lookup(ten_a(), EvictionRegion::Sam)
-            .unwrap()
-            .unwrap();
+        let got = store.lookup(ten_a(), EvictionRegion::Sam).unwrap().unwrap();
         assert_eq!(got, row);
     }
 
@@ -429,9 +408,7 @@ mod tests {
         let row_a = fresh_row(ten_a(), EvictionRegion::Sam);
         store.push_row(row_a).unwrap();
         // Tenant B asks for the same region — surfaces None.
-        let got = store
-            .lookup(ten_b(), EvictionRegion::Sam)
-            .unwrap();
+        let got = store.lookup(ten_b(), EvictionRegion::Sam).unwrap();
         assert!(got.is_none());
     }
 
@@ -443,9 +420,7 @@ mod tests {
         store
             .apply_eviction_reclaim(ten_a(), EvictionRegion::Sam, 300, 200)
             .unwrap();
-        let got = store
-            .snapshot(ten_a(), EvictionRegion::Sam)
-            .unwrap();
+        let got = store.snapshot(ten_a(), EvictionRegion::Sam).unwrap();
         assert_eq!(got.bytes_used, 700);
         assert_eq!(got.bytes_reclaimed_lifetime, 300);
         assert_eq!(got.last_evict_at_ms, Some(200));
@@ -477,9 +452,7 @@ mod tests {
         store
             .touch_evict_watermark(ten_a(), EvictionRegion::Sam, 500)
             .unwrap();
-        let got = store
-            .snapshot(ten_a(), EvictionRegion::Sam)
-            .unwrap();
+        let got = store.snapshot(ten_a(), EvictionRegion::Sam).unwrap();
         assert_eq!(got.last_evict_at_ms, Some(500));
         assert_eq!(got.updated_at_ms, 500);
     }
@@ -496,10 +469,7 @@ mod tests {
         let err = store
             .touch_evict_watermark(ten_a(), EvictionRegion::Sam, 400)
             .unwrap_err();
-        assert!(matches!(
-            err,
-            StorageStateError::LifecycleMonotonic { .. }
-        ));
+        assert!(matches!(err, StorageStateError::LifecycleMonotonic { .. }));
     }
 
     #[test]

@@ -48,11 +48,11 @@ impl AssetClass {
     #[must_use]
     pub const fn overlap_seconds(self) -> u64 {
         match self {
-            Self::Tdk => 7 * 24 * 3_600,       // 7d
-            Self::PatSigning => 24 * 3_600,    // 24h
-            Self::AuditChain => 24 * 3_600,    // 24h
-            Self::AdminSigning => 24 * 3_600,  // 24h
-            Self::Byok => 7 * 24 * 3_600,      // 7d
+            Self::Tdk => 7 * 24 * 3_600,                    // 7d
+            Self::PatSigning => 24 * 3_600,                 // 24h
+            Self::AuditChain => 24 * 3_600,                 // 24h
+            Self::AdminSigning => 24 * 3_600,               // 24h
+            Self::Byok => 7 * 24 * 3_600,                   // 7d
             Self::ErasureAttestationKey => 30 * 24 * 3_600, // 30d canonical per key_management.md §3.2.1
         }
     }

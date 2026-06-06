@@ -129,16 +129,28 @@ mod tests {
     #[test]
     fn retry_on_429_until_exhausted() {
         let p = RetryPolicy::wave16_default();
-        assert!(matches!(p.decide(Some(429), 0), RetryDecision::Retry { .. }));
-        assert!(matches!(p.decide(Some(429), 1), RetryDecision::Retry { .. }));
-        assert!(matches!(p.decide(Some(429), 2), RetryDecision::Retry { .. }));
+        assert!(matches!(
+            p.decide(Some(429), 0),
+            RetryDecision::Retry { .. }
+        ));
+        assert!(matches!(
+            p.decide(Some(429), 1),
+            RetryDecision::Retry { .. }
+        ));
+        assert!(matches!(
+            p.decide(Some(429), 2),
+            RetryDecision::Retry { .. }
+        ));
         assert_eq!(p.decide(Some(429), 3), RetryDecision::GiveUp);
     }
 
     #[test]
     fn retry_on_5xx_until_exhausted() {
         let p = RetryPolicy::wave16_default();
-        assert!(matches!(p.decide(Some(503), 0), RetryDecision::Retry { .. }));
+        assert!(matches!(
+            p.decide(Some(503), 0),
+            RetryDecision::Retry { .. }
+        ));
         assert_eq!(p.decide(Some(503), 3), RetryDecision::GiveUp);
     }
 

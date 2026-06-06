@@ -41,7 +41,7 @@ use corelink_billing_stripe_traits::{
 use corelink_tier_selection::tier::TierKind;
 
 use crate::audit::{AuditSeverity, BillingAuditEmitter, BillingAuditError, BillingAuditRecord};
-use crate::clock::{MatClock, default_mat_clock};
+use crate::clock::{default_mat_clock, MatClock};
 use crate::d1::{BillingD1Error, BillingD1Writer, MaterializedRow};
 use crate::tier::{TierSelectError, TierSelector};
 
@@ -98,11 +98,7 @@ pub const EVENT_MATERIALIZATION_MATRIX: &[(&str, Option<&str>, &str)] = &[
         Some("stripe_customers"),
         "corelink.billing.customer.materialized.v1",
     ),
-    (
-        "invoice.created",
-        None,
-        "corelink.billing.echo.v1",
-    ),
+    ("invoice.created", None, "corelink.billing.echo.v1"),
 ];
 
 /// Materializer error → dispatcher error conversion.
@@ -536,7 +532,9 @@ impl D1SubscriptionStateHandler {
         // pins the delivery. Tenant id is optional for these arms
         // (`invoice.created` arrives before the tenant linkage is
         // resolved in some Stripe flows). We tolerate its absence.
-        let tenant_id = self.tenant_id_from(env).unwrap_or_else(|_| "__unknown__".to_string());
+        let tenant_id = self
+            .tenant_id_from(env)
+            .unwrap_or_else(|_| "__unknown__".to_string());
         let now_ms = self.clock.now_ms();
         self.audit
             .emit_billing(&BillingAuditRecord {
@@ -616,10 +614,9 @@ mod tests {
             ("plan_starter", TierKind::Starter),
             ("plan_pro", TierKind::Pro),
         ]));
-        let handler = D1SubscriptionStateHandler::new(d1.clone(), audit.clone(), sel)
-            .with_clock(Arc::new(InMemoryFakeMatClock::at_unix_ms(
-                1_700_000_000_000,
-            )));
+        let handler = D1SubscriptionStateHandler::new(d1.clone(), audit.clone(), sel).with_clock(
+            Arc::new(InMemoryFakeMatClock::at_unix_ms(1_700_000_000_000)),
+        );
         (handler, d1, audit)
     }
 
@@ -700,7 +697,10 @@ mod tests {
         );
         handler.on_invoice_paid(&e).unwrap();
         assert_eq!(d1.count_table("stripe_invoices"), 1);
-        assert_eq!(audit.count_event("corelink.billing.invoice.materialized.v1"), 1);
+        assert_eq!(
+            audit.count_event("corelink.billing.invoice.materialized.v1"),
+            1
+        );
     }
 
     #[test]

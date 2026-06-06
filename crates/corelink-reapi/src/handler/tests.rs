@@ -18,9 +18,7 @@ use uuid::Uuid;
 use crate::pat::AuthStubError;
 
 use super::audit_emit::deterministic_audit_id;
-use super::helpers::{
-    extract_bearer, parse_read_resource_name, parse_resource_name, region_str,
-};
+use super::helpers::{extract_bearer, parse_read_resource_name, parse_resource_name, region_str};
 
 #[test]
 fn parse_resource_name_canonical() {

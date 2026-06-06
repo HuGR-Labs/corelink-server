@@ -124,11 +124,7 @@ pub async fn ingest_into_dt(
 
     for (attempt, &delay_secs) in delays.iter().enumerate() {
         if delay_secs > 0 {
-            warn!(
-                attempt = attempt + 1,
-                delay_secs,
-                "DT ingestion retry"
-            );
+            warn!(attempt = attempt + 1, delay_secs, "DT ingestion retry");
             tokio::time::sleep(Duration::from_secs(delay_secs)).await;
         }
 
@@ -168,10 +164,7 @@ pub async fn ingest_into_dt(
             Ok(resp) => {
                 let status = resp.status();
                 if status.is_success() {
-                    let body = resp
-                        .text()
-                        .await
-                        .unwrap_or_else(|_| "{}".to_owned());
+                    let body = resp.text().await.unwrap_or_else(|_| "{}".to_owned());
                     // DT returns JSON with `token` (processing token); extract project UUID
                     // from Location header or body.
                     let project_uuid = extract_project_uuid(&body);

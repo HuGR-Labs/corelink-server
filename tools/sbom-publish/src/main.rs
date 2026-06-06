@@ -199,16 +199,19 @@ async fn run(cli: Cli) -> Result<(), SbomError> {
                 ValidationMode::Strict
             };
             let result = validate_ntia_json(&sbom_json, mode);
-            println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-                "overall_compliant": result.overall_compliant,
-                "author_present": result.author_present,
-                "timestamp_present": result.timestamp_present,
-                "component_name_present": result.component_name_present,
-                "component_version_present": result.component_version_present,
-                "component_supplier_present": result.component_supplier_present,
-                "component_unique_id_present": result.component_unique_id_present,
-                "dependency_relationships_present": result.dependency_relationships_present,
-            }))?);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "overall_compliant": result.overall_compliant,
+                    "author_present": result.author_present,
+                    "timestamp_present": result.timestamp_present,
+                    "component_name_present": result.component_name_present,
+                    "component_version_present": result.component_version_present,
+                    "component_supplier_present": result.component_supplier_present,
+                    "component_unique_id_present": result.component_unique_id_present,
+                    "dependency_relationships_present": result.dependency_relationships_present,
+                }))?
+            );
             if !result.overall_compliant && !auditor {
                 return Err(SbomError::NtiaValidationFailed(result));
             }
@@ -254,9 +257,10 @@ async fn run(cli: Cli) -> Result<(), SbomError> {
 
 fn exit_code_for_error(e: &SbomError) -> ExitCode {
     match e {
-        SbomError::GenerationFailed(_) | SbomError::SchemaInvalid(_) | SbomError::Json(_) | SbomError::Io(_) => {
-            ExitCode::from(1)
-        }
+        SbomError::GenerationFailed(_)
+        | SbomError::SchemaInvalid(_)
+        | SbomError::Json(_)
+        | SbomError::Io(_) => ExitCode::from(1),
         SbomError::NtiaValidationFailed(_) => ExitCode::from(2),
         SbomError::TsaRequestFailed(_) => ExitCode::from(3),
         SbomError::DtIngestionFailed { .. }

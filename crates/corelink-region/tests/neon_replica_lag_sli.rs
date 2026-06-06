@@ -85,7 +85,10 @@ fn failing_probe_propagates_error_for_sev3_path() {
     let r = p.probe(Region::Enam, Region::Weur, 0);
     assert!(r.is_err());
     let msg = r.unwrap_err();
-    assert!(msg.contains("neon"), "actionable error contains 'neon': {msg}");
+    assert!(
+        msg.contains("neon"),
+        "actionable error contains 'neon': {msg}"
+    );
 }
 
 #[test]

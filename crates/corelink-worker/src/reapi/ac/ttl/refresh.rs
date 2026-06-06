@@ -40,11 +40,7 @@ pub const DEFAULT_REFRESH_THRESHOLD_MS: u64 = 60_000;
 /// existing row's `last_hit_at` is preserved by the meta store's
 /// `refresh_on_hit` impl which clamps via `max(prev, now)`.
 #[must_use]
-pub const fn refresh_if_needed(
-    now_ms: u64,
-    last_hit_at_ms: u64,
-    threshold: Duration,
-) -> bool {
+pub const fn refresh_if_needed(now_ms: u64, last_hit_at_ms: u64, threshold: Duration) -> bool {
     // saturating_sub: if now_ms < last_hit_at_ms, returns 0 ⇒ false
     // for any positive threshold.
     let elapsed_ms = now_ms.saturating_sub(last_hit_at_ms);

@@ -85,10 +85,7 @@ impl StripeAuditEventType {
     /// attempt).
     #[must_use]
     pub const fn is_sev2(self) -> bool {
-        matches!(
-            self,
-            Self::SignatureRejected | Self::SignatureSkewRejected
-        )
+        matches!(self, Self::SignatureRejected | Self::SignatureSkewRejected)
     }
 }
 
@@ -207,9 +204,7 @@ impl InMemoryStripeAuditSink {
 impl StripeAuditSink for InMemoryStripeAuditSink {
     fn emit(&self, record: StripeAuditRecord) -> Result<(), StripeAuditEmitError> {
         let mut guard = self.inner.lock().map_err(|_| {
-            StripeAuditEmitError::Store(
-                "billing-stripe audit sink mutex poisoned".to_string(),
-            )
+            StripeAuditEmitError::Store("billing-stripe audit sink mutex poisoned".to_string())
         })?;
         guard.push(record);
         Ok(())
@@ -300,14 +295,16 @@ mod tests {
         let sink = InMemoryStripeAuditSink::new();
         assert!(sink.is_empty());
         sink.emit(rec(StripeAuditEventType::UsageRecorded)).unwrap();
-        sink.emit(rec(StripeAuditEventType::WebhookReceived)).unwrap();
+        sink.emit(rec(StripeAuditEventType::WebhookReceived))
+            .unwrap();
         assert_eq!(sink.len(), 2);
         assert_eq!(
             sink.snapshot_of(StripeAuditEventType::UsageRecorded).len(),
             1
         );
         assert_eq!(
-            sink.snapshot_of(StripeAuditEventType::WebhookReceived).len(),
+            sink.snapshot_of(StripeAuditEventType::WebhookReceived)
+                .len(),
             1
         );
     }

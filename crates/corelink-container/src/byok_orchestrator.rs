@@ -248,8 +248,8 @@ async fn build_active() -> Result<Arc<dyn KmsProvider>, BYOKError> {
                 "CORELINK_BYOK_AZURE_VAULT_URL unset (required for byok-azure-real)".to_string(),
             )
         })?;
-        let region = std::env::var("CORELINK_BYOK_AZURE_REGION")
-            .unwrap_or_else(|_| "eastus2".to_string());
+        let region =
+            std::env::var("CORELINK_BYOK_AZURE_REGION").unwrap_or_else(|_| "eastus2".to_string());
         let p = corelink_byok::azure::AzureKeyVaultRealProvider::new(&region, &vault_url)?;
         Ok(Arc::new(p))
     }

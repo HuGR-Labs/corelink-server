@@ -1,4 +1,11 @@
-#![allow(clippy::expect_used, clippy::unwrap_used, clippy::print_stdout, clippy::print_stderr, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 //! Example: handle a DT webhook event end-to-end.
 //!
 //! Run: `cargo run -p corelink-dt-webhook --example webhook_handle`
@@ -50,10 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let delivered = handler.handle_webhook(event).await?;
     println!(
         "Alert delivered: cve={} severity={} channels={:?} latency={}ms",
-        delivered.cve_id,
-        delivered.severity,
-        delivered.channels,
-        delivered.delivery_latency_ms,
+        delivered.cve_id, delivered.severity, delivered.channels, delivered.delivery_latency_ms,
     );
 
     Ok(())

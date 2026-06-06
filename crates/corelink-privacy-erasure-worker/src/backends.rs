@@ -50,8 +50,8 @@
 //! with the canonical 24h-grace verification fingerprint to be
 //! resolved by the verification cron at `queued_at + 24h`.
 
-use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use uuid::Uuid;
 
@@ -146,10 +146,7 @@ pub trait BackendErasureAdapter: Send + Sync + core::fmt::Debug {
     ///
     /// - [`ErasureBackendError::Transport`] for transient transport
     ///   failures.
-    fn verification_hash(
-        &self,
-        ctx: VerificationContext,
-    ) -> Result<[u8; 32], ErasureBackendError>;
+    fn verification_hash(&self, ctx: VerificationContext) -> Result<[u8; 32], ErasureBackendError>;
 }
 
 /// Canonical in-memory backend adapter. Stores per-(tenant, subject)
@@ -232,7 +229,9 @@ impl InMemoryBackendErasureAdapter {
     #[must_use]
     pub fn row_count(&self, tenant_id: Uuid, subject_id: Uuid) -> usize {
         match self.rows.lock() {
-            Ok(g) => g.get(&(tenant_id, subject_id)).map_or(0, std::vec::Vec::len),
+            Ok(g) => g
+                .get(&(tenant_id, subject_id))
+                .map_or(0, std::vec::Vec::len),
             Err(_) => 0,
         }
     }
@@ -373,10 +372,7 @@ impl BackendErasureAdapter for InMemoryBackendErasureAdapter {
         })
     }
 
-    fn verification_hash(
-        &self,
-        ctx: VerificationContext,
-    ) -> Result<[u8; 32], ErasureBackendError> {
+    fn verification_hash(&self, ctx: VerificationContext) -> Result<[u8; 32], ErasureBackendError> {
         let fail = match self.fail_transport.lock() {
             Ok(g) => *g,
             Err(_) => false,
@@ -494,7 +490,10 @@ mod tests {
         adapter.insert_rows(t, s, vec![InMemoryRow::new(b"row1".to_vec())]);
         let salt = [1u8; 32];
         let outcome = adapter.erase(t, s, &salt, false).unwrap();
-        let is_erased = matches!(outcome, BackendErasureOutcome::Erased { records_deleted: 1 });
+        let is_erased = matches!(
+            outcome,
+            BackendErasureOutcome::Erased { records_deleted: 1 }
+        );
         assert!(is_erased);
         let hash = adapter
             .verification_hash(VerificationContext {
@@ -575,7 +574,10 @@ mod tests {
         );
         let salt = [9u8; 32];
         let outcome = adapter.erase(t, s, &salt, false).unwrap();
-        let is_erased = matches!(outcome, BackendErasureOutcome::Erased { records_deleted: 1 });
+        let is_erased = matches!(
+            outcome,
+            BackendErasureOutcome::Erased { records_deleted: 1 }
+        );
         assert!(is_erased);
         assert_eq!(adapter.row_count(t, s), 0);
     }
@@ -604,7 +606,9 @@ mod tests {
         let outcome = adapter.erase(t, s, &salt, true).unwrap();
         let is_pseudo = matches!(
             outcome,
-            BackendErasureOutcome::Pseudonymized { records_redacted: 1 }
+            BackendErasureOutcome::Pseudonymized {
+                records_redacted: 1
+            }
         );
         assert!(is_pseudo);
     }

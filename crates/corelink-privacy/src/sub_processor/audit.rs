@@ -38,10 +38,7 @@ pub trait SubProcessorAuditSink: std::fmt::Debug + Send + Sync {
     ///
     /// Returning `Err(...)` causes the calling orchestrator to abort the
     /// entire operation without mutating any state.
-    fn emit(
-        &self,
-        record: SubProcessorAuditRecord,
-    ) -> Result<(), SubProcessorAuditSinkError>;
+    fn emit(&self, record: SubProcessorAuditRecord) -> Result<(), SubProcessorAuditSinkError>;
 }
 
 /// In-memory capture sink for testing.
@@ -73,10 +70,7 @@ impl InMemorySubProcessorAuditSink {
     /// Return the count of captured records.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.records
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .len()
+        self.records.lock().unwrap_or_else(|p| p.into_inner()).len()
     }
 
     /// Return true if no records have been captured.
@@ -93,10 +87,7 @@ impl Default for InMemorySubProcessorAuditSink {
 }
 
 impl SubProcessorAuditSink for InMemorySubProcessorAuditSink {
-    fn emit(
-        &self,
-        record: SubProcessorAuditRecord,
-    ) -> Result<(), SubProcessorAuditSinkError> {
+    fn emit(&self, record: SubProcessorAuditRecord) -> Result<(), SubProcessorAuditSinkError> {
         self.records
             .lock()
             .unwrap_or_else(|p| p.into_inner())
@@ -110,10 +101,7 @@ impl SubProcessorAuditSink for InMemorySubProcessorAuditSink {
 pub struct FailingSubProcessorAuditSink;
 
 impl SubProcessorAuditSink for FailingSubProcessorAuditSink {
-    fn emit(
-        &self,
-        _record: SubProcessorAuditRecord,
-    ) -> Result<(), SubProcessorAuditSinkError> {
+    fn emit(&self, _record: SubProcessorAuditRecord) -> Result<(), SubProcessorAuditSinkError> {
         Err(SubProcessorAuditSinkError::Unavailable(
             "FailingSubProcessorAuditSink always fails".into(),
         ))

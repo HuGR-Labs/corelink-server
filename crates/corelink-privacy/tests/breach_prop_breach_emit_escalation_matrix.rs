@@ -17,9 +17,7 @@
     reason = "test file"
 )]
 
-use corelink_privacy::breach::{
-    escalation_policy_for, BreachSeverity,
-};
+use corelink_privacy::breach::{escalation_policy_for, BreachSeverity};
 use proptest::prelude::*;
 
 /// Runtime-configurable test count per S-07 P1-2 lesson absorbed.

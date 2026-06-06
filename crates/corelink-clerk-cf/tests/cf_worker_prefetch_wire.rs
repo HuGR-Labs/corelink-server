@@ -135,14 +135,12 @@ async fn prefetch_request_prelude_success_cached_region_propagates() {
 #[tokio::test]
 async fn prefetch_request_prelude_backend_failure_fails_closed() {
     let tenant = TenantContext::from_header_value(TENANT_LABEL).expect("tenant context");
-    let d1 = CfD1DatabaseReal::stub_for_native_tests(
-        TenantId::new(TENANT_LABEL).expect("valid tenant"),
-    );
+    let d1 =
+        CfD1DatabaseReal::stub_for_native_tests(TenantId::new(TENANT_LABEL).expect("valid tenant"));
     let (audit, buf) = AuditSink::recorder(TENANT_LABEL);
     let d1 = d1.with_audit(audit.d1());
 
-    let outcome =
-        prefetch_request_prelude(tenant.clone(), &d1, &audit, Region::Iad).await;
+    let outcome = prefetch_request_prelude(tenant.clone(), &d1, &audit, Region::Iad).await;
 
     match outcome {
         Err(PrefetchWireError::PrefetchBackend(diagnostic)) => {

@@ -31,7 +31,10 @@ fn audit_logs_record() -> EvidenceRecord {
         EvidenceStream::AuditLogs,
         "outbox#42",
         1_700_000_000_000,
-        [("event_type", "corelink.auth.signin"), ("tenant_hash", "abc")],
+        [
+            ("event_type", "corelink.auth.signin"),
+            ("tenant_hash", "abc"),
+        ],
     )
 }
 
@@ -62,9 +65,7 @@ async fn success_returns_receipt_id_and_sets_bearer() {
         .and(path("/v1/evidence/audit-logs"))
         .and(header("Authorization", "Bearer drata_test_key_abc"))
         .and(header_exists("Idempotency-Key"))
-        .respond_with(
-            ResponseTemplate::new(201).set_body_string(r#"{"receipt_id":"rcp_42"}"#),
-        )
+        .respond_with(ResponseTemplate::new(201).set_body_string(r#"{"receipt_id":"rcp_42"}"#))
         .mount(&server)
         .await;
 
@@ -175,9 +176,7 @@ async fn stream_endpoint_routing_is_correct() {
     let server = fresh_server().await;
     Mock::given(method("POST"))
         .and(path("/v1/evidence/incident-response"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_string(r#"{"receipt_id":"rcp_ir"}"#),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"receipt_id":"rcp_ir"}"#))
         .expect(1)
         .mount(&server)
         .await;

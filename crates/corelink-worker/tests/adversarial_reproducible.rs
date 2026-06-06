@@ -128,7 +128,10 @@ fn non_determinism_regression_detected() {
         is_within_threshold(baseline_diff, total_bytes),
         "baseline state must be within threshold"
     );
-    assert_eq!(compute_outcome(baseline_diff, total_bytes), "within_threshold");
+    assert_eq!(
+        compute_outcome(baseline_diff, total_bytes),
+        "within_threshold"
+    );
 
     // After dep upgrade: new non-deterministic timestamp adds ~30 KB of diff.
     let regressed_diff: u64 = baseline_diff + 30_000; // ~5.83 %

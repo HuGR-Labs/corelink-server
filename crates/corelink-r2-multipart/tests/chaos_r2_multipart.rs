@@ -52,7 +52,13 @@ async fn chaos_client_disconnect_mid_upload() {
     let prefix = fixed_prefix(tenant);
     let dh = dummy_digest();
     let u = adapter
-        .initiate(InitiateRequest::new(tenant, &prefix, Bucket::Chunk, "sam", &dh))
+        .initiate(InitiateRequest::new(
+            tenant,
+            &prefix,
+            Bucket::Chunk,
+            "sam",
+            &dh,
+        ))
         .await
         .unwrap();
     // Upload 3 parts.
@@ -69,7 +75,10 @@ async fn chaos_client_disconnect_mid_upload() {
     }
     // Client disconnects → handler invokes abort.
     adapter.abort(tenant, &u).await.unwrap();
-    assert_eq!(adapter.session_state(&u.upload_id), Some(SessionState::Aborted));
+    assert_eq!(
+        adapter.session_state(&u.upload_id),
+        Some(SessionState::Aborted)
+    );
     let parts = adapter.parts_snapshot(&u.upload_id);
     assert!(
         parts.is_empty(),
@@ -77,7 +86,12 @@ async fn chaos_client_disconnect_mid_upload() {
     );
     // upload_part on aborted session yields UploadIdNotFound.
     let r = adapter
-        .upload_part(tenant, &u, PartNumber::new(1).unwrap(), Bytes::from_static(b"z"))
+        .upload_part(
+            tenant,
+            &u,
+            PartNumber::new(1).unwrap(),
+            Bytes::from_static(b"z"),
+        )
         .await;
     assert!(matches!(r, Err(MultipartError::UploadIdNotFound { .. })));
 }
@@ -92,7 +106,13 @@ async fn chaos_r2_backend_failure_surfaces() {
     let prefix = fixed_prefix(tenant);
     let dh = dummy_digest();
     let r = adapter
-        .initiate(InitiateRequest::new(tenant, &prefix, Bucket::Chunk, "sam", &dh))
+        .initiate(InitiateRequest::new(
+            tenant,
+            &prefix,
+            Bucket::Chunk,
+            "sam",
+            &dh,
+        ))
         .await;
     match r {
         Err(MultipartError::Backend(s)) => assert_eq!(s, "R2 5xx mid-complete"),
@@ -129,13 +149,23 @@ async fn chaos_cross_tenant_upload_id_replay() {
         .unwrap();
     // Tenant B replays.
     let r = adapter
-        .upload_part(tb, &u, PartNumber::new(1).unwrap(), Bytes::from_static(b"x"))
+        .upload_part(
+            tb,
+            &u,
+            PartNumber::new(1).unwrap(),
+            Bytes::from_static(b"x"),
+        )
         .await;
     assert!(matches!(r, Err(MultipartError::CrossTenantUpload { .. })));
 
     // The legitimate tenant can still finish their work.
     let e = adapter
-        .upload_part(ta, &u, PartNumber::new(1).unwrap(), Bytes::from_static(b"x"))
+        .upload_part(
+            ta,
+            &u,
+            PartNumber::new(1).unwrap(),
+            Bytes::from_static(b"x"),
+        )
         .await
         .unwrap();
     let _ = adapter
@@ -174,7 +204,13 @@ async fn chaos_orphan_sweeper_consumes_list_orphans() {
     let prefix = fixed_prefix(tenant);
     let dh = dummy_digest();
     let u = adapter
-        .initiate(InitiateRequest::new(tenant, &prefix, Bucket::Chunk, "sam", &dh))
+        .initiate(InitiateRequest::new(
+            tenant,
+            &prefix,
+            Bucket::Chunk,
+            "sam",
+            &dh,
+        ))
         .await
         .unwrap();
     // Advance the sweeper's `now` 8 days into the future.
@@ -213,7 +249,13 @@ async fn chaos_complete_part_etag_mismatch() {
     let prefix = fixed_prefix(tenant);
     let dh = dummy_digest();
     let u = adapter
-        .initiate(InitiateRequest::new(tenant, &prefix, Bucket::Chunk, "sam", &dh))
+        .initiate(InitiateRequest::new(
+            tenant,
+            &prefix,
+            Bucket::Chunk,
+            "sam",
+            &dh,
+        ))
         .await
         .unwrap();
     let _ = adapter
@@ -233,7 +275,11 @@ async fn chaos_complete_part_etag_mismatch() {
         )
         .await;
     match r {
-        Err(MultipartError::PartMissing { part_number, expected, actual }) => {
+        Err(MultipartError::PartMissing {
+            part_number,
+            expected,
+            actual,
+        }) => {
             assert_eq!(part_number, 1);
             assert!(!expected.is_empty());
             assert_eq!(actual, "fabricated");

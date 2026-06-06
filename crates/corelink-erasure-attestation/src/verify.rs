@@ -47,19 +47,16 @@ pub fn verify_attestation_signature(
         .decode(&attestation.signature_ed25519)
         .map_err(|e| AttestationError::Verify(format!("base64 decode failed: {e}")))?;
 
-    let sig_arr: [u8; 64] = sig_bytes.try_into().map_err(|_| {
-        AttestationError::Verify("signature must be exactly 64 bytes".to_string())
-    })?;
+    let sig_arr: [u8; 64] = sig_bytes
+        .try_into()
+        .map_err(|_| AttestationError::Verify("signature must be exactly 64 bytes".to_string()))?;
 
     let signature = Signature::from_bytes(&sig_arr);
 
     // 2. Verify against canonical payload bytes.
     public_key
         .verifying_key
-        .verify(
-            attestation.canonical_payload_jcs.as_bytes(),
-            &signature,
-        )
+        .verify(attestation.canonical_payload_jcs.as_bytes(), &signature)
         .map_err(|e| AttestationError::Verify(format!("ed25519 verify failed: {e}")))?;
 
     tracing::debug!(
@@ -145,8 +142,7 @@ mod tests {
     fn truncated_sig_fails() {
         let (mut att, pk) = make_attestation_and_key();
         // Encode only 32 bytes instead of 64.
-        att.signature_ed25519 =
-            base64::engine::general_purpose::STANDARD.encode([0u8; 32]);
+        att.signature_ed25519 = base64::engine::general_purpose::STANDARD.encode([0u8; 32]);
         let err = verify_attestation_signature(&att, &pk).unwrap_err();
         assert!(matches!(err, AttestationError::Verify(_)));
     }

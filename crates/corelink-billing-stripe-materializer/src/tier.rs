@@ -44,11 +44,7 @@ impl std::error::Error for TierSelectError {}
 /// inject a fixed mapping via [`InMemoryTierSelector::with_mapping`].
 pub trait TierSelector: fmt::Debug + Send + Sync {
     /// Compute the canonical tier for `(plan_id, seat_count)`.
-    fn compute_tier(
-        &self,
-        plan_id: &str,
-        seat_count: u64,
-    ) -> Result<TierKind, TierSelectError>;
+    fn compute_tier(&self, plan_id: &str, seat_count: u64) -> Result<TierKind, TierSelectError>;
 }
 
 /// Native in-memory mirror.
@@ -84,11 +80,7 @@ impl InMemoryTierSelector {
 }
 
 impl TierSelector for InMemoryTierSelector {
-    fn compute_tier(
-        &self,
-        plan_id: &str,
-        _seat_count: u64,
-    ) -> Result<TierKind, TierSelectError> {
+    fn compute_tier(&self, plan_id: &str, _seat_count: u64) -> Result<TierKind, TierSelectError> {
         let g = self
             .plan_to_tier
             .lock()

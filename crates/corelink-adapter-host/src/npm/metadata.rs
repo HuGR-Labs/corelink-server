@@ -115,7 +115,8 @@ async fn refresh_from_upstream(
         now,
         serde_json::json!({ "pkg": pkg }),
     )?;
-    kv.put(tenant, &kv_key_for_pkg(pkg), raw.clone(), now).await?;
+    kv.put(tenant, &kv_key_for_pkg(pkg), raw.clone(), now)
+        .await?;
     Ok(MetadataResponse {
         body: raw,
         pkg: pkg.to_owned(),
@@ -149,7 +150,10 @@ pub fn validate_metadata_json(bytes: &[u8]) -> Result<serde_json::Value, NpmAdap
 ///
 /// Returns [`NpmAdapterError::MetadataParse`] if the version or
 /// `dist.shasum` field is missing or malformed.
-pub fn extract_shasum(metadata: &serde_json::Value, version: &str) -> Result<String, NpmAdapterError> {
+pub fn extract_shasum(
+    metadata: &serde_json::Value,
+    version: &str,
+) -> Result<String, NpmAdapterError> {
     let shasum = metadata
         .get("versions")
         .and_then(|v| v.get(version))
@@ -157,9 +161,7 @@ pub fn extract_shasum(metadata: &serde_json::Value, version: &str) -> Result<Str
         .and_then(|d| d.get("shasum"))
         .and_then(|s| s.as_str())
         .ok_or_else(|| {
-            NpmAdapterError::MetadataParse(format!(
-                "missing dist.shasum for version {version}"
-            ))
+            NpmAdapterError::MetadataParse(format!("missing dist.shasum for version {version}"))
         })?;
     Ok(shasum.to_owned())
 }

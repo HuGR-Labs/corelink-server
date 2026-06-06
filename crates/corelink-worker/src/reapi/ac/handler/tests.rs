@@ -21,16 +21,14 @@ use zeroize::Zeroizing;
 use super::super::audit::{AcEventType, InMemoryAuditSink};
 use super::super::merkle::InMemoryMerkleVerifier;
 use super::super::meta::{AcMetaUpsertOutcome, InMemoryAcMetaStore};
+use super::super::neg_cache::AcNegCache;
 use super::super::outputs::InMemoryOutputsCheck;
 use super::super::sig::InMemoryFakeSigner;
 use super::super::types::{ActionDigest, ActionResult, OutputFileDigest};
-use super::builder::{
-    ActionCacheHandlerBuilder, ActionCacheHandlerImpl, Clock, FakeClock,
-};
+use super::builder::{ActionCacheHandlerBuilder, ActionCacheHandlerImpl, Clock, FakeClock};
 use super::envelope_store::InMemoryAcEnvelopeStore;
 use super::errors::{AcError, DEFAULT_AC_TTL_EXTEND_MS};
 use super::handler_trait::ActionCacheHandler;
-use super::super::neg_cache::AcNegCache;
 use crate::cache::kv::InMemoryKv;
 use crate::middleware::auth_ctx::__test_helpers::make_auth_ctx;
 use crate::middleware::auth_ctx::{AuthCtx, AuthMethod, PrincipalId};
@@ -55,7 +53,10 @@ fn make_ctx(tenant: Uuid, region: Region, scopes: PatScopes) -> AuthCtx {
     )
 }
 
-#[allow(dead_code, reason = "merkle/signer fields kept on Arc for shared-handle lifecycle even when tests do not borrow them")]
+#[allow(
+    dead_code,
+    reason = "merkle/signer fields kept on Arc for shared-handle lifecycle even when tests do not borrow them"
+)]
 struct Wiring {
     handler: ActionCacheHandlerImpl<
         InMemoryAcMetaStore,
@@ -129,7 +130,11 @@ fn fresh_action_result() -> (ActionDigest, ActionResult) {
 async fn update_then_get_happy_path() {
     let w = wire(Region::Wnam);
     let tenant = Uuid::parse_str("01938af0-abcd-7123-8456-000000000a01").unwrap();
-    let ctx = make_ctx(tenant, Region::Wnam, PatScopes::single(SCOPE_CACHE_W | SCOPE_CACHE_R));
+    let ctx = make_ctx(
+        tenant,
+        Region::Wnam,
+        PatScopes::single(SCOPE_CACHE_W | SCOPE_CACHE_R),
+    );
     let (ad, ar) = fresh_action_result();
     // Pre-populate outputs alive.
     w.outputs.insert_all_alive(tenant, &ar);
@@ -155,7 +160,11 @@ async fn cross_tenant_get_returns_not_found() {
     let w = wire(Region::Wnam);
     let tenant_a = Uuid::parse_str("01938af0-abcd-7123-8456-000000000a01").unwrap();
     let tenant_b = Uuid::parse_str("01938af0-abcd-7123-8456-000000000b02").unwrap();
-    let ctx_a = make_ctx(tenant_a, Region::Wnam, PatScopes::single(SCOPE_CACHE_W | SCOPE_CACHE_R));
+    let ctx_a = make_ctx(
+        tenant_a,
+        Region::Wnam,
+        PatScopes::single(SCOPE_CACHE_W | SCOPE_CACHE_R),
+    );
     let ctx_b = make_ctx(tenant_b, Region::Wnam, PatScopes::single(SCOPE_CACHE_R));
     let (ad, ar) = fresh_action_result();
     w.outputs.insert_all_alive(tenant_a, &ar);
@@ -232,7 +241,11 @@ async fn outputs_missing_rejected_pre_persist() {
 async fn idempotent_re_update_refreshes_last_hit() {
     let w = wire(Region::Wnam);
     let tenant = Uuid::parse_str("01938af0-abcd-7123-8456-000000000a01").unwrap();
-    let ctx = make_ctx(tenant, Region::Wnam, PatScopes::single(SCOPE_CACHE_W | SCOPE_CACHE_R));
+    let ctx = make_ctx(
+        tenant,
+        Region::Wnam,
+        PatScopes::single(SCOPE_CACHE_W | SCOPE_CACHE_R),
+    );
     let (ad, ar) = fresh_action_result();
     w.outputs.insert_all_alive(tenant, &ar);
     w.handler
@@ -245,10 +258,7 @@ async fn idempotent_re_update_refreshes_last_hit() {
         .update_action_result(&ctx, &ad, ar.clone(), "req-2")
         .await
         .unwrap();
-    assert_eq!(
-        again.upsert_outcome,
-        AcMetaUpsertOutcome::IdempotentRefresh
-    );
+    assert_eq!(again.upsert_outcome, AcMetaUpsertOutcome::IdempotentRefresh);
 }
 
 #[tokio::test]
@@ -283,7 +293,11 @@ async fn result_hash_mismatch_rejected_409() {
 async fn neg_cache_invalidated_on_update() {
     let w = wire(Region::Wnam);
     let tenant = Uuid::parse_str("01938af0-abcd-7123-8456-000000000a01").unwrap();
-    let ctx = make_ctx(tenant, Region::Wnam, PatScopes::single(SCOPE_CACHE_W | SCOPE_CACHE_R));
+    let ctx = make_ctx(
+        tenant,
+        Region::Wnam,
+        PatScopes::single(SCOPE_CACHE_W | SCOPE_CACHE_R),
+    );
     let (ad, ar) = fresh_action_result();
     // First GET — miss + populate negative cache.
     let _ = w
@@ -330,14 +344,22 @@ async fn region_mismatch_returns_internal() {
 async fn audit_emitted_on_get_ok() {
     let w = wire(Region::Wnam);
     let tenant = Uuid::parse_str("01938af0-abcd-7123-8456-000000000a01").unwrap();
-    let ctx = make_ctx(tenant, Region::Wnam, PatScopes::single(SCOPE_CACHE_W | SCOPE_CACHE_R));
+    let ctx = make_ctx(
+        tenant,
+        Region::Wnam,
+        PatScopes::single(SCOPE_CACHE_W | SCOPE_CACHE_R),
+    );
     let (ad, ar) = fresh_action_result();
     w.outputs.insert_all_alive(tenant, &ar);
     w.handler
         .update_action_result(&ctx, &ad, ar.clone(), "req-up")
         .await
         .unwrap();
-    let _ = w.handler.get_action_result(&ctx, &ad, "req-get").await.unwrap();
+    let _ = w
+        .handler
+        .get_action_result(&ctx, &ad, "req-get")
+        .await
+        .unwrap();
     let ok = w.audit.snapshot_of(AcEventType::GetOk);
     assert_eq!(ok.len(), 1);
     let upd = w.audit.snapshot_of(AcEventType::UpdateOk);
@@ -348,7 +370,11 @@ async fn audit_emitted_on_get_ok() {
 async fn ttl_expired_returns_410() {
     let w = wire(Region::Wnam);
     let tenant = Uuid::parse_str("01938af0-abcd-7123-8456-000000000a01").unwrap();
-    let ctx = make_ctx(tenant, Region::Wnam, PatScopes::single(SCOPE_CACHE_W | SCOPE_CACHE_R));
+    let ctx = make_ctx(
+        tenant,
+        Region::Wnam,
+        PatScopes::single(SCOPE_CACHE_W | SCOPE_CACHE_R),
+    );
     let (ad, ar) = fresh_action_result();
     w.outputs.insert_all_alive(tenant, &ar);
     w.handler
@@ -370,7 +396,11 @@ async fn ttl_expired_returns_410() {
 async fn envelope_tampering_detected_via_sig_invalid() {
     let w = wire(Region::Wnam);
     let tenant = Uuid::parse_str("01938af0-abcd-7123-8456-000000000a01").unwrap();
-    let ctx = make_ctx(tenant, Region::Wnam, PatScopes::single(SCOPE_CACHE_W | SCOPE_CACHE_R));
+    let ctx = make_ctx(
+        tenant,
+        Region::Wnam,
+        PatScopes::single(SCOPE_CACHE_W | SCOPE_CACHE_R),
+    );
     let (ad, ar) = fresh_action_result();
     w.outputs.insert_all_alive(tenant, &ar);
     w.handler

@@ -23,7 +23,9 @@ use corelink_ops::deploy::{
 };
 
 fn main() {
-    let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::WARN).try_init();
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .try_init();
 
     let sink = Arc::new(InMemoryDeployAuditSink::new());
     let verifier = InMemoryDeployVerifier::new_unsigned_from(Arc::clone(&sink));
@@ -52,7 +54,9 @@ fn main() {
 
     match result {
         Ok(_) => {
-            eprintln!("CRITICAL: unsigned deploy was NOT blocked — INV-SUPPLY-SIGNED-DEPLOY violated!");
+            eprintln!(
+                "CRITICAL: unsigned deploy was NOT blocked — INV-SUPPLY-SIGNED-DEPLOY violated!"
+            );
             std::process::exit(2);
         }
         Err(ref e @ DeployVerifyError::SignatureInvalid(_)) => {

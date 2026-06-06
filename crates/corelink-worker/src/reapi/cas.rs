@@ -58,9 +58,7 @@ pub use assembler::{
     ManifestRecord,
 };
 pub use audit::{AuditSink, AuditSinkError, BlobAuditRecord, BlobEventType, InMemoryAuditSink};
-pub use chunk_store::{
-    ChunkKey, ChunkRecord, ChunkStore, ChunkStoreError, InMemoryChunkStore,
-};
+pub use chunk_store::{ChunkKey, ChunkRecord, ChunkStore, ChunkStoreError, InMemoryChunkStore};
 pub use session::{
     BoundChunk, InMemorySessionStore, OrphanCandidate, SessionFinalize, SessionInit, SessionKey,
     SessionSnapshot, SessionState, SessionStore, SessionStoreError,

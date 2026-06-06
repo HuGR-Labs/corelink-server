@@ -20,7 +20,7 @@ use std::time::SystemTime;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use super::audit::{DeployAuditSink, alert_sev1_audit_emit_failed, alert_sev2_deploy_blocked};
+use super::audit::{alert_sev1_audit_emit_failed, alert_sev2_deploy_blocked, DeployAuditSink};
 use super::cf_api::{CfApiClient, PropagateResult};
 use super::error::DeployVerifyError;
 use super::types::{
@@ -197,7 +197,9 @@ impl InMemoryDeployVerifier {
         got_san: impl Into<String>,
     ) -> Self {
         Self {
-            mode: VerificationMode::IdentityMismatch { got_san: got_san.into() },
+            mode: VerificationMode::IdentityMismatch {
+                got_san: got_san.into(),
+            },
             audit_sink,
             cf_client: InMemoryCfApiClient::new_ok(),
         }
@@ -233,7 +235,11 @@ impl InMemoryDeployVerifier {
         signed_digest: impl Into<String>,
         resolved_digest: impl Into<String>,
     ) -> Self {
-        Self::new_replay_attack(audit_sink as Arc<dyn DeployAuditSink>, signed_digest, resolved_digest)
+        Self::new_replay_attack(
+            audit_sink as Arc<dyn DeployAuditSink>,
+            signed_digest,
+            resolved_digest,
+        )
     }
 
     /// Construct a verifier with a custom mode and audit sink.
@@ -300,7 +306,10 @@ impl InMemoryDeployVerifier {
                 })
             }
 
-            VerificationMode::ReplayAttack { signed_digest, resolved_digest } => {
+            VerificationMode::ReplayAttack {
+                signed_digest,
+                resolved_digest,
+            } => {
                 warn!(
                     release_tag = %webhook.release_tag,
                     signed_digest = %signed_digest,
@@ -313,7 +322,11 @@ impl InMemoryDeployVerifier {
                 })
             }
 
-            VerificationMode::Signed { rekor_log_index, fulcio_san, resolved_digest } => {
+            VerificationMode::Signed {
+                rekor_log_index,
+                fulcio_san,
+                resolved_digest,
+            } => {
                 // Validate identity pattern (structural check, wasm32-safe)
                 if !expected_identity.matches_simple(fulcio_san) {
                     warn!(
@@ -333,7 +346,11 @@ impl InMemoryDeployVerifier {
                     image = %cosign_image_ref.image,
                     "Cosign verify OK: signature + Rekor inclusion + Fulcio chain valid"
                 );
-                Ok((*rekor_log_index, fulcio_san.clone(), resolved_digest.clone()))
+                Ok((
+                    *rekor_log_index,
+                    fulcio_san.clone(),
+                    resolved_digest.clone(),
+                ))
             }
         }
     }
@@ -349,7 +366,8 @@ impl DeployVerifier for InMemoryDeployVerifier {
         let trace_id = Uuid::now_v7().to_string();
 
         // Step 1-6: run verification pipeline
-        let pipeline_result = self.run_verify_pipeline(webhook, cosign_image_ref, expected_identity);
+        let pipeline_result =
+            self.run_verify_pipeline(webhook, cosign_image_ref, expected_identity);
 
         match pipeline_result {
             Err(ref verify_err) => {
@@ -390,10 +408,8 @@ impl DeployVerifier for InMemoryDeployVerifier {
 
             Ok((rekor_log_index, fulcio_cert_san, resolved_digest)) => {
                 // Step 7: emit audit event BEFORE propagating (fail-CLOSED)
-                let audit_event = DeployAuditEvent::verified(
-                    webhook.release_tag.clone(),
-                    trace_id.clone(),
-                );
+                let audit_event =
+                    DeployAuditEvent::verified(webhook.release_tag.clone(), trace_id.clone());
                 if let Err(audit_err) = self.emit_audit_event(audit_event) {
                     // Audit emit failed — SEV-1, deploy blocked
                     alert_sev1_audit_emit_failed(&webhook.release_tag, &audit_err);
@@ -401,10 +417,9 @@ impl DeployVerifier for InMemoryDeployVerifier {
                 }
 
                 // Step 8: propagate to Cloudflare API with pinned digest
-                let cf_result = self.cf_client.propagate(
-                    &webhook.deploy_target.script_name,
-                    &resolved_digest,
-                )?;
+                let cf_result = self
+                    .cf_client
+                    .propagate(&webhook.deploy_target.script_name, &resolved_digest)?;
 
                 info!(
                     release_tag = %webhook.release_tag,
@@ -424,10 +439,7 @@ impl DeployVerifier for InMemoryDeployVerifier {
         }
     }
 
-    fn emit_audit_event(
-        &self,
-        event: DeployAuditEvent,
-    ) -> Result<(), DeployVerifyError> {
+    fn emit_audit_event(&self, event: DeployAuditEvent) -> Result<(), DeployVerifyError> {
         self.audit_sink.emit(event)
     }
 }
@@ -448,7 +460,9 @@ impl CloneForPropagation for DeployVerifyError {
     fn clone_for_propagation(&self) -> Self {
         match self {
             Self::SignatureInvalid(msg) => Self::SignatureInvalid(msg.clone()),
-            Self::RekorMissing { image } => Self::RekorMissing { image: image.clone() },
+            Self::RekorMissing { image } => Self::RekorMissing {
+                image: image.clone(),
+            },
             Self::FulcioChainInvalid(msg) => Self::FulcioChainInvalid(msg.clone()),
             Self::IdentityMismatch { got, expected } => Self::IdentityMismatch {
                 got: got.clone(),
@@ -457,7 +471,10 @@ impl CloneForPropagation for DeployVerifyError {
             Self::OciFetchFailed(msg) => Self::OciFetchFailed(msg.clone()),
             Self::CfApiFailed(msg) => Self::CfApiFailed(msg.clone()),
             Self::AuditEmitFailed(msg) => Self::AuditEmitFailed(msg.clone()),
-            Self::DigestMismatch { signed_digest, resolved_digest } => Self::DigestMismatch {
+            Self::DigestMismatch {
+                signed_digest,
+                resolved_digest,
+            } => Self::DigestMismatch {
                 signed_digest: signed_digest.clone(),
                 resolved_digest: resolved_digest.clone(),
             },
@@ -502,7 +519,11 @@ impl CfApiClient for InMemoryCfApiClient {
                 "CF API unavailable (simulated)".to_string(),
             ));
         }
-        let deployment_id = format!("dep-{}-{}", script_name, &pinned_digest[..8.min(pinned_digest.len())]);
+        let deployment_id = format!(
+            "dep-{}-{}",
+            script_name,
+            &pinned_digest[..8.min(pinned_digest.len())]
+        );
         info!(
             script_name = %script_name,
             pinned_digest = %pinned_digest,
@@ -514,11 +535,16 @@ impl CfApiClient for InMemoryCfApiClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing, clippy::panic)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 mod tests {
-    use super::*;
     use super::super::audit::InMemoryDeployAuditSink;
     use super::super::types::{DeployTarget, GitHubActor};
+    use super::*;
 
     fn make_webhook(tag: &str) -> CfDeployWebhook {
         CfDeployWebhook::new(
@@ -565,7 +591,10 @@ mod tests {
         let identity = CosignIdentityPattern::corelink_release();
 
         let result = verifier.verify_and_propagate(&webhook, &image_ref, &identity);
-        assert!(matches!(result, Err(DeployVerifyError::SignatureInvalid(_))));
+        assert!(matches!(
+            result,
+            Err(DeployVerifyError::SignatureInvalid(_))
+        ));
         assert_eq!(sink.len(), 1);
         let event = &sink.events()[0];
         assert_eq!(event.event_type, "dev.hugr.corelink.deploy.blocked.v1");
@@ -581,7 +610,10 @@ mod tests {
         let identity = CosignIdentityPattern::corelink_release();
 
         let result = verifier.verify_and_propagate(&webhook, &image_ref, &identity);
-        assert!(matches!(result, Err(DeployVerifyError::RekorMissing { .. })));
+        assert!(matches!(
+            result,
+            Err(DeployVerifyError::RekorMissing { .. })
+        ));
         assert_eq!(sink.len(), 1);
         assert_eq!(sink.events()[0].outcome, VerifyOutcome::RekorMissing);
     }
@@ -595,7 +627,10 @@ mod tests {
             &make_image_ref("v0.3.0"),
             &CosignIdentityPattern::corelink_release(),
         );
-        assert!(matches!(result, Err(DeployVerifyError::FulcioChainInvalid(_))));
+        assert!(matches!(
+            result,
+            Err(DeployVerifyError::FulcioChainInvalid(_))
+        ));
         assert_eq!(sink.events()[0].outcome, VerifyOutcome::FulcioInvalid);
     }
 
@@ -611,7 +646,10 @@ mod tests {
             &make_image_ref("v0.1.0"),
             &CosignIdentityPattern::corelink_release(),
         );
-        assert!(matches!(result, Err(DeployVerifyError::IdentityMismatch { .. })));
+        assert!(matches!(
+            result,
+            Err(DeployVerifyError::IdentityMismatch { .. })
+        ));
         assert_eq!(sink.events()[0].outcome, VerifyOutcome::IdentityMismatch);
     }
 
@@ -628,6 +666,9 @@ mod tests {
             &make_image_ref("v0.2.0"),
             &CosignIdentityPattern::corelink_release(),
         );
-        assert!(matches!(result, Err(DeployVerifyError::DigestMismatch { .. })));
+        assert!(matches!(
+            result,
+            Err(DeployVerifyError::DigestMismatch { .. })
+        ));
     }
 }

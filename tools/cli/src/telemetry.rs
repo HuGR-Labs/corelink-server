@@ -78,7 +78,7 @@ impl TelemetryEvent {
 
 /// Returns a platform slug like `"linux-x86_64"` or `"darwin-aarch64"`.
 fn current_os_slug() -> String {
-    let os = std::env::consts::OS;   // "linux", "macos", "windows"
+    let os = std::env::consts::OS; // "linux", "macos", "windows"
     let arch = std::env::consts::ARCH; // "x86_64", "aarch64", etc.
     format!("{os}-{arch}")
 }
@@ -136,7 +136,10 @@ mod tests {
     fn event_has_no_pii() {
         let id = Uuid::new_v4();
         let event = TelemetryEvent::new("ls", "ok", 42, id);
-        assert!(!event.has_pii(), "INVARIANT: telemetry payload must not contain PII");
+        assert!(
+            !event.has_pii(),
+            "INVARIANT: telemetry payload must not contain PII"
+        );
     }
 
     /// Payload JSON serialization must not contain forbidden fields.
@@ -147,10 +150,19 @@ mod tests {
         let json = serde_json::to_string(&event).expect("serialise");
 
         // These fields must NEVER appear in the payload (R-S15-15 + LINDDUN Identifiability).
-        assert!(!json.contains("tenant_id"), "tenant_id must never be in payload");
+        assert!(
+            !json.contains("tenant_id"),
+            "tenant_id must never be in payload"
+        );
         assert!(!json.contains("\"pat\""), "PAT must never be in payload");
-        assert!(!json.contains("digest"), "blob digests must never be in payload");
-        assert!(!json.contains("file_path"), "file paths must never be in payload");
+        assert!(
+            !json.contains("digest"),
+            "blob digests must never be in payload"
+        );
+        assert!(
+            !json.contains("file_path"),
+            "file paths must never be in payload"
+        );
 
         // Required fields must be present.
         assert!(json.contains("cli_version"));
@@ -178,6 +190,9 @@ mod tests {
         let slug = current_os_slug();
         assert!(!slug.is_empty());
         assert!(!slug.contains("token"), "OS slug must not leak token info");
-        assert!(!slug.contains("secret"), "OS slug must not leak secret info");
+        assert!(
+            !slug.contains("secret"),
+            "OS slug must not leak secret info"
+        );
     }
 }

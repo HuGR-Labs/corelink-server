@@ -190,6 +190,9 @@ mod tests {
             .audit_code(),
             "cycle_detected"
         );
-        assert_eq!(MerkleError::VersionUnsupported(2).audit_code(), "version_unsupported");
+        assert_eq!(
+            MerkleError::VersionUnsupported(2).audit_code(),
+            "version_unsupported"
+        );
     }
 }

@@ -39,17 +39,15 @@
 
 use std::sync::Arc;
 
-use corelink_eviction::EvictionRegion;
 use corelink_billing::quota::cas::{
-    canonical_audit_event_strings, canonical_metric_names,
-    days_until_month_reset_secs, next_month_first_utc_midnight_secs,
-    AtomicCasState, AtomicQuotaChecker, AtomicTenantBytesState,
-    InMemoryAtomicCasState, InMemoryAtomicQuotaChecker,
-    InMemoryQuotaCasAuditSink, InMemoryQuotaCasMetrics,
-    QuotaCasDecision, QuotaCasEventType, QuotaCasMetricKind,
+    canonical_audit_event_strings, canonical_metric_names, days_until_month_reset_secs,
+    next_month_first_utc_midnight_secs, AtomicCasState, AtomicQuotaChecker, AtomicTenantBytesState,
+    InMemoryAtomicCasState, InMemoryAtomicQuotaChecker, InMemoryQuotaCasAuditSink,
+    InMemoryQuotaCasMetrics, QuotaCasDecision, QuotaCasEventType, QuotaCasMetricKind,
     QuotaCasResultLabel, MAX_SECS_PER_MONTH, MIGRATION_0012_QUOTA_CAS_ATTEMPTS,
     RETRY_AFTER_MIN_SECS,
 };
+use corelink_eviction::EvictionRegion;
 use proptest::prelude::*;
 use uuid::Uuid;
 
@@ -412,10 +410,8 @@ impl AtomicCasState for OneShotRaceState {
         &self,
         tenant_id: Uuid,
         region: EvictionRegion,
-    ) -> Result<
-        Option<AtomicTenantBytesState>,
-        corelink_billing::quota::cas::AtomicCasStateError,
-    > {
+    ) -> Result<Option<AtomicTenantBytesState>, corelink_billing::quota::cas::AtomicCasStateError>
+    {
         self.inner.lookup(tenant_id, region)
     }
     fn try_commit_delta(
@@ -424,25 +420,24 @@ impl AtomicCasState for OneShotRaceState {
         region: EvictionRegion,
         expected_version: u64,
         delta_bytes: u64,
-    ) -> Result<AtomicTenantBytesState, corelink_billing::quota::cas::AtomicCasStateError>
-    {
+    ) -> Result<AtomicTenantBytesState, corelink_billing::quota::cas::AtomicCasStateError> {
         let mut g = self.bumped.lock().unwrap();
         if !*g {
             *g = true;
             drop(g);
-            let cur = self
-                .inner
-                .lookup(tenant_id, region)?
-                .ok_or(corelink_billing::quota::cas::AtomicCasStateError::Missing {
+            let cur = self.inner.lookup(tenant_id, region)?.ok_or(
+                corelink_billing::quota::cas::AtomicCasStateError::Missing {
                     tenant_id,
                     region: region.as_str(),
-                })?;
+                },
+            )?;
             self.inner.seed_row(AtomicTenantBytesState {
                 cas_version: cur.cas_version.saturating_add(1),
                 ..cur
             })?;
         }
-        self.inner.try_commit_delta(tenant_id, region, expected_version, delta_bytes)
+        self.inner
+            .try_commit_delta(tenant_id, region, expected_version, delta_bytes)
     }
     fn seed_row(
         &self,
@@ -550,17 +545,11 @@ fn retry_after_at_canonical_boundary_cases() {
 
     // First second of January → ~31 days − 1s.
     let jan_1 = compose_utc(2026, 1, 1, 0, 0, 1);
-    assert_eq!(
-        days_until_month_reset_secs(jan_1),
-        31 * 86_400 - 1
-    );
+    assert_eq!(days_until_month_reset_secs(jan_1), 31 * 86_400 - 1);
 
     // Feb 28 non-leap year → 1 day.
     let feb_28_nonleap = compose_utc(2027, 2, 28, 0, 0, 0);
-    assert_eq!(
-        days_until_month_reset_secs(feb_28_nonleap),
-        86_400
-    );
+    assert_eq!(days_until_month_reset_secs(feb_28_nonleap), 86_400);
 
     // Feb 29 leap year → 1 day.
     let feb_29_leap = compose_utc(2028, 2, 29, 0, 0, 0);

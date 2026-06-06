@@ -84,16 +84,13 @@ pub enum IdempotencyDecision {
 ///   the value (e.g. NaN floats, non-string map keys). Production
 ///   wiring at the construction surface ensures the data tree never
 ///   contains non-finite floats by construction.
-pub fn compute_canonical_bytes_for_idem(
-    event: &UsageEvent,
-) -> Result<Vec<u8>, BillingEmitError> {
+pub fn compute_canonical_bytes_for_idem(event: &UsageEvent) -> Result<Vec<u8>, BillingEmitError> {
     // Zero the idem_key slot for the link input (canonical formula
     // input); the derived digest is then written back into the slot
     // post-derivation by the orchestrator.
     let mut zeroed = event.clone();
     zeroed.idem_key = IdemKey(GENESIS_IDEM_KEY);
-    serde_jcs::to_vec(&zeroed)
-        .map_err(|e| BillingEmitError::Canonicalization(format!("{e}")))
+    serde_jcs::to_vec(&zeroed).map_err(|e| BillingEmitError::Canonicalization(format!("{e}")))
 }
 
 /// Derive the canonical idempotency key from the usage event. Pure
@@ -188,9 +185,7 @@ impl IdempotencyTracker for InMemoryIdempotencyTracker {
         canonical_bytes: &[u8],
     ) -> Result<IdempotencyDecision, BillingEmitError> {
         let mut g = self.state.lock().map_err(|_| {
-            BillingEmitError::Internal(
-                "idempotency tracker mutex poisoned".to_string(),
-            )
+            BillingEmitError::Internal("idempotency tracker mutex poisoned".to_string())
         })?;
         let key_bytes = *idem_key.as_bytes();
         let canonical_key = (tenant_id, key_bytes);
@@ -230,7 +225,11 @@ impl IdempotencyTracker for InMemoryIdempotencyTracker {
     fn accepted_count(&self, tenant_id: Uuid) -> usize {
         match self.state.lock() {
             Ok(g) => g.accepted.get(&tenant_id).map_or(0, HashSet::len),
-            Err(p) => p.into_inner().accepted.get(&tenant_id).map_or(0, HashSet::len),
+            Err(p) => p
+                .into_inner()
+                .accepted
+                .get(&tenant_id)
+                .map_or(0, HashSet::len),
         }
     }
 }

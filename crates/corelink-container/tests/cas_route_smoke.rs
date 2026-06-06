@@ -154,7 +154,10 @@ async fn cas_put_then_get_round_trip_through_router() {
     );
     let put_body_bytes = to_bytes(put_resp.into_body(), 1 << 20).await.expect("body");
     let put_body = String::from_utf8(put_body_bytes.to_vec()).expect("utf8 body");
-    assert_eq!(put_body, hash, "PUT response body must echo the content hash");
+    assert_eq!(
+        put_body, hash,
+        "PUT response body must echo the content hash"
+    );
 
     // GET — must return the SAME bytes
     let get_req = Request::builder()

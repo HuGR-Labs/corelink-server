@@ -36,11 +36,13 @@ fn objection_pauses_matching_purpose_only() {
 
     // Pre-objection: both purposes Allowed.
     assert_eq!(
-        env.policy.evaluate_purpose(tenant.tenant_id, "marketing_analytics"),
+        env.policy
+            .evaluate_purpose(tenant.tenant_id, "marketing_analytics"),
         PolicyDecision::Allowed
     );
     assert_eq!(
-        env.policy.evaluate_purpose(tenant.tenant_id, "aggregate_telemetry"),
+        env.policy
+            .evaluate_purpose(tenant.tenant_id, "aggregate_telemetry"),
         PolicyDecision::Allowed
     );
 
@@ -59,12 +61,16 @@ fn objection_pauses_matching_purpose_only() {
     }
     // Other purposes for the same tenant: still Allowed.
     assert_eq!(
-        env.policy.evaluate_purpose(tenant.tenant_id, "aggregate_telemetry"),
+        env.policy
+            .evaluate_purpose(tenant.tenant_id, "aggregate_telemetry"),
         PolicyDecision::Allowed
     );
 
     // Snapshot the canonical objections list.
     let objections = env.policy.snapshot_objections(tenant.tenant_id);
     assert_eq!(objections.len(), 1);
-    assert_eq!(objections.first().map(String::as_str), Some("marketing_analytics"));
+    assert_eq!(
+        objections.first().map(String::as_str),
+        Some("marketing_analytics")
+    );
 }

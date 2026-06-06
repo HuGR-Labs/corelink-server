@@ -132,9 +132,7 @@ impl D1Harness {
         conn.execute_batch("PRAGMA foreign_keys = ON;")
             .expect("PRAGMA foreign_keys");
         let migration = std::fs::read_to_string(PILOT_SIGNUPS_MIGRATION_PATH)
-            .unwrap_or_else(|e| {
-                panic!("read migration {PILOT_SIGNUPS_MIGRATION_PATH}: {e}")
-            });
+            .unwrap_or_else(|e| panic!("read migration {PILOT_SIGNUPS_MIGRATION_PATH}: {e}"));
         conn.execute_batch(&migration)
             .expect("apply 0053_pilot_signups migration");
         Self {
@@ -356,9 +354,7 @@ impl SignupStore for SqliteSignupStore {
                 {
                     // Concurrent racer landed first — re-run the
                     // idempotent lookup and return that record.
-                    if let Some(existing) =
-                        lookup_existing(&g, &record.email, &record.token_id)?
-                    {
+                    if let Some(existing) = lookup_existing(&g, &record.email, &record.token_id)? {
                         return Ok(existing);
                     }
                     return Err("sqlite race window: unique-fail without follow-up row");
@@ -400,25 +396,18 @@ fn lookup_existing(
         Some(r) => {
             let id_str: String = r.get(0).map_err(|_| "sqlite col id")?;
             let tenant_str: String = r.get(1).map_err(|_| "sqlite col tenant_id")?;
-            let id =
-                Uuid::parse_str(&id_str).map_err(|_| "sqlite id not UUID")?;
-            let tenant_id = Uuid::parse_str(&tenant_str)
-                .map_err(|_| "sqlite tenant_id not UUID")?;
-            let signed_up_at_i64: i64 =
-                r.get(6).map_err(|_| "sqlite col signed_up_at")?;
-            let signed_up_at_ms =
-                u64::try_from(signed_up_at_i64).unwrap_or(0);
+            let id = Uuid::parse_str(&id_str).map_err(|_| "sqlite id not UUID")?;
+            let tenant_id =
+                Uuid::parse_str(&tenant_str).map_err(|_| "sqlite tenant_id not UUID")?;
+            let signed_up_at_i64: i64 = r.get(6).map_err(|_| "sqlite col signed_up_at")?;
+            let signed_up_at_ms = u64::try_from(signed_up_at_i64).unwrap_or(0);
             Ok(Some(PilotSignupRecord {
                 id,
                 tenant_id,
                 email: r.get(2).map_err(|_| "sqlite col email")?,
-                company_name: r
-                    .get(3)
-                    .map_err(|_| "sqlite col company_name")?,
+                company_name: r.get(3).map_err(|_| "sqlite col company_name")?,
                 tier_hint: r.get(4).map_err(|_| "sqlite col tier_hint")?,
-                expected_use_case: r
-                    .get(5)
-                    .map_err(|_| "sqlite col expected_use_case")?,
+                expected_use_case: r.get(5).map_err(|_| "sqlite col expected_use_case")?,
                 signed_up_at_ms,
                 token_id: r.get(8).map_err(|_| "sqlite col token_id")?,
                 state: r.get(7).map_err(|_| "sqlite col state")?,

@@ -31,9 +31,9 @@
 use std::sync::Arc;
 
 use corelink_gc::{
-    admin_trigger, AdminTriggerOutcome, CheckpointDeltas, DegradeKind, FailureContext,
-    GcEventType, GcMetricsObserver, GcPhase, GcRegion, GcRunStore, GcRunStoreError, GcScheduler,
-    GcStatus, InMemoryDegradeProbe, InMemoryGcAuditSink, InMemoryGcMetrics, InMemoryGcRunStore,
+    admin_trigger, AdminTriggerOutcome, CheckpointDeltas, DegradeKind, FailureContext, GcEventType,
+    GcMetricsObserver, GcPhase, GcRegion, GcRunStore, GcRunStoreError, GcScheduler, GcStatus,
+    InMemoryDegradeProbe, InMemoryGcAuditSink, InMemoryGcMetrics, InMemoryGcRunStore,
     InMemoryGcScheduler, InMemoryGcWorker, RunId, ScheduleConfig,
 };
 use proptest::prelude::*;

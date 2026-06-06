@@ -369,11 +369,7 @@ impl ErasurePlan {
             .iter()
             .map(|backend| ErasurePlanEntry {
                 backend: *backend,
-                idempotency_key: ErasurePlanEntry::idempotency_key_for(
-                    request.dsr_id,
-                    *backend,
-                    0,
-                ),
+                idempotency_key: ErasurePlanEntry::idempotency_key_for(request.dsr_id, *backend, 0),
             })
             .collect();
         Self {
@@ -802,13 +798,7 @@ mod tests {
     #[test]
     fn erasure_plan_canonical_has_12_entries() {
         let salt = ErasureSalt::synthetic_for_test(1);
-        let req = ErasureRequest::new(
-            fixed_uuid(11),
-            fixed_uuid(12),
-            fixed_uuid(13),
-            salt,
-            1_000,
-        );
+        let req = ErasureRequest::new(fixed_uuid(11), fixed_uuid(12), fixed_uuid(13), salt, 1_000);
         let plan = ErasurePlan::canonical(&req, 2_000);
         assert_eq!(plan.entries.len(), BACKEND_COUNT);
         for (i, expected) in canonical_backend_kinds().iter().enumerate() {
@@ -822,13 +812,7 @@ mod tests {
     #[test]
     fn erasure_plan_canonical_replay_safe() {
         let salt = ErasureSalt::synthetic_for_test(1);
-        let req = ErasureRequest::new(
-            fixed_uuid(21),
-            fixed_uuid(22),
-            fixed_uuid(23),
-            salt,
-            1_000,
-        );
+        let req = ErasureRequest::new(fixed_uuid(21), fixed_uuid(22), fixed_uuid(23), salt, 1_000);
         let p1 = ErasurePlan::canonical(&req, 2_000);
         let p2 = ErasurePlan::canonical(&req, 2_000);
         assert_eq!(p1, p2);
@@ -837,9 +821,7 @@ mod tests {
     #[test]
     fn backend_outcome_strings_unique() {
         let arms = [
-            BackendErasureOutcome::Erased {
-                records_deleted: 1,
-            },
+            BackendErasureOutcome::Erased { records_deleted: 1 },
             BackendErasureOutcome::Pseudonymized {
                 records_redacted: 1,
             },
@@ -861,10 +843,7 @@ mod tests {
 
     #[test]
     fn backend_outcome_is_successful_pinned() {
-        let success_erased = BackendErasureOutcome::Erased {
-            records_deleted: 0,
-        }
-        .is_successful();
+        let success_erased = BackendErasureOutcome::Erased { records_deleted: 0 }.is_successful();
         let success_pseudo = BackendErasureOutcome::Pseudonymized {
             records_redacted: 0,
         }
@@ -958,14 +937,8 @@ mod tests {
     #[test]
     fn legal_hold_builder() {
         let salt = ErasureSalt::synthetic_for_test(1);
-        let req = ErasureRequest::new(
-            fixed_uuid(1),
-            fixed_uuid(2),
-            fixed_uuid(3),
-            salt,
-            10,
-        )
-        .with_legal_hold(true);
+        let req = ErasureRequest::new(fixed_uuid(1), fixed_uuid(2), fixed_uuid(3), salt, 10)
+            .with_legal_hold(true);
         assert!(req.legal_hold);
     }
 }

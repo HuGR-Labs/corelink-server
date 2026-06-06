@@ -26,10 +26,10 @@
 use std::sync::Arc;
 
 use corelink_replica_worker::{
-    AggregationEntry, FailingReplicaAuditSink, FailingReplicationWorker,
-    HotBlob, InMemoryOfflineAggregator, InMemoryReplicaAuditSink, InMemoryReplicationWorker,
+    AggregationEntry, FailingReplicaAuditSink, FailingReplicationWorker, HotBlob,
+    InMemoryOfflineAggregator, InMemoryReplicaAuditSink, InMemoryReplicationWorker,
     OfflineAggregator, Region, ReplicaAuditEventType, ReplicaAuditSink, ReplicaError,
-    ReplicaStatus, ResidencyGraph, ReplicationWorker, AGGREGATION_WINDOW_DAYS, NO_TENANT_ID_LABEL,
+    ReplicaStatus, ReplicationWorker, ResidencyGraph, AGGREGATION_WINDOW_DAYS, NO_TENANT_ID_LABEL,
 };
 
 /// Adversarial scenario 1: Replication storm (top-1% explosion).
@@ -119,7 +119,10 @@ fn adversarial_tamper_replica_hash_mismatch_detected() {
         replication_status: ReplicaStatus::Pending,
     };
     let count = failing_worker.replicate_batch(&[blob]).unwrap();
-    assert_eq!(count, 0, "tampered blob must not count as successfully replicated");
+    assert_eq!(
+        count, 0,
+        "tampered blob must not count as successfully replicated"
+    );
 }
 
 /// Adversarial scenario 3: Failover loop attempt.
@@ -213,7 +216,10 @@ fn adversarial_audit_fail_closed_state_unchanged() {
 
     // Aggregation must fail (audit emit fails).
     let result = agg.run(AGGREGATION_WINDOW_DAYS);
-    assert!(result.is_err(), "aggregation must fail when audit emit fails");
+    assert!(
+        result.is_err(),
+        "aggregation must fail when audit emit fails"
+    );
 
     // State must be unchanged (no hot blobs upserted).
     let hot_blobs = agg.hot_blobs();

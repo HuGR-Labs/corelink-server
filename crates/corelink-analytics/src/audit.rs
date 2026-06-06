@@ -52,12 +52,8 @@ impl AnalyticsEventType {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::MetricEmitted => "corelink.analytics.metric_emitted",
-            Self::CardinalityRejected => {
-                "corelink.analytics.cardinality_rejected"
-            }
-            Self::BudgetExceeded => {
-                "corelink.analytics.budget_exceeded"
-            }
+            Self::CardinalityRejected => "corelink.analytics.cardinality_rejected",
+            Self::BudgetExceeded => "corelink.analytics.budget_exceeded",
         }
     }
 
@@ -138,10 +134,7 @@ pub trait AnalyticsAuditSink: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`AnalyticsAuditSinkError::Store`] on any backend failure.
-    fn emit(
-        &self,
-        record: AnalyticsAuditRecord,
-    ) -> Result<(), AnalyticsAuditSinkError>;
+    fn emit(&self, record: AnalyticsAuditRecord) -> Result<(), AnalyticsAuditSinkError>;
 }
 
 /// In-memory test audit sink. Cloning shares the underlying buffer.
@@ -183,10 +176,7 @@ impl InMemoryAnalyticsAuditSink {
 
     /// Filter snapshot down to records of a single event type.
     #[must_use]
-    pub fn snapshot_of(
-        &self,
-        event_type: AnalyticsEventType,
-    ) -> Vec<AnalyticsAuditRecord> {
+    pub fn snapshot_of(&self, event_type: AnalyticsEventType) -> Vec<AnalyticsAuditRecord> {
         self.snapshot()
             .into_iter()
             .filter(|r| r.event_type == event_type)
@@ -195,15 +185,11 @@ impl InMemoryAnalyticsAuditSink {
 }
 
 impl AnalyticsAuditSink for InMemoryAnalyticsAuditSink {
-    fn emit(
-        &self,
-        record: AnalyticsAuditRecord,
-    ) -> Result<(), AnalyticsAuditSinkError> {
-        let mut guard = self.inner.lock().map_err(|_| {
-            AnalyticsAuditSinkError::Store(
-                "audit sink mutex poisoned".to_string(),
-            )
-        })?;
+    fn emit(&self, record: AnalyticsAuditRecord) -> Result<(), AnalyticsAuditSinkError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| AnalyticsAuditSinkError::Store("audit sink mutex poisoned".to_string()))?;
         guard.push(record);
         Ok(())
     }
@@ -224,13 +210,9 @@ impl FailingAnalyticsAuditSink {
 }
 
 impl AnalyticsAuditSink for FailingAnalyticsAuditSink {
-    fn emit(
-        &self,
-        _record: AnalyticsAuditRecord,
-    ) -> Result<(), AnalyticsAuditSinkError> {
+    fn emit(&self, _record: AnalyticsAuditRecord) -> Result<(), AnalyticsAuditSinkError> {
         Err(AnalyticsAuditSinkError::Store(
-            "induced analytics audit sink failure (test fixture)"
-                .to_string(),
+            "induced analytics audit sink failure (test fixture)".to_string(),
         ))
     }
 }
@@ -296,10 +278,7 @@ mod tests {
         sink.emit(rec(AnalyticsEventType::CardinalityRejected))
             .unwrap();
         assert_eq!(sink.len(), 2);
-        assert_eq!(
-            sink.snapshot_of(AnalyticsEventType::MetricEmitted).len(),
-            1
-        );
+        assert_eq!(sink.snapshot_of(AnalyticsEventType::MetricEmitted).len(), 1);
         assert_eq!(
             sink.snapshot_of(AnalyticsEventType::CardinalityRejected)
                 .len(),
