@@ -105,6 +105,14 @@ jobs:
           SENTRY_PROJECT: "corelink-admin-ui"
           CSP_ENFORCEMENT: "enforce"
 
+      # wrangler is not a dependency of apps/admin-ui, so `pnpm cf:deploy`
+      # (= `wrangler deploy`) would otherwise fail with "wrangler: command not
+      # found". Pin the global install to v4 to match cf-deploy-prod.yml
+      # (v3 cannot parse [[env.*.containers]] arrays — verified 2026-06-05).
+      - name: Install wrangler
+        working-directory: .
+        run: npm install -g wrangler@4
+
       # Deploy the built Worker. `cf:deploy` = `wrangler deploy`, which reads
       # the Worker name (corelink-admin-ui), entrypoint (.open-next/worker.js),
       # assets, and the custom-domain route from apps/admin-ui/wrangler.toml.
