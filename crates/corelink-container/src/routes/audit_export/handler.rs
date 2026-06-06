@@ -5,11 +5,13 @@
 //! Verbatim move of `handle_export`; supporting parse / serialize
 //! helpers live in [`super::parse`].
 //!
-//! Wave-37 (fix): tenant is now extracted from the `:tenant` path
-//! parameter following the `/v1/cas/:tenant/:hash` pattern. The Worker
-//! extracts the PAT-resolved tenant id, routes the request to the
-//! per-tenant DO, and forwards the full URL path to the container —
-//! so the path tenant is the canonical authenticated tenant.
+//! Security fix (`fix/container-tenant-binding`): the authenticated
+//! tenant is the DO-injected `x-corelink-tenant-id` header, resolved via
+//! the [`crate::auth_tenant::AuthTenant`] extractor (fail-CLOSED) —
+//! mirroring `cas.rs`/`ac.rs`. The DO forwards the URL path UNCHANGED,
+//! so the client-controllable `:tenant` path segment is NOT trusted:
+//! it is a client echo that is validated against the authenticated
+//! tenant (mismatch ⇒ SEV-1 cross-tenant audit row + 403, fail-CLOSED).
 
 #![forbid(unsafe_code)]
 
@@ -37,25 +39,62 @@ use super::types::{
 
 /// `GET /v1/audit/:tenant/export` axum handler.
 ///
-/// The `:tenant` path parameter is the canonical authenticated tenant
-/// following the `/v1/cas/:tenant/:hash` pattern. The Worker extracts
-/// the PAT-resolved tenant id, routes the request to the per-tenant DO,
-/// and forwards the full URL path (including the tenant segment) to the
-/// container — so the path tenant is the authoritative source of truth.
+/// The authenticated tenant is the DO-injected `x-corelink-tenant-id`
+/// header, bound by the [`crate::auth_tenant::AuthTenant`] extractor
+/// (fail-CLOSED — the handler cannot run without a concrete,
+/// non-sentinel tenant). The `:tenant` path segment is a
+/// client-controllable echo (the DO forwards the URL path UNCHANGED)
+/// and is NOT trusted: it is validated against the authenticated
+/// tenant, and a mismatch is a cross-tenant attempt (SEV-1 audit row +
+/// 403, fail-CLOSED) handled BEFORE any data access. Mirrors
+/// `cas.rs`/`ac.rs`.
 pub(super) async fn handle_export(
     State(state): State<AuditExportRouteState>,
+    auth: crate::auth_tenant::AuthTenant,
     Path(path_tenant_str): Path<String>,
     Query(query): Query<AuditExportQuery>,
 ) -> axum::response::Response {
-    // 1. Auth — tenant from the `:tenant` path segment (canonical,
-    //    following /v1/cas/:tenant/:hash). The Worker injects the
-    //    PAT-resolved tenant into the URL path before forwarding.
-    let authenticated_tenant = match Uuid::parse_str(path_tenant_str.trim()) {
+    // 1. Auth — the authenticated tenant is the PAT-resolved
+    //    `x-corelink-tenant-id` header bound by `AuthTenant` (the SOLE
+    //    isolation key). The extractor already guarantees a non-empty,
+    //    non-sentinel value; parse it as a UUID (400 on a non-UUID,
+    //    mirroring the existing query-tenant parse).
+    let authenticated_tenant = match Uuid::parse_str(auth.0.trim()) {
+        Ok(t) => t,
+        Err(_) => {
+            return (StatusCode::BAD_REQUEST, "tenant: invalid uuid in header").into_response();
+        }
+    };
+
+    // 1b. Cross-tenant attempt check on the `:tenant` PATH segment. The
+    //     path is a client echo (the DO forwards it UNCHANGED) and MUST
+    //     equal the authenticated tenant. A mismatch emits the SAME
+    //     SEV-1 security audit row as the `?tenant=` mismatch path
+    //     BEFORE returning 403 (fail-CLOSED ordering: 503 on sink
+    //     failure, else 403), BEFORE any data access.
+    let path_tenant = match Uuid::parse_str(path_tenant_str.trim()) {
         Ok(t) => t,
         Err(_) => {
             return (StatusCode::BAD_REQUEST, "tenant: invalid uuid in path").into_response();
         }
     };
+    if !uuid_eq_ct(&authenticated_tenant, &path_tenant) {
+        let row = ExportAuditRow {
+            event_type: EVENT_TYPE_CROSS_TENANT_ATTEMPT.to_string(),
+            authenticated_tenant: Some(authenticated_tenant),
+            attempted_tenant: Some(path_tenant),
+            from_ms: 0,
+            to_ms: 0,
+            bytes_written: 0,
+            events_written: 0,
+            exit_status: "cross_tenant_reject".to_string(),
+            payload: None,
+        };
+        if let Some(resp) = emit_or_503(&state.audit_sink, row) {
+            return resp;
+        }
+        return (StatusCode::FORBIDDEN, "cross-tenant audit-export denied").into_response();
+    }
 
     // 2. Parse the window. Reject inverted / equal bounds at the
     //    route boundary so the exporter never sees a malformed shape.
@@ -82,8 +121,10 @@ pub(super) async fn handle_export(
         }
     };
 
-    // 3. Cross-tenant attempt check. The optional `tenant` query
-    //    parameter MUST equal the authenticated tenant (constant-
+    // 3. Cross-tenant attempt check (defense in depth — the `:tenant`
+    //    path segment was already validated against the authenticated
+    //    header tenant in step 1b). The optional `tenant` query
+    //    parameter MUST also equal the authenticated tenant (constant-
     //    time compare). A mismatch emits the SEV-1 security audit
     //    row BEFORE returning 403 (fail-CLOSED ordering).
     if let Some(attempted_str) = query.tenant.as_deref() {

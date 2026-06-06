@@ -22,6 +22,23 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+- **Container cache surfaces now bind tenant isolation to the authenticated
+  tenant, not a client-controlled value (cross-tenant read/write fix).** The
+  native container keyed CAS (`/v1/cas/:tenant/:hash`), AC
+  (`/v1/ac/:tenant/:digest`), Turbo (`/v8/artifacts?teamId=`), and audit-export
+  (`/v1/audit/:tenant/export`) isolation off a client-supplied path/query value
+  while ignoring the DO-injected, Worker-overwritten `x-corelink-tenant-id`
+  header — so any authenticated PAT could read or write any tenant's artifacts /
+  action cache / audit log. New `auth_tenant::AuthTenant` extractor (fail-closed
+  on missing/sentinel header) is the sole isolation tenant; the path/query tenant
+  must equal it (403 on mismatch). Turbo additionally demotes `teamId` to a
+  sub-namespace within the authenticated tenant (`key = "<teamId>/<hash>"`) and
+  drops the tautological `team_id == caller_tenant` check; the injective HMAC
+  prefix path is now always reached for UUID tenants. Mirrors the Bazel surface,
+  which already bound the header. Full analysis in
+  `docs/FINDING-turbo-tenant-isolation.md`.
+
 ### Fixed
 - **Prod deploy gate now asserts the Team + Pro Stripe price IDs are
   populated.** `cf-deploy-prod.yml`'s required-prod-secrets check listed only

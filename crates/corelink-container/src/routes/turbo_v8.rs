@@ -27,10 +27,14 @@
 //!
 //! # Tenant isolation
 //!
-//! `teamId` query parameter is required on PUT and GET.  Missing `teamId` → 400.
-//! `teamId` must equal the authenticated caller tenant; mismatch → 403 + audit.
-//! The cross-tenant check + audit-emit-BEFORE-mutation fail-CLOSED ordering is
-//! enforced inside [`CasAdapterTurboHandler`], not in the route layer.
+//! The isolation tenant is the DO-injected, PAT-resolved authenticated tenant
+//! (`AuthTenant` / `x-corelink-tenant-id`), threaded in as `caller_tenant`. The
+//! `teamId` query parameter is required on PUT and GET (missing `teamId` → 400)
+//! but is NOT a security boundary: it is a Turborepo team label demoted to a
+//! logical sub-namespace WITHIN the authenticated tenant. Storage is keyed
+//! `tenant = auth.0`, `key = "<teamId>/<hash>"`, so teams under one tenant stay
+//! partitioned while cross-tenant access is impossible (no authenticated tenant
+//! ⇒ 401 fail-CLOSED at the extractor).
 //!
 //! # Hash semantics
 //!
@@ -93,8 +97,9 @@ pub const TURBO_STATUS_ROUTE: &str = "/v8/artifacts/status";
 /// informational.
 #[derive(Debug, Deserialize)]
 pub struct ArtifactQuery {
-    /// Vercel team identifier — used as the storage partition key.
-    /// Must equal the authenticated caller tenant (enforced in the handler).
+    /// Vercel team identifier — a logical sub-namespace WITHIN the authenticated
+    /// tenant, NOT the isolation tenant. Forms the storage key prefix
+    /// (`"<teamId>/<hash>"`); the isolation tenant is `AuthTenant`.
     #[serde(rename = "teamId")]
     pub team_id: String,
     /// Informational slug (repo name, etc.) — logged but not partitioned.
@@ -191,11 +196,12 @@ async fn handle_get(
     State(state): State<TurboRouteState>,
     Path(hash): Path<String>,
     Query(params): Query<ArtifactQuery>,
+    auth: crate::auth_tenant::AuthTenant,
 ) -> impl IntoResponse {
-    // Authenticated tenant: for Phase 0 we use teamId as the caller_tenant
-    // since there is no auth middleware yet on this path.  Production wiring
-    // must thread the bearer-verified tenant from a tower layer here.
-    let caller_tenant = params.team_id.clone();
+    // Isolation tenant is the DO-injected, PAT-resolved authenticated tenant
+    // (`auth.0`) — NOT the client `teamId`.  `teamId` is a Turborepo team label
+    // demoted to a logical sub-namespace inside the authenticated tenant.
+    let caller_tenant = auth.0;
     let now_ms = 0u64;
     let req = TurboGetRequest::new(
         hash,
@@ -221,9 +227,11 @@ async fn handle_put(
     State(state): State<TurboRouteState>,
     Path(hash): Path<String>,
     Query(params): Query<ArtifactQuery>,
+    auth: crate::auth_tenant::AuthTenant,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
-    let caller_tenant = params.team_id.clone();
+    // Isolation tenant is the authenticated `auth.0`, not the client `teamId`.
+    let caller_tenant = auth.0;
     let now_ms = 0u64;
     let req = TurboPutRequest::new(
         hash,
@@ -316,6 +324,12 @@ mod tests {
     };
     use tower::ServiceExt; // for `.oneshot()`
 
+    /// Fixed authenticated tenant injected via `x-corelink-tenant-id` so the
+    /// `AuthTenant` extractor (fail-CLOSED) admits the request. PUT/GET in a
+    /// round-trip MUST share this value or the GET reads a different tenant's
+    /// namespace and 404s.
+    const TEST_AUTH_TENANT: &str = "11111111-1111-1111-1111-111111111111";
+
     /// Build a test fixture using `InMemoryKvStore` + `InMemoryTurboAuditSink`.
     fn fixture() -> TurboRouteState {
         build_handlers()
@@ -360,6 +374,7 @@ mod tests {
         let req = Request::builder()
             .method(Method::GET)
             .uri("/v8/artifacts/deadbeef?teamId=team_a")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
             .body(Body::empty())
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -377,6 +392,7 @@ mod tests {
             .method(Method::PUT)
             .uri("/v8/artifacts/abc123?teamId=team_x")
             .header("content-type", "application/octet-stream")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
             .body(Body::from(body_bytes.clone()))
             .expect("put request");
         let put_resp = app.clone().oneshot(put_req).await.expect("put oneshot");
@@ -386,6 +402,7 @@ mod tests {
         let get_req = Request::builder()
             .method(Method::GET)
             .uri("/v8/artifacts/abc123?teamId=team_x")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
             .body(Body::empty())
             .expect("get request");
         let get_resp = app.oneshot(get_req).await.expect("get oneshot");
@@ -411,6 +428,7 @@ mod tests {
         let put_req = Request::builder()
             .method(Method::PUT)
             .uri(format!("/v8/artifacts/{opaque_hash}?teamId=t1"))
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
             .body(Body::from(artifact.clone()))
             .expect("put");
         let put_resp = app.clone().oneshot(put_req).await.expect("put");
@@ -419,6 +437,7 @@ mod tests {
         let get_req = Request::builder()
             .method(Method::GET)
             .uri(format!("/v8/artifacts/{opaque_hash}?teamId=t1"))
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
             .body(Body::empty())
             .expect("get");
         let get_resp = app.oneshot(get_req).await.expect("get");
@@ -432,35 +451,58 @@ mod tests {
     // ── cross-tenant guard ────────────────────────────────────────────────────
 
     #[tokio::test]
-    async fn put_cross_tenant_returns_403() {
-        // Phase 0 uses teamId as caller_tenant; an attacker who sets
-        // teamId=victim loses because the handler enforces team_id == caller_tenant.
-        // In Phase 0 these are always equal (teamId IS the caller_tenant), so
-        // we test the handler-level rejection directly to keep the route test
-        // focused on HTTP status mapping.
+    async fn cross_tenant_isolated_via_caller_tenant_miss_not_denied() {
+        // Repurposed from `put_cross_tenant_returns_403`. The isolation tenant
+        // is now `AuthTenant` (auth.0), NOT the `teamId` query param, so a
+        // `team_id == caller_tenant` denial is structurally impossible on this
+        // path — at the HTTP layer a missing/invalid tenant is rejected 401 at
+        // the extractor (fail-CLOSED) before the handler runs. We assert the
+        // NEW invariant at the handler the route is wired to: an artifact
+        // written under caller_tenant="tenantA" is unreachable from
+        // caller_tenant="tenantB" with the SAME teamId+hash — a NotFound MISS,
+        // not a denial.
         let state = fixture();
-        let err = state
+        state
             .handler
             .put(corelink_turbo_bridge::TurboPutRequest::new(
                 "h1",
-                "victim", // team_id
+                "shared_team", // teamId — sub-namespace, NOT the tenant
                 "s",
-                b"x".to_vec(),
+                b"tenantA bytes".to_vec(),
                 None,
-                "evil",
-                "attacker", // caller_tenant != team_id → CrossTenantDenied
+                "userA",
+                "tenantA", // caller_tenant — the isolation dimension
                 1,
-            ));
+            ))
+            .expect("put under tenantA");
+        let err = state
+            .handler
+            .get(corelink_turbo_bridge::TurboGetRequest::new(
+                "h1",
+                "shared_team",
+                "s",
+                "userB",
+                "tenantB", // different caller_tenant ⇒ isolated
+                2,
+            ))
+            .expect_err("tenantB must not reach tenantA's artifact");
         assert!(matches!(
-            err.unwrap_err(),
-            corelink_turbo_bridge::TurboBridgeError::CrossTenantDenied { .. }
+            err,
+            corelink_turbo_bridge::TurboBridgeError::NotFound { .. }
         ));
-        // Verify map_err maps it to 403.
-        let resp = map_err(corelink_turbo_bridge::TurboBridgeError::CrossTenantDenied {
-            caller: "attacker".into(),
-            requested_team_id: "victim".into(),
-        });
-        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        // Same-tenant round-trip still serves the bytes.
+        let ok = state
+            .handler
+            .get(corelink_turbo_bridge::TurboGetRequest::new(
+                "h1",
+                "shared_team",
+                "s",
+                "userA",
+                "tenantA",
+                3,
+            ))
+            .expect("tenantA round-trip");
+        assert_eq!(ok.bytes, b"tenantA bytes".to_vec());
     }
 
     // ── events endpoint ───────────────────────────────────────────────────────

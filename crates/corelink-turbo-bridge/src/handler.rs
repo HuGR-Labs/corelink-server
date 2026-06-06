@@ -6,9 +6,11 @@
 //!
 //! 1. Validate `hash.len() <= MAX_HASH_LEN`; reject longer hashes with
 //!    [`TurboBridgeError::HashTooLong`] without emitting an audit event.
-//! 2. On a PUT/GET where `team_id != caller_tenant`: emit
-//!    `PutDenied` / `GetDenied` audit event BEFORE returning
-//!    [`TurboBridgeError::CrossTenantDenied`] (fail-CLOSED ordering).
+//! 2. Key storage by `tenant = caller_tenant` (the authenticated tenant) with
+//!    `team_id` demoted to a sub-namespace in the key (`"<team_id>/<hash>"`).
+//!    `team_id` is NOT the tenant, so there is no `team_id == caller_tenant`
+//!    check; cross-tenant isolation is provided solely by the `caller_tenant`
+//!    storage dimension.
 //! 3. On a PUT: emit `PutAttempted` BEFORE storage mutation; emit
 //!    `PutCommitted` AFTER durable store.  If audit emit fails, abort
 //!    without mutation.
@@ -33,7 +35,8 @@ use crate::{MAX_HASH_LEN, VERCEL_API_VERSION};
 pub struct TurboPutRequest {
     /// Turbo-native opaque artifact hash (up to [`MAX_HASH_LEN`] chars).
     pub hash: String,
-    /// `teamId` query parameter — must equal `caller_tenant`.
+    /// `teamId` query parameter — a Turborepo team label demoted to a storage
+    /// sub-namespace (key prefix), NOT the tenant.
     pub team_id: String,
     /// `slug` query parameter — informational only (logged, not partitioned).
     pub slug: String,
@@ -43,7 +46,7 @@ pub struct TurboPutRequest {
     pub duration_ms: Option<u64>,
     /// Authenticated principal identity.
     pub principal: String,
-    /// Authenticated tenant from the auth layer (must equal `team_id`).
+    /// Authenticated (PAT-resolved) tenant — the sole isolation/storage tenant.
     pub caller_tenant: String,
     /// Wall-clock timestamp in unix-millis.
     pub at_unix_ms: u64,
@@ -118,13 +121,14 @@ impl TurboPutResponse {
 pub struct TurboGetRequest {
     /// Turbo-native opaque artifact hash (up to [`MAX_HASH_LEN`] chars).
     pub hash: String,
-    /// `teamId` query parameter — must equal `caller_tenant`.
+    /// `teamId` query parameter — a Turborepo team label demoted to a storage
+    /// sub-namespace (key prefix), NOT the tenant.
     pub team_id: String,
     /// `slug` query parameter — informational only.
     pub slug: String,
     /// Authenticated principal identity.
     pub principal: String,
-    /// Authenticated tenant from the auth layer (must equal `team_id`).
+    /// Authenticated (PAT-resolved) tenant — the sole isolation/storage tenant.
     pub caller_tenant: String,
     /// Wall-clock timestamp in unix-millis.
     pub at_unix_ms: u64,
@@ -189,9 +193,11 @@ pub trait TurboArtifactHandler: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// - [`TurboBridgeError::HashTooLong`] — hash exceeds [`MAX_HASH_LEN`].
-    /// - [`TurboBridgeError::CrossTenantDenied`] — `team_id != caller_tenant`.
     /// - [`TurboBridgeError::AuditFailed`] — audit sink unavailable.
     /// - [`TurboBridgeError::Internal`] — storage error.
+    ///
+    /// Isolation is by `caller_tenant` (the storage tenant); `team_id` is a
+    /// sub-namespace, so no cross-tenant denial arises on this path.
     fn put(&self, req: TurboPutRequest) -> Result<TurboPutResponse, TurboBridgeError>;
 
     /// Handle `GET /v8/artifacts/<hash>` — retrieve artifact bytes.
@@ -199,10 +205,12 @@ pub trait TurboArtifactHandler: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// - [`TurboBridgeError::HashTooLong`] — hash exceeds [`MAX_HASH_LEN`].
-    /// - [`TurboBridgeError::CrossTenantDenied`] — `team_id != caller_tenant`.
     /// - [`TurboBridgeError::NotFound`] — artifact not in store.
     /// - [`TurboBridgeError::AuditFailed`] — audit sink unavailable.
     /// - [`TurboBridgeError::Internal`] — storage error.
+    ///
+    /// Isolation is by `caller_tenant` (the storage tenant); `team_id` is a
+    /// sub-namespace, so no cross-tenant denial arises on this path.
     fn get(&self, req: TurboGetRequest) -> Result<TurboGetResponse, TurboBridgeError>;
 
     /// Handle `POST /v8/artifacts/events` — accept telemetry and drop it.
@@ -226,8 +234,9 @@ pub trait TurboArtifactHandler: Send + Sync + core::fmt::Debug {
 /// Deterministic in-memory Turbo handler.  Intended for unit tests and
 /// property tests.
 ///
-/// Storage key: `(tenant_id, turbo_hash_string)` → bytes.
-/// The hash is stored as the opaque key Turbo supplies — no hash verification.
+/// Storage key: `(caller_tenant, "<team_id>/<hash>")` → bytes. The tenant
+/// dimension is the authenticated `caller_tenant`; `team_id` is a sub-namespace
+/// prefix on the opaque Turbo hash — no hash verification.
 pub struct InMemoryTurboHandler {
     objects: Mutex<HashMap<(String, String), Vec<u8>>>,
     audit: Arc<dyn TurboAuditSink>,
@@ -269,10 +278,6 @@ impl InMemoryTurboHandler {
         g.insert((tenant.into(), hash.into()), bytes.into());
         Ok(())
     }
-
-    fn check_tenant(team_id: &str, caller_tenant: &str) -> bool {
-        team_id == caller_tenant
-    }
 }
 
 impl TurboArtifactHandler for InMemoryTurboHandler {
@@ -285,23 +290,9 @@ impl TurboArtifactHandler for InMemoryTurboHandler {
             });
         }
 
-        // Cross-tenant check — audit BEFORE returning denial.
-        if !Self::check_tenant(&req.team_id, &req.caller_tenant) {
-            self.audit
-                .emit(TurboAuditEvent::new(
-                    TurboAuditEventKind::PutDenied,
-                    req.team_id.clone(),
-                    req.hash.clone(),
-                    req.principal.clone(),
-                    req.at_unix_ms,
-                    req.slug.clone(),
-                ))
-                .map_err(|e| TurboBridgeError::AuditFailed(e.to_string()))?;
-            return Err(TurboBridgeError::CrossTenantDenied {
-                caller: req.caller_tenant,
-                requested_team_id: req.team_id,
-            });
-        }
+        // No `team_id == caller_tenant` check: `team_id` is a Turborepo team
+        // label, NOT the tenant. Isolation is the storage `tenant =
+        // caller_tenant`; `team_id` is a sub-namespace inside it (key prefix).
 
         // PutAttempted audit BEFORE mutation.
         self.audit
@@ -321,7 +312,15 @@ impl TurboArtifactHandler for InMemoryTurboHandler {
                 .objects
                 .lock()
                 .map_err(|_| TurboBridgeError::Internal("storage lock poisoned".into()))?;
-            g.insert((req.team_id.clone(), req.hash.clone()), req.bytes);
+            // Storage: tenant = authenticated caller_tenant; key carries the
+            // team_id sub-namespace so teams under one tenant stay partitioned.
+            g.insert(
+                (
+                    req.caller_tenant.clone(),
+                    format!("{}/{}", req.team_id, req.hash),
+                ),
+                req.bytes,
+            );
         }
 
         // PutCommitted audit AFTER durable store.
@@ -348,23 +347,8 @@ impl TurboArtifactHandler for InMemoryTurboHandler {
             });
         }
 
-        // Cross-tenant check — audit BEFORE returning denial.
-        if !Self::check_tenant(&req.team_id, &req.caller_tenant) {
-            self.audit
-                .emit(TurboAuditEvent::new(
-                    TurboAuditEventKind::GetDenied,
-                    req.team_id.clone(),
-                    req.hash.clone(),
-                    req.principal.clone(),
-                    req.at_unix_ms,
-                    req.slug.clone(),
-                ))
-                .map_err(|e| TurboBridgeError::AuditFailed(e.to_string()))?;
-            return Err(TurboBridgeError::CrossTenantDenied {
-                caller: req.caller_tenant,
-                requested_team_id: req.team_id,
-            });
-        }
+        // No `team_id == caller_tenant` check: isolation is the storage
+        // `tenant = caller_tenant`; `team_id` is a sub-namespace key prefix.
 
         // GetAttempted audit BEFORE lookup.
         self.audit
@@ -384,11 +368,16 @@ impl TurboArtifactHandler for InMemoryTurboHandler {
                 .objects
                 .lock()
                 .map_err(|_| TurboBridgeError::Internal("storage lock poisoned".into()))?;
-            g.get(&(req.team_id.clone(), req.hash.clone()))
-                .cloned()
-                .ok_or_else(|| TurboBridgeError::NotFound {
-                    hash: req.hash.clone(),
-                })?
+            // Storage: tenant = authenticated caller_tenant; key carries the
+            // team_id sub-namespace (mirrors the write path).
+            g.get(&(
+                req.caller_tenant.clone(),
+                format!("{}/{}", req.team_id, req.hash),
+            ))
+            .cloned()
+            .ok_or_else(|| TurboBridgeError::NotFound {
+                hash: req.hash.clone(),
+            })?
         };
 
         // GetServed audit AFTER successful lookup.
@@ -483,7 +472,9 @@ mod tests {
     #[test]
     fn get_emits_attempted_then_served() {
         let (audit, h) = fixture();
-        h.seed("team_c", "abc", b"x".to_vec()).expect("seed");
+        // Storage key is now `(caller_tenant, "<team_id>/<hash>")` — seed under
+        // the derived key so the GET (team_id=team_c, hash=abc) hits it.
+        h.seed("team_c", "team_c/abc", b"x".to_vec()).expect("seed");
         h.get(TurboGetRequest::new("abc", "team_c", "s", "p", "team_c", 1))
             .expect("get");
         let rows = audit.snapshot().expect("snapshot");
@@ -502,43 +493,78 @@ mod tests {
     }
 
     #[test]
-    fn put_cross_tenant_emits_put_denied_before_rejection() {
+    fn put_cross_tenant_isolated_no_denial_path() {
+        // Repurposed: the old "PutDenied before rejection" premise is impossible
+        // now (no `team_id == caller_tenant` check). The audit ordering for a
+        // PUT is still asserted by `put_happy_emits_attempted_then_committed`.
+        // Here we assert the NEW isolation invariant: a PUT under
+        // caller_tenant="tenantA" is unreachable from caller_tenant="tenantB"
+        // (same team_id + hash) — cross-tenant reads MISS (NotFound), they are
+        // not "denied". A normal PUT also no longer emits any *Denied row.
         let (audit, h) = fixture();
-        let err = h
-            .put(TurboPutRequest::new(
-                "aaa",
-                "victim_team",
-                "s",
-                b"bytes".to_vec(),
-                None,
-                "attacker",
-                "attacker_team",
-                1,
-            ))
-            .expect_err("denied");
-        assert!(matches!(err, TurboBridgeError::CrossTenantDenied { .. }));
+        h.put(TurboPutRequest::new(
+            "aaa",
+            "shared_team",
+            "s",
+            b"tenantA bytes".to_vec(),
+            None,
+            "userA",
+            "tenantA",
+            1,
+        ))
+        .expect("put succeeds — no denial path");
+        // No *Denied audit row exists on the put path anymore.
         let rows = audit.snapshot().expect("snapshot");
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].kind, TurboAuditEventKind::PutDenied);
+        assert!(rows
+            .iter()
+            .all(|r| r.kind != TurboAuditEventKind::PutDenied));
+        // tenantB cannot read tenantA's artifact despite identical team/hash.
+        let err = h
+            .get(TurboGetRequest::new(
+                "aaa",
+                "shared_team",
+                "s",
+                "userB",
+                "tenantB",
+                2,
+            ))
+            .expect_err("tenantB isolated from tenantA");
+        assert!(matches!(err, TurboBridgeError::NotFound { .. }));
     }
 
     #[test]
-    fn get_cross_tenant_emits_get_denied_before_rejection() {
+    fn get_cross_tenant_isolated_returns_not_found() {
+        // Repurposed: cross-tenant GET is now an isolation MISS, not a denial.
+        // tenantB requesting tenantA's (team_id, hash) gets NotFound; no
+        // GetDenied row is emitted (only GetAttempted, since the lookup misses
+        // after the attempt audit).
         let (audit, h) = fixture();
+        h.put(TurboPutRequest::new(
+            "bbb",
+            "shared_team",
+            "s",
+            b"tenantA bytes".to_vec(),
+            None,
+            "userA",
+            "tenantA",
+            1,
+        ))
+        .expect("seed tenantA");
         let err = h
             .get(TurboGetRequest::new(
                 "bbb",
-                "victim_team",
+                "shared_team",
                 "s",
-                "attacker",
-                "attacker_team",
-                1,
+                "userB",
+                "tenantB",
+                2,
             ))
-            .expect_err("denied");
-        assert!(matches!(err, TurboBridgeError::CrossTenantDenied { .. }));
+            .expect_err("isolated miss");
+        assert!(matches!(err, TurboBridgeError::NotFound { .. }));
         let rows = audit.snapshot().expect("snapshot");
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].kind, TurboAuditEventKind::GetDenied);
+        assert!(rows
+            .iter()
+            .all(|r| r.kind != TurboAuditEventKind::GetDenied));
     }
 
     #[test]
