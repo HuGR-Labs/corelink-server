@@ -23,6 +23,17 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **Prod deploy gate now asserts the Team + Pro Stripe price IDs are
+  populated.** `cf-deploy-prod.yml`'s required-prod-secrets check listed only
+  the Stripe key/webhook secret, so a Cloudflare env missing
+  `STRIPE_PRICE_ID_TEAM`/`STRIPE_PRICE_ID_PRO` could deploy a Worker whose
+  Team/Pro upgrade buttons resolve no price and return a 502 at checkout. Both
+  price IDs are added to the deploy's `REQUIRED[]` assertion array, given rows
+  in `docs/internal/secrets-checklist.md` (the gate-enforced matrix, #109/#110),
+  and recorded in the new `specs/_compliance/secrets-matrix.md` GA-cutover
+  anchor (which also resolves the dangling `RB-GA-CUTOVER.md` §1.3 reference to
+  that path). Secrets-matrix gates (`validate_secrets_matrix.py` code_only=0,
+  `secrets-checklist-verify.sh` no drift) stay green.
 - **admin-ui Lighthouse a11y `document-title` on `/en/privacy` +
   `/en/consent/new`.** Both routes are dynamic (they `await params`) under the
   `force-dynamic` root layout and previously carried no page-level metadata, so
