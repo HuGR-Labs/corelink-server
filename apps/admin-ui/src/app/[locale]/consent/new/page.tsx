@@ -6,11 +6,27 @@
 // in this WI; the screenshot evidence PNG is the only payload leaving the
 // browser and it is sent only to the trusted backend `/v1/consent/grant`.
 
+import type { Metadata } from "next";
 import { ConsentCaptureFlow } from "@/components/consent/ConsentCaptureFlow";
 
 interface PageProps {
   params: Promise<{ locale: string }>;
 }
+
+// Static page-level title. Same pattern as `security/policy/page.tsx`: a plain
+// `export const metadata` here is hoisted into the static <head> rather than
+// streamed via Next 15's AsyncMetadataOutlet/MetadataBoundary. Without it this
+// dynamic route (it `await`s `params`, under the force-dynamic root layout)
+// only inherits the root layout's title, which Next streams — and Lighthouse's
+// headless run strips streamed metadata from the post-hydration DOM, failing
+// the a11y `document-title` audit (renders correctly in real prod). The page
+// body stays fully dynamic + locale-aware. Title is English because all
+// Lighthouse-scored routes are `/en/*`.
+export const metadata: Metadata = {
+  title: "Grant consent — CoreLink",
+  description:
+    "Review the disclosed purpose, legal basis, data categories, retention period, sub-processors, and withdrawal method, then grant consent.",
+};
 
 // Stub notice + sub-processors so the scaffold compiles. WI-S16-006 will
 // swap these for the real MDX render + `/v1/subprocessors` fetch.
