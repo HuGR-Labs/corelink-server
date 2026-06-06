@@ -94,6 +94,8 @@ jobs:
           REQUIRED=(
             STRIPE_SECRET_KEY
             STRIPE_WEBHOOK_SECRET
+            STRIPE_PRICE_ID_TEAM
+            STRIPE_PRICE_ID_PRO
             CLERK_SECRET_KEY
             PAGERDUTY_ROUTING_KEY
             SLACK_WEBHOOK_URL_ALERTS_SEV1
