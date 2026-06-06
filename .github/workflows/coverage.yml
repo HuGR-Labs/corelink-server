@@ -22,6 +22,20 @@ permissions:
   contents: read
   pull-requests: write
 
+# Serialize the heavy release/coverage cargo builds across the self-hosted
+# mac fleet so two never compile against the SAME checkout `target/` dir at
+# once. The group name is a SHARED LITERAL (intentionally NOT
+# `${{ github.workflow }}`) so this workflow serializes AGAINST
+# cas_foundation.yml's heavy build legs too: when both land on the same
+# `corelink-builder-N` runner they race `target/**/deps/*.d` and fail
+# intermittently with "No such file or directory" / "rustc never executed".
+# `cancel-in-progress: false` queues the second run (no lost coverage); these
+# are nightly crons hours apart so the queue is effectively never >1 deep.
+# Keep this group name in lockstep with cas_foundation.yml.
+concurrency:
+  group: corelink-mac-heavy-cargo-build
+  cancel-in-progress: false
+
 jobs:
   coverage:
     name: cargo-llvm-cov (workspace HTML + summary)
