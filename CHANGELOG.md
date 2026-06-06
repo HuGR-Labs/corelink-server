@@ -23,6 +23,17 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **admin-ui Lighthouse a11y `document-title` on `/en/privacy` +
+  `/en/consent/new`.** Both routes are dynamic (they `await params`) under the
+  `force-dynamic` root layout and previously carried no page-level metadata, so
+  they inherited the root layout's `<title>` — which Next 15 streams via
+  `AsyncMetadataOutlet`/`MetadataBoundary`. Lighthouse's headless run strips
+  streamed metadata from the post-hydration DOM, failing the `document-title`
+  audit (≈0.77 a11y) even though the title renders in real prod. Each page now
+  exports a static `metadata` (title hoisted into the static `<head>`), matching
+  the existing `security/policy/page.tsx` pattern; the page bodies stay dynamic
+  + locale-aware and the localized in-page headings are unchanged. (`/` was
+  already covered by the static `metadata` on the new landing `app/page.tsx`.)
 - **Container env contract: empty string now means "use default"** for
   `R2_AC_BUCKET`/`R2_AC_REGION`/`R2_CAS_BUCKET`/`R2_CAS_REGION` (new
   `storage::env_or` helper). The DO forwards `?? ""` with a documented
