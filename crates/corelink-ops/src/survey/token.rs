@@ -264,7 +264,10 @@ mod tests {
         // Bit-flip on a base64 char often still decodes; assert the
         // failure is either signature or malformed.
         assert!(
-            matches!(err, SurveyError::InvalidSignature | SurveyError::MalformedToken),
+            matches!(
+                err,
+                SurveyError::InvalidSignature | SurveyError::MalformedToken
+            ),
             "expected sig/malformed, got {err:?}"
         );
     }

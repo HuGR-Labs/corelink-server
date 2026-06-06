@@ -85,12 +85,7 @@ impl AuditOrchestrator {
             "adapter": "brew",
         });
 
-        let event = AuditEvent::new(
-            EVENT_TYPE_CACHE_FILL,
-            tenant_id,
-            (self.clock)(),
-            payload,
-        );
+        let event = AuditEvent::new(EVENT_TYPE_CACHE_FILL, tenant_id, (self.clock)(), payload);
 
         match self.emitter.emit(event) {
             Ok(()) => Ok(()),
@@ -128,17 +123,10 @@ mod tests {
     #[test]
     fn emit_appends_event_with_expected_shape() {
         let sink: Arc<InMemoryAuditEmitter> = Arc::new(InMemoryAuditEmitter::new());
-        let orchestrator = AuditOrchestrator::with_clock(
-            sink.clone(),
-            Arc::new(|| 1_716_700_000_000),
-        );
+        let orchestrator =
+            AuditOrchestrator::with_clock(sink.clone(), Arc::new(|| 1_716_700_000_000));
         orchestrator
-            .emit_bottle_cache_fill(
-                "tenant-abc",
-                "deadbeef",
-                "v2/homebrew/core/curl",
-                4096,
-            )
+            .emit_bottle_cache_fill("tenant-abc", "deadbeef", "v2/homebrew/core/curl", 4096)
             .unwrap();
         let events = sink.snapshot();
         assert_eq!(events.len(), 1);

@@ -199,7 +199,10 @@ async fn worker_aggregate_bridges_and_publishes_to_statuspage() {
     .expect("bridged publish succeeds");
     assert_eq!(outcome.status, 201);
     let evt = audit.snapshot();
-    assert_eq!(evt.first().unwrap().outcome, StatuspageAuditOutcome::Published);
+    assert_eq!(
+        evt.first().unwrap().outcome,
+        StatuspageAuditOutcome::Published
+    );
     assert_eq!(evt.first().unwrap().p95_hours_observed, 18);
 }
 
@@ -253,7 +256,10 @@ async fn rate_limit_blocks_second_publish_within_five_minutes_with_jitter() {
 
     let events = audit.snapshot();
     assert_eq!(events.len(), 2);
-    assert_eq!(events.first().unwrap().outcome, StatuspageAuditOutcome::Published);
+    assert_eq!(
+        events.first().unwrap().outcome,
+        StatuspageAuditOutcome::Published
+    );
     assert_eq!(
         events.get(1).unwrap().outcome,
         StatuspageAuditOutcome::RateLimited

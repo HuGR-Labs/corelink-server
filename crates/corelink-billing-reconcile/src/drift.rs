@@ -72,9 +72,7 @@ pub fn compute_pairwise_drift_pct(left: LayerTotals, right: LayerTotals) -> f64 
 /// escalation routes upstream first (Lote 10.6bis split-tier
 /// principle: detect at the source).
 #[must_use]
-pub fn compute_max_drift(
-    snapshot: ReconcileSnapshot,
-) -> (f64, ReconcileLayerKind) {
+pub fn compute_max_drift(snapshot: ReconcileSnapshot) -> (f64, ReconcileLayerKind) {
     let d12 = compute_pairwise_drift_pct(snapshot.layer1, snapshot.layer2);
     let d23 = compute_pairwise_drift_pct(snapshot.layer2, snapshot.layer3);
     let d13 = compute_pairwise_drift_pct(snapshot.layer1, snapshot.layer3);
@@ -172,20 +170,14 @@ mod tests {
     #[test]
     fn pairwise_drift_canonical_one_percent() {
         // 99 vs 100 over denominator 100 = 1%.
-        let d = compute_pairwise_drift_pct(
-            LayerTotals::new(99, 1),
-            LayerTotals::new(100, 1),
-        );
+        let d = compute_pairwise_drift_pct(LayerTotals::new(99, 1), LayerTotals::new(100, 1));
         assert!((d - 0.01).abs() < 1e-12);
     }
 
     #[test]
     fn pairwise_drift_canonical_point_one_percent() {
         // 999 vs 1000 over denominator 1000 = 0.1%.
-        let d = compute_pairwise_drift_pct(
-            LayerTotals::new(999, 1),
-            LayerTotals::new(1000, 1),
-        );
+        let d = compute_pairwise_drift_pct(LayerTotals::new(999, 1), LayerTotals::new(1000, 1));
         assert!((d - 0.001).abs() < 1e-12);
     }
 

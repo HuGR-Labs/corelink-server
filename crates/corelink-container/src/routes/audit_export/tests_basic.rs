@@ -38,12 +38,18 @@ fn route_constant_matches_canonical_path() {
 
 #[test]
 fn event_type_constants_match_spec() {
-    assert_eq!(EVENT_TYPE_EXPORT_REQUEST, "corelink.audit.export_request.v1");
+    assert_eq!(
+        EVENT_TYPE_EXPORT_REQUEST,
+        "corelink.audit.export_request.v1"
+    );
     assert_eq!(
         EVENT_TYPE_CROSS_TENANT_ATTEMPT,
         "corelink.security.audit_export_cross_tenant_attempt.v1"
     );
-    assert_eq!(EVENT_TYPE_VERIFY_FAILED, "corelink.audit.export_verify_failed.v1");
+    assert_eq!(
+        EVENT_TYPE_VERIFY_FAILED,
+        "corelink.audit.export_verify_failed.v1"
+    );
 }
 
 #[test]
@@ -149,12 +155,8 @@ fn serialize_ndjson_lines_empty_returns_zero() {
 
 #[test]
 fn mid_stream_abort_trailer_value_matches_canonical_payload() {
-    let v = mid_stream_abort_trailer_value(
-        42,
-        1,
-        "aa".repeat(32).as_str(),
-        "bb".repeat(32).as_str(),
-    );
+    let v =
+        mid_stream_abort_trailer_value(42, 1, "aa".repeat(32).as_str(), "bb".repeat(32).as_str());
     assert!(v.starts_with("{\"break_at_seq\":42,\"break_at_chunk\":1,"));
     assert!(v.contains("\"observed\":\""));
     assert!(v.contains("\"expected\":\""));

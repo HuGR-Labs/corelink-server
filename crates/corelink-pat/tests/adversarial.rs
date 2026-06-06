@@ -10,9 +10,9 @@
     reason = "test code: failures must be loud, not silenced"
 )]
 
-use corelink_pat::types::PAT_TOKEN_ID_LEN;
 use corelink_pat::mint::{mint_with_entropy, DeterministicMintInput};
 use corelink_pat::scopes::PatScopes;
+use corelink_pat::types::PAT_TOKEN_ID_LEN;
 use corelink_pat::types::{PatEnv, PatHash, PatSigningKey, PrincipalId, TenantId};
 use corelink_pat::{verify_argon2id, verify_with_hash, PatError};
 use password_hash::Salt;
@@ -36,7 +36,8 @@ fn rejects_argon2i_algorithm_downgrade() {
     // Hand-crafted PHC string with `argon2i` instead of `argon2id`.
     // The hash bytes themselves are arbitrary; the parser MUST
     // reject the algorithm tag before invoking the hasher.
-    let phc = "$argon2i$v=19$m=65536,t=3,p=4$c2FsdHNhbHRzYWx0c2FsdA$abcdefghijklmnopqrstuvwxyz012345";
+    let phc =
+        "$argon2i$v=19$m=65536,t=3,p=4$c2FsdHNhbHRzYWx0c2FsdA$abcdefghijklmnopqrstuvwxyz012345";
     let hash = PatHash::from_phc_string(phc.to_owned());
     let res = verify_argon2id("any_input", &hash);
     assert!(matches!(res, Err(PatError::HashError(_))));
@@ -47,7 +48,8 @@ fn rejects_argon2i_algorithm_downgrade() {
 ///    if the rest of the PHC string is otherwise valid.
 #[test]
 fn rejects_argon2_m_cost_below_floor() {
-    let phc = "$argon2id$v=19$m=8192,t=3,p=4$c2FsdHNhbHRzYWx0c2FsdA$abcdefghijklmnopqrstuvwxyz012345";
+    let phc =
+        "$argon2id$v=19$m=8192,t=3,p=4$c2FsdHNhbHRzYWx0c2FsdA$abcdefghijklmnopqrstuvwxyz012345";
     let hash = PatHash::from_phc_string(phc.to_owned());
     let res = verify_argon2id("any_input", &hash);
     assert!(matches!(res, Err(PatError::HashError(_))));
@@ -56,7 +58,8 @@ fn rejects_argon2_m_cost_below_floor() {
 /// 3. **t_cost downgrade**: iteration count below floor rejected.
 #[test]
 fn rejects_argon2_t_cost_below_floor() {
-    let phc = "$argon2id$v=19$m=65536,t=1,p=4$c2FsdHNhbHRzYWx0c2FsdA$abcdefghijklmnopqrstuvwxyz012345";
+    let phc =
+        "$argon2id$v=19$m=65536,t=1,p=4$c2FsdHNhbHRzYWx0c2FsdA$abcdefghijklmnopqrstuvwxyz012345";
     let hash = PatHash::from_phc_string(phc.to_owned());
     let res = verify_argon2id("any_input", &hash);
     assert!(matches!(res, Err(PatError::HashError(_))));

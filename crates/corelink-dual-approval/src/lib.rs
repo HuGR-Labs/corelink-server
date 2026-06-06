@@ -133,9 +133,9 @@ pub use audit::{
 pub use collusion::InMemoryCollusionStore;
 pub use error::DualApprovalError;
 pub use gate::{
-    AdminRoleStore, DualApprovalGate, DualApprovalGateImpl, InMemoryAdminRoleStore, proptest_cases,
+    proptest_cases, AdminRoleStore, DualApprovalGate, DualApprovalGateImpl, InMemoryAdminRoleStore,
 };
-pub use hmac_verify::{AdminSigningKey, compute_hmac, verify_hmac};
+pub use hmac_verify::{compute_hmac, verify_hmac, AdminSigningKey};
 pub use nonce::InMemoryNonceStore;
 pub use types::{
     ActorIdentity, AdminAuditEventData, AdminOpLogRow, AdminOpRequest, AdminOpType,

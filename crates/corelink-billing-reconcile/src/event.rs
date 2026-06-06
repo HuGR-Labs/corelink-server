@@ -437,7 +437,10 @@ mod tests {
 
     #[test]
     fn layer_kind_display_matches_str() {
-        assert_eq!(format!("{}", ReconcileLayerKind::Layer3Stripe), "layer3_stripe");
+        assert_eq!(
+            format!("{}", ReconcileLayerKind::Layer3Stripe),
+            "layer3_stripe"
+        );
     }
 
     #[test]
@@ -462,37 +465,25 @@ mod tests {
     #[test]
     fn config_rejects_non_finite() {
         let r = ReconcileConfig::new(5, f64::NAN, 0.0001, 0.001, 0.01);
-        assert!(matches!(
-            r,
-            Err(crate::error::ReconcileError::Config(_))
-        ));
+        assert!(matches!(r, Err(crate::error::ReconcileError::Config(_))));
     }
 
     #[test]
     fn config_rejects_negative() {
         let r = ReconcileConfig::new(5, -1.0, 0.0001, 0.001, 0.01);
-        assert!(matches!(
-            r,
-            Err(crate::error::ReconcileError::Config(_))
-        ));
+        assert!(matches!(r, Err(crate::error::ReconcileError::Config(_))));
     }
 
     #[test]
     fn config_rejects_non_monotonic_ladder() {
         let r = ReconcileConfig::new(5, 0.0001, 0.001, 0.0005, 0.01);
-        assert!(matches!(
-            r,
-            Err(crate::error::ReconcileError::Config(_))
-        ));
+        assert!(matches!(r, Err(crate::error::ReconcileError::Config(_))));
     }
 
     #[test]
     fn config_rejects_auto_fix_above_quiet() {
         let r = ReconcileConfig::new(5, 0.001, 0.0001, 0.001, 0.01);
-        assert!(matches!(
-            r,
-            Err(crate::error::ReconcileError::Config(_))
-        ));
+        assert!(matches!(r, Err(crate::error::ReconcileError::Config(_))));
     }
 
     #[test]

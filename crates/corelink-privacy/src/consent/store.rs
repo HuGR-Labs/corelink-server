@@ -122,10 +122,7 @@ pub trait ConsentStore: Send + Sync {
     ) -> Result<Vec<ConsentRevocationRecord>, ConsentLedgerError>;
 
     /// Mark a grant record as stale (notice major version bump, AC-006).
-    fn mark_grant_stale(
-        &self,
-        consent_id: &str,
-    ) -> Result<(), ConsentLedgerError>;
+    fn mark_grant_stale(&self, consent_id: &str) -> Result<(), ConsentLedgerError>;
 }
 
 /// Idempotency key for grant records.
@@ -163,9 +160,7 @@ impl InMemoryConsentStore {
         self.revocations.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    fn lock_grant_index(
-        &self,
-    ) -> std::sync::MutexGuard<'_, HashMap<GrantIdempotencyKey, String>> {
+    fn lock_grant_index(&self) -> std::sync::MutexGuard<'_, HashMap<GrantIdempotencyKey, String>> {
         self.grant_index.lock().unwrap_or_else(|p| p.into_inner())
     }
 }

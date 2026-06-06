@@ -18,8 +18,7 @@
 
 use corelink_dsr::{DsrDecision, DsrEndpoint, DsrJurisdiction, DsrRequestKind};
 use e2e_dsr::{
-    canonical_dsr_for, make_test_tenant, setup_test_env, verify_audit_chain,
-    ExpectedDsrAuditEvent,
+    canonical_dsr_for, make_test_tenant, setup_test_env, verify_audit_chain, ExpectedDsrAuditEvent,
 };
 
 #[test]

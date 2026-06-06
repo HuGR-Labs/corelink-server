@@ -222,7 +222,10 @@ impl SlackMessage {
         });
         if let Some(ts) = &self.thread_ts {
             if let Some(obj) = payload.as_object_mut() {
-                obj.insert("thread_ts".to_string(), serde_json::Value::String(ts.clone()));
+                obj.insert(
+                    "thread_ts".to_string(),
+                    serde_json::Value::String(ts.clone()),
+                );
             }
         }
         payload
@@ -313,13 +316,8 @@ mod tests {
 
     #[test]
     fn fields_are_escaped() {
-        let m = SlackMessage::new(
-            SlackChannel::EnterpriseInquiries,
-            "Hi",
-            "f",
-            "t",
-        )
-        .with_field("company", "*evil* <script>");
+        let m = SlackMessage::new(SlackChannel::EnterpriseInquiries, "Hi", "f", "t")
+            .with_field("company", "*evil* <script>");
         let j = m.to_block_kit_json();
         let blocks = j.get("blocks").unwrap().as_array().unwrap();
         // header at [0], section at [1]

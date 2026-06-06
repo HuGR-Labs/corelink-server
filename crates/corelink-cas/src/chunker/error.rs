@@ -27,9 +27,7 @@ pub enum ChunkerError {
     /// if it emitted another chunk. Cross-crate aligned with
     /// `corelink-worker::reapi::cas::types::MAX_CHUNKS_PER_BLOB` per
     /// spec contract S-05 §5.1 P1-SR5-001.
-    #[error(
-        "blob decomposed into too many chunks: {found} > {max} (cross-crate cap)"
-    )]
+    #[error("blob decomposed into too many chunks: {found} > {max} (cross-crate cap)")]
     TooManyChunks {
         /// Number of chunks already emitted (or about to be emitted).
         found: u64,
@@ -40,7 +38,9 @@ pub enum ChunkerError {
     /// `ChunkerConfig` for [`crate::chunker::ChunkerAlgorithm::FastCDC2MiB`]
     /// violated the `min ≤ avg ≤ max` invariant required by the
     /// FastCDC algorithm (Xia 2016 §3.4).
-    #[error("FastCDC config invalid: min={min} avg={avg} max={max} (require min ≤ avg ≤ max, all > 0)")]
+    #[error(
+        "FastCDC config invalid: min={min} avg={avg} max={max} (require min ≤ avg ≤ max, all > 0)"
+    )]
     FastCdcConfigInvalid {
         /// Configured minimum chunk size.
         min: usize,

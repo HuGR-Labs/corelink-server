@@ -321,15 +321,11 @@ impl std::error::Error for MaterializerError {}
 /// rows MUST still tolerate it for the rollback-replay edge case).
 pub trait StateMaterializer: fmt::Debug + Send + Sync {
     /// `customer.subscription.deleted` → downgrade tenant to Free.
-    fn on_subscription_deleted(
-        &self,
-        env: &StripeWebhookEnvelope,
-    ) -> Result<(), MaterializerError>;
+    fn on_subscription_deleted(&self, env: &StripeWebhookEnvelope)
+        -> Result<(), MaterializerError>;
     /// `customer.subscription.updated` → refresh tier + status.
-    fn on_subscription_updated(
-        &self,
-        env: &StripeWebhookEnvelope,
-    ) -> Result<(), MaterializerError>;
+    fn on_subscription_updated(&self, env: &StripeWebhookEnvelope)
+        -> Result<(), MaterializerError>;
     /// `invoice.paid` → extend access expiry + mark invoice paid.
     fn on_invoice_paid(&self, env: &StripeWebhookEnvelope) -> Result<(), MaterializerError>;
     /// `invoice.payment_failed` → set grace-period flag.

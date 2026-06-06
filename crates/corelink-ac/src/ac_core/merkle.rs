@@ -109,8 +109,7 @@ pub fn build_root(result: &ActionResult) -> Result<[u8; MERKLE_ROOT_LEN], Merkle
     // after, BUT each group lex-sorted internally by digest bytes
     // for determinism (the wire surface admits any insertion order;
     // the tree binding is order-independent at the API surface).
-    let mut leaf_inputs: Vec<[u8; MERKLE_ROOT_LEN]> =
-        Vec::with_capacity(result.output_count());
+    let mut leaf_inputs: Vec<[u8; MERKLE_ROOT_LEN]> = Vec::with_capacity(result.output_count());
     for o in &result.output_files {
         if is_zero_digest(&o.digest) {
             return Err(MerkleError::Malformed {
@@ -151,9 +150,12 @@ pub fn build_root(result: &ActionResult) -> Result<[u8; MERKLE_ROOT_LEN], Merkle
             // [0]/[1] indices are sound here. Rather than rely on the
             // clippy-denied `[i]` indexing pattern we destructure via
             // first/last accessors so the code remains lint-clean.
-            let left = pair.first().copied().ok_or_else(|| MerkleError::Malformed {
-                reason: "internal: chunks_exact yielded short slice (len 0)".to_string(),
-            })?;
+            let left = pair
+                .first()
+                .copied()
+                .ok_or_else(|| MerkleError::Malformed {
+                    reason: "internal: chunks_exact yielded short slice (len 0)".to_string(),
+                })?;
             let right = pair.last().copied().ok_or_else(|| MerkleError::Malformed {
                 reason: "internal: chunks_exact yielded short slice (len 1)".to_string(),
             })?;
@@ -177,9 +179,12 @@ pub fn build_root(result: &ActionResult) -> Result<[u8; MERKLE_ROOT_LEN], Merkle
 
     // `level.len() == 1` invariant holds because we exited the loop;
     // the empty case was returned eagerly above.
-    level.into_iter().next().ok_or_else(|| MerkleError::Malformed {
-        reason: "internal: empty level vector after build loop".to_string(),
-    })
+    level
+        .into_iter()
+        .next()
+        .ok_or_else(|| MerkleError::Malformed {
+            reason: "internal: empty level vector after build loop".to_string(),
+        })
 }
 
 /// Verify a claimed `merkle_root` against the canonical recomputation
@@ -298,8 +303,11 @@ mod tests {
     #[test]
     fn two_leaves_balance_canonically() {
         let r = fresh_result(2);
-        let mut leaf_inputs: Vec<[u8; 32]> =
-            r.output_files.iter().map(|f| *f.digest.as_bytes()).collect();
+        let mut leaf_inputs: Vec<[u8; 32]> = r
+            .output_files
+            .iter()
+            .map(|f| *f.digest.as_bytes())
+            .collect();
         leaf_inputs.sort_unstable();
         let l0 = hash_leaf(&leaf_inputs[0]);
         let l1 = hash_leaf(&leaf_inputs[1]);
@@ -354,12 +362,7 @@ mod tests {
         // contribute. Pinning current behavior so a future
         // refactor doesn't silently change the binding.
         let h = Digest::compute(b"shared");
-        let r1 = ActionResult::new(
-            vec![OutputFileDigest::new(h, 1)],
-            Vec::new(),
-            0,
-            Vec::new(),
-        );
+        let r1 = ActionResult::new(vec![OutputFileDigest::new(h, 1)], Vec::new(), 0, Vec::new());
         let r2 = ActionResult::new(
             Vec::new(),
             vec![OutputDirectoryDigest::new(h, 2)],

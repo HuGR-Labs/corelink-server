@@ -352,9 +352,7 @@ impl InMemoryErasureWorker {
             let adapter = self
                 .adapter(*entry)
                 .ok_or_else(|| {
-                    ErasureWorkerError::Config(format!(
-                        "no canonical adapter for backend {entry}"
-                    ))
+                    ErasureWorkerError::Config(format!("no canonical adapter for backend {entry}"))
                 })?
                 .clone();
 
@@ -475,11 +473,11 @@ impl InMemoryErasureWorker {
 )]
 mod tests {
     use super::*;
-    use uuid::Uuid;
     use crate::audit_emit::{FailingErasureAuditSink, InMemoryErasureAuditSink};
     use crate::backends::canonical_in_memory_adapters;
     use crate::event::ErasureSalt;
     use crate::idempotency::InMemoryErasureIdempotencyLedger;
+    use uuid::Uuid;
 
     fn fixed_uuid(seed: u8) -> Uuid {
         let mut b = [0u8; 16];
@@ -505,12 +503,8 @@ mod tests {
                 dyn_arc
             })
             .collect();
-        let worker = InMemoryErasureWorker::try_new(
-            audit.clone(),
-            ledger.clone(),
-            adapters_dyn,
-        )
-        .unwrap();
+        let worker =
+            InMemoryErasureWorker::try_new(audit.clone(), ledger.clone(), adapters_dyn).unwrap();
         (worker, audit, ledger, adapters_typed)
     }
 
@@ -574,12 +568,8 @@ mod tests {
                 dyn_arc
             })
             .collect();
-        let worker = InMemoryErasureWorker::try_new(
-            audit.clone(),
-            ledger.clone(),
-            adapters_dyn,
-        )
-        .unwrap();
+        let worker =
+            InMemoryErasureWorker::try_new(audit.clone(), ledger.clone(), adapters_dyn).unwrap();
         let req = fresh_request();
         let err = worker.process_erasure(&req, 1_000).unwrap_err();
         let aud = matches!(err, ErasureWorkerError::Audit(_));
@@ -634,7 +624,13 @@ mod tests {
         // Skip process_erasure → no tombstones; sweep at now > 24h.
         let now = req.verification_deadline_ms().saturating_add(1);
         let d = worker.verify_erasure(&req, now).unwrap();
-        let breached = matches!(d, ErasureDecision::SlaBreached { unverified_count: BACKEND_COUNT, .. });
+        let breached = matches!(
+            d,
+            ErasureDecision::SlaBreached {
+                unverified_count: BACKEND_COUNT,
+                ..
+            }
+        );
         assert!(breached);
     }
 }

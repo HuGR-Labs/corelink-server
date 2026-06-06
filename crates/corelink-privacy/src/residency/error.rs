@@ -75,7 +75,9 @@ pub enum ResidencyViolation {
     },
 
     /// Region migration request is pending review.
-    #[error("Region migration request '{ticket_id}' is pending Privacy Officer + Compliance review")]
+    #[error(
+        "Region migration request '{ticket_id}' is pending Privacy Officer + Compliance review"
+    )]
     MigrationPendingReview {
         /// The migration ticket ID.
         ticket_id: String,

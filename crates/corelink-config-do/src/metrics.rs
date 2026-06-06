@@ -5,24 +5,19 @@
 //! Real OTel pipe wiring deferred to S-13 observability layer.
 
 /// Metric name: config propagation latency histogram (p50/p95/p99).
-pub const METRIC_PROPAGATION_SECONDS: &str =
-    "corelink_admin_config_propagation_seconds_bucket";
+pub const METRIC_PROPAGATION_SECONDS: &str = "corelink_admin_config_propagation_seconds_bucket";
 
 /// Metric name: CAS conflict counter (labels: layer, plan).
-pub const METRIC_CAS_CONFLICT_TOTAL: &str =
-    "corelink_admin_config_cas_conflict_total";
+pub const METRIC_CAS_CONFLICT_TOTAL: &str = "corelink_admin_config_cas_conflict_total";
 
 /// Metric name: rollback outcome counter (labels: outcome, plan).
-pub const METRIC_ROLLBACK_TOTAL: &str =
-    "corelink_admin_config_rollback_total";
+pub const METRIC_ROLLBACK_TOTAL: &str = "corelink_admin_config_rollback_total";
 
 /// Metric name: update outcome counter (labels: outcome, plan).
-pub const METRIC_UPDATE_TOTAL: &str =
-    "corelink_admin_config_update_total";
+pub const METRIC_UPDATE_TOTAL: &str = "corelink_admin_config_update_total";
 
 /// Metric name: D1 history row count gauge.
-pub const METRIC_HISTORY_SIZE_GAUGE: &str =
-    "corelink_admin_config_history_size_gauge";
+pub const METRIC_HISTORY_SIZE_GAUGE: &str = "corelink_admin_config_history_size_gauge";
 
 /// Canonical update outcome labels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

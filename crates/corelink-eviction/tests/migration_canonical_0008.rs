@@ -117,9 +117,7 @@ fn every_canonical_check_constraint_mnemonic_is_present() {
 fn region_evict_index_present() {
     let sql = migration_sql_no_comments();
     assert!(
-        sql.contains(
-            "CREATE INDEX IF NOT EXISTS idx_tenant_storage_state_region_evict"
-        ),
+        sql.contains("CREATE INDEX IF NOT EXISTS idx_tenant_storage_state_region_evict"),
         "idx_tenant_storage_state_region_evict must be present \
          (per-region eviction cron consumer)"
     );
@@ -129,9 +127,7 @@ fn region_evict_index_present() {
 fn bytes_used_index_present() {
     let sql = migration_sql_no_comments();
     assert!(
-        sql.contains(
-            "CREATE INDEX IF NOT EXISTS idx_tenant_storage_state_bytes_used"
-        ),
+        sql.contains("CREATE INDEX IF NOT EXISTS idx_tenant_storage_state_bytes_used"),
         "idx_tenant_storage_state_bytes_used must be present (analytics)"
     );
 }

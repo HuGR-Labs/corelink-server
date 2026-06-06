@@ -285,9 +285,7 @@ impl OfflineAggregator for InMemoryOfflineAggregator {
                     primary_region: String::new(),
                     replica_region: String::new(),
                     timestamp_ms: ts_ms,
-                    detail: format!(
-                        "upserted={hot_blobs_upserted} evicted={hot_blobs_evicted}"
-                    ),
+                    detail: format!("upserted={hot_blobs_upserted} evicted={hot_blobs_evicted}"),
                 })
                 .map_err(ReplicaError::Audit)?;
 

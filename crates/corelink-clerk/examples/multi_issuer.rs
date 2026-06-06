@@ -2,7 +2,6 @@
 //!
 //! Run with: `cargo run --example multi_issuer -p corelink-clerk`.
 
-
 #![allow(clippy::print_stdout, reason = "example demonstrates console output")]
 
 use corelink_clerk::fakes::{InMemoryKvCache, StaticJwksFetcher};
@@ -21,6 +20,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fetcher = StaticJwksFetcher::empty();
     let cache = InMemoryKvCache::new();
     let adapter = ClerkAdapter::new(cfg, fetcher, cache);
-    println!("adapter accepts {} canonical issuers", adapter.config().issuer_allowlist().len());
+    println!(
+        "adapter accepts {} canonical issuers",
+        adapter.config().issuer_allowlist().len()
+    );
     Ok(())
 }

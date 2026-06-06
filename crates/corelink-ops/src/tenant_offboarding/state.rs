@@ -37,9 +37,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// `#[non_exhaustive]` reserves additive growth (e.g. a future
 /// `LEGAL_HOLD` arm for litigation-pause semantics).
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[non_exhaustive]
 #[serde(rename_all = "snake_case")]
 pub enum TenantOffboardingState {
@@ -168,9 +166,7 @@ pub struct TenantOffboardingCaps {
 ///
 /// Every state transition must be triggered by exactly one of these
 /// canonical events. `#[non_exhaustive]` reserves additive growth.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[non_exhaustive]
 #[serde(rename_all = "snake_case")]
 pub enum TransitionTrigger {
@@ -438,7 +434,13 @@ mod tests {
     fn customer_initiated_from_non_active_is_illegal() {
         use TenantOffboardingState as S;
         use TransitionTrigger as T;
-        for s in [S::CancelRequested, S::GracePeriod, S::ReadOnly, S::Suspended, S::Erased] {
+        for s in [
+            S::CancelRequested,
+            S::GracePeriod,
+            S::ReadOnly,
+            S::Suspended,
+            S::Erased,
+        ] {
             assert_eq!(
                 TenantOffboardingTransition::resolve(s, T::CustomerInitiated),
                 None,

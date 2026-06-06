@@ -19,7 +19,16 @@
 // CLI binary is explicitly allowed to print to stdout/stderr — this is its purpose.
 // W35-P2-OPS absorption note: the umbrella library's print_stdout/print_stderr/etc. denies
 // don't apply to binary entry points (human-readable CLI output is the binary's purpose).
-#![allow(clippy::print_stdout, clippy::print_stderr, clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 
 use std::path::PathBuf;
 use std::process;
@@ -161,7 +170,11 @@ async fn run_verify(args: VerifyArgs) -> i32 {
     let bundle_contents = match std::fs::read_to_string(&args.bundle) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("error: failed to read bundle file `{}`: {}", args.bundle.display(), e);
+            eprintln!(
+                "error: failed to read bundle file `{}`: {}",
+                args.bundle.display(),
+                e
+            );
             return 3;
         }
     };
@@ -205,14 +218,26 @@ async fn run_verify(args: VerifyArgs) -> i32 {
                     );
                 }
                 OutputFormat::Text | OutputFormat::Yaml => {
-                    println!("SLSA L3 provenance verification PASSED for release {}", args.release);
+                    println!(
+                        "SLSA L3 provenance verification PASSED for release {}",
+                        args.release
+                    );
                     println!("  builder_id:               {}", prov.builder_id);
                     println!("  commit_sha:               {}", prov.commit_sha);
                     println!("  workflow_ref:             {}", prov.workflow_ref);
                     println!("  rekor_log_index:          {}", prov.rekor_log_index);
-                    println!("  rekor_inclusion_proof:    {}", prov.rekor_inclusion_proof_url);
-                    println!("  fulcio_cert_chain_valid:  {}", prov.fulcio_cert_chain_valid);
-                    println!("  in_toto_schema_version:   {}", prov.in_toto_schema_version);
+                    println!(
+                        "  rekor_inclusion_proof:    {}",
+                        prov.rekor_inclusion_proof_url
+                    );
+                    println!(
+                        "  fulcio_cert_chain_valid:  {}",
+                        prov.fulcio_cert_chain_valid
+                    );
+                    println!(
+                        "  in_toto_schema_version:   {}",
+                        prov.in_toto_schema_version
+                    );
                     println!("  artifact_digest:          {}", prov.artifact_digest);
                 }
             }
@@ -257,18 +282,23 @@ fn run_extract(args: ExtractArgs) -> i32 {
     let bundle_contents = match std::fs::read_to_string(&args.bundle) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("error: failed to read bundle file `{}`: {}", args.bundle.display(), e);
+            eprintln!(
+                "error: failed to read bundle file `{}`: {}",
+                args.bundle.display(),
+                e
+            );
             return 3;
         }
     };
 
-    let attestation: SlsaAttestation = match serde_json::from_str::<SlsaAttestation>(&bundle_contents) {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("error: failed to parse attestation bundle: {}", e);
-            return 3;
-        }
-    };
+    let attestation: SlsaAttestation =
+        match serde_json::from_str::<SlsaAttestation>(&bundle_contents) {
+            Ok(a) => a,
+            Err(e) => {
+                eprintln!("error: failed to parse attestation bundle: {}", e);
+                return 3;
+            }
+        };
 
     match args.output_format {
         OutputFormat::Json => {
@@ -282,19 +312,48 @@ fn run_extract(args: ExtractArgs) -> i32 {
             }
         }
         OutputFormat::Text | OutputFormat::Yaml => {
-            println!("Attestation bundle extracted from: {}", args.bundle.display());
+            println!(
+                "Attestation bundle extracted from: {}",
+                args.bundle.display()
+            );
             println!("  payloadType:   {}", attestation.payload_type);
-            println!("  payload:       {} (base64-encoded, {} chars)", &attestation.payload[..attestation.payload.len().min(32)], attestation.payload.len());
-            println!("  signatures:    {} signature(s)", attestation.signatures.len());
+            println!(
+                "  payload:       {} (base64-encoded, {} chars)",
+                &attestation.payload[..attestation.payload.len().min(32)],
+                attestation.payload.len()
+            );
+            println!(
+                "  signatures:    {} signature(s)",
+                attestation.signatures.len()
+            );
             for (i, sig) in attestation.signatures.iter().enumerate() {
-                println!("    [{}] key_id: {}", i, if sig.key_id.is_empty() { "(empty)" } else { &sig.key_id });
+                println!(
+                    "    [{}] key_id: {}",
+                    i,
+                    if sig.key_id.is_empty() {
+                        "(empty)"
+                    } else {
+                        &sig.key_id
+                    }
+                );
                 println!("    [{}] cert:   {} chars PEM", i, sig.cert.len());
                 println!("    [{}] sig:    {} chars", i, sig.sig.len());
                 if let Some(ref bundle) = sig.bundle {
                     println!("    [{}] rekor_log_index: {}", i, bundle.rekor_log_index);
-                    println!("    [{}] inclusion_proof: {}", i, if bundle.inclusion_proof.is_some() { "present" } else { "MISSING" });
+                    println!(
+                        "    [{}] inclusion_proof: {}",
+                        i,
+                        if bundle.inclusion_proof.is_some() {
+                            "present"
+                        } else {
+                            "MISSING"
+                        }
+                    );
                 } else {
-                    println!("    [{}] rekor bundle: MISSING (INV-SUPPLY-PROVENANCE-IN-REKOR violation)", i);
+                    println!(
+                        "    [{}] rekor bundle: MISSING (INV-SUPPLY-PROVENANCE-IN-REKOR violation)",
+                        i
+                    );
                 }
             }
         }

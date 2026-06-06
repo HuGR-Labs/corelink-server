@@ -55,8 +55,7 @@ fn replay_intentionally_verifies_post_facto() {
     let c = ctx("sig-replay-verify", LocaleBcp47::Es419);
     let req = build_req("44444444-4444-7444-8444-444444444444");
     let receipt = svc.accept(&c, req).unwrap();
-    let claims =
-        verify_receipt(&pubkey, Some("kid-test-01"), &receipt.jwt_receipt).unwrap();
+    let claims = verify_receipt(&pubkey, Some("kid-test-01"), &receipt.jwt_receipt).unwrap();
     assert_eq!(claims.jti, receipt.jti);
     // exp = iat + 10y → verifies far into the future.
     assert!(claims.exp - claims.iat >= 315_360_000);

@@ -86,27 +86,15 @@ impl RedMetricKind {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::CasPutRequestsTotal => {
-                "corelink_cas_put_requests_total"
-            }
-            Self::CasPutDurationSeconds => {
-                "corelink_cas_put_duration_seconds"
-            }
+            Self::CasPutRequestsTotal => "corelink_cas_put_requests_total",
+            Self::CasPutDurationSeconds => "corelink_cas_put_duration_seconds",
             Self::CasGetBytesTotal => "corelink_cas_get_bytes_total",
-            Self::AcLookupRequestsTotal => {
-                "corelink_ac_lookup_requests_total"
-            }
+            Self::AcLookupRequestsTotal => "corelink_ac_lookup_requests_total",
             Self::GcRunsTotal => "corelink_gc_runs_total",
             Self::DedupRatio => "corelink_dedup_ratio",
-            Self::RateLimitRejectsTotal => {
-                "corelink_rate_limit_rejects_total"
-            }
-            Self::PrivacyDsrActiveTotal => {
-                "corelink_privacy_dsr_active_total"
-            }
-            Self::BillingEventsEmittedTotal => {
-                "corelink_billing_events_emitted_total"
-            }
+            Self::RateLimitRejectsTotal => "corelink_rate_limit_rejects_total",
+            Self::PrivacyDsrActiveTotal => "corelink_privacy_dsr_active_total",
+            Self::BillingEventsEmittedTotal => "corelink_billing_events_emitted_total",
             Self::CfCpuTimeUs => "corelink_cf_cpu_time_us",
             Self::R2OpsTotal => "corelink_r2_ops_total",
             Self::D1RowScansTotal => "corelink_d1_row_scans_total",
@@ -166,9 +154,7 @@ impl fmt::Display for RedMetricKind {
 ///
 /// Ordering mirrors the [`RedMetricKind`] enum declaration.
 #[must_use]
-pub const fn canonical_metric_names() -> &'static [&'static str;
-       CANONICAL_METRIC_COUNT]
-{
+pub const fn canonical_metric_names() -> &'static [&'static str; CANONICAL_METRIC_COUNT] {
     &[
         "corelink_cas_put_requests_total",
         "corelink_cas_put_duration_seconds",
@@ -191,8 +177,7 @@ pub const fn canonical_metric_names() -> &'static [&'static str;
 /// Canonical 15-element [`RedMetricKind`] enumeration list — pinned
 /// for cross-component regression tests + property-test seed sources.
 #[must_use]
-pub const fn canonical_metric_kinds(
-) -> &'static [RedMetricKind; CANONICAL_METRIC_COUNT] {
+pub const fn canonical_metric_kinds() -> &'static [RedMetricKind; CANONICAL_METRIC_COUNT] {
     &[
         RedMetricKind::CasPutRequestsTotal,
         RedMetricKind::CasPutDurationSeconds,
@@ -256,14 +241,10 @@ mod tests {
     #[test]
     fn red_9_partition_uses_6() {
         let kinds = canonical_metric_kinds();
-        let red_set: std::collections::HashSet<&'static str> = kinds[..9]
-            .iter()
-            .map(|k| k.as_str())
-            .collect();
-        let use_set: std::collections::HashSet<&'static str> = kinds[9..]
-            .iter()
-            .map(|k| k.as_str())
-            .collect();
+        let red_set: std::collections::HashSet<&'static str> =
+            kinds[..9].iter().map(|k| k.as_str()).collect();
+        let use_set: std::collections::HashSet<&'static str> =
+            kinds[9..].iter().map(|k| k.as_str()).collect();
         assert_eq!(red_set.len(), 9);
         assert_eq!(use_set.len(), 6);
         assert!(red_set.is_disjoint(&use_set));
@@ -273,21 +254,15 @@ mod tests {
     fn histogram_classification_only_cas_put_duration() {
         for k in canonical_metric_kinds() {
             let expected = matches!(k, RedMetricKind::CasPutDurationSeconds);
-            assert_eq!(
-                k.is_histogram(),
-                expected,
-                "{} histogram mis-classified",
-                k
-            );
+            assert_eq!(k.is_histogram(), expected, "{} histogram mis-classified", k);
         }
     }
 
     #[test]
     fn each_kind_is_one_of_counter_gauge_histogram() {
         for k in canonical_metric_kinds() {
-            let n = u32::from(k.is_counter())
-                + u32::from(k.is_gauge())
-                + u32::from(k.is_histogram());
+            let n =
+                u32::from(k.is_counter()) + u32::from(k.is_gauge()) + u32::from(k.is_histogram());
             assert_eq!(
                 n, 1,
                 "{} must be exactly one of counter/gauge/histogram \

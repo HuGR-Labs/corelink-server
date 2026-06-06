@@ -153,11 +153,11 @@ fn clamp_unit(v: f64) -> f64 {
 #[must_use]
 pub const fn egress_baseline_for_tier(tier: Tier) -> u64 {
     match tier {
-        Tier::Free => 1_000_000,                     // 1 MB/min.
-        Tier::Solo => 10_000_000,                    // 10 MB/min.
-        Tier::Team => 50_000_000,                    // 50 MB/min.
-        Tier::Business => 500_000_000,               // 500 MB/min.
-        Tier::Enterprise => 5_000_000_000,           // 5 GB/min.
+        Tier::Free => 1_000_000,           // 1 MB/min.
+        Tier::Solo => 10_000_000,          // 10 MB/min.
+        Tier::Team => 50_000_000,          // 50 MB/min.
+        Tier::Business => 500_000_000,     // 500 MB/min.
+        Tier::Enterprise => 5_000_000_000, // 5 GB/min.
         // Forward-compatibility — unknown tier gets enterprise default
         // (most-permissive; conservative-on-availability).
         _ => 5_000_000_000,

@@ -53,14 +53,10 @@ pub fn verify_webhook_signature(
     let tol_i = i64::try_from(tolerance_seconds).unwrap_or(i64::MAX);
     let skew = now_i.saturating_sub(ts_i);
     if skew > tol_i {
-        return Err(WebhookVerifyError::ReplayWindowExceeded {
-            skew_seconds: skew,
-        });
+        return Err(WebhookVerifyError::ReplayWindowExceeded { skew_seconds: skew });
     }
     if skew < -tol_i {
-        return Err(WebhookVerifyError::FutureDated {
-            skew_seconds: skew,
-        });
+        return Err(WebhookVerifyError::FutureDated { skew_seconds: skew });
     }
 
     let expected = compute_signature(secret, ts_seconds, payload);
@@ -74,9 +70,7 @@ pub fn verify_webhook_signature(
             Ok(b) => b,
             Err(_) => continue,
         };
-        if provided.len() == expected_bytes.len()
-            && bool::from(provided.ct_eq(&expected_bytes))
-        {
+        if provided.len() == expected_bytes.len() && bool::from(provided.ct_eq(&expected_bytes)) {
             return Ok(());
         }
     }
@@ -158,7 +152,10 @@ mod tests {
             DEFAULT_TOLERANCE_SECONDS,
         )
         .unwrap_err();
-        assert!(matches!(err, WebhookVerifyError::ReplayWindowExceeded { .. }));
+        assert!(matches!(
+            err,
+            WebhookVerifyError::ReplayWindowExceeded { .. }
+        ));
     }
 
     #[test]
@@ -211,17 +208,15 @@ mod tests {
 
     #[test]
     fn missing_t_rejected() {
-        let err =
-            verify_webhook_signature(b"{}", "v1=abc", b"s", 100, DEFAULT_TOLERANCE_SECONDS)
-                .unwrap_err();
+        let err = verify_webhook_signature(b"{}", "v1=abc", b"s", 100, DEFAULT_TOLERANCE_SECONDS)
+            .unwrap_err();
         assert!(matches!(err, WebhookVerifyError::MalformedHeader(_)));
     }
 
     #[test]
     fn missing_v1_rejected() {
-        let err =
-            verify_webhook_signature(b"{}", "t=100", b"s", 100, DEFAULT_TOLERANCE_SECONDS)
-                .unwrap_err();
+        let err = verify_webhook_signature(b"{}", "t=100", b"s", 100, DEFAULT_TOLERANCE_SECONDS)
+            .unwrap_err();
         assert!(matches!(err, WebhookVerifyError::MalformedHeader(_)));
     }
 

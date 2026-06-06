@@ -44,23 +44,19 @@ pub struct InMemoryDeployAuditSink {
 impl InMemoryDeployAuditSink {
     /// Construct a new empty in-memory sink.
     pub fn new() -> Self {
-        Self { events: Arc::new(Mutex::new(Vec::new())) }
+        Self {
+            events: Arc::new(Mutex::new(Vec::new())),
+        }
     }
 
     /// Return a snapshot of all emitted events (cloned).
     pub fn events(&self) -> Vec<DeployAuditEvent> {
-        self.events
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or_default()
+        self.events.lock().map(|g| g.clone()).unwrap_or_default()
     }
 
     /// Return the number of emitted events.
     pub fn len(&self) -> usize {
-        self.events
-            .lock()
-            .map(|g| g.len())
-            .unwrap_or(0)
+        self.events.lock().map(|g| g.len()).unwrap_or(0)
     }
 
     /// Returns `true` if no events have been emitted.
@@ -97,7 +93,9 @@ pub struct FailingDeployAuditSink {
 impl FailingDeployAuditSink {
     /// Construct with a custom error message.
     pub fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into() }
+        Self {
+            message: message.into(),
+        }
     }
 }
 
@@ -127,11 +125,7 @@ impl DeployAuditSink for FailingDeployAuditSink {
 /// In production this log line is picked up by the CF Logpush → alerting
 /// pipeline.  During S-12 a staging stub is used; full S-09 integration
 /// lands in a later sprint.
-pub fn alert_sev2_deploy_blocked(
-    release_tag: &str,
-    reason: &str,
-    error: &DeployVerifyError,
-) {
+pub fn alert_sev2_deploy_blocked(release_tag: &str, reason: &str, error: &DeployVerifyError) {
     warn!(
         sev = "SEV-2",
         alert_name = "deploy_blocked",
@@ -154,10 +148,15 @@ pub fn alert_sev1_audit_emit_failed(release_tag: &str, error: &DeployVerifyError
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing, clippy::panic)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 mod tests {
-    use super::*;
     use super::super::types::VerifyOutcome;
+    use super::*;
 
     #[test]
     fn in_memory_sink_appends_events() {
@@ -177,7 +176,10 @@ mod tests {
         let ev = DeployAuditEvent::verified("v0.1.0", "trace-000");
         let result = sink.emit(ev);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), DeployVerifyError::AuditEmitFailed(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            DeployVerifyError::AuditEmitFailed(_)
+        ));
     }
 
     #[test]

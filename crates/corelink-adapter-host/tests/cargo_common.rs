@@ -51,11 +51,7 @@ impl InMemoryCas {
 
 #[async_trait]
 impl CasStore for InMemoryCas {
-    async fn get(
-        &self,
-        tenant_id: &str,
-        digest_hex: &str,
-    ) -> Result<Option<Vec<u8>>, CasError> {
+    async fn get(&self, tenant_id: &str, digest_hex: &str) -> Result<Option<Vec<u8>>, CasError> {
         Ok(self
             .inner
             .lock()
@@ -64,12 +60,7 @@ impl CasStore for InMemoryCas {
             .cloned())
     }
 
-    async fn put(
-        &self,
-        tenant_id: &str,
-        digest_hex: &str,
-        bytes: Vec<u8>,
-    ) -> Result<(), CasError> {
+    async fn put(&self, tenant_id: &str, digest_hex: &str, bytes: Vec<u8>) -> Result<(), CasError> {
         self.inner
             .lock()
             .unwrap()
@@ -85,11 +76,7 @@ pub struct FailingCas;
 
 #[async_trait]
 impl CasStore for FailingCas {
-    async fn get(
-        &self,
-        _tenant_id: &str,
-        _digest_hex: &str,
-    ) -> Result<Option<Vec<u8>>, CasError> {
+    async fn get(&self, _tenant_id: &str, _digest_hex: &str) -> Result<Option<Vec<u8>>, CasError> {
         Err(CasError::Backend("intentional get failure".to_owned()))
     }
 
@@ -123,10 +110,7 @@ impl StaticTenantResolver {
 
 #[async_trait]
 impl TenantResolver for StaticTenantResolver {
-    async fn resolve(
-        &self,
-        pat_plaintext: &str,
-    ) -> Result<String, TenantResolveError> {
+    async fn resolve(&self, pat_plaintext: &str) -> Result<String, TenantResolveError> {
         use subtle::ConstantTimeEq;
         // Constant-time compare: iterate all entries to avoid early-exit
         // timing oracle. We return the first match found.
@@ -151,13 +135,7 @@ pub async fn spin_adapter(
     body_size_limit_bytes: u64,
 ) -> (SocketAddr, tokio::task::JoinHandle<()>) {
     let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let config = CargoAdapterConfig::new(
-        bind_addr,
-        body_size_limit_bytes,
-        cas,
-        resolver,
-        audit,
-    );
+    let config = CargoAdapterConfig::new(bind_addr, body_size_limit_bytes, cas, resolver, audit);
 
     let router = build_router(config);
     let listener = tokio::net::TcpListener::bind(bind_addr).await.unwrap();

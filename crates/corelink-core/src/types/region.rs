@@ -34,8 +34,7 @@ pub enum Region {
 impl Region {
     /// All valid region values (for property tests + iterate-all
     /// patterns).
-    pub const ALL: &'static [Region] =
-        &[Region::Wnam, Region::Enam, Region::Weur, Region::Sam];
+    pub const ALL: &'static [Region] = &[Region::Wnam, Region::Enam, Region::Weur, Region::Sam];
 
     /// Lowercase identifier string (used in resource names, metrics
     /// labels). Behaviour parity with `corelink_region::Region::as_str`.

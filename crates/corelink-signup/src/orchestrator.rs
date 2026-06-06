@@ -177,10 +177,7 @@ where
 
     /// Run the full orchestration pipeline for `request`. Returns a
     /// [`SignupResponse`] on every non-Internal arm.
-    pub fn provision(
-        &self,
-        request: &SignupRequest,
-    ) -> Result<SignupResponse, OrchestrationError> {
+    pub fn provision(&self, request: &SignupRequest) -> Result<SignupResponse, OrchestrationError> {
         // -- Step 1: input validation (pre-tx; no D1 lock). --
         if request.idempotency_key.is_empty() {
             let rec = SignupAuditRecord::new(
@@ -505,7 +502,9 @@ mod tests {
     #[test]
     fn region_pinned_from_pt_br_cookie() {
         let o = happy_orchestrator();
-        let r = o.provision(&req("idem-pt", "a", "pt-BR", "evt_pt")).unwrap();
+        let r = o
+            .provision(&req("idem-pt", "a", "pt-BR", "evt_pt"))
+            .unwrap();
         match r.outcome {
             SignupOutcome::Provisioned { primary_region, .. } => {
                 assert_eq!(primary_region, PrimaryRegion::Sam);
@@ -588,7 +587,9 @@ mod tests {
         let billing = InMemoryBillingClient::new();
         let prov = InMemoryProvisionRecord::new();
         let o = SignupOrchestrator::new(audit.clone(), store.clone(), billing, prov);
-        let err = o.provision(&req("idem-1", "a", "en-US", "evt_1")).unwrap_err();
+        let err = o
+            .provision(&req("idem-1", "a", "en-US", "evt_1"))
+            .unwrap_err();
         match err {
             OrchestrationError::Storage { step, .. } => {
                 assert_eq!(step, OrchestrationStep::InsertTenant);
@@ -614,7 +615,9 @@ mod tests {
             InMemoryBillingClient::new(),
             InMemoryProvisionRecord::new(),
         );
-        let err = o.provision(&req("idem-1", "a", "en-US", "evt_1")).unwrap_err();
+        let err = o
+            .provision(&req("idem-1", "a", "en-US", "evt_1"))
+            .unwrap_err();
         assert!(matches!(
             err,
             OrchestrationError::Storage {
@@ -647,7 +650,9 @@ mod tests {
             InMemoryBillingClient::new(),
             InMemoryProvisionRecord::new(),
         );
-        let err = o.provision(&req("idem-1", "a", "en-US", "evt_1")).unwrap_err();
+        let err = o
+            .provision(&req("idem-1", "a", "en-US", "evt_1"))
+            .unwrap_err();
         assert!(matches!(
             err,
             OrchestrationError::Storage {
@@ -666,7 +671,8 @@ mod tests {
             InMemoryBillingClient::new(),
             InMemoryProvisionRecord::new(),
         );
-        o.provision(&req("idem-1", "a", "en-US", "evt_xyz")).unwrap();
+        o.provision(&req("idem-1", "a", "en-US", "evt_xyz"))
+            .unwrap();
         let snap = audit.snapshot();
         assert!(!snap.is_empty());
         for r in &snap {

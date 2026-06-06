@@ -6,9 +6,7 @@
 //! verify or PAT auth). Each tenant region carries a separate `kid`
 //! provisioned via the secret rotation worker (S-13).
 
-use jsonwebtoken::{
-    decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation,
-};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 
 use crate::error::DpaAcceptanceError;

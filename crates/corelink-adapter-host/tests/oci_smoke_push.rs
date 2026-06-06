@@ -98,7 +98,8 @@ async fn push_pull_roundtrip() {
     // 5) Audit row was emitted.
     let snap = rig.audit.snapshot();
     assert!(
-        snap.iter().any(|r| r.event_type == "corelink.oci.blob.push.v1"),
+        snap.iter()
+            .any(|r| r.event_type == "corelink.oci.blob.push.v1"),
         "expected blob.push audit row, got: {snap:?}"
     );
 }

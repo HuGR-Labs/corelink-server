@@ -37,16 +37,14 @@
 
 use std::sync::Arc;
 
-use corelink_eviction::{
-    reservation_ttl_ms, EvictionRegion, InMemoryTenantStorageStateStore,
-    TenantStorageStateRow,
-};
 use corelink_billing::quota::core::{
-    canonical_audit_event_strings, canonical_metric_names,
-    InMemoryQuotaAuditSink, InMemoryQuotaCheck, InMemoryQuotaMetrics,
-    InMemoryReservationTracker, QuotaCheck, QuotaConfig, QuotaDecision,
-    QuotaEventType, QuotaMetricKind, RequestKind, ReservationId,
-    ReservationTracker, MIGRATION_0009_QUOTA_RESERVATIONS,
+    canonical_audit_event_strings, canonical_metric_names, InMemoryQuotaAuditSink,
+    InMemoryQuotaCheck, InMemoryQuotaMetrics, InMemoryReservationTracker, QuotaCheck, QuotaConfig,
+    QuotaDecision, QuotaEventType, QuotaMetricKind, RequestKind, ReservationId, ReservationTracker,
+    MIGRATION_0009_QUOTA_RESERVATIONS,
+};
+use corelink_eviction::{
+    reservation_ttl_ms, EvictionRegion, InMemoryTenantStorageStateStore, TenantStorageStateRow,
 };
 use proptest::prelude::*;
 use uuid::Uuid;
@@ -426,7 +424,12 @@ proptest! {
 fn prop_check_duration_under_3ms_p99() {
     let (engine, state, _r, _a, metrics) = fresh_engine();
     state
-        .push_row(fresh_state_row(ten_a(), EvictionRegion::Sam, 0, 1_000_000_000))
+        .push_row(fresh_state_row(
+            ten_a(),
+            EvictionRegion::Sam,
+            0,
+            1_000_000_000,
+        ))
         .unwrap();
     for _ in 0..10_000 {
         let _ = engine
@@ -441,12 +444,11 @@ fn prop_check_duration_under_3ms_p99() {
             .unwrap();
     }
     // Every sample is 0 in the InMemory fake.
-    let samples = metrics
-        .duration_samples(corelink_billing::quota::core::QuotaCheckResultLabel::Allow);
+    let samples =
+        metrics.duration_samples(corelink_billing::quota::core::QuotaCheckResultLabel::Allow);
     assert_eq!(samples.len(), 10_000);
     let max = samples.iter().copied().max().unwrap_or_default();
     assert!(max <= 3, "in-memory fake duration sample > 3ms: {max}");
-    let total =
-        metrics.counter_total(QuotaMetricKind::CheckTotal);
+    let total = metrics.counter_total(QuotaMetricKind::CheckTotal);
     assert_eq!(total, 10_000);
 }

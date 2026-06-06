@@ -25,12 +25,8 @@ use corelink_analytics::MIGRATION_0015_ANALYTICS_CARDINALITY_BUDGETS;
 #[test]
 fn migration_includes_both_canonical_tables() {
     let sql = MIGRATION_0015_ANALYTICS_CARDINALITY_BUDGETS;
-    assert!(sql.contains(
-        "CREATE TABLE IF NOT EXISTS analytics_cardinality_budgets"
-    ));
-    assert!(sql.contains(
-        "CREATE TABLE IF NOT EXISTS analytics_cardinality_observed"
-    ));
+    assert!(sql.contains("CREATE TABLE IF NOT EXISTS analytics_cardinality_budgets"));
+    assert!(sql.contains("CREATE TABLE IF NOT EXISTS analytics_cardinality_observed"));
 }
 
 #[test]
@@ -80,12 +76,8 @@ fn migration_does_not_use_underscore_ms_column_suffix() {
 #[test]
 fn migration_includes_observed_recent_index() {
     let sql = MIGRATION_0015_ANALYTICS_CARDINALITY_BUDGETS;
-    assert!(sql.contains(
-        "CREATE INDEX IF NOT EXISTS idx_analytics_observed_recent"
-    ));
-    assert!(sql.contains(
-        "CREATE INDEX IF NOT EXISTS idx_analytics_observed_metric"
-    ));
+    assert!(sql.contains("CREATE INDEX IF NOT EXISTS idx_analytics_observed_recent"));
+    assert!(sql.contains("CREATE INDEX IF NOT EXISTS idx_analytics_observed_metric"));
 }
 
 #[test]

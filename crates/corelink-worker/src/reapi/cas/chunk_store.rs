@@ -309,10 +309,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let r = store
-            .lookup(ChunkKey::new(tenant_b, cd))
-            .await
-            .unwrap();
+        let r = store.lookup(ChunkKey::new(tenant_b, cd)).await.unwrap();
         assert!(r.is_none());
     }
 

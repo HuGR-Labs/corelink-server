@@ -117,25 +117,20 @@ pub mod redaction;
 pub mod sink;
 
 pub use audit::{
-    canonical_audit_event_strings, FailingLogAuditSink,
-    InMemoryLogAuditSink, LogAuditEmitError, LogAuditEventType,
-    LogAuditRecord, LogAuditSink,
+    canonical_audit_event_strings, FailingLogAuditSink, InMemoryLogAuditSink, LogAuditEmitError,
+    LogAuditEventType, LogAuditRecord, LogAuditSink,
 };
 pub use error::{LogAuditSinkError, LogSinkError, LogpushError};
 pub use record::{
-    canonical_log_event_types, LogEventType, LogRecord, TenantId,
-    CLOUDEVENTS_SPECVERSION, SCHEMA_VERSION,
+    canonical_log_event_types, LogEventType, LogRecord, TenantId, CLOUDEVENTS_SPECVERSION,
+    SCHEMA_VERSION,
 };
 pub use redaction::{
-    canonical_pii_pattern_kinds, InMemoryPiiRedactor, PiiPatternKind,
-    PiiRedactor, RedactionOutcome, CNPJ_PLACEHOLDER, CPF_PLACEHOLDER,
-    EMAIL_PLACEHOLDER, IP_PLACEHOLDER, PAN_PLACEHOLDER,
-    TOKEN_PLACEHOLDER,
+    canonical_pii_pattern_kinds, InMemoryPiiRedactor, PiiPatternKind, PiiRedactor,
+    RedactionOutcome, CNPJ_PLACEHOLDER, CPF_PLACEHOLDER, EMAIL_PLACEHOLDER, IP_PLACEHOLDER,
+    PAN_PLACEHOLDER, TOKEN_PLACEHOLDER,
 };
-pub use sink::{
-    CapturedLogSink, FailingLogSink, InMemoryLogSink, LogSink,
-    PersistedLogLine,
-};
+pub use sink::{CapturedLogSink, FailingLogSink, InMemoryLogSink, LogSink, PersistedLogLine};
 
 /// Canonical SQL DDL for the log-schema versioning + redaction
 /// pattern config durable mirror (D1 migration 0016).

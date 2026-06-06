@@ -56,12 +56,7 @@ impl StatuspageRateLimiter {
     /// Decide whether `(page_id, metric_id)` may publish at
     /// `now_epoch_ms`. On `Allow` the limiter records `now_epoch_ms`
     /// as the latest publish; on `DenyBackoff` no state is mutated.
-    pub fn decide(
-        &self,
-        page_id: &str,
-        metric_id: &str,
-        now_epoch_ms: u64,
-    ) -> RateLimitDecision {
+    pub fn decide(&self, page_id: &str, metric_id: &str, now_epoch_ms: u64) -> RateLimitDecision {
         let key = (page_id.to_string(), metric_id.to_string());
         let mut guard = match self.last_allowed.lock() {
             Ok(g) => g,
@@ -119,7 +114,11 @@ mod tests {
         let d = l.decide("p", "m", 60_000); // 1 min later
         let is_deny = matches!(d, RateLimitDecision::DenyBackoff { .. });
         assert!(is_deny);
-        if let RateLimitDecision::DenyBackoff { retry_after, jitter } = d {
+        if let RateLimitDecision::DenyBackoff {
+            retry_after,
+            jitter,
+        } = d
+        {
             // 4 min remaining
             assert_eq!(retry_after, Duration::from_millis(4 * 60 * 1_000));
             // jitter = retry_after / 8

@@ -321,12 +321,18 @@ mod tests {
 
     #[test]
     fn audit_event_names_canonical() {
-        assert_eq!(ChaosAuditEvent::Started.name(), "corelink.chaos.run.started");
+        assert_eq!(
+            ChaosAuditEvent::Started.name(),
+            "corelink.chaos.run.started"
+        );
         assert_eq!(
             ChaosAuditEvent::Completed.name(),
             "corelink.chaos.run.completed"
         );
-        assert_eq!(ChaosAuditEvent::Aborted.name(), "corelink.chaos.run.aborted");
+        assert_eq!(
+            ChaosAuditEvent::Aborted.name(),
+            "corelink.chaos.run.aborted"
+        );
     }
 
     #[test]

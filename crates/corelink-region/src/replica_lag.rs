@@ -184,7 +184,10 @@ mod tests {
     fn metric_name_is_canonical() {
         // Load-bearing for `scripts/verify-replication-lag.py` and Prometheus
         // alerting rules. Renaming requires updating both.
-        assert_eq!(METRIC_D1_REPLICA_LAG_SECONDS, "corelink_d1_replica_lag_seconds");
+        assert_eq!(
+            METRIC_D1_REPLICA_LAG_SECONDS,
+            "corelink_d1_replica_lag_seconds"
+        );
     }
 
     #[test]
@@ -211,9 +214,7 @@ mod tests {
     fn inmemory_probe_set_lag_observable() {
         let p = InMemoryD1ReplicaLagProbe::new();
         p.set_lag(Region::Weur, Region::Sam, 12.5);
-        let s = p
-            .probe(Region::Weur, Region::Sam, 0)
-            .expect("probe");
+        let s = p.probe(Region::Weur, Region::Sam, 0).expect("probe");
         assert!((s.lag_seconds - 12.5).abs() < f64::EPSILON);
     }
 

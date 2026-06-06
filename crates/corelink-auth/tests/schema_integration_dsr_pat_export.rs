@@ -35,8 +35,10 @@
 //! pattern; this test pins the cross-component contract that S-11
 //! consumes.
 
-#![allow(clippy::doc_overindented_list_items, reason = "agent-authored docs use 4-space indents")]
-
+#![allow(
+    clippy::doc_overindented_list_items,
+    reason = "agent-authored docs use 4-space indents"
+)]
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -186,7 +188,11 @@ fn dsr_access_request_surface_excludes_token_hash() {
     for row in &export {
         assert!(pat_token_ids.contains(&row.token_id), "token_id surfaced");
         assert_eq!(row.tenant_id, t1.tenant_id, "tenant binding preserved");
-        assert_eq!(row.issued_to_user, Some(u1.user_id), "issued_to_user preserved");
+        assert_eq!(
+            row.issued_to_user,
+            Some(u1.user_id),
+            "issued_to_user preserved"
+        );
         assert!(!row.scopes.is_empty(), "scopes surfaced");
         assert!(row.revoked_at.is_none(), "all PATs active in Scenario A");
     }
@@ -240,7 +246,12 @@ fn dsr_erasure_cascade_preserves_audit_pseudonyms() {
     let mut pat_ids: Vec<Uuid> = Vec::new();
     for i in 0..5 {
         let token_id = format!("erasetokid{i:06}");
-        let p = pat_row(t1.tenant_id, u1.user_id, &token_id, u8::try_from(i).unwrap());
+        let p = pat_row(
+            t1.tenant_id,
+            u1.user_id,
+            &token_id,
+            u8::try_from(i).unwrap(),
+        );
         pat_ids.push(p.pat_id);
         schema.insert_pat(p).unwrap();
     }
@@ -251,10 +262,8 @@ fn dsr_erasure_cascade_preserves_audit_pseudonyms() {
         .iter()
         .map(|id| PatIdHash::derive(&id.to_string()).expect("derive ok"))
         .collect();
-    let pre_principal_hash =
-        PrincipalIdHash::derive(u1.clerk_user_id.as_str()).expect("derive ok");
-    let pre_email_hash =
-        EmailHash::derive("user.clerk@example.invalid").expect("derive ok");
+    let pre_principal_hash = PrincipalIdHash::derive(u1.clerk_user_id.as_str()).expect("derive ok");
+    let pre_email_hash = EmailHash::derive("user.clerk@example.invalid").expect("derive ok");
 
     // Insert a sample revocation_log row that should survive the
     // cascade per the sim contract.
@@ -291,23 +300,34 @@ fn dsr_erasure_cascade_preserves_audit_pseudonyms() {
     // opaque pseudonym AFTER the cascade.
     for (id, pre) in pat_ids.iter().zip(pre_pat_hashes.iter()) {
         let post = PatIdHash::derive(&id.to_string()).expect("derive ok");
-        assert_eq!(post.as_str(), pre.as_str(),
-            "PatIdHash diverged across erasure boundary");
+        assert_eq!(
+            post.as_str(),
+            pre.as_str(),
+            "PatIdHash diverged across erasure boundary"
+        );
     }
     let post_principal_hash =
         PrincipalIdHash::derive(u1.clerk_user_id.as_str()).expect("derive ok");
-    assert_eq!(post_principal_hash.as_str(), pre_principal_hash.as_str(),
-        "PrincipalIdHash diverged across erasure boundary");
-    let post_email_hash =
-        EmailHash::derive("user.clerk@example.invalid").expect("derive ok");
-    assert_eq!(post_email_hash.as_str(), pre_email_hash.as_str(),
-        "EmailHash diverged across erasure boundary");
+    assert_eq!(
+        post_principal_hash.as_str(),
+        pre_principal_hash.as_str(),
+        "PrincipalIdHash diverged across erasure boundary"
+    );
+    let post_email_hash = EmailHash::derive("user.clerk@example.invalid").expect("derive ok");
+    assert_eq!(
+        post_email_hash.as_str(),
+        pre_email_hash.as_str(),
+        "EmailHash diverged across erasure boundary"
+    );
 
     // revocation_log survival check: the row inserted before the
     // cascade is still present (per sim contract — log outlives
     // the PAT for cross-region propagation forensics).
-    assert_eq!(schema.revocation_count(), 1,
-        "revocation_log MUST survive the cascade for forensic trail");
+    assert_eq!(
+        schema.revocation_count(),
+        1,
+        "revocation_log MUST survive the cascade for forensic trail"
+    );
 }
 
 /// Scenario C — multi-tenant erasure: a user with PATs across two

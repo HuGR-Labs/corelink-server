@@ -165,8 +165,7 @@ pub use audit::{
     SignupAuditEmitError, SignupAuditEventType, SignupAuditRecord, SignupAuditSink,
 };
 pub use billing::{
-    BillingClient, BillingError, InMemoryBillingClient, StripeCustomerId,
-    StripeOutageBillingClient,
+    BillingClient, BillingError, InMemoryBillingClient, StripeCustomerId, StripeOutageBillingClient,
 };
 pub use correlation::CorrelationId;
 pub use error::OrchestrationError;
@@ -180,8 +179,7 @@ pub use pat::{PatHash, ShownOnceToken};
 pub use region::{canonical_regions, Bcp47Locale, PrimaryRegion};
 pub use request::SignupRequest;
 pub use store::{
-    AtomicSignupStore, FailingAtomicSignupStore, InMemoryAtomicSignupStore, SignupTx,
-    StorageError,
+    AtomicSignupStore, FailingAtomicSignupStore, InMemoryAtomicSignupStore, SignupTx, StorageError,
 };
 pub use tenant::{SignupId, TenantId, UserEmailHash};
 

@@ -17,11 +17,11 @@
 use std::sync::Arc;
 
 use corelink_config_do::{
-    AdminActor, ConfigError, ConfigPayload, FeatureFlag, RateLimitKey,
-    RateLimitTunable, RetentionPolicy, SUPPORTED_SCHEMA_VERSION,
     metrics::NoopMetrics,
     store::{ConfigSingletonStore, InMemoryAuditSink, InMemoryConfigSingletonStore},
     validation::validate_payload,
+    AdminActor, ConfigError, ConfigPayload, FeatureFlag, RateLimitKey, RateLimitTunable,
+    RetentionPolicy, SUPPORTED_SCHEMA_VERSION,
 };
 use proptest::prelude::*;
 use uuid::Uuid;
@@ -80,10 +80,7 @@ fn payload_with_retention(ttl_days: u32) -> ConfigPayload {
 }
 
 fn new_store() -> InMemoryConfigSingletonStore {
-    InMemoryConfigSingletonStore::new(
-        Arc::new(InMemoryAuditSink::new()),
-        Arc::new(NoopMetrics),
-    )
+    InMemoryConfigSingletonStore::new(Arc::new(InMemoryAuditSink::new()), Arc::new(NoopMetrics))
 }
 
 // ── prop_config_cas_concurrent_no_lost_writes ────────────────────────────────
@@ -287,10 +284,8 @@ proptest! {
 #[test]
 fn test_audit_fail_closed_aborts_mutation() {
     use corelink_config_do::store::{ConfigSingletonStore, FailingAuditSink};
-    let store = InMemoryConfigSingletonStore::new(
-        Arc::new(FailingAuditSink),
-        Arc::new(NoopMetrics),
-    );
+    let store =
+        InMemoryConfigSingletonStore::new(Arc::new(FailingAuditSink), Arc::new(NoopMetrics));
     let actor = dummy_actor();
 
     let result = tokio_test::block_on(store.update(0, genesis_payload(), &actor, 1_000));

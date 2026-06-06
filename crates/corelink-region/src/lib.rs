@@ -38,16 +38,16 @@ pub use do_sync_age::{
     DO_SYNC_AGE_CONFIG_SINGLETON_P99_CEILING_SECONDS, DO_SYNC_AGE_RATE_LIMITER_BUDGET_SECONDS,
     DO_SYNC_AGE_TENANT_QUOTA_P99_CEILING_SECONDS, METRIC_DO_SYNC_AGE_SECONDS,
 };
-pub use neon_replica_lag::{
-    FailingNeonReplicaLagProbe, InMemoryNeonReplicaLagProbe, NeonReplicaLagProbe,
-    NeonReplicaLagSample, METRIC_NEON_REPLICA_LAG_SECONDS, NEON_PROBE_CADENCE_SECONDS,
-    NEON_REPLICA_LAG_P99_SOFT_CEILING_SECONDS, NEON_SLO_IS_INFORMATIONAL,
-};
 pub use kv_propagation::{
     fraction_within_typical, FailingKvPropagationProbe, InMemoryKvPropagationProbe,
     KvPropagationProbe, KvPropagationSample, KV_PROBE_CADENCE_SECONDS,
     KV_PROPAGATION_PESSIMISTIC_P99_CEILING_SECONDS, KV_PROPAGATION_TYPICAL_P99_CEILING_SECONDS,
     KV_PROPAGATION_TYPICAL_SAMPLE_FRACTION, METRIC_KV_PROPAGATION_LAG_SECONDS,
+};
+pub use neon_replica_lag::{
+    FailingNeonReplicaLagProbe, InMemoryNeonReplicaLagProbe, NeonReplicaLagProbe,
+    NeonReplicaLagSample, METRIC_NEON_REPLICA_LAG_SECONDS, NEON_PROBE_CADENCE_SECONDS,
+    NEON_REPLICA_LAG_P99_SOFT_CEILING_SECONDS, NEON_SLO_IS_INFORMATIONAL,
 };
 pub use r2_crr::{
     FailingR2CrrProbe, InMemoryR2CrrProbe, R2CrrProbe, R2CrrSample, METRIC_R2_CRR_LAG_SECONDS,

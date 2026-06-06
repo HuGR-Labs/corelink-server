@@ -45,11 +45,11 @@ impl Digest {
     /// - the size portion is not a valid `u64`
     /// - the size exceeds 4 GiB
     pub fn parse(s: &str) -> Result<Self, BazelBridgeError> {
-        let (hash_part, size_part) = s.split_once('/').ok_or_else(|| {
-            BazelBridgeError::InvalidDigest {
-                reason: format!("expected '<hash>/<size_bytes>', got: {s:?}"),
-            }
-        })?;
+        let (hash_part, size_part) =
+            s.split_once('/')
+                .ok_or_else(|| BazelBridgeError::InvalidDigest {
+                    reason: format!("expected '<hash>/<size_bytes>', got: {s:?}"),
+                })?;
         validate_hash(hash_part)?;
         let size_bytes = size_part
             .parse::<u64>()
@@ -99,7 +99,10 @@ fn validate_hash(hash: &str) -> Result<(), BazelBridgeError> {
             ),
         });
     }
-    if !hash.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+    if !hash
+        .bytes()
+        .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    {
         return Err(BazelBridgeError::InvalidDigest {
             reason: format!("hash must be lowercase hex, got: {hash:?}"),
         });

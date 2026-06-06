@@ -149,10 +149,7 @@ pub trait CircuitAuditSink: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`CircuitAuditSinkError::Store`] on any backend failure.
-    fn emit(
-        &self,
-        record: CircuitAuditRecord,
-    ) -> Result<(), CircuitAuditSinkError>;
+    fn emit(&self, record: CircuitAuditRecord) -> Result<(), CircuitAuditSinkError>;
 }
 
 /// In-memory test audit sink. Cloning shares the underlying buffer.
@@ -194,10 +191,7 @@ impl InMemoryCircuitAuditSink {
 
     /// Filter snapshot down to records of a single event type.
     #[must_use]
-    pub fn snapshot_of(
-        &self,
-        event_type: CircuitEventType,
-    ) -> Vec<CircuitAuditRecord> {
+    pub fn snapshot_of(&self, event_type: CircuitEventType) -> Vec<CircuitAuditRecord> {
         self.snapshot()
             .into_iter()
             .filter(|r| r.event_type == event_type)
@@ -206,15 +200,11 @@ impl InMemoryCircuitAuditSink {
 }
 
 impl CircuitAuditSink for InMemoryCircuitAuditSink {
-    fn emit(
-        &self,
-        record: CircuitAuditRecord,
-    ) -> Result<(), CircuitAuditSinkError> {
-        let mut guard = self.inner.lock().map_err(|_| {
-            CircuitAuditSinkError::Store(
-                "audit sink mutex poisoned".to_string(),
-            )
-        })?;
+    fn emit(&self, record: CircuitAuditRecord) -> Result<(), CircuitAuditSinkError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| CircuitAuditSinkError::Store("audit sink mutex poisoned".to_string()))?;
         guard.push(record);
         Ok(())
     }
@@ -235,10 +225,7 @@ impl FailingCircuitAuditSink {
 }
 
 impl CircuitAuditSink for FailingCircuitAuditSink {
-    fn emit(
-        &self,
-        _record: CircuitAuditRecord,
-    ) -> Result<(), CircuitAuditSinkError> {
+    fn emit(&self, _record: CircuitAuditRecord) -> Result<(), CircuitAuditSinkError> {
         Err(CircuitAuditSinkError::Store(
             "induced circuit audit sink failure (test fixture)".to_string(),
         ))
@@ -310,10 +297,7 @@ mod tests {
         sink.emit(rec(CircuitEventType::HalfOpenProbe)).unwrap();
         assert_eq!(sink.len(), 2);
         assert_eq!(sink.snapshot_of(CircuitEventType::Tripped).len(), 1);
-        assert_eq!(
-            sink.snapshot_of(CircuitEventType::HalfOpenProbe).len(),
-            1
-        );
+        assert_eq!(sink.snapshot_of(CircuitEventType::HalfOpenProbe).len(), 1);
     }
 
     #[test]

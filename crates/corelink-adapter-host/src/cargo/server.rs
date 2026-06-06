@@ -77,10 +77,7 @@ pub fn build_router(config: CargoAdapterConfig) -> Router {
     // not explicitly registered. We register an explicit HEAD handler
     // to avoid serving body bytes on HEAD requests.
     Router::new()
-        .route(
-            "/:key",
-            get(handle_get).put(handle_put).head(handle_head),
-        )
+        .route("/:key", get(handle_get).put(handle_put).head(handle_head))
         .with_state(state)
 }
 
@@ -237,10 +234,7 @@ async fn handle_put(
 ///
 /// Returns [`CargoAdapterError::BodyOversized`] if the streamed total
 /// exceeds `limit`.
-async fn collect_body(
-    request: Request,
-    limit: u64,
-) -> Result<Vec<u8>, CargoAdapterError> {
+async fn collect_body(request: Request, limit: u64) -> Result<Vec<u8>, CargoAdapterError> {
     // axum 0.7 / http-body-util: collect the full body into Bytes.
     // We enforce the size limit here rather than using axum's
     // `DefaultBodyLimit` so we can return a structured error.
@@ -267,10 +261,7 @@ impl IntoResponse for CargoAdapterError {
                 StatusCode::PAYLOAD_TOO_LARGE,
                 format!("body exceeds limit: {bytes} bytes"),
             ),
-            Self::Bind(err) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("bind: {err}"),
-            ),
+            Self::Bind(err) => (StatusCode::INTERNAL_SERVER_ERROR, format!("bind: {err}")),
         };
         let mut response = Response::new(Body::from(body));
         *response.status_mut() = status;

@@ -44,6 +44,7 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
+use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
 use corelink_hash::Digest;
 use corelink_meta::{
     AuditEvent, AuditEventType, BlobMetaKey, CommitSoftDeleteRequest, InMemoryMetaStore, MetaStore,
@@ -59,9 +60,8 @@ use corelink_reapi::proto::reapi::{BatchUpdateBlobsRequest, Digest as ProtoDiges
 use corelink_reapi::{
     cas_get_router, AuthScope, ByteStreamService, CasWriteService, HttpReadState, StubPatValidator,
 };
-use corelink_tenant_path::TenantDerivationKey;
-use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
 use corelink_replication::region_resolver::Region;
+use corelink_tenant_path::TenantDerivationKey;
 use tokio::net::TcpListener;
 use tonic::metadata::MetadataValue;
 use tonic::transport::{Channel, Server};

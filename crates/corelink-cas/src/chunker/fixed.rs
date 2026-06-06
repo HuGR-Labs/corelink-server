@@ -12,8 +12,8 @@
 //! satisfying WI §1.4 "BLAKE3 hash inline".
 
 use crate::chunker::bounds::{FIXED_DEFAULT_CHUNK_SIZE, MAX_BLOB_SIZE, MAX_CHUNKS_PER_BLOB};
-use crate::chunker::kind::{Chunker, ChunkerStep};
 use crate::chunker::error::ChunkerError;
+use crate::chunker::kind::{Chunker, ChunkerStep};
 use crate::chunker::Chunk;
 
 /// Fixed-size chunker — emits a chunk every `chunk_size` cumulative
@@ -150,7 +150,9 @@ impl Chunker for FixedChunker {
             return None;
         }
         let digest = self.hasher.finalize();
-        let offset = self.bytes_absorbed.saturating_sub(self.staging.len() as u64);
+        let offset = self
+            .bytes_absorbed
+            .saturating_sub(self.staging.len() as u64);
         let size_bytes = self.staging.len();
         self.chunks_emitted = self.chunks_emitted.saturating_add(1);
         self.finalized = true;
@@ -196,7 +198,9 @@ impl FixedChunker {
         let digest = self.hasher.finalize();
         let mut digest_bytes = [0u8; 32];
         digest_bytes.copy_from_slice(digest.as_bytes());
-        let offset = self.bytes_absorbed.saturating_sub(self.staging.len() as u64);
+        let offset = self
+            .bytes_absorbed
+            .saturating_sub(self.staging.len() as u64);
         let size_bytes = self.staging.len();
         self.chunks_emitted = self.chunks_emitted.saturating_add(1);
         self.hasher.reset();

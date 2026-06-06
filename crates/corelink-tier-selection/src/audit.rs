@@ -59,7 +59,9 @@ impl TierSelectionAuditEventType {
             Self::EnterpriseRouteBypassAttempt => {
                 "corelink.onboarding.enterprise_route_bypass_attempt"
             }
-            Self::StripeSubscriptionActivated => "corelink.onboarding.stripe_subscription_activated",
+            Self::StripeSubscriptionActivated => {
+                "corelink.onboarding.stripe_subscription_activated"
+            }
             Self::StripeWebhookDuplicate => "corelink.onboarding.stripe_webhook_duplicate",
             Self::StripeWebhookInvalidSignature => {
                 "corelink.onboarding.stripe_webhook_invalid_signature"
@@ -141,10 +143,7 @@ pub trait TierSelectionAuditSink: core::fmt::Debug + Send + Sync {
     /// Emit a single audit record. MUST be invoked BEFORE the state
     /// mutation; a returned `Err` aborts the mutation per
     /// `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER`.
-    fn emit(
-        &self,
-        record: &TierSelectionAuditRecord,
-    ) -> Result<(), TierSelectionAuditEmitError>;
+    fn emit(&self, record: &TierSelectionAuditRecord) -> Result<(), TierSelectionAuditEmitError>;
 }
 
 /// In-memory test sink — accumulates emitted records for property
@@ -193,13 +192,11 @@ impl InMemoryTierSelectionAuditSink {
 }
 
 impl TierSelectionAuditSink for InMemoryTierSelectionAuditSink {
-    fn emit(
-        &self,
-        record: &TierSelectionAuditRecord,
-    ) -> Result<(), TierSelectionAuditEmitError> {
-        let mut g = self.records.lock().map_err(|e| {
-            TierSelectionAuditEmitError::Rejected(format!("mutex poisoned: {e}"))
-        })?;
+    fn emit(&self, record: &TierSelectionAuditRecord) -> Result<(), TierSelectionAuditEmitError> {
+        let mut g = self
+            .records
+            .lock()
+            .map_err(|e| TierSelectionAuditEmitError::Rejected(format!("mutex poisoned: {e}")))?;
         g.push(record.clone());
         Ok(())
     }
@@ -211,10 +208,7 @@ impl TierSelectionAuditSink for InMemoryTierSelectionAuditSink {
 pub struct FailingTierSelectionAuditSink;
 
 impl TierSelectionAuditSink for FailingTierSelectionAuditSink {
-    fn emit(
-        &self,
-        _record: &TierSelectionAuditRecord,
-    ) -> Result<(), TierSelectionAuditEmitError> {
+    fn emit(&self, _record: &TierSelectionAuditRecord) -> Result<(), TierSelectionAuditEmitError> {
         Err(TierSelectionAuditEmitError::Rejected(
             "adversarial fixture: always rejects".to_string(),
         ))

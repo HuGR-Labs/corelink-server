@@ -16,7 +16,11 @@ pub fn redact_api_key(api_key: &str) -> String {
     }
     // Keep at most 4 trailing chars by codepoint to avoid splitting on
     // a UTF-8 boundary (Statuspage keys are ASCII but defense-in-depth).
-    let tail: String = trimmed.chars().rev().take(4).collect::<String>()
+    let tail: String = trimmed
+        .chars()
+        .rev()
+        .take(4)
+        .collect::<String>()
         .chars()
         .rev()
         .collect();

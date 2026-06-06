@@ -80,11 +80,7 @@ impl TokenBucketState {
     /// Mirrors the canonical "new tenant lands with full burst budget"
     /// admission policy.
     #[must_use]
-    pub fn new_full(
-        burst_capacity: u32,
-        refill_rate_per_sec: u32,
-        created_at_ms: u64,
-    ) -> Self {
+    pub fn new_full(burst_capacity: u32, refill_rate_per_sec: u32, created_at_ms: u64) -> Self {
         Self {
             available_tokens: f64::from(burst_capacity),
             burst_capacity,
@@ -264,8 +260,7 @@ pub fn try_acquire(
             // Defensive: clamp to live-tenant floor + hard ceiling.
             let wait_u = if wait_secs_f.is_nan() || wait_secs_f < 0.0 {
                 config.retry_after_floor_secs()
-            } else if wait_secs_f > config.retry_after_hard_ceiling_secs() as f64
-            {
+            } else if wait_secs_f > config.retry_after_hard_ceiling_secs() as f64 {
                 config.retry_after_hard_ceiling_secs()
             } else {
                 wait_secs_f as u64

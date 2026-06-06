@@ -224,7 +224,7 @@ impl ReportSigner for InMemoryReportSigner {
 mod tests {
     use super::*;
     use crate::event::{
-        canonical_cloudevent_types, canonical_backend_kinds, BackendErasureOutcome,
+        canonical_backend_kinds, canonical_cloudevent_types, BackendErasureOutcome,
         ErasurePlanEntry, ErasureRequest, ErasureSalt,
     };
 
@@ -252,9 +252,7 @@ mod tests {
                 tenant_id: req.tenant_id,
                 backend: *k,
                 outcome: if k.is_effective() {
-                    BackendErasureOutcome::Erased {
-                        records_deleted: 1,
-                    }
+                    BackendErasureOutcome::Erased { records_deleted: 1 }
                 } else {
                     BackendErasureOutcome::Pseudonymized {
                         records_redacted: 1,
@@ -274,7 +272,10 @@ mod tests {
             completions,
             verified_at_ms: 90_000_000,
             verified_complete: true,
-            cloudevent_types: canonical_cloudevent_types().iter().map(|s| (*s).to_string()).collect(),
+            cloudevent_types: canonical_cloudevent_types()
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect(),
         }
     }
 

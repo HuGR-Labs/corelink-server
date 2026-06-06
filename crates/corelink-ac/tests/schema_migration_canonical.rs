@@ -107,10 +107,7 @@ fn every_canonical_check_constraint_is_present() {
         "chk_ac_sig_key_id_positive",
     ];
     for n in needles {
-        assert!(
-            sql.contains(n),
-            "missing CHECK constraint mnemonic: {n}"
-        );
+        assert!(sql.contains(n), "missing CHECK constraint mnemonic: {n}");
     }
 }
 
@@ -135,10 +132,7 @@ fn every_canonical_check_clause_is_inline_in_create_table() {
         "sig_key_id >= 1",
     ];
     for p in predicates {
-        assert!(
-            sql.contains(p),
-            "missing inline CHECK predicate: `{p}`"
-        );
+        assert!(sql.contains(p), "missing inline CHECK predicate: `{p}`");
     }
 }
 

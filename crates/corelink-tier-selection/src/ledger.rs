@@ -27,14 +27,10 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use crate::audit::{
-    TierSelectionAuditEventType, TierSelectionAuditRecord, TierSelectionAuditSink,
-};
+use crate::audit::{TierSelectionAuditEventType, TierSelectionAuditRecord, TierSelectionAuditSink};
 use crate::dpa::DpaAcceptanceGate;
 use crate::error::TierError;
-use crate::stripe::{
-    CheckoutSessionRequest, StripeCheckoutSessionCompletedEvent, StripeClient,
-};
+use crate::stripe::{CheckoutSessionRequest, StripeCheckoutSessionCompletedEvent, StripeClient};
 use crate::tenant::{StripeCustomerId, TenantCtx, TenantId};
 use crate::tier::TierKind;
 
@@ -513,7 +509,9 @@ mod tests {
     #[test]
     fn free_tier_skips_stripe_when_dpa_accepted() {
         let (l, audit) = ledger_with_dpa_ok();
-        let r = l.select_tier(&ctx("t1", 1000), TierKind::Free, "u@x.com").unwrap();
+        let r = l
+            .select_tier(&ctx("t1", 1000), TierKind::Free, "u@x.com")
+            .unwrap();
         assert!(matches!(r, TierSelectionReceipt::FreeActivated { .. }));
         assert!(audit.has_event(TierSelectionAuditEventType::TierActivatedFree));
         assert_eq!(l.checkout_session_count(), 0);
@@ -598,7 +596,11 @@ mod tests {
         assert!(matches!(err, TierError::LockHeld));
         // After 60s window, lock should be evicted.
         let _ok2 = l
-            .select_tier(&ctx("t1", 1000 + TIER_SELECTION_LOCK_WINDOW_MS + 1), TierKind::Free, "u@x.com")
+            .select_tier(
+                &ctx("t1", 1000 + TIER_SELECTION_LOCK_WINDOW_MS + 1),
+                TierKind::Free,
+                "u@x.com",
+            )
             .ok();
         // Note: this may fail with AlreadyActive after a Free
         // activation; we check at minimum that LockHeld is not raised
@@ -631,7 +633,9 @@ mod tests {
             .select_tier(&ctx("t1", 1000), TierKind::Pro, "u@x.com")
             .unwrap();
         let (session_id, _) = match receipt {
-            TierSelectionReceipt::CheckoutRedirect { session_id, tier, .. } => (session_id, tier),
+            TierSelectionReceipt::CheckoutRedirect {
+                session_id, tier, ..
+            } => (session_id, tier),
             other => panic!("expected CheckoutRedirect, got {other:?}"),
         };
         let event = StripeCheckoutSessionCompletedEvent {
@@ -651,7 +655,9 @@ mod tests {
     #[test]
     fn webhook_duplicate_event_is_idempotent() {
         let (l, _) = ledger_with_dpa_ok();
-        let _ = l.select_tier(&ctx("t1", 1000), TierKind::Pro, "u@x.com").unwrap();
+        let _ = l
+            .select_tier(&ctx("t1", 1000), TierKind::Pro, "u@x.com")
+            .unwrap();
         let event = StripeCheckoutSessionCompletedEvent {
             event_id: "evt_dup".to_string(),
             session_id: "cs_x".to_string(),
@@ -661,7 +667,10 @@ mod tests {
             ts_ms: 5_000,
         };
         let r1 = l.on_checkout_completed(&event).unwrap();
-        assert!(matches!(r1, SubscriptionActivationReceipt::Activated { .. }));
+        assert!(matches!(
+            r1,
+            SubscriptionActivationReceipt::Activated { .. }
+        ));
         let r2 = l.on_checkout_completed(&event).unwrap();
         assert!(matches!(
             r2,

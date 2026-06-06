@@ -46,7 +46,11 @@ pub struct LsResponse {
 
 impl fmt::Display for LsResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{:<72}  {:>12}  {:>12}  CREATED_AT", "DIGEST", "SIZE", "TENANT")?;
+        writeln!(
+            f,
+            "{:<72}  {:>12}  {:>12}  CREATED_AT",
+            "DIGEST", "SIZE", "TENANT"
+        )?;
         writeln!(f, "{}", "-".repeat(120))?;
         for e in &self.entries {
             writeln!(f, "{e}")?;
@@ -55,7 +59,11 @@ impl fmt::Display for LsResponse {
             f,
             "({} total{})",
             self.total_count,
-            if self.next_cursor.is_some() { "; more pages available" } else { "" }
+            if self.next_cursor.is_some() {
+                "; more pages available"
+            } else {
+                ""
+            }
         )
     }
 }
@@ -97,7 +105,12 @@ pub async fn run(
 }
 
 #[cfg(test)]
-#[allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used)]
+#[allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used
+)]
 mod tests {
     use super::*;
 

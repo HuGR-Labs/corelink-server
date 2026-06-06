@@ -14,8 +14,8 @@
 
 use corelink_replica_worker::coverage::{
     compute_coverage_ratio, CoverageObservation, FailingHotBlobCoverageSli, HotBlobCoverageSli,
-    InMemoryHotBlobCoverageSli, HOT_BLOB_COVERAGE_DEADLINE_SECONDS,
-    HOT_BLOB_COVERAGE_TARGET_RATIO, METRIC_HOT_BLOB_REPLICATION_COVERAGE_RATIO,
+    InMemoryHotBlobCoverageSli, HOT_BLOB_COVERAGE_DEADLINE_SECONDS, HOT_BLOB_COVERAGE_TARGET_RATIO,
+    METRIC_HOT_BLOB_REPLICATION_COVERAGE_RATIO,
 };
 use corelink_replica_worker::Region;
 
@@ -56,7 +56,7 @@ fn inmemory_sli_records_per_region_observations() {
     for (r, num, den) in [
         (Region::Wnam, 95_u64, 100_u64),
         (Region::Enam, 99, 100),
-        (Region::Weur, 50, 100),   // breach
+        (Region::Weur, 50, 100), // breach
         (Region::Sam, 100, 100),
     ] {
         sli.emit_coverage(r, num, den, 0).expect("emit ok");

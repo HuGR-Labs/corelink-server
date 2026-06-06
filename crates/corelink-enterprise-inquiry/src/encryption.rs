@@ -49,9 +49,7 @@ use std::sync::{Arc, Mutex};
 
 use thiserror::Error;
 
-use crate::form::{
-    BYOKRequirementsKind, EnterpriseInquiryForm, InquiryId, ResidencyKind, Role,
-};
+use crate::form::{BYOKRequirementsKind, EnterpriseInquiryForm, InquiryId, ResidencyKind, Role};
 
 /// AAD context bound to every sealed payload — prevents cross-tenant
 /// or cross-inquiry wrapped-DEK swap attacks per `BYOK::build_aad`
@@ -537,14 +535,11 @@ impl InquiryPayloadEncryptor for InMemoryInquiryPayloadEncryptor {
             }
         }
         let mut cursor = TEST_MAGIC.len();
-        let company =
-            pop_str_field(&buf, &mut cursor).map_err(InquiryEncryptionError::Unseal)?;
-        let email =
-            pop_str_field(&buf, &mut cursor).map_err(InquiryEncryptionError::Unseal)?;
+        let company = pop_str_field(&buf, &mut cursor).map_err(InquiryEncryptionError::Unseal)?;
+        let email = pop_str_field(&buf, &mut cursor).map_err(InquiryEncryptionError::Unseal)?;
         let phone_optional =
             pop_opt_str_field(&buf, &mut cursor).map_err(InquiryEncryptionError::Unseal)?;
-        let use_case =
-            pop_str_field(&buf, &mut cursor).map_err(InquiryEncryptionError::Unseal)?;
+        let use_case = pop_str_field(&buf, &mut cursor).map_err(InquiryEncryptionError::Unseal)?;
         let additional_notes =
             pop_opt_str_field(&buf, &mut cursor).map_err(InquiryEncryptionError::Unseal)?;
         Ok(UnsealedInquiryPii {

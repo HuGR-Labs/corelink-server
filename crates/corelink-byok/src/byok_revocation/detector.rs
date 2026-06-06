@@ -148,10 +148,7 @@ impl RevocationDetector {
         let interval = self.config.check_interval();
         let mut failure_counter = FailureCounter::default();
         loop {
-            if let Err(e) = self
-                .run_cycle_inner(&mut failure_counter)
-                .await
-            {
+            if let Err(e) = self.run_cycle_inner(&mut failure_counter).await {
                 error!(error = %e, "revocation check cycle error");
             }
             tokio::time::sleep(interval).await;
@@ -191,10 +188,7 @@ impl RevocationDetector {
                     Ok(KmsAccessStatus::Revoked) | Ok(KmsAccessStatus::NotFound) => {
                         // Kill switch: unconditional, immediate.
                         failure_counter.reset(key_id.as_str());
-                        if let Err(e) = self
-                            .handle_revocation(provider, &key_id)
-                            .await
-                        {
+                        if let Err(e) = self.handle_revocation(provider, &key_id).await {
                             error!(
                                 error = %e,
                                 provider = provider.provider_kind().as_str(),
@@ -248,17 +242,16 @@ impl RevocationDetector {
                             error = %e,
                             "KMS access check error"
                         );
-                    }
-                    // NOTE: prior to Wave-35 Phase 2 absorption a defensive
-                    // `Ok(_) => {...}` future-compat catch-all sat here. Once
-                    // `KmsAccessStatus` moved into the same crate as this
-                    // match the compiler proved the arm unreachable
-                    // (intra-crate exhaustiveness). Removed per charter
-                    // "no `#[allow]` to mask new lints"; behaviour preserved
-                    // because the existing 4 arms are exhaustive over the
-                    // current `#[non_exhaustive]` enum surface, and any
-                    // future variant would force a recompile that surfaces
-                    // the missing-arm error explicitly at this match site.
+                    } // NOTE: prior to Wave-35 Phase 2 absorption a defensive
+                      // `Ok(_) => {...}` future-compat catch-all sat here. Once
+                      // `KmsAccessStatus` moved into the same crate as this
+                      // match the compiler proved the arm unreachable
+                      // (intra-crate exhaustiveness). Removed per charter
+                      // "no `#[allow]` to mask new lints"; behaviour preserved
+                      // because the existing 4 arms are exhaustive over the
+                      // current `#[non_exhaustive]` enum surface, and any
+                      // future variant would force a recompile that surfaces
+                      // the missing-arm error explicitly at this match site.
                 }
             }
         }
@@ -369,11 +362,7 @@ impl RevocationDetector {
     }
 
     /// Handle `KmsAccessStatus::Ok` — restore tenant if previously degraded.
-    async fn handle_ok_status(
-        &self,
-        provider: &Arc<dyn KmsProvider>,
-        key_id: &KmsKeyId,
-    ) {
+    async fn handle_ok_status(&self, provider: &Arc<dyn KmsProvider>, key_id: &KmsKeyId) {
         let current = self.store.current_status(key_id).await;
         match current {
             Ok(Some(TenantByokStatus::DegradedReadOnly)) => {
@@ -418,19 +407,11 @@ impl RevocationDetector {
 
     /// Conservative degrade on sustained network partition (no kill switch;
     /// false-positive safe — customer can verify and unblock).
-    async fn conservative_degrade(
-        &self,
-        provider: &Arc<dyn KmsProvider>,
-        key_id: &KmsKeyId,
-    ) {
+    async fn conservative_degrade(&self, provider: &Arc<dyn KmsProvider>, key_id: &KmsKeyId) {
         let degraded_at_ms = now_ms();
         let _ = self
             .store
-            .mark_degraded(
-                key_id,
-                provider.provider_kind().as_str(),
-                degraded_at_ms,
-            )
+            .mark_degraded(key_id, provider.provider_kind().as_str(), degraded_at_ms)
             .await;
 
         warn!(
@@ -447,10 +428,7 @@ impl RevocationDetector {
     /// Here we return an empty list (production wiring is deployment-specific).
     // WI-S14-009 follow-up: D1 query adapter injection
     #[allow(unused)]
-    async fn list_active_byok_keys(
-        &self,
-        _provider: &Arc<dyn KmsProvider>,
-    ) -> Vec<KmsKeyId> {
+    async fn list_active_byok_keys(&self, _provider: &Arc<dyn KmsProvider>) -> Vec<KmsKeyId> {
         // Production: D1 query. Stub returns empty; tests inject via override.
         vec![]
     }

@@ -31,7 +31,11 @@ pub struct DeployTarget {
 
 impl DeployTarget {
     /// Construct a `DeployTarget`.
-    pub fn new(script_name: impl Into<String>, zone_id: impl Into<String>, route_pattern: impl Into<String>) -> Self {
+    pub fn new(
+        script_name: impl Into<String>,
+        zone_id: impl Into<String>,
+        route_pattern: impl Into<String>,
+    ) -> Self {
         Self {
             script_name: script_name.into(),
             zone_id: zone_id.into(),
@@ -56,7 +60,10 @@ pub struct GitHubActor {
 impl GitHubActor {
     /// Construct a `GitHubActor`.
     pub fn new(login: impl Into<String>, workflow_ref: impl Into<String>) -> Self {
-        Self { login: login.into(), workflow_ref: workflow_ref.into() }
+        Self {
+            login: login.into(),
+            workflow_ref: workflow_ref.into(),
+        }
     }
 }
 
@@ -122,12 +129,18 @@ pub struct OciImageRef {
 impl OciImageRef {
     /// Construct an `OciImageRef` with a floating tag (digest resolved later).
     pub fn from_tag(image: impl Into<String>) -> Self {
-        Self { image: image.into(), digest: String::new() }
+        Self {
+            image: image.into(),
+            digest: String::new(),
+        }
     }
 
     /// Construct an `OciImageRef` with a pinned digest.
     pub fn from_digest(image: impl Into<String>, digest: impl Into<String>) -> Self {
-        Self { image: image.into(), digest: digest.into() }
+        Self {
+            image: image.into(),
+            digest: digest.into(),
+        }
     }
 
     /// Returns `true` when the digest has been resolved.
@@ -161,7 +174,9 @@ impl CosignIdentityPattern {
 
     /// Construct from an arbitrary regex pattern.
     pub fn new(pattern: impl Into<String>) -> Self {
-        Self { pattern: pattern.into() }
+        Self {
+            pattern: pattern.into(),
+        }
     }
 
     /// Returns `true` if `san_uri` matches this pattern.
@@ -323,7 +338,7 @@ pub mod metrics {
     clippy::expect_used,
     clippy::indexing_slicing,
     clippy::panic,
-    clippy::const_is_empty,
+    clippy::const_is_empty
 )]
 mod tests {
     use super::*;

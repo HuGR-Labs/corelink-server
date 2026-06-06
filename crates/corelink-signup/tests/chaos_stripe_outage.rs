@@ -36,12 +36,12 @@
     reason = "tests are allowed to use these primitives"
 )]
 
+use corelink_signup::orchestrator::InMemoryProvisionRecord;
 use corelink_signup::{
     AtomicSignupStore, Bcp47Locale, BillingIntent, CorrelationId, IdempotencyKey,
     InMemoryAtomicSignupStore, InMemorySignupAuditSink, SignupAuditEventType, SignupOrchestrator,
     SignupOutcome, SignupRequest, StripeOutageBillingClient, UserEmailHash,
 };
-use corelink_signup::orchestrator::InMemoryProvisionRecord;
 
 fn req(idem: &str, email: &str, locale: &str, cid: &str) -> SignupRequest {
     SignupRequest::new(

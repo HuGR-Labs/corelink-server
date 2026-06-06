@@ -113,8 +113,7 @@ fn dek_generate_produces_non_zero_random_bytes() {
     // Kills mutation: Dek::generate -> Ok(Default::default()) (all zeros).
     let dek = Dek::generate().expect("DEK generation");
     assert_ne!(
-        dek.bytes,
-        [0u8; 32],
+        dek.bytes, [0u8; 32],
         "Dek::generate must use getrandom, not Default::default()"
     );
     // Two independent generations must differ (CSPRNG, not Default).
@@ -261,10 +260,7 @@ async fn dek_cache_evict_returns_exact_match_count_two_entries() {
         key_arn_or_id: arn_a.to_string(),
         region: "us-east-1".to_string(),
     };
-    let evicted = cache
-        .evict_all_for_key(&key_id_a)
-        .await
-        .expect("evict");
+    let evicted = cache.evict_all_for_key(&key_id_a).await.expect("evict");
     assert_eq!(evicted, 2, "exactly the two arn_a entries must be evicted");
     assert_eq!(cache.len().await, 1, "arn_b entry must remain");
     // The remaining entry must still be reachable.

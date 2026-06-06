@@ -17,11 +17,11 @@
     reason = "tests are allowed to use these primitives"
 )]
 
-use corelink_byok::{Dek, KmsProviderKind};
 use corelink_byok::revocation::{
     event::{EVENT_TYPE_CMK_RESTORED, EVENT_TYPE_CMK_REVOKED},
     store::TenantByokStatus,
 };
+use corelink_byok::{Dek, KmsProviderKind};
 use e2e_byok_revoke::helpers::{
     make_wrapped_for, KillSwitchRunner, KmsBehaviour, ALL_PROVIDER_KINDS,
 };
@@ -68,7 +68,11 @@ async fn matrix_all_four_providers_revoke_and_restore() {
         );
 
         assert_eq!(bundle.alert.alert_count(), 1, "{kind:?}: 1 revoke alert");
-        assert_eq!(bundle.alert.recovery_count(), 1, "{kind:?}: 1 recovery alert");
+        assert_eq!(
+            bundle.alert.recovery_count(),
+            1,
+            "{kind:?}: 1 recovery alert"
+        );
     }
 }
 
@@ -79,11 +83,15 @@ async fn matrix_provider_fips_levels_canonical() {
     for kind in ALL_PROVIDER_KINDS {
         let bundle = setup_byok_env(*kind);
         let expected = match kind {
-            KmsProviderKind::AwsKms
-            | KmsProviderKind::GcpKms
-            | KmsProviderKind::AzureKeyVault => FipsLevel::Fips140_3_L1,
+            KmsProviderKind::AwsKms | KmsProviderKind::GcpKms | KmsProviderKind::AzureKeyVault => {
+                FipsLevel::Fips140_3_L1
+            }
             KmsProviderKind::HashicorpVault => FipsLevel::Fips140_2_L1,
         };
-        assert_eq!(bundle.provider.fips_level(), expected, "{kind:?} FIPS level");
+        assert_eq!(
+            bundle.provider.fips_level(),
+            expected,
+            "{kind:?} FIPS level"
+        );
     }
 }

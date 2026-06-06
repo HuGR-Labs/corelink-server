@@ -110,7 +110,15 @@ async fn scenario_03_dt_ingestion_retry_exhausted() {
 
     let sbom_bytes = b"{\"specVersion\":\"1.5\"}";
 
-    let result = ingest_into_dt(sbom_bytes, &dt_url, &api_key, "corelink-server", "0.0.0", None).await;
+    let result = ingest_into_dt(
+        sbom_bytes,
+        &dt_url,
+        &api_key,
+        "corelink-server",
+        "0.0.0",
+        None,
+    )
+    .await;
 
     assert!(
         result.is_err(),

@@ -16,7 +16,10 @@
 //!
 //! Cadence: **monthly** (per `failure_modes.md §RB cadence line 278`).
 
-#![allow(clippy::print_stdout, reason = "binary harnesses produce human-readable PASS/FAIL output to stdout; print_stdout-deny inherited from the umbrella library does not apply")]
+#![allow(
+    clippy::print_stdout,
+    reason = "binary harnesses produce human-readable PASS/FAIL output to stdout; print_stdout-deny inherited from the umbrella library does not apply"
+)]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
@@ -61,7 +64,11 @@ fn clean_event() -> DriftPlanEvent {
 
 /// Step 1: Cron detection — consumer processes drift event; finding inserted.
 fn step_cron_detection(
-    consumer: &mut DriftConsumer<DefaultDriftClassifier, InMemoryDriftAuditSink, InMemoryDriftFindingStore>,
+    consumer: &mut DriftConsumer<
+        DefaultDriftClassifier,
+        InMemoryDriftAuditSink,
+        InMemoryDriftFindingStore,
+    >,
 ) -> Step {
     let event = medium_drift_event();
     match consumer.process_plan_event(&event) {
@@ -83,12 +90,16 @@ fn step_cron_detection(
 
 /// Step 2: SEV-3 Slack alert — severity >= Medium fires alert in production.
 fn step_sev3_alert_fires(
-    consumer: &DriftConsumer<DefaultDriftClassifier, InMemoryDriftAuditSink, InMemoryDriftFindingStore>,
+    consumer: &DriftConsumer<
+        DefaultDriftClassifier,
+        InMemoryDriftAuditSink,
+        InMemoryDriftFindingStore,
+    >,
 ) -> Step {
     let findings = consumer.store().all_findings();
-    let has_medium_or_higher = findings.iter().any(|f| {
-        matches!(f.severity, DriftSeverity::Medium | DriftSeverity::High)
-    });
+    let has_medium_or_higher = findings
+        .iter()
+        .any(|f| matches!(f.severity, DriftSeverity::Medium | DriftSeverity::High));
     Step {
         name: "sev3-alert-fires",
         passed: has_medium_or_higher,
@@ -101,7 +112,11 @@ fn step_sev3_alert_fires(
 
 /// Step 3: D1 finding row inserted and stored.
 fn step_d1_finding_row(
-    consumer: &DriftConsumer<DefaultDriftClassifier, InMemoryDriftAuditSink, InMemoryDriftFindingStore>,
+    consumer: &DriftConsumer<
+        DefaultDriftClassifier,
+        InMemoryDriftAuditSink,
+        InMemoryDriftFindingStore,
+    >,
 ) -> Step {
     let findings = consumer.store().all_findings();
     Step {
@@ -121,15 +136,17 @@ fn step_decision_tree() -> Step {
     Step {
         name: "decision-tree-severity-classification",
         passed: ok,
-        detail: format!(
-            "diff_count=5 → severity={severity:?} (expected Medium per RB-FM-206 §2)"
-        ),
+        detail: format!("diff_count=5 → severity={severity:?} (expected Medium per RB-FM-206 §2)"),
     }
 }
 
 /// Step 5: Clean run after remediation — exit_code=0 → None severity; no new finding.
 fn step_clean_run_post_remediation(
-    consumer: &mut DriftConsumer<DefaultDriftClassifier, InMemoryDriftAuditSink, InMemoryDriftFindingStore>,
+    consumer: &mut DriftConsumer<
+        DefaultDriftClassifier,
+        InMemoryDriftAuditSink,
+        InMemoryDriftFindingStore,
+    >,
 ) -> Step {
     let event = clean_event();
     match consumer.process_plan_event(&event) {
@@ -154,7 +171,11 @@ fn step_clean_run_post_remediation(
 
 /// Step 6: Audit chain — at least 2 audit events (drift detected + clean run).
 fn step_audit_chain(
-    consumer: &DriftConsumer<DefaultDriftClassifier, InMemoryDriftAuditSink, InMemoryDriftFindingStore>,
+    consumer: &DriftConsumer<
+        DefaultDriftClassifier,
+        InMemoryDriftAuditSink,
+        InMemoryDriftFindingStore,
+    >,
 ) -> Step {
     let events = &consumer.audit_sink().records;
     Step {
@@ -195,7 +216,10 @@ async fn main() {
     }
 
     println!();
-    println!("=== RB-FM-206 dry-run result: {} ===", if all_pass { "PASS" } else { "FAIL" });
+    println!(
+        "=== RB-FM-206 dry-run result: {} ===",
+        if all_pass { "PASS" } else { "FAIL" }
+    );
 
     if !all_pass {
         std::process::exit(1);

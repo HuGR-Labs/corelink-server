@@ -383,9 +383,10 @@ where
         utilization: UtilizationPct,
         now_ms: u64,
     ) -> Result<QuotaTransition, QuotaFsmError> {
-        let _lock = self.transition_lock.lock().map_err(|_| {
-            QuotaFsmError::Internal("transition mutex poisoned".to_string())
-        })?;
+        let _lock = self
+            .transition_lock
+            .lock()
+            .map_err(|_| QuotaFsmError::Internal("transition mutex poisoned".to_string()))?;
 
         let row = self.lookup_or_genesis(tenant_id, now_ms)?;
 
@@ -400,8 +401,7 @@ where
         }
 
         let target_state = utilization_bucket(utilization, &self.config);
-        let transition =
-            Self::compute_utilization_transition(row.current_state, target_state);
+        let transition = Self::compute_utilization_transition(row.current_state, target_state);
 
         if !transition.mutated() {
             return Ok(transition);
@@ -431,15 +431,16 @@ where
         tenant_id: Uuid,
         now_ms: u64,
     ) -> Result<QuotaTransition, QuotaFsmError> {
-        let _lock = self.transition_lock.lock().map_err(|_| {
-            QuotaFsmError::Internal("transition mutex poisoned".to_string())
-        })?;
+        let _lock = self
+            .transition_lock
+            .lock()
+            .map_err(|_| QuotaFsmError::Internal("transition mutex poisoned".to_string()))?;
 
         let row = self.lookup_or_genesis(tenant_id, now_ms)?;
         let new_count = row.invoice_failure_count.incremented();
         let threshold = self.config.suspension_invoice_failure_threshold();
-        let crosses_threshold = new_count.value() >= threshold
-            && row.invoice_failure_count.value() < threshold;
+        let crosses_threshold =
+            new_count.value() >= threshold && row.invoice_failure_count.value() < threshold;
 
         // Compute the canonical transition arm. Two cases:
         //   1. crosses_threshold → Suspended (state edge fires).
@@ -494,9 +495,10 @@ where
         utilization: UtilizationPct,
         now_ms: u64,
     ) -> Result<QuotaTransition, QuotaFsmError> {
-        let _lock = self.transition_lock.lock().map_err(|_| {
-            QuotaFsmError::Internal("transition mutex poisoned".to_string())
-        })?;
+        let _lock = self
+            .transition_lock
+            .lock()
+            .map_err(|_| QuotaFsmError::Internal("transition mutex poisoned".to_string()))?;
 
         let row = self.lookup_or_genesis(tenant_id, now_ms)?;
 
@@ -546,9 +548,9 @@ where
     reason = "tests are allowed to use these primitives; float_cmp is acceptable for canonical-percentage-pin assertions where the values are constructed deterministically."
 )]
 mod tests {
-    use super::*;
     use super::super::audit::{FailingQuotaAuditSink, InMemoryQuotaAuditSink};
     use super::super::store::{FailingQuotaFsmStore, InMemoryQuotaFsmStore};
+    use super::*;
 
     type Fsm = InMemoryQuotaStateMachine<InMemoryQuotaAuditSink, InMemoryQuotaFsmStore>;
 
@@ -568,7 +570,12 @@ mod tests {
         let (fsm, audit, store) = fresh();
         let t = Uuid::now_v7();
         let trans = fsm.evaluate_utilization(t, util(50.0), 100).unwrap();
-        let no_change = matches!(trans, QuotaTransition::NoChange { state: QuotaState::WithinPlan });
+        let no_change = matches!(
+            trans,
+            QuotaTransition::NoChange {
+                state: QuotaState::WithinPlan
+            }
+        );
         assert!(no_change);
         assert_eq!(audit.len(), 0);
         // Genesis row not upserted (no mutation needed).
@@ -590,9 +597,7 @@ mod tests {
         // Two audit rows: state_changed + overage_telemetry_recorded.
         assert_eq!(audit.len(), 2);
         assert_eq!(
-            audit
-                .snapshot_of(QuotaAuditEventType::StateChanged)
-                .len(),
+            audit.snapshot_of(QuotaAuditEventType::StateChanged).len(),
             1
         );
         assert_eq!(
@@ -711,10 +716,7 @@ mod tests {
             }
         );
         assert!(suspended);
-        assert_eq!(
-            audit.snapshot_of(QuotaAuditEventType::Suspended).len(),
-            1
-        );
+        assert_eq!(audit.snapshot_of(QuotaAuditEventType::Suspended).len(), 1);
         let row = store.lookup(t).unwrap().unwrap();
         assert_eq!(row.current_state, QuotaState::SuspendedForNonPayment);
         assert_eq!(row.invoice_failure_count.value(), 3);
@@ -729,10 +731,7 @@ mod tests {
         }
         // Only one Suspended audit (the canonical edge from 2→3
         // failures); the 4th + 5th are NoChange.
-        assert_eq!(
-            audit.snapshot_of(QuotaAuditEventType::Suspended).len(),
-            1
-        );
+        assert_eq!(audit.snapshot_of(QuotaAuditEventType::Suspended).len(), 1);
         let row = store.lookup(t).unwrap().unwrap();
         assert_eq!(row.current_state, QuotaState::SuspendedForNonPayment);
         assert_eq!(row.invoice_failure_count.value(), 5);
@@ -780,10 +779,7 @@ mod tests {
             }
         );
         assert!(reinstated);
-        assert_eq!(
-            audit.snapshot_of(QuotaAuditEventType::Reinstated).len(),
-            1
-        );
+        assert_eq!(audit.snapshot_of(QuotaAuditEventType::Reinstated).len(), 1);
         let row = store.lookup(t).unwrap().unwrap();
         assert_eq!(row.current_state, QuotaState::WithinPlan);
         assert_eq!(row.invoice_failure_count.value(), 0);
@@ -868,7 +864,8 @@ mod tests {
             fn lookup(
                 &self,
                 tenant_id: Uuid,
-            ) -> Result<Option<QuotaFsmStateRow>, super::super::error::QuotaFsmStoreError> {
+            ) -> Result<Option<QuotaFsmStateRow>, super::super::error::QuotaFsmStoreError>
+            {
                 Ok(Some(QuotaFsmStateRow::genesis(tenant_id, 0)))
             }
             fn upsert(
@@ -920,7 +917,12 @@ mod tests {
         let t = Uuid::now_v7();
         // 1 failure → suspended under tighter threshold.
         let trans = fsm.record_invoice_failure(t, 100).unwrap();
-        let suspended = matches!(trans, QuotaTransition::Suspended { invoice_failures: 1 });
+        let suspended = matches!(
+            trans,
+            QuotaTransition::Suspended {
+                invoice_failures: 1
+            }
+        );
         assert!(suspended);
     }
 
@@ -935,9 +937,7 @@ mod tests {
         let _ = fsm.evaluate_utilization(t, util(101.0), 400).unwrap();
         // 3 state_changed audits (genesis to 80, 80 to 95, 95 to 100).
         assert_eq!(
-            audit
-                .snapshot_of(QuotaAuditEventType::StateChanged)
-                .len(),
+            audit.snapshot_of(QuotaAuditEventType::StateChanged).len(),
             3
         );
         // 2 overage_telemetry audits (80 + 95 entries).

@@ -171,14 +171,23 @@ async fn ct_split_blob_chunk_append_canonical() -> ConformanceResult {
     let (handler, _chunks) = build_handler(Region::Wnam, 1);
     let tenant = Uuid::from_u128(1);
     let ctx = make_ctx(tenant, Region::Wnam, PatScopes::single(SCOPE_CACHE_W));
-    let init = handler.init_split(&ctx, &bd(b"chunked"), "i").await.unwrap();
+    let init = handler
+        .init_split(&ctx, &bd(b"chunked"), "i")
+        .await
+        .unwrap();
     let sid = match init {
         InitSplitOutcome::Started { session_id } => session_id,
         _ => return ConformanceResult::fail(test, "init should Start"),
     };
     for i in 0u32..3 {
         if let Err(e) = handler
-            .append_chunk(&ctx, sid, ChunkIndex(i), Bytes::from(format!("c{i}").into_bytes()), "c")
+            .append_chunk(
+                &ctx,
+                sid,
+                ChunkIndex(i),
+                Bytes::from(format!("c{i}").into_bytes()),
+                "c",
+            )
             .await
         {
             return ConformanceResult::fail(test, format!("append c{i} failed: {e:?}"));
@@ -247,7 +256,10 @@ async fn ct_split_blob_chunk_ordering_violation_rejected() -> ConformanceResult 
     if matches!(err, SplitError::ChunkOrderingViolation { .. }) {
         ConformanceResult::pass(test)
     } else {
-        ConformanceResult::fail(test, format!("expected ChunkOrderingViolation, got {err:?}"))
+        ConformanceResult::fail(
+            test,
+            format!("expected ChunkOrderingViolation, got {err:?}"),
+        )
     }
 }
 
@@ -443,9 +455,7 @@ async fn ct_splice_blob_streaming_canonical_order() -> ConformanceResult {
     } else {
         ConformanceResult::fail(
             test,
-            format!(
-                "chunks out of order: expected {payloads:?}, got {actual:?}"
-            ),
+            format!("chunks out of order: expected {payloads:?}, got {actual:?}"),
         )
     }
 }

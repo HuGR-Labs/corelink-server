@@ -32,9 +32,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::audit::{
-    InquiryAuditEventType, InquiryAuditRecord, InquiryAuditSink,
-};
+use crate::audit::{InquiryAuditEventType, InquiryAuditRecord, InquiryAuditSink};
 use crate::crm::{CrmClient, CrmEntryId};
 use crate::encryption::{
     anonymised_slack_summary, seal_inquiry, InquiryPayloadEncryptor, SealedInquiry,
@@ -192,9 +190,9 @@ where
     }
 
     fn lock_state(&self) -> Result<std::sync::MutexGuard<'_, LedgerState>, EnterpriseInquiryError> {
-        self.state.lock().map_err(|e| {
-            EnterpriseInquiryError::Internal(format!("ledger mutex poisoned: {e}"))
-        })
+        self.state
+            .lock()
+            .map_err(|e| EnterpriseInquiryError::Internal(format!("ledger mutex poisoned: {e}")))
     }
 
     /// Submit an inquiry — runs validation + the PAT-SAGA-001 atomic
@@ -321,8 +319,7 @@ where
         // ============================================================
 
         // Leg 1: Slack notification — ANONYMISED summary; no PII.
-        let slack_body =
-            anonymised_slack_summary(&inquiry_id, &sealed.sanitized, lead_score);
+        let slack_body = anonymised_slack_summary(&inquiry_id, &sealed.sanitized, lead_score);
         let slack_message_id =
             match self
                 .slack
@@ -746,10 +743,16 @@ mod tests {
         let posts = slack.snapshot();
         assert_eq!(posts.len(), 1);
         let body = &posts[0].body;
-        assert!(!body.contains("ciso@acme.example"), "email in slack: {body}");
+        assert!(
+            !body.contains("ciso@acme.example"),
+            "email in slack: {body}"
+        );
         assert!(!body.contains("+15555550100"), "phone in slack: {body}");
         assert!(!body.contains("Acme Corp"), "company in slack: {body}");
-        assert!(!body.contains("multi-region read-through"), "notes in slack");
+        assert!(
+            !body.contains("multi-region read-through"),
+            "notes in slack"
+        );
         // Surrogates present.
         assert!(body.contains("AC"));
         assert!(body.contains("acme.example"));

@@ -181,10 +181,7 @@ impl Email {
 impl fmt::Debug for Email {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Redact local-part; surface domain only for diagnosis.
-        let domain = self
-            .0
-            .split_once('@')
-            .map_or("<no-domain>", |(_, d)| d);
+        let domain = self.0.split_once('@').map_or("<no-domain>", |(_, d)| d);
         write!(f, "Email(<redacted>@{domain})")
     }
 }

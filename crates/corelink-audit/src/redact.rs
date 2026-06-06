@@ -248,7 +248,10 @@ mod tests {
 
     #[test]
     fn redact_pat_macro_replaces_input() {
-        assert_eq!(redact_pat!("corelink_pat_live_xxx.yyy.zzz"), "[REDACTED-PAT]");
+        assert_eq!(
+            redact_pat!("corelink_pat_live_xxx.yyy.zzz"),
+            "[REDACTED-PAT]"
+        );
         assert_eq!(redact_pat!(""), "[REDACTED-PAT]");
     }
 

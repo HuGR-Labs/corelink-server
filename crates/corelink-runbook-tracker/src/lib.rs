@@ -453,17 +453,7 @@ mod tests {
     fn drill_record_rejects_empty_executor() {
         let rb = RunbookId::new("RB-FM-051").expect("valid");
         assert_eq!(
-            DrillRecord::new(
-                "drill-x",
-                rb,
-                "  ",
-                10_000,
-                600,
-                600,
-                true,
-                "url",
-                None,
-            ),
+            DrillRecord::new("drill-x", rb, "  ", 10_000, 600, 600, true, "url", None,),
             Err(TrackerError::EmptyExecutor)
         );
     }
@@ -472,17 +462,7 @@ mod tests {
     fn drill_record_rejects_empty_evidence() {
         let rb = RunbookId::new("RB-FM-051").expect("valid");
         assert_eq!(
-            DrillRecord::new(
-                "drill-x",
-                rb,
-                "op_a",
-                10_000,
-                600,
-                600,
-                true,
-                "",
-                None,
-            ),
+            DrillRecord::new("drill-x", rb, "op_a", 10_000, 600, 600, true, "", None,),
             Err(TrackerError::EmptyEvidence)
         );
     }

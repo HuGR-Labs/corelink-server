@@ -20,9 +20,11 @@ use corelink_replication_coordinator::{
     ReplicationCoordinator,
 };
 
-fn fixture(
-) -> (Arc<InMemoryHeartbeatRegistry>, Arc<InMemoryCoordinatorAuditSink>, InMemoryReplicationCoordinator)
-{
+fn fixture() -> (
+    Arc<InMemoryHeartbeatRegistry>,
+    Arc<InMemoryCoordinatorAuditSink>,
+    InMemoryReplicationCoordinator,
+) {
     let hb = Arc::new(InMemoryHeartbeatRegistry::new());
     let audit = Arc::new(InMemoryCoordinatorAuditSink::new());
     let coord = InMemoryReplicationCoordinator::new(
@@ -38,9 +40,7 @@ fn two_primaries_at_registration_rejected() -> Result<(), CoordinatorError> {
     // simultaneously. The second register MUST be rejected.
     let (_hb, _audit, coord) = fixture();
     coord.register(Region::Wnam, RegionRole::Primary)?;
-    let err = coord
-        .register(Region::Enam, RegionRole::Primary)
-        .err();
+    let err = coord.register(Region::Enam, RegionRole::Primary).err();
     match err {
         Some(CoordinatorError::SplitBrainRejected {
             candidate,
@@ -155,8 +155,7 @@ fn replica_lag_slo_breach_triggers_reroute_evaluation() -> Result<(), Coordinato
 }
 
 #[test]
-fn full_failover_lifecycle_emits_canonical_audit_taxonomy(
-) -> Result<(), CoordinatorError> {
+fn full_failover_lifecycle_emits_canonical_audit_taxonomy() -> Result<(), CoordinatorError> {
     // Full lifecycle: PRIMARY-HEALTHY → primary fail → promote replica →
     // 24h cool-down → failback. The audit trail MUST be exactly:
     // [RegionDemoted, RegionPromoted, FailbackCommitted].
@@ -183,8 +182,7 @@ fn full_failover_lifecycle_emits_canonical_audit_taxonomy(
     coord.failback(Region::Wnam, after_24h)?;
 
     let records = audit.records();
-    let types: Vec<CoordinatorAuditEventType> =
-        records.iter().map(|r| r.event_type).collect();
+    let types: Vec<CoordinatorAuditEventType> = records.iter().map(|r| r.event_type).collect();
     assert_eq!(
         types,
         vec![

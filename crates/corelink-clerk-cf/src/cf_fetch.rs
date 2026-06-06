@@ -18,7 +18,7 @@
 //! non-Send future and satisfy the `Send` bound — this is the canonical
 //! workers-rs pattern documented in their README.
 
-use corelink_clerk::jwks::{JwksFetchError, JwksFetchFuture, JwksFetcher, Jwks};
+use corelink_clerk::jwks::{Jwks, JwksFetchError, JwksFetchFuture, JwksFetcher};
 use worker::{Fetch, Method, Request, RequestInit};
 
 /// Production [`JwksFetcher`] that calls the CF Workers Fetch API.

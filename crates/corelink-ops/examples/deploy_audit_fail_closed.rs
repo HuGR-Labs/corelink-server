@@ -25,7 +25,9 @@ use corelink_ops::deploy::{
 };
 
 fn main() {
-    let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::ERROR).try_init();
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::ERROR)
+        .try_init();
 
     // Audit sink that always fails — simulates S-09 chain 503
     let failing_sink = Arc::new(FailingDeployAuditSink::new(

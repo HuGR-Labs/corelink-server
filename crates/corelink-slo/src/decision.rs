@@ -176,9 +176,7 @@ mod tests {
     fn page_and_ticket_and_quiet_partition_decisions() {
         let v = canonical_alert_decisions();
         for d in v {
-            let cnt = u32::from(d.is_page())
-                + u32::from(d.is_ticket())
-                + u32::from(d.is_quiet());
+            let cnt = u32::from(d.is_page()) + u32::from(d.is_ticket()) + u32::from(d.is_quiet());
             assert_eq!(
                 cnt, 1,
                 "every decision belongs to exactly one of page/ticket/quiet: {d}"

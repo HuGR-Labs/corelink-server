@@ -31,13 +31,7 @@ fn make_failing_audit_ledger() -> (InMemoryConsentLedger, Arc<InMemoryConsentSto
     let audit = Arc::new(FailingConsentAuditSink);
     let signer = Arc::new(InMemoryConsentHmacSigner::new_test());
     let cascade = Arc::new(InMemoryCascadeSink::new());
-    let ledger = InMemoryConsentLedger::new(
-        store.clone(),
-        audit,
-        signer,
-        cascade,
-        "1.0.0",
-    );
+    let ledger = InMemoryConsentLedger::new(store.clone(), audit, signer, cascade, "1.0.0");
     (ledger, store)
 }
 
@@ -75,7 +69,11 @@ fn grant_audit_fail_returns_error_state_unchanged() {
 
     // State UNCHANGED: no grants stored
     let grants = store.list_grants("tenant-01", "subject-01").unwrap();
-    assert_eq!(grants.len(), 0, "store must be UNCHANGED after audit failure");
+    assert_eq!(
+        grants.len(),
+        0,
+        "store must be UNCHANGED after audit failure"
+    );
 }
 
 /// AC-009: Revoke with failing audit → error returned, store UNCHANGED.
@@ -117,7 +115,11 @@ fn revoke_audit_fail_returns_error_state_unchanged() {
     };
 
     let result = failing_ledger.revoke_consent(
-        "t", "s", "pt-BR", ConsentPurpose::MarketingEmail, revoke_proof,
+        "t",
+        "s",
+        "pt-BR",
+        ConsentPurpose::MarketingEmail,
+        revoke_proof,
     );
 
     assert!(result.is_err(), "revoke must fail when audit emit fails");
@@ -126,7 +128,11 @@ fn revoke_audit_fail_returns_error_state_unchanged() {
 
     // No revocation records stored
     let revocations = working_store.list_revocations("t", "s").unwrap();
-    assert_eq!(revocations.len(), 0, "revocation store must be UNCHANGED after audit failure");
+    assert_eq!(
+        revocations.len(),
+        0,
+        "revocation store must be UNCHANGED after audit failure"
+    );
 }
 
 /// Verify the FailingConsentAuditSink always returns Audit error.

@@ -85,7 +85,12 @@ impl InMemoryAcEnvelopeStore {
     }
 
     fn key(region: Region, prefix: &TenantPrefix, hex: &str) -> String {
-        format!("ac-{}/{}/{}.json", region.bucket_suffix(), prefix.as_str(), hex)
+        format!(
+            "ac-{}/{}/{}.json",
+            region.bucket_suffix(),
+            prefix.as_str(),
+            hex
+        )
     }
 
     /// Snapshot every persisted key (test diagnostics).
@@ -96,12 +101,7 @@ impl InMemoryAcEnvelopeStore {
 
     /// Test-only mutator: tamper an envelope's signature byte to
     /// simulate envelope corruption.
-    pub fn tamper_for_test(
-        &self,
-        region: Region,
-        prefix: &TenantPrefix,
-        hex: &str,
-    ) -> bool {
+    pub fn tamper_for_test(&self, region: Region, prefix: &TenantPrefix, hex: &str) -> bool {
         let key = Self::key(region, prefix, hex);
         let mut guard = self.inner.lock();
         if let Some(env) = guard.get_mut(&key) {

@@ -223,18 +223,13 @@ async fn issuer_spoof_rejected() {
 async fn malformed_no_panic() {
     let key = shared_key_v1();
     let adapter = make_adapter(key);
-    let inputs = [
-        "",
-        "abc",
-        "a.b",
-        "a.b.c.d",
-        "not.a.jwt.at.all",
-        "...",
-        "<>",
-    ];
+    let inputs = ["", "abc", "a.b", "a.b.c.d", "not.a.jwt.at.all", "...", "<>"];
     for input in inputs {
         let result = adapter.validate(input).await;
-        assert!(result.is_err(), "malformed accepted: {input:?} → {result:?}");
+        assert!(
+            result.is_err(),
+            "malformed accepted: {input:?} → {result:?}"
+        );
     }
 }
 
@@ -251,10 +246,8 @@ async fn kid_rotation_lazy_refresh_succeeds() {
         .build()
         .unwrap();
     let jwks_phase1 = corelink_clerk::Jwks::from_keys(vec![key_v1.jwks_key.clone()]);
-    let jwks_phase2 = corelink_clerk::Jwks::from_keys(vec![
-        key_v1.jwks_key.clone(),
-        key_v2.jwks_key.clone(),
-    ]);
+    let jwks_phase2 =
+        corelink_clerk::Jwks::from_keys(vec![key_v1.jwks_key.clone(), key_v2.jwks_key.clone()]);
     let fetcher = ScriptedJwksFetcher::new(vec![jwks_phase1, jwks_phase2]);
     let cache = InMemoryKvCache::with_clock(fixed_clock);
     let adapter = ClerkAdapter::new_with_clock(cfg, fetcher, cache, fixed_clock);
@@ -267,7 +260,10 @@ async fn kid_rotation_lazy_refresh_succeeds() {
     let jwt = encode(&header, &claims, &encoding).expect("test sign");
 
     let result = adapter.validate(&jwt).await;
-    assert!(result.is_ok(), "expected accept after lazy refresh, got {result:?}");
+    assert!(
+        result.is_ok(),
+        "expected accept after lazy refresh, got {result:?}"
+    );
     let snapshot = adapter.counters();
     assert!(snapshot.refresh_kid_miss + snapshot.refresh_scheduled >= 1);
 }

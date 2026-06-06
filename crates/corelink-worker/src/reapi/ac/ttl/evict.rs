@@ -49,8 +49,8 @@ use super::super::meta::{AcExpiredCandidate, AcMetaError, AcMetaStore};
 use super::super::neg_cache::AcNegCache;
 use super::super::types::ActionDigest;
 use crate::cache::kv::KvBackend;
-use crate::TenantCtx;
 use crate::Region;
+use crate::TenantCtx;
 use corelink_tenant_path::TenantDerivationKey;
 
 /// Canonical bounded batch ceiling — 250 rows per tick.
@@ -372,8 +372,7 @@ where
         // Step 4 — KV negative-cache invalidate (idempotent).
         // Soft-fail: KV outage does not roll back the eviction (the
         // row is gone in D1; KV is a hint cache).
-        let tenant_ctx =
-            TenantCtx::new(self.tdk.as_ref(), candidate.tenant_id, self.region);
+        let tenant_ctx = TenantCtx::new(self.tdk.as_ref(), candidate.tenant_id, self.region);
         let _ = self
             .neg_cache
             .invalidate_on_update(&tenant_ctx, &candidate.action_digest)
@@ -427,11 +426,11 @@ where
     reason = "test code: panics surface as test failures by design; helper signature mirrors the AcUpsertRequest field set; field-reassign on outcome keeps assertions readable"
 )]
 mod tests {
-    use super::*;
     use super::super::super::audit::InMemoryAuditSink;
     use super::super::super::handler::InMemoryAcEnvelopeStore;
-    use super::super::super::meta::{AcUpsertRequest, AcKey, InMemoryAcMetaStore};
+    use super::super::super::meta::{AcKey, AcUpsertRequest, InMemoryAcMetaStore};
     use super::super::super::types::ActionDigest;
+    use super::*;
     use crate::cache::kv::InMemoryKv;
     use corelink_hash::Digest;
     use corelink_tenant_path::derive_prefix;

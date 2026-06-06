@@ -164,7 +164,11 @@ mod tests {
         ];
         for t in &types {
             let s = t.as_cloud_event_type();
-            assert!(s.starts_with("corelink.region."), "expected corelink.region. prefix: {}", s);
+            assert!(
+                s.starts_with("corelink.region."),
+                "expected corelink.region. prefix: {}",
+                s
+            );
         }
     }
 

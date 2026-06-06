@@ -26,12 +26,12 @@
 use std::collections::HashSet;
 use std::sync::Mutex;
 
+use corelink_ac::types::{
+    AcEnvelope, ActionDigest, ActionResult, OutputFileDigest, MERKLE_ROOT_LEN, RESULT_HASH_LEN,
+};
 use corelink_ac::{
     build_root, codec, BlobMetaReader, MerkleError, OutputsCheckError, OutputsValidator,
     StrictOutputsValidator, MAX_OUTPUT_FILES,
-};
-use corelink_ac::types::{
-    AcEnvelope, ActionDigest, ActionResult, OutputFileDigest, MERKLE_ROOT_LEN, RESULT_HASH_LEN,
 };
 use corelink_hash::Digest;
 use proptest::prelude::*;
@@ -88,9 +88,8 @@ fn arb_output_file() -> impl Strategy<Value = OutputFileDigest> {
 }
 
 fn arb_result(min_files: usize, max_files: usize) -> impl Strategy<Value = ActionResult> {
-    proptest::collection::vec(arb_output_file(), min_files..=max_files).prop_map(|files| {
-        ActionResult::new(files, Vec::new(), 0, b"raw".to_vec())
-    })
+    proptest::collection::vec(arb_output_file(), min_files..=max_files)
+        .prop_map(|files| ActionResult::new(files, Vec::new(), 0, b"raw".to_vec()))
 }
 
 proptest! {

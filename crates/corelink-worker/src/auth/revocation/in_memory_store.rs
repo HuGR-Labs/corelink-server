@@ -39,7 +39,8 @@ struct InMemoryRevocationState {
 
 impl fmt::Debug for InMemoryRevocationStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("InMemoryRevocationStore").finish_non_exhaustive()
+        f.debug_struct("InMemoryRevocationStore")
+            .finish_non_exhaustive()
     }
 }
 

@@ -346,7 +346,10 @@ mod tests {
     #[test]
     fn canonical_metric_and_reason_constants() {
         // LOAD-BEARING: alerting rule label matchers depend on these.
-        assert_eq!(METRIC_FAILBACK_BLOCKED_TOTAL, "corelink_failback_blocked_total");
+        assert_eq!(
+            METRIC_FAILBACK_BLOCKED_TOTAL,
+            "corelink_failback_blocked_total"
+        );
         assert_eq!(
             FAILBACK_BLOCKED_REASON_AUDIT_OUTBOX_DIRTY,
             "audit_outbox_dirty"
@@ -356,14 +359,8 @@ mod tests {
     #[test]
     fn clean_outbox_allows_failback() {
         let (outbox, sink, counter) = fixtures();
-        let r = assert_outbox_drained_or_block(
-            &outbox,
-            &sink,
-            &counter,
-            Region::Wnam,
-            Region::Enam,
-            0,
-        );
+        let r =
+            assert_outbox_drained_or_block(&outbox, &sink, &counter, Region::Wnam, Region::Enam, 0);
         assert!(r.is_ok());
         // No audit emit on nominal path.
         assert_eq!(sink.records().len(), 0);
@@ -428,14 +425,8 @@ mod tests {
         let sink = InMemoryFailoverAuditSink::new();
         let counter = FailingFailbackBlockedCounter::new("metrics dropped");
         outbox.seed_undrained(Region::Wnam, 1);
-        let r = assert_outbox_drained_or_block(
-            &outbox,
-            &sink,
-            &counter,
-            Region::Wnam,
-            Region::Enam,
-            0,
-        );
+        let r =
+            assert_outbox_drained_or_block(&outbox, &sink, &counter, Region::Wnam, Region::Enam, 0);
         // Gate decision is canonical — counter failure must NOT mask refusal.
         match r {
             Err(FailoverError::WriteBlockedDuringFailover { .. }) => {}
@@ -454,14 +445,8 @@ mod tests {
         let sink = FailingFailoverAuditSink::new("audit chain broken");
         let counter = InMemoryFailbackBlockedCounter::new();
         outbox.seed_undrained(Region::Wnam, 1);
-        let r = assert_outbox_drained_or_block(
-            &outbox,
-            &sink,
-            &counter,
-            Region::Wnam,
-            Region::Enam,
-            0,
-        );
+        let r =
+            assert_outbox_drained_or_block(&outbox, &sink, &counter, Region::Wnam, Region::Enam, 0);
         match r {
             Err(FailoverError::Audit(msg)) => {
                 assert!(msg.contains("audit chain broken"));
@@ -478,14 +463,8 @@ mod tests {
         let outbox = FailingAuditOutbox::new("d1 unreachable");
         let sink = InMemoryFailoverAuditSink::new();
         let counter = InMemoryFailbackBlockedCounter::new();
-        let r = assert_outbox_drained_or_block(
-            &outbox,
-            &sink,
-            &counter,
-            Region::Wnam,
-            Region::Enam,
-            0,
-        );
+        let r =
+            assert_outbox_drained_or_block(&outbox, &sink, &counter, Region::Wnam, Region::Enam, 0);
         match r {
             Err(FailoverError::Internal(msg)) => {
                 assert!(msg.contains("audit_outbox query failed"));
@@ -508,25 +487,13 @@ mod tests {
     fn mark_all_drained_unblocks_failback() {
         let (outbox, sink, counter) = fixtures();
         outbox.seed_undrained(Region::Wnam, 3);
-        let r1 = assert_outbox_drained_or_block(
-            &outbox,
-            &sink,
-            &counter,
-            Region::Wnam,
-            Region::Enam,
-            1,
-        );
+        let r1 =
+            assert_outbox_drained_or_block(&outbox, &sink, &counter, Region::Wnam, Region::Enam, 1);
         assert!(r1.is_err());
 
         outbox.mark_all_drained(Region::Wnam);
-        let r2 = assert_outbox_drained_or_block(
-            &outbox,
-            &sink,
-            &counter,
-            Region::Wnam,
-            Region::Enam,
-            2,
-        );
+        let r2 =
+            assert_outbox_drained_or_block(&outbox, &sink, &counter, Region::Wnam, Region::Enam, 2);
         assert!(r2.is_ok());
         // Exactly one audit emit happened (the refusal) — the success path
         // adds none.
@@ -538,24 +505,12 @@ mod tests {
         let (outbox, sink, counter) = fixtures();
         outbox.seed_undrained(Region::Wnam, 5);
         // Failback for ENAM → WNAM is blocked (WNAM is old primary, dirty).
-        let r_blocked = assert_outbox_drained_or_block(
-            &outbox,
-            &sink,
-            &counter,
-            Region::Wnam,
-            Region::Enam,
-            0,
-        );
+        let r_blocked =
+            assert_outbox_drained_or_block(&outbox, &sink, &counter, Region::Wnam, Region::Enam, 0);
         assert!(r_blocked.is_err());
         // Failback for WEUR → SAM proceeds (WEUR is old primary, clean).
-        let r_ok = assert_outbox_drained_or_block(
-            &outbox,
-            &sink,
-            &counter,
-            Region::Weur,
-            Region::Sam,
-            0,
-        );
+        let r_ok =
+            assert_outbox_drained_or_block(&outbox, &sink, &counter, Region::Weur, Region::Sam, 0);
         assert!(r_ok.is_ok());
     }
 }

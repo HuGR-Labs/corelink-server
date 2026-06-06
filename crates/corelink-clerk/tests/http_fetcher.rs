@@ -141,10 +141,7 @@ impl std::fmt::Debug for RewritingFetcher {
 }
 
 impl corelink_clerk::JwksFetcher for RewritingFetcher {
-    fn fetch<'a>(
-        &'a self,
-        _url: &'a str,
-    ) -> corelink_clerk::jwks::JwksFetchFuture<'a> {
+    fn fetch<'a>(&'a self, _url: &'a str) -> corelink_clerk::jwks::JwksFetchFuture<'a> {
         Box::pin(async move {
             self.hits.fetch_add(1, Ordering::SeqCst);
             self.inner.fetch_jwks(&self.target_url).await
@@ -242,7 +239,10 @@ async fn http_fetch_wrong_issuer_rejected() {
     let claims = baseline_claims(&attacker_issuer);
     let jwt = sign(&key, &claims);
     let err = adapter.validate(&jwt).await.unwrap_err();
-    assert!(matches!(err, AuthError::IssuerMismatch { .. }), "got {err:?}");
+    assert!(
+        matches!(err, AuthError::IssuerMismatch { .. }),
+        "got {err:?}"
+    );
 }
 
 #[tokio::test]
@@ -310,7 +310,10 @@ async fn http_fetch_key_rotation_triggers_refetch() {
 
     // JWT signed with key_v2 — must trigger a kid_miss → refetch.
     let jwt = sign(&key_v2, &baseline_claims(&issuer));
-    let principal = adapter.validate(&jwt).await.expect("validate after rotation");
+    let principal = adapter
+        .validate(&jwt)
+        .await
+        .expect("validate after rotation");
     assert_eq!(principal.user_id.as_str(), "user_2abc");
     assert!(
         hits.load(Ordering::SeqCst) >= 2,

@@ -14,7 +14,6 @@
 //!   evicted [`Dek`].
 //! - Capacity: bounded LRU (max 10 000 entries per Worker).
 
-
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -200,7 +199,14 @@ impl DekCache {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, clippy::indexing_slicing, clippy::uninlined_format_args, clippy::format_in_format_args)]
+#[allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args
+)]
 mod tests {
     use super::*;
 

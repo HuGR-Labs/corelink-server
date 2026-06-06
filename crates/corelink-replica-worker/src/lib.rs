@@ -118,8 +118,8 @@ pub use audit::{
 pub use cardinality::{LIVE_METRIC_LABEL_CARDINALITY, NO_TENANT_ID_LABEL};
 pub use coverage::{
     compute_coverage_ratio, CoverageObservation, FailingHotBlobCoverageSli, HotBlobCoverageSli,
-    InMemoryHotBlobCoverageSli, HOT_BLOB_COVERAGE_DEADLINE_SECONDS,
-    HOT_BLOB_COVERAGE_TARGET_RATIO, METRIC_HOT_BLOB_REPLICATION_COVERAGE_RATIO,
+    InMemoryHotBlobCoverageSli, HOT_BLOB_COVERAGE_DEADLINE_SECONDS, HOT_BLOB_COVERAGE_TARGET_RATIO,
+    METRIC_HOT_BLOB_REPLICATION_COVERAGE_RATIO,
 };
 pub use error::ReplicaError;
 pub use hot_blob::{AggregationEntry, HotBlob, ReplicaStatus};

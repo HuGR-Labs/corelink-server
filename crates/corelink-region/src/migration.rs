@@ -91,7 +91,11 @@ pub struct MigrationReport {
 impl MigrationReport {
     /// Create a new dry-run report scaffold.
     #[must_use]
-    pub fn new_dry_run(target_region: Region, tenant_id_filter: Option<String>, started_at_ms: u64) -> Self {
+    pub fn new_dry_run(
+        target_region: Region,
+        tenant_id_filter: Option<String>,
+        started_at_ms: u64,
+    ) -> Self {
         Self {
             run_id: Uuid::now_v7(),
             is_dry_run: true,
@@ -110,7 +114,11 @@ impl MigrationReport {
 
     /// Create a new execute report scaffold.
     #[must_use]
-    pub fn new_execute(target_region: Region, tenant_id_filter: Option<String>, started_at_ms: u64) -> Self {
+    pub fn new_execute(
+        target_region: Region,
+        tenant_id_filter: Option<String>,
+        started_at_ms: u64,
+    ) -> Self {
         Self {
             run_id: Uuid::now_v7(),
             is_dry_run: false,
@@ -172,7 +180,10 @@ mod tests {
     #[test]
     fn test_migration_decision_labels() {
         assert_eq!(MigrationDecision::Migrate.as_label(), "migrate");
-        assert_eq!(MigrationDecision::SkippedAlreadyMigrated.as_label(), "skipped_already_migrated");
+        assert_eq!(
+            MigrationDecision::SkippedAlreadyMigrated.as_label(),
+            "skipped_already_migrated"
+        );
         assert_eq!(MigrationDecision::Failed.as_label(), "failed");
     }
 
@@ -217,7 +228,8 @@ mod tests {
 
     #[test]
     fn test_migration_report_idempotent_skip() {
-        let mut report = MigrationReport::new_execute(Region::Sam, Some("eu_*".to_owned()), 2_000_000);
+        let mut report =
+            MigrationReport::new_execute(Region::Sam, Some("eu_*".to_owned()), 2_000_000);
         assert!(!report.is_dry_run);
 
         report.add_tenant_result(TenantMigrationResult {

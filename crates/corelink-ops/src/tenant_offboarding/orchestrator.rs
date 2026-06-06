@@ -35,9 +35,7 @@ use super::audit::{
     TenantOffboardingAuditEventType, TenantOffboardingAuditRecord, TenantOffboardingAuditSink,
 };
 use super::error::TenantOffboardingError;
-use super::state::{
-    TenantOffboardingState, TenantOffboardingTransition, TransitionTrigger,
-};
+use super::state::{TenantOffboardingState, TenantOffboardingTransition, TransitionTrigger};
 use super::store::{TenantOffboardingRecord, TenantOffboardingStore};
 
 /// Canonical grace-period duration in days (T+1..T+30 = 30 days of
@@ -54,9 +52,8 @@ pub const CANONICAL_READ_ONLY_DAYS: u32 = 15;
 pub const CANONICAL_SUSPENDED_DAYS: u32 = 45;
 
 /// Canonical total T+0 → T+90 = 90 days. Sum of the three above.
-pub const CANONICAL_TOTAL_T_PLUS_90_DAYS: u32 = CANONICAL_GRACE_PERIOD_DAYS
-    + CANONICAL_READ_ONLY_DAYS
-    + CANONICAL_SUSPENDED_DAYS;
+pub const CANONICAL_TOTAL_T_PLUS_90_DAYS: u32 =
+    CANONICAL_GRACE_PERIOD_DAYS + CANONICAL_READ_ONLY_DAYS + CANONICAL_SUSPENDED_DAYS;
 
 const MS_PER_DAY: i64 = 86_400_000;
 
@@ -213,11 +210,11 @@ impl InMemoryTenantOffboardingOrchestrator {
                 // `GraceNotElapsed`.
                 Some(cancel_requested_at_ms.saturating_add(MS_PER_DAY))
             }
-            TenantOffboardingState::GracePeriod => Some(
-                cancel_requested_at_ms.saturating_add(
+            TenantOffboardingState::GracePeriod => {
+                Some(cancel_requested_at_ms.saturating_add(
                     (CANONICAL_GRACE_PERIOD_DAYS as i64).saturating_mul(MS_PER_DAY),
-                ),
-            ),
+                ))
+            }
             TenantOffboardingState::ReadOnly => Some(
                 cancel_requested_at_ms.saturating_add(
                     ((CANONICAL_GRACE_PERIOD_DAYS + CANONICAL_READ_ONLY_DAYS) as i64)
@@ -251,13 +248,11 @@ impl InMemoryTenantOffboardingOrchestrator {
         now_ms: i64,
         operator_id: Option<String>,
     ) -> Result<TenantOffboardingAuditRecord, TenantOffboardingError> {
-        let event_type = TenantOffboardingAuditEventType::for_destination(to).ok_or_else(
-            || {
-                TenantOffboardingError::Internal(format!(
-                    "no canonical audit event for destination state {to}"
-                ))
-            },
-        )?;
+        let event_type = TenantOffboardingAuditEventType::for_destination(to).ok_or_else(|| {
+            TenantOffboardingError::Internal(format!(
+                "no canonical audit event for destination state {to}"
+            ))
+        })?;
         Ok(TenantOffboardingAuditRecord {
             event_type,
             tenant_id: tenant_id.to_string(),
@@ -316,12 +311,13 @@ impl TenantOffboardingOrchestrator for InMemoryTenantOffboardingOrchestrator {
         tenant_id: &str,
         now_ms: i64,
     ) -> Result<TenantOffboardingRecord, TenantOffboardingError> {
-        let current = self.store.get(tenant_id)?.ok_or(
-            TenantOffboardingError::IllegalTransition {
-                from: TenantOffboardingState::Active,
-                trigger: TransitionTrigger::CustomerReverted,
-            },
-        )?;
+        let current =
+            self.store
+                .get(tenant_id)?
+                .ok_or(TenantOffboardingError::IllegalTransition {
+                    from: TenantOffboardingState::Active,
+                    trigger: TransitionTrigger::CustomerReverted,
+                })?;
 
         let to = TenantOffboardingTransition::resolve(
             current.state,
@@ -352,21 +348,20 @@ impl TenantOffboardingOrchestrator for InMemoryTenantOffboardingOrchestrator {
         tenant_id: &str,
         now_ms: i64,
     ) -> Result<TenantOffboardingRecord, TenantOffboardingError> {
-        let current = self.store.get(tenant_id)?.ok_or(
-            TenantOffboardingError::IllegalTransition {
-                from: TenantOffboardingState::Active,
-                trigger: TransitionTrigger::TimerExpired,
-            },
-        )?;
+        let current =
+            self.store
+                .get(tenant_id)?
+                .ok_or(TenantOffboardingError::IllegalTransition {
+                    from: TenantOffboardingState::Active,
+                    trigger: TransitionTrigger::TimerExpired,
+                })?;
 
-        let to = TenantOffboardingTransition::resolve(
-            current.state,
-            TransitionTrigger::TimerExpired,
-        )
-        .ok_or(TenantOffboardingError::IllegalTransition {
-            from: current.state,
-            trigger: TransitionTrigger::TimerExpired,
-        })?;
+        let to =
+            TenantOffboardingTransition::resolve(current.state, TransitionTrigger::TimerExpired)
+                .ok_or(TenantOffboardingError::IllegalTransition {
+                    from: current.state,
+                    trigger: TransitionTrigger::TimerExpired,
+                })?;
 
         // INV-OFFBOARDING-GRACE-RESPECTED: validate canonical timer.
         match Self::next_timer_threshold_ms(current.state, current.cancel_requested_at_ms) {
@@ -405,21 +400,19 @@ impl TenantOffboardingOrchestrator for InMemoryTenantOffboardingOrchestrator {
                 "operator_id must be non-empty for OpsForced".to_string(),
             ));
         }
-        let current = self.store.get(tenant_id)?.ok_or(
-            TenantOffboardingError::IllegalTransition {
-                from: TenantOffboardingState::Active,
-                trigger: TransitionTrigger::OpsForced,
-            },
-        )?;
+        let current =
+            self.store
+                .get(tenant_id)?
+                .ok_or(TenantOffboardingError::IllegalTransition {
+                    from: TenantOffboardingState::Active,
+                    trigger: TransitionTrigger::OpsForced,
+                })?;
 
-        let to = TenantOffboardingTransition::resolve(
-            current.state,
-            TransitionTrigger::OpsForced,
-        )
-        .ok_or(TenantOffboardingError::IllegalTransition {
-            from: current.state,
-            trigger: TransitionTrigger::OpsForced,
-        })?;
+        let to = TenantOffboardingTransition::resolve(current.state, TransitionTrigger::OpsForced)
+            .ok_or(TenantOffboardingError::IllegalTransition {
+                from: current.state,
+                trigger: TransitionTrigger::OpsForced,
+            })?;
 
         let audit = Self::build_audit(
             tenant_id,
@@ -449,12 +442,13 @@ impl TenantOffboardingOrchestrator for InMemoryTenantOffboardingOrchestrator {
             return Err(TenantOffboardingError::DryRunPreviewMissing);
         }
 
-        let current = self.store.get(&req.tenant_id)?.ok_or(
-            TenantOffboardingError::IllegalTransition {
-                from: TenantOffboardingState::Active,
-                trigger: TransitionTrigger::AdminCommitErasure,
-            },
-        )?;
+        let current =
+            self.store
+                .get(&req.tenant_id)?
+                .ok_or(TenantOffboardingError::IllegalTransition {
+                    from: TenantOffboardingState::Active,
+                    trigger: TransitionTrigger::AdminCommitErasure,
+                })?;
 
         let to = TenantOffboardingTransition::resolve(
             current.state,
@@ -497,11 +491,11 @@ impl TenantOffboardingOrchestrator for InMemoryTenantOffboardingOrchestrator {
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
-    use super::*;
     use super::super::audit::{
         FailingTenantOffboardingAuditSink, InMemoryTenantOffboardingAuditSink,
     };
     use super::super::store::{FailingTenantOffboardingStore, InMemoryTenantOffboardingStore};
+    use super::*;
 
     fn fresh() -> (
         Arc<InMemoryTenantOffboardingAuditSink>,
@@ -510,10 +504,7 @@ mod tests {
     ) {
         let audit = Arc::new(InMemoryTenantOffboardingAuditSink::new());
         let store = Arc::new(InMemoryTenantOffboardingStore::new());
-        let orch = InMemoryTenantOffboardingOrchestrator::new(
-            audit.clone(),
-            store.clone(),
-        );
+        let orch = InMemoryTenantOffboardingOrchestrator::new(audit.clone(), store.clone());
         (audit, store, orch)
     }
 
@@ -566,7 +557,10 @@ mod tests {
         // Same instant — no progress allowed (cancel→grace
         // requires +1 day per canonical daily-cron tick).
         let r = orch.cron_advance("t", 0);
-        assert!(matches!(r, Err(TenantOffboardingError::GraceNotElapsed { .. })));
+        assert!(matches!(
+            r,
+            Err(TenantOffboardingError::GraceNotElapsed { .. })
+        ));
     }
 
     #[test]
@@ -617,7 +611,10 @@ mod tests {
             dry_run_preview_confirmed: false,
             now_ms: 1,
         });
-        assert!(matches!(r, Err(TenantOffboardingError::DryRunPreviewMissing)));
+        assert!(matches!(
+            r,
+            Err(TenantOffboardingError::DryRunPreviewMissing)
+        ));
     }
 
     #[test]
@@ -641,8 +638,7 @@ mod tests {
     fn audit_failure_aborts_state_advance_fail_closed() {
         let store = Arc::new(InMemoryTenantOffboardingStore::new());
         let audit = Arc::new(FailingTenantOffboardingAuditSink::new());
-        let orch =
-            InMemoryTenantOffboardingOrchestrator::new(audit.clone(), store.clone());
+        let orch = InMemoryTenantOffboardingOrchestrator::new(audit.clone(), store.clone());
 
         let r = orch.initiate_cancel("t", None, None, 0);
         assert!(matches!(r, Err(TenantOffboardingError::Audit(_))));

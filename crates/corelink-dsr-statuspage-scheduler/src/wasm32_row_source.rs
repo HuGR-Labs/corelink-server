@@ -70,9 +70,9 @@
 // reference text without churn.
 #![allow(rustdoc::broken_intra_doc_links)]
 
-use corelink_privacy_erasure_worker::VerificationOutcome;
 #[cfg(target_arch = "wasm32")]
 use crate::row_source::D1RowSourceError;
+use corelink_privacy_erasure_worker::VerificationOutcome;
 
 /// Canonical wave-19 `outcome_json` parser. Pure helper exposed at
 /// public visibility so the native test harness (proptest) can pin
@@ -85,8 +85,7 @@ use crate::row_source::D1RowSourceError;
 /// Returns the `serde_json` error message as a `String` (wrapped at
 /// the call site into [`D1RowSourceError::Parse`]).
 pub fn parse_outcome_json(s: &str) -> Result<VerificationOutcome, String> {
-    serde_json::from_str::<VerificationOutcome>(s)
-        .map_err(|e| format!("outcome_json parse: {e}"))
+    serde_json::from_str::<VerificationOutcome>(s).map_err(|e| format!("outcome_json parse: {e}"))
 }
 
 /// Canonical wave-19 `outcome_json` serializer. Symmetric to
@@ -98,8 +97,7 @@ pub fn parse_outcome_json(s: &str) -> Result<VerificationOutcome, String> {
 ///
 /// Returns the `serde_json` error message as a `String`.
 pub fn render_outcome_json(outcome: &VerificationOutcome) -> Result<String, String> {
-    serde_json::to_string(outcome)
-        .map_err(|e| format!("outcome_json render: {e}"))
+    serde_json::to_string(outcome).map_err(|e| format!("outcome_json render: {e}"))
 }
 
 /// Canonical row shape projected by [`CRON_OUTCOME_QUERY`]. One field
@@ -221,9 +219,8 @@ impl D1Wasm32RowSource {
             .map_err(|e| D1RowSourceError::Read(format!("results: {e}")))?;
         let mut outcomes = Vec::with_capacity(rows.len());
         for (idx, row) in rows.into_iter().enumerate() {
-            let parsed = parse_outcome_json(&row.outcome_json).map_err(|e| {
-                D1RowSourceError::Parse(format!("row {idx}: {e}"))
-            })?;
+            let parsed = parse_outcome_json(&row.outcome_json)
+                .map_err(|e| D1RowSourceError::Parse(format!("row {idx}: {e}")))?;
             outcomes.push(parsed);
         }
         Ok(outcomes)

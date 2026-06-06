@@ -25,11 +25,11 @@
     clippy::panic
 )]
 
+use corelink_byok::aws::{validate_aws_kms_key_arn, AwsKmsProvider};
 use corelink_byok::{
     types::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek},
     KmsProvider,
 };
-use corelink_byok::aws::{validate_aws_kms_key_arn, AwsKmsProvider};
 use serde_json::json;
 
 const VALID_ARN: &str =
@@ -118,7 +118,10 @@ async fn encryption_context_missing_on_wrap_is_rejected() {
     let key_id = fixture_key_id();
     let dek = Dek::generate().expect("dek");
 
-    let err = p.wrap_dek(&dek, &key_id, None).await.expect_err("must reject");
+    let err = p
+        .wrap_dek(&dek, &key_id, None)
+        .await
+        .expect_err("must reject");
     assert!(
         matches!(err, BYOKError::EncryptionContextMissing),
         "expected EncryptionContextMissing, got {err:?}"
@@ -186,7 +189,8 @@ async fn check_access_rejects_malformed_arn() {
 #[test]
 fn arn_validation_accepts_canonical_and_partitions() {
     assert!(validate_aws_kms_key_arn(VALID_ARN).is_ok());
-    let gov = "arn:aws-us-gov:kms:us-gov-west-1:000000000000:key/00000000-0000-0000-0000-000000000000";
+    let gov =
+        "arn:aws-us-gov:kms:us-gov-west-1:000000000000:key/00000000-0000-0000-0000-000000000000";
     assert!(validate_aws_kms_key_arn(gov).is_ok());
     let cn = "arn:aws-cn:kms:cn-north-1:000000000000:key/00000000-0000-0000-0000-000000000000";
     assert!(validate_aws_kms_key_arn(cn).is_ok());
@@ -194,10 +198,7 @@ fn arn_validation_accepts_canonical_and_partitions() {
 
 #[test]
 fn arn_validation_rejects_aliases() {
-    assert!(validate_aws_kms_key_arn(
-        "arn:aws:kms:us-east-1:000000000000:alias/my-key"
-    )
-    .is_err());
+    assert!(validate_aws_kms_key_arn("arn:aws:kms:us-east-1:000000000000:alias/my-key").is_err());
 }
 
 #[test]
@@ -210,10 +211,7 @@ fn arn_validation_rejects_short_account() {
 
 #[test]
 fn arn_validation_rejects_non_uuid_resource() {
-    assert!(validate_aws_kms_key_arn(
-        "arn:aws:kms:us-east-1:000000000000:key/not-a-uuid"
-    )
-    .is_err());
+    assert!(validate_aws_kms_key_arn("arn:aws:kms:us-east-1:000000000000:key/not-a-uuid").is_err());
 }
 
 #[test]
@@ -239,7 +237,10 @@ async fn wrap_rejects_malformed_arn() {
     };
     let dek = Dek::generate().expect("dek");
     let aad = json!({"tenant_id": "t", "blob_hash": "h"});
-    let err = p.wrap_dek(&dek, &key_id, Some(&aad)).await.expect_err("must reject");
+    let err = p
+        .wrap_dek(&dek, &key_id, Some(&aad))
+        .await
+        .expect_err("must reject");
     assert!(matches!(err, BYOKError::Provider(_)));
 }
 
@@ -249,7 +250,10 @@ async fn wrap_rejects_malformed_arn() {
 fn fips_endpoint_off_by_default_in_mock() {
     let p = AwsKmsProvider::new_mock("us-east-1");
     assert!(!p.fips_endpoint_enabled());
-    assert_eq!(p.resolved_endpoint_hostname(), "kms.us-east-1.amazonaws.com");
+    assert_eq!(
+        p.resolved_endpoint_hostname(),
+        "kms.us-east-1.amazonaws.com"
+    );
 }
 
 // ── Cross-provider tampering ─────────────────────────────────────────────────
@@ -283,7 +287,10 @@ async fn rejects_wrong_provider_on_wrap_key_id() {
     };
     let aad = json!({"tenant_id": "t", "blob_hash": "h"});
     let dek = Dek::generate().expect("dek");
-    let err = p.wrap_dek(&dek, &bad, Some(&aad)).await.expect_err("must reject");
+    let err = p
+        .wrap_dek(&dek, &bad, Some(&aad))
+        .await
+        .expect_err("must reject");
     assert!(matches!(err, BYOKError::EnvelopeError(_)));
 }
 

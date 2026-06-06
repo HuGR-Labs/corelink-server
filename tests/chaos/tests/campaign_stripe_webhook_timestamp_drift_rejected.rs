@@ -35,11 +35,7 @@ fn clock_drift_outside_window_rejects_webhook() {
     );
 
     // (2) Audit event emitted.
-    assert_audit_emitted_once(
-        v.audit_events(),
-        "corelink.billing.webhook.replay_window",
-    )
-    .unwrap();
+    assert_audit_emitted_once(v.audit_events(), "corelink.billing.webhook.replay_window").unwrap();
 
     // (3) SEV-2 alert fired.
     assert_alert_fired(v.sev2_alerts(), "stripe_webhook_clock_skew").unwrap();
@@ -54,5 +50,8 @@ fn invalid_signature_rejected_separately_from_clock_drift() {
         v.verify(false, 1_000_000, 1_000_000),
         WebhookOutcome::SignatureMismatch
     );
-    assert!(v.sev2_alerts().is_empty(), "signature-mismatch path is its own audit");
+    assert!(
+        v.sev2_alerts().is_empty(),
+        "signature-mismatch path is its own audit"
+    );
 }

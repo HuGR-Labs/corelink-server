@@ -16,7 +16,7 @@ mod common;
 
 use std::sync::Arc;
 
-use common::{default_body_limit, spin_adapter, InMemoryCas, StaticTenantResolver, test_key};
+use common::{default_body_limit, spin_adapter, test_key, InMemoryCas, StaticTenantResolver};
 use corelink_adapter_host::cargo::audit::EVENT_TYPE_CACHE_WRITE;
 use corelink_audit::ports::InMemoryAuditEmitter;
 
@@ -30,13 +30,8 @@ async fn put_then_get_is_a_cache_hit() {
     let resolver = Arc::new(StaticTenantResolver::new().with(PAT, TENANT));
     let audit = Arc::new(InMemoryAuditEmitter::new());
 
-    let (addr, _adapter) = spin_adapter(
-        cas.clone(),
-        resolver,
-        audit.clone(),
-        default_body_limit(),
-    )
-    .await;
+    let (addr, _adapter) =
+        spin_adapter(cas.clone(), resolver, audit.clone(), default_body_limit()).await;
 
     let key = test_key();
     let client = reqwest::Client::new();
@@ -80,10 +75,7 @@ async fn put_then_get_is_a_cache_hit() {
     assert_eq!(events[0].event_type, EVENT_TYPE_CACHE_WRITE);
     assert_eq!(events[0].tenant_id, TENANT);
     assert_eq!(events[0].payload["adapter"], "cargo");
-    assert_eq!(
-        events[0].payload["body_size_bytes"],
-        ARTIFACT_BYTES.len()
-    );
+    assert_eq!(events[0].payload["body_size_bytes"], ARTIFACT_BYTES.len());
 
     // CAS: exactly one entry, namespaced to TENANT.
     assert_eq!(cas.len(), 1);
@@ -97,13 +89,8 @@ async fn head_returns_200_after_put() {
     let resolver = Arc::new(StaticTenantResolver::new().with(PAT, TENANT));
     let audit = Arc::new(InMemoryAuditEmitter::new());
 
-    let (addr, _adapter) = spin_adapter(
-        cas.clone(),
-        resolver,
-        audit.clone(),
-        default_body_limit(),
-    )
-    .await;
+    let (addr, _adapter) =
+        spin_adapter(cas.clone(), resolver, audit.clone(), default_body_limit()).await;
 
     let key = test_key();
     let client = reqwest::Client::new();
@@ -142,13 +129,8 @@ async fn put_is_idempotent() {
     let resolver = Arc::new(StaticTenantResolver::new().with(PAT, TENANT));
     let audit = Arc::new(InMemoryAuditEmitter::new());
 
-    let (addr, _adapter) = spin_adapter(
-        cas.clone(),
-        resolver,
-        audit.clone(),
-        default_body_limit(),
-    )
-    .await;
+    let (addr, _adapter) =
+        spin_adapter(cas.clone(), resolver, audit.clone(), default_body_limit()).await;
 
     let key = test_key();
     let client = reqwest::Client::new();

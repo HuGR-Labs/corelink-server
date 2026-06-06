@@ -73,7 +73,6 @@ pub use builder::{
 };
 pub use envelope_store::{AcEnvelopeStore, InMemoryAcEnvelopeStore};
 pub use errors::{
-    AcError, GetActionResult, UpdateActionResult, AC_ENVELOPE_VERSION,
-    DEFAULT_AC_TTL_EXTEND_MS,
+    AcError, GetActionResult, UpdateActionResult, AC_ENVELOPE_VERSION, DEFAULT_AC_TTL_EXTEND_MS,
 };
 pub use handler_trait::ActionCacheHandler;

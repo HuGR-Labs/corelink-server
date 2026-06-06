@@ -175,10 +175,7 @@ impl MessageTemplate {
             )
             .with_field("breach_id", breach_id)
             .with_field("affected_tenant_count", affected_tenant_count.to_string())
-            .with_field(
-                "sla_hours_remaining",
-                sla_hours_remaining.to_string(),
-            ),
+            .with_field("sla_hours_remaining", sla_hours_remaining.to_string()),
 
             Self::OncallHandoff {
                 outgoing,

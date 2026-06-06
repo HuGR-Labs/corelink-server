@@ -104,9 +104,8 @@ impl Serialize for ChainHash {
 impl<'de> Deserialize<'de> for ChainHash {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s = String::deserialize(d)?;
-        let bytes = hex::decode(&s).map_err(|e| {
-            serde::de::Error::custom(format!("ChainHash hex decode failed: {e}"))
-        })?;
+        let bytes = hex::decode(&s)
+            .map_err(|e| serde::de::Error::custom(format!("ChainHash hex decode failed: {e}")))?;
         if bytes.len() != 32 {
             return Err(serde::de::Error::custom(format!(
                 "ChainHash expected 32 bytes; got {}",
@@ -410,7 +409,10 @@ mod tests {
 
     #[test]
     fn counter_aggregated_event_type_pinned() {
-        assert_eq!(COUNTER_AGGREGATED_EVENT_TYPE, "corelink.billing.counter.aggregated");
+        assert_eq!(
+            COUNTER_AGGREGATED_EVENT_TYPE,
+            "corelink.billing.counter.aggregated"
+        );
     }
 
     #[test]

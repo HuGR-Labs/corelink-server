@@ -25,11 +25,11 @@
 
 use std::sync::Arc;
 
-use corelink_byok::{Dek, KmsProvider, KmsProviderKind};
 use corelink_byok::revocation::{
     event::EVENT_TYPE_CMK_REVOKED, store::TenantByokStatus, testutil::NoopAlerter,
     RevocationConfig, RevocationDetector,
 };
+use corelink_byok::{Dek, KmsProvider, KmsProviderKind};
 use e2e_byok_revoke::helpers::{
     make_wrapped_for, KillSwitchRunner, KmsBehaviour, KILL_SWITCH_SLA_MS,
 };

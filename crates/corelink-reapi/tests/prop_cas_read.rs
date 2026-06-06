@@ -88,6 +88,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
+use corelink_cas::cache::kv::{FakeClock, InMemoryKv};
+use corelink_cas::cache::negative::{NegativeCache, DEFAULT_NEGATIVE_CACHE_TTL_SECS};
+use corelink_cas::cache::MissReason as CacheMiss;
+use corelink_cas::r2_storage::{CountingR2, InMemoryR2, R2Reader, R2Writer};
 use corelink_hash::{Digest, VerifiedBody};
 use corelink_meta::{
     AuditEvent, AuditEventType, BlobMetaKey, CommitPutRequest, CommitSoftDeleteRequest,
@@ -95,12 +99,8 @@ use corelink_meta::{
 };
 use corelink_reapi::find_missing::FindMissingOrchestrator;
 use corelink_reapi::read::{CasReadOrchestrator, MissReason as ReadMiss, ReadOutcome};
-use corelink_tenant_path::TenantDerivationKey;
-use corelink_cas::cache::kv::{FakeClock, InMemoryKv};
-use corelink_cas::cache::negative::{NegativeCache, DEFAULT_NEGATIVE_CACHE_TTL_SECS};
-use corelink_cas::cache::MissReason as CacheMiss;
-use corelink_cas::r2_storage::{CountingR2, InMemoryR2, R2Reader, R2Writer};
 use corelink_replication::region_resolver::{Region, TenantCtx};
+use corelink_tenant_path::TenantDerivationKey;
 use proptest::prelude::*;
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -628,7 +628,10 @@ async fn cross_tenant_read_round_robin_100k() {
     let mut digests: Vec<Digest> = Vec::with_capacity(TENANTS);
     for t in 0..TENANTS {
         // Use a wide spread so HMAC16 prefixes never collide.
-        let ctx = ctx_for(tenant_uuid((t as u64) + 0xCAFE_F00D_0000_0000), Region::Wnam);
+        let ctx = ctx_for(
+            tenant_uuid((t as u64) + 0xCAFE_F00D_0000_0000),
+            Region::Wnam,
+        );
         let body: Vec<u8> = (0..128u8).map(|i| i.wrapping_add(t as u8)).collect();
         let digest = Digest::compute(&body);
         let writer = R2Writer::new(Region::Wnam, Arc::clone(&counting));
@@ -712,7 +715,9 @@ async fn cross_tenant_read_round_robin_100k() {
         }
         let outcomes = join_all(handles).await;
         for r in outcomes {
-            let outcome = r.expect("task did not panic").expect("orchestrator must not error");
+            let outcome = r
+                .expect("task did not panic")
+                .expect("orchestrator must not error");
             match outcome {
                 ReadOutcome::Hit { .. } => leaks += 1,
                 ReadOutcome::NotFound(ReadMiss::NeverExisted) => ok_misses += 1,

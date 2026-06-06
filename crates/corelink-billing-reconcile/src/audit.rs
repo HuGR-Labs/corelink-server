@@ -232,10 +232,7 @@ impl InMemoryReconcileAuditSink {
 }
 
 impl ReconcileAuditSink for InMemoryReconcileAuditSink {
-    fn emit(
-        &self,
-        record: ReconcileAuditRecord,
-    ) -> Result<(), ReconcileAuditEmitErrorInner> {
+    fn emit(&self, record: ReconcileAuditRecord) -> Result<(), ReconcileAuditEmitErrorInner> {
         let mut guard = self.inner.lock().map_err(|_| {
             ReconcileAuditEmitErrorInner::Store(
                 "billing-reconcile audit sink mutex poisoned".to_string(),

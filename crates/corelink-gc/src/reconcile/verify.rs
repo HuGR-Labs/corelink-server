@@ -12,8 +12,7 @@ use uuid::Uuid;
 use crate::mark::BlobDigest;
 
 use super::{
-    AcMetaReconcileRow, BlobMetaReconcileRow, BlobMetaRefcountStore, ReconcileError,
-    RefcountSource,
+    AcMetaReconcileRow, BlobMetaReconcileRow, BlobMetaRefcountStore, ReconcileError, RefcountSource,
 };
 
 /// In-memory `ac_meta` reference-source fake. Tests push rows per
@@ -47,12 +46,7 @@ impl InMemoryRefcountSource {
 
     /// Soft-delete an `ac_meta` row by `action_digest` (test mutator
     /// for the `deleted_at_ms IS NULL` filter property).
-    pub fn soft_delete(
-        &self,
-        tenant_id: Uuid,
-        action_digest: &str,
-        deleted_at_ms: u64,
-    ) -> bool {
+    pub fn soft_delete(&self, tenant_id: Uuid, action_digest: &str, deleted_at_ms: u64) -> bool {
         let mut g = match self.inner.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -129,11 +123,7 @@ impl InMemoryBlobMetaRefcountStore {
 
     /// Snapshot a single row (diagnostic).
     #[must_use]
-    pub fn snapshot(
-        &self,
-        tenant_id: Uuid,
-        digest: &BlobDigest,
-    ) -> Option<BlobMetaReconcileRow> {
+    pub fn snapshot(&self, tenant_id: Uuid, digest: &BlobDigest) -> Option<BlobMetaReconcileRow> {
         let g = match self.inner.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -145,12 +135,7 @@ impl InMemoryBlobMetaRefcountStore {
     /// stored refcount mid-reconcile. The conditional UPDATE in
     /// [`BlobMetaRefcountStore::conditional_set_refcount`] will then
     /// skip the row (anti-ping-pong predicate fails).
-    pub fn set_stored_refcount(
-        &self,
-        tenant_id: Uuid,
-        digest: &BlobDigest,
-        refcount: u32,
-    ) -> bool {
+    pub fn set_stored_refcount(&self, tenant_id: Uuid, digest: &BlobDigest, refcount: u32) -> bool {
         let mut g = match self.inner.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -170,12 +155,17 @@ impl BlobMetaRefcountStore for InMemoryBlobMetaRefcountStore {
         &self,
         tenant_id: Uuid,
     ) -> Result<Vec<BlobMetaReconcileRow>, ReconcileError> {
-        let g = self
-            .inner
-            .lock()
-            .map_err(|_| ReconcileError::Backend("blob_meta reconcile mutex poisoned".to_owned()))?;
+        let g = self.inner.lock().map_err(|_| {
+            ReconcileError::Backend("blob_meta reconcile mutex poisoned".to_owned())
+        })?;
         Ok(g.iter()
-            .filter_map(|((t, _), row)| if *t == tenant_id { Some(row.clone()) } else { None })
+            .filter_map(|((t, _), row)| {
+                if *t == tenant_id {
+                    Some(row.clone())
+                } else {
+                    None
+                }
+            })
             .collect())
     }
 
@@ -186,10 +176,9 @@ impl BlobMetaRefcountStore for InMemoryBlobMetaRefcountStore {
         stored_refcount: u32,
         new_refcount: u32,
     ) -> Result<bool, ReconcileError> {
-        let mut g = self
-            .inner
-            .lock()
-            .map_err(|_| ReconcileError::Backend("blob_meta reconcile mutex poisoned".to_owned()))?;
+        let mut g = self.inner.lock().map_err(|_| {
+            ReconcileError::Backend("blob_meta reconcile mutex poisoned".to_owned())
+        })?;
         let key = (tenant_id, digest.clone());
         let Some(row) = g.get_mut(&key) else {
             return Ok(false);

@@ -20,7 +20,9 @@
 )]
 
 use corelink_byok::{Dek, KmsProviderKind};
-use e2e_byok_revoke::helpers::{make_wrapped_for, KillSwitchRunner, KmsBehaviour, KILL_SWITCH_SLA_MS};
+use e2e_byok_revoke::helpers::{
+    make_wrapped_for, KillSwitchRunner, KmsBehaviour, KILL_SWITCH_SLA_MS,
+};
 use e2e_byok_revoke::setup_byok_env;
 
 const STAMPEDE_ENTRIES: u32 = 10_000;

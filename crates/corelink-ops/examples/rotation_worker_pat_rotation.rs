@@ -13,11 +13,11 @@
 
 use std::sync::Arc;
 
-use corelink_rotation_adapters::{AssetClass, KeyHandle, KeyState, PatSigningRotationAdapter};
 use corelink_ops::rotation::worker::{
     InMemoryRotationStateMachine, ProbeContext, RollbackConfig, RollbackDriver, RollbackOutcome,
     RotationMetrics, RotationOrchestrator, RotationOutcome,
 };
+use corelink_rotation_adapters::{AssetClass, KeyHandle, KeyState, PatSigningRotationAdapter};
 
 fn main() {
     let adapter = Arc::new(PatSigningRotationAdapter::new("us-east".to_string()));
@@ -38,13 +38,21 @@ fn main() {
         RotationOutcome::Ok { handle, .. } => handle,
         other => panic!("{other:?}"),
     };
-    let prom1 = orch.promote(&key1_pending, t0 + 1).expect("promote 1 failed");
+    let prom1 = orch
+        .promote(&key1_pending, t0 + 1)
+        .expect("promote 1 failed");
     let key1_active = match prom1 {
         RotationOutcome::Ok { handle, .. } => handle,
         other => panic!("{other:?}"),
     };
-    println!("[PAT] key1 promoted: key_id={} state={}", key1_active.key_id, key1_active.state);
-    println!("[PAT] Overlap window: {}s (24h)", AssetClass::PatSigning.overlap_seconds());
+    println!(
+        "[PAT] key1 promoted: key_id={} state={}",
+        key1_active.key_id, key1_active.state
+    );
+    println!(
+        "[PAT] Overlap window: {}s (24h)",
+        AssetClass::PatSigning.overlap_seconds()
+    );
 
     // Second rotation: key1 → Overlap; key2 → Active.
     let t1 = t0 + AssetClass::PatSigning.overlap_seconds() * 1_000 + 100;
@@ -53,12 +61,17 @@ fn main() {
         RotationOutcome::Ok { handle, .. } => handle,
         other => panic!("{other:?}"),
     };
-    let prom2 = orch.promote(&key2_pending, t1 + 1).expect("promote 2 failed");
+    let prom2 = orch
+        .promote(&key2_pending, t1 + 1)
+        .expect("promote 2 failed");
     let key2_active = match prom2 {
         RotationOutcome::Ok { handle, .. } => handle,
         other => panic!("{other:?}"),
     };
-    println!("[PAT] key2 promoted: key_id={} state={}", key2_active.key_id, key2_active.state);
+    println!(
+        "[PAT] key2 promoted: key_id={} state={}",
+        key2_active.key_id, key2_active.state
+    );
 
     // Synthesize key1 Overlap handle.
     let key1_overlap = KeyHandle {
@@ -90,7 +103,9 @@ fn main() {
         });
         match result {
             Ok(RollbackOutcome::Accumulating { consecutive }) => {
-                println!("[PAT] probe {probe}: Accumulating ({consecutive} consecutive above-threshold)");
+                println!(
+                    "[PAT] probe {probe}: Accumulating ({consecutive} consecutive above-threshold)"
+                );
             }
             Err(e) => {
                 println!("[PAT] probe {probe}: Rollback triggered — {e}");

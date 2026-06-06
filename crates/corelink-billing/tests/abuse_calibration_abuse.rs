@@ -62,13 +62,12 @@
 use std::sync::Arc;
 
 use corelink_billing::abuse::{
-    AbuseDecision, AbuseFeatureWeights, AbuseFeatures, AbuseScorer,
-    InMemoryAbuseAuditSink, InMemoryAbuseMetrics, InMemoryAbuseScorer,
+    AbuseDecision, AbuseFeatureWeights, AbuseFeatures, AbuseScorer, InMemoryAbuseAuditSink,
+    InMemoryAbuseMetrics, InMemoryAbuseScorer,
 };
 use corelink_eviction::Tier;
 use corelink_ratelimit::{
-    InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics,
-    InMemoryTokenBucketRateLimiter,
+    InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics, InMemoryTokenBucketRateLimiter,
 };
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -98,8 +97,7 @@ fn wilson_upper_95(k: u32, n: u32) -> f64 {
     let p = f64::from(k) / n_f;
     let denom = 1.0 + z * z / n_f;
     let centre = p + z * z / (2.0 * n_f);
-    let margin =
-        z * (p * (1.0 - p) / n_f + z * z / (4.0 * n_f * n_f)).sqrt();
+    let margin = z * (p * (1.0 - p) / n_f + z * z / (4.0 * n_f * n_f)).sqrt();
     (centre + margin) / denom
 }
 
@@ -113,8 +111,7 @@ fn wilson_lower_95(k: u32, n: u32) -> f64 {
     let p = f64::from(k) / n_f;
     let denom = 1.0 + z * z / n_f;
     let centre = p + z * z / (2.0 * n_f);
-    let margin =
-        z * (p * (1.0 - p) / n_f + z * z / (4.0 * n_f * n_f)).sqrt();
+    let margin = z * (p * (1.0 - p) / n_f + z * z / (4.0 * n_f * n_f)).sqrt();
     (centre - margin) / denom
 }
 
@@ -164,10 +161,7 @@ fn synthesize_workloads() -> (Vec<WorkloadRow>, Vec<WorkloadRow>) {
         let egress = jitter_u64(&mut rng, 10_000_000, 0.10);
         let entropy = jitter(&mut rng, 4.0, 0.10);
         let exec = jitter_u32(&mut rng, 20, 0.10);
-        benign.push((
-            AbuseFeatures::new(cpu, egress, entropy, exec),
-            Tier::Team,
-        ));
+        benign.push((AbuseFeatures::new(cpu, egress, entropy, exec), Tier::Team));
     }
 
     // Archetype 2: Parallel CI 1000 RPS Business.
@@ -191,10 +185,7 @@ fn synthesize_workloads() -> (Vec<WorkloadRow>, Vec<WorkloadRow>) {
         let egress = jitter_u64(&mut rng, 5_000_000_000, 0.10);
         let entropy = jitter(&mut rng, 3.5, 0.10);
         let exec = jitter_u32(&mut rng, 10, 0.10);
-        benign.push((
-            AbuseFeatures::new(cpu, egress, entropy, exec),
-            Tier::Team,
-        ));
+        benign.push((AbuseFeatures::new(cpu, egress, entropy, exec), Tier::Team));
     }
 
     // Archetype 4: Docker layer rebuild (Team; 50 RPS; entropy 3.5).
@@ -203,10 +194,7 @@ fn synthesize_workloads() -> (Vec<WorkloadRow>, Vec<WorkloadRow>) {
         let egress = jitter_u64(&mut rng, 5_000_000, 0.10);
         let entropy = jitter(&mut rng, 3.5, 0.10);
         let exec = jitter_u32(&mut rng, 5, 0.10);
-        benign.push((
-            AbuseFeatures::new(cpu, egress, entropy, exec),
-            Tier::Team,
-        ));
+        benign.push((AbuseFeatures::new(cpu, egress, entropy, exec), Tier::Team));
     }
 
     // Archetype 5: Academic research (Team; 100 RPS; entropy 4.5).
@@ -215,10 +203,7 @@ fn synthesize_workloads() -> (Vec<WorkloadRow>, Vec<WorkloadRow>) {
         let egress = jitter_u64(&mut rng, 8_000_000, 0.10);
         let entropy = jitter(&mut rng, 4.5, 0.10);
         let exec = jitter_u32(&mut rng, 15, 0.10);
-        benign.push((
-            AbuseFeatures::new(cpu, egress, entropy, exec),
-            Tier::Team,
-        ));
+        benign.push((AbuseFeatures::new(cpu, egress, entropy, exec), Tier::Team));
     }
 
     // ---- Abusive archetypes (HIGH-INTENSITY per WI §6.1.5) ----------
@@ -238,10 +223,7 @@ fn synthesize_workloads() -> (Vec<WorkloadRow>, Vec<WorkloadRow>) {
         let egress = jitter_u64(&mut rng, 500_000_000, 0.05);
         let entropy = jitter(&mut rng, 0.4, 0.10).max(0.0);
         let exec = jitter_u32(&mut rng, 2_500, 0.05);
-        abusive.push((
-            AbuseFeatures::new(cpu, egress, entropy, exec),
-            Tier::Team,
-        ));
+        abusive.push((AbuseFeatures::new(cpu, egress, entropy, exec), Tier::Team));
     }
 
     // Archetype 7: Scraping HIGH-INTENSITY (egress ≥ 20× baseline;
@@ -253,10 +235,7 @@ fn synthesize_workloads() -> (Vec<WorkloadRow>, Vec<WorkloadRow>) {
         let egress = jitter_u64(&mut rng, 1_000_000_000, 0.10);
         let entropy = jitter(&mut rng, 0.5, 0.10).max(0.0);
         let exec = jitter_u32(&mut rng, 500, 0.10);
-        abusive.push((
-            AbuseFeatures::new(cpu, egress, entropy, exec),
-            Tier::Team,
-        ));
+        abusive.push((AbuseFeatures::new(cpu, egress, entropy, exec), Tier::Team));
     }
 
     // Archetype 8: Action-digest spam HIGH-INTENSITY (entropy ≤ 0.5
@@ -270,10 +249,7 @@ fn synthesize_workloads() -> (Vec<WorkloadRow>, Vec<WorkloadRow>) {
         let egress = jitter_u64(&mut rng, 250_000_000, 0.10);
         let entropy = jitter(&mut rng, 0.1, 0.10).max(0.0);
         let exec = jitter_u32(&mut rng, 2_500, 0.05);
-        abusive.push((
-            AbuseFeatures::new(cpu, egress, entropy, exec),
-            Tier::Team,
-        ));
+        abusive.push((AbuseFeatures::new(cpu, egress, entropy, exec), Tier::Team));
     }
 
     // Archetype 9: Exec flood HIGH-INTENSITY (exec ≥ 100× tier
@@ -285,10 +261,7 @@ fn synthesize_workloads() -> (Vec<WorkloadRow>, Vec<WorkloadRow>) {
         let egress = jitter_u64(&mut rng, 100_000_000, 0.10);
         let entropy = jitter(&mut rng, 0.4, 0.10).max(0.0);
         let exec = jitter_u32(&mut rng, 5_000, 0.05);
-        abusive.push((
-            AbuseFeatures::new(cpu, egress, entropy, exec),
-            Tier::Team,
-        ));
+        abusive.push((AbuseFeatures::new(cpu, egress, entropy, exec), Tier::Team));
     }
 
     // Archetype 10: Multi-vector combined attack (all features
@@ -299,10 +272,7 @@ fn synthesize_workloads() -> (Vec<WorkloadRow>, Vec<WorkloadRow>) {
         let egress = jitter_u64(&mut rng, 2_000_000_000, 0.05);
         let entropy = jitter(&mut rng, 0.1, 0.10).max(0.0);
         let exec = jitter_u32(&mut rng, 5_000, 0.05);
-        abusive.push((
-            AbuseFeatures::new(cpu, egress, entropy, exec),
-            Tier::Team,
-        ));
+        abusive.push((AbuseFeatures::new(cpu, egress, entropy, exec), Tier::Team));
     }
 
     (benign, abusive)
@@ -327,8 +297,10 @@ fn calibration_fp_rate_under_5pct_tp_rate_over_80pct() {
     let mut fp_count = 0_u32;
     for (i, (features, tier)) in benign.iter().enumerate() {
         let score = corelink_billing::abuse::compute_score(features, &weights, *tier);
-        let decision =
-            corelink_billing::abuse::decide(score, &corelink_billing::abuse::AbuseConfig::canonical());
+        let decision = corelink_billing::abuse::decide(
+            score,
+            &corelink_billing::abuse::AbuseConfig::canonical(),
+        );
         if !matches!(decision, AbuseDecision::Benign) {
             fp_count += 1;
             eprintln!(
@@ -342,8 +314,7 @@ fn calibration_fp_rate_under_5pct_tp_rate_over_80pct() {
     let fp_upper_95 = wilson_upper_95(fp_count, 50);
     eprintln!(
         "FP: {fp_count}/50 = {:.3} (Wilson 95% upper = {:.3})",
-        fp_rate,
-        fp_upper_95
+        fp_rate, fp_upper_95
     );
     // Per WI §6.1.5: ≤ 2 FP em 50 → 95% CI upper ≤ 9.6% acceptable
     // initial (Lote 10.8bis P0-E corrected); target ≤ 5% with 0 FP.
@@ -360,8 +331,10 @@ fn calibration_fp_rate_under_5pct_tp_rate_over_80pct() {
     let mut tp_count = 0_u32;
     for (i, (features, tier)) in abusive.iter().enumerate() {
         let score = corelink_billing::abuse::compute_score(features, &weights, *tier);
-        let decision =
-            corelink_billing::abuse::decide(score, &corelink_billing::abuse::AbuseConfig::canonical());
+        let decision = corelink_billing::abuse::decide(
+            score,
+            &corelink_billing::abuse::AbuseConfig::canonical(),
+        );
         if !matches!(decision, AbuseDecision::Benign) {
             tp_count += 1;
         } else {
@@ -376,8 +349,7 @@ fn calibration_fp_rate_under_5pct_tp_rate_over_80pct() {
     let tp_lower_95 = wilson_lower_95(tp_count, 50);
     eprintln!(
         "TP: {tp_count}/50 = {:.3} (Wilson 95% lower = {:.3})",
-        tp_rate,
-        tp_lower_95
+        tp_rate, tp_lower_95
     );
     // Per WI §6.1.5 + sprint contract §6 DoD: ≥ 40 TP em 50 → 95% CI
     // lower ≥ 67% acceptable; target ≥ 45 TP → lower 78%. We accept
@@ -429,7 +401,8 @@ fn calibration_orchestrator_pipeline_emits_audit_and_metrics() {
 
     // Each of 100 tenants emits exactly one ScoreComputed audit.
     assert_eq!(
-        audit.snapshot_of(corelink_billing::abuse::AbuseEventType::ScoreComputed)
+        audit
+            .snapshot_of(corelink_billing::abuse::AbuseEventType::ScoreComputed)
             .len(),
         100
     );
@@ -448,7 +421,8 @@ fn calibration_orchestrator_pipeline_emits_audit_and_metrics() {
 
     // 0 SuspendApplied audits (LGPD Art. 20 humane response).
     assert_eq!(
-        audit.snapshot_of(corelink_billing::abuse::AbuseEventType::SuspendApplied)
+        audit
+            .snapshot_of(corelink_billing::abuse::AbuseEventType::SuspendApplied)
             .len(),
         0
     );

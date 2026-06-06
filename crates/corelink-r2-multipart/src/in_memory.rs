@@ -155,12 +155,7 @@ impl InMemoryMultipartAdapter {
             Err(_) => return Vec::new(),
         };
         g.get(upload_id)
-            .map(|s| {
-                s.parts
-                    .iter()
-                    .map(|(n, p)| (*n, p.etag.clone()))
-                    .collect()
-            })
+            .map(|s| s.parts.iter().map(|(n, p)| (*n, p.etag.clone())).collect())
             .unwrap_or_default()
     }
 
@@ -294,11 +289,11 @@ impl MultipartAdapter for InMemoryMultipartAdapter {
         let etag = part_etag(&bytes);
 
         let mut g = self.lock_sessions()?;
-        let session = g
-            .get_mut(&upload.upload_id)
-            .ok_or_else(|| MultipartError::UploadIdNotFound {
-                upload_id: upload.upload_id.clone(),
-            })?;
+        let session =
+            g.get_mut(&upload.upload_id)
+                .ok_or_else(|| MultipartError::UploadIdNotFound {
+                    upload_id: upload.upload_id.clone(),
+                })?;
         Self::check_session_tenant(session, tenant_id, &upload.upload_id)?;
         if session.state != SessionState::InProgress {
             return Err(MultipartError::UploadIdNotFound {
@@ -340,11 +335,11 @@ impl MultipartAdapter for InMemoryMultipartAdapter {
         }
 
         let mut g = self.lock_sessions()?;
-        let session = g
-            .get_mut(&upload.upload_id)
-            .ok_or_else(|| MultipartError::UploadIdNotFound {
-                upload_id: upload.upload_id.clone(),
-            })?;
+        let session =
+            g.get_mut(&upload.upload_id)
+                .ok_or_else(|| MultipartError::UploadIdNotFound {
+                    upload_id: upload.upload_id.clone(),
+                })?;
         Self::check_session_tenant(session, tenant_id, &upload.upload_id)?;
 
         // Idempotent re-complete: return the cached result.
@@ -368,13 +363,15 @@ impl MultipartAdapter for InMemoryMultipartAdapter {
         // Validate every submitted part exists with matching ETag.
         let mut total_bytes: u64 = 0;
         for (pn, supplied) in &parts {
-            let recorded = session.parts.get(&pn.get()).ok_or_else(|| {
-                MultipartError::PartMissing {
-                    part_number: pn.get(),
-                    expected: "<not uploaded>".to_string(),
-                    actual: supplied.as_str().to_string(),
-                }
-            })?;
+            let recorded =
+                session
+                    .parts
+                    .get(&pn.get())
+                    .ok_or_else(|| MultipartError::PartMissing {
+                        part_number: pn.get(),
+                        expected: "<not uploaded>".to_string(),
+                        actual: supplied.as_str().to_string(),
+                    })?;
             if recorded.etag != *supplied {
                 return Err(MultipartError::PartMissing {
                     part_number: pn.get(),
@@ -411,17 +408,13 @@ impl MultipartAdapter for InMemoryMultipartAdapter {
         Ok(object)
     }
 
-    async fn abort(
-        &self,
-        tenant_id: Uuid,
-        upload: &MultipartUpload,
-    ) -> Result<(), MultipartError> {
+    async fn abort(&self, tenant_id: Uuid, upload: &MultipartUpload) -> Result<(), MultipartError> {
         let mut g = self.lock_sessions()?;
-        let session = g
-            .get_mut(&upload.upload_id)
-            .ok_or_else(|| MultipartError::UploadIdNotFound {
-                upload_id: upload.upload_id.clone(),
-            })?;
+        let session =
+            g.get_mut(&upload.upload_id)
+                .ok_or_else(|| MultipartError::UploadIdNotFound {
+                    upload_id: upload.upload_id.clone(),
+                })?;
         Self::check_session_tenant(session, tenant_id, &upload.upload_id)?;
         match session.state {
             SessionState::InProgress | SessionState::Aborted => {
@@ -691,7 +684,12 @@ mod tests {
         let dh = dummy_digest();
         let u = a.initiate(initiate_req(t_a, &p_a, &dh)).await.unwrap();
         let r = a
-            .upload_part(t_b, &u, PartNumber::new(1).unwrap(), Bytes::from_static(b"x"))
+            .upload_part(
+                t_b,
+                &u,
+                PartNumber::new(1).unwrap(),
+                Bytes::from_static(b"x"),
+            )
             .await;
         assert!(matches!(r, Err(MultipartError::CrossTenantUpload { .. })));
     }
@@ -780,7 +778,10 @@ mod tests {
         // Don't upload part 1; submit it anyway.
         let parts = vec![(PartNumber::new(1).unwrap(), PartETag::new("fake"))];
         let r = a.complete(t, &u, parts).await;
-        assert!(matches!(r, Err(MultipartError::PartMissing { part_number: 1, .. })));
+        assert!(matches!(
+            r,
+            Err(MultipartError::PartMissing { part_number: 1, .. })
+        ));
     }
 
     #[tokio::test]
@@ -796,7 +797,10 @@ mod tests {
             .unwrap();
         let parts = vec![(PartNumber::new(1).unwrap(), PartETag::new("wrong"))];
         let r = a.complete(t, &u, parts).await;
-        assert!(matches!(r, Err(MultipartError::PartMissing { part_number: 1, .. })));
+        assert!(matches!(
+            r,
+            Err(MultipartError::PartMissing { part_number: 1, .. })
+        ));
     }
 
     #[tokio::test]
@@ -877,7 +881,11 @@ mod tests {
             .await
             .unwrap();
         let orph_m = a
-            .list_orphans(Bucket::Manifest, future_now, Duration::from_secs(7 * 86_400))
+            .list_orphans(
+                Bucket::Manifest,
+                future_now,
+                Duration::from_secs(7 * 86_400),
+            )
             .await
             .unwrap();
         assert_eq!(orph_c.len(), 1);

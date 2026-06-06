@@ -42,9 +42,7 @@
 
 use std::sync::Arc;
 
-use crate::audit::{
-    StripeAuditEventType, StripeAuditRecord, StripeAuditSink,
-};
+use crate::audit::{StripeAuditEventType, StripeAuditRecord, StripeAuditSink};
 use crate::error::StripeError;
 use crate::event::{StripeAdapterDecision, WebhookEvent};
 use crate::signature::verify_stripe_signature;
@@ -267,10 +265,7 @@ mod tests {
     use crate::signature::compute_signature;
     use crate::webhook_log::{FailingStripeWebhookLog, InMemoryStripeWebhookLog};
 
-    type Handler = InMemoryStripeWebhookHandler<
-        InMemoryStripeAuditSink,
-        InMemoryStripeWebhookLog,
-    >;
+    type Handler = InMemoryStripeWebhookHandler<InMemoryStripeAuditSink, InMemoryStripeWebhookLog>;
 
     fn fresh_handler() -> (
         Handler,
@@ -317,11 +312,15 @@ mod tests {
         assert!(processed);
         assert_eq!(log.len(), 1);
         assert_eq!(
-            audit.snapshot_of(StripeAuditEventType::WebhookReceived).len(),
+            audit
+                .snapshot_of(StripeAuditEventType::WebhookReceived)
+                .len(),
             1
         );
         assert_eq!(
-            audit.snapshot_of(StripeAuditEventType::SignatureVerified).len(),
+            audit
+                .snapshot_of(StripeAuditEventType::SignatureVerified)
+                .len(),
             1
         );
     }
@@ -347,7 +346,9 @@ mod tests {
         assert!(matches!(err, StripeError::SignatureRejected(_)));
         assert_eq!(log.len(), 0);
         assert_eq!(
-            audit.snapshot_of(StripeAuditEventType::SignatureRejected).len(),
+            audit
+                .snapshot_of(StripeAuditEventType::SignatureRejected)
+                .len(),
             1
         );
     }
@@ -360,9 +361,7 @@ mod tests {
         let ts = 1_700_000_000_u64;
         let header = build_valid_header(payload, ts, secret);
         // now is 6 minutes after ts → exceed 5-min window.
-        let now_ms = ts
-            .saturating_mul(1000)
-            .saturating_add(6 * 60 * 1000);
+        let now_ms = ts.saturating_mul(1000).saturating_add(6 * 60 * 1000);
         let req = WebhookHandleRequest {
             signature_header: &header,
             payload,
@@ -374,7 +373,9 @@ mod tests {
         assert!(matches!(err, StripeError::SignatureSkewRejected { .. }));
         assert_eq!(log.len(), 0);
         assert_eq!(
-            audit.snapshot_of(StripeAuditEventType::SignatureSkewRejected).len(),
+            audit
+                .snapshot_of(StripeAuditEventType::SignatureSkewRejected)
+                .len(),
             1
         );
     }
@@ -394,11 +395,15 @@ mod tests {
         };
         let _ = h.handle(req).unwrap_err();
         assert_eq!(
-            audit.snapshot_of(StripeAuditEventType::WebhookReceived).len(),
+            audit
+                .snapshot_of(StripeAuditEventType::WebhookReceived)
+                .len(),
             1
         );
         assert_eq!(
-            audit.snapshot_of(StripeAuditEventType::SignatureRejected).len(),
+            audit
+                .snapshot_of(StripeAuditEventType::SignatureRejected)
+                .len(),
             1
         );
     }
@@ -475,7 +480,9 @@ mod tests {
         assert!(matches!(err, StripeError::WebhookLog(_)));
         // Audit verified arm fired BEFORE the log failure.
         assert_eq!(
-            audit.snapshot_of(StripeAuditEventType::SignatureVerified).len(),
+            audit
+                .snapshot_of(StripeAuditEventType::SignatureVerified)
+                .len(),
             1
         );
     }

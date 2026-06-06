@@ -61,7 +61,9 @@ fn r3_1_webhook_signature_mismatch_rejected_no_mutation() {
     // signature failure short-circuited at the boundary. State is
     // still `PendingCheckout` — no spurious activation.
     let row = env.tier.row(&TierTenantId::new(prov.tenant_id.as_str()));
-    let state = row.map(|r| r.subscription_state).unwrap_or(SubscriptionState::Inactive);
+    let state = row
+        .map(|r| r.subscription_state)
+        .unwrap_or(SubscriptionState::Inactive);
     assert_eq!(state, SubscriptionState::PendingCheckout);
 
     // Sanity: a correctly-signed payload would verify.
@@ -86,8 +88,5 @@ fn r3_1_webhook_signature_mismatch_rejected_no_mutation() {
     );
     let _ = env.tier.on_checkout_completed(&event).unwrap();
     let row = env.tier.row(&TierTenantId::new(prov.tenant_id.as_str()));
-    assert_eq!(
-        row.unwrap().subscription_state,
-        SubscriptionState::Active
-    );
+    assert_eq!(row.unwrap().subscription_state, SubscriptionState::Active);
 }

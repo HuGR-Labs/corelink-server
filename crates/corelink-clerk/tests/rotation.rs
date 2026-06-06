@@ -107,12 +107,7 @@ async fn rotation_storm_high_pass_rate() {
         .map(|i| TestRsaKey::generate(&format!("kid_v{i}")))
         .collect();
     let phases: Vec<Jwks> = (0..5)
-        .map(|i| {
-            Jwks::from_keys(vec![
-                keys[i].jwks_key.clone(),
-                keys[i + 1].jwks_key.clone(),
-            ])
-        })
+        .map(|i| Jwks::from_keys(vec![keys[i].jwks_key.clone(), keys[i + 1].jwks_key.clone()]))
         .collect();
     let cfg = ClerkConfig::builder()
         .jwks_url("https://clerk.test.example.dev/.well-known/jwks.json")
@@ -183,8 +178,10 @@ async fn clock_skew_within_60s_accepted_outside_rejected() {
     // At +61s: must reject (Expired).
     *drift.lock().unwrap() = 61;
     let r2 = adapter.validate(&jwt).await;
-    assert!(matches!(r2, Err(AuthError::Expired)),
-        "clock skew > 60s must surface Expired, got {r2:?}");
+    assert!(
+        matches!(r2, Err(AuthError::Expired)),
+        "clock skew > 60s must surface Expired, got {r2:?}"
+    );
 }
 
 #[tokio::test]

@@ -387,7 +387,8 @@ impl RecordingHubSpotHttp {
     /// Push a scripted transport failure onto the end of the queue.
     pub fn push_transport_failure(&self, msg: impl Into<String>) {
         if let Ok(mut g) = self.state.lock() {
-            g.responses.push(Err(HubSpotHttpError::Transport(msg.into())));
+            g.responses
+                .push(Err(HubSpotHttpError::Transport(msg.into())));
         }
     }
 
@@ -578,8 +579,9 @@ where
     where
         F: Fn(&str) -> Option<String>,
     {
-        let raw_token = env("HUBSPOT_PRIVATE_APP_TOKEN")
-            .ok_or_else(|| HubSpotConfigError::EnvMissing("HUBSPOT_PRIVATE_APP_TOKEN".to_string()))?;
+        let raw_token = env("HUBSPOT_PRIVATE_APP_TOKEN").ok_or_else(|| {
+            HubSpotConfigError::EnvMissing("HUBSPOT_PRIVATE_APP_TOKEN".to_string())
+        })?;
         let raw_region = env("HUBSPOT_REGION")
             .ok_or_else(|| HubSpotConfigError::EnvMissing("HUBSPOT_REGION".to_string()))?;
         let token = HubSpotToken::new(raw_token)?;
@@ -786,8 +788,7 @@ where
             &unsealed.company,
             inquiry_id,
         )?;
-        let company_id =
-            self.find_or_create_company(&unsealed.company, None, inquiry_id)?;
+        let company_id = self.find_or_create_company(&unsealed.company, None, inquiry_id)?;
         let deal_id = self.create_deal(
             &contact_id,
             &company_id,
@@ -962,8 +963,12 @@ fn truncate(s: &str, max: usize) -> String {
 /// dependency in this crate. Production wiring SHOULD replace this
 /// with a real JSON parse once the crate adopts serde.
 fn parse_object_id(body: &str) -> Result<String, CrmError> {
-    parse_string_field(body, "\"id\"")
-        .ok_or_else(|| CrmError::Rejected(format!("hubspot response missing `id`: {}", truncate(body, 256))))
+    parse_string_field(body, "\"id\"").ok_or_else(|| {
+        CrmError::Rejected(format!(
+            "hubspot response missing `id`: {}",
+            truncate(body, 256)
+        ))
+    })
 }
 
 /// Parse the first hit from a `/search` response (`{"results":[{"id":"123",...}],...}`).
@@ -1048,11 +1053,15 @@ mod tests {
         f
     }
 
-    fn client_us(http: RecordingHubSpotHttp) -> HubSpotCrmClient<RecordingHubSpotHttp, NoopSleeper> {
+    fn client_us(
+        http: RecordingHubSpotHttp,
+    ) -> HubSpotCrmClient<RecordingHubSpotHttp, NoopSleeper> {
         HubSpotCrmClient::new(http, NoopSleeper::new(), token(), HubSpotRegion::Us1).unwrap()
     }
 
-    fn client_eu(http: RecordingHubSpotHttp) -> HubSpotCrmClient<RecordingHubSpotHttp, NoopSleeper> {
+    fn client_eu(
+        http: RecordingHubSpotHttp,
+    ) -> HubSpotCrmClient<RecordingHubSpotHttp, NoopSleeper> {
         HubSpotCrmClient::new(http, NoopSleeper::new(), token(), HubSpotRegion::Eu1).unwrap()
     }
 
@@ -1125,7 +1134,10 @@ mod tests {
     #[test]
     fn create_contact_happy_path() {
         let http = RecordingHubSpotHttp::new();
-        http.push_response(201, "{\"id\":\"100001\",\"properties\":{\"email\":\"a@b.c\"}}");
+        http.push_response(
+            201,
+            "{\"id\":\"100001\",\"properties\":{\"email\":\"a@b.c\"}}",
+        );
         let c = client_us(http.clone());
         let id = c
             .create_contact(
@@ -1141,7 +1153,9 @@ mod tests {
         assert_eq!(req.method, HubSpotMethod::Post);
         assert_eq!(req.url, "https://api.hubapi.com/crm/v3/objects/contacts");
         assert!(req.body.contains("\"email\":\"a@b.c\""));
-        assert!(req.body.contains("\"hs_unique_creation_key\":\"contact:inq-1\""));
+        assert!(req
+            .body
+            .contains("\"hs_unique_creation_key\":\"contact:inq-1\""));
     }
 
     // -------- T6 company search-then-create idempotent (hit) --------
@@ -1159,7 +1173,9 @@ mod tests {
         assert_eq!(id, "900");
         // ONLY the search request fired — no create.
         assert_eq!(http.request_count(), 1);
-        assert!(http.requests()[0].url.ends_with("/crm/v3/objects/companies/search"));
+        assert!(http.requests()[0]
+            .url
+            .ends_with("/crm/v3/objects/companies/search"));
     }
 
     // -------- T7 company search-then-create idempotent (miss → create) --------
@@ -1167,7 +1183,10 @@ mod tests {
     fn find_or_create_company_creates_when_search_misses() {
         let http = RecordingHubSpotHttp::new();
         http.push_response(200, "{\"total\":0,\"results\":[]}");
-        http.push_response(201, "{\"id\":\"901\",\"properties\":{\"name\":\"Acme Inc\"}}");
+        http.push_response(
+            201,
+            "{\"id\":\"901\",\"properties\":{\"name\":\"Acme Inc\"}}",
+        );
         let c = client_us(http.clone());
         let id = c
             .find_or_create_company("Acme Inc", None, &InquiryId::new("inq-3"))
@@ -1177,7 +1196,9 @@ mod tests {
         assert_eq!(reqs.len(), 2);
         assert!(reqs[0].url.ends_with("/crm/v3/objects/companies/search"));
         assert!(reqs[1].url.ends_with("/crm/v3/objects/companies"));
-        assert!(reqs[1].body.contains("\"hs_unique_creation_key\":\"company:inq-3\""));
+        assert!(reqs[1]
+            .body
+            .contains("\"hs_unique_creation_key\":\"company:inq-3\""));
     }
 
     // -------- T8 deal create linked to contact + company --------
@@ -1325,7 +1346,10 @@ mod tests {
     #[test]
     fn validation_4xx_is_not_retried() {
         let http = RecordingHubSpotHttp::new();
-        http.push_response(400, "{\"category\":\"VALIDATION_ERROR\",\"message\":\"bad email\"}");
+        http.push_response(
+            400,
+            "{\"category\":\"VALIDATION_ERROR\",\"message\":\"bad email\"}",
+        );
         let c = client_us(http.clone());
         let err = c
             .create_contact("not-an-email", "A", "B", "Co", &InquiryId::new("inq-400"))
@@ -1358,7 +1382,10 @@ mod tests {
     #[test]
     fn compensate_patches_deal_to_closedlost() {
         let http = RecordingHubSpotHttp::new();
-        http.push_response(200, "{\"id\":\"3001\",\"properties\":{\"dealstage\":\"closedlost\"}}");
+        http.push_response(
+            200,
+            "{\"id\":\"3001\",\"properties\":{\"dealstage\":\"closedlost\"}}",
+        );
         let c = client_us(http.clone());
         c.compensate(&InquiryId::new("inq-cmp"), &CrmEntryId::new("3001"))
             .unwrap();
@@ -1390,8 +1417,8 @@ mod tests {
             "HUBSPOT_REGION" => Some("eu1".to_string()),
             _ => None,
         };
-        let c =
-            HubSpotCrmClient::from_env(RecordingHubSpotHttp::new(), NoopSleeper::new(), env).unwrap();
+        let c = HubSpotCrmClient::from_env(RecordingHubSpotHttp::new(), NoopSleeper::new(), env)
+            .unwrap();
         assert_eq!(c.region(), HubSpotRegion::Eu1);
     }
 
@@ -1399,9 +1426,8 @@ mod tests {
     #[test]
     fn from_env_missing_var_errors() {
         let env = |_: &str| -> Option<String> { None };
-        let err =
-            HubSpotCrmClient::from_env(RecordingHubSpotHttp::new(), NoopSleeper::new(), env)
-                .unwrap_err();
+        let err = HubSpotCrmClient::from_env(RecordingHubSpotHttp::new(), NoopSleeper::new(), env)
+            .unwrap_err();
         assert!(matches!(err, HubSpotConfigError::EnvMissing(_)));
     }
 
@@ -1431,7 +1457,10 @@ mod tests {
             body: String::new(),
             retry_after_s: None,
         };
-        assert_eq!(classify_retry(&r5, 0), RetryDecision::Retry { delay_ms: 250 });
+        assert_eq!(
+            classify_retry(&r5, 0),
+            RetryDecision::Retry { delay_ms: 250 }
+        );
         assert_eq!(classify_retry(&r5, 5), RetryDecision::GiveUp);
     }
 
@@ -1444,7 +1473,10 @@ mod tests {
         c.create_contact("a@b.c", "A", "B", "Co", &InquiryId::new("inq-auth"))
             .unwrap();
         let req = &http.requests()[0];
-        assert_eq!(req.authorization, "Bearer pat-na1-AAAAAAAAAAAAAAAA-deadbeef");
+        assert_eq!(
+            req.authorization,
+            "Bearer pat-na1-AAAAAAAAAAAAAAAA-deadbeef"
+        );
         // Debug must redact the authorization field.
         let dbg = format!("{:?}", req);
         assert!(dbg.contains("authorization: \"<redacted>\""));
@@ -1455,12 +1487,24 @@ mod tests {
     #[test]
     fn residency_routable_matrix() {
         assert!(is_residency_routable(ResidencyKind::Eu, HubSpotRegion::Eu1));
-        assert!(!is_residency_routable(ResidencyKind::Eu, HubSpotRegion::Us1));
+        assert!(!is_residency_routable(
+            ResidencyKind::Eu,
+            HubSpotRegion::Us1
+        ));
         assert!(is_residency_routable(ResidencyKind::Us, HubSpotRegion::Us1));
-        assert!(!is_residency_routable(ResidencyKind::Us, HubSpotRegion::Eu1));
+        assert!(!is_residency_routable(
+            ResidencyKind::Us,
+            HubSpotRegion::Eu1
+        ));
         // None / Sam / Apac / Specific currently permitted on either
         // (legal review out-of-band).
-        assert!(is_residency_routable(ResidencyKind::None, HubSpotRegion::Us1));
-        assert!(is_residency_routable(ResidencyKind::Apac, HubSpotRegion::Eu1));
+        assert!(is_residency_routable(
+            ResidencyKind::None,
+            HubSpotRegion::Us1
+        ));
+        assert!(is_residency_routable(
+            ResidencyKind::Apac,
+            HubSpotRegion::Eu1
+        ));
     }
 }

@@ -62,9 +62,9 @@ impl InquirySlackClient for InquirySlackAdapter {
 
         match self.inner.send(&msg) {
             Ok(outcome) => {
-                let id = outcome.thread_ts.unwrap_or_else(|| {
-                    format!("{}:{}", inquiry_id, kind.as_str())
-                });
+                let id = outcome
+                    .thread_ts
+                    .unwrap_or_else(|| format!("{}:{}", inquiry_id, kind.as_str()));
                 Ok(InquirySlackMessageId::new(id))
             }
             Err(e) => Err(InquirySlackError::Transport(map_err(&e))),

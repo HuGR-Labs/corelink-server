@@ -198,9 +198,6 @@ impl ChunkInput {
     /// Construct a fresh [`ChunkInput`].
     #[must_use]
     pub const fn new(digest: [u8; DIGEST_LEN], size_bytes: u32) -> Self {
-        Self {
-            digest,
-            size_bytes,
-        }
+        Self { digest, size_bytes }
     }
 }

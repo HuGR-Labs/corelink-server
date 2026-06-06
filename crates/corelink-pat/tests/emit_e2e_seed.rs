@@ -59,8 +59,16 @@ fn emit_e2e_pat_seed() {
     let principal_id = PrincipalId(Uuid::now_v7());
     let scopes = PatScopes::from_u64(SCOPE_CACHE_R | SCOPE_CACHE_W);
     let ttl = Some(Duration::from_secs(7 * 24 * 60 * 60)); // 7d
-    let (plaintext, pat) =
-        mint(PatEnv::Pat, tenant_id, principal_id, scopes, ttl, &signing_key, 1).expect("mint");
+    let (plaintext, pat) = mint(
+        PatEnv::Pat,
+        tenant_id,
+        principal_id,
+        scopes,
+        ttl,
+        &signing_key,
+        1,
+    )
+    .expect("mint");
 
     // 3. Emit the customer-facing token + the seed SQL. The plaintext is
     //    capturable by the harness caller; the SQL is structured so the FK

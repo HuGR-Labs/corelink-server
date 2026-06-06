@@ -178,12 +178,10 @@ pub use audit::{
     canonical_stripe_audit_event_strings, FailingStripeAuditSink, InMemoryStripeAuditSink,
     StripeAuditEmitError, StripeAuditEventType, StripeAuditRecord, StripeAuditSink,
 };
-pub use error::{
-    StripeAuditSinkError, StripeError, StripeUsageLedgerError, StripeWebhookLogError,
-};
+pub use error::{StripeAuditSinkError, StripeError, StripeUsageLedgerError, StripeWebhookLogError};
 pub use event::{
-    IdempotencyKey, StripeAdapterDecision, SubscriptionItemId, UsageRecordRequest,
-    WebhookEvent, WebhookEventKind,
+    IdempotencyKey, StripeAdapterDecision, SubscriptionItemId, UsageRecordRequest, WebhookEvent,
+    WebhookEventKind,
 };
 pub use idempotency::{
     compute_canonical_aggregate_bytes, derive_idempotency_key,
@@ -195,9 +193,7 @@ pub use ledger::{
 pub use signature::{
     compute_signature, verify_stripe_signature, StripeSignatureHeader, REPLAY_WINDOW_MS,
 };
-pub use webhook::{
-    InMemoryStripeWebhookHandler, StripeWebhookHandler, WebhookHandleRequest,
-};
+pub use webhook::{InMemoryStripeWebhookHandler, StripeWebhookHandler, WebhookHandleRequest};
 pub use webhook_log::{
     FailingStripeWebhookLog, InMemoryStripeWebhookLog, StripeWebhookLog, WebhookInsertOutcome,
 };

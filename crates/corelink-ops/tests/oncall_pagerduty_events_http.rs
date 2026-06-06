@@ -71,7 +71,9 @@ fn http_trigger_succeeds_against_mockito() {
         Box::new(audit),
         Box::new(NoopClock),
     );
-    let out = client.send(&mk_event(EventAction::Trigger, "k-mock")).unwrap();
+    let out = client
+        .send(&mk_event(EventAction::Trigger, "k-mock"))
+        .unwrap();
     assert!(matches!(out, SendOutcome::Accepted { .. }));
     mock.assert();
     let recorded = events_handle.lock().unwrap();

@@ -223,8 +223,7 @@ impl fmt::Display for KvOp {
 ///
 /// The default is a no-op suitable for read-only test fixtures;
 /// production wires a writer via [`CfKvNamespaceReal::with_audit`].
-pub type AuditFn =
-    Arc<dyn Fn(KvOp, &str) -> Result<(), KvError> + Send + Sync + 'static>;
+pub type AuditFn = Arc<dyn Fn(KvOp, &str) -> Result<(), KvError> + Send + Sync + 'static>;
 
 fn noop_audit() -> AuditFn {
     Arc::new(|_op, _key| Ok(()))
@@ -361,7 +360,10 @@ impl CfKvNamespaceReal {
     /// native non-test build this helper is unused; the explicit
     /// `#[allow(dead_code)]` keeps the function discoverable in a
     /// `cargo doc` build without a noisy warning.
-    #[allow(dead_code, reason = "wasm32+test-only; kept on the shared impl block for clarity")]
+    #[allow(
+        dead_code,
+        reason = "wasm32+test-only; kept on the shared impl block for clarity"
+    )]
     fn clamp_ttl(ttl: Option<u64>) -> Option<u64> {
         ttl.map(|n| n.max(CF_KV_MIN_TTL_SECS))
     }
@@ -474,15 +476,12 @@ impl KvBackend for CfKvNamespaceReal {
         value: Vec<u8>,
         ttl_secs: u64,
     ) -> impl Future<Output = Result<(), KvError>> + Send + 'a {
-        worker::send::SendFuture::new(async move {
-            self.put_bytes(key, &value, Some(ttl_secs)).await
-        })
+        worker::send::SendFuture::new(
+            async move { self.put_bytes(key, &value, Some(ttl_secs)).await },
+        )
     }
 
-    fn delete<'a>(
-        &'a self,
-        key: &'a str,
-    ) -> impl Future<Output = Result<(), KvError>> + Send + 'a {
+    fn delete<'a>(&'a self, key: &'a str) -> impl Future<Output = Result<(), KvError>> + Send + 'a {
         worker::send::SendFuture::new(async move { CfKvNamespaceReal::delete(self, key).await })
     }
 }
@@ -546,12 +545,7 @@ impl KvBackend for CfKvNamespaceReal {
         self.get_bytes(key).await
     }
 
-    async fn put_with_ttl(
-        &self,
-        key: &str,
-        value: Vec<u8>,
-        ttl_secs: u64,
-    ) -> Result<(), KvError> {
+    async fn put_with_ttl(&self, key: &str, value: Vec<u8>, ttl_secs: u64) -> Result<(), KvError> {
         self.put_bytes(key, &value, Some(ttl_secs)).await
     }
 
@@ -713,8 +707,14 @@ mod tests {
 
     #[test]
     fn clamp_ttl_floors_below_minimum() {
-        assert_eq!(CfKvNamespaceReal::clamp_ttl(Some(30)), Some(CF_KV_MIN_TTL_SECS));
-        assert_eq!(CfKvNamespaceReal::clamp_ttl(Some(0)), Some(CF_KV_MIN_TTL_SECS));
+        assert_eq!(
+            CfKvNamespaceReal::clamp_ttl(Some(30)),
+            Some(CF_KV_MIN_TTL_SECS)
+        );
+        assert_eq!(
+            CfKvNamespaceReal::clamp_ttl(Some(0)),
+            Some(CF_KV_MIN_TTL_SECS)
+        );
     }
 
     #[test]

@@ -49,8 +49,10 @@ pub trait DpaAcceptanceStore: Send + Sync + std::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`DpaAcceptanceError::Store`] on backend failure.
-    fn lookup(&self, signup_id: &SignupId)
-        -> Result<Option<DpaAcceptanceRecord>, DpaAcceptanceError>;
+    fn lookup(
+        &self,
+        signup_id: &SignupId,
+    ) -> Result<Option<DpaAcceptanceRecord>, DpaAcceptanceError>;
 }
 
 /// In-memory implementation for unit + integration tests.

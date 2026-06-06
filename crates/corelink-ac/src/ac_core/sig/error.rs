@@ -113,7 +113,11 @@ mod tests {
         // that renames an error variant trips the test before reaching
         // production dashboards.
         assert_eq!(
-            SigError::LengthMismatch { expected: 32, got: 64 }.audit_code(),
+            SigError::LengthMismatch {
+                expected: 32,
+                got: 64
+            }
+            .audit_code(),
             "length_mismatch"
         );
         assert_eq!(SigError::Invalid.audit_code(), "sig_invalid");
@@ -126,7 +130,10 @@ mod tests {
             .audit_code(),
             "key_id_unknown"
         );
-        assert_eq!(SigError::BackendError("kms".into()).audit_code(), "backend_error");
+        assert_eq!(
+            SigError::BackendError("kms".into()).audit_code(),
+            "backend_error"
+        );
         assert_eq!(
             SigError::TdkDerivationFailed("len".into()).audit_code(),
             "tdk_derivation_failed"

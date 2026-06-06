@@ -11,15 +11,13 @@
 
 use corelink_auth::webauthn::{
     Aaguid, AaguidPolicy, AuthenticatorAttachment, AuthenticatorFlags, CredentialId, EngineConfig,
-    FixedClock, InMemoryEngine, Origin, OriginAllowlist, RegistrationResponse, RpId,
-    UserAccountId, WebAuthnEngine, COSE_ALG_ES256,
+    FixedClock, InMemoryEngine, Origin, OriginAllowlist, RegistrationResponse, RpId, UserAccountId,
+    WebAuthnEngine, COSE_ALG_ES256,
 };
 
 fn main() {
     let cfg = EngineConfig::builder(RpId::new("corelink.humangr.com").unwrap(), "CoreLink")
-        .origins(
-            OriginAllowlist::from_strings(["https://app.corelink.humangr.com"]).unwrap(),
-        )
+        .origins(OriginAllowlist::from_strings(["https://app.corelink.humangr.com"]).unwrap())
         .aaguids(AaguidPolicy::builder().allow(Aaguid::touch_id()).build())
         .build()
         .unwrap();
@@ -40,7 +38,9 @@ fn main() {
         0,
         Origin::parse("https://app.corelink.humangr.com").unwrap(),
     );
-    let cred_id = engine.finish_registration(challenge.id(), response).unwrap();
+    let cred_id = engine
+        .finish_registration(challenge.id(), response)
+        .unwrap();
     println!("Credential persisted: {cred_id:?}");
 
     let creds = engine.credential_store().list_for_user(user);

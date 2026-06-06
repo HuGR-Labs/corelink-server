@@ -27,10 +27,9 @@ use proptest::prelude::*;
 
 use corelink_ops::tenant_offboarding::{
     AdminCommitErasureRequest, InMemoryTenantOffboardingAuditSink,
-    InMemoryTenantOffboardingOrchestrator, InMemoryTenantOffboardingStore,
-    TenantOffboardingError, TenantOffboardingOrchestrator, TenantOffboardingState,
-    TenantOffboardingTransition, TransitionTrigger, CANONICAL_GRACE_PERIOD_DAYS,
-    CANONICAL_READ_ONLY_DAYS,
+    InMemoryTenantOffboardingOrchestrator, InMemoryTenantOffboardingStore, TenantOffboardingError,
+    TenantOffboardingOrchestrator, TenantOffboardingState, TenantOffboardingTransition,
+    TransitionTrigger, CANONICAL_GRACE_PERIOD_DAYS, CANONICAL_READ_ONLY_DAYS,
 };
 
 /// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 256
@@ -69,10 +68,7 @@ fn time_step_strategy() -> impl Strategy<Value = i64> {
         Just(0_i64),
         Just(MS_PER_DAY),
         Just((CANONICAL_GRACE_PERIOD_DAYS as i64 + 1) * MS_PER_DAY),
-        Just(
-            ((CANONICAL_GRACE_PERIOD_DAYS + CANONICAL_READ_ONLY_DAYS) as i64 + 1)
-                * MS_PER_DAY
-        ),
+        Just(((CANONICAL_GRACE_PERIOD_DAYS + CANONICAL_READ_ONLY_DAYS) as i64 + 1) * MS_PER_DAY),
         Just(95_i64 * MS_PER_DAY),
     ]
 }

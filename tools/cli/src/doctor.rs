@@ -100,14 +100,8 @@ impl fmt::Display for DoctorCheck {
             .latency_ms
             .map(|ms| format!("{ms}ms"))
             .unwrap_or_else(|| "n/a".to_owned());
-        let action = self
-            .next_action
-            .as_deref()
-            .unwrap_or("");
-        let code = self
-            .error_code
-            .as_deref()
-            .unwrap_or("");
+        let action = self.next_action.as_deref().unwrap_or("");
+        let code = self.error_code.as_deref().unwrap_or("");
         write!(
             f,
             "{:<18} {:<6} {:>8}   {:>20}   {}",
@@ -382,7 +376,12 @@ async fn check_client_verify(client: &CorelinkClient) -> DoctorCheck {
 }
 
 #[cfg(test)]
-#[allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used)]
+#[allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used
+)]
 mod tests {
     use super::*;
 

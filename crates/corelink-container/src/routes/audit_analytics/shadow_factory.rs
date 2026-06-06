@@ -35,10 +35,7 @@ pub trait ShadowSinkFactory: Send + Sync + core::fmt::Debug {
     ///
     /// Returns a static error string when the tenant has no pinned
     /// region recorded (production) or the test fake doesn't carry one.
-    fn for_tenant(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<Arc<dyn NeonShadowSink>, &'static str>;
+    fn for_tenant(&self, tenant_id: Uuid) -> Result<Arc<dyn NeonShadowSink>, &'static str>;
 
     /// Wave-27 closure: resolve a shadow sink for `tenant_id` given a
     /// *pre-resolved* `region` — typically sourced from the

@@ -147,9 +147,9 @@ impl MfaStepUpVerifier for InMemoryMfaStepUpVerifier {
     fn verify(&self, token: Option<&MfaStepUpToken>) -> Result<(), DsrMfaError> {
         let res = match token {
             None => Err(DsrMfaError::Required),
-            Some(t) if !t.is_non_empty() => Err(DsrMfaError::Invalid(
-                "empty token bytes".to_string(),
-            )),
+            Some(t) if !t.is_non_empty() => {
+                Err(DsrMfaError::Invalid("empty token bytes".to_string()))
+            }
             Some(_) => Ok(()),
         };
         match self.inner.lock() {

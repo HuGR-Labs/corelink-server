@@ -198,9 +198,7 @@ mod tests {
 
     #[test]
     fn signature_rejected_displays_diagnostic() {
-        let e = StripeError::SignatureRejected(
-            "HMAC-SHA256 mismatch".to_string(),
-        );
+        let e = StripeError::SignatureRejected("HMAC-SHA256 mismatch".to_string());
         let s = format!("{e}");
         assert!(s.contains("signature rejected"));
     }

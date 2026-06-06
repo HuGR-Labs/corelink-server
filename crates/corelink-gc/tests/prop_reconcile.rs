@@ -103,12 +103,7 @@ fn fresh(start_ms: u64) -> ReconcileFixture {
     (phase, runs, refcount_source, blob_meta, audit)
 }
 
-fn seed_run_in_reconcile(
-    runs: &InMemoryGcRunStore,
-    rid: RunId,
-    tenant: Uuid,
-    region: GcRegion,
-) {
+fn seed_run_in_reconcile(runs: &InMemoryGcRunStore, rid: RunId, tenant: Uuid, region: GcRegion) {
     runs.insert_pending(rid, tenant, region, 100, "cron".into())
         .unwrap();
     runs.acquire_running(rid, tenant, 200).unwrap();
@@ -122,12 +117,7 @@ fn seed_run_in_reconcile(
         .unwrap();
 }
 
-fn seed_blob(
-    blob_meta: &InMemoryBlobMetaRefcountStore,
-    tenant: Uuid,
-    d: BlobDigest,
-    stored: u32,
-) {
+fn seed_blob(blob_meta: &InMemoryBlobMetaRefcountStore, tenant: Uuid, d: BlobDigest, stored: u32) {
     blob_meta.push_row(
         tenant,
         BlobMetaReconcileRow {

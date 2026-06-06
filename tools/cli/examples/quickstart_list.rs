@@ -39,7 +39,10 @@ async fn main() -> Result<()> {
         anyhow::bail!("server returned {status}: {body}");
     }
     let body: serde_json::Value = resp.json().await.context("decode body")?;
-    let count = body.get("items").and_then(|v| v.as_array()).map_or(0, Vec::len);
+    let count = body
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map_or(0, Vec::len);
     println!("status={status} pat_count={count}");
     println!("body={}", serde_json::to_string_pretty(&body)?);
     Ok(())

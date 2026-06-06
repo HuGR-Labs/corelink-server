@@ -28,10 +28,15 @@ pub fn run_list(_format: OutputFormat) -> Result<(), CliError> {
 }
 
 #[cfg(test)]
-#[allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used)]
+#[allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used
+)]
 mod tests {
     use crate::config::{
-        apply_key_to_cfg, load_from_path, list_sanitised_from_cfg, save_to_path, CorelinkConfig,
+        apply_key_to_cfg, list_sanitised_from_cfg, load_from_path, save_to_path, CorelinkConfig,
     };
 
     #[test]

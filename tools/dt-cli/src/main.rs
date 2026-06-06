@@ -1,4 +1,11 @@
-#![allow(clippy::expect_used, clippy::unwrap_used, clippy::print_stdout, clippy::print_stderr, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 //! `corelink-dt-cli` — Dependency-Track CLI utility (WI-S12-005).
 //!
 //! # Subcommands
@@ -13,7 +20,9 @@
 //! - `DT_PROJECT_UUID` — project UUID to target.
 
 use corelink_dt_webhook::{
-    handler::InMemoryDtWebhookHandler, types::{DtProjectUuid, SyntheticCve}, DtWebhookHandler,
+    handler::InMemoryDtWebhookHandler,
+    types::{DtProjectUuid, SyntheticCve},
+    DtWebhookHandler,
 };
 use tracing::{error, info};
 
@@ -119,9 +128,7 @@ async fn run_ossindex_fallback(_args: &[String]) {
 }
 
 fn get_flag(args: &[String], flag: &str) -> Option<String> {
-    args.windows(2)
-        .find(|w| w[0] == flag)
-        .map(|w| w[1].clone())
+    args.windows(2).find(|w| w[0] == flag).map(|w| w[1].clone())
 }
 
 fn severity_to_cvss(severity: &str) -> f64 {

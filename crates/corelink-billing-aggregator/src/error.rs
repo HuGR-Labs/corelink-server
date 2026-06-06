@@ -164,9 +164,8 @@ mod tests {
 
     #[test]
     fn chain_break_displays_diagnostic() {
-        let e = AggregatorError::ChainBreak(
-            "expected head abcdef..; observed 000000..".to_string(),
-        );
+        let e =
+            AggregatorError::ChainBreak("expected head abcdef..; observed 000000..".to_string());
         let s = format!("{e}");
         assert!(s.contains("chain break"));
         assert!(s.contains("CRITICAL"));

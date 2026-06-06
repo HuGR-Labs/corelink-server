@@ -45,16 +45,14 @@
 use std::sync::Arc;
 
 use corelink_eviction::{
-    reservation_ttl_ms, should_fire_quota_trigger, ttl_for_tier,
-    ttl_for_tier_with_override, AcReferenceProbe, BlobLruRow,
-    BlobMetaSoftDeleteStore, CountingEvictionClock, EvictionBlobDigest,
-    EvictionConfig, EvictionDecision, EvictionMetricKind, EvictionPhase,
+    reservation_ttl_ms, should_fire_quota_trigger, ttl_for_tier, ttl_for_tier_with_override,
+    AcReferenceProbe, BlobLruRow, BlobMetaSoftDeleteStore, CountingEvictionClock,
+    EvictionBlobDigest, EvictionConfig, EvictionDecision, EvictionMetricKind, EvictionPhase,
     EvictionRegion, InMemoryAcReferenceProbe, InMemoryBlobMetaSoftDeleteStore,
-    InMemoryEvictionAuditSink, InMemoryEvictionMetrics,
-    InMemoryEvictionPhase, InMemoryTenantStorageStateStore,
-    QuotaTriggerOutcome, SoftDeleteOutcome, TenantStorageStateRow,
-    TenantStorageStateStore, Tier, TierTtlOverrideError,
-    MAX_RESERVATION_TTL_MS, MIN_RESERVATION_TTL_MS,
+    InMemoryEvictionAuditSink, InMemoryEvictionMetrics, InMemoryEvictionPhase,
+    InMemoryTenantStorageStateStore, QuotaTriggerOutcome, SoftDeleteOutcome, TenantStorageStateRow,
+    TenantStorageStateStore, Tier, TierTtlOverrideError, MAX_RESERVATION_TTL_MS,
+    MIN_RESERVATION_TTL_MS,
 };
 use proptest::prelude::*;
 use uuid::Uuid;
@@ -574,19 +572,10 @@ fn audit_sink_collects_quota_trigger_fired_event_at_95pct() {
         clock,
     );
     storage_state
-        .push_row(fresh_state_row(
-            ten_a(),
-            EvictionRegion::Sam,
-            95,
-            100,
-        ))
+        .push_row(fresh_state_row(ten_a(), EvictionRegion::Sam, 95, 100))
         .unwrap();
-    blob_meta
-        .push_row(ten_a(), lru_row(1, 1, 5))
-        .unwrap();
-    let r = phase
-        .execute_daily(ten_a(), EvictionRegion::Sam)
-        .unwrap();
+    blob_meta.push_row(ten_a(), lru_row(1, 1, 5)).unwrap();
+    let r = phase.execute_daily(ten_a(), EvictionRegion::Sam).unwrap();
     assert!(r.quota_trigger_fired);
     assert_eq!(
         audit
@@ -616,13 +605,7 @@ fn step_candidate_evict_path_persists_soft_delete() {
     let row = lru_row(0xab, 1, 99);
     blob_meta.push_row(ten_a(), row.clone()).unwrap();
     let d = phase
-        .step_candidate(
-            ten_a(),
-            EvictionRegion::Sam,
-            &row,
-            start,
-            start - 1,
-        )
+        .step_candidate(ten_a(), EvictionRegion::Sam, &row, start, start - 1)
         .unwrap();
     assert!(matches!(d, EvictionDecision::Evict { .. }));
     let outcome = blob_meta

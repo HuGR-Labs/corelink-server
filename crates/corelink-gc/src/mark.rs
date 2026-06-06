@@ -58,9 +58,7 @@ use crate::audit::{GcAuditRecord, GcAuditSink, GcAuditSinkError, GcEventType};
 use crate::error::GcError;
 use crate::metrics::{GcMetricsObserver, GcMetricsObserverError};
 use crate::region::GcRegion;
-use crate::run::{
-    CheckpointDeltas, GcPhase, GcRun, GcRunStore, GcRunStoreError, GcStatus, RunId,
-};
+use crate::run::{CheckpointDeltas, GcPhase, GcRun, GcRunStore, GcRunStoreError, GcStatus, RunId};
 
 /// Embedded canonical migration SQL for `gc_candidates` (WI-S06-002).
 ///
@@ -762,11 +760,17 @@ where
             let now = self.clock.now_ms();
             if now > deadline_ms {
                 return Err(MarkError::PhaseBudgetExceeded {
-                    duration_ms: now.saturating_sub(deadline_ms.saturating_sub(self.config.phase_budget_ms)),
+                    duration_ms: now
+                        .saturating_sub(deadline_ms.saturating_sub(self.config.phase_budget_ms)),
                     budget_ms: self.config.phase_budget_ms,
                 });
             }
-            let batch = fetch(tenant_id, snapshot_lower_bound_ms, self.config.batch_size, offset)?;
+            let batch = fetch(
+                tenant_id,
+                snapshot_lower_bound_ms,
+                self.config.batch_size,
+                offset,
+            )?;
             let batch_len_u32 = u32::try_from(batch.len()).unwrap_or(u32::MAX);
             rows_scanned = rows_scanned.saturating_add(u64::from(batch_len_u32));
             batches = batches.saturating_add(1);
@@ -904,7 +908,9 @@ where
         let phase_end_now = self.clock.now_ms();
         let reachable_count = u64::try_from(reachable.len()).unwrap_or(u64::MAX);
         let total_rows_scanned = p1_rows.saturating_add(p2_rows).saturating_add(p3_rows);
-        let total_batches = p1_batches.saturating_add(p2_batches).saturating_add(p3_batches);
+        let total_batches = p1_batches
+            .saturating_add(p2_batches)
+            .saturating_add(p3_batches);
         let duration_ms = phase_end_now.saturating_sub(phase_start_now);
         self.runs.checkpoint(
             run_id,
@@ -1019,9 +1025,7 @@ impl InMemoryReachableSetSource {
         if off >= rows.len() {
             return Vec::new();
         }
-        let end = off
-            .saturating_add(batch_size as usize)
-            .min(rows.len());
+        let end = off.saturating_add(batch_size as usize).min(rows.len());
         rows.get(off..end).map_or_else(Vec::new, <[T]>::to_vec)
     }
 }
@@ -1670,9 +1674,9 @@ mod tests {
         }
         let result = mark.execute(rid, tenant, GcRegion::Sam).unwrap();
         assert_eq!(result.rows_scanned_count, 7); // pass1=7 + pass2=0 + pass3=0
-        // Pass1 batches: 3 (3+3+1 → stop on partial).
-        // Pass2 batches: 1 (empty → stop immediately).
-        // Pass3 batches: 1 (empty → stop immediately).
+                                                  // Pass1 batches: 3 (3+3+1 → stop on partial).
+                                                  // Pass2 batches: 1 (empty → stop immediately).
+                                                  // Pass3 batches: 1 (empty → stop immediately).
         assert_eq!(result.batches_processed, 5);
         assert_eq!(result.candidates_count, 7);
         assert_eq!(candidates.snapshot().len(), 7);
@@ -1748,9 +1752,6 @@ mod tests {
             CandidateStatus::PhysicallyDeleted.as_str(),
             "physically_deleted"
         );
-        assert_eq!(
-            CandidateStatus::ProtectedReRef.as_str(),
-            "protected_re_ref"
-        );
+        assert_eq!(CandidateStatus::ProtectedReRef.as_str(), "protected_re_ref");
     }
 }

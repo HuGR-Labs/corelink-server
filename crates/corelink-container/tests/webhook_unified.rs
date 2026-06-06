@@ -37,12 +37,12 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{self, HeaderMap, Request, StatusCode};
-use corelink_server::webhook::{router, WebhookState, STRIPE_WEBHOOK_ROUTE};
 use corelink_billing::stripe::real::webhook::compute_signature;
 use corelink_billing::stripe::real::webhook_dispatch::{
     AuditOutcome, CanonicalWebhookEventType, FixedClock, InMemoryIdempotencyStore,
     RecordingAuditEmitter, RecordingSliRecorder, RecordingStateMaterializer, WebhookDispatcher,
 };
+use corelink_server::webhook::{router, WebhookState, STRIPE_WEBHOOK_ROUTE};
 use tower::ServiceExt;
 
 const SECRET: &[u8] = b"whsec_unified_e2e";
@@ -206,11 +206,9 @@ async fn bad_signature_returns_401_and_emits_signature_invalid_audit() {
     let mut headers = HeaderMap::new();
     headers.insert(
         "stripe-signature",
-        format!(
-            "t={FIXED_TS},v1=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
-        )
-        .parse()
-        .unwrap(),
+        format!("t={FIXED_TS},v1=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+            .parse()
+            .unwrap(),
     );
 
     let (status, _) = post_webhook(state, headers, body).await;

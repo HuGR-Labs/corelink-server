@@ -86,8 +86,8 @@ impl KvJwksCache for InMemoryKvCache {
             if slot.expires_at <= now {
                 return Ok(None);
             }
-            let jwks = Jwks::parse(&slot.payload)
-                .map_err(|e| KvJwksCacheError::Corrupt(e.to_string()))?;
+            let jwks =
+                Jwks::parse(&slot.payload).map_err(|e| KvJwksCacheError::Corrupt(e.to_string()))?;
             Ok(Some(CachedJwks {
                 jwks,
                 stored_at: slot.stored_at,

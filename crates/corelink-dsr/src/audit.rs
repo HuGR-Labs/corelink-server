@@ -264,9 +264,10 @@ impl InMemoryDsrAuditSink {
 
 impl DsrAuditSink for InMemoryDsrAuditSink {
     fn emit(&self, record: DsrAuditRecord) -> Result<(), DsrAuditSinkError> {
-        let mut guard = self.inner.lock().map_err(|_| {
-            DsrAuditSinkError::Store("dsr audit sink mutex poisoned".to_string())
-        })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| DsrAuditSinkError::Store("dsr audit sink mutex poisoned".to_string()))?;
         guard.push(record);
         Ok(())
     }
@@ -372,7 +373,9 @@ mod tests {
     #[test]
     fn failing_sink_returns_store_error() {
         let sink = FailingDsrAuditSink::new();
-        let err = sink.emit(rec(DsrAuditEventType::RequestReceived)).unwrap_err();
+        let err = sink
+            .emit(rec(DsrAuditEventType::RequestReceived))
+            .unwrap_err();
         assert!(matches!(err, DsrAuditSinkError::Store(_)));
     }
 

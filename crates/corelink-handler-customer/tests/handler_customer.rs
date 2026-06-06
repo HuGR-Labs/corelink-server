@@ -19,22 +19,26 @@
 
 use std::sync::Arc;
 
-use corelink_handler_customer::{
-    AuditEventKind, CustomerAuditHandler, CustomerBillingHandler, CustomerKeysHandler,
-    CustomerOverviewHandler, CustomerTeamHandler, CustomerUsageHandler, InMemoryAuditSink,
-    InMemoryCustomerHandler, InMemorySliObserver,
-};
 use corelink_handler_customer::request::{
     AuditQueryRequest, BillingRequest, BillingResponse, ByokStatus, CustomerAuditEventRow,
     DailyUsageBucket, InvoiceRow, KeyCreateRequest, KeyRevokeRequest, KeysListRequest,
     OverviewBilling, OverviewRequest, OverviewResponse, OverviewUsage, PatRow, PortalRequest,
     TeamInviteRequest, TeamListRequest, UsageRequest, UsageResponse,
 };
+use corelink_handler_customer::{
+    AuditEventKind, CustomerAuditHandler, CustomerBillingHandler, CustomerKeysHandler,
+    CustomerOverviewHandler, CustomerTeamHandler, CustomerUsageHandler, InMemoryAuditSink,
+    InMemoryCustomerHandler, InMemorySliObserver,
+};
 use corelink_slo::definition::Sli;
 
 // ─── Fixture helpers ──────────────────────────────────────────────────────────
 
-fn make_handler() -> (InMemoryCustomerHandler, Arc<InMemoryAuditSink>, Arc<InMemorySliObserver>) {
+fn make_handler() -> (
+    InMemoryCustomerHandler,
+    Arc<InMemoryAuditSink>,
+    Arc<InMemorySliObserver>,
+) {
     let audit = Arc::new(InMemoryAuditSink::new());
     let sli = Arc::new(InMemorySliObserver::new());
     let h = InMemoryCustomerHandler::new(
@@ -76,7 +80,13 @@ fn sample_billing(tenant_id: &str) -> BillingResponse {
         "2026-06-01T00:00:00Z",
         2900_i64,
         "usd",
-        vec![InvoiceRow::new("inv_001", "2026-05-01T00:00:00Z", 2900, "paid", "https://stripe.com/inv_001")],
+        vec![InvoiceRow::new(
+            "inv_001",
+            "2026-05-01T00:00:00Z",
+            2900,
+            "paid",
+            "https://stripe.com/inv_001",
+        )],
     )
 }
 
@@ -96,7 +106,8 @@ fn sample_pat(tenant_id: &str) -> PatRow {
 #[test]
 fn overview_happy_path() {
     let (h, audit, sli) = make_handler();
-    h.seed_overview("tenant_a", sample_overview("tenant_a")).unwrap();
+    h.seed_overview("tenant_a", sample_overview("tenant_a"))
+        .unwrap();
 
     let req = OverviewRequest::new("tenant_a", "user:alice", 1_000);
     let resp = h.overview(req).unwrap();
@@ -122,7 +133,10 @@ fn overview_unknown_tenant_returns_not_found() {
     let req = OverviewRequest::new("ghost_tenant", "user:bob", 2_000);
     let err = h.overview(req).unwrap_err();
     assert!(
-        matches!(err, corelink_handler_customer::CustomerHandlerError::NotFound { .. }),
+        matches!(
+            err,
+            corelink_handler_customer::CustomerHandlerError::NotFound { .. }
+        ),
         "expected NotFound, got {err:?}"
     );
     // SLI must still fire (error path).
@@ -171,7 +185,8 @@ fn usage_period_filter_no_match_returns_not_found() {
 #[test]
 fn billing_happy_path() {
     let (h, audit, sli) = make_handler();
-    h.seed_billing("tenant_a", sample_billing("tenant_a")).unwrap();
+    h.seed_billing("tenant_a", sample_billing("tenant_a"))
+        .unwrap();
 
     let req = BillingRequest::new("tenant_a", "user:alice", 1_000);
     let resp = h.billing(req).unwrap();
@@ -191,7 +206,10 @@ fn portal_url_happy_path() {
     let req = PortalRequest::new("tenant_a", "user:alice", 1_000);
     let resp = h.portal_url(req).unwrap();
 
-    assert!(resp.portal_url.contains("tenant_a"), "portal URL must contain tenant");
+    assert!(
+        resp.portal_url.contains("tenant_a"),
+        "portal URL must contain tenant"
+    );
 
     let rows = audit.snapshot().unwrap();
     assert_eq!(rows[0].kind, AuditEventKind::BillingAttempted);
@@ -230,7 +248,13 @@ fn keys_list_other_tenant_not_visible() {
 #[test]
 fn keys_create_happy_path() {
     let (h, audit, sli) = make_handler();
-    let req = KeyCreateRequest::new("tenant_a", "user:alice", "deploy key", vec!["cas:write".into()], 2_000);
+    let req = KeyCreateRequest::new(
+        "tenant_a",
+        "user:alice",
+        "deploy key",
+        vec!["cas:write".into()],
+        2_000,
+    );
     let resp = h.create(req).unwrap();
 
     assert!(!resp.token.is_empty(), "token must be non-empty on create");
@@ -251,11 +275,17 @@ fn keys_revoke_happy_path() {
 
     let pat_id = "pat_tenant_a_001";
     let req = corelink_handler_customer::request::KeyRevokeRequest::new(
-        "tenant_a", "user:alice", pat_id, 3_000,
+        "tenant_a",
+        "user:alice",
+        pat_id,
+        3_000,
     );
     let resp = h.revoke(req).unwrap();
 
-    assert!(resp.pat.revoked_at.is_some(), "revoked_at must be set after revoke");
+    assert!(
+        resp.pat.revoked_at.is_some(),
+        "revoked_at must be set after revoke"
+    );
 
     let rows = audit.snapshot().unwrap();
     assert_eq!(rows[0].kind, AuditEventKind::KeyRevokeAttempted);
@@ -314,7 +344,11 @@ fn keys_revoke_unknown_pat_not_found() {
 fn team_list_happy_path() {
     let (h, _audit, sli) = make_handler();
     let member = corelink_handler_customer::request::TeamMemberRow::new(
-        "user_001", "alice@acme.com", "Developer", "2026-05-01T00:00:00Z", "active",
+        "user_001",
+        "alice@acme.com",
+        "Developer",
+        "2026-05-01T00:00:00Z",
+        "active",
     );
     h.seed_member("tenant_a", member).unwrap();
 
@@ -329,9 +363,7 @@ fn team_list_happy_path() {
 #[test]
 fn team_invite_happy_path() {
     let (h, audit, sli) = make_handler();
-    let req = TeamInviteRequest::new(
-        "tenant_a", "user:alice", "bob@acme.com", "Developer", 2_000,
-    );
+    let req = TeamInviteRequest::new("tenant_a", "user:alice", "bob@acme.com", "Developer", 2_000);
     let resp = h.invite(req).unwrap();
 
     assert_eq!(resp.member.email, "bob@acme.com");
@@ -350,8 +382,22 @@ fn team_invite_happy_path() {
 fn audit_query_happy_path_no_filter() {
     let (h, audit_sink, sli) = make_handler();
     let rows = vec![
-        CustomerAuditEventRow::new("evt_001", "2026-05-01T00:00:00Z", "corelink.customer.keys.create.committed", "info", "alice@acme.com", "PAT created"),
-        CustomerAuditEventRow::new("evt_002", "2026-05-02T00:00:00Z", "corelink.customer.team.invite.committed", "info", "alice@acme.com", "Bob invited"),
+        CustomerAuditEventRow::new(
+            "evt_001",
+            "2026-05-01T00:00:00Z",
+            "corelink.customer.keys.create.committed",
+            "info",
+            "alice@acme.com",
+            "PAT created",
+        ),
+        CustomerAuditEventRow::new(
+            "evt_002",
+            "2026-05-02T00:00:00Z",
+            "corelink.customer.team.invite.committed",
+            "info",
+            "alice@acme.com",
+            "Bob invited",
+        ),
     ];
     h.seed_audit_rows("tenant_a", rows).unwrap();
 
@@ -370,8 +416,22 @@ fn audit_query_happy_path_no_filter() {
 fn audit_query_event_type_filter() {
     let (h, _audit_sink, _sli) = make_handler();
     let rows = vec![
-        CustomerAuditEventRow::new("evt_001", "2026-05-01T00:00:00Z", "corelink.customer.keys.create.committed", "info", "alice@acme.com", "PAT created"),
-        CustomerAuditEventRow::new("evt_002", "2026-05-02T00:00:00Z", "corelink.customer.team.invite.committed", "info", "alice@acme.com", "Bob invited"),
+        CustomerAuditEventRow::new(
+            "evt_001",
+            "2026-05-01T00:00:00Z",
+            "corelink.customer.keys.create.committed",
+            "info",
+            "alice@acme.com",
+            "PAT created",
+        ),
+        CustomerAuditEventRow::new(
+            "evt_002",
+            "2026-05-02T00:00:00Z",
+            "corelink.customer.team.invite.committed",
+            "info",
+            "alice@acme.com",
+            "Bob invited",
+        ),
     ];
     h.seed_audit_rows("tenant_a", rows).unwrap();
 
@@ -401,20 +461,27 @@ fn audit_query_empty_store_returns_empty_vec() {
 #[test]
 fn overview_audit_fail_propagates_and_sli_error_fired() {
     let (h, audit, sli) = make_handler();
-    h.seed_overview("tenant_a", sample_overview("tenant_a")).unwrap();
+    h.seed_overview("tenant_a", sample_overview("tenant_a"))
+        .unwrap();
     audit.inject_failure("sink down").unwrap();
 
     let req = OverviewRequest::new("tenant_a", "user:alice", 1_000);
     let err = h.overview(req).unwrap_err();
 
     assert!(
-        matches!(err, corelink_handler_customer::CustomerHandlerError::AuditFailed(_)),
+        matches!(
+            err,
+            corelink_handler_customer::CustomerHandlerError::AuditFailed(_)
+        ),
         "expected AuditFailed, got {err:?}"
     );
     // SLI error observation must have fired.
     let snap = sli.snapshot().unwrap();
     assert!(!snap.is_empty());
-    assert!(snap.iter().all(|o| o.is_error), "all SLI observations must be error on AuditFailed path");
+    assert!(
+        snap.iter().all(|o| o.is_error),
+        "all SLI observations must be error on AuditFailed path"
+    );
 }
 
 #[test]
@@ -432,13 +499,19 @@ fn keys_create_audit_fail_propagates_before_mutation() {
 
     // Audit still records nothing (sink was injected to fail).
     let rows = audit.snapshot().unwrap();
-    assert!(rows.is_empty(), "audit rows must be empty when sink is failing");
+    assert!(
+        rows.is_empty(),
+        "audit rows must be empty when sink is failing"
+    );
 
     // PAT must NOT have been created (mutation aborted).
     audit.clear_failure().unwrap();
     let list_req = KeysListRequest::new("tenant_a", "user:alice", 3_000);
     let list_resp = CustomerKeysHandler::list(&h, list_req).unwrap();
-    assert!(list_resp.pats.is_empty(), "PAT must not be created when audit fails");
+    assert!(
+        list_resp.pats.is_empty(),
+        "PAT must not be created when audit fails"
+    );
 }
 
 #[test]
@@ -458,7 +531,10 @@ fn team_invite_audit_fail_propagates_before_mutation() {
     audit.clear_failure().unwrap();
     let list_req = TeamListRequest::new("tenant_a", "user:alice", 4_000);
     let list_resp = CustomerTeamHandler::list(&h, list_req).unwrap();
-    assert!(list_resp.members.is_empty(), "invite must not complete when audit fails");
+    assert!(
+        list_resp.members.is_empty(),
+        "invite must not complete when audit fails"
+    );
 }
 
 // ─── SLI emit-on-every-return-path (INV-HANDLER-SLI-EMIT-ENTRY) ─────────────
@@ -514,7 +590,11 @@ fn audit_event_kind_slugs_are_unique_and_non_empty() {
         assert!(!slug.is_empty(), "slug for {k:?} must not be empty");
         assert!(seen.insert(slug), "duplicate slug: {slug}");
     }
-    assert_eq!(seen.len(), 20, "all 20 AuditEventKind variants must have unique slugs");
+    assert_eq!(
+        seen.len(),
+        20,
+        "all 20 AuditEventKind variants must have unique slugs"
+    );
 }
 
 // ─── Multi-tenant isolation ───────────────────────────────────────────────────
@@ -522,8 +602,30 @@ fn audit_event_kind_slugs_are_unique_and_non_empty() {
 #[test]
 fn keys_list_isolation_across_tenants() {
     let (h, _audit, _sli) = make_handler();
-    h.seed_pat("tenant_x", PatRow::new("pat_x_001", "x key", vec![], "2026-05-01T00:00:00Z", None, None)).unwrap();
-    h.seed_pat("tenant_y", PatRow::new("pat_y_001", "y key", vec![], "2026-05-01T00:00:00Z", None, None)).unwrap();
+    h.seed_pat(
+        "tenant_x",
+        PatRow::new(
+            "pat_x_001",
+            "x key",
+            vec![],
+            "2026-05-01T00:00:00Z",
+            None,
+            None,
+        ),
+    )
+    .unwrap();
+    h.seed_pat(
+        "tenant_y",
+        PatRow::new(
+            "pat_y_001",
+            "y key",
+            vec![],
+            "2026-05-01T00:00:00Z",
+            None,
+            None,
+        ),
+    )
+    .unwrap();
 
     let req_x = KeysListRequest::new("tenant_x", "user:x", 1_000);
     let resp_x = CustomerKeysHandler::list(&h, req_x).unwrap();

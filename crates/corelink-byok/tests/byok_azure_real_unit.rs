@@ -23,15 +23,15 @@
     clippy::uninlined_format_args
 )]
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use base64::Engine as _;
+use corelink_byok::azure::AzureKeyVaultRealProvider;
+use corelink_byok::azure::__test_support::EntraCredentials;
 use corelink_byok::{
     BYOKError, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
 };
-use corelink_byok::azure::__test_support::EntraCredentials;
-use corelink_byok::azure::AzureKeyVaultRealProvider;
 use serde_json::json;
 use wiremock::matchers::{header, method, path, path_regex};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
@@ -354,12 +354,8 @@ async fn entra_token_cached_across_operations() {
         "00000000-0000-0000-0000-000000000000",
         "redacted-secret-not-logged",
     );
-    let provider = AzureKeyVaultRealProvider::for_test(
-        http_client(),
-        creds,
-        "eastus",
-        &server.uri(),
-    );
+    let provider =
+        AzureKeyVaultRealProvider::for_test(http_client(), creds, "eastus", &server.uri());
 
     let dek = Dek::generate().unwrap();
     let ctx = json!({"tenant_id": "T1"});
@@ -427,12 +423,8 @@ async fn entra_workload_identity_token_exchange() {
         "00000000-0000-0000-0000-000000000000",
         tmp.clone(),
     );
-    let provider = AzureKeyVaultRealProvider::for_test(
-        http_client(),
-        creds,
-        "eastus",
-        &server.uri(),
-    );
+    let provider =
+        AzureKeyVaultRealProvider::for_test(http_client(), creds, "eastus", &server.uri());
 
     let dek = Dek::generate().unwrap();
     let ctx = json!({"tenant_id": "T"});
@@ -532,7 +524,9 @@ async fn wrapkey_request_uses_rsa_oaep_256_and_base64url() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
-        .and(path(format!("/keys/{TEST_KEY_NAME}/{TEST_KEY_VER}/wrapkey")))
+        .and(path(format!(
+            "/keys/{TEST_KEY_NAME}/{TEST_KEY_VER}/wrapkey"
+        )))
         .respond_with(|req: &Request| {
             let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
             assert_eq!(body["alg"].as_str().unwrap(), "RSA-OAEP-256");
@@ -568,7 +562,9 @@ async fn url_carries_api_version_7_4() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
-        .and(path(format!("/keys/{TEST_KEY_NAME}/{TEST_KEY_VER}/wrapkey")))
+        .and(path(format!(
+            "/keys/{TEST_KEY_NAME}/{TEST_KEY_VER}/wrapkey"
+        )))
         .and(wiremock::matchers::query_param("api-version", "7.4"))
         .respond_with(EchoWrapResponder {
             counter: Arc::new(AtomicUsize::new(0)),
@@ -610,11 +606,8 @@ fn fips_endpoint_url_pattern_assertion_premium_hsm() {
 
 #[test]
 fn fips_endpoint_url_pattern_assertion_managed_hsm() {
-    let p = AzureKeyVaultRealProvider::new_mock(
-        "eastus",
-        "https://corp-hsm.managedhsm.azure.net",
-    )
-    .unwrap();
+    let p = AzureKeyVaultRealProvider::new_mock("eastus", "https://corp-hsm.managedhsm.azure.net")
+        .unwrap();
     assert_eq!(p.resolved_fips_endpoint(), "corp-hsm.managedhsm.azure.net");
     assert_eq!(p.fips_tier_suffix(), "managedhsm.azure.net");
 }
@@ -635,21 +628,15 @@ fn fips_endpoint_url_pattern_assertion_us_gov() {
 
 #[test]
 fn fips_endpoint_rejects_non_fips_host() {
-    let err = AzureKeyVaultRealProvider::new_mock(
-        "eastus",
-        "https://attacker.example.com",
-    )
-    .unwrap_err();
+    let err =
+        AzureKeyVaultRealProvider::new_mock("eastus", "https://attacker.example.com").unwrap_err();
     assert!(matches!(err, BYOKError::Provider(_)));
 }
 
 #[test]
 fn fips_level_is_140_2_l2() {
     let p = AzureKeyVaultRealProvider::new_mock("eastus", PROD_VAULT_URL).unwrap();
-    assert_eq!(
-        p.fips_level(),
-        corelink_byok::FipsLevel::Fips140_2_L2
-    );
+    assert_eq!(p.fips_level(), corelink_byok::FipsLevel::Fips140_2_L2);
     assert_eq!(p.provider_kind(), KmsProviderKind::AzureKeyVault);
     assert_eq!(p.region(), "eastus");
 }
@@ -720,10 +707,7 @@ async fn non_string_aad_value_rejected_mock_mode() {
 async fn missing_aad_rejected_on_wrap_mock_mode() {
     let p = AzureKeyVaultRealProvider::new_mock("eastus", PROD_VAULT_URL).unwrap();
     let dek = Dek::generate().unwrap();
-    let err = p
-        .wrap_dek(&dek, &test_key_id(), None)
-        .await
-        .unwrap_err();
+    let err = p.wrap_dek(&dek, &test_key_id(), None).await.unwrap_err();
     assert!(matches!(err, BYOKError::EncryptionContextMissing));
 }
 
@@ -732,10 +716,7 @@ async fn missing_aad_rejected_on_unwrap_mock_mode() {
     let p = AzureKeyVaultRealProvider::new_mock("eastus", PROD_VAULT_URL).unwrap();
     let dek = Dek::generate().unwrap();
     let aad = json!({"tenant_id": "t", "blob_hash": "h"});
-    let wrapped = p
-        .wrap_dek(&dek, &test_key_id(), Some(&aad))
-        .await
-        .unwrap();
+    let wrapped = p.wrap_dek(&dek, &test_key_id(), Some(&aad)).await.unwrap();
     let stripped = WrappedDek {
         encryption_context: None,
         ..wrapped
@@ -754,10 +735,7 @@ async fn wrong_provider_rejected_mock_mode() {
     };
     let dek = Dek::generate().unwrap();
     let aad = json!({"tenant_id": "t", "blob_hash": "h"});
-    let err = p
-        .wrap_dek(&dek, &bad_key_id, Some(&aad))
-        .await
-        .unwrap_err();
+    let err = p.wrap_dek(&dek, &bad_key_id, Some(&aad)).await.unwrap_err();
     assert!(matches!(err, BYOKError::EnvelopeError(_)));
 }
 
@@ -800,10 +778,7 @@ mod prop {
             for (k, v) in &kvs {
                 m2.insert(k.clone(), serde_json::Value::String(v.clone()));
             }
-            (
-                serde_json::Value::Object(m1),
-                serde_json::Value::Object(m2),
-            )
+            (serde_json::Value::Object(m1), serde_json::Value::Object(m2))
         })
     }
 

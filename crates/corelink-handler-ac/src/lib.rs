@@ -25,6 +25,8 @@ pub mod observer;
 
 pub use audit::{AuditEvent, AuditEventKind, AuditSink, InMemoryAuditSink};
 pub use error::AcHandlerError;
-pub use handler::{AcLookupHandler, AcLookupRequest, AcLookupResponse, AcUpdateHandler,
-    AcUpdateRequest, AcUpdateResponse, InMemoryAcHandler};
+pub use handler::{
+    AcLookupHandler, AcLookupRequest, AcLookupResponse, AcUpdateHandler, AcUpdateRequest,
+    AcUpdateResponse, InMemoryAcHandler,
+};
 pub use observer::{InMemorySliObserver, Sli, SliObservation, SliObserver};

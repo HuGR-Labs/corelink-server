@@ -5,11 +5,7 @@
 //! request is rejected with `NoticeVersionStale`. NO fallback to
 //! legitimate_interest (corrige GPT P0-1 round-1).
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::panic,
-    reason = "test code"
-)]
+#![allow(clippy::unwrap_used, clippy::panic, reason = "test code")]
 
 use corelink_privacy::consent::notice_version_check::{
     check_notice_version, is_notice_version_stale,
@@ -48,7 +44,6 @@ fn malformed_version_not_stale() {
 
 #[test]
 fn grant_with_stale_notice_version_rejects() {
-    use std::sync::Arc;
     use corelink_privacy::consent::{
         audit_emit::InMemoryConsentAuditSink,
         cascade::InMemoryCascadeSink,
@@ -58,6 +53,7 @@ fn grant_with_stale_notice_version_rejects() {
         store::{ConsentStore, InMemoryConsentStore},
         ConsentLedgerError,
     };
+    use std::sync::Arc;
 
     let store = Arc::new(InMemoryConsentStore::new());
     let audit = Arc::new(InMemoryConsentAuditSink::new());
@@ -65,13 +61,7 @@ fn grant_with_stale_notice_version_rejects() {
     let cascade = Arc::new(InMemoryCascadeSink::new());
 
     // Current version is 2.0.0
-    let ledger = InMemoryConsentLedger::new(
-        store.clone(),
-        audit.clone(),
-        signer,
-        cascade,
-        "2.0.0",
-    );
+    let ledger = InMemoryConsentLedger::new(store.clone(), audit.clone(), signer, cascade, "2.0.0");
 
     // Submit proof with old version 1.5.0 → stale
     let proof = ConsentProofPayload {
@@ -83,14 +73,15 @@ fn grant_with_stale_notice_version_rejects() {
         submission_ts: "ts2".to_owned(),
     };
 
-    let result = ledger.grant_consent(
-        "t", "s", "en-US", ConsentPurpose::MarketingEmail, proof,
-    );
+    let result = ledger.grant_consent("t", "s", "en-US", ConsentPurpose::MarketingEmail, proof);
 
     assert!(result.is_err());
     let valid = matches!(
         result.unwrap_err(),
-        ConsentLedgerError::NoticeVersionStale { current: 2, submitted: 1 }
+        ConsentLedgerError::NoticeVersionStale {
+            current: 2,
+            submitted: 1
+        }
     );
     assert!(valid, "error must be NoticeVersionStale");
 
@@ -102,7 +93,6 @@ fn grant_with_stale_notice_version_rejects() {
 
 #[test]
 fn grant_with_current_version_ok() {
-    use std::sync::Arc;
     use corelink_privacy::consent::{
         audit_emit::InMemoryConsentAuditSink,
         cascade::InMemoryCascadeSink,
@@ -111,6 +101,7 @@ fn grant_with_current_version_ok() {
         schema::{ConsentProofPayload, ConsentPurpose, LocaleBcp47},
         store::InMemoryConsentStore,
     };
+    use std::sync::Arc;
 
     let ledger = InMemoryConsentLedger::new(
         Arc::new(InMemoryConsentStore::new()),
@@ -129,8 +120,6 @@ fn grant_with_current_version_ok() {
         submission_ts: "ts2".to_owned(),
     };
 
-    let result = ledger.grant_consent(
-        "t", "s", "en-US", ConsentPurpose::BetaFeatures, proof,
-    );
+    let result = ledger.grant_consent("t", "s", "en-US", ConsentPurpose::BetaFeatures, proof);
     assert!(result.is_ok(), "current notice version must be accepted");
 }

@@ -105,10 +105,7 @@ pub trait EdgeMetricsObserver: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`EdgeMetricsObserverError::Backend`] on backend failure.
-    fn record_decision(
-        &self,
-        result: EdgeResultLabel,
-    ) -> Result<(), EdgeMetricsObserverError>;
+    fn record_decision(&self, result: EdgeResultLabel) -> Result<(), EdgeMetricsObserverError>;
 
     /// Set the gauge `corelink.edge.cidr_blocklist_size{family=...}`
     /// to `count`.
@@ -128,10 +125,7 @@ pub trait EdgeMetricsObserver: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`EdgeMetricsObserverError::Backend`] on backend failure.
-    fn record_blocklist_add(
-        &self,
-        reason: &str,
-    ) -> Result<(), EdgeMetricsObserverError>;
+    fn record_blocklist_add(&self, reason: &str) -> Result<(), EdgeMetricsObserverError>;
 
     /// Increment `corelink.edge.cidr_blocklist_removed_total` by 1.
     ///
@@ -145,10 +139,7 @@ pub trait EdgeMetricsObserver: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`EdgeMetricsObserverError::Backend`] on backend failure.
-    fn record_cf_api_error(
-        &self,
-        operation: &str,
-    ) -> Result<(), EdgeMetricsObserverError>;
+    fn record_cf_api_error(&self, operation: &str) -> Result<(), EdgeMetricsObserverError>;
 }
 
 /// In-memory metrics observer. Captures every recorded metric for
@@ -217,15 +208,9 @@ impl InMemoryEdgeMetrics {
         }
     }
 
-    fn bump_counter(
-        &self,
-        label: String,
-        by: u64,
-    ) -> Result<(), EdgeMetricsObserverError> {
+    fn bump_counter(&self, label: String, by: u64) -> Result<(), EdgeMetricsObserverError> {
         let mut guard = self.inner.lock().map_err(|_| {
-            EdgeMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            EdgeMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         let entry = guard.counters.entry(label).or_insert(0);
         *entry = entry.saturating_add(by);
@@ -234,10 +219,7 @@ impl InMemoryEdgeMetrics {
 }
 
 impl EdgeMetricsObserver for InMemoryEdgeMetrics {
-    fn record_decision(
-        &self,
-        result: EdgeResultLabel,
-    ) -> Result<(), EdgeMetricsObserverError> {
+    fn record_decision(&self, result: EdgeResultLabel) -> Result<(), EdgeMetricsObserverError> {
         let label = format!(
             "{}{{result={}}}",
             EdgeMetricKind::DecisionTotal.as_str(),
@@ -257,18 +239,13 @@ impl EdgeMetricsObserver for InMemoryEdgeMetrics {
             family.as_int()
         );
         let mut guard = self.inner.lock().map_err(|_| {
-            EdgeMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            EdgeMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         guard.gauges.insert(label, count);
         Ok(())
     }
 
-    fn record_blocklist_add(
-        &self,
-        reason: &str,
-    ) -> Result<(), EdgeMetricsObserverError> {
+    fn record_blocklist_add(&self, reason: &str) -> Result<(), EdgeMetricsObserverError> {
         let label = format!(
             "{}{{reason={reason}}}",
             EdgeMetricKind::CidrBlocklistAddedTotal.as_str(),
@@ -277,14 +254,13 @@ impl EdgeMetricsObserver for InMemoryEdgeMetrics {
     }
 
     fn record_blocklist_remove(&self) -> Result<(), EdgeMetricsObserverError> {
-        let label = EdgeMetricKind::CidrBlocklistRemovedTotal.as_str().to_string();
+        let label = EdgeMetricKind::CidrBlocklistRemovedTotal
+            .as_str()
+            .to_string();
         self.bump_counter(label, 1)
     }
 
-    fn record_cf_api_error(
-        &self,
-        operation: &str,
-    ) -> Result<(), EdgeMetricsObserverError> {
+    fn record_cf_api_error(&self, operation: &str) -> Result<(), EdgeMetricsObserverError> {
         let label = format!(
             "{}{{operation={operation}}}",
             EdgeMetricKind::CfApiErrorTotal.as_str(),
@@ -307,10 +283,7 @@ impl FailingEdgeMetrics {
 }
 
 impl EdgeMetricsObserver for FailingEdgeMetrics {
-    fn record_decision(
-        &self,
-        _result: EdgeResultLabel,
-    ) -> Result<(), EdgeMetricsObserverError> {
+    fn record_decision(&self, _result: EdgeResultLabel) -> Result<(), EdgeMetricsObserverError> {
         Err(EdgeMetricsObserverError::Backend(
             "induced edge metrics failure (test fixture)".to_string(),
         ))
@@ -326,10 +299,7 @@ impl EdgeMetricsObserver for FailingEdgeMetrics {
         ))
     }
 
-    fn record_blocklist_add(
-        &self,
-        _reason: &str,
-    ) -> Result<(), EdgeMetricsObserverError> {
+    fn record_blocklist_add(&self, _reason: &str) -> Result<(), EdgeMetricsObserverError> {
         Err(EdgeMetricsObserverError::Backend(
             "induced edge metrics failure (test fixture)".to_string(),
         ))
@@ -341,10 +311,7 @@ impl EdgeMetricsObserver for FailingEdgeMetrics {
         ))
     }
 
-    fn record_cf_api_error(
-        &self,
-        _operation: &str,
-    ) -> Result<(), EdgeMetricsObserverError> {
+    fn record_cf_api_error(&self, _operation: &str) -> Result<(), EdgeMetricsObserverError> {
         Err(EdgeMetricsObserverError::Backend(
             "induced edge metrics failure (test fixture)".to_string(),
         ))
@@ -404,10 +371,7 @@ mod tests {
     fn blocklist_size_overwrites_gauge() {
         let m = InMemoryEdgeMetrics::new();
         m.observe_blocklist_size(CidrFamily::V4, 10).unwrap();
-        let label = format!(
-            "{}{{family=4}}",
-            EdgeMetricKind::CidrBlocklistSize.as_str()
-        );
+        let label = format!("{}{{family=4}}", EdgeMetricKind::CidrBlocklistSize.as_str());
         assert_eq!(m.gauge(&label), 10);
         m.observe_blocklist_size(CidrFamily::V4, 20).unwrap();
         assert_eq!(m.gauge(&label), 20);

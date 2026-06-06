@@ -200,7 +200,7 @@ fn build_worker(
             // (We do not propagate Result up because every consumer of
             // `setup_test_env` wants an infallible bundle.)
             let _ = e; // silence dead-code on the failure ladder
-            // Re-run with a fresh canonical adapter list as a fallback.
+                       // Re-run with a fresh canonical adapter list as a fallback.
             let adapters: Vec<Arc<dyn BackendErasureAdapter>> = canonical_in_memory_adapters()
                 .into_iter()
                 .map(|a| -> Arc<dyn BackendErasureAdapter> { a as _ })

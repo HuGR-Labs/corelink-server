@@ -22,20 +22,29 @@
 //! - Latency p99 ≤ 30 ms (asserted via 10 samples).
 
 #![forbid(unsafe_code)]
-#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, clippy::print_stderr, clippy::print_stdout)]
+#![allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::print_stderr,
+    clippy::print_stdout
+)]
 
 #[cfg(test)]
 mod e2e_aws_kms {
     use std::env;
     use std::time::Instant;
 
+    use corelink_byok::aws::AwsKmsProvider;
     use corelink_byok::{
         dek_cache::DekCache,
         envelope::EnvelopeEncryptor,
         types::{KmsAccessStatus, KmsKeyId, KmsProviderKind},
         KmsProvider,
     };
-    use corelink_byok::aws::AwsKmsProvider;
 
     fn get_test_key_arn() -> Option<String> {
         env::var("AWS_KMS_TEST_KEY_ARN")
@@ -116,7 +125,9 @@ mod e2e_aws_kms {
             .expect("encrypt");
 
         // First decrypt — populates cache.
-        enc.decrypt(&blob, tenant_id, blob_hash).await.expect("first decrypt");
+        enc.decrypt(&blob, tenant_id, blob_hash)
+            .await
+            .expect("first decrypt");
 
         // Second decrypt — should hit cache; significantly faster.
         let t0 = Instant::now();

@@ -61,9 +61,7 @@ pub fn validate(body: &[u8]) -> Result<(String, OciDigest), OciAdapterError> {
     let schema_version = obj
         .get("schemaVersion")
         .and_then(|v| v.as_u64())
-        .ok_or_else(|| {
-            OciAdapterError::ManifestInvalid(String::from("missing schemaVersion"))
-        })?;
+        .ok_or_else(|| OciAdapterError::ManifestInvalid(String::from("missing schemaVersion")))?;
     if schema_version != 2 {
         return Err(OciAdapterError::ManifestInvalid(format!(
             "unsupported schemaVersion: {schema_version}"
@@ -99,9 +97,7 @@ pub fn validate(body: &[u8]) -> Result<(String, OciDigest), OciAdapterError> {
             .ok_or_else(|| OciAdapterError::ManifestInvalid(String::from("missing config")))?;
         config
             .as_object()
-            .ok_or_else(|| {
-                OciAdapterError::ManifestInvalid(String::from("config must be object"))
-            })?
+            .ok_or_else(|| OciAdapterError::ManifestInvalid(String::from("config must be object")))?
             .get("digest")
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
@@ -139,7 +135,10 @@ pub fn tag_list_key(repo: &str) -> String {
 }
 
 /// `PUT /v2/<repo>/manifests/<reference>`.
-#[allow(clippy::too_many_arguments, reason = "wire-shape constructor — every arg is necessary")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "wire-shape constructor — every arg is necessary"
+)]
 pub async fn put(
     kv: &dyn ManifestKvStore,
     auditor: &dyn AuditEmitter,

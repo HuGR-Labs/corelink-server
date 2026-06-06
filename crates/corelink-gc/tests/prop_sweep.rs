@@ -35,11 +35,10 @@
 use std::sync::Arc;
 
 use corelink_gc::{
-    AcReferenceIndex, BlobDigest, BlobMetaStore, CandidateStatus, CountingSweepClock,
-    GcCandidate, GcCandidatesStore, GcEventType, GcPhase, GcRegion, GcRunStore,
-    InMemoryAcReferenceIndex, InMemoryBlobMetaStore, InMemoryGcAuditSink,
-    InMemoryGcCandidatesStore, InMemoryGcMetrics, InMemoryGcRunStore, InMemorySweepPhase,
-    RunId, SweepBlobMetaRow, SweepDecision, SweepPhase,
+    AcReferenceIndex, BlobDigest, BlobMetaStore, CandidateStatus, CountingSweepClock, GcCandidate,
+    GcCandidatesStore, GcEventType, GcPhase, GcRegion, GcRunStore, InMemoryAcReferenceIndex,
+    InMemoryBlobMetaStore, InMemoryGcAuditSink, InMemoryGcCandidatesStore, InMemoryGcMetrics,
+    InMemoryGcRunStore, InMemorySweepPhase, RunId, SweepBlobMetaRow, SweepDecision, SweepPhase,
 };
 use proptest::prelude::*;
 use uuid::Uuid;
@@ -479,7 +478,15 @@ fn sweep_decision_alreadyresolved_for_already_swept_candidate() {
     let rid = RunId(Uuid::from_u128(2));
     let d = digest_from(0xBEEF);
     let mark_anchor: u64 = 5_000;
-    seed_candidate(&candidates, &blob_meta, tenant, rid, d.clone(), mark_anchor, 256);
+    seed_candidate(
+        &candidates,
+        &blob_meta,
+        tenant,
+        rid,
+        d.clone(),
+        mark_anchor,
+        256,
+    );
     candidates
         .transition_status(
             tenant,
@@ -506,12 +513,7 @@ fn ac_index_returns_witness_with_action_digest_passthrough() {
     let ac = InMemoryAcReferenceIndex::new();
     let tenant = Uuid::from_u128(1);
     let target = digest_from(0x1234);
-    ac.push_ac_row(
-        tenant,
-        "action_witness_string",
-        vec![target.clone()],
-        1_000,
-    );
+    ac.push_ac_row(tenant, "action_witness_string", vec![target.clone()], 1_000);
     let res = ac.find_re_reference(tenant, &target, 999).unwrap().unwrap();
     assert_eq!(res.action_digest, "action_witness_string");
     assert_eq!(res.created_at_ms, 1_000);

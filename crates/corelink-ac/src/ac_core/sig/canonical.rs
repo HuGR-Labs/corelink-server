@@ -111,15 +111,7 @@ mod tests {
 
     #[test]
     fn preimage_length_is_121_bytes() {
-        let bytes = compose(
-            1,
-            42,
-            Uuid::nil(),
-            &[0xAB; 32],
-            1234,
-            &[0xCD; 32],
-        )
-        .unwrap();
+        let bytes = compose(1, 42, Uuid::nil(), &[0xAB; 32], 1234, &[0xCD; 32]).unwrap();
         assert_eq!(bytes.len(), AC_ENVELOPE_PREIMAGE_LEN);
         assert_eq!(bytes[0], 1);
         assert_eq!(&bytes[1..5], &42_u32.to_be_bytes());

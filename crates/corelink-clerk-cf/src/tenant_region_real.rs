@@ -73,8 +73,7 @@ use uuid::Uuid;
 /// [`CfD1DatabaseReal::scoped_query`] tenant-scope validator accepts it
 /// (the validator rejects any SELECT lacking the canonical scope
 /// clause — defense in depth against a tenant-isolation bypass).
-pub const SQL_SELECT_TENANT_REGION: &str =
-    "SELECT region FROM tenant_config WHERE tenant_id = ?";
+pub const SQL_SELECT_TENANT_REGION: &str = "SELECT region FROM tenant_config WHERE tenant_id = ?";
 
 /// Failure modes for [`D1TenantConfigStore::prefetch`].
 #[non_exhaustive]
@@ -144,7 +143,10 @@ impl D1TenantConfigStore {
     /// — never happens in normal operation but we surface the
     /// fail-CLOSED path explicitly rather than panicking.
     pub fn cache_size(&self) -> Result<usize, &'static str> {
-        let guard = self.cache.lock().map_err(|_| "cache_size: mutex poisoned")?;
+        let guard = self
+            .cache
+            .lock()
+            .map_err(|_| "cache_size: mutex poisoned")?;
         Ok(guard.len())
     }
 
@@ -316,7 +318,10 @@ mod tests {
         let outcome = store.prefetch(&d1, tenant, tenant_id_str).await;
         match outcome {
             Err(PrefetchError::Backend(msg)) => {
-                assert!(msg.contains("WasmOnly"), "expected WasmOnly diagnostic: {msg}");
+                assert!(
+                    msg.contains("WasmOnly"),
+                    "expected WasmOnly diagnostic: {msg}"
+                );
             }
             other => panic!("expected PrefetchError::Backend(WasmOnly), got {other:?}"),
         }

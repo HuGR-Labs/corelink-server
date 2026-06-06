@@ -75,9 +75,7 @@ fn dig_from_seed(seed: u8) -> BlobDigest {
 /// Strategy: a sub-batch of distinct digest seeds (`u8`); cap at
 /// `MAX_FIND_MISSING_BATCH_SIZE` so the trait's batch-size precondition
 /// is honoured by every generated input.
-fn distinct_seeds_strategy(
-    max_size: usize,
-) -> impl Strategy<Value = Vec<u8>> {
+fn distinct_seeds_strategy(max_size: usize) -> impl Strategy<Value = Vec<u8>> {
     let cap = max_size.min(usize::from(u8::MAX));
     prop::collection::btree_set(0u8..=u8::MAX, 0..=cap)
         .prop_map(|s| s.into_iter().collect::<Vec<u8>>())
@@ -85,9 +83,7 @@ fn distinct_seeds_strategy(
 
 /// Strategy: an arbitrary order-preserving multiset of digest seeds
 /// (allows duplicates; bounded to `MAX_FIND_MISSING_BATCH_SIZE`).
-fn arbitrary_seeds_strategy(
-    max_size: usize,
-) -> impl Strategy<Value = Vec<u8>> {
+fn arbitrary_seeds_strategy(max_size: usize) -> impl Strategy<Value = Vec<u8>> {
     prop::collection::vec(0u8..=u8::MAX, 0..=max_size)
 }
 

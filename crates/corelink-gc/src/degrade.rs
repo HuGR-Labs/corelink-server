@@ -147,7 +147,13 @@ impl InMemoryDegradeProbe {
     /// Drive the mode to `kind` with the supplied operator metadata.
     /// `kind = Off` clears the operator metadata (back to canonical
     /// off snapshot).
-    pub fn set(&self, kind: DegradeKind, enabled_by_pat_id: &str, enabled_at_ms: u64, reason: &str) {
+    pub fn set(
+        &self,
+        kind: DegradeKind,
+        enabled_by_pat_id: &str,
+        enabled_at_ms: u64,
+        reason: &str,
+    ) {
         let snap = if kind == DegradeKind::Off {
             DegradeMode::off()
         } else {
@@ -167,7 +173,12 @@ impl InMemoryDegradeProbe {
     /// Convenience: set to `GcPause` with the canonical operator
     /// metadata.
     pub fn pause(&self, enabled_by_pat_id: &str, enabled_at_ms: u64, reason: &str) {
-        self.set(DegradeKind::GcPause, enabled_by_pat_id, enabled_at_ms, reason);
+        self.set(
+            DegradeKind::GcPause,
+            enabled_by_pat_id,
+            enabled_at_ms,
+            reason,
+        );
     }
 
     /// Reset to the canonical `Off` snapshot.

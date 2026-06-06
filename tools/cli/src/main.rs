@@ -157,7 +157,6 @@ enum Commands {
     // -----------------------------------------------------------------------
     // Stream-1 "ridiculously easy to use" additions
     // -----------------------------------------------------------------------
-
     /// Show identity: tenant_id, token_prefix, route_kind.
     ///
     /// Calls `GET /v1/users/me` and caches tenant_id in
@@ -257,11 +256,21 @@ enum AuditAction {
         ndjson: Option<PathBuf>,
         /// Export URL (`https://api.corelink.humangr.com/v1/audit/export?...`).
         /// Mutually exclusive with `--ndjson`. Requires `--bearer`.
-        #[arg(long = "url", value_name = "URL", conflicts_with = "ndjson", requires = "bearer")]
+        #[arg(
+            long = "url",
+            value_name = "URL",
+            conflicts_with = "ndjson",
+            requires = "bearer"
+        )]
         url: Option<String>,
         /// Bearer token (PAT) for the export request. Read from
         /// `CORELINK_PAT` env var if not supplied. Never logged.
-        #[arg(long = "bearer", value_name = "TOKEN", env = "CORELINK_PAT", hide_env_values = true)]
+        #[arg(
+            long = "bearer",
+            value_name = "TOKEN",
+            env = "CORELINK_PAT",
+            hide_env_values = true
+        )]
         bearer: Option<String>,
         /// 64-char BLAKE3 chain-head anchor (from response header
         /// `X-CoreLink-Audit-Export-Chain-Head-Anchor`). REQUIRED for
@@ -365,8 +374,12 @@ async fn main() {
         .iter()
         .any(|a| a == "--pat" || a.starts_with("--pat="))
     {
-        eprintln!("error: PAT must NOT be passed as a CLI argument (security control CTRL-CRED-001).");
-        eprintln!("       Use env var CORELINK_PAT or config file ~/.corelink/config.toml instead.");
+        eprintln!(
+            "error: PAT must NOT be passed as a CLI argument (security control CTRL-CRED-001)."
+        );
+        eprintln!(
+            "       Use env var CORELINK_PAT or config file ~/.corelink/config.toml instead."
+        );
         std::process::exit(2);
     }
 
@@ -445,7 +458,12 @@ async fn run() -> (&'static str, Result<(), CliError>) {
     };
 
     let res = match cli.command {
-        Commands::Ls { tenant, prefix, limit, cursor } => {
+        Commands::Ls {
+            tenant,
+            prefix,
+            limit,
+            cursor,
+        } => {
             commands::ls::run(
                 &client,
                 &tenant,
@@ -466,9 +484,7 @@ async fn run() -> (&'static str, Result<(), CliError>) {
         Commands::Bench { write, read, full } => {
             commands::bench::run(&client, write, read, full, format).await
         }
-        Commands::Doctor { json } => {
-            commands::doctor_cmd::run(&client, json, format).await
-        }
+        Commands::Doctor { json } => commands::doctor_cmd::run(&client, json, format).await,
         // Stream-1 additions.
         Commands::Whoami => commands::whoami::run(&client, format).await,
         Commands::Ac { action } => run_ac(&client, &action, format).await,
@@ -514,7 +530,9 @@ async fn run_audit(action: &AuditAction, format: OutputFormat) -> Result<(), Cli
             fixture_events,
             fixture_start_ms,
         } => {
-            let out_dir = output.clone().unwrap_or_else(commands::audit::default_output_dir);
+            let out_dir = output
+                .clone()
+                .unwrap_or_else(commands::audit::default_output_dir);
             if *fixture {
                 // Offline fixture transport — no PAT required, fully deterministic.
                 let tenant_uuid: uuid::Uuid = tenant.parse().map_err(|e| {

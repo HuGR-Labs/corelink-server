@@ -221,8 +221,7 @@ impl CampaignD1Pool {
     /// Try to acquire a connection.
     pub fn acquire(&mut self) -> D1AcquireOutcome {
         if self.in_use >= self.capacity {
-            self.audit_events
-                .push("corelink.d1.pool.exhausted".into());
+            self.audit_events.push("corelink.d1.pool.exhausted".into());
             self.sev2_alerts.push("d1_pool_saturated".into());
             return D1AcquireOutcome::Pool503 {
                 retry_after_secs: 2,
@@ -312,8 +311,7 @@ impl CampaignAuditDualWrite {
         if self.r2_archive.len() != self.neon_shadow.len() {
             self.audit_events
                 .push("corelink.audit.shadow_sink.silent_failure".into());
-            self.sev2_alerts
-                .push("audit_shadow_sink_drift".into());
+            self.sev2_alerts.push("audit_shadow_sink_drift".into());
             return false;
         }
         true
@@ -394,10 +392,8 @@ impl CampaignRlsTable {
             .map(|t| t == claimed_tenant)
             .unwrap_or(false);
         if !allowed {
-            self.audit_events
-                .push("corelink.rls.guc.dropped".into());
-            self.sev1_alerts
-                .push("rls_policy_violation_attempt".into());
+            self.audit_events.push("corelink.rls.guc.dropped".into());
+            self.sev1_alerts.push("rls_policy_violation_attempt".into());
             return RlsInsertOutcome::PolicyRejected;
         }
         self.rows
@@ -499,7 +495,12 @@ impl CampaignByokModel {
     /// Acquire a data key, preferring the supplied provider then any
     /// healthy fallback. Fails CLOSED if no provider is available.
     pub fn acquire_data_key(&mut self, preferred: ByokProvider) -> ByokOutcome {
-        if self.provider_state.get(&preferred).copied().unwrap_or(false) {
+        if self
+            .provider_state
+            .get(&preferred)
+            .copied()
+            .unwrap_or(false)
+        {
             return ByokOutcome::KeyAcquired(preferred);
         }
         for (p, ok) in &self.provider_state {
@@ -570,12 +571,7 @@ impl CampaignWebhookVerifier {
     /// Verify a webhook. `signed_ok` mirrors the upstream signature
     /// check (HMAC-SHA256 over `t.body`). `sender_ts` and `verifier_now`
     /// are wall-clock seconds.
-    pub fn verify(
-        &mut self,
-        signed_ok: bool,
-        sender_ts: i64,
-        verifier_now: i64,
-    ) -> WebhookOutcome {
+    pub fn verify(&mut self, signed_ok: bool, sender_ts: i64, verifier_now: i64) -> WebhookOutcome {
         if !signed_ok {
             self.audit_events
                 .push("corelink.billing.webhook.signature_invalid".into());
@@ -655,8 +651,7 @@ impl CampaignClerkJwks {
         }
         // Cache miss → re-fetch from upstream.
         self.cached_kid = self.upstream_kid.clone();
-        self.audit_events
-            .push("corelink.clerk.jwks.rotated".into());
+        self.audit_events.push("corelink.clerk.jwks.rotated".into());
         self.info_events.push("clerk_jwks_rotation".into());
         if signing_kid == self.cached_kid {
             return JwksOutcome::VerifiedAfterRefetch(signing_kid.into());
@@ -787,10 +782,7 @@ impl CampaignMultipart {
 /// # Errors
 ///
 /// Returns `Err` if the event does not appear exactly once.
-pub fn assert_audit_emitted_once(
-    events: &[String],
-    canonical: &str,
-) -> Result<(), String> {
+pub fn assert_audit_emitted_once(events: &[String], canonical: &str) -> Result<(), String> {
     let count = events.iter().filter(|e| e.as_str() == canonical).count();
     if count == 1 {
         Ok(())

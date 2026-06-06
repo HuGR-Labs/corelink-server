@@ -26,11 +26,10 @@
 )]
 
 use corelink_pat::{
-    parse_env, PatEnv, PatError, PatScopes, PatSigningKey, PatTokenId, SCOPE_ADMIN_AUDIT,
-    SCOPE_ADMIN_BILLING, SCOPE_ADMIN_TENANT_R, SCOPE_ADMIN_TENANT_W, SCOPE_ADMIN_TOKENS,
-    SCOPE_ADMIN_USERS, SCOPE_CACHE_DELETE, SCOPE_CACHE_FIND, SCOPE_CACHE_R, SCOPE_CACHE_RW,
-    SCOPE_CACHE_W, SCOPE_EXECUTE_ACTION, SCOPE_KNOWN_MASK, SCOPE_REPORT_RESULT,
-    compute_hmac_sig, verify_hmac_sig,
+    compute_hmac_sig, parse_env, verify_hmac_sig, PatEnv, PatError, PatScopes, PatSigningKey,
+    PatTokenId, SCOPE_ADMIN_AUDIT, SCOPE_ADMIN_BILLING, SCOPE_ADMIN_TENANT_R, SCOPE_ADMIN_TENANT_W,
+    SCOPE_ADMIN_TOKENS, SCOPE_ADMIN_USERS, SCOPE_CACHE_DELETE, SCOPE_CACHE_FIND, SCOPE_CACHE_R,
+    SCOPE_CACHE_RW, SCOPE_CACHE_W, SCOPE_EXECUTE_ACTION, SCOPE_KNOWN_MASK, SCOPE_REPORT_RESULT,
 };
 
 // =====================================================================
@@ -99,13 +98,15 @@ fn pat_scopes_known_mask_covers_exactly_twelve_bits() {
     let with_reserved: u64 = SCOPE_KNOWN_MASK | (1u64 << 63);
     let s = PatScopes::from_u64(with_reserved);
     assert_eq!(s.to_u64(), SCOPE_KNOWN_MASK);
-    assert!(s.to_u64() & (1u64 << 63) == 0, "reserved bit must be dropped");
+    assert!(
+        s.to_u64() & (1u64 << 63) == 0,
+        "reserved bit must be dropped"
+    );
 }
 
 #[test]
 fn pat_scopes_has_required_returns_true_only_when_all_bits_set() {
-    let admin =
-        PatScopes::from_u64(SCOPE_ADMIN_TENANT_R | SCOPE_ADMIN_TENANT_W);
+    let admin = PatScopes::from_u64(SCOPE_ADMIN_TENANT_R | SCOPE_ADMIN_TENANT_W);
     assert!(admin.has(SCOPE_ADMIN_TENANT_R));
     assert!(admin.has(SCOPE_ADMIN_TENANT_W));
     assert!(admin.has(SCOPE_ADMIN_TENANT_R | SCOPE_ADMIN_TENANT_W));
@@ -142,9 +143,7 @@ fn pat_scopes_is_empty_distinguishes_zero_from_one_bit() {
 
 #[test]
 fn pat_scopes_add_remove_round_trip() {
-    let s = PatScopes::empty()
-        .add(SCOPE_CACHE_R)
-        .add(SCOPE_CACHE_W);
+    let s = PatScopes::empty().add(SCOPE_CACHE_R).add(SCOPE_CACHE_W);
     assert!(s.has(SCOPE_CACHE_R));
     assert!(s.has(SCOPE_CACHE_W));
     let r = s.remove(SCOPE_CACHE_W);
@@ -299,14 +298,20 @@ fn hmac_sig_verify_accepts_matching_and_rejects_mismatch_and_wrong_length() {
     bad[0] ^= 0x01;
     match verify_hmac_sig(&key, preimage, &bad) {
         Err(PatError::InvalidPat) => {}
-        other => panic!("bit-flipped sig must reject as InvalidPat; got {:?}", other.is_ok()),
+        other => panic!(
+            "bit-flipped sig must reject as InvalidPat; got {:?}",
+            other.is_ok()
+        ),
     }
     // Wrong-length sig (15 or 17 bytes) → Malformed.
     let too_short: &[u8] = &sig[..15];
     let too_long: Vec<u8> = sig.iter().copied().chain(std::iter::once(0u8)).collect();
     match verify_hmac_sig(&key, preimage, too_short) {
         Err(PatError::Malformed) => {}
-        other => panic!("short sig must reject as Malformed; got {:?}", other.is_ok()),
+        other => panic!(
+            "short sig must reject as Malformed; got {:?}",
+            other.is_ok()
+        ),
     }
     match verify_hmac_sig(&key, preimage, &too_long) {
         Err(PatError::Malformed) => {}
@@ -474,7 +479,10 @@ fn mint_production_token_id_spans_upper_half_of_alphabet() {
             break;
         }
     }
-    assert!(saw_upper, "mint must occasionally emit chars outside '0'..='7'");
+    assert!(
+        saw_upper,
+        "mint must occasionally emit chars outside '0'..='7'"
+    );
     assert!(saw_non_zero, "mint must emit non-'0' chars");
 }
 

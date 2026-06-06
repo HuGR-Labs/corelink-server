@@ -89,14 +89,10 @@ use uuid::Uuid;
 
 use crate::audit::{GcAuditRecord, GcAuditSink, GcAuditSinkError, GcEventType};
 use crate::error::GcError;
-use crate::mark::{
-    BlobDigest, CandidateStatus, GcCandidate, GcCandidatesStore, MarkError,
-};
+use crate::mark::{BlobDigest, CandidateStatus, GcCandidate, GcCandidatesStore, MarkError};
 use crate::metrics::{GcMetricsObserver, GcMetricsObserverError};
 use crate::region::GcRegion;
-use crate::run::{
-    CheckpointDeltas, GcPhase, GcRunStore, GcRunStoreError, GcStatus, RunId,
-};
+use crate::run::{CheckpointDeltas, GcPhase, GcRunStore, GcRunStoreError, GcStatus, RunId};
 use crate::sweep::{GRACE_AC_MS, GRACE_CAS_MS};
 
 /// Canonical physical-delete phase budget — 30 min p99 @ 100 k
@@ -407,15 +403,14 @@ impl InMemoryBlobMetaPurgeStore {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
-        g.get(&(tenant_id, digest.clone()))
-            .and_then(|row| {
-                row.deleted_at_ms.map(|ts| PurgeState {
-                    r2_key: row.r2_key.clone(),
-                    refcount: row.refcount,
-                    size_bytes: row.size_bytes,
-                    deleted_at_ms: ts,
-                })
+        g.get(&(tenant_id, digest.clone())).and_then(|row| {
+            row.deleted_at_ms.map(|ts| PurgeState {
+                r2_key: row.r2_key.clone(),
+                refcount: row.refcount,
+                size_bytes: row.size_bytes,
+                deleted_at_ms: ts,
             })
+        })
     }
 }
 
@@ -425,10 +420,9 @@ impl BlobMetaPurgeStore for InMemoryBlobMetaPurgeStore {
         tenant_id: Uuid,
         digest: &BlobDigest,
     ) -> Result<Option<PurgeState>, PhysicalDeleteError> {
-        let g = self
-            .inner
-            .lock()
-            .map_err(|_| PhysicalDeleteError::Backend("blob_meta purge mutex poisoned".to_owned()))?;
+        let g = self.inner.lock().map_err(|_| {
+            PhysicalDeleteError::Backend("blob_meta purge mutex poisoned".to_owned())
+        })?;
         Ok(g.get(&(tenant_id, digest.clone())).and_then(|row| {
             row.deleted_at_ms.map(|ts| PurgeState {
                 r2_key: row.r2_key.clone(),
@@ -446,10 +440,9 @@ impl BlobMetaPurgeStore for InMemoryBlobMetaPurgeStore {
         now_ms: u64,
         grace_period_ms: u64,
     ) -> Result<bool, PhysicalDeleteError> {
-        let mut g = self
-            .inner
-            .lock()
-            .map_err(|_| PhysicalDeleteError::Backend("blob_meta purge mutex poisoned".to_owned()))?;
+        let mut g = self.inner.lock().map_err(|_| {
+            PhysicalDeleteError::Backend("blob_meta purge mutex poisoned".to_owned())
+        })?;
         let key = (tenant_id, digest.clone());
         let Some(row) = g.get(&key) else {
             return Ok(false);
@@ -999,7 +992,11 @@ where
             // Concurrent winner; observe and surface AlreadyResolved.
             let observed = self
                 .candidates
-                .lookup(candidate.tenant_id, &candidate.digest, candidate.mark_run_id)?
+                .lookup(
+                    candidate.tenant_id,
+                    &candidate.digest,
+                    candidate.mark_run_id,
+                )?
                 .map_or(CandidateStatus::Swept, |c| c.status);
             return Ok(PhysicalDeleteDecision::AlreadyResolved {
                 observed_status: observed,
@@ -1078,8 +1075,7 @@ where
                     audit_events_emitted = audit_events_emitted.saturating_add(1);
                 }
                 PhysicalDeleteDecision::SkippedGracePending { .. } => {
-                    blobs_skipped_grace_pending =
-                        blobs_skipped_grace_pending.saturating_add(1);
+                    blobs_skipped_grace_pending = blobs_skipped_grace_pending.saturating_add(1);
                 }
                 PhysicalDeleteDecision::SkippedRefcountNonZero { .. } => {
                     blobs_skipped_refcount_non_zero =
@@ -1215,7 +1211,10 @@ mod tests {
     /// Seed a `Swept` candidate with the matching `blob_meta` purge row
     /// (refcount=0, soft-deleted at `deleted_at_ms`) and the matching
     /// R2 key. Mirrors the sweep→physical-delete handoff.
-    #[allow(clippy::too_many_arguments, reason = "test fixture: 10 fixture-state arguments collapsing to a single setup helper kept readable inline rather than via a builder type")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "test fixture: 10 fixture-state arguments collapsing to a single setup helper kept readable inline rather than via a builder type"
+    )]
     fn seed_swept_candidate(
         candidates: &InMemoryGcCandidatesStore,
         blob_meta: &InMemoryBlobMetaPurgeStore,
@@ -1273,7 +1272,10 @@ mod tests {
         let cfg = PhysicalDeleteConfig::default();
         assert_eq!(cfg.grace_cas_ms(), GRACE_CAS_MS);
         assert_eq!(cfg.grace_ac_ms(), GRACE_AC_MS);
-        assert_eq!(cfg.phase_budget_ms(), CANONICAL_PHYSICAL_DELETE_PHASE_BUDGET_MS);
+        assert_eq!(
+            cfg.phase_budget_ms(),
+            CANONICAL_PHYSICAL_DELETE_PHASE_BUDGET_MS
+        );
     }
 
     #[test]

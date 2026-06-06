@@ -86,8 +86,7 @@ impl R2CrrSample {
     /// incident threshold — caller MUST emit SEV-2 + page.
     #[must_use]
     pub fn is_missing_incident(&self) -> bool {
-        !self.object_present
-            && self.lag_seconds >= (R2_CRR_OBJECT_MISSING_INCIDENT_SECONDS as f64)
+        !self.object_present && self.lag_seconds >= (R2_CRR_OBJECT_MISSING_INCIDENT_SECONDS as f64)
     }
 }
 

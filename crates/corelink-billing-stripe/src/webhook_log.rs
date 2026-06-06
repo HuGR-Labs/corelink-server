@@ -62,17 +62,11 @@ pub trait StripeWebhookLog: Send + Sync + core::fmt::Debug {
     ///
     /// Returns [`StripeWebhookLogError::Backend`] on any backend
     /// failure.
-    fn insert(
-        &self,
-        event: &WebhookEvent,
-    ) -> Result<WebhookInsertOutcome, StripeWebhookLogError>;
+    fn insert(&self, event: &WebhookEvent) -> Result<WebhookInsertOutcome, StripeWebhookLogError>;
 
     /// Look up a recorded webhook event by canonical Stripe event id.
     /// Returns `None` if no event has been logged for that id.
-    fn get(
-        &self,
-        stripe_event_id: &str,
-    ) -> Result<Option<WebhookEvent>, StripeWebhookLogError>;
+    fn get(&self, stripe_event_id: &str) -> Result<Option<WebhookEvent>, StripeWebhookLogError>;
 }
 
 /// In-memory Stripe webhook event log. Per-instance `Arc<Mutex<>>` per
@@ -108,14 +102,9 @@ impl InMemoryStripeWebhookLog {
 }
 
 impl StripeWebhookLog for InMemoryStripeWebhookLog {
-    fn insert(
-        &self,
-        event: &WebhookEvent,
-    ) -> Result<WebhookInsertOutcome, StripeWebhookLogError> {
+    fn insert(&self, event: &WebhookEvent) -> Result<WebhookInsertOutcome, StripeWebhookLogError> {
         let mut g = self.state.lock().map_err(|_| {
-            StripeWebhookLogError::Backend(
-                "billing-stripe webhook log mutex poisoned".to_string(),
-            )
+            StripeWebhookLogError::Backend("billing-stripe webhook log mutex poisoned".to_string())
         })?;
         if g.contains_key(&event.stripe_event_id) {
             return Ok(WebhookInsertOutcome::AlreadyExists);
@@ -124,14 +113,9 @@ impl StripeWebhookLog for InMemoryStripeWebhookLog {
         Ok(WebhookInsertOutcome::Inserted)
     }
 
-    fn get(
-        &self,
-        stripe_event_id: &str,
-    ) -> Result<Option<WebhookEvent>, StripeWebhookLogError> {
+    fn get(&self, stripe_event_id: &str) -> Result<Option<WebhookEvent>, StripeWebhookLogError> {
         let g = self.state.lock().map_err(|_| {
-            StripeWebhookLogError::Backend(
-                "billing-stripe webhook log mutex poisoned".to_string(),
-            )
+            StripeWebhookLogError::Backend("billing-stripe webhook log mutex poisoned".to_string())
         })?;
         Ok(g.get(stripe_event_id).cloned())
     }
@@ -151,19 +135,13 @@ impl FailingStripeWebhookLog {
 }
 
 impl StripeWebhookLog for FailingStripeWebhookLog {
-    fn insert(
-        &self,
-        _event: &WebhookEvent,
-    ) -> Result<WebhookInsertOutcome, StripeWebhookLogError> {
+    fn insert(&self, _event: &WebhookEvent) -> Result<WebhookInsertOutcome, StripeWebhookLogError> {
         Err(StripeWebhookLogError::Backend(
             "induced billing-stripe webhook log failure (test fixture)".to_string(),
         ))
     }
 
-    fn get(
-        &self,
-        _stripe_event_id: &str,
-    ) -> Result<Option<WebhookEvent>, StripeWebhookLogError> {
+    fn get(&self, _stripe_event_id: &str) -> Result<Option<WebhookEvent>, StripeWebhookLogError> {
         Ok(None)
     }
 }

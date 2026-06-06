@@ -19,9 +19,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use corelink_audit::{
-    AuthEvent, AuthEventData, AuthEventType, DenyReason, Emitter, InMemoryEmitter,
-    PrincipalIdHash, RegionTag, RequestId, RetentionHint, TenantId as AuditTenantId, TenantTier,
-    TokenKind,
+    AuthEvent, AuthEventData, AuthEventType, DenyReason, Emitter, InMemoryEmitter, PrincipalIdHash,
+    RegionTag, RequestId, RetentionHint, TenantId as AuditTenantId, TenantTier, TokenKind,
 };
 use corelink_tenant_path::TenantPrefix;
 use uuid::Uuid;
@@ -356,7 +355,10 @@ impl CasStore {
         value: Vec<u8>,
     ) -> Result<(), FakeError> {
         let mut g = self.inner.lock().map_err(|_| FakeError::MutexPoisoned)?;
-        g.insert((prefix.as_str().to_string(), key.to_string()), (owner, value));
+        g.insert(
+            (prefix.as_str().to_string(), key.to_string()),
+            (owner, value),
+        );
         Ok(())
     }
 
@@ -590,12 +592,7 @@ impl IdempotencyStore {
     /// - Same key + different tenant: independent row, returns
     ///   `Ok(false)` (the canonical INV-IDEMPOTENCY-TENANT-SCOPED
     ///   property — keys do not leak across tenants).
-    pub fn claim(
-        &self,
-        tenant: Uuid,
-        key: &str,
-        body_fingerprint: u64,
-    ) -> Result<bool, FakeError> {
+    pub fn claim(&self, tenant: Uuid, key: &str, body_fingerprint: u64) -> Result<bool, FakeError> {
         let mut g = self.inner.lock().map_err(|_| FakeError::MutexPoisoned)?;
         let composite = (tenant, key.to_string());
         match g.get(&composite) {
@@ -1318,12 +1315,7 @@ impl HierarchicalQuotaStore {
     }
 
     /// Register `child` under `parent` with `ceiling`.
-    pub fn register_child(
-        &self,
-        child: Uuid,
-        parent: Uuid,
-        ceiling: u64,
-    ) -> Result<(), FakeError> {
+    pub fn register_child(&self, child: Uuid, parent: Uuid, ceiling: u64) -> Result<(), FakeError> {
         let mut g = self.inner.lock().map_err(|_| FakeError::MutexPoisoned)?;
         g.insert(child, (parent, 0, ceiling));
         Ok(())

@@ -125,7 +125,10 @@ pub async fn run(
         for (i, _) in (0..ops).enumerate() {
             let path = if mode == BenchMode::Full && !digests.is_empty() {
                 let idx = i % digests.len();
-                format!("/v1/cas/download/{}", digests.get(idx).map(String::as_str).unwrap_or(""))
+                format!(
+                    "/v1/cas/download/{}",
+                    digests.get(idx).map(String::as_str).unwrap_or("")
+                )
             } else {
                 // Read-only mode: use a known-good test digest.
                 "/v1/cas/download/benchmark-test".to_owned()
@@ -137,7 +140,11 @@ pub async fn run(
     }
 
     let total_ms = overall_start.elapsed().as_millis() as u64;
-    let total_ops = if mode == BenchMode::Full { ops * 2 } else { ops };
+    let total_ops = if mode == BenchMode::Full {
+        ops * 2
+    } else {
+        ops
+    };
     let ops_per_sec = if total_ms > 0 {
         (total_ops as f64) * 1000.0 / (total_ms as f64)
     } else {
@@ -195,7 +202,12 @@ fn percentile(sorted: &[u64], pct: usize) -> u64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used)]
+#[allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used
+)]
 mod tests {
     use super::*;
 

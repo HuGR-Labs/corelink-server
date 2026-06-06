@@ -13,9 +13,9 @@
 //!           check `body.len() == size_bytes` (R2 corruption guard).
 
 use bytes::Bytes;
+use corelink_cas::r2_storage::R2Backend;
 use corelink_hash::Digest;
 use corelink_meta::MetaStore;
-use corelink_cas::r2_storage::R2Backend;
 use corelink_replication::region_resolver::TenantCtx as StorageTenantCtx;
 use tonic::{Code, Status};
 use uuid::Uuid;
@@ -176,7 +176,11 @@ pub(super) fn batch_read_validate_request(
 
     let inline_cap_bytes: u64 = u64::try_from(MAX_BATCH_TOTAL_SIZE_BYTES).unwrap_or(u64::MAX);
     let single_blob_inline_cap_bytes: u64 = inline_cap_bytes; // 4 MiB
-    Ok((inner.digests, inline_cap_bytes, single_blob_inline_cap_bytes))
+    Ok((
+        inner.digests,
+        inline_cap_bytes,
+        single_blob_inline_cap_bytes,
+    ))
 }
 
 /// 4a. Pre-validate per-input-slot digests (hex + size_bytes); decode hex
@@ -199,8 +203,7 @@ pub(super) fn batch_read_prevalidate_slots(digests: Vec<ProtoDigest>) -> Vec<Slo
             Err(_) => {
                 slots.push(SlotState::BadDigest {
                     proto_digest: Some(pd),
-                    message: "digest hex is malformed (expected 64 lowercase hex chars)"
-                        .to_owned(),
+                    message: "digest hex is malformed (expected 64 lowercase hex chars)".to_owned(),
                 });
             }
             Ok(d) => {

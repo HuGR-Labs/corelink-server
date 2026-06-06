@@ -41,9 +41,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use crate::audit::{
-    CoordinatorAuditEventType, CoordinatorAuditRecord, CoordinatorAuditSink,
-};
+use crate::audit::{CoordinatorAuditEventType, CoordinatorAuditRecord, CoordinatorAuditSink};
 use crate::error::CoordinatorError;
 use crate::heartbeat::HeartbeatRegistry;
 use crate::lag::LagBundle;
@@ -113,11 +111,7 @@ pub trait ReplicationCoordinator: std::fmt::Debug + Send + Sync {
     /// Return `Ok(())` if `region` is the current primary AND its
     /// heartbeat is fresh AND its lag is within SLO; else the
     /// appropriate fail-CLOSED error.
-    fn route_write(
-        &self,
-        region: Region,
-        now_ms: u64,
-    ) -> Result<(), CoordinatorError>;
+    fn route_write(&self, region: Region, now_ms: u64) -> Result<(), CoordinatorError>;
 
     /// Evaluate the failover decision tree without mutating state.
     ///
@@ -126,11 +120,8 @@ pub trait ReplicationCoordinator: std::fmt::Debug + Send + Sync {
     /// Returns [`CoordinatorError::UnknownRegion`] if `primary` was
     /// never registered; [`CoordinatorError::Internal`] on lock
     /// poisoning.
-    fn evaluate(
-        &self,
-        primary: Region,
-        now_ms: u64,
-    ) -> Result<PromotionDecision, CoordinatorError>;
+    fn evaluate(&self, primary: Region, now_ms: u64)
+        -> Result<PromotionDecision, CoordinatorError>;
 
     /// Promote `replica` to primary, demoting `primary` to hot-standby.
     /// Audit-emit-BEFORE-mutation fail-CLOSED.
@@ -160,11 +151,7 @@ pub trait ReplicationCoordinator: std::fmt::Debug + Send + Sync {
     ///   has passed since `region` was demoted.
     /// - [`CoordinatorError::Audit`] if the audit sink fails — state
     ///   is NOT mutated.
-    fn failback(
-        &self,
-        region: Region,
-        now_ms: u64,
-    ) -> Result<(), CoordinatorError>;
+    fn failback(&self, region: Region, now_ms: u64) -> Result<(), CoordinatorError>;
 
     /// Return the full multi-region status snapshot consumed by
     /// `/health` and customer dashboards.
@@ -172,10 +159,7 @@ pub trait ReplicationCoordinator: std::fmt::Debug + Send + Sync {
     /// # Errors
     ///
     /// Returns [`CoordinatorError::Internal`] on lock poisoning.
-    fn replication_status(
-        &self,
-        now_ms: u64,
-    ) -> Result<ReplicationStatus, CoordinatorError>;
+    fn replication_status(&self, now_ms: u64) -> Result<ReplicationStatus, CoordinatorError>;
 }
 
 /// In-memory coordinator orchestrator (F-001 closure).
@@ -236,9 +220,7 @@ impl InMemoryReplicationCoordinator {
         Ok(guard.iter().map(|(k, v)| (*k, v.role)).collect())
     }
 
-    fn primary_in_guard(
-        guard: &HashMap<&'static str, RegionRoleState>,
-    ) -> Option<Region> {
+    fn primary_in_guard(guard: &HashMap<&'static str, RegionRoleState>) -> Option<Region> {
         for region in Region::ALL {
             if let Some(s) = guard.get(region.as_str()) {
                 if s.role == RegionRole::Primary {
@@ -355,16 +337,16 @@ impl ReplicationCoordinator for InMemoryReplicationCoordinator {
             }
             // Replica must be registered.
             let registered = {
-                let guard = self.state.lock().map_err(|e| {
-                    CoordinatorError::Internal(format!("state lock poisoned: {e}"))
-                })?;
+                let guard = self
+                    .state
+                    .lock()
+                    .map_err(|e| CoordinatorError::Internal(format!("state lock poisoned: {e}")))?;
                 guard.contains_key(replica.as_str())
             };
             if !registered {
                 continue;
             }
-            let (replica_fresh, replica_lag) =
-                self.region_health_in_guard(replica, now_ms)?;
+            let (replica_fresh, replica_lag) = self.region_health_in_guard(replica, now_ms)?;
             if replica_fresh && replica_lag.within_slo() {
                 return Ok(PromotionDecision::PromoteReplica { replica });
             }
@@ -421,15 +403,13 @@ impl ReplicationCoordinator for InMemoryReplicationCoordinator {
         }
 
         // Anti-flap: if primary is STILL eligible, refuse promotion.
-        let (primary_fresh, primary_lag) =
-            self.region_health_in_guard(primary, now_ms)?;
+        let (primary_fresh, primary_lag) = self.region_health_in_guard(primary, now_ms)?;
         if primary_fresh && primary_lag.within_slo() {
             return Err(CoordinatorError::PrimaryStillEligible { primary });
         }
 
         // Replica must be eligible (fresh heartbeat + within SLO).
-        let (replica_fresh, replica_lag) =
-            self.region_health_in_guard(replica, now_ms)?;
+        let (replica_fresh, replica_lag) = self.region_health_in_guard(replica, now_ms)?;
         if !replica_fresh || !replica_lag.within_slo() {
             return Err(CoordinatorError::NoEligibleReplica { primary });
         }
@@ -462,9 +442,7 @@ impl ReplicationCoordinator for InMemoryReplicationCoordinator {
                 timestamp_ms: now_ms,
                 detail: format!(
                     "promoted_from=replica r2_lag={} d1_lag={} kv_lag={}",
-                    replica_lag.r2_seconds,
-                    replica_lag.d1_seconds,
-                    replica_lag.kv_seconds
+                    replica_lag.r2_seconds, replica_lag.d1_seconds, replica_lag.kv_seconds
                 ),
             })
             .map_err(CoordinatorError::Audit)?;
@@ -580,10 +558,7 @@ impl ReplicationCoordinator for InMemoryReplicationCoordinator {
         Ok(())
     }
 
-    fn replication_status(
-        &self,
-        now_ms: u64,
-    ) -> Result<ReplicationStatus, CoordinatorError> {
+    fn replication_status(&self, now_ms: u64) -> Result<ReplicationStatus, CoordinatorError> {
         let guard = self
             .state
             .lock()
@@ -638,9 +613,11 @@ mod tests {
     use crate::audit::{FailingCoordinatorAuditSink, InMemoryCoordinatorAuditSink};
     use crate::heartbeat::{Heartbeat, InMemoryHeartbeatRegistry};
 
-    fn fixture(
-    ) -> (Arc<InMemoryHeartbeatRegistry>, Arc<InMemoryCoordinatorAuditSink>, InMemoryReplicationCoordinator)
-    {
+    fn fixture() -> (
+        Arc<InMemoryHeartbeatRegistry>,
+        Arc<InMemoryCoordinatorAuditSink>,
+        InMemoryReplicationCoordinator,
+    ) {
         let hb = Arc::new(InMemoryHeartbeatRegistry::new());
         let audit = Arc::new(InMemoryCoordinatorAuditSink::new());
         let coord = InMemoryReplicationCoordinator::new(
@@ -673,9 +650,7 @@ mod tests {
     fn register_split_brain_rejected() -> Result<(), CoordinatorError> {
         let (_hb, _audit, coord) = fixture();
         coord.register(Region::Wnam, RegionRole::Primary)?;
-        let err = coord
-            .register(Region::Enam, RegionRole::Primary)
-            .err();
+        let err = coord.register(Region::Enam, RegionRole::Primary).err();
         assert!(matches!(
             err,
             Some(CoordinatorError::SplitBrainRejected { .. })
@@ -695,8 +670,7 @@ mod tests {
     }
 
     #[test]
-    fn evaluate_promotes_when_primary_stale_and_replica_healthy(
-    ) -> Result<(), CoordinatorError> {
+    fn evaluate_promotes_when_primary_stale_and_replica_healthy() -> Result<(), CoordinatorError> {
         let (hb, _audit, coord) = fixture();
         coord.register(Region::Wnam, RegionRole::Primary)?;
         coord.register(Region::Enam, RegionRole::Replica)?;
@@ -720,8 +694,7 @@ mod tests {
     }
 
     #[test]
-    fn evaluate_no_eligible_replica_when_all_breach(
-    ) -> Result<(), CoordinatorError> {
+    fn evaluate_no_eligible_replica_when_all_breach() -> Result<(), CoordinatorError> {
         let (hb, _audit, coord) = fixture();
         coord.register(Region::Wnam, RegionRole::Primary)?;
         coord.register(Region::Enam, RegionRole::Replica)?;

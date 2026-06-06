@@ -92,7 +92,6 @@ pub mod worker;
 pub use evict::{EvictBatch, EvictBatchOutcome, EvictError, EvictRowOutcome, MAX_BATCH_SIZE};
 pub use refresh::{refresh_if_needed, DEFAULT_REFRESH_THRESHOLD_MS};
 pub use resolver::{
-    EnvConfigTierTtlResolver, MockTierTtlResolver, TenantTier, TierTtlResolver,
-    DEFAULT_TIER_TTL_MS,
+    EnvConfigTierTtlResolver, MockTierTtlResolver, TenantTier, TierTtlResolver, DEFAULT_TIER_TTL_MS,
 };
 pub use worker::{InMemoryTtlWorker, TtlWorker, TtlWorkerError, TtlWorkerTickOutcome};

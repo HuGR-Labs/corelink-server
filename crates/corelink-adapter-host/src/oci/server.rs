@@ -45,7 +45,10 @@ pub fn router(state: AppState) -> Router {
         .layer(middleware::from_fn(log_request))
 }
 
-async fn log_request(req: axum::extract::Request, next: middleware::Next) -> axum::response::Response {
+async fn log_request(
+    req: axum::extract::Request,
+    next: middleware::Next,
+) -> axum::response::Response {
     let m = req.method().clone();
     let p = req.uri().path().to_string();
     let resp = next.run(req).await;

@@ -145,7 +145,10 @@ mod tests {
     #[test]
     fn extract_bearer_wrong_scheme() {
         let mut headers = HeaderMap::new();
-        headers.insert(http::header::AUTHORIZATION, header_value("Basic dXNlcjpwYXNz"));
+        headers.insert(
+            http::header::AUTHORIZATION,
+            header_value("Basic dXNlcjpwYXNz"),
+        );
         let err = match extract_bearer(&headers) {
             Err(e) => e,
             Ok(_) => panic!("must reject Basic scheme"),
@@ -157,7 +160,10 @@ mod tests {
     #[test]
     fn extract_bearer_wrong_prefix() {
         let mut headers = HeaderMap::new();
-        headers.insert(http::header::AUTHORIZATION, header_value("Bearer ghp_unexpected"));
+        headers.insert(
+            http::header::AUTHORIZATION,
+            header_value("Bearer ghp_unexpected"),
+        );
         let err = match extract_bearer(&headers) {
             Err(e) => e,
             Ok(_) => panic!("must reject non-PAT prefix"),
@@ -169,7 +175,10 @@ mod tests {
     #[test]
     fn extract_bearer_accepts_valid_pat() {
         let mut headers = HeaderMap::new();
-        headers.insert(http::header::AUTHORIZATION, header_value("Bearer hugr-pat_abc123"));
+        headers.insert(
+            http::header::AUTHORIZATION,
+            header_value("Bearer hugr-pat_abc123"),
+        );
         let pat = match extract_bearer(&headers) {
             Ok(p) => p,
             Err(e) => panic!("must accept canonical PAT: {e}"),

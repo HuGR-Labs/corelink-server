@@ -33,10 +33,7 @@ fn pool_exhaustion_returns_503_with_retry_after() {
     // (1) Fail CLOSED — 503 + Retry-After.
     match pool.acquire() {
         D1AcquireOutcome::Pool503 { retry_after_secs } => {
-            assert!(
-                retry_after_secs > 0,
-                "Retry-After must be a positive hint"
-            );
+            assert!(retry_after_secs > 0, "Retry-After must be a positive hint");
         }
         other => panic!("expected Pool503, got {other:?}"),
     }

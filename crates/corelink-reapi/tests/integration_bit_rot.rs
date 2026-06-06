@@ -56,6 +56,7 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
+use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
 use corelink_client_verify::{ClientVerifier, VerifyError};
 use corelink_hash::{Digest, VerifiedBody};
 use corelink_meta::{
@@ -63,9 +64,8 @@ use corelink_meta::{
     RequestId,
 };
 use corelink_reapi::read::{CasReadOrchestrator, ReadOutcome};
-use corelink_tenant_path::TenantDerivationKey;
-use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
 use corelink_replication::region_resolver::{Region, TenantCtx};
+use corelink_tenant_path::TenantDerivationKey;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
@@ -143,53 +143,78 @@ async fn read_bytes(
 async fn bit_rot_10_scenarios_all_caught_by_client_verify() {
     let original_body = b"Hello, CoreLink CAS read-path bit-rot test!".to_vec();
     let scenarios: Vec<(&'static str, Box<dyn Fn(&[u8]) -> Vec<u8>>)> = vec![
-        ("flip-byte-0", Box::new(|b: &[u8]| {
-            let mut v = b.to_vec();
-            v[0] ^= 0x01;
-            v
-        })),
-        ("flip-byte-mid", Box::new(|b: &[u8]| {
-            let mut v = b.to_vec();
-            let m = v.len() / 2;
-            v[m] ^= 0x40;
-            v
-        })),
-        ("flip-byte-last", Box::new(|b: &[u8]| {
-            let mut v = b.to_vec();
-            let last = v.len() - 1;
-            v[last] ^= 0x80;
-            v
-        })),
-        ("zero-32-byte-range", Box::new(|b: &[u8]| {
-            let mut v = b.to_vec();
-            let start = 5.min(v.len());
-            let end = (start + 32).min(v.len());
-            for byte in &mut v[start..end] {
-                *byte = 0;
-            }
-            v
-        })),
-        ("truncate-by-one", Box::new(|b: &[u8]| {
-            let mut v = b.to_vec();
-            v.pop();
-            v
-        })),
+        (
+            "flip-byte-0",
+            Box::new(|b: &[u8]| {
+                let mut v = b.to_vec();
+                v[0] ^= 0x01;
+                v
+            }),
+        ),
+        (
+            "flip-byte-mid",
+            Box::new(|b: &[u8]| {
+                let mut v = b.to_vec();
+                let m = v.len() / 2;
+                v[m] ^= 0x40;
+                v
+            }),
+        ),
+        (
+            "flip-byte-last",
+            Box::new(|b: &[u8]| {
+                let mut v = b.to_vec();
+                let last = v.len() - 1;
+                v[last] ^= 0x80;
+                v
+            }),
+        ),
+        (
+            "zero-32-byte-range",
+            Box::new(|b: &[u8]| {
+                let mut v = b.to_vec();
+                let start = 5.min(v.len());
+                let end = (start + 32).min(v.len());
+                for byte in &mut v[start..end] {
+                    *byte = 0;
+                }
+                v
+            }),
+        ),
+        (
+            "truncate-by-one",
+            Box::new(|b: &[u8]| {
+                let mut v = b.to_vec();
+                v.pop();
+                v
+            }),
+        ),
         ("truncate-to-empty", Box::new(|_b: &[u8]| Vec::new())),
-        ("extend-by-one", Box::new(|b: &[u8]| {
-            let mut v = b.to_vec();
-            v.push(0xCC);
-            v
-        })),
-        ("swap-same-length", Box::new(|b: &[u8]| {
-            // Distinct body of the same length.
-            (0..b.len()).map(|i| (b[i].wrapping_add(0xA5)) ^ 0x33).collect()
-        })),
-        ("swap-different-length", Box::new(|_b: &[u8]| {
-            b"a totally unrelated payload".to_vec()
-        })),
-        ("invert-all-bits", Box::new(|b: &[u8]| {
-            b.iter().map(|x| x ^ 0xFF).collect()
-        })),
+        (
+            "extend-by-one",
+            Box::new(|b: &[u8]| {
+                let mut v = b.to_vec();
+                v.push(0xCC);
+                v
+            }),
+        ),
+        (
+            "swap-same-length",
+            Box::new(|b: &[u8]| {
+                // Distinct body of the same length.
+                (0..b.len())
+                    .map(|i| (b[i].wrapping_add(0xA5)) ^ 0x33)
+                    .collect()
+            }),
+        ),
+        (
+            "swap-different-length",
+            Box::new(|_b: &[u8]| b"a totally unrelated payload".to_vec()),
+        ),
+        (
+            "invert-all-bits",
+            Box::new(|b: &[u8]| b.iter().map(|x| x ^ 0xFF).collect()),
+        ),
     ];
 
     for (label, mutator) in scenarios {
@@ -197,12 +222,22 @@ async fn bit_rot_10_scenarios_all_caught_by_client_verify() {
         let backend = Arc::new(InMemoryR2::new());
         let meta = InMemoryMetaStore::new();
         let ctx = ctx_for(0xDEAD_BEEF_0000_0000);
-        let (digest, canonical_key) =
-            write_blob(&backend, &meta, &ctx, &original_body, 0x0193_84A0_FACE_7000_8000_0000_0000_FFFF).await;
+        let (digest, canonical_key) = write_blob(
+            &backend,
+            &meta,
+            &ctx,
+            &original_body,
+            0x0193_84A0_FACE_7000_8000_0000_0000_FFFF,
+        )
+        .await;
 
         // Sanity: the body the verifier saw before injection must match.
         let pristine = read_bytes(&backend, &meta, &ctx, &digest).await;
-        assert_eq!(pristine.as_ref(), original_body.as_slice(), "[{label}] pristine read drifted");
+        assert_eq!(
+            pristine.as_ref(),
+            original_body.as_slice(),
+            "[{label}] pristine read drifted"
+        );
         let verifier = ClientVerifier::default_on();
         verifier
             .verify(pristine.as_ref(), &digest)
@@ -217,7 +252,11 @@ async fn bit_rot_10_scenarios_all_caught_by_client_verify() {
         // Read post-corruption: the orchestrator returns whatever R2
         // hands back (it does NOT verify; that's the SDK's job).
         let post = read_bytes(&backend, &meta, &ctx, &digest).await;
-        assert_eq!(post.as_ref(), corrupt.as_slice(), "[{label}] R2 did not propagate corruption");
+        assert_eq!(
+            post.as_ref(),
+            corrupt.as_slice(),
+            "[{label}] R2 did not propagate corruption"
+        );
 
         // SDK verify against the CLAIMED digest (= the digest of the
         // pristine body, which is what travels on the wire). MUST
@@ -237,7 +276,9 @@ async fn bit_rot_10_scenarios_all_caught_by_client_verify() {
                 );
             }
             Err(other) => panic!("[{label}] expected DigestMismatch, got: {other:?}"),
-            Ok(()) => panic!("[{label}] verifier ACCEPTED corrupted body — INV-CAS-INTEGRITY breach"),
+            Ok(()) => {
+                panic!("[{label}] verifier ACCEPTED corrupted body — INV-CAS-INTEGRITY breach")
+            }
         }
     }
 }

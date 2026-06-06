@@ -181,7 +181,12 @@ pub fn validate_ntia_json(sbom_json: &Value, mode: ValidationMode) -> NtiaValida
                 has_purl || has_cpe
             })
             .count() as f32;
-        (names / total, versions / total, suppliers / total, unique_ids / total)
+        (
+            names / total,
+            versions / total,
+            suppliers / total,
+            unique_ids / total,
+        )
     };
 
     // 7. Dependency relationships

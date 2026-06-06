@@ -76,10 +76,10 @@ impl Digest {
             let &[hi_byte, lo_byte] = chunk else {
                 return Err(DigestParseError::InvalidLength(bytes.len()));
             };
-            let hi = decode_nibble(hi_byte)
-                .map_err(|()| DigestParseError::InvalidHexByte(i * 2))?;
-            let lo = decode_nibble(lo_byte)
-                .map_err(|()| DigestParseError::InvalidHexByte(i * 2 + 1))?;
+            let hi =
+                decode_nibble(hi_byte).map_err(|()| DigestParseError::InvalidHexByte(i * 2))?;
+            let lo =
+                decode_nibble(lo_byte).map_err(|()| DigestParseError::InvalidHexByte(i * 2 + 1))?;
             *slot = (hi << 4) | lo;
         }
         Ok(Self(out))
@@ -168,9 +168,9 @@ mod hex_serde {
             DigestParseError::InvalidLength(n) => {
                 serde::de::Error::invalid_length(n, &"64 hex chars")
             }
-            DigestParseError::InvalidHexByte(i) => serde::de::Error::custom(format!(
-                "invalid hex byte at position {i}"
-            )),
+            DigestParseError::InvalidHexByte(i) => {
+                serde::de::Error::custom(format!("invalid hex byte at position {i}"))
+            }
         })?;
         Ok(*d.as_bytes())
     }

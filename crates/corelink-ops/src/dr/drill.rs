@@ -77,11 +77,10 @@ pub use corelink_failover_router::{Region, ResidencyGraph};
 pub use env_guard::{require_staging, DrillEnv};
 pub use error::DrillError;
 pub use outage::{
-    CfRegionOutageSimulator, InMemoryCfRegionOutageSimulator, OutageOutcome,
-    RTO_CEIL_SECONDS, RPO_CEIL_SECONDS,
+    CfRegionOutageSimulator, InMemoryCfRegionOutageSimulator, OutageOutcome, RPO_CEIL_SECONDS,
+    RTO_CEIL_SECONDS,
 };
 pub use run::{DrillRun, DrillStatus, RtoRpoMeasurement, SloImpact};
 pub use schedule::{
-    DrillCadence, DrillCycle, DrillSchedule, DrillScheduler, InMemoryDrillScheduler,
-    SEMESTRAL_CRON,
+    DrillCadence, DrillCycle, DrillSchedule, DrillScheduler, InMemoryDrillScheduler, SEMESTRAL_CRON,
 };

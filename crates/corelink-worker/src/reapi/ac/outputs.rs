@@ -196,9 +196,9 @@ impl InMemoryOutputsCheck {
                 continue; // dedupe
             }
             match guard.rows.get(&(tenant_id, d)) {
-                Some(true) => {}                       // alive
-                Some(false) => missing.push(d),        // tombstoned
-                None => missing.push(d),               // never existed
+                Some(true) => {}                // alive
+                Some(false) => missing.push(d), // tombstoned
+                None => missing.push(d),        // never existed
             }
         }
         if missing.is_empty() {
@@ -256,10 +256,7 @@ mod tests {
             Vec::new(),
         );
         check.insert_all_alive(fixed_tenant(), &result);
-        let out = check
-            .assert_alive(fixed_tenant(), &result)
-            .await
-            .unwrap();
+        let out = check.assert_alive(fixed_tenant(), &result).await.unwrap();
         assert!(out.is_all_alive());
     }
 
@@ -279,10 +276,7 @@ mod tests {
         );
         check.insert_alive(fixed_tenant(), alive);
         check.insert_tombstoned(fixed_tenant(), dead);
-        let out = check
-            .assert_alive(fixed_tenant(), &result)
-            .await
-            .unwrap();
+        let out = check.assert_alive(fixed_tenant(), &result).await.unwrap();
         match out {
             OutputsCheckOutcome::SomeMissing { missing } => {
                 assert_eq!(missing, vec![dead]);

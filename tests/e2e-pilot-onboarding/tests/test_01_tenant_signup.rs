@@ -67,7 +67,10 @@ fn wave23_pilot_signup_duplicate_is_rejected() {
     h.complete_signup(&tenant).unwrap();
     let err = h.complete_signup(&tenant).unwrap_err();
     assert!(
-        matches!(err, PilotHarnessError::Signup(SignupError::AlreadyProvisioned(_))),
+        matches!(
+            err,
+            PilotHarnessError::Signup(SignupError::AlreadyProvisioned(_))
+        ),
         "got: {err:?}"
     );
     // Audit chain unchanged.

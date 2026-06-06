@@ -37,21 +37,12 @@ pub trait CasStore: Send + Sync + Debug {
     /// `None` on miss. `Err` is reserved for backend failure (network,
     /// disk, permission) and surfaces as
     /// [`crate::cargo::CargoAdapterError::Cas`].
-    async fn get(
-        &self,
-        tenant_id: &str,
-        digest_hex: &str,
-    ) -> Result<Option<Vec<u8>>, CasError>;
+    async fn get(&self, tenant_id: &str, digest_hex: &str) -> Result<Option<Vec<u8>>, CasError>;
 
     /// Durably store `bytes` under `(tenant_id, digest_hex)`. Existing
     /// entries are overwritten idempotently (content-addressable equality
     /// is presumed at the caller via the BLAKE3 key).
-    async fn put(
-        &self,
-        tenant_id: &str,
-        digest_hex: &str,
-        bytes: Vec<u8>,
-    ) -> Result<(), CasError>;
+    async fn put(&self, tenant_id: &str, digest_hex: &str, bytes: Vec<u8>) -> Result<(), CasError>;
 }
 
 /// CAS backend failure surface.
@@ -77,10 +68,7 @@ pub trait TenantResolver: Send + Sync + Debug {
     /// Return the tenant id owning `pat_plaintext`, or
     /// `Err(TenantResolveError::InvalidPat)` if the PAT is unknown /
     /// expired / out-of-scope.
-    async fn resolve(
-        &self,
-        pat_plaintext: &str,
-    ) -> Result<String, TenantResolveError>;
+    async fn resolve(&self, pat_plaintext: &str) -> Result<String, TenantResolveError>;
 }
 
 /// PAT resolution failure surface.

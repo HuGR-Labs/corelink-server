@@ -467,7 +467,8 @@ mod tests {
         .unwrap();
         assert_eq!(s.len(), 2);
         assert_eq!(
-            s.snapshot_of(CanaryAuditEventType::DispatchLagExceeded).len(),
+            s.snapshot_of(CanaryAuditEventType::DispatchLagExceeded)
+                .len(),
             1
         );
     }

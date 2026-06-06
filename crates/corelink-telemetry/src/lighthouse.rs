@@ -416,12 +416,12 @@ impl LighthouseCustomer {
                 self.observation_started_at = Some(now_ts);
             }
             (LifecycleState::Observing, LifecycleState::Attested) => {
-                let started = self
-                    .observation_started_at
-                    .ok_or(TrackerError::IllegalTransition {
-                        from: self.state,
-                        to: target,
-                    })?;
+                let started =
+                    self.observation_started_at
+                        .ok_or(TrackerError::IllegalTransition {
+                            from: self.state,
+                            to: target,
+                        })?;
                 let elapsed = now_ts.saturating_sub(started);
                 if elapsed < OBSERVATION_WINDOW_SECS {
                     return Err(TrackerError::ObservationWindowNotElapsed {
@@ -666,7 +666,8 @@ mod tests {
     fn state_machine_canonical_happy_path() {
         let mut c = forge();
         assert_eq!(c.state, LifecycleState::Recruiting);
-        c.transition_to(LifecycleState::Engaged, 100, false).unwrap();
+        c.transition_to(LifecycleState::Engaged, 100, false)
+            .unwrap();
         c.transition_to(LifecycleState::Migrating, 200, false)
             .unwrap();
         c.transition_to(LifecycleState::Observing, 300, false)
@@ -697,7 +698,8 @@ mod tests {
     #[test]
     fn observation_window_must_elapse_before_attestation() {
         let mut c = forge();
-        c.transition_to(LifecycleState::Engaged, 100, false).unwrap();
+        c.transition_to(LifecycleState::Engaged, 100, false)
+            .unwrap();
         c.transition_to(LifecycleState::Migrating, 200, false)
             .unwrap();
         c.transition_to(LifecycleState::Observing, 300, false)
@@ -714,7 +716,8 @@ mod tests {
     #[test]
     fn sla_breach_blocks_attestation() {
         let mut c = forge();
-        c.transition_to(LifecycleState::Engaged, 100, false).unwrap();
+        c.transition_to(LifecycleState::Engaged, 100, false)
+            .unwrap();
         c.transition_to(LifecycleState::Migrating, 200, false)
             .unwrap();
         c.transition_to(LifecycleState::Observing, 300, false)
@@ -732,7 +735,8 @@ mod tests {
     #[test]
     fn enterprise_requires_byok_health_for_attestation() {
         let mut c = ent();
-        c.transition_to(LifecycleState::Engaged, 100, false).unwrap();
+        c.transition_to(LifecycleState::Engaged, 100, false)
+            .unwrap();
         c.transition_to(LifecycleState::Migrating, 200, false)
             .unwrap();
         c.transition_to(LifecycleState::Observing, 300, false)
@@ -752,7 +756,8 @@ mod tests {
     #[test]
     fn team_tier_ignores_byok_health() {
         let mut c = forge();
-        c.transition_to(LifecycleState::Engaged, 100, false).unwrap();
+        c.transition_to(LifecycleState::Engaged, 100, false)
+            .unwrap();
         c.transition_to(LifecycleState::Migrating, 200, false)
             .unwrap();
         c.transition_to(LifecycleState::Observing, 300, false)
@@ -792,7 +797,8 @@ mod tests {
     #[test]
     fn withdrawn_not_reachable_post_attestation() {
         let mut c = forge();
-        c.transition_to(LifecycleState::Engaged, 100, false).unwrap();
+        c.transition_to(LifecycleState::Engaged, 100, false)
+            .unwrap();
         c.transition_to(LifecycleState::Migrating, 200, false)
             .unwrap();
         c.transition_to(LifecycleState::Observing, 300, false)
@@ -821,7 +827,8 @@ mod tests {
     #[test]
     fn observation_outcome_pending_before_window() {
         let mut c = forge();
-        c.transition_to(LifecycleState::Engaged, 100, false).unwrap();
+        c.transition_to(LifecycleState::Engaged, 100, false)
+            .unwrap();
         c.transition_to(LifecycleState::Migrating, 200, false)
             .unwrap();
         c.transition_to(LifecycleState::Observing, 300, false)
@@ -832,7 +839,8 @@ mod tests {
     #[test]
     fn observation_outcome_met_after_window_no_breach() {
         let mut c = forge();
-        c.transition_to(LifecycleState::Engaged, 100, false).unwrap();
+        c.transition_to(LifecycleState::Engaged, 100, false)
+            .unwrap();
         c.transition_to(LifecycleState::Migrating, 200, false)
             .unwrap();
         c.transition_to(LifecycleState::Observing, 300, false)
@@ -844,7 +852,8 @@ mod tests {
     #[test]
     fn observation_outcome_miss_when_breach() {
         let mut c = forge();
-        c.transition_to(LifecycleState::Engaged, 100, false).unwrap();
+        c.transition_to(LifecycleState::Engaged, 100, false)
+            .unwrap();
         c.transition_to(LifecycleState::Migrating, 200, false)
             .unwrap();
         c.transition_to(LifecycleState::Observing, 300, false)
@@ -862,7 +871,8 @@ mod tests {
         let mut o = oss();
         let mut e = ent();
         for c in [&mut f, &mut o, &mut e] {
-            c.transition_to(LifecycleState::Engaged, 100, false).unwrap();
+            c.transition_to(LifecycleState::Engaged, 100, false)
+                .unwrap();
             c.transition_to(LifecycleState::Migrating, 200, false)
                 .unwrap();
             c.transition_to(LifecycleState::Observing, 300, false)
@@ -887,7 +897,8 @@ mod tests {
         let mut f = forge();
         let mut o = oss();
         for c in [&mut f, &mut o] {
-            c.transition_to(LifecycleState::Engaged, 100, false).unwrap();
+            c.transition_to(LifecycleState::Engaged, 100, false)
+                .unwrap();
             c.transition_to(LifecycleState::Migrating, 200, false)
                 .unwrap();
             c.transition_to(LifecycleState::Observing, 300, false)
@@ -943,7 +954,8 @@ mod tests {
         let mut o = oss();
         let mut e = ent();
         for c in [&mut f, &mut o, &mut e] {
-            c.transition_to(LifecycleState::Engaged, 100, false).unwrap();
+            c.transition_to(LifecycleState::Engaged, 100, false)
+                .unwrap();
             c.transition_to(LifecycleState::Migrating, 200, false)
                 .unwrap();
             c.transition_to(LifecycleState::Observing, 300, false)

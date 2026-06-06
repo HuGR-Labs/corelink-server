@@ -570,12 +570,9 @@ mod tests {
 
     #[test]
     fn otel_collector_stub_returns_ok() {
-        let cfg = OtelCollectorConfig::new(
-            "https://otel.example.com:4318",
-            OtlpProtocol::Http,
-            None,
-        )
-        .unwrap();
+        let cfg =
+            OtelCollectorConfig::new("https://otel.example.com:4318", OtlpProtocol::Http, None)
+                .unwrap();
         let e = OtelCollectorExporter::new(cfg);
         e.export_batch(&[sample_metric()]).unwrap();
         e.export_trace(&sample_span()).unwrap();

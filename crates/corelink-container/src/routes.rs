@@ -33,13 +33,13 @@ use std::sync::Arc;
 
 use axum::Router;
 use corelink_analytics::Region;
-use corelink_audit_chain::{
-    InMemoryNeonShadowSink, InMemoryShadowSyncAuditSink, NeonShadowSink,
-};
+use corelink_audit_chain::{InMemoryNeonShadowSink, InMemoryShadowSyncAuditSink, NeonShadowSink};
 use uuid::Uuid;
 
 use crate::routes::audit_analytics::ShadowSinkFactory;
 
+/// AC HTTP routes (R-prep wire-up; wave-11).
+pub mod ac;
 /// Admin HTTP routes (R-prep wire-up; wave-11).
 pub mod admin;
 /// Pilot-admin HTTP routes (Wave-29 stream-3): replaces the wave-27
@@ -47,8 +47,6 @@ pub mod admin;
 /// `pilot-24h-checkin.sh`) with proper endpoints + audit-emit
 /// fail-CLOSED ordering + 5-Layer Defense scope gating.
 pub mod admin_pilot;
-/// AC HTTP routes (R-prep wire-up; wave-11).
-pub mod ac;
 /// Customer-facing audit-analytics routes (Wave-18 wiring of the
 /// Neon analytics shadow sync): `GET /v1/audit/analytics/event-count`
 /// + `GET /v1/audit/analytics/timeline` over the per-tenant
@@ -60,14 +58,6 @@ pub mod audit_analytics;
 /// WI-S09-008): `GET /v1/audit/export?from=&to=` streams NDJSON
 /// audit events + inclusion proofs.
 pub mod audit_export;
-/// CAS HTTP routes (R-prep example wire-up; wave-8).
-pub mod cas;
-/// Customer self-serve HTTP routes (Stream-2.6): `/v1/customer/*` endpoints
-/// (overview, usage, billing, keys, team, audit) wired via
-/// `corelink-handler-customer` trait objects. Worker matchRoute already
-/// forwards these paths to the container; this module is the final link
-/// that makes them return real responses instead of 404.
-pub mod customer;
 /// REAPI v2 Bazel remote-cache routes (Phase 0 Stream B1):
 /// `GET/PUT /bazel/v2/:instance/blobs/:hash/:size`,
 /// `PUT /bazel/v2/:instance/uploads/:uuid/blobs/:hash/:size`,
@@ -78,11 +68,14 @@ pub mod customer;
 /// for any Bazel user; backed by the same R2 CAS/AC blobs as the
 /// native `/v1/cas` and `/v1/ac` routes.
 pub mod bazel_v2;
-/// Pilot signup route (wave-29 stream-1; closes DEBT-027 engineering-side).
-/// Surfaces `POST /v1/signup/pilot/{token}` over an HMAC-SHA256
-/// signed token + per-IP rate-limit + fail-CLOSED audit emit. See
-/// `specs/_audits/sealed/2026-05-16-signup-corelink-dev-backend.md`.
-pub mod signup;
+/// CAS HTTP routes (R-prep example wire-up; wave-8).
+pub mod cas;
+/// Customer self-serve HTTP routes (Stream-2.6): `/v1/customer/*` endpoints
+/// (overview, usage, billing, keys, team, audit) wired via
+/// `corelink-handler-customer` trait objects. Worker matchRoute already
+/// forwards these paths to the container; this module is the final link
+/// that makes them return real responses instead of 404.
+pub mod customer;
 /// Internal PAT mint route (Stream-5): `POST /_internal/pat/mint`.
 /// Only reachable from the Cloudflare Durable Object via
 /// `container.getTcpPort(50051)`. Gated by the `X-Corelink-Internal-Auth`
@@ -90,28 +83,28 @@ pub mod signup;
 /// `corelink_pat::mint::mint(...)` and returns the hash + plaintext
 /// for the signup-worker to write to D1 and Clerk session metadata.
 pub mod internal_pat;
+/// Pilot signup route (wave-29 stream-1; closes DEBT-027 engineering-side).
+/// Surfaces `POST /v1/signup/pilot/{token}` over an HMAC-SHA256
+/// signed token + per-IP rate-limit + fail-CLOSED audit emit. See
+/// `specs/_audits/sealed/2026-05-16-signup-corelink-dev-backend.md`.
+pub mod signup;
 /// `POST /v1/onboarding/tier-select` — server-side Stripe Checkout
 /// Session creation for self-serve tier upgrades. Internal-auth gated
 /// (constant-time) + edge-verified `x-corelink-tenant-id` (fail-CLOSED);
 /// INV-ONBOARD-DPA-FIRST + durable 60s lock + hosted Stripe Checkout.
 /// WI-S19-004 production wiring.
 pub mod tier_select;
-/// Production [`tier_select::TierSelectStore`] adapter (WP-A scaffold):
-/// the durable D1-over-HTTP lock / DPA / active-subscription / persist
-/// transaction. Stub bodies (`todo!("WP-A")`) until WP-A fills the SQL.
-pub mod tier_select_store;
+/// Production [`tier_select::TierSelectAudit`] adapter (WP-C scaffold):
+/// fail-CLOSED audit-chain emit (mirrors `internal_pat` tracing-audit).
+pub mod tier_select_audit;
 /// Production [`tier_select::CheckoutCreator`] adapter (WP-B scaffold):
 /// hosted Stripe Checkout via `StripeRealClient` (`spawn_blocking`). Holds
 /// the email-seam decision (trait stays email-free; Stripe collects it).
 pub mod tier_select_checkout;
-/// Production [`tier_select::TierSelectAudit`] adapter (WP-C scaffold):
-/// fail-CLOSED audit-chain emit (mirrors `internal_pat` tracing-audit).
-pub mod tier_select_audit;
-/// Caller-identity reflection route: `GET /v1/users/me` reads the
-/// Worker-injected `x-corelink-tenant-id` / `-token-prefix` /
-/// `-route-kind` headers and echoes them as JSON. Lets clients verify
-/// PAT wiring without exercising any data-plane (CAS/AC) surface.
-pub mod users;
+/// Production [`tier_select::TierSelectStore`] adapter (WP-A scaffold):
+/// the durable D1-over-HTTP lock / DPA / active-subscription / persist
+/// transaction. Stub bodies (`todo!("WP-A")`) until WP-A fills the SQL.
+pub mod tier_select_store;
 /// Turborepo remote-cache routes (Phase 0 / Stream B2):
 /// `GET/PUT /v8/artifacts/:hash`, `POST /v8/artifacts/events`,
 /// `POST /v8/artifacts/status`.
@@ -123,6 +116,11 @@ pub mod users;
 /// Phase 0 backing store: `InMemoryKvStore` (non-persistent).
 /// TODO(v2): swap for `R2KvStore` — see module doc.
 pub mod turbo_v8;
+/// Caller-identity reflection route: `GET /v1/users/me` reads the
+/// Worker-injected `x-corelink-tenant-id` / `-token-prefix` /
+/// `-route-kind` headers and echoes them as JSON. Lets clients verify
+/// PAT wiring without exercising any data-plane (CAS/AC) surface.
+pub mod users;
 
 /// Per-tenant in-memory shadow-sink factory. Production wiring
 /// replaces this with a Neon-backed factory (see
@@ -149,10 +147,7 @@ impl InMemoryShadowSinkFactory {
 }
 
 impl ShadowSinkFactory for InMemoryShadowSinkFactory {
-    fn for_tenant(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
+    fn for_tenant(&self, tenant_id: Uuid) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
         // Default region for the in-memory dev/CI sink is IAD — the
         // production factory resolves the per-tenant pinned region
         // from the tenant-config store.

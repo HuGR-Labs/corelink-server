@@ -93,11 +93,11 @@
 //! # });
 //! ```
 
-
+use crate::{
+    BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
+};
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use crate::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
-                    KmsProviderKind, WrappedDek};
 
 #[cfg(all(feature = "real-vault", not(target_arch = "wasm32")))]
 pub mod auth;
@@ -297,7 +297,8 @@ impl KmsProvider for VaultProvider {
                 .get_mut(..copy_len)
                 .ok_or(BYOKError::EnvelopeError("ctx_marker slice".to_string()))?
                 .copy_from_slice(
-                    ctx_bytes.get(..copy_len)
+                    ctx_bytes
+                        .get(..copy_len)
                         .ok_or(BYOKError::EnvelopeError("ctx_bytes slice".to_string()))?,
                 );
             ciphertext.extend_from_slice(&ctx_marker);
@@ -336,23 +337,30 @@ impl KmsProvider for VaultProvider {
 
             // Verify context binding: the stored context marker must match
             // the context currently in wrapped.encryption_context.
-            let stored_ctx_b64 = Self::context_to_vault_context(wrapped.encryption_context.as_ref());
+            let stored_ctx_b64 =
+                Self::context_to_vault_context(wrapped.encryption_context.as_ref());
             let stored_ctx_bytes = stored_ctx_b64.as_bytes();
             let mut expected_marker = [0u8; 32];
             let copy_len = stored_ctx_bytes.len().min(32);
             expected_marker
                 .get_mut(..copy_len)
-                .ok_or(BYOKError::EnvelopeError("expected_marker slice".to_string()))?
-                .copy_from_slice(
-                    stored_ctx_bytes.get(..copy_len)
-                        .ok_or(BYOKError::EnvelopeError("stored_ctx_bytes slice".to_string()))?,
-                );
+                .ok_or(BYOKError::EnvelopeError(
+                    "expected_marker slice".to_string(),
+                ))?
+                .copy_from_slice(stored_ctx_bytes.get(..copy_len).ok_or(
+                    BYOKError::EnvelopeError("stored_ctx_bytes slice".to_string()),
+                )?);
 
-            let actual_marker: [u8; 32] = wrapped.ciphertext
+            let actual_marker: [u8; 32] = wrapped
+                .ciphertext
                 .get(..32)
-                .ok_or(BYOKError::EnvelopeError("Vault mock: ciphertext < 32 bytes".to_string()))?
+                .ok_or(BYOKError::EnvelopeError(
+                    "Vault mock: ciphertext < 32 bytes".to_string(),
+                ))?
                 .try_into()
-                .map_err(|_| BYOKError::EnvelopeError("Vault mock: cannot read context marker".to_string()))?;
+                .map_err(|_| {
+                    BYOKError::EnvelopeError("Vault mock: cannot read context marker".to_string())
+                })?;
 
             if actual_marker != expected_marker {
                 return Err(BYOKError::EnvelopeError(
@@ -361,9 +369,12 @@ impl KmsProvider for VaultProvider {
             }
 
             // Reverse XOR marker.
-            let ct = wrapped.ciphertext
+            let ct = wrapped
+                .ciphertext
                 .get(32..)
-                .ok_or(BYOKError::EnvelopeError("Vault mock: ciphertext < 64 bytes for ct".to_string()))?;
+                .ok_or(BYOKError::EnvelopeError(
+                    "Vault mock: ciphertext < 64 bytes for ct".to_string(),
+                ))?;
             if ct.len() != 32 {
                 return Err(BYOKError::EnvelopeError(format!(
                     "Vault mock: DEK ciphertext length {} != 32",
@@ -396,7 +407,9 @@ impl KmsProvider for VaultProvider {
             if days <= MTLS_CERT_ALERT_DAYS {
                 // Cert expiry within alert threshold — return warning.
                 // Caller fires SEV-3 + customer notification.
-                return Err(BYOKError::MtlsCertExpiringSoon { days_remaining: days });
+                return Err(BYOKError::MtlsCertExpiringSoon {
+                    days_remaining: days,
+                });
             }
         }
 
@@ -412,7 +425,13 @@ impl KmsProvider for VaultProvider {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, clippy::indexing_slicing, clippy::uninlined_format_args)]
+#[allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::uninlined_format_args
+)]
 mod tests {
     use super::*;
     use crate::KmsProvider;
@@ -459,7 +478,10 @@ mod tests {
         let dek = Dek::generate().expect("entropy");
         let orig = dek.bytes;
         let ctx = serde_json::json!({"tenant_id": "T1", "blob_hash": "H3"});
-        let wrapped = p.wrap_dek(&dek, &vault_key_id(), Some(&ctx)).await.expect("wrap");
+        let wrapped = p
+            .wrap_dek(&dek, &vault_key_id(), Some(&ctx))
+            .await
+            .expect("wrap");
         let unwrapped = p.unwrap_dek(&wrapped).await.expect("unwrap");
         assert_eq!(orig, unwrapped.bytes);
     }
@@ -469,7 +491,10 @@ mod tests {
         let p = VaultProvider::new_mock("us-east-1");
         let dek = Dek::generate().expect("entropy");
         let ctx_a = serde_json::json!({"tenant_id": "T1"});
-        let wrapped = p.wrap_dek(&dek, &vault_key_id(), Some(&ctx_a)).await.expect("wrap");
+        let wrapped = p
+            .wrap_dek(&dek, &vault_key_id(), Some(&ctx_a))
+            .await
+            .expect("wrap");
 
         // Tamper: change encryption_context → context marker mismatch.
         let tampered = WrappedDek {
@@ -477,7 +502,10 @@ mod tests {
             ..wrapped
         };
         let result = p.unwrap_dek(&tampered).await;
-        assert!(result.is_err(), "Vault transit context binding must reject tampered context");
+        assert!(
+            result.is_err(),
+            "Vault transit context binding must reject tampered context"
+        );
     }
 
     #[tokio::test]
@@ -493,7 +521,10 @@ mod tests {
         p.set_mock_cert_days_remaining(Some(25)); // within 30d threshold
         let result = p.check_access(&vault_key_id()).await;
         assert!(
-            matches!(result, Err(BYOKError::MtlsCertExpiringSoon { days_remaining: 25 })),
+            matches!(
+                result,
+                Err(BYOKError::MtlsCertExpiringSoon { days_remaining: 25 })
+            ),
             "cert expiry within 30d must return MtlsCertExpiringSoon"
         );
     }
@@ -504,7 +535,10 @@ mod tests {
         p.set_mock_cert_days_remaining(Some(30)); // exactly at threshold
         let result = p.check_access(&vault_key_id()).await;
         assert!(
-            matches!(result, Err(BYOKError::MtlsCertExpiringSoon { days_remaining: 30 })),
+            matches!(
+                result,
+                Err(BYOKError::MtlsCertExpiringSoon { days_remaining: 30 })
+            ),
             "cert expiry exactly 30d must alert"
         );
     }

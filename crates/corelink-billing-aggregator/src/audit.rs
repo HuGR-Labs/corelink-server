@@ -146,10 +146,7 @@ pub trait AggregatorAuditSink: Send + Sync + core::fmt::Debug {
     ///
     /// Returns [`AggregatorAuditEmitError::Store`] on any backend
     /// failure.
-    fn emit(
-        &self,
-        record: AggregatorAuditRecord,
-    ) -> Result<(), AggregatorAuditEmitError>;
+    fn emit(&self, record: AggregatorAuditRecord) -> Result<(), AggregatorAuditEmitError>;
 }
 
 /// In-memory test audit sink. Cloning shares the underlying buffer so
@@ -192,10 +189,7 @@ impl InMemoryAggregatorAuditSink {
 
     /// Filter snapshot down to records of a single event type.
     #[must_use]
-    pub fn snapshot_of(
-        &self,
-        event_type: AggregatorAuditEventType,
-    ) -> Vec<AggregatorAuditRecord> {
+    pub fn snapshot_of(&self, event_type: AggregatorAuditEventType) -> Vec<AggregatorAuditRecord> {
         self.snapshot()
             .into_iter()
             .filter(|r| r.event_type == event_type)
@@ -204,10 +198,7 @@ impl InMemoryAggregatorAuditSink {
 }
 
 impl AggregatorAuditSink for InMemoryAggregatorAuditSink {
-    fn emit(
-        &self,
-        record: AggregatorAuditRecord,
-    ) -> Result<(), AggregatorAuditEmitError> {
+    fn emit(&self, record: AggregatorAuditRecord) -> Result<(), AggregatorAuditEmitError> {
         let mut guard = self.inner.lock().map_err(|_| {
             AggregatorAuditEmitError::Store(
                 "billing-aggregator audit sink mutex poisoned".to_string(),
@@ -232,10 +223,7 @@ impl FailingAggregatorAuditSink {
 }
 
 impl AggregatorAuditSink for FailingAggregatorAuditSink {
-    fn emit(
-        &self,
-        _record: AggregatorAuditRecord,
-    ) -> Result<(), AggregatorAuditEmitError> {
+    fn emit(&self, _record: AggregatorAuditRecord) -> Result<(), AggregatorAuditEmitError> {
         Err(AggregatorAuditEmitError::Store(
             "induced billing-aggregator audit sink failure (test fixture)".to_string(),
         ))
@@ -301,15 +289,18 @@ mod tests {
     fn in_memory_sink_captures_records() {
         let sink = InMemoryAggregatorAuditSink::new();
         assert!(sink.is_empty());
-        sink.emit(rec(AggregatorAuditEventType::RunStarted)).unwrap();
-        sink.emit(rec(AggregatorAuditEventType::RunCompleted)).unwrap();
+        sink.emit(rec(AggregatorAuditEventType::RunStarted))
+            .unwrap();
+        sink.emit(rec(AggregatorAuditEventType::RunCompleted))
+            .unwrap();
         assert_eq!(sink.len(), 2);
         assert_eq!(
             sink.snapshot_of(AggregatorAuditEventType::RunStarted).len(),
             1
         );
         assert_eq!(
-            sink.snapshot_of(AggregatorAuditEventType::RunCompleted).len(),
+            sink.snapshot_of(AggregatorAuditEventType::RunCompleted)
+                .len(),
             1
         );
     }

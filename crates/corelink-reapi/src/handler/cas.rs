@@ -11,9 +11,9 @@
 
 use std::sync::Arc;
 
+use corelink_cas::r2_storage::R2Backend;
 use corelink_hash::Digest;
 use corelink_meta::MetaStore;
-use corelink_cas::r2_storage::R2Backend;
 use tonic::{async_trait, Code, Request, Response, Status};
 
 use crate::capabilities::MAX_BATCH_TOTAL_SIZE_BYTES;

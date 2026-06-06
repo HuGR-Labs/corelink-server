@@ -72,8 +72,7 @@ mod tests {
 
     #[test]
     fn dispatcher_renders() {
-        let e =
-            SloError::Dispatcher(SloPagerDutyDispatchError::Transport("503".to_string()));
+        let e = SloError::Dispatcher(SloPagerDutyDispatchError::Transport("503".to_string()));
         assert!(format!("{e}").contains("PagerDuty dispatcher failure"));
     }
 

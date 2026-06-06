@@ -36,17 +36,14 @@
 use std::sync::Arc;
 
 use corelink_analytics::{
-    canonical_audit_event_strings, canonical_metric_names,
-    AcHitMissLabel, AnalyticsConfig, AnalyticsError,
-    AnalyticsEventType, BillingEventTypeLabel, CardinalityValidator,
-    DoClassLabel, DsrTypeLabel, GcPhaseLabel, InMemoryAnalyticsAuditSink,
-    InMemoryRedMetrics, KvNamespaceLabel, MetricLabelTuple,
-    R2BucketLabel, R2OpTypeLabel, RateLimitLayerLabel,
-    RateLimitReasonLabel, RedMetricKind, RedMetricsObserver,
-    RedResultLabel, Region, Tier, ValidatorDecision,
-    CANONICAL_GLOBAL_BUDGET, CANONICAL_HISTOGRAM_BUCKET_BOUNDARIES,
-    CANONICAL_METRIC_COUNT, CANONICAL_PER_METRIC_BUDGET,
-    FORBIDDEN_LABEL_NAMES, MIGRATION_0015_ANALYTICS_CARDINALITY_BUDGETS,
+    canonical_audit_event_strings, canonical_metric_names, AcHitMissLabel, AnalyticsConfig,
+    AnalyticsError, AnalyticsEventType, BillingEventTypeLabel, CardinalityValidator, DoClassLabel,
+    DsrTypeLabel, GcPhaseLabel, InMemoryAnalyticsAuditSink, InMemoryRedMetrics, KvNamespaceLabel,
+    MetricLabelTuple, R2BucketLabel, R2OpTypeLabel, RateLimitLayerLabel, RateLimitReasonLabel,
+    RedMetricKind, RedMetricsObserver, RedResultLabel, Region, Tier, ValidatorDecision,
+    CANONICAL_GLOBAL_BUDGET, CANONICAL_HISTOGRAM_BUCKET_BOUNDARIES, CANONICAL_METRIC_COUNT,
+    CANONICAL_PER_METRIC_BUDGET, FORBIDDEN_LABEL_NAMES,
+    MIGRATION_0015_ANALYTICS_CARDINALITY_BUDGETS,
 };
 use proptest::prelude::*;
 
@@ -150,10 +147,8 @@ fn canonical_metric_names_pinned() {
 
 #[test]
 fn migration_0015_is_embedded() {
-    assert!(MIGRATION_0015_ANALYTICS_CARDINALITY_BUDGETS
-        .contains("analytics_cardinality_budgets"));
-    assert!(MIGRATION_0015_ANALYTICS_CARDINALITY_BUDGETS
-        .contains("migration 0015"));
+    assert!(MIGRATION_0015_ANALYTICS_CARDINALITY_BUDGETS.contains("analytics_cardinality_budgets"));
+    assert!(MIGRATION_0015_ANALYTICS_CARDINALITY_BUDGETS.contains("migration 0015"));
 }
 
 #[test]
@@ -643,10 +638,11 @@ fn audit_arms_pin_canonical_strings() {
             3000,
         )
         .unwrap_err();
-    assert!(matches!(err, AnalyticsError::CardinalityBudgetExceeded { .. }));
-    let emitted = audit
-        .snapshot_of(AnalyticsEventType::MetricEmitted)
-        .len();
+    assert!(matches!(
+        err,
+        AnalyticsError::CardinalityBudgetExceeded { .. }
+    ));
+    let emitted = audit.snapshot_of(AnalyticsEventType::MetricEmitted).len();
     let rejected = audit
         .snapshot_of(AnalyticsEventType::CardinalityRejected)
         .len();
@@ -706,9 +702,7 @@ fn global_budget_exceeded_audit_arm_fires() {
         other => panic!("expected global budget exceed, got {other:?}"),
     }
     assert_eq!(
-        audit
-            .snapshot_of(AnalyticsEventType::BudgetExceeded)
-            .len(),
+        audit.snapshot_of(AnalyticsEventType::BudgetExceeded).len(),
         1
     );
 }

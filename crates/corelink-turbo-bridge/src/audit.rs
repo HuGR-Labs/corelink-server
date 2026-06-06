@@ -95,7 +95,8 @@ pub struct InMemoryTurboAuditSink {
 
 impl core::fmt::Debug for InMemoryTurboAuditSink {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("InMemoryTurboAuditSink").finish_non_exhaustive()
+        f.debug_struct("InMemoryTurboAuditSink")
+            .finish_non_exhaustive()
     }
 }
 

@@ -46,9 +46,9 @@ pub mod policy;
 pub mod r2;
 
 pub use helpers::{
-    canonical_dsr_for, canonical_dsr_with_request_id, canonical_erasure_for,
-    canonical_mfa_token, make_test_tenant, poll_dsr_status, seed_backends_for, setup_test_env,
-    verify_audit_chain, ExpectedDsrAuditEvent, TenantBundle, TestDsrEnv,
+    canonical_dsr_for, canonical_dsr_with_request_id, canonical_erasure_for, canonical_mfa_token,
+    make_test_tenant, poll_dsr_status, seed_backends_for, setup_test_env, verify_audit_chain,
+    ExpectedDsrAuditEvent, TenantBundle, TestDsrEnv,
 };
 pub use policy::{PolicyDecision, RestrictionFlag, TenantPolicyLedger};
 pub use r2::{InMemoryR2EvidenceClient, R2EvidenceError, R2SignedUrl};

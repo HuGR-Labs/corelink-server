@@ -58,7 +58,9 @@ fn adversarial_1_integrity_mismatch_rejects_and_audits() {
     )
     .expect("audit emit");
     let snap = sink.snapshot();
-    assert!(snap.iter().any(|e| e.event_type == event_types::WHEEL_INTEGRITY_MISMATCH));
+    assert!(snap
+        .iter()
+        .any(|e| e.event_type == event_types::WHEEL_INTEGRITY_MISMATCH));
 }
 
 // (2) Oversize wheel (>1 GiB) — the upstream client returns
@@ -139,8 +141,7 @@ fn adversarial_5b_extra_url_caught_by_integrity_check_on_download() {
             "yanked": false
         }]
     });
-    let parsed: ProjectIndex =
-        parse_json_index(payload.to_string().as_bytes()).expect("parse");
+    let parsed: ProjectIndex = parse_json_index(payload.to_string().as_bytes()).expect("parse");
     assert_eq!(parsed.files.len(), 1);
     // The "downloaded" malicious bytes do not match the
     // upstream-declared sha (which is `00…00` here).

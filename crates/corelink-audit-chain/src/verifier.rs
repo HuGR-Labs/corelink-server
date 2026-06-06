@@ -30,9 +30,7 @@
 
 use subtle::ConstantTimeEq;
 
-use crate::audit::{
-    AuditChainAuditEventType, AuditChainAuditRecord, AuditChainAuditSink,
-};
+use crate::audit::{AuditChainAuditEventType, AuditChainAuditRecord, AuditChainAuditSink};
 use crate::chain::link_chain_hash;
 use crate::error::AuditChainError;
 use crate::event::{AuditEvent, ChainHash, GENESIS_PREV_HASH, GENESIS_SEQUENCE_NUMBER};
@@ -166,7 +164,13 @@ where
             // `subtle::ConstantTimeEq` so the rejection latency does not
             // leak whether and where the 32-byte BLAKE3 hashes differ
             // (timing oracle defence; INV-AUTH-CONSTANT-TIME-COLD-PAD).
-            if ev.prev_hash.as_bytes().ct_eq(current_prev_hash.as_bytes()).unwrap_u8() == 0 {
+            if ev
+                .prev_hash
+                .as_bytes()
+                .ct_eq(current_prev_hash.as_bytes())
+                .unwrap_u8()
+                == 0
+            {
                 self.emit_chain_break_audit(
                     ev.subject.subject(),
                     expected_tenant_id,
@@ -442,7 +446,10 @@ mod tests {
         let err = v
             .verify_chain_from_genesis(&chain, tenant_a, "verifier", 1)
             .unwrap_err();
-        assert!(matches!(err, AuditChainError::TenantIsolationViolation { .. }));
+        assert!(matches!(
+            err,
+            AuditChainError::TenantIsolationViolation { .. }
+        ));
     }
 
     #[test]
@@ -455,7 +462,10 @@ mod tests {
         let err = v
             .verify_chain_from_genesis(&chain, tenant, "verifier", 1)
             .unwrap_err();
-        assert!(matches!(err, AuditChainError::SequenceOrderingViolation { .. }));
+        assert!(matches!(
+            err,
+            AuditChainError::SequenceOrderingViolation { .. }
+        ));
     }
 
     #[test]

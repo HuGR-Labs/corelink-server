@@ -15,12 +15,12 @@ use std::sync::{Arc, Mutex};
 use super::audit::{SubProcessorAuditRecord, SubProcessorAuditSink};
 use super::broadcast::BroadcastStore;
 use super::error::SubProcessorEmitError;
-use super::event::{
-    BroadcastLogEntry, DeliveryStatus, NotificationType, ObjectionPayload,
-    ObjectionTicketStatus, SubProcessorChangedPayload, SubProcessorEventType,
-    SubProcessorObjectionPayload, SubProcessorPublishedPayload,
-};
 use super::event::ObjectionDecision;
+use super::event::{
+    BroadcastLogEntry, DeliveryStatus, NotificationType, ObjectionPayload, ObjectionTicketStatus,
+    SubProcessorChangedPayload, SubProcessorEventType, SubProcessorObjectionPayload,
+    SubProcessorPublishedPayload,
+};
 use super::objection::{ObjectionStore, ObjectionTicket};
 
 /// Request to publish the initial sub-processor list.
@@ -107,31 +107,19 @@ pub struct ResolutionRequest {
 pub trait SubProcessorEmitter: std::fmt::Debug + Send + Sync {
     /// Emit initial sub-processor publication event.
     /// AC-001: No broadcast triggered (initial publish).
-    fn publish(
-        &self,
-        request: PublishRequest,
-    ) -> Result<(), SubProcessorEmitError>;
+    fn publish(&self, request: PublishRequest) -> Result<(), SubProcessorEmitError>;
 
     /// Emit sub-processor change event + seed broadcast log.
     /// AC-002: Triggers 30d broadcast to all subscribed customers.
-    fn record_change(
-        &self,
-        request: ChangeRequest,
-    ) -> Result<(), SubProcessorEmitError>;
+    fn record_change(&self, request: ChangeRequest) -> Result<(), SubProcessorEmitError>;
 
     /// File a customer objection.
     /// AC-004: Creates ticket + emits audit event.
-    fn file_objection(
-        &self,
-        request: ObjectionRequest,
-    ) -> Result<(), SubProcessorEmitError>;
+    fn file_objection(&self, request: ObjectionRequest) -> Result<(), SubProcessorEmitError>;
 
     /// Resolve an objection ticket (Privacy Officer + Legal decision).
     /// AC-005: accept or terminate.
-    fn resolve_objection(
-        &self,
-        request: ResolutionRequest,
-    ) -> Result<(), SubProcessorEmitError>;
+    fn resolve_objection(&self, request: ResolutionRequest) -> Result<(), SubProcessorEmitError>;
 
     /// Update delivery status for a broadcast log entry (webhook callback).
     /// AC-003: delivery confirmation tracking.
@@ -145,10 +133,7 @@ pub trait SubProcessorEmitter: std::fmt::Debug + Send + Sync {
 
     /// Query delivery rate for a broadcast.
     /// AC-003 / AC-008: FM-453 detection.
-    fn delivery_rate(
-        &self,
-        broadcast_id: &str,
-    ) -> Result<(usize, usize), SubProcessorEmitError>;
+    fn delivery_rate(&self, broadcast_id: &str) -> Result<(usize, usize), SubProcessorEmitError>;
 }
 
 /// In-memory orchestrator implementing the full emitter protocol.
@@ -180,10 +165,7 @@ impl InMemorySubProcessorEmitter {
 }
 
 impl SubProcessorEmitter for InMemorySubProcessorEmitter {
-    fn publish(
-        &self,
-        request: PublishRequest,
-    ) -> Result<(), SubProcessorEmitError> {
+    fn publish(&self, request: PublishRequest) -> Result<(), SubProcessorEmitError> {
         // lookup (nothing to look up for publish)
         // emit_audit BEFORE mutate_state (fail-CLOSED)
         let payload_json = serde_json::to_string(&request.payload)
@@ -200,10 +182,7 @@ impl SubProcessorEmitter for InMemorySubProcessorEmitter {
         Ok(())
     }
 
-    fn record_change(
-        &self,
-        request: ChangeRequest,
-    ) -> Result<(), SubProcessorEmitError> {
+    fn record_change(&self, request: ChangeRequest) -> Result<(), SubProcessorEmitError> {
         // lookup: nothing to look up for change record
         // emit_audit BEFORE mutate_state
         let payload_json = serde_json::to_string(&request.payload)
@@ -223,10 +202,7 @@ impl SubProcessorEmitter for InMemorySubProcessorEmitter {
         Ok(())
     }
 
-    fn file_objection(
-        &self,
-        request: ObjectionRequest,
-    ) -> Result<(), SubProcessorEmitError> {
+    fn file_objection(&self, request: ObjectionRequest) -> Result<(), SubProcessorEmitError> {
         // lookup: check for duplicate via ObjectionStore (deferred to insert)
         // emit_audit BEFORE mutate_state (fail-CLOSED)
         let audit_payload = SubProcessorObjectionPayload {
@@ -259,10 +235,7 @@ impl SubProcessorEmitter for InMemorySubProcessorEmitter {
         Ok(())
     }
 
-    fn resolve_objection(
-        &self,
-        request: ResolutionRequest,
-    ) -> Result<(), SubProcessorEmitError> {
+    fn resolve_objection(&self, request: ResolutionRequest) -> Result<(), SubProcessorEmitError> {
         // lookup: fetch existing ticket
         let ticket = self
             .objection_store
@@ -326,10 +299,7 @@ impl SubProcessorEmitter for InMemorySubProcessorEmitter {
         Ok(())
     }
 
-    fn delivery_rate(
-        &self,
-        broadcast_id: &str,
-    ) -> Result<(usize, usize), SubProcessorEmitError> {
+    fn delivery_rate(&self, broadcast_id: &str) -> Result<(usize, usize), SubProcessorEmitError> {
         let (delivered, total) = self.broadcast_store.delivery_rate(broadcast_id)?;
         Ok((delivered, total))
     }

@@ -44,10 +44,7 @@ impl HttpMethod {
     /// True for HTTP methods that mutate server state.
     #[must_use]
     pub const fn is_write(self) -> bool {
-        matches!(
-            self,
-            Self::Post | Self::Put | Self::Patch | Self::Delete
-        )
+        matches!(self, Self::Post | Self::Put | Self::Patch | Self::Delete)
     }
 }
 
@@ -106,9 +103,9 @@ impl ReadOnlyDegradeGate {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::schema::GRACE_PERIOD_SECONDS;
     use super::super::version::SemverVersion;
+    use super::*;
     use uuid::Uuid;
 
     fn expired_tenant() -> TenantDpaState {
@@ -153,12 +150,8 @@ mod tests {
 
     #[test]
     fn re_accept_endpoint_always_allowed_even_when_expired() {
-        let d = ReadOnlyDegradeGate::evaluate(
-            &expired_tenant(),
-            HttpMethod::Post,
-            RE_ACCEPT_PATH,
-            200,
-        );
+        let d =
+            ReadOnlyDegradeGate::evaluate(&expired_tenant(), HttpMethod::Post, RE_ACCEPT_PATH, 200);
         assert_eq!(d, GateDecision::Allow);
     }
 

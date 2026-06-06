@@ -230,9 +230,7 @@ impl BackPressureQueue {
     ///
     /// Returns [`ResilienceError::BackPressurePoisoned`] on inner
     /// mutex poisoning.
-    pub fn audit_snapshot(
-        &self,
-    ) -> Result<Vec<BackPressureRejectRecord>, ResilienceError> {
+    pub fn audit_snapshot(&self) -> Result<Vec<BackPressureRejectRecord>, ResilienceError> {
         let g = self
             .rejects
             .lock()

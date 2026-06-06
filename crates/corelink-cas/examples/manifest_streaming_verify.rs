@@ -62,8 +62,8 @@ fn main() {
     let mut sink = CollectingVerifiedSink::new();
 
     // Run streaming verify.
-    let outcome = verify_streaming(&header, &mut refs, &mut bytes, &mut sink)
-        .expect("streaming verify OK");
+    let outcome =
+        verify_streaming(&header, &mut refs, &mut bytes, &mut sink).expect("streaming verify OK");
     println!(
         "streaming verify: chunks={} bytes={}",
         outcome.chunks_streamed, outcome.bytes_streamed

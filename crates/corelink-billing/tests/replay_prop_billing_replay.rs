@@ -124,7 +124,11 @@ fn canonical_decision_taxonomy_pinned() {
     assert_eq!(arms.len(), 4);
     let mut set: HashSet<&'static str> = HashSet::new();
     for a in &arms {
-        assert!(set.insert(a.as_str()), "duplicate decision str: {}", a.as_str());
+        assert!(
+            set.insert(a.as_str()),
+            "duplicate decision str: {}",
+            a.as_str()
+        );
     }
     assert_eq!(set.len(), 4);
 }
@@ -146,11 +150,7 @@ fn fresh_engine() -> (
     let audit = Arc::new(InMemoryReplayAuditSink::new());
     let idem = Arc::new(InMemoryReplayIdempotencyLedger::new());
     let archive = Arc::new(InMemoryReplayArchive::new());
-    let e = InMemoryReplayEngine::new(
-        Arc::clone(&audit),
-        Arc::clone(&idem),
-        Arc::clone(&archive),
-    );
+    let e = InMemoryReplayEngine::new(Arc::clone(&audit), Arc::clone(&idem), Arc::clone(&archive));
     (e, audit, idem, archive)
 }
 

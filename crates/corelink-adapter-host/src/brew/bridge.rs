@@ -72,11 +72,7 @@ impl BrewCasBridge {
 
 #[async_trait]
 impl CasStore for BrewCasBridge {
-    async fn get(
-        &self,
-        tenant_id: &str,
-        cas_key: &str,
-    ) -> Result<Option<Vec<u8>>, CasError> {
+    async fn get(&self, tenant_id: &str, cas_key: &str) -> Result<Option<Vec<u8>>, CasError> {
         let handler = Arc::clone(&self.read_handler);
         let req = CasReadRequest::new(
             tenant_id,
@@ -95,12 +91,7 @@ impl CasStore for BrewCasBridge {
         }
     }
 
-    async fn put(
-        &self,
-        tenant_id: &str,
-        cas_key: &str,
-        bytes: Vec<u8>,
-    ) -> Result<(), CasError> {
+    async fn put(&self, tenant_id: &str, cas_key: &str, bytes: Vec<u8>) -> Result<(), CasError> {
         let handler = Arc::clone(&self.write_handler);
         let req = CasWriteRequest::new(
             tenant_id,
@@ -113,7 +104,9 @@ impl CasStore for BrewCasBridge {
         let result = tokio::task::spawn_blocking(move || handler.write(req))
             .await
             .map_err(|e| CasError::Backend(format!("spawn_blocking join: {e}")))?;
-        result.map(|_| ()).map_err(|e| CasError::Backend(format!("handler: {e:?}")))
+        result
+            .map(|_| ())
+            .map_err(|e| CasError::Backend(format!("handler: {e:?}")))
     }
 }
 
@@ -145,10 +138,7 @@ impl BrewTenantBridge {
 
 #[async_trait]
 impl TenantResolver for BrewTenantBridge {
-    async fn resolve(
-        &self,
-        pat_plaintext: &str,
-    ) -> Result<String, TenantResolveError> {
+    async fn resolve(&self, pat_plaintext: &str) -> Result<String, TenantResolveError> {
         let validator = Arc::clone(&self.validator);
         let token = pat_plaintext.to_owned();
         let result = tokio::task::spawn_blocking(move || {
@@ -237,7 +227,9 @@ mod tests {
     #[tokio::test]
     async fn cas_put_wrong_hash_errors() {
         let bridge = make_cas_bridge(make_handler());
-        let err = bridge.put("brew-t1", &"e".repeat(64), b"bottle".to_vec()).await;
+        let err = bridge
+            .put("brew-t1", &"e".repeat(64), b"bottle".to_vec())
+            .await;
         assert!(err.is_err());
     }
 
@@ -257,7 +249,13 @@ mod tests {
     async fn tenant_bridge_valid_pat() {
         let mut v = StubPatValidator::new();
         let tid = Uuid::from_u128(100);
-        v.insert("brew-token", tid, Uuid::from_u128(200), Region::Wnam, [AuthScope::CacheRead]);
+        v.insert(
+            "brew-token",
+            tid,
+            Uuid::from_u128(200),
+            Region::Wnam,
+            [AuthScope::CacheRead],
+        );
         let bridge = BrewTenantBridge::new(Arc::new(v));
         let resolved = bridge.resolve("brew-token").await.unwrap();
         assert_eq!(resolved, tid.to_string());
@@ -274,6 +272,9 @@ mod tests {
     fn debug_impls() {
         let h = make_handler();
         let _ = format!("{:?}", make_cas_bridge(h));
-        let _ = format!("{:?}", BrewTenantBridge::new(Arc::new(StubPatValidator::new())));
+        let _ = format!(
+            "{:?}",
+            BrewTenantBridge::new(Arc::new(StubPatValidator::new()))
+        );
     }
 }

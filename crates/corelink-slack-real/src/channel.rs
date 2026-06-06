@@ -202,11 +202,16 @@ mod tests {
         let mut r = WebhookRegistry::new();
         r.insert(SlackChannel::AlertsSev1, "https://hooks.slack.com/a");
         assert!(r.has(SlackChannel::AlertsSev1));
-        assert_eq!(r.url(SlackChannel::AlertsSev1).unwrap(), "https://hooks.slack.com/a");
+        assert_eq!(
+            r.url(SlackChannel::AlertsSev1).unwrap(),
+            "https://hooks.slack.com/a"
+        );
         let err = r.url(SlackChannel::OncallHandoff).unwrap_err();
         assert!(matches!(
             err,
-            WebhookRegistryError::ChannelUnconfigured { channel: SlackChannel::OncallHandoff }
+            WebhookRegistryError::ChannelUnconfigured {
+                channel: SlackChannel::OncallHandoff
+            }
         ));
     }
 

@@ -30,16 +30,14 @@ pub const METRIC_BREACH_TIME_TO_NOTIFICATION_SECONDS: &str =
 /// Labels: `{severity, scenario}`
 /// SLO target: ≤ 4h = 14400 seconds.
 /// Histogram buckets recommended: [1800, 3600, 7200, 14400, 21600, 28800].
-pub const METRIC_BREACH_TIME_TO_DECISION_SECONDS: &str =
-    "corelink_breach_time_to_decision_seconds";
+pub const METRIC_BREACH_TIME_TO_DECISION_SECONDS: &str = "corelink_breach_time_to_decision_seconds";
 
 /// Prometheus counter: dry-run tabletop completions.
 ///
 /// Labels: `{outcome, scenario}`
 /// `outcome` ∈ {"passed", "passed_with_concerns"}
 /// `scenario` ∈ {"scenario-1-pii-leak-via-log", "scenario-2-r2-cross-tenant", "scenario-3-audit-chain"}
-pub const METRIC_BREACH_DRY_RUN_COMPLETION_TOTAL: &str =
-    "corelink_breach_dry_run_completion_total";
+pub const METRIC_BREACH_DRY_RUN_COMPLETION_TOTAL: &str = "corelink_breach_dry_run_completion_total";
 
 /// Prometheus counter: customer notification delivery outcomes.
 ///

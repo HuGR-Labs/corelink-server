@@ -123,10 +123,7 @@ pub trait CircuitMetricsObserver: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Backend transport failures.
-    fn record_recovery(
-        &self,
-        region: &str,
-    ) -> Result<(), CircuitMetricsObserverError>;
+    fn record_recovery(&self, region: &str) -> Result<(), CircuitMetricsObserverError>;
 
     /// Record a `global_circuit.single_signal_alarm_total{region,
     /// signal}` increment. SEV-3 alert source.
@@ -195,12 +192,7 @@ impl InMemoryCircuitMetrics {
 
     /// Counter for a (kind, label_a, label_b) tuple.
     #[must_use]
-    pub fn counter_for_labels(
-        &self,
-        kind: CircuitMetricKind,
-        label_a: &str,
-        label_b: &str,
-    ) -> u64 {
+    pub fn counter_for_labels(&self, kind: CircuitMetricKind, label_a: &str, label_b: &str) -> u64 {
         let g = match self.counters.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -217,9 +209,7 @@ impl InMemoryCircuitMetrics {
         label_b: String,
     ) -> Result<(), CircuitMetricsObserverError> {
         let mut g = self.counters.lock().map_err(|_| {
-            CircuitMetricsObserverError::Backend(
-                "metrics counter mutex poisoned".to_string(),
-            )
+            CircuitMetricsObserverError::Backend("metrics counter mutex poisoned".to_string())
         })?;
         *g.entry((kind, label_a, label_b)).or_insert(0) += 1;
         Ok(())
@@ -263,10 +253,7 @@ impl CircuitMetricsObserver for InMemoryCircuitMetrics {
         )
     }
 
-    fn record_recovery(
-        &self,
-        region: &str,
-    ) -> Result<(), CircuitMetricsObserverError> {
+    fn record_recovery(&self, region: &str) -> Result<(), CircuitMetricsObserverError> {
         self.bump(
             CircuitMetricKind::RecoveriesTotal,
             region.to_string(),
@@ -340,17 +327,10 @@ impl CircuitMetricsObserver for FailingCircuitMetrics {
     ) -> Result<(), CircuitMetricsObserverError> {
         Err(CircuitMetricsObserverError::Backend("induced".to_string()))
     }
-    fn record_trip(
-        &self,
-        _r: &str,
-        _x: &'static str,
-    ) -> Result<(), CircuitMetricsObserverError> {
+    fn record_trip(&self, _r: &str, _x: &'static str) -> Result<(), CircuitMetricsObserverError> {
         Err(CircuitMetricsObserverError::Backend("induced".to_string()))
     }
-    fn record_recovery(
-        &self,
-        _r: &str,
-    ) -> Result<(), CircuitMetricsObserverError> {
+    fn record_recovery(&self, _r: &str) -> Result<(), CircuitMetricsObserverError> {
         Err(CircuitMetricsObserverError::Backend("induced".to_string()))
     }
     fn record_single_signal_alarm(
@@ -407,11 +387,7 @@ mod tests {
         m.record_within_quota("tenant_quota", "iad").unwrap();
         m.record_within_quota("global_circuit_open", "iad").unwrap();
         assert_eq!(
-            m.counter_for_labels(
-                CircuitMetricKind::WithinQuotaTotal,
-                "tenant_quota",
-                "iad"
-            ),
+            m.counter_for_labels(CircuitMetricKind::WithinQuotaTotal, "tenant_quota", "iad"),
             2
         );
         assert_eq!(
@@ -422,10 +398,7 @@ mod tests {
             ),
             1
         );
-        assert_eq!(
-            m.counter_total(CircuitMetricKind::WithinQuotaTotal),
-            3
-        );
+        assert_eq!(m.counter_total(CircuitMetricKind::WithinQuotaTotal), 3);
     }
 
     #[test]
@@ -434,10 +407,7 @@ mod tests {
         m.record_over_quota("per_ip", "iad").unwrap();
         m.record_over_quota("per_pat", "iad").unwrap();
         m.record_over_quota("over_quota", "sam").unwrap();
-        assert_eq!(
-            m.counter_total(CircuitMetricKind::OverQuotaTotal),
-            3
-        );
+        assert_eq!(m.counter_total(CircuitMetricKind::OverQuotaTotal), 3);
     }
 
     #[test]
@@ -447,19 +417,11 @@ mod tests {
         m.record_trip("iad", "MultiSignalCombined").unwrap();
         m.record_trip("sam", "ManualOverride").unwrap();
         assert_eq!(
-            m.counter_for_labels(
-                CircuitMetricKind::TripsTotal,
-                "iad",
-                "MultiSignalCombined"
-            ),
+            m.counter_for_labels(CircuitMetricKind::TripsTotal, "iad", "MultiSignalCombined"),
             2
         );
         assert_eq!(
-            m.counter_for_labels(
-                CircuitMetricKind::TripsTotal,
-                "sam",
-                "ManualOverride"
-            ),
+            m.counter_for_labels(CircuitMetricKind::TripsTotal, "sam", "ManualOverride"),
             1
         );
     }
@@ -469,10 +431,7 @@ mod tests {
         let m = InMemoryCircuitMetrics::new();
         m.record_recovery("iad").unwrap();
         m.record_recovery("iad").unwrap();
-        assert_eq!(
-            m.counter_total(CircuitMetricKind::RecoveriesTotal),
-            2
-        );
+        assert_eq!(m.counter_total(CircuitMetricKind::RecoveriesTotal), 2);
     }
 
     #[test]
@@ -491,10 +450,7 @@ mod tests {
         let m = InMemoryCircuitMetrics::new();
         m.record_manual_override("iad", "open").unwrap();
         m.record_manual_override("iad", "closed").unwrap();
-        assert_eq!(
-            m.counter_total(CircuitMetricKind::ManualOverrideTotal),
-            2
-        );
+        assert_eq!(m.counter_total(CircuitMetricKind::ManualOverrideTotal), 2);
     }
 
     #[test]

@@ -254,8 +254,7 @@ where
         async move {
             let mut outcome = TtlWorkerTickOutcome::new(self.region);
             // Step 1 — enumerate tenants with expired rows.
-            let tenants: Vec<Uuid> =
-                self.meta.tenants_with_expired(self.region, now_ms).await?;
+            let tenants: Vec<Uuid> = self.meta.tenants_with_expired(self.region, now_ms).await?;
             outcome.tenants_swept = tenants.len();
 
             // Step 2 — drain each tenant's queue. Round-robin across
@@ -269,9 +268,7 @@ where
                         outcome.hit_row_ceiling = true;
                         break 'tick;
                     }
-                    let remaining = self
-                        .row_ceiling
-                        .saturating_sub(outcome.aggregate.total());
+                    let remaining = self.row_ceiling.saturating_sub(outcome.aggregate.total());
                     let limit = self.batch_size.min(remaining);
                     if limit == 0 {
                         outcome.hit_row_ceiling = true;
@@ -314,11 +311,11 @@ fn aggregate_into(target: &mut EvictBatchOutcome, src: &EvictBatchOutcome) {
     reason = "test code: panics surface as test failures by design; helper signature mirrors the AcUpsertRequest field set"
 )]
 mod tests {
-    use super::*;
     use super::super::super::audit::{AcEventType, InMemoryAuditSink};
     use super::super::super::handler::InMemoryAcEnvelopeStore;
     use super::super::super::meta::{AcKey, AcUpsertRequest, InMemoryAcMetaStore};
     use super::super::super::types::{ActionDigest, ActionResult, ResultHash};
+    use super::*;
     use crate::cache::kv::InMemoryKv;
     use corelink_hash::Digest;
     use corelink_tenant_path::derive_prefix;
@@ -350,8 +347,12 @@ mod tests {
         let action_hash = Digest::compute(action_seed);
         let key = AcKey::new(tenant_id, action_hash);
         let prefix = derive_prefix(tdk, tenant_id);
-        let result_hash =
-            ResultHash::compute(&ActionResult::new(Vec::new(), Vec::new(), 0, result_seed.to_vec()));
+        let result_hash = ResultHash::compute(&ActionResult::new(
+            Vec::new(),
+            Vec::new(),
+            0,
+            result_seed.to_vec(),
+        ));
         let req = AcUpsertRequest {
             key,
             action_digest: ActionDigest::new(action_hash, action_seed.len() as i64),
@@ -494,7 +495,7 @@ mod tests {
         }
         let outcome = worker.tick(5_000_000, "tick-1").await.unwrap();
         assert_eq!(outcome.aggregate.evicted, 2); // wnam only
-        // weur rows preserved (different region; this worker is wnam).
+                                                  // weur rows preserved (different region; this worker is wnam).
         for i in 0_u64..5 {
             let key = AcKey::new(fixed_tenant_a(), Digest::compute(&[b'w', i as u8]));
             assert!(meta.get(&key).await.unwrap().is_some());
@@ -538,16 +539,7 @@ mod tests {
         let audit = Arc::new(InMemoryAuditSink::new());
         let neg = Arc::new(AcNegCache::new(Region::Wnam, InMemoryKv::new()).unwrap());
         let tdk = fixed_tdk();
-        let r = InMemoryTtlWorker::new(
-            Region::Wnam,
-            meta,
-            envelope,
-            audit,
-            neg,
-            tdk,
-            1000,
-            0,
-        );
+        let r = InMemoryTtlWorker::new(Region::Wnam, meta, envelope, audit, neg, tdk, 1000, 0);
         assert!(r.is_err());
     }
 

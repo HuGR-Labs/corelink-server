@@ -198,9 +198,7 @@ pub mod error;
 pub mod event;
 pub mod idempotency;
 
-pub use archive::{
-    FailingReplayArchive, InMemoryReplayArchive, ReplayArchive,
-};
+pub use archive::{FailingReplayArchive, InMemoryReplayArchive, ReplayArchive};
 pub use audit::{
     audit_event_for_decision, canonical_replay_audit_event_strings, FailingReplayAuditSink,
     InMemoryReplayAuditSink, ReplayAuditEmitError, ReplayAuditEventType, ReplayAuditRecord,
@@ -211,8 +209,8 @@ pub use engine::{
 };
 pub use error::{ReplayAuditSinkError, ReplayError, ReplayIdempotencyError};
 pub use event::{
-    canonical_replay_reasons, drift_summary_from_reconcile, LayerDriftSummary,
-    ReconstructedLayers, ReplayConfig, ReplayDecision, ReplayOutcome, ReplayReason, ReplayRequest,
+    canonical_replay_reasons, drift_summary_from_reconcile, LayerDriftSummary, ReconstructedLayers,
+    ReplayConfig, ReplayDecision, ReplayOutcome, ReplayReason, ReplayRequest,
     BILLING_FORENSICS_ADMIN_ROLE,
 };
 pub use idempotency::{

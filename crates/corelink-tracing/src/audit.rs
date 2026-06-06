@@ -52,12 +52,8 @@ impl TracingAuditEventType {
         match self {
             Self::SpanStarted => "corelink.tracing.span_started",
             Self::SpanEnded => "corelink.tracing.span_ended",
-            Self::SamplerDecision => {
-                "corelink.tracing.sampler_decision"
-            }
-            Self::ExporterFailure => {
-                "corelink.tracing.exporter_failure"
-            }
+            Self::SamplerDecision => "corelink.tracing.sampler_decision",
+            Self::ExporterFailure => "corelink.tracing.exporter_failure",
         }
     }
 
@@ -77,8 +73,7 @@ impl core::fmt::Display for TracingAuditEventType {
 /// Canonical event-string list for cross-component regression tests +
 /// dashboard widget configuration.
 #[must_use]
-pub const fn canonical_audit_event_strings(
-) -> &'static [&'static str; 4] {
+pub const fn canonical_audit_event_strings() -> &'static [&'static str; 4] {
     &[
         "corelink.tracing.span_started",
         "corelink.tracing.span_ended",
@@ -126,10 +121,7 @@ pub trait TracingAuditSink: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`TracingAuditEmitError::Store`] on any backend failure.
-    fn emit(
-        &self,
-        record: TracingAuditRecord,
-    ) -> Result<(), TracingAuditEmitError>;
+    fn emit(&self, record: TracingAuditRecord) -> Result<(), TracingAuditEmitError>;
 }
 
 /// In-memory test audit sink. Cloning shares the underlying buffer.
@@ -171,10 +163,7 @@ impl InMemoryTracingAuditSink {
 
     /// Filter snapshot down to records of a single event type.
     #[must_use]
-    pub fn snapshot_of(
-        &self,
-        event_type: TracingAuditEventType,
-    ) -> Vec<TracingAuditRecord> {
+    pub fn snapshot_of(&self, event_type: TracingAuditEventType) -> Vec<TracingAuditRecord> {
         self.snapshot()
             .into_iter()
             .filter(|r| r.event_type == event_type)
@@ -183,15 +172,11 @@ impl InMemoryTracingAuditSink {
 }
 
 impl TracingAuditSink for InMemoryTracingAuditSink {
-    fn emit(
-        &self,
-        record: TracingAuditRecord,
-    ) -> Result<(), TracingAuditEmitError> {
-        let mut guard = self.inner.lock().map_err(|_| {
-            TracingAuditEmitError::Store(
-                "audit sink mutex poisoned".to_string(),
-            )
-        })?;
+    fn emit(&self, record: TracingAuditRecord) -> Result<(), TracingAuditEmitError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| TracingAuditEmitError::Store("audit sink mutex poisoned".to_string()))?;
         guard.push(record);
         Ok(())
     }
@@ -211,13 +196,9 @@ impl FailingTracingAuditSink {
 }
 
 impl TracingAuditSink for FailingTracingAuditSink {
-    fn emit(
-        &self,
-        _record: TracingAuditRecord,
-    ) -> Result<(), TracingAuditEmitError> {
+    fn emit(&self, _record: TracingAuditRecord) -> Result<(), TracingAuditEmitError> {
         Err(TracingAuditEmitError::Store(
-            "induced tracing audit sink failure (test fixture)"
-                .to_string(),
+            "induced tracing audit sink failure (test fixture)".to_string(),
         ))
     }
 }
@@ -287,10 +268,7 @@ mod tests {
             sink.snapshot_of(TracingAuditEventType::SpanStarted).len(),
             1
         );
-        assert_eq!(
-            sink.snapshot_of(TracingAuditEventType::SpanEnded).len(),
-            1
-        );
+        assert_eq!(sink.snapshot_of(TracingAuditEventType::SpanEnded).len(), 1);
     }
 
     #[test]

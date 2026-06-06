@@ -50,7 +50,10 @@ pub(super) fn make_ctx(tenant: Uuid, region: Region, scopes: PatScopes) -> AuthC
     )
 }
 
-#[allow(dead_code, reason = "session + assembler handles kept on Arc for handler-shared lifecycle even when individual tests do not borrow them directly")]
+#[allow(
+    dead_code,
+    reason = "session + assembler handles kept on Arc for handler-shared lifecycle even when individual tests do not borrow them directly"
+)]
 pub(super) struct Wiring {
     pub(super) handler: SplitSpliceHandlerImpl<
         InMemorySessionStore,

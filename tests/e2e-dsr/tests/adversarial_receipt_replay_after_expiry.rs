@@ -49,10 +49,7 @@ fn receipt_replay_after_90d_rejected() {
     }
 
     // At submitted + 90d + 1ms: verify rejects with Expired.
-    let past_window = env
-        .now_ms
-        .saturating_add(90 * 86_400_000)
-        .saturating_add(1);
+    let past_window = env.now_ms.saturating_add(90 * 86_400_000).saturating_add(1);
     let err = match env.dsr_receipt_issuer.verify(&receipt, past_window) {
         Ok(_) => panic!("expired receipt must NOT verify"),
         Err(e) => e,

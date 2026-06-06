@@ -112,8 +112,9 @@ impl PyCorelinkClient {
         // BLAKE3 of empty bytes and only succeed if the requested digest
         // matches (i.e. the caller is asking for the empty-blob digest).
         let body: &[u8] = b"";
-        let expected = Digest::from_hex(&digest)
-            .map_err(|e| -> pyo3::PyErr { PyValueError::new_err(format!("invalid digest: {e}")) })?;
+        let expected = Digest::from_hex(&digest).map_err(|e| -> pyo3::PyErr {
+            PyValueError::new_err(format!("invalid digest: {e}"))
+        })?;
 
         if self.client_verify_enabled {
             self.verifier
@@ -152,8 +153,9 @@ impl PyCorelinkClient {
     /// Returns a `StatResult` Python object. Raises `RuntimeError` if the
     /// digest is not found.
     pub fn stat(&self, digest: String) -> PyResult<StatResult> {
-        let _ = Digest::from_hex(&digest)
-            .map_err(|e| -> pyo3::PyErr { PyValueError::new_err(format!("invalid digest: {e}")) })?;
+        let _ = Digest::from_hex(&digest).map_err(|e| -> pyo3::PyErr {
+            PyValueError::new_err(format!("invalid digest: {e}"))
+        })?;
         // stub: return placeholder stat
         Ok(StatResult {
             digest,
@@ -211,12 +213,8 @@ mod tests {
     #[test]
     fn default_on_client_verify_enabled() {
         pyo3::prepare_freethreaded_python();
-        let client = PyCorelinkClient::new(
-            "test-pat".to_string(),
-            "acme-corp".to_string(),
-            true,
-        )
-        .expect("constructor");
+        let client = PyCorelinkClient::new("test-pat".to_string(), "acme-corp".to_string(), true)
+            .expect("constructor");
         assert!(
             client._inner_client_verify_enabled(),
             "client_verify must be True by default"
@@ -231,12 +229,8 @@ mod tests {
     fn explicit_disable_sets_flag_false() {
         pyo3::prepare_freethreaded_python();
         let before = corelink_client_verify::opt_out_total();
-        let client = PyCorelinkClient::new(
-            "test-pat".to_string(),
-            "acme-corp".to_string(),
-            false,
-        )
-        .expect("constructor");
+        let client = PyCorelinkClient::new("test-pat".to_string(), "acme-corp".to_string(), false)
+            .expect("constructor");
         let after = corelink_client_verify::opt_out_total();
         assert!(!client._inner_client_verify_enabled());
         assert!(!client.verifier.config().enabled());
@@ -246,12 +240,8 @@ mod tests {
     #[test]
     fn put_returns_blake3_hex() {
         pyo3::prepare_freethreaded_python();
-        let client = PyCorelinkClient::new(
-            "pat".to_string(),
-            "t1".to_string(),
-            true,
-        )
-        .expect("ctor");
+        let client =
+            PyCorelinkClient::new("pat".to_string(), "t1".to_string(), true).expect("ctor");
         let digest = client.put(b"hello").expect("put");
         // BLAKE3 of "hello" (well-known value)
         assert_eq!(digest.len(), 64, "hex digest must be 64 chars");
@@ -310,12 +300,8 @@ mod tests {
         // This test documents the intent as a regression guard.
         let secret = "super-secret-pat-value";
         pyo3::prepare_freethreaded_python();
-        let client = PyCorelinkClient::new(
-            secret.to_string(),
-            "tenant".to_string(),
-            true,
-        )
-        .expect("ctor");
+        let client =
+            PyCorelinkClient::new(secret.to_string(), "tenant".to_string(), true).expect("ctor");
         // The PAT IS currently in Debug — this is tracked as a
         // post-WI-S15-004 hardening item (custom Debug impl that redacts
         // `pat` to `<redacted>`). The test below documents current

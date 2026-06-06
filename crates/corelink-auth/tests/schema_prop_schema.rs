@@ -297,13 +297,15 @@ fn tenant_seed_strategy() -> impl Strategy<Value = TenantSeed> {
         proptest::collection::vec(any::<u8>(), 16..=64),
         any::<u128>().prop_map(Uuid::from_u128),
     )
-        .prop_map(|(tenant_id, slug, pat_token_id, pat_token_hash, pat_id)| TenantSeed {
-            tenant_id,
-            slug,
-            pat_token_id,
-            pat_token_hash,
-            pat_id,
-        })
+        .prop_map(
+            |(tenant_id, slug, pat_token_id, pat_token_hash, pat_id)| TenantSeed {
+                tenant_id,
+                slug,
+                pat_token_id,
+                pat_token_hash,
+                pat_id,
+            },
+        )
 }
 
 proptest! {

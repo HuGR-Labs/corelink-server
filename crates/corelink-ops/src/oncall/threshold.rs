@@ -67,9 +67,7 @@ impl FatigueThreshold {
     pub const fn is_hard(self) -> bool {
         matches!(
             self,
-            Self::HardSev1PerShift
-                | Self::HardSev2PerShift
-                | Self::HardPagesPerMonthNonRotation
+            Self::HardSev1PerShift | Self::HardSev2PerShift | Self::HardPagesPerMonthNonRotation
         )
     }
 }
@@ -154,8 +152,8 @@ pub fn decide_handoff(
     sev2_per_shift: u64,
     pages_per_month_non_rotation: u64,
 ) -> HandoffDecision {
-    let hard_pages =
-        pages_per_month_non_rotation > FatigueThreshold::HardPagesPerMonthNonRotation.trigger_count();
+    let hard_pages = pages_per_month_non_rotation
+        > FatigueThreshold::HardPagesPerMonthNonRotation.trigger_count();
     if hard_pages {
         return HandoffDecision::MandatoryRotationBlock;
     }

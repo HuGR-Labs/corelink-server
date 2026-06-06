@@ -185,7 +185,11 @@ fn migration_filenames_match_canonical_pattern() {
     let dir = locate_migrations_dir();
     let files = list_migration_files(&dir).expect("list");
     for f in &files {
-        let name = f.file_name().expect("filename").to_string_lossy().to_string();
+        let name = f
+            .file_name()
+            .expect("filename")
+            .to_string_lossy()
+            .to_string();
         // NNNN_lowercase_underscore.sql
         let prefix: String = name.chars().take(4).collect();
         assert!(

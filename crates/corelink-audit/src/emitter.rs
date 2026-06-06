@@ -117,9 +117,7 @@ impl InMemoryEmitter {
     /// that want to simulate the outbox-drain layer (e.g. clearing
     /// drained rows).
     fn lock(&self) -> Result<MutexGuard<'_, Vec<AuthEvent>>, EmitterError> {
-        self.events
-            .lock()
-            .map_err(|_| EmitterError::MutexPoisoned)
+        self.events.lock().map_err(|_| EmitterError::MutexPoisoned)
     }
 }
 

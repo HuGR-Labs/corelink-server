@@ -60,9 +60,7 @@ pub enum MultipartError {
     /// number, or an ETag that doesn't match what the
     /// adapter computed/returned for that part. Maps to 422 +
     /// `COR_MULTIPART_PART_MISSING`.
-    #[error(
-        "part {part_number} missing or ETag mismatch (expected `{expected}`, got `{actual}`)"
-    )]
+    #[error("part {part_number} missing or ETag mismatch (expected `{expected}`, got `{actual}`)")]
     PartMissing {
         /// Offending part.
         part_number: u32,

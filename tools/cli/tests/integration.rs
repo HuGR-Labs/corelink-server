@@ -16,9 +16,7 @@
 
 use corelink_cli::{
     auth::validate_pat_shape,
-    config::{
-        load_from_path, save_to_path, CorelinkConfig, DEFAULT_ENDPOINT,
-    },
+    config::{load_from_path, save_to_path, CorelinkConfig, DEFAULT_ENDPOINT},
     error::CliError,
 };
 use tempfile::NamedTempFile;
@@ -52,14 +50,20 @@ fn pat_env_ro_valid() {
 #[test]
 fn pat_bad_prefix_rejected() {
     let pat = make_valid_pat("pat").replace("corelink_", "notcorelink_");
-    assert!(matches!(validate_pat_shape(&pat), Err(CliError::PatMalformed)));
+    assert!(matches!(
+        validate_pat_shape(&pat),
+        Err(CliError::PatMalformed)
+    ));
 }
 
 #[test]
 fn pat_bad_env_rejected() {
     // "dev" is not in the allowlist
     let pat = make_valid_pat("dev");
-    assert!(matches!(validate_pat_shape(&pat), Err(CliError::PatMalformed)));
+    assert!(matches!(
+        validate_pat_shape(&pat),
+        Err(CliError::PatMalformed)
+    ));
 }
 
 #[test]
@@ -68,12 +72,18 @@ fn pat_short_secret_rejected() {
     let short_secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"; // 42 chars (1 short)
     let sig = "AAAAAAAAAAAAAAAAAAAAAA";
     let pat = format!("corelink_pat_{token_id}.{short_secret}.{sig}");
-    assert!(matches!(validate_pat_shape(&pat), Err(CliError::PatMalformed)));
+    assert!(matches!(
+        validate_pat_shape(&pat),
+        Err(CliError::PatMalformed)
+    ));
 }
 
 #[test]
 fn pat_empty_rejected() {
-    assert!(matches!(validate_pat_shape(""), Err(CliError::PatMalformed)));
+    assert!(matches!(
+        validate_pat_shape(""),
+        Err(CliError::PatMalformed)
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -99,7 +109,10 @@ fn config_roundtrip_with_token_and_tenant() {
     let loaded = load_from_path(path).expect("load");
 
     assert_eq!(loaded.auth.pat, Some(make_valid_pat("pat")));
-    assert_eq!(loaded.defaults.tenant_id, Some("tenant_test_001".to_owned()));
+    assert_eq!(
+        loaded.defaults.tenant_id,
+        Some("tenant_test_001".to_owned())
+    );
     assert_eq!(
         loaded.defaults.endpoint,
         Some("https://corelink-api.humangr.com".to_owned())
@@ -125,7 +138,11 @@ fn config_redacted_pat_hides_secret() {
     // Must not contain the full secret portion.
     assert!(r.contains("***"), "redaction marker must appear: {r}");
     // Must not contain the full 95/96-char PAT.
-    assert!(r.len() < 40, "redacted PAT should be short: len={}", r.len());
+    assert!(
+        r.len() < 40,
+        "redacted PAT should be short: len={}",
+        r.len()
+    );
 }
 
 #[test]

@@ -5,7 +5,7 @@
     clippy::panic,
     clippy::indexing_slicing,
     clippy::format_in_format_args,
-    clippy::uninlined_format_args,
+    clippy::uninlined_format_args
 )]
 //!
 //! Validates INV-SUPPLY-SIGNED-DEPLOY enforcement under adversarial conditions
@@ -41,10 +41,16 @@ fn make_webhook(tag: &str) -> CfDeployWebhook {
         tag,
         "feedcafe".repeat(5),
         format!("refs/tags/{tag}"),
-        DeployTarget::new("corelink-worker", "c".repeat(32), "api.corelink.humangr.com/*"),
+        DeployTarget::new(
+            "corelink-worker",
+            "c".repeat(32),
+            "api.corelink.humangr.com/*",
+        ),
         GitHubActor::new(
             "github-actions[bot]",
-            format!("humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{tag}"),
+            format!(
+                "humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{tag}"
+            ),
         ),
     )
 }
@@ -75,7 +81,10 @@ fn chaos_deploy_unsigned_artifact_blocked_verified() {
     );
 
     // SEV-2 alert fires
-    assert!(result.unwrap_err().is_sev2(), "chaos: SEV-2 must fire for unsigned deploy");
+    assert!(
+        result.unwrap_err().is_sev2(),
+        "chaos: SEV-2 must fire for unsigned deploy"
+    );
 
     // Audit event emitted
     assert!(!sink.is_empty(), "chaos: audit event must be emitted");
@@ -109,7 +118,10 @@ fn chaos_deploy_with_rekor_missing_blocked_verified() {
 
     // Image should be mentioned in error
     if let Err(DeployVerifyError::RekorMissing { image }) = &result {
-        assert!(image.contains("corelink-worker"), "error must reference the image");
+        assert!(
+            image.contains("corelink-worker"),
+            "error must reference the image"
+        );
     }
 
     assert_eq!(sink.events()[0].outcome, VerifyOutcome::RekorMissing);
@@ -122,13 +134,28 @@ fn chaos_deploy_with_rekor_missing_blocked_verified() {
 #[test]
 fn chaos_identity_confusion_100_variants_all_blocked() {
     let attacker_orgs = [
-        "attacker", "evil-corp", "supply-chain-attack", "fake-hugr", "not-humangr",
-        "humangr-fake", "humangr_labs", "humangr-lab", "humangrlabs", "xn--humangr-labs",
+        "attacker",
+        "evil-corp",
+        "supply-chain-attack",
+        "fake-hugr",
+        "not-humangr",
+        "humangr-fake",
+        "humangr_labs",
+        "humangr-lab",
+        "humangrlabs",
+        "xn--humangr-labs",
     ];
     let attacker_repos = [
-        "corelink-server", "corelink", "server", "corelink-server-fork",
-        "CORELINK-SERVER", "corelink.server", "corelink_server",
-        "corelink-server-evil", "corelonk-server", "corelinks-server",
+        "corelink-server",
+        "corelink",
+        "server",
+        "corelink-server-fork",
+        "CORELINK-SERVER",
+        "corelink.server",
+        "corelink_server",
+        "corelink-server-evil",
+        "corelonk-server",
+        "corelinks-server",
     ];
 
     let mut blocked_count = 0u32;
@@ -140,8 +167,10 @@ fn chaos_identity_confusion_100_variants_all_blocked() {
             );
 
             let sink = Arc::new(InMemoryDeployAuditSink::new());
-            let verifier =
-                InMemoryDeployVerifier::new_identity_mismatch_from(Arc::clone(&sink), &attacker_san);
+            let verifier = InMemoryDeployVerifier::new_identity_mismatch_from(
+                Arc::clone(&sink),
+                &attacker_san,
+            );
 
             let result = verifier.verify_and_propagate(
                 &make_webhook("v0.1.0"),
@@ -207,7 +236,9 @@ fn chaos_audit_emit_failure_100_iterations_zero_false_deploys() {
     let mut blocked = 0u32;
 
     for i in 0u32..100 {
-        let failing_sink = Arc::new(FailingDeployAuditSink::new(format!("simulated-503-iter-{i}")));
+        let failing_sink = Arc::new(FailingDeployAuditSink::new(format!(
+            "simulated-503-iter-{i}"
+        )));
         let verifier = InMemoryDeployVerifier::with_mode(
             VerificationMode::Signed {
                 rekor_log_index: i as u64,
@@ -242,7 +273,10 @@ fn chaos_rate_limit_returns_429() {
 
     let (status, body) = error_to_http_response(&DeployVerifyError::RateLimitExceeded);
     assert_eq!(status, 429, "rate limit must return HTTP 429");
-    assert!(body.contains("rate_limit_exceeded"), "body must describe the limit");
+    assert!(
+        body.contains("rate_limit_exceeded"),
+        "body must describe the limit"
+    );
 }
 
 // ── Chaos 7: Webhook HMAC auth ────────────────────────────────────────────
@@ -286,7 +320,10 @@ fn chaos_oci_fetch_failure_blocks_deploy() {
     assert_eq!(oci_error.http_status(), 503);
     assert_eq!(oci_error.blocked_reason_label(), "oci_fetch_failed");
     assert!(!oci_error.is_sev1());
-    assert!(!oci_error.is_sev2(), "OCI fetch failure is operational, not SEV-2 security");
+    assert!(
+        !oci_error.is_sev2(),
+        "OCI fetch failure is operational, not SEV-2 security"
+    );
 }
 
 // ── Chaos 9: Manual wrangler deploy bypass (IAM) ─────────────────────────

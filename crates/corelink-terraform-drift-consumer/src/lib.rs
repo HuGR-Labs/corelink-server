@@ -61,15 +61,12 @@ pub mod event;
 pub mod metrics;
 pub mod store;
 
-pub use audit::{
-    DriftAuditEventType, DriftAuditRecord, DriftAuditSink, InMemoryDriftAuditSink,
-};
+pub use audit::{DriftAuditEventType, DriftAuditRecord, DriftAuditSink, InMemoryDriftAuditSink};
 pub use classifier::{DefaultDriftClassifier, DriftClassifier};
 pub use consumer::DriftConsumer;
 pub use error::DriftConsumerError;
 pub use event::{
-    DriftFinding, DriftPlanEvent, DriftSeverity, DriftStatus, RemediationDecision,
-    REGIONS,
+    DriftFinding, DriftPlanEvent, DriftSeverity, DriftStatus, RemediationDecision, REGIONS,
 };
 pub use metrics::{DriftMetricOutcome, DriftMetrics};
 pub use store::{DriftFindingStore, InMemoryDriftFindingStore};

@@ -182,9 +182,7 @@ pub enum LruUpdateOutcome {
 
 /// Trait surfaced by every `blob_meta` soft-delete backend
 /// (production D1 row UPDATE / in-memory fake).
-pub trait BlobMetaSoftDeleteStore:
-    Send + Sync + core::fmt::Debug
-{
+pub trait BlobMetaSoftDeleteStore: Send + Sync + core::fmt::Debug {
     /// Lookup the current `blob_meta` row. Returns `Ok(None)` when
     /// the row does not exist or belongs to a different tenant
     /// (Layer 4 envelope).
@@ -295,15 +293,9 @@ impl InMemoryBlobMetaSoftDeleteStore {
     /// # Errors
     ///
     /// Returns [`BlobMetaError::Backend`] on mutex poisoning.
-    pub fn push_row(
-        &self,
-        tenant_id: Uuid,
-        row: BlobLruRow,
-    ) -> Result<(), BlobMetaError> {
+    pub fn push_row(&self, tenant_id: Uuid, row: BlobLruRow) -> Result<(), BlobMetaError> {
         let mut g = self.inner.lock().map_err(|_| {
-            BlobMetaError::Backend(
-                "blob_meta soft-delete store mutex poisoned".to_string(),
-            )
+            BlobMetaError::Backend("blob_meta soft-delete store mutex poisoned".to_string())
         })?;
         g.insert((tenant_id, row.digest.clone()), row);
         Ok(())
@@ -311,11 +303,7 @@ impl InMemoryBlobMetaSoftDeleteStore {
 
     /// Snapshot a row.
     #[must_use]
-    pub fn snapshot(
-        &self,
-        tenant_id: Uuid,
-        digest: &EvictionBlobDigest,
-    ) -> Option<BlobLruRow> {
+    pub fn snapshot(&self, tenant_id: Uuid, digest: &EvictionBlobDigest) -> Option<BlobLruRow> {
         let g = match self.inner.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -340,9 +328,7 @@ impl BlobMetaSoftDeleteStore for InMemoryBlobMetaSoftDeleteStore {
         digest: &EvictionBlobDigest,
     ) -> Result<Option<BlobLruRow>, BlobMetaError> {
         let g = self.inner.lock().map_err(|_| {
-            BlobMetaError::Backend(
-                "blob_meta soft-delete store mutex poisoned".to_string(),
-            )
+            BlobMetaError::Backend("blob_meta soft-delete store mutex poisoned".to_string())
         })?;
         Ok(g.get(&(tenant_id, digest.clone())).cloned())
     }
@@ -354,9 +340,7 @@ impl BlobMetaSoftDeleteStore for InMemoryBlobMetaSoftDeleteStore {
         now_ms: u64,
     ) -> Result<SoftDeleteOutcome, BlobMetaError> {
         let mut g = self.inner.lock().map_err(|_| {
-            BlobMetaError::Backend(
-                "blob_meta soft-delete store mutex poisoned".to_string(),
-            )
+            BlobMetaError::Backend("blob_meta soft-delete store mutex poisoned".to_string())
         })?;
         let Some(row) = g.get_mut(&(tenant_id, digest.clone())) else {
             return Ok(SoftDeleteOutcome::AlreadyResolved);
@@ -376,9 +360,7 @@ impl BlobMetaSoftDeleteStore for InMemoryBlobMetaSoftDeleteStore {
         limit: usize,
     ) -> Result<Vec<BlobLruRow>, BlobMetaError> {
         let g = self.inner.lock().map_err(|_| {
-            BlobMetaError::Backend(
-                "blob_meta soft-delete store mutex poisoned".to_string(),
-            )
+            BlobMetaError::Backend("blob_meta soft-delete store mutex poisoned".to_string())
         })?;
         let mut candidates: Vec<BlobLruRow> = g
             .iter()
@@ -401,9 +383,7 @@ impl BlobMetaSoftDeleteStore for InMemoryBlobMetaSoftDeleteStore {
         new_ms: u64,
     ) -> Result<LruUpdateOutcome, BlobMetaError> {
         let mut g = self.inner.lock().map_err(|_| {
-            BlobMetaError::Backend(
-                "blob_meta soft-delete store mutex poisoned".to_string(),
-            )
+            BlobMetaError::Backend("blob_meta soft-delete store mutex poisoned".to_string())
         })?;
         let Some(row) = g.get_mut(&(tenant_id, digest.clone())) else {
             return Ok(LruUpdateOutcome::AlreadyResolved);
@@ -521,26 +501,20 @@ mod tests {
         let s = InMemoryBlobMetaSoftDeleteStore::new();
         let r = row(1, 100, 4096);
         s.push_row(ten_a(), r.clone()).unwrap();
-        let out = s
-            .soft_delete_for_eviction(ten_a(), &r.digest, 200)
-            .unwrap();
+        let out = s.soft_delete_for_eviction(ten_a(), &r.digest, 200).unwrap();
         assert!(matches!(
             out,
             SoftDeleteOutcome::Deleted { size_bytes: 4096 }
         ));
         // Idempotent re-run.
-        let out2 = s
-            .soft_delete_for_eviction(ten_a(), &r.digest, 300)
-            .unwrap();
+        let out2 = s.soft_delete_for_eviction(ten_a(), &r.digest, 300).unwrap();
         assert!(matches!(out2, SoftDeleteOutcome::AlreadyResolved));
     }
 
     #[test]
     fn soft_delete_absent_row_returns_already_resolved() {
         let s = InMemoryBlobMetaSoftDeleteStore::new();
-        let out = s
-            .soft_delete_for_eviction(ten_a(), &dig(99), 200)
-            .unwrap();
+        let out = s.soft_delete_for_eviction(ten_a(), &dig(99), 200).unwrap();
         assert!(matches!(out, SoftDeleteOutcome::AlreadyResolved));
     }
 
@@ -608,9 +582,7 @@ mod tests {
     fn update_last_accessed_at_ms_advances_when_strictly_greater() {
         let s = InMemoryBlobMetaSoftDeleteStore::new();
         s.push_row(ten_a(), row(1, 100, 1)).unwrap();
-        let out = s
-            .update_last_accessed_at_ms(ten_a(), &dig(1), 200)
-            .unwrap();
+        let out = s.update_last_accessed_at_ms(ten_a(), &dig(1), 200).unwrap();
         assert!(matches!(
             out,
             LruUpdateOutcome::Updated {
@@ -626,9 +598,7 @@ mod tests {
     fn update_last_accessed_at_ms_skipped_when_equal() {
         let s = InMemoryBlobMetaSoftDeleteStore::new();
         s.push_row(ten_a(), row(1, 100, 1)).unwrap();
-        let out = s
-            .update_last_accessed_at_ms(ten_a(), &dig(1), 100)
-            .unwrap();
+        let out = s.update_last_accessed_at_ms(ten_a(), &dig(1), 100).unwrap();
         assert!(matches!(
             out,
             LruUpdateOutcome::Skipped { existing_ms: 100 }
@@ -641,9 +611,7 @@ mod tests {
     fn update_last_accessed_at_ms_skipped_when_less() {
         let s = InMemoryBlobMetaSoftDeleteStore::new();
         s.push_row(ten_a(), row(1, 100, 1)).unwrap();
-        let out = s
-            .update_last_accessed_at_ms(ten_a(), &dig(1), 50)
-            .unwrap();
+        let out = s.update_last_accessed_at_ms(ten_a(), &dig(1), 50).unwrap();
         assert!(matches!(
             out,
             LruUpdateOutcome::Skipped { existing_ms: 100 }
@@ -664,9 +632,7 @@ mod tests {
         let s = InMemoryBlobMetaSoftDeleteStore::new();
         s.push_row(ten_a(), row(1, 100, 1)).unwrap();
         s.soft_delete_for_eviction(ten_a(), &dig(1), 150).unwrap();
-        let out = s
-            .update_last_accessed_at_ms(ten_a(), &dig(1), 200)
-            .unwrap();
+        let out = s.update_last_accessed_at_ms(ten_a(), &dig(1), 200).unwrap();
         assert!(matches!(out, LruUpdateOutcome::AlreadyResolved));
     }
 

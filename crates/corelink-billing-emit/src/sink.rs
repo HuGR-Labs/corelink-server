@@ -94,14 +94,8 @@ pub trait R2UsageSink: Send + Sync + core::fmt::Debug {
 /// Canonical R2 object key per WI-S10-001 §1
 /// (`usage/{tenant_id}/{billing_period}/{seq:08}.usage.ndjson`).
 #[must_use]
-pub fn canonical_r2_key(
-    tenant_id: Uuid,
-    billing_period: &str,
-    sequence_number: u64,
-) -> String {
-    format!(
-        "usage/{tenant_id}/{billing_period}/{sequence_number:08}.usage.ndjson"
-    )
+pub fn canonical_r2_key(tenant_id: Uuid, billing_period: &str, sequence_number: u64) -> String {
+    format!("usage/{tenant_id}/{billing_period}/{sequence_number:08}.usage.ndjson")
 }
 
 /// In-memory append-only orchestrator. Per-(tenant, billing_period)
@@ -209,9 +203,10 @@ impl InMemoryR2UsageSink {
     ///   INV-BILLING-APPEND-ONLY; production wiring at CF R2
     ///   PutObject reproduces this via Object Lock Governance Mode).
     pub fn append(&self, event: &UsageEvent) -> Result<PersistedUsageLine, R2UsageSinkError> {
-        let mut g = self.state.lock().map_err(|_| {
-            R2UsageSinkError::Backend("usage sink mutex poisoned".to_string())
-        })?;
+        let mut g = self
+            .state
+            .lock()
+            .map_err(|_| R2UsageSinkError::Backend("usage sink mutex poisoned".to_string()))?;
         let tenant_id = event.data.tenant_id;
         let billing_period = event.data.billing_period.clone();
         let key_pair = (tenant_id, billing_period.clone());
@@ -252,17 +247,13 @@ impl InMemoryR2UsageSink {
     ///   key already exists.
     /// - [`R2UsageSinkError::Backend`] when the per-instance mutex is
     ///   poisoned.
-    pub fn put_at_explicit_key(
-        &self,
-        line: PersistedUsageLine,
-    ) -> Result<(), R2UsageSinkError> {
-        let mut g = self.state.lock().map_err(|_| {
-            R2UsageSinkError::Backend("usage sink mutex poisoned".to_string())
-        })?;
+    pub fn put_at_explicit_key(&self, line: PersistedUsageLine) -> Result<(), R2UsageSinkError> {
+        let mut g = self
+            .state
+            .lock()
+            .map_err(|_| R2UsageSinkError::Backend("usage sink mutex poisoned".to_string()))?;
         if g.keys.contains(&line.r2_key) {
-            return Err(R2UsageSinkError::AppendOnlyViolation {
-                key: line.r2_key,
-            });
+            return Err(R2UsageSinkError::AppendOnlyViolation { key: line.r2_key });
         }
         g.keys.insert(line.r2_key.clone());
         g.buffer.push(line);
@@ -367,8 +358,12 @@ mod tests {
         assert!(!line.ndjson.ends_with('\n'));
         // Contains canonical CloudEvents pinned attributes.
         assert!(line.ndjson.contains("\"specversion\":\"1.0\""));
-        assert!(line.ndjson.contains(&format!("\"type\":\"{USAGE_EVENT_TYPE}\"")));
-        assert!(line.ndjson.contains("\"datacontenttype\":\"application/json\""));
+        assert!(line
+            .ndjson
+            .contains(&format!("\"type\":\"{USAGE_EVENT_TYPE}\"")));
+        assert!(line
+            .ndjson
+            .contains("\"datacontenttype\":\"application/json\""));
         assert!(line.ndjson.contains("\"region\":\"iad\""));
     }
 

@@ -90,15 +90,12 @@ use uuid::Uuid;
 
 use corelink_billing_emit::{IdemKey, UsageEvent, UsageEventKind};
 
-use crate::audit::{
-    AggregatorAuditEventType, AggregatorAuditRecord, AggregatorAuditSink,
-};
+use crate::audit::{AggregatorAuditEventType, AggregatorAuditRecord, AggregatorAuditSink};
 use crate::chain::compute_canonical_bytes;
 use crate::error::AggregatorError;
 use crate::event::{
-    AggregatedCounter, AggregatedCounterData, AggregationDecision,
-    CounterGroupKey, COUNTER_AGGREGATED_EVENT_TYPE, CLOUDEVENTS_DATACONTENTTYPE,
-    CLOUDEVENTS_SPECVERSION,
+    AggregatedCounter, AggregatedCounterData, AggregationDecision, CounterGroupKey,
+    CLOUDEVENTS_DATACONTENTTYPE, CLOUDEVENTS_SPECVERSION, COUNTER_AGGREGATED_EVENT_TYPE,
 };
 use crate::store::{AggregatedCounterStore, UpsertOutcome};
 
@@ -163,10 +160,7 @@ pub trait CounterAggregator: Send + Sync + core::fmt::Debug {
     ///   the counter store (CRITICAL tampering signal).
     /// - [`AggregatorError::Internal`] when a per-instance mutex is
     ///   poisoned.
-    fn run(
-        &self,
-        request: AggregationRequest<'_>,
-    ) -> Result<AggregationDecision, AggregatorError>;
+    fn run(&self, request: AggregationRequest<'_>) -> Result<AggregationDecision, AggregatorError>;
 }
 
 /// Canonical aggregation-request shape. Mirrors the production CF Cron
@@ -323,10 +317,7 @@ where
     A: AggregatorAuditSink + 'static,
     S: AggregatedCounterStore + 'static,
 {
-    fn run(
-        &self,
-        request: AggregationRequest<'_>,
-    ) -> Result<AggregationDecision, AggregatorError> {
+    fn run(&self, request: AggregationRequest<'_>) -> Result<AggregationDecision, AggregatorError> {
         // Audit `run_started` BEFORE any state observation per the
         // canonical S-07 P1-1 fix + Lote 10.6bis pattern.
         let started_rec = Self::audit_record(
@@ -384,13 +375,10 @@ where
                 let completed_rec = Self::audit_record(
                     AggregatorAuditEventType::RunCompleted,
                     &request,
-                    "skipped: duplicate run; prior aggregate data payload matches"
-                        .to_string(),
+                    "skipped: duplicate run; prior aggregate data payload matches".to_string(),
                 );
                 self.audit.emit(completed_rec)?;
-                return Ok(AggregationDecision::SkippedDuplicateRun {
-                    existing: prior,
-                });
+                return Ok(AggregationDecision::SkippedDuplicateRun { existing: prior });
             }
         }
 
@@ -416,8 +404,7 @@ where
 
         // Compute the canonical bytes + recomputed chain digest.
         let canonical = compute_canonical_bytes(&aggregate)?;
-        let new_head =
-            crate::chain::link_chain_hash_from_canonical(&head.current_head, &canonical);
+        let new_head = crate::chain::link_chain_hash_from_canonical(&head.current_head, &canonical);
         let digest_hex = hex::encode(canonical_digest_bytes(&canonical));
 
         // Counter store UPSERT (atomic counter + chain head advance).
@@ -496,10 +483,8 @@ mod tests {
         UsageEventKind,
     };
 
-    type Aggregator = InMemoryCounterAggregator<
-        InMemoryAggregatorAuditSink,
-        InMemoryAggregatedCounterStore,
-    >;
+    type Aggregator =
+        InMemoryCounterAggregator<InMemoryAggregatorAuditSink, InMemoryAggregatedCounterStore>;
 
     fn fresh_aggregator() -> (
         Aggregator,
@@ -586,11 +571,15 @@ mod tests {
         assert!(is_no_events);
         assert_eq!(store.len(), 0);
         assert_eq!(
-            audit.snapshot_of(AggregatorAuditEventType::RunStarted).len(),
+            audit
+                .snapshot_of(AggregatorAuditEventType::RunStarted)
+                .len(),
             1
         );
         assert_eq!(
-            audit.snapshot_of(AggregatorAuditEventType::RunCompleted).len(),
+            audit
+                .snapshot_of(AggregatorAuditEventType::RunCompleted)
+                .len(),
             1
         );
     }
@@ -616,11 +605,15 @@ mod tests {
         assert_eq!(agg.prev_hash, ChainHash::genesis());
         assert_eq!(store.len(), 1);
         assert_eq!(
-            audit.snapshot_of(AggregatorAuditEventType::RunStarted).len(),
+            audit
+                .snapshot_of(AggregatorAuditEventType::RunStarted)
+                .len(),
             1
         );
         assert_eq!(
-            audit.snapshot_of(AggregatorAuditEventType::RunCompleted).len(),
+            audit
+                .snapshot_of(AggregatorAuditEventType::RunCompleted)
+                .len(),
             1
         );
     }
@@ -629,7 +622,13 @@ mod tests {
     fn second_run_same_inputs_yields_skipped_duplicate_run() {
         let (a, _audit, store) = fresh_aggregator();
         let tenant = Uuid::now_v7();
-        let evs = vec![fresh_event(tenant, UsageEventKind::CasPut, 5, "2026-05", 100)];
+        let evs = vec![fresh_event(
+            tenant,
+            UsageEventKind::CasPut,
+            5,
+            "2026-05",
+            100,
+        )];
         let req1 = AggregationRequest {
             tenant_id: tenant,
             billing_period: "2026-05",
@@ -705,23 +704,26 @@ mod tests {
         let head1 = store1.chain_head(tenant, "2026-05").unwrap();
         // Build store2 head by computing chain link locally for parity.
         let canonical2 = compute_canonical_bytes(&agg2).unwrap();
-        let head2 = crate::chain::link_chain_hash_from_canonical(
-            &ChainHash::genesis(),
-            &canonical2,
-        );
+        let head2 =
+            crate::chain::link_chain_hash_from_canonical(&ChainHash::genesis(), &canonical2);
         assert_eq!(agg1, agg2);
         assert_eq!(head1.current_head, head2);
     }
 
     #[test]
     fn audit_failure_aborts_run_no_state_mutation() {
-        let audit: Arc<FailingAggregatorAuditSink> =
-            Arc::new(FailingAggregatorAuditSink::new());
+        let audit: Arc<FailingAggregatorAuditSink> = Arc::new(FailingAggregatorAuditSink::new());
         let store: Arc<InMemoryAggregatedCounterStore> =
             Arc::new(InMemoryAggregatedCounterStore::new());
         let a = InMemoryCounterAggregator::new(Arc::clone(&audit), Arc::clone(&store));
         let tenant = Uuid::now_v7();
-        let evs = vec![fresh_event(tenant, UsageEventKind::CasPut, 5, "2026-05", 100)];
+        let evs = vec![fresh_event(
+            tenant,
+            UsageEventKind::CasPut,
+            5,
+            "2026-05",
+            100,
+        )];
         let req = build_request(tenant, "2026-05", UsageEventKind::CasPut, &evs, 1000);
         let err = a.run(req).unwrap_err();
         assert!(matches!(err, AggregatorError::Audit(_)));
@@ -730,22 +732,31 @@ mod tests {
 
     #[test]
     fn store_failure_emits_sink_failure_audit() {
-        let audit: Arc<InMemoryAggregatorAuditSink> =
-            Arc::new(InMemoryAggregatorAuditSink::new());
+        let audit: Arc<InMemoryAggregatorAuditSink> = Arc::new(InMemoryAggregatorAuditSink::new());
         let store: Arc<FailingAggregatedCounterStore> =
             Arc::new(FailingAggregatedCounterStore::new());
         let a = InMemoryCounterAggregator::new(Arc::clone(&audit), Arc::clone(&store));
         let tenant = Uuid::now_v7();
-        let evs = vec![fresh_event(tenant, UsageEventKind::CasPut, 5, "2026-05", 100)];
+        let evs = vec![fresh_event(
+            tenant,
+            UsageEventKind::CasPut,
+            5,
+            "2026-05",
+            100,
+        )];
         let req = build_request(tenant, "2026-05", UsageEventKind::CasPut, &evs, 1000);
         let err = a.run(req).unwrap_err();
         assert!(matches!(err, AggregatorError::Store(_)));
         assert_eq!(
-            audit.snapshot_of(AggregatorAuditEventType::SinkFailure).len(),
+            audit
+                .snapshot_of(AggregatorAuditEventType::SinkFailure)
+                .len(),
             1
         );
         assert_eq!(
-            audit.snapshot_of(AggregatorAuditEventType::RunStarted).len(),
+            audit
+                .snapshot_of(AggregatorAuditEventType::RunStarted)
+                .len(),
             1
         );
     }

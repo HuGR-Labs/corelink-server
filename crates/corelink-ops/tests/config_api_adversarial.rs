@@ -15,19 +15,24 @@
 use std::sync::Arc;
 use uuid::Uuid;
 
-use corelink_ops::config::api::{
-    ApiError,
-    handlers::{AdminContext, PutConfigRequest, handle_put, handle_rollback},
-};
 use corelink_config_do::{
-    AdminActor, ConfigError, ConfigPayload,
     metrics::NoopMetrics,
-    store::{ConfigSingletonStore, FailingAuditSink, InMemoryAuditSink, InMemoryConfigSingletonStore},
+    store::{
+        ConfigSingletonStore, FailingAuditSink, InMemoryAuditSink, InMemoryConfigSingletonStore,
+    },
+    AdminActor, ConfigError, ConfigPayload,
+};
+use corelink_ops::config::api::{
+    handlers::{handle_put, handle_rollback, AdminContext, PutConfigRequest},
+    ApiError,
 };
 
 fn admin_ctx(now_ms: u64) -> AdminContext {
     AdminContext {
-        actor: AdminActor { user_id: Uuid::nil(), email_hash: [0u8; 32] },
+        actor: AdminActor {
+            user_id: Uuid::nil(),
+            email_hash: [0u8; 32],
+        },
         mfa_ts_ms: now_ms - 5 * 60 * 1000, // 5 min ago — fresh
         is_admin: true,
         dual_approver_user_id: Some(Uuid::nil()),
@@ -56,10 +61,7 @@ fn stale_mfa_ctx(now_ms: u64) -> AdminContext {
 }
 
 fn fresh_store() -> InMemoryConfigSingletonStore {
-    InMemoryConfigSingletonStore::new(
-        Arc::new(InMemoryAuditSink::new()),
-        Arc::new(NoopMetrics),
-    )
+    InMemoryConfigSingletonStore::new(Arc::new(InMemoryAuditSink::new()), Arc::new(NoopMetrics))
 }
 
 // ── 1. Schema field injection (unknown field) ─────────────────────────────────
@@ -76,7 +78,10 @@ fn adversarial_schema_drift_rejected() {
     let mut payload = ConfigPayload::genesis();
     payload.schema_version = 99; // drift
 
-    let req = PutConfigRequest { expected_version: 0, new_payload: payload };
+    let req = PutConfigRequest {
+        expected_version: 0,
+        new_payload: payload,
+    };
     let result = tokio_test::block_on(handle_put(&store, &ctx, req, now_ms));
     assert!(result.is_err(), "schema drift must be rejected");
     match result {
@@ -99,7 +104,10 @@ fn adversarial_cas_conflict() {
     let r1 = tokio_test::block_on(handle_put(
         &store,
         &ctx,
-        PutConfigRequest { expected_version: 0, new_payload: ConfigPayload::genesis() },
+        PutConfigRequest {
+            expected_version: 0,
+            new_payload: ConfigPayload::genesis(),
+        },
         now_ms,
     ));
     assert!(r1.is_ok(), "first caller must succeed");
@@ -108,7 +116,10 @@ fn adversarial_cas_conflict() {
     let r2 = tokio_test::block_on(handle_put(
         &store,
         &ctx,
-        PutConfigRequest { expected_version: 0, new_payload: ConfigPayload::genesis() },
+        PutConfigRequest {
+            expected_version: 0,
+            new_payload: ConfigPayload::genesis(),
+        },
         now_ms,
     ));
     assert!(r2.is_err(), "second caller with stale version must fail");
@@ -147,7 +158,10 @@ fn adversarial_mfa_stale() {
     let result = tokio_test::block_on(handle_put(
         &store,
         &ctx,
-        PutConfigRequest { expected_version: 0, new_payload: ConfigPayload::genesis() },
+        PutConfigRequest {
+            expected_version: 0,
+            new_payload: ConfigPayload::genesis(),
+        },
         now_ms,
     ));
     assert!(result.is_err());
@@ -183,11 +197,12 @@ fn adversarial_rollback_expired_version() {
     let base_ms = 1_000_000u64;
 
     // Create version 1 at base_ms.
-    let actor = AdminActor { user_id: Uuid::nil(), email_hash: [0u8; 32] };
-    let v1 = tokio_test::block_on(
-        store.update(0, ConfigPayload::genesis(), &actor, base_ms)
-    )
-    .expect("update v1");
+    let actor = AdminActor {
+        user_id: Uuid::nil(),
+        email_hash: [0u8; 32],
+    };
+    let v1 = tokio_test::block_on(store.update(0, ConfigPayload::genesis(), &actor, base_ms))
+        .expect("update v1");
     assert_eq!(v1, 1);
 
     // Attempt rollback 91d later.
@@ -208,17 +223,18 @@ fn adversarial_rollback_expired_version() {
 // ── 7. Audit chain break (fail-CLOSED) ───────────────────────────────────────
 #[test]
 fn adversarial_audit_fail_closed() {
-    let store = InMemoryConfigSingletonStore::new(
-        Arc::new(FailingAuditSink),
-        Arc::new(NoopMetrics),
-    );
+    let store =
+        InMemoryConfigSingletonStore::new(Arc::new(FailingAuditSink), Arc::new(NoopMetrics));
     let now_ms = 10_000_000u64;
     let ctx = admin_ctx(now_ms);
 
     let result = tokio_test::block_on(handle_put(
         &store,
         &ctx,
-        PutConfigRequest { expected_version: 0, new_payload: ConfigPayload::genesis() },
+        PutConfigRequest {
+            expected_version: 0,
+            new_payload: ConfigPayload::genesis(),
+        },
         now_ms,
     ));
     assert!(result.is_err(), "audit failure must abort update");
@@ -239,7 +255,10 @@ fn adversarial_non_admin_put_rejected() {
     let result = tokio_test::block_on(handle_put(
         &store,
         &ctx,
-        PutConfigRequest { expected_version: 0, new_payload: ConfigPayload::genesis() },
+        PutConfigRequest {
+            expected_version: 0,
+            new_payload: ConfigPayload::genesis(),
+        },
         now_ms,
     ));
     assert!(result.is_err());

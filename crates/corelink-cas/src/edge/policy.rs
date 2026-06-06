@@ -50,15 +50,11 @@ use std::sync::{Arc, Mutex};
 
 use uuid::Uuid;
 
-use crate::edge::audit::{
-    EdgeAuditRecord, EdgeAuditSink, EdgeEventType,
-};
+use crate::edge::audit::{EdgeAuditRecord, EdgeAuditSink, EdgeEventType};
 use crate::edge::cidr::{longest_match, overlaps, Cidr, CidrFamily, IpAddr};
 use crate::edge::config::{EdgeConfig, EdgeDefaultAction};
 use crate::edge::error::EdgeError;
-use crate::edge::metrics::{
-    EdgeMetricsObserver, EdgeResultLabel,
-};
+use crate::edge::metrics::{EdgeMetricsObserver, EdgeResultLabel};
 
 /// Wall-clock source the orchestrator consults for the `now_ms`
 /// audit + metrics timestamp. Production wiring consults a CF Worker
@@ -83,9 +79,7 @@ impl SystemEdgeClock {
 
 impl EdgeClock for SystemEdgeClock {
     fn now_ms(&self) -> u64 {
-        match std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-        {
+        match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
             Ok(d) => u64::try_from(d.as_millis()).unwrap_or(u64::MAX),
             Err(_) => 0,
         }
@@ -361,10 +355,7 @@ where
         &self.config
     }
 
-    fn record_size_gauges(
-        &self,
-        bucket: &TenantBlocklist,
-    ) -> Result<(), EdgeError> {
+    fn record_size_gauges(&self, bucket: &TenantBlocklist) -> Result<(), EdgeError> {
         self.metrics
             .observe_blocklist_size(CidrFamily::V4, bucket.count_family(CidrFamily::V4))?;
         self.metrics
@@ -555,12 +546,7 @@ where
 {
     /// Construct with the canonical default config.
     #[must_use]
-    pub fn with_defaults(
-        blocklist: Arc<B>,
-        audit: Arc<A>,
-        metrics: Arc<M>,
-        clock: Arc<C>,
-    ) -> Self {
+    pub fn with_defaults(blocklist: Arc<B>, audit: Arc<A>, metrics: Arc<M>, clock: Arc<C>) -> Self {
         Self::new(blocklist, audit, metrics, clock, EdgeConfig::canonical())
     }
 
@@ -617,9 +603,7 @@ where
         // envelope; emit failure surfaces 503 — the audit gap MUST NOT
         // leak as a 200 to the client).
         let cidr = match decision {
-            EdgeDecision::DenyBlocklisted { matched_prefix } => {
-                Some(matched_prefix.cidr)
-            }
+            EdgeDecision::DenyBlocklisted { matched_prefix } => Some(matched_prefix.cidr),
             EdgeDecision::Allow | EdgeDecision::DenyAbuse { .. } => None,
         };
         self.audit.emit(EdgeAuditRecord {
@@ -736,7 +720,8 @@ mod tests {
     fn blocklisted_ip_denied_with_matched_prefix() {
         let (bl, audit, _m, pol) = fresh();
         let cidr = Cidr::parse("203.0.113.0/24").unwrap();
-        bl.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1).unwrap();
+        bl.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1)
+            .unwrap();
         let ip = IpAddr::parse("203.0.113.5").unwrap();
         let d = pol.evaluate(ten_a(), ip, "rid").unwrap();
         match d {
@@ -746,14 +731,8 @@ mod tests {
             _ => panic!("expected DenyBlocklisted"),
         }
         // Audit: 1 BlocklistAdded + 1 DeniedBlocklist.
-        assert_eq!(
-            audit.snapshot_of(EdgeEventType::BlocklistAdded).len(),
-            1
-        );
-        assert_eq!(
-            audit.snapshot_of(EdgeEventType::DeniedBlocklist).len(),
-            1
-        );
+        assert_eq!(audit.snapshot_of(EdgeEventType::BlocklistAdded).len(), 1);
+        assert_eq!(audit.snapshot_of(EdgeEventType::DeniedBlocklist).len(), 1);
     }
 
     #[test]
@@ -766,7 +745,8 @@ mod tests {
         // Add a single /24 entry; the matcher MUST resolve any
         // /24-covered IP to that exact entry.
         let net24 = Cidr::parse("203.0.113.0/24").unwrap();
-        bl.add_prefix(ten_a(), net24, "ManualAdmin", admin(), "rid", 1).unwrap();
+        bl.add_prefix(ten_a(), net24, "ManualAdmin", admin(), "rid", 1)
+            .unwrap();
         let ip = IpAddr::parse("203.0.113.99").unwrap();
         let d = pol.evaluate(ten_a(), ip, "rid").unwrap();
         match d {
@@ -782,7 +762,8 @@ mod tests {
         let (bl, _a, _m, _pol) = fresh();
         let big = Cidr::parse("192.0.0.0/16").unwrap();
         let small = Cidr::parse("192.0.2.0/24").unwrap();
-        bl.add_prefix(ten_a(), big, "ManualAdmin", admin(), "rid", 1).unwrap();
+        bl.add_prefix(ten_a(), big, "ManualAdmin", admin(), "rid", 1)
+            .unwrap();
         let err = bl
             .add_prefix(ten_a(), small, "ManualAdmin", admin(), "rid", 2)
             .unwrap_err();
@@ -793,54 +774,45 @@ mod tests {
     fn add_prefix_idempotent() {
         let (bl, audit, _m, _pol) = fresh();
         let cidr = Cidr::parse("203.0.113.0/24").unwrap();
-        bl.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1).unwrap();
-        bl.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 2).unwrap();
+        bl.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1)
+            .unwrap();
+        bl.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 2)
+            .unwrap();
         assert_eq!(bl.len(ten_a()).unwrap(), 1);
         // Second add was no-op; only one BlocklistAdded audit emitted.
-        assert_eq!(
-            audit.snapshot_of(EdgeEventType::BlocklistAdded).len(),
-            1
-        );
+        assert_eq!(audit.snapshot_of(EdgeEventType::BlocklistAdded).len(), 1);
     }
 
     #[test]
     fn remove_prefix_round_trip() {
         let (bl, audit, _m, pol) = fresh();
         let cidr = Cidr::parse("203.0.113.0/24").unwrap();
-        bl.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1).unwrap();
-        let removed = bl
-            .remove_prefix(ten_a(), cidr, admin(), "rid", 2)
+        bl.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1)
             .unwrap();
+        let removed = bl.remove_prefix(ten_a(), cidr, admin(), "rid", 2).unwrap();
         assert!(removed);
         // After remove, subsequent evaluate is Allow.
         let ip = IpAddr::parse("203.0.113.5").unwrap();
         let d = pol.evaluate(ten_a(), ip, "rid").unwrap();
         assert!(d.is_allow());
-        assert_eq!(
-            audit.snapshot_of(EdgeEventType::BlocklistRemoved).len(),
-            1
-        );
+        assert_eq!(audit.snapshot_of(EdgeEventType::BlocklistRemoved).len(), 1);
     }
 
     #[test]
     fn remove_nonexistent_is_idempotent_no_audit() {
         let (bl, audit, _m, _pol) = fresh();
         let cidr = Cidr::parse("203.0.113.0/24").unwrap();
-        let removed = bl
-            .remove_prefix(ten_a(), cidr, admin(), "rid", 1)
-            .unwrap();
+        let removed = bl.remove_prefix(ten_a(), cidr, admin(), "rid", 1).unwrap();
         assert!(!removed);
-        assert_eq!(
-            audit.snapshot_of(EdgeEventType::BlocklistRemoved).len(),
-            0
-        );
+        assert_eq!(audit.snapshot_of(EdgeEventType::BlocklistRemoved).len(), 0);
     }
 
     #[test]
     fn tenant_a_blocklist_does_not_affect_tenant_b() {
         let (bl, _a, _m, pol) = fresh();
         let cidr = Cidr::parse("203.0.113.0/24").unwrap();
-        bl.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1).unwrap();
+        bl.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1)
+            .unwrap();
         let ip = IpAddr::parse("203.0.113.5").unwrap();
         let d_a = pol.evaluate(ten_a(), ip, "rid").unwrap();
         let d_b = pol.evaluate(ten_b(), ip, "rid").unwrap();
@@ -853,13 +825,8 @@ mod tests {
         let audit = Arc::new(InMemoryEdgeAuditSink::new());
         let metrics = Arc::new(InMemoryEdgeMetrics::new());
         // Tiny config: max 2 entries.
-        let cfg = EdgeConfig::with_overrides(EdgeDefaultAction::Allow, 2, 2)
-            .unwrap();
-        let bl = InMemoryCidrBlocklist::new(
-            Arc::clone(&audit),
-            Arc::clone(&metrics),
-            cfg,
-        );
+        let cfg = EdgeConfig::with_overrides(EdgeDefaultAction::Allow, 2, 2).unwrap();
+        let bl = InMemoryCidrBlocklist::new(Arc::clone(&audit), Arc::clone(&metrics), cfg);
         bl.add_prefix(
             ten_a(),
             Cidr::parse("10.0.0.0/24").unwrap(),
@@ -898,10 +865,7 @@ mod tests {
     fn audit_failure_aborts_admin_add_no_state_change() {
         let audit = Arc::new(FailingEdgeAuditSink::new());
         let metrics = Arc::new(InMemoryEdgeMetrics::new());
-        let bl = InMemoryCidrBlocklist::with_defaults(
-            Arc::clone(&audit),
-            Arc::clone(&metrics),
-        );
+        let bl = InMemoryCidrBlocklist::with_defaults(Arc::clone(&audit), Arc::clone(&metrics));
         let cidr = Cidr::parse("203.0.113.0/24").unwrap();
         let err = bl
             .add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1)
@@ -915,7 +879,8 @@ mod tests {
     fn ipv6_match_supported() {
         let (bl, _a, _m, pol) = fresh();
         let cidr = Cidr::parse("2001:db8::/32").unwrap();
-        bl.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1).unwrap();
+        bl.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1)
+            .unwrap();
         let ip = IpAddr::parse("2001:db8:abcd::1").unwrap();
         let d = pol.evaluate(ten_a(), ip, "rid").unwrap();
         assert!(matches!(d, EdgeDecision::DenyBlocklisted { .. }));
@@ -933,8 +898,7 @@ mod tests {
             Arc::clone(&audit),
             Arc::clone(&metrics),
         ));
-        let cfg = EdgeConfig::with_overrides(EdgeDefaultAction::Deny, 100, 80)
-            .unwrap();
+        let cfg = EdgeConfig::with_overrides(EdgeDefaultAction::Deny, 100, 80).unwrap();
         let clock = Arc::new(FixedClock(1));
         let pol = InMemoryEdgePolicy::new(bl, audit, metrics, clock, cfg);
         let ip = IpAddr::parse("203.0.113.5").unwrap();
@@ -951,7 +915,9 @@ mod tests {
             .unwrap();
         assert!(matches!(
             d,
-            EdgeDecision::DenyAbuse { reason: "sustained_4xx" }
+            EdgeDecision::DenyAbuse {
+                reason: "sustained_4xx"
+            }
         ));
         // decision_total{result=denied_abuse} == 1.
         let label = format!(
@@ -966,7 +932,8 @@ mod tests {
         let (bl1, _a, _m, _p) = fresh();
         let (bl2, _a2, _m2, _p2) = fresh();
         let cidr = Cidr::parse("203.0.113.0/24").unwrap();
-        bl1.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1).unwrap();
+        bl1.add_prefix(ten_a(), cidr, "ManualAdmin", admin(), "rid", 1)
+            .unwrap();
         assert_eq!(bl1.len(ten_a()).unwrap(), 1);
         assert_eq!(bl2.len(ten_a()).unwrap(), 0);
     }

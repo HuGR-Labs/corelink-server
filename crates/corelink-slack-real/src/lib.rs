@@ -62,7 +62,7 @@ pub mod template;
 
 pub use adapter::InquirySlackAdapter;
 pub use audit::{
-    InMemorySlackAuditSink, SlackAuditEvent, SlackAuditError, SlackAuditOutcome, SlackAuditSink,
+    InMemorySlackAuditSink, SlackAuditError, SlackAuditEvent, SlackAuditOutcome, SlackAuditSink,
 };
 pub use channel::{SlackChannel, WebhookRegistry, WebhookRegistryError};
 pub use client::{SendOutcome, SharedSlackClient, SlackClientError};

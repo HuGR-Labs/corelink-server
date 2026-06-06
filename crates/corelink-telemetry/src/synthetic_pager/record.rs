@@ -47,7 +47,10 @@ impl DrillRecord {
     ///   resolved at ack-receipt time).
     /// * [`SyntheticDrillError::AckBeforeEmit`] if `ack_ts_ms` predates
     ///   `emit_ts_ms`.
-    #[allow(clippy::too_many_arguments, reason = "domain record assembled from upstream cron + webhook fields")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "domain record assembled from upstream cron + webhook fields"
+    )]
     pub fn new(
         drill_id: SyntheticDrillId,
         region: Region,
@@ -102,7 +105,8 @@ pub trait DrillRecorder {
     ///
     /// Adapter-defined; library callers receive
     /// [`SyntheticDrillError::Recorder`].
-    fn latest_for_region(&self, region: Region) -> Result<Option<DrillRecord>, SyntheticDrillError>;
+    fn latest_for_region(&self, region: Region)
+        -> Result<Option<DrillRecord>, SyntheticDrillError>;
 }
 
 /// In-memory recorder for tests + the cron worker fake path.
@@ -151,7 +155,10 @@ impl DrillRecorder for InMemoryDrillRecorder {
         Ok(())
     }
 
-    fn latest_for_region(&self, region: Region) -> Result<Option<DrillRecord>, SyntheticDrillError> {
+    fn latest_for_region(
+        &self,
+        region: Region,
+    ) -> Result<Option<DrillRecord>, SyntheticDrillError> {
         let g = self
             .inner
             .lock()

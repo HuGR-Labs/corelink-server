@@ -100,10 +100,7 @@ impl ErasureAttestationSigner {
             .map_err(|e| AttestationError::Canonicalization(e.to_string()))?;
 
         // 2. Sign canonical bytes.
-        let sig = self
-            .signing_key
-            .signing_key
-            .sign(canonical.as_bytes());
+        let sig = self.signing_key.signing_key.sign(canonical.as_bytes());
         let sig_b64 = base64::engine::general_purpose::STANDARD.encode(sig.to_bytes());
 
         tracing::debug!(

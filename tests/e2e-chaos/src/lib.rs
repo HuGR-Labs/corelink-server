@@ -515,8 +515,11 @@ mod tests {
     fn telemetry_records_slo_violation_on_breach() {
         // Use the GA-catalog lat-r2-get (blast 500 bps); configure 600 bps
         // impact to force breach.
-        let (run, tele) =
-            run_clean_staging(ChaosE2eDrill::LatencyInjectionP99Bounded, "test-breach", 600);
+        let (run, tele) = run_clean_staging(
+            ChaosE2eDrill::LatencyInjectionP99Bounded,
+            "test-breach",
+            600,
+        );
         assert!(matches!(
             run.outcome,
             ChaosOutcome::SteadyStateBreached { .. }

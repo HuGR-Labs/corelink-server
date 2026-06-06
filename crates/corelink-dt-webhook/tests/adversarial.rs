@@ -1,4 +1,9 @@
-#![allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 //! Adversarial regression tests for the DT webhook handler (WI-S12-005).
 //!
 //! # Scenarios
@@ -196,7 +201,9 @@ async fn scenario_5_pagerduty_outage_fallback_slack() {
     let result = handler.handle_webhook(event).await.expect("ok");
     // Slack must be present as fallback channel.
     assert!(
-        result.channels.contains(&corelink_dt_webhook::AlertChannel::Slack),
+        result
+            .channels
+            .contains(&corelink_dt_webhook::AlertChannel::Slack),
         "Slack must be in channels for Critical (fallback if PagerDuty down)"
     );
 }

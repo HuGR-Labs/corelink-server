@@ -96,7 +96,9 @@ impl OciScope {
             .filter(|s| !s.is_empty())
             .collect::<Vec<_>>();
         if actions.is_empty() {
-            return Err(OciAdapterError::Auth(String::from("empty actions in scope")));
+            return Err(OciAdapterError::Auth(String::from(
+                "empty actions in scope",
+            )));
         }
         Ok(Self {
             repo: repo.to_string(),
@@ -225,8 +227,7 @@ pub fn verify(
     let tenant_uuid =
         uuid::Uuid::parse_str(tenant_text).map_err(|_| OciAdapterError::InvalidToken)?;
     let scope_raw = b64_url_no_pad_decode(scope_b64)?;
-    let scope_str =
-        std::str::from_utf8(&scope_raw).map_err(|_| OciAdapterError::InvalidToken)?;
+    let scope_str = std::str::from_utf8(&scope_raw).map_err(|_| OciAdapterError::InvalidToken)?;
     let scope = OciScope::parse(scope_str).map_err(|_| OciAdapterError::InvalidToken)?;
     Ok(VerifiedToken {
         tenant: TenantId::from_uuid(tenant_uuid),

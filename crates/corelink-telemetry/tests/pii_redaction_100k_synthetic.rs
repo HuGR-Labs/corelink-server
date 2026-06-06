@@ -67,22 +67,14 @@ const TOTAL_SAMPLES: usize = 100_000;
 const PER_CATEGORY: usize = TOTAL_SAMPLES / 5;
 
 const ASCII_LOWER: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
-const ASCII_ALPHANUMERIC: &[u8] =
-    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+const ASCII_ALPHANUMERIC: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const HEX_CHARS: &[u8] = b"0123456789abcdef";
 
-fn rand_string(
-    rng: &mut ChaCha20Rng,
-    alphabet: &[u8],
-    len: usize,
-) -> String {
+fn rand_string(rng: &mut ChaCha20Rng, alphabet: &[u8], len: usize) -> String {
     (0..len)
         .map(|_| {
             let idx = rng.random_range(0..alphabet.len());
-            alphabet
-                .get(idx)
-                .copied()
-                .unwrap_or(b'a') as char
+            alphabet.get(idx).copied().unwrap_or(b'a') as char
         })
         .collect()
 }
@@ -115,12 +107,7 @@ fn rand_ipv6(rng: &mut ChaCha20Rng) -> String {
         let hexlen = rng.random_range(1..=4);
         for _ in 0..hexlen {
             let idx = rng.random_range(0..HEX_CHARS.len());
-            s.push(
-                HEX_CHARS
-                    .get(idx)
-                    .copied()
-                    .unwrap_or(b'0') as char,
-            );
+            s.push(HEX_CHARS.get(idx).copied().unwrap_or(b'0') as char);
         }
     }
     s
@@ -133,9 +120,7 @@ fn rand_bearer(rng: &mut ChaCha20Rng) -> String {
 }
 
 fn rand_pan_luhn(rng: &mut ChaCha20Rng) -> String {
-    let mut digits: Vec<u8> = (0..15)
-        .map(|_| rng.random_range(0..=9_u8))
-        .collect();
+    let mut digits: Vec<u8> = (0..15).map(|_| rng.random_range(0..=9_u8)).collect();
     // First digit must be 1-9 to avoid leading-zero ambiguity.
     if let Some(first) = digits.get_mut(0) {
         if *first == 0 {
@@ -144,10 +129,7 @@ fn rand_pan_luhn(rng: &mut ChaCha20Rng) -> String {
     }
     let check = compute_luhn_check(&digits);
     digits.push(check);
-    digits
-        .iter()
-        .map(|d| (b'0' + d) as char)
-        .collect()
+    digits.iter().map(|d| (b'0' + d) as char).collect()
 }
 
 fn compute_luhn_check(digits: &[u8]) -> u8 {
@@ -176,9 +158,7 @@ fn compute_luhn_check(digits: &[u8]) -> u8 {
     }
 }
 
-fn rand_clean_prefix_suffix(
-    rng: &mut ChaCha20Rng,
-) -> (String, String) {
+fn rand_clean_prefix_suffix(rng: &mut ChaCha20Rng) -> (String, String) {
     let p_len = rng.random_range(0..=12);
     let s_len = rng.random_range(0..=12);
     let prefix = rand_string(rng, ASCII_LOWER, p_len);
@@ -217,9 +197,7 @@ fn run_category<F: Fn(&mut ChaCha20Rng) -> String>(
             // redacted output (we only strip the token portion); the
             // assertion is that the token TEXT after the space is
             // gone.
-            let token_part = raw
-                .strip_prefix("Bearer ")
-                .unwrap_or(&raw);
+            let token_part = raw.strip_prefix("Bearer ").unwrap_or(&raw);
             outcome.redacted.contains(token_part)
         } else {
             outcome.redacted.contains(&raw)
@@ -265,22 +243,8 @@ fn pii_redaction_100k_synthetic_zero_leakage() {
         rand_email,
         false,
     );
-    let s_ipv4 = run_category(
-        &mut rng,
-        &redactor,
-        PER_CATEGORY,
-        "ipv4",
-        rand_ipv4,
-        false,
-    );
-    let s_ipv6 = run_category(
-        &mut rng,
-        &redactor,
-        PER_CATEGORY,
-        "ipv6",
-        rand_ipv6,
-        false,
-    );
+    let s_ipv4 = run_category(&mut rng, &redactor, PER_CATEGORY, "ipv4", rand_ipv4, false);
+    let s_ipv6 = run_category(&mut rng, &redactor, PER_CATEGORY, "ipv6", rand_ipv6, false);
     let s_bearer = run_category(
         &mut rng,
         &redactor,
@@ -307,11 +271,7 @@ fn pii_redaction_100k_synthetic_zero_leakage() {
     assert_eq!(
         total_leaks, 0,
         "PII leakage detected: email={} ipv4={} ipv6={} bearer={} pan={}",
-        s_email.leaks,
-        s_ipv4.leaks,
-        s_ipv6.leaks,
-        s_bearer.leaks,
-        s_pan.leaks,
+        s_email.leaks, s_ipv4.leaks, s_ipv6.leaks, s_bearer.leaks, s_pan.leaks,
     );
     // Defensive: total redaction hits should be at least 100k (one
     // category-typed hit per sample minimum).

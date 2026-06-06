@@ -410,9 +410,7 @@ pub enum ReconcileError {
     Metrics(#[from] GcMetricsObserverError),
     /// Reconcile phase budget exceeded (1h p99 @ 1M blobs per sprint
     /// contract §5.5 R-S06-10.1).
-    #[error(
-        "reconcile phase budget exceeded: duration_ms={duration_ms} > budget_ms={budget_ms}"
-    )]
+    #[error("reconcile phase budget exceeded: duration_ms={duration_ms} > budget_ms={budget_ms}")]
     PhaseBudgetExceeded {
         /// Duration observed at the moment the budget was checked.
         duration_ms: u64,
@@ -468,4 +466,3 @@ pub trait ReconcilePhase: Send + Sync + core::fmt::Debug {
         region: GcRegion,
     ) -> Result<ReconcileResult, ReconcileError>;
 }
-

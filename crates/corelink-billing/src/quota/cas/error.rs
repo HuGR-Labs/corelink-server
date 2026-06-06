@@ -22,9 +22,7 @@ pub enum QuotaCasError {
     /// Either the row was never seeded (post-deploy backfill pending)
     /// OR a programmer wiring error misrouted the tenant. Mapped to 5xx
     /// by handler.
-    #[error(
-        "tenant_storage_state row missing for tenant={tenant_id} region={region}"
-    )]
+    #[error("tenant_storage_state row missing for tenant={tenant_id} region={region}")]
     TenantStorageStateMissing {
         /// Tenant scope.
         tenant_id: Uuid,
@@ -36,9 +34,7 @@ pub enum QuotaCasError {
     /// the orchestrator's read and the orchestrator's write. The
     /// orchestrator retries up to `max_cas_attempts`; this arm is
     /// surfaced when retries are exhausted (pathological contention).
-    #[error(
-        "quota CAS race detected after {attempts} attempts (tenant={tenant_id})"
-    )]
+    #[error("quota CAS race detected after {attempts} attempts (tenant={tenant_id})")]
     CasRaceExhausted {
         /// Tenant scope.
         tenant_id: Uuid,

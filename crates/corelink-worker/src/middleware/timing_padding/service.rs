@@ -125,11 +125,7 @@ where
         // `poll_ready` call, preserving the "exactly one `poll_ready`
         // per `call`" invariant for stateful inner services.
         let started = tokio::time::Instant::now();
-        let request_id = compute_request_seed(
-            &req,
-            self.server_secret,
-            &self.call_counter,
-        );
+        let request_id = compute_request_seed(&req, self.server_secret, &self.call_counter);
         let config = self.config;
         let policy = self.policy.clone();
         let predicate_kind = self.predicate_kind;
@@ -144,8 +140,7 @@ where
         Box::pin(async move {
             let response = inner.call(req).await?;
             if predicate_kind.matches(&response) {
-                let pre_pad_elapsed_ms =
-                    started.elapsed().as_secs_f64() * 1000.0;
+                let pre_pad_elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
                 let pad_target =
                     canonical_pad_target(config, &policy, request_id, started.elapsed());
                 // Saturating add — `tokio::time::Instant` can in
@@ -165,8 +160,7 @@ where
                 // `miss_arm` is `unknown` when the handler did not
                 // classify the arm (still padded, but without per-arm
                 // attribution).
-                let total_elapsed_ms =
-                    started.elapsed().as_secs_f64() * 1000.0;
+                let total_elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
                 // Codex round-5 P1: read the canonical arm
                 // discriminator first from the `MissMarker` extension
                 // (HTTP path; tonic does not propagate extensions

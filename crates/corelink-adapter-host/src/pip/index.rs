@@ -44,7 +44,11 @@ impl IndexFormat {
     #[must_use]
     pub fn negotiate(accept: Option<&str>, prefer_json_index: bool) -> Self {
         let Some(hdr) = accept else {
-            return if prefer_json_index { Self::Json } else { Self::Html };
+            return if prefer_json_index {
+                Self::Json
+            } else {
+                Self::Html
+            };
         };
         let lower = hdr.to_ascii_lowercase();
         let accepts_json = lower.contains("application/vnd.pypi.simple.v1+json");
@@ -169,7 +173,8 @@ async fn refresh_from_upstream(
         now,
         serde_json::json!({ "project": project, "files": parsed.files.len() }),
     )?;
-    kv.put(tenant, &kv_key_for_project(project), raw, now).await?;
+    kv.put(tenant, &kv_key_for_project(project), raw, now)
+        .await?;
     Ok(parsed)
 }
 
@@ -228,10 +233,7 @@ mod tests {
     #[test]
     fn negotiate_returns_json_when_pep691_accepted() {
         assert_eq!(
-            IndexFormat::negotiate(
-                Some("application/vnd.pypi.simple.v1+json"),
-                true
-            ),
+            IndexFormat::negotiate(Some("application/vnd.pypi.simple.v1+json"), true),
             IndexFormat::Json
         );
     }

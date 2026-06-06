@@ -103,10 +103,7 @@ pub trait QuotaMetricsObserver: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`QuotaMetricsObserverError::Backend`] on backend failure.
-    fn record_check(
-        &self,
-        result: QuotaCheckResultLabel,
-    ) -> Result<(), QuotaMetricsObserverError>;
+    fn record_check(&self, result: QuotaCheckResultLabel) -> Result<(), QuotaMetricsObserverError>;
 
     /// Increment `corelink.quota.denials_total{tenant_id}` by 1 — only
     /// emitted on the PROVISIONAL 429 deny arm.
@@ -114,10 +111,7 @@ pub trait QuotaMetricsObserver: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`QuotaMetricsObserverError::Backend`] on backend failure.
-    fn record_denial(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), QuotaMetricsObserverError>;
+    fn record_denial(&self, tenant_id: Uuid) -> Result<(), QuotaMetricsObserverError>;
 
     /// Set the gauge `corelink.quota.reservation_active{tenant_id,
     /// region}` to `count`.
@@ -227,10 +221,7 @@ impl InMemoryQuotaMetrics {
     /// label (informational; used by `prop_check_duration_under_3ms_p99`
     /// to assert SLO bound).
     #[must_use]
-    pub fn duration_samples(
-        &self,
-        result: QuotaCheckResultLabel,
-    ) -> Vec<u64> {
+    pub fn duration_samples(&self, result: QuotaCheckResultLabel) -> Vec<u64> {
         let guard = match self.inner.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -242,15 +233,9 @@ impl InMemoryQuotaMetrics {
             .unwrap_or_default()
     }
 
-    fn bump_counter(
-        &self,
-        label: String,
-        by: u64,
-    ) -> Result<(), QuotaMetricsObserverError> {
+    fn bump_counter(&self, label: String, by: u64) -> Result<(), QuotaMetricsObserverError> {
         let mut guard = self.inner.lock().map_err(|_| {
-            QuotaMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            QuotaMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         let entry = guard.counters.entry(label).or_insert(0);
         *entry = entry.saturating_add(by);
@@ -259,10 +244,7 @@ impl InMemoryQuotaMetrics {
 }
 
 impl QuotaMetricsObserver for InMemoryQuotaMetrics {
-    fn record_check(
-        &self,
-        result: QuotaCheckResultLabel,
-    ) -> Result<(), QuotaMetricsObserverError> {
+    fn record_check(&self, result: QuotaCheckResultLabel) -> Result<(), QuotaMetricsObserverError> {
         let label = format!(
             "{}{{result={}}}",
             QuotaMetricKind::CheckTotal.as_str(),
@@ -271,10 +253,7 @@ impl QuotaMetricsObserver for InMemoryQuotaMetrics {
         self.bump_counter(label, 1)
     }
 
-    fn record_denial(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<(), QuotaMetricsObserverError> {
+    fn record_denial(&self, tenant_id: Uuid) -> Result<(), QuotaMetricsObserverError> {
         let label = format!(
             "{}{{tenant={tenant_id}}}",
             QuotaMetricKind::DenialsTotal.as_str()
@@ -294,9 +273,7 @@ impl QuotaMetricsObserver for InMemoryQuotaMetrics {
             region.as_str()
         );
         let mut guard = self.inner.lock().map_err(|_| {
-            QuotaMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            QuotaMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         guard.gauges.insert(label, count);
         Ok(())
@@ -313,9 +290,7 @@ impl QuotaMetricsObserver for InMemoryQuotaMetrics {
             result.as_str()
         );
         let mut guard = self.inner.lock().map_err(|_| {
-            QuotaMetricsObserverError::Backend(
-                "metrics observer mutex poisoned".to_string(),
-            )
+            QuotaMetricsObserverError::Backend("metrics observer mutex poisoned".to_string())
         })?;
         let entry = guard.counters.entry(label).or_insert(0);
         *entry = entry.saturating_add(duration_ms);
@@ -354,10 +329,7 @@ impl QuotaMetricsObserver for FailingQuotaMetrics {
         ))
     }
 
-    fn record_denial(
-        &self,
-        _tenant_id: Uuid,
-    ) -> Result<(), QuotaMetricsObserverError> {
+    fn record_denial(&self, _tenant_id: Uuid) -> Result<(), QuotaMetricsObserverError> {
         Err(QuotaMetricsObserverError::Backend(
             "induced quota metrics failure (test fixture)".to_string(),
         ))
@@ -468,10 +440,7 @@ mod tests {
             .unwrap();
         m.record_check_duration_ms(QuotaCheckResultLabel::Allow, 2)
             .unwrap();
-        assert_eq!(
-            m.last_duration_ms(QuotaCheckResultLabel::Allow),
-            Some(2)
-        );
+        assert_eq!(m.last_duration_ms(QuotaCheckResultLabel::Allow), Some(2));
         let samples = m.duration_samples(QuotaCheckResultLabel::Allow);
         assert_eq!(samples, vec![1, 2]);
     }

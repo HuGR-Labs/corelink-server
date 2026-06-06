@@ -49,8 +49,7 @@
 use corelink_eviction::Tier;
 
 use super::config::{
-    egress_baseline_for_tier, exec_baseline_for_tier, AbuseConfig,
-    AbuseFeatureWeights,
+    egress_baseline_for_tier, exec_baseline_for_tier, AbuseConfig, AbuseFeatureWeights,
 };
 use super::features::AbuseFeatures;
 
@@ -167,10 +166,8 @@ pub fn compute_score(
     tier: Tier,
 ) -> AbuseScore {
     let cpu_norm = normalise_cpu(features.cpu_wallclock_ratio);
-    let egress_norm =
-        normalise_egress(features.egress_bytes_per_min, tier);
-    let entropy_norm =
-        normalise_entropy(features.action_digest_entropy_bits);
+    let egress_norm = normalise_egress(features.egress_bytes_per_min, tier);
+    let entropy_norm = normalise_entropy(features.action_digest_entropy_bits);
     let exec_norm = normalise_exec(features.concurrent_exec_count, tier);
 
     let raw = weights.cpu() * cpu_norm
@@ -303,7 +300,11 @@ mod tests {
         // = (4000/50 - 1) / 100 = 79/100 → clamped to 0.79.
         // score ≈ 0.30*0.98 + 0.25*1.0 + 0.25*0.9 + 0.20*0.79
         //       ≈ 0.294 + 0.25 + 0.225 + 0.158 = 0.927.
-        assert!(s.as_f64() >= 0.8, "expected Malicious tier; got {}", s.as_f64());
+        assert!(
+            s.as_f64() >= 0.8,
+            "expected Malicious tier; got {}",
+            s.as_f64()
+        );
     }
 
     #[test]

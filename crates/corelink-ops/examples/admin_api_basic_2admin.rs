@@ -1,13 +1,13 @@
 //! Example: basic 2-admin pipeline (admin-api layer).
 #![allow(clippy::unwrap_used, clippy::print_stdout, clippy::expect_used)]
-use std::sync::Arc;
-use uuid::Uuid;
 use corelink_dual_approval::{
-    AdminOpAuditSink, AdminOpRequest, AdminOpType, AdminSigningKey, DualApprovalGateImpl,
-    InMemoryAdminOpAuditSink, InMemoryAdminRoleStore, InMemoryCollusionStore, InMemoryNonceStore,
-    compute_hmac,
+    compute_hmac, AdminOpAuditSink, AdminOpRequest, AdminOpType, AdminSigningKey,
+    DualApprovalGateImpl, InMemoryAdminOpAuditSink, InMemoryAdminRoleStore, InMemoryCollusionStore,
+    InMemoryNonceStore,
 };
 use corelink_ops::admin::api::middleware::AdminApiPipeline;
+use std::sync::Arc;
+use uuid::Uuid;
 
 fn main() {
     let caller = Uuid::now_v7();

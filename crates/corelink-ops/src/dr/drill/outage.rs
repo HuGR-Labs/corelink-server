@@ -124,18 +124,19 @@ impl CfRegionOutageSimulator for InMemoryCfRegionOutageSimulator {
         // Canonical staging-only enforcement boundary FIRST (mirrors WI §1 TS guard).
         super::env_guard::require_staging(env)?;
 
-        let failover_target = self
-            .graph
-            .sibling(simulated_region)
-            .ok_or(DrillError::NoSiblingAvailable {
-                region: simulated_region,
-            })?;
+        let failover_target =
+            self.graph
+                .sibling(simulated_region)
+                .ok_or(DrillError::NoSiblingAvailable {
+                    region: simulated_region,
+                })?;
 
         // Mark synthetic_outage.
         {
-            let mut guard = self.outages.lock().map_err(|e| {
-                DrillError::Internal(format!("outages lock poisoned: {e}"))
-            })?;
+            let mut guard = self
+                .outages
+                .lock()
+                .map_err(|e| DrillError::Internal(format!("outages lock poisoned: {e}")))?;
             guard.insert(simulated_region);
         }
 

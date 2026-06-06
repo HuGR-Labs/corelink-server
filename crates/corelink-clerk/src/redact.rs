@@ -24,7 +24,10 @@ pub fn principal_hash(sub: &str) -> String {
     // Only the first 4 bytes (8 hex chars) per WI §21.
     // Unreachable fallback: SHA-256 always emits 32 bytes; clippy prefers
     // unwrap_or_default over explicit match here.
-    let first4: [u8; 4] = digest.get(..4).and_then(|s| s.try_into().ok()).unwrap_or_default();
+    let first4: [u8; 4] = digest
+        .get(..4)
+        .and_then(|s| s.try_into().ok())
+        .unwrap_or_default();
     hex::encode(first4)
 }
 

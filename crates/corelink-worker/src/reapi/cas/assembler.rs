@@ -302,7 +302,8 @@ struct AssemblerInner {
 
 impl<C: ChunkStore> fmt::Debug for InMemoryBlobAssembler<C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("InMemoryBlobAssembler").finish_non_exhaustive()
+        f.debug_struct("InMemoryBlobAssembler")
+            .finish_non_exhaustive()
     }
 }
 
@@ -353,9 +354,8 @@ impl<C: ChunkStore> BlobAssembler for InMemoryBlobAssembler<C> {
             // Validate canonical ordering — defense-in-depth (the
             // session store already guarantees this).
             for (expected, c) in chunks.iter().enumerate() {
-                let expected = u32::try_from(expected).map_err(|_| {
-                    AssemblerError::Backend("chunk index overflow u32".to_string())
-                })?;
+                let expected = u32::try_from(expected)
+                    .map_err(|_| AssemblerError::Backend("chunk index overflow u32".to_string()))?;
                 if c.index.0 != expected {
                     return Err(AssemblerError::ChunkOrderingViolation {
                         index: c.index.0,
@@ -440,13 +440,13 @@ impl<C: ChunkStore> BlobAssembler for InMemoryBlobAssembler<C> {
             let mut bytes_streamed: u64 = 0;
             for bound in &record.chunks {
                 let chunk_key = ChunkKey::new(tenant_id, bound.digest);
-                let r = self
-                    .chunks
-                    .lookup(chunk_key)
-                    .await?
-                    .ok_or(AssemblerError::ChunkMissing {
-                        chunk_index: bound.index.0,
-                    })?;
+                let r =
+                    self.chunks
+                        .lookup(chunk_key)
+                        .await?
+                        .ok_or(AssemblerError::ChunkMissing {
+                            chunk_index: bound.index.0,
+                        })?;
                 // Per-chunk hash verify — this is the streaming
                 // fail-fast invariant (`INV-MULTIPART-STREAMING-VERIFY-FAIL-FAST`).
                 let recomputed = super::types::ChunkDigest::compute(&r.bytes);
@@ -480,10 +480,10 @@ impl<C: ChunkStore> BlobAssembler for InMemoryBlobAssembler<C> {
     reason = "test code: panics surface as test failures by design"
 )]
 mod tests {
-    use super::*;
     use super::super::chunk_store::InMemoryChunkStore;
     use super::super::session::BoundChunk;
     use super::super::types::{ChunkDigest, ChunkIndex};
+    use super::*;
     use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
     use zeroize::Zeroizing;
 
@@ -496,7 +496,11 @@ mod tests {
         BlobDigest::new(Digest::compute(seed), seed.len() as u64)
     }
 
-    async fn upsert_chunks(store: &Arc<InMemoryChunkStore>, tenant: Uuid, blobs: &[&[u8]]) -> Vec<BoundChunk> {
+    async fn upsert_chunks(
+        store: &Arc<InMemoryChunkStore>,
+        tenant: Uuid,
+        blobs: &[&[u8]],
+    ) -> Vec<BoundChunk> {
         let prefix = fixed_prefix(tenant);
         let mut out = Vec::new();
         for (i, b) in blobs.iter().enumerate() {
@@ -625,13 +629,11 @@ mod tests {
         let tenant = Uuid::nil();
         let prefix = fixed_prefix(tenant);
         // Build manifest binding chunks that we DON'T put into the store.
-        let bound = vec![
-            BoundChunk {
-                index: ChunkIndex(0),
-                digest: ChunkDigest::compute(b"ghost"),
-                size_bytes: 5,
-            },
-        ];
+        let bound = vec![BoundChunk {
+            index: ChunkIndex(0),
+            digest: ChunkDigest::compute(b"ghost"),
+            size_bytes: 5,
+        }];
         let key = ManifestKey::new(tenant, bd(b"blob"));
         let r = assembler
             .build_manifest(key, Region::Wnam, &prefix, &bound, 1)
@@ -642,6 +644,9 @@ mod tests {
             .stream_chunks(tenant, &prefix, Region::Wnam, &r, &mut sink)
             .await
             .unwrap_err();
-        assert!(matches!(err, AssemblerError::ChunkMissing { chunk_index: 0 }));
+        assert!(matches!(
+            err,
+            AssemblerError::ChunkMissing { chunk_index: 0 }
+        ));
     }
 }

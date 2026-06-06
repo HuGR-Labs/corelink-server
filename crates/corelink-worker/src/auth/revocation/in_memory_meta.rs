@@ -122,7 +122,8 @@ impl TestClock for MonotonicTestClock {
 
 impl fmt::Debug for InMemoryMetaRevocationSink {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("InMemoryMetaRevocationSink").finish_non_exhaustive()
+        f.debug_struct("InMemoryMetaRevocationSink")
+            .finish_non_exhaustive()
     }
 }
 

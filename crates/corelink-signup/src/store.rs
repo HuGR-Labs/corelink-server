@@ -136,11 +136,8 @@ pub trait AtomicSignupStore: core::fmt::Debug + Send + Sync {
     fn insert_tenant(&self, tx: &mut SignupTx, row: TenantRow) -> Result<(), StorageError>;
 
     /// Insert the `dpa_acceptance_pending` row.
-    fn insert_dpa_pending(
-        &self,
-        tx: &mut SignupTx,
-        row: DpaPendingRow,
-    ) -> Result<(), StorageError>;
+    fn insert_dpa_pending(&self, tx: &mut SignupTx, row: DpaPendingRow)
+        -> Result<(), StorageError>;
 
     /// Insert the first `pat` row.
     fn insert_first_pat(&self, tx: &mut SignupTx, row: PatRow) -> Result<(), StorageError>;
@@ -225,9 +222,7 @@ impl InMemoryAtomicSignupStore {
 
     fn maybe_inject(&self, step: crate::outcome::OrchestrationStep) -> Result<(), StorageError> {
         if self.current_failure() == Some(step) {
-            return Err(StorageError::Aborted(format!(
-                "injected failure at {step}"
-            )));
+            return Err(StorageError::Aborted(format!("injected failure at {step}")));
         }
         Ok(())
     }
@@ -494,7 +489,8 @@ mod tests {
         s.commit(tx, &IdempotencyKey::new("idem-1")).unwrap();
         // Second commit with same email_hash MUST be rejected.
         let mut tx2 = s.begin().unwrap();
-        s.insert_tenant(&mut tx2, tenant_row("t-2", "same")).unwrap();
+        s.insert_tenant(&mut tx2, tenant_row("t-2", "same"))
+            .unwrap();
         s.insert_dpa_pending(&mut tx2, dpa_row("t-2")).unwrap();
         s.insert_first_pat(&mut tx2, pat_row("t-2")).unwrap();
         s.insert_usage_counter(&mut tx2, uc_row("t-2")).unwrap();
@@ -508,7 +504,9 @@ mod tests {
         let s = InMemoryAtomicSignupStore::new();
         s.inject_failure_at(crate::outcome::OrchestrationStep::InsertTenant);
         let mut tx = s.begin().unwrap();
-        let err = s.insert_tenant(&mut tx, tenant_row("t-1", "a")).unwrap_err();
+        let err = s
+            .insert_tenant(&mut tx, tenant_row("t-1", "a"))
+            .unwrap_err();
         assert!(matches!(err, StorageError::Aborted(_)));
     }
 

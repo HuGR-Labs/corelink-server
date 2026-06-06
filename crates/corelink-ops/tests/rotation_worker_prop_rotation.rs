@@ -28,13 +28,13 @@
 
 use std::sync::Arc;
 
-use corelink_rotation_adapters::{
-    is_valid_read_state, is_valid_write_state, AuditChainRotationAdapter, AssetClass,
-    ByokRotationAdapter, KeyState, PatSigningRotationAdapter, RotationAdapter as _,
-    RotationError, TdkRotationAdapter,
-};
 use corelink_ops::rotation::worker::{
     InMemoryRotationStateMachine, RotationMetrics, RotationOrchestrator, RotationOutcome,
+};
+use corelink_rotation_adapters::{
+    is_valid_read_state, is_valid_write_state, AssetClass, AuditChainRotationAdapter,
+    ByokRotationAdapter, KeyState, PatSigningRotationAdapter, RotationAdapter as _, RotationError,
+    TdkRotationAdapter,
 };
 use proptest::prelude::*;
 
@@ -49,11 +49,8 @@ fn proptest_cases() -> u32 {
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-fn tdk_orchestrator() -> RotationOrchestrator<
-    TdkRotationAdapter,
-    InMemoryRotationStateMachine,
-    RotationMetrics,
-> {
+fn tdk_orchestrator(
+) -> RotationOrchestrator<TdkRotationAdapter, InMemoryRotationStateMachine, RotationMetrics> {
     RotationOrchestrator::new(
         Arc::new(TdkRotationAdapter::new("us-east".to_string())),
         Arc::new(InMemoryRotationStateMachine::new()),
@@ -62,11 +59,9 @@ fn tdk_orchestrator() -> RotationOrchestrator<
     )
 }
 
-fn pat_orchestrator() -> RotationOrchestrator<
-    PatSigningRotationAdapter,
-    InMemoryRotationStateMachine,
-    RotationMetrics,
-> {
+fn pat_orchestrator(
+) -> RotationOrchestrator<PatSigningRotationAdapter, InMemoryRotationStateMachine, RotationMetrics>
+{
     RotationOrchestrator::new(
         Arc::new(PatSigningRotationAdapter::new("us-east".to_string())),
         Arc::new(InMemoryRotationStateMachine::new()),
@@ -75,11 +70,9 @@ fn pat_orchestrator() -> RotationOrchestrator<
     )
 }
 
-fn audit_chain_orchestrator() -> RotationOrchestrator<
-    AuditChainRotationAdapter,
-    InMemoryRotationStateMachine,
-    RotationMetrics,
-> {
+fn audit_chain_orchestrator(
+) -> RotationOrchestrator<AuditChainRotationAdapter, InMemoryRotationStateMachine, RotationMetrics>
+{
     RotationOrchestrator::new(
         Arc::new(AuditChainRotationAdapter::new("us-east".to_string())),
         Arc::new(InMemoryRotationStateMachine::new()),
@@ -88,11 +81,8 @@ fn audit_chain_orchestrator() -> RotationOrchestrator<
     )
 }
 
-fn byok_orchestrator() -> RotationOrchestrator<
-    ByokRotationAdapter,
-    InMemoryRotationStateMachine,
-    RotationMetrics,
-> {
+fn byok_orchestrator(
+) -> RotationOrchestrator<ByokRotationAdapter, InMemoryRotationStateMachine, RotationMetrics> {
     RotationOrchestrator::new(
         Arc::new(ByokRotationAdapter::new("tenant-abc".to_string())),
         Arc::new(InMemoryRotationStateMachine::new()),

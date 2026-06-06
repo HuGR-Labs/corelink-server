@@ -43,7 +43,10 @@ fn chaos_network_partition_recovers() {
     // (2) Audit lifecycle canonical.
     let events = tele.audit_events();
     assert_canonical_audit_sequence(&events).unwrap();
-    assert_eq!(events, vec![ChaosAuditEvent::Started, ChaosAuditEvent::Completed]);
+    assert_eq!(
+        events,
+        vec![ChaosAuditEvent::Started, ChaosAuditEvent::Completed]
+    );
 
     // (3) SLO violation counter NOT incremented.
     assert_eq!(tele.slo_violation_total(), 0);

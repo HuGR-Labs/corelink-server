@@ -81,7 +81,10 @@ fn erasure_request_happy_path_drains_all_12_backends() {
         Err(e) => panic!("jwt receipt verify failed: {e:?}"),
     };
     assert_eq!(claims.request_id, request.request_id);
-    assert_eq!(claims.expires_at_ms, env.now_ms.saturating_add(90 * 86_400_000));
+    assert_eq!(
+        claims.expires_at_ms,
+        env.now_ms.saturating_add(90 * 86_400_000)
+    );
 
     // Audit chain: received + mfa_verified + accepted + receipt_issued.
     if let Err(msg) = verify_audit_chain(
@@ -158,7 +161,9 @@ fn erasure_request_happy_path_drains_all_12_backends() {
         Ok(v) => v,
         Err(e) => panic!("report serialize: {e}"),
     };
-    let url = env.r2.put_signed(key.clone(), report_bytes.clone(), env.now_ms);
+    let url = env
+        .r2
+        .put_signed(key.clone(), report_bytes.clone(), env.now_ms);
     assert!(url.is_valid(env.now_ms));
     assert_eq!(
         url.expires_at_ms,

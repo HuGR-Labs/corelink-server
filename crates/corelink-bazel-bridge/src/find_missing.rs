@@ -94,7 +94,8 @@ pub struct InMemoryFindMissing {
 
 impl core::fmt::Debug for InMemoryFindMissing {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("InMemoryFindMissing").finish_non_exhaustive()
+        f.debug_struct("InMemoryFindMissing")
+            .finish_non_exhaustive()
     }
 }
 
@@ -142,7 +143,10 @@ impl FindMissingHandler for InMemoryFindMissing {
                 Err(CasHandlerError::NotFound { .. }) => {
                     missing.push(digest.clone());
                 }
-                Err(CasHandlerError::CrossTenantDenied { caller, requested_tenant }) => {
+                Err(CasHandlerError::CrossTenantDenied {
+                    caller,
+                    requested_tenant,
+                }) => {
                     return Err(BazelBridgeError::CrossTenantDenied {
                         caller,
                         requested: requested_tenant,
@@ -222,8 +226,8 @@ pub fn build_find_missing_response(missing: Vec<Digest>) -> Result<String, Bazel
 )]
 mod tests {
     use super::*;
-    use corelink_handler_cas::{InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver};
     use corelink_handler_cas::handler::fake_hash;
+    use corelink_handler_cas::{InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver};
 
     const HASH_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const HASH_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -300,7 +304,9 @@ mod tests {
         let fm = InMemoryFindMissing::new(Arc::new(handler));
         // Build a slice of 4097 identical digests.
         let d = valid_digest(HASH_A);
-        let digests: Vec<Digest> = (0..=crate::FIND_MISSING_BLOB_CAP).map(|_| d.clone()).collect();
+        let digests: Vec<Digest> = (0..=crate::FIND_MISSING_BLOB_CAP)
+            .map(|_| d.clone())
+            .collect();
         let err = fm
             .find_missing("t1", "p1", "t1", 0, &digests)
             .expect_err("too large");
@@ -309,9 +315,7 @@ mod tests {
 
     #[test]
     fn parse_find_missing_request_valid() {
-        let body = format!(
-            r#"{{"blobDigests":[{{"hash":"{HASH_A}","sizeBytes":10}}]}}"#
-        );
+        let body = format!(r#"{{"blobDigests":[{{"hash":"{HASH_A}","sizeBytes":10}}]}}"#);
         let digests = parse_find_missing_request(&body).expect("parse");
         assert_eq!(digests.len(), 1);
         assert_eq!(digests[0].hash, HASH_A);

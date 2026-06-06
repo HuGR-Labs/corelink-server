@@ -26,9 +26,7 @@ use corelink_privacy_erasure_worker::{
     BackendErasureAdapter, BackendKind, ErasureDecision, ErasureIdempotencyLedger, ErasureWorker,
     ErasureWorkerError,
 };
-use e2e_dsr::{
-    canonical_erasure_for, make_test_tenant, seed_backends_for, setup_test_env,
-};
+use e2e_dsr::{canonical_erasure_for, make_test_tenant, seed_backends_for, setup_test_env};
 
 #[test]
 fn partial_backend_failure_aborts_then_replays() {
@@ -86,7 +84,10 @@ fn partial_backend_failure_aborts_then_replays() {
 
     // ---- Replay: clear chaos toggle + re-run ----
     stripe.set_transport_failure(false);
-    let dispatch = match env.erasure_worker.process_erasure(&erasure, env.now_ms.saturating_add(1)) {
+    let dispatch = match env
+        .erasure_worker
+        .process_erasure(&erasure, env.now_ms.saturating_add(1))
+    {
         Ok(d) => d,
         Err(e) => panic!("replay process_erasure failed: {e:?}"),
     };
@@ -100,7 +101,10 @@ fn partial_backend_failure_aborts_then_replays() {
     assert_eq!(snapshot2.len(), 12, "12 canonical backends post-replay");
 
     // Verification sweep is VerifiedComplete.
-    let outcome = match env.verification_job.run_24h_sweep(&erasure, env.now_ms.saturating_add(60_000)) {
+    let outcome = match env
+        .verification_job
+        .run_24h_sweep(&erasure, env.now_ms.saturating_add(60_000))
+    {
         Ok(o) => o,
         Err(e) => panic!("verification sweep: {e:?}"),
     };

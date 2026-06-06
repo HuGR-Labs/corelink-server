@@ -60,7 +60,7 @@
 pub mod harness;
 
 pub use harness::{
-    canonical_blob_payload, canonical_blob_payloads, canonical_pilot_tenant, blob_digest_hex,
+    blob_digest_hex, canonical_blob_payload, canonical_blob_payloads, canonical_pilot_tenant,
     AuditChainError, AuditEventKind, AuditExportError, AuditExportManifest, AuditRecord,
     BatchUploadReceipt, CasError, DsrErasureError, DsrErasureReceipt, OffboardingError,
     OffboardingReceipt, PilotHarness, PilotHarnessError, PilotTenant, SignupError, SignupReceipt,

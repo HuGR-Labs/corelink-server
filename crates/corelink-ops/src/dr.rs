@@ -9,5 +9,5 @@
 //!   cold-restore drill; catches silent backup corruption / freshness
 //!   regressions / restore failures between drill cycles).
 
-pub mod drill;
 pub mod backup_verify;
+pub mod drill;

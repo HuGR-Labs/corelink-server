@@ -204,7 +204,10 @@ fn sev1_fanout_set_canonical() {
     sev1_sorted.sort_unstable();
     let mut expected_sorted = expected.clone();
     expected_sorted.sort_unstable();
-    assert_eq!(sev1_sorted, expected_sorted, "SEV-1 set drift: {sev1:?} vs {expected:?}");
+    assert_eq!(
+        sev1_sorted, expected_sorted,
+        "SEV-1 set drift: {sev1:?} vs {expected:?}"
+    );
 }
 
 /// In-memory emitter captures every event in order.

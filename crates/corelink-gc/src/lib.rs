@@ -78,8 +78,7 @@
 /// `wrangler d1 migrations apply`. The simulator does not parse this
 /// string; the algorithmic invariants are re-implemented directly so
 /// test failures are easy to triage.
-pub const MIGRATION_0006_GC_RUN: &str =
-    include_str!("../../../migrations/d1/0006_gc_run.sql");
+pub const MIGRATION_0006_GC_RUN: &str = include_str!("../../../migrations/d1/0006_gc_run.sql");
 
 pub mod admin;
 pub mod audit;
@@ -101,7 +100,9 @@ pub use audit::{
     canonical_audit_event_strings, GcAuditRecord, GcAuditSink, GcAuditSinkError, GcEventType,
     InMemoryGcAuditSink,
 };
-pub use degrade::{DegradeKind, DegradeMode, DegradeProbe, DegradeProbeError, InMemoryDegradeProbe};
+pub use degrade::{
+    DegradeKind, DegradeMode, DegradeProbe, DegradeProbeError, InMemoryDegradeProbe,
+};
 pub use error::GcError;
 pub use mark::{
     AcMetaRow, BlobDigest, BlobMetaRow, CandidateStatus, CountingMarkClock, GcCandidate,
@@ -115,11 +116,11 @@ pub use metrics::{
     InMemoryGcMetrics,
 };
 pub use reconcile::{
-    auto_fix_gate_fires, sev_level_for, AcMetaReconcileRow, BlobMetaRefcountStore,
-    BlobMetaReconcileRow, CountingReconcileClock, InMemoryBlobMetaRefcountStore,
+    auto_fix_gate_fires, sev_level_for, AcMetaReconcileRow, BlobMetaReconcileRow,
+    BlobMetaRefcountStore, CountingReconcileClock, InMemoryBlobMetaRefcountStore,
     InMemoryReconcilePhase, InMemoryRefcountSource, ReconcileClock, ReconcileConfig,
-    ReconcileDecision, ReconcileError, ReconcilePhase, ReconcileResult, RefcountSource,
-    SevLevel, AUTO_FIX_MAX_PERCENT, AUTO_FIX_MAX_RECORDS, CANONICAL_RECONCILE_PHASE_BUDGET_MS,
+    ReconcileDecision, ReconcileError, ReconcilePhase, ReconcileResult, RefcountSource, SevLevel,
+    AUTO_FIX_MAX_PERCENT, AUTO_FIX_MAX_RECORDS, CANONICAL_RECONCILE_PHASE_BUDGET_MS,
     SEV1_PER_TENANT_DRIFT_PERCENT, SEV2_GLOBAL_DRIFT_PERCENT,
 };
 pub use region::{GcRegion, UnknownRegion, REGION_LIST};

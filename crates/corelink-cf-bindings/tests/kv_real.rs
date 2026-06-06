@@ -32,10 +32,10 @@
     reason = "test code: unwrap/panic on a failing assertion is itself a test failure"
 )]
 
+use corelink_cas::cache::kv::{KvBackend, KvError};
 use corelink_cf_bindings::kv_real::{
     AuditFn, CfKvNamespaceReal, KvOp, TenantPrefix, CF_KV_MIN_TTL_SECS,
 };
-use corelink_cas::cache::kv::{KvBackend, KvError};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -79,7 +79,11 @@ impl FakeKv {
 
     fn list_with_prefix(&self, prefix: &str, limit: Option<usize>) -> Vec<String> {
         let g = self.inner.lock().expect("FakeKv lock poisoned");
-        let mut keys: Vec<_> = g.keys().filter(|k| k.starts_with(prefix)).cloned().collect();
+        let mut keys: Vec<_> = g
+            .keys()
+            .filter(|k| k.starts_with(prefix))
+            .cloned()
+            .collect();
         keys.sort();
         if let Some(n) = limit {
             keys.truncate(n);
@@ -99,7 +103,9 @@ fn tp(s: &str) -> TenantPrefix {
 #[test]
 fn tenant_prefix_injected_on_tail_only_key() {
     let kv = CfKvNamespaceReal::stub_for_native_tests(tp("tntAAAA"));
-    let scoped = kv.scoped_key("neg/cache/abc").expect("derivation must succeed");
+    let scoped = kv
+        .scoped_key("neg/cache/abc")
+        .expect("derivation must succeed");
     assert_eq!(scoped.as_str(), "tntAAAA:neg/cache/abc");
 }
 
@@ -209,9 +215,8 @@ async fn get_validates_tenant_prefix_before_backend() {
 
 #[tokio::test]
 async fn audit_fail_closed_blocks_put() {
-    let audit: AuditFn = Arc::new(|_op, _key| {
-        Err(KvError::Backend("audit: write denied by policy".to_owned()))
-    });
+    let audit: AuditFn =
+        Arc::new(|_op, _key| Err(KvError::Backend("audit: write denied by policy".to_owned())));
     let kv = CfKvNamespaceReal::stub_for_native_tests(tp("tnt")).with_audit(audit);
     let err = kv
         .put_bytes("tnt:k", b"v", Some(120))
@@ -278,7 +283,11 @@ async fn audit_records_op_and_scoped_key() {
     let _ = kv.get_bytes("k2").await;
     // DELETE — audit fires.
     let _ = kv.delete("k3").await;
-    assert_eq!(count.load(Ordering::Acquire), 3, "audit must fire on every op");
+    assert_eq!(
+        count.load(Ordering::Acquire),
+        3,
+        "audit must fire on every op"
+    );
     let entries = captured.lock().expect("mutex").clone();
     assert_eq!(entries[0].0, KvOp::Put);
     assert_eq!(entries[0].1, "tntXYZ:k1");
@@ -357,11 +366,20 @@ async fn fake_kv_round_trip_observes_scoped_key() {
     // PUT with tenant-local tail; audit fence sees the SCOPED key.
     let _ = kv.put_bytes("entry/1", b"v", Some(120)).await;
     // The FakeKv now holds the scoped variant — not the tail.
-    assert!(fake.get("tntROUND:entry/1").is_some(), "scoped key must be stored");
-    assert!(fake.get("entry/1").is_none(), "bare tail must NOT be stored");
+    assert!(
+        fake.get("tntROUND:entry/1").is_some(),
+        "scoped key must be stored"
+    );
+    assert!(
+        fake.get("entry/1").is_none(),
+        "bare tail must NOT be stored"
+    );
     // DELETE on the same key (tail form) must hit the scoped slot.
     let _ = kv.delete("entry/1").await;
-    assert!(fake.get("tntROUND:entry/1").is_none(), "scoped key must be deleted");
+    assert!(
+        fake.get("tntROUND:entry/1").is_none(),
+        "scoped key must be deleted"
+    );
 }
 
 #[tokio::test]

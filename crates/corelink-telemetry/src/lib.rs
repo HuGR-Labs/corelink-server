@@ -144,10 +144,22 @@ mod tests {
         // Each aggregator submodule publishes a tiny `module_path_marker`
         // const so this smoke test has something concrete to assert on
         // beyond compile resolution.
-        assert_eq!(crate::tracing::module_path_marker(), "corelink_telemetry::tracing");
-        assert_eq!(crate::logpush::module_path_marker(), "corelink_telemetry::logpush");
-        assert_eq!(crate::otel::module_path_marker(), "corelink_telemetry::otel");
-        assert_eq!(crate::canary::module_path_marker(), "corelink_telemetry::canary");
+        assert_eq!(
+            crate::tracing::module_path_marker(),
+            "corelink_telemetry::tracing"
+        );
+        assert_eq!(
+            crate::logpush::module_path_marker(),
+            "corelink_telemetry::logpush"
+        );
+        assert_eq!(
+            crate::otel::module_path_marker(),
+            "corelink_telemetry::otel"
+        );
+        assert_eq!(
+            crate::canary::module_path_marker(),
+            "corelink_telemetry::canary"
+        );
         assert_eq!(
             crate::synthetic_pager::module_path_marker(),
             "corelink_telemetry::synthetic_pager"

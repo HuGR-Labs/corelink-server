@@ -52,8 +52,27 @@ pub(crate) fn is_valid_cloud_kms_resource(s: &str) -> bool {
     let parts: Vec<&str> = s.split('/').collect();
     matches!(
         parts.as_slice(),
-        ["projects", _, "locations", _, "keyRings", _, "cryptoKeys", _]
-            | ["projects", _, "locations", _, "keyRings", _, "cryptoKeys", _, "cryptoKeyVersions", _]
+        [
+            "projects",
+            _,
+            "locations",
+            _,
+            "keyRings",
+            _,
+            "cryptoKeys",
+            _
+        ] | [
+            "projects",
+            _,
+            "locations",
+            _,
+            "keyRings",
+            _,
+            "cryptoKeys",
+            _,
+            "cryptoKeyVersions",
+            _
+        ]
     ) && parts.iter().all(|p| !p.is_empty())
 }
 
@@ -90,7 +109,9 @@ mod tests {
             "arn:aws:kms:us-east-1:123:key/abc"
         ));
         // Missing segments.
-        assert!(!is_valid_cloud_kms_resource("projects/p/locations/l/keyRings/r"));
+        assert!(!is_valid_cloud_kms_resource(
+            "projects/p/locations/l/keyRings/r"
+        ));
         // Trailing slash.
         assert!(!is_valid_cloud_kms_resource(
             "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk/"
@@ -102,7 +123,9 @@ mod tests {
     #[test]
     fn strip_version() {
         assert_eq!(
-            strip_version_suffix("projects/p/locations/l/keyRings/r/cryptoKeys/k/cryptoKeyVersions/3"),
+            strip_version_suffix(
+                "projects/p/locations/l/keyRings/r/cryptoKeys/k/cryptoKeyVersions/3"
+            ),
             "projects/p/locations/l/keyRings/r/cryptoKeys/k"
         );
         assert_eq!(

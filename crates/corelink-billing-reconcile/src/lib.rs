@@ -202,17 +202,15 @@ pub mod reconciler;
 pub mod stripe_pause;
 
 pub use audit::{
-    audit_event_for_decision, canonical_reconcile_audit_event_strings,
-    FailingReconcileAuditSink, InMemoryReconcileAuditSink, ReconcileAuditEmitError,
-    ReconcileAuditEventType, ReconcileAuditRecord, ReconcileAuditSink,
+    audit_event_for_decision, canonical_reconcile_audit_event_strings, FailingReconcileAuditSink,
+    InMemoryReconcileAuditSink, ReconcileAuditEmitError, ReconcileAuditEventType,
+    ReconcileAuditRecord, ReconcileAuditSink,
 };
 pub use drift::{
-    auto_fix_gate_fires, compute_drift_record_count, compute_max_drift,
-    compute_pairwise_drift_pct,
+    auto_fix_gate_fires, compute_drift_record_count, compute_max_drift, compute_pairwise_drift_pct,
 };
 pub use error::{
-    ReconcileAuditSinkError, ReconcileDriftHistoryError, ReconcileError,
-    ReconcileStripePauseError,
+    ReconcileAuditSinkError, ReconcileDriftHistoryError, ReconcileError, ReconcileStripePauseError,
 };
 pub use event::{
     canonical_reconcile_layer_kinds, LayerTotals, ReconcileConfig, ReconcileDecision,
@@ -220,8 +218,8 @@ pub use event::{
     QUIET_THRESHOLD, SEV2_TO_SEV1_THRESHOLD, SEV3_TO_SEV2_THRESHOLD,
 };
 pub use history::{
-    DriftHistoryInsertOutcome, DriftHistoryLedger, DriftHistoryRow,
-    FailingDriftHistoryLedger, InMemoryDriftHistoryLedger,
+    DriftHistoryInsertOutcome, DriftHistoryLedger, DriftHistoryRow, FailingDriftHistoryLedger,
+    InMemoryDriftHistoryLedger,
 };
 pub use reconciler::{BillingReconciler, InMemoryBillingReconciler};
 pub use stripe_pause::{

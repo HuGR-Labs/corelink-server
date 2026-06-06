@@ -36,8 +36,8 @@
 )]
 
 use corelink_cf_bindings::do_real::{
-    AuditFn, CfDurableObjectReal, DoError, DoOp, DoTenantPrefix, FakeDoRouter,
-    FakeFetchResponse, AUDIT_DENY_PREFIX, TENANT_SCOPE_PREFIX, WASM_ONLY_PREFIX,
+    AuditFn, CfDurableObjectReal, DoError, DoOp, DoTenantPrefix, FakeDoRouter, FakeFetchResponse,
+    AUDIT_DENY_PREFIX, TENANT_SCOPE_PREFIX, WASM_ONLY_PREFIX,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -64,21 +64,16 @@ fn err_msg(err: DoError) -> String {
 
 #[test]
 fn scoped_name_prepends_canonical_prefix_for_bare_purpose() {
-    let wrapper =
-        CfDurableObjectReal::stub_for_native_tests(tp("tnt0123456789abcd"));
+    let wrapper = CfDurableObjectReal::stub_for_native_tests(tp("tnt0123456789abcd"));
     let scoped = wrapper
         .scoped_name("dedup-counter")
         .expect("bare purpose must be accepted and prefixed");
-    assert_eq!(
-        scoped.as_str(),
-        "tenant:tnt0123456789abcd:dedup-counter"
-    );
+    assert_eq!(scoped.as_str(), "tenant:tnt0123456789abcd:dedup-counter");
 }
 
 #[test]
 fn scoped_name_accepts_already_canonical_form() {
-    let wrapper =
-        CfDurableObjectReal::stub_for_native_tests(tp("tntABCD"));
+    let wrapper = CfDurableObjectReal::stub_for_native_tests(tp("tntABCD"));
     let scoped = wrapper
         .scoped_name("tenant:tntABCD:rollout-controller")
         .expect("canonical name must be accepted verbatim");
@@ -95,8 +90,8 @@ fn scoped_name_rejects_cross_tenant_ceremony() {
         .scoped_name("tenant:tntBBBB:dedup-counter")
         .expect_err("cross-tenant name must be refused");
     let msg = err_msg(err);
-            assert!(msg.starts_with(TENANT_SCOPE_PREFIX));
-            assert!(msg.contains("tenant-id segment does not match"));
+    assert!(msg.starts_with(TENANT_SCOPE_PREFIX));
+    assert!(msg.contains("tenant-id segment does not match"));
 }
 
 #[test]
@@ -106,7 +101,7 @@ fn scoped_name_rejects_empty_purpose_segment() {
         .scoped_name("tenant:tnt:")
         .expect_err("empty purpose tail must be refused");
     let msg = err_msg(err);
-        assert!(msg.contains("empty purpose segment"));
+    assert!(msg.contains("empty purpose segment"));
 }
 
 #[test]
@@ -118,7 +113,7 @@ fn scoped_name_rejects_missing_purpose_separator() {
         .scoped_name("tenant:tnt")
         .expect_err("missing purpose separator must be refused");
     let msg = err_msg(err);
-        assert!(msg.contains("missing purpose segment"));
+    assert!(msg.contains("missing purpose segment"));
 }
 
 #[test]
@@ -126,7 +121,7 @@ fn scoped_name_rejects_empty_name() {
     let wrapper = CfDurableObjectReal::stub_for_native_tests(tp("tnt"));
     let err = wrapper.scoped_name("").expect_err("empty name");
     let msg = err_msg(err);
-        assert!(msg.contains("empty name"));
+    assert!(msg.contains("empty name"));
 }
 
 #[test]
@@ -136,7 +131,7 @@ fn scoped_name_rejects_nul_byte() {
         .scoped_name("foo\0bar")
         .expect_err("NUL byte must be refused");
     let msg = err_msg(err);
-        assert!(msg.contains("NUL"));
+    assert!(msg.contains("NUL"));
 }
 
 #[test]
@@ -146,7 +141,7 @@ fn scoped_name_rejects_whitespace_in_name() {
         .scoped_name("foo bar")
         .expect_err("whitespace in name must be refused");
     let msg = err_msg(err);
-        assert!(msg.contains("whitespace"));
+    assert!(msg.contains("whitespace"));
 }
 
 // ---------------------------------------------------------------------------
@@ -201,8 +196,7 @@ async fn fetch_routes_through_router_using_canonical_scoped_name() {
         }
         Ok(FakeFetchResponse::empty(204))
     }));
-    let wrapper =
-        CfDurableObjectReal::with_fake_router(tp("tnt0123456789abcd"), router);
+    let wrapper = CfDurableObjectReal::with_fake_router(tp("tnt0123456789abcd"), router);
     let _ = wrapper
         .fetch_with_str("dedup-counter", "https://do/x")
         .await
@@ -212,10 +206,7 @@ async fn fetch_routes_through_router_using_canonical_scoped_name() {
         .ok()
         .and_then(|g| g.clone())
         .expect("router must have received the name");
-    assert_eq!(
-        captured_name,
-        "tenant:tnt0123456789abcd:dedup-counter"
-    );
+    assert_eq!(captured_name, "tenant:tnt0123456789abcd:dedup-counter");
 }
 
 #[tokio::test]
@@ -227,11 +218,11 @@ async fn fetch_surfaces_router_error_with_do_fetch_prefix() {
         .await
         .expect_err("router failure must surface as DoError");
     let msg = err_msg(err);
-            assert!(
-                msg.contains("do_fetch:"),
-                "binding-fault must carry do_fetch: prefix; got: {msg}"
-            );
-            assert!(msg.contains("upstream unreachable"));
+    assert!(
+        msg.contains("do_fetch:"),
+        "binding-fault must carry do_fetch: prefix; got: {msg}"
+    );
+    assert!(msg.contains("upstream unreachable"));
 }
 
 // ---------------------------------------------------------------------------
@@ -247,13 +238,16 @@ async fn audit_hook_fires_exactly_once_before_router_dispatch() {
         Ok(())
     });
     let router = FakeDoRouter::constant(FakeFetchResponse::ok(b"hi".to_vec()));
-    let wrapper = CfDurableObjectReal::with_fake_router(tp("tnt"), router)
-        .with_audit(audit);
+    let wrapper = CfDurableObjectReal::with_fake_router(tp("tnt"), router).with_audit(audit);
     let _ = wrapper
         .fetch_with_str("counter", "https://do/x")
         .await
         .expect("fetch must succeed");
-    assert_eq!(count.load(Ordering::Acquire), 1, "audit must fire exactly once");
+    assert_eq!(
+        count.load(Ordering::Acquire),
+        1,
+        "audit must fire exactly once"
+    );
 }
 
 #[tokio::test]
@@ -272,15 +266,14 @@ async fn audit_hook_fail_closed_blocks_fetch_dispatch() {
             "{AUDIT_DENY_PREFIX}write denied by policy"
         )))
     });
-    let wrapper = CfDurableObjectReal::with_fake_router(tp("tnt"), router)
-        .with_audit(audit);
+    let wrapper = CfDurableObjectReal::with_fake_router(tp("tnt"), router).with_audit(audit);
     let err = wrapper
         .fetch_with_str("counter", "https://do/x")
         .await
         .expect_err("audit deny must block fetch");
     let msg = err_msg(err);
-            assert!(msg.contains("write denied by policy"), "got: {msg}");
-            assert!(msg.contains(AUDIT_DENY_PREFIX), "got: {msg}");
+    assert!(msg.contains("write denied by policy"), "got: {msg}");
+    assert!(msg.contains(AUDIT_DENY_PREFIX), "got: {msg}");
     assert_eq!(
         dispatched.load(Ordering::Acquire),
         0,
@@ -301,13 +294,16 @@ async fn audit_hook_receives_canonical_scoped_name_not_raw() {
         Ok(())
     });
     let router = FakeDoRouter::constant(FakeFetchResponse::empty(204));
-    let wrapper = CfDurableObjectReal::with_fake_router(tp("tntABCD"), router)
-        .with_audit(audit);
+    let wrapper = CfDurableObjectReal::with_fake_router(tp("tntABCD"), router).with_audit(audit);
     let _ = wrapper
         .fetch_with_str("rollout-fsm", "https://do/state")
         .await
         .expect("fetch must succeed");
-    let cap = captured.lock().ok().and_then(|g| g.clone()).expect("audit captured");
+    let cap = captured
+        .lock()
+        .ok()
+        .and_then(|g| g.clone())
+        .expect("audit captured");
     assert_eq!(cap.0, DoOp::FetchStr);
     assert_eq!(cap.1, "tenant:tntABCD:rollout-fsm");
 }
@@ -323,8 +319,7 @@ async fn audit_fires_for_fetch_with_request_with_correct_op_label() {
         Ok(())
     });
     let router = FakeDoRouter::constant(FakeFetchResponse::empty(204));
-    let wrapper = CfDurableObjectReal::with_fake_router(tp("tnt"), router)
-        .with_audit(audit);
+    let wrapper = CfDurableObjectReal::with_fake_router(tp("tnt"), router).with_audit(audit);
     let _ = wrapper
         .fetch_with_request("counter", "POST", "https://do/x", b"")
         .await
@@ -345,8 +340,8 @@ async fn native_stub_returns_wasm_only_on_fetch_with_str() {
         .await
         .expect_err("native stub must refuse");
     let msg = err_msg(err);
-            assert!(msg.contains(WASM_ONLY_PREFIX), "got: {msg}");
-            assert!(msg.contains("fetch_with_str"), "got: {msg}");
+    assert!(msg.contains(WASM_ONLY_PREFIX), "got: {msg}");
+    assert!(msg.contains("fetch_with_str"), "got: {msg}");
 }
 
 #[tokio::test]
@@ -357,36 +352,42 @@ async fn native_stub_returns_wasm_only_on_fetch_with_request() {
         .await
         .expect_err("native stub must refuse");
     let msg = err_msg(err);
-            assert!(msg.contains(WASM_ONLY_PREFIX));
-            assert!(msg.contains("fetch_with_request"));
+    assert!(msg.contains(WASM_ONLY_PREFIX));
+    assert!(msg.contains("fetch_with_request"));
 }
 
 #[test]
 fn native_stub_returns_wasm_only_on_stub_by_name() {
     let wrapper = CfDurableObjectReal::stub_for_native_tests(tp("tnt"));
-    let err = wrapper.stub_by_name("counter").expect_err("native stub must refuse");
+    let err = wrapper
+        .stub_by_name("counter")
+        .expect_err("native stub must refuse");
     let msg = err_msg(err);
-            assert!(msg.contains(WASM_ONLY_PREFIX));
-            assert!(msg.contains("resolve"));
+    assert!(msg.contains(WASM_ONLY_PREFIX));
+    assert!(msg.contains("resolve"));
 }
 
 #[test]
 fn native_stub_returns_wasm_only_on_stub_by_hex_id_after_validation() {
     let wrapper = CfDurableObjectReal::stub_for_native_tests(tp("tnt"));
     let hex = "0".repeat(64);
-    let err = wrapper.stub_by_hex_id(&hex).expect_err("native stub must refuse");
+    let err = wrapper
+        .stub_by_hex_id(&hex)
+        .expect_err("native stub must refuse");
     let msg = err_msg(err);
-            assert!(msg.contains(WASM_ONLY_PREFIX));
-            assert!(msg.contains("resolve"));
+    assert!(msg.contains(WASM_ONLY_PREFIX));
+    assert!(msg.contains("resolve"));
 }
 
 #[test]
 fn stub_by_hex_id_rejects_wrong_length_before_audit() {
     let wrapper = CfDurableObjectReal::stub_for_native_tests(tp("tnt"));
-    let err = wrapper.stub_by_hex_id("abcd").expect_err("short hex must be refused");
+    let err = wrapper
+        .stub_by_hex_id("abcd")
+        .expect_err("short hex must be refused");
     let msg = err_msg(err);
-            assert!(msg.contains(TENANT_SCOPE_PREFIX));
-            assert!(msg.contains("64 chars"));
+    assert!(msg.contains(TENANT_SCOPE_PREFIX));
+    assert!(msg.contains("64 chars"));
 }
 
 #[test]
@@ -394,10 +395,12 @@ fn stub_by_hex_id_rejects_non_hex_charset() {
     let wrapper = CfDurableObjectReal::stub_for_native_tests(tp("tnt"));
     // 64 chars but `z` is not hex.
     let bad = format!("z{}", "0".repeat(63));
-    let err = wrapper.stub_by_hex_id(&bad).expect_err("non-hex must be refused");
+    let err = wrapper
+        .stub_by_hex_id(&bad)
+        .expect_err("non-hex must be refused");
     let msg = err_msg(err);
-            assert!(msg.contains(TENANT_SCOPE_PREFIX));
-            assert!(msg.contains("ascii-hex"));
+    assert!(msg.contains(TENANT_SCOPE_PREFIX));
+    assert!(msg.contains("ascii-hex"));
 }
 
 // ---------------------------------------------------------------------------
@@ -414,12 +417,12 @@ async fn validation_fires_before_wasm_only_on_fetch() {
         .await
         .expect_err("cross-tenant name must be refused pre-stub");
     let msg = err_msg(err);
-            // Must be the tenant_scope error, NOT WasmOnly.
-            assert!(
-                msg.contains(TENANT_SCOPE_PREFIX),
-                "validation must fire before WasmOnly: got: {msg}"
-            );
-            assert!(!msg.contains(WASM_ONLY_PREFIX));
+    // Must be the tenant_scope error, NOT WasmOnly.
+    assert!(
+        msg.contains(TENANT_SCOPE_PREFIX),
+        "validation must fire before WasmOnly: got: {msg}"
+    );
+    assert!(!msg.contains(WASM_ONLY_PREFIX));
 }
 
 #[tokio::test]
@@ -432,15 +435,14 @@ async fn audit_fires_before_wasm_only_on_fetch_with_no_router() {
             "{AUDIT_DENY_PREFIX}denied by policy"
         )))
     });
-    let wrapper = CfDurableObjectReal::stub_for_native_tests(tp("tnt"))
-        .with_audit(audit);
+    let wrapper = CfDurableObjectReal::stub_for_native_tests(tp("tnt")).with_audit(audit);
     let err = wrapper
         .fetch_with_str("counter", "https://do/x")
         .await
         .expect_err("audit deny must surface");
     let msg = err_msg(err);
-            assert!(msg.contains(AUDIT_DENY_PREFIX), "got: {msg}");
-            assert!(!msg.contains(WASM_ONLY_PREFIX), "got: {msg}");
+    assert!(msg.contains(AUDIT_DENY_PREFIX), "got: {msg}");
+    assert!(!msg.contains(WASM_ONLY_PREFIX), "got: {msg}");
 }
 
 // ---------------------------------------------------------------------------
@@ -452,8 +454,7 @@ async fn audit_fires_before_wasm_only_on_fetch_with_no_router() {
 fn crate_reexports_do_real_public_types() {
     // Compile-time assertions: if any of these renames, this test
     // fails to compile.
-    let _: corelink_cf_bindings::DoError =
-        corelink_cf_bindings::DoError::Backend("x".to_owned());
+    let _: corelink_cf_bindings::DoError = corelink_cf_bindings::DoError::Backend("x".to_owned());
     let _: corelink_cf_bindings::DoOp = corelink_cf_bindings::DoOp::FetchStr;
     let _: corelink_cf_bindings::DoTenantPrefix =
         corelink_cf_bindings::DoTenantPrefix::new("tnt").expect("valid");

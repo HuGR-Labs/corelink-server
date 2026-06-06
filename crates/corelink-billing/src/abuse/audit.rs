@@ -84,9 +84,7 @@ impl AbuseEventType {
             Self::DecisionSuspicious => "corelink.abuse.decision_suspicious",
             Self::DecisionMalicious => "corelink.abuse.decision_malicious",
             Self::DowngradeApplied => "corelink.abuse.downgrade_applied",
-            Self::AdminReviewTriggered => {
-                "corelink.abuse.admin_review_triggered"
-            }
+            Self::AdminReviewTriggered => "corelink.abuse.admin_review_triggered",
             Self::SuspendApplied => "corelink.abuse.suspend_applied",
         }
     }
@@ -226,9 +224,10 @@ impl InMemoryAbuseAuditSink {
 
 impl AbuseAuditSink for InMemoryAbuseAuditSink {
     fn emit(&self, record: AbuseAuditRecord) -> Result<(), AbuseAuditSinkError> {
-        let mut guard = self.inner.lock().map_err(|_| {
-            AbuseAuditSinkError::Store("audit sink mutex poisoned".to_string())
-        })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| AbuseAuditSinkError::Store("audit sink mutex poisoned".to_string()))?;
         guard.push(record);
         Ok(())
     }

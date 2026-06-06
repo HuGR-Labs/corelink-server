@@ -151,11 +151,10 @@ impl InMemoryAcReferenceProbe {
         created_at_ms: u64,
         deleted_at_ms: Option<u64>,
     ) -> Result<(), EvictionError> {
-        let mut g = self.inner.lock().map_err(|_| {
-            EvictionError::Backend(
-                "ac reference probe mutex poisoned".to_string(),
-            )
-        })?;
+        let mut g = self
+            .inner
+            .lock()
+            .map_err(|_| EvictionError::Backend("ac reference probe mutex poisoned".to_string()))?;
         g.entry(tenant_id).or_default().push(AcReferenceRow {
             action_digest: action_digest.into(),
             blob_refs,
@@ -165,15 +164,11 @@ impl InMemoryAcReferenceProbe {
         Ok(())
     }
 
-    fn snapshot_for_tenant(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<Vec<AcReferenceRow>, EvictionError> {
-        let g = self.inner.lock().map_err(|_| {
-            EvictionError::Backend(
-                "ac reference probe mutex poisoned".to_string(),
-            )
-        })?;
+    fn snapshot_for_tenant(&self, tenant_id: Uuid) -> Result<Vec<AcReferenceRow>, EvictionError> {
+        let g = self
+            .inner
+            .lock()
+            .map_err(|_| EvictionError::Backend("ac reference probe mutex poisoned".to_string()))?;
         Ok(g.get(&tenant_id).cloned().unwrap_or_default())
     }
 }
@@ -254,9 +249,7 @@ mod tests {
     #[test]
     fn empty_probe_returns_none() {
         let p = InMemoryAcReferenceProbe::new();
-        let r = p
-            .find_active_reference(ten_a(), &dig(1), 1000)
-            .unwrap();
+        let r = p.find_active_reference(ten_a(), &dig(1), 1000).unwrap();
         assert!(r.is_none());
     }
 
@@ -267,10 +260,7 @@ mod tests {
         // ac.created_at = 999 < evict_started_at = 1000 → active.
         p.push_ac_row(ten_a(), "act-a", vec![d.clone()], 999, None)
             .unwrap();
-        let w = p
-            .find_active_reference(ten_a(), &d, 1000)
-            .unwrap()
-            .unwrap();
+        let w = p.find_active_reference(ten_a(), &d, 1000).unwrap().unwrap();
         assert_eq!(w.action_digest, "act-a");
         assert_eq!(w.created_at_ms, 999);
     }
@@ -286,9 +276,7 @@ mod tests {
         // (the strict `<` evict arm fails).
         p.push_ac_row(ten_a(), "act-boundary", vec![d.clone()], 1000, None)
             .unwrap();
-        let r = p
-            .find_active_reference(ten_a(), &d, 1000)
-            .unwrap();
+        let r = p.find_active_reference(ten_a(), &d, 1000).unwrap();
         assert!(
             r.is_none(),
             "boundary off-by-one: ac.created_at == evict_started_at MUST be PROTECTED \
@@ -304,9 +292,7 @@ mod tests {
         let d = dig(1);
         p.push_ac_row(ten_a(), "act-newer", vec![d.clone()], 1001, None)
             .unwrap();
-        let r = p
-            .find_active_reference(ten_a(), &d, 1000)
-            .unwrap();
+        let r = p.find_active_reference(ten_a(), &d, 1000).unwrap();
         assert!(r.is_none());
     }
 
@@ -318,9 +304,7 @@ mod tests {
         let d = dig(1);
         p.push_ac_row(ten_a(), "act-older", vec![d.clone()], 999, None)
             .unwrap();
-        let r = p
-            .find_active_reference(ten_a(), &d, 1000)
-            .unwrap();
+        let r = p.find_active_reference(ten_a(), &d, 1000).unwrap();
         assert!(r.is_some());
     }
 
@@ -330,17 +314,9 @@ mod tests {
         let d = dig(1);
         // ac.deleted_at = Some(_) → row is deleted; even if
         // created_at < anchor it does NOT protect.
-        p.push_ac_row(
-            ten_a(),
-            "act-deleted",
-            vec![d.clone()],
-            500,
-            Some(750),
-        )
-        .unwrap();
-        let r = p
-            .find_active_reference(ten_a(), &d, 1000)
+        p.push_ac_row(ten_a(), "act-deleted", vec![d.clone()], 500, Some(750))
             .unwrap();
+        let r = p.find_active_reference(ten_a(), &d, 1000).unwrap();
         assert!(r.is_none());
     }
 
@@ -349,9 +325,7 @@ mod tests {
         let p = InMemoryAcReferenceProbe::new();
         p.push_ac_row(ten_a(), "act-other", vec![dig(2)], 500, None)
             .unwrap();
-        let r = p
-            .find_active_reference(ten_a(), &dig(1), 1000)
-            .unwrap();
+        let r = p.find_active_reference(ten_a(), &dig(1), 1000).unwrap();
         assert!(r.is_none());
     }
 
@@ -362,9 +336,7 @@ mod tests {
         // Tenant B has the AC reference; Tenant A's eviction sees nothing.
         p.push_ac_row(ten_b(), "act-b", vec![d.clone()], 500, None)
             .unwrap();
-        let r = p
-            .find_active_reference(ten_a(), &d, 1000)
-            .unwrap();
+        let r = p.find_active_reference(ten_a(), &d, 1000).unwrap();
         assert!(r.is_none());
     }
 

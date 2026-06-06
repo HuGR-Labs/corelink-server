@@ -33,8 +33,8 @@ pub fn encode(envelope: &AcEnvelope) -> Result<Vec<u8>, MerkleError> {
     if envelope.version != AC_ENVELOPE_VERSION {
         return Err(MerkleError::VersionUnsupported(envelope.version));
     }
-    let bytes = serde_json::to_vec(envelope)
-        .map_err(|e| MerkleError::DecodeError(e.to_string()))?;
+    let bytes =
+        serde_json::to_vec(envelope).map_err(|e| MerkleError::DecodeError(e.to_string()))?;
     if bytes.len() > MAX_PAYLOAD_BYTES {
         return Err(MerkleError::PayloadExceeded {
             found_bytes: bytes.len(),
@@ -61,8 +61,8 @@ pub fn decode(bytes: &[u8]) -> Result<AcEnvelope, MerkleError> {
             bound: MAX_PAYLOAD_BYTES,
         });
     }
-    let env: AcEnvelope = serde_json::from_slice(bytes)
-        .map_err(|e| MerkleError::DecodeError(e.to_string()))?;
+    let env: AcEnvelope =
+        serde_json::from_slice(bytes).map_err(|e| MerkleError::DecodeError(e.to_string()))?;
     if env.version != AC_ENVELOPE_VERSION {
         return Err(MerkleError::VersionUnsupported(env.version));
     }

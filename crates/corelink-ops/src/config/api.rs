@@ -70,8 +70,8 @@ pub mod middleware;
 
 pub use error::ApiError;
 pub use handlers::{
-    AdminContext, GetCurrentResponse, HistoryResponse, PutConfigRequest, PutConfigResponse,
-    RollbackResponse, handle_get_current, handle_get_history, handle_put, handle_rollback,
+    handle_get_current, handle_get_history, handle_put, handle_rollback, AdminContext,
+    GetCurrentResponse, HistoryResponse, PutConfigRequest, PutConfigResponse, RollbackResponse,
 };
 
 /// Crate version string.

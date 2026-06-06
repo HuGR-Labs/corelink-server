@@ -51,16 +51,12 @@ use std::sync::{Arc, Mutex};
 
 use uuid::Uuid;
 
-use crate::audit::{
-    RateLimitAuditRecord, RateLimitAuditSink, RateLimitEventType,
-};
+use crate::audit::{RateLimitAuditRecord, RateLimitAuditSink, RateLimitEventType};
 use crate::bucket::{try_acquire, BucketDecision, TokenBucketState};
 use crate::config::RateLimitConfig;
 use crate::error::RateLimitError;
 use crate::key::{BucketKey, KeyDimension};
-use crate::metrics::{
-    RateLimitMetricsObserver, RateLimitResultLabel,
-};
+use crate::metrics::{RateLimitMetricsObserver, RateLimitResultLabel};
 
 /// Per-request decision rendered by [`RateLimiter::try_acquire`].
 ///
@@ -230,11 +226,7 @@ where
 
     /// Construct with an explicit config.
     #[must_use]
-    pub fn new(
-        audit: Arc<A>,
-        metrics: Arc<M>,
-        config: RateLimitConfig,
-    ) -> Self {
+    pub fn new(audit: Arc<A>, metrics: Arc<M>, config: RateLimitConfig) -> Self {
         Self {
             audit,
             metrics,
@@ -256,9 +248,10 @@ where
     ///
     /// Returns [`RateLimitError::Backend`] on mutex poisoning.
     pub fn bucket_count(&self) -> Result<usize, RateLimitError> {
-        let g = self.state.lock().map_err(|_| {
-            RateLimitError::Backend("limiter state mutex poisoned".to_string())
-        })?;
+        let g = self
+            .state
+            .lock()
+            .map_err(|_| RateLimitError::Backend("limiter state mutex poisoned".to_string()))?;
         Ok(g.len())
     }
 
@@ -275,9 +268,10 @@ where
         key: BucketKey,
         state: TokenBucketState,
     ) -> Result<(), RateLimitError> {
-        let mut g = self.state.lock().map_err(|_| {
-            RateLimitError::Backend("limiter state mutex poisoned".to_string())
-        })?;
+        let mut g = self
+            .state
+            .lock()
+            .map_err(|_| RateLimitError::Backend("limiter state mutex poisoned".to_string()))?;
         g.insert(key, state);
         Ok(())
     }
@@ -315,9 +309,10 @@ where
         }
 
         // Step 2: per-instance Mutex (mirrors DO actor serialisation).
-        let mut guard = self.state.lock().map_err(|_| {
-            RateLimitError::Backend("limiter state mutex poisoned".to_string())
-        })?;
+        let mut guard = self
+            .state
+            .lock()
+            .map_err(|_| RateLimitError::Backend("limiter state mutex poisoned".to_string()))?;
 
         // Lazy materialise the bucket.
         let state = *guard
@@ -377,8 +372,7 @@ where
                 tenant_id,
                 bucket_key: bucket_key.clone(),
                 cost: 0,
-                available_tokens_after: next_state.available_tokens.floor()
-                    as u64,
+                available_tokens_after: next_state.available_tokens.floor() as u64,
                 created_by_request_id: "test".to_string(),
                 now_ms,
             })?;
@@ -394,11 +388,8 @@ where
             BucketDecision::Allow { .. } => RateLimitResultLabel::Allowed,
             BucketDecision::Deny429 { .. } => RateLimitResultLabel::Denied,
         };
-        self.metrics.record_check(
-            tenant_id,
-            bucket_key.dimension,
-            result_label,
-        )?;
+        self.metrics
+            .record_check(tenant_id, bucket_key.dimension, result_label)?;
         self.metrics.observe_tokens_remaining(
             tenant_id,
             bucket_key.dimension,
@@ -411,7 +402,8 @@ where
             bucket_key.dimension,
             next_state.refill_rate_per_sec.floor() as u64,
         )?;
-        self.metrics.record_middleware_duration_us(result_label, 0)?;
+        self.metrics
+            .record_middleware_duration_us(result_label, 0)?;
 
         let public_decision = match decision {
             BucketDecision::Allow {
@@ -421,8 +413,7 @@ where
                 decided_at_ms: now_ms,
                 tokens_remaining: available_tokens_after,
                 burst_capacity: next_state.burst_capacity,
-                refill_rate_per_sec: next_state.refill_rate_per_sec.floor()
-                    as u64,
+                refill_rate_per_sec: next_state.refill_rate_per_sec.floor() as u64,
             },
             BucketDecision::Deny429 {
                 retry_after_secs,
@@ -433,8 +424,7 @@ where
                 retry_after_secs,
                 tokens_remaining: available_tokens_after,
                 burst_capacity: next_state.burst_capacity,
-                refill_rate_per_sec: next_state.refill_rate_per_sec.floor()
-                    as u64,
+                refill_rate_per_sec: next_state.refill_rate_per_sec.floor() as u64,
             },
         };
 
@@ -463,12 +453,11 @@ where
             dimension,
             scope_key: scope_key.to_string(),
         };
-        let mut g = self.state.lock().map_err(|_| {
-            RateLimitError::Backend("limiter state mutex poisoned".to_string())
-        })?;
-        let entry = g
-            .entry(key)
-            .or_insert_with(|| self.fresh_bucket(now_ms));
+        let mut g = self
+            .state
+            .lock()
+            .map_err(|_| RateLimitError::Backend("limiter state mutex poisoned".to_string()))?;
+        let entry = g.entry(key).or_insert_with(|| self.fresh_bucket(now_ms));
         // Snap available_tokens to new capacity if shrinking.
         let new_cap_f = f64::from(new_burst_capacity);
         if entry.available_tokens > new_cap_f {
@@ -483,9 +472,10 @@ where
         &self,
         bucket_key: &BucketKey,
     ) -> Result<Option<TokenBucketState>, RateLimitError> {
-        let g = self.state.lock().map_err(|_| {
-            RateLimitError::Backend("limiter state mutex poisoned".to_string())
-        })?;
+        let g = self
+            .state
+            .lock()
+            .map_err(|_| RateLimitError::Backend("limiter state mutex poisoned".to_string()))?;
         Ok(g.get(bucket_key).copied())
     }
 }
@@ -513,10 +503,7 @@ mod tests {
     }
 
     type Fixture = (
-        InMemoryTokenBucketRateLimiter<
-            InMemoryRateLimitAuditSink,
-            InMemoryRateLimitMetrics,
-        >,
+        InMemoryTokenBucketRateLimiter<InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics>,
         Arc<InMemoryRateLimitAuditSink>,
         Arc<InMemoryRateLimitMetrics>,
     );
@@ -524,10 +511,8 @@ mod tests {
     fn fresh() -> Fixture {
         let audit = Arc::new(InMemoryRateLimitAuditSink::new());
         let metrics = Arc::new(InMemoryRateLimitMetrics::new());
-        let limiter = InMemoryTokenBucketRateLimiter::with_defaults(
-            Arc::clone(&audit),
-            Arc::clone(&metrics),
-        );
+        let limiter =
+            InMemoryTokenBucketRateLimiter::with_defaults(Arc::clone(&audit), Arc::clone(&metrics));
         (limiter, audit, metrics)
     }
 
@@ -549,14 +534,8 @@ mod tests {
             } if tokens_remaining == 999
         ));
         // Audit + metric emitted.
-        assert_eq!(
-            audit.snapshot_of(RateLimitEventType::Allowed).len(),
-            1
-        );
-        assert_eq!(
-            metrics.counter_total(RateLimitMetricKind::CheckTotal),
-            1
-        );
+        assert_eq!(audit.snapshot_of(RateLimitEventType::Allowed).len(), 1);
+        assert_eq!(metrics.counter_total(RateLimitMetricKind::CheckTotal), 1);
     }
 
     // ---- Deny path --------------------------------------------------
@@ -584,14 +563,8 @@ mod tests {
             }
             _ => panic!("expected deny"),
         }
-        assert_eq!(
-            audit.snapshot_of(RateLimitEventType::Denied429).len(),
-            1
-        );
-        assert_eq!(
-            metrics.counter_total(RateLimitMetricKind::CheckTotal),
-            1
-        );
+        assert_eq!(audit.snapshot_of(RateLimitEventType::Denied429).len(), 1);
+        assert_eq!(metrics.counter_total(RateLimitMetricKind::CheckTotal), 1);
     }
 
     // ---- Cost overflow guard ---------------------------------------
@@ -674,15 +647,8 @@ mod tests {
         let (lim, _a, _m) = fresh();
         // Update the team-default tenant to enterprise rate 10000 RPS,
         // burst 50000.
-        lim.update_plan(
-            ten_a(),
-            KeyDimension::PerTenant,
-            "",
-            10_000,
-            50_000,
-            1000,
-        )
-        .unwrap();
+        lim.update_plan(ten_a(), KeyDimension::PerTenant, "", 10_000, 50_000, 1000)
+            .unwrap();
         let key = BucketKey::per_tenant(ten_a());
         let snap = lim.snapshot_bucket(&key).unwrap().unwrap();
         assert_eq!(snap.burst_capacity, 50_000);
@@ -721,10 +687,8 @@ mod tests {
     fn audit_failure_aborts_decision_and_bucket_unchanged() {
         let audit = Arc::new(FailingRateLimitAuditSink::new());
         let metrics = Arc::new(InMemoryRateLimitMetrics::new());
-        let lim = InMemoryTokenBucketRateLimiter::with_defaults(
-            Arc::clone(&audit),
-            Arc::clone(&metrics),
-        );
+        let lim =
+            InMemoryTokenBucketRateLimiter::with_defaults(Arc::clone(&audit), Arc::clone(&metrics));
         let key = BucketKey::per_tenant(ten_a());
         let err = lim.try_acquire(ten_a(), key.clone(), 1, 1000).unwrap_err();
         assert!(matches!(err, RateLimitError::Audit(_)));

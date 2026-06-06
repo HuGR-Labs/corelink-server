@@ -161,19 +161,26 @@ fn all_ten_sla_event_types_round_trip_through_pipeline() {
         // Dedup row inserted on every accepted delivery (state mutator
         // OR observability echo OR unknown — for the canonical 10 we
         // always insert).
-        assert_eq!(idem.len(), 1, "event {} did not insert dedup row", canon.label());
+        assert_eq!(
+            idem.len(),
+            1,
+            "event {} did not insert dedup row",
+            canon.label()
+        );
 
         // Materializer is called iff the event type is a state mutator.
         let mat_calls = mat.call_count();
         if canon.is_state_mutator() {
             assert_eq!(
-                mat_calls, 1,
+                mat_calls,
+                1,
                 "state mutator {} should call materializer",
                 canon.label()
             );
         } else {
             assert_eq!(
-                mat_calls, 0,
+                mat_calls,
+                0,
                 "observability echo {} should NOT call materializer",
                 canon.label()
             );
@@ -319,7 +326,10 @@ fn materializer_transient_failure_returns_500_with_audit() {
     );
     // SLI still emitted (sad-path latency visible).
     assert_eq!(sli.count(), 1);
-    assert_eq!(sli.observations()[0].outcome, AuditOutcome::MaterializerFailed);
+    assert_eq!(
+        sli.observations()[0].outcome,
+        AuditOutcome::MaterializerFailed
+    );
 }
 
 #[test]

@@ -8,11 +8,11 @@ use std::sync::Arc;
 use super::super::audit::AuditSink;
 use super::super::merkle::MerkleVerifier;
 use super::super::meta::AcMetaStore;
+use super::super::neg_cache::AcNegCache;
 use super::super::outputs::OutputsCheck;
 use super::super::sig::Signer;
 use super::super::types::ActionResult;
 use super::envelope_store::AcEnvelopeStore;
-use super::super::neg_cache::AcNegCache;
 use crate::cache::kv::KvBackend;
 use crate::Region;
 
@@ -32,9 +32,7 @@ impl Clock for SystemClock {
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| {
-                u64::try_from(d.as_millis()).unwrap_or(u64::MAX)
-            })
+            .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
     }
 }
 
@@ -61,8 +59,7 @@ impl FakeClock {
 
     /// Pin the clock to an absolute value.
     pub fn set_ms(&self, abs_ms: u64) {
-        self.now
-            .store(abs_ms, std::sync::atomic::Ordering::Release);
+        self.now.store(abs_ms, std::sync::atomic::Ordering::Release);
     }
 }
 

@@ -23,14 +23,10 @@ use super::config::{
     TimingPaddingConfig, TimingPaddingError, JITTER_PCT_DEFAULT, JITTER_PCT_MAX,
     PADDING_GRANULARITY_MS_MIN, TARGET_P99_MS_DEFAULT, TARGET_P99_MS_MAX,
 };
-use super::padding::{
-    canonical_pad_target, compute_request_seed, splitmix_str, splitmix_u64,
-};
+use super::padding::{canonical_pad_target, compute_request_seed, splitmix_str, splitmix_u64};
 use super::policy::{JitterPolicy, MissMarker};
 use super::predicate::miss_predicates;
-use super::stats::{
-    bootstrap_median_ci, mann_whitney_u_p_value, median, sidak_per_test_alpha,
-};
+use super::stats::{bootstrap_median_ci, mann_whitney_u_p_value, median, sidak_per_test_alpha};
 
 // Compile-time witness: defaults are inside the validated range.
 const _: () = {
@@ -121,8 +117,7 @@ fn pad_target_seeded_jitter_stays_in_window() {
     let cfg = TimingPaddingConfig::new(200, 10).unwrap();
     let policy = JitterPolicy::Seeded;
     for seed in 0..1024u64 {
-        let target =
-            canonical_pad_target(cfg, &policy, seed, Duration::from_millis(0));
+        let target = canonical_pad_target(cfg, &policy, seed, Duration::from_millis(0));
         let ms = target.as_millis();
         assert!(
             (180..=220).contains(&ms),
@@ -146,8 +141,7 @@ fn pad_target_seeded_jitter_varies_across_seeds() {
     let policy = JitterPolicy::Seeded;
     let mut distinct = std::collections::BTreeSet::new();
     for seed in 0..256u64 {
-        let target =
-            canonical_pad_target(cfg, &policy, seed, Duration::from_millis(0));
+        let target = canonical_pad_target(cfg, &policy, seed, Duration::from_millis(0));
         distinct.insert(target.as_millis() as i64);
     }
     assert!(
@@ -164,14 +158,23 @@ fn server_secret_changes_seed_for_same_request_id() {
     // Codex round-1 P1 fix: the seed must NOT be a pure function
     // of the client-controlled `x-request-id`.
     let counter = AtomicU64::new(0);
-    let req_a = Request::builder().header("x-request-id", "abc").body(()).unwrap();
+    let req_a = Request::builder()
+        .header("x-request-id", "abc")
+        .body(())
+        .unwrap();
     let counter_b = AtomicU64::new(0);
-    let req_b = Request::builder().header("x-request-id", "abc").body(()).unwrap();
+    let req_b = Request::builder()
+        .header("x-request-id", "abc")
+        .body(())
+        .unwrap();
     let s_secret_1 = 0x1111_1111_1111_1111u64;
     let s_secret_2 = 0x2222_2222_2222_2222u64;
     let s1 = compute_request_seed(&req_a, s_secret_1, &counter);
     let s2 = compute_request_seed(&req_b, s_secret_2, &counter_b);
-    assert_ne!(s1, s2, "different server secrets must produce different seeds");
+    assert_ne!(
+        s1, s2,
+        "different server secrets must produce different seeds"
+    );
 }
 
 #[test]
@@ -181,7 +184,12 @@ fn same_id_different_calls_yield_different_seeds() {
     // intentionally re-using ids) get distinct seeds.
     let counter = AtomicU64::new(0);
     let secret = 0xC0DE_C0DE_C0DE_C0DEu64;
-    let req = || Request::builder().header("x-request-id", "same").body(()).unwrap();
+    let req = || {
+        Request::builder()
+            .header("x-request-id", "same")
+            .body(())
+            .unwrap()
+    };
     let s1 = compute_request_seed(&req(), secret, &counter);
     let s2 = compute_request_seed(&req(), secret, &counter);
     assert_ne!(s1, s2);
@@ -235,7 +243,10 @@ fn mwu_overlapping_samples_p_large() {
     let xs: Vec<f64> = (0..200).map(|_| rng.random_range(0.0..100.0)).collect();
     let ys: Vec<f64> = (0..200).map(|_| rng.random_range(0.0..100.0)).collect();
     let p = mann_whitney_u_p_value(&xs, &ys).unwrap();
-    assert!(p > 0.05, "same-distribution samples expected p > 0.05, got {p}");
+    assert!(
+        p > 0.05,
+        "same-distribution samples expected p > 0.05, got {p}"
+    );
 }
 
 #[test]
@@ -296,7 +307,11 @@ fn bootstrap_ci_nonzero_for_separated_samples() {
     let ys: Vec<f64> = (200..250).map(|i| i as f64).collect();
     let ci = bootstrap_median_ci(&xs, &ys, 200, 11).unwrap();
     assert!(ci.point_estimate > 100.0);
-    assert!(ci.ci_lower > 50.0, "expected CI lower > 50, got {}", ci.ci_lower);
+    assert!(
+        ci.ci_lower > 50.0,
+        "expected CI lower > 50, got {}",
+        ci.ci_lower
+    );
 }
 
 #[test]

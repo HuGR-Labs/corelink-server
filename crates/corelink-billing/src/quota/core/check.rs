@@ -61,21 +61,14 @@ use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 use corelink_eviction::{
-    should_fire_quota_trigger, EvictionRegion, QuotaTriggerOutcome,
-    TenantStorageStateStore,
+    should_fire_quota_trigger, EvictionRegion, QuotaTriggerOutcome, TenantStorageStateStore,
 };
 
-use super::audit::{
-    QuotaAuditRecord, QuotaAuditSink, QuotaEventType,
-};
+use super::audit::{QuotaAuditRecord, QuotaAuditSink, QuotaEventType};
 use super::config::QuotaConfig;
 use super::error::QuotaError;
-use super::metrics::{
-    QuotaCheckResultLabel, QuotaMetricsObserver,
-};
-use super::reservation::{
-    ReservationId, ReservationRow, ReservationTracker,
-};
+use super::metrics::{QuotaCheckResultLabel, QuotaMetricsObserver};
+use super::reservation::{ReservationId, ReservationRow, ReservationTracker};
 use super::retry_after::provisional_retry_after_secs;
 
 /// Request kind drives whether the decision engine reserves bytes.
@@ -335,9 +328,10 @@ where
         now_ms: u64,
     ) -> Result<QuotaCheckOutcome, QuotaError> {
         // Per-instance lock — mirrors DO actor serialisation.
-        let _lock = self.decision_lock.lock().map_err(|_| {
-            QuotaError::Backend("decision lock poisoned".to_string())
-        })?;
+        let _lock = self
+            .decision_lock
+            .lock()
+            .map_err(|_| QuotaError::Backend("decision lock poisoned".to_string()))?;
 
         // Step 1: sweep TTL-expired reservations inline. Production
         // runs this on the 60s DO alarm cadence; inline keeps the test
@@ -378,8 +372,9 @@ where
         }
 
         // Step 4: sum active reservations for (tenant, region).
-        let active_reservations =
-            self.reservations.sum_active_bytes(tenant_id, region, now_ms)?;
+        let active_reservations = self
+            .reservations
+            .sum_active_bytes(tenant_id, region, now_ms)?;
         let would_use = row
             .bytes_used
             .saturating_add(active_reservations)
@@ -430,13 +425,9 @@ where
             created_by_request_id: "test".to_string(),
             now_ms,
         })?;
-        let reservation = self.reservations.insert(
-            tenant_id,
-            reservation_id,
-            region,
-            request_bytes,
-            now_ms,
-        )?;
+        let reservation =
+            self.reservations
+                .insert(tenant_id, reservation_id, region, request_bytes, now_ms)?;
 
         // Compute the post-reservation projection for the 95% trigger
         // gate. We project the row with the would_use total to mirror
@@ -464,11 +455,8 @@ where
             .reservations
             .active_row_count()
             .map_err(QuotaError::Reservation)?;
-        self.metrics.observe_reservation_active(
-            tenant_id,
-            region,
-            active_count as u64,
-        )?;
+        self.metrics
+            .observe_reservation_active(tenant_id, region, active_count as u64)?;
 
         Ok(QuotaCheckOutcome {
             decision: QuotaDecision::Reserve {
@@ -489,9 +477,10 @@ where
         reservation_id: ReservationId,
         now_ms: u64,
     ) -> Result<u64, QuotaError> {
-        let _lock = self.decision_lock.lock().map_err(|_| {
-            QuotaError::Backend("decision lock poisoned".to_string())
-        })?;
+        let _lock = self
+            .decision_lock
+            .lock()
+            .map_err(|_| QuotaError::Backend("decision lock poisoned".to_string()))?;
 
         // Audit emit BEFORE the reservation tracker mutation
         // (fail-closed envelope: audit failure leaves the reservation
@@ -547,9 +536,10 @@ where
         reservation_id: ReservationId,
         now_ms: u64,
     ) -> Result<bool, QuotaError> {
-        let _lock = self.decision_lock.lock().map_err(|_| {
-            QuotaError::Backend("decision lock poisoned".to_string())
-        })?;
+        let _lock = self
+            .decision_lock
+            .lock()
+            .map_err(|_| QuotaError::Backend("decision lock poisoned".to_string()))?;
         let row = self.reservations.lookup(tenant_id, reservation_id)?;
         match row {
             Some(row) => {
@@ -589,9 +579,7 @@ where
 )]
 mod tests {
     use super::*;
-    use corelink_eviction::{
-        InMemoryTenantStorageStateStore, TenantStorageStateRow,
-    };
+    use corelink_eviction::{InMemoryTenantStorageStateStore, TenantStorageStateRow};
 
     use super::super::audit::InMemoryQuotaAuditSink;
     use super::super::metrics::InMemoryQuotaMetrics;
@@ -883,10 +871,7 @@ mod tests {
                 1000,
             )
             .unwrap_err();
-        assert!(matches!(
-            err,
-            QuotaError::TenantStorageStateMissing { .. }
-        ));
+        assert!(matches!(err, QuotaError::TenantStorageStateMissing { .. }));
     }
 
     // ---- commit_reservation -----------------------------------------
@@ -936,9 +921,7 @@ mod tests {
     #[test]
     fn release_reservation_idempotent_when_unknown() {
         let (engine, _s, _r, _a, _m) = fresh();
-        let r = engine
-            .release_reservation(ten_a(), rid(999), 2000)
-            .unwrap();
+        let r = engine.release_reservation(ten_a(), rid(999), 2000).unwrap();
         assert!(!r);
     }
 
@@ -968,9 +951,7 @@ mod tests {
         assert!(r);
         assert_eq!(res.active_row_count().unwrap(), 0);
         assert_eq!(
-            audit
-                .snapshot_of(QuotaEventType::ReservationExpired)
-                .len(),
+            audit.snapshot_of(QuotaEventType::ReservationExpired).len(),
             1
         );
     }
@@ -987,8 +968,8 @@ mod tests {
         // of the next check.
         res.insert(ten_a(), rid(99), EvictionRegion::Sam, 1024, 100)
             .unwrap(); // expires 60_100.
-        // Now run a check at now=70_000 — the inline sweep should
-        // remove the expired reservation.
+                       // Now run a check at now=70_000 — the inline sweep should
+                       // remove the expired reservation.
         let _out = engine
             .check_and_reserve(
                 ten_a(),

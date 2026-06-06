@@ -239,9 +239,7 @@ fn map_bridge_err(e: BazelBridgeError) -> axum::response::Response {
             (StatusCode::UNPROCESSABLE_ENTITY, "size mismatch")
         }
         BazelBridgeError::CrossTenantDenied { .. } => (StatusCode::FORBIDDEN, "cross-tenant"),
-        BazelBridgeError::AuditFailed(_) => {
-            (StatusCode::SERVICE_UNAVAILABLE, "audit closed")
-        }
+        BazelBridgeError::AuditFailed(_) => (StatusCode::SERVICE_UNAVAILABLE, "audit closed"),
         BazelBridgeError::BatchTooLarge { .. } => {
             (StatusCode::PAYLOAD_TOO_LARGE, "batch too large")
         }
@@ -272,7 +270,10 @@ async fn handle_cas_read(
         Ok(d) => d,
         Err(e) => return map_bridge_err(e),
     };
-    match state.adapter.cas_get(&instance, &digest, &p, &tenant, now_ms()) {
+    match state
+        .adapter
+        .cas_get(&instance, &digest, &p, &tenant, now_ms())
+    {
         Ok(bytes) => (
             StatusCode::OK,
             [("content-type", "application/octet-stream")],
@@ -327,7 +328,10 @@ async fn handle_ac_read(
         Ok(d) => d,
         Err(e) => return map_bridge_err(e),
     };
-    match state.adapter.ac_get(&instance, &digest, &p, &tenant, now_ms()) {
+    match state
+        .adapter
+        .ac_get(&instance, &digest, &p, &tenant, now_ms())
+    {
         Ok(bytes) => (
             StatusCode::OK,
             [("content-type", "application/octet-stream")],
@@ -396,12 +400,7 @@ async fn handle_find_missing(
 
     // Serialise the response.
     match build_find_missing_response(missing) {
-        Ok(json) => (
-            StatusCode::OK,
-            [("content-type", "application/json")],
-            json,
-        )
-            .into_response(),
+        Ok(json) => (StatusCode::OK, [("content-type", "application/json")], json).into_response(),
         Err(e) => map_bridge_err(e),
     }
 }
@@ -433,12 +432,7 @@ mod tests {
     }
 
     /// Shared fixture: PUT a blob via the route, return the hash used.
-    async fn seed_cas_via_route(
-        app: &axum::Router,
-        tenant: &str,
-        hash: &str,
-        payload: &[u8],
-    ) {
+    async fn seed_cas_via_route(app: &axum::Router, tenant: &str, hash: &str, payload: &[u8]) {
         let size = payload.len();
         let uuid = "test-uuid-0000";
         let uri = format!("/bazel/v2/{tenant}/uploads/{uuid}/blobs/{hash}/{size}");

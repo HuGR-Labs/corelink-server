@@ -39,11 +39,7 @@ fn fixture() -> InMemoryReplicationCoordinator {
 fn count_primaries(coord: &InMemoryReplicationCoordinator) -> usize {
     coord
         .role_map()
-        .map(|m| {
-            m.values()
-                .filter(|r| **r == RegionRole::Primary)
-                .count()
-        })
+        .map(|m| m.values().filter(|r| **r == RegionRole::Primary).count())
         .unwrap_or(usize::MAX)
 }
 

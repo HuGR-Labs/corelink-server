@@ -34,7 +34,7 @@
 )]
 
 use corelink_ops::supply_chain::policy::{
-    DenialReason, LicenseClass, SourceKind, classify_license, evaluate_policy, source_is_allowed,
+    classify_license, evaluate_policy, source_is_allowed, DenialReason, LicenseClass, SourceKind,
 };
 use proptest::prelude::*;
 
@@ -275,7 +275,14 @@ proptest! {
 /// `classify_license` is referentially transparent — same input → same output.
 #[test]
 fn license_classifier_is_deterministic() {
-    for &spdx in &["MIT", "GPL-3.0", "Apache-2.0", "SSPL-1.0", "BUSL-1.1", "ISC"] {
+    for &spdx in &[
+        "MIT",
+        "GPL-3.0",
+        "Apache-2.0",
+        "SSPL-1.0",
+        "BUSL-1.1",
+        "ISC",
+    ] {
         let a = classify_license(spdx);
         let b = classify_license(spdx);
         assert_eq!(a, b, "classify_license('{spdx}') is not deterministic");
@@ -312,15 +319,8 @@ fn allowlist_cardinality_canonical() {
 #[test]
 fn bannedlist_canonical() {
     let banned = [
-        "GPL-1.0",
-        "GPL-2.0",
-        "GPL-2.0+",
-        "GPL-3.0",
-        "GPL-3.0+",
-        "AGPL-1.0",
-        "AGPL-3.0",
-        "SSPL-1.0",
-        "BUSL-1.1",
+        "GPL-1.0", "GPL-2.0", "GPL-2.0+", "GPL-3.0", "GPL-3.0+", "AGPL-1.0", "AGPL-3.0",
+        "SSPL-1.0", "BUSL-1.1",
     ];
     for spdx in banned {
         let class = classify_license(spdx);

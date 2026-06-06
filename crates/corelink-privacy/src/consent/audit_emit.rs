@@ -83,10 +83,7 @@ pub trait ConsentAuditSink: Send + Sync {
     /// Returns `Err` if the audit could not be durably recorded.
     /// The caller MUST rollback any in-progress state mutation and
     /// return a 503 with retry-after.
-    fn emit(
-        &self,
-        record: ConsentAuditRecord,
-    ) -> Result<(), ConsentLedgerError>;
+    fn emit(&self, record: ConsentAuditRecord) -> Result<(), ConsentLedgerError>;
 }
 
 /// In-memory audit sink that captures all emitted records.

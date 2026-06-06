@@ -301,10 +301,7 @@ impl ProvisionedTenant {
 /// # Errors
 ///
 /// Returns a human-readable error string describing the first mismatch.
-pub fn verify_audit_chain(
-    env: &TestEnv,
-    expected: &[ExpectedAuditEvent],
-) -> Result<(), String> {
+pub fn verify_audit_chain(env: &TestEnv, expected: &[ExpectedAuditEvent]) -> Result<(), String> {
     let mut emitted: Vec<ExpectedAuditEvent> = Vec::new();
 
     // Signup audit chain.
@@ -328,12 +325,8 @@ pub fn verify_audit_chain(
     // Tier-selection audit chain.
     for ev in env.tier_audit.snapshot_event_types() {
         emitted.push(match ev {
-            TierSelectionAuditEventType::TierSelectAttempted => {
-                ExpectedAuditEvent::TierAttempted
-            }
-            TierSelectionAuditEventType::TierActivatedFree => {
-                ExpectedAuditEvent::TierActivatedFree
-            }
+            TierSelectionAuditEventType::TierSelectAttempted => ExpectedAuditEvent::TierAttempted,
+            TierSelectionAuditEventType::TierActivatedFree => ExpectedAuditEvent::TierActivatedFree,
             TierSelectionAuditEventType::StripeCheckoutSessionCreated => {
                 ExpectedAuditEvent::TierStripeCheckoutCreated
             }
@@ -504,9 +497,6 @@ pub trait TierAuditSnapshotExt {
 
 impl TierAuditSnapshotExt for InMemoryTierSelectionAuditSink {
     fn snapshot_event_types(&self) -> Vec<TierSelectionAuditEventType> {
-        self.snapshot()
-            .into_iter()
-            .map(|r| r.event_type)
-            .collect()
+        self.snapshot().into_iter().map(|r| r.event_type).collect()
     }
 }

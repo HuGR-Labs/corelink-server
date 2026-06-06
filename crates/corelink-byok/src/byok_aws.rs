@@ -77,7 +77,6 @@
 //! operations to the native server process over the internal
 //! control-plane RPC.
 
-
 use crate::byok_core::types::BYOKError;
 
 pub mod real;
@@ -217,15 +216,17 @@ fn is_canonical_uuid(s: &str) -> bool {
 #[cfg(not(target_arch = "wasm32"))]
 mod legacy {
     use super::{read_fips_endpoint_flag, resolve_endpoint_hostname, validate_aws_kms_key_arn};
+    use crate::{
+        types::{
+            BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek,
+        },
+        KmsProvider,
+    };
     use async_trait::async_trait;
     use aws_sdk_kms::{
         config::{Builder as KmsConfigBuilder, Region},
         primitives::Blob,
         Client,
-    };
-    use crate::{
-        types::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek},
-        KmsProvider,
     };
     use serde_json::Value;
     use std::collections::HashMap;
@@ -435,7 +436,9 @@ mod legacy {
                 .clone()
                 .into_inner();
             if plaintext.len() != 32 {
-                return Err(BYOKError::DekLengthInvalid { got: plaintext.len() });
+                return Err(BYOKError::DekLengthInvalid {
+                    got: plaintext.len(),
+                });
             }
             let mut bytes = [0u8; 32];
             bytes.copy_from_slice(&plaintext);
@@ -526,17 +529,15 @@ mod legacy {
         }
         let aad = serde_json::to_vec(ctx).unwrap_or_default();
         let expected = aad_fingerprint(&aad);
-        let stored = wrapped
-            .ciphertext
-            .get(..8)
-            .ok_or_else(|| BYOKError::EnvelopeError("AWS mock: ciphertext too short".to_string()))?;
+        let stored = wrapped.ciphertext.get(..8).ok_or_else(|| {
+            BYOKError::EnvelopeError("AWS mock: ciphertext too short".to_string())
+        })?;
         if stored != expected.as_slice() {
             return Err(BYOKError::AadMismatch);
         }
-        let body = wrapped
-            .ciphertext
-            .get(8..)
-            .ok_or_else(|| BYOKError::EnvelopeError("AWS mock: ciphertext too short".to_string()))?;
+        let body = wrapped.ciphertext.get(8..).ok_or_else(|| {
+            BYOKError::EnvelopeError("AWS mock: ciphertext too short".to_string())
+        })?;
         let mut bytes = [0u8; 32];
         for (out, &b) in bytes.iter_mut().zip(body.iter()) {
             *out = b ^ 0xBB;
@@ -626,7 +627,8 @@ mod tests {
 
     #[test]
     fn validate_arn_rejects_wrong_partition() {
-        let arn = "arn:aws-bogus:kms:us-east-1:000000000000:key/00000000-0000-0000-0000-000000000000";
+        let arn =
+            "arn:aws-bogus:kms:us-east-1:000000000000:key/00000000-0000-0000-0000-000000000000";
         assert!(validate_aws_kms_key_arn(arn).is_err());
     }
 

@@ -254,11 +254,10 @@ where
         ))?;
 
         // Re-read the row so the caller sees the refreshed last_hit_at.
-        let refreshed = self
-            .meta
-            .get(&key)
-            .await?
-            .ok_or_else(|| AcError::Internal("ac_meta row vanished post-refresh".to_string()))?;
+        let refreshed =
+            self.meta.get(&key).await?.ok_or_else(|| {
+                AcError::Internal("ac_meta row vanished post-refresh".to_string())
+            })?;
         Ok(GetActionResult {
             action_result,
             row: refreshed,
@@ -339,27 +338,27 @@ where
             action_digest,
             &result_hash,
         )?;
-        let signature: [u8; AC_ENVELOPE_SIG_LEN] = match self.signer.sign(
-            ctx.tenant_id(),
-            self.sig_key_id,
-            &canonical,
-        ) {
-            Ok(s) => s,
-            Err(sig_err) => {
-                if !matches!(sig_err, SigError::KeyIdReserved) {
-                    self.audit.emit(self.make_record(
-                        AcEventType::UpdateSigInvalid,
-                        ctx,
-                        action_digest,
-                        request_id,
-                        Some(result_hash),
-                        "sig_sign_failed",
-                        Vec::new(),
-                    ))?;
+        let signature: [u8; AC_ENVELOPE_SIG_LEN] =
+            match self
+                .signer
+                .sign(ctx.tenant_id(), self.sig_key_id, &canonical)
+            {
+                Ok(s) => s,
+                Err(sig_err) => {
+                    if !matches!(sig_err, SigError::KeyIdReserved) {
+                        self.audit.emit(self.make_record(
+                            AcEventType::UpdateSigInvalid,
+                            ctx,
+                            action_digest,
+                            request_id,
+                            Some(result_hash),
+                            "sig_sign_failed",
+                            Vec::new(),
+                        ))?;
+                    }
+                    return Err(sig_err.into());
                 }
-                return Err(sig_err.into());
-            }
-        };
+            };
         let envelope = AcEnvelope {
             canonical_bytes: canonical,
             signature,
@@ -473,5 +472,4 @@ where
             row,
         })
     }
-
 }

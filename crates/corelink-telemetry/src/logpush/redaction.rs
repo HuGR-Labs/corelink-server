@@ -169,10 +169,7 @@ pub trait PiiRedactor: Send + Sync + core::fmt::Debug {
     /// [`PiiRedactor::redact`] on every string leaf (object keys are
     /// PRESERVED; only string values are redacted; numbers + bools
     /// pass through). The cumulative `RedactionOutcome` is returned.
-    fn redact_json(
-        &self,
-        value: &mut serde_json::Value,
-    ) -> RedactionOutcome {
+    fn redact_json(&self, value: &mut serde_json::Value) -> RedactionOutcome {
         let mut outcome = RedactionOutcome::default();
         redact_json_recursive(self, value, &mut outcome);
         outcome
@@ -188,17 +185,11 @@ fn redact_json_recursive<R: PiiRedactor + ?Sized>(
         serde_json::Value::String(s) => {
             let r = redactor.redact(s);
             *s = r.redacted;
-            outcome.email_hits =
-                outcome.email_hits.saturating_add(r.email_hits);
-            outcome.ip_hits =
-                outcome.ip_hits.saturating_add(r.ip_hits);
-            outcome.token_hits =
-                outcome.token_hits.saturating_add(r.token_hits);
-            outcome.pan_hits =
-                outcome.pan_hits.saturating_add(r.pan_hits);
-            outcome.cpf_cnpj_hits = outcome
-                .cpf_cnpj_hits
-                .saturating_add(r.cpf_cnpj_hits);
+            outcome.email_hits = outcome.email_hits.saturating_add(r.email_hits);
+            outcome.ip_hits = outcome.ip_hits.saturating_add(r.ip_hits);
+            outcome.token_hits = outcome.token_hits.saturating_add(r.token_hits);
+            outcome.pan_hits = outcome.pan_hits.saturating_add(r.pan_hits);
+            outcome.cpf_cnpj_hits = outcome.cpf_cnpj_hits.saturating_add(r.cpf_cnpj_hits);
         }
         serde_json::Value::Array(arr) => {
             for v in arr.iter_mut() {
@@ -245,9 +236,7 @@ impl InMemoryPiiRedactor {
     /// Snapshot the per-pattern cumulative counters across every
     /// redaction pass.
     #[must_use]
-    pub fn snapshot_counters(
-        &self,
-    ) -> (u64, u64, u64, u64, u64) {
+    pub fn snapshot_counters(&self) -> (u64, u64, u64, u64, u64) {
         let g = match self.counters.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -267,8 +256,7 @@ impl PiiRedactor for InMemoryPiiRedactor {
         // then email; then IP. The order is load-bearing for the
         // canonical hit-count discipline.
         let mut step = redact_tokens(input);
-        outcome.token_hits =
-            outcome.token_hits.saturating_add(step.hits);
+        outcome.token_hits = outcome.token_hits.saturating_add(step.hits);
 
         // IP scanner runs BEFORE the CPF/CNPJ + PAN scanners so an
         // IPv4-shaped string never collides with a digit-only document
@@ -278,28 +266,22 @@ impl PiiRedactor for InMemoryPiiRedactor {
         outcome.ip_hits = outcome.ip_hits.saturating_add(step.hits);
 
         step = redact_cpf_cnpj(&step.text);
-        outcome.cpf_cnpj_hits =
-            outcome.cpf_cnpj_hits.saturating_add(step.hits);
+        outcome.cpf_cnpj_hits = outcome.cpf_cnpj_hits.saturating_add(step.hits);
 
         step = redact_pan(&step.text);
-        outcome.pan_hits =
-            outcome.pan_hits.saturating_add(step.hits);
+        outcome.pan_hits = outcome.pan_hits.saturating_add(step.hits);
 
         step = redact_email(&step.text);
-        outcome.email_hits =
-            outcome.email_hits.saturating_add(step.hits);
+        outcome.email_hits = outcome.email_hits.saturating_add(step.hits);
 
         outcome.redacted = step.text;
 
         if let Ok(mut g) = self.counters.lock() {
             g.email = g.email.saturating_add(u64::from(outcome.email_hits));
             g.ip = g.ip.saturating_add(u64::from(outcome.ip_hits));
-            g.token =
-                g.token.saturating_add(u64::from(outcome.token_hits));
+            g.token = g.token.saturating_add(u64::from(outcome.token_hits));
             g.pan = g.pan.saturating_add(u64::from(outcome.pan_hits));
-            g.cpf_cnpj = g
-                .cpf_cnpj
-                .saturating_add(u64::from(outcome.cpf_cnpj_hits));
+            g.cpf_cnpj = g.cpf_cnpj.saturating_add(u64::from(outcome.cpf_cnpj_hits));
         }
         outcome
     }
@@ -314,8 +296,7 @@ struct PassResult {
 // -- Email scanner -----------------------------------------------------
 
 fn is_email_local_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric()
-        || matches!(b, b'.' | b'_' | b'+' | b'-' | b'%')
+    b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'+' | b'-' | b'%')
 }
 
 fn is_email_domain_byte(b: u8) -> bool {
@@ -333,10 +314,7 @@ fn redact_email(input: &str) -> PassResult {
             // Walk backward to find the local-part start.
             let mut local_start = i;
             while local_start > 0 {
-                let prev = bytes
-                    .get(local_start - 1)
-                    .copied()
-                    .unwrap_or(0);
+                let prev = bytes.get(local_start - 1).copied().unwrap_or(0);
                 if is_email_local_byte(prev) {
                     local_start -= 1;
                 } else {
@@ -346,8 +324,7 @@ fn redact_email(input: &str) -> PassResult {
             // Walk forward from i+1 to find the domain end.
             let mut domain_end = i + 1;
             while domain_end < bytes.len() {
-                let nxt =
-                    bytes.get(domain_end).copied().unwrap_or(0);
+                let nxt = bytes.get(domain_end).copied().unwrap_or(0);
                 if is_email_domain_byte(nxt) {
                     domain_end += 1;
                 } else {
@@ -357,19 +334,14 @@ fn redact_email(input: &str) -> PassResult {
             // Validate: local non-empty, domain has at least one dot
             // separating at least 2 chars on each side, and TLD ≥ 2
             // chars + alphabetic.
-            let domain = bytes
-                .get(i + 1..domain_end)
-                .unwrap_or(&[]);
+            let domain = bytes.get(i + 1..domain_end).unwrap_or(&[]);
             let local_len = i - local_start;
-            let last_dot = domain
-                .iter()
-                .rposition(|c| *c == b'.');
+            let last_dot = domain.iter().rposition(|c| *c == b'.');
             let valid = local_len >= 1
                 && !domain.is_empty()
                 && last_dot.is_some_and(|idx| {
                     let tld = domain.get(idx + 1..).unwrap_or(&[]);
-                    tld.len() >= 2
-                        && tld.iter().all(|c| c.is_ascii_alphabetic())
+                    tld.len() >= 2 && tld.iter().all(|c| c.is_ascii_alphabetic())
                 });
             if valid {
                 // Trim trailing dot from the local-part / leading dot
@@ -454,9 +426,7 @@ fn match_ipv4_at(bytes: &[u8], start: usize) -> Option<usize> {
         while digits < 3 {
             let b = bytes.get(i).copied().unwrap_or(0);
             if b.is_ascii_digit() {
-                value = value
-                    .saturating_mul(10)
-                    .saturating_add(u32::from(b - b'0'));
+                value = value.saturating_mul(10).saturating_add(u32::from(b - b'0'));
                 digits += 1;
                 i += 1;
             } else {
@@ -469,8 +439,7 @@ fn match_ipv4_at(bytes: &[u8], start: usize) -> Option<usize> {
         // Reject leading-zero octets (e.g. "01.02.03.04") to avoid
         // swallowing tag-shaped digit runs inside opaque ids.
         if digits > 1 {
-            let first =
-                bytes.get(octet_start).copied().unwrap_or(0);
+            let first = bytes.get(octet_start).copied().unwrap_or(0);
             if first == b'0' {
                 return None;
             }
@@ -564,18 +533,14 @@ fn redact_tokens(input: &str) -> PassResult {
         if matches_bearer_prefix(bytes, i) {
             let after = i + BEARER_PREFIX_LEN;
             // Skip a single optional space.
-            let token_start =
-                if bytes.get(after).copied() == Some(b' ') {
-                    after + 1
-                } else {
-                    after
-                };
+            let token_start = if bytes.get(after).copied() == Some(b' ') {
+                after + 1
+            } else {
+                after
+            };
             let mut token_end = token_start;
             while token_end < bytes.len() {
-                let b = bytes
-                    .get(token_end)
-                    .copied()
-                    .unwrap_or(0);
+                let b = bytes.get(token_end).copied().unwrap_or(0);
                 if is_token_byte(b) {
                     token_end += 1;
                 } else {
@@ -718,9 +683,7 @@ fn match_long_token_at(bytes: &[u8], start: usize) -> Option<usize> {
     if alnum_count >= 24
         && total_len >= 24
         && boundary_right(bytes, i)
-        && contains_letter_and_digit(
-            bytes.get(start..i).unwrap_or(&[]),
-        )
+        && contains_letter_and_digit(bytes.get(start..i).unwrap_or(&[]))
     {
         Some(i)
     } else {
@@ -758,10 +721,7 @@ fn redact_pan(input: &str) -> PassResult {
     PassResult { text: out, hits }
 }
 
-fn collect_pan_digits(
-    bytes: &[u8],
-    start: usize,
-) -> Option<(Vec<u8>, usize)> {
+fn collect_pan_digits(bytes: &[u8], start: usize) -> Option<(Vec<u8>, usize)> {
     if !boundary_left(bytes, start) {
         return None;
     }
@@ -778,10 +738,7 @@ fn collect_pan_digits(
             digits.push(b - b'0');
             i += 1;
             last_digit_idx = i;
-        } else if matches!(b, b' ' | b'-')
-            && !digits.is_empty()
-            && digits.len() < 19
-        {
+        } else if matches!(b, b' ' | b'-') && !digits.is_empty() && digits.len() < 19 {
             i += 1;
         } else {
             break;
@@ -852,10 +809,7 @@ fn redact_cpf_cnpj(input: &str) -> PassResult {
     PassResult { text: out, hits }
 }
 
-fn collect_doc_digits(
-    bytes: &[u8],
-    start: usize,
-) -> Option<(Vec<u8>, usize)> {
+fn collect_doc_digits(bytes: &[u8], start: usize) -> Option<(Vec<u8>, usize)> {
     if !boundary_left(bytes, start) {
         return None;
     }
@@ -872,9 +826,7 @@ fn collect_doc_digits(
             digits.push(b - b'0');
             i += 1;
             last_digit_idx = i;
-        } else if matches!(b, b'.' | b'-' | b'/')
-            && !digits.is_empty()
-        {
+        } else if matches!(b, b'.' | b'-' | b'/') && !digits.is_empty() {
             i += 1;
         } else {
             break;
@@ -891,14 +843,15 @@ fn cpf_valid(digits: &[u8]) -> bool {
     if digits.len() != 11 {
         return false;
     }
-    if digits.iter().all(|d| *d == digits.first().copied().unwrap_or(0)) {
+    if digits
+        .iter()
+        .all(|d| *d == digits.first().copied().unwrap_or(0))
+    {
         return false;
     }
     let mut sum1: u32 = 0;
     for (idx, d) in digits.iter().take(9).enumerate() {
-        sum1 = sum1.saturating_add(
-            u32::from(*d).saturating_mul(10 - (idx as u32)),
-        );
+        sum1 = sum1.saturating_add(u32::from(*d).saturating_mul(10 - (idx as u32)));
     }
     let dv1 = compute_dv_mod11(sum1);
     if digits.get(9).copied() != Some(dv1) {
@@ -906,9 +859,7 @@ fn cpf_valid(digits: &[u8]) -> bool {
     }
     let mut sum2: u32 = 0;
     for (idx, d) in digits.iter().take(10).enumerate() {
-        sum2 = sum2.saturating_add(
-            u32::from(*d).saturating_mul(11 - (idx as u32)),
-        );
+        sum2 = sum2.saturating_add(u32::from(*d).saturating_mul(11 - (idx as u32)));
     }
     let dv2 = compute_dv_mod11(sum2);
     digits.get(10).copied() == Some(dv2)
@@ -923,22 +874,22 @@ fn compute_dv_mod11(sum: u32) -> u8 {
     }
 }
 
-const CNPJ_W1: [u32; 12] =
-    [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-const CNPJ_W2: [u32; 13] =
-    [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+const CNPJ_W1: [u32; 12] = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+const CNPJ_W2: [u32; 13] = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
 
 fn cnpj_valid(digits: &[u8]) -> bool {
     if digits.len() != 14 {
         return false;
     }
-    if digits.iter().all(|d| *d == digits.first().copied().unwrap_or(0)) {
+    if digits
+        .iter()
+        .all(|d| *d == digits.first().copied().unwrap_or(0))
+    {
         return false;
     }
     let mut sum1: u32 = 0;
     for (idx, w) in CNPJ_W1.iter().enumerate() {
-        let d =
-            u32::from(digits.get(idx).copied().unwrap_or(0));
+        let d = u32::from(digits.get(idx).copied().unwrap_or(0));
         sum1 = sum1.saturating_add(d.saturating_mul(*w));
     }
     let dv1 = compute_dv_mod11(sum1);
@@ -947,8 +898,7 @@ fn cnpj_valid(digits: &[u8]) -> bool {
     }
     let mut sum2: u32 = 0;
     for (idx, w) in CNPJ_W2.iter().enumerate() {
-        let d =
-            u32::from(digits.get(idx).copied().unwrap_or(0));
+        let d = u32::from(digits.get(idx).copied().unwrap_or(0));
         sum2 = sum2.saturating_add(d.saturating_mul(*w));
     }
     let dv2 = compute_dv_mod11(sum2);
@@ -998,8 +948,7 @@ mod tests {
     #[test]
     fn ipv6_redacted() {
         let r = InMemoryPiiRedactor::new();
-        let out =
-            r.redact("from 2001:db8::1 routed");
+        let out = r.redact("from 2001:db8::1 routed");
         assert!(out.redacted.contains("<IP_REDACTED>"));
         assert!(!out.redacted.contains("2001:db8::1"));
         assert_eq!(out.ip_hits, 1);
@@ -1008,20 +957,17 @@ mod tests {
     #[test]
     fn bearer_token_redacted() {
         let r = InMemoryPiiRedactor::new();
-        let out = r.redact(
-            "Authorization: Bearer abcdef0123456789ZYXW",
-        );
+        let out = r.redact("Authorization: Bearer abcdef0123456789ZYXW");
         assert!(out.redacted.contains("<TOKEN_REDACTED>"));
-        assert!(!out
-            .redacted
-            .contains("abcdef0123456789ZYXW"));
+        assert!(!out.redacted.contains("abcdef0123456789ZYXW"));
         assert_eq!(out.token_hits, 1);
     }
 
     #[test]
     fn jwt_redacted() {
         let r = InMemoryPiiRedactor::new();
-        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+        let jwt =
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
         let out = r.redact(&format!("token {jwt} expired"));
         assert!(out.redacted.contains("<TOKEN_REDACTED>"));
         assert!(!out.redacted.contains(jwt));
@@ -1032,8 +978,7 @@ mod tests {
     fn pan_redacted_visa_test_number() {
         let r = InMemoryPiiRedactor::new();
         // Standard Visa test PAN (4111-1111-1111-1111; Luhn-valid).
-        let out =
-            r.redact("card 4111 1111 1111 1111 captured");
+        let out = r.redact("card 4111 1111 1111 1111 captured");
         assert!(out.redacted.contains("<PAN_REDACTED>"));
         assert_eq!(out.pan_hits, 1);
     }
@@ -1042,8 +987,7 @@ mod tests {
     fn pan_invalid_luhn_passes_through() {
         let r = InMemoryPiiRedactor::new();
         // 16 digit run that is NOT Luhn-valid.
-        let out =
-            r.redact("transaction 1234567890123456 logged");
+        let out = r.redact("transaction 1234567890123456 logged");
         assert!(out.redacted.contains("1234567890123456"));
         assert_eq!(out.pan_hits, 0);
     }
@@ -1052,8 +996,7 @@ mod tests {
     fn cpf_redacted_canonical() {
         let r = InMemoryPiiRedactor::new();
         // Canonical valid CPF (random; passes mod-11 test).
-        let out =
-            r.redact("doc 529.982.247-25 verified");
+        let out = r.redact("doc 529.982.247-25 verified");
         assert!(out.redacted.contains("<CPF_REDACTED>"));
         assert_eq!(out.cpf_cnpj_hits, 1);
     }
@@ -1062,8 +1005,7 @@ mod tests {
     fn cnpj_redacted_canonical() {
         let r = InMemoryPiiRedactor::new();
         // Canonical valid CNPJ.
-        let out =
-            r.redact("empresa 11.222.333/0001-81 ativa");
+        let out = r.redact("empresa 11.222.333/0001-81 ativa");
         assert!(out.redacted.contains("<CNPJ_REDACTED>"));
         assert_eq!(out.cpf_cnpj_hits, 1);
     }
@@ -1079,8 +1021,7 @@ mod tests {
     #[test]
     fn redaction_idempotent() {
         let r = InMemoryPiiRedactor::new();
-        let input =
-            "alice@example.com from 192.168.1.42 with Bearer abcdef0123456789ZYXW";
+        let input = "alice@example.com from 192.168.1.42 with Bearer abcdef0123456789ZYXW";
         let pass1 = r.redact(input);
         let pass2 = r.redact(&pass1.redacted);
         assert_eq!(pass1.redacted, pass2.redacted);
@@ -1093,8 +1034,7 @@ mod tests {
     #[test]
     fn redaction_preserves_non_pii() {
         let r = InMemoryPiiRedactor::new();
-        let input =
-            "GET /v1/cas/put status=200 duration_ms=42 region=iad";
+        let input = "GET /v1/cas/put status=200 duration_ms=42 region=iad";
         let out = r.redact(input);
         assert_eq!(out.redacted, input);
         assert_eq!(out.total_hits(), 0);
@@ -1174,8 +1114,7 @@ mod tests {
     #[test]
     fn outcome_total_hits_sums_correctly() {
         let r = InMemoryPiiRedactor::new();
-        let out = r
-            .redact("alice@example.com 192.168.1.42 Bearer abcdef0123456789ZYXW");
+        let out = r.redact("alice@example.com 192.168.1.42 Bearer abcdef0123456789ZYXW");
         assert_eq!(out.total_hits(), 3);
     }
 }

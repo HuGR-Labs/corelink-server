@@ -20,20 +20,20 @@ use corelink_bazel_bridge::{
     digest::Digest,
     error::BazelBridgeError,
     find_missing::{
-        FindMissingHandler, InMemoryFindMissing, build_find_missing_response,
-        parse_find_missing_request,
+        build_find_missing_response, parse_find_missing_request, FindMissingHandler,
+        InMemoryFindMissing,
     },
-    uri::{RoapiOperation, parse_reapi_path},
+    uri::{parse_reapi_path, RoapiOperation},
     FIND_MISSING_BLOB_CAP, REAPI_VERSION,
 };
 use corelink_handler_ac::{
-    AcLookupHandler, AcUpdateHandler, InMemoryAcHandler,
-    InMemoryAuditSink as AcAuditSink, InMemorySliObserver as AcSliObserver,
+    AcLookupHandler, AcUpdateHandler, InMemoryAcHandler, InMemoryAuditSink as AcAuditSink,
+    InMemorySliObserver as AcSliObserver,
 };
+use corelink_handler_cas::handler::fake_hash;
 use corelink_handler_cas::{
     CasReadHandler, CasWriteHandler, InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver,
 };
-use corelink_handler_cas::handler::fake_hash;
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -127,7 +127,11 @@ fn end_to_end_cas_put_via_upload_uri() {
     let path = format!("/{TENANT}/uploads/{uuid}/blobs/{hash}/{size}");
     let op = parse_reapi_path("POST", &path).expect("parse");
     let (instance, upload_id, digest) = match op {
-        RoapiOperation::CasWrite { instance, upload_id, digest } => (instance, upload_id, digest),
+        RoapiOperation::CasWrite {
+            instance,
+            upload_id,
+            digest,
+        } => (instance, upload_id, digest),
         other => panic!("{other:?}"),
     };
     assert_eq!(upload_id, uuid);
@@ -152,7 +156,11 @@ fn end_to_end_cas_put_size_mismatch_rejected() {
     let path = format!("/{TENANT}/uploads/{uuid}/blobs/{hash}/{wrong_size}");
     let op = parse_reapi_path("POST", &path).expect("parse");
     let (instance, _, digest) = match op {
-        RoapiOperation::CasWrite { instance, upload_id, digest } => (instance, upload_id, digest),
+        RoapiOperation::CasWrite {
+            instance,
+            upload_id,
+            digest,
+        } => (instance, upload_id, digest),
         other => panic!("{other:?}"),
     };
     let err = adapter
@@ -243,7 +251,13 @@ fn end_to_end_find_missing_blobs_partial_hit() {
 
     let fm = InMemoryFindMissing::new(cas as Arc<dyn CasReadHandler>);
     let missing = fm
-        .find_missing(TENANT, "ci", TENANT, 0, &[present_digest, absent_digest.clone()])
+        .find_missing(
+            TENANT,
+            "ci",
+            TENANT,
+            0,
+            &[present_digest, absent_digest.clone()],
+        )
         .expect("find_missing");
     assert_eq!(missing.len(), 1);
     assert_eq!(missing[0], absent_digest);
@@ -305,8 +319,7 @@ fn end_to_end_ac_put_cross_tenant_denied() {
 #[test]
 fn digest_empty_blob_sha_is_valid() {
     // SHA-256 of empty bytes.
-    let sha256_empty =
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    let sha256_empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     let d = Digest::new(sha256_empty, 0).expect("empty blob digest");
     assert_eq!(d.size_bytes, 0);
 }
@@ -351,7 +364,10 @@ fn find_missing_over_cap_is_rejected() {
     let err = fm
         .find_missing(TENANT, "ci", TENANT, 0, &digests)
         .expect_err("over cap");
-    assert!(matches!(err, BazelBridgeError::BatchTooLarge { cap: 4096, .. }));
+    assert!(matches!(
+        err,
+        BazelBridgeError::BatchTooLarge { cap: 4096, .. }
+    ));
     assert_eq!(err.http_status(), 413);
 }
 
@@ -360,7 +376,11 @@ fn find_missing_over_cap_is_rejected() {
 #[test]
 fn error_http_status_codes_match_spec() {
     assert_eq!(
-        BazelBridgeError::NotFound { tenant: "t".into(), hash: "h".into() }.http_status(),
+        BazelBridgeError::NotFound {
+            tenant: "t".into(),
+            hash: "h".into()
+        }
+        .http_status(),
         404
     );
     assert_eq!(
@@ -368,17 +388,28 @@ fn error_http_status_codes_match_spec() {
         400
     );
     assert_eq!(
-        BazelBridgeError::SizeMismatch { digest_size: 1, actual: 2 }.http_status(),
+        BazelBridgeError::SizeMismatch {
+            digest_size: 1,
+            actual: 2
+        }
+        .http_status(),
         400
     );
     assert_eq!(
-        BazelBridgeError::CrossTenantDenied { caller: "a".into(), requested: "b".into() }
-            .http_status(),
+        BazelBridgeError::CrossTenantDenied {
+            caller: "a".into(),
+            requested: "b".into()
+        }
+        .http_status(),
         403
     );
     assert_eq!(BazelBridgeError::AuditFailed("x".into()).http_status(), 503);
     assert_eq!(
-        BazelBridgeError::BatchTooLarge { requested: 5000, cap: 4096 }.http_status(),
+        BazelBridgeError::BatchTooLarge {
+            requested: 5000,
+            cap: 4096
+        }
+        .http_status(),
         413
     );
     assert_eq!(BazelBridgeError::Internal("x".into()).http_status(), 500);

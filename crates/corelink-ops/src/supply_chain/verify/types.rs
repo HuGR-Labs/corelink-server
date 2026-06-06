@@ -42,7 +42,11 @@ impl SlsaAttestation {
     /// Use this constructor in tests and examples (struct literal is blocked by `#[non_exhaustive]`
     /// outside the defining crate).
     pub fn new(payload_type: String, payload: String, signatures: Vec<DsseSignature>) -> Self {
-        Self { payload_type, payload, signatures }
+        Self {
+            payload_type,
+            payload,
+            signatures,
+        }
     }
 }
 
@@ -75,7 +79,12 @@ impl DsseSignature {
     /// Use this constructor in tests and examples (struct literal is blocked by `#[non_exhaustive]`
     /// outside the defining crate).
     pub fn new(sig: String, key_id: String, cert: String, bundle: Option<RekorBundle>) -> Self {
-        Self { sig, key_id, cert, bundle }
+        Self {
+            sig,
+            key_id,
+            cert,
+            bundle,
+        }
     }
 }
 
@@ -109,7 +118,11 @@ impl RekorBundle {
         rekor_log_entry_digest: String,
         inclusion_proof: Option<MerkleInclusionProof>,
     ) -> Self {
-        Self { rekor_log_index, rekor_log_entry_digest, inclusion_proof }
+        Self {
+            rekor_log_index,
+            rekor_log_entry_digest,
+            inclusion_proof,
+        }
     }
 }
 
@@ -142,7 +155,12 @@ impl MerkleInclusionProof {
     /// Use this constructor in tests and examples (struct literal is blocked by `#[non_exhaustive]`
     /// outside the defining crate).
     pub fn new(log_index: u64, tree_size: u64, root_hash: String, hashes: Vec<String>) -> Self {
-        Self { log_index, tree_size, root_hash, hashes }
+        Self {
+            log_index,
+            tree_size,
+            root_hash,
+            hashes,
+        }
     }
 }
 

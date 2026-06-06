@@ -13,12 +13,12 @@
 
 use std::sync::Mutex;
 
+use corelink_dpa_acceptance::service::{Clock, DpaAcceptanceService, JtiMinter};
 use corelink_dpa_acceptance::{
     InMemoryDpaAcceptanceStore, InMemoryDpaAuditSink, InMemoryNotificationSink, Jurisdiction,
     LocaleBcp47, LocaleNoticeRegistry, RsaPrivateKeyPem, RsaPublicKeyPem, SignupId, TenantCtx,
     TenantId,
 };
-use corelink_dpa_acceptance::service::{Clock, DpaAcceptanceService, JtiMinter};
 
 use rsa::pkcs1::{EncodeRsaPrivateKey, LineEnding};
 use rsa::pkcs8::EncodePublicKey;

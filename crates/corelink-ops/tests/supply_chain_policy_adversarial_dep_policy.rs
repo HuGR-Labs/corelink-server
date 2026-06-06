@@ -25,7 +25,7 @@
     clippy::print_stderr
 )]
 
-use corelink_ops::supply_chain::policy::{DenialReason, SourceKind, evaluate_policy};
+use corelink_ops::supply_chain::policy::{evaluate_policy, DenialReason, SourceKind};
 
 // ---------------------------------------------------------------------------
 // Scenario 1: GPL-3.0 dep introduced
@@ -49,7 +49,13 @@ fn scenario_01_gpl3_dep_introduced_is_blocked() {
         "GPL-3.0-or-later",
     ];
     for spdx in gpl_licenses {
-        let outcome = evaluate_policy("adversarial-gpl-crate", spdx, &SourceKind::CratesIo, false, None);
+        let outcome = evaluate_policy(
+            "adversarial-gpl-crate",
+            spdx,
+            &SourceKind::CratesIo,
+            false,
+            None,
+        );
         assert!(
             !outcome.allowed,
             "GPL license '{spdx}' was NOT blocked — INV-SUPPLY-LICENSE-ALLOWLIST violated! \
@@ -68,8 +74,20 @@ fn scenario_01_gpl3_dep_introduced_is_blocked() {
 /// Particularly important for SaaS: AGPL-3.0 triggers copyleft at network use.
 #[test]
 fn scenario_01_agpl_sspl_blocked() {
-    for spdx in ["AGPL-1.0", "AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later", "SSPL-1.0"] {
-        let outcome = evaluate_policy("adversarial-agpl-crate", spdx, &SourceKind::CratesIo, false, None);
+    for spdx in [
+        "AGPL-1.0",
+        "AGPL-3.0",
+        "AGPL-3.0-only",
+        "AGPL-3.0-or-later",
+        "SSPL-1.0",
+    ] {
+        let outcome = evaluate_policy(
+            "adversarial-agpl-crate",
+            spdx,
+            &SourceKind::CratesIo,
+            false,
+            None,
+        );
         assert!(
             !outcome.allowed,
             "'{spdx}' was NOT blocked — network copyleft dep slipped through!"
@@ -81,7 +99,13 @@ fn scenario_01_agpl_sspl_blocked() {
 #[test]
 fn scenario_01_commercial_restriction_blocked() {
     for spdx in ["BUSL-1.1", "Commons-Clause"] {
-        let outcome = evaluate_policy("adversarial-commercial-crate", spdx, &SourceKind::CratesIo, false, None);
+        let outcome = evaluate_policy(
+            "adversarial-commercial-crate",
+            spdx,
+            &SourceKind::CratesIo,
+            false,
+            None,
+        );
         assert!(
             !outcome.allowed,
             "'{spdx}' (commercial restriction) was NOT blocked — legal exposure!"
@@ -103,10 +127,10 @@ fn scenario_02_yanked_dep_blocks_auto_merge() {
     // when the dep is yanked.
     let outcome = evaluate_policy(
         "yanked-patch-crate",
-        "MIT",         // allowed license
+        "MIT", // allowed license
         &SourceKind::CratesIo,
-        true,          // yanked!
-        None,          // no RUSTSEC advisory
+        true, // yanked!
+        None, // no RUSTSEC advisory
     );
 
     assert!(
@@ -130,8 +154,8 @@ fn scenario_02_yanked_precedence_over_advisory() {
         "yanked-and-vulnerable",
         "MIT",
         &SourceKind::CratesIo,
-        true,                          // yanked
-        Some("RUSTSEC-2024-0001"),     // also has an advisory
+        true,                      // yanked
+        Some("RUSTSEC-2024-0001"), // also has an advisory
     );
     assert!(!outcome.allowed);
     assert_eq!(outcome.denial_reason, Some(DenialReason::Yanked));
@@ -163,7 +187,10 @@ fn scenario_03_typosquat_unknown_registry_blocked() {
         "Typosquat crate from unknown registry was NOT blocked — sources policy failure!"
     );
     assert!(
-        matches!(outcome.denial_reason, Some(DenialReason::UnknownSource(SourceKind::UnknownRegistry))),
+        matches!(
+            outcome.denial_reason,
+            Some(DenialReason::UnknownSource(SourceKind::UnknownRegistry))
+        ),
         "Expected UnknownSource(UnknownRegistry), got {:?}",
         outcome.denial_reason
     );
@@ -182,7 +209,10 @@ fn scenario_03_typosquat_git_unpinned_blocked() {
     );
     assert!(!outcome.allowed, "Git-unpinned dep was not blocked");
     assert!(
-        matches!(outcome.denial_reason, Some(DenialReason::UnknownSource(SourceKind::GitUnpinned))),
+        matches!(
+            outcome.denial_reason,
+            Some(DenialReason::UnknownSource(SourceKind::GitUnpinned))
+        ),
         "Expected UnknownSource(GitUnpinned), got {:?}",
         outcome.denial_reason
     );
@@ -200,7 +230,10 @@ fn scenario_03_git_pinned_blocked_when_not_allowlisted() {
         false,
         None,
     );
-    assert!(!outcome.allowed, "SHA-pinned git dep (not in allow-git) was not blocked");
+    assert!(
+        !outcome.allowed,
+        "SHA-pinned git dep (not in allow-git) was not blocked"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -274,9 +307,9 @@ fn scenario_05_vendor_patch_without_adr_blocked_at_source_level() {
     // without being in the allow-git list is treated as git-pinned (if SHA
     // is provided) or git-unpinned (if branch/tag).
     let outcome_unpinned = evaluate_policy(
-        "serde",                           // legitimate crate, patched version
-        "MIT",                             // correct license
-        &SourceKind::GitUnpinned,          // [patch.crates-io] git without commit
+        "serde",                  // legitimate crate, patched version
+        "MIT",                    // correct license
+        &SourceKind::GitUnpinned, // [patch.crates-io] git without commit
         false,
         None,
     );
@@ -288,7 +321,7 @@ fn scenario_05_vendor_patch_without_adr_blocked_at_source_level() {
     let outcome_pinned = evaluate_policy(
         "tokio",
         "MIT",
-        &SourceKind::GitPinned,            // [patch.crates-io] with SHA, not in allow-git
+        &SourceKind::GitPinned, // [patch.crates-io] with SHA, not in allow-git
         false,
         None,
     );
@@ -311,11 +344,46 @@ fn scenario_05_vendor_patch_without_adr_blocked_at_source_level() {
 fn regression_all_5_adversarial_scenarios_blocked() {
     let adversarial_cases = [
         // (label, crate_name, spdx, source, yanked, advisory)
-        ("GPL-3.0 dep", "evil-gpl", "GPL-3.0", SourceKind::CratesIo, false, None),
-        ("Yanked dep", "yanked-dep", "MIT", SourceKind::CratesIo, true, None),
-        ("Typosquat unknown-registry", "corelink-fake", "MIT", SourceKind::UnknownRegistry, false, None),
-        ("Vendor patch git-unpinned", "serde-patched", "MIT", SourceKind::GitUnpinned, false, None),
-        ("Advisory dep", "vuln-crate", "MIT", SourceKind::CratesIo, false, Some("RUSTSEC-2024-0001")),
+        (
+            "GPL-3.0 dep",
+            "evil-gpl",
+            "GPL-3.0",
+            SourceKind::CratesIo,
+            false,
+            None,
+        ),
+        (
+            "Yanked dep",
+            "yanked-dep",
+            "MIT",
+            SourceKind::CratesIo,
+            true,
+            None,
+        ),
+        (
+            "Typosquat unknown-registry",
+            "corelink-fake",
+            "MIT",
+            SourceKind::UnknownRegistry,
+            false,
+            None,
+        ),
+        (
+            "Vendor patch git-unpinned",
+            "serde-patched",
+            "MIT",
+            SourceKind::GitUnpinned,
+            false,
+            None,
+        ),
+        (
+            "Advisory dep",
+            "vuln-crate",
+            "MIT",
+            SourceKind::CratesIo,
+            false,
+            Some("RUSTSEC-2024-0001"),
+        ),
     ];
 
     for (label, crate_name, spdx, source, yanked, advisory) in adversarial_cases {

@@ -27,7 +27,9 @@ pub enum EvictionError {
     /// Surfaced as a typed error so the phase orchestrator can emit
     /// the `corelink.evict.skipped_reachable` audit event and continue
     /// with the next candidate.
-    #[error("eviction refused: blob {digest_hex8} still reachable (active_refcount={active_refcount})")]
+    #[error(
+        "eviction refused: blob {digest_hex8} still reachable (active_refcount={active_refcount})"
+    )]
     BlobReachable {
         /// First-8-hex prefix of the candidate digest (privacy-friendly
         /// forensic trail; matches the GC sweep audit pattern).
@@ -41,9 +43,7 @@ pub enum EvictionError {
     /// region. Either the row was never seeded (post-deploy backfill
     /// pending) OR a programmer wiring error misrouted the tenant.
     /// Mapped to 5xx by handler.
-    #[error(
-        "tenant_storage_state row missing for tenant={tenant_id} region={region}"
-    )]
+    #[error("tenant_storage_state row missing for tenant={tenant_id} region={region}")]
     TenantStorageStateMissing {
         /// Tenant scope.
         tenant_id: Uuid,
@@ -73,9 +73,7 @@ pub enum EvictionError {
     /// configured ceiling. The phase orchestrator returns this when
     /// the per-candidate probe trips the deadline. Maps to 5xx with
     /// retry-after at the handler boundary.
-    #[error(
-        "eviction phase budget exceeded: duration_ms={duration_ms} > budget_ms={budget_ms}"
-    )]
+    #[error("eviction phase budget exceeded: duration_ms={duration_ms} > budget_ms={budget_ms}")]
     PhaseBudgetExceeded {
         /// Duration observed at the moment the budget was checked.
         duration_ms: u64,

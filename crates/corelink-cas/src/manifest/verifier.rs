@@ -137,9 +137,7 @@ impl ManifestVerifier {
             return Err(VerifyError::Structure(ManifestError::Empty));
         }
         let actual_chunks = u32::try_from(manifest.chunks.len()).map_err(|_| {
-            VerifyError::Structure(ManifestError::ChunkCountExceeded {
-                found: u32::MAX,
-            })
+            VerifyError::Structure(ManifestError::ChunkCountExceeded { found: u32::MAX })
         })?;
         if manifest.chunk_count != actual_chunks {
             return Err(VerifyError::Structure(ManifestError::ChunkCountMismatch {
@@ -152,9 +150,7 @@ impl ManifestVerifier {
         let mut sum_size: u64 = 0;
         for (slot_usize, c) in manifest.chunks.iter().enumerate() {
             let slot = u32::try_from(slot_usize).map_err(|_| {
-                VerifyError::Structure(ManifestError::ChunkCountExceeded {
-                    found: u32::MAX,
-                })
+                VerifyError::Structure(ManifestError::ChunkCountExceeded { found: u32::MAX })
             })?;
             if c.index != slot {
                 return Err(VerifyError::Structure(
@@ -238,10 +234,7 @@ pub trait ChunkBytesSource {
     ///
     /// Implementations may return a backend-class error string —
     /// surfaced by [`verify_streaming`] as a generic stream truncation.
-    fn fetch_chunk_bytes(
-        &mut self,
-        chunk_index: u32,
-    ) -> Result<Option<Vec<u8>>, String>;
+    fn fetch_chunk_bytes(&mut self, chunk_index: u32) -> Result<Option<Vec<u8>>, String>;
 }
 
 /// Sink consuming verified bytes during streaming verify. Mirrors the
@@ -340,7 +333,10 @@ impl StreamingManifestHeader {
 /// - [`VerifyError::Structure`] with [`ManifestError::RootMismatch`]
 ///   at terminal poll when the recomputed Merkle root disagrees with
 ///   the header's claimed `merkle_root`.
-#[allow(clippy::too_many_arguments, reason = "single-call canonical streaming surface; arguments are necessary contract — chunk_refs cursor + bytes cursor + sink + cancellation must remain explicit + caller-controlled")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "single-call canonical streaming surface; arguments are necessary contract — chunk_refs cursor + bytes cursor + sink + cancellation must remain explicit + caller-controlled"
+)]
 pub fn verify_streaming(
     header: &StreamingManifestHeader,
     refs: &mut dyn ChunkRefSource,
@@ -386,20 +382,21 @@ pub fn verify_streaming(
 
     for expected_idx in 0..header.chunk_count {
         // 1. Pull next ChunkRef.
-        let chunk_ref = match refs
-            .next_chunk_ref()
-            .map_err(|_| VerifyError::StreamingSourceTruncated {
-                index: chunks_streamed,
-                expected_total: header.chunk_count,
-            })? {
-            Some(c) => c,
-            None => {
-                return Err(VerifyError::StreamingSourceTruncated {
+        let chunk_ref =
+            match refs
+                .next_chunk_ref()
+                .map_err(|_| VerifyError::StreamingSourceTruncated {
                     index: chunks_streamed,
                     expected_total: header.chunk_count,
-                });
-            }
-        };
+                })? {
+                Some(c) => c,
+                None => {
+                    return Err(VerifyError::StreamingSourceTruncated {
+                        index: chunks_streamed,
+                        expected_total: header.chunk_count,
+                    });
+                }
+            };
         if chunk_ref.index != expected_idx {
             return Err(VerifyError::StreamingChunkIndexUnexpected {
                 expected: expected_idx,
@@ -454,11 +451,12 @@ pub fn verify_streaming(
 
         // 3. Push verified bytes to sink.
         let bytes_len = bytes.len() as u64;
-        sink.write_verified(expected_idx, bytes)
-            .map_err(|_| VerifyError::StreamingSourceTruncated {
+        sink.write_verified(expected_idx, bytes).map_err(|_| {
+            VerifyError::StreamingSourceTruncated {
                 index: expected_idx,
                 expected_total: header.chunk_count,
-            })?;
+            }
+        })?;
 
         // 4. Update bottom-up Merkle stack.
         let leaf = hash_leaf(&chunk_ref.digest);
@@ -469,8 +467,8 @@ pub fn verify_streaming(
     }
 
     // --- Terminal collapse (odd-leaf promotion mirror) ---
-    let recomputed_root = collapse_stack(&mut stack)
-        .ok_or(VerifyError::Structure(ManifestError::Empty))?;
+    let recomputed_root =
+        collapse_stack(&mut stack).ok_or(VerifyError::Structure(ManifestError::Empty))?;
     if recomputed_root != header.merkle_root {
         return Err(VerifyError::Structure(ManifestError::RootMismatch));
     }
@@ -491,10 +489,7 @@ pub fn verify_streaming(
 
 /// Push a leaf onto the streaming-Merkle stack and collapse pairs at
 /// matching levels. Stack-bounded log2(MAX_CHUNKS_PER_BLOB) ≈ 17.
-fn push_leaf_and_collapse(
-    stack: &mut Vec<(u32, [u8; DIGEST_LEN])>,
-    leaf: [u8; DIGEST_LEN],
-) {
+fn push_leaf_and_collapse(stack: &mut Vec<(u32, [u8; DIGEST_LEN])>, leaf: [u8; DIGEST_LEN]) {
     stack.push((0, leaf));
     // Collapse: while top two have equal level, pop + inner-hash + push.
     while stack.len() >= 2 {
@@ -519,9 +514,7 @@ fn push_leaf_and_collapse(
 /// Collapse the streaming-Merkle stack at terminal poll. Implements
 /// the canonical RFC 6962 / Bitcoin odd-leaf promotion rule when the
 /// stack has more than one slot at terminal.
-fn collapse_stack(
-    stack: &mut Vec<(u32, [u8; DIGEST_LEN])>,
-) -> Option<[u8; DIGEST_LEN]> {
+fn collapse_stack(stack: &mut Vec<(u32, [u8; DIGEST_LEN])>) -> Option<[u8; DIGEST_LEN]> {
     if stack.is_empty() {
         return None;
     }
@@ -606,10 +599,7 @@ impl InMemoryChunkBytesSource {
 }
 
 impl ChunkBytesSource for InMemoryChunkBytesSource {
-    fn fetch_chunk_bytes(
-        &mut self,
-        chunk_index: u32,
-    ) -> Result<Option<Vec<u8>>, String> {
+    fn fetch_chunk_bytes(&mut self, chunk_index: u32) -> Result<Option<Vec<u8>>, String> {
         Ok(self.by_index.get(&chunk_index).cloned())
     }
 }
@@ -847,11 +837,7 @@ mod tests {
         let outcome = verify_streaming(&header, &mut refs, &mut bytes, &mut sink).unwrap();
         assert_eq!(outcome.chunks_streamed, 3);
         assert_eq!(outcome.bytes_streamed, 9);
-        let collected: Vec<u8> = sink
-            .take()
-            .into_iter()
-            .flat_map(|(_, b)| b)
-            .collect();
+        let collected: Vec<u8> = sink.take().into_iter().flat_map(|(_, b)| b).collect();
         assert_eq!(collected, b"AAABBBCCC");
     }
 

@@ -53,9 +53,7 @@ use std::sync::Mutex;
 
 use uuid::Uuid;
 
-use crate::audit::{
-    EvictionAuditRecord, EvictionAuditSink, EvictionEventType, EvictionReason,
-};
+use crate::audit::{EvictionAuditRecord, EvictionAuditSink, EvictionEventType, EvictionReason};
 use crate::blob_meta::{BlobLruRow, BlobMetaSoftDeleteStore, SoftDeleteOutcome};
 use crate::error::EvictionError;
 use crate::metrics::EvictionMetricsObserver;
@@ -159,10 +157,7 @@ impl EvictionConfig {
     ) -> Result<Self, crate::tier::TierTtlOverrideError> {
         // Validate the override at construction time so the runtime
         // path never sees an invalid combination.
-        let _ = crate::tier::ttl_for_tier_with_override(
-            tier,
-            enterprise_ttl_override_days,
-        )?;
+        let _ = crate::tier::ttl_for_tier_with_override(tier, enterprise_ttl_override_days)?;
         Ok(Self {
             tier,
             enterprise_ttl_override_days,
@@ -185,10 +180,8 @@ impl EvictionConfig {
     /// Resolved TTL (ms) for the configured tier (honours override).
     #[must_use]
     pub fn ttl_ms(&self) -> u64 {
-        match crate::tier::ttl_for_tier_with_override(
-            self.tier,
-            self.enterprise_ttl_override_days,
-        ) {
+        match crate::tier::ttl_for_tier_with_override(self.tier, self.enterprise_ttl_override_days)
+        {
             Ok(v) => v,
             // The override was validated at construction; this branch
             // is unreachable in practice. Fall back to canonical
@@ -538,11 +531,9 @@ where
             created_by_request_id: "cron".to_string(),
             now_ms: now,
         })?;
-        let outcome = self.blob_meta.soft_delete_for_eviction(
-            tenant_id,
-            &candidate.digest,
-            now,
-        )?;
+        let outcome = self
+            .blob_meta
+            .soft_delete_for_eviction(tenant_id, &candidate.digest, now)?;
         match outcome {
             SoftDeleteOutcome::Deleted { size_bytes } => {
                 self.metrics
@@ -616,8 +607,7 @@ where
             result.audit_events_emitted = result.audit_events_emitted.saturating_add(1);
             // Phase duration metric.
             let phase_end = self.clock.now_ms();
-            let duration =
-                phase_end.saturating_sub(evict_started_at_ms);
+            let duration = phase_end.saturating_sub(evict_started_at_ms);
             result.eviction_duration_ms = duration;
             self.metrics.record_duration_ms(region, duration)?;
             return Ok(result);
@@ -661,8 +651,7 @@ where
         }
 
         // Phase budget tracking.
-        let deadline_ms =
-            evict_started_at_ms.saturating_add(self.config.phase_budget_ms);
+        let deadline_ms = evict_started_at_ms.saturating_add(self.config.phase_budget_ms);
 
         // Optional reclaim target — when set (ad-hoc quota trigger),
         // the loop short-circuits once `result.bytes_reclaimed >= target`.
@@ -674,32 +663,21 @@ where
             let now_for_probe = self.clock.now_ms();
             if now_for_probe > deadline_ms {
                 return Err(EvictionError::PhaseBudgetExceeded {
-                    duration_ms: now_for_probe
-                        .saturating_sub(evict_started_at_ms),
+                    duration_ms: now_for_probe.saturating_sub(evict_started_at_ms),
                     budget_ms: self.config.phase_budget_ms,
                 });
             }
 
-            let decision = self.step_candidate(
-                tenant_id,
-                region,
-                candidate,
-                evict_started_at_ms,
-                cutoff_ms,
-            )?;
-            result.candidates_processed =
-                result.candidates_processed.saturating_add(1);
+            let decision =
+                self.step_candidate(tenant_id, region, candidate, evict_started_at_ms, cutoff_ms)?;
+            result.candidates_processed = result.candidates_processed.saturating_add(1);
             match decision {
                 EvictionDecision::Evict {
                     bytes_reclaimed, ..
                 } => {
-                    result.blobs_evicted_count =
-                        result.blobs_evicted_count.saturating_add(1);
-                    result.bytes_reclaimed = result
-                        .bytes_reclaimed
-                        .saturating_add(bytes_reclaimed);
-                    result.audit_events_emitted =
-                        result.audit_events_emitted.saturating_add(1);
+                    result.blobs_evicted_count = result.blobs_evicted_count.saturating_add(1);
+                    result.bytes_reclaimed = result.bytes_reclaimed.saturating_add(bytes_reclaimed);
+                    result.audit_events_emitted = result.audit_events_emitted.saturating_add(1);
                     // Apply storage_state reclaim atomic.
                     let reclaim_now = self.clock.now_ms();
                     self.storage_state.apply_eviction_reclaim(
@@ -718,21 +696,17 @@ where
                 EvictionDecision::SkipReachable { .. } => {
                     result.cascade_prevented_count =
                         result.cascade_prevented_count.saturating_add(1);
-                    result.audit_events_emitted =
-                        result.audit_events_emitted.saturating_add(1);
+                    result.audit_events_emitted = result.audit_events_emitted.saturating_add(1);
                 }
                 EvictionDecision::SkipTtlNotExpired { .. } => {
-                    result.skipped_ttl_count =
-                        result.skipped_ttl_count.saturating_add(1);
+                    result.skipped_ttl_count = result.skipped_ttl_count.saturating_add(1);
                     // Skipped-TTL audit emit handled inside step_candidate.
-                    result.audit_events_emitted =
-                        result.audit_events_emitted.saturating_add(1);
+                    result.audit_events_emitted = result.audit_events_emitted.saturating_add(1);
                 }
                 EvictionDecision::SkipQuotaOk { .. } => {
                     // Per-candidate SkipQuotaOk should not surface;
                     // the quota gate is per-tenant, not per-candidate.
-                    result.skipped_quota_ok_count =
-                        result.skipped_quota_ok_count.saturating_add(1);
+                    result.skipped_quota_ok_count = result.skipped_quota_ok_count.saturating_add(1);
                 }
             }
         }
@@ -773,12 +747,7 @@ where
         // Ad-hoc trigger bypasses the per-tenant quota gate (the
         // caller already verified the tenant is at >= 95%); the loop
         // short-circuits at the explicit target.
-        self.execute_internal(
-            tenant_id,
-            region,
-            false,
-            Some(target_bytes_to_reclaim),
-        )
+        self.execute_internal(tenant_id, region, false, Some(target_bytes_to_reclaim))
     }
 }
 
@@ -800,9 +769,7 @@ mod tests {
     use crate::blob_meta::{EvictionBlobDigest, InMemoryBlobMetaSoftDeleteStore};
     use crate::metrics::InMemoryEvictionMetrics;
     use crate::reachable::InMemoryAcReferenceProbe;
-    use crate::storage_state::{
-        InMemoryTenantStorageStateStore, TenantStorageStateRow,
-    };
+    use crate::storage_state::{InMemoryTenantStorageStateStore, TenantStorageStateRow};
 
     fn ten_a() -> Uuid {
         Uuid::from_u128(0xa)
@@ -883,14 +850,7 @@ mod tests {
             clock,
             config,
         );
-        (
-            phase,
-            blob_meta,
-            ac_probe,
-            storage_state,
-            audit,
-            metrics,
-        )
+        (phase, blob_meta, ac_probe, storage_state, audit, metrics)
     }
 
     // ---- canonical constants ---------------------------------------
@@ -932,63 +892,36 @@ mod tests {
 
     #[test]
     fn step_already_soft_deleted_yields_skip_ttl() {
-        let (phase, _b, _x, _s, _a, _m) =
-            fresh(1000, EvictionConfig::default_for_free_tier());
+        let (phase, _b, _x, _s, _a, _m) = fresh(1000, EvictionConfig::default_for_free_tier());
         let mut row = lru_row(1, 50, 1024);
         row.deleted_at_ms = Some(800);
         let d = phase
-            .step_candidate(
-                ten_a(),
-                EvictionRegion::Sam,
-                &row,
-                10_000,
-                5_000,
-            )
+            .step_candidate(ten_a(), EvictionRegion::Sam, &row, 10_000, 5_000)
             .unwrap();
         assert!(matches!(d, EvictionDecision::SkipTtlNotExpired { .. }));
     }
 
     #[test]
     fn step_within_ttl_window_yields_skip_ttl() {
-        let (phase, _b, _x, _s, _a, _m) =
-            fresh(1000, EvictionConfig::default_for_free_tier());
+        let (phase, _b, _x, _s, _a, _m) = fresh(1000, EvictionConfig::default_for_free_tier());
         // last_accessed = 6000 >= cutoff = 5000 → skip TTL.
         let row = lru_row(1, 6000, 1024);
         let d = phase
-            .step_candidate(
-                ten_a(),
-                EvictionRegion::Sam,
-                &row,
-                10_000,
-                5_000,
-            )
+            .step_candidate(ten_a(), EvictionRegion::Sam, &row, 10_000, 5_000)
             .unwrap();
         assert!(matches!(d, EvictionDecision::SkipTtlNotExpired { .. }));
     }
 
     #[test]
     fn step_reachable_yields_skip_reachable() {
-        let (phase, b, x, _s, _a, m) =
-            fresh(1000, EvictionConfig::default_for_free_tier());
+        let (phase, b, x, _s, _a, m) = fresh(1000, EvictionConfig::default_for_free_tier());
         let row = lru_row(1, 100, 1024);
         b.push_row(ten_a(), row.clone()).unwrap();
         // Push an AC ref older than evict_started_at_ms = 10000.
-        x.push_ac_row(
-            ten_a(),
-            "ac-1",
-            vec![row.digest.clone()],
-            5000,
-            None,
-        )
-        .unwrap();
+        x.push_ac_row(ten_a(), "ac-1", vec![row.digest.clone()], 5000, None)
+            .unwrap();
         let d = phase
-            .step_candidate(
-                ten_a(),
-                EvictionRegion::Sam,
-                &row,
-                10_000,
-                5_000,
-            )
+            .step_candidate(ten_a(), EvictionRegion::Sam, &row, 10_000, 5_000)
             .unwrap();
         assert!(matches!(d, EvictionDecision::SkipReachable { .. }));
         assert_eq!(
@@ -999,18 +932,11 @@ mod tests {
 
     #[test]
     fn step_evict_path_emits_audit_and_metrics() {
-        let (phase, b, _x, _s, a, m) =
-            fresh(1000, EvictionConfig::default_for_free_tier());
+        let (phase, b, _x, _s, a, m) = fresh(1000, EvictionConfig::default_for_free_tier());
         let row = lru_row(1, 100, 4096);
         b.push_row(ten_a(), row.clone()).unwrap();
         let d = phase
-            .step_candidate(
-                ten_a(),
-                EvictionRegion::Sam,
-                &row,
-                10_000,
-                5_000,
-            )
+            .step_candidate(ten_a(), EvictionRegion::Sam, &row, 10_000, 5_000)
             .unwrap();
         match d {
             EvictionDecision::Evict {
@@ -1042,8 +968,7 @@ mod tests {
 
     #[test]
     fn execute_daily_returns_storage_state_missing() {
-        let (phase, _b, _x, _s, _a, _m) =
-            fresh(1000, EvictionConfig::default_for_free_tier());
+        let (phase, _b, _x, _s, _a, _m) = fresh(1000, EvictionConfig::default_for_free_tier());
         let err = phase
             .execute_daily(ten_a(), EvictionRegion::Sam)
             .unwrap_err();
@@ -1055,20 +980,14 @@ mod tests {
 
     #[test]
     fn execute_daily_below_threshold_skips_quota_ok() {
-        let (phase, _b, _x, s, a, m) =
-            fresh(1000, EvictionConfig::default_for_free_tier());
+        let (phase, _b, _x, s, a, m) = fresh(1000, EvictionConfig::default_for_free_tier());
         s.push_row(state_row(ten_a(), EvictionRegion::Sam, 50, 100))
             .unwrap();
-        let r = phase
-            .execute_daily(ten_a(), EvictionRegion::Sam)
-            .unwrap();
+        let r = phase.execute_daily(ten_a(), EvictionRegion::Sam).unwrap();
         assert_eq!(r.skipped_quota_ok_count, 1);
         assert_eq!(r.blobs_evicted_count, 0);
         assert!(!r.quota_trigger_fired);
-        assert_eq!(
-            a.snapshot_of(EvictionEventType::SkippedQuotaOk).len(),
-            1
-        );
+        assert_eq!(a.snapshot_of(EvictionEventType::SkippedQuotaOk).len(), 1);
         assert_eq!(
             m.counter_total(crate::metrics::EvictionMetricKind::CronFired),
             1
@@ -1082,25 +1001,19 @@ mod tests {
         // collapses cutoff to 0 and a row with last_accessed=1
         // doesn't satisfy `< cutoff`).
         let start = 30_u64 * 86_400_000; // 30d in ms
-        let (phase, b, _x, s, a, _m) =
-            fresh(start, EvictionConfig::default_for_free_tier());
+        let (phase, b, _x, s, a, _m) = fresh(start, EvictionConfig::default_for_free_tier());
         // Tenant at 96% quota.
         s.push_row(state_row(ten_a(), EvictionRegion::Sam, 96, 100))
             .unwrap();
         // Push a cold blob: last_accessed = 1 << cutoff (start - 7d).
         let cold = lru_row(1, 1, 30);
         b.push_row(ten_a(), cold).unwrap();
-        let r = phase
-            .execute_daily(ten_a(), EvictionRegion::Sam)
-            .unwrap();
+        let r = phase.execute_daily(ten_a(), EvictionRegion::Sam).unwrap();
         assert!(r.quota_trigger_fired);
         assert_eq!(r.blobs_evicted_count, 1);
         assert_eq!(r.bytes_reclaimed, 30);
         // QuotaTriggerFired audit emit.
-        assert_eq!(
-            a.snapshot_of(EvictionEventType::QuotaTriggerFired).len(),
-            1
-        );
+        assert_eq!(a.snapshot_of(EvictionEventType::QuotaTriggerFired).len(), 1);
         // Storage state row was reclaimed (96 - 30 = 66).
         let row = s.snapshot(ten_a(), EvictionRegion::Sam).unwrap();
         assert_eq!(row.bytes_used, 66);
@@ -1112,13 +1025,13 @@ mod tests {
     #[test]
     fn execute_quota_trigger_short_circuits_at_target() {
         let start = 30_u64 * 86_400_000;
-        let (phase, b, _x, s, _a, _m) =
-            fresh(start, EvictionConfig::default_for_free_tier());
+        let (phase, b, _x, s, _a, _m) = fresh(start, EvictionConfig::default_for_free_tier());
         s.push_row(state_row(ten_a(), EvictionRegion::Sam, 200, 100))
             .unwrap();
         // 5 cold blobs of 50 bytes each = 250 reclaimable.
         for i in 0..5 {
-            b.push_row(ten_a(), lru_row(i, 1 + u64::from(i), 50)).unwrap();
+            b.push_row(ten_a(), lru_row(i, 1 + u64::from(i), 50))
+                .unwrap();
         }
         // Target = 100 bytes — the loop should evict 2 blobs and stop.
         let r = phase
@@ -1134,8 +1047,7 @@ mod tests {
     #[test]
     fn tenant_isolation_eviction_does_not_touch_other_tenant() {
         let start = 30_u64 * 86_400_000;
-        let (phase, b, _x, s, _a, _m) =
-            fresh(start, EvictionConfig::default_for_free_tier());
+        let (phase, b, _x, s, _a, _m) = fresh(start, EvictionConfig::default_for_free_tier());
         s.push_row(state_row(ten_a(), EvictionRegion::Sam, 100, 100))
             .unwrap();
         s.push_row(state_row(ten_b(), EvictionRegion::Sam, 50, 100))
@@ -1146,9 +1058,7 @@ mod tests {
         // Cold blob for B (would be eligible if scanned).
         let blob_b = lru_row(2, 1, 30);
         b.push_row(ten_b(), blob_b.clone()).unwrap();
-        phase
-            .execute_daily(ten_a(), EvictionRegion::Sam)
-            .unwrap();
+        phase.execute_daily(ten_a(), EvictionRegion::Sam).unwrap();
         // Tenant B's blob is untouched.
         let snap_b = b.snapshot(ten_b(), &blob_b.digest).unwrap();
         assert!(snap_b.deleted_at_ms.is_none());
@@ -1163,8 +1073,7 @@ mod tests {
         // type signature expects only blob_meta + ac_probe +
         // storage_state — adding a chunks-table store would be a
         // BREAKING change visible at compile time.
-        let (phase, _b, _x, _s, _a, _m) =
-            fresh(1000, EvictionConfig::default_for_free_tier());
+        let (phase, _b, _x, _s, _a, _m) = fresh(1000, EvictionConfig::default_for_free_tier());
         // Sanity: the config is the only field we expose.
         let c = phase.config();
         assert_eq!(c.tier(), Tier::Free);

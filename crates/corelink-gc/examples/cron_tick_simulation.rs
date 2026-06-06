@@ -41,7 +41,9 @@ fn main() {
         0xa11ce,
     );
 
-    let tenants: Vec<Uuid> = (0u32..3).map(|i| Uuid::from_u128(u128::from(i) + 1)).collect();
+    let tenants: Vec<Uuid> = (0u32..3)
+        .map(|i| Uuid::from_u128(u128::from(i) + 1))
+        .collect();
     let outcome = scheduler.cron_tick(1_700_000_000_000, &tenants).unwrap();
     println!(
         "cron tick result: region={:?} admitted={} jittered_start_ms={} paused={}",

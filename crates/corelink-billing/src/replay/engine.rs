@@ -260,10 +260,9 @@ where
         // F-001 closure: per-instance serial pipeline so
         // audit-emit-then-ledger-UPSERT is atomic from the caller's
         // perspective.
-        let _guard = self
-            .mutex
-            .lock()
-            .map_err(|_| ReplayError::Internal("billing-replay engine mutex poisoned".to_string()))?;
+        let _guard = self.mutex.lock().map_err(|_| {
+            ReplayError::Internal("billing-replay engine mutex poisoned".to_string())
+        })?;
 
         // 1. Authorization gate. Audit BEFORE returning the canonical
         //    Denied403 arm (the audit row IS the forensic evidence of
@@ -309,9 +308,7 @@ where
                 request,
                 None,
                 now_ms,
-                format!(
-                    "dry_run_planned layers_planned={CANONICAL_LAYER_COUNT}"
-                ),
+                format!("dry_run_planned layers_planned={CANONICAL_LAYER_COUNT}"),
             ))?;
             return Ok(ReplayDecision::DryRunPlan {
                 layers_planned: CANONICAL_LAYER_COUNT,
@@ -335,7 +332,10 @@ where
             request,
             Some(drift_summary),
             now_ms,
-            format!("executed layer_diverged={diverged} drift_summary={}", drift_summary.as_str()),
+            format!(
+                "executed layer_diverged={diverged} drift_summary={}",
+                drift_summary.as_str()
+            ),
         ))?;
 
         // The canonical layer_diverged audit fires AFTER the executed
@@ -403,10 +403,12 @@ pub fn drift_summary_for_reconcile(
     reason = "tests are allowed to use these primitives; float_cmp is acceptable for canonical-percentage-pin assertions where the values are constructed deterministically."
 )]
 mod tests {
-    use super::*;
     use super::super::archive::{FailingReplayArchive, InMemoryReplayArchive};
     use super::super::audit::{FailingReplayAuditSink, InMemoryReplayAuditSink};
-    use super::super::idempotency::{FailingReplayIdempotencyLedger, InMemoryReplayIdempotencyLedger};
+    use super::super::idempotency::{
+        FailingReplayIdempotencyLedger, InMemoryReplayIdempotencyLedger,
+    };
+    use super::*;
     use uuid::Uuid;
 
     type Engine = InMemoryReplayEngine<
@@ -424,11 +426,8 @@ mod tests {
         let audit = Arc::new(InMemoryReplayAuditSink::new());
         let idem = Arc::new(InMemoryReplayIdempotencyLedger::new());
         let archive = Arc::new(InMemoryReplayArchive::new());
-        let e = InMemoryReplayEngine::new(
-            Arc::clone(&audit),
-            Arc::clone(&idem),
-            Arc::clone(&archive),
-        );
+        let e =
+            InMemoryReplayEngine::new(Arc::clone(&audit), Arc::clone(&idem), Arc::clone(&archive));
         (e, audit, idem, archive)
     }
 
@@ -448,12 +447,7 @@ mod tests {
         let (e, audit, idem, archive) = fresh_engine();
         let t = Uuid::now_v7();
         archive.seed(t, "2026-05", ReconstructedLayers::new(100, 100, 100));
-        let mut r = req_for(
-            Uuid::now_v7(),
-            t,
-            "2026-05",
-            ReplayReason::CustomerDispute,
-        );
+        let mut r = req_for(Uuid::now_v7(), t, "2026-05", ReplayReason::CustomerDispute);
         r.presented_role = "regular_admin".to_string();
         let dec = e
             .replay(&r, ReconstructedLayers::new(100, 100, 100), 1)
@@ -535,7 +529,9 @@ mod tests {
         // = 2 rows.
         assert_eq!(audit.snapshot_of(ReplayAuditEventType::Executed).len(), 1);
         assert_eq!(
-            audit.snapshot_of(ReplayAuditEventType::RequestAuthorized).len(),
+            audit
+                .snapshot_of(ReplayAuditEventType::RequestAuthorized)
+                .len(),
             1
         );
     }
@@ -545,7 +541,12 @@ mod tests {
         let (e, audit, _idem, archive) = fresh_engine();
         let t = Uuid::now_v7();
         archive.seed(t, "2026-05", ReconstructedLayers::new(99, 100, 100));
-        let r = req_for(Uuid::now_v7(), t, "2026-05", ReplayReason::DriftInvestigation);
+        let r = req_for(
+            Uuid::now_v7(),
+            t,
+            "2026-05",
+            ReplayReason::DriftInvestigation,
+        );
         let dec = e
             .replay(&r, ReconstructedLayers::new(100, 100, 100), 1)
             .unwrap();
@@ -567,13 +568,11 @@ mod tests {
     #[test]
     fn audit_failure_on_denied_arm_propagates_no_ledger() {
         let audit: Arc<FailingReplayAuditSink> = Arc::new(FailingReplayAuditSink::new());
-        let idem: Arc<InMemoryReplayIdempotencyLedger> = Arc::new(InMemoryReplayIdempotencyLedger::new());
+        let idem: Arc<InMemoryReplayIdempotencyLedger> =
+            Arc::new(InMemoryReplayIdempotencyLedger::new());
         let archive: Arc<InMemoryReplayArchive> = Arc::new(InMemoryReplayArchive::new());
-        let e = InMemoryReplayEngine::new(
-            Arc::clone(&audit),
-            Arc::clone(&idem),
-            Arc::clone(&archive),
-        );
+        let e =
+            InMemoryReplayEngine::new(Arc::clone(&audit), Arc::clone(&idem), Arc::clone(&archive));
         let mut r = req_for(
             Uuid::now_v7(),
             Uuid::now_v7(),
@@ -591,14 +590,16 @@ mod tests {
     #[test]
     fn audit_failure_on_executed_arm_propagates_no_ledger() {
         let audit: Arc<FailingReplayAuditSink> = Arc::new(FailingReplayAuditSink::new());
-        let idem: Arc<InMemoryReplayIdempotencyLedger> = Arc::new(InMemoryReplayIdempotencyLedger::new());
+        let idem: Arc<InMemoryReplayIdempotencyLedger> =
+            Arc::new(InMemoryReplayIdempotencyLedger::new());
         let archive: Arc<InMemoryReplayArchive> = Arc::new(InMemoryReplayArchive::new());
-        archive.seed(Uuid::now_v7(), "2026-05", ReconstructedLayers::new(100, 100, 100));
-        let e = InMemoryReplayEngine::new(
-            Arc::clone(&audit),
-            Arc::clone(&idem),
-            Arc::clone(&archive),
+        archive.seed(
+            Uuid::now_v7(),
+            "2026-05",
+            ReconstructedLayers::new(100, 100, 100),
         );
+        let e =
+            InMemoryReplayEngine::new(Arc::clone(&audit), Arc::clone(&idem), Arc::clone(&archive));
         let r = req_for(
             Uuid::now_v7(),
             Uuid::now_v7(),
@@ -615,13 +616,11 @@ mod tests {
     #[test]
     fn idempotency_lookup_failure_propagates() {
         let audit: Arc<InMemoryReplayAuditSink> = Arc::new(InMemoryReplayAuditSink::new());
-        let idem: Arc<FailingReplayIdempotencyLedger> = Arc::new(FailingReplayIdempotencyLedger::new());
+        let idem: Arc<FailingReplayIdempotencyLedger> =
+            Arc::new(FailingReplayIdempotencyLedger::new());
         let archive: Arc<InMemoryReplayArchive> = Arc::new(InMemoryReplayArchive::new());
-        let e = InMemoryReplayEngine::new(
-            Arc::clone(&audit),
-            Arc::clone(&idem),
-            Arc::clone(&archive),
-        );
+        let e =
+            InMemoryReplayEngine::new(Arc::clone(&audit), Arc::clone(&idem), Arc::clone(&archive));
         let r = req_for(
             Uuid::now_v7(),
             Uuid::now_v7(),
@@ -637,13 +636,11 @@ mod tests {
     #[test]
     fn archive_failure_propagates() {
         let audit: Arc<InMemoryReplayAuditSink> = Arc::new(InMemoryReplayAuditSink::new());
-        let idem: Arc<InMemoryReplayIdempotencyLedger> = Arc::new(InMemoryReplayIdempotencyLedger::new());
+        let idem: Arc<InMemoryReplayIdempotencyLedger> =
+            Arc::new(InMemoryReplayIdempotencyLedger::new());
         let archive: Arc<FailingReplayArchive> = Arc::new(FailingReplayArchive::new());
-        let e = InMemoryReplayEngine::new(
-            Arc::clone(&audit),
-            Arc::clone(&idem),
-            Arc::clone(&archive),
-        );
+        let e =
+            InMemoryReplayEngine::new(Arc::clone(&audit), Arc::clone(&idem), Arc::clone(&archive));
         let r = req_for(
             Uuid::now_v7(),
             Uuid::now_v7(),
@@ -783,7 +780,8 @@ mod tests {
         let rid = Uuid::now_v7();
         let r1 = req_for(rid, t1, "2026-05", ReplayReason::CustomerDispute);
         let r2 = req_for(rid, t2, "2026-05", ReplayReason::CustomerDispute);
-        e.replay(&r1, ReconstructedLayers::new(100, 100, 100), 1).unwrap();
+        e.replay(&r1, ReconstructedLayers::new(100, 100, 100), 1)
+            .unwrap();
         // Second re-fire with same request_id but different tenant —
         // the lookup will succeed (request_id exists) so the
         // orchestrator returns Authorized with idempotent_replay =

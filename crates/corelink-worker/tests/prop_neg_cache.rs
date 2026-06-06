@@ -72,11 +72,7 @@ fn ctx_for(tid: Uuid, region: Region) -> TenantCtx {
 }
 
 fn region_strategy() -> impl Strategy<Value = Region> {
-    prop_oneof![
-        Just(Region::Wnam),
-        Just(Region::Weur),
-        Just(Region::Sam),
-    ]
+    prop_oneof![Just(Region::Wnam), Just(Region::Weur), Just(Region::Sam),]
 }
 
 fn miss_reason_strategy() -> impl Strategy<Value = MissReason> {
@@ -360,10 +356,7 @@ async fn cross_tenant_isolation_concurrent_100k() {
     // Seed every victim's cache with a NotFound for every digest.
     for vctx in &victims {
         for d in &digest_pool {
-            cache
-                .put_miss(vctx, d, MissReason::NotFound)
-                .await
-                .unwrap();
+            cache.put_miss(vctx, d, MissReason::NotFound).await.unwrap();
         }
     }
 

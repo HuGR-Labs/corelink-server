@@ -48,7 +48,8 @@ fn make_emitter(
 ) -> (InMemoryNoticeEmitter, Arc<InMemoryNoticeAuditSink>) {
     let sink = Arc::new(InMemoryNoticeAuditSink::new());
     let emitter = InMemoryNoticeEmitter::new(
-        Arc::new(Mutex::new(store)) as Arc<Mutex<dyn corelink_privacy::notice::store::NoticeStateStore>>,
+        Arc::new(Mutex::new(store))
+            as Arc<Mutex<dyn corelink_privacy::notice::store::NoticeStateStore>>,
         sink.clone() as Arc<dyn corelink_privacy::notice::audit::NoticeAuditSink>,
     );
     (emitter, sink)
@@ -196,7 +197,8 @@ fn ac001_initial_publication_v1_0() {
 fn ac006_notice_text_hash_crlf_lf_parity() {
     use corelink_privacy::notice::notice_text_hash;
     let content_lf = "# Privacy Notice\n\nWe collect your data.\n\nContact: dpo@hugr.dev\n";
-    let content_crlf = "# Privacy Notice\r\n\r\nWe collect your data.\r\n\r\nContact: dpo@hugr.dev\r\n";
+    let content_crlf =
+        "# Privacy Notice\r\n\r\nWe collect your data.\r\n\r\nContact: dpo@hugr.dev\r\n";
     assert_eq!(
         notice_text_hash(content_lf),
         notice_text_hash(content_crlf),

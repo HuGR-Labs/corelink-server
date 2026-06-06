@@ -175,11 +175,8 @@ pub fn validate_repo_name(name: &str) -> Result<(), crate::oci::error::OciAdapte
             )));
         }
         for c in component.chars() {
-            let ok = c.is_ascii_lowercase()
-                || c.is_ascii_digit()
-                || c == '.'
-                || c == '_'
-                || c == '-';
+            let ok =
+                c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_' || c == '-';
             if !ok {
                 return Err(OciAdapterError::InvalidRepoName(format!(
                     "invalid char `{c}` in {name}"
@@ -263,6 +260,9 @@ mod tests {
 
     #[test]
     fn urldecode_handles_percent_triplets() {
-        assert_eq!(urldecode("repository%3Aa%2Fb%3Apull"), "repository:a/b:pull");
+        assert_eq!(
+            urldecode("repository%3Aa%2Fb%3Apull"),
+            "repository:a/b:pull"
+        );
     }
 }

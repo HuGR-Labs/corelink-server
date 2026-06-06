@@ -75,7 +75,9 @@ pub enum DeployVerifyError {
     ///
     /// Signature was for a different image digest than the one resolved from
     /// the OCI registry.  HTTP 401 `deploy_verify_failed`.
-    #[error("image digest mismatch: signature bound to {signed_digest}, resolved {resolved_digest}")]
+    #[error(
+        "image digest mismatch: signature bound to {signed_digest}, resolved {resolved_digest}"
+    )]
     DigestMismatch {
         /// Digest embedded in the Cosign signature.
         signed_digest: String,
@@ -157,7 +159,10 @@ mod tests {
             401
         );
         assert_eq!(
-            DeployVerifyError::RekorMissing { image: "img".to_string() }.http_status(),
+            DeployVerifyError::RekorMissing {
+                image: "img".to_string()
+            }
+            .http_status(),
             401
         );
         assert_eq!(
@@ -180,7 +185,10 @@ mod tests {
         assert!(DeployVerifyError::AuditEmitFailed("x".to_string()).is_sev1());
         assert!(!DeployVerifyError::SignatureInvalid("x".to_string()).is_sev1());
         assert!(DeployVerifyError::SignatureInvalid("x".to_string()).is_sev2());
-        assert!(DeployVerifyError::RekorMissing { image: "i".to_string() }.is_sev2());
+        assert!(DeployVerifyError::RekorMissing {
+            image: "i".to_string()
+        }
+        .is_sev2());
         assert!(!DeployVerifyError::AuditEmitFailed("x".to_string()).is_sev2());
     }
 
@@ -188,7 +196,9 @@ mod tests {
     fn blocked_reason_labels_non_empty() {
         let errors: Vec<DeployVerifyError> = vec![
             DeployVerifyError::SignatureInvalid("x".to_string()),
-            DeployVerifyError::RekorMissing { image: "i".to_string() },
+            DeployVerifyError::RekorMissing {
+                image: "i".to_string(),
+            },
             DeployVerifyError::FulcioChainInvalid("f".to_string()),
             DeployVerifyError::IdentityMismatch {
                 got: "g".to_string(),
@@ -205,7 +215,10 @@ mod tests {
             DeployVerifyError::RateLimitExceeded,
         ];
         for e in &errors {
-            assert!(!e.blocked_reason_label().is_empty(), "empty label for {e:?}");
+            assert!(
+                !e.blocked_reason_label().is_empty(),
+                "empty label for {e:?}"
+            );
         }
     }
 }

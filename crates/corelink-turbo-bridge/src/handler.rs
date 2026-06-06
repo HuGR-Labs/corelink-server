@@ -235,7 +235,8 @@ pub struct InMemoryTurboHandler {
 
 impl core::fmt::Debug for InMemoryTurboHandler {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("InMemoryTurboHandler").finish_non_exhaustive()
+        f.debug_struct("InMemoryTurboHandler")
+            .finish_non_exhaustive()
     }
 }
 

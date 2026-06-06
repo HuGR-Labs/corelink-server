@@ -67,8 +67,8 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use corelink_clerk::ClerkPrincipal;
 use corelink_pat::{
-    PatEnv, PatId, PatScopes, PrincipalId as PatPrincipal, TenantId as PatTenantId,
-    SCOPE_CACHE_R, SCOPE_CACHE_RW, SCOPE_CACHE_W,
+    PatEnv, PatId, PatScopes, PrincipalId as PatPrincipal, TenantId as PatTenantId, SCOPE_CACHE_R,
+    SCOPE_CACHE_RW, SCOPE_CACHE_W,
 };
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
 use corelink_worker::middleware::{
@@ -180,11 +180,7 @@ impl Service<Request<Bytes>> for SpyHandler {
     type Response = Response<Bytes>;
     type Error = std::convert::Infallible;
     type Future = std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Result<Self::Response, Self::Error>,
-                > + Send,
-        >,
+        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>,
     >;
 
     fn poll_ready(
@@ -202,7 +198,8 @@ impl Service<Request<Bytes>> for SpyHandler {
             reached.store(true, Ordering::Relaxed);
             if let Some(ctx) = req.extensions().get::<AuthCtx>() {
                 *last_tenant.lock().expect("poisoned") = Some(ctx.tenant_id());
-                *last_prefix.lock().expect("poisoned") = Some(ctx.tenant_prefix().as_str().to_owned());
+                *last_prefix.lock().expect("poisoned") =
+                    Some(ctx.tenant_prefix().as_str().to_owned());
             }
             Ok(Response::new(Bytes::from_static(b"ok")))
         })
@@ -252,11 +249,7 @@ fn canonical_pat_plaintext() -> String {
 /// Run a single request through `(AuthLayer + SpyHandler)` synchronously.
 /// Uses a fresh per-iteration tokio runtime so proptest shrinking
 /// behaves deterministically.
-fn run_once(
-    state: AuthState,
-    spy: SpyHandler,
-    req: Request<Bytes>,
-) -> Response<Bytes> {
+fn run_once(state: AuthState, spy: SpyHandler, req: Request<Bytes>) -> Response<Bytes> {
     let mut svc = AuthLayer::new(state).layer(spy);
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -683,7 +676,9 @@ async fn smoke_authlayer_full_stack() {
     let tenant = Uuid::parse_str("01938af0-abcd-7123-8456-000000000001").unwrap();
     let principal = Uuid::parse_str("01938af0-abcd-7123-8456-000000000002").unwrap();
     let pat_v = Arc::new(ScriptedPatVerifier::returning(make_pat_verification(
-        tenant, principal, SCOPE_CACHE_RW,
+        tenant,
+        principal,
+        SCOPE_CACHE_RW,
     )));
     let jwt_v = Arc::new(ScriptedJwtVerifier {
         outcome: Arc::new(std::sync::Mutex::new(JwtScript::AlwaysInvalid)),

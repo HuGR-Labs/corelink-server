@@ -357,14 +357,7 @@ fn ffi_null_digest_hex_ptr_with_zero_length_rejects() {
     let v = unsafe { corelink_verifier_new_default_on() };
     let mut out: i32 = -1;
     let rc = unsafe {
-        corelink_verifier_verify(
-            v,
-            body.as_ptr(),
-            body.len(),
-            core::ptr::null(),
-            0,
-            &mut out,
-        )
+        corelink_verifier_verify(v, body.as_ptr(), body.len(), core::ptr::null(), 0, &mut out)
     };
     // Length 0 != 64 trips the length gate first.
     assert_eq!(rc, COR_VERIFY_ERR_INVALID_DIGEST);

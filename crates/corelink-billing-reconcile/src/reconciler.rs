@@ -60,8 +60,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::audit::{
-    audit_event_for_decision, ReconcileAuditEventType, ReconcileAuditRecord,
-    ReconcileAuditSink,
+    audit_event_for_decision, ReconcileAuditEventType, ReconcileAuditRecord, ReconcileAuditSink,
 };
 use crate::drift::{auto_fix_gate_fires, compute_drift_record_count, compute_max_drift};
 use crate::error::ReconcileError;
@@ -292,9 +291,7 @@ where
             ReconcileDecision::AutoFixed { .. } => Some(primary_layer),
             ReconcileDecision::TicketSev3 { primary_layer, .. }
             | ReconcileDecision::PageSev2 { primary_layer, .. }
-            | ReconcileDecision::PageSev1AutoPaused { primary_layer, .. } => {
-                Some(primary_layer)
-            }
+            | ReconcileDecision::PageSev1AutoPaused { primary_layer, .. } => Some(primary_layer),
         };
         self.audit.emit(Self::audit_record(
             audit_event,
@@ -364,9 +361,7 @@ mod tests {
     use crate::audit::{FailingReconcileAuditSink, InMemoryReconcileAuditSink};
     use crate::event::{LayerTotals, ReconcileLayerKind};
     use crate::history::{FailingDriftHistoryLedger, InMemoryDriftHistoryLedger};
-    use crate::stripe_pause::{
-        FailingStripeSubmissionControl, InMemoryStripeSubmissionControl,
-    };
+    use crate::stripe_pause::{FailingStripeSubmissionControl, InMemoryStripeSubmissionControl};
 
     type Reconciler = InMemoryBillingReconciler<
         InMemoryReconcileAuditSink,
@@ -628,8 +623,7 @@ mod tests {
         let history = Arc::new(InMemoryDriftHistoryLedger::new());
         let stripe = Arc::new(InMemoryStripeSubmissionControl::new());
         // Tighter ladder: quiet 1e-6, sev3 1e-5, sev1 1e-4.
-        let cfg =
-            ReconcileConfig::new(5, 1e-6, 1e-6, 1e-5, 1e-4).unwrap();
+        let cfg = ReconcileConfig::new(5, 1e-6, 1e-6, 1e-5, 1e-4).unwrap();
         let r = InMemoryBillingReconciler::with_config(
             Arc::clone(&audit),
             Arc::clone(&history),
@@ -695,8 +689,7 @@ mod tests {
             }
             other => unreachable!("{other:?}"),
         }
-        let stripe_paused = audit
-            .snapshot_of(ReconcileAuditEventType::StripePaused);
+        let stripe_paused = audit.snapshot_of(ReconcileAuditEventType::StripePaused);
         assert_eq!(stripe_paused.len(), 1);
         assert_eq!(
             stripe_paused[0].primary_layer,

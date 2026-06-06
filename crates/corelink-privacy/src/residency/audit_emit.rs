@@ -96,11 +96,17 @@ pub struct ResidencyAuditRecord {
 
 impl ResidencyAuditRecord {
     /// Construct a `request_routed` record.
-    pub fn request_routed(id: impl Into<String>, time: impl Into<String>, payload: RequestRoutedPayload) -> Self {
+    pub fn request_routed(
+        id: impl Into<String>,
+        time: impl Into<String>,
+        payload: RequestRoutedPayload,
+    ) -> Self {
         let data = serde_json::to_value(&payload).unwrap_or(serde_json::Value::Null);
         Self {
             spec_version: "1.0".to_string(),
-            event_type: ResidencyAuditEventType::RequestRouted.as_cloudevents_type().to_string(),
+            event_type: ResidencyAuditEventType::RequestRouted
+                .as_cloudevents_type()
+                .to_string(),
             source: "https://corelink.humangr.com/residency-enforcement".to_string(),
             id: id.into(),
             time: time.into(),
@@ -109,7 +115,11 @@ impl ResidencyAuditRecord {
     }
 
     /// Construct a `write_rejected_cross_region` record.
-    pub fn write_rejected(id: impl Into<String>, time: impl Into<String>, payload: WriteRejectedPayload) -> Self {
+    pub fn write_rejected(
+        id: impl Into<String>,
+        time: impl Into<String>,
+        payload: WriteRejectedPayload,
+    ) -> Self {
         let data = serde_json::to_value(&payload).unwrap_or(serde_json::Value::Null);
         Self {
             spec_version: "1.0".to_string(),

@@ -171,7 +171,10 @@ impl R2ListPager for InMemoryR2ListPager {
 // keeps the function call-site self-documenting at the route handler boundary.
 // A `StreamBuildContext { ... }` refactor is tracked as a follow-on cleanup
 // (cosmetic only; no behavioral change).
-#[allow(clippy::too_many_arguments, reason = "trailing-payload + audit sink fan-in")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "trailing-payload + audit sink fan-in"
+)]
 pub fn build_audit_export_async_stream(
     mut pager: Box<dyn R2ListPager>,
     manifest_line: String,
@@ -315,7 +318,10 @@ pub fn build_audit_export_async_stream(
 #[must_use]
 fn export_row_buffer_bytes() -> usize {
     match std::env::var(ENV_EXPORT_ROW_BUFFER_BYTES) {
-        Ok(v) => v.trim().parse::<usize>().unwrap_or(DEFAULT_EXPORT_ROW_BUFFER_BYTES),
+        Ok(v) => v
+            .trim()
+            .parse::<usize>()
+            .unwrap_or(DEFAULT_EXPORT_ROW_BUFFER_BYTES),
         Err(_) => DEFAULT_EXPORT_ROW_BUFFER_BYTES,
     }
 }
@@ -388,12 +394,8 @@ fn abort_trailer_frame(
     expected_hex: &str,
 ) -> Frame<Bytes> {
     let mut trailers = HeaderMap::new();
-    let value = mid_stream_abort_trailer_value(
-        break_at_seq,
-        break_at_chunk,
-        observed_hex,
-        expected_hex,
-    );
+    let value =
+        mid_stream_abort_trailer_value(break_at_seq, break_at_chunk, observed_hex, expected_hex);
     if let (Ok(name), Ok(val)) = (
         HeaderName::from_bytes(HEADER_EXPORT_ABORTED.as_bytes()),
         HeaderValue::from_str(&value),

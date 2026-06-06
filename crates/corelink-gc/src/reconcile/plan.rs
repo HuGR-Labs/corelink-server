@@ -7,8 +7,7 @@ use std::sync::Mutex;
 
 use super::{
     ReconcileClock, ReconcileError, SevLevel, AUTO_FIX_MAX_PERCENT, AUTO_FIX_MAX_RECORDS,
-    CANONICAL_RECONCILE_PHASE_BUDGET_MS, SEV1_PER_TENANT_DRIFT_PERCENT,
-    SEV2_GLOBAL_DRIFT_PERCENT,
+    CANONICAL_RECONCILE_PHASE_BUDGET_MS, SEV1_PER_TENANT_DRIFT_PERCENT, SEV2_GLOBAL_DRIFT_PERCENT,
 };
 
 /// Counter-driven [`ReconcileClock`] used by tests + property tests.
@@ -184,11 +183,6 @@ pub fn sev_level_for(
 /// bound `≤`); either drift_count = 6 OR drift_percent = 0.000101
 /// rejects (manual review).
 #[must_use]
-pub fn auto_fix_gate_fires(
-    drift_count: u64,
-    drift_percent: f64,
-    config: &ReconcileConfig,
-) -> bool {
-    drift_count <= config.auto_fix_max_records
-        && drift_percent <= config.auto_fix_max_percent
+pub fn auto_fix_gate_fires(drift_count: u64, drift_percent: f64, config: &ReconcileConfig) -> bool {
+    drift_count <= config.auto_fix_max_records && drift_percent <= config.auto_fix_max_percent
 }

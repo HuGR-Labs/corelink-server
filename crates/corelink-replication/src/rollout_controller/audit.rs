@@ -197,14 +197,22 @@ mod tests {
     #[test]
     fn canonical_audit_event_count_pinned() {
         let strings = canonical_rollout_audit_event_strings();
-        assert_eq!(strings.len(), 8, "expected 8 canonical rollout audit events");
+        assert_eq!(
+            strings.len(),
+            8,
+            "expected 8 canonical rollout audit events"
+        );
     }
 
     #[test]
     fn all_event_types_have_distinct_strings() {
         let strings = canonical_rollout_audit_event_strings();
         let unique: std::collections::HashSet<_> = strings.iter().collect();
-        assert_eq!(unique.len(), strings.len(), "duplicate CloudEvent type strings");
+        assert_eq!(
+            unique.len(),
+            strings.len(),
+            "duplicate CloudEvent type strings"
+        );
     }
 
     #[test]

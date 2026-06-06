@@ -33,7 +33,9 @@
 //!   is the only canonical detection. Codex round-1 P0 + round-2
 //!   P0 fix.
 
-use corelink_auth::middleware::{JitterPolicy, PredicateKind, TimingPaddingConfig, TimingPaddingLayer};
+use corelink_auth::middleware::{
+    JitterPolicy, PredicateKind, TimingPaddingConfig, TimingPaddingLayer,
+};
 
 /// Type re-export — callers usually import `MissPaddingLayer` rather
 /// than the longer `corelink_worker::middleware::TimingPaddingLayer`.

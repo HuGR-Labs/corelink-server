@@ -48,8 +48,7 @@ use corelink_clerk::fakes::test_keys::TestRsaKey;
 use corelink_clerk::fakes::{InMemoryKvCache, StaticJwksFetcher};
 use corelink_clerk::{ClerkAdapter, ClerkConfig, ClerkPrincipal};
 use corelink_pat::{
-    PatEnv, PatId, PatScopes, PrincipalId as PatPrincipal, TenantId as PatTenantId,
-    SCOPE_CACHE_RW,
+    PatEnv, PatId, PatScopes, PrincipalId as PatPrincipal, TenantId as PatTenantId, SCOPE_CACHE_RW,
 };
 use corelink_tenant_path::TenantDerivationKey;
 use corelink_worker::middleware::{
@@ -242,11 +241,7 @@ impl Service<Request<Bytes>> for EchoService {
     type Response = Response<Bytes>;
     type Error = std::convert::Infallible;
     type Future = std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Result<Self::Response, Self::Error>,
-                > + Send,
-        >,
+        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>,
     >;
 
     fn poll_ready(
@@ -301,14 +296,19 @@ async fn happy_path_pat_injects_authctx() {
         ))),
     });
     let jwt_resolver = Arc::new(ScriptedJwtResolver {
-        binding: Arc::new(std::sync::Mutex::new(Err(AuthMiddlewareError::InvalidToken))),
+        binding: Arc::new(std::sync::Mutex::new(Err(
+            AuthMiddlewareError::InvalidToken,
+        ))),
     });
     let state = canonical_state(pat_verifier.clone(), jwt_verifier, jwt_resolver);
     let echo = EchoService::default();
     let mut svc = AuthLayer::new(state).layer(echo.clone());
     let req = Request::builder()
         .uri("/v1/cas/abcd")
-        .header(http::header::AUTHORIZATION, format!("Bearer {}", canonical_pat_plaintext()))
+        .header(
+            http::header::AUTHORIZATION,
+            format!("Bearer {}", canonical_pat_plaintext()),
+        )
         .body(Bytes::new())
         .unwrap();
     let resp = svc.ready().await.unwrap().call(req).await.unwrap();
@@ -457,7 +457,10 @@ async fn pat_invalid_returns_401_with_constant_time_pad() {
     let echo = EchoService::default();
     let mut svc = AuthLayer::new(state).layer(echo.clone());
     let req = Request::builder()
-        .header(http::header::AUTHORIZATION, format!("Bearer {}", canonical_pat_plaintext()))
+        .header(
+            http::header::AUTHORIZATION,
+            format!("Bearer {}", canonical_pat_plaintext()),
+        )
         .body(Bytes::new())
         .unwrap();
     let resp = svc.ready().await.unwrap().call(req).await.unwrap();
@@ -551,7 +554,10 @@ async fn cross_tenant_smuggle_rejected_uniform_401() {
     let echo = EchoService::default();
     let mut svc = AuthLayer::new(state).layer(echo.clone());
     let req = Request::builder()
-        .header(http::header::AUTHORIZATION, format!("Bearer {}", canonical_pat_plaintext()))
+        .header(
+            http::header::AUTHORIZATION,
+            format!("Bearer {}", canonical_pat_plaintext()),
+        )
         .header("x-corelink-tenant-id", tenant_b.to_string())
         .body(Bytes::new())
         .unwrap();
@@ -586,7 +592,10 @@ async fn cross_tenant_smuggle_matching_value_passes_through() {
     let echo = EchoService::default();
     let mut svc = AuthLayer::new(state).layer(echo.clone());
     let req = Request::builder()
-        .header(http::header::AUTHORIZATION, format!("Bearer {}", canonical_pat_plaintext()))
+        .header(
+            http::header::AUTHORIZATION,
+            format!("Bearer {}", canonical_pat_plaintext()),
+        )
         .header("x-corelink-tenant-id", tenant.to_string())
         .body(Bytes::new())
         .unwrap();
@@ -619,7 +628,10 @@ async fn request_id_propagation_into_authctx() {
     let echo = EchoService::default();
     let mut svc = AuthLayer::new(state).layer(echo.clone());
     let req = Request::builder()
-        .header(http::header::AUTHORIZATION, format!("Bearer {}", canonical_pat_plaintext()))
+        .header(
+            http::header::AUTHORIZATION,
+            format!("Bearer {}", canonical_pat_plaintext()),
+        )
         .header("x-request-id", custom_request_id.to_string())
         .body(Bytes::new())
         .unwrap();

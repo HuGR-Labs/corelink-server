@@ -9,9 +9,7 @@ pub enum CustomerHandlerError {
     /// Cross-tenant access denied — the caller's authenticated tenant
     /// does not match the requested tenant. Audit row emitted BEFORE
     /// this error is returned (fail-CLOSED ordering).
-    #[error(
-        "cross-tenant denied: caller_tenant={caller} requested_tenant={requested_tenant}"
-    )]
+    #[error("cross-tenant denied: caller_tenant={caller} requested_tenant={requested_tenant}")]
     CrossTenantDenied {
         /// Caller's authenticated tenant.
         caller: String,

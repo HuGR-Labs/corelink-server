@@ -104,9 +104,8 @@ fn phase_check_constraint_lists_canonical_7_phases() {
 fn status_check_constraint_includes_failed_per_lote_10_6bis() {
     // Lote 10.6bis P0-4 fix: 'failed' status variant added.
     let sql = MIGRATION_0006_GC_RUN;
-    assert!(sql.contains(
-        "status IN ('pending', 'running', 'succeeded', 'crashed', 'aborted', 'failed')"
-    ));
+    assert!(sql
+        .contains("status IN ('pending', 'running', 'succeeded', 'crashed', 'aborted', 'failed')"));
 }
 
 #[test]

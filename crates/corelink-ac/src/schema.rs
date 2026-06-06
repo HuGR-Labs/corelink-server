@@ -64,8 +64,7 @@
 /// `wrangler d1 migrations apply`. The simulator does not parse this
 /// string; the algorithmic invariants are re-implemented directly so
 /// test failures are easy to triage.
-pub const MIGRATION_0002_AC_META: &str =
-    include_str!("../../../migrations/d1/0002_ac_meta.sql");
+pub const MIGRATION_0002_AC_META: &str = include_str!("../../../migrations/d1/0002_ac_meta.sql");
 
 pub mod region;
 pub mod sim;
