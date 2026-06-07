@@ -23,6 +23,16 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **Worker now strips client-suppliable trust headers on every forward path
+  (header-smuggling fix, H4).** The data-plane Worker forwarded `x-admin-scope`,
+  `x-admin-principal`, `x-admin-tenant`, `x-corelink-internal-auth`, and
+  `x-corelink-fanout-from` from the client to the DO/container verbatim except on
+  the onboarding path — letting any client smuggle them to a trusting handler. A
+  `stripClientTrustHeaders` helper now deletes them on all four forward blocks
+  (main, region-fanout, internal, onboarding) before the server values are set
+  (delete-then-set where the Worker legitimately sets one). Also fixes a latent
+  bug where the internal forward leaked the client's `x-corelink-internal-auth`
+  instead of re-setting it from the server secret.
 - **Container cache surfaces now bind tenant isolation to the authenticated
   tenant, not a client-controlled value (cross-tenant read/write fix).** The
   native container keyed CAS (`/v1/cas/:tenant/:hash`), AC
