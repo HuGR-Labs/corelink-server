@@ -1343,3 +1343,167 @@ describe("WP-T1: tenant-derived DO routing", () => {
     expect(resp.status).toBe(200);
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Security (H4): server-trust header hygiene on forwarded requests
+//
+// A client must NEVER be able to SMUGGLE server-trust headers (x-admin-scope,
+// x-admin-principal, x-admin-tenant, x-corelink-internal-auth,
+// x-corelink-fanout-from) straight to the DO/container. Every forward path that
+// clones request.headers MUST strip them before the Worker sets its own values.
+// The Worker-established headers (x-corelink-tenant-id / -route-kind /
+// -token-prefix) MUST still survive (the Worker overwrites them).
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("security (H4): forwarded-request trust-header hygiene", () => {
+  /** Capture all headers the DO stub receives on the forwarded request. */
+  function makeHeaderCapturingEnv(): {
+    env: Partial<Env>;
+    captured: { headers?: Headers };
+  } {
+    const captured: { headers?: Headers } = {};
+    const env: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (_n: string) => ({ toString: () => "stub-id" }),
+        get: () => ({
+          fetch: async (req: Request): Promise<Response> => {
+            captured.headers = new Headers(req.headers);
+            return new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          },
+        }),
+        idFromString: (_s: string) => ({ toString: () => "stub-id" }),
+        newUniqueId: () => ({ toString: () => "stub-id" }),
+        jurisdiction: (_j: string) => env.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+    return { env, captured };
+  }
+
+  const SMUGGLED: Record<string, string> = {
+    "x-admin-scope": "admin:*",
+    "x-admin-principal": "attacker@evil.example.com",
+    "x-admin-tenant": "victim-tenant",
+    "x-corelink-internal-auth": "forged-internal-secret",
+    "x-corelink-fanout-from": "prod",
+  };
+
+  it("MAIN data-plane forward strips ALL client trust headers", async () => {
+    const { env, captured } = makeHeaderCapturingEnv();
+    const resp = await workerFetch(
+      `http://localhost/api/v2/${TEST_TENANT_ID}/path`,
+      { headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}`, ...SMUGGLED } },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(captured.headers).toBeDefined();
+    for (const name of Object.keys(SMUGGLED)) {
+      expect(captured.headers?.get(name), `${name} must be stripped`).toBeNull();
+    }
+  });
+
+  it("MAIN data-plane forward: Worker-set trust headers survive the strip", async () => {
+    const { env, captured } = makeHeaderCapturingEnv();
+    await workerFetch(
+      `http://localhost/api/v2/${TEST_TENANT_ID}/path`,
+      {
+        headers: {
+          Authorization: `Bearer ${TEST_PAT_TOKEN}`,
+          // Client also tries to spoof the Worker-established headers — these
+          // are unconditionally overwritten by the Worker, not just deleted.
+          "x-corelink-tenant-id": "spoofed-tenant",
+          "x-corelink-route-kind": "spoofed-kind",
+          "x-corelink-token-prefix": "spoofed-prefix",
+          ...SMUGGLED,
+        },
+      },
+      env,
+    );
+    // The Worker's own values win.
+    expect(captured.headers?.get("x-corelink-tenant-id")).toBe(TEST_TENANT_ID);
+    expect(captured.headers?.get("x-corelink-route-kind")).toBe("reapi_v2");
+    expect(captured.headers?.get("x-corelink-token-prefix")).not.toBe("spoofed-prefix");
+  });
+
+  it("internal forward strips smuggled internal-auth and re-sets it from the server secret", async () => {
+    const { env, captured } = makeHeaderCapturingEnv();
+    const INTERNAL_KEY = "the-real-internal-secret-0123456789";
+    const resp = await workerFetch(
+      "http://localhost/_internal/pat/mint",
+      {
+        method: "POST",
+        headers: {
+          // Caller authenticates with the correct shared secret …
+          "x-corelink-internal-auth": INTERNAL_KEY,
+          // … but also tries to smuggle admin headers.
+          "x-admin-scope": "admin:*",
+          "x-admin-principal": "attacker",
+          "x-admin-tenant": "victim",
+          "x-corelink-fanout-from": "prod",
+        },
+        body: "{}",
+      },
+      { ...env, CORELINK_INTERNAL_AUTH_KEY: INTERNAL_KEY },
+    );
+    expect(resp.status).toBe(200);
+    // Admin headers stripped …
+    expect(captured.headers?.get("x-admin-scope")).toBeNull();
+    expect(captured.headers?.get("x-admin-principal")).toBeNull();
+    expect(captured.headers?.get("x-admin-tenant")).toBeNull();
+    expect(captured.headers?.get("x-corelink-fanout-from")).toBeNull();
+    // … internal-auth re-set from the server secret (delete-then-set).
+    expect(captured.headers?.get("x-corelink-internal-auth")).toBe(INTERNAL_KEY);
+  });
+
+  it("region-fanout forward strips smuggled trust headers but keeps Worker-set fanout-from", async () => {
+    // Capture the headers the regional Worker (Service Binding) receives.
+    let fanoutHeaders: Headers | undefined;
+    const regionalBinding = {
+      fetch: async (req: Request): Promise<Response> => {
+        fanoutHeaders = new Headers(req.headers);
+        return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+      },
+    };
+    // D1 mock: PAT row + tenant.primary_region = "lhr" to trigger fan-out.
+    const d1 = {
+      prepare: (sql: string) => ({
+        bind: (...args: unknown[]) => ({
+          first: async <T>() => {
+            if (sql.includes("FROM pat")) {
+              return { tenant_id: TEST_TENANT_ID, expires_ms: Date.now() + 3_600_000 } as T;
+            }
+            if (sql.includes("primary_region")) {
+              return { primary_region: "lhr" } as T;
+            }
+            // tenant_storage_state / tier lookups → null (no quota record).
+            void args;
+            return null as T;
+          },
+        }),
+        first: async <T>() => null as T | null,
+      }),
+    } as unknown as D1Database;
+
+    const resp = await workerFetch(
+      `http://localhost/api/v2/${TEST_TENANT_ID}/path`,
+      {
+        headers: {
+          Authorization: `Bearer ${TEST_PAT_TOKEN}`,
+          "x-admin-scope": "admin:*",
+          "x-corelink-internal-auth": "forged",
+          "x-corelink-fanout-from": "spoofed-origin",
+        },
+      },
+      { CONFIG_DB: d1, PROD_LHR: regionalBinding },
+    );
+    expect(resp.status).toBe(200);
+    expect(fanoutHeaders).toBeDefined();
+    // Smuggled admin/internal-auth stripped.
+    expect(fanoutHeaders?.get("x-admin-scope")).toBeNull();
+    expect(fanoutHeaders?.get("x-corelink-internal-auth")).toBeNull();
+    // fanout-from is Worker-established to "prod" (client "spoofed-origin" gone).
+    expect(fanoutHeaders?.get("x-corelink-fanout-from")).toBe("prod");
+  });
+});

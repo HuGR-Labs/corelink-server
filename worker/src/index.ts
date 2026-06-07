@@ -203,6 +203,45 @@ function handlePreflight(request: Request): Response | null {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Server-trust header hygiene (security: H4)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Client-suppliable "server-trust" headers that the Worker is solely
+ * responsible for establishing (or that must NEVER be client-set). A client
+ * could otherwise SMUGGLE these straight through to the DO/container, which
+ * trusts some of them on its admin routes and its internal-auth gate.
+ *
+ * On EVERY path where the Worker forwards a client request by cloning
+ * `request.headers`, these MUST be deleted BEFORE the Worker sets its own
+ * verified values (delete-then-set). On data-plane paths the Worker does not
+ * set internal-auth, so deleting it makes the container's internal-auth-gated
+ * admin routes Worker-unreachable by design (operator-only posture).
+ *
+ * NOTE: `x-corelink-tenant-id` / `x-corelink-route-kind` / `x-corelink-token-prefix`
+ * are NOT listed here on purpose — the Worker unconditionally `.set()`s those
+ * itself on every forward, so any client value is already overwritten.
+ */
+const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
+  "x-admin-scope",
+  "x-admin-principal",
+  "x-admin-tenant",
+  "x-corelink-internal-auth",
+  "x-corelink-fanout-from",
+];
+
+/**
+ * Strip every client-suppliable server-trust header from a forwarded request's
+ * Headers. Call this BEFORE any `h.set(...)` of Worker-established trust values
+ * (delete-then-set) on every DO/container forward path.
+ */
+function stripClientTrustHeaders(h: Headers): void {
+  for (const name of CLIENT_TRUST_HEADERS) {
+    h.delete(name);
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Route table
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -1056,10 +1095,17 @@ const handler: ExportedHandler<Env> = {
       const internalAugmented = new Request(request, {
         headers: (() => {
           const h = new Headers(request.headers);
+          // Strip ALL client-suppliable trust headers BEFORE re-establishing
+          // them from server-trusted values (delete-then-set). A client must
+          // never smuggle x-admin-* / fanout-from, nor a forged internal-auth.
+          stripClientTrustHeaders(h);
           h.set("x-request-id", requestId);
           h.set("x-corelink-route-kind", "internal");
           h.set("x-corelink-tenant-id", "_system");
           h.set("x-corelink-token-prefix", "internal");
+          // Re-set internal-auth from the server secret the Worker just verified
+          // the caller against — the container's internal-auth gate requires it.
+          h.set("x-corelink-internal-auth", internalAuthKey);
           return h;
         })(),
       });
@@ -1175,7 +1221,10 @@ const handler: ExportedHandler<Env> = {
       const onbAugmented = new Request(request, {
         headers: (() => {
           const h = new Headers(request.headers);
-          h.delete("x-corelink-internal-auth");
+          // Strip the FULL set of client-suppliable trust headers (x-admin-*,
+          // fanout-from, internal-auth) BEFORE re-establishing them from
+          // server-trusted values (delete-then-set).
+          stripClientTrustHeaders(h);
           h.delete("x-corelink-tenant-id");
           h.delete("authorization");
           h.set("x-request-id", requestId);
@@ -1397,6 +1446,10 @@ const handler: ExportedHandler<Env> = {
           const regionalReq = new Request(request, {
             headers: (() => {
               const h = new Headers(request.headers);
+              // Strip ALL client-suppliable trust headers BEFORE the Worker
+              // sets its own (delete-then-set). The Worker legitimately sets
+              // x-corelink-fanout-from below from a server-trusted constant.
+              stripClientTrustHeaders(h);
               h.set("x-request-id", requestId);
               h.set("x-corelink-route-kind", route.routeKind);
               h.set("x-corelink-token-prefix", auth.tokenPrefix);
@@ -1422,6 +1475,11 @@ const handler: ExportedHandler<Env> = {
     const augmented = new Request(request, {
       headers: (() => {
         const h = new Headers(request.headers);
+        // Security (H4): strip ALL client-suppliable server-trust headers on the
+        // data-plane forward. The Worker does NOT set internal-auth here, so the
+        // container's internal-auth-gated admin routes become Worker-unreachable
+        // by design — admin is operator-only (internal-auth path) posture.
+        stripClientTrustHeaders(h);
         h.set("x-request-id", requestId);
         h.set("x-corelink-route-kind", route.routeKind);
         // Pass token prefix for DO-side audit correlation (NOT the raw token).
