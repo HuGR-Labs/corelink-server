@@ -280,6 +280,17 @@ Each entry cross-references:
 
 ### Changed
 
+- **Prod deploy gate no longer requires the Slack webhook secrets.** The
+  `cf-deploy-prod.yml` required-secrets check listed
+  `SLACK_WEBHOOK_URL_ALERTS_SEV1/SEV2` + `..._BREACH_NOTIFICATIONS`, but
+  operational alerting currently routes via PagerDuty (`PAGERDUTY_ROUTING_KEY`,
+  still gated) and direct Slack delivery is a not-yet-wired enhancement
+  (`corelink-slack-real`'s `WebhookRegistry::from_env` already omits unset
+  channels and dispatch fails closed with `ChannelUnconfigured` — no startup
+  break). The gate was blocking deploys on secrets nothing consumes; the three
+  `SLACK_WEBHOOK_URL_*` entries are dropped from `REQUIRED[]` (with an in-place
+  comment to re-add them if Slack becomes load-bearing). The secrets-checklist
+  rows + crate are unchanged.
 - **Public API-reference + subprocessors docs regenerated** to catch up with
   sources that advanced without a docs refresh, greening the two `--check`
   drift gates. `openapi/corelink-v1.yaml` was synced 2026-05-30 (f10f0c54) but
