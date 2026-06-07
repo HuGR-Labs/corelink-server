@@ -73,6 +73,113 @@ async fn cross_tenant_reject_returns_503_on_audit_sink_failure() {
     );
 }
 
+/// AuthTenant negative — a request with NO `x-corelink-tenant-id`
+/// header MUST be rejected 401 by the `AuthTenant` extractor BEFORE
+/// the `handle_export` body runs (`auth: AuthTenant` is the first
+/// extractor in the handler signature). Drop that arg and the request
+/// would proceed into the handler and parse the path tenant instead.
+/// Both path `:tenant` and `?tenant=` are well-formed UUIDs so the
+/// ONLY reason for the rejection is the missing authenticated-tenant
+/// header.
+#[tokio::test]
+async fn missing_tenant_header_returns_401() {
+    use tower::ServiceExt;
+    let tenant = Uuid::from_u128(0xA1);
+    let sink = Arc::new(InMemoryExportAuditSink::new());
+    let exporter: Arc<dyn AuditExporter> = Arc::new(InMemoryAuditExporter::new());
+    let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
+    let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
+    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(InMemoryTokenBucketRateLimiter::new(
+        rl_audit,
+        rl_metrics,
+        audit_export_rate_limit_config(),
+    ));
+    let state = AuditExportRouteState {
+        exporter,
+        rate_limiter,
+        audit_sink: sink as Arc<dyn ExportAuditSink>,
+        pager_page_size: R2_LIST_PAGE_SIZE,
+        wall_clock: default_wall_clock(),
+    };
+    let app = router(state);
+    // NO `x-corelink-tenant-id` header — `AuthTenant` fails CLOSED
+    // with 401 before the handler is invoked. The `TENANT_ID_HEADER`
+    // (`X-Tenant-Id`) is NOT the authenticated-tenant source; omitting
+    // `x-corelink-tenant-id` is what trips the extractor.
+    let uri = format!("/v1/audit/{tenant}/export?from=0&to=1000");
+    let req = axum::http::Request::builder()
+        .uri(uri)
+        .body(axum::body::Body::empty())
+        .expect("req");
+    let resp = app.oneshot(req).await.expect("oneshot");
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "missing x-corelink-tenant-id MUST 401 at the AuthTenant extractor, \
+         not reach handle_export"
+    );
+}
+
+/// Cross-tenant negative (PATH segment) — a request whose path
+/// `:tenant` does NOT equal the authenticated `x-corelink-tenant-id`
+/// header MUST hit the step-1b cross-tenant guard: emit the SEV-1
+/// `cross_tenant_reject` audit row and return 403, BEFORE any data
+/// access (and before the `?tenant=` query check, which is left
+/// matching the header here so ONLY the path drives the mismatch).
+/// This complements the existing `?tenant=` mismatch test
+/// (`cross_tenant_reject_returns_503_on_audit_sink_failure`). The sink
+/// is healthy so the fail-CLOSED ordering yields 403 (not 503).
+#[tokio::test]
+async fn path_tenant_ne_header_returns_403_and_audits_sev1() {
+    use tower::ServiceExt;
+    let auth_tenant = Uuid::from_u128(0xAA);
+    let path_tenant = Uuid::from_u128(0xBB);
+    let sink = Arc::new(InMemoryExportAuditSink::new());
+    let exporter: Arc<dyn AuditExporter> = Arc::new(InMemoryAuditExporter::new());
+    let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
+    let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
+    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(InMemoryTokenBucketRateLimiter::new(
+        rl_audit,
+        rl_metrics,
+        audit_export_rate_limit_config(),
+    ));
+    let state = AuditExportRouteState {
+        exporter,
+        rate_limiter,
+        audit_sink: sink.clone() as Arc<dyn ExportAuditSink>,
+        pager_page_size: R2_LIST_PAGE_SIZE,
+        wall_clock: default_wall_clock(),
+    };
+    let app = router(state);
+    // Path `:tenant` is `path_tenant` (0xBB) but the authenticated
+    // header is `auth_tenant` (0xAA) → step-1b path mismatch → 403.
+    let uri = format!("/v1/audit/{path_tenant}/export?from=0&to=1000");
+    let req = axum::http::Request::builder()
+        .uri(uri)
+        .header(TENANT_ID_HEADER, auth_tenant.to_string())
+        .header("x-corelink-tenant-id", auth_tenant.to_string())
+        .body(axum::body::Body::empty())
+        .expect("req");
+    let resp = app.oneshot(req).await.expect("oneshot");
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "path :tenant != authenticated header MUST 403 at the step-1b guard \
+         (healthy sink → 403, not 503)"
+    );
+    // The SEV-1 cross-tenant row landed BEFORE the 403 (fail-CLOSED
+    // ordering) — pin both the emit and the attempted-tenant binding.
+    let rows = sink.snapshot().expect("snapshot");
+    assert!(
+        rows.iter().any(|r| r.exit_status == "cross_tenant_reject"
+            && r.authenticated_tenant == Some(auth_tenant)
+            && r.attempted_tenant == Some(path_tenant)),
+        "path-mismatch MUST emit one cross_tenant_reject row binding the \
+         authenticated + attempted (path) tenants; saw {:?}",
+        rows.iter().map(|r| &r.exit_status).collect::<Vec<_>>(),
+    );
+}
+
 /// A-P2-01 closure — rate-limit-deny now fails CLOSED.
 #[tokio::test]
 async fn rate_limit_deny_returns_503_on_audit_sink_failure() {

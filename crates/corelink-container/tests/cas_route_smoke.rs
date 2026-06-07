@@ -135,6 +135,64 @@ async fn cas_route_state_constructs_without_panic_on_native() {
     let _router = cas::router(fresh_state());
 }
 
+/// AuthTenant negative — a CAS read with NO `x-corelink-tenant-id`
+/// header MUST be rejected 401 by the `AuthTenant` extractor BEFORE
+/// the handler runs. This is the load-bearing route-layer proof that
+/// the `auth: AuthTenant` argument is wired: drop the arg and this
+/// request would reach the handler and 404 instead. The path `:tenant`
+/// is a well-formed value (`tenant-a`) so the ONLY reason for the
+/// rejection is the missing authenticated-tenant header.
+#[tokio::test]
+async fn cas_read_route_missing_tenant_header_returns_401() {
+    let app = cas::router(fresh_state());
+
+    let req = Request::builder()
+        .uri("/v1/cas/tenant-a/abc123")
+        .method("GET")
+        // NO `x-corelink-tenant-id` header — the `AuthTenant` extractor
+        // fails CLOSED with 401 before the handler is invoked.
+        .body(Body::empty())
+        .expect("build req");
+    let resp = app.oneshot(req).await.expect("oneshot");
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "missing x-corelink-tenant-id MUST 401 at the AuthTenant extractor, \
+         not reach the handler"
+    );
+}
+
+/// Cross-tenant negative — a CAS read whose path `:tenant` does NOT
+/// equal the authenticated `x-corelink-tenant-id` header MUST be
+/// denied 403 by the in-handler cross-tenant guard, BEFORE any storage
+/// access. Drop the guard (or the `auth: AuthTenant` arg it compares
+/// against) and this request would 404 instead.
+#[tokio::test]
+async fn cas_read_route_path_tenant_ne_header_returns_403() {
+    let app = cas::router(fresh_state());
+
+    let req = Request::builder()
+        .uri("/v1/cas/tenant-a/abc123")
+        .method("GET")
+        // Header tenant (`tenant-b`) != path `:tenant` (`tenant-a`) →
+        // cross-tenant attempt → 403 before storage access.
+        .header("x-corelink-tenant-id", "tenant-b")
+        .body(Body::empty())
+        .expect("build req");
+    let resp = app.oneshot(req).await.expect("oneshot");
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "path :tenant != authenticated header MUST 403 (cross-tenant guard)"
+    );
+    let bytes = to_bytes(resp.into_body(), 1 << 20).await.expect("body");
+    let body = String::from_utf8(bytes.to_vec()).expect("utf8 body");
+    assert_eq!(
+        body, "cross-tenant",
+        "403 body must be the handler-emitted cross-tenant string"
+    );
+}
+
 /// PUT then GET round-trip through the axum router — pins that:
 ///   1. The PUT route is wired (matchit captures :tenant/:hash on PUT).
 ///   2. The body bytes round-trip through the handler back to the GET.

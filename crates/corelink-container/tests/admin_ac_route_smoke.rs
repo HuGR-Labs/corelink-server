@@ -131,6 +131,67 @@ async fn ac_update_route_reaches_handler_and_returns_handler_created_201() {
     );
 }
 
+/// AuthTenant negative — an AC lookup with NO `x-corelink-tenant-id`
+/// header MUST be rejected 401 by the `AuthTenant` extractor BEFORE
+/// the handler runs. Drop the `auth: AuthTenant` arg and this request
+/// would reach the handler and 404 (`ac miss`) instead. The path
+/// `:tenant` is a well-formed value (`tenant-a`) so the ONLY reason
+/// for the rejection is the missing authenticated-tenant header.
+#[tokio::test]
+async fn ac_lookup_route_missing_tenant_header_returns_401() {
+    let (lookup, update) = ac::build_handlers();
+    let state = AcRouteState { lookup, update };
+    let app = ac::router(state);
+
+    let req = Request::builder()
+        .uri("/v1/ac/tenant-a/digest-xyz")
+        .method("GET")
+        // NO `x-corelink-tenant-id` header — `AuthTenant` fails CLOSED
+        // with 401 before the handler is invoked.
+        .body(Body::empty())
+        .expect("build req");
+    let resp = app.oneshot(req).await.expect("oneshot");
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "missing x-corelink-tenant-id MUST 401 at the AuthTenant extractor, \
+         not reach the handler"
+    );
+}
+
+/// Cross-tenant negative — an AC lookup whose path `:tenant` does NOT
+/// equal the authenticated `x-corelink-tenant-id` header MUST be
+/// denied 403 by the in-handler cross-tenant guard, BEFORE any storage
+/// access. Drop the guard (or the `auth: AuthTenant` arg it compares
+/// against) and this request would 404 (`ac miss`) instead.
+#[tokio::test]
+async fn ac_lookup_route_path_tenant_ne_header_returns_403() {
+    let (lookup, update) = ac::build_handlers();
+    let state = AcRouteState { lookup, update };
+    let app = ac::router(state);
+
+    let req = Request::builder()
+        .uri("/v1/ac/tenant-a/digest-xyz")
+        .method("GET")
+        // Header tenant (`tenant-b`) != path `:tenant` (`tenant-a`) →
+        // cross-tenant attempt → 403 before storage access.
+        .header("x-corelink-tenant-id", "tenant-b")
+        .body(Body::empty())
+        .expect("build req");
+    let resp = app.oneshot(req).await.expect("oneshot");
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "path :tenant != authenticated header MUST 403 (cross-tenant guard)"
+    );
+    let bytes = to_bytes(resp.into_body(), 1 << 20).await.expect("body");
+    let body = String::from_utf8(bytes.to_vec()).expect("utf8 body");
+    assert_eq!(
+        body, "cross-tenant",
+        "403 body must be the handler-emitted cross-tenant string"
+    );
+}
+
 /// Admin read against a fresh handler MUST reach the handler and
 /// emit the canonical `admin not found` 404 body. A router-miss
 /// (DEBT-029 bug surface) would yield an empty body.

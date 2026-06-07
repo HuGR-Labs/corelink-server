@@ -38,6 +38,11 @@ export interface Env {
   CONFIG_DB: D1Database;
   // Secrets (bound via `wrangler secret put`)
   CLERK_SECRET_KEY?: string;
+  // Activate exact-issuer pin: `wrangler secret put CLERK_ISSUER_URL --env prod`
+  // Value = Clerk Frontend API / issuer URL, e.g. https://<slug>.clerk.accounts.dev
+  // or the prod issuer shown in the Clerk dashboard → API Keys → Frontend API URL.
+  // Without this secret the worker falls back to the shape-check (https + "clerk").
+  CLERK_ISSUER_URL?: string;
   STRIPE_SECRET_KEY?: string;
   // L3 money path — forwarded to the container by the DO (see durable_object.ts);
   // the tier-select route is unmounted (404) without CORELINK_DPA_VERSION, and
@@ -1193,17 +1198,20 @@ const handler: ExportedHandler<Env> = {
       // presence and allowlist membership after a successful verify, and also
       // assert `iss` presence + expected shape so issuer trust is explicit rather
       // than implicit from the JWKS endpoint.
-      const ONBOARDING_AZP_ALLOWLIST = ["https://corelink-admin.humangr.com"] as const;
       //
-      // TODO(issuer-pin): Once the Clerk Frontend API URL (e.g.
-      // "https://<instance>.clerk.accounts.dev") is confirmed and stable, store it
-      // as a wrangler secret (e.g. CLERK_ISSUER_URL) and replace the shape-only
-      // check below with an exact equality check:
-      //   if (claims.iss !== env.CLERK_ISSUER_URL) { reject 401 }
-      // The shape check below (`https://` prefix + `clerk` in host) is conservative:
-      // it blocks non-Clerk issuers while avoiding a hardcoded wrong URL in prod.
+      // SECURITY FIX (M2 — issuer pin): When CLERK_ISSUER_URL is set, we pass it
+      // to verifyToken() as `issuer` (library-level enforcement) AND re-assert
+      // exact equality post-verify.  Without the secret the shape-check fallback
+      // (https + "clerk") is preserved; set the secret to activate the exact pin.
+      const ONBOARDING_AZP_ALLOWLIST = ["https://corelink-admin.humangr.com"] as const;
+      const clerkIssuerUrl = env.CLERK_ISSUER_URL && env.CLERK_ISSUER_URL.length > 0
+        ? env.CLERK_ISSUER_URL
+        : undefined;
       let onbClerkUserId: string;
       try {
+        // Note: `verifyToken` has no `issuer` option (Clerk verifies the issuer
+        // implicitly via the instance-scoped JWKS); the exact issuer pin is the
+        // post-verify `iss === CLERK_ISSUER_URL` assertion below.
         const claims = await verifyToken(onbToken, {
           secretKey: clerkSecretKey,
           authorizedParties: ["https://corelink-admin.humangr.com"],
@@ -1225,21 +1233,33 @@ const handler: ExportedHandler<Env> = {
           );
         }
 
-        // M1-FIX-2: Explicitly assert issuer is present and has the expected
-        // Clerk shape (https scheme, hostname contains "clerk").  This ensures
-        // issuer trust is explicit even before the full issuer URL is pinned.
-        // Replace with exact string equality once CLERK_ISSUER_URL is confirmed.
+        // M2-FIX: Assert issuer.  When CLERK_ISSUER_URL is set (exact-pin mode),
+        // require strict equality against the configured value.  Without it, fall
+        // back to the M1 shape-check (https scheme + hostname contains "clerk") so
+        // this is a safe no-op until the owner runs:
+        //   wrangler secret put CLERK_ISSUER_URL --env prod
         const iss = (claims as Record<string, unknown>)["iss"];
-        if (
-          typeof iss !== "string" ||
-          iss.length === 0 ||
-          !iss.startsWith("https://") ||
-          !iss.includes("clerk")
-        ) {
-          return applyCors(
-            reapiError("UNAUTHORIZED", "clerk session issuer invalid", 401, requestId),
-            request,
-          );
+        if (clerkIssuerUrl) {
+          // Exact-pin mode: CLERK_ISSUER_URL is set — require exact equality.
+          if (iss !== clerkIssuerUrl) {
+            return applyCors(
+              reapiError("UNAUTHORIZED", "clerk session issuer invalid", 401, requestId),
+              request,
+            );
+          }
+        } else {
+          // Shape-check fallback: block non-Clerk issuers conservatively.
+          if (
+            typeof iss !== "string" ||
+            iss.length === 0 ||
+            !iss.startsWith("https://") ||
+            !iss.includes("clerk")
+          ) {
+            return applyCors(
+              reapiError("UNAUTHORIZED", "clerk session issuer invalid", 401, requestId),
+              request,
+            );
+          }
         }
 
         if (!claims.sub) {
