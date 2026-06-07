@@ -142,7 +142,10 @@ mod tests {
     #[test]
     fn validate_team_id_rejects_empty() {
         let err = validate_team_id("").expect_err("empty rejected");
-        assert!(matches!(err, TurboBridgeError::TeamIdInvalid { len: 0, .. }));
+        assert!(matches!(
+            err,
+            TurboBridgeError::TeamIdInvalid { len: 0, .. }
+        ));
     }
 
     #[test]

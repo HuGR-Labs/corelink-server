@@ -1149,9 +1149,7 @@ mod tests {
         let mut right = HeaderMap::new();
         right.insert(
             ADMIN_INTERNAL_AUTH_HEADER,
-            "test-internal-auth-key-32-bytes-x"
-                .parse()
-                .expect("header"),
+            "test-internal-auth-key-32-bytes-x".parse().expect("header"),
         );
         assert!(internal_auth_ok(Some(&key), &right));
     }
@@ -1168,17 +1166,12 @@ mod tests {
             ADMIN_SCOPE_HEADER,
             REQUIRED_ADMIN_SCOPE.parse().expect("header"),
         );
-        headers.insert(
-            ADMIN_PRINCIPAL_HEADER,
-            "attacker".parse().expect("header"),
-        );
+        headers.insert(ADMIN_PRINCIPAL_HEADER, "attacker".parse().expect("header"));
         let res = require_admin_scope(&state, &headers, None);
         assert!(res.is_err(), "must reject without internal-auth secret");
         // The unauthorized audit row was emitted BEFORE the 403.
         let rows = audit.snapshot().expect("audit");
-        assert!(rows
-            .iter()
-            .any(|r| r.event_type == EVENT_TYPE_UNAUTHORIZED));
+        assert!(rows.iter().any(|r| r.event_type == EVENT_TYPE_UNAUTHORIZED));
     }
 
     /// With the correct internal-auth secret AND scope + principal, the
@@ -1189,9 +1182,7 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(
             ADMIN_INTERNAL_AUTH_HEADER,
-            "test-internal-auth-key-32-bytes-x"
-                .parse()
-                .expect("header"),
+            "test-internal-auth-key-32-bytes-x".parse().expect("header"),
         );
         headers.insert(
             ADMIN_SCOPE_HEADER,

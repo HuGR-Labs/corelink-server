@@ -295,7 +295,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     const GLOBAL_BODY_LIMIT_BYTES: usize = 10 * 1024 * 1024; // 10 MiB
     let mut app = routes::build_with_factory(shadow_factory)
         .route("/_health", get(health_handler))
-        .layer(axum::extract::DefaultBodyLimit::max(GLOBAL_BODY_LIMIT_BYTES));
+        .layer(axum::extract::DefaultBodyLimit::max(
+            GLOBAL_BODY_LIMIT_BYTES,
+        ));
 
     // Stream-5: `POST /_internal/pat/mint` — gated by shared secret.
     // Mounted when CORELINK_INTERNAL_AUTH_KEY + PAT_SIGNING_KEY are both set.
