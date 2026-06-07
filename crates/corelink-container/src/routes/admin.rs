@@ -397,9 +397,17 @@ pub fn router(state: AdminRouteState) -> Router {
 /// The route is intentionally hand-coded against `serde_json` rather
 /// than a `prost`-generated message because the admin plane is the
 /// control plane: cardinality is small, evolution is cheap, and the
-/// surface is human-curated. Production wiring threads the initiator
-/// principal + admin-role flag through an auth middleware; the JSON
-/// body carries only the op + approval-token fields.
+/// surface is human-curated.
+///
+/// # Auth authority
+///
+/// Since the PR #152 internal-auth gate, the authority for the admin
+/// assertion comes entirely from the `x-corelink-internal-auth` gate,
+/// NOT from the JSON body. The gated path (`into_request_gated`)
+/// hardcodes `operator@internal` as the initiator principal and forces
+/// `is_admin = true` regardless of the body fields. Operators are no
+/// longer required to send `initiator` / `initiator_is_admin` — they
+/// default to empty/false and are ignored for the auth decision.
 #[derive(Clone, Debug, Deserialize)]
 pub struct AdminMutateBody {
     /// Operation kind (`set_tenant_tier` / `rotate_admin_token`).
@@ -410,9 +418,23 @@ pub struct AdminMutateBody {
     pub tier: Option<String>,
     /// Token ID (required for `rotate_admin_token`).
     pub token_id: Option<String>,
-    /// Initiator principal (production: from auth middleware).
+    /// Initiator principal.
+    ///
+    /// **Ignored by the gated route path** (`into_request_gated`): since
+    /// the PR #152 internal-auth gate the authority comes from clearing
+    /// the `x-corelink-internal-auth` gate, which hardcodes the operator
+    /// principal. This field is optional on the wire (`#[serde(default)]`)
+    /// so callers are not required to send a dummy value; any supplied
+    /// value is discarded.
+    #[serde(default)]
     pub initiator: String,
     /// True if initiator carries the admin role.
+    ///
+    /// **Ignored by the gated route path** (`into_request_gated`): the
+    /// internal-auth gate forces `is_admin = true` regardless of this
+    /// field. Optional on the wire (`#[serde(default)]`); any supplied
+    /// value is discarded.
+    #[serde(default)]
     pub initiator_is_admin: bool,
     /// Approval id from the dual-approval ledger (None = rejected).
     pub approval_id: Option<String>,
@@ -839,6 +861,35 @@ mod tests {
         };
         let err = body.into_request(0).expect_err("missing tier");
         assert!(err.contains("tier"));
+    }
+
+    /// serde-default: a wire body WITHOUT `initiator` / `initiator_is_admin`
+    /// fields MUST deserialize successfully and the gated path MUST still
+    /// derive admin authority from the operator principal, not the body.
+    ///
+    /// This pins the PR #152 change: the fields are no longer required on the
+    /// wire, so callers that omit them don't get a 400.
+    #[test]
+    fn admin_mutate_body_serde_default_no_initiator_fields() {
+        // JSON that intentionally omits initiator and initiator_is_admin.
+        let json = r#"{
+            "op_kind": "set_tenant_tier",
+            "tenant": "t1",
+            "tier": "Team",
+            "approval_id": "a1",
+            "approver": "bob"
+        }"#;
+        let body: AdminMutateBody =
+            serde_json::from_str(json).expect("deserialize without initiator fields");
+        // Defaults: empty string + false.
+        assert_eq!(body.initiator, "");
+        assert!(!body.initiator_is_admin);
+        // The gated path ignores the body fields and derives admin from the gate.
+        let req = body
+            .into_request_gated("operator@internal", 0)
+            .expect("gated request from minimal body");
+        assert_eq!(req.initiator, "operator@internal");
+        assert!(req.initiator_is_admin);
     }
 
     /// The operator gate fails CLOSED when the key is unconfigured,

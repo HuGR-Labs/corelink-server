@@ -1016,8 +1016,13 @@ const handler: ExportedHandler<Env> = {
     }
 
     // Container health deep-probe — /_health/container — no auth required.
-    // Forwards to the container's /_health via the _system DO, exposing the
-    // full health body including the A4 `storage` field (r2 vs inmemory).
+    // Forwards to the container's /_health via the _system DO.
+    //
+    // Security (L1): the container body includes a `storage` field (`r2` vs
+    // `inmemory`) that leaks when prod cold-starts into the InMemory fallback.
+    // Strip `storage` from the JSON before returning to unauthenticated callers:
+    // parse the container's JSON response, delete `storage`, re-serialize. The
+    // liveness `status` field is preserved so monitoring tools still work.
     if (route.routeKind === "health_container") {
       const systemDoId = env.CORELINK_SERVER.idFromName("_system");
       const systemStub = env.CORELINK_SERVER.get(systemDoId);
@@ -1048,8 +1053,23 @@ const handler: ExportedHandler<Env> = {
       if (!containerHeaders.has("x-request-id")) {
         containerHeaders.set("x-request-id", requestId);
       }
+      // Strip the `storage` field (L1 fix): parse JSON, delete `storage`,
+      // re-serialize. If the body is not valid JSON (container returned an
+      // error body or non-JSON), pass it through unmodified — liveness
+      // semantics are preserved by the upstream status code.
+      let redactedBody: BodyInit;
+      try {
+        const raw = await containerResp.json() as Record<string, unknown>;
+        delete raw["storage"];
+        redactedBody = JSON.stringify(raw);
+        containerHeaders.set("Content-Type", "application/json");
+      } catch {
+        // Non-JSON body (e.g. container down, returned plain-text error):
+        // fall back to streaming the raw body through without redaction.
+        redactedBody = containerResp.body ?? "";
+      }
       return applyCors(
-        new Response(containerResp.body, {
+        new Response(redactedBody, {
           status: containerResp.status,
           statusText: containerResp.statusText,
           headers: containerHeaders,
