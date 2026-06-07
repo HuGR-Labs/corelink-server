@@ -63,6 +63,13 @@ pub mod byok;
 
 pub mod auth_tenant;
 pub mod byok_orchestrator;
+/// Cache-scope enforcement helper + extractor.
+///
+/// Parses the Worker-set, server-trusted `x-corelink-scope` header (the
+/// PAT's D1 scope string) into a checkable form and gates the cache
+/// surfaces (CAS / AC / Turbo) on read vs write capability. Fail-CLOSED:
+/// missing/empty scope grants nothing. See module docs for the grammar.
+pub mod scope;
 #[cfg(feature = "neon-real")]
 pub mod neon_shadow_factory;
 pub mod routes;

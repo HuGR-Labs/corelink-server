@@ -55,7 +55,13 @@ const TEST_TENANT_ID = "00000000-0000-0000-0000-000000000001";
  * token_id query. Used to simulate D1 PAT store responses in unit tests.
  */
 function makeD1Mock(
-  tokenIdToRow: Map<string, { tenant_id: string; expires_ms: number }>,
+  // `scope` is optional so existing fixtures (which omit it) double as the
+  // "older row with NULL/absent scope" case (H1). When present it is forwarded
+  // verbatim to the DO via x-corelink-scope.
+  tokenIdToRow: Map<
+    string,
+    { tenant_id: string; expires_ms: number; scope?: string | null }
+  >,
 ): D1Database {
   return {
     prepare: (sql: string) => ({
@@ -1505,5 +1511,170 @@ describe("security (H4): forwarded-request trust-header hygiene", () => {
     expect(fanoutHeaders?.get("x-corelink-internal-auth")).toBeNull();
     // fanout-from is Worker-established to "prod" (client "spoofed-origin" gone).
     expect(fanoutHeaders?.get("x-corelink-fanout-from")).toBe("prod");
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// H1: PAT scope is a server-trusted signal — read from D1, forwarded to the DO
+// as x-corelink-scope, and NEVER forgeable by the client.
+// ──────────────────────────────────────────────────────────────────────────────
+describe("H1: x-corelink-scope server-trust header", () => {
+  /** Build a capturing-DO env that records the headers the DO receives. */
+  function makeCapturingEnv(record: (h: Headers) => void): Partial<Env> {
+    const ns = {
+      idFromName: (_n: string) => ({ toString: () => "id" }),
+      get: () => ({
+        fetch: async (req: Request) => {
+          record(new Headers(req.headers));
+          return new Response("{}", {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+      }),
+      idFromString: (_s: string) => ({ toString: () => "id" }),
+      newUniqueId: () => ({ toString: () => "id" }),
+      jurisdiction: (_j: string) => ns,
+    } as unknown as DurableObjectNamespace;
+    return { CORELINK_SERVER: ns };
+  }
+
+  it("(a) forwards the D1-resolved scope verbatim as x-corelink-scope", async () => {
+    let seen: Headers | undefined;
+    const env: Partial<Env> = {
+      ...makeCapturingEnv((h) => { seen = h; }),
+      CONFIG_DB: makeD1Mock(new Map([
+        [TEST_TOKEN_ID, {
+          tenant_id: TEST_TENANT_ID,
+          expires_ms: Date.now() + 3_600_000,
+          scope: "cas:rw",
+        }],
+      ])),
+    };
+    const resp = await workerFetch(
+      `http://localhost/api/v2/${TEST_TENANT_ID}/path`,
+      { headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` } },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(seen?.get("x-corelink-scope")).toBe("cas:rw");
+  });
+
+  it("(b) a client-supplied x-corelink-scope is STRIPPED — never forwarded as the client value", async () => {
+    let seen: Headers | undefined;
+    const env: Partial<Env> = {
+      ...makeCapturingEnv((h) => { seen = h; }),
+      CONFIG_DB: makeD1Mock(new Map([
+        [TEST_TOKEN_ID, {
+          tenant_id: TEST_TENANT_ID,
+          expires_ms: Date.now() + 3_600_000,
+          scope: "cas:rw",
+        }],
+      ])),
+    };
+    const resp = await workerFetch(
+      `http://localhost/api/v2/${TEST_TENANT_ID}/path`,
+      {
+        headers: {
+          Authorization: `Bearer ${TEST_PAT_TOKEN}`,
+          // Client attempts to smuggle an escalated scope.
+          "x-corelink-scope": "admin",
+        },
+      },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    // The forged "admin" must be gone — replaced by the D1-resolved value only.
+    expect(seen?.get("x-corelink-scope")).toBe("cas:rw");
+    expect(seen?.get("x-corelink-scope")).not.toBe("admin");
+  });
+
+  it("(c) a missing/null D1 scope is forwarded as the empty string", async () => {
+    let seen: Headers | undefined;
+    const env: Partial<Env> = {
+      ...makeCapturingEnv((h) => { seen = h; }),
+      // Row OMITS scope (older row, NULL in D1) → normalised to "".
+      CONFIG_DB: makeD1Mock(new Map([
+        [TEST_TOKEN_ID, {
+          tenant_id: TEST_TENANT_ID,
+          expires_ms: Date.now() + 3_600_000,
+          scope: null,
+        }],
+      ])),
+    };
+    const resp = await workerFetch(
+      `http://localhost/api/v2/${TEST_TENANT_ID}/path`,
+      { headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` } },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    // Header is present and explicitly empty (not absent, not the literal "null").
+    expect(seen?.get("x-corelink-scope")).toBe("");
+  });
+
+  it("(c') a row with scope entirely absent (older fixture) is forwarded as the empty string", async () => {
+    let seen: Headers | undefined;
+    const env: Partial<Env> = {
+      ...makeCapturingEnv((h) => { seen = h; }),
+      // Default fixture map: no `scope` key at all.
+      CONFIG_DB: makeD1Mock(new Map([
+        [TEST_TOKEN_ID, {
+          tenant_id: TEST_TENANT_ID,
+          expires_ms: Date.now() + 3_600_000,
+        }],
+      ])),
+    };
+    const resp = await workerFetch(
+      `http://localhost/api/v2/${TEST_TENANT_ID}/path`,
+      { headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` } },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(seen?.get("x-corelink-scope")).toBe("");
+  });
+
+  it("region-fanout forward also carries the D1-resolved x-corelink-scope (and strips client value)", async () => {
+    let fanoutHeaders: Headers | undefined;
+    const regionalBinding = {
+      fetch: async (req: Request): Promise<Response> => {
+        fanoutHeaders = new Headers(req.headers);
+        return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+      },
+    };
+    const d1 = {
+      prepare: (sql: string) => ({
+        bind: (...args: unknown[]) => ({
+          first: async <T>() => {
+            if (sql.includes("FROM pat")) {
+              return {
+                tenant_id: TEST_TENANT_ID,
+                expires_ms: Date.now() + 3_600_000,
+                scope: "cas:rw",
+              } as T;
+            }
+            if (sql.includes("primary_region")) {
+              return { primary_region: "lhr" } as T;
+            }
+            void args;
+            return null as T;
+          },
+        }),
+        first: async <T>() => null as T | null,
+      }),
+    } as unknown as D1Database;
+
+    const resp = await workerFetch(
+      `http://localhost/api/v2/${TEST_TENANT_ID}/path`,
+      {
+        headers: {
+          Authorization: `Bearer ${TEST_PAT_TOKEN}`,
+          "x-corelink-scope": "admin", // smuggle attempt on the fanout path
+        },
+      },
+      { CONFIG_DB: d1, PROD_LHR: regionalBinding },
+    );
+    expect(resp.status).toBe(200);
+    expect(fanoutHeaders?.get("x-corelink-scope")).toBe("cas:rw");
+    expect(fanoutHeaders?.get("x-corelink-scope")).not.toBe("admin");
   });
 });

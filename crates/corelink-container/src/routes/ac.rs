@@ -178,6 +178,7 @@ async fn handle_lookup(
     State(state): State<AcRouteState>,
     Path((tenant, action_digest)): Path<(String, String)>,
     auth: crate::auth_tenant::AuthTenant,
+    scope: crate::scope::CacheScope,
 ) -> impl IntoResponse {
     // The authenticated tenant (DO-injected `x-corelink-tenant-id`,
     // PAT-resolved by the Worker) is the SOLE isolation key. The path
@@ -186,6 +187,11 @@ async fn handle_lookup(
     // storage access (no tenant quoted in the body). Mirrors bazel_v2.
     if tenant != auth.0 {
         return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
+    // Scope gate (fail-CLOSED): AC lookup is a cache READ — require
+    // `cas:rw` or `cas:r`. BEFORE any storage access. NO-OP for `cas:rw`.
+    if !scope.can_read() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
     // Logical clock stand-in (handler is the source of truth in
     // production; see cas.rs for the same rationale).
@@ -210,6 +216,7 @@ async fn handle_update(
     State(state): State<AcRouteState>,
     Path((tenant, action_digest)): Path<(String, String)>,
     auth: crate::auth_tenant::AuthTenant,
+    scope: crate::scope::CacheScope,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
     // See `handle_lookup`: the authenticated tenant is the sole
@@ -217,6 +224,12 @@ async fn handle_update(
     // match. Deny 403 BEFORE any storage access on mismatch.
     if tenant != auth.0 {
         return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
+    // Scope gate (fail-CLOSED): AC update is a cache WRITE — require
+    // `cas:rw`. A read-only (`cas:r`) token is rejected here. NO-OP for
+    // current `cas:rw` traffic.
+    if !scope.can_write() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
     let now_ms = 0u64;
     let req = AcUpdateRequest::new(
@@ -408,5 +421,85 @@ mod tests {
         assert!(matches!(err, AcHandlerError::Miss { .. }));
         let resp = map_err(err);
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    // ── scope enforcement (x-corelink-scope) ─────────────────────────────────
+
+    use axum::{
+        body::Body,
+        http::{Method, Request},
+    };
+    use tower::ServiceExt; // for `.oneshot()`
+
+    /// Authenticated tenant injected via `x-corelink-tenant-id`; the scope
+    /// header then gates lookup (read) vs update (write).
+    const TEST_TENANT: &str = "t1";
+
+    /// A `cas:rw` AC update succeeds (current prod scope — happy path).
+    #[tokio::test]
+    async fn update_with_rw_scope_succeeds() {
+        let (_a, _s, st) = fixture();
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/ac/{TEST_TENANT}/d1"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::from(b"result".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CREATED);
+    }
+
+    /// A `cas:r` (read-only) AC update is rejected 403 "insufficient scope".
+    #[tokio::test]
+    async fn update_with_read_only_scope_returns_403_insufficient_scope() {
+        let (_a, _s, st) = fixture();
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/ac/{TEST_TENANT}/d1"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::from(b"result".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        assert_eq!(body.as_ref(), b"insufficient scope");
+    }
+
+    /// A `cas:r` AC lookup passes the scope gate; the entry is absent so the
+    /// route returns 404 (a denied scope would 403 before storage).
+    #[tokio::test]
+    async fn lookup_with_read_only_scope_passes_gate_then_404() {
+        let (_a, _s, st) = fixture();
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/v1/ac/{TEST_TENANT}/ghost"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Fail-CLOSED: an AC lookup with NO scope header is rejected 403.
+    #[tokio::test]
+    async fn lookup_with_missing_scope_returns_403() {
+        let (_a, _s, st) = fixture();
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/v1/ac/{TEST_TENANT}/ghost"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 }

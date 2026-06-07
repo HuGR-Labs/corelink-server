@@ -23,6 +23,21 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **Auth spine: PAT scope enforcement (H1) + possession-model decision (H2).**
+  The Worker now resolves the PAT's `scope` from D1 and forwards it as the
+  server-trusted `x-corelink-scope` header (added to the strip denylist so a
+  client can never forge it); previously scope was written to D1 but never read,
+  so every PAT was effectively unscoped. The container enforces it on the cache
+  surfaces (CAS/AC/Turbo AND Bazel REAPI v2): writes require `cas:rw` (or `admin`), reads require
+  `cas:rw`/`cas:r`/`admin`, fail-CLOSED on a missing scope. `admin` is treated as
+  a cache superset so enforcement is decoupled from the prod scope back-fill
+  (admin→cas:rw) — no deploy-ordering dependency. Today every prod PAT grants
+  cache rw, so this is a NO-OP for live traffic; it ESTABLISHES the gate so
+  read-only / tiered tokens work later. (H2) the HMAC-SHA256 fast-fail with the
+  prod-bound `PAT_SIGNING_KEY` is documented as the cryptographic possession gate;
+  per-request Argon2id verification is deliberately NOT added (hot-path latency) —
+  an explicit engineering decision, addable later (amortized) if signing-key
+  compromise becomes a concern.
 - **Route-layer negative tests + Clerk issuer exact-pin (pentest follow-ups).**
   Added HTTP route-layer negative tests for CAS / AC / audit-export proving the
   `AuthTenant` wiring: missing `x-corelink-tenant-id` → 401, path/query tenant ≠

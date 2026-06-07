@@ -262,8 +262,18 @@ fn parse_digest(hash: &str, size_str: &str) -> Result<Digest, BazelBridgeError> 
 async fn handle_cas_read(
     State(state): State<BazelRouteState>,
     Path((instance, hash, size)): Path<(String, String, String)>,
+    scope: crate::scope::CacheScope,
     headers: HeaderMap,
 ) -> impl IntoResponse {
+    // Scope gate (fail-CLOSED): the PAT must carry a cache-READ capability
+    // (`cas:rw` or `cas:r`) in the Worker-trusted `x-corelink-scope` header
+    // BEFORE any storage access. Mirrors the CAS/AC/Turbo surfaces; this
+    // closes the previously-UNGATED Bazel REAPI cache surface. NO-OP for
+    // current `cas:rw`/`admin` prod traffic; establishes the gate for
+    // tiered (`cas:r`) tokens.
+    if !scope.can_read() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
     let tenant = caller_tenant(&headers);
     let p = principal(&headers);
     let digest = match parse_digest(&hash, &size) {
@@ -292,9 +302,17 @@ async fn handle_cas_read(
 async fn handle_cas_write(
     State(state): State<BazelRouteState>,
     Path((instance, uuid, hash, size)): Path<(String, String, String, String)>,
+    scope: crate::scope::CacheScope,
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
+    // Scope gate (fail-CLOSED): the PAT must carry a cache-WRITE capability
+    // (`cas:rw`) BEFORE any storage access. A read-only (`cas:r`) token is
+    // rejected here — this is the gap the cold review flagged (a `cas:r`
+    // token could write blobs via Bazel while blocked on CAS/AC/Turbo).
+    if !scope.can_write() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
     let tenant = caller_tenant(&headers);
     let p = principal(&headers);
     let digest = match parse_digest(&hash, &size) {
@@ -320,8 +338,14 @@ async fn handle_cas_write(
 async fn handle_ac_read(
     State(state): State<BazelRouteState>,
     Path((instance, hash, size)): Path<(String, String, String)>,
+    scope: crate::scope::CacheScope,
     headers: HeaderMap,
 ) -> impl IntoResponse {
+    // Scope gate (fail-CLOSED): AC lookup is a cache READ; require `cas:r`
+    // (or `cas:rw`/`admin`) BEFORE any storage access.
+    if !scope.can_read() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
     let tenant = caller_tenant(&headers);
     let p = principal(&headers);
     let digest = match parse_digest(&hash, &size) {
@@ -346,9 +370,15 @@ async fn handle_ac_read(
 async fn handle_ac_write(
     State(state): State<BazelRouteState>,
     Path((instance, hash, size)): Path<(String, String, String)>,
+    scope: crate::scope::CacheScope,
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
+    // Scope gate (fail-CLOSED): AC update is a cache WRITE; require `cas:rw`
+    // (or `admin`) BEFORE any storage access. A read-only token is rejected.
+    if !scope.can_write() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
     let tenant = caller_tenant(&headers);
     let p = principal(&headers);
     let digest = match parse_digest(&hash, &size) {
@@ -371,9 +401,17 @@ async fn handle_ac_write(
 async fn handle_find_missing(
     State(state): State<BazelRouteState>,
     Path(instance): Path<String>,
+    scope: crate::scope::CacheScope,
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
+    // Scope gate (fail-CLOSED): findMissingBlobs is a read/existence probe
+    // over the CAS — require `cas:r` (or `cas:rw`/`admin`) BEFORE any storage
+    // access. The body extractor (`Bytes`) stays LAST per axum 0.7 ordering;
+    // `CacheScope` is `FromRequestParts` so it precedes the body.
+    if !scope.can_read() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
     let tenant = caller_tenant(&headers);
     let p = principal(&headers);
 
@@ -441,6 +479,7 @@ mod tests {
             .method("PUT")
             .header("x-corelink-tenant-id", tenant)
             .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .body(Body::from(payload.to_vec()))
             .unwrap();
         // Must clone the router for oneshot; caller holds the arc in state.
@@ -470,6 +509,7 @@ mod tests {
             .method("GET")
             .header("x-corelink-tenant-id", TENANT)
             .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -490,6 +530,7 @@ mod tests {
             .method("GET")
             .header("x-corelink-tenant-id", TENANT)
             .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -513,6 +554,7 @@ mod tests {
             .uri(&read_uri)
             .method("GET")
             .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -538,6 +580,7 @@ mod tests {
             .method("PUT")
             .header("x-corelink-tenant-id", TENANT)
             .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .body(Body::from(payload.clone()))
             .unwrap();
         let put_resp = app.clone().oneshot(put_req).await.expect("PUT oneshot");
@@ -549,6 +592,7 @@ mod tests {
             .method("GET")
             .header("x-corelink-tenant-id", TENANT)
             .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .body(Body::empty())
             .unwrap();
         let get_resp = app.oneshot(get_req).await.expect("GET oneshot");
@@ -576,6 +620,7 @@ mod tests {
             .method("POST")
             .header("x-corelink-tenant-id", TENANT)
             .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .header("content-type", "application/json")
             .body(Body::from(body))
             .unwrap();
@@ -616,6 +661,7 @@ mod tests {
             .method("POST")
             .header("x-corelink-tenant-id", TENANT)
             .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .header("content-type", "application/json")
             .body(Body::from(body))
             .unwrap();
@@ -641,6 +687,9 @@ mod tests {
             .method("GET")
             .header("x-corelink-tenant-id", "attacker")
             .header("x-corelink-token-prefix", "tok_attacker")
+            // Carry a valid cache scope so the request CLEARS the scope gate
+            // and reaches the adapter's cross-tenant check (the SUT here).
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -660,6 +709,9 @@ mod tests {
             .method("PUT")
             .header("x-corelink-tenant-id", "attacker")
             .header("x-corelink-token-prefix", "tok_attacker")
+            // Valid write scope so the request clears the scope gate and the
+            // adapter's cross-tenant check is what produces the 403.
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .body(Body::from(b"payload".to_vec()))
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -682,6 +734,7 @@ mod tests {
             .method("PUT")
             .header("x-corelink-tenant-id", TENANT)
             .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .body(Body::from(payload))
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -700,6 +753,7 @@ mod tests {
             .uri(&uri)
             .method("GET")
             .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -731,5 +785,172 @@ mod tests {
                 "path {p:?} must use :name syntax, not {{name}}"
             );
         }
+    }
+
+    // ── Cache-scope enforcement (x-corelink-scope) ────────────────────────────
+    //
+    // The Bazel REAPI surface was the one PAT-reachable cache surface left
+    // UNGATED after PR #159 wired the scope gate into CAS/AC/Turbo. These
+    // tests pin the gate fail-CLOSED on the Bazel handlers so a read-only
+    // (`cas:r`) token can no longer write blobs via Bazel. They mirror the
+    // CAS/AC/Turbo scope tests: missing scope → 403, read-only on a write →
+    // 403, `cas:rw`/`admin` → passes the gate.
+
+    /// Read the 403 response body as bytes (helper for the assertions below).
+    async fn body_bytes(resp: axum::response::Response) -> Vec<u8> {
+        to_bytes(resp.into_body(), 1 << 20)
+            .await
+            .expect("body")
+            .to_vec()
+    }
+
+    /// Fail-CLOSED: a CAS read with NO `x-corelink-scope` header is rejected
+    /// 403 "insufficient scope" BEFORE any storage access.
+    #[tokio::test]
+    async fn cas_read_missing_scope_returns_403_insufficient_scope() {
+        let app = router(make_state());
+        let uri = format!("/bazel/v2/{TENANT}/blobs/{HASH_A}/10");
+        let req = Request::builder()
+            .uri(&uri)
+            .method("GET")
+            .header("x-corelink-tenant-id", TENANT)
+            .header("x-corelink-token-prefix", "tok_test")
+            // no x-corelink-scope header → fail-CLOSED
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        assert_eq!(body_bytes(resp).await, b"insufficient scope");
+    }
+
+    /// Fail-CLOSED: a CAS write with NO scope header is rejected 403 BEFORE
+    /// the adapter `cas_put` is reached (the gap the cold review flagged).
+    #[tokio::test]
+    async fn cas_write_missing_scope_returns_403_insufficient_scope() {
+        let app = router(make_state());
+        let payload = b"no-scope-write".to_vec();
+        let hash = fake_hash(&payload);
+        let size = payload.len();
+        let uuid = "test-uuid-noscope";
+        let uri = format!("/bazel/v2/{TENANT}/uploads/{uuid}/blobs/{hash}/{size}");
+        let req = Request::builder()
+            .uri(&uri)
+            .method("PUT")
+            .header("x-corelink-tenant-id", TENANT)
+            .header("x-corelink-token-prefix", "tok_test")
+            // no x-corelink-scope header → fail-CLOSED
+            .body(Body::from(payload))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        assert_eq!(body_bytes(resp).await, b"insufficient scope");
+    }
+
+    /// A read-only (`cas:r`) token on a CAS write is rejected 403 BEFORE the
+    /// adapter — the core privilege-escalation the gate prevents.
+    #[tokio::test]
+    async fn cas_write_read_only_scope_returns_403() {
+        let app = router(make_state());
+        let payload = b"read-only-cannot-write".to_vec();
+        let hash = fake_hash(&payload);
+        let size = payload.len();
+        let uuid = "test-uuid-readonly";
+        let uri = format!("/bazel/v2/{TENANT}/uploads/{uuid}/blobs/{hash}/{size}");
+        let req = Request::builder()
+            .uri(&uri)
+            .method("PUT")
+            .header("x-corelink-tenant-id", TENANT)
+            .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::from(payload))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        assert_eq!(body_bytes(resp).await, b"insufficient scope");
+    }
+
+    /// A read-only (`cas:r`) token on an AC write is rejected 403 BEFORE the
+    /// adapter (AC update is a cache write).
+    #[tokio::test]
+    async fn ac_write_read_only_scope_returns_403() {
+        let app = router(make_state());
+        let hash = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        let uri = format!("/bazel/v2/{TENANT}/blobs/ac/{hash}/7");
+        let req = Request::builder()
+            .uri(&uri)
+            .method("PUT")
+            .header("x-corelink-tenant-id", TENANT)
+            .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::from(b"payload".to_vec()))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        assert_eq!(body_bytes(resp).await, b"insufficient scope");
+    }
+
+    /// Fail-CLOSED: findMissingBlobs (a read/existence probe) with NO scope
+    /// header is rejected 403 BEFORE the find-missing handler runs.
+    #[tokio::test]
+    async fn find_missing_missing_scope_returns_403() {
+        let app = router(make_state());
+        let body = serde_json::json!({
+            "blobDigests": [{"hash": HASH_A, "sizeBytes": 5}]
+        })
+        .to_string();
+        let req = Request::builder()
+            .uri(format!("/bazel/v2/{TENANT}/findMissingBlobs"))
+            .method("POST")
+            .header("x-corelink-tenant-id", TENANT)
+            .header("x-corelink-token-prefix", "tok_test")
+            .header("content-type", "application/json")
+            // no x-corelink-scope header → fail-CLOSED
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        assert_eq!(body_bytes(resp).await, b"insufficient scope");
+    }
+
+    /// A read-only (`cas:r`) token PASSES the read gate on a CAS read: the
+    /// blob is absent so the route returns 404 — proving the gate let the
+    /// read through (a denied scope would 403 before storage).
+    #[tokio::test]
+    async fn cas_read_read_only_scope_passes_gate_then_404() {
+        let app = router(make_state());
+        let uri = format!("/bazel/v2/{TENANT}/blobs/{HASH_A}/10");
+        let req = Request::builder()
+            .uri(&uri)
+            .method("GET")
+            .header("x-corelink-tenant-id", TENANT)
+            .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// An `admin` token (the prod superset, pre back-fill) passes the write
+    /// gate: a CAS write succeeds (204) — proving `admin` grants cache rw and
+    /// the gate is a NO-OP for live admin-scoped traffic.
+    #[tokio::test]
+    async fn cas_write_admin_scope_succeeds() {
+        let app = router(make_state());
+        let payload = b"admin-writes-ok".to_vec();
+        let hash = fake_hash(&payload);
+        let size = payload.len();
+        let uuid = "test-uuid-admin";
+        let uri = format!("/bazel/v2/{TENANT}/uploads/{uuid}/blobs/{hash}/{size}");
+        let req = Request::builder()
+            .uri(&uri)
+            .method("PUT")
+            .header("x-corelink-tenant-id", TENANT)
+            .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "admin")
+            .body(Body::from(payload))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     }
 }

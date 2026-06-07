@@ -80,6 +80,7 @@ async fn ac_lookup_route_reaches_handler_and_returns_handler_miss_404() {
         // `AuthTenant` reads `x-corelink-tenant-id` and the handler 403s
         // unless it equals the `:tenant` path segment — mirror `tenant-a`.
         .header("x-corelink-tenant-id", "tenant-a")
+        .header("x-corelink-scope", "cas:rw")
         .body(Body::empty())
         .expect("build req");
     let resp = app.oneshot(req).await.expect("oneshot");
@@ -113,6 +114,7 @@ async fn ac_update_route_reaches_handler_and_returns_handler_created_201() {
         // `AuthTenant` reads `x-corelink-tenant-id` and the handler 403s
         // unless it equals the `:tenant` path segment — mirror `tenant-a`.
         .header("x-corelink-tenant-id", "tenant-a")
+        .header("x-corelink-scope", "cas:rw")
         .body(Body::from("result-bytes"))
         .expect("build req");
     let resp = app.oneshot(req).await.expect("oneshot");
