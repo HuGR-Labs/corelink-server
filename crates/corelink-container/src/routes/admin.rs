@@ -926,9 +926,7 @@ mod tests {
         let mut right = HeaderMap::new();
         right.insert(
             ADMIN_INTERNAL_AUTH_HEADER,
-            "test-internal-auth-key-32-bytes-x"
-                .parse()
-                .expect("header"),
+            "test-internal-auth-key-32-bytes-x".parse().expect("header"),
         );
         assert!(internal_auth_ok(Some(&key), &right));
     }

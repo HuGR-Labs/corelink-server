@@ -603,7 +603,14 @@ mod tests {
             let (audit, h) = fixture();
             let err = h
                 .put(TurboPutRequest::new(
-                    "h1", bad, "s", vec![], None, "p", "t1", 1,
+                    "h1",
+                    bad,
+                    "s",
+                    vec![],
+                    None,
+                    "p",
+                    "t1",
+                    1,
                 ))
                 .expect_err("invalid team_id rejected");
             assert!(matches!(err, TurboBridgeError::TeamIdInvalid { .. }));

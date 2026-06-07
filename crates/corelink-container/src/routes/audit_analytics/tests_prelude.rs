@@ -68,14 +68,9 @@ async fn request_prelude_consumed_dispatches_through_for_tenant_in_region() {
     };
     let prelude = RequestPrelude::new(tenant, Region::Fra);
 
-    let resp = handle_event_count(
-        State(state),
-        auth,
-        Some(Extension(prelude)),
-        Query(query),
-    )
-    .await
-    .into_response();
+    let resp = handle_event_count(State(state), auth, Some(Extension(prelude)), Query(query))
+        .await
+        .into_response();
     assert_eq!(resp.status(), StatusCode::OK, "happy path expected");
 
     let legacy = *recording.for_tenant_calls.lock().expect("legacy counter");
@@ -263,14 +258,9 @@ async fn audit_analytics_consumes_prelude_region_without_extra_d1_round_trip() {
     };
     let prelude = RequestPrelude::new(tenant, Region::Fra);
 
-    let resp = handle_event_count(
-        State(state),
-        auth,
-        Some(Extension(prelude)),
-        Query(query),
-    )
-    .await
-    .into_response();
+    let resp = handle_event_count(State(state), auth, Some(Extension(prelude)), Query(query))
+        .await
+        .into_response();
     assert_eq!(
         resp.status(),
         StatusCode::OK,

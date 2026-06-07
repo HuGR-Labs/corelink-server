@@ -30,13 +30,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::audit::{TurboAuditEvent, TurboAuditEventKind, TurboAuditSink};
+use crate::error::validate_team_id;
 use crate::error::TurboBridgeError;
 use crate::events::{TurboEventsRequest, TurboEventsResponse};
 use crate::handler::{
     TurboArtifactHandler, TurboGetRequest, TurboGetResponse, TurboPutRequest, TurboPutResponse,
     TurboStatusResponse,
 };
-use crate::error::validate_team_id;
 use crate::status::TurboStatusPayload;
 use crate::MAX_HASH_LEN;
 
@@ -432,7 +432,12 @@ mod tests {
     #[test]
     fn adapter_put_rejects_invalid_team_id_without_audit() {
         let (audit, store, h) = fixture();
-        for bad in ["", "a/b", "../other", &"a".repeat(crate::error::MAX_TEAM_ID_LEN + 1)] {
+        for bad in [
+            "",
+            "a/b",
+            "../other",
+            &"a".repeat(crate::error::MAX_TEAM_ID_LEN + 1),
+        ] {
             let err = h
                 .put(TurboPutRequest::new(
                     "h1",
@@ -449,9 +454,7 @@ mod tests {
         }
         // DoS guard path emits no audit and writes nothing.
         assert!(audit.snapshot().expect("snapshot").is_empty());
-        assert!(store
-            .read("t1", &format!("/{}", "h1"))
-            .is_err());
+        assert!(store.read("t1", &format!("/{}", "h1")).is_err());
     }
 
     #[test]

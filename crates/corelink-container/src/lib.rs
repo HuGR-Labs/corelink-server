@@ -63,6 +63,9 @@ pub mod byok;
 
 pub mod auth_tenant;
 pub mod byok_orchestrator;
+#[cfg(feature = "neon-real")]
+pub mod neon_shadow_factory;
+pub mod routes;
 /// Cache-scope enforcement helper + extractor.
 ///
 /// Parses the Worker-set, server-trusted `x-corelink-scope` header (the
@@ -70,9 +73,6 @@ pub mod byok_orchestrator;
 /// surfaces (CAS / AC / Turbo) on read vs write capability. Fail-CLOSED:
 /// missing/empty scope grants nothing. See module docs for the grammar.
 pub mod scope;
-#[cfg(feature = "neon-real")]
-pub mod neon_shadow_factory;
-pub mod routes;
 /// Native-container storage adapters (R2 S3-compatible API + D1 HTTP).
 ///
 /// WP-S1 Phase 1 — provides [`storage::r2_s3::R2CasHandler`] (real
