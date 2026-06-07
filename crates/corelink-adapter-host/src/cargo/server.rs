@@ -92,8 +92,14 @@ pub fn build_router(config: CargoAdapterConfig) -> Router {
     // axum 0.7: HEAD is served automatically by the GET handler when
     // not explicitly registered. We register an explicit HEAD handler
     // to avoid serving body bytes on HEAD requests.
+    //
+    // The route is a catch-all (`/*path`), not `/:key`, so the adapter can be
+    // mounted UNCHANGED behind a container prefix (`/cargo/<tenant>/<key>`):
+    // `handle_*` resolve the actual key via `key_from_path`, which already
+    // takes the LAST path segment. In standalone sccache mode the client hits
+    // `/<key>` (a single segment), which the catch-all matches identically.
     Router::new()
-        .route("/:key", get(handle_get).put(handle_put).head(handle_head))
+        .route("/*path", get(handle_get).put(handle_put).head(handle_head))
         .with_state(state)
 }
 
@@ -318,7 +324,10 @@ mod tests {
         // Different UUIDs produce different handles (collision-free for
         // any realistic tenant space).
         let other = hash_for_log("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
-        assert_ne!(handle, other, "distinct UUIDs must produce distinct handles");
+        assert_ne!(
+            handle, other,
+            "distinct UUIDs must produce distinct handles"
+        );
     }
 
     /// F4 regression: verify the first 8 bytes of SHA-256 match the

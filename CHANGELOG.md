@@ -22,6 +22,27 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **sccache → CoreLink cargo build-cache surface (Phase A — code).** Mounted the
+  `corelink_adapter_host::cargo` adapter at `/cargo/<tenant>/<key>`, closing the
+  three integration gaps from `FINDING-sccache-adapter-gaps.md`: (1) the Worker
+  already forwarded `/cargo/*` but the container never mounted the adapter (every
+  request 404'd) — now wired via `routes/cargo.rs` (`nest_service("/cargo", …)`
+  over the adapter's catch-all route + a per-operation scope gate); (2) **Option B**
+  container-side PAT validation —
+  a new D1-backed `TenantResolver` (`cargo_pat_resolver::D1PatTenantResolver`)
+  re-verifies the bearer PAT against the D1 `pat` store (HMAC fast-reject →
+  token_id lookup → Argon2id possession check → fail-CLOSED cache-scope gate),
+  the Argon2id check the Worker skips under its cpu_ms budget; (3) the stale
+  adapter PAT prefix `hugr-pat_` → `corelink_` so production PATs are accepted.
+  Tenant is PAT-derived (never the path segment); per-operation read/write scope
+  is enforced at the route from the Worker-set `x-corelink-scope`. The `/cargo`
+  route is env-gated (mounted only when `PAT_SIGNING_KEY` + the D1/R2 `StorageEnv`
+  are present; fail-CLOSED / unmounted in dev/CI). Deploy + measurement are
+  Phase B/C (owner-gated). NOTE: sibling adapters (npm/pip/brew/oci) still carry
+  the `hugr-pat_` placeholder prefix — unmounted scaffolds on no live path;
+  reconcile when each is wired.
+
 ### Security
 - **Audit-round-2 hardening (brutal 13-agent audit follow-ups).** Closed the
   real findings: signup rate-limit no longer keyed off the client-forgeable

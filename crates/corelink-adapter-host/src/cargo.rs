@@ -8,7 +8,8 @@
 //! `GET`/`PUT`/`HEAD` requests against this adapter. The adapter:
 //!
 //! 1. authenticates the caller via PAT (`Authorization: Bearer
-//!    hugr-pat_<token>`; constant-time prefix verified via `subtle`);
+//!    corelink_<env>_<token_id>.…`; constant-time prefix verified via
+//!    `subtle`);
 //! 2. resolves the PAT to a `TenantId` via the adapter-local
 //!    [`ports::TenantResolver`] (see [`ports`]);
 //! 3. translates the sccache BLAKE3 key (URL path segment) to a

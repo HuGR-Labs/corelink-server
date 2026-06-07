@@ -68,6 +68,12 @@ pub mod audit_export;
 /// for any Bazel user; backed by the same R2 CAS/AC blobs as the
 /// native `/v1/cas` and `/v1/ac` routes.
 pub mod bazel_v2;
+/// sccache HTTP build-cache surface: `/cargo/<tenant>/<key>` (FINDING
+/// Gap 1). Mounts `corelink_adapter_host::cargo` with a D1-backed PAT
+/// resolver (Option B) + per-operation scope gate. Mounted only when
+/// `PAT_SIGNING_KEY` + the D1/R2 `StorageEnv` are present (fail-CLOSED:
+/// unmounted in dev/CI). See module docs.
+pub mod cargo;
 /// CAS HTTP routes (R-prep example wire-up; wave-8).
 pub mod cas;
 /// Customer self-serve HTTP routes (Stream-2.6): `/v1/customer/*` endpoints
@@ -188,6 +194,12 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         lookup: ac_lookup.clone(),
         update: ac_update.clone(),
     };
+    // FINDING Gap 1: clone the shared CAS handler trait objects for the
+    // cargo (sccache) surface BEFORE they are moved into the Bazel bridge
+    // below — so `/cargo/*` reads/writes the SAME backing store as
+    // cas/ac/bazel/turbo (no new R2 connection).
+    let cargo_cas_read = cas_read.clone();
+    let cargo_cas_write = cas_write.clone();
     // Phase 0 Stream B1: Bazel REAPI v2 routes share the same CAS/AC
     // trait objects so all four route surfaces read from / write to the
     // same backing store. No new R2 connections are opened.
@@ -226,7 +238,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     let signup_state = signup::build_state();
     let customer_state = customer::build_handlers();
     let turbo_state = turbo_v8::build_handlers();
-    Router::new()
+    let mut router = Router::new()
         .merge(cas::router(cas_state))
         .merge(ac::router(ac_state))
         .merge(admin::router(admin_state))
@@ -237,7 +249,30 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         .merge(users::router())
         .merge(customer::router(customer_state))
         .merge(bazel_v2::router(bazel_state))
-        .merge(turbo_v8::router(turbo_state))
+        .merge(turbo_v8::router(turbo_state));
+
+    // FINDING Gap 1 — sccache `/cargo/*` surface. Mounted ONLY when the
+    // D1-backed PAT resolver can be built from env (PAT_SIGNING_KEY +
+    // StorageEnv present). Fail-CLOSED: in dev/CI (no env) the route is
+    // simply absent — a forwarded `/cargo/*` 404s rather than running with
+    // an unconfigured validator. This mirrors `internal_pat`'s env-gate.
+    match crate::cargo_pat_resolver::D1PatTenantResolver::from_env() {
+        Some(resolver) => {
+            router = router.merge(cargo::router(
+                cargo_cas_read,
+                cargo_cas_write,
+                std::sync::Arc::new(resolver),
+            ));
+        }
+        None => {
+            tracing::warn!(
+                "PAT_SIGNING_KEY or StorageEnv unset; /cargo/* (sccache) NOT mounted \
+                 (dev/CI mode — the cargo PAT resolver requires both)"
+            );
+        }
+    }
+
+    router
 }
 
 #[cfg(test)]
