@@ -68,6 +68,7 @@ async fn cas_read_route_reaches_handler_and_returns_handler_not_found_404() {
         // `AuthTenant` reads `x-corelink-tenant-id` and the handler 403s
         // unless it equals the `:tenant` path segment — mirror `tenant-a`.
         .header("x-corelink-tenant-id", "tenant-a")
+        .header("x-corelink-scope", "cas:rw")
         .body(Body::empty())
         .expect("build req");
     let resp = app.oneshot(req).await.expect("oneshot");
@@ -103,6 +104,7 @@ async fn cas_read_route_does_not_match_literal_braces_uri() {
         // unless it matches — mirror the decoded literal so the request
         // still reaches the handler (and gets the 404 this test asserts).
         .header("x-corelink-tenant-id", "{tenant}")
+        .header("x-corelink-scope", "cas:rw")
         .body(Body::empty())
         .expect("build req");
     let resp = app.oneshot(req).await.expect("oneshot");
@@ -213,6 +215,7 @@ async fn cas_put_then_get_round_trip_through_router() {
         // `AuthTenant` reads `x-corelink-tenant-id` and the handler 403s
         // unless it equals the `:tenant` path segment — mirror `tenant-a`.
         .header("x-corelink-tenant-id", "tenant-a")
+        .header("x-corelink-scope", "cas:rw")
         .body(Body::from(bytes.clone()))
         .expect("build PUT req");
     let put_resp = app.clone().oneshot(put_req).await.expect("PUT oneshot");
@@ -235,6 +238,7 @@ async fn cas_put_then_get_round_trip_through_router() {
         // Same authenticated tenant as the PUT above (`tenant-a`) so the
         // GET reads back the bytes the PUT stored for that tenant.
         .header("x-corelink-tenant-id", "tenant-a")
+        .header("x-corelink-scope", "cas:rw")
         .body(Body::empty())
         .expect("build GET req");
     let get_resp = app.oneshot(get_req).await.expect("GET oneshot");

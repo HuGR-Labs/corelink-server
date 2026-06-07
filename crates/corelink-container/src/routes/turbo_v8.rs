@@ -212,7 +212,13 @@ async fn handle_get(
     Path(hash): Path<String>,
     Query(params): Query<ArtifactQuery>,
     auth: crate::auth_tenant::AuthTenant,
+    scope: crate::scope::CacheScope,
 ) -> impl IntoResponse {
+    // Scope gate (fail-CLOSED): Turbo GET is a cache READ — require
+    // `cas:rw` or `cas:r`. BEFORE any audit or storage. NO-OP for `cas:rw`.
+    if !scope.can_read() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
     // Isolation tenant is the DO-injected, PAT-resolved authenticated tenant
     // (`auth.0`) — NOT the client `teamId`.  `teamId` is a Turborepo team label
     // demoted to a logical sub-namespace inside the authenticated tenant.
@@ -249,8 +255,15 @@ async fn handle_put(
     Path(hash): Path<String>,
     Query(params): Query<ArtifactQuery>,
     auth: crate::auth_tenant::AuthTenant,
+    scope: crate::scope::CacheScope,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
+    // Scope gate (fail-CLOSED): Turbo PUT is a cache WRITE — require
+    // `cas:rw`. A read-only (`cas:r`) token is rejected here. NO-OP for
+    // current `cas:rw` traffic.
+    if !scope.can_write() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
     // Isolation tenant is the authenticated `auth.0`, not the client `teamId`.
     let caller_tenant = auth.0;
     // DoS / key-aliasing guard on `teamId` (storage-key prefix) before any
@@ -359,6 +372,11 @@ mod tests {
     /// namespace and 404s.
     const TEST_AUTH_TENANT: &str = "11111111-1111-1111-1111-111111111111";
 
+    /// Read+write cache scope, mirroring every current prod PAT. Requests
+    /// that exercise GET/PUT must carry this in `x-corelink-scope` or the
+    /// fail-CLOSED scope gate rejects them 403.
+    const TEST_SCOPE_RW: &str = "cas:rw";
+
     /// Build a test fixture using `InMemoryKvStore` + `InMemoryTurboAuditSink`.
     fn fixture() -> TurboRouteState {
         build_handlers()
@@ -404,6 +422,7 @@ mod tests {
             .method(Method::GET)
             .uri("/v8/artifacts/deadbeef?teamId=team_a")
             .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
             .body(Body::empty())
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -422,6 +441,7 @@ mod tests {
             .uri("/v8/artifacts/abc123?teamId=team_x")
             .header("content-type", "application/octet-stream")
             .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
             .body(Body::from(body_bytes.clone()))
             .expect("put request");
         let put_resp = app.clone().oneshot(put_req).await.expect("put oneshot");
@@ -432,6 +452,7 @@ mod tests {
             .method(Method::GET)
             .uri("/v8/artifacts/abc123?teamId=team_x")
             .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
             .body(Body::empty())
             .expect("get request");
         let get_resp = app.oneshot(get_req).await.expect("get oneshot");
@@ -458,6 +479,7 @@ mod tests {
             .method(Method::PUT)
             .uri(format!("/v8/artifacts/{opaque_hash}?teamId=t1"))
             .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
             .body(Body::from(artifact.clone()))
             .expect("put");
         let put_resp = app.clone().oneshot(put_req).await.expect("put");
@@ -467,6 +489,7 @@ mod tests {
             .method(Method::GET)
             .uri(format!("/v8/artifacts/{opaque_hash}?teamId=t1"))
             .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
             .body(Body::empty())
             .expect("get");
         let get_resp = app.oneshot(get_req).await.expect("get");
@@ -639,6 +662,7 @@ mod tests {
             .method(Method::PUT)
             .uri("/v8/artifacts/somehash?teamId=a%2Fb")
             .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
             .body(Body::from(b"data".to_vec()))
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -652,6 +676,7 @@ mod tests {
             .method(Method::PUT)
             .uri("/v8/artifacts/somehash?teamId=")
             .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
             .body(Body::from(b"data".to_vec()))
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -666,6 +691,7 @@ mod tests {
             .method(Method::PUT)
             .uri(format!("/v8/artifacts/somehash?teamId={long}"))
             .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
             .body(Body::from(b"data".to_vec()))
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -679,10 +705,61 @@ mod tests {
             .method(Method::GET)
             .uri("/v8/artifacts/somehash?teamId=a%2Fb")
             .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
             .body(Body::empty())
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // ── scope enforcement (x-corelink-scope) ─────────────────────────────────
+
+    #[tokio::test]
+    async fn put_with_read_only_scope_returns_403_insufficient_scope() {
+        // A `cas:r` (read-only) token must NOT be able to PUT (write).
+        let app = test_router();
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri("/v8/artifacts/h1?teamId=team_x")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::from(b"data".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        assert_eq!(body.as_ref(), b"insufficient scope");
+    }
+
+    #[tokio::test]
+    async fn put_with_rw_scope_succeeds() {
+        // `cas:rw` is the current prod scope — PUT must still succeed.
+        let app = test_router();
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri("/v8/artifacts/h1?teamId=team_x")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .body(Body::from(b"data".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn get_with_missing_scope_returns_403() {
+        // Fail-CLOSED: no `x-corelink-scope` header ⇒ no cache read.
+        let app = test_router();
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/v8/artifacts/h1?teamId=team_x")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]
@@ -693,6 +770,7 @@ mod tests {
             .method(Method::PUT)
             .uri("/v8/artifacts/h1?teamId=team_AbC-123")
             .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
             .body(Body::from(b"data".to_vec()))
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");

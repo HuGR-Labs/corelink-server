@@ -131,7 +131,19 @@ type RouteKind =
 
 /** Auth extraction result from the Authorization header. */
 type AuthResult =
-  | { readonly ok: true; readonly tenantId: string; readonly tokenPrefix: string }
+  | {
+      readonly ok: true;
+      readonly tenantId: string;
+      readonly tokenPrefix: string;
+      /**
+       * The PAT's D1-resolved `scope` column (security: H1). The Worker is the
+       * SOLE authority for this value — it is read from the trusted D1 `pat`
+       * mirror, never from the client, and forwarded to the DO/container as the
+       * `x-corelink-scope` server-trust header so the container can ENFORCE it.
+       * Defaults to `""` for older rows whose `scope` is NULL/absent.
+       */
+      readonly scope: string;
+    }
   | { readonly ok: false; readonly reason: string };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -226,6 +238,12 @@ function handlePreflight(request: Request): Response | null {
  * NOTE: `x-corelink-tenant-id` / `x-corelink-route-kind` / `x-corelink-token-prefix`
  * are NOT listed here on purpose — the Worker unconditionally `.set()`s those
  * itself on every forward, so any client value is already overwritten.
+ *
+ * `x-corelink-scope` (security: H1) IS listed: unlike the always-overwritten
+ * headers above, the Worker only `.set()`s scope on PAT-backed forwards, so it
+ * MUST be deleted here too — otherwise a client could SMUGGLE a forged scope
+ * (e.g. `admin`) straight through on any path. The Worker is the sole setter of
+ * the scope value (read from the trusted D1 `pat.scope`), never the client.
  */
 const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   "x-admin-scope",
@@ -233,6 +251,7 @@ const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   "x-admin-tenant",
   "x-corelink-internal-auth",
   "x-corelink-fanout-from",
+  "x-corelink-scope",
 ];
 
 /**
@@ -532,6 +551,24 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
   // If the signing key is bound, verify the hmac_sig segment before touching D1.
   // Pre-image: `<token_id>.<random_secret>` (bytes 9+env_len+1 through end of
   // random_secret segment — the same preimage used by the Rust verify crate).
+  //
+  // ── Possession model (security: H2 — explicit engineering DECISION) ───────
+  // PAT_SIGNING_KEY is bound in prod, so this HMAC-SHA256 check IS the
+  // cryptographic possession gate: a caller cannot present a token whose
+  // hmac_sig verifies without holding the server signing key — forging a PAT
+  // requires that key, not merely a stolen/guessed token_id. This is what makes
+  // the scope (H1) and tenant_id we read from D1 trustworthy to forward.
+  //
+  // We deliberately do NOT additionally Argon2id-verify `random_secret` against
+  // the stored `pat_hash` on EVERY request: Argon2id is intentionally expensive
+  // (~tens-of-ms) and the Worker runs under a tight cpu_ms budget on the hot
+  // cache path — per-request Argon2id would dominate latency for every CAS/AC
+  // hit. The HMAC gate already binds possession to the signing key. Per-request
+  // Argon2id is acceptable defence-in-depth to add LATER (amortised/cached per
+  // token_id) ONLY if signing-key compromise becomes a credible concern — at
+  // which point key rotation is the primary response. This is the decided
+  // posture, not a TODO. (The DO retains the raw token and may still perform the
+  // hash verify out of the Worker's latency budget.)
   if (env.PAT_SIGNING_KEY !== undefined && env.PAT_SIGNING_KEY.length > 0) {
     const hmacOk = await verifyPatHmac(
       env.PAT_SIGNING_KEY,
@@ -549,11 +586,15 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
   interface PatRow {
     tenant_id: string;
     expires_ms: number;
+    // H1: the PAT's persisted scope (D1 `pat.scope`, SINGULAR TEXT column).
+    // Prod values are `cas:rw` (post back-fill) / historically `admin`. May be
+    // NULL on older rows — normalised to "" at the return site below.
+    scope: string | null;
   }
   let row: PatRow | null;
   try {
     row = await env.CONFIG_DB
-      .prepare("SELECT tenant_id, expires_ms FROM pat WHERE token_id = ?1 LIMIT 1")
+      .prepare("SELECT tenant_id, expires_ms, scope FROM pat WHERE token_id = ?1 LIMIT 1")
       .bind(parsed.tokenId)
       .first<PatRow>();
   } catch (_err: unknown) {
@@ -573,8 +614,17 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
     return { ok: false, reason: "pat_expired" };
   }
 
-  // Resolved tenant_id from D1. The DO will perform the Argon2id + scope verify.
-  return { ok: true, tenantId: row.tenant_id, tokenPrefix };
+  // Resolved tenant_id + scope from D1. The Worker forwards `scope` to the
+  // container as the server-trusted `x-corelink-scope` header (H1) so scopes
+  // written to D1 are actually ENFORCED downstream (previously they were stored
+  // but never read here, leaving every PAT effectively unscoped). NULL scope on
+  // older rows is normalised to "" so the container sees an explicit value.
+  return {
+    ok: true,
+    tenantId: row.tenant_id,
+    tokenPrefix,
+    scope: row.scope ?? "",
+  };
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1372,7 +1422,9 @@ const handler: ExportedHandler<Env> = {
     type AuthOk = Extract<AuthResult, { ok: true }>;
     let auth: AuthOk;
     if (route.routeKind === "signup") {
-      auth = { ok: true, tenantId: "_anonymous", tokenPrefix: "signup" };
+      // Signup is pre-tenant: the path :token IS the auth artifact, not a PAT,
+      // so there is no D1-resolved scope — forward an empty scope (H1).
+      auth = { ok: true, tenantId: "_anonymous", tokenPrefix: "signup", scope: "" };
     } else {
       const result = await extractAuth(request, env);
       if (!result.ok) {
@@ -1543,6 +1595,9 @@ const handler: ExportedHandler<Env> = {
               h.set("x-corelink-route-kind", route.routeKind);
               h.set("x-corelink-token-prefix", auth.tokenPrefix);
               h.set("x-corelink-tenant-id", resolvedTenantId);
+              // H1: forward the D1-resolved PAT scope as a server-trust header.
+              // stripClientTrustHeaders above already deleted any client value.
+              h.set("x-corelink-scope", auth.scope);
               h.set("x-corelink-fanout-from", "prod");
               return h;
             })(),
@@ -1578,6 +1633,10 @@ const handler: ExportedHandler<Env> = {
         // Worker auth; the DO MUST NOT trust any client-supplied value for it
         // (overwritten here unconditionally).
         h.set("x-corelink-tenant-id", resolvedTenantId);
+        // H1: forward the D1-resolved PAT scope as a server-trust header so the
+        // container can ENFORCE it. stripClientTrustHeaders above already deleted
+        // any client-supplied x-corelink-scope (the Worker is the sole setter).
+        h.set("x-corelink-scope", auth.scope);
         // Keep raw Authorization on the forwarded request: the DO performs the
         // Argon2id + scope verify against the D1 PAT store (the possession check
         // the Worker skips under its cpu_ms budget). The DO is trusted; it never
