@@ -21,7 +21,7 @@ use corelink_adapter_host::cargo::audit::EVENT_TYPE_CACHE_WRITE;
 use corelink_audit::ports::InMemoryAuditEmitter;
 
 const ARTIFACT_BYTES: &[u8] = b"\x7fELF\x02\x01\x01\x00fake-rust-artifact";
-const PAT: &str = "hugr-pat_tenant_smoke";
+const PAT: &str = "corelink_tenant_smoke";
 const TENANT: &str = "tenant-smoke";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

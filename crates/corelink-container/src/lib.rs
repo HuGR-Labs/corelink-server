@@ -63,6 +63,12 @@ pub mod byok;
 
 pub mod auth_tenant;
 pub mod byok_orchestrator;
+/// D1-backed PAT → tenant resolver for the cargo (sccache) adapter.
+///
+/// Implements the cargo adapter's `TenantResolver` port (Option B:
+/// container-side PAT re-verification) — HMAC fast-reject → D1 `pat`
+/// lookup → Argon2id → fail-CLOSED cache-scope gate. See module docs.
+pub mod cargo_pat_resolver;
 #[cfg(feature = "neon-real")]
 pub mod neon_shadow_factory;
 pub mod routes;

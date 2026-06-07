@@ -173,6 +173,11 @@ corelink-handler-admin = { workspace = true }
 corelink-bazel-bridge = { workspace = true }
 # Phase 0 Stream B2 — Vercel /v8/artifacts Turborepo cache bridge.
 corelink-turbo-bridge = { workspace = true }
+# sccache→CoreLink Phase A — the cargo (sccache HTTP) build-cache adapter,
+# mounted at `/cargo/*`. Provides `corelink_adapter_host::cargo::build_router`
+# + the `TenantResolver`/`CasStore` ports the container wires to a D1-backed
+# PAT resolver + the shared CAS handlers (see `routes/cargo.rs`).
+corelink-adapter-host = { workspace = true }
 # Stream-2.6 — customer self-serve handler surface wired into
 # `apps/server::routes::customer` (`/v1/customer/*` endpoints).
 corelink-handler-customer = { workspace = true }
@@ -186,6 +191,10 @@ corelink-audit-chain = { workspace = true }
 corelink-ratelimit = { workspace = true }
 # Stream-5: internal PAT mint route (`/_internal/pat/mint`).
 corelink-pat = { workspace = true }
+# FINDING Gap 1 — the cargo adapter's `CargoAdapterConfig.auditor` is an
+# `Arc<dyn corelink_audit::ports::AuditEmitter>`; the container constructs it
+# (InMemoryAuditEmitter) when mounting `/cargo/*` (see `routes/cargo.rs`).
+corelink-audit = { workspace = true }
 subtle = { workspace = true }
 uuid = { workspace = true }
 

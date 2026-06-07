@@ -33,8 +33,8 @@ use common::{
 use corelink_adapter_host::cargo::audit::{EVENT_TYPE_AUTH_FAILED, EVENT_TYPE_CACHE_WRITE};
 use corelink_audit::ports::InMemoryAuditEmitter;
 
-const PAT_A: &str = "hugr-pat_tenant_a";
-const PAT_B: &str = "hugr-pat_tenant_b";
+const PAT_A: &str = "corelink_tenant_a";
+const PAT_B: &str = "corelink_tenant_b";
 const TENANT_A: &str = "tenant-a";
 const TENANT_B: &str = "tenant-b";
 
@@ -53,7 +53,7 @@ async fn forged_pat_returns_401() {
     // Unknown PAT with the right prefix.
     let resp_unknown = client
         .get(format!("http://{addr}/{key}"))
-        .header("Authorization", "Bearer hugr-pat_forged_unknown_token")
+        .header("Authorization", "Bearer corelink_forged_unknown_token")
         .send()
         .await
         .unwrap();
@@ -67,7 +67,7 @@ async fn forged_pat_returns_401() {
         .unwrap();
     assert_eq!(resp_missing.status(), 401);
 
-    // Wrong prefix (not `hugr-pat_`).
+    // Wrong prefix (not `corelink_`).
     let resp_wrong = client
         .get(format!("http://{addr}/{key}"))
         .header("Authorization", "Bearer ghp_github_style_token")

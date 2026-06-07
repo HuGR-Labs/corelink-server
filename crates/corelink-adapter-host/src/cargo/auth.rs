@@ -2,12 +2,17 @@
 //!
 //! The cargo adapter accepts the bearer token via the standard
 //! `Authorization: Bearer <pat>` header. sccache's HTTP backend
-//! supports a configurable HTTP header; we align with the CoreLink
-//! PAT format (`hugr-pat_<token>`) for consistency with sibling adapters.
+//! supports a configurable HTTP header; we align with the production
+//! CoreLink PAT format
+//! (`corelink_<env>_<token_id>.<random_secret>.<hmac_sig>`) so the live
+//! dogfood token (which starts `corelink_`) is accepted.
 //!
-//! Tokens MUST start with the canonical `hugr-pat_` prefix; the prefix
+//! Tokens MUST start with the canonical `corelink_` prefix; the prefix
 //! check is a fast-path reject that runs BEFORE the constant-time
 //! resolver lookup so malformed input never reaches the per-tenant index.
+//! The prefix literal + length are pinned to
+//! [`corelink_pat::format::PAT_PREFIX_LEN`] (9 = `b"corelink_"`), the
+//! single source of truth for the wire format.
 //!
 //! ## Constant-time compare
 //!
@@ -26,7 +31,20 @@ use crate::cargo::error::CargoAdapterError;
 use crate::cargo::ports::{SharedTenantResolver, TenantResolveError};
 
 /// Canonical CoreLink PAT plaintext prefix.
-pub const PAT_PREFIX: &str = "hugr-pat_";
+///
+/// Matches the production wire format `corelink_<env>_…` — 9 bytes
+/// (`b"corelink_"`). This equals the canonical `corelink_pat::format::
+/// PAT_PREFIX_LEN` (kept in prose, not as a code dep, so this adapter
+/// stays decoupled from the workspace PAT crate per the `ports` module
+/// charter — the authoritative parse + crypto verify runs in the
+/// container's `TenantResolver` impl, which DOES use `corelink_pat`).
+/// The previous `hugr-pat_` value was a pre-production placeholder that
+/// rejected every real PAT at the prefix gate (FINDING Gap 3).
+pub const PAT_PREFIX: &str = "corelink_";
+
+// Compile-time pin: the canonical PAT prefix is 9 bytes (`b"corelink_"`).
+// If the wire format ever changes, this assert fires at build time.
+const _: () = assert!(PAT_PREFIX.len() == 9);
 
 /// Extract the bearer PAT plaintext from `headers`. Returns
 /// [`CargoAdapterError::Auth`] when:
@@ -109,16 +127,18 @@ mod tests {
 
     #[test]
     fn bearer_eq_matches_prefix() {
-        assert!(bearer_eq("hugr-pat_deadbeef", PAT_PREFIX));
+        assert!(bearer_eq("corelink_pat_deadbeef", PAT_PREFIX));
     }
 
     #[test]
     fn bearer_eq_rejects_short_token() {
-        assert!(!bearer_eq("hugr", PAT_PREFIX));
+        assert!(!bearer_eq("core", PAT_PREFIX));
     }
 
     #[test]
     fn bearer_eq_rejects_wrong_prefix() {
+        // The legacy placeholder prefix must now be REJECTED (Gap 3).
+        assert!(!bearer_eq("hugr-pat_deadbeef", PAT_PREFIX));
         assert!(!bearer_eq("ghp_deadbeef_token", PAT_PREFIX));
     }
 
@@ -172,12 +192,12 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(
             http::header::AUTHORIZATION,
-            header_value("Bearer hugr-pat_abc123"),
+            header_value("Bearer corelink_pat_abc123"),
         );
         let pat = match extract_bearer(&headers) {
             Ok(p) => p,
             Err(e) => panic!("must accept canonical PAT: {e}"),
         };
-        assert_eq!(pat.expose_secret(), "hugr-pat_abc123");
+        assert_eq!(pat.expose_secret(), "corelink_pat_abc123");
     }
 }
