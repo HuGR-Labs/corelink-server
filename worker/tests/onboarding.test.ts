@@ -102,7 +102,11 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
   });
 
   it("verifies Clerk, resolves tenant, injects internal-auth, forwards to the DO", async () => {
-    mockVerifyToken.mockResolvedValue({ sub: "user_abc" } as never);
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      azp: "https://corelink-admin.humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
     const captured: { req?: Request } = {};
     const env = makeOnbEnv({ captured, clerkUserToTenant: new Map([["user_abc", "acme-default"]]) });
 
@@ -118,7 +122,11 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
   });
 
   it("STRIPS client-supplied internal-auth + tenant-id + Clerk JWT before forwarding (CRITICAL-2)", async () => {
-    mockVerifyToken.mockResolvedValue({ sub: "user_abc" } as never);
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      azp: "https://corelink-admin.humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
     const captured: { req?: Request } = {};
     const env = makeOnbEnv({ captured, clerkUserToTenant: new Map([["user_abc", "acme-default"]]) });
 
@@ -160,7 +168,11 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
   });
 
   it("returns 403 when the verified session has no CoreLink tenant", async () => {
-    mockVerifyToken.mockResolvedValue({ sub: "user_no_tenant" } as never);
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_no_tenant",
+      azp: "https://corelink-admin.humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
     const captured: { req?: Request } = {};
     const env = makeOnbEnv({ captured, clerkUserToTenant: new Map() }); // no mapping
 
@@ -181,7 +193,11 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
   });
 
   it("fail-CLOSED: 403 when CORELINK_INTERNAL_AUTH_KEY is unbound (cannot authorize to container)", async () => {
-    mockVerifyToken.mockResolvedValue({ sub: "user_abc" } as never);
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      azp: "https://corelink-admin.humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
     const captured: { req?: Request } = {};
     const env = makeOnbEnv({
       captured,
@@ -196,7 +212,11 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
   });
 
   it("preserves the request body when forwarding to the DO", async () => {
-    mockVerifyToken.mockResolvedValue({ sub: "user_abc" } as never);
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      azp: "https://corelink-admin.humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
     const captured: { req?: Request } = {};
     const env = makeOnbEnv({ captured, clerkUserToTenant: new Map([["user_abc", "acme-default"]]) });
 
@@ -208,7 +228,11 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
   });
 
   it("returns 401 when the verified token carries no subject (sub)", async () => {
-    mockVerifyToken.mockResolvedValue({ sub: undefined } as never);
+    mockVerifyToken.mockResolvedValue({
+      sub: undefined,
+      azp: "https://corelink-admin.humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
     const captured: { req?: Request } = {};
     const env = makeOnbEnv({ captured, clerkUserToTenant: new Map() });
 
@@ -216,5 +240,57 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
 
     expect(resp.status).toBe(401);
     expect(captured.req).toBeUndefined();
+  });
+
+  // ── M1 security hardening tests ──────────────────────────────────────────
+
+  it("M1: rejects (401) a token that passes verifyToken but has no azp claim", async () => {
+    // Simulates a token from a different Clerk app on the same instance — the
+    // library skips the azp check when azp is absent; our post-verify guard
+    // must catch it.
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      // azp intentionally absent
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request } = {};
+    const env = makeOnbEnv({ captured, clerkUserToTenant: new Map([["user_abc", "acme-default"]]) });
+
+    const resp = await onbFetch(env, { Authorization: "Bearer no-azp.jwt" });
+
+    expect(resp.status).toBe(401);
+    expect(captured.req).toBeUndefined();
+  });
+
+  it("M1: rejects (401) a token whose azp is not in the allowlist", async () => {
+    // Simulates a valid Clerk JWT minted for a different frontend application.
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      azp: "https://attacker-app.example.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request } = {};
+    const env = makeOnbEnv({ captured, clerkUserToTenant: new Map([["user_abc", "acme-default"]]) });
+
+    const resp = await onbFetch(env, { Authorization: "Bearer wrong-azp.jwt" });
+
+    expect(resp.status).toBe(401);
+    expect(captured.req).toBeUndefined();
+  });
+
+  it("M1: accepts a legitimate corelink-admin token with correct azp + iss (happy path unbroken)", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      azp: "https://corelink-admin.humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request } = {};
+    const env = makeOnbEnv({ captured, clerkUserToTenant: new Map([["user_abc", "acme-default"]]) });
+
+    const resp = await onbFetch(env, { Authorization: "Bearer valid.clerk.jwt" });
+
+    expect(resp.status).toBe(200);
+    expect(captured.req).toBeDefined();
+    expect(captured.req!.headers.get("x-corelink-tenant-id")).toBe("acme-default");
   });
 });
