@@ -1,9 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   autoProvisionFromClerkEvent,
+  defaultApiClient,
   tenantSlugFor,
   regionFromColo,
   verifySvixSignature,
+  type AutoProvisionEnv,
   type ClerkUserCreatedEvent,
 } from "../src/webhooks/clerk.js";
 
@@ -226,6 +228,8 @@ describe("verifySvixSignature", () => {
       svixTimestamp,
       svixSignature: sig,
       secret,
+      // Pin server clock to the signed timestamp so the freshness check passes.
+      nowSeconds: Number(svixTimestamp),
     });
     expect(ok).toBe(true);
   });
@@ -254,7 +258,182 @@ describe("verifySvixSignature", () => {
       svixTimestamp: "1700000000",
       svixSignature: sig,
       secret,
+      // Pin the clock fresh so this test isolates the *signature* mismatch,
+      // not the timestamp-freshness rejection (covered separately below).
+      nowSeconds: 1700000000,
     });
     expect(ok).toBe(false);
+  });
+
+  it("rejects a stale timestamp (replay) even with a valid signature", async () => {
+    // Build a genuinely-valid signature, then verify with a clock skewed
+    // beyond the 300s window — the freshness (anti-replay) check must reject it.
+    const secretRaw = "supersecret-raw-bytes-with-good-entropy";
+    const secret = `whsec_${btoa(secretRaw)}`;
+    const body = JSON.stringify({ type: "user.created" });
+    const svixId = "msg_replay";
+    const svixTimestamp = "1700000000";
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secretRaw),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const sigBytes = new Uint8Array(
+      await crypto.subtle.sign(
+        "HMAC",
+        key,
+        new TextEncoder().encode(`${svixId}.${svixTimestamp}.${body}`),
+      ),
+    );
+    const sig = `v1,${btoa(String.fromCharCode(...sigBytes))}`;
+
+    // 301s in the future relative to the signed timestamp → outside ±300s.
+    const stale = await verifySvixSignature({
+      body,
+      svixId,
+      svixTimestamp,
+      svixSignature: sig,
+      secret,
+      nowSeconds: 1700000000 + 301,
+    });
+    expect(stale).toBe(false);
+
+    // Same signature, clock just inside the window → accepted.
+    const fresh = await verifySvixSignature({
+      body,
+      svixId,
+      svixTimestamp,
+      svixSignature: sig,
+      secret,
+      nowSeconds: 1700000000 + 299,
+    });
+    expect(fresh).toBe(true);
+  });
+
+  it("rejects a missing or non-numeric timestamp", async () => {
+    const secretRaw = "supersecret-raw-bytes-with-good-entropy";
+    const secret = `whsec_${btoa(secretRaw)}`;
+    const body = JSON.stringify({ type: "user.created" });
+    const svixId = "msg_badts";
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secretRaw),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+
+    async function sigFor(ts: string): Promise<string> {
+      const sb = new Uint8Array(
+        await crypto.subtle.sign(
+          "HMAC",
+          key,
+          new TextEncoder().encode(`${svixId}.${ts}.${body}`),
+        ),
+      );
+      return `v1,${btoa(String.fromCharCode(...sb))}`;
+    }
+
+    // Empty timestamp — rejected.
+    expect(
+      await verifySvixSignature({
+        body,
+        svixId,
+        svixTimestamp: "",
+        svixSignature: await sigFor(""),
+        secret,
+        nowSeconds: 1700000000,
+      }),
+    ).toBe(false);
+
+    // Non-numeric timestamp — rejected.
+    expect(
+      await verifySvixSignature({
+        body,
+        svixId,
+        svixTimestamp: "not-a-number",
+        svixSignature: await sigFor("not-a-number"),
+        secret,
+        nowSeconds: 1700000000,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("defaultApiClient.issuePat (H3: honors scope, no privilege-by-default)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("mints + persists the requested scope (cas:rw), never admin", async () => {
+    // Capture the D1 bind args for the `pat` INSERT.
+    let patBindArgs: unknown[] = [];
+    const fakeDb = {
+      prepare(query: string) {
+        const stmt = {
+          _query: query,
+          bind(...values: unknown[]) {
+            if (query.includes("INSERT OR IGNORE INTO pat")) {
+              patBindArgs = values;
+            }
+            return stmt;
+          },
+          async run() {
+            return { success: true };
+          },
+          async all() {
+            return { results: [] };
+          },
+          async first() {
+            return null;
+          },
+        };
+        return stmt;
+      },
+    };
+
+    // Capture the mint request body.
+    let mintBody: Record<string, unknown> = {};
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (req: Request | string | URL) => {
+        const r = req as Request;
+        mintBody = JSON.parse(await r.text()) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({
+            token_plaintext: "corelink_pat_REAL",
+            pat_id: "pat_real",
+            token_id: "tok_real",
+            expires_ms: 9_999_999_999_999,
+            hash: "deadbeefhash",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      });
+
+    const env = {
+      CLERK_WEBHOOK_SECRET: "whsec_x",
+      CORELINK_API_BASE: "https://api.example.test",
+      CORELINK_INTERNAL_AUTH_KEY: "internal-key",
+      CONFIG_DB: fakeDb,
+    } as unknown as AutoProvisionEnv;
+
+    const api = defaultApiClient(env);
+    const pat = await api.issuePat("t_1", "cas:rw");
+
+    expect(pat).toMatchObject({ id: "pat_real", plaintext: "corelink_pat_REAL" });
+
+    // H3: the mint request asks for cas:rw, not admin.
+    expect(mintBody["scopes"]).toBe("cas:rw");
+    expect(mintBody["scopes"]).not.toBe("admin");
+
+    // H3: the D1 `scope` column is bound to cas:rw (4th positional bind, ?4),
+    // not the old hardcoded 'admin' literal.
+    expect(patBindArgs[3]).toBe("cas:rw");
+    expect(patBindArgs).not.toContain("admin");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

@@ -1167,12 +1167,61 @@ const handler: ExportedHandler<Env> = {
 
       // Verify the Clerk JWT at the edge. `verifyToken` throws on an invalid /
       // expired / wrong-azp token; `authorizedParties` pins it to our app origin.
+      //
+      // SECURITY FIX (M1): Clerk's `authorizedParties` check is skipped by the
+      // library when the token omits `azp` entirely.  We therefore re-assert `azp`
+      // presence and allowlist membership after a successful verify, and also
+      // assert `iss` presence + expected shape so issuer trust is explicit rather
+      // than implicit from the JWKS endpoint.
+      const ONBOARDING_AZP_ALLOWLIST = ["https://corelink-admin.humangr.com"] as const;
+      //
+      // TODO(issuer-pin): Once the Clerk Frontend API URL (e.g.
+      // "https://<instance>.clerk.accounts.dev") is confirmed and stable, store it
+      // as a wrangler secret (e.g. CLERK_ISSUER_URL) and replace the shape-only
+      // check below with an exact equality check:
+      //   if (claims.iss !== env.CLERK_ISSUER_URL) { reject 401 }
+      // The shape check below (`https://` prefix + `clerk` in host) is conservative:
+      // it blocks non-Clerk issuers while avoiding a hardcoded wrong URL in prod.
       let onbClerkUserId: string;
       try {
         const claims = await verifyToken(onbToken, {
           secretKey: clerkSecretKey,
           authorizedParties: ["https://corelink-admin.humangr.com"],
         });
+
+        // M1-FIX-1: Explicitly assert azp is present AND in the allowlist.
+        // The Clerk library skips the azp check when the claim is absent, so a
+        // token from a different app on the same Clerk instance (no azp) would
+        // otherwise pass verifyToken() undetected.
+        const azp = (claims as Record<string, unknown>)["azp"];
+        if (
+          typeof azp !== "string" ||
+          azp.length === 0 ||
+          !(ONBOARDING_AZP_ALLOWLIST as readonly string[]).includes(azp)
+        ) {
+          return applyCors(
+            reapiError("UNAUTHORIZED", "clerk session azp invalid", 401, requestId),
+            request,
+          );
+        }
+
+        // M1-FIX-2: Explicitly assert issuer is present and has the expected
+        // Clerk shape (https scheme, hostname contains "clerk").  This ensures
+        // issuer trust is explicit even before the full issuer URL is pinned.
+        // Replace with exact string equality once CLERK_ISSUER_URL is confirmed.
+        const iss = (claims as Record<string, unknown>)["iss"];
+        if (
+          typeof iss !== "string" ||
+          iss.length === 0 ||
+          !iss.startsWith("https://") ||
+          !iss.includes("clerk")
+        ) {
+          return applyCors(
+            reapiError("UNAUTHORIZED", "clerk session issuer invalid", 401, requestId),
+            request,
+          );
+        }
+
         if (!claims.sub) {
           return applyCors(
             reapiError("UNAUTHORIZED", "clerk session missing subject", 401, requestId),

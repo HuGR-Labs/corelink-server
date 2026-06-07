@@ -87,7 +87,20 @@ interface VerifyContext {
   svixTimestamp: string;
   svixSignature: string;
   secret: string;
+  /**
+   * Current time in unix seconds, used for the `svix-timestamp` freshness
+   * (anti-replay) check. Defaults to `Date.now() / 1000`. Injectable for tests.
+   */
+  nowSeconds?: number;
+  /**
+   * Max allowed clock skew (seconds) between `svix-timestamp` and `nowSeconds`.
+   * Defaults to 300 (5 min) — the Svix canonical default tolerance.
+   */
+  toleranceSeconds?: number;
 }
+
+/** Svix canonical default replay-tolerance window: 5 minutes. */
+const SVIX_TIMESTAMP_TOLERANCE_SECONDS = 300;
 
 /**
  * Verify the Svix signature on a Clerk webhook payload.
@@ -96,9 +109,28 @@ interface VerifyContext {
  * with the webhook secret (base64-decoded after the `whsec_` prefix). The
  * `svix-signature` header is a space-separated list of `v1,<base64sig>` values
  * — at least one must match in constant time.
+ *
+ * Anti-replay: in addition to the signature, the `svix-timestamp` (unix seconds)
+ * must be within ±`toleranceSeconds` (default 300s) of the server clock. Without
+ * this, a captured signed `user.created` webhook would be replayable forever,
+ * re-driving tenant/PAT provisioning. A missing/non-numeric timestamp is rejected
+ * with the same `false` as a bad signature.
  */
 export async function verifySvixSignature(ctx: VerifyContext): Promise<boolean> {
   if (!ctx.secret.startsWith("whsec_")) return false;
+
+  // Anti-replay: reject stale or malformed timestamps before doing any HMAC work.
+  const tolerance = ctx.toleranceSeconds ?? SVIX_TIMESTAMP_TOLERANCE_SECONDS;
+  const nowSeconds = ctx.nowSeconds ?? Date.now() / 1000;
+  const svixTs = Number(ctx.svixTimestamp);
+  if (
+    ctx.svixTimestamp.trim() === "" ||
+    !Number.isFinite(svixTs) ||
+    Math.abs(nowSeconds - svixTs) > tolerance
+  ) {
+    return false;
+  }
+
   const rawSecret = ctx.secret.slice("whsec_".length);
   const secretBytes = Uint8Array.from(atob(rawSecret), (c) => c.charCodeAt(0));
   const key = await crypto.subtle.importKey(
@@ -476,10 +508,12 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
     },
 
     // ── issuePat ──────────────────────────────────────────────────────────────
-    // Calls `/_internal/pat/mint`, inserts the PAT row to D1, returns plaintext.
+    // Calls `/_internal/pat/mint` with the caller-requested `scope` (self-serve
+    // PATs are `cas:rw`, never `admin`), inserts the PAT row to D1 with that
+    // same scope, and returns the plaintext.
     async issuePat(
       tenantId: string,
-      _scope: "cas:rw",
+      scope: "cas:rw",
     ): Promise<{ id: string; plaintext: string }> {
       if (!env.CORELINK_INTERNAL_AUTH_KEY) {
         // Dev/CI stub — return a fake PAT that the tests can assert on.
@@ -501,7 +535,9 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
             tenant_id: tenantId,
             // Use the tenant_id as the principal_id for the first PAT.
             principal_id: tenantId,
-            scopes: "admin",
+            // Honor the caller-requested scope (self-serve PATs are cas:rw,
+            // NEVER admin). The container mint route authorizes per-scope.
+            scopes: scope,
             ttl_seconds: patTtlSeconds,
           }),
         },
@@ -526,12 +562,13 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
           "INSERT OR IGNORE INTO pat " +
             "(pat_id, tenant_id, pat_hash, scope, expires_ms, token_id, " +
             " shown_once_token, shown_once_consumed, created_ms) " +
-            "VALUES (?1, ?2, ?3, 'admin', ?4, ?5, ?6, 1, ?7)",
+            "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)",
         )
           .bind(
             mint.pat_id,
             tenantId,
             mint.hash,
+            scope, // persist the caller-requested scope (cas:rw), NOT admin
             mint.expires_ms,
             mint.token_id,
             crypto.randomUUID(), // shown_once_token (pre-consumed)

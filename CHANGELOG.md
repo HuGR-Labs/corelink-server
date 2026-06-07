@@ -56,6 +56,17 @@ Each entry cross-references:
   is used in the storage key, closing heap-amplification and intra-tenant
   slot-aliasing. Audit-export now caps the query window to 30 days (400 on
   exceed) so a single `from=0&to=now` cannot stream an unbounded history.
+- **Signup / money-path hardening (pentest 2026-06-06).** (H3) `issuePat` ignored
+  its `scope` param and minted the first self-serve customer PAT with the `admin`
+  scope (hardcoded in the mint request and the D1 insert) — privilege-by-default;
+  now honors the caller-supplied `cas:rw`. (H6) the Svix webhook verify checked the
+  HMAC but never validated `svix-timestamp` freshness, so a captured signed
+  `user.created` webhook was replayable indefinitely (duplicate tenant/PAT
+  provisioning); now rejects timestamps outside a ±5-minute window (and
+  missing/non-numeric). (M1) the onboarding Clerk JWT verify is bypassable when the
+  token omits `azp` (the library skips the `authorizedParties` check); now asserts
+  `azp` is present and allow-listed after verify, plus an explicit issuer
+  shape-check (TODO: exact `CLERK_ISSUER_URL` pin).
 - **Container cache surfaces now bind tenant isolation to the authenticated
   tenant, not a client-controlled value (cross-tenant read/write fix).** The
   native container keyed CAS (`/v1/cas/:tenant/:hash`), AC
