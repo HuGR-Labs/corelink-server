@@ -65,6 +65,7 @@ use serde::{Deserialize, Serialize};
 use corelink_turbo_bridge::{
     adapter::{CasAdapterTurboHandler, InMemoryKvStore},
     audit::InMemoryTurboAuditSink,
+    error::validate_team_id,
     TurboArtifactHandler, TurboBridgeError, TurboEventsRequest, TurboGetRequest, TurboPutRequest,
     TurboStatusRequest,
 };
@@ -86,6 +87,14 @@ pub const TURBO_EVENTS_ROUTE: &str = "/v8/artifacts/events";
 
 /// `POST /v8/artifacts/status` — static remote-cache enabled check.
 pub const TURBO_STATUS_ROUTE: &str = "/v8/artifacts/status";
+
+/// Per-route request-body cap for the `/v8/artifacts/*` routes (100 MiB).
+///
+/// Turbo build artifacts are legitimately larger than the 10 MiB global body
+/// limit applied in `main.rs`, so the Turbo router layers this larger
+/// `DefaultBodyLimit` (which axum honours as the innermost limit) — while still
+/// bounding the body so an authenticated PAT cannot OOM the shared container.
+pub const TURBO_BODY_LIMIT_BYTES: usize = 100 * 1024 * 1024;
 
 // ── Query parameters ──────────────────────────────────────────────────────────
 
@@ -183,6 +192,12 @@ pub fn router(state: TurboRouteState) -> Router {
         .route(TURBO_EVENTS_ROUTE, post(handle_events))
         .route(TURBO_STATUS_ROUTE, post(handle_status))
         .route(TURBO_GET_ROUTE, get(handle_get).put(handle_put))
+        // Per-route body cap: Turbo build artifacts are legitimately larger than
+        // the 10 MiB global limit set in `main.rs`. This inner `DefaultBodyLimit`
+        // layer overrides the outer global default for the `/v8/artifacts/*`
+        // routes only (axum honours the innermost limit) while still bounding the
+        // body at 100 MiB so a PAT cannot OOM the shared container.
+        .layer(axum::extract::DefaultBodyLimit::max(TURBO_BODY_LIMIT_BYTES))
         .with_state(state)
 }
 
@@ -202,6 +217,12 @@ async fn handle_get(
     // (`auth.0`) — NOT the client `teamId`.  `teamId` is a Turborepo team label
     // demoted to a logical sub-namespace inside the authenticated tenant.
     let caller_tenant = auth.0;
+    // DoS / key-aliasing guard: reject empty / overlong / `/`-bearing `teamId`
+    // (it is interpolated into the storage key) BEFORE any audit or storage.
+    // Mirrors the MAX_HASH_LEN guard; maps to 400 via `map_err`.
+    if let Err(e) = validate_team_id(&params.team_id) {
+        return map_err(e);
+    }
     let now_ms = 0u64;
     let req = TurboGetRequest::new(
         hash,
@@ -232,6 +253,11 @@ async fn handle_put(
 ) -> impl IntoResponse {
     // Isolation tenant is the authenticated `auth.0`, not the client `teamId`.
     let caller_tenant = auth.0;
+    // DoS / key-aliasing guard on `teamId` (storage-key prefix) before any
+    // audit or storage. Mirrors the MAX_HASH_LEN guard; maps to 400.
+    if let Err(e) = validate_team_id(&params.team_id) {
+        return map_err(e);
+    }
     let now_ms = 0u64;
     let req = TurboPutRequest::new(
         hash,
@@ -293,6 +319,9 @@ fn map_err(e: TurboBridgeError) -> axum::response::Response {
         TurboBridgeError::NotFound { .. } => (StatusCode::NOT_FOUND, "not found").into_response(),
         TurboBridgeError::HashTooLong { .. } => {
             (StatusCode::BAD_REQUEST, "hash too long").into_response()
+        }
+        TurboBridgeError::TeamIdInvalid { .. } => {
+            (StatusCode::BAD_REQUEST, "invalid teamId").into_response()
         }
         TurboBridgeError::CrossTenantDenied { .. } => {
             (StatusCode::FORBIDDEN, "cross-tenant").into_response()
@@ -587,5 +616,86 @@ mod tests {
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // ── teamId DoS / key-aliasing guard → 400 ─────────────────────────────────
+
+    #[test]
+    fn team_id_invalid_maps_to_400() {
+        let resp = map_err(TurboBridgeError::TeamIdInvalid {
+            len: 0,
+            max: 256,
+            reason: "team_id must not be empty",
+        });
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn put_slash_in_team_id_returns_400() {
+        let app = test_router();
+        // `teamId=a/b` is `teamId=a%2Fb` here — a `/`-bearing value that would
+        // escape the team sub-namespace key prefix. Rejected at the route guard.
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri("/v8/artifacts/somehash?teamId=a%2Fb")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .body(Body::from(b"data".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn put_empty_team_id_returns_400() {
+        let app = test_router();
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri("/v8/artifacts/somehash?teamId=")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .body(Body::from(b"data".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn put_overlong_team_id_returns_400() {
+        let app = test_router();
+        let long = "a".repeat(corelink_turbo_bridge::error::MAX_TEAM_ID_LEN + 1);
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v8/artifacts/somehash?teamId={long}"))
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .body(Body::from(b"data".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn get_slash_in_team_id_returns_400() {
+        let app = test_router();
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/v8/artifacts/somehash?teamId=a%2Fb")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn put_valid_team_id_accepted() {
+        // Sanity: a conventional slug-style teamId still round-trips 200.
+        let app = test_router();
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri("/v8/artifacts/h1?teamId=team_AbC-123")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .body(Body::from(b"data".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 }

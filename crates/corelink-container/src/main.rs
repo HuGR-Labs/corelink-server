@@ -286,7 +286,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // HTTP listener on PORT (50051) — the exact port the DO forwards HTTP to and
     // probes for /_health. `/_health` is added here so the DO's container
     // readiness probe (GET /_health, expects 200) succeeds.
-    let mut app = routes::build_with_factory(shadow_factory).route("/_health", get(health_handler));
+    // H5 DoS guard: cap the request body for EVERY route at 10 MiB so an
+    // authenticated PAT cannot OOM the shared container with a multi-GB body on
+    // any JSON/CAS route. `DefaultBodyLimit` is an outer layer; axum honours the
+    // innermost limit, so the Turbo `/v8/artifacts/:hash` PUT (which legitimately
+    // carries larger build artifacts) sets its own larger per-route limit inside
+    // `turbo_v8::router()` and is NOT constrained by this global default.
+    const GLOBAL_BODY_LIMIT_BYTES: usize = 10 * 1024 * 1024; // 10 MiB
+    let mut app = routes::build_with_factory(shadow_factory)
+        .route("/_health", get(health_handler))
+        .layer(axum::extract::DefaultBodyLimit::max(GLOBAL_BODY_LIMIT_BYTES));
 
     // Stream-5: `POST /_internal/pat/mint` — gated by shared secret.
     // Mounted when CORELINK_INTERNAL_AUTH_KEY + PAT_SIGNING_KEY are both set.
