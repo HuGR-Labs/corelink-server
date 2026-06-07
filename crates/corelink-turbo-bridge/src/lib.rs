@@ -45,10 +45,15 @@
 //!
 //! # Invariants
 //!
-//! - `team_id` from the request MUST equal the authenticated `caller_tenant`;
-//!   violations return [`TurboBridgeError::CrossTenantDenied`] + emit a
-//!   [`TurboAuditEventKind::PutDenied`] / [`TurboAuditEventKind::GetDenied`]
-//!   audit event BEFORE returning.
+//! - Tenant isolation is enforced solely by the `caller_tenant` storage
+//!   dimension (the PAT-resolved authenticated tenant). Every PUT and GET
+//!   keys storage by `caller_tenant`; a different `caller_tenant` cannot
+//!   reach another tenant's artifacts regardless of the `team_id` value.
+//! - `team_id` is a Turborepo team label demoted to a sub-namespace in the
+//!   storage key (`"<team_id>/<hash>"`). It is NOT the tenant and carries NO
+//!   `== caller_tenant` requirement; there is no [`TurboBridgeError::CrossTenantDenied`]
+//!   path for `team_id` mismatches. Cross-tenant isolation is provided solely
+//!   by `caller_tenant` reaching the store.
 //! - All audit emits happen BEFORE any state mutation (fail-CLOSED ordering).
 //! - No `unwrap()` / `expect()` / `panic!()` outside `#[cfg(test)]`.
 

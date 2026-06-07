@@ -23,6 +23,20 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **internal_pat + hygiene hardening (pentest 2026-06-06 follow-ups).** (M2)
+  `/_internal/pat/mint`'s `x-corelink-internal-auth` verify no longer leaks the
+  secret length via a non-constant-time length short-circuit — now a single
+  padded constant-time compare (mirrors the PR #152 admin gate). (M3) the auth
+  header is checked BEFORE the JSON body is parsed (was `Json` extractor first),
+  so an unauthenticated caller can't force body parsing pre-auth. (M6) the mint
+  log hashes the tenant id (`hash_for_log`) instead of logging the raw UUID
+  (INV-NO-PII-IN-LOGS). (L1) `/_health/container` redacts the `storage`
+  backend field so an unauthenticated probe can't detect the InMemory fallback.
+  (L3) corrected a stale `corelink-turbo-bridge` doc claiming a removed
+  `team_id == caller_tenant` check. `AdminMutateBody.initiator*` made
+  wire-optional (`serde(default)`) since the internal-auth gate now owns the
+  admin decision. (M7 — response still returns the Argon2id hash — noted as a
+  follow-up entangled with the signup-worker D1 write.)
 - **Worker now strips client-suppliable trust headers on every forward path
   (header-smuggling fix, H4).** The data-plane Worker forwarded `x-admin-scope`,
   `x-admin-principal`, `x-admin-tenant`, `x-corelink-internal-auth`, and
