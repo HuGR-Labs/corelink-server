@@ -55,10 +55,11 @@ use subtle::ConstantTimeEq;
 /// gated behind the `CORELINK_INTERNAL_AUTH_KEY` shared secret, NOT
 /// reachable by any authenticated tenant PAT.
 ///
-/// NOTE: the Worker does NOT currently strip a client-supplied
-/// `x-corelink-internal-auth` on the public `/v1/*` path (tracked
-/// separately). The gate here is still effective because the secret VALUE
-/// cannot be forged — verification is a constant-time compare below.
+/// Defense-in-depth: the Worker strips any client-supplied
+/// `x-corelink-internal-auth` header on the public `/v1/*` path
+/// (`x-corelink-internal-auth` is listed in `CLIENT_TRUST_HEADERS` and is
+/// removed before the request reaches the container). The constant-time gate
+/// below is a second independent layer — both must hold.
 pub const ADMIN_INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 
 /// Constant-time verification of the operator shared secret.

@@ -133,9 +133,32 @@ fn header_or(headers: &HeaderMap, name: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_owned())
 }
 
-/// Read `x-corelink-tenant-id`; fail-CLOSED to `"_unknown"`.
-fn tenant(headers: &HeaderMap) -> String {
-    header_or(headers, "x-corelink-tenant-id", "_unknown")
+/// Sentinels the Worker/DO use for non-tenant traffic — never a real tenant.
+/// Mirrors `auth_tenant::AuthTenant`'s sentinel set.
+const TENANT_SENTINELS: &[&str] = &["_anonymous", "_unknown", "_system", "_pending"];
+
+/// Read the authenticated `x-corelink-tenant-id`, **fail-CLOSED**.
+///
+/// F-defense: the previous version fell back to the `"_unknown"` sentinel on a
+/// missing/empty header, so an unauthenticated request silently flowed into the
+/// handler under a sentinel tenant (every customer surface reads/writes that
+/// tenant's billing/keys/team data). We now mirror `auth_tenant::AuthTenant`:
+/// a missing/empty/sentinel value is an `Err(())` the handler maps to `401`.
+fn tenant(headers: &HeaderMap) -> Result<String, ()> {
+    let raw = headers
+        .get("x-corelink-tenant-id")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .unwrap_or("");
+    if raw.is_empty() || TENANT_SENTINELS.contains(&raw) {
+        return Err(());
+    }
+    Ok(raw.to_owned())
+}
+
+/// Canonical fail-CLOSED 401 for a missing/sentinel authenticated tenant.
+fn unauthenticated_tenant() -> axum::response::Response {
+    (StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response()
 }
 
 /// Read `x-corelink-token-prefix`; fail-CLOSED to `"_unknown"`.
@@ -198,7 +221,12 @@ async fn handle_overview(
     State(state): State<CustomerRouteState>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    let t = tenant(&headers);
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
+    // BEFORE any storage/handler access.
+    let t = match tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
     let p = principal(&headers);
     let req = OverviewRequest::new(t, p, now_ms());
     match state.overview.overview(req) {
@@ -246,7 +274,12 @@ async fn handle_usage(
     headers: HeaderMap,
     Query(q): Query<UsageQuery>,
 ) -> impl IntoResponse {
-    let t = tenant(&headers);
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
+    // BEFORE any storage/handler access.
+    let t = match tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
     let p = principal(&headers);
     let req = UsageRequest::new(t, p, q.period, now_ms());
     match state.usage.usage(req) {
@@ -276,7 +309,12 @@ async fn handle_audit(
     headers: HeaderMap,
     Query(q): Query<AuditQuery>,
 ) -> impl IntoResponse {
-    let t = tenant(&headers);
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
+    // BEFORE any storage/handler access.
+    let t = match tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
     let p = principal(&headers);
     // `kind` is comma-separated; split into event_types Vec.
     let event_types: Vec<String> = q
@@ -316,7 +354,12 @@ async fn handle_billing(
     State(state): State<CustomerRouteState>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    let t = tenant(&headers);
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
+    // BEFORE any storage/handler access.
+    let t = match tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
     let p = principal(&headers);
     let req = BillingRequest::new(t, p, now_ms());
     match state.billing.billing(req) {
@@ -347,7 +390,12 @@ async fn handle_billing_portal(
     State(state): State<CustomerRouteState>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    let t = tenant(&headers);
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
+    // BEFORE any storage/handler access.
+    let t = match tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
     let p = principal(&headers);
     let req = PortalRequest::new(t, p, now_ms());
     match state.billing.portal_url(req) {
@@ -364,7 +412,12 @@ async fn handle_keys_list(
     State(state): State<CustomerRouteState>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    let t = tenant(&headers);
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
+    // BEFORE any storage/handler access.
+    let t = match tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
     let p = principal(&headers);
     let req = KeysListRequest::new(t, p, now_ms());
     match state.keys.list(req) {
@@ -396,7 +449,12 @@ async fn handle_keys_create(
     headers: HeaderMap,
     Json(body): Json<CreatePatBody>,
 ) -> impl IntoResponse {
-    let t = tenant(&headers);
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
+    // BEFORE any storage/handler access.
+    let t = match tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
     let p = principal(&headers);
     let req = KeyCreateRequest::new(t, p, body.name, body.scopes, now_ms());
     match state.keys.create(req) {
@@ -424,7 +482,12 @@ async fn handle_keys_revoke(
     headers: HeaderMap,
     Path(pat_id): Path<String>,
 ) -> impl IntoResponse {
-    let t = tenant(&headers);
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
+    // BEFORE any storage/handler access.
+    let t = match tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
     let p = principal(&headers);
     let req = KeyRevokeRequest::new(t, p, pat_id, now_ms());
     match state.keys.revoke(req) {
@@ -450,7 +513,12 @@ async fn handle_team_list(
     State(state): State<CustomerRouteState>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    let t = tenant(&headers);
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
+    // BEFORE any storage/handler access.
+    let t = match tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
     let p = principal(&headers);
     let req = TeamListRequest::new(t, p, now_ms());
     match state.team.list(req) {
@@ -476,7 +544,12 @@ async fn handle_team_invite(
     headers: HeaderMap,
     Json(body): Json<InviteBody>,
 ) -> impl IntoResponse {
-    let t = tenant(&headers);
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
+    // BEFORE any storage/handler access.
+    let t = match tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
     let p = principal(&headers);
     let req = TeamInviteRequest::new(t, p, body.email, body.role, now_ms());
     match state.team.invite(req) {
@@ -624,8 +697,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn missing_tenant_header_falls_back_to_unknown() {
-        // No tenant header → _unknown tenant → NotFound (no seed for _unknown).
+    async fn missing_tenant_header_is_401_fail_closed() {
+        // F-defense: a missing tenant header must FAIL-CLOSED with 401 — NOT
+        // fall back to the `"_unknown"` sentinel (the old behavior, which let
+        // an unauthenticated request reach the handler under a sentinel
+        // tenant). The 401 fires BEFORE any handler/storage access.
         let (state, _) = fixture();
         let app = router(state);
         let req = Request::builder()
@@ -634,8 +710,29 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
-        // NotFound because _unknown has no seeded overview.
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn sentinel_tenant_header_is_401_fail_closed() {
+        // A sentinel value in the header is not a real authenticated tenant
+        // and must be rejected 401, same as a missing header.
+        let (state, _) = fixture();
+        let app = router(state);
+        for sentinel in ["_unknown", "_anonymous", "_system", "_pending", "   "] {
+            let req = Request::builder()
+                .uri("/v1/customer/overview")
+                .method("GET")
+                .header("x-corelink-tenant-id", sentinel)
+                .body(Body::empty())
+                .unwrap();
+            let resp = app.clone().oneshot(req).await.expect("oneshot");
+            assert_eq!(
+                resp.status(),
+                StatusCode::UNAUTHORIZED,
+                "sentinel {sentinel:?} must fail closed"
+            );
+        }
     }
 
     // ── Usage route ───────────────────────────────────────────────────────────

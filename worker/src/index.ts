@@ -252,6 +252,14 @@ const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   "x-corelink-internal-auth",
   "x-corelink-fanout-from",
   "x-corelink-scope",
+  // F1: the forgeable client-supplied XFF must be stripped on every forward —
+  // the container's signup rate-limit now reads the server-trusted
+  // x-corelink-client-ip (set by the Worker from cf-connecting-ip), never XFF.
+  "x-forwarded-for",
+  // F1: the Worker is the SOLE setter of x-corelink-client-ip (from the
+  // unforgeable cf-connecting-ip). Strip any client-supplied value first so a
+  // client can never smuggle a forged client IP past the rate-limiter.
+  "x-corelink-client-ip",
 ];
 
 /**
@@ -1151,13 +1159,28 @@ const handler: ExportedHandler<Env> = {
       const enc2 = new TextEncoder();
       const expectedBytes = enc2.encode(internalAuthKey);
       const providedBytes = enc2.encode(provided);
-      let authOk = false;
-      if (providedBytes.length === expectedBytes.length) {
-        authOk = crypto.subtle.timingSafeEqual(providedBytes, expectedBytes);
-      } else {
-        // Different lengths — run a dummy comparison to prevent timing oracle.
-        crypto.subtle.timingSafeEqual(expectedBytes, expectedBytes);
-      }
+      // Constant-time auth WITHOUT a secret-length oracle. The previous
+      // `providedBytes.length === expectedBytes.length` branch took a timing
+      // path that depended on the PROVIDED length (and the else-branch compared
+      // the secret to itself, not to the provided bytes) — both distinguishable
+      // → a length oracle. Instead: copy the provided bytes into a fixed buffer
+      // sized to the EXPECTED length (pad with zeros / truncate the overflow),
+      // run exactly ONE timingSafeEqual over equal-length buffers, then AND with
+      // a constant-time length-equality bit. No early branch depends on the
+      // provided length. Mirrors the padded Rust internal_pat.rs/admin.rs gates.
+      const fixed = new Uint8Array(expectedBytes.length);
+      const copyLen =
+        providedBytes.length < expectedBytes.length
+          ? providedBytes.length
+          : expectedBytes.length;
+      fixed.set(providedBytes.subarray(0, copyLen));
+      const bytesEqual = crypto.subtle.timingSafeEqual(fixed, expectedBytes);
+      // Length-equality bit — a length mismatch can never authenticate (a wrong
+      // length that pads to the same prefix bytes is still rejected). This is a
+      // single integer compare, not a per-character path, so it carries no
+      // length oracle: timingSafeEqual already ran over equal-length buffers.
+      const lenEqual = providedBytes.length === expectedBytes.length;
+      const authOk = bytesEqual && lenEqual;
       if (!authOk) {
         return applyCors(
           reapiError("UNAUTHORIZED", "internal auth required", 401, requestId),
@@ -1598,6 +1621,10 @@ const handler: ExportedHandler<Env> = {
               // H1: forward the D1-resolved PAT scope as a server-trust header.
               // stripClientTrustHeaders above already deleted any client value.
               h.set("x-corelink-scope", auth.scope);
+              // F1: forward CF's unforgeable client IP as x-corelink-client-ip
+              // (the client-forgeable x-forwarded-for was stripped above) so the
+              // regional Worker/container rate-limits signup off a trusted IP.
+              h.set("x-corelink-client-ip", request.headers.get("cf-connecting-ip") ?? "");
               h.set("x-corelink-fanout-from", "prod");
               return h;
             })(),
@@ -1637,6 +1664,12 @@ const handler: ExportedHandler<Env> = {
         // container can ENFORCE it. stripClientTrustHeaders above already deleted
         // any client-supplied x-corelink-scope (the Worker is the sole setter).
         h.set("x-corelink-scope", auth.scope);
+        // F1: forward Cloudflare's UNFORGEABLE client IP as the server-trusted
+        // x-corelink-client-ip so the container's signup rate-limit keys off it
+        // (NOT the client-forgeable x-forwarded-for, which stripClientTrustHeaders
+        // already deleted above). cf-connecting-ip is set by the CF edge and a
+        // client cannot spoof it. The signup routeKind reaches THIS forward.
+        h.set("x-corelink-client-ip", request.headers.get("cf-connecting-ip") ?? "");
         // Keep raw Authorization on the forwarded request: the DO performs the
         // Argon2id + scope verify against the D1 PAT store (the possession check
         // the Worker skips under its cpu_ms budget). The DO is trusted; it never

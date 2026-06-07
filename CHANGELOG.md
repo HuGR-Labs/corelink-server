@@ -23,6 +23,20 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **Audit-round-2 hardening (brutal 13-agent audit follow-ups).** Closed the
+  real findings: signup rate-limit no longer keyed off the client-forgeable
+  `x-forwarded-for` — the Worker strips it and forwards Cloudflare's trusted
+  `cf-connecting-ip` as `x-corelink-client-ip` (denylisted); the container reads
+  that, fail-closed to a single shared bucket when absent. Eliminated two
+  internal-auth timing oracles (`tier_select.rs` and the Worker `/_internal/*`
+  gate) by padding to a single constant-time compare (matching the other gates).
+  Turbo `events`/`status` now require the `AuthTenant` extractor; Bazel and
+  customer routes fail-CLOSED (401) on a missing/sentinel tenant instead of a
+  `"_unknown"` fallback. Cargo adapter hashes the tenant id in debug logs
+  (INV-NO-PII-IN-LOGS). Added the `CLERK_ISSUER_URL` secrets-matrix row + wrangler
+  doc; corrected stale `admin.rs`/`admin_pilot.rs` comments. (Audit false-positives
+  — "scope spine absent", "health exposes storage" — were a stale-checkout artifact;
+  the spine and the Worker storage-redaction are present on main.)
 - **Auth spine: PAT scope enforcement (H1) + possession-model decision (H2).**
   The Worker now resolves the PAT's `scope` from D1 and forwards it as the
   server-trusted `x-corelink-scope` header (added to the strip denylist so a

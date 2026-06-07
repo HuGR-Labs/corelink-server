@@ -295,11 +295,19 @@ async fn handle_put(
 ///
 /// Accept-and-drop: any body accepted, always returns 200.  Turbo telemetry
 /// is not CoreLink's to own — no state mutation, no audit emit.
+///
+/// F3 (defense-in-depth): require the `AuthTenant` extractor — fail-CLOSED 401
+/// on a missing/sentinel tenant. The Worker PAT-gates this path, but the
+/// container must not trust that; an unauthenticated request never reaches the
+/// handler. `AuthTenant` is `FromRequestParts`, so it precedes the `Bytes`
+/// body extractor (axum 0.7 ordering rule).
 async fn handle_events(
     State(state): State<TurboRouteState>,
+    auth: crate::auth_tenant::AuthTenant,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
-    let req = TurboEventsRequest::new(body.to_vec(), "anon", 0u64);
+    let principal = format!("anon@{}", auth.0);
+    let req = TurboEventsRequest::new(body.to_vec(), principal, 0u64);
     match state.handler.events(req) {
         Ok(_) => StatusCode::OK.into_response(),
         Err(e) => map_err(e),
@@ -309,11 +317,17 @@ async fn handle_events(
 /// `POST /v8/artifacts/status`
 ///
 /// Returns static `{"status":"enabled"}`.  No request body required.
+///
+/// F3 (defense-in-depth): require the `AuthTenant` extractor — fail-CLOSED 401
+/// on a missing/sentinel tenant. `AuthTenant` is `FromRequestParts`, so it
+/// precedes the body extractor (axum 0.7 ordering rule).
 async fn handle_status(
     State(state): State<TurboRouteState>,
+    auth: crate::auth_tenant::AuthTenant,
     _req: axum::extract::Request,
 ) -> impl IntoResponse {
-    let _status_req = TurboStatusRequest::new("anon", 0u64);
+    let principal = format!("anon@{}", auth.0);
+    let _status_req = TurboStatusRequest::new(principal, 0u64);
     match state.handler.status() {
         Ok(payload) => (StatusCode::OK, Json(payload)).into_response(),
         Err(e) => map_err(e),
@@ -563,10 +577,12 @@ mod tests {
     async fn post_events_always_200() {
         let app = test_router();
         // Turbo sends arbitrary JSON telemetry; we accept and drop.
+        // F3: events now requires the authenticated-tenant header.
         let req = Request::builder()
             .method(Method::POST)
             .uri("/v8/artifacts/events")
             .header("content-type", "application/json")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
             .body(Body::from(r#"{"sessionId":"abc","source":"LOCAL"}"#))
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -576,13 +592,72 @@ mod tests {
     #[tokio::test]
     async fn post_events_empty_body_200() {
         let app = test_router();
+        // F3: events now requires the authenticated-tenant header.
         let req = Request::builder()
             .method(Method::POST)
             .uri("/v8/artifacts/events")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
             .body(Body::empty())
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    // ── F3: events/status are fail-CLOSED without an authenticated tenant ──────
+
+    #[tokio::test]
+    async fn post_events_without_tenant_header_is_401() {
+        // F3 (defense-in-depth): the container must not trust the Worker's
+        // PAT gate. No `x-corelink-tenant-id` ⇒ `AuthTenant` rejects 401
+        // BEFORE the accept-and-drop handler runs.
+        let app = test_router();
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/v8/artifacts/events")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"sessionId":"abc","source":"LOCAL"}"#))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn post_events_sentinel_tenant_is_401() {
+        // A sentinel tenant value is not a real authenticated tenant.
+        let app = test_router();
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/v8/artifacts/events")
+            .header("x-corelink-tenant-id", "_unknown")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn post_status_without_tenant_header_is_401() {
+        let app = test_router();
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/v8/artifacts/status")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn post_status_sentinel_tenant_is_401() {
+        let app = test_router();
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/v8/artifacts/status")
+            .header("x-corelink-tenant-id", "_unknown")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
     // ── status endpoint ───────────────────────────────────────────────────────
@@ -590,9 +665,11 @@ mod tests {
     #[tokio::test]
     async fn post_status_returns_enabled() {
         let app = test_router();
+        // F3: status now requires the authenticated-tenant header.
         let req = Request::builder()
             .method(Method::POST)
             .uri("/v8/artifacts/status")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
             .body(Body::empty())
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
