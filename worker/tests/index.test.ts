@@ -1512,6 +1512,44 @@ describe("security (H4): forwarded-request trust-header hygiene", () => {
     // fanout-from is Worker-established to "prod" (client "spoofed-origin" gone).
     expect(fanoutHeaders?.get("x-corelink-fanout-from")).toBe("prod");
   });
+
+  // F1: client-supplied trust headers (internal-auth, admin-scope, the forgeable
+  // x-forwarded-for) MUST be stripped on the forwarded request, while the
+  // Worker-set x-corelink-client-ip (sourced from the unforgeable cf-connecting-ip)
+  // survives. This proves the denylist + strip actually fire AND that the Worker
+  // overwrites the client IP from CF's trusted header — deleting either the strip
+  // or the x-corelink-client-ip set must fail this test.
+  it("MAIN forward strips client trust headers (incl. x-forwarded-for) and sets x-corelink-client-ip from cf-connecting-ip", async () => {
+    const { env, captured } = makeHeaderCapturingEnv();
+    const resp = await workerFetch(
+      `http://localhost/api/v2/${TEST_TENANT_ID}/path`,
+      {
+        headers: {
+          Authorization: `Bearer ${TEST_PAT_TOKEN}`,
+          // Client tries to smuggle internal-auth + admin-scope …
+          "x-corelink-internal-auth": "forged-internal-secret",
+          "x-admin-scope": "admin:*",
+          // … and a forged client IP via the (now denylisted) XFF …
+          "x-forwarded-for": "6.6.6.6",
+          // … and tries to pre-set the server-only x-corelink-client-ip header.
+          "x-corelink-client-ip": "6.6.6.6",
+          // CF edge sets the unforgeable real client IP here.
+          "cf-connecting-ip": "203.0.113.7",
+        },
+      },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(captured.headers).toBeDefined();
+    // Client-supplied trust headers are stripped.
+    expect(captured.headers?.get("x-corelink-internal-auth")).toBeNull();
+    expect(captured.headers?.get("x-admin-scope")).toBeNull();
+    // The forgeable x-forwarded-for is stripped (no longer trusted for rate-limit).
+    expect(captured.headers?.get("x-forwarded-for")).toBeNull();
+    // The Worker-set client IP wins: sourced from cf-connecting-ip, NOT the
+    // client's forged 6.6.6.6 value.
+    expect(captured.headers?.get("x-corelink-client-ip")).toBe("203.0.113.7");
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────────────

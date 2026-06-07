@@ -208,24 +208,43 @@ impl IntoResponse for TierSelectHttpError {
 /// Verify the internal-auth shared secret in **constant time**. Returns
 /// `Err(Unauthenticated)` on a missing or mismatched header — fail-CLOSED.
 ///
-/// Constant-time compare prevents a timing side-channel from leaking the
-/// secret (mirrors `internal_pat.rs`).
+/// The compare pads the provided value to the expected length and runs a
+/// single `ct_eq` over equal-length buffers, then folds in a length-equality
+/// bit — so NEITHER the secret length NOR its content is leaked via an early
+/// return / branch. Mirrors `admin.rs::internal_auth_ok` / `internal_pat.rs`
+/// exactly (F2 fix: `subtle::ct_eq` short-circuits on unequal lengths, which
+/// leaked the secret length via timing; the previous direct `ct_eq` here did
+/// exactly that).
 fn verify_internal_auth(
     headers: &HeaderMap,
     expected_secret: &str,
 ) -> Result<(), TierSelectHttpError> {
+    // Treat a missing header as an empty presented value so the compare runs
+    // on the SAME constant-time path (no early return distinguishes
+    // missing-header from wrong-secret).
     let presented = headers
         .get(INTERNAL_AUTH_HEADER)
         .and_then(|v| v.to_str().ok())
-        .ok_or(TierSelectHttpError::Unauthenticated)?;
+        .unwrap_or("");
 
-    // Length-independent constant-time equality. `ConstantTimeEq` on
-    // unequal-length slices returns 0 without early-exit on length.
-    let ok: bool = presented
-        .as_bytes()
-        .ct_eq(expected_secret.as_bytes())
-        .into();
-    if ok {
+    let expected_bytes = expected_secret.as_bytes();
+    let provided_bytes = presented.as_bytes();
+    // Pad provided to expected length to run ct_eq on equal-length slices,
+    // then fold in the real length-equality so a longer/shorter provided
+    // value can never match. No branch short-circuits on the secret length.
+    let provided_padded: Vec<u8> = if provided_bytes.len() >= expected_bytes.len() {
+        provided_bytes
+            .get(..expected_bytes.len())
+            .unwrap_or(&[])
+            .to_vec()
+    } else {
+        let mut v = provided_bytes.to_vec();
+        v.resize(expected_bytes.len(), 0);
+        v
+    };
+    let content_ok = expected_bytes.ct_eq(&provided_padded).unwrap_u8();
+    let len_ok = u8::from(expected_bytes.len() == provided_bytes.len());
+    if (content_ok & len_ok) == 1 {
         Ok(())
     } else {
         Err(TierSelectHttpError::Unauthenticated)
@@ -785,6 +804,56 @@ mod tests {
         let h = headers(Some("wrong-key"), Some("tenant-abc"));
         let e = authorize_and_validate(&state(), &h, &req("pro")).unwrap_err();
         assert_eq!(e, TierSelectHttpError::Unauthenticated);
+    }
+
+    // ── F2: length-oracle on the internal-auth secret ────────────────────────
+    // `subtle::ct_eq` short-circuits on unequal lengths; the previous direct
+    // `ct_eq` here leaked the secret length via timing. These mirror
+    // `internal_pat.rs`'s padded-ct tests: a wrong same-length, a SHORTER, a
+    // LONGER (correct-prefix), and a strict-prefix value must ALL be rejected
+    // on the SAME constant-time path — no branch distinguishes "wrong length"
+    // from "wrong content".
+    const F2_KEY: &str = "super-secret-internal-key";
+
+    #[test]
+    fn f2_rejects_wrong_same_length_internal_auth() {
+        let wrong: String = "X".repeat(F2_KEY.len());
+        assert_eq!(wrong.len(), F2_KEY.len());
+        let h = headers(Some(&wrong), Some("tenant-abc"));
+        let e = authorize_and_validate(&state(), &h, &req("pro")).unwrap_err();
+        assert_eq!(e, TierSelectHttpError::Unauthenticated);
+    }
+
+    #[test]
+    fn f2_rejects_shorter_internal_auth() {
+        let h = headers(Some("short"), Some("tenant-abc"));
+        let e = authorize_and_validate(&state(), &h, &req("pro")).unwrap_err();
+        assert_eq!(e, TierSelectHttpError::Unauthenticated);
+    }
+
+    #[test]
+    fn f2_rejects_longer_correct_prefix_internal_auth() {
+        let longer = format!("{F2_KEY}-extra-trailing-bytes");
+        assert!(longer.starts_with(F2_KEY));
+        let h = headers(Some(&longer), Some("tenant-abc"));
+        let e = authorize_and_validate(&state(), &h, &req("pro")).unwrap_err();
+        assert_eq!(e, TierSelectHttpError::Unauthenticated);
+    }
+
+    #[test]
+    fn f2_rejects_strict_prefix_internal_auth() {
+        let prefix = &F2_KEY[..F2_KEY.len() - 3];
+        let h = headers(Some(prefix), Some("tenant-abc"));
+        let e = authorize_and_validate(&state(), &h, &req("pro")).unwrap_err();
+        assert_eq!(e, TierSelectHttpError::Unauthenticated);
+    }
+
+    #[test]
+    fn f2_accepts_exact_internal_auth() {
+        // The correct secret still authenticates on the padded-ct path.
+        let h = headers(Some(F2_KEY), Some("tenant-abc"));
+        let (tenant, _tier) = authorize_and_validate(&state(), &h, &req("pro")).unwrap();
+        assert_eq!(tenant, "tenant-abc");
     }
 
     #[test]

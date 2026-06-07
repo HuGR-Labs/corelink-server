@@ -33,6 +33,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
 use http_body_util::BodyExt;
+use sha2::{Digest, Sha256};
 
 use crate::cargo::audit::AuditOrchestrator;
 use crate::cargo::auth::{extract_bearer, resolve_tenant};
@@ -59,6 +60,21 @@ impl std::fmt::Debug for CargoRouterState {
             .field("body_size_limit_bytes", &self.body_size_limit_bytes)
             .finish()
     }
+}
+
+/// Hash a value to a short, stable hex correlation handle for logging
+/// (INV-NO-PII-IN-LOGS). First 8 bytes of SHA-256, hex-encoded —
+/// consistent with the `hash_for_log` convention in `internal_pat.rs`
+/// and `durable_object.ts`. Never log the raw tenant UUID; log this
+/// handle instead.
+#[must_use]
+fn hash_for_log(value: &str) -> String {
+    let digest = Sha256::digest(value.as_bytes());
+    let mut out = String::with_capacity(16);
+    for b in digest.iter().take(8) {
+        out.push_str(&format!("{b:02x}"));
+    }
+    out
 }
 
 /// Build the axum [`Router`] without binding a listener — useful for
@@ -129,13 +145,13 @@ async fn handle_get(
 
     match state.cas.get(&tenant_id, &key).await {
         Ok(Some(bytes)) => {
-            tracing::debug!(tenant_id = %tenant_id, key = %key, "cargo CAS hit");
+            tracing::debug!(tenant_hash = %hash_for_log(&tenant_id), key = %key, "cargo CAS hit");
             let mut response = Response::new(Body::from(bytes));
             *response.status_mut() = StatusCode::OK;
             response
         }
         Ok(None) => {
-            tracing::debug!(tenant_id = %tenant_id, key = %key, "cargo CAS miss");
+            tracing::debug!(tenant_hash = %hash_for_log(&tenant_id), key = %key, "cargo CAS miss");
             StatusCode::NOT_FOUND.into_response()
         }
         Err(CasError::Backend(msg)) => CargoAdapterError::Cas(msg).into_response(),
@@ -223,7 +239,7 @@ async fn handle_put(
 
     match state.cas.put(&tenant_id, &key, bytes).await {
         Ok(()) => {
-            tracing::debug!(tenant_id = %tenant_id, key = %key, "cargo CAS put");
+            tracing::debug!(tenant_hash = %hash_for_log(&tenant_id), key = %key, "cargo CAS put");
             StatusCode::OK.into_response()
         }
         Err(CasError::Backend(msg)) => CargoAdapterError::Cas(msg).into_response(),
@@ -271,3 +287,48 @@ impl IntoResponse for CargoAdapterError {
 
 #[doc(hidden)]
 pub fn _unused_marker(_: &SharedCasStore) {}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "tests are allowed to use these primitives"
+)]
+mod tests {
+    use super::*;
+
+    /// F4 regression: `hash_for_log` emits a short hex handle, not the
+    /// raw UUID, and is stable (same input → same output, different
+    /// input → different output).
+    #[test]
+    fn hash_for_log_is_short_hex_not_raw_uuid() {
+        let raw = "550e8400-e29b-41d4-a716-446655440000";
+        let handle = hash_for_log(raw);
+        // 16 hex chars (8 bytes).
+        assert_eq!(handle.len(), 16, "handle must be 16 hex chars");
+        assert!(
+            handle.bytes().all(|b| b.is_ascii_hexdigit()),
+            "handle must be hex"
+        );
+        // Must NOT be the raw UUID.
+        assert_ne!(handle, raw, "handle must not be the raw tenant id");
+        // Stability: same input always produces the same handle.
+        assert_eq!(handle, hash_for_log(raw), "hash_for_log must be stable");
+        // Different UUIDs produce different handles (collision-free for
+        // any realistic tenant space).
+        let other = hash_for_log("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+        assert_ne!(handle, other, "distinct UUIDs must produce distinct handles");
+    }
+
+    /// F4 regression: verify the first 8 bytes of SHA-256 match the
+    /// expected value for a known input.
+    #[test]
+    fn hash_for_log_matches_sha256_first_8_bytes() {
+        use sha2::{Digest as _, Sha256};
+        let input = "550e8400-e29b-41d4-a716-446655440000";
+        let full = Sha256::digest(input.as_bytes());
+        let expected: String = full.iter().take(8).map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hash_for_log(input), expected);
+    }
+}

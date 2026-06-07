@@ -111,10 +111,11 @@ pub const REQUIRED_ADMIN_SCOPE: &str = "corelink:admin:pilots";
 /// NOT the client-forgeable `x-admin-scope` header (which previously stood
 /// alone and let any caller self-assert admin).
 ///
-/// NOTE: the Worker does NOT currently strip a client-supplied
-/// `x-corelink-internal-auth` on the public `/v1/*` path (tracked
-/// separately). The gate is still effective because the secret VALUE
-/// cannot be forged — verification is a constant-time compare.
+/// Defense-in-depth: the Worker strips any client-supplied
+/// `x-corelink-internal-auth` header on the public `/v1/*` path
+/// (`x-corelink-internal-auth` is listed in `CLIENT_TRUST_HEADERS` and is
+/// removed before the request reaches the container). The constant-time gate
+/// below is a second independent layer — both must hold.
 pub const ADMIN_INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 
 /// Audit event type — emitted on `grant-tier` success.

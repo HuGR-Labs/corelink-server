@@ -95,7 +95,9 @@ fn build_request(token: &str, ip: &str, body: &Value) -> Request<Body> {
         .method("POST")
         .uri(format!("/v1/signup/pilot/{token}"))
         .header("content-type", "application/json")
-        .header("x-forwarded-for", ip)
+        // The rate-limit key now comes from the Worker-trusted `x-corelink-client-ip`
+        // (set from cf-connecting-ip); a client-forged `x-forwarded-for` is ignored.
+        .header("x-corelink-client-ip", ip)
         .body(Body::from(serde_json::to_vec(body).unwrap()))
         .unwrap()
 }

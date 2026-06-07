@@ -216,6 +216,11 @@ crons = [
 
 # Secrets: `wrangler secret put STRIPE_KEY` etc
 # - CLERK_SECRET_KEY
+# - CLERK_ISSUER_URL  — Clerk JWT issuer URL pin; read by worker/src/index.ts to
+#   validate the `iss` claim on inbound Clerk JWTs (prevents cross-instance token
+#   replay). Value is the Clerk instance issuer URL (e.g.
+#   `https://<instance>.clerk.accounts.dev`). Rotate on instance change or compromise.
+#   Set via: wrangler secret put CLERK_ISSUER_URL --env prod
 # - STRIPE_SECRET_KEY
 # - DATABASE_URL (Neon Postgres)
 # - PAT_SIGNING_KEY  — hex-encoded HMAC-SHA256 signing key (≥ 32 bytes decoded).

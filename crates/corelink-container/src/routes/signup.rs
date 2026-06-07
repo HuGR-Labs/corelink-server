@@ -37,7 +37,8 @@
 //! ```text
 //! POST /v1/signup/pilot/{token}
 //! Content-Type: application/json
-//! X-Forwarded-For: <client-ip>  (rate-limit anchor; optional)
+//! X-Corelink-Client-Ip: <client-ip>  (rate-limit anchor; set by the Worker
+//!                                      from cf-connecting-ip; NOT client-controlled)
 //!
 //! {
 //!   "email": "...",
@@ -82,7 +83,9 @@
 //! - Audit emit BEFORE response (fail-CLOSED per
 //!   `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER`).
 //! - Rate-limit gate at the route boundary uses the canonical
-//!   `corelink-ratelimit::RateLimiter` trait (per-IP bucket).
+//!   `corelink-ratelimit::RateLimiter` trait (per-IP bucket, keyed on
+//!   the server-trusted `x-corelink-client-ip` header; missing header
+//!   collapses to the shared `"_no_ip"` bucket — fail-CLOSED).
 //!
 //! # Audit cross-reference
 //!
@@ -706,18 +709,24 @@ pub fn router(state: SignupRouteState) -> Router {
         .with_state(state)
 }
 
-/// Extract the client IP for the per-IP rate-limit bucket. Prefers
-/// `X-Forwarded-For` (production binds Cloudflare's edge IP here);
-/// falls back to the literal `"unknown"` if the header is missing or
-/// malformed (rate-limit gate still applies per-bucket).
+/// Extract the client IP for the per-IP rate-limit bucket.
+///
+/// Reads **`x-corelink-client-ip`** — a server-trusted header set by
+/// the Cloudflare Worker from `cf-connecting-ip` (which a client
+/// cannot forge). The client-controlled `x-forwarded-for` header is
+/// intentionally ignored to prevent rate-limit bypass via header
+/// rotation.
+///
+/// Fail-CLOSED: if `x-corelink-client-ip` is absent or empty, returns
+/// the shared sentinel `"_no_ip"` so all such requests share a single
+/// throttle bucket rather than receiving unlimited unique keys.
 fn extract_client_ip(headers: &HeaderMap) -> String {
     headers
-        .get("x-forwarded-for")
+        .get("x-corelink-client-ip")
         .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map_or_else(|| "unknown".to_owned(), str::to_owned)
+        .map_or_else(|| "_no_ip".to_owned(), str::to_owned)
 }
 
 /// Tenant id allocated for the per-IP rate-limit bucket. The pilot
@@ -1039,5 +1048,81 @@ mod tests {
     #[test]
     fn router_builds() {
         let _r = router(build_state());
+    }
+
+    // ── F1 regressions: extract_client_ip ─────────────────────────────────────
+
+    /// F1: `x-corelink-client-ip` is read as the trusted rate-limit key.
+    #[test]
+    fn extract_client_ip_reads_trusted_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-corelink-client-ip",
+            "203.0.113.42".parse().unwrap(),
+        );
+        assert_eq!(extract_client_ip(&headers), "203.0.113.42");
+    }
+
+    /// F1: a client-forged `x-forwarded-for` is completely ignored.
+    #[test]
+    fn extract_client_ip_ignores_x_forwarded_for() {
+        let mut headers = HeaderMap::new();
+        // Only XFF is present; x-corelink-client-ip is absent.
+        headers.insert(
+            "x-forwarded-for",
+            "1.2.3.4, 5.6.7.8".parse().unwrap(),
+        );
+        // Must NOT return "1.2.3.4" (or any value from XFF).
+        // Must return the shared no-ip sentinel.
+        assert_eq!(
+            extract_client_ip(&headers),
+            "_no_ip",
+            "forged x-forwarded-for must be ignored; missing trusted header must collapse to _no_ip"
+        );
+    }
+
+    /// F1: both XFF and the trusted header are present — only the
+    /// trusted header wins.
+    #[test]
+    fn extract_client_ip_trusted_header_wins_over_xff() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            "10.0.0.1, 10.0.0.2".parse().unwrap(),
+        );
+        headers.insert(
+            "x-corelink-client-ip",
+            "203.0.113.99".parse().unwrap(),
+        );
+        assert_eq!(
+            extract_client_ip(&headers),
+            "203.0.113.99",
+            "trusted header must win; XFF must not influence the bucket key"
+        );
+    }
+
+    /// F1: absent `x-corelink-client-ip` → shared `"_no_ip"` sentinel
+    /// (fail-CLOSED: one shared bucket, not unlimited unique keys).
+    #[test]
+    fn extract_client_ip_missing_header_returns_shared_no_ip_bucket() {
+        let headers = HeaderMap::new();
+        assert_eq!(
+            extract_client_ip(&headers),
+            "_no_ip",
+            "missing trusted header must yield the shared _no_ip bucket"
+        );
+    }
+
+    /// F1: empty-value `x-corelink-client-ip` → shared `"_no_ip"` sentinel.
+    #[test]
+    fn extract_client_ip_empty_header_returns_shared_no_ip_bucket() {
+        let mut headers = HeaderMap::new();
+        // An empty (whitespace-only) value must also collapse.
+        headers.insert("x-corelink-client-ip", "   ".parse().unwrap());
+        assert_eq!(
+            extract_client_ip(&headers),
+            "_no_ip",
+            "empty trusted header must yield the shared _no_ip bucket"
+        );
     }
 }

@@ -201,9 +201,35 @@ fn header_str(headers: &HeaderMap, name: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_owned())
 }
 
-/// Extract `x-corelink-tenant-id`; fail-CLOSED to `"_unknown"`.
-fn caller_tenant(headers: &HeaderMap) -> String {
-    header_str(headers, "x-corelink-tenant-id", "_unknown")
+/// Sentinels the Worker/DO use for non-tenant traffic — never a real tenant.
+/// Mirrors `auth_tenant::AuthTenant`'s sentinel set so every cache surface
+/// rejects the same non-authenticated values.
+const TENANT_SENTINELS: &[&str] = &["_anonymous", "_unknown", "_system", "_pending"];
+
+/// Extract the authenticated `x-corelink-tenant-id`, **fail-CLOSED**.
+///
+/// F-defense: the previous version fell back to the `"_unknown"` sentinel on a
+/// missing/empty header, so an unauthenticated request silently flowed into the
+/// bridge under a sentinel tenant. We now mirror `auth_tenant::AuthTenant`:
+/// a missing/empty/sentinel value is an `Err(())` that the handler maps to a
+/// hard `401`. Only a concrete, non-sentinel tenant is returned. (The bridge's
+/// `instance == caller_tenant` cross-tenant check still applies on top of this.)
+fn caller_tenant(headers: &HeaderMap) -> Result<String, ()> {
+    let raw = headers
+        .get("x-corelink-tenant-id")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .unwrap_or("");
+    if raw.is_empty() || TENANT_SENTINELS.contains(&raw) {
+        return Err(());
+    }
+    Ok(raw.to_owned())
+}
+
+/// Canonical fail-CLOSED 401 for a missing/sentinel authenticated tenant.
+/// Does not leak which condition tripped.
+fn unauthenticated_tenant() -> axum::response::Response {
+    (StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response()
 }
 
 /// Extract `x-corelink-token-prefix` as principal; fail-CLOSED to `"_unknown"`.
@@ -274,7 +300,12 @@ async fn handle_cas_read(
     if !scope.can_read() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
-    let tenant = caller_tenant(&headers);
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
+    // BEFORE any storage access — do not trust a `"_unknown"` default.
+    let tenant = match caller_tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
     let p = principal(&headers);
     let digest = match parse_digest(&hash, &size) {
         Ok(d) => d,
@@ -313,7 +344,12 @@ async fn handle_cas_write(
     if !scope.can_write() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
-    let tenant = caller_tenant(&headers);
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
+    // BEFORE any storage access.
+    let tenant = match caller_tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
     let p = principal(&headers);
     let digest = match parse_digest(&hash, &size) {
         Ok(d) => d,
@@ -346,7 +382,12 @@ async fn handle_ac_read(
     if !scope.can_read() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
-    let tenant = caller_tenant(&headers);
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
+    // BEFORE any storage access.
+    let tenant = match caller_tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
     let p = principal(&headers);
     let digest = match parse_digest(&hash, &size) {
         Ok(d) => d,
@@ -379,7 +420,12 @@ async fn handle_ac_write(
     if !scope.can_write() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
-    let tenant = caller_tenant(&headers);
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
+    // BEFORE any storage access.
+    let tenant = match caller_tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
     let p = principal(&headers);
     let digest = match parse_digest(&hash, &size) {
         Ok(d) => d,
@@ -412,7 +458,12 @@ async fn handle_find_missing(
     if !scope.can_read() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
-    let tenant = caller_tenant(&headers);
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
+    // BEFORE any body parse or storage access.
+    let tenant = match caller_tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
     let p = principal(&headers);
 
     // Parse + validate the JSON body.
@@ -952,5 +1003,96 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+    }
+
+    // ── F-defense: fail-CLOSED on missing / sentinel tenant header ─────────────
+    //
+    // The previous `caller_tenant` fell back to the `"_unknown"` sentinel, so
+    // an unauthenticated request flowed into the bridge. These prove every
+    // Bazel surface now rejects 401 (and BEFORE any storage / body parse) when
+    // the authenticated-tenant header is absent or a sentinel — even with a
+    // valid cache scope.
+
+    #[tokio::test]
+    async fn cas_read_missing_tenant_header_returns_401() {
+        let app = router(make_state());
+        let uri = format!("/bazel/v2/{TENANT}/blobs/{HASH_A}/10");
+        let req = Request::builder()
+            .uri(&uri)
+            .method("GET")
+            // No x-corelink-tenant-id; valid scope so the 401 is the tenant
+            // gate, not the scope gate.
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn cas_read_sentinel_tenant_returns_401() {
+        let app = router(make_state());
+        let uri = format!("/bazel/v2/_unknown/blobs/{HASH_A}/10");
+        let req = Request::builder()
+            .uri(&uri)
+            .method("GET")
+            // Sentinel tenant header must be rejected even though instance
+            // == header (so the cross-tenant check would otherwise pass).
+            .header("x-corelink-tenant-id", "_unknown")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn cas_write_missing_tenant_header_returns_401() {
+        let app = router(make_state());
+        let payload = b"no-tenant".to_vec();
+        let hash = fake_hash(&payload);
+        let size = payload.len();
+        let uri = format!("/bazel/v2/{TENANT}/uploads/u1/blobs/{hash}/{size}");
+        let req = Request::builder()
+            .uri(&uri)
+            .method("PUT")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::from(payload))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn ac_read_missing_tenant_header_returns_401() {
+        let app = router(make_state());
+        let uri = format!("/bazel/v2/{TENANT}/blobs/ac/{HASH_A}/10");
+        let req = Request::builder()
+            .uri(&uri)
+            .method("GET")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn find_missing_missing_tenant_header_returns_401() {
+        let app = router(make_state());
+        // A valid JSON body — the 401 must fire BEFORE the body is parsed.
+        let body = serde_json::json!({
+            "blobDigests": [{"hash": HASH_A, "sizeBytes": 5}]
+        })
+        .to_string();
+        let req = Request::builder()
+            .uri(format!("/bazel/v2/{TENANT}/findMissingBlobs"))
+            .method("POST")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 }
