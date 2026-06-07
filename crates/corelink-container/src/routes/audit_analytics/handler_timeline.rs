@@ -1,18 +1,28 @@
 //! Axum handler for `GET /v1/audit/analytics/timeline`.
 //!
 //! Split from monolithic `audit_analytics.rs` (wave-33 stage 2.PRE-B.2.c).
-//! Verbatim move; no behavioural change.
+//!
+//! Security fix (`fix/sec-critical-public-exposure`): the authenticated
+//! tenant is the DO-injected `x-corelink-tenant-id` header, bound by the
+//! [`crate::auth_tenant::AuthTenant`] extractor (fail-CLOSED — the
+//! handler cannot run without a concrete, non-sentinel tenant), mirroring
+//! `routes/audit_export/handler.rs`. The previous implementation derived
+//! the tenant from the CLIENT-forgeable `x-tenant-id` header via
+//! `parse_tenant_header`, which the Worker never sets/strips — a forged
+//! `x-tenant-id: <victim>` read any tenant's audit analytics. The tenant
+//! is now SOLELY `auth.0`; `x-tenant-id` is no longer an authority.
 
 #![forbid(unsafe_code)]
 
 use axum::{
     extract::{Extension, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::IntoResponse,
 };
+use uuid::Uuid;
 
 use super::audit_sink::emit_or_503;
-use super::rate_limit::{parse_tenant_header, rate_limit_check};
+use super::rate_limit::rate_limit_check;
 use super::shadow_factory::resolve_shadow_via_prelude;
 use super::state::AuditAnalyticsRouteState;
 use super::types::{
@@ -21,15 +31,25 @@ use super::types::{
 };
 
 /// Internal handler for `/timeline`.
+///
+/// The authenticated tenant is the PAT-resolved `x-corelink-tenant-id`
+/// header bound by the [`crate::auth_tenant::AuthTenant`] extractor (the
+/// SOLE isolation key — the extractor already guarantees a non-empty,
+/// non-sentinel value; parse it as a UUID, 400 on a non-UUID, mirroring
+/// `audit_export`). Axum 0.7 extractor ordering: `State`, then
+/// `AuthTenant` / `Option<Extension>` (both `FromRequestParts`), then
+/// `Query` last (the sole `FromRequest`).
 pub(super) async fn handle_timeline(
     State(state): State<AuditAnalyticsRouteState>,
+    auth: crate::auth_tenant::AuthTenant,
     prelude: Option<Extension<RequestPrelude>>,
-    headers: HeaderMap,
     Query(query): Query<TimelineQuery>,
 ) -> axum::response::Response {
-    let tenant = match parse_tenant_header(&headers) {
+    let tenant = match Uuid::parse_str(auth.0.trim()) {
         Ok(t) => t,
-        Err(resp) => return resp,
+        Err(_) => {
+            return (StatusCode::BAD_REQUEST, "tenant: invalid uuid in header").into_response();
+        }
     };
     if query.from >= query.to {
         return emit_or_503(

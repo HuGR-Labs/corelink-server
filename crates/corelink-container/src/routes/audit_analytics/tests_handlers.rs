@@ -23,7 +23,7 @@ use std::sync::Arc;
 use axum::{
     body::to_bytes,
     extract::{Query, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::IntoResponse,
 };
 use corelink_analytics::Region;
@@ -41,7 +41,8 @@ use super::tests_common::{
     state_with_tenant_mismatch_and_failing_audit, AggregateTimelineFailsShadow,
     FailingAnalyticsAuditSink, OneTenantFactory,
 };
-use super::types::{EventCountQuery, TimelineQuery, EVENT_TYPE_ANALYTICS_QUERY, TENANT_ID_HEADER};
+use super::types::{EventCountQuery, TimelineQuery, EVENT_TYPE_ANALYTICS_QUERY};
+use crate::auth_tenant::AuthTenant;
 
 /// Wave-20 fix-stream (finding B-P1-02 + B-P1-03 closure).
 ///
@@ -63,17 +64,16 @@ async fn tenant_isolation_violation_returns_503_on_audit_sink_failure() {
     }
     let state = state_with_tenant_mismatch_and_failing_audit(requested, bound);
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        TENANT_ID_HEADER,
-        requested.to_string().parse().expect("header parse"),
-    );
+    // Authenticated tenant is now the `x-corelink-tenant-id`-bound
+    // `AuthTenant` (security fix `fix/sec-critical-public-exposure`),
+    // not the forgeable `x-tenant-id` header.
+    let auth = AuthTenant(requested.to_string());
     let query = EventCountQuery {
         from: 0,
         to: 1_000,
         event_type: None,
     };
-    let resp = handle_event_count(State(state.clone()), None, headers.clone(), Query(query))
+    let resp = handle_event_count(State(state.clone()), auth.clone(), None, Query(query))
         .await
         .into_response();
     assert_eq!(
@@ -90,7 +90,7 @@ async fn tenant_isolation_violation_returns_503_on_audit_sink_failure() {
         to: 1_000,
         granularity: Some(100),
     };
-    let resp2 = handle_timeline(State(state), None, headers, Query(tq))
+    let resp2 = handle_timeline(State(state), auth, None, Query(tq))
         .await
         .into_response();
     assert_eq!(
@@ -119,17 +119,13 @@ async fn handle_timeline_error_arm_returns_503_on_audit_sink_failure() {
     let mut state = build_state(factory);
     state.audit_sink = Arc::new(FailingAnalyticsAuditSink);
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        TENANT_ID_HEADER,
-        tenant.to_string().parse().expect("header parse"),
-    );
+    let auth = AuthTenant(tenant.to_string());
     let tq = TimelineQuery {
         from: 0,
         to: 1_000,
         granularity: Some(100),
     };
-    let resp = handle_timeline(State(state), None, headers, Query(tq))
+    let resp = handle_timeline(State(state), auth, None, Query(tq))
         .await
         .into_response();
     assert_eq!(
@@ -174,11 +170,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
     let fake = Arc::new(InMemoryFakeWallClock::at_unix_ms(1_700_000_000_000));
     state.wall_clock = fake.clone() as Arc<dyn WallClock>;
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        TENANT_ID_HEADER,
-        tenant.to_string().parse().expect("header parse"),
-    );
+    let auth = AuthTenant(tenant.to_string());
     // Stationary query window — the legacy `to_ms`-driven path
     // would let this loop forever; the wave-21 wall-clock-driven
     // path correctly exhausts after `burst=10`.
@@ -194,8 +186,8 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
     for _ in 0..10 {
         let resp = handle_event_count(
             State(state.clone()),
+            auth.clone(),
             None,
-            headers.clone(),
             Query(query.clone()),
         )
         .await
@@ -212,8 +204,8 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
     // 11th request — bucket empty, wall clock still pinned → 429.
     let resp_denied = handle_event_count(
         State(state.clone()),
+        auth.clone(),
         None,
-        headers.clone(),
         Query(query.clone()),
     )
     .await
@@ -228,7 +220,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
     // refilled (refill=1 token/s × 60s = 60 tokens, clamped to
     // burst=10). The next request MUST allow.
     fake.advance(std::time::Duration::from_secs(60));
-    let resp_after_advance = handle_event_count(State(state), None, headers, Query(query))
+    let resp_after_advance = handle_event_count(State(state), auth, None, Query(query))
         .await
         .into_response();
     assert_eq!(
@@ -275,18 +267,14 @@ async fn analytics_wall_clock_saturated_to_zero_returns_503_and_emits_clock_unav
     let fake = Arc::new(InMemoryFakeWallClock::at_unix_ms(0));
     state.wall_clock = fake as Arc<dyn WallClock>;
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        TENANT_ID_HEADER,
-        tenant.to_string().parse().expect("header parse"),
-    );
+    let auth = AuthTenant(tenant.to_string());
     let query = EventCountQuery {
         from: 0,
         to: 1_000,
         event_type: None,
     };
 
-    let resp = handle_event_count(State(state.clone()), None, headers.clone(), Query(query))
+    let resp = handle_event_count(State(state.clone()), auth, None, Query(query))
         .await
         .into_response();
     assert_eq!(

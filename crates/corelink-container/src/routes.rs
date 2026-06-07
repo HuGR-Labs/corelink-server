@@ -192,16 +192,34 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // trait objects so all four route surfaces read from / write to the
     // same backing store. No new R2 connections are opened.
     let bazel_state = bazel_v2::build_handlers_from(cas_read, cas_write, ac_lookup, ac_update);
+    // SECURITY (admin control-plane gate): the `/v1/admin/*` and
+    // `/v1/admin/pilots/*` surfaces are OPERATOR-ONLY — they must NOT be
+    // reachable by any authenticated tenant PAT. We gate them behind the
+    // `CORELINK_INTERNAL_AUTH_KEY` shared secret, exactly like
+    // `/_internal/pat/mint`. The key is threaded into each route state;
+    // when it is unset at boot the handlers fail CLOSED (403) and never
+    // run privileged logic. (We always-mount and fail-closed rather than
+    // conditionally mount, because `build_with_factory` returns a
+    // non-optional `Router` and dev/CI must still construct it.)
+    let admin_internal_auth_key = admin::internal_auth_key_from_env();
+    if admin_internal_auth_key.is_none() {
+        tracing::warn!(
+            "CORELINK_INTERNAL_AUTH_KEY unset; /v1/admin/* and /v1/admin/pilots/* \
+             mounted but FAIL CLOSED (403) — operator gate not configured (dev/CI mode)"
+        );
+    }
     let (admin_read, admin_mutate) = admin::build_handlers();
     let admin_state = admin::AdminRouteState {
         read: admin_read,
         mutate: admin_mutate,
+        internal_auth_key: admin_internal_auth_key.clone(),
     };
     let (pilot_store, pilot_audit) = admin_pilot::build_handlers();
     let pilot_admin_state = admin_pilot::PilotAdminRouteState {
         store: pilot_store,
         audit_sink: pilot_audit,
         wall_clock: crate::wall_clock::default_wall_clock(),
+        internal_auth_key: admin_internal_auth_key,
     };
     let audit_export_state = audit_export::build_state();
     let audit_analytics_state = audit_analytics::build_state(shadow_factory);
