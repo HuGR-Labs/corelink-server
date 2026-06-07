@@ -84,3 +84,7 @@ worker-configuration.d.ts
 # TechLead orchestrator local state (machine-local; never committed — also
 # enforced by the techlead git-hygiene-guard hook).
 .techlead/
+
+# npm lockfiles — this repo uses pnpm (pnpm-lock.yaml); never commit package-lock.json
+package-lock.json
+**/package-lock.json
