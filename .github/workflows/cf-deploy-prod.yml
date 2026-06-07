@@ -91,6 +91,16 @@ jobs:
           # Hard-required secrets for prod. If any of these are missing in
           # Cloudflare, fail before deploying — better to short-circuit than
           # to ship a Worker that 5xx's on first request.
+          #
+          # SLACK_WEBHOOK_URL_* are intentionally NOT gated: operational
+          # alerting currently routes via PagerDuty (PAGERDUTY_ROUTING_KEY),
+          # and direct Slack delivery is a not-yet-wired enhancement
+          # (docs/internal/secrets-checklist.md §"not yet wired into a code
+          # consumer"). corelink-slack-real degrades gracefully when a
+          # channel's webhook is unset (WebhookRegistry::from_env omits it,
+          # dispatch returns ChannelUnconfigured — no startup failure). Re-add
+          # the SLACK_WEBHOOK_URL_* entries here if/when Slack becomes a
+          # load-bearing alert path so the deploy can't ship without them.
           REQUIRED=(
             STRIPE_SECRET_KEY
             STRIPE_WEBHOOK_SECRET
@@ -98,9 +108,6 @@ jobs:
             STRIPE_PRICE_ID_PRO
             CLERK_SECRET_KEY
             PAGERDUTY_ROUTING_KEY
-            SLACK_WEBHOOK_URL_ALERTS_SEV1
-            SLACK_WEBHOOK_URL_ALERTS_SEV2
-            SLACK_WEBHOOK_URL_BREACH_NOTIFICATIONS
           )
           MISSING=0
           for name in "${REQUIRED[@]}"; do
