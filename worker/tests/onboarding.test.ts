@@ -293,4 +293,64 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
     expect(captured.req).toBeDefined();
     expect(captured.req!.headers.get("x-corelink-tenant-id")).toBe("acme-default");
   });
+
+  // ── M2 issuer-pin tests ───────────────────────────────────────────────────
+
+  it("M2: accepts (200) when CLERK_ISSUER_URL is set and iss matches exactly", async () => {
+    // Exact-pin mode: CLERK_ISSUER_URL is present and the token's iss equals it.
+    const ISSUER = "https://clerk.humangr.com";
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      azp: "https://corelink-admin.humangr.com",
+      iss: ISSUER,
+    } as never);
+    const captured: { req?: Request } = {};
+    const env: Env = {
+      ...makeOnbEnv({ captured, clerkUserToTenant: new Map([["user_abc", "acme-default"]]) }),
+      CLERK_ISSUER_URL: ISSUER,
+    };
+
+    const resp = await onbFetch(env, { Authorization: "Bearer pinned-issuer.jwt" });
+
+    expect(resp.status).toBe(200);
+    expect(captured.req).toBeDefined();
+    expect(captured.req!.headers.get("x-corelink-tenant-id")).toBe("acme-default");
+  });
+
+  it("M2: rejects (401) when CLERK_ISSUER_URL is set and iss does NOT match", async () => {
+    // Exact-pin mode: token's iss is a different (possibly spoofed) issuer.
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      azp: "https://corelink-admin.humangr.com",
+      iss: "https://attacker.clerk.accounts.dev",
+    } as never);
+    const captured: { req?: Request } = {};
+    const env: Env = {
+      ...makeOnbEnv({ captured, clerkUserToTenant: new Map([["user_abc", "acme-default"]]) }),
+      CLERK_ISSUER_URL: "https://clerk.humangr.com",
+    };
+
+    const resp = await onbFetch(env, { Authorization: "Bearer wrong-issuer.jwt" });
+
+    expect(resp.status).toBe(401);
+    expect(captured.req).toBeUndefined();
+  });
+
+  it("M2: falls back to shape-check (passes) when CLERK_ISSUER_URL is absent", async () => {
+    // No CLERK_ISSUER_URL set — shape-check fallback must accept a valid Clerk issuer.
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_abc",
+      azp: "https://corelink-admin.humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request } = {};
+    // makeOnbEnv does not set CLERK_ISSUER_URL — shape-check fallback applies.
+    const env = makeOnbEnv({ captured, clerkUserToTenant: new Map([["user_abc", "acme-default"]]) });
+
+    const resp = await onbFetch(env, { Authorization: "Bearer shape-check.jwt" });
+
+    expect(resp.status).toBe(200);
+    expect(captured.req).toBeDefined();
+    expect(captured.req!.headers.get("x-corelink-tenant-id")).toBe("acme-default");
+  });
 });

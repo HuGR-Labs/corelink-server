@@ -23,6 +23,14 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **Route-layer negative tests + Clerk issuer exact-pin (pentest follow-ups).**
+  Added HTTP route-layer negative tests for CAS / AC / audit-export proving the
+  `AuthTenant` wiring: missing `x-corelink-tenant-id` → 401, path/query tenant ≠
+  header → 403 (closes the PR #150 cold-review coverage gap — a refactor dropping
+  the extractor now fails CI). Completed the onboarding Clerk JWT issuer pin: when
+  the `CLERK_ISSUER_URL` secret is set the `iss` claim must equal it exactly
+  (else 401); without it the transitional https/"clerk" shape-check applies. (Owner
+  activates by `wrangler secret put CLERK_ISSUER_URL --env prod`.)
 - **internal_pat + hygiene hardening (pentest 2026-06-06 follow-ups).** (M2)
   `/_internal/pat/mint`'s `x-corelink-internal-auth` verify no longer leaks the
   secret length via a non-constant-time length short-circuit — now a single
