@@ -37,7 +37,7 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -48,6 +48,57 @@ use corelink_handler_admin::{
     InMemoryAuditSink, InMemorySliObserver, MutateOp,
 };
 use serde::Deserialize;
+use subtle::ConstantTimeEq;
+
+/// Request header carrying the operator-only shared secret. The admin
+/// control plane is operator-only (mirrors `/_internal/pat/mint`): it is
+/// gated behind the `CORELINK_INTERNAL_AUTH_KEY` shared secret, NOT
+/// reachable by any authenticated tenant PAT.
+///
+/// NOTE: the Worker does NOT currently strip a client-supplied
+/// `x-corelink-internal-auth` on the public `/v1/*` path (tracked
+/// separately). The gate here is still effective because the secret VALUE
+/// cannot be forged — verification is a constant-time compare below.
+pub const ADMIN_INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
+
+/// Constant-time verification of the operator shared secret.
+///
+/// Fail-CLOSED:
+/// - `expected` is `None` (key not configured at boot) → `false`. The
+///   admin plane never runs privileged logic without a configured gate.
+/// - header absent / wrong → `false`.
+///
+/// The compare pads the provided value to the expected length and runs a
+/// single `ct_eq` so the secret LENGTH is not leaked via early return
+/// (improves on the length-short-circuit nit in `internal_pat`).
+#[must_use]
+fn internal_auth_ok(expected: Option<&Arc<str>>, headers: &HeaderMap) -> bool {
+    let Some(expected) = expected else {
+        return false;
+    };
+    let provided = headers
+        .get(ADMIN_INTERNAL_AUTH_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let expected_bytes = expected.as_bytes();
+    let provided_bytes = provided.as_bytes();
+    // Pad provided to expected length to run ct_eq on equal-length slices,
+    // then fold in the real length-equality so a longer/shorter provided
+    // value can never match.
+    let provided_padded: Vec<u8> = if provided_bytes.len() >= expected_bytes.len() {
+        provided_bytes
+            .get(..expected_bytes.len())
+            .unwrap_or(&[])
+            .to_vec()
+    } else {
+        let mut v = provided_bytes.to_vec();
+        v.resize(expected_bytes.len(), 0);
+        v
+    };
+    let content_ok = expected_bytes.ct_eq(&provided_padded).unwrap_u8();
+    let len_ok = u8::from(expected_bytes.len() == provided_bytes.len());
+    (content_ok & len_ok) == 1
+}
 
 /// Canonical admin read route path (axum-0.7 / matchit-0.7 `:name` capture).
 ///
@@ -70,6 +121,11 @@ pub struct AdminRouteState {
     pub read: Arc<dyn AdminReadHandler>,
     /// Mutate handler (separate trait object — see crate-level docs).
     pub mutate: Arc<dyn AdminMutateHandler>,
+    /// Operator-only shared secret for the `x-corelink-internal-auth`
+    /// gate (sourced from `CORELINK_INTERNAL_AUTH_KEY`). `None` when the
+    /// key is unset at boot → every admin handler fails CLOSED (403)
+    /// (mirrors the `internal_pat` fail-CLOSED posture).
+    pub internal_auth_key: Option<Arc<str>>,
 }
 
 impl core::fmt::Debug for AdminRouteState {
@@ -309,6 +365,25 @@ impl AdminMutateHandler for D1AdminHandler {
     }
 }
 
+/// Read the operator-only shared secret from the environment.
+///
+/// Returns `Some` only when `CORELINK_INTERNAL_AUTH_KEY` is set and at
+/// least 16 chars (mirrors `internal_pat::build_state_from_env`). When
+/// `None`, the admin handlers fail CLOSED (403) — privileged logic never
+/// runs without a configured gate.
+#[must_use]
+pub fn internal_auth_key_from_env() -> Option<Arc<str>> {
+    let key = std::env::var("CORELINK_INTERNAL_AUTH_KEY").ok()?;
+    if key.len() < 16 {
+        tracing::warn!(
+            "CORELINK_INTERNAL_AUTH_KEY too short (< 16 chars); \
+             /v1/admin/* handlers will fail CLOSED (403)"
+        );
+        return None;
+    }
+    Some(Arc::from(key.as_str()))
+}
+
 /// Build the axum `Router` exposing the admin read + mutate routes.
 pub fn router(state: AdminRouteState) -> Router {
     Router::new()
@@ -381,17 +456,85 @@ impl AdminMutateBody {
             at_unix_ms,
         ))
     }
+
+    /// Parse the body into an [`AdminMutateRequest`] for the
+    /// **operator-gated** route path.
+    ///
+    /// Unlike [`into_request`](Self::into_request), the admin assertion
+    /// is NOT taken from the client JSON: the caller already cleared the
+    /// `x-corelink-internal-auth` gate, so the initiator principal is the
+    /// supplied trusted `operator` and `is_admin` is forced `true`. The
+    /// body's `initiator` / `initiator_is_admin` fields are IGNORED for
+    /// the auth decision (kept on the struct only for wire-compat).
+    ///
+    /// Dual-approval (`approval_id` + `approver`) is still parsed and
+    /// enforced downstream; the handler rejects self-approval, so the
+    /// `approver` must differ from `operator`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a static error string when the op-kind / required-field
+    /// combination is invalid (same rules as [`into_request`](Self::into_request)).
+    pub fn into_request_gated(
+        self,
+        operator: &str,
+        at_unix_ms: u64,
+    ) -> Result<AdminMutateRequest, &'static str> {
+        let op = match self.op_kind.as_str() {
+            "set_tenant_tier" => {
+                let tenant = self.tenant.ok_or("set_tenant_tier requires tenant")?;
+                let tier = self.tier.ok_or("set_tenant_tier requires tier")?;
+                MutateOp::set_tenant_tier(tenant, tier)
+            }
+            "rotate_admin_token" => {
+                let token_id = self
+                    .token_id
+                    .ok_or("rotate_admin_token requires token_id")?;
+                MutateOp::rotate_admin_token(token_id)
+            }
+            _ => return Err("unknown op_kind"),
+        };
+        let approval = match (self.approval_id, self.approver) {
+            (Some(id), Some(approver)) => Some(DualApprovalToken::new(id, approver)),
+            (None, None) => None,
+            _ => return Err("approval_id + approver must be set together"),
+        };
+        Ok(AdminMutateRequest::new(
+            op,
+            operator.to_owned(),
+            // is_admin is derived from the internal-auth gate, NOT the body.
+            true,
+            approval,
+            at_unix_ms,
+        ))
+    }
 }
 
 /// `GET /v1/admin/read/:resource` handler.
 async fn handle_read(
     State(state): State<AdminRouteState>,
+    headers: HeaderMap,
     Path(resource): Path<String>,
 ) -> impl IntoResponse {
+    // Operator-only gate (fail-CLOSED). The admin control plane is NOT
+    // reachable by tenant PATs: only a caller holding the
+    // `CORELINK_INTERNAL_AUTH_KEY` shared secret (the operator, via the
+    // Worker→DO→container hop) may read admin records. Absent/wrong
+    // secret, or unconfigured key → 403 BEFORE any handler logic. The
+    // handler's own ReadAttempted audit row is only emitted once the
+    // gate passes; on the gate-fail path the SEC signal is the structured
+    // warning below (no per-tenant audit sink exists at this boundary).
+    if !internal_auth_ok(state.internal_auth_key.as_ref(), &headers) {
+        tracing::warn!(
+            event = "AdminReadUnauthorized",
+            "admin read rejected: missing/invalid x-corelink-internal-auth (fail-CLOSED)"
+        );
+        return (StatusCode::FORBIDDEN, "forbidden").into_response();
+    }
     let now_ms = 0u64;
-    // Demo wire-up: the auth middleware (production) injects the
-    // principal + is_admin flag; here we accept the resource path
-    // directly and assume an admin principal.
+    // The caller is the trusted operator (it cleared the internal-auth
+    // gate above), so we derive the admin principal from the gated
+    // context — NOT from any client-supplied field.
     let req = AdminReadRequest::new(resource, "admin@root", true, now_ms);
     match state.read.read(req) {
         Ok(resp) => (StatusCode::OK, resp.body).into_response(),
@@ -399,13 +542,36 @@ async fn handle_read(
     }
 }
 
+/// Principal recorded for operator-gated admin mutations. The admin
+/// assertion is derived from the internal-auth gate, NEVER from the
+/// client JSON body.
+const ADMIN_OPERATOR_PRINCIPAL: &str = "operator@internal";
+
 /// `POST /v1/admin/mutate` handler.
 async fn handle_mutate(
     State(state): State<AdminRouteState>,
+    headers: HeaderMap,
     Json(body): Json<AdminMutateBody>,
 ) -> impl IntoResponse {
+    // Operator-only gate (fail-CLOSED). The previous version read
+    // `initiator_is_admin` from the JSON BODY, letting any caller
+    // self-assert admin. That is removed: the admin assertion now comes
+    // ONLY from clearing this internal-auth gate.
+    if !internal_auth_ok(state.internal_auth_key.as_ref(), &headers) {
+        tracing::warn!(
+            event = "AdminMutateUnauthorized",
+            "admin mutate rejected: missing/invalid x-corelink-internal-auth (fail-CLOSED)"
+        );
+        return (StatusCode::FORBIDDEN, "forbidden").into_response();
+    }
     let now_ms = 0u64;
-    let req = match body.into_request(now_ms) {
+    // Build the request from the body's OPERATION fields only. The
+    // initiator principal + is_admin flag are derived from the gated
+    // operator context (is_admin = true), NOT from the body. Dual-
+    // approval (approval_id + approver) is still honoured from the body
+    // and is enforced by the handler — the approver must differ from the
+    // operator principal.
+    let req = match body.into_request_gated(ADMIN_OPERATOR_PRINCIPAL, now_ms) {
         Ok(r) => r,
         Err(msg) => return (StatusCode::BAD_REQUEST, msg).into_response(),
     };
@@ -459,7 +625,19 @@ mod tests {
         let shared = Arc::new(InMemoryAdminHandler::new(audit.clone(), sli.clone()));
         let read: Arc<dyn AdminReadHandler> = shared.clone();
         let mutate: Arc<dyn AdminMutateHandler> = shared.clone();
-        (audit, sli, shared, AdminRouteState { read, mutate })
+        (
+            audit,
+            sli,
+            shared,
+            AdminRouteState {
+                read,
+                mutate,
+                // Tests exercise the handler trait directly; a configured
+                // key here keeps the router constructable. Gate behaviour
+                // is covered by the internal_auth_ok unit tests below.
+                internal_auth_key: Some(Arc::from("test-internal-auth-key-32-bytes-x")),
+            },
+        )
     }
 
     #[test]
@@ -661,5 +839,72 @@ mod tests {
         };
         let err = body.into_request(0).expect_err("missing tier");
         assert!(err.contains("tier"));
+    }
+
+    /// The operator gate fails CLOSED when the key is unconfigured,
+    /// regardless of any header the client supplies.
+    #[test]
+    fn internal_auth_fails_closed_when_key_unset() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ADMIN_INTERNAL_AUTH_HEADER,
+            "anything".parse().expect("header"),
+        );
+        assert!(!internal_auth_ok(None, &headers));
+    }
+
+    /// Absent / wrong / right header behaviour against a configured key.
+    #[test]
+    fn internal_auth_matches_only_exact_secret() {
+        let key: Arc<str> = Arc::from("test-internal-auth-key-32-bytes-x");
+        // Absent header → reject.
+        let empty = HeaderMap::new();
+        assert!(!internal_auth_ok(Some(&key), &empty));
+        // Wrong value → reject.
+        let mut wrong = HeaderMap::new();
+        wrong.insert(ADMIN_INTERNAL_AUTH_HEADER, "wrong".parse().expect("header"));
+        assert!(!internal_auth_ok(Some(&key), &wrong));
+        // Prefix of the real key (length differs) → reject (no length leak).
+        let mut prefix = HeaderMap::new();
+        prefix.insert(
+            ADMIN_INTERNAL_AUTH_HEADER,
+            "test-internal-auth-key-32-bytes".parse().expect("header"),
+        );
+        assert!(!internal_auth_ok(Some(&key), &prefix));
+        // Exact value → accept.
+        let mut right = HeaderMap::new();
+        right.insert(
+            ADMIN_INTERNAL_AUTH_HEADER,
+            "test-internal-auth-key-32-bytes-x"
+                .parse()
+                .expect("header"),
+        );
+        assert!(internal_auth_ok(Some(&key), &right));
+    }
+
+    /// The gated body parser derives `is_admin = true` + the operator
+    /// principal from the gate, IGNORING the body's self-asserted
+    /// `initiator` / `initiator_is_admin`.
+    #[test]
+    fn into_request_gated_ignores_body_admin_assertion() {
+        let body = AdminMutateBody {
+            op_kind: "set_tenant_tier".into(),
+            tenant: Some("t1".into()),
+            tier: Some("Team".into()),
+            token_id: None,
+            // Attacker-controlled body fields — must be ignored.
+            initiator: "attacker".into(),
+            initiator_is_admin: false,
+            approval_id: Some("a1".into()),
+            approver: Some("bob".into()),
+        };
+        let req = body
+            .into_request_gated("operator@internal", 7)
+            .expect("gated request");
+        // The handler request carries the initiator + admin flag as
+        // public fields; pin that the operator principal — not
+        // "attacker" — is recorded and is_admin is forced true.
+        assert_eq!(req.initiator, "operator@internal");
+        assert!(req.initiator_is_admin);
     }
 }

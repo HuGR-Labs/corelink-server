@@ -74,6 +74,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
 // -----------------------------------------------------------------------------
@@ -103,6 +104,18 @@ pub const ADMIN_TENANT_HEADER: &str = "x-admin-tenant";
 
 /// Required admin scope literal.
 pub const REQUIRED_ADMIN_SCOPE: &str = "corelink:admin:pilots";
+
+/// Operator-only shared-secret header. The pilot-admin control plane is
+/// operator-only (mirrors `/_internal/pat/mint`): the PRIMARY boundary is
+/// the `CORELINK_INTERNAL_AUTH_KEY` shared secret verified constant-time,
+/// NOT the client-forgeable `x-admin-scope` header (which previously stood
+/// alone and let any caller self-assert admin).
+///
+/// NOTE: the Worker does NOT currently strip a client-supplied
+/// `x-corelink-internal-auth` on the public `/v1/*` path (tracked
+/// separately). The gate is still effective because the secret VALUE
+/// cannot be forged — verification is a constant-time compare.
+pub const ADMIN_INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 
 /// Audit event type — emitted on `grant-tier` success.
 pub const EVENT_TYPE_TIER_GRANTED: &str = "corelink.admin.pilot_tier_granted.v1";
@@ -467,6 +480,11 @@ pub struct PilotAdminRouteState {
     /// Wall clock (production: `SystemWallClock`; tests:
     /// `InMemoryFakeWallClock`).
     pub wall_clock: Arc<dyn crate::wall_clock::WallClock>,
+    /// Operator-only shared secret for the `x-corelink-internal-auth`
+    /// gate (sourced from `CORELINK_INTERNAL_AUTH_KEY`). `None` when the
+    /// key is unset at boot → every pilot-admin handler fails CLOSED
+    /// (403) (mirrors the `internal_pat` fail-CLOSED posture).
+    pub internal_auth_key: Option<Arc<str>>,
 }
 
 impl fmt::Debug for PilotAdminRouteState {
@@ -790,6 +808,41 @@ fn parse_tenant_uuid(raw: &str) -> Result<Uuid, Response> {
     Uuid::parse_str(raw).map_err(|_| (StatusCode::BAD_REQUEST, "invalid tenant_id").into_response())
 }
 
+/// Constant-time verification of the operator shared secret.
+///
+/// Fail-CLOSED:
+/// - `expected` is `None` (key not configured at boot) → `false`.
+/// - header absent / wrong → `false`.
+///
+/// Pads the provided value to the expected length and runs a single
+/// `ct_eq`, then folds in the real length-equality — so the secret LENGTH
+/// is not leaked via an early-return short-circuit.
+#[must_use]
+fn internal_auth_ok(expected: Option<&Arc<str>>, headers: &HeaderMap) -> bool {
+    let Some(expected) = expected else {
+        return false;
+    };
+    let provided = headers
+        .get(ADMIN_INTERNAL_AUTH_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let expected_bytes = expected.as_bytes();
+    let provided_bytes = provided.as_bytes();
+    let provided_padded: Vec<u8> = if provided_bytes.len() >= expected_bytes.len() {
+        provided_bytes
+            .get(..expected_bytes.len())
+            .unwrap_or(&[])
+            .to_vec()
+    } else {
+        let mut v = provided_bytes.to_vec();
+        v.resize(expected_bytes.len(), 0);
+        v
+    };
+    let content_ok = expected_bytes.ct_eq(&provided_padded).unwrap_u8();
+    let len_ok = u8::from(expected_bytes.len() == provided_bytes.len());
+    (content_ok & len_ok) == 1
+}
+
 /// L2 + L3 + L5: enforce that the caller carries
 /// `corelink:admin:pilots` in the validated scope claim, and that
 /// (if tenant-scoped) the bound tenant matches the target tenant.
@@ -805,6 +858,32 @@ fn require_admin_scope(
     target_tenant: Option<Uuid>,
 ) -> Result<PilotAdminScope, Response> {
     let now_ms = state.wall_clock.now_ms();
+
+    // PRIMARY boundary (fail-CLOSED): the operator-only shared secret.
+    // This replaces the previous design where the client-forgeable
+    // `x-admin-scope` header was the SOLE gate — any tenant PAT could
+    // set that header and self-assert admin. Now the request must clear
+    // the `x-corelink-internal-auth` constant-time gate first; absent /
+    // wrong secret, or unconfigured key → emit the canonical
+    // unauthorized audit row BEFORE the 403.
+    if !internal_auth_ok(state.internal_auth_key.as_ref(), headers) {
+        let row = PilotAuditRow {
+            event_type: EVENT_TYPE_UNAUTHORIZED.to_string(),
+            principal: String::new(),
+            tenant_id: target_tenant,
+            at_unix_ms: now_ms,
+            exit_status: "forbidden".to_string(),
+            payload: serde_json::json!({
+                "reason": "missing/invalid x-corelink-internal-auth",
+            }),
+        };
+        return Err(emit_or_503(
+            state,
+            row,
+            (StatusCode::FORBIDDEN, "operator auth required").into_response(),
+        ));
+    }
+
     let principal = headers
         .get(ADMIN_PRINCIPAL_HEADER)
         .and_then(|v| v.to_str().ok())
@@ -815,6 +894,10 @@ fn require_admin_scope(
         .get(ADMIN_SCOPE_HEADER)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
+    // SECONDARY label (NOT the sole gate): the internal-auth check above
+    // is the boundary. We keep the scope-string + principal checks as a
+    // defence-in-depth label so audit rows still carry a principal and a
+    // misconfigured operator forward (no scope) is observable.
     let has_scope = scope_header
         .split_whitespace()
         .any(|s| s == REQUIRED_ADMIN_SCOPE);
@@ -924,6 +1007,10 @@ mod tests {
             store: store.clone() as Arc<dyn PilotStore>,
             audit_sink: audit.clone() as Arc<dyn PilotAuditSink>,
             wall_clock: clock.clone() as Arc<dyn crate::wall_clock::WallClock>,
+            // Configured key so unit tests that exercise the store /
+            // scope logic can supply the secret header. Gate behaviour is
+            // covered by the dedicated internal_auth_ok tests below.
+            internal_auth_key: Some(Arc::from("test-internal-auth-key-32-bytes-x")),
         };
         (state, store, audit, clock)
     }
@@ -1037,6 +1124,82 @@ mod tests {
             })
             .expect_err("inject");
         assert_eq!(err, "audit pipeline down");
+    }
+
+    #[test]
+    fn internal_auth_fails_closed_when_key_unset() {
+        // Even with a forged x-corelink-internal-auth header, an unset
+        // key means the operator gate fails CLOSED.
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ADMIN_INTERNAL_AUTH_HEADER,
+            "anything".parse().expect("header"),
+        );
+        assert!(!internal_auth_ok(None, &headers));
+    }
+
+    #[test]
+    fn internal_auth_matches_only_exact_secret() {
+        let key: Arc<str> = Arc::from("test-internal-auth-key-32-bytes-x");
+        let empty = HeaderMap::new();
+        assert!(!internal_auth_ok(Some(&key), &empty));
+        let mut wrong = HeaderMap::new();
+        wrong.insert(ADMIN_INTERNAL_AUTH_HEADER, "wrong".parse().expect("header"));
+        assert!(!internal_auth_ok(Some(&key), &wrong));
+        let mut right = HeaderMap::new();
+        right.insert(
+            ADMIN_INTERNAL_AUTH_HEADER,
+            "test-internal-auth-key-32-bytes-x"
+                .parse()
+                .expect("header"),
+        );
+        assert!(internal_auth_ok(Some(&key), &right));
+    }
+
+    /// `require_admin_scope` rejects (403) when the internal-auth header
+    /// is absent even if a forged `x-admin-scope` is present — proving
+    /// the scope header is no longer the sole gate.
+    #[test]
+    fn require_admin_scope_rejects_without_internal_auth() {
+        let (state, _store, audit, _c) = fixture();
+        let mut headers = HeaderMap::new();
+        // Forged scope + principal — the OLD sole gate. No internal-auth.
+        headers.insert(
+            ADMIN_SCOPE_HEADER,
+            REQUIRED_ADMIN_SCOPE.parse().expect("header"),
+        );
+        headers.insert(
+            ADMIN_PRINCIPAL_HEADER,
+            "attacker".parse().expect("header"),
+        );
+        let res = require_admin_scope(&state, &headers, None);
+        assert!(res.is_err(), "must reject without internal-auth secret");
+        // The unauthorized audit row was emitted BEFORE the 403.
+        let rows = audit.snapshot().expect("audit");
+        assert!(rows
+            .iter()
+            .any(|r| r.event_type == EVENT_TYPE_UNAUTHORIZED));
+    }
+
+    /// With the correct internal-auth secret AND scope + principal, the
+    /// gate passes.
+    #[test]
+    fn require_admin_scope_passes_with_internal_auth_and_scope() {
+        let (state, _store, _audit, _c) = fixture();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ADMIN_INTERNAL_AUTH_HEADER,
+            "test-internal-auth-key-32-bytes-x"
+                .parse()
+                .expect("header"),
+        );
+        headers.insert(
+            ADMIN_SCOPE_HEADER,
+            REQUIRED_ADMIN_SCOPE.parse().expect("header"),
+        );
+        headers.insert(ADMIN_PRINCIPAL_HEADER, "ops@root".parse().expect("header"));
+        let scope = require_admin_scope(&state, &headers, None).expect("authorized");
+        assert_eq!(scope.principal, "ops@root");
     }
 
     #[test]

@@ -30,7 +30,7 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Extension, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::IntoResponse,
 };
 use corelink_analytics::Region;
@@ -44,8 +44,9 @@ use super::state::build_state;
 use super::tests_common::RecordingShadowFactory;
 use super::types::{
     AnalyticsAuditRow, EventCountQuery, RequestPrelude, TimelineQuery, EVENT_TYPE_ANALYTICS_QUERY,
-    REGION_SOURCE_FALLBACK, REGION_SOURCE_PRELUDE, REQUEST_PRELUDE_MISSING_EXIT, TENANT_ID_HEADER,
+    REGION_SOURCE_FALLBACK, REGION_SOURCE_PRELUDE, REQUEST_PRELUDE_MISSING_EXIT,
 };
+use crate::auth_tenant::AuthTenant;
 
 /// Wave-27 closure pin: when a `RequestPrelude` extension is attached
 /// to the request, the handler MUST dispatch through
@@ -59,11 +60,7 @@ async fn request_prelude_consumed_dispatches_through_for_tenant_in_region() {
     let factory: Arc<dyn ShadowSinkFactory> = recording.clone();
     let state = build_state(factory);
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        TENANT_ID_HEADER,
-        tenant.to_string().parse().expect("header parse"),
-    );
+    let auth = AuthTenant(tenant.to_string());
     let query = EventCountQuery {
         from: 0,
         to: 1_000,
@@ -73,8 +70,8 @@ async fn request_prelude_consumed_dispatches_through_for_tenant_in_region() {
 
     let resp = handle_event_count(
         State(state),
+        auth,
         Some(Extension(prelude)),
-        headers,
         Query(query),
     )
     .await
@@ -117,18 +114,14 @@ async fn request_prelude_missing_falls_back_with_warn_and_audit() {
     let capture: Arc<InMemoryAnalyticsAuditSink> = Arc::new(InMemoryAnalyticsAuditSink::new());
     state.audit_sink = capture.clone() as Arc<dyn AnalyticsAuditSink>;
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        TENANT_ID_HEADER,
-        tenant.to_string().parse().expect("header parse"),
-    );
+    let auth = AuthTenant(tenant.to_string());
     let query = EventCountQuery {
         from: 0,
         to: 1_000,
         event_type: None,
     };
 
-    let resp = handle_event_count(State(state), None, headers, Query(query))
+    let resp = handle_event_count(State(state), auth, None, Query(query))
         .await
         .into_response();
     assert_eq!(
@@ -172,8 +165,9 @@ async fn request_prelude_missing_falls_back_with_warn_and_audit() {
 }
 
 /// Wave-27 defense-in-depth pin: when a `RequestPrelude` extension
-/// is attached BUT bound to a DIFFERENT tenant than the
-/// `X-Tenant-Id` header (a wiring bug where the CF Worker
+/// is attached BUT bound to a DIFFERENT tenant than the authenticated
+/// tenant (the `AuthTenant` / `x-corelink-tenant-id` binding — a
+/// wiring bug where the CF Worker
 /// dispatched with a stale prelude), the handler MUST IGNORE the
 /// stale prelude and fall back through the legacy path with the
 /// `request_prelude_missing` marker emitted (the prelude is
@@ -195,11 +189,7 @@ async fn request_prelude_missing_emit_pinned_for_timeline_route() {
     let capture: Arc<InMemoryAnalyticsAuditSink> = Arc::new(InMemoryAnalyticsAuditSink::new());
     state.audit_sink = capture.clone() as Arc<dyn AnalyticsAuditSink>;
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        TENANT_ID_HEADER,
-        tenant.to_string().parse().expect("header parse"),
-    );
+    let auth = AuthTenant(tenant.to_string());
     let tq = TimelineQuery {
         from: 0,
         to: 1_000,
@@ -210,8 +200,8 @@ async fn request_prelude_missing_emit_pinned_for_timeline_route() {
 
     let resp = handle_timeline(
         State(state),
+        auth,
         Some(Extension(stale_prelude)),
-        headers,
         Query(tq),
     )
     .await
@@ -265,11 +255,7 @@ async fn audit_analytics_consumes_prelude_region_without_extra_d1_round_trip() {
     let capture: Arc<InMemoryAnalyticsAuditSink> = Arc::new(InMemoryAnalyticsAuditSink::new());
     state.audit_sink = capture.clone() as Arc<dyn AnalyticsAuditSink>;
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        TENANT_ID_HEADER,
-        tenant.to_string().parse().expect("header parse"),
-    );
+    let auth = AuthTenant(tenant.to_string());
     let query = EventCountQuery {
         from: 0,
         to: 1_000,
@@ -279,8 +265,8 @@ async fn audit_analytics_consumes_prelude_region_without_extra_d1_round_trip() {
 
     let resp = handle_event_count(
         State(state),
+        auth,
         Some(Extension(prelude)),
-        headers,
         Query(query),
     )
     .await
@@ -355,18 +341,14 @@ async fn audit_analytics_fallback_path_tags_region_source_fallback() {
     let capture: Arc<InMemoryAnalyticsAuditSink> = Arc::new(InMemoryAnalyticsAuditSink::new());
     state.audit_sink = capture.clone() as Arc<dyn AnalyticsAuditSink>;
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        TENANT_ID_HEADER,
-        tenant.to_string().parse().expect("header parse"),
-    );
+    let auth = AuthTenant(tenant.to_string());
     let query = EventCountQuery {
         from: 0,
         to: 1_000,
         event_type: None,
     };
 
-    let resp = handle_event_count(State(state), None, headers, Query(query))
+    let resp = handle_event_count(State(state), auth, None, Query(query))
         .await
         .into_response();
     assert_eq!(resp.status(), StatusCode::OK);

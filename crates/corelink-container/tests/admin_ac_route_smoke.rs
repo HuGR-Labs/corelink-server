@@ -43,9 +43,27 @@ use axum::{
 };
 use corelink_server::routes::{
     ac::{self, AcRouteState},
-    admin::{self, AdminRouteState},
+    admin::{self, AdminRouteState, ADMIN_INTERNAL_AUTH_HEADER},
 };
 use tower::ServiceExt;
+
+/// Operator shared secret used by these smoke tests. The admin control
+/// plane is now operator-only (gated behind `CORELINK_INTERNAL_AUTH_KEY`,
+/// mirroring `/_internal/pat/mint`); the admin-read requests below carry
+/// this secret in the `x-corelink-internal-auth` header so they clear the
+/// gate and reach the handler. Negative-gate behaviour is unit-tested in
+/// `admin.rs`.
+const TEST_INTERNAL_AUTH_KEY: &str = "test-internal-auth-key-32-bytes-x";
+
+/// Build an `AdminRouteState` with the operator gate configured.
+fn admin_state_with_gate() -> AdminRouteState {
+    let (read, mutate) = admin::build_handlers();
+    AdminRouteState {
+        read,
+        mutate,
+        internal_auth_key: Some(Arc::from(TEST_INTERNAL_AUTH_KEY)),
+    }
+}
 
 /// AC lookup against a fresh handler MUST reach the handler and
 /// surface the canonical `ac miss` 404 body. A router-miss (which is
@@ -118,13 +136,12 @@ async fn ac_update_route_reaches_handler_and_returns_handler_created_201() {
 /// (DEBT-029 bug surface) would yield an empty body.
 #[tokio::test]
 async fn admin_read_route_reaches_handler_and_returns_handler_not_found_404() {
-    let (read, mutate) = admin::build_handlers();
-    let state = AdminRouteState { read, mutate };
-    let app = admin::router(state);
+    let app = admin::router(admin_state_with_gate());
 
     let req = Request::builder()
         .uri("/v1/admin/read/tenant:unknown")
         .method("GET")
+        .header(ADMIN_INTERNAL_AUTH_HEADER, TEST_INTERNAL_AUTH_KEY)
         .body(Body::empty())
         .expect("build req");
     let resp = app.oneshot(req).await.expect("oneshot");
@@ -149,9 +166,7 @@ async fn admin_read_route_reaches_handler_and_returns_handler_not_found_404() {
 /// the literal-braces request would spuriously match.
 #[tokio::test]
 async fn admin_read_route_does_not_match_literal_braces_uri() {
-    let (read, mutate) = admin::build_handlers();
-    let state = AdminRouteState { read, mutate };
-    let app = admin::router(state);
+    let app = admin::router(admin_state_with_gate());
 
     // The encoded form `%7Bresource%7D` is what a buggy client would
     // send if it didn't substitute the path param. Post-fix the
@@ -161,9 +176,11 @@ async fn admin_read_route_does_not_match_literal_braces_uri() {
     // `{resource}` (after percent-decoding) as the resource name and
     // emits its normal not-found path. We assert the handler ran
     // (status is the handler's 404, not a router 404 with empty body).
+    // The operator gate header is required to reach the handler at all.
     let req = Request::builder()
         .uri("/v1/admin/read/%7Bresource%7D")
         .method("GET")
+        .header(ADMIN_INTERNAL_AUTH_HEADER, TEST_INTERNAL_AUTH_KEY)
         .body(Body::empty())
         .expect("build req");
     let resp = app.oneshot(req).await.expect("oneshot");
@@ -202,8 +219,7 @@ async fn route_state_constructs_without_panic_on_native() {
     let (lookup, update) = ac::build_handlers();
     let _ac_router = ac::router(AcRouteState { lookup, update });
 
-    let (read, mutate) = admin::build_handlers();
-    let _admin_router = admin::router(AdminRouteState { read, mutate });
+    let _admin_router = admin::router(admin_state_with_gate());
 
     // Cross-route smoke — both routers compose under the same axum
     // build, so the in-process construction proves the constants

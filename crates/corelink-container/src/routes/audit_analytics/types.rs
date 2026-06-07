@@ -17,8 +17,16 @@ pub const ROUTE_EVENT_COUNT: &str = "/v1/audit/analytics/event-count";
 /// Canonical route path for the timeline aggregate.
 pub const ROUTE_TIMELINE: &str = "/v1/audit/analytics/timeline";
 
-/// Header the production middleware uses to inject the JWT-validated
-/// tenant id (mirrors `audit_export::TENANT_ID_HEADER`).
+/// DEPRECATED — NOT the tenant authority. Security fix
+/// (`fix/sec-critical-public-exposure`): `x-tenant-id` is
+/// CLIENT-forgeable — the Worker never sets or strips it, so a forged
+/// value would read any tenant's per-tenant audit analytics. The
+/// authenticated tenant is now the DO-injected `x-corelink-tenant-id`
+/// header, bound by the [`crate::auth_tenant::AuthTenant`] extractor
+/// (fail-CLOSED), mirroring `routes/audit_export/handler.rs`. This
+/// constant is retained only because it is re-exported by the parent
+/// module and referenced by archival tests; do NOT derive a request
+/// tenant from it.
 pub const TENANT_ID_HEADER: &str = "x-tenant-id";
 
 /// Canonical CloudEvents `type` for the audit-analytics query emit.
@@ -60,7 +68,9 @@ pub const MAX_GRANULARITY_MS: u64 = 24 * 60 * 60 * 1_000;
 pub struct AnalyticsAuditRow {
     /// Canonical CloudEvents `type`.
     pub event_type: String,
-    /// Tenant id (from `X-Tenant-Id`).
+    /// Authenticated tenant id — the DO-injected `x-corelink-tenant-id`
+    /// bound by [`crate::auth_tenant::AuthTenant`] (NOT the forgeable
+    /// `x-tenant-id`; see `fix/sec-critical-public-exposure`).
     pub authenticated_tenant: Option<Uuid>,
     /// Canonical endpoint slug (`"event_count"` / `"timeline"`).
     pub endpoint: String,

@@ -1,8 +1,19 @@
-//! Common rate-limit gate + tenant-header parser for the
+//! Common rate-limit gate + (DEPRECATED) tenant-header parser for the
 //! `/v1/audit/analytics/*` routes.
 //!
 //! Split from monolithic `audit_analytics.rs` (wave-33 stage 2.PRE-B.2.c).
-//! Verbatim move of `rate_limit_check` and `parse_tenant_header`.
+//!
+//! Security fix (`fix/sec-critical-public-exposure`): [`parse_tenant_header`]
+//! read the tenant from the CLIENT-forgeable `x-tenant-id` header
+//! ([`super::types::TENANT_ID_HEADER`]), which the Worker NEVER sets or
+//! strips — only the DO-injected `x-corelink-tenant-id` is trustworthy.
+//! A forged `x-tenant-id: <victim>` therefore read any tenant's
+//! per-tenant audit analytics. The handlers now derive the tenant SOLELY
+//! from the [`crate::auth_tenant::AuthTenant`] extractor
+//! (`x-corelink-tenant-id`, fail-CLOSED), mirroring
+//! `routes/audit_export/handler.rs`. `parse_tenant_header` is retained
+//! at its def-site (archival; no production caller) and is no longer a
+//! tenant authority — do NOT reintroduce it on the request path.
 
 #![forbid(unsafe_code)]
 
@@ -19,6 +30,17 @@ use super::types::{AnalyticsAuditRow, EVENT_TYPE_ANALYTICS_QUERY, TENANT_ID_HEAD
 
 /// Extract + validate the `X-Tenant-Id` header.
 ///
+/// # DEPRECATED — not a tenant authority
+///
+/// Security fix (`fix/sec-critical-public-exposure`): `x-tenant-id` is
+/// CLIENT-forgeable (the Worker never sets/strips it), so this MUST NOT
+/// be used to derive the request tenant. The handlers now bind the
+/// tenant via the [`crate::auth_tenant::AuthTenant`] extractor
+/// (`x-corelink-tenant-id`, fail-CLOSED). This function is retained for
+/// archival reference only and has no production caller —
+/// `#[allow(dead_code)]` documents the intentional retention. Do NOT
+/// reintroduce it on the request path.
+///
 /// Wave-20 (B-P3-03 closure): the `Err` variant carries a full
 /// `axum::response::Response` (>100 bytes) which Clippy flags via
 /// `result_large_err`. The waiver is deliberate — the caller chains
@@ -29,6 +51,7 @@ use super::types::{AnalyticsAuditRow, EVENT_TYPE_ANALYTICS_QUERY, TENANT_ID_HEAD
 /// header map (one of the few large-on-stack types in axum), accepted
 /// trade-off for call-site ergonomics. Tracked as cosmetic follow-on.
 #[allow(clippy::result_large_err)]
+#[allow(dead_code)] // retained for archival reference; not a tenant authority (see module + fn docs)
 pub(super) fn parse_tenant_header(headers: &HeaderMap) -> Result<Uuid, axum::response::Response> {
     match headers
         .get(TENANT_ID_HEADER)

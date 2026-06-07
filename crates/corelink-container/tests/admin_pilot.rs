@@ -28,10 +28,18 @@ use axum::{
 };
 use corelink_server::routes::admin_pilot::{
     router, InMemoryPilotAuditSink, InMemoryPilotStore, PilotAdminRouteState, PilotAuditSink,
-    PilotState, PilotStore, PilotTenant, ADMIN_PRINCIPAL_HEADER, ADMIN_SCOPE_HEADER,
-    ADMIN_TENANT_HEADER, EVENT_TYPE_CHECKIN, EVENT_TYPE_CROSS_TENANT, EVENT_TYPE_TIER_GRANTED,
-    EVENT_TYPE_UNAUTHORIZED, REQUIRED_ADMIN_SCOPE,
+    PilotState, PilotStore, PilotTenant, ADMIN_INTERNAL_AUTH_HEADER, ADMIN_PRINCIPAL_HEADER,
+    ADMIN_SCOPE_HEADER, ADMIN_TENANT_HEADER, EVENT_TYPE_CHECKIN, EVENT_TYPE_CROSS_TENANT,
+    EVENT_TYPE_TIER_GRANTED, EVENT_TYPE_UNAUTHORIZED, REQUIRED_ADMIN_SCOPE,
 };
+
+/// Operator shared secret for these integration tests. The pilot-admin
+/// control plane is now operator-only (gated behind
+/// `CORELINK_INTERNAL_AUTH_KEY`, mirroring `/_internal/pat/mint`): every
+/// admin request carries this secret in the `x-corelink-internal-auth`
+/// header to clear the PRIMARY gate. The previous SOLE gate
+/// (`x-admin-scope`) is now only a secondary defence-in-depth label.
+const TEST_INTERNAL_AUTH_KEY: &str = "test-internal-auth-key-32-bytes-x";
 use corelink_server::wall_clock::InMemoryFakeWallClock;
 use serde_json::Value;
 use tower::ServiceExt;
@@ -53,6 +61,7 @@ fn fixture(
         store: store.clone() as Arc<dyn PilotStore>,
         audit_sink: audit.clone() as Arc<dyn PilotAuditSink>,
         wall_clock: clock.clone() as Arc<dyn corelink_server::wall_clock::WallClock>,
+        internal_auth_key: Some(Arc::from(TEST_INTERNAL_AUTH_KEY)),
     };
     (state, store, audit, clock)
 }
@@ -90,6 +99,9 @@ fn seed_tenant(
 
 fn admin_headers(builder: axum::http::request::Builder) -> axum::http::request::Builder {
     builder
+        // PRIMARY operator gate (constant-time shared secret).
+        .header(ADMIN_INTERNAL_AUTH_HEADER, TEST_INTERNAL_AUTH_KEY)
+        // Secondary defence-in-depth label (no longer the sole gate).
         .header(ADMIN_SCOPE_HEADER, REQUIRED_ADMIN_SCOPE)
         .header(ADMIN_PRINCIPAL_HEADER, "ops@root")
 }
@@ -200,16 +212,21 @@ async fn checkin_emits_alert_for_overdue_no_blob_tenant() {
     let _ = store; // keep alive
 }
 
-/// 2. Non-admin JWT → 403 + unauthorized audit row BEFORE the
-///    response.
+/// 2. Tenant PAT (no operator secret) → 403 + unauthorized audit row
+///    BEFORE the response. This is the SECURITY-CRITICAL case: even a
+///    caller that forges the (now-secondary) `x-admin-scope` +
+///    `x-admin-principal` headers is rejected because it cannot supply
+///    the operator shared secret. (Previously the scope header was the
+///    sole gate and this request would have been ADMITTED.)
 #[tokio::test]
-async fn non_admin_jwt_rejected_with_audit_before_403() {
+async fn tenant_pat_without_operator_secret_rejected_with_audit_before_403() {
     let (state, _store, audit, _clock) = fixture(1_700_000_000_000);
 
     let app = router(state);
-    // Missing X-Admin-Scope entirely.
+    // Forged scope + principal, but NO x-corelink-internal-auth secret.
     let req = Request::builder()
         .uri("/v1/admin/pilots?state=NEW")
+        .header(ADMIN_SCOPE_HEADER, REQUIRED_ADMIN_SCOPE)
         .header(ADMIN_PRINCIPAL_HEADER, "alice@tenant")
         .body(Body::empty())
         .expect("build req");
@@ -219,19 +236,22 @@ async fn non_admin_jwt_rejected_with_audit_before_403() {
     let snap = audit.snapshot().expect("audit");
     assert_eq!(snap.len(), 1, "audit row MUST be emitted BEFORE the 403");
     assert_eq!(snap[0].event_type, EVENT_TYPE_UNAUTHORIZED);
-    assert_eq!(snap[0].principal, "alice@tenant");
     assert_eq!(snap[0].exit_status, "forbidden");
 }
 
-/// 2b. Non-admin JWT (no principal) → 403 with empty-principal row.
+/// 2b. Wrong operator secret → 403 with unauthorized audit row. Pins
+///     that an INCORRECT secret value is rejected (constant-time
+///     compare), not just an absent one.
 #[tokio::test]
-async fn missing_principal_rejected_with_audit() {
+async fn wrong_operator_secret_rejected_with_audit() {
     let (state, _store, audit, _clock) = fixture(1_700_000_000_000);
 
     let app = router(state);
     let req = Request::builder()
         .uri("/v1/admin/pilots?state=NEW")
+        .header(ADMIN_INTERNAL_AUTH_HEADER, "wrong-secret-value")
         .header(ADMIN_SCOPE_HEADER, REQUIRED_ADMIN_SCOPE)
+        .header(ADMIN_PRINCIPAL_HEADER, "ops@root")
         .body(Body::empty())
         .expect("build req");
     let resp = app.oneshot(req).await.expect("oneshot");
@@ -257,6 +277,9 @@ async fn cross_tenant_grant_tier_rejected_with_audit_before_403() {
         .method("POST")
         .uri(format!("/v1/admin/pilots/{tenant_b}/grant-tier"))
         .header("content-type", "application/json")
+        // Operator gate cleared; the cross-tenant check (L3) is what
+        // rejects this request.
+        .header(ADMIN_INTERNAL_AUTH_HEADER, TEST_INTERNAL_AUTH_KEY)
         .header(ADMIN_SCOPE_HEADER, REQUIRED_ADMIN_SCOPE)
         .header(ADMIN_PRINCIPAL_HEADER, "tenant-a-admin")
         .header(ADMIN_TENANT_HEADER, tenant_a.to_string())
@@ -290,6 +313,7 @@ async fn same_tenant_admin_grant_tier_succeeds() {
         .method("POST")
         .uri(format!("/v1/admin/pilots/{tenant}/grant-tier"))
         .header("content-type", "application/json")
+        .header(ADMIN_INTERNAL_AUTH_HEADER, TEST_INTERNAL_AUTH_KEY)
         .header(ADMIN_SCOPE_HEADER, REQUIRED_ADMIN_SCOPE)
         .header(ADMIN_PRINCIPAL_HEADER, "self-admin")
         .header(ADMIN_TENANT_HEADER, tenant.to_string())

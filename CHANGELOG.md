@@ -33,6 +33,21 @@ Each entry cross-references:
   (delete-then-set where the Worker legitimately sets one). Also fixes a latent
   bug where the internal forward leaked the client's `x-corelink-internal-auth`
   instead of re-setting it from the server secret.
+- **Closed three CRITICAL cross-tenant / control-plane exposures (pentest
+  2026-06-06).** (1) `/v1/audit/analytics/{event-count,timeline}` keyed its
+  tenant off the client-forgeable `x-tenant-id` header (the Worker never
+  set/stripped it) over a tenant-addressable Neon shadow — any authenticated PAT
+  could read any tenant's audit analytics; now bound to the `AuthTenant`
+  extractor (`x-corelink-tenant-id`, fail-closed), mirroring the audit-export
+  fix. (2) `/v1/admin/{read,mutate}` ran with hardcoded `is_admin:true` /
+  body-supplied `initiator_is_admin` and (3) `/v1/admin/pilots/*` authorized on
+  the client-forgeable `x-admin-scope` header — any PAT could read any tenant's
+  admin record and mutate any tenant's billing tier. Both admin surfaces are now
+  gated behind the `CORELINK_INTERNAL_AUTH_KEY` shared secret (operator-only,
+  constant-time verify, fail-closed — same posture as `/_internal/pat/mint`);
+  the admin-mutate decision no longer trusts the request body. Full audit:
+  `security-audit-2026-06-06` (the deeper PAT-scope-enforcement + Argon2id
+  possession spine is tracked as a follow-up).
 - **Container cache surfaces now bind tenant isolation to the authenticated
   tenant, not a client-controlled value (cross-tenant read/write fix).** The
   native container keyed CAS (`/v1/cas/:tenant/:hash`), AC
