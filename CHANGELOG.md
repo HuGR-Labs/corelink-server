@@ -48,6 +48,14 @@ Each entry cross-references:
   the admin-mutate decision no longer trusts the request body. Full audit:
   `security-audit-2026-06-06` (the deeper PAT-scope-enforcement + Argon2id
   possession spine is tracked as a follow-up).
+- **DoS hardening (pentest 2026-06-06).** Added a global request-body limit
+  (`DefaultBodyLimit`, 10 MiB; 100 MiB on the Turbo artifact route) — previously
+  any authenticated PAT could OOM the shared container with an unbounded `PUT
+  /v8/artifacts` or JSON body. Turbo `teamId` is now validated (≤256 chars,
+  `[A-Za-z0-9_-]` only — rejects empty / `/` / `../` / control bytes) before it
+  is used in the storage key, closing heap-amplification and intra-tenant
+  slot-aliasing. Audit-export now caps the query window to 30 days (400 on
+  exceed) so a single `from=0&to=now` cannot stream an unbounded history.
 - **Container cache surfaces now bind tenant isolation to the authenticated
   tenant, not a client-controlled value (cross-tenant read/write fix).** The
   native container keyed CAS (`/v1/cas/:tenant/:hash`), AC

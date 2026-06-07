@@ -395,3 +395,91 @@ async fn mid_stream_break_surfaces_audit_failure_via_forced_close() {
         "generator must force-close before draining all rows"
     );
 }
+
+/// M4 DoS fix — a window wider than 30 days MUST be rejected with 400
+/// BEFORE any data access. Pins `MAX_EXPORT_WINDOW_MS` enforcement in
+/// `handle_export` (step 2b).
+#[tokio::test]
+async fn export_window_exceeding_30_days_returns_400() {
+    use super::types::MAX_EXPORT_WINDOW_MS;
+    use tower::ServiceExt;
+
+    let tenant = Uuid::from_u128(0xD05A);
+    let sink = Arc::new(InMemoryExportAuditSink::new());
+    let exporter: Arc<dyn AuditExporter> = Arc::new(InMemoryAuditExporter::new());
+    let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
+    let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
+    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(InMemoryTokenBucketRateLimiter::new(
+        rl_audit,
+        rl_metrics,
+        audit_export_rate_limit_config(),
+    ));
+    let state = AuditExportRouteState {
+        exporter,
+        rate_limiter,
+        audit_sink: sink as Arc<dyn ExportAuditSink>,
+        pager_page_size: R2_LIST_PAGE_SIZE,
+        wall_clock: default_wall_clock(),
+    };
+    let app = router(state);
+
+    // from=0, to = MAX+1 ms → span is exactly one millisecond past the cap.
+    let to_ms = MAX_EXPORT_WINDOW_MS + 1;
+    let uri = format!("/v1/audit/{tenant}/export?from=0&to={to_ms}");
+    let req = axum::http::Request::builder()
+        .uri(uri)
+        .header(TENANT_ID_HEADER, tenant.to_string())
+        .header("x-corelink-tenant-id", tenant.to_string())
+        .body(axum::body::Body::empty())
+        .expect("req");
+    let resp = app.oneshot(req).await.expect("oneshot");
+    assert_eq!(
+        resp.status(),
+        StatusCode::BAD_REQUEST,
+        "window > 30 days MUST be rejected with 400 (M4 DoS fix)"
+    );
+}
+
+/// M4 DoS fix — a window exactly at the 30-day boundary MUST pass the
+/// span gate and proceed to the exporter (200 on an empty window).
+/// Pins that `MAX_EXPORT_WINDOW_MS` is an inclusive upper bound.
+#[tokio::test]
+async fn export_window_at_30_day_boundary_is_allowed() {
+    use super::types::MAX_EXPORT_WINDOW_MS;
+    use tower::ServiceExt;
+
+    let tenant = Uuid::from_u128(0xD05B);
+    let sink = Arc::new(InMemoryExportAuditSink::new());
+    let exporter: Arc<dyn AuditExporter> = Arc::new(InMemoryAuditExporter::new());
+    let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
+    let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
+    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(InMemoryTokenBucketRateLimiter::new(
+        rl_audit,
+        rl_metrics,
+        audit_export_rate_limit_config(),
+    ));
+    let state = AuditExportRouteState {
+        exporter,
+        rate_limiter,
+        audit_sink: sink as Arc<dyn ExportAuditSink>,
+        pager_page_size: R2_LIST_PAGE_SIZE,
+        wall_clock: default_wall_clock(),
+    };
+    let app = router(state);
+
+    // from=0, to = MAX_EXPORT_WINDOW_MS → span == cap exactly, MUST allow.
+    let to_ms = MAX_EXPORT_WINDOW_MS;
+    let uri = format!("/v1/audit/{tenant}/export?from=0&to={to_ms}");
+    let req = axum::http::Request::builder()
+        .uri(uri)
+        .header(TENANT_ID_HEADER, tenant.to_string())
+        .header("x-corelink-tenant-id", tenant.to_string())
+        .body(axum::body::Body::empty())
+        .expect("req");
+    let resp = app.oneshot(req).await.expect("oneshot");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "window == 30 days MUST pass the span gate (inclusive boundary)"
+    );
+}

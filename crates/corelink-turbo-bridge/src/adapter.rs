@@ -36,6 +36,7 @@ use crate::handler::{
     TurboArtifactHandler, TurboGetRequest, TurboGetResponse, TurboPutRequest, TurboPutResponse,
     TurboStatusResponse,
 };
+use crate::error::validate_team_id;
 use crate::status::TurboStatusPayload;
 use crate::MAX_HASH_LEN;
 
@@ -165,6 +166,11 @@ impl TurboArtifactHandler for CasAdapterTurboHandler {
             });
         }
 
+        // DoS / key-aliasing guard: `team_id` is interpolated into the storage
+        // key (`"<team_id>/<hash>"`); reject empty / overlong / `/`-bearing
+        // values BEFORE any audit emit or write (mirrors the hash guard above).
+        validate_team_id(&req.team_id)?;
+
         // No `team_id == caller_tenant` check: `team_id` is a Turborepo team
         // label, NOT the tenant. Isolation is provided solely by the storage
         // `tenant = caller_tenant` (the authenticated tenant); `team_id` is a
@@ -215,6 +221,9 @@ impl TurboArtifactHandler for CasAdapterTurboHandler {
                 max: MAX_HASH_LEN,
             });
         }
+
+        // DoS / key-aliasing guard on `team_id` (key prefix) before any audit.
+        validate_team_id(&req.team_id)?;
 
         // No `team_id == caller_tenant` check: isolation is the storage
         // `tenant = caller_tenant`; `team_id` is a sub-namespace key prefix.
@@ -418,5 +427,55 @@ mod tests {
             .get(TurboGetRequest::new(opaque, "t1", "s", "p", "t1", 2))
             .expect("retrieved");
         assert_eq!(resp.bytes, b"data".to_vec());
+    }
+
+    #[test]
+    fn adapter_put_rejects_invalid_team_id_without_audit() {
+        let (audit, store, h) = fixture();
+        for bad in ["", "a/b", "../other", &"a".repeat(crate::error::MAX_TEAM_ID_LEN + 1)] {
+            let err = h
+                .put(TurboPutRequest::new(
+                    "h1",
+                    bad,
+                    "s",
+                    b"data".to_vec(),
+                    None,
+                    "p",
+                    "t1",
+                    1,
+                ))
+                .expect_err("invalid team_id rejected");
+            assert!(matches!(err, TurboBridgeError::TeamIdInvalid { .. }));
+        }
+        // DoS guard path emits no audit and writes nothing.
+        assert!(audit.snapshot().expect("snapshot").is_empty());
+        assert!(store
+            .read("t1", &format!("/{}", "h1"))
+            .is_err());
+    }
+
+    #[test]
+    fn adapter_get_rejects_invalid_team_id() {
+        let (_, _, h) = fixture();
+        let err = h
+            .get(TurboGetRequest::new("h1", "a/b", "s", "p", "t1", 1))
+            .expect_err("invalid team_id rejected on get");
+        assert!(matches!(err, TurboBridgeError::TeamIdInvalid { .. }));
+    }
+
+    #[test]
+    fn adapter_accepts_valid_team_id() {
+        let (_, _, h) = fixture();
+        h.put(TurboPutRequest::new(
+            "h1",
+            "team_AbC-123",
+            "s",
+            b"data".to_vec(),
+            None,
+            "p",
+            "t1",
+            1,
+        ))
+        .expect("valid team_id accepted");
     }
 }

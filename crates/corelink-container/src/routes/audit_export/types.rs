@@ -123,3 +123,13 @@ pub struct ExportAuditRow {
 /// Wave-19 stable enum for the mid-stream chain-break exit-status (replaces
 /// the wave-18 colon-prefix `verify_failed_mid_stream:<json>` encoding).
 pub const EXIT_STATUS_VERIFY_FAILED_MID_STREAM: &str = "verify_failed_mid_stream";
+
+/// Maximum permitted export window span (inclusive-from, exclusive-to).
+///
+/// Requests whose `(to_ms - from_ms)` exceeds this value are rejected
+/// with HTTP 400 before any data access, closing the M4 DoS vector
+/// (unbounded streaming read / long-held connection / memory growth).
+///
+/// 30 days expressed in milliseconds:
+///   30 × 24 × 60 × 60 × 1_000 = 2_592_000_000 ms
+pub const MAX_EXPORT_WINDOW_MS: u64 = 30 * 24 * 60 * 60 * 1_000;

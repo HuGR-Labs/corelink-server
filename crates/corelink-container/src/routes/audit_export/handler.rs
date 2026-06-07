@@ -35,6 +35,7 @@ use super::stream::{build_audit_export_async_stream, InMemoryR2ListPager};
 use super::types::{
     ExportAuditRow, EVENT_TYPE_CROSS_TENANT_ATTEMPT, EVENT_TYPE_EXPORT_REQUEST,
     EVENT_TYPE_VERIFY_FAILED, HEADER_CHAIN_HEAD_ANCHOR, HEADER_EXPORT_ABORTED,
+    MAX_EXPORT_WINDOW_MS,
 };
 
 /// `GET /v1/audit/:tenant/export` axum handler.
@@ -120,6 +121,19 @@ pub(super) async fn handle_export(
                 .into_response();
         }
     };
+
+    // 2b. Max-window span guard (M4 DoS fix). Saturating subtraction is
+    //     safe here: `ExportWindow::new` above already asserts `from_ms <
+    //     to_ms`, so `to_ms - from_ms` is always positive and cannot
+    //     underflow; `saturating_sub` is used for clarity and to be
+    //     panic-free under all inputs.
+    if to_ms.saturating_sub(from_ms) > MAX_EXPORT_WINDOW_MS {
+        return (
+            StatusCode::BAD_REQUEST,
+            "export window exceeds 30-day maximum",
+        )
+            .into_response();
+    }
 
     // 3. Cross-tenant attempt check (defense in depth — the `:tenant`
     //    path segment was already validated against the authenticated
