@@ -692,14 +692,49 @@ pub fn build_state_with_key(token_key: Vec<u8>) -> SignupRouteState {
 }
 
 /// Default dev/CI key — deterministic 32-byte value. Production wiring
-/// MUST override via [`build_state_with_key`] with the live secret.
+/// MUST override via [`build_state_from_env`] with the live secret.
 const DEV_TOKEN_KEY: &[u8; 32] = b"corelink-dev-pilot-signup-key!!\0";
 
-/// Construct the default native dev/CI route state with the canonical
-/// dev key. Production callers MUST use [`build_state_with_key`].
+/// Construct route state with the canonical **dev/CI key**.
+///
+/// ⚠️ **TESTS / dev only.** This wires the public, hardcoded
+/// [`DEV_TOKEN_KEY`] — a value that lives in the open repo and is
+/// therefore forgeable. Production MUST mount via [`build_state_from_env`]
+/// (which fail-CLOSED requires the `SIGNUP_TOKEN_KEY` secret); this builder
+/// exists only for the test module and any explicit dev path.
 #[must_use]
 pub fn build_state() -> SignupRouteState {
     build_state_with_key(DEV_TOKEN_KEY.to_vec())
+}
+
+/// Build the pilot-signup route state from the environment, fail-CLOSED.
+///
+/// Reads:
+///
+/// - `SIGNUP_TOKEN_KEY` — hex-encoded HMAC token key (≥ 32 bytes decoded).
+///   Missing or invalid → returns `None`; the caller logs a warning and
+///   skips mounting the route (so `/v1/signup/pilot` is simply absent in
+///   dev/CI without the secret, rather than running with a forgeable key).
+///
+/// Mirrors [`internal_pat::build_state_from_env`]'s `PAT_SIGNING_KEY`
+/// hex+length handling. Production wires the live secret; never the
+/// hardcoded [`DEV_TOKEN_KEY`].
+#[must_use]
+pub fn build_state_from_env() -> Option<SignupRouteState> {
+    let token_key_hex = std::env::var("SIGNUP_TOKEN_KEY").ok()?;
+    let token_key = hex::decode(token_key_hex.trim())
+        .map_err(|e| {
+            tracing::warn!(error = %e, "SIGNUP_TOKEN_KEY not valid hex; /v1/signup/pilot NOT mounted");
+        })
+        .ok()?;
+    if token_key.len() < 32 {
+        tracing::warn!(
+            len = token_key.len(),
+            "SIGNUP_TOKEN_KEY too short (< 32 bytes decoded); /v1/signup/pilot NOT mounted"
+        );
+        return None;
+    }
+    Some(build_state_with_key(token_key))
 }
 
 /// Build the axum router exposing the pilot-signup route.
@@ -1112,5 +1147,66 @@ mod tests {
             "_no_ip",
             "empty trusted header must yield the shared _no_ip bucket"
         );
+    }
+
+    // ── env-gate: build_state_from_env (fail-CLOSED) ───────────────────────────
+    //
+    // These two tests mutate the process-global `SIGNUP_TOKEN_KEY`, so they are
+    // serialized through a module-local lock and each restores the prior value.
+    // No OTHER test in this crate reads `SIGNUP_TOKEN_KEY`, so the only possible
+    // race is between these two — which the lock removes. (edition-2021:
+    // `set_var`/`remove_var` are safe; see `tier_select_checkout.rs`.)
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Fail-CLOSED: no `SIGNUP_TOKEN_KEY` in the environment → `None`, so the
+    /// caller never mounts `/v1/signup/pilot` with the public dev key.
+    #[test]
+    fn build_state_from_env_is_none_without_secret() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let prev = std::env::var("SIGNUP_TOKEN_KEY").ok();
+        std::env::remove_var("SIGNUP_TOKEN_KEY");
+        assert!(
+            build_state_from_env().is_none(),
+            "absent SIGNUP_TOKEN_KEY must yield None (fail-CLOSED)"
+        );
+        if let Some(v) = prev {
+            std::env::set_var("SIGNUP_TOKEN_KEY", v);
+        }
+    }
+
+    /// A valid hex key (≥ 32 bytes decoded) yields `Some`, so production with
+    /// the secret set mounts the route.
+    #[test]
+    fn build_state_from_env_is_some_with_valid_hex_secret() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let prev = std::env::var("SIGNUP_TOKEN_KEY").ok();
+        // 32 bytes (0xAB) hex-encoded.
+        std::env::set_var("SIGNUP_TOKEN_KEY", "ab".repeat(32));
+        assert!(
+            build_state_from_env().is_some(),
+            "valid hex SIGNUP_TOKEN_KEY (>= 32 bytes) must yield Some"
+        );
+        match prev {
+            Some(v) => std::env::set_var("SIGNUP_TOKEN_KEY", v),
+            None => std::env::remove_var("SIGNUP_TOKEN_KEY"),
+        }
+    }
+
+    /// A too-short hex key (< 32 bytes decoded) is rejected → `None`
+    /// (fail-CLOSED), mirroring `internal_pat`'s length floor.
+    #[test]
+    fn build_state_from_env_is_none_with_short_secret() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let prev = std::env::var("SIGNUP_TOKEN_KEY").ok();
+        // 16 bytes — below the 32-byte floor.
+        std::env::set_var("SIGNUP_TOKEN_KEY", "cd".repeat(16));
+        assert!(
+            build_state_from_env().is_none(),
+            "SIGNUP_TOKEN_KEY shorter than 32 decoded bytes must yield None"
+        );
+        match prev {
+            Some(v) => std::env::set_var("SIGNUP_TOKEN_KEY", v),
+            None => std::env::remove_var("SIGNUP_TOKEN_KEY"),
+        }
     }
 }
