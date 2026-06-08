@@ -1056,10 +1056,7 @@ mod tests {
     #[test]
     fn extract_client_ip_reads_trusted_header() {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            "x-corelink-client-ip",
-            "203.0.113.42".parse().unwrap(),
-        );
+        headers.insert("x-corelink-client-ip", "203.0.113.42".parse().unwrap());
         assert_eq!(extract_client_ip(&headers), "203.0.113.42");
     }
 
@@ -1068,10 +1065,7 @@ mod tests {
     fn extract_client_ip_ignores_x_forwarded_for() {
         let mut headers = HeaderMap::new();
         // Only XFF is present; x-corelink-client-ip is absent.
-        headers.insert(
-            "x-forwarded-for",
-            "1.2.3.4, 5.6.7.8".parse().unwrap(),
-        );
+        headers.insert("x-forwarded-for", "1.2.3.4, 5.6.7.8".parse().unwrap());
         // Must NOT return "1.2.3.4" (or any value from XFF).
         // Must return the shared no-ip sentinel.
         assert_eq!(
@@ -1086,14 +1080,8 @@ mod tests {
     #[test]
     fn extract_client_ip_trusted_header_wins_over_xff() {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            "x-forwarded-for",
-            "10.0.0.1, 10.0.0.2".parse().unwrap(),
-        );
-        headers.insert(
-            "x-corelink-client-ip",
-            "203.0.113.99".parse().unwrap(),
-        );
+        headers.insert("x-forwarded-for", "10.0.0.1, 10.0.0.2".parse().unwrap());
+        headers.insert("x-corelink-client-ip", "203.0.113.99".parse().unwrap());
         assert_eq!(
             extract_client_ip(&headers),
             "203.0.113.99",
