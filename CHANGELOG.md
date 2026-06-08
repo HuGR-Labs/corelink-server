@@ -223,6 +223,18 @@ Each entry cross-references:
   mutations are idempotent (safe upserts / guarded no-op UPDATEs). FLAGGED:
   analytics MRR emits are not yet deduped against the 0044
   `stripe_webhook_events_processed` table — deferred as a larger change.
+  Adversarial-review follow-ups (#178): (a) `activatePaidTierSelection`'s
+  `ON CONFLICT DO UPDATE` now also rewrites `subscription_started_at_ms` to the
+  fresh activation timestamp — a returning customer whose prior cancel/failure
+  had NULLed it would otherwise hit the re-activation arm with
+  (`state='active' AND started_at IS NULL`), violating the 0039
+  `subscription_started_when_active` CHECK → swallowed throw → paying
+  re-subscriber locked out (and able to double-subscribe). (b)
+  `customer.subscription.updated` revocation no longer requires the subscription
+  object to carry a `customer` field: a non-granting status with no `customer`
+  now deactivates the gate by `stripe_subscription_id` (resolved to the tenant
+  via `tenant_billing`) — previously fail-OPEN. Added coverage for the activation
+  gate write, the re-subscribe sequence, and the no-`customer` revocation.
 - **signup-worker bound a customer's PAT to an ORPHAN tenant under concurrent
   duplicate Clerk delivery (correctness race).** `apps/signup-worker/.../clerk.ts`
   `createTenant` generated a random `tenantId`, ran `INSERT OR IGNORE INTO tenant`,

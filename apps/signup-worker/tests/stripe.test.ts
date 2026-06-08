@@ -646,4 +646,157 @@ describe("handleStripeWebhook", () => {
         expect(backfill!.params).toContain(periodEndSec * 1000);
         expect(backfill!.params).toContain("sub_created");
     });
+
+    // ------------------------------------------------------------------
+    // FIX 3: the activation gate write itself is asserted (not just
+    // tenant_billing). checkout.session.completed must write
+    // tier_selections with subscription_state='active' AND a non-null
+    // subscription_started_at_ms — both the INSERT arm and (FIX 1) the
+    // ON CONFLICT re-activation arm.
+    // ------------------------------------------------------------------
+
+    it("checkout.session.completed → tier_selections write sets state='active' AND a non-null subscription_started_at_ms", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_activation_gate",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_act",
+                    subscription: "sub_act",
+                    amount_total: 4900,
+                    metadata: { tenant_id: "tenant_act", tier: "starter" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        const activation = db.runCalls.find(
+            (c) =>
+                c.sql.includes("INSERT INTO tier_selections") &&
+                c.sql.includes("ON CONFLICT"),
+        );
+        expect(activation).toBeDefined();
+        // INSERT arm hardcodes 'active' in the VALUES; the DO UPDATE SET also
+        // forces subscription_state = 'active'.
+        expect(activation!.sql).toContain("'active'");
+        expect(activation!.sql).toContain("subscription_state");
+        // The re-activation arm MUST rewrite subscription_started_at_ms (FIX 1):
+        // the DO UPDATE SET column appears so a returning customer's NULL'd
+        // timestamp is replaced. (Before FIX 1 the UPDATE never touched it.)
+        const updateClause = activation!.sql.slice(activation!.sql.indexOf("DO UPDATE"));
+        expect(updateClause).toContain("subscription_started_at_ms");
+        // A non-null activation timestamp (nowMs-range) was bound.
+        const tsParam = activation!.params.find(
+            (p) => typeof p === "number" && p >= nowMs - 5000 && p <= nowMs + 5000,
+        );
+        expect(tsParam).toBeDefined();
+        expect(tsParam).not.toBeNull();
+    });
+
+    // ------------------------------------------------------------------
+    // FIX 4: re-subscribe sequence. A prior cancel/payment-failure NULLs
+    // subscription_started_at_ms; the SECOND checkout hits the ON CONFLICT
+    // re-activation branch, which MUST write a fresh non-null timestamp or
+    // the 0039 subscription_started_when_active CHECK throws and the paying
+    // re-subscriber is locked out. This asserts the re-activation upsert
+    // carries the timestamp rewrite (would fail before FIX 1).
+    // ------------------------------------------------------------------
+
+    it("re-subscribe (checkout → subscription.deleted → checkout) → second activation rewrites a non-null subscription_started_at_ms", async () => {
+        const db = fakeDb();
+        const t0 = Date.now();
+        const checkout = (id: string) => ({
+            id,
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_resub",
+                    subscription: "sub_resub",
+                    amount_total: 4900,
+                    metadata: { tenant_id: "tenant_resub", tier: "starter" },
+                },
+            },
+        });
+
+        // 1) Initial checkout → active.
+        let req = await makeStripeRequest(checkout("evt_resub_1"), TEST_SECRET, t0);
+        expect((await handleStripeWebhook(req, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        // 2) subscription.deleted → deactivate (NULLs subscription_started_at_ms).
+        const del = {
+            id: "evt_resub_del",
+            type: "customer.subscription.deleted",
+            data: { object: { id: "sub_resub", customer: "cus_resub", metadata: { tenant_id: "tenant_resub" } } },
+        };
+        req = await makeStripeRequest(del, TEST_SECRET, t0 + 1000);
+        expect((await handleStripeWebhook(req, baseEnv(db), fakeCtx())).status).toBe(200);
+        // The deactivation NULLs the timestamp (the condition FIX 1 must survive).
+        const deact = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("'inactive'"),
+        );
+        expect(deact).toBeDefined();
+        expect(deact!.sql).toContain("subscription_started_at_ms = NULL");
+
+        // 3) Second checkout → ON CONFLICT re-activation.
+        const t1 = t0 + 2000;
+        req = await makeStripeRequest(checkout("evt_resub_2"), TEST_SECRET, t1);
+        expect((await handleStripeWebhook(req, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        const activations = db.runCalls.filter(
+            (c) => c.sql.includes("INSERT INTO tier_selections") && c.sql.includes("ON CONFLICT"),
+        );
+        expect(activations).toHaveLength(2);
+        const second = activations[1]!;
+        // The re-activation UPDATE arm rewrites the timestamp to a fresh,
+        // non-null value — satisfying the CHECK after a prior NULLing.
+        const updateClause = second.sql.slice(second.sql.indexOf("DO UPDATE"));
+        expect(updateClause).toContain("subscription_started_at_ms");
+        const tsParam = second.params.find(
+            (p) => typeof p === "number" && p >= t1 - 5000 && p <= t1 + 5000,
+        );
+        expect(tsParam).toBeDefined();
+        expect(tsParam).not.toBeNull();
+    });
+
+    // ------------------------------------------------------------------
+    // FIX 2: subscription.updated with a non-granting status and NO
+    // `customer` field must STILL revoke the access gate (fail-safe) —
+    // keyed by subscription id via tenant_billing. The old code nested the
+    // deactivation under `if (customer)`, so it fail-OPENed.
+    // ------------------------------------------------------------------
+
+    it("customer.subscription.updated canceled with NO customer field → gate deactivated by subscription id", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_no_customer_cancel",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_no_customer",
+                    status: "canceled",
+                    // NOTE: no `customer` field — the bug scenario.
+                    metadata: { tenant_id: "tenant_no_customer" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // The gate IS deactivated, keyed by the subscription id (resolved via
+        // tenant_billing), even though `customer` was absent.
+        const deact = db.runCalls.find(
+            (c) =>
+                c.sql.includes("UPDATE tier_selections") &&
+                c.sql.includes("'inactive'") &&
+                c.sql.includes("tenant_billing"),
+        );
+        expect(deact).toBeDefined();
+        expect(deact!.params).toContain("sub_no_customer");
+    });
 });

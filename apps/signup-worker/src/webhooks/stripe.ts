@@ -395,11 +395,16 @@ async function cancelBilling(
  * is only ever set to 'active' here with a non-null `subscription_started_at_ms`,
  * satisfying the `subscription_started_when_active` CHECK.
  *
- * The ON CONFLICT UPDATE is guarded `WHERE subscription_state <> 'active'` and
- * does NOT rewrite `subscription_started_at_ms`, so a duplicate or out-of-order
- * `checkout.session.completed` can never downgrade an already-active tier or
- * shift the original activation timestamp (review hardening — Stripe can
- * redeliver and reorder webhook events).
+ * The ON CONFLICT UPDATE is guarded `WHERE subscription_state <> 'active'`, so a
+ * duplicate or out-of-order `checkout.session.completed` can never downgrade an
+ * already-active tier or shift its activation timestamp (review hardening —
+ * Stripe can redeliver and reorder webhook events). When the guard DOES fire
+ * (the row was previously deactivated — state <> 'active' with
+ * subscription_started_at_ms = NULL), the UPDATE rewrites
+ * subscription_started_at_ms to a fresh non-null value so the re-activated row
+ * still satisfies the `subscription_started_when_active` CHECK (a returning
+ * customer would otherwise be locked out — the NULL timestamp left by
+ * deactivateTierSelection* would violate the CHECK and throw).
  */
 async function activatePaidTierSelection(
     db: D1DatabaseLike,
@@ -418,9 +423,18 @@ async function activatePaidTierSelection(
                 subscription_started_at_ms, schema_version, correlation_id)
              VALUES (?1, ?2, 'active', ?3, ?4, 1, ?5)
              ON CONFLICT (tenant_id) DO UPDATE SET
-               tier               = excluded.tier,
-               subscription_state = 'active',
-               stripe_customer_id = excluded.stripe_customer_id
+               tier                       = excluded.tier,
+               subscription_state         = 'active',
+               stripe_customer_id         = excluded.stripe_customer_id,
+               -- Re-activation MUST write a fresh non-null timestamp: a prior
+               -- cancel/payment-failure ran deactivateTierSelection* which set
+               -- subscription_started_at_ms = NULL, so without this the
+               -- (state='active' AND started_at IS NULL) row violates the 0039
+               -- subscription_started_when_active CHECK and the write throws —
+               -- locking the paying re-subscriber out. Bind ?4 (= nowMs), the
+               -- same value the INSERT arm writes; NOT a COALESCE of the
+               -- existing column (which is NULL after cancel).
+               subscription_started_at_ms = ?4
              WHERE tier_selections.subscription_state <> 'active'`,
         )
         .bind(
@@ -466,6 +480,40 @@ async function deactivateTierSelectionByCustomer(
                AND subscription_state <> 'inactive'`,
         )
         .bind(opts.stripeCustomerId)
+        .run();
+}
+
+/**
+ * Revoke the canonical access gate keyed by `stripe_subscription_id` — used when
+ * a subscription-lifecycle event (e.g. subscription.updated → canceled/unpaid)
+ * arrives WITHOUT a top-level `customer` field. Stripe subscription objects are
+ * not guaranteed to carry `customer`, but they always carry their own id; if we
+ * gated revocation on `customer` we would fail-OPEN and leave a non-paying
+ * tenant entitled.
+ *
+ * `tier_selections` has no `stripe_subscription_id` column (0039), so we resolve
+ * the tenant through `tenant_billing` (which maps subscription id → tenant id,
+ * 0055) via a correlated subquery. Bare idempotent UPDATE; clears
+ * `subscription_started_at_ms` to keep the `subscription_started_when_active`
+ * CHECK satisfied for the now non-active state. Safe no-op if no billing row
+ * maps the subscription id (e.g. event for an unknown/foreign subscription).
+ */
+async function deactivateTierSelectionBySubscription(
+    db: D1DatabaseLike,
+    opts: { stripeSubscriptionId: string },
+): Promise<void> {
+    await db
+        .prepare(
+            `UPDATE tier_selections
+             SET subscription_state = 'inactive',
+                 subscription_started_at_ms = NULL
+             WHERE tenant_id IN (
+                       SELECT tenant_id FROM tenant_billing
+                       WHERE stripe_subscription_id = ?1
+                   )
+               AND subscription_state <> 'inactive'`,
+        )
+        .bind(opts.stripeSubscriptionId)
         .run();
 }
 
@@ -678,39 +726,50 @@ export async function handleStripeWebhook(
                     }),
                 );
 
-                if (typeof stripeCustomerId === "string" && stripeCustomerId) {
-                    // (a) Propagate an in-place plan change to the entitlement
-                    // tier. Only when we recognise the price → tier (else leave
-                    // the existing tier untouched; never guess).
-                    if (newTier) {
-                        ctx.waitUntil(
-                            updateTierSelectionTierByCustomer(db, {
-                                stripeCustomerId,
-                                tier: newTier,
-                            }).catch((e: unknown) => {
-                                console.warn(
-                                    `[stripe-webhook] tier_selections tier update failed: ${(e as Error).message}`,
-                                );
-                            }),
-                        );
-                    }
-                    // (b) Keep the access gate in sync with the Stripe status. A
-                    // subscription that drops to past_due/unpaid/paused/canceled
-                    // here (not just on a separate deleted/payment_failed event)
-                    // must lose entitlement. We do NOT flip back to 'active' on
-                    // this event — activation only happens via
-                    // checkout.session.completed (single activation writer).
-                    if (!grantsAccess) {
-                        ctx.waitUntil(
-                            deactivateTierSelectionByCustomer(db, {
-                                stripeCustomerId,
-                            }).catch((e: unknown) => {
-                                console.warn(
-                                    `[stripe-webhook] tier_selections deactivate failed: ${(e as Error).message}`,
-                                );
-                            }),
-                        );
-                    }
+                // (a) Propagate an in-place plan change to the entitlement tier.
+                // Only when we recognise the price → tier (else leave the
+                // existing tier untouched; never guess). Tier propagation is an
+                // enrichment (not a safety control), so it stays customer-gated:
+                // updateTierSelectionTierByCustomer keys on the customer column.
+                if (typeof stripeCustomerId === "string" && stripeCustomerId && newTier) {
+                    ctx.waitUntil(
+                        updateTierSelectionTierByCustomer(db, {
+                            stripeCustomerId,
+                            tier: newTier,
+                        }).catch((e: unknown) => {
+                            console.warn(
+                                `[stripe-webhook] tier_selections tier update failed: ${(e as Error).message}`,
+                            );
+                        }),
+                    );
+                }
+                // (b) Keep the access gate in sync with the Stripe status. A
+                // subscription that drops to past_due/unpaid/paused/canceled here
+                // (not just on a separate deleted/payment_failed event) must lose
+                // entitlement. We do NOT flip back to 'active' on this event —
+                // activation only happens via checkout.session.completed (single
+                // activation writer).
+                //
+                // FAIL-SAFE: entitlement REVOCATION must NOT depend on the
+                // subscription object carrying a `customer` field (it may not).
+                // Prefer the customer key when present; otherwise revoke by
+                // subscription id (resolved to the tenant via tenant_billing). A
+                // non-granting status with neither key would be unreachable, but
+                // we always have the subscription id here (guarded above).
+                if (!grantsAccess) {
+                    const deactivate =
+                        typeof stripeCustomerId === "string" && stripeCustomerId
+                            ? deactivateTierSelectionByCustomer(db, { stripeCustomerId })
+                            : deactivateTierSelectionBySubscription(db, {
+                                  stripeSubscriptionId,
+                              });
+                    ctx.waitUntil(
+                        deactivate.catch((e: unknown) => {
+                            console.warn(
+                                `[stripe-webhook] tier_selections deactivate failed: ${(e as Error).message}`,
+                            );
+                        }),
+                    );
                 }
             }
 
