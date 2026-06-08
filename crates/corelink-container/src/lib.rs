@@ -82,6 +82,13 @@ pub mod adapter_oci_kv;
 /// here once (replaces the cargo-only `cargo_pat_resolver`). See module docs.
 pub mod adapter_pat;
 pub mod auth_tenant;
+/// Durable native [`corelink_billing_stripe_materializer::BillingD1Writer`]
+/// over the CF D1 REST API (`billing_d1_http::D1HttpBillingWriter`). Bridges
+/// the SYNC billing-writer trait (shared with the wasm32 Worker) to the
+/// async [`storage::d1_http::D1HttpClient`] via `block_in_place`, so the
+/// native Stripe-webhook materializer writes DURABLY to D1 instead of the
+/// in-memory mirror. See module docs.
+pub mod billing_d1_http;
 pub mod byok_orchestrator;
 #[cfg(feature = "neon-real")]
 pub mod neon_shadow_factory;

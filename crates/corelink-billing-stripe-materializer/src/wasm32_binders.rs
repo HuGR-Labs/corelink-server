@@ -78,7 +78,11 @@ use corelink_audit_chain::{ArchiveProducer, ArchiveSink, PersistedAuditLine, R2A
 use corelink_cf_bindings::{CfD1DatabaseReal, D1Error, TenantId};
 
 use crate::audit::{BillingAuditEmitter, BillingAuditError, BillingAuditRecord};
-use crate::d1::{BillingD1Error, BillingD1Writer, MaterializedRow};
+use crate::d1::{
+    BillingD1Error, BillingD1Writer, MaterializedRow, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND,
+    SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_TIER, SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE,
+    SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
+};
 
 // ---------------------------------------------------------------------------
 // CfD1BillingWriter — wasm32 production D1 binder.
@@ -223,12 +227,16 @@ impl BillingD1Writer for CfD1BillingWriter {
                 "cf-d1-binder: empty stripe_event_id rejected".to_owned(),
             ));
         }
-        self.d1
-            .scoped_query(SQL_INSERT_WEBHOOK_EVENT_PROCESSED)
-            .map_err(map_d1_error_transient)?;
-        // The dedup gate is the dispatcher's primary line of defense;
-        // the wasm32 binder defers the actual `INSERT OR IGNORE` to the
-        // async dispatch layer.
+        // NOTE: unlike the per-tenant row writers, the dedup table
+        // (`stripe_webhook_events_processed`, migration 0044) is
+        // UN-tenanted — its PRIMARY KEY is the globally-unique Stripe
+        // `event_id` and the deployed schema has NO `tenant_id` column.
+        // We therefore do NOT route `SQL_INSERT_WEBHOOK_EVENT_PROCESSED`
+        // through `scoped_query` (whose INSERT rule hard-requires a
+        // `tenant_id` column); doing so would falsely reject the
+        // schema-correct statement. The actual `INSERT OR IGNORE … `
+        // is performed by the async dispatch layer one frame above (the
+        // native `D1HttpBillingWriter` executes it directly).
         Err(BillingD1Error::Transient(
             "wasm32_async_dispatch_pending: try_record_event staged; dispatch via worker::send::SendFuture layer"
                 .to_owned(),
@@ -303,20 +311,16 @@ fn map_d1_error_transient(err: D1Error) -> BillingD1Error {
 }
 
 // ---------------------------------------------------------------------------
-// Canonical SQL literals (mirror the wave-15 dispatcher state mutator
-// table set). Each is tenant-scoped per the
-// `CfD1DatabaseReal::scoped_query` shallow validator's rules.
+// Canonical SQL literals now live in [`crate::d1`] (SINGLE SOURCE OF
+// TRUTH — re-exported at the crate root). BOTH the wasm32 binder above
+// and the native container writer
+// (`corelink-container::billing_d1_http::D1HttpBillingWriter`)
+// transcribe the SAME strings, so the two production targets can never
+// drift from the deployed schema. The shape is pinned by the `sql_tests`
+// module below. (`SQL_INSERT_WEBHOOK_EVENT_PROCESSED` is intentionally
+// NOT imported here: the dedup table is un-tenanted, so the wasm32
+// `try_record_event` does not route it through `scoped_query`.)
 // ---------------------------------------------------------------------------
-
-const SQL_UPSERT_CUSTOMER: &str = "INSERT INTO stripe_customers (tenant_id, stripe_customer_id, stripe_event_id, payload, materialized_at_ms) VALUES (?, ?, ?, ?, ?) ON CONFLICT(tenant_id, stripe_customer_id) DO UPDATE SET payload = excluded.payload, materialized_at_ms = excluded.materialized_at_ms";
-const SQL_UPSERT_SUBSCRIPTION: &str = "INSERT INTO stripe_subscriptions (tenant_id, stripe_subscription_id, stripe_event_id, payload, materialized_at_ms) VALUES (?, ?, ?, ?, ?) ON CONFLICT(tenant_id, stripe_subscription_id) DO UPDATE SET payload = excluded.payload, materialized_at_ms = excluded.materialized_at_ms";
-const SQL_MARK_SUBSCRIPTION_CANCELED: &str = "UPDATE stripe_subscriptions SET payload = ?, materialized_at_ms = ? WHERE tenant_id = ? AND stripe_subscription_id = ?";
-const SQL_UPSERT_INVOICE: &str = "INSERT INTO stripe_invoices (tenant_id, stripe_invoice_id, stripe_event_id, payload, materialized_at_ms) VALUES (?, ?, ?, ?, ?) ON CONFLICT(tenant_id, stripe_invoice_id) DO UPDATE SET payload = excluded.payload, materialized_at_ms = excluded.materialized_at_ms";
-const SQL_INSERT_DISPUTE: &str = "INSERT INTO stripe_disputes (tenant_id, stripe_dispute_id, stripe_event_id, payload, materialized_at_ms) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING";
-const SQL_INSERT_REFUND: &str = "INSERT INTO stripe_refunds (tenant_id, stripe_refund_id, stripe_event_id, payload, materialized_at_ms) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING";
-const SQL_INSERT_WEBHOOK_EVENT_PROCESSED: &str = "INSERT INTO stripe_webhook_events_processed (tenant_id, stripe_event_id, canonical_event_type, processed_at_ms) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING";
-const SQL_READ_TIER: &str = "SELECT tier FROM tier_selections WHERE tenant_id = ?";
-const SQL_UPSERT_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?, ?, 'active', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'active', subscription_started_at_ms = excluded.subscription_started_at_ms, correlation_id = excluded.correlation_id";
 
 // ---------------------------------------------------------------------------
 // ArchiveProducerBillingEmitter — wasm32 production audit emitter binder.

@@ -98,6 +98,80 @@ impl MaterializedRow {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Canonical billing SQL literals — SINGLE SOURCE OF TRUTH.
+//
+// Reconciled COLUMN-BY-COLUMN against the DEPLOYED schema
+// (`migrations/d1/0048_stripe_billing_materializer.sql` +
+// `0044_stripe_webhook_events_processed.sql`). BOTH production writers
+// transcribe these EXACT strings so the two targets can never drift:
+//
+//   * wasm32 CF Worker — `crate::wasm32_binders::CfD1BillingWriter`
+//     (validates the shape via `CfD1DatabaseReal::scoped_query`; the
+//     actual `worker::D1Database` call runs one frame above).
+//   * native container — `corelink-container::billing_d1_http::D1HttpBillingWriter`
+//     (executes them over the CF D1 REST API via `D1HttpClient::query`).
+//
+// Invariants baked in here (do NOT regress — the deployed schema is the
+// authority):
+//   * the JSON payload column is `payload_json` (NOT `payload`);
+//   * the `ON CONFLICT` target is each table's single natural PRIMARY
+//     KEY (the per-table Stripe id), not a composite `(tenant_id, …)`;
+//   * `tenant_id` is the FIRST bound parameter on every TENANTED table
+//     so the wasm32 `verify_first_bind` ct-eq probe and the native
+//     positional bind agree;
+//   * NOT-NULL-no-default columns are bound explicitly
+//     (`stripe_subscriptions.status`, `stripe_invoices.outcome`);
+//     DEFAULTed `severity` / `schema_version` are omitted.
+//
+// Native positional binds, in `?1..?n` order (kept in lockstep with the
+// native writer):
+//   CUSTOMER:     tenant_id, stripe_id, stripe_event_id, materialized_at_ms, payload_json
+//   SUBSCRIPTION: tenant_id, stripe_id, stripe_event_id, status, materialized_at_ms, payload_json
+//   CANCEL:       payload_json, materialized_at_ms, tenant_id, stripe_id
+//   INVOICE:      tenant_id, stripe_id, stripe_event_id, outcome, materialized_at_ms, payload_json
+//   DISPUTE:      tenant_id, stripe_id, stripe_event_id, materialized_at_ms, payload_json
+//   REFUND:       tenant_id, stripe_charge_id, stripe_event_id, materialized_at_ms, payload_json
+//   WEBHOOK:      event_id, event_type, processed_at_ms, ('dispatched' literal), correlation_id
+// ---------------------------------------------------------------------------
+
+/// `customer.created` → `stripe_customers` UPSERT (PK `stripe_customer_id`).
+pub const SQL_UPSERT_CUSTOMER: &str = "INSERT INTO stripe_customers (tenant_id, stripe_customer_id, stripe_event_id, materialized_at_ms, payload_json) VALUES (?, ?, ?, ?, ?) ON CONFLICT(stripe_customer_id) DO UPDATE SET payload_json = excluded.payload_json, materialized_at_ms = excluded.materialized_at_ms";
+/// `customer.subscription.created|updated` → `stripe_subscriptions`
+/// UPSERT (PK `stripe_subscription_id`; binds the NOT-NULL `status`).
+pub const SQL_UPSERT_SUBSCRIPTION: &str = "INSERT INTO stripe_subscriptions (tenant_id, stripe_subscription_id, stripe_event_id, status, materialized_at_ms, payload_json) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(stripe_subscription_id) DO UPDATE SET status = excluded.status, payload_json = excluded.payload_json, materialized_at_ms = excluded.materialized_at_ms";
+/// `customer.subscription.deleted` → set `status='canceled'` on the
+/// existing subscription row (tenant-scoped UPDATE).
+pub const SQL_MARK_SUBSCRIPTION_CANCELED: &str = "UPDATE stripe_subscriptions SET status = 'canceled', payload_json = ?, materialized_at_ms = ? WHERE tenant_id = ? AND stripe_subscription_id = ?";
+/// `invoice.paid|payment_failed` → `stripe_invoices` UPSERT
+/// (PK `stripe_invoice_id`; binds the NOT-NULL CHECKed `outcome`).
+pub const SQL_UPSERT_INVOICE: &str = "INSERT INTO stripe_invoices (tenant_id, stripe_invoice_id, stripe_event_id, outcome, materialized_at_ms, payload_json) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(stripe_invoice_id) DO UPDATE SET outcome = excluded.outcome, payload_json = excluded.payload_json, materialized_at_ms = excluded.materialized_at_ms";
+/// `charge.dispute.created` → `stripe_disputes` INSERT (PK
+/// `stripe_dispute_id`; DEFAULTed `severity`/`schema_version` omitted).
+pub const SQL_INSERT_DISPUTE: &str = "INSERT INTO stripe_disputes (tenant_id, stripe_dispute_id, stripe_event_id, materialized_at_ms, payload_json) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING";
+/// `charge.refunded` → `stripe_refunds` INSERT. The PRIMARY KEY is the
+/// parent `stripe_charge_id` (refunds are addressed via the charge in
+/// webhook deliveries) — there is NO `stripe_refund_id` column.
+pub const SQL_INSERT_REFUND: &str = "INSERT INTO stripe_refunds (tenant_id, stripe_charge_id, stripe_event_id, materialized_at_ms, payload_json) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING";
+/// Idempotency dedup INSERT into `stripe_webhook_events_processed`
+/// (migration 0044). This table is UN-tenanted — its PRIMARY KEY is the
+/// globally-unique Stripe `event_id`; there is NO `tenant_id` column.
+/// `outcome` is the literal `'dispatched'` (try_record is the dispatch
+/// path; the CHECK admits `dispatched`/`acknowledged_unknown`) and the
+/// Stripe `event_id` doubles as the NOT-NULL `correlation_id` (the sync
+/// trait carries neither). `RETURNING event_id` lets the native writer
+/// detect insert-vs-ignore (mirrors the tier-select lock probe).
+pub const SQL_INSERT_WEBHOOK_EVENT_PROCESSED: &str = "INSERT INTO stripe_webhook_events_processed (event_id, event_type, processed_at_ms, outcome, correlation_id) VALUES (?, ?, ?, 'dispatched', ?) ON CONFLICT DO NOTHING RETURNING event_id";
+/// Read the current tier for a tenant (`tier_selections`, migration
+/// 0039). Bind `?1` = `tenant_id`. Already schema-correct (the #172 fix).
+pub const SQL_READ_TIER: &str = "SELECT tier FROM tier_selections WHERE tenant_id = ?";
+/// UPSERT a tenant's tier → `subscription_state='active'` with the
+/// activation timestamp bound to `subscription_started_at_ms` (the
+/// `subscription_started_when_active` CHECK requires it NOT NULL when
+/// active). Binds `?1..?4` = (tenant_id, tier, subscription_started_at_ms,
+/// correlation_id). Already schema-correct (the #172 fix).
+pub const SQL_UPSERT_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?, ?, 'active', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'active', subscription_started_at_ms = excluded.subscription_started_at_ms, correlation_id = excluded.correlation_id";
+
 /// Canonical billing-D1 writer trait.
 ///
 /// All write methods are **idempotent**: calling the same method twice
@@ -407,5 +481,160 @@ mod tests {
         d1.upsert_tier("ten_1", "pro", 1_700_000_000_000, "corr_1")
             .unwrap();
         assert_eq!(d1.read_tier("ten_1").unwrap(), Some("pro".to_string()));
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // Canonical SQL shape pins — reconcile the shared literals against the
+    // DEPLOYED schema (`migrations/d1/0048_*` + `0044_*` + `0039_*`). A
+    // regression here is a money-path launch-blocker (a wrong column name
+    // is a 100% silent write failure in production), so these run under the
+    // default `cargo test --lib` (NOT gated behind `cf-billing-real`).
+    // ───────────────────────────────────────────────────────────────────────
+
+    /// The JSON column is `payload_json` on EVERY 0048 table — the old
+    /// `payload` name does not exist and would fail every INSERT.
+    #[test]
+    fn no_materializer_sql_references_legacy_payload_column() {
+        for sql in [
+            SQL_UPSERT_CUSTOMER,
+            SQL_UPSERT_SUBSCRIPTION,
+            SQL_MARK_SUBSCRIPTION_CANCELED,
+            SQL_UPSERT_INVOICE,
+            SQL_INSERT_DISPUTE,
+            SQL_INSERT_REFUND,
+        ] {
+            assert!(
+                sql.contains("payload_json"),
+                "must use the deployed `payload_json` column: {sql}"
+            );
+            // The bare token `payload ` (with a trailing space / paren)
+            // must never appear — only `payload_json`.
+            assert!(
+                !sql.contains("payload ") && !sql.contains("payload,") && !sql.contains("payload)"),
+                "must NOT reference the non-existent `payload` column: {sql}"
+            );
+        }
+    }
+
+    #[test]
+    fn customer_upsert_matches_0048() {
+        let sql = SQL_UPSERT_CUSTOMER;
+        assert_eq!(sql.matches('?').count(), 5, "5 binds: {sql}");
+        assert!(sql.contains("INSERT INTO stripe_customers"), "{sql}");
+        // Natural PK conflict target — NOT a composite (tenant_id, …).
+        assert!(sql.contains("ON CONFLICT(stripe_customer_id)"), "{sql}");
+        assert!(!sql.contains("ON CONFLICT(tenant_id"), "{sql}");
+        // tenant_id is the first bound column (verify_first_bind contract).
+        assert!(
+            sql.contains("(tenant_id, stripe_customer_id"),
+            "tenant_id must be bind #1: {sql}"
+        );
+    }
+
+    #[test]
+    fn subscription_upsert_binds_status_not_null_0048() {
+        let sql = SQL_UPSERT_SUBSCRIPTION;
+        assert_eq!(sql.matches('?').count(), 6, "6 binds incl. status: {sql}");
+        assert!(sql.contains("INSERT INTO stripe_subscriptions"), "{sql}");
+        assert!(sql.contains("ON CONFLICT(stripe_subscription_id)"), "{sql}");
+        // `status` is NOT NULL with no default → MUST be bound + upserted.
+        assert!(sql.contains("status"), "must bind NOT-NULL status: {sql}");
+        assert!(
+            sql.contains("status = excluded.status"),
+            "must refresh status on conflict: {sql}"
+        );
+    }
+
+    #[test]
+    fn mark_canceled_sets_status_and_is_tenant_scoped() {
+        let sql = SQL_MARK_SUBSCRIPTION_CANCELED;
+        assert!(sql.trim_start().to_ascii_lowercase().starts_with("update"), "{sql}");
+        assert!(
+            sql.contains("status = 'canceled'"),
+            "cancel must set status='canceled': {sql}"
+        );
+        assert!(
+            sql.contains("WHERE tenant_id = ?"),
+            "UPDATE must be tenant-scoped: {sql}"
+        );
+        assert!(sql.contains("stripe_subscription_id = ?"), "{sql}");
+    }
+
+    #[test]
+    fn invoice_upsert_binds_outcome_not_null_0048() {
+        let sql = SQL_UPSERT_INVOICE;
+        assert_eq!(sql.matches('?').count(), 6, "6 binds incl. outcome: {sql}");
+        assert!(sql.contains("INSERT INTO stripe_invoices"), "{sql}");
+        assert!(sql.contains("ON CONFLICT(stripe_invoice_id)"), "{sql}");
+        // `outcome` is NOT NULL + CHECK IN('paid','payment_failed').
+        assert!(sql.contains("outcome"), "must bind NOT-NULL outcome: {sql}");
+        assert!(
+            sql.contains("outcome = excluded.outcome"),
+            "must refresh outcome on conflict: {sql}"
+        );
+    }
+
+    #[test]
+    fn dispute_insert_matches_0048() {
+        let sql = SQL_INSERT_DISPUTE;
+        assert_eq!(sql.matches('?').count(), 5, "5 binds: {sql}");
+        assert!(sql.contains("INSERT INTO stripe_disputes"), "{sql}");
+        assert!(sql.contains("stripe_dispute_id"), "{sql}");
+        // severity + schema_version have DEFAULTs and are intentionally omitted.
+        assert!(!sql.contains("severity"), "DEFAULTed severity omitted: {sql}");
+    }
+
+    #[test]
+    fn refund_insert_uses_charge_id_pk_0048() {
+        let sql = SQL_INSERT_REFUND;
+        assert_eq!(sql.matches('?').count(), 5, "5 binds: {sql}");
+        assert!(sql.contains("INSERT INTO stripe_refunds"), "{sql}");
+        // PK is the parent charge id; the non-existent stripe_refund_id
+        // column must NEVER appear (the latent bug).
+        assert!(sql.contains("stripe_charge_id"), "{sql}");
+        assert!(
+            !sql.contains("stripe_refund_id"),
+            "must NOT reference the non-existent stripe_refund_id: {sql}"
+        );
+    }
+
+    #[test]
+    fn webhook_dedup_insert_matches_0044_untenanted() {
+        let sql = SQL_INSERT_WEBHOOK_EVENT_PROCESSED;
+        assert!(
+            sql.contains("INSERT INTO stripe_webhook_events_processed"),
+            "{sql}"
+        );
+        // Deployed 0044 columns — NOT the old (tenant_id, stripe_event_id,
+        // canonical_event_type, processed_at_ms) shape.
+        for col in ["event_id", "event_type", "processed_at_ms", "outcome", "correlation_id"] {
+            assert!(sql.contains(col), "missing deployed column `{col}`: {sql}");
+        }
+        // The table is un-tenanted — no tenant_id column exists.
+        assert!(!sql.contains("tenant_id"), "0044 has no tenant_id: {sql}");
+        assert!(!sql.contains("canonical_event_type"), "renamed→event_type: {sql}");
+        // outcome bound as the dispatch literal (CHECK-admitted).
+        assert!(sql.contains("'dispatched'"), "outcome literal: {sql}");
+        // RETURNING lets the native writer detect insert-vs-ignore.
+        assert!(sql.contains("RETURNING event_id"), "{sql}");
+        // 3 binds: event_id, event_type, processed_at_ms, correlation_id
+        // (outcome is a literal, not a bind) → 4 placeholders actually.
+        assert_eq!(sql.matches('?').count(), 4, "4 binds (outcome is literal): {sql}");
+    }
+
+    #[test]
+    fn tier_sql_unchanged_and_schema_correct_0039() {
+        // The #172 fix — left intact, re-pinned here as the shared owner.
+        assert_eq!(SQL_UPSERT_TIER.matches('?').count(), 4, "{SQL_UPSERT_TIER}");
+        assert!(SQL_UPSERT_TIER.contains("'active'"), "{SQL_UPSERT_TIER}");
+        assert!(
+            SQL_UPSERT_TIER.contains("subscription_started_at_ms"),
+            "{SQL_UPSERT_TIER}"
+        );
+        assert!(
+            !SQL_UPSERT_TIER.contains("materialized_at_ms"),
+            "must NOT reference materialized_at_ms: {SQL_UPSERT_TIER}"
+        );
+        assert!(SQL_READ_TIER.contains("WHERE tenant_id = ?"), "{SQL_READ_TIER}");
     }
 }
