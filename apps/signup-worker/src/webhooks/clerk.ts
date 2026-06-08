@@ -490,7 +490,18 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
         .bind(tenantId, emailHash, ownerUserId, nowMs)
         .run();
 
-      return { id: tenantId };
+      // Read back the WINNING tenant by clerk_user_id. Under concurrent
+      // duplicate Clerk delivery, INSERT OR IGNORE may have skipped our row
+      // (the UNIQUE clerk_user_id index, migration 0056); the durable tenant is
+      // whichever insert won. Adopt it so the PAT + Clerk metadata bind to the
+      // REAL tenant, never an orphan (D1 FKs are off in Workers — this read-back
+      // is the only guard).
+      const winner = await env.CONFIG_DB.prepare(
+        "SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1 LIMIT 1",
+      )
+        .bind(ownerUserId)
+        .first<{ tenant_id: string }>();
+      return { id: winner?.tenant_id ?? tenantId };
     },
 
     // ── configureTenant ───────────────────────────────────────────────────────

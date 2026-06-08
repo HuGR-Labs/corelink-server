@@ -437,3 +437,108 @@ describe("defaultApiClient.issuePat (H3: honors scope, no privilege-by-default)"
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("defaultApiClient.createTenant (concurrent-duplicate webhook → no orphan PAT)", () => {
+  /**
+   * Models the migration-0056 UNIQUE(clerk_user_id) index: a `tenant` table
+   * that already holds a row for this Clerk user (a Svix retry / a second
+   * concurrent isolate won the insert first). `INSERT OR IGNORE` must no-op on
+   * the clerk_user_id conflict, and the read-back `SELECT ... WHERE
+   * clerk_user_id = ?1` must surface the PRE-EXISTING tenant_id — never the
+   * freshly-generated random one that has no row.
+   */
+  function fakeDbWithExistingTenant(existing: {
+    clerkUserId: string;
+    tenantId: string;
+  }) {
+    // The single durable row keyed by clerk_user_id (the UNIQUE index).
+    const rows = new Map<string, string>([
+      [existing.clerkUserId, existing.tenantId],
+    ]);
+    let insertAttempted = false;
+    let insertInserted = false;
+    let selectClerkUserId: string | undefined;
+
+    const db = {
+      prepare(query: string) {
+        let boundClerkUserId: string | undefined;
+        const stmt = {
+          _query: query,
+          bind(...values: unknown[]) {
+            if (query.includes("INSERT OR IGNORE INTO tenant")) {
+              // VALUES (?1=tenant_id, ?2=email_hash, ?3=clerk_user_id, ?4=...).
+              boundClerkUserId = values[2] as string;
+            } else if (
+              query.includes("SELECT tenant_id FROM tenant WHERE clerk_user_id")
+            ) {
+              boundClerkUserId = values[0] as string;
+            }
+            return stmt;
+          },
+          async run() {
+            if (query.includes("INSERT OR IGNORE INTO tenant")) {
+              insertAttempted = true;
+              const cuid = boundClerkUserId as string;
+              if (rows.has(cuid)) {
+                // UNIQUE(clerk_user_id) conflict → OR IGNORE silently skips.
+                insertInserted = false;
+              } else {
+                // No conflict in this scenario, but model the happy path too.
+                // (tenant_id isn't captured here — irrelevant to this test.)
+                insertInserted = true;
+              }
+            }
+            return { success: true };
+          },
+          async all() {
+            return { results: [] };
+          },
+          async first() {
+            if (query.includes("SELECT tenant_id FROM tenant WHERE clerk_user_id")) {
+              selectClerkUserId = boundClerkUserId;
+              const tid = rows.get(boundClerkUserId as string);
+              return tid ? { tenant_id: tid } : null;
+            }
+            return null;
+          },
+        };
+        return stmt;
+      },
+    };
+
+    return {
+      db,
+      state: () => ({ insertAttempted, insertInserted, selectClerkUserId }),
+    };
+  }
+
+  it("returns the EXISTING tenant_id (read-back wins), not the freshly-generated one", async () => {
+    const ownerUserId = "user_2abc";
+    const existingTenantId = "t_pre_existing_winner";
+    const { db, state } = fakeDbWithExistingTenant({
+      clerkUserId: ownerUserId,
+      tenantId: existingTenantId,
+    });
+
+    const env = {
+      CLERK_WEBHOOK_SECRET: "whsec_x",
+      CORELINK_API_BASE: "https://api.example.test",
+      CONFIG_DB: db,
+    } as unknown as AutoProvisionEnv;
+
+    const api = defaultApiClient(env);
+    const { id } = await api.createTenant("alice-codes-default", ownerUserId);
+
+    // The fix: adopt the durable winner. The OLD code returned its own random
+    // crypto.randomUUID() here (an orphan id with no tenant row) — this assert
+    // fails against that behavior.
+    expect(id).toBe(existingTenantId);
+
+    const s = state();
+    // INSERT OR IGNORE was attempted but no-op'd on the UNIQUE conflict.
+    expect(s.insertAttempted).toBe(true);
+    expect(s.insertInserted).toBe(false);
+    // The read-back queried by the owner's clerk_user_id.
+    expect(s.selectClerkUserId).toBe(ownerUserId);
+  });
+});
