@@ -3,8 +3,9 @@
 # Worker envs (prod-sam, prod-lhr, prod-nrt, prod-syd).
 #
 # The regional Workers were deployed by Wave 32 multi-region phase 2 but do
-# NOT have the 3 secrets the container sidecar needs to reach R2 (S3 API) +
-# CF API. Without these, any container-driven path (audit export, scrub,
+# NOT have the secrets the container sidecar needs to reach R2 (S3 API) +
+# CF API (R2_S3_ACCESS_KEY_ID, R2_S3_SECRET_ACCESS_KEY, CF_API_TOKEN,
+# CLOUDFLARE_ACCOUNT_ID). Without these, any container-driven path (audit export, scrub,
 # advanced storage ops) fails. Worker-only paths (CAS/AC binding read/write,
 # auth, signup forwarding) work without them.
 #
@@ -38,7 +39,11 @@ readonly DEFAULT_ENV_FILE="$REPO_ROOT/.env.local"
 readonly DEFAULT_WRANGLER="$REPO_ROOT/worker/node_modules/.bin/wrangler"
 
 readonly ALL_REGIONS=(sam lhr nrt syd)
-readonly SECRETS=(R2_S3_ACCESS_KEY_ID R2_S3_SECRET_ACCESS_KEY CF_API_TOKEN)
+# CLOUDFLARE_ACCOUNT_ID added 2026-06-08 (#33): StorageEnv::from_env (storage.rs:84)
+# requires it; without it the regional container falls back to InMemory storage =
+# DATA LOSS. wrangler.toml:551 already documents it in the per-region secret set,
+# but it was missing from this push list.
+readonly SECRETS=(R2_S3_ACCESS_KEY_ID R2_S3_SECRET_ACCESS_KEY CF_API_TOKEN CLOUDFLARE_ACCOUNT_ID)
 
 # Logging helpers (no secret values ever).
 LOG_PREFIX="[$SCRIPT_NAME]"
