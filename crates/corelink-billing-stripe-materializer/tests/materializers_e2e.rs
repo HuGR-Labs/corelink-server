@@ -228,7 +228,7 @@ fn tier_change_scenario_basic_to_pro_emits_tier_changed_audit() {
     // Seed: tenant is at `starter`.
     bundle
         .d1
-        .upsert_tier("ten_1", "starter", "init")
+        .upsert_tier("ten_1", "starter", 1_700_000_000_000, "init")
         .expect("seed tier");
 
     // subscription.updated → plan_pro
@@ -267,7 +267,7 @@ fn tier_change_no_op_when_target_tier_equals_current() {
     let bundle = build_bundle();
     bundle
         .d1
-        .upsert_tier("ten_1", "pro", "init")
+        .upsert_tier("ten_1", "pro", 1_700_000_000_000, "init")
         .expect("seed tier");
 
     let (body, hdr) = signed_envelope_with_object(

@@ -140,11 +140,21 @@ pub trait BillingD1Writer: fmt::Debug + Send + Sync {
     fn read_tier(&self, tenant_id: &str) -> Result<Option<String>, BillingD1Error>;
 
     /// UPSERT the tier for `tenant_id`. Production writes
-    /// `tier_selections.tier`; native mirror stores the value verbatim.
+    /// `tier_selections.(tier, subscription_state='active',
+    /// subscription_started_at_ms=now_ms, correlation_id)`; the native
+    /// mirror stores the value verbatim.
+    ///
+    /// `now_ms` is the activation timestamp (ms since epoch) bound to
+    /// `subscription_started_at_ms`. The production statement writes
+    /// `subscription_state = 'active'`, and the
+    /// `subscription_started_when_active` table CHECK in migration
+    /// `0039` requires `subscription_started_at_ms` NOT NULL whenever the
+    /// state is `active` — so `now_ms` MUST be supplied.
     fn upsert_tier(
         &self,
         tenant_id: &str,
         tier_wire: &str,
+        now_ms: i64,
         correlation_id: &str,
     ) -> Result<(), BillingD1Error>;
 }
@@ -306,6 +316,11 @@ impl BillingD1Writer for InMemoryBillingD1 {
         &self,
         tenant_id: &str,
         tier_wire: &str,
+        // Activation timestamp bound to `subscription_started_at_ms` in
+        // the production statement. The native mirror keeps its existing
+        // `(tier, correlation_id)` shape (no behavior regression); the
+        // arg is threaded for trait parity with the wasm32 binder.
+        _now_ms: i64,
         correlation_id: &str,
     ) -> Result<(), BillingD1Error> {
         self.check_armed()?;
@@ -389,7 +404,8 @@ mod tests {
     fn tier_read_then_upsert_then_read_back() {
         let d1 = InMemoryBillingD1::new();
         assert_eq!(d1.read_tier("ten_1").unwrap(), None);
-        d1.upsert_tier("ten_1", "pro", "corr_1").unwrap();
+        d1.upsert_tier("ten_1", "pro", 1_700_000_000_000, "corr_1")
+            .unwrap();
         assert_eq!(d1.read_tier("ten_1").unwrap(), Some("pro".to_string()));
     }
 }

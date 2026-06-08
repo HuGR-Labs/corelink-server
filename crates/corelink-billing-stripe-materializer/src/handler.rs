@@ -368,7 +368,10 @@ impl D1SubscriptionStateHandler {
             .map_err(audit_to_mat)?;
 
         self.d1
-            .upsert_tier(tenant_id, new_wire, &env.id)
+            // `now_ms` (u64) → i64 for the `subscription_started_at_ms`
+            // bind. The Stripe-event clock is far below i64::MAX (ms
+            // since epoch), so the cast is lossless in practice.
+            .upsert_tier(tenant_id, new_wire, now_ms as i64, &env.id)
             .map_err(d1_to_mat)?;
         Ok(())
     }
@@ -639,7 +642,8 @@ mod tests {
     #[test]
     fn subscription_updated_recomputes_tier_and_emits_change_audit() {
         let (handler, d1, audit) = fixture();
-        d1.upsert_tier("ten_1", "starter", "init").unwrap();
+        d1.upsert_tier("ten_1", "starter", 1_700_000_000_000, "init")
+            .unwrap();
         let e = env(
             "evt_su",
             "customer.subscription.updated",
@@ -661,7 +665,8 @@ mod tests {
     #[test]
     fn subscription_deleted_marks_canceled_and_downgrades_to_free() {
         let (handler, d1, audit) = fixture();
-        d1.upsert_tier("ten_1", "pro", "init").unwrap();
+        d1.upsert_tier("ten_1", "pro", 1_700_000_000_000, "init")
+            .unwrap();
         let e = env(
             "evt_sd",
             "customer.subscription.deleted",
@@ -756,7 +761,8 @@ mod tests {
     #[test]
     fn unknown_plan_in_subscription_update_surfaces_invalid_payload() {
         let (handler, d1, _audit) = fixture();
-        d1.upsert_tier("ten_1", "starter", "init").unwrap();
+        d1.upsert_tier("ten_1", "starter", 1_700_000_000_000, "init")
+            .unwrap();
         let e = env(
             "evt_su",
             "customer.subscription.updated",

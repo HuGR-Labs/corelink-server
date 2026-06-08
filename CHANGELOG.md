@@ -235,6 +235,21 @@ Each entry cross-references:
   Gated least-privilege back-fill of the 25 legacy admin rows (`admin → read-write`,
   no migration) in `scripts/backfill-admin-scope-prod.sh`; deploy + follow-ups in
   `docs/operator/launch-pat-scope-fix-runbook.md`.
+- **`tier_selections` UPSERT now writes columns that actually exist.** The wasm32
+  production tier binder's `SQL_UPSERT_TIER`
+  (`corelink-billing-stripe-materializer::wasm32_binders`) referenced a
+  non-existent `materialized_at_ms` column and omitted the NOT-NULL
+  `subscription_state`, so every webhook-driven tier change would have failed at
+  bind/execute against the real D1 schema (`migrations/d1/0039_tier_selection.sql`).
+  The statement now binds `(tenant_id, tier, subscription_started_at_ms,
+  correlation_id)` and writes `subscription_state = 'active'` (the materializer owns
+  the active transition, consistent with `tier_select_store.rs::persist_free_active`),
+  satisfying the `subscription_started_when_active` table CHECK. `upsert_tier` gained
+  a `now_ms: i64` activation-timestamp arg threaded from the
+  `persist_tier_change` caller through the trait, the InMemory mirror (no behavior
+  regression), and the wasm32 binder; bind order keeps `tenant_id` first so the
+  `verify_first_bind` ct-eq tenant probe is preserved. Added a unit test pinning the
+  statement shape (four binds, `'active'`, timestamp column, no `materialized_at_ms`).
 - **Prod deploy gate now asserts the Team + Pro Stripe price IDs are
   populated.** `cf-deploy-prod.yml`'s required-prod-secrets check listed only
   the Stripe key/webhook secret, so a Cloudflare env missing
