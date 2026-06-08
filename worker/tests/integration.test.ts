@@ -131,17 +131,20 @@ describe("full pipeline smoke", () => {
     expect(resp.status).toBe(200);
   });
 
-  it("authenticated OCI v2 check — pipeline reaches DO and returns DO response", async () => {
+  it("OCI v2 pass-through — Worker forwards to the _oci DO and returns its response verbatim", async () => {
+    // PR #169: /v2/* is a pure pass-through. The Worker does NOT auth-gate it;
+    // it forwards RAW to the _oci DO and returns whatever the DO returns. Here
+    // the stub returns 200 + a DO-supplied header, both of which pass through.
     const env = makeEnvWithStub(200, { ok: true }, { "x-corelink-from-do": "1" });
     const resp = await workerHandler.fetch!(
-      new Request("http://localhost/v2/", {
-        headers: { Authorization: `Bearer ${VALID_TOKEN}` },
-      }),
+      // No Authorization needed at the Worker — OCI auth happens in the container.
+      new Request("http://localhost/v2/"),
       env,
       makeCtx(),
     );
     expect(resp.status).toBe(200);
-    // Response came from DO (not auth-blocked)
+    // The DO's response (status + headers) is returned verbatim.
+    expect(resp.headers.get("x-corelink-from-do")).toBe("1");
   });
 
   it("authenticated REAPI v2 — pipeline reaches DO", async () => {
@@ -206,33 +209,63 @@ describe("full pipeline smoke", () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// OCI Distribution Spec conformance
+// OCI Distribution Spec conformance — owned by the CONTAINER (pass-through)
+//
+// PR #169: the Worker no longer performs OCI auth or builds OCI envelopes. The
+// container emits the Docker-Distribution-Api-Version header, the 401 +
+// Www-Authenticate challenge, and the error envelopes. These tests therefore
+// assert the WORKER's job: route /v2/* + /token to the _oci DO and forward the
+// container's response VERBATIM (here a configurable stub stands in for it).
 // ──────────────────────────────────────────────────────────────────────────────
 
-describe("OCI spec conformance", () => {
-  it("GET /v2/ without auth returns Docker-Distribution-Api-Version header", async () => {
-    const resp = await fetch_("http://localhost/v2/");
+describe("OCI spec conformance — pass-through to the container", () => {
+  it("forwards the container's Docker-Distribution-Api-Version header verbatim", async () => {
+    // The container sets the OCI version header; the Worker forwards it unchanged.
+    const env = makeEnvWithStub(401, { errors: [{ code: "UNAUTHORIZED", message: "auth required" }] }, {
+      "Docker-Distribution-Api-Version": "registry/2.0",
+      "WWW-Authenticate": 'Bearer realm="https://corelink.test/token"',
+    });
+    const resp = await workerHandler.fetch!(new Request("http://localhost/v2/"), env, makeCtx());
     expect(resp.headers.get("docker-distribution-api-version")).toBe("registry/2.0");
   });
 
-  it("GET /v2/ without auth returns Content-Type: application/json", async () => {
-    const resp = await fetch_("http://localhost/v2/");
-    expect(resp.headers.get("content-type")).toContain("application/json");
-  });
-
-  it("GET /v2/ without auth returns 401 with errors array", async () => {
-    const resp = await fetch_("http://localhost/v2/");
+  it("forwards the container's 401 + errors array + Www-Authenticate challenge verbatim", async () => {
+    const env = makeEnvWithStub(401, { errors: [{ code: "UNAUTHORIZED", message: "auth required" }] }, {
+      "Docker-Distribution-Api-Version": "registry/2.0",
+      "WWW-Authenticate": 'Bearer realm="https://corelink.test/token"',
+    });
+    const resp = await workerHandler.fetch!(new Request("http://localhost/v2/"), env, makeCtx());
     expect(resp.status).toBe(401);
+    expect(resp.headers.get("www-authenticate")).toContain("Bearer realm=");
     const body = await resp.json() as { errors: Array<{ code: string; message: string }> };
     expect(Array.isArray(body.errors)).toBe(true);
     expect(body.errors[0]?.code).toBe("UNAUTHORIZED");
   });
 
-  it("GET /v2 (no trailing slash) returns OCI error envelope", async () => {
+  it("the Worker itself does NOT 401 an unauthenticated /v2/ — it forwards to the _oci DO", async () => {
+    // With a 200-returning stub (no container-issued challenge), the Worker must
+    // pass the 200 straight through: proof it did not inject its own auth gate.
+    const resp = await fetch_("http://localhost/v2/");
+    expect(resp.status).toBe(200);
+  });
+
+  it("GET /v2 (no trailing slash) also resolves to the pass-through (not 404)", async () => {
     const resp = await fetch_("http://localhost/v2");
     expect(resp.status).not.toBe(404);
+    // Default stub returns 200 — the route matched the OCI pass-through, not the
+    // not_found arm, and the Worker added no OCI envelope of its own.
+    expect(resp.status).toBe(200);
     const body = await resp.json() as Record<string, unknown>;
-    expect(Array.isArray(body["errors"])).toBe(true);
+    expect(body["errors"]).toBeUndefined();
+  });
+
+  it("GET /token resolves to the pass-through (OCI second leg), not the PAT gate", async () => {
+    // /token carries OCI Basic auth; it must reach the _oci DO, never the PAT
+    // gate (which would 401 a non-PAT credential). Default stub → 200.
+    const resp = await fetch_("http://localhost/token", {
+      headers: { Authorization: "Basic dXNlcjpwYXNz" },
+    });
+    expect(resp.status).toBe(200);
   });
 });
 
@@ -260,19 +293,21 @@ describe("timing-pad on 404", () => {
 // DO 404 response — timing-pad applied
 // ──────────────────────────────────────────────────────────────────────────────
 
-describe("DO 404 response timing-pad", () => {
-  it("DO 404 response is passed through with x-request-id and completes", async () => {
+describe("OCI DO 404 pass-through", () => {
+  it("container 404 (BLOB_UNKNOWN) on an OCI route is passed through with x-request-id", async () => {
+    // OCI is pass-through: the Worker forwards the container's 404 envelope as-is.
+    // (No Worker auth gate, and no timing-pad on the OCI path — that pad only
+    // applies to the PAT-gated DO forward.) No Authorization needed at the edge.
     const env = makeEnvWithStub(404, { errors: [{ code: "BLOB_UNKNOWN", message: "not found", detail: null }] });
     const resp = await workerHandler.fetch!(
-      new Request(`http://localhost/v2/${TEST_TENANT_ID}/blobs/sha256:deadbeef`, {
-        headers: { Authorization: `Bearer ${VALID_TOKEN}` },
-      }),
+      new Request(`http://localhost/v2/myrepo/blobs/sha256:deadbeef`),
       env,
       makeCtx(),
     );
-    // 404 from DO is passed through; the timing-pad adds latency
     expect(resp.status).toBe(404);
     expect(resp.headers.get("x-request-id")).not.toBeNull();
+    const body = await resp.json() as { errors: Array<{ code: string }> };
+    expect(body.errors[0]?.code).toBe("BLOB_UNKNOWN");
   });
 });
 
@@ -310,10 +345,13 @@ describe("security headers", () => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 describe("HTTP method handling", () => {
-  it("POST to authenticated route reaches DO", async () => {
+  // POST/PUT/DELETE on an authenticated PAT route reach the DO. (OCI /v2/* is a
+  // pass-through with no Worker auth gate — covered separately above — so the
+  // "authenticated method reaches DO" contract is exercised on a REAPI route.)
+  it("POST to an authenticated REAPI route reaches DO", async () => {
     const env = makeEnvWithStub(201, { upload_url: "/v2/repo/blobs/uploads/uuid" });
     const resp = await workerHandler.fetch!(
-      new Request(`http://localhost/v2/${TEST_TENANT_ID}/blobs/uploads/`, {
+      new Request(`http://localhost/api/v2/${TEST_TENANT_ID}/blobs/uploads/`, {
         method: "POST",
         headers: { Authorization: `Bearer ${VALID_TOKEN}` },
       }),
@@ -323,10 +361,10 @@ describe("HTTP method handling", () => {
     expect(resp.status).toBe(201);
   });
 
-  it("PUT to authenticated route reaches DO", async () => {
+  it("PUT to an authenticated REAPI route reaches DO", async () => {
     const env = makeEnvWithStub(200, { digest: "sha256:abc" });
     const resp = await workerHandler.fetch!(
-      new Request(`http://localhost/v2/${TEST_TENANT_ID}/manifests/latest`, {
+      new Request(`http://localhost/api/v2/${TEST_TENANT_ID}/manifests/latest`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${VALID_TOKEN}`,
@@ -340,10 +378,32 @@ describe("HTTP method handling", () => {
     expect(resp.status).toBe(200);
   });
 
-  it("DELETE to unauthenticated route returns 401", async () => {
-    const resp = await fetch_("http://localhost/v2/repo/manifests/latest", {
-      method: "DELETE",
-    });
-    expect(resp.status).toBe(401);
+  it("OCI methods (PUT/DELETE) are forwarded to the _oci DO verbatim, not auth-gated by the Worker", async () => {
+    // The Worker forwards the request method + path to the container, which does
+    // its own method/auth handling. Capture the forwarded method to prove the
+    // pass-through (no Worker 401 for an unauthenticated OCI DELETE).
+    let capturedMethod: string | null = null;
+    const capturingEnv: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (name: string) => ({ toString: () => `do-${name}` }),
+        get: () => ({
+          fetch: async (req: Request): Promise<Response> => {
+            capturedMethod = req.method;
+            return new Response(JSON.stringify({ ok: true }), {
+              status: 202,
+              headers: { "Content-Type": "application/json" },
+            });
+          },
+        }),
+        idFromString: (_s: string) => ({ toString: () => "id" }),
+        newUniqueId: () => ({ toString: () => "unique-id" }),
+        jurisdiction: (_j: string) => capturingEnv.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+    // No Authorization header — the Worker must NOT 401; it forwards verbatim.
+    const resp = await fetch_("http://localhost/v2/repo/manifests/latest", { method: "DELETE" }, capturingEnv);
+    expect(capturedMethod).toBe("DELETE");
+    // The container's status is returned verbatim (no Worker-synthesized 401).
+    expect(resp.status).toBe(202);
   });
 });

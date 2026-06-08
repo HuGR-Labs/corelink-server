@@ -131,6 +131,21 @@ pub trait ManifestKvStore: Send + Sync + fmt::Debug {
     async fn list_prefix(&self, tenant: &TenantId, prefix: &str) -> PortResult<Vec<String>>;
 }
 
+/// A resolved PAT: the owning tenant plus whether the PAT carries cache
+/// WRITE capability. Returned by [`TenantResolver::resolve_pat_capability`]
+/// so the `/token` exchange can downscope the minted registry bearer to
+/// the PAT's real rights (a read-only PAT must not get a `push` token).
+///
+/// NOT `#[non_exhaustive]`: out-of-crate `TenantResolver` impls (the
+/// container's `OciPatResolver`) construct it directly.
+#[derive(Debug, Clone)]
+pub struct ResolvedPat {
+    /// Tenant the PAT belongs to.
+    pub tenant: TenantId,
+    /// `true` iff the PAT grants cache WRITE (e.g. `cas:rw` / `admin`).
+    pub can_write: bool,
+}
+
 /// PAT → [`TenantId`] resolver port. Wave-33 Stream B's
 /// `corelink-auth` aggregator hosts the canonical PAT verify
 /// implementation; this port is the adapter-local shim until a
@@ -141,6 +156,24 @@ pub trait TenantResolver: Send + Sync + fmt::Debug {
     /// Basic <base64(user:pat)>`) to a [`TenantId`]. Returns `Err`
     /// with a wire-shape message on invalid / expired / revoked.
     async fn resolve_pat(&self, pat: &SecretWrap) -> PortResult<TenantId>;
+
+    /// Resolve a PAT to its tenant AND its cache write-capability.
+    ///
+    /// The `/token` exchange uses the write bit to downscope the minted
+    /// registry bearer (a read-only PAT must not obtain a `push` token).
+    ///
+    /// Default impl: resolve the tenant and report `can_write = false`
+    /// (FAIL-SAFE — an impl that cannot determine write capability grants
+    /// read only). Impls backed by a scope-aware verifier (the container's
+    /// Option-B `PatVerifier`) override this to report the PAT's real
+    /// capability.
+    async fn resolve_pat_capability(&self, pat: &SecretWrap) -> PortResult<ResolvedPat> {
+        let tenant = self.resolve_pat(pat).await?;
+        Ok(ResolvedPat {
+            tenant,
+            can_write: false,
+        })
+    }
 }
 
 /// Test fakes used by the integration tests and by [`crate::oci::config`]
