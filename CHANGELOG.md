@@ -191,6 +191,18 @@ Each entry cross-references:
   `docs/FINDING-turbo-tenant-isolation.md`.
 
 ### Fixed
+- **signup-worker bound a customer's PAT to an ORPHAN tenant under concurrent
+  duplicate Clerk delivery (correctness race).** `apps/signup-worker/.../clerk.ts`
+  `createTenant` generated a random `tenantId`, ran `INSERT OR IGNORE INTO tenant`,
+  then returned its OWN generated id. When a Svix retry / a second concurrent
+  isolate had already inserted a row for this Clerk user, the UNIQUE
+  `idx_tenant_clerk_user_id` index (migration 0056) silently skipped the insert —
+  but the caller still minted a PAT and wrote that orphan `tenant_id` into Clerk
+  metadata, leaving the customer holding a PAT pointing at a non-existent tenant
+  (D1 FKs are off in CF Workers, so nothing caught it). Fix: after the
+  `INSERT OR IGNORE`, `SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1` and
+  return THAT id — our row if we won the insert, the pre-existing row if we were
+  skipped — so the PAT + metadata always bind to the durable tenant.
 - **Stripe webhook was 401-rejected at the Worker edge — paid checkouts never
   granted a tier (LAUNCH-BLOCKER).** `worker/src/index.ts`'s `matchRoute` had no
   `/v1/billing/*` arm, so `POST /v1/billing/stripe-webhook` fell into the generic
