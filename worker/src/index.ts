@@ -115,6 +115,7 @@ type RouteKind =
   | "health_serving"
   | "oci_v2"
   | "oci_token"
+  | "billing_webhook"
   | "npm"
   | "pip"
   | "brew"
@@ -453,6 +454,19 @@ function matchRoute(url: URL): RouteMatch {
   // never accidentally skipped on 404-padding paths.
   if (path.startsWith("/_internal/")) {
     return { tenantId: "_system", pathSuffix: path, routeKind: "internal" };
+  }
+
+  // Stripe billing webhook — EXACT /v1/billing/stripe-webhook (mounted in the
+  // container at crates/corelink-container/src/webhook.rs). Stripe authenticates
+  // with a `Stripe-Signature` HMAC header, NOT a Bearer PAT, so this is a pure
+  // pass-through (mirrors the OCI carve-out): the Worker forwards the RAW body +
+  // Stripe-Signature to the container, which is the SOLE authority for verifying
+  // the signature (constant-time, replay-windowed) and deriving the tenant from
+  // the signed event metadata. There is NO URL tenant — route to the shared
+  // "_system" DO. Checked BEFORE the generic /v1/* arm so it is never swallowed
+  // into the PAT-required reapi_v1 bucket (which would 401 the un-PAT'd webhook).
+  if (path === "/v1/billing/stripe-webhook") {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "billing_webhook" };
   }
 
   // REAPI v1 — /v1/users/me, /v1/cas/blobs/<digest>/<size>, /v1/admin/audit/events, …
@@ -1455,6 +1469,57 @@ const handler: ExportedHandler<Env> = {
         );
       }
       return applyCors(ociResp, request);
+    }
+
+    // Stripe billing webhook pass-through — POST /v1/billing/stripe-webhook.
+    // Mirrors the OCI carve-out: Stripe authenticates with a `Stripe-Signature`
+    // HMAC header (NOT a Bearer PAT), so the Worker is a pure forwarder here —
+    // no extractAuth, no tenant/scope injection. The container is the SOLE
+    // authority: it re-computes the Stripe HMAC over the EXACT raw body bytes
+    // (constant-time, replay-windowed) and derives the tenant from the signed
+    // event metadata. Route to the shared "_system" DO (the webhook has no URL
+    // tenant). CRITICAL CORRECTNESS: forward the body UNCHANGED — `new Request(
+    // request, { headers })` preserves the body stream unread, so the bytes the
+    // container hashes are byte-identical to what Stripe signed. We do NOT
+    // read/clone/parse the body (a re-serialized body would break the signature).
+    if (route.routeKind === "billing_webhook") {
+      const billingDoId = env.CORELINK_SERVER.idFromName("_system");
+      const billingStub = env.CORELINK_SERVER.get(billingDoId);
+      const billingReq = new Request(request, {
+        headers: (() => {
+          const h = new Headers(request.headers);
+          // Strip any client-forged x-corelink-* server-trust headers BEFORE we
+          // set our own (delete-then-set). stripClientTrustHeaders does NOT
+          // remove `stripe-signature` (the webhook's auth) nor `authorization`
+          // — both are preserved by the `new Headers(request.headers)` clone.
+          stripClientTrustHeaders(h);
+          h.set("x-request-id", requestId);
+          h.set("x-corelink-route-kind", route.routeKind);
+          // Defense-in-depth: the container derives the tenant SOLELY from the
+          // signed Stripe event, never from a header. Delete any smuggled
+          // tenant/scope so a forged value can never reach the container.
+          // (tenant-id is not in the strip list — the Worker normally always
+          // .set()s it — so delete it explicitly on this no-tenant path.)
+          h.delete("x-corelink-tenant-id");
+          h.delete("x-corelink-scope");
+          // Deliberately NOT set: x-corelink-tenant-id / x-corelink-scope.
+          return h;
+        })(),
+      });
+      let billingResp: Response;
+      try {
+        billingResp = await billingStub.fetch(billingReq);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        // Do NOT include error detail that could leak internal topology
+        // (parity with the OCI / PAT-path DO forward catches).
+        console.error(`[${requestId}] billing webhook DO fetch failed: ${message.slice(0, 80)}`);
+        return applyCors(
+          reapiError("INTERNAL_ERROR", "upstream error", 500, requestId),
+          request,
+        );
+      }
+      return applyCors(billingResp, request);
     }
 
     // Auth gate — all other routes require a valid Bearer PAT, EXCEPT signup

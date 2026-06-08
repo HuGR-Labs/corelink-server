@@ -191,6 +191,22 @@ Each entry cross-references:
   `docs/FINDING-turbo-tenant-isolation.md`.
 
 ### Fixed
+- **Stripe webhook was 401-rejected at the Worker edge — paid checkouts never
+  granted a tier (LAUNCH-BLOCKER).** `worker/src/index.ts`'s `matchRoute` had no
+  `/v1/billing/*` arm, so `POST /v1/billing/stripe-webhook` fell into the generic
+  `/v1/*` `reapi_v1` bucket and hit the Bearer-PAT gate (`extractAuth`). Stripe
+  sends only a `Stripe-Signature` header (no PAT), so the Worker 401'd the request
+  before it reached the container — no Stripe event was ever processed. Added a
+  `billing_webhook` route-kind + an EXACT-path `matchRoute` arm (placed before the
+  generic `/v1/*` arm) and a pass-through branch (mirroring the OCI carve-out)
+  that forwards the webhook to the shared `_system` DO with NO PAT gate. The raw
+  request body is forwarded UNCHANGED (`new Request(request, { headers })` — never
+  read/parsed/re-serialized) so the container's Stripe HMAC verifies over the
+  exact signed bytes; `Stripe-Signature` is preserved; client-suppliable trust
+  headers (`x-corelink-scope`/`x-admin-*`/`x-corelink-tenant-id`) are stripped
+  (the container is the sole tenant authority, deriving it from the signed event).
+  The Worker adds NO signature/PAT validation — the container's HMAC verify
+  (constant-time, replay-windowed) is the sole authority.
 - **Prod deploy gate now asserts the Team + Pro Stripe price IDs are
   populated.** `cf-deploy-prod.yml`'s required-prod-secrets check listed only
   the Stripe key/webhook secret, so a Cloudflare env missing
