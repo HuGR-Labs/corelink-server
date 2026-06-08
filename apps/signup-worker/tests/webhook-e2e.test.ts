@@ -221,7 +221,7 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
         return { id: "tenant-uuid-001" };
       },
       async configureTenant(_tenantId: string, _region: string, _plan: "free") {},
-      async issuePat(tenantId: string, scope: "cas:rw") {
+      async issuePat(tenantId: string, scope: "read-write") {
         mintCalled.push(`issuePat:${tenantId}:${scope}`);
         return { id: "pat-uuid-001", plaintext: "corelink_pat_TESTTOKEN" };
       },

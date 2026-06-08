@@ -77,7 +77,7 @@ describe("autoProvisionFromClerkEvent", () => {
       async configureTenant(tenantId: string, region: string, plan: "free") {
         calls.push(`configureTenant(${tenantId},${region},${plan})`);
       },
-      async issuePat(tenantId: string, scope: "cas:rw") {
+      async issuePat(tenantId: string, scope: "read-write") {
         calls.push(`issuePat(${tenantId},${scope})`);
         return { id: "pat_1", plaintext: "ct_test_secret_xyz" };
       },
@@ -114,7 +114,7 @@ describe("autoProvisionFromClerkEvent", () => {
     expect(calls).toEqual([
       "createTenant(alice-codes-default,user_2abc)",
       "configureTenant(t_1,ord,free)",
-      "issuePat(t_1,cas:rw)",
+      "issuePat(t_1,read-write)",
       `publishUserMetadata(user_2abc,${JSON.stringify({
         tenant_id: "t_1",
         region: "ord",
@@ -367,7 +367,7 @@ describe("defaultApiClient.issuePat (H3: honors scope, no privilege-by-default)"
     vi.restoreAllMocks();
   });
 
-  it("mints + persists the requested scope (cas:rw), never admin", async () => {
+  it("mints + persists the requested scope (read-write), never admin", async () => {
     // Capture the D1 bind args for the `pat` INSERT.
     let patBindArgs: unknown[] = [];
     const fakeDb = {
@@ -421,17 +421,17 @@ describe("defaultApiClient.issuePat (H3: honors scope, no privilege-by-default)"
     } as unknown as AutoProvisionEnv;
 
     const api = defaultApiClient(env);
-    const pat = await api.issuePat("t_1", "cas:rw");
+    const pat = await api.issuePat("t_1", "read-write");
 
     expect(pat).toMatchObject({ id: "pat_real", plaintext: "corelink_pat_REAL" });
 
-    // H3: the mint request asks for cas:rw, not admin.
-    expect(mintBody["scopes"]).toBe("cas:rw");
+    // H3: the mint request asks for read-write, not admin.
+    expect(mintBody["scopes"]).toBe("read-write");
     expect(mintBody["scopes"]).not.toBe("admin");
 
-    // H3: the D1 `scope` column is bound to cas:rw (4th positional bind, ?4),
+    // H3: the D1 `scope` column is bound to read-write (4th positional bind, ?4),
     // not the old hardcoded 'admin' literal.
-    expect(patBindArgs[3]).toBe("cas:rw");
+    expect(patBindArgs[3]).toBe("read-write");
     expect(patBindArgs).not.toContain("admin");
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);

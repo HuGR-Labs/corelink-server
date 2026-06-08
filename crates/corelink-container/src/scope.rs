@@ -14,25 +14,35 @@
 //! tokens are ignored. A token grants a cache capability when one of its
 //! segments matches:
 //!
-//! - **write** (CAS PUT, AC update, Turbo PUT) requires a `cas:rw` token
-//!   (or a future `cas:w`).
-//! - **read** (CAS GET, AC lookup, Turbo GET) requires `cas:rw` OR `cas:r`
-//!   (and, since write implies read, a `cas:w` token also grants read).
+//! - **write** (CAS PUT, AC update, Turbo PUT) requires a `cas:rw` /
+//!   `read-write` token (or a future `cas:w`).
+//! - **read** (CAS GET, AC lookup, Turbo GET) requires `cas:rw` / `read-write`
+//!   OR `cas:r` / `read-only` (and, since write implies read, a `cas:w` token
+//!   also grants read).
+//!
+//! # Two equivalent spellings
+//!
+//! The D1 `pat.scope` column is constrained to `('read-write','read-only',
+//! 'admin')` (see `migrations/d1/0037`), and the production provisioning path
+//! (`signup-worker/clerk.ts`) writes `read-write` — so `read-write` /
+//! `read-only` are the canonical STORED forms. The colon grammar (`cas:rw` /
+//! `cas:r` / `cas:w`) is the equivalent internal spelling used by the cache
+//! surfaces' own `x-corelink-scope` plumbing. This module accepts BOTH so the
+//! stored value and the internal spelling map to the same capability — no
+//! destructive schema migration is needed to align them.
 //!
 //! # Fail-CLOSED
 //!
 //! An empty or missing scope grants NOTHING (both [`requires_cache_read`]
 //! and [`requires_cache_write`] return `false`). `admin` is treated as a
-//! superset that DOES grant cache rw (so enforcement is decoupled from the
-//! prod scope back-fill `admin → cas:rw`); admin *route* authorization is a
+//! superset that DOES grant cache rw; admin *route* authorization is a
 //! separate internal-auth gate (`admin.rs`/`admin_pilot.rs`), not this module.
 //!
 //! # Current traffic
 //!
-//! Prod PATs carry `admin` (pre back-fill) or `cas:rw` (post) — both pass
-//! read+write, so enforcement is a NO-OP for live traffic regardless of
-//! back-fill ordering. This module ESTABLISHES the gate so read-only / tiered
-//! tokens (`cas:r`) work later.
+//! Prod PATs carry `admin` (legacy) or `read-write` (self-serve) — both pass
+//! read+write, so enforcement is a NO-OP for live traffic. This module
+//! ESTABLISHES the gate so `read-only` / tiered tokens work later.
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
@@ -56,27 +66,32 @@ fn tokens(scope: &str) -> impl Iterator<Item = &str> {
 
 /// True when `scope` grants the cache **read** capability.
 ///
-/// Granted by `cas:rw`, `cas:r`, `cas:w` (write implies read), or `admin`
-/// (a superset that includes cache access). Fail-CLOSED: empty / missing /
-/// no matching token ⇒ `false`.
+/// Granted by `cas:rw` / `read-write`, `cas:r` / `read-only`, `cas:w` (write
+/// implies read), or `admin` (a superset that includes cache access).
+/// Fail-CLOSED: empty / missing / no matching token ⇒ `false`.
 #[must_use]
 pub fn requires_cache_read(scope: &str) -> bool {
-    tokens(scope).any(|t| matches!(t, "cas:rw" | "cas:r" | "cas:w" | "admin"))
+    tokens(scope).any(|t| {
+        matches!(
+            t,
+            "cas:rw" | "cas:r" | "cas:w" | "read-write" | "read-only" | "admin"
+        )
+    })
 }
 
 /// True when `scope` grants the cache **write** capability.
 ///
-/// Granted by `cas:rw`, `cas:w`, or `admin` (a superset that includes cache
-/// access). Fail-CLOSED: empty / missing / no matching token ⇒ `false`.
+/// Granted by `cas:rw` / `read-write`, `cas:w`, or `admin` (a superset that
+/// includes cache access). NOT granted by `read-only` / `cas:r`. Fail-CLOSED:
+/// empty / missing / no matching token ⇒ `false`.
 ///
-/// `admin` grants cache rw so that the deploy is decoupled from the prod
-/// scope back-fill (`admin → cas:rw`): pre-back-fill admin-scoped customer
-/// PATs keep working, post-back-fill `cas:rw` PATs work, and a future `cas:r`
-/// is read-only. Admin *route* authorization remains a separate internal-auth
-/// gate (see `admin.rs`/`admin_pilot.rs`); this only governs the cache surface.
+/// `admin` grants cache rw so that legacy admin-scoped customer PATs keep
+/// working alongside the `read-write` self-serve tokens. Admin *route*
+/// authorization remains a separate internal-auth gate (see
+/// `admin.rs`/`admin_pilot.rs`); this only governs the cache surface.
 #[must_use]
 pub fn requires_cache_write(scope: &str) -> bool {
-    tokens(scope).any(|t| matches!(t, "cas:rw" | "cas:w" | "admin"))
+    tokens(scope).any(|t| matches!(t, "cas:rw" | "cas:w" | "read-write" | "admin"))
 }
 
 /// Read the trusted [`SCOPE_HEADER`] value off the request parts, trimmed.
@@ -160,6 +175,22 @@ mod tests {
         // Forward-design: a write-only token still implies read.
         assert!(requires_cache_write("cas:w"));
         assert!(requires_cache_read("cas:w"));
+    }
+
+    #[test]
+    fn read_write_is_equivalent_to_cas_rw() {
+        // `read-write` is the canonical STORED form (D1 pat.scope CHECK +
+        // signup-worker provisioning). It must grant read AND write, exactly
+        // like `cas:rw` — this is what unblocks real self-serve signups.
+        assert!(requires_cache_read("read-write"));
+        assert!(requires_cache_write("read-write"));
+    }
+
+    #[test]
+    fn read_only_grants_read_not_write() {
+        // `read-only` is the stored equivalent of `cas:r`.
+        assert!(requires_cache_read("read-only"));
+        assert!(!requires_cache_write("read-only"));
     }
 
     #[test]
