@@ -443,6 +443,42 @@ pub struct AdminMutateBody {
     pub approver: Option<String>,
 }
 
+/// Canonical `tier_selections.tier` enum (migration 0039). The D1
+/// `UPDATE tier_selections SET tier = ?1` write is gated by a CHECK
+/// constraint accepting EXACTLY these lower-case labels.
+///
+/// NOTE on divergence: migration 0057's `tenant.tier` CHECK additionally
+/// allows `solo` and `org` (legacy / quota-class aliases). Those are NOT
+/// valid in `tier_selections`, so the operator admin path rejects them
+/// here with a clean 400 rather than letting the value reach the D1 CHECK
+/// (which would surface as an opaque 500). Reconciling the two enums is an
+/// additive-only auth-migration follow-up (do NOT widen 0039 destructively)
+/// — tracked in the PR for #35.
+const TIER_SELECTIONS_TIERS: [&str; 5] = ["free", "starter", "team", "pro", "enterprise"];
+
+/// Validate + normalize an operator-supplied `tier` string against the
+/// `tier_selections.tier` enum BEFORE it is flowed into a
+/// [`MutateOp::SetTenantTier`] and on to the D1 write.
+///
+/// Trims surrounding whitespace and lower-cases (so the codebase's own
+/// admin callers that send `"Team"` normalize to `"team"`), then rejects
+/// anything outside [`TIER_SELECTIONS_TIERS`] with a static error string —
+/// surfaced as a `400 invalid_tier` at the route boundary instead of an
+/// opaque D1 CHECK-violation 500.
+///
+/// # Errors
+///
+/// Returns `Err("invalid_tier")` when the normalized value is not one of
+/// the canonical `tier_selections` tiers (e.g. `solo`, `org`, typos).
+fn normalize_tier_selection(raw: &str) -> Result<String, &'static str> {
+    let normalized = raw.trim().to_ascii_lowercase();
+    if TIER_SELECTIONS_TIERS.contains(&normalized.as_str()) {
+        Ok(normalized)
+    } else {
+        Err("invalid_tier")
+    }
+}
+
 impl AdminMutateBody {
     /// Parse the body into an [`AdminMutateRequest`].
     ///
@@ -456,6 +492,9 @@ impl AdminMutateBody {
             "set_tenant_tier" => {
                 let tenant = self.tenant.ok_or("set_tenant_tier requires tenant")?;
                 let tier = self.tier.ok_or("set_tenant_tier requires tier")?;
+                // Validate + normalize against the tier_selections enum
+                // BEFORE the value can reach the D1 CHECK (#35).
+                let tier = normalize_tier_selection(&tier)?;
                 MutateOp::set_tenant_tier(tenant, tier)
             }
             "rotate_admin_token" => {
@@ -507,6 +546,9 @@ impl AdminMutateBody {
             "set_tenant_tier" => {
                 let tenant = self.tenant.ok_or("set_tenant_tier requires tenant")?;
                 let tier = self.tier.ok_or("set_tenant_tier requires tier")?;
+                // Validate + normalize against the tier_selections enum
+                // BEFORE the value can reach the D1 CHECK (#35).
+                let tier = normalize_tier_selection(&tier)?;
                 MutateOp::set_tenant_tier(tenant, tier)
             }
             "rotate_admin_token" => {
@@ -862,6 +904,86 @@ mod tests {
         };
         let err = body.into_request(0).expect_err("missing tier");
         assert!(err.contains("tier"));
+    }
+
+    /// Build a `set_tenant_tier` body with the given raw tier string.
+    fn tier_body(tier: &str) -> AdminMutateBody {
+        AdminMutateBody {
+            op_kind: "set_tenant_tier".into(),
+            tenant: Some("t1".into()),
+            tier: Some(tier.into()),
+            token_id: None,
+            initiator: String::new(),
+            initiator_is_admin: false,
+            approval_id: Some("a1".into()),
+            approver: Some("bob".into()),
+        }
+    }
+
+    /// Extract the tier label from a parsed `set_tenant_tier` request.
+    fn parsed_tier(req: &AdminMutateRequest) -> &str {
+        match &req.op {
+            MutateOp::SetTenantTier { tier, .. } => tier.as_str(),
+            other => panic!("expected SetTenantTier, got {other:?}"),
+        }
+    }
+
+    /// #35: the operator's own admin tests send capitalized labels
+    /// (`"Team"`). The parser MUST normalize them to the lower-case
+    /// `tier_selections` label so the D1 CHECK accepts the write — on
+    /// BOTH the legacy and the operator-gated path.
+    #[test]
+    fn set_tenant_tier_normalizes_capitalized_tier() {
+        let req = tier_body("Team")
+            .into_request(0)
+            .expect("capitalized tier accepted + normalized");
+        assert_eq!(parsed_tier(&req), "team");
+
+        let gated = tier_body("  PRO  ")
+            .into_request_gated("operator@internal", 0)
+            .expect("capitalized + padded tier accepted + normalized");
+        assert_eq!(parsed_tier(&gated), "pro");
+    }
+
+    /// #35: every canonical `tier_selections` tier is accepted in its
+    /// lower-case form and passes through unchanged.
+    #[test]
+    fn set_tenant_tier_accepts_valid_lowercase_tiers() {
+        for tier in ["free", "starter", "team", "pro", "enterprise"] {
+            let req = tier_body(tier)
+                .into_request(0)
+                .unwrap_or_else(|e| panic!("tier {tier} should be accepted: {e}"));
+            assert_eq!(parsed_tier(&req), tier);
+        }
+    }
+
+    /// #35: an unknown tier is rejected with the `invalid_tier` 400
+    /// marker BEFORE reaching the D1 CHECK (no opaque 500).
+    #[test]
+    fn set_tenant_tier_rejects_invalid_tier() {
+        let err = tier_body("platinum")
+            .into_request(0)
+            .expect_err("unknown tier rejected");
+        assert_eq!(err, "invalid_tier");
+
+        let gated_err = tier_body("platinum")
+            .into_request_gated("operator@internal", 0)
+            .expect_err("unknown tier rejected on gated path");
+        assert_eq!(gated_err, "invalid_tier");
+    }
+
+    /// #35 divergence: `solo` / `org` are valid in migration 0057's
+    /// `tenant.tier` CHECK but NOT in 0039's `tier_selections.tier`.
+    /// They MUST be rejected cleanly here (additive-only migration
+    /// follow-up tracked in the PR), not flowed to the D1 CHECK.
+    #[test]
+    fn set_tenant_tier_rejects_solo_and_org_divergence() {
+        for tier in ["solo", "org", "Solo", "ORG"] {
+            let err = tier_body(tier)
+                .into_request_gated("operator@internal", 0)
+                .expect_err("solo/org rejected (0039 vs 0057 divergence)");
+            assert_eq!(err, "invalid_tier", "tier {tier} must be rejected");
+        }
     }
 
     /// serde-default: a wire body WITHOUT `initiator` / `initiator_is_admin`
