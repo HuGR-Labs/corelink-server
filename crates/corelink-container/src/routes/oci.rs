@@ -141,6 +141,18 @@ impl OciMoatStore {
     }
 }
 
+/// True iff `upload_uuid` was minted for `tenant`. Sessions are minted as
+/// `<tenant-canonical>:<random>` in [`OciMoatStore::open_upload`]; the upload
+/// buffer is process-shared across tenants (all OCI traffic hits one `_oci`
+/// DO), so chunk/cancel/finalize MUST reject a uuid that isn't the caller's —
+/// otherwise a tenant holding another's uuid could append-to / cancel its
+/// in-flight push (a confused-deputy griefing vector). A cross-tenant uuid
+/// returns the SAME "not found" error as an absent one (no existence oracle).
+fn upload_uuid_belongs_to(tenant: &TenantId, upload_uuid: &str) -> bool {
+    let prefix = format!("{}:", tenant.to_canonical_text());
+    upload_uuid.starts_with(&prefix)
+}
+
 #[async_trait]
 impl BlobStore for OciMoatStore {
     async fn open_upload(&self, tenant: &TenantId) -> PortResult<String> {
@@ -155,10 +167,13 @@ impl BlobStore for OciMoatStore {
 
     async fn append_chunk(
         &self,
-        _tenant: &TenantId,
+        tenant: &TenantId,
         upload_uuid: &str,
         chunk: Bytes,
     ) -> PortResult<u64> {
+        if !upload_uuid_belongs_to(tenant, upload_uuid) {
+            return Err(format!("upload session not found: {upload_uuid}"));
+        }
         let mut g = self
             .uploads
             .lock()
@@ -179,6 +194,9 @@ impl BlobStore for OciMoatStore {
         upload_uuid: &str,
         blob_key: &str,
     ) -> PortResult<Bytes> {
+        if !upload_uuid_belongs_to(tenant, upload_uuid) {
+            return Err(format!("upload session not found: {upload_uuid}"));
+        }
         let buf = {
             let mut g = self
                 .uploads
@@ -199,7 +217,10 @@ impl BlobStore for OciMoatStore {
         Ok(assembled)
     }
 
-    async fn cancel_upload(&self, _tenant: &TenantId, upload_uuid: &str) -> PortResult<()> {
+    async fn cancel_upload(&self, tenant: &TenantId, upload_uuid: &str) -> PortResult<()> {
+        if !upload_uuid_belongs_to(tenant, upload_uuid) {
+            return Err(format!("upload session not found: {upload_uuid}"));
+        }
         self.uploads
             .lock()
             .map_err(|e| format!("oci upload buf poisoned: {e}"))?
@@ -778,5 +799,43 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(pulled.as_ref(), bytes.as_slice());
+    }
+
+    #[tokio::test]
+    async fn upload_session_is_tenant_scoped() {
+        // Confused-deputy guard: the shared `_oci` DO buffers ALL tenants'
+        // uploads in one process map, so a tenant may only append/cancel/
+        // finalize a session it opened. A cross-tenant uuid must look like an
+        // absent session (no existence oracle) and must NOT mutate it.
+        let cas = Arc::new(StubCas::default());
+        let moat = Arc::new(MoatCache::production(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()),
+            "oci-test",
+        ));
+        let store = OciMoatStore::new(moat);
+        let tenant_a = TenantId::from_uuid(Uuid::from_u128(0xA));
+        let tenant_b = TenantId::from_uuid(Uuid::from_u128(0xB));
+
+        let uuid = store.open_upload(&tenant_a).await.unwrap();
+
+        // Tenant B cannot touch tenant A's session (each → not-found error).
+        assert!(store
+            .append_chunk(&tenant_b, &uuid, Bytes::from_static(b"x"))
+            .await
+            .is_err());
+        assert!(store.cancel_upload(&tenant_b, &uuid).await.is_err());
+        assert!(store
+            .finalize_upload(&tenant_b, &uuid, "sha256:00")
+            .await
+            .is_err());
+
+        // A's session is intact (B's attempts were rejected before any mutation),
+        // so tenant A can still append.
+        assert!(store
+            .append_chunk(&tenant_a, &uuid, Bytes::from_static(b"x"))
+            .await
+            .is_ok());
     }
 }
