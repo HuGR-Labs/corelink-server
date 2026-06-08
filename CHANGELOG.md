@@ -39,9 +39,28 @@ Each entry cross-references:
   is enforced at the route from the Worker-set `x-corelink-scope`. The `/cargo`
   route is env-gated (mounted only when `PAT_SIGNING_KEY` + the D1/R2 `StorageEnv`
   are present; fail-CLOSED / unmounted in dev/CI). Deploy + measurement are
-  Phase B/C (owner-gated). NOTE: sibling adapters (npm/pip/brew/oci) still carry
-  the `hugr-pat_` placeholder prefix — unmounted scaffolds on no live path;
-  reconcile when each is wired.
+  Phase B/C (owner-gated).
+- **brew + npm + pip cache surfaces (Phase B) + shared PAT-verifier unification.**
+  Wired `corelink_adapter_host::{brew,npm,pip}` into the container on the SAME
+  Option-B auth + a new 2-level content-dedup moat: `/brew/<tenant>/<path>`
+  (public Homebrew bottles, cross-tenant deduped under `_public`),
+  `/npm/<tenant>/<rest>` (registry.npmjs.org mirror; tarball bytes per-tenant,
+  metadata in D1 `adapter_npm_meta`), `/pip/<tenant>/<path>` (PyPI PEP 503/691
+  simple index in D1 `adapter_pip_index` + content-addressed wheels). Bytes
+  content-address through `adapter_cache::MoatCache` behind a D1
+  `(namespace, url_hash) → content_hash` map (migrations 0058–0060); the moat
+  also re-verifies on READ that served bytes re-hash to the mapped content-hash
+  (refuse-and-self-heal), so the shared `_public` namespace can never serve
+  un-content-addressed bytes even under a poisoned map row (L6-review hardening).
+  **Zero-debt
+  unification:** the cargo-only `cargo_pat_resolver::D1PatTenantResolver` (#163)
+  is replaced by ONE trait-agnostic `adapter_pat::PatVerifier` shared across
+  cargo/brew/npm/pip — each adapter wraps it in a thin `TenantResolver` newtype,
+  so the HMAC → D1 → Argon2id → fail-CLOSED-scope pipeline lives exactly once.
+  SSRF guards pin each upstream to its configured origin; the adapter PAT prefix
+  is `corelink_`. All four routes are env-gated (fail-CLOSED / unmounted in
+  dev/CI). oci is deferred (its two-leg `/token` + Bearer-HMAC auth needs a
+  Worker-side exception). Deploy/measurement owner-gated.
 
 ### Security
 - **Audit-round-2 hardening (brutal 13-agent audit follow-ups).** Closed the

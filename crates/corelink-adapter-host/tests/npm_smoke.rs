@@ -32,7 +32,7 @@ use url::Url;
 
 use common::{FixedTenant, InMemCas, InMemKv};
 
-const TEST_PAT: &str = "hugr-pat_npm_test";
+const TEST_PAT: &str = "corelink_npm_test";
 
 fn make_state() -> AdapterState {
     let cas: Arc<dyn corelink_adapter_host::npm::ports::CasStore> = Arc::new(InMemCas::default());
@@ -114,7 +114,7 @@ async fn forged_pat_returns_401() {
         .oneshot(
             Request::builder()
                 .uri("/lodash")
-                .header(header::AUTHORIZATION, "Bearer hugr-pat_forged")
+                .header(header::AUTHORIZATION, "Bearer corelink_forged")
                 .body(Body::empty())
                 .expect("req"),
         )

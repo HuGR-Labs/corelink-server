@@ -1,12 +1,14 @@
 //! PAT extraction + tenant resolution for the npm adapter.
 //!
 //! npm clients send `Authorization: Bearer <token>`. The adapter
-//! expects `Bearer hugr-pat_<token>` (CoreLink PAT). The PAT
-//! plaintext is held in a [`secrecy::SecretString`] so it never
-//! lands in a `Display` / log line by accident. PAT bytes are
-//! compared in constant time at the resolver layer via
-//! [`subtle::ConstantTimeEq`] (the resolver trait contract documents
-//! this).
+//! expects `Bearer corelink_<token>` (the canonical CoreLink PAT
+//! format). The [`PAT_PREFIX`] check is a fast-path reject — done in
+//! constant time via [`subtle::ConstantTimeEq`] — that runs BEFORE the
+//! resolver lookup, so a malformed/foreign token never reaches the
+//! per-tenant index. The PAT plaintext is held in a
+//! [`secrecy::SecretString`] so it never lands in a `Display` / log
+//! line by accident. PAT bytes are compared in constant time at the
+//! resolver layer too (the resolver trait contract documents this).
 
 use std::sync::Arc;
 
@@ -14,16 +16,27 @@ use corelink_audit::ports::AuditEmitter;
 use corelink_core::types::tenant::TenantId;
 use http::HeaderMap;
 use secrecy::{ExposeSecret, SecretString};
+use subtle::ConstantTimeEq;
 
 use crate::npm::audit::{emit_npm_audit, event_types, now_unix_ms};
 use crate::npm::error::NpmAdapterError;
 use crate::npm::ports::TenantResolverHandle;
 
+/// Canonical CoreLink PAT plaintext prefix.
+pub const PAT_PREFIX: &str = "corelink_";
+
+/// Compile-time pin: the production wire prefix is `corelink_` (9 bytes,
+/// = `corelink_pat::format::PAT_PREFIX_LEN`). Kept a string literal so the
+/// adapter crate stays decoupled from `corelink_pat` per the ports charter;
+/// the authoritative parse + crypto verify happens in the container resolver.
+const _: () = assert!(PAT_PREFIX.len() == 9);
+
 /// Extract the PAT plaintext from a request's [`HeaderMap`].
 ///
 /// Returns `Ok(SecretString)` on success; `Err(NpmAdapterError::Auth)`
 /// if no `Authorization: Bearer` header is present, the format is
-/// malformed, or the token is empty.
+/// malformed, the token is empty, or the token does not start with
+/// [`PAT_PREFIX`].
 ///
 /// # Errors
 ///
@@ -40,12 +53,38 @@ pub fn extract_pat(headers: &HeaderMap) -> Result<SecretString, NpmAdapterError>
         if token.is_empty() {
             return Err(NpmAdapterError::Auth("empty Bearer token".into()));
         }
+        if !bearer_eq(token, PAT_PREFIX) {
+            return Err(NpmAdapterError::Auth("PAT prefix mismatch".into()));
+        }
         return Ok(SecretString::new(token.to_owned().into()));
     }
 
     Err(NpmAdapterError::Auth(
         "Authorization must be `Bearer <pat>`".into(),
     ))
+}
+
+/// Constant-time prefix check: does `token` start with `expected_prefix`?
+///
+/// Iterates over the prefix bytes only (length is public input). The
+/// constant-time comparison hides the per-byte mismatch position so an
+/// attacker timing the response can't binary-search the prefix. The prefix
+/// is itself fixed (`corelink_`), so the loop iteration count is
+/// data-independent.
+#[must_use]
+fn bearer_eq(token: &str, expected_prefix: &str) -> bool {
+    let token_bytes = token.as_bytes();
+    let expected = expected_prefix.as_bytes();
+    if token_bytes.len() < expected.len() {
+        return false;
+    }
+    // Bounded by the length check above; route via `get` to stay clear of
+    // the `indexing_slicing` lint.
+    let head = match token_bytes.get(..expected.len()) {
+        Some(slice) => slice,
+        None => return false,
+    };
+    head.ct_eq(expected).into()
 }
 
 /// Convenience helper: extract the PAT from `headers`, resolve to a
@@ -101,8 +140,8 @@ mod tests {
 
     #[test]
     fn extracts_bearer_token() {
-        let pat = extract_pat(&h("Bearer hugr-pat_abc123")).expect("bearer ok");
-        assert_eq!(pat.expose_secret(), "hugr-pat_abc123");
+        let pat = extract_pat(&h("Bearer corelink_abc123")).expect("bearer ok");
+        assert_eq!(pat.expose_secret(), "corelink_abc123");
     }
 
     #[test]
@@ -121,5 +160,27 @@ mod tests {
     fn rejects_unknown_scheme() {
         let result = extract_pat(&h("Basic foobar"));
         assert!(matches!(result, Err(NpmAdapterError::Auth(_))));
+    }
+
+    #[test]
+    fn rejects_wrong_prefix() {
+        // A non-`corelink_` token (e.g. a GitHub PAT or the old placeholder
+        // prefix) is rejected at extraction, before the resolver lookup.
+        assert!(matches!(
+            extract_pat(&h("Bearer ghp_github")),
+            Err(NpmAdapterError::Auth(_))
+        ));
+        assert!(matches!(
+            extract_pat(&h("Bearer hugr-pat_legacy")),
+            Err(NpmAdapterError::Auth(_))
+        ));
+    }
+
+    #[test]
+    fn bearer_eq_matches_and_rejects() {
+        assert!(bearer_eq("corelink_deadbeef", PAT_PREFIX));
+        assert!(!bearer_eq("hugr", PAT_PREFIX)); // shorter than prefix
+        assert!(!bearer_eq("ghp_deadbeef", PAT_PREFIX));
+        assert!(!bearer_eq("hugr-pat_x", PAT_PREFIX)); // legacy placeholder rejected
     }
 }

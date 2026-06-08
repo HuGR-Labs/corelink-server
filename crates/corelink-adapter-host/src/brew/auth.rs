@@ -3,7 +3,7 @@
 //! Brew adapter accepts the bearer token via the standard
 //! `Authorization: Bearer <pat>` header (and, by convention with the
 //! brew client, the same plaintext set in `HOMEBREW_GITHUB_API_TOKEN`).
-//! Tokens are expected to start with the canonical `hugr-pat_` prefix
+//! Tokens are expected to start with the canonical `corelink_` prefix
 //! per the CoreLink PAT format; the prefix check is a fast-path reject
 //! that runs BEFORE the constant-time resolver lookup, so malformed
 //! input never reaches the per-tenant index.
@@ -25,7 +25,13 @@ use crate::brew::error::BrewAdapterError;
 use crate::brew::ports::{SharedTenantResolver, TenantResolveError};
 
 /// Canonical CoreLink PAT plaintext prefix.
-pub const PAT_PREFIX: &str = "hugr-pat_";
+pub const PAT_PREFIX: &str = "corelink_";
+
+/// Compile-time pin: the production wire prefix is `corelink_` (9 bytes,
+/// = `corelink_pat::format::PAT_PREFIX_LEN`). Kept a string literal so the
+/// adapter crate stays decoupled from `corelink_pat` per the ports charter;
+/// the authoritative parse + crypto verify happens in the container resolver.
+const _: () = assert!(PAT_PREFIX.len() == 9);
 
 /// Extract the bearer PAT plaintext from `headers`. Returns
 /// [`BrewAdapterError::Auth`] when:
@@ -63,7 +69,7 @@ pub fn extract_bearer(headers: &HeaderMap) -> Result<SecretString, BrewAdapterEr
 /// constant-time comparison hides the per-byte mismatch position so an
 /// attacker timing the response can't binary-search the prefix. We do
 /// NOT pad to a fixed length here — the prefix is itself fixed
-/// (`hugr-pat_`), so the loop iteration count is data-independent.
+/// (`corelink_`), so the loop iteration count is data-independent.
 #[must_use]
 pub fn bearer_eq(token: &str, expected_prefix: &str) -> bool {
     let token_bytes = token.as_bytes();
@@ -114,7 +120,7 @@ mod tests {
 
     #[test]
     fn bearer_eq_matches_prefix() {
-        assert!(bearer_eq("hugr-pat_deadbeef", PAT_PREFIX));
+        assert!(bearer_eq("corelink_deadbeef", PAT_PREFIX));
     }
 
     #[test]
@@ -125,6 +131,8 @@ mod tests {
     #[test]
     fn bearer_eq_rejects_wrong_prefix() {
         assert!(!bearer_eq("ghp_deadbeef_token", PAT_PREFIX));
+        // The pre-production placeholder prefix is now REJECTED.
+        assert!(!bearer_eq("hugr-pat_deadbeef", PAT_PREFIX));
     }
 
     #[test]
@@ -177,12 +185,12 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(
             http::header::AUTHORIZATION,
-            header_value("Bearer hugr-pat_abc123"),
+            header_value("Bearer corelink_abc123"),
         );
         let pat = match extract_bearer(&headers) {
             Ok(p) => p,
             Err(e) => panic!("must accept canonical PAT: {e}"),
         };
-        assert_eq!(pat.expose_secret(), "hugr-pat_abc123");
+        assert_eq!(pat.expose_secret(), "corelink_abc123");
     }
 }

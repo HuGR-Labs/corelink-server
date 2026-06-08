@@ -65,10 +65,9 @@ impl UpstreamClient {
     /// Returns [`NpmAdapterError::Upstream`] on any transport failure
     /// or non-2xx status.
     pub async fn fetch_metadata(&self, pkg: &str) -> Result<Vec<u8>, NpmAdapterError> {
-        let url = self
-            .base
-            .join(pkg)
-            .map_err(|e| NpmAdapterError::Upstream(format!("package URL join: {e}")))?;
+        // SSRF-guarded join: the resolved metadata URL must stay on the
+        // configured registry origin (scheme + host + port).
+        let url = join_within_upstream(&self.base, pkg)?;
         let mut headers = HeaderMap::new();
         headers.insert(ACCEPT, HeaderValue::from_static(NPM_ACCEPT));
         headers.insert(USER_AGENT, HeaderValue::from_static(ADAPTER_USER_AGENT));
@@ -108,6 +107,12 @@ impl UpstreamClient {
         tarball_url: &Url,
         max_bytes: u64,
     ) -> Result<Bytes, NpmAdapterError> {
+        // SSRF guard: npm tarballs are served from the SAME registry origin as
+        // metadata (`{registry}/{pkg}/-/{file}`). The URL is constructed from
+        // path-derived `pkg`/`file` segments, so pin the resolved origin to the
+        // configured registry (scheme + host + port) before fetching — a
+        // host-swapped URL is rejected rather than fetched.
+        require_same_origin(&self.base, tarball_url)?;
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static(ADAPTER_USER_AGENT));
         let resp = self
@@ -140,6 +145,36 @@ impl UpstreamClient {
     }
 }
 
+/// Join `path` onto `upstream` and verify the result stays on the SAME origin
+/// (scheme + host + port). `Url::join` host-swaps when `path` carries a scheme
+/// (`https://evil/…`) or a protocol-relative authority (`//evil/…`) — this is
+/// the SSRF guard for the read-through metadata fetch. Returns
+/// [`NpmAdapterError::Upstream`] when the resolved URL escapes the configured
+/// registry origin.
+fn join_within_upstream(upstream: &Url, path: &str) -> Result<Url, NpmAdapterError> {
+    let joined = upstream
+        .join(path)
+        .map_err(|e| NpmAdapterError::Upstream(format!("url join: {e}")))?;
+    require_same_origin(upstream, &joined)?;
+    Ok(joined)
+}
+
+/// Verify `candidate` is on the SAME origin (scheme + host + port) as
+/// `upstream`. Used to pin an already-absolute URL (e.g. a constructed tarball
+/// URL) to the configured registry origin. Returns
+/// [`NpmAdapterError::Upstream`] on mismatch.
+fn require_same_origin(upstream: &Url, candidate: &Url) -> Result<(), NpmAdapterError> {
+    let same_origin = candidate.scheme() == upstream.scheme()
+        && candidate.host_str() == upstream.host_str()
+        && candidate.port_or_known_default() == upstream.port_or_known_default();
+    if !same_origin {
+        return Err(NpmAdapterError::Upstream(
+            "SSRF guard: resolved upstream URL escapes the configured host".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -162,5 +197,39 @@ mod tests {
         let base = Url::parse("https://registry.npmjs.org").expect("parse");
         let client = UpstreamClient::new(base);
         assert!(client.is_ok());
+    }
+
+    #[test]
+    fn join_relative_path_stays_on_host() {
+        let up = Url::parse("https://registry.npmjs.org").unwrap();
+        let u = join_within_upstream(&up, "lodash").unwrap();
+        assert_eq!(u.as_str(), "https://registry.npmjs.org/lodash");
+    }
+
+    #[test]
+    fn join_absolute_path_stays_on_host() {
+        let up = Url::parse("https://registry.npmjs.org").unwrap();
+        let u = join_within_upstream(&up, "/lodash/-/lodash-4.17.21.tgz").unwrap();
+        assert_eq!(u.host_str(), Some("registry.npmjs.org"));
+    }
+
+    #[test]
+    fn join_absolute_url_is_rejected_ssrf() {
+        // A scheme-bearing path host-swaps via `Url::join`.
+        let up = Url::parse("https://registry.npmjs.org").unwrap();
+        assert!(
+            join_within_upstream(&up, "https://evil.example/x").is_err(),
+            "scheme-bearing path must be rejected by the SSRF guard"
+        );
+    }
+
+    #[test]
+    fn join_protocol_relative_authority_is_rejected_ssrf() {
+        // `//authority` is protocol-relative and host-swaps via `Url::join`.
+        let up = Url::parse("https://registry.npmjs.org").unwrap();
+        assert!(
+            join_within_upstream(&up, "//evil.example/x").is_err(),
+            "protocol-relative authority must be rejected by the SSRF guard"
+        );
     }
 }
