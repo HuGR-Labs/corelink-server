@@ -79,6 +79,15 @@ Each entry cross-references:
   adapters (cargo / brew / npm / pip / oci). Deploy + measurement owner-gated.
 
 ### Security
+- **Pilot-signup route env-gated — killed the hardcoded public dev HMAC key.**
+  The `/v1/signup/pilot` route was mounted UNCONDITIONALLY in prod with a public
+  constant signing key (`DEV_TOKEN_KEY` in the open repo), making pilot activation
+  tokens forgeable by anyone. `signup::build_state_from_env()` now reads the
+  hex-encoded `SIGNUP_TOKEN_KEY` secret (≥ 32 bytes decoded) and the route mounts
+  ONLY when it is present + valid; absent/invalid → fail-CLOSED (route unmounted,
+  warning logged), mirroring `internal_pat`'s `PAT_SIGNING_KEY` env-gate. The
+  token-verification logic is unchanged — only the key SOURCE (env, not hardcoded)
+  and the mount gate. `build_state()` (dev key) is retained for tests/dev only.
 - **Audit-round-2 hardening (brutal 13-agent audit follow-ups).** Closed the
   real findings: signup rate-limit no longer keyed off the client-forgeable
   `x-forwarded-for` — the Worker strips it and forwards Cloudflare's trusted

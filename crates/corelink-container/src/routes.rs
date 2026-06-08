@@ -272,7 +272,6 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     };
     let audit_export_state = audit_export::build_state();
     let audit_analytics_state = audit_analytics::build_state(shadow_factory);
-    let signup_state = signup::build_state();
     let customer_state = customer::build_handlers();
     let turbo_state = turbo_v8::build_handlers();
     let mut router = Router::new()
@@ -282,11 +281,23 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         .merge(admin_pilot::router(pilot_admin_state))
         .merge(audit_export::router(audit_export_state))
         .merge(audit_analytics::router(audit_analytics_state))
-        .merge(signup::router(signup_state))
         .merge(users::router())
         .merge(customer::router(customer_state))
         .merge(bazel_v2::router(bazel_state))
         .merge(turbo_v8::router(turbo_state));
+
+    // Pilot-signup route — env-gated, fail-CLOSED (mirrors `internal_pat`).
+    // Mounted only when `SIGNUP_TOKEN_KEY` is present + valid (hex, ≥ 32
+    // bytes decoded); in dev/CI without the secret it is absent (404)
+    // rather than running with the public hardcoded dev key, which would
+    // make the pilot-token HMAC forgeable.
+    if let Some(signup_state) = signup::build_state_from_env() {
+        router = router.merge(signup::router(signup_state));
+    } else {
+        tracing::warn!(
+            "SIGNUP_TOKEN_KEY unset/invalid; /v1/signup/pilot NOT mounted (fail-CLOSED)"
+        );
+    }
 
     // Cache-adapter surfaces (Option B — the container re-verifies the bearer
     // PAT against D1 via the SHARED `adapter_pat::PatVerifier`, never trusting
