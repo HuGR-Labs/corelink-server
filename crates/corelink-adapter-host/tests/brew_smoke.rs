@@ -27,7 +27,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const BOTTLE_BYTES: &[u8] = b"\x1f\x8b\x08\x00fake-tar-gz-payload";
 const BOTTLE_PATH: &str = "/v2/homebrew/core/curl-8.5.0.bottle.tar.gz";
-const PAT: &str = "hugr-pat_tenant_smoke";
+const PAT: &str = "corelink_tenant_smoke";
 const TENANT: &str = "tenant-smoke";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -27,7 +27,8 @@
 //! # Tenant + scope trust model
 //!
 //! Tenant identity comes from the PAT, re-verified in the container against
-//! the D1 `pat` store ([`crate::cargo_pat_resolver::D1PatTenantResolver`],
+//! the D1 `pat` store ([`crate::adapter_pat::PatVerifier`] — the ONE verifier
+//! shared by cargo/brew/npm/pip, wrapped here via [`resolver_from_verifier`];
 //! Option B — HMAC + Argon2id possession check). The path `<tenant>` is
 //! NEVER trusted for storage. The scope gate here is the per-operation
 //! layer (read vs write) on top of the resolver's "has cache capability"
@@ -42,25 +43,53 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::Router;
 
+use async_trait::async_trait;
 use corelink_adapter_host::cargo::config::DEFAULT_BODY_SIZE_LIMIT_BYTES;
-use corelink_adapter_host::cargo::ports::SharedTenantResolver;
+use corelink_adapter_host::cargo::ports::{SharedTenantResolver, TenantResolveError, TenantResolver};
 use corelink_adapter_host::cargo::{server, CargoAdapterConfig, CargoCasBridge};
 use corelink_audit::ports::{AuditEmitter, InMemoryAuditEmitter};
 use corelink_handler_cas::{CasReadHandler, CasWriteHandler};
 
+use crate::adapter_pat::{PatVerifier, VerifyError};
 use crate::scope::{requires_cache_read, requires_cache_write, SCOPE_HEADER};
 
 /// Service principal recorded on adapter CAS operations. Identifies the
 /// adapter-host service, NOT the end-user PAT (which the resolver verified).
 const CARGO_SERVICE_PRINCIPAL: &str = "cargo-adapter-host";
 
+/// Thin shell adapting the shared [`PatVerifier`] (Option B) to cargo's
+/// `TenantResolver` port. Identical pattern to brew/npm/pip: the container
+/// holds ONE `PatVerifier` and every adapter wraps it, so the
+/// HMAC → D1 → Argon2id → fail-CLOSED-scope pipeline lives once in
+/// [`crate::adapter_pat`].
+#[derive(Debug)]
+struct CargoPatResolver(Arc<PatVerifier>);
+
+#[async_trait]
+impl TenantResolver for CargoPatResolver {
+    async fn resolve(&self, pat_plaintext: &str) -> Result<String, TenantResolveError> {
+        self.0.verify(pat_plaintext).await.map_err(|e| match e {
+            VerifyError::InvalidPat => TenantResolveError::InvalidPat,
+            VerifyError::Backend(m) => TenantResolveError::Backend(m),
+        })
+    }
+}
+
+/// Wrap the shared [`PatVerifier`] as cargo's injectable [`SharedTenantResolver`].
+/// The container build path calls this so cargo shares the one verifier with
+/// brew/npm/pip rather than constructing a second D1-backed resolver.
+#[must_use]
+pub fn resolver_from_verifier(verifier: Arc<PatVerifier>) -> SharedTenantResolver {
+    Arc::new(CargoPatResolver(verifier))
+}
+
 /// Build the `/cargo/*` sub-router from shared CAS handlers + a PAT→tenant
 /// resolver.
 ///
-/// The `resolver` is injected so production wires the D1-backed
-/// [`crate::cargo_pat_resolver::D1PatTenantResolver`] while tests pass a
-/// hermetic stub. The CAS handlers are the SAME `Arc<dyn …>` trait objects
-/// the cas/bazel/turbo surfaces use (no new R2 connection).
+/// The `resolver` is injected so production wires the shared [`PatVerifier`]
+/// (via [`resolver_from_verifier`]) while tests pass a hermetic stub. The CAS
+/// handlers are the SAME `Arc<dyn …>` trait objects the cas/bazel/turbo
+/// surfaces use (no new R2 connection).
 pub fn router(
     cas_read: Arc<dyn CasReadHandler>,
     cas_write: Arc<dyn CasWriteHandler>,

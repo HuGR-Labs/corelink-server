@@ -9,7 +9,7 @@
 //! against this adapter. The adapter:
 //!
 //! 1. authenticates the caller via PAT (`Authorization: Bearer
-//!    hugr-pat_<token>`; constant-time compared via `subtle`);
+//!    corelink_<token>`; constant-time compared via `subtle`);
 //! 2. derives a per-tenant CAS key from the canonicalized request URL
 //!    using BLAKE3 (brew URLs do NOT embed an upstream SHA, so the
 //!    canonical URL is the only stable cache key — best-effort

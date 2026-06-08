@@ -61,14 +61,24 @@
 #[cfg(feature = "byok-aws-real")]
 pub mod byok;
 
+/// 2-level content-dedup MOAT store shared by the cache adapters: bytes
+/// are content-addressed in CAS (blake3, deduped) behind a D1
+/// `(namespace, url_hash) → content_hash` map. Public deps share the
+/// `_public` namespace (cross-tenant dedup — the network-effect moat);
+/// private artifacts stay per-tenant. See module docs.
+pub mod adapter_cache;
+/// D1-backed KV for the cache adapters' MUTABLE metadata (npm package
+/// documents in `adapter_npm_meta`, public/private namespaced). See module docs.
+pub mod adapter_kv;
+/// Shared container-side PAT verifier (Option B) for ALL cache adapters
+/// (cargo / brew / npm / oci / pip). Trait-agnostic
+/// [`adapter_pat::PatVerifier::verify`]; each adapter route wraps it in a
+/// thin newtype impl of that adapter's `TenantResolver` port. The HMAC
+/// fast-reject → D1 lookup → Argon2id → fail-CLOSED scope pipeline lives
+/// here once (replaces the cargo-only `cargo_pat_resolver`). See module docs.
+pub mod adapter_pat;
 pub mod auth_tenant;
 pub mod byok_orchestrator;
-/// D1-backed PAT → tenant resolver for the cargo (sccache) adapter.
-///
-/// Implements the cargo adapter's `TenantResolver` port (Option B:
-/// container-side PAT re-verification) — HMAC fast-reject → D1 `pat`
-/// lookup → Argon2id → fail-CLOSED cache-scope gate. See module docs.
-pub mod cargo_pat_resolver;
 #[cfg(feature = "neon-real")]
 pub mod neon_shadow_factory;
 pub mod routes;

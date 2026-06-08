@@ -1,25 +1,23 @@
-//! D1-backed PAT → tenant resolver for the cargo (sccache) adapter.
+//! Shared container-side PAT verifier for the cache adapters
+//! (cargo / brew / npm / oci / pip) — Option B (defense-in-depth).
 //!
-//! # Why this exists (Option B — defense-in-depth)
+//! # Why this exists
 //!
-//! The cargo adapter (`corelink_adapter_host::cargo`) is designed to
-//! **self-validate** the bearer PAT inside the container, rather than
-//! trusting the Worker-injected `x-corelink-tenant-id`. The owner chose
-//! Option B (2026-06-05, FINDING-sccache-adapter-gaps §Gap 2): the
-//! container re-verifies the PAT against the D1 `pat` store. The Worker
-//! already validates the PAT (HMAC fast-fail + D1 lookup) under its
-//! cpu_ms budget; this resolver repeats the **full** verification —
-//! including the Argon2id possession check the Worker skips — so a
-//! compromised or misconfigured Worker cannot grant cache access on its
-//! own.
+//! Each `corelink_adapter_host` adapter is designed to **self-validate**
+//! the bearer PAT inside the container rather than trusting the
+//! Worker-injected `x-corelink-tenant-id`. The owner chose Option B
+//! (2026-06-05, FINDING-sccache-adapter-gaps §Gap 2): the container
+//! re-verifies the PAT against the D1 `pat` store. The Worker already
+//! validates the PAT (HMAC fast-fail + D1 lookup) under its cpu_ms
+//! budget; this verifier repeats the **full** verification — including
+//! the Argon2id possession check the Worker skips — so a compromised or
+//! misconfigured Worker cannot grant cache access on its own.
 //!
-//! The adapter's [`TenantResolver`] port returns only the tenant id; the
-//! per-request scope check therefore lives here. Because the port carries
-//! no operation (read vs write), this resolver enforces only that the PAT
-//! holds **some** cache capability (`requires_cache_read`). Per-operation
-//! read/write granularity is enforced one layer up, at the container
-//! cargo route, from the Worker-resolved `x-corelink-scope` header (see
-//! `routes/cargo.rs`).
+//! Each adapter declares its OWN (nominally distinct) `TenantResolver`
+//! port trait, so this module exposes a trait-agnostic [`PatVerifier`]
+//! and each adapter route module wraps it in a thin newtype shell that
+//! impls that adapter's `TenantResolver` (see `routes/<adapter>.rs`).
+//! The verification pipeline lives here, once.
 //!
 //! # Verification pipeline (mirrors `auth_model.md §2.3`)
 //!
@@ -31,22 +29,41 @@
 //!    match + HMAC + Argon2id of the secret segment against the stored
 //!    PHC hash. Run on a blocking thread (Argon2id is CPU-heavy).
 //! 4. **Scope gate** — fail-CLOSED unless the D1 `scope` string grants a
-//!    cache capability.
+//!    cache capability. The port carries no operation, so this asserts
+//!    only "has SOME cache capability"; per-operation read/write is
+//!    enforced one layer up at each adapter route from the Worker-set
+//!    `x-corelink-scope` header.
 //!
 //! Every distinguishable failure (bad parse, bad sig, unknown token,
 //! expired, wrong secret, no cache scope) collapses to
-//! [`TenantResolveError::InvalidPat`] so the wire surface cannot tell an
+//! [`VerifyError::InvalidPat`] so the wire surface cannot tell an
 //! attacker *why* a token was rejected. Only genuine backend faults (D1
-//! unreachable, corrupt row) surface as [`TenantResolveError::Backend`].
+//! unreachable, corrupt row) surface as [`VerifyError::Backend`].
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use corelink_adapter_host::cargo::ports::{TenantResolveError, TenantResolver};
 use corelink_pat::{verify_hmac_only, verify_with_hash, PatHash, PatSigningKey};
 
 use crate::scope::requires_cache_read;
 use crate::storage::d1_http::D1HttpClient;
+use crate::storage::{non_empty_env, StorageEnv};
+
+/// Failure surface of [`PatVerifier::verify`].
+///
+/// Adapter route shells map this onto their adapter's local
+/// `TenantResolveError` (`InvalidPat` ⇒ 401, `Backend` ⇒ 503).
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum VerifyError {
+    /// PAT not found, expired, forged, wrong secret, or lacking a cache
+    /// scope. Uniform by design (no oracle). Surfaces as HTTP 401.
+    #[error("invalid PAT")]
+    InvalidPat,
+    /// Verifier backend (D1, corrupt row) failed. Surfaces as HTTP 503.
+    #[error("verifier backend: {0}")]
+    Backend(String),
+}
 
 /// A single `pat` row, reduced to the fields PAT verification needs.
 ///
@@ -66,9 +83,9 @@ pub struct PatRow {
 /// Fetch a `pat` row by its non-secret `token_id`, already expiry-filtered.
 ///
 /// Abstracted as a trait so the security-critical verification pipeline in
-/// [`D1PatTenantResolver`] can be unit-tested hermetically with real
-/// crypto and a fake row source — the production impl talks to D1 over
-/// HTTP, which a unit test cannot reach.
+/// [`PatVerifier`] can be unit-tested hermetically with real crypto and a
+/// fake row source — the production impl talks to D1 over HTTP, which a
+/// unit test cannot reach.
 #[async_trait]
 pub trait PatRowLookup: Send + Sync {
     /// Return the row for `token_id`, or `None` when no live (non-expired)
@@ -79,8 +96,8 @@ pub trait PatRowLookup: Send + Sync {
 /// Production [`PatRowLookup`] over the CF D1 HTTP API.
 ///
 /// The query mirrors the Worker hot-path (migration `0054_pat_token_id`):
-/// an `O(1)` covering-index lookup on `token_id`, with the same
-/// SQL-side expiry filter (`expires_ms = 0` ⇒ no-expiry token).
+/// an `O(1)` covering-index lookup on `token_id`, with the same SQL-side
+/// expiry filter (`expires_ms = 0` ⇒ no-expiry token).
 #[async_trait]
 impl PatRowLookup for D1HttpClient {
     async fn lookup(&self, token_id: &str) -> Result<Option<PatRow>, String> {
@@ -124,23 +141,24 @@ impl PatRowLookup for D1HttpClient {
     }
 }
 
-/// D1-backed [`TenantResolver`] implementing the Option-B container-side
-/// PAT verification for the cargo adapter.
-pub struct D1PatTenantResolver {
+/// Container-side PAT → tenant verifier (Option B). Trait-agnostic: each
+/// adapter route module wraps an `Arc<PatVerifier>` in a thin newtype
+/// that impls that adapter's `TenantResolver` port.
+pub struct PatVerifier {
     lookup: Arc<dyn PatRowLookup>,
     signing_key: Arc<PatSigningKey>,
 }
 
-impl std::fmt::Debug for D1PatTenantResolver {
+impl std::fmt::Debug for PatVerifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("D1PatTenantResolver")
+        f.debug_struct("PatVerifier")
             .field("lookup", &"Arc<dyn PatRowLookup>")
             .field("signing_key", &"[REDACTED]")
             .finish()
     }
 }
 
-impl D1PatTenantResolver {
+impl PatVerifier {
     /// Construct from an explicit row source + signing key (used by the
     /// production wiring and by tests with a fake lookup).
     #[must_use]
@@ -151,69 +169,68 @@ impl D1PatTenantResolver {
         }
     }
 
-    /// Build the production resolver from process env: a D1 HTTP client
-    /// (from [`crate::storage::StorageEnv`]) plus the hex-encoded
-    /// `PAT_SIGNING_KEY`. Returns `None` when any required input is
-    /// missing/invalid, so the caller can fail-CLOSED (not mount the
-    /// cargo route) in dev/CI — mirroring `internal_pat::build_state_from_env`.
+    /// Build the production verifier from process env: a D1 HTTP client
+    /// (from [`StorageEnv`]) plus the hex-encoded `PAT_SIGNING_KEY`.
+    /// Returns `None` when any required input is missing/invalid, so the
+    /// caller can fail-CLOSED (not mount the adapter route) in dev/CI —
+    /// mirroring `internal_pat::build_state_from_env`.
+    #[must_use]
     pub fn from_env() -> Option<Self> {
-        let storage_env = crate::storage::StorageEnv::from_env()?;
+        let storage_env = StorageEnv::from_env()?;
         let d1 = D1HttpClient::new(&storage_env)
-            .map_err(|e| tracing::warn!(error = %e, "cargo PAT resolver: D1 client init failed"))
+            .map_err(|e| tracing::warn!(error = %e, "adapter PAT verifier: D1 client init failed"))
             .ok()?;
 
-        let signing_key_hex = crate::storage::non_empty_env("PAT_SIGNING_KEY")?;
+        let signing_key_hex = non_empty_env("PAT_SIGNING_KEY")?;
         let key_bytes = hex::decode(signing_key_hex.trim())
             .map_err(|_| {
-                tracing::warn!("PAT_SIGNING_KEY is not valid hex; cargo route NOT mounted")
+                tracing::warn!("PAT_SIGNING_KEY is not valid hex; adapter routes NOT mounted")
             })
             .ok()?;
         let signing_key = PatSigningKey::from_bytes(key_bytes)
             .map_err(
-                |e| tracing::warn!(error = %e, "PAT_SIGNING_KEY invalid; cargo route NOT mounted"),
+                |e| tracing::warn!(error = %e, "PAT_SIGNING_KEY invalid; adapter routes NOT mounted"),
             )
             .ok()?;
 
         Some(Self::new(Arc::new(d1), Arc::new(signing_key)))
     }
 
-    /// The full verification pipeline. Separated from the trait method so
-    /// it returns the precise error for unit-test assertions.
-    async fn resolve_inner(&self, pat_plaintext: &str) -> Result<String, TenantResolveError> {
-        // 1. HMAC fast-reject (pre-D1). Parse + signature; a forged token
-        //    is rejected here without a D1 round-trip. Uniform InvalidPat.
+    /// The full Option-B verification pipeline. Returns the PAT's owning
+    /// tenant id on success.
+    pub async fn verify(&self, pat_plaintext: &str) -> Result<String, VerifyError> {
+        // 1. HMAC fast-reject (pre-D1). A forged token is rejected here
+        //    without a D1 round-trip. Uniform InvalidPat.
         let (_env, token_id) = verify_hmac_only(pat_plaintext, &self.signing_key)
-            .map_err(|_| TenantResolveError::InvalidPat)?;
+            .map_err(|_| VerifyError::InvalidPat)?;
 
         // 2. D1 lookup by the non-secret token_id (expiry filtered in SQL).
         let row = match self
             .lookup
             .lookup(token_id.as_str())
             .await
-            .map_err(TenantResolveError::Backend)?
+            .map_err(VerifyError::Backend)?
         {
             Some(row) => row,
-            // Unknown / expired / revoked. Burn the SAME Argon2id cost as the
-            // hot path before returning so the response latency does not leak
-            // whether the token_id exists (token-enumeration oracle defence —
-            // matches the canonical middleware's cold path). Only reachable by
-            // a caller who already passed the HMAC gate (i.e. holds the signing
-            // key), but we equalize regardless. Errors here are ignored: the
-            // dummy verify is timing padding, not an auth decision.
+            // Unknown / expired / revoked. Burn the SAME Argon2id cost as
+            // the hot path before returning so response latency does not
+            // leak whether the token_id exists (token-enumeration oracle
+            // defence). Errors here are ignored: it is timing padding, not
+            // an auth decision.
             None => {
                 let plaintext = pat_plaintext.to_owned();
                 let _ = tokio::task::spawn_blocking(move || {
                     corelink_pat::dummy_verify_for_constant_time(&plaintext)
                 })
                 .await;
-                return Err(TenantResolveError::InvalidPat);
+                return Err(VerifyError::InvalidPat);
             }
         };
 
-        // 3. Full crypto verify on a blocking thread (Argon2id is CPU-heavy
-        //    and must not stall the async worker). Re-parses, constant-time
-        //    matches token_id, re-checks HMAC, then Argon2id-verifies the
-        //    secret segment against the stored PHC hash.
+        // 3. Full crypto verify on a blocking thread (Argon2id is
+        //    CPU-heavy and must not stall the async worker). Re-parses,
+        //    constant-time matches token_id, re-checks HMAC, then
+        //    Argon2id-verifies the secret segment against the stored hash.
         let plaintext = pat_plaintext.to_owned();
         let signing_key = Arc::clone(&self.signing_key);
         let stored_hash = PatHash::from_phc_string(row.pat_hash);
@@ -221,24 +238,17 @@ impl D1PatTenantResolver {
             verify_with_hash(&plaintext, &token_id, &stored_hash, &signing_key)
         })
         .await
-        .map_err(|e| TenantResolveError::Backend(format!("verify join: {e}")))?;
-        verify_result.map_err(|_| TenantResolveError::InvalidPat)?;
+        .map_err(|e| VerifyError::Backend(format!("verify join: {e}")))?;
+        verify_result.map_err(|_| VerifyError::InvalidPat)?;
 
         // 4. Scope gate — fail-CLOSED. The port has no operation, so we
         //    require at least cache-read capability here; per-operation
-        //    write enforcement is at the route layer (x-corelink-scope).
+        //    write enforcement is at each adapter route (x-corelink-scope).
         if !requires_cache_read(&row.scope) {
-            return Err(TenantResolveError::InvalidPat);
+            return Err(VerifyError::InvalidPat);
         }
 
         Ok(row.tenant_id)
-    }
-}
-
-#[async_trait]
-impl TenantResolver for D1PatTenantResolver {
-    async fn resolve(&self, pat_plaintext: &str) -> Result<String, TenantResolveError> {
-        self.resolve_inner(pat_plaintext).await
     }
 }
 
@@ -261,8 +271,8 @@ mod tests {
     use super::*;
 
     /// Fake row source: a `token_id → PatRow` map plus a call counter and
-    /// an optional forced backend error. Lets the tests drive the full
-    /// verification pipeline with real crypto but no network.
+    /// an optional forced backend error. Drives the full verification
+    /// pipeline with real crypto but no network.
     #[derive(Default)]
     struct FakeLookup {
         rows: HashMap<String, PatRow>,
@@ -346,13 +356,12 @@ mod tests {
     async fn forged_token_rejected_before_d1() {
         let key = test_key();
         let lookup = Arc::new(FakeLookup::empty());
-        let resolver = D1PatTenantResolver::new(lookup.clone(), key);
-        let err = resolver
-            .resolve("corelink_pat_not-a-real-token")
+        let verifier = PatVerifier::new(lookup.clone(), key);
+        let err = verifier
+            .verify("corelink_pat_not-a-real-token")
             .await
             .unwrap_err();
-        assert!(matches!(err, TenantResolveError::InvalidPat));
-        // The HMAC fast-reject must run BEFORE any D1 round-trip.
+        assert!(matches!(err, VerifyError::InvalidPat));
         assert_eq!(lookup.call_count(), 0, "forged token must not reach D1");
     }
 
@@ -360,15 +369,14 @@ mod tests {
     async fn wrong_signing_key_rejected_before_d1() {
         let mint_key = test_key();
         let (pt, _tid, hash, tenant) = mint_pat(&mint_key, 7, SCOPE_CACHE_RW);
-        // Resolver verifies with a DIFFERENT key → HMAC fast-reject.
         let other_key = Arc::new(PatSigningKey::from_bytes(vec![0x11u8; 32]).unwrap());
         let lookup = Arc::new(FakeLookup::with_row(
             "ignored",
             row(&hash, &tenant, "cas:rw"),
         ));
-        let resolver = D1PatTenantResolver::new(lookup.clone(), other_key);
-        let err = resolver.resolve(&pt).await.unwrap_err();
-        assert!(matches!(err, TenantResolveError::InvalidPat));
+        let verifier = PatVerifier::new(lookup.clone(), other_key);
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(matches!(err, VerifyError::InvalidPat));
         assert_eq!(lookup.call_count(), 0, "bad HMAC must not reach D1");
     }
 
@@ -377,8 +385,8 @@ mod tests {
         let key = test_key();
         let (pt, tid, hash, tenant) = mint_pat(&key, 42, SCOPE_CACHE_RW);
         let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
-        let resolver = D1PatTenantResolver::new(lookup.clone(), key);
-        let resolved = resolver.resolve(&pt).await.unwrap();
+        let verifier = PatVerifier::new(lookup.clone(), key);
+        let resolved = verifier.verify(&pt).await.unwrap();
         assert_eq!(resolved, tenant);
         assert_eq!(lookup.call_count(), 1);
     }
@@ -387,21 +395,19 @@ mod tests {
     async fn admin_scope_grants_cache() {
         let key = test_key();
         let (pt, tid, hash, tenant) = mint_pat(&key, 43, SCOPE_CACHE_RW);
-        // D1 scope string is `admin` (a cache superset) — pre-back-fill prod shape.
         let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "admin")));
-        let resolver = D1PatTenantResolver::new(lookup, key);
-        assert_eq!(resolver.resolve(&pt).await.unwrap(), tenant);
+        let verifier = PatVerifier::new(lookup, key);
+        assert_eq!(verifier.verify(&pt).await.unwrap(), tenant);
     }
 
     #[tokio::test]
     async fn unknown_token_id_is_invalid() {
         let key = test_key();
         let (pt, _tid, _hash, _tenant) = mint_pat(&key, 44, SCOPE_CACHE_RW);
-        // HMAC passes (right key) but the row is absent (unknown/expired/revoked).
         let lookup = Arc::new(FakeLookup::empty());
-        let resolver = D1PatTenantResolver::new(lookup.clone(), key);
-        let err = resolver.resolve(&pt).await.unwrap_err();
-        assert!(matches!(err, TenantResolveError::InvalidPat));
+        let verifier = PatVerifier::new(lookup.clone(), key);
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(matches!(err, VerifyError::InvalidPat));
         assert_eq!(lookup.call_count(), 1, "valid HMAC must reach D1");
     }
 
@@ -409,37 +415,35 @@ mod tests {
     async fn wrong_stored_hash_is_invalid() {
         let key = test_key();
         let (pt, tid, _hash, tenant) = mint_pat(&key, 45, SCOPE_CACHE_RW);
-        // A DIFFERENT PAT's hash → Argon2id of pt's secret fails to verify.
         let (_pt2, _tid2, other_hash, _t2) = mint_pat(&key, 46, SCOPE_CACHE_RW);
         let lookup = Arc::new(FakeLookup::with_row(
             &tid,
             row(&other_hash, &tenant, "cas:rw"),
         ));
-        let resolver = D1PatTenantResolver::new(lookup, key);
-        let err = resolver.resolve(&pt).await.unwrap_err();
-        assert!(matches!(err, TenantResolveError::InvalidPat));
+        let verifier = PatVerifier::new(lookup, key);
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(matches!(err, VerifyError::InvalidPat));
     }
 
     #[tokio::test]
     async fn empty_scope_fails_closed() {
         let key = test_key();
         let (pt, tid, hash, tenant) = mint_pat(&key, 47, SCOPE_CACHE_RW);
-        // Legacy row with NULL/absent scope → "" → no cache capability.
         let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "")));
-        let resolver = D1PatTenantResolver::new(lookup, key);
-        let err = resolver.resolve(&pt).await.unwrap_err();
-        assert!(matches!(err, TenantResolveError::InvalidPat));
+        let verifier = PatVerifier::new(lookup, key);
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(matches!(err, VerifyError::InvalidPat));
     }
 
     #[tokio::test]
     async fn read_only_scope_still_resolves() {
-        // The resolver gates on "has cache read" (the port carries no op);
-        // a cas:r PAT resolves here — per-op write-deny is the route layer's job.
+        // The verifier gates on "has cache read" (the port carries no op);
+        // a cas:r PAT resolves here — per-op write-deny is the route's job.
         let key = test_key();
         let (pt, tid, hash, tenant) = mint_pat(&key, 48, SCOPE_CACHE_R);
         let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:r")));
-        let resolver = D1PatTenantResolver::new(lookup, key);
-        assert_eq!(resolver.resolve(&pt).await.unwrap(), tenant);
+        let verifier = PatVerifier::new(lookup, key);
+        assert_eq!(verifier.verify(&pt).await.unwrap(), tenant);
     }
 
     #[tokio::test]
@@ -447,10 +451,10 @@ mod tests {
         let key = test_key();
         let (pt, _tid, _hash, _tenant) = mint_pat(&key, 49, SCOPE_CACHE_RW);
         let lookup = Arc::new(FakeLookup::backend("d1 unreachable"));
-        let resolver = D1PatTenantResolver::new(lookup, key);
-        let err = resolver.resolve(&pt).await.unwrap_err();
+        let verifier = PatVerifier::new(lookup, key);
+        let err = verifier.verify(&pt).await.unwrap_err();
         match err {
-            TenantResolveError::Backend(m) => assert!(m.contains("d1 unreachable")),
+            VerifyError::Backend(m) => assert!(m.contains("d1 unreachable")),
             other => panic!("expected Backend, got {other:?}"),
         }
     }

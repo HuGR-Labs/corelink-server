@@ -6,7 +6,11 @@
 //! auth where the username is `hugr` and the password is the PAT.
 //! Both are accepted.
 //!
-//! The PAT plaintext is held in a [`secrecy::SecretString`] so it
+//! The adapter expects the PAT to be the canonical CoreLink format
+//! (`corelink_<token>` — see [`PAT_PREFIX`]); the prefix is checked in
+//! constant time, for BOTH the Bearer and the basic-auth paths, BEFORE
+//! the resolver lookup, so a foreign token never reaches the per-tenant
+//! index. The PAT plaintext is held in a [`secrecy::SecretString`] so it
 //! never lands in a `Display` / log line by accident. PAT bytes are
 //! compared in constant time at the resolver layer via
 //! [`subtle::ConstantTimeEq`] (the resolver trait contract documents
@@ -28,6 +32,15 @@ use crate::pip::ports::TenantResolverHandle;
 /// the PAT). `pip` synthesises basic auth from
 /// `--index-url http://hugr:<pat>@host/simple/`.
 pub const BASIC_AUTH_USERNAME: &str = "hugr";
+
+/// Canonical CoreLink PAT plaintext prefix.
+pub const PAT_PREFIX: &str = "corelink_";
+
+/// Compile-time pin: the production wire prefix is `corelink_` (9 bytes,
+/// = `corelink_pat::format::PAT_PREFIX_LEN`). Kept a string literal so the
+/// adapter crate stays decoupled from `corelink_pat` per the ports charter;
+/// the authoritative parse + crypto verify happens in the container resolver.
+const _: () = assert!(PAT_PREFIX.len() == 9);
 
 /// Extract the PAT plaintext from a request's [`HeaderMap`] without
 /// allocating until the very last step.
@@ -51,7 +64,7 @@ pub fn extract_pat(headers: &HeaderMap) -> Result<SecretString, PipAdapterError>
         if token.is_empty() {
             return Err(PipAdapterError::Auth("empty Bearer token".into()));
         }
-        return Ok(SecretString::new(token.to_owned().into()));
+        return pat_with_prefix(token);
     }
 
     if let Some(b64) = value_str.strip_prefix("Basic ") {
@@ -61,6 +74,41 @@ pub fn extract_pat(headers: &HeaderMap) -> Result<SecretString, PipAdapterError>
     Err(PipAdapterError::Auth(
         "Authorization must be `Bearer <pat>` or `Basic <base64>`".into(),
     ))
+}
+
+/// Verify `token` carries the canonical [`PAT_PREFIX`] (constant-time) and
+/// wrap it in a [`SecretString`]. Shared by the Bearer and basic-auth paths
+/// so a foreign token is rejected identically regardless of how `pip`
+/// presented it.
+///
+/// # Errors
+///
+/// Returns [`PipAdapterError::Auth`] when the prefix does not match.
+fn pat_with_prefix(token: &str) -> Result<SecretString, PipAdapterError> {
+    if !bearer_eq(token, PAT_PREFIX) {
+        return Err(PipAdapterError::Auth("PAT prefix mismatch".into()));
+    }
+    Ok(SecretString::new(token.to_owned().into()))
+}
+
+/// Constant-time prefix check: does `token` start with `expected_prefix`?
+///
+/// Iterates over the prefix bytes only (length is public input). The
+/// constant-time comparison hides the per-byte mismatch position. The
+/// prefix is itself fixed (`corelink_`), so the loop iteration count is
+/// data-independent.
+#[must_use]
+fn bearer_eq(token: &str, expected_prefix: &str) -> bool {
+    let token_bytes = token.as_bytes();
+    let expected = expected_prefix.as_bytes();
+    if token_bytes.len() < expected.len() {
+        return false;
+    }
+    let head = match token_bytes.get(..expected.len()) {
+        Some(slice) => slice,
+        None => return false,
+    };
+    head.ct_eq(expected).into()
 }
 
 fn decode_basic(b64: &str) -> Result<SecretString, PipAdapterError> {
@@ -84,7 +132,9 @@ fn decode_basic(b64: &str) -> Result<SecretString, PipAdapterError> {
     if pass.is_empty() {
         return Err(PipAdapterError::Auth("empty basic-auth password".into()));
     }
-    Ok(SecretString::new(pass.to_owned().into()))
+    // The basic-auth password IS the PAT — apply the same canonical-prefix
+    // gate as the Bearer path.
+    pat_with_prefix(pass)
 }
 
 /// Minimal `=`-padded standard-base64 decoder. The adapter avoids
@@ -207,8 +257,8 @@ mod tests {
 
     #[test]
     fn extracts_bearer_token() {
-        let pat = extract_pat(&h("Bearer hugr-pat_abc123")).expect("bearer ok");
-        assert_eq!(pat.expose_secret(), "hugr-pat_abc123");
+        let pat = extract_pat(&h("Bearer corelink_abc123")).expect("bearer ok");
+        assert_eq!(pat.expose_secret(), "corelink_abc123");
     }
 
     #[test]
@@ -230,16 +280,38 @@ mod tests {
     }
 
     #[test]
+    fn rejects_wrong_prefix_bearer() {
+        // A non-`corelink_` Bearer token is rejected at extraction.
+        assert!(matches!(
+            extract_pat(&h("Bearer ghp_github")),
+            Err(PipAdapterError::Auth(_))
+        ));
+        // The legacy placeholder prefix is now rejected too.
+        assert!(matches!(
+            extract_pat(&h("Bearer hugr-pat_legacy")),
+            Err(PipAdapterError::Auth(_))
+        ));
+    }
+
+    #[test]
     fn decodes_basic_with_correct_username() {
-        // base64("hugr:hugr-pat_xyz") = "aHVncjpodWdyLXBhdF94eXo="
-        let pat = extract_pat(&h("Basic aHVncjpodWdyLXBhdF94eXo=")).expect("basic ok");
-        assert_eq!(pat.expose_secret(), "hugr-pat_xyz");
+        // base64("hugr:corelink_xyz") = "aHVncjpjb3JlbGlua194eXo="
+        let pat = extract_pat(&h("Basic aHVncjpjb3JlbGlua194eXo=")).expect("basic ok");
+        assert_eq!(pat.expose_secret(), "corelink_xyz");
+    }
+
+    #[test]
+    fn rejects_basic_wrong_prefix() {
+        // base64("hugr:hugr-pat_xyz") = "aHVncjpodWdyLXBhdF94eXo=" — correct
+        // username, but the password lacks the `corelink_` prefix ⇒ rejected.
+        let result = extract_pat(&h("Basic aHVncjpodWdyLXBhdF94eXo="));
+        assert!(matches!(result, Err(PipAdapterError::Auth(_))));
     }
 
     #[test]
     fn rejects_basic_wrong_username() {
-        // base64("alice:hugr-pat_xyz") = "YWxpY2U6aHVnci1wYXRfeHl6"
-        let result = extract_pat(&h("Basic YWxpY2U6aHVnci1wYXRfeHl6"));
+        // base64("alice:corelink_xyz") = "YWxpY2U6Y29yZWxpbmtfeHl6"
+        let result = extract_pat(&h("Basic YWxpY2U6Y29yZWxpbmtfeHl6"));
         assert!(matches!(result, Err(PipAdapterError::Auth(_))));
     }
 
@@ -254,5 +326,13 @@ mod tests {
         // base64("hugr:") = "aHVncjo="
         let raw = decode_base64_padded("aHVncjo=").expect("ok");
         assert_eq!(raw, b"hugr:");
+    }
+
+    #[test]
+    fn bearer_eq_matches_and_rejects() {
+        assert!(bearer_eq("corelink_deadbeef", PAT_PREFIX));
+        assert!(!bearer_eq("hugr", PAT_PREFIX));
+        assert!(!bearer_eq("ghp_deadbeef", PAT_PREFIX));
+        assert!(!bearer_eq("hugr-pat_x", PAT_PREFIX));
     }
 }

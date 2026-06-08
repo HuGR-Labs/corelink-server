@@ -26,8 +26,8 @@ use url::Url;
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-const PAT_A: &str = "hugr-pat_tenant_a";
-const PAT_B: &str = "hugr-pat_tenant_b";
+const PAT_A: &str = "corelink_tenant_a";
+const PAT_B: &str = "corelink_tenant_b";
 const TENANT_A: &str = "tenant-a";
 const TENANT_B: &str = "tenant-b";
 
@@ -97,7 +97,7 @@ async fn forged_pat_returns_401() {
     // Unknown PAT with the right prefix.
     let resp = reqwest::Client::new()
         .get(format!("http://{addr}/v2/some/bottle"))
-        .header("Authorization", "Bearer hugr-pat_forged_unknown_token")
+        .header("Authorization", "Bearer corelink_forged_unknown_token")
         .send()
         .await
         .unwrap();
@@ -111,7 +111,7 @@ async fn forged_pat_returns_401() {
         .unwrap();
     assert_eq!(resp_missing.status(), 401);
 
-    // Wrong prefix (not `hugr-pat_`).
+    // Wrong prefix (not `corelink_`).
     let resp_wrong = reqwest::Client::new()
         .get(format!("http://{addr}/v2/some/bottle"))
         .header("Authorization", "Bearer ghp_github_style_token")

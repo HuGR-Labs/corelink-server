@@ -68,6 +68,12 @@ pub mod audit_export;
 /// for any Bazel user; backed by the same R2 CAS/AC blobs as the
 /// native `/v1/cas` and `/v1/ac` routes.
 pub mod bazel_v2;
+/// Homebrew bottle cache surface (Phase B): `/brew/<tenant>/<bottle-path>`
+/// nests the `corelink_adapter_host::brew` read-through proxy. Option-B PAT
+/// re-verify via the shared [`crate::adapter_pat`] verifier; public bottle
+/// bytes dedup cross-tenant through the 2-level [`crate::adapter_cache`] moat.
+/// Env-gated mount in [`build_with_factory`].
+pub mod brew;
 /// sccache HTTP build-cache surface: `/cargo/<tenant>/<key>` (FINDING
 /// Gap 1). Mounts `corelink_adapter_host::cargo` with a D1-backed PAT
 /// resolver (Option B) + per-operation scope gate. Mounted only when
@@ -89,6 +95,21 @@ pub mod customer;
 /// `corelink_pat::mint::mint(...)` and returns the hash + plaintext
 /// for the signup-worker to write to D1 and Clerk session metadata.
 pub mod internal_pat;
+/// npm registry cache surface (Phase B): `/npm/<tenant>/<rest>` nests the
+/// `corelink_adapter_host::npm` read-through `registry.npmjs.org` mirror.
+/// Option-B PAT re-verify via the shared [`crate::adapter_pat`] verifier;
+/// tarball bytes dedup through the 2-level [`crate::adapter_cache`] moat,
+/// mutable package metadata in the D1-backed [`crate::adapter_kv`] KV.
+/// Env-gated mount in [`build_with_factory`].
+pub mod npm;
+/// PyPI (pip / uv / poetry / pdm) cache surface (Phase B):
+/// `/pip/<tenant>/<pep-path>` nests the `corelink_adapter_host::pip`
+/// read-through PyPI mirror (PEP 503/691 simple index + content-addressed
+/// wheels/sdists). Option-B PAT re-verify via the shared [`crate::adapter_pat`]
+/// verifier; wheel bytes dedup through the 2-level [`crate::adapter_cache`] moat,
+/// the mutable simple index in a per-tenant D1 KV. Env-gated mount in
+/// [`build_with_factory`].
+pub mod pip;
 /// Pilot signup route (wave-29 stream-1; closes DEBT-027 engineering-side).
 /// Surfaces `POST /v1/signup/pilot/{token}` over an HMAC-SHA256
 /// signed token + per-IP rate-limit + fail-CLOSED audit emit. See
@@ -194,12 +215,17 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         lookup: ac_lookup.clone(),
         update: ac_update.clone(),
     };
-    // FINDING Gap 1: clone the shared CAS handler trait objects for the
-    // cargo (sccache) surface BEFORE they are moved into the Bazel bridge
-    // below — so `/cargo/*` reads/writes the SAME backing store as
-    // cas/ac/bazel/turbo (no new R2 connection).
+    // Cache adapters share the SAME CAS trait objects (one R2 connection) —
+    // clone BEFORE they are moved into the Bazel bridge below. cargo writes
+    // per-tenant via CargoCasBridge; brew/npm/pip dedup through the 2-level moat.
     let cargo_cas_read = cas_read.clone();
     let cargo_cas_write = cas_write.clone();
+    let brew_cas_read = cas_read.clone();
+    let brew_cas_write = cas_write.clone();
+    let npm_cas_read = cas_read.clone();
+    let npm_cas_write = cas_write.clone();
+    let pip_cas_read = cas_read.clone();
+    let pip_cas_write = cas_write.clone();
     // Phase 0 Stream B1: Bazel REAPI v2 routes share the same CAS/AC
     // trait objects so all four route surfaces read from / write to the
     // same backing store. No new R2 connections are opened.
@@ -251,25 +277,87 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         .merge(bazel_v2::router(bazel_state))
         .merge(turbo_v8::router(turbo_state));
 
-    // FINDING Gap 1 — sccache `/cargo/*` surface. Mounted ONLY when the
-    // D1-backed PAT resolver can be built from env (PAT_SIGNING_KEY +
-    // StorageEnv present). Fail-CLOSED: in dev/CI (no env) the route is
-    // simply absent — a forwarded `/cargo/*` 404s rather than running with
-    // an unconfigured validator. This mirrors `internal_pat`'s env-gate.
-    match crate::cargo_pat_resolver::D1PatTenantResolver::from_env() {
-        Some(resolver) => {
-            router = router.merge(cargo::router(
-                cargo_cas_read,
-                cargo_cas_write,
-                std::sync::Arc::new(resolver),
-            ));
+    // Cache-adapter surfaces (Option B — the container re-verifies the bearer
+    // PAT against D1 via the SHARED `adapter_pat::PatVerifier`, never trusting
+    // the Worker-injected tenant header). Mounted only when the verifier builds
+    // from env (PAT_SIGNING_KEY + StorageEnv); in dev/CI it is absent and these
+    // routes 404 (fail-CLOSED) rather than running with an unconfigured
+    // validator. Mirrors `internal_pat`'s env-gate.
+    //
+    // ONE `PatVerifier` is shared across cargo/brew/npm/pip: cargo wraps it via
+    // `cargo::resolver_from_verifier`; brew/npm/pip take it directly. cargo needs
+    // only the verifier (sccache keys are client-content-addressed, stored
+    // per-tenant via CargoCasBridge — no cross-tenant dedup). brew/npm/pip add
+    // the 2-level content-dedup moat: they need the D1-over-HTTP client, which
+    // doubles as the url→content-hash map (`adapter_cache::UrlMapStore`) AND
+    // pip's index-KV backend. A per-adapter dependency that fails to build from
+    // env skips ONLY that adapter (fail-CLOSED per-adapter).
+    if let Some(verifier) = crate::adapter_pat::PatVerifier::from_env() {
+        let verifier = Arc::new(verifier);
+
+        // cargo (sccache): only the shared verifier; no moat (per-tenant CAS).
+        router = router.merge(cargo::router(
+            cargo_cas_read,
+            cargo_cas_write,
+            cargo::resolver_from_verifier(verifier.clone()),
+        ));
+
+        // brew/npm/pip share the 2-level moat map (the D1-over-HTTP client).
+        match crate::adapter_cache::d1_map_from_env() {
+            Some(d1) => {
+                // brew: shared map + verifier (public bottles, cross-tenant dedup).
+                let brew_map: Arc<dyn crate::adapter_cache::UrlMapStore> = d1.clone();
+                router = router.merge(brew::router(
+                    brew_cas_read,
+                    brew_cas_write,
+                    brew_map,
+                    verifier.clone(),
+                ));
+
+                // npm: shared map + verifier + the D1-backed metadata KV table
+                // (`adapter_npm_meta`). If its env builder returns None, skip npm only.
+                match crate::adapter_kv::npm_kv_from_env() {
+                    Some(npm_meta_kv) => {
+                        let npm_map: Arc<dyn crate::adapter_cache::UrlMapStore> = d1.clone();
+                        router = router.merge(npm::router(
+                            npm_cas_read,
+                            npm_cas_write,
+                            npm_map,
+                            npm_meta_kv,
+                            verifier.clone(),
+                        ));
+                    }
+                    None => {
+                        tracing::warn!(
+                            "npm metadata KV unavailable from env; /npm/* NOT mounted \
+                             (fail-CLOSED) — cargo/brew/pip unaffected"
+                        );
+                    }
+                }
+
+                // pip: shared map + verifier + the SAME D1 client (reused for the
+                // per-tenant simple-index KV table `adapter_pip_index`).
+                let pip_map: Arc<dyn crate::adapter_cache::UrlMapStore> = d1.clone();
+                router = router.merge(pip::router(
+                    pip_cas_read,
+                    pip_cas_write,
+                    pip_map,
+                    d1,
+                    verifier,
+                ));
+            }
+            None => {
+                tracing::warn!(
+                    "D1 moat map unavailable from env; /brew/*, /npm/*, /pip/* NOT \
+                     mounted (fail-CLOSED) — /cargo/* (no moat) unaffected"
+                );
+            }
         }
-        None => {
-            tracing::warn!(
-                "PAT_SIGNING_KEY or StorageEnv unset; /cargo/* (sccache) NOT mounted \
-                 (dev/CI mode — the cargo PAT resolver requires both)"
-            );
-        }
+    } else {
+        tracing::warn!(
+            "PAT_SIGNING_KEY/StorageEnv unset; cache-adapter routes \
+             (/cargo/*, /brew/*, /npm/*, /pip/*) NOT mounted (dev/CI mode)"
+        );
     }
 
     router

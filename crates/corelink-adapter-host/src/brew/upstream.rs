@@ -50,10 +50,9 @@ impl UpstreamFetcher {
         canonical_path: &str,
         bottle_size_limit_bytes: u64,
     ) -> Result<Vec<u8>, BrewAdapterError> {
-        let url = self
-            .upstream_domain
-            .join(canonical_path)
-            .map_err(|err| BrewAdapterError::Upstream(format!("url join: {err}")))?;
+        // SSRF-guarded join: the resolved URL must stay on the configured
+        // upstream origin (scheme + host + port).
+        let url = join_within_upstream(&self.upstream_domain, canonical_path)?;
 
         let response = self
             .client
@@ -110,6 +109,27 @@ fn extend_from_bytes(buf: &mut Vec<u8>, chunk: &Bytes) {
     buf.extend_from_slice(chunk);
 }
 
+/// Join `path` onto `upstream` and verify the result stays on the SAME origin
+/// (scheme + host + port). `Url::join` host-swaps when `path` carries a scheme
+/// (`https://evil/…`) or a protocol-relative authority (`//evil/…`) — this is
+/// the SSRF guard for the read-through upstream fetch. Returns
+/// [`BrewAdapterError::Upstream`] when the resolved URL escapes the configured
+/// upstream origin.
+fn join_within_upstream(upstream: &url::Url, path: &str) -> Result<url::Url, BrewAdapterError> {
+    let joined = upstream
+        .join(path)
+        .map_err(|err| BrewAdapterError::Upstream(format!("url join: {err}")))?;
+    let same_origin = joined.scheme() == upstream.scheme()
+        && joined.host_str() == upstream.host_str()
+        && joined.port_or_known_default() == upstream.port_or_known_default();
+    if !same_origin {
+        return Err(BrewAdapterError::Upstream(
+            "SSRF guard: resolved upstream URL escapes the configured host".to_owned(),
+        ));
+    }
+    Ok(joined)
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -120,6 +140,40 @@ fn extend_from_bytes(buf: &mut Vec<u8>, chunk: &Bytes) {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn join_relative_path_stays_on_host() {
+        let up = Url::parse("https://ghcr.io").unwrap();
+        let u = join_within_upstream(&up, "v2/homebrew/core/curl").unwrap();
+        assert_eq!(u.as_str(), "https://ghcr.io/v2/homebrew/core/curl");
+    }
+
+    #[test]
+    fn join_absolute_path_stays_on_host() {
+        let up = Url::parse("https://ghcr.io").unwrap();
+        let u = join_within_upstream(&up, "/v2/foo").unwrap();
+        assert_eq!(u.host_str(), Some("ghcr.io"));
+    }
+
+    #[test]
+    fn join_absolute_url_is_rejected_ssrf() {
+        // A scheme-bearing path would host-swap via `Url::join`.
+        let up = Url::parse("https://ghcr.io").unwrap();
+        assert!(
+            join_within_upstream(&up, "https://evil.example/x").is_err(),
+            "scheme-bearing path must be rejected by the SSRF guard"
+        );
+    }
+
+    #[test]
+    fn join_protocol_relative_authority_is_rejected_ssrf() {
+        // `//authority` is protocol-relative and host-swaps via `Url::join`.
+        let up = Url::parse("https://ghcr.io").unwrap();
+        assert!(
+            join_within_upstream(&up, "//evil.example/x").is_err(),
+            "protocol-relative authority must be rejected by the SSRF guard"
+        );
+    }
 
     #[tokio::test]
     async fn fetcher_constructible_with_https_url() {

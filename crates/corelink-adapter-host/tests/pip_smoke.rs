@@ -143,7 +143,7 @@ fn make_state(_seed_index: Option<(String, Bytes)>) -> AdapterState {
     let tenant = TenantId::from_uuid(uuid::Uuid::now_v7());
     let resolver: Arc<dyn TenantResolver> = Arc::new(FixedTenant {
         tenant: tenant.clone(),
-        expected_pat: "hugr-pat_test".into(),
+        expected_pat: "corelink_test".into(),
     });
     let auditor: Arc<dyn AuditEmitter> = Arc::new(InMemoryAuditEmitter::default());
     let config = PipAdapterConfig::new(
@@ -205,7 +205,7 @@ async fn forged_pat_returns_401() {
         .oneshot(
             Request::builder()
                 .uri("/simple/requests/")
-                .header(header::AUTHORIZATION, "Bearer hugr-pat_forged")
+                .header(header::AUTHORIZATION, "Bearer corelink_forged")
                 .body(Body::empty())
                 .expect("req"),
         )
@@ -224,7 +224,7 @@ async fn wheel_route_returns_502_without_seeded_index() {
         .oneshot(
             Request::builder()
                 .uri("/pkg/0000000000000000000000000000000000000000000000000000000000000000/foo-1.0-py3-none-any.whl")
-                .header(header::AUTHORIZATION, "Bearer hugr-pat_test")
+                .header(header::AUTHORIZATION, "Bearer corelink_test")
                 .body(Body::empty())
                 .expect("req"),
         )

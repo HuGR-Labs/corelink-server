@@ -173,11 +173,25 @@ corelink-handler-admin = { workspace = true }
 corelink-bazel-bridge = { workspace = true }
 # Phase 0 Stream B2 — Vercel /v8/artifacts Turborepo cache bridge.
 corelink-turbo-bridge = { workspace = true }
-# sccache→CoreLink Phase A — the cargo (sccache HTTP) build-cache adapter,
-# mounted at `/cargo/*`. Provides `corelink_adapter_host::cargo::build_router`
-# + the `TenantResolver`/`CasStore` ports the container wires to a D1-backed
-# PAT resolver + the shared CAS handlers (see `routes/cargo.rs`).
+# Cache-adapter container wiring (cargo via #163; brew/npm/pip Phase B).
+# `corelink_adapter_host` provides every adapter's router + SPI ports
+# (`TenantResolver`/`CasStore`) the container wires to the shared
+# `adapter_pat::PatVerifier` (Option B) + the shared CAS handlers (see
+# `routes/{cargo,brew,npm,pip}.rs`).
 corelink-adapter-host = { workspace = true }
+# corelink-core::types::{digest::Digest, tenant::TenantId} — the typed
+# digest + tenant newtypes the npm/pip adapter `CasStore`/`TenantResolver`
+# ports speak (brew's ports use plain strings; npm/pip use the typed core
+# newtypes, so the route wrappers in `routes/{npm,pip}.rs` need this dep).
+corelink-core = { workspace = true }
+# corelink-hash::Digest::compute — the canonical content hash for the 2-level
+# moat store (must match the CAS write path's blake3).
+corelink-hash = { workspace = true }
+# `url::Url` for the adapter upstream-domain config (BrewAdapterConfig etc.).
+# Direct version (not workspace) matching `corelink-adapter-host` (`url = "2"`)
+# so the `Url` type unifies across the dep boundary; url is not aliased in
+# [workspace.dependencies].
+url = "2"
 # Stream-2.6 — customer self-serve handler surface wired into
 # `apps/server::routes::customer` (`/v1/customer/*` endpoints).
 corelink-handler-customer = { workspace = true }
