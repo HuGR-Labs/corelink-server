@@ -270,6 +270,81 @@ describe("OCI spec conformance — pass-through to the container", () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Stripe billing webhook pass-through (LAUNCH-BLOCKER fix)
+//
+// POST /v1/billing/stripe-webhook authenticates via the `Stripe-Signature` HMAC
+// header, NOT a Bearer PAT. The Worker forwards it to the shared _system DO with
+// NO PAT gate (pre-fix it 401'd in the reapi_v1 bucket), preserving the raw body
+// + Stripe-Signature so the container verifies the HMAC over the signed bytes.
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("Stripe billing webhook pass-through to the container", () => {
+  const RAW_BODY = JSON.stringify({ id: "evt_1", type: "checkout.session.completed" });
+  const SIG = "t=1700000000,v1=abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abcd";
+
+  it("forwards the webhook to the _system DO and returns its response verbatim (no 401)", async () => {
+    // The DO stub returns 200 — proof the Worker did NOT inject a PAT auth gate.
+    const env = makeEnvWithStub(200, { received: true }, { "x-corelink-from-do": "1" });
+    const resp = await workerHandler.fetch!(
+      new Request("http://localhost/v1/billing/stripe-webhook", {
+        method: "POST",
+        headers: { "Stripe-Signature": SIG },
+        body: RAW_BODY,
+      }),
+      env,
+      makeCtx(),
+    );
+    expect(resp.status).toBe(200);
+    expect(resp.headers.get("x-corelink-from-do")).toBe("1");
+  });
+
+  it("preserves the RAW body bytes + Stripe-Signature on the forwarded request", async () => {
+    // Capture what the Worker forwards: the container re-hashes these exact bytes.
+    let captured: { body: string; sig: string | null } | null = null;
+    const capturingEnv: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (_n: string) => ({ toString: () => "id" }),
+        get: () => ({
+          fetch: async (req: Request): Promise<Response> => {
+            captured = { body: await req.text(), sig: req.headers.get("stripe-signature") };
+            return new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          },
+        }),
+        idFromString: (_s: string) => ({ toString: () => "id" }),
+        newUniqueId: () => ({ toString: () => "unique-id" }),
+        jurisdiction: (_j: string) => ({}) as DurableObjectNamespace,
+      } as unknown as DurableObjectNamespace,
+    };
+    const resp = await fetch_(
+      "http://localhost/v1/billing/stripe-webhook",
+      { method: "POST", headers: { "Stripe-Signature": SIG }, body: RAW_BODY },
+      capturingEnv,
+    );
+    expect(resp.status).toBe(200);
+    expect(captured).not.toBeNull();
+    expect(captured!.body).toBe(RAW_BODY);
+    expect(captured!.sig).toBe(SIG);
+  });
+
+  it("a DO 500 on the webhook path is forwarded verbatim (Worker does not reshape it)", async () => {
+    const env = makeEnvWithStub(500, { error: "transient backend error" });
+    const resp = await workerHandler.fetch!(
+      new Request("http://localhost/v1/billing/stripe-webhook", {
+        method: "POST",
+        headers: { "Stripe-Signature": SIG },
+        body: RAW_BODY,
+      }),
+      env,
+      makeCtx(),
+    );
+    expect(resp.status).toBe(500);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // 404 timing-pad path
 // ──────────────────────────────────────────────────────────────────────────────
 

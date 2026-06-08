@@ -287,6 +287,22 @@ describe("miniflare: authenticated request → DO dispatch in workerd", () => {
     });
     expect(resp.headers.get("x-request-id")).not.toBeNull();
   });
+
+  it("Stripe webhook reaches the _system DO via pass-through — NOT 401 (returns 503 with no container)", async () => {
+    // LAUNCH-BLOCKER fix: /v1/billing/stripe-webhook carries only a
+    // Stripe-Signature (no Bearer PAT). The Worker forwards it to the shared
+    // _system DO with NO PAT gate. With no container bound the DO returns 503
+    // CONTAINER_UNAVAILABLE — the key assertion is that it is NOT a Worker 401.
+    const resp = await dispatchFetch("/v1/billing/stripe-webhook", {
+      method: "POST",
+      headers: { "Stripe-Signature": "t=1700000000,v1=deadbeefcafef00ddeadbeefcafef00d" },
+      body: JSON.stringify({ id: "evt_1", type: "checkout.session.completed" }),
+    });
+    expect(resp.status).not.toBe(401);
+    expect(resp.status).toBe(503);
+    const body = await resp.json() as { error: string };
+    expect(body.error).toBe("CONTAINER_UNAVAILABLE");
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────────────

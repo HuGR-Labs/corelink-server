@@ -575,6 +575,178 @@ describe("route resolution — OCI paths (pass-through)", () => {
   });
 });
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Stripe billing webhook pass-through (LAUNCH-BLOCKER fix)
+//
+// POST /v1/billing/stripe-webhook is authenticated by Stripe's `Stripe-Signature`
+// HMAC header, NOT a Bearer PAT. The Worker MUST forward it to the shared _system
+// DO WITHOUT the PAT gate (no 401), preserving the RAW body + Stripe-Signature so
+// the container can verify the HMAC over the exact signed bytes. It strips
+// client-trust headers (delete-then-set) and the container — never a header — is
+// the sole tenant authority.
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("Stripe billing webhook pass-through (/v1/billing/stripe-webhook)", () => {
+  /** Capture what the Worker forwards to the DO + the DO name it routes to. */
+  function makeBillingCapturingEnv(): {
+    env: Partial<Env>;
+    namesUsed: string[];
+    captured: {
+      body?: string;
+      sig?: string | null;
+      auth?: string | null;
+      routeKind?: string | null;
+      tenant?: string | null;
+      scope?: string | null;
+      forgedAdminScope?: string | null;
+    };
+  } {
+    const namesUsed: string[] = [];
+    const captured: {
+      body?: string;
+      sig?: string | null;
+      auth?: string | null;
+      routeKind?: string | null;
+      tenant?: string | null;
+      scope?: string | null;
+      forgedAdminScope?: string | null;
+    } = {};
+    const env: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (name: string) => {
+          namesUsed.push(name);
+          return { toString: () => `do-${name}` };
+        },
+        get: () => ({
+          fetch: async (req: Request): Promise<Response> => {
+            // Read the forwarded body to PROVE the bytes survived the forward
+            // unchanged (this is the DO's job — the Worker must not read it).
+            captured.body = await req.text();
+            captured.sig = req.headers.get("stripe-signature");
+            captured.auth = req.headers.get("authorization");
+            captured.routeKind = req.headers.get("x-corelink-route-kind");
+            captured.tenant = req.headers.get("x-corelink-tenant-id");
+            captured.scope = req.headers.get("x-corelink-scope");
+            captured.forgedAdminScope = req.headers.get("x-admin-scope");
+            return new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          },
+        }),
+        idFromString: (_s: string) => ({ toString: () => "stub-id" }),
+        newUniqueId: () => ({ toString: () => "stub-id" }),
+        jurisdiction: (_j: string) => env.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+    return { env, namesUsed, captured };
+  }
+
+  const RAW_WEBHOOK_BODY = JSON.stringify({
+    id: "evt_test_123",
+    type: "checkout.session.completed",
+    data: { object: { metadata: { tenant_id: "should-be-ignored-by-worker" } } },
+  });
+  const STRIPE_SIG = "t=1700000000,v1=deadbeefcafef00ddeadbeefcafef00ddeadbeefcafef00ddeadbeefcafef00d";
+
+  it("does NOT 401 the un-PAT'd webhook — forwards to the _system DO (no Worker auth gate)", async () => {
+    // The webhook carries ONLY a Stripe-Signature (no Bearer PAT). Pre-fix this
+    // fell into the reapi_v1 PAT bucket → 401. It must now pass through (200 stub).
+    const { env } = makeBillingCapturingEnv();
+    const resp = await workerFetch(
+      "http://localhost/v1/billing/stripe-webhook",
+      { method: "POST", headers: { "Stripe-Signature": STRIPE_SIG }, body: RAW_WEBHOOK_BODY },
+      env,
+    );
+    expect(resp.status).toBe(200);
+  });
+
+  it("routes to the shared _system DO (no URL tenant)", async () => {
+    const { env, namesUsed } = makeBillingCapturingEnv();
+    await workerFetch(
+      "http://localhost/v1/billing/stripe-webhook",
+      { method: "POST", headers: { "Stripe-Signature": STRIPE_SIG }, body: RAW_WEBHOOK_BODY },
+      env,
+    );
+    expect(namesUsed).toEqual(["_system"]);
+  });
+
+  it("forwards the RAW body UNCHANGED (HMAC must verify over the exact bytes)", async () => {
+    const { env, captured } = makeBillingCapturingEnv();
+    await workerFetch(
+      "http://localhost/v1/billing/stripe-webhook",
+      { method: "POST", headers: { "Stripe-Signature": STRIPE_SIG }, body: RAW_WEBHOOK_BODY },
+      env,
+    );
+    // Byte-identical: no parse/re-serialize. A reordered/reformatted body would
+    // break the container's signature verification.
+    expect(captured.body).toBe(RAW_WEBHOOK_BODY);
+  });
+
+  it("preserves the Stripe-Signature header (the webhook's auth)", async () => {
+    const { env, captured } = makeBillingCapturingEnv();
+    await workerFetch(
+      "http://localhost/v1/billing/stripe-webhook",
+      { method: "POST", headers: { "Stripe-Signature": STRIPE_SIG }, body: RAW_WEBHOOK_BODY },
+      env,
+    );
+    expect(captured.sig).toBe(STRIPE_SIG);
+  });
+
+  it("sets x-corelink-route-kind=billing_webhook and injects NO tenant/scope", async () => {
+    const { env, captured } = makeBillingCapturingEnv();
+    await workerFetch(
+      "http://localhost/v1/billing/stripe-webhook",
+      { method: "POST", headers: { "Stripe-Signature": STRIPE_SIG }, body: RAW_WEBHOOK_BODY },
+      env,
+    );
+    expect(captured.routeKind).toBe("billing_webhook");
+    // The container derives the tenant from the signed event, never a header.
+    expect(captured.tenant).toBeNull();
+    expect(captured.scope).toBeNull();
+  });
+
+  it("strips client-forged trust headers (x-corelink-scope / x-admin-scope / x-corelink-tenant-id)", async () => {
+    const { env, captured } = makeBillingCapturingEnv();
+    await workerFetch(
+      "http://localhost/v1/billing/stripe-webhook",
+      {
+        method: "POST",
+        headers: {
+          "Stripe-Signature": STRIPE_SIG,
+          // Forged server-trust headers — the Worker MUST strip all of these.
+          "x-corelink-scope": "admin",
+          "x-admin-scope": "admin",
+          "x-corelink-tenant-id": "attacker-tenant",
+        },
+        body: RAW_WEBHOOK_BODY,
+      },
+      env,
+    );
+    expect(captured.scope).toBeNull();
+    expect(captured.tenant).toBeNull();
+    expect(captured.forgedAdminScope).toBeNull();
+  });
+
+  it("a trailing-segment path (/v1/billing/stripe-webhook/extra) does NOT pass through — stays PAT-gated (401)", async () => {
+    // The carve-out is an EXACT-path match; anything else under /v1/billing/*
+    // still falls into the reapi_v1 PAT bucket and 401s without a PAT.
+    const resp = await workerFetch("http://localhost/v1/billing/stripe-webhook/extra", {
+      method: "POST",
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("does NOT disturb /v1/customer/billing/* — that PAT route still 401s without auth", async () => {
+    // Guard against the carve-out accidentally widening to other /v1/*billing*
+    // paths: the customer-portal billing route is PAT-required and must 401.
+    const resp = await workerFetch("http://localhost/v1/customer/billing/portal", {
+      method: "GET",
+    });
+    expect(resp.status).toBe(401);
+  });
+});
+
 describe("route resolution — non-OCI paths", () => {
   const reapiPaths = [
     "/api/v2/tenant/blobs",
