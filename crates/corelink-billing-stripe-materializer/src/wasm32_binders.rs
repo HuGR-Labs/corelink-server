@@ -257,6 +257,12 @@ impl BillingD1Writer for CfD1BillingWriter {
         &self,
         tenant_id: &str,
         tier_wire: &str,
+        // Activation timestamp (ms since epoch) bound to
+        // `subscription_started_at_ms` (positional bind #3). The
+        // `subscription_started_when_active` table CHECK requires this
+        // NOT NULL whenever `subscription_state = 'active'` (the literal
+        // we write); see `migrations/d1/0039_tier_selection.sql`.
+        _now_ms: i64,
         _correlation_id: &str,
     ) -> Result<(), BillingD1Error> {
         if !self.tenant.ct_eq_str(tenant_id) {
@@ -272,6 +278,9 @@ impl BillingD1Writer for CfD1BillingWriter {
         self.d1
             .scoped_query(SQL_UPSERT_TIER)
             .map_err(map_d1_error_transient)?;
+        // First positional bind is `tenant_id` (bind #1); the ct-eq probe
+        // anchors the tenant. Binds #2..#4 are
+        // (tier_wire, subscription_started_at_ms = now_ms, correlation_id).
         self.d1
             .verify_first_bind(tenant_id)
             .map_err(map_d1_error_transient)?;
@@ -307,7 +316,7 @@ const SQL_INSERT_DISPUTE: &str = "INSERT INTO stripe_disputes (tenant_id, stripe
 const SQL_INSERT_REFUND: &str = "INSERT INTO stripe_refunds (tenant_id, stripe_refund_id, stripe_event_id, payload, materialized_at_ms) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING";
 const SQL_INSERT_WEBHOOK_EVENT_PROCESSED: &str = "INSERT INTO stripe_webhook_events_processed (tenant_id, stripe_event_id, canonical_event_type, processed_at_ms) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING";
 const SQL_READ_TIER: &str = "SELECT tier FROM tier_selections WHERE tenant_id = ?";
-const SQL_UPSERT_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier, correlation_id, materialized_at_ms) VALUES (?, ?, ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, correlation_id = excluded.correlation_id, materialized_at_ms = excluded.materialized_at_ms";
+const SQL_UPSERT_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?, ?, 'active', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'active', subscription_started_at_ms = excluded.subscription_started_at_ms, correlation_id = excluded.correlation_id";
 
 // ---------------------------------------------------------------------------
 // ArchiveProducerBillingEmitter — wasm32 production audit emitter binder.
@@ -418,3 +427,47 @@ pub type ProductionAuditLine = PersistedAuditLine;
 /// `corelink-audit-chain` at every call site.
 pub trait ProductionArchiveSink: ArchiveSink {}
 impl<T: ArchiveSink + ?Sized> ProductionArchiveSink for T {}
+
+#[cfg(test)]
+mod sql_tests {
+    use super::SQL_UPSERT_TIER;
+
+    /// Pin the production tier UPSERT statement shape against the real
+    /// schema (`migrations/d1/0039_tier_selection.sql`). It MUST:
+    /// bind exactly four positional params (tenant_id, tier,
+    /// subscription_started_at_ms, correlation_id), write the literal
+    /// `subscription_state = 'active'`, bind the activation timestamp
+    /// column, target `tier_selections` on the `tenant_id` conflict key,
+    /// and NEVER reference the non-existent `materialized_at_ms` column
+    /// the latent bug used.
+    #[test]
+    fn upsert_tier_binds_four_params_with_active_state_and_timestamp() {
+        let sql = SQL_UPSERT_TIER;
+        assert_eq!(
+            sql.matches('?').count(),
+            4,
+            "must bind exactly four positional params: {sql}"
+        );
+        assert!(
+            sql.contains("subscription_state"),
+            "must set subscription_state (NOT-NULL column): {sql}"
+        );
+        assert!(
+            sql.contains("'active'"),
+            "must write the literal 'active' state: {sql}"
+        );
+        assert!(
+            sql.contains("subscription_started_at_ms"),
+            "must bind subscription_started_at_ms (required when active): {sql}"
+        );
+        assert!(
+            !sql.contains("materialized_at_ms"),
+            "must NOT reference materialized_at_ms (column does not exist): {sql}"
+        );
+        assert!(sql.contains("tier_selections"), "wrong table: {sql}");
+        assert!(
+            sql.contains("ON CONFLICT(tenant_id)"),
+            "wrong conflict key: {sql}"
+        );
+    }
+}

@@ -181,7 +181,9 @@ fn read_tier_rejects_cross_tenant_id() {
 #[test]
 fn upsert_tier_rejects_cross_tenant_id() {
     let w = writer();
-    let err = w.upsert_tier("other_tenant", "pro", "corr_1").unwrap_err();
+    let err = w
+        .upsert_tier("other_tenant", "pro", 1_700_000_000_000, "corr_1")
+        .unwrap_err();
     assert!(
         matches!(err, BillingD1Error::InvalidPayload(ref s) if s.contains("does not match anchored tenant"))
     );
@@ -190,7 +192,9 @@ fn upsert_tier_rejects_cross_tenant_id() {
 #[test]
 fn upsert_tier_rejects_empty_tier_wire() {
     let w = writer();
-    let err = w.upsert_tier(TENANT, "", "corr_1").unwrap_err();
+    let err = w
+        .upsert_tier(TENANT, "", 1_700_000_000_000, "corr_1")
+        .unwrap_err();
     assert!(matches!(err, BillingD1Error::InvalidPayload(ref s) if s.contains("empty tier_wire")));
 }
 
