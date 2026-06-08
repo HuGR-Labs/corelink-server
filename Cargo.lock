@@ -2214,6 +2214,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "axum",
+ "base64",
  "bytes",
  "corelink-adapter-host",
  "corelink-analytics",

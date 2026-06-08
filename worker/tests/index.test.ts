@@ -90,10 +90,20 @@ function makeD1Mock(
 /** Mock Env with a CORELINK_SERVER DO namespace that returns an error stub */
 function makeEnv(doStubStatus = 503, d1Override?: D1Database): Env {
   const stub = {
-    fetch: async (_req: Request): Promise<Response> => {
+    fetch: async (req: Request): Promise<Response> => {
+      // Echo x-request-id back like the real CoreLinkServer DO does on its 503
+      // (durable_object.ts) — the OCI pass-through forwards the DO response
+      // verbatim (it does NOT re-stamp x-request-id the way the PAT path does),
+      // so the DO is the one that must carry the correlation id on OCI routes.
       return new Response(
         JSON.stringify({ error: "CONTAINER_UNAVAILABLE", message: "test stub", request_id: "stub" }),
-        { status: doStubStatus, headers: { "Content-Type": "application/json" } },
+        {
+          status: doStubStatus,
+          headers: {
+            "Content-Type": "application/json",
+            "X-Request-Id": req.headers.get("x-request-id") ?? "stub",
+          },
+        },
       );
     },
   };
@@ -209,21 +219,87 @@ describe("GET unknown path (not_found)", () => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 describe("auth middleware", () => {
-  it("returns 401 for /v2/ without Authorization header", async () => {
+  // ── OCI two-leg auth pass-through (PR #169) ────────────────────────────────
+  // The Worker NO LONGER auth-gates or builds OCI error envelopes for /v2/* and
+  // /token. It forwards them RAW to the dedicated "_oci" DO; the container does
+  // its own two-leg auth and emits ALL OCI responses (401 + Www-Authenticate,
+  // error envelopes). With no container bound, the DO stub here returns 503
+  // CONTAINER_UNAVAILABLE — so the Worker must pass THAT through verbatim, NOT
+  // synthesize a 401/Docker-Distribution OCI envelope of its own.
+  it("does NOT 401 /v2/ at the Worker — forwards to the _oci DO (no Worker auth gate)", async () => {
     const resp = await workerFetch("http://localhost/v2/");
-    expect(resp.status).toBe(401);
+    // The default DO stub returns 503; the Worker forwards it verbatim. The key
+    // assertion is that the Worker no longer short-circuits OCI with its own 401.
+    expect(resp.status).toBe(503);
   });
 
-  it("returns OCI errors array for /v2/ 401", async () => {
+  it("does NOT synthesize an OCI errors[] envelope for /v2/ — returns the DO body verbatim", async () => {
     const resp = await workerFetch("http://localhost/v2/");
-    const body = await resp.json() as { errors: Array<{ code: string }> };
-    expect(Array.isArray(body.errors)).toBe(true);
-    expect(body.errors[0]?.code).toBe("UNAUTHORIZED");
+    const body = await resp.json() as Record<string, unknown>;
+    // The forwarded DO stub body is the REAPI-shaped CONTAINER_UNAVAILABLE, NOT
+    // a Worker-built OCI `errors:[{code:"UNAUTHORIZED"}]` array.
+    expect(body["errors"]).toBeUndefined();
+    expect(body["error"]).toBe("CONTAINER_UNAVAILABLE");
   });
 
-  it("returns Docker-Distribution-Api-Version on /v2/ 401", async () => {
+  it("does NOT set Docker-Distribution-Api-Version on /v2/ from the Worker", async () => {
     const resp = await workerFetch("http://localhost/v2/");
-    expect(resp.headers.get("docker-distribution-api-version")).toBe("registry/2.0");
+    // The container owns this header now; the Worker (forwarding the DO stub)
+    // must not synthesize it.
+    expect(resp.headers.get("docker-distribution-api-version")).toBeNull();
+  });
+
+  it("routes /token (OCI second leg) to the pass-through, NOT the PAT gate", async () => {
+    // /token with OCI Basic auth must reach the _oci DO (→ 503 stub), never the
+    // PAT auth gate (which would 401 on a non-Bearer-PAT credential).
+    const resp = await workerFetch("http://localhost/token", {
+      headers: { Authorization: "Basic dXNlcjpwYXNz" },
+    });
+    expect(resp.status).toBe(503);
+    const body = await resp.json() as Record<string, unknown>;
+    expect(body["error"]).toBe("CONTAINER_UNAVAILABLE");
+  });
+
+  it("forwards the raw Authorization header to the _oci DO and strips client-trust headers", async () => {
+    let captured: { auth: string | null; scope: string | null; tenant: string | null; routeKind: string | null } | null = null;
+    const capturingEnv: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (name: string) => ({ toString: () => `do-${name}` }),
+        get: () => ({
+          fetch: async (req: Request): Promise<Response> => {
+            captured = {
+              auth: req.headers.get("authorization"),
+              scope: req.headers.get("x-corelink-scope"),
+              tenant: req.headers.get("x-corelink-tenant-id"),
+              routeKind: req.headers.get("x-corelink-route-kind"),
+            };
+            return new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          },
+        }),
+        idFromString: (_s: string) => ({ toString: () => "stub-id" }),
+        newUniqueId: () => ({ toString: () => "stub-unique-id" }),
+        jurisdiction: (_j: string) => capturingEnv.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+    await workerFetch("http://localhost/v2/myrepo/blobs/sha256:abc", {
+      headers: {
+        // OCI Bearer (issued by the container's /token leg) — must reach the DO.
+        Authorization: "Bearer oci-hmac-bearer-token",
+        // Forged client-trust headers — the Worker MUST strip these.
+        "x-corelink-scope": "admin",
+        "x-corelink-tenant-id": "attacker-tenant",
+      },
+    }, capturingEnv);
+    expect(captured).not.toBeNull();
+    expect(captured!.auth).toBe("Bearer oci-hmac-bearer-token");
+    // The Worker injects neither scope nor tenant for OCI, and strips the forged
+    // client values (defense-in-depth: tenant-id deleted in the pass-through).
+    expect(captured!.scope).toBeNull();
+    expect(captured!.tenant).toBeNull();
+    expect(captured!.routeKind).toBe("oci_v2");
   });
 
   it("returns 401 for REAPI /api/v2/ without Authorization", async () => {
@@ -441,7 +517,7 @@ describe("CORS", () => {
 // Route resolution
 // ──────────────────────────────────────────────────────────────────────────────
 
-describe("route resolution — OCI paths", () => {
+describe("route resolution — OCI paths (pass-through)", () => {
   const ociPaths = [
     "/v2/",
     "/v2",
@@ -449,16 +525,54 @@ describe("route resolution — OCI paths", () => {
     "/v2/myrepo/blobs/sha256:abc",
     "/v2/myrepo/manifests/latest",
     "/v2/myrepo/tags/list",
+    "/token",
   ];
 
+  // Every OCI path resolves to the pass-through and is forwarded to the _oci DO
+  // (the first /v2/ segment is the repository NAME, NOT a tenant; /token has no
+  // tenant segment). The Worker does NOT auth-gate or build an OCI envelope —
+  // it returns the DO's response verbatim (503 CONTAINER_UNAVAILABLE in tests).
   for (const path of ociPaths) {
-    it(`${path} returns OCI error envelope on unauthenticated request`, async () => {
+    it(`${path} forwards to the _oci DO (no Worker-synthesized OCI envelope)`, async () => {
       const resp = await workerFetch(`http://localhost${path}`);
       const body = await resp.json() as Record<string, unknown>;
-      expect(Array.isArray(body["errors"])).toBe(true);
-      expect(resp.headers.get("docker-distribution-api-version")).toBe("registry/2.0");
+      // Worker returns the DO stub body verbatim — no OCI errors[] array and no
+      // Docker-Distribution-Api-Version header synthesized by the Worker.
+      expect(body["errors"]).toBeUndefined();
+      expect(resp.headers.get("docker-distribution-api-version")).toBeNull();
+      expect(body["error"]).toBe("CONTAINER_UNAVAILABLE");
     });
   }
+
+  it("the first /v2/ segment is the repository NAME, not a tenant — all OCI routes share the _oci DO", async () => {
+    const namesUsed: string[] = [];
+    const capturingEnv: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (name: string) => {
+          namesUsed.push(name);
+          return { toString: () => `do-${name}` };
+        },
+        get: () => ({
+          fetch: async (_req: Request): Promise<Response> =>
+            new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+        }),
+        idFromString: (_s: string) => ({ toString: () => "stub-id" }),
+        newUniqueId: () => ({ toString: () => "stub-unique-id" }),
+        jurisdiction: (_j: string) => capturingEnv.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+    // Two DIFFERENT repository names + the /token leg must all route to "_oci".
+    await workerFetch("http://localhost/v2/alpine/blobs/sha256:abc", undefined, capturingEnv);
+    await workerFetch("http://localhost/v2/ubuntu/manifests/latest", undefined, capturingEnv);
+    await workerFetch("http://localhost/token", undefined, capturingEnv);
+    expect(namesUsed).toEqual(["_oci", "_oci", "_oci"]);
+    // The repository name (alpine/ubuntu) must NEVER be used as a DO key.
+    expect(namesUsed).not.toContain("alpine");
+    expect(namesUsed).not.toContain("ubuntu");
+  });
 });
 
 describe("route resolution — non-OCI paths", () => {
@@ -486,14 +600,19 @@ describe("route resolution — non-OCI paths", () => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 describe("DO error mapping", () => {
-  it("DO 503 on OCI path returns valid JSON with error field", async () => {
-    const resp = await workerFetch(`http://localhost/v2/${TEST_TENANT_ID}/manifests/latest`, {
-      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
+  it("DO 503 on OCI path is forwarded verbatim (Worker does not reshape it)", async () => {
+    // OCI is pass-through: the Worker forwards the DO's 503 body as-is. No auth
+    // header is needed (the Worker no longer gates OCI), but supplying one must
+    // not change the outcome — it is forwarded to the container, not consumed.
+    const resp = await workerFetch(`http://localhost/v2/myrepo/manifests/latest`, {
+      headers: { Authorization: "Bearer oci-bearer" },
     });
+    expect(resp.status).toBe(503);
     const body = await resp.json() as Record<string, unknown>;
-    const hasErrors = Array.isArray(body["errors"]);
-    const hasError = typeof body["error"] === "string";
-    expect(hasErrors || hasError).toBe(true);
+    // The DO stub's CONTAINER_UNAVAILABLE body, verbatim — not reshaped into an
+    // OCI `errors[]` envelope.
+    expect(body["error"]).toBe("CONTAINER_UNAVAILABLE");
+    expect(body["errors"]).toBeUndefined();
   });
 
   it("DO 503 on REAPI path returns REAPI envelope", async () => {
@@ -528,7 +647,11 @@ describe("DO error mapping", () => {
     expect(body.error).toBe("INTERNAL_ERROR");
   });
 
-  it("DO fetch exception on OCI path returns OCI error envelope", async () => {
+  it("OCI DO fetch exception returns a controlled 500 with x-request-id (not OCI envelope, not opaque)", async () => {
+    // Hardening (PR #169): the OCI pass-through wraps ociStub.fetch in try/catch
+    // (parity with the PAT-path DO forward). A DO/container throw must yield the
+    // same controlled REAPI error the PAT path uses — NOT a leaked stack, NOT a
+    // Worker-synthesized OCI `errors[]` envelope.
     const throwingEnv: Partial<Env> = {
       CORELINK_SERVER: {
         idFromName: (_name: string) => ({ toString: () => "stub-id" }),
@@ -543,12 +666,15 @@ describe("DO error mapping", () => {
       } as unknown as DurableObjectNamespace,
     };
 
-    const resp = await workerFetch(`http://localhost/v2/${TEST_TENANT_ID}/blobs/sha256:abc`, {
-      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
-    }, throwingEnv);
+    const resp = await workerFetch(`http://localhost/v2/myrepo/blobs/sha256:abc`, undefined, throwingEnv);
     expect(resp.status).toBe(500);
+    expect(resp.headers.get("x-request-id")).not.toBeNull();
     const body = await resp.json() as Record<string, unknown>;
-    expect(Array.isArray(body["errors"])).toBe(true);
+    expect(body["error"]).toBe("INTERNAL_ERROR");
+    // The Worker no longer builds OCI envelopes — no errors[] on OCI faults.
+    expect(body["errors"]).toBeUndefined();
+    // Must not leak the underlying throw message.
+    expect(JSON.stringify(body)).not.toContain("network error");
   });
 });
 
@@ -661,16 +787,18 @@ describe("auth middleware — invalid token characters", () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// OCI error status code mapping — ociStatusForCode branch coverage
+// OCI pass-through — the CONTAINER owns OCI status + error envelopes.
+//
+// Previously the Worker mapped OCI codes → status via ociStatusForCode/ociError
+// (now DELETED). Under PR #169 the container emits ALL OCI responses; the Worker
+// is a pure forwarder, so these tests assert the container's envelope is returned
+// VERBATIM (status, body, OCI-spec headers) and the Worker adds none of its own.
 // ──────────────────────────────────────────────────────────────────────────────
 
-describe("OCI status-for-code mapping", () => {
-  // We test ociStatusForCode indirectly by having the DO stub return a response
-  // that the worker processes. The worker calls ociError() directly for auth
-  // failures — we already cover UNAUTHORIZED. The other codes are exercised
-  // when the DO returns error envelopes for authenticated OCI requests.
-
-  it("DO returning OCI BLOB_UNKNOWN envelope passes through with correct request-id", async () => {
+describe("OCI pass-through — container-owned status + envelope", () => {
+  it("DO/container OCI envelope (404 BLOB_UNKNOWN + Docker-Distribution header) is forwarded verbatim", async () => {
+    // The container — NOT the Worker — produces the OCI envelope AND the OCI-spec
+    // headers. The Worker must hand them back unchanged (verbatim pass-through).
     const blobUnknownEnv: Partial<Env> = {
       CORELINK_SERVER: {
         idFromName: (_n: string) => ({ toString: () => "id" }),
@@ -682,6 +810,7 @@ describe("OCI status-for-code mapping", () => {
                 status: 404,
                 headers: {
                   "Content-Type": "application/json",
+                  "Docker-Distribution-Api-Version": "registry/2.0",
                   "X-Request-Id": req.headers.get("x-request-id") ?? "stub",
                 },
               },
@@ -693,48 +822,52 @@ describe("OCI status-for-code mapping", () => {
       } as unknown as DurableObjectNamespace,
     };
     const resp = await workerFetch(
-      `http://localhost/v2/${TEST_TENANT_ID}/blobs/sha256:deadbeef`,
-      { headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` } },
+      `http://localhost/v2/myrepo/blobs/sha256:deadbeef`,
+      undefined,
       blobUnknownEnv,
     );
-    // DO returns 404; worker passes it through with x-request-id
+    // Status, body, and the container-supplied OCI header all pass through.
     expect(resp.status).toBe(404);
     expect(resp.headers.get("x-request-id")).not.toBeNull();
-  });
-
-  it("worker returns UNAUTHORIZED OCI error (code path: UNAUTHORIZED → 401)", async () => {
-    // This exercises ociStatusForCode('UNAUTHORIZED') = 401 directly via the
-    // worker's auth middleware for OCI routes.
-    const resp = await workerFetch("http://localhost/v2/repo/blobs/sha256:abc");
-    expect(resp.status).toBe(401);
+    expect(resp.headers.get("docker-distribution-api-version")).toBe("registry/2.0");
     const body = await resp.json() as { errors: Array<{ code: string }> };
-    expect(body.errors[0]?.code).toBe("UNAUTHORIZED");
+    expect(body.errors[0]?.code).toBe("BLOB_UNKNOWN");
   });
 
-  it("worker returns UNKNOWN OCI error (500) when DO fetch throws on OCI path", async () => {
-    // This exercises ociStatusForCode default branch (unknown code → 500)
-    const throwingEnv: Partial<Env> = {
+  it("container 401 + Www-Authenticate (the OCI auth challenge) is forwarded verbatim", async () => {
+    // The OCI 401/Www-Authenticate challenge is now the CONTAINER's job (the
+    // first leg of OCI two-leg auth). The Worker forwards it unchanged and never
+    // builds its own 401 for OCI routes.
+    const challengeEnv: Partial<Env> = {
       CORELINK_SERVER: {
         idFromName: (_n: string) => ({ toString: () => "id" }),
         get: () => ({
-          fetch: async (_req: Request): Promise<Response> => {
-            throw new Error("simulated network failure");
-          },
+          fetch: async (req: Request) =>
+            new Response(
+              JSON.stringify({ errors: [{ code: "UNAUTHORIZED", message: "authentication required", detail: null }] }),
+              {
+                status: 401,
+                headers: {
+                  "Content-Type": "application/json",
+                  "WWW-Authenticate": 'Bearer realm="https://corelink.test/token",service="corelink-oci"',
+                  "Docker-Distribution-Api-Version": "registry/2.0",
+                  "X-Request-Id": req.headers.get("x-request-id") ?? "stub",
+                },
+              },
+            ),
         }),
         idFromString: (_s: string) => ({ toString: () => "id" }),
         newUniqueId: () => ({ toString: () => "id" }),
-        jurisdiction: (_j: string) => throwingEnv.CORELINK_SERVER,
+        jurisdiction: (_j: string) => challengeEnv.CORELINK_SERVER,
       } as unknown as DurableObjectNamespace,
     };
-    const resp = await workerFetch(
-      `http://localhost/v2/${TEST_TENANT_ID}/manifests/latest`,
-      { headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` } },
-      throwingEnv,
-    );
-    // ociError("UNKNOWN", ...) → ociStatusForCode('UNKNOWN') → default 500
-    expect(resp.status).toBe(500);
+    const resp = await workerFetch("http://localhost/v2/repo/blobs/sha256:abc", undefined, challengeEnv);
+    expect(resp.status).toBe(401);
+    // The Www-Authenticate challenge must survive the forward (it drives the
+    // OCI client to the /token second leg).
+    expect(resp.headers.get("www-authenticate")).toContain("Bearer realm=");
     const body = await resp.json() as { errors: Array<{ code: string }> };
-    expect(body.errors[0]?.code).toBe("UNKNOWN");
+    expect(body.errors[0]?.code).toBe("UNAUTHORIZED");
   });
 });
 
@@ -1210,9 +1343,12 @@ describe("WP-T1: tenant-derived DO routing", () => {
     // The routing must call idFromName(auth.tenantId), NOT idFromName(url-segment).
     // Request 1: URL tenant matches TEST_TENANT_ID → reaches DO; idFromName must
     //   be called with TEST_TENANT_ID (the auth tenant), never the URL string.
-    // Request 2: an "_anonymous" route (bare /v2/) carries no URL tenant → the
-    //   spoof gate is bypassed and routing still uses the auth tenant. This proves
-    //   the routing parameter is auth-derived regardless of the URL path shape.
+    // Request 2: an "_anonymous" route (/v8/artifacts, Turborepo) carries no URL
+    //   tenant → the spoof gate is bypassed and routing still uses the auth
+    //   tenant. This proves the routing parameter is auth-derived regardless of
+    //   the URL path shape. (NB: bare /v2/ is NO LONGER usable here — under PR
+    //   #169 it is the OCI pass-through and routes to the dedicated "_oci" DO,
+    //   not the auth tenant; /v8/artifacts is the PAT-gated _anonymous route.)
     const namesUsed: string[] = [];
     const capturingEnv: Partial<Env> = {
       CORELINK_SERVER: {
@@ -1233,11 +1369,11 @@ describe("WP-T1: tenant-derived DO routing", () => {
       } as unknown as DurableObjectNamespace,
     };
 
-    // Request 1: matching URL tenant. Request 2: bare /v2/ (_anonymous route).
+    // Request 1: matching URL tenant. Request 2: /v8/artifacts (_anonymous route).
     await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/blobs`, {
       headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
     }, capturingEnv);
-    await workerFetch("http://localhost/v2/", {
+    await workerFetch("http://localhost/v8/artifacts/hash123", {
       headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
     }, capturingEnv);
 

@@ -109,15 +109,29 @@ pub async fn token(
         Ok(s) => s,
         Err(e) => return err_response(&e, None, None),
     };
-    let tenant = match state.config.tenant_resolver.resolve_pat(&pat).await {
-        Ok(t) => t,
+    let resolved = match state
+        .config
+        .tenant_resolver
+        .resolve_pat_capability(&pat)
+        .await
+    {
+        Ok(r) => r,
         Err(e) => return err_response(&OciAdapterError::Auth(e), None, None),
+    };
+    // SECURITY: downscope the grant to the PAT's real capability. A
+    // read-only (`cas:r`) PAT requesting `push` is granted pull-only, so
+    // the data-plane `scope.allows(repo, "push")` check denies the write
+    // (no scope escalation via the token exchange).
+    let granted = if resolved.can_write {
+        scope
+    } else {
+        scope.restricted_to_read()
     };
     let now_secs = (state.clock_unix_ms)() / 1000;
     let token = match crate::oci::auth::mint(
         &state.config.token_signing_key,
-        &tenant,
-        &scope,
+        &resolved.tenant,
+        &granted,
         now_secs,
         state.config.token_ttl_secs,
     ) {

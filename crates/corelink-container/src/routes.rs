@@ -102,6 +102,15 @@ pub mod internal_pat;
 /// mutable package metadata in the D1-backed [`crate::adapter_kv`] KV.
 /// Env-gated mount in [`build_with_factory`].
 pub mod npm;
+/// OCI Distribution v1.1 registry surface (Phase B): `/v2/*` + `/token`
+/// mounts the `corelink_adapter_host::oci` adapter (docker / podman / buildah
+/// / containerd / Helm OCI). Two-leg auth: `/token` exchanges a PAT (Option-B
+/// re-verify via the shared [`crate::adapter_pat`] verifier) for a short-lived
+/// HMAC registry bearer, downscoped to the PAT's capability; `/v2` ops verify
+/// the bearer locally + enforce its repo scope. Blobs dedup through the
+/// [`crate::adapter_cache`] moat; mutable manifests/tags in the durable
+/// [`crate::adapter_oci_kv`] D1 KV. Env-gated mount in [`build_with_factory`].
+pub mod oci;
 /// PyPI (pip / uv / poetry / pdm) cache surface (Phase B):
 /// `/pip/<tenant>/<pep-path>` nests the `corelink_adapter_host::pip`
 /// read-through PyPI mirror (PEP 503/691 simple index + content-addressed
@@ -226,6 +235,8 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     let npm_cas_write = cas_write.clone();
     let pip_cas_read = cas_read.clone();
     let pip_cas_write = cas_write.clone();
+    let oci_cas_read = cas_read.clone();
+    let oci_cas_write = cas_write.clone();
     // Phase 0 Stream B1: Bazel REAPI v2 routes share the same CAS/AC
     // trait objects so all four route surfaces read from / write to the
     // same backing store. No new R2 connections are opened.
@@ -331,6 +342,37 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                         tracing::warn!(
                             "npm metadata KV unavailable from env; /npm/* NOT mounted \
                              (fail-CLOSED) — cargo/brew/pip unaffected"
+                        );
+                    }
+                }
+
+                // oci: shared moat map (blobs) + the durable D1 manifest KV
+                // (`adapter_oci_kv`, migration 0061) + verifier + the OCI session
+                // HMAC key (CORELINK_OCI_TOKEN_KEY). All four required; skip oci
+                // (fail-CLOSED) if the KV or the key is absent.
+                match (
+                    crate::adapter_oci_kv::oci_kv_from_env(),
+                    crate::storage::non_empty_env(oci::OCI_TOKEN_KEY_ENV),
+                ) {
+                    (Some(oci_kv), Some(token_key)) => {
+                        let oci_map: Arc<dyn crate::adapter_cache::UrlMapStore> = d1.clone();
+                        let oci_manifest_kv: Arc<
+                            dyn corelink_adapter_host::oci::ports::ManifestKvStore,
+                        > = oci_kv;
+                        router = router.merge(oci::router(
+                            oci_cas_read,
+                            oci_cas_write,
+                            oci_map,
+                            oci_manifest_kv,
+                            verifier.clone(),
+                            corelink_core::SecretWrap::new(token_key),
+                        ));
+                    }
+                    _ => {
+                        tracing::warn!(
+                            "CORELINK_OCI_TOKEN_KEY or OCI manifest KV unavailable; \
+                             /v2/* + /token (OCI registry) NOT mounted (fail-CLOSED) \
+                             — cargo/brew/npm/pip unaffected"
                         );
                     }
                 }

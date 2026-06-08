@@ -191,17 +191,24 @@ describe("miniflare: GET /health in workerd", () => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 describe("miniflare: auth middleware in workerd", () => {
-  it("returns 401 OCI error envelope for /v2/ without auth", async () => {
+  it("does NOT 401 /v2/ at the Worker — forwards to the _oci DO (no Worker auth gate)", async () => {
+    // PR #169: /v2/* is a pass-through. The Worker no longer auth-gates it or
+    // builds an OCI envelope. In the miniflare harness CF Containers are not
+    // available, so the real CoreLinkServer DO returns 503 CONTAINER_UNAVAILABLE
+    // — the Worker forwards THAT verbatim (not a synthesized 401 OCI envelope).
     const resp = await dispatchFetch("/v2/myrepo/blobs/sha256:abc");
-    expect(resp.status).toBe(401);
-    const body = await resp.json() as { errors: Array<{ code: string }> };
-    expect(Array.isArray(body.errors)).toBe(true);
-    expect(body.errors[0]?.code).toBe("UNAUTHORIZED");
+    expect(resp.status).toBe(503);
+    const body = await resp.json() as Record<string, unknown>;
+    expect(body["error"]).toBe("CONTAINER_UNAVAILABLE");
+    // The Worker did NOT synthesize an OCI errors[] array.
+    expect(body["errors"]).toBeUndefined();
   });
 
-  it("returns Docker-Distribution-Api-Version on /v2/ 401", async () => {
+  it("does NOT set Docker-Distribution-Api-Version on /v2/ from the Worker", async () => {
+    // The container owns the OCI-spec header; with no container in the harness
+    // the forwarded DO 503 carries no such header, and the Worker adds none.
     const resp = await dispatchFetch("/v2/");
-    expect(resp.headers.get("docker-distribution-api-version")).toBe("registry/2.0");
+    expect(resp.headers.get("docker-distribution-api-version")).toBeNull();
   });
 
   it("returns REAPI 401 for /api/v2/ without auth", async () => {
@@ -246,10 +253,12 @@ describe("miniflare: auth middleware in workerd", () => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 describe("miniflare: authenticated request → DO dispatch in workerd", () => {
-  it("authenticated OCI request reaches DO — returns 503 CONTAINER_UNAVAILABLE", async () => {
-    const resp = await dispatchFetch(`/v2/${TEST_TENANT_ID}/blobs/sha256:abc`, {
-      headers: { Authorization: `Bearer ${VALID_TOKEN}` },
-    });
+  it("OCI request reaches the _oci DO via pass-through — returns 503 CONTAINER_UNAVAILABLE", async () => {
+    // PR #169: the Worker forwards /v2/* to the _oci DO with no auth gate. With
+    // no container bound the DO returns 503 CONTAINER_UNAVAILABLE. The repo NAME
+    // in the path (here a UUID-shaped string) is NOT a tenant — it is forwarded
+    // as-is; the request still lands on the shared "_oci" DO.
+    const resp = await dispatchFetch(`/v2/myrepo/blobs/sha256:abc`);
     expect(resp.status).toBe(503);
     const body = await resp.json() as { error: string };
     expect(body.error).toBe("CONTAINER_UNAVAILABLE");

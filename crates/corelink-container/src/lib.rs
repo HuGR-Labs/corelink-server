@@ -70,6 +70,10 @@ pub mod adapter_cache;
 /// D1-backed KV for the cache adapters' MUTABLE metadata (npm package
 /// documents in `adapter_npm_meta`, public/private namespaced). See module docs.
 pub mod adapter_kv;
+/// Durable D1-backed `ManifestKvStore` for the OCI registry adapter
+/// (mutable manifests + tag lists in `adapter_oci_kv`; blobs go through the
+/// content-addressed moat). See module docs.
+pub mod adapter_oci_kv;
 /// Shared container-side PAT verifier (Option B) for ALL cache adapters
 /// (cargo / brew / npm / oci / pip). Trait-agnostic
 /// [`adapter_pat::PatVerifier::verify`]; each adapter route wraps it in a

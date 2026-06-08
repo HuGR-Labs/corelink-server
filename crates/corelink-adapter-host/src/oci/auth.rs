@@ -117,6 +117,21 @@ impl OciScope {
     pub fn allows(&self, repo: &str, action: &str) -> bool {
         self.repo == repo && self.actions.iter().any(|a| a == action)
     }
+
+    /// Downscope to READ-only: grant `pull` (and ONLY pull) on the same
+    /// repo, dropping `push`/`delete`. The `/token` exchange applies this
+    /// to a read-only (`cas:r`) PAT so it cannot mint a write-capable
+    /// registry token — without it a read-only PAT could obtain a `push`
+    /// bearer (scope escalation). A read-capable PAT may always pull the
+    /// repo it requested, so this always yields a usable (non-empty,
+    /// verify-able) pull grant.
+    #[must_use]
+    pub fn restricted_to_read(&self) -> Self {
+        Self {
+            repo: self.repo.clone(),
+            actions: vec![String::from("pull")],
+        }
+    }
 }
 
 /// Token verification produces this — the call site can then check

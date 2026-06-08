@@ -59,8 +59,24 @@ Each entry cross-references:
   so the HMAC → D1 → Argon2id → fail-CLOSED-scope pipeline lives exactly once.
   SSRF guards pin each upstream to its configured origin; the adapter PAT prefix
   is `corelink_`. All four routes are env-gated (fail-CLOSED / unmounted in
-  dev/CI). oci is deferred (its two-leg `/token` + Bearer-HMAC auth needs a
-  Worker-side exception). Deploy/measurement owner-gated.
+  dev/CI). Deploy/measurement owner-gated.
+- **OCI Distribution v1.1 registry surface (Phase B) — the 5th + final adapter.**
+  Wired `corelink_adapter_host::oci` into the container + Worker: `/v2/*` +
+  `/token` (docker / podman / buildah / containerd / Helm OCI). Two-leg auth —
+  the client exchanges a PAT (HTTP Basic, Option-B re-verified) at `/token` for
+  a short-lived HMAC registry bearer; `/v2` ops verify the bearer locally (no
+  D1/Argon2id per request) + enforce its repo scope. The Worker forwards OCI
+  RAW (pass-through to a dedicated `_oci` DO — it cannot resolve a PAT scope for
+  the two-leg flow), so the container is the SOLE OCI auth authority. Image
+  blobs dedup through the content-addressed moat (inheriting its read-side
+  integrity check); mutable manifests + tag lists live in the durable D1
+  `adapter_oci_kv` table (migration 0061). **SECURITY (scope-escalation fix):**
+  the `/token` exchange now downscopes the minted bearer to the PAT's real
+  capability — a read-only (`cas:r`) PAT can no longer obtain a `push` token
+  (it gets pull-only; the data-plane `scope.allows(repo,"push")` then denies the
+  write). New env `CORELINK_OCI_TOKEN_KEY` (≥32-byte session-HMAC key, distinct
+  from `PAT_SIGNING_KEY`); env-gated mount (fail-CLOSED). Completes all 5 cache
+  adapters (cargo / brew / npm / pip / oci). Deploy + measurement owner-gated.
 
 ### Security
 - **Audit-round-2 hardening (brutal 13-agent audit follow-ups).** Closed the

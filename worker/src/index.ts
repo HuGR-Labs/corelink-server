@@ -114,6 +114,7 @@ type RouteKind =
   | "health"
   | "health_serving"
   | "oci_v2"
+  | "oci_token"
   | "npm"
   | "pip"
   | "brew"
@@ -344,11 +345,25 @@ function matchRoute(url: URL): RouteMatch {
     return { tenantId: "_system", pathSuffix: "/api/health", routeKind: "health_serving" };
   }
 
+  // OCI token endpoint — EXACT /token (the second leg of OCI two-leg auth).
+  // The OCI client GETs /token with `Authorization: Basic base64(user:<PAT>)`;
+  // the container verifies the PAT (Option-B) and mints a short-lived HMAC
+  // Bearer. There is NO tenant path segment, so tenantId is the shared "_oci"
+  // sentinel (same dedicated DO as /v2/*); the container derives the real
+  // tenant from the PAT. The Worker is a pure forwarder here (no PAT gate).
+  if (path === "/token") {
+    return { tenantId: "_oci", pathSuffix: path, routeKind: "oci_token" };
+  }
+
   // OCI v2 — /v2[/…]
+  // OCI has NO tenant path segment: the first /v2/ segment is the repository
+  // NAME (e.g. /v2/alpine/blobs/...), NOT a tenant. tenantId is the shared
+  // "_oci" sentinel so the dedicated OCI DO is used; the container does its own
+  // two-leg auth (Option-B PAT verify at /token, HMAC Bearer on /v2) and
+  // derives + namespaces the tenant from the OCI token. pathSuffix is forwarded
+  // UNCHANGED.
   if (path === "/v2" || path === "/v2/" || path.startsWith("/v2/")) {
-    const rest = path.slice(3); // strip "/v2"
-    const tenant = extractFirstSegment(rest) ?? "_anonymous";
-    return { tenantId: tenant, pathSuffix: path, routeKind: "oci_v2" };
+    return { tenantId: "_oci", pathSuffix: path, routeKind: "oci_v2" };
   }
 
   // Bazel remote cache (REAPI v2) — /bazel/v2/<instance>/...
@@ -964,45 +979,8 @@ function splitmix32(x: number): number {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Error envelope builders (REAPI + OCI error shapes)
+// Error envelope builders (REAPI error shapes)
 // ──────────────────────────────────────────────────────────────────────────────
-
-interface OciErrorEnvelope {
-  readonly errors: ReadonlyArray<OciErrorEntry>;
-}
-
-interface OciErrorEntry {
-  readonly code: string;
-  readonly message: string;
-  readonly detail: unknown;
-}
-
-function ociError(code: string, message: string, requestId: string): Response {
-  const body: OciErrorEnvelope = { errors: [{ code, message, detail: null }] };
-  return new Response(JSON.stringify(body), {
-    status: ociStatusForCode(code),
-    headers: {
-      "Content-Type": "application/json",
-      "X-Request-Id": requestId,
-      "Docker-Distribution-Api-Version": "registry/2.0",
-    },
-  });
-}
-
-function ociStatusForCode(code: string): number {
-  switch (code) {
-    case "UNAUTHORIZED": return 401;
-    case "DENIED": return 403;
-    case "NOT_FOUND": return 404;
-    case "BLOB_UNKNOWN": return 404;
-    case "MANIFEST_UNKNOWN": return 404;
-    case "UNSUPPORTED": return 405;
-    case "DIGEST_INVALID": return 400;
-    case "NAME_INVALID": return 400;
-    case "BLOB_UPLOAD_INVALID": return 400;
-    default: return 500;
-  }
-}
 
 interface ReapiErrorEnvelope {
   readonly error: string;
@@ -1434,6 +1412,51 @@ const handler: ExportedHandler<Env> = {
       return applyCors(resp, request);
     }
 
+    // OCI two-leg auth pass-through — /v2/* and /token.
+    // OCI does its OWN auth in the container (Option-B PAT verify at /token,
+    // HMAC Bearer on /v2). The Worker is a pure forwarder: no extractAuth, no
+    // tenant/scope injection, no path-spoof/quota/region-tenant binding (there
+    // is no edge-resolved tenant for OCI). Route to a dedicated shared DO; the
+    // container does per-tenant CAS namespacing from the OCI-token tenant.
+    if (route.routeKind === "oci_v2" || route.routeKind === "oci_token") {
+      const ociDoId = env.CORELINK_SERVER.idFromName("_oci");
+      const ociStub = env.CORELINK_SERVER.get(ociDoId);
+      const ociReq = new Request(request, {
+        headers: (() => {
+          const h = new Headers(request.headers);
+          stripClientTrustHeaders(h);          // delete any client-forged x-corelink-*
+          // Defense-in-depth: x-corelink-tenant-id is NOT in the strip list (the
+          // Worker normally always .set()s it), but the OCI pass-through never
+          // sets it — so delete any smuggled value so it can never reach the
+          // container (which ignores it for OCI, but belt-and-braces).
+          h.delete("x-corelink-tenant-id");
+          h.set("x-request-id", requestId);
+          h.set("x-corelink-route-kind", route.routeKind);
+          // Deliberately NOT set: x-corelink-tenant-id / x-corelink-scope.
+          // The OCI adapter derives the tenant from the OCI Bearer/PAT and
+          // enforces per-op scope from its own HMAC bearer token. The raw
+          // Authorization header (OCI Basic at /token, OCI Bearer at /v2) is
+          // preserved by the `new Headers(request.headers)` clone above —
+          // stripClientTrustHeaders does NOT remove Authorization.
+          return h;
+        })(),
+      });
+      let ociResp: Response;
+      try {
+        ociResp = await ociStub.fetch(ociReq);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        // Do NOT include error detail that could leak internal topology
+        // (parity with the PAT-path DO forward catch below).
+        console.error(`[${requestId}] OCI DO fetch failed: ${message.slice(0, 80)}`);
+        return applyCors(
+          reapiError("INTERNAL_ERROR", "upstream error", 500, requestId),
+          request,
+        );
+      }
+      return applyCors(ociResp, request);
+    }
+
     // Auth gate — all other routes require a valid Bearer PAT, EXCEPT signup
     // which is pre-tenant: the :token in /v1/signup/pilot/:token IS the auth
     // artifact, not a Bearer PAT. The container validates the path token against
@@ -1451,13 +1474,9 @@ const handler: ExportedHandler<Env> = {
     } else {
       const result = await extractAuth(request, env);
       if (!result.ok) {
-        // Timing-pad auth failures on OCI routes to match the OCI error envelope shape
-        if (route.routeKind === "oci_v2") {
-          return applyCors(
-            ociError("UNAUTHORIZED", "authentication required", requestId),
-            request,
-          );
-        }
+        // OCI (oci_v2 / oci_token) never reaches here — it is handled by the
+        // dedicated pass-through branch ABOVE (which forwards to the container
+        // for its own two-leg auth), so this PAT-gate path only sees PAT routes.
         return applyCors(
           reapiError("UNAUTHORIZED", "authentication required", 401, requestId),
           request,
@@ -1487,13 +1506,8 @@ const handler: ExportedHandler<Env> = {
 
     if (isRealTenant && urlTenant !== "_anonymous" && urlTenant !== resolvedTenantId) {
       // PAT tenant ≠ URL path tenant — potential path-spoof.
-      // Return 403 without leaking which side mismatched.
-      if (route.routeKind === "oci_v2") {
-        return applyCors(
-          ociError("DENIED", "tenant mismatch", requestId),
-          request,
-        );
-      }
+      // Return 403 without leaking which side mismatched. (OCI never reaches
+      // this PAT-gate path — see the dedicated pass-through branch above.)
       return applyCors(
         reapiError("FORBIDDEN", "tenant mismatch", 403, requestId),
         request,
@@ -1513,28 +1527,11 @@ const handler: ExportedHandler<Env> = {
       const quotaTier = await getTierForTenant(env.CONFIG_DB, resolvedTenantId);
       const requestQuotaEnabled = env.REQUEST_QUOTA_ENABLED === "true";
 
-      // Storage quota check
+      // Storage quota check. (OCI never reaches this PAT-gate path — see the
+      // dedicated pass-through branch above; the container enforces OCI quota.)
       const storageCheck = await checkStorageQuota(env.CONFIG_DB, resolvedTenantId, quotaTier);
       if (!storageCheck.ok) {
         const retryAfter = String(storageCheck.retryAfterSec);
-        if (route.routeKind === "oci_v2") {
-          return applyCors(
-            new Response(
-              JSON.stringify({
-                errors: [{ code: "DENIED", message: storageCheck.reason }],
-              }),
-              {
-                status: 429,
-                headers: {
-                  "Content-Type": "application/json",
-                  "Retry-After": retryAfter,
-                  "X-Request-Id": requestId,
-                },
-              },
-            ),
-            request,
-          );
-        }
         return applyCors(
           new Response(
             JSON.stringify({
@@ -1685,12 +1682,8 @@ const handler: ExportedHandler<Env> = {
       const message = err instanceof Error ? err.message : "unknown error";
       // Do NOT include error detail that could leak internal topology
       console.error(`[${requestId}] DO fetch failed: ${message.slice(0, 80)}`);
-      if (route.routeKind === "oci_v2") {
-        return applyCors(
-          ociError("UNKNOWN", "upstream error", requestId),
-          request,
-        );
-      }
+      // OCI never reaches this PAT-gate DO forward — see the dedicated
+      // pass-through branch above (which has its own DO forward + error path).
       return applyCors(
         reapiError("INTERNAL_ERROR", "upstream error", 500, requestId),
         request,

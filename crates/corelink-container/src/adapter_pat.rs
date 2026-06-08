@@ -45,7 +45,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use corelink_pat::{verify_hmac_only, verify_with_hash, PatHash, PatSigningKey};
 
-use crate::scope::requires_cache_read;
+use crate::scope::{requires_cache_read, requires_cache_write};
 use crate::storage::d1_http::D1HttpClient;
 use crate::storage::{non_empty_env, StorageEnv};
 
@@ -196,9 +196,19 @@ impl PatVerifier {
         Some(Self::new(Arc::new(d1), Arc::new(signing_key)))
     }
 
-    /// The full Option-B verification pipeline. Returns the PAT's owning
-    /// tenant id on success.
-    pub async fn verify(&self, pat_plaintext: &str) -> Result<String, VerifyError> {
+    /// The full Option-B verification pipeline, returning the PAT's owning
+    /// tenant id **and** whether it carries cache WRITE capability.
+    ///
+    /// Callers that mint a downstream credential FROM the PAT (the OCI
+    /// `/token` Basic→Bearer exchange) use the write bit to downscope the
+    /// grant to the PAT's real rights — otherwise a read-only (`cas:r`)
+    /// PAT could obtain a `push` registry token. The simpler [`Self::verify`]
+    /// discards the bit (per-op write enforcement for the header-scoped
+    /// adapters stays at the route from `x-corelink-scope`).
+    pub async fn verify_capability(
+        &self,
+        pat_plaintext: &str,
+    ) -> Result<(String, bool), VerifyError> {
         // 1. HMAC fast-reject (pre-D1). A forged token is rejected here
         //    without a D1 round-trip. Uniform InvalidPat.
         let (_env, token_id) = verify_hmac_only(pat_plaintext, &self.signing_key)
@@ -241,14 +251,24 @@ impl PatVerifier {
         .map_err(|e| VerifyError::Backend(format!("verify join: {e}")))?;
         verify_result.map_err(|_| VerifyError::InvalidPat)?;
 
-        // 4. Scope gate — fail-CLOSED. The port has no operation, so we
-        //    require at least cache-read capability here; per-operation
-        //    write enforcement is at each adapter route (x-corelink-scope).
+        // 4. Scope gate — fail-CLOSED on NO cache capability at all, then
+        //    surface the read/write split so credential-minting callers can
+        //    downscope.
         if !requires_cache_read(&row.scope) {
             return Err(VerifyError::InvalidPat);
         }
+        let can_write = requires_cache_write(&row.scope);
 
-        Ok(row.tenant_id)
+        Ok((row.tenant_id, can_write))
+    }
+
+    /// The full Option-B verification pipeline. Returns the PAT's owning
+    /// tenant id on success. Thin wrapper over [`Self::verify_capability`]
+    /// for callers that don't need the write-capability bit.
+    pub async fn verify(&self, pat_plaintext: &str) -> Result<String, VerifyError> {
+        self.verify_capability(pat_plaintext)
+            .await
+            .map(|(tenant, _can_write)| tenant)
     }
 }
 
