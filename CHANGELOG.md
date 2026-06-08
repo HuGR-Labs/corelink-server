@@ -175,6 +175,23 @@ Each entry cross-references:
   `docs/FINDING-turbo-tenant-isolation.md`.
 
 ### Fixed
+- **D1 `pat.scope` CHECK corrected to the live scope vocabulary (launch
+  landmine).** Migration `0037` pinned `scope CHECK (scope IN
+  ('read-write','read-only','admin'))`, but the auth code (`scope.rs`
+  `requires_cache_read/write`) and the production provisioning path
+  (`signup-worker/clerk.ts`, which persists `scope='cas:rw'`) speak the colon
+  grammar `('cas:rw','cas:r','cas:w','admin')`. The first real self-serve
+  signup would have failed its PAT INSERT with a `CHECK constraint failed`,
+  leaving the customer without a token. Verified against live `corelink-prod-d1`
+  (25 rows, all legacy `admin`; the `cas:rw` path had never written). New
+  migration `0061_pat_scope_colon_grammar.sql` rebuilds `pat` with the corrected
+  CHECK + `DEFAULT 'cas:rw'` (SQLite/D1 cannot ALTER a CHECK in place),
+  preserving all rows + the three named indexes; no table FK-references `pat`,
+  so the rebuild is dependency-safe. Gated least-privilege back-fill of the
+  legacy admin rows (`admin → cas:rw`, valid only post-0061) in
+  `scripts/backfill-admin-scope-prod.sh`; deploy/data steps documented in
+  `docs/operator/launch-pat-scope-fix-runbook.md`. Locally proven with
+  python3 sqlite3 against the exact prod DDL.
 - **Prod deploy gate now asserts the Team + Pro Stripe price IDs are
   populated.** `cf-deploy-prod.yml`'s required-prod-secrets check listed only
   the Stripe key/webhook secret, so a Cloudflare env missing
