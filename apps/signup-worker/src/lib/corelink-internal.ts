@@ -12,7 +12,7 @@
 export interface InternalMintParams {
   tenantId: string;
   principalId: string;
-  /** "admin" | "cas:rw" */
+  /** "admin" | "read-write" (the mint route also accepts the "cas:rw" alias) */
   scopes: string;
   /** TTL in seconds (e.g. 365 * 86400 = 31536000). */
   ttlSeconds: number;

@@ -207,6 +207,22 @@ Each entry cross-references:
   (the container is the sole tenant authority, deriving it from the signed event).
   The Worker adds NO signature/PAT validation — the container's HMAC verify
   (constant-time, replay-windowed) is the sole authority.
+- **PAT scope launch-blocker — provisioning wrote a value the D1 CHECK rejects.**
+  The prod `pat.scope` column is constrained to `('read-write','read-only','admin')`
+  (migration 0037), but `signup-worker/clerk.ts` persisted `scope='cas:rw'` — so the
+  first real self-serve signup would have failed its PAT INSERT with a CHECK
+  violation and the customer would never receive a token. Verified on live
+  `corelink-prod-d1` (25 rows, all legacy `admin`; the `cas:rw` path never wrote).
+  Auth migrations are additive-only (INV-AUTH-MIGRATION-ADDITIVE, HIGH — no
+  destructive `pat` rebuild without an ADR), so the fix is code-side: `clerk.ts`
+  now provisions `read-write` (CHECK-valid, **non-admin** → least privilege), and
+  `scope.rs` `requires_cache_read/write` additively accept `read-write` (→ rw) and
+  `read-only` (→ read) alongside the colon grammar. One change covers every surface
+  (the unified `verify_capability`, OCI `/token` downscope, all five adapters); the
+  mint route already mapped `read-write`→cache-rw and the signed bitset is unchanged.
+  Gated least-privilege back-fill of the 25 legacy admin rows (`admin → read-write`,
+  no migration) in `scripts/backfill-admin-scope-prod.sh`; deploy + follow-ups in
+  `docs/operator/launch-pat-scope-fix-runbook.md`.
 - **Prod deploy gate now asserts the Team + Pro Stripe price IDs are
   populated.** `cf-deploy-prod.yml`'s required-prod-secrets check listed only
   the Stripe key/webhook secret, so a Cloudflare env missing

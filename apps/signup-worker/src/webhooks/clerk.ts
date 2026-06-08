@@ -7,7 +7,7 @@
  *   2. Pick the nearest CF region from the request `cf.colo` field
  *      (Geo-IP-derived — no DB lookup needed; falls back to `auto`).
  *   3. Attach `plan=free`.
- *   4. Issue a PAT scoped `cas:rw`, return plaintext **once** to the user
+ *   4. Issue a PAT scoped `read-write`, return plaintext **once** to the user
  *      via Clerk's `publicMetadata` so `/welcome` can render it.
  *   5. Emit `signup_completed`, `tenant_created`, `region_assigned`,
  *      `pat_issued` events to the `analytics_events` D1 table.
@@ -211,7 +211,7 @@ interface ApiClient {
   ): Promise<void>;
   issuePat(
     tenantId: string,
-    scope: "cas:rw",
+    scope: "read-write",
   ): Promise<{ id: string; plaintext: string }>;
   publishUserMetadata(
     userId: string,
@@ -300,11 +300,11 @@ export async function autoProvisionFromClerkEvent(input: {
     svix_id: input.svixId,
   });
 
-  // 3. Issue PAT (cas:rw).
-  const pat = await input.api.issuePat(tenant.id, "cas:rw");
+  // 3. Issue PAT (read-write).
+  const pat = await input.api.issuePat(tenant.id, "read-write");
   await input.analytics.emit("pat_issued", tenant.id, user.id, {
     pat_id: pat.id,
-    scope: "cas:rw",
+    scope: "read-write",
     svix_id: input.svixId,
   });
 
@@ -509,11 +509,11 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
 
     // ── issuePat ──────────────────────────────────────────────────────────────
     // Calls `/_internal/pat/mint` with the caller-requested `scope` (self-serve
-    // PATs are `cas:rw`, never `admin`), inserts the PAT row to D1 with that
+    // PATs are `read-write`, never `admin`), inserts the PAT row to D1 with that
     // same scope, and returns the plaintext.
     async issuePat(
       tenantId: string,
-      scope: "cas:rw",
+      scope: "read-write",
     ): Promise<{ id: string; plaintext: string }> {
       if (!env.CORELINK_INTERNAL_AUTH_KEY) {
         // Dev/CI stub — return a fake PAT that the tests can assert on.
@@ -535,7 +535,7 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
             tenant_id: tenantId,
             // Use the tenant_id as the principal_id for the first PAT.
             principal_id: tenantId,
-            // Honor the caller-requested scope (self-serve PATs are cas:rw,
+            // Honor the caller-requested scope (self-serve PATs are read-write,
             // NEVER admin). The container mint route authorizes per-scope.
             scopes: scope,
             ttl_seconds: patTtlSeconds,
@@ -568,7 +568,7 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
             mint.pat_id,
             tenantId,
             mint.hash,
-            scope, // persist the caller-requested scope (cas:rw), NOT admin
+            scope, // persist the caller-requested scope (read-write), NOT admin
             mint.expires_ms,
             mint.token_id,
             crypto.randomUUID(), // shown_once_token (pre-consumed)
