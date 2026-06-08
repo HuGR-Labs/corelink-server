@@ -212,6 +212,21 @@ Each entry cross-references:
   `INSERT OR IGNORE`, `SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1` and
   return THAT id — our row if we won the insert, the pre-existing row if we were
   skipped — so the PAT + metadata always bind to the durable tenant.
+- **Operator `set_tenant_tier` flowed an unvalidated `tier` string to the D1
+  CHECK (#35).** The operator admin mutate path (`routes/admin.rs`
+  `into_request` / `into_request_gated`) built `MutateOp::SetTenantTier` from the
+  raw JSON `tier` with no enum validation and no case normalization, then mirrored
+  it to `UPDATE tier_selections SET tier = ?1`
+  (`storage/d1_http.rs::tenant_set_tier`). A capitalized label (`"Team"` — what the
+  codebase's own admin tests send) or a `tenant.tier`-only alias (`solo` / `org`,
+  valid in migration 0057 but NOT in 0039's `tier_selections.tier` CHECK) produced
+  an opaque D1 CHECK-violation 500. Now a shared `normalize_tier_selection` helper
+  trims + lower-cases the input and rejects anything outside the canonical 0039
+  enum (`free`/`starter`/`team`/`pro`/`enterprise`) with a clean
+  `400 invalid_tier` at the route boundary, before the D1 write. **Divergence
+  follow-up:** `solo`/`org` exist in `tenant.tier` (0057) but not in
+  `tier_selections.tier` (0039); they are rejected for now (additive-only
+  auth-migration rule — no destructive 0039 widening).
 - **Stripe webhook was 401-rejected at the Worker edge — paid checkouts never
   granted a tier (LAUNCH-BLOCKER).** `worker/src/index.ts`'s `matchRoute` had no
   `/v1/billing/*` arm, so `POST /v1/billing/stripe-webhook` fell into the generic
