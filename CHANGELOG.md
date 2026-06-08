@@ -23,6 +23,41 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Durable D1-HTTP billing writer for the Stripe-webhook materializer
+  (money-path launch-blocker #27 Item 7b).** Added
+  `corelink-container::billing_d1_http::D1HttpBillingWriter`, a native
+  `BillingD1Writer` that persists Stripe-webhook state (customers /
+  subscriptions / invoices / disputes / refunds / tier + the idempotency dedup
+  row) DURABLY to Cloudflare D1 over the REST API, replacing the in-memory
+  mirror that lost all billing state on container restart. The
+  `BillingD1Writer` trait (and the whole `WebhookDispatcher` pipeline) is
+  **sync by charter** — it is shared with the wasm32 CF Worker whose
+  `worker::D1Database` `JsFuture`s are `!Send` — so the new writer bridges the
+  sync trait to the async `D1HttpClient` via
+  `tokio::task::block_in_place(|| Handle::current().block_on(…))` (the native
+  server is `#[tokio::main]` multi-thread); **no trait was made async** and the
+  shared leaf / `stripe-real` / Worker path is untouched. Wired in `main.rs`:
+  env-gated on `StorageEnv::from_env()` — durable D1 in prod, `InMemoryBillingD1`
+  in dev/CI. Fail-CLOSED (any D1 transport/non-2xx error → `Transient` → HTTP
+  500 → Stripe retries; the dedup row prevents double-materialization);
+  parameterised SQL only; secret-redacting `Debug`.
+- **Stripe-materializer SQL reconciled to the deployed D1 schema (same
+  launch-blocker).** The canonical billing SQL literals were materially WRONG
+  vs the deployed migrations and would have silently failed every webhook write
+  in production. Promoted them to a single source of truth in
+  `corelink-billing-stripe-materializer::d1` (re-exported `SQL_*`, transcribed
+  by both the wasm32 binder and the native writer) and fixed each against the
+  deployed columns: the JSON column is **`payload_json`** (was `payload`) on all
+  `0048` tables; `ON CONFLICT` targets each table's natural PK (was a composite
+  `(tenant_id, …)`); `stripe_subscriptions.status` and `stripe_invoices.outcome`
+  (NOT-NULL, no default — sourced from the handler payload) are now bound;
+  `stripe_refunds` uses its real `stripe_charge_id` PK (the non-existent
+  `stripe_refund_id` is gone); and the `0044` dedup INSERT now writes the real
+  un-tenanted columns `(event_id, event_type, processed_at_ms, outcome,
+  correlation_id)` — `outcome` literal `'dispatched'`, the Stripe `event_id` as
+  `correlation_id` — with `RETURNING event_id` for insert-vs-replay detection
+  (the trait signatures are unchanged). New `d1::tests` pin every corrected
+  shape under the default `cargo test --lib`.
 - **sccache → CoreLink cargo build-cache surface (Phase A — code).** Mounted the
   `corelink_adapter_host::cargo` adapter at `/cargo/<tenant>/<key>`, closing the
   three integration gaps from `FINDING-sccache-adapter-gaps.md`: (1) the Worker

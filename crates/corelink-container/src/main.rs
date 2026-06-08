@@ -36,6 +36,7 @@ use corelink_billing_stripe_materializer::{
     BillingD1Writer, D1IdempotencyStore, D1SubscriptionStateHandler, InMemoryBillingAuditEmitter,
     InMemoryBillingD1, InMemoryTierSelector, RealStripeAuditEmitter,
 };
+use corelink_server::billing_d1_http::D1HttpBillingWriter;
 use corelink_server::routes;
 use corelink_server::routes::audit_analytics::ShadowSinkFactory;
 use corelink_server::webhook::{router as webhook_router, WebhookState};
@@ -370,7 +371,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 ArchiveProducerBillingEmitter as _, CfD1BillingWriter as _,
             };
         }
-        let billing_d1: Arc<dyn BillingD1Writer> = Arc::new(InMemoryBillingD1::new());
+        // Item 7b (money-path launch-blocker): wire the DURABLE D1-HTTP
+        // billing writer when the D1 config is present, so Stripe-webhook
+        // state (customers / subscriptions / invoices / disputes / refunds
+        // / tier / the idempotency dedup row) is materialized to D1 over
+        // the CF REST API — NOT lost to the in-memory mirror on the next
+        // container restart. The sync `BillingD1Writer` trait is bridged
+        // to the async `D1HttpClient` inside `D1HttpBillingWriter`
+        // (`block_in_place`; the trait stays sync for the shared wasm32
+        // Worker path). Dev/CI without `R2_S3_*`/CF D1 config keep the
+        // `InMemoryBillingD1` mirror so the suite stays green offline.
+        let billing_d1: Arc<dyn BillingD1Writer> =
+            match corelink_server::storage::StorageEnv::from_env() {
+                Some(storage_env) => match corelink_server::storage::d1_http::D1HttpClient::new(
+                    &storage_env,
+                ) {
+                    Ok(client) => {
+                        info!(
+                            "billing: DURABLE D1-HTTP writer wired (CF D1 REST API); \
+                             Stripe-webhook state persists across restarts"
+                        );
+                        Arc::new(D1HttpBillingWriter::new(Arc::new(client)))
+                    }
+                    Err(e) => {
+                        warn!(
+                            error = %e,
+                            "billing: D1HttpClient init failed; \
+                             FALLING BACK to InMemoryBillingD1 (webhook state is NOT durable)"
+                        );
+                        Arc::new(InMemoryBillingD1::new())
+                    }
+                },
+                None => {
+                    warn!(
+                        "billing: D1 config absent (R2_S3_*/CF D1); \
+                         using InMemoryBillingD1 (dev/CI — webhook state is NOT durable)"
+                    );
+                    Arc::new(InMemoryBillingD1::new())
+                }
+            };
         let billing_audit = Arc::new(InMemoryBillingAuditEmitter::new());
         // Canonical Stripe-plan-id → tier mapping. Production
         // operators flip these via the workspace tier config; the
