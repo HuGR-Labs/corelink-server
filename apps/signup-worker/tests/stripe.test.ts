@@ -171,6 +171,12 @@ const baseEnv = (db?: ReturnType<typeof fakeDb>): StripeWebhookEnv => ({
     STRIPE_WEBHOOK_SECRET: TEST_SECRET,
     ANALYTICS_ENDPOINT: "https://analytics.test/ingest",
     ANALYTICS_INGEST_KEY: "test_key",
+    // Price→tier reverse map (mirrors the checkout backend's
+    // STRIPE_PRICE_ID_{TIER} env vars) so subscription.updated can map a price
+    // change back to a tier.
+    STRIPE_PRICE_ID_STARTER: "price_starter_xxx",
+    STRIPE_PRICE_ID_TEAM: "price_team_yyy",
+    STRIPE_PRICE_ID_PRO: "price_pro_zzz",
     BILLING_DB: db
         ? { prepare: db.prepare }
         : undefined,
@@ -408,5 +414,236 @@ describe("handleStripeWebhook", () => {
         // Both calls invoke the same ON CONFLICT upsert path.
         const insertCalls = db.runCalls.filter((c) => c.sql.includes("INSERT INTO tenant_billing"));
         expect(insertCalls).toHaveLength(2);
+    });
+
+    // ------------------------------------------------------------------
+    // GAP #1: invoice.payment_failed → revoke entitlement on TERMINAL failure
+    // ------------------------------------------------------------------
+
+    it("invoice.payment_failed (terminal: next_payment_attempt=null) → tier_selections deactivated + billing past_due", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_pf_terminal",
+            type: "invoice.payment_failed",
+            data: {
+                object: {
+                    subscription: "sub_pf",
+                    customer: "cus_pf",
+                    attempt_count: 4,
+                    next_payment_attempt: null, // Stripe has given up → terminal
+                    metadata: { tenant_id: "tenant_pf" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // tier_selections flipped away from 'active' (the canonical gate).
+        const deact = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("'inactive'"),
+        );
+        expect(deact).toBeDefined();
+        expect(deact!.params).toContain("cus_pf");
+
+        // tenant_billing status set to past_due (status-only update).
+        const billing = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tenant_billing") && c.params.includes("past_due"),
+        );
+        expect(billing).toBeDefined();
+        // Must NOT have written current_period_end_ms (status-only SQL).
+        expect(billing!.sql).not.toContain("current_period_end_ms");
+    });
+
+    it("invoice.payment_failed (transient: next_payment_attempt set) → NO entitlement change (fail-safe)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_pf_transient",
+            type: "invoice.payment_failed",
+            data: {
+                object: {
+                    subscription: "sub_pf2",
+                    customer: "cus_pf2",
+                    attempt_count: 1,
+                    next_payment_attempt: Math.floor(nowMs / 1000) + 3 * 24 * 3600, // will retry
+                    metadata: { tenant_id: "tenant_pf2" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // No tier_selections nor tenant_billing mutation on a transient failure.
+        expect(db.runCalls.find((c) => c.sql.includes("UPDATE tier_selections"))).toBeUndefined();
+        expect(db.runCalls.find((c) => c.sql.includes("UPDATE tenant_billing"))).toBeUndefined();
+    });
+
+    // ------------------------------------------------------------------
+    // GAP #2: customer.subscription.deleted → tier_selections → 'inactive'
+    // ------------------------------------------------------------------
+
+    it("customer.subscription.deleted → tier_selections.subscription_state set to 'inactive'", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_del_gate",
+            type: "customer.subscription.deleted",
+            data: {
+                object: {
+                    id: "sub_del_gate",
+                    customer: "cus_del_gate",
+                    metadata: { tenant_id: "tenant_del_gate" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // Canceled → tenant_billing.status='canceled' (existing behaviour).
+        expect(db.runCalls.find((c) => c.sql.includes("'canceled'"))).toBeDefined();
+        // NEW: tier_selections flipped to 'inactive' so access is revoked AND a
+        // re-subscribe is allowed (not left at 'active').
+        const deact = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("'inactive'"),
+        );
+        expect(deact).toBeDefined();
+        expect(deact!.params).toContain("cus_del_gate");
+    });
+
+    // ------------------------------------------------------------------
+    // GAP #3a: subscription.updated unknown status → NOT coerced to 'paid'
+    // ------------------------------------------------------------------
+
+    it("customer.subscription.updated with UNKNOWN status → billing not 'paid' (fail-safe) + gate deactivated", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_unknown_status",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_unknown",
+                    customer: "cus_unknown",
+                    status: "some_future_stripe_status",
+                    metadata: { tenant_id: "tenant_unknown" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        const billing = db.runCalls.find((c) => c.sql.includes("UPDATE tenant_billing"));
+        expect(billing).toBeDefined();
+        // Old fail-open bug coerced unknown → 'paid'. Must NOT do that.
+        expect(billing!.params).not.toContain("paid");
+        expect(billing!.params).toContain("incomplete");
+        // Unknown status does not grant access → gate deactivated.
+        expect(
+            db.runCalls.find(
+                (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("'inactive'"),
+            ),
+        ).toBeDefined();
+    });
+
+    // ------------------------------------------------------------------
+    // GAP #3b: subscription.updated plan change → propagate new tier
+    // ------------------------------------------------------------------
+
+    it("customer.subscription.updated downgrade (price change) → tier_selections.tier updated to new tier", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_downgrade",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_downgrade",
+                    customer: "cus_downgrade",
+                    status: "active",
+                    current_period_end: Math.floor(nowMs / 1000) + 30 * 24 * 3600,
+                    items: { data: [{ price: { id: "price_starter_xxx" } }] }, // downgraded to starter
+                    metadata: { tenant_id: "tenant_downgrade" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // tier propagated to tier_selections.tier = 'starter'.
+        const tierUpdate = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("SET tier"),
+        );
+        expect(tierUpdate).toBeDefined();
+        expect(tierUpdate!.params).toContain("starter");
+        expect(tierUpdate!.params).toContain("cus_downgrade");
+        // Active status → no deactivation (gate stays as-is).
+        expect(
+            db.runCalls.find(
+                (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("'inactive'"),
+            ),
+        ).toBeUndefined();
+    });
+
+    it("customer.subscription.updated with UNKNOWN price → tier left untouched (never guess)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_unknown_price",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_unknown_price",
+                    customer: "cus_unknown_price",
+                    status: "active",
+                    items: { data: [{ price: { id: "price_not_in_our_map" } }] },
+                    metadata: { tenant_id: "t_up" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+        // No SET tier write when the price maps to no known tier.
+        expect(
+            db.runCalls.find((c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("SET tier")),
+        ).toBeUndefined();
+    });
+
+    // ------------------------------------------------------------------
+    // GAP #4: subscription.created → backfill period-end
+    // ------------------------------------------------------------------
+
+    it("customer.subscription.created → backfills tenant_billing.current_period_end_ms", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const periodEndSec = Math.floor(nowMs / 1000) + 30 * 24 * 3600;
+        const event = {
+            id: "evt_created",
+            type: "customer.subscription.created",
+            data: {
+                object: {
+                    id: "sub_created",
+                    customer: "cus_created",
+                    current_period_end: periodEndSec,
+                    metadata: { tenant_id: "tenant_created" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        const backfill = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tenant_billing") && c.sql.includes("current_period_end_ms"),
+        );
+        expect(backfill).toBeDefined();
+        expect(backfill!.params).toContain(periodEndSec * 1000);
+        expect(backfill!.params).toContain("sub_created");
     });
 });

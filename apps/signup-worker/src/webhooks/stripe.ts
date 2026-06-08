@@ -4,11 +4,34 @@
 // then mutates the `tenant_billing` D1 table on the three lifecycle events that
 // matter for self-serve billing:
 //
-//   checkout.session.completed    → INSERT / UPDATE tenant_billing (paid)
-//   customer.subscription.updated → UPDATE period_end + status
-//   customer.subscription.deleted → UPDATE status = 'canceled'
+//   checkout.session.completed    → INSERT / UPDATE tenant_billing (paid) +
+//                                   activate tier_selections (access gate)
+//   customer.subscription.created → backfill tenant_billing.current_period_end_ms
+//   customer.subscription.updated → UPDATE period_end + status; propagate a plan
+//                                   change to tier_selections.tier; sync the
+//                                   access gate (deactivate if status no longer
+//                                   grants access)
+//   customer.subscription.deleted → tenant_billing.status='canceled' AND
+//                                   tier_selections.subscription_state='inactive'
+//                                   (lose access + allow re-subscribe)
+//   invoice.payment_failed        → on TERMINAL dunning failure: tenant_billing
+//                                   status='past_due' AND tier_selections away
+//                                   from 'active' (revoke entitlement)
+//
+// CANONICAL access gate: `tier_selections.subscription_state = 'active'` (read by
+// the container's `has_active_subscription`, tier_select_store.rs). tenant_billing
+// is the secondary mirror. Every handler that changes entitlement updates the
+// canonical gate, not just tenant_billing.
 //
 // Each arm also emits an analytics event to the analytics-worker.
+//
+// IDEMPOTENCY NOTE (Stripe redelivers; #34): every D1 mutation here is a safe
+// upsert or a guarded/no-op UPDATE. The analytics emits (e.g.
+// `paid_subscription_started` MRR) are NOT deduped — a Stripe redelivery would
+// double-count. The durable dedup table `stripe_webhook_events_processed`
+// (migration 0044) is NOT yet wired into this handler; wiring it (INSERT OR
+// IGNORE on event.id, gating dispatch) is the correct fix and is deferred as a
+// larger change. FLAGGED for follow-up.
 //
 // Security invariants (audited):
 //   1. Stripe-Timestamp MUST be within 5 minutes of now (replay-attack window).
@@ -34,6 +57,14 @@ import { emit, newEventId } from "../lib/analytics-server";
 export interface StripeWebhookEnv extends AnalyticsEmitEnv {
     STRIPE_WEBHOOK_SECRET?: string;
     BILLING_DB?: D1DatabaseLike;
+    // Stripe price ids per paid tier — the same env vars the checkout backend
+    // (corelink-stripe-real client.rs:649 `STRIPE_PRICE_ID_{TIER}`) reads to
+    // CREATE a session. The webhook reads them in REVERSE (price → tier) so an
+    // in-place Stripe plan change on customer.subscription.updated can map the
+    // new price back to our tier and propagate it to tier_selections.tier.
+    STRIPE_PRICE_ID_STARTER?: string;
+    STRIPE_PRICE_ID_TEAM?: string;
+    STRIPE_PRICE_ID_PRO?: string;
 }
 
 // Minimal D1 interface — keeps unit tests independent of @cloudflare/workers-types.
@@ -167,6 +198,75 @@ function centsToUsd(cents: unknown): number {
     return typeof cents === "number" ? cents / 100 : 0;
 }
 
+/** The canonical paid tiers the tier_selections FSM may be activated on. */
+type PaidTier = "starter" | "team" | "pro";
+
+/** Coerce an arbitrary string to a known paid tier, or null. */
+function asPaidTier(raw: unknown): PaidTier | null {
+    return raw === "starter" || raw === "team" || raw === "pro" ? raw : null;
+}
+
+/** Read a paid tier straight from Stripe `metadata[tier]` (checkout sets it). */
+function tierFromMetadata(obj: Record<string, unknown>): PaidTier | null {
+    const meta = obj["metadata"] as Record<string, unknown> | undefined;
+    return asPaidTier(meta?.["tier"]);
+}
+
+/**
+ * Reverse-map the Stripe price id on a subscription object back to our tier,
+ * using the same `STRIPE_PRICE_ID_{TIER}` env vars the checkout backend uses to
+ * pick the price. The subscription object carries the active price under
+ * `items.data[0].price.id` (and, defensively, `plan.id` on older API shapes).
+ *
+ * Returns null if the price matches no configured tier — callers MUST treat a
+ * null as "unknown, do not change the tier" (fail-safe; never guess).
+ */
+function tierFromSubscriptionPrice(
+    obj: Record<string, unknown>,
+    env: StripeWebhookEnv,
+): PaidTier | null {
+    const items = obj["items"] as { data?: Array<Record<string, unknown>> } | undefined;
+    const first = items?.data?.[0];
+    const priceObj = first?.["price"] as Record<string, unknown> | undefined;
+    const planObj = obj["plan"] as Record<string, unknown> | undefined;
+    const priceId =
+        (typeof priceObj?.["id"] === "string" ? (priceObj["id"] as string) : null) ??
+        (typeof planObj?.["id"] === "string" ? (planObj["id"] as string) : null);
+    if (!priceId) return null;
+
+    const map: Array<[string | undefined, PaidTier]> = [
+        [env.STRIPE_PRICE_ID_STARTER, "starter"],
+        [env.STRIPE_PRICE_ID_TEAM, "team"],
+        [env.STRIPE_PRICE_ID_PRO, "pro"],
+    ];
+    for (const [configured, tier] of map) {
+        if (configured && configured === priceId) return tier;
+    }
+    return null;
+}
+
+/**
+ * Resolve the tier of a subscription event: prefer the explicit
+ * `metadata[tier]` (rare on subscription objects — only present if the checkout
+ * copied it into subscription_data), then fall back to the price→tier map.
+ */
+function resolveSubscriptionTier(
+    obj: Record<string, unknown>,
+    env: StripeWebhookEnv,
+): PaidTier | null {
+    return tierFromMetadata(obj) ?? tierFromSubscriptionPrice(obj, env);
+}
+
+/**
+ * Whether a Stripe subscription `status` means the tenant still has entitlement.
+ * `active` and `trialing` keep access; everything else (past_due, unpaid,
+ * canceled, incomplete, incomplete_expired, paused) loses it. Fail-safe: an
+ * unknown/absent status is treated as NOT entitled.
+ */
+function subscriptionStatusGrantsAccess(rawStatus: unknown): boolean {
+    return rawStatus === "active" || rawStatus === "trialing";
+}
+
 // ---------------------------------------------------------------------------
 // D1 writers
 // ---------------------------------------------------------------------------
@@ -240,6 +340,27 @@ async function updateBillingSubscription(
 }
 
 /**
+ * Update ONLY `tenant_billing.status` (leave period-end + ids untouched), keyed
+ * by subscription id. Used on invoice.payment_failed so a dunning failure marks
+ * the row 'past_due' without clobbering the existing current_period_end_ms.
+ * Idempotent on redelivery.
+ */
+async function updateBillingStatus(
+    db: D1DatabaseLike,
+    opts: { stripeSubscriptionId: string; status: string; nowMs: number },
+): Promise<void> {
+    await db
+        .prepare(
+            `UPDATE tenant_billing
+             SET status = ?1,
+                 updated_at_ms = ?2
+             WHERE stripe_subscription_id = ?3`,
+        )
+        .bind(opts.status, opts.nowMs, opts.stripeSubscriptionId)
+        .run();
+}
+
+/**
  * Mark billing as canceled on `customer.subscription.deleted`.
  */
 async function cancelBilling(
@@ -309,6 +430,90 @@ async function activatePaidTierSelection(
             opts.nowMs,
             opts.correlationId,
         )
+        .run();
+}
+
+/**
+ * Revoke the canonical access gate: flip `tier_selections.subscription_state`
+ * away from 'active' so `has_active_subscription` (tier_select_store.rs:192,
+ * `… WHERE subscription_state = 'active'`) returns false. Used on
+ * invoice.payment_failed (final dunning), subscription.deleted (cancel), and
+ * any subscription.updated that no longer grants access.
+ *
+ * Keyed by `stripe_customer_id` because subscription-lifecycle events identify
+ * the tenant by customer, not by tenant_id metadata (which subscription objects
+ * may lack — only the checkout SESSION carried it). We resolve the customer
+ * here; tier_selections.stripe_customer_id is written on activation.
+ *
+ * `inactive` (NOT `pending_checkout`) is chosen per the 0039 CHECK so the tenant
+ * (a) immediately loses access and (b) can re-subscribe — tier_select.rs:699
+ * `AlreadyActive` only blocks a tenant whose state is still 'active'.
+ *
+ * Idempotent: a bare UPDATE with `WHERE … <> 'inactive'` is a safe no-op on
+ * redelivery, and clearing `subscription_started_at_ms` keeps the
+ * `subscription_started_when_active` CHECK satisfied for the non-active state.
+ */
+async function deactivateTierSelectionByCustomer(
+    db: D1DatabaseLike,
+    opts: { stripeCustomerId: string },
+): Promise<void> {
+    await db
+        .prepare(
+            `UPDATE tier_selections
+             SET subscription_state = 'inactive',
+                 subscription_started_at_ms = NULL
+             WHERE stripe_customer_id = ?1
+               AND subscription_state <> 'inactive'`,
+        )
+        .bind(opts.stripeCustomerId)
+        .run();
+}
+
+/**
+ * Propagate an in-place plan change (Stripe price swap on the SAME subscription)
+ * to `tier_selections.tier`. checkout.session.completed is the only OTHER writer
+ * of `tier`, so without this a tenant who upgrades/downgrades inside Stripe keeps
+ * their old entitlement tier forever.
+ *
+ * Bare UPDATE keyed by customer; only touches the `tier` column so it never
+ * resurrects a canceled/past_due subscription_state. Idempotent (writing the
+ * same tier twice is a no-op). Never called with an unknown tier (caller gates
+ * on a non-null PaidTier — fail-safe).
+ */
+async function updateTierSelectionTierByCustomer(
+    db: D1DatabaseLike,
+    opts: { stripeCustomerId: string; tier: PaidTier },
+): Promise<void> {
+    await db
+        .prepare(
+            `UPDATE tier_selections
+             SET tier = ?1
+             WHERE stripe_customer_id = ?2`,
+        )
+        .bind(opts.tier, opts.stripeCustomerId)
+        .run();
+}
+
+/**
+ * Backfill `tenant_billing.current_period_end_ms` on customer.subscription.created.
+ * checkout.session.completed writes the row with a null period-end (the session
+ * object does not carry it); .created fires immediately after and DOES carry
+ * `current_period_end`. Keyed by subscription id. Pure UPDATE — never inserts —
+ * so it can only enrich an existing paid row, never create one out of band.
+ * Idempotent: writing the same period-end twice is a no-op.
+ */
+async function backfillPeriodEnd(
+    db: D1DatabaseLike,
+    opts: { stripeSubscriptionId: string; currentPeriodEndMs: number; nowMs: number },
+): Promise<void> {
+    await db
+        .prepare(
+            `UPDATE tenant_billing
+             SET current_period_end_ms = ?1,
+                 updated_at_ms = ?2
+             WHERE stripe_subscription_id = ?3`,
+        )
+        .bind(opts.currentPeriodEndMs, opts.nowMs, opts.stripeSubscriptionId)
         .run();
 }
 
@@ -445,14 +650,25 @@ export async function handleStripeWebhook(
                 unpaid: "past_due",
                 paused: "past_due",
             };
-            const billingStatus = (rawStatus && statusMap[rawStatus]) ?? "paid";
+            // FAIL-SAFE (money path): an UNKNOWN/absent Stripe status must NOT
+            // coerce to 'paid' (the old `?? "paid"` default was fail-OPEN and
+            // could keep a non-paying tenant entitled). Default to 'incomplete',
+            // which is a valid tenant_billing CHECK value and does NOT grant
+            // access (only 'active'/'trialing' do, via the gate below).
+            const billingStatus = (rawStatus && statusMap[rawStatus]) ?? "incomplete";
 
             const periodEndSecs = obj["current_period_end"] as number | undefined;
             const currentPeriodEndMs = typeof periodEndSecs === "number" ? periodEndSecs * 1000 : null;
 
+            // Resolve the (possibly changed) tier from the subscription price.
+            const newTier = resolveSubscriptionTier(obj, env);
+            const stripeCustomerId = obj["customer"] as string | undefined;
+            const grantsAccess = subscriptionStatusGrantsAccess(rawStatus);
+
             if (env.BILLING_DB) {
+                const db = env.BILLING_DB;
                 ctx.waitUntil(
-                    updateBillingSubscription(env.BILLING_DB, {
+                    updateBillingSubscription(db, {
                         stripeSubscriptionId,
                         status: billingStatus,
                         currentPeriodEndMs,
@@ -461,6 +677,41 @@ export async function handleStripeWebhook(
                         console.warn(`[stripe-webhook] D1 subscription update failed: ${(e as Error).message}`);
                     }),
                 );
+
+                if (typeof stripeCustomerId === "string" && stripeCustomerId) {
+                    // (a) Propagate an in-place plan change to the entitlement
+                    // tier. Only when we recognise the price → tier (else leave
+                    // the existing tier untouched; never guess).
+                    if (newTier) {
+                        ctx.waitUntil(
+                            updateTierSelectionTierByCustomer(db, {
+                                stripeCustomerId,
+                                tier: newTier,
+                            }).catch((e: unknown) => {
+                                console.warn(
+                                    `[stripe-webhook] tier_selections tier update failed: ${(e as Error).message}`,
+                                );
+                            }),
+                        );
+                    }
+                    // (b) Keep the access gate in sync with the Stripe status. A
+                    // subscription that drops to past_due/unpaid/paused/canceled
+                    // here (not just on a separate deleted/payment_failed event)
+                    // must lose entitlement. We do NOT flip back to 'active' on
+                    // this event — activation only happens via
+                    // checkout.session.completed (single activation writer).
+                    if (!grantsAccess) {
+                        ctx.waitUntil(
+                            deactivateTierSelectionByCustomer(db, {
+                                stripeCustomerId,
+                            }).catch((e: unknown) => {
+                                console.warn(
+                                    `[stripe-webhook] tier_selections deactivate failed: ${(e as Error).message}`,
+                                );
+                            }),
+                        );
+                    }
+                }
             }
 
             ctx.waitUntil(
@@ -472,6 +723,106 @@ export async function handleStripeWebhook(
                         stripe_subscription_id: stripeSubscriptionId,
                         status: billingStatus,
                         current_period_end_ms: currentPeriodEndMs,
+                        tier: newTier,
+                    },
+                }),
+            );
+            break;
+        }
+
+        case "customer.subscription.created": {
+            // Minimal handler: backfill the period-end that
+            // checkout.session.completed wrote as null. Pure UPDATE keyed by
+            // subscription id — never inserts, never touches the access gate
+            // (activation stays the sole responsibility of
+            // checkout.session.completed). Idempotent on redelivery.
+            const stripeSubscriptionId = obj["id"] as string | undefined;
+            const periodEndSecs = obj["current_period_end"] as number | undefined;
+            if (
+                env.BILLING_DB &&
+                typeof stripeSubscriptionId === "string" &&
+                stripeSubscriptionId &&
+                typeof periodEndSecs === "number"
+            ) {
+                ctx.waitUntil(
+                    backfillPeriodEnd(env.BILLING_DB, {
+                        stripeSubscriptionId,
+                        currentPeriodEndMs: periodEndSecs * 1000,
+                        nowMs,
+                    }).catch((e: unknown) => {
+                        console.warn(`[stripe-webhook] period-end backfill failed: ${(e as Error).message}`);
+                    }),
+                );
+            }
+            break;
+        }
+
+        case "invoice.payment_failed": {
+            // BLOCKING money-path gap: a tenant whose RENEWAL payment fails must
+            // lose entitlement — but only on the FINAL failure, not a transient
+            // first attempt. Stripe drives the subscription to `past_due`/`unpaid`
+            // once dunning is exhausted; the invoice carries that status under
+            // `subscription_details.subscription` / a top-level `subscription` id
+            // and we gate on the invoice's reported subscription status.
+            //
+            // Fail-safe: if the invoice does NOT signal a terminal
+            // past_due/unpaid status (e.g. Stripe will retry), we do NOTHING and
+            // leave entitlement intact (a transient first-attempt failure should
+            // not revoke access). We never grant access here.
+            const stripeSubscriptionId =
+                (obj["subscription"] as string | undefined) ??
+                (((obj["subscription_details"] as Record<string, unknown> | undefined)?.[
+                    "subscription"
+                ]) as string | undefined);
+            const stripeCustomerId = obj["customer"] as string | undefined;
+            const attemptCount = obj["attempt_count"] as number | undefined;
+            const nextAttempt = obj["next_payment_attempt"]; // null when Stripe has given up
+            // Terminal when Stripe will not retry again (next_payment_attempt is
+            // explicitly null and present in the payload).
+            const isTerminalFailure =
+                "next_payment_attempt" in obj && nextAttempt === null;
+
+            if (
+                env.BILLING_DB &&
+                isTerminalFailure &&
+                typeof stripeSubscriptionId === "string" &&
+                stripeSubscriptionId
+            ) {
+                const db = env.BILLING_DB;
+                // 1. Secondary mirror: tenant_billing.status = 'past_due'
+                //    (status-only — must NOT clobber current_period_end_ms).
+                ctx.waitUntil(
+                    updateBillingStatus(db, {
+                        stripeSubscriptionId,
+                        status: "past_due",
+                        nowMs,
+                    }).catch((e: unknown) => {
+                        console.warn(`[stripe-webhook] payment_failed billing update failed: ${(e as Error).message}`);
+                    }),
+                );
+                // 2. CANONICAL gate: flip tier_selections away from 'active'.
+                if (typeof stripeCustomerId === "string" && stripeCustomerId) {
+                    ctx.waitUntil(
+                        deactivateTierSelectionByCustomer(db, {
+                            stripeCustomerId,
+                        }).catch((e: unknown) => {
+                            console.warn(
+                                `[stripe-webhook] payment_failed deactivate failed: ${(e as Error).message}`,
+                            );
+                        }),
+                    );
+                }
+            }
+
+            ctx.waitUntil(
+                emit(env, {
+                    id: newEventId(),
+                    event_name: "invoice_payment_failed",
+                    tenant_id: tenantId,
+                    properties: {
+                        stripe_subscription_id: stripeSubscriptionId ?? null,
+                        terminal: isTerminalFailure,
+                        attempt_count: typeof attemptCount === "number" ? attemptCount : null,
                     },
                 }),
             );
@@ -481,13 +832,31 @@ export async function handleStripeWebhook(
         case "customer.subscription.deleted": {
             const stripeSubscriptionId = obj["id"] as string | undefined;
             if (!stripeSubscriptionId) break;
+            const stripeCustomerId = obj["customer"] as string | undefined;
 
             if (env.BILLING_DB) {
+                const db = env.BILLING_DB;
                 ctx.waitUntil(
-                    cancelBilling(env.BILLING_DB, { stripeSubscriptionId, nowMs }).catch((e: unknown) => {
+                    cancelBilling(db, { stripeSubscriptionId, nowMs }).catch((e: unknown) => {
                         console.warn(`[stripe-webhook] D1 cancel failed: ${(e as Error).message}`);
                     }),
                 );
+                // CANONICAL gate: a canceled subscription must lose access AND be
+                // able to re-subscribe. The old handler left
+                // tier_selections.subscription_state='active', which both kept
+                // the tenant entitled forever AND tripped tier_select.rs:699
+                // `AlreadyActive` on any re-subscribe. Flip to 'inactive'.
+                if (typeof stripeCustomerId === "string" && stripeCustomerId) {
+                    ctx.waitUntil(
+                        deactivateTierSelectionByCustomer(db, {
+                            stripeCustomerId,
+                        }).catch((e: unknown) => {
+                            console.warn(
+                                `[stripe-webhook] cancel deactivate failed: ${(e as Error).message}`,
+                            );
+                        }),
+                    );
+                }
             }
 
             ctx.waitUntil(

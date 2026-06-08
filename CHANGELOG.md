@@ -200,6 +200,29 @@ Each entry cross-references:
   `docs/FINDING-turbo-tenant-isolation.md`.
 
 ### Fixed
+- **Stripe webhook did not propagate cancel / payment-failure / downgrade to the
+  CANONICAL access gate, and an unknown status failed OPEN (money-path,
+  launch-blocking; #34).** `apps/signup-worker/src/webhooks/stripe.ts` only handled
+  `checkout.session.completed` + `customer.subscription.updated/deleted`, and the
+  updated/deleted arms wrote only `tenant_billing` (the SECONDARY mirror) — they
+  left `tier_selections.subscription_state='active'`, which is the CANONICAL gate
+  read by the container's `has_active_subscription` (tier_select_store.rs). Result:
+  a canceled/non-paying tenant kept full entitlement (and was blocked by
+  `AlreadyActive` from re-subscribing). Fixes: (1) added `invoice.payment_failed`
+  — on a TERMINAL dunning failure (`next_payment_attempt === null`) set
+  `tenant_billing.status='past_due'` (status-only, preserves `current_period_end_ms`)
+  AND flip `tier_selections.subscription_state → 'inactive'`; transient first
+  attempts are a no-op (fail-safe). (2) `customer.subscription.deleted` now also
+  flips `tier_selections.subscription_state → 'inactive'` (revoke + allow
+  re-subscribe). (3) `customer.subscription.updated` no longer coerces an UNKNOWN
+  Stripe status to `'paid'` (was fail-OPEN; now defaults to `'incomplete'`),
+  propagates an in-place price change to `tier_selections.tier` (reverse
+  `STRIPE_PRICE_ID_{TIER}` map; unknown price → left untouched), and deactivates
+  the gate whenever the status no longer grants access. (4) added
+  `customer.subscription.created` to backfill `current_period_end_ms`. All D1
+  mutations are idempotent (safe upserts / guarded no-op UPDATEs). FLAGGED:
+  analytics MRR emits are not yet deduped against the 0044
+  `stripe_webhook_events_processed` table — deferred as a larger change.
 - **signup-worker bound a customer's PAT to an ORPHAN tenant under concurrent
   duplicate Clerk delivery (correctness race).** `apps/signup-worker/.../clerk.ts`
   `createTenant` generated a random `tenantId`, ran `INSERT OR IGNORE INTO tenant`,
