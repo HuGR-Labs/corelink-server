@@ -227,6 +227,26 @@ Each entry cross-references:
   follow-up:** `solo`/`org` exist in `tenant.tier` (0057) but not in
   `tier_selections.tier` (0039); they are rejected for now (additive-only
   auth-migration rule — no destructive 0039 widening).
+- **`--mvp-only` prod-secrets push silently omitted launch-critical secrets
+  (signups / billing / storage) — MVP launch would silent-disable core features
+  (#33).** The container reads several secrets via `from_env`/Option (the route or
+  feature is skipped, not errored, when absent), but they were missing from
+  `scripts/secrets-mvp-allowlist.txt`, so a `put-secrets-prod.sh --mvp-only`
+  launch would NOT push them. Added the genuinely-MVP-core ones to the allowlist:
+  `CORELINK_INTERNAL_AUTH_KEY` + `CORELINK_DPA_VERSION` (without them
+  `tier_select.rs` and `internal_pat.rs` do NOT mount → **no signups**);
+  `STRIPE_WEBHOOK_SECRET` (without it `main.rs:337` skips the webhook route →
+  **customer pays, no tier**); `STRIPE_PRICE_ID_TEAM` + `STRIPE_PRICE_ID_PRO`
+  (`client.rs:649` resolves price per tier → Team/Pro checkout 502'd, only
+  STARTER worked); `R2_S3_ACCESS_KEY_ID` + `R2_S3_SECRET_ACCESS_KEY`
+  (`StorageEnv::from_env` → absent ⇒ InMemory fallback ⇒ **CAS/AC data loss**).
+  Also fixed the `CLOUDFLARE_API_TOKEN` → `CF_API_TOKEN` name in the allowlist to
+  match what the container actually reads (`storage.rs:85`), and added the missing
+  `CLOUDFLARE_ACCOUNT_ID` to `scripts/put-secrets-regional.sh`'s per-region secret
+  set (`storage.rs:84` requires it; `wrangler.toml:551` already documented it).
+  No code-vs-matrix drift introduced — every added secret already has a
+  `secrets-checklist.md` row; `validate_secrets_matrix.py` stays `code_only=0` and
+  `secrets-checklist-verify.sh` stays no-drift.
 - **Stripe webhook was 401-rejected at the Worker edge — paid checkouts never
   granted a tier (LAUNCH-BLOCKER).** `worker/src/index.ts`'s `matchRoute` had no
   `/v1/billing/*` arm, so `POST /v1/billing/stripe-webhook` fell into the generic
