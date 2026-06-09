@@ -524,7 +524,12 @@ describe("handleStripeWebhook", () => {
         ).toBeDefined();
     });
 
-    it("dedup: a REDELIVERY (same event.id) is a clean no-op 200 — no re-mutation, no re-emit", async () => {
+    it("dedup (option b): a REDELIVERY re-runs the idempotent writes but SKIPS the analytics emit (no double MRR)", async () => {
+        // Core option-(b) assertion: the entitlement/billing writes are
+        // idempotent upserts and MUST always run (a redelivery safely
+        // re-converges D1 — and is the recovery path for a prior failed
+        // fire-and-forget write). The dedup gates ONLY the non-idempotent
+        // analytics emit, so MRR is not double-counted on a Stripe retry.
         const db = fakeDb();
         const nowMs = Date.now();
         const event = {
@@ -540,7 +545,7 @@ describe("handleStripeWebhook", () => {
             },
         };
 
-        // First delivery → processes.
+        // First delivery → processes + emits.
         const req1 = await makeStripeRequest(event, TEST_SECRET, nowMs);
         expect((await handleStripeWebhook(req1, baseEnv(db), fakeCtx())).status).toBe(200);
 
@@ -559,19 +564,80 @@ describe("handleStripeWebhook", () => {
         expect(res2.status).toBe(200);
         expect(await res2.text()).toBe("ok");
 
-        // No new tenant_billing mutation and no new analytics emit on redelivery.
+        // The idempotent entitlement write DID run AGAIN on the redelivery (NOT
+        // short-circuited) — this is the entitlement-loss recovery guarantee.
         const billingInsertsAfterSecond = db.runCalls.filter((c) =>
             c.sql.includes("INSERT INTO tenant_billing"),
         ).length;
-        expect(billingInsertsAfterSecond).toBe(billingInsertsAfterFirst); // no re-mutation
-        expect(fetchSpy.mock.calls.length).toBe(emitsAfterFirst); // no re-emit (no double MRR)
+        expect(billingInsertsAfterSecond).toBe(billingInsertsAfterFirst + 1); // write re-ran
+        // The tier_selections activation (entitlement gate) also re-ran.
+        const tierActivations = db.runCalls.filter(
+            (c) => c.sql.includes("INSERT INTO tier_selections") && c.sql.includes("ON CONFLICT"),
+        );
+        expect(tierActivations).toHaveLength(2);
+
+        // But the analytics emit did NOT fire a second time (no double MRR).
+        expect(fetchSpy.mock.calls.length).toBe(emitsAfterFirst); // no re-emit
 
         // The dedup claim was attempted on BOTH deliveries (the second hit the
-        // PK conflict and short-circuited).
+        // PK conflict → duplicate → emit skipped, writes still ran).
         const claims = db.runCalls.filter((c) =>
             c.sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed"),
         );
         expect(claims).toHaveLength(2);
+    });
+
+    it("dedup REGRESSION (entitlement-loss): a successful claim NEVER blocks the idempotent entitlement write on redelivery", async () => {
+        // The adversarial-review CRITICAL: the original design claimed the
+        // event then whole-handler short-circuited the duplicate, so a
+        // redelivery skipped the (fire-and-forget, non-awaited) entitlement
+        // write entirely. If the first delivery's write had failed, the
+        // customer paid with NO access and NO recovery. This proves the gate
+        // never blocks the entitlement write: even though the claim SUCCEEDS on
+        // the first delivery (changes=1) and CONFLICTS on the second
+        // (duplicate), the tier_selections activation write runs on BOTH.
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_entitlement_recovery",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_recover",
+                    subscription: "sub_recover",
+                    amount_total: 4900,
+                    metadata: { tenant_id: "tenant_recover", tier: "starter" },
+                },
+            },
+        };
+
+        // Delivery 1 — claim succeeds (changes=1).
+        const req1 = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        expect((await handleStripeWebhook(req1, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        // Delivery 2 — claim CONFLICTS (duplicate). Despite the dedup claim
+        // succeeding/blocking the emit, the entitlement gate write MUST re-run.
+        const req2 = await makeStripeRequest(event, TEST_SECRET, nowMs + 1000);
+        expect((await handleStripeWebhook(req2, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        // The dedup recorded the first as 'claimed' and the second as a PK
+        // conflict (two claim attempts).
+        const claims = db.runCalls.filter((c) =>
+            c.sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed"),
+        );
+        expect(claims).toHaveLength(2);
+
+        // CRITICAL: the entitlement (tier_selections) activation write ran on
+        // BOTH deliveries — the dedup gate did NOT block it. No entitlement loss.
+        const activations = db.runCalls.filter(
+            (c) => c.sql.includes("INSERT INTO tier_selections") && c.sql.includes("ON CONFLICT"),
+        );
+        expect(activations).toHaveLength(2);
+        // And the tenant_billing upsert ran on both deliveries too.
+        const billingUpserts = db.runCalls.filter((c) =>
+            c.sql.includes("INSERT INTO tenant_billing"),
+        );
+        expect(billingUpserts).toHaveLength(2);
     });
 
     it("dedup: claim INSERT failure (D1 error) FAILS SAFE — event is still processed (not lost)", async () => {

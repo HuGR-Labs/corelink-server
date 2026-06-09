@@ -25,15 +25,28 @@
 //
 // Each arm also emits an analytics event to the analytics-worker.
 //
-// IDEMPOTENCY NOTE (Stripe redelivers; #34/#36): every D1 mutation here is a
-// safe upsert or a guarded/no-op UPDATE. The analytics emits (e.g.
-// `paid_subscription_started` MRR) are NOT individually idempotent, so a Stripe
-// redelivery would double-count. We therefore claim `event.id` durably at the
-// TOP of the handler (after signature verification, before any mutation/emit)
+// IDEMPOTENCY NOTE (Stripe redelivers; #34/#36, option (b) re-architecture):
+// every D1 mutation here is a safe upsert or a guarded/no-op UPDATE, so a Stripe
+// redelivery can ALWAYS re-run them harmlessly. The ONLY non-idempotent side
+// effects are the analytics emits (e.g. `paid_subscription_started` MRR), which
+// would double-count on a redelivery. We therefore claim `event.id` durably at
+// the TOP of the handler (after signature verification, before any mutation/emit)
 // against `stripe_webhook_events_processed` (migration 0044) via INSERT OR
-// IGNORE on the event_id PRIMARY KEY: a first delivery is recorded then
-// dispatched; a redelivery short-circuits to a clean no-op 200. See
-// `claimWebhookEvent` for the claim-then-process fail-safe ordering.
+// IGNORE on the event_id PRIMARY KEY, and use the claim outcome to gate ONLY the
+// emits — NOT the writes. A first delivery (changes=1) processes + emits; a
+// redelivery (changes=0, PK conflict) STILL runs the idempotent entitlement/
+// billing writes (so a Stripe redelivery safely re-converges the D1 state — no
+// entitlement loss) but SKIPS the analytics emit(s) so MRR is not double-counted.
+//
+// CRITICAL (why we do NOT whole-handler short-circuit on a duplicate): the
+// entitlement writes (upsertBillingPaid / activatePaidTierSelection / …) are
+// dispatched via ctx.waitUntil and are not awaited before we return 200. If we
+// short-circuited the whole handler on a duplicate and a prior delivery's write
+// had failed (Stripe got its 200 and will never redeliver again, or redelivers
+// and we early-return), the customer would have paid with NO access and no
+// recovery path. Gating only the emit keeps every redelivery re-running the
+// idempotent writes, which is the recovery path. See `claimWebhookEvent` for the
+// claim-then-process fail-safe ordering.
 //
 // Security invariants (audited):
 //   1. Stripe-Timestamp MUST be within 5 minutes of now (replay-attack window).
@@ -292,31 +305,36 @@ const HANDLED_EVENT_TYPES = new Set<string>([
 
 /** Outcome of an idempotency claim against `stripe_webhook_events_processed`. */
 type ClaimResult =
-    | "claimed" // newly inserted — this delivery is the first; proceed.
-    | "duplicate" // PK conflict — already processed; short-circuit 200.
-    | "claim_error"; // the claim INSERT itself failed (D1 error) — fail-safe.
+    | "claimed" // newly inserted — this delivery is the FIRST: process + emit.
+    | "duplicate" // PK conflict — already processed: process (idempotent writes), SKIP emit.
+    | "claim_error"; // the claim INSERT itself failed (D1 error) — fail-safe → treat as first.
 
 /**
- * Durably claim a Stripe `event.id` BEFORE any mutation/emit so a redelivery is
- * a clean no-op (migration 0044 `stripe_webhook_events_processed`).
+ * Durably claim a Stripe `event.id` BEFORE any mutation/emit (migration 0044
+ * `stripe_webhook_events_processed`). The claim outcome gates ONLY the
+ * non-idempotent analytics emit — option (b): the idempotent entitlement/billing
+ * writes ALWAYS run regardless of the claim result.
  *
  * Uses `INSERT OR IGNORE` on the `event_id` PRIMARY KEY and inspects
  * `meta.changes`:
- *   - changes === 1 → row newly inserted → "claimed" (first delivery; dispatch).
- *   - changes === 0 → PK conflict → "duplicate" (Stripe retry; short-circuit).
+ *   - changes === 1 → row newly inserted → "claimed" (first delivery: emit).
+ *   - changes === 0 → PK conflict → "duplicate" (Stripe retry: SKIP emit).
  *
  * Ordering / fail-safe (claim-THEN-process): we claim first, then dispatch the
- * (already-idempotent) D1 upserts + the analytics emit. A crash mid-dispatch
- * therefore leaves the event MARKED — acceptable for this money path because
- * every D1 write here is an idempotent upsert/guarded-UPDATE; the only
- * non-idempotent side effect is the analytics emit, and marking-first is the
- * conservative choice that prevents a redelivery from double-counting MRR.
+ * (already-idempotent) D1 upserts; we emit only when this is the first delivery.
+ *
+ * We DO NOT whole-handler short-circuit on a duplicate. The D1 writes here are
+ * dispatched fire-and-forget (ctx.waitUntil) and not awaited before the 200, so
+ * a prior delivery's write could have failed AFTER the claim row committed. If we
+ * short-circuited a redelivery, that failed entitlement write would never be
+ * retried (Stripe stops at the 200) → customer paid, no access, no recovery. By
+ * letting every redelivery re-run the idempotent writes, the redelivery IS the
+ * recovery path; we merely gate the emit so MRR is not double-counted.
  *
  * If the claim INSERT itself throws (D1 unavailable), we return "claim_error"
- * and the caller FALLS THROUGH to processing: losing a first-time entitlement /
- * revenue event is strictly worse than a possible double analytics count, and
- * the D1 state writes are themselves idempotent. We never short-circuit on a
- * claim error (that could silently drop a genuine first delivery).
+ * and the caller treats it as a FIRST delivery (process + emit): losing a
+ * first-time entitlement / revenue event is strictly worse than a possible
+ * double analytics count. We never drop a genuine first delivery.
  *
  * `outcome` records whether we dispatched a known event or merely acknowledged
  * an unknown one (forensics column; not read by the dedup path).
@@ -694,14 +712,20 @@ export async function handleStripeWebhook(
     const tenantId = tenantIdFromMetadata(obj);
     const nowMs = Date.now();
 
-    // --- 4. Idempotency claim BEFORE any mutation/emit (#34/#36). --------
+    // --- 4. Idempotency claim BEFORE any mutation/emit (#34/#36, option b). -
     // Stripe redelivers; the analytics emits (e.g. paid_subscription_started
     // MRR) are not individually idempotent, so a redelivery would double-count.
-    // We claim event.id durably (migration 0044) and short-circuit a known
-    // duplicate to a clean no-op 200. A first delivery is recorded then
-    // processed (claim-then-process; see claimWebhookEvent for the fail-safe
-    // ordering). Only attempted when a DB is configured — without BILLING_DB
-    // there is no durable store to dedup against (graceful degradation).
+    // We claim event.id durably (migration 0044) and use the outcome to gate
+    // ONLY the emit. The idempotent entitlement/billing writes ALWAYS run (even
+    // on a redelivery) — they are upserts/guarded-UPDATEs, so re-running them is
+    // the recovery path for a prior delivery's failed (fire-and-forget) write;
+    // we must NOT whole-handler short-circuit a duplicate or a failed
+    // entitlement write would be lost forever (Stripe stops at the 200 →
+    // customer paid, no access, no recovery). Claim-then-process; see
+    // claimWebhookEvent for the fail-safe ordering. Only attempted when a DB is
+    // configured — without BILLING_DB there is no durable dedup store (graceful
+    // degradation), in which case we treat every delivery as first (emit).
+    let isFirstDelivery = true;
     if (event.id && env.BILLING_DB) {
         const claim = await claimWebhookEvent(env.BILLING_DB, {
             eventId: event.id,
@@ -709,13 +733,11 @@ export async function handleStripeWebhook(
             nowMs,
             correlationId: `stripe_webhook:${event.id}`,
         });
-        if (claim === "duplicate") {
-            // Already processed on a prior delivery — return the same success
-            // (200) WITHOUT re-mutating D1 or re-emitting analytics.
-            return new Response("ok", { status: 200 });
-        }
-        // "claimed" → first delivery, proceed. "claim_error" → fail-safe,
-        // proceed anyway rather than risk dropping a genuine first delivery.
+        // "duplicate" → already emitted on a prior delivery: run the idempotent
+        // writes again but SKIP the emit (no double MRR). "claimed" → first
+        // delivery: emit. "claim_error" → fail-safe: treat as first (emit)
+        // rather than risk dropping a genuine first delivery's analytics.
+        isFirstDelivery = claim !== "duplicate";
     }
 
     switch (event.type) {
@@ -775,19 +797,25 @@ export async function handleStripeWebhook(
                         );
                     }
                 }
-                ctx.waitUntil(
-                    emit(env, {
-                        id: newEventId(),
-                        event_name: "paid_subscription_started",
-                        tenant_id: tenantId,
-                        properties: {
-                            plan,
-                            mrr_usd: centsToUsd(amountTotal),
-                            stripe_customer_id: stripeCustomerId,
-                            stripe_subscription_id: stripeSubscriptionId ?? null,
-                        },
-                    }),
-                );
+                // Emit ONLY on the first delivery — the writes above ran
+                // unconditionally (idempotent), but paid_subscription_started
+                // carries non-idempotent MRR that must not double-count on a
+                // Stripe redelivery.
+                if (isFirstDelivery) {
+                    ctx.waitUntil(
+                        emit(env, {
+                            id: newEventId(),
+                            event_name: "paid_subscription_started",
+                            tenant_id: tenantId,
+                            properties: {
+                                plan,
+                                mrr_usd: centsToUsd(amountTotal),
+                                stripe_customer_id: stripeCustomerId,
+                                stripe_subscription_id: stripeSubscriptionId ?? null,
+                            },
+                        }),
+                    );
+                }
             }
             break;
         }
@@ -883,19 +911,22 @@ export async function handleStripeWebhook(
                 }
             }
 
-            ctx.waitUntil(
-                emit(env, {
-                    id: newEventId(),
-                    event_name: "subscription_updated",
-                    tenant_id: tenantId,
-                    properties: {
-                        stripe_subscription_id: stripeSubscriptionId,
-                        status: billingStatus,
-                        current_period_end_ms: currentPeriodEndMs,
-                        tier: newTier,
-                    },
-                }),
-            );
+            // Emit only on first delivery (writes above ran unconditionally).
+            if (isFirstDelivery) {
+                ctx.waitUntil(
+                    emit(env, {
+                        id: newEventId(),
+                        event_name: "subscription_updated",
+                        tenant_id: tenantId,
+                        properties: {
+                            stripe_subscription_id: stripeSubscriptionId,
+                            status: billingStatus,
+                            current_period_end_ms: currentPeriodEndMs,
+                            tier: newTier,
+                        },
+                    }),
+                );
+            }
             break;
         }
 
@@ -983,18 +1014,21 @@ export async function handleStripeWebhook(
                 }
             }
 
-            ctx.waitUntil(
-                emit(env, {
-                    id: newEventId(),
-                    event_name: "invoice_payment_failed",
-                    tenant_id: tenantId,
-                    properties: {
-                        stripe_subscription_id: stripeSubscriptionId ?? null,
-                        terminal: isTerminalFailure,
-                        attempt_count: typeof attemptCount === "number" ? attemptCount : null,
-                    },
-                }),
-            );
+            // Emit only on first delivery (writes above ran unconditionally).
+            if (isFirstDelivery) {
+                ctx.waitUntil(
+                    emit(env, {
+                        id: newEventId(),
+                        event_name: "invoice_payment_failed",
+                        tenant_id: tenantId,
+                        properties: {
+                            stripe_subscription_id: stripeSubscriptionId ?? null,
+                            terminal: isTerminalFailure,
+                            attempt_count: typeof attemptCount === "number" ? attemptCount : null,
+                        },
+                    }),
+                );
+            }
             break;
         }
 
@@ -1037,18 +1071,21 @@ export async function handleStripeWebhook(
                 );
             }
 
-            ctx.waitUntil(
-                emit(env, {
-                    id: newEventId(),
-                    event_name: "subscription_canceled",
-                    tenant_id: tenantId,
-                    properties: {
-                        stripe_subscription_id: stripeSubscriptionId,
-                        from_plan: "starter",
-                        to_plan: "free",
-                    },
-                }),
-            );
+            // Emit only on first delivery (writes above ran unconditionally).
+            if (isFirstDelivery) {
+                ctx.waitUntil(
+                    emit(env, {
+                        id: newEventId(),
+                        event_name: "subscription_canceled",
+                        tenant_id: tenantId,
+                        properties: {
+                            stripe_subscription_id: stripeSubscriptionId,
+                            from_plan: "starter",
+                            to_plan: "free",
+                        },
+                    }),
+                );
+            }
             break;
         }
 
