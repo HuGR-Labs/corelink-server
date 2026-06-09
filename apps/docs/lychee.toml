@@ -27,11 +27,14 @@ exclude = [
   "stub_search_only_api_key_replace_at_dday",
 ]
 
-# Headers required by some doc hosts.
-headers = ["User-Agent: lychee-corelink-docs/1.0"]
+# User-Agent for doc hosts that require one. (lychee >=0.20 renamed the old
+# `headers` array to the dedicated `user_agent` field.)
+user_agent = "lychee-corelink-docs/1.0"
 
 # Accept 2xx + 3xx.
 accept = ["200..=299", "301..=308"]
 
-# Where to scan.
-base = "./build"
+# NOTE: the scan root is provided per-workflow on the CLI (`--root-dir`), not
+# here — lychee >=0.20 replaced the old relative `base = "./build"` field with
+# `base_url` (URLs) / `root_dir` (absolute local path), and a relative value is
+# rejected at config-parse time.
