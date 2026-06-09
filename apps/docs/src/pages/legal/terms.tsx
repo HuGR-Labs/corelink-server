@@ -68,8 +68,8 @@ export default function TermsPage(): ReactElement {
             use the Service for your internal business purposes during your
             subscription term. The Service includes the API, the command-line
             tool, the Admin UI, and the documentation surfaces (this site,{" "}
-            <a href="https://docs.corelink.humangr.com">
-              docs.corelink.humangr.com
+            <a href="https://corelink-docs.humangr.com">
+              corelink-docs.humangr.com
             </a>
             , and{" "}
             <a href="https://corelink-app.humangr.com">

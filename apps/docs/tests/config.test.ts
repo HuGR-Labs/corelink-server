@@ -4,7 +4,7 @@ import config from "../docusaurus.config";
 describe("docusaurus.config.ts — site identity", () => {
   it("has the canonical CoreLink site identity", () => {
     expect(config.title).toBe("CoreLink");
-    expect(config.url).toBe("https://docs.corelink.humangr.com");
+    expect(config.url).toBe("https://corelink-docs.humangr.com");
     expect(config.baseUrl).toBe("/");
     expect(config.organizationName).toBe("humangr-labs");
     expect(config.projectName).toBe("corelink-server");

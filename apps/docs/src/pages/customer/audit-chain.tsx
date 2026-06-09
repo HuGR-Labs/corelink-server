@@ -3,7 +3,7 @@
  *
  * Restarts the wave-8 `wt/r-prep-audit-chain-viz` scaffold (commit `21f8ea8`,
  * never merged) as a Docusaurus standalone page so the customer-value-add
- * lands inside the public docs surface that ships at `docs.corelink.humangr.com`
+ * lands inside the public docs surface that ships at `corelink-docs.humangr.com`
  * (WI-S18-001 foundation) rather than the admin-ui shell.
  *
  * Consumes ONLY the wave-19 customer-audit endpoints (no new server-side
