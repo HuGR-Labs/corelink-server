@@ -235,6 +235,32 @@ Each entry cross-references:
   `docs/FINDING-turbo-tenant-isolation.md`.
 
 ### Fixed
+- **Stripe webhook double-counted MRR on redelivery and could leave a
+  cancel-without-`customer` entitled (money-path; #36, follow-ups to #34/#178).**
+  Wired the durable dedup table `stripe_webhook_events_processed` (migration
+  0044) into `apps/signup-worker/src/webhooks/stripe.ts`: immediately after
+  signature verification and before any mutation/emit, the handler claims
+  `event.id` via `INSERT OR IGNORE` on the `event_id` PRIMARY KEY and inspects
+  `meta.changes`, then uses the outcome to gate ONLY the non-idempotent
+  analytics emit (option b) — NOT the writes. The idempotent entitlement/billing
+  writes ALWAYS run: a first delivery (changes=1) processes + emits; a Stripe
+  redelivery (changes=0, PK conflict) STILL re-runs the idempotent upserts
+  (re-converging D1 — the recovery path for a prior fire-and-forget write that
+  failed) but SKIPS the emit so `paid_subscription_started` MRR no longer
+  double-counts. This deliberately does NOT whole-handler short-circuit a
+  duplicate: because the entitlement writes are dispatched via `ctx.waitUntil`
+  (not awaited before the 200), short-circuiting a redelivery would permanently
+  lose a prior delivery's failed entitlement write (Stripe stops at the 200 →
+  customer paid, no access, no recovery). The claim is claim-then-process and
+  fail-safe: a D1 claim error is treated as a first delivery (process + emit),
+  never dropping a genuine first-time entitlement/revenue event. Also mirrored
+  the #178 FIX-2 fallback onto
+  `customer.subscription.deleted`: when the deleted subscription object carries
+  no top-level `customer`, revocation falls back to
+  `deactivateTierSelectionBySubscription` (keyed by subscription id via
+  `tenant_billing`) so a cancel always revokes the canonical access gate.
+  Hardened the re-subscribe test's activation-timestamp assertion to anchor on
+  the handler's real wall clock instead of the signature timestamp.
 - **Stripe webhook did not propagate cancel / payment-failure / downgrade to the
   CANONICAL access gate, and an unknown status failed OPEN (money-path,
   launch-blocking; #34).** `apps/signup-worker/src/webhooks/stripe.ts` only handled

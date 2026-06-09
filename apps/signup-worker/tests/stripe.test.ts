@@ -124,12 +124,22 @@ function fakeCtx(): ExecutionContext {
     } as unknown as ExecutionContext;
 }
 
-/** Minimal D1 stub — records all bind/run calls. */
+/**
+ * Minimal D1 stub — records all bind/run calls.
+ *
+ * Models the `stripe_webhook_events_processed` idempotency table's `INSERT OR
+ * IGNORE` conflict behavior on the `event_id` PRIMARY KEY: the first claim for
+ * a given event_id reports `meta.changes = 1` (row inserted), a redelivery of
+ * the same event_id reports `meta.changes = 0` (PK conflict ignored). Every
+ * other statement reports `meta.changes = 1` (nothing in the handler reads it).
+ */
 function fakeDb(): {
     prepare: Mock;
     runCalls: Array<{ sql: string; params: unknown[] }>;
 } {
     const runCalls: Array<{ sql: string; params: unknown[] }> = [];
+    // Durable mirror of the dedup PK: event_ids already claimed.
+    const claimedEventIds = new Set<string>();
 
     const prepare = vi.fn((sql: string) => {
         const params: unknown[] = [];
@@ -140,7 +150,49 @@ function fakeDb(): {
             }),
             run: vi.fn(async () => {
                 runCalls.push({ sql, params: [...params] });
-                return {};
+                let changes = 1;
+                if (sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed")) {
+                    // event_id is bound as ?1 (first param).
+                    const eventId = params[0] as string;
+                    if (claimedEventIds.has(eventId)) {
+                        changes = 0; // PK conflict → IGNOREd.
+                    } else {
+                        claimedEventIds.add(eventId);
+                        changes = 1;
+                    }
+                }
+                return { meta: { changes } };
+            }),
+        };
+        return stmt;
+    });
+    return { prepare, runCalls };
+}
+
+/**
+ * Variant fake DB whose idempotency claim INSERT always THROWS (D1 error),
+ * exercising the fail-safe claim-then-process path: the handler must proceed to
+ * dispatch rather than drop a possible first-time event. All other statements
+ * behave normally.
+ */
+function fakeDbClaimThrows(): {
+    prepare: Mock;
+    runCalls: Array<{ sql: string; params: unknown[] }>;
+} {
+    const runCalls: Array<{ sql: string; params: unknown[] }> = [];
+    const prepare = vi.fn((sql: string) => {
+        const params: unknown[] = [];
+        const stmt = {
+            bind: vi.fn((...args: unknown[]) => {
+                params.push(...args);
+                return stmt;
+            }),
+            run: vi.fn(async () => {
+                if (sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed")) {
+                    throw new Error("D1_UNAVAILABLE");
+                }
+                runCalls.push({ sql, params: [...params] });
+                return { meta: { changes: 1 } };
             }),
         };
         return stmt;
@@ -276,7 +328,7 @@ describe("handleStripeWebhook", () => {
         expect(res.status).toBe(200);
     });
 
-    it("checkout.session.completed without tenant_id metadata → 200, no D1 write", async () => {
+    it("checkout.session.completed without tenant_id metadata → 200, no billing/tier write", async () => {
         const db = fakeDb();
         const nowMs = Date.now();
         const event = {
@@ -294,8 +346,14 @@ describe("handleStripeWebhook", () => {
         const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
         const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
         expect(res.status).toBe(200);
-        // No D1 write (no tenant_id to key on).
-        expect(db.prepare).not.toHaveBeenCalled();
+        // No billing/tier mutation (no tenant_id to key on). The dedup claim
+        // row is written independently of tenant_id, so we assert the absence
+        // of the billing/tier writes specifically rather than zero D1 calls.
+        expect(
+            db.runCalls.find(
+                (c) => c.sql.includes("tenant_billing") || c.sql.includes("tier_selections"),
+            ),
+        ).toBeUndefined();
     });
 
     it("customer.subscription.updated → D1 update + analytics + 200", async () => {
@@ -367,7 +425,7 @@ describe("handleStripeWebhook", () => {
         expect(body.events[0]!.event_name).toBe("subscription_canceled");
     });
 
-    it("unknown event type → 200 with no D1 or analytics side effects", async () => {
+    it("unknown event type → 200 with no billing/tier mutation or analytics (only the dedup claim)", async () => {
         const db = fakeDb();
         const nowMs = Date.now();
         const event = {
@@ -381,15 +439,30 @@ describe("handleStripeWebhook", () => {
 
         const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
         expect(res.status).toBe(200);
-        expect(db.prepare).not.toHaveBeenCalled();
+        // The ONLY D1 write is the idempotency claim (dedup runs before the
+        // switch); no billing/tier_selections mutation for an unhandled type.
+        expect(
+            db.runCalls.every((c) =>
+                c.sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed"),
+            ),
+        ).toBe(true);
+        expect(
+            db.runCalls.find(
+                (c) => c.sql.includes("tenant_billing") || c.sql.includes("tier_selections"),
+            ),
+        ).toBeUndefined();
+        // No analytics emit for an unhandled type.
         expect(fetchSpy).not.toHaveBeenCalled();
     });
 
-    it("idempotency: calling checkout.session.completed twice with same tenant → uses ON CONFLICT upsert (both calls 200)", async () => {
+    it("idempotency: two DISTINCT checkout events both process (ON CONFLICT upsert stays safe; both 200)", async () => {
+        // Distinct event ids are NOT deduped — both deliveries dispatch and both
+        // exercise the tenant_billing ON CONFLICT upsert (the historical intent
+        // of this test). Same-id dedup is covered by the dedup tests below.
         const db = fakeDb();
         const nowMs = Date.now();
-        const event = {
-            id: "evt_idem_1",
+        const mk = (id: string) => ({
+            id,
             type: "checkout.session.completed",
             data: {
                 object: {
@@ -399,21 +472,215 @@ describe("handleStripeWebhook", () => {
                     metadata: { tenant_id: "tenant_idem", plan: "starter" },
                 },
             },
+        });
+
+        const req1 = await makeStripeRequest(mk("evt_idem_a"), TEST_SECRET, nowMs);
+        expect((await handleStripeWebhook(req1, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        const req2 = await makeStripeRequest(mk("evt_idem_b"), TEST_SECRET, nowMs + 1000);
+        expect((await handleStripeWebhook(req2, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        // Two distinct events → the ON CONFLICT upsert path runs twice.
+        const insertCalls = db.runCalls.filter((c) => c.sql.includes("INSERT INTO tenant_billing"));
+        expect(insertCalls).toHaveLength(2);
+    });
+
+    // ------------------------------------------------------------------
+    // #34/#36: durable dedup on Stripe event.id
+    // ------------------------------------------------------------------
+
+    it("dedup: first delivery processes AND records the event in stripe_webhook_events_processed", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_dedup_first",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_dedup",
+                    subscription: "sub_dedup",
+                    amount_total: 4900,
+                    metadata: { tenant_id: "tenant_dedup", plan: "starter" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // The idempotency claim was written (INSERT OR IGNORE on event_id) with
+        // the outcome marked 'dispatched' for a handled event type.
+        const claim = db.runCalls.find((c) =>
+            c.sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed"),
+        );
+        expect(claim).toBeDefined();
+        expect(claim!.params[0]).toBe("evt_dedup_first"); // event_id is ?1
+        expect(claim!.params).toContain("checkout.session.completed");
+        expect(claim!.params).toContain("dispatched");
+
+        // First delivery still dispatched the real side effects.
+        expect(
+            db.runCalls.find((c) => c.sql.includes("INSERT INTO tenant_billing")),
+        ).toBeDefined();
+    });
+
+    it("dedup (option b): a REDELIVERY re-runs the idempotent writes but SKIPS the analytics emit (no double MRR)", async () => {
+        // Core option-(b) assertion: the entitlement/billing writes are
+        // idempotent upserts and MUST always run (a redelivery safely
+        // re-converges D1 — and is the recovery path for a prior failed
+        // fire-and-forget write). The dedup gates ONLY the non-idempotent
+        // analytics emit, so MRR is not double-counted on a Stripe retry.
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_dedup_retry",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_retry",
+                    subscription: "sub_retry",
+                    amount_total: 4900,
+                    metadata: { tenant_id: "tenant_retry", plan: "starter" },
+                },
+            },
         };
 
-        // First call.
+        // First delivery → processes + emits.
         const req1 = await makeStripeRequest(event, TEST_SECRET, nowMs);
-        const res1 = await handleStripeWebhook(req1, baseEnv(db), fakeCtx());
-        expect(res1.status).toBe(200);
+        expect((await handleStripeWebhook(req1, baseEnv(db), fakeCtx())).status).toBe(200);
 
-        // Second call (Stripe retry) — same event id, slightly later timestamp.
+        // Snapshot the side effects after the first delivery.
+        const billingInsertsAfterFirst = db.runCalls.filter((c) =>
+            c.sql.includes("INSERT INTO tenant_billing"),
+        ).length;
+        const fetchSpy = vi.mocked(globalThis.fetch);
+        const emitsAfterFirst = fetchSpy.mock.calls.length;
+        expect(billingInsertsAfterFirst).toBe(1);
+        expect(emitsAfterFirst).toBeGreaterThanOrEqual(1);
+
+        // Redelivery (Stripe retry) — SAME event id, later signature timestamp.
         const req2 = await makeStripeRequest(event, TEST_SECRET, nowMs + 1000);
         const res2 = await handleStripeWebhook(req2, baseEnv(db), fakeCtx());
         expect(res2.status).toBe(200);
+        expect(await res2.text()).toBe("ok");
 
-        // Both calls invoke the same ON CONFLICT upsert path.
-        const insertCalls = db.runCalls.filter((c) => c.sql.includes("INSERT INTO tenant_billing"));
-        expect(insertCalls).toHaveLength(2);
+        // The idempotent entitlement write DID run AGAIN on the redelivery (NOT
+        // short-circuited) — this is the entitlement-loss recovery guarantee.
+        const billingInsertsAfterSecond = db.runCalls.filter((c) =>
+            c.sql.includes("INSERT INTO tenant_billing"),
+        ).length;
+        expect(billingInsertsAfterSecond).toBe(billingInsertsAfterFirst + 1); // write re-ran
+        // The tier_selections activation (entitlement gate) also re-ran.
+        const tierActivations = db.runCalls.filter(
+            (c) => c.sql.includes("INSERT INTO tier_selections") && c.sql.includes("ON CONFLICT"),
+        );
+        expect(tierActivations).toHaveLength(2);
+
+        // But the analytics emit did NOT fire a second time (no double MRR).
+        expect(fetchSpy.mock.calls.length).toBe(emitsAfterFirst); // no re-emit
+
+        // The dedup claim was attempted on BOTH deliveries (the second hit the
+        // PK conflict → duplicate → emit skipped, writes still ran).
+        const claims = db.runCalls.filter((c) =>
+            c.sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed"),
+        );
+        expect(claims).toHaveLength(2);
+    });
+
+    it("dedup REGRESSION (entitlement-loss): a successful claim NEVER blocks the idempotent entitlement write on redelivery", async () => {
+        // The adversarial-review CRITICAL: the original design claimed the
+        // event then whole-handler short-circuited the duplicate, so a
+        // redelivery skipped the (fire-and-forget, non-awaited) entitlement
+        // write entirely. If the first delivery's write had failed, the
+        // customer paid with NO access and NO recovery. This proves the gate
+        // never blocks the entitlement write: even though the claim SUCCEEDS on
+        // the first delivery (changes=1) and CONFLICTS on the second
+        // (duplicate), the tier_selections activation write runs on BOTH.
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_entitlement_recovery",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_recover",
+                    subscription: "sub_recover",
+                    amount_total: 4900,
+                    metadata: { tenant_id: "tenant_recover", tier: "starter" },
+                },
+            },
+        };
+
+        // Delivery 1 — claim succeeds (changes=1).
+        const req1 = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        expect((await handleStripeWebhook(req1, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        // Delivery 2 — claim CONFLICTS (duplicate). Despite the dedup claim
+        // succeeding/blocking the emit, the entitlement gate write MUST re-run.
+        const req2 = await makeStripeRequest(event, TEST_SECRET, nowMs + 1000);
+        expect((await handleStripeWebhook(req2, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        // The dedup recorded the first as 'claimed' and the second as a PK
+        // conflict (two claim attempts).
+        const claims = db.runCalls.filter((c) =>
+            c.sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed"),
+        );
+        expect(claims).toHaveLength(2);
+
+        // CRITICAL: the entitlement (tier_selections) activation write ran on
+        // BOTH deliveries — the dedup gate did NOT block it. No entitlement loss.
+        const activations = db.runCalls.filter(
+            (c) => c.sql.includes("INSERT INTO tier_selections") && c.sql.includes("ON CONFLICT"),
+        );
+        expect(activations).toHaveLength(2);
+        // And the tenant_billing upsert ran on both deliveries too.
+        const billingUpserts = db.runCalls.filter((c) =>
+            c.sql.includes("INSERT INTO tenant_billing"),
+        );
+        expect(billingUpserts).toHaveLength(2);
+    });
+
+    it("dedup: claim INSERT failure (D1 error) FAILS SAFE — event is still processed (not lost)", async () => {
+        const db = fakeDbClaimThrows();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_claim_err",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_claim_err",
+                    subscription: "sub_claim_err",
+                    amount_total: 4900,
+                    metadata: { tenant_id: "tenant_claim_err", plan: "starter" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        // Claim threw → handler falls through and still dispatches (never drops
+        // a possible first-time event).
+        expect(res.status).toBe(200);
+        expect(
+            db.runCalls.find((c) => c.sql.includes("INSERT INTO tenant_billing")),
+        ).toBeDefined();
+    });
+
+    it("dedup: an UNKNOWN event type is claimed with outcome 'acknowledged_unknown'", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_dedup_unknown",
+            type: "invoice.payment_succeeded",
+            data: { object: { id: "in_x" } },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+        const claim = db.runCalls.find((c) =>
+            c.sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed"),
+        );
+        expect(claim).toBeDefined();
+        expect(claim!.params).toContain("acknowledged_unknown");
     });
 
     // ------------------------------------------------------------------
@@ -512,6 +779,42 @@ describe("handleStripeWebhook", () => {
         );
         expect(deact).toBeDefined();
         expect(deact!.params).toContain("cus_del_gate");
+    });
+
+    it("customer.subscription.deleted with NO customer field → gate STILL revoked by subscription id (fail-safe)", async () => {
+        // #36 FIX-2 (mirror of the subscription.updated fallback): a cancel must
+        // always revoke entitlement, even when the deleted subscription object
+        // carries no top-level `customer`. Revocation falls back to keying by
+        // subscription id (resolved to the tenant via tenant_billing).
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_del_no_customer",
+            type: "customer.subscription.deleted",
+            data: {
+                object: {
+                    id: "sub_del_no_customer",
+                    // NOTE: no `customer` field — the bug scenario.
+                    metadata: { tenant_id: "tenant_del_no_customer" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // billing still canceled.
+        expect(db.runCalls.find((c) => c.sql.includes("'canceled'"))).toBeDefined();
+        // Gate deactivated keyed by subscription id (via tenant_billing subquery),
+        // NOT by customer (which is absent).
+        const deact = db.runCalls.find(
+            (c) =>
+                c.sql.includes("UPDATE tier_selections") &&
+                c.sql.includes("'inactive'") &&
+                c.sql.includes("tenant_billing"),
+        );
+        expect(deact).toBeDefined();
+        expect(deact!.params).toContain("sub_del_no_customer");
     });
 
     // ------------------------------------------------------------------
@@ -742,9 +1045,16 @@ describe("handleStripeWebhook", () => {
         expect(deact!.sql).toContain("subscription_started_at_ms = NULL");
 
         // 3) Second checkout → ON CONFLICT re-activation.
+        // The signature timestamp t1 only authenticates the request; the
+        // activation row's subscription_started_at_ms is bound from the
+        // handler's OWN Date.now(), not from t1. Anchor the assertion window on
+        // the real wall clock spanning the handler call (capture before/after)
+        // so it is not fragile w.r.t. the signature timestamp.
         const t1 = t0 + 2000;
         req = await makeStripeRequest(checkout("evt_resub_2"), TEST_SECRET, t1);
+        const wallBefore = Date.now();
         expect((await handleStripeWebhook(req, baseEnv(db), fakeCtx())).status).toBe(200);
+        const wallAfter = Date.now();
 
         const activations = db.runCalls.filter(
             (c) => c.sql.includes("INSERT INTO tier_selections") && c.sql.includes("ON CONFLICT"),
@@ -756,7 +1066,7 @@ describe("handleStripeWebhook", () => {
         const updateClause = second.sql.slice(second.sql.indexOf("DO UPDATE"));
         expect(updateClause).toContain("subscription_started_at_ms");
         const tsParam = second.params.find(
-            (p) => typeof p === "number" && p >= t1 - 5000 && p <= t1 + 5000,
+            (p) => typeof p === "number" && p >= wallBefore && p <= wallAfter,
         );
         expect(tsParam).toBeDefined();
         expect(tsParam).not.toBeNull();
