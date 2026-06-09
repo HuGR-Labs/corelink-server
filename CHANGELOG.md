@@ -288,6 +288,18 @@ Each entry cross-references:
   `tenant_billing`) so a cancel always revokes the canonical access gate.
   Hardened the re-subscribe test's activation-timestamp assertion to anchor on
   the handler's real wall clock instead of the signature timestamp.
+- **Cutover runbook contradicted the live prod reality — two launch-day landmines.**
+  (1) `scripts/apply-d1-migrations-prod.sh` HARD-PAUSED when the migration file count
+  ≠ 52, but the adapter/billing/pilot work added migrations 0053–0061 → the live count
+  is **60**. The runner would have refused to apply on launch day. Updated
+  `EXPECTED_FILE_COUNT` 52→60 and `EXPECTED_TABLE_COUNT` 75→80 (re-derived for the
+  60-migration set; post-apply floor check). (2) `scripts/dns-prod-plan.sh` +
+  `dns-prod-verify.sh` still encoded the DEAD dotted `*.corelink.humangr.com` CNAMEs
+  (plus 4 dead wave-29 extras: acme-dev/staging/sandbox/go), contradicting the live
+  flat hosts AND the already-flat `smoke-prod-corelink.sh`. Reconciled both to the flat
+  scheme (5 live hosts + the deliberate `status` BetterUptime CNAME). Adds
+  `docs/operator/launch-day-sequence-2026-06-09.md` (the verified operator launch
+  sequence + owner-flags).
 - **Stripe webhook did not propagate cancel / payment-failure / downgrade to the
   CANONICAL access gate, and an unknown status failed OPEN (money-path,
   launch-blocking; #34).** `apps/signup-worker/src/webhooks/stripe.ts` only handled

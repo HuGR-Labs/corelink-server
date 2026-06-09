@@ -89,16 +89,18 @@ fi
 # Pages subdomain: <project>.pages.dev is the canonical CF Pages target.
 # ---------------------------------------------------------------------------
 
+# FLAT-rename scheme (2026-06-09): live prod serves on corelink-<surface>.humangr.com;
+# the dotted *.corelink.humangr.com scheme is DEAD (NXDOMAIN) — see
+# docs/operator/host-scheme-canonical-2026-06-09.md. Kept in sync with
+# scripts/smoke-prod-corelink.sh DNS_PLAN (5 flat hosts + status). The 4 dotted
+# wave-29 extras (acme-dev/staging/sandbox/go) are dropped — not part of the MVP
+# surface. status.corelink.humangr.com stays dotted (deliberate BetterUptime CNAME).
 PLAN_ENTRIES=(
-  "api.corelink.humangr.com|CNAME|corelink-prod.gustavoschneiter.workers.dev|true|1|Worker prod entry point (all /v1/* routes)"
-  "app.corelink.humangr.com|CNAME|corelink-admin-ui.pages.dev|true|1|Phase F Pages: corelink-admin-ui"
-  "docs.corelink.humangr.com|CNAME|corelink-docs.pages.dev|true|1|Phase F Pages: corelink-docs (4 locales)"
-  "signup.corelink.humangr.com|CNAME|corelink-prod.gustavoschneiter.workers.dev|true|1|Worker signup/pilot-onboard route"
-  "admin.corelink.humangr.com|CNAME|corelink-prod.gustavoschneiter.workers.dev|true|1|Worker internal-admin route (Clerk-gated)"
-  "acme-dev.corelink.humangr.com|CNAME|corelink-prod.gustavoschneiter.workers.dev|true|1|Worker ACME-dev environment (wave-29 inventory)"
-  "staging.corelink.humangr.com|CNAME|corelink-staging.gustavoschneiter.workers.dev|true|1|Staging worker (wrangler --env staging)"
-  "sandbox.corelink.humangr.com|CNAME|corelink-prod.gustavoschneiter.workers.dev|true|1|Sandbox/trial route (wave-29 inventory)"
-  "go.corelink.humangr.com|CNAME|corelink-prod.gustavoschneiter.workers.dev|true|1|Redirect/go-links worker route"
+  "corelink-api.humangr.com|CNAME|corelink-prod.gustavoschneiter.workers.dev|true|1|Worker prod entry point (all /v1/* routes)"
+  "corelink-app.humangr.com|CNAME|corelink-admin-ui.pages.dev|true|1|Phase F Pages: corelink-admin-ui (customer console)"
+  "corelink-docs.humangr.com|CNAME|corelink-docs.pages.dev|true|1|Phase F Pages: corelink-docs (4 locales)"
+  "corelink-signup.humangr.com|CNAME|corelink-prod.gustavoschneiter.workers.dev|true|1|Worker signup/pilot-onboard route"
+  "corelink-admin.humangr.com|CNAME|corelink-prod.gustavoschneiter.workers.dev|true|1|Worker internal-admin route (Clerk-gated)"
   "status.corelink.humangr.com|CNAME|hugrl.betteruptime.com|false|1|Phase A (ALREADY EXISTS — dns-only per BetterUptime requirement)"
 )
 
