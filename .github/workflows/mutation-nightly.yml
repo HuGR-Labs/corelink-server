@@ -38,9 +38,20 @@ name: mutation-nightly (R2 baseline + 5-crate expansion + wave-24 large-crate la
 
 on:
   schedule:
-    # Nightly at 05:23 UTC (offset from tenant-path 04:17 to avoid
-    # resource contention on the shared GHA runner pool).
-    - cron: '23 5 * * *'
+    # DEMOTED from nightly to WEEKLY (Mondays 05:23 UTC).
+    #
+    # The per-PR `mutation-pr.yml` (cargo-mutants --in-diff) is now the fast
+    # first line — it mutates only the lines each PR changed and catches test
+    # blind spots in NEW code in minutes, on every PR. This full-workspace
+    # sweep (11 crates × full build × full test suite ≈ 6-8h) re-audits code
+    # nobody has touched in weeks and was pinning the shared self-hosted Mac
+    # every single night. It now runs at most weekly as the kill-rate BASELINE
+    # regression gate (catches coverage regressions from refactors elsewhere).
+    #
+    # FOLLOW-UP (infra): move this weekly full sweep to a DEDICATED runner so it
+    # never competes with interactive use of the shared founder Mac. Until then,
+    # `workflow_dispatch` is the on-demand escape hatch.
+    - cron: '23 5 * * 1'
   workflow_dispatch:
     # Manual trigger for baseline re-record after a deliberate refactor.
 
