@@ -2,7 +2,7 @@
  * Contract tests for apps/docs/functions/_middleware.ts (E1, 2026-05-28).
  *
  * Asserts:
- *   (a) Host ending in .pages.dev returns 301 to docs.corelink.humangr.com,
+ *   (a) Host ending in .pages.dev returns 301 to corelink-docs.humangr.com,
  *       preserving path + query.
  *   (b) Canonical custom-domain host falls through to ctx.next().
  */
@@ -22,7 +22,7 @@ function makeCtx(url: string) {
 }
 
 describe("docs pages.dev _middleware (REDIRECT mode)", () => {
-  it("301-redirects *.pages.dev to docs.corelink.humangr.com with path preserved", async () => {
+  it("301-redirects *.pages.dev to corelink-docs.humangr.com with path preserved", async () => {
     const { ctx, next } = makeCtx(
       "https://corelink-docs.pages.dev/tutorial/getting-started?ref=hn",
     );
@@ -30,7 +30,7 @@ describe("docs pages.dev _middleware (REDIRECT mode)", () => {
     expect(res.status).toBe(301);
     const location = res.headers.get("location");
     expect(location).toBe(
-      "https://docs.corelink.humangr.com/tutorial/getting-started?ref=hn",
+      "https://corelink-docs.humangr.com/tutorial/getting-started?ref=hn",
     );
     expect(next).not.toHaveBeenCalled();
   });
@@ -42,13 +42,13 @@ describe("docs pages.dev _middleware (REDIRECT mode)", () => {
     const res = (await onRequest(ctx)) as Response;
     expect(res.status).toBe(301);
     expect(res.headers.get("location")).toBe(
-      "https://docs.corelink.humangr.com/reference/",
+      "https://corelink-docs.humangr.com/reference/",
     );
   });
 
   it("falls through to ctx.next() for the canonical custom domain", async () => {
     const { ctx, next } = makeCtx(
-      "https://docs.corelink.humangr.com/tutorial/",
+      "https://corelink-docs.humangr.com/tutorial/",
     );
     const res = (await onRequest(ctx)) as Response;
     expect(next).toHaveBeenCalledTimes(1);

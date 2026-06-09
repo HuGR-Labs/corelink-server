@@ -5,11 +5,11 @@ import { describe, expect, it } from "vitest";
 const STATIC_DIR = path.resolve(__dirname, "..", "static");
 
 describe("static/ assets", () => {
-  it("publishes a CNAME pointing at docs.corelink.humangr.com (custom domain)", () => {
+  it("publishes a CNAME pointing at corelink-docs.humangr.com (custom domain)", () => {
     const cname = fs
       .readFileSync(path.join(STATIC_DIR, "CNAME"), "utf8")
       .trim();
-    expect(cname).toBe("docs.corelink.humangr.com");
+    expect(cname).toBe("corelink-docs.humangr.com");
   });
 
   it("ships a robots.txt that allows crawling and points at the sitemap", () => {
@@ -20,7 +20,7 @@ describe("static/ assets", () => {
     expect(robots).toMatch(/User-agent:\s*\*/);
     expect(robots).toMatch(/Allow:\s*\//);
     expect(robots).toMatch(
-      /Sitemap:\s*https:\/\/docs\.corelink\.dev\/sitemap\.xml/,
+      /Sitemap:\s*https:\/\/corelink-docs\.humangr\.com\/sitemap\.xml/,
     );
   });
 

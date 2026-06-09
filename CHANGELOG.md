@@ -300,6 +300,23 @@ Each entry cross-references:
   scheme (5 live hosts + the deliberate `status` BetterUptime CNAME). Adds
   `docs/operator/launch-day-sequence-2026-06-09.md` (the verified operator launch
   sequence + owner-flags).
+- **Live operational configs routed to DEAD dotted hosts
+  (`*.corelink.humangr.com`) instead of the canonical flat hosts
+  (`corelink-<surface>.humangr.com`).** Production serves on the flat scheme
+  (api/app/docs/signup/admin); the dotted scheme does not resolve (NXDOMAIN). A
+  partial Wave-32 flat-rename left stale dotted references that (a) kept `e2e-prod`
+  red since 2026-06-04 (`ENOTFOUND docs.corelink.humangr.com`), (b) made
+  `apps/docs/functions/_middleware.ts` 301-redirect `*.pages.dev` traffic to a dead
+  host, and (c) pointed the docs `SITE_URL`/canonical + a customer-facing docs link
+  at dead hosts. Repointed to flat: `e2e-prod.yml` E2E url defaults, docs middleware
+  `CANONICAL_HOST`, `docusaurus.config.ts` `SITE_URL` + "Admin" nav link, the
+  admin-ui audit-export docs link, and test fixtures (`portal.rs`,
+  `middleware-pages.test.ts`). Decision recorded in
+  `docs/operator/host-scheme-canonical-2026-06-09.md` (flat = canonical), which also
+  flags owner-only items: the CSP Clerk host (auth-critical), `get.corelink.io`, the
+  still-dotted `dns-prod-plan.sh`, the customer `.mdx` sweep (PR 2), and the stubbed
+  billing portal. Surgical — sealed audits, WebAuthn vectors (`evil.corelink…`), and
+  historical docs untouched.
 - **Stripe webhook did not propagate cancel / payment-failure / downgrade to the
   CANONICAL access gate, and an unknown status failed OPEN (money-path,
   launch-blocking; #34).** `apps/signup-worker/src/webhooks/stripe.ts` only handled

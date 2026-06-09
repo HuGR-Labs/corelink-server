@@ -1,5 +1,5 @@
 /**
- * Pilot welcome page — `docs.corelink.humangr.com/pilot/welcome`.
+ * Pilot welcome page — `corelink-docs.humangr.com/pilot/welcome`.
  *
  * R-prep wave-29 stream-2 deliverable. Reached after successful POST
  * to `signup.corelink.humangr.com/v1/signup/pilot/{token}` from `./apply.tsx`.
