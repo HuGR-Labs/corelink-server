@@ -42,6 +42,7 @@ use corelink_handler_cas::{
     CasReadResponse, CasWriteHandler, CasWriteRequest, CasWriteResponse, InMemoryAuditSink,
     InMemorySliObserver, SliObservation, SliObserver,
 };
+use corelink_hash::Digest;
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
 use tracing::{debug, warn};
 use uuid::Uuid;
@@ -277,6 +278,32 @@ impl R2CasHandler {
     }
 }
 
+/// Enforce the CAS content-addressing invariant
+/// (`INV-CAS-CONTENT-ADDRESSED`): the supplied `bytes` MUST hash to
+/// `claimed_hash` under the canonical BLAKE3 digest.
+///
+/// Returns `Ok(())` on a match, or `Err(actual_hex)` carrying the hash
+/// actually computed from the bytes so the caller can build the
+/// `HashMismatch` error and the `CorrectnessViolation` audit event.
+///
+/// A malformed `claimed_hash` (not canonical 64-char lowercase hex) is
+/// itself a mismatch — the durable store never persists/serves bytes
+/// under a digest it cannot validate.
+///
+/// This is the single enforcement point for content-addressing on the
+/// durable path. Every CAS write/read surface — the native
+/// `PUT/GET /v1/cas/...` route, the Bazel REAPI v2 bridge, and sccache
+/// — funnels through `R2CasHandler`, so this one gate closes the
+/// cache-poisoning hole across all of them. (The in-memory handler
+/// enforces the same invariant for dev/test.)
+fn verify_content_hash(claimed_hash: &str, bytes: &[u8]) -> Result<(), String> {
+    let actual = Digest::compute(bytes);
+    match Digest::from_hex(claimed_hash) {
+        Ok(claimed) if claimed.verify_constant_time(&actual) => Ok(()),
+        _ => Err(actual.to_hex()),
+    }
+}
+
 impl CasReadHandler for R2CasHandler {
     fn read(&self, req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
         use corelink_handler_cas::observer::Sli;
@@ -333,6 +360,31 @@ impl CasReadHandler for R2CasHandler {
 
         match result {
             Ok(Some(bytes)) => {
+                // Read-path content-addressing RE-verification: the
+                // bytes R2 returned MUST still hash to the requested
+                // digest. This catches R2 bitrot, storage-tier
+                // tampering, or a historically mis-keyed blob BEFORE it
+                // is served as trusted CAS content. A mismatch is a
+                // `CorrectnessViolation`, never a hit. (See
+                // `verify_content_hash`.)
+                if let Err(actual) = verify_content_hash(&req.hash, &bytes) {
+                    self.audit
+                        .emit(AuditEvent::new(
+                            AuditEventKind::CorrectnessViolation,
+                            req.tenant.clone(),
+                            req.hash.clone(),
+                            req.principal.clone(),
+                            req.at_unix_ms,
+                        ))
+                        .map_err(CasHandlerError::AuditFailed)?;
+                    self.sli
+                        .observe(SliObservation::new(Sli::CorrectnessCas, true, 0));
+                    emit(true);
+                    return Err(CasHandlerError::HashMismatch {
+                        claimed: req.hash,
+                        actual,
+                    });
+                }
                 self.audit
                     .emit(AuditEvent::new(
                         AuditEventKind::ReadServed,
@@ -399,6 +451,33 @@ impl CasWriteHandler for R2CasHandler {
                 req.at_unix_ms,
             ))
             .map_err(CasHandlerError::AuditFailed)?;
+
+        // Content-addressing enforcement (INV-CAS-CONTENT-ADDRESSED):
+        // the durable store MUST NOT persist bytes that do not hash to
+        // the claimed digest — otherwise the CAS guarantee is a lie and
+        // any client (or a buggy uploader) can poison the cache for
+        // every subsequent reader of that digest. Verify BEFORE the
+        // PUT; on mismatch emit `CorrectnessViolation` + a
+        // `CorrectnessCas` SLI failure and reject with 422
+        // `HashMismatch`. Nothing is written.
+        if let Err(actual) = verify_content_hash(&req.claimed_hash, &req.bytes) {
+            self.audit
+                .emit(AuditEvent::new(
+                    AuditEventKind::CorrectnessViolation,
+                    req.tenant.clone(),
+                    req.claimed_hash.clone(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                ))
+                .map_err(CasHandlerError::AuditFailed)?;
+            self.sli
+                .observe(SliObservation::new(Sli::CorrectnessCas, true, 0));
+            emit(true);
+            return Err(CasHandlerError::HashMismatch {
+                claimed: req.claimed_hash,
+                actual,
+            });
+        }
 
         let key = self.r2_key(&req.tenant, &req.claimed_hash);
         debug!(key = %key, bytes = req.bytes.len(), "R2CasHandler::write");
@@ -840,6 +919,100 @@ mod tests {
         assert!(matches!(err, CasHandlerError::CrossTenantDenied { .. }));
         // The audit sink recorded a ReadDenied event BEFORE the
         // rejection — fail-CLOSED ordering pin.
+    }
+
+    // ---------------------------------------------------------------
+    // Content-addressing enforcement (INV-CAS-CONTENT-ADDRESSED)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn verify_content_hash_accepts_matching_digest() {
+        let bytes = b"the quick brown fox";
+        let claimed = Digest::compute(bytes).to_hex();
+        assert!(verify_content_hash(&claimed, bytes).is_ok());
+    }
+
+    #[test]
+    fn verify_content_hash_rejects_mismatch_and_reports_actual() {
+        // Claim the digest of "A" but hand over the bytes of "B".
+        let claimed = Digest::compute(b"A").to_hex();
+        let actual_expected = Digest::compute(b"B").to_hex();
+        let err = verify_content_hash(&claimed, b"B").expect_err("must reject");
+        // The reported `actual` is the TRUE hash of the bytes given,
+        // not the (lying) claimed hash.
+        assert_eq!(err, actual_expected);
+        assert_ne!(err, claimed);
+    }
+
+    #[test]
+    fn verify_content_hash_rejects_malformed_claim() {
+        // A non-canonical claimed hash can never be validated — treat
+        // as a mismatch, never persist/serve under an unparseable key.
+        assert!(verify_content_hash("not-a-hash", b"anything").is_err());
+        assert!(verify_content_hash("", b"anything").is_err());
+    }
+
+    /// The load-bearing security regression: a WRITE whose bytes do not
+    /// hash to the claimed digest is rejected with `HashMismatch`
+    /// BEFORE any storage I/O — the durable store never persists
+    /// poisoned content. (`make_test_handler` points at localhost:1, so
+    /// reaching the PUT would error; this test proves we never reach
+    /// it.)
+    #[tokio::test]
+    async fn r2_cas_write_rejects_poisoned_bytes_before_storage() {
+        let handler = make_test_handler("iad").await;
+        let claimed = Digest::compute(b"honest-bytes").to_hex();
+        // Same tenant (so we pass the cross-tenant gate) but the body
+        // is NOT what the claimed digest addresses.
+        let req = CasWriteRequest::new(
+            "t1",
+            claimed.clone(),
+            b"POISONED-bytes".to_vec(),
+            "anon@t1",
+            "t1",
+            1,
+        );
+        let err = handler
+            .write(req)
+            .expect_err("poisoned write must be rejected");
+        match err {
+            CasHandlerError::HashMismatch { claimed: c, actual } => {
+                assert_eq!(c, claimed);
+                assert_eq!(actual, Digest::compute(b"POISONED-bytes").to_hex());
+            }
+            other => panic!("expected HashMismatch, got {other:?}"),
+        }
+    }
+
+    /// A WRITE whose bytes DO hash to the claimed digest passes
+    /// verification and proceeds to the storage layer (which then
+    /// errors against the unreachable stub endpoint — proving we got
+    /// PAST the content check rather than being rejected by it).
+    // NOTE: `multi_thread` flavor is REQUIRED — this test proceeds past
+    // content verification into the storage layer, which uses
+    // `tokio::task::block_in_place` (valid only on the multi-threaded
+    // runtime; the production server is `#[tokio::main]` multi-thread).
+    // The default current-thread `#[tokio::test]` runtime would panic at
+    // the `block_in_place` call, not at any fault in the fix.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn r2_cas_write_with_honest_bytes_passes_verification() {
+        let handler = make_test_handler("iad").await;
+        let bytes = b"honest-bytes".to_vec();
+        let claimed = Digest::compute(&bytes).to_hex();
+        let req = CasWriteRequest::new("t1", claimed, bytes, "anon@t1", "t1", 1);
+        let err = handler
+            .write(req)
+            .expect_err("stub endpoint is unreachable");
+        // The load-bearing assertion: honest bytes are NOT rejected by
+        // the content-addressing gate — verification PASSED and we
+        // proceeded to storage (which then failed at the unreachable
+        // stub endpoint). We assert "not a HashMismatch" rather than a
+        // specific downstream error so the test does not depend on the
+        // exact network-failure variant.
+        assert!(
+            !matches!(err, CasHandlerError::HashMismatch { .. }),
+            "honest bytes must pass content verification, got {err:?}"
+        );
     }
 
     // ---------------------------------------------------------------
