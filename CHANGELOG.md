@@ -235,6 +235,25 @@ Each entry cross-references:
   `docs/FINDING-turbo-tenant-isolation.md`.
 
 ### Fixed
+- **Stripe webhook double-counted MRR on redelivery and could leave a
+  cancel-without-`customer` entitled (money-path; #36, follow-ups to #34/#178).**
+  Wired the durable dedup table `stripe_webhook_events_processed` (migration
+  0044) into `apps/signup-worker/src/webhooks/stripe.ts`: immediately after
+  signature verification and before any mutation/emit, the handler claims
+  `event.id` via `INSERT OR IGNORE` on the `event_id` PRIMARY KEY and inspects
+  `meta.changes` — a first delivery (changes=1) records the event then
+  processes; a Stripe redelivery (changes=0, PK conflict) short-circuits to a
+  clean no-op 200, so the non-idempotent analytics emits (e.g.
+  `paid_subscription_started` MRR) no longer double-count. The claim is
+  claim-then-process and fail-safe: a D1 claim error proceeds to process
+  (never drops a genuine first-time entitlement/revenue event; the state writes
+  are idempotent upserts). Also mirrored the #178 FIX-2 fallback onto
+  `customer.subscription.deleted`: when the deleted subscription object carries
+  no top-level `customer`, revocation falls back to
+  `deactivateTierSelectionBySubscription` (keyed by subscription id via
+  `tenant_billing`) so a cancel always revokes the canonical access gate.
+  Hardened the re-subscribe test's activation-timestamp assertion to anchor on
+  the handler's real wall clock instead of the signature timestamp.
 - **Stripe webhook did not propagate cancel / payment-failure / downgrade to the
   CANONICAL access gate, and an unknown status failed OPEN (money-path,
   launch-blocking; #34).** `apps/signup-worker/src/webhooks/stripe.ts` only handled

@@ -25,13 +25,15 @@
 //
 // Each arm also emits an analytics event to the analytics-worker.
 //
-// IDEMPOTENCY NOTE (Stripe redelivers; #34): every D1 mutation here is a safe
-// upsert or a guarded/no-op UPDATE. The analytics emits (e.g.
-// `paid_subscription_started` MRR) are NOT deduped — a Stripe redelivery would
-// double-count. The durable dedup table `stripe_webhook_events_processed`
-// (migration 0044) is NOT yet wired into this handler; wiring it (INSERT OR
-// IGNORE on event.id, gating dispatch) is the correct fix and is deferred as a
-// larger change. FLAGGED for follow-up.
+// IDEMPOTENCY NOTE (Stripe redelivers; #34/#36): every D1 mutation here is a
+// safe upsert or a guarded/no-op UPDATE. The analytics emits (e.g.
+// `paid_subscription_started` MRR) are NOT individually idempotent, so a Stripe
+// redelivery would double-count. We therefore claim `event.id` durably at the
+// TOP of the handler (after signature verification, before any mutation/emit)
+// against `stripe_webhook_events_processed` (migration 0044) via INSERT OR
+// IGNORE on the event_id PRIMARY KEY: a first delivery is recorded then
+// dispatched; a redelivery short-circuits to a clean no-op 200. See
+// `claimWebhookEvent` for the claim-then-process fail-safe ordering.
 //
 // Security invariants (audited):
 //   1. Stripe-Timestamp MUST be within 5 minutes of now (replay-attack window).
@@ -68,9 +70,17 @@ export interface StripeWebhookEnv extends AnalyticsEmitEnv {
 }
 
 // Minimal D1 interface — keeps unit tests independent of @cloudflare/workers-types.
+//
+// `run()` returns the D1 result envelope; we only read `meta.changes` (the
+// number of rows actually written) to detect whether an `INSERT OR IGNORE`
+// idempotency claim newly inserted (changes === 1) or hit the PK conflict
+// (changes === 0 → already processed).
+interface D1RunResult {
+    meta?: { changes?: number };
+}
 interface D1PreparedStatement {
     bind(...values: unknown[]): D1PreparedStatement;
-    run(): Promise<unknown>;
+    run(): Promise<D1RunResult>;
 }
 interface D1DatabaseLike {
     prepare(query: string): D1PreparedStatement;
@@ -265,6 +275,82 @@ function resolveSubscriptionTier(
  */
 function subscriptionStatusGrantsAccess(rawStatus: unknown): boolean {
     return rawStatus === "active" || rawStatus === "trialing";
+}
+
+// ---------------------------------------------------------------------------
+// Idempotency claim (#34/#36): dedup on Stripe event.id
+// ---------------------------------------------------------------------------
+
+/** Event types this handler actually dispatches side effects for. */
+const HANDLED_EVENT_TYPES = new Set<string>([
+    "checkout.session.completed",
+    "customer.subscription.updated",
+    "customer.subscription.created",
+    "invoice.payment_failed",
+    "customer.subscription.deleted",
+]);
+
+/** Outcome of an idempotency claim against `stripe_webhook_events_processed`. */
+type ClaimResult =
+    | "claimed" // newly inserted — this delivery is the first; proceed.
+    | "duplicate" // PK conflict — already processed; short-circuit 200.
+    | "claim_error"; // the claim INSERT itself failed (D1 error) — fail-safe.
+
+/**
+ * Durably claim a Stripe `event.id` BEFORE any mutation/emit so a redelivery is
+ * a clean no-op (migration 0044 `stripe_webhook_events_processed`).
+ *
+ * Uses `INSERT OR IGNORE` on the `event_id` PRIMARY KEY and inspects
+ * `meta.changes`:
+ *   - changes === 1 → row newly inserted → "claimed" (first delivery; dispatch).
+ *   - changes === 0 → PK conflict → "duplicate" (Stripe retry; short-circuit).
+ *
+ * Ordering / fail-safe (claim-THEN-process): we claim first, then dispatch the
+ * (already-idempotent) D1 upserts + the analytics emit. A crash mid-dispatch
+ * therefore leaves the event MARKED — acceptable for this money path because
+ * every D1 write here is an idempotent upsert/guarded-UPDATE; the only
+ * non-idempotent side effect is the analytics emit, and marking-first is the
+ * conservative choice that prevents a redelivery from double-counting MRR.
+ *
+ * If the claim INSERT itself throws (D1 unavailable), we return "claim_error"
+ * and the caller FALLS THROUGH to processing: losing a first-time entitlement /
+ * revenue event is strictly worse than a possible double analytics count, and
+ * the D1 state writes are themselves idempotent. We never short-circuit on a
+ * claim error (that could silently drop a genuine first delivery).
+ *
+ * `outcome` records whether we dispatched a known event or merely acknowledged
+ * an unknown one (forensics column; not read by the dedup path).
+ */
+async function claimWebhookEvent(
+    db: D1DatabaseLike,
+    opts: {
+        eventId: string;
+        eventType: string;
+        nowMs: number;
+        correlationId: string;
+    },
+): Promise<ClaimResult> {
+    const outcome = HANDLED_EVENT_TYPES.has(opts.eventType)
+        ? "dispatched"
+        : "acknowledged_unknown";
+    try {
+        const res = await db
+            .prepare(
+                `INSERT OR IGNORE INTO stripe_webhook_events_processed
+                   (event_id, event_type, processed_at_ms, outcome, correlation_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5)`,
+            )
+            .bind(opts.eventId, opts.eventType, opts.nowMs, outcome, opts.correlationId)
+            .run();
+        // `INSERT OR IGNORE` writes 1 row on first delivery, 0 on PK conflict.
+        return (res?.meta?.changes ?? 0) > 0 ? "claimed" : "duplicate";
+    } catch (e: unknown) {
+        // Fail-safe: do NOT lose a first-time event. Proceed to process.
+        console.warn(
+            `[stripe-webhook] idempotency claim failed (processing anyway): ${(e as Error).message}`,
+        );
+        return "claim_error";
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -608,6 +694,30 @@ export async function handleStripeWebhook(
     const tenantId = tenantIdFromMetadata(obj);
     const nowMs = Date.now();
 
+    // --- 4. Idempotency claim BEFORE any mutation/emit (#34/#36). --------
+    // Stripe redelivers; the analytics emits (e.g. paid_subscription_started
+    // MRR) are not individually idempotent, so a redelivery would double-count.
+    // We claim event.id durably (migration 0044) and short-circuit a known
+    // duplicate to a clean no-op 200. A first delivery is recorded then
+    // processed (claim-then-process; see claimWebhookEvent for the fail-safe
+    // ordering). Only attempted when a DB is configured — without BILLING_DB
+    // there is no durable store to dedup against (graceful degradation).
+    if (event.id && env.BILLING_DB) {
+        const claim = await claimWebhookEvent(env.BILLING_DB, {
+            eventId: event.id,
+            eventType: event.type,
+            nowMs,
+            correlationId: `stripe_webhook:${event.id}`,
+        });
+        if (claim === "duplicate") {
+            // Already processed on a prior delivery — return the same success
+            // (200) WITHOUT re-mutating D1 or re-emitting analytics.
+            return new Response("ok", { status: 200 });
+        }
+        // "claimed" → first delivery, proceed. "claim_error" → fail-safe,
+        // proceed anyway rather than risk dropping a genuine first delivery.
+    }
+
     switch (event.type) {
         case "checkout.session.completed": {
             // Extract Stripe IDs from the session object.
@@ -905,17 +1015,26 @@ export async function handleStripeWebhook(
                 // tier_selections.subscription_state='active', which both kept
                 // the tenant entitled forever AND tripped tier_select.rs:699
                 // `AlreadyActive` on any re-subscribe. Flip to 'inactive'.
-                if (typeof stripeCustomerId === "string" && stripeCustomerId) {
-                    ctx.waitUntil(
-                        deactivateTierSelectionByCustomer(db, {
-                            stripeCustomerId,
-                        }).catch((e: unknown) => {
-                            console.warn(
-                                `[stripe-webhook] cancel deactivate failed: ${(e as Error).message}`,
-                            );
-                        }),
-                    );
-                }
+                //
+                // FAIL-SAFE (mirrors subscription.updated FIX-2): a cancel must
+                // ALWAYS revoke entitlement, even when the deleted subscription
+                // object carries no top-level `customer` field. Prefer the
+                // customer key when present; otherwise revoke by subscription id
+                // (resolved to the tenant via tenant_billing). We always have the
+                // subscription id here (guarded above).
+                const deactivate =
+                    typeof stripeCustomerId === "string" && stripeCustomerId
+                        ? deactivateTierSelectionByCustomer(db, { stripeCustomerId })
+                        : deactivateTierSelectionBySubscription(db, {
+                              stripeSubscriptionId,
+                          });
+                ctx.waitUntil(
+                    deactivate.catch((e: unknown) => {
+                        console.warn(
+                            `[stripe-webhook] cancel deactivate failed: ${(e as Error).message}`,
+                        );
+                    }),
+                );
             }
 
             ctx.waitUntil(
