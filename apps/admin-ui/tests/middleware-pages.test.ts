@@ -47,7 +47,7 @@ describe("admin-ui pages.dev _middleware (BLOCK mode)", () => {
 
   it("falls through to ctx.next() for the canonical custom domain", async () => {
     const { ctx, next } = makeCtx(
-      "https://app.corelink.humangr.com/admin/tenants",
+      "https://corelink-app.humangr.com/admin/tenants",
     );
     const res = (await onRequest(ctx)) as Response;
     expect(next).toHaveBeenCalledTimes(1);

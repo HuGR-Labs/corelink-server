@@ -7,7 +7,7 @@ import { getStatuspageUrl } from "./src/statuspage-url";
  * CoreLink public docs Docusaurus configuration.
  *
  * WI-S18-001 foundation deliverable. Deploys to Cloudflare Pages at
- * `docs.corelink.humangr.com` (custom domain via CNAME) with three locales
+ * `corelink-docs.humangr.com` (custom domain via CNAME) with three locales
  * (en-US default + pt-BR + es-419 per sprint contract R-S18-12) and a
  * Diátaxis-organized sidebar (tutorial / how-to / reference / explanation).
  *
@@ -15,7 +15,7 @@ import { getStatuspageUrl } from "./src/statuspage-url";
  * injected at D-day via environment variables (`ALGOLIA_APP_ID`,
  * `ALGOLIA_SEARCH_API_KEY`, `ALGOLIA_INDEX_NAME`).
  */
-const SITE_URL = "https://docs.corelink.humangr.com";
+const SITE_URL = "https://corelink-docs.humangr.com";
 const ORG = "humangr-labs";
 const REPO = "corelink-server";
 const EDIT_BASE = `https://github.com/${ORG}/${REPO}/edit/main/apps/docs/`;
@@ -347,7 +347,7 @@ const config: Config = {
           position: "right",
         },
         {
-          href: "https://admin.corelink.humangr.com",
+          href: "https://corelink-app.humangr.com",
           label: "Admin",
           position: "right",
         },

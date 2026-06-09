@@ -444,7 +444,7 @@ function ExportBundleButton({
       visible_leaves: leaves,
       verify_instructions: [
         "Run: corelink audit verify --bundle <path-to-this-file>",
-        "See https://docs.corelink.humangr.com/reference/cli/audit",
+        "See https://corelink-docs.humangr.com/reference/cli/audit",
       ],
     };
     if (typeof window === "undefined") return;

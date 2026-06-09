@@ -49,8 +49,8 @@ jobs:
       PROJECTS: chromium
       # Defaults match playwright.prod.config.ts — override via repo vars/secrets
       # if a staging/preview environment needs to be probed instead.
-      E2E_BASE_URL: ${{ vars.E2E_BASE_URL || 'https://app.corelink.humangr.com' }}
-      E2E_DOCS_URL: ${{ vars.E2E_DOCS_URL || 'https://docs.corelink.humangr.com' }}
+      E2E_BASE_URL: ${{ vars.E2E_BASE_URL || 'https://corelink-app.humangr.com' }}
+      E2E_DOCS_URL: ${{ vars.E2E_DOCS_URL || 'https://corelink-docs.humangr.com' }}
       E2E_INSTALL_URL: ${{ vars.E2E_INSTALL_URL || 'https://get.corelink.io' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

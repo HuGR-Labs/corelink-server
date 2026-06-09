@@ -18,7 +18,7 @@ type PagesFunction = (ctx: {
   next: () => Promise<Response>;
 }) => Promise<Response> | Response;
 
-const CANONICAL_HOST = "docs.corelink.humangr.com";
+const CANONICAL_HOST = "corelink-docs.humangr.com";
 
 export const onRequest: PagesFunction = async (ctx) => {
   const url = new URL(ctx.request.url);
