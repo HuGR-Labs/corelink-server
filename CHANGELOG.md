@@ -235,6 +235,33 @@ Each entry cross-references:
   `docs/FINDING-turbo-tenant-isolation.md`.
 
 ### Fixed
+- **Stripe webhook silently dropped entitlement/billing writes on a D1 failure —
+  customer paid, no access, no retry (money-path durability; #37, follow-up to
+  #34/#36/#178).** The entitlement/billing D1 writes in
+  `apps/signup-worker/src/webhooks/stripe.ts` were dispatched FIRE-AND-FORGET
+  (`ctx.waitUntil(p.catch(swallow))`) and the handler returned 200 regardless, so
+  a D1 error/throttle lost the write: Stripe saw its 200, never redelivered, and
+  the paying customer had no access and no recovery. The writes are now AWAITED
+  and, if ANY required write throws, the handler returns a non-2xx (**500**) so
+  Stripe redelivers (every write is an idempotent `ON CONFLICT` upsert / guarded
+  `UPDATE`, so the retry re-runs them harmlessly). The durable dedup claim was
+  also moved from BEFORE processing to AFTER the writes succeed
+  (**process-then-claim**): claiming first was wrong once writes are awaited +
+  retried, because a first delivery whose write FAILED would already have claimed
+  the event, so Stripe's retry would see a duplicate and SKIP the
+  `paid_subscription_started` emit → MRR undercount. With the claim made only
+  after the writes commit, the claim row exists iff a delivery SUCCEEDED, so the
+  analytics emit is **exactly-once on the first successful delivery**: a first
+  attempt that failed never claimed (it 500'd first) so the retry completes the
+  writes + emits; a retry after a prior success hits the PK conflict and skips the
+  emit (no double MRR) while the idempotent writes re-run. The emit is
+  best-effort (analytics, not money-path): an emit failure is caught + logged and
+  does NOT fail the webhook — writes succeeding + 200 is the success contract. All
+  existing handler logic (payment_failed terminal-only, cancel/downgrade
+  propagation, deleted-without-`customer` fallback, subscription.created backfill)
+  is unchanged — only the await + the 500-on-failure + the claim ordering moved.
+  New tests cover: write-failure→500→redelivery→exactly-once emit, happy path,
+  true-duplicate redelivery (no second emit), and emit-failure-still-200.
 - **Stripe webhook double-counted MRR on redelivery and could leave a
   cancel-without-`customer` entitled (money-path; #36, follow-ups to #34/#178).**
   Wired the durable dedup table `stripe_webhook_events_processed` (migration
