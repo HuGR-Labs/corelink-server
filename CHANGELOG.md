@@ -133,6 +133,27 @@ Each entry cross-references:
   MVP allowlist / `cf-deploy-prod.yml` REQUIRED list was rejected — both target
   the main worker, so it would have pushed the secret to the wrong Worker and
   false-failed the gate.)
+- **CAS content-addressing now ENFORCED on the durable R2 path — closes a
+  cache-poisoning hole (brutal-audit B1).** `R2CasHandler` previously stored
+  bytes under the client-claimed digest WITHOUT computing `blake3(bytes)`, and
+  served bytes from R2 WITHOUT re-verifying them — so any client (or a buggy
+  uploader) could persist arbitrary bytes under a fabricated digest and poison
+  the cache for every subsequent reader, and silent R2 bitrot/tampering was
+  served as trusted content. The route doc claimed "the handler enforces hash
+  equality" but only the in-memory fake did (hence green tests, blind prod).
+  Added `verify_content_hash` and wired it into BOTH `<R2CasHandler as
+  CasWriteHandler>::write` (verify BEFORE the PUT — poisoned bytes are never
+  persisted) and `<R2CasHandler as CasReadHandler>::read` (re-verify bytes
+  returned by R2 before serving). A mismatch emits a `CorrectnessViolation`
+  audit + a `CorrectnessCas` SLI failure and returns `422 HashMismatch`. Because
+  every CAS write/read surface — native `/v1/cas`, the Bazel REAPI v2 bridge,
+  and sccache — funnels through `R2CasHandler`, this single gate closes the hole
+  across all of them. A malformed (non-canonical-hex) claimed digest is itself a
+  mismatch (never persisted/served). NOTE: Action-Cache (`R2AcHandler`)
+  result-payload integrity is a SEPARATE follow-up — the AC action-digest is a
+  *key*, not a content hash of the payload, so its integrity needs the
+  `corelink-ac` Merkle/HKDF signed-result envelope wired into the update/lookup
+  path (tracked, not in this PR).
 - **Pilot-signup route env-gated — killed the hardcoded public dev HMAC key.**
   The `/v1/signup/pilot` route was mounted UNCONDITIONALLY in prod with a public
   constant signing key (`DEV_TOKEN_KEY` in the open repo), making pilot activation
