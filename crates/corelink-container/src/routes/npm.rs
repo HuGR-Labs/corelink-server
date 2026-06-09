@@ -77,7 +77,7 @@ use corelink_core::types::tenant::TenantId;
 use corelink_handler_cas::{CasReadHandler, CasWriteHandler};
 
 use crate::adapter_cache::{MoatCache, MoatError, UrlMapStore, PUBLIC_NAMESPACE};
-use crate::adapter_kv::{NpmKvStore, NpmKvError};
+use crate::adapter_kv::{NpmKvError, NpmKvStore};
 use crate::adapter_pat::{PatVerifier, VerifyError};
 use crate::scope::{requires_cache_read, requires_cache_write, SCOPE_HEADER};
 
@@ -236,9 +236,8 @@ impl TenantResolver for NpmPatResolver {
             VerifyError::InvalidPat => NpmAdapterError::Auth("invalid PAT".to_owned()),
             VerifyError::Backend(m) => NpmAdapterError::Auth(format!("backend: {m}")),
         })?;
-        let uuid = uuid::Uuid::parse_str(&tenant_text).map_err(|e| {
-            NpmAdapterError::Auth(format!("backend: tenant id not a UUID: {e}"))
-        })?;
+        let uuid = uuid::Uuid::parse_str(&tenant_text)
+            .map_err(|e| NpmAdapterError::Auth(format!("backend: tenant id not a UUID: {e}")))?;
         Ok(TenantId::from_uuid(uuid))
     }
 }
@@ -393,7 +392,8 @@ mod tests {
         CasHandlerError, CasReadRequest, CasReadResponse, CasWriteRequest, CasWriteResponse,
     };
     use corelink_pat::{
-        mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId as PatTenantId, SCOPE_CACHE_RW,
+        mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId as PatTenantId,
+        SCOPE_CACHE_RW,
     };
     use tower::ServiceExt; // for `.oneshot`
     use uuid::Uuid;
@@ -463,11 +463,7 @@ mod tests {
     struct FakeKv(Mutex<FakeKvRows>);
     #[async_trait]
     impl NpmKvBackend for FakeKv {
-        async fn get(
-            &self,
-            ns: &str,
-            key: &str,
-        ) -> Result<Option<(Vec<u8>, u64)>, String> {
+        async fn get(&self, ns: &str, key: &str) -> Result<Option<(Vec<u8>, u64)>, String> {
             Ok(self
                 .0
                 .lock()
@@ -719,10 +715,7 @@ mod tests {
 
         // The tarball CAS key is SHA256(tarball-URL); the adapter builds the
         // URL as `<registry>/<pkg>/-/<file>`.
-        let tarball_url = format!(
-            "{}/lodash/-/lodash-4.17.21.tgz",
-            DEFAULT_UPSTREAM_REGISTRY
-        );
+        let tarball_url = format!("{}/lodash/-/lodash-4.17.21.tgz", DEFAULT_UPSTREAM_REGISTRY);
         let digest = tarball_url_digest(&tarball_url).unwrap();
         let url_hash = digest.to_hex();
         let content_hash = canonical_hash_hex(&tarball_bytes);

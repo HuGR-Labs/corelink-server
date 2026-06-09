@@ -548,7 +548,10 @@ mod tests {
     #[test]
     fn mark_canceled_sets_status_and_is_tenant_scoped() {
         let sql = SQL_MARK_SUBSCRIPTION_CANCELED;
-        assert!(sql.trim_start().to_ascii_lowercase().starts_with("update"), "{sql}");
+        assert!(
+            sql.trim_start().to_ascii_lowercase().starts_with("update"),
+            "{sql}"
+        );
         assert!(
             sql.contains("status = 'canceled'"),
             "cancel must set status='canceled': {sql}"
@@ -581,7 +584,10 @@ mod tests {
         assert!(sql.contains("INSERT INTO stripe_disputes"), "{sql}");
         assert!(sql.contains("stripe_dispute_id"), "{sql}");
         // severity + schema_version have DEFAULTs and are intentionally omitted.
-        assert!(!sql.contains("severity"), "DEFAULTed severity omitted: {sql}");
+        assert!(
+            !sql.contains("severity"),
+            "DEFAULTed severity omitted: {sql}"
+        );
     }
 
     #[test]
@@ -607,19 +613,32 @@ mod tests {
         );
         // Deployed 0044 columns — NOT the old (tenant_id, stripe_event_id,
         // canonical_event_type, processed_at_ms) shape.
-        for col in ["event_id", "event_type", "processed_at_ms", "outcome", "correlation_id"] {
+        for col in [
+            "event_id",
+            "event_type",
+            "processed_at_ms",
+            "outcome",
+            "correlation_id",
+        ] {
             assert!(sql.contains(col), "missing deployed column `{col}`: {sql}");
         }
         // The table is un-tenanted — no tenant_id column exists.
         assert!(!sql.contains("tenant_id"), "0044 has no tenant_id: {sql}");
-        assert!(!sql.contains("canonical_event_type"), "renamed→event_type: {sql}");
+        assert!(
+            !sql.contains("canonical_event_type"),
+            "renamed→event_type: {sql}"
+        );
         // outcome bound as the dispatch literal (CHECK-admitted).
         assert!(sql.contains("'dispatched'"), "outcome literal: {sql}");
         // RETURNING lets the native writer detect insert-vs-ignore.
         assert!(sql.contains("RETURNING event_id"), "{sql}");
         // 3 binds: event_id, event_type, processed_at_ms, correlation_id
         // (outcome is a literal, not a bind) → 4 placeholders actually.
-        assert_eq!(sql.matches('?').count(), 4, "4 binds (outcome is literal): {sql}");
+        assert_eq!(
+            sql.matches('?').count(),
+            4,
+            "4 binds (outcome is literal): {sql}"
+        );
     }
 
     #[test]
@@ -635,6 +654,9 @@ mod tests {
             !SQL_UPSERT_TIER.contains("materialized_at_ms"),
             "must NOT reference materialized_at_ms: {SQL_UPSERT_TIER}"
         );
-        assert!(SQL_READ_TIER.contains("WHERE tenant_id = ?"), "{SQL_READ_TIER}");
+        assert!(
+            SQL_READ_TIER.contains("WHERE tenant_id = ?"),
+            "{SQL_READ_TIER}"
+        );
     }
 }

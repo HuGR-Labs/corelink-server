@@ -93,7 +93,11 @@ impl D1HttpBillingWriter {
     ///
     /// Fail-CLOSED: a transport / non-2xx / decode error from the client
     /// (an `Err(String)`) is mapped to [`BillingD1Error::Transient`].
-    fn run(&self, sql: &str, binds: Vec<Value>) -> Result<Vec<serde_json::Map<String, Value>>, BillingD1Error> {
+    fn run(
+        &self,
+        sql: &str,
+        binds: Vec<Value>,
+    ) -> Result<Vec<serde_json::Map<String, Value>>, BillingD1Error> {
         let d1 = Arc::clone(&self.d1);
         // The native server is `#[tokio::main]` (multi-thread). We are
         // inside an async task already (the axum handler), so we cannot
@@ -103,8 +107,7 @@ impl D1HttpBillingWriter {
         // future to completion. (Charter: the trait is sync — this is the
         // single documented bridge point.)
         tokio::task::block_in_place(move || {
-            tokio::runtime::Handle::current()
-                .block_on(async move { d1.query(sql, &binds).await })
+            tokio::runtime::Handle::current().block_on(async move { d1.query(sql, &binds).await })
         })
         .map_err(|e| BillingD1Error::Transient(format!("d1-http-billing: {e}")))
     }
@@ -115,7 +118,9 @@ impl D1HttpBillingWriter {
     /// shape error rather than panicking (charter: no `unwrap` in `src/`).
     fn payload_json(row: &MaterializedRow) -> Result<String, BillingD1Error> {
         serde_json::to_string(&row.payload).map_err(|e| {
-            BillingD1Error::InvalidPayload(format!("d1-http-billing: payload serialize failed: {e}"))
+            BillingD1Error::InvalidPayload(format!(
+                "d1-http-billing: payload serialize failed: {e}"
+            ))
         })
     }
 

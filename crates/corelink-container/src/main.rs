@@ -383,25 +383,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // `InMemoryBillingD1` mirror so the suite stays green offline.
         let billing_d1: Arc<dyn BillingD1Writer> =
             match corelink_server::storage::StorageEnv::from_env() {
-                Some(storage_env) => match corelink_server::storage::d1_http::D1HttpClient::new(
-                    &storage_env,
-                ) {
-                    Ok(client) => {
-                        info!(
-                            "billing: DURABLE D1-HTTP writer wired (CF D1 REST API); \
+                Some(storage_env) => {
+                    match corelink_server::storage::d1_http::D1HttpClient::new(&storage_env) {
+                        Ok(client) => {
+                            info!(
+                                "billing: DURABLE D1-HTTP writer wired (CF D1 REST API); \
                              Stripe-webhook state persists across restarts"
-                        );
-                        Arc::new(D1HttpBillingWriter::new(Arc::new(client)))
+                            );
+                            Arc::new(D1HttpBillingWriter::new(Arc::new(client)))
+                        }
+                        Err(e) => {
+                            warn!(
+                                error = %e,
+                                "billing: D1HttpClient init failed; \
+                                 FALLING BACK to InMemoryBillingD1 (webhook state is NOT durable)"
+                            );
+                            Arc::new(InMemoryBillingD1::new())
+                        }
                     }
-                    Err(e) => {
-                        warn!(
-                            error = %e,
-                            "billing: D1HttpClient init failed; \
-                             FALLING BACK to InMemoryBillingD1 (webhook state is NOT durable)"
-                        );
-                        Arc::new(InMemoryBillingD1::new())
-                    }
-                },
+                }
                 None => {
                     warn!(
                         "billing: D1 config absent (R2_S3_*/CF D1); \
