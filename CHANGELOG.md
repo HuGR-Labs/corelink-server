@@ -114,7 +114,24 @@ Each entry cross-references:
   adapters (cargo / brew / npm / pip / oci). Deploy + measurement owner-gated.
 
 ### Security
-- **Signup-worker secrets brought under governance (brutal-audit B3).** The
+- **Money path fails LOUD instead of silently mis-provisioning (brutal-audit B4).**
+  Two signup/payment paths that silently returned 200 on a misconfiguration —
+  dropping a paying customer with no retry and no operator signal — now fail
+  loud so the upstream (Stripe / Svix) redelivers and the failure is visible:
+  (1) `apps/signup-worker/src/webhooks/stripe.ts` — a `checkout.session.completed`
+  missing `tenant_id` or the Stripe `customer` now returns **500 before the
+  idempotency claim** (was: silent 200 with no entitlement write); the customer
+  paid, so we never silently ack a checkout we could not apply.
+  (2) `apps/signup-worker/src/webhooks/clerk.ts` — `issuePat` with an absent
+  `CORELINK_INTERNAL_AUTH_KEY` now **throws** (→ webhook 500 → Svix retries)
+  instead of returning a fake `corelink_pat_DEVSTUB` that looked valid to the
+  user but authenticated nothing while the webhook 200'd (so Svix never retried
+  and the new user was permanently, silently broken). Regression tests added for
+  both. NOTE: the related checkout `metadata[tier]`-absent default-to-`starter`
+  under-provisioning is **deferred** to a dedicated PR — fixing it correctly
+  requires also making `customer.subscription.updated` RE-activate the
+  entitlement gate (the SCA/out-of-order lockout), and the two must land
+  together to avoid a fail-closed regression.
   `corelink-signup-worker` Worker owns the secrets that gate the entire
   signup→provision→first-payment path (`CLERK_WEBHOOK_SECRET`, `CLERK_SECRET_KEY`,
   `CORELINK_INTERNAL_AUTH_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_*`), but

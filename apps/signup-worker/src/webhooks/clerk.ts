@@ -414,6 +414,29 @@ export async function handleClerkWebhook(
     }
   }
 
+  // FAIL-LOUD before any tenant is created (brutal-audit B4). Provisioning
+  // REQUIRES CORELINK_INTERNAL_AUTH_KEY to mint the PAT (step 3 of
+  // autoProvisionFromClerkEvent). CONFIG_DB is a declarative binding (always
+  // present once deployed), but the auth key is a `wrangler secret put` value
+  // that can be absent independently — the documented launch landmine. If we
+  // let provisioning START without it, `createTenant` commits a tenant row and
+  // THEN `issuePat` throws; on Svix redelivery the idempotency check ABOVE
+  // short-circuits on that orphan tenant and NEVER re-issues the PAT, leaving
+  // the user permanently PAT-less. Checking HERE — after the idempotency read,
+  // before the first write — makes a missing key 500 with ZERO side effects,
+  // so redelivery cleanly re-provisions once the secret is set. (issuePat also
+  // throws as a backstop.)
+  if (!env.CORELINK_INTERNAL_AUTH_KEY) {
+    console.error(
+      `[clerk-webhook] CORELINK_INTERNAL_AUTH_KEY absent — cannot mint PAT; ` +
+        `returning 500 before any tenant write (user=${event.data.id}, svix=${svixId})`,
+    );
+    return new Response(
+      JSON.stringify({ ok: false, error: "internal_auth_key_unconfigured" }),
+      { status: 500, headers: { "content-type": "application/json" } },
+    );
+  }
+
   try {
     const result = await autoProvisionFromClerkEvent({
       event,
@@ -527,8 +550,16 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
       scope: "read-write",
     ): Promise<{ id: string; plaintext: string }> {
       if (!env.CORELINK_INTERNAL_AUTH_KEY) {
-        // Dev/CI stub — return a fake PAT that the tests can assert on.
-        return { id: crypto.randomUUID(), plaintext: "corelink_pat_DEVSTUB" };
+        // FAIL-LOUD (signup money path): without the internal auth key we
+        // CANNOT mint a real PAT. The old behavior returned a fake
+        // "corelink_pat_DEVSTUB" that looked valid to the user but
+        // authenticated NOTHING, while the Clerk webhook still returned 200 —
+        // so Svix never retried and the new user was permanently broken with
+        // no signal. Throw instead: the webhook handler maps this to a 500,
+        // Svix redelivers, and the signup self-heals once the secret is set.
+        throw new Error(
+          "CORELINK_INTERNAL_AUTH_KEY is not configured — refusing to issue a stub PAT",
+        );
       }
 
       // Call the container's internal mint endpoint. Prefer the service
