@@ -23,7 +23,7 @@
 //! Specifically, the crate ships:
 //!
 //! 1. The [`tier`] module ships [`TierKind`] `#[non_exhaustive]`
-//!    5-canonical (`Free` / `Starter` / `Team` / `Pro` /
+//!    6-canonical (`Free` / `Solo` / `Starter` / `Pro` / `Max` /
 //!    `Enterprise` per WI §6.1 + spec contract §5.3 R-S19-7) +
 //!    [`tier::canonical_tiers`] surface-stability list.
 //! 2. The [`tenant`] module ships [`TenantId`], [`StripeCustomerId`]

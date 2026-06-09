@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# apply-d1-migrations-prod.sh — Phase D runner: apply 60 D1 migrations to
+# apply-d1-migrations-prod.sh — Phase D runner: apply 61 D1 migrations to
 # corelink-prod-d1 in lexicographic order.
 #
 # Default mode: DRY-RUN (lists what WOULD be applied; no remote mutations).
@@ -41,12 +41,16 @@ readonly MIGRATIONS_DIR="$REPO_ROOT/migrations/d1"
 # database_id d64742ea-e102-40b2-a844-ff02e3f94562, migrations_dir migrations/d1).
 readonly DB_NAME="CONFIG_DB"
 readonly DB_ENV="prod"
-readonly EXPECTED_FILE_COUNT=60
-# Computed via CREATE TABLE analysis across all 60 migration files.
+readonly EXPECTED_FILE_COUNT=61
+# Computed via CREATE TABLE analysis across all 61 migration files.
 # Re-derived 2026-06-09 for the 60-migration set: grep-count of unique table
 # names = 80 (was 75 across 52 files; +5 net from the adapter/billing/pilot
 # migrations 0053-0061 — pilot_signups, tenant_billing, adapter_cache_map,
-# adapter_npm_meta, adapter_pip_index, adapter_oci_kv). FLOOR check only: the
+# adapter_npm_meta, adapter_pip_index, adapter_oci_kv). 2026-06-09: +1 file
+# (0062_expand_tier_selections_6tier) widens the tier CHECK via a table REBUILD
+# — net table count UNCHANGED (the two rebuilt tables, tier_selections +
+# stripe_checkout_sessions, are dropped and re-created under the same names), so
+# EXPECTED_TABLE_COUNT stays 80. FLOOR check only: the
 # live sqlite_master count also includes d1_migrations + sqlite internals, so
 # the post-apply verification passes whenever actual >= this value.
 readonly EXPECTED_TABLE_COUNT=80

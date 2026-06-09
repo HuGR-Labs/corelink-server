@@ -28,7 +28,7 @@ pub const STRIPE_REPLAY_WINDOW_MS: u64 = 300_000;
 pub struct CheckoutSessionRequest {
     /// Tenant on whose behalf we create the session.
     pub tenant_id: TenantId,
-    /// Tier the session is for (one of Starter / Team / Pro).
+    /// Tier the session is for (one of Solo / Starter / Pro / Max).
     pub tier: TierKind,
     /// Customer email pre-filled into Checkout (pulled from the
     /// tenant signup payload per WI §6.2).

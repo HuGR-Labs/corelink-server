@@ -59,9 +59,10 @@ const LOCK_TTL_MS: i64 = 60_000;
 const fn tier_column(tier: RequestedTier) -> &'static str {
     match tier {
         RequestedTier::Free => "free",
+        RequestedTier::Solo => "solo",
         RequestedTier::Starter => "starter",
-        RequestedTier::Team => "team",
         RequestedTier::Pro => "pro",
+        RequestedTier::Max => "max",
     }
 }
 

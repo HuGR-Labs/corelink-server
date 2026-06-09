@@ -40,9 +40,10 @@ use corelink_tier_selection::{
 fn tier_kind_as_str_canonical_strings_stable_and_distinct() {
     let pairs = [
         (TierKind::Free, "free"),
+        (TierKind::Solo, "solo"),
         (TierKind::Starter, "starter"),
-        (TierKind::Team, "team"),
         (TierKind::Pro, "pro"),
+        (TierKind::Max, "max"),
         (TierKind::Enterprise, "enterprise"),
     ];
     for (t, expected) in &pairs {
@@ -53,15 +54,15 @@ fn tier_kind_as_str_canonical_strings_stable_and_distinct() {
     }
     // canonical_tiers list must match.
     let canon = canonical_tiers();
-    assert_eq!(canon.len(), 5);
+    assert_eq!(canon.len(), 6);
     for (i, (t, _)) in pairs.iter().enumerate() {
         assert_eq!(canon[i], *t);
     }
-    // Five distinct strings.
+    // Six distinct strings.
     let mut sorted: Vec<&str> = pairs.iter().map(|(_, s)| *s).collect();
     sorted.sort_unstable();
     sorted.dedup();
-    assert_eq!(sorted.len(), 5);
+    assert_eq!(sorted.len(), 6);
 }
 
 #[test]
@@ -70,7 +71,7 @@ fn tier_kind_requires_stripe_checkout_only_paid_tiers() {
     assert!(!TierKind::Free.requires_stripe_checkout());
     assert!(!TierKind::Free.routes_to_inquiry_form());
     // Paid: stripe yes, inquiry no.
-    for t in [TierKind::Starter, TierKind::Team, TierKind::Pro] {
+    for t in [TierKind::Solo, TierKind::Starter, TierKind::Pro, TierKind::Max] {
         assert!(t.requires_stripe_checkout(), "{t:?}");
         assert!(!t.routes_to_inquiry_form(), "{t:?}");
     }
@@ -322,7 +323,7 @@ fn in_memory_stripe_client_session_count_grows_via_ledger() {
     let _ = ledger
         .select_tier(
             &TenantCtx::new(TenantId::new("t-s2"), 1000, "c2"),
-            TierKind::Team,
+            TierKind::Max,
             "u2@x.com",
         )
         .unwrap();

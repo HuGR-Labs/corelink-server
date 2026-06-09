@@ -40,8 +40,9 @@ Sustained throughput is controlled by your **rate-limit tier**
 |------|----------------:|------------------------:|-------|
 | Free | 10 | 50 | Instant activation; no Stripe Checkout required. |
 | Solo | 50 | 200 | Single-engineer plan. |
-| Team | 200 | 1 000 | Standard small-team plan. |
-| Business | 1 000 | 5 000 | Mid-market plan. |
+| Starter | 200 | 1 000 | Small-team plan. |
+| Pro | 1 000 | 5 000 | Best-value plan for production teams. |
+| Max | 4 000 | 20 000 | Scale plan for serious build volume. |
 | Enterprise | 10 000 (negotiable per contract) | 50 000 | Contract-negotiated; route through the inquiry form. |
 
 **Burst capacity** is the size of your token bucket — you can spend
@@ -49,14 +50,12 @@ all tokens in a parallel burst, then the bucket refills at the
 sustained RPS. Burst is always **≥ 4× sustained** so a normal
 parallel-build spike does not 429 you.
 
-:::note Billing tier vs rate-limit tier
-The **billing** vocabulary (what you pay on) is *Free / Starter /
-Team / Pro / Enterprise*. The **rate-limit** vocabulary (what your
-bucket runs on) is *Free / Solo / Team / Business / Enterprise*.
-The two are FROZEN in different contracts; your `X-CoreLink-Tier`
-header carries the rate-limit name and your invoice carries the
-billing name. We are aware of the inconsistency; harmonisation is
-post-GA work.
+:::note Billing tier and rate-limit tier share one vocabulary
+Your rate-limit tier and your billing tier use the **same** canonical
+names — *Free / Solo / Starter / Pro / Max / Enterprise*. Your
+`X-CoreLink-Tier` header and your invoice carry the identical tier
+name, so the bucket your requests run on always matches the plan you
+pay for.
 :::
 
 ## Headers on every 429
@@ -71,7 +70,7 @@ informational `X-CoreLink-*` vendor headers:
 | `RateLimit-Policy` | `<limit>;w=<window>, …` | RFC 9331 §3 |
 | `Retry-After` | `<seconds>` | RFC 6585 §4 + RFC 9110 §10.2.3 |
 | `X-Rate-Limit-Type` | one of the 5 canonical arms | CoreLink-specific |
-| `X-CoreLink-Tier` | `free` / `solo` / `team` / `business` / `enterprise` | informational |
+| `X-CoreLink-Tier` | `free` / `solo` / `starter` / `pro` / `max` / `enterprise` | informational |
 | `X-CoreLink-Quota-Reset-UTC` | RFC 3339 absolute timestamp | informational |
 | `X-CoreLink-Tier-Upgrade-URL` | `https://corelink.humangr.com/pricing` | informational |
 

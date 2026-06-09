@@ -83,9 +83,10 @@ fn build_ledger_dpa_denied() -> (
 fn tier_strategy() -> impl Strategy<Value = TierKind> {
     prop_oneof![
         Just(TierKind::Free),
+        Just(TierKind::Solo),
         Just(TierKind::Starter),
-        Just(TierKind::Team),
         Just(TierKind::Pro),
+        Just(TierKind::Max),
         Just(TierKind::Enterprise),
     ]
 }
@@ -156,7 +157,7 @@ proptest! {
         let second_now = first_now.saturating_add(gap_ms);
         let r2 = ledger.select_tier(
             &TenantCtx::new(TenantId::new("t1"), second_now, "c2"),
-            TierKind::Team,
+            TierKind::Solo,
             "u@x.com",
         );
 
@@ -191,9 +192,10 @@ proptest! {
         repeats in 1u32..20,
         ts_ms in 1u64..10_000_000,
         tier in prop_oneof![
+            Just(TierKind::Solo),
             Just(TierKind::Starter),
-            Just(TierKind::Team),
             Just(TierKind::Pro),
+            Just(TierKind::Max),
         ],
     ) {
         let (ledger, _stripe, _audit) = build_ledger_dpa_accepted(&["t1"]);
@@ -304,13 +306,13 @@ proptest! {
 }
 
 // -------------------------------------------------------------------
-// Surface-stability regression: canonical 5-tier list
+// Surface-stability regression: canonical 6-tier list
 // -------------------------------------------------------------------
 
 #[test]
 fn canonical_tier_strings_stable() {
     let strs: Vec<&str> = canonical_tiers().iter().map(|t| t.as_str()).collect();
-    assert_eq!(strs, ["free", "starter", "team", "pro", "enterprise"]);
+    assert_eq!(strs, ["free", "solo", "starter", "pro", "max", "enterprise"]);
 }
 
 // -------------------------------------------------------------------

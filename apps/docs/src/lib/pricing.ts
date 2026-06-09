@@ -1,19 +1,18 @@
 /**
  * Pricing data model for the public pricing page + calculator.
  *
- * Phase 0.E (`PRICING-UNSTUB-CHECKOUT-WIRE`) lift: the prior wave-29
- * 5-tier scaffold (Free / Starter / Team / Pro / Enterprise) flagged
- * every magnitude `provisional: true` pending a Finance rate card.
- * Per `specs/_audits/2026-05-27-pricing-benchmarks.md` §5 +
- * `specs/_audits/2026-05-27-phase-0-execution-plan.md` §2.E +
- * `ROADMAP-TO-LAUNCH.md` §3, we collapse to the launch shape:
+ * 6-tier launch ladder (FROZEN taxonomy contract, 2026-06-09): the
+ * public surface lists all six customer-facing tiers in canonical
+ * order, the four paid tiers self-serve via Stripe Checkout and
+ * Enterprise routes through the inquiry form:
  *
- *     Free  →  Pro ($25/mo or $250/yr)  →  Enterprise (contact us)
+ *     Free $0  →  Solo $15  →  Starter $35  →  Pro $50  →  Max $149
+ *               →  Enterprise (contact us)
  *
- * Pricing is no longer provisional — it is the launch rate card,
- * signed off by Gustavo Schneiter (sole-founder authority) 2026-05-27.
+ * Pricing is the launch rate card, signed off by Gustavo Schneiter
+ * (sole-founder authority). Pro is the recommended / anchor SKU.
  *
- * Quota policy at v0.1 is **hard cap** on both Free and Pro (no silent
+ * Quota policy at v0.1 is **hard cap** on every priced tier (no silent
  * overage billing — buyer hits 100% → 429 + upgrade CTA). Overage axes
  * exist as data so the calculator can render "you would exceed this
  * tier" warnings, but every overage USD rate is `0` (hard cap), which
@@ -25,17 +24,25 @@
  */
 
 /**
- * Launch tier taxonomy. Three tiers per pricing-benchmarks §5
- * ("Three tiers is the dominant shape" — Sentry, Resend, Plausible,
- * Garnix, BuildBuddy, EngFlow). Wave-13's 5-tier internal taxonomy is
- * preserved in `crates/corelink-tier-selection/src/tier.rs`; the
- * public surface is the 3-tier launch shape.
+ * Launch tier taxonomy — the six canonical customer-facing tiers
+ * (FROZEN). Wire strings are snake_case. The internal billing model in
+ * `crates/corelink-tier-selection/src/tier.rs` is the matching
+ * authority; this is the public surface.
  */
-export type TierId = "free" | "pro" | "enterprise";
+export type TierId =
+  | "free"
+  | "solo"
+  | "starter"
+  | "pro"
+  | "max"
+  | "enterprise";
 
 export const CANONICAL_TIERS: readonly TierId[] = [
   "free",
+  "solo",
+  "starter",
   "pro",
+  "max",
   "enterprise",
 ] as const;
 
@@ -47,7 +54,8 @@ export type BillingPeriod = "monthly" | "annual";
 
 /**
  * "2 months free" = pay for 10 months out of 12 → 1 - 10/12 ≈ 16.67%.
- * Equivalent to the published $250/yr Pro list price vs. $25 × 12.
+ * Applied uniformly to every paid tier's monthly base for the annual
+ * list price (e.g. Pro $50/mo → $500/yr vs. $50 × 12).
  */
 export const ANNUAL_DISCOUNT_RATE = 1 - 10 / 12;
 
@@ -64,7 +72,7 @@ export interface TierShape {
   readonly includedCasGb: number;
   /** Included cache requests / month. */
   readonly includedRequests: number;
-  /** Included workspaces (Free: 1; Pro: unlimited → `null`). */
+  /** Included workspaces (Free: 1; higher tiers unlimited → `null`). */
   readonly includedWorkspaces: number | null;
   /** True if BYOK (bring-your-own-R2 + bring-your-own-KMS) is offered. */
   readonly byok: boolean;
@@ -121,10 +129,48 @@ export const TIER_RATE_CARD: Readonly<Record<TierId, TierShape>> = {
     usdPerRequestOverage: 0,
     hardCap: true,
   },
+  solo: {
+    id: "solo",
+    label: "Solo",
+    tagline: "For the solo developer shipping real work.",
+    includedCasGb: 50,
+    includedRequests: 2_000_000,
+    includedWorkspaces: null, // unlimited
+    byok: false,
+    sso: false,
+    slaCredits: false,
+    dpa: false,
+    auditLogExport: false,
+    support: "Email (best-effort response target)",
+    usdMonthlyBase: 15,
+    usdAnnualList: 150,
+    usdPerCasGbOverage: 0, // hard cap at v0.1; metered overage deferred to v0.2.
+    usdPerRequestOverage: 0,
+    hardCap: true,
+  },
+  starter: {
+    id: "starter",
+    label: "Starter",
+    tagline: "For a small team getting onto a shared cache.",
+    includedCasGb: 150,
+    includedRequests: 6_000_000,
+    includedWorkspaces: null, // unlimited
+    byok: false,
+    sso: false,
+    slaCredits: false,
+    dpa: false,
+    auditLogExport: false,
+    support: "Email (2 business-day response target)",
+    usdMonthlyBase: 35,
+    usdAnnualList: 350,
+    usdPerCasGbOverage: 0, // hard cap at v0.1; metered overage deferred to v0.2.
+    usdPerRequestOverage: 0,
+    hardCap: true,
+  },
   pro: {
     id: "pro",
     label: "Pro",
-    tagline: "For teams shipping production builds.",
+    tagline: "For teams shipping production builds. Best value.",
     includedCasGb: 500,
     includedRequests: 20_000_000,
     includedWorkspaces: null, // unlimited
@@ -134,8 +180,27 @@ export const TIER_RATE_CARD: Readonly<Record<TierId, TierShape>> = {
     dpa: false,
     auditLogExport: false,
     support: "Email (1 business-day response target)",
-    usdMonthlyBase: 25,
-    usdAnnualList: 250,
+    usdMonthlyBase: 50,
+    usdAnnualList: 500,
+    usdPerCasGbOverage: 0, // hard cap at v0.1; metered overage deferred to v0.2.
+    usdPerRequestOverage: 0,
+    hardCap: true,
+  },
+  max: {
+    id: "max",
+    label: "Max",
+    tagline: "For scaling teams pushing serious build volume.",
+    includedCasGb: 2_000,
+    includedRequests: 80_000_000,
+    includedWorkspaces: null, // unlimited
+    byok: false,
+    sso: false,
+    slaCredits: false,
+    dpa: false,
+    auditLogExport: false,
+    support: "Priority email (1 business-day response target)",
+    usdMonthlyBase: 149,
+    usdAnnualList: 1_490,
     usdPerCasGbOverage: 0, // hard cap at v0.1; metered overage deferred to v0.2.
     usdPerRequestOverage: 0,
     hardCap: true,
@@ -207,7 +272,7 @@ const clampNonNegative = (n: number): number =>
 
 /**
  * Apply the period discount to the monthly base. Annual = "2 months
- * free" (~16.67% off) per Pro's $250/yr list vs. $25 × 12.
+ * free" (~16.67% off) per Pro's $500/yr list vs. $50 × 12.
  */
 export function applyPeriodDiscount(
   monthlyBase: number,
@@ -248,7 +313,7 @@ export function estimateTier(
     };
   }
 
-  // Hard-cap tiers (Free + Pro at v0.1): overage is structurally
+  // Hard-cap tiers (every priced tier at v0.1): overage is structurally
   // disallowed. Surface `null` so the UI renders "Hard cap" instead
   // of a misleading "$0 overage".
   const casOverageCost = card.hardCap
@@ -294,10 +359,10 @@ export function estimateAllTiers(
 /**
  * Pick the smallest tier (by canonical order) whose included quotas
  * fully cover the usage profile. Returns `null` if usage exceeds even
- * Pro — caller should route to Enterprise contact-sales.
+ * Max — caller should route to Enterprise contact-sales.
  */
 export function recommendTier(usage: UsageInputs): TierId | null {
-  for (const tier of ["free", "pro"] as const) {
+  for (const tier of ["free", "solo", "starter", "pro", "max"] as const) {
     const est = estimateTier(tier, usage, "monthly");
     if (est.fitsWithoutOverage) {
       return tier;
