@@ -200,6 +200,55 @@ function fakeDbClaimThrows(): {
     return { prepare, runCalls };
 }
 
+/**
+ * Variant fake DB that lets a CHOSEN entitlement/billing write throw, to exercise
+ * the #37 durability path (await writes → 500 on failure). `failWhile()` returns
+ * true for a `run()` whose SQL should throw; flipping the closed-over flag lets a
+ * test fail the FIRST delivery's write then succeed on the (Stripe) redelivery.
+ * The idempotency claim INSERT models PK-conflict dedup exactly like `fakeDb`, so
+ * a redelivery after a prior SUCCESS hits the conflict (and a redelivery after a
+ * prior FAILURE — where no claim was ever written — does not).
+ */
+function fakeDbFailableWrite(failWhile: (sql: string) => boolean): {
+    prepare: Mock;
+    runCalls: Array<{ sql: string; params: unknown[] }>;
+} {
+    const runCalls: Array<{ sql: string; params: unknown[] }> = [];
+    const claimedEventIds = new Set<string>();
+    const prepare = vi.fn((sql: string) => {
+        const params: unknown[] = [];
+        const stmt = {
+            bind: vi.fn((...args: unknown[]) => {
+                params.push(...args);
+                return stmt;
+            }),
+            run: vi.fn(async () => {
+                // A targeted entitlement/billing write throws (D1 error) — the
+                // call is NOT recorded as a successful runCall.
+                if (
+                    !sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed") &&
+                    failWhile(sql)
+                ) {
+                    throw new Error("D1_WRITE_FAILED");
+                }
+                runCalls.push({ sql, params: [...params] });
+                let changes = 1;
+                if (sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed")) {
+                    const eventId = params[0] as string;
+                    if (claimedEventIds.has(eventId)) changes = 0;
+                    else {
+                        claimedEventIds.add(eventId);
+                        changes = 1;
+                    }
+                }
+                return { meta: { changes } };
+            }),
+        };
+        return stmt;
+    });
+    return { prepare, runCalls };
+}
+
 /** Build a signed Stripe webhook Request. */
 async function makeStripeRequest(
     event: Record<string, unknown>,
@@ -681,6 +730,183 @@ describe("handleStripeWebhook", () => {
         );
         expect(claim).toBeDefined();
         expect(claim!.params).toContain("acknowledged_unknown");
+    });
+
+    // ------------------------------------------------------------------
+    // #37: durable entitlement writes — await + 500-on-failure +
+    //      process-then-claim (emit exactly-once on first SUCCESSFUL delivery)
+    // ------------------------------------------------------------------
+
+    it("durability: write FAILURE → non-2xx (500), NO claim row, NO emit; then redelivery → writes succeed, claim made, emit fires once", async () => {
+        // The core #37 guarantee. The first delivery's entitlement/billing write
+        // throws (D1 error). The handler must NOT return 200, NOT claim, NOT emit
+        // — so Stripe redelivers. The redelivery (write now succeeds) completes
+        // the writes, claims the event, and emits EXACTLY ONCE. (Before #37 the
+        // failed write was swallowed under a 200 → customer paid, no access.)
+        let failWrites = true; // first delivery's billing write throws.
+        const db = fakeDbFailableWrite(
+            (sql) => failWrites && sql.includes("INSERT INTO tenant_billing"),
+        );
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_durable_retry",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_durable",
+                    subscription: "sub_durable",
+                    amount_total: 4900,
+                    metadata: { tenant_id: "tenant_durable", tier: "starter" },
+                },
+            },
+        };
+        const fetchSpy = vi.mocked(globalThis.fetch);
+
+        // --- Delivery 1: the billing write fails. ---
+        const req1 = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res1 = await handleStripeWebhook(req1, baseEnv(db), fakeCtx());
+        expect(res1.status).toBe(500); // non-2xx → Stripe will redeliver.
+        expect(await res1.text()).toBe("write_failed");
+        // NO claim row was written (process-then-claim: we 500'd before claiming).
+        expect(
+            db.runCalls.find((c) =>
+                c.sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed"),
+            ),
+        ).toBeUndefined();
+        // NO analytics emit on the failed delivery.
+        expect(fetchSpy).not.toHaveBeenCalled();
+
+        // --- Delivery 2 (Stripe redelivery): the write now succeeds. ---
+        failWrites = false;
+        const req2 = await makeStripeRequest(event, TEST_SECRET, nowMs + 1000);
+        const res2 = await handleStripeWebhook(req2, baseEnv(db), fakeCtx());
+        expect(res2.status).toBe(200);
+        // The entitlement/billing write completed this time.
+        expect(
+            db.runCalls.find((c) => c.sql.includes("INSERT INTO tenant_billing")),
+        ).toBeDefined();
+        // The claim was made AFTER the writes succeeded (changes=1, first success).
+        expect(
+            db.runCalls.find((c) =>
+                c.sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed"),
+            ),
+        ).toBeDefined();
+        // The emit fired EXACTLY ONCE (on the first SUCCESSFUL delivery), so MRR
+        // is neither lost (the failed attempt) nor double-counted.
+        expect(fetchSpy.mock.calls.length).toBe(1);
+        const body = JSON.parse(fetchSpy.mock.calls[0]![1]?.body as string) as {
+            events: Array<{ event_name: string }>;
+        };
+        expect(body.events[0]!.event_name).toBe("paid_subscription_started");
+    });
+
+    it("durability: happy path → writes AWAITED, 200, claim made, emit once", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_durable_happy",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_happy",
+                    subscription: "sub_happy",
+                    amount_total: 4900,
+                    metadata: { tenant_id: "tenant_happy", tier: "starter" },
+                },
+            },
+        };
+        const fetchSpy = vi.mocked(globalThis.fetch);
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // Writes ran (awaited) AND the claim was written after them.
+        expect(
+            db.runCalls.find((c) => c.sql.includes("INSERT INTO tenant_billing")),
+        ).toBeDefined();
+        expect(
+            db.runCalls.find((c) => c.sql.includes("INSERT INTO tier_selections")),
+        ).toBeDefined();
+        expect(
+            db.runCalls.find((c) =>
+                c.sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed"),
+            ),
+        ).toBeDefined();
+        // emit fired exactly once.
+        expect(fetchSpy.mock.calls.length).toBe(1);
+    });
+
+    it("durability: TRUE duplicate (already-succeeded) redelivery → writes re-run, NO second emit, 200", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_durable_dup",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_dup",
+                    subscription: "sub_dup",
+                    amount_total: 4900,
+                    metadata: { tenant_id: "tenant_dup", tier: "starter" },
+                },
+            },
+        };
+        const fetchSpy = vi.mocked(globalThis.fetch);
+
+        // Delivery 1 — succeeds, claims, emits.
+        const req1 = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        expect((await handleStripeWebhook(req1, baseEnv(db), fakeCtx())).status).toBe(200);
+        const emitsAfterFirst = fetchSpy.mock.calls.length;
+        const billingAfterFirst = db.runCalls.filter((c) =>
+            c.sql.includes("INSERT INTO tenant_billing"),
+        ).length;
+        expect(emitsAfterFirst).toBe(1);
+
+        // Delivery 2 — true duplicate (prior success): writes re-run (idempotent),
+        // claim is a PK conflict → NO second emit, still 200.
+        const req2 = await makeStripeRequest(event, TEST_SECRET, nowMs + 1000);
+        const res2 = await handleStripeWebhook(req2, baseEnv(db), fakeCtx());
+        expect(res2.status).toBe(200);
+        // Idempotent writes re-ran (recovery path stays intact).
+        expect(
+            db.runCalls.filter((c) => c.sql.includes("INSERT INTO tenant_billing")).length,
+        ).toBe(billingAfterFirst + 1);
+        // But the emit did NOT fire a second time (exactly-once on success).
+        expect(fetchSpy.mock.calls.length).toBe(emitsAfterFirst);
+    });
+
+    it("durability: emit FAILURE is non-fatal → handler still returns 200 (analytics not money-path)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_emit_fail",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_emitfail",
+                    subscription: "sub_emitfail",
+                    amount_total: 4900,
+                    metadata: { tenant_id: "tenant_emitfail", tier: "starter" },
+                },
+            },
+        };
+        // The analytics fetch throws — emit must NOT fail the webhook.
+        const fetchSpy = vi.mocked(globalThis.fetch);
+        fetchSpy.mockRejectedValueOnce(new Error("ANALYTICS_DOWN"));
+
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        // Writes succeeded + claim made → 200 despite the emit failure.
+        expect(res.status).toBe(200);
+        expect(
+            db.runCalls.find((c) => c.sql.includes("INSERT INTO tenant_billing")),
+        ).toBeDefined();
+        // The event stays claimed (a failed emit does not un-claim it).
+        expect(
+            db.runCalls.find((c) =>
+                c.sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed"),
+            ),
+        ).toBeDefined();
     });
 
     // ------------------------------------------------------------------
