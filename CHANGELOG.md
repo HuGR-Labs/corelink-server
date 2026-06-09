@@ -235,6 +235,15 @@ Each entry cross-references:
   `docs/FINDING-turbo-tenant-isolation.md`.
 
 ### Fixed
+- **The CLI install one-liner told users to `curl https://get.corelink.io | sh` — a
+  domain we do NOT own (`corelink.io` belongs to a third party).** A takeover of that
+  domain could serve malware to anyone running the installer. Repointed the served
+  install script (`apps/get-corelink-worker/src/install.ts`), the worker comments, and
+  the `E2E_INSTALL_URL` default to the live, owned `corelink-get.humangr.com` route
+  (already bound in `wrangler.toml`). Also relaxed the prod-surface test's `set -eu`
+  shebang regex (it required `set -eu` on line 2, but the script has header comments
+  first → it failed against the real script regardless of host). Worker unit tests
+  26/26 green.
 - **Stripe webhook silently dropped entitlement/billing writes on a D1 failure —
   customer paid, no access, no retry (money-path durability; #37, follow-up to
   #34/#36/#178).** The entitlement/billing D1 writes in

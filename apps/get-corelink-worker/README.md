@@ -1,10 +1,10 @@
 # `get-corelink-worker`
 
 Cloudflare Worker serving the **CoreLink CLI install one-liner** at
-`https://get.corelink.io`.
+`https://corelink-get.humangr.com`.
 
 ```bash
-curl -fsSL https://get.corelink.io | sh -s -- --token=$PAT --region=ord
+curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=$PAT --region=ord
 ```
 
 The script:
@@ -25,7 +25,7 @@ The script:
 | Property | Value |
 | --- | --- |
 | Worker name | `corelink-get-cli` |
-| Custom domain | `get.corelink.io` |
+| Custom domain | `corelink-get.humangr.com` |
 | Compatibility date | `2026-04-01` (matches root + clerk-cf Workers) |
 | `workers_dev` | `false` (security hardening — bot-scan resistant) |
 | CPU cap | `30 ms` (static script render is sub-millisecond) |
@@ -39,10 +39,10 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm deploy           # default = dev / staging env
-pnpm deploy:prod      # env.prod with route binding to get.corelink.io
+pnpm deploy:prod      # env.prod with route binding to corelink-get.humangr.com
 ```
 
-The `get.corelink.io` DNS + CF custom-domain mapping is set up via a
+The `corelink-get.humangr.com` DNS + CF custom-domain mapping is set up via a
 **separate Gustavo runbook** (CF dashboard click). Until DNS is live,
 `pnpm dev` exposes the script on a local `wrangler dev` URL for E2E
 testing the install flow.
@@ -125,12 +125,12 @@ The workflow will:
 
 ## Acceptance (Phase 0.H)
 
-1. `GET https://get.corelink.io` returns `Content-Type: text/x-shellscript`
+1. `GET https://corelink-get.humangr.com` returns `Content-Type: text/x-shellscript`
    and exits 200 in < 50 ms p99 (pure static render — no DO / KV / R2 /
    D1 calls).
-2. `curl -fsSL https://get.corelink.io | sh -s -- --token=$TEST_TOKEN --region=ord`
+2. `curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=$TEST_TOKEN --region=ord`
    end-to-end succeeds on Linux x86_64 and Darwin aarch64.
-3. `curl -fsSL https://get.corelink.io | sh -s --` (no `--token`) exits
+3. `curl -fsSL https://corelink-get.humangr.com | sh -s --` (no `--token`) exits
    non-zero with `FATAL: --token required` on stderr.
 4. The served script's `URL=` line points at the
    `humangr-labs/corelink-cli` Releases path verbatim — the GitHub

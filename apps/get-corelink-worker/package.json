@@ -2,7 +2,7 @@
   "name": "@corelink/get-corelink-worker",
   "private": true,
   "version": "0.1.0",
-  "description": "Cloudflare Worker serving the CoreLink CLI install one-liner at https://get.corelink.io (Phase 0.H).",
+  "description": "Cloudflare Worker serving the CoreLink CLI install one-liner at https://corelink-get.humangr.com (Phase 0.H).",
   "type": "module",
   "engines": {
     "node": ">=20.0.0",

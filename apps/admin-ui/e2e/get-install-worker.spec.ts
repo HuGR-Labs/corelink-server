@@ -2,7 +2,7 @@
  * Production-surface E2E — get-corelink-worker install script.
  *
  * The worker (apps/get-corelink-worker) serves the canonical CLI install
- * one-liner at https://get.corelink.io (and the legacy alias
+ * one-liner at https://corelink-get.humangr.com (and the legacy alias
  * https://corelink-get.humangr.com — both routes are configured in
  * wrangler.toml [env.prod.routes]).
  *
@@ -13,7 +13,7 @@
 
 import { test, expect } from "@playwright/test";
 
-const INSTALL_URL = process.env["E2E_INSTALL_URL"] ?? "https://get.corelink.io";
+const INSTALL_URL = process.env["E2E_INSTALL_URL"] ?? "https://corelink-get.humangr.com";
 
 test.describe("get-corelink-worker install script (prod surface)", () => {
   test("serves install script with POSIX shebang + corelink-cli + --token marker", async ({
@@ -39,8 +39,8 @@ test.describe("get-corelink-worker install script (prod surface)", () => {
     expect(body.startsWith("#!/bin/sh"), "must start with POSIX sh shebang").toBe(true);
     expect(body).toContain("corelink-cli");
     expect(body).toContain("--token=");
-    // `set -eu` is the first executable line invariant.
-    expect(body).toMatch(/^#!\/bin\/sh\s*\nset -eu\b/);
+    // `set -eu` is the first executable line (after the shebang + header comments).
+    expect(body).toMatch(/^#!\/bin\/sh\n(?:#.*\n)*set -eu\b/);
   });
 
   test("/healthz returns ok", async ({ request }) => {

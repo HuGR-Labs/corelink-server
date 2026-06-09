@@ -41,7 +41,7 @@ async function fetch(input: string, init?: RequestInit): Promise<Response> {
 
 describe("get-corelink-worker routes", () => {
   it("GET / returns 200 with text/x-shellscript Content-Type", async () => {
-    const res = await fetch("https://get.corelink.io/");
+    const res = await fetch("https://corelink-get.humangr.com/");
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("text/x-shellscript; charset=utf-8");
     const body = await res.text();
@@ -50,21 +50,21 @@ describe("get-corelink-worker routes", () => {
   });
 
   it("GET / response sets Cache-Control no-store (never serve stale)", async () => {
-    const res = await fetch("https://get.corelink.io/");
+    const res = await fetch("https://corelink-get.humangr.com/");
     const cc = res.headers.get("Cache-Control") ?? "";
     expect(cc).toContain("no-store");
     expect(cc).toContain("no-cache");
   });
 
   it("GET / response includes defense-in-depth headers", async () => {
-    const res = await fetch("https://get.corelink.io/");
+    const res = await fetch("https://corelink-get.humangr.com/");
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");
     expect(res.headers.get("Strict-Transport-Security")).toContain("max-age=63072000");
   });
 
   it("GET / response includes pre-HN-launch security headers (CSP/XFO/Permissions)", async () => {
-    const res = await fetch("https://get.corelink.io/");
+    const res = await fetch("https://corelink-get.humangr.com/");
     // Strict CSP — no scripts/iframes/anything since body is shell, not HTML.
     const csp = res.headers.get("Content-Security-Policy") ?? "";
     expect(csp).toContain("default-src 'none'");
@@ -76,7 +76,7 @@ describe("get-corelink-worker routes", () => {
   });
 
   it("404 responses still carry security headers", async () => {
-    const res = await fetch("https://get.corelink.io/unknown");
+    const res = await fetch("https://corelink-get.humangr.com/unknown");
     expect(res.status).toBe(404);
     expect(res.headers.get("X-Frame-Options")).toBe("DENY");
     expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
@@ -84,12 +84,12 @@ describe("get-corelink-worker routes", () => {
   });
 
   it("GET / response surfaces ENVIRONMENT for debug-tracing", async () => {
-    const res = await fetch("https://get.corelink.io/");
+    const res = await fetch("https://corelink-get.humangr.com/");
     expect(res.headers.get("X-Corelink-Env")).toBe("test");
   });
 
   it("HEAD / returns 200 with headers but no body", async () => {
-    const res = await fetch("https://get.corelink.io/", { method: "HEAD" });
+    const res = await fetch("https://corelink-get.humangr.com/", { method: "HEAD" });
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("text/x-shellscript; charset=utf-8");
     const body = await res.text();
@@ -97,31 +97,31 @@ describe("get-corelink-worker routes", () => {
   });
 
   it("GET /healthz returns 200 with `ok`", async () => {
-    const res = await fetch("https://get.corelink.io/healthz");
+    const res = await fetch("https://corelink-get.humangr.com/healthz");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok\n");
   });
 
   it("GET /unknown returns 404", async () => {
-    const res = await fetch("https://get.corelink.io/unknown-path");
+    const res = await fetch("https://corelink-get.humangr.com/unknown-path");
     expect(res.status).toBe(404);
   });
 
   it("POST / returns 405 with Allow header listing GET, HEAD", async () => {
-    const res = await fetch("https://get.corelink.io/", { method: "POST" });
+    const res = await fetch("https://corelink-get.humangr.com/", { method: "POST" });
     expect(res.status).toBe(405);
     expect(res.headers.get("Allow")).toBe("GET, HEAD");
   });
 
   it("PUT / returns 405", async () => {
-    const res = await fetch("https://get.corelink.io/", { method: "PUT" });
+    const res = await fetch("https://corelink-get.humangr.com/", { method: "PUT" });
     expect(res.status).toBe(405);
   });
 
   it("query parameters are ignored (script body is deterministic)", async () => {
-    const a = await (await fetch("https://get.corelink.io/")).text();
+    const a = await (await fetch("https://corelink-get.humangr.com/")).text();
     const b = await (
-      await fetch("https://get.corelink.io/?ref=marketing&utm_source=docs")
+      await fetch("https://corelink-get.humangr.com/?ref=marketing&utm_source=docs")
     ).text();
     expect(a).toBe(b);
   });
@@ -129,7 +129,7 @@ describe("get-corelink-worker routes", () => {
   it("empty pathname is treated as root", async () => {
     // URL constructor normalizes empty pathname to "/" — verify the
     // route table handles both forms identically.
-    const res = await fetch("https://get.corelink.io");
+    const res = await fetch("https://corelink-get.humangr.com");
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("text/x-shellscript; charset=utf-8");
   });

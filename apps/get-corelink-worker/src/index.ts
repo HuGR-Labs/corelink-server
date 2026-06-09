@@ -1,10 +1,10 @@
 /**
  * `get-corelink-worker` — Cloudflare Worker serving the CoreLink CLI
- * install one-liner at https://get.corelink.io.
+ * install one-liner at https://corelink-get.humangr.com.
  *
  * Architecture:
  *
- *   Internet HTTPS GET https://get.corelink.io
+ *   Internet HTTPS GET https://corelink-get.humangr.com
  *                  ↓
  *              this Worker (route table + render install.ts template)
  *                  ↓
