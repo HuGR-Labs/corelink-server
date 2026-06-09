@@ -1,9 +1,9 @@
 # CoreLink Do Not Track (DNT) Policy
 # RFC 5785 well-known resource; format per EFF DNT Policy v1.0.
 #
-# This file is served at https://corelink.dev/.well-known/dnt-policy.txt
+# This file is served at https://corelink-docs.humangr.com/.well-known/dnt-policy.txt
 # Last updated: 2026-05-15
-# Canonical: https://corelink.dev/.well-known/dnt-policy.txt
+# Canonical: https://corelink-docs.humangr.com/.well-known/dnt-policy.txt
 
 CoreLink ("we") commits to the following behaviour for any HTTP request
 where the user agent sends the `DNT: 1` header (RFC 6797 §5, W3C TPE).
@@ -12,9 +12,9 @@ where the user agent sends the `DNT: 1` header (RFC 6797 §5, W3C TPE).
 
 When `DNT: 1` is present on any request to:
 
-  - corelink.dev
-  - *.corelink.dev (including api.corelink.dev, admin.corelink.dev,
-    docs.corelink.dev, status.corelink.dev)
+  - the CoreLink product hosts under humangr.com: corelink-api,
+    corelink-app, corelink-docs, corelink-signup, and corelink-admin
+    (each `.humangr.com`)
 
 we will not:
 
@@ -40,7 +40,7 @@ without `DNT: 1`, we may:
 
 ## 3. Sub-processors and DNT
 
-Where a vendor in our [public sub-processor list](https://corelink.dev/trust/subprocessors)
+Where a vendor in our [public sub-processor list](https://corelink-docs.humangr.com/trust/subprocessors)
 honours DNT independently (e.g., Cloudflare's privacy posture), the DNT
 signal is propagated unmodified. Where a vendor does not honour DNT, we
 do not enable behavioural-tracking features in that vendor's product,
@@ -59,9 +59,9 @@ regardless of the DNT signal.
 
 If you observe a violation of this policy:
 
-  Email:  privacy@corelink.dev
+  Email:  corelinksec@humangr.com
   Subject prefix: [DNT]
-  Trust Center: https://corelink.dev/trust
+  Trust Center: https://corelink-docs.humangr.com/trust
 
 We will acknowledge within 5 business days and remediate any confirmed
 violation within 30 days.

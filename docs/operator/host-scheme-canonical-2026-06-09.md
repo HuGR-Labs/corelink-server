@@ -47,6 +47,21 @@ Fixed (PR `fix/live-host-scheme-flat-2026-06-09`):
   link → flat.
 - Test-fixture consistency: `corelink-stripe-real/src/portal.rs`,
   `apps/admin-ui/tests/middleware-pages.test.ts`.
+- (follow-up) the docs unit tests + `static/CNAME` + `static/robots.txt` + several
+  `src/pages/*` were also brought to the flat host.
+
+## ⚠️ `corelink.dev` is a THIRD-PARTY domain — NOT ours
+
+Discovered 2026-06-09: `corelink.dev` belongs to an **unrelated company** ("CoreLink
+Development", an AI web/mobile dev agency in Missouri — its apex serves their marketing
+site; the `*.corelink.dev` subdomains do not resolve). Several files aspirationally used
+it. The docs `CNAME` / `robots.txt` / a unit test were fixed in PR #183; the
+`static/.well-known/{security.txt,dnt-policy.txt}` (which misdirected **security +
+privacy disclosure contacts** to `@corelink.dev` — a stranger) were moved off it to
+`corelinksec@humangr.com` + the live `corelink-docs.humangr.com`. **Our product domain
+is `humangr.com`.** Also dead (not just dotted): `corelink.humangr.com` (apex) and
+`corelink.io` / `get.corelink.io` — only the flat `corelink-<surface>.humangr.com`
+hosts are live.
 
 ## Explicitly NOT touched (correct as-is / out of scope)
 
