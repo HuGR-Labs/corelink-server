@@ -235,6 +235,12 @@ Each entry cross-references:
   `docs/FINDING-turbo-tenant-isolation.md`.
 
 ### Fixed
+- **admin-ui CSP allowed a dead Clerk host (`clerk.corelink.humangr.com`) → the
+  sign-in widget would have been CSP-blocked in production.** The owner created the
+  Clerk **production** instance (Frontend API `clerk.corelink-app.humangr.com`);
+  repointed `script-src`/`connect-src`/`frame-src` (+ the `csp.test.ts` assertions +
+  README) to it. 16/16 csp tests green locally. (The prod `pk_live` + the 5 Clerk DNS
+  CNAMEs are the operator's launch-day step.)
 - **The CLI install one-liner told users to `curl https://get.corelink.io | sh` — a
   domain we do NOT own (`corelink.io` belongs to a third party).** A takeover of that
   domain could serve malware to anyone running the installer. Repointed the served

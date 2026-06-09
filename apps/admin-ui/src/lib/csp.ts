@@ -7,11 +7,11 @@
  *
  * Directives baseline:
  *   - default-src 'self'         (deny-by-default for most fetch contexts)
- *   - script-src  'self' nonce + clerk.corelink.humangr.com
+ *   - script-src  'self' nonce + clerk.corelink-app.humangr.com
  *                                + https://plausible.io
  *                                + https://js.stripe.com
  *   - style-src   'self' 'unsafe-inline' nonce  (Tailwind + Clerk widgets)
- *   - connect-src 'self' + api.corelink.humangr.com + clerk.corelink.humangr.com
+ *   - connect-src 'self' + api.corelink.humangr.com + clerk.corelink-app.humangr.com
  *                                + https://plausible.io
  *                                + https://api.stripe.com
  *                                + https://m.stripe.network
@@ -19,7 +19,7 @@
  *                                + https://billing.stripe.com  (Customer Portal)
  *   - frame-src   https://js.stripe.com + https://hooks.stripe.com
  *                                + https://challenges.cloudflare.com (Clerk bot)
- *                                + https://clerk.corelink.humangr.com (Clerk modals)
+ *                                + https://clerk.corelink-app.humangr.com (Clerk modals)
  *   - img-src     'self' data: https:
  *   - frame-ancestors 'none', form-action 'self', base-uri 'self'
  *   - report-uri /api/csp-report
@@ -52,7 +52,7 @@ export interface CspOptions {
 export function buildCspDirectives(nonce: string): string[] {
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' https://clerk.corelink.humangr.com https://plausible.io https://js.stripe.com`,
+    `script-src 'self' 'nonce-${nonce}' https://clerk.corelink-app.humangr.com https://plausible.io https://js.stripe.com`,
     // 'unsafe-inline' on style-src is acceptable: required by Tailwind CSS JIT (inline
     // <style> blocks) and by Clerk's modal overlay styles. NEVER on script-src.
     // Source: https://clerk.com/docs/security/content-security-policy
@@ -63,10 +63,10 @@ export function buildCspDirectives(nonce: string): string[] {
     //   https://checkout.stripe.com — required for Stripe Checkout session fetch
     //   https://billing.stripe.com  — required for Stripe Customer Portal redirect
     // Source: https://docs.stripe.com/security/guide#content-security-policy
-    "connect-src 'self' https://corelink-api.humangr.com https://clerk.corelink.humangr.com https://plausible.io https://api.stripe.com https://m.stripe.network https://checkout.stripe.com https://billing.stripe.com",
-    // frame-src addition: https://clerk.corelink.humangr.com for Clerk modal/popup auth steps
+    "connect-src 'self' https://corelink-api.humangr.com https://clerk.corelink-app.humangr.com https://plausible.io https://api.stripe.com https://m.stripe.network https://checkout.stripe.com https://billing.stripe.com",
+    // frame-src addition: https://clerk.corelink-app.humangr.com for Clerk modal/popup auth steps
     // Source: https://clerk.com/docs/security/content-security-policy
-    "frame-src https://js.stripe.com https://hooks.stripe.com https://challenges.cloudflare.com https://clerk.corelink.humangr.com",
+    "frame-src https://js.stripe.com https://hooks.stripe.com https://challenges.cloudflare.com https://clerk.corelink-app.humangr.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
