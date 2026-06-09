@@ -44,9 +44,9 @@ describe("CSP header generation", () => {
     expect(buildCspHeaderValue("n")).toContain("report-uri /api/csp-report");
   });
 
-  it("allows clerk.corelink.humangr.com for script + connect", () => {
+  it("allows clerk.corelink-app.humangr.com for script + connect", () => {
     const value = buildCspHeaderValue("n");
-    expect(value).toContain("https://clerk.corelink.humangr.com");
+    expect(value).toContain("https://clerk.corelink-app.humangr.com");
     expect(value).toContain("https://corelink-api.humangr.com");
   });
 
@@ -78,7 +78,7 @@ describe("CSP header generation", () => {
     // Source: https://clerk.com/docs/security/content-security-policy
     const directives = buildCspDirectives("n");
     const frame = directives.find((d) => d.startsWith("frame-src")) ?? "";
-    expect(frame).toContain("https://clerk.corelink.humangr.com");
+    expect(frame).toContain("https://clerk.corelink-app.humangr.com");
   });
 
   it("style-src includes 'unsafe-inline' (required by Tailwind + Clerk widgets)", () => {
