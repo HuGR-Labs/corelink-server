@@ -1,7 +1,7 @@
 /**
  * Canonical CoreLink CLI install shell-script template.
  *
- * Served verbatim by the `get-corelink-worker` at https://get.corelink.io.
+ * Served verbatim by the `get-corelink-worker` at https://corelink-get.humangr.com.
  * Two placeholders are interpolated at render time from `Env`:
  *
  *   - `__RELEASE_ORIGIN__` → `env.RELEASE_ORIGIN`
@@ -69,7 +69,7 @@ export function renderInstallScript(config: InstallScriptConfig): string {
  * — the leading whitespace of the heredoc body is significant.
  */
 const INSTALL_SCRIPT_TEMPLATE = `#!/bin/sh
-# CoreLink CLI installer — served from https://get.corelink.io.
+# CoreLink CLI installer — served from https://corelink-get.humangr.com.
 # Source: github.com/humangr-labs/corelink-cli :: apps/get-corelink-worker.
 # Re-run is safe: writes to /usr/local/bin/corelink and ~/.corelink/config.toml.
 set -eu
@@ -87,7 +87,7 @@ done
 
 if [ -z "$TOKEN" ]; then
   echo "FATAL: --token required" >&2
-  echo "Usage: curl -fsSL https://get.corelink.io | sh -s -- --token=<PAT> [--region=<region>]" >&2
+  echo "Usage: curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=<PAT> [--region=<region>]" >&2
   exit 2
 fi
 
