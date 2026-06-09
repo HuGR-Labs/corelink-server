@@ -59,7 +59,7 @@ tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 tokio-test = { workspace = true }
 # d1-migrations: rusqlite with bundled libsqlite3 (CI host-only).
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 # drata-sync: synchronous blocking HTTPS client (no tokio in src/).
 reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }
 # supply-verify CLI deps:
@@ -81,7 +81,7 @@ proptest = { workspace = true }
 mockito = "1"
 wiremock = "0.6"
 rand = "0.9"
-rand_chacha = "0.9"
+rand_chacha = "0.10"
 # Cross-crate SLI binding tests (DR-16 wave-14, dr_backup_verify_sli_binding.rs):
 corelink-slo = { workspace = true }
 
