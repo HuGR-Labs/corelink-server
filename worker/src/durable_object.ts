@@ -466,9 +466,11 @@ export class CoreLinkServer implements DurableObject {
           STRIPE_SECRET_KEY: this.env.STRIPE_SECRET_KEY ?? "",
           STRIPE_AUTH_MODE: this.env.STRIPE_AUTH_MODE ?? "",
           STRIPE_WEBHOOK_SECRET: this.env.STRIPE_WEBHOOK_SECRET ?? "",
+          STRIPE_PRICE_ID_SOLO: this.env.STRIPE_PRICE_ID_SOLO ?? "",
           STRIPE_PRICE_ID_STARTER: this.env.STRIPE_PRICE_ID_STARTER ?? "",
           STRIPE_PRICE_ID_TEAM: this.env.STRIPE_PRICE_ID_TEAM ?? "",
           STRIPE_PRICE_ID_PRO: this.env.STRIPE_PRICE_ID_PRO ?? "",
+          STRIPE_PRICE_ID_MAX: this.env.STRIPE_PRICE_ID_MAX ?? "",
           CORELINK_DPA_VERSION: this.env.CORELINK_DPA_VERSION ?? "",
           // ADR-MULTI-REGION-V1 — per-region R2 bucket overrides.
           // Absent/empty → container defaults to IAD (corelink-ac-iad / iad).

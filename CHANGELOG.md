@@ -34,6 +34,15 @@ Each entry cross-references:
   `solo`/`max`, retains `team`) via the SQLite 12-step rebuild (zero data loss).
   New `scripts/ops/stripe-setup-tiers.sh` (idempotent, safety-gated, not run)
   provisions the live products and emits `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}`.
+- **6-tier money-path wiring through the TypeScript edge.** Completes the change
+  on the worker side (the Rust/container side shipped above): the Durable Object
+  now forwards `STRIPE_PRICE_ID_{SOLO,MAX}` into the container env (alongside
+  Starter/Pro) so Solo/Max checkout sessions resolve a price instead of 500-ing,
+  and the `signup-worker` Stripe webhook's reverse price→tier map + `PaidTier`
+  union + `asPaidTier` learn `solo`/`max` so a paid Solo/Max subscription
+  activates `tier_selections.tier` (without it those customers pay but stay
+  un-entitled). `stripe-setup-tiers.sh` fixed: `--live` is a per-command flag and
+  a live `STRIPE_API_KEY` is auto-detected.
 
 ### Added
 - **Durable D1-HTTP billing writer for the Stripe-webhook materializer

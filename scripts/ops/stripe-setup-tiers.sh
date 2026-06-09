@@ -158,13 +158,26 @@ fi
 
 # Build the common flag set passed to EVERY `stripe` invocation. We never put a
 # key here — auth is the CLI's own (`stripe login` / its STRIPE_API_KEY env).
+# A LIVE key supplied via STRIPE_API_KEY (e.g. a restricted key with Products +
+# Prices write, since the `stripe login` key is read-only) already puts the CLI
+# in live mode by itself — combining it with --live errors. So when such a key
+# is present we LABEL live but do NOT add the --live flag (the key drives mode).
+# A plain --live with no STRIPE_API_KEY uses the config's live key as before.
+if [[ "${STRIPE_API_KEY:-}" == rk_live_* || "${STRIPE_API_KEY:-}" == sk_live_* ]]; then
+    LIVE=true
+fi
 STRIPE_FLAGS=()
-$LIVE && STRIPE_FLAGS+=("--live")
+if $LIVE && [[ -z "${STRIPE_API_KEY:-}" ]]; then
+    STRIPE_FLAGS+=("--live")
+fi
 [[ -n "$ACCOUNT" ]] && STRIPE_FLAGS+=("--account" "$ACCOUNT")
 
-# Run the Stripe CLI with the common flags. Output goes to stdout for capture.
+# Run the Stripe CLI. NOTE: `--live` / `--account` are PER-COMMAND flags in the
+# Stripe CLI (v1.x) and must FOLLOW the resource+operation — putting them first
+# makes the CLI parse `--live` as an unknown subcommand ("Unknown command
+# --live"). So the common flags go AFTER "$@". Output goes to stdout for capture.
 stripe_cli() {
-    "$STRIPE_BIN" "${STRIPE_FLAGS[@]}" "$@"
+    "$STRIPE_BIN" "$@" "${STRIPE_FLAGS[@]}"
 }
 
 # Extract a top-level `"id"` string from a Stripe JSON object on stdin.

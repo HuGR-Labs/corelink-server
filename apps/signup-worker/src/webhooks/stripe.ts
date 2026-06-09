@@ -85,9 +85,11 @@ export interface StripeWebhookEnv extends AnalyticsEmitEnv {
     // CREATE a session. The webhook reads them in REVERSE (price → tier) so an
     // in-place Stripe plan change on customer.subscription.updated can map the
     // new price back to our tier and propagate it to tier_selections.tier.
+    STRIPE_PRICE_ID_SOLO?: string;
     STRIPE_PRICE_ID_STARTER?: string;
     STRIPE_PRICE_ID_TEAM?: string;
     STRIPE_PRICE_ID_PRO?: string;
+    STRIPE_PRICE_ID_MAX?: string;
 }
 
 // Minimal D1 interface — keeps unit tests independent of @cloudflare/workers-types.
@@ -230,11 +232,17 @@ function centsToUsd(cents: unknown): number {
 }
 
 /** The canonical paid tiers the tier_selections FSM may be activated on. */
-type PaidTier = "starter" | "team" | "pro";
+type PaidTier = "solo" | "starter" | "team" | "pro" | "max";
 
 /** Coerce an arbitrary string to a known paid tier, or null. */
 function asPaidTier(raw: unknown): PaidTier | null {
-    return raw === "starter" || raw === "team" || raw === "pro" ? raw : null;
+    return raw === "solo" ||
+        raw === "starter" ||
+        raw === "team" ||
+        raw === "pro" ||
+        raw === "max"
+        ? raw
+        : null;
 }
 
 /** Read a paid tier straight from Stripe `metadata[tier]` (checkout sets it). */
@@ -266,9 +274,11 @@ function tierFromSubscriptionPrice(
     if (!priceId) return null;
 
     const map: Array<[string | undefined, PaidTier]> = [
+        [env.STRIPE_PRICE_ID_SOLO, "solo"],
         [env.STRIPE_PRICE_ID_STARTER, "starter"],
         [env.STRIPE_PRICE_ID_TEAM, "team"],
         [env.STRIPE_PRICE_ID_PRO, "pro"],
+        [env.STRIPE_PRICE_ID_MAX, "max"],
     ];
     for (const [configured, tier] of map) {
         if (configured && configured === priceId) return tier;
