@@ -114,6 +114,25 @@ Each entry cross-references:
   adapters (cargo / brew / npm / pip / oci). Deploy + measurement owner-gated.
 
 ### Security
+- **Signup-worker secrets brought under governance (brutal-audit B3).** The
+  `corelink-signup-worker` Worker owns the secrets that gate the entire
+  signup→provision→first-payment path (`CLERK_WEBHOOK_SECRET`, `CLERK_SECRET_KEY`,
+  `CORELINK_INTERNAL_AUTH_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_*`), but
+  it is deployed separately from the main worker (single default env) and was
+  therefore OUTSIDE the scope of `put-secrets-prod.sh` and the
+  `cf-deploy-prod.yml` secret gate — and `CLERK_WEBHOOK_SECRET` was entirely
+  absent from the secrets matrix, so nothing tracked or verified it. Added the
+  `CLERK_WEBHOOK_SECRET` matrix row (#150, with the topology note), documented
+  the signup-worker gate gap in the checklist Notes, and added
+  `scripts/verify-signup-worker-secrets.sh` — a read-only operator pre-launch
+  check that lists the signup-worker's deployed secret NAMES and fails if any
+  required one is missing (never reads values; intentionally NOT CI-wired so it
+  cannot false-fail an unrelated deploy). Follow-up (owner-topology decision): a
+  signup-worker deploy workflow that runs this verifier as a hard gate. (NOTE:
+  the audit's literal suggestion to add `CLERK_WEBHOOK_SECRET` to the main-worker
+  MVP allowlist / `cf-deploy-prod.yml` REQUIRED list was rejected — both target
+  the main worker, so it would have pushed the secret to the wrong Worker and
+  false-failed the gate.)
 - **Pilot-signup route env-gated — killed the hardcoded public dev HMAC key.**
   The `/v1/signup/pilot` route was mounted UNCONDITIONALLY in prod with a public
   constant signing key (`DEV_TOKEN_KEY` in the open repo), making pilot activation
