@@ -40,8 +40,7 @@ use crate::storage::d1_http::D1HttpClient;
 #[async_trait]
 pub trait NpmKvBackend: Send + Sync + std::fmt::Debug {
     /// Fetch `(value, inserted_at_unix_ms)` for `(namespace, key)`, or `None`.
-    async fn get(&self, namespace: &str, key: &str)
-        -> Result<Option<(Vec<u8>, u64)>, String>;
+    async fn get(&self, namespace: &str, key: &str) -> Result<Option<(Vec<u8>, u64)>, String>;
     /// Upsert `(namespace, key) → (value, inserted_at_unix_ms)`.
     async fn put(
         &self,
@@ -54,11 +53,7 @@ pub trait NpmKvBackend: Send + Sync + std::fmt::Debug {
 
 #[async_trait]
 impl NpmKvBackend for D1HttpClient {
-    async fn get(
-        &self,
-        namespace: &str,
-        key: &str,
-    ) -> Result<Option<(Vec<u8>, u64)>, String> {
+    async fn get(&self, namespace: &str, key: &str) -> Result<Option<(Vec<u8>, u64)>, String> {
         // Value is stored as hex (D1 over HTTP is JSON-only; npm metadata is
         // UTF-8 JSON, but hex keeps the column binary-safe + avoids escaping
         // surprises). `inserted_ms` is the freshness anchor the adapter TTLs.
@@ -215,11 +210,7 @@ mod tests {
     struct FakeBackend(Mutex<FakeRows>);
     #[async_trait]
     impl NpmKvBackend for FakeBackend {
-        async fn get(
-            &self,
-            ns: &str,
-            key: &str,
-        ) -> Result<Option<(Vec<u8>, u64)>, String> {
+        async fn get(&self, ns: &str, key: &str) -> Result<Option<(Vec<u8>, u64)>, String> {
             Ok(self
                 .0
                 .lock()
@@ -227,13 +218,7 @@ mod tests {
                 .get(&(ns.to_owned(), key.to_owned()))
                 .cloned())
         }
-        async fn put(
-            &self,
-            ns: &str,
-            key: &str,
-            value: Vec<u8>,
-            ts: u64,
-        ) -> Result<(), String> {
+        async fn put(&self, ns: &str, key: &str, value: Vec<u8>, ts: u64) -> Result<(), String> {
             self.0
                 .lock()
                 .unwrap()
@@ -266,7 +251,10 @@ mod tests {
             .put("tenant-a", "npm:meta:@org/x", b"a".to_vec(), 1)
             .await
             .unwrap();
-        assert_eq!(store.get("tenant-b", "npm:meta:@org/x").await.unwrap(), None);
+        assert_eq!(
+            store.get("tenant-b", "npm:meta:@org/x").await.unwrap(),
+            None
+        );
         assert_eq!(
             store.get("tenant-a", "npm:meta:@org/x").await.unwrap(),
             Some((b"a".to_vec(), 1))

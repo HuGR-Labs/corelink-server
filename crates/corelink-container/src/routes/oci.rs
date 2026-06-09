@@ -283,10 +283,13 @@ impl TenantResolver for OciPatResolver {
         // so the `/token` exchange downscopes the registry grant — a
         // read-only PAT cannot mint a `push` bearer.
         let (tenant_text, can_write) =
-            self.0.verify_capability(pat.expose()).await.map_err(|e| match e {
-                VerifyError::InvalidPat => "invalid PAT".to_owned(),
-                VerifyError::Backend(m) => format!("backend: {m}"),
-            })?;
+            self.0
+                .verify_capability(pat.expose())
+                .await
+                .map_err(|e| match e {
+                    VerifyError::InvalidPat => "invalid PAT".to_owned(),
+                    VerifyError::Backend(m) => format!("backend: {m}"),
+                })?;
         let uuid = Uuid::parse_str(&tenant_text)
             .map_err(|e| format!("backend: malformed tenant uuid: {e}"))?;
         Ok(ResolvedPat {
@@ -394,8 +397,8 @@ mod tests {
         CasHandlerError, CasReadRequest, CasReadResponse, CasWriteRequest, CasWriteResponse,
     };
     use corelink_pat::{
-        mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId as PatTenantId, SCOPE_CACHE_R,
-        SCOPE_CACHE_RW,
+        mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId as PatTenantId,
+        SCOPE_CACHE_R, SCOPE_CACHE_RW,
     };
     use tower::ServiceExt; // for `.oneshot`
     use uuid::Uuid;
@@ -453,10 +456,10 @@ mod tests {
             content_hash: &str,
             _len: u64,
         ) -> Result<(), String> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert((ns.to_owned(), url_hash.to_owned()), content_hash.to_owned());
+            self.0.lock().unwrap().insert(
+                (ns.to_owned(), url_hash.to_owned()),
+                content_hash.to_owned(),
+            );
             Ok(())
         }
     }

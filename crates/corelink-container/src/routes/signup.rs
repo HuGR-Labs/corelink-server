@@ -1162,7 +1162,9 @@ mod tests {
     /// caller never mounts `/v1/signup/pilot` with the public dev key.
     #[test]
     fn build_state_from_env_is_none_without_secret() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let prev = std::env::var("SIGNUP_TOKEN_KEY").ok();
         std::env::remove_var("SIGNUP_TOKEN_KEY");
         assert!(
@@ -1178,7 +1180,9 @@ mod tests {
     /// the secret set mounts the route.
     #[test]
     fn build_state_from_env_is_some_with_valid_hex_secret() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let prev = std::env::var("SIGNUP_TOKEN_KEY").ok();
         // 32 bytes (0xAB) hex-encoded.
         std::env::set_var("SIGNUP_TOKEN_KEY", "ab".repeat(32));
@@ -1196,7 +1200,9 @@ mod tests {
     /// (fail-CLOSED), mirroring `internal_pat`'s length floor.
     #[test]
     fn build_state_from_env_is_none_with_short_secret() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let prev = std::env::var("SIGNUP_TOKEN_KEY").ok();
         // 16 bytes — below the 32-byte floor.
         std::env::set_var("SIGNUP_TOKEN_KEY", "cd".repeat(16));

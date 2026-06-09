@@ -177,10 +177,9 @@ impl KvStore for PipIndexKvStore {
         // round-trip via hex to stay binary-safe + column-stable. `hex` is
         // already a container dep; this keeps the path lint-clean (no manual
         // indexing) vs a hand-rolled base64.
-        let value_hex = row
-            .get("value")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| PipAdapterError::Kv("D1 adapter_pip_index: missing `value`".to_owned()))?;
+        let value_hex = row.get("value").and_then(|v| v.as_str()).ok_or_else(|| {
+            PipAdapterError::Kv("D1 adapter_pip_index: missing `value`".to_owned())
+        })?;
         let value = hex::decode(value_hex)
             .map_err(|e| PipAdapterError::Kv(format!("D1 adapter_pip_index: value decode: {e}")))?;
         let inserted_ms = row
@@ -237,7 +236,9 @@ impl TenantResolver for PipPatResolver {
         let uuid = uuid::Uuid::parse_str(&tenant_text).map_err(|e| {
             // D1 stores canonical uuid text; a non-uuid here is a backend
             // invariant break, not a client-auth failure.
-            PipAdapterError::Cas(format!("verifier returned non-uuid tenant `{tenant_text}`: {e}"))
+            PipAdapterError::Cas(format!(
+                "verifier returned non-uuid tenant `{tenant_text}`: {e}"
+            ))
         })?;
         Ok(TenantId::from_uuid(uuid))
     }
@@ -405,7 +406,8 @@ mod tests {
         CasHandlerError, CasReadRequest, CasReadResponse, CasWriteRequest, CasWriteResponse,
     };
     use corelink_pat::{
-        mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId as PatTenantId, SCOPE_CACHE_RW,
+        mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId as PatTenantId,
+        SCOPE_CACHE_RW,
     };
     use tower::ServiceExt; // for `.oneshot`
     use uuid::Uuid;
@@ -460,10 +462,10 @@ mod tests {
             content_hash: &str,
             _len: u64,
         ) -> Result<(), String> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert((ns.to_owned(), url_hash.to_owned()), content_hash.to_owned());
+            self.0.lock().unwrap().insert(
+                (ns.to_owned(), url_hash.to_owned()),
+                content_hash.to_owned(),
+            );
             Ok(())
         }
     }
@@ -527,10 +529,10 @@ mod tests {
             value: Vec<u8>,
             inserted_at_unix_ms: u64,
         ) -> Result<(), PipAdapterError> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert((tenant.to_string(), key.to_owned()), (value, inserted_at_unix_ms));
+            self.0.lock().unwrap().insert(
+                (tenant.to_string(), key.to_owned()),
+                (value, inserted_at_unix_ms),
+            );
             Ok(())
         }
     }
@@ -610,7 +612,11 @@ mod tests {
     async fn missing_scope_is_403_at_the_gate() {
         let app = router_rejecting();
         let resp = app
-            .oneshot(get("/pip/t/simple/requests/", Some("corelink_whatever"), None))
+            .oneshot(get(
+                "/pip/t/simple/requests/",
+                Some("corelink_whatever"),
+                None,
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
@@ -634,7 +640,11 @@ mod tests {
         // resolver, which the EmptyLookup still rejects → 401 either way.)
         let app = router_rejecting();
         let resp = app
-            .oneshot(get("/pip/t/simple/requests/", Some("ghp_github"), Some(SCOPE_RW)))
+            .oneshot(get(
+                "/pip/t/simple/requests/",
+                Some("ghp_github"),
+                Some(SCOPE_RW),
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
@@ -695,10 +705,10 @@ mod tests {
         // under (PUBLIC, blake3). This is the sha256→blake3 fork in action.
         let blake3 = canonical_hash_hex(&wheel_bytes);
         let cas = Arc::new(StubCas::default());
-        cas.0
-            .lock()
-            .unwrap()
-            .insert((PUBLIC_NAMESPACE.to_owned(), blake3.clone()), wheel_bytes.clone());
+        cas.0.lock().unwrap().insert(
+            (PUBLIC_NAMESPACE.to_owned(), blake3.clone()),
+            wheel_bytes.clone(),
+        );
         let map = Arc::new(FakeMap::default());
         map.0
             .lock()

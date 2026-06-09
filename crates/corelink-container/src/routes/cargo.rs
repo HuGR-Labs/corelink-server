@@ -45,7 +45,9 @@ use axum::Router;
 
 use async_trait::async_trait;
 use corelink_adapter_host::cargo::config::DEFAULT_BODY_SIZE_LIMIT_BYTES;
-use corelink_adapter_host::cargo::ports::{SharedTenantResolver, TenantResolveError, TenantResolver};
+use corelink_adapter_host::cargo::ports::{
+    SharedTenantResolver, TenantResolveError, TenantResolver,
+};
 use corelink_adapter_host::cargo::{server, CargoAdapterConfig, CargoCasBridge};
 use corelink_audit::ports::{AuditEmitter, InMemoryAuditEmitter};
 use corelink_handler_cas::{CasReadHandler, CasWriteHandler};
