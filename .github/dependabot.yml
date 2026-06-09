@@ -41,7 +41,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
-      time: "08:00"
+      time: "04:00"
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 10
     groups:
@@ -63,7 +63,7 @@ updates:
       include: scope
     reviewers:
       - "humangr-labs/security"
-    rebase-strategy: auto
+    rebase-strategy: disabled
 
   # ---------------------------------------------------------------------------
   # GitHub Actions — SHA-pin maintenance.
@@ -74,7 +74,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
-      time: "08:00"
+      time: "04:00"
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 5
     groups:
@@ -92,7 +92,7 @@ updates:
       include: scope
     reviewers:
       - "humangr-labs/security"
-    rebase-strategy: auto
+    rebase-strategy: disabled
 
   # ---------------------------------------------------------------------------
   # npm — admin-ui (Next.js dashboard).
@@ -102,7 +102,7 @@ updates:
     schedule:
       interval: weekly
       day: tuesday
-      time: "08:00"
+      time: "04:00"
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 5
     groups:
@@ -121,7 +121,7 @@ updates:
       include: scope
     reviewers:
       - "humangr-labs/security"
-    rebase-strategy: auto
+    rebase-strategy: disabled
     versioning-strategy: increase
 
   # ---------------------------------------------------------------------------
@@ -132,7 +132,7 @@ updates:
     schedule:
       interval: weekly
       day: wednesday
-      time: "08:00"
+      time: "04:00"
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 5
     groups:
@@ -151,7 +151,7 @@ updates:
       include: scope
     reviewers:
       - "humangr-labs/security"
-    rebase-strategy: auto
+    rebase-strategy: disabled
     versioning-strategy: increase
 
   # ---------------------------------------------------------------------------
@@ -162,7 +162,7 @@ updates:
     schedule:
       interval: weekly
       day: thursday
-      time: "08:00"
+      time: "04:00"
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 3
     groups:
@@ -181,7 +181,7 @@ updates:
       include: scope
     reviewers:
       - "humangr-labs/security"
-    rebase-strategy: auto
+    rebase-strategy: disabled
     versioning-strategy: increase
 
   # ---------------------------------------------------------------------------
@@ -194,7 +194,7 @@ updates:
     schedule:
       interval: weekly
       day: wednesday
-      time: "08:00"
+      time: "04:00"
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 3
     groups:
@@ -213,7 +213,7 @@ updates:
       include: scope
     reviewers:
       - "humangr-labs/security"
-    rebase-strategy: auto
+    rebase-strategy: disabled
     versioning-strategy: increase
 
   # ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ updates:
     schedule:
       interval: weekly
       day: thursday
-      time: "08:00"
+      time: "04:00"
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 3
     groups:
@@ -243,7 +243,7 @@ updates:
       include: scope
     reviewers:
       - "humangr-labs/security"
-    rebase-strategy: auto
+    rebase-strategy: disabled
 
   # ---------------------------------------------------------------------------
   # pip — corelink-py (Python SDK).
@@ -253,7 +253,7 @@ updates:
     schedule:
       interval: weekly
       day: thursday
-      time: "08:00"
+      time: "04:00"
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 3
     groups:
@@ -272,4 +272,4 @@ updates:
       include: scope
     reviewers:
       - "humangr-labs/security"
-    rebase-strategy: auto
+    rebase-strategy: disabled
