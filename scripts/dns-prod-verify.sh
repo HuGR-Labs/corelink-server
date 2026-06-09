@@ -62,37 +62,33 @@ declare -A PLAN_TARGET
 declare -A PLAN_PROXIED
 declare -A PLAN_DNS_ONLY_NOTE
 
-PLAN_TARGET["api.corelink.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
-PLAN_TARGET["app.corelink.humangr.com"]="corelink-admin-ui.pages.dev"
-PLAN_TARGET["docs.corelink.humangr.com"]="corelink-docs.pages.dev"
-PLAN_TARGET["signup.corelink.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
-PLAN_TARGET["admin.corelink.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
-PLAN_TARGET["acme-dev.corelink.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
-PLAN_TARGET["staging.corelink.humangr.com"]="corelink-staging.gustavoschneiter.workers.dev"
-PLAN_TARGET["sandbox.corelink.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
-PLAN_TARGET["go.corelink.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
+# FLAT-rename (2026-06-09): in sync with smoke-prod-corelink.sh DNS_PLAN +
+# dns-prod-plan.sh PLAN_ENTRIES. The 4 dotted wave-29 extras
+# (acme-dev/staging/sandbox/go) are dropped; status stays dotted (deliberate
+# BetterUptime CNAME). See docs/operator/host-scheme-canonical-2026-06-09.md.
+PLAN_TARGET["corelink-api.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
+PLAN_TARGET["corelink-app.humangr.com"]="corelink-admin-ui.pages.dev"
+PLAN_TARGET["corelink-docs.humangr.com"]="corelink-docs.pages.dev"
+PLAN_TARGET["corelink-signup.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
+PLAN_TARGET["corelink-admin.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
 PLAN_TARGET["status.corelink.humangr.com"]="hugrl.betteruptime.com"
 
-PLAN_PROXIED["api.corelink.humangr.com"]="true"
-PLAN_PROXIED["app.corelink.humangr.com"]="true"
-PLAN_PROXIED["docs.corelink.humangr.com"]="true"
-PLAN_PROXIED["signup.corelink.humangr.com"]="true"
-PLAN_PROXIED["admin.corelink.humangr.com"]="true"
-PLAN_PROXIED["acme-dev.corelink.humangr.com"]="true"
-PLAN_PROXIED["staging.corelink.humangr.com"]="true"
-PLAN_PROXIED["sandbox.corelink.humangr.com"]="true"
-PLAN_PROXIED["go.corelink.humangr.com"]="true"
+PLAN_PROXIED["corelink-api.humangr.com"]="true"
+PLAN_PROXIED["corelink-app.humangr.com"]="true"
+PLAN_PROXIED["corelink-docs.humangr.com"]="true"
+PLAN_PROXIED["corelink-signup.humangr.com"]="true"
+PLAN_PROXIED["corelink-admin.humangr.com"]="true"
 PLAN_PROXIED["status.corelink.humangr.com"]="false"
 
 PLAN_DNS_ONLY_NOTE["status.corelink.humangr.com"]="dns-only — TLS managed by BetterUptime, not CF edge"
 
 # Expected TLS health paths (only applicable after Phase E+G deploy)
 declare -A PLAN_HEALTH_PATH
-PLAN_HEALTH_PATH["api.corelink.humangr.com"]="/health"
-PLAN_HEALTH_PATH["app.corelink.humangr.com"]="/"
-PLAN_HEALTH_PATH["docs.corelink.humangr.com"]="/"
-PLAN_HEALTH_PATH["signup.corelink.humangr.com"]="/health"
-PLAN_HEALTH_PATH["admin.corelink.humangr.com"]="/health"
+PLAN_HEALTH_PATH["corelink-api.humangr.com"]="/health"
+PLAN_HEALTH_PATH["corelink-app.humangr.com"]="/"
+PLAN_HEALTH_PATH["corelink-docs.humangr.com"]="/"
+PLAN_HEALTH_PATH["corelink-signup.humangr.com"]="/health"
+PLAN_HEALTH_PATH["corelink-admin.humangr.com"]="/health"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -195,15 +191,11 @@ echo "    Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo ""
 
 NAMES=(
-  "api.corelink.humangr.com"
-  "app.corelink.humangr.com"
-  "docs.corelink.humangr.com"
-  "signup.corelink.humangr.com"
-  "admin.corelink.humangr.com"
-  "acme-dev.corelink.humangr.com"
-  "staging.corelink.humangr.com"
-  "sandbox.corelink.humangr.com"
-  "go.corelink.humangr.com"
+  "corelink-api.humangr.com"
+  "corelink-app.humangr.com"
+  "corelink-docs.humangr.com"
+  "corelink-signup.humangr.com"
+  "corelink-admin.humangr.com"
   "status.corelink.humangr.com"
 )
 
