@@ -211,8 +211,9 @@ rotation owner → compromise response → storage location.
 | 147 | Clerk issuer URL pin (Worker JWT onboarding) | `CLERK_ISSUER_URL` | worker/src/index.ts (onboarding Clerk-JWT issuer pin; compared against the `iss` claim of inbound JWTs to prevent cross-instance token replay) | Clerk | https://dashboard.clerk.com | Clerk dashboard → JWT Templates → copy the `iss` value for the production instance (format: `https://<instance>.clerk.accounts.dev` or custom domain) | rotate-on-compromise / on-instance-change | DevOps | N/A (URL pin, not a credential; rotate only when the Clerk instance is changed or compromised) | cf-wrangler |
 | 148 | OCI registry session HMAC key (≥32 bytes) | `CORELINK_OCI_TOKEN_KEY` | corelink-container (`crates/corelink-container` routes/oci.rs): signs + verifies the short-lived OCI realm bearer tokens minted at `/token` and presented on `/v2` ops. DISTINCT from #141 `PAT_SIGNING_KEY` (which keys the PAT HMAC) — this keys ONLY the OCI session token. The `/v2/*` + `/token` registry route mounts only when this is present (fail-CLOSED). | self-generated (no vendor) | n/a | `openssl rand -hex 32` (≥32-byte raw key); set on the prod container | 180d | SRE Lead | `wrangler secret put CORELINK_OCI_TOKEN_KEY --env prod` (container); rotation invalidates in-flight OCI session tokens (clients simply re-exchange at `/token`); does NOT affect PATs | cf-wrangler |
 | 149 | Signup pilot token HMAC key (HMAC-SHA256, hex) | `SIGNUP_TOKEN_KEY` | corelink-container (`crates/corelink-container` routes/signup.rs): HMAC-SHA256 key for the `/v1/signup/pilot` signed token. The `/v1/signup/pilot` route mounts ONLY when this is present + valid hex (≥32 bytes decoded) — fail-CLOSED. DISTINCT from #141 `PAT_SIGNING_KEY` and #148 `CORELINK_OCI_TOKEN_KEY`. | self-generated (no vendor) | n/a | `openssl rand -hex 32` (≥32-byte hex); set on the prod container | 180d | SRE Lead | `wrangler secret put SIGNUP_TOKEN_KEY --env prod` (container); rotation invalidates outstanding pilot-signup tokens | cf-wrangler |
+| 150 | Clerk webhook signing secret (Svix) | `CLERK_WEBHOOK_SECRET` | **apps/signup-worker** (`webhooks/clerk.ts`): the Svix signing key used to verify the signature of every inbound Clerk `user.created`/`user.updated` webhook BEFORE provisioning a tenant — fail-CLOSED. It is the trigger secret for the entire signup→provision chain: if it is stale/absent, every Clerk webhook 4xx's at the Worker, Svix stops retrying, and NO new tenants are provisioned. **Topology note (brutal-audit B3):** this lives on the `corelink-signup-worker` Worker (single default env — `wrangler secret put CLERK_WEBHOOK_SECRET --config apps/signup-worker/wrangler.toml`, NO `--env`), NOT the main `--env prod` worker. It is therefore OUTSIDE the scope of `put-secrets-prod.sh` and the `cf-deploy-prod.yml` secret gate (both target the main worker). Verify it (and the other signup-worker secrets) pre-launch with `scripts/verify-signup-worker-secrets.sh`. | Clerk | https://dashboard.clerk.com | Clerk dashboard → Webhooks → (endpoint) → Signing Secret (`whsec_…`) | rotate-on-compromise | DevOps | Rotate the endpoint signing secret in Clerk; `wrangler secret put CLERK_WEBHOOK_SECRET --config apps/signup-worker/wrangler.toml`; a stale value breaks all signups | cf-wrangler (signup-worker) |
 
-**Total rows: 148**
+**Total rows: 149**
 
 ## Notes
 
@@ -225,6 +226,18 @@ rotation owner → compromise response → storage location.
 - **BYOK customer-side** secrets (#33, #34) are NOT in `cf-wrangler` —
   customers provision them in their own Vault and we receive scoped credentials
   per-tenant. We never persist these centrally.
+- **Signup-worker secrets are NOT covered by the main deploy gate (known gap —
+  brutal-audit B3).** `corelink-signup-worker` (apps/signup-worker) is a
+  separate Worker with a single default env, deployed independently of
+  `cf-deploy-prod.yml` (which deploys + gates only the main `--env prod`
+  worker). Its required secrets — `CLERK_WEBHOOK_SECRET` (#150), `CLERK_SECRET_KEY`
+  (#6), `CORELINK_INTERNAL_AUTH_KEY` (#142, the signup-worker half),
+  `STRIPE_WEBHOOK_SECRET` (#3), and `STRIPE_PRICE_ID_{TEAM,PRO,STARTER}` — are
+  NOT provisioned by `put-secrets-prod.sh` (it targets the main worker) and NOT
+  checked by any CI step. Until the signup-worker gets its own deploy workflow +
+  secret gate, run `scripts/verify-signup-worker-secrets.sh` as a manual
+  pre-launch gate. **Follow-up (owner-topology decision):** wire a
+  signup-worker deploy workflow that runs this verifier as a hard gate.
 - **Build-metadata** rows (#74, #75) are not secrets in the cryptographic sense
   but are included so the verifier doesn't flag them as missing.
 
