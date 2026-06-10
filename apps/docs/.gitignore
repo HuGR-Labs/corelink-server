@@ -4,3 +4,9 @@ node_modules/
 *.log
 .DS_Store
 dist/
+
+# `vale sync` downloads the Microsoft package into styles/Microsoft/ at
+# CI/local lint time; only README.md + placeholder.yml are tracked.
+styles/Microsoft/*
+!styles/Microsoft/README.md
+!styles/Microsoft/placeholder.yml

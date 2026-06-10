@@ -1,8 +1,0 @@
-# Placeholder so `styles/Microsoft/` exists in git before `vale sync`
-# downloads the upstream package. Real rule files (e.g. `Acronyms.yml`,
-# `Adverbs.yml`, ...) are fetched by the CI workflow.
-extends: existence
-message: "placeholder rule — replaced by `vale sync`"
-level: suggestion
-tokens:
-  - "__corelink_vale_placeholder__"

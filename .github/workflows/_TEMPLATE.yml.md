@@ -30,7 +30,7 @@ actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
 arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536    # v3.0.0
 dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable as of 2026-04-29
 Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c     # v2.7.7
-taiki-e/install-action@daa3c1f1f9a9d46f686d9fc2f65773d0c293688b   # v2.49.49 (cargo-deny@0.16.4)
+taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25   # v2.81.9 (cargo-deny@0.19.8; older tools may still pin v2.49.49)
 sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409 # v3.7.0
 pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d       # v4.1.0
 ```
@@ -122,9 +122,9 @@ jobs:
       # above already provides cargo; just add taiki-e/install-action + the run.
       # Canonical gate lives in cargo-deny.yml — don't duplicate it per crate.
       # - name: Install cargo-deny (native — taiki-e/install-action, SHA-pinned)
-      #   uses: taiki-e/install-action@daa3c1f1f9a9d46f686d9fc2f65773d0c293688b # v2.49.49
+      #   uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
       #   with:
-      #     tool: cargo-deny@0.16.4
+      #     tool: cargo-deny@0.19.8
       # - name: Run cargo-deny (license + advisories + sources + bans)
       #   run: cargo deny --all-features check
 

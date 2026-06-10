@@ -22,6 +22,27 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **admin-ui `/upgrade?plan=<tier>` page — the public pricing CTAs now reach
+  checkout (#49).** Every docs pricing CTA targets
+  `corelink-app.humangr.com/upgrade?plan=<tier>`, but admin-ui had no
+  `/upgrade` route — the money path's front door 404'd. Added
+  `/[locale]/upgrade`: validates `?plan=` against the checkout-able set
+  (solo/starter/team/pro/max; invalid/missing → anchor SKU `pro`), probes the
+  Clerk session with the same predicate as `/api/checkout/session`
+  (signed-out → `/sign-in?redirect_url=…` round-trip back to the page, plan
+  preserved), and for signed-in visitors auto-fires the existing checkout
+  POST via `<UpgradeButton autoStart />` (once-per-mount, StrictMode-safe)
+  behind a minimal accessible tier card (rate-card name+price, `role=status`
+  redirect notice, manual retry fallback). A locale-less `GET /upgrade`
+  forwarder 307s the docs-CTA URL shape onto `/en/upgrade?plan=<normalized>`
+  (same default-locale convention as `/` and `/sign-up`). The checkout
+  route's `PAID_TIERS` gate and the page validation now share one source of
+  truth (`CHECKOUT_TIER_IDS`, src/lib/pricing.ts) so the two surfaces cannot
+  drift. 16 new tests (plan normalization, forwarder, signed-out redirect,
+  tier-card render incl. legacy `team`, auto-fired POST handoff, no-flag
+  no-fire).
+
 ### Fixed
 - **Repo-root wrangler version hygiene — stale v3 broke bare `npx wrangler`.**
   An out-of-band npm install of `@cloudflare/next-on-pages` (~2026-05-14) had
@@ -37,6 +58,44 @@ Each entry cross-references:
   `scripts/deploy-pages-docs-prod.sh` already resolved the repo-local binary
   via `_pages-deploy-common.sh` — its "run pnpm install" hint now actually
   installs a root wrangler. (Task #44)
+- **`corelink-app.humangr.com` (public app entry, all docs pricing CTAs) served
+  the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
+  500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:
+  the 2026-05-30 Pages→Worker migration (`5435fd8a`) moved only
+  `corelink-admin.humangr.com` to the OpenNext Worker and left
+  `corelink-app.humangr.com` attached to the abandoned `corelink-admin-ui`
+  Pages project (broken next-on-pages build, commit `3daebca6`). Fix:
+  `apps/admin-ui/wrangler.toml` now binds `corelink-app.humangr.com` as a
+  Worker custom domain; the two legacy Pages deploy scripts are hard-deprecated
+  (`FORCE_LEGACY_PAGES_DEPLOY=1` escape hatch); owner-gated flip steps in
+  `docs/operator/corelink-app-domain-flip-runbook.md`. No app code, env or
+  secret changes — the identical Worker already serves these routes 200 on
+  `corelink-admin.humangr.com`.
+- **Docs CI: the four pre-existing reds greened (task #42).** (1) The Vale
+  prose-lint jobs (`docs-ci.yml` + `docs-vale.yml`) moved to GitHub-hosted
+  `ubuntu-latest` — `errata-ai/vale-action` downloads a Linux x86_64 reviewdog
+  binary that ENOEXECs (`spawn Unknown system error -8`) on the self-hosted
+  macOS fleet; prose lint needs no secrets or self-hosted hardware. (2)
+  `apps/docs/tests/cli-reference.test.ts` now reads the CLI clap source at its
+  real location `tools/cli/src/main.rs` (moved from `crates/corelink-cli` in
+  wave-33 stage 2.D.3, 360042b8). (3) `apps/docs/tests/sidebars.test.ts`
+  expected-category list updated to the current canonical sidebar (adds the
+  intentional Integrations / Concepts / API categories from 3e1eb226). (4)
+  `Health.mdx` REAPI reference regenerated — legitimate provenance drift after
+  `apps/server/proto/health.proto` moved to
+  `crates/corelink-container/proto/health.proto` (wave-33, 1d0c221e); the
+  generator is deterministic. Also repointed the stale
+  `apps/server/proto/**` docs-ci trigger path at the live
+  `crates/corelink-container/proto/**` so future proto edits re-run the
+  drift gate instead of silently skipping it.
+- **cargo-deny `0.16.4` → `0.19.8` — CVSS 4.0 advisory parsing (repo-wide red gate).**
+  cargo-deny `0.16.4` could not parse CVSS 4.0 advisory vectors, so the new
+  `RUSTSEC-2026-0073` advisory hard-failed the advisories gate at database load on
+  every PR touching `crates/*/src/**`. Bumped to `0.19.8` (prebuilt via SHA-pinned
+  `taiki-e/install-action@fd2f5e3d…` v2.81.9) across all four call sites. Strictly
+  positive security posture (parses *more* advisories; `deny.toml` policy unchanged,
+  verified `advisories/bans/licenses/sources ok`). Governance: ADR-S12-045 v1.2.0 +
+  §14.s12.004.1 Security review (owner-approved 2026-06-10).
 - **6-tier completeness sweep across every TypeScript surface.** The 6-tier
   launch (Solo $15 / Max $149) had shipped Rust-complete but left stale 5-tier
   unions on the TS edge. Closed in one sweep, all aligned to the signed launch
@@ -89,6 +148,17 @@ Each entry cross-references:
   activates `tier_selections.tier` (without it those customers pay but stay
   un-entitled). `stripe-setup-tiers.sh` fixed: `--live` is a per-command flag and
   a live `STRIPE_API_KEY` is auto-detected.
+### Added
+- **Durable Turborepo remote cache** — `storage::r2_kv::R2KvStore` backs the
+  `/v8/artifacts/*` surface with R2 when storage creds are present (closes the
+  `turbo_v8` `TODO(v2)`: artifacts now persist across container restarts;
+  in-RAM `InMemoryKvStore` remains the dev/CI fallback). Per-tenant HMAC prefix
+  isolation; opaque keys (no content-hash verify); a `KvBackend` seam makes the
+  full behavioral suite runnable against an in-process fake (no network). Core
+  suite proves the merge-blockers: tenant isolation incl. path-traversal-as-
+  literal [P0], durability-across-rebuild, no-false-404 on backend error, and
+  proptest invariants (object-key determinism/injectivity/opacity). Full SOTA
+  scenario matrix (307 scenarios, 7 lenses) in `docs/TEST-PLAN-kv-cache.md`.
 
 ### Fixed
 - **Release container build: `corelink-reapi` protoc codegen now resolves the

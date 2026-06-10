@@ -22,9 +22,12 @@ on:
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".github/workflows/docs-ci.yml"
-      # REAPI drift surface (absorbed from docs-reapi-gen.yml per CI-OPT-002):
+      # REAPI drift surface (absorbed from docs-reapi-gen.yml per CI-OPT-002).
+      # apps/server/proto/** moved to crates/corelink-container/proto/** in
+      # wave-33 stage 2.B.1 (1d0c221e) — keep the trigger pointed at the live
+      # location or proto edits silently skip the drift gate.
       - "crates/corelink-reapi/proto/**"
-      - "apps/server/proto/**"
+      - "crates/corelink-container/proto/**"
   push:
     branches: [main]
     paths:
@@ -34,7 +37,7 @@ on:
       - "pnpm-workspace.yaml"
       - ".github/workflows/docs-ci.yml"
       - "crates/corelink-reapi/proto/**"
-      - "apps/server/proto/**"
+      - "crates/corelink-container/proto/**"
   schedule:
     # Nightly Lighthouse baseline at 08:00 UTC (absorbed from docs-lighthouse.yml).
     # Tag-trigger surface from old docs-lighthouse.yml (docs-v*, v*) is
@@ -272,19 +275,47 @@ jobs:
 
   vale:
     name: Vale prose lint
+    # ADVISORY (never fails on findings — `--no-exit`): full-tree error-level
+    # report, i.e. the legacy prose-debt burn-down list. The ENFORCING gate is
+    # docs-vale.yml, scoped to the files each PR changes. Self-hosted with a
+    # checksum-pinned native Vale: errata-ai/vale-action ships a Linux
+    # reviewdog that ENOEXECs on macOS, and GitHub-hosted runners do not
+    # start on this account (billing-blocked).
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
+    env:
+      VALE_VERSION: 3.9.1
+      # sha256 from the official vale_3.9.1_checksums.txt release asset.
+      VALE_SHA256_X86_64: 4f7852dadad2980f0eaadf9a89f7d42085d97a65804b79577a483acba1ee6c8e
+      VALE_SHA256_ARM64: 3d4b5038332784d9828cc6c31b55277603c9e210cc503979bbf4e6e2659aeaa9
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Run Vale
-        uses: errata-ai/vale-action@d89dee975228ae261d22c15adcd03578634d429c # v2.1.1
-        with:
-          version: 3.9.1
-          files: apps/docs/docs
-          fail_on_error: false
-          reporter: github-pr-check
-          vale_flags: "--config=apps/docs/.vale.ini --no-exit"
+      - name: Install Vale (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            arm64)  TARBALL="vale_${VALE_VERSION}_macOS_arm64.tar.gz";  SHA="$VALE_SHA256_ARM64" ;;
+            x86_64) TARBALL="vale_${VALE_VERSION}_macOS_64-bit.tar.gz"; SHA="$VALE_SHA256_X86_64" ;;
+            *) echo "unsupported runner arch: $(uname -m)" >&2; exit 1 ;;
+          esac
+          curl -fsSLo "$RUNNER_TEMP/$TARBALL" \
+            "https://github.com/errata-ai/vale/releases/download/v${VALE_VERSION}/${TARBALL}"
+          echo "$SHA  $RUNNER_TEMP/$TARBALL" | shasum -a 256 -c -
+          tar -xzf "$RUNNER_TEMP/$TARBALL" -C "$RUNNER_TEMP" vale
+          "$RUNNER_TEMP/vale" --version
+
+      - name: Sync Vale packages (Microsoft style)
+        run: |
+          "$RUNNER_TEMP/vale" --config=apps/docs/.vale.ini sync
+
+      - name: Run Vale (full tree, advisory)
+        # _generated/** mirrors .proto comments (REAPI zero-drift gate) —
+        # prose edits there are forbidden, so it is not prose-linted.
+        run: |
+          "$RUNNER_TEMP/vale" --config=apps/docs/.vale.ini --no-exit \
+            --glob='!**/_generated/**' --output=line \
+            apps/docs/docs apps/docs/blog
 
   # ===================================================================
   # CI-OPT-002 absorbed jobs (from former standalone workflows)
