@@ -141,12 +141,14 @@ async function workerFetch(url: string, init?: RequestInit, env?: Env): Promise<
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("QUOTAS constant definitions", () => {
-  it("free tier has 10 GB storage ceiling and 500K request cap (signed rate card)", () => {
+  // Numbers follow the signed launch rate card (6-tier ladder, PR #209 —
+  // worker/src/lib/quota.ts header / apps/docs/src/lib/pricing.ts TIER_RATE_CARD).
+  it("free tier has 10 GB storage ceiling and 500K request cap", () => {
     expect(QUOTAS.free.storageBytesMax).toBe(10 * 1_073_741_824);
     expect(QUOTAS.free.requestsPerMonthMax).toBe(500_000);
   });
 
-  it("solo is 50 GB / 2M and starter is 150 GB / 6M (signed rate card)", () => {
+  it("solo and starter follow the 6-tier rate card (50 GB / 2M and 150 GB / 6M)", () => {
     expect(QUOTAS.solo.storageBytesMax).toBe(50 * 1_073_741_824);
     expect(QUOTAS.solo.requestsPerMonthMax).toBe(2_000_000);
     expect(QUOTAS.starter.storageBytesMax).toBe(150 * 1_073_741_824);
