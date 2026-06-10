@@ -747,7 +747,6 @@ export async function handleStripeWebhook(
             // plan. (Previously this read [plan], which is always absent, and
             // silently recorded "starter" for every team/pro customer.)
             const tierMeta = (obj["metadata"] as Record<string, unknown> | undefined)?.["tier"];
-            const plan = typeof tierMeta === "string" ? tierMeta : "starter";
             // checkout.session does not carry current_period_end — that lives on
             // the subscription object. We leave it null here; it will be filled by
             // the subsequent customer.subscription.created / updated event Stripe
@@ -775,6 +774,23 @@ export async function handleStripeWebhook(
                     status: 500,
                 });
             }
+
+            // FAIL-LOUD (money path, same class as above): our checkout backend
+            // ALWAYS sets metadata[tier] (corelink-stripe-real client.rs:630).
+            // A session without it cannot be attributed to a SKU — the old
+            // fallback recorded "starter" for whatever the customer actually
+            // bought (a Max $149 checkout would be billing-rowed as Starter
+            // $35). Return 500 so Stripe redelivers and the anomalous session
+            // is visible instead of silently mispriced.
+            if (typeof tierMeta !== "string" || !tierMeta) {
+                console.error(
+                    `[stripe-webhook] checkout.session.completed missing metadata[tier] ` +
+                        `(session=${(obj["id"] as string | undefined) ?? "unknown"}); ` +
+                        `returning 500 for redelivery rather than recording a wrong plan`,
+                );
+                return new Response("checkout_missing_tier", { status: 500 });
+            }
+            const plan = tierMeta;
 
             {
                 if (env.BILLING_DB) {
@@ -1048,7 +1064,10 @@ export async function handleStripeWebhook(
                 tenant_id: tenantId,
                 properties: {
                     stripe_subscription_id: stripeSubscriptionId,
-                    from_plan: "starter",
+                    // Real prior plan (metadata[tier] or the price→tier map);
+                    // the old hardcoded "starter" mislabeled every
+                    // solo/team/pro/max cancel in analytics.
+                    from_plan: resolveSubscriptionTier(obj, env) ?? "unknown",
                     to_plan: "free",
                 },
             };

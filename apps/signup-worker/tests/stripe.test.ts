@@ -334,7 +334,7 @@ describe("handleStripeWebhook", () => {
                     metadata: {
                         tenant_id: "tenant_abc",
                         clerk_user_id: "user_clerk_xyz",
-                        plan: "starter",
+                        tier: "starter",
                     },
                 },
             },
@@ -368,7 +368,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_nodb",
                     subscription: "sub_nodb",
                     amount_total: 4900,
-                    metadata: { tenant_id: "t_nodb", plan: "starter" },
+                    metadata: { tenant_id: "t_nodb", tier: "starter" },
                 },
             },
         };
@@ -401,6 +401,37 @@ describe("handleStripeWebhook", () => {
         // silently 200 (the old behavior dropped the entitlement with no retry
         // and no signal) — we return 500 BEFORE the claim so Stripe redelivers.
         expect(res.status).toBe(500);
+        // No billing/tier mutation (we bailed before any write).
+        expect(
+            db.runCalls.find(
+                (c) => c.sql.includes("tenant_billing") || c.sql.includes("tier_selections"),
+            ),
+        ).toBeUndefined();
+    });
+
+    it("checkout.session.completed without metadata[tier] → 500 (fail-loud, no write, Stripe redelivers)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_notier_1",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_notier",
+                    subscription: "sub_notier",
+                    amount_total: 14900,
+                    // tenant_id + customer present, but NO tier: our checkout
+                    // backend always sets metadata[tier], so this session is
+                    // anomalous. The old fallback silently recorded "starter"
+                    // (a Max $149 checkout billing-rowed as Starter $35).
+                    metadata: { tenant_id: "tenant_notier" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(500);
+        expect(await res.text()).toBe("checkout_missing_tier");
         // No billing/tier mutation (we bailed before any write).
         expect(
             db.runCalls.find(
@@ -454,7 +485,7 @@ describe("handleStripeWebhook", () => {
             data: {
                 object: {
                     id: "sub_deleted_xyz",
-                    metadata: { tenant_id: "tenant_del" },
+                    metadata: { tenant_id: "tenant_del", tier: "pro" },
                 },
             },
         };
@@ -473,9 +504,13 @@ describe("handleStripeWebhook", () => {
 
         const fetchSpy = vi.mocked(globalThis.fetch);
         const body = JSON.parse(fetchSpy.mock.calls[0]![1]?.body as string) as {
-            events: Array<{ event_name: string }>;
+            events: Array<{ event_name: string; properties: Record<string, unknown> }>;
         };
         expect(body.events[0]!.event_name).toBe("subscription_canceled");
+        // from_plan is the REAL prior plan (metadata[tier] / price→tier map),
+        // not the old hardcoded "starter".
+        expect(body.events[0]!.properties["from_plan"]).toBe("pro");
+        expect(body.events[0]!.properties["to_plan"]).toBe("free");
     });
 
     it("unknown event type → 200 with no billing/tier mutation or analytics (only the dedup claim)", async () => {
@@ -522,7 +557,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_idem",
                     subscription: "sub_idem",
                     amount_total: 4900,
-                    metadata: { tenant_id: "tenant_idem", plan: "starter" },
+                    metadata: { tenant_id: "tenant_idem", tier: "starter" },
                 },
             },
         });
@@ -553,7 +588,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_dedup",
                     subscription: "sub_dedup",
                     amount_total: 4900,
-                    metadata: { tenant_id: "tenant_dedup", plan: "starter" },
+                    metadata: { tenant_id: "tenant_dedup", tier: "starter" },
                 },
             },
         };
@@ -593,7 +628,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_retry",
                     subscription: "sub_retry",
                     amount_total: 4900,
-                    metadata: { tenant_id: "tenant_retry", plan: "starter" },
+                    metadata: { tenant_id: "tenant_retry", tier: "starter" },
                 },
             },
         };
@@ -816,7 +851,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_claim_err",
                     subscription: "sub_claim_err",
                     amount_total: 4900,
-                    metadata: { tenant_id: "tenant_claim_err", plan: "starter" },
+                    metadata: { tenant_id: "tenant_claim_err", tier: "starter" },
                 },
             },
         };

@@ -44,6 +44,20 @@ Each entry cross-references:
   no-fire).
 
 ### Fixed
+- **Stripe webhook: a paid `checkout.session.completed` without
+  `metadata[tier]` was silently billing-rowed as `starter`** — the
+  fallback in `apps/signup-worker/src/webhooks/stripe.ts` defaulted any
+  missing/unparseable tier metadata to `"starter"`, so an anomalous session
+  (our checkout backend always sets `metadata[tier]`, client.rs:630) would
+  record the WRONG plan with no signal (a Max $149 checkout persisted as
+  Starter $35). Now fails loud — 500 `checkout_missing_tier` before any
+  write, same class as the existing missing-tenant/customer guard, so
+  Stripe redelivers and the anomaly is visible. Also: the
+  `subscription_canceled` analytics event hardcoded `from_plan: "starter"`
+  for every cancel; it now derives the real prior plan via
+  `resolveSubscriptionTier` (metadata\[tier\] / price→tier map, `"unknown"`
+  fallback). Tests: +1 fail-loud case; the fixtures that leaned on the
+  buggy default (`metadata.plan`, never read) now send `metadata.tier`.
 - **`corelink-app.humangr.com` (public app entry, all docs pricing CTAs) served
   the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
   500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:
