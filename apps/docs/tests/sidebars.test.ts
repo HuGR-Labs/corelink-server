@@ -6,17 +6,22 @@ describe("sidebars.ts — Diátaxis 4-quadrant structure", () => {
     expect(Object.keys(sidebars)).toEqual(["defaultSidebar"]);
   });
 
-  it("contains the four Diátaxis categories plus the Trust quadrant", () => {
+  it("contains the canonical top-level category list (Diátaxis + additive)", () => {
     // The four canonical Diátaxis quadrants — tutorial / how-to / reference /
     // explanation — are present as top-level categories. The "Tutorial" label
     // was renamed to "Get Started" per R-8 GA launch checklist (single most-
     // clicked post-launch entry-point; see `apps/docs/sidebars.ts` line 24
     // comment and `.github/workflows/quickstart-validate.yml`).
     //
-    // The "Trust" quadrant is an additive top-level category for the customer-
-    // facing trust-portal pages (compliance / security / pricing) under
-    // cross-functional review per S-18 spec contract §10 anti-scope. It is
-    // not a Diátaxis quadrant; it is a separate gate (see PRR-S18 §9).
+    // Additive (non-Diátaxis) top-level categories:
+    //   - "Integrations" / "Concepts" / "API" — customer-facing entry points
+    //     added intentionally by `docs: navbar + sidebar wiring` (3e1eb226),
+    //     placed above the Diátaxis quadrants for first-time visitor
+    //     discoverability.
+    //   - "Trust" — customer-facing trust-portal pages (compliance /
+    //     security / pricing) under cross-functional review per S-18 spec
+    //     contract §10 anti-scope. Not a Diátaxis quadrant; a separate gate
+    //     (see PRR-S18 §9).
     const sidebar = sidebars.defaultSidebar;
     if (!Array.isArray(sidebar)) {
       throw new Error("expected defaultSidebar to be an array");
@@ -34,6 +39,9 @@ describe("sidebars.ts — Diátaxis 4-quadrant structure", () => {
 
     expect(categoryLabels).toEqual([
       "Get Started",
+      "Integrations",
+      "Concepts",
+      "API",
       "How-to",
       "Reference",
       "Explanation",

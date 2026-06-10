@@ -36,6 +36,31 @@ Each entry cross-references:
   `docs/operator/corelink-app-domain-flip-runbook.md`. No app code, env or
   secret changes — the identical Worker already serves these routes 200 on
   `corelink-admin.humangr.com`.
+- **Docs CI: the four pre-existing reds greened (task #42).** (1) The Vale
+  prose-lint jobs (`docs-ci.yml` + `docs-vale.yml`) moved to GitHub-hosted
+  `ubuntu-latest` — `errata-ai/vale-action` downloads a Linux x86_64 reviewdog
+  binary that ENOEXECs (`spawn Unknown system error -8`) on the self-hosted
+  macOS fleet; prose lint needs no secrets or self-hosted hardware. (2)
+  `apps/docs/tests/cli-reference.test.ts` now reads the CLI clap source at its
+  real location `tools/cli/src/main.rs` (moved from `crates/corelink-cli` in
+  wave-33 stage 2.D.3, 360042b8). (3) `apps/docs/tests/sidebars.test.ts`
+  expected-category list updated to the current canonical sidebar (adds the
+  intentional Integrations / Concepts / API categories from 3e1eb226). (4)
+  `Health.mdx` REAPI reference regenerated — legitimate provenance drift after
+  `apps/server/proto/health.proto` moved to
+  `crates/corelink-container/proto/health.proto` (wave-33, 1d0c221e); the
+  generator is deterministic. Also repointed the stale
+  `apps/server/proto/**` docs-ci trigger path at the live
+  `crates/corelink-container/proto/**` so future proto edits re-run the
+  drift gate instead of silently skipping it.
+- **cargo-deny `0.16.4` → `0.19.8` — CVSS 4.0 advisory parsing (repo-wide red gate).**
+  cargo-deny `0.16.4` could not parse CVSS 4.0 advisory vectors, so the new
+  `RUSTSEC-2026-0073` advisory hard-failed the advisories gate at database load on
+  every PR touching `crates/*/src/**`. Bumped to `0.19.8` (prebuilt via SHA-pinned
+  `taiki-e/install-action@fd2f5e3d…` v2.81.9) across all four call sites. Strictly
+  positive security posture (parses *more* advisories; `deny.toml` policy unchanged,
+  verified `advisories/bans/licenses/sources ok`). Governance: ADR-S12-045 v1.2.0 +
+  §14.s12.004.1 Security review (owner-approved 2026-06-10).
 - **6-tier completeness sweep across every TypeScript surface.** The 6-tier
   launch (Solo $15 / Max $149) had shipped Rust-complete but left stale 5-tier
   unions on the TS edge. Closed in one sweep, all aligned to the signed launch
@@ -88,6 +113,17 @@ Each entry cross-references:
   activates `tier_selections.tier` (without it those customers pay but stay
   un-entitled). `stripe-setup-tiers.sh` fixed: `--live` is a per-command flag and
   a live `STRIPE_API_KEY` is auto-detected.
+### Added
+- **Durable Turborepo remote cache** — `storage::r2_kv::R2KvStore` backs the
+  `/v8/artifacts/*` surface with R2 when storage creds are present (closes the
+  `turbo_v8` `TODO(v2)`: artifacts now persist across container restarts;
+  in-RAM `InMemoryKvStore` remains the dev/CI fallback). Per-tenant HMAC prefix
+  isolation; opaque keys (no content-hash verify); a `KvBackend` seam makes the
+  full behavioral suite runnable against an in-process fake (no network). Core
+  suite proves the merge-blockers: tenant isolation incl. path-traversal-as-
+  literal [P0], durability-across-rebuild, no-false-404 on backend error, and
+  proptest invariants (object-key determinism/injectivity/opacity). Full SOTA
+  scenario matrix (307 scenarios, 7 lenses) in `docs/TEST-PLAN-kv-cache.md`.
 
 ### Fixed
 - **Release container build: `corelink-reapi` protoc codegen now resolves the

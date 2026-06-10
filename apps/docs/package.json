@@ -28,7 +28,7 @@
     "lint": "eslint --max-warnings=0 tests",
     "test": "vitest run",
     "test:watch": "vitest",
-    "vale": "vale --config=.vale.ini docs",
+    "vale": "vale --config=.vale.ini --glob='!**/_generated/**' docs blog",
     "broken-links": "lychee --config lychee.toml ./build || true"
   },
   "dependencies": {
