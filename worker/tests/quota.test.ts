@@ -141,15 +141,16 @@ async function workerFetch(url: string, init?: RequestInit, env?: Env): Promise<
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("QUOTAS constant definitions", () => {
-  it("free tier has 10 GB storage ceiling and 1M request cap", () => {
+  it("free tier has 10 GB storage ceiling and 500K request cap (signed rate card)", () => {
     expect(QUOTAS.free.storageBytesMax).toBe(10 * 1_073_741_824);
-    expect(QUOTAS.free.requestsPerMonthMax).toBe(1_000_000);
+    expect(QUOTAS.free.requestsPerMonthMax).toBe(500_000);
   });
 
-  it("solo and starter map to the same 100 GB ceiling with no request cap", () => {
-    expect(QUOTAS.solo.storageBytesMax).toBe(100 * 1_073_741_824);
-    expect(QUOTAS.solo.requestsPerMonthMax).toBe(Number.MAX_SAFE_INTEGER);
-    expect(QUOTAS.starter.storageBytesMax).toBe(QUOTAS.solo.storageBytesMax);
+  it("solo is 50 GB / 2M and starter is 150 GB / 6M (signed rate card)", () => {
+    expect(QUOTAS.solo.storageBytesMax).toBe(50 * 1_073_741_824);
+    expect(QUOTAS.solo.requestsPerMonthMax).toBe(2_000_000);
+    expect(QUOTAS.starter.storageBytesMax).toBe(150 * 1_073_741_824);
+    expect(QUOTAS.starter.requestsPerMonthMax).toBe(6_000_000);
   });
 
   it("enterprise has no caps (MAX_SAFE_INTEGER)", () => {

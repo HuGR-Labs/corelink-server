@@ -114,6 +114,23 @@ Each entry cross-references:
   `resolveSubscriptionTier` (metadata\[tier\] / price→tier map, `"unknown"`
   fallback). Tests: +1 fail-loud case; the fixtures that leaned on the
   buggy default (`metadata.plan`, never read) now send `metadata.tier`.
+- **fix(worker): Clerk azp allowlist now includes `corelink-app.humangr.com`** — the
+  user-facing sign-up host (#219) was missing from `ONBOARDING_AZP_ALLOWLIST` and
+  `authorizedParties`, so every session minted on corelink-app was 401-rejected on
+  the onboarding/checkout funnel (found by the 2026-06-10 dashboard-wiring design
+  review; latent — no real users yet).
+- **Security hardening sweep (worker, CI workflows, runbook).** Four precise
+  mechanical changes: (1) `x-corelink-tenant-id` added to `CLIENT_TRUST_HEADERS`
+  strip list in `worker/src/index.ts` — the invariant is now structural (strip
+  happens before any forward path can set or delete the header) rather than
+  per-path discipline; (2) prominent `pull_request_target` + merge-ref checkout
+  sentinel comments added to `.github/workflows/dependabot-policy.yml` — guards
+  the self-hosted-runner / PR-head-checkout combination against future unsafe
+  additions; (3) `SEARCH_HAYSTACK` in `.github/workflows/api-deprecation-check.yml`
+  built with `printf '%s\n'` instead of bare shell concatenation — prevents
+  shell-control content in PR title/body from altering downstream `grep` parsing;
+  (4) `SECURITY.md` operational note added: fork-PR approval requirement when the
+  repo goes public + SHA-pinning baseline verified 2026-06-10.
 - **`corelink-app.humangr.com` (public app entry, all docs pricing CTAs) served
   the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
   500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:
