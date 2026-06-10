@@ -1,9 +1,10 @@
-// WI-S16-005 — minimal Clerk org-role binding.
+// WI-S16-005 — Clerk org-role binding.
 //
-// In production this is backed by `@clerk/nextjs` (`auth()` server helper + the
-// `useUser()` client hook). To keep WI-005 testable in isolation and decoupled
-// from the parallel scaffolds (WI-S16-001..004) we expose a single
-// `getCurrentRole()` provider that production wiring overrides.
+// In production this is backed by `@clerk/nextjs/server` (`auth()` — see
+// `clerkProvider` below). The E2E path (double-gated, never active in
+// production builds) synthesizes the context from the playwright fixture
+// cookie instead. Tests can still swap the whole provider via
+// `setAuthProvider`.
 
 import type { ClerkOrgRole } from "./types";
 
@@ -35,7 +36,8 @@ async function defaultProvider(): Promise<AuthContext> {
   };
   const e2e = process.env["NEXT_PUBLIC_E2E_TEST_MODE"];
   if (e2e !== "1" || process.env["NODE_ENV"] === "production") {
-    return empty;
+    // NOT in E2E mode → resolve the real Clerk session server-side.
+    return clerkProvider(empty);
   }
   try {
     // Lazy-load `next/headers` so unit tests (which exercise this module
@@ -71,6 +73,82 @@ async function defaultProvider(): Promise<AuthContext> {
       mfa_verified_at: decoded.mfaAt
         ? new Date(decoded.mfaAt * 1000).toISOString()
         : new Date().toISOString(),
+    };
+  } catch {
+    return empty;
+  }
+}
+
+// ─── Real Clerk session resolution (production path) ─────────────────────────
+//
+// Mirrors the role mapping the E2E path synthesizes from the fixture cookie:
+// an explicit Clerk org role keyed `corelink-admin` / `corelink-viewer` /
+// `corelink-member` maps 1:1 (Clerk v6 prefixes custom org-role keys with
+// `org:`); Clerk's legacy built-in roles map `admin` → `corelink-admin` and
+// `basic_member`/`member` → `corelink-member`. A signed-in user with NO
+// active organization is the self-serve solo-tenant case (signup-worker
+// provisions one tenant per `clerk_user_id`) and gets `corelink-member` —
+// Viewer-minimum for CustomerGuard, NEVER operator scope: `corelink-admin`
+// only ever comes from an explicit org role, so RbacGuard stays fail-closed.
+
+/** Map a raw Clerk `orgRole` claim onto {@link ClerkOrgRole}. */
+function mapClerkOrgRole(orgRole: string | null | undefined): ClerkOrgRole {
+  if (!orgRole) return null;
+  const key = orgRole.startsWith("org:") ? orgRole.slice(4) : orgRole;
+  if (
+    key === "corelink-admin" ||
+    key === "corelink-viewer" ||
+    key === "corelink-member"
+  ) {
+    return key;
+  }
+  if (key === "admin") return "corelink-admin";
+  if (key === "basic_member" || key === "member") return "corelink-member";
+  // Unknown role key → null; the caller downgrades an *authenticated*
+  // session to Viewer-minimum `corelink-member`. Operator scope
+  // (`corelink-admin`) is never inferred — only explicit keys above.
+  return null;
+}
+
+interface ClerkSessionShape {
+  userId?: string | null;
+  orgId?: string | null;
+  orgRole?: string | null;
+  sessionClaims?: {
+    /** Session-token v2 factor-verification-age: [firstFactorAgeMin, secondFactorAgeMin]; -1 = never. */
+    fva?: [number, number];
+  } | null;
+}
+
+/**
+ * Resolve the real Clerk session via `@clerk/nextjs/server` `auth()`.
+ * Fail-closed: any error (Clerk not installed, no middleware context,
+ * unit-test environment, malformed claims) returns the empty context.
+ */
+async function clerkProvider(empty: AuthContext): Promise<AuthContext> {
+  try {
+    // Lazy import so unit tests / non-Clerk environments never crash.
+    const mod = (await import("@clerk/nextjs/server").catch(() => null)) as
+      | { auth?: () => Promise<ClerkSessionShape> }
+      | null;
+    if (!mod?.auth) return empty;
+    const session = await mod.auth();
+    if (!session?.userId) return empty;
+    const role: ClerkOrgRole =
+      mapClerkOrgRole(session.orgRole) ?? "corelink-member";
+    // mfa_verified_at from the v2 session-token `fva` claim (minutes since
+    // the second factor was verified; -1 = never verified). Absent claim or
+    // -1 → null, which mfaFresh() treats as stale (fail closed).
+    let mfaVerifiedAt: string | null = null;
+    const fva = session.sessionClaims?.fva;
+    if (Array.isArray(fva) && typeof fva[1] === "number" && fva[1] >= 0) {
+      mfaVerifiedAt = new Date(Date.now() - fva[1] * 60_000).toISOString();
+    }
+    return {
+      user_id: session.userId,
+      org_id: session.orgId ?? null,
+      role,
+      mfa_verified_at: mfaVerifiedAt,
     };
   } catch {
     return empty;

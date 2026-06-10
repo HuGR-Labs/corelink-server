@@ -147,6 +147,30 @@ Each entry cross-references:
   ladder (free 10 GB/500K, solo 50 GB/2M, starter 150 GB/6M). Test
   harness/expectations only — no Worker runtime behavior changed; full worker
   suite 233/233 + miniflare 22/22 green.
+- **admin-ui auth was decorative — the edge middleware never enforced
+  anything and the production auth provider rejected everyone.** Five audited
+  fixes: (1) `middleware.ts` now calls `auth.protect()` inside the
+  `clerkMiddleware` handler for protected paths, so unauthenticated requests
+  redirect to sign-in (security headers — nonce/CSP — still applied to every
+  response including Clerk's redirects; the no-publishable-key dev/test
+  fallback is preserved); the route matcher gained the genuinely-public
+  surfaces enforcement would otherwise break (`/` landing, locale-prefixed
+  pricing/legal/privacy/security/403, `/api/newsletter/subscribe`) plus a
+  self-gated class for `/upgrade` (Clerk context without middleware protect —
+  the page owns its `?plan=`-preserving sign-in round-trip). (2)
+  `src/lib/auth.ts` resolves the real Clerk session in production (lazy
+  `@clerk/nextjs/server` `auth()`; `orgRole` mapped onto `ClerkOrgRole`,
+  solo users without an org get Viewer-minimum `corelink-member`,
+  `corelink-admin` only ever from an explicit org role; `mfa_verified_at`
+  from the `fva` claim; fail-closed on any error) instead of always returning
+  `role: null`, which left RbacGuard/CustomerGuard rejecting every real user;
+  the double-gated E2E cookie path is unchanged. (3) `customer/*` and
+  `admin/*` moved under the `(authenticated)` route group (URLs unchanged) so
+  ClerkProvider is mounted and client-side `useAuth`/`useUser` work. (4)
+  `/api/newsletter/subscribe` (public POST) is now per-IP rate-limited
+  (`CF-Connecting-IP`, same limiter as `/api/csp-report`; 429 + retry-after
+  with CORS headers). (5) `redactTokens` also scrubs JWT-shaped substrings
+  (Clerk session tokens) from error bodies, not just CoreLink PATs.
 - **`corelink-app.humangr.com` (public app entry, all docs pricing CTAs) served
   the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
   500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:

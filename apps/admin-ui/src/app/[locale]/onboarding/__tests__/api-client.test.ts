@@ -46,6 +46,22 @@ describe("api-client", () => {
     ).toBe("token=corelink_***_REDACTED failed");
   });
 
+  it("redacts JWT-shaped substrings (e.g. Clerk session tokens)", () => {
+    const jwt =
+      "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyXzEyMyJ9.sig-part_ABC123";
+    expect(redactTokens(`Bearer ${jwt} rejected`)).toBe(
+      "Bearer jwt_***_REDACTED rejected",
+    );
+    // Both token shapes in one body are scrubbed.
+    expect(
+      redactTokens(`pat=corelink_test_abc jwt=${jwt}`),
+    ).toBe("pat=corelink_***_REDACTED jwt=jwt_***_REDACTED");
+    // Non-JWT text containing "eyJ" without the 3-segment shape is untouched.
+    expect(redactTokens("prefix eyJonly-one-segment suffix")).toBe(
+      "prefix eyJonly-one-segment suffix",
+    );
+  });
+
   it("throws ApiClientError on non-2xx with redacted body", async () => {
     const fetchImpl = async (): Promise<Response> =>
       new Response("denied: corelink_prod_leaked_value", { status: 403 });

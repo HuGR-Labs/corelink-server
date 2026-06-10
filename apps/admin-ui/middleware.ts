@@ -15,7 +15,7 @@ import {
   generateNonce,
   STATIC_SECURITY_HEADERS,
 } from "@/lib/csp";
-import { isPublicPath } from "@/lib/route-matcher";
+import { isPublicPath, isSelfGatedPath } from "@/lib/route-matcher";
 
 function applySecurityHeaders(res: NextResponse, nonce: string): void {
   // WI-S16-007 deliverable 4: CSP rollout flag.
@@ -68,30 +68,34 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
       const mod = (await import("@clerk/nextjs/server").catch(() => null)) as
         | {
             clerkMiddleware?: (
-              handler: (auth: unknown, request: NextRequest) => Promise<Response> | Response,
+              handler: (
+                auth: { protect: () => Promise<unknown> },
+                request: NextRequest,
+              ) => Promise<Response> | Response,
             ) => (req: NextRequest) => Promise<Response>;
           }
         | null;
       if (mod?.clerkMiddleware) {
-        const handler = mod.clerkMiddleware(async (_auth, _request) => {
+        // Self-gated routes (e.g. /upgrade) need the Clerk request context
+        // (server-side `auth()` must resolve) but own their signed-out
+        // redirect themselves — everything else is enforced here.
+        const enforce = !isSelfGatedPath(pathname);
+        const handler = mod.clerkMiddleware(async (auth, _request) => {
+          if (enforce) {
+            // Real enforcement: unauthenticated requests to protected paths
+            // are redirected to sign-in by Clerk (return URL preserved).
+            await auth.protect();
+          }
           const res = NextResponse.next({ request: { headers: requestHeaders } });
           applySecurityHeaders(res, nonce);
           return res;
         });
         const result = await handler(req);
-        // Augment Clerk's response (which may be a redirect) with our headers.
-        const augmented = NextResponse.next({
-          request: { headers: requestHeaders },
-        });
-        // Copy status + location from Clerk's redirect if applicable.
-        if (result.status >= 300 && result.status < 400 && result.headers.get("location")) {
-          const redirect = NextResponse.redirect(
-            new URL(result.headers.get("location") as string, req.url),
-            result.status,
-          );
-          applySecurityHeaders(redirect, nonce);
-          return redirect;
-        }
+        // Preserve Clerk's response verbatim (set-cookie, handshake headers,
+        // and the sign-in redirect from `auth.protect()`) while guaranteeing
+        // our security headers ride along on EVERY response — including
+        // Clerk's redirects. Re-wrapping makes the headers mutable.
+        const augmented = new NextResponse(result.body, result);
         applySecurityHeaders(augmented, nonce);
         return augmented;
       }
