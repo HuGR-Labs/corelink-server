@@ -23,6 +23,14 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **cargo-deny `0.16.4` → `0.19.8` — CVSS 4.0 advisory parsing (repo-wide red gate).**
+  cargo-deny `0.16.4` could not parse CVSS 4.0 advisory vectors, so the new
+  `RUSTSEC-2026-0073` advisory hard-failed the advisories gate at database load on
+  every PR touching `crates/*/src/**`. Bumped to `0.19.8` (prebuilt via SHA-pinned
+  `taiki-e/install-action@fd2f5e3d…` v2.81.9) across all four call sites. Strictly
+  positive security posture (parses *more* advisories; `deny.toml` policy unchanged,
+  verified `advisories/bans/licenses/sources ok`). Governance: ADR-S12-045 v1.2.0 +
+  §14.s12.004.1 Security review (owner-approved 2026-06-10).
 - **6-tier completeness sweep across every TypeScript surface.** The 6-tier
   launch (Solo $15 / Max $149) had shipped Rust-complete but left stale 5-tier
   unions on the TS edge. Closed in one sweep, all aligned to the signed launch
