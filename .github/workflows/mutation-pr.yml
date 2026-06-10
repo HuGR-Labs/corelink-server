@@ -66,13 +66,17 @@ jobs:
           workspaces: ". -> target"
           key: mutants-pr
 
-      - name: Install cargo-mutants + cargo-nextest (no-op if already present)
-        run: |
-          set -euo pipefail
-          # On the self-hosted Mac these usually persist across runs, so
-          # `cargo install` is a fast no-op when the pinned version is present.
-          cargo install cargo-mutants --locked --version 25.0.1
-          cargo install cargo-nextest --locked
+      # Prebuilt binaries via taiki-e (SHA-pinned) — avoids the from-source
+      # `cargo install` compile race (os error 2 / aws-lc-sys) that flakes on
+      # the contended self-hosted Mac, and is faster than compiling.
+      - name: Install cargo-mutants (prebuilt)
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: cargo-mutants@25.0.1
+      - name: Install cargo-nextest (prebuilt)
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: cargo-nextest
 
       - name: Compute the PR diff (changed lines only)
         run: |

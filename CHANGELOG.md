@@ -23,6 +23,14 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **CI tool installs → SHA-pinned taiki-e prebuilt binaries (os-error-2 compile-race).**
+  `cargo-audit`, `cargo-mutants`, and `cargo-nextest` were installed via `cargo install`
+  (from source), pulling the heavy `aws-lc-sys` build that intermittently fails with
+  `No such file or directory (os error 2)` on the contended self-hosted Mac — cancelling
+  the cargo-audit + cargo-mutants gates. Switched all 13 call sites to the SHA-pinned
+  `taiki-e/install-action@fd2f5e3d…` (v2.81.9) prebuilt binary (versions unchanged; pure
+  mechanism swap). Lighter + reliable. Governance: ADR-S12-045 v1.3.0 + §14.s12.004.1
+  Security review (owner-approved 2026-06-10).
 - **Docs CI: the four pre-existing reds greened (task #42).** (1) The Vale
   prose-lint jobs (`docs-ci.yml` + `docs-vale.yml`) moved to GitHub-hosted
   `ubuntu-latest` — `errata-ai/vale-action` downloads a Linux x86_64 reviewdog
