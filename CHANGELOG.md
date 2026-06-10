@@ -44,6 +44,15 @@ Each entry cross-references:
   un-entitled). `stripe-setup-tiers.sh` fixed: `--live` is a per-command flag and
   a live `STRIPE_API_KEY` is auto-detected.
 
+### Fixed
+- **Release container build: `corelink-reapi` protoc codegen now resolves the
+  protobuf well-known types.** The builder stage installed `protobuf-compiler`
+  (the `protoc` binary) but not `libprotobuf-dev`, so
+  `proto/google/rpc/status.proto`'s `import "google/protobuf/any.proto"` failed
+  with `File not found` during `docker build` (host + CI cargo builds were
+  unaffected). Added `libprotobuf-dev` to the builder stage so
+  `/usr/include/google/protobuf/*.proto` is present on protoc's include path.
+
 ### Added
 - **Durable D1-HTTP billing writer for the Stripe-webhook materializer
   (money-path launch-blocker #27 Item 7b).** Added
