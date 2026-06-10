@@ -58,6 +58,10 @@
 --     RE-CREATED verbatim after the swap, so the at-most-one-active-subscription
 --     invariant is preserved across the rebuild.
 --   - `tier_selection_locks` is NOT touched (its CHECKs do not reference tier).
+--   - DEPENDENT VIEW: `stripe_tier_drift_view` (0048) reads `tier_selections`;
+--     it is dropped before the rebuild and recreated verbatim afterwards
+--     (section 0 / section 3) per the 12-step procedure — D1 aborts the batch
+--     on a dangling view reference even though local sqlite3 tolerates it.
 --
 -- Idempotency: unlike 0039 this file is NOT re-runnable on its own (a rebuild is
 --   inherently one-shot); it is guarded by the migration runner's sequential
@@ -72,6 +76,26 @@
 --   - crates/corelink-container/src/routes/tier_select_store.rs (tier_column)
 
 PRAGMA foreign_keys = OFF;
+-- D1 runs each migration file as a single transaction, and SQLite documents
+-- `PRAGMA foreign_keys` as a NO-OP inside a transaction — so the line above
+-- only helps engines that execute the file statement-by-statement. For D1 the
+-- effective mechanism is `defer_foreign_keys` (D1-documented), which IS
+-- honoured in-transaction and covers the DROP/RENAME window below.
+PRAGMA defer_foreign_keys = true;
+
+-- ============================================================
+-- 0. Dependent views — 12-step "drop and recreate views" step
+-- ============================================================
+-- `stripe_tier_drift_view` (migration 0048) references `tier_selections`.
+-- D1 re-validates the schema while executing the rebuild batch, and the
+-- dangling view (between DROP TABLE and the RENAME) aborts the whole file:
+--   "error in view stripe_tier_drift_view: no such table: main.tier_selections"
+-- (observed against prod, 2026-06-10; the batch rolled back atomically).
+-- Local sqlite3 CLIs tolerate the window, which is why this never failed in
+-- dev — the view must be dropped BEFORE the rebuild and recreated VERBATIM
+-- at the end of this file (section 3). Views hold no data; zero loss.
+-- `drata_evidence_sent_backlog_24h` (0044) references neither rebuilt table.
+DROP VIEW IF EXISTS stripe_tier_drift_view;  -- additive-allowed: ADR-0062 12-step dependent-view handling (recreated verbatim in section 3; views hold no data)
 
 -- ============================================================
 -- 1. tier_selections — rebuild with the widened 6-tier CHECK
@@ -166,5 +190,22 @@ CREATE INDEX IF NOT EXISTS idx_stripe_sessions_tenant
 
 CREATE INDEX IF NOT EXISTS idx_stripe_sessions_created
     ON stripe_checkout_sessions (created_at_ms);
+
+-- ============================================================
+-- 3. Recreate dependent views (verbatim from migration 0048)
+-- ============================================================
+-- Dropped in section 0 so the rebuild never leaves a dangling reference.
+-- Definition is byte-identical to 0048_stripe_billing_materializer.sql.
+CREATE VIEW IF NOT EXISTS stripe_tier_drift_view AS
+SELECT
+    ts.tenant_id          AS tenant_id,
+    ts.tier               AS persisted_tier,
+    ss.plan_id            AS active_plan_id,
+    ss.status             AS active_status,
+    ss.materialized_at_ms AS subscription_seen_at_ms
+FROM tier_selections AS ts
+LEFT JOIN stripe_subscriptions AS ss
+       ON ss.tenant_id = ts.tenant_id
+WHERE ss.status = 'active';
 
 PRAGMA foreign_keys = ON;
