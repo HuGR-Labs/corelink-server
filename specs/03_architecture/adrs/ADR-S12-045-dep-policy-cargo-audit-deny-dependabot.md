@@ -3,9 +3,9 @@ id: "ADR-S12-045"
 type: "adr"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-05-13"
-updated: "2026-06-02"
+updated: "2026-06-10"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -113,7 +113,7 @@ No single tool covers all three axes.  The Rust ecosystem provides:
 | Tool | Pinned version | Current SHA (action) | Bump policy |
 |---|---|---|---|
 | cargo-audit | 0.21.x | installed via cargo install | Quarterly + ADR |
-| cargo-deny | 0.16.4 | installed via taiki-e/install-action@daa3c1f1... | Quarterly + ADR |
+| cargo-deny | 0.19.8 | installed via taiki-e/install-action@daa3c1f1... (cargo-binstall fallback — the v2.49.49 manifest tops out at 0.18.2; refresh the action SHA at the next quarterly review for manifest-native install) | Quarterly + ADR |
 | actions/checkout | v4.2.2 | @11bd71901bbe5b1630ceea73d27597364c9af683 | Dependabot auto-merge |
 | dtolnay/rust-toolchain | stable | @29eef336d9b2848a0b548edc03f92a220660cdb8 | ADR |
 | Swatinem/rust-cache | v2.7.7 | @400e7407cfd7a091e5fbb6afec01ec146c432b7c | Dependabot auto-merge |
@@ -144,3 +144,4 @@ No single tool covers all three axes.  The Rust ecosystem provides:
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 1.0.0 | 2026-05-13 | Gustavo (via Claude Sonnet 4.6) | Initial creation — WI-S12-004 SEALED. |
+| 1.2.0 | 2026-06-10 | Gustavo (via Claude Fable 5) | cargo-deny pin 0.16.4 → 0.19.8. RUSTSEC-2026-0073 (libcrux-poly1305) introduced a CVSS 4.0 vector; cargo-deny ≤ 0.18.x fails to parse the advisory DB ("unsupported CVSS version: 4.0") — the advisory gate was down repo-wide from ~2026-06-09. 0.19.8 verified on the runner host: full `--all-features check` → advisories/bans/licenses/sources all ok (workspace NOT affected by RUSTSEC-2026-0073; parse-time failure only). 0.19.8 installs via install-action's cargo-binstall fallback until the action SHA is refreshed (next quarterly review). |

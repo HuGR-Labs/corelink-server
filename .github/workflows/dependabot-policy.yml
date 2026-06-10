@@ -100,7 +100,10 @@ jobs:
         if: hashFiles('Cargo.toml') != ''
         uses: taiki-e/install-action@9ba3ac3fd006a70c6e186a683577abc1ccf0ff3a  # v2.49.45
         with:
-          tool: cargo-deny@0.16.4
+          # 0.16.4 → 0.19.8 (2026-06-10, ADR-S12-045 v1.2.0): CVSS-4.0 advisory-db
+          # parse fix; kept in lockstep with cargo-deny.yml / cas_foundation.yml.
+          # Installs via the action's cargo-binstall fallback (manifest < 0.19.8).
+          tool: cargo-deny@0.19.8
 
       - name: Run cargo-deny licenses (fail-closed)
         if: hashFiles('Cargo.toml') != ''

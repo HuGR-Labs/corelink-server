@@ -56,14 +56,20 @@ jobs:
       # EmbarkStudios/cargo-deny-action is a Docker container action and is
       # Linux-only ("Container action is only supported on Linux"); it hard-fails
       # on our macOS self-hosted fleet. Run cargo-deny NATIVELY instead, mirroring
-      # the dependabot-policy.yml gate. Both pin cargo-deny@0.16.4 via taiki-e.
+      # the dependabot-policy.yml gate. Both pin cargo-deny@0.19.8 via taiki-e.
       # Version bump requires ADR + Security review per §14.s12.004.1.
+      # 0.16.4 → 0.19.8 (2026-06-10, ADR-S12-045 v1.2.0): RUSTSEC-2026-0073 added
+      # a CVSS 4.0 vector to the advisory DB; cargo-deny ≤ 0.18.x fails to PARSE
+      # the DB ("unsupported CVSS version: 4.0") — gate was down repo-wide.
+      # NOTE: the v2.49.49 install-action manifest tops out at cargo-deny 0.18.2,
+      # so 0.19.8 installs via the action's default cargo-binstall fallback;
+      # manifest-native install needs an action SHA refresh (next quarterly review).
       - name: Install Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
       - name: Install cargo-deny (native — taiki-e/install-action, SHA-pinned)
         uses: taiki-e/install-action@daa3c1f1f9a9d46f686d9fc2f65773d0c293688b # v2.49.49
         with:
-          tool: cargo-deny@0.16.4
+          tool: cargo-deny@0.19.8
       # `--all-features` ensures wasm32 + host-server features both audited.
       # `--hide-inclusion-graph` reduces noise on large dep trees.
       - name: Run cargo-deny (license + advisories + sources + bans)

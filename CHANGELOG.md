@@ -23,6 +23,21 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **cargo-deny advisory gate down repo-wide — CVSS 4.0 parse failure.**
+  RUSTSEC-2026-0073 (libcrux-poly1305) introduced a CVSS 4.0 vector into the
+  RUSTSEC advisory DB; the pinned cargo-deny 0.16.4 (cvss v1 parser) failed to
+  LOAD the DB (`unsupported CVSS version: 4.0`), so every advisory check
+  (`cargo-deny.yml`, `cas_foundation.yml` job `cargo-deny`, `lockfile-diff.yml`
+  deny summary) failed at parse time since ~2026-06-09 — the supply-chain
+  advisory gate was effectively down. Pin bumped 0.16.4 → 0.19.8 across the
+  four workflows (+ `dependabot-policy.yml` kept in lockstep) and the
+  ADR-S12-045 tooling-pin table (v1.2.0) per the §14.s12.004.1 bump-via-ADR
+  policy. Verified on the runner host: 0.18.2/0.18.3 still fail; 0.19.8 full
+  `--all-features check` → advisories/bans/licenses/sources all ok (the
+  workspace is NOT affected by RUSTSEC-2026-0073 — parse-time failure only).
+  Note: taiki-e/install-action@v2.49.49's manifest tops out at cargo-deny
+  0.18.2, so 0.19.8 installs via the action's default cargo-binstall fallback
+  until the action SHA is refreshed at the next quarterly tooling review.
 - **6-tier completeness sweep across every TypeScript surface.** The 6-tier
   launch (Solo $15 / Max $149) had shipped Rust-complete but left stale 5-tier
   unions on the TS edge. Closed in one sweep, all aligned to the signed launch
