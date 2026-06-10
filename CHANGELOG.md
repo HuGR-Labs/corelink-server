@@ -43,6 +43,16 @@ Each entry cross-references:
   `pricing.test.ts` now pins the 6-tier card, and the signup-worker
   webhook-e2e fixtures carry `CORELINK_INTERNAL_AUTH_KEY` (required since the
   #195 fail-loud gate).
+- **Migration 0062: drop/recreate the dependent `stripe_tier_drift_view` around
+  the `tier_selections` rebuild.** The 0048 reconciliation view reads
+  `tier_selections`; D1 aborts the rebuild batch on the dangling reference
+  ("error in view stripe_tier_drift_view: no such table") even though local
+  sqlite3 tolerates the window — the SQLite 12-step "drop and recreate views"
+  step was missing. Also adds `PRAGMA defer_foreign_keys = true` (the
+  D1-honoured in-transaction mechanism; `PRAGMA foreign_keys` is a documented
+  no-op inside a transaction). Verified red→green against a restored prod
+  replica: 6-tier CHECKs land, view recreated verbatim + queryable, indexes
+  rebuilt, zero rows lost.
 
 ### Changed
 - **Billing tier taxonomy 5 → 6 (Free/Solo/Starter/Pro/Max/Enterprise).** Adds a

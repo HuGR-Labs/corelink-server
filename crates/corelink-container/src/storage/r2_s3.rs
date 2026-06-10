@@ -279,7 +279,7 @@ impl R2CasHandler {
 }
 
 /// Enforce the CAS content-addressing invariant
-/// (`INV-CAS-CONTENT-ADDRESSED`): the supplied `bytes` MUST hash to
+/// (`INV-CAS-INTEGRITY`): the supplied `bytes` MUST hash to
 /// `claimed_hash` under the canonical BLAKE3 digest.
 ///
 /// Returns `Ok(())` on a match, or `Err(actual_hex)` carrying the hash
@@ -452,7 +452,7 @@ impl CasWriteHandler for R2CasHandler {
             ))
             .map_err(CasHandlerError::AuditFailed)?;
 
-        // Content-addressing enforcement (INV-CAS-CONTENT-ADDRESSED):
+        // Content-addressing enforcement (INV-CAS-INTEGRITY):
         // the durable store MUST NOT persist bytes that do not hash to
         // the claimed digest — otherwise the CAS guarantee is a lie and
         // any client (or a buggy uploader) can poison the cache for
@@ -922,7 +922,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // Content-addressing enforcement (INV-CAS-CONTENT-ADDRESSED)
+    // Content-addressing enforcement (INV-CAS-INTEGRITY)
     // ---------------------------------------------------------------
 
     #[test]
