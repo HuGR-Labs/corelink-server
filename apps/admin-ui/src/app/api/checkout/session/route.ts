@@ -64,8 +64,13 @@ import { apiPost, ApiClientError } from "@/lib/api-client";
 // which is available in the edge runtime — no Buffer dependency.
 export const dynamic = "force-dynamic";
 
-/** Canonical paid tiers accepted by this route. */
-const PAID_TIERS = new Set(["starter", "team", "pro", "enterprise"]);
+/**
+ * Canonical checkout-able tiers accepted by this route — the 4 paid SKUs of
+ * the 6-tier ladder (solo/starter/pro/max) plus legacy `team` (still accepted
+ * by the 0062 CHECK). Enterprise is NOT checkout-able (the tier-select
+ * backend 422s it toward the inquiry form), so it gets the clear 400 below.
+ */
+const PAID_TIERS = new Set(["solo", "starter", "team", "pro", "max"]);
 const DEFAULT_TIER = "pro";
 
 interface CheckoutRequestBody {

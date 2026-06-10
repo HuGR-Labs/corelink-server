@@ -76,7 +76,15 @@ function rfc7807(status: number, title: string, detail: string): MockResponse {
 
 function makeTenants(): Tenant[] {
   const regions: Array<Tenant["region"]> = ["us-east", "us-west", "eu-west", "ap-south"];
-  const plans: Array<Tenant["plan"]> = ["free", "starter", "team", "enterprise"];
+  const plans: Array<Tenant["plan"]> = [
+    "free",
+    "solo",
+    "starter",
+    "team",
+    "pro",
+    "max",
+    "enterprise",
+  ];
   return Array.from({ length: 25 }, (_, i) => ({
     tenant_id: `tenant_${String(i + 1).padStart(3, "0")}`,
     name: `Tenant ${i + 1}`,

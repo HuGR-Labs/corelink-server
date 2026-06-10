@@ -796,9 +796,11 @@ export async function handleStripeWebhook(
                     // path reads. Only a real paid tier may flip to 'active'
                     // (free never reaches Stripe; enterprise uses the inquiry
                     // form). An unrecognised tier is left un-activated rather
-                    // than written with a bogus value.
-                    const paidTier =
-                        plan === "starter" || plan === "team" || plan === "pro" ? plan : null;
+                    // than written with a bogus value. Uses the canonical
+                    // asPaidTier set — an inline starter/team/pro triple here
+                    // silently skipped Solo/Max activation (pay-but-not-
+                    // entitled for the $15/$149 SKUs).
+                    const paidTier = asPaidTier(plan);
                     if (paidTier) {
                         requiredWrites.push(
                             activatePaidTierSelection(db, {

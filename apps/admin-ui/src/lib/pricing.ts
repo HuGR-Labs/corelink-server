@@ -1,17 +1,19 @@
 /**
  * CoreLink pricing tier definitions.
  *
- * SOURCE OF TRUTH: docs/POSITIONING.md (org-wide SoT).
- * This file is the admin-ui copy — keep in sync with POSITIONING.md.
+ * SOURCE OF TRUTH: the signed launch rate card —
+ * `apps/docs/src/lib/pricing.ts` (TIER_RATE_CARD, FROZEN 6-tier taxonomy)
+ * per `specs/_audits/2026-05-27-pricing-benchmarks.md` §5; positioning
+ * context in docs/POSITIONING.md. Keep this admin-ui copy in sync.
  *
- * Tier numbers last verified: 2026-05-30.
+ * Tier numbers last verified: 2026-06-10 (6-tier launch ladder).
  */
 
 export type Tier = {
   /** Canonical tier id used in Stripe product lookup. */
   id: string;
   name: string;
-  /** Display price, e.g. "$0" or "$5". Empty string = "Talk to us". */
+  /** Display price, e.g. "$0" or "$15". Empty string = "Talk to us". */
   price: string;
   /** Per-month suffix or empty for Enterprise. */
   cadence: string;
@@ -29,11 +31,11 @@ export const TIERS: Tier[] = [
     price: "$0",
     cadence: "/mo",
     features: [
-      "10 GB storage",
-      "1 user",
-      "Public projects only",
-      "OSS use case",
+      "10 GB CAS storage",
+      "500K cache requests/mo",
+      "1 workspace",
       "Bazel + Turborepo protocol bridges",
+      "Community support",
     ],
     cta: "Sign up free",
     ctaHref: "/sign-up",
@@ -41,46 +43,60 @@ export const TIERS: Tier[] = [
   {
     id: "solo",
     name: "Solo",
-    price: "$5",
+    price: "$15",
     cadence: "/mo",
     features: [
-      "100 GB storage",
-      "Unlimited transfer (R2 zero-egress)",
-      "1 user",
-      "Private projects",
-      "Bazel + Turborepo protocol bridges",
+      "50 GB CAS storage",
+      "2M cache requests/mo",
+      "Unlimited workspaces",
+      "Zero-egress transfer (R2)",
+      "Email support",
     ],
     cta: "Sign up",
     ctaHref: "/sign-up",
   },
   {
-    id: "team",
-    name: "Team",
-    price: "$30",
+    id: "starter",
+    name: "Starter",
+    price: "$35",
     cadence: "/mo",
     features: [
-      "1 TB storage",
-      "Up to 10 users",
-      "Multi-tenant within org",
-      "Audit trail (Merkle chain)",
-      "Unlimited transfer (R2 zero-egress)",
+      "150 GB CAS storage",
+      "6M cache requests/mo",
+      "Unlimited workspaces",
+      "Zero-egress transfer (R2)",
+      "Email support (2-business-day target)",
+    ],
+    cta: "Sign up",
+    ctaHref: "/sign-up",
+  },
+  {
+    id: "pro",
+    name: "Pro",
+    price: "$50",
+    cadence: "/mo",
+    features: [
+      "500 GB CAS storage",
+      "20M cache requests/mo",
+      "Unlimited workspaces",
+      "Zero-egress transfer (R2)",
+      "Email support (1-business-day target)",
     ],
     cta: "Sign up",
     ctaHref: "/sign-up",
     highlight: true,
   },
   {
-    id: "org",
-    name: "Org",
-    price: "$150",
+    id: "max",
+    name: "Max",
+    price: "$149",
     cadence: "/mo",
     features: [
-      "10 TB storage",
-      "Up to 50 users",
-      "BYOK (bring your own key)",
-      "Multi-region replication",
-      "SLA included",
-      "Unlimited transfer (R2 zero-egress)",
+      "2 TB CAS storage",
+      "80M cache requests/mo",
+      "Unlimited workspaces",
+      "Zero-egress transfer (R2)",
+      "Priority email support",
     ],
     cta: "Sign up",
     ctaHref: "/sign-up",
@@ -91,10 +107,10 @@ export const TIERS: Tier[] = [
     price: "",
     cadence: "",
     features: [
-      "Custom storage & users",
-      "Custom DPA",
-      "Data residency",
-      "Compliance packages",
+      "BYOK (bring your own key)",
+      "SSO / SAML",
+      "99.9% SLA with credits",
+      "Custom DPA & data residency",
       "Dedicated support",
     ],
     cta: "Talk to us",

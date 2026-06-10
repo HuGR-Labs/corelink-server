@@ -30,7 +30,15 @@ export function validateTenantName(name: string): ValidationResult {
 export const SUPPORTED_REGIONS = ["us-east", "eu-west", "sa-east"] as const;
 export type Region = (typeof SUPPORTED_REGIONS)[number];
 
-export const SUPPORTED_PLANS = ["free", "starter", "pro", "enterprise"] as const;
+export const SUPPORTED_PLANS = [
+  "free",
+  "solo",
+  "starter",
+  "team",
+  "pro",
+  "max",
+  "enterprise",
+] as const;
 export type Plan = (typeof SUPPORTED_PLANS)[number];
 
 export function isFreeplan(plan: Plan): boolean {

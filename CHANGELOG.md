@@ -23,6 +23,26 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **6-tier completeness sweep across every TypeScript surface.** The 6-tier
+  launch (Solo $15 / Max $149) had shipped Rust-complete but left stale 5-tier
+  unions on the TS edge. Closed in one sweep, all aligned to the signed launch
+  rate card (`apps/docs/src/lib/pricing.ts` TIER_RATE_CARD): (1) **money-path
+  bug** — the signup-worker `checkout.session.completed` activation gate used
+  an inline starter/team/pro triple, so a paid Solo/Max checkout never
+  activated `tier_selections` (pay-but-not-entitled); now uses the canonical
+  `asPaidTier` set, with end-to-end regression tests for solo/max activation
+  AND the price→tier reverse map. (2) Worker edge `quota.ts`: `max` was
+  missing entirely (a Max tenant fell back to the `free` quota class); quotas
+  now mirror the rate card (50 GB/150 GB/500 GB/2 TB + per-tier request caps).
+  (3) admin-ui `pricing.ts` rewritten from the pre-S19 $5/$30/$150 ladder to
+  the 6-tier card; checkout route + UpgradeButton + plan unions + e2e fixtures
+  widened; docs `PricingCalculator` retyped to the canonical `TierId`; the
+  public pricing page `ctaForTier` gained the missing Solo/Starter/Max CTAs;
+  POSITIONING.md ladder updated from "illustrative" to the signed rate card.
+  Also greens two suites that were red on main: the stale 3-tier/$25-Pro
+  `pricing.test.ts` now pins the 6-tier card, and the signup-worker
+  webhook-e2e fixtures carry `CORELINK_INTERNAL_AUTH_KEY` (required since the
+  #195 fail-loud gate).
 - **Migration 0062: drop/recreate the dependent `stripe_tier_drift_view` around
   the `tier_selections` rebuild.** The 0048 reconciliation view reads
   `tier_selections`; D1 aborts the rebuild batch on the dangling reference

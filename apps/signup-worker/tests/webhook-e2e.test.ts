@@ -212,6 +212,9 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
     const env: AutoProvisionEnv = {
       CLERK_WEBHOOK_SECRET: WEBHOOK_SECRET,
       CORELINK_API_BASE: "https://corelink-api.humangr.com",
+      // #195 fail-loud: provisioning 500s BEFORE any tenant write when the
+      // PAT-mint key is absent — the e2e env must carry it like prod does.
+      CORELINK_INTERNAL_AUTH_KEY: "test-internal-auth-key-e2e",
     };
 
     // Inject a stub api that records calls.
@@ -327,6 +330,8 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
     const env: AutoProvisionEnv = {
       CLERK_WEBHOOK_SECRET: WEBHOOK_SECRET,
       CORELINK_API_BASE: "https://corelink-api.humangr.com",
+      // #195 fail-loud: the PAT-mint key gate runs before provisioning.
+      CORELINK_INTERNAL_AUTH_KEY: "test-internal-auth-key-e2e",
     };
 
     const claimCapturingApi = () => ({

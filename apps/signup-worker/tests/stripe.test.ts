@@ -693,6 +693,118 @@ describe("handleStripeWebhook", () => {
         expect(billingUpserts).toHaveLength(2);
     });
 
+    it("REGRESSION (6-tier): checkout.session.completed with tier=solo activates tier_selections 'solo' (was silently skipped)", async () => {
+        // The GAP-6 activation gate used an inline starter/team/pro triple, so
+        // a PAID Solo ($15) or Max ($149) checkout completed WITHOUT activating
+        // the entitlement FSM — pay-but-not-entitled. The gate now uses the
+        // canonical asPaidTier set; this pins solo end-to-end.
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_checkout_solo_1",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_solo_1",
+                    subscription: "sub_solo_1",
+                    amount_total: 1500,
+                    metadata: { tenant_id: "tenant_solo", tier: "solo" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        expect((await handleStripeWebhook(req, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        const activation = db.runCalls.find(
+            (c) => c.sql.includes("INSERT INTO tier_selections") && c.sql.includes("ON CONFLICT"),
+        );
+        expect(activation).toBeDefined();
+        expect(activation!.params).toContain("solo");
+    });
+
+    it("REGRESSION (6-tier): checkout.session.completed with tier=max activates tier_selections 'max' (was silently skipped)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_checkout_max_1",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_max_1",
+                    subscription: "sub_max_1",
+                    amount_total: 14900,
+                    metadata: { tenant_id: "tenant_max", tier: "max" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        expect((await handleStripeWebhook(req, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        const activation = db.runCalls.find(
+            (c) => c.sql.includes("INSERT INTO tier_selections") && c.sql.includes("ON CONFLICT"),
+        );
+        expect(activation).toBeDefined();
+        expect(activation!.params).toContain("max");
+    });
+
+    it("6-tier reverse map: subscription.updated with the SOLO price id propagates tier 'solo' (no tier metadata)", async () => {
+        // Pins tierFromSubscriptionPrice for the new SKUs: no metadata[tier] on
+        // the subscription object — the price→tier map alone must resolve it.
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const periodEndSec = Math.floor(nowMs / 1000) + 30 * 24 * 3600;
+        const event = {
+            id: "evt_sub_solo_price_1",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_solo_price",
+                    customer: "cus_solo_price",
+                    status: "active",
+                    current_period_end: periodEndSec,
+                    metadata: { tenant_id: "tenant_solo_price" },
+                    items: { data: [{ price: { id: "price_solo_aaa" } }] },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        expect((await handleStripeWebhook(req, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        const propagation = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tier_selections") && c.params.includes("solo"),
+        );
+        expect(propagation).toBeDefined();
+        expect(propagation!.params).toContain("cus_solo_price");
+    });
+
+    it("6-tier reverse map: subscription.updated with the MAX price id propagates tier 'max' (no tier metadata)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const periodEndSec = Math.floor(nowMs / 1000) + 30 * 24 * 3600;
+        const event = {
+            id: "evt_sub_max_price_1",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_max_price",
+                    customer: "cus_max_price",
+                    status: "active",
+                    current_period_end: periodEndSec,
+                    metadata: { tenant_id: "tenant_max_price" },
+                    items: { data: [{ price: { id: "price_max_www" } }] },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        expect((await handleStripeWebhook(req, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        const propagation = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tier_selections") && c.params.includes("max"),
+        );
+        expect(propagation).toBeDefined();
+        expect(propagation!.params).toContain("cus_max_price");
+    });
+
     it("dedup: claim INSERT failure (D1 error) FAILS SAFE — event is still processed (not lost)", async () => {
         const db = fakeDbClaimThrows();
         const nowMs = Date.now();

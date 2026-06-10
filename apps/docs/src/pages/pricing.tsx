@@ -44,12 +44,19 @@ function ctaForTier(tier: TierId): TierCta {
   switch (tier) {
     case "free":
       return { label: "Start free", href: SIGNUP_URL };
+    case "solo":
+      return { label: "Upgrade to Solo", href: `${APP_BASE}/upgrade?plan=solo` };
+    case "starter":
+      return { label: "Upgrade to Starter", href: `${APP_BASE}/upgrade?plan=starter` };
     case "pro":
       // Admin-ui handles the auth check: if not signed in Clerk
       // intercepts and routes to `/sign-up?redirect=/upgrade?plan=pro`.
       // If signed in it POSTs to /api/checkout/session and 303s into
-      // Stripe Checkout (wired by Phase 0.C).
+      // Stripe Checkout (wired by Phase 0.C). Same flow for every paid
+      // SKU via `/upgrade?plan=<tier>`.
       return { label: "Upgrade to Pro", href: UPGRADE_PRO_URL };
+    case "max":
+      return { label: "Upgrade to Max", href: `${APP_BASE}/upgrade?plan=max` };
     case "enterprise":
       return { label: "Contact sales", href: SALES_MAILTO };
   }

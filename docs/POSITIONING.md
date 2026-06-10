@@ -48,12 +48,15 @@ CAS + AC persist to real R2; PAT auth + tenant isolation work E2E.
   pay $0.09/GB egress; CoreLink pays $0. This is architectural, not
   marginal. It is the reason undercut + good margin is mathematically
   possible.
-- **Pricing tiers (illustrative — not yet shipped):**
-  - Free: 10GB, 1 user, public projects, OSS use
-  - Solo: $5/mo, 100GB, unlimited transfer
-  - Team: $30/mo, 1TB, multi-tenant, audit
-  - Org: $150/mo, 10TB, BYOK, multi-region, SLA
-  - Enterprise: custom (DPA, residency, compliance custom)
+- **Pricing tiers (launch rate card — signed, FROZEN 6-tier taxonomy; the
+  machine-readable authority is `apps/docs/src/lib/pricing.ts`
+  TIER_RATE_CARD per `specs/_audits/2026-05-27-pricing-benchmarks.md` §5):**
+  - Free: $0, 10GB, 500K req/mo, 1 workspace, OSS/evaluation
+  - Solo: $15/mo, 50GB, 2M req/mo
+  - Starter: $35/mo, 150GB, 6M req/mo
+  - Pro: $50/mo, 500GB, 20M req/mo — the anchor SKU
+  - Max: $149/mo, 2TB, 80M req/mo
+  - Enterprise: custom (BYOK, SSO, 99.9% SLA, DPA, residency)
 - **Distribution: dev community + content marketing, NOT sales calls.**
   GitHub, HN, dev.to, podcast appearances, OSS strategy. Self-serve
   signup. Impeccable DX. A $30/mo customer churns if onboarding
