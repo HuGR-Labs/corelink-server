@@ -171,6 +171,14 @@ ALLOWLIST_REGEX = re.compile(
     r"|R2_CHUNK_BUCKET$"
     r"|R2_CHUNK_REGION$"
     r"|R2_TEST_BUCKET$"
+    # 2026-06-10 — public-flip smoke harness (scripts/smoke/). Dedicated
+    # low-privilege smoke-user credentials + base-URL override consumed by
+    # scripts/smoke/authenticated-smoke.spec.ts. Operator-local test-account
+    # creds (same precedent as CORELINK_E2E_TOKEN / NEON_TEST_DSN) — never a
+    # deployed production secret, so not a matrix row.
+    r"|SMOKE_USER_EMAIL$"
+    r"|SMOKE_USER_PASSWORD$"
+    r"|SMOKE_BASE_URL$"
     r")"
 )
 
