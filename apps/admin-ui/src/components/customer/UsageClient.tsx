@@ -3,16 +3,17 @@
 "use client";
 
 import React from "react";
+import { useAuth } from "@clerk/nextjs";
 import { CustomerClient } from "@/lib/customer-client";
 import type { CustomerUsage } from "@/lib/customer-types";
-
-const client = new CustomerClient();
 
 function mb(b: number): string {
   return (b / 1024 ** 2).toFixed(1) + " MiB";
 }
 
 export function UsageClient(): React.ReactElement {
+  const { getToken } = useAuth();
+  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
   const [data, setData] = React.useState<CustomerUsage | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
 
@@ -25,7 +26,7 @@ export function UsageClient(): React.ReactElement {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [client]);
 
   if (err) return <p data-testid="usage-error">{err}</p>;
   if (!data) return <p data-testid="usage-loading">loading…</p>;

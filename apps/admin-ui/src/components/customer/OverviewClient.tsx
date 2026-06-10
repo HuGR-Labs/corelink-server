@@ -3,10 +3,9 @@
 "use client";
 
 import React from "react";
+import { useAuth } from "@clerk/nextjs";
 import { CustomerClient } from "@/lib/customer-client";
 import type { CustomerOverview } from "@/lib/customer-types";
-
-const client = new CustomerClient();
 
 function gibibytes(b: number): string {
   return (b / 1024 ** 3).toFixed(2) + " GiB";
@@ -18,6 +17,8 @@ function dollars(cents: number, currency: string): string {
 }
 
 export function OverviewClient(): React.ReactElement {
+  const { getToken } = useAuth();
+  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
   const [data, setData] = React.useState<CustomerOverview | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -30,7 +31,7 @@ export function OverviewClient(): React.ReactElement {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [client]);
 
   if (error) return <p data-testid="overview-error">{error}</p>;
   if (!data) return <p data-testid="overview-loading">loading…</p>;

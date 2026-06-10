@@ -4,11 +4,10 @@
 "use client";
 
 import React from "react";
+import { useAuth } from "@clerk/nextjs";
 import { CustomerClient } from "@/lib/customer-client";
 import type { CustomerBilling } from "@/lib/customer-types";
 import { UpgradeButton } from "@/components/UpgradeButton";
-
-const client = new CustomerClient();
 
 function money(cents: number, currency: string): string {
   const sign = currency === "usd" ? "$" : currency === "eur" ? "€" : "R$";
@@ -16,6 +15,8 @@ function money(cents: number, currency: string): string {
 }
 
 export function BillingClient(): React.ReactElement {
+  const { getToken } = useAuth();
+  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
   const [data, setData] = React.useState<CustomerBilling | null>(null);
   const [portalUrl, setPortalUrl] = React.useState<string | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
@@ -29,7 +30,7 @@ export function BillingClient(): React.ReactElement {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [client]);
 
   async function openPortal(): Promise<void> {
     try {
