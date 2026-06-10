@@ -251,7 +251,7 @@ describe("formatUsd — honest framing", () => {
 });
 
 describe("estimateAllTiers", () => {
-  it("returns one estimate per canonical tier in order Free / Pro / Enterprise", () => {
+  it("returns one estimate per canonical tier in ladder order (Free → Enterprise)", () => {
     const results = estimateAllTiers(DEFAULT_USAGE);
     expect(results.map((r) => r.tier)).toEqual([...CANONICAL_TIERS]);
   });

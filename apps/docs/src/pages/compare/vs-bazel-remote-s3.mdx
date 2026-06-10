@@ -159,8 +159,8 @@ Honest differentiation, grounded in charter evidence.
    team serving multiple internal tenants who should not see each
    other's cache entries.
 
-6. **Predictable flat pricing with one number.** Pro is $25/mo or
-   $250/yr (two months free) for 500 GB / 20M requests. Enterprise
+6. **Predictable flat pricing with one number.** Pro is $50/mo or
+   $500/yr (two months free) for 500 GB / 20M requests. Enterprise
    is $500–$5,000/mo for BYOK + dedicated infra + SLA + SSO.
    bazel-remote's cost is unbounded and depends on your S3 usage
    pattern — which is fine when usage is small, but can surprise you
@@ -176,15 +176,15 @@ the binary; the SRE time estimate is conservative.
 
 | Scale | bazel-remote + AWS S3 (est.) | CoreLink |
 |---|---|---|
-| **10 GB warm cache** (small team, ~1M req/mo) | S3: ~$0.25/mo storage + ~$0.05 egress + ~$0.50 requests ≈ **$1–$5/mo** + 1–3 hr/mo SRE | Free tier: $0/mo (10 GB, 500k req included); $25/mo Pro if you exceed 500k req/mo |
-| **500 GB warm cache** (mid-size team, ~10M req/mo) | S3: ~$11.50/mo storage + egress $5–$50/mo (varies) + requests ~$5/mo + instance ~$30–$50/mo ≈ **$50–$120/mo** + 4–8 hr/mo SRE | Pro: $25/mo flat (500 GB / 20M req included). No separate compute line item. |
+| **10 GB warm cache** (small team, ~1M req/mo) | S3: ~$0.25/mo storage + ~$0.05 egress + ~$0.50 requests ≈ **$1–$5/mo** + 1–3 hr/mo SRE | Free tier: $0/mo (10 GB, 500k req included); paid tiers from $15/mo (Solo) if you exceed 500k req/mo |
+| **500 GB warm cache** (mid-size team, ~10M req/mo) | S3: ~$11.50/mo storage + egress $5–$50/mo (varies) + requests ~$5/mo + instance ~$30–$50/mo ≈ **$50–$120/mo** + 4–8 hr/mo SRE | Pro: $50/mo flat (500 GB / 20M req included). No separate compute line item. |
 | **5 TB warm cache** (large org, ~100M req/mo) | S3: ~$115/mo storage + egress $50–$500/mo + requests ~$50/mo + cluster ~$200–$500/mo ≈ **$400–$1,200/mo** + 10–20 hr/mo SRE | Enterprise: $500–$5,000/mo (includes BYOK + dedicated infra + SLA + SSO). Flat. |
 
 **What the table does not show:**
 
 - **SRE time loaded cost.** At $100/hr loaded, 8 hr/mo of SRE
   maintenance on a 500 GB bazel-remote instance is $9,600/year of
-  invisible engineering cost — against CoreLink Pro's $300/year.
+  invisible engineering cost — against CoreLink Pro's $600/year.
   The crossover where CoreLink's flat fee is clearly cheaper in total
   cost of ownership (TCO) is typically at the 200–500 GB range for a
   team with an SRE allocated to other work.
@@ -215,7 +215,7 @@ beyond Bazel / Buck2?**
 
 **2. Do you have an SRE available to deploy, patch, and monitor a
 Go binary + S3 bucket, and is that SRE time genuinely cheaper than
-$25/mo?**
+$50/mo?**
 
 - **Yes, and your cache stays under ~200 GB** → bazel-remote + S3 (or
   R2 for zero egress). The software cost is $0 and your SRE overhead
