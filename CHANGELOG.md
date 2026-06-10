@@ -58,6 +58,14 @@ Each entry cross-references:
   `scripts/deploy-pages-docs-prod.sh` already resolved the repo-local binary
   via `_pages-deploy-common.sh` — its "run pnpm install" hint now actually
   installs a root wrangler. (Task #44)
+- **CI tool installs → SHA-pinned taiki-e prebuilt binaries (os-error-2 compile-race).**
+  `cargo-audit`, `cargo-mutants`, and `cargo-nextest` were installed via `cargo install`
+  (from source), pulling the heavy `aws-lc-sys` build that intermittently fails with
+  `No such file or directory (os error 2)` on the contended self-hosted Mac — cancelling
+  the cargo-audit + cargo-mutants gates. Switched all 13 call sites to the SHA-pinned
+  `taiki-e/install-action@fd2f5e3d…` (v2.81.9) prebuilt binary (versions unchanged; pure
+  mechanism swap). Lighter + reliable. Governance: ADR-S12-045 v1.3.0 + §14.s12.004.1
+  Security review (owner-approved 2026-06-10).
 - **`corelink-app.humangr.com` (public app entry, all docs pricing CTAs) served
   the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
   500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:
