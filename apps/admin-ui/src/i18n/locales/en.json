@@ -167,6 +167,12 @@
       "talkToUs": "Talk to us"
     }
   },
+  "upgrade": {
+    "heading": "Upgrade to {tier}",
+    "redirecting": "Taking you to secure Stripe Checkout… CoreLink never sees your card number — Stripe handles all payment data.",
+    "note": "Not redirected automatically? Use the button above, or",
+    "comparePlans": "compare all plans"
+  },
   "upgraded": {
     "heading": "Subscription started",
     "subtitle": "Thank you — your payment went through. Your plan activates in a moment. We're finishing the last step in the background; you don't need to do anything.",

@@ -22,6 +22,27 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **admin-ui `/upgrade?plan=<tier>` page — the public pricing CTAs now reach
+  checkout (#49).** Every docs pricing CTA targets
+  `corelink-app.humangr.com/upgrade?plan=<tier>`, but admin-ui had no
+  `/upgrade` route — the money path's front door 404'd. Added
+  `/[locale]/upgrade`: validates `?plan=` against the checkout-able set
+  (solo/starter/team/pro/max; invalid/missing → anchor SKU `pro`), probes the
+  Clerk session with the same predicate as `/api/checkout/session`
+  (signed-out → `/sign-in?redirect_url=…` round-trip back to the page, plan
+  preserved), and for signed-in visitors auto-fires the existing checkout
+  POST via `<UpgradeButton autoStart />` (once-per-mount, StrictMode-safe)
+  behind a minimal accessible tier card (rate-card name+price, `role=status`
+  redirect notice, manual retry fallback). A locale-less `GET /upgrade`
+  forwarder 307s the docs-CTA URL shape onto `/en/upgrade?plan=<normalized>`
+  (same default-locale convention as `/` and `/sign-up`). The checkout
+  route's `PAID_TIERS` gate and the page validation now share one source of
+  truth (`CHECKOUT_TIER_IDS`, src/lib/pricing.ts) so the two surfaces cannot
+  drift. 16 new tests (plan normalization, forwarder, signed-out redirect,
+  tier-card render incl. legacy `team`, auto-fired POST handoff, no-flag
+  no-fire).
+
 ### Fixed
 - **CI tool installs → SHA-pinned taiki-e prebuilt binaries (os-error-2 compile-race).**
   `cargo-audit`, `cargo-mutants`, and `cargo-nextest` were installed via `cargo install`
@@ -31,6 +52,19 @@ Each entry cross-references:
   `taiki-e/install-action@fd2f5e3d…` (v2.81.9) prebuilt binary (versions unchanged; pure
   mechanism swap). Lighter + reliable. Governance: ADR-S12-045 v1.3.0 + §14.s12.004.1
   Security review (owner-approved 2026-06-10).
+- **`corelink-app.humangr.com` (public app entry, all docs pricing CTAs) served
+  the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
+  500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:
+  the 2026-05-30 Pages→Worker migration (`5435fd8a`) moved only
+  `corelink-admin.humangr.com` to the OpenNext Worker and left
+  `corelink-app.humangr.com` attached to the abandoned `corelink-admin-ui`
+  Pages project (broken next-on-pages build, commit `3daebca6`). Fix:
+  `apps/admin-ui/wrangler.toml` now binds `corelink-app.humangr.com` as a
+  Worker custom domain; the two legacy Pages deploy scripts are hard-deprecated
+  (`FORCE_LEGACY_PAGES_DEPLOY=1` escape hatch); owner-gated flip steps in
+  `docs/operator/corelink-app-domain-flip-runbook.md`. No app code, env or
+  secret changes — the identical Worker already serves these routes 200 on
+  `corelink-admin.humangr.com`.
 - **Docs CI: the four pre-existing reds greened (task #42).** (1) The Vale
   prose-lint jobs (`docs-ci.yml` + `docs-vale.yml`) moved to GitHub-hosted
   `ubuntu-latest` — `errata-ai/vale-action` downloads a Linux x86_64 reviewdog

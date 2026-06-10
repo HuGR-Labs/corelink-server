@@ -27,6 +27,25 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
+# ⛔ DEPRECATED (2026-06-10) — admin-ui no longer ships via CF Pages.
+#
+# next-on-pages 1.13.7 cannot render Next 15 SSR with next-intl + middleware
+# + ClerkProvider: every SSR route (incl. /sign-up) returns HTTP 500. The app
+# was migrated to a Worker (@opennextjs/cloudflare) on 2026-05-30 (035f10ec /
+# 5435fd8a). Re-deploying the Pages project re-creates the broken build that
+# served "Not Found"/500 on corelink-app.humangr.com until 2026-06-10.
+#
+# Use instead:  cd apps/admin-ui && pnpm cf:build && pnpm cf:deploy
+# Domain flip:  docs/operator/corelink-app-domain-flip-runbook.md
+# ---------------------------------------------------------------------------
+if [ "${FORCE_LEGACY_PAGES_DEPLOY:-0}" != "1" ]; then
+  echo "ERROR: deploy-pages-admin-ui-prod.sh is DEPRECATED — admin-ui is a Worker now." >&2
+  echo "       (next-on-pages SSR 500s; see header comment.) Use: apps/admin-ui pnpm cf:build && pnpm cf:deploy" >&2
+  echo "       Set FORCE_LEGACY_PAGES_DEPLOY=1 only if you really mean the dead Pages project." >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
 # Script setup
 # ---------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -56,6 +56,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { apiPost, ApiClientError } from "@/lib/api-client";
+import { CHECKOUT_TIER_IDS, DEFAULT_CHECKOUT_TIER } from "@/lib/pricing";
 
 // Edge runtime — required by Cloudflare Pages (per Wave 32 Phase F).
 // Clerk's server SDK works on edge via the lazy `await import(...)`
@@ -69,9 +70,11 @@ export const dynamic = "force-dynamic";
  * the 6-tier ladder (solo/starter/pro/max) plus legacy `team` (still accepted
  * by the 0062 CHECK). Enterprise is NOT checkout-able (the tier-select
  * backend 422s it toward the inquiry form), so it gets the clear 400 below.
+ * Sourced from `CHECKOUT_TIER_IDS` (src/lib/pricing.ts) so this gate and the
+ * `/[locale]/upgrade?plan=` validation can never drift apart.
  */
-const PAID_TIERS = new Set(["solo", "starter", "team", "pro", "max"]);
-const DEFAULT_TIER = "pro";
+const PAID_TIERS = new Set<string>(CHECKOUT_TIER_IDS);
+const DEFAULT_TIER = DEFAULT_CHECKOUT_TIER;
 
 interface CheckoutRequestBody {
   tier?: string;
