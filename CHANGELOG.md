@@ -44,6 +44,19 @@ Each entry cross-references:
   no-fire).
 
 ### Fixed
+- **`apps/analytics-worker` legacy toolchain (wrangler `^3.62.0` → `^4.20.0`,
+  vitest `^1.6.0` → `^4.1.8`) — clears the last 9 dev-graph npm advisories
+  rooted in its wrangler-3/vitest-1 dependency chain** (undici 5.x ×5 via
+  miniflare 3, esbuild ≤0.24 / vite 5 via vitest 1, ws via miniflare 3,
+  vitest 1.x itself). It was the repo's last wrangler-3 holdout; the bump
+  aligns it with the versions every other Worker package already uses and
+  evicts miniflare 3 / undici 5 / vitest 1 / wrangler 3 from `pnpm-lock.yaml`
+  entirely. `worker/package.json` now declares `miniflare ^4.20260609.0`
+  explicitly (it previously leaned on the v3 hoisted from analytics-worker's
+  wrangler 3; the miniflare integration suite keeps running through the
+  transition — the same explicit pin lands in #228). Remaining `pnpm audit`
+  findings all trace through the `apps/admin-ui` and `apps/docs` dev chains,
+  none through the Worker packages.
 - **`corelink-app.humangr.com` (public app entry, all docs pricing CTAs) served
   the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
   500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:
