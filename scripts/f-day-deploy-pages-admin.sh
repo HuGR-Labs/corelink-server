@@ -31,6 +31,21 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
+# ⛔ DEPRECATED (2026-06-10) — admin-ui no longer ships via CF Pages.
+# Pages → Worker migration 2026-05-30 (035f10ec / 5435fd8a): next-on-pages
+# SSR returns 500 on every page route. Re-deploying the Pages project
+# re-creates the corelink-app.humangr.com "Not Found"/500 outage.
+# Use instead:  cd apps/admin-ui && pnpm cf:build && pnpm cf:deploy
+# Domain flip:  docs/operator/corelink-app-domain-flip-runbook.md
+# ---------------------------------------------------------------------------
+if [ "${FORCE_LEGACY_PAGES_DEPLOY:-0}" != "1" ]; then
+  echo "ERROR: f-day-deploy-pages-admin.sh is DEPRECATED — admin-ui is a Worker now." >&2
+  echo "       Use: apps/admin-ui pnpm cf:build && pnpm cf:deploy (see header comment)." >&2
+  echo "       Set FORCE_LEGACY_PAGES_DEPLOY=1 only if you really mean the dead Pages project." >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
 # Script setup
 # ---------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

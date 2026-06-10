@@ -23,6 +23,19 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **`corelink-app.humangr.com` (public app entry, all docs pricing CTAs) served
+  the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
+  500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:
+  the 2026-05-30 Pages→Worker migration (`5435fd8a`) moved only
+  `corelink-admin.humangr.com` to the OpenNext Worker and left
+  `corelink-app.humangr.com` attached to the abandoned `corelink-admin-ui`
+  Pages project (broken next-on-pages build, commit `3daebca6`). Fix:
+  `apps/admin-ui/wrangler.toml` now binds `corelink-app.humangr.com` as a
+  Worker custom domain; the two legacy Pages deploy scripts are hard-deprecated
+  (`FORCE_LEGACY_PAGES_DEPLOY=1` escape hatch); owner-gated flip steps in
+  `docs/operator/corelink-app-domain-flip-runbook.md`. No app code, env or
+  secret changes — the identical Worker already serves these routes 200 on
+  `corelink-admin.humangr.com`.
 - **Docs CI: the four pre-existing reds greened (task #42).** (1) The Vale
   prose-lint jobs (`docs-ci.yml` + `docs-vale.yml`) moved to GitHub-hosted
   `ubuntu-latest` — `errata-ai/vale-action` downloads a Linux x86_64 reviewdog

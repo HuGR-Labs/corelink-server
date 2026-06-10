@@ -27,11 +27,20 @@ main = ".open-next/worker.js"
 compatibility_date = "2026-04-01"
 compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 
-# Custom domain — bind directly to the Worker. Previously owned by the
+# Custom domains — bind directly to the Worker. Previously owned by the
 # `corelink-admin-ui` Pages project; detached via CF API on migration day
-# (Pages project remains but no longer serves this domain).
+# (Pages project remains but no longer serves these domains).
+#
+# corelink-app.humangr.com is the PUBLIC app entry point: all docs pricing
+# CTAs target it and the Clerk production Frontend API lives at
+# clerk.corelink-app.humangr.com (it is Clerk's home domain). It was left on
+# the dead Pages project when corelink-admin was migrated (2026-05-30,
+# 5435fd8a), which served the broken next-on-pages build: `/` → literal
+# "Not Found", every SSR route (incl. /sign-up) → 500. Flip runbook:
+# docs/operator/corelink-app-domain-flip-runbook.md
 routes = [
-  { pattern = "corelink-admin.humangr.com", custom_domain = true }
+  { pattern = "corelink-admin.humangr.com", custom_domain = true },
+  { pattern = "corelink-app.humangr.com", custom_domain = true }
 ]
 
 [assets]
