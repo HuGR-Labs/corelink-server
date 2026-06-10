@@ -151,16 +151,15 @@ impl core::fmt::Debug for TurboRouteState {
 
 /// Build the [`TurboRouteState`] for the current build target and runtime.
 ///
-/// # Phase 0 / v1 — `InMemoryKvStore`
+/// # Runtime backing-store selection (v2)
 ///
-/// Artifacts are stored in RAM using [`InMemoryKvStore`] (does NOT persist
-/// across container restarts).  The audit sink is also in-memory.
-///
-/// **TODO(v2):** Swap `InMemoryKvStore` for a thin `R2KvStore` impl backed
-/// by R2 directly (separate bucket / prefix).  The route handlers and all
-/// audit/validation logic are unchanged — only the `Arc<dyn CasReadStore>` /
-/// `Arc<dyn CasWriteStore>` arguments to [`CasAdapterTurboHandler::new`] need
-/// to be replaced.  See `specs/TODO-turbo-r2-backing-store.md`.
+/// When storage credentials are configured (`StorageEnv::from_env()`), the
+/// handler is backed by the **durable** [`R2KvStore`](crate::storage::r2_kv::R2KvStore)
+/// (closes the former `TODO(v2)`: artifacts now persist across container
+/// restarts). Otherwise — dev / CI without secrets — it falls back to the
+/// in-RAM [`InMemoryKvStore`]. Mirrors the `cas`/`ac` `build_handlers`
+/// fallback convention; the route handlers and audit/validation logic are
+/// identical for both backings (opaque-key semantics, no hash verify).
 ///
 /// # Panics
 ///
@@ -168,6 +167,36 @@ impl core::fmt::Debug for TurboRouteState {
 #[must_use]
 pub fn build_handlers() -> TurboRouteState {
     let audit = Arc::new(InMemoryTurboAuditSink::new());
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use crate::storage::{r2_kv, StorageEnv};
+        if StorageEnv::from_env().is_some() {
+            // `block_in_place` rationale: build_handlers runs inside the
+            // `#[tokio::main]` multi-thread runtime; a bare `block_on`
+            // from a running future hangs. Mirrors `cas`/`ac` handlers.
+            let handle = tokio::runtime::Handle::current();
+            let built =
+                tokio::task::block_in_place(|| handle.block_on(r2_kv::build_r2_kv_from_env()));
+            match built {
+                Some(Ok(store)) => {
+                    let store = Arc::new(store);
+                    let read: Arc<dyn corelink_turbo_bridge::adapter::CasReadStore> = store.clone();
+                    let write: Arc<dyn corelink_turbo_bridge::adapter::CasWriteStore> = store;
+                    tracing::info!("Turbo handler: R2KvStore (durable storage)");
+                    let handler: Arc<dyn TurboArtifactHandler> =
+                        Arc::new(CasAdapterTurboHandler::new(read, write, audit));
+                    return TurboRouteState { handler };
+                }
+                Some(Err(e)) => {
+                    tracing::error!(error = %e, "Turbo R2KvStore build failed, falling back to InMemory");
+                }
+                None => {}
+            }
+        }
+    }
+
+    tracing::info!("Turbo handler: InMemoryKvStore (no storage credentials configured)");
     let store = Arc::new(InMemoryKvStore::new());
     let handler: Arc<dyn TurboArtifactHandler> =
         Arc::new(CasAdapterTurboHandler::new(store.clone(), store, audit));
