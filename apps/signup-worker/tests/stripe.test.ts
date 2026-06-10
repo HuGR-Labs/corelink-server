@@ -7,7 +7,11 @@
  *   - customer.subscription.updated → D1 update + analytics
  *   - customer.subscription.deleted → D1 cancel + analytics
  *   - Unknown event types → 200 with no side effects
- *   - Missing BILLING_DB → graceful degradation (still 200)
+ *   - Missing BILLING_DB → 503 fail-closed (Stripe retries; no silent ack)
+ *   - payment_status activation gate (unpaid completed → no writes;
+ *     async_payment_succeeded → activates; async_payment_failed → no writes)
+ *   - price↔tier defense-in-depth assert on subscription.created/updated
+ *   - terminal-state guard: a 'canceled' tenant_billing row never resurrects
  */
 
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
@@ -303,21 +307,26 @@ describe("handleStripeWebhook", () => {
     });
 
     it("returns 400 on invalid signature", async () => {
+        const db = fakeDb();
         const req = new Request("https://x.test/webhooks/stripe", {
             method: "POST",
             headers: { "stripe-signature": "t=12345,v1=badhex" },
             body: "{}",
         });
-        const res = await handleStripeWebhook(req, baseEnv(), fakeCtx());
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
         expect(res.status).toBe(400);
         expect(await res.text()).toBe("invalid_signature");
+        // Rejected BEFORE any side effect.
+        expect(db.runCalls).toHaveLength(0);
     });
 
     it("returns 400 with missing stripe-signature header", async () => {
+        const db = fakeDb();
         const req = new Request("https://x.test/webhooks/stripe", { method: "POST", body: "{}" });
-        const res = await handleStripeWebhook(req, baseEnv(), fakeCtx());
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
         expect(res.status).toBe(400);
         expect(await res.text()).toBe("invalid_signature");
+        expect(db.runCalls).toHaveLength(0);
     });
 
     it("checkout.session.completed → D1 upsert + analytics + 200", async () => {
@@ -331,6 +340,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_test123",
                     subscription: "sub_test456",
                     amount_total: 4900,
+                    payment_status: "paid",
                     metadata: {
                         tenant_id: "tenant_abc",
                         clerk_user_id: "user_clerk_xyz",
@@ -358,7 +368,12 @@ describe("handleStripeWebhook", () => {
         expect(callBody.events[0]!.tenant_id).toBe("tenant_abc");
     });
 
-    it("checkout.session.completed with no BILLING_DB → 200 (graceful degradation)", async () => {
+    it("missing BILLING_DB → 503 fail-closed, NO processing (was a silent 200 that no-op'd every money-path write)", async () => {
+        // AUDIT FIX 2: without the binding every D1 write silently no-ops and
+        // the old handler still acked 200 — Stripe never retried, so a PAID
+        // checkout was dropped with no recovery. Now mirrors the
+        // STRIPE_WEBHOOK_SECRET check: 503 BEFORE any processing so Stripe
+        // retries until the deploy misconfiguration is fixed.
         const nowMs = Date.now();
         const event = {
             id: "evt_nodb_1",
@@ -368,6 +383,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_nodb",
                     subscription: "sub_nodb",
                     amount_total: 4900,
+                    payment_status: "paid",
                     metadata: { tenant_id: "t_nodb", tier: "starter" },
                 },
             },
@@ -375,8 +391,13 @@ describe("handleStripeWebhook", () => {
         const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
         const env = baseEnv();
         delete (env as { BILLING_DB?: unknown }).BILLING_DB;
+        const fetchSpy = vi.mocked(globalThis.fetch);
+        fetchSpy.mockClear();
         const res = await handleStripeWebhook(req, env, fakeCtx());
-        expect(res.status).toBe(200);
+        expect(res.status).toBe(503);
+        expect(await res.text()).toBe("billing_db_unbound");
+        // No processing happened: no analytics emit either.
+        expect(fetchSpy).not.toHaveBeenCalled();
     });
 
     it("checkout.session.completed without tenant_id metadata → 500 (fail-loud, no write, Stripe redelivers)", async () => {
@@ -390,6 +411,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_nometa",
                     subscription: "sub_nometa",
                     amount_total: 4900,
+                    payment_status: "paid",
                     metadata: {},
                 },
             },
@@ -420,6 +442,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_notier",
                     subscription: "sub_notier",
                     amount_total: 14900,
+                    payment_status: "paid",
                     // tenant_id + customer present, but NO tier: our checkout
                     // backend always sets metadata[tier], so this session is
                     // anomalous. The old fallback silently recorded "starter"
@@ -557,6 +580,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_idem",
                     subscription: "sub_idem",
                     amount_total: 4900,
+                    payment_status: "paid",
                     metadata: { tenant_id: "tenant_idem", tier: "starter" },
                 },
             },
@@ -588,6 +612,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_dedup",
                     subscription: "sub_dedup",
                     amount_total: 4900,
+                    payment_status: "paid",
                     metadata: { tenant_id: "tenant_dedup", tier: "starter" },
                 },
             },
@@ -628,6 +653,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_retry",
                     subscription: "sub_retry",
                     amount_total: 4900,
+                    payment_status: "paid",
                     metadata: { tenant_id: "tenant_retry", tier: "starter" },
                 },
             },
@@ -694,6 +720,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_recover",
                     subscription: "sub_recover",
                     amount_total: 4900,
+                    payment_status: "paid",
                     metadata: { tenant_id: "tenant_recover", tier: "starter" },
                 },
             },
@@ -743,6 +770,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_solo_1",
                     subscription: "sub_solo_1",
                     amount_total: 1500,
+                    payment_status: "paid",
                     metadata: { tenant_id: "tenant_solo", tier: "solo" },
                 },
             },
@@ -768,6 +796,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_max_1",
                     subscription: "sub_max_1",
                     amount_total: 14900,
+                    payment_status: "paid",
                     metadata: { tenant_id: "tenant_max", tier: "max" },
                 },
             },
@@ -851,6 +880,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_claim_err",
                     subscription: "sub_claim_err",
                     amount_total: 4900,
+                    payment_status: "paid",
                     metadata: { tenant_id: "tenant_claim_err", tier: "starter" },
                 },
             },
@@ -907,6 +937,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_durable",
                     subscription: "sub_durable",
                     amount_total: 4900,
+                    payment_status: "paid",
                     metadata: { tenant_id: "tenant_durable", tier: "starter" },
                 },
             },
@@ -962,6 +993,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_happy",
                     subscription: "sub_happy",
                     amount_total: 4900,
+                    payment_status: "paid",
                     metadata: { tenant_id: "tenant_happy", tier: "starter" },
                 },
             },
@@ -998,6 +1030,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_dup",
                     subscription: "sub_dup",
                     amount_total: 4900,
+                    payment_status: "paid",
                     metadata: { tenant_id: "tenant_dup", tier: "starter" },
                 },
             },
@@ -1037,6 +1070,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_emitfail",
                     subscription: "sub_emitfail",
                     amount_total: 4900,
+                    payment_status: "paid",
                     metadata: { tenant_id: "tenant_emitfail", tier: "starter" },
                 },
             },
@@ -1346,6 +1380,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_act",
                     subscription: "sub_act",
                     amount_total: 4900,
+                    payment_status: "paid",
                     metadata: { tenant_id: "tenant_act", tier: "starter" },
                 },
             },
@@ -1397,6 +1432,7 @@ describe("handleStripeWebhook", () => {
                     customer: "cus_resub",
                     subscription: "sub_resub",
                     amount_total: 4900,
+                    payment_status: "paid",
                     metadata: { tenant_id: "tenant_resub", tier: "starter" },
                 },
             },
@@ -1485,5 +1521,415 @@ describe("handleStripeWebhook", () => {
         );
         expect(deact).toBeDefined();
         expect(deact!.params).toContain("sub_no_customer");
+    });
+
+    // ------------------------------------------------------------------
+    // AUDIT FIX 1: payment_status activation gate. checkout.session.completed
+    // fires with payment_status='unpaid' for async payment methods (SEPA,
+    // ACH, …) — the old handler activated entitlement without reading it,
+    // granting access for money that may never arrive. Activation is now
+    // gated on paid/no_payment_required; async payments activate via
+    // checkout.session.async_payment_succeeded.
+    // ------------------------------------------------------------------
+
+    it("checkout.session.completed with payment_status=unpaid → 200, ZERO writes, no emit (entitlement comes later)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_unpaid_1",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    id: "cs_unpaid_1",
+                    customer: "cus_unpaid",
+                    subscription: "sub_unpaid",
+                    amount_total: 4900,
+                    payment_status: "unpaid", // async payment method still pending
+                    metadata: { tenant_id: "tenant_unpaid", tier: "starter" },
+                },
+            },
+        };
+        const fetchSpy = vi.mocked(globalThis.fetch);
+        fetchSpy.mockClear();
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        // 200: the event is valid, we just take no action yet — activation
+        // arrives via async_payment_succeeded (or never, via …failed).
+        expect(res.status).toBe(200);
+        // ZERO tenant_billing / tier_selections writes — nothing granted.
+        expect(
+            db.runCalls.find(
+                (c) => c.sql.includes("tenant_billing") || c.sql.includes("tier_selections"),
+            ),
+        ).toBeUndefined();
+        // In fact zero D1 statements at all (we return before the claim too).
+        expect(db.runCalls).toHaveLength(0);
+        // No paid_subscription_started emit — no MRR started yet.
+        expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("checkout.session.completed with payment_status=no_payment_required → activates (trial/100%-coupon checkouts)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_npr_1",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    id: "cs_npr_1",
+                    customer: "cus_npr",
+                    subscription: "sub_npr",
+                    amount_total: 0,
+                    payment_status: "no_payment_required",
+                    metadata: { tenant_id: "tenant_npr", tier: "starter" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+        expect(
+            db.runCalls.find((c) => c.sql.includes("INSERT INTO tenant_billing")),
+        ).toBeDefined();
+        expect(
+            db.runCalls.find((c) => c.sql.includes("INSERT INTO tier_selections")),
+        ).toBeDefined();
+    });
+
+    it("checkout.session.completed with UNKNOWN/missing payment_status → 500 fail-loud, no writes", async () => {
+        // Fail-safe in BOTH directions: never grant on an unproven payment,
+        // never silently 200 a session shape we do not understand.
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_nops_1",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    id: "cs_nops_1",
+                    customer: "cus_nops",
+                    subscription: "sub_nops",
+                    amount_total: 4900,
+                    // NOTE: no payment_status at all (anomalous session shape).
+                    metadata: { tenant_id: "tenant_nops", tier: "starter" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(500);
+        expect(await res.text()).toBe("checkout_payment_status_unknown");
+        expect(
+            db.runCalls.find(
+                (c) => c.sql.includes("tenant_billing") || c.sql.includes("tier_selections"),
+            ),
+        ).toBeUndefined();
+    });
+
+    it("checkout.session.async_payment_succeeded → activates IDENTICALLY to a paid completed session", async () => {
+        // This is how a delayed payment method eventually activates: the
+        // session completed earlier with payment_status='unpaid' (no writes);
+        // once the payment clears, Stripe fires this event with the same
+        // session object (now payment_status='paid').
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_async_ok_1",
+            type: "checkout.session.async_payment_succeeded",
+            data: {
+                object: {
+                    id: "cs_async_ok_1",
+                    customer: "cus_async_ok",
+                    subscription: "sub_async_ok",
+                    amount_total: 4900,
+                    payment_status: "paid",
+                    metadata: { tenant_id: "tenant_async_ok", tier: "starter" },
+                },
+            },
+        };
+        const fetchSpy = vi.mocked(globalThis.fetch);
+        fetchSpy.mockClear();
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // Identical activation to the paid-completed path (the shared helper):
+        // tenant_billing 'paid' upsert …
+        const billing = db.runCalls.find((c) => c.sql.includes("INSERT INTO tenant_billing"));
+        expect(billing).toBeDefined();
+        expect(billing!.sql).toContain("'paid'");
+        expect(billing!.params).toContain("tenant_async_ok");
+        // … + canonical tier_selections activation …
+        const activation = db.runCalls.find(
+            (c) => c.sql.includes("INSERT INTO tier_selections") && c.sql.includes("ON CONFLICT"),
+        );
+        expect(activation).toBeDefined();
+        expect(activation!.params).toContain("starter");
+        expect(activation!.sql).toContain("'active'");
+        // … + the paid_subscription_started MRR emit.
+        const body = JSON.parse(fetchSpy.mock.calls[0]![1]?.body as string) as {
+            events: Array<{ event_name: string; tenant_id: string }>;
+        };
+        expect(body.events[0]!.event_name).toBe("paid_subscription_started");
+        expect(body.events[0]!.tenant_id).toBe("tenant_async_ok");
+    });
+
+    it("checkout.session.async_payment_succeeded missing metadata[tier] → 500 (same fail-loud as completed)", async () => {
+        // The shared arm means the async path inherits ALL the completed-path
+        // validation — pin one of the guards to prove it.
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_async_notier_1",
+            type: "checkout.session.async_payment_succeeded",
+            data: {
+                object: {
+                    id: "cs_async_notier_1",
+                    customer: "cus_async_notier",
+                    subscription: "sub_async_notier",
+                    amount_total: 14900,
+                    payment_status: "paid",
+                    metadata: { tenant_id: "tenant_async_notier" }, // no tier
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(500);
+        expect(await res.text()).toBe("checkout_missing_tier");
+        expect(
+            db.runCalls.find(
+                (c) => c.sql.includes("tenant_billing") || c.sql.includes("tier_selections"),
+            ),
+        ).toBeUndefined();
+    });
+
+    it("checkout.session.async_payment_failed → 200, no billing/tier writes (nothing was granted, nothing to revoke)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_async_fail_1",
+            type: "checkout.session.async_payment_failed",
+            data: {
+                object: {
+                    id: "cs_async_fail_1",
+                    customer: "cus_async_fail",
+                    subscription: "sub_async_fail",
+                    payment_status: "unpaid",
+                    metadata: { tenant_id: "tenant_async_fail", tier: "starter" },
+                },
+            },
+        };
+        const fetchSpy = vi.mocked(globalThis.fetch);
+        fetchSpy.mockClear();
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+        // No entitlement/billing mutation (the unpaid completed event never
+        // wrote anything, so there is nothing to revert) — only the dedup
+        // claim is allowed to touch D1.
+        expect(
+            db.runCalls.find(
+                (c) => c.sql.includes("tenant_billing") || c.sql.includes("tier_selections"),
+            ),
+        ).toBeUndefined();
+        // And no analytics emit.
+        expect(fetchSpy).not.toHaveBeenCalled();
+        // The event IS claimed as a dispatched type (forensics).
+        const claim = db.runCalls.find((c) =>
+            c.sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed"),
+        );
+        expect(claim).toBeDefined();
+        expect(claim!.params).toContain("dispatched");
+    });
+
+    // ------------------------------------------------------------------
+    // AUDIT FIX 3: price↔tier defense-in-depth assert. metadata[tier] is
+    // server-set at checkout, but a checkout-backend bug could desync it from
+    // the price actually subscribed. The checkout.session webhook payload
+    // carries no price data (line_items requires expand[], never present in
+    // events), so the cross-check lives on subscription.created/updated —
+    // the first payloads that carry BOTH metadata[tier] and the price.
+    // ------------------------------------------------------------------
+
+    it("subscription.updated with metadata[tier] CONTRADICTING the subscribed price → 500 fail-loud, no writes", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_mismatch_upd_1",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_mismatch_upd",
+                    customer: "cus_mismatch_upd",
+                    status: "active",
+                    current_period_end: Math.floor(nowMs / 1000) + 30 * 24 * 3600,
+                    // metadata says PRO but the actual subscribed price is STARTER.
+                    metadata: { tenant_id: "tenant_mismatch_upd", tier: "pro" },
+                    items: { data: [{ price: { id: "price_starter_xxx" } }] },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(500);
+        expect(await res.text()).toBe("subscription_tier_price_mismatch");
+        // No write of EITHER candidate tier — never pick a winner.
+        expect(
+            db.runCalls.find(
+                (c) => c.sql.includes("tenant_billing") || c.sql.includes("tier_selections"),
+            ),
+        ).toBeUndefined();
+    });
+
+    it("subscription.updated with metadata[tier] AGREEING with the price → processes normally (no false positive)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_match_upd_1",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_match_upd",
+                    customer: "cus_match_upd",
+                    status: "active",
+                    current_period_end: Math.floor(nowMs / 1000) + 30 * 24 * 3600,
+                    metadata: { tenant_id: "tenant_match_upd", tier: "pro" },
+                    items: { data: [{ price: { id: "price_pro_zzz" } }] },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+        const update = db.runCalls.find((c) => c.sql.includes("UPDATE tenant_billing"));
+        expect(update).toBeDefined();
+        expect(update!.params).toContain("paid");
+        // Tier propagation used the (consistent) resolved tier.
+        const tierUpdate = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("SET tier"),
+        );
+        expect(tierUpdate).toBeDefined();
+        expect(tierUpdate!.params).toContain("pro");
+    });
+
+    it("subscription.created with metadata[tier] CONTRADICTING the subscribed price → 500 fail-loud, no backfill", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_mismatch_cre_1",
+            type: "customer.subscription.created",
+            data: {
+                object: {
+                    id: "sub_mismatch_cre",
+                    customer: "cus_mismatch_cre",
+                    current_period_end: Math.floor(nowMs / 1000) + 30 * 24 * 3600,
+                    // metadata says MAX but the actual subscribed price is SOLO.
+                    metadata: { tenant_id: "tenant_mismatch_cre", tier: "max" },
+                    items: { data: [{ price: { id: "price_solo_aaa" } }] },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(500);
+        expect(await res.text()).toBe("subscription_tier_price_mismatch");
+        expect(
+            db.runCalls.find(
+                (c) => c.sql.includes("tenant_billing") || c.sql.includes("tier_selections"),
+            ),
+        ).toBeUndefined();
+    });
+
+    // ------------------------------------------------------------------
+    // AUDIT FIX 4: tenant_billing terminal-state guard. Stripe webhooks are
+    // unordered — a late customer.subscription.updated(status=active) arriving
+    // AFTER customer.subscription.deleted used to resurrect tenant_billing to
+    // 'paid'. The UPDATE now carries `AND status != 'canceled'` so a canceled
+    // row never moves forward (matching the canonical tier_selections gate,
+    // where activation only ever happens via checkout.session.completed).
+    // The fake DB is stateless, so the regression is pinned on the SQL guard
+    // the statement executes with.
+    // ------------------------------------------------------------------
+
+    it("terminal-state: deleted then LATE updated(active) → the billing UPDATE is guarded so a 'canceled' row stays canceled", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+
+        // 1) The subscription is deleted → tenant_billing.status = 'canceled'.
+        const del = {
+            id: "evt_term_del",
+            type: "customer.subscription.deleted",
+            data: {
+                object: {
+                    id: "sub_terminal",
+                    customer: "cus_terminal",
+                    metadata: { tenant_id: "tenant_terminal" },
+                },
+            },
+        };
+        let req = await makeStripeRequest(del, TEST_SECRET, nowMs);
+        expect((await handleStripeWebhook(req, baseEnv(db), fakeCtx())).status).toBe(200);
+        expect(db.runCalls.find((c) => c.sql.includes("'canceled'"))).toBeDefined();
+
+        // 2) A LATE/out-of-order updated(status=active) for the SAME
+        //    subscription arrives afterwards.
+        const lateUpdate = {
+            id: "evt_term_late_upd",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_terminal",
+                    customer: "cus_terminal",
+                    status: "active",
+                    current_period_end: Math.floor(nowMs / 1000) + 30 * 24 * 3600,
+                    metadata: { tenant_id: "tenant_terminal" },
+                },
+            },
+        };
+        req = await makeStripeRequest(lateUpdate, TEST_SECRET, nowMs + 1000);
+        expect((await handleStripeWebhook(req, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        // The status='paid' UPDATE the late event executes is guarded: it can
+        // never touch a row whose status is already 'canceled'.
+        const update = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tenant_billing") && c.params.includes("paid"),
+        );
+        expect(update).toBeDefined();
+        expect(update!.sql).toContain("status != 'canceled'");
+
+        // And the canonical gate was NOT resurrected: no tier_selections write
+        // sets subscription_state back to 'active' on this event (activation
+        // only ever happens via checkout.session.completed).
+        const lateActivation = db.runCalls.find(
+            (c) => c.sql.includes("tier_selections") && c.sql.includes("'active'"),
+        );
+        expect(lateActivation).toBeUndefined();
+    });
+
+    it("terminal-state: a late invoice.payment_failed after cancel is guarded too (status-only UPDATE carries the guard)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_term_pf",
+            type: "invoice.payment_failed",
+            data: {
+                object: {
+                    subscription: "sub_term_pf",
+                    customer: "cus_term_pf",
+                    attempt_count: 4,
+                    next_payment_attempt: null, // terminal dunning failure
+                    metadata: { tenant_id: "tenant_term_pf" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        expect((await handleStripeWebhook(req, baseEnv(db), fakeCtx())).status).toBe(200);
+        const billing = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tenant_billing") && c.params.includes("past_due"),
+        );
+        expect(billing).toBeDefined();
+        // 'canceled' is terminal: even the past_due status writer is guarded.
+        expect(billing!.sql).toContain("status != 'canceled'");
     });
 });

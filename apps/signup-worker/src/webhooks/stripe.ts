@@ -5,7 +5,18 @@
 // matter for self-serve billing:
 //
 //   checkout.session.completed    → INSERT / UPDATE tenant_billing (paid) +
-//                                   activate tier_selections (access gate)
+//                                   activate tier_selections (access gate) —
+//                                   ONLY when payment_status is
+//                                   paid/no_payment_required (async payment
+//                                   methods deliver 'unpaid' here; entitlement
+//                                   then arrives via async_payment_succeeded)
+//   checkout.session.async_payment_succeeded
+//                                 → same activation as a paid completed session
+//                                   (delayed payment methods: SEPA, ACH, …)
+//   checkout.session.async_payment_failed
+//                                 → log + ack; nothing was granted at
+//                                   completed-time (payment_status was
+//                                   'unpaid'), so there is nothing to revoke
 //   customer.subscription.created → backfill tenant_billing.current_period_end_ms
 //   customer.subscription.updated → UPDATE period_end + status; propagate a plan
 //                                   change to tier_selections.tier; sync the
@@ -299,6 +310,40 @@ function resolveSubscriptionTier(
 }
 
 /**
+ * Defense-in-depth price↔tier cross-check (audit fix 3).
+ *
+ * `metadata[tier]` is server-set by our checkout backend (client.rs:631), but a
+ * checkout-backend bug could desync it from the Stripe price actually
+ * subscribed (the price is selected from `STRIPE_PRICE_ID_{TIER}` by the same
+ * tier — if that wiring ever breaks, the customer pays one SKU and gets
+ * entitled to another). Subscription objects are the first webhook payloads
+ * that carry BOTH signals (`metadata[tier]` when the checkout copied it +
+ * `items.data[0].price.id` / `plan.id` always), so we cross-check them there.
+ *
+ * Returns the conflicting pair when both resolve AND disagree, else null.
+ * Callers MUST fail loud (500 → Stripe redelivery, operator signal) on a
+ * conflict — never pick a winner and keep writing entitlement.
+ *
+ * NOTE: `checkout.session.completed` cannot run this check — the webhook
+ * session payload carries NO price-shaped data (`line_items` is only present
+ * on an API retrieval with `expand[]`, never in event payloads, and the
+ * session object has no `items`/`plan`), and we deliberately make no Stripe
+ * API calls from the webhook. The cross-check therefore lives on the
+ * customer.subscription.created/updated events Stripe fires immediately after
+ * checkout, where the price IS in the payload.
+ */
+function detectTierPriceMismatch(
+    obj: Record<string, unknown>,
+    env: StripeWebhookEnv,
+): { metaTier: PaidTier; priceTier: PaidTier } | null {
+    const metaTier = tierFromMetadata(obj);
+    const priceTier = tierFromSubscriptionPrice(obj, env);
+    return metaTier && priceTier && metaTier !== priceTier
+        ? { metaTier, priceTier }
+        : null;
+}
+
+/**
  * Whether a Stripe subscription `status` means the tenant still has entitlement.
  * `active` and `trialing` keep access; everything else (past_due, unpaid,
  * canceled, incomplete, incomplete_expired, paused) loses it. Fail-safe: an
@@ -315,6 +360,8 @@ function subscriptionStatusGrantsAccess(rawStatus: unknown): boolean {
 /** Event types this handler actually dispatches side effects for. */
 const HANDLED_EVENT_TYPES = new Set<string>([
     "checkout.session.completed",
+    "checkout.session.async_payment_succeeded",
+    "checkout.session.async_payment_failed",
     "customer.subscription.updated",
     "customer.subscription.created",
     "invoice.payment_failed",
@@ -436,6 +483,16 @@ async function upsertBillingPaid(
  * Update billing status + period-end on `customer.subscription.updated`.
  * Looks up by stripe_subscription_id so we can find the tenant even if the
  * webhook arrives before tenant_id metadata is available.
+ *
+ * TERMINAL-STATE GUARD (audit fix 4): 'canceled' is terminal for a given
+ * stripe_subscription_id. Stripe webhooks are NOT ordered — a late/out-of-order
+ * `customer.subscription.updated(status=active)` arriving AFTER
+ * `customer.subscription.deleted` used to resurrect tenant_billing to 'paid'
+ * (the canonical tier_selections gate was already safe: activation only happens
+ * via checkout.session.completed). `AND status != 'canceled'` makes the mirror
+ * match the canonical gate: once canceled, only a NEW checkout (the
+ * upsertBillingPaid ON CONFLICT path, which carries a new subscription id) can
+ * move the row forward.
  */
 async function updateBillingSubscription(
     db: D1DatabaseLike,
@@ -452,7 +509,8 @@ async function updateBillingSubscription(
              SET status = ?1,
                  current_period_end_ms = ?2,
                  updated_at_ms = ?3
-             WHERE stripe_subscription_id = ?4`,
+             WHERE stripe_subscription_id = ?4
+               AND status != 'canceled'`,
         )
         .bind(opts.status, opts.currentPeriodEndMs, opts.nowMs, opts.stripeSubscriptionId)
         .run();
@@ -462,7 +520,9 @@ async function updateBillingSubscription(
  * Update ONLY `tenant_billing.status` (leave period-end + ids untouched), keyed
  * by subscription id. Used on invoice.payment_failed so a dunning failure marks
  * the row 'past_due' without clobbering the existing current_period_end_ms.
- * Idempotent on redelivery.
+ * Idempotent on redelivery. Same terminal-state guard as
+ * updateBillingSubscription (audit fix 4): a late invoice.payment_failed after
+ * subscription.deleted must not move a 'canceled' row to 'past_due'.
  */
 async function updateBillingStatus(
     db: D1DatabaseLike,
@@ -473,7 +533,8 @@ async function updateBillingStatus(
             `UPDATE tenant_billing
              SET status = ?1,
                  updated_at_ms = ?2
-             WHERE stripe_subscription_id = ?3`,
+             WHERE stripe_subscription_id = ?3
+               AND status != 'canceled'`,
         )
         .bind(opts.status, opts.nowMs, opts.stripeSubscriptionId)
         .run();
@@ -684,6 +745,82 @@ async function backfillPeriodEnd(
         .run();
 }
 
+/**
+ * Queue the checkout activation (audit fix 1 extraction): the tenant_billing
+ * 'paid' upsert + the canonical tier_selections activation, and build the
+ * `paid_subscription_started` analytics event the caller emits exactly-once.
+ *
+ * SHARED by the two paths that may grant entitlement for a checkout session —
+ * `checkout.session.completed` with payment_status paid/no_payment_required,
+ * and `checkout.session.async_payment_succeeded` (delayed payment methods) —
+ * so the activation semantics CANNOT drift between them.
+ *
+ * The inner `env.BILLING_DB` guard is TypeScript narrowing only: the handler
+ * fails closed (503) before dispatch when the binding is missing.
+ */
+function queueCheckoutActivation(
+    env: StripeWebhookEnv,
+    requiredWrites: Array<Promise<void>>,
+    opts: {
+        sessionId: string | undefined;
+        tenantId: string;
+        stripeCustomerId: string;
+        stripeSubscriptionId: string | null;
+        plan: string;
+        amountTotal: number | undefined;
+        nowMs: number;
+    },
+): Parameters<typeof emit>[1] {
+    if (env.BILLING_DB) {
+        const db = env.BILLING_DB;
+        // REQUIRED durable write — awaited by the caller; a failure returns
+        // 500 so Stripe redelivers (the customer paid, they are owed the
+        // billing row).
+        requiredWrites.push(
+            upsertBillingPaid(db, {
+                tenantId: opts.tenantId,
+                stripeCustomerId: opts.stripeCustomerId,
+                stripeSubscriptionId: opts.stripeSubscriptionId,
+                plan: opts.plan,
+                currentPeriodEndMs: null,
+                nowMs: opts.nowMs,
+            }),
+        );
+        // GAP-6: reconcile the canonical subscription FSM the money path
+        // reads. Only a real paid tier may flip to 'active' (free never
+        // reaches Stripe; enterprise uses the inquiry form). An unrecognised
+        // tier is left un-activated rather than written with a bogus value.
+        // Uses the canonical asPaidTier set — an inline starter/team/pro
+        // triple here silently skipped Solo/Max activation
+        // (pay-but-not-entitled for the $15/$149 SKUs).
+        const paidTier = asPaidTier(opts.plan);
+        if (paidTier) {
+            requiredWrites.push(
+                activatePaidTierSelection(db, {
+                    tenantId: opts.tenantId,
+                    tier: paidTier,
+                    stripeCustomerId: opts.stripeCustomerId,
+                    nowMs: opts.nowMs,
+                    correlationId: `stripe_checkout:${opts.sessionId ?? opts.stripeCustomerId}`,
+                }),
+            );
+        }
+    }
+    // paid_subscription_started carries non-idempotent MRR; emitted exactly
+    // once on the first SUCCESSFUL delivery (gated on the post-write claim).
+    return {
+        id: newEventId(),
+        event_name: "paid_subscription_started",
+        tenant_id: opts.tenantId,
+        properties: {
+            plan: opts.plan,
+            mrr_usd: centsToUsd(opts.amountTotal),
+            stripe_customer_id: opts.stripeCustomerId,
+            stripe_subscription_id: opts.stripeSubscriptionId,
+        },
+    };
+}
+
 // ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
@@ -695,6 +832,21 @@ export async function handleStripeWebhook(
 ): Promise<Response> {
     if (!env.STRIPE_WEBHOOK_SECRET) {
         return new Response("stripe webhook secret not configured", { status: 503 });
+    }
+
+    // FAIL-CLOSED (audit fix 2, mirrors the secret check above): without the
+    // BILLING_DB binding every money-path write below would silently no-op and
+    // the handler would still return 200 — Stripe would never retry, so a PAID
+    // checkout would be acked with zero entitlement writes and no recovery
+    // (silent paid-but-no-access). A missing binding is a deploy
+    // misconfiguration: return 503 so Stripe retries until it is fixed. The
+    // inner `if (env.BILLING_DB)` guards below remain for TS narrowing only.
+    if (!env.BILLING_DB) {
+        console.error(
+            "[stripe-webhook] BILLING_DB binding missing — returning 503 (fail-closed) " +
+                "so Stripe retries instead of silently dropping money-path writes",
+        );
+        return new Response("billing_db_unbound", { status: 503 });
     }
 
     // --- 1. Read raw body (required for signature verification). --------
@@ -737,7 +889,49 @@ export async function handleStripeWebhook(
     let emitEvent: Parameters<typeof emit>[1] | null = null;
 
     switch (event.type) {
+        // checkout.session.async_payment_succeeded is how a DELAYED payment
+        // method (SEPA debit, ACH, …) eventually activates: its session
+        // completed earlier with payment_status='unpaid' (gated below, no
+        // writes), and this event fires once the payment actually clears. The
+        // session object is the same shape, so it shares the completed arm —
+        // identical validation + identical activation (audit fix 1).
+        case "checkout.session.async_payment_succeeded":
         case "checkout.session.completed": {
+            // PAYMENT-STATUS ACTIVATION GATE (audit fix 1): a
+            // checkout.session.completed fires even when an async payment
+            // method has NOT been charged yet (payment_status='unpaid'). The
+            // old handler activated entitlement without ever reading
+            // payment_status — granting access for money that may never
+            // arrive. Gate ALL writes on the session being actually paid:
+            //   - 'paid' / 'no_payment_required' → activate below.
+            //   - 'unpaid' → ack with 200 and write NOTHING; entitlement
+            //     arrives via checkout.session.async_payment_succeeded (and a
+            //     failure via …async_payment_failed, which has nothing to
+            //     revoke precisely because we skipped the writes here).
+            //   - anything else (missing/unknown) → fail loud (500,
+            //     redelivery): fail-safe in BOTH directions — never grant on
+            //     an unproven payment, never silently drop a session we do
+            //     not understand.
+            const paymentStatus = obj["payment_status"];
+            if (paymentStatus === "unpaid") {
+                console.log(
+                    `[stripe-webhook] ${event.type} with payment_status=unpaid ` +
+                        `(session=${(obj["id"] as string | undefined) ?? "unknown"}) — ` +
+                        `async payment still pending; skipping all entitlement/billing ` +
+                        `writes (activation arrives via checkout.session.async_payment_succeeded)`,
+                );
+                return new Response("ok", { status: 200 });
+            }
+            if (paymentStatus !== "paid" && paymentStatus !== "no_payment_required") {
+                console.error(
+                    `[stripe-webhook] ${event.type} with unrecognized payment_status=` +
+                        `${typeof paymentStatus === "string" ? paymentStatus : "<absent>"} ` +
+                        `(session=${(obj["id"] as string | undefined) ?? "unknown"}); ` +
+                        `returning 500 for redelivery rather than activating an unproven payment`,
+                );
+                return new Response("checkout_payment_status_unknown", { status: 500 });
+            }
+
             // Extract Stripe IDs from the session object.
             const stripeCustomerId = obj["customer"] as string | null | undefined;
             const stripeSubscriptionId = obj["subscription"] as string | null | undefined;
@@ -765,7 +959,7 @@ export async function handleStripeWebhook(
             // not apply.
             if (!tenantId || typeof stripeCustomerId !== "string" || !stripeCustomerId) {
                 console.error(
-                    `[stripe-webhook] checkout.session.completed missing ` +
+                    `[stripe-webhook] ${event.type} missing ` +
                         `${!tenantId ? "tenant_id" : "customer"} ` +
                         `(session=${(obj["id"] as string | undefined) ?? "unknown"}); ` +
                         `returning 500 for redelivery rather than dropping a paid signup`,
@@ -784,7 +978,7 @@ export async function handleStripeWebhook(
             // is visible instead of silently mispriced.
             if (typeof tierMeta !== "string" || !tierMeta) {
                 console.error(
-                    `[stripe-webhook] checkout.session.completed missing metadata[tier] ` +
+                    `[stripe-webhook] ${event.type} missing metadata[tier] ` +
                         `(session=${(obj["id"] as string | undefined) ?? "unknown"}); ` +
                         `returning 500 for redelivery rather than recording a wrong plan`,
                 );
@@ -792,64 +986,68 @@ export async function handleStripeWebhook(
             }
             const plan = tierMeta;
 
-            {
-                if (env.BILLING_DB) {
-                    const db = env.BILLING_DB;
-                    // REQUIRED durable write — awaited below; a failure returns
-                    // 500 so Stripe redelivers (the customer paid, they are owed
-                    // the billing row).
-                    requiredWrites.push(
-                        upsertBillingPaid(db, {
-                            tenantId,
-                            stripeCustomerId,
-                            stripeSubscriptionId: typeof stripeSubscriptionId === "string" ? stripeSubscriptionId : null,
-                            plan,
-                            currentPeriodEndMs: null,
-                            nowMs,
-                        }),
-                    );
-                    // GAP-6: reconcile the canonical subscription FSM the money
-                    // path reads. Only a real paid tier may flip to 'active'
-                    // (free never reaches Stripe; enterprise uses the inquiry
-                    // form). An unrecognised tier is left un-activated rather
-                    // than written with a bogus value. Uses the canonical
-                    // asPaidTier set — an inline starter/team/pro triple here
-                    // silently skipped Solo/Max activation (pay-but-not-
-                    // entitled for the $15/$149 SKUs).
-                    const paidTier = asPaidTier(plan);
-                    if (paidTier) {
-                        requiredWrites.push(
-                            activatePaidTierSelection(db, {
-                                tenantId,
-                                tier: paidTier,
-                                stripeCustomerId,
-                                nowMs,
-                                correlationId: `stripe_checkout:${(obj["id"] as string | undefined) ?? stripeCustomerId}`,
-                            }),
-                        );
-                    }
-                }
-                // paid_subscription_started carries non-idempotent MRR; emitted
-                // exactly once on the first SUCCESSFUL delivery (gated on the
-                // post-write claim below).
-                emitEvent = {
-                    id: newEventId(),
-                    event_name: "paid_subscription_started",
-                    tenant_id: tenantId,
-                    properties: {
-                        plan,
-                        mrr_usd: centsToUsd(amountTotal),
-                        stripe_customer_id: stripeCustomerId,
-                        stripe_subscription_id: stripeSubscriptionId ?? null,
-                    },
-                };
-            }
+            // NOTE (audit fix 3): no price↔tier cross-check is possible here —
+            // the webhook session payload carries no price data (`line_items`
+            // only exists on an API retrieval with `expand[]`) and we make no
+            // Stripe API calls from the webhook. The cross-check runs on the
+            // customer.subscription.created/updated events that immediately
+            // follow, where the price IS in the payload — see
+            // detectTierPriceMismatch.
+
+            // Shared activation (audit fix 1): identical for a paid completed
+            // session and for async_payment_succeeded.
+            emitEvent = queueCheckoutActivation(env, requiredWrites, {
+                sessionId: obj["id"] as string | undefined,
+                tenantId,
+                stripeCustomerId,
+                stripeSubscriptionId:
+                    typeof stripeSubscriptionId === "string" ? stripeSubscriptionId : null,
+                plan,
+                amountTotal,
+                nowMs,
+            });
+            break;
+        }
+
+        case "checkout.session.async_payment_failed": {
+            // The delayed payment for an earlier 'unpaid' completed session
+            // failed. NOTHING was granted at completed-time (the
+            // payment_status gate above skipped all writes), so there is
+            // nothing to revoke — log for forensics and ack so Stripe stops
+            // retrying. No writes, no analytics emit.
+            console.log(
+                `[stripe-webhook] checkout.session.async_payment_failed ` +
+                    `(session=${(obj["id"] as string | undefined) ?? "unknown"}, ` +
+                    `tenant=${tenantId ?? "unknown"}) — no entitlement was granted, ` +
+                    `nothing to revoke; acknowledging`,
+            );
             break;
         }
 
         case "customer.subscription.updated": {
             const stripeSubscriptionId = obj["id"] as string | undefined;
             if (!stripeSubscriptionId) break;
+
+            // DEFENSE-IN-DEPTH price↔tier assert (audit fix 3): when the
+            // subscription payload carries BOTH metadata[tier] and a
+            // recognizable price, they must agree — a disagreement means the
+            // checkout backend desynced the server-set tier from the price the
+            // customer is actually paying, and silently preferring either side
+            // could entitle the wrong SKU. Fail loud BEFORE any write (500 →
+            // Stripe redelivers; the mismatch stays visible until fixed).
+            {
+                const mismatch = detectTierPriceMismatch(obj, env);
+                if (mismatch) {
+                    console.error(
+                        `[stripe-webhook] ${event.type} price↔tier mismatch ` +
+                            `(subscription=${stripeSubscriptionId}): metadata[tier]=` +
+                            `${mismatch.metaTier} but the subscribed price maps to ` +
+                            `${mismatch.priceTier}; returning 500 for redelivery rather ` +
+                            `than entitling the wrong SKU`,
+                    );
+                    return new Response("subscription_tier_price_mismatch", { status: 500 });
+                }
+            }
 
             const rawStatus = obj["status"] as string | undefined;
             // Map Stripe subscription statuses to our internal set.
@@ -947,6 +1145,25 @@ export async function handleStripeWebhook(
             // (activation stays the sole responsibility of
             // checkout.session.completed). Idempotent on redelivery.
             const stripeSubscriptionId = obj["id"] as string | undefined;
+
+            // DEFENSE-IN-DEPTH price↔tier assert (audit fix 3, same as the
+            // .updated arm): subscription.created is the FIRST payload after
+            // checkout that carries the real price, so it is the earliest
+            // point a checkout-backend tier↔price desync can be caught.
+            {
+                const mismatch = detectTierPriceMismatch(obj, env);
+                if (mismatch) {
+                    console.error(
+                        `[stripe-webhook] ${event.type} price↔tier mismatch ` +
+                            `(subscription=${stripeSubscriptionId ?? "unknown"}): ` +
+                            `metadata[tier]=${mismatch.metaTier} but the subscribed ` +
+                            `price maps to ${mismatch.priceTier}; returning 500 for ` +
+                            `redelivery rather than entitling the wrong SKU`,
+                    );
+                    return new Response("subscription_tier_price_mismatch", { status: 500 });
+                }
+            }
+
             const periodEndSecs = obj["current_period_end"] as number | undefined;
             if (
                 env.BILLING_DB &&
@@ -1106,8 +1323,9 @@ export async function handleStripeWebhook(
     //                                   before claiming) → claim now + emit.
     // claim_error (the claim INSERT itself threw) is fail-safe → treat as first
     // (emit): the writes already succeeded, so a 200 is correct, and we never
-    // drop a genuine first revenue emit. Without BILLING_DB there is no durable
-    // dedup store (graceful degradation) → every delivery is treated as first.
+    // drop a genuine first revenue emit. (BILLING_DB is guaranteed bound here —
+    // the handler fails closed with 503 at the top when it is missing; the
+    // check below is TS narrowing.)
     let isFirstDelivery = true;
     if (event.id && env.BILLING_DB) {
         const claim = await claimWebhookEvent(env.BILLING_DB, {
