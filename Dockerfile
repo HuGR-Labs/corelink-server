@@ -64,6 +64,7 @@ FROM rust:1.91-slim-bookworm@sha256:ac77791dbc2ab3cd3ab732fe9b45b0414a794743da99
 # Deps pra compilar protos e linkagem
 RUN apt-get update && apt-get install -y --no-install-recommends \
     protobuf-compiler \
+    libprotobuf-dev \
     pkg-config \
     libssl-dev \
     ca-certificates \
