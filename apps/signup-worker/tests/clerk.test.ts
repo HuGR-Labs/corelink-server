@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   autoProvisionFromClerkEvent,
   defaultApiClient,
+  handleClerkWebhook,
   tenantSlugFor,
   regionFromColo,
   verifySvixSignature,
@@ -435,6 +436,118 @@ describe("defaultApiClient.issuePat (H3: honors scope, no privilege-by-default)"
     expect(patBindArgs).not.toContain("admin");
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws (fail-loud) when CORELINK_INTERNAL_AUTH_KEY is absent — never returns a stub PAT", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const env = {
+      CLERK_WEBHOOK_SECRET: "whsec_x",
+      CORELINK_API_BASE: "https://api.example.test",
+      // CORELINK_INTERNAL_AUTH_KEY intentionally UNSET.
+    } as unknown as AutoProvisionEnv;
+
+    const api = defaultApiClient(env);
+
+    // Must reject (so the webhook handler returns 500 and Svix retries),
+    // NOT return a fake "corelink_pat_DEVSTUB", and NOT hit the mint endpoint.
+    await expect(api.issuePat("t_1", "read-write")).rejects.toThrow(
+      /CORELINK_INTERNAL_AUTH_KEY/,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleClerkWebhook (B4: fail-loud BEFORE any tenant write)", () => {
+  // Build a Svix-signed user.created request with a CURRENT timestamp so the
+  // handler's ±300s replay-freshness check passes against the real clock.
+  async function signedUserCreated(secretRaw: string, body: string): Promise<Request> {
+    const svixId = "msg_b4";
+    const svixTimestamp = String(Math.floor(Date.now() / 1000));
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secretRaw),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const sigBytes = new Uint8Array(
+      await crypto.subtle.sign(
+        "HMAC",
+        key,
+        new TextEncoder().encode(`${svixId}.${svixTimestamp}.${body}`),
+      ),
+    );
+    const sig = `v1,${btoa(String.fromCharCode(...sigBytes))}`;
+    return new Request("https://signup.test/webhooks/clerk", {
+      method: "POST",
+      headers: {
+        "svix-id": svixId,
+        "svix-timestamp": svixTimestamp,
+        "svix-signature": sig,
+        "content-type": "application/json",
+      },
+      body,
+    });
+  }
+
+  it("CORELINK_INTERNAL_AUTH_KEY absent → 500 and NEVER creates a tenant (no PAT-less orphan)", async () => {
+    const secretRaw = "supersecret-raw-bytes-with-good-entropy";
+    const secret = `whsec_${btoa(secretRaw)}`;
+    const body = JSON.stringify({
+      type: "user.created",
+      data: { id: "user_b4", email_addresses: [] },
+    });
+    const req = await signedUserCreated(secretRaw, body);
+
+    // CONFIG_DB present (declarative binding) with NO existing tenant — but the
+    // internal auth key (a `wrangler secret`) is absent. This is the launch
+    // landmine: the OLD code would createTenant, then issuePat throws, leaving a
+    // PAT-less orphan that the idempotency check blocks from ever re-provisioning.
+    const configDb = {
+      prepare() {
+        return {
+          bind() {
+            return this;
+          },
+          async first() {
+            return null; // no existing tenant
+          },
+          async run() {
+            return { success: true };
+          },
+          async all() {
+            return { results: [] };
+          },
+        };
+      },
+    };
+    const env = {
+      CLERK_WEBHOOK_SECRET: secret,
+      CONFIG_DB: configDb,
+      // CORELINK_INTERNAL_AUTH_KEY intentionally UNSET.
+    } as unknown as AutoProvisionEnv;
+
+    // apiFactory whose createTenant flips a flag if it is (wrongly) reached.
+    let createTenantCalled = false;
+    const apiFactory = (() => ({
+      async createTenant() {
+        createTenantCalled = true;
+        return { id: "t_should_not_exist" };
+      },
+      async configureTenant() {},
+      async issuePat() {
+        return { id: "x", plaintext: "y" };
+      },
+      async publishUserMetadata() {},
+    })) as unknown as Parameters<typeof handleClerkWebhook>[2];
+
+    const res = await handleClerkWebhook(req, env, apiFactory);
+
+    expect(res.status).toBe(500);
+    // The load-bearing assertion: we bailed BEFORE provisioning, so no
+    // PAT-less orphan tenant was committed — Svix redelivery re-runs the whole
+    // flow cleanly once the secret is set.
+    expect(createTenantCalled).toBe(false);
   });
 });
 

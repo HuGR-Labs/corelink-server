@@ -756,7 +756,27 @@ export async function handleStripeWebhook(
             const clerkUserId = clerkUserIdFromMetadata(obj);
             void clerkUserId; // recorded in metadata for audit, not needed here
 
-            if (tenantId && typeof stripeCustomerId === "string" && stripeCustomerId) {
+            // FAIL-LOUD (money path): a paid checkout.session.completed MUST
+            // carry tenant_id (the checkout backend sets metadata[tenant_id])
+            // AND a Stripe customer. If either is missing, the customer has
+            // PAID but cannot be provisioned — silently returning 200 (the old
+            // behavior) dropped the entitlement with NO retry and NO operator
+            // signal. Return 500 BEFORE the claim so Stripe redelivers and the
+            // failure is visible; never silently ack a paid checkout we could
+            // not apply.
+            if (!tenantId || typeof stripeCustomerId !== "string" || !stripeCustomerId) {
+                console.error(
+                    `[stripe-webhook] checkout.session.completed missing ` +
+                        `${!tenantId ? "tenant_id" : "customer"} ` +
+                        `(session=${(obj["id"] as string | undefined) ?? "unknown"}); ` +
+                        `returning 500 for redelivery rather than dropping a paid signup`,
+                );
+                return new Response("checkout_missing_tenant_or_customer", {
+                    status: 500,
+                });
+            }
+
+            {
                 if (env.BILLING_DB) {
                     const db = env.BILLING_DB;
                     // REQUIRED durable write — awaited below; a failure returns

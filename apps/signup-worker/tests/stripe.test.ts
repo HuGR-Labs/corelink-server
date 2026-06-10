@@ -379,7 +379,7 @@ describe("handleStripeWebhook", () => {
         expect(res.status).toBe(200);
     });
 
-    it("checkout.session.completed without tenant_id metadata → 200, no billing/tier write", async () => {
+    it("checkout.session.completed without tenant_id metadata → 500 (fail-loud, no write, Stripe redelivers)", async () => {
         const db = fakeDb();
         const nowMs = Date.now();
         const event = {
@@ -396,10 +396,12 @@ describe("handleStripeWebhook", () => {
         };
         const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
         const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
-        expect(res.status).toBe(200);
-        // No billing/tier mutation (no tenant_id to key on). The dedup claim
-        // row is written independently of tenant_id, so we assert the absence
-        // of the billing/tier writes specifically rather than zero D1 calls.
+        // A paid checkout.session.completed with no tenant_id is a money-path
+        // anomaly: the customer PAID but we cannot provision them. We MUST NOT
+        // silently 200 (the old behavior dropped the entitlement with no retry
+        // and no signal) — we return 500 BEFORE the claim so Stripe redelivers.
+        expect(res.status).toBe(500);
+        // No billing/tier mutation (we bailed before any write).
         expect(
             db.runCalls.find(
                 (c) => c.sql.includes("tenant_billing") || c.sql.includes("tier_selections"),
