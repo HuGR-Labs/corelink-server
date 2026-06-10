@@ -36,29 +36,29 @@
     "@docusaurus/plugin-client-redirects": "3.10.1",
     "@docusaurus/preset-classic": "3.10.1",
     "@mdx-js/react": "^3.0.0",
-    "@sentry/browser": "^8.45.0",
+    "@sentry/browser": "^10.57.0",
     "clsx": "^2.1.1",
     "prism-react-renderer": "^2.4.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@axe-core/cli": "^4.11.3",
     "@docusaurus/module-type-aliases": "3.10.1",
     "@docusaurus/tsconfig": "3.10.1",
     "@docusaurus/types": "3.10.1",
-    "@eslint/js": "^9.17.0",
-    "@types/node": "^22.10.0",
-    "@types/react": "^18.3.12",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.9.2",
+    "@types/react": "^19.2.17",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
-    "eslint": "^9.17.0",
+    "eslint": "^10.4.1",
     "eslint-plugin-react": "^7.37.2",
     "gray-matter": "^4.0.3",
-    "protobufjs": "^7.4.0",
+    "protobufjs": "^8.6.2",
     "tsx": "^4.19.0",
-    "typescript": "~5.6.3",
-    "vitest": "^2.1.8"
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.8"
   },
   "browserslist": {
     "production": [
