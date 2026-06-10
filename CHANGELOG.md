@@ -44,6 +44,18 @@ Each entry cross-references:
   no-fire).
 
 ### Fixed
+- **Security hardening sweep (worker, CI workflows, runbook).** Four precise
+  mechanical changes: (1) `x-corelink-tenant-id` added to `CLIENT_TRUST_HEADERS`
+  strip list in `worker/src/index.ts` — the invariant is now structural (strip
+  happens before any forward path can set or delete the header) rather than
+  per-path discipline; (2) prominent `pull_request_target` + merge-ref checkout
+  sentinel comments added to `.github/workflows/dependabot-policy.yml` — guards
+  the self-hosted-runner / PR-head-checkout combination against future unsafe
+  additions; (3) `SEARCH_HAYSTACK` in `.github/workflows/api-deprecation-check.yml`
+  built with `printf '%s\n'` instead of bare shell concatenation — prevents
+  shell-control content in PR title/body from altering downstream `grep` parsing;
+  (4) `SECURITY.md` operational note added: fork-PR approval requirement when the
+  repo goes public + SHA-pinning baseline verified 2026-06-10.
 - **`corelink-app.humangr.com` (public app entry, all docs pricing CTAs) served
   the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
   500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:

@@ -200,4 +200,29 @@ After a fix is released we publish:
 
 ---
 
-_Last updated: 2026-05-14._
+---
+
+## Operational Security Notes
+
+### 2026-06-10 — Actions fork-PR policy + SHA-pinning baseline
+
+**Repository visibility.**
+The repo is currently **private**. GitHub does not expose the
+"Fork pull request workflows → Require approval for all outside collaborators"
+setting for private repos (the option is absent from Settings → Actions).
+
+**Action required if the repo is ever made public:** immediately navigate to
+Settings → Actions → General → Fork pull request workflows and set the policy
+to **"Require approval for all outside collaborators"** before any external
+contributor can open a PR. The CI runs on the founder's Mac (self-hosted
+runner); a fork PR that executes arbitrary workflow code is a direct RCE
+vector onto that machine.
+
+**SHA-pinning.**
+`actions/permissions sha_pinning_required=true` was confirmed enabled via the
+GitHub API on 2026-06-10. All workflows in `.github/workflows/` were already
+SHA-pinned prior to this date (enforced by the `action-sha-audit` required
+check). No workflow updates are needed as a result; this note records the
+baseline verification.
+
+_Last updated: 2026-06-10._

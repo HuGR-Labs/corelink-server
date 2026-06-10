@@ -239,9 +239,16 @@ function handlePreflight(request: Request): Response | null {
  * set internal-auth, so deleting it makes the container's internal-auth-gated
  * admin routes Worker-unreachable by design (operator-only posture).
  *
- * NOTE: `x-corelink-tenant-id` / `x-corelink-route-kind` / `x-corelink-token-prefix`
- * are NOT listed here on purpose — the Worker unconditionally `.set()`s those
- * itself on every forward, so any client value is already overwritten.
+ * NOTE: `x-corelink-route-kind` / `x-corelink-token-prefix` are NOT listed here
+ * on purpose — the Worker unconditionally `.set()`s those itself on every
+ * forward, so any client value is already overwritten.
+ *
+ * `x-corelink-tenant-id` IS listed (structural strip): the Worker always
+ * `.set()`s it AFTER strip on PAT-backed, internal, onboarding, and fanout
+ * forwards; the OCI and billing-webhook carve-outs explicitly `.delete()` it
+ * instead (no tenant on those paths). The per-path explicit `.delete()` calls
+ * remain as belt-and-braces but the invariant is now structural — a client can
+ * never smuggle a forged tenant-id past this list onto any forward path.
  *
  * `x-corelink-scope` (security: H1) IS listed: unlike the always-overwritten
  * headers above, the Worker only `.set()`s scope on PAT-backed forwards, so it
@@ -256,6 +263,11 @@ const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   "x-corelink-internal-auth",
   "x-corelink-fanout-from",
   "x-corelink-scope",
+  // Structural tenant-id strip: the Worker is the SOLE setter of
+  // x-corelink-tenant-id (from D1-resolved PAT or server constant) on every
+  // forward path. Stripping here means no client can smuggle a forged
+  // tenant-id regardless of which path is taken.
+  "x-corelink-tenant-id",
   // F1: the forgeable client-supplied XFF must be stripped on every forward —
   // the container's signup rate-limit now reads the server-trusted
   // x-corelink-client-ip (set by the Worker from cf-connecting-ip), never XFF.
@@ -1378,9 +1390,11 @@ const handler: ExportedHandler<Env> = {
         headers: (() => {
           const h = new Headers(request.headers);
           // Strip the FULL set of client-suppliable trust headers (x-admin-*,
-          // fanout-from, internal-auth) BEFORE re-establishing them from
-          // server-trusted values (delete-then-set).
+          // fanout-from, scope, tenant-id, internal-auth) BEFORE re-establishing
+          // them from server-trusted values (delete-then-set).
           stripClientTrustHeaders(h);
+          // Belt-and-braces: x-corelink-tenant-id is now in the strip list so
+          // the line above already removed any client value; kept for clarity.
           h.delete("x-corelink-tenant-id");
           h.delete("authorization");
           h.set("x-request-id", requestId);
@@ -1441,10 +1455,10 @@ const handler: ExportedHandler<Env> = {
         headers: (() => {
           const h = new Headers(request.headers);
           stripClientTrustHeaders(h);          // delete any client-forged x-corelink-*
-          // Defense-in-depth: x-corelink-tenant-id is NOT in the strip list (the
-          // Worker normally always .set()s it), but the OCI pass-through never
-          // sets it — so delete any smuggled value so it can never reach the
-          // container (which ignores it for OCI, but belt-and-braces).
+          // Belt-and-braces: x-corelink-tenant-id is now in the strip list so
+          // the delete above already removed any client value. The explicit
+          // delete below is kept as belt-and-braces documentation that the OCI
+          // pass-through deliberately never sets a tenant-id header.
           h.delete("x-corelink-tenant-id");
           h.set("x-request-id", requestId);
           h.set("x-corelink-route-kind", route.routeKind);
@@ -1497,11 +1511,11 @@ const handler: ExportedHandler<Env> = {
           stripClientTrustHeaders(h);
           h.set("x-request-id", requestId);
           h.set("x-corelink-route-kind", route.routeKind);
-          // Defense-in-depth: the container derives the tenant SOLELY from the
-          // signed Stripe event, never from a header. Delete any smuggled
-          // tenant/scope so a forged value can never reach the container.
-          // (tenant-id is not in the strip list — the Worker normally always
-          // .set()s it — so delete it explicitly on this no-tenant path.)
+          // Belt-and-braces: the container derives the tenant SOLELY from the
+          // signed Stripe event, never from a header. x-corelink-tenant-id is
+          // now in the strip list so the delete above already removed any client
+          // value; the explicit delete below documents that the billing-webhook
+          // path deliberately never sets a tenant-id header.
           h.delete("x-corelink-tenant-id");
           h.delete("x-corelink-scope");
           // Deliberately NOT set: x-corelink-tenant-id / x-corelink-scope.
