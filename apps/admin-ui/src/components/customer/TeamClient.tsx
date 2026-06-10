@@ -3,14 +3,15 @@
 "use client";
 
 import React from "react";
+import { useAuth } from "@clerk/nextjs";
 import { CustomerClient } from "@/lib/customer-client";
 import type { CustomerTeamMember } from "@/lib/customer-types";
-
-const client = new CustomerClient();
 
 const ROLES: Array<CustomerTeamMember["role"]> = ["Owner", "Admin", "Developer", "Viewer"];
 
 export function TeamClient(): React.ReactElement {
+  const { getToken } = useAuth();
+  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
   const [members, setMembers] = React.useState<CustomerTeamMember[]>([]);
   const [email, setEmail] = React.useState("");
   const [role, setRole] = React.useState<CustomerTeamMember["role"]>("Developer");
@@ -28,7 +29,7 @@ export function TeamClient(): React.ReactElement {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [client]);
 
   React.useEffect(() => {
     void reload();

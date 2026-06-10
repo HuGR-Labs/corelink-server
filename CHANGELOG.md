@@ -23,6 +23,18 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **admin-ui customer dashboard client wired to real Clerk auth (WP-4 of the
+  dashboard revival).** `CustomerClient` accepts an optional
+  `getToken?: () => Promise<string | null>` and attaches
+  `Authorization: Bearer <token>` to every `/v1/customer/*` request when it
+  resolves non-null (omitted otherwise — the E2E mock mode's request shape is
+  byte-identical to before). All 6 customer components (Overview / Usage /
+  Audit / Billing / Keys / Team) now build the client in-component from
+  Clerk's `useAuth().getToken` via `useMemo` instead of an unauthenticated
+  module-scope singleton. `CustomerBilling["status"]` (and the overview
+  billing snapshot) additively widened with `"inactive"` for tenants without
+  a Stripe subscription. New `tests/customer-client.test.ts` covers the
+  token-attached / token-null / no-getToken request shapes.
 - **admin-ui `/upgrade?plan=<tier>` page — the public pricing CTAs now reach
   checkout (#49).** Every docs pricing CTA targets
   `corelink-app.humangr.com/upgrade?plan=<tier>`, but admin-ui had no
