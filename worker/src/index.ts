@@ -1282,7 +1282,14 @@ const handler: ExportedHandler<Env> = {
       // to verifyToken() as `issuer` (library-level enforcement) AND re-assert
       // exact equality post-verify.  Without the secret the shape-check fallback
       // (https + "clerk") is preserved; set the secret to activate the exact pin.
-      const ONBOARDING_AZP_ALLOWLIST = ["https://corelink-admin.humangr.com"] as const;
+      // Both admin-ui hosts are bound to the OpenNext Worker (#219): sessions are
+      // minted on corelink-app (the sign-up/user-facing host) AND corelink-admin.
+      // A JWT minted on corelink-app carries azp=https://corelink-app.humangr.com —
+      // listing only corelink-admin 401-blocked the whole onboarding/checkout funnel.
+      const ONBOARDING_AZP_ALLOWLIST = [
+        "https://corelink-admin.humangr.com",
+        "https://corelink-app.humangr.com",
+      ] as const;
       const clerkIssuerUrl = env.CLERK_ISSUER_URL && env.CLERK_ISSUER_URL.length > 0
         ? env.CLERK_ISSUER_URL
         : undefined;
@@ -1293,7 +1300,7 @@ const handler: ExportedHandler<Env> = {
         // post-verify `iss === CLERK_ISSUER_URL` assertion below.
         const claims = await verifyToken(onbToken, {
           secretKey: clerkSecretKey,
-          authorizedParties: ["https://corelink-admin.humangr.com"],
+          authorizedParties: [...ONBOARDING_AZP_ALLOWLIST],
         });
 
         // M1-FIX-1: Explicitly assert azp is present AND in the allowlist.

@@ -44,6 +44,11 @@ Each entry cross-references:
   no-fire).
 
 ### Fixed
+- **fix(worker): Clerk azp allowlist now includes `corelink-app.humangr.com`** — the
+  user-facing sign-up host (#219) was missing from `ONBOARDING_AZP_ALLOWLIST` and
+  `authorizedParties`, so every session minted on corelink-app was 401-rejected on
+  the onboarding/checkout funnel (found by the 2026-06-10 dashboard-wiring design
+  review; latent — no real users yet).
 - **Security hardening sweep (worker, CI workflows, runbook).** Four precise
   mechanical changes: (1) `x-corelink-tenant-id` added to `CLIENT_TRUST_HEADERS`
   strip list in `worker/src/index.ts` — the invariant is now structural (strip
