@@ -35,6 +35,28 @@ Each entry cross-references:
   billing snapshot) additively widened with `"inactive"` for tenants without
   a Stripe subscription. New `tests/customer-client.test.ts` covers the
   token-attached / token-null / no-getToken request shapes.
+- **Public-flip smoke harness (`scripts/smoke/`) — unauthenticated probes +
+  real-Clerk-session Playwright spec.** Closes the smoke gap behind the
+  2026-06-10 azp incident: a latent `401 clerk session azp invalid` on the
+  user-facing host survived every prior smoke because none exercised a real
+  browser Clerk session on `corelink-app.humangr.com`. Layer 1
+  (`public-flip-smoke.sh`, curl-only, no secrets) pins the canonical
+  unauthenticated expectations per prod host — app/admin landing 200 +
+  security headers (XFO/XCTO/HSTS/Referrer/Permissions/CSP),
+  `/upgrade?plan=solo` 307→`/en/upgrade` chain ending 200, `/sign-up` 200,
+  docs 200, api fail-closed 404 root + `/health`+`/_health` — with per-probe
+  PASS/FAIL and non-zero exit on any FAIL. Layer 2
+  (`authenticated-smoke.spec.ts`, standalone Playwright — own package.json,
+  NOT wired into admin-ui's e2e configs) signs in through the real Clerk UI
+  with a dedicated smoke user (`SMOKE_USER_EMAIL`/`SMOKE_USER_PASSWORD` from
+  env, never logged), asserts welcome/provisioning renders with a
+  session-wide watcher proving no `401 azp invalid` on the wire, drives
+  `/upgrade?plan=solo` to a minted `checkout.stripe.com` URL (navigation to
+  Stripe route-aborted — no payment possible), and parks
+  `test.skip(TODO(dashboard-wave))` 5xx assertions for the dashboard tabs.
+  `SMOKE_*` vars allowlisted in both secrets gates (test-account creds, the
+  `CORELINK_E2E_TOKEN`/`NEON_TEST_DSN` precedent). Run before/after every
+  public-facing deploy; WP-5 acceptance gate. See `scripts/smoke/README.md`.
 - **admin-ui `/upgrade?plan=<tier>` page — the public pricing CTAs now reach
   checkout (#49).** Every docs pricing CTA targets
   `corelink-app.humangr.com/upgrade?plan=<tier>`, but admin-ui had no
