@@ -3,7 +3,7 @@ id: "PROPOSAL-2026-06-10-ADMIN-PILOT-TENANT-RATE-MAPPING"
 type: "governance"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.2.0"
 created: "2026-06-10"
 updated: "2026-06-10"
 owner: "Gustavo Schneiter"
@@ -113,29 +113,49 @@ nothing durable.
   endpoint becomes operator-callable from the public edge with **zero Worker
   changes**. The alternative (a Worker carve-out that forwards
   `POST /v1/admin/pilots` with internal-auth verification) adds new edge
-  surface for no benefit; rejected.
+  surface for no benefit; rejected. **(Ratified Q3, 2026-06-10 — alias-only,
+  no Worker carve-out; zero Worker changes stands, but it requires the
+  container-side identity synthesis amended into §2.2.)**
 - Mount is **env-gated like `internal_pat`**: requires `CORELINK_INTERNAL_AUTH_KEY`
   (≥ 16 chars) AND `PAT_SIGNING_KEY` (valid hex, ≥ 32 bytes decoded), because the
   endpoint mints a PAT in-process (§2.6). Missing either → route not mounted
   (fail-CLOSED, mirrors `internal_pat::build_state_from_env`).
 
-### 2.2 Auth gating (mirrors grant-tier exactly)
+### 2.2 Auth gating (mirrors grant-tier, plus internal-edge identity synthesis)
 
-Reuse `admin_pilot::require_admin_scope` unchanged — the 5-layer defense already
-shipped there:
+> **Amended per Q3 ratification (2026-06-10, lead).** The original draft said
+> "zero Worker changes" AND "reuse `admin_pilot::require_admin_scope`
+> unchanged" — these are mutually inconsistent: the Worker's internal path
+> strips `x-admin-principal`/`x-admin-scope` (`CLIENT_TRUST_HEADERS`,
+> `worker/src/index.ts:252`) and re-injects ONLY
+> internal-auth/request-id/route-kind/tenant/token-prefix
+> (`index.ts:1188-1203`), while `require_admin_scope` hard-403s on an empty
+> principal (`admin_pilot.rs:905`) — every edge call would 403. The ratified
+> design below keeps zero Worker changes and fixes the drift container-side.
 
-1. **PRIMARY boundary:** constant-time, length-padded `internal_auth_ok` against
-   `CORELINK_INTERNAL_AUTH_KEY`; key unset → fail CLOSED 403. Gate runs BEFORE
-   the body is parsed (take the body as raw `Bytes`, M3 pattern from
-   `internal_pat.rs`).
-2. **Secondary labels:** `x-admin-principal` (audit principal) +
+The gate layers:
+
+1. **PRIMARY boundary (unchanged):** constant-time, length-padded
+   `internal_auth_ok` against `CORELINK_INTERNAL_AUTH_KEY`; key unset → fail
+   CLOSED 403. Gate runs BEFORE the body is parsed (take the body as raw
+   `Bytes`, M3 pattern from `internal_pat.rs`).
+2. **Internal-edge identity synthesis (the Q3 amendment):** after
+   `internal_auth_ok` passes (the primary gate, unchanged), if
+   `x-admin-principal` is empty AND `x-corelink-route-kind == "internal"`
+   (server-set by the Worker after the strip — not client-forgeable), the gate
+   logic synthesizes the audit identity: use principal
+   `internal-edge-operator` and treat the pilots scope as granted, so audit
+   rows keep a principal. Direct container calls with explicit headers keep
+   today's behavior. This matches the `/_internal/pat/mint` precedent
+   (internal-auth-only gating).
+3. **Secondary labels:** `x-admin-principal` (audit principal) +
    `x-admin-scope: corelink:admin:pilots` (defense-in-depth re-check; NOT the
    sole gate). The Worker strips client-supplied copies on every public path.
-3. **No dual-approval** (decision D2): consistent with the rest of the pilot-admin
+4. **No dual-approval** (decision D2): consistent with the rest of the pilot-admin
    family (`grant-tier` has none) and the solo-operator reality. The
    dual-approval machinery stays where it is (`/v1/admin/mutate`). Escalate to
    dual-approval only if/when a second operator exists.
-4. Unauthorized probe → emit `corelink.security.admin_pilot_unauthorized.v1`
+5. Unauthorized probe → emit `corelink.security.admin_pilot_unauthorized.v1`
    BEFORE the 403 (`emit_or_503`), exactly as the sibling routes do.
 
 ### 2.3 Request / response shape
@@ -272,6 +292,19 @@ VALUES (?pat_id, ?winner_tenant_id, ?argon2id_phc, 'read-write', ?expires_ms,
         ?token_id, ?uuid, 1, ?now_ms);
 ```
 
+**Seed wrinkles (Q1, ratified 2026-06-10)** — two consequences of step (4) the
+operator must understand before passing `seed_tier_selection=true`:
+
+1. `worker/src/lib/quota.ts:100` reads `SELECT tier FROM tier_selections …
+   LIMIT 1` with NO `subscription_state` filter — even an `inactive` seeded
+   row would drive the quota class.
+2. A seeded `active` row trips `AlreadyActive` (`tier_select.rs:699`) — a
+   comped pilot cannot later self-serve checkout until the row is flipped.
+
+A `'comped'` subscription state is deferred (needs another 0062-style rebuild;
+owner decision only if comped→paid self-serve conversion becomes a
+requirement). The default stays `seed_tier_selection=false`.
+
 ### 2.6 PAT minting (decision D4 — in-process, not HTTP)
 
 The handler calls **`corelink_pat::mint::mint(...)` directly** (the same
@@ -312,12 +345,16 @@ Failure modes (exhaustive):
 | Duplicate email, conflicting `slug`/`tier` | 409 `email_already_provisioned` (no silent param drift) | unchanged | operator resolves manually |
 | `tier='max'` requested | 400 `invalid_tier_for_create` | none | use `free` + grant-tier, or wait for 0063 |
 
-### 2.8 Schema follow-ups (separate PRs, additive-only)
+### 2.8 Follow-ups (separate PRs; schema items additive-only)
 
-1. **0063 (required for full 6-tier parity):** widen `tenant.tier` CHECK to add
-   `'max'` (and decide on `'pilot'`) via the 0062-style 12-step rebuild + ADR +
-   `-- additive-allowed:` annotations. Until then this endpoint refuses `max`
-   at create time (§2.3).
+1. **0063 (Q2 ratified 2026-06-10 — ADR approved as a NON-BLOCKING
+   follow-up):** widen `tenant.tier` CHECK to add `'max'` via the 0062-style
+   12-step rebuild + ADR + `-- additive-allowed:` annotations. NOT a launch
+   blocker: quota resolution prefers `tier_selections` (which accepts `max`
+   post-0062), so a max pilot is reachable via grant-tier/seed today. Do NOT
+   add a `'pilot'` value (grant-tier's "pilot" lives in the in-memory store
+   only, never written to D1). Until 0063 lands, this endpoint refuses `max`
+   at create time with 400 `invalid_tier_for_create` (§2.3).
 2. **Optional:** `ALTER TABLE pilot_signups ADD COLUMN slug TEXT` (pure additive)
    so the list endpoint's D1 binding can serve `PilotTenant.slug` without a
    join; until then `slug` lives in the audit payload + response only.
@@ -325,6 +362,10 @@ Failure modes (exhaustive):
    (NEW/RESERVED/PROVISIONED/ACTIVE/GRADUATED/TERMINATED) vs `pilot_signups`
    CHECK's 5 (RESERVED/PROVISIONED/ACTIVE/EXPIRED/CANCELLED) — the eventual D1
    `PilotStore` binding must reconcile (additive CHECK widening or enum mapping).
+4. **PAT `rotate` op (Q4 follow-up, ratified 2026-06-10):** a future
+   `rotate=true` flag / rotate operation so a lost pilot credential can be
+   recovered without a manual `pat`-row delete. Not needed for launch (solo
+   operator, pilots only) — the replay path keeps returning `pat: null`.
 
 ---
 
@@ -375,11 +416,11 @@ the monthly cap before the (still-TODO, see §3.5) request-quota counter reacts.
 | `solo` | `Solo` (50 rps / 200) | Name-aligned; 65× headroom; a single developer's parallel build fits the 200-token burst. |
 | `starter` | **`Team`** (200 rps / 1000) | NOT Solo: (a) Starter is sold as "a small team getting onto a shared cache" — multi-developer concurrent CI; one 32-way Bazel run exceeds Solo's 200-token burst in the first second, and 50 rps refill would 429 a second concurrent pipeline; (b) `RateLimitConfig::canonical()` ALREADY gives every unresolved tenant Team — mapping a *paid* tier below today's implicit default is a day-one regression; (c) the 3× cap step over solo (6 M vs 2 M) tracks the 4× refill step. 87× headroom. |
 | `pro` | **`Business`** (1000 rps / 5000) | The anchor SKU, "teams shipping production builds": 2–3 concurrent heavy pipelines exhaust Team's 1000-token burst; Business's 5000 burst covers ~5 concurrent runs. 130× headroom. |
-| `max` | **`Business`** (1000 rps / 5000) | NOT Enterprise: (a) Enterprise's 10 k rps is the contract-negotiated class with S-13 admin override AND the unknown-tier fallback — granting it to self-serve erases the Enterprise upsell surface; (b) at 10 k rps a runaway Max client could burn the full 80 M cap in ~2.2 h and 324× the cap in a month, with request-quota enforcement still a no-op (§3.5) — Business bounds the worst case at 32×; (c) max vs pro differentiation already lives in quota + storage (4× both), not per-second spikes. Headroom 32× is the lowest in the table but still ample (sustained 1000 rps for 22 h = the whole monthly cap — any client doing that is the abuse scorer's job, not the happy path). |
+| `max` | **`Business`** (1000 rps / 5000) | NOT Enterprise: (a) Enterprise's 10 k rps is the contract-negotiated class with S-13 admin override AND the unknown-tier fallback — granting it to self-serve erases the Enterprise upsell surface; (b) at 10 k rps a runaway Max client could burn the full 80 M cap in ~2.2 h and 324× the cap in a month, with request-quota enforcement still a no-op (`checkRequestQuota` returns ok:true, `quota.ts:209-226`; §3.4 gap (c)) — Business bounds the worst case at 32×; (c) max vs pro differentiation already lives in quota + storage (4× both), not per-second spikes. Headroom 32× is the lowest in the table but still ample (sustained 1000 rps for 22 h = the whole monthly cap — any client doing that is the abuse scorer's job, not the happy path). |
 | `enterprise` | `Enterprise` (10 000 rps / 50 000) | Contractual; per-tenant admin override supersedes the default (tier.rs doc). |
 | `team` (D1 legacy, kept by 0062) | `Team` | Name-identical; legacy rows keep their semantics. |
 | `org` (D1 legacy = pre-S-19 "pro") | `Business` | `worker/src/lib/quota.ts` already treats org as pro's quota class; follow it. |
-| `pilot` (grant-tier label) / unknown | `Team` | Matches today's pre-resolution default → zero behavior change for pilots; unknown stays on tier.rs's documented most-permissive-fallback debate (see Q5). |
+| `pilot` (grant-tier label) / unknown | `Team` | Ratified (Q5b): zero behavior change — `config.rs:155-166` `canonical()` default IS Team. Note: tier.rs's unknown→Enterprise fallback is the enum **wildcard-arm** fallback (`tier.rs:71-80`), not string-level; the Team narrowing applies to the new string-level fn only. |
 
 Monotonicity check: free ⊂ solo ⊂ starter ⊂ pro = max ⊂ enterprise — no
 paid tier ever rate-limits below a cheaper tier.
@@ -425,9 +466,13 @@ cache retention and pro/max inherit 365-day — directionally sensible
 promise** the moment the mapping ships, so the rate card / docs must state it
 (see Q5).
 
+**Ratified acceptance item (Q5c, 2026-06-10, lead):** the per-tier retention
+promise (starter 90 d, pro/max 365 d, 730 d override cap) MUST land in the
+rate card/docs in the **SAME PR** as the mapping fn.
+
 ---
 
-## 4. Open questions for the tech lead (max 5)
+## 4. Open questions for the tech lead (max 5) — ALL RATIFIED 2026-06-10
 
 1. **Comped-pilot `tier_selections` semantics (ties to #32/#34):** when
    `seed_tier_selection=true` with a paid tier, we write
@@ -436,26 +481,91 @@ promise** the moment the mapping ships, so the rate card / docs must state it
    Stripe linkage, or do pilots need a distinct state (additive CHECK widening,
    e.g. `'comped'`)? Default in this design is `seed_tier_selection=false`
    (quota.ts falls back to `tenant.tier`) until answered.
+
+   **RATIFIED (2026-06-10, lead):** default stays `seed_tier_selection=false`.
+   Two wrinkles added to §2.5: (1) `worker/src/lib/quota.ts:100` reads
+   `SELECT tier FROM tier_selections … LIMIT 1` with NO subscription_state
+   filter — even an `inactive` seeded row would drive the quota class; (2) a
+   seeded `active` row trips `AlreadyActive` (`tier_select.rs:699`) — a comped
+   pilot cannot later self-serve checkout until the row is flipped. `'comped'`
+   state deferred (needs another 0062-style rebuild; owner decision only if
+   comped→paid self-serve conversion becomes a requirement).
 2. **`tenant.tier` CHECK widening (0063):** approve the 0062-style rebuild ADR to
    add `'max'` (and `'pilot'`?) to `tenant.tier` — or rule that create-time tier
    stays `{free,solo,starter,pro,enterprise}` forever and `max` is only ever
    reached via `tier_selections` (leaving `tenant.tier` as the quota fallback
    only)?
+
+   **RATIFIED (2026-06-10, lead):** interim posture approved: refuse `max` at
+   create-time with 400 `invalid_tier_for_create`. The 0063 rebuild ADR is
+   approved as a NON-BLOCKING follow-up (quota resolution prefers
+   `tier_selections`, which accepts `max` post-0062, so a max pilot is
+   reachable via grant-tier/seed today). Do NOT add a `'pilot'` value
+   (grant-tier's "pilot" lives in the in-memory store only, never written to
+   D1). §2.8.1 updated.
 3. **Reachability:** is the `/_internal/admin/pilots` alias mount (zero Worker
    changes, operator-only channel) acceptable as the ONLY edge path, or do you
    want a Worker carve-out so a future admin-UI can call `POST /v1/admin/pilots`
    with internal auth injected server-side?
+
+   **RATIFIED with a SUBSTANTIVE AMENDMENT (2026-06-10, lead):** the
+   alias-only reachability decision (no Worker carve-out) is ratified, but the
+   draft's "zero Worker changes" + "reuse `require_admin_scope` unchanged"
+   were mutually inconsistent: the Worker's internal path strips
+   `x-admin-principal`/`x-admin-scope` (`CLIENT_TRUST_HEADERS`,
+   `worker/src/index.ts:252`) and re-injects ONLY
+   internal-auth/request-id/route-kind/tenant/token-prefix
+   (`index.ts:1188-1203`), while `require_admin_scope` hard-403s on empty
+   principal (`admin_pilot.rs:905`) — every edge call would 403. §2.2 amended:
+   keep zero Worker changes; container-side, after `internal_auth_ok` passes,
+   if `x-admin-principal` is empty AND `x-corelink-route-kind == "internal"`
+   (server-set, not client-forgeable), synthesize principal
+   `internal-edge-operator` and treat the pilots scope as granted. Matches the
+   `/_internal/pat/mint` precedent.
 4. **PAT-on-replay posture:** replay returns `pat: null` and never re-mints once
    a pat row exists (CTRL-CRED-001). Is "operator deletes the pat row manually
    (or uses a future rotate op) to recover a lost pilot credential" acceptable
    for launch, or should this design include a `rotate=true` flag from day one?
+
+   **RATIFIED (2026-06-10, lead):** as-is for launch (solo operator, pilots
+   only). `rotate` op added to the follow-ups list (§2.8.4).
 5. **Mapping ratification:** confirm (a) `starter→Team`, `pro→Business`,
    `max→Business` as proposed (esp. max NOT Enterprise); (b) `pilot`/unknown →
-   `Team` — note this *narrows* tier.rs's documented unknown→Enterprise
-   fallback for strings, which only makes sense if we also accept (c) the
+   `Team` — note this *narrows* tier.rs's enum **wildcard-arm**
+   unknown→Enterprise fallback (`tier.rs:71-80`) only at the string level: the
+   narrowing applies to the new string-level fn only, not the enum arm — which
+   only makes sense if we also accept (c) the
    eviction-TTL coupling in §3.5 becoming a published retention promise per
    tier. Ship order: Rust authority fn first (inert until limiter wiring), TS
    mirror + pin test with the first consumer.
+
+   **RATIFIED (2026-06-10, lead):** (a) starter→Team, pro→Business,
+   **max→Business** (NOT Enterprise: request-quota enforcement is a no-op
+   today — `checkRequestQuota` returns ok:true, `quota.ts:209-226` — so
+   Enterprise's 10k rps would leave an 80M-cap tenant unbounded at 324×;
+   Business bounds it at 32×); (b) pilot/unknown→Team (zero behavior change:
+   `config.rs:155-166` `canonical()` default IS Team); (c) TTL coupling
+   ratified WITH an explicit acceptance item: the per-tier retention promise
+   (starter 90 d, pro/max 365 d, 730 d override cap) MUST land in the rate
+   card/docs in the SAME PR as the mapping fn (§3.5).
+
+### §4 ratification record — 2026-06-10 (lead)
+
+- **Q1:** RATIFIED — `seed_tier_selection=false` default stands; quota.ts
+  no-state-filter + `AlreadyActive` wrinkles documented in §2.5; `'comped'`
+  state deferred.
+- **Q2:** RATIFIED — refuse `max` at create-time (400
+  `invalid_tier_for_create`); 0063 rebuild ADR approved as a NON-BLOCKING
+  follow-up; no `'pilot'` value.
+- **Q3:** RATIFIED with substantive amendment — alias-only reachability (no
+  Worker carve-out) stands; §2.2 amended to synthesize
+  `internal-edge-operator` on server-trusted internal calls, fixing the
+  guaranteed-403 drift.
+- **Q4:** RATIFIED as-is for launch — `pat: null` on replay, no rotate;
+  `rotate` op added to the follow-ups (§2.8.4).
+- **Q5:** RATIFIED — starter→Team, pro→Business, max→Business (NOT
+  Enterprise), pilot/unknown→Team; TTL coupling accepted with the same-PR
+  rate-card/docs acceptance item.
 
 ---
 
