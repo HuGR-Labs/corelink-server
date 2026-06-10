@@ -91,7 +91,7 @@ export interface AdminOp {
 export interface Tenant {
   tenant_id: string;
   name: string;
-  plan: "free" | "starter" | "team" | "enterprise";
+  plan: "free" | "solo" | "starter" | "team" | "pro" | "max" | "enterprise";
   region: "us-east" | "us-west" | "eu-west" | "ap-south";
   byok_status: "none" | "active" | "rotation_pending";
   created_at: string;

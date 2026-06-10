@@ -28,8 +28,15 @@ const zeroUsage: UsageInputs = {
 };
 
 describe("CANONICAL_TIERS — launch shape", () => {
-  it("is exactly Free / Pro / Enterprise (3 tiers)", () => {
-    expect([...CANONICAL_TIERS]).toEqual(["free", "pro", "enterprise"]);
+  it("is exactly the FROZEN 6-tier launch ladder", () => {
+    expect([...CANONICAL_TIERS]).toEqual([
+      "free",
+      "solo",
+      "starter",
+      "pro",
+      "max",
+      "enterprise",
+    ]);
   });
 
   it("contains no `provisional` field on any tier", () => {
@@ -43,9 +50,16 @@ describe("CANONICAL_TIERS — launch shape", () => {
     expect(TIER_RATE_CARD.free.usdMonthlyBase).toBe(0);
   });
 
-  it("Pro is $25/mo or $250/yr per pricing-benchmarks §5", () => {
-    expect(TIER_RATE_CARD.pro.usdMonthlyBase).toBe(25);
-    expect(TIER_RATE_CARD.pro.usdAnnualList).toBe(250);
+  it("Pro is $50/mo or $500/yr per pricing-benchmarks §5", () => {
+    expect(TIER_RATE_CARD.pro.usdMonthlyBase).toBe(50);
+    expect(TIER_RATE_CARD.pro.usdAnnualList).toBe(500);
+  });
+
+  it("paid ladder is Solo $15 / Starter $35 / Pro $50 / Max $149", () => {
+    expect(TIER_RATE_CARD.solo.usdMonthlyBase).toBe(15);
+    expect(TIER_RATE_CARD.starter.usdMonthlyBase).toBe(35);
+    expect(TIER_RATE_CARD.pro.usdMonthlyBase).toBe(50);
+    expect(TIER_RATE_CARD.max.usdMonthlyBase).toBe(149);
   });
 
   it("Enterprise is contact-sales (no anchor)", () => {
@@ -150,10 +164,10 @@ describe("applyPeriodDiscount + annual billing", () => {
     );
   });
 
-  it("Pro annual base × 12 equals the published $250/year list (within $1)", () => {
+  it("Pro annual base × 12 equals the published $500/year list (within $1)", () => {
     const monthlyBase = TIER_RATE_CARD.pro.usdMonthlyBase ?? 0;
     const annualEffectiveMonthly = applyPeriodDiscount(monthlyBase, "annual");
-    expect(annualEffectiveMonthly * 12).toBeCloseTo(250, 5);
+    expect(annualEffectiveMonthly * 12).toBeCloseTo(500, 5);
   });
 });
 
@@ -162,9 +176,9 @@ describe("recommendTier", () => {
     expect(recommendTier(zeroUsage)).toBe("free");
   });
 
-  it("usage slightly above Free recommends Pro", () => {
+  it("usage slightly above Free recommends Solo (the next tier up)", () => {
     const usage: UsageInputs = { casGbStored: 50, requestsPerMonth: 600_000 };
-    expect(recommendTier(usage)).toBe("pro");
+    expect(recommendTier(usage)).toBe("solo");
   });
 
   it("usage above Pro quota returns null (-> route to Enterprise)", () => {
@@ -181,10 +195,10 @@ describe("computeBreakEven", () => {
     const usage: UsageInputs = { casGbStored: 50, requestsPerMonth: 600_000 };
     const be = computeBreakEven(usage);
     expect(be).not.toBeNull();
-    expect(be?.recommended).toBe("pro");
-    expect(be?.headroomCasGb).toBe(TIER_RATE_CARD.pro.includedCasGb - 50);
+    expect(be?.recommended).toBe("solo");
+    expect(be?.headroomCasGb).toBe(TIER_RATE_CARD.solo.includedCasGb - 50);
     expect(be?.headroomRequests).toBe(
-      TIER_RATE_CARD.pro.includedRequests - 600_000,
+      TIER_RATE_CARD.solo.includedRequests - 600_000,
     );
   });
 

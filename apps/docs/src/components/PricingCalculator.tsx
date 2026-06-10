@@ -12,12 +12,15 @@
 
 import type { ReactElement } from "react";
 
+import type { TierId } from "../lib/pricing";
+
 export interface PricingCalculatorInputs {
   readonly storageGb: number;
   readonly monthlyCacheHits: number;
   readonly cacheHitRatio: number;
   readonly egressGb: number;
-  readonly plan: "free" | "starter" | "pro" | "business" | "enterprise";
+  /** Canonical 6-tier id from the signed rate card (lib/pricing TierId). */
+  readonly plan: TierId;
 }
 
 export const DEFAULT_PRICING_INPUTS: PricingCalculatorInputs = {

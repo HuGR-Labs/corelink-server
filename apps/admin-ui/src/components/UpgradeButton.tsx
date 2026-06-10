@@ -40,10 +40,11 @@ export interface UpgradeButtonProps {
   /** Locale slug for the post-Checkout redirect — falls back to "en". */
   locale?: string;
   /**
-   * Canonical paid tier (`starter` | `team` | `pro` | `enterprise`).
-   * Defaults to "pro" — the launch tier per launch-readiness §2.
+   * Canonical checkout-able tier — the 4 paid SKUs of the 6-tier ladder
+   * (`solo` | `starter` | `pro` | `max`) plus legacy `team`.
+   * Defaults to "pro" — the anchor SKU per the launch rate card.
    */
-  tier?: "starter" | "team" | "pro" | "enterprise";
+  tier?: "solo" | "starter" | "team" | "pro" | "max";
   /** Override button label (i18n owners do this; default is English). */
   label?: string;
   /** Injected fetch impl for tests. */

@@ -6,7 +6,7 @@
 export interface CustomerOverview {
   tenant_id: string;
   tenant_name: string;
-  plan: "free" | "starter" | "team" | "enterprise";
+  plan: "free" | "solo" | "starter" | "team" | "pro" | "max" | "enterprise";
   usage: {
     period: string; // e.g. "2026-05"
     cas_bytes: number;
@@ -53,7 +53,7 @@ export interface CustomerAuditFilter {
 
 export interface CustomerBilling {
   status: "trialing" | "active" | "past_due" | "canceled";
-  plan: "free" | "starter" | "team" | "enterprise";
+  plan: "free" | "solo" | "starter" | "team" | "pro" | "max" | "enterprise";
   current_period_start: string;
   current_period_end: string;
   amount_due_cents: number;

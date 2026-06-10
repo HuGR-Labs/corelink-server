@@ -6,11 +6,16 @@
  * unknown → allow through) to preserve availability; DO performs its own
  * deeper quota enforcement (CAS / quota_fsm_state) on every mutation.
  *
- * Tier taxonomy (canonical):
- *   free       10 GB storage / 1 M requests per month
- *   solo       100 GB / no request cap   (also mapped from 'starter')
- *   team       1 TB  / no request cap
- *   org        10 TB / no request cap    (also mapped from 'pro')
+ * Tier taxonomy (canonical 6-tier launch ladder + legacy classes). Numbers
+ * come from the signed launch rate card (apps/docs/src/lib/pricing.ts
+ * TIER_RATE_CARD / specs/_audits/2026-05-27-pricing-benchmarks.md §5):
+ *   free       10 GB storage / 500 K requests per month
+ *   solo       50 GB / 2 M requests per month
+ *   starter    150 GB / 6 M requests per month
+ *   team       1 TB / no request cap        (legacy class, retained)
+ *   pro        500 GB / 20 M requests per month
+ *   org        legacy pre-S-19 name of 'pro' — same quota class
+ *   max        2 TB / 80 M requests per month
  *   enterprise no caps
  *
  * Storage quota is enforced via SUM(bytes_used) from tenant_storage_state.
@@ -28,11 +33,20 @@ import type { D1Database } from "@cloudflare/workers-types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Canonical tier names used internally.
- * 'starter' is the S-19 rename of 'solo'; both map to the same quota class.
- * 'pro' is the S-19 rename of 'org'; both map to the same quota class.
+ * Canonical tier names used internally — the 6-tier launch ladder
+ * (free/solo/starter/pro/max/enterprise) plus two legacy classes kept for
+ * back-compat with existing rows: 'team' (pre-6-tier SKU, retained by the
+ * 0062 CHECK) and 'org' (pre-S-19 name of 'pro', same quota class).
  */
-export type Tier = "free" | "solo" | "starter" | "team" | "pro" | "org" | "enterprise";
+export type Tier =
+  | "free"
+  | "solo"
+  | "starter"
+  | "team"
+  | "pro"
+  | "org"
+  | "max"
+  | "enterprise";
 
 /** Quota ceilings for a tier. MAX_SAFE_INTEGER means "no cap". */
 export interface Quota {
@@ -41,19 +55,20 @@ export interface Quota {
   /**
    * Maximum HTTP requests per calendar month.
    * TODO(request-counter): deferred until a monthly counter table exists.
-   * Currently only 'free' has a finite cap, and it is not yet enforced.
+   * Caps follow the signed rate card but are NOT yet enforced (storage is).
    */
   readonly requestsPerMonthMax: number;
 }
 
 /** Per-tier quota table. */
 export const QUOTAS: Record<Tier, Quota> = {
-  free:       { storageBytesMax: 10 * 1_073_741_824,         requestsPerMonthMax: 1_000_000 },
-  solo:       { storageBytesMax: 100 * 1_073_741_824,        requestsPerMonthMax: Number.MAX_SAFE_INTEGER },
-  starter:    { storageBytesMax: 100 * 1_073_741_824,        requestsPerMonthMax: Number.MAX_SAFE_INTEGER },
+  free:       { storageBytesMax: 10 * 1_073_741_824,         requestsPerMonthMax: 500_000 },
+  solo:       { storageBytesMax: 50 * 1_073_741_824,         requestsPerMonthMax: 2_000_000 },
+  starter:    { storageBytesMax: 150 * 1_073_741_824,        requestsPerMonthMax: 6_000_000 },
   team:       { storageBytesMax: 1_099_511_627_776,          requestsPerMonthMax: Number.MAX_SAFE_INTEGER },
-  pro:        { storageBytesMax: 10 * 1_099_511_627_776,     requestsPerMonthMax: Number.MAX_SAFE_INTEGER },
-  org:        { storageBytesMax: 10 * 1_099_511_627_776,     requestsPerMonthMax: Number.MAX_SAFE_INTEGER },
+  pro:        { storageBytesMax: 500 * 1_073_741_824,        requestsPerMonthMax: 20_000_000 },
+  org:        { storageBytesMax: 500 * 1_073_741_824,        requestsPerMonthMax: 20_000_000 },
+  max:        { storageBytesMax: 2_000 * 1_073_741_824,      requestsPerMonthMax: 80_000_000 },
   enterprise: { storageBytesMax: Number.MAX_SAFE_INTEGER,    requestsPerMonthMax: Number.MAX_SAFE_INTEGER },
 };
 
@@ -121,6 +136,7 @@ function isValidTier(value: string): value is Tier {
     value === "team" ||
     value === "pro" ||
     value === "org" ||
+    value === "max" ||
     value === "enterprise"
   );
 }
