@@ -44,6 +44,22 @@ Each entry cross-references:
   no-fire).
 
 ### Fixed
+- **Worker test harness: miniflare D1 mock drifted from the real PAT lookup —
+  5/22 miniflare integration tests failed on a fresh `pnpm install`.** The
+  hand-seeded `pat` table in `worker/tests/do_miniflare_integration.miniflare.test.ts`
+  lacked the `scope` column that the Worker's auth query
+  (`SELECT tenant_id, expires_ms, scope FROM pat …`, H1 scope enforcement)
+  selects, so the D1 query threw and `extractAuth` fail-closed every valid
+  token to 401 (reason `d1_lookup_error`) — the seeded schema now mirrors the
+  canonical migrations (`0037` + `0054`, incl. `pat_hash`/`scope`/`token_id`).
+  Also: `miniflare` v4 is now a declared `worker/` devDependency (it was a
+  phantom import that only resolved via a stale root `node_modules` leftover);
+  the `/v1/rollouts/*` expectation updated for the deliberate generic `/v1/*`
+  reapi_v1 PAT-gate arm (401, not 404); and the two `quota.test.ts` rate-card
+  assertions left stale by the #209 6-tier sweep now assert the signed launch
+  ladder (free 10 GB/500K, solo 50 GB/2M, starter 150 GB/6M). Test
+  harness/expectations only — no Worker runtime behavior changed; full worker
+  suite 233/233 + miniflare 22/22 green.
 - **`corelink-app.humangr.com` (public app entry, all docs pricing CTAs) served
   the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
   500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:
