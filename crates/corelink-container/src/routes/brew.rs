@@ -63,6 +63,13 @@ const BREW_UPSTREAM_DOMAIN: &str = "https://ghcr.io";
 
 /// Brew's `CasStore` port → the 2-level [`MoatCache`], always under the shared
 /// [`PUBLIC_NAMESPACE`] (Homebrew bottles are public ⇒ cross-tenant dedup).
+///
+/// Pre-store integrity for this SHARED namespace is enforced upstream of this
+/// store, in the adapter's fetch path (`corelink_adapter_host::brew::bottle`):
+/// content-addressed ghcr.io paths (`…/sha256:<hex>`) are verified against the
+/// URL-declared digest BEFORE `put` is ever called — a mismatched fetch is
+/// refused + audited, so corrupt bytes cannot be persisted here. The read path
+/// additionally re-verifies blake3 against the stored mapping (self-healing).
 #[derive(Debug)]
 struct BrewMoatStore {
     moat: Arc<MoatCache>,
@@ -178,7 +185,13 @@ async fn brew_gate(mut req: Request, next: Next) -> Response {
         Method::GET | Method::HEAD => requires_cache_read(scope),
         // brew exposes no client write surface; gate defensively anyway.
         Method::PUT => requires_cache_write(scope),
-        _ => true,
+        // Fail-CLOSED: the adapter only routes GET (axum's `get` also serves
+        // HEAD), so anything else would 405 downstream today — but the gate
+        // must not assume that. An unmapped method is denied here so a future
+        // adapter route can never ship without an explicit scope decision. No
+        // browser/CORS clients exist on this surface (brew CLI only), so
+        // OPTIONS is not legitimate traffic.
+        _ => false,
     };
     if !scope_ok {
         return (StatusCode::FORBIDDEN, "insufficient cache scope").into_response();
@@ -349,6 +362,29 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn unmapped_methods_are_403_even_with_rw_scope() {
+        // Fail-CLOSED method gate: DELETE/PATCH carry a FULL cas:rw scope but
+        // are not a mapped cache operation, so the gate must deny them (403)
+        // rather than fall through to downstream routing.
+        for method in [Method::DELETE, Method::PATCH] {
+            let app = router_rejecting();
+            let req = HttpRequest::builder()
+                .method(method.clone())
+                .uri("/brew/t/v2/x")
+                .header("authorization", "Bearer corelink_whatever")
+                .header(SCOPE_HEADER, SCOPE_RW)
+                .body(Body::empty())
+                .unwrap();
+            let resp = app.oneshot(req).await.unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::FORBIDDEN,
+                "{method} with cas:rw must fail closed at the gate"
+            );
+        }
     }
 
     #[tokio::test]

@@ -31,6 +31,7 @@
 use std::sync::Arc;
 
 use blake3::Hasher;
+use sha2::{Digest as _, Sha256};
 
 use crate::brew::audit::AuditOrchestrator;
 use crate::brew::error::BrewAdapterError;
@@ -72,6 +73,32 @@ pub fn cas_key_for(canonical_path: &str) -> String {
     hex::encode(digest.as_bytes())
 }
 
+/// Extract the upstream-declared sha256 digest from a canonical bottle
+/// path, when the request is content-addressed.
+///
+/// Homebrew serves bottles from ghcr.io as OCI blobs —
+/// `v2/homebrew/core/<formula>/blobs/sha256:<64-hex>` — and by-digest
+/// manifest fetches use the same `sha256:<64-hex>` final segment. In both
+/// cases the OCI spec defines the digest as the sha256 of the response
+/// bytes, so it is the pre-store integrity anchor. Returns `None` for
+/// non-content-addressed paths (e.g. manifest-by-tag), which remain
+/// best-effort. The canonical path is already lowercased, matching
+/// `hex::encode`'s lowercase output.
+#[must_use]
+pub fn expected_sha256(canonical_path: &str) -> Option<&str> {
+    let last = canonical_path.rsplit('/').next()?;
+    let hex_digest = last.strip_prefix("sha256:")?;
+    (hex_digest.len() == 64 && hex_digest.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then_some(hex_digest)
+}
+
+/// Lowercase-hex sha256 of `bytes` (the OCI digest algorithm).
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
 /// Bottle-fetch orchestrator. Encapsulates the get/put cycle plus the
 /// audit-emit-BEFORE-store ordering invariant.
 #[non_exhaustive]
@@ -110,9 +137,11 @@ impl BottleService {
     }
 
     /// Fulfill a brew bottle GET. On CAS hit, returns the cached bytes
-    /// without touching the network. On miss, fetches upstream, emits
-    /// the audit row, then stores in CAS — in that order, so a failed
-    /// audit emit never leaves a half-stored blob behind.
+    /// without touching the network. On miss, fetches upstream, verifies
+    /// content-addressed paths against the URL-declared sha256 digest
+    /// (fail-CLOSED: mismatch → audit row + error, nothing stored or
+    /// served), emits the audit row, then stores in CAS — in that order,
+    /// so a failed audit emit never leaves a half-stored blob behind.
     ///
     /// `raw_path` is the brew client's request path (with optional
     /// query). `tenant_id` MUST be the value returned by the
@@ -145,10 +174,46 @@ impl BottleService {
             .fetch_bottle(&canonical, self.bottle_size_limit_bytes)
             .await?;
 
+        // Pre-store integrity: when the request path is content-addressed
+        // (ghcr.io OCI blob / by-digest manifest, `…/sha256:<hex>`), the
+        // fetched bytes MUST match the URL-declared digest BEFORE the store.
+        // The store is the shared `_public` namespace, so a MITMed/corrupt
+        // upstream response would otherwise be persisted once and served to
+        // every tenant until the read path self-heals. Mismatch → audit row,
+        // no store, no serve (the bytes are corrupt; the brew client would
+        // reject them against the formula DSL anyway).
+        let verified_sha256 = match expected_sha256(&canonical) {
+            Some(expected) => {
+                let computed = sha256_hex(&bytes);
+                if computed != expected {
+                    self.auditor.emit_bottle_integrity_mismatch(
+                        tenant_id,
+                        &cas_key,
+                        &canonical,
+                        expected,
+                        &computed,
+                        bytes.len() as u64,
+                    )?;
+                    return Err(BrewAdapterError::Upstream(format!(
+                        "integrity: upstream bytes do not match the URL-declared \
+                         digest sha256:{expected} (computed sha256:{computed}); \
+                         refusing to cache or serve"
+                    )));
+                }
+                true
+            }
+            None => false,
+        };
+
         // Audit-emit-BEFORE-mutation. On audit failure we do NOT
         // call `cas.put`, preserving INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER.
-        self.auditor
-            .emit_bottle_cache_fill(tenant_id, &cas_key, &canonical, bytes.len() as u64)?;
+        self.auditor.emit_bottle_cache_fill(
+            tenant_id,
+            &cas_key,
+            &canonical,
+            bytes.len() as u64,
+            verified_sha256,
+        )?;
 
         // Persist.
         if let Err(CasError::Backend(msg)) = self.cas.put(tenant_id, &cas_key, bytes.clone()).await
@@ -215,5 +280,46 @@ mod tests {
         let k1 = cas_key_for("v2/homebrew/core/curl");
         let k2 = cas_key_for("v2/homebrew/core/wget");
         assert_ne!(k1, k2);
+    }
+
+    #[test]
+    fn expected_sha256_extracts_ghcr_blob_digest() {
+        let digest = "a".repeat(64);
+        let path = format!("v2/homebrew/core/curl/blobs/sha256:{digest}");
+        assert_eq!(expected_sha256(&path), Some(digest.as_str()));
+    }
+
+    #[test]
+    fn expected_sha256_extracts_by_digest_manifest() {
+        let digest = "0123456789abcdef".repeat(4);
+        let path = format!("v2/homebrew/core/curl/manifests/sha256:{digest}");
+        assert_eq!(expected_sha256(&path), Some(digest.as_str()));
+    }
+
+    #[test]
+    fn expected_sha256_none_for_non_content_addressed_paths() {
+        // Tag-addressed manifest, bare bottle filename, root — all best-effort.
+        assert_eq!(expected_sha256("v2/homebrew/core/curl/manifests/8.5.0"), None);
+        assert_eq!(expected_sha256("v2/homebrew/core/curl-8.5.0.bottle.tar.gz"), None);
+        assert_eq!(expected_sha256(""), None);
+    }
+
+    #[test]
+    fn expected_sha256_rejects_malformed_digests() {
+        // Wrong length / non-hex must NOT be treated as a digest claim.
+        assert_eq!(expected_sha256("blobs/sha256:deadbeef"), None);
+        let not_hex = "z".repeat(64);
+        assert_eq!(expected_sha256(&format!("blobs/sha256:{not_hex}")), None);
+        let too_long = "a".repeat(65);
+        assert_eq!(expected_sha256(&format!("blobs/sha256:{too_long}")), None);
+    }
+
+    #[test]
+    fn sha256_hex_matches_known_vector() {
+        // sha256("") — the canonical empty-input vector.
+        assert_eq!(
+            sha256_hex(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
     }
 }

@@ -140,8 +140,12 @@ async fn cargo_gate(req: Request, next: Next) -> Response {
     let scope_ok = match *req.method() {
         Method::PUT => requires_cache_write(scope),
         Method::GET | Method::HEAD => requires_cache_read(scope),
-        // Other methods carry no cache semantics; let the adapter handle them.
-        _ => true,
+        // Fail-CLOSED: the adapter only routes GET/HEAD/PUT (so anything else
+        // would 405 downstream today), but the gate must not assume that —
+        // an unmapped method is denied here so a future adapter route can
+        // never ship without an explicit scope decision. No browser/CORS
+        // clients exist on this surface, so OPTIONS is not legitimate traffic.
+        _ => false,
     };
     if !scope_ok {
         return (StatusCode::FORBIDDEN, "insufficient cache scope").into_response();
