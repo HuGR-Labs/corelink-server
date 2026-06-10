@@ -24,6 +24,48 @@ export type Tier = {
   highlight?: boolean;
 };
 
+/**
+ * Checkout-able tiers — the 4 paid SKUs of the 6-tier ladder
+ * (solo/starter/pro/max) plus legacy `team` (still accepted by the 0062
+ * CHECK). Single source of truth for BOTH the `/api/checkout/session`
+ * gate (`PAID_TIERS`) and the `/upgrade?plan=` query validation, so the
+ * two surfaces can never drift. Free is not checkout-able (sign-up is),
+ * and Enterprise is NOT checkout-able either (the tier-select backend
+ * 422s it toward the inquiry form).
+ */
+export const CHECKOUT_TIER_IDS = [
+  "solo",
+  "starter",
+  "team",
+  "pro",
+  "max",
+] as const;
+
+export type CheckoutTierId = (typeof CHECKOUT_TIER_IDS)[number];
+
+/** Anchor SKU per the launch rate card — the fallback for `?plan=`. */
+export const DEFAULT_CHECKOUT_TIER: CheckoutTierId = "pro";
+
+export function isCheckoutTierId(value: string): value is CheckoutTierId {
+  return (CHECKOUT_TIER_IDS as readonly string[]).includes(value);
+}
+
+/**
+ * Normalize a raw `?plan=` query value (as handed over by Next.js
+ * `searchParams` — possibly an array for repeated params, possibly
+ * absent) to a checkout-able tier id. Case-insensitive; repeated params
+ * use the first occurrence; missing/invalid values fall back to the
+ * anchor SKU `pro` — the public docs pricing CTAs always pass a valid
+ * plan, so the fallback only fires on hand-edited URLs.
+ */
+export function normalizeCheckoutTier(
+  plan: string | readonly string[] | undefined | null,
+): CheckoutTierId {
+  const raw = Array.isArray(plan) ? plan[0] : plan;
+  const candidate = (typeof raw === "string" ? raw : "").trim().toLowerCase();
+  return isCheckoutTierId(candidate) ? candidate : DEFAULT_CHECKOUT_TIER;
+}
+
 export const TIERS: Tier[] = [
   {
     id: "free",

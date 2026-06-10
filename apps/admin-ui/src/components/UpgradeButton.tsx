@@ -35,18 +35,29 @@
  */
 
 import * as React from "react";
+import type { CheckoutTierId } from "@/lib/pricing";
 
 export interface UpgradeButtonProps {
   /** Locale slug for the post-Checkout redirect — falls back to "en". */
   locale?: string;
   /**
    * Canonical checkout-able tier — the 4 paid SKUs of the 6-tier ladder
-   * (`solo` | `starter` | `pro` | `max`) plus legacy `team`.
+   * (`solo` | `starter` | `pro` | `max`) plus legacy `team`
+   * (`CHECKOUT_TIER_IDS` in src/lib/pricing.ts).
    * Defaults to "pro" — the anchor SKU per the launch rate card.
    */
-  tier?: "solo" | "starter" | "team" | "pro" | "max";
+  tier?: CheckoutTierId;
   /** Override button label (i18n owners do this; default is English). */
   label?: string;
+  /**
+   * Fire the checkout POST automatically on mount (used by
+   * `/[locale]/upgrade` to drive Checkout immediately for signed-in
+   * visitors arriving from the public pricing CTAs). The button stays
+   * rendered as the manual fallback: if the auto-fired POST fails, the
+   * error surfaces inline and the user can retry by clicking. Fires at
+   * most once per mount (StrictMode-safe via ref guard).
+   */
+  autoStart?: boolean;
   /** Injected fetch impl for tests. */
   fetchImpl?: typeof fetch;
   /**
@@ -66,13 +77,14 @@ export function UpgradeButton({
   locale = "en",
   tier = "pro",
   label,
+  autoStart = false,
   fetchImpl,
   redirectImpl,
 }: UpgradeButtonProps): React.ReactElement {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  async function onClick(): Promise<void> {
+  const startCheckout = React.useCallback(async (): Promise<void> => {
     setError(null);
     setBusy(true);
     try {
@@ -103,7 +115,18 @@ export function UpgradeButton({
       setError((e as Error).message);
       setBusy(false);
     }
-  }
+  }, [fetchImpl, redirectImpl, tier, locale]);
+
+  // Auto-submit path (`/[locale]/upgrade`): kick off the same POST the
+  // click handler runs, exactly once per mount. The ref guard keeps
+  // React 18 StrictMode's double-invoked dev effects (and any dep-driven
+  // re-runs) from minting two Checkout sessions.
+  const autoStarted = React.useRef(false);
+  React.useEffect(() => {
+    if (!autoStart || autoStarted.current) return;
+    autoStarted.current = true;
+    void startCheckout();
+  }, [autoStart, startCheckout]);
 
   const displayLabel =
     label ?? `Upgrade to ${tier.charAt(0).toUpperCase() + tier.slice(1)}`;
@@ -112,7 +135,7 @@ export function UpgradeButton({
     <div data-testid="upgrade-button">
       <button
         type="button"
-        onClick={onClick}
+        onClick={startCheckout}
         disabled={busy}
         data-testid="upgrade-open-button"
       >
