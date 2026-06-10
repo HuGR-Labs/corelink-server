@@ -23,6 +23,19 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **pnpm prod-advisory audit gate** (`.github/workflows/pnpm-audit.yml`). New
+  CI workflow scanning npm/pnpm advisories on every PR that touches
+  `pnpm-lock.yaml`, `package.json` or relevant workspace manifests, plus a
+  daily cron at 03:47 UTC (staggered from existing nightlies). Runs on
+  `ubuntu-latest` (pure registry call — no self-hosted Mac slot consumed).
+  Steps: checkout → pnpm 10.32.1 + Node 22 → `pnpm install
+  --frozen-lockfile --ignore-scripts` → blocking `pnpm audit --prod
+  --audit-level high` (1 retry for registry 5xx flakes; carries
+  `continue-on-error: true` with a `TODO(flip-to-blocking)` comment until
+  the npm-advisories-override PR resolves the ~10 known prod vulns) →
+  non-blocking full `pnpm audit` for dev-graph visibility. Advisory waivers
+  via `pnpm.auditConfig.ignoreCves` in `package.json` require an ADR-style
+  note, mirroring `.cargo/audit.toml` policy.
 - **admin-ui `/upgrade?plan=<tier>` page — the public pricing CTAs now reach
   checkout (#49).** Every docs pricing CTA targets
   `corelink-app.humangr.com/upgrade?plan=<tier>`, but admin-ui had no
