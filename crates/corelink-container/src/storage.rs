@@ -30,6 +30,7 @@
 //! - [`d1_http`] — async D1 HTTP API client for metadata reads.
 
 pub mod d1_http;
+pub mod r2_kv;
 pub mod r2_s3;
 
 /// Configuration for the native-container storage layer, sourced
