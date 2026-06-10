@@ -23,6 +23,7 @@ import {
   CANONICAL_TIERS,
   TIER_RATE_CARD,
   applyPeriodDiscount,
+  formatRetention,
   formatUsd,
 } from "../lib/pricing";
 import type { BillingPeriod, TierId, TierShape } from "../lib/pricing";
@@ -173,6 +174,9 @@ export default function Pricing(): ReactElement {
                       : `${card.includedWorkspaces} workspace${card.includedWorkspaces === 1 ? "" : "s"}`}
                   </li>
                   <li>
+                    <strong>{card.retentionDays}-day</strong> cache retention
+                  </li>
+                  <li>
                     {card.hardCap
                       ? "Hard cap at 100% — no surprise bills"
                       : "Custom capacity"}
@@ -248,6 +252,19 @@ export default function Pricing(): ReactElement {
               {CANONICAL_TIERS.map((t) => {
                 const w = TIER_RATE_CARD[t].includedWorkspaces;
                 return <td key={t}>{w === null ? "Unlimited" : w}</td>;
+              })}
+            </tr>
+            <tr>
+              <th scope="row">Cache retention</th>
+              {CANONICAL_TIERS.map((t) => {
+                const c = TIER_RATE_CARD[t];
+                return (
+                  <td key={t}>
+                    {c.retentionOverrideCapDays === null
+                      ? `${c.retentionDays} days`
+                      : `${c.retentionDays} days (up to ${c.retentionOverrideCapDays} by contract)`}
+                  </td>
+                );
               })}
             </tr>
             <tr>

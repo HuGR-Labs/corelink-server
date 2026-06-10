@@ -23,6 +23,26 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Billing-tier → operational-tier mapping + per-tier retention promise in
+  the rate card (task #35, PR #218 §3 — ratified 2026-06-10).** New single
+  Rust authority
+  `corelink_ratelimit::tier::tier_for_billing_label(&str) -> Tier` maps the
+  FROZEN 6-tier billing taxonomy (plus D1 legacy values) onto the 5-tier
+  operational ladder: free→Free, solo→Solo, starter→Team, pro→Business,
+  max→Business (NOT Enterprise, ratified Q5a), org→Business, team→Team,
+  enterprise→Enterprise, pilot/unknown→Team (zero behavior change —
+  `RateLimitConfig::canonical()`'s implicit default is already Team; the
+  enum wildcard-arm Enterprise fallback in `refill_rate_for_tier` is
+  untouched). Tests pin totality over the taxonomy, the max≠Enterprise
+  decision, the Team fallback, and price-ladder monotonicity. Because the
+  mapped `Tier` also selects the eviction TTL ladder, the §3.5 ratified
+  acceptance item ships in the same change: `TIER_RATE_CARD`
+  (`apps/docs/src/lib/pricing.ts`) now carries the per-tier cache-retention
+  promise (`retentionDays` 7/30/90/365/365/365 + Enterprise-only
+  `retentionOverrideCapDays` 730 per CAP-EVICT-002), rendered on the public
+  pricing page (tier-card bullet + "Cache retention" comparison row) and
+  pinned by vitest (ladder values, Enterprise-only cap, monotonic
+  non-decreasing retention, `formatRetention` rendering).
 - **admin-ui `/upgrade?plan=<tier>` page — the public pricing CTAs now reach
   checkout (#49).** Every docs pricing CTA targets
   `corelink-app.humangr.com/upgrade?plan=<tier>`, but admin-ui had no
