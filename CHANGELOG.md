@@ -44,6 +44,20 @@ Each entry cross-references:
   no-fire).
 
 ### Fixed
+- **Repo-root wrangler version hygiene — stale v3 broke bare `npx wrangler`.**
+  An out-of-band npm install of `@cloudflare/next-on-pages` (~2026-05-14) had
+  dropped a stale `wrangler@3.114.17` into the pnpm-managed root
+  `node_modules`; with no root `wrangler` devDependency, bare `npx wrangler`
+  resolved v3 and died parsing `wrangler.toml` (`"containers" should be an
+  object, but got an array` — the containers array is v4 syntax). Root
+  `package.json` now pins `wrangler ^4.95.0` (locked to 4.95.0, matching
+  `worker/`), so the repo-root `node_modules/.bin/wrangler` is always 4.x,
+  and `scripts/apply-d1-migrations-prod.sh` now defaults to the repo-pinned
+  binary (`$REPO_ROOT/node_modules/.bin/wrangler`) instead of
+  `npx wrangler@latest` (the `WRANGLER` env override is preserved).
+  `scripts/deploy-pages-docs-prod.sh` already resolved the repo-local binary
+  via `_pages-deploy-common.sh` — its "run pnpm install" hint now actually
+  installs a root wrangler. (Task #44)
 - **`corelink-app.humangr.com` (public app entry, all docs pricing CTAs) served
   the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
   500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:

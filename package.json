@@ -35,5 +35,8 @@
     "test": "pnpm -r --parallel test",
     "test:coverage": "pnpm -r test:coverage",
     "build": "pnpm -r build"
+  },
+  "devDependencies": {
+    "wrangler": "^4.95.0"
   }
 }
