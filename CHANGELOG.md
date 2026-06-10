@@ -66,6 +66,54 @@ Each entry cross-references:
   `taiki-e/install-action@fd2f5e3d…` (v2.81.9) prebuilt binary (versions unchanged; pure
   mechanism swap). Lighter + reliable. Governance: ADR-S12-045 v1.3.0 + §14.s12.004.1
   Security review (owner-approved 2026-06-10).
+- **Stripe webhook money-path fail-safety: payment_status activation gate +
+  BILLING_DB fail-closed + price↔tier defense-in-depth assert + tenant_billing
+  terminal-state guard** (`apps/signup-worker/src/webhooks/stripe.ts`,
+  closes four audited findings; stacks on the `metadata[tier]` fail-loud fix
+  below). (1) `checkout.session.completed` activated entitlement without ever
+  reading `payment_status` — an async payment method (SEPA/ACH) completes the
+  session with `payment_status='unpaid'` and the money may never arrive.
+  Activation (tenant_billing upsert + tier_selections activation + MRR emit,
+  now one shared helper) is gated on `paid`/`no_payment_required`; `unpaid` →
+  200 with ZERO writes; an unknown/absent payment_status fails loud (500).
+  New handlers: `checkout.session.async_payment_succeeded` runs the identical
+  shared activation once the delayed payment clears, and
+  `…async_payment_failed` logs + acks (nothing was granted, nothing to
+  revoke). (2) A missing `BILLING_DB` binding no-op'd every money-path write
+  yet still acked 200 — Stripe never retries, so a PAID checkout was silently
+  dropped with no recovery. The handler now fails closed (503
+  `billing_db_unbound`, mirroring the `STRIPE_WEBHOOK_SECRET` check) so
+  Stripe retries until the deploy misconfiguration is fixed. (3)
+  Defense-in-depth price↔tier assert: server-set `metadata[tier]` could be
+  desynced from the actually-subscribed price by a checkout-backend bug;
+  `customer.subscription.created`/`.updated` (the first payloads carrying
+  both signals — the checkout-session payload has no price data, line_items
+  is expand-only) now 500 `subscription_tier_price_mismatch` before any
+  write when they disagree, instead of silently entitling either SKU. (4)
+  Terminal-state guard: Stripe webhooks are unordered — a late
+  `customer.subscription.updated(status=active)` after
+  `customer.subscription.deleted` resurrected `tenant_billing` to `'paid'`.
+  The status UPDATEs now carry `AND status != 'canceled'` (matching the
+  canonical tier_selections gate, where activation only happens via
+  checkout); only a NEW checkout can move a canceled row forward. Tests:
+  76 → 87 (+11 new incl. unpaid-completed zero-writes, async-succeeded
+  identical activation, async-failed no-writes, unbound-DB 503, mismatch
+  500s on created/updated + agreeing-tier no-false-positive, and the
+  deleted-then-late-active resurrection pin).
+- **Stripe webhook: a paid `checkout.session.completed` without
+  `metadata[tier]` was silently billing-rowed as `starter`** — the
+  fallback in `apps/signup-worker/src/webhooks/stripe.ts` defaulted any
+  missing/unparseable tier metadata to `"starter"`, so an anomalous session
+  (our checkout backend always sets `metadata[tier]`, client.rs:630) would
+  record the WRONG plan with no signal (a Max $149 checkout persisted as
+  Starter $35). Now fails loud — 500 `checkout_missing_tier` before any
+  write, same class as the existing missing-tenant/customer guard, so
+  Stripe redelivers and the anomaly is visible. Also: the
+  `subscription_canceled` analytics event hardcoded `from_plan: "starter"`
+  for every cancel; it now derives the real prior plan via
+  `resolveSubscriptionTier` (metadata\[tier\] / price→tier map, `"unknown"`
+  fallback). Tests: +1 fail-loud case; the fixtures that leaned on the
+  buggy default (`metadata.plan`, never read) now send `metadata.tier`.
 - **`corelink-app.humangr.com` (public app entry, all docs pricing CTAs) served
   the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
   500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:
