@@ -75,12 +75,14 @@ pub const TENANT_HEADER: &str = "x-corelink-tenant-id";
 pub enum RequestedTier {
     /// Free tier — instant activation, no Checkout Session.
     Free,
+    /// Solo paid tier.
+    Solo,
     /// Starter paid tier.
     Starter,
-    /// Team paid tier.
-    Team,
     /// Pro paid tier.
     Pro,
+    /// Max paid tier.
+    Max,
 }
 
 impl RequestedTier {
@@ -90,9 +92,10 @@ impl RequestedTier {
     pub fn parse_self_serve(s: &str) -> ParsedTier {
         match s.trim().to_ascii_lowercase().as_str() {
             "free" => ParsedTier::Tier(Self::Free),
+            "solo" => ParsedTier::Tier(Self::Solo),
             "starter" => ParsedTier::Tier(Self::Starter),
-            "team" => ParsedTier::Tier(Self::Team),
             "pro" => ParsedTier::Tier(Self::Pro),
+            "max" => ParsedTier::Tier(Self::Max),
             "enterprise" => ParsedTier::Enterprise,
             _ => ParsedTier::Invalid,
         }
@@ -129,8 +132,8 @@ pub enum ParsedTier {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TierSelectRequest {
-    /// Requested tier: `free` | `starter` | `team` | `pro`. (`enterprise`
-    /// → 422.)
+    /// Requested tier: `free` | `solo` | `starter` | `pro` | `max`.
+    /// (`enterprise` → 422.)
     pub tier: String,
     /// Post-payment success redirect (Stripe appends the session id). The
     /// Worker builds this from a trusted origin — never user-supplied.
@@ -1123,7 +1126,7 @@ mod tests {
             store,
             SpyCheckout::default(),
             SpyAudit::default(),
-            RequestedTier::Team,
+            RequestedTier::Max,
         )
         .await;
         assert_eq!(r.unwrap_err(), TierSelectHttpError::AlreadyActive);

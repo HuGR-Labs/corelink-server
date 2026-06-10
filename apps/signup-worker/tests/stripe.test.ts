@@ -275,9 +275,11 @@ const baseEnv = (db?: ReturnType<typeof fakeDb>): StripeWebhookEnv => ({
     // Price→tier reverse map (mirrors the checkout backend's
     // STRIPE_PRICE_ID_{TIER} env vars) so subscription.updated can map a price
     // change back to a tier.
+    STRIPE_PRICE_ID_SOLO: "price_solo_aaa",
     STRIPE_PRICE_ID_STARTER: "price_starter_xxx",
     STRIPE_PRICE_ID_TEAM: "price_team_yyy",
     STRIPE_PRICE_ID_PRO: "price_pro_zzz",
+    STRIPE_PRICE_ID_MAX: "price_max_www",
     BILLING_DB: db
         ? { prepare: db.prepare }
         : undefined,

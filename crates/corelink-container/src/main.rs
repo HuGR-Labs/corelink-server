@@ -413,14 +413,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let billing_audit = Arc::new(InMemoryBillingAuditEmitter::new());
         // Canonical Stripe-plan-id → tier mapping. Production
         // operators flip these via the workspace tier config; the
-        // defaults here mirror the canonical 5-tier taxonomy from
+        // defaults here mirror the canonical 6-tier taxonomy from
         // `corelink-tier-selection::tier::TierKind` so a fresh
         // deployment without overrides still classifies the four
-        // production plans correctly.
+        // paid production plans correctly.
         let tier_selector = Arc::new(InMemoryTierSelector::with_mapping(&[
+            ("plan_solo", TierKind::Solo),
             ("plan_starter", TierKind::Starter),
-            ("plan_team", TierKind::Team),
             ("plan_pro", TierKind::Pro),
+            ("plan_max", TierKind::Max),
         ]));
         let materializer: Arc<dyn StateMaterializer> = Arc::new(D1SubscriptionStateHandler::new(
             billing_d1.clone(),

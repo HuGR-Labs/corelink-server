@@ -614,8 +614,10 @@ mod tests {
         let d1 = Arc::new(InMemoryBillingD1::new());
         let audit = Arc::new(InMemoryBillingAuditEmitter::new());
         let sel = Arc::new(InMemoryTierSelector::with_mapping(&[
+            ("plan_solo", TierKind::Solo),
             ("plan_starter", TierKind::Starter),
             ("plan_pro", TierKind::Pro),
+            ("plan_max", TierKind::Max),
         ]));
         let handler = D1SubscriptionStateHandler::new(d1.clone(), audit.clone(), sel).with_clock(
             Arc::new(InMemoryFakeMatClock::at_unix_ms(1_700_000_000_000)),

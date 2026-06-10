@@ -105,10 +105,14 @@ mod tests {
     #[test]
     fn known_plan_resolves_to_tier() {
         let sel = InMemoryTierSelector::with_mapping(&[
+            ("plan_solo", TierKind::Solo),
             ("plan_starter", TierKind::Starter),
             ("plan_pro", TierKind::Pro),
+            ("plan_max", TierKind::Max),
         ]);
         assert_eq!(sel.compute_tier("plan_pro", 5).unwrap(), TierKind::Pro);
+        assert_eq!(sel.compute_tier("plan_solo", 1).unwrap(), TierKind::Solo);
+        assert_eq!(sel.compute_tier("plan_max", 1).unwrap(), TierKind::Max);
     }
 
     #[test]

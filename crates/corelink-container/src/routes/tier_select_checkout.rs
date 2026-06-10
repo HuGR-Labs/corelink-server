@@ -17,10 +17,10 @@
 //! `Err(String)` on ANY Stripe failure (→ 502 `stripe_unavailable`).
 //!
 //! Mapping the trait's [`RequestedTier`] → `corelink_tier_selection::tier::
-//! TierKind` is `Starter→Starter`, `Team→Team`, `Pro→Pro`. `Free` never
-//! reaches this adapter (the orchestration activates free instantly without
-//! Stripe), so WP-B may treat `Free` as an internal invariant violation
-//! (`Err(...)`).
+//! TierKind` is `Solo→Solo`, `Starter→Starter`, `Pro→Pro`, `Max→Max`. `Free`
+//! never reaches this adapter (the orchestration activates free instantly
+//! without Stripe), so WP-B may treat `Free` as an internal invariant
+//! violation (`Err(...)`).
 //!
 //! ──────────────────────────────────────────────────────────────────────
 //! # EMAIL SEAM DECISION (resolved here so WP-A/B/C are not blocked)
@@ -170,9 +170,10 @@ impl CheckoutCreator for StripeCheckoutCreator {
         // before any checkout), so treat it as an internal invariant
         // violation rather than silently opening a paid session.
         let tier_kind = match tier {
+            RequestedTier::Solo => TierKind::Solo,
             RequestedTier::Starter => TierKind::Starter,
-            RequestedTier::Team => TierKind::Team,
             RequestedTier::Pro => TierKind::Pro,
+            RequestedTier::Max => TierKind::Max,
             RequestedTier::Free => {
                 return Err("invariant: free tier must not reach Stripe checkout".to_string());
             }

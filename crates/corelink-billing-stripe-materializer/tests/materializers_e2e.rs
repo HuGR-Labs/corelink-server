@@ -60,8 +60,9 @@ fn build_bundle() -> Bundle {
     let audit_sink = Arc::new(InMemoryBillingAuditEmitter::new());
     let tier_selector = Arc::new(InMemoryTierSelector::with_mapping(&[
         ("plan_basic", TierKind::Starter),
-        ("plan_team", TierKind::Team),
+        ("plan_solo", TierKind::Solo),
         ("plan_pro", TierKind::Pro),
+        ("plan_max", TierKind::Max),
     ]));
     let handler = Arc::new(D1SubscriptionStateHandler::new(
         d1.clone() as Arc<dyn BillingD1Writer>,

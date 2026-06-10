@@ -8,19 +8,18 @@ the Excel-equivalent of the public calculator at
 side of the ledger that the public version does not expose.
 
 **Status.** DRAFT — pending Finance sign-off on COGS rows.
-Last updated 2026-05-15. Pinned to `crates/corelink-tier-selection`.
+Last updated 2026-06-09. Pinned to `crates/corelink-tier-selection`.
 
 **Source of truth.**
 - Customer-facing tier definitions: `apps/docs/docs/explanation/pricing/index.mdx`
 - Customer-facing calculator math: `apps/docs/docs/explanation/pricing/calculator.mdx`
 - Tier taxonomy in code: `crates/corelink-tier-selection/src/tier.rs`
-- Internal Pro SKU (not yet launched publicly): see "Pro SKU" section below.
 
-> Discrepancy note: the code in `crates/corelink-tier-selection/src/tier.rs`
-> models five tiers (Free / Starter / Team / Pro / Enterprise). The
-> public site at launch lists four (Free / Starter / Team / Enterprise).
-> The Pro SKU is held internal pending Finance + Product decision on
-> whether to expose it at GA. See *Pro SKU* below.
+The public site, this worksheet, and the code all share one frozen
+6-tier taxonomy: **Free / Solo / Starter / Pro / Max / Enterprise**. The
+four paid tiers (Solo / Starter / Pro / Max) self-serve via Stripe
+Checkout; Free is instant-activation; Enterprise routes through the
+inquiry form. There is no held-back internal SKU.
 
 ---
 
@@ -31,13 +30,18 @@ the public pricing page, and the internal worksheet. If you change a
 number here, update the public pages and the calculator in the same
 commit.
 
-| Tier | Base $/mo | Included storage (GB) | Included reads (GB) | Storage overage ($/GB) | Read overage ($/GB) | BYOK add-on ($/mo) | Seats cap | Regions cap |
-|---|---|---|---|---|---|---|---|---|
-| Free | 0 | 5 | 50 | hard-cap | hard-cap | n/a | 3 | shared (1) |
-| Starter | 29 | 50 | 500 | 0.20 | 0.04 | n/a | 10 | 1 |
-| Team | 199 | 500 | 5,120 | 0.15 | 0.03 | 99 | 50 | 2 |
-| Pro (internal) | 599 | 2,048 | 20,480 | 0.10 | 0.02 | included | 200 | 3 |
-| Enterprise | quote | quote | quote | quote | quote | included | unlimited | 4 |
+At v0.1 every priced tier is **hard-capped** (no metered overage — over
+quota returns `429` with an upgrade CTA). Metered overage is deferred to
+v0.2.
+
+| Tier | Base $/mo | Included storage (GB) | Included reads (GB) | Overage | BYOK add-on ($/mo) | Seats cap | Regions cap |
+|---|---|---|---|---|---|---|---|
+| Free | 0 | 10 | 50 | hard-cap | n/a | 3 | shared (1) |
+| Solo | 15 | 50 | 500 | hard-cap | n/a | 5 | 1 |
+| Starter | 35 | 150 | 1,536 | hard-cap | n/a | 10 | 1 |
+| Pro | 50 | 500 | 5,120 | hard-cap | n/a | 50 | 2 |
+| Max | 149 | 2,048 | 20,480 | hard-cap | 99 | 100 | 2 |
+| Enterprise | quote | quote | quote | negotiated | included | unlimited | 4 |
 
 ---
 
@@ -82,6 +86,16 @@ available.)
 ---
 
 ## Worked tier P&L
+
+> **Pending Finance re-model (2026-06-09).** The canonical rate card
+> above is the new 6-tier launch ladder (Free $0 / Solo $15 / Starter
+> $35 / Pro $50 / Max $149 / Enterprise). The worked P&L, margin
+> summary, sales playbook, and Excel block **below** are still pinned to
+> the superseded rate card (Starter $29 / Team $199 / internal-Pro
+> $599) and overage model. They are retained as the COGS methodology
+> reference only; Finance must re-run the per-tier revenue/margin
+> against the new ladder before these numbers are quoted. Do not cite
+> the dollar figures below as current.
 
 ### Free tier
 
@@ -346,7 +360,7 @@ margin_pct_team    = margin_team / rev_team
 ## Trace
 
 - spec contract S-19 §6.1 (tier taxonomy)
-- WI-S19-004 §6.1 (5-tier baseline)
+- WI-S19-004 §6.1 (tier baseline)
 - WI-S19-005 (Enterprise routing)
 - WI-S20-008 §2.1.2 Post 5 (economics framing)
 - `crates/corelink-tier-selection/src/tier.rs`

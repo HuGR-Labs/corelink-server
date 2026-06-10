@@ -49,9 +49,11 @@ export interface Env {
   // Stripe checkout needs the per-tier price ids.
   STRIPE_AUTH_MODE?: string;
   STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_PRICE_ID_SOLO?: string;
   STRIPE_PRICE_ID_STARTER?: string;
   STRIPE_PRICE_ID_TEAM?: string;
   STRIPE_PRICE_ID_PRO?: string;
+  STRIPE_PRICE_ID_MAX?: string;
   CORELINK_DPA_VERSION?: string;
   // PAT HMAC signing key (raw hex, ≥ 32 bytes decoded) — used for the
   // HMAC-SHA256 fast-fail layer in PAT validation (WP-A1 step 2).

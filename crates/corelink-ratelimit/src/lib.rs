@@ -31,9 +31,10 @@
 //!    tenant-leftmost ordering) + the canonical 3-dimension list
 //!    [`KEY_DIMENSION_LIST`] for cross-component regression tests.
 //! 3. The [`tier`] module ships [`refill_rate_for_tier`] resolver
-//!    against the canonical 5-tier ladder (free/solo/team/business/
-//!    enterprise) per WI-S08-001 §6.1.4 + Lote 10.7bis P0-7 (5-tier
-//!    vocabulary FROZEN at the data model layer).
+//!    against the canonical billing-tier ladder (free/solo/starter/pro/
+//!    max/enterprise) per WI-S08-001 §6.1.4 + Lote 10.7bis P0-7 (tier
+//!    vocabulary unified with the billing taxonomy at the data model
+//!    layer).
 //! 4. The [`bucket`] module ships [`TokenBucketState`] (the durable
 //!    state machine; `available_tokens: f64` for sub-1-token refill
 //!    precision per WI §1 invariant 5) + [`BucketDecision`]

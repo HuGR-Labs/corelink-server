@@ -22,6 +22,28 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Changed
+- **Billing tier taxonomy 5 → 6 (Free/Solo/Starter/Pro/Max/Enterprise).** Adds a
+  **Solo** ($15) entry SKU and a **Max** ($149) premium SKU and removes **Team**.
+  `TierKind` + `requires_stripe_checkout` (now the 4 paid: Solo/Starter/Pro/Max)
+  + the Stripe `plan_*`→tier map + `RequestedTier`/checkout adapters + the public
+  pricing page (lists all six) move together. Spec governance: **ADR-S19-001**
+  amends the sealed R-S19-7 tier count *without editing sealed history*;
+  **ADR-0062** records the D1 migration mechanism. Additive D1 migration **0062**
+  widens the `tier_selections` / `stripe_checkout_sessions` tier CHECKs (adds
+  `solo`/`max`, retains `team`) via the SQLite 12-step rebuild (zero data loss).
+  New `scripts/ops/stripe-setup-tiers.sh` (idempotent, safety-gated, not run)
+  provisions the live products and emits `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}`.
+- **6-tier money-path wiring through the TypeScript edge.** Completes the change
+  on the worker side (the Rust/container side shipped above): the Durable Object
+  now forwards `STRIPE_PRICE_ID_{SOLO,MAX}` into the container env (alongside
+  Starter/Pro) so Solo/Max checkout sessions resolve a price instead of 500-ing,
+  and the `signup-worker` Stripe webhook's reverse price→tier map + `PaidTier`
+  union + `asPaidTier` learn `solo`/`max` so a paid Solo/Max subscription
+  activates `tier_selections.tier` (without it those customers pay but stay
+  un-entitled). `stripe-setup-tiers.sh` fixed: `--live` is a per-command flag and
+  a live `STRIPE_API_KEY` is auto-detected.
+
 ### Added
 - **Durable D1-HTTP billing writer for the Stripe-webhook materializer
   (money-path launch-blocker #27 Item 7b).** Added
