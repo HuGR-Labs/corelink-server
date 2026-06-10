@@ -4,7 +4,8 @@
  * Asserts:
  *   1. All 8 reference pages exist (index + 7 canonical subcommands + config).
  *   2. Each page covers the flag set declared in
- *      crates/corelink-cli/src/main.rs.
+ *      tools/cli/src/main.rs (moved from crates/corelink-cli in wave-33
+ *      stage 2.D.3, 360042b8).
  *   3. The 8 doctor checks are documented exactly (no drift).
  *   4. The index lists every subcommand.
  */
@@ -117,7 +118,7 @@ describe("WI-S18-003 CLI per-command reference", () => {
 
   it("CLI source flags match documented set", async () => {
     const cliSrc = await readFile(
-      resolve(here, "..", "..", "..", "crates", "corelink-cli", "src", "main.rs"),
+      resolve(here, "..", "..", "..", "tools", "cli", "src", "main.rs"),
       "utf8",
     );
     // every documented subcommand must appear in the Rust source as a clap variant
