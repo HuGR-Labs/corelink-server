@@ -22,9 +22,12 @@ on:
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".github/workflows/docs-ci.yml"
-      # REAPI drift surface (absorbed from docs-reapi-gen.yml per CI-OPT-002):
+      # REAPI drift surface (absorbed from docs-reapi-gen.yml per CI-OPT-002).
+      # apps/server/proto/** moved to crates/corelink-container/proto/** in
+      # wave-33 stage 2.B.1 (1d0c221e) — keep the trigger pointed at the live
+      # location or proto edits silently skip the drift gate.
       - "crates/corelink-reapi/proto/**"
-      - "apps/server/proto/**"
+      - "crates/corelink-container/proto/**"
   push:
     branches: [main]
     paths:
@@ -34,7 +37,7 @@ on:
       - "pnpm-workspace.yaml"
       - ".github/workflows/docs-ci.yml"
       - "crates/corelink-reapi/proto/**"
-      - "apps/server/proto/**"
+      - "crates/corelink-container/proto/**"
   schedule:
     # Nightly Lighthouse baseline at 08:00 UTC (absorbed from docs-lighthouse.yml).
     # Tag-trigger surface from old docs-lighthouse.yml (docs-v*, v*) is
@@ -272,7 +275,11 @@ jobs:
 
   vale:
     name: Vale prose lint
-    runs-on: [self-hosted, mac, corelink-builder]
+    # GitHub-hosted: errata-ai/vale-action downloads a Linux x86_64 reviewdog
+    # binary, which ENOEXECs (`spawn Unknown system error -8`) on the
+    # self-hosted macOS fleet. Prose lint needs no secrets and no self-hosted
+    # hardware, so it runs on ubuntu-latest.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

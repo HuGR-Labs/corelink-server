@@ -23,6 +23,23 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **Docs CI: the four pre-existing reds greened (task #42).** (1) The Vale
+  prose-lint jobs (`docs-ci.yml` + `docs-vale.yml`) moved to GitHub-hosted
+  `ubuntu-latest` — `errata-ai/vale-action` downloads a Linux x86_64 reviewdog
+  binary that ENOEXECs (`spawn Unknown system error -8`) on the self-hosted
+  macOS fleet; prose lint needs no secrets or self-hosted hardware. (2)
+  `apps/docs/tests/cli-reference.test.ts` now reads the CLI clap source at its
+  real location `tools/cli/src/main.rs` (moved from `crates/corelink-cli` in
+  wave-33 stage 2.D.3, 360042b8). (3) `apps/docs/tests/sidebars.test.ts`
+  expected-category list updated to the current canonical sidebar (adds the
+  intentional Integrations / Concepts / API categories from 3e1eb226). (4)
+  `Health.mdx` REAPI reference regenerated — legitimate provenance drift after
+  `apps/server/proto/health.proto` moved to
+  `crates/corelink-container/proto/health.proto` (wave-33, 1d0c221e); the
+  generator is deterministic. Also repointed the stale
+  `apps/server/proto/**` docs-ci trigger path at the live
+  `crates/corelink-container/proto/**` so future proto edits re-run the
+  drift gate instead of silently skipping it.
 - **6-tier completeness sweep across every TypeScript surface.** The 6-tier
   launch (Solo $15 / Max $149) had shipped Rust-complete but left stale 5-tier
   unions on the TS edge. Closed in one sweep, all aligned to the signed launch
