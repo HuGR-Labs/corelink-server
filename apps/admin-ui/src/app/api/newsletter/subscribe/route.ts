@@ -38,6 +38,7 @@
  *     that would duplicate the one Resend sends and risk inconsistency.
  *
  * Behaviour matrix:
+ *   - Per-IP rate limit exceeded              → 429 rate_limited
  *   - Missing or invalid email                → 400 invalid_email
  *   - Missing server secrets (dev/test mode)  → 503 not_configured
  *   - Resend 4xx (already exists, blocked)    → 200 ok (idempotent UX)
@@ -51,10 +52,27 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // Edge runtime — `fetch` is the only outbound call we make, and the
 // Resend Audience API is purely HTTPS. No Node-only dependency required.
 export const dynamic = "force-dynamic";
+
+/**
+ * Client IP for rate limiting (mirrors /api/csp-report). On Cloudflare,
+ * `CF-Connecting-IP` is set by the edge and not spoofable by the client;
+ * fall back to XFF/X-Real-IP for non-CF dev environments.
+ */
+function clientIp(req: NextRequest): string {
+  const cf = req.headers.get("cf-connecting-ip");
+  if (cf) return cf.trim();
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) {
+    const first = xff.split(",")[0];
+    if (first) return first.trim();
+  }
+  return req.headers.get("x-real-ip") ?? "unknown";
+}
 
 // Conservative email check: a local-part with no whitespace / @, an @,
 // and a domain with at least one dot. Resend does the authoritative
@@ -85,7 +103,7 @@ function sanitiseTag(value: string | undefined, fallback: string): string {
   return cleaned.length > 0 ? cleaned : fallback;
 }
 
-function corsHeaders(origin: string | null): HeadersInit {
+function corsHeaders(origin: string | null): Record<string, string> {
   // Allow any *.humangr.com origin (docs + admin + future marketing). We
   // do not echo arbitrary origins because that would let a malicious page
   // POST on a logged-in user's behalf — but a newsletter endpoint takes
@@ -113,6 +131,21 @@ export function OPTIONS(req: NextRequest): Response {
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const cors = corsHeaders(req.headers.get("origin"));
+
+  // Public unauthenticated endpoint → per-IP rate limit (same limiter and
+  // window as /api/csp-report) so it can't be used to spam Resend or burn
+  // the API quota. 429 carries CORS headers so the docs-site fetch can
+  // read the failure instead of a CORS error.
+  const decision = checkRateLimit(clientIp(req));
+  if (!decision.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      {
+        status: 429,
+        headers: { ...cors, "retry-after": String(decision.retryAfterSec) },
+      },
+    );
+  }
 
   let body: SubscribeBody = {};
   try {

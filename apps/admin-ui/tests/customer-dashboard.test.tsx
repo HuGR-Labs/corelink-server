@@ -141,7 +141,7 @@ describe("CustomerNav", () => {
 // PortalLauncher
 // ---------------------------------------------------------------------------
 
-import { PortalLauncher } from "@/app/[locale]/customer/billing/PortalLauncher";
+import { PortalLauncher } from "@/app/[locale]/(authenticated)/customer/billing/PortalLauncher";
 
 describe("PortalLauncher", () => {
   afterEach(() => vi.restoreAllMocks());
