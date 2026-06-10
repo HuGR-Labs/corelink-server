@@ -50,15 +50,16 @@ jobs:
       - name: Install Rust toolchain (stable, pinned)
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
 
-      - name: Install cargo-deny (pinned) for license check
-        run: |
-          # cargo-deny 0.16.4 — pinned per §14.s12.004.1.
-          # cargo-deny.yml installs the CLI natively via
-          # taiki-e/install-action cargo-deny@0.16.4 (the EmbarkStudios
-          # container action is Linux-only and hard-fails on the macOS
-          # fleet); here we install the same pinned CLI directly for the
-          # license summary step.
-          cargo install cargo-deny --version "0.16.4" --locked --quiet
+      # cargo-deny 0.19.8 — pinned per §14.s12.004.1 (ADR-S12-045 v1.2.0).
+      # Installed via the SAME SHA-pinned taiki-e/install-action prebuilt
+      # binary as cargo-deny.yml / dependabot-policy.yml (the EmbarkStudios
+      # container action is Linux-only and hard-fails on the macOS fleet;
+      # the prebuilt binary also avoids the from-source compile race that
+      # bites `cargo install` on the contended self-hosted Mac).
+      - name: Install cargo-deny (SHA-pinned) for license check
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: cargo-deny@0.19.8
 
       - name: Generate Cargo.lock diff
         id: diff

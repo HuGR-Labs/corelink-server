@@ -98,9 +98,9 @@ jobs:
 
       - name: Install cargo-deny (SHA-pinned)
         if: hashFiles('Cargo.toml') != ''
-        uses: taiki-e/install-action@9ba3ac3fd006a70c6e186a683577abc1ccf0ff3a  # v2.49.45
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25  # v2.81.9
         with:
-          tool: cargo-deny@0.16.4
+          tool: cargo-deny@0.19.8
 
       - name: Run cargo-deny licenses (fail-closed)
         if: hashFiles('Cargo.toml') != ''
