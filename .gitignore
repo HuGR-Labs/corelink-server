@@ -71,6 +71,9 @@ apps/admin-ui/tsconfig.tsbuildinfo
 # Pentest evidence pack build output (regen via scripts/build-pentest-evidence-pack.sh)
 /dist/
 .claude/worktrees/
+# Machine-local Claude Code loop/scheduler state — never committed.
+.claude/scheduled_tasks.lock
+.claude/*.lock
 
 # LICENSE full-text files materialized by scripts/fetch-license-texts.sh
 /LICENSE-APACHE-2.0.txt
