@@ -44,6 +44,21 @@ Each entry cross-references:
   no-fire).
 
 ### Fixed
+- **Docs pricing copy: purged the stale "Pro $25/mo or $250/yr" / "Three
+  plans" launch shape from every public docs page** (public-launch blocker —
+  the published prose contradicted the live checkout). All copy now matches
+  the canonical 6-tier rate card (`apps/docs/src/lib/pricing.ts`
+  TIER_RATE_CARD): Free $0 / Solo $15 / Starter $35 / Pro $50 ($500/yr) /
+  Max $149 / Enterprise contact. Touched: `pricing.tsx` (meta description,
+  hero, header comment), `pricing/calculator.tsx` (meta description),
+  `legal/terms.tsx` §3 (three plans → six tiers), and all six
+  `compare/vs-*.mdx` pages — including the derived arithmetic ($300/yr Pro
+  TCO → $600/yr; the vs-turborepo Scenario B differential and the
+  vs-sccache 500 GB verdict recomputed honestly at $50/mo; "smallest paid
+  tier" cells now anchor Solo $15/mo). Competitor prices left untouched.
+  Plus the dead 5-tier `Free|Solo|Team|Org|Enterprise` comment in
+  `apps/admin-ui/src/app/[locale]/pricing/page.tsx` and a stale
+  `Free / Pro / Enterprise` test name in `pricing.test.ts`.
 - **`corelink-app.humangr.com` (public app entry, all docs pricing CTAs) served
   the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
   500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:
