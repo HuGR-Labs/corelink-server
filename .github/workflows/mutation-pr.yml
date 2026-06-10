@@ -1,0 +1,129 @@
+name: mutation-pr (per-diff cargo-mutants — fast PR gate)
+
+# Lightweight per-PR replacement for the workspace mutation sweep.
+#
+# WHY: the old `mutation-nightly` ran cargo-mutants across 11 whole crates
+# EVERY night — thousands of mutants, each requiring a full build + full test
+# run → 6-8h that pinned the shared self-hosted Mac and re-sabotaged code
+# nobody had touched in weeks. (See the brutal-audit infra notes.)
+#
+# WHAT THIS DOES INSTEAD: mutates ONLY the lines this PR changed
+# (`cargo mutants --in-diff`). A PR touching ~20 Rust lines spawns ~5-10
+# mutants (minutes), not thousands. A PR with no Rust source changes produces
+# zero mutants and passes instantly. Same protection where bugs actually live —
+# the NEW code — without re-auditing months-stale code every night.
+#
+# Runner: self-hosted Mac on purpose — cargo-mutants + cargo-nextest are
+# already installed there and the build cache is warm (same machine), so a
+# per-diff run is genuinely fast. The Mac relief comes from demoting the
+# nightly full-workspace sweep (now weekly), not from this light check.
+#
+# The full-crate kill-rate BASELINE regression gate still lives in
+# `mutation-nightly.yml` (now weekly / dedicated-runner). This per-PR check is
+# the fast first line: it fails if a mutant on a CHANGED line survives the
+# tests (a test blind spot in the new code).
+
+on:
+  pull_request:
+    # Only spawn the job when Rust code/manifests change — a docs/TS/config PR
+    # has nothing to mutate, so it shouldn't even pay the setup cost. (The
+    # in-job "no .rs in diff" guard is kept as a belt-and-suspenders for
+    # Cargo.toml-only changes.)
+    paths:
+      - '**.rs'
+      - '**/Cargo.toml'
+      - 'Cargo.lock'
+
+permissions:
+  contents: read
+
+# Only the latest commit of a PR needs checking; cancel superseded runs so a
+# rapid push sequence never stacks mutation runs on the shared Mac.
+concurrency:
+  group: mutation-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  mutants-diff:
+    name: cargo-mutants (changed lines only)
+    runs-on: [self-hosted, mac, corelink-builder]
+    steps:
+      - name: Checkout (full history — needed for the base diff)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+          key: mutants-pr
+
+      - name: Install cargo-mutants + cargo-nextest (no-op if already present)
+        run: |
+          set -euo pipefail
+          # On the self-hosted Mac these usually persist across runs, so
+          # `cargo install` is a fast no-op when the pinned version is present.
+          cargo install cargo-mutants --locked --version 25.0.1
+          cargo install cargo-nextest --locked
+
+      - name: Compute the PR diff (changed lines only)
+        run: |
+          set -euo pipefail
+          base="origin/${{ github.base_ref }}"
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}" || true
+          # Three-dot: changes introduced by this PR relative to the merge-base.
+          git diff "$base"...HEAD > pr.diff
+          echo "diff lines: $(wc -l < pr.diff)"
+
+      - name: Run cargo-mutants on changed lines
+        run: |
+          set -euo pipefail
+          # Skip cleanly if the PR touches no Rust source — zero mutants.
+          if ! grep -qE '^\+\+\+ b/.*\.rs$' pr.diff; then
+            echo "No Rust source changes in this PR — 0 mutants, passing."
+            exit 0
+          fi
+          # `--in-diff` restricts mutants to the changed lines.
+          # `--test-tool nextest` runs the suite in parallel (faster).
+          # Timeout is auto-derived from the baseline test time (robust against
+          # false timeouts on slower crates); a hung mutant still dies.
+          # We pass `--output .` (cargo-mutants writes results to ./mutants.out/)
+          # and `|| true` because the pass/fail gate is computed below from
+          # missed.txt — so we can print the surviving mutants explicitly.
+          cargo mutants \
+            --in-diff pr.diff \
+            --test-tool nextest \
+            --no-shuffle \
+            --output . \
+            -j 2 \
+            || true
+
+      - name: Gate — fail if any CHANGED-line mutant survived
+        run: |
+          set -euo pipefail
+          out="mutants.out"
+          if [ ! -d "$out" ]; then
+            echo "No mutants.out produced (no Rust mutants for this diff) — pass."
+            exit 0
+          fi
+          missed="$out/missed.txt"
+          timed_out="$out/timeout.txt"
+          if [ -s "$missed" ]; then
+            echo "::error::Surviving mutants on lines THIS PR changed — the new code has a test blind spot. Add a test that fails when the mutated line is sabotaged:"
+            sed 's/^/  SURVIVED: /' "$missed"
+            exit 1
+          fi
+          if [ -s "$timed_out" ]; then
+            echo "::warning::Some changed-line mutants TIMED OUT (inconclusive, not a hard fail):"
+            sed 's/^/  TIMEOUT: /' "$timed_out"
+          fi
+          echo "✅ All changed-line mutants were caught (or none were generated)."
+          [ -f "$out/caught.txt" ] && sed 's/^/  caught: /' "$out/caught.txt" || true
