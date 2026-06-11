@@ -23,7 +23,7 @@ import type { D1Database, DurableObjectNamespace, ExecutionContext, ExportedHand
 import { CoreLinkServer } from "./durable_object.js";
 import { RolloutController } from "./rollout_controller.js";
 import { getTierForTenant, checkStorageQuota, checkRequestQuota } from "./lib/quota.js";
-import { verifyToken } from "@clerk/backend";
+import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -309,8 +309,9 @@ function stripClientTrustHeaders(h: Headers): void {
  *   /cargo/*                → Cargo registry proxy
  *   /api/v2/*               → REAPI v2 (CoreLink native HTTP API)
  *   /v1/customer/*          → Customer portal (overview, usage, billing, keys, team,
- *                              audit) — PAT required; tenant from PAT. Checked BEFORE
- *                              the generic /v1/* arm (specificity order).
+ *                              audit) — dual-auth (WP-1): CoreLink PAT (tenant from
+ *                              PAT) OR Clerk session JWT (tenant from clerk_user_id).
+ *                              Checked BEFORE the generic /v1/* arm (specificity order).
  *   /v1/users/me            → REAPI v1 — tenant comes from PAT (urlTenant=_anonymous)
  *   /v1/cas/*               → REAPI v1 CAS — tenant from PAT
  *   /v1/admin/*             → REAPI v1 admin — tenant from PAT (admin scope enforced
@@ -446,7 +447,10 @@ function matchRoute(url: URL): RouteMatch {
   // reapi_v1 bucket. Tenant is NOT in the URL — resolved by the DO from the PAT
   // (same pattern as reapi_v1 / /v1/users/me). The spoof gate doesn't fire because
   // urlTenant="_anonymous" (no path tenant in /v1/customer/<resource> URLs).
-  // Auth: PAT required — customer routes are NOT pre-tenant (unlike signup).
+  // Auth: dual (WP-1) — a canonical CoreLink PAT takes the generic PAT gate
+  // (unchanged), anything else takes the Clerk-session bridge (edge-verified
+  // JWT, tenant from clerk_user_id). Customer routes are NOT pre-tenant
+  // (unlike signup).
   if (path.startsWith("/v1/customer/") || path === "/v1/customer") {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "customer_v1" };
   }
@@ -1258,134 +1262,20 @@ const handler: ExportedHandler<Env> = {
         );
       }
 
-      // Extract the Clerk session token from the Authorization header.
-      const onbAuthz = request.headers.get("authorization") ?? "";
-      const onbBearer = /^Bearer\s+(.+)$/i.exec(onbAuthz);
-      const onbToken = onbBearer?.[1];
-      if (!onbToken) {
-        return applyCors(
-          reapiError("UNAUTHORIZED", "clerk session required", 401, requestId),
-          request,
-        );
+      // Verify the Clerk session + resolve the tenant via the SHARED pipeline
+      // (worker/src/lib/clerk_auth.ts — dashboard revival WP-1 extraction).
+      // The helper carries the full hardened flow verbatim: bearer extraction
+      // (401), verifyToken with the shared azp allowlist (M1 post-verify
+      // re-assert), issuer exact-pin / shape-check (M2), claims.sub required,
+      // and the tenant lookup by clerk_user_id (no row → 403; D1 error → 500).
+      // `clerkSecretKey` presence was already asserted by the arm-level
+      // fail-CLOSED guard above, so the helper's own secret guard never fires
+      // here (onboarding behavior unchanged).
+      const onbClerkAuth = await verifyClerkSessionAndResolveTenant(request, env, requestId);
+      if (!onbClerkAuth.ok) {
+        return applyCors(onbClerkAuth.response, request);
       }
-
-      // Verify the Clerk JWT at the edge. `verifyToken` throws on an invalid /
-      // expired / wrong-azp token; `authorizedParties` pins it to our app origin.
-      //
-      // SECURITY FIX (M1): Clerk's `authorizedParties` check is skipped by the
-      // library when the token omits `azp` entirely.  We therefore re-assert `azp`
-      // presence and allowlist membership after a successful verify, and also
-      // assert `iss` presence + expected shape so issuer trust is explicit rather
-      // than implicit from the JWKS endpoint.
-      //
-      // SECURITY FIX (M2 — issuer pin): When CLERK_ISSUER_URL is set, we pass it
-      // to verifyToken() as `issuer` (library-level enforcement) AND re-assert
-      // exact equality post-verify.  Without the secret the shape-check fallback
-      // (https + "clerk") is preserved; set the secret to activate the exact pin.
-      // Both admin-ui hosts are bound to the OpenNext Worker (#219): sessions are
-      // minted on corelink-app (the sign-up/user-facing host) AND corelink-admin.
-      // A JWT minted on corelink-app carries azp=https://corelink-app.humangr.com —
-      // listing only corelink-admin 401-blocked the whole onboarding/checkout funnel.
-      const ONBOARDING_AZP_ALLOWLIST = [
-        "https://corelink-admin.humangr.com",
-        "https://corelink-app.humangr.com",
-      ] as const;
-      const clerkIssuerUrl = env.CLERK_ISSUER_URL && env.CLERK_ISSUER_URL.length > 0
-        ? env.CLERK_ISSUER_URL
-        : undefined;
-      let onbClerkUserId: string;
-      try {
-        // Note: `verifyToken` has no `issuer` option (Clerk verifies the issuer
-        // implicitly via the instance-scoped JWKS); the exact issuer pin is the
-        // post-verify `iss === CLERK_ISSUER_URL` assertion below.
-        const claims = await verifyToken(onbToken, {
-          secretKey: clerkSecretKey,
-          authorizedParties: [...ONBOARDING_AZP_ALLOWLIST],
-        });
-
-        // M1-FIX-1: Explicitly assert azp is present AND in the allowlist.
-        // The Clerk library skips the azp check when the claim is absent, so a
-        // token from a different app on the same Clerk instance (no azp) would
-        // otherwise pass verifyToken() undetected.
-        const azp = (claims as Record<string, unknown>)["azp"];
-        if (
-          typeof azp !== "string" ||
-          azp.length === 0 ||
-          !(ONBOARDING_AZP_ALLOWLIST as readonly string[]).includes(azp)
-        ) {
-          return applyCors(
-            reapiError("UNAUTHORIZED", "clerk session azp invalid", 401, requestId),
-            request,
-          );
-        }
-
-        // M2-FIX: Assert issuer.  When CLERK_ISSUER_URL is set (exact-pin mode),
-        // require strict equality against the configured value.  Without it, fall
-        // back to the M1 shape-check (https scheme + hostname contains "clerk") so
-        // this is a safe no-op until the owner runs:
-        //   wrangler secret put CLERK_ISSUER_URL --env prod
-        const iss = (claims as Record<string, unknown>)["iss"];
-        if (clerkIssuerUrl) {
-          // Exact-pin mode: CLERK_ISSUER_URL is set — require exact equality.
-          if (iss !== clerkIssuerUrl) {
-            return applyCors(
-              reapiError("UNAUTHORIZED", "clerk session issuer invalid", 401, requestId),
-              request,
-            );
-          }
-        } else {
-          // Shape-check fallback: block non-Clerk issuers conservatively.
-          if (
-            typeof iss !== "string" ||
-            iss.length === 0 ||
-            !iss.startsWith("https://") ||
-            !iss.includes("clerk")
-          ) {
-            return applyCors(
-              reapiError("UNAUTHORIZED", "clerk session issuer invalid", 401, requestId),
-              request,
-            );
-          }
-        }
-
-        if (!claims.sub) {
-          return applyCors(
-            reapiError("UNAUTHORIZED", "clerk session missing subject", 401, requestId),
-            request,
-          );
-        }
-        onbClerkUserId = claims.sub;
-      } catch {
-        // Never surface the verification error detail to the client.
-        return applyCors(
-          reapiError("UNAUTHORIZED", "invalid clerk session", 401, requestId),
-          request,
-        );
-      }
-
-      // Resolve the CoreLink tenant from the verified Clerk user id. The
-      // signup-worker writes tenant.clerk_user_id at provision (migration 0056).
-      let onbTenantId: string;
-      try {
-        const row = await env.CONFIG_DB
-          .prepare("SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1 LIMIT 1")
-          .bind(onbClerkUserId)
-          .first<{ tenant_id: string }>();
-        if (!row || !row.tenant_id) {
-          return applyCors(
-            reapiError("FORBIDDEN", "no tenant for this session", 403, requestId),
-            request,
-          );
-        }
-        onbTenantId = row.tenant_id;
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "unknown error";
-        console.error(`[${requestId}] onboarding tenant lookup failed: ${message.slice(0, 80)}`);
-        return applyCors(
-          reapiError("INTERNAL_ERROR", "tenant resolution error", 500, requestId),
-          request,
-        );
-      }
+      const onbTenantId = onbClerkAuth.tenantId;
 
       // Forward to the tenant's DO. CRITICAL: strip ALL client-supplied trust
       // headers FIRST (the browser must never spoof internal-auth or the tenant
@@ -1543,6 +1433,98 @@ const handler: ExportedHandler<Env> = {
         );
       }
       return applyCors(billingResp, request);
+    }
+
+    // Customer portal dual-auth dispatch (dashboard revival WP-1) —
+    // /v1/customer/* accepts EITHER a CoreLink PAT (existing path, byte-identical
+    // — handled by the generic PAT gate below) OR a Clerk session JWT (the
+    // browser dashboard holds a Clerk session, not a PAT).
+    //
+    // Dispatch guard: parsePat() accepts ONLY the canonical
+    // `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` shape — a Clerk JWT
+    // (or any non-PAT bearer) can NEVER parse as one, so any parseable PAT
+    // (including expired/revoked ones) falls through to the PAT gate exactly as
+    // before; the PAT surface is untouched. The token is derived the same way
+    // extractAuth derives it (slice "Bearer " + trim) so the dispatch decision
+    // and the PAT gate's parse can never disagree.
+    //
+    // Clerk arm: verify via the SHARED pipeline (lib/clerk_auth.ts — same M1
+    // azp re-assert + M2 issuer pin + tenant lookup as onboarding), then
+    // forward to the PER-TENANT DO. Mirrors the onboarding forward but
+    // deliberately WITHOUT x-corelink-internal-auth — customer routes resolve
+    // the tenant from the server-trust x-corelink-tenant-id header and do not
+    // need the internal-auth key (least privilege: the dashboard surface must
+    // not carry the operator-grade credential).
+    //
+    // Storage-quota gate is BYPASSED on this arm (deliberate): an over-quota
+    // tenant must still see the dashboard to upgrade — same posture as
+    // onboarding (which also never passes through the quota gate).
+    if (route.routeKind === "customer_v1") {
+      const custAuthz = request.headers.get("authorization") ?? "";
+      const custToken = custAuthz.startsWith("Bearer ")
+        ? custAuthz.slice("Bearer ".length).trim()
+        : "";
+      if (parsePat(custToken) === null) {
+        const custClerkAuth = await verifyClerkSessionAndResolveTenant(request, env, requestId);
+        if (!custClerkAuth.ok) {
+          return applyCors(custClerkAuth.response, request);
+        }
+        const custTenantId = custClerkAuth.tenantId;
+
+        // Forward to the tenant's DO. CRITICAL: strip ALL client-supplied trust
+        // headers FIRST (the browser must never spoof internal-auth or the
+        // tenant id), then set them from server-trusted values. Drop the Clerk
+        // JWT — the container trusts the Worker-set x-corelink-tenant-id, and
+        // the session token must not travel further than the edge.
+        const custDoId = env.CORELINK_SERVER.idFromName(custTenantId);
+        const custStub = env.CORELINK_SERVER.get(custDoId);
+        const custAugmented = new Request(request, {
+          headers: (() => {
+            const h = new Headers(request.headers);
+            // Strip the FULL set of client-suppliable trust headers (x-admin-*,
+            // fanout-from, scope, tenant-id, internal-auth) BEFORE re-establishing
+            // them from server-trusted values (delete-then-set).
+            stripClientTrustHeaders(h);
+            h.delete("authorization");
+            h.set("x-request-id", requestId);
+            h.set("x-corelink-route-kind", "customer_v1");
+            h.set("x-corelink-token-prefix", "clerk");
+            h.set("x-corelink-tenant-id", custTenantId);
+            // Clerk-session callers get the dashboard read-write surface; the
+            // Worker is the sole setter (stripClientTrustHeaders deleted any
+            // client-supplied value above).
+            h.set("x-corelink-scope", "read-write");
+            // Deliberately NOT set: x-corelink-internal-auth (least privilege —
+            // customer routes don't need the operator-grade credential).
+            return h;
+          })(),
+        });
+        let custResp: Response;
+        try {
+          custResp = await custStub.fetch(custAugmented);
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : "unknown error";
+          console.error(`[${requestId}] customer clerk DO fetch failed: ${message.slice(0, 80)}`);
+          return applyCors(
+            reapiError("INTERNAL_ERROR", "customer upstream error", 500, requestId),
+            request,
+          );
+        }
+        const custHeaders = new Headers(custResp.headers);
+        if (!custHeaders.has("x-request-id")) {
+          custHeaders.set("x-request-id", requestId);
+        }
+        return applyCors(
+          new Response(custResp.body, {
+            status: custResp.status,
+            statusText: custResp.statusText,
+            headers: custHeaders,
+          }),
+          request,
+        );
+      }
+      // else: the bearer parses as a canonical PAT — fall through to the
+      // generic PAT gate below (byte-identical to the pre-WP-1 behavior).
     }
 
     // Auth gate — all other routes require a valid Bearer PAT, EXCEPT signup

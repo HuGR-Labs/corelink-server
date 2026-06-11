@@ -23,6 +23,25 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Clerk session bridge for `customer_v1` — dual-auth dispatch (dashboard
+  revival WP-1).** `/v1/customer/*` now accepts EITHER a CoreLink PAT (existing
+  path, byte-identical — the dispatch guard is `parsePat(bearer) === null`, and
+  a Clerk JWT can never parse as the canonical `corelink_<env>_…` PAT shape) OR
+  a Clerk session JWT from the browser dashboard. The onboarding arm's Clerk
+  verification (verifyToken + M1 azp presence/allowlist re-assert + M2 issuer
+  exact-pin/shape-check + `tenant.clerk_user_id` resolution) is extracted
+  verbatim into the shared helper `worker/src/lib/clerk_auth.ts`
+  (`verifyClerkSessionAndResolveTenant`), which the onboarding arm now calls —
+  zero behavior change (its tests are untouched and green). On a valid session
+  the Worker forwards to the PER-TENANT DO with the server-trust headers
+  (`x-corelink-tenant-id`, `x-corelink-token-prefix: clerk`,
+  `x-corelink-scope: read-write`), dropping the Clerk JWT at the edge and —
+  least privilege, unlike onboarding — WITHOUT `x-corelink-internal-auth`
+  (customer routes don't need the operator-grade credential). The storage-quota
+  gate is deliberately bypassed on this arm: an over-quota tenant must still
+  see the dashboard to upgrade (same posture as onboarding). 12 new tests
+  (PAT + revoked-PAT/0063 regressions, bad-sig/azp/issuer 401s, no-tenant 403,
+  least-privilege forward assertions); worker suite 236 → 248.
 - **`/_internal/admin/pilots…` alias + internal-edge identity synthesis
   (#218 §2.1-§2.2, ratified Q3 2026-06-10).** The three pilot-admin handlers
   (`list` / `grant-tier` / `checkin`) are now additionally bound under
