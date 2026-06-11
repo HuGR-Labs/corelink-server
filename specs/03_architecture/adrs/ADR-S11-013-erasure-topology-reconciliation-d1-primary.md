@@ -154,7 +154,24 @@ the `stripe_*` mirror pseudonymization depth (which `payload_json` fields).
 4. `Stripe` pseudonymize (+ `update_customer`) + the 4 pseudonymized WORM backends + `Kv`/`Loki` reconciled.
 5. Wire `build_worker()` (replace `build_placeholder_worker`), 24h verification cron + BLAKE3-keyed report signer; full test pass; PR.
 
-## R2-erasure open questions (increment 3 — cold-verified 2026-06-11, BLOCKING)
+## R2-erasure design (increment 3 — cold-verified 2026-06-11, RESOLVED + SHIPPED)
+
+> **Resolution (2026-06-11):** a focused live-storage-model investigation resolved
+> all three blocking questions. **The multipart/chunk CAS path is NOT shipped**
+> (in-memory sim, zero prod write sites) — the live CAS write path is
+> **native-whole-blob-only** with no durable D1 index. So both adapters shipped:
+> **`R2Ac`** is D1-driven off the authoritative `ac_meta` index (per-region
+> buckets); **`R2Cas`** is **LIST-by-prefix** over `<region>/<tenant_prefix>/`
+> across all 5 regions (complete by construction) + a defensive D1 cleanup. Both
+> derive `tenant_prefix` via `derive_prefix(tdk, tenant)` (matches the writer by
+> construction; fail-CLOSED without the TDK). `R2S3Client::{delete,list_objects_v2}`
+> landed. Residual follow-ups: TDK rotation (`path_key_id > 1`) needs a versioned
+> lookup (single key at launch); and the orthogonal finding that the container
+> uses a global `R2_CAS_REGION` and does not consult `tenant.primary_region` for
+> CAS write routing is a **residency-compliance** matter tracked separately, not
+> an erasure gap (erase already lists all 5 regions).
+
+### Original blocking questions (now resolved, retained for the record)
 
 Increment 3 (`R2Cas` + `R2Ac`) was cold-verified against the shipped storage code
 before writing any adapter. The verification surfaced that the canonical
