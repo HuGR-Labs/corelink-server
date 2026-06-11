@@ -88,25 +88,31 @@ pub struct PatRow {
 /// unit test cannot reach.
 #[async_trait]
 pub trait PatRowLookup: Send + Sync {
-    /// Return the row for `token_id`, or `None` when no live (non-expired)
-    /// row exists. `Err` is reserved for backend faults.
+    /// Return the row for `token_id`, or `None` when no live (non-expired,
+    /// non-revoked) row exists. `Err` is reserved for backend faults.
     async fn lookup(&self, token_id: &str) -> Result<Option<PatRow>, String>;
 }
 
-/// Production [`PatRowLookup`] over the CF D1 HTTP API.
+/// The D1 `pat` lookup SQL for the container verifier.
 ///
-/// The query mirrors the Worker hot-path (migration `0054_pat_token_id`):
-/// an `O(1)` covering-index lookup on `token_id`, with the same SQL-side
-/// expiry filter (`expires_ms = 0` ⇒ no-expiry token).
+/// Mirrors the Worker hot-path (migration `0054_pat_token_id`): an `O(1)`
+/// covering-index lookup on `token_id`, with the same SQL-side expiry
+/// filter (`expires_ms = 0` ⇒ no-expiry token) and the same soft-revocation
+/// filter (migration `0063_pat_customer_keys`: `revoked_at_ms IS NULL` ⇒
+/// active; a revoked row is indistinguishable from an absent one).
+const PAT_LOOKUP_SQL: &str = "SELECT tenant_id, pat_hash, scope FROM pat \
+     WHERE token_id = ?1 \
+       AND (expires_ms = 0 OR expires_ms > unixepoch('now', 'subsec') * 1000) \
+       AND revoked_at_ms IS NULL \
+     LIMIT 1";
+
+/// Production [`PatRowLookup`] over the CF D1 HTTP API.
 #[async_trait]
 impl PatRowLookup for D1HttpClient {
     async fn lookup(&self, token_id: &str) -> Result<Option<PatRow>, String> {
         let rows = self
             .query(
-                "SELECT tenant_id, pat_hash, scope FROM pat \
-                 WHERE token_id = ?1 \
-                   AND (expires_ms = 0 OR expires_ms > unixepoch('now', 'subsec') * 1000) \
-                 LIMIT 1",
+                PAT_LOOKUP_SQL,
                 &[serde_json::Value::String(token_id.to_owned())],
             )
             .await?;
@@ -464,6 +470,38 @@ mod tests {
         let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:r")));
         let verifier = PatVerifier::new(lookup, key);
         assert_eq!(verifier.verify(&pt).await.unwrap(), tenant);
+    }
+
+    #[tokio::test]
+    async fn revoked_row_is_invalid_pat() {
+        // Soft revocation (migration 0063) is enforced INSIDE the lookup
+        // SQL (`AND revoked_at_ms IS NULL`), so a revoked row surfaces to
+        // the pipeline exactly like an absent one: `lookup → None`. Model
+        // that here (the FakeLookup map simply does not contain the
+        // revoked row) and assert the uniform InvalidPat — a revoked PAT
+        // must be indistinguishable from an unknown one on the wire.
+        let key = test_key();
+        let (pt, _tid, _hash, _tenant) = mint_pat(&key, 50, SCOPE_CACHE_RW);
+        let lookup = Arc::new(FakeLookup::empty());
+        let verifier = PatVerifier::new(lookup.clone(), key);
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(matches!(err, VerifyError::InvalidPat));
+        assert_eq!(lookup.call_count(), 1, "revocation is decided at D1");
+    }
+
+    #[test]
+    fn lookup_sql_filters_revoked_and_expired_rows() {
+        // The production D1 query must carry BOTH SQL-side liveness
+        // filters — losing either one silently re-admits dead tokens.
+        assert!(
+            PAT_LOOKUP_SQL.contains("AND revoked_at_ms IS NULL"),
+            "lookup SQL must exclude soft-revoked rows (migration 0063)"
+        );
+        assert!(
+            PAT_LOOKUP_SQL.contains("expires_ms = 0 OR expires_ms >"),
+            "lookup SQL must keep the expiry filter"
+        );
+        assert!(PAT_LOOKUP_SQL.contains("WHERE token_id = ?1"));
     }
 
     #[tokio::test]

@@ -98,7 +98,8 @@ beforeAll(async () => {
 
   // Seed the D1 PAT table with a test row so authenticated tests can pass.
   const d1 = await mf.getD1Database("CONFIG_DB");
-  await d1.exec("CREATE TABLE IF NOT EXISTS pat (pat_id TEXT NOT NULL PRIMARY KEY, tenant_id TEXT NOT NULL, token_id TEXT UNIQUE, expires_ms INTEGER NOT NULL)");
+  // revoked_at_ms: soft-revocation marker (migration 0063) — NULL = active.
+  await d1.exec("CREATE TABLE IF NOT EXISTS pat (pat_id TEXT NOT NULL PRIMARY KEY, tenant_id TEXT NOT NULL, token_id TEXT UNIQUE, expires_ms INTEGER NOT NULL, revoked_at_ms BIGINT)");
   await d1.prepare(
     "INSERT OR IGNORE INTO pat (pat_id, tenant_id, token_id, expires_ms) VALUES (?1, ?2, ?3, ?4)"
   ).bind(

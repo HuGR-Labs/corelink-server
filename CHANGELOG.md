@@ -43,6 +43,21 @@ Each entry cross-references:
   secret. The `POST /v1/admin/pilots` create-tenant endpoint itself (#218
   §2.3-§2.7, incl. the `max` create-time refusal and
   `seed_tier_selection=false` default) is the follow-up work package.
+- **PAT soft-revocation schema (migration 0063) + enforced revoked filter in
+  both lookups (dashboard-revival WP-2).** `migrations/d1/0063_pat_customer_keys.sql`
+  additively adds `pat.name` (customer-facing key label for the dashboard key
+  list) and `pat.revoked_at_ms` (soft-revocation timestamp; NULL = active —
+  rows are retained for audit instead of deleted, per the additive-only
+  auth-migration policy). Revocation is ENFORCED at both PAT lookups: the
+  Worker hot-path (`worker/src/index.ts` `validatePat` step 4) and the
+  container Option-B verifier (`crates/corelink-container/src/adapter_pat.rs`)
+  now filter `AND revoked_at_ms IS NULL`, so a revoked PAT uniformly fails
+  closed as 401 (`pat_not_found` / `InvalidPat` — indistinguishable from an
+  unknown token; no revocation oracle on the wire). Both columns are consumed
+  by the WP-3 `D1CustomerHandler` (key list / rename / revoke). Tests: worker
+  vitest (revoked row → 401; explicit-NULL active row still resolves) +
+  container unit tests (revoked ⇒ uniform `InvalidPat`; lookup-SQL shape
+  guards both liveness filters).
 - **admin-ui `/upgrade?plan=<tier>` page — the public pricing CTAs now reach
   checkout (#49).** Every docs pricing CTA targets
   `corelink-app.humangr.com/upgrade?plan=<tier>`, but admin-ui had no
