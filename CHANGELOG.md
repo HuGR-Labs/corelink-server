@@ -176,6 +176,9 @@ Each entry cross-references:
   no-fire).
 
 ### Fixed
+- **fix(ci): secrets-checklist gate red on main** — the rust-bundle merge resolution
+  duplicated the `ALLOWLIST_REGEX` assignment (second overwrote the first, dropping
+  `CORELINK_PORTAL_RETURN_URL`); merged into a single assignment.
 - **Container fail-closed hardening: method gates, `/v1/users/me` tenant
   parity, brew `_public` pre-store integrity.** (1) The four adapter
   method-dispatch scope gates (`routes/cargo.rs`, `npm.rs`, `pip.rs`,
