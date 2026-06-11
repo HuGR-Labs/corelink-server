@@ -48,7 +48,7 @@ Dated **2026-05-27**. Prices and quotas change — verify before quoting.
 
 | Capability | CoreLink | Turborepo Remote Cache |
 |---|---|---|
-| Pricing | Free (10 GB / 500k req/mo); Pro $25/mo flat (500 GB, 20M req); Enterprise custom | Bundled with Vercel plans; "fair use" Hobby (100 GB upload/mo, 100 art-req/min), Pro (1 TB/mo, 10k req/min), Enterprise (4 TB/mo, 10k req/min) |
+| Pricing | Free (10 GB / 500k req/mo); flat paid tiers $15–$149/mo (Pro $50/mo: 500 GB, 20M req); Enterprise custom | Bundled with Vercel plans; "fair use" Hobby (100 GB upload/mo, 100 art-req/min), Pro (1 TB/mo, 10k req/min), Enterprise (4 TB/mo, 10k req/min) |
 | Requires Vercel deployment | No | Effectively yes — self-hosting the cache layer is community-unofficial and unsupported |
 | Artifact expiry | Configurable; no 7-day hard eviction on paid tiers | **7-day artifact expiry** by default (per Vercel docs 2026-05-27) |
 | Wire protocol | REAPI v2 (CAS + ActionCache + Capabilities) | Turborepo-native artifact protocol (REST-based, proprietary) — not REAPI |
@@ -80,7 +80,7 @@ Be direct about when Turborepo is the better answer.
    you get 1 TB/month and 10k req/min. CoreLink Free tops out at 10 GB / 500k
    req/mo. For a mid-sized JS team that is already paying Vercel Pro ($20/seat
    for deployment), the cache is included. Adding CoreLink is an incremental
-   $25/mo for a benefit you already have.
+   $50/mo (Pro) for a benefit you already have.
 
 3. **Native Turborepo DX.** Turborepo's task graph, hashing, and cache
    pipeline are designed as a unit. The CLI knows which artifacts are
@@ -169,7 +169,7 @@ cache, ~2M cache artifact operations/month.
 Pro at $20/seat. The cache is inside the seat fee you are already paying
 for deployments.
 
-**CoreLink:** $25/mo (Pro: 500 GB, 20M req). You would pay $25/mo for
+**CoreLink:** $50/mo (Pro: 500 GB, 20M req). You would pay $50/mo for
 a benefit already included in your Vercel bill.
 
 **Verdict for this scenario: Turborepo wins cleanly.** There is no
@@ -190,14 +190,14 @@ cache operations/month across all stacks.
 three running (rotate creds, watch eviction, monitor hit rates). Three
 systems, three billing relationships, three audit postures.
 
-**CoreLink (Pro):** $25/mo flat. REAPI v2 covers the Bazel pipeline.
+**CoreLink (Pro):** $50/mo flat. REAPI v2 covers the Bazel pipeline.
 Cargo adapter covers Rust. npm adapter covers the JS layer (including
 Turborepo workspaces via the REAPI shim — see Migration). 300 GB is
 inside the 500 GB Pro quota. One bill, one audit log, one BYOK envelope.
 
-**Differential: ~$0–$40/mo in direct costs** (Turborepo + self-hosted
-alternatives vs. CoreLink Pro), but the polyglot ops overhead is the
-real cost that spreadsheet does not show.
+**Differential: CoreLink Pro costs ~$10–$35/mo more in direct line
+items** than Turborepo + self-hosted alternatives, but the polyglot ops
+overhead is the real cost that spreadsheet does not show.
 
 ---
 

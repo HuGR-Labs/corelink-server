@@ -138,7 +138,9 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
         with:
           workspaces: ". -> target"
-      - run: cargo install cargo-mutants --locked
+      - uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: cargo-mutants
       # `cargo mutants` (no --check) actually runs the test suite against
       # each mutant; --check would only `cargo check` mutants. The
       # `--minimum-test-timeout` keeps the slow 100k-iter property test

@@ -302,7 +302,7 @@ describe("retention promise — PROPOSAL-2026-06-10 §3.5 (ratified Q5c)", () =>
 });
 
 describe("estimateAllTiers", () => {
-  it("returns one estimate per canonical tier in order Free / Pro / Enterprise", () => {
+  it("returns one estimate per canonical tier in ladder order (Free → Enterprise)", () => {
     const results = estimateAllTiers(DEFAULT_USAGE);
     expect(results.map((r) => r.tier)).toEqual([...CANONICAL_TIERS]);
   });

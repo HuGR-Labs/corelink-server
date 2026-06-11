@@ -43,7 +43,7 @@ prices and quotas change — verify before quoting in a buying decision.
 
 | Capability | CoreLink | BuildBuddy |
 |---|---|---|
-| Pricing (smallest paid tier) | $25/mo flat (Pro: 500 GB / 20M req included) | "Team" pay-as-you-go: per-GB cache transfer over 100 GB; Mac cores $45/core; price not posted on page |
+| Pricing (smallest paid tier) | $15/mo flat (Solo); Pro $50/mo (500 GB / 20M req included) | "Team" pay-as-you-go: per-GB cache transfer over 100 GB; Mac cores $45/core; price not posted on page |
 | Free tier limits | 10 GB cache, 500k req/mo, 1 workspace, no card | 100 GB cache transfer/mo, 80 Linux cores RBE, 10 users |
 | Wire protocol | REAPI v2 (CAS + ActionCache + Capabilities) | REAPI v2 (CAS + AC + Capabilities + Execution) |
 | Bazel / Buck2 / Pants / Please | Yes (any REAPI client) | Yes (Bazel-first; Buck2 via REAPI; build-events UI is Bazel-native) |
@@ -128,8 +128,8 @@ deliberately and they cost us features BuildBuddy has.
    $0 for the executor you are not using. BuildBuddy's pricing
    structure assumes you want RBE; Mac-core billing alone is $45/core.
 
-5. **Predictable flat pricing with one number.** Pro is $25/mo or
-   $250/yr (two months free) for 500 GB / 20M requests. No per-seat,
+5. **Predictable flat pricing with one number.** Pro is $50/mo or
+   $500/yr (two months free) for 500 GB / 20M requests. No per-seat,
    no per-credit, no Mac surcharge. A platform engineer can decide
    inside the unsigned-authority window (per Persona P1 in our ICP
    audit). BuildBuddy's Team pricing is pay-as-you-go per-GB and the
@@ -154,7 +154,7 @@ Rust services) + Turborepo (for the JS frontend).
 
 ### CoreLink
 
-- **Pro: $25/mo flat.** 500 GB included (you use 200), 20M requests
+- **Pro: $50/mo flat.** 500 GB included (you use 200), 20M requests
   included (you use 12M). Pro covers Bazel CAS + Cargo cache +
   Turborepo adapter from the same workspace.
 - Cargo / Rust services: same bucket, no separate sccache S3 to
@@ -163,7 +163,7 @@ Rust services) + Turborepo (for the JS frontend).
 - BYOK + audit-chain are at the Enterprise tier — for the 90-day SOC 2
   push, you either stay on Pro (and supply your auditor with our
   default audit-log export) or open an Enterprise conversation.
-- **Estimated total: $25/mo at Pro**, with a path to Enterprise (typical
+- **Estimated total: $50/mo at Pro**, with a path to Enterprise (typical
   range $500–$5,000/mo per our published pricing band, depending on
   storage + dedicated infra + BYOK + SSO + SLA) when the auditor
   requires customer-managed keys.

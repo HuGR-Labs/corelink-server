@@ -141,15 +141,18 @@ async function workerFetch(url: string, init?: RequestInit, env?: Env): Promise<
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("QUOTAS constant definitions", () => {
-  it("free tier has 10 GB storage ceiling and 1M request cap", () => {
+  // Numbers follow the signed launch rate card (6-tier ladder, PR #209 —
+  // worker/src/lib/quota.ts header / apps/docs/src/lib/pricing.ts TIER_RATE_CARD).
+  it("free tier has 10 GB storage ceiling and 500K request cap", () => {
     expect(QUOTAS.free.storageBytesMax).toBe(10 * 1_073_741_824);
-    expect(QUOTAS.free.requestsPerMonthMax).toBe(1_000_000);
+    expect(QUOTAS.free.requestsPerMonthMax).toBe(500_000);
   });
 
-  it("solo and starter map to the same 100 GB ceiling with no request cap", () => {
-    expect(QUOTAS.solo.storageBytesMax).toBe(100 * 1_073_741_824);
-    expect(QUOTAS.solo.requestsPerMonthMax).toBe(Number.MAX_SAFE_INTEGER);
-    expect(QUOTAS.starter.storageBytesMax).toBe(QUOTAS.solo.storageBytesMax);
+  it("solo and starter follow the 6-tier rate card (50 GB / 2M and 150 GB / 6M)", () => {
+    expect(QUOTAS.solo.storageBytesMax).toBe(50 * 1_073_741_824);
+    expect(QUOTAS.solo.requestsPerMonthMax).toBe(2_000_000);
+    expect(QUOTAS.starter.storageBytesMax).toBe(150 * 1_073_741_824);
+    expect(QUOTAS.starter.requestsPerMonthMax).toBe(6_000_000);
   });
 
   it("enterprise has no caps (MAX_SAFE_INTEGER)", () => {

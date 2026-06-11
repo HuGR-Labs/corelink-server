@@ -167,6 +167,21 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
     expect(captured.req).toBeUndefined();
   });
 
+  it("accepts azp from corelink-app.humangr.com (the user-facing sign-up host, #219)", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_app_host",
+      azp: "https://corelink-app.humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request } = {};
+    const env = makeOnbEnv({ captured, clerkUserToTenant: new Map() }); // no mapping
+
+    const resp = await onbFetch(env, { Authorization: "Bearer clerk.jwt" });
+
+    // 403 no-tenant (NOT 401 azp-invalid) proves the azp gate admitted the host.
+    expect(resp.status).toBe(403);
+  });
+
   it("returns 403 when the verified session has no CoreLink tenant", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_no_tenant",

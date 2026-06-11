@@ -15,7 +15,9 @@ export interface CustomerOverview {
     quota_bytes: number;
   };
   billing: {
-    status: "trialing" | "active" | "past_due" | "canceled";
+    // Keep in sync with CustomerBilling["status"] — the overview snapshot is
+    // derived from the same backend billing record.
+    status: "trialing" | "active" | "past_due" | "canceled" | "inactive";
     next_invoice_at: string; // ISO
     amount_due_cents: number;
     currency: "usd" | "eur" | "brl";
@@ -52,7 +54,10 @@ export interface CustomerAuditFilter {
 }
 
 export interface CustomerBilling {
-  status: "trialing" | "active" | "past_due" | "canceled";
+  // "inactive" = no Stripe subscription on file (the worker/container emits it
+  // for tenants that never checked out). Additive widening — keep in sync with
+  // the backend's billing status enum.
+  status: "trialing" | "active" | "past_due" | "canceled" | "inactive";
   plan: "free" | "solo" | "starter" | "team" | "pro" | "max" | "enterprise";
   current_period_start: string;
   current_period_end: string;

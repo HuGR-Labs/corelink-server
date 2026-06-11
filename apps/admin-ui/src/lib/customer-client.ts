@@ -22,6 +22,14 @@ import type {
 export interface CustomerClientOptions {
   baseUrl?: string;
   fetchImpl?: typeof fetch;
+  /**
+   * Async supplier of the caller's session token (e.g. Clerk's
+   * `useAuth().getToken`). When provided and it resolves to a non-null
+   * string, every request carries `Authorization: Bearer <token>`.
+   * When omitted (or it resolves to null) NO Authorization header is sent —
+   * this keeps the E2E mock mode (catch-all `/api` route) byte-identical.
+   */
+  getToken?: () => Promise<string | null>;
 }
 
 export class CustomerClientError extends Error {
@@ -31,6 +39,11 @@ export class CustomerClientError extends Error {
   }
 }
 
+// Prefers NEXT_PUBLIC_CORELINK_API_URL when set. In production the admin-ui
+// build sets NEXT_PUBLIC_CORELINK_API_URL=https://corelink-api.humangr.com at
+// build time (NEXT_PUBLIC_* is inlined into the client bundle), so the browser
+// talks to the real API origin; without it we fall back to the same-origin
+// `/api` path (E2E mock catch-all / local dev).
 function resolveBaseUrl(): string {
   const explicit =
     typeof process !== "undefined" ? process.env?.NEXT_PUBLIC_CORELINK_API_URL : undefined;
@@ -44,16 +57,21 @@ function resolveBaseUrl(): string {
 export class CustomerClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly getToken?: () => Promise<string | null>;
 
   constructor(opts: CustomerClientOptions = {}) {
     this.baseUrl = opts.baseUrl ?? resolveBaseUrl();
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis);
+    this.getToken = opts.getToken;
   }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const token = this.getToken ? await this.getToken() : null;
+    const authHeaders: Record<string, string> =
+      token != null ? { authorization: `Bearer ${token}` } : {};
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
       ...init,
-      headers: { "content-type": "application/json", ...(init.headers ?? {}) },
+      headers: { "content-type": "application/json", ...authHeaders, ...(init.headers ?? {}) },
     });
     if (!res.ok) {
       throw new CustomerClientError(res.status, `customer api error (${res.status})`);

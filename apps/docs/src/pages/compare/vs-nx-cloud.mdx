@@ -53,7 +53,7 @@ This page lays out the honest tradeoffs. Dated **2026-05-27**.
 
 | Capability | CoreLink | Nx Cloud |
 |---|---|---|
-| Pricing (smallest paid tier) | $25/mo flat (Pro: 500 GB / 20M req included) | Team: $19/contributor + $5.50 per 10k credits + $2.25/concurrent CI connection |
+| Pricing (smallest paid tier) | $15/mo flat (Solo); Pro $50/mo (500 GB / 20M req included) | Team: $19/contributor + $5.50 per 10k credits + $2.25/concurrent CI connection |
 | Free tier | 10 GB cache, 500k req/mo, 1 workspace, no card | "Hobby": 50,000 credits/mo (resets), 5 contributors, 10 concurrent CI connections |
 | Pricing axis | Flat tier (one number) | Hybrid: per-seat + per-credit + per-CI-connection |
 | Wire protocol | REAPI v2 (CAS + ActionCache + Capabilities) | Nx-native protocol (proprietary) — not REAPI |
@@ -120,8 +120,8 @@ Honest differentiation, not shade.
    bazel-remote (Bazel) stitches three vendors today; CoreLink
    collapses that.
 
-3. **Flat-tier pricing, no credits, no per-seat.** Pro is $25/mo or
-   $250/yr (~17% annual discount, "2 months free" — the Plausible /
+3. **Flat-tier pricing, no credits, no per-seat.** Pro is $50/mo or
+   $500/yr (~17% annual discount, "2 months free" — the Plausible /
    BetterStack convention). One number. Two limits (GB, req). A buyer
    can decide in 30 seconds without a spreadsheet. Nx Cloud's
    "$19/contributor + $5.50 per 10k credits + $2.25/CI connection"
@@ -165,7 +165,7 @@ in 6 months.
 
 ### CoreLink
 
-- **Pro: $25/mo flat.** 500 GB included (you use 200 across all
+- **Pro: $50/mo flat.** 500 GB included (you use 200 across all
   workloads). 20M requests included (you use 12M). One bill covers
   Bazel CAS + Cargo cache + Turborepo / Nx adapter (where the Nx CLI
   is configured to talk to a generic remote cache rather than Nx
@@ -177,7 +177,7 @@ in 6 months.
 - Cache distribution / task graph distribution: not in scope. Your CI
   scheduler (GitHub Actions matrix, Buildkite, Nx Agents on a
   side-arrangement) remains responsible.
-- **Estimated total: $25/mo at Pro**, $1,000–$2,000/mo if you upgrade
+- **Estimated total: $50/mo at Pro**, $1,000–$2,000/mo if you upgrade
   to a small Enterprise tier for BYOK + dedicated infra + SLA.
 
 ### Nx Cloud
@@ -251,7 +251,8 @@ plugin** (CVE-2025-36852, deprecated May 2026), the migration shape is
 slightly different — you are leaving a self-hosted footgun rather than
 a paid SaaS. The CoreLink Free tier (10 GB, 500k req/mo) is enough to
 prove cache-hit math against your old self-hosted instance; if your
-cache footprint is larger, $25/mo Pro is the next step.
+cache footprint is larger, the paid ladder starts at $15/mo (Solo) and
+$50/mo Pro covers 500 GB.
 
 ## When NOT to choose CoreLink
 
@@ -277,8 +278,8 @@ We lose several Nx-shaped buying conversations cleanly.
 4. **Per-credit pricing has actually been good for you.** Some teams
    genuinely prefer the metered shape because their workload is bursty
    and the Hobby tier (50k credits, 5 contributors) covers their
-   off-peak weeks at $0. If that is your shape, the flat $25/mo Pro
-   tier on CoreLink is an upgrade from Nx Cloud Hobby's free, not from
+   off-peak weeks at $0. If that is your shape, a flat paid CoreLink
+   tier ($15–$50/mo) is an upgrade from Nx Cloud Hobby's free, not from
    an established Nx Cloud Team commitment.
 
 5. **You are a solo developer on a free tier.** Both Nx Cloud Hobby

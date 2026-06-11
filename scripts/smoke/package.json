@@ -1,0 +1,16 @@
+{
+  "name": "@corelink/public-flip-smoke",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone public-flip smoke harness — unauthenticated curl probes + real-Clerk-session Playwright spec against live prod. Intentionally NOT part of the pnpm workspace (see pnpm-workspace.yaml) so it runs from a clean checkout with npm alone.",
+  "scripts": {
+    "smoke:public": "bash public-flip-smoke.sh",
+    "smoke:authed": "playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0",
+    "@types/node": "^22.19.20",
+    "typescript": "^5.8.0"
+  }
+}

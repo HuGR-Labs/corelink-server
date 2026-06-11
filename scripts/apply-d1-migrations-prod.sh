@@ -18,7 +18,8 @@
 #   1   — migration failure (aborted on first error; partial state possible)
 #   2   — usage / argument error
 #   3   — additive-migration guard failed (pre-flight check_migrations_additive.py)
-#   127 — wrangler not in PATH
+#   127 — wrangler not found (run `pnpm install` at the repo root, or set
+#         the WRANGLER env var to a wrangler 4.x binary/command)
 #
 # Usage:
 #   scripts/apply-d1-migrations-prod.sh [--apply] [--help]
@@ -166,11 +167,15 @@ fi
 
 # ── 5. Apply path (requires wrangler + CF auth) ──────────────────────────────
 
-WRANGLER_CMD="${WRANGLER:-npx wrangler@latest}"
+# Prefer the repo-pinned wrangler (root devDependency, 4.x) over npx/ambient
+# resolution: a stale wrangler 3 hoisted into the root node_modules cannot
+# parse this repo's wrangler.toml ("containers" array is a v4 syntax).
+# The WRANGLER env var still overrides (binary path or multi-word command).
+WRANGLER_CMD="${WRANGLER:-$REPO_ROOT/node_modules/.bin/wrangler}"
 
 if ! $WRANGLER_CMD --version >/dev/null 2>&1; then
     err "wrangler CLI not reachable via: $WRANGLER_CMD"
-    err "Ensure npx is available or set WRANGLER env var to the wrangler binary path."
+    err "Run \`pnpm install\` at the repo root, or set the WRANGLER env var to a wrangler 4.x binary path."
     exit 127
 fi
 

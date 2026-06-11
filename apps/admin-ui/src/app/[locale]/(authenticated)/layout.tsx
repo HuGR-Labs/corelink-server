@@ -13,9 +13,11 @@
  * `auth()` calls inside child Server Components receive the Clerk request
  * context without a full-edge ClerkProvider in the global scope.
  *
- * Pages inside this group:
+ * Pages inside this group (route groups don't change URLs):
  *   - /[locale]/welcome  — post-signup PAT reveal (WI-PLG-004)
- *   - /[locale]/customer — dashboard (to be added)
+ *   - /[locale]/customer — tenant self-serve dashboard (client components
+ *     use useAuth/useUser → ClerkProvider must be mounted above them)
+ *   - /[locale]/admin    — operator surface (same requirement)
  */
 
 import * as React from "react";
