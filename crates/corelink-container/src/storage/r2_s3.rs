@@ -172,6 +172,31 @@ impl R2S3Client {
         }
     }
 
+    /// Hard-delete the object stored under `key`.
+    ///
+    /// S3 `DeleteObject` is idempotent — deleting a key that does not
+    /// exist returns success — so a replayed erasure is a safe no-op.
+    /// Used by the WI-S11-008 GDPR erasure adapters (`adapter_r2_cas` /
+    /// `adapter_r2_ac`) to erase a tenant's content-addressed bytes.
+    ///
+    /// # Errors
+    /// Returns `Err(String)` on any transport/service error.
+    pub async fn delete(&self, key: &str) -> Result<(), String> {
+        debug!(
+            bucket = %self.bucket,
+            key = %key,
+            "R2S3Client::delete"
+        );
+        self.inner
+            .delete_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| format!("R2 delete failed for key {key}: {e}"))?;
+        Ok(())
+    }
+
     /// Compute the R2 object key for a blob.
     ///
     /// Key format: `<region>/<tenant_prefix_16>/<digest>`.

@@ -23,6 +23,12 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Storage — `R2S3Client::delete` (WI-S11-008 Wave 1, increment 3 prep).** Idempotent
+  S3 `DeleteObject` primitive (deleting a missing key is a safe no-op, so a replayed
+  erasure is harmless), mirroring the existing `put`/`get`. Required by the R2 CAS/AC
+  GDPR erasure adapters. Method added; the adapters that consume it land in increment 3
+  once the live CAS whole-blob-vs-chunk + multi-region residency storage model is
+  cold-confirmed (see ADR-S11-013 §R2-erasure open questions).
 - **DSR erasure — real D1-backed idempotency ledger + audit sink + effective D1
   erase adapter (WI-S11-008 Wave 1, increments 1+2, ADR-S11-013).** Three new
   transports under `corelink-container/src/routes/dsr/`: `D1ErasureIdempotencyLedger`
