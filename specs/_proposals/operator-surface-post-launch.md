@@ -169,3 +169,26 @@ Total ≈ 8–10 working days. Read-only slice (WP-0,1,3,4,5 minus ops) ships in
 - The `onboarding` Worker arm (index.ts:1238-1410) is the proven Clerk-bridge template,
   but for the *operator* plane the bridge must live in the admin-ui server proxy, not
   the public Worker, to keep `/v1/admin/*` publicly unreachable.
+
+---
+
+## §5 Ratification record — 2026-06-11 (lead)
+
+Owner delegated PR/design decisions to the lead ("eu só o stakeholder", 2026-06-11).
+
+1. **Read-only v1: RATIFIED.** Ship tenants+audit read-only first (WP-2 ops queue
+   deferrable); operator mutations stay on the documented curl-vs-`/_internal` runbook.
+2. **Mutation UX: ops-queue RATIFIED** (matches built UI + audited dual-approval
+   posture); v1 executes only tier-change ops, the other four OpTypes are
+   recorded-not-executed.
+3. **Single-founder dual-approval: RELAXED** to single-approval-with-reason until a
+   second operator exists. The reason header is mandatory and audited; the
+   distinct-approver check re-arms automatically when a second operator identity is
+   registered. Break-glass account deferred (owner may create one at any time).
+4. **Clerk operator org:** creation + `CLERK_OPERATOR_ORG_ID` pinning is an
+   owner-credential step → added to the task #46 owner-gates list (post-launch,
+   non-blocking).
+5. **§3 contract reconciliations (plan/region enums, name←tenant_id, optional
+   merkle/r2): RATIFIED.**
+6. **E3 audit-export = 501 and merkle verification deferred: RATIFIED**; the R2
+   audit-chain join is funded as a follow-up WP when the operator surface is built.
