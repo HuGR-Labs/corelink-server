@@ -19,13 +19,13 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@sentry/cloudflare": "^8.45.0"
+    "@sentry/cloudflare": "^10.57.0"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.16.14",
     "@cloudflare/workers-types": "^4.20260609.1",
-    "typescript": "^5.7.2",
-    "vitest": "^4.1.7",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8",
     "wrangler": "^4.20.0"
   }
 }

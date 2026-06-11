@@ -19,14 +19,14 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@clerk/backend": "2.33.3"
+    "@clerk/backend": "3.6.1"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.16.14",
     "@cloudflare/workers-types": "^4.20260609.1",
     "@vitest/coverage-istanbul": "^4.1.8",
     "miniflare": "^4.20260609.0",
-    "typescript": "^5.7.2",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.8",
     "wrangler": "^4.20.0"
   }
