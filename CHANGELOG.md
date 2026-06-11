@@ -101,6 +101,18 @@ Each entry cross-references:
   carry `integrity:"verified-sha256"`; non-content-addressed paths (e.g.
   manifest-by-tag) keep `"best-effort"`. Spec
   (`specs/_proposals/adapters/brew.md` §3) updated to match.
+- **cas-foundation heavy gate: `cargo fmt --all -- --check` RED on `main`
+  cleared.** The nightly/heavy "Workspace build + test (convergence)" job died
+  at the rustfmt step (before clippy ever ran) on formatting drift in 4 files
+  that landed unformatted: `crates/corelink-container/src/routes/admin.rs`
+  (`TIER_SELECTIONS_TIERS` const) and three `corelink-tier-selection`
+  test/array sites (`src/tier.rs`, `tests/mutation_kills.rs`,
+  `tests/prop_tier_selection.rs`). Pure `cargo fmt` mechanical reflow — zero
+  semantic change; clippy `-D warnings` + tests on both touched crates green.
+  (The run's other two reds are infra, not code: the reproducible-build smoke
+  hit the shared-runner `rustc … (never executed)` / os-error-2 toolchain
+  race, and the TLC canonical job finished its model checks then got
+  cancelled by the lane timeout.)
 - **`corelink-app.humangr.com` (public app entry, all docs pricing CTAs) served
   the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
   500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:

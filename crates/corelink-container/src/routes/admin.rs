@@ -454,8 +454,7 @@ pub struct AdminMutateBody {
 /// surface as an opaque 500). Reconciling the two enums is an additive-only
 /// auth-migration follow-up (do NOT widen 0039 destructively) — tracked in
 /// the PR for #35.
-const TIER_SELECTIONS_TIERS: [&str; 6] =
-    ["free", "solo", "starter", "pro", "max", "enterprise"];
+const TIER_SELECTIONS_TIERS: [&str; 6] = ["free", "solo", "starter", "pro", "max", "enterprise"];
 
 /// Validate + normalize an operator-supplied `tier` string against the
 /// `tier_selections.tier` enum BEFORE it is flowed into a
