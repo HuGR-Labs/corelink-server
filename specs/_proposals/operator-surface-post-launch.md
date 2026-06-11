@@ -1,3 +1,24 @@
+---
+id: "PROPOSAL-2026-06-10-OPERATOR-SURFACE-POST-LAUNCH"
+type: "governance"
+doc_status: "ACTIVE"
+audit_status: "ACTIVE"
+version: "1.0.0"
+created: "2026-06-10"
+updated: "2026-06-11"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
+tags:
+  - "proposal"
+  - "admin"
+  - "operator-surface"
+  - "dashboard"
+  - "post-launch"
+---
+
 # Operator Surface (admin-ui ↔ container) — Post-Launch Design v1
 
 **Status:** ratifiable draft · read-only investigation · 2026-06-10
