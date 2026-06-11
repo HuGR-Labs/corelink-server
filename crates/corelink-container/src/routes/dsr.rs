@@ -47,6 +47,7 @@ use corelink_privacy_erasure_worker::orchestrator::{ErasureWorker, InMemoryErasu
 // Wave 1 increments 3-4 (R2 CAS/AC, Stripe, KV/Loki, pseudonymized).
 mod adapter_d1;
 mod adapter_r2_ac;
+mod adapter_r2_cas;
 mod audit;
 mod d1util;
 mod ledger;
@@ -147,6 +148,9 @@ fn build_d1_worker() -> Option<InMemoryErasureWorker> {
                 BackendKind::D1 => Arc::new(adapter_d1::D1EraseAdapter::new(Arc::clone(&d1))),
                 BackendKind::R2Ac => {
                     Arc::new(adapter_r2_ac::R2AcEraseAdapter::new(Arc::clone(&d1)))
+                }
+                BackendKind::R2Cas => {
+                    Arc::new(adapter_r2_cas::R2CasEraseAdapter::new(Arc::clone(&d1)))
                 }
                 other => Arc::new(InMemoryBackendErasureAdapter::new(other)),
             }

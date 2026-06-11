@@ -23,6 +23,19 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **DSR erasure — real R2 CAS erase adapter (`R2Cas`, WI-S11-008 Wave 1,
+  increment 3 — completes increment 3).** Hard-deletes a tenant's
+  content-addressed bytes from the single `corelink-cas-prod` bucket via
+  **LIST-by-prefix** (`R2S3Client::list_objects_v2`, paginated) over
+  `<region>/<tenant_prefix>/` across all five storage regions, then a defensive
+  D1 cleanup of the CAS storage-layer tables (`chunks`, `manifest_chunks`,
+  `multipart_sessions`, `blob_meta`). LIST-by-prefix is the only *complete*
+  enumeration: cold verification confirmed the live prod CAS path is
+  native-whole-blob-only (multipart NOT shipped) with **no durable D1 index**, so
+  the tenant's bytes can only be reached by their derived prefix. The prefix is
+  `derive_prefix(tdk, tenant)` — the same derivation the writer used (keys match
+  by construction); no TDK ⇒ fail CLOSED. Wired into `build_d1_worker`
+  (D1 + R2Ac + R2Cas real; the other 9 backends stay `InMemory`).
 - **DSR erasure — real R2 Action-Cache erase adapter (`R2Ac`, WI-S11-008 Wave 1,
   increment 3).** Hard-deletes a tenant's REAPI Action-Cache result envelopes from
   the per-region `corelink-ac-<region>` R2 buckets, then the `ac_meta` D1 index.
