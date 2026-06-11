@@ -44,6 +44,28 @@ Each entry cross-references:
   no-fire).
 
 ### Fixed
+- **Container fail-closed hardening: method gates, `/v1/users/me` tenant
+  parity, brew `_public` pre-store integrity.** (1) The four adapter
+  method-dispatch scope gates (`routes/cargo.rs`, `npm.rs`, `pip.rs`,
+  `brew.rs`) ended in `_ => true` — an unmapped HTTP method bypassed the
+  per-operation scope check and relied on the adapter's routing to 405 it.
+  Now `_ => false` (fail-CLOSED; a future adapter route can never ship
+  without an explicit scope decision), with per-gate DELETE/PATCH-with-
+  `cas:rw`→403 tests. (2) `GET /v1/users/me` defaulted a missing/sentinel
+  tenant to an `"_unknown"` echo — the one v1 surface off the fail-closed
+  posture. It now uses the same `AuthTenant` extractor as cas/ac/turbo
+  (missing/sentinel `x-corelink-tenant-id` → 401). (3) The brew adapter
+  stored upstream-fetched bottle bytes into the shared `_public` moat
+  namespace without pre-store verification (`integrity:"best-effort"`).
+  ghcr.io serves bottles as content-addressed OCI blobs
+  (`…/blobs/sha256:<hex>`), so the fetch path
+  (`corelink-adapter-host::brew::bottle`) now verifies the fetched bytes
+  against the URL-declared sha256 BEFORE the store: mismatch → refusal
+  (502, nothing stored or served) + a
+  `corelink.brew.bottle.integrity_mismatch.v1` audit row; verified fills
+  carry `integrity:"verified-sha256"`; non-content-addressed paths (e.g.
+  manifest-by-tag) keep `"best-effort"`. Spec
+  (`specs/_proposals/adapters/brew.md` §3) updated to match.
 - **`corelink-app.humangr.com` (public app entry, all docs pricing CTAs) served
   the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
   500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:
