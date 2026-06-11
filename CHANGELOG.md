@@ -23,6 +23,16 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **DSR erasure — `POST /_internal/dsr/verify` endpoint (WI-S11-008 Wave 1,
+  increment 5).** Drives the canonical 24h verification sweep
+  (`ErasureWorker::verify_erasure`): re-fingerprints every backend for a `dsr_id`
+  and lands the `verification_passed/failed` + `completed` audit arms. Same
+  internal-auth gate as `/erase`, but a **light `DsrVerifyV1` wire shape**
+  (`dsr_id` + `tenant_id` + `queued_at_ms` only) — the per-DSR `erasure_salt` and
+  raw `subject_id` are NOT retained post-erasure and the sweep never needs them
+  (it re-fingerprints by tenant). Returns a compact non-PII decision label
+  (`verified_complete`/`verified_partial`/`sla_breached`/…), never the per-backend
+  completions. Fired by the signup-worker cron (next).
 - **DSR erasure — reconcile the 8 not-shipped backends to `NotApplicable`
   (WI-S11-008 Wave 1, increment 4 — completes the 12-backend wiring).** The
   canonical contract assumes a Neon-primary control-plane + WORM audit/evidence/

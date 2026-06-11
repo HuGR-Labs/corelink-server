@@ -228,11 +228,27 @@ pub fn build_state_from_env() -> Option<DsrRouteState> {
     })
 }
 
-/// Mount `POST /_internal/dsr/erase`.
+/// Mount `POST /_internal/dsr/{erase,verify}`.
 pub fn router(state: DsrRouteState) -> Router {
     Router::new()
         .route("/_internal/dsr/erase", post(handle_erase))
+        .route("/_internal/dsr/verify", post(handle_verify))
         .with_state(state)
+}
+
+/// Compact, non-PII label for an [`ErasureDecision`] arm (the verify endpoint
+/// returns this, never the full decision with its per-backend completions).
+fn decision_label(decision: &ErasureDecision) -> &'static str {
+    match decision {
+        ErasureDecision::Started { .. } => "started",
+        ErasureDecision::VerifiedComplete { .. } => "verified_complete",
+        ErasureDecision::VerifiedPartial { .. } => "verified_partial",
+        ErasureDecision::VerificationFailed { .. } => "verification_failed",
+        ErasureDecision::SlaBreached { .. } => "sla_breached",
+        ErasureDecision::Rejected { .. } => "rejected",
+        // `ErasureDecision` is `#[non_exhaustive]`.
+        _ => "unknown",
+    }
 }
 
 fn now_ms() -> u64 {
@@ -243,6 +259,36 @@ fn now_ms() -> u64 {
             .unwrap_or(0),
     )
     .unwrap_or(0)
+}
+
+/// Wire shape for the 24h verify cron tick. The sweep needs only the ids + the
+/// SLA-clock anchor; the per-DSR `erasure_salt` and raw `subject_id` are **not
+/// retained** post-erasure (and `verify_erasure` never uses the salt — it
+/// re-fingerprints by tenant), so they are omitted here.
+#[derive(Debug, Deserialize)]
+pub struct DsrVerifyV1 {
+    /// Canonical UUID DSR id (matches the original erase request).
+    pub dsr_id: String,
+    /// Tenant id whose erasure is being verified.
+    pub tenant_id: String,
+    /// Original enqueue instant (Unix epoch ms) — the verification-deadline anchor.
+    pub queued_at_ms: u64,
+}
+
+/// Build a canonical [`ErasureRequest`] for the verify sweep from the light
+/// [`DsrVerifyV1`]. `subject_id == tenant_id` (one-user-per-tenant); the salt is
+/// a zeroed placeholder (unused by `verify_erasure`).
+fn parse_verify_request(msg: &DsrVerifyV1) -> Result<ErasureRequest, String> {
+    let dsr_id = Uuid::parse_str(&msg.dsr_id).map_err(|e| format!("dsr_id: {e}"))?;
+    let tenant_id = Uuid::parse_str(&msg.tenant_id).map_err(|e| format!("tenant_id: {e}"))?;
+    Ok(ErasureRequest {
+        dsr_id,
+        tenant_id,
+        subject_id: tenant_id,
+        erasure_salt: ErasureSalt::new([0u8; 32]),
+        queued_at_ms: msg.queued_at_ms,
+        legal_hold: false,
+    })
 }
 
 fn parse_request(msg: &DsrQueuedV1) -> Result<ErasureRequest, String> {
@@ -298,6 +344,44 @@ async fn handle_erase(
     }
 }
 
+/// `POST /_internal/dsr/verify` — the 24h verification sweep tick (fired by the
+/// signup-worker cron). Re-fingerprints every backend for `dsr_id` and lands the
+/// canonical `verification_passed/failed` + `completed` audit arms. Same
+/// internal-auth gate + wire shape as `/erase`.
+async fn handle_verify(
+    State(state): State<DsrRouteState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if !internal_auth_ok(state.internal_auth_key.as_bytes(), &headers) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    let msg: DsrVerifyV1 = match serde_json::from_slice(&body) {
+        Ok(m) => m,
+        Err(e) => return (StatusCode::BAD_REQUEST, format!("invalid body: {e}")).into_response(),
+    };
+    let request = match parse_verify_request(&msg) {
+        Ok(r) => r,
+        Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
+    };
+    match state.worker.verify_erasure(&request, now_ms()) {
+        Ok(decision) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "ok": true,
+                "dsr_id": msg.dsr_id,
+                "decision": decision_label(&decision),
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("verification failed: {e}"),
+        )
+            .into_response(),
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, reason = "tests")]
 mod tests {
@@ -308,6 +392,19 @@ mod tests {
         // Construction enforces the canonical 12-backend order; an error here
         // means canonical_backend_kinds drifted from BACKEND_COUNT.
         assert!(build_placeholder_worker().is_ok());
+    }
+
+    #[test]
+    fn parse_verify_maps_ids_subject_equals_tenant_salt_zeroed() {
+        let msg = DsrVerifyV1 {
+            dsr_id: "00000000-0000-7000-8000-000000000001".to_string(),
+            tenant_id: "00000000-0000-7000-8000-000000000002".to_string(),
+            queued_at_ms: 1_700_000_000_000,
+        };
+        let req = parse_verify_request(&msg).unwrap();
+        assert_eq!(req.subject_id, req.tenant_id, "subject == tenant for verify");
+        assert_eq!(req.erasure_salt.as_bytes(), &[0u8; 32], "salt unused → zeroed");
+        assert_eq!(req.queued_at_ms, 1_700_000_000_000);
     }
 
     #[test]
