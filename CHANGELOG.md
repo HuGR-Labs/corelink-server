@@ -22,6 +22,27 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+- **CRITICAL — close the "paid tier without payment" enforcement hole (e2e
+  adversarial audit 2026-06-11).** The checkout backend persists the requested
+  paid tier into `tier_selections` at checkout-START with
+  `subscription_state = 'pending_checkout'` (before any payment); the canonical
+  access gate is `subscription_state = 'active'` (the live Stripe handler only
+  flips the row to `active` on a *paid* `checkout.session.completed`). But the
+  request-time tier-enforcement read
+  (`worker/src/lib/quota.ts::getTierForTenant`, wired at `worker/src/index.ts`
+  → `checkStorageQuota`/`checkRequestQuota`) read `tier_selections.tier` with
+  **no state filter** — so a user could select a paid tier, abandon Stripe
+  checkout, and be served full paid quota for free. The enforcement read now
+  honours the canonical gate (`AND subscription_state = 'active'`), falling
+  through to `tenant.tier` → `free` otherwise; the customer-dashboard plan read
+  (`crates/corelink-container/src/customer_d1.rs`) mirrors the same filter so a
+  pending checkout never displays as the active plan. Auth / tenant-isolation /
+  PAT-revocation re-audited clean and unchanged. (The live Stripe webhook
+  handler — `apps/signup-worker/src/webhooks/stripe.ts` — already maps real
+  price ids, downgrades on `past_due`, and is process-then-claim idempotent, so
+  no webhook-handler change was needed.)
+
 ### Added
 - **Clerk session bridge for `customer_v1` — dual-auth dispatch (dashboard
   revival WP-1).** `/v1/customer/*` now accepts EITHER a CoreLink PAT (existing
