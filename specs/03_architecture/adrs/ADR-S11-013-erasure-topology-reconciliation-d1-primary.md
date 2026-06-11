@@ -1,7 +1,7 @@
 ---
-id: "ADR-S11-010"
+id: "ADR-S11-013"
 type: "adr"
-doc_status: "ACCEPTED"
+doc_status: "ACTIVE"
 audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-06-11"
@@ -14,7 +14,7 @@ superseded_by: null
 tags: ["adr", "s11", "privacy", "erasure", "dsr", "topology", "regulatory"]
 ---
 
-# ADR-S11-010 — Erasure Backend Topology Reconciliation (canonical model → shipped D1-primary reality)
+# ADR-S11-013 — Erasure Backend Topology Reconciliation (canonical model → shipped D1-primary reality)
 
 ## Status
 
@@ -65,7 +65,7 @@ each adapter's real transport does**, re-mapped to where data actually lives.
 
 | Canonical kind | Spec intent (Neon-primary) | **Reconciled real transport (D1-primary)** |
 |---|---|---|
-| `NeonMain` | hard-delete Neon account/tenant/consent rows | **NotApplicable** — auth-spine not shipped; control-plane identity lives in D1 (handled by `D1`). Returns `NotApplicable("control-plane consolidated into D1; see ADR-S11-010")`. Future-proof: becomes real if the auth-spine lands. |
+| `NeonMain` | hard-delete Neon account/tenant/consent rows | **NotApplicable** — auth-spine not shipped; control-plane identity lives in D1 (handled by `D1`). Returns `NotApplicable("control-plane consolidated into D1; see ADR-S11-013")`. Future-proof: becomes real if the auth-spine lands. |
 | `NeonBilling` | retain Neon `invoice`/`usage_event` under fiscal hold | **NotApplicable** — billing mirror is in D1 (`stripe_*`, retained); see `Stripe` + the D1 retain-set. |
 | `R2Cas` | refcount-aware blob delete | **REAL** — R2 `corelink-cas-prod` DeleteObject **only when `blob_meta.refcount → 0`**; decrement-only otherwise (cross-tenant break = CRITICAL, WI-S11-002 §28 R-003). Coordinates D1 `blob_meta`. |
 | `R2Ac` | action-cache delete | **REAL** — R2 `corelink-ac-{5 regions}` per tenant prefix; D1 `ac_meta` rows. |

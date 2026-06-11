@@ -596,7 +596,7 @@ impl StripeRealClient {
     /// `Customer.delete`** — deleting the customer object would break invoice
     /// integrity (GAAP ASC 606 + LGPD Art. 16 fiscal 5y retention). This crate
     /// deliberately exposes NO customer-delete primitive (WI AC-004 / §28
-    /// R-004; ADR-S11-010).
+    /// R-004; ADR-S11-013).
     ///
     /// `idempotency_key` MUST be deterministic per `(dsr_id, customer)` so a
     /// retried erasure is a safe replay.
@@ -1122,7 +1122,7 @@ mod tests {
             Some("0190a1b2-c3d4-7890-abcd-ef0123456789")
         );
         // INVARIANT: pseudonymize-only — the form must carry NO delete
-        // primitive (WI AC-004 / ADR-S11-010). A `Customer.delete` is a POST
+        // primitive (WI AC-004 / ADR-S11-013). A `Customer.delete` is a POST
         // to /v1/customers/:id/delete or a DELETE verb, never a form field —
         // but assert no key hints at deletion as a defensive tripwire.
         assert!(

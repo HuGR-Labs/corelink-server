@@ -15,7 +15,7 @@
 //! transient re-fingerprint recomputed by the 24h verify sweep) is NOT
 //! persisted here and reconstructed completions carry the canonical empty
 //! hash. This is a property of the canonical schema, documented in
-//! ADR-S11-010.
+//! ADR-S11-013.
 
 use std::sync::Arc;
 

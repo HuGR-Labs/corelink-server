@@ -24,7 +24,7 @@ Each entry cross-references:
 
 ### Added
 - **DSR erasure — real D1-backed idempotency ledger + audit sink + effective D1
-  erase adapter (WI-S11-008 Wave 1, increments 1+2, ADR-S11-010).** Three new
+  erase adapter (WI-S11-008 Wave 1, increments 1+2, ADR-S11-013).** Three new
   transports under `corelink-container/src/routes/dsr/`: `D1ErasureIdempotencyLedger`
   (over `dsr_erasure_log`, `INSERT OR IGNORE` + `SELECT`-back → `Replayed`/`DivergentPayload`
   on a 4-field `(outcome, tenant_id, subject_id_hash, idempotency_key)` match, deterministic
@@ -36,7 +36,7 @@ Each entry cross-references:
   `InMemory` placeholders pending increments 3-5). Pipeline remains inert in prod until
   task #46 provisioning (queues + `ERASURE_SALT_KEY` + `CORELINK_INTERNAL_AUTH_KEY`).
 - **DSR erasure — `BackendCompletion.subject_id_hash` canonical field (WI-S11-008
-  Wave 1, ADR-S11-010 gap #1).** The per-backend completion record now carries the
+  Wave 1, ADR-S11-013 gap #1).** The per-backend completion record now carries the
   canonical `sha256(subject_id ‖ erasure_salt)` subject pseudonym, populated by the
   orchestrator via `pseudonymize_subject_id`, so the real D1-backed idempotency
   ledger can write the `dsr_erasure_log.subject_id_hash NOT NULL` column (the pure
@@ -48,7 +48,7 @@ Each entry cross-references:
   (`POST /v1/customers/:id`: overwrite email/name, clear phone/address, stamp
   `pii_redacted` + `erasure_dsr_id` metadata). By design exposes NO
   customer-delete primitive — deleting the customer would break invoice
-  integrity (GAAP ASC 606 + LGPD Art. 16 fiscal retention). See ADR-S11-010.
+  integrity (GAAP ASC 606 + LGPD Art. 16 fiscal retention). See ADR-S11-013.
 - **DSR account deletion — Clerk `user.deleted` → erasure pipeline (WI-S11-008
   WP-F + WP-G).** The signup-worker Clerk webhook now handles `user.deleted`: it
   looks up the tenant by `clerk_user_id` and PRODUCES a frozen-contract

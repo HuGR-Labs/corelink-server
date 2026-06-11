@@ -3,7 +3,7 @@
 //! `corelink-config-prod` database.
 //!
 //! The erase-set + the erase-vs-retain classification are OWNER-RATIFIED
-//! in ADR-S11-010 (2026-06-11). Every table/column below was cold-verified
+//! in ADR-S11-013 (2026-06-11). Every table/column below was cold-verified
 //! against its `migrations/d1/*.sql` `CREATE TABLE`. Load-bearing
 //! subtleties, all honored here:
 //!
@@ -66,7 +66,7 @@ const TENANT_ID_TABLES: &[&str] = &[
 const NAMESPACE_TABLES: &[&str] = &["adapter_cache_map", "adapter_npm_meta", "adapter_pip_index"];
 
 /// Tables that MUST NEVER appear in the erase-set (retain-set per
-/// ADR-S11-010: the erasure record itself, fiscal 5y, audit WORM 7y).
+/// ADR-S11-013: the erasure record itself, fiscal 5y, audit WORM 7y).
 /// Used by the guard test to catch an accidental erase-set addition.
 #[cfg(test)]
 const RETAIN_SET: &[&str] = &[
@@ -255,7 +255,7 @@ mod tests {
         for t in TENANT_ID_TABLES.iter().chain(NAMESPACE_TABLES.iter()) {
             assert!(
                 !RETAIN_SET.contains(t),
-                "RETAIN-set table {t} must NEVER be in the D1 erase-set (ADR-S11-010)"
+                "RETAIN-set table {t} must NEVER be in the D1 erase-set (ADR-S11-013)"
             );
         }
     }

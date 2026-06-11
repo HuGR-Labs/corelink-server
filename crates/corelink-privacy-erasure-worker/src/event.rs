@@ -481,7 +481,7 @@ pub struct BackendCompletion {
     /// the durable D1 tombstone NEVER carries the raw subject id). Populated
     /// by the orchestrator via `crate::pseudonymize::pseudonymize_subject_id`.
     /// `#[serde(default)]` keeps pre-Wave-1 `outcome_json` snapshots (written
-    /// before this column existed) deserializable. See ADR-S11-010 gap #1.
+    /// before this column existed) deserializable. See ADR-S11-013 gap #1.
     #[serde(default)]
     pub subject_id_hash: [u8; 32],
     /// Canonical 12-arm backend kind.
