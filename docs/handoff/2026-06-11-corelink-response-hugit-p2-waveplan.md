@@ -25,11 +25,15 @@
 ## 1. The gaps BELOW the six (the "more surprises" — cold-verified)
 
 - **G0 — FOUNDATION (blocks every seam).** The hugit tenant is **not provisioned**:
-  no `tenant` row, no `pat` row, no `pilot_signups` row. The operator endpoint
-  `POST /v1/admin/pilots` (create non-Clerk pilot tenant + mint PAT atomically)
-  is **design-ratified but NOT implemented** (PROPOSAL-2026-06-10 / the admin-pilot
-  task). `/_internal/pat/mint` needs the prod secret `CORELINK_INTERNAL_AUTH_KEY`
-  (owner-gated, task #46). *Every A–F smoke test sits on this.*
+  no `tenant` row, no `pat` row, no `pilot_signups` row (cold-verified: zero `hugit`
+  refs in migrations/code). The admin-pilot module EXISTS + is wired
+  (`routes/admin_pilot.rs` → `routes.rs:289`: `GET /v1/admin/pilots` list +
+  `POST …/grant-tier` + `POST …/checkin`), BUT (a) there is **NO create-pilot-tenant
+  + mint-PAT endpoint** (only list/grant-tier/checkin), and (b) it is backed by
+  **`InMemoryPilotStore` (NON-durable)** — pilot ops don't survive a restart.
+  `/_internal/pat/mint` needs the prod secret `CORELINK_INTERNAL_AUTH_KEY`
+  (owner-gated, task #46). So **WP-FOUND-1 = add the create+mint endpoint AND a
+  D1-durable `PilotStore`.** *Every A–F smoke test sits on this.*
 - **G1 — monthly-$-ceiling enforcement is a GAP.** Per-tenant **rate-limit EXISTS**
   and is fully wired (`ratelimit_buckets` + tier map: free→200 RPS/1000 burst),
   but there is **no per-month $ cap at the request boundary** (`tenant_quota` table
@@ -50,7 +54,7 @@ module(s); I wire + cold-check + verify.
 
 | WP | Seam | Owner-files (disjoint) | Size | Dep-on | Non-interference |
 |---|---|---|---|---|---|
-| **WP-FOUND-1** | G0 admin/pilots endpoint | `routes/admin_pilot.rs` (new) + D1 provisioning | M | task #46 secret (live only) | ISOLATED (internal-auth route) |
+| **WP-FOUND-1** | G0 create-pilot + durable store | EXTEND `routes/admin_pilot.rs` (add create+mint endpoint) + new D1-durable `PilotStore` (replace `InMemoryPilotStore`) | M | task #46 secret (live only) | ISOLATED (internal-auth route) |
 | **WP-FOUND-2** | G1 $-ceiling | `tenant_quota` migration + quota middleware | M | ADR (design first) | the cap itself — protects launch |
 | **WP-A** | A — AC 409 | `corelink-handler-ac/src/{error,handler}.rs` + `routes/ac.rs` (409 map) | **S** | — | ISOLATED |
 | **WP-C** | C — session exchange | `worker/src/lib/session_exchange.ts` + Worker route | **S** | reuses `/_internal/pat/mint` | ISOLATED |
