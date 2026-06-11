@@ -735,8 +735,12 @@ impl CustomerBillingHandler for D1CustomerHandler {
             .tenant_row(&req.caller_tenant)?
             .ok_or_else(|| self.tenant_not_found(&req.caller_tenant))?;
         let billing = self.billing_row(&req.caller_tenant)?;
+        // Only an ACTIVE subscription's tier is the customer's real plan; a
+        // `pending_checkout` row (paid tier written at click time, before
+        // payment) must NOT surface as the active plan. Mirrors the
+        // enforcement filter in `worker/src/lib/quota.ts::getTierForTenant`.
         let tier_rows = self.run(
-            "SELECT tier FROM tier_selections WHERE tenant_id = ?1 LIMIT 1",
+            "SELECT tier FROM tier_selections WHERE tenant_id = ?1 AND subscription_state = 'active' LIMIT 1",
             vec![json!(req.caller_tenant)],
         )?;
 
