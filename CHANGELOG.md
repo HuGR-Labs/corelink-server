@@ -78,6 +78,36 @@ Each entry cross-references:
   pricing page (tier-card bullet + "Cache retention" comparison row) and
   pinned by vitest (ladder values, Enterprise-only cap, monotonic
   non-decreasing retention, `formatRetention` rendering).
+- **D1-backed customer handler (dashboard revival WP-3).** New
+  `crates/corelink-container/src/customer_d1.rs`: `D1CustomerHandler`
+  implements all 6 `corelink-handler-customer` traits over the live D1
+  database (sync↔async bridge per `billing_d1_http`), replacing the
+  `InMemoryCustomerHandler` 404-stub so real tenants get real dashboard
+  data — HONEST v1: real data where a deployed table exists, explicit
+  empty/zero/501 where it doesn't, never fabricated. Overview/usage read
+  `tenant` (tier 0057) + `tenant_storage_state` SUM(bytes_used)/quota +
+  `tenant_billing` (0055) + `byok_envelope` presence; billing maps the
+  FROZEN status table (paid→active, past_due/incomplete→past_due,
+  canceled→canceled, no-row→inactive); billing/portal creates a real
+  Stripe billing-portal session from `tenant_billing.stripe_customer_id`
+  (no customer → 404 "no billing account"); keys list/create/revoke run
+  against the `pat` table (create = real `corelink_pat::mint` + INSERT,
+  FROZEN scope map `["cache:read"]`→read-only / anything-with-write→
+  read-write / admin NEVER grantable, token returned once + never
+  logged; revoke = tenant-scoped idempotent `revoked_at_ms` UPDATE —
+  depends on the WP-2 migration 0063 `pat.name`/`pat.revoked_at_ms`
+  columns, parallel PR); team = synthesized Owner row from
+  `tenant.clerk_user_id`; team/invite = new additive
+  `CustomerHandlerError::NotImplemented` → explicit 501 ("team invites
+  are coming soon"). Wiring: `routes.rs` now uses
+  `customer::build_handlers_from_env()` — D1 env present → D1 handler,
+  else InMemory (dev/CI), mirroring the `adapter_pat::PatVerifier::
+  from_env` fail-closed pattern. Audit emit-before-lookup + SLI on every
+  return path per the trait contracts; D1 transport errors fail CLOSED
+  (500), never degrade to empty data. 30 new hermetic mock-D1 tests
+  (per-endpoint happy paths, frozen status/scope maps, cross-tenant
+  revoke → 404, idempotent revoke, portal-no-customer → 404, invite →
+  501, fail-closed transport + audit-failure ordering).
 - **admin-ui `/upgrade?plan=<tier>` page — the public pricing CTAs now reach
   checkout (#49).** Every docs pricing CTA targets
   `corelink-app.humangr.com/upgrade?plan=<tier>`, but admin-ui had no

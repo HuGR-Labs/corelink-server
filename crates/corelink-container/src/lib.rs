@@ -90,6 +90,14 @@ pub mod auth_tenant;
 /// in-memory mirror. See module docs.
 pub mod billing_d1_http;
 pub mod byok_orchestrator;
+/// Production D1-backed customer-dashboard handler (dashboard revival
+/// WP-3): [`customer_d1::D1CustomerHandler`] implements all 6
+/// `corelink-handler-customer` traits over the CF D1 REST API
+/// (sync↔async bridge per [`billing_d1_http`]), replacing the
+/// InMemory 404-stub for real tenants. HONEST v1: real data where a
+/// deployed table exists, explicit empty/zero/501 where it doesn't.
+/// See module docs for the per-endpoint matrix.
+pub mod customer_d1;
 #[cfg(feature = "neon-real")]
 pub mod neon_shadow_factory;
 pub mod routes;

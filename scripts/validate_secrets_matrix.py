@@ -171,6 +171,12 @@ ALLOWLIST_REGEX = re.compile(
     r"|R2_CHUNK_BUCKET$"
     r"|R2_CHUNK_REGION$"
     r"|R2_TEST_BUCKET$"
+    # WP-3 dashboard revival (2026-06-10) — Stripe billing-portal return_url
+    # override (public dashboard URL; default hardcoded in source). No
+    # credential material — STRIPE_SECRET_KEY (matrix row) is the actual
+    # credential.
+    #   Consumer: crates/corelink-container/src/customer_d1.rs (from_env)
+    r"|CORELINK_PORTAL_RETURN_URL$"
     r")"
 )
 

@@ -81,11 +81,40 @@ impl core::fmt::Debug for CustomerRouteState {
 
 // ─── Handler factory ─────────────────────────────────────────────────────────
 
+/// Build the production `CustomerRouteState` from process env
+/// (dashboard revival WP-3). When the D1 config
+/// ([`crate::storage::StorageEnv`]) is present, all 6 slots share one
+/// [`crate::customer_d1::D1CustomerHandler`] (real dashboard data);
+/// otherwise dev/CI falls back to [`build_handlers`]'s
+/// `InMemoryCustomerHandler` — mirroring
+/// [`crate::adapter_pat::PatVerifier::from_env`]'s fail-closed
+/// env-gate pattern.
+#[must_use]
+pub fn build_handlers_from_env() -> CustomerRouteState {
+    match crate::customer_d1::D1CustomerHandler::from_env() {
+        Some(shared) => CustomerRouteState {
+            overview: shared.clone(),
+            usage: shared.clone(),
+            billing: shared.clone(),
+            keys: shared.clone(),
+            team: shared.clone(),
+            audit: shared,
+        },
+        None => {
+            tracing::warn!(
+                "StorageEnv unset/invalid; /v1/customer/* backed by \
+                 InMemoryCustomerHandler (dev/CI mode)"
+            );
+            build_handlers()
+        }
+    }
+}
+
 /// Build the canonical `CustomerRouteState` using `InMemoryCustomerHandler`
 /// (shared behind all 6 trait-object slots via a single `Arc`).
 ///
-/// Production wiring uses InMemory for now; a D1-backed handler is a
-/// follow-up per the `trait-abstraction-defer` rule.
+/// Dev/CI wiring; production uses [`build_handlers_from_env`] which
+/// swaps in the D1-backed handler when the D1 env is present.
 #[must_use]
 pub fn build_handlers() -> CustomerRouteState {
     let audit = Arc::new(InMemoryAuditSink::new());
@@ -587,6 +616,12 @@ fn map_err(e: CustomerHandlerError) -> axum::response::Response {
         CustomerHandlerError::AuditFailed(_) => {
             (StatusCode::SERVICE_UNAVAILABLE, "audit closed").into_response()
         }
+        // HONEST v1 (dashboard revival WP-3): an endpoint the concrete
+        // handler does not implement yet is an explicit 501 with UI
+        // copy — never fabricated data, never a misleading 404/500.
+        CustomerHandlerError::NotImplemented(_) => {
+            (StatusCode::NOT_IMPLEMENTED, "team invites are coming soon").into_response()
+        }
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal").into_response(),
     }
 }
@@ -999,5 +1034,25 @@ mod tests {
     fn map_err_internal_is_500() {
         let resp = map_err(CustomerHandlerError::Internal("boom".into()));
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn map_err_not_implemented_is_501() {
+        // WP-3 (HONEST v1): the D1 handler's team-invite returns
+        // NotImplemented; the route maps it to an explicit 501.
+        let resp = map_err(CustomerHandlerError::NotImplemented(
+            "team invites are not yet implemented".into(),
+        ));
+        assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
+    }
+
+    #[test]
+    fn build_handlers_from_env_falls_back_to_in_memory_without_d1_env() {
+        // Dev/CI (no StorageEnv): the env-gated factory must still
+        // produce a usable state (InMemory fallback) without panicking.
+        // (If a developer machine exports the full StorageEnv this still
+        // constructs — the D1 handler does no I/O at build time.)
+        let state = build_handlers_from_env();
+        let _router = router(state);
     }
 }
