@@ -23,6 +23,12 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **DSR erasure — `StripeRealClient::pseudonymize_customer` (WI-S11-008 Wave 1,
+  Stripe backend).** Pseudonymizes a customer's PII for a DSR erasure
+  (`POST /v1/customers/:id`: overwrite email/name, clear phone/address, stamp
+  `pii_redacted` + `erasure_dsr_id` metadata). By design exposes NO
+  customer-delete primitive — deleting the customer would break invoice
+  integrity (GAAP ASC 606 + LGPD Art. 16 fiscal retention). See ADR-S11-010.
 - **DSR account deletion — Clerk `user.deleted` → erasure pipeline (WI-S11-008
   WP-F + WP-G).** The signup-worker Clerk webhook now handles `user.deleted`: it
   looks up the tenant by `clerk_user_id` and PRODUCES a frozen-contract

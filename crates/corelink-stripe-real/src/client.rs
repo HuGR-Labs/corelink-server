@@ -565,6 +565,56 @@ impl StripeRealClient {
         self.get::<CustomerObject>(&format!("/v1/customers/{id}"))
     }
 
+    /// Build the form for GDPR/LGPD erasure pseudonymization of a Stripe
+    /// customer. Extracted so the pseudonymize-only invariant is unit-testable
+    /// WITHOUT a live Stripe round-trip. By construction this form NEVER
+    /// carries a delete primitive — it only overwrites the PII fields
+    /// (`email`/`name`) and clears the optional PII fields (`phone`/`address`),
+    /// then stamps the `pii_redacted` + `erasure_dsr_id` metadata markers.
+    fn pseudonymize_customer_form(
+        pseudo_email: &str,
+        pseudo_name: &str,
+        erasure_dsr_id: &str,
+    ) -> Vec<(&'static str, String)> {
+        vec![
+            ("email", pseudo_email.to_string()),
+            ("name", pseudo_name.to_string()),
+            // Clear the optional PII fields (Stripe interprets an empty value
+            // as an unset). Belt-and-suspenders even if they were never set.
+            ("phone", String::new()),
+            ("address", String::new()),
+            ("metadata[pii_redacted]", "true".to_string()),
+            ("metadata[erasure_dsr_id]", erasure_dsr_id.to_string()),
+        ]
+    }
+
+    /// `POST /v1/customers/:id` — pseudonymize a customer's PII for a DSR
+    /// erasure (WI-S11-008 Stripe backend; `backends/stripe.rs`).
+    ///
+    /// Overwrites `email`/`name`, clears `phone`/`address`, and stamps the
+    /// `pii_redacted` + `erasure_dsr_id` metadata. **NEVER calls
+    /// `Customer.delete`** — deleting the customer object would break invoice
+    /// integrity (GAAP ASC 606 + LGPD Art. 16 fiscal 5y retention). This crate
+    /// deliberately exposes NO customer-delete primitive (WI AC-004 / §28
+    /// R-004; ADR-S11-010).
+    ///
+    /// `idempotency_key` MUST be deterministic per `(dsr_id, customer)` so a
+    /// retried erasure is a safe replay.
+    ///
+    /// # Errors
+    /// See [`StripeError`] taxonomy.
+    pub fn pseudonymize_customer(
+        &self,
+        id: &str,
+        pseudo_email: &str,
+        pseudo_name: &str,
+        erasure_dsr_id: &str,
+        idempotency_key: &str,
+    ) -> Result<CustomerObject, StripeError> {
+        let form = Self::pseudonymize_customer_form(pseudo_email, pseudo_name, erasure_dsr_id);
+        self.post_form::<CustomerObject>(&format!("/v1/customers/{id}"), &form, idempotency_key)
+    }
+
     /// `POST /v1/subscriptions` — create a subscription.
     ///
     /// # Errors
@@ -1048,6 +1098,37 @@ mod tests {
             }
             other => panic!("expected WalletBroker mode (snake_case), got {other:?}"),
         }
+    }
+
+    #[test]
+    fn pseudonymize_customer_form_redacts_pii_and_never_deletes() {
+        let form = StripeRealClient::pseudonymize_customer_form(
+            "erased+cus_x@redacted.invalid",
+            "erased_ab12cd34",
+            "0190a1b2-c3d4-7890-abcd-ef0123456789",
+        );
+        let get = |k: &str| form.iter().find(|(key, _)| *key == k).map(|(_, v)| v.clone());
+
+        // PII fields overwritten with the pseudonyms.
+        assert_eq!(get("email").as_deref(), Some("erased+cus_x@redacted.invalid"));
+        assert_eq!(get("name").as_deref(), Some("erased_ab12cd34"));
+        // Optional PII fields cleared (Stripe unsets on empty value).
+        assert_eq!(get("phone").as_deref(), Some(""));
+        assert_eq!(get("address").as_deref(), Some(""));
+        // Redaction markers stamped.
+        assert_eq!(get("metadata[pii_redacted]").as_deref(), Some("true"));
+        assert_eq!(
+            get("metadata[erasure_dsr_id]").as_deref(),
+            Some("0190a1b2-c3d4-7890-abcd-ef0123456789")
+        );
+        // INVARIANT: pseudonymize-only — the form must carry NO delete
+        // primitive (WI AC-004 / ADR-S11-010). A `Customer.delete` is a POST
+        // to /v1/customers/:id/delete or a DELETE verb, never a form field —
+        // but assert no key hints at deletion as a defensive tripwire.
+        assert!(
+            form.iter().all(|(k, _)| !k.contains("delete") && !k.contains("deleted")),
+            "erasure form must never carry a delete primitive: {form:?}"
+        );
     }
 
     #[test]
