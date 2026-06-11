@@ -475,6 +475,15 @@ pub struct BackendCompletion {
     pub dsr_id: Uuid,
     /// Tenant id (S-03 inheritance).
     pub tenant_id: Uuid,
+    /// Canonical `sha256(subject_id || erasure_salt)` subject pseudonym —
+    /// the `subject_id_hash NOT NULL` column of
+    /// `migrations/d1/0022_dsr_erasure_log.sql` (CTRL-PRIV-014 minimization:
+    /// the durable D1 tombstone NEVER carries the raw subject id). Populated
+    /// by the orchestrator via `crate::pseudonymize::pseudonymize_subject_id`.
+    /// `#[serde(default)]` keeps pre-Wave-1 `outcome_json` snapshots (written
+    /// before this column existed) deserializable. See ADR-S11-010 gap #1.
+    #[serde(default)]
+    pub subject_id_hash: [u8; 32],
     /// Canonical 12-arm backend kind.
     pub backend: BackendKind,
     /// Per-backend outcome (5-arm taxonomy).

@@ -23,6 +23,14 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **DSR erasure — `BackendCompletion.subject_id_hash` canonical field (WI-S11-008
+  Wave 1, ADR-S11-010 gap #1).** The per-backend completion record now carries the
+  canonical `sha256(subject_id ‖ erasure_salt)` subject pseudonym, populated by the
+  orchestrator via `pseudonymize_subject_id`, so the real D1-backed idempotency
+  ledger can write the `dsr_erasure_log.subject_id_hash NOT NULL` column (the pure
+  trait surface previously could not). Additive + `#[serde(default)]` (pre-Wave-1
+  `outcome_json` snapshots stay deserializable); the `outcome_json` round-trip
+  property test passes with arbitrary subject-hash values.
 - **DSR erasure — `StripeRealClient::pseudonymize_customer` (WI-S11-008 Wave 1,
   Stripe backend).** Pseudonymizes a customer's PII for a DSR erasure
   (`POST /v1/customers/:id`: overwrite email/name, clear phone/address, stamp

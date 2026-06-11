@@ -100,6 +100,7 @@ prop_compose! {
         elapsed in 0u64..1_000_000u64,
         retry in 0u32..=5u32,
         verification_hash in proptest::array::uniform32(any::<u8>()),
+        subject_id_hash in proptest::array::uniform32(any::<u8>()),
     ) -> BackendCompletion {
         let idempotency_key = format!(
             "corelink-{dsr_short}-{backend}-{retry:03}",
@@ -109,6 +110,7 @@ prop_compose! {
         BackendCompletion {
             dsr_id: dsr,
             tenant_id: tenant,
+            subject_id_hash,
             backend,
             outcome,
             idempotency_key,
