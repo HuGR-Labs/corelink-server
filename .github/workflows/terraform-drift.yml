@@ -73,7 +73,7 @@ jobs:
       # ----------------------------------------------------------------
       - name: Checkout
         # actions/checkout@v4.2.2 — SHA-pinned per WI-S01-007.
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
 
@@ -83,7 +83,7 @@ jobs:
       # SHA: b9cd54a3c349d3f38e8881555d616ced269862dd
       # ----------------------------------------------------------------
       - name: Setup Terraform ${{ env.TF_VERSION }}
-        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false  # raw exit codes; wrapper would swallow exit code 2
@@ -189,7 +189,7 @@ jobs:
       - name: Upload plan artifact — ${{ matrix.region }}
         if: always()
         # actions/upload-artifact@v4.5.0
-        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: terraform-plan-${{ matrix.region }}-${{ github.run_id }}
           path: |
@@ -203,9 +203,9 @@ jobs:
       # ----------------------------------------------------------------
       - name: "[SEV-3] Slack alert — drift detected — ${{ matrix.region }}"
         if: steps.plan.outputs.exitcode == '2'
-        # slackapi/slack-github-action@v2.0.0
-        # SHA: 485a9d42d3a73031f12ec201c457e2162c45d02d
-        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d
+        # slackapi/slack-github-action@v3.0.3
+        # SHA: 45a88b9581bfab2566dc881e2cd66d334e621e2c
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c
         with:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -252,7 +252,7 @@ jobs:
       # ----------------------------------------------------------------
       - name: "[SEV-2] Slack alert — terraform error — ${{ matrix.region }}"
         if: steps.plan.outputs.exitcode == '1'
-        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c
         with:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -298,7 +298,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
 
@@ -319,7 +319,7 @@ jobs:
 
       - name: "[SEV-3] Multi-region drift summary"
         if: needs.drift-check.result == 'failure'
-        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c
         with:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -357,7 +357,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
 

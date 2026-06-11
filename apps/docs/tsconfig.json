@@ -2,6 +2,9 @@
   "extends": "@docusaurus/tsconfig",
   "compilerOptions": {
     "baseUrl": ".",
+    // TS6: baseUrl is deprecated (TS5101 hard error); paths-based resolution
+    // still works — silence until the baseUrl removal migration (TS7 deadline).
+    "ignoreDeprecations": "6.0",
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,

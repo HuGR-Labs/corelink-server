@@ -13,6 +13,6 @@
   ],
   "keywords": ["corelink", "cache", "blake3", "wasm", "remote-cache"],
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^6.0.3"
   }
 }

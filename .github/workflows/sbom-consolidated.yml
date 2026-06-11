@@ -41,7 +41,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
 
@@ -54,7 +54,7 @@ jobs:
           shared-key: sbom-consolidated
 
       - name: Install cargo-cyclonedx
-        uses: taiki-e/install-action@daa3c1f1f9a9d46f686d9fc2f65773d0c293688b # v2.49.49
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
         with:
           tool: cargo-cyclonedx@0.5.7
 
@@ -67,7 +67,7 @@ jobs:
         run: bash scripts/sbom-aggregate.sh
 
       - name: Upload consolidated SBOM (release artifact)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: corelink-workspace-sbom-${{ github.ref_name }}
           path: target/sbom/corelink-workspace.cdx.json
