@@ -23,6 +23,26 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **`/_internal/admin/pilots…` alias + internal-edge identity synthesis
+  (#218 §2.1-§2.2, ratified Q3 2026-06-10).** The three pilot-admin handlers
+  (`list` / `grant-tier` / `checkin`) are now additionally bound under
+  `/_internal/admin/pilots…`, making the operator surface reachable from the
+  public edge through the Worker's existing `/_internal/*` channel
+  (constant-time internal-auth verification + client-trust-header strip +
+  `_system`-DO forward) with zero Worker changes. Because that channel strips
+  `x-admin-principal`/`x-admin-scope` and `require_admin_scope` previously
+  hard-403'd on an empty principal, every edge call would have 403'd
+  (the drift the Q3 ratification fixed): after the PRIMARY internal-auth gate
+  passes, an empty principal PLUS the server-set
+  `x-corelink-route-kind: internal` (Worker-overwritten on every forward —
+  not client-forgeable) now synthesizes the audit principal
+  `internal-edge-operator` with the pilots scope treated as granted, so audit
+  rows always carry a principal. Explicit-header requests keep today's
+  behavior byte-identical; an empty principal without the internal route-kind
+  still 403s; the route-kind header never substitutes for the internal-auth
+  secret. The `POST /v1/admin/pilots` create-tenant endpoint itself (#218
+  §2.3-§2.7, incl. the `max` create-time refusal and
+  `seed_tier_selection=false` default) is the follow-up work package.
 - **admin-ui `/upgrade?plan=<tier>` page — the public pricing CTAs now reach
   checkout (#49).** Every docs pricing CTA targets
   `corelink-app.humangr.com/upgrade?plan=<tier>`, but admin-ui had no

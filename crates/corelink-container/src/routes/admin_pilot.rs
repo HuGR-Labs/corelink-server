@@ -18,6 +18,20 @@
 //!   alert row when the tenant has not uploaded a single blob 24h
 //!   after `tier_granted_at_ms`.
 //!
+//! ## `/_internal/admin/pilots…` alias (#218 §2.1, ratified Q3)
+//!
+//! The SAME three handlers are additionally bound under
+//! `/_internal/admin/pilots…` so the surface is operator-reachable
+//! from the public edge with ZERO Worker changes: the Worker's
+//! existing `/_internal/*` route-kind already does constant-time
+//! internal-auth verification + strip-then-reinject + `_system`-DO
+//! forwarding with the path preserved. Because that path strips the
+//! client-suppliable `x-admin-principal` / `x-admin-scope` headers
+//! and re-injects only internal-auth / request-id / route-kind /
+//! tenant / token-prefix, the gate synthesizes the audit identity
+//! [`INTERNAL_EDGE_PRINCIPAL`] for such calls — see
+//! [`require_admin_scope`].
+//!
 //! # Auth model
 //!
 //! Every route is gated by the admin JWT scope
@@ -90,6 +104,17 @@ pub const PILOTS_GRANT_TIER_ROUTE: &str = "/v1/admin/pilots/:tenant_id/grant-tie
 /// Canonical checkin route path (axum 0.7 `:name` capture).
 pub const PILOTS_CHECKIN_ROUTE: &str = "/v1/admin/pilots/:tenant_id/checkin";
 
+/// Internal-edge alias for the list route (#218 §2.1, ratified Q3):
+/// same handler, reachable through the Worker's `/_internal/*` channel.
+pub const INTERNAL_PILOTS_LIST_ROUTE: &str = "/_internal/admin/pilots";
+
+/// Internal-edge alias for the grant-tier route (#218 §2.1).
+pub const INTERNAL_PILOTS_GRANT_TIER_ROUTE: &str =
+    "/_internal/admin/pilots/:tenant_id/grant-tier";
+
+/// Internal-edge alias for the checkin route (#218 §2.1).
+pub const INTERNAL_PILOTS_CHECKIN_ROUTE: &str = "/_internal/admin/pilots/:tenant_id/checkin";
+
 /// HTTP header carrying the operator-validated admin scope claim
 /// (production: set by the JWT-validating tower middleware).
 pub const ADMIN_SCOPE_HEADER: &str = "x-admin-scope";
@@ -117,6 +142,26 @@ pub const REQUIRED_ADMIN_SCOPE: &str = "corelink:admin:pilots";
 /// removed before the request reaches the container). The constant-time gate
 /// below is a second independent layer — both must hold.
 pub const ADMIN_INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
+
+/// Server-set route-kind header. The Worker unconditionally `.set()`s
+/// this header on EVERY forward (it is deliberately NOT in
+/// `CLIENT_TRUST_HEADERS` because the overwrite makes a client value
+/// unreachable), so its value is server-trusted — a request that
+/// reaches the container through the Worker carries the Worker's
+/// route classification, never the client's.
+pub const ROUTE_KIND_HEADER: &str = "x-corelink-route-kind";
+
+/// Route-kind value the Worker sets on `/_internal/*` forwards
+/// (`worker/src/index.ts`, internal route handling).
+pub const ROUTE_KIND_INTERNAL: &str = "internal";
+
+/// Synthesized audit principal for operator calls arriving through the
+/// Worker's `/_internal/*` channel (#218 §2.2, ratified Q3 2026-06-10):
+/// that path strips the client-suppliable `x-admin-principal` /
+/// `x-admin-scope` headers and does NOT re-inject them, so after the
+/// PRIMARY internal-auth gate passes the gate synthesizes this
+/// principal — audit rows always carry a non-empty principal.
+pub const INTERNAL_EDGE_PRINCIPAL: &str = "internal-edge-operator";
 
 /// Audit event type — emitted on `grant-tier` success.
 pub const EVENT_TYPE_TIER_GRANTED: &str = "corelink.admin.pilot_tier_granted.v1";
@@ -586,11 +631,24 @@ pub struct CheckinResponse {
 // -----------------------------------------------------------------------------
 
 /// Build the axum sub-router for the pilot-admin surface.
+///
+/// Each handler is bound twice: at its canonical `/v1/admin/pilots…`
+/// path AND at the `/_internal/admin/pilots…` alias (#218 §2.1,
+/// ratified Q3) — the alias rides the Worker's existing `/_internal/*`
+/// forwarding channel (constant-time internal-auth verification +
+/// client-trust-header strip + `_system`-DO forward, path preserved),
+/// making the surface operator-reachable from the public edge with
+/// zero Worker changes. Both paths run the IDENTICAL gate
+/// ([`require_admin_scope`]) — the alias is reachability, not a
+/// privilege change.
 pub fn router(state: PilotAdminRouteState) -> Router {
     Router::new()
         .route(PILOTS_LIST_ROUTE, get(handle_list))
         .route(PILOTS_GRANT_TIER_ROUTE, post(handle_grant_tier))
         .route(PILOTS_CHECKIN_ROUTE, post(handle_checkin))
+        .route(INTERNAL_PILOTS_LIST_ROUTE, get(handle_list))
+        .route(INTERNAL_PILOTS_GRANT_TIER_ROUTE, post(handle_grant_tier))
+        .route(INTERNAL_PILOTS_CHECKIN_ROUTE, post(handle_checkin))
         .with_state(state)
 }
 
@@ -891,47 +949,78 @@ fn require_admin_scope(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("");
-    let scope_header = headers
-        .get(ADMIN_SCOPE_HEADER)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    // SECONDARY label (NOT the sole gate): the internal-auth check above
-    // is the boundary. We keep the scope-string + principal checks as a
-    // defence-in-depth label so audit rows still carry a principal and a
-    // misconfigured operator forward (no scope) is observable.
-    let has_scope = scope_header
-        .split_whitespace()
-        .any(|s| s == REQUIRED_ADMIN_SCOPE);
-    if principal.is_empty() || !has_scope {
-        let row = PilotAuditRow {
-            event_type: EVENT_TYPE_UNAUTHORIZED.to_string(),
-            principal: principal.to_string(),
-            tenant_id: target_tenant,
-            at_unix_ms: now_ms,
-            exit_status: "forbidden".to_string(),
-            payload: serde_json::json!({
-                "reason": if principal.is_empty() {
-                    "missing X-Admin-Principal"
-                } else {
-                    "missing corelink:admin:pilots scope"
-                },
-            }),
-        };
-        return Err(emit_or_503(
-            state,
-            row,
-            (StatusCode::FORBIDDEN, "admin scope required").into_response(),
-        ));
-    }
-    let bound_tenant = headers
-        .get(ADMIN_TENANT_HEADER)
+    let route_kind = headers
+        .get(ROUTE_KIND_HEADER)
         .and_then(|v| v.to_str().ok())
         .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .and_then(|s| Uuid::parse_str(s).ok());
-    let scope = PilotAdminScope {
-        principal: principal.to_string(),
-        bound_tenant,
+        .unwrap_or("");
+    // Internal-edge identity synthesis (#218 §2.2, ratified Q3
+    // 2026-06-10): the Worker's `/_internal/*` path strips the
+    // client-suppliable `x-admin-principal` / `x-admin-scope` headers
+    // (CLIENT_TRUST_HEADERS) and re-injects ONLY internal-auth /
+    // request-id / route-kind / tenant / token-prefix — so an operator
+    // call through the public edge arrives with NO principal and NO
+    // scope label. After the PRIMARY internal-auth gate above has
+    // passed, an empty principal PLUS the server-set
+    // `x-corelink-route-kind: internal` (the Worker unconditionally
+    // overwrites that header on every forward — not client-forgeable)
+    // synthesizes the audit identity [`INTERNAL_EDGE_PRINCIPAL`] with
+    // the pilots scope treated as granted, so audit rows keep a
+    // principal. `bound_tenant` stays `None` (global operator): the
+    // Worker strips `x-admin-tenant` on this path too. Matches the
+    // `/_internal/pat/mint` precedent (internal-auth-only gating).
+    //
+    // Requests with an explicit principal keep today's behavior
+    // byte-identical; an empty principal WITHOUT the internal
+    // route-kind still falls through to the 403 below.
+    let scope = if principal.is_empty() && route_kind == ROUTE_KIND_INTERNAL {
+        PilotAdminScope {
+            principal: INTERNAL_EDGE_PRINCIPAL.to_string(),
+            bound_tenant: None,
+        }
+    } else {
+        let scope_header = headers
+            .get(ADMIN_SCOPE_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        // SECONDARY label (NOT the sole gate): the internal-auth check above
+        // is the boundary. We keep the scope-string + principal checks as a
+        // defence-in-depth label so audit rows still carry a principal and a
+        // misconfigured operator forward (no scope) is observable.
+        let has_scope = scope_header
+            .split_whitespace()
+            .any(|s| s == REQUIRED_ADMIN_SCOPE);
+        if principal.is_empty() || !has_scope {
+            let row = PilotAuditRow {
+                event_type: EVENT_TYPE_UNAUTHORIZED.to_string(),
+                principal: principal.to_string(),
+                tenant_id: target_tenant,
+                at_unix_ms: now_ms,
+                exit_status: "forbidden".to_string(),
+                payload: serde_json::json!({
+                    "reason": if principal.is_empty() {
+                        "missing X-Admin-Principal"
+                    } else {
+                        "missing corelink:admin:pilots scope"
+                    },
+                }),
+            };
+            return Err(emit_or_503(
+                state,
+                row,
+                (StatusCode::FORBIDDEN, "admin scope required").into_response(),
+            ));
+        }
+        let bound_tenant = headers
+            .get(ADMIN_TENANT_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .and_then(|s| Uuid::parse_str(s).ok());
+        PilotAdminScope {
+            principal: principal.to_string(),
+            bound_tenant,
+        }
     };
     if let Some(target) = target_tenant {
         if !scope.allows_tenant(target) {
@@ -1041,6 +1130,17 @@ mod tests {
             "/v1/admin/pilots/:tenant_id/grant-tier"
         );
         assert_eq!(PILOTS_CHECKIN_ROUTE, "/v1/admin/pilots/:tenant_id/checkin");
+        // #218 §2.1 aliases — the same handlers behind the Worker's
+        // `/_internal/*` forwarding channel.
+        assert_eq!(INTERNAL_PILOTS_LIST_ROUTE, "/_internal/admin/pilots");
+        assert_eq!(
+            INTERNAL_PILOTS_GRANT_TIER_ROUTE,
+            "/_internal/admin/pilots/:tenant_id/grant-tier"
+        );
+        assert_eq!(
+            INTERNAL_PILOTS_CHECKIN_ROUTE,
+            "/_internal/admin/pilots/:tenant_id/checkin"
+        );
     }
 
     #[test]
@@ -1192,6 +1292,121 @@ mod tests {
         headers.insert(ADMIN_PRINCIPAL_HEADER, "ops@root".parse().expect("header"));
         let scope = require_admin_scope(&state, &headers, None).expect("authorized");
         assert_eq!(scope.principal, "ops@root");
+    }
+
+    /// #218 §2.2 (ratified Q3): internal-auth + server-set
+    /// `x-corelink-route-kind: internal` + NO principal/scope headers
+    /// (the Worker strips them on the `/_internal/*` path) → the gate
+    /// synthesizes the `internal-edge-operator` identity with a global
+    /// (unbound) tenant scope.
+    #[test]
+    fn require_admin_scope_synthesizes_internal_edge_identity() {
+        let (state, _store, audit, _c) = fixture();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ADMIN_INTERNAL_AUTH_HEADER,
+            "test-internal-auth-key-32-bytes-x".parse().expect("header"),
+        );
+        headers.insert(
+            ROUTE_KIND_HEADER,
+            ROUTE_KIND_INTERNAL.parse().expect("header"),
+        );
+        let scope = require_admin_scope(&state, &headers, None).expect("synthesized");
+        assert_eq!(scope.principal, INTERNAL_EDGE_PRINCIPAL);
+        assert!(scope.bound_tenant.is_none(), "global operator scope");
+        // No unauthorized audit row — the gate admitted the request.
+        let rows = audit.snapshot().expect("audit");
+        assert!(rows.is_empty());
+    }
+
+    /// #218 §2.2: an empty principal WITHOUT the internal route-kind
+    /// keeps today's 403 (the synthesis never fires for direct /
+    /// non-internal forwards) and the unauthorized audit row is
+    /// emitted BEFORE the 403.
+    #[test]
+    fn require_admin_scope_rejects_empty_principal_without_internal_route_kind() {
+        let (state, _store, audit, _c) = fixture();
+        for route_kind in [None, Some("reapi_v1"), Some("onboarding")] {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                ADMIN_INTERNAL_AUTH_HEADER,
+                "test-internal-auth-key-32-bytes-x".parse().expect("header"),
+            );
+            if let Some(kind) = route_kind {
+                headers.insert(ROUTE_KIND_HEADER, kind.parse().expect("header"));
+            }
+            let res = require_admin_scope(&state, &headers, None);
+            assert!(res.is_err(), "empty principal must 403 (kind={route_kind:?})");
+        }
+        let rows = audit.snapshot().expect("audit");
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(|r| r.event_type == EVENT_TYPE_UNAUTHORIZED));
+    }
+
+    /// #218 §2.2: the synthesis is SECONDARY to the internal-auth gate —
+    /// `x-corelink-route-kind: internal` alone (no/wrong secret) is
+    /// still rejected with the unauthorized audit row first. The
+    /// route-kind header never substitutes for the PRIMARY boundary.
+    #[test]
+    fn internal_route_kind_without_internal_auth_still_403() {
+        let (state, _store, audit, _c) = fixture();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ROUTE_KIND_HEADER,
+            ROUTE_KIND_INTERNAL.parse().expect("header"),
+        );
+        let res = require_admin_scope(&state, &headers, None);
+        assert!(res.is_err(), "must reject without the operator secret");
+        let rows = audit.snapshot().expect("audit");
+        assert!(rows.iter().any(|r| r.event_type == EVENT_TYPE_UNAUTHORIZED));
+    }
+
+    /// #218 §2.2: an EXPLICIT principal keeps today's behavior
+    /// byte-identical even when the route-kind is `internal` — the
+    /// synthesis fires only on an EMPTY principal, so a direct
+    /// operator call with explicit headers keeps its own identity
+    /// (and still needs the scope label).
+    #[test]
+    fn explicit_principal_with_internal_route_kind_keeps_explicit_identity() {
+        let (state, _store, _audit, _c) = fixture();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ADMIN_INTERNAL_AUTH_HEADER,
+            "test-internal-auth-key-32-bytes-x".parse().expect("header"),
+        );
+        headers.insert(
+            ROUTE_KIND_HEADER,
+            ROUTE_KIND_INTERNAL.parse().expect("header"),
+        );
+        headers.insert(
+            ADMIN_SCOPE_HEADER,
+            REQUIRED_ADMIN_SCOPE.parse().expect("header"),
+        );
+        headers.insert(ADMIN_PRINCIPAL_HEADER, "ops@root".parse().expect("header"));
+        let scope = require_admin_scope(&state, &headers, None).expect("authorized");
+        assert_eq!(scope.principal, "ops@root", "explicit identity wins");
+    }
+
+    /// #218 §2.2: explicit principal WITHOUT the scope label is still
+    /// 403 even under `route-kind: internal` — the explicit-header
+    /// path is unchanged; only the empty-principal case synthesizes.
+    #[test]
+    fn explicit_principal_without_scope_under_internal_route_kind_still_403() {
+        let (state, _store, audit, _c) = fixture();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ADMIN_INTERNAL_AUTH_HEADER,
+            "test-internal-auth-key-32-bytes-x".parse().expect("header"),
+        );
+        headers.insert(
+            ROUTE_KIND_HEADER,
+            ROUTE_KIND_INTERNAL.parse().expect("header"),
+        );
+        headers.insert(ADMIN_PRINCIPAL_HEADER, "ops@root".parse().expect("header"));
+        let res = require_admin_scope(&state, &headers, None);
+        assert!(res.is_err(), "explicit principal still requires the scope label");
+        let rows = audit.snapshot().expect("audit");
+        assert!(rows.iter().any(|r| r.event_type == EVENT_TYPE_UNAUTHORIZED));
     }
 
     #[test]
