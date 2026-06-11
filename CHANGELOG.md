@@ -23,6 +23,14 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **DSR erasure — 24h verification sweep cron (WI-S11-008 Wave 1, increment 5).**
+  New signup-worker Cron Trigger (`[triggers] crons = ["0 * * * *"]`, hourly) →
+  `scheduled()` → `runDsrVerifySweep`: queries `dsr_erasure_log` (D1) for every
+  DSR past its 24h SLA deadline (bounded 7d look-back, one verify per `dsr_id`)
+  and POSTs the container `/_internal/dsr/verify` for each. Idempotent (re-sweeps
+  are harmless); inert until `CORELINK_INTERNAL_AUTH_KEY` is bound (task #46).
+  Closes the autonomous pipeline: Clerk `user.deleted` → queue → erase → 24h cron
+  → verify → audit. (106/106 signup-worker tests green.)
 - **DSR erasure — `POST /_internal/dsr/verify` endpoint (WI-S11-008 Wave 1,
   increment 5).** Drives the canonical 24h verification sweep
   (`ErasureWorker::verify_erasure`): re-fingerprints every backend for a `dsr_id`

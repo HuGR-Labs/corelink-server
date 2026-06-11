@@ -15,6 +15,7 @@ import { handleStripeWebhook } from "./webhooks/stripe.js";
 import type { StripeWebhookEnv } from "./webhooks/stripe.js";
 import { handleErasureQueueBatch } from "./webhooks/dsr_consumer.js";
 import type { QueueMessageBatch } from "./webhooks/dsr_consumer.js";
+import { runDsrVerifySweep } from "./webhooks/dsr_verify_cron.js";
 import { withSecurityHeaders } from "./security-headers.js";
 
 type WorkerEnv = AutoProvisionEnv & StripeWebhookEnv;
@@ -74,6 +75,29 @@ const baseHandler: ExportedHandler<SignupEnv> = {
       Sentry.captureException(err);
       throw err;
     }
+  },
+
+  // DSR 24h verification sweep (Cron Trigger). Re-fingerprints every DSR past
+  // its 24h SLA deadline via the container /_internal/dsr/verify endpoint.
+  // Inert until CORELINK_INTERNAL_AUTH_KEY is bound (task #46).
+  async scheduled(_event, env: SignupEnv, ctx: ExecutionContext): Promise<void> {
+    const db = env.CONFIG_DB;
+    if (!db) {
+      return;
+    }
+    ctx.waitUntil(
+      runDsrVerifySweep({ ...env, CONFIG_DB: db }, Date.now())
+        .then((r) => {
+          if (!r.skipped) {
+            console.log(
+              `[dsr-verify-cron] swept=${r.swept} failed=${r.failed}`,
+            );
+          }
+        })
+        .catch((err: unknown) => {
+          Sentry.captureException(err);
+        }),
+    );
   },
 };
 
