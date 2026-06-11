@@ -22,7 +22,7 @@
     "e2e:prod": "playwright test --config=playwright.prod.config.ts",
     "e2e:prod:list": "playwright test --config=playwright.prod.config.ts --list",
     "lhci": "lhci autorun --config=./lighthouserc.cjs",
-    "cf:build": "opennextjs-cloudflare build",
+    "cf:build": "opennextjs-cloudflare build && node scripts/strip-client-sourcemaps.mjs",
     "cf:deploy": "wrangler deploy"
   },
   "dependencies": {
