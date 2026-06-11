@@ -195,6 +195,11 @@ Each entry cross-references:
   no-fire).
 
 ### Fixed
+- **fix(deps): prod npm graph → 0 known vulnerabilities** — pnpm overrides for the 8
+  pre-existing prod advisories (shell-quote 1.8.4, rollup 3.30.0 scoped backport,
+  js-cookie 3.0.8, serialize-javascript 7.0.5, postcss dedupe, qs 6.15.2, uuid 11.1.1
+  + admin-ui direct bump); pnpm-audit CI gate flipped to BLOCKING on the prod graph
+  and routed to the self-hosted fleet (ubuntu-latest unavailable in this repo).
 - **fix(ci): secrets-checklist gate red on main** — the rust-bundle merge resolution
   duplicated the `ALLOWLIST_REGEX` assignment (second overwrote the first, dropping
   `CORELINK_PORTAL_RETURN_URL`); merged into a single assignment.

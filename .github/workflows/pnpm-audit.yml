@@ -4,7 +4,7 @@ name: pnpm-audit (supply-chain)
 # lockfiles or package manifests, plus a daily cron for continuous monitoring.
 #
 # PR mode  : `pnpm audit --prod --audit-level high` — blocking on HIGH+ prod
-#             advisories (with continue-on-error: true carrying a
+#             advisories (BLOCKING on the prod graph since 2026-06-11; the
 #             TODO(flip-to-blocking) until the npm-advisories-override PR
 #             that clears the 10 known prod vulns lands; flip at that point).
 # Full scan: `pnpm audit` (all deps incl. dev) — non-blocking (continue-on-error:
@@ -22,7 +22,7 @@ name: pnpm-audit (supply-chain)
 #   4. Get Security + Owner sign-off before merge.
 #
 # ⚠  TODO(flip-to-blocking): The `pnpm audit --prod --audit-level high` step
-# below carries `continue-on-error: true` because ~10 known advisories exist
+# below is BLOCKING (flipped 2026-06-11 when the prod graph reached 0 vulns)
 # in the current prod dependency graph that have not yet been resolved. Once
 # the npm-advisories-override PR (resolving/suppressing those 10 known prod
 # vulns via `pnpm.auditConfig.ignoreCves`) lands on main, flip that step to
@@ -72,7 +72,7 @@ jobs:
     # Do NOT route to [self-hosted, mac, corelink-builder] — that fleet is
     # shared with all Rust build jobs and the Mac cannot afford idle network
     # slots (ref: cargo-audit.yml "stop heavy-gate stampede" note).
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS]
     timeout-minutes: 5
 
     steps:
@@ -109,12 +109,9 @@ jobs:
         # One retry on failure before surfacing the error — `pnpm audit` hits
         # the npm registry and a transient 5xx should not burn a PR slot.
         #
-        # TODO(flip-to-blocking): Remove `continue-on-error: true` once the
-        # npm-advisories-override PR (clearing the ~10 known prod advisories
-        # via `pnpm.auditConfig.ignoreCves` in package.json) is merged to
-        # main. Until then this step is advisory-mode only: it prints the
-        # findings but does not fail the job.
-        continue-on-error: true
+        # Blocking since 2026-06-11: the prod graph reached 0 known
+        # vulnerabilities (npm-prod-advisories overrides PR). New prod
+        # advisories now RED this gate; waiver = pnpm.auditConfig.ignoreCves.
         run: |
           attempt=0
           until pnpm audit --prod --audit-level high || [ $attempt -ge 1 ]; do
