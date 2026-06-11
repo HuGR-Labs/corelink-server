@@ -312,7 +312,10 @@ proptest! {
 #[test]
 fn canonical_tier_strings_stable() {
     let strs: Vec<&str> = canonical_tiers().iter().map(|t| t.as_str()).collect();
-    assert_eq!(strs, ["free", "solo", "starter", "pro", "max", "enterprise"]);
+    assert_eq!(
+        strs,
+        ["free", "solo", "starter", "pro", "max", "enterprise"]
+    );
 }
 
 // -------------------------------------------------------------------

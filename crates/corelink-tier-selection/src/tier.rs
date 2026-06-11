@@ -103,7 +103,12 @@ mod tests {
 
     #[test]
     fn paid_tiers_require_stripe() {
-        for t in [TierKind::Solo, TierKind::Starter, TierKind::Pro, TierKind::Max] {
+        for t in [
+            TierKind::Solo,
+            TierKind::Starter,
+            TierKind::Pro,
+            TierKind::Max,
+        ] {
             assert!(t.requires_stripe_checkout(), "{t:?} should require stripe");
             assert!(!t.routes_to_inquiry_form());
         }
@@ -112,6 +117,9 @@ mod tests {
     #[test]
     fn canonical_strings_stable() {
         let strs: Vec<_> = canonical_tiers().iter().map(|t| t.as_str()).collect();
-        assert_eq!(strs, ["free", "solo", "starter", "pro", "max", "enterprise"]);
+        assert_eq!(
+            strs,
+            ["free", "solo", "starter", "pro", "max", "enterprise"]
+        );
     }
 }

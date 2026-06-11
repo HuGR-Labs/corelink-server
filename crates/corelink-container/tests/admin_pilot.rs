@@ -30,7 +30,8 @@ use corelink_server::routes::admin_pilot::{
     router, InMemoryPilotAuditSink, InMemoryPilotStore, PilotAdminRouteState, PilotAuditSink,
     PilotState, PilotStore, PilotTenant, ADMIN_INTERNAL_AUTH_HEADER, ADMIN_PRINCIPAL_HEADER,
     ADMIN_SCOPE_HEADER, ADMIN_TENANT_HEADER, EVENT_TYPE_CHECKIN, EVENT_TYPE_CROSS_TENANT,
-    EVENT_TYPE_TIER_GRANTED, EVENT_TYPE_UNAUTHORIZED, REQUIRED_ADMIN_SCOPE,
+    EVENT_TYPE_TIER_GRANTED, EVENT_TYPE_UNAUTHORIZED, INTERNAL_EDGE_PRINCIPAL,
+    REQUIRED_ADMIN_SCOPE, ROUTE_KIND_HEADER, ROUTE_KIND_INTERNAL,
 };
 
 /// Operator shared secret for these integration tests. The pilot-admin
@@ -390,6 +391,152 @@ async fn invalid_tenant_uuid_400() {
     .expect("build req");
     let resp = app.oneshot(req).await.expect("oneshot");
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+// ---------------------------------------------------------------------------
+// `/_internal/admin/pilots…` alias + internal-edge identity synthesis
+// (#218 §2.1-§2.2, ratified Q3 2026-06-10)
+// ---------------------------------------------------------------------------
+
+/// Headers as the Worker's `/_internal/*` channel delivers them: the
+/// client-suppliable trust headers (`x-admin-principal`,
+/// `x-admin-scope`, `x-admin-tenant`) are STRIPPED, and the Worker
+/// re-injects internal-auth + the server-set
+/// `x-corelink-route-kind: internal`.
+fn internal_edge_headers(builder: axum::http::request::Builder) -> axum::http::request::Builder {
+    builder
+        .header(ADMIN_INTERNAL_AUTH_HEADER, TEST_INTERNAL_AUTH_KEY)
+        .header(ROUTE_KIND_HEADER, ROUTE_KIND_INTERNAL)
+}
+
+/// 5. Alias happy path — `GET /_internal/admin/pilots` with the
+///    Worker-shaped header set (internal-auth + route-kind internal,
+///    NO principal/scope) → 200 and the audit row carries the
+///    synthesized `internal-edge-operator` principal.
+#[tokio::test]
+async fn internal_alias_list_synthesizes_edge_operator_principal() {
+    let (state, store, audit, _clock) = fixture(1_700_000_000_000);
+    seed_tenant(&store, PilotState::New, "tenant-a", 1_000, None);
+
+    let app = router(state);
+    let req = internal_edge_headers(Request::builder().uri("/_internal/admin/pilots?state=NEW"))
+        .body(Body::empty())
+        .expect("build req");
+    let resp = app.oneshot(req).await.expect("oneshot");
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let bytes = to_bytes(resp.into_body(), 1 << 20).await.expect("body");
+    let json: Value = serde_json::from_slice(&bytes).expect("json");
+    assert_eq!(json["rows"].as_array().expect("rows").len(), 1);
+
+    let snap = audit.snapshot().expect("audit");
+    assert_eq!(snap.len(), 1);
+    assert_eq!(snap[0].event_type, "corelink.admin.pilot_list.v1");
+    assert_eq!(
+        snap[0].principal, INTERNAL_EDGE_PRINCIPAL,
+        "audit row carries the synthesized principal"
+    );
+}
+
+/// 5b. Alias grant-tier end-to-end under the synthesized identity —
+///     both the `attempt` and `ok` audit rows carry
+///     `internal-edge-operator` and the mutation lands.
+#[tokio::test]
+async fn internal_alias_grant_tier_succeeds_with_synthesized_principal() {
+    let (state, store, audit, _clock) = fixture(1_700_000_000_000);
+    let id = seed_tenant(&store, PilotState::New, "edge-pilot", 1_000, None);
+
+    let app = router(state);
+    let body = serde_json::json!({"tier": "pilot", "cap_bytes": 100_000_000_000_u64});
+    let req = internal_edge_headers(
+        Request::builder()
+            .method("POST")
+            .uri(format!("/_internal/admin/pilots/{id}/grant-tier"))
+            .header("content-type", "application/json"),
+    )
+    .body(Body::from(body.to_string()))
+    .expect("build req");
+    let resp = app.oneshot(req).await.expect("oneshot");
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let snap = audit.snapshot().expect("audit");
+    assert_eq!(snap.len(), 2);
+    assert_eq!(snap[0].event_type, EVENT_TYPE_TIER_GRANTED);
+    assert_eq!(snap[0].exit_status, "attempt");
+    assert_eq!(snap[0].principal, INTERNAL_EDGE_PRINCIPAL);
+    assert_eq!(snap[1].exit_status, "ok");
+    assert_eq!(snap[1].principal, INTERNAL_EDGE_PRINCIPAL);
+
+    let after = store.get(id).expect("get").expect("present");
+    assert_eq!(after.pilot_state, PilotState::Active);
+}
+
+/// 5c. Alias WITHOUT internal-auth → 403 and the unauthorized audit
+///     row is emitted BEFORE the response. The alias never weakens
+///     the PRIMARY gate: a forged `x-corelink-route-kind: internal`
+///     alone admits nothing.
+#[tokio::test]
+async fn internal_alias_without_internal_auth_rejected_with_audit_before_403() {
+    let (state, _store, audit, _clock) = fixture(1_700_000_000_000);
+
+    let app = router(state);
+    let req = Request::builder()
+        .uri("/_internal/admin/pilots?state=NEW")
+        .header(ROUTE_KIND_HEADER, ROUTE_KIND_INTERNAL)
+        .body(Body::empty())
+        .expect("build req");
+    let resp = app.oneshot(req).await.expect("oneshot");
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    let snap = audit.snapshot().expect("audit");
+    assert_eq!(snap.len(), 1, "audit row MUST be emitted BEFORE the 403");
+    assert_eq!(snap[0].event_type, EVENT_TYPE_UNAUTHORIZED);
+    assert_eq!(snap[0].exit_status, "forbidden");
+}
+
+/// 5d. Internal-auth OK but empty principal + route-kind NOT internal
+///     (e.g. a PAT-routed forward) → 403 unchanged. The synthesis is
+///     strictly conditioned on the server-set internal route-kind.
+#[tokio::test]
+async fn empty_principal_with_non_internal_route_kind_still_403() {
+    let (state, _store, audit, _clock) = fixture(1_700_000_000_000);
+
+    let app = router(state);
+    let req = Request::builder()
+        .uri("/_internal/admin/pilots?state=NEW")
+        .header(ADMIN_INTERNAL_AUTH_HEADER, TEST_INTERNAL_AUTH_KEY)
+        .header(ROUTE_KIND_HEADER, "reapi_v1")
+        .body(Body::empty())
+        .expect("build req");
+    let resp = app.oneshot(req).await.expect("oneshot");
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    let snap = audit.snapshot().expect("audit");
+    assert_eq!(snap.len(), 1);
+    assert_eq!(snap[0].event_type, EVENT_TYPE_UNAUTHORIZED);
+}
+
+/// 5e. Explicit-header regression pin — the canonical path with the
+///     full explicit header set behaves byte-identically with the
+///     alias mounted: explicit principal is preserved in audit rows
+///     (NOT replaced by the synthesized identity), including when the
+///     request also carries `route-kind: internal`.
+#[tokio::test]
+async fn explicit_headers_keep_identity_on_alias_path() {
+    let (state, store, audit, _clock) = fixture(1_700_000_000_000);
+    seed_tenant(&store, PilotState::New, "tenant-a", 1_000, None);
+
+    let app = router(state);
+    let req = admin_headers(Request::builder().uri("/_internal/admin/pilots?state=NEW"))
+        .header(ROUTE_KIND_HEADER, ROUTE_KIND_INTERNAL)
+        .body(Body::empty())
+        .expect("build req");
+    let resp = app.oneshot(req).await.expect("oneshot");
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let snap = audit.snapshot().expect("audit");
+    assert_eq!(snap.len(), 1);
+    assert_eq!(snap[0].principal, "ops@root", "explicit identity wins");
 }
 
 /// Edge: grant-tier on already-ACTIVE tenant → 409 conflict.

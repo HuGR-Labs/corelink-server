@@ -645,7 +645,7 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
   let row: PatRow | null;
   try {
     row = await env.CONFIG_DB
-      .prepare("SELECT tenant_id, expires_ms, scope FROM pat WHERE token_id = ?1 LIMIT 1")
+      .prepare("SELECT tenant_id, expires_ms, scope FROM pat WHERE token_id = ?1 AND revoked_at_ms IS NULL LIMIT 1")
       .bind(parsed.tokenId)
       .first<PatRow>();
   } catch (_err: unknown) {

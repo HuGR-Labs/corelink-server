@@ -32,6 +32,13 @@ pub enum CustomerHandlerError {
     #[error("customer audit emit failed: {0}")]
     AuditFailed(String),
 
+    /// The endpoint is recognised but the concrete handler does not
+    /// implement it yet (HONEST v1: an explicit `501 Not Implemented`
+    /// instead of fabricated data or a misleading 404). Additive
+    /// variant — `#[non_exhaustive]` keeps existing `match`es valid.
+    #[error("not implemented: {0}")]
+    NotImplemented(String),
+
     /// Internal state inconsistency.
     #[error("internal customer-handler error: {0}")]
     Internal(String),

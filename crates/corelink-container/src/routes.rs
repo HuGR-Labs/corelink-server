@@ -272,7 +272,10 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     };
     let audit_export_state = audit_export::build_state();
     let audit_analytics_state = audit_analytics::build_state(shadow_factory);
-    let customer_state = customer::build_handlers();
+    // Customer dashboard (WP-3): D1-backed handler when the D1 env is
+    // present; InMemory fallback for dev/CI (fail-closed env-gate,
+    // mirroring `adapter_pat::PatVerifier::from_env`).
+    let customer_state = customer::build_handlers_from_env();
     let turbo_state = turbo_v8::build_handlers();
     let mut router = Router::new()
         .merge(cas::router(cas_state))

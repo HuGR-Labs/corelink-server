@@ -119,7 +119,9 @@ beforeAll(async () => {
       "shown_once_token TEXT NOT NULL UNIQUE, " +
       "shown_once_consumed INTEGER NOT NULL DEFAULT 0 CHECK (shown_once_consumed IN (0, 1)), " +
       "created_ms BIGINT NOT NULL, " +
-      "token_id TEXT)",
+      "token_id TEXT, " +
+      // 0063: soft-revocation marker — NULL = active (worker filters AND revoked_at_ms IS NULL)
+      "revoked_at_ms BIGINT)",
   );
   await d1.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_pat_token_id ON pat (token_id)");
   const seedPat =

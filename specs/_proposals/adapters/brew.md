@@ -48,12 +48,14 @@ Canonical bottle layout: `<formula>-<version>.<os>.bottle.tar.gz`. Filename does
 |---|---|
 | `GET /<domain-path>` | digest-keyed: `CasStore::get(tenant, blake3(canonical_url))`; miss: upstream fetch + CAS put |
 
-Unlike npm/pip, brew doesn't include the upstream hash in the URL. Two implications:
+Integrity depends on the path shape. The dominant production upstream (ghcr.io) serves bottles as **content-addressed OCI blobs** — `…/blobs/sha256:<64-hex>` — and by-digest manifest fetches carry the same `sha256:<hex>` final segment. Two cases:
 
-1. **Pre-store integrity check is BEST-EFFORT.** We can't verify against an inline `#sha256=` fragment. The brew client does the verification post-download (against the formula DSL). The adapter trusts the upstream-served bytes and stores; if the upstream gets compromised, brew's downstream check catches it.
-2. **No deduplication across formula updates.** When a formula's bottle SHA changes (e.g., security fix), the URL typically changes too (new version), so cache key naturally rotates.
+1. **Content-addressed paths (`…/sha256:<64-hex>`) are VERIFIED pre-store.** The adapter computes sha256 over the fetched bytes and compares it to the URL-declared digest BEFORE the CAS put. A mismatch emits a `corelink.brew.bottle.integrity_mismatch.v1` audit row and refuses the fill (502; nothing stored, nothing served) — a MITMed/corrupt upstream response can never be persisted into the shared store. The cache-fill audit row carries `integrity = "verified-sha256"`.
+2. **Non-content-addressed paths (e.g. manifest-by-tag) remain BEST-EFFORT.** There is no digest in the URL to check against; the brew client does the verification post-download (against the formula DSL). These fills carry `integrity = "best-effort"` so SIEM rules can flag the lane separately.
 
-Optional hardening: if the consumer wants, the adapter can fetch the brew tap's formula JSON in parallel and verify the bottle SHA before storing. Defer to v2 (adds latency + complexity for limited benefit since brew client verifies anyway).
+Deduplication across formula updates: when a formula's bottle SHA changes (e.g., security fix), the URL changes too (new digest), so the cache key naturally rotates.
+
+Optional further hardening: the adapter could fetch the brew tap's formula JSON in parallel and verify the bottle SHA before storing even on non-digest paths. Defer to v2 (adds latency + complexity for limited benefit since brew client verifies anyway).
 
 ## 4. Crate structure
 

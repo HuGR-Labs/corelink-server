@@ -71,7 +71,12 @@ fn tier_kind_requires_stripe_checkout_only_paid_tiers() {
     assert!(!TierKind::Free.requires_stripe_checkout());
     assert!(!TierKind::Free.routes_to_inquiry_form());
     // Paid: stripe yes, inquiry no.
-    for t in [TierKind::Solo, TierKind::Starter, TierKind::Pro, TierKind::Max] {
+    for t in [
+        TierKind::Solo,
+        TierKind::Starter,
+        TierKind::Pro,
+        TierKind::Max,
+    ] {
         assert!(t.requires_stripe_checkout(), "{t:?}");
         assert!(!t.routes_to_inquiry_form(), "{t:?}");
     }

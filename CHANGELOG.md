@@ -23,6 +23,91 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **`/_internal/admin/pilots…` alias + internal-edge identity synthesis
+  (#218 §2.1-§2.2, ratified Q3 2026-06-10).** The three pilot-admin handlers
+  (`list` / `grant-tier` / `checkin`) are now additionally bound under
+  `/_internal/admin/pilots…`, making the operator surface reachable from the
+  public edge through the Worker's existing `/_internal/*` channel
+  (constant-time internal-auth verification + client-trust-header strip +
+  `_system`-DO forward) with zero Worker changes. Because that channel strips
+  `x-admin-principal`/`x-admin-scope` and `require_admin_scope` previously
+  hard-403'd on an empty principal, every edge call would have 403'd
+  (the drift the Q3 ratification fixed): after the PRIMARY internal-auth gate
+  passes, an empty principal PLUS the server-set
+  `x-corelink-route-kind: internal` (Worker-overwritten on every forward —
+  not client-forgeable) now synthesizes the audit principal
+  `internal-edge-operator` with the pilots scope treated as granted, so audit
+  rows always carry a principal. Explicit-header requests keep today's
+  behavior byte-identical; an empty principal without the internal route-kind
+  still 403s; the route-kind header never substitutes for the internal-auth
+  secret. The `POST /v1/admin/pilots` create-tenant endpoint itself (#218
+  §2.3-§2.7, incl. the `max` create-time refusal and
+  `seed_tier_selection=false` default) is the follow-up work package.
+- **PAT soft-revocation schema (migration 0063) + enforced revoked filter in
+  both lookups (dashboard-revival WP-2).** `migrations/d1/0063_pat_customer_keys.sql`
+  additively adds `pat.name` (customer-facing key label for the dashboard key
+  list) and `pat.revoked_at_ms` (soft-revocation timestamp; NULL = active —
+  rows are retained for audit instead of deleted, per the additive-only
+  auth-migration policy). Revocation is ENFORCED at both PAT lookups: the
+  Worker hot-path (`worker/src/index.ts` `validatePat` step 4) and the
+  container Option-B verifier (`crates/corelink-container/src/adapter_pat.rs`)
+  now filter `AND revoked_at_ms IS NULL`, so a revoked PAT uniformly fails
+  closed as 401 (`pat_not_found` / `InvalidPat` — indistinguishable from an
+  unknown token; no revocation oracle on the wire). Both columns are consumed
+  by the WP-3 `D1CustomerHandler` (key list / rename / revoke). Tests: worker
+  vitest (revoked row → 401; explicit-NULL active row still resolves) +
+  container unit tests (revoked ⇒ uniform `InvalidPat`; lookup-SQL shape
+  guards both liveness filters).
+- **Billing-tier → operational-tier mapping + per-tier retention promise in
+  the rate card (task #35, PR #218 §3 — ratified 2026-06-10).** New single
+  Rust authority
+  `corelink_ratelimit::tier::tier_for_billing_label(&str) -> Tier` maps the
+  FROZEN 6-tier billing taxonomy (plus D1 legacy values) onto the 5-tier
+  operational ladder: free→Free, solo→Solo, starter→Team, pro→Business,
+  max→Business (NOT Enterprise, ratified Q5a), org→Business, team→Team,
+  enterprise→Enterprise, pilot/unknown→Team (zero behavior change —
+  `RateLimitConfig::canonical()`'s implicit default is already Team; the
+  enum wildcard-arm Enterprise fallback in `refill_rate_for_tier` is
+  untouched). Tests pin totality over the taxonomy, the max≠Enterprise
+  decision, the Team fallback, and price-ladder monotonicity. Because the
+  mapped `Tier` also selects the eviction TTL ladder, the §3.5 ratified
+  acceptance item ships in the same change: `TIER_RATE_CARD`
+  (`apps/docs/src/lib/pricing.ts`) now carries the per-tier cache-retention
+  promise (`retentionDays` 7/30/90/365/365/365 + Enterprise-only
+  `retentionOverrideCapDays` 730 per CAP-EVICT-002), rendered on the public
+  pricing page (tier-card bullet + "Cache retention" comparison row) and
+  pinned by vitest (ladder values, Enterprise-only cap, monotonic
+  non-decreasing retention, `formatRetention` rendering).
+- **D1-backed customer handler (dashboard revival WP-3).** New
+  `crates/corelink-container/src/customer_d1.rs`: `D1CustomerHandler`
+  implements all 6 `corelink-handler-customer` traits over the live D1
+  database (sync↔async bridge per `billing_d1_http`), replacing the
+  `InMemoryCustomerHandler` 404-stub so real tenants get real dashboard
+  data — HONEST v1: real data where a deployed table exists, explicit
+  empty/zero/501 where it doesn't, never fabricated. Overview/usage read
+  `tenant` (tier 0057) + `tenant_storage_state` SUM(bytes_used)/quota +
+  `tenant_billing` (0055) + `byok_envelope` presence; billing maps the
+  FROZEN status table (paid→active, past_due/incomplete→past_due,
+  canceled→canceled, no-row→inactive); billing/portal creates a real
+  Stripe billing-portal session from `tenant_billing.stripe_customer_id`
+  (no customer → 404 "no billing account"); keys list/create/revoke run
+  against the `pat` table (create = real `corelink_pat::mint` + INSERT,
+  FROZEN scope map `["cache:read"]`→read-only / anything-with-write→
+  read-write / admin NEVER grantable, token returned once + never
+  logged; revoke = tenant-scoped idempotent `revoked_at_ms` UPDATE —
+  depends on the WP-2 migration 0063 `pat.name`/`pat.revoked_at_ms`
+  columns, parallel PR); team = synthesized Owner row from
+  `tenant.clerk_user_id`; team/invite = new additive
+  `CustomerHandlerError::NotImplemented` → explicit 501 ("team invites
+  are coming soon"). Wiring: `routes.rs` now uses
+  `customer::build_handlers_from_env()` — D1 env present → D1 handler,
+  else InMemory (dev/CI), mirroring the `adapter_pat::PatVerifier::
+  from_env` fail-closed pattern. Audit emit-before-lookup + SLI on every
+  return path per the trait contracts; D1 transport errors fail CLOSED
+  (500), never degrade to empty data. 30 new hermetic mock-D1 tests
+  (per-endpoint happy paths, frozen status/scope maps, cross-tenant
+  revoke → 404, idempotent revoke, portal-no-customer → 404, invite →
+  501, fail-closed transport + audit-failure ordering).
 - **admin-ui customer dashboard client wired to real Clerk auth (WP-4 of the
   dashboard revival).** `CustomerClient` accepts an optional
   `getToken?: () => Promise<string | null>` and attaches
@@ -91,6 +176,40 @@ Each entry cross-references:
   no-fire).
 
 ### Fixed
+- **Container fail-closed hardening: method gates, `/v1/users/me` tenant
+  parity, brew `_public` pre-store integrity.** (1) The four adapter
+  method-dispatch scope gates (`routes/cargo.rs`, `npm.rs`, `pip.rs`,
+  `brew.rs`) ended in `_ => true` — an unmapped HTTP method bypassed the
+  per-operation scope check and relied on the adapter's routing to 405 it.
+  Now `_ => false` (fail-CLOSED; a future adapter route can never ship
+  without an explicit scope decision), with per-gate DELETE/PATCH-with-
+  `cas:rw`→403 tests. (2) `GET /v1/users/me` defaulted a missing/sentinel
+  tenant to an `"_unknown"` echo — the one v1 surface off the fail-closed
+  posture. It now uses the same `AuthTenant` extractor as cas/ac/turbo
+  (missing/sentinel `x-corelink-tenant-id` → 401). (3) The brew adapter
+  stored upstream-fetched bottle bytes into the shared `_public` moat
+  namespace without pre-store verification (`integrity:"best-effort"`).
+  ghcr.io serves bottles as content-addressed OCI blobs
+  (`…/blobs/sha256:<hex>`), so the fetch path
+  (`corelink-adapter-host::brew::bottle`) now verifies the fetched bytes
+  against the URL-declared sha256 BEFORE the store: mismatch → refusal
+  (502, nothing stored or served) + a
+  `corelink.brew.bottle.integrity_mismatch.v1` audit row; verified fills
+  carry `integrity:"verified-sha256"`; non-content-addressed paths (e.g.
+  manifest-by-tag) keep `"best-effort"`. Spec
+  (`specs/_proposals/adapters/brew.md` §3) updated to match.
+- **cas-foundation heavy gate: `cargo fmt --all -- --check` RED on `main`
+  cleared.** The nightly/heavy "Workspace build + test (convergence)" job died
+  at the rustfmt step (before clippy ever ran) on formatting drift in 4 files
+  that landed unformatted: `crates/corelink-container/src/routes/admin.rs`
+  (`TIER_SELECTIONS_TIERS` const) and three `corelink-tier-selection`
+  test/array sites (`src/tier.rs`, `tests/mutation_kills.rs`,
+  `tests/prop_tier_selection.rs`). Pure `cargo fmt` mechanical reflow — zero
+  semantic change; clippy `-D warnings` + tests on both touched crates green.
+  (The run's other two reds are infra, not code: the reproducible-build smoke
+  hit the shared-runner `rustc … (never executed)` / os-error-2 toolchain
+  race, and the TLC canonical job finished its model checks then got
+  cancelled by the lane timeout.)
 - **Repo-root wrangler version hygiene — stale v3 broke bare `npx wrangler`.**
   An out-of-band npm install of `@cloudflare/next-on-pages` (~2026-05-14) had
   dropped a stale `wrangler@3.114.17` into the pnpm-managed root
