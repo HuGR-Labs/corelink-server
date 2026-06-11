@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# apply-d1-migrations-prod.sh — Phase D runner: apply 61 D1 migrations to
+# apply-d1-migrations-prod.sh — Phase D runner: apply 62 D1 migrations to
 # corelink-prod-d1 in lexicographic order.
 #
 # Default mode: DRY-RUN (lists what WOULD be applied; no remote mutations).
@@ -42,7 +42,7 @@ readonly MIGRATIONS_DIR="$REPO_ROOT/migrations/d1"
 # database_id d64742ea-e102-40b2-a844-ff02e3f94562, migrations_dir migrations/d1).
 readonly DB_NAME="CONFIG_DB"
 readonly DB_ENV="prod"
-readonly EXPECTED_FILE_COUNT=61
+readonly EXPECTED_FILE_COUNT=62
 # Computed via CREATE TABLE analysis across all 61 migration files.
 # Re-derived 2026-06-09 for the 60-migration set: grep-count of unique table
 # names = 80 (was 75 across 52 files; +5 net from the adapter/billing/pilot
