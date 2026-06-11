@@ -43,6 +43,37 @@ pub(super) fn col_i64(row: &D1Row, key: &str) -> Option<i64> {
     row.get(key).and_then(Value::as_i64)
 }
 
+/// Read a D1 BLOB column as a lowercase hex string.
+///
+/// The Cloudflare D1 HTTP query API represents a BLOB as a JSON **array of
+/// byte integers** (the canonical form); we also accept an already-hex string
+/// defensively. Any other / unrecognised encoding returns `None` — the callers
+/// (R2 erase adapters) then **fail CLOSED** (Transport error → retry/surface)
+/// rather than build a wrong key and silently skip a PII object. Returns `None`
+/// for SQL NULL / absent too.
+pub(super) fn col_blob_hex(row: &D1Row, key: &str) -> Option<String> {
+    match row.get(key)? {
+        // Canonical D1 form: array of 0..=255 byte values.
+        Value::Array(arr) => {
+            let bytes: Option<Vec<u8>> = arr
+                .iter()
+                .map(|v| v.as_u64().and_then(|n| u8::try_from(n).ok()))
+                .collect();
+            bytes.map(hex::encode)
+        }
+        // Defensive: an already-hex string (even length, all hex digits).
+        Value::String(s) => {
+            let t = s.trim();
+            if !t.is_empty() && t.len() % 2 == 0 && t.bytes().all(|b| b.is_ascii_hexdigit()) {
+                Some(t.to_ascii_lowercase())
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
 /// `u64` epoch-ms → `i64` for [`crate::customer_d1::ms_to_iso8601`],
 /// saturating on overflow (epoch ms never realistically exceeds `i64`).
 pub(super) fn clamp_ms(ms: u64) -> i64 {
@@ -125,5 +156,27 @@ mod tests {
         assert_eq!(iso8601_to_ms("not-a-timestamp"), None);
         assert_eq!(iso8601_to_ms("2026-13-01T00:00:00Z"), None); // month 13
         assert_eq!(iso8601_to_ms(""), None);
+    }
+
+    #[test]
+    fn blob_hex_decodes_canonical_and_hex_forms() {
+        let raw: [u8; 4] = [0xDE, 0xAD, 0xBE, 0xEF];
+        let want = "deadbeef";
+        // (a) array-of-ints (canonical D1 wire form).
+        let mut row = D1Row::new();
+        row.insert(
+            "p".into(),
+            Value::Array(raw.iter().map(|b| Value::from(u64::from(*b))).collect()),
+        );
+        assert_eq!(col_blob_hex(&row, "p").as_deref(), Some(want));
+        // (b) already-hex string (case-insensitive).
+        let mut row = D1Row::new();
+        row.insert("p".into(), Value::String("DEADBEEF".into()));
+        assert_eq!(col_blob_hex(&row, "p").as_deref(), Some(want));
+        // (c) unrecognised form / absent → None (callers fail CLOSED).
+        let mut row = D1Row::new();
+        row.insert("p".into(), Value::String("not hex!".into()));
+        assert_eq!(col_blob_hex(&row, "p"), None);
+        assert_eq!(col_blob_hex(&D1Row::new(), "p"), None);
     }
 }

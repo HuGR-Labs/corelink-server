@@ -23,6 +23,21 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **DSR erasure — real R2 Action-Cache erase adapter (`R2Ac`, WI-S11-008 Wave 1,
+  increment 3).** Hard-deletes a tenant's REAPI Action-Cache result envelopes from
+  the per-region `corelink-ac-<region>` R2 buckets, then the `ac_meta` D1 index.
+  Fully D1-driven (no S3 LIST): `ac_meta` is the authoritative per-tenant AC index
+  (`(tenant_id, action_digest)` + `region` + materialised `tenant_prefix`), so each
+  row resolves to its exact `<region>/<tenant_prefix_hex>/<action_digest>` key.
+  Reads the materialised prefix (rotation-correct) via a new `col_blob_hex` D1 BLOB
+  decoder that **fails CLOSED** on an unrecognised wire form (never builds a wrong
+  key and silently skips a PII object). R2 objects deleted BEFORE the D1 index rows
+  (idempotent-retry-safe; `DeleteObject` is itself idempotent). Wired into
+  `build_d1_worker`; the other 10 non-D1/AC backends stay `InMemory` placeholders.
+  The `R2Cas` adapter is deferred within increment 3 — cold verification (the
+  investigation logged in ADR-S11-013) confirmed the prod CAS write path is
+  native-whole-blob-only (multipart/chunks NOT shipped) with no durable D1 index,
+  so CAS erase needs `ListObjectsV2` by tenant prefix (next).
 - **Storage — `R2S3Client::delete` (WI-S11-008 Wave 1, increment 3 prep).** Idempotent
   S3 `DeleteObject` primitive (deleting a missing key is a safe no-op, so a replayed
   erasure is harmless), mirroring the existing `put`/`get`. Required by the R2 CAS/AC

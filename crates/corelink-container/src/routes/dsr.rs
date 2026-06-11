@@ -46,6 +46,7 @@ use corelink_privacy_erasure_worker::orchestrator::{ErasureWorker, InMemoryErasu
 // adapter). The remaining 11 backends stay in-memory placeholders until
 // Wave 1 increments 3-4 (R2 CAS/AC, Stripe, KV/Loki, pseudonymized).
 mod adapter_d1;
+mod adapter_r2_ac;
 mod audit;
 mod d1util;
 mod ledger;
@@ -142,10 +143,12 @@ fn build_d1_worker() -> Option<InMemoryErasureWorker> {
     let adapters: Vec<Arc<dyn BackendErasureAdapter>> = canonical_backend_kinds()
         .iter()
         .map(|k| -> Arc<dyn BackendErasureAdapter> {
-            if *k == BackendKind::D1 {
-                Arc::new(adapter_d1::D1EraseAdapter::new(Arc::clone(&d1)))
-            } else {
-                Arc::new(InMemoryBackendErasureAdapter::new(*k))
+            match *k {
+                BackendKind::D1 => Arc::new(adapter_d1::D1EraseAdapter::new(Arc::clone(&d1))),
+                BackendKind::R2Ac => {
+                    Arc::new(adapter_r2_ac::R2AcEraseAdapter::new(Arc::clone(&d1)))
+                }
+                other => Arc::new(InMemoryBackendErasureAdapter::new(other)),
             }
         })
         .collect();
