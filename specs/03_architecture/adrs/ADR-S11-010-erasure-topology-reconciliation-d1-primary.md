@@ -1,7 +1,7 @@
 ---
 id: "ADR-S11-010"
 type: "adr"
-doc_status: "DRAFT"
+doc_status: "ACCEPTED"
 audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-06-11"
@@ -18,10 +18,13 @@ tags: ["adr", "s11", "privacy", "erasure", "dsr", "topology", "regulatory"]
 
 ## Status
 
-**PROPOSED — owner ratification required before WI-S11-008 Wave 1 wires any
-irreversible delete.** Surfaced during DSR Wave 1 cold-verification
-(2026-06-11). The §"D1 erase-vs-retain classification" table is the
-GDPR-critical artifact and MUST be owner-reviewed before increment 2.
+**Accepted — Gustavo Schneiter ratified the D1 erase-vs-retain classification
+on 2026-06-11.** Surfaced during DSR Wave 1 cold-verification (2026-06-11); the
+GDPR-critical erase-vs-retain policy below is owner-approved and Wave 1
+increment 2 may wire the real deletes against it. (Engineering pre-work still
+required: the exhaustive per-table `tenant_id`-column verification — that the
+WHERE clause is correct for each erase-set table — is an implementation
+checklist, not a policy question.)
 
 ## Context
 
@@ -75,7 +78,7 @@ each adapter's real transport does**, re-mapped to where data actually lives.
 | `R2CasLegalHoldPseudo` | retain under hold; pseudonymize index | **REAL pseudonymize** — governance-mode hold partition. |
 | `R2EvidencePseudo` | retain `evidence-*` 7y; pseudonymize | **REAL pseudonymize** — compliance evidence store. |
 
-### D1 erase-vs-retain classification (GDPR-CRITICAL — owner ratification required)
+### D1 erase-vs-retain classification (GDPR-CRITICAL — OWNER-RATIFIED 2026-06-11)
 
 The `D1` adapter hard-deletes the **erase-set** and never touches the **retain-set**.
 Misclassifying in either direction is a defect: under-delete = Art. 17 violation;
@@ -103,9 +106,11 @@ via the orchestration link), `tenant_storage_state`, `tenant_offboarding_state`,
 `abuse_scores` (security-retention vs subject behavioral PII),
 the `stripe_*` mirror pseudonymization depth (which `payload_json` fields).
 
-> ⚠️ This table is classified from the cold-verified migration inventory but is
-> **PROPOSED**. The exhaustive table-by-table `tenant_id`-column audit across all
-> 63 D1 migrations is the gating pre-work for increment 2.
+> ✅ **OWNER-RATIFIED 2026-06-11.** The erase-vs-retain *policy* is approved. The
+> exhaustive table-by-table `tenant_id`-column verification across the 63 D1
+> migrations remains an engineering checklist for increment 2 (confirm each
+> erase-set table's key column + that no retain-set row is touched), but is no
+> longer a policy/approval gate.
 
 ### Contract gaps discovered (must close in Wave 1)
 
