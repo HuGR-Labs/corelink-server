@@ -195,6 +195,13 @@ Each entry cross-references:
   no-fire).
 
 ### Fixed
+- **security(audit 2026-06-11): pre-launch pentest hardening** — strip client
+  `.js.map` source maps from the admin-ui OpenNext assets before deploy (was
+  serving 138 maps publicly, leaking dep versions/module paths); add the 6
+  launch-critical forwarded secrets (R2 S3 keys, internal-auth, PAT-signing,
+  Stripe SOLO/MAX price ids) to the cf-deploy-prod REQUIRED gate (silent
+  InMemory-storage/broken-checkout on omission); pin `wrangler@4.95.0` exact in
+  the two deploy workflows; correct the pnpm-audit runner comments.
 - **fix(deps): prod npm graph → 0 known vulnerabilities** — pnpm overrides for the 8
   pre-existing prod advisories (shell-quote 1.8.4, rollup 3.30.0 scoped backport,
   js-cookie 3.0.8, serialize-javascript 7.0.5, postcss dedupe, qs 6.15.2, uuid 11.1.1

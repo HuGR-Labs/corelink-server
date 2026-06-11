@@ -30,7 +30,9 @@ name: pnpm-audit (supply-chain)
 # default) to make this a hard gate. Track: search for
 # "TODO(flip-to-blocking)" in this file.
 #
-# Runner: ubuntu-latest (NOT self-hosted) — this job is a pure registry call
+# Runner: self-hosted (this private repo has no GitHub-hosted runners; the
+#         ubuntu-latest attempt 2s-failed with 'no runner'). Pure registry
+#         call — light on the Mac; runs sequentially after heavier jobs.
 # (pnpm install --frozen-lockfile + pnpm audit). Sending it to the self-hosted
 # Mac would waste a CI slot and contribute to the Mac-overload problem
 # (load 398/665 recorded 2026-06-04; see cargo-audit.yml note). No compilation
@@ -64,11 +66,11 @@ permissions:
 jobs:
   # -----------------------------------------------------------------------
   # Advisory scan: blocking on HIGH+ prod advisories, non-blocking on full.
-  # Runs on ubuntu-latest — pure registry call, no compilation needed.
+  # Runs on the self-hosted fleet — pure registry call, no compilation.
   # -----------------------------------------------------------------------
   pnpm-audit:
     name: pnpm advisory audit
-    # ubuntu-latest: this job only calls the npm registry + parses JSON.
+    # self-hosted: this job only calls the npm registry + parses JSON.
     # Do NOT route to [self-hosted, mac, corelink-builder] — that fleet is
     # shared with all Rust build jobs and the Mac cannot afford idle network
     # slots (ref: cargo-audit.yml "stop heavy-gate stampede" note).
