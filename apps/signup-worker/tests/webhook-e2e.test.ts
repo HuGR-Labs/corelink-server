@@ -16,6 +16,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   handleClerkWebhook,
   defaultApiClient,
+  buildErasureQueueMessage,
+  deterministicDsrId,
   type AutoProvisionEnv,
   type ClerkUserCreatedEvent,
 } from "../src/webhooks/clerk.js";
@@ -298,13 +300,14 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
     expect(apiCalled).toBe(false);
   });
 
-  it("ignores non-user.created event types with 200", async () => {
+  it("ignores unhandled event types with 200", async () => {
     const env: AutoProvisionEnv = {
       CLERK_WEBHOOK_SECRET: WEBHOOK_SECRET,
       CORELINK_API_BASE: "https://corelink-api.humangr.com",
     };
-    const body = JSON.stringify({ type: "user.deleted", data: { id: "u_1" } });
-    const svixId = "msg_del_001";
+    // session.created is a real Clerk event the signup-worker does not handle.
+    const body = JSON.stringify({ type: "session.created", data: { id: "sess_1" } });
+    const svixId = "msg_sess_001";
     const svixTimestamp = String(Math.floor(Date.now() / 1000));
     const sig = await signWebhookBody(WEBHOOK_SECRET, svixId, svixTimestamp, body);
     const req = new Request("https://signup.corelink.humangr.com/webhooks/clerk", {
@@ -321,6 +324,120 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
     expect(resp.status).toBe(200);
     const text = await resp.text();
     expect(text).toBe("ignored");
+  });
+
+  // ── Clerk user.deleted → GDPR right-to-erasure enqueue (WI-S11-008) ──────────
+  describe("user.deleted → DSR erasure enqueue", () => {
+    type ConfigDb = Parameters<typeof defaultApiClient>[0]["CONFIG_DB"];
+
+    async function deletedReq(userId: string): Promise<Request> {
+      const body = JSON.stringify({ type: "user.deleted", data: { id: userId, deleted: true } });
+      const svixId = `msg_del_${userId}`;
+      const ts = String(Math.floor(Date.now() / 1000));
+      const sig = await signWebhookBody(WEBHOOK_SECRET, svixId, ts, body);
+      return new Request("https://signup.corelink.humangr.com/webhooks/clerk", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "svix-id": svixId,
+          "svix-timestamp": ts,
+          "svix-signature": sig,
+        },
+        body,
+      });
+    }
+
+    async function seedTenant(db: InMemoryD1, tenantId: string, clerkUserId: string): Promise<void> {
+      await db
+        .prepare(
+          "INSERT OR IGNORE INTO tenant (tenant_id, primary_region, tenant_state, email_hash, clerk_user_id, created_at_ms, updated_at_ms, created_ms, updated_ms) VALUES (?1, ?2, 'active', ?3, ?4, ?5, ?5, ?5, ?5)",
+        )
+        .bind(tenantId, "enam", "hash", clerkUserId, 1)
+        .run();
+    }
+
+    function envWith(db: InMemoryD1, sent: unknown[] | null): AutoProvisionEnv {
+      return {
+        CLERK_WEBHOOK_SECRET: WEBHOOK_SECRET,
+        CORELINK_API_BASE: "https://corelink-api.humangr.com",
+        CONFIG_DB: db as unknown as ConfigDb,
+        ...(sent
+          ? { DSR_QUEUE: { send: async (m: unknown) => { sent.push(m); } } }
+          : {}),
+        ERASURE_SALT_KEY: "test-erasure-salt-key",
+      };
+    }
+
+    it("enqueues a dsr.queued.v1 erasure request when a tenant exists", async () => {
+      const db = new InMemoryD1();
+      await seedTenant(db, "tenant-uuid-1", "user_del_1");
+      const sent: unknown[] = [];
+      const resp = await handleClerkWebhook(await deletedReq("user_del_1"), envWith(db, sent), defaultApiClient);
+      expect(resp.status).toBe(200);
+      const json = (await resp.json()) as { erasure_enqueued: boolean; tenant_id: string; dsr_id: string };
+      expect(json.erasure_enqueued).toBe(true);
+      expect(json.tenant_id).toBe("tenant-uuid-1");
+      expect(sent).toHaveLength(1);
+      const msg = sent[0] as Record<string, unknown>;
+      expect(msg.schema).toBe("dev.hugr.corelink.dsr.queued.v1");
+      expect(msg.tenant_id).toBe("tenant-uuid-1");
+      expect(msg.subject_id).toBe("tenant-uuid-1");
+      expect(msg.legal_hold).toBe(false);
+      expect(msg.source).toBe("clerk.user.deleted");
+      expect((msg.erasure_salt_hex as string)).toHaveLength(64);
+      expect(msg.dsr_id).toBe(json.dsr_id);
+    });
+
+    it("is idempotent: a redelivered user.deleted yields the same dsr_id", async () => {
+      const db = new InMemoryD1();
+      await seedTenant(db, "tenant-uuid-2", "user_del_2");
+      const sent: unknown[] = [];
+      const env = envWith(db, sent);
+      const r1 = (await (await handleClerkWebhook(await deletedReq("user_del_2"), env, defaultApiClient)).json()) as { dsr_id: string };
+      const r2 = (await (await handleClerkWebhook(await deletedReq("user_del_2"), env, defaultApiClient)).json()) as { dsr_id: string };
+      expect(r1.dsr_id).toBe(r2.dsr_id);
+      expect((sent[0] as Record<string, unknown>).dsr_id).toBe((sent[1] as Record<string, unknown>).dsr_id);
+    });
+
+    it("no-ops (200, erasure_enqueued=false) when the deleted user has no tenant", async () => {
+      const db = new InMemoryD1(); // empty — no tenant for this user
+      const sent: unknown[] = [];
+      const resp = await handleClerkWebhook(await deletedReq("user_nobody"), envWith(db, sent), defaultApiClient);
+      expect(resp.status).toBe(200);
+      const json = (await resp.json()) as { erasure_enqueued: boolean; reason: string };
+      expect(json.erasure_enqueued).toBe(false);
+      expect(json.reason).toBe("no_tenant");
+      expect(sent).toHaveLength(0);
+    });
+
+    it("FAILS LOUD (500) when a tenant exists but DSR_QUEUE is unbound", async () => {
+      const db = new InMemoryD1();
+      await seedTenant(db, "tenant-uuid-3", "user_del_3");
+      const resp = await handleClerkWebhook(await deletedReq("user_del_3"), envWith(db, null), defaultApiClient);
+      expect(resp.status).toBe(500);
+      const json = (await resp.json()) as { error: string };
+      expect(json.error).toBe("dsr_queue_unconfigured");
+    });
+  });
+
+  describe("erasure message helpers", () => {
+    it("deterministicDsrId is stable, distinct per user, and valid-UUID-shaped", async () => {
+      const a = await deterministicDsrId("user_x");
+      const b = await deterministicDsrId("user_x");
+      const c = await deterministicDsrId("user_y");
+      expect(a).toBe(b);
+      expect(a).not.toBe(c);
+      expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    });
+
+    it("buildErasureQueueMessage: 32-byte salt; secret-keyed salt differs from the fallback", async () => {
+      const withKey = await buildErasureQueueMessage({ clerkUserId: "u", tenantId: "t", nowMs: 1, saltKey: "k" });
+      const noKey = await buildErasureQueueMessage({ clerkUserId: "u", tenantId: "t", nowMs: 1, saltKey: undefined });
+      expect(withKey.erasure_salt_hex).toHaveLength(64);
+      expect(noKey.erasure_salt_hex).toHaveLength(64);
+      expect(withKey.erasure_salt_hex).not.toBe(noKey.erasure_salt_hex);
+      expect(withKey.dsr_id).toBe(noKey.dsr_id); // dsr_id is independent of the salt key
+    });
   });
 
   it("session claim shape: publishUserMetadata receives { tenant_id, region, pat_plaintext }", async () => {
