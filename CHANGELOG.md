@@ -34,6 +34,13 @@ Each entry cross-references:
   tenant present but queue unbound → **fail-loud 500** so a GDPR right-to-erasure
   obligation is never silently dropped. New infra: `corelink-dsr-erasure` queue
   + DLQ; new secret `ERASURE_SALT_KEY`.
+  The container exposes the receiving endpoint `POST /_internal/dsr/erase`
+  (WI-S11-008 **Wave 0**, `crates/corelink-container/src/routes/dsr.rs`,
+  internal-auth gated) which maps the message to a canonical `ErasureRequest`
+  and drives the 12-backend erasure orchestrator. **Wave 0 uses in-memory no-op
+  backend adapters** — the full pipeline is wired and exercised end-to-end but no
+  real data is deleted yet; **Wave 1** swaps each canonical adapter for its real
+  transport (D1 / R2 / Stripe / KV / Loki).
 - **Clerk session bridge for `customer_v1` — dual-auth dispatch (dashboard
   revival WP-1).** `/v1/customer/*` now accepts EITHER a CoreLink PAT (existing
   path, byte-identical — the dispatch guard is `parsePat(bearer) === null`, and
