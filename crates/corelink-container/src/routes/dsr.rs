@@ -30,15 +30,25 @@ use serde::Deserialize;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
-use corelink_privacy_erasure_worker::audit_emit::InMemoryErasureAuditSink;
+use corelink_privacy_erasure_worker::audit_emit::{ErasureAuditSink, InMemoryErasureAuditSink};
 use corelink_privacy_erasure_worker::backends::{
     BackendErasureAdapter, InMemoryBackendErasureAdapter,
 };
 use corelink_privacy_erasure_worker::event::{
-    canonical_backend_kinds, ErasureDecision, ErasureRequest, ErasureSalt,
+    canonical_backend_kinds, BackendKind, ErasureDecision, ErasureRequest, ErasureSalt,
 };
-use corelink_privacy_erasure_worker::idempotency::InMemoryErasureIdempotencyLedger;
+use corelink_privacy_erasure_worker::idempotency::{
+    ErasureIdempotencyLedger, InMemoryErasureIdempotencyLedger,
+};
 use corelink_privacy_erasure_worker::orchestrator::{ErasureWorker, InMemoryErasureWorker};
+
+// WI-S11-008 Wave 1 real D1 transports (ledger + audit sink + D1 erase
+// adapter). The remaining 11 backends stay in-memory placeholders until
+// Wave 1 increments 3-4 (R2 CAS/AC, Stripe, KV/Loki, pseudonymized).
+mod adapter_d1;
+mod audit;
+mod d1util;
+mod ledger;
 
 const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 
@@ -117,6 +127,32 @@ pub fn build_placeholder_worker() -> Result<InMemoryErasureWorker, String> {
     InMemoryErasureWorker::try_new(audit, ledger, adapters).map_err(|e| e.to_string())
 }
 
+/// Build the canonical orchestrator with the REAL D1-backed ledger + audit
+/// sink + D1 erase adapter (WI-S11-008 Wave 1). The other 11 backends are
+/// still in-memory placeholders (increments 3-4). `None` when `StorageEnv`
+/// is not configured (so the route falls back to the all-placeholder
+/// worker — e.g. in tests / unconfigured envs).
+fn build_d1_worker() -> Option<InMemoryErasureWorker> {
+    let storage_env = crate::storage::StorageEnv::from_env()?;
+    let d1 = Arc::new(crate::storage::d1_http::D1HttpClient::new(&storage_env).ok()?);
+
+    let audit: Arc<dyn ErasureAuditSink> = Arc::new(audit::D1ErasureAuditSink::new(Arc::clone(&d1)));
+    let ledger: Arc<dyn ErasureIdempotencyLedger> =
+        Arc::new(ledger::D1ErasureIdempotencyLedger::new(Arc::clone(&d1)));
+    let adapters: Vec<Arc<dyn BackendErasureAdapter>> = canonical_backend_kinds()
+        .iter()
+        .map(|k| -> Arc<dyn BackendErasureAdapter> {
+            if *k == BackendKind::D1 {
+                Arc::new(adapter_d1::D1EraseAdapter::new(Arc::clone(&d1)))
+            } else {
+                Arc::new(InMemoryBackendErasureAdapter::new(*k))
+            }
+        })
+        .collect();
+
+    InMemoryErasureWorker::try_new(audit, ledger, adapters).ok()
+}
+
 /// Build the route state from env. `None` when `CORELINK_INTERNAL_AUTH_KEY` is
 /// unset/empty (route not mounted) — mirrors `internal_pat::build_state_from_env`.
 #[must_use]
@@ -125,7 +161,13 @@ pub fn build_state_from_env() -> Option<DsrRouteState> {
     if internal_auth_key.is_empty() {
         return None;
     }
-    let worker = build_placeholder_worker().ok()?;
+    // Prefer the real D1-backed worker; fall back to the all-placeholder
+    // worker when storage is unconfigured (keeps the route mountable in
+    // tests / partially-configured envs).
+    let worker = match build_d1_worker() {
+        Some(w) => w,
+        None => build_placeholder_worker().ok()?,
+    };
     Some(DsrRouteState {
         internal_auth_key,
         worker: Arc::new(worker),
@@ -133,7 +175,6 @@ pub fn build_state_from_env() -> Option<DsrRouteState> {
 }
 
 /// Mount `POST /_internal/dsr/erase`.
-#[must_use]
 pub fn router(state: DsrRouteState) -> Router {
     Router::new()
         .route("/_internal/dsr/erase", post(handle_erase))

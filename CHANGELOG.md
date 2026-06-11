@@ -23,6 +23,18 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **DSR erasure — real D1-backed idempotency ledger + audit sink + effective D1
+  erase adapter (WI-S11-008 Wave 1, increments 1+2, ADR-S11-010).** Three new
+  transports under `corelink-container/src/routes/dsr/`: `D1ErasureIdempotencyLedger`
+  (over `dsr_erasure_log`, `INSERT OR IGNORE` + `SELECT`-back → `Replayed`/`DivergentPayload`
+  on a 4-field `(outcome, tenant_id, subject_id_hash, idempotency_key)` match, deterministic
+  `log_id`); `D1ErasureAuditSink` (→ `audit_outbox` CloudEvents, **omits raw `subject_id`**
+  per CTRL-PRIV-014); and `D1EraseAdapter` (23 cold-verified PII `DELETE`s — tenant_id /
+  namespace / `signup_attempts` subquery, `tenant` row last, never touches the `_public`
+  namespace, legal-hold → `NotApplicable`, retain-set guard test). Wired via
+  `build_d1_worker()` (real D1 ledger+audit+D1 adapter; the other 11 backends stay
+  `InMemory` placeholders pending increments 3-5). Pipeline remains inert in prod until
+  task #46 provisioning (queues + `ERASURE_SALT_KEY` + `CORELINK_INTERNAL_AUTH_KEY`).
 - **DSR erasure — `BackendCompletion.subject_id_hash` canonical field (WI-S11-008
   Wave 1, ADR-S11-010 gap #1).** The per-backend completion record now carries the
   canonical `sha256(subject_id ‖ erasure_salt)` subject pseudonym, populated by the
