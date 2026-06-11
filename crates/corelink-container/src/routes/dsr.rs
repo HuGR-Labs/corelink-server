@@ -42,10 +42,11 @@ use corelink_privacy_erasure_worker::idempotency::{
 };
 use corelink_privacy_erasure_worker::orchestrator::{ErasureWorker, InMemoryErasureWorker};
 
-// WI-S11-008 Wave 1 real D1 transports (ledger + audit sink + D1 erase
-// adapter). The remaining 11 backends stay in-memory placeholders until
-// Wave 1 increments 3-4 (R2 CAS/AC, Stripe, KV/Loki, pseudonymized).
+// WI-S11-008 Wave 1 real transports. The 4 effective/pseudonymize backends
+// (D1, R2Ac, R2Cas, Stripe) are real; the other 8 are reconciled to
+// NotApplicable (not shipped in prod — ADR-S11-013).
 mod adapter_d1;
+mod adapter_not_applicable;
 mod adapter_r2_ac;
 mod adapter_r2_cas;
 mod adapter_stripe;
@@ -142,6 +143,10 @@ fn build_d1_worker() -> Option<InMemoryErasureWorker> {
     let audit: Arc<dyn ErasureAuditSink> = Arc::new(audit::D1ErasureAuditSink::new(Arc::clone(&d1)));
     let ledger: Arc<dyn ErasureIdempotencyLedger> =
         Arc::new(ledger::D1ErasureIdempotencyLedger::new(Arc::clone(&d1)));
+    // Helper: a not-shipped backend reconciled to NotApplicable (ADR-S11-013).
+    let na = |kind: BackendKind, reason: &'static str| -> Arc<dyn BackendErasureAdapter> {
+        Arc::new(adapter_not_applicable::NotApplicableAdapter::new(kind, reason))
+    };
     let adapters: Vec<Arc<dyn BackendErasureAdapter>> = canonical_backend_kinds()
         .iter()
         .map(|k| -> Arc<dyn BackendErasureAdapter> {
@@ -156,7 +161,45 @@ fn build_d1_worker() -> Option<InMemoryErasureWorker> {
                 BackendKind::Stripe => {
                     Arc::new(adapter_stripe::StripePseudonymizeAdapter::new(Arc::clone(&d1)))
                 }
-                other => Arc::new(InMemoryBackendErasureAdapter::new(other)),
+                // The remaining 8 are NOT SHIPPED in prod (ADR-S11-013) — no
+                // durable subject PII to erase → reconciled to NotApplicable
+                // with a documented reason (truthful GDPR audit record).
+                BackendKind::NeonMain => na(
+                    BackendKind::NeonMain,
+                    "Neon control-plane not shipped; subject identity lives in D1 (handled by the D1 adapter)",
+                ),
+                BackendKind::NeonBilling => na(
+                    BackendKind::NeonBilling,
+                    "Neon billing not shipped; billing state lives in D1 + Stripe",
+                ),
+                BackendKind::NeonPitrPseudo => na(
+                    BackendKind::NeonPitrPseudo,
+                    "Neon PITR not shipped; no Neon backups to tombstone",
+                ),
+                BackendKind::Kv => na(
+                    BackendKind::Kv,
+                    "KV namespaces are caches (metadata/JWKS/negative-cache); no durable PII, reconstructed from D1",
+                ),
+                BackendKind::Loki => na(
+                    BackendKind::Loki,
+                    "no active Loki sink shipped (observability references only)",
+                ),
+                BackendKind::R2AuditPseudo => na(
+                    BackendKind::R2AuditPseudo,
+                    "no R2 audit WORM bucket shipped; no subject-indexed audit store to pseudonymize",
+                ),
+                BackendKind::R2CasLegalHoldPseudo => na(
+                    BackendKind::R2CasLegalHoldPseudo,
+                    "no legal-hold CAS partition shipped",
+                ),
+                BackendKind::R2EvidencePseudo => na(
+                    BackendKind::R2EvidencePseudo,
+                    "no R2 evidence-* bucket shipped",
+                ),
+                // `BackendKind` is `#[non_exhaustive]`; a future canonical kind
+                // defaults to NotApplicable until it gets a real adapter (the
+                // orchestrator's count/order check still pins the canonical 12).
+                _ => na(*k, "unrecognised canonical backend (non_exhaustive default)"),
             }
         })
         .collect();

@@ -23,6 +23,18 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **DSR erasure — reconcile the 8 not-shipped backends to `NotApplicable`
+  (WI-S11-008 Wave 1, increment 4 — completes the 12-backend wiring).** The
+  canonical contract assumes a Neon-primary control-plane + WORM audit/evidence/
+  legal-hold/PITR stores that were never shipped (cold-verified: Neon holds only
+  `audit_events_shadow`; no `evidence-*`/`legal-hold`/audit-WORM R2 buckets in
+  `wrangler.toml`; KV is caches; no active Loki sink). A new
+  `NotApplicableAdapter` (parameterised by kind + a documented `reason`) replaces
+  the silent `InMemory` placeholders for `NeonMain`/`NeonBilling`/`NeonPitrPseudo`/
+  `Kv`/`Loki`/`R2AuditPseudo`/`R2CasLegalHoldPseudo`/`R2EvidencePseudo`, so the
+  per-backend audit row records a truthful `not_applicable` instead of a no-op
+  success. `build_d1_worker` now wires **all 12** canonical backends with real or
+  reconciled adapters (zero `InMemory`).
 - **DSR erasure — real Stripe pseudonymize adapter (`Stripe`, WI-S11-008 Wave 1,
   increment 4).** Pseudonymizes a tenant's Stripe customer(s) (redacts
   email/name/phone/address, stamps `pii_redacted` metadata) via the existing
