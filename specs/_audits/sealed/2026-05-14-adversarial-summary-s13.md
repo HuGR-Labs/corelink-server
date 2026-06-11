@@ -110,7 +110,7 @@ Note: Scenario 4.3 counts as "mitigated" via P2 waiver + compensating control; n
 | 5.3 | p99 latency spike trigger | `test_latency_spike_trigger` | `p99_latency_ms > 2000` triggers auto-rollback | ✅ TRIGGERED |
 | 5.4 | Budget cap DoS — exceed cumulative rollback budget | `prop_budget_cap_enforced` (10k iter) | `cumulative_rollback_cost > cap` → subsequent rollback ops blocked; SEV-2 | ✅ BLOCKED |
 | 5.5 | Bypass stage via direct API | `prop_stage_progression_ordered` (10k iter) | FSM: invalid transition → `InvalidTransition` error | ✅ BLOCKED |
-| 5.6 | Cosign signature gate bypass — deploy unsigned artifact | `test_unsigned_deploy_blocked` | `cosign verify` hard fail-closed (ADR-0044); no unsigned artifact advances rollout | ✅ BLOCKED |
+| 5.6 | Cosign signature gate bypass — deploy unsigned artifact | `test_unsigned_deploy_blocked` | `cosign verify` hard fail-closed (ADR-0025); no unsigned artifact advances rollout | ✅ BLOCKED |
 | 5.7 | Concurrent rollouts — start second while first active | `prop_concurrent_rollouts_blocked` (10k iter) | `RolloutController::start()` checks single-active invariant | ✅ BLOCKED |
 | 5.8 | Cloudflare outage during rollout | `test_cf_outage_rollback_trigger` | Cloudflare health probe failure → SLO-ADMIN-ROLLBACK-RECOVERY trigger | ✅ HANDLED |
 

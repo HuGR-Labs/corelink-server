@@ -1,5 +1,5 @@
 ---
-id: "ADR-0044"
+id: "ADR-0025"
 type: "adr"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
@@ -14,7 +14,7 @@ superseded_by: null
 tags: ["adr", "s12", "supply-chain", "cosign", "sigstore", "fulcio", "rekor", "deploy-gate", "hard-gate", "high-risk", "ff-hr-005"]
 ---
 
-# ADR-0044 — Deploy Gate: Hard Non-Bypassable Cosign Keyless OIDC Verify Gate
+# ADR-0025 — Deploy Gate: Hard Non-Bypassable Cosign Keyless OIDC Verify Gate
 
 > **doc_status:** DRAFT · **audit_status:** ACTIVE
 > **Parent:** WI-S12-003 · **Owner:** Gustavo Schneiter

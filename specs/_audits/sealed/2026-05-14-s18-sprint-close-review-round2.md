@@ -139,7 +139,7 @@ Document the canonical local-dev install command in
 | No `dangerouslySetInnerHTML` in custom React | **PASS** | `grep -rn dangerouslySetInnerHTML apps/docs/src/` empty. |
 | No specific `$` amounts in `pricing/` | **PASS** | Enforced by `tests/cross-functional.test.ts` regex; 58 cross-functional tests green. |
 | No merge-conflict markers | **PASS** | Grep across `apps/docs/` and `specs/` returns only a single match inside the audit narrative for S-15 (a string literal in a different audit's diff log, not an actual conflict). |
-| `python3 scripts/validate_specs.py` (S-18 failures) | **PASS** | 0 S-18 failures. 14 unique failing files, all pre-existing S-11/S-12/S-13 ADRs (`ADR-S11-003/004/007/008/009/010/011/012`, `ADR-S12-001/045/046/047`, `ADR-S13-001`, `ADR-0037-dependency-track-self-host.md`). Out of S-18 scope. |
+| `python3 scripts/validate_specs.py` (S-18 failures) | **PASS** | 0 S-18 failures. 14 unique failing files, all pre-existing S-11/S-12/S-13 ADRs (`ADR-S11-003/004/007/008/009/010/011/012`, `ADR-S12-001/045/046/047`, `ADR-S13-001`, `ADR-0024-dependency-track-self-host.md`). Out of S-18 scope. |
 | `pnpm typecheck` / `pnpm lint` / `pnpm test` | **PASS** | typecheck clean. Lint clean (`eslint --max-warnings=0 tests` → 0 warnings). 264/264 tests across 11 files (including reapi-gen drift check at 1.8 s). |
 
 ## 7. Docusaurus build status

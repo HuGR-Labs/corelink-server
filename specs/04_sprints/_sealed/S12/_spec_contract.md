@@ -329,9 +329,9 @@ Itens waivable com Security lead + Legal + ADR:
 | 1.1.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | SOTA v1.1 — INV-SUPPLY-PROVENANCE-IN-REKOR fail-closed hardening (no grace period). |
 | 1.2.0 | 2026-05-13 | Gustavo (via Claude Sonnet 4.6) | WI-S12-001 SEALED: release-slsa3.yml + corelink-supply-verify + ADR-0045 + slsa-l3-pipeline.md. |
 | 1.2.1 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-002 SEALED: sbom-publish crate + sbom.yml + ADR-S12-001. |
-| 1.2.2 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-003 SEALED: corelink-deploy-verifier + cosign-sign.yml + ADR-0044. |
+| 1.2.2 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-003 SEALED: corelink-deploy-verifier + cosign-sign.yml + ADR-0025. |
 | 1.3.0 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-004 SEALED: cargo-audit/deny/Dependabot workflows + deny.toml + corelink-supply-chain-policy + dep-policy.md + ADR-S12-045/046/047. |
-| 1.3.1 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-005 SEALED: corelink-dt-webhook + CLI + reconcile + DT infra + ADR-0037 + dt-dr-runbook.md. |
+| 1.3.1 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-005 SEALED: corelink-dt-webhook + CLI + reconcile + DT infra + ADR-0024 + dt-dr-runbook.md. |
 | 1.3.2 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-006 SEALED: reproducible builds 2-runner diff + SOURCE_DATE_EPOCH + rust-toolchain.toml + ADR-0015 ratified. Hermetic flags: `--remap-path-prefix` + `-C codegen-units=1` + `--frozen --offline --jobs 1`; threshold ≤ 5 %; `scripts/build_rs_lint.sh` pre-commit hook; `prop_reproducible` (7 tests) + `adversarial_reproducible` (5 tests) gate. |
 | 1.4.0 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-007 SEALED: RB-FM-157 FROZEN + RB-FM-156/157 dry-run reports + PRR-S12 11 sign-offs CONDITIONALLY_APPROVED + security walkthrough P0=0 + adversarial summary 35 scenarios 100% + OWASP ASVS V14+V11.1+SSDF+EO14028 40/40. S-12 sprint SEALED. |
 

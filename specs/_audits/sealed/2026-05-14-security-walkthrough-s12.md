@@ -80,7 +80,7 @@ Cosign verify step.
 pre-activation webhook. Workers cannot be deployed via `wrangler deploy`
 in production without the webhook returning 200. CF IAM token scoped to
 `workers:write` does not bypass the webhook activation gate.
-ADR-0044: no operator override exists; fail-closed.
+ADR-0025: no operator override exists; fail-closed.
 
 **Result:** BLOCKED. Architecture-level control (CF webhook mandatory path).
 **Severity:** N/A (blocked). **Finding:** None.

@@ -97,7 +97,7 @@ Format key:
 | TSC | CTRL ID | Evidence type | Artifact location | Cadence | Status | Last update |
 |---|---|---|---|---|---|---|
 | CC5.1 | process control (compliance_matrix.md as canonical) | change_management | `specs/03_architecture/compliance_matrix.md` CTRL-XXX cumulative + PAT-XXX patterns | AUTO | I | f18acdc |
-| CC5.2 | CTRL-SUPPLY-001..005 | change_management | INV-SUPPLY-SBOM-PRESENT + INV-SUPPLY-PROVENANCE-IN-REKOR + INV-SUPPLY-LICENSE-ALLOWLIST + ADR-0037 (Dependency-Track) | PER-RELEASE | I | f18acdc |
+| CC5.2 | CTRL-SUPPLY-001..005 | change_management | INV-SUPPLY-SBOM-PRESENT + INV-SUPPLY-PROVENANCE-IN-REKOR + INV-SUPPLY-LICENSE-ALLOWLIST + ADR-0024 (Dependency-Track) | PER-RELEASE | I | f18acdc |
 | CC5.3 | process control (60+ runbooks under VCS) | change_management | `specs/05_quality/runbooks/RB-*.md` (60+ runbooks) + `specs/_governance/` + legal templates | AUTO | I | f18acdc |
 
 ### 2.6 CC6 Logical & Physical Access
@@ -117,7 +117,7 @@ Format key:
 
 | TSC | CTRL ID | Evidence type | Artifact location | Cadence | Status | Last update |
 |---|---|---|---|---|---|---|
-| CC7.1 | CTRL-SUPPLY-004 + CTRL-SUPPLY-005 | vulnerability_management | ADR-0037 Dependency-Track + `deny.toml` cargo-deny + `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md` | DAILY | I | f18acdc |
+| CC7.1 | CTRL-SUPPLY-004 + CTRL-SUPPLY-005 | vulnerability_management | ADR-0024 Dependency-Track + `deny.toml` cargo-deny + `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md` | DAILY | I | f18acdc |
 | CC7.2 | CTRL-META-001 | audit_logs | Prometheus catalog + DASH-GA-READINESS + DASH-COMPLIANCE-S20 + pentest summaries | DAILY | I | f18acdc |
 | CC7.3 | process control (PagerDuty + RB-BREACH-NOTIF + IR-TABLETOP-PLAYBOOK) | incident_response | WI-S20-006 PagerDuty 24/7 + 3 regions + synthetic page weekly + RB-BREACH-NOTIF + IR-TABLETOP-PLAYBOOK.md (6 scenarios; quarterly cadence; first session Q3-2026) | AUTO | P (GAP-03 — playbook + 6 scenarios + 2026 schedule landed; first execution pending Q3-2026) | f18acdc |
 | CC7.4 | process control (runbook RB-* suite) | incident_response | RB-BREACH-NOTIF + RB-CONSENT-TAMPERING + RB-DATA-RESIDENCY-LEAK + RB-DSR-ERASURE-INCOMPLETE + RB-BYOK-REVOKE | AUTO | P (GAP-12 — postmortem template) | f18acdc |

@@ -1,5 +1,5 @@
 ---
-id: "ADR-0037"
+id: "ADR-0024"
 type: "adr"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
@@ -14,7 +14,7 @@ superseded_by: null
 tags: ["adr", "s12", "supply-chain", "dependency-track", "cve-alerts", "self-host", "neon-postgres", "webhook", "high-risk"]
 ---
 
-# ADR-0037 — Dependency-Track Self-Host Architecture + CVE Alerting
+# ADR-0024 — Dependency-Track Self-Host Architecture + CVE Alerting
 
 ## Status
 
