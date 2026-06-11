@@ -13,7 +13,14 @@
       "@docusaurus/core@3.10.1": "patches/@docusaurus__core@3.10.1.patch"
     },
     "overrides": {
-      "@types/react": "^19.0.12"
+      "@types/react": "^19.0.12",
+      "js-cookie@<3.0.7": ">=3.0.7 <4",
+      "postcss@<8.5.10": ">=8.5.10 <9",
+      "qs@>=6.11.1 <6.15.2": ">=6.15.2 <7",
+      "rollup@>=3.0.0 <3.30.0": ">=3.30.0 <4",
+      "serialize-javascript@<7.0.5": ">=7.0.5 <8",
+      "shell-quote@<1.8.4": ">=1.8.4 <2",
+      "uuid@<11.1.1": ">=11.1.1 <12"
     }
   },
   "scripts": {
