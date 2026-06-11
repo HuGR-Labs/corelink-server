@@ -154,6 +154,53 @@ the `stripe_*` mirror pseudonymization depth (which `payload_json` fields).
 4. `Stripe` pseudonymize (+ `update_customer`) + the 4 pseudonymized WORM backends + `Kv`/`Loki` reconciled.
 5. Wire `build_worker()` (replace `build_placeholder_worker`), 24h verification cron + BLAKE3-keyed report signer; full test pass; PR.
 
+## R2-erasure open questions (increment 3 — cold-verified 2026-06-11, BLOCKING)
+
+Increment 3 (`R2Cas` + `R2Ac`) was cold-verified against the shipped storage code
+before writing any adapter. The verification surfaced that the canonical
+`r2_cas.rs` stub ("refcount-aware soft-delete; blob shared with another tenant
+via S-07 dedup") **does not match prod**, and that a naive D1-driven erase would
+be **GDPR-incomplete**. Confirmed facts + the blocking open questions:
+
+**Confirmed (safe to rely on):**
+- CAS is **one bucket** (`corelink-cas-prod`), region carried in the key prefix.
+  AC is **five buckets** (`corelink-ac-{sam,iad,lhr,nrt,syd}`), region in the
+  bucket name. (`wrangler.toml`, all prod envs.)
+- The `chunks` dedup refcount is **intra-tenant only** (PK `(tenant_id,
+  chunk_digest)`; "cross-tenant chunk leak FM-303 impossible at storage layer").
+  So the canonical `subject_unaffiliated` (blob shared with *another* tenant)
+  arm **cannot occur** — a full per-tenant hard-delete is cross-tenant-safe by
+  construction (the tenant_prefix is `HMAC(TDK, tenant_id)[:16]`).
+- `R2S3Client` wraps `aws-sdk-s3`; `delete()` (idempotent `DeleteObject`) landed
+  (`400dc6cd`). `ListObjectsV2` is **not yet implemented**.
+- `ac_meta` (`0002`) indexes every AC entry per tenant (`(tenant_id,
+  action_digest)` + `region` + materialised `tenant_prefix` BLOB) → AC erase can
+  be D1-driven (no LIST needed): for each row, delete
+  `<region>/<tenant_prefix_hex>/<action_digest>` from the `corelink-ac-<region>`
+  bucket, then delete the `ac_meta` rows.
+
+**BLOCKING open questions (must resolve before the CAS adapter is safe):**
+1. **Native whole-blob CAS path.** `R2CasHandler` (CasWriteHandler) puts **whole
+   blobs** at `<cas_region>/<tenant_prefix>/<digest>` — a path **separate** from
+   the multipart `chunks` table. A `chunks.r2_object_key`-driven erase would
+   **orphan every native whole-blob object** = incomplete erasure. The safe
+   design is **`ListObjectsV2` by prefix** `<region>/<tenant_prefix>/` (+
+   `chunk-<region>/<tenant_prefix>/`) then delete-all — complete by construction.
+2. **`blob_meta` / `manifest_chunks` have NO INSERT site in the container Rust**
+   (grep clean). Either a TS Worker writes them or the live model differs from
+   the schema. Until the authoritative CAS index/write path is known, a
+   D1-driven CAS erase cannot be proven complete.
+3. **Multi-region residency.** Whether a single tenant's CAS bytes can span
+   multiple storage regions (so erase must LIST all 5 region prefixes) or are
+   pinned to one `primary_region`. Determines the LIST fan-out.
+
+**Decision:** do NOT ship a chunks-only CAS erase. Increment 3 is gated on (a)
+adding `R2S3Client::list_objects_v2` (paginated) and (b) a focused cold-map of
+the **complete** live CAS write/index/residency model (container Rust + the TS
+Workers). `R2Ac` is unblocked and may land first. Until then the `R2Cas`/`R2Ac`
+backends remain the inert `InMemory` placeholders (pipeline is prod-inert until
+task #46 regardless).
+
 ## References
 
 - `privacy_model.md §6.2` (canonical erasure pipeline — the spec being reconciled).
