@@ -5,8 +5,8 @@
  * Server component. Tier data sourced from src/lib/pricing.ts.
  * Org-wide SoT: docs/POSITIONING.md.
  *
- * Renders a responsive 5-card grid:
- *   Free | Solo | Team (highlighted) | Org | Enterprise
+ * Renders a responsive card grid over the 6-tier ladder:
+ *   Free | Solo | Starter | Pro (highlighted) | Max | Enterprise
  */
 
 import * as React from "react";

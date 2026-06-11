@@ -36,10 +36,16 @@ export interface ApiCallOptions {
 }
 
 const TOKEN_RE = /(corelink_(?:prod|test)_[A-Za-z0-9_-]+)/g;
+// JWT-shaped substrings (three base64url segments, header starting with
+// `eyJ` = `{"` ) — covers Clerk session tokens and any other JWT that an
+// upstream error body might echo back.
+const JWT_RE = /eyJ[\w-]+\.[\w-]+\.[\w-]+/g;
 
-/** Replace any bearer-like token in arbitrary text with a placeholder. */
+/** Replace any bearer-like token (CoreLink PAT or JWT) in arbitrary text with a placeholder. */
 export function redactTokens(text: string): string {
-  return text.replace(TOKEN_RE, "corelink_***_REDACTED");
+  return text
+    .replace(TOKEN_RE, "corelink_***_REDACTED")
+    .replace(JWT_RE, "jwt_***_REDACTED");
 }
 
 function defaultBaseUrl(): string {

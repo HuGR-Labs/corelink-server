@@ -102,9 +102,10 @@ export default function TermsPage(): ReactElement {
         <section className={styles.section}>
           <h2>3. Plans, fees, and payment</h2>
           <p>
-            CoreLink offers three plans: Free (10 GB cache, no card required),
-            Pro ($25/month, paid via Stripe Checkout), and Enterprise
-            (custom-contract). Pro fees are charged monthly in advance and
+            CoreLink offers six tiers: Free (10 GB cache, no card required),
+            Solo ($15/month), Starter ($35/month), Pro ($50/month), Max
+            ($149/month) — all paid via Stripe Checkout — and Enterprise
+            (custom-contract). Paid-tier fees are charged monthly in advance and
             are non-refundable except where required by law or where we
             materially reduce the Service per §1. Overage above your plan
             allowance is metered at the rate card published on{" "}

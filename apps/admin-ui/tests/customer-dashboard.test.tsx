@@ -25,6 +25,12 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+// Customer components call Clerk's useAuth() to mint session tokens for the
+// CustomerClient — stub it (no ClerkProvider in jsdom).
+vi.mock("@clerk/nextjs", () => ({
+  useAuth: () => ({ getToken: async () => null }),
+}));
+
 // ---------------------------------------------------------------------------
 // CustomerGuard
 // ---------------------------------------------------------------------------
@@ -141,7 +147,7 @@ describe("CustomerNav", () => {
 // PortalLauncher
 // ---------------------------------------------------------------------------
 
-import { PortalLauncher } from "@/app/[locale]/customer/billing/PortalLauncher";
+import { PortalLauncher } from "@/app/[locale]/(authenticated)/customer/billing/PortalLauncher";
 
 describe("PortalLauncher", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -220,7 +226,8 @@ describe("PortalLauncher", () => {
 
 import { UsageClient } from "@/components/customer/UsageClient";
 
-// Components use module-level `const client = new CustomerClient()`.
+// Components build the client in-component via
+// `useMemo(() => new CustomerClient({ getToken }), [getToken])`.
 // vi.mock is hoisted — we cannot reference variables declared after it in the factory.
 // Solution: capture the singleton mock instance inside the factory so we can
 // later spy on it with vi.spyOn per test.
@@ -238,7 +245,13 @@ vi.mock("@/lib/customer-client", async () => {
     startBillingPortal: viInner.fn(),
   };
   return {
-    CustomerClient: viInner.fn().mockImplementation(() => sharedInstance),
+    // Plain function (NOT vi.fn().mockImplementation): the PortalLauncher
+    // describe runs vi.restoreAllMocks() in afterEach, which would strip a
+    // mockImplementation and make later in-component `new CustomerClient(...)`
+    // calls return an empty instance.
+    CustomerClient: function CustomerClient() {
+      return sharedInstance;
+    },
     CustomerClientError: class extends Error {
       constructor(public status: number, msg: string) {
         super(msg);
