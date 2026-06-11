@@ -299,8 +299,14 @@ mod tests {
     #[test]
     fn expected_sha256_none_for_non_content_addressed_paths() {
         // Tag-addressed manifest, bare bottle filename, root — all best-effort.
-        assert_eq!(expected_sha256("v2/homebrew/core/curl/manifests/8.5.0"), None);
-        assert_eq!(expected_sha256("v2/homebrew/core/curl-8.5.0.bottle.tar.gz"), None);
+        assert_eq!(
+            expected_sha256("v2/homebrew/core/curl/manifests/8.5.0"),
+            None
+        );
+        assert_eq!(
+            expected_sha256("v2/homebrew/core/curl-8.5.0.bottle.tar.gz"),
+            None
+        );
         assert_eq!(expected_sha256(""), None);
     }
 

@@ -268,7 +268,10 @@ mod tests {
             .collect();
         for pair in mapped.windows(2) {
             if let [a, b] = pair {
-                assert!(b >= a, "billing ladder maps non-monotonically: {a:?} -> {b:?}");
+                assert!(
+                    b >= a,
+                    "billing ladder maps non-monotonically: {a:?} -> {b:?}"
+                );
             }
         }
     }

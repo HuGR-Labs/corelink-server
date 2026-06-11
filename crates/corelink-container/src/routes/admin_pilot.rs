@@ -109,8 +109,7 @@ pub const PILOTS_CHECKIN_ROUTE: &str = "/v1/admin/pilots/:tenant_id/checkin";
 pub const INTERNAL_PILOTS_LIST_ROUTE: &str = "/_internal/admin/pilots";
 
 /// Internal-edge alias for the grant-tier route (#218 §2.1).
-pub const INTERNAL_PILOTS_GRANT_TIER_ROUTE: &str =
-    "/_internal/admin/pilots/:tenant_id/grant-tier";
+pub const INTERNAL_PILOTS_GRANT_TIER_ROUTE: &str = "/_internal/admin/pilots/:tenant_id/grant-tier";
 
 /// Internal-edge alias for the checkin route (#218 §2.1).
 pub const INTERNAL_PILOTS_CHECKIN_ROUTE: &str = "/_internal/admin/pilots/:tenant_id/checkin";
@@ -1336,7 +1335,10 @@ mod tests {
                 headers.insert(ROUTE_KIND_HEADER, kind.parse().expect("header"));
             }
             let res = require_admin_scope(&state, &headers, None);
-            assert!(res.is_err(), "empty principal must 403 (kind={route_kind:?})");
+            assert!(
+                res.is_err(),
+                "empty principal must 403 (kind={route_kind:?})"
+            );
         }
         let rows = audit.snapshot().expect("audit");
         assert_eq!(rows.len(), 3);
@@ -1404,7 +1406,10 @@ mod tests {
         );
         headers.insert(ADMIN_PRINCIPAL_HEADER, "ops@root".parse().expect("header"));
         let res = require_admin_scope(&state, &headers, None);
-        assert!(res.is_err(), "explicit principal still requires the scope label");
+        assert!(
+            res.is_err(),
+            "explicit principal still requires the scope label"
+        );
         let rows = audit.snapshot().expect("audit");
         assert!(rows.iter().any(|r| r.event_type == EVENT_TYPE_UNAUTHORIZED));
     }

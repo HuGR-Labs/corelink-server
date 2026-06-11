@@ -176,7 +176,13 @@ mod tests {
         let orchestrator =
             AuditOrchestrator::with_clock(sink.clone(), Arc::new(|| 1_716_700_000_000));
         orchestrator
-            .emit_bottle_cache_fill("tenant-abc", "deadbeef", "v2/homebrew/core/curl", 4096, false)
+            .emit_bottle_cache_fill(
+                "tenant-abc",
+                "deadbeef",
+                "v2/homebrew/core/curl",
+                4096,
+                false,
+            )
             .unwrap();
         let events = sink.snapshot();
         assert_eq!(events.len(), 1);
