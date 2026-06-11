@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CoreLink — Planos &amp; Preços (preview)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#08080d; --bg2:#0d0d16;
+    --surface:rgba(255,255,255,.035);
+    --surface-2:rgba(255,255,255,.055);
+    --border:rgba(255,255,255,.09);
+    --border-2:rgba(255,255,255,.14);
+    --text:#ececf3; --muted:#9a9aac; --faint:#6a6a7a;
+    --indigo:#6366f1; --violet:#8b5cf6; --cyan:#22d3ee;
+    --accent:linear-gradient(135deg,#6366f1 0%,#8b5cf6 45%,#22d3ee 100%);
+    --amber:#f5b942; --green:#34d399;
+    --radius:18px;
+    --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; font-family:var(--font); color:var(--text);
+    background:var(--bg);
+    background-image:
+      radial-gradient(900px 500px at 12% -8%, rgba(99,102,241,.20), transparent 60%),
+      radial-gradient(800px 520px at 92% 4%, rgba(34,211,238,.13), transparent 60%),
+      radial-gradient(700px 700px at 50% 120%, rgba(139,92,246,.12), transparent 60%);
+    background-attachment:fixed;
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+  }
+  .wrap{max-width:1200px; margin:0 auto; padding:0 24px}
+  .grad{background:var(--accent); -webkit-background-clip:text; background-clip:text; color:transparent}
+  a{color:inherit}
+
+  /* ---------- HERO ---------- */
+  header{padding:74px 0 30px; text-align:center}
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600;
+    letter-spacing:.16em; text-transform:uppercase; color:var(--muted);
+    border:1px solid var(--border); border-radius:999px; padding:7px 15px; margin-bottom:26px;
+    background:var(--surface);
+  }
+  .eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+  h1{font-size:clamp(38px,6vw,62px); line-height:1.04; font-weight:800; margin:0 0 18px; letter-spacing:-.025em}
+  .sub{font-size:clamp(16px,2.1vw,20px); color:var(--muted); max-width:660px; margin:0 auto 14px}
+  .sub b{color:var(--text); font-weight:600}
+  .edge{
+    display:inline-flex;gap:18px;flex-wrap:wrap;justify-content:center;
+    margin-top:18px;font-size:13.5px;color:var(--muted)
+  }
+  .edge span{display:inline-flex;align-items:center;gap:7px}
+  .edge .ic{color:var(--cyan)}
+
+  /* ---------- BILLING TOGGLE ---------- */
+  .toggle-row{display:flex;align-items:center;justify-content:center;gap:14px;margin:34px 0 6px}
+  .toggle-row .lab{font-size:14.5px;font-weight:500;color:var(--muted);transition:.2s}
+  .toggle-row .lab.on{color:var(--text)}
+  .save{font-size:11.5px;font-weight:700;color:var(--green);border:1px solid rgba(52,211,153,.35);
+    background:rgba(52,211,153,.10);border-radius:999px;padding:3px 9px;margin-left:2px}
+  .switch{position:relative;width:54px;height:30px;flex:0 0 auto}
+  .switch input{opacity:0;width:0;height:0}
+  .slider{position:absolute;inset:0;border-radius:999px;background:var(--surface-2);
+    border:1px solid var(--border-2);cursor:pointer;transition:.25s}
+  .slider:before{content:"";position:absolute;height:22px;width:22px;left:3px;top:3px;border-radius:50%;
+    background:var(--accent);transition:.25s}
+  input:checked + .slider:before{transform:translateX(24px)}
+
+  /* ---------- TIER CARDS ---------- */
+  .tiers{
+    display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin:40px 0 14px;align-items:stretch;
+  }
+  @media(max-width:1100px){.tiers{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:680px){.tiers{grid-template-columns:1fr}}
+  .card{
+    position:relative;display:flex;flex-direction:column;
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:24px 20px;transition:transform .2s,border-color .2s,background .2s;
+  }
+  .card:hover{transform:translateY(-4px);border-color:var(--border-2);background:var(--surface-2)}
+  .card.pro{
+    border:1px solid transparent;
+    background:
+      linear-gradient(var(--bg2),var(--bg2)) padding-box,
+      var(--accent) border-box;
+    box-shadow:0 0 0 1px rgba(139,92,246,.08), 0 24px 60px -24px rgba(124,58,237,.55);
+  }
+  .card.pro:hover{transform:translateY(-7px)}
+  .ribbon{
+    position:absolute;top:-12px;left:50%;transform:translateX(-50%);
+    font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:#0a0a12;
+    background:var(--accent);border-radius:999px;padding:5px 13px;white-space:nowrap;
+    box-shadow:0 6px 18px -6px rgba(139,92,246,.7)
+  }
+  .tname{font-size:15px;font-weight:700;letter-spacing:.01em;margin:2px 0 3px}
+  .ttag{font-size:12.5px;color:var(--faint);min-height:32px;margin-bottom:14px}
+  .price{display:flex;align-items:baseline;gap:3px;margin-bottom:2px}
+  .price .cur{font-size:18px;font-weight:600;color:var(--muted)}
+  .price .amt{font-size:38px;font-weight:800;letter-spacing:-.03em}
+  .price .per{font-size:13px;color:var(--muted);font-weight:500}
+  .bill-note{display:none;font-size:11px;color:var(--green);margin:1px 0 0}
+  .price.custom .amt{font-size:24px}
+  hr.sep{border:0;border-top:1px solid var(--border);margin:16px 0}
+  .feats{list-style:none;padding:0;margin:0 0 20px;display:flex;flex-direction:column;gap:9px;flex:1}
+  .feats li{display:flex;gap:9px;font-size:13px;color:var(--muted);align-items:flex-start}
+  .feats li b{color:var(--text);font-weight:600}
+  .feats .ck{color:var(--cyan);flex:0 0 auto;margin-top:1px;font-weight:700}
+  .btn{
+    display:block;text-align:center;text-decoration:none;font-size:13.5px;font-weight:600;
+    padding:11px 14px;border-radius:11px;border:1px solid var(--border-2);color:var(--text);
+    background:var(--surface-2);transition:.2s
+  }
+  .btn:hover{background:rgba(255,255,255,.10);border-color:#fff3}
+  .btn.primary{background:var(--accent);border:none;color:#0a0a12;font-weight:700}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.ghost{background:transparent}
+
+  /* ---------- COMPARISON MATRIX ---------- */
+  section.compare{margin:72px 0 0}
+  .sec-head{text-align:center;margin-bottom:30px}
+  .sec-head .kick{font-size:12.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--violet)}
+  .sec-head h2{font-size:clamp(26px,4vw,38px);font-weight:800;letter-spacing:-.02em;margin:8px 0 0}
+  .sec-head p{color:var(--muted);margin:10px auto 0;max-width:560px;font-size:15px}
+  .matrix-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);background:rgba(255,255,255,.018)}
+  table{border-collapse:collapse;width:100%;min-width:880px}
+  thead th{position:sticky;top:0;z-index:2}
+  th,td{padding:14px 16px;text-align:left;font-size:13.5px;border-bottom:1px solid var(--border)}
+  thead th{background:var(--bg2);font-weight:700;font-size:13px;vertical-align:bottom;border-bottom:1px solid var(--border-2)}
+  thead th .th-price{font-size:12px;color:var(--muted);font-weight:600;margin-top:2px}
+  tbody td{color:var(--muted)}
+  tbody td:first-child{color:var(--text);font-weight:500}
+  .grp td{
+    background:rgba(139,92,246,.07);font-weight:700;font-size:11.5px;letter-spacing:.13em;
+    text-transform:uppercase;color:#c4b5fd;border-bottom:1px solid var(--border-2)
+  }
+  .grp.soon td{background:rgba(245,185,66,.08);color:var(--amber)}
+  td.val{text-align:center}
+  th.val,td.val{text-align:center}
+  .ck-y{color:var(--green);font-weight:700}
+  .ck-n{color:var(--faint)}
+  /* Pro column highlight */
+  col.pro-col{background:linear-gradient(180deg,rgba(139,92,246,.10),rgba(34,211,238,.05))}
+  th.col-pro,td.col-pro{position:relative}
+  th.col-pro{color:#fff}
+  .pill{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+    padding:3px 8px;border-radius:999px;vertical-align:middle}
+  .pill.soon{color:var(--amber);background:rgba(245,185,66,.12);border:1px solid rgba(245,185,66,.3)}
+  .pill.live{color:var(--green);background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.3)}
+
+  /* ---------- ROADMAP BAND ---------- */
+  .band{margin:80px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:780px){.band{grid-template-columns:1fr}}
+  .rcard{
+    border:1px solid var(--border);border-radius:var(--radius);padding:28px;
+    background:linear-gradient(160deg,rgba(255,255,255,.04),rgba(255,255,255,.012));position:relative;overflow:hidden
+  }
+  .rcard:before{content:"";position:absolute;width:240px;height:240px;border-radius:50%;
+    filter:blur(60px);opacity:.5;top:-90px;right:-70px}
+  .rcard.runners:before{background:radial-gradient(circle,rgba(34,211,238,.5),transparent 70%)}
+  .rcard.spaces:before{background:radial-gradient(circle,rgba(139,92,246,.5),transparent 70%)}
+  .rcard h3{font-size:21px;font-weight:800;margin:14px 0 4px;letter-spacing:-.01em;position:relative}
+  .rcard .lead{color:var(--muted);font-size:14px;margin:0 0 18px;position:relative;max-width:42ch}
+  .rcard .rprice{font-size:15px;font-weight:600;position:relative}
+  .rcard .rprice .big{font-size:26px;font-weight:800}
+  .rlist{list-style:none;padding:0;margin:16px 0 0;position:relative;display:flex;flex-direction:column;gap:8px}
+  .rlist li{font-size:13px;color:var(--muted);display:flex;gap:9px}
+  .rlist .ck{color:var(--cyan);font-weight:700}
+
+  /* ---------- ECOSYSTEM ---------- */
+  .eco{margin:84px 0 0;border:1px solid var(--border);border-radius:var(--radius);
+    background:linear-gradient(180deg,rgba(255,255,255,.03),transparent);padding:34px 30px}
+  .eco-top{text-align:center;margin-bottom:26px}
+  .eco-top h2{font-size:24px;font-weight:800;margin:0 0 6px}
+  .eco-top p{color:var(--muted);margin:0;font-size:14px}
+  .eco-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media(max-width:880px){.eco-grid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:520px){.eco-grid{grid-template-columns:1fr}}
+  .eco-item{border:1px solid var(--border);border-radius:14px;padding:18px;background:var(--surface)}
+  .eco-item .nm{font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .eco-item .ds{font-size:12.5px;color:var(--muted);min-height:54px}
+  .tag{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;padding:3px 8px;border-radius:999px}
+  .tag.now{color:var(--green);background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.3)}
+  .tag.p3{color:var(--amber);background:rgba(245,185,66,.12);border:1px solid rgba(245,185,66,.3)}
+  .tag.sep{color:var(--cyan);background:rgba(34,211,238,.12);border:1px solid rgba(34,211,238,.3)}
+
+  footer{margin:70px 0 60px;text-align:center;color:var(--faint);font-size:12.5px;line-height:1.7}
+  footer .note{max-width:720px;margin:0 auto}
+  .draftbar{
+    position:sticky;top:0;z-index:50;background:rgba(245,185,66,.1);
+    border-bottom:1px solid rgba(245,185,66,.35);color:var(--amber);
+    font-size:12.5px;font-weight:600;text-align:center;padding:8px 16px;backdrop-filter:blur(8px)
+  }
+</style>
+</head>
+<body>
+
+<div class="draftbar">⚠️ PREVIEW INTERNO — não publicado. Estrutura/features para revisão do techlead &amp; owner.</div>
+
+<div class="wrap">
+
+  <!-- HERO -->
+  <header>
+    <div class="eyebrow"><span class="dot"></span> HuGR · CoreLink</div>
+    <h1>Builds mais rápidos.<br/><span class="grad">E mais baratos.</span></h1>
+    <p class="sub">A plataforma <b>content-addressed</b> de builds: o cache que comprime seus builds + <b>workspaces</b> que viram objeto — snapshot &amp; hydrate em segundos via <code>clw</code>. CAS, Bazel, Turborepo, sccache e 5 adapters, tudo no mesmo motor.</p>
+    <div class="edge">
+      <span><span class="ic">◆</span> Egress R2 = <b style="color:var(--text)">$0</b></span>
+      <span><span class="ic">◆</span> Dedup cross-tenant de deps públicas</span>
+      <span><span class="ic">◆</span> Multi-região global</span>
+    </div>
+
+    <!-- BILLING TOGGLE -->
+    <div class="toggle-row">
+      <span class="lab on" id="lab-m">Mensal</span>
+      <label class="switch"><input type="checkbox" id="billing-toggle" /><span class="slider"></span></label>
+      <span class="lab" id="lab-a">Anual <span class="save">2 meses grátis</span></span>
+    </div>
+  </header>
+
+  <!-- TIER CARDS -->
+  <div class="tiers">
+
+    <!-- FREE -->
+    <div class="card">
+      <div class="tname">Free</div>
+      <div class="ttag">Projetos pessoais e avaliação — sem cartão</div>
+      <div class="price"><span class="cur">$</span><span class="amt" data-m="0" data-a="0">0</span><span class="per">/mês</span></div>
+      <div class="bill-note">para sempre</div>
+      <hr class="sep"/>
+      <ul class="feats">
+        <li><span class="ck">✓</span> <span><b>10 GB</b> de cache</span></li>
+        <li><span class="ck">✓</span> <span><b>500K</b> requisições/mês</span></li>
+        <li><span class="ck">✓</span> <span><b>1</b> workspace</span></li>
+        <li><span class="ck">✓</span> <span>Todas as superfícies de cache</span></li>
+        <li><span class="ck">✓</span> <span>Suporte da comunidade</span></li>
+      </ul>
+      <a class="btn ghost" href="#">Começar grátis</a>
+    </div>
+
+    <!-- SOLO -->
+    <div class="card">
+      <div class="tname">Solo</div>
+      <div class="ttag">Dev solo, build sempre quente</div>
+      <div class="price"><span class="cur">$</span><span class="amt" data-m="15" data-a="12.50">15</span><span class="per">/mês</span></div>
+      <div class="bill-note">cobrado anual · economiza $30/ano</div>
+      <hr class="sep"/>
+      <ul class="feats">
+        <li><span class="ck">✓</span> <span><b>50 GB</b> de cache</span></li>
+        <li><span class="ck">✓</span> <span><b>2M</b> requisições/mês</span></li>
+        <li><span class="ck">✓</span> <span>Workspaces <b>ilimitados</b></span></li>
+        <li><span class="ck">✓</span> <span>Suporte por e-mail</span></li>
+      </ul>
+      <a class="btn" href="#">Assinar Solo</a>
+    </div>
+
+    <!-- STARTER -->
+    <div class="card">
+      <div class="tname">Starter</div>
+      <div class="ttag">Time pequeno começando</div>
+      <div class="price"><span class="cur">$</span><span class="amt" data-m="35" data-a="29.17">35</span><span class="per">/mês</span></div>
+      <div class="bill-note">cobrado anual · economiza $70/ano</div>
+      <hr class="sep"/>
+      <ul class="feats">
+        <li><span class="ck">✓</span> <span><b>150 GB</b> de cache</span></li>
+        <li><span class="ck">✓</span> <span><b>6M</b> requisições/mês</span></li>
+        <li><span class="ck">✓</span> <span>Workspaces <b>ilimitados</b></span></li>
+        <li><span class="ck">✓</span> <span>Suporte por e-mail (2 dias úteis)</span></li>
+      </ul>
+      <a class="btn" href="#">Assinar Starter</a>
+    </div>
+
+    <!-- PRO ⭐ -->
+    <div class="card pro">
+      <div class="ribbon">★ Melhor custo-benefício</div>
+      <div class="tname">Pro</div>
+      <div class="ttag">O plano que faz sentido pra maioria</div>
+      <div class="price"><span class="cur">$</span><span class="amt" data-m="50" data-a="41.67">50</span><span class="per">/mês</span></div>
+      <div class="bill-note">cobrado anual · economiza $100/ano</div>
+      <hr class="sep"/>
+      <ul class="feats">
+        <li><span class="ck">✓</span> <span><b>500 GB</b> de cache <b style="color:var(--cyan)">(3,3× o Starter)</b></span></li>
+        <li><span class="ck">✓</span> <span><b>20M</b> requisições/mês</span></li>
+        <li><span class="ck">✓</span> <span>Workspaces <b>ilimitados</b></span></li>
+        <li><span class="ck">✓</span> <span>Suporte por e-mail (1 dia útil)</span></li>
+      </ul>
+      <a class="btn primary" href="#">Assinar Pro</a>
+    </div>
+
+    <!-- MAX -->
+    <div class="card">
+      <div class="tname">Max</div>
+      <div class="ttag">Times em escala, volume sério de builds</div>
+      <div class="price"><span class="cur">$</span><span class="amt" data-m="149" data-a="124.17">149</span><span class="per">/mês</span></div>
+      <div class="bill-note">cobrado anual · economiza $298/ano</div>
+      <hr class="sep"/>
+      <ul class="feats">
+        <li><span class="ck">✓</span> <span><b>2 TB</b> de cache (2.000 GB)</span></li>
+        <li><span class="ck">✓</span> <span><b>80M</b> requisições/mês</span></li>
+        <li><span class="ck">✓</span> <span>Workspaces <b>ilimitados</b></span></li>
+        <li><span class="ck">✓</span> <span>Suporte <b>prioritário</b> por e-mail</span></li>
+      </ul>
+      <a class="btn" href="#">Assinar Max</a>
+    </div>
+
+    <!-- ENTERPRISE -->
+    <div class="card">
+      <div class="tname">Enterprise</div>
+      <div class="ttag">Volume, contrato, dedicado</div>
+      <div class="price custom"><span class="amt">Sob consulta</span></div>
+      <div class="bill-note">&nbsp;</div>
+      <hr class="sep"/>
+      <ul class="feats">
+        <li><span class="ck">✓</span> <span>Armazenamento &amp; cotas <b>custom</b></span></li>
+        <li><span class="ck">✓</span> <span><b>BYOK</b> + <b>SSO/SAML</b></span></li>
+        <li><span class="ck">✓</span> <span>SLA <b>99.9%</b> com créditos · <b>DPA</b></span></li>
+        <li><span class="ck">✓</span> <span>Suporte <b>dedicado</b> · audit log export</span></li>
+      </ul>
+      <a class="btn" href="#">Falar com vendas</a>
+    </div>
+
+  </div>
+
+  <!-- COMPARISON MATRIX -->
+  <section class="compare">
+    <div class="sec-head">
+      <div class="kick">Comparação completa</div>
+      <h2>Tudo que entra em cada plano</h2>
+      <p>O cache + governança estão <b style="color:var(--green)">ao vivo</b> no launch. Runners e Workspaces são a evolução natural — <b style="color:var(--amber)">fase&nbsp;3</b>.</p>
+    </div>
+
+    <div class="matrix-scroll">
+      <table>
+        <colgroup>
+          <col/><col/><col/><col/><col class="pro-col"/><col/><col/>
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Recurso</th>
+            <th class="val">Free<div class="th-price">$0</div></th>
+            <th class="val">Solo<div class="th-price">$15</div></th>
+            <th class="val">Starter<div class="th-price">$35</div></th>
+            <th class="val col-pro">Pro ★<div class="th-price">$50</div></th>
+            <th class="val">Max<div class="th-price">$149</div></th>
+            <th class="val">Enterprise<div class="th-price">custom</div></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="grp"><td colspan="7">Cache &amp; Build Acceleration <span class="pill live">Ao vivo</span></td></tr>
+          <tr><td>Armazenamento (CAS)</td><td class="val">10 GB</td><td class="val">50 GB</td><td class="val">150 GB</td><td class="val col-pro">500 GB</td><td class="val">2 TB</td><td class="val">Custom</td></tr>
+          <tr><td>Requisições de cache / mês¹</td><td class="val">500K</td><td class="val">2M</td><td class="val">6M</td><td class="val col-pro">20M</td><td class="val">80M</td><td class="val">Custom</td></tr>
+          <tr><td>Workspaces</td><td class="val">1</td><td class="val">Ilimitados</td><td class="val">Ilimitados</td><td class="val col-pro">Ilimitados</td><td class="val">Ilimitados</td><td class="val">Ilimitados</td></tr>
+          <tr><td>CAS / Action Cache nativo</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val col-pro ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td></tr>
+          <tr><td>Bazel REAPI v2</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val col-pro ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td></tr>
+          <tr><td>Turborepo remote cache</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val col-pro ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td></tr>
+          <tr><td>sccache (Rust / C++)</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val col-pro ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td></tr>
+          <tr><td>Adapters: cargo · brew · npm · pip · oci</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val col-pro ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td></tr>
+          <tr><td>Dedup cross-tenant (deps públicas)</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val col-pro ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td></tr>
+
+          <tr class="grp"><td colspan="7">Storage Governance <span class="pill live">Ao vivo</span></td></tr>
+          <tr><td>Uso &amp; analytics</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val col-pro ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td></tr>
+          <tr><td>Cotas — hard cap a 100%¹</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val col-pro ck-y">✓</td><td class="val ck-y">✓</td><td class="val">Custom</td></tr>
+          <tr><td>Políticas de retenção</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val col-pro ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td></tr>
+          <tr><td>Eviction / lifecycle</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val col-pro ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td></tr>
+          <tr><td>Audit log export</td><td class="val ck-n">—</td><td class="val ck-n">—</td><td class="val ck-n">—</td><td class="val col-pro ck-n">—</td><td class="val ck-n">—</td><td class="val ck-y">✓</td></tr>
+
+          <tr class="grp"><td colspan="7">Segurança &amp; Suporte <span class="pill live">Ao vivo</span></td></tr>
+          <tr><td>Tenant isolation (HMAC prefixes, fail-closed)</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td><td class="val col-pro ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td></tr>
+          <tr><td>BYOK (sua chave de criptografia)</td><td class="val ck-n">—</td><td class="val ck-n">—</td><td class="val ck-n">—</td><td class="val col-pro ck-n">—</td><td class="val ck-n">—</td><td class="val ck-y">✓</td></tr>
+          <tr><td>SSO / SAML</td><td class="val ck-n">—</td><td class="val ck-n">—</td><td class="val ck-n">—</td><td class="val col-pro ck-n">—</td><td class="val ck-n">—</td><td class="val ck-y">✓</td></tr>
+          <tr><td>DPA &amp; MSA custom</td><td class="val ck-n">—</td><td class="val ck-n">—</td><td class="val ck-n">—</td><td class="val col-pro ck-n">—</td><td class="val ck-n">—</td><td class="val ck-y">✓</td></tr>
+          <tr><td>Suporte</td><td class="val">Comunidade</td><td class="val">E-mail</td><td class="val">E-mail (2 dias úteis)</td><td class="val col-pro">E-mail (1 dia útil)</td><td class="val">E-mail prioritário</td><td class="val">Canal dedicado</td></tr>
+          <tr><td>SLA de uptime (com créditos)</td><td class="val ck-n">—</td><td class="val ck-n">—</td><td class="val ck-n">—</td><td class="val col-pro ck-n">—</td><td class="val ck-n">—</td><td class="val">99.9%</td></tr>
+
+          <tr class="grp soon"><td colspan="7">Em breve — a evolução do CoreLink <span class="pill soon">Fase 3 · roadmap</span></td></tr>
+          <tr><td>CoreLink Runners (CI, minutos ilimitados)²</td><td class="val ck-n">—</td><td class="val">add-on</td><td class="val">add-on</td><td class="val col-pro">1 runner incl.</td><td class="val">4 runners incl.</td><td class="val">BYOC / custom</td></tr>
+          <tr><td>CoreLink Workspaces — Pin (warm garantido)³</td><td class="val ck-n">—</td><td class="val">add-on</td><td class="val">Pin 100 GB</td><td class="val col-pro">Pin 500 GB</td><td class="val">Pin 1 TB</td><td class="val">Custom</td></tr>
+          <tr><td>AI-agent sandboxes / dev boxes</td><td class="val ck-n">—</td><td class="val ck-n">—</td><td class="val ck-n">—</td><td class="val col-pro ck-y">✓</td><td class="val ck-y">✓</td><td class="val ck-y">✓</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ROADMAP BAND -->
+  <section class="band">
+    <div class="rcard runners">
+      <span class="pill soon">Fase 3 · campanha #1</span>
+      <h3>CoreLink Runners</h3>
+      <p class="lead">CI que não toca sua máquina. <b style="color:var(--text)">Minutos ilimitados</b>, você paga por runner paralelo — não por minuto. Cache incluso, então o build esquenta sozinho.</p>
+      <div class="rprice"><span class="big">a partir de $29</span> / runner paralelo · mês</div>
+      <ul class="rlist">
+        <li><span class="ck">✓</span> ~60–70% mais barato que GitHub-hosted</li>
+        <li><span class="ck">✓</span> Warm-up do cache → spin-up por job (efêmero)</li>
+        <li><span class="ck">✓</span> Tailwind: GitHub passa a cobrar self-hosted em Mar/2026</li>
+      </ul>
+    </div>
+    <div class="rcard spaces">
+      <span class="pill soon">Fase 3+ · campanha #2</span>
+      <h3>CoreLink Workspaces</h3>
+      <p class="lead">Seu workspace — source + deps + toolchain + estado — vira um objeto content-addressed. Qualquer máquina hidrata em segundos. Runner, sandbox de agente, dev box: <b style="color:var(--text)">um primitivo só</b>.</p>
+      <div class="rprice"><span class="big">Pin 100 GB · $5</span> / mês</div>
+      <ul class="rlist">
+        <li><span class="ck">✓</span> Warm garantido (SLA de calor) — sem primeiro build frio</li>
+        <li><span class="ck">✓</span> Hidratação ~40–70% quente via deps públicas compartilhadas</li>
+        <li><span class="ck">✓</span> Margem via dedupe (~85–90%), não via markup</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ECOSYSTEM -->
+  <section class="eco">
+    <div class="eco-top">
+      <h2>O ecossistema <span class="grad">HuGR</span></h2>
+      <p>Uma família de produtos sobre o mesmo cache content-addressed.</p>
+    </div>
+    <div class="eco-grid">
+      <div class="eco-item">
+        <div class="nm">◆ CoreLink Cache <span class="tag now">Launch</span></div>
+        <div class="ds">O produto-base: cache + governança de storage. CAS, Bazel, Turborepo, sccache, 5 adapters.</div>
+      </div>
+      <div class="eco-item">
+        <div class="nm">⚡ CoreLink Runners <span class="tag p3">Fase 3</span></div>
+        <div class="ds">CI/build-acceleration sobre o cache. Compute efêmero, minutos ilimitados, cobrança por concorrência.</div>
+      </div>
+      <div class="eco-item">
+        <div class="nm">⬡ CoreLink Workspaces <span class="tag now">Disponível · clw</span></div>
+        <div class="ds">O primitivo: workspace como objeto — <code>clw</code> snapshot/hydrate/run (pre-1.0, mergeado). Runners, sandboxes de agente e dev boxes (compute) são SKUs futuros dele.</div>
+      </div>
+      <div class="eco-item">
+        <div class="nm">⑂ hugit <span class="tag sep">Forge · separado</span></div>
+        <div class="ds">O forge da HuGR (git hosting) — marca/repo próprio (campanha #3). Posicionamento a definir.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <p class="note">
+      <b style="color:var(--muted)">¹ Hard cap a 100% da cota (v0.1):</b> ao atingir o limite, escritas retornam 429 + CTA de upgrade — <b style="color:var(--muted)">sem cobrança de excedente</b>. Anual = 2 meses grátis. Egress do R2 é $0. ·
+      <b style="color:var(--muted)">² Runners</b> é roadmap (fase 3) — ainda não buildado. <b style="color:var(--muted)">³ Workspaces (clw)</b> já está disponível (snapshot/hydrate, pre-1.0); o Pin + sandboxes (compute) é que são roadmap. Preços de roadmap são indicativos. <br/><br/>
+      Preços em USD. Margens validadas contra o COGS (R2 storage $0.033/GB-mês all-in, egress $0, compute ~$0.50/user, Stripe 2.9%+$0.30) — todos os planos pagos &gt; 50% de margem no uso máximo (Max a 2 TB cheios ≈ 52%).<br/>
+      <span style="color:var(--faint)">Preview interno CoreLink · HuGR · gerado para revisão — não é página pública.</span>
+    </p>
+  </footer>
+
+</div>
+
+<script>
+  var t = document.getElementById('billing-toggle');
+  var labM = document.getElementById('lab-m');
+  var labA = document.getElementById('lab-a');
+  t.addEventListener('change', function () {
+    var annual = t.checked;
+    document.querySelectorAll('.amt[data-m]').forEach(function (el) {
+      el.textContent = annual ? el.getAttribute('data-a') : el.getAttribute('data-m');
+    });
+    document.querySelectorAll('.bill-note').forEach(function (el) {
+      el.style.display = annual ? 'block' : 'none';
+    });
+    labM.classList.toggle('on', !annual);
+    labA.classList.toggle('on', annual);
+  });
+</script>
+
+</body>
+</html>
