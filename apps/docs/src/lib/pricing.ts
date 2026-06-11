@@ -84,6 +84,24 @@ export interface TierShape {
   readonly dpa: boolean;
   /** True if audit log export (beyond 90-day in-app retention). */
   readonly auditLogExport: boolean;
+  /**
+   * Cache retention promise (days): how long cached artifacts are
+   * retained before tier-TTL eviction. This is a published product
+   * promise — it mirrors, and MUST stay consistent with, the canonical
+   * TTL ladder in `crates/corelink-eviction/src/tier.rs` composed with
+   * the billing→operational tier mapping
+   * (`crates/corelink-ratelimit/src/tier.rs::tier_for_billing_label`,
+   * PROPOSAL-2026-06-10-ADMIN-PILOT-TENANT-RATE-MAPPING §3.3/§3.5,
+   * ratified 2026-06-10).
+   */
+  readonly retentionDays: number;
+  /**
+   * Contract-negotiated retention override hard cap (days). `null` for
+   * every self-serve tier (no override offered); Enterprise only:
+   * 730 d (CAP-EVICT-002 boundary — 730 is the CAP, the default stays
+   * 365 d).
+   */
+  readonly retentionOverrideCapDays: number | null;
   /** Support channel description. */
   readonly support: string;
   /** Per-tier base monthly fee (USD). `null` for contact-sales. */
@@ -122,6 +140,8 @@ export const TIER_RATE_CARD: Readonly<Record<TierId, TierShape>> = {
     slaCredits: false,
     dpa: false,
     auditLogExport: false,
+    retentionDays: 7,
+    retentionOverrideCapDays: null,
     support: "Community (GitHub Discussions)",
     usdMonthlyBase: 0,
     usdAnnualList: 0,
@@ -141,6 +161,8 @@ export const TIER_RATE_CARD: Readonly<Record<TierId, TierShape>> = {
     slaCredits: false,
     dpa: false,
     auditLogExport: false,
+    retentionDays: 30,
+    retentionOverrideCapDays: null,
     support: "Email (best-effort response target)",
     usdMonthlyBase: 15,
     usdAnnualList: 150,
@@ -160,6 +182,8 @@ export const TIER_RATE_CARD: Readonly<Record<TierId, TierShape>> = {
     slaCredits: false,
     dpa: false,
     auditLogExport: false,
+    retentionDays: 90,
+    retentionOverrideCapDays: null,
     support: "Email (2 business-day response target)",
     usdMonthlyBase: 35,
     usdAnnualList: 350,
@@ -179,6 +203,8 @@ export const TIER_RATE_CARD: Readonly<Record<TierId, TierShape>> = {
     slaCredits: false,
     dpa: false,
     auditLogExport: false,
+    retentionDays: 365,
+    retentionOverrideCapDays: null,
     support: "Email (1 business-day response target)",
     usdMonthlyBase: 50,
     usdAnnualList: 500,
@@ -198,6 +224,8 @@ export const TIER_RATE_CARD: Readonly<Record<TierId, TierShape>> = {
     slaCredits: false,
     dpa: false,
     auditLogExport: false,
+    retentionDays: 365,
+    retentionOverrideCapDays: null,
     support: "Priority email (1 business-day response target)",
     usdMonthlyBase: 149,
     usdAnnualList: 1_490,
@@ -219,6 +247,8 @@ export const TIER_RATE_CARD: Readonly<Record<TierId, TierShape>> = {
     slaCredits: true,
     dpa: true,
     auditLogExport: true,
+    retentionDays: 365,
+    retentionOverrideCapDays: 730, // default 365 d; up to 730 d by contract (CAP-EVICT-002)
     support: "Dedicated channel + custom SLA",
     usdMonthlyBase: null,
     usdAnnualList: null,
@@ -396,6 +426,20 @@ export function computeBreakEven(usage: UsageInputs): BreakEvenHeadroom | null {
       card.includedRequests - usage.requestsPerMonth,
     ),
   };
+}
+
+/**
+ * Render a tier's cache-retention promise. Self-serve tiers show the
+ * flat promise ("90-day cache retention"); Enterprise appends the
+ * contract-negotiable override cap ("365-day cache retention — up to
+ * 730 days by contract").
+ */
+export function formatRetention(card: TierShape): string {
+  const base = `${card.retentionDays}-day cache retention`;
+  if (card.retentionOverrideCapDays === null) {
+    return base;
+  }
+  return `${base} — up to ${card.retentionOverrideCapDays} days by contract`;
 }
 
 /**
