@@ -48,6 +48,7 @@ use corelink_privacy_erasure_worker::orchestrator::{ErasureWorker, InMemoryErasu
 mod adapter_d1;
 mod adapter_r2_ac;
 mod adapter_r2_cas;
+mod adapter_stripe;
 mod audit;
 mod d1util;
 mod ledger;
@@ -151,6 +152,9 @@ fn build_d1_worker() -> Option<InMemoryErasureWorker> {
                 }
                 BackendKind::R2Cas => {
                     Arc::new(adapter_r2_cas::R2CasEraseAdapter::new(Arc::clone(&d1)))
+                }
+                BackendKind::Stripe => {
+                    Arc::new(adapter_stripe::StripePseudonymizeAdapter::new(Arc::clone(&d1)))
                 }
                 other => Arc::new(InMemoryBackendErasureAdapter::new(other)),
             }

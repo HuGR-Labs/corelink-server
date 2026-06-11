@@ -23,6 +23,19 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **DSR erasure — real Stripe pseudonymize adapter (`Stripe`, WI-S11-008 Wave 1,
+  increment 4).** Pseudonymizes a tenant's Stripe customer(s) (redacts
+  email/name/phone/address, stamps `pii_redacted` metadata) via the existing
+  `StripeRealClient::pseudonymize_customer` — **never deletes** the customer
+  (invoice/payment history must survive fiscal retention: GAAP ASC 606 + LGPD
+  Art. 16). Resolves the ordering hazard (canonical fan-out runs `D1` before
+  `Stripe`, and D1 deletes the `tenant` row that carries `stripe_customer_id`)
+  by reading the id from the **retained** `stripe_customers` table (D1
+  RETAIN-set). Idempotent (deterministic key per `(subject, customer)`);
+  fails CLOSED when `STRIPE_SECRET_KEY` is unset. Wired into `build_d1_worker`
+  (D1 + R2Ac + R2Cas + Stripe real; the remaining 8 backends — the not-shipped
+  Neon/Kv + the WORM pseudonymized audit/evidence/legal-hold — stay `InMemory`
+  pending their shipped-reality reconciliation).
 - **DSR erasure — real R2 CAS erase adapter (`R2Cas`, WI-S11-008 Wave 1,
   increment 3 — completes increment 3).** Hard-deletes a tenant's
   content-addressed bytes from the single `corelink-cas-prod` bucket via
