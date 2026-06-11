@@ -23,14 +23,17 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
-- **DSR account deletion — Clerk `user.deleted` → erasure enqueue (WI-S11-008
-  WP-F).** The signup-worker Clerk webhook now handles `user.deleted`: it looks
-  up the tenant by `clerk_user_id` and enqueues a frozen-contract
+- **DSR account deletion — Clerk `user.deleted` → erasure pipeline (WI-S11-008
+  WP-F + WP-G).** The signup-worker Clerk webhook now handles `user.deleted`: it
+  looks up the tenant by `clerk_user_id` and PRODUCES a frozen-contract
   `dsr.queued.v1` message (deterministic `dsr_id` for idempotent redelivery +
-  HMAC-derived erasure salt) onto `DSR_QUEUE` for the erasure orchestrator. No
-  tenant → 200 no-op; tenant present but queue unbound → **fail-loud 500** so a
-  GDPR right-to-erasure obligation is never silently dropped. New secrets:
-  `DSR_QUEUE` binding + `ERASURE_SALT_KEY`.
+  HMAC-derived erasure salt) onto `DSR_QUEUE`. The same worker CONSUMES the queue
+  (`queue` handler → `dsr_consumer.ts`) and forwards each message to the
+  container's `/_internal/dsr/erase` endpoint (internal-auth gated; ack on 2xx,
+  retry otherwise → dead-letter after 10 attempts). No tenant → 200 no-op;
+  tenant present but queue unbound → **fail-loud 500** so a GDPR right-to-erasure
+  obligation is never silently dropped. New infra: `corelink-dsr-erasure` queue
+  + DLQ; new secret `ERASURE_SALT_KEY`.
 - **Clerk session bridge for `customer_v1` — dual-auth dispatch (dashboard
   revival WP-1).** `/v1/customer/*` now accepts EITHER a CoreLink PAT (existing
   path, byte-identical — the dispatch guard is `parsePat(bearer) === null`, and

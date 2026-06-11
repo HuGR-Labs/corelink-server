@@ -10,9 +10,11 @@
 
 import * as Sentry from "@sentry/cloudflare";
 import { handleClerkWebhook, defaultApiClient } from "./webhooks/clerk.js";
-import type { AutoProvisionEnv } from "./webhooks/clerk.js";
+import type { AutoProvisionEnv, DsrQueuedV1 } from "./webhooks/clerk.js";
 import { handleStripeWebhook } from "./webhooks/stripe.js";
 import type { StripeWebhookEnv } from "./webhooks/stripe.js";
+import { handleErasureQueueBatch } from "./webhooks/dsr_consumer.js";
+import type { QueueMessageBatch } from "./webhooks/dsr_consumer.js";
 import { withSecurityHeaders } from "./security-headers.js";
 
 type WorkerEnv = AutoProvisionEnv & StripeWebhookEnv;
@@ -55,6 +57,22 @@ const baseHandler: ExportedHandler<SignupEnv> = {
     } catch (err) {
       Sentry.captureException(err);
       return withSecurityHeaders(new Response("internal_error", { status: 500 }));
+    }
+  },
+
+  // DSR erasure queue consumer (dsr.queued.v1 → container /_internal/dsr/erase).
+  // Per-message ack/retry lives in handleErasureQueueBatch; a thrown error here
+  // is captured + rethrown so the queue runtime redelivers the whole batch
+  // (the erasure orchestrator is idempotent, so redelivery is safe).
+  async queue(batch, env: SignupEnv): Promise<void> {
+    try {
+      await handleErasureQueueBatch(
+        batch as unknown as QueueMessageBatch<DsrQueuedV1>,
+        env,
+      );
+    } catch (err) {
+      Sentry.captureException(err);
+      throw err;
     }
   },
 };
