@@ -17,6 +17,7 @@ import {
   computeBreakEven,
   estimateAllTiers,
   estimateTier,
+  formatRetention,
   formatUsd,
   recommendTier,
 } from "./pricing";
@@ -250,8 +251,58 @@ describe("formatUsd — honest framing", () => {
   });
 });
 
+describe("retention promise — PROPOSAL-2026-06-10 §3.5 (ratified Q5c)", () => {
+  it("pins the per-tier retention ladder (7/30/90/365/365/365 days)", () => {
+    // Mirrors crates/corelink-eviction/src/tier.rs ttl_for_tier composed
+    // with crates/corelink-ratelimit/src/tier.rs tier_for_billing_label:
+    // free→Free 7d, solo→Solo 30d, starter→Team 90d, pro→Business 365d,
+    // max→Business 365d, enterprise→Enterprise 365d.
+    expect(TIER_RATE_CARD.free.retentionDays).toBe(7);
+    expect(TIER_RATE_CARD.solo.retentionDays).toBe(30);
+    expect(TIER_RATE_CARD.starter.retentionDays).toBe(90);
+    expect(TIER_RATE_CARD.pro.retentionDays).toBe(365);
+    expect(TIER_RATE_CARD.max.retentionDays).toBe(365);
+    expect(TIER_RATE_CARD.enterprise.retentionDays).toBe(365);
+  });
+
+  it("Enterprise is the ONLY tier with the 730-day contract override cap", () => {
+    expect(TIER_RATE_CARD.enterprise.retentionOverrideCapDays).toBe(730);
+    for (const tier of CANONICAL_TIERS) {
+      if (tier !== "enterprise") {
+        expect(TIER_RATE_CARD[tier].retentionOverrideCapDays).toBeNull();
+      }
+    }
+  });
+
+  it("retention is monotonically non-decreasing across the price ladder", () => {
+    // A higher tier must never promise SHORTER retention than a
+    // cheaper one (same monotonicity rule as the rate-class mapping).
+    let last = 0;
+    for (const tier of CANONICAL_TIERS) {
+      const days = TIER_RATE_CARD[tier].retentionDays;
+      expect(days).toBeGreaterThanOrEqual(last);
+      last = days;
+    }
+  });
+
+  it("formatRetention renders the flat promise for self-serve tiers", () => {
+    expect(formatRetention(TIER_RATE_CARD.starter)).toBe(
+      "90-day cache retention",
+    );
+    expect(formatRetention(TIER_RATE_CARD.max)).toBe(
+      "365-day cache retention",
+    );
+  });
+
+  it("formatRetention appends the contract cap for Enterprise", () => {
+    expect(formatRetention(TIER_RATE_CARD.enterprise)).toBe(
+      "365-day cache retention — up to 730 days by contract",
+    );
+  });
+});
+
 describe("estimateAllTiers", () => {
-  it("returns one estimate per canonical tier in order Free / Pro / Enterprise", () => {
+  it("returns one estimate per canonical tier in ladder order (Free → Enterprise)", () => {
     const results = estimateAllTiers(DEFAULT_USAGE);
     expect(results.map((r) => r.tier)).toEqual([...CANONICAL_TIERS]);
   });

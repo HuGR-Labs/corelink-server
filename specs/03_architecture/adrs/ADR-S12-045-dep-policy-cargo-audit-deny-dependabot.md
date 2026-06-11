@@ -3,7 +3,7 @@ id: "ADR-S12-045"
 type: "adr"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-05-13"
 updated: "2026-06-10"
 owner: "Gustavo Schneiter"
@@ -44,7 +44,11 @@ No single tool covers all three axes.  The Rust ecosystem provides:
   manifests.
 - **Daily cron**: `0 6 * * *` UTC; parse JSON findings; classify HIGH/CRITICAL; emit SEV-2
   (CRITICAL) or SEV-3 (HIGH) alerts.
-- **Version**: pinned to `0.21.x`; bump via ADR + Security review.
+- **Version**: pinned to `0.22.x` (was `0.21.x` in prose / `0.22.1` in CI until
+  v1.3.0 reconciled them); bump via ADR + Security review.
+- **Install**: SHA-pinned `taiki-e/install-action` **prebuilt binary** (since v1.3.0;
+  was `cargo install` from source) — removes the os-error-2 from-source compile race
+  on the contended self-hosted Mac. Mirrors the cargo-deny install method.
 
 ### cargo-deny
 
@@ -112,7 +116,8 @@ No single tool covers all three axes.  The Rust ecosystem provides:
 
 | Tool | Pinned version | Current SHA (action) | Bump policy |
 |---|---|---|---|
-| cargo-audit | 0.21.x | installed via cargo install | Quarterly + ADR |
+| cargo-audit | 0.22.1 | installed via taiki-e/install-action@fd2f5e3d... (v2.81.9) prebuilt | Quarterly + ADR |
+| cargo-mutants | 25.0.1 (PR/nightly gate) · 27.0.0 (workspace nightly) · latest (per-crate) | installed via taiki-e/install-action@fd2f5e3d... prebuilt | test-tooling (not security-gated) |
 | cargo-deny | 0.19.8 | installed via taiki-e/install-action@fd2f5e3d... (v2.81.9) | Quarterly + ADR |
 | actions/checkout | v4.2.2 | @11bd71901bbe5b1630ceea73d27597364c9af683 | Dependabot auto-merge |
 | dtolnay/rust-toolchain | stable | @29eef336d9b2848a0b548edc03f92a220660cdb8 | ADR |
@@ -146,6 +151,36 @@ No single tool covers all three axes.  The Rust ecosystem provides:
 | 1.0.0 | 2026-05-13 | Gustavo (via Claude Sonnet 4.6) | Initial creation — WI-S12-004 SEALED. |
 | 1.1.0 | 2026-06-02 | Gustavo | Retired the Linux-only EmbarkStudios/cargo-deny-action container in favour of the native taiki-e/install-action install on the macOS self-hosted fleet. |
 | 1.2.0 | 2026-06-10 | Gustavo (via Claude Opus 4.8) | **cargo-deny `0.16.4` → `0.19.8`** (+ taiki-e/install-action `v2.49.49`/`v2.49.45` → `v2.81.9`, SHA `fd2f5e3d…`). See Amendment 1.2.0 below. |
+| 1.3.0 | 2026-06-10 | Gustavo (via Claude Opus 4.8) | **cargo-audit + cargo-mutants + cargo-nextest install: `cargo install` (from source) → SHA-pinned taiki-e prebuilt binary** across all 13 call sites (versions unchanged). Reconciled cargo-audit pin prose `0.21.x` → `0.22.1` (CI reality). See Amendment 1.3.0 below. |
+
+## Amendment 1.3.0 — prebuilt tool installs (os-error-2 compile-race fix)
+
+**Trigger:** `cargo install cargo-audit` / `cargo install cargo-mutants` /
+`cargo install cargo-nextest` compile the tools **from source**, pulling the heavy
+`aws-lc-sys` C/asm build. On the contended self-hosted Mac this repeatedly hits a
+filesystem race (`No such file or directory (os error 2)` / `clang: no input files`),
+**cancelling/failing the cargo-audit and cargo-mutants gates** intermittently and
+forcing documented-flake admin merges.
+
+**Change:** all 13 from-source install sites switched to the **SHA-pinned
+`taiki-e/install-action@fd2f5e3d…` (v2.81.9) prebuilt binary** — `cargo-audit` (2),
+`cargo-mutants` (9: PR gate, workspace nightly, 6 per-crate nightly, mutation-nightly),
+`cargo-nextest` (1, in the PR mutation gate). **Versions are unchanged** (cargo-audit
+`0.22.1`, cargo-mutants `25.0.1`/`27.0.0`/latest-per-crate, cargo-nextest latest) — a
+pure install-mechanism swap, so kill-rate baselines do not shift.
+
+**Security review (§14.s12.004.1 — cargo-audit is high-risk-lane tooling):**
+- **No version change** → no change to which advisories cargo-audit detects or which
+  mutants cargo-mutants generates. Pure delivery-mechanism change.
+- **Supply chain:** the prebuilt binaries are the upstream projects' own signed GitHub
+  release artifacts, fetched by the already-trusted, SHA-pinned `taiki-e/install-action`
+  (same action+SHA already used for cargo-deny). Trust surface is **narrowed**, not
+  widened: a pinned prebuilt artifact vs. compiling arbitrary transitive crates.io
+  source (incl. `aws-lc-sys` build scripts) at install time.
+- **Reliability is itself a security property:** a gate that flakes-red gets bypassed;
+  a reliable gate gets enforced.
+- **Approved-by:** Gustavo Schneiter (owner / final_approver), 2026-06-10, via the
+  Security-review gate for this change.
 
 ## Amendment 1.2.0 — cargo-deny version bump (CVSS 4.0 advisory parse)
 

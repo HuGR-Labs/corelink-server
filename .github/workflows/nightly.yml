@@ -389,11 +389,14 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install cargo-mutants (pinned)
+      - name: Install cargo-mutants (pinned, prebuilt)
         # Pin the exact mutant-runner version so workflow runs are
         # reproducible and a future cargo-mutants upstream change can't
-        # silently shift our kill-rate.
-        run: cargo install cargo-mutants --locked --version =27.0.0
+        # silently shift our kill-rate. Prebuilt binary (taiki-e) avoids the
+        # from-source compile race on the contended self-hosted Mac.
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: cargo-mutants@27.0.0
 
       - name: cargo-mutants workspace
         run: cargo mutants --workspace --no-shuffle --minimum-test-timeout=600

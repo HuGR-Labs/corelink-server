@@ -3,12 +3,13 @@
 "use client";
 
 import React from "react";
+import { useAuth } from "@clerk/nextjs";
 import { CustomerClient } from "@/lib/customer-client";
 import type { CustomerAuditEvent } from "@/lib/customer-types";
 
-const client = new CustomerClient();
-
 export function AuditClient(): React.ReactElement {
+  const { getToken } = useAuth();
+  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
   const [rows, setRows] = React.useState<CustomerAuditEvent[]>([]);
   const [since, setSince] = React.useState<string>("");
   const [loading, setLoading] = React.useState(true);
@@ -18,7 +19,7 @@ export function AuditClient(): React.ReactElement {
     const res = await client.listAudit(sinceVal ? { since: new Date(sinceVal).toISOString() } : {});
     setRows(res.rows);
     setLoading(false);
-  }, []);
+  }, [client]);
 
   React.useEffect(() => {
     void reload(since);

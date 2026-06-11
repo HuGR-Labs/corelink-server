@@ -79,7 +79,7 @@ export default function Calculator(): ReactElement {
   return (
     <Layout
       title="Pricing calculator"
-      description="Interactive cost calculator for CoreLink's 3 tiers: Free, Pro, Enterprise."
+      description="Interactive cost calculator for CoreLink's 6 tiers: Free, Solo, Starter, Pro, Max, Enterprise."
     >
       <main className={styles.page}>
         <header className={styles.header}>

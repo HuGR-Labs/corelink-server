@@ -26,6 +26,30 @@ name: dependabot-policy (license + status-check enforcement)
 # Implements: WI-S12-004 §6.1.5 (ST-005) + R-PREP audit policy gate.
 # SHA-pinned per HIGH_RISK lane FF-HR-005.
 
+# ============================================================================
+# SECURITY SENTINEL — pull_request_target + self-hosted runner WARNING
+#
+# This workflow uses `pull_request_target` (trusted context, write permissions)
+# and runs on the self-hosted mac runner (the founder's machine). It checks out
+# PR-HEAD content via `refs/pull/N/merge` in the policy-gate job below.
+#
+# This combination is safe ONLY because the SOLE consumer of the checked-out
+# code is `cargo deny check licenses bans` (~line 111) — a STATIC ANALYZER
+# that reads Cargo.lock/deny.toml but NEVER executes build scripts, proc
+# macros, or any other PR-supplied code.
+#
+# DO NOT add any of the following to this job without a dedicated security
+# review and explicit sign-off from the repo owner:
+#   - cargo build / cargo test / cargo run
+#   - npm install / npm run / npx (on checked-out sources)
+#   - Any shell step that executes code from the PR branch
+#   - Any step that installs or invokes build tooling from the PR tree
+#   - Any action that triggers Rust/Node/Python evaluation of PR files
+#
+# Violating this constraint turns any PR author into an RCE actor on the
+# founder's machine. The policy-gate job MUST remain a pure static-analysis
+# pass. (Ref: GHSA-2022-0001, GitHub Actions security hardening guide §5.4)
+# ============================================================================
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, labeled, ready_for_review]
@@ -67,6 +91,14 @@ jobs:
       # ---------------------------------------------------------------------
       # Step 1 — Checkout the PR head so we can inspect Cargo.lock diffs.
       # We use the merge-ref so the lockfile reflects post-merge state.
+      #
+      # SECURITY NOTE: this step checks out PR-HEAD content (refs/pull/N/merge)
+      # on a SELF-HOSTED runner. This is intentional and safe ONLY because no
+      # subsequent step executes code from the checked-out tree (see the
+      # pull_request_target sentinel comment at the top of this file). The
+      # only consumer is `cargo deny check licenses bans` — a static analyzer.
+      # Any future step that builds, installs, or runs PR-supplied code MUST
+      # undergo a security review before being added here.
       # ---------------------------------------------------------------------
       - name: Checkout PR merge ref (SHA-pinned)
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3

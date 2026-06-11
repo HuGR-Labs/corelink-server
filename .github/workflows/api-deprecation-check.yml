@@ -183,7 +183,12 @@ jobs:
           fi
           # Collect commit messages on the PR.
           COMMIT_MSGS=$(git log --format=%B "$BASE_REF..$HEAD_REF")
-          SEARCH_HAYSTACK="${PR_TITLE}"$'\n'"${PR_BODY}"$'\n'"${COMMIT_MSGS}"
+          # Build SEARCH_HAYSTACK via printf so shell-control characters in
+          # PR_TITLE/PR_BODY/COMMIT_MSGS cannot alter parsing. Each argument is
+          # treated as a literal %s token; downstream consumers use grep -qF
+          # (fixed-string) or grep -qE on a known-safe ISSUE_NUM, so semantics
+          # are byte-identical to the old concatenation.
+          SEARCH_HAYSTACK=$(printf '%s\n' "$PR_TITLE" "$PR_BODY" "$COMMIT_MSGS")
           FAIL=0
           while IFS=$'\t' read -r op issue; do
             [ -z "$op" ] && continue

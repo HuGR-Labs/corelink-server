@@ -339,7 +339,13 @@ async fn npm_gate(mut req: Request, next: Next) -> Response {
         // npm exposes no client write surface (no `npm publish`); gate
         // defensively anyway.
         Method::PUT | Method::POST => requires_cache_write(scope),
-        _ => true,
+        // Fail-CLOSED: the adapter only routes GET (axum's `get` also serves
+        // HEAD), so anything else would 405 downstream today — but the gate
+        // must not assume that. An unmapped method is denied here so a future
+        // adapter route can never ship without an explicit scope decision. No
+        // browser/CORS clients exist on this surface (npm CLI only), so
+        // OPTIONS is not legitimate traffic.
+        _ => false,
     };
     if !scope_ok {
         return (StatusCode::FORBIDDEN, "insufficient cache scope").into_response();
@@ -554,6 +560,29 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn unmapped_methods_are_403_even_with_rw_scope() {
+        // Fail-CLOSED method gate: DELETE/PATCH carry a FULL cas:rw scope but
+        // are not a mapped cache operation, so the gate must deny them (403)
+        // rather than fall through to downstream routing.
+        for method in [Method::DELETE, Method::PATCH] {
+            let app = router_rejecting();
+            let req = HttpRequest::builder()
+                .method(method.clone())
+                .uri("/npm/t/lodash")
+                .header("authorization", "Bearer corelink_whatever")
+                .header(SCOPE_HEADER, SCOPE_RW)
+                .body(Body::empty())
+                .unwrap();
+            let resp = app.oneshot(req).await.unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::FORBIDDEN,
+                "{method} with cas:rw must fail closed at the gate"
+            );
+        }
     }
 
     #[tokio::test]

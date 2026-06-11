@@ -1,0 +1,42 @@
+-- Migration 0063: Customer-key columns on the D1 `pat` table (WP-2,
+-- dashboard revival).
+--
+-- The customer dashboard (WP-1 UI + WP-3 D1CustomerHandler) lists, labels
+-- and soft-revokes a tenant's PATs ("API keys"). Migration 0037 created
+-- `pat` and 0054 added the `token_id` lookup column; neither carries a
+-- customer-facing label nor a revocation marker — this migration adds
+-- both additively.
+--
+-- Column contract:
+--   name           TEXT  (nullable)
+--     Customer-facing key label shown in the dashboard key list
+--     (e.g. "CI runner", "laptop"). Purely presentational — never used
+--     in any auth decision. NULL on legacy rows and on keys minted
+--     without a label.
+--   revoked_at_ms  BIGINT  (nullable)
+--     Soft-revocation timestamp (Unix epoch milliseconds). NULL = the
+--     key is ACTIVE; non-NULL = revoked at that instant. Soft (the row
+--     is retained for audit/display) rather than DELETE, per the
+--     additive-only auth-migration policy. ENFORCED at both PAT
+--     lookups: the Worker hot-path (`worker/src/index.ts`,
+--     `validatePat` step 4) and the container Option-B verifier
+--     (`crates/corelink-container/src/adapter_pat.rs`) both add
+--     `AND revoked_at_ms IS NULL` to their `WHERE token_id = ?1`
+--     queries, so a revoked PAT uniformly fails closed as 401
+--     (pat_not_found / InvalidPat — no revocation oracle on the wire).
+--
+-- Both columns are consumed by the WP-3 D1CustomerHandler (key list /
+-- rename / revoke endpoints).
+--
+-- Additive policy (INV-AUTH-MIGRATION-ADDITIVE, HIGH): no DROP, no
+-- destructive ALTER, no table rebuild. Pure ADD COLUMN statements; every
+-- existing row is preserved byte-for-byte and gains NULL for both new
+-- columns (NULL revoked_at_ms ⇒ active, so no live PAT changes behavior).
+--
+-- D1 note: D1/SQLite has no `ALTER TABLE ADD COLUMN IF NOT EXISTS`; the
+-- statements below are safe on any DB at migration 0054+ where the
+-- columns do not yet exist (the 0054 precedent).
+
+ALTER TABLE pat ADD COLUMN name TEXT;
+
+ALTER TABLE pat ADD COLUMN revoked_at_ms BIGINT;

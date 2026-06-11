@@ -111,8 +111,10 @@ jobs:
           workspaces: ". -> target"
           key: mutants-${{ matrix.crate }}
 
-      - name: Install cargo-mutants
-        run: cargo install cargo-mutants --locked --version 25.0.1
+      - name: Install cargo-mutants (prebuilt)
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: cargo-mutants@25.0.1
 
       - name: Run cargo-mutants on ${{ matrix.crate }}
         run: |

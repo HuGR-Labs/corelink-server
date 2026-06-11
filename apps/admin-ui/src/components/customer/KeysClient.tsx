@@ -3,14 +3,15 @@
 "use client";
 
 import React from "react";
+import { useAuth } from "@clerk/nextjs";
 import { CustomerClient } from "@/lib/customer-client";
 import type { CustomerOverview, CustomerPat } from "@/lib/customer-types";
-
-const client = new CustomerClient();
 
 const SCOPE_OPTIONS = ["cache:r", "cache:w", "cache:find-missing", "admin:audit"] as const;
 
 export function KeysClient(): React.ReactElement {
+  const { getToken } = useAuth();
+  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
   const [pats, setPats] = React.useState<CustomerPat[]>([]);
   const [byok, setByok] = React.useState<CustomerOverview["byok"] | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -30,7 +31,7 @@ export function KeysClient(): React.ReactElement {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [client]);
 
   React.useEffect(() => {
     void reload();

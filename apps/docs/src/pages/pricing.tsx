@@ -1,12 +1,13 @@
 /**
  * Public pricing page — Phase 0.E launch shape.
  *
- * 3 tiers (Free / Pro / Enterprise) per pricing-benchmarks §5 + ROADMAP-TO-LAUNCH.md §3
+ * 6 tiers (Free / Solo / Starter / Pro / Max / Enterprise) per
+ * pricing-benchmarks §5 + ROADMAP-TO-LAUNCH.md §3
  * + phase-0-execution-plan.md §2.E. Prices are concrete launch prices
  * (no longer provisional). CTAs route to real surfaces:
  *
  *   Free        → https://corelink-app.humangr.com/sign-up
- *   Pro         → https://corelink-app.humangr.com/upgrade?plan=pro
+ *   Paid tiers  → https://corelink-app.humangr.com/upgrade?plan=<tier>
  *   Enterprise  → mailto:sales@humangr.com
  *
  * The `/upgrade?plan=pro` route in `apps/admin-ui` triggers the
@@ -23,6 +24,7 @@ import {
   CANONICAL_TIERS,
   TIER_RATE_CARD,
   applyPeriodDiscount,
+  formatRetention,
   formatUsd,
 } from "../lib/pricing";
 import type { BillingPeriod, TierId, TierShape } from "../lib/pricing";
@@ -104,14 +106,14 @@ export default function Pricing(): ReactElement {
   return (
     <Layout
       title="Pricing"
-      description="CoreLink plans: Free, Pro ($25/mo or $250/yr), Enterprise. Three tiers, one number on Pro, no per-seat."
+      description="CoreLink plans: Free, Solo ($15/mo), Starter ($35/mo), Pro ($50/mo or $500/yr), Max ($149/mo), Enterprise. Six tiers, flat numbers, no per-seat."
     >
       <main className={styles.page}>
         <header className={styles.header}>
           <h1>Pricing</h1>
           <p>
-            Three plans. One paid number ($25/mo on Pro). No per-seat, no
-            per-build, no surprise bills.
+            Six tiers, from Free to Enterprise. Flat numbers ($50/mo on
+            Pro). No per-seat, no per-build, no surprise bills.
           </p>
         </header>
 
@@ -171,6 +173,9 @@ export default function Pricing(): ReactElement {
                     {card.includedWorkspaces === null
                       ? "Unlimited workspaces"
                       : `${card.includedWorkspaces} workspace${card.includedWorkspaces === 1 ? "" : "s"}`}
+                  </li>
+                  <li>
+                    <strong>{card.retentionDays}-day</strong> cache retention
                   </li>
                   <li>
                     {card.hardCap
@@ -248,6 +253,19 @@ export default function Pricing(): ReactElement {
               {CANONICAL_TIERS.map((t) => {
                 const w = TIER_RATE_CARD[t].includedWorkspaces;
                 return <td key={t}>{w === null ? "Unlimited" : w}</td>;
+              })}
+            </tr>
+            <tr>
+              <th scope="row">Cache retention</th>
+              {CANONICAL_TIERS.map((t) => {
+                const c = TIER_RATE_CARD[t];
+                return (
+                  <td key={t}>
+                    {c.retentionOverrideCapDays === null
+                      ? `${c.retentionDays} days`
+                      : `${c.retentionDays} days (up to ${c.retentionOverrideCapDays} by contract)`}
+                  </td>
+                );
               })}
             </tr>
             <tr>

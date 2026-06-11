@@ -18,6 +18,11 @@
 //! # Security
 //!
 //! - No request body is read or logged (INV-NO-BODY-IN-LOGS).
+//! - The tenant is extracted fail-CLOSED via the shared
+//!   [`crate::auth_tenant::AuthTenant`] extractor — a missing or
+//!   sentinel `x-corelink-tenant-id` is rejected with 401, exactly
+//!   like every other v1 surface (cas/ac/turbo). The endpoint never
+//!   echoes a sentinel tenant.
 //! - The tenant id and token prefix are echoed back to the caller; the
 //!   caller already proved possession of these via the PAT, so this is
 //!   not an information disclosure.
@@ -32,6 +37,8 @@ use axum::{
     Router,
 };
 
+use crate::auth_tenant::AuthTenant;
+
 /// Canonical /v1/users/me route path.
 pub const USERS_ME_ROUTE: &str = "/v1/users/me";
 
@@ -45,8 +52,9 @@ pub fn router() -> Router {
 /// Read the value of `name` from `headers`, trimmed; return `default`
 /// when the header is absent or empty. Header values that contain
 /// non-ASCII bytes fall through to `default` (the Worker only sets
-/// ASCII values; an invalid value indicates client tampering on a path
-/// the DO did not expect — fail-CLOSED to "_unknown").
+/// ASCII values). Used ONLY for echo-only correlation metadata
+/// (token prefix / route kind) — the tenant goes through the
+/// fail-CLOSED [`AuthTenant`] extractor instead.
 fn header_or(headers: &HeaderMap, name: &str, default: &str) -> String {
     headers
         .get(name)
@@ -57,8 +65,14 @@ fn header_or(headers: &HeaderMap, name: &str, default: &str) -> String {
 }
 
 /// `GET /v1/users/me` handler.
-async fn handle_me(headers: HeaderMap) -> impl IntoResponse {
-    let tenant_id = header_or(&headers, "x-corelink-tenant-id", "_unknown");
+///
+/// The tenant comes from the fail-CLOSED [`AuthTenant`] extractor (the
+/// same one every other v1 surface uses): a missing/sentinel
+/// `x-corelink-tenant-id` rejects with 401 BEFORE this body runs. The
+/// remaining headers are echo-only correlation metadata, so they keep
+/// soft defaults.
+async fn handle_me(auth: AuthTenant, headers: HeaderMap) -> impl IntoResponse {
+    let tenant_id = auth.0;
     let token_prefix = header_or(&headers, "x-corelink-token-prefix", "_unknown");
     let route_kind = header_or(&headers, "x-corelink-route-kind", "reapi_v1");
 
@@ -147,7 +161,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn returns_unknown_when_headers_missing() {
+    async fn missing_tenant_header_is_401() {
+        // Fail-CLOSED parity with every other v1 surface: no authenticated
+        // tenant ⇒ 401 from the AuthTenant extractor, never a sentinel echo.
         let app = router();
         let req = Request::builder()
             .uri("/v1/users/me")
@@ -155,12 +171,48 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn sentinel_tenant_header_is_401() {
+        // Sentinels (_unknown/_anonymous/_system/_pending) are non-tenant
+        // traffic markers — the extractor rejects them fail-CLOSED.
+        for sentinel in ["_unknown", "_anonymous", "_system", "_pending", ""] {
+            let app = router();
+            let req = Request::builder()
+                .uri("/v1/users/me")
+                .method("GET")
+                .header("x-corelink-tenant-id", sentinel)
+                .body(Body::empty())
+                .unwrap();
+            let resp = app.oneshot(req).await.expect("oneshot");
+            assert_eq!(
+                resp.status(),
+                StatusCode::UNAUTHORIZED,
+                "sentinel tenant {sentinel:?} must be rejected"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn echo_only_metadata_keeps_soft_defaults() {
+        // With a REAL tenant, the echo-only correlation headers (token
+        // prefix / route kind) keep their soft defaults when absent.
+        let app = router();
+        let req = Request::builder()
+            .uri("/v1/users/me")
+            .method("GET")
+            .header("x-corelink-tenant-id", "tenant-abc")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::OK);
         let bytes = to_bytes(resp.into_body(), 1 << 20).await.expect("body");
         let body = String::from_utf8(bytes.to_vec()).expect("utf8");
-        // Fail-CLOSED default — both tenant + token-prefix unknown.
-        assert!(body.contains("\"tenant_id\":\"_unknown\""));
+        assert!(body.contains("\"tenant_id\":\"tenant-abc\""));
         assert!(body.contains("\"token_prefix\":\"_unknown\""));
+        assert!(body.contains("\"route_kind\":\"reapi_v1\""));
     }
 
     #[test]

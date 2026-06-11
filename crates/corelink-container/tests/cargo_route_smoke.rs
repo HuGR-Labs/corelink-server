@@ -169,6 +169,30 @@ async fn read_only_scope_allows_get() {
 }
 
 #[tokio::test]
+async fn unmapped_methods_are_403_even_with_rw_scope() {
+    // Fail-CLOSED method gate: DELETE/PATCH carry a FULL cas:rw scope but are
+    // not a mapped cache operation (GET/HEAD/PUT), so the gate must deny them
+    // (403) rather than fall through to downstream routing.
+    for method in ["DELETE", "PATCH"] {
+        let app = cargo_router();
+        let key = key_for(b"unmapped-method");
+        let req = Request::builder()
+            .method(method)
+            .uri(format!("/cargo/{TENANT}/{key}"))
+            .header("Authorization", format!("Bearer {PAT}"))
+            .header("x-corelink-scope", SCOPE_RW)
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::FORBIDDEN,
+            "{method} with cas:rw must fail closed at the gate"
+        );
+    }
+}
+
+#[tokio::test]
 async fn missing_pat_returns_401() {
     let app = cargo_router();
     let key = key_for(b"x");

@@ -3,7 +3,8 @@
  *
  * R2 mandate (§0.8): "miniflare integration tests for DO are mandatory".
  *
- * These tests use miniflare v3 (workspace version) programmatically within a
+ * These tests use miniflare v4 (declared in worker/package.json devDependencies
+ * — NOT a phantom hoisted dependency) programmatically within a
  * standard Node.js vitest test. A Miniflare instance is created, the worker
  * bundle (compiled by wrangler --dry-run) is loaded into workerd, and HTTP
  * requests are dispatched through the full Workers runtime (NOT Node.js).
@@ -75,7 +76,8 @@ beforeAll(async () => {
   const script = readFileSync(DIST_INDEX, "utf8");
 
   // Lazy-import miniflare to avoid loading it in the primary test suite
-  // (which uses a different miniflare version). The workspace root provides v3.
+  // (which uses the miniflare pinned by @cloudflare/vitest-pool-workers).
+  // Resolved from worker/package.json devDependencies (miniflare v4).
   const { Miniflare } = await import("miniflare");
 
   mf = new Miniflare({
@@ -97,24 +99,55 @@ beforeAll(async () => {
   });
 
   // Seed the D1 PAT table with a test row so authenticated tests can pass.
+  //
+  // The schema MIRRORS the real D1 `pat` table (migrations/d1/0037 + 0054):
+  // the Worker auth path (worker/src/index.ts extractAuth) runs
+  //   SELECT tenant_id, expires_ms, scope FROM pat WHERE token_id = ?1
+  // so every column it selects MUST exist here — a missing column makes the
+  // D1 query throw, which extractAuth maps to a fail-closed 401
+  // (reason: d1_lookup_error) and the authenticated tests silently degrade.
+  // (The FOREIGN KEY to tenant(tenant_id) is intentionally omitted — the mock
+  // seeds no tenant table and the auth query never joins it.)
   const d1 = await mf.getD1Database("CONFIG_DB");
-  await d1.exec("CREATE TABLE IF NOT EXISTS pat (pat_id TEXT NOT NULL PRIMARY KEY, tenant_id TEXT NOT NULL, token_id TEXT UNIQUE, expires_ms INTEGER NOT NULL)");
-  await d1.prepare(
-    "INSERT OR IGNORE INTO pat (pat_id, tenant_id, token_id, expires_ms) VALUES (?1, ?2, ?3, ?4)"
-  ).bind(
+  await d1.exec(
+    "CREATE TABLE IF NOT EXISTS pat (" +
+      "pat_id TEXT NOT NULL PRIMARY KEY, " +
+      "tenant_id TEXT NOT NULL, " +
+      "pat_hash TEXT NOT NULL UNIQUE, " +
+      "scope TEXT NOT NULL DEFAULT 'read-write' CHECK (scope IN ('read-write', 'read-only', 'admin')), " +
+      "expires_ms BIGINT NOT NULL, " +
+      "shown_once_token TEXT NOT NULL UNIQUE, " +
+      "shown_once_consumed INTEGER NOT NULL DEFAULT 0 CHECK (shown_once_consumed IN (0, 1)), " +
+      "created_ms BIGINT NOT NULL, " +
+      "token_id TEXT, " +
+      // 0063: soft-revocation marker — NULL = active (worker filters AND revoked_at_ms IS NULL)
+      "revoked_at_ms BIGINT)",
+  );
+  await d1.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_pat_token_id ON pat (token_id)");
+  const seedPat =
+    "INSERT OR IGNORE INTO pat " +
+    "(pat_id, tenant_id, pat_hash, scope, expires_ms, shown_once_token, shown_once_consumed, created_ms, token_id) " +
+    "VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8)";
+  await d1.prepare(seedPat).bind(
     "00000000-0000-0000-0000-000000000042",
     TEST_TENANT_ID,
-    TEST_TOKEN_ID,
+    "mock-pat-hash-tenant-1", // never verified in the Worker (Argon2id is the DO's layer)
+    "read-write",
     Date.now() + 7_200_000, // +2h
+    "00000000-0000-0000-0000-0000000000a1",
+    Date.now(),
+    TEST_TOKEN_ID,
   ).run();
   // Second tenant for cross-tenant isolation tests (distinct token_id + tenant_id).
-  await d1.prepare(
-    "INSERT OR IGNORE INTO pat (pat_id, tenant_id, token_id, expires_ms) VALUES (?1, ?2, ?3, ?4)"
-  ).bind(
+  await d1.prepare(seedPat).bind(
     "00000000-0000-0000-0000-000000000043",
     SECOND_TENANT_ID,
-    SECOND_TOKEN_ID,
+    "mock-pat-hash-tenant-2",
+    "read-write",
     Date.now() + 7_200_000, // +2h
+    "00000000-0000-0000-0000-0000000000a2",
+    Date.now(),
+    SECOND_TOKEN_ID,
   ).run();
 
   // Warm up: dispatch a health check to confirm the worker is ready
@@ -408,12 +441,17 @@ describe("miniflare: DO tenant isolation in workerd", () => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 describe("miniflare: RolloutController DO in workerd", () => {
-  it("worker routes unknown path to not_found (RolloutController is internal-only)", async () => {
-    // The RolloutController DO is not directly exposed via the worker's route table.
-    // Requests to unmatched paths return 404 NOT_FOUND (timing-padded).
+  it("worker never exposes RolloutController — /v1/rollouts/* falls into the PAT-gated reapi_v1 arm (401)", async () => {
+    // The RolloutController DO is not directly exposed via the worker's route
+    // table. Since the generic `/v1/*` fallthrough arm was added (reapi_v1 —
+    // /v1/users/me, /v1/cas/*, …; see matchRoute in worker/src/index.ts),
+    // /v1/rollouts/* no longer 404s: it matches reapi_v1, which requires a
+    // PAT, so an unauthenticated probe is rejected 401 UNAUTHORIZED at the
+    // Worker and never reaches any DO. (Genuinely unmatched paths still 404 —
+    // covered by the "404 has correct JSON shape" test above.)
     const resp = await dispatchFetch("/v1/rollouts/test-rollout");
-    expect(resp.status).toBe(404);
+    expect(resp.status).toBe(401);
     const body = await resp.json() as { error: string };
-    expect(body.error).toBe("NOT_FOUND");
+    expect(body.error).toBe("UNAUTHORIZED");
   });
 });

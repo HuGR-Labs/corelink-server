@@ -34,11 +34,11 @@ on:
       - 'deny.toml'
       - '.cargo/audit.toml'   # advisory-waiver list — re-run the gate if it changes
       - '.github/workflows/cargo-audit.yml'
-  # NOTE: no `push: branches:[main]` — `cargo install cargo-audit` compiles the
-  # tool from source on the self-hosted macOS fleet, so re-running it on every
-  # main merge fed the heavy-gate stampede (load 398/665, 2026-06-04; extends
-  # the 977225d3 "stop heavy-gate stampede" sweep). The daily cron below + the
-  # PR `paths:` lane above keep continuous + targeted coverage; on-demand via
+  # NOTE: no `push: branches:[main]` — kept off the main-merge path to avoid the
+  # heavy-gate stampede (load 398/665, 2026-06-04; extends the 977225d3 "stop
+  # heavy-gate stampede" sweep). cargo-audit now installs as a SHA-pinned
+  # taiki-e prebuilt binary (no from-source compile), so this gate is lighter,
+  # but the cron + PR `paths:` lanes still keep coverage targeted; on-demand via
   # workflow_dispatch.
   schedule:
     # Daily at 06:00 UTC — RUSTSEC mirror typically refreshes by 05:00 UTC.
@@ -95,10 +95,10 @@ jobs:
       - name: Cargo cache
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
 
-      - name: Install cargo-audit (pinned)
-        run: |
-          cargo install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked --quiet
-          cargo audit --version
+      - name: Install cargo-audit (pinned, prebuilt)
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: cargo-audit@${{ env.CARGO_AUDIT_VERSION }}
 
       - name: Fetch pinned advisory database
         # Check out the SHA-pinned advisory DB into a workspace-local path so the
@@ -140,10 +140,10 @@ jobs:
       - name: Cargo cache
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
 
-      - name: Install cargo-audit (pinned)
-        run: |
-          cargo install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked --quiet
-          cargo audit --version
+      - name: Install cargo-audit (pinned, prebuilt)
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        with:
+          tool: cargo-audit@${{ env.CARGO_AUDIT_VERSION }}
 
       - name: Fetch pinned advisory database (resilience fallback)
         # Checked-out as a guaranteed-parseable fallback for the cron: the daily

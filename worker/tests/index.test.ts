@@ -57,10 +57,16 @@ const TEST_TENANT_ID = "00000000-0000-0000-0000-000000000001";
 function makeD1Mock(
   // `scope` is optional so existing fixtures (which omit it) double as the
   // "older row with NULL/absent scope" case (H1). When present it is forwarded
-  // verbatim to the DO via x-corelink-scope.
+  // verbatim to the DO via x-corelink-scope. `revoked_at_ms` (migration 0063)
+  // is optional likewise: absent/NULL = active, non-NULL = soft-revoked.
   tokenIdToRow: Map<
     string,
-    { tenant_id: string; expires_ms: number; scope?: string | null }
+    {
+      tenant_id: string;
+      expires_ms: number;
+      scope?: string | null;
+      revoked_at_ms?: number | null;
+    }
   >,
 ): D1Database {
   return {
@@ -69,6 +75,15 @@ function makeD1Mock(
         first: async <T>() => {
           const tokenId = args[0] as string;
           const row = tokenIdToRow.get(tokenId);
+          // Simulate D1 semantics for the soft-revocation predicate
+          // (migration 0063): when the worker's SQL filters on
+          // `revoked_at_ms IS NULL`, a revoked row must NOT be returned.
+          if (
+            sql.includes("revoked_at_ms IS NULL") &&
+            row?.revoked_at_ms != null
+          ) {
+            return null as T | null;
+          }
           return (row ?? null) as T | null;
         },
         all: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
@@ -412,6 +427,52 @@ describe("auth middleware", () => {
       headers: { Authorization: `Bearer ${patExpired}` },
     }, { CONFIG_DB: d1WithExpired });
     expect(resp.status).toBe(401);
+  });
+
+  it("returns 401 for valid-format PAT that is soft-revoked in D1 (revoked_at_ms set)", async () => {
+    // WP-2 (dashboard revival): the PAT lookup SQL gains
+    // `AND revoked_at_ms IS NULL` (migration 0063), so a revoked row is
+    // indistinguishable from an absent one → uniform 401.
+    const revokedTokenId = "DDDDDDDDDDDDDDDD"; // 16 Crockford b32 chars
+    const patRevoked =
+      "corelink_pat_" +
+      revokedTokenId +
+      "." +
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" + // 43 base64url
+      "." +
+      "AAAAAAAAAAAAAAAAAAAAAA"; // 22 base64url
+    expect(patRevoked.length).toBe(96); // sanity
+
+    // D1 mock with a NON-expired but soft-revoked row for DDDDDDDDDDDDDDDD.
+    const d1WithRevoked = makeD1Mock(new Map([
+      [revokedTokenId, {
+        tenant_id: TEST_TENANT_ID,
+        expires_ms: Date.now() + 3_600_000,
+        scope: "cas:rw",
+        revoked_at_ms: Date.now() - 1000,
+      }],
+    ]));
+    const resp = await workerFetch("http://localhost/api/v2/t/path", {
+      headers: { Authorization: `Bearer ${patRevoked}` },
+    }, { CONFIG_DB: d1WithRevoked });
+    expect(resp.status).toBe(401);
+  });
+
+  it("still accepts a PAT whose row has NULL revoked_at_ms (active key)", async () => {
+    // Guard the inverse: an explicit NULL revoked_at_ms (the post-0063
+    // shape of every active row) must keep resolving.
+    const d1ActiveNullRevoked = makeD1Mock(new Map([
+      [TEST_TOKEN_ID, {
+        tenant_id: TEST_TENANT_ID,
+        expires_ms: Date.now() + 3_600_000,
+        revoked_at_ms: null,
+      }],
+    ]));
+    const resp = await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/path`, {
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
+    }, { CONFIG_DB: d1ActiveNullRevoked });
+    expect(resp.status).not.toBe(401);
+    expect(resp.status).toBe(503); // DO stub
   });
 
   it("resolves real tenant_id from D1 and passes it to the DO via trusted header", async () => {

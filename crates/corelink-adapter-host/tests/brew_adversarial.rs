@@ -21,7 +21,9 @@ mod common;
 use std::sync::Arc;
 
 use common::{default_bottle_limit, spin_adapter, InMemoryCas, StaticTenantResolver};
+use corelink_adapter_host::brew::audit::{EVENT_TYPE_CACHE_FILL, EVENT_TYPE_INTEGRITY_MISMATCH};
 use corelink_audit::ports::InMemoryAuditEmitter;
+use sha2::{Digest as _, Sha256};
 use url::Url;
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -244,4 +246,94 @@ async fn upstream_5xx_returns_502_with_no_half_store() {
     // success path, AFTER a clean upstream fetch).
     assert_eq!(cas.len(), 0, "no half-stored bottle on upstream 5xx");
     assert_eq!(audit.snapshot().len(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mitm_digest_mismatch_is_refused_and_never_stored() {
+    // Content-addressed ghcr.io blob path whose declared digest does NOT
+    // match the served bytes (a MITMed / corrupt upstream). The adapter
+    // must refuse: 502, NOTHING stored, an integrity_mismatch audit row.
+    let upstream = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"tampered-bytes".to_vec()))
+        .mount(&upstream)
+        .await;
+
+    let cas = Arc::new(InMemoryCas::new());
+    let resolver = Arc::new(StaticTenantResolver::new().with(PAT_A, TENANT_A));
+    let audit = Arc::new(InMemoryAuditEmitter::new());
+
+    let upstream_url = Url::parse(&upstream.uri()).unwrap();
+    let (addr, _adapter) = spin_adapter(
+        upstream_url,
+        cas.clone(),
+        resolver,
+        audit.clone(),
+        default_bottle_limit(),
+    )
+    .await;
+
+    let declared = "a".repeat(64); // ≠ sha256(b"tampered-bytes")
+    let resp = reqwest::Client::new()
+        .get(format!(
+            "http://{addr}/v2/homebrew/core/curl/blobs/sha256:{declared}"
+        ))
+        .header("Authorization", format!("Bearer {PAT_A}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 502, "digest mismatch must refuse, not serve");
+
+    assert_eq!(cas.len(), 0, "tampered bytes must NEVER reach the store");
+    let events = audit.snapshot();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type, EVENT_TYPE_INTEGRITY_MISMATCH);
+    assert_eq!(events[0].tenant_id, TENANT_A);
+    assert_eq!(events[0].payload["expected_sha256"], declared);
+    assert_eq!(events[0].payload["outcome"], "refused");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn matching_digest_is_verified_and_stored() {
+    // The same content-addressed path with HONEST bytes: 200, stored, and
+    // the cache-fill audit row carries integrity = verified-sha256.
+    let bottle: &[u8] = b"\x1f\x8b\x08\x00honest-bottle";
+    let digest = hex::encode(Sha256::digest(bottle));
+
+    let upstream = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(bottle.to_vec()))
+        .mount(&upstream)
+        .await;
+
+    let cas = Arc::new(InMemoryCas::new());
+    let resolver = Arc::new(StaticTenantResolver::new().with(PAT_A, TENANT_A));
+    let audit = Arc::new(InMemoryAuditEmitter::new());
+
+    let upstream_url = Url::parse(&upstream.uri()).unwrap();
+    let (addr, _adapter) = spin_adapter(
+        upstream_url,
+        cas.clone(),
+        resolver,
+        audit.clone(),
+        default_bottle_limit(),
+    )
+    .await;
+
+    let resp = reqwest::Client::new()
+        .get(format!(
+            "http://{addr}/v2/homebrew/core/curl/blobs/sha256:{digest}"
+        ))
+        .header("Authorization", format!("Bearer {PAT_A}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.bytes().await.unwrap().as_ref(), bottle);
+
+    assert_eq!(cas.len(), 1, "verified bytes are stored");
+    let events = audit.snapshot();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type, EVENT_TYPE_CACHE_FILL);
+    assert_eq!(events[0].payload["integrity"], "verified-sha256");
 }
