@@ -13,6 +13,9 @@
 use std::sync::Arc;
 
 use serde_json::Value;
+use zeroize::Zeroizing;
+
+use corelink_tenant_path::TenantDerivationKey;
 
 use crate::storage::d1_http::{D1HttpClient, D1Row};
 
@@ -43,35 +46,28 @@ pub(super) fn col_i64(row: &D1Row, key: &str) -> Option<i64> {
     row.get(key).and_then(Value::as_i64)
 }
 
-/// Read a D1 BLOB column as a lowercase hex string.
+/// Load the tenant derivation key from `R2_TDK_HEX` (64 hex chars = 32 bytes),
+/// mirroring `storage::r2_s3::load_tdk_from_env`.
 ///
-/// The Cloudflare D1 HTTP query API represents a BLOB as a JSON **array of
-/// byte integers** (the canonical form); we also accept an already-hex string
-/// defensively. Any other / unrecognised encoding returns `None` — the callers
-/// (R2 erase adapters) then **fail CLOSED** (Transport error → retry/surface)
-/// rather than build a wrong key and silently skip a PII object. Returns `None`
-/// for SQL NULL / absent too.
-pub(super) fn col_blob_hex(row: &D1Row, key: &str) -> Option<String> {
-    match row.get(key)? {
-        // Canonical D1 form: array of 0..=255 byte values.
-        Value::Array(arr) => {
-            let bytes: Option<Vec<u8>> = arr
-                .iter()
-                .map(|v| v.as_u64().and_then(|n| u8::try_from(n).ok()))
-                .collect();
-            bytes.map(hex::encode)
-        }
-        // Defensive: an already-hex string (even length, all hex digits).
-        Value::String(s) => {
-            let t = s.trim();
-            if !t.is_empty() && t.len() % 2 == 0 && t.bytes().all(|b| b.is_ascii_hexdigit()) {
-                Some(t.to_ascii_lowercase())
-            } else {
-                None
-            }
-        }
-        _ => None,
+/// The R2 erase adapters key every object by `derive_prefix(tdk, tenant)` — the
+/// SAME 16-char `URL_SAFE_NO_PAD(HMAC-SHA256(tdk, tenant))[..16]` the CAS/AC
+/// write path used — so deriving with this key matches the stored objects **by
+/// construction** (no reliance on a materialised-prefix column / BLOB wire
+/// form). Returns `None` when unset/malformed; the adapters then fail CLOSED
+/// (they cannot address the tenant's R2 objects, so must not report success).
+///
+/// NOTE: assumes a single live TDK version (`path_key_id = 1`, true at launch).
+/// Under TDK rotation an entry written with an older key would need a versioned
+/// lookup — flagged in ADR-S11-013; out of scope for the launch erase-set.
+pub(super) fn load_tdk() -> Option<TenantDerivationKey> {
+    let hex_str = std::env::var("R2_TDK_HEX").ok()?;
+    let hex_str = hex_str.trim();
+    if hex_str.len() != 64 {
+        return None;
     }
+    let mut bytes = Zeroizing::new([0u8; 32]);
+    hex::decode_to_slice(hex_str, bytes.as_mut()).ok()?;
+    Some(TenantDerivationKey::from_bytes(bytes))
 }
 
 /// `u64` epoch-ms → `i64` for [`crate::customer_d1::ms_to_iso8601`],
@@ -159,24 +155,11 @@ mod tests {
     }
 
     #[test]
-    fn blob_hex_decodes_canonical_and_hex_forms() {
-        let raw: [u8; 4] = [0xDE, 0xAD, 0xBE, 0xEF];
-        let want = "deadbeef";
-        // (a) array-of-ints (canonical D1 wire form).
-        let mut row = D1Row::new();
-        row.insert(
-            "p".into(),
-            Value::Array(raw.iter().map(|b| Value::from(u64::from(*b))).collect()),
-        );
-        assert_eq!(col_blob_hex(&row, "p").as_deref(), Some(want));
-        // (b) already-hex string (case-insensitive).
-        let mut row = D1Row::new();
-        row.insert("p".into(), Value::String("DEADBEEF".into()));
-        assert_eq!(col_blob_hex(&row, "p").as_deref(), Some(want));
-        // (c) unrecognised form / absent → None (callers fail CLOSED).
-        let mut row = D1Row::new();
-        row.insert("p".into(), Value::String("not hex!".into()));
-        assert_eq!(col_blob_hex(&row, "p"), None);
-        assert_eq!(col_blob_hex(&D1Row::new(), "p"), None);
+    fn tdk_absent_is_none() {
+        // With no R2_TDK_HEX set the loader yields None (adapters fail closed).
+        // (Cannot assert the Some path without mutating process env in a
+        // shared test binary.)
+        std::env::remove_var("R2_TDK_HEX");
+        assert!(load_tdk().is_none());
     }
 }

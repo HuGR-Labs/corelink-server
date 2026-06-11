@@ -31,7 +31,9 @@ use corelink_privacy_erasure_worker::backends::{
 use corelink_privacy_erasure_worker::error::ErasureBackendError;
 use corelink_privacy_erasure_worker::event::{BackendErasureOutcome, BackendKind};
 
-use super::d1util::{col_blob_hex, col_str, d1_query_blocking, scalar_count};
+use corelink_tenant_path::derive_prefix;
+
+use super::d1util::{col_str, d1_query_blocking, load_tdk, scalar_count};
 use crate::storage::d1_http::D1HttpClient;
 use crate::storage::r2_s3::R2S3Client;
 use crate::storage::StorageEnv;
@@ -144,10 +146,21 @@ impl BackendErasureAdapter for R2AcEraseAdapter {
         }
         let tid = tenant_id.to_string();
 
+        // The R2 object prefix is derived ONCE per tenant — identical to the
+        // CAS/AC write path `derive_prefix(tdk, tenant).to_string()` (16-char
+        // `URL_SAFE_NO_PAD(HMAC)[..16]`), so the erase keys match the stored
+        // objects by construction. No TDK ⇒ fail CLOSED (cannot address them).
+        let tdk = load_tdk().ok_or_else(|| {
+            ErasureBackendError::Transport(
+                "R2_TDK_HEX unavailable — cannot derive AC tenant prefix".to_owned(),
+            )
+        })?;
+        let prefix = derive_prefix(&tdk, tenant_id).to_string();
+
         // 1. Read the authoritative AC index for this tenant.
         let rows = d1_query_blocking(
             &self.d1,
-            "SELECT region, tenant_prefix, action_digest FROM ac_meta WHERE tenant_id = ?1",
+            "SELECT region, action_digest FROM ac_meta WHERE tenant_id = ?1",
             vec![json!(tid)],
         )
         .map_err(ErasureBackendError::Transport)?;
@@ -156,21 +169,19 @@ impl BackendErasureAdapter for R2AcEraseAdapter {
             return Ok(BackendErasureOutcome::NotApplicable);
         }
 
-        // 2. Resolve each index row to its (bucket, R2 key). A row that cannot
-        //    be resolved is a SEV-1 data anomaly — fail CLOSED (Transport error
-        //    → orchestrator retry) rather than silently skip a PII object.
+        // 2. Resolve each index row to its (bucket, R2 key)
+        //    `<region>/<prefix>/<action_digest>`. A row that cannot be resolved
+        //    is a SEV-1 data anomaly — fail CLOSED (Transport error →
+        //    orchestrator retry) rather than silently skip a PII object.
         let mut targets: Vec<(String, String)> = Vec::with_capacity(rows.len());
         for row in &rows {
             let region = col_str(row, "region").ok_or_else(|| {
                 ErasureBackendError::Transport("ac_meta.region missing/non-text".to_owned())
             })?;
-            let prefix_hex = col_blob_hex(row, "tenant_prefix").ok_or_else(|| {
-                ErasureBackendError::Transport("ac_meta.tenant_prefix unreadable".to_owned())
-            })?;
             let digest = col_str(row, "action_digest").ok_or_else(|| {
                 ErasureBackendError::Transport("ac_meta.action_digest missing/non-text".to_owned())
             })?;
-            let key = R2S3Client::blob_key(&region, &prefix_hex, &digest);
+            let key = R2S3Client::blob_key(&region, &prefix, &digest);
             targets.push((self.bucket_for(&region), key));
         }
 
