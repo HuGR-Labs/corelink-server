@@ -89,6 +89,29 @@ ignore = [
     # to pyo3 >= 0.29 clears BOTH 0176 + 0177 — then remove both from this file
     # and `.cargo/audit.toml`.
     "RUSTSEC-2026-0177",
+    # 2026-06-12 — three DoS advisories published the same day in the
+    # rust-postgres stack (postgres-protocol / tokio-postgres):
+    #   RUSTSEC-2026-0178  panic on a `DataRow` with fewer fields than columns
+    #   RUSTSEC-2026-0179  unbounded SCRAM iteration count → CPU-exhaustion DoS
+    #   RUSTSEC-2026-0180  panic decoding a malformed binary `hstore` value
+    # ALL THREE reach the tree SOLELY via `corelink-audit-chain`'s **optional**,
+    # feature-gated postgres audit sink (`deadpool-postgres` + `tokio-postgres`,
+    # `optional = true`) plus a `[dev-dependencies]` test-container. The shipped
+    # CoreLink Cloudflare runtime is D1/SQLite and opens NO postgres connection;
+    # the optional sink, even when enabled, connects only to the operator's OWN
+    # trusted postgres. All three require a *malicious / compromised / MITM
+    # postgres server*, which the product never connects to — zero production
+    # attack surface. The semver fix (tokio-postgres >= 0.7.18) is NOT applied
+    # because `cargo update` to it force-DOWNGRADES unrelated shared transitive
+    # deps across the workspace (windows-sys 0.61→0.48/0.52, socket2 0.6→0.5,
+    # getrandom 0.4→0.3) — unacceptable collateral churn for a dev/optional-only
+    # path. Re-evaluate when tokio-postgres ships a fix that resolves cleanly,
+    # or when the optional postgres audit sink is removed; then drop these from
+    # both this file and `.cargo/audit.toml`. (Mirrors the rustls-pemfile /
+    # number_prefix dev-only-no-prod-exposure precedent above.)
+    "RUSTSEC-2026-0178",
+    "RUSTSEC-2026-0179",
+    "RUSTSEC-2026-0180",
 ]
 # CVSS threshold not applied: HIGH_RISK lane treats EVERY advisory as
 # blocking until explicitly waived via ADR.

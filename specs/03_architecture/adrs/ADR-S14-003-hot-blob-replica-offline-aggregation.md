@@ -1,5 +1,5 @@
 ---
-id: "ADR-S14-001"
+id: "ADR-S14-003"
 type: "adr"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
@@ -14,7 +14,7 @@ superseded_by: null
 tags: ["adr", "s14", "region", "failover", "replica", "hot-blob", "offline-aggregation", "cardinality-budget", "high-risk"]
 ---
 
-# ADR-S14-001 — Hot Blob Replica via Offline Aggregation (NOT Live Cardinality-Violating Metric) + PAT-REGION-FAILOVER-001 + Residency Restriction in `replica_region` S-14
+# ADR-S14-003 — Hot Blob Replica via Offline Aggregation (NOT Live Cardinality-Violating Metric) + PAT-REGION-FAILOVER-001 + Residency Restriction in `replica_region` S-14
 
 ## Status
 
