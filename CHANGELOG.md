@@ -137,6 +137,16 @@ Each entry cross-references:
   #254 / `feat/dsr-account-deletion`) rather than duplicating them; the erase
   WRITE route stays unmounted (fail-CLOSED) until that adapter lands, while the
   410 READ gate is live from env wherever D1 creds are present.
+- **`EventLogDO` — thin, generic, per-tenant append-only event-log Durable
+  Object primitive (ADR-0065, hugit-P2 seam D / WP-D).** A minimal ordering +
+  durability primitive: `POST /_eventlog/append` returns a strictly-monotonic,
+  gap-free, 1-based `{ seq, ts_ms }` under the DO's single-writer
+  serialization, and `GET /_eventlog/read?from_seq=&limit=` returns entries in
+  `seq` order. Deliberately NOT chain-aware (no hashing/Merkle/signatures) — the
+  consumer (hugit) layers its integrity chain on top (ADR-0066). One DO instance
+  per tenant (`idFromName(tenant_id)`); tenant-pinned (cross-tenant → 403). Owner
+  file `worker/src/event_log_do.ts`; bound as `EVENT_LOG_DO` across all envs with
+  migration `tag = "v3"` (`new_sqlite_classes = ["EventLogDO"]`).
 - **Clerk session bridge for `customer_v1` — dual-auth dispatch (dashboard
   revival WP-1).** `/v1/customer/*` now accepts EITHER a CoreLink PAT (existing
   path, byte-identical — the dispatch guard is `parsePat(bearer) === null`, and

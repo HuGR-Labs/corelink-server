@@ -22,6 +22,7 @@
 import type { D1Database, DurableObjectNamespace, ExecutionContext, ExportedHandler } from "@cloudflare/workers-types";
 import { CoreLinkServer } from "./durable_object.js";
 import { RolloutController } from "./rollout_controller.js";
+import { EventLogDO } from "./event_log_do.js";
 import { getTierForTenant, checkStorageQuota, checkRequestQuota } from "./lib/quota.js";
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
 import { handleSessionExchange } from "./lib/session_exchange.js";
@@ -33,6 +34,11 @@ import { handleSessionExchange } from "./lib/session_exchange.js";
 /** Worker environment bindings — matches wrangler.toml. */
 export interface Env {
   CORELINK_SERVER: DurableObjectNamespace;
+  // ADR-0065 — per-tenant append-only event-log DO (hugit-P2 seam D).
+  // One DO instance per tenant: idFromName(tenant_id). Bound in wrangler.toml
+  // `[[durable_objects.bindings]]` (name = "EVENT_LOG_DO"). Optional in the
+  // type so existing test envs that omit it still typecheck.
+  EVENT_LOG_DO?: DurableObjectNamespace;
   ENVIRONMENT: string;
   // D1 CONFIG_DB — control-plane database. Holds the `pat` table queried
   // during PAT validation (WP-A1). Bound in wrangler.toml `[[d1_databases]]`.
@@ -1814,4 +1820,4 @@ const handler: ExportedHandler<Env> = {
 };
 
 export default handler;
-export { CoreLinkServer, RolloutController };
+export { CoreLinkServer, RolloutController, EventLogDO };

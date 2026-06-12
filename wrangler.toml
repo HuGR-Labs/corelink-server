@@ -186,6 +186,18 @@ class_name = "RolloutController"
 tag = "v2"
 new_sqlite_classes = ["RolloutController"]
 
+# ADR-0065 — EventLogDO: thin, generic, per-tenant append-only event-log
+# primitive (hugit-P2 seam D). One DO instance per tenant via
+# idFromName(tenant_id); SQLite-backed storage. The class is exported from
+# worker/src/index.ts and implemented in worker/src/event_log_do.ts.
+[[durable_objects.bindings]]
+name = "EVENT_LOG_DO"
+class_name = "EventLogDO"
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["EventLogDO"]
+
 # Vars não-secretas
 [vars]
 ENVIRONMENT = "dev"
@@ -408,6 +420,10 @@ class_name = "CoreLinkServer"
 name = "ROLLOUT_DO"
 class_name = "RolloutController"
 
+[[env.prod.durable_objects.bindings]]
+name = "EVENT_LOG_DO"
+class_name = "EventLogDO"
+
 # ============================================================================
 # R2-10 — Staging environment (`wrangler deploy --env staging`).
 #
@@ -510,6 +526,10 @@ class_name = "CoreLinkServer"
 [[env.staging.durable_objects.bindings]]
 name = "ROLLOUT_DO"
 class_name = "RolloutController"
+
+[[env.staging.durable_objects.bindings]]
+name = "EVENT_LOG_DO"
+class_name = "EventLogDO"
 
 [[env.staging.containers]]
 class_name = "CoreLinkServer"
@@ -659,6 +679,10 @@ class_name = "CoreLinkServer"
 name = "ROLLOUT_DO"
 class_name = "RolloutController"
 
+[[env.prod-sam.durable_objects.bindings]]
+name = "EVENT_LOG_DO"
+class_name = "EventLogDO"
+
 [[env.prod-sam.containers]]
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-sam-corelinkserver-prod:0206f0cd-r1"
@@ -772,6 +796,10 @@ class_name = "CoreLinkServer"
 [[env.prod-lhr.durable_objects.bindings]]
 name = "ROLLOUT_DO"
 class_name = "RolloutController"
+
+[[env.prod-lhr.durable_objects.bindings]]
+name = "EVENT_LOG_DO"
+class_name = "EventLogDO"
 
 [[env.prod-lhr.containers]]
 class_name = "CoreLinkServer"
@@ -887,6 +915,10 @@ class_name = "CoreLinkServer"
 name = "ROLLOUT_DO"
 class_name = "RolloutController"
 
+[[env.prod-nrt.durable_objects.bindings]]
+name = "EVENT_LOG_DO"
+class_name = "EventLogDO"
+
 [[env.prod-nrt.containers]]
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-nrt-corelinkserver-prod:0206f0cd-r1"
@@ -1000,6 +1032,10 @@ class_name = "CoreLinkServer"
 [[env.prod-syd.durable_objects.bindings]]
 name = "ROLLOUT_DO"
 class_name = "RolloutController"
+
+[[env.prod-syd.durable_objects.bindings]]
+name = "EVENT_LOG_DO"
+class_name = "EventLogDO"
 
 [[env.prod-syd.containers]]
 class_name = "CoreLinkServer"
