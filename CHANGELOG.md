@@ -44,6 +44,23 @@ Each entry cross-references:
   no webhook-handler change was needed.)
 
 ### Added
+- **Transparency-log submission seam — public Rekor witnessing (hugit-P2 seam
+  E, ADR-0066).** New `corelink-transparency-log` crate: a thin submitter that
+  witnesses CoreLink-signed audit / attestation entries on the **public
+  sigstore/Rekor** transparency log — making them verifiable *against* CoreLink,
+  not *via* CoreLink. Per ADR-0066 CoreLink integrates the public log rather
+  than rebuilding one: it builds the canonical Rekor `hashedrekord` v0.0.1
+  proposed entry from a `SignedEntry` (the JCS-canonical payload digest +
+  detached Ed25519 signature + published public key — the payload bytes never
+  leave CoreLink), submits it through the `RekorSubmitter` async seam, and
+  records the returned `RekorWitnessRecord { log_index, inclusion_proof }`
+  alongside the entry. The `witness_or_degrade` driver runs **post-hoc, off the
+  write path** and **fails OPEN**: a Rekor outage degrades witnessing
+  (`WitnessOutcome::Degraded`, queued for out-of-band retry) but never blocks or
+  errors the durable write path. Ships pure-logic (entry builder + response
+  parser + fail-open policy) with an `InMemoryRekor` fake pinning every
+  invariant in CI; the real HTTPS transport to `rekor.sigstore.dev` is the
+  binding portion deferred per ADR-0066.
 - **Clerk session bridge for `customer_v1` — dual-auth dispatch (dashboard
   revival WP-1).** `/v1/customer/*` now accepts EITHER a CoreLink PAT (existing
   path, byte-identical — the dispatch guard is `parsePat(bearer) === null`, and

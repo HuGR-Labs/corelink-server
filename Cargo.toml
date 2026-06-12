@@ -162,6 +162,11 @@ members = [
     "crates/corelink-byok",
     # WI-S14-007 Ed25519 erasure attestation
     "crates/corelink-erasure-attestation",
+    # hugit-P2 seam E (ADR-0066) — public Rekor transparency-log submission
+    # seam. Thin submitter (NOT a log operator): witnesses signed audit /
+    # attestation entries on sigstore/Rekor, post-hoc + fail-OPEN. Pure-logic
+    # trait + InMemory fake; real HTTPS transport deferred per the ADR.
+    "crates/corelink-transparency-log",
     # WI-S17-002 DR drill scheduler + CF region outage simulator
     # R-prep continuous (daily) backup verification harness — complements
     # GAP-15 cold-restore drill (which runs only on schedule). Catches
@@ -628,6 +633,7 @@ corelink-replication-coordinator = { path = "crates/corelink-replication-coordin
 # `specs/_audits/sealed/2026-05-26-w35-p2-byok-absorption.md`.
 corelink-byok = { path = "crates/corelink-byok" }
 corelink-erasure-attestation = { path = "crates/corelink-erasure-attestation" }
+corelink-transparency-log = { path = "crates/corelink-transparency-log" }
 corelink-chaos-scheduler = { path = "crates/corelink-chaos-scheduler" }
 corelink-tier-selection = { path = "crates/corelink-tier-selection" }
 corelink-stripe-real = { path = "crates/corelink-stripe-real" }
