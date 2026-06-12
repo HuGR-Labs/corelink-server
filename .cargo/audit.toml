@@ -65,4 +65,16 @@ ignore = [
     # pyo3 0.29.0 (major bump). Mirror of deny.toml. A single corelink-py bump to
     # pyo3 >= 0.29 clears BOTH; then remove both from BOTH files.
     "RUSTSEC-2026-0177",
+    # 2026-06-12 — three same-day rust-postgres DoS advisories (postgres-protocol
+    # / tokio-postgres): -0178 short-`DataRow` panic, -0179 unbounded SCRAM
+    # iteration CPU-exhaustion, -0180 malformed-`hstore` decode panic. Reached
+    # only via `corelink-audit-chain`'s OPTIONAL feature-gated postgres audit sink
+    # + dev test-containers; the shipped CF runtime is D1/SQLite (no postgres
+    # connection) and all three require a malicious postgres *server*. The semver
+    # fix (tokio-postgres >= 0.7.18) force-downgrades unrelated shared workspace
+    # deps (windows-sys / socket2 / getrandom), so it is waived rather than
+    # applied. Mirror of `deny.toml` — re-evaluate the trio together.
+    "RUSTSEC-2026-0178",
+    "RUSTSEC-2026-0179",
+    "RUSTSEC-2026-0180",
 ]

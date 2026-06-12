@@ -22,7 +22,35 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **ci: unbreak the `wasm32-unknown-unknown` build (main red ~3 days).** The
+  `WASM target build` gate (`corelink-worker` cargo-check on wasm32) had been
+  failing since 2026-06-10 because `getrandom 0.4.2` entered the wasm dependency
+  graph (via `uuid`'s `rng-getrandom` feature) without its `wasm_js` backend
+  feature enabled — so it fell through to the `unsupported` backend stub and
+  E0425'd on the missing `fill_inner`/`inner_u32`/`inner_u64`. `corelink-worker`'s
+  `[target.'cfg(target_arch = "wasm32")'.dependencies]` already pinned the 0.2
+  (`js`) and 0.3 (`wasm_js`) majors but not 0.4; added the matching
+  `getrandom 0.4 features = ["wasm_js"]` entry (the `--cfg=getrandom_backend=
+  "wasm_js"` rustflag was already set in `.cargo/config.toml`). wasm32 check now
+  passes locally; native build/test graph unchanged (target-gated).
+
 ### Security
+- **deps: waive 3 rust-postgres DoS advisories (RUSTSEC-2026-0178 / -0179 /
+  -0180).** Published 2026-06-12 in the postgres-protocol / tokio-postgres stack
+  (short-`DataRow` panic, unbounded SCRAM iteration CPU-exhaustion,
+  malformed-`hstore` decode panic) — they red'd cargo-deny / cargo-audit
+  repo-wide. All three reach the tree SOLELY via `corelink-audit-chain`'s
+  **optional**, feature-gated postgres audit sink (`tokio-postgres`,
+  `optional = true`) plus dev test-containers; the shipped CF Workers runtime is
+  D1/SQLite and opens no postgres connection, and all three require a
+  malicious/compromised/MITM postgres *server*, which the product never connects
+  to — zero production attack surface. Waived (not upgraded) because
+  `cargo update` to the fixed tokio-postgres 0.7.18 force-DOWNGRADES unrelated
+  shared workspace deps (windows-sys 0.61→0.48/0.52, socket2 0.6→0.5,
+  getrandom 0.4→0.3) — unacceptable collateral churn for a dev/optional path.
+  Mirror ignores added to `deny.toml` + `.cargo/audit.toml`; re-evaluate when
+  tokio-postgres ships a clean-resolving fix or the optional sink is dropped.
 - **CRITICAL — close the "paid tier without payment" enforcement hole (e2e
   adversarial audit 2026-06-11).** The checkout backend persists the requested
   paid tier into `tier_selections` at checkout-START with
