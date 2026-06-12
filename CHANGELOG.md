@@ -195,6 +195,18 @@ Each entry cross-references:
   non-blocking full `pnpm audit` for dev-graph visibility. Advisory waivers
   via `pnpm.auditConfig.ignoreCves` in `package.json` require an ADR-style
   note, mirroring `.cargo/audit.toml` policy.
+- **`tenant.tier` CHECK widened to include `'max'` — migration 0064 + ADR-0064
+  (#218 §4-Q2 ratified follow-up).** Migration 0057 added `tenant.tier` with an
+  inline CHECK that accepted `('free','solo','starter','team','pro','org','enterprise')`
+  but omitted `'max'`. Migration 0062 already widened `tier_selections.tier` and
+  `stripe_checkout_sessions.tier` to include `'max'`; leaving `tenant.tier`
+  narrower would create silent quota-enforcement gaps for max-tier customers.
+  PR #218 §4-Q2 ratified the fix as a non-blocking follow-up. Migration 0064
+  applies the same 0062-style 12-step table rebuild: full 19-column explicit copy
+  (zero rows dropped or mutated), all 9 indexes recreated verbatim, `PRAGMA
+  defer_foreign_keys` around the DROP/RENAME window. `'pilot'` intentionally NOT
+  added (ratified out at §4-Q2). ADR-0064 records the mechanism and the ratification
+  quote. Draft PR — prod apply is owner-gated.
 - **admin-ui `/upgrade?plan=<tier>` page — the public pricing CTAs now reach
   checkout (#49).** Every docs pricing CTA targets
   `corelink-app.humangr.com/upgrade?plan=<tier>`, but admin-ui had no
