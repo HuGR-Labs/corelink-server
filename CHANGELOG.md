@@ -49,6 +49,18 @@ Each entry cross-references:
   (`AcHandlerError::DivergentBody` → HTTP 409); a byte-identical re-PUT stays an idempotent
   no-op (`durable=false`). A proven cache result is immutable-once-stored — silent replacement
   is forbidden. Audit emits before the refusal.
+- **Pilot-admin: create endpoint + D1-durable store (hugit-P2 WP-FOUND).**
+  `POST /v1/admin/pilots` (and the `/_internal/admin/pilots` operator-edge alias)
+  creates a new pilot tenant: mints a fresh `tenant_id`, persists it in the `NEW`
+  lifecycle state (`tier=free`), and returns the created record (`201 Created`).
+  The handler mirrors the existing `admin_pilot` auth/error/audit discipline
+  exactly — operator-only `x-corelink-internal-auth` constant-time gate + scope
+  re-check + fail-CLOSED audit-before-mutation. The `PilotStore` is now backed by
+  a new D1-durable `D1PilotStore` (over `D1HttpClient`, sync↔async via
+  `block_in_place`/`block_on`, CF-token-redacting Debug) so pilots survive
+  container restarts; the non-durable `InMemoryPilotStore` remains the dev/CI
+  fallback (env-gated). New additive migration `0065_pilot_tenants.sql` adds the
+  `pilot_tenants` backing table (no destructive change; no ADR waiver needed).
 - **Clerk session bridge for `customer_v1` — dual-auth dispatch (dashboard
   revival WP-1).** `/v1/customer/*` now accepts EITHER a CoreLink PAT (existing
   path, byte-identical — the dispatch guard is `parsePat(bearer) === null`, and
