@@ -44,6 +44,21 @@ Each entry cross-references:
   no webhook-handler change was needed.)
 
 ### Added
+- **Per-hash CAS erase + 410-Gone tombstone (hugit-P2 seam B, WP-B).** New
+  operator/internal write-side endpoint `POST /_internal/cas/:tenant/:hash/erase`
+  (constant-time `X-Corelink-Internal-Auth` gated, off the hot GET path) deletes
+  a single content-addressed blob from the cold `corelink-cas-prod` R2 bucket and
+  writes a durable tombstone (`cas_tombstone` D1 table, migration
+  `0067_cas_tombstone.sql`). The CAS read path
+  (`GET /v1/cas/:tenant/:hash`) now consults the tombstone FIRST and returns
+  **HTTP 410 Gone** for an erased hash — never 404 ("never existed") and never
+  200 (resurrected bytes); a re-erase is an idempotent no-op. Pure decision logic
+  ships in the new `corelink-handler-cas-erase` crate (digest validation,
+  cross-tenant gate, tombstone marker, read-gate). The R2 byte-deletion COMPOSES
+  the DSR Wave 1 R2 CAS primitives (`R2S3Client::{delete, list_objects_v2}`, PR
+  #254 / `feat/dsr-account-deletion`) rather than duplicating them; the erase
+  WRITE route stays unmounted (fail-CLOSED) until that adapter lands, while the
+  410 READ gate is live from env wherever D1 creds are present.
 - **Clerk session bridge for `customer_v1` — dual-auth dispatch (dashboard
   revival WP-1).** `/v1/customer/*` now accepts EITHER a CoreLink PAT (existing
   path, byte-identical — the dispatch guard is `parsePat(bearer) === null`, and

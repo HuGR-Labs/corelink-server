@@ -248,6 +248,8 @@ members = [
     # wasm32 CF-Worker impls deferred per autonomous-execution charter
     # trait-abstraction-defer.
     "crates/corelink-handler-cas",
+    # Per-hash CAS erase + 410-Gone tombstone pure logic (hugit-P2 seam B, WP-B).
+    "crates/corelink-handler-cas-erase",
     "crates/corelink-handler-ac",
     "crates/corelink-handler-admin",
     # REAPI v2 REST translation layer mapping Bazel --remote_cache endpoints
@@ -638,6 +640,7 @@ corelink-dsr-statuspage-scheduler = { path = "crates/corelink-dsr-statuspage-sch
 corelink-openapi = { path = "tools/openapi" }
 # R-prep handler-crate skeletons (CAS / AC / Admin).
 corelink-handler-cas = { path = "crates/corelink-handler-cas" }
+corelink-handler-cas-erase = { path = "crates/corelink-handler-cas-erase" }
 corelink-handler-ac = { path = "crates/corelink-handler-ac" }
 corelink-handler-admin = { path = "crates/corelink-handler-admin" }
 corelink-bazel-bridge = { path = "crates/corelink-bazel-bridge" }

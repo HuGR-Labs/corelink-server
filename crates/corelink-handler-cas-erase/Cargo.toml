@@ -1,0 +1,21 @@
+[package]
+name = "corelink-handler-cas-erase"
+description = "CoreLink per-hash CAS erase handler (hugit-P2 seam B, WP-B). Pure logic for the operator/internal write-side erase: validates an erase request, models the 410-Gone tombstone marker that subsequent GETs must honour, and surfaces an idempotent re-erase as a no-op. No I/O: the R2 delete + D1 tombstone transports are composed in the container's `routes::cas_erase` over the DSR Wave 1 R2 CAS primitives (delete/list)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_handler_cas_erase"
+path = "tests/prop_handler_cas_erase.rs"
