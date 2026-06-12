@@ -24,6 +24,7 @@ import { CoreLinkServer } from "./durable_object.js";
 import { RolloutController } from "./rollout_controller.js";
 import { getTierForTenant, checkStorageQuota, checkRequestQuota } from "./lib/quota.js";
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
+import { handleSessionExchange } from "./lib/session_exchange.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -129,6 +130,7 @@ type RouteKind =
   | "turbo_v8"
   | "signup"
   | "onboarding"
+  | "session_exchange"
   | "internal"
   | "health_container"
   | "not_found";
@@ -463,6 +465,19 @@ function matchRoute(url: URL): RouteMatch {
   // the generic /v1/* arm so onboarding never falls into the PAT-only bucket.
   if (path.startsWith("/v1/onboarding/") || path === "/v1/onboarding") {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "onboarding" };
+  }
+
+  // Session→token exchange — EXACT /v1/session/exchange (hugit-P2 WP-C, seam C).
+  // The caller presents a Clerk SESSION JWT (server-side only, never client-
+  // exposed per ADR-0002); the Worker verifies it at the EDGE (same shared
+  // pipeline as onboarding/customer) and mints a short-lived tenant-scoped
+  // CoreLink PAT by REUSING the container's audited /_internal/pat/mint route.
+  // Tenant is NOT in the URL — resolved from the verified Clerk user id — so
+  // urlTenant stays "_anonymous". Checked BEFORE the generic /v1/* arm so it is
+  // never swallowed into the PAT-required reapi_v1 bucket (the caller holds a
+  // session, not a PAT).
+  if (path === "/v1/session/exchange") {
+    return { tenantId: "_anonymous", pathSuffix: path, routeKind: "session_exchange" };
   }
 
   // Internal routes — /_internal/* — gated by X-Corelink-Internal-Auth shared
@@ -1325,6 +1340,19 @@ const handler: ExportedHandler<Env> = {
         }),
         request,
       );
+    }
+
+    // Session→token exchange — POST /v1/session/exchange (hugit-P2 WP-C, seam C).
+    // The caller presents a Clerk SESSION JWT; the edge verifies it (shared
+    // pipeline) and exchanges it for a short-lived tenant-scoped CoreLink PAT,
+    // REUSING the container's audited /_internal/pat/mint via the _system DO.
+    // The handler is fully fail-CLOSED (missing secret → 403, bad/expired
+    // session → 401, no tenant → 403, upstream fault → 500) and never forwards
+    // the session token past the edge. CORS is applied here, mirroring the
+    // onboarding/customer arms.
+    if (route.routeKind === "session_exchange") {
+      const sessResp = await handleSessionExchange(request, env, requestId);
+      return applyCors(sessResp, request);
     }
 
     // Not found — timing-padded to prevent cross-tenant enumeration
