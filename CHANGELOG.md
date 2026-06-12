@@ -34,6 +34,22 @@ Each entry cross-references:
   `getrandom 0.4 features = ["wasm_js"]` entry (the `--cfg=getrandom_backend=
   "wasm_js"` rustflag was already set in `.cargo/config.toml`). wasm32 check now
   passes locally; native build/test graph unchanged (target-gated).
+### Added
+- **feat(container): per-tenant monthly $-ceiling — a fail-CLOSED spend cap
+  (WP-FOUND-2 / G1, ADR-0068).** The container already enforced a per-tenant
+  *rate* limit (`ratelimit_buckets`, velocity) but had **no monetary bound** — a
+  tenant operating within the rate limit could still accrue unbounded monthly
+  cost (the real blast-radius risk for the hugit campaign on cheap third-party
+  infra). Adds a new `tenant_quota` D1 table (migration
+  `0066_tenant_quota.sql`; additive `CREATE TABLE IF NOT EXISTS`, integer
+  micro-dollars, $5/mo launch tripwire default) plus a quota middleware
+  (`crates/corelink-container/src/tenant_quota.rs`): `QuotaGuard::check`
+  fail-CLOSES — over the ceiling → `402 Payment Required`, quota-store error /
+  clock-unavailable → `503` — and accrues on the allow path, rolling the cycle
+  every ~30 days. Wired alongside the existing rate limit (the two together
+  bound both axes — velocity AND cumulative dollars). Backed by
+  `D1HttpClient::tenant_quota_lookup` / `tenant_quota_upsert` (parameterised,
+  tenant-scoped). In-memory fake for dev/CI; `D1QuotaStore` in production.
 
 ### Security
 - **deps: waive 3 rust-postgres DoS advisories (RUSTSEC-2026-0178 / -0179 /

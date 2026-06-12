@@ -322,6 +322,95 @@ impl D1HttpClient {
     }
 }
 
+impl D1HttpClient {
+    /// Read a tenant's `tenant_quota` row (migration 0066).
+    ///
+    /// Returns `Ok(Some(state))` when the row exists, `Ok(None)` when it
+    /// does not (a fresh tenant), and `Err(String)` on D1 transport /
+    /// decode error. Backs [`crate::tenant_quota::D1QuotaStore::get`];
+    /// the quota guard fail-CLOSES on the `Err` arm.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` on D1 communication errors or a malformed
+    /// row (missing / non-integer column).
+    pub async fn tenant_quota_lookup(
+        &self,
+        tenant_id: &str,
+    ) -> Result<Option<crate::tenant_quota::QuotaState>, String> {
+        let rows = self
+            .query(
+                "SELECT monthly_budget_usd_micros, accrued_usd_micros, cycle_anchor_ms \
+                 FROM tenant_quota WHERE tenant_id = ?1 LIMIT 1",
+                &[serde_json::Value::String(tenant_id.to_owned())],
+            )
+            .await?;
+
+        let Some(row) = rows.into_iter().next() else {
+            return Ok(None);
+        };
+
+        let monthly_budget_usd_micros = row
+            .get("monthly_budget_usd_micros")
+            .and_then(serde_json::Value::as_i64)
+            .ok_or("D1 tenant_quota: missing or non-integer `monthly_budget_usd_micros`")?;
+        let accrued_usd_micros = row
+            .get("accrued_usd_micros")
+            .and_then(serde_json::Value::as_i64)
+            .ok_or("D1 tenant_quota: missing or non-integer `accrued_usd_micros`")?;
+        let cycle_anchor_ms = row
+            .get("cycle_anchor_ms")
+            .and_then(serde_json::Value::as_i64)
+            .ok_or("D1 tenant_quota: missing or non-integer `cycle_anchor_ms`")?;
+
+        Ok(Some(crate::tenant_quota::QuotaState {
+            monthly_budget_usd_micros,
+            accrued_usd_micros,
+            cycle_anchor_ms,
+        }))
+    }
+
+    /// Upsert a tenant's `tenant_quota` row (migration 0066).
+    ///
+    /// Idempotent on `tenant_id` (PRIMARY KEY) via
+    /// `INSERT … ON CONFLICT … DO UPDATE`. The `monthly_budget_usd_micros`
+    /// ceiling is preserved on conflict (only the operator tunes it);
+    /// the accrued counter + cycle anchor + `updated_at_ms` are
+    /// overwritten with the guard-computed values. Backs
+    /// [`crate::tenant_quota::D1QuotaStore::put`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` on D1 communication errors.
+    pub async fn tenant_quota_upsert(
+        &self,
+        tenant_id: &str,
+        state: crate::tenant_quota::QuotaState,
+        updated_at_ms: i64,
+    ) -> Result<(), String> {
+        let _ = self
+            .query(
+                "INSERT INTO tenant_quota \
+                   (tenant_id, monthly_budget_usd_micros, accrued_usd_micros, \
+                    cycle_anchor_ms, updated_at_ms) \
+                 VALUES (?1, ?2, ?3, ?4, ?5) \
+                 ON CONFLICT(tenant_id) DO UPDATE SET \
+                   accrued_usd_micros = excluded.accrued_usd_micros, \
+                   cycle_anchor_ms    = excluded.cycle_anchor_ms, \
+                   updated_at_ms      = excluded.updated_at_ms",
+                &[
+                    serde_json::Value::String(tenant_id.to_owned()),
+                    serde_json::Value::from(state.monthly_budget_usd_micros),
+                    serde_json::Value::from(state.accrued_usd_micros),
+                    serde_json::Value::from(state.cycle_anchor_ms),
+                    serde_json::Value::from(updated_at_ms),
+                ],
+            )
+            .await?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
