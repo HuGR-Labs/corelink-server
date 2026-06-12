@@ -66,6 +66,19 @@ ignore = [
     # when indicatif cuts a release dropping number_prefix (track an indicatif
     # bump that switches to unit-prefix), then remove this ignore.
     "RUSTSEC-2025-0119",
+    # 2026-06-11 — pyo3 0.24.2 RUSTSEC-2026-0176 (out-of-bounds read in
+    # `nth`/`nth_back` for `PyList`/`PyTuple` iterators). Reached SOLELY via
+    # `corelink-py` (the Python SDK bindings crate) — pyo3 is a Python-extension
+    # dependency and is NOT shipped in the CoreLink Cloudflare runtime (the
+    # Workers run on V8 isolates + a native Rust container; no Python interpreter
+    # / pyo3 is ever loaded in the product attack surface). The OOB read requires
+    # adversarial `nth`/`nth_back` iteration over a `PyList`/`PyTuple`; the SDK's
+    # controlled bindings do not expose untrusted-controlled iterator skipping.
+    # No semver-compatible fix in the 0.24 line as of 2026-06-11 (`cargo update -p
+    # pyo3` is a no-op; the fix lands in pyo3 0.25+, a major bump for the Python
+    # SDK). Re-evaluate: bump `corelink-py` to pyo3 >= 0.25 (a separate Python-SDK
+    # change), then remove this ignore.
+    "RUSTSEC-2026-0176",
 ]
 # CVSS threshold not applied: HIGH_RISK lane treats EVERY advisory as
 # blocking until explicitly waived via ADR.
