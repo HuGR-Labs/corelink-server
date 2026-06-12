@@ -2422,6 +2422,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-transparency-log"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "hex",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "corelink-turbo-bridge"
 version = "0.1.0"
 dependencies = [
