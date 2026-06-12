@@ -291,7 +291,7 @@ CSP / CSC responsibility column:
 
 | # | Question | A | Resp | Answer + Evidence | TSC |
 |---|---|---|---|---|---|
-| TVM-01.1 | Vulnerability management policy? | Y | CSP | `specs/03_architecture/security_model.md` + ADR-0037 Dependency-Track. | CC7.1 |
+| TVM-01.1 | Vulnerability management policy? | Y | CSP | `specs/03_architecture/security_model.md` + ADR-0024 Dependency-Track. | CC7.1 |
 | TVM-02.1 | Scanning at planned intervals? | Y | CSP | DAILY (cargo-deny + Dependency-Track + CodeQL/Semgrep on every PR). | CC7.1 |
 | TVM-03.1 | Severity-based SLA for remediation? | Y | CSP | `RB-STATIC-ANALYSIS-TRIAGE.md`. | CC7.1 |
 | TVM-04.1 | Pentest performed at planned intervals? | P | CSP | Internal adversarial reviews + cargo-fuzz summary; external pentest scoped under R-6 staging-bake (T-30d pre-GA). | CC7.1 |

@@ -179,7 +179,7 @@ Rate limit: 1 000 lookups/day on free tier. Use sparingly.
 ## 8. References
 
 - WI-S12-005 spec: `specs/04_sprints/_sealed/S12/work_items/WI-S12-005-dependency-track-self-host-cve-alerts.md`
-- ADR-0037: `specs/03_architecture/adrs/ADR-0037-dependency-track-self-host.md`
+- ADR-0024: `specs/03_architecture/adrs/ADR-0024-dependency-track-self-host.md`
 - RB-FM-156 (dep malicious scenario): `specs/04_sprints/_sealed/S12/work_items/WI-S12-007-rb-fm-156-rb-fm-157-prr-ship-gate.md`
 - Neon PITR docs: <https://neon.tech/docs/introduction/point-in-time-restore>
 - DT API docs: <https://docs.dependencytrack.org/integrations/rest-api/>

@@ -76,7 +76,7 @@ This PRR covers **S-12 implementation phase** (sprint contract
 - **WI-S12-003** — Cosign sign release + CF deploy webhook verify gate (hard
   fail-closed; no unsigned deploy bypass). New crate `crates/corelink-deploy-verifier/`
   (verifier + audit + chaos tests) + `.github/workflows/cosign-sign.yml` +
-  `ADR-0044-deploy-gate-hard-cosign-keyless.md`.
+  `ADR-0025-deploy-gate-hard-cosign-keyless.md`.
   SEALED commit `c6cbe73`.
 
 - **WI-S12-004** — cargo-audit + cargo-deny policies + Dependabot auto-merge.
@@ -89,7 +89,7 @@ This PRR covers **S-12 implementation phase** (sprint contract
 - **WI-S12-005** — Dependency-Track self-host + CVE alerts webhook + DT DLQ +
   reconciliation. New crates `crates/corelink-dt-webhook/` + `crates/corelink-dt-cli/`
   + `crates/corelink-dt-reconcile/` + `infra/dependency-track/` (docker-compose +
-  Caddy + .env.example) + `ADR-0037` + `docs/internal/dt-dr-runbook.md`.
+  Caddy + .env.example) + `ADR-0024` + `docs/internal/dt-dr-runbook.md`.
   SEALED commit `44ed145`.
 
 - **WI-S12-006** — Reproducible builds 2-runner diff + SOURCE_DATE_EPOCH +
@@ -112,7 +112,7 @@ lane on S-12:
 |---|---|---|---|---|---|
 | 1 | Owner | Gustavo Schneiter | 2026-05-14 | ✅ APPROVED | WI-S12-001..006 SEALED (commits per autonomous_state.json: `44ed145` (WI-001) / `459583f` (WI-002) / `c6cbe73` (WI-003) / `8ee452a` (WI-004) / second `44ed145` wave (WI-005) / state file sealed WI-006); WI-S12-007 SEAL in this PRR. All 7/7 WIs SEALED. Evidence pack complete per §3 below. |
 | 2 | Final Approver | Gustavo Schneiter | 2026-05-14 | ✅ APPROVED | Owner + Final Approver dual-hat per ADR-0034. |
-| 3 | Architect (incl. Crypto SME specialization for WI-S12-001 SLSA L3 sigstore/Fulcio OIDC keyless + WI-S12-003 Cosign keyless OIDC + WI-S12-005 DT HMAC-SHA256 verify) | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-14 | ⚠️ WAIVED (ADR-0034) | Crypto-load-bearing review: SLSA L3 sigstore/Fulcio OIDC keyless cert provisioning + Rekor inclusion proof mandatory (INV-SUPPLY-PROVENANCE-IN-REKOR; ADR-0045 fail-closed, no grace period) reviewed at WI-S12-001 SEAL; Cosign keyless OIDC sign + CF deploy verify gate (hard fail-closed per ADR-0044) reviewed at WI-S12-003 SEAL; DT HMAC-SHA256 webhook verify + DLQ reviewed at WI-S12-005 SEAL. Adversarial suite: `corelink-supply-verify` 5 CVE-class prop tests (forge_fork, rekor_tampered, fulcio_expired, schema_drift, alg_none) + `corelink-deploy-verifier` 5 CVE-class tests (unsigned, rekor_missing, identity_confusion, replay, audit_fail_closed) + `corelink-dt-webhook` 5 tests (hmac_bypass, alert_flood, dt_outage, slack_outage, pd_outage) — all green. Revalidation trigger: Architect hired with formal Crypto SME certification. |
+| 3 | Architect (incl. Crypto SME specialization for WI-S12-001 SLSA L3 sigstore/Fulcio OIDC keyless + WI-S12-003 Cosign keyless OIDC + WI-S12-005 DT HMAC-SHA256 verify) | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-14 | ⚠️ WAIVED (ADR-0034) | Crypto-load-bearing review: SLSA L3 sigstore/Fulcio OIDC keyless cert provisioning + Rekor inclusion proof mandatory (INV-SUPPLY-PROVENANCE-IN-REKOR; ADR-0045 fail-closed, no grace period) reviewed at WI-S12-001 SEAL; Cosign keyless OIDC sign + CF deploy verify gate (hard fail-closed per ADR-0025) reviewed at WI-S12-003 SEAL; DT HMAC-SHA256 webhook verify + DLQ reviewed at WI-S12-005 SEAL. Adversarial suite: `corelink-supply-verify` 5 CVE-class prop tests (forge_fork, rekor_tampered, fulcio_expired, schema_drift, alg_none) + `corelink-deploy-verifier` 5 CVE-class tests (unsigned, rekor_missing, identity_confusion, replay, audit_fail_closed) + `corelink-dt-webhook` 5 tests (hmac_bypass, alert_flood, dt_outage, slack_outage, pd_outage) — all green. Revalidation trigger: Architect hired with formal Crypto SME certification. |
 | 4 | Security Lead | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-14 | ⚠️ WAIVED (ADR-0034) | STRIDE delta: Spoofing — Cosign keyless OIDC + Rekor inclusion proof validates builder identity (INV-SUPPLY-PROVENANCE-IN-REKOR); Tampering — SLSA L3 + reproducible builds + Cosign deploy gate (INV-SUPPLY-SIGNED-DEPLOY CRITICAL); Repudiation — PRR + walkthrough + dry-run reports = forensic-grade trail; Information disclosure — SBOM exposes deps (intentional + OSS standard; no PII in supply chain artifacts validated); DoS — RB-FM-156/157 dry-runs validate alert paths + on-call escalation; EoP — deploy gate + CF IAM + Cosign keyless OIDC validates. Security walkthrough (2h adversarial review session, 2026-05-14): scope SLSA L3 + SBOM + Cosign + cargo-audit/deny + Dependabot + DT + reproducible builds. Adversarial scenarios attempted: provenance forge via fork (blocked — builder_id mismatch), Cosign bypass via CF API token (blocked — CF IAM scoping), DT fake alert injection (blocked — HMAC + admin auth), Dependabot replay on closed branch (blocked — GitHub dedup), SBOM tampering post-publish (blocked — SLSA material hash). P0 findings: 0. P1 findings: 0. P2 findings: 1 (recommend `cargo-vet` integration — deferred S-13+ per anti-scope). Findings report: `specs/_audits/sealed/2026-05-14-security-walkthrough-s12.md`. Revalidation trigger: Security Lead hired. |
 | 5 | SRE Lead | Gustavo Schneiter (dual-hat per ADR-0034) | 2026-05-14 | ⚠️ WAIVED (ADR-0034) | RB-FM-156 (dep maintainer malicioso / SolarWinds-style) dry-run executed 2026-05-13: all 9 evidence checklist items verified; 2 minor drift findings remediated; runbook FROZEN v1.0.0. Audit trace: `specs/_audits/sealed/2026-05-13-rb-fm-156-dry-run.md`. RB-FM-157 (typosquatting) dry-run executed 2026-05-14: all 9 evidence checklist items verified; 2 minor drift findings remediated; runbook promoted from stub to FROZEN v1.0.0. Audit trace: `specs/_audits/sealed/2026-05-14-rb-fm-157-dry-run.md`. Production CF Cron + Slack + PagerDuty delivery deferred until staging account provisioned per `trait-abstraction-defer` charter; config-verified. DR test (DT Postgres PITR) deferred; quarterly cadence documented in `docs/internal/dt-dr-runbook.md`. Revalidation trigger: SRE Lead hired OR staging account provisioned. |
 | 6 | Engineer (S-12 implementation lead) | Gustavo Schneiter | 2026-05-14 | ✅ APPROVED | Implementation lead through WI-S12-001..007. Quality gates: `cargo clippy --workspace --all-targets -- -D warnings` clean; `python3 scripts/validate_specs.py` clean (289 schema + 8 YAML = 297 docs, 13 pre-existing schema failures in imported ADRs, not introduced by S-12); adversarial test suites across all 6 S-12 crates green; `scripts/autonomous_state.json` updated. RB dry-run scripts (host-side) green: `scripts/rb_fm_156_dry_run.rs` pattern + `scripts/rb_fm_157_dry_run.rs` pattern executable. Cargo.lock committed; deny.toml policy green (0 HIGH/CRITICAL, 0 yanked, license allowlist enforced). |
@@ -145,7 +145,7 @@ Per `_spec_contract.md` §6 + WI-S12-007 §11 (DoD).
 | 7 / 7 WIs SEALED | ✅ | Commits per `scripts/autonomous_state.json`; WI-006 + WI-007 sealed in this wave. |
 | SLSA L3 attestation publicada em Rekor para todos releases pós-S-12 | ✅ HOST-SIDE | `crates/corelink-supply-verify/` ships verifier + CLI + prop tests; `.github/workflows/release-slsa3.yml` production workflow; actual Rekor entries deferred until staging CI account provisioned. |
 | SBOM CycloneDX 1.5+ + DT ingestion + NTIA minimum elements | ✅ HOST-SIDE | `tools/sbom-publish/` ships SBOM generator + NTIA validator + DT ingestion + TSA; `sbom.yml` workflow; DT self-hosted infra in `infra/dependency-track/`. |
-| Cosign verify hard gate before CF deploy | ✅ HOST-SIDE | `crates/corelink-deploy-verifier/` ships verifier; `cosign-sign.yml` workflow; ADR-0044 fail-closed. Chaos test "deploy unsigned" blocked. |
+| Cosign verify hard gate before CF deploy | ✅ HOST-SIDE | `crates/corelink-deploy-verifier/` ships verifier; `cosign-sign.yml` workflow; ADR-0025 fail-closed. Chaos test "deploy unsigned" blocked. |
 | cargo-audit zero findings HIGH/CRITICAL em Cargo.lock | ✅ | `cargo audit --deny warnings` clean as of SEAL date; `deny.toml` policy enforced. |
 | cargo-deny policy verde em CI; license allowlist; 0 yanked deps | ✅ | `deny.toml` with 7-OSI license allowlist; `cargo-deny.yml` workflow; INV-SUPPLY-NO-YANKED + INV-SUPPLY-LICENSE-ALLOWLIST enforced. |
 | Dependabot weekly grouped PRs + auto-merge minor patches | ✅ | `dependabot.yml` + `dependabot-auto-merge.yml` workflows; auto-merge minor patches via required CI gates. |
@@ -227,9 +227,9 @@ lane standard via documented waiver path.
 | cargo-audit/deny/Dependabot workflows | `.github/workflows/cargo-audit.yml` + `cargo-deny.yml` + `dependabot-auto-merge.yml` + `lockfile-diff.yml` | ✅ |
 | deny.toml policy | `deny.toml` (workspace root) | ✅ |
 | Dependency-Track infra + webhook + CLI + reconciler | `infra/dependency-track/` + `crates/corelink-dt-webhook/` + `crates/corelink-dt-cli/` + `crates/corelink-dt-reconcile/` | ✅ |
-| ADR-0044 (deploy gate hard cosign keyless) | `specs/03_architecture/adrs/ADR-0044-deploy-gate-hard-cosign-keyless.md` | ✅ |
+| ADR-0025 (deploy gate hard cosign keyless) | `specs/03_architecture/adrs/ADR-0025-deploy-gate-hard-cosign-keyless.md` | ✅ |
 | ADR-0045 (SLSA L3 Rekor mandatory fail-closed) | `specs/03_architecture/adrs/ADR-0045-slsa-l3-rekor-mandatory.md` | ✅ |
-| ADR-0037 (DT self-host) | `specs/03_architecture/adrs/ADR-0037-dependency-track-self-host.md` | ✅ |
+| ADR-0024 (DT self-host) | `specs/03_architecture/adrs/ADR-0024-dependency-track-self-host.md` | ✅ |
 | ADR-S12-001 (SBOM CycloneDX NTIA TSA DT) | `specs/03_architecture/adrs/ADR-S12-001-sbom-cyclonedx-ntia-tsa-dt.md` | ✅ |
 | ADR-S12-045/046/047 (dep policy / license) | `specs/03_architecture/adrs/ADR-S12-045-dep-policy-*.md` + `ADR-S12-046-*.md` + `ADR-S12-047-*.md` | ✅ |
 | INV registry 3 new entries | `specs/03_architecture/invariant_registry.md` (INV-SUPPLY-PROVENANCE-IN-REKOR + INV-SUPPLY-NO-YANKED + INV-SUPPLY-LICENSE-ALLOWLIST) | ✅ |
@@ -267,7 +267,7 @@ Per spec contract §15 + WI-S12-007 §28. After WI-S12-001..007 implementation:
 |---|---|---|---|---|
 | R-S12-001 — Dep maintainer compromise (FM-156) | CRITICAL (all builds) | SLSA L3 + cargo-audit ≤ 24h + DT ≤ 15 min + CI block auto-merge + RB-FM-156 FROZEN | LOW | SRE Lead |
 | R-S12-002 — Typosquatting (FM-157) | HIGH | Lockfile diff PR comment + CODEOWNERS mandatory review + SBOM DT new-component anomaly + RB-FM-157 FROZEN + `[bans.deny]` for known typosquats | LOW | Security Lead |
-| R-S12-003 — Cosign signature bypass | CRITICAL | Hard fail-closed (ADR-0044); Rekor inclusion proof mandatory (ADR-0045); no operator override | NEGLIGIBLE | Architect |
+| R-S12-003 — Cosign signature bypass | CRITICAL | Hard fail-closed (ADR-0025); Rekor inclusion proof mandatory (ADR-0045); no operator override | NEGLIGIBLE | Architect |
 | R-S12-004 — GPL/AGPL license leak (transitive) | HIGH (legal) | cargo-deny INV-SUPPLY-LICENSE-ALLOWLIST CI gate; quarterly Legal review (ADR-S12-047) | LOW | Compliance Officer |
 | R-S12-005 — Yanked dep via Dependabot | MEDIUM | INV-SUPPLY-NO-YANKED cargo-deny CI gate; Dependabot auto-merge requires CI pass | LOW | SRE Lead |
 | R-S12-006 — Rekor outage blocks deploy | HIGH (operational) | Fail-closed canonical (ADR-0045); no grace period; local Rekor cache for performance only | NEGLIGIBLE (intended; operational readiness via RB) | SRE Lead |

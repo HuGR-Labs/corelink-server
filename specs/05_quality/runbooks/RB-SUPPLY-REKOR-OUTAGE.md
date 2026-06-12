@@ -21,7 +21,7 @@ tags: ["runbook", "supply-chain", "rekor", "sigstore", "outage", "s12"]
 > Production-grade SOP for handling Sigstore Rekor public transparency log
 > unavailability during a Cosign-gated CF Worker deploy. Created S-12
 > sprint-close P1-5 to close the dangling reference at
-> `specs/03_architecture/adrs/ADR-0044-deploy-gate-hard-cosign-keyless.md:142`.
+> `specs/03_architecture/adrs/ADR-0025-deploy-gate-hard-cosign-keyless.md:142`.
 
 ## 1. Trigger
 
@@ -85,7 +85,7 @@ inclusion proof and the call fails:
 
 ## 6. Fail-OPEN policy: FORBIDDEN
 
-**Do NOT bypass the Rekor check under any circumstance.** ADR-0044 + ADR-0045 establish Cosign + Rekor as **hard non-bypassable** gates. The acceptable outcome of a Rekor outage is **deploy delay**, never **unsigned deploy**. Any operator who manually disables the Rekor check during an outage commits an audit violation tracked under FM-156.
+**Do NOT bypass the Rekor check under any circumstance.** ADR-0025 + ADR-0045 establish Cosign + Rekor as **hard non-bypassable** gates. The acceptable outcome of a Rekor outage is **deploy delay**, never **unsigned deploy**. Any operator who manually disables the Rekor check during an outage commits an audit violation tracked under FM-156.
 
 ## 7. Communication template (customer-facing)
 
@@ -108,7 +108,7 @@ inclusion proof and the call fails:
 
 ## 9. References
 
-- ADR-0044 — Deploy gate hard Cosign keyless (canonical hard gate policy).
+- ADR-0025 — Deploy gate hard Cosign keyless (canonical hard gate policy).
 - ADR-0045 — SLSA L3 Rekor mandatory (canonical inclusion proof requirement).
 - `corelink-deploy-verifier::verifier::verify_rekor_inclusion`
 - INV-SUPPLY-PROVENANCE-IN-REKOR (HIGH, `specs/03_architecture/invariant_registry.md §3.10`).

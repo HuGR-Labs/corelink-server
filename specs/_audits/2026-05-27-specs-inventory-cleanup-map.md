@@ -111,13 +111,13 @@ specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md	5319	archit
 specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md	21503	architecture charter doc
 specs/03_architecture/adrs/ADR-0035-ac-handler-invariants.md	4328	architecture charter doc
 specs/03_architecture/adrs/ADR-0036-d1-schema-migration-governance.md	4350	architecture charter doc
-specs/03_architecture/adrs/ADR-0037-dependency-track-self-host.md	4352	architecture charter doc
+specs/03_architecture/adrs/ADR-0024-dependency-track-self-host.md	4352	architecture charter doc
 specs/03_architecture/adrs/ADR-0037-merkle-action-protocol-result-hash.md	9946	architecture charter doc
 specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md	6895	architecture charter doc
 specs/03_architecture/adrs/ADR-0040-multipart-d1-sharding.md	7987	architecture charter doc
 specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md	10541	architecture charter doc
 specs/03_architecture/adrs/ADR-0043-hmac-tenant-prefix-algorithm.md	10751	architecture charter doc
-specs/03_architecture/adrs/ADR-0044-deploy-gate-hard-cosign-keyless.md	8753	architecture charter doc
+specs/03_architecture/adrs/ADR-0025-deploy-gate-hard-cosign-keyless.md	8753	architecture charter doc
 specs/03_architecture/adrs/ADR-0044-digest-pluggability.md	11135	architecture charter doc
 specs/03_architecture/adrs/ADR-0044-sbom-cyclonedx-toolchain.md	8157	architecture charter doc
 specs/03_architecture/adrs/ADR-0045-slsa-l3-rekor-mandatory.md	7271	architecture charter doc
