@@ -82,6 +82,14 @@ pub mod brew;
 pub mod cargo;
 /// CAS HTTP routes (R-prep example wire-up; wave-8).
 pub mod cas;
+/// Per-hash CAS erase + 410-Gone tombstone (hugit-P2 seam B, WP-B):
+/// `POST /_internal/cas/:tenant/:hash/erase` (internal-auth gated, write-side).
+/// Deletes a blob from R2 (composing the DSR Wave 1 / PR #254 R2 CAS erase
+/// primitives) and writes a `cas_tombstone` row (migration 0067) so a
+/// subsequent GET returns HTTP 410 Gone. Pure decision logic lives in
+/// `corelink-handler-cas-erase`. Route mounting is owner-gated on the R2 eraser
+/// (the #254 seam); until then `build_state_from_env` returns `None`.
+pub mod cas_erase;
 /// Customer self-serve HTTP routes (Stream-2.6): `/v1/customer/*` endpoints
 /// (overview, usage, billing, keys, team, audit) wired via
 /// `corelink-handler-customer` trait objects. Worker matchRoute already
@@ -215,9 +223,17 @@ pub fn build() -> Router {
 /// identical.
 pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router {
     let (cas_read, cas_write) = cas::build_handlers();
+    // 410-Gone tombstone read gate (hugit-P2 seam B, WP-B). Wired from env
+    // (D1-backed) when D1 creds are present so an erased hash answers 410 even
+    // before the (#254-gated) erase WRITE route is mounted; `None` in dev/CI ⇒
+    // classic 200/404 (fail-safe — no false 410s without a real store).
+    let cas_tombstones: Option<Arc<dyn cas_erase::TombstoneStore>> =
+        cas_erase::D1TombstoneStore::from_env()
+            .map(|s| Arc::new(s) as Arc<dyn cas_erase::TombstoneStore>);
     let cas_state = cas::CasRouteState {
         read: cas_read.clone(),
         write: cas_write.clone(),
+        tombstones: cas_tombstones,
     };
     let (ac_lookup, ac_update) = ac::build_handlers();
     let ac_state = ac::AcRouteState {

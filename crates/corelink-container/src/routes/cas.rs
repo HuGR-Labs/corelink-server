@@ -62,6 +62,13 @@ pub struct CasRouteState {
     pub read: Arc<dyn CasReadHandler>,
     /// Write handler (separate trait object — see crate-level docs).
     pub write: Arc<dyn CasWriteHandler>,
+    /// Optional 410-Gone tombstone store (hugit-P2 seam B, WP-B). When present,
+    /// `GET` consults it FIRST: an erased `(tenant, hash)` short-circuits to
+    /// HTTP 410 Gone (never 404, never 200) before the R2 lookup. `None` (the
+    /// default — in-memory / test builds, and prod until PR #254's R2 erase
+    /// adapter lands) ⇒ no tombstone gate, classic 200/404 behaviour. Backed by
+    /// [`crate::routes::cas_erase::D1TombstoneStore`] in prod.
+    pub tombstones: Option<Arc<dyn crate::routes::cas_erase::TombstoneStore>>,
 }
 
 impl core::fmt::Debug for CasRouteState {
@@ -208,6 +215,22 @@ async fn handle_read(
     if !scope.can_read() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
+    // 410-Gone tombstone gate (hugit-P2 seam B, WP-B). When a tombstone store is
+    // wired, an erased `(tenant, hash)` short-circuits to HTTP 410 Gone — BEFORE
+    // the R2 GET, so it is a single keyed D1 lookup off the hot path. An erased
+    // artifact MUST return 410 (never 404 "never existed", never 200 resurrect).
+    // A lookup-transport error fails OPEN to the normal read path: a transient
+    // D1 blip must not 410 a live blob (the erase write-side is the source of
+    // truth; the read gate is advisory). `None` ⇒ classic 200/404.
+    if let Some(tombstones) = state.tombstones.as_ref() {
+        match tombstones.is_tombstoned(&auth.0, &hash).await {
+            Ok(true) => return (StatusCode::GONE, "erased").into_response(),
+            Ok(false) => {}
+            Err(e) => {
+                tracing::warn!(error = %e, "cas: tombstone gate lookup failed; serving normally");
+            }
+        }
+    }
     // Logical clock stand-in: production wiring threads a
     // `WallClock` collaborator. We use the handler-supplied
     // `at_unix_ms` to keep the route logic-free.
@@ -315,7 +338,29 @@ mod tests {
         let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
         let read: Arc<dyn CasReadHandler> = shared.clone();
         let write: Arc<dyn CasWriteHandler> = shared;
-        CasRouteState { read, write }
+        CasRouteState {
+            read,
+            write,
+            tombstones: None,
+        }
+    }
+
+    /// Fixture with a tombstone store pre-seeded with `(tenant, hash)` so the
+    /// read gate returns 410 Gone (WP-B).
+    fn fixture_with_tombstone(tenant: &str, hash: &str) -> CasRouteState {
+        let audit = Arc::new(InMemoryAuditSink::new());
+        let sli = Arc::new(InMemorySliObserver::new());
+        let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
+        let read: Arc<dyn CasReadHandler> = shared.clone();
+        let write: Arc<dyn CasWriteHandler> = shared;
+        let store = Arc::new(crate::routes::cas_erase::InMemoryTombstoneStore::new());
+        store.seed(tenant, hash);
+        let tombstones: Arc<dyn crate::routes::cas_erase::TombstoneStore> = store;
+        CasRouteState {
+            read,
+            write,
+            tombstones: Some(tombstones),
+        }
     }
 
     #[test]
@@ -473,5 +518,41 @@ mod tests {
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    // ── 410-Gone tombstone read gate (hugit-P2 seam B, WP-B) ─────────────────
+
+    /// A GET for an ERASED `(tenant, hash)` returns HTTP 410 Gone — NOT 404,
+    /// NOT 200. The tombstone gate runs after the scope gate and before the R2
+    /// read.
+    #[tokio::test]
+    async fn get_erased_hash_returns_410_gone() {
+        const ERASED: &str = "erasedhash01";
+        let app = router(fixture_with_tombstone(TEST_TENANT, ERASED));
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/v1/cas/{TEST_TENANT}/{ERASED}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::GONE);
+    }
+
+    /// With a tombstone store wired, a NON-erased hash still 404s (the gate is
+    /// per-hash, not a blanket block).
+    #[tokio::test]
+    async fn get_non_erased_hash_with_store_still_404() {
+        let app = router(fixture_with_tombstone(TEST_TENANT, "some-other-hash"));
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/v1/cas/{TEST_TENANT}/livehash99"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 }
