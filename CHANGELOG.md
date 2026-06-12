@@ -22,6 +22,23 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **feat(container): per-tenant monthly $-ceiling — a fail-CLOSED spend cap
+  (WP-FOUND-2 / G1, ADR-0068).** The container already enforced a per-tenant
+  *rate* limit (`ratelimit_buckets`, velocity) but had **no monetary bound** — a
+  tenant operating within the rate limit could still accrue unbounded monthly
+  cost (the real blast-radius risk for the hugit campaign on cheap third-party
+  infra). Adds a new `tenant_quota` D1 table (migration
+  `0066_tenant_quota.sql`; additive `CREATE TABLE IF NOT EXISTS`, integer
+  micro-dollars, $5/mo launch tripwire default) plus a quota middleware
+  (`crates/corelink-container/src/tenant_quota.rs`): `QuotaGuard::check`
+  fail-CLOSES — over the ceiling → `402 Payment Required`, quota-store error /
+  clock-unavailable → `503` — and accrues on the allow path, rolling the cycle
+  every ~30 days. Wired alongside the existing rate limit (the two together
+  bound both axes — velocity AND cumulative dollars). Backed by
+  `D1HttpClient::tenant_quota_lookup` / `tenant_quota_upsert` (parameterised,
+  tenant-scoped). In-memory fake for dev/CI; `D1QuotaStore` in production.
+
 ### Security
 - **CRITICAL — close the "paid tier without payment" enforcement hole (e2e
   adversarial audit 2026-06-11).** The checkout backend persists the requested
