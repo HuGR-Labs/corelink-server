@@ -64,7 +64,7 @@ use self::types::{
 /// Core trait for the deploy verify gate.
 ///
 /// All implementations **must** be fail-CLOSED: any check failure blocks the
-/// deploy.  There is **no** bypass mode (§7 anti-patterns, ADR-0044).
+/// deploy.  There is **no** bypass mode (§7 anti-patterns, ADR-0025).
 ///
 /// # Contract
 ///

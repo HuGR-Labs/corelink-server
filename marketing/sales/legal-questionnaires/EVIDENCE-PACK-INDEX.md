@@ -112,7 +112,7 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 66 | **Vulnerability mgmt — static analysis** | `specs/_audits/sealed/2026-05-15-static-analysis-baseline.md` | NDA |
 | 67 | Vuln — triage runbook | `specs/_runbooks/RB-STATIC-ANALYSIS-TRIAGE.md` | NDA |
 | 68 | Vuln — cargo-fuzz summary | `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md` | NDA |
-| 69 | Vuln — Dependency-Track | ADR-0037 (`specs/03_architecture/adrs/`) | OPEN-SOURCE |
+| 69 | Vuln — Dependency-Track | ADR-0024 (`specs/03_architecture/adrs/`) | OPEN-SOURCE |
 | 70 | **Supply chain — SBOM** | Release artifacts `https://github.com/humangr-labs/corelink/releases` | OPEN-SOURCE |
 | 71 | Supply chain — Rekor / Sigstore | Per release (Cosign signatures) | OPEN-SOURCE |
 | 72 | Supply chain — license allowlist | `LICENSE-APACHE-2.0` + `LICENSE-MIT` + OSS matrix commit `44cdf15` + `.github/workflows/license-policy.yml` + `scripts/license-audit.sh` | OPEN-SOURCE |

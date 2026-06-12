@@ -66,6 +66,52 @@ ignore = [
     # when indicatif cuts a release dropping number_prefix (track an indicatif
     # bump that switches to unit-prefix), then remove this ignore.
     "RUSTSEC-2025-0119",
+    # 2026-06-11 — pyo3 0.24.2 RUSTSEC-2026-0176 (out-of-bounds read in
+    # `nth`/`nth_back` for `PyList`/`PyTuple` iterators). Reached SOLELY via
+    # `corelink-py` (the Python SDK bindings crate) — pyo3 is a Python-extension
+    # dependency and is NOT shipped in the CoreLink Cloudflare runtime (the
+    # Workers run on V8 isolates + a native Rust container; no Python interpreter
+    # / pyo3 is ever loaded in the product attack surface). The OOB read requires
+    # adversarial `nth`/`nth_back` iteration over a `PyList`/`PyTuple`; the SDK's
+    # controlled bindings do not expose untrusted-controlled iterator skipping.
+    # No semver-compatible fix in the 0.24 line as of 2026-06-11 (`cargo update -p
+    # pyo3` is a no-op; the fix lands in pyo3 0.25+, a major bump for the Python
+    # SDK). Re-evaluate: bump `corelink-py` to pyo3 >= 0.25 (a separate Python-SDK
+    # change), then remove this ignore.
+    "RUSTSEC-2026-0176",
+    # 2026-06-12 — pyo3 0.24.2 RUSTSEC-2026-0177 (missing `Sync` bound on the
+    # closure in `PyCFunction::new_closure`; a thread-safety bug under
+    # free-threaded Python). SAME provenance as 0176: reached SOLELY via
+    # `corelink-py` (the Python SDK bindings), not shipped in the CoreLink
+    # Cloudflare runtime, and the bindings register no free-threaded closures.
+    # Fixed in pyo3 0.29.0 (a major bump for the Python SDK; not
+    # semver-compatible with the pinned 0.24 line). A single `corelink-py` bump
+    # to pyo3 >= 0.29 clears BOTH 0176 + 0177 — then remove both from this file
+    # and `.cargo/audit.toml`.
+    "RUSTSEC-2026-0177",
+    # 2026-06-12 — three DoS advisories published the same day in the
+    # rust-postgres stack (postgres-protocol / tokio-postgres):
+    #   RUSTSEC-2026-0178  panic on a `DataRow` with fewer fields than columns
+    #   RUSTSEC-2026-0179  unbounded SCRAM iteration count → CPU-exhaustion DoS
+    #   RUSTSEC-2026-0180  panic decoding a malformed binary `hstore` value
+    # ALL THREE reach the tree SOLELY via `corelink-audit-chain`'s **optional**,
+    # feature-gated postgres audit sink (`deadpool-postgres` + `tokio-postgres`,
+    # `optional = true`) plus a `[dev-dependencies]` test-container. The shipped
+    # CoreLink Cloudflare runtime is D1/SQLite and opens NO postgres connection;
+    # the optional sink, even when enabled, connects only to the operator's OWN
+    # trusted postgres. All three require a *malicious / compromised / MITM
+    # postgres server*, which the product never connects to — zero production
+    # attack surface. The semver fix (tokio-postgres >= 0.7.18) is NOT applied
+    # because `cargo update` to it force-DOWNGRADES unrelated shared transitive
+    # deps across the workspace (windows-sys 0.61→0.48/0.52, socket2 0.6→0.5,
+    # getrandom 0.4→0.3) — unacceptable collateral churn for a dev/optional-only
+    # path. Re-evaluate when tokio-postgres ships a fix that resolves cleanly,
+    # or when the optional postgres audit sink is removed; then drop these from
+    # both this file and `.cargo/audit.toml`. (Mirrors the rustls-pemfile /
+    # number_prefix dev-only-no-prod-exposure precedent above.)
+    "RUSTSEC-2026-0178",
+    "RUSTSEC-2026-0179",
+    "RUSTSEC-2026-0180",
 ]
 # CVSS threshold not applied: HIGH_RISK lane treats EVERY advisory as
 # blocking until explicitly waived via ADR.

@@ -43,6 +43,8 @@ const TEST_PAT_TOKEN =
 /** Build a minimal D1 mock that routes queries by SQL keyword. */
 function makeQuotaD1Mock(opts: {
   tierSelectionsRow?: { tier: string } | null;
+  /** Simulated `subscription_state` of the tier_selections row (default 'active'). */
+  tierSelectionsState?: string;
   tenantTierRow?: { tier: string } | null;
   storageBytes?: number | null;
   patRow?: { tenant_id: string; expires_ms: number } | null;
@@ -51,6 +53,7 @@ function makeQuotaD1Mock(opts: {
 }): D1Database {
   const {
     tierSelectionsRow = null,
+    tierSelectionsState = "active",
     tenantTierRow = null,
     storageBytes = 0,
     patRow = { tenant_id: TEST_TENANT_ID, expires_ms: Date.now() + 3_600_000 },
@@ -69,6 +72,16 @@ function makeQuotaD1Mock(opts: {
 
           if (isTierSelQuery) {
             if (throwOnTierQuery) throw new Error("D1 tier_selections error");
+            // Mirror the SQL's `subscription_state = 'active'` filter: a
+            // non-active row (e.g. pending_checkout, written at checkout
+            // click time before payment) is INVISIBLE to the enforcement
+            // read and must not grant its paid tier.
+            if (
+              sql.includes("subscription_state = 'active'") &&
+              tierSelectionsState !== "active"
+            ) {
+              return null as T | null;
+            }
             return (tierSelectionsRow ?? null) as T | null;
           }
           if (isTenantTierQuery) {
@@ -203,6 +216,30 @@ describe("getTierForTenant", () => {
       const resolved = await getTierForTenant(db, TEST_TENANT_ID);
       expect(resolved).toBe(t);
     }
+  });
+
+  // SECURITY (billing-state CRITICAL): the checkout backend writes the
+  // requested paid tier at click time with subscription_state =
+  // 'pending_checkout' BEFORE any payment. The enforcement read must honor
+  // tier_selections ONLY when the subscription is active, or a user could
+  // select a paid tier, abandon Stripe, and be served full paid quota free.
+  it("does NOT grant a pending_checkout (unpaid) paid tier — falls through to free", async () => {
+    const db = makeQuotaD1Mock({
+      tierSelectionsRow: { tier: "max" },
+      tierSelectionsState: "pending_checkout",
+      tenantTierRow: null,
+    });
+    const tier = await getTierForTenant(db, TEST_TENANT_ID);
+    expect(tier).toBe("free");
+  });
+
+  it("grants the paid tier once the subscription is active", async () => {
+    const db = makeQuotaD1Mock({
+      tierSelectionsRow: { tier: "max" },
+      tierSelectionsState: "active",
+    });
+    const tier = await getTierForTenant(db, TEST_TENANT_ID);
+    expect(tier).toBe("max");
   });
 });
 

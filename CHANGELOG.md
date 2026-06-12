@@ -22,6 +22,55 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **ci: unbreak the `wasm32-unknown-unknown` build (main red ~3 days).** The
+  `WASM target build` gate (`corelink-worker` cargo-check on wasm32) had been
+  failing since 2026-06-10 because `getrandom 0.4.2` entered the wasm dependency
+  graph (via `uuid`'s `rng-getrandom` feature) without its `wasm_js` backend
+  feature enabled — so it fell through to the `unsupported` backend stub and
+  E0425'd on the missing `fill_inner`/`inner_u32`/`inner_u64`. `corelink-worker`'s
+  `[target.'cfg(target_arch = "wasm32")'.dependencies]` already pinned the 0.2
+  (`js`) and 0.3 (`wasm_js`) majors but not 0.4; added the matching
+  `getrandom 0.4 features = ["wasm_js"]` entry (the `--cfg=getrandom_backend=
+  "wasm_js"` rustflag was already set in `.cargo/config.toml`). wasm32 check now
+  passes locally; native build/test graph unchanged (target-gated).
+
+### Security
+- **deps: waive 3 rust-postgres DoS advisories (RUSTSEC-2026-0178 / -0179 /
+  -0180).** Published 2026-06-12 in the postgres-protocol / tokio-postgres stack
+  (short-`DataRow` panic, unbounded SCRAM iteration CPU-exhaustion,
+  malformed-`hstore` decode panic) — they red'd cargo-deny / cargo-audit
+  repo-wide. All three reach the tree SOLELY via `corelink-audit-chain`'s
+  **optional**, feature-gated postgres audit sink (`tokio-postgres`,
+  `optional = true`) plus dev test-containers; the shipped CF Workers runtime is
+  D1/SQLite and opens no postgres connection, and all three require a
+  malicious/compromised/MITM postgres *server*, which the product never connects
+  to — zero production attack surface. Waived (not upgraded) because
+  `cargo update` to the fixed tokio-postgres 0.7.18 force-DOWNGRADES unrelated
+  shared workspace deps (windows-sys 0.61→0.48/0.52, socket2 0.6→0.5,
+  getrandom 0.4→0.3) — unacceptable collateral churn for a dev/optional path.
+  Mirror ignores added to `deny.toml` + `.cargo/audit.toml`; re-evaluate when
+  tokio-postgres ships a clean-resolving fix or the optional sink is dropped.
+- **CRITICAL — close the "paid tier without payment" enforcement hole (e2e
+  adversarial audit 2026-06-11).** The checkout backend persists the requested
+  paid tier into `tier_selections` at checkout-START with
+  `subscription_state = 'pending_checkout'` (before any payment); the canonical
+  access gate is `subscription_state = 'active'` (the live Stripe handler only
+  flips the row to `active` on a *paid* `checkout.session.completed`). But the
+  request-time tier-enforcement read
+  (`worker/src/lib/quota.ts::getTierForTenant`, wired at `worker/src/index.ts`
+  → `checkStorageQuota`/`checkRequestQuota`) read `tier_selections.tier` with
+  **no state filter** — so a user could select a paid tier, abandon Stripe
+  checkout, and be served full paid quota for free. The enforcement read now
+  honours the canonical gate (`AND subscription_state = 'active'`), falling
+  through to `tenant.tier` → `free` otherwise; the customer-dashboard plan read
+  (`crates/corelink-container/src/customer_d1.rs`) mirrors the same filter so a
+  pending checkout never displays as the active plan. Auth / tenant-isolation /
+  PAT-revocation re-audited clean and unchanged. (The live Stripe webhook
+  handler — `apps/signup-worker/src/webhooks/stripe.ts` — already maps real
+  price ids, downgrades on `past_due`, and is process-then-claim idempotent, so
+  no webhook-handler change was needed.)
+
 ### Added
 - **DSR erasure — 24h verification sweep cron (WI-S11-008 Wave 1, increment 5).**
   New signup-worker Cron Trigger (`[triggers] crons = ["0 * * * *"]`, hourly) →
@@ -144,6 +193,23 @@ Each entry cross-references:
   backend adapters** — the full pipeline is wired and exercised end-to-end but no
   real data is deleted yet; **Wave 1** swaps each canonical adapter for its real
   transport (D1 / R2 / Stripe / KV / Loki).
+- **AC handler — 409 Conflict on divergent-body PUT (hugit-P2 WP-A).** `InMemoryAcHandler::update`
+  now refuses to overwrite a stored `(tenant, action_digest)` result with different bytes
+  (`AcHandlerError::DivergentBody` → HTTP 409); a byte-identical re-PUT stays an idempotent
+  no-op (`durable=false`). A proven cache result is immutable-once-stored — silent replacement
+  is forbidden. Audit emits before the refusal.
+- **Pilot-admin: create endpoint + D1-durable store (hugit-P2 WP-FOUND).**
+  `POST /v1/admin/pilots` (and the `/_internal/admin/pilots` operator-edge alias)
+  creates a new pilot tenant: mints a fresh `tenant_id`, persists it in the `NEW`
+  lifecycle state (`tier=free`), and returns the created record (`201 Created`).
+  The handler mirrors the existing `admin_pilot` auth/error/audit discipline
+  exactly — operator-only `x-corelink-internal-auth` constant-time gate + scope
+  re-check + fail-CLOSED audit-before-mutation. The `PilotStore` is now backed by
+  a new D1-durable `D1PilotStore` (over `D1HttpClient`, sync↔async via
+  `block_in_place`/`block_on`, CF-token-redacting Debug) so pilots survive
+  container restarts; the non-durable `InMemoryPilotStore` remains the dev/CI
+  fallback (env-gated). New additive migration `0065_pilot_tenants.sql` adds the
+  `pilot_tenants` backing table (no destructive change; no ADR waiver needed).
 - **Clerk session bridge for `customer_v1` — dual-auth dispatch (dashboard
   revival WP-1).** `/v1/customer/*` now accepts EITHER a CoreLink PAT (existing
   path, byte-identical — the dispatch guard is `parsePat(bearer) === null`, and
@@ -295,6 +361,18 @@ Each entry cross-references:
   non-blocking full `pnpm audit` for dev-graph visibility. Advisory waivers
   via `pnpm.auditConfig.ignoreCves` in `package.json` require an ADR-style
   note, mirroring `.cargo/audit.toml` policy.
+- **`tenant.tier` CHECK widened to include `'max'` — migration 0064 + ADR-0064
+  (#218 §4-Q2 ratified follow-up).** Migration 0057 added `tenant.tier` with an
+  inline CHECK that accepted `('free','solo','starter','team','pro','org','enterprise')`
+  but omitted `'max'`. Migration 0062 already widened `tier_selections.tier` and
+  `stripe_checkout_sessions.tier` to include `'max'`; leaving `tenant.tier`
+  narrower would create silent quota-enforcement gaps for max-tier customers.
+  PR #218 §4-Q2 ratified the fix as a non-blocking follow-up. Migration 0064
+  applies the same 0062-style 12-step table rebuild: full 19-column explicit copy
+  (zero rows dropped or mutated), all 9 indexes recreated verbatim, `PRAGMA
+  defer_foreign_keys` around the DROP/RENAME window. `'pilot'` intentionally NOT
+  added (ratified out at §4-Q2). ADR-0064 records the mechanism and the ratification
+  quote. Draft PR — prod apply is owner-gated.
 - **admin-ui `/upgrade?plan=<tier>` page — the public pricing CTAs now reach
   checkout (#49).** Every docs pricing CTA targets
   `corelink-app.humangr.com/upgrade?plan=<tier>`, but admin-ui had no

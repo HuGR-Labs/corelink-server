@@ -169,7 +169,7 @@ tags: ["soc2", "tsc-2017", "tsc-2022", "gap-analysis", "drata", "vanta", "type-i
 
 ### CC5.2 — Technology general controls
 
-- **Evidence:** SBOM signed (INV-SUPPLY-SBOM-PRESENT); Rekor provenance INV-SUPPLY-PROVENANCE-IN-REKOR; allowlist licenses INV-SUPPLY-LICENSE-ALLOWLIST; ADR-0037 Dependency-Track self-host.
+- **Evidence:** SBOM signed (INV-SUPPLY-SBOM-PRESENT); Rekor provenance INV-SUPPLY-PROVENANCE-IN-REKOR; allowlist licenses INV-SUPPLY-LICENSE-ALLOWLIST; ADR-0024 Dependency-Track self-host.
 - **Gap:** none.
 - **Status:** GREEN.
 
@@ -252,7 +252,7 @@ tags: ["soc2", "tsc-2017", "tsc-2022", "gap-analysis", "drata", "vanta", "type-i
 
 ### CC7.1 — Detection of configuration vulnerabilities
 
-- **Evidence:** Dependency-Track ADR-0037; cargo-deny `deny.toml`; cargo-fuzz summaries `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`.
+- **Evidence:** Dependency-Track ADR-0024; cargo-deny `deny.toml`; cargo-fuzz summaries `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md`.
 - **Gap:** none.
 - **Status:** GREEN.
 
@@ -497,7 +497,7 @@ Per pre-flight P0-S20-003 (CIS Controls v8 / CIS Cloudflare Benchmark coverage d
 | 1 | Inventory and Control of Enterprise Assets | IG2 | `specs/03_architecture/data_model.md` + `specs/_compliance/vendor-shortlist-soc2.md` (Drata asset inventory module) | minor — IG3 automated discovery requires Drata agent on Workers (limited; doc compensating control) | SRE | D+30 (GAP-18 compensating-control doc) |
 | 2 | Inventory and Control of Software Assets | IG2 | `specs/03_architecture/security_model.md` SBOM signed (INV-SUPPLY-SBOM-PRESENT) + Cosign + Rekor + `compliance/cyclonedx/` CycloneDX 1.5+ | none material | Security | n/a (GREEN) |
 | 3 | Data Protection | IG3 | `specs/03_architecture/privacy_model.md` + `compliance/byok-fips-matrix.md` + INV-DATA-RESIDENCY + INV-DATA-ERASURE-COMPLETE + INV-ERASURE-ATTESTATION-SIGNED + INV-BYOK-CRYPTO-SOVEREIGNTY | GAP-02 FIPS attestation per provider closing | Architect | D+30 (GAP-02 closure) |
-| 4 | Secure Configuration of Enterprise Assets and Software | IG2 | `deny.toml` cargo-deny + `specs/03_architecture/adrs/ADR-0037-dependency-track.md` self-host + `.github/workflows/` SHA-pinned | minor — runtime drift detection absent (GAP-11 compensating control) | SRE | T+6m (GAP-11) |
+| 4 | Secure Configuration of Enterprise Assets and Software | IG2 | `deny.toml` cargo-deny + `specs/03_architecture/adrs/ADR-0024-dependency-track-self-host.md` self-host + `.github/workflows/` SHA-pinned | minor — runtime drift detection absent (GAP-11 compensating control) | SRE | T+6m (GAP-11) |
 | 5 | Account Management | IG2 | `specs/03_architecture/auth_model.md` Clerk SSO + `legal/sub-processors.md` provisioning + WI-S19-001 onboarding | none material | Compliance | n/a (GREEN) |
 | 6 | Access Control Management | IG3 | `specs/03_architecture/compliance_matrix.md` CC6.1 + CTRL-AUTH-010 WebAuthn UV=1 + PAT-DUAL-APPROVAL-001 + INV-ADMIN-MFA-FRESHNESS | minor — quarterly access review not yet automated (GAP-01 + GAP-26) | Compliance | D+30 (GAP-01) |
 | 7 | Continuous Vulnerability Management | IG2 | `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md` + Dependency-Track + GAP-29 vuln-mgmt SLA per severity (informal currently) | minor — vuln-mgmt SLA per severity not yet formalized (GAP-29) | Security | D+30 (GAP-29) |
@@ -509,7 +509,7 @@ Per pre-flight P0-S20-003 (CIS Controls v8 / CIS Cloudflare Benchmark coverage d
 | 13 | Network Monitoring and Defense | IG2 | Prometheus metrics catalog + DASH-GA-READINESS + DASH-COMPLIANCE-S20 + Cloudflare Analytics + Logpush to SIEM | none material | SRE | n/a (GREEN) |
 | 14 | Security Awareness and Skills Training | IG1 | `templates/` skill matrix per role + advisor pool CV review template `legal/legal-externo-engagement-contract.md` | GAP-30 onboarding security training tracking not yet automated | Compliance | T+2m post-GA (GAP-30) |
 | 15 | Service Provider Management | IG2 | `legal/sub-processors.md` 10/14 documented + Drata vendor module + GAP-14 4 pending sub-processor reviews + GAP-09 SOC 2 refresh + GAP-21 sub-processor change-notification automation | GAP-14 + GAP-21 in flight; GAP-09 quarterly | Compliance | D+60 (GAP-14) |
-| 16 | Application Software Security | IG3 | `specs/_audits/sealed/pentest/SOW-S20-EXTERNAL-PENTEST.md` external pentest scope (zero HIGH/CRITICAL @ retest = SEAL gate hard) + OWASP ASVS L2/L3 per-surface map §4.1 + ADR-0037 Dependency-Track + property tests + TLA+ 4 INV-level + 4 runbook-level specs | GAP-20 annual pentest cadence calendarized (post-GA) | Security | T+1m post-GA (GAP-20) |
+| 16 | Application Software Security | IG3 | `specs/_audits/sealed/pentest/SOW-S20-EXTERNAL-PENTEST.md` external pentest scope (zero HIGH/CRITICAL @ retest = SEAL gate hard) + OWASP ASVS L2/L3 per-surface map §4.1 + ADR-0024 Dependency-Track + property tests + TLA+ 4 INV-level + 4 runbook-level specs | GAP-20 annual pentest cadence calendarized (post-GA) | Security | T+1m post-GA (GAP-20) |
 | 17 | Incident Response Management | IG3 | WI-S20-006 PagerDuty 24/7 + 3 regions + synthetic page weekly + RB-BREACH-NOTIF + RB-CONSENT-TAMPERING + RB-DATA-RESIDENCY-LEAK + RB-DSR-ERASURE-INCOMPLETE + RB-BYOK-REVOKE | GAP-03 IR plan tabletop end-to-end not yet executed | SRE | D+60 (GAP-03) |
 | 18 | Penetration Testing | IG3 | `specs/_audits/sealed/pentest/SOW-S20-EXTERNAL-PENTEST.md` Schellman / A-LIGN / Bishop Fox engagement (2-week test + 1-week retest); zero HIGH/CRITICAL @ retest = GA gate hard; `specs/_audits/sealed/2026-05-14-pentest-s14-byok.md` prior S-14 BYOK pentest baseline | GAP-20 annual cadence calendarized (post-GA) | Security | T+1m post-GA (GAP-20) |
 

@@ -32,7 +32,7 @@ references:
 | V14.1.1 | Build pipeline reproducibility | Build artifacts are reproducible from source | ✅ PASS | WI-S12-006: 2-runner diff ≤ 5%; SOURCE_DATE_EPOCH; rust-toolchain.toml pinned |
 | V14.1.2 | Dependency pinning | All dependencies pinned to specific versions | ✅ PASS | `Cargo.lock` committed at root; cargo-deny `yanked = "deny"` |
 | V14.1.3 | Dependency vulnerability scanning | Automated vulnerability scanning of all dependencies | ✅ PASS | cargo-audit daily cron + CI PR gate; DT continuous CVE matching |
-| V14.1.4 | Build integrity verification | Build artifacts verified before deployment | ✅ PASS | Cosign keyless OIDC sign + CF deploy webhook verify (ADR-0044 fail-closed) |
+| V14.1.4 | Build integrity verification | Build artifacts verified before deployment | ✅ PASS | Cosign keyless OIDC sign + CF deploy webhook verify (ADR-0025 fail-closed) |
 | V14.2.1 | Artifact signing | Release artifacts signed with cryptographic key | ✅ PASS | Cosign keyless OIDC (Fulcio short-lived cert per build); SLSA L3 provenance signed via sigstore |
 | V14.2.2 | Signature verification before deploy | Signature verified before artifact activation | ✅ PASS | `corelink-deploy-verifier` Cosign verify + Rekor inclusion proof mandatory pre-rollout |
 | V14.2.3 | Provenance transparency | Build provenance publicly verifiable | ✅ PASS | Rekor transparency log; SLSA L3 attestation public (INV-SUPPLY-PROVENANCE-IN-REKOR) |
@@ -54,7 +54,7 @@ references:
 | # | Control | Requirement | Status | Evidence |
 |---|---|---|---|---|
 | V11.1.1 | Prevent automated attacks | Supply chain automation attacks prevented | ✅ PASS | Cosign verify gate prevents automated unsigned deploy; cargo-deny prevents automated GPL dep merge |
-| V11.1.2 | Workflow integrity | Business workflows cannot be bypassed | ✅ PASS | ADR-0044 + ADR-0045: no operator override for Cosign/Rekor gates; fail-closed canonical |
+| V11.1.2 | Workflow integrity | Business workflows cannot be bypassed | ✅ PASS | ADR-0025 + ADR-0045: no operator override for Cosign/Rekor gates; fail-closed canonical |
 | V11.1.3 | Validate high-value transactions | High-risk operations require elevated verification | ✅ PASS | Deploy = high-risk; Cosign + Rekor + SLSA provenance all required before activation |
 | V11.1.4 | Prevent unauthorized state transitions | Supply chain state transitions authorized | ✅ PASS | INV-SUPPLY-SIGNED-DEPLOY enforced at CF webhook layer; unsigned artifact cannot transition to "deployed" |
 | V11.1.5 | Audit trail for high-risk operations | All supply chain operations audited | ✅ PASS | Cosign sign + deploy verify → audit chain event `corelink.supply.deploy_verified`; SLSA provenance in Rekor public log |
@@ -109,7 +109,7 @@ references:
 
 | Control | Requirement | Status | Evidence |
 |---|---|---|---|
-| CC6.7 | Signed artifacts only deployed | ✅ PASS | Cosign verify gate (ADR-0044); unsigned deploy = rollout blocked |
+| CC6.7 | Signed artifacts only deployed | ✅ PASS | Cosign verify gate (ADR-0025); unsigned deploy = rollout blocked |
 | CC7.1 | Vulnerability detection continuous | ✅ PASS | DT CVE alerts ≤ 15 min p99; cargo-audit daily; Dependabot weekly |
 | CC8.1 | System change management with integrity verification | ✅ PASS | SLSA L3 provenance on every release; lockfile diff review required; CODEOWNERS |
 

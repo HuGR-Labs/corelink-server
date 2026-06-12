@@ -89,6 +89,13 @@ serde = { workspace = true, optional = true }
 uuid = { workspace = true, features = ["js"] }
 getrandom = { version = "0.2", features = ["js"] }
 getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+# getrandom 0.4 entered the wasm graph via `uuid`'s `rng-getrandom` feature
+# (tenant-path / corelink-audit / corelink-pat / …). Like 0.2/0.3 above it
+# needs its wasm backend feature explicitly enabled here, or the 0.4.x
+# `wasm32-unknown-unknown` build falls through to the `unsupported` backend
+# stub (no `fill_inner`/`inner_u32`/`inner_u64` → E0425). The companion
+# `--cfg=getrandom_backend="wasm_js"` rustflag is set in `.cargo/config.toml`.
+getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
 proptest = { workspace = true }

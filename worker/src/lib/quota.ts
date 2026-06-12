@@ -93,11 +93,19 @@ export async function getTierForTenant(
   tenantId: string,
 ): Promise<Tier> {
   // ── 1. tier_selections (canonical, written by S-19 subscription flow) ──────
+  // SECURITY: only an ACTIVE subscription grants its paid tier. The
+  // checkout backend writes the requested paid tier at click time with
+  // `subscription_state='pending_checkout'` (before any payment); without
+  // the `= 'active'` filter, a user could select a paid tier, abandon
+  // Stripe, and still be served full paid quota for free. `pending_checkout`
+  // / `inactive` rows fall through to tenant.tier → 'free'.
   interface TierSelRow { tier: string }
   let tierSel: TierSelRow | null = null;
   try {
     tierSel = await db
-      .prepare("SELECT tier FROM tier_selections WHERE tenant_id = ?1 LIMIT 1")
+      .prepare(
+        "SELECT tier FROM tier_selections WHERE tenant_id = ?1 AND subscription_state = 'active' LIMIT 1",
+      )
       .bind(tenantId)
       .first<TierSelRow>();
   } catch {

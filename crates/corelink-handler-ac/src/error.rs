@@ -28,6 +28,19 @@ pub enum AcHandlerError {
         requested_tenant: String,
     },
 
+    /// Caller PUT a divergent body for an existing `(tenant, action_digest)`.
+    /// AC entries are immutable-once-proven; the handler refuses to overwrite a
+    /// stored result with different bytes (a proven cache result must never be
+    /// silently replaced). Maps to HTTP 409 Conflict. A byte-identical re-PUT is
+    /// an idempotent no-op (`durable=false`), NOT this error.
+    #[error("ac divergent body: tenant={tenant} action_digest={action_digest}")]
+    DivergentBody {
+        /// Tenant the update was scoped to.
+        tenant: String,
+        /// Canonical action digest.
+        action_digest: String,
+    },
+
     /// Audit emit failed BEFORE mutation; state unchanged.
     #[error("ac audit emit failed: {0}")]
     AuditFailed(String),
