@@ -10,6 +10,10 @@
 //!
 //! - `GET  /v1/admin/pilots?state=<NEW|ACTIVE|GRADUATED|TERMINATED>`
 //!   — paginated list of pilot tenants filtered by lifecycle state.
+//! - `POST /v1/admin/pilots` — create a new pilot tenant row (slug,
+//!   optional initial `cap_bytes`). Mints a fresh tenant UUID, persists
+//!   the row in the `NEW` lifecycle state, and returns the created
+//!   [`PilotTenant`]. The operator follows up with `grant-tier`.
 //! - `POST /v1/admin/pilots/{tenant_id}/grant-tier` — grant pilot
 //!   tier (`tier`, `cap_bytes`). Mirrors `grant-pilot-tier.sh`
 //!   semantics, including the `pilot_state` NEW → ACTIVE transition.
@@ -88,14 +92,18 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
+
+use crate::storage::d1_http::{D1HttpClient, D1Row};
 
 // -----------------------------------------------------------------------------
 // Constants
 // -----------------------------------------------------------------------------
 
-/// Canonical list-pilots route path.
+/// Canonical list-pilots route path. Also the canonical create-pilot
+/// path: `GET` lists, `POST` creates — same axum path, different method.
 pub const PILOTS_LIST_ROUTE: &str = "/v1/admin/pilots";
 
 /// Canonical grant-tier route path (axum 0.7 `:name` capture).
@@ -162,6 +170,9 @@ pub const ROUTE_KIND_INTERNAL: &str = "internal";
 /// principal — audit rows always carry a non-empty principal.
 pub const INTERNAL_EDGE_PRINCIPAL: &str = "internal-edge-operator";
 
+/// Audit event type — emitted on `create` (attempt + success).
+pub const EVENT_TYPE_CREATED: &str = "corelink.admin.pilot_created.v1";
+
 /// Audit event type — emitted on `grant-tier` success.
 pub const EVENT_TYPE_TIER_GRANTED: &str = "corelink.admin.pilot_tier_granted.v1";
 
@@ -182,6 +193,9 @@ pub const DEFAULT_PAGE_SIZE: usize = 50;
 
 /// Hard cap on page size — defends against unbounded listing.
 pub const MAX_PAGE_SIZE: usize = 200;
+
+/// Hard cap on the create-pilot `slug` length (L4 input validation).
+pub const MAX_SLUG_LEN: usize = 256;
 
 // -----------------------------------------------------------------------------
 // State enum
@@ -409,6 +423,26 @@ pub trait PilotStore: fmt::Debug + Send + Sync {
         cap_bytes: u64,
         granted_at_ms: u64,
     ) -> Result<PilotTenant, &'static str>;
+
+    /// Create a brand-new pilot-tenant row in the `NEW` lifecycle
+    /// state: `tier = "free"`, the supplied `cap_bytes`, no grant /
+    /// blob timestamps yet. The caller supplies a freshly-minted
+    /// `tenant_id` so the row's id is stable across the audit emit and
+    /// the persist.
+    ///
+    /// # Errors
+    ///
+    /// Returns `&'static str` if the underlying store is unavailable or
+    /// the `tenant_id` already exists (the create is non-idempotent —
+    /// a duplicate id is an operator/caller fault, surfaced as a
+    /// distinct error so the handler can map it to `409 Conflict`).
+    fn create(
+        &self,
+        tenant_id: Uuid,
+        slug: &str,
+        cap_bytes: u64,
+        signup_at_ms: u64,
+    ) -> Result<PilotTenant, &'static str>;
 }
 
 /// In-memory pilot-tenant store — used by tests + dev/CI.
@@ -508,6 +542,321 @@ impl PilotStore for InMemoryPilotStore {
         tenant.tier_granted_at_ms = Some(granted_at_ms);
         Ok(tenant.clone())
     }
+
+    fn create(
+        &self,
+        tenant_id: Uuid,
+        slug: &str,
+        cap_bytes: u64,
+        signup_at_ms: u64,
+    ) -> Result<PilotTenant, &'static str> {
+        if let Ok(g) = self.fail_with.lock() {
+            if let Some(reason) = *g {
+                return Err(reason);
+            }
+        }
+        let mut guard = self.by_id.lock().map_err(|_| "store poisoned")?;
+        if guard.contains_key(&tenant_id) {
+            return Err("tenant already exists");
+        }
+        let tenant = PilotTenant {
+            tenant_id,
+            slug: slug.to_string(),
+            tier: "free".to_string(),
+            cap_bytes,
+            pilot_state: PilotState::New,
+            signup_at_ms,
+            tier_granted_at_ms: None,
+            first_blob_at_ms: None,
+        };
+        guard.insert(tenant_id, tenant.clone());
+        Ok(tenant)
+    }
+}
+
+// -----------------------------------------------------------------------------
+// D1-durable pilot-tenant store
+// -----------------------------------------------------------------------------
+
+/// Canonical `SELECT` projection for the `pilot_tenants` table (0065) —
+/// every column the [`PilotTenant`] shape needs, in a fixed order.
+/// Table + column names are compile-time constants (injection-safe);
+/// only values are ever bound as `?n` params.
+const PILOT_SELECT_COLS: &str =
+    "tenant_id, slug, tier, cap_bytes, pilot_state, signup_at_ms, \
+     tier_granted_at_ms, first_blob_at_ms";
+
+/// Sync row-source seam over D1 — the sync↔async bridge point.
+///
+/// The [`PilotStore`] trait is synchronous (the pilot-admin handlers
+/// call it inside the axum task), but on the native container D1 is
+/// reachable only via the **async** [`D1HttpClient`]. The production
+/// impl ([`D1HttpPilotDb`]) bridges each call through
+/// `tokio::task::block_in_place` + `Handle::current().block_on(…)` —
+/// the same single documented bridge as
+/// [`crate::customer_d1::D1HttpCustomerDb`]; tests supply a hermetic
+/// mock so the SQL/serialization is exercised without a live D1.
+pub trait PilotD1: fmt::Debug + Send + Sync {
+    /// Run one parameterised statement; return the result rows (empty
+    /// for non-`RETURNING` writes).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` on any D1 transport, HTTP, or decode
+    /// failure.
+    fn query(&self, sql: &str, binds: Vec<Value>) -> Result<Vec<D1Row>, String>;
+}
+
+/// Production [`PilotD1`] over the CF D1 REST API. Single documented
+/// sync↔async bridge point (mirrors `customer_d1::D1HttpCustomerDb`).
+pub struct D1HttpPilotDb {
+    /// Shared D1-over-HTTP client (owns + redacts the CF API token).
+    d1: Arc<D1HttpClient>,
+}
+
+impl D1HttpPilotDb {
+    /// Wire the row source over a shared [`D1HttpClient`].
+    #[must_use]
+    pub fn new(d1: Arc<D1HttpClient>) -> Self {
+        Self { d1 }
+    }
+}
+
+impl fmt::Debug for D1HttpPilotDb {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // The client's own Debug is never surfaced here so a leaked
+        // Debug can never expose the CF API token.
+        f.debug_struct("D1HttpPilotDb")
+            .field("d1", &"[D1HttpClient]")
+            .finish()
+    }
+}
+
+impl PilotD1 for D1HttpPilotDb {
+    fn query(&self, sql: &str, binds: Vec<Value>) -> Result<Vec<D1Row>, String> {
+        let d1 = Arc::clone(&self.d1);
+        // The native server is `#[tokio::main]` (multi-thread); we are
+        // inside an async task (the axum handler), so `block_in_place`
+        // hands the worker thread back to the scheduler while
+        // `Handle::current().block_on` drives the D1 round-trip.
+        tokio::task::block_in_place(move || {
+            tokio::runtime::Handle::current().block_on(async move { d1.query(sql, &binds).await })
+        })
+    }
+}
+
+/// D1-durable [`PilotStore`] over the `pilot_tenants` table (0065).
+/// Rows survive container restarts (unlike [`InMemoryPilotStore`]).
+pub struct D1PilotStore {
+    /// D1 row source (production: [`D1HttpPilotDb`]).
+    db: Arc<dyn PilotD1>,
+}
+
+impl D1PilotStore {
+    /// Construct over a [`PilotD1`] row source.
+    #[must_use]
+    pub fn new(db: Arc<dyn PilotD1>) -> Self {
+        Self { db }
+    }
+
+    /// Build the production D1-backed store from process env. `None`
+    /// when the D1 config ([`crate::storage::StorageEnv`]) is
+    /// absent/invalid — the caller then keeps the InMemory store
+    /// (dev/CI), mirroring
+    /// [`crate::customer_d1::D1CustomerHandler::from_env`]'s
+    /// fail-closed pattern.
+    #[must_use]
+    pub fn from_env() -> Option<Arc<Self>> {
+        let storage_env = crate::storage::StorageEnv::from_env()?;
+        let d1 = D1HttpClient::new(&storage_env)
+            .map_err(|e| tracing::warn!(error = %e, "admin_pilot: D1 client init failed"))
+            .ok()?;
+        Some(Arc::new(Self::new(Arc::new(D1HttpPilotDb::new(Arc::new(
+            d1,
+        ))))))
+    }
+}
+
+impl fmt::Debug for D1PilotStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Redaction marker only — never surface the inner client Debug.
+        f.debug_struct("D1PilotStore")
+            .field("db", &"[PilotD1]")
+            .finish()
+    }
+}
+
+/// Map a `pilot_tenants` D1 row into a [`PilotTenant`]. Returns a
+/// `&'static str` when a required column is missing / mistyped (the
+/// store fails CLOSED rather than fabricating a tenant).
+fn pilot_row_to_tenant(row: &D1Row) -> Result<PilotTenant, &'static str> {
+    let tenant_id = row
+        .get("tenant_id")
+        .and_then(Value::as_str)
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or("pilot_tenants: missing/invalid tenant_id")?;
+    let slug = row
+        .get("slug")
+        .and_then(Value::as_str)
+        .ok_or("pilot_tenants: missing slug")?
+        .to_string();
+    let tier = row
+        .get("tier")
+        .and_then(Value::as_str)
+        .ok_or("pilot_tenants: missing tier")?
+        .to_string();
+    let cap_bytes = row
+        .get("cap_bytes")
+        .and_then(Value::as_i64)
+        .map(|v| u64::try_from(v).unwrap_or(0))
+        .ok_or("pilot_tenants: missing cap_bytes")?;
+    let pilot_state = row
+        .get("pilot_state")
+        .and_then(Value::as_str)
+        .and_then(PilotState::parse)
+        .ok_or("pilot_tenants: missing/invalid pilot_state")?;
+    let signup_at_ms = row
+        .get("signup_at_ms")
+        .and_then(Value::as_i64)
+        .map(|v| u64::try_from(v).unwrap_or(0))
+        .ok_or("pilot_tenants: missing signup_at_ms")?;
+    let tier_granted_at_ms = row
+        .get("tier_granted_at_ms")
+        .and_then(Value::as_i64)
+        .map(|v| u64::try_from(v).unwrap_or(0));
+    let first_blob_at_ms = row
+        .get("first_blob_at_ms")
+        .and_then(Value::as_i64)
+        .map(|v| u64::try_from(v).unwrap_or(0));
+    Ok(PilotTenant {
+        tenant_id,
+        slug,
+        tier,
+        cap_bytes,
+        pilot_state,
+        signup_at_ms,
+        tier_granted_at_ms,
+        first_blob_at_ms,
+    })
+}
+
+impl PilotStore for D1PilotStore {
+    fn list_by_state(
+        &self,
+        state: PilotState,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<PilotTenant>, &'static str> {
+        let sql = format!(
+            "SELECT {PILOT_SELECT_COLS} FROM pilot_tenants \
+             WHERE pilot_state = ?1 ORDER BY signup_at_ms ASC LIMIT ?2 OFFSET ?3"
+        );
+        let rows = self
+            .db
+            .query(
+                &sql,
+                vec![
+                    json!(state.as_str()),
+                    json!(i64::try_from(limit).unwrap_or(i64::MAX)),
+                    json!(i64::try_from(offset).unwrap_or(i64::MAX)),
+                ],
+            )
+            .map_err(|_| "store unavailable")?;
+        rows.iter().map(pilot_row_to_tenant).collect()
+    }
+
+    fn get(&self, tenant_id: Uuid) -> Result<Option<PilotTenant>, &'static str> {
+        let sql = format!(
+            "SELECT {PILOT_SELECT_COLS} FROM pilot_tenants WHERE tenant_id = ?1 LIMIT 1"
+        );
+        let rows = self
+            .db
+            .query(&sql, vec![json!(tenant_id.to_string())])
+            .map_err(|_| "store unavailable")?;
+        match rows.first() {
+            Some(row) => Ok(Some(pilot_row_to_tenant(row)?)),
+            None => Ok(None),
+        }
+    }
+
+    fn apply_grant_tier(
+        &self,
+        tenant_id: Uuid,
+        tier: &str,
+        cap_bytes: u64,
+        granted_at_ms: u64,
+    ) -> Result<PilotTenant, &'static str> {
+        // Read-modify-write through the same store seam so the
+        // grant-eligible-state invariant matches InMemory exactly.
+        let existing = self.get(tenant_id)?.ok_or("tenant not found")?;
+        if !matches!(
+            existing.pilot_state,
+            PilotState::New | PilotState::Reserved | PilotState::Provisioned
+        ) {
+            return Err("tenant not in grant-eligible state");
+        }
+        // Tenant-scoped, state-guarded UPDATE: the `pilot_state IN (...)`
+        // predicate makes the write idempotent + race-safe (a concurrent
+        // grant that already flipped the row to ACTIVE updates 0 rows).
+        self.db
+            .query(
+                "UPDATE pilot_tenants \
+                 SET tier = ?1, cap_bytes = ?2, pilot_state = 'ACTIVE', \
+                     tier_granted_at_ms = ?3 \
+                 WHERE tenant_id = ?4 \
+                   AND pilot_state IN ('NEW', 'RESERVED', 'PROVISIONED')",
+                vec![
+                    json!(tier),
+                    json!(i64::try_from(cap_bytes).unwrap_or(i64::MAX)),
+                    json!(i64::try_from(granted_at_ms).unwrap_or(i64::MAX)),
+                    json!(tenant_id.to_string()),
+                ],
+            )
+            .map_err(|_| "store unavailable")?;
+        // Re-read so the returned record reflects the persisted row.
+        self.get(tenant_id)?.ok_or("tenant not found")
+    }
+
+    fn create(
+        &self,
+        tenant_id: Uuid,
+        slug: &str,
+        cap_bytes: u64,
+        signup_at_ms: u64,
+    ) -> Result<PilotTenant, &'static str> {
+        // Pre-check existence: D1 HTTP `success` does not discriminate a
+        // PRIMARY-KEY conflict cleanly across the wire, so confirm the id
+        // is free before inserting (mirrors `d1_http::tenant_set_tier`'s
+        // existence pre-check). A duplicate id is an operator fault → a
+        // distinct error the handler maps to 409.
+        if self.get(tenant_id)?.is_some() {
+            return Err("tenant already exists");
+        }
+        self.db
+            .query(
+                "INSERT INTO pilot_tenants \
+                 (tenant_id, slug, tier, cap_bytes, pilot_state, signup_at_ms, \
+                  tier_granted_at_ms, first_blob_at_ms) \
+                 VALUES (?1, ?2, 'free', ?3, 'NEW', ?4, NULL, NULL)",
+                vec![
+                    json!(tenant_id.to_string()),
+                    json!(slug),
+                    json!(i64::try_from(cap_bytes).unwrap_or(i64::MAX)),
+                    json!(i64::try_from(signup_at_ms).unwrap_or(i64::MAX)),
+                ],
+            )
+            .map_err(|_| "store unavailable")?;
+        Ok(PilotTenant {
+            tenant_id,
+            slug: slug.to_string(),
+            tier: "free".to_string(),
+            cap_bytes,
+            pilot_state: PilotState::New,
+            signup_at_ms,
+            tier_granted_at_ms: None,
+            first_blob_at_ms: None,
+        })
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -596,6 +945,26 @@ pub struct ListPilotsResponse {
     pub limit: usize,
 }
 
+/// Request body for `POST /v1/admin/pilots` (create a pilot tenant).
+#[derive(Clone, Debug, Deserialize)]
+pub struct CreatePilotBody {
+    /// Display slug (lowercase, hyphen-delimited). Required, non-empty,
+    /// `≤ MAX_SLUG_LEN` chars — validated at the route boundary (L4).
+    pub slug: String,
+    /// Optional initial storage cap in bytes (decimal-GB convention).
+    /// Pre-grant tenants default to 0; the operator stamps the real cap
+    /// via `grant-tier`.
+    #[serde(default)]
+    pub cap_bytes: Option<u64>,
+}
+
+/// Response body for `POST /v1/admin/pilots`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CreatePilotResponse {
+    /// The newly-created pilot tenant (state `NEW`, tier `free`).
+    pub tenant: PilotTenant,
+}
+
 /// Request body for `POST /v1/admin/pilots/{tenant_id}/grant-tier`.
 #[derive(Clone, Debug, Deserialize)]
 pub struct GrantTierBody {
@@ -642,10 +1011,13 @@ pub struct CheckinResponse {
 /// privilege change.
 pub fn router(state: PilotAdminRouteState) -> Router {
     Router::new()
-        .route(PILOTS_LIST_ROUTE, get(handle_list))
+        .route(PILOTS_LIST_ROUTE, get(handle_list).post(handle_create))
         .route(PILOTS_GRANT_TIER_ROUTE, post(handle_grant_tier))
         .route(PILOTS_CHECKIN_ROUTE, post(handle_checkin))
-        .route(INTERNAL_PILOTS_LIST_ROUTE, get(handle_list))
+        .route(
+            INTERNAL_PILOTS_LIST_ROUTE,
+            get(handle_list).post(handle_create),
+        )
         .route(INTERNAL_PILOTS_GRANT_TIER_ROUTE, post(handle_grant_tier))
         .route(INTERNAL_PILOTS_CHECKIN_ROUTE, post(handle_checkin))
         .with_state(state)
@@ -713,6 +1085,79 @@ async fn handle_list(
         limit,
     };
     (StatusCode::OK, Json(body)).into_response()
+}
+
+async fn handle_create(
+    State(state): State<PilotAdminRouteState>,
+    headers: HeaderMap,
+    Json(body): Json<CreatePilotBody>,
+) -> Response {
+    // No target tenant — create mints a NEW id, so the gate runs at the
+    // global-operator scope (mirrors `handle_list`).
+    let scope = match require_admin_scope(&state, &headers, None) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    // L4 input validation.
+    let slug = body.slug.trim();
+    if slug.is_empty() {
+        return (StatusCode::BAD_REQUEST, "slug must be non-empty").into_response();
+    }
+    if slug.chars().count() > MAX_SLUG_LEN {
+        return (StatusCode::BAD_REQUEST, "slug too long").into_response();
+    }
+    let cap_bytes = body.cap_bytes.unwrap_or(0);
+    let tenant_id = Uuid::now_v7();
+    let now_ms = state.wall_clock.now_ms();
+
+    // Fail-CLOSED: emit audit BEFORE the mutation. If audit fails, abort.
+    let pre_row = PilotAuditRow {
+        event_type: EVENT_TYPE_CREATED.to_string(),
+        principal: scope.principal.clone(),
+        tenant_id: Some(tenant_id),
+        at_unix_ms: now_ms,
+        exit_status: "attempt".to_string(),
+        payload: json!({
+            "slug": slug,
+            "cap_bytes": cap_bytes,
+        }),
+    };
+    if state.audit_sink.emit(pre_row).is_err() {
+        return (StatusCode::SERVICE_UNAVAILABLE, "audit pipeline closed").into_response();
+    }
+
+    let tenant = match state.store.create(tenant_id, slug, cap_bytes, now_ms) {
+        Ok(t) => t,
+        Err(msg) => {
+            let status = if msg == "tenant already exists" {
+                StatusCode::CONFLICT
+            } else {
+                StatusCode::SERVICE_UNAVAILABLE
+            };
+            return (status, msg).into_response();
+        }
+    };
+
+    let post_row = PilotAuditRow {
+        event_type: EVENT_TYPE_CREATED.to_string(),
+        principal: scope.principal,
+        tenant_id: Some(tenant_id),
+        at_unix_ms: now_ms,
+        exit_status: "ok".to_string(),
+        payload: json!({
+            "slug": tenant.slug,
+            "cap_bytes": tenant.cap_bytes,
+            "pilot_state": tenant.pilot_state.as_str(),
+        }),
+    };
+    if state.audit_sink.emit(post_row).is_err() {
+        // The row already landed in the store, but the post-emit failed:
+        // surface 503 so the operator retries. The pre-emit `attempt`
+        // row is the SEC team's record that the create was issued.
+        return (StatusCode::SERVICE_UNAVAILABLE, "audit pipeline closed").into_response();
+    }
+
+    (StatusCode::CREATED, Json(CreatePilotResponse { tenant })).into_response()
 }
 
 async fn handle_grant_tier(
@@ -1426,5 +1871,331 @@ mod tests {
             payload: serde_json::Value::Null,
         });
         assert!(err.is_ok());
+    }
+
+    // ── create (in-memory store) ─────────────────────────────────────────────
+
+    #[test]
+    fn in_memory_store_create_inserts_new_tenant_in_new_state() {
+        let (_st, store, _au, _c) = fixture();
+        let id = Uuid::now_v7();
+        let created = store
+            .create(id, "acme-builds", 0, 1_000)
+            .expect("create");
+        assert_eq!(created.tenant_id, id);
+        assert_eq!(created.slug, "acme-builds");
+        assert_eq!(created.tier, "free");
+        assert_eq!(created.pilot_state, PilotState::New);
+        assert_eq!(created.signup_at_ms, 1_000);
+        assert!(created.tier_granted_at_ms.is_none());
+        assert!(created.first_blob_at_ms.is_none());
+        // The row is now durable in the store + grant-eligible.
+        let fetched = store.get(id).expect("get").expect("present");
+        assert_eq!(fetched, created);
+    }
+
+    #[test]
+    fn in_memory_store_create_rejects_duplicate_id() {
+        let (_st, store, _au, _c) = fixture();
+        let id = Uuid::now_v7();
+        store.create(id, "a", 0, 1).expect("first");
+        let err = store.create(id, "b", 0, 2).expect_err("dup");
+        assert_eq!(err, "tenant already exists");
+    }
+
+    // ── create handler (router) ──────────────────────────────────────────────
+
+    /// Build the request headers that clear the operator gate.
+    fn operator_headers() -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ADMIN_INTERNAL_AUTH_HEADER,
+            "test-internal-auth-key-32-bytes-x".parse().expect("header"),
+        );
+        headers.insert(
+            ADMIN_SCOPE_HEADER,
+            REQUIRED_ADMIN_SCOPE.parse().expect("header"),
+        );
+        headers.insert(ADMIN_PRINCIPAL_HEADER, "ops@root".parse().expect("header"));
+        headers
+    }
+
+    #[tokio::test]
+    async fn handle_create_persists_and_returns_201() {
+        let (state, store, audit, _c) = fixture();
+        let resp = handle_create(
+            State(state),
+            operator_headers(),
+            Json(CreatePilotBody {
+                slug: "  beta-co  ".to_owned(),
+                cap_bytes: Some(42),
+            }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        // Exactly one NEW-state tenant landed, slug trimmed.
+        let rows = store.list_by_state(PilotState::New, 0, 50).expect("list");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].slug, "beta-co");
+        assert_eq!(rows[0].cap_bytes, 42);
+        // Audit: attempt then ok.
+        let kinds: Vec<_> = audit
+            .snapshot()
+            .expect("audit")
+            .into_iter()
+            .map(|r| (r.event_type, r.exit_status))
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                (EVENT_TYPE_CREATED.to_owned(), "attempt".to_owned()),
+                (EVENT_TYPE_CREATED.to_owned(), "ok".to_owned()),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_create_rejects_empty_slug() {
+        let (state, store, _audit, _c) = fixture();
+        let resp = handle_create(
+            State(state),
+            operator_headers(),
+            Json(CreatePilotBody {
+                slug: "   ".to_owned(),
+                cap_bytes: None,
+            }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert!(store
+            .list_by_state(PilotState::New, 0, 50)
+            .expect("list")
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn handle_create_rejects_without_internal_auth() {
+        let (state, _store, _audit, _c) = fixture();
+        // No operator secret header → 403 (gate is the PRIMARY boundary).
+        let resp = handle_create(
+            State(state),
+            HeaderMap::new(),
+            Json(CreatePilotBody {
+                slug: "x".to_owned(),
+                cap_bytes: None,
+            }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn handle_create_audit_failure_aborts_before_mutation() {
+        let (state, store, audit, _c) = fixture();
+        audit.inject_failure("sink down").expect("inject");
+        let resp = handle_create(
+            State(state),
+            operator_headers(),
+            Json(CreatePilotBody {
+                slug: "x".to_owned(),
+                cap_bytes: None,
+            }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        // Fail-CLOSED: nothing persisted.
+        assert!(store
+            .list_by_state(PilotState::New, 0, 50)
+            .expect("list")
+            .is_empty());
+    }
+
+    // ── D1 store (hermetic mock, no live D1) ─────────────────────────────────
+
+    /// Hermetic mock [`PilotD1`]: canned result sets keyed by an SQL
+    /// fragment; every (sql, binds) recorded for assertions. Mirrors
+    /// `customer_d1::MockD1`.
+    #[derive(Debug, Default)]
+    struct MockPilotD1 {
+        canned: Vec<(&'static str, Vec<D1Row>)>,
+        calls: Mutex<Vec<(String, Vec<Value>)>>,
+        fail: bool,
+    }
+
+    impl MockPilotD1 {
+        fn with(canned: Vec<(&'static str, Vec<D1Row>)>) -> Self {
+            Self {
+                canned,
+                calls: Mutex::new(Vec::new()),
+                fail: false,
+            }
+        }
+
+        fn failing() -> Self {
+            Self {
+                fail: true,
+                ..Self::default()
+            }
+        }
+
+        fn calls(&self) -> Vec<(String, Vec<Value>)> {
+            self.calls.lock().expect("lock").clone()
+        }
+    }
+
+    impl PilotD1 for MockPilotD1 {
+        fn query(&self, sql: &str, binds: Vec<Value>) -> Result<Vec<D1Row>, String> {
+            self.calls
+                .lock()
+                .expect("lock")
+                .push((sql.to_owned(), binds));
+            if self.fail {
+                return Err("D1 HTTP 500: transport down".to_owned());
+            }
+            for (fragment, rows) in &self.canned {
+                if sql.contains(fragment) {
+                    return Ok(rows.clone());
+                }
+            }
+            Ok(Vec::new())
+        }
+    }
+
+    fn d1_row(pairs: &[(&str, Value)]) -> D1Row {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), v.clone()))
+            .collect()
+    }
+
+    fn pilot_d1_row(id: Uuid, state: &str, signup: i64) -> D1Row {
+        d1_row(&[
+            ("tenant_id", json!(id.to_string())),
+            ("slug", json!("acme")),
+            ("tier", json!("free")),
+            ("cap_bytes", json!(0_i64)),
+            ("pilot_state", json!(state)),
+            ("signup_at_ms", json!(signup)),
+            ("tier_granted_at_ms", Value::Null),
+            ("first_blob_at_ms", Value::Null),
+        ])
+    }
+
+    #[test]
+    fn pilot_row_to_tenant_maps_every_column() {
+        let id = Uuid::now_v7();
+        let row = d1_row(&[
+            ("tenant_id", json!(id.to_string())),
+            ("slug", json!("acme-builds")),
+            ("tier", json!("pilot")),
+            ("cap_bytes", json!(100_i64)),
+            ("pilot_state", json!("ACTIVE")),
+            ("signup_at_ms", json!(1_000_i64)),
+            ("tier_granted_at_ms", json!(5_000_i64)),
+            ("first_blob_at_ms", Value::Null),
+        ]);
+        let t = pilot_row_to_tenant(&row).expect("map");
+        assert_eq!(t.tenant_id, id);
+        assert_eq!(t.slug, "acme-builds");
+        assert_eq!(t.tier, "pilot");
+        assert_eq!(t.cap_bytes, 100);
+        assert_eq!(t.pilot_state, PilotState::Active);
+        assert_eq!(t.signup_at_ms, 1_000);
+        assert_eq!(t.tier_granted_at_ms, Some(5_000));
+        assert!(t.first_blob_at_ms.is_none());
+    }
+
+    #[test]
+    fn pilot_row_to_tenant_fails_closed_on_missing_column() {
+        let row = d1_row(&[("slug", json!("acme"))]);
+        assert!(pilot_row_to_tenant(&row).is_err());
+    }
+
+    #[test]
+    fn d1_store_list_binds_state_limit_offset_and_maps_rows() {
+        let id = Uuid::now_v7();
+        let db = Arc::new(MockPilotD1::with(vec![(
+            "FROM pilot_tenants",
+            vec![pilot_d1_row(id, "NEW", 1_000)],
+        )]));
+        let store = D1PilotStore::new(db.clone());
+        let rows = store.list_by_state(PilotState::New, 7, 25).expect("list");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].tenant_id, id);
+        // Binds: state, limit, offset — values only, never the table name.
+        let calls = db.calls();
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0].0.contains("ORDER BY signup_at_ms ASC"));
+        assert_eq!(
+            calls[0].1,
+            vec![json!("NEW"), json!(25_i64), json!(7_i64)]
+        );
+    }
+
+    #[test]
+    fn d1_store_get_returns_none_for_absent_row() {
+        let db = Arc::new(MockPilotD1::with(vec![]));
+        let store = D1PilotStore::new(db);
+        assert!(store.get(Uuid::now_v7()).expect("get").is_none());
+    }
+
+    #[test]
+    fn d1_store_create_pre_checks_then_inserts() {
+        // Empty canned → get() returns None (free id), so create inserts.
+        let db = Arc::new(MockPilotD1::with(vec![]));
+        let store = D1PilotStore::new(db.clone());
+        let id = Uuid::now_v7();
+        let created = store.create(id, "beta", 9, 2_000).expect("create");
+        assert_eq!(created.pilot_state, PilotState::New);
+        assert_eq!(created.tier, "free");
+        let calls = db.calls();
+        // 1: existence SELECT, 2: INSERT.
+        assert_eq!(calls.len(), 2);
+        assert!(calls[0].0.contains("SELECT"));
+        assert!(calls[1].0.contains("INSERT INTO pilot_tenants"));
+        assert_eq!(
+            calls[1].1,
+            vec![
+                json!(id.to_string()),
+                json!("beta"),
+                json!(9_i64),
+                json!(2_000_i64),
+            ]
+        );
+    }
+
+    #[test]
+    fn d1_store_create_rejects_existing_id() {
+        let id = Uuid::now_v7();
+        let db = Arc::new(MockPilotD1::with(vec![(
+            "FROM pilot_tenants",
+            vec![pilot_d1_row(id, "NEW", 1)],
+        )]));
+        let store = D1PilotStore::new(db);
+        let err = store.create(id, "x", 0, 1).expect_err("dup");
+        assert_eq!(err, "tenant already exists");
+    }
+
+    #[test]
+    fn d1_store_grant_tier_rejects_already_active_without_update() {
+        let id = Uuid::now_v7();
+        let db = Arc::new(MockPilotD1::with(vec![(
+            "FROM pilot_tenants",
+            vec![pilot_d1_row(id, "ACTIVE", 1)],
+        )]));
+        let store = D1PilotStore::new(db.clone());
+        let err = store
+            .apply_grant_tier(id, "pilot", 1, 5)
+            .expect_err("conflict");
+        assert!(err.contains("not in grant-eligible state"));
+        // Only the read happened — no UPDATE was issued.
+        assert!(db.calls().iter().all(|(sql, _)| !sql.contains("UPDATE")));
+    }
+
+    #[test]
+    fn d1_store_fails_closed_on_transport_error() {
+        let store = D1PilotStore::new(Arc::new(MockPilotD1::failing()));
+        assert!(store.list_by_state(PilotState::New, 0, 50).is_err());
+        assert!(store.get(Uuid::now_v7()).is_err());
     }
 }

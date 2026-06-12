@@ -263,7 +263,22 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         mutate: admin_mutate,
         internal_auth_key: admin_internal_auth_key.clone(),
     };
-    let (pilot_store, pilot_audit) = admin_pilot::build_handlers();
+    let (default_pilot_store, pilot_audit) = admin_pilot::build_handlers();
+    // Durable pilot-tenant store (hugit-P2 WP-FOUND): D1-backed when the
+    // D1 env is present so pilots survive container restarts; the
+    // non-durable InMemory store is the dev/CI fallback (fail-closed
+    // env-gate, mirroring `customer::build_handlers_from_env`).
+    let pilot_store: std::sync::Arc<dyn admin_pilot::PilotStore> =
+        match admin_pilot::D1PilotStore::from_env() {
+            Some(d1_store) => d1_store,
+            None => {
+                tracing::warn!(
+                    "admin_pilot: D1 env absent; /v1/admin/pilots backed by \
+                     NON-durable InMemoryPilotStore (dev/CI mode)"
+                );
+                default_pilot_store
+            }
+        };
     let pilot_admin_state = admin_pilot::PilotAdminRouteState {
         store: pilot_store,
         audit_sink: pilot_audit,
