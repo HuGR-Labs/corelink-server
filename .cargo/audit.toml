@@ -59,4 +59,10 @@ ignore = [
     # Mirror of `deny.toml` `[advisories].ignore`. Re-evaluate: bump
     # `corelink-py` to pyo3 >= 0.25, then remove from BOTH files.
     "RUSTSEC-2026-0176",
+    # 2026-06-12 — pyo3 0.24.2 RUSTSEC-2026-0177 (missing `Sync` bound on the
+    # `PyCFunction::new_closure` closure; free-threaded-Python thread-safety bug).
+    # Same provenance as 0176 (corelink-py Python SDK only, not shipped). Fixed in
+    # pyo3 0.29.0 (major bump). Mirror of deny.toml. A single corelink-py bump to
+    # pyo3 >= 0.29 clears BOTH; then remove both from BOTH files.
+    "RUSTSEC-2026-0177",
 ]

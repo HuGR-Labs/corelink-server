@@ -79,6 +79,16 @@ ignore = [
     # SDK). Re-evaluate: bump `corelink-py` to pyo3 >= 0.25 (a separate Python-SDK
     # change), then remove this ignore.
     "RUSTSEC-2026-0176",
+    # 2026-06-12 — pyo3 0.24.2 RUSTSEC-2026-0177 (missing `Sync` bound on the
+    # closure in `PyCFunction::new_closure`; a thread-safety bug under
+    # free-threaded Python). SAME provenance as 0176: reached SOLELY via
+    # `corelink-py` (the Python SDK bindings), not shipped in the CoreLink
+    # Cloudflare runtime, and the bindings register no free-threaded closures.
+    # Fixed in pyo3 0.29.0 (a major bump for the Python SDK; not
+    # semver-compatible with the pinned 0.24 line). A single `corelink-py` bump
+    # to pyo3 >= 0.29 clears BOTH 0176 + 0177 — then remove both from this file
+    # and `.cargo/audit.toml`.
+    "RUSTSEC-2026-0177",
 ]
 # CVSS threshold not applied: HIGH_RISK lane treats EVERY advisory as
 # blocking until explicitly waived via ADR.
