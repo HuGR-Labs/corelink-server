@@ -332,11 +332,25 @@ impl AcUpdateHandler for InMemoryAcHandler {
                 .entries
                 .lock()
                 .map_err(|_| AcHandlerError::Internal("entry lock poisoned".into()))?;
-            g.insert(
-                (req.tenant.clone(), req.action_digest.clone()),
-                req.result_payload,
-            )
-            .is_none()
+            let key = (req.tenant.clone(), req.action_digest.clone());
+            if let Some(existing) = g.get(&key) {
+                if *existing != req.result_payload {
+                    // Idempotency violation: same key, divergent body. NEVER
+                    // overwrite a proven AC result. UpdateAttempted already
+                    // fired; no UpdateCommitted follows — the 409 is the signal.
+                    drop(g);
+                    emit(false);
+                    return Err(AcHandlerError::DivergentBody {
+                        tenant: req.tenant,
+                        action_digest: req.action_digest,
+                    });
+                }
+                // Byte-identical re-PUT → idempotent no-op.
+                false
+            } else {
+                g.insert(key, req.result_payload);
+                true
+            }
         };
 
         self.audit
@@ -493,5 +507,37 @@ mod tests {
         assert!(matches!(err, AcHandlerError::CrossTenantDenied { .. }));
         let rows = audit.snapshot().expect("audit");
         assert_eq!(rows[0].kind, AuditEventKind::UpdateDenied);
+    }
+
+    #[test]
+    fn update_divergent_body_returns_conflict_and_preserves_original() {
+        let (_audit, _sli, h) = fixture();
+        // First PUT stores "v1".
+        let r1 = h
+            .update(AcUpdateRequest::new("t1", "d1", b"v1".to_vec(), "p1", "t1", 1))
+            .expect("first");
+        assert!(r1.durable, "fresh insert is durable");
+        // Byte-identical re-PUT → idempotent no-op (Ok, durable=false).
+        let r2 = h
+            .update(AcUpdateRequest::new("t1", "d1", b"v1".to_vec(), "p1", "t1", 2))
+            .expect("identical replay is Ok");
+        assert!(!r2.durable, "identical re-PUT is an idempotent no-op");
+        // Divergent body for the SAME key → 409 conflict.
+        let err = h
+            .update(AcUpdateRequest::new(
+                "t1",
+                "d1",
+                b"v2-DIFFERENT".to_vec(),
+                "p1",
+                "t1",
+                3,
+            ))
+            .expect_err("divergent body must conflict");
+        assert!(matches!(err, AcHandlerError::DivergentBody { .. }));
+        // The proven result must survive — NO silent overwrite.
+        let hit = h
+            .lookup(AcLookupRequest::new("t1", "d1", "p1", "t1", 4))
+            .expect("original still present");
+        assert_eq!(hit.result_payload, b"v1".to_vec(), "original not overwritten");
     }
 }

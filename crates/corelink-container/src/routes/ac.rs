@@ -260,6 +260,11 @@ fn map_err(e: AcHandlerError) -> axum::response::Response {
         AcHandlerError::CrossTenantDenied { .. } => {
             (StatusCode::FORBIDDEN, "cross-tenant").into_response()
         }
+        AcHandlerError::DivergentBody { .. } => {
+            // Same (tenant, action_digest), different bytes: a proven AC
+            // result must never be silently overwritten. 409 Conflict.
+            (StatusCode::CONFLICT, "divergent body").into_response()
+        }
         AcHandlerError::AuditFailed(_) => {
             // Fail-CLOSED: audit pipeline down = 503; never serve
             // bytes / commit updates without the audit row.

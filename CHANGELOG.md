@@ -44,6 +44,11 @@ Each entry cross-references:
   no webhook-handler change was needed.)
 
 ### Added
+- **AC handler — 409 Conflict on divergent-body PUT (hugit-P2 WP-A).** `InMemoryAcHandler::update`
+  now refuses to overwrite a stored `(tenant, action_digest)` result with different bytes
+  (`AcHandlerError::DivergentBody` → HTTP 409); a byte-identical re-PUT stays an idempotent
+  no-op (`durable=false`). A proven cache result is immutable-once-stored — silent replacement
+  is forbidden. Audit emits before the refusal.
 - **Clerk session bridge for `customer_v1` — dual-auth dispatch (dashboard
   revival WP-1).** `/v1/customer/*` now accepts EITHER a CoreLink PAT (existing
   path, byte-identical — the dispatch guard is `parsePat(bearer) === null`, and
