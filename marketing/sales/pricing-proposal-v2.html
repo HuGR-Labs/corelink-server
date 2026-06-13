@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CoreLink — Proposta de Preços v2 (loss-proof)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#08080d; --bg2:#0d0d16;
+    --surface:rgba(255,255,255,.035);
+    --surface-2:rgba(255,255,255,.055);
+    --border:rgba(255,255,255,.09);
+    --border-2:rgba(255,255,255,.14);
+    --text:#ececf3; --muted:#9a9aac; --faint:#6a6a7a;
+    --indigo:#6366f1; --violet:#8b5cf6; --cyan:#22d3ee;
+    --accent:linear-gradient(135deg,#6366f1 0%,#8b5cf6 45%,#22d3ee 100%);
+    --amber:#f5b942; --green:#34d399;
+    --radius:18px;
+    --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; font-family:var(--font); color:var(--text);
+    background:var(--bg);
+    background-image:
+      radial-gradient(900px 500px at 12% -8%, rgba(99,102,241,.20), transparent 60%),
+      radial-gradient(800px 520px at 92% 4%, rgba(34,211,238,.13), transparent 60%),
+      radial-gradient(700px 700px at 50% 120%, rgba(139,92,246,.12), transparent 60%);
+    background-attachment:fixed;
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+  }
+  .wrap{max-width:1200px; margin:0 auto; padding:0 24px}
+  .grad{background:var(--accent); -webkit-background-clip:text; background-clip:text; color:transparent}
+  a{color:inherit}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;
+    background:rgba(255,255,255,.06);padding:1px 6px;border-radius:6px}
+
+  /* ---------- HERO ---------- */
+  header{padding:74px 0 30px; text-align:center}
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600;
+    letter-spacing:.16em; text-transform:uppercase; color:var(--muted);
+    border:1px solid var(--border); border-radius:999px; padding:7px 15px; margin-bottom:26px;
+    background:var(--surface);
+  }
+  .eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+  h1{font-size:clamp(38px,6vw,62px); line-height:1.04; font-weight:800; margin:0 0 18px; letter-spacing:-.025em}
+  .sub{font-size:clamp(16px,2.1vw,20px); color:var(--muted); max-width:680px; margin:0 auto 14px}
+  .sub b{color:var(--text); font-weight:600}
+  .edge{
+    display:inline-flex;gap:18px;flex-wrap:wrap;justify-content:center;
+    margin-top:18px;font-size:13.5px;color:var(--muted)
+  }
+  .edge span{display:inline-flex;align-items:center;gap:7px}
+  .edge .ic{color:var(--cyan)}
+
+  /* ---------- AXIOM BANNER ---------- */
+  .axiom{
+    margin:36px auto 0;max-width:860px;border-radius:var(--radius);position:relative;overflow:hidden;
+    border:1px solid transparent;
+    background:
+      linear-gradient(var(--bg2),var(--bg2)) padding-box,
+      var(--accent) border-box;
+    box-shadow:0 0 0 1px rgba(139,92,246,.08), 0 24px 60px -28px rgba(124,58,237,.6);
+    padding:30px 32px;text-align:center
+  }
+  .axiom .lbl{font-size:11.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--cyan);margin-bottom:12px}
+  .axiom .ax{font-size:clamp(22px,3.2vw,30px);font-weight:800;letter-spacing:-.02em;line-height:1.15}
+  .axiom .ax .grad{font-weight:800}
+  .axiom .exp{color:var(--muted);font-size:14px;margin:14px auto 0;max-width:640px}
+  .axiom .exp b{color:var(--text)}
+
+  /* ---------- BILLING TOGGLE ---------- */
+  .toggle-row{display:flex;align-items:center;justify-content:center;gap:14px;margin:34px 0 6px}
+  .toggle-row .lab{font-size:14.5px;font-weight:500;color:var(--muted);transition:.2s}
+  .toggle-row .lab.on{color:var(--text)}
+  .save{font-size:11.5px;font-weight:700;color:var(--green);border:1px solid rgba(52,211,153,.35);
+    background:rgba(52,211,153,.10);border-radius:999px;padding:3px 9px;margin-left:2px}
+  .switch{position:relative;width:54px;height:30px;flex:0 0 auto}
+  .switch input{opacity:0;width:0;height:0}
+  .slider{position:absolute;inset:0;border-radius:999px;background:var(--surface-2);
+    border:1px solid var(--border-2);cursor:pointer;transition:.25s}
+  .slider:before{content:"";position:absolute;height:22px;width:22px;left:3px;top:3px;border-radius:50%;
+    background:var(--accent);transition:.25s}
+  input:checked + .slider:before{transform:translateX(24px)}
+
+  /* ---------- SECTION HEADS ---------- */
+  section.product{margin:84px 0 0}
+  .sec-head{text-align:center;margin-bottom:30px}
+  .sec-head .kick{font-size:12.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--violet)}
+  .sec-head h2{font-size:clamp(26px,4vw,38px);font-weight:800;letter-spacing:-.02em;margin:8px 0 0}
+  .sec-head h2 .pill{vertical-align:middle;margin-left:8px}
+  .sec-head p{color:var(--muted);margin:12px auto 0;max-width:640px;font-size:15px}
+  .sec-head p b{color:var(--text)}
+  .pill{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+    padding:3px 8px;border-radius:999px;vertical-align:middle}
+  .pill.soon{color:var(--amber);background:rgba(245,185,66,.12);border:1px solid rgba(245,185,66,.3)}
+  .pill.live{color:var(--green);background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.3)}
+  .pill.addon{color:var(--cyan);background:rgba(34,211,238,.12);border:1px solid rgba(34,211,238,.3)}
+
+  /* ---------- TIER CARDS ---------- */
+  .tiers{
+    display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin:32px 0 14px;align-items:stretch;
+  }
+  .tiers.t4{grid-template-columns:repeat(4,1fr);max-width:920px;margin-left:auto;margin-right:auto}
+  @media(max-width:1100px){.tiers{grid-template-columns:repeat(3,1fr)}.tiers.t4{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:680px){.tiers,.tiers.t4{grid-template-columns:1fr}}
+  .card{
+    position:relative;display:flex;flex-direction:column;
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:24px 20px;transition:transform .2s,border-color .2s,background .2s;
+  }
+  .card:hover{transform:translateY(-4px);border-color:var(--border-2);background:var(--surface-2)}
+  .card.pro{
+    border:1px solid transparent;
+    background:
+      linear-gradient(var(--bg2),var(--bg2)) padding-box,
+      var(--accent) border-box;
+    box-shadow:0 0 0 1px rgba(139,92,246,.08), 0 24px 60px -24px rgba(124,58,237,.55);
+  }
+  .card.pro:hover{transform:translateY(-7px)}
+  .ribbon{
+    position:absolute;top:-12px;left:50%;transform:translateX(-50%);
+    font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:#0a0a12;
+    background:var(--accent);border-radius:999px;padding:5px 13px;white-space:nowrap;
+    box-shadow:0 6px 18px -6px rgba(139,92,246,.7)
+  }
+  .tname{font-size:15px;font-weight:700;letter-spacing:.01em;margin:2px 0 3px}
+  .ttag{font-size:12.5px;color:var(--faint);min-height:32px;margin-bottom:14px}
+  .price{display:flex;align-items:baseline;gap:3px;margin-bottom:2px}
+  .price .cur{font-size:18px;font-weight:600;color:var(--muted)}
+  .price .amt{font-size:38px;font-weight:800;letter-spacing:-.03em}
+  .price .per{font-size:13px;color:var(--muted);font-weight:500}
+  .bill-note{display:none;font-size:11px;color:var(--green);margin:1px 0 0}
+  .price.custom .amt{font-size:24px}
+  hr.sep{border:0;border-top:1px solid var(--border);margin:16px 0}
+  .feats{list-style:none;padding:0;margin:0 0 16px;display:flex;flex-direction:column;gap:9px;flex:1}
+  .feats li{display:flex;gap:9px;font-size:13px;color:var(--muted);align-items:flex-start}
+  .feats li b{color:var(--text);font-weight:600}
+  .feats .ck{color:var(--cyan);flex:0 0 auto;margin-top:1px;font-weight:700}
+  .ceiling{font-size:11px;color:var(--faint);border-top:1px dashed var(--border);padding-top:10px;margin-bottom:14px}
+  .ceiling b{color:var(--green)}
+  .btn{
+    display:block;text-align:center;text-decoration:none;font-size:13.5px;font-weight:600;
+    padding:11px 14px;border-radius:11px;border:1px solid var(--border-2);color:var(--text);
+    background:var(--surface-2);transition:.2s
+  }
+  .btn:hover{background:rgba(255,255,255,.10);border-color:#fff3}
+  .btn.primary{background:var(--accent);border:none;color:#0a0a12;font-weight:700}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.ghost{background:transparent}
+
+  /* ---------- NOTE BOX ---------- */
+  .notebox{
+    margin:22px auto 0;max-width:860px;border:1px solid rgba(245,185,66,.3);
+    background:rgba(245,185,66,.07);border-radius:14px;padding:16px 20px;
+    font-size:13px;color:var(--amber);line-height:1.55
+  }
+  .notebox b{color:#ffd98a}
+  .notebox.cyan{border-color:rgba(34,211,238,.3);background:rgba(34,211,238,.06);color:#9fe9f5}
+  .notebox.cyan b{color:#d4f6fc}
+  .footnote{margin:16px auto 0;max-width:860px;text-align:center;color:var(--faint);font-size:12.5px;line-height:1.6}
+  .footnote b{color:var(--muted)}
+
+  /* ---------- BUNDLES ---------- */
+  .bundles{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:32px 0 0}
+  @media(max-width:880px){.bundles{grid-template-columns:1fr}}
+  .bcard{
+    position:relative;border:1px solid var(--border);border-radius:var(--radius);padding:26px 24px;
+    background:linear-gradient(160deg,rgba(255,255,255,.04),rgba(255,255,255,.012));
+    display:flex;flex-direction:column;transition:transform .2s,border-color .2s
+  }
+  .bcard:hover{transform:translateY(-4px);border-color:var(--border-2)}
+  .bcard.pro{
+    border:1px solid transparent;
+    background:linear-gradient(var(--bg2),var(--bg2)) padding-box, var(--accent) border-box;
+    box-shadow:0 24px 60px -28px rgba(124,58,237,.5)
+  }
+  .bcard .bname{font-size:17px;font-weight:800;letter-spacing:-.01em}
+  .bcard .bcombo{font-size:12.5px;color:var(--muted);margin:6px 0 14px}
+  .bcard .bprice{display:flex;align-items:baseline;gap:3px}
+  .bcard .bprice .cur{font-size:17px;color:var(--muted);font-weight:600}
+  .bcard .bprice .amt{font-size:34px;font-weight:800;letter-spacing:-.03em}
+  .bcard .bprice .per{font-size:13px;color:var(--muted)}
+  .bsave{display:inline-block;margin-top:8px;font-size:11.5px;font-weight:700;color:var(--green);
+    border:1px solid rgba(52,211,153,.35);background:rgba(52,211,153,.10);border-radius:999px;padding:3px 10px}
+  .bproof{margin-top:14px;font-size:11.5px;color:var(--faint);border-top:1px dashed var(--border);padding-top:10px}
+  .bproof b{color:var(--green)}
+
+  /* ---------- PROOF TABLE ---------- */
+  section.proof{margin:96px 0 0}
+  .matrix-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);background:rgba(255,255,255,.018)}
+  table{border-collapse:collapse;width:100%;min-width:820px}
+  th,td{padding:14px 16px;text-align:left;font-size:13.5px;border-bottom:1px solid var(--border)}
+  thead th{background:var(--bg2);font-weight:700;font-size:13px;vertical-align:bottom;border-bottom:1px solid var(--border-2)}
+  tbody td{color:var(--muted)}
+  tbody td:first-child{color:var(--text);font-weight:600}
+  td.val,th.val{text-align:center}
+  .ok{color:var(--green);font-weight:700}
+  .cogs{color:var(--amber);font-weight:600}
+  .priceCell{color:var(--text);font-weight:700}
+  tr.free td{background:rgba(245,185,66,.05)}
+  .proof-explain{margin:22px auto 0;max-width:900px;border:1px solid var(--border);border-radius:var(--radius);
+    background:linear-gradient(180deg,rgba(255,255,255,.03),transparent);padding:24px 28px;
+    font-size:14px;color:var(--muted);line-height:1.65}
+  .proof-explain b{color:var(--text)}
+  .proof-explain .hl{color:var(--green);font-weight:700}
+  .rates{margin:18px auto 0;max-width:900px;display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  @media(max-width:680px){.rates{grid-template-columns:1fr}}
+  .rate{font-size:12.5px;color:var(--muted);border:1px solid var(--border);border-radius:12px;
+    padding:12px 14px;background:var(--surface)}
+  .rate b{color:var(--text)}
+  .runner-proof{margin:18px auto 0;max-width:900px;border:1px solid rgba(34,211,238,.25);
+    background:rgba(34,211,238,.05);border-radius:14px;padding:18px 22px;font-size:13.5px;color:#bfeef7;line-height:1.6}
+  .runner-proof b{color:#e6fbff}
+
+  /* ---------- OPEN DECISIONS ---------- */
+  .decisions{margin:80px 0 0;border:1px solid var(--border);border-radius:var(--radius);
+    background:linear-gradient(180deg,rgba(255,255,255,.03),transparent);padding:30px 32px}
+  .decisions h3{margin:0 0 14px;font-size:18px;font-weight:800}
+  .decisions ol{margin:0;padding-left:22px;color:var(--muted);font-size:13.5px;line-height:1.8}
+  .decisions ol b{color:var(--text)}
+
+  footer{margin:64px 0 60px;text-align:center;color:var(--faint);font-size:12.5px;line-height:1.7}
+  footer .note{max-width:760px;margin:0 auto}
+  .draftbar{
+    position:sticky;top:0;z-index:50;background:rgba(245,185,66,.1);
+    border-bottom:1px solid rgba(245,185,66,.35);color:var(--amber);
+    font-size:12.5px;font-weight:600;text-align:center;padding:8px 16px;backdrop-filter:blur(8px)
+  }
+</style>
+</head>
+<body>
+
+<div class="draftbar">⚠️ PROPOSTA INTERNA v2 — pricing loss-proof. Para revisão do owner. Não publicado.</div>
+
+<div class="wrap">
+
+  <!-- HERO -->
+  <header>
+    <div class="eyebrow"><span class="dot"></span> HuGR · CoreLink · Proposta v2</div>
+    <h1>Preços que <span class="grad">não dão prejuízo.</span></h1>
+    <p class="sub">Três linhas de produto — <b>Cache</b>, <b>Runners</b> e <b>Workspaces</b> — vendidas standalone ou em bundle. Cada linha de preço é <b>estruturalmente loss-proof</b>: o preço excede o COGS de pior caso, garantido em runtime.</p>
+
+    <!-- AXIOM -->
+    <div class="axiom">
+      <div class="lbl">Axioma que governa todo o pricing</div>
+      <div class="ax">É <span class="grad">matematicamente impossível</span> dar prejuízo em qualquer tier.</div>
+      <p class="exp">Toda linha de preço excede seu COGS de pior caso, <b>imposto em runtime por um teto de $ mensal fail-closed</b> (ADR-0068) para o cache e por um <b>teto de vCPU-horas</b> para os runners. Atingiu o teto → bloqueia (402) antes da perda. Não é uma promessa de marketing; é uma invariante de código.</p>
+    </div>
+
+    <!-- BILLING TOGGLE -->
+    <div class="toggle-row">
+      <span class="lab on" id="lab-m">Mensal</span>
+      <label class="switch"><input type="checkbox" id="billing-toggle" /><span class="slider"></span></label>
+      <span class="lab" id="lab-a">Anual <span class="save">2 meses grátis</span></span>
+    </div>
+  </header>
+
+  <!-- ════════ COMO FUNCIONA — EXPLICADO PRA LEIGO ════════ -->
+  <section class="wrap" id="como-funciona" style="padding-top:14px;padding-bottom:10px">
+    <div style="text-align:center">
+      <div style="font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--cyan);margin-bottom:10px">Como funciona · em 30 segundos</div>
+      <h2 style="font-size:clamp(26px,3.6vw,36px);font-weight:800;letter-spacing:-.02em;margin:0 0 10px">Três produtos, <span class="grad">um motor</span></h2>
+      <p style="color:var(--muted);max-width:660px;margin:0 auto;font-size:15px">Os três rodam no <b style="color:var(--text)">mesmo motor content-addressed (CAS)</b> — por isso se reforçam, mas <b style="color:var(--text)">cada um vende sozinho</b>. Pensa num videogame:</p>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:26px">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px">
+        <div style="font-size:26px;margin-bottom:8px">🧠</div>
+        <h3 style="margin:0 0 4px;font-size:18px">CoreLink Cache</h3>
+        <div style="color:var(--cyan);font-size:13px;font-weight:600;margin-bottom:12px">"A memória do build"</div>
+        <p style="color:var(--muted);font-size:14.5px;margin:0;line-height:1.55">Lembra os <b style="color:var(--text)">resultados dos builds</b> — seus e de qualquer dev ou CI do time. Você nunca recompila o que já foi compilado. Build de 10 min vira 30 s.<br><span style="color:var(--faint);font-size:13px">guarda pedaços: outputs de build</span></p>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px">
+        <div style="font-size:26px;margin-bottom:8px">💾</div>
+        <h3 style="margin:0 0 4px;font-size:18px">CoreLink Workspaces</h3>
+        <div style="color:var(--violet);font-size:13px;font-weight:600;margin-bottom:12px">"Save state do jogo inteiro"</div>
+        <p style="color:var(--muted);font-size:14.5px;margin:0;line-height:1.55">Snapshot do seu <b style="color:var(--text)">ambiente de trabalho INTEIRO</b> (código + <code>node_modules</code> + builds + arquivos gerados) num único objeto. <code>clw hydrate</code> e ele materializa <b style="color:var(--text)">idêntico, em segundos</b>, em qualquer máquina.<br><span style="color:var(--faint);font-size:13px">guarda a árvore inteira</span></p>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px">
+        <div style="font-size:26px;margin-bottom:8px">🎮</div>
+        <h3 style="margin:0 0 4px;font-size:18px">CoreLink Runners</h3>
+        <div style="color:var(--green);font-size:13px;font-weight:600;margin-bottom:12px">"Consoles alugados que já vêm com seu save carregado"</div>
+        <p style="color:var(--muted);font-size:14.5px;margin:0;line-height:1.55">Máquinas de CI <b style="color:var(--text)">efêmeras e baratas</b> que não tocam seu Mac. Você paga por <b style="color:var(--text)">quantas rodam ao mesmo tempo</b> — não por minuto. Como cache + workspace vêm junto, elas bootam <b style="color:var(--text)">quentes</b>.<br><span style="color:var(--faint);font-size:13px">o compute que consome os dois</span></p>
+      </div>
+    </div>
+
+    <!-- WORKSPACES DEEP-DIVE (o que mais gera dúvida) -->
+    <div style="background:linear-gradient(135deg,rgba(139,92,246,.10),rgba(34,211,238,.06));border:1px solid var(--border-2);border-radius:var(--radius);padding:28px;margin-top:24px">
+      <h3 style="margin:0 0 14px;font-size:19px">🔍 Entendendo o Workspaces <span style="color:var(--muted);font-weight:500;font-size:14px">— o que mais gera dúvida</span></h3>
+      <p style="color:var(--muted);font-size:14.5px;line-height:1.6;margin:0 0 12px"><b style="color:var(--text)">O problema:</b> montar um ambiente de dev numa máquina nova = <code>git clone</code> + <code>npm install</code> + <code>build</code> = 15–30 min, e nunca fica idêntico ("na minha máquina funciona").</p>
+      <p style="color:var(--muted);font-size:14.5px;line-height:1.6;margin:0 0 12px"><b style="color:var(--text)">A solução (a CLI <code>clw</code>):</b> <code>clw snapshot</code> empacota o diretório inteiro num objeto content-addressed no CAS · <code>clw hydrate</code> materializa esse ambiente exato em segundos em qualquer lugar (dedup: o que já está no cache é pulado) · <code>clw run</code> <b style="color:var(--text)">memoiza</b> comandos determinísticos — nunca rodam de novo se os inputs não mudaram.</p>
+      <p style="color:var(--amber);font-size:14.5px;line-height:1.6;margin:0 0 12px;font-weight:600">⚠️ NÃO é Gitpod / Codespaces — não é uma VM ou IDE na nuvem. É o <u>estado do seu workspace virando um arquivo teleportável</u>. A máquina é descartável; o workspace vive no cache.</p>
+      <p style="color:var(--muted);font-size:14.5px;line-height:1.6;margin:0 0 12px"><b style="color:var(--text)">Use cases:</b> máquina nova / formatou o Mac → ambiente idêntico em segundos · trocar de branch pesada sem rebuild · onboarding (dev novo hydrata o workspace exato do time) · CI runner efêmero hydrata o workspace quente → build começa <i>hot</i> · agente de IA hydrata um sandbox isolado e descartável.</p>
+      <p style="color:var(--muted);font-size:14.5px;line-height:1.6;margin:0"><b style="color:var(--text)">Pin</b> (o add-on pago) = manter o snapshot <b style="color:var(--text)">garantidamente quente</b> → o hydrate é sempre instantâneo (vs. cold, que existe mas pode precisar remontar).</p>
+    </div>
+
+    <p style="text-align:center;color:var(--muted);font-size:14.5px;line-height:1.65;margin:24px auto 0;max-width:760px">
+      <b style="color:var(--text)">A diferença:</b> Cache guarda <b style="color:var(--text)">pedaços</b> (outputs). Workspaces guarda a <b style="color:var(--text)">árvore inteira</b>. Runners é o <b style="color:var(--text)">compute</b> que consome os dois.&nbsp; <b style="color:var(--text)">A sinergia:</b> o runner boota quente porque hydrata o workspace, que está quente porque o cache lembra os builds.&nbsp; <b style="color:var(--text)">A independência:</b> você não precisa de Runners pra assinar o Cache — por isso há planos standalone <i>e</i> bundle.
+    </p>
+  </section>
+
+  <!-- ════════ HERÓI: BUNDLES (o foco) ════════ -->
+  <section class="product" id="bundles" style="margin-top:56px">
+    <div class="sec-head">
+      <div class="kick" style="color:var(--cyan)">⭐ O jeito recomendado · o stack completo</div>
+      <h2>Bundles — <span class="grad">Cache + Runners + Workspaces</span></h2>
+      <p>O CoreLink inteiro num plano só, <b>mais barato que avulso — economize 17–31%</b>. Cada bundle é <b>loss-proof por construção</b>. É por aqui que a maioria começa.</p>
+    </div>
+
+    <div class="bundles">
+      <div class="bcard">
+        <div class="bname">Solo Stack</div>
+        <div class="bcombo">Cache Solo (50GB/2M) + Runners Starter (20 paralelos) + Pin Lite (25GB)</div>
+        <div class="bprice"><span class="cur">$</span><span class="amt" data-m="25" data-a="20.83">25</span><span class="per">/mês</span></div>
+        <span class="bsave">avulso $28 → economiza $3 (11%)</span>
+        <div class="bproof">loss-proof: teto combinado <b>$15 &lt; $25</b></div>
+      </div>
+
+      <div class="bcard">
+        <div class="bname">Starter Stack</div>
+        <div class="bcombo">Cache Starter (150GB/6M) + Runners Starter (20 paralelos) + Pin Lite (25GB)</div>
+        <div class="bprice"><span class="cur">$</span><span class="amt" data-m="39" data-a="32.50">39</span><span class="per">/mês</span></div>
+        <span class="bsave">avulso $48 → economiza $9 (19%)</span>
+        <div class="bproof">loss-proof: teto combinado <b>$28 &lt; $39</b></div>
+      </div>
+
+      <div class="bcard pro">
+        <div class="ribbon">★ Mais popular</div>
+        <div class="bname">Build Stack</div>
+        <div class="bcombo">Cache Pro (500GB/20M) + Runners Pro (40 paralelos) + Pin 100GB</div>
+        <div class="bprice"><span class="cur">$</span><span class="amt" data-m="59" data-a="49.17">59</span><span class="per">/mês</span></div>
+        <span class="bsave">avulso $82 → economiza $23 (28%)</span>
+        <div class="bproof">loss-proof: teto combinado <b>$46 &lt; $59</b></div>
+      </div>
+
+      <div class="bcard">
+        <div class="bname">Team Stack</div>
+        <div class="bcombo">Cache Pro (500GB/20M) + Runners Team (80 paralelos) + Pin 500GB</div>
+        <div class="bprice"><span class="cur">$</span><span class="amt" data-m="99" data-a="82.50">99</span><span class="per">/mês</span></div>
+        <span class="bsave">avulso $139 → economiza $40 (29%)</span>
+        <div class="bproof">loss-proof: teto combinado <b>$70 &lt; $99</b></div>
+      </div>
+
+      <div class="bcard">
+        <div class="bname">Scale Stack</div>
+        <div class="bcombo">Cache Pro (500GB/20M) + Runners Scale (160 paralelos) + Pin 500GB</div>
+        <div class="bprice"><span class="cur">$</span><span class="amt" data-m="149" data-a="124.17">149</span><span class="per">/mês</span></div>
+        <span class="bsave">avulso $189 → economiza $40 (21%)</span>
+        <div class="bproof">loss-proof: teto combinado <b>$100 &lt; $149</b></div>
+      </div>
+
+      <div class="bcard">
+        <div class="bname">Max Stack</div>
+        <div class="bcombo">Cache Max (2TB/80M) + Runners Max (320 paralelos) + Pin 1TB</div>
+        <div class="bprice"><span class="cur">$</span><span class="amt" data-m="299" data-a="249.17">299</span><span class="per">/mês</span></div>
+        <span class="bsave">avulso $418 → economiza $119 (28%)</span>
+        <div class="bproof">loss-proof: teto combinado <b>$232 &lt; $299</b></div>
+      </div>
+
+      <div class="bcard">
+        <div class="bname">Enterprise</div>
+        <div class="bcombo">Tudo custom</div>
+        <div class="bprice"><span class="amt" style="font-size:24px">Sob consulta</span></div>
+        <span class="bsave">BYOK · SSO · SLA · DPA · BYOC</span>
+        <div class="bproof">Cotas e teto negociados em contrato.</div>
+      </div>
+    </div>
+    <p class="footnote">+ <b>Workspaces Pin</b> extra pode ser adicionado a qualquer stack. Prefere só uma peça? Veja os planos <a href="#alacarte" style="color:var(--cyan)">à la carte</a> abaixo.</p>
+  </section>
+
+  <!-- ════════ Á LA CARTE (standalone — secundário) ════════ -->
+  <section class="wrap" id="alacarte" style="margin-top:84px;text-align:center">
+    <div style="font-size:12.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--violet)">Ou monte à la carte</div>
+    <h2 style="font-size:clamp(24px,3.4vw,32px);font-weight:800;letter-spacing:-.02em;margin:8px 0 0">Prefere só uma peça?</h2>
+    <p style="color:var(--muted);max-width:640px;margin:12px auto 0;font-size:15px">Cada produto vende <b style="color:var(--text)">standalone</b> — você não precisa do stack inteiro. Pra quem quer só o cache, só os runners, ou só os workspaces.</p>
+  </section>
+
+  <!-- ════════ SECTION 1 — CACHE ════════ -->
+  <section class="product" id="cache">
+    <div class="sec-head">
+      <div class="kick">Linha 1 · Standalone, ao vivo</div>
+      <h2>CoreLink Cache <span class="pill live">Ao vivo</span></h2>
+      <p>O cache content-addressed. <b>CAS + Bazel REAPI + Turborepo + sccache + 5 adapters.</b> Egress R2 = $0. Multi-região. Vende standalone — não precisa de Runners. Cache standalone vai até <b>Pro $50</b> — acima disso, o stack completo (bundles).</p>
+    </div>
+
+    <div class="tiers">
+      <!-- FREE -->
+      <div class="card">
+        <div class="tname">Free</div>
+        <div class="ttag">Loss-leader · sem cartão</div>
+        <div class="price"><span class="cur">$</span><span class="amt" data-m="0" data-a="0">0</span><span class="per">/mês</span></div>
+        <div class="bill-note">para sempre</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span><b>10 GB</b> de cache</span></li>
+          <li><span class="ck">✓</span> <span><b>500K</b> req/mês</span></li>
+          <li><span class="ck">✓</span> <span><b>Write sub-cap 100K/mês</b> (COGS &lt; $1)</span></li>
+          <li><span class="ck">✓</span> <span><b>1</b> workspace</span></li>
+          <li><span class="ck">✓</span> <span>Todas as superfícies de cache</span></li>
+          <li><span class="ck">✓</span> <span>Suporte da comunidade</span></li>
+        </ul>
+        <div class="ceiling">Loss-leader com COGS <b>limitado &lt; $1</b> pelo write sub-cap.</div>
+        <a class="btn ghost" href="#">Começar grátis</a>
+      </div>
+
+      <!-- SOLO -->
+      <div class="card">
+        <div class="tname">Solo</div>
+        <div class="ttag">Dev solo, build sempre quente</div>
+        <div class="price"><span class="cur">$</span><span class="amt" data-m="15" data-a="12.50">15</span><span class="per">/mês</span></div>
+        <div class="bill-note">cobrado anual · economiza $30/ano</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span><b>50 GB</b> de cache</span></li>
+          <li><span class="ck">✓</span> <span><b>2M</b> req/mês</span></li>
+          <li><span class="ck">✓</span> <span>Workspaces <b>ilimitados</b> (cold)</span></li>
+          <li><span class="ck">✓</span> <span>Suporte por e-mail</span></li>
+        </ul>
+        <div class="ceiling">Teto de COGS <b>fail-closed</b> (ADR-0068).</div>
+        <a class="btn" href="#">Assinar Solo</a>
+      </div>
+
+      <!-- STARTER -->
+      <div class="card">
+        <div class="tname">Starter</div>
+        <div class="ttag">Time pequeno começando</div>
+        <div class="price"><span class="cur">$</span><span class="amt" data-m="35" data-a="29.17">35</span><span class="per">/mês</span></div>
+        <div class="bill-note">cobrado anual · economiza $70/ano</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span><b>150 GB</b> de cache</span></li>
+          <li><span class="ck">✓</span> <span><b>6M</b> req/mês</span></li>
+          <li><span class="ck">✓</span> <span>Workspaces <b>ilimitados</b> (cold)</span></li>
+          <li><span class="ck">✓</span> <span>Suporte por e-mail (2 dias)</span></li>
+        </ul>
+        <div class="ceiling">Teto de COGS <b>fail-closed</b> (ADR-0068).</div>
+        <a class="btn" href="#">Assinar Starter</a>
+      </div>
+
+      <!-- PRO ⭐ -->
+      <div class="card pro">
+        <div class="ribbon">★ Melhor custo-benefício</div>
+        <div class="tname">Pro</div>
+        <div class="ttag">O plano que faz sentido pra maioria</div>
+        <div class="price"><span class="cur">$</span><span class="amt" data-m="50" data-a="41.67">50</span><span class="per">/mês</span></div>
+        <div class="bill-note">cobrado anual · economiza $100/ano</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span><b>500 GB</b> de cache</span></li>
+          <li><span class="ck">✓</span> <span><b>20M</b> req/mês</span></li>
+          <li><span class="ck">✓</span> <span>Workspaces <b>ilimitados</b> (cold)</span></li>
+          <li><span class="ck">✓</span> <span>Suporte por e-mail (1 dia)</span></li>
+        </ul>
+        <div class="ceiling">Teto de COGS <b>fail-closed</b> (ADR-0068).</div>
+        <a class="btn primary" href="#">Assinar Pro</a>
+      </div>
+
+      <!-- ENTERPRISE -->
+      <div class="card">
+        <div class="tname">Enterprise</div>
+        <div class="ttag">Volume, contrato, dedicado</div>
+        <div class="price custom"><span class="amt">Sob consulta</span></div>
+        <div class="bill-note">&nbsp;</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span>Storage &amp; cotas <b>custom</b></span></li>
+          <li><span class="ck">✓</span> <span><b>BYOK</b> + <b>SSO/SAML</b></span></li>
+          <li><span class="ck">✓</span> <span>SLA <b>99.9%</b> · <b>DPA</b></span></li>
+          <li><span class="ck">✓</span> <span>Audit log export</span></li>
+        </ul>
+        <div class="ceiling">Teto e cotas negociados em contrato.</div>
+        <a class="btn" href="#">Falar com vendas</a>
+      </div>
+    </div>
+    <p class="footnote">Todo tier pago carrega um <b>teto de COGS fail-closed (ADR-0068)</b> — o valor por tier está na <a href="#prova" style="color:var(--cyan)">seção A Prova</a>.</p>
+  </section>
+
+  <!-- ════════ SECTION 2 — RUNNERS ════════ -->
+  <section class="product" id="runners">
+    <div class="sec-head">
+      <div class="kick">Linha 2 · Standalone ou add-on</div>
+      <h2>CoreLink Runners <span class="pill addon">Standalone / add-on</span></h2>
+      <p>CI que não toca sua máquina. <b>Minutos ilimitados — você paga por runner paralelo, não por minuto.</b> Cache incluso (o build esquenta sozinho). Sem tier free; <b>trial de 5 dias</b> (cartão no arquivo).</p>
+    </div>
+
+    <div class="notebox cyan">
+      <b>Categoria única.</b> Todos os concorrentes cobram por minuto ($0.003–0.004/min); nós vendemos <b>paralelismo, flat</b>. Cache sempre incluso nos Runners.
+    </div>
+
+    <div class="tiers">
+      <!-- STARTER -->
+      <div class="card">
+        <div class="tname">Starter</div>
+        <div class="ttag">Primeiro pipeline paralelo</div>
+        <div class="price"><span class="cur">$</span><span class="amt" data-m="8" data-a="6.67">8</span><span class="per">/mês</span></div>
+        <div class="bill-note">cobrado anual · economiza $16/ano</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span><b>20</b> runners paralelos</span></li>
+          <li><span class="ck">✓</span> <span>Minutos <b>ilimitados</b></span></li>
+          <li><span class="ck">✓</span> <span>Cache incluso</span></li>
+        </ul>
+        <div class="ceiling">Teto <b>300 vCPU-h/mês</b> (cap anti-perda).</div>
+        <a class="btn" href="#">Trial 5 dias</a>
+      </div>
+
+      <!-- PRO -->
+      <div class="card">
+        <div class="tname">Pro</div>
+        <div class="ttag">Pipelines maiores</div>
+        <div class="price"><span class="cur">$</span><span class="amt" data-m="20" data-a="16.67">20</span><span class="per">/mês</span></div>
+        <div class="bill-note">cobrado anual · economiza $40/ano</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span><b>40</b> runners paralelos</span></li>
+          <li><span class="ck">✓</span> <span>Minutos <b>ilimitados</b></span></li>
+          <li><span class="ck">✓</span> <span>Cache incluso</span></li>
+        </ul>
+        <div class="ceiling">Teto <b>720 vCPU-h/mês</b>.</div>
+        <a class="btn" href="#">Trial 5 dias</a>
+      </div>
+
+      <!-- TEAM -->
+      <div class="card">
+        <div class="tname">Team</div>
+        <div class="ttag">Time inteiro em CI</div>
+        <div class="price"><span class="cur">$</span><span class="amt" data-m="50" data-a="41.67">50</span><span class="per">/mês</span></div>
+        <div class="bill-note">cobrado anual · economiza $100/ano</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span><b>80</b> runners paralelos</span></li>
+          <li><span class="ck">✓</span> <span>Minutos <b>ilimitados</b></span></li>
+          <li><span class="ck">✓</span> <span>Cache incluso</span></li>
+        </ul>
+        <div class="ceiling">Teto <b>1.800 vCPU-h/mês</b>.</div>
+        <a class="btn" href="#">Trial 5 dias</a>
+      </div>
+
+      <!-- SCALE -->
+      <div class="card">
+        <div class="tname">Scale</div>
+        <div class="ttag">Monorepo pesado</div>
+        <div class="price"><span class="cur">$</span><span class="amt" data-m="100" data-a="83.33">100</span><span class="per">/mês</span></div>
+        <div class="bill-note">cobrado anual · economiza $200/ano</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span><b>160</b> runners paralelos</span></li>
+          <li><span class="ck">✓</span> <span>Minutos <b>ilimitados</b></span></li>
+          <li><span class="ck">✓</span> <span>Cache incluso</span></li>
+        </ul>
+        <div class="ceiling">Teto <b>3.600 vCPU-h/mês</b>.</div>
+        <a class="btn" href="#">Trial 5 dias</a>
+      </div>
+
+      <!-- MAX -->
+      <div class="card">
+        <div class="tname">Max</div>
+        <div class="ttag">Fanout máximo</div>
+        <div class="price"><span class="cur">$</span><span class="amt" data-m="200" data-a="166.67">200</span><span class="per">/mês</span></div>
+        <div class="bill-note">cobrado anual · economiza $400/ano</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span><b>320</b> runners paralelos</span></li>
+          <li><span class="ck">✓</span> <span>Minutos <b>ilimitados</b></span></li>
+          <li><span class="ck">✓</span> <span>Cache incluso</span></li>
+        </ul>
+        <div class="ceiling">Teto <b>7.200 vCPU-h/mês</b>.</div>
+        <a class="btn" href="#">Trial 5 dias</a>
+      </div>
+
+      <!-- ENTERPRISE -->
+      <div class="card">
+        <div class="tname">Enterprise</div>
+        <div class="ttag">BYOC / governança</div>
+        <div class="price custom"><span class="amt">Sob consulta</span></div>
+        <div class="bill-note">&nbsp;</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span><b>BYOC</b> / custom</span></li>
+          <li><span class="ck">✓</span> <span>Governança &amp; controles</span></li>
+          <li><span class="ck">✓</span> <span>Cotas negociadas</span></li>
+        </ul>
+        <div class="ceiling">Teto negociado em contrato.</div>
+        <a class="btn" href="#">Falar com vendas</a>
+      </div>
+    </div>
+    <p class="footnote">O <b>teto de vCPU-h</b> é o cap anti-perda: COGS-máximo = teto × $0.0167 (Northflank), sempre &lt; preço.</p>
+
+    <div class="notebox">
+      ⚠️ <b>Colisão de nomes.</b> Os nomes <b>Starter / Pro / Max</b> colidem com os tiers de Cache (preços e significados diferentes). Reconciliar nomenclatura antes do GA — sugestão: prefixar <code>Cache:</code> / <code>Runners:</code> nos bundles.
+    </div>
+  </section>
+
+  <!-- ════════ SECTION 3 — WORKSPACES ════════ -->
+  <section class="product" id="workspaces">
+    <div class="sec-head">
+      <div class="kick">Linha 3 · Add-on Pin</div>
+      <h2>CoreLink Workspaces <span class="pill addon">Add-on Pin</span></h2>
+      <p>Workspaces que viram objeto — snapshot &amp; hydrate em segundos via <code>clw</code>. Cold workspaces ilimitados já vêm nos tiers de Cache. <b>Pin = warm garantido</b> (spin-up instantâneo). Âncora: um seat standalone seria ~$20–40/seat (Gitpod/Replit); aqui é add-on por GB warm.</p>
+    </div>
+
+    <div class="tiers t4">
+      <div class="card">
+        <div class="tname">Pin Lite</div>
+        <div class="ttag">A entrada pra quem só quer 1 workspace sempre quente</div>
+        <div class="price"><span class="cur">$</span><span class="amt" data-m="5" data-a="4.17">5</span><span class="per">/mês</span></div>
+        <div class="bill-note">cobrado anual · economiza $10/ano</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span><b>25 GB</b> warm</span></li>
+          <li><span class="ck">✓</span> <span>Spin-up instantâneo</span></li>
+        </ul>
+        <a class="btn" href="#">Adicionar Pin</a>
+      </div>
+
+      <div class="card">
+        <div class="tname">Pin 100 GB</div>
+        <div class="ttag">Warm garantido</div>
+        <div class="price"><span class="cur">$</span><span class="amt" data-m="12" data-a="10.00">12</span><span class="per">/mês</span></div>
+        <div class="bill-note">cobrado anual · economiza $24/ano</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span><b>100 GB</b> warm garantido</span></li>
+          <li><span class="ck">✓</span> <span>Spin-up instantâneo</span></li>
+        </ul>
+        <a class="btn" href="#">Adicionar Pin</a>
+      </div>
+
+      <div class="card pro">
+        <div class="ribbon">★ Mais escolhido</div>
+        <div class="tname">Pin 500 GB</div>
+        <div class="ttag">Time com vários workspaces</div>
+        <div class="price"><span class="cur">$</span><span class="amt" data-m="39" data-a="32.50">39</span><span class="per">/mês</span></div>
+        <div class="bill-note">cobrado anual · economiza $78/ano</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span><b>500 GB</b> warm garantido</span></li>
+          <li><span class="ck">✓</span> <span>Spin-up instantâneo</span></li>
+        </ul>
+        <a class="btn primary" href="#">Adicionar Pin</a>
+      </div>
+
+      <div class="card">
+        <div class="tname">Pin 1 TB</div>
+        <div class="ttag">Frota grande, sempre quente</div>
+        <div class="price"><span class="cur">$</span><span class="amt" data-m="69" data-a="57.50">69</span><span class="per">/mês</span></div>
+        <div class="bill-note">cobrado anual · economiza $138/ano</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span><b>1 TB</b> warm garantido</span></li>
+          <li><span class="ck">✓</span> <span>Spin-up instantâneo</span></li>
+        </ul>
+        <a class="btn" href="#">Adicionar Pin</a>
+      </div>
+
+      <div class="card">
+        <div class="tname">Custom</div>
+        <div class="ttag">Enterprise</div>
+        <div class="price custom"><span class="amt">Sob consulta</span></div>
+        <div class="bill-note">&nbsp;</div>
+        <hr class="sep"/>
+        <ul class="feats">
+          <li><span class="ck">✓</span> <span>Warm <b>custom</b></span></li>
+          <li><span class="ck">✓</span> <span>Governança dedicada</span></li>
+        </ul>
+        <a class="btn" href="#">Falar com vendas</a>
+      </div>
+    </div>
+    <p class="footnote">Pin precificado <b>≥4× o COGS</b> de storage R2 warm ($0.015/GB-mês) → margem <b>≥78%</b>. Pin Lite COGS = 25×$0.015 = <b>$0.38</b> → <b>~92% margem</b>.</p>
+  </section>
+
+  <!-- ════════ SECTION 5 — A PROVA ════════ -->
+  <section class="proof" id="prova">
+    <div class="sec-head">
+      <div class="kick">A prova</div>
+      <h2>Por que é matematicamente impossível dar prejuízo</h2>
+      <p>COGS de pior caso (100% writes) vs. preço vs. o teto $-ceiling imposto em runtime. O teto sempre bloqueia <b>antes</b> da perda.</p>
+    </div>
+
+    <div class="matrix-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Tier</th>
+            <th>Cap (storage / requests)</th>
+            <th class="val">COGS pior-caso<br/><span style="font-weight:500;color:var(--faint)">(100% writes)</span></th>
+            <th class="val">Preço</th>
+            <th class="val">Teto $-ceiling<br/><span style="font-weight:500;color:var(--faint)">enforced</span></th>
+            <th class="val">Margem-piso<br/><span style="font-weight:500;color:var(--faint)">garantida</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="free">
+            <td>Free</td><td>10 GB / 500K</td>
+            <td class="val cogs">$3.05</td><td class="val priceCell">$0</td>
+            <td class="val">write-cap → &lt;$1</td><td class="val ok">loss-leader limitado</td>
+          </tr>
+          <tr>
+            <td>Solo</td><td>50 GB / 2M</td>
+            <td class="val cogs">$12.35</td><td class="val priceCell">$15</td>
+            <td class="val">$10</td><td class="val ok">≥33%</td>
+          </tr>
+          <tr>
+            <td>Starter</td><td>150 GB / 6M</td>
+            <td class="val cogs">$37.05</td><td class="val priceCell">$35</td>
+            <td class="val">$23</td><td class="val ok">≥34%</td>
+          </tr>
+          <tr>
+            <td>Pro</td><td>500 GB / 20M</td>
+            <td class="val cogs">$123.50</td><td class="val priceCell">$50</td>
+            <td class="val">$33</td><td class="val ok">≥34%</td>
+          </tr>
+          <tr>
+            <td>Max <span style="font-weight:500;color:var(--faint)">(cache-only, via Enterprise/bundle)</span></td><td>2 TB / 80M</td>
+            <td class="val cogs">$494.72</td><td class="val priceCell">$149</td>
+            <td class="val">$97</td><td class="val ok">≥35%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin:28px 0 0;font-size:16px;font-weight:800">Bundles <span style="color:var(--muted);font-weight:500;font-size:13.5px">— teto combinado dos 3 componentes</span></h3>
+    <div class="matrix-scroll" style="margin-top:14px">
+      <table>
+        <thead>
+          <tr>
+            <th>Bundle</th>
+            <th class="val">Teto combinado<br/><span style="font-weight:500;color:var(--faint)">(soma dos 3)</span></th>
+            <th class="val">Preço</th>
+            <th class="val">Margem-piso<br/><span style="font-weight:500;color:var(--faint)">garantida</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Solo Stack</td>
+            <td class="val cogs">$15</td><td class="val priceCell">$25</td><td class="val ok">≥40%</td>
+          </tr>
+          <tr>
+            <td>Starter Stack</td>
+            <td class="val cogs">$28</td><td class="val priceCell">$39</td><td class="val ok">≥28%</td>
+          </tr>
+          <tr>
+            <td>Build Stack</td>
+            <td class="val cogs">$46</td><td class="val priceCell">$59</td><td class="val ok">≥22%</td>
+          </tr>
+          <tr>
+            <td>Team Stack</td>
+            <td class="val cogs">$70</td><td class="val priceCell">$99</td><td class="val ok">≥29%</td>
+          </tr>
+          <tr>
+            <td>Scale Stack</td>
+            <td class="val cogs">$100</td><td class="val priceCell">$149</td><td class="val ok">≥33%</td>
+          </tr>
+          <tr>
+            <td>Max Stack</td>
+            <td class="val cogs">$232</td><td class="val priceCell">$299</td><td class="val ok">≥22%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="footnote">Tetos de bundle = soma dos tetos fail-closed dos 3 componentes; o pior-caso (tudo write + runners no talo + workspace cheio simultâneo) é improvável — margem real <b>~10–20× melhor</b>.</p>
+
+    <div class="proof-explain">
+      <b>COGS por operação:</b> write ≈ <b>$5.8µ</b> (R2 Class A $4.50/M + D1 write $1/M + Worker), read ≈ <b>$0.66µ</b> (8,8× mais barato). O pior caso é <b>100% writes</b>. O <b>$-ceiling fail-closed (ADR-0068)</b> bloqueia (<b>402</b>) antes do COGS acumulado passar o teto = <span class="hl">0.65 × preço</span>, então a perda é <span class="hl">impossível em QUALQUER mix</span>. O caso real (~90% reads) deixa a margem <b>10–20× melhor</b>. Egress R2 = <b>$0</b>.
+    </div>
+
+    <div class="runner-proof">
+      <b>Runners — mesma prova:</b> cada tier tem COGS-máx = teto vCPU-h × $0.0167 &lt; preço. Starter <b>$5 &lt; $8</b> · Pro <b>$12 &lt; $20</b> · Team <b>$30 &lt; $50</b> · Scale <b>$60 &lt; $100</b> · Max <b>$120 &lt; $200</b>.
+    </div>
+
+    <div class="rates">
+      <div class="rate"><b>R2 storage</b> — $0.015/GB-mês</div>
+      <div class="rate"><b>R2 Class A</b> (writes) — $4.50/M</div>
+      <div class="rate"><b>R2 Class B</b> (reads) — $0.36/M</div>
+      <div class="rate"><b>R2 egress</b> — <span style="color:var(--green)">$0</span></div>
+      <div class="rate"><b>D1 write</b> — $1.00/M</div>
+      <div class="rate"><b>D1 read</b> — $0.001/M</div>
+      <div class="rate"><b>Workers</b> — $0.30/M req</div>
+      <div class="rate"><b>Northflank runner</b> — $0.0167/vCPU-h</div>
+    </div>
+  </section>
+
+  <!-- OPEN DECISIONS -->
+  <section class="decisions">
+    <h3>Decisões abertas para o owner</h3>
+    <ol>
+      <li>Os <b>números de preço/teto são tunáveis</b> — só a garantia <b>loss-proof</b> é estrutural.</li>
+      <li>Reconciliar a <b>colisão de nomes</b> Cache vs Runners (Starter/Pro/Max repetem com significados diferentes).</li>
+      <li>Confirmar os preços de <b>Workspaces Pin</b> ($5 Lite / $12 / $39 / $69) e os <b>4 bundles</b> (Build $59 / Team $99 / Scale $199 / Max $349) + Enterprise.</li>
+      <li>A tabela <b>tier → max_concurrency</b> para o seam de runners: <code>Free 1</code> / <code>Solo 2</code> / <code>Starter 20</code> / <code>Pro 40</code> / <code>Max 160</code>.</li>
+    </ol>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <p class="note">
+      Preços em USD. <b style="color:var(--muted)">Anual = 2 meses grátis</b> (12 pelo preço de 10). Egress do R2 é $0.
+      Garantia loss-proof imposta em runtime: <b style="color:var(--muted)">$-ceiling fail-closed (ADR-0068)</b> para cache, teto de <b style="color:var(--muted)">vCPU-horas</b> para runners.<br/><br/>
+      <span style="color:var(--faint)">Proposta interna v2 · CoreLink · HuGR · gerada para revisão do owner — não é página pública.</span>
+    </p>
+  </footer>
+
+</div>
+
+<script>
+  var t = document.getElementById('billing-toggle');
+  var labM = document.getElementById('lab-m');
+  var labA = document.getElementById('lab-a');
+  t.addEventListener('change', function () {
+    var annual = t.checked;
+    document.querySelectorAll('.amt[data-m]').forEach(function (el) {
+      el.textContent = annual ? el.getAttribute('data-a') : el.getAttribute('data-m');
+    });
+    document.querySelectorAll('.bill-note').forEach(function (el) {
+      el.style.display = annual ? 'block' : 'none';
+    });
+    labM.classList.toggle('on', !annual);
+    labA.classList.toggle('on', annual);
+  });
+</script>
+
+</body>
+</html>
