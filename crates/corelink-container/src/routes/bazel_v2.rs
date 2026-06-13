@@ -83,6 +83,11 @@ pub struct BazelRouteState {
     pub adapter: BazelAdapter,
     /// `findMissingBlobs` handler.
     pub find_missing: Arc<dyn FindMissingHandler>,
+    /// Optional per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
+    /// `Some` in production (D1-backed); checked at the TOP of each billable
+    /// REAPI handler, AFTER the scope gate + tenant resolve, BEFORE storage.
+    /// `None` in dev/CI (not enforced). Set by `routes::build_with_factory`.
+    pub quota: Option<crate::routes::QuotaGate>,
 }
 
 impl core::fmt::Debug for BazelRouteState {
@@ -125,6 +130,8 @@ pub fn build_handlers_from(
     BazelRouteState {
         adapter,
         find_missing,
+        // Default OFF; `routes::build_with_factory` sets the D1-backed gate.
+        quota: None,
     }
 }
 
@@ -237,6 +244,21 @@ fn principal(headers: &HeaderMap) -> String {
     header_str(headers, "x-corelink-token-prefix", "_unknown")
 }
 
+/// Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1) for the REAPI
+/// surface: charge the flat per-op cost when the gate is wired. `Some(resp)` ⇒
+/// REJECT (402 over-ceiling / 503 fail-CLOSED); `None` ⇒ proceed (and `None`
+/// when the gate is absent in dev/CI). Called at the TOP of each billable
+/// handler, AFTER the scope gate + tenant resolve, BEFORE storage.
+async fn quota_reject(
+    state: &BazelRouteState,
+    tenant: &str,
+) -> Option<axum::response::Response> {
+    match state.quota.as_ref() {
+        Some(gate) => gate.check(tenant).await,
+        None => None,
+    }
+}
+
 /// Logical wall-clock stand-in (production wiring injects a real clock
 /// collaborator; 0 keeps the routes logic-free and matches the CAS/AC
 /// route convention).
@@ -306,6 +328,10 @@ async fn handle_cas_read(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
+    if let Some(resp) = quota_reject(&state, &tenant).await {
+        return resp;
+    }
     let p = principal(&headers);
     let digest = match parse_digest(&hash, &size) {
         Ok(d) => d,
@@ -350,6 +376,10 @@ async fn handle_cas_write(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
+    if let Some(resp) = quota_reject(&state, &tenant).await {
+        return resp;
+    }
     let p = principal(&headers);
     let digest = match parse_digest(&hash, &size) {
         Ok(d) => d,
@@ -388,6 +418,10 @@ async fn handle_ac_read(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
+    if let Some(resp) = quota_reject(&state, &tenant).await {
+        return resp;
+    }
     let p = principal(&headers);
     let digest = match parse_digest(&hash, &size) {
         Ok(d) => d,
@@ -426,6 +460,10 @@ async fn handle_ac_write(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
+    if let Some(resp) = quota_reject(&state, &tenant).await {
+        return resp;
+    }
     let p = principal(&headers);
     let digest = match parse_digest(&hash, &size) {
         Ok(d) => d,
@@ -464,6 +502,10 @@ async fn handle_find_missing(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
+    if let Some(resp) = quota_reject(&state, &tenant).await {
+        return resp;
+    }
     let p = principal(&headers);
 
     // Parse + validate the JSON body.

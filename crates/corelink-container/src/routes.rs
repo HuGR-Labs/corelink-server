@@ -166,6 +166,60 @@ pub mod turbo_v8;
 /// PAT wiring without exercising any data-plane (CAS/AC) surface.
 pub mod users;
 
+/// Per-route handle to the per-tenant monthly $-ceiling gate (ADR-0068;
+/// hugit-P2 WP-G1). Bundles the shared [`crate::tenant_quota::QuotaGuard`]
+/// with the FLAT per-op cost resolved once at boot
+/// ([`crate::tenant_quota::cost_per_op_micros`]), so each billable handler
+/// can charge a fixed cost without re-reading env on the hot path.
+///
+/// A billable handler holds an `Option<QuotaGate>` in its route state
+/// (`None` in dev/CI without D1) and calls [`QuotaGate::check`] at the TOP,
+/// AFTER the rate-limit / scope gate and BEFORE the work:
+///
+/// ```ignore
+/// if let Some(gate) = state.quota.as_ref() {
+///     if let Some(resp) = gate.check(&tenant).await { return resp; }
+/// }
+/// ```
+#[derive(Clone, Debug)]
+pub struct QuotaGate {
+    guard: Arc<crate::tenant_quota::QuotaGuard>,
+    cost_micros: i64,
+}
+
+impl QuotaGate {
+    /// Build the production gate from process env, or `None` in dev/CI
+    /// (no D1 storage env). The flat per-op cost is resolved once here.
+    #[must_use]
+    pub fn from_env() -> Option<Self> {
+        let guard = crate::tenant_quota::quota_guard_from_env()?;
+        Some(Self {
+            guard,
+            cost_micros: crate::tenant_quota::cost_per_op_micros(),
+        })
+    }
+
+    /// Charge ONE flat-cost billable op against `tenant`'s monthly
+    /// $-ceiling. `Some(resp)` ⇒ REJECT (402 over-ceiling / 503
+    /// fail-CLOSED); `None` ⇒ proceed. Delegates to
+    /// [`crate::tenant_quota::QuotaGuard::check`].
+    pub async fn check(&self, tenant: &str) -> Option<axum::response::Response> {
+        self.guard.check(tenant, self.cost_micros).await
+    }
+
+    /// Construct a gate from an explicit guard + per-op cost. Used by route
+    /// integration tests to wire a hermetic in-memory quota store (the
+    /// production path uses [`Self::from_env`]).
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn new_for_test(
+        guard: Arc<crate::tenant_quota::QuotaGuard>,
+        cost_micros: i64,
+    ) -> Self {
+        Self { guard, cost_micros }
+    }
+}
+
 /// Per-tenant in-memory shadow-sink factory. Production wiring
 /// replaces this with a Neon-backed factory (see
 /// `apps/server/src/main.rs` boot path); the in-memory factory
@@ -222,6 +276,19 @@ pub fn build() -> Router {
 /// in a Neon-backed factory while keeping every other route shape
 /// identical.
 pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router {
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1). ONE
+    // gate (D1-backed) shared across every billable data-plane surface
+    // (CAS/AC, Bazel REAPI, Turbo, sccache), exactly like the rate-limit
+    // gate. `None` in dev/CI (no D1 storage env) — the ceiling is then not
+    // enforced, mirroring the adapter routes' fail-CLOSED env-gate.
+    let quota = QuotaGate::from_env();
+    if quota.is_none() {
+        tracing::warn!(
+            "tenant-quota: D1 storage env absent; per-tenant $-ceiling gate NOT \
+             enforced on billable routes (dev/CI mode)"
+        );
+    }
+
     let (cas_read, cas_write) = cas::build_handlers();
     // 410-Gone tombstone read gate (hugit-P2 seam B, WP-B). Wired from env
     // (D1-backed) when D1 creds are present so an erased hash answers 410 even
@@ -234,11 +301,13 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         read: cas_read.clone(),
         write: cas_write.clone(),
         tombstones: cas_tombstones,
+        quota: quota.clone(),
     };
     let (ac_lookup, ac_update) = ac::build_handlers();
     let ac_state = ac::AcRouteState {
         lookup: ac_lookup.clone(),
         update: ac_update.clone(),
+        quota: quota.clone(),
     };
     // Cache adapters share the SAME CAS trait objects (one R2 connection) —
     // clone BEFORE they are moved into the Bazel bridge below. cargo writes
@@ -256,7 +325,8 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // Phase 0 Stream B1: Bazel REAPI v2 routes share the same CAS/AC
     // trait objects so all four route surfaces read from / write to the
     // same backing store. No new R2 connections are opened.
-    let bazel_state = bazel_v2::build_handlers_from(cas_read, cas_write, ac_lookup, ac_update);
+    let mut bazel_state = bazel_v2::build_handlers_from(cas_read, cas_write, ac_lookup, ac_update);
+    bazel_state.quota = quota.clone();
     // SECURITY (admin control-plane gate): the `/v1/admin/*` and
     // `/v1/admin/pilots/*` surfaces are OPERATOR-ONLY — they must NOT be
     // reachable by any authenticated tenant PAT. We gate them behind the
@@ -307,7 +377,8 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // present; InMemory fallback for dev/CI (fail-closed env-gate,
     // mirroring `adapter_pat::PatVerifier::from_env`).
     let customer_state = customer::build_handlers_from_env();
-    let turbo_state = turbo_v8::build_handlers();
+    let mut turbo_state = turbo_v8::build_handlers();
+    turbo_state.quota = quota.clone();
     let mut router = Router::new()
         .merge(cas::router(cas_state))
         .merge(ac::router(ac_state))
@@ -352,10 +423,13 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         let verifier = Arc::new(verifier);
 
         // cargo (sccache): only the shared verifier; no moat (per-tenant CAS).
+        // The $-ceiling gate (when present) is threaded into the gate layer so
+        // sccache ops are charged alongside CAS/AC/Bazel/Turbo.
         router = router.merge(cargo::router(
             cargo_cas_read,
             cargo_cas_write,
             cargo::resolver_from_verifier(verifier.clone()),
+            quota.clone(),
         ));
 
         // brew/npm/pip share the 2-level moat map (the D1-over-HTTP client).

@@ -22,6 +22,39 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+- **quota: wire the per-tenant monthly $-ceiling guard (ADR-0068) onto the
+  billable data plane (hugit-P2 WP-G1).** `QuotaGuard` existed but no route
+  called it (dead code). It is now mounted — alongside the existing scope/rate
+  gate — on every billable surface (native CAS/AC, Bazel REAPI v2, Turborepo,
+  sccache), charging a FLAT per-op cost (`QUOTA_COST_PER_OP_MICROS`, default
+  `1000` = $0.001/op; the $5/mo tripwire ≈ 5000 ops/mo — a coarse preventive
+  cap, not precise metering). Over-ceiling ⇒ `402`; store/clock fault ⇒ `503`
+  (fail-CLOSED). Unenforced in dev/CI without D1.
+- **quota: make accrual DB-atomic (TOCTOU lost-update).** `tenant_quota`
+  accrual was a blind overwrite (`accrued = excluded.accrued`); concurrent ops
+  lost each other's spend and under-counted. Accrual now does the add in D1
+  (`accrued = tenant_quota.accrued + excluded.accrued`) via a dedicated atomic
+  `tenant_quota_accrue`; the guard passes the per-op DELTA, and cycle-roll /
+  seed keep an absolute write.
+- **session-exchange: throttle PAT minting (per-principal, fail-CLOSED 429).**
+  `/v1/session/exchange` minted PATs with no rate limit — one valid session
+  could loop-mint unbounded PATs. Added a per-derived-principal fixed-window cap
+  (10/60s) backed by an atomic D1 counter (migration 0068), rejecting `429` over
+  the cap (fail-OPEN only on a throttle-store outage).
+- **session-exchange: stop leaking the raw Clerk user id (F-01).** The exchange
+  response returned `principal: <raw user_xxx>`; it now returns the opaque,
+  SHA-256-derived principal UUID (the value already sent to the container).
+- **admin-pilot: validate the pilot slug charset (F-03).** `POST
+  /v1/admin/pilots` only checked non-empty + length; it now rejects any slug
+  with a byte outside `[A-Za-z0-9_-]` (`400`), blocking null/control chars from
+  reaching D1 / audit logs (defence-in-depth; SQLi already impossible via
+  parameterised binds).
+- **worker: sanitize the `x-request-id` passthrough (F-02).** A propagated
+  `x-request-id` (echoed into JSON bodies + forwarded headers) was accepted with
+  no charset check, enabling log-injection via control chars. It is now
+  restricted to `[A-Za-z0-9._-]`; an invalid value falls back to a generated id.
+
 ### Fixed
 - **ci: unbreak the `wasm32-unknown-unknown` build (main red ~3 days).** The
   `WASM target build` gate (`corelink-worker` cargo-check on wasm32) had been

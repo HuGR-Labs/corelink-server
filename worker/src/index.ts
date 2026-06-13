@@ -186,10 +186,25 @@ const CORS_HEADERS: ReadonlyArray<readonly [string, string]> = [
 // Request ID middleware
 // ──────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Allowed charset for a propagated `x-request-id` (F-02): RFC-style token
+ * bytes only — letters, digits, `.`, `_`, `-`. The supplied id lands in JSON
+ * response bodies AND forwarded request headers, so unconstrained values
+ * (control chars, newlines, quotes) enable log-injection / header-shape
+ * tampering. A value with any other char is rejected and replaced with a
+ * freshly generated id.
+ */
+const REQUEST_ID_CHARSET = /^[A-Za-z0-9._-]+$/;
+
 /** Generate or propagate a request-id. Never exposes body or PII. */
 function resolveRequestId(request: Request): string {
   const incoming = request.headers.get("x-request-id");
-  if (incoming !== null && incoming.length > 0 && incoming.length <= 128) {
+  if (
+    incoming !== null &&
+    incoming.length > 0 &&
+    incoming.length <= 128 &&
+    REQUEST_ID_CHARSET.test(incoming)
+  ) {
     return incoming;
   }
   return crypto.randomUUID();

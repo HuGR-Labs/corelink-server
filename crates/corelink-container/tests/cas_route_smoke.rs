@@ -58,6 +58,9 @@ fn fresh_state() -> CasRouteState {
         read,
         write,
         tombstones: None,
+        // No $-ceiling gate in the smoke test (gate is exercised in
+        // `routes::cas`'s unit tests + the `tenant_quota` suite).
+        quota: None,
     }
 }
 

@@ -35,7 +35,7 @@
  * here; only a request-id-tagged error class on the upstream-failure path.
  */
 
-import type { DurableObjectNamespace } from "@cloudflare/workers-types";
+import type { D1Database, DurableObjectNamespace } from "@cloudflare/workers-types";
 import type { Env } from "../index.js";
 import { verifyClerkSessionAndResolveTenant } from "./clerk_auth.js";
 
@@ -55,6 +55,85 @@ const EXCHANGE_PAT_TTL_SECONDS = 3600;
  * Maps to `SCOPE_CACHE_RW` in the container's internal_pat scope table.
  */
 const EXCHANGE_PAT_SCOPE = "cas:rw";
+
+/**
+ * Mint-throttle window length, in ms (60s). The per-principal cap is enforced
+ * over this fixed window (see {@link checkMintThrottle}).
+ */
+const MINT_THROTTLE_WINDOW_MS = 60_000;
+
+/**
+ * Max PAT mints allowed per principal per {@link MINT_THROTTLE_WINDOW_MS}
+ * window. Legitimate forge use exchanges a session for ONE short-lived
+ * (1-hour) PAT and reuses it; a handful of mints/min covers retries + multiple
+ * devices while bounding loop-mint abuse. Over this ⇒ 429 (fail-CLOSED).
+ */
+const MINT_THROTTLE_MAX_PER_WINDOW = 10;
+
+/**
+ * Per-principal fixed-window mint throttle for `/v1/session/exchange`.
+ *
+ * A still-valid Clerk session could otherwise loop-mint unbounded PATs (each
+ * a durable D1 row + an Argon2id hash on the shared container). This caps mints
+ * per derived principal UUID (`principalId` — the opaque value, NOT the raw
+ * Clerk id) to {@link MINT_THROTTLE_MAX_PER_WINDOW} per
+ * {@link MINT_THROTTLE_WINDOW_MS}, mirroring the per-IP cap the pilot-signup
+ * path enforces.
+ *
+ * The window roll + increment is ONE atomic D1 statement
+ * (`INSERT … ON CONFLICT … DO UPDATE … RETURNING count`), so concurrent mints
+ * cannot race past the cap. Returns a 429 `Response` when the cap is exceeded
+ * (fail-CLOSED on the limit); returns `null` to proceed.
+ *
+ * On a D1 transport error this fails OPEN (allow + log) — a throttle-store
+ * outage must not lock every user out of minting, matching the Worker's
+ * D1-error posture elsewhere (e.g. `getTierForTenant`). The limit is still
+ * enforced whenever the counter is readable, which closes the abuse loop under
+ * normal operation.
+ */
+async function checkMintThrottle(
+  db: D1Database,
+  principalId: string,
+  requestId: string,
+): Promise<Response | null> {
+  const now = Date.now();
+  interface CountRow {
+    count: number;
+  }
+  let row: CountRow | null = null;
+  try {
+    row = await db
+      .prepare(
+        "INSERT INTO session_exchange_throttle (clerk_sub, window_start_ms, count) \
+         VALUES (?1, ?2, 1) \
+         ON CONFLICT(clerk_sub) DO UPDATE SET \
+           count = CASE \
+             WHEN session_exchange_throttle.window_start_ms + ?3 <= ?2 THEN 1 \
+             ELSE session_exchange_throttle.count + 1 END, \
+           window_start_ms = CASE \
+             WHEN session_exchange_throttle.window_start_ms + ?3 <= ?2 THEN ?2 \
+             ELSE session_exchange_throttle.window_start_ms END \
+         RETURNING count",
+      )
+      .bind(principalId, now, MINT_THROTTLE_WINDOW_MS)
+      .first<CountRow>();
+  } catch {
+    // D1 unavailable — fail OPEN (allow). The limit still applies whenever the
+    // counter is readable. Logged without PII (principalId is opaque).
+    console.error(`[${requestId}] session exchange throttle store error; allowing`);
+    return null;
+  }
+
+  if (row !== null && row.count > MINT_THROTTLE_MAX_PER_WINDOW) {
+    return reapiError(
+      "TOO_MANY_REQUESTS",
+      "session exchange mint rate exceeded; retry shortly",
+      429,
+      requestId,
+    );
+  }
+  return null;
+}
 
 /**
  * REAPI error envelope builder — local mirror of index.ts `reapiError`
@@ -190,6 +269,16 @@ export async function handleSessionExchange(
   // The browser/client can never supply that header — it never leaves the
   // backend (least-privilege: identical to the `internal` route arm).
   const principalId = await clerkUserIdToPrincipalUuid(clerkUserId);
+
+  // ── 3b. Per-principal mint throttle (fail-CLOSED 429) ──────────────────────
+  // The session is verified, but a still-valid session must not loop-mint
+  // unbounded PATs. Cap mints per derived principal UUID per fixed window
+  // BEFORE the (expensive) container Argon2id mint + D1 insert.
+  const throttled = await checkMintThrottle(env.CONFIG_DB, principalId, requestId);
+  if (throttled !== null) {
+    return throttled;
+  }
+
   const mintBody = JSON.stringify({
     tenant_id: tenantId,
     principal_id: principalId,
@@ -261,7 +350,11 @@ export async function handleSessionExchange(
     token_plaintext: minted.token_plaintext,
     pat_id: minted.pat_id,
     token_id: minted.token_id,
-    principal: clerkUserId,
+    // F-01: return the opaque, derived principal UUID — NEVER the raw Clerk
+    // user id (`user_xxx`). `principalId` is the SHA-256-derived UUID already
+    // sent to the container as `principal_id`; surfacing the raw Clerk id would
+    // leak the upstream identity-provider subject to the client.
+    principal: principalId,
     tenant: tenantId,
     expires_ms: minted.expires_ms,
   };

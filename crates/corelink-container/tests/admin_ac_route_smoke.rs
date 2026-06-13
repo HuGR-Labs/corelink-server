@@ -71,7 +71,7 @@ fn admin_state_with_gate() -> AdminRouteState {
 #[tokio::test]
 async fn ac_lookup_route_reaches_handler_and_returns_handler_miss_404() {
     let (lookup, update) = ac::build_handlers();
-    let state = AcRouteState { lookup, update };
+    let state = AcRouteState { lookup, update, quota: None };
     let app = ac::router(state);
 
     let req = Request::builder()
@@ -105,7 +105,7 @@ async fn ac_lookup_route_reaches_handler_and_returns_handler_miss_404() {
 #[tokio::test]
 async fn ac_update_route_reaches_handler_and_returns_handler_created_201() {
     let (lookup, update) = ac::build_handlers();
-    let state = AcRouteState { lookup, update };
+    let state = AcRouteState { lookup, update, quota: None };
     let app = ac::router(state);
 
     let req = Request::builder()
@@ -142,7 +142,7 @@ async fn ac_update_route_reaches_handler_and_returns_handler_created_201() {
 #[tokio::test]
 async fn ac_lookup_route_missing_tenant_header_returns_401() {
     let (lookup, update) = ac::build_handlers();
-    let state = AcRouteState { lookup, update };
+    let state = AcRouteState { lookup, update, quota: None };
     let app = ac::router(state);
 
     let req = Request::builder()
@@ -169,7 +169,7 @@ async fn ac_lookup_route_missing_tenant_header_returns_401() {
 #[tokio::test]
 async fn ac_lookup_route_path_tenant_ne_header_returns_403() {
     let (lookup, update) = ac::build_handlers();
-    let state = AcRouteState { lookup, update };
+    let state = AcRouteState { lookup, update, quota: None };
     let app = ac::router(state);
 
     let req = Request::builder()
@@ -280,7 +280,7 @@ async fn admin_read_route_does_not_match_literal_braces_uri() {
 #[tokio::test]
 async fn route_state_constructs_without_panic_on_native() {
     let (lookup, update) = ac::build_handlers();
-    let _ac_router = ac::router(AcRouteState { lookup, update });
+    let _ac_router = ac::router(AcRouteState { lookup, update, quota: None });
 
     let _admin_router = admin::router(admin_state_with_gate());
 

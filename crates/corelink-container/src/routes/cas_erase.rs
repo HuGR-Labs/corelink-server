@@ -206,6 +206,17 @@ async fn handle_erase(
             )
                 .into_response();
         }
+        // `CasEraseError` is `#[non_exhaustive]`: a future variant must
+        // fail-CLOSED (never silently fall through to the erase) — map any
+        // unknown error to 500 so a new error kind can never ship without an
+        // explicit decision here.
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "internal" })),
+            )
+                .into_response();
+        }
     };
 
     // 5. Sample prior tombstone presence (for idempotent-outcome reporting).

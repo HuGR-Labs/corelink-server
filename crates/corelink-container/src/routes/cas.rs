@@ -69,6 +69,11 @@ pub struct CasRouteState {
     /// adapter lands) ⇒ no tombstone gate, classic 200/404 behaviour. Backed by
     /// [`crate::routes::cas_erase::D1TombstoneStore`] in prod.
     pub tombstones: Option<Arc<dyn crate::routes::cas_erase::TombstoneStore>>,
+    /// Optional per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
+    /// `Some` in production (D1-backed) — checked at the TOP of each billable
+    /// handler, AFTER the scope gate, BEFORE storage. `None` in dev/CI (no D1)
+    /// — the ceiling is simply not enforced. See [`crate::tenant_quota`].
+    pub quota: Option<crate::routes::QuotaGate>,
 }
 
 impl core::fmt::Debug for CasRouteState {
@@ -215,6 +220,14 @@ async fn handle_read(
     if !scope.can_read() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1): charge the
+    // flat per-op cost, AFTER the scope gate, BEFORE storage. Over-ceiling ⇒ 402;
+    // store/clock fault ⇒ 503 (fail-CLOSED). `None` in dev/CI ⇒ not enforced.
+    if let Some(gate) = state.quota.as_ref() {
+        if let Some(resp) = gate.check(&auth.0).await {
+            return resp;
+        }
+    }
     // 410-Gone tombstone gate (hugit-P2 seam B, WP-B). When a tombstone store is
     // wired, an erased `(tenant, hash)` short-circuits to HTTP 410 Gone — BEFORE
     // the R2 GET, so it is a single keyed D1 lookup off the hot path. An erased
@@ -274,6 +287,13 @@ async fn handle_write(
     // rejected here. NO-OP for current `cas:rw` traffic.
     if !scope.can_write() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1) — see
+    // `handle_read`. AFTER the scope gate, BEFORE storage.
+    if let Some(gate) = state.quota.as_ref() {
+        if let Some(resp) = gate.check(&auth.0).await {
+            return resp;
+        }
     }
     let now_ms = 0u64;
     let req = CasWriteRequest::new(
@@ -342,6 +362,7 @@ mod tests {
             read,
             write,
             tombstones: None,
+            quota: None,
         }
     }
 
@@ -360,6 +381,7 @@ mod tests {
             read,
             write,
             tombstones: Some(tombstones),
+            quota: None,
         }
     }
 
@@ -548,6 +570,97 @@ mod tests {
         let req = Request::builder()
             .method(Method::GET)
             .uri(format!("/v1/cas/{TEST_TENANT}/livehash99"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    // ── per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1) ─────────
+
+    /// Fixture whose state carries a `QuotaGate` backed by an in-memory quota
+    /// store seeded so the NEXT billable op trips the ceiling. The flat per-op
+    /// cost is `1` micro-USD; the seeded tenant is already AT its budget, so any
+    /// charge projects over the cap.
+    fn fixture_over_ceiling(tenant: &str) -> CasRouteState {
+        use crate::tenant_quota::{InMemoryQuotaStore, QuotaGuard, QuotaState, QuotaStore};
+        use crate::wall_clock::InMemoryFakeWallClock;
+
+        let audit = Arc::new(InMemoryAuditSink::new());
+        let sli = Arc::new(InMemorySliObserver::new());
+        let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
+        let read: Arc<dyn CasReadHandler> = shared.clone();
+        let write: Arc<dyn CasWriteHandler> = shared;
+
+        let store = InMemoryQuotaStore::new();
+        store.seed(
+            tenant,
+            QuotaState {
+                monthly_budget_usd_micros: 5_000_000,
+                accrued_usd_micros: 5_000_000, // already at the $5 cap
+                cycle_anchor_ms: 1_700_000_000_000,
+            },
+        );
+        let store: Arc<dyn QuotaStore> = Arc::new(store);
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(1_700_000_000_000));
+        let guard = Arc::new(QuotaGuard::new(store, clock));
+        let gate = crate::routes::QuotaGate::new_for_test(guard, 1);
+
+        CasRouteState {
+            read,
+            write,
+            tombstones: None,
+            quota: Some(gate),
+        }
+    }
+
+    /// Once accrued spend has reached the monthly ceiling, a billable CAS read
+    /// is rejected with HTTP 402 Payment Required — BEFORE storage. This is the
+    /// load-bearing wiring assertion: the previously-dead `QuotaGuard` is now
+    /// mounted and trips on a real HTTP request.
+    #[tokio::test]
+    async fn billable_request_over_ceiling_returns_402() {
+        let app = router(fixture_over_ceiling(TEST_TENANT));
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/v1/cas/{TEST_TENANT}/deadbeef"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
+    }
+
+    /// Control: with room under the ceiling the same request passes the gate
+    /// and proceeds to storage (404 for the absent blob — NOT 402). Proves the
+    /// gate is not a blanket block.
+    #[tokio::test]
+    async fn billable_request_under_ceiling_proceeds() {
+        use crate::tenant_quota::{InMemoryQuotaStore, QuotaGuard, QuotaStore};
+        use crate::wall_clock::InMemoryFakeWallClock;
+
+        let audit = Arc::new(InMemoryAuditSink::new());
+        let sli = Arc::new(InMemorySliObserver::new());
+        let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
+        let read: Arc<dyn CasReadHandler> = shared.clone();
+        let write: Arc<dyn CasWriteHandler> = shared;
+        // Empty store ⇒ fresh tenant at the $5 tripwire with 0 accrued.
+        let store: Arc<dyn QuotaStore> = Arc::new(InMemoryQuotaStore::new());
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(1_700_000_000_000));
+        let guard = Arc::new(QuotaGuard::new(store, clock));
+        let st = CasRouteState {
+            read,
+            write,
+            tombstones: None,
+            quota: Some(crate::routes::QuotaGate::new_for_test(guard, 1_000)),
+        };
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/v1/cas/{TEST_TENANT}/deadbeef"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:r")
             .body(Body::empty())

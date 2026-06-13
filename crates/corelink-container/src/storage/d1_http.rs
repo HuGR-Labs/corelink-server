@@ -370,14 +370,20 @@ impl D1HttpClient {
         }))
     }
 
-    /// Upsert a tenant's `tenant_quota` row (migration 0066).
+    /// **Absolute** upsert of a tenant's `tenant_quota` row (migration
+    /// 0066). Backs [`crate::tenant_quota::D1QuotaStore::put`] — used ONLY
+    /// to seed a fresh tenant and to roll the cycle, where the new
+    /// `accrued_usd_micros` is a computed value (the op's cost on a fresh
+    /// cycle), NOT a delta over the prior row.
     ///
     /// Idempotent on `tenant_id` (PRIMARY KEY) via
     /// `INSERT … ON CONFLICT … DO UPDATE`. The `monthly_budget_usd_micros`
-    /// ceiling is preserved on conflict (only the operator tunes it);
-    /// the accrued counter + cycle anchor + `updated_at_ms` are
-    /// overwritten with the guard-computed values. Backs
-    /// [`crate::tenant_quota::D1QuotaStore::put`].
+    /// ceiling is preserved on conflict (only the operator tunes it); the
+    /// accrued counter + cycle anchor + `updated_at_ms` are overwritten
+    /// with the guard-computed values. This is a deliberate BLIND
+    /// overwrite — correct for the seed/roll path, where the prior accrued
+    /// value is being intentionally discarded. The hot-path accrual uses
+    /// the atomic [`Self::tenant_quota_accrue`] instead.
     ///
     /// # Errors
     ///
@@ -403,6 +409,56 @@ impl D1HttpClient {
                     serde_json::Value::from(state.monthly_budget_usd_micros),
                     serde_json::Value::from(state.accrued_usd_micros),
                     serde_json::Value::from(state.cycle_anchor_ms),
+                    serde_json::Value::from(updated_at_ms),
+                ],
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// **Atomic increment** of a tenant's accrued cost (migration 0066).
+    /// Backs [`crate::tenant_quota::D1QuotaStore::accrue`] — the hot-path
+    /// accrual after a served billable op.
+    ///
+    /// The increment is done by the DB inside `ON CONFLICT … DO UPDATE`:
+    ///
+    /// ```sql
+    /// accrued_usd_micros = tenant_quota.accrued_usd_micros + excluded.accrued_usd_micros
+    /// ```
+    ///
+    /// i.e. the bound `?3` carries the per-op **delta** (`cost`), and the
+    /// add happens in SQLite, not in the application. This closes the
+    /// TOCTOU lost-update window: a blind `SET accrued = excluded.accrued`
+    /// (read total in app, write total back) loses one op's spend when two
+    /// requests interleave; letting the DB compute `accrued + delta` makes
+    /// concurrent accruals sum. On the INSERT (fresh-row) path the row is
+    /// seeded at the default tripwire with `accrued = delta` and
+    /// `cycle_anchor_ms = seed_anchor_ms`; an existing row keeps its anchor
+    /// and budget (only the operator tunes the budget).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` on D1 communication errors.
+    pub async fn tenant_quota_accrue(
+        &self,
+        tenant_id: &str,
+        delta_micros: i64,
+        seed_anchor_ms: i64,
+        updated_at_ms: i64,
+    ) -> Result<(), String> {
+        let _ = self
+            .query(
+                "INSERT INTO tenant_quota \
+                   (tenant_id, accrued_usd_micros, cycle_anchor_ms, updated_at_ms) \
+                 VALUES (?1, ?2, ?3, ?4) \
+                 ON CONFLICT(tenant_id) DO UPDATE SET \
+                   accrued_usd_micros = tenant_quota.accrued_usd_micros \
+                                        + excluded.accrued_usd_micros, \
+                   updated_at_ms      = excluded.updated_at_ms",
+                &[
+                    serde_json::Value::String(tenant_id.to_owned()),
+                    serde_json::Value::from(delta_micros),
+                    serde_json::Value::from(seed_anchor_ms),
                     serde_json::Value::from(updated_at_ms),
                 ],
             )
