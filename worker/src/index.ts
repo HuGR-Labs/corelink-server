@@ -146,6 +146,7 @@ type RouteKind =
   | "oci_v2"
   | "oci_token"
   | "billing_webhook"
+  | "fabric_introspect"
   | "npm"
   | "pip"
   | "brew"
@@ -538,6 +539,19 @@ function matchRoute(url: URL): RouteMatch {
   //   (3) Add per-tenant authorization to the mint endpoint.
   if (path.startsWith("/_internal/")) {
     return { tenantId: "_system", pathSuffix: path, routeKind: "internal" };
+  }
+
+  // corelink-runners fabric introspect — EXACT /internal/v1/auth/introspect (no
+  // underscore, per the ratified runners contract — distinct from the /_internal/*
+  // family above). The container mounts this route and is the SOLE auth authority,
+  // gated by FABRIC_INTROSPECT_AUTH_KEY (a DEDICATED secret, NOT the shared
+  // CORELINK_INTERNAL_AUTH_KEY of /_internal/*). So the Worker is a pure
+  // pass-through: it forwards the caller's x-corelink-internal-auth (the FABRIC
+  // secret) UNCHANGED to the _system DO and applies NO edge gate. (Wiring gap from
+  // #261: the container had the route but the Worker never forwarded this path,
+  // so introspect 404'd end-to-end — fixed 2026-06-13.)
+  if (path === "/internal/v1/auth/introspect") {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "fabric_introspect" };
   }
 
   // Stripe billing webhook — EXACT /v1/billing/stripe-webhook (mounted in the
@@ -1542,6 +1556,43 @@ const handler: ExportedHandler<Env> = {
         );
       }
       return applyCors(billingResp, request);
+    }
+
+    // corelink-runners fabric introspect — pure pass-through to the _system DO →
+    // container, which is the SOLE auth authority (FABRIC_INTROSPECT_AUTH_KEY).
+    // The Worker forwards the caller's x-corelink-internal-auth (the FABRIC secret)
+    // UNCHANGED and applies NO edge gate (mirrors the billing-webhook carve-out,
+    // where the container verifies the Stripe signature). See the matchRoute note.
+    if (route.routeKind === "fabric_introspect") {
+      const fbDoId = env.CORELINK_SERVER.idFromName("_system");
+      const fbStub = env.CORELINK_SERVER.get(fbDoId);
+      // Capture the FABRIC secret BEFORE stripping client trust headers.
+      const fabricAuth = request.headers.get("x-corelink-internal-auth") ?? "";
+      const fbReq = new Request(request, {
+        headers: (() => {
+          const h = new Headers(request.headers);
+          stripClientTrustHeaders(h);
+          h.set("x-request-id", requestId);
+          h.set("x-corelink-route-kind", "fabric_introspect");
+          h.set("x-corelink-tenant-id", "_system");
+          // Re-forward the caller's FABRIC secret unchanged — the container's
+          // introspect gate is the sole authority; the Worker never inspects it.
+          h.set("x-corelink-internal-auth", fabricAuth);
+          return h;
+        })(),
+      });
+      let fbResp: Response;
+      try {
+        fbResp = await fbStub.fetch(fbReq);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        console.error(`[${requestId}] fabric introspect DO fetch failed: ${message.slice(0, 80)}`);
+        return applyCors(
+          reapiError("INTERNAL_ERROR", "upstream error", 500, requestId),
+          request,
+        );
+      }
+      return applyCors(fbResp, request);
     }
 
     // Customer portal dual-auth dispatch (dashboard revival WP-1) —
