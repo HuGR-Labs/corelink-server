@@ -16,8 +16,18 @@ use crate::schema::{Jurisdiction, TenantId};
 ///
 /// PKCS#1 (`-----BEGIN RSA PRIVATE KEY-----`) or PKCS#8
 /// (`-----BEGIN PRIVATE KEY-----`); `jsonwebtoken` accepts both.
-#[derive(Clone, Debug)]
+///
+/// `Debug` is a manual redacting impl (NOT `#[derive(Debug)]`) so the raw
+/// private-key PEM can never be printed via a `{:?}` of this type or any
+/// struct that holds it (e.g. `DpaAcceptanceService`).
+#[derive(Clone)]
 pub struct RsaPrivateKeyPem(pub String);
+
+impl core::fmt::Debug for RsaPrivateKeyPem {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("RsaPrivateKeyPem([REDACTED RSA PRIVATE KEY])")
+    }
+}
 
 /// PEM-encoded RSA public key for verifying receipts.
 #[derive(Clone, Debug)]

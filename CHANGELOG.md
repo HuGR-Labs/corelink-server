@@ -22,6 +22,21 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+- **Redact `Debug` on three secret-bearing structs (pre-launch audit, 2 HIGH).**
+  `StorageEnv` (`storage.rs`) and `D1HttpClient` (`storage/d1_http.rs`) carried
+  `#[derive(Debug)]` despite holding the R2 S3 secret access key, R2 access key
+  ID, and the CF API token — so any `{:?}` / `dbg!` / `tracing` `?`-field / panic
+  `{:#?}` would print production cloud credentials verbatim (and `StorageEnv`'s
+  doc-comment falsely claimed Debug was "intentionally redacted"). Replaced both
+  derives with manual `Debug` impls that emit `[REDACTED]` for every secret/
+  identifier field (matching the existing `D1HttpCustomerDb`/Stripe redaction
+  pattern). Also gave `RsaPrivateKeyPem` (`corelink-dpa-acceptance`) a redacting
+  `Debug` so the RS256 signing key's PEM can't leak through a derived `Debug`
+  (auto-fixing `DpaAcceptanceService`, which delegates to the field). Latent (no
+  current call site formats these directly) but a one-line future log would have
+  leaked the keys to storage/D1. No behaviour change beyond Debug output.
+
 ### Fixed
 - **ci: unbreak the `wasm32-unknown-unknown` build (main red ~3 days).** The
   `WASM target build` gate (`corelink-worker` cargo-check on wasm32) had been
