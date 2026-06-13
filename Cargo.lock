@@ -2251,6 +2251,7 @@ dependencies = [
  "corelink-handler-customer",
  "corelink-hash",
  "corelink-pat",
+ "corelink-privacy-erasure-worker",
  "corelink-ratelimit",
  "corelink-stripe-real",
  "corelink-tenant-path",

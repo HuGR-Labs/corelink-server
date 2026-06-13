@@ -313,6 +313,7 @@ mod tests {
         BackendCompletion {
             dsr_id: dsr,
             tenant_id: fixed_uuid(99),
+            subject_id_hash: [0u8; 32],
             backend,
             outcome: BackendErasureOutcome::Erased { records_deleted: 1 },
             idempotency_key: format!("corelink-{}-{}-000", "abcdef01", backend.as_str()),

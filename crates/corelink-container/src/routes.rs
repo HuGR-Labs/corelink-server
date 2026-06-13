@@ -96,6 +96,11 @@ pub mod cas_erase;
 /// forwards these paths to the container; this module is the final link
 /// that makes them return real responses instead of 404.
 pub mod customer;
+/// Internal DSR erasure route (WI-S11-008): `POST /_internal/dsr/erase`.
+/// Reachable only from the Cloudflare DO; gated by the same
+/// `X-Corelink-Internal-Auth` shared secret. Drives the 12-backend erasure
+/// orchestrator (Wave 0: in-memory no-op adapters; Wave 1 wires real transports).
+pub mod dsr;
 /// Internal PAT mint route (Stream-5): `POST /_internal/pat/mint`.
 /// Only reachable from the Cloudflare Durable Object via
 /// `container.getTcpPort(50051)`. Gated by the `X-Corelink-Internal-Auth`

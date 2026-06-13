@@ -121,6 +121,127 @@ Each entry cross-references:
   no webhook-handler change was needed.)
 
 ### Added
+- **DSR erasure — 24h verification sweep cron (WI-S11-008 Wave 1, increment 5).**
+  New signup-worker Cron Trigger (`[triggers] crons = ["0 * * * *"]`, hourly) →
+  `scheduled()` → `runDsrVerifySweep`: queries `dsr_erasure_log` (D1) for every
+  DSR past its 24h SLA deadline (bounded 7d look-back, one verify per `dsr_id`)
+  and POSTs the container `/_internal/dsr/verify` for each. Idempotent (re-sweeps
+  are harmless); inert until `CORELINK_INTERNAL_AUTH_KEY` is bound (task #46).
+  Closes the autonomous pipeline: Clerk `user.deleted` → queue → erase → 24h cron
+  → verify → audit. (106/106 signup-worker tests green.)
+- **DSR erasure — `POST /_internal/dsr/verify` endpoint (WI-S11-008 Wave 1,
+  increment 5).** Drives the canonical 24h verification sweep
+  (`ErasureWorker::verify_erasure`): re-fingerprints every backend for a `dsr_id`
+  and lands the `verification_passed/failed` + `completed` audit arms. Same
+  internal-auth gate as `/erase`, but a **light `DsrVerifyV1` wire shape**
+  (`dsr_id` + `tenant_id` + `queued_at_ms` only) — the per-DSR `erasure_salt` and
+  raw `subject_id` are NOT retained post-erasure and the sweep never needs them
+  (it re-fingerprints by tenant). Returns a compact non-PII decision label
+  (`verified_complete`/`verified_partial`/`sla_breached`/…), never the per-backend
+  completions. Fired by the signup-worker cron (next).
+- **DSR erasure — reconcile the 8 not-shipped backends to `NotApplicable`
+  (WI-S11-008 Wave 1, increment 4 — completes the 12-backend wiring).** The
+  canonical contract assumes a Neon-primary control-plane + WORM audit/evidence/
+  legal-hold/PITR stores that were never shipped (cold-verified: Neon holds only
+  `audit_events_shadow`; no `evidence-*`/`legal-hold`/audit-WORM R2 buckets in
+  `wrangler.toml`; KV is caches; no active Loki sink). A new
+  `NotApplicableAdapter` (parameterised by kind + a documented `reason`) replaces
+  the silent `InMemory` placeholders for `NeonMain`/`NeonBilling`/`NeonPitrPseudo`/
+  `Kv`/`Loki`/`R2AuditPseudo`/`R2CasLegalHoldPseudo`/`R2EvidencePseudo`, so the
+  per-backend audit row records a truthful `not_applicable` instead of a no-op
+  success. `build_d1_worker` now wires **all 12** canonical backends with real or
+  reconciled adapters (zero `InMemory`).
+- **DSR erasure — real Stripe pseudonymize adapter (`Stripe`, WI-S11-008 Wave 1,
+  increment 4).** Pseudonymizes a tenant's Stripe customer(s) (redacts
+  email/name/phone/address, stamps `pii_redacted` metadata) via the existing
+  `StripeRealClient::pseudonymize_customer` — **never deletes** the customer
+  (invoice/payment history must survive fiscal retention: GAAP ASC 606 + LGPD
+  Art. 16). Resolves the ordering hazard (canonical fan-out runs `D1` before
+  `Stripe`, and D1 deletes the `tenant` row that carries `stripe_customer_id`)
+  by reading the id from the **retained** `stripe_customers` table (D1
+  RETAIN-set). Idempotent (deterministic key per `(subject, customer)`);
+  fails CLOSED when `STRIPE_SECRET_KEY` is unset. Wired into `build_d1_worker`
+  (D1 + R2Ac + R2Cas + Stripe real; the remaining 8 backends — the not-shipped
+  Neon/Kv + the WORM pseudonymized audit/evidence/legal-hold — stay `InMemory`
+  pending their shipped-reality reconciliation).
+- **DSR erasure — real R2 CAS erase adapter (`R2Cas`, WI-S11-008 Wave 1,
+  increment 3 — completes increment 3).** Hard-deletes a tenant's
+  content-addressed bytes from the single `corelink-cas-prod` bucket via
+  **LIST-by-prefix** (`R2S3Client::list_objects_v2`, paginated) over
+  `<region>/<tenant_prefix>/` across all five storage regions, then a defensive
+  D1 cleanup of the CAS storage-layer tables (`chunks`, `manifest_chunks`,
+  `multipart_sessions`, `blob_meta`). LIST-by-prefix is the only *complete*
+  enumeration: cold verification confirmed the live prod CAS path is
+  native-whole-blob-only (multipart NOT shipped) with **no durable D1 index**, so
+  the tenant's bytes can only be reached by their derived prefix. The prefix is
+  `derive_prefix(tdk, tenant)` — the same derivation the writer used (keys match
+  by construction); no TDK ⇒ fail CLOSED. Wired into `build_d1_worker`
+  (D1 + R2Ac + R2Cas real; the other 9 backends stay `InMemory`).
+- **DSR erasure — real R2 Action-Cache erase adapter (`R2Ac`, WI-S11-008 Wave 1,
+  increment 3).** Hard-deletes a tenant's REAPI Action-Cache result envelopes from
+  the per-region `corelink-ac-<region>` R2 buckets, then the `ac_meta` D1 index.
+  Fully D1-driven (no S3 LIST): `ac_meta` is the authoritative per-tenant AC index
+  (`(tenant_id, action_digest)` + `region` + materialised `tenant_prefix`), so each
+  row resolves to its exact `<region>/<tenant_prefix_hex>/<action_digest>` key.
+  Reads the materialised prefix (rotation-correct) via a new `col_blob_hex` D1 BLOB
+  decoder that **fails CLOSED** on an unrecognised wire form (never builds a wrong
+  key and silently skips a PII object). R2 objects deleted BEFORE the D1 index rows
+  (idempotent-retry-safe; `DeleteObject` is itself idempotent). Wired into
+  `build_d1_worker`; the other 10 non-D1/AC backends stay `InMemory` placeholders.
+  The `R2Cas` adapter is deferred within increment 3 — cold verification (the
+  investigation logged in ADR-S11-013) confirmed the prod CAS write path is
+  native-whole-blob-only (multipart/chunks NOT shipped) with no durable D1 index,
+  so CAS erase needs `ListObjectsV2` by tenant prefix (next).
+- **Storage — `R2S3Client::delete` (WI-S11-008 Wave 1, increment 3 prep).** Idempotent
+  S3 `DeleteObject` primitive (deleting a missing key is a safe no-op, so a replayed
+  erasure is harmless), mirroring the existing `put`/`get`. Required by the R2 CAS/AC
+  GDPR erasure adapters. Method added; the adapters that consume it land in increment 3
+  once the live CAS whole-blob-vs-chunk + multi-region residency storage model is
+  cold-confirmed (see ADR-S11-013 §R2-erasure open questions).
+- **DSR erasure — real D1-backed idempotency ledger + audit sink + effective D1
+  erase adapter (WI-S11-008 Wave 1, increments 1+2, ADR-S11-013).** Three new
+  transports under `corelink-container/src/routes/dsr/`: `D1ErasureIdempotencyLedger`
+  (over `dsr_erasure_log`, `INSERT OR IGNORE` + `SELECT`-back → `Replayed`/`DivergentPayload`
+  on a 4-field `(outcome, tenant_id, subject_id_hash, idempotency_key)` match, deterministic
+  `log_id`); `D1ErasureAuditSink` (→ `audit_outbox` CloudEvents, **omits raw `subject_id`**
+  per CTRL-PRIV-014); and `D1EraseAdapter` (23 cold-verified PII `DELETE`s — tenant_id /
+  namespace / `signup_attempts` subquery, `tenant` row last, never touches the `_public`
+  namespace, legal-hold → `NotApplicable`, retain-set guard test). Wired via
+  `build_d1_worker()` (real D1 ledger+audit+D1 adapter; the other 11 backends stay
+  `InMemory` placeholders pending increments 3-5). Pipeline remains inert in prod until
+  task #46 provisioning (queues + `ERASURE_SALT_KEY` + `CORELINK_INTERNAL_AUTH_KEY`).
+- **DSR erasure — `BackendCompletion.subject_id_hash` canonical field (WI-S11-008
+  Wave 1, ADR-S11-013 gap #1).** The per-backend completion record now carries the
+  canonical `sha256(subject_id ‖ erasure_salt)` subject pseudonym, populated by the
+  orchestrator via `pseudonymize_subject_id`, so the real D1-backed idempotency
+  ledger can write the `dsr_erasure_log.subject_id_hash NOT NULL` column (the pure
+  trait surface previously could not). Additive + `#[serde(default)]` (pre-Wave-1
+  `outcome_json` snapshots stay deserializable); the `outcome_json` round-trip
+  property test passes with arbitrary subject-hash values.
+- **DSR erasure — `StripeRealClient::pseudonymize_customer` (WI-S11-008 Wave 1,
+  Stripe backend).** Pseudonymizes a customer's PII for a DSR erasure
+  (`POST /v1/customers/:id`: overwrite email/name, clear phone/address, stamp
+  `pii_redacted` + `erasure_dsr_id` metadata). By design exposes NO
+  customer-delete primitive — deleting the customer would break invoice
+  integrity (GAAP ASC 606 + LGPD Art. 16 fiscal retention). See ADR-S11-013.
+- **DSR account deletion — Clerk `user.deleted` → erasure pipeline (WI-S11-008
+  WP-F + WP-G).** The signup-worker Clerk webhook now handles `user.deleted`: it
+  looks up the tenant by `clerk_user_id` and PRODUCES a frozen-contract
+  `dsr.queued.v1` message (deterministic `dsr_id` for idempotent redelivery +
+  HMAC-derived erasure salt) onto `DSR_QUEUE`. The same worker CONSUMES the queue
+  (`queue` handler → `dsr_consumer.ts`) and forwards each message to the
+  container's `/_internal/dsr/erase` endpoint (internal-auth gated; ack on 2xx,
+  retry otherwise → dead-letter after 10 attempts). No tenant → 200 no-op;
+  tenant present but queue unbound → **fail-loud 500** so a GDPR right-to-erasure
+  obligation is never silently dropped. New infra: `corelink-dsr-erasure` queue
+  + DLQ; new secret `ERASURE_SALT_KEY`.
+  The container exposes the receiving endpoint `POST /_internal/dsr/erase`
+  (WI-S11-008 **Wave 0**, `crates/corelink-container/src/routes/dsr.rs`,
+  internal-auth gated) which maps the message to a canonical `ErasureRequest`
+  and drives the 12-backend erasure orchestrator. **Wave 0 uses in-memory no-op
+  backend adapters** — the full pipeline is wired and exercised end-to-end but no
+  real data is deleted yet; **Wave 1** swaps each canonical adapter for its real
+  transport (D1 / R2 / Stripe / KV / Loki).
 - **AC handler — 409 Conflict on divergent-body PUT (hugit-P2 WP-A).** `InMemoryAcHandler::update`
   now refuses to overwrite a stored `(tenant, action_digest)` result with different bytes
   (`AcHandlerError::DivergentBody` → HTTP 409); a byte-identical re-PUT stays an idempotent

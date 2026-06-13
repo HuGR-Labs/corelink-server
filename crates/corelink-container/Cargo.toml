@@ -207,6 +207,8 @@ corelink-audit-chain = { workspace = true }
 corelink-ratelimit = { workspace = true }
 # Stream-5: internal PAT mint route (`/_internal/pat/mint`).
 corelink-pat = { workspace = true }
+# WI-S11-008: DSR erasure orchestrator behind `/_internal/dsr/erase`.
+corelink-privacy-erasure-worker = { workspace = true }
 # FINDING Gap 1 — the cargo adapter's `CargoAdapterConfig.auditor` is an
 # `Arc<dyn corelink_audit::ports::AuditEmitter>`; the container constructs it
 # (InMemoryAuditEmitter) when mounting `/cargo/*` (see `routes/cargo.rs`).
