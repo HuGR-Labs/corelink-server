@@ -48,7 +48,11 @@ Each entry cross-references:
   and the DSR erasure would have fallen back to a PREDICTABLE non-secret salt
   instead of `ERASURE_SALT_KEY`. Both are now forwarded; introspect mounts and the
   GDPR erasure path uses the real salt. (CAS-erase / tier-select / pat-mint were
-  already forwarded and unaffected.)
+  already forwarded and unaffected.) A follow-up audit then cross-checked EVERY
+  `env::var` the container reads against the forward-list and closed the remaining
+  (currently-unset, so no-op today) gaps — `R2_TDK_HEX`, `SIGNUP_TOKEN_KEY`,
+  `CORELINK_PORTAL_RETURN_URL`, and the BYOK provider region/vault vars — so a
+  future secret-set reaches the container instead of silently doing nothing.
 
 ### Security
 - **cas-erase: complete the WP-B CAS-erase WRITE path — wire the real R2
