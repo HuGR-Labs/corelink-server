@@ -336,6 +336,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
+    // WI-S11-008: `POST /_internal/dsr/erase` — gated by the
+    // CORELINK_INTERNAL_AUTH_KEY. Drives the 12-backend erasure orchestrator
+    // (Wave 1: real D1/R2/Stripe/KV/Loki transports wired in #254).
+    if let Some(dsr_state) = corelink_server::routes::dsr::build_state_from_env() {
+        info!("routes: /_internal/dsr/erase route mounted (Wave 1 real adapters)");
+        app = app.merge(corelink_server::routes::dsr::router(dsr_state));
+    } else {
+        warn!("CORELINK_INTERNAL_AUTH_KEY unset; /_internal/dsr/erase route NOT mounted (dev/CI)");
+    }
+
     // L3: `POST /v1/onboarding/tier-select` — self-serve Stripe Checkout.
     // Mounted only when the internal-auth secret + D1 + Stripe + DPA version
     // are ALL configured (fail-safe; same internal-auth gate as the PAT route).

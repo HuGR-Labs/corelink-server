@@ -62,6 +62,193 @@ export interface AutoProvisionEnv {
    * Required for `publishUserMetadata`. Bound via `wrangler secret put CLERK_SECRET_KEY`.
    */
   CLERK_SECRET_KEY?: string;
+
+  /**
+   * Cloudflare Queue producer for DSR erasure (`dsr.queued.v1`). A verified
+   * Clerk `user.deleted` event enqueues here; the consumer (WI-S11-008) drives
+   * the erasure orchestrator. When a deletion has a tenant to erase but this
+   * binding is absent, the handler FAILS LOUD (500) rather than silently
+   * dropping a GDPR right-to-erasure obligation. Absent + no tenant → 200 no-op.
+   */
+  DSR_QUEUE?: { send(message: unknown): Promise<void> };
+
+  /**
+   * Secret key for deriving the per-DSR erasure salt (HMAC-SHA256 over the
+   * deterministic `dsr_id`). Yields an unlinkable pseudonymization salt. When
+   * absent (dev/CI), a NON-secret `SHA-256(dsr_id)` fallback is used. Bound via
+   * `wrangler secret put ERASURE_SALT_KEY`.
+   */
+  ERASURE_SALT_KEY?: string;
+}
+
+/** Clerk `user.deleted` webhook payload (account-deletion → GDPR erasure). */
+export interface ClerkUserDeletedEvent {
+  type: "user.deleted";
+  data: { id: string; deleted?: boolean };
+}
+
+/**
+ * Frozen wire contract for the DSR erasure queue message (`dsr.queued.v1`).
+ * The Rust queue consumer (WI-S11-008) deserializes this into the
+ * orchestrator's `ErasureRequest`. `erasure_salt_hex` is 64 hex chars (32
+ * bytes); `subject_id == tenant_id` because CoreLink provisions exactly one
+ * tenant per Clerk user, so the tenant IS the unit of deletion.
+ */
+export interface DsrQueuedV1 {
+  schema: "dev.hugr.corelink.dsr.queued.v1";
+  dsr_id: string;
+  tenant_id: string;
+  subject_id: string;
+  erasure_salt_hex: string;
+  queued_at_ms: number;
+  legal_hold: boolean;
+  source: "clerk.user.deleted";
+  clerk_user_id: string;
+}
+
+function bytesToHex(buf: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Deterministic name-based (v5-shaped) UUID from a Clerk user id. STABLE across
+ * Svix redeliveries, so the same account deletion always maps to ONE `dsr_id`
+ * and the erasure orchestrator (which dedups per `(dsr_id, backend)`) is
+ * idempotent — a redelivered `user.deleted` never double-runs erasure.
+ */
+export async function deterministicDsrId(clerkUserId: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`corelink-dsr-v1:${clerkUserId}`),
+  );
+  const b = new Uint8Array(digest).slice(0, 16);
+  b[6] = ((b[6] ?? 0) & 0x0f) | 0x50; // version 5 (name-based)
+  b[8] = ((b[8] ?? 0) & 0x3f) | 0x80; // RFC 4122 variant
+  const h = bytesToHex(b.buffer);
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+/**
+ * 32-byte erasure salt (hex). `HMAC-SHA256(ERASURE_SALT_KEY, dsr_id)` when the
+ * key is set (secret → unlinkable pseudonymization); else `SHA-256(dsr_id)`
+ * (dev/CI fallback — deterministic but NOT secret).
+ */
+export async function deriveErasureSalt(
+  dsrId: string,
+  key: string | undefined,
+): Promise<string> {
+  if (key && key.length > 0) {
+    const k = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(key),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const sig = await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(dsrId));
+    return bytesToHex(sig);
+  }
+  const d = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`erasure-salt:${dsrId}`),
+  );
+  return bytesToHex(d);
+}
+
+/**
+ * Build the `dsr.queued.v1` erasure message for a deleted Clerk user. Pure
+ * given its inputs (deterministic `dsr_id` + salt) → fully testable + idempotent.
+ */
+export async function buildErasureQueueMessage(input: {
+  clerkUserId: string;
+  tenantId: string;
+  nowMs: number;
+  saltKey: string | undefined;
+}): Promise<DsrQueuedV1> {
+  const dsrId = await deterministicDsrId(input.clerkUserId);
+  const saltHex = await deriveErasureSalt(dsrId, input.saltKey);
+  return {
+    schema: "dev.hugr.corelink.dsr.queued.v1",
+    dsr_id: dsrId,
+    tenant_id: input.tenantId,
+    subject_id: input.tenantId, // 1 Clerk user : 1 tenant — tenant is the deletion unit
+    erasure_salt_hex: saltHex,
+    queued_at_ms: input.nowMs,
+    legal_hold: false,
+    source: "clerk.user.deleted",
+    clerk_user_id: input.clerkUserId,
+  };
+}
+
+/**
+ * Handle a verified Clerk `user.deleted` event: look up the tenant and enqueue
+ * a GDPR erasure request. FAIL-LOUD (500 → Svix retries) when a tenant exists
+ * but the queue binding is absent, so a right-to-erasure obligation is never
+ * silently dropped. No tenant (deleted pre-provision or already erased) → 200 no-op.
+ */
+export async function handleUserDeleted(
+  event: ClerkUserDeletedEvent,
+  env: AutoProvisionEnv,
+  svixId: string,
+): Promise<Response> {
+  const clerkUserId = event.data?.id;
+  if (!clerkUserId) {
+    return Response.json({ ok: true, erasure_enqueued: false, reason: "no_user_id" });
+  }
+
+  let tenantId: string | null = null;
+  if (env.CONFIG_DB) {
+    try {
+      const row = await env.CONFIG_DB.prepare(
+        "SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1 LIMIT 1",
+      )
+        .bind(clerkUserId)
+        .first<{ tenant_id: string }>();
+      tenantId = row?.tenant_id ?? null;
+    } catch {
+      // D1 error — 500 so Svix retries. We must NOT silently drop a deletion.
+      return new Response(
+        JSON.stringify({ ok: false, error: "tenant_lookup_failed" }),
+        { status: 500, headers: { "content-type": "application/json" } },
+      );
+    }
+  }
+
+  if (!tenantId) {
+    // No provisioned tenant — nothing to erase. Ack so Svix stops retrying.
+    return Response.json({ ok: true, erasure_enqueued: false, reason: "no_tenant" });
+  }
+
+  if (!env.DSR_QUEUE) {
+    console.error(
+      `[clerk-webhook] user.deleted tenant=${tenantId} but DSR_QUEUE unbound — ` +
+        `cannot honor erasure; returning 500 for Svix retry (svix=${svixId})`,
+    );
+    return new Response(
+      JSON.stringify({ ok: false, error: "dsr_queue_unconfigured" }),
+      { status: 500, headers: { "content-type": "application/json" } },
+    );
+  }
+
+  const msg = await buildErasureQueueMessage({
+    clerkUserId,
+    tenantId,
+    nowMs: Date.now(),
+    saltKey: env.ERASURE_SALT_KEY,
+  });
+  await env.DSR_QUEUE.send(msg);
+  // dsr_id is a pseudonymous id; tenant_id is not secret. erasure_salt is NEVER logged.
+  console.log(
+    `[clerk-webhook] erasure enqueued dsr_id=${msg.dsr_id} tenant=${tenantId} svix=${svixId}`,
+  );
+  return Response.json({
+    ok: true,
+    erasure_enqueued: true,
+    dsr_id: msg.dsr_id,
+    tenant_id: tenantId,
+  });
 }
 
 export interface AutoProvisionResult {
@@ -384,15 +571,21 @@ export async function handleClerkWebhook(
     return new Response("invalid_signature", { status: 401 });
   }
 
-  let event: ClerkUserCreatedEvent;
+  let parsed: { type?: string; data?: { id?: string } };
   try {
-    event = JSON.parse(body) as ClerkUserCreatedEvent;
+    parsed = JSON.parse(body) as { type?: string; data?: { id?: string } };
   } catch {
     return new Response("invalid_json", { status: 400 });
   }
-  if (event.type !== "user.created") {
+
+  // Account deletion → enqueue a GDPR right-to-erasure request (WI-S11-008).
+  if (parsed.type === "user.deleted") {
+    return handleUserDeleted(parsed as ClerkUserDeletedEvent, env, svixId);
+  }
+  if (parsed.type !== "user.created") {
     return new Response("ignored", { status: 200 });
   }
+  const event = parsed as ClerkUserCreatedEvent;
 
   const colo =
     (request as Request & { cf?: { colo?: string } }).cf?.colo ?? null;

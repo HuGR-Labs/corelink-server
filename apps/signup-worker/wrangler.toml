@@ -69,3 +69,35 @@ CORELINK_API_BASE = "https://corelink-api.humangr.com"
 [[services]]
 binding = "CORELINK_API_SVC"
 service = "corelink-prod"
+
+# ── DSR erasure queue (WI-S11-008) ───────────────────────────────────────────
+# The Clerk `user.deleted` webhook PRODUCES `dsr.queued.v1` messages onto
+# DSR_QUEUE (src/webhooks/clerk.ts::handleUserDeleted); this same worker CONSUMES
+# them (src/index.ts `queue` → src/webhooks/dsr_consumer.ts) and forwards each to
+# the container's `/_internal/dsr/erase` endpoint (internal-auth gated). The
+# erasure orchestrator dedups per (dsr_id, backend), so redelivery is safe;
+# poison messages land in the dead-letter queue after max_retries.
+#
+# Infra (one-time, operator — task #46 adjacent):
+#   worker/node_modules/.bin/wrangler queues create corelink-dsr-erasure
+#   worker/node_modules/.bin/wrangler queues create corelink-dsr-erasure-dlq
+# New secret (operator): wrangler secret put ERASURE_SALT_KEY  (per-DSR salt HMAC)
+[[queues.producers]]
+binding = "DSR_QUEUE"
+queue = "corelink-dsr-erasure"
+
+[[queues.consumers]]
+queue = "corelink-dsr-erasure"
+max_batch_size = 10
+max_batch_timeout = 30
+# Erasure is a legal obligation — retry generously before dead-lettering for
+# manual review rather than dropping a right-to-erasure request.
+max_retries = 10
+dead_letter_queue = "corelink-dsr-erasure-dlq"
+
+# DSR 24h verification sweep (WI-S11-008 incr 5). Hourly tick → src/index.ts
+# `scheduled()` → runDsrVerifySweep → container POST /_internal/dsr/verify for
+# every DSR past its 24h SLA deadline (idempotent; inert until
+# CORELINK_INTERNAL_AUTH_KEY is bound — task #46).
+[triggers]
+crons = ["0 * * * *"]
