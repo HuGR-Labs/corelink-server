@@ -22,6 +22,29 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+- **CAA-360 adversarial audit + full remediation (35 confirmed findings, all severities).**
+  A 16-agent 360° pen-test + multi-perspective review (3 Opus pentest + 3 Opus + 5 Sonnet +
+  5 Haiku, adversarially verified — 12 false-positives refuted) found a coherent root-cause
+  class: secrets/invariants that **fail OPEN and silent**. All 35 actionable findings were
+  remediated to **fail CLOSED and loud** across 26 files. Highlights: (F1/F2) the R2
+  tenant-prefix Tenant-Derivation-Key is now MANDATORY on the prod storage path — the
+  public-UUID raw-padded fallback is gone (cfg(test) only), closing a same-millisecond
+  cross-tenant CAS/AC co-residence risk; (F5) `R2AcHandler::update` re-enforces the
+  divergent-body invariant (no silent overwrite → AC-poisoning); (F7/F8) CAS is now
+  residency-aware (`R2_CAS_REGION`) and the worker→container env forward-list is complete;
+  (F9/F18/F28/F15) `ERASURE_SALT_KEY` / `PAT_SIGNING_KEY` / `CORELINK_INTERNAL_AUTH_KEY`
+  fail-closed + ≥32-char floors; (F6/F10) Stripe `success_url`/`cancel_url` host-allowlist
+  (open-redirect); (F22) `timingSafeEqual` uses a real per-isolate HMAC key with no length
+  branch; (F37) Vault auth structs redact secrets in Debug; plus quota/session fail-closed,
+  OCI/Turbo buffer bounds, brew validation, and doc/comment-vs-code reconciliations. Verified:
+  cargo check + clippy -D warnings + worker/signup tsc + corelink-server tests all green.
+  Tracked architectural/infra follow-ups in `docs/security/2026-06-13-CAA-360-followups.md`;
+  full chewed report in `docs/security/2026-06-13-CAA-360-audit-report.md`.
+- **introspect M2: `max_concurrency`** added to `/internal/v1/auth/introspect` (additive
+  top-level `Option<u32>`, ratified byte-compatible shape with corelink-runners; ladder
+  Starter→20/Pro→40/Team→80/Scale→160/Max→320; absent for cache-only tenants).
+
 ### Fixed
 - **migrations(0064): make the `tenant` table rebuild D1-applicable — add
   `PRAGMA legacy_alter_table=ON` + recreate the residency triggers.** The

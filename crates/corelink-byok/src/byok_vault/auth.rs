@@ -43,7 +43,6 @@ const REFRESH_MARGIN_SECS: u64 = 60;
 const STATIC_TOKEN_TTL_SECS: u64 = 3600;
 
 /// Vault auth method selector + resolved credentials.
-#[derive(Debug)]
 enum AuthSource {
     /// Direct token (`VAULT_TOKEN`).
     Token(String),
@@ -58,6 +57,32 @@ enum AuthSource {
     Static(String),
 }
 
+impl std::fmt::Debug for AuthSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Token(_) => f.write_str("AuthSource::Token(<redacted>)"),
+            Self::AppRole { role_id, .. } => {
+                f.debug_struct("AuthSource::AppRole")
+                    .field("role_id", role_id)
+                    .field("secret_id", &"<redacted>")
+                    .finish()
+            }
+            Self::Kubernetes { role, .. } => {
+                f.debug_struct("AuthSource::Kubernetes")
+                    .field("role", role)
+                    .field("sa_jwt", &"<redacted>")
+                    .finish()
+            }
+            Self::AwsIam { role } => {
+                f.debug_struct("AuthSource::AwsIam")
+                    .field("role", role)
+                    .finish()
+            }
+            Self::Static(_) => f.write_str("AuthSource::Static(<redacted>)"),
+        }
+    }
+}
+
 impl AuthSource {
     fn label(&self) -> &'static str {
         match self {
@@ -70,24 +95,50 @@ impl AuthSource {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct CachedToken {
     token: String,
     refresh_at: Instant,
 }
 
+impl std::fmt::Debug for CachedToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CachedToken")
+            .field("token", &"<redacted>")
+            .field("refresh_at", &self.refresh_at)
+            .finish()
+    }
+}
+
 /// Vault auth — resolves and caches a short-lived Vault token.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct VaultAuth {
     inner: Arc<AuthInner>,
 }
 
-#[derive(Debug)]
+impl std::fmt::Debug for VaultAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VaultAuth")
+            .field("inner", &self.inner)
+            .finish()
+    }
+}
+
 struct AuthInner {
     source: AuthSource,
     http: reqwest::Client,
     vault_addr: String,
     cache: Mutex<Option<CachedToken>>,
+}
+
+impl std::fmt::Debug for AuthInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthInner")
+            .field("source", &self.source)
+            .field("vault_addr", &self.vault_addr)
+            .field("cache", &"<opaque>")
+            .finish()
+    }
 }
 
 impl VaultAuth {
@@ -310,5 +361,57 @@ mod tests {
         let t2 = a.token().await.expect("token2");
         assert_eq!(t1, t2);
         assert_eq!(t1, "hvs.cached");
+    }
+
+    #[test]
+    fn vault_auth_debug_redacts_secrets() {
+        let auth = VaultAuth::for_test_static("hvs_super_secret_token_do_not_log");
+        let dbg = format!("{:?}", auth);
+        // Secret token should not appear in debug output
+        assert!(!dbg.contains("hvs_super_secret_token_do_not_log"));
+        assert!(dbg.contains("redacted") || dbg.contains("opaque"));
+    }
+
+    #[test]
+    fn auth_source_debug_redacts_direct_token() {
+        let source = AuthSource::Token("hvs_direct_token_secret".to_string());
+        let dbg = format!("{:?}", source);
+        assert!(!dbg.contains("hvs_direct_token_secret"));
+        assert!(dbg.contains("redacted"));
+    }
+
+    #[test]
+    fn auth_source_debug_redacts_approle() {
+        let source = AuthSource::AppRole {
+            role_id: "role_123".to_string(),
+            secret_id: "secret_456_confidential".to_string(),
+        };
+        let dbg = format!("{:?}", source);
+        assert!(!dbg.contains("secret_456_confidential"));
+        assert!(dbg.contains("role_123"));
+        assert!(dbg.contains("redacted"));
+    }
+
+    #[test]
+    fn auth_source_debug_redacts_kubernetes() {
+        let source = AuthSource::Kubernetes {
+            role: "app-role".to_string(),
+            sa_jwt: "eyJhbGciOiJSUzI1NiIsImtpZCI6InNlY3JldCJ9".to_string(),
+        };
+        let dbg = format!("{:?}", source);
+        assert!(!dbg.contains("eyJhbGciOiJSUzI1NiIsImtpZCI6InNlY3JldCJ9"));
+        assert!(dbg.contains("app-role"));
+        assert!(dbg.contains("redacted"));
+    }
+
+    #[test]
+    fn cached_token_debug_redacts() {
+        let ct = CachedToken {
+            token: "hvs_cached_secret_token".to_string(),
+            refresh_at: Instant::now(),
+        };
+        let dbg = format!("{:?}", ct);
+        assert!(!dbg.contains("hvs_cached_secret_token"));
+        assert!(dbg.contains("redacted"));
     }
 }

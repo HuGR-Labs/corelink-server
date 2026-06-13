@@ -104,27 +104,48 @@ async function hashForLog(value: string): Promise<string> {
 // ──────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Per-isolate random HMAC key for {@link timingSafeEqual}.
+ *
+ * F22 (2026-06-13 audit): the previous implementation used an all-zero key,
+ * which offers no confidentiality if an attacker can observe the HMAC output.
+ * The key MUST be a real secret. It is generated once per isolate from a CSPRNG
+ * and never leaves this module; HMAC-ing both inputs under a key the attacker
+ * does not know makes the post-HMAC byte comparison non-forgeable.
+ */
+let hmacKeyPromise: Promise<CryptoKey> | undefined;
+function getHmacKey(): Promise<CryptoKey> {
+  if (hmacKeyPromise === undefined) {
+    const raw = crypto.getRandomValues(new Uint8Array(32));
+    hmacKeyPromise = crypto.subtle.importKey(
+      "raw",
+      raw,
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+  }
+  return hmacKeyPromise;
+}
+
+/**
  * Constant-time bytes equality.
- * Uses HMAC-SHA256 on both inputs before comparison to prevent
- * timing side-channels from implementation differences in string comparison.
+ *
+ * HMAC-SHA256s both inputs under a per-isolate random key, then XOR-compares
+ * the two 32-byte tags. Because HMAC-SHA256 always yields a fixed 32-byte
+ * output regardless of input length, NO length branch is taken — equal and
+ * unequal-length inputs run the exact same two HMACs and the same fixed-width
+ * compare, so there is no length-equality timing oracle (F22). The random key
+ * (not a zero key) means the post-HMAC tags cannot be forged or replayed.
  * Equivalent to Rust's `subtle::ConstantTimeEq`.
  */
 async function timingSafeEqual(a: string, b: string): Promise<boolean> {
   const enc = new TextEncoder();
   const aBytes = enc.encode(a);
   const bBytes = enc.encode(b);
-  if (aBytes.length !== bBytes.length) {
-    // Consume constant work to prevent length-based timing
-    await crypto.subtle.digest("SHA-256", aBytes);
-    return false;
-  }
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new Uint8Array(32),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
+  const key = await getHmacKey();
+  // Both HMACs run unconditionally regardless of length — HMAC-SHA256 emits a
+  // fixed 32-byte tag, so the comparison below is always over equal widths and
+  // there is no length-dependent fast path.
   const [sigA, sigB] = await Promise.all([
     crypto.subtle.sign("HMAC", key, aBytes),
     crypto.subtle.sign("HMAC", key, bBytes),
@@ -503,6 +524,23 @@ export class CoreLinkServer implements DurableObject {
           R2_AC_REGION: this.env.R2_AC_REGION ?? "",
           R2_CHUNK_BUCKET: this.env.R2_CHUNK_BUCKET ?? "",
           R2_CHUNK_REGION: this.env.R2_CHUNK_REGION ?? "",
+          // F7/F8 (2026-06-13 audit) — CAS residency. The container reads
+          // R2_CAS_REGION/R2_CAS_BUCKET (`routes/cas.rs:125-126`) but they were
+          // NOT forwarded, so the F7 residency fix (set R2_CAS_REGION per
+          // regional env) would have silently no-op'd: the operator sets the
+          // var, deploy succeeds, container keeps keying CAS under "iad". Each
+          // [env.prod-<region>].vars now sets R2_CAS_REGION so EU/regional CAS
+          // bytes key to their own region. Absent/empty → container defaults to
+          // IAD (corelink-cas-prod / iad).
+          R2_CAS_REGION: this.env.R2_CAS_REGION ?? "",
+          R2_CAS_BUCKET: this.env.R2_CAS_BUCKET ?? "",
+          // F8 — remaining container-read env vars missing from the forward
+          // list: the AC R2 bucket prefix (`dsr/adapter_r2_ac.rs:68`) and the
+          // Turborepo bucket (`storage/r2_kv.rs:178`). Unset in prod today
+          // (defaults match intended values), but any operator override would
+          // silently no-op without these — the ERASURE_SALT_KEY-class bug.
+          R2_AC_BUCKET_PREFIX: this.env.R2_AC_BUCKET_PREFIX ?? "",
+          R2_TURBO_BUCKET: this.env.R2_TURBO_BUCKET ?? "",
         },
       });
 

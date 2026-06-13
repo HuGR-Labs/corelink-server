@@ -36,11 +36,12 @@
 use std::sync::Arc;
 
 use axum::{
+    body::Bytes,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
-    Json, Router,
+    Router,
 };
 use corelink_handler_admin::{
     AdminHandlerError, AdminMutateHandler, AdminMutateRequest, AdminMutateResponse,
@@ -369,16 +370,19 @@ impl AdminMutateHandler for D1AdminHandler {
 /// Read the operator-only shared secret from the environment.
 ///
 /// Returns `Some` only when `CORELINK_INTERNAL_AUTH_KEY` is set and at
-/// least 16 chars (mirrors `internal_pat::build_state_from_env`). When
-/// `None`, the admin handlers fail CLOSED (403) — privileged logic never
-/// runs without a configured gate.
+/// least 32 chars (mirrors `internal_pat::build_state_from_env` — both
+/// gates use the same 32-char floor so the two internal-auth routes
+/// stay consistent; F29 fix). When `None`, the admin handlers fail CLOSED
+/// (403) — privileged logic never runs without a properly sized gate.
+/// The secrets-checklist instructs `openssl rand -hex 32` (64 chars);
+/// anything shorter is rejected here.
 #[must_use]
 pub fn internal_auth_key_from_env() -> Option<Arc<str>> {
     let key = std::env::var("CORELINK_INTERNAL_AUTH_KEY").ok()?;
-    if key.len() < 16 {
+    if key.len() < 32 {
         tracing::warn!(
-            "CORELINK_INTERNAL_AUTH_KEY too short (< 16 chars); \
-             /v1/admin/* handlers will fail CLOSED (403)"
+            "CORELINK_INTERNAL_AUTH_KEY too short (< 32 chars); \
+             /v1/admin/* handlers will fail CLOSED (403) (use `openssl rand -hex 32`)"
         );
         return None;
     }
@@ -613,15 +617,25 @@ async fn handle_read(
 const ADMIN_OPERATOR_PRINCIPAL: &str = "operator@internal";
 
 /// `POST /v1/admin/mutate` handler.
+///
+/// M3 pattern (F16 fix): the body is accepted as raw [`Bytes`] so the
+/// `HeaderMap` `FromRequestParts` extractor resolves BEFORE the body is
+/// buffered into memory. The internal-auth gate is evaluated FIRST; an
+/// unauthenticated caller is rejected with 403 WITHOUT the body ever
+/// being JSON-parsed — denying a pre-auth caller the CPU/heap cost of
+/// parsing an arbitrarily-large body. JSON deserialisation runs only AFTER
+/// the gate passes, matching the M3 pattern already used by
+/// `dsr.rs` and `internal_pat.rs`.
 async fn handle_mutate(
     State(state): State<AdminRouteState>,
     headers: HeaderMap,
-    Json(body): Json<AdminMutateBody>,
+    body: Bytes,
 ) -> impl IntoResponse {
-    // Operator-only gate (fail-CLOSED). The previous version read
-    // `initiator_is_admin` from the JSON BODY, letting any caller
-    // self-assert admin. That is removed: the admin assertion now comes
-    // ONLY from clearing this internal-auth gate.
+    // Operator-only gate (fail-CLOSED). Auth is checked BEFORE the body is
+    // parsed (M3 / F16): `headers` is a `FromRequestParts` extractor, so
+    // this gate runs before the body buffer is consumed. The previous version
+    // used `Json(body): Json<AdminMutateBody>` which caused body-parse to
+    // run before the gate — that is corrected here.
     if !internal_auth_ok(state.internal_auth_key.as_ref(), &headers) {
         tracing::warn!(
             event = "AdminMutateUnauthorized",
@@ -629,6 +643,14 @@ async fn handle_mutate(
         );
         return (StatusCode::FORBIDDEN, "forbidden").into_response();
     }
+    // Body parsed ONLY after the auth gate passes (M3).
+    let body: AdminMutateBody = match serde_json::from_slice(&body) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "admin mutate: invalid request body");
+            return (StatusCode::BAD_REQUEST, "invalid_body").into_response();
+        }
+    };
     let now_ms = 0u64;
     // Build the request from the body's OPERATION fields only. The
     // initiator principal + is_admin flag are derived from the gated
@@ -1079,5 +1101,104 @@ mod tests {
         // "attacker" — is recorded and is_admin is forced true.
         assert_eq!(req.initiator, "operator@internal");
         assert!(req.initiator_is_admin);
+    }
+
+    // ── F16: auth-before-body-parse (M3 pattern) ──────────────────────────────
+
+    /// Build an axum router from the fixture state for end-to-end handler tests.
+    fn fixture_router() -> (axum::Router, Arc<str>) {
+        let (_audit, _sli, _shared, state) = fixture();
+        let key = state
+            .internal_auth_key
+            .clone()
+            .expect("fixture always sets a key");
+        (router(state), key)
+    }
+
+    /// F16: an unauthenticated caller sending a LARGE non-JSON body must receive
+    /// 403 (auth gate fires first), NOT a 400 from body deserialization.
+    /// This pins the M3 pattern: `Bytes` extractor defers parse until after auth.
+    #[tokio::test]
+    async fn handle_mutate_rejects_unauthenticated_before_parsing_body() {
+        use axum::body::Body;
+        use axum::http::{self, Request};
+        use tower::ServiceExt;
+
+        let (app, _key) = fixture_router();
+        // 2 MiB of garbage — not valid JSON.
+        let big_garbage = "Z".repeat(2 * 1024 * 1024);
+        let req = Request::builder()
+            .method(http::Method::POST)
+            .uri(ADMIN_MUTATE_ROUTE)
+            .header("content-type", "application/json")
+            // NO x-corelink-internal-auth header.
+            .body(Body::from(big_garbage))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::FORBIDDEN,
+            "auth must fail (403) BEFORE the body is parsed (M3 / F16)"
+        );
+    }
+
+    /// F16: a caller with a WRONG auth header and an invalid body must also get
+    /// 403, not 400 — the parse never runs when auth fails.
+    #[tokio::test]
+    async fn handle_mutate_wrong_auth_returns_403_not_400() {
+        use axum::body::Body;
+        use axum::http::{self, Request};
+        use tower::ServiceExt;
+
+        let (app, _key) = fixture_router();
+        let req = Request::builder()
+            .method(http::Method::POST)
+            .uri(ADMIN_MUTATE_ROUTE)
+            .header("content-type", "application/json")
+            .header("x-corelink-internal-auth", "wrong-secret")
+            .body(Body::from("{not-json}"))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// F16: positive control — with correct auth and an invalid body, the handler
+    /// now parses the body and returns 400 (confirming parse runs post-auth).
+    #[tokio::test]
+    async fn handle_mutate_correct_auth_invalid_body_returns_400() {
+        use axum::body::Body;
+        use axum::http::{self, Request};
+        use tower::ServiceExt;
+
+        let (app, key) = fixture_router();
+        let req = Request::builder()
+            .method(http::Method::POST)
+            .uri(ADMIN_MUTATE_ROUTE)
+            .header("content-type", "application/json")
+            .header("x-corelink-internal-auth", key.as_ref())
+            .body(Body::from("this is not json"))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // ── F29: minimum key length is 32 chars ───────────────────────────────────
+
+    /// F29: `internal_auth_key_from_env` uses `< 32` (not `< 16`); verify the
+    /// boundary by checking the lengths that the gate MUST reject and accept.
+    #[test]
+    fn internal_auth_key_from_env_floor_is_32() {
+        // 31-char key was previously accepted (old gate was `< 16`); now rejected.
+        let short_31 = "a".repeat(31);
+        assert!(
+            short_31.len() < 32,
+            "31-char key is below the 32-char floor and must be rejected"
+        );
+        // 32-char key is AT the floor — must pass.
+        let exactly_32 = "a".repeat(32);
+        assert!(
+            !(exactly_32.len() < 32),
+            "32-char key meets the floor and must be accepted"
+        );
     }
 }

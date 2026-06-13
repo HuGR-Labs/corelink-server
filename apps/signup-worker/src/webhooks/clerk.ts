@@ -74,11 +74,21 @@ export interface AutoProvisionEnv {
 
   /**
    * Secret key for deriving the per-DSR erasure salt (HMAC-SHA256 over the
-   * deterministic `dsr_id`). Yields an unlinkable pseudonymization salt. When
-   * absent (dev/CI), a NON-secret `SHA-256(dsr_id)` fallback is used. Bound via
-   * `wrangler secret put ERASURE_SALT_KEY`.
+   * deterministic `dsr_id`). Yields an unlinkable pseudonymization salt.
+   * **Required in prod** — when absent in a prod environment the handler
+   * fails closed (500 → Svix retries) rather than silently falling back to
+   * a predictable non-secret SHA-256 that breaks GDPR pseudonymization.
+   * In non-prod environments (dev/CI) the predictable fallback is still used
+   * so tests can run without secrets. Bound via `wrangler secret put ERASURE_SALT_KEY`.
    */
   ERASURE_SALT_KEY?: string;
+
+  /**
+   * Deployment environment name (e.g. `"prod"`, `"staging"`, `"dev"`).
+   * Used to enforce that production-required secrets like `ERASURE_SALT_KEY`
+   * are present before driving GDPR erasure. Bound via `[vars]` in wrangler.toml.
+   */
+  ENVIRONMENT?: string;
 }
 
 /** Clerk `user.deleted` webhook payload (account-deletion → GDPR erasure). */
@@ -132,12 +142,21 @@ export async function deterministicDsrId(clerkUserId: string): Promise<string> {
 
 /**
  * 32-byte erasure salt (hex). `HMAC-SHA256(ERASURE_SALT_KEY, dsr_id)` when the
- * key is set (secret → unlinkable pseudonymization); else `SHA-256(dsr_id)`
- * (dev/CI fallback — deterministic but NOT secret).
+ * key is set (secret → unlinkable pseudonymization per GDPR Art. 4(5)).
+ *
+ * Fail-closed in prod (F9, CAA-360 2026-06-13): when `key` is absent and
+ * `environment` starts with `"prod"`, throws an error so the caller returns 500
+ * and Svix retries the erasure — the right-to-erasure obligation stays alive
+ * while the operator misconfiguration is corrected.
+ *
+ * In non-prod environments (dev/CI) the deterministic `SHA-256("erasure-salt:"
+ * + dsr_id)` fallback is still used so tests run without secrets; it is NOT
+ * secret and MUST NOT reach production.
  */
 export async function deriveErasureSalt(
   dsrId: string,
   key: string | undefined,
+  environment?: string,
 ): Promise<string> {
   if (key && key.length > 0) {
     const k = await crypto.subtle.importKey(
@@ -150,6 +169,14 @@ export async function deriveErasureSalt(
     const sig = await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(dsrId));
     return bytesToHex(sig);
   }
+  // ERASURE_SALT_KEY absent — fail CLOSED in prod (the predictable fallback
+  // breaks GDPR pseudonymization unlinkability).
+  if (environment && environment.startsWith("prod")) {
+    throw new Error(
+      "ERASURE_SALT_KEY is not configured — refusing to derive a predictable erasure salt in prod (fail-CLOSED)",
+    );
+  }
+  // Non-prod fallback: deterministic but NOT secret. Never reaches production.
   const d = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(`erasure-salt:${dsrId}`),
@@ -160,15 +187,19 @@ export async function deriveErasureSalt(
 /**
  * Build the `dsr.queued.v1` erasure message for a deleted Clerk user. Pure
  * given its inputs (deterministic `dsr_id` + salt) → fully testable + idempotent.
+ *
+ * Throws when `saltKey` is absent and `environment` starts with `"prod"` (F9,
+ * CAA-360 2026-06-13) — the caller must surface this as a 500 for Svix retry.
  */
 export async function buildErasureQueueMessage(input: {
   clerkUserId: string;
   tenantId: string;
   nowMs: number;
   saltKey: string | undefined;
+  environment?: string;
 }): Promise<DsrQueuedV1> {
   const dsrId = await deterministicDsrId(input.clerkUserId);
-  const saltHex = await deriveErasureSalt(dsrId, input.saltKey);
+  const saltHex = await deriveErasureSalt(dsrId, input.saltKey, input.environment);
   return {
     schema: "dev.hugr.corelink.dsr.queued.v1",
     dsr_id: dsrId,
@@ -232,12 +263,27 @@ export async function handleUserDeleted(
     );
   }
 
-  const msg = await buildErasureQueueMessage({
-    clerkUserId,
-    tenantId,
-    nowMs: Date.now(),
-    saltKey: env.ERASURE_SALT_KEY,
-  });
+  let msg: DsrQueuedV1;
+  try {
+    msg = await buildErasureQueueMessage({
+      clerkUserId,
+      tenantId,
+      nowMs: Date.now(),
+      saltKey: env.ERASURE_SALT_KEY,
+      environment: env.ENVIRONMENT,
+    });
+  } catch (saltErr) {
+    // F9 (CAA-360 2026-06-13): ERASURE_SALT_KEY absent in prod → fail CLOSED.
+    // Return 500 so Svix retries — the erasure obligation stays alive until
+    // the operator provisions the secret.
+    console.error(
+      `[clerk-webhook] erasure salt derivation failed for tenant=${tenantId} svix=${svixId}: ${String(saltErr)}`,
+    );
+    return new Response(
+      JSON.stringify({ ok: false, error: "erasure_salt_key_unconfigured" }),
+      { status: 500, headers: { "content-type": "application/json" } },
+    );
+  }
   await env.DSR_QUEUE.send(msg);
   // dsr_id is a pseudonymous id; tenant_id is not secret. erasure_salt is NEVER logged.
   console.log(

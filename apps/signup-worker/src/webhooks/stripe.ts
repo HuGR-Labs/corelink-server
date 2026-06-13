@@ -703,10 +703,19 @@ async function deactivateTierSelectionBySubscription(
  * of `tier`, so without this a tenant who upgrades/downgrades inside Stripe keeps
  * their old entitlement tier forever.
  *
- * Bare UPDATE keyed by customer; only touches the `tier` column so it never
- * resurrects a canceled/past_due subscription_state. Idempotent (writing the
+ * Keyed by customer; only touches the `tier` column. Idempotent (writing the
  * same tier twice is a no-op). Never called with an unknown tier (caller gates
  * on a non-null PaidTier — fail-safe).
+ *
+ * F35 FIX: `AND subscription_state = 'active'` is added so this is a no-op on
+ * rows that are already inactive/canceled. Without the filter, a concurrent
+ * `customer.subscription.updated` event that both changes the price AND cancels
+ * the subscription (both paths flushed via `Promise.all`) writes a stale tier
+ * onto an inactive row: the access gate (quota.ts `subscription_state='active'`)
+ * is unaffected, but the row carries an incorrect tier label that misleads
+ * forensic/audit queries. The filter makes the tier update a no-op when
+ * `deactivateTierSelectionByCustomer` wins the D1 race (or has already run),
+ * preventing stale tier data on inactive rows.
  */
 async function updateTierSelectionTierByCustomer(
     db: D1DatabaseLike,
@@ -716,7 +725,8 @@ async function updateTierSelectionTierByCustomer(
         .prepare(
             `UPDATE tier_selections
              SET tier = ?1
-             WHERE stripe_customer_id = ?2`,
+             WHERE stripe_customer_id = ?2
+               AND subscription_state = 'active'`,
         )
         .bind(opts.tier, opts.stripeCustomerId)
         .run();
@@ -1224,13 +1234,26 @@ export async function handleStripeWebhook(
                     }),
                 );
                 // 2. CANONICAL gate: flip tier_selections away from 'active'.
-                if (typeof stripeCustomerId === "string" && stripeCustomerId) {
-                    requiredWrites.push(
-                        deactivateTierSelectionByCustomer(db, {
-                            stripeCustomerId,
-                        }),
-                    );
-                }
+                //
+                // F34 FIX: mirror the pattern used by `customer.subscription.updated`
+                // (lines above) and `customer.subscription.deleted`: prefer the
+                // customer key when present; fall back to the subscription id
+                // (resolved to the tenant via a correlated subquery through
+                // `tenant_billing`) when `customer` is absent from the invoice
+                // payload. Without this fallback, a terminal `invoice.payment_failed`
+                // whose payload omits `customer` leaves `tier_selections.subscription_state`
+                // as 'active', granting the tenant indefinite paid-tier access despite
+                // a definitive payment failure. We always have `stripeSubscriptionId`
+                // at this point (guarded above) so the fallback is always available.
+                requiredWrites.push(
+                    typeof stripeCustomerId === "string" && stripeCustomerId
+                        ? deactivateTierSelectionByCustomer(db, {
+                              stripeCustomerId,
+                          })
+                        : deactivateTierSelectionBySubscription(db, {
+                              stripeSubscriptionId,
+                          }),
+                );
             }
 
             emitEvent = {

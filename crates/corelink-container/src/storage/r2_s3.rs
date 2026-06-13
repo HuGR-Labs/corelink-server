@@ -243,10 +243,12 @@ impl R2S3Client {
 
     /// Compute the R2 object key for a blob.
     ///
-    /// Key format: `<region>/<tenant_prefix_16>/<digest>`.
-    /// The tenant prefix is derived via `derive_prefix` using a zero
-    /// TDK (test/dev mode). For production, a real TDK is loaded from
-    /// env and threaded via [`R2CasHandler::with_tdk`].
+    /// Key format: `<region>/<tenant_prefix_16>/<digest>`. The
+    /// `tenant_prefix` is computed by the caller; on the production path
+    /// it is always `derive_prefix(secret_tdk, tenant_uuid)` (the
+    /// handlers fail closed without a TDK — F1/F2). `region` is the
+    /// handler's residency region (F7), so each regional env keys its
+    /// objects under its own region.
     #[must_use]
     pub fn blob_key(region: &str, tenant_prefix: &str, digest: &str) -> String {
         format!("{region}/{tenant_prefix}/{digest}")
@@ -302,36 +304,16 @@ impl R2CasHandler {
 
     /// Derive the R2 key for a (tenant, digest) pair.
     ///
-    /// When no TDK is configured (test mode), falls back to `tenant`
-    /// as a raw 16-char pad.
+    /// The tenant prefix is ALWAYS `derive_prefix(tdk, tenant_uuid)` —
+    /// an unpredictable, secret-keyed HMAC namespace (layer 5 of
+    /// `INV-TENANT-ISOLATION`). The handler cannot be constructed
+    /// without a TDK on the production path (see
+    /// [`build_r2_cas_handler_from_env`], which fails closed when
+    /// `R2_TDK_HEX` is unset) — so the raw-padded public-prefix
+    /// fallback used by simple non-UUID test fixtures is gated behind
+    /// `#[cfg(test)]` and is unreachable in production (F1/F2).
     fn r2_key(&self, tenant: &str, digest: &str) -> String {
-        let prefix = match &self.tdk {
-            Some(tdk) => {
-                // Attempt to parse tenant as UUID; fall back to raw
-                // string prefix on parse error (test fixture tenants
-                // are often simple strings, not UUIDs).
-                if let Ok(uid) = Uuid::try_parse(tenant) {
-                    derive_prefix(tdk, uid).to_string()
-                } else {
-                    // Non-UUID tenant (test mode) — use raw, padded.
-                    let mut p = tenant.to_owned();
-                    p.truncate(16);
-                    while p.len() < 16 {
-                        p.push('0');
-                    }
-                    p
-                }
-            }
-            None => {
-                // No TDK — dev/test mode: use padded tenant.
-                let mut p = tenant.to_owned();
-                p.truncate(16);
-                while p.len() < 16 {
-                    p.push('0');
-                }
-                p
-            }
-        };
+        let prefix = tenant_prefix(self.tdk.as_ref(), tenant);
         R2S3Client::blob_key(&self.cas_region, &prefix, digest)
     }
 
@@ -345,6 +327,73 @@ impl R2CasHandler {
         self.sli.observe(SliObservation::new(avail, is_error, 0));
         self.sli.observe(SliObservation::new(lat, is_error, 0));
     }
+}
+
+/// Compute the per-tenant 16-char R2 key prefix (layer 5 of
+/// `INV-TENANT-ISOLATION`).
+///
+/// The production handlers are ALWAYS constructed with a secret TDK
+/// (`build_r2_*_handler_from_env` fail closed otherwise — F1/F2), so
+/// the live path always takes the `Some(tdk)` arm and HMACs the FULL
+/// tenant id under the secret key: an unpredictable, ~96-bit,
+/// collision-resistant namespace.
+///
+/// The public, predictable raw-padded fallback (a 16-char prefix of
+/// the tenant string) exists ONLY for unit-test fixtures whose tenant
+/// is a simple non-UUID string (e.g. `"t1"`); it is gated behind
+/// `#[cfg(test)]` and is unreachable in production.
+fn tenant_prefix(tdk: Option<&TenantDerivationKey>, tenant: &str) -> String {
+    match tdk {
+        Some(tdk) => match Uuid::try_parse(tenant) {
+            Ok(uid) => derive_prefix(tdk, uid).to_string(),
+            #[cfg(test)]
+            Err(_) => raw_padded_prefix(tenant),
+            // In production every tenant id is a canonical UUIDv7. A
+            // non-UUID tenant reaching the real handler is a SEV-class
+            // invariant violation, not a degrade — refuse to address
+            // it under a public/predictable prefix. Emitting an empty
+            // prefix yields an unusable, isolated key space (`<region>//<digest>`)
+            // and a loud structured error, never silent cross-tenant
+            // co-residence.
+            #[cfg(not(test))]
+            Err(_) => {
+                tracing::error!(
+                    "tenant id is not a canonical UUID on the production storage path; \
+                     refusing to derive a public tenant prefix (INV-TENANT-ISOLATION)"
+                );
+                String::new()
+            }
+        },
+        // No TDK is only reachable under `#[cfg(test)]`: the production
+        // builders fail closed when `R2_TDK_HEX` is unset, so the real
+        // handler is never constructed with `tdk = None` (F1/F2).
+        #[cfg(test)]
+        None => raw_padded_prefix(tenant),
+        #[cfg(not(test))]
+        None => {
+            tracing::error!(
+                "R2 storage handler constructed without a TDK on the production path; \
+                 refusing to derive a public tenant prefix (INV-TENANT-ISOLATION)"
+            );
+            String::new()
+        }
+    }
+}
+
+/// Public raw-padded 16-char prefix — TEST FIXTURES ONLY.
+///
+/// Truncates/pads the raw tenant string to exactly 16 chars. This is a
+/// PUBLIC, predictable namespace and must NEVER be used on the
+/// production path (see F1/F2); it lets unit tests use simple non-UUID
+/// tenant ids (`"t1"`, `"tenant-abc"`) without a real TDK.
+#[cfg(test)]
+fn raw_padded_prefix(tenant: &str) -> String {
+    let mut p = tenant.to_owned();
+    p.truncate(16);
+    while p.len() < 16 {
+        p.push('0');
+    }
+    p
 }
 
 /// Enforce the CAS content-addressing invariant
@@ -596,7 +645,22 @@ pub async fn build_r2_cas_handler_from_env(
     cas_region: &str,
 ) -> Option<Result<R2CasHandler, String>> {
     let env = super::StorageEnv::from_env()?;
-    let tdk_bytes = load_tdk_from_env();
+    // FAIL CLOSED: storage creds are present, so this is the production
+    // data plane — the secret TDK is MANDATORY (F1/F2). Without it the
+    // tenant prefix would degrade to a public, predictable scheme and
+    // enable same-millisecond cross-tenant blob co-residence. Refuse to
+    // construct the handler (the route will not mount) and emit a loud,
+    // structured error rather than serving in the silently-degraded
+    // public-prefix mode.
+    let Some(tdk_bytes) = load_tdk_from_env() else {
+        tracing::error!(
+            "R2_TDK_HEX required for production tenant prefixing but is unset/invalid; \
+             refusing to mount the R2 CAS handler (fail-closed, INV-TENANT-ISOLATION)"
+        );
+        return Some(Err(
+            "R2_TDK_HEX required for production tenant prefixing".to_owned(),
+        ));
+    };
     let client = match R2S3Client::new(&env, bucket).await {
         Ok(c) => c,
         Err(e) => return Some(Err(e)),
@@ -604,7 +668,11 @@ pub async fn build_r2_cas_handler_from_env(
     let audit = Arc::new(InMemoryAuditSink::new());
     let sli = Arc::new(InMemorySliObserver::new());
     Some(Ok(R2CasHandler::new(
-        client, cas_region, tdk_bytes, audit, sli,
+        client,
+        cas_region,
+        Some(tdk_bytes),
+        audit,
+        sli,
     )))
 }
 
@@ -662,30 +730,12 @@ impl R2AcHandler {
     }
 
     /// Derive the R2 key for a (tenant, action_digest) pair. Mirrors
-    /// `R2CasHandler::r2_key`; the AC bucket uses the same layout.
+    /// `R2CasHandler::r2_key`; the AC bucket uses the same layout and
+    /// the same always-HMAC tenant prefix (F1/F2). The handler cannot
+    /// be built without a TDK on the production path (see
+    /// [`build_r2_ac_handler_from_env`]).
     fn r2_key(&self, tenant: &str, action_digest: &str) -> String {
-        let prefix = match &self.tdk {
-            Some(tdk) => {
-                if let Ok(uid) = Uuid::try_parse(tenant) {
-                    derive_prefix(tdk, uid).to_string()
-                } else {
-                    let mut p = tenant.to_owned();
-                    p.truncate(16);
-                    while p.len() < 16 {
-                        p.push('0');
-                    }
-                    p
-                }
-            }
-            None => {
-                let mut p = tenant.to_owned();
-                p.truncate(16);
-                while p.len() < 16 {
-                    p.push('0');
-                }
-                p
-            }
-        };
+        let prefix = tenant_prefix(self.tdk.as_ref(), tenant);
         R2S3Client::blob_key(&self.ac_region, &prefix, action_digest)
     }
 
@@ -849,15 +899,51 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
         // comment in `<R2AcHandler as AcLookupHandler>::lookup` above.
         let handle = tokio::runtime::Handle::current();
 
-        // `durable=true` mirrors `InMemoryAcHandler::update` — only set
-        // on a fresh insert. Probe existence via GET before PUT;
-        // any GET error other than NoSuchKey is treated as
-        // pre-existing (conservative — never claim durable on
-        // ambiguous state).
-        let pre_existed = matches!(
-            tokio::task::block_in_place(|| handle.block_on(self.client.get(&key))),
-            Ok(Some(_))
-        );
+        // AC IMMUTABILITY INVARIANT (F5): the Action Cache maps an
+        // `action_digest` (hash of the build *action*, not its result)
+        // to a result payload. AC bytes are therefore NOT
+        // self-verifying — a divergent re-PUT must be REFUSED, never
+        // silently overwritten, or any write-capable token can poison a
+        // proven cache result for every subsequent build that hits the
+        // same digest (supply-chain compromise).
+        //
+        // GET-and-compare BEFORE any PUT (mirrors
+        // `InMemoryAcHandler::update`):
+        //   - existing != payload → `DivergentBody` (409); NO PUT.
+        //   - existing == payload → idempotent no-op (`durable=false`).
+        //   - absent              → PUT (`durable=true`).
+        //   - ambiguous GET error → fail CLOSED (`Internal`); never
+        //     blind-overwrite on an unknown prior state.
+        let existing =
+            tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
+        match existing {
+            Ok(Some(prior)) if prior != req.result_payload => {
+                warn!(
+                    key = %key,
+                    "R2AcHandler::update divergent body — refusing to overwrite a \
+                     proven AC result (INV-AC-IMMUTABILITY)"
+                );
+                self.emit_update_sli(false);
+                return Err(AcHandlerError::DivergentBody {
+                    tenant: req.tenant,
+                    action_digest: req.action_digest,
+                });
+            }
+            Ok(Some(_)) => {
+                // Byte-identical re-PUT → idempotent no-op. The proven
+                // bytes are already durable; do not re-PUT.
+                self.emit_update_sli(false);
+                return Ok(AcUpdateResponse::new(req.action_digest, false));
+            }
+            Ok(None) => { /* absent — fall through to the PUT below */ }
+            Err(e) => {
+                // Ambiguous prior state: fail closed rather than risk a
+                // blind overwrite of a proven result.
+                warn!(error = %e, key = %key, "R2AcHandler::update pre-PUT GET error");
+                self.emit_update_sli(true);
+                return Err(AcHandlerError::Internal(e));
+            }
+        }
 
         let result = tokio::task::block_in_place(|| {
             handle.block_on(self.client.put(&key, req.result_payload))
@@ -875,7 +961,8 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
                     ))
                     .map_err(AcHandlerError::AuditFailed)?;
                 self.emit_update_sli(false);
-                Ok(AcUpdateResponse::new(req.action_digest, !pre_existed))
+                // Fresh insert (the `None` arm above) → durable=true.
+                Ok(AcUpdateResponse::new(req.action_digest, true))
             }
             Err(e) => {
                 warn!(error = %e, key = %key, "R2AcHandler::update error");
@@ -903,7 +990,20 @@ pub async fn build_r2_ac_handler_from_env(
     ac_region: &str,
 ) -> Option<Result<R2AcHandler, String>> {
     let env = super::StorageEnv::from_env()?;
-    let tdk_bytes = load_tdk_from_env();
+    // FAIL CLOSED: see `build_r2_cas_handler_from_env`. The AC key space
+    // is NOT content-addressed (AC bytes are not self-verifying), so a
+    // predictable-prefix collision is even more dangerous here (F1/F5):
+    // a same-ms prefix collision lets one tenant poison another's
+    // ActionResult. The secret TDK is mandatory on the production path.
+    let Some(tdk_bytes) = load_tdk_from_env() else {
+        tracing::error!(
+            "R2_TDK_HEX required for production tenant prefixing but is unset/invalid; \
+             refusing to mount the R2 AC handler (fail-closed, INV-TENANT-ISOLATION)"
+        );
+        return Some(Err(
+            "R2_TDK_HEX required for production tenant prefixing".to_owned(),
+        ));
+    };
     let client = match R2S3Client::new(&env, bucket).await {
         Ok(c) => c,
         Err(e) => return Some(Err(e)),
@@ -911,13 +1011,19 @@ pub async fn build_r2_ac_handler_from_env(
     let audit = Arc::new(corelink_handler_ac::InMemoryAuditSink::new());
     let sli = Arc::new(corelink_handler_ac::InMemorySliObserver::new());
     Some(Ok(R2AcHandler::new(
-        client, ac_region, tdk_bytes, audit, sli,
+        client,
+        ac_region,
+        Some(tdk_bytes),
+        audit,
+        sli,
     )))
 }
 
 /// Load the tenant derivation key from `R2_TDK_HEX` env var (64 hex chars =
-/// 32 bytes). Returns `None` when not set, causing `R2CasHandler` to use
-/// the raw-padded fallback (dev/test mode).
+/// 32 bytes). Returns `None` when unset/invalid; on the production storage
+/// path a `None` here makes `build_r2_*_handler_from_env` FAIL CLOSED (the
+/// handler is not constructed and the route does not mount) rather than
+/// degrade to a public-prefix scheme (F1/F2).
 fn load_tdk_from_env() -> Option<Zeroizing<[u8; 32]>> {
     let hex_str = std::env::var("R2_TDK_HEX").ok()?;
     let hex_str = hex_str.trim();
@@ -1159,5 +1265,139 @@ mod tests {
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
         R2CasHandler::new(client, region, None, audit, sli)
+    }
+
+    /// A non-zero fake 32-byte TDK for tests that must exercise the
+    /// PRODUCTION always-HMAC prefix path (`Some(tdk)` arm).
+    fn fake_tdk() -> Zeroizing<[u8; 32]> {
+        Zeroizing::new([0x5au8; 32])
+    }
+
+    /// Build an `R2CasHandler` with a real (fake) TDK over a stub S3
+    /// client — exercises the production `Some(tdk)` key-derivation arm.
+    async fn make_test_handler_with_tdk(region: &str) -> R2CasHandler {
+        let stub_env = StorageEnv {
+            r2_endpoint: "https://localhost:1".to_owned(),
+            r2_access_key_id: "test".to_owned(),
+            r2_secret_access_key: "test".to_owned(),
+            cloudflare_account_id: "test".to_owned(),
+            cf_api_token: "test".to_owned(),
+            d1_database_id: "test".to_owned(),
+        };
+        let client = R2S3Client::new(&stub_env, "test-bucket")
+            .await
+            .expect("stub client");
+        let audit = Arc::new(InMemoryAuditSink::new());
+        let sli = Arc::new(InMemorySliObserver::new());
+        R2CasHandler::new(client, region, Some(fake_tdk()), audit, sli)
+    }
+
+    /// Build an `R2AcHandler` over a stub S3 client (no TDK → test
+    /// raw-pad prefix; only the divergent-body/region logic is
+    /// exercised here, any S3 I/O fails against the stub).
+    async fn make_test_ac_handler(region: &str) -> R2AcHandler {
+        let stub_env = StorageEnv {
+            r2_endpoint: "https://localhost:1".to_owned(),
+            r2_access_key_id: "test".to_owned(),
+            r2_secret_access_key: "test".to_owned(),
+            cloudflare_account_id: "test".to_owned(),
+            cf_api_token: "test".to_owned(),
+            d1_database_id: "test".to_owned(),
+        };
+        let client = R2S3Client::new(&stub_env, "test-bucket")
+            .await
+            .expect("stub client");
+        let audit = Arc::new(corelink_handler_ac::InMemoryAuditSink::new());
+        let sli = Arc::new(corelink_handler_ac::InMemorySliObserver::new());
+        R2AcHandler::new(client, region, None, audit, sli)
+    }
+
+    // ---------------------------------------------------------------
+    // F1/F2 — production path ALWAYS HMACs the full tenant id
+    // ---------------------------------------------------------------
+
+    /// With a TDK configured (the production posture), a canonical UUID
+    /// tenant resolves to the secret-keyed `derive_prefix` HMAC — NOT
+    /// the public raw-padded prefix of the tenant string. This is the
+    /// regression pin for F1/F2: the predictable public prefix must
+    /// never appear on the TDK path for a UUID tenant.
+    #[tokio::test]
+    async fn r2_cas_tdk_path_uses_hmac_prefix_not_raw_tenant() {
+        let handler = make_test_handler_with_tdk("iad").await;
+        // A canonical UUIDv7-shaped tenant id.
+        let tenant = "0190abcd-1234-75ab-8def-0123456789ab";
+        let key = handler.r2_key(tenant, &"d".repeat(64));
+        let parts: Vec<&str> = key.split('/').collect();
+        assert_eq!(parts.len(), 3, "key: {key}");
+        let prefix = parts[1];
+        assert_eq!(prefix.len(), 16, "prefix must be 16 chars: {key}");
+        // The HMAC prefix must NOT be the predictable public prefix of
+        // the tenant string (the F1 raw-padded fallback).
+        let raw_public = &tenant[..16];
+        assert_ne!(
+            prefix, raw_public,
+            "production prefix leaked the public tenant-id prefix (F1/F2)"
+        );
+        // And it must equal the canonical secret-keyed derivation.
+        let expected = derive_prefix(
+            &TenantDerivationKey::from_bytes(fake_tdk()),
+            Uuid::try_parse(tenant).unwrap(),
+        )
+        .to_string();
+        assert_eq!(prefix, expected, "prefix must be derive_prefix(tdk, uuid)");
+    }
+
+    // ---------------------------------------------------------------
+    // F7 — CAS storage is residency-aware: keyed by the handler's
+    // region, never a process-global. A regional handler MUST prefix
+    // its keys with that region.
+    // ---------------------------------------------------------------
+
+    /// Each regional CAS handler keys objects under its OWN region — an
+    /// `lhr` handler must never write into the `iad` key space. This is
+    /// the invariant that makes per-env `R2_CAS_REGION` (the frozen
+    /// contract) load-bearing rather than cosmetic. If a regional env
+    /// fails to thread its region through, this fails.
+    #[tokio::test]
+    async fn r2_cas_keys_are_residency_scoped_per_region() {
+        for region in ["iad", "lhr", "sam", "nrt", "syd"] {
+            let handler = make_test_handler_with_tdk(region).await;
+            let key = handler.r2_key("0190abcd-1234-75ab-8def-0123456789ab", &"a".repeat(64));
+            assert!(
+                key.starts_with(&format!("{region}/")),
+                "CAS key for region {region} must be region-scoped (residency): {key}"
+            );
+        }
+        // A non-iad region must NOT collapse to the iad default.
+        let lhr = make_test_handler_with_tdk("lhr").await;
+        let key = lhr.r2_key("0190abcd-1234-75ab-8def-0123456789ab", &"a".repeat(64));
+        assert!(
+            !key.starts_with("iad/"),
+            "EU (lhr) CAS write fell back to the US (iad) key space: {key}"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // F5 — AC update divergent-body invariant (no silent overwrite)
+    // ---------------------------------------------------------------
+
+    /// On an AMBIGUOUS pre-PUT GET (the stub endpoint is unreachable, so
+    /// GET errors), `R2AcHandler::update` MUST fail closed with
+    /// `Internal` and NEVER fall through to a blind PUT that could
+    /// overwrite a proven AC result. This pins the F5 fail-closed branch
+    /// (a proven result is never overwritten on unknown prior state).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn r2_ac_update_fails_closed_on_ambiguous_get() {
+        use corelink_handler_ac::{AcHandlerError, AcUpdateHandler, AcUpdateRequest};
+        let handler = make_test_ac_handler("iad").await;
+        let req = AcUpdateRequest::new("t1", &"d".repeat(64), b"payload".to_vec(), "p@t1", "t1", 1);
+        let err = handler
+            .update(req)
+            .expect_err("ambiguous GET against stub must fail closed");
+        assert!(
+            matches!(err, AcHandlerError::Internal(_)),
+            "update must fail closed (Internal) on an ambiguous pre-PUT GET, \
+             never blind-overwrite — got {err:?}"
+        );
     }
 }

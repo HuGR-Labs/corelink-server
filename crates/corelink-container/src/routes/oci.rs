@@ -84,6 +84,17 @@ use crate::adapter_pat::{PatVerifier, VerifyError};
 /// the adapter-host service, NOT the end-user PAT.
 const OCI_SERVICE_PRINCIPAL: &str = "oci-adapter-host";
 
+/// Maximum number of concurrent open upload sessions per tenant (F25 guard).
+///
+/// Each open session holds an in-memory `Vec<u8>` buffer that accumulates blob
+/// chunks via `PATCH`. Without a cap, an authenticated tenant can open N sessions
+/// and feed each a large body, growing heap to N × chunk-size up to N × 5 GiB.
+/// Capping at 4 matches the Turborepo PUT concurrency limit and covers realistic
+/// multi-layer parallel push patterns (most OCI clients push 1–3 layers at once).
+/// Excess `POST /v2/<repo>/blobs/uploads/` are rejected with an error mapped to
+/// 429 by the adapter error layer.
+const OCI_MAX_OPEN_SESSIONS_PER_TENANT: usize = 4;
+
 /// Bearer-realm URL the adapter advertises in `Www-Authenticate` on a
 /// `/v2/` 401, pointing OCI clients at the `/token` exchange. Flat prod
 /// hostname per the deployment note (`corelink-oci.humangr.com`); the
@@ -156,12 +167,36 @@ fn upload_uuid_belongs_to(tenant: &TenantId, upload_uuid: &str) -> bool {
 #[async_trait]
 impl BlobStore for OciMoatStore {
     async fn open_upload(&self, tenant: &TenantId) -> PortResult<String> {
-        // Server-allocated, collision-resistant session id.
-        let uuid = format!("{}:{}", tenant.to_canonical_text(), Uuid::new_v4().simple());
-        self.uploads
+        // F25 — per-tenant open-session cap.
+        //
+        // Count how many sessions in the map belong to this tenant by checking
+        // the `<tenant-text>:` prefix (sessions are minted as
+        // `<tenant-text>:<uuid>`). Reject with an error string that the adapter
+        // maps to 429 when the count is at the cap. The check+insert is atomic
+        // because we hold the mutex for the entire operation.
+        let tenant_text = tenant.to_canonical_text();
+        let session_prefix = format!("{tenant_text}:");
+        let uuid = format!("{tenant_text}:{}", Uuid::new_v4().simple());
+        let mut g = self
+            .uploads
             .lock()
-            .map_err(|e| format!("oci upload buf poisoned: {e}"))?
-            .insert(uuid.clone(), Vec::new());
+            .map_err(|e| format!("oci upload buf poisoned: {e}"))?;
+        let open_count = g
+            .keys()
+            .filter(|k| k.starts_with(&session_prefix))
+            .count();
+        if open_count >= OCI_MAX_OPEN_SESSIONS_PER_TENANT {
+            tracing::warn!(
+                tenant_id = %tenant_text,
+                open_sessions = open_count,
+                limit = OCI_MAX_OPEN_SESSIONS_PER_TENANT,
+                "oci: per-tenant upload-session cap reached; rejecting new session (F25)"
+            );
+            return Err(format!(
+                "too many open upload sessions for tenant (limit {OCI_MAX_OPEN_SESSIONS_PER_TENANT})"
+            ));
+        }
+        g.insert(uuid.clone(), Vec::new());
         Ok(uuid)
     }
 
@@ -840,5 +875,56 @@ mod tests {
             .append_chunk(&tenant_a, &uuid, Bytes::from_static(b"x"))
             .await
             .is_ok());
+    }
+
+    #[tokio::test]
+    async fn open_upload_enforces_per_tenant_session_cap() {
+        // F25 — per-tenant open-session cap.
+        //
+        // Open OCI_MAX_OPEN_SESSIONS_PER_TENANT sessions for tenant A; the next
+        // open must fail. Tenant B is unaffected (independent counter).
+        let cas = Arc::new(StubCas::default());
+        let moat = Arc::new(MoatCache::production(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()),
+            "oci-test-cap",
+        ));
+        let store = OciMoatStore::new(moat);
+        let tenant_a = TenantId::from_uuid(Uuid::from_u128(0xAA));
+        let tenant_b = TenantId::from_uuid(Uuid::from_u128(0xBB));
+
+        // Fill tenant A's quota.
+        let mut sessions = Vec::new();
+        for _ in 0..OCI_MAX_OPEN_SESSIONS_PER_TENANT {
+            let uuid = store.open_upload(&tenant_a).await.unwrap();
+            sessions.push(uuid);
+        }
+        assert_eq!(sessions.len(), OCI_MAX_OPEN_SESSIONS_PER_TENANT);
+
+        // One more for tenant A must be rejected (cap reached).
+        let err = store.open_upload(&tenant_a).await.unwrap_err();
+        assert!(
+            err.contains("too many open upload sessions"),
+            "expected cap error, got: {err}"
+        );
+
+        // Tenant B is not affected by tenant A's sessions.
+        let b_session = store.open_upload(&tenant_b).await;
+        assert!(
+            b_session.is_ok(),
+            "tenant B must not be blocked by tenant A's sessions"
+        );
+
+        // After cancelling one of A's sessions the cap is relaxed.
+        store
+            .cancel_upload(&tenant_a, &sessions[0])
+            .await
+            .unwrap();
+        let new_session = store.open_upload(&tenant_a).await;
+        assert!(
+            new_session.is_ok(),
+            "tenant A must be able to open a new session after cancelling one"
+        );
     }
 }

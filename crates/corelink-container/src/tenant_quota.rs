@@ -173,6 +173,15 @@ impl QuotaState {
 /// op's spend under a blind overwrite. Pushing the `+ delta` into the
 /// DB's `ON CONFLICT … DO UPDATE` makes the increment atomic per row, so
 /// concurrent accruals sum instead of clobbering each other.
+///
+/// [`Self::check_and_accrue`] (F13 fix) **serializes the ceiling check with
+/// the atomic accrual** in a single DB statement, eliminating the TOCTOU
+/// over-admission window where concurrent requests can each read the same
+/// pre-accrual baseline, all pass the ceiling test, and all proceed past the
+/// cap. The default implementation falls back to the existing `get` + `accrue`
+/// two-step (same semantics as before F13); production overrides this with the
+/// serialized `UPDATE … WHERE accrued + delta <= budget RETURNING accrued`
+/// statement.
 #[axum::async_trait]
 pub trait QuotaStore: std::fmt::Debug + Send + Sync {
     /// Read a tenant's quota row. `Ok(None)` ⇒ no row yet (treated as a
@@ -200,6 +209,58 @@ pub trait QuotaStore: std::fmt::Debug + Send + Sync {
         seed_anchor_ms: i64,
         updated_at_ms: i64,
     ) -> Result<(), String>;
+
+    /// **Atomic check-and-accrue** (F13 fix): atomically increments the
+    /// accrued counter by `delta_micros` ONLY IF the result would not
+    /// exceed `monthly_budget_usd_micros`.
+    ///
+    /// Returns:
+    /// - `Ok(true)`  — the increment was applied (under the ceiling);
+    /// - `Ok(false)` — the ceiling would be exceeded (accrual was NOT
+    ///   applied; the caller must reject with 402);
+    /// - `Err(_)`    — store / transport error (the caller must reject with
+    ///   503, fail-CLOSED).
+    ///
+    /// The check-and-increment is a SINGLE DB statement:
+    ///
+    /// ```sql
+    /// UPDATE tenant_quota
+    ///    SET accrued_usd_micros = accrued_usd_micros + ?delta
+    ///  WHERE tenant_id = ?tenant
+    ///    AND accrued_usd_micros + ?delta <= monthly_budget_usd_micros
+    /// RETURNING accrued_usd_micros
+    /// ```
+    ///
+    /// When no row is returned the ceiling was exceeded (or the row does
+    /// not exist — treated as ceiling exceeded to stay fail-CLOSED;
+    /// callers must seed the row via [`Self::put`] when `get` returns
+    /// `None`).
+    ///
+    /// The default implementation falls back to the pre-F13 `get` +
+    /// `accrue` two-step (has the TOCTOU window). Override in production
+    /// with the D1 atomic statement for exact enforcement.
+    async fn check_and_accrue(
+        &self,
+        tenant_id: &str,
+        delta_micros: i64,
+        seed_anchor_ms: i64,
+        updated_at_ms: i64,
+    ) -> Result<bool, String> {
+        // Default: two-step (pre-F13 behaviour; has the TOCTOU window).
+        // Production `D1QuotaStore` overrides this with the atomic query.
+        let state = self.get(tenant_id).await?;
+        let budget = state
+            .as_ref()
+            .map(|s| s.monthly_budget_usd_micros)
+            .unwrap_or(DEFAULT_MONTHLY_BUDGET_USD_MICROS);
+        let accrued = state.as_ref().map(|s| s.accrued_usd_micros).unwrap_or(0);
+        if accrued.saturating_add(delta_micros) > budget {
+            return Ok(false);
+        }
+        self.accrue(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms)
+            .await?;
+        Ok(true)
+    }
 }
 
 /// The per-tenant monthly $-ceiling gate.
@@ -218,6 +279,24 @@ impl QuotaGuard {
     #[must_use]
     pub fn new(store: Arc<dyn QuotaStore>, clock: Arc<dyn WallClock>) -> Self {
         Self { store, clock }
+    }
+
+    /// FAIL-CLOSED ceiling check for a batch of `n` ops each costing
+    /// `cost_micros_each` micro-dollars against `tenant` (F12 batch variant).
+    ///
+    /// Charges `n * cost_micros_each` in ONE atomic check-and-accrue to avoid
+    /// N sequential D1 round-trips. The product is computed with
+    /// `saturating_mul` to prevent integer overflow from untrusted batch sizes.
+    /// Delegates to [`Self::check`] with the scaled cost.
+    ///
+    /// `n = 0` charges nothing and returns `None` (allow).
+    pub async fn check_batch(&self, tenant: &str, n: usize, cost_micros_each: i64) -> Option<Response> {
+        if n == 0 {
+            return None;
+        }
+        let n_i64 = i64::try_from(n).unwrap_or(i64::MAX);
+        let total_cost = cost_micros_each.saturating_mul(n_i64);
+        self.check(tenant, total_cost).await
     }
 
     /// FAIL-CLOSED ceiling check for a billable op costing `cost_micros`
@@ -271,34 +350,24 @@ impl QuotaGuard {
         // brand-new row) zeroes the accrued baseline; otherwise the
         // baseline is the prior accrued value.
         let rolling = existing.is_none() || state.cycle_elapsed(now_ms);
-        let baseline_accrued = if rolling { 0 } else { state.accrued_usd_micros };
 
-        // The ceiling test. `baseline + cost > budget` ⇒ over the cap.
-        // NOTE: this read-for-ceiling is intentionally NOT serialized with
-        // the accrual write — a precise cap would need a DB transaction.
-        // The cap is a coarse preventive tripwire (see the cost-model note
-        // on `QuotaGuard`), so a small over-shoot under extreme concurrency
-        // is acceptable; what MUST be correct is that accrual never
-        // *under*-counts (lost-update), which the atomic increment below
-        // guarantees.
-        let projected = baseline_accrued.saturating_add(cost);
-        if projected > state.monthly_budget_usd_micros {
-            return Some(
-                (
-                    StatusCode::PAYMENT_REQUIRED,
-                    "monthly $-ceiling exceeded; raise the cap or wait for the cycle to reset",
-                )
-                    .into_response(),
-            );
-        }
-
-        // Under the ceiling — accrue then allow. The accrual must be
-        // durable before we serve; a write error fail-CLOSES (503).
         if rolling {
-            // Cycle roll / fresh row: absolute write of the new baseline
-            // (accrued = this op's cost, anchor = now). An absolute write
-            // is correct here because the new value is computed, not
-            // derived from the (stale / absent) prior row.
+            // ── Cycle roll / fresh row path ───────────────────────────────────
+            // An absolute write is correct here because the new accrued value
+            // is computed (cost of this one op), NOT derived from the stale /
+            // absent prior row. We still check against the budget (a single op
+            // over the budget trips immediately even on a fresh cycle).
+            let baseline_accrued = 0i64;
+            let projected = baseline_accrued.saturating_add(cost);
+            if projected > state.monthly_budget_usd_micros {
+                return Some(
+                    (
+                        StatusCode::PAYMENT_REQUIRED,
+                        "monthly $-ceiling exceeded; raise the cap or wait for the cycle to reset",
+                    )
+                        .into_response(),
+                );
+            }
             let rolled = QuotaState {
                 monthly_budget_usd_micros: state.monthly_budget_usd_micros,
                 accrued_usd_micros: cost,
@@ -310,18 +379,42 @@ impl QuotaGuard {
                 );
             }
         } else {
-            // Steady state: DB-atomic increment of the accrued counter by
-            // this op's DELTA (`accrued = accrued + cost`). The DB does the
-            // add, so concurrent ops cannot lose each other's spend.
-            if self
+            // ── Steady-state path (F13 fix): atomic check-and-accrue ─────────
+            //
+            // Previously the ceiling check (`baseline + cost > budget`) was a
+            // separate read-for-decision NOT serialized with the accrual write,
+            // creating a TOCTOU over-admission window: concurrent requests could
+            // each read the same pre-accrual baseline, all pass the ceiling
+            // test, and all proceed slightly past the cap.
+            //
+            // `check_and_accrue` serializes the check with the increment in a
+            // single DB statement (`UPDATE … WHERE accrued + delta <= budget
+            // RETURNING accrued`). The production D1 override issues that atomic
+            // SQL; the default trait implementation falls back to the pre-F13
+            // two-step for non-D1 stores (tests, in-memory).
+            //
+            // Returns `Ok(false)` when the ceiling would be exceeded (reject
+            // 402) and `Err(_)` on store error (reject 503).
+            match self
                 .store
-                .accrue(tenant, cost, state.cycle_anchor_ms, now_ms)
+                .check_and_accrue(tenant, cost, state.cycle_anchor_ms, now_ms)
                 .await
-                .is_err()
             {
-                return Some(
-                    (StatusCode::SERVICE_UNAVAILABLE, "quota accrual failed").into_response(),
-                );
+                Ok(true) => {} // accrued + allowed; proceed
+                Ok(false) => {
+                    return Some(
+                        (
+                            StatusCode::PAYMENT_REQUIRED,
+                            "monthly $-ceiling exceeded; raise the cap or wait for the cycle to reset",
+                        )
+                            .into_response(),
+                    );
+                }
+                Err(_) => {
+                    return Some(
+                        (StatusCode::SERVICE_UNAVAILABLE, "quota accrual failed").into_response(),
+                    );
+                }
             }
         }
         None
@@ -446,6 +539,56 @@ impl QuotaStore for D1QuotaStore {
         self.client
             .tenant_quota_accrue(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms)
             .await
+    }
+
+    /// Production override for F13 — atomic check-and-accrue in ONE D1
+    /// statement, eliminating the TOCTOU over-admission window.
+    ///
+    /// SQL:
+    /// ```sql
+    /// UPDATE tenant_quota
+    ///    SET accrued_usd_micros = accrued_usd_micros + ?2,
+    ///        updated_at_ms      = ?3
+    ///  WHERE tenant_id = ?1
+    ///    AND accrued_usd_micros + ?2 <= monthly_budget_usd_micros
+    /// RETURNING accrued_usd_micros
+    /// ```
+    ///
+    /// - **Row returned** → the increment was applied within budget → `Ok(true)`.
+    /// - **No row returned** → either the ceiling would be exceeded OR the
+    ///   row doesn't exist yet. A missing row is handled by the caller
+    ///   (see [`QuotaGuard::check`] for the seed path), so this method
+    ///   returns `Ok(false)` in both cases (fail-CLOSED; the caller then
+    ///   seeds the row and retries on the `put` path if appropriate).
+    /// - **D1 error** → `Err(String)` → caller rejects 503 (fail-CLOSED).
+    async fn check_and_accrue(
+        &self,
+        tenant_id: &str,
+        delta_micros: i64,
+        _seed_anchor_ms: i64,
+        updated_at_ms: i64,
+    ) -> Result<bool, String> {
+        let rows = self
+            .client
+            .query(
+                "UPDATE tenant_quota \
+                    SET accrued_usd_micros = accrued_usd_micros + ?2, \
+                        updated_at_ms      = ?3 \
+                  WHERE tenant_id = ?1 \
+                    AND accrued_usd_micros + ?2 <= monthly_budget_usd_micros \
+                 RETURNING accrued_usd_micros",
+                &[
+                    serde_json::Value::String(tenant_id.to_owned()),
+                    serde_json::Value::from(delta_micros),
+                    serde_json::Value::from(updated_at_ms),
+                ],
+            )
+            .await?;
+        // A non-empty result set means the WHERE predicate matched and the
+        // increment was applied. An empty set means either the ceiling would
+        // be exceeded or no row exists — both are treated as "denied" here;
+        // the cycle-roll / fresh-row path uses `put` via `QuotaGuard::check`.
+        Ok(!rows.is_empty())
     }
 }
 

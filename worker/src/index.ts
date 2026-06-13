@@ -67,7 +67,9 @@ export interface Env {
   // Bound via: `wrangler secret put PAT_SIGNING_KEY`
   // Key derivation: HKDF-SHA256(CORELINK_MASTER_KEY, "corelink-pat-signing-salt-v1",
   //   b"corelink-v1-pat-signing-key", 32) per key_management.md §3.2.1.
-  PAT_SIGNING_KEY?: string;
+  // REQUIRED: extractAuth() fails closed (503) when this secret is absent
+  // or decodes to fewer than 32 bytes. Never optional in any deployed env.
+  PAT_SIGNING_KEY: string;
   // Stream-5: shared secret for `/_internal/pat/mint` (passed to container
   // at boot + verified before forwarding). Bound via:
   // `wrangler secret put CORELINK_INTERNAL_AUTH_KEY`
@@ -101,6 +103,25 @@ export interface Env {
   R2_AC_REGION?: string;
   R2_CHUNK_BUCKET?: string;
   R2_CHUNK_REGION?: string;
+  // CAS residency (F7/F8 — 2026-06-13 audit): per-region CAS storage, forwarded
+  // to the container via container.start({env}). Region-correct keying; the
+  // physical per-region CAS buckets are an infra follow-up.
+  R2_CAS_REGION?: string;
+  R2_CAS_BUCKET?: string;
+  R2_AC_BUCKET_PREFIX?: string;
+  R2_TURBO_BUCKET?: string;
+  // Container env-contract (forwarded via durable_object.ts container.start):
+  // secrets + provider vars the native container reads from its own process env.
+  R2_TDK_HEX?: string;
+  ERASURE_SALT_KEY?: string;
+  FABRIC_INTROSPECT_AUTH_KEY?: string;
+  SIGNUP_TOKEN_KEY?: string;
+  CORELINK_PORTAL_RETURN_URL?: string;
+  AWS_REGION?: string;
+  GCP_REGION?: string;
+  CORELINK_BYOK_AZURE_REGION?: string;
+  CORELINK_BYOK_AZURE_VAULT_URL?: string;
+  CORELINK_BYOK_VAULT_REGION?: string;
   // WI-MULTI-REGION-V1 Service Bindings: prod env can fan-out to the 4
   // regional Workers. Set in [[env.prod.services]] blocks. Used by the
   // per-tenant routing logic: tenant.primary_region in D1 → dispatch via
@@ -502,10 +523,19 @@ function matchRoute(url: URL): RouteMatch {
   }
 
   // Internal routes — /_internal/* — gated by X-Corelink-Internal-Auth shared
-  // secret. NOT gated by PAT auth. Only reachable from Worker-to-Worker calls
+  // secret. NOT gated by PAT auth. Intended for Worker-to-Worker calls
   // (signup-worker → this Worker → DO → container). The shared-secret check
   // is performed in the fetch handler (not in matchRoute) so the route is
   // never accidentally skipped on 404-padding paths.
+  //
+  // SECURITY NOTE (F4): /_internal/* is currently reachable from the public
+  // internet (no WAF rule / CF Access / IP allowlist). The sole gate is the
+  // constant-time CORELINK_INTERNAL_AUTH_KEY compare below. A leak of this
+  // single shared secret enables any-tenant admin-PAT minting via
+  // /_internal/pat/mint. Hardening tracked as F4 follow-up:
+  //   (1) Restrict to Service Binding only (remove public route).
+  //   (2) Separate per-consumer secrets (mint vs onboarding vs signup-worker).
+  //   (3) Add per-tenant authorization to the mint endpoint.
   if (path.startsWith("/_internal/")) {
     return { tenantId: "_system", pathSuffix: path, routeKind: "internal" };
   }
@@ -580,14 +610,15 @@ function extractFirstSegment(path: string): string | null {
  *   - SHA-256 prefix for log correlation is computed from the raw token bytes
  *     (non-reversible; see INV-NO-PII-IN-LOGS).
  *
- * NOTE: Argon2id verification (step 3c in auth_model.md §2.3) is NOT
- * performed in the CF Worker because OWASP-2024 Argon2id cost parameters
- * (m=64MiB, t=3, p=4) exceed the Worker's 30ms CPU budget. The Rust DO
- * (corelink-worker Tower middleware) performs the Argon2id verify on the
- * raw token forwarded via the Authorization header. The Worker provides the
- * existence + expiry gate (this function) which eliminates the "any string
- * accepted" vulnerability. Argon2id + scope checks are the DO's second
- * defence layer.
+ * NOTE: Argon2id verification is NOT performed in the CF Worker (OWASP-2024
+ * cost parameters m=64MiB, t=3, p=4 exceed the Worker's cpu_ms budget) AND
+ * is NOT performed by the Durable Object or the native container plane either
+ * (F3/F17). Argon2id is wired only for the cache ADAPTER routes (cargo/brew/
+ * npm/pip/oci) via adapter_pat::PatVerifier. The native CAS/AC/Bazel/Turbo/
+ * customer plane trusts the Worker-injected x-corelink-tenant-id directly.
+ * Possession on the native plane therefore rests SOLELY on this HMAC gate
+ * (PAT_SIGNING_KEY required). Wiring adapter_pat::PatVerifier onto the native
+ * plane as a container-side second layer is tracked as a TODO (F3 fix item 1).
  *
  * The Worker never logs the token value — only a 6-char hashed prefix
  * for correlation tracing.
@@ -596,6 +627,34 @@ function extractFirstSegment(path: string): string | null {
  * writes hashed-form tenant IDs to audit events.
  */
 async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
+  // F18: PAT_SIGNING_KEY is the SOLE possession gate for the native plane (F3/F17).
+  // Fail CLOSED and LOUD when it is absent or too short — never silently skip the
+  // HMAC check. The 32-byte minimum mirrors the NIST 128-bit floor for symmetric
+  // auth secrets. The caller maps this reason to HTTP 503 so operators are alerted.
+  const signingKeyRaw = env.PAT_SIGNING_KEY;
+  if (!signingKeyRaw || signingKeyRaw.length === 0) {
+    console.error(
+      JSON.stringify({
+        event: "pat_signing_key_absent",
+        severity: "CRITICAL",
+        message: "PAT_SIGNING_KEY is unset — extractAuth failing closed (503). Provision the secret and redeploy.",
+      }),
+    );
+    return { ok: false, reason: "signing_key_not_configured" };
+  }
+  // Validate the decoded key length: the hex string encodes raw bytes, so
+  // length/2 gives decoded byte count. A key < 64 hex chars = < 32 bytes.
+  if (signingKeyRaw.length < 64) {
+    console.error(
+      JSON.stringify({
+        event: "pat_signing_key_too_short",
+        severity: "CRITICAL",
+        message: `PAT_SIGNING_KEY decodes to fewer than 32 bytes (hex length ${signingKeyRaw.length}) — failing closed (503).`,
+      }),
+    );
+    return { ok: false, reason: "signing_key_not_configured" };
+  }
+
   const authHeader = request.headers.get("authorization");
   if (authHeader === null || authHeader.length === 0) {
     return { ok: false, reason: "missing_authorization_header" };
@@ -638,17 +697,18 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
     return { ok: false, reason: "invalid_pat_format" };
   }
 
-  // ── Step 3: HMAC-SHA256 fast-fail (requires PAT_SIGNING_KEY secret) ──────
-  // If the signing key is bound, verify the hmac_sig segment before touching D1.
-  // Pre-image: `<token_id>.<random_secret>` (bytes 9+env_len+1 through end of
-  // random_secret segment — the same preimage used by the Rust verify crate).
+  // ── Step 3: HMAC-SHA256 fast-fail (PAT_SIGNING_KEY — always required) ───
+  // Verify the hmac_sig segment before touching D1. The key is guaranteed
+  // non-empty and ≥ 32 decoded bytes by the guard at the top of extractAuth.
+  // Pre-image: `<token_id>.<random_secret>` (the same preimage used by the
+  // Rust verify crate).
   //
   // ── Possession model (security: H2 — explicit engineering DECISION) ───────
-  // PAT_SIGNING_KEY is bound in prod, so this HMAC-SHA256 check IS the
-  // cryptographic possession gate: a caller cannot present a token whose
-  // hmac_sig verifies without holding the server signing key — forging a PAT
-  // requires that key, not merely a stolen/guessed token_id. This is what makes
-  // the scope (H1) and tenant_id we read from D1 trustworthy to forward.
+  // This HMAC-SHA256 check IS the sole cryptographic possession gate for the
+  // native plane (F3/F17): a caller cannot present a token whose hmac_sig
+  // verifies without holding the server signing key — forging a PAT requires
+  // that key, not merely a stolen/guessed token_id. This is what makes the
+  // scope (H1) and tenant_id we read from D1 trustworthy to forward.
   //
   // We deliberately do NOT additionally Argon2id-verify `random_secret` against
   // the stored `pat_hash` on EVERY request: Argon2id is intentionally expensive
@@ -658,17 +718,15 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
   // Argon2id is acceptable defence-in-depth to add LATER (amortised/cached per
   // token_id) ONLY if signing-key compromise becomes a credible concern — at
   // which point key rotation is the primary response. This is the decided
-  // posture, not a TODO. (The DO retains the raw token and may still perform the
-  // hash verify out of the Worker's latency budget.)
-  if (env.PAT_SIGNING_KEY !== undefined && env.PAT_SIGNING_KEY.length > 0) {
-    const hmacOk = await verifyPatHmac(
-      env.PAT_SIGNING_KEY,
-      parsed.hmacPreimage,
-      parsed.hmacSigBytes,
-    );
-    if (!hmacOk) {
-      return { ok: false, reason: "invalid_pat_hmac" };
-    }
+  // posture, not a TODO. Wiring adapter_pat::PatVerifier onto the native plane
+  // as a container-side backstop is tracked as a TODO (F3 fix item 1).
+  const hmacOk = await verifyPatHmac(
+    signingKeyRaw,
+    parsed.hmacPreimage,
+    parsed.hmacSigBytes,
+  );
+  if (!hmacOk) {
+    return { ok: false, reason: "invalid_pat_hmac" };
   }
 
   // ── Step 4: D1 lookup by token_id ────────────────────────────────────────
@@ -1113,7 +1171,9 @@ const handler: ExportedHandler<Env> = {
     // (tests/e2e-user-journeys/src/main.rs:151).
     if (route.routeKind === "health" || route.routeKind === "health_serving") {
       const statusLiteral = route.routeKind === "health_serving" ? "SERVING" : "ok";
-      const body = JSON.stringify({ status: statusLiteral, env: env.ENVIRONMENT });
+      // F19: omit `env` — deployment environment must not be disclosed on
+      // unauthenticated endpoints. Serve env detail only on internal/authed paths.
+      const body = JSON.stringify({ status: statusLiteral });
       const resp = new Response(body, {
         status: 200,
         headers: {
@@ -1596,6 +1656,17 @@ const handler: ExportedHandler<Env> = {
         // OCI (oci_v2 / oci_token) never reaches here — it is handled by the
         // dedicated pass-through branch ABOVE (which forwards to the container
         // for its own two-leg auth), so this PAT-gate path only sees PAT routes.
+        //
+        // F18: signing_key_not_configured means PAT_SIGNING_KEY is absent or
+        // too short — the operator MUST be alerted via 503 (not 401, which would
+        // silently look like a bad client credential). The structured error log
+        // is emitted inside extractAuth; here we map to 503 Service Unavailable.
+        if (result.reason === "signing_key_not_configured") {
+          return applyCors(
+            reapiError("SERVICE_UNAVAILABLE", "authentication service misconfigured", 503, requestId),
+            request,
+          );
+        }
         return applyCors(
           reapiError("UNAUTHORIZED", "authentication required", 401, requestId),
           request,
@@ -1786,10 +1857,13 @@ const handler: ExportedHandler<Env> = {
         // already deleted above). cf-connecting-ip is set by the CF edge and a
         // client cannot spoof it. The signup routeKind reaches THIS forward.
         h.set("x-corelink-client-ip", request.headers.get("cf-connecting-ip") ?? "");
-        // Keep raw Authorization on the forwarded request: the DO performs the
-        // Argon2id + scope verify against the D1 PAT store (the possession check
-        // the Worker skips under its cpu_ms budget). The DO is trusted; it never
-        // logs the raw value (INV-NO-PII-IN-LOGS enforced in durable_object.ts).
+        // Keep raw Authorization on the forwarded request: the DO proxies it
+        // to the container. NOTE (F3/F17): the native plane (CAS/AC/Bazel/Turbo)
+        // does NOT perform Argon2id re-verify — possession rests solely on the
+        // Worker's HMAC gate above. The DO is trusted; it never logs the raw
+        // value (INV-NO-PII-IN-LOGS enforced in durable_object.ts).
+        // TODO(F3): wire adapter_pat::PatVerifier onto the native plane as a
+        // container-side second possession layer (Option-B extension).
         return h;
       })(),
     });

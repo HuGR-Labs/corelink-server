@@ -221,12 +221,36 @@ pub fn dummy_verify_for_constant_time(plaintext: &str) -> Result<(), PatError> {
     // hasher with the dummy plaintext so the work is identical.
     let _eq = plaintext.as_bytes().ct_eq(dummy_pt.as_bytes());
     let stored = dummy_phc();
-    if stored.as_str().is_empty() {
-        // Dummy PHC failed to materialize at startup (impossible in
-        // practice); surface as InvalidPat so the middleware path
-        // collapses uniformly.
-        return Err(PatError::InvalidPat);
-    }
-    let _ = verify_argon2id(dummy_pt, stored);
+    // Hardcoded fallback dummy PHC ensures Argon2id work always runs
+    // even if startup initialization fails. This is computed once at
+    // module load with a deterministic salt; if entropy or hash fails
+    // to materialize, we use this static fallback. The plaintext is
+    // fixed and publicly known, so this PHC has zero cryptographic
+    // value; its sole purpose is constant-time latency matching.
+    static FALLBACK_DUMMY_PHC: OnceLock<PatHash> = OnceLock::new();
+    let fallback = FALLBACK_DUMMY_PHC.get_or_init(|| {
+        // Recompute the same dummy hash as dummy_phc() with the same
+        // deterministic salt. If hashing fails, return a non-empty
+        // marker string so the cold path always invokes verify_argon2id.
+        let salt = match Salt::from_b64("Y29yZWxpbmtfZHVtbXkwMQ") {
+            Ok(s) => s,
+            Err(_) => {
+                // If salt decoding itself fails, use a simple non-empty
+                // string that will be rejected as unparseable PHC, forcing
+                // the verify_argon2id call to complete with a HashError.
+                // This preserves timing invariants by ensuring the
+                // verify path always runs.
+                return PatHash::from_phc_string("$argon2id$v=19$m=65536,t=3,p=4$".to_string());
+            }
+        };
+        hash_random_secret_with_salt(dummy_pt, salt)
+            .unwrap_or_else(|_| PatHash::from_phc_string("$argon2id$v=19$m=65536,t=3,p=4$".to_string()))
+    });
+    let phc = if stored.as_str().is_empty() {
+        fallback
+    } else {
+        stored
+    };
+    let _ = verify_argon2id(dummy_pt, phc);
     Err(PatError::InvalidPat)
 }

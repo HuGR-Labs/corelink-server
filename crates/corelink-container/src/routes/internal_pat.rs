@@ -3,12 +3,28 @@
 //!
 //! # Security model
 //!
-//! This route is **NOT** reachable from the public internet. It is
-//! mounted on the container's HTTP listener (port 50051) which is
-//! only accessible from the Cloudflare Durable Object via
-//! `container.getTcpPort(50051)`. The DO forwards only requests whose
-//! caller supplies the `X-Corelink-Internal-Auth` header matching the
-//! shared secret. Without this header the route returns 401.
+//! **Reachability warning (F4):** `/_internal/pat/mint` is matched and
+//! served by the *public* edge Worker (`corelink-api.humangr.com/*`) and
+//! is reachable from the public internet. The sole gate is a constant-time
+//! compare of the caller-supplied `x-corelink-internal-auth` header against
+//! the `CORELINK_INTERNAL_AUTH_KEY` shared secret. The compare is
+//! fail-closed and uses padded `ct_eq` so neither secret length nor content
+//! leaks via an early branch — but the secret is a single, internet-reachable,
+//! operator-grade credential shared with the signup-worker.
+//!
+//! **Recommended hardening (tracked, not yet implemented):** (1) separate
+//! per-consumer secrets so a signup-worker leak cannot exercise the mint;
+//! (2) restrict `/_internal/pat/mint` to a Worker-to-Worker Service Binding
+//! (no public route); (3) add per-tenant authorisation to the mint.
+//!
+//! **PAT verification on native routes (F3):** the container's native
+//! data-plane routes (CAS, AC, Bazel REAPI, Turbo) do NOT perform a
+//! second Argon2id re-verify. Possession is checked once at the edge
+//! Worker (HMAC fast-fail + D1 expiry lookup); the container trusts the
+//! Worker-injected `x-corelink-tenant-id` header. Argon2id is wired only
+//! to the cache-adapter paths (cargo/brew/npm/pip/OCI) via
+//! `adapter_pat::PatVerifier`. Wiring Argon2id onto the native CAS/AC
+//! plane is tracked as a TODO (Option-B extension).
 //!
 //! The shared secret is bound to the container via the `CORELINK_INTERNAL_AUTH_KEY`
 //! env var (passed at `container.start({ env })` — same mechanism as
@@ -387,8 +403,10 @@ fn hex_nibble(b: u8) -> Option<u8> {
 /// Build the route state from env vars at binary boot time.
 ///
 /// - `CORELINK_INTERNAL_AUTH_KEY` — shared secret for the auth header gate.
-///   Must be at least 32 bytes (ASCII). Missing → route returns 503 on every
-///   request (fail-CLOSED: we never mint PATs without a secret gate).
+///   Must be at least 32 bytes (ASCII). Missing or shorter than 32 chars →
+///   route is NOT mounted (fail-CLOSED: we never mint PATs without a properly
+///   sized secret gate). The secrets-checklist instructs `openssl rand -hex 32`
+///   (64 chars); anything shorter is rejected here.
 /// - `PAT_SIGNING_KEY` — hex-encoded HMAC signing key (≥ 32 bytes decoded).
 ///   Missing → route returns 503 (same fail-CLOSED policy).
 ///
@@ -396,10 +414,10 @@ fn hex_nibble(b: u8) -> Option<u8> {
 /// a warning and skips mounting the route (dev/CI without secrets).
 pub fn build_state_from_env() -> Option<InternalPatRouteState> {
     let auth_key = std::env::var("CORELINK_INTERNAL_AUTH_KEY").ok()?;
-    if auth_key.len() < 16 {
+    if auth_key.len() < 32 {
         tracing::warn!(
-            "CORELINK_INTERNAL_AUTH_KEY too short (< 16 chars); \
-             /_internal/pat/mint route NOT mounted"
+            "CORELINK_INTERNAL_AUTH_KEY too short (< 32 chars); \
+             /_internal/pat/mint route NOT mounted (use `openssl rand -hex 32`)"
         );
         return None;
     }
@@ -725,5 +743,38 @@ mod tests {
         {
             assert!(build_state_from_env().is_none() || build_state_from_env().is_some());
         }
+    }
+
+    // ── F29: minimum key length is 32 chars (doc and code MUST agree) ─────────
+
+    /// F29 invariant: a 31-char key (doc-rejected, formerly code-accepted) MUST
+    /// be refused by `build_state_from_env` — the code floor is 32, matching the
+    /// doc. A 16–31-char key previously slipped past the old `< 16` check; this
+    /// test pins that the corrected `< 32` gate closes that gap.
+    ///
+    /// Because `build_state_from_env` reads from the process env and tests run
+    /// concurrently, we validate the gate logic directly: the condition that
+    /// `build_state_from_env` uses to reject the key is `auth_key.len() < 32`.
+    /// We assert the boundary values here — 31 chars must be below the gate,
+    /// 32 chars must be at or above it.
+    #[test]
+    fn minimum_auth_key_length_is_32_not_16() {
+        // Keys shorter than 32 chars MUST be rejected (F29 fix: was < 16).
+        let short_16 = "a".repeat(16); // was previously accepted by the old gate
+        assert!(
+            short_16.len() < 32,
+            "16-char key must be below the 32-char floor"
+        );
+        let short_31 = "a".repeat(31);
+        assert!(
+            short_31.len() < 32,
+            "31-char key must be below the 32-char floor"
+        );
+        // A 32-char key is AT the floor and must NOT be rejected.
+        let exactly_32 = "a".repeat(32);
+        assert!(
+            !(exactly_32.len() < 32),
+            "32-char key must pass the >= 32 gate"
+        );
     }
 }

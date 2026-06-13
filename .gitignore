@@ -95,3 +95,4 @@ package-lock.json
 **/package-lock.json
 target-cas-erase/
 target-isolated/
+.env.prod
