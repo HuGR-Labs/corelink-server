@@ -472,6 +472,15 @@ export class CoreLinkServer implements DurableObject {
           STRIPE_PRICE_ID_PRO: this.env.STRIPE_PRICE_ID_PRO ?? "",
           STRIPE_PRICE_ID_MAX: this.env.STRIPE_PRICE_ID_MAX ?? "",
           CORELINK_DPA_VERSION: this.env.CORELINK_DPA_VERSION ?? "",
+          // DSR Wave 1 (#254): the container's erasure adapters derive the
+          // pseudonymization/idempotency salt from ERASURE_SALT_KEY. If absent the
+          // container falls back to a PREDICTABLE non-secret salt — forward it so
+          // the real secret is used (launch-required GDPR path).
+          ERASURE_SALT_KEY: this.env.ERASURE_SALT_KEY ?? "",
+          // corelink-runners auth seam (#261): `POST /internal/v1/auth/introspect`
+          // mounts in the container only when FABRIC_INTROSPECT_AUTH_KEY (+ PAT +
+          // D1) are present. Forward it or the route stays unmounted (404).
+          FABRIC_INTROSPECT_AUTH_KEY: this.env.FABRIC_INTROSPECT_AUTH_KEY ?? "",
           // ADR-MULTI-REGION-V1 — per-region R2 bucket overrides.
           // Absent/empty → container defaults to IAD (corelink-ac-iad / iad).
           // Set by [env.prod-<region>].vars in wrangler.toml.
