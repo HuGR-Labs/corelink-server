@@ -28,7 +28,10 @@ use tracing::{debug, warn};
 use super::StorageEnv;
 
 /// Async D1 HTTP API client.
-#[derive(Debug)]
+///
+/// `Debug` is a manual redacting impl (NOT `#[derive(Debug)]`) so a `{:?}` of
+/// the root client can never print the CF API bearer token. Wrapper structs
+/// (`D1HttpCustomerDb` etc.) already redact, but the root type must too.
 pub struct D1HttpClient {
     http: reqwest::Client,
     /// Base URL: `https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{db_id}/query`.
@@ -36,6 +39,15 @@ pub struct D1HttpClient {
     /// Bearer token for the `Authorization` header (CF API token).
     /// Never logged — stored as a plain `String` but treated as a secret.
     api_token: String,
+}
+
+impl core::fmt::Debug for D1HttpClient {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("D1HttpClient")
+            .field("query_url", &self.query_url)
+            .field("api_token", &"[REDACTED]")
+            .finish_non_exhaustive()
+    }
 }
 
 /// A single row returned from D1: a map of column name → JSON value.

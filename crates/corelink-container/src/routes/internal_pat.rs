@@ -175,8 +175,12 @@ const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 /// - empty / missing header → `false` (the empty provided value pads to the
 ///   secret length but the length-equality bit is 0, so it can never match a
 ///   non-empty secret).
+///
+/// Exposed `pub(crate)` so the fabric introspection route
+/// (`routes::auth_introspect`) reuses this exact constant-time gate against
+/// its OWN dedicated secret rather than reinventing the compare.
 #[must_use]
-fn internal_auth_ok(expected: &[u8], headers: &HeaderMap) -> bool {
+pub(crate) fn internal_auth_ok(expected: &[u8], headers: &HeaderMap) -> bool {
     let provided = headers
         .get(INTERNAL_AUTH_HEADER)
         .and_then(|v| v.to_str().ok())

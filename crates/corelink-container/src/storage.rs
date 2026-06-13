@@ -42,9 +42,9 @@ pub mod r2_s3;
 /// # Security note
 ///
 /// The S3 credentials held here are treated as secrets: `Debug` is
-/// intentionally redacted and the struct does not implement `Clone` or
-/// `Display` to limit accidental exposure.
-#[derive(Debug)]
+/// intentionally redacted (manual impl below — NOT `#[derive(Debug)]`,
+/// which would print the R2 secret key + CF API token verbatim) and the
+/// struct does not implement `Clone` to limit accidental exposure.
 pub struct StorageEnv {
     /// R2 S3-compatible endpoint URL
     /// (`https://<account>.r2.cloudflarestorage.com`).
@@ -59,6 +59,22 @@ pub struct StorageEnv {
     pub(crate) cf_api_token: String,
     /// D1 database ID (from `D1_DATABASE_ID`).
     pub(crate) d1_database_id: String,
+}
+
+impl core::fmt::Debug for StorageEnv {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // SECURITY: redact every credential + account/db identifier; only the
+        // non-secret R2 endpoint is shown (mirrors `Display`). A `{:?}` of this
+        // struct must never leak the R2 access/secret keys or the CF API token.
+        f.debug_struct("StorageEnv")
+            .field("r2_endpoint", &self.r2_endpoint)
+            .field("r2_access_key_id", &"[REDACTED]")
+            .field("r2_secret_access_key", &"[REDACTED]")
+            .field("cloudflare_account_id", &"[REDACTED]")
+            .field("cf_api_token", &"[REDACTED]")
+            .field("d1_database_id", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl core::fmt::Display for StorageEnv {

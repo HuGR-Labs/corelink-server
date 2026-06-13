@@ -75,6 +75,19 @@ Each entry cross-references:
   `x-request-id` (echoed into JSON bodies + forwarded headers) was accepted with
   no charset check, enabling log-injection via control chars. It is now
   restricted to `[A-Za-z0-9._-]`; an invalid value falls back to a generated id.
+- **Redact `Debug` on three secret-bearing structs (pre-launch audit, 2 HIGH).**
+  `StorageEnv` (`storage.rs`) and `D1HttpClient` (`storage/d1_http.rs`) carried
+  `#[derive(Debug)]` despite holding the R2 S3 secret access key, R2 access key
+  ID, and the CF API token — so any `{:?}` / `dbg!` / `tracing` `?`-field / panic
+  `{:#?}` would print production cloud credentials verbatim (and `StorageEnv`'s
+  doc-comment falsely claimed Debug was "intentionally redacted"). Replaced both
+  derives with manual `Debug` impls that emit `[REDACTED]` for every secret/
+  identifier field (matching the existing `D1HttpCustomerDb`/Stripe redaction
+  pattern). Also gave `RsaPrivateKeyPem` (`corelink-dpa-acceptance`) a redacting
+  `Debug` so the RS256 signing key's PEM can't leak through a derived `Debug`
+  (auto-fixing `DpaAcceptanceService`, which delegates to the field). Latent (no
+  current call site formats these directly) but a one-line future log would have
+  leaked the keys to storage/D1. No behaviour change beyond Debug output.
 
 ### Fixed
 - **ci: unbreak the `wasm32-unknown-unknown` build (main red ~3 days).** The
@@ -142,6 +155,22 @@ Each entry cross-references:
   no webhook-handler change was needed.)
 
 ### Added
+- **Fabric PAT introspection endpoint (corelink-runners M1).** New
+  `POST /internal/v1/auth/introspect` on the container
+  (`crates/corelink-container` routes/auth_introspect.rs): the runners fabric
+  resolves an inbound Bearer PAT to its owning tenant + plan via the shared
+  Option-B [`PatVerifier`] pipeline. Caller auth is fail-CLOSED on the
+  `X-Corelink-Internal-Auth` header bound to a NEW **dedicated** secret
+  `FABRIC_INTROSPECT_AUTH_KEY` (≥32 chars; distinct from the mint secret — tight
+  blast radius), reusing the constant-time `internal_auth_ok` gate; the route is
+  NOT mounted when the secret/PAT-key/D1 are absent. Responses: `200 {valid:true,
+  tenant_id, plan}` on a verified PAT (plan resolved by the new additive Rust
+  `tier_for_tenant` mirror of `getTierForTenant` — active-subscription → tenant
+  tier → `free`); uniform `200 {valid:false}` (no oracle, no tenant_id) on a bad
+  PAT; **503** on a verifier-backend OR tier-query D1 fault (fail-CLOSED — never
+  serve a guessed plan; the fabric maps 503 → `Err(Unreachable)`). The optional
+  `max_concurrency` / `rate_ceiling_per_min` caps are OMITTED at M1 and
+  forward-compatible (`skip_serializing_if`). Secrets matrix row #151 added.
 - **DSR erasure — 24h verification sweep cron (WI-S11-008 Wave 1, increment 5).**
   New signup-worker Cron Trigger (`[triggers] crons = ["0 * * * *"]`, hourly) →
   `scheduled()` → `runDsrVerifySweep`: queries `dsr_erasure_log` (D1) for every
