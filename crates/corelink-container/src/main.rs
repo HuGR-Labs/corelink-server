@@ -315,6 +315,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
+    // M1: `POST /internal/v1/auth/introspect` — corelink-runners fabric PAT
+    // introspection. Gated by a DEDICATED `FABRIC_INTROSPECT_AUTH_KEY` (NOT the
+    // mint secret — tight blast radius). Mounted only when that secret (≥32
+    // chars) + the PAT signing key + the D1 `StorageEnv` are ALL present
+    // (fail-CLOSED: unmounted in dev/CI).
+    if let Some(introspect_state) =
+        corelink_server::routes::auth_introspect::build_state_from_env()
+    {
+        info!(
+            "routes: /internal/v1/auth/introspect mounted (FABRIC_INTROSPECT_AUTH_KEY + PAT signing key + D1 present)"
+        );
+        app = app.merge(corelink_server::routes::auth_introspect::router(
+            introspect_state,
+        ));
+    } else {
+        warn!(
+            "FABRIC_INTROSPECT_AUTH_KEY / PAT_SIGNING_KEY / D1 config incomplete; \
+             /internal/v1/auth/introspect NOT mounted (dev/CI mode)"
+        );
+    }
+
     // L3: `POST /v1/onboarding/tier-select` — self-serve Stripe Checkout.
     // Mounted only when the internal-auth secret + D1 + Stripe + DPA version
     // are ALL configured (fail-safe; same internal-auth gate as the PAT route).

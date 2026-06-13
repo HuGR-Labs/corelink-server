@@ -58,6 +58,14 @@ pub mod audit_analytics;
 /// WI-S09-008): `GET /v1/audit/export?from=&to=` streams NDJSON
 /// audit events + inclusion proofs.
 pub mod audit_export;
+/// Fabric PAT introspection route (M1): `POST /internal/v1/auth/introspect`.
+/// Reached only from the corelink-runners fabric via the container's
+/// internal listener. Gated by the `X-Corelink-Internal-Auth` header bound
+/// to a DEDICATED `FABRIC_INTROSPECT_AUTH_KEY` secret (tight blast radius —
+/// distinct from the mint secret). Verifies an inbound PAT via the shared
+/// [`crate::adapter_pat`] pipeline and resolves the tenant's plan; fail-CLOSED
+/// (503) on any backend fault, uniform `{valid:false}` on a bad PAT.
+pub mod auth_introspect;
 /// REAPI v2 Bazel remote-cache routes (Phase 0 Stream B1):
 /// `GET/PUT /bazel/v2/:instance/blobs/:hash/:size`,
 /// `PUT /bazel/v2/:instance/uploads/:uuid/blobs/:hash/:size`,
