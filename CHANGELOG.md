@@ -23,6 +23,58 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **cas-erase: complete the WP-B CAS-erase WRITE path — wire the real R2
+  `CasBlobEraser` (hugit-P2 seam B).** The `POST /_internal/cas/:tenant/:hash/erase`
+  scaffold (constant-time internal-auth gate, cross-tenant path-echo check,
+  digest charset-validation, delete-before-tombstone ordering, D1
+  `cas_tombstone` 410-Gone store) shipped with its R2 byte-deletion seam gated
+  OFF (`build_state_from_env` → `None`) until the DSR Wave 1 R2 primitives
+  (#254) landed. Now that #254 is merged, the production `R2CasBlobEraser` is
+  wired: it reuses `R2S3Client::{list_objects_v2, delete, blob_key}` and derives
+  the tenant prefix the **same way the CAS writer did** (`Uuid::try_parse →
+  derive_prefix(tdk, uuid)`, else the raw-padded 16-char fallback), then LISTs
+  `<region>/<tenant_prefix>/<digest>` across the five canonical CAS regions
+  (`sam/iad/lhr/nrt/syd`) and DELETEs the match — idempotent, so a re-erase of an
+  absent blob is a no-op success. Key layout matches the stored object **by
+  construction** (same `blob_key` leading path the writer keys under), closing
+  the silent-no-op class of bug (the earlier `R2Ac` key-derivation mismatch).
+  **fail-CLOSED:** the WRITE route mounts only when the internal-auth key, the
+  R2 TDK (`R2_TDK_HEX`), and the D1 tombstone store all build from env — without
+  the TDK the eraser cannot address the tenant's R2 objects, so it is never
+  constructed and the route stays UNMOUNTED (it can never write a 410 tombstone
+  for a blob whose bytes it could not delete). Mounted at the #254-merge seam in
+  `main.rs`. Unmounted in dev/CI.
+- **quota: wire the per-tenant monthly $-ceiling guard (ADR-0068) onto the
+  billable data plane (hugit-P2 WP-G1).** `QuotaGuard` existed but no route
+  called it (dead code). It is now mounted — alongside the existing scope/rate
+  gate — on every billable surface (native CAS/AC, Bazel REAPI v2, Turborepo,
+  sccache), charging a FLAT per-op cost (`QUOTA_COST_PER_OP_MICROS`, default
+  `1000` = $0.001/op; the $5/mo tripwire ≈ 5000 ops/mo — a coarse preventive
+  cap, not precise metering). Over-ceiling ⇒ `402`; store/clock fault ⇒ `503`
+  (fail-CLOSED). Unenforced in dev/CI without D1.
+- **quota: make accrual DB-atomic (TOCTOU lost-update).** `tenant_quota`
+  accrual was a blind overwrite (`accrued = excluded.accrued`); concurrent ops
+  lost each other's spend and under-counted. Accrual now does the add in D1
+  (`accrued = tenant_quota.accrued + excluded.accrued`) via a dedicated atomic
+  `tenant_quota_accrue`; the guard passes the per-op DELTA, and cycle-roll /
+  seed keep an absolute write.
+- **session-exchange: throttle PAT minting (per-principal, fail-CLOSED 429).**
+  `/v1/session/exchange` minted PATs with no rate limit — one valid session
+  could loop-mint unbounded PATs. Added a per-derived-principal fixed-window cap
+  (10/60s) backed by an atomic D1 counter (migration 0068), rejecting `429` over
+  the cap (fail-OPEN only on a throttle-store outage).
+- **session-exchange: stop leaking the raw Clerk user id (F-01).** The exchange
+  response returned `principal: <raw user_xxx>`; it now returns the opaque,
+  SHA-256-derived principal UUID (the value already sent to the container).
+- **admin-pilot: validate the pilot slug charset (F-03).** `POST
+  /v1/admin/pilots` only checked non-empty + length; it now rejects any slug
+  with a byte outside `[A-Za-z0-9_-]` (`400`), blocking null/control chars from
+  reaching D1 / audit logs (defence-in-depth; SQLi already impossible via
+  parameterised binds).
+- **worker: sanitize the `x-request-id` passthrough (F-02).** A propagated
+  `x-request-id` (echoed into JSON bodies + forwarded headers) was accepted with
+  no charset check, enabling log-injection via control chars. It is now
+  restricted to `[A-Za-z0-9._-]`; an invalid value falls back to a generated id.
 - **Redact `Debug` on three secret-bearing structs (pre-launch audit, 2 HIGH).**
   `StorageEnv` (`storage.rs`) and `D1HttpClient` (`storage/d1_http.rs`) carried
   `#[derive(Debug)]` despite holding the R2 S3 secret access key, R2 access key
@@ -49,6 +101,22 @@ Each entry cross-references:
   `getrandom 0.4 features = ["wasm_js"]` entry (the `--cfg=getrandom_backend=
   "wasm_js"` rustflag was already set in `.cargo/config.toml`). wasm32 check now
   passes locally; native build/test graph unchanged (target-gated).
+### Added
+- **feat(container): per-tenant monthly $-ceiling — a fail-CLOSED spend cap
+  (WP-FOUND-2 / G1, ADR-0068).** The container already enforced a per-tenant
+  *rate* limit (`ratelimit_buckets`, velocity) but had **no monetary bound** — a
+  tenant operating within the rate limit could still accrue unbounded monthly
+  cost (the real blast-radius risk for the hugit campaign on cheap third-party
+  infra). Adds a new `tenant_quota` D1 table (migration
+  `0066_tenant_quota.sql`; additive `CREATE TABLE IF NOT EXISTS`, integer
+  micro-dollars, $5/mo launch tripwire default) plus a quota middleware
+  (`crates/corelink-container/src/tenant_quota.rs`): `QuotaGuard::check`
+  fail-CLOSES — over the ceiling → `402 Payment Required`, quota-store error /
+  clock-unavailable → `503` — and accrues on the allow path, rolling the cycle
+  every ~30 days. Wired alongside the existing rate limit (the two together
+  bound both axes — velocity AND cumulative dollars). Backed by
+  `D1HttpClient::tenant_quota_lookup` / `tenant_quota_upsert` (parameterised,
+  tenant-scoped). In-memory fake for dev/CI; `D1QuotaStore` in production.
 
 ### Security
 - **deps: waive 3 rust-postgres DoS advisories (RUSTSEC-2026-0178 / -0179 /
@@ -241,6 +309,48 @@ Each entry cross-references:
   container restarts; the non-durable `InMemoryPilotStore` remains the dev/CI
   fallback (env-gated). New additive migration `0065_pilot_tenants.sql` adds the
   `pilot_tenants` backing table (no destructive change; no ADR waiver needed).
+- **Transparency-log submission seam — public Rekor witnessing (hugit-P2 seam
+  E, ADR-0066).** New `corelink-transparency-log` crate: a thin submitter that
+  witnesses CoreLink-signed audit / attestation entries on the **public
+  sigstore/Rekor** transparency log — making them verifiable *against* CoreLink,
+  not *via* CoreLink. Per ADR-0066 CoreLink integrates the public log rather
+  than rebuilding one: it builds the canonical Rekor `hashedrekord` v0.0.1
+  proposed entry from a `SignedEntry` (the JCS-canonical payload digest +
+  detached Ed25519 signature + published public key — the payload bytes never
+  leave CoreLink), submits it through the `RekorSubmitter` async seam, and
+  records the returned `RekorWitnessRecord { log_index, inclusion_proof }`
+  alongside the entry. The `witness_or_degrade` driver runs **post-hoc, off the
+  write path** and **fails OPEN**: a Rekor outage degrades witnessing
+  (`WitnessOutcome::Degraded`, queued for out-of-band retry) but never blocks or
+  errors the durable write path. Ships pure-logic (entry builder + response
+  parser + fail-open policy) with an `InMemoryRekor` fake pinning every
+  invariant in CI; the real HTTPS transport to `rekor.sigstore.dev` is the
+  binding portion deferred per ADR-0066.
+- **Per-hash CAS erase + 410-Gone tombstone (hugit-P2 seam B, WP-B).** New
+  operator/internal write-side endpoint `POST /_internal/cas/:tenant/:hash/erase`
+  (constant-time `X-Corelink-Internal-Auth` gated, off the hot GET path) deletes
+  a single content-addressed blob from the cold `corelink-cas-prod` R2 bucket and
+  writes a durable tombstone (`cas_tombstone` D1 table, migration
+  `0067_cas_tombstone.sql`). The CAS read path
+  (`GET /v1/cas/:tenant/:hash`) now consults the tombstone FIRST and returns
+  **HTTP 410 Gone** for an erased hash — never 404 ("never existed") and never
+  200 (resurrected bytes); a re-erase is an idempotent no-op. Pure decision logic
+  ships in the new `corelink-handler-cas-erase` crate (digest validation,
+  cross-tenant gate, tombstone marker, read-gate). The R2 byte-deletion COMPOSES
+  the DSR Wave 1 R2 CAS primitives (`R2S3Client::{delete, list_objects_v2}`, PR
+  #254 / `feat/dsr-account-deletion`) rather than duplicating them; the erase
+  WRITE route stays unmounted (fail-CLOSED) until that adapter lands, while the
+  410 READ gate is live from env wherever D1 creds are present.
+- **`EventLogDO` — thin, generic, per-tenant append-only event-log Durable
+  Object primitive (ADR-0065, hugit-P2 seam D / WP-D).** A minimal ordering +
+  durability primitive: `POST /_eventlog/append` returns a strictly-monotonic,
+  gap-free, 1-based `{ seq, ts_ms }` under the DO's single-writer
+  serialization, and `GET /_eventlog/read?from_seq=&limit=` returns entries in
+  `seq` order. Deliberately NOT chain-aware (no hashing/Merkle/signatures) — the
+  consumer (hugit) layers its integrity chain on top (ADR-0066). One DO instance
+  per tenant (`idFromName(tenant_id)`); tenant-pinned (cross-tenant → 403). Owner
+  file `worker/src/event_log_do.ts`; bound as `EVENT_LOG_DO` across all envs with
+  migration `tag = "v3"` (`new_sqlite_classes = ["EventLogDO"]`).
 - **Clerk session bridge for `customer_v1` — dual-auth dispatch (dashboard
   revival WP-1).** `/v1/customer/*` now accepts EITHER a CoreLink PAT (existing
   path, byte-identical — the dispatch guard is `parsePat(bearer) === null`, and

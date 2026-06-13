@@ -346,6 +346,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         warn!("CORELINK_INTERNAL_AUTH_KEY unset; /_internal/dsr/erase route NOT mounted (dev/CI)");
     }
 
+    // hugit-P2 seam B, WP-B: `POST /_internal/cas/:tenant/:hash/erase` — per-hash
+    // CAS erase + 410-Gone tombstone, gated by the same CORELINK_INTERNAL_AUTH_KEY.
+    // The WRITE route mounts only when ALL prod transports build from env: the
+    // internal-auth key, the R2 TDK (`R2_TDK_HEX`), and the D1 tombstone store.
+    // Without the TDK the eraser cannot derive the writer's tenant prefix, so the
+    // route stays UNMOUNTED (fail-CLOSED) — it can never tombstone a blob whose
+    // bytes it could not address (mirrors the DSR R2 CAS adapter's fail-closed
+    // posture). The read-side 410 gate is wired separately in `routes::cas`.
+    let cas_erase_auth_key = corelink_server::routes::admin::internal_auth_key_from_env();
+    if let Some(cas_erase_state) =
+        corelink_server::routes::cas_erase::build_state_from_env(cas_erase_auth_key)
+    {
+        info!("routes: /_internal/cas/:tenant/:hash/erase route mounted (R2 TDK + D1 tombstone present)");
+        app = app.merge(corelink_server::routes::cas_erase::router(cas_erase_state));
+    } else {
+        warn!(
+            "CORELINK_INTERNAL_AUTH_KEY / R2_TDK_HEX / D1 incomplete; \
+             /_internal/cas/:tenant/:hash/erase route NOT mounted (fail-CLOSED)"
+        );
+    }
+
     // L3: `POST /v1/onboarding/tier-select` — self-serve Stripe Checkout.
     // Mounted only when the internal-auth secret + D1 + Stripe + DPA version
     // are ALL configured (fail-safe; same internal-auth gate as the PAT route).

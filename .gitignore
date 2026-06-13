@@ -91,3 +91,5 @@ worker-configuration.d.ts
 # npm lockfiles — this repo uses pnpm (pnpm-lock.yaml); never commit package-lock.json
 package-lock.json
 **/package-lock.json
+target-cas-erase/
+target-isolated/

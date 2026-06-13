@@ -165,6 +165,8 @@ corelink-billing-stripe-materializer = { workspace = true }
 # `Arc<dyn HandlerTrait>` to keep route shape stable across the
 # native / wasm32 CF-Worker swap.
 corelink-handler-cas = { workspace = true }
+# Per-hash CAS erase + 410-Gone tombstone pure logic (hugit-P2 seam B, WP-B).
+corelink-handler-cas-erase = { workspace = true }
 corelink-handler-ac = { workspace = true }
 corelink-handler-admin = { workspace = true }
 # Phase 0 Stream B1 — REAPI v2 Bazel remote-cache bridge.

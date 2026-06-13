@@ -117,5 +117,10 @@ pub mod scope;
 /// present the real adapters are used; otherwise the InMemory fakes
 /// remain active for tests + local dev.
 pub mod storage;
+/// Per-tenant monthly $-ceiling middleware (WP-FOUND-2 / G1, ADR-0068):
+/// a fail-CLOSED cumulative-dollar cap, orthogonal to the existing
+/// per-tenant rate limit. Backed by the `tenant_quota` D1 table
+/// (migration 0066).
+pub mod tenant_quota;
 pub mod wall_clock;
 pub mod webhook;

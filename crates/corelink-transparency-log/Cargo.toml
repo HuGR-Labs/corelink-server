@@ -1,0 +1,44 @@
+[package]
+name = "corelink-transparency-log"
+description = "CoreLink transparency-log submission seam (hugit-P2 seam E, ADR-0066) — thin submitter that witnesses signed audit/attestation entries on the PUBLIC sigstore/Rekor transparency log. Builds a Rekor `hashedrekord` v0.0.1 entry from a signed CoreLink entry (Ed25519 erasure attestation / audit-chain head), submits it post-hoc (OFF the write path), and records the returned `{log_index, inclusion_proof}` alongside the entry. Async + best-effort + fail-OPEN on the witness (a Rekor outage degrades witnessing, never the durable write path per ADR-0065). CoreLink is a SUBMITTER, not a log operator — the public witness is verifiable AGAINST CoreLink, not VIA CoreLink. Pure-logic trait + InMemory fake; the real HTTPS transport to the public Rekor instance is the binding portion, deferred per ADR-0066 + the repo trait-abstraction-defer charter."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Base64 encoding for the Rekor entry body + public key + signature fields.
+base64 = { workspace = true }
+# SHA-256 for the hashedrekord content digest (Rekor `data.hash.value`).
+sha2 = { workspace = true }
+# Hex encoding for the content digest (Rekor digests are lowercase hex).
+hex = { workspace = true }
+# Serialization of the Rekor proposed-entry + parsed log-entry response.
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Error taxonomy.
+thiserror = { workspace = true }
+# Observability.
+tracing = { workspace = true }
+# async submitter trait surface (object-safe `Box<dyn>` submitters).
+async-trait = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tokio = { workspace = true }
+
+[[test]]
+name = "prop_witness"
+path = "tests/prop_witness.rs"
+
+[[test]]
+name = "adversarial"
+path = "tests/adversarial.rs"
+
+[[example]]
+name = "witness_attestation"
+path = "examples/witness_attestation.rs"

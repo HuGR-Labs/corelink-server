@@ -1106,6 +1106,21 @@ async fn handle_create(
     if slug.chars().count() > MAX_SLUG_LEN {
         return (StatusCode::BAD_REQUEST, "slug too long").into_response();
     }
+    // L4 charset validation (F-03): enforce the documented "lowercase,
+    // hyphen-delimited" slug contract — ASCII alphanumeric / `-` / `_` only.
+    // Blocks null/control chars and other non-printables from reaching D1 /
+    // audit logs (log-injection / row-shape hardening). SQLi is already
+    // impossible here (all SQL is parameterised), so this is defence-in-depth.
+    if !slug
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            "slug must be lowercase alphanumeric/hyphen/underscore",
+        )
+            .into_response();
+    }
     let cap_bytes = body.cap_bytes.unwrap_or(0);
     let tenant_id = Uuid::now_v7();
     let now_ms = state.wall_clock.now_ms();

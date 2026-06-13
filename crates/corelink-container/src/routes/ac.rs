@@ -73,6 +73,10 @@ pub struct AcRouteState {
     pub lookup: Arc<dyn AcLookupHandler>,
     /// Update handler (separate trait object — see crate-level docs).
     pub update: Arc<dyn AcUpdateHandler>,
+    /// Optional per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
+    /// `Some` in production (D1-backed); checked at the TOP of each handler,
+    /// AFTER the scope gate, BEFORE storage. `None` in dev/CI (not enforced).
+    pub quota: Option<crate::routes::QuotaGate>,
 }
 
 impl core::fmt::Debug for AcRouteState {
@@ -193,6 +197,14 @@ async fn handle_lookup(
     if !scope.can_read() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1): charge the
+    // flat per-op cost, AFTER the scope gate, BEFORE storage. 402 over-ceiling /
+    // 503 fail-CLOSED. `None` in dev/CI ⇒ not enforced.
+    if let Some(gate) = state.quota.as_ref() {
+        if let Some(resp) = gate.check(&auth.0).await {
+            return resp;
+        }
+    }
     // Logical clock stand-in (handler is the source of truth in
     // production; see cas.rs for the same rationale).
     let now_ms = 0u64;
@@ -230,6 +242,13 @@ async fn handle_update(
     // current `cas:rw` traffic.
     if !scope.can_write() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1) — see
+    // `handle_lookup`. AFTER the scope gate, BEFORE storage.
+    if let Some(gate) = state.quota.as_ref() {
+        if let Some(resp) = gate.check(&auth.0).await {
+            return resp;
+        }
     }
     let now_ms = 0u64;
     let req = AcUpdateRequest::new(
@@ -298,7 +317,15 @@ mod tests {
         let shared = Arc::new(InMemoryAcHandler::new(audit.clone(), sli.clone()));
         let lookup: Arc<dyn AcLookupHandler> = shared.clone();
         let update: Arc<dyn AcUpdateHandler> = shared;
-        (audit, sli, AcRouteState { lookup, update })
+        (
+            audit,
+            sli,
+            AcRouteState {
+                lookup,
+                update,
+                quota: None,
+            },
+        )
     }
 
     #[test]

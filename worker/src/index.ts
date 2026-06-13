@@ -22,8 +22,10 @@
 import type { D1Database, DurableObjectNamespace, ExecutionContext, ExportedHandler } from "@cloudflare/workers-types";
 import { CoreLinkServer } from "./durable_object.js";
 import { RolloutController } from "./rollout_controller.js";
+import { EventLogDO } from "./event_log_do.js";
 import { getTierForTenant, checkStorageQuota, checkRequestQuota } from "./lib/quota.js";
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
+import { handleSessionExchange } from "./lib/session_exchange.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -32,6 +34,11 @@ import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
 /** Worker environment bindings — matches wrangler.toml. */
 export interface Env {
   CORELINK_SERVER: DurableObjectNamespace;
+  // ADR-0065 — per-tenant append-only event-log DO (hugit-P2 seam D).
+  // One DO instance per tenant: idFromName(tenant_id). Bound in wrangler.toml
+  // `[[durable_objects.bindings]]` (name = "EVENT_LOG_DO"). Optional in the
+  // type so existing test envs that omit it still typecheck.
+  EVENT_LOG_DO?: DurableObjectNamespace;
   ENVIRONMENT: string;
   // D1 CONFIG_DB — control-plane database. Holds the `pat` table queried
   // during PAT validation (WP-A1). Bound in wrangler.toml `[[d1_databases]]`.
@@ -129,6 +136,7 @@ type RouteKind =
   | "turbo_v8"
   | "signup"
   | "onboarding"
+  | "session_exchange"
   | "internal"
   | "health_container"
   | "not_found";
@@ -178,10 +186,25 @@ const CORS_HEADERS: ReadonlyArray<readonly [string, string]> = [
 // Request ID middleware
 // ──────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Allowed charset for a propagated `x-request-id` (F-02): RFC-style token
+ * bytes only — letters, digits, `.`, `_`, `-`. The supplied id lands in JSON
+ * response bodies AND forwarded request headers, so unconstrained values
+ * (control chars, newlines, quotes) enable log-injection / header-shape
+ * tampering. A value with any other char is rejected and replaced with a
+ * freshly generated id.
+ */
+const REQUEST_ID_CHARSET = /^[A-Za-z0-9._-]+$/;
+
 /** Generate or propagate a request-id. Never exposes body or PII. */
 function resolveRequestId(request: Request): string {
   const incoming = request.headers.get("x-request-id");
-  if (incoming !== null && incoming.length > 0 && incoming.length <= 128) {
+  if (
+    incoming !== null &&
+    incoming.length > 0 &&
+    incoming.length <= 128 &&
+    REQUEST_ID_CHARSET.test(incoming)
+  ) {
     return incoming;
   }
   return crypto.randomUUID();
@@ -463,6 +486,19 @@ function matchRoute(url: URL): RouteMatch {
   // the generic /v1/* arm so onboarding never falls into the PAT-only bucket.
   if (path.startsWith("/v1/onboarding/") || path === "/v1/onboarding") {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "onboarding" };
+  }
+
+  // Session→token exchange — EXACT /v1/session/exchange (hugit-P2 WP-C, seam C).
+  // The caller presents a Clerk SESSION JWT (server-side only, never client-
+  // exposed per ADR-0002); the Worker verifies it at the EDGE (same shared
+  // pipeline as onboarding/customer) and mints a short-lived tenant-scoped
+  // CoreLink PAT by REUSING the container's audited /_internal/pat/mint route.
+  // Tenant is NOT in the URL — resolved from the verified Clerk user id — so
+  // urlTenant stays "_anonymous". Checked BEFORE the generic /v1/* arm so it is
+  // never swallowed into the PAT-required reapi_v1 bucket (the caller holds a
+  // session, not a PAT).
+  if (path === "/v1/session/exchange") {
+    return { tenantId: "_anonymous", pathSuffix: path, routeKind: "session_exchange" };
   }
 
   // Internal routes — /_internal/* — gated by X-Corelink-Internal-Auth shared
@@ -1327,6 +1363,19 @@ const handler: ExportedHandler<Env> = {
       );
     }
 
+    // Session→token exchange — POST /v1/session/exchange (hugit-P2 WP-C, seam C).
+    // The caller presents a Clerk SESSION JWT; the edge verifies it (shared
+    // pipeline) and exchanges it for a short-lived tenant-scoped CoreLink PAT,
+    // REUSING the container's audited /_internal/pat/mint via the _system DO.
+    // The handler is fully fail-CLOSED (missing secret → 403, bad/expired
+    // session → 401, no tenant → 403, upstream fault → 500) and never forwards
+    // the session token past the edge. CORS is applied here, mirroring the
+    // onboarding/customer arms.
+    if (route.routeKind === "session_exchange") {
+      const sessResp = await handleSessionExchange(request, env, requestId);
+      return applyCors(sessResp, request);
+    }
+
     // Not found — timing-padded to prevent cross-tenant enumeration
     if (route.routeKind === "not_found") {
       await applyTimingPad(
@@ -1786,4 +1835,4 @@ const handler: ExportedHandler<Env> = {
 };
 
 export default handler;
-export { CoreLinkServer, RolloutController };
+export { CoreLinkServer, RolloutController, EventLogDO };

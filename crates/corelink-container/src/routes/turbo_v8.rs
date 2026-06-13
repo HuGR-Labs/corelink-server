@@ -139,6 +139,12 @@ pub struct PutArtifactResponse {
 pub struct TurboRouteState {
     /// Handler implementing all four Turbo API verbs.
     pub handler: Arc<dyn TurboArtifactHandler>,
+    /// Optional per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
+    /// `Some` in production (D1-backed); checked at the TOP of the billable
+    /// artifact GET/PUT handlers, AFTER the scope gate, BEFORE storage. `None`
+    /// in dev/CI (not enforced). The telemetry `events`/static `status` verbs
+    /// are NOT billable and are not gated. Set by `routes::build_with_factory`.
+    pub quota: Option<crate::routes::QuotaGate>,
 }
 
 impl core::fmt::Debug for TurboRouteState {
@@ -186,7 +192,10 @@ pub fn build_handlers() -> TurboRouteState {
                     tracing::info!("Turbo handler: R2KvStore (durable storage)");
                     let handler: Arc<dyn TurboArtifactHandler> =
                         Arc::new(CasAdapterTurboHandler::new(read, write, audit));
-                    return TurboRouteState { handler };
+                    return TurboRouteState {
+                        handler,
+                        quota: None,
+                    };
                 }
                 Some(Err(e)) => {
                     tracing::error!(error = %e, "Turbo R2KvStore build failed, falling back to InMemory");
@@ -200,7 +209,10 @@ pub fn build_handlers() -> TurboRouteState {
     let store = Arc::new(InMemoryKvStore::new());
     let handler: Arc<dyn TurboArtifactHandler> =
         Arc::new(CasAdapterTurboHandler::new(store.clone(), store, audit));
-    TurboRouteState { handler }
+    TurboRouteState {
+        handler,
+        quota: None,
+    }
 }
 
 /// Build the axum `Router` exposing all four `/v8/artifacts/*` routes.
@@ -258,6 +270,14 @@ async fn handle_get(
     if let Err(e) = validate_team_id(&params.team_id) {
         return map_err(e);
     }
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1): charge the
+    // flat per-op cost, AFTER the scope gate, BEFORE storage. 402 over-ceiling /
+    // 503 fail-CLOSED. `None` in dev/CI ⇒ not enforced.
+    if let Some(gate) = state.quota.as_ref() {
+        if let Some(resp) = gate.check(&caller_tenant).await {
+            return resp;
+        }
+    }
     let now_ms = 0u64;
     let req = TurboGetRequest::new(
         hash,
@@ -299,6 +319,13 @@ async fn handle_put(
     // audit or storage. Mirrors the MAX_HASH_LEN guard; maps to 400.
     if let Err(e) = validate_team_id(&params.team_id) {
         return map_err(e);
+    }
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1) — see
+    // `handle_get`. AFTER the scope gate, BEFORE storage.
+    if let Some(gate) = state.quota.as_ref() {
+        if let Some(resp) = gate.check(&caller_tenant).await {
+            return resp;
+        }
     }
     let now_ms = 0u64;
     let req = TurboPutRequest::new(

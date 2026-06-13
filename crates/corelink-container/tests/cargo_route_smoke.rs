@@ -55,7 +55,9 @@ fn cargo_router() -> axum::Router {
     let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
     let read: Arc<dyn CasReadHandler> = shared.clone();
     let write: Arc<dyn CasWriteHandler> = shared;
-    cargo::router(read, write, Arc::new(StubResolver))
+    // No $-ceiling gate in this smoke test (the route shape is identical with
+    // or without it; the gate is exercised by the tenant_quota unit tests).
+    cargo::router(read, write, Arc::new(StubResolver), None)
 }
 
 /// A valid sccache key: the in-memory handler's `fake_hash` of the bytes,

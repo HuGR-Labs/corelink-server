@@ -96,6 +96,7 @@ pub fn router(
     cas_read: Arc<dyn CasReadHandler>,
     cas_write: Arc<dyn CasWriteHandler>,
     resolver: SharedTenantResolver,
+    quota: Option<crate::routes::QuotaGate>,
 ) -> Router {
     let cas = Arc::new(CargoCasBridge::new(
         cas_read,
@@ -113,7 +114,11 @@ pub fn router(
         auditor,
     );
 
-    let adapter = server::build_router(config).layer(middleware::from_fn(cargo_gate));
+    // The gate layer carries the optional $-ceiling gate as its state so the
+    // per-operation scope check AND the per-tenant cost charge both run in one
+    // middleware (axum's `from_fn_with_state`). `None` ⇒ ceiling not enforced.
+    let adapter = server::build_router(config)
+        .layer(middleware::from_fn_with_state(quota, cargo_gate));
     Router::new().nest_service("/cargo", adapter)
 }
 
@@ -131,7 +136,11 @@ pub fn router(
 /// HTTP method (read vs write) is known only at this layer, so per-operation
 /// granularity (read-only PAT must not PUT) is enforced here — mirroring the
 /// H1 scope spine used by cas/ac/turbo/bazel.
-async fn cargo_gate(req: Request, next: Next) -> Response {
+async fn cargo_gate(
+    axum::extract::State(quota): axum::extract::State<Option<crate::routes::QuotaGate>>,
+    req: Request,
+    next: Next,
+) -> Response {
     let scope = req
         .headers()
         .get(SCOPE_HEADER)
@@ -149,6 +158,27 @@ async fn cargo_gate(req: Request, next: Next) -> Response {
     };
     if !scope_ok {
         return (StatusCode::FORBIDDEN, "insufficient cache scope").into_response();
+    }
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1): charge the
+    // flat per-op cost AFTER the scope gate, BEFORE the adapter runs PAT auth +
+    // CAS. The isolation tenant is the Worker-set, server-trusted
+    // `x-corelink-tenant-id` (the adapter re-derives the tenant from the PAT for
+    // storage; the header is only the cost-attribution key here — a forged
+    // header can over-charge ITS OWN tenant, never another). A missing/empty
+    // header skips the charge fail-OPEN: cost-accounting must never deny a
+    // scope-valid op for lack of a label. 402 over-ceiling / 503 fail-CLOSED.
+    if let Some(gate) = quota.as_ref() {
+        let tenant = req
+            .headers()
+            .get("x-corelink-tenant-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .unwrap_or("");
+        if !tenant.is_empty() {
+            if let Some(resp) = gate.check(tenant).await {
+                return resp;
+            }
+        }
     }
     next.run(req).await
 }

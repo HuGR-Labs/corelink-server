@@ -52,7 +52,16 @@ fn fresh_state() -> CasRouteState {
     let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
     let read: Arc<dyn CasReadHandler> = shared.clone();
     let write: Arc<dyn CasWriteHandler> = shared;
-    CasRouteState { read, write }
+    // No tombstone store wired in the smoke test ⇒ classic 200/404 behaviour
+    // (the 410-Gone gate is exercised in `routes::cas`'s unit tests).
+    CasRouteState {
+        read,
+        write,
+        tombstones: None,
+        // No $-ceiling gate in the smoke test (gate is exercised in
+        // `routes::cas`'s unit tests + the `tenant_quota` suite).
+        quota: None,
+    }
 }
 
 /// CAS read against a fresh handler MUST reach the handler and
