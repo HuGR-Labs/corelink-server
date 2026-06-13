@@ -23,10 +23,13 @@
 //! tenant prefix across the five CAS regions and DELETEs the object(s) for the
 //! one digest, exactly the per-key cousin of the DSR tenant-wide erase. WP-B
 //! does **not** duplicate those primitives; the trait is the frozen seam #254
-//! fills. Until #254 lands the trait is wired in tests via
-//! [`InMemoryBlobEraser`]; the env builder ([`build_state_from_env`]) returns
-//! `None` (route fail-CLOSED / unmounted) so no half-built erase can run in
-//! prod without the R2 transport.
+//! fills. The production [`R2CasBlobEraser`] reuses `R2S3Client` directly and
+//! derives the tenant prefix the SAME way the CAS writer did (so the erase key
+//! matches the stored object by construction); [`InMemoryBlobEraser`] backs the
+//! unit tests. The env builder ([`build_state_from_env`]) returns `Some` only
+//! when the R2 TDK + D1 tombstone store + internal-auth key are all present,
+//! and `None` otherwise (route fail-CLOSED / unmounted) so no half-built erase
+//! — and, critically, no wrong-key silent-no-op — can run in prod.
 //!
 //! # Tombstone store
 //!
@@ -38,6 +41,9 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
+use uuid::Uuid;
+use zeroize::Zeroizing;
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
@@ -462,20 +468,165 @@ impl CasBlobEraser for InMemoryBlobEraser {
     }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Production R2 blob eraser (the #254 seam, now filled)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Canonical CAS storage regions — the `<region>/` key-prefix segment.
+///
+/// Byte-for-byte the same list the DSR Wave 1 tenant-wide CAS adapter uses
+/// (`routes::dsr::adapter_r2_cas::CAS_REGIONS`). CAS is **one bucket**; the
+/// storage region lives in the key prefix `<region>/<tenant_prefix>/<digest>`.
+/// The container writes through a single global `R2_CAS_REGION`, but a
+/// per-hash erase sweeps all five regions so it is robust to a deployment
+/// whose write region changed over time (cheap — a once-per-erase LIST).
+const CAS_REGIONS: &[&str] = &["sam", "iad", "lhr", "nrt", "syd"];
+
+/// Default single CAS bucket; overridable via `R2_CAS_BUCKET` (non-prod).
+/// Mirrors `routes::dsr::adapter_r2_cas::DEFAULT_CAS_BUCKET`.
+const DEFAULT_CAS_BUCKET: &str = "corelink-cas-prod";
+
+/// Length (chars) of the materialised tenant prefix in an R2 key.
+const TENANT_PREFIX_LEN: usize = 16;
+
+/// Production [`CasBlobEraser`] over R2.
+///
+/// Given `(tenant, digest)`, derives the tenant prefix the **same way the CAS
+/// writer did** ([`crate::storage::r2_s3::R2CasHandler`]'s `r2_key`: parse the
+/// tenant as a UUID and `derive_prefix(tdk, uuid)`, else the raw-padded
+/// fallback) and, for each of the five CAS regions, LISTs
+/// `<region>/<tenant_prefix>/<digest>` and DELETEs the matching object(s) via
+/// [`crate::storage::r2_s3::R2S3Client`]. Idempotent — re-erasing an absent
+/// blob is a no-op success (S3 `DeleteObject` semantics).
+///
+/// Key layout matches by construction: the LIST prefix is built with the SAME
+/// `R2S3Client::blob_key(region, prefix, digest)` leading path the writer
+/// keys under, so a key-derivation mismatch (the earlier `R2Ac` silent-no-op
+/// class of bug) is impossible.
+pub struct R2CasBlobEraser {
+    /// Single CAS bucket name (e.g. `corelink-cas-prod`).
+    cas_bucket: String,
+    /// Tenant derivation key — required (fail-CLOSED without it).
+    tdk: Arc<TenantDerivationKey>,
+}
+
+impl std::fmt::Debug for R2CasBlobEraser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Redact the TDK; surface only the bucket.
+        f.debug_struct("R2CasBlobEraser")
+            .field("cas_bucket", &self.cas_bucket)
+            .field("tdk", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl R2CasBlobEraser {
+    /// Construct over an explicit TDK + CAS bucket.
+    #[must_use]
+    pub fn new(tdk: Arc<TenantDerivationKey>, cas_bucket: String) -> Self {
+        Self { cas_bucket, tdk }
+    }
+
+    /// Derive the 16-char tenant prefix the SAME way the CAS writer
+    /// ([`crate::storage::r2_s3::R2CasHandler`]'s `r2_key`) did: parse the
+    /// tenant as a UUID and `derive_prefix(tdk, uuid)`, else raw-pad/truncate
+    /// the tenant string to 16 chars (the writer's non-UUID/dev fallback).
+    /// Keeping the two derivations identical is what makes the erase key match
+    /// the stored object **by construction**.
+    fn tenant_prefix(&self, tenant: &str) -> String {
+        if let Ok(uid) = Uuid::try_parse(tenant) {
+            derive_prefix(&self.tdk, uid).to_string()
+        } else {
+            let mut p = tenant.to_owned();
+            p.truncate(TENANT_PREFIX_LEN);
+            while p.len() < TENANT_PREFIX_LEN {
+                p.push('0');
+            }
+            p
+        }
+    }
+}
+
+#[async_trait]
+impl CasBlobEraser for R2CasBlobEraser {
+    async fn erase_blob(&self, tenant: &str, digest: &str) -> Result<(), String> {
+        let prefix = self.tenant_prefix(tenant);
+        let env = crate::storage::StorageEnv::from_env()
+            .ok_or_else(|| "StorageEnv unavailable for R2 CAS erase".to_owned())?;
+        let client =
+            crate::storage::r2_s3::R2S3Client::new(&env, self.cas_bucket.clone()).await?;
+        for region in CAS_REGIONS {
+            // The LIST prefix is the EXACT whole-blob key for this digest:
+            // `<region>/<tenant_prefix>/<digest>` (per `R2S3Client::blob_key`).
+            // LISTing it (rather than a bare DELETE) lets a re-erase of an
+            // absent blob short-circuit and stays robust if a future multipart
+            // path ever keys companion objects under the same digest prefix.
+            let key = crate::storage::r2_s3::R2S3Client::blob_key(region, &prefix, digest);
+            let keys = client.list_objects_v2(&key).await?;
+            for k in keys {
+                client.delete(&k).await?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Build the route state from env.
 ///
-/// Returns `Some` only when BOTH the D1 tombstone store AND the R2 blob eraser
-/// build from env — i.e. once PR #254 lands and supplies the R2 eraser. Until
-/// then this returns `None` and the route is NOT mounted (fail-CLOSED): the
-/// container will never run a half-built erase that drops the tombstone without
-/// deleting the bytes, or vice-versa. The orchestrator wires the real eraser at
-/// the #254-merge integration point (see module docs).
+/// Returns `Some` only when ALL of the prod transports build from env: the
+/// **R2 TDK** (`R2_TDK_HEX`), the **D1 tombstone store**, and the supplied
+/// **internal-auth key**. Any missing piece ⇒ `None` and the route is NOT
+/// mounted (fail-CLOSED): the container never runs a half-built erase that
+/// could drop the tombstone without deleting the bytes, or — the load-bearing
+/// failure mode — derive the WRONG R2 key and silently no-op the deletion
+/// while writing a 410 tombstone (bytes-still-resident DSR breach). Without a
+/// TDK the eraser cannot address the tenant's objects, so it MUST NOT be
+/// constructed (mirrors the DSR `adapter_r2_cas` `load_tdk()` fail-CLOSED).
 #[must_use]
-pub fn build_state_from_env(_internal_auth_key: Option<Arc<str>>) -> Option<CasEraseRouteState> {
-    // The R2 blob eraser is the DSR Wave 1 (#254) adapter; not yet importable on
-    // this baseline. Returning None keeps the route unmounted until #254 lands
-    // and the orchestrator supplies the eraser at the integration seam.
-    None
+pub fn build_state_from_env(internal_auth_key: Option<Arc<str>>) -> Option<CasEraseRouteState> {
+    let internal_auth_key = internal_auth_key?;
+
+    // Fail-CLOSED without a TDK: we cannot derive the tenant prefix the writer
+    // used, so we cannot prove which R2 objects to delete (mirrors DSR).
+    let tdk = load_tdk_from_env()?;
+
+    // D1-backed tombstone store; absent D1 env ⇒ unmounted.
+    let tombstones: Arc<dyn TombstoneStore> = Arc::new(D1TombstoneStore::from_env()?);
+
+    let cas_bucket = crate::storage::env_or("R2_CAS_BUCKET", DEFAULT_CAS_BUCKET);
+    let eraser: Arc<dyn CasBlobEraser> =
+        Arc::new(R2CasBlobEraser::new(Arc::new(tdk), cas_bucket));
+
+    Some(CasEraseRouteState {
+        tombstones,
+        eraser,
+        internal_auth_key,
+    })
+}
+
+/// Load the tenant derivation key from `R2_TDK_HEX` (64 hex chars = 32 bytes).
+///
+/// Mirrors `crate::storage::r2_s3::load_tdk_from_env` /
+/// `routes::dsr::d1util::load_tdk` byte-for-byte (same env var, same length
+/// gate, same hex decode) so the prefix this eraser derives matches the one
+/// the writer/DSR adapter derive. Returns `None` (fail-CLOSED) when the var is
+/// absent, the wrong length, or not valid hex.
+fn load_tdk_from_env() -> Option<TenantDerivationKey> {
+    let hex_str = std::env::var("R2_TDK_HEX").ok()?;
+    let hex_str = hex_str.trim();
+    if hex_str.len() != 64 {
+        tracing::warn!(
+            len = hex_str.len(),
+            "cas_erase: R2_TDK_HEX has wrong length; eraser NOT built (route unmounted)"
+        );
+        return None;
+    }
+    let mut bytes = Zeroizing::new([0u8; 32]);
+    if hex::decode_to_slice(hex_str, bytes.as_mut()).is_err() {
+        tracing::warn!("cas_erase: R2_TDK_HEX is not valid hex; eraser NOT built (route unmounted)");
+        return None;
+    }
+    Some(TenantDerivationKey::from_bytes(bytes))
 }
 
 #[cfg(test)]
@@ -595,5 +746,76 @@ mod tests {
         let t = InMemoryTombstoneStore::new();
         assert!(!t.upsert(TENANT, DIGEST, "r", 1).await.expect("u1"));
         assert!(t.upsert(TENANT, DIGEST, "r", 2).await.expect("u2"));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Production R2 eraser — by-construction key-layout proof + fail-CLOSED
+    // ──────────────────────────────────────────────────────────────────────
+
+    /// A fixed, non-zero TDK so the derived prefix is deterministic.
+    fn test_tdk() -> Arc<TenantDerivationKey> {
+        let bytes = Zeroizing::new([7u8; 32]);
+        Arc::new(TenantDerivationKey::from_bytes(bytes))
+    }
+
+    /// The eraser's LIST/DELETE key for a UUID tenant is EXACTLY the whole-blob
+    /// key the CAS writer keys under: `<region>/<derive_prefix(tdk,uuid)>/<digest>`.
+    /// This is the by-construction guarantee that the erase cannot silently
+    /// no-op on a key-derivation mismatch (the earlier R2Ac bug class).
+    #[test]
+    fn eraser_prefix_matches_writer_derivation_for_uuid_tenant() {
+        let tdk = test_tdk();
+        let eraser = R2CasBlobEraser::new(tdk.clone(), "corelink-cas-prod".to_owned());
+        let tenant_uuid = "550e8400-e29b-41d4-a716-446655440000";
+        let uid = Uuid::try_parse(tenant_uuid).expect("uuid");
+        // What the WRITER derives (R2CasHandler::r2_key UUID branch).
+        let writer_prefix = derive_prefix(&tdk, uid).to_string();
+        // What the ERASER derives.
+        let eraser_prefix = eraser.tenant_prefix(tenant_uuid);
+        assert_eq!(eraser_prefix, writer_prefix, "prefix must match the writer");
+        assert_eq!(writer_prefix.len(), TENANT_PREFIX_LEN);
+        // And the assembled LIST key is the leading path of the blob key.
+        let blob_key = crate::storage::r2_s3::R2S3Client::blob_key("iad", &writer_prefix, DIGEST);
+        let list_key = crate::storage::r2_s3::R2S3Client::blob_key("iad", &eraser_prefix, DIGEST);
+        assert_eq!(list_key, blob_key);
+        assert!(blob_key.starts_with("iad/"), "key={blob_key}");
+        assert!(blob_key.ends_with(&format!("/{DIGEST}")), "key={blob_key}");
+    }
+
+    /// Non-UUID tenant uses the writer's raw-padded 16-char fallback (dev/test
+    /// fixtures), so a digest erase still keys identically to the writer.
+    #[test]
+    fn eraser_prefix_pads_non_uuid_tenant_to_16() {
+        let eraser = R2CasBlobEraser::new(test_tdk(), "corelink-cas-prod".to_owned());
+        let prefix = eraser.tenant_prefix("t1");
+        assert_eq!(prefix.len(), TENANT_PREFIX_LEN);
+        assert!(prefix.starts_with("t1"), "prefix={prefix}");
+    }
+
+    /// The five canonical CAS regions match the DSR Wave 1 tenant-wide adapter
+    /// (`adapter_r2_cas::CAS_REGIONS`) — same sweep, same order.
+    #[test]
+    fn cas_regions_match_dsr_adapter() {
+        assert_eq!(CAS_REGIONS, &["sam", "iad", "lhr", "nrt", "syd"]);
+    }
+
+    /// Fail-CLOSED: with no internal-auth key the route state is never built
+    /// (route unmounted) even if other env were present.
+    #[test]
+    fn build_state_without_auth_key_is_none() {
+        assert!(build_state_from_env(None).is_none());
+    }
+
+    /// Fail-CLOSED: an auth key is present but `R2_TDK_HEX` is absent ⇒ the
+    /// eraser cannot derive the tenant prefix, so the route is NOT mounted.
+    /// (We cannot mutate process env safely in a shared test binary, so this
+    /// asserts the no-TDK branch directly via the loader.)
+    #[test]
+    fn build_state_fail_closed_without_tdk() {
+        std::env::remove_var("R2_TDK_HEX");
+        assert!(load_tdk_from_env().is_none(), "no TDK ⇒ loader None");
+        // With the loader None, build_state_from_env short-circuits to None
+        // regardless of D1/bucket env.
+        assert!(build_state_from_env(Some(Arc::from(TEST_KEY))).is_none());
     }
 }

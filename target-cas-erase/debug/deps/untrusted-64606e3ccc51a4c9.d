@@ -1,0 +1,8 @@
+/Users/gustavoschneiter/Documents/HuGR/corelink-server/.claude/worktrees/agent-a2b17226d0c989237/target-cas-erase/debug/deps/untrusted-64606e3ccc51a4c9.d: /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/lib.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/input.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/no_panic.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/reader.rs
+
+/Users/gustavoschneiter/Documents/HuGR/corelink-server/.claude/worktrees/agent-a2b17226d0c989237/target-cas-erase/debug/deps/libuntrusted-64606e3ccc51a4c9.rmeta: /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/lib.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/input.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/no_panic.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/reader.rs
+
+/Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/lib.rs:
+/Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/input.rs:
+/Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/no_panic.rs:
+/Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/reader.rs:

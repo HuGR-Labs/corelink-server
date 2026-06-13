@@ -23,6 +23,27 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **cas-erase: complete the WP-B CAS-erase WRITE path — wire the real R2
+  `CasBlobEraser` (hugit-P2 seam B).** The `POST /_internal/cas/:tenant/:hash/erase`
+  scaffold (constant-time internal-auth gate, cross-tenant path-echo check,
+  digest charset-validation, delete-before-tombstone ordering, D1
+  `cas_tombstone` 410-Gone store) shipped with its R2 byte-deletion seam gated
+  OFF (`build_state_from_env` → `None`) until the DSR Wave 1 R2 primitives
+  (#254) landed. Now that #254 is merged, the production `R2CasBlobEraser` is
+  wired: it reuses `R2S3Client::{list_objects_v2, delete, blob_key}` and derives
+  the tenant prefix the **same way the CAS writer did** (`Uuid::try_parse →
+  derive_prefix(tdk, uuid)`, else the raw-padded 16-char fallback), then LISTs
+  `<region>/<tenant_prefix>/<digest>` across the five canonical CAS regions
+  (`sam/iad/lhr/nrt/syd`) and DELETEs the match — idempotent, so a re-erase of an
+  absent blob is a no-op success. Key layout matches the stored object **by
+  construction** (same `blob_key` leading path the writer keys under), closing
+  the silent-no-op class of bug (the earlier `R2Ac` key-derivation mismatch).
+  **fail-CLOSED:** the WRITE route mounts only when the internal-auth key, the
+  R2 TDK (`R2_TDK_HEX`), and the D1 tombstone store all build from env — without
+  the TDK the eraser cannot address the tenant's R2 objects, so it is never
+  constructed and the route stays UNMOUNTED (it can never write a 410 tombstone
+  for a blob whose bytes it could not delete). Mounted at the #254-merge seam in
+  `main.rs`. Unmounted in dev/CI.
 - **quota: wire the per-tenant monthly $-ceiling guard (ADR-0068) onto the
   billable data plane (hugit-P2 WP-G1).** `QuotaGuard` existed but no route
   called it (dead code). It is now mounted — alongside the existing scope/rate

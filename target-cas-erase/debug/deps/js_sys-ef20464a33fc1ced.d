@@ -1,0 +1,8 @@
+/Users/gustavoschneiter/Documents/HuGR/corelink-server/.claude/worktrees/agent-a2b17226d0c989237/target-cas-erase/debug/deps/js_sys-ef20464a33fc1ced.d: /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/js-sys-0.3.99/src/lib.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/js-sys-0.3.99/src/futures/mod.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/js-sys-0.3.99/src/futures/queue.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/js-sys-0.3.99/src/futures/task/singlethread.rs
+
+/Users/gustavoschneiter/Documents/HuGR/corelink-server/.claude/worktrees/agent-a2b17226d0c989237/target-cas-erase/debug/deps/libjs_sys-ef20464a33fc1ced.rmeta: /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/js-sys-0.3.99/src/lib.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/js-sys-0.3.99/src/futures/mod.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/js-sys-0.3.99/src/futures/queue.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/js-sys-0.3.99/src/futures/task/singlethread.rs
+
+/Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/js-sys-0.3.99/src/lib.rs:
+/Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/js-sys-0.3.99/src/futures/mod.rs:
+/Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/js-sys-0.3.99/src/futures/queue.rs:
+/Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/js-sys-0.3.99/src/futures/task/singlethread.rs:
