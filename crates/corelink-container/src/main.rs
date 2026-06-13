@@ -315,12 +315,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
-    // WI-S11-008 Wave 0: `POST /_internal/dsr/erase` — gated by the same
+    // M1: `POST /internal/v1/auth/introspect` — corelink-runners fabric PAT
+    // introspection. Gated by a DEDICATED `FABRIC_INTROSPECT_AUTH_KEY` (NOT the
+    // mint secret — tight blast radius). Mounted only when that secret (≥32
+    // chars) + the PAT signing key + the D1 `StorageEnv` are ALL present
+    // (fail-CLOSED: unmounted in dev/CI).
+    if let Some(introspect_state) =
+        corelink_server::routes::auth_introspect::build_state_from_env()
+    {
+        info!(
+            "routes: /internal/v1/auth/introspect mounted (FABRIC_INTROSPECT_AUTH_KEY + PAT signing key + D1 present)"
+        );
+        app = app.merge(corelink_server::routes::auth_introspect::router(
+            introspect_state,
+        ));
+    } else {
+        warn!(
+            "FABRIC_INTROSPECT_AUTH_KEY / PAT_SIGNING_KEY / D1 config incomplete; \
+             /internal/v1/auth/introspect NOT mounted (dev/CI mode)"
+        );
+    }
+
+    // WI-S11-008: `POST /_internal/dsr/erase` — gated by the
     // CORELINK_INTERNAL_AUTH_KEY. Drives the 12-backend erasure orchestrator
-    // (Wave 0: in-memory no-op adapters — pipeline wired end-to-end, no real
-    // deletion yet; Wave 1 swaps in real D1/R2/Stripe/KV/Loki transports).
+    // (Wave 1: real D1/R2/Stripe/KV/Loki transports wired in #254).
     if let Some(dsr_state) = corelink_server::routes::dsr::build_state_from_env() {
-        info!("routes: /_internal/dsr/erase route mounted (Wave 0 placeholder adapters)");
+        info!("routes: /_internal/dsr/erase route mounted (Wave 1 real adapters)");
         app = app.merge(corelink_server::routes::dsr::router(dsr_state));
     } else {
         warn!("CORELINK_INTERNAL_AUTH_KEY unset; /_internal/dsr/erase route NOT mounted (dev/CI)");
