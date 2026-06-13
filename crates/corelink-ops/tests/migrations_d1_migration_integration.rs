@@ -32,21 +32,14 @@ const KNOWN_HAZARDS: &[(&str, &str)] = &[
     // patched in earlier waves (likely the schema-shape unification
     // pass that introduced `tenant` / `tenants` view aliases). Removing
     // stale pins per the test's "no stale entry" guard (line 174 panic).
-    // Empty list was the steady-state until 0064 landed (below).
-    (
-        "0064_tenant_tier_max.sql",
-        // Intentional SQLite/D1 table-rebuild (the 12-step recreate) to RELAX
-        // the inline `tenant.tier` CHECK so it also accepts 'max'. SQLite/D1 has
-        // no `ALTER TABLE … ALTER COLUMN` / `DROP CONSTRAINT`, so the only
-        // correct way to widen an existing inline CHECK is to rebuild the table
-        // (DROP TABLE + RENAME TO) — which the in-memory replay flags as a
-        // statement skip beyond the documented D1-IF-NOT-EXISTS rewrite.
-        // ADDITIVE in effect: the accepted-value set only GROWS (legacy 'team'/
-        // 'org' retained), rows are copied 1:1 via INSERT…SELECT, zero data
-        // loss. Ratified in ADR-0064; the migration carries line-local
-        // `additive-allowed: ADR-0064` suppressions for the additive gate.
-        "ADR-0064 tenant.tier CHECK widen (+max) — deliberate table rebuild, additive in effect",
-    ),
+    // Empty again as of #262: 0064 was previously pinned here because its
+    // table-rebuild did not replay cleanly against the in-memory SQLite. The
+    // 2026-06-13 prod-apply failure exposed the real cause — the rebuild's
+    // `ALTER TABLE … RENAME` re-parsed residency triggers on other tables that
+    // reference `tenant`, hitting "no such table: main.tenant". #262 fixes 0064
+    // (`PRAGMA legacy_alter_table=ON` + recreate the `trg_tenant_*` triggers),
+    // so it now replays cleanly — the test's "no stale entry" guard requires it
+    // be removed from this list.
 ];
 
 /// Files with hard failures that are PRE-EXISTING bugs in the migration
