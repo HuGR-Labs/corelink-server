@@ -75,15 +75,17 @@
 --                                      WHERE NOT NULL                    [0056]
 --   (no index was added on `tier` in 0057 — none created here either)
 --
--- Trigger inventory (0028 — survive the rebuild as they reference the table
---   name, not the physical storage; D1 re-validates after RENAME TO):
+-- Trigger inventory (0028 — triggers DEFINED ON `tenant`; SQLite DROPS these
+--   together with the table on `DROP TABLE tenant`, so they MUST be recreated
+--   after the RENAME — see section 3 below. (The earlier claim that they
+--   "survive name-bound" was WRONG and would have silently lost the residency
+--   guards post-rebuild — corrected 2026-06-13.)):
 --   trg_tenant_primary_region_required   (BEFORE INSERT)
 --   trg_tenant_primary_region_immutable  (BEFORE UPDATE OF primary_region)
 --   trg_tenant_primary_region_valid_insert (BEFORE INSERT)
---   → These are name-bound to `tenant`, not the physical object; they
---     survive the DROP + RENAME swap on the same connection. We do NOT
---     drop + recreate them — that would be a destructive trigger operation
---     and is unnecessary: D1 trigger bindings follow the table name.
+--   Triggers on OTHER tables that REFERENCE `tenant` in their body
+--   (trg_blob_meta/ac_meta/audit_outbox _region_match_*) are NOT dropped, but
+--   force the legacy_alter_table=ON guard above (else the RENAME re-parse fails).
 --
 -- Safety of the rebuild:
 --   - `PRAGMA foreign_keys` is left OFF for the rebuild.
@@ -115,6 +117,19 @@ PRAGMA foreign_keys = OFF;
 -- effective mechanism is `defer_foreign_keys` (D1-documented), which IS
 -- honoured in-transaction and covers the DROP/RENAME window below.
 PRAGMA defer_foreign_keys = true;
+
+-- CRITICAL (2026-06-13 prod-apply fix): set legacy_alter_table=ON for the
+-- DROP + RENAME window. Without it, SQLite 3.25+ (which D1 runs) re-parses
+-- EVERY trigger/view body during `ALTER TABLE … RENAME TO`. Five triggers on
+-- OTHER tables reference `tenant` in their bodies (the residency guards
+-- trg_blob_meta_region_match_insert/_update, trg_ac_meta_region_match_insert/
+-- _update, trg_audit_outbox_region_match_insert). During the rename — after the
+-- old `tenant` is dropped — that re-parse hits "no such table: main.tenant" and
+-- aborts the whole migration (observed on corelink-config-prod 2026-06-13).
+-- legacy_alter_table=ON suppresses the cross-object re-parse (exactly SQLite's
+-- documented "12-step" step 2). It is a connection flag, NOT a no-op in a
+-- transaction (unlike PRAGMA foreign_keys), so D1 honours it here.
+PRAGMA legacy_alter_table = ON;
 
 -- ============================================================
 -- 1. tenant — rebuild with the widened 7-value CHECK on `tier`
@@ -258,4 +273,41 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_clerk_user_id
 -- NOTE: No index on `tier` — 0057 did not create one, and the quota lookup
 -- hot-path (worker/src/lib/quota.ts) reads by tenant_id (PK), not by tier.
 
+-- ============================================================
+-- 3. Re-create the residency triggers ON `tenant` (DROPPED with the table)
+-- ============================================================
+-- SQLite drops a table's own triggers when the table is dropped. These three
+-- (from 0028 / WI-S14-002, INV-REGION-NO-CROSS-LEAK) enforce primary_region
+-- integrity and MUST be recreated verbatim or residency enforcement silently
+-- vanishes. Definitions copied byte-for-byte from corelink-config-prod
+-- sqlite_master (2026-06-13). Using IF NOT EXISTS for re-run safety.
+
+CREATE TRIGGER IF NOT EXISTS trg_tenant_primary_region_required
+BEFORE INSERT ON tenant
+FOR EACH ROW
+WHEN NEW.primary_region IS NULL
+BEGIN
+    SELECT RAISE(ABORT, 'primary_region is required for new tenants (WI-S14-002: INV-REGION-NO-CROSS-LEAK)');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_tenant_primary_region_valid_insert
+BEFORE INSERT ON tenant
+FOR EACH ROW
+WHEN NEW.primary_region IS NOT NULL
+  AND NEW.primary_region NOT IN ('wnam','enam','weur','sam','apac','afr')
+BEGIN
+    SELECT RAISE(ABORT, 'primary_region must be one of: wnam, enam, weur, sam, apac, afr');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_tenant_primary_region_immutable
+BEFORE UPDATE OF primary_region ON tenant
+FOR EACH ROW
+WHEN OLD.primary_region IS NOT NULL AND OLD.primary_region != NEW.primary_region
+BEGIN
+    SELECT RAISE(ABORT, 'primary_region is immutable post-INSERT (WI-S14-002: manual ticket + admin role + dual-approval required)');
+END;
+
+-- Restore the default before finishing (connection hygiene; D1 connections are
+-- ephemeral per request but keep the migration self-contained).
+PRAGMA legacy_alter_table = OFF;
 PRAGMA foreign_keys = ON;
