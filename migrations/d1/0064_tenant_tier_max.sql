@@ -1,5 +1,18 @@
 -- Migration 0064: widen the tier-string CHECK on `tenant.tier` to include 'max'.
 --
+-- ⚠️ D1 APPLY MECHANISM (load-bearing — verified on a scratch D1 clone 2026-06-13):
+--   `tenant` is the parent of 5 inbound FK children (pat, usage_counter,
+--   region_migration_request, dpa_acceptance_pending, signup_orchestration).
+--   `wrangler d1 migrations apply` does NOT honour `PRAGMA defer_foreign_keys`
+--   (it enforces FKs per statement), so the DROP TABLE step orphans those
+--   children and the apply fails with `FOREIGN KEY constraint failed` + a full
+--   rollback. `wrangler d1 execute --file <this>` runs the file as ONE
+--   transaction and DOES honour the defer, so the rebuild commits FK-clean.
+--   → On D1, this migration (and any FK-PARENT table rebuild) MUST be applied
+--     via `execute --file`, then recorded in `d1_migrations` so the runner
+--     treats it as applied. Prod (corelink-config-prod, the single shared
+--     CONFIG_DB across all 5 envs) was applied this way on 2026-06-13.
+--
 -- Canonical taxonomy (FROZEN — 6 tiers post-ADR-S19-001):
 --   free | solo | starter | pro | max | enterprise
 --   Legacy aliases retained for back-compat: 'team', 'org'.
