@@ -250,6 +250,7 @@ mod tests {
             .map(|k| BackendCompletion {
                 dsr_id: req.dsr_id,
                 tenant_id: req.tenant_id,
+                subject_id_hash: [0u8; 32],
                 backend: *k,
                 outcome: if k.is_effective() {
                     BackendErasureOutcome::Erased { records_deleted: 1 }

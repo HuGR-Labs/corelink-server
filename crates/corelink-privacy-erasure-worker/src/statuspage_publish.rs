@@ -198,6 +198,7 @@ mod tests {
         let completions = vec![BackendCompletion {
             dsr_id: request.dsr_id,
             tenant_id: request.tenant_id,
+            subject_id_hash: [0u8; 32],
             backend: BackendKind::D1,
             outcome: BackendErasureOutcome::Erased { records_deleted: 1 },
             idempotency_key: format!("{}:{}", request.dsr_id, BackendKind::D1.as_str()),

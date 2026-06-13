@@ -280,6 +280,11 @@ impl InMemoryErasureWorker {
         let completion = BackendCompletion {
             dsr_id: request.dsr_id,
             tenant_id: request.tenant_id,
+            subject_id_hash: *crate::pseudonymize::pseudonymize_subject_id(
+                request.subject_id,
+                request.erasure_salt.as_bytes(),
+            )
+            .as_bytes(),
             backend: entry.backend,
             outcome,
             idempotency_key: entry.idempotency_key.clone(),
@@ -367,6 +372,11 @@ impl InMemoryErasureWorker {
                     completions.push(BackendCompletion {
                         dsr_id: request.dsr_id,
                         tenant_id: request.tenant_id,
+                        subject_id_hash: *crate::pseudonymize::pseudonymize_subject_id(
+                            request.subject_id,
+                            request.erasure_salt.as_bytes(),
+                        )
+                        .as_bytes(),
                         backend: *entry,
                         outcome: BackendErasureOutcome::Failed {
                             retry_after_seconds: 60,

@@ -172,6 +172,75 @@ impl R2S3Client {
         }
     }
 
+    /// Hard-delete the object stored under `key`.
+    ///
+    /// S3 `DeleteObject` is idempotent — deleting a key that does not
+    /// exist returns success — so a replayed erasure is a safe no-op.
+    /// Used by the WI-S11-008 GDPR erasure adapters (`adapter_r2_cas` /
+    /// `adapter_r2_ac`) to erase a tenant's content-addressed bytes.
+    ///
+    /// # Errors
+    /// Returns `Err(String)` on any transport/service error.
+    pub async fn delete(&self, key: &str) -> Result<(), String> {
+        debug!(
+            bucket = %self.bucket,
+            key = %key,
+            "R2S3Client::delete"
+        );
+        self.inner
+            .delete_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| format!("R2 delete failed for key {key}: {e}"))?;
+        Ok(())
+    }
+
+    /// List every object key under `prefix` (paginated via the V2
+    /// continuation token).
+    ///
+    /// Used by the WI-S11-008 CAS erasure adapter: the native whole-blob CAS
+    /// path keys objects at `<region>/<tenant_prefix>/<digest>` with **no
+    /// durable D1 index**, so LIST-by-prefix is the only enumeration that is
+    /// complete by construction (deletes everything under a tenant's prefix,
+    /// no matter which component wrote it).
+    ///
+    /// # Errors
+    /// Returns `Err(String)` on any transport/service error.
+    pub async fn list_objects_v2(&self, prefix: &str) -> Result<Vec<String>, String> {
+        let mut keys = Vec::new();
+        let mut continuation: Option<String> = None;
+        loop {
+            let mut req = self
+                .inner
+                .list_objects_v2()
+                .bucket(&self.bucket)
+                .prefix(prefix);
+            if let Some(token) = continuation.as_ref() {
+                req = req.continuation_token(token);
+            }
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| format!("R2 list failed for prefix {prefix}: {e}"))?;
+            for obj in resp.contents() {
+                if let Some(k) = obj.key() {
+                    keys.push(k.to_owned());
+                }
+            }
+            if resp.is_truncated().unwrap_or(false) {
+                match resp.next_continuation_token() {
+                    Some(t) => continuation = Some(t.to_owned()),
+                    None => break,
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(keys)
+    }
+
     /// Compute the R2 object key for a blob.
     ///
     /// Key format: `<region>/<tenant_prefix_16>/<digest>`.
