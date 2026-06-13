@@ -1,7 +1,0 @@
-/Users/gustavoschneiter/Documents/HuGR/corelink-server/.claude/worktrees/agent-a2b17226d0c989237/target-cas-erase/debug/deps/signal_hook_registry-0d4bd9b06d780dea.d: /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/lib.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/half_lock.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/vec_map.rs
-
-/Users/gustavoschneiter/Documents/HuGR/corelink-server/.claude/worktrees/agent-a2b17226d0c989237/target-cas-erase/debug/deps/libsignal_hook_registry-0d4bd9b06d780dea.rmeta: /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/lib.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/half_lock.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/vec_map.rs
-
-/Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/lib.rs:
-/Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/half_lock.rs:
-/Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/vec_map.rs:

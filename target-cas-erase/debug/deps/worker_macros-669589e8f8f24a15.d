@@ -1,8 +1,0 @@
-/Users/gustavoschneiter/Documents/HuGR/corelink-server/.claude/worktrees/agent-a2b17226d0c989237/target-cas-erase/debug/deps/worker_macros-669589e8f8f24a15.d: /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/worker-macros-0.8.3/src/lib.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/worker-macros-0.8.3/src/durable_object.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/worker-macros-0.8.3/src/event.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/worker-macros-0.8.3/src/send.rs
-
-/Users/gustavoschneiter/Documents/HuGR/corelink-server/.claude/worktrees/agent-a2b17226d0c989237/target-cas-erase/debug/deps/libworker_macros-669589e8f8f24a15.dylib: /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/worker-macros-0.8.3/src/lib.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/worker-macros-0.8.3/src/durable_object.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/worker-macros-0.8.3/src/event.rs /Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/worker-macros-0.8.3/src/send.rs
-
-/Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/worker-macros-0.8.3/src/lib.rs:
-/Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/worker-macros-0.8.3/src/durable_object.rs:
-/Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/worker-macros-0.8.3/src/event.rs:
-/Users/gustavoschneiter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/worker-macros-0.8.3/src/send.rs:
