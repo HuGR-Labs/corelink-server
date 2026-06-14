@@ -36,7 +36,10 @@ type WelcomeClaims = {
 export default async function WelcomePage(props: {
   params: Promise<{ locale: Locale }>;
 }): Promise<React.ReactElement> {
-  const { locale } = await props.params;
+  // params are awaited to satisfy the dynamic-route contract; the post-signup
+  // redirects intentionally target the locale-less /sign-in (the only real
+  // sign-in route — there is no [locale]/sign-in), matching the /upgrade page.
+  await props.params;
 
   const mod = await import("@clerk/nextjs/server").catch(() => null);
   let claims: WelcomeClaims = {};
@@ -58,7 +61,7 @@ export default async function WelcomePage(props: {
       // unavailable for this render (an OpenNext edge edge-case). Never 500 the
       // post-signup landing — send the user to sign-in to re-establish a session
       // rather than crashing. The error.tsx boundary is the last-resort net.
-      redirect(`/${locale}/sign-in`);
+      redirect("/sign-in");
     }
   }
 
@@ -67,7 +70,7 @@ export default async function WelcomePage(props: {
   // signup whose webhook is mid-flight will have its tenant within ~2s).
   // p95 webhook latency target ≤ 2s (acceptance §2); rare edge case.
   if (!claims.tenant_id) {
-    redirect(`/${locale}/sign-in`);
+    redirect("/sign-in");
   }
 
   const region = claims.region ?? "auto";

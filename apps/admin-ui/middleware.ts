@@ -109,7 +109,11 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
         applySecurityHeaders(augmented, nonce);
         return augmented;
       }
-    } catch {
+    } catch (err) {
+      // Observability: a Clerk outage / version skew presents here as "everyone
+      // bounced to sign-in" — log it so it's not mistaken for a login-conversion
+      // drop. (Surfaced to the Worker logs + Sentry.)
+      console.error("clerkMiddleware enforcement error", err);
       // Fail CLOSED: if Clerk enforcement errors on an ENFORCED path, never
       // fall through and serve the protected page anonymously (that both leaks
       // the page and 500s when its `auth()` finds no middleware context).
