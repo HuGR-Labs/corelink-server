@@ -51,19 +51,33 @@ Each entry cross-references:
   Cloudflare zone rate-limit rule ("Wave 32", 10 req/10s/IP across all corelink
   hosts) counted the ~20 static-chunk requests every SPA page load fires from
   one IP, so `/sign-in` + `/sign-up` 429'd (CF error 1015) on their own JS
-  bundles → `Loading chunk failed` → page crash. The rule now EXCLUDES static
-  assets (`/_next/`, `/assets/`, `/img/`, `/fonts/`, `/static/`) and allows 50
-  req/10s/IP for dynamic requests (infra change on zone humangr.com). (2) The
-  `/sign-in` + `/sign-up` widgets (`<SignIn>`/`<SignUp>`) rendered with NO
-  `<ClerkProvider>` ancestor (those routes live outside the
+  bundles → `Loading chunk failed` → page crash. The rule now EXCLUDES only the
+  immutable static prefixes (`/_next/static/`, `/assets/`, `/img/`, `/fonts/`,
+  `/static/` — NOT `/_next/image` or `/_next/data`, which stay metered) and
+  allows 50 req/10s/IP for dynamic requests (infra change on zone humangr.com).
+  (2) The `/sign-in` + `/sign-up` widgets (`<SignIn>`/`<SignUp>`) rendered with
+  NO `<ClerkProvider>` ancestor (those routes live outside the
   `[locale]/(authenticated)` provider group), so Clerk threw `useSession can
   only be used within the <ClerkProvider />`; both now mount their own provider
   inside the existing `ssr:false` dynamic boundary (`ClerkSignIn.tsx` /
   `ClerkSignUp.tsx`) — keeping `@clerk/nextjs` out of the edge-SSR pass. (3)
-  CSP gaps: `script-src` was missing `https://challenges.cloudflare.com` (Clerk
-  Smart-CAPTCHA / Turnstile, injected at runtime) and `connect-src` was missing
-  `https://corelink-analytics.humangr.com` (the first-party PLG event sink) —
-  both added so enforce-mode CSP no longer blocks them.
+  CSP gaps (verified against Clerk's official policy): `script-src` was missing
+  `https://challenges.cloudflare.com` (Clerk Smart-CAPTCHA / Turnstile), there
+  was no `worker-src` so the Turnstile `blob:` Web Worker fell back to
+  `default-src 'self'` and was refused, and `connect-src` was missing the
+  first-party analytics sink + `https://clerk-telemetry.com`. Added
+  `script-src challenges`, `worker-src 'self' blob:`, and the two connect-src
+  hosts so enforce-mode CSP no longer blocks the widget.
+  Hardening from a 3-agent adversarial review rode along: `images.unoptimized`
+  (the app uses `next/image` zero times → removes the `/_next/image` optimizer
+  as a cost/DoS surface), an `error.tsx` boundary for the authenticated group
+  (a thrown Server Component degrades to a branded screen, not a bare 500), the
+  `admin-ui-deploy` job timeout 20m→40m (the OpenNext build routinely runs
+  18-20m on the shared Mac), and a browser render-smoke
+  (`scripts/e2e-admin-ui-render-smoke.mjs` + `e2e-admin-ui-render.yml`) that
+  loads the auth pages in headless Chromium and fails on a client-side
+  exception — closing the gap that let `e2e-clerk-signup` stay green through
+  this outage (it only tests the backend).
 - **admin-ui: immutable edge-caching for `/_next/static` (`public/_headers`).**
   Workers Assets served the content-hashed chunks `cache-control: max-age=0,
   must-revalidate` (cf-cache MISS every request) so each SPA page load re-fetched
