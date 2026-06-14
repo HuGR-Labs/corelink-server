@@ -50,11 +50,15 @@ async function checkPage(browser, target) {
 
   const url = `${BASE}${target.path}`;
   try {
-    await page.goto(url, { waitUntil: "networkidle", timeout: 45000 });
+    // `domcontentloaded` (not `networkidle`): pages with a live analytics beacon
+    // or other long-lived connection never reach network-idle, which would flag a
+    // perfectly healthy page. A client-side exception still surfaces via the
+    // `pageerror` listener + the error-screen text check after the settle wait.
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
   } catch (e) {
     errors.push(`navigation: ${e.message.split("\n")[0]}`);
   }
-  await page.waitForTimeout(4000);
+  await page.waitForTimeout(5000);
 
   const bodyText = (await page.evaluate(() => document.body?.innerText || "")).slice(0, 200);
   if (/Application error|client-side exception/i.test(bodyText)) {
