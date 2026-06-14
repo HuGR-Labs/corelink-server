@@ -37,8 +37,8 @@ use axum::{
     Router,
 };
 use corelink_handler_cas::{
-    CasHandlerError, CasReadHandler, CasReadRequest, CasWriteHandler, CasWriteRequest,
-    InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver,
+    CasHandlerError, CasReadHandler, CasReadRequest, CasReadResponse, CasWriteHandler,
+    CasWriteRequest, CasWriteResponse, InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver,
 };
 
 /// Canonical CAS read route path (matchit-0.7 / axum-0.7 `:name` captures).
@@ -82,6 +82,43 @@ impl core::fmt::Debug for CasRouteState {
     }
 }
 
+/// Sentinel carried in [`CasHandlerError::Internal`] by
+/// [`UnavailableCasHandler`] so [`map_err`] can map the storage-unavailable
+/// condition to **503** (rather than the generic 500 the `Internal` wildcard
+/// arm yields). The handler-error enum lives in a sibling crate and is
+/// `#[non_exhaustive]` without a dedicated `Unavailable` variant, so we thread
+/// the distinction through `Internal` with this exact marker prefix.
+const STORAGE_UNAVAILABLE_SENTINEL: &str = "storage-unavailable: ";
+
+/// Fail-CLOSED stand-in handler mounted in place of `InMemoryCasHandler` when
+/// storage credentials ARE present but the R2 handler refused to build —
+/// today exactly the "R2_TDK_HEX required" case (F1, CAA-360).
+///
+/// A silent `InMemory` fallback there would serve a NON-durable cache with no
+/// alarm (fail-OPEN-ish). Instead every read/write through this handler fails
+/// CLOSED + LOUD: it returns [`CasHandlerError::Internal`] carrying the
+/// [`STORAGE_UNAVAILABLE_SENTINEL`], which [`map_err`] maps to HTTP 503 — the
+/// route is unavailable until `R2_TDK_HEX` is set. Distinct from the
+/// creds-ABSENT path (`None` ⇒ dev/CI `InMemory`, which is fine).
+#[derive(Debug)]
+struct UnavailableCasHandler;
+
+impl CasReadHandler for UnavailableCasHandler {
+    fn read(&self, _req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
+        Err(CasHandlerError::Internal(format!(
+            "{STORAGE_UNAVAILABLE_SENTINEL}R2 CAS handler refused to build (R2_TDK_HEX unset/invalid)"
+        )))
+    }
+}
+
+impl CasWriteHandler for UnavailableCasHandler {
+    fn write(&self, _req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError> {
+        Err(CasHandlerError::Internal(format!(
+            "{STORAGE_UNAVAILABLE_SENTINEL}R2 CAS handler refused to build (R2_TDK_HEX unset/invalid)"
+        )))
+    }
+}
+
 /// Build the canonical `Arc<dyn CasReadHandler>` for the current
 /// build target and runtime environment.
 ///
@@ -101,6 +138,14 @@ impl core::fmt::Debug for CasRouteState {
 ///   function falls back to `InMemoryCasHandler`. No network I/O
 ///   occurs.
 ///
+/// - When credentials ARE present but the R2 handler refuses to build
+///   (today exactly the "`R2_TDK_HEX` required" case — F1, CAA-360) the
+///   function does NOT silently degrade to `InMemoryCasHandler` (that
+///   would serve a non-durable cache with no alarm). It instead mounts
+///   the fail-CLOSED [`UnavailableCasHandler`], whose every read/write
+///   maps to HTTP 503 until `R2_TDK_HEX` is set, and emits a loud,
+///   structured `tracing::error!`.
+///
 /// On `wasm32-unknown-unknown` (Cloudflare Worker target) a
 /// compile-error placeholder is emitted per the
 /// `trait-abstraction-defer` rule; the wasm32 binding is out of
@@ -108,9 +153,11 @@ impl core::fmt::Debug for CasRouteState {
 ///
 /// # Panics
 ///
-/// Does not panic. If the R2 client cannot be constructed
-/// (malformed endpoint URL, etc.) an error is logged and the
-/// function falls back to `InMemoryCasHandler`.
+/// Does not panic. If the R2 client cannot be constructed with creds
+/// present (malformed endpoint URL, missing `R2_TDK_HEX`, etc.) an
+/// error is logged and the route is served by the fail-CLOSED
+/// [`UnavailableCasHandler`] (HTTP 503), never the silent `InMemory`
+/// fallback.
 #[must_use]
 pub fn build_handlers() -> (Arc<dyn CasReadHandler>, Arc<dyn CasWriteHandler>) {
     #[cfg(not(target_arch = "wasm32"))]
@@ -161,10 +208,27 @@ pub fn build_handlers() -> (Arc<dyn CasReadHandler>, Arc<dyn CasWriteHandler>) {
                     return (read, write);
                 }
                 Some(Err(e)) => {
+                    // F1 (CAA-360) fail-CLOSED + LOUD: storage creds ARE present
+                    // (this is the production data plane), but the R2 handler
+                    // refused to build — today exactly "R2_TDK_HEX required". We
+                    // MUST NOT silently fall back to the non-durable `InMemory`
+                    // cache (that is fail-OPEN-ish: a broken cache with no
+                    // alarm). Mount the fail-CLOSED `UnavailableCasHandler`
+                    // instead: every read/write returns 503 until `R2_TDK_HEX` is
+                    // set. Distinct from the creds-ABSENT case below (`None` ⇒
+                    // dev/CI `InMemory`, which is fine).
                     tracing::error!(
                         error = %e,
-                        "CAS handler: R2S3 build failed, falling back to InMemory"
+                        bucket = %bucket,
+                        region = %region,
+                        "CAS handler: R2S3 build REFUSED with storage creds present \
+                         (R2_TDK_HEX unset/invalid?) — mounting fail-CLOSED 503 \
+                         handler, NOT InMemory (F1 INV-TENANT-ISOLATION)"
                     );
+                    let shared: Arc<UnavailableCasHandler> = Arc::new(UnavailableCasHandler);
+                    let read: Arc<dyn CasReadHandler> = shared.clone();
+                    let write: Arc<dyn CasWriteHandler> = shared;
+                    return (read, write);
                 }
                 None => {
                     // Should not happen: we already checked is_some().
@@ -172,7 +236,9 @@ pub fn build_handlers() -> (Arc<dyn CasReadHandler>, Arc<dyn CasWriteHandler>) {
             }
         }
 
-        // Fallback: InMemory (no creds or build failure).
+        // Fallback: InMemory — creds ABSENT (unit tests, local dev, CI). This is
+        // the dev/CI path; production always has storage creds and takes the R2
+        // branch above (which now fails CLOSED on a missing TDK).
         tracing::info!("CAS handler: InMemory (no storage credentials configured)");
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
@@ -347,6 +413,14 @@ fn map_err(e: CasHandlerError) -> axum::response::Response {
             // bytes / commit writes without the audit row.
             (StatusCode::SERVICE_UNAVAILABLE, "audit closed").into_response()
         }
+        // F1 (CAA-360) fail-CLOSED: the route was mounted with storage creds
+        // present but the R2 handler refused to build (R2_TDK_HEX unset/invalid),
+        // so it is serving the `UnavailableCasHandler`. Surface that as 503
+        // "storage unavailable" — the cache is unavailable until R2_TDK_HEX is
+        // set, NOT a generic 500. See [`UnavailableCasHandler`].
+        CasHandlerError::Internal(ref msg) if msg.starts_with(STORAGE_UNAVAILABLE_SENTINEL) => {
+            (StatusCode::SERVICE_UNAVAILABLE, "storage unavailable").into_response()
+        }
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal").into_response(),
     }
 }
@@ -362,6 +436,33 @@ fn map_err(e: CasHandlerError) -> axum::response::Response {
 mod tests {
     use super::*;
     use corelink_handler_cas::handler::fake_hash;
+
+    /// `map_err` must map an `Internal` error to 503 ONLY when it carries the
+    /// storage-unavailable sentinel; any other `Internal` is a generic 500.
+    /// Kills the cargo-mutants "replace match guard with true" mutant on the
+    /// `if msg.starts_with(STORAGE_UNAVAILABLE_SENTINEL)` guard (mirrors the
+    /// ac.rs test) — with the guard forced to `true`, the non-sentinel case
+    /// below would wrongly become 503.
+    #[test]
+    fn map_err_internal_is_503_only_for_storage_sentinel() {
+        let storage = map_err(CasHandlerError::Internal(format!(
+            "{STORAGE_UNAVAILABLE_SENTINEL}R2_TDK_HEX unset"
+        )));
+        assert_eq!(
+            storage.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "sentinel-tagged Internal must be 503"
+        );
+
+        let generic = map_err(CasHandlerError::Internal(
+            "lock poisoned: unrelated failure".to_string(),
+        ));
+        assert_eq!(
+            generic.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "non-sentinel Internal must be 500, not 503 (guard must not be `true`)"
+        );
+    }
 
     fn fixture() -> CasRouteState {
         let audit = Arc::new(InMemoryAuditSink::new());
@@ -396,10 +497,38 @@ mod tests {
         }
     }
 
+    /// Route state backed by the fail-CLOSED [`UnavailableCasHandler`] — the
+    /// shape `build_handlers` returns when storage creds are present but the R2
+    /// handler refuses to build (F1: `R2_TDK_HEX` unset/invalid).
+    fn fixture_unavailable() -> CasRouteState {
+        let shared = Arc::new(UnavailableCasHandler);
+        let read: Arc<dyn CasReadHandler> = shared.clone();
+        let write: Arc<dyn CasWriteHandler> = shared;
+        CasRouteState {
+            read,
+            write,
+            tombstones: None,
+            quota: None,
+        }
+    }
+
     #[test]
     fn route_constants_match_canonical_path() {
         assert_eq!(CAS_READ_ROUTE, "/v1/cas/:tenant/:hash");
         assert_eq!(CAS_WRITE_ROUTE, "/v1/cas/:tenant/:hash");
+    }
+
+    /// F1 (CAA-360) fail-CLOSED: the `UnavailableCasHandler`'s error maps to
+    /// HTTP 503 "storage unavailable" (NOT the generic 500) so a forgotten
+    /// `R2_TDK_HEX` is loud, not a silent non-durable cache.
+    #[test]
+    fn unavailable_handler_maps_to_503() {
+        let err = UnavailableCasHandler
+            .read(CasReadRequest::new("t1", "h", "anon@t1", "t1", 0))
+            .expect_err("unavailable");
+        assert!(matches!(err, CasHandlerError::Internal(_)));
+        let resp = map_err(err);
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[test]
@@ -571,6 +700,43 @@ mod tests {
             .await
             .expect("body");
         assert_eq!(body.as_ref(), b"insufficient scope");
+    }
+
+    /// F1 (CAA-360) end-to-end: a route mounted on the fail-CLOSED
+    /// `UnavailableCasHandler` (creds present, `R2_TDK_HEX` missing) returns
+    /// HTTP 503 for an in-scope GET — the cache refuses to serve, not a silent
+    /// 200/404 from a non-durable InMemory fallback.
+    #[tokio::test]
+    async fn get_on_unavailable_handler_returns_503() {
+        let app = router(fixture_unavailable());
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/v1/cas/{TEST_TENANT}/deadbeef"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    /// F1 (CAA-360) end-to-end: an in-scope PUT against the fail-CLOSED
+    /// `UnavailableCasHandler` returns 503 — writes are refused (never a silent
+    /// non-durable commit) until `R2_TDK_HEX` is set.
+    #[tokio::test]
+    async fn put_on_unavailable_handler_returns_503() {
+        let app = router(fixture_unavailable());
+        let bytes = b"cas-unavailable".to_vec();
+        let hash = fake_hash(&bytes);
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/cas/{TEST_TENANT}/{hash}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::from(bytes))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     /// A `cas:r` GET is allowed (read-only token reads). The artifact is

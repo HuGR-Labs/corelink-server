@@ -95,6 +95,21 @@ pub trait KvStore: Send + Sync + fmt::Debug {
     ) -> Result<(), PipAdapterError>;
 }
 
+/// A resolved PAT: the owning tenant plus whether the PAT carries cache
+/// WRITE capability. Returned by [`TenantResolver::resolve_with_capability`]
+/// so write-gate callers can enforce the PAT's real rights independently of
+/// the Worker-injected `x-corelink-scope` header (two-layer write enforcement).
+///
+/// Mirrors the `ResolvedPat` shape in the OCI adapter's ports — all adapters
+/// use the same two-layer model after F27.
+#[derive(Debug, Clone)]
+pub struct ResolvedTenant {
+    /// Tenant the PAT belongs to.
+    pub tenant_id: TenantId,
+    /// `true` iff the PAT grants cache WRITE (e.g. `cas:rw` / `admin`).
+    pub can_write: bool,
+}
+
 /// PAT → tenant resolver. The adapter calls
 /// [`TenantResolver::resolve`] on every request before any CAS / KV
 /// touch; an `Err` short-circuits to `401`.
@@ -110,6 +125,29 @@ pub trait TenantResolver: Send + Sync + fmt::Debug {
     /// Returns [`PipAdapterError::Auth`] for any PAT verification
     /// failure (missing, malformed, expired, revoked, wrong scope).
     async fn resolve(&self, pat_plaintext: &str) -> Result<TenantId, PipAdapterError>;
+
+    /// Resolve a PAT to its tenant AND its cache write-capability.
+    ///
+    /// The write gate uses this to enforce `scope_ok_from_header AND
+    /// can_write_from_pat_reverify` (two-layer write enforcement, mirroring
+    /// OCI). Default impl: resolve the tenant and report `can_write = false`
+    /// (FAIL-SAFE — an impl that cannot determine write capability denies
+    /// writes). Impls backed by the container's `PatVerifier` override this
+    /// to return the PAT's real capability.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PipAdapterError::Auth`] for any PAT verification failure.
+    async fn resolve_with_capability(
+        &self,
+        pat_plaintext: &str,
+    ) -> Result<ResolvedTenant, PipAdapterError> {
+        let tenant_id = self.resolve(pat_plaintext).await?;
+        Ok(ResolvedTenant {
+            tenant_id,
+            can_write: false,
+        })
+    }
 }
 
 /// Convenience type alias for the `Arc<dyn ...>` wiring shape the

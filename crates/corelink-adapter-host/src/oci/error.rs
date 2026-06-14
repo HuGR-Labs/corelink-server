@@ -99,6 +99,28 @@ pub enum OciAdapterError {
     /// `/`-separated). Wire shape: `400`.
     #[error("invalid repository name: {0}")]
     InvalidRepoName(String),
+
+    /// The per-tenant open upload-session cap has been reached.
+    ///
+    /// Each open session buffers blob chunks in process memory until the
+    /// matching `PUT` finalises or the session is cancelled; without a cap
+    /// an authenticated tenant can exhaust heap by opening N sessions and
+    /// feeding large `PATCH` bodies.
+    ///
+    /// Wire shape: `429 Too Many Requests` + `Retry-After: <secs>`.
+    /// The client SHOULD cancel or finalise an existing session before
+    /// retrying the `POST /v2/<repo>/blobs/uploads/`.
+    ///
+    /// `retry_after_secs` is advisory (we do not track when the oldest
+    /// session will expire). 60 s is a conservative default that covers
+    /// most realistic push timeouts.
+    #[error("too many open upload sessions (limit {limit}); retry after {retry_after_secs}s")]
+    TooManyOpenSessions {
+        /// The configured per-tenant cap that was reached.
+        limit: usize,
+        /// Advisory retry delay in seconds.
+        retry_after_secs: u32,
+    },
 }
 
 /// Wire-shape error envelope per OCI Distribution Spec v1.1.
@@ -139,6 +161,11 @@ impl OciAdapterError {
             Self::NotFound => "NAME_UNKNOWN",
             Self::CatalogDisabled => "DENIED",
             Self::InvalidRepoName(_) => "NAME_INVALID",
+            // BLOB_UPLOAD_THROTTLED is not a Distribution Spec v1.1 standard
+            // code; "DENIED" is the closest standard value. The HTTP 429
+            // status and the `Retry-After` header are the client's primary
+            // signal — the OCI code is informational only.
+            Self::TooManyOpenSessions { .. } => "DENIED",
         }
     }
 

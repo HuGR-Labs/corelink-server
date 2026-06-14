@@ -438,6 +438,10 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         // cargo (sccache): only the shared verifier; no moat (per-tenant CAS).
         // The $-ceiling gate (when present) is threaded into the gate layer so
         // sccache ops are charged alongside CAS/AC/Bazel/Turbo.
+        // The resolver (built from the shared verifier) ALSO backs the gate's
+        // two-layer write capability check (F27: scope header AND the PAT-derived
+        // `can_write` from the resolver's single verification — no redundant
+        // second PAT verify).
         router = router.merge(cargo::router(
             cargo_cas_read,
             cargo_cas_write,
@@ -576,5 +580,35 @@ mod tests {
         // factory. Both branches must construct without panic.
         let factory: Arc<dyn ShadowSinkFactory> = Arc::new(InMemoryShadowSinkFactory::new());
         let _router = build_with_factory(factory);
+    }
+
+    #[tokio::test]
+    async fn build_with_factory_produces_a_routing_router() {
+        use axum::body::Body;
+        use axum::http::{Method, Request, StatusCode};
+        use tower::ServiceExt;
+
+        // A real router has the routes mounted; the degenerate
+        // `build_with_factory -> Default::default()` mutant returns an EMPTY
+        // `Router` that 404s every path. GET on the POST-only `/v1/admin/mutate`
+        // route → axum 405 (path registered, method mismatch) on the real
+        // router, vs 404 on the empty one — kills that mutant.
+        let factory: Arc<dyn ShadowSinkFactory> = Arc::new(InMemoryShadowSinkFactory::new());
+        let router = build_with_factory(factory);
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/v1/admin/mutate")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "build_with_factory must mount real routes (an empty router would 404)"
+        );
     }
 }

@@ -46,6 +46,57 @@ Each entry cross-references:
   Starter→20/Pro→40/Team→80/Scale→160/Max→320; absent for cache-only tenants).
 
 ### Fixed
+- **admin-ui: prod login was completely broken (`Application error: a
+  client-side exception`) — three compounding root causes fixed.** (1) A
+  Cloudflare zone rate-limit rule ("Wave 32", 10 req/10s/IP across all corelink
+  hosts) counted the ~20 static-chunk requests every SPA page load fires from
+  one IP, so `/sign-in` + `/sign-up` 429'd (CF error 1015) on their own JS
+  bundles → `Loading chunk failed` → page crash. The rule now EXCLUDES only the
+  immutable static prefixes (`/_next/static/`, `/assets/`, `/img/`, `/fonts/`,
+  `/static/` — NOT `/_next/image` or `/_next/data`, which stay metered) and
+  allows 50 req/10s/IP for dynamic requests (infra change on zone humangr.com).
+  (2) The `/sign-in` + `/sign-up` widgets (`<SignIn>`/`<SignUp>`) rendered with
+  NO `<ClerkProvider>` ancestor (those routes live outside the
+  `[locale]/(authenticated)` provider group), so Clerk threw `useSession can
+  only be used within the <ClerkProvider />`; both now mount their own provider
+  inside the existing `ssr:false` dynamic boundary (`ClerkSignIn.tsx` /
+  `ClerkSignUp.tsx`) — keeping `@clerk/nextjs` out of the edge-SSR pass. (3)
+  CSP gaps (verified against Clerk's official policy): `script-src` was missing
+  `https://challenges.cloudflare.com` (Clerk Smart-CAPTCHA / Turnstile), there
+  was no `worker-src` so the Turnstile `blob:` Web Worker fell back to
+  `default-src 'self'` and was refused, and `connect-src` was missing the
+  first-party analytics sink + `https://clerk-telemetry.com`. Added
+  `script-src challenges`, `worker-src 'self' blob:`, and the two connect-src
+  hosts so enforce-mode CSP no longer blocks the widget.
+  Hardening from a 3-agent adversarial review rode along: `images.unoptimized`
+  (the app uses `next/image` zero times → removes the `/_next/image` optimizer
+  as a cost/DoS surface), an `error.tsx` boundary for the authenticated group
+  (a thrown Server Component degrades to a branded screen, not a bare 500), the
+  `admin-ui-deploy` job timeout 20m→40m (the OpenNext build routinely runs
+  18-20m on the shared Mac), and a browser render-smoke
+  (`scripts/e2e-admin-ui-render-smoke.mjs` + `e2e-admin-ui-render.yml`) that
+  loads the auth pages in headless Chromium and fails on a client-side
+  exception — closing the gap that let `e2e-clerk-signup` stay green through
+  this outage (it only tests the backend).
+- **admin-ui: `/en/welcome` returned HTTP 500 (post-signup landing).** The
+  enforcement middleware ran `auth.protect()` with no `signInUrl`, so a signed-out
+  request couldn't build a redirect and threw; the middleware's `catch {}`
+  swallowed it and fell through to render the protected page, whose server-side
+  `auth()` then found no Clerk middleware context and threw during SSR → 500.
+  Fixed by passing `{ signInUrl: "/sign-in" }` to `clerkMiddleware` (signed-out →
+  clean 307), making the middleware catch FAIL CLOSED on enforced paths (redirect
+  to `/sign-in`, never serve a protected page anonymously) with error logging,
+  and wrapping the welcome page's `auth()` so a thrown context redirects to
+  `/sign-in` (locale-less) instead of crashing — backed by a new
+  `(authenticated)/error.tsx` boundary.
+- **admin-ui: immutable edge-caching for `/_next/static` (`public/_headers`).**
+  Workers Assets served the content-hashed chunks `cache-control: max-age=0,
+  must-revalidate` (cf-cache MISS every request) so each SPA page load re-fetched
+  ~20 chunks from the worker origin — the cost driver behind the "Wave 32" CF
+  rate-limit rule and the per-load burst that crashed login. Adds the
+  OpenNext-recommended `public/_headers` (`/_next/static/* →
+  public,max-age=31536000,immutable`) so chunks become cf-cache HITs and stop
+  hitting the origin.
 - **migrations(0064): make the `tenant` table rebuild D1-applicable — add
   `PRAGMA legacy_alter_table=ON` + recreate the residency triggers.** The
   0064 rebuild (widen `tenant.tier` CHECK to add `'max'`) failed on
@@ -76,6 +127,22 @@ Each entry cross-references:
   (currently-unset, so no-op today) gaps — `R2_TDK_HEX`, `SIGNUP_TOKEN_KEY`,
   `CORELINK_PORTAL_RETURN_URL`, and the BYOK provider region/vault vars — so a
   future secret-set reaches the container instead of silently doing nothing.
+- **CAA-360 wave-1 follow-ups: write-gate, fail-closed storage, and adapter
+  hardening.** Closes the next remediation tranche on top of the 35-finding pass:
+  (F27) the cargo/brew/npm/pip cache **write gate** now requires the PAT's
+  `can_write` capability — derived from a SINGLE PAT verification via the
+  resolver port (`resolve_with_capability`), not a redundant second verifier —
+  in addition to the server-trusted `x-corelink-scope` header (two layers, one
+  verification); (F8) the OCI adapter rejects session-table exhaustion with
+  `429 Too Many Requests` + `Retry-After` (`TooManyOpenSessions`) instead of a
+  silent overflow; storage handlers that fail to construct now resolve to a
+  loud `UnavailableCas/AcHandler` that maps to **503** (fail-closed, never a
+  silent 500/empty-200); and a new `scripts/check-env-contract.py` gate greps
+  every container `env::var` against the Worker DO forward-list so an unforwarded
+  secret is caught at CI, not in prod. Verified: `cargo check --tests` +
+  `clippy --all-targets -D warnings` + `cargo test` (481 + adapter suites) all
+  green. Wave-2 design (CAS true-residency, internal-auth Service-Binding,
+  in-container PAT re-verify) pinned in `docs/security/2026-06-13-CAA-360-wave2-design.md`.
 
 ### Security
 - **cas-erase: complete the WP-B CAS-erase WRITE path — wire the real R2

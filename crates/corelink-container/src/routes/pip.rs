@@ -69,7 +69,9 @@ use corelink_adapter_host::pip::config::{
     DEFAULT_WHEEL_SIZE_LIMIT_BYTES,
 };
 use corelink_adapter_host::pip::error::PipAdapterError;
-use corelink_adapter_host::pip::ports::{CasStore, KvStore, TenantResolver};
+use corelink_adapter_host::pip::ports::{
+    CasStore, KvStore, ResolvedTenant, TenantResolver, TenantResolverHandle,
+};
 use corelink_adapter_host::pip::server::{build_router, AdapterState};
 use corelink_adapter_host::pip::upstream::UpstreamClient;
 use corelink_audit::ports::{AuditEmitter, InMemoryAuditEmitter};
@@ -242,6 +244,30 @@ impl TenantResolver for PipPatResolver {
         })?;
         Ok(TenantId::from_uuid(uuid))
     }
+
+    /// Override: call `verify_capability` so the write-gate can use the
+    /// D1-verified `can_write` bit instead of trusting only the header (F27).
+    async fn resolve_with_capability(
+        &self,
+        pat_plaintext: &str,
+    ) -> Result<ResolvedTenant, PipAdapterError> {
+        let (tenant_text, can_write) =
+            self.0.verify_capability(pat_plaintext).await.map_err(|e| match e {
+                VerifyError::InvalidPat => PipAdapterError::Auth("invalid PAT".to_owned()),
+                VerifyError::Backend(m) => {
+                    PipAdapterError::Cas(format!("verifier backend: {m}"))
+                }
+            })?;
+        let uuid = uuid::Uuid::parse_str(&tenant_text).map_err(|e| {
+            PipAdapterError::Cas(format!(
+                "verifier returned non-uuid tenant `{tenant_text}`: {e}"
+            ))
+        })?;
+        Ok(ResolvedTenant {
+            tenant_id: TenantId::from_uuid(uuid),
+            can_write,
+        })
+    }
 }
 
 /// Build the `/pip/*` sub-router from shared CAS handlers + the
@@ -278,7 +304,7 @@ pub fn router(
     ));
     let cas: Arc<dyn CasStore> = Arc::new(PipMoatStore { moat });
     let metadata_kv: Arc<dyn KvStore> = Arc::new(PipIndexKvStore { d1 });
-    let resolver: Arc<dyn TenantResolver> = Arc::new(PipPatResolver(verifier));
+    let resolver: TenantResolverHandle = Arc::new(PipPatResolver(verifier));
     let auditor: Arc<dyn AuditEmitter> = Arc::new(InMemoryAuditEmitter::new());
 
     let upstream_pypi = match Url::parse(PIP_UPSTREAM_DEFAULT) {
@@ -306,7 +332,7 @@ pub fn router(
         true, // prefer PEP 691 JSON index
         cas,
         metadata_kv,
-        resolver,
+        resolver.clone(),
         auditor,
     );
 
@@ -325,30 +351,39 @@ pub fn router(
     // remainder never matches the params ⇒ 404). Wrapping the mount lets the
     // gate rewrite `/pip/<tenant>/<rest>` → `/pip/<rest>` BEFORE `nest_service`
     // routes. See [`pip_gate`].
+    // The SAME resolver is threaded into the gate for two-layer write enforcement
+    // (F27) — one PAT verification, not two.
     let adapter = build_router(state);
     Router::new()
         .nest_service("/pip", adapter)
-        .layer(middleware::from_fn(pip_gate))
+        .layer(middleware::from_fn_with_state(resolver, pip_gate))
 }
 
-/// Gate layer: per-operation cache-scope enforcement + tenant-segment
-/// strip.
+/// Gate layer: per-operation cache-scope enforcement + two-layer write
+/// enforcement (F27) + tenant-segment strip.
 ///
 /// Runs as an OUTER layer (BEFORE `nest_service` strips `/pip`), so
 /// `req.uri().path()` is the FULL `/pip/<tenant>/<rest>`. (1) enforces the
 /// per-op scope from the server-trusted `x-corelink-scope` header (GET ⇒
-/// read); (2) rewrites the path to `/pip/<rest>` — dropping the `<tenant>`
-/// segment while KEEPING the static `/pip` prefix so `nest_service` then
-/// strips `/pip` and hands `/<rest>` to the adapter's typed routes (and the
-/// upstream fetch sees the real PEP path, never the tenant segment). Running
-/// outer is required because axum 0.7 matches the nested param routes at
-/// routing time, before an inner layer could rewrite the path (see [`router`]).
-async fn pip_gate(mut req: Request, next: Next) -> Response {
+/// read); (2) for PUT (defensive write surface) also requires the PAT's
+/// `can_write` bit via the resolver's single `resolve_with_capability`
+/// verification (F27 — two-layer write enforcement mirroring OCI, no redundant
+/// second PAT verify); (3) rewrites the path to `/pip/<rest>` — dropping the
+/// `<tenant>` segment while KEEPING the static `/pip` prefix so `nest_service`
+/// then strips `/pip` and hands `/<rest>` to the adapter's typed routes. Running
+/// outer is required because axum 0.7 matches the nested param routes at routing
+/// time, before an inner layer could rewrite the path (see [`router`]).
+async fn pip_gate(
+    axum::extract::State(resolver): axum::extract::State<TenantResolverHandle>,
+    mut req: Request,
+    next: Next,
+) -> Response {
     let scope = req
         .headers()
         .get(SCOPE_HEADER)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
+    let is_write = req.method() == Method::PUT;
     let scope_ok = match *req.method() {
         // pip is a read-through cache: clients only GET (simple index +
         // wheels + healthz). The transparent cache-fill (a CAS/KV write by
@@ -366,6 +401,49 @@ async fn pip_gate(mut req: Request, next: Next) -> Response {
     };
     if !scope_ok {
         return (StatusCode::FORBIDDEN, "insufficient cache scope").into_response();
+    }
+
+    // F27 — two-layer write enforcement: for PUT requests, require the PAT's own
+    // `can_write` bit from the resolver's SINGLE PAT verification
+    // (`resolve_with_capability` — HMAC + Argon2id against D1). This ensures a
+    // Worker-side scope-header mistake cannot grant a write that the PAT's D1
+    // record does not authorise — without a redundant second verify. The pip
+    // resolver collapses every verification failure into a `PipAdapterError`,
+    // so any resolver `Err` is treated as a fail-CLOSED write denial (401).
+    if is_write {
+        let pat_token = req
+            .headers()
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.strip_prefix("Bearer "))
+            .map(str::to_owned);
+        match pat_token {
+            None => {
+                tracing::warn!("pip: PUT with no bearer token — rejecting (F27)");
+                return (StatusCode::UNAUTHORIZED, "missing bearer token").into_response();
+            }
+            Some(pat_plaintext) => {
+                match resolver.resolve_with_capability(&pat_plaintext).await {
+                    Ok(resolved) if resolved.can_write => {
+                        // PAT grants write — both layers pass; continue.
+                    }
+                    Ok(_no_write) => {
+                        tracing::warn!(
+                            "pip: PUT denied — PAT scope lacks write capability (F27)"
+                        );
+                        return (
+                            StatusCode::FORBIDDEN,
+                            "PAT does not grant write capability",
+                        )
+                            .into_response();
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "pip: PUT denied — PAT re-verify failed (F27)");
+                        return (StatusCode::UNAUTHORIZED, "invalid PAT").into_response();
+                    }
+                }
+            }
+        }
     }
 
     // Drop the `<tenant>` segment but KEEP the `/pip` mount prefix:
@@ -564,7 +642,9 @@ mod tests {
             PIP_SERVICE_PRINCIPAL,
         ));
         let cas: Arc<dyn CasStore> = Arc::new(PipMoatStore { moat });
-        let resolver: Arc<dyn TenantResolver> = Arc::new(PipPatResolver(verifier));
+        // The SAME resolver backs the adapter (tenant resolution) AND the gate's
+        // two-layer write check — one PAT verification, not two.
+        let resolver: TenantResolverHandle = Arc::new(PipPatResolver(verifier));
         let auditor: Arc<dyn AuditEmitter> = Arc::new(InMemoryAuditEmitter::new());
         let upstream_pypi = Url::parse(PIP_UPSTREAM_DEFAULT).unwrap();
         let upstream = Arc::new(UpstreamClient::new(upstream_pypi.clone()).unwrap());
@@ -576,7 +656,7 @@ mod tests {
             true,
             cas,
             kv,
-            resolver,
+            resolver.clone(),
             auditor,
         );
         let state = AdapterState {
@@ -584,10 +664,11 @@ mod tests {
             upstream,
         };
         // Mirror prod `router`: the gate is an OUTER layer wrapping the mount.
+        // The SAME resolver is threaded in for two-layer write enforcement (F27).
         let adapter = build_router(state);
         Router::new()
             .nest_service("/pip", adapter)
-            .layer(middleware::from_fn(pip_gate))
+            .layer(middleware::from_fn_with_state(resolver, pip_gate))
     }
 
     /// Router whose verifier rejects ALL PATs (empty lookup); stores unused.

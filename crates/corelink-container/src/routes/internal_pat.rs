@@ -773,7 +773,7 @@ mod tests {
         // A 32-char key is AT the floor and must NOT be rejected.
         let exactly_32 = "a".repeat(32);
         assert!(
-            !(exactly_32.len() < 32),
+            exactly_32.len() >= 32,
             "32-char key must pass the >= 32 gate"
         );
     }

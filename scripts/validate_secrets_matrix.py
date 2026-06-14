@@ -185,6 +185,14 @@ ALLOWLIST_REGEX = re.compile(
     r"|SMOKE_USER_EMAIL$"
     r"|SMOKE_USER_PASSWORD$"
     r"|SMOKE_BASE_URL$"
+    # 2026-06-14 — admin-ui browser render smoke
+    # (scripts/e2e-admin-ui-render-smoke.mjs + .github/workflows/e2e-admin-ui-render.yml).
+    #   BASE_URL            — the (public) URL to smoke; defaulted to prod in-script.
+    #   PW_EXECUTABLE_PATH  — optional local Chromium path (CI uses the default).
+    # CI/test config, never a deployed production secret — same precedent as the
+    # SMOKE_* smoke-harness vars above.
+    r"|BASE_URL$"
+    r"|PW_EXECUTABLE_PATH$"
     r")"
 )
 

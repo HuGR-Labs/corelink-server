@@ -1390,7 +1390,7 @@ mod tests {
     async fn r2_ac_update_fails_closed_on_ambiguous_get() {
         use corelink_handler_ac::{AcHandlerError, AcUpdateHandler, AcUpdateRequest};
         let handler = make_test_ac_handler("iad").await;
-        let req = AcUpdateRequest::new("t1", &"d".repeat(64), b"payload".to_vec(), "p@t1", "t1", 1);
+        let req = AcUpdateRequest::new("t1", "d".repeat(64), b"payload".to_vec(), "p@t1", "t1", 1);
         let err = handler
             .update(req)
             .expect_err("ambiguous GET against stub must fail closed");

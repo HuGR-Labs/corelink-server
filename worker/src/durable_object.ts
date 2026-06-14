@@ -510,6 +510,9 @@ export class CoreLinkServer implements DurableObject {
           // but makes a future secret-set "just work".
           R2_TDK_HEX: this.env.R2_TDK_HEX ?? "",
           SIGNUP_TOKEN_KEY: this.env.SIGNUP_TOKEN_KEY ?? "",
+          // OCI token-mint signing key — read by the container's OCI adapter.
+          // (Gap caught by scripts/check-env-contract.py on its first run, 2026-06-13.)
+          CORELINK_OCI_TOKEN_KEY: this.env.CORELINK_OCI_TOKEN_KEY ?? "",
           CORELINK_PORTAL_RETURN_URL: this.env.CORELINK_PORTAL_RETURN_URL ?? "",
           // BYOK (enterprise) provider regions/vault — off for the SMB launch.
           AWS_REGION: this.env.AWS_REGION ?? "",

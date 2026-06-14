@@ -1,0 +1,96 @@
+name: e2e — admin-ui render smoke
+
+# Browser-level render smoke for the public admin-ui pages (/, /sign-in, /sign-up).
+#
+# Why this exists: the `e2e-clerk-signup` cron exercises only the BACKEND signup
+# orchestration and never loads the pages in a browser, so it stayed green through
+# the 2026-06-14 prod login outage (a client-side exception that an HTTP-200 check
+# cannot see). This loads the real pages in headless Chromium and FAILS on any
+# pageerror / failed JS chunk / missing Clerk widget — i.e. it would have caught it.
+#
+# Runs after every admin-ui deploy (via workflow_run), on a schedule, and on demand.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL to smoke (default prod)"
+        required: false
+        default: "https://corelink-app.humangr.com"
+  schedule:
+    # Every 6h, offset from the backend e2e cron to spread shared-Mac load.
+    - cron: "40 */6 * * *"
+  workflow_run:
+    workflows: ["admin-ui — CF Worker deploy"]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: e2e-admin-ui-render
+  cancel-in-progress: false
+
+jobs:
+  render-smoke:
+    name: render smoke (headless Chromium)
+    runs-on: [self-hosted, mac, corelink-builder]
+    timeout-minutes: 15
+    # On workflow_run, only run if the deploy succeeded (no point smoking a failed deploy).
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 1
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install deps (admin-ui — brings in Playwright)
+        working-directory: apps/admin-ui
+        run: pnpm install --frozen-lockfile
+
+      - name: Ensure Chromium for Playwright
+        working-directory: apps/admin-ui
+        run: pnpm exec playwright install chromium
+
+      - name: Run render smoke
+        id: smoke
+        env:
+          BASE_URL: ${{ github.event.inputs.base_url || 'https://corelink-app.humangr.com' }}
+        run: node scripts/e2e-admin-ui-render-smoke.mjs
+
+      - name: Open issue on failure
+        if: failure() && steps.smoke.outcome == 'failure'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `E2E REGRESSION: admin-ui render smoke failed (run ${context.runId})`,
+              labels: ['e2e-regression', 'sev-1'],
+              body: [
+                `## admin-ui render smoke failed`,
+                ``,
+                `One or more of \`/\`, \`/sign-in\`, \`/sign-up\` crashed client-side, 4xx'd a JS`,
+                `chunk, or failed to render the Clerk widget against prod.`,
+                ``,
+                `**Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                ``,
+                `### What to investigate (matches the 2026-06-14 outage classes)`,
+                `1. \`pageerror: useSession … <ClerkProvider/>\` → an auth route lost its provider.`,
+                `2. \`asset 429\` → the CF "Wave 32" rate-limit rule is counting static chunks again`,
+                `   (must exclude \`/_next/static/\`). See \`docs/findings/2026-06-14-admin-ui-login-outage-followups.md\`.`,
+                `3. \`asset 404\` / chunk MIME errors → a broken/partial deploy.`,
+                `4. CSP refusals (worker-src/script-src) → check \`apps/admin-ui/src/lib/csp.ts\`.`,
+              ].join('\n'),
+            });

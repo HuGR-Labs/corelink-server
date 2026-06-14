@@ -47,8 +47,8 @@ use axum::{
     Router,
 };
 use corelink_handler_ac::{
-    AcHandlerError, AcLookupHandler, AcLookupRequest, AcUpdateHandler, AcUpdateRequest,
-    InMemoryAcHandler, InMemoryAuditSink, InMemorySliObserver,
+    AcHandlerError, AcLookupHandler, AcLookupRequest, AcLookupResponse, AcUpdateHandler,
+    AcUpdateRequest, AcUpdateResponse, InMemoryAcHandler, InMemoryAuditSink, InMemorySliObserver,
 };
 
 /// Canonical AC lookup route path (axum-0.7 / matchit-0.7 `:name` captures).
@@ -85,6 +85,44 @@ impl core::fmt::Debug for AcRouteState {
     }
 }
 
+/// Sentinel carried in [`AcHandlerError::Internal`] by
+/// [`UnavailableAcHandler`] so [`map_err`] can map the storage-unavailable
+/// condition to **503** (rather than the generic 500 the `Internal` wildcard
+/// arm yields). Mirrors `routes::cas`'s sentinel exactly: the handler-error
+/// enum lives in a sibling crate and is `#[non_exhaustive]` without a dedicated
+/// `Unavailable` variant, so we thread the distinction through `Internal`.
+const STORAGE_UNAVAILABLE_SENTINEL: &str = "storage-unavailable: ";
+
+/// Fail-CLOSED stand-in handler mounted in place of `InMemoryAcHandler` when
+/// storage credentials ARE present but the R2 handler refused to build —
+/// today exactly the "R2_TDK_HEX required" case (F1, CAA-360). Mirrors
+/// `routes::cas::UnavailableCasHandler`.
+///
+/// A silent `InMemory` fallback there would serve a NON-durable cache with no
+/// alarm (fail-OPEN-ish). Instead every lookup/update through this handler
+/// fails CLOSED + LOUD: it returns [`AcHandlerError::Internal`] carrying the
+/// [`STORAGE_UNAVAILABLE_SENTINEL`], which [`map_err`] maps to HTTP 503 — the
+/// route is unavailable until `R2_TDK_HEX` is set. Distinct from the
+/// creds-ABSENT path (`None` ⇒ dev/CI `InMemory`, which is fine).
+#[derive(Debug)]
+struct UnavailableAcHandler;
+
+impl AcLookupHandler for UnavailableAcHandler {
+    fn lookup(&self, _req: AcLookupRequest) -> Result<AcLookupResponse, AcHandlerError> {
+        Err(AcHandlerError::Internal(format!(
+            "{STORAGE_UNAVAILABLE_SENTINEL}R2 AC handler refused to build (R2_TDK_HEX unset/invalid)"
+        )))
+    }
+}
+
+impl AcUpdateHandler for UnavailableAcHandler {
+    fn update(&self, _req: AcUpdateRequest) -> Result<AcUpdateResponse, AcHandlerError> {
+        Err(AcHandlerError::Internal(format!(
+            "{STORAGE_UNAVAILABLE_SENTINEL}R2 AC handler refused to build (R2_TDK_HEX unset/invalid)"
+        )))
+    }
+}
+
 /// Build the canonical `(Arc<dyn AcLookupHandler>, Arc<dyn AcUpdateHandler>)`
 /// pair for the current build target.
 ///
@@ -95,6 +133,14 @@ impl core::fmt::Debug for AcRouteState {
 /// is scheduled for a follow-on WP; this function logs whether storage
 /// credentials are configured so the operator can verify the env is
 /// correct even before the real handler lands.
+///
+/// When storage credentials ARE present but the R2 handler refuses to
+/// build (today exactly the "`R2_TDK_HEX` required" case — F1, CAA-360)
+/// the function does NOT silently degrade to `InMemoryAcHandler` (that
+/// would serve a non-durable cache with no alarm). It instead mounts the
+/// fail-CLOSED [`UnavailableAcHandler`], whose every lookup/update maps to
+/// HTTP 503 until `R2_TDK_HEX` is set, and emits a loud, structured
+/// `tracing::error!`.
 ///
 /// The wasm32 CF-Worker impl is deferred per the autonomous-execution
 /// charter `trait-abstraction-defer` rule (tracked as
@@ -139,10 +185,27 @@ pub fn build_handlers() -> (Arc<dyn AcLookupHandler>, Arc<dyn AcUpdateHandler>) 
                     return (lookup, update);
                 }
                 Some(Err(e)) => {
+                    // F1 (CAA-360) fail-CLOSED + LOUD: storage creds ARE present
+                    // (this is the production data plane), but the R2 handler
+                    // refused to build — today exactly "R2_TDK_HEX required". We
+                    // MUST NOT silently fall back to the non-durable `InMemory`
+                    // cache (fail-OPEN-ish: a broken cache with no alarm). Mount
+                    // the fail-CLOSED `UnavailableAcHandler` instead: every
+                    // lookup/update returns 503 until `R2_TDK_HEX` is set.
+                    // Distinct from the creds-ABSENT case below (`None` ⇒ dev/CI
+                    // `InMemory`, which is fine). Mirrors `routes::cas`.
                     tracing::error!(
                         error = %e,
-                        "AC handler: R2S3 build failed, falling back to InMemory"
+                        bucket = %bucket,
+                        region = %region,
+                        "AC handler: R2S3 build REFUSED with storage creds present \
+                         (R2_TDK_HEX unset/invalid?) — mounting fail-CLOSED 503 \
+                         handler, NOT InMemory (F1 INV-TENANT-ISOLATION)"
                     );
+                    let shared: Arc<UnavailableAcHandler> = Arc::new(UnavailableAcHandler);
+                    let lookup: Arc<dyn AcLookupHandler> = shared.clone();
+                    let update: Arc<dyn AcUpdateHandler> = shared;
+                    return (lookup, update);
                 }
                 None => {
                     // Should not happen: we already checked is_some().
@@ -150,7 +213,9 @@ pub fn build_handlers() -> (Arc<dyn AcLookupHandler>, Arc<dyn AcUpdateHandler>) 
             }
         }
 
-        // Fallback: InMemory (no creds or build failure).
+        // Fallback: InMemory — creds ABSENT (unit tests, local dev, CI). This is
+        // the dev/CI path; production always has storage creds and takes the R2
+        // branch above (which now fails CLOSED on a missing TDK).
         tracing::info!("AC handler: InMemory (no storage credentials configured)");
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
@@ -289,6 +354,14 @@ fn map_err(e: AcHandlerError) -> axum::response::Response {
             // bytes / commit updates without the audit row.
             (StatusCode::SERVICE_UNAVAILABLE, "audit closed").into_response()
         }
+        // F1 (CAA-360) fail-CLOSED: the route was mounted with storage creds
+        // present but the R2 handler refused to build (R2_TDK_HEX unset/invalid),
+        // so it is serving the `UnavailableAcHandler`. Surface that as 503
+        // "storage unavailable" — the cache is unavailable until R2_TDK_HEX is
+        // set, NOT a generic 500. See [`UnavailableAcHandler`].
+        AcHandlerError::Internal(ref msg) if msg.starts_with(STORAGE_UNAVAILABLE_SENTINEL) => {
+            (StatusCode::SERVICE_UNAVAILABLE, "storage unavailable").into_response()
+        }
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal").into_response(),
     }
 }
@@ -304,6 +377,32 @@ fn map_err(e: AcHandlerError) -> axum::response::Response {
 mod tests {
     use super::*;
     use corelink_handler_ac::{AuditEventKind, Sli};
+
+    /// `map_err` must map an `Internal` error to 503 ONLY when it carries the
+    /// storage-unavailable sentinel; any other `Internal` is a generic 500.
+    /// Kills the cargo-mutants "replace match guard with true" mutant on the
+    /// `if msg.starts_with(STORAGE_UNAVAILABLE_SENTINEL)` guard — with the guard
+    /// forced to `true`, the non-sentinel case below would wrongly become 503.
+    #[test]
+    fn map_err_internal_is_503_only_for_storage_sentinel() {
+        let storage = map_err(AcHandlerError::Internal(format!(
+            "{STORAGE_UNAVAILABLE_SENTINEL}R2_TDK_HEX unset"
+        )));
+        assert_eq!(
+            storage.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "sentinel-tagged Internal must be 503"
+        );
+
+        let generic = map_err(AcHandlerError::Internal(
+            "lock poisoned: unrelated failure".to_string(),
+        ));
+        assert_eq!(
+            generic.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "non-sentinel Internal must be 500, not 503 (guard must not be `true`)"
+        );
+    }
 
     /// Test fixture: returns the route state plus the underlying
     /// audit + SLI sinks so each test can verify emit ordering.
@@ -328,10 +427,37 @@ mod tests {
         )
     }
 
+    /// Route state backed by the fail-CLOSED [`UnavailableAcHandler`] — the
+    /// shape `build_handlers` returns when storage creds are present but the R2
+    /// handler refuses to build (F1: `R2_TDK_HEX` unset/invalid).
+    fn fixture_unavailable() -> AcRouteState {
+        let shared = Arc::new(UnavailableAcHandler);
+        let lookup: Arc<dyn AcLookupHandler> = shared.clone();
+        let update: Arc<dyn AcUpdateHandler> = shared;
+        AcRouteState {
+            lookup,
+            update,
+            quota: None,
+        }
+    }
+
     #[test]
     fn route_constants_match_canonical_path() {
         assert_eq!(AC_LOOKUP_ROUTE, "/v1/ac/:tenant/:action_digest");
         assert_eq!(AC_UPDATE_ROUTE, "/v1/ac/:tenant/:action_digest");
+    }
+
+    /// F1 (CAA-360) fail-CLOSED: the `UnavailableAcHandler`'s error maps to
+    /// HTTP 503 "storage unavailable" (NOT the generic 500) so a forgotten
+    /// `R2_TDK_HEX` is loud, not a silent non-durable cache.
+    #[test]
+    fn unavailable_handler_maps_to_503() {
+        let err = UnavailableAcHandler
+            .lookup(AcLookupRequest::new("t1", "d1", "anon@t1", "t1", 0))
+            .expect_err("unavailable");
+        assert!(matches!(err, AcHandlerError::Internal(_)));
+        let resp = map_err(err);
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[test]
@@ -501,6 +627,41 @@ mod tests {
             .await
             .expect("body");
         assert_eq!(body.as_ref(), b"insufficient scope");
+    }
+
+    /// F1 (CAA-360) end-to-end: an in-scope AC lookup against the fail-CLOSED
+    /// `UnavailableAcHandler` (creds present, `R2_TDK_HEX` missing) returns
+    /// HTTP 503 — the cache refuses to serve, not a silent miss from a
+    /// non-durable InMemory fallback.
+    #[tokio::test]
+    async fn lookup_on_unavailable_handler_returns_503() {
+        let app = router(fixture_unavailable());
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/v1/ac/{TEST_TENANT}/ghost"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    /// F1 (CAA-360) end-to-end: an in-scope AC update against the fail-CLOSED
+    /// `UnavailableAcHandler` returns 503 — updates are refused (never a silent
+    /// non-durable commit) until `R2_TDK_HEX` is set.
+    #[tokio::test]
+    async fn update_on_unavailable_handler_returns_503() {
+        let app = router(fixture_unavailable());
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/ac/{TEST_TENANT}/d1"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::from(b"result".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     /// A `cas:r` AC lookup passes the scope gate; the entry is absent so the

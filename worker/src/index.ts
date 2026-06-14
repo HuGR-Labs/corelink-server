@@ -116,6 +116,7 @@ export interface Env {
   ERASURE_SALT_KEY?: string;
   FABRIC_INTROSPECT_AUTH_KEY?: string;
   SIGNUP_TOKEN_KEY?: string;
+  CORELINK_OCI_TOKEN_KEY?: string;
   CORELINK_PORTAL_RETURN_URL?: string;
   AWS_REGION?: string;
   GCP_REGION?: string;

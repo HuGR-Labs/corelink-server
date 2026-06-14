@@ -1197,7 +1197,7 @@ mod tests {
         // 32-char key is AT the floor — must pass.
         let exactly_32 = "a".repeat(32);
         assert!(
-            !(exactly_32.len() < 32),
+            exactly_32.len() >= 32,
             "32-char key meets the floor and must be accepted"
         );
     }

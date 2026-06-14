@@ -33,6 +33,22 @@
 //! NEVER trusted for storage. The scope gate here is the per-operation
 //! layer (read vs write) on top of the resolver's "has cache capability"
 //! check, mirroring the H1 scope spine used by cas/ac/turbo/bazel.
+//!
+//! ## Two-layer write enforcement (F27)
+//!
+//! For PUT requests the gate enforces BOTH:
+//!
+//! 1. `x-corelink-scope` header must carry write capability (Worker-set,
+//!    server-trusted from D1); AND
+//! 2. The bearer PAT's `can_write` bit, obtained from the SAME single PAT
+//!    verification the resolver already runs to derive the tenant
+//!    (`TenantResolver::resolve_with_capability` — HMAC + Argon2id against D1).
+//!
+//! This eliminates the single-header-trust gap (F27): even if the Worker ever
+//! injected a wrong scope header, the resolver's PAT-derived `can_write` bit
+//! would block the write. Mirrors the OCI adapter's two-layer model — and there
+//! is exactly ONE PAT verification per request (via the resolver port), not a
+//! redundant second one.
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
@@ -46,7 +62,7 @@ use axum::Router;
 use async_trait::async_trait;
 use corelink_adapter_host::cargo::config::DEFAULT_BODY_SIZE_LIMIT_BYTES;
 use corelink_adapter_host::cargo::ports::{
-    SharedTenantResolver, TenantResolveError, TenantResolver,
+    ResolvedTenant, SharedTenantResolver, TenantResolveError, TenantResolver,
 };
 use corelink_adapter_host::cargo::{server, CargoAdapterConfig, CargoCasBridge};
 use corelink_audit::ports::{AuditEmitter, InMemoryAuditEmitter};
@@ -75,6 +91,20 @@ impl TenantResolver for CargoPatResolver {
             VerifyError::Backend(m) => TenantResolveError::Backend(m),
         })
     }
+
+    /// Override: call `verify_capability` so the write-gate can use the
+    /// D1-verified `can_write` bit instead of trusting only the header.
+    async fn resolve_with_capability(
+        &self,
+        pat_plaintext: &str,
+    ) -> Result<ResolvedTenant, TenantResolveError> {
+        let (tenant_id, can_write) =
+            self.0.verify_capability(pat_plaintext).await.map_err(|e| match e {
+                VerifyError::InvalidPat => TenantResolveError::InvalidPat,
+                VerifyError::Backend(m) => TenantResolveError::Backend(m),
+            })?;
+        Ok(ResolvedTenant { tenant_id, can_write })
+    }
 }
 
 /// Wrap the shared [`PatVerifier`] as cargo's injectable [`SharedTenantResolver`].
@@ -85,8 +115,21 @@ pub fn resolver_from_verifier(verifier: Arc<PatVerifier>) -> SharedTenantResolve
     Arc::new(CargoPatResolver(verifier))
 }
 
+/// Gate state bundling the optional $-ceiling gate and the tenant resolver
+/// needed for two-layer write enforcement (F27). The resolver's
+/// `resolve_with_capability` yields the PAT-derived `can_write` bit from the
+/// SAME single verification the adapter uses to resolve the tenant — so the gate
+/// does NOT run a redundant second PAT verify. `Clone`-cheap (all fields
+/// arc-shaped).
+#[derive(Clone)]
+struct CargoGateState {
+    quota: Option<crate::routes::QuotaGate>,
+    resolver: SharedTenantResolver,
+}
+
 /// Build the `/cargo/*` sub-router from shared CAS handlers + a PAT→tenant
-/// resolver.
+/// resolver. The SAME resolver backs both the adapter (tenant resolution) and
+/// the gate's two-layer write enforcement (F27) — one PAT verification, not two.
 ///
 /// The `resolver` is injected so production wires the shared [`PatVerifier`]
 /// (via [`resolver_from_verifier`]) while tests pass a hermetic stub. The CAS
@@ -110,34 +153,44 @@ pub fn router(
         SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
         DEFAULT_BODY_SIZE_LIMIT_BYTES,
         cas,
-        resolver,
+        resolver.clone(),
         auditor,
     );
 
-    // The gate layer carries the optional $-ceiling gate as its state so the
-    // per-operation scope check AND the per-tenant cost charge both run in one
-    // middleware (axum's `from_fn_with_state`). `None` ⇒ ceiling not enforced.
+    // The gate layer carries both the optional $-ceiling gate and the tenant
+    // resolver so PUT requests are subject to two-layer write enforcement (F27):
+    // scope header check AND the PAT-derived `can_write` bit from the resolver's
+    // single verification (no redundant second PAT verify).
+    let gate_state = CargoGateState { quota, resolver };
     let adapter = server::build_router(config)
-        .layer(middleware::from_fn_with_state(quota, cargo_gate));
+        .layer(middleware::from_fn_with_state(gate_state, cargo_gate));
     Router::new().nest_service("/cargo", adapter)
 }
 
-/// Gate layer for the cargo surface: per-operation cache-scope enforcement.
+/// Gate layer for the cargo surface: per-operation cache-scope enforcement +
+/// two-layer write enforcement (F27).
 ///
 /// Runs as a `layer` on the adapter router (which is a catch-all `/*path`, so
 /// it matches the nested `/cargo/<tenant>/<key>` shape directly — no path
-/// rewrite needed). The gate enforces the per-operation scope from the
-/// Worker-set, server-trusted `x-corelink-scope` header, then forwards to the
-/// adapter, which does PAT auth + key validation + CAS. An insufficient scope
-/// → 403; everything else is the adapter's call (401/400/404/200).
+/// rewrite needed). The gate enforces:
 ///
-/// Why scope lives here, not in the resolver: the adapter's `TenantResolver`
-/// port carries no operation, so it can only check "has cache capability". The
-/// HTTP method (read vs write) is known only at this layer, so per-operation
-/// granularity (read-only PAT must not PUT) is enforced here — mirroring the
-/// H1 scope spine used by cas/ac/turbo/bazel.
+/// 1. **Scope header check** — the Worker-set, server-trusted
+///    `x-corelink-scope` header must carry the required capability (read or
+///    write). An insufficient scope → 403.
+/// 2. **PAT-derived `can_write` for writes (F27)** — for PUT requests the gate
+///    ALSO extracts the bearer PAT and calls
+///    `TenantResolver::resolve_with_capability()` to obtain the D1-verified
+///    `can_write` bit from the SAME single PAT verification the adapter uses to
+///    resolve the tenant (no redundant second verify). A PAT whose D1 record
+///    lacks write capability is rejected (403) even if the header says `cas:rw`.
+///    This makes cargo two-layer for writes, matching the OCI model.
+/// 3. **$-ceiling gate** — per-tenant monthly cost check (ADR-0068).
+///
+/// Read requests (GET/HEAD) are NOT subject to the extra `can_write` check; the
+/// header check alone is sufficient for reads (the PAT resolver in the adapter
+/// still runs and rejects any invalid PAT → 401).
 async fn cargo_gate(
-    axum::extract::State(quota): axum::extract::State<Option<crate::routes::QuotaGate>>,
+    axum::extract::State(state): axum::extract::State<CargoGateState>,
     req: Request,
     next: Next,
 ) -> Response {
@@ -146,6 +199,7 @@ async fn cargo_gate(
         .get(SCOPE_HEADER)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
+    let is_write = req.method() == Method::PUT;
     let scope_ok = match *req.method() {
         Method::PUT => requires_cache_write(scope),
         Method::GET | Method::HEAD => requires_cache_read(scope),
@@ -159,6 +213,61 @@ async fn cargo_gate(
     if !scope_ok {
         return (StatusCode::FORBIDDEN, "insufficient cache scope").into_response();
     }
+
+    // F27 — two-layer write enforcement: for PUT requests, require the PAT's own
+    // `can_write` bit from the resolver's SINGLE PAT verification
+    // (`resolve_with_capability` — HMAC + Argon2id against D1). This ensures a
+    // Worker-side scope-header mistake cannot grant a write that the PAT's D1
+    // record does not authorise — without a redundant second verify (the adapter
+    // already verifies the same PAT to resolve the tenant). Read requests skip
+    // this (the adapter's resolver still verifies the PAT for auth; only the
+    // write-capability cross-check is gated here).
+    if is_write {
+        let pat_token = req
+            .headers()
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.strip_prefix("Bearer "))
+            .map(str::to_owned);
+        match pat_token {
+            None => {
+                tracing::warn!("cargo: PUT with no bearer token — rejecting (F27)");
+                return (StatusCode::UNAUTHORIZED, "missing bearer token").into_response();
+            }
+            Some(pat_plaintext) => {
+                match state.resolver.resolve_with_capability(&pat_plaintext).await {
+                    Ok(resolved) if resolved.can_write => {
+                        // PAT grants write — both layers pass; continue.
+                    }
+                    Ok(_no_write) => {
+                        tracing::warn!(
+                            "cargo: PUT denied — PAT scope lacks write capability (F27)"
+                        );
+                        return (
+                            StatusCode::FORBIDDEN,
+                            "PAT does not grant write capability",
+                        )
+                            .into_response();
+                    }
+                    Err(TenantResolveError::Backend(m)) => {
+                        tracing::error!(error = %m, "cargo: resolver backend error (F27)");
+                        return (
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            "PAT verifier backend error",
+                        )
+                            .into_response();
+                    }
+                    // `InvalidPat` + any future non-exhaustive variant: fail-CLOSED
+                    // (the PAT did not resolve, so the write is denied → 401).
+                    Err(e) => {
+                        tracing::warn!(error = %e, "cargo: PUT denied — PAT re-verify failed (F27)");
+                        return (StatusCode::UNAUTHORIZED, "invalid PAT").into_response();
+                    }
+                }
+            }
+        }
+    }
+
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1): charge the
     // flat per-op cost AFTER the scope gate, BEFORE the adapter runs PAT auth +
     // CAS. The isolation tenant is the Worker-set, server-trusted
@@ -167,7 +276,7 @@ async fn cargo_gate(
     // header can over-charge ITS OWN tenant, never another). A missing/empty
     // header skips the charge fail-OPEN: cost-accounting must never deny a
     // scope-valid op for lack of a label. 402 over-ceiling / 503 fail-CLOSED.
-    if let Some(gate) = quota.as_ref() {
+    if let Some(gate) = state.quota.as_ref() {
         let tenant = req
             .headers()
             .get("x-corelink-tenant-id")

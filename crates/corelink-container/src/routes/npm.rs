@@ -68,7 +68,9 @@ use corelink_adapter_host::npm::config::{
     DEFAULT_UPSTREAM_REGISTRY,
 };
 use corelink_adapter_host::npm::error::NpmAdapterError;
-use corelink_adapter_host::npm::ports::{CasStore, KvStore, TenantResolver};
+use corelink_adapter_host::npm::ports::{
+    CasStore, KvStore, ResolvedTenant, TenantResolver, TenantResolverHandle,
+};
 use corelink_adapter_host::npm::server::{build_router, AdapterState};
 use corelink_adapter_host::npm::upstream::UpstreamClient;
 use corelink_audit::ports::{AuditEmitter, InMemoryAuditEmitter};
@@ -240,6 +242,26 @@ impl TenantResolver for NpmPatResolver {
             .map_err(|e| NpmAdapterError::Auth(format!("backend: tenant id not a UUID: {e}")))?;
         Ok(TenantId::from_uuid(uuid))
     }
+
+    /// Override: call `verify_capability` so the write-gate can use the
+    /// D1-verified `can_write` bit instead of trusting only the header (F27).
+    async fn resolve_with_capability(
+        &self,
+        pat_plaintext: &str,
+    ) -> Result<ResolvedTenant, NpmAdapterError> {
+        let (tenant_text, can_write) =
+            self.0.verify_capability(pat_plaintext).await.map_err(|e| match e {
+                VerifyError::InvalidPat => NpmAdapterError::Auth("invalid PAT".to_owned()),
+                VerifyError::Backend(m) => NpmAdapterError::Auth(format!("backend: {m}")),
+            })?;
+        let uuid = uuid::Uuid::parse_str(&tenant_text).map_err(|e| {
+            NpmAdapterError::Auth(format!("backend: tenant id not a UUID: {e}"))
+        })?;
+        Ok(ResolvedTenant {
+            tenant_id: TenantId::from_uuid(uuid),
+            can_write,
+        })
+    }
 }
 
 /// Build the `/npm/*` sub-router from shared CAS handlers + the url→hash
@@ -266,7 +288,7 @@ pub fn router(
     ));
     let cas: Arc<dyn CasStore> = Arc::new(NpmMoatStore { moat });
     let kv: Arc<dyn KvStore> = Arc::new(NpmMetaKv { kv: meta_kv });
-    let resolver: Arc<dyn TenantResolver> = Arc::new(NpmPatResolver(verifier));
+    let resolver: TenantResolverHandle = Arc::new(NpmPatResolver(verifier));
     let auditor: Arc<dyn AuditEmitter> = Arc::new(InMemoryAuditEmitter::new());
 
     let upstream_url = match Url::parse(DEFAULT_UPSTREAM_REGISTRY) {
@@ -293,7 +315,7 @@ pub fn router(
         DEFAULT_TARBALL_SIZE_LIMIT_BYTES,
         cas,
         kv,
-        resolver,
+        resolver.clone(),
         auditor,
     );
 
@@ -308,29 +330,39 @@ pub fn router(
     // rewrite `/npm/<tenant>/<rest>` → `/npm/<rest>` BEFORE `nest_service`
     // routes, so the inner param routes see the real registry path. (brew can
     // use an inner gate only because its inner route is a catch-all `/{*path}`.)
+    // The SAME resolver is threaded into the gate for two-layer write enforcement
+    // (F27) — one PAT verification, not two.
     Router::new()
         .nest_service("/npm", adapter)
-        .layer(middleware::from_fn(npm_gate))
+        .layer(middleware::from_fn_with_state(resolver, npm_gate))
 }
 
-/// Gate layer: per-operation cache-scope enforcement + tenant-segment strip.
+/// Gate layer: per-operation cache-scope enforcement + two-layer write
+/// enforcement (F27) + tenant-segment strip.
 ///
 /// Runs as an OUTER layer (BEFORE `nest_service` strips `/npm`), so
 /// `req.uri().path()` is the FULL `/npm/<tenant>/<rest>`. (1) enforces the
 /// per-op scope from the server-trusted `x-corelink-scope` header (GET/HEAD ⇒
-/// read); (2) rewrites the path to `/npm/<rest>` — dropping the `<tenant>`
-/// segment while KEEPING the static `/npm` prefix so `nest_service` then
-/// strips `/npm` and hands `/<rest>` to the adapter's `/:pkg` +
-/// `/:pkg/-/:tarball` routes (and the upstream fetch sees the real registry
-/// path, never the tenant segment). Running outer is required because axum
-/// 0.7 matches the nested param routes at routing time, before an inner layer
-/// could rewrite the path (see the mount note in [`router`]).
-async fn npm_gate(mut req: Request, next: Next) -> Response {
+/// read); (2) for PUT/POST (defensive write surface) also requires the PAT's
+/// `can_write` bit via the resolver's single `resolve_with_capability`
+/// verification (F27 — two-layer write enforcement mirroring OCI, no redundant
+/// second PAT verify); (3) rewrites the path to `/npm/<rest>` — dropping the
+/// `<tenant>` segment while KEEPING the static `/npm` prefix so `nest_service`
+/// then strips `/npm` and hands `/<rest>` to the adapter's `/:pkg` +
+/// `/:pkg/-/:tarball` routes. Running outer is required because axum 0.7 matches
+/// the nested param routes at routing time, before an inner layer could rewrite
+/// the path (see [`router`]).
+async fn npm_gate(
+    axum::extract::State(resolver): axum::extract::State<TenantResolverHandle>,
+    mut req: Request,
+    next: Next,
+) -> Response {
     let scope = req
         .headers()
         .get(SCOPE_HEADER)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
+    let is_write = matches!(*req.method(), Method::PUT | Method::POST);
     let scope_ok = match *req.method() {
         // npm is a read-through mirror: clients only GET (metadata, tarball,
         // ping). The transparent cache-fill (a CAS/KV write by the service)
@@ -349,6 +381,49 @@ async fn npm_gate(mut req: Request, next: Next) -> Response {
     };
     if !scope_ok {
         return (StatusCode::FORBIDDEN, "insufficient cache scope").into_response();
+    }
+
+    // F27 — two-layer write enforcement: for PUT/POST requests, require the PAT's
+    // own `can_write` bit from the resolver's SINGLE PAT verification
+    // (`resolve_with_capability` — HMAC + Argon2id against D1). This ensures a
+    // Worker-side scope-header mistake cannot grant a write that the PAT's D1
+    // record does not authorise — without a redundant second verify. The npm
+    // resolver collapses every verification failure into `NpmAdapterError::Auth`,
+    // so any resolver `Err` is treated as a fail-CLOSED write denial (401).
+    if is_write {
+        let pat_token = req
+            .headers()
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.strip_prefix("Bearer "))
+            .map(str::to_owned);
+        match pat_token {
+            None => {
+                tracing::warn!("npm: write with no bearer token — rejecting (F27)");
+                return (StatusCode::UNAUTHORIZED, "missing bearer token").into_response();
+            }
+            Some(pat_plaintext) => {
+                match resolver.resolve_with_capability(&pat_plaintext).await {
+                    Ok(resolved) if resolved.can_write => {
+                        // PAT grants write — both layers pass; continue.
+                    }
+                    Ok(_no_write) => {
+                        tracing::warn!(
+                            "npm: write denied — PAT scope lacks write capability (F27)"
+                        );
+                        return (
+                            StatusCode::FORBIDDEN,
+                            "PAT does not grant write capability",
+                        )
+                            .into_response();
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "npm: write denied — PAT re-verify failed (F27)");
+                        return (StatusCode::UNAUTHORIZED, "invalid PAT").into_response();
+                    }
+                }
+            }
+        }
     }
 
     // Drop the `<tenant>` segment but KEEP the `/npm` mount prefix:
