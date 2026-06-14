@@ -412,6 +412,37 @@ pub fn router(
 // `/token` downscope to the PAT's capability (see `router` doc). The Worker
 // forwards OCI raw, so there is no server-set `x-corelink-scope` to gate on —
 // a header gate would 403 every request under pass-through.
+//
+// F26 — security note: OCI `x-corelink-scope` gate exception (two-leg pass-through)
+//
+// The Worker intentionally does NOT inject `x-corelink-scope` on any OCI request
+// (both `/token` and `/v2/*`). The OCI Distribution Spec v1.1 §auth two-leg flow
+// requires that the client presents `Authorization: Basic <pat>` to `/token` and
+// receives an HMAC bearer. Because the Worker cannot resolve the PAT scope at
+// forward time (it does not re-verify the PAT), it cannot set the header; a gate
+// here would `403` every OCI request, including the initial token exchange.
+//
+// Compensating controls that make this safe:
+//   1. `/token` runs the full Option-B PAT re-verify (HMAC + D1 lookup + Argon2id
+//      via `OciPatResolver` → `PatVerifier::verify_capability`). An invalid or
+//      revoked PAT returns 401 before a bearer is minted.
+//   2. The minted bearer carries the PAT's REAL capability (read vs read/write) via
+//      the `can_write` downscope path (`OciScope::restricted_to_read` on `cas:r`
+//      PATs), so a read-only PAT cannot obtain a `push` bearer.
+//   3. Every `/v2/*` data-plane op verifies the HMAC bearer locally
+//      (`crate::oci::auth::verify`) and enforces `scope.allows(repo, action)`
+//      before touching any port. There is no unauthenticated code path.
+//   4. The per-tenant upload-session cap (F25, `OCI_MAX_OPEN_SESSIONS_PER_TENANT`)
+//      limits in-memory abuse from a valid but malicious authenticated tenant.
+//
+// Net: the absence of `x-corelink-scope` is a necessary protocol accommodation,
+// not a gap. The PAT re-verify + bearer scope-downscope + per-op scope enforcement
+// provide equivalent or stronger defence than the header gate would on the other
+// adapters (which trust the Worker-injected header rather than re-verifying).
+//
+// If the Worker is extended to resolve OCI PAT scopes at forward time, the gate
+// SHOULD be added for defence-in-depth — but doing so requires the Worker to
+// perform Argon2id-equivalent work on every OCI call, which is out of scope.
 
 #[cfg(test)]
 #[allow(
@@ -925,6 +956,111 @@ mod tests {
         assert!(
             new_session.is_ok(),
             "tenant A must be able to open a new session after cancelling one"
+        );
+    }
+
+    /// F25 route-level test: `POST /v2/<repo>/blobs/uploads/` returns
+    /// `429 Too Many Requests` + `Retry-After` when the per-tenant session
+    /// cap is exhausted.
+    ///
+    /// This exercises the full HTTP path (adapter router → `open()` handler
+    /// → `OciMoatStore::open_upload` → error-mapping → `err_response`) so
+    /// we verify both the status code and the presence of the `Retry-After`
+    /// header.
+    #[tokio::test]
+    async fn upload_session_cap_returns_429_with_retry_after() {
+        let key = test_key();
+        let tenant_uuid = Uuid::from_u128(0xCAFF00);
+        let (plaintext, pat) = mint(
+            PatEnv::Pat,
+            PatTenantId(tenant_uuid),
+            PrincipalId(Uuid::from_u128(0xDEAD)),
+            PatScopes::from_u64(SCOPE_CACHE_RW),
+            None,
+            &key,
+            1,
+        )
+        .unwrap();
+        let pt = plaintext.into_string();
+        let lookup = OneTokenLookup {
+            token_id: pat.token_id.as_str().to_owned(),
+            row: PatRow {
+                tenant_id: pat.tenant_id.0.to_string(),
+                pat_hash: pat.hash.as_str().to_owned(),
+                scope: SCOPE_RW.to_owned(),
+            },
+        };
+        let verifier = Arc::new(PatVerifier::new(Arc::new(lookup), key));
+        let cas = Arc::new(StubCas::default());
+        let app = router(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()),
+            Arc::new(OciKvFake::default()),
+            verifier,
+            SecretWrap::new(OCI_KEY.to_owned()),
+        );
+
+        // Obtain a push+pull bearer for the test tenant.
+        let token_resp = app
+            .clone()
+            .oneshot(req(
+                Method::GET,
+                "/token?scope=repository:myrepo:push,pull",
+                Some(&basic(&pt)),
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(token_resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(token_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let bearer = format!("Bearer {}", json["token"].as_str().expect("token field"));
+
+        // Open OCI_MAX_OPEN_SESSIONS_PER_TENANT sessions — each must return 202.
+        for _ in 0..OCI_MAX_OPEN_SESSIONS_PER_TENANT {
+            let resp = app
+                .clone()
+                .oneshot(
+                    HttpRequest::builder()
+                        .method(Method::POST)
+                        .uri("/v2/myrepo/blobs/uploads/")
+                        .header("authorization", &bearer)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::ACCEPTED,
+                "expected 202 while filling quota"
+            );
+        }
+
+        // The next POST must hit the cap → 429 + Retry-After.
+        let resp = app
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .method(Method::POST)
+                    .uri("/v2/myrepo/blobs/uploads/")
+                    .header("authorization", &bearer)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "expected 429 when session cap is reached"
+        );
+        assert!(
+            resp.headers().contains_key("retry-after"),
+            "429 response must carry a Retry-After header"
         );
     }
 }

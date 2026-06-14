@@ -20,7 +20,9 @@ use std::sync::Arc;
 
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
-use corelink_adapter_host::cargo::ports::{TenantResolveError, TenantResolver};
+use corelink_adapter_host::cargo::ports::{
+    ResolvedTenant, TenantResolveError, TenantResolver,
+};
 use corelink_handler_cas::{
     handler::fake_hash, CasReadHandler, CasWriteHandler, InMemoryAuditSink, InMemoryCasHandler,
     InMemorySliObserver,
@@ -47,6 +49,24 @@ impl TenantResolver for StubResolver {
             Err(TenantResolveError::InvalidPat)
         }
     }
+
+    /// The known-good PAT carries cache WRITE (so the PUT/GET round-trip
+    /// succeeds through the gate's two-layer write check); everything else is
+    /// `InvalidPat`. The read-only-scope PUT 403 comes from the
+    /// `x-corelink-scope` HEADER gate, BEFORE this `can_write` check runs.
+    async fn resolve_with_capability(
+        &self,
+        pat_plaintext: &str,
+    ) -> Result<ResolvedTenant, TenantResolveError> {
+        if pat_plaintext == PAT {
+            Ok(ResolvedTenant {
+                tenant_id: TENANT.to_owned(),
+                can_write: true,
+            })
+        } else {
+            Err(TenantResolveError::InvalidPat)
+        }
+    }
 }
 
 fn cargo_router() -> axum::Router {
@@ -58,6 +78,8 @@ fn cargo_router() -> axum::Router {
     // No $-ceiling gate in this smoke test (the route shape is identical with
     // or without it; the gate is exercised by the tenant_quota unit tests).
     cargo::router(read, write, Arc::new(StubResolver), None)
+    // (no separate verifier arg: the gate's two-layer write check now uses the
+    // resolver's `resolve_with_capability` — a single PAT verification.)
 }
 
 /// A valid sccache key: the in-memory handler's `fake_hash` of the bytes,

@@ -76,6 +76,22 @@ Each entry cross-references:
   (currently-unset, so no-op today) gaps — `R2_TDK_HEX`, `SIGNUP_TOKEN_KEY`,
   `CORELINK_PORTAL_RETURN_URL`, and the BYOK provider region/vault vars — so a
   future secret-set reaches the container instead of silently doing nothing.
+- **CAA-360 wave-1 follow-ups: write-gate, fail-closed storage, and adapter
+  hardening.** Closes the next remediation tranche on top of the 35-finding pass:
+  (F27) the cargo/brew/npm/pip cache **write gate** now requires the PAT's
+  `can_write` capability — derived from a SINGLE PAT verification via the
+  resolver port (`resolve_with_capability`), not a redundant second verifier —
+  in addition to the server-trusted `x-corelink-scope` header (two layers, one
+  verification); (F8) the OCI adapter rejects session-table exhaustion with
+  `429 Too Many Requests` + `Retry-After` (`TooManyOpenSessions`) instead of a
+  silent overflow; storage handlers that fail to construct now resolve to a
+  loud `UnavailableCas/AcHandler` that maps to **503** (fail-closed, never a
+  silent 500/empty-200); and a new `scripts/check-env-contract.py` gate greps
+  every container `env::var` against the Worker DO forward-list so an unforwarded
+  secret is caught at CI, not in prod. Verified: `cargo check --tests` +
+  `clippy --all-targets -D warnings` + `cargo test` (481 + adapter suites) all
+  green. Wave-2 design (CAS true-residency, internal-auth Service-Binding,
+  in-container PAT re-verify) pinned in `docs/security/2026-06-13-CAA-360-wave2-design.md`.
 
 ### Security
 - **cas-erase: complete the WP-B CAS-erase WRITE path — wire the real R2

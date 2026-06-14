@@ -50,6 +50,12 @@ fn check_repo_push(repo: &str, scope: &crate::oci::auth::OciScope) -> Result<(),
 /// `POST /v2/<repo>/blobs/uploads/`. Opens an upload session and
 /// returns `202` + the `Location:` header pointing the client at the
 /// `PATCH` URL.
+///
+/// When the per-tenant session cap is reached the port returns an error
+/// string starting with `"too many open upload sessions"`.  We surface
+/// that as [`OciAdapterError::TooManyOpenSessions`] → HTTP 429 + a
+/// `Retry-After` header so clients back off rather than looping.  All
+/// other port errors are generic backend faults (500).
 pub async fn open(
     cas: &dyn BlobStore,
     tenant: &TenantId,
@@ -60,7 +66,26 @@ pub async fn open(
     let uuid = cas
         .open_upload(tenant)
         .await
-        .map_err(OciAdapterError::Cas)?;
+        .map_err(|e| {
+            if e.starts_with("too many open upload sessions") {
+                // Parse the limit from the error message if present so the
+                // response is self-consistent; fall back to a sentinel.
+                let limit = e
+                    .find("(limit ")
+                    .and_then(|i| e[i + 7..].split(')').next())
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .unwrap_or(0);
+                OciAdapterError::TooManyOpenSessions {
+                    limit,
+                    // 60 s is a conservative advisory back-off: long enough
+                    // to let a stalled push time out, short enough to not
+                    // strand legitimate retries.
+                    retry_after_secs: 60,
+                }
+            } else {
+                OciAdapterError::Cas(e)
+            }
+        })?;
     let location = format!("/v2/{repo}/blobs/uploads/{uuid}");
     let mut headers = HeaderMap::new();
     headers.insert(

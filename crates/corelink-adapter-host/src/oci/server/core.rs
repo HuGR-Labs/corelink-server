@@ -70,11 +70,16 @@ pub const fn status_for(err: &OciAdapterError) -> StatusCode {
             StatusCode::NOT_FOUND
         }
         OciAdapterError::Audit(_) => StatusCode::SERVICE_UNAVAILABLE,
+        // F25: per-tenant upload-session cap → 429 Too Many Requests.
+        // The client must cancel or finalize an existing session before
+        // retrying POST /v2/<repo>/blobs/uploads/.
+        OciAdapterError::TooManyOpenSessions { .. } => StatusCode::TOO_MANY_REQUESTS,
     }
 }
 
 /// Build a wire-shape JSON error envelope `axum::Response`. Adds the
-/// `Www-Authenticate: Bearer …` header on 401 responses.
+/// `Www-Authenticate: Bearer …` header on 401 responses and a
+/// `Retry-After: <secs>` header on 429 responses.
 pub fn err_response(
     err: &OciAdapterError,
     realm: Option<&str>,
@@ -97,6 +102,12 @@ pub fn err_response(
             if let Ok(v) = h.parse() {
                 headers.insert(axum::http::header::WWW_AUTHENTICATE, v);
             }
+        }
+    }
+    // F25: surface the advisory back-off delay to compliant clients.
+    if let OciAdapterError::TooManyOpenSessions { retry_after_secs, .. } = err {
+        if let Ok(v) = retry_after_secs.to_string().parse() {
+            headers.insert("Retry-After", v);
         }
     }
     (status, headers, Body::from(body)).into_response()

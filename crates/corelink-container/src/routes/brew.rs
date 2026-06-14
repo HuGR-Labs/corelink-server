@@ -42,7 +42,9 @@ use axum::Router;
 use url::Url;
 
 use corelink_adapter_host::brew::config::DEFAULT_BOTTLE_SIZE_LIMIT_BYTES;
-use corelink_adapter_host::brew::ports::{CasError, CasStore, TenantResolveError, TenantResolver};
+use corelink_adapter_host::brew::ports::{
+    CasError, CasStore, ResolvedTenant, SharedTenantResolver, TenantResolveError, TenantResolver,
+};
 use corelink_adapter_host::brew::server::build_router;
 use corelink_adapter_host::brew::BrewAdapterConfig;
 use corelink_audit::ports::{AuditEmitter, InMemoryAuditEmitter};
@@ -111,6 +113,20 @@ impl TenantResolver for BrewPatResolver {
             VerifyError::Backend(m) => TenantResolveError::Backend(m),
         })
     }
+
+    /// Override: call `verify_capability` so the write-gate can use the
+    /// D1-verified `can_write` bit instead of trusting only the header (F27).
+    async fn resolve_with_capability(
+        &self,
+        pat_plaintext: &str,
+    ) -> Result<ResolvedTenant, TenantResolveError> {
+        let (tenant_id, can_write) =
+            self.0.verify_capability(pat_plaintext).await.map_err(|e| match e {
+                VerifyError::InvalidPat => TenantResolveError::InvalidPat,
+                VerifyError::Backend(m) => TenantResolveError::Backend(m),
+            })?;
+        Ok(ResolvedTenant { tenant_id, can_write })
+    }
 }
 
 /// Build the `/brew/*` sub-router from shared CAS handlers + the url→hash map
@@ -118,7 +134,9 @@ impl TenantResolver for BrewPatResolver {
 ///
 /// The `cas_read`/`cas_write` are the SAME trait objects the cas/ac/bazel/turbo
 /// surfaces use; `map` is the D1-backed url→content-hash store; `verifier` is
-/// shared across cache adapters. On a construction error the route is simply
+/// shared across cache adapters. The resolver built from it backs BOTH the
+/// adapter (tenant resolution) and the gate's two-layer write enforcement (F27)
+/// — one PAT verification, not two. On a construction error the route is simply
 /// NOT mounted (empty sub-router + logged) so the container still boots.
 pub fn router(
     cas_read: Arc<dyn CasReadHandler>,
@@ -133,7 +151,7 @@ pub fn router(
         BREW_SERVICE_PRINCIPAL,
     ));
     let cas: Arc<dyn CasStore> = Arc::new(BrewMoatStore { moat });
-    let resolver: Arc<dyn TenantResolver> = Arc::new(BrewPatResolver(verifier));
+    let resolver: SharedTenantResolver = Arc::new(BrewPatResolver(verifier));
     let auditor: Arc<dyn AuditEmitter> = Arc::new(InMemoryAuditEmitter::new());
 
     let upstream = match Url::parse(BREW_UPSTREAM_DOMAIN) {
@@ -150,7 +168,7 @@ pub fn router(
         upstream,
         DEFAULT_BOTTLE_SIZE_LIMIT_BYTES,
         cas,
-        resolver,
+        resolver.clone(),
         auditor,
     );
 
@@ -162,23 +180,36 @@ pub fn router(
         }
     };
 
-    let adapter = adapter.layer(middleware::from_fn(brew_gate));
+    // Thread the SAME resolver into the gate so PUT (defensive write) is subject
+    // to two-layer write enforcement (F27): scope header AND the PAT-derived
+    // `can_write` from the resolver's single verification (no redundant second
+    // PAT verify).
+    let adapter = adapter.layer(middleware::from_fn_with_state(resolver, brew_gate));
     Router::new().nest_service("/brew", adapter)
 }
 
-/// Gate layer: per-operation cache-scope enforcement + tenant-segment strip.
+/// Gate layer: per-operation cache-scope enforcement + two-layer write
+/// enforcement (F27) + tenant-segment strip.
 ///
 /// Runs AFTER `nest_service` strips `/brew`, so `req.uri().path()` is
 /// `/<tenant>/<bottle-path>`. (1) enforces the per-op scope from the
-/// server-trusted `x-corelink-scope` header (GET/HEAD ⇒ read); (2) rewrites the
-/// path to `/<bottle-path>` so both the adapter's catch-all and the upstream
-/// fetch see the real bottle path (never the tenant segment).
-async fn brew_gate(mut req: Request, next: Next) -> Response {
+/// server-trusted `x-corelink-scope` header (GET/HEAD ⇒ read); (2) for PUT
+/// (defensive write surface) also requires the PAT's `can_write` bit via the
+/// resolver's single `resolve_with_capability` verification (F27 — two-layer
+/// write enforcement mirroring OCI, no redundant second PAT verify); (3)
+/// rewrites the path to `/<bottle-path>` so the adapter's catch-all and the
+/// upstream fetch see the real bottle path.
+async fn brew_gate(
+    axum::extract::State(resolver): axum::extract::State<SharedTenantResolver>,
+    mut req: Request,
+    next: Next,
+) -> Response {
     let scope = req
         .headers()
         .get(SCOPE_HEADER)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
+    let is_write = req.method() == Method::PUT;
     let scope_ok = match *req.method() {
         // brew is a read-through cache: clients only GET. The transparent
         // cache-fill (a CAS write by the service) is not a client write.
@@ -195,6 +226,57 @@ async fn brew_gate(mut req: Request, next: Next) -> Response {
     };
     if !scope_ok {
         return (StatusCode::FORBIDDEN, "insufficient cache scope").into_response();
+    }
+
+    // F27 — two-layer write enforcement: for PUT requests, require the PAT's own
+    // `can_write` bit from the resolver's SINGLE PAT verification
+    // (`resolve_with_capability` — HMAC + Argon2id against D1). This ensures a
+    // Worker-side scope-header mistake cannot grant a write that the PAT's D1
+    // record does not authorise — without a redundant second verify.
+    if is_write {
+        let pat_token = req
+            .headers()
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.strip_prefix("Bearer "))
+            .map(str::to_owned);
+        match pat_token {
+            None => {
+                tracing::warn!("brew: PUT with no bearer token — rejecting (F27)");
+                return (StatusCode::UNAUTHORIZED, "missing bearer token").into_response();
+            }
+            Some(pat_plaintext) => {
+                match resolver.resolve_with_capability(&pat_plaintext).await {
+                    Ok(resolved) if resolved.can_write => {
+                        // PAT grants write — both layers pass; continue.
+                    }
+                    Ok(_no_write) => {
+                        tracing::warn!(
+                            "brew: PUT denied — PAT scope lacks write capability (F27)"
+                        );
+                        return (
+                            StatusCode::FORBIDDEN,
+                            "PAT does not grant write capability",
+                        )
+                            .into_response();
+                    }
+                    Err(TenantResolveError::Backend(m)) => {
+                        tracing::error!(error = %m, "brew: resolver backend error (F27)");
+                        return (
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            "PAT verifier backend error",
+                        )
+                            .into_response();
+                    }
+                    // `InvalidPat` + any future non-exhaustive variant: fail-CLOSED
+                    // (the PAT did not resolve, so the write is denied → 401).
+                    Err(e) => {
+                        tracing::warn!(error = %e, "brew: PUT denied — PAT re-verify failed (F27)");
+                        return (StatusCode::UNAUTHORIZED, "invalid PAT").into_response();
+                    }
+                }
+            }
+        }
     }
 
     // Strip the leading `<tenant>` segment: `/<tenant>/<rest>` → `/<rest>`.
@@ -238,7 +320,8 @@ mod tests {
         CasHandlerError, CasReadRequest, CasReadResponse, CasWriteRequest, CasWriteResponse,
     };
     use corelink_pat::{
-        mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId, SCOPE_CACHE_RW,
+        mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId, SCOPE_CACHE_R,
+        SCOPE_CACHE_RW,
     };
     use tower::ServiceExt; // for `.oneshot`
     use uuid::Uuid;
@@ -422,6 +505,60 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// F27 — two-layer write enforcement: a read-only PAT (`cas:r`) is denied
+    /// on PUT even when the `x-corelink-scope` header says `cas:rw`. This proves
+    /// that the gate's second layer (PAT re-verify) is independent of the header
+    /// and cannot be bypassed by a misconfigured Worker.
+    #[tokio::test]
+    async fn f27_put_denied_for_readonly_pat_despite_rw_header() {
+        let key = test_key();
+        // Mint a read-only PAT (SCOPE_CACHE_R = `cas:r`, no write bit).
+        let (plaintext, pat) = mint(
+            PatEnv::Pat,
+            TenantId(Uuid::from_u128(0xF27A)),
+            PrincipalId(Uuid::from_u128(0xF27B)),
+            PatScopes::from_u64(SCOPE_CACHE_R),
+            None,
+            &key,
+            1,
+        )
+        .unwrap();
+        let pt = plaintext.into_string();
+        let lookup = OneTokenLookup {
+            token_id: pat.token_id.as_str().to_owned(),
+            row: PatRow {
+                tenant_id: pat.tenant_id.0.to_string(),
+                pat_hash: pat.hash.as_str().to_owned(),
+                // D1 scope is read-only — the header claims rw, the PAT is r only.
+                scope: "cas:r".to_owned(),
+            },
+        };
+        let verifier = Arc::new(PatVerifier::new(Arc::new(lookup), key));
+        let cas: Arc<StubCas> = Arc::new(StubCas::default());
+        let app = router(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()),
+            verifier,
+        );
+
+        // PUT with `cas:rw` scope header but a read-only PAT: the gate's
+        // second layer (PAT re-verify) must deny this → 403.
+        let req = HttpRequest::builder()
+            .method(Method::PUT)
+            .uri("/brew/t/v2/some-bottle.tar.gz")
+            .header("authorization", format!("Bearer {pt}"))
+            .header(SCOPE_HEADER, SCOPE_RW)
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::FORBIDDEN,
+            "F27: read-only PAT must be denied on PUT even with rw scope header"
+        );
     }
 
     #[tokio::test]

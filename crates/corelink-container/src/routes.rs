@@ -438,6 +438,10 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         // cargo (sccache): only the shared verifier; no moat (per-tenant CAS).
         // The $-ceiling gate (when present) is threaded into the gate layer so
         // sccache ops are charged alongside CAS/AC/Bazel/Turbo.
+        // The resolver (built from the shared verifier) ALSO backs the gate's
+        // two-layer write capability check (F27: scope header AND the PAT-derived
+        // `can_write` from the resolver's single verification — no redundant
+        // second PAT verify).
         router = router.merge(cargo::router(
             cargo_cas_read,
             cargo_cas_write,
