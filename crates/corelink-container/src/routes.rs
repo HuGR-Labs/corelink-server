@@ -581,4 +581,34 @@ mod tests {
         let factory: Arc<dyn ShadowSinkFactory> = Arc::new(InMemoryShadowSinkFactory::new());
         let _router = build_with_factory(factory);
     }
+
+    #[tokio::test]
+    async fn build_with_factory_produces_a_routing_router() {
+        use axum::body::Body;
+        use axum::http::{Method, Request, StatusCode};
+        use tower::ServiceExt;
+
+        // A real router has the routes mounted; the degenerate
+        // `build_with_factory -> Default::default()` mutant returns an EMPTY
+        // `Router` that 404s every path. GET on the POST-only `/v1/admin/mutate`
+        // route → axum 405 (path registered, method mismatch) on the real
+        // router, vs 404 on the empty one — kills that mutant.
+        let factory: Arc<dyn ShadowSinkFactory> = Arc::new(InMemoryShadowSinkFactory::new());
+        let router = build_with_factory(factory);
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/v1/admin/mutate")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "build_with_factory must mount real routes (an empty router would 404)"
+        );
+    }
 }

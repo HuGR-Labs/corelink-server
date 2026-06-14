@@ -47,6 +47,18 @@ fn check_repo_push(repo: &str, scope: &crate::oci::auth::OciScope) -> Result<(),
     Ok(())
 }
 
+/// Parse the advisory limit `N` from a `"too many open upload sessions
+/// (limit N)"` port error message. Returns `0` when the `(limit …)` clause is
+/// absent or unparseable (a self-consistent sentinel). The `+ 7` skips the
+/// literal `"(limit "` prefix.
+#[must_use]
+fn parse_session_limit(err: &str) -> usize {
+    err.find("(limit ")
+        .and_then(|i| err[i + 7..].split(')').next())
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(0)
+}
+
 /// `POST /v2/<repo>/blobs/uploads/`. Opens an upload session and
 /// returns `202` + the `Location:` header pointing the client at the
 /// `PATCH` URL.
@@ -70,11 +82,7 @@ pub async fn open(
             if e.starts_with("too many open upload sessions") {
                 // Parse the limit from the error message if present so the
                 // response is self-consistent; fall back to a sentinel.
-                let limit = e
-                    .find("(limit ")
-                    .and_then(|i| e[i + 7..].split(')').next())
-                    .and_then(|s| s.parse::<usize>().ok())
-                    .unwrap_or(0);
+                let limit = parse_session_limit(&e);
                 OciAdapterError::TooManyOpenSessions {
                     limit,
                     // 60 s is a conservative advisory back-off: long enough
@@ -330,4 +338,24 @@ pub async fn put(
             .map_err(|_| OciAdapterError::Cas(String::from("digest header parse")))?,
     );
     Ok((StatusCode::CREATED, headers, Body::empty()).into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_session_limit;
+
+    #[test]
+    fn parse_session_limit_extracts_the_number() {
+        // The real port error shape → the advisory limit is parsed verbatim.
+        // (Kills the `i + 7` offset mutants: any other offset reads the wrong
+        // substring → parse fails → 0 ≠ the expected limit.)
+        assert_eq!(
+            parse_session_limit("too many open upload sessions (limit 5)"),
+            5
+        );
+        assert_eq!(parse_session_limit("x (limit 42) y"), 42);
+        // Absent / unparseable clause → 0 sentinel.
+        assert_eq!(parse_session_limit("too many open upload sessions"), 0);
+        assert_eq!(parse_session_limit("(limit abc)"), 0);
+    }
 }
