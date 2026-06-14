@@ -208,11 +208,17 @@ fn build_d1_worker() -> Option<InMemoryErasureWorker> {
 }
 
 /// Build the route state from env. `None` when `CORELINK_INTERNAL_AUTH_KEY` is
-/// unset/empty (route not mounted) — mirrors `internal_pat::build_state_from_env`.
+/// unset or shorter than 32 chars (route not mounted — fail-CLOSED). Mirrors
+/// the ≥32-char floor set by the PAT-signing key standard and recommended by
+/// F28/F15 of the 2026-06-13 CAA-360 security audit.
 #[must_use]
 pub fn build_state_from_env() -> Option<DsrRouteState> {
     let internal_auth_key = std::env::var("CORELINK_INTERNAL_AUTH_KEY").ok()?;
-    if internal_auth_key.is_empty() {
+    if internal_auth_key.len() < 32 {
+        tracing::warn!(
+            "CORELINK_INTERNAL_AUTH_KEY too short (< 32 chars); \
+             /_internal/dsr/* NOT mounted (fail-CLOSED)"
+        );
         return None;
     }
     // Prefer the real D1-backed worker; fall back to the all-placeholder
@@ -319,11 +325,17 @@ async fn handle_erase(
     }
     let msg: DsrQueuedV1 = match serde_json::from_slice(&body) {
         Ok(m) => m,
-        Err(e) => return (StatusCode::BAD_REQUEST, format!("invalid body: {e}")).into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "dsr/erase: invalid request body");
+            return (StatusCode::BAD_REQUEST, "invalid request body").into_response();
+        }
     };
     let request = match parse_request(&msg) {
         Ok(r) => r,
-        Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "dsr/erase: request field parse error");
+            return (StatusCode::BAD_REQUEST, "invalid request body").into_response();
+        }
     };
     match state.worker.process_erasure(&request, now_ms()) {
         // Cross-tenant / policy rejection (tenant pre-check). Should never
@@ -336,11 +348,10 @@ async fn handle_erase(
             Json(serde_json::json!({ "ok": true, "dsr_id": msg.dsr_id })),
         )
             .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("erasure failed: {e}"),
-        )
-            .into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, dsr_id = %msg.dsr_id, "dsr/erase: erasure engine error");
+            (StatusCode::INTERNAL_SERVER_ERROR, "erasure failed").into_response()
+        }
     }
 }
 
@@ -358,11 +369,17 @@ async fn handle_verify(
     }
     let msg: DsrVerifyV1 = match serde_json::from_slice(&body) {
         Ok(m) => m,
-        Err(e) => return (StatusCode::BAD_REQUEST, format!("invalid body: {e}")).into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "dsr/verify: invalid request body");
+            return (StatusCode::BAD_REQUEST, "invalid request body").into_response();
+        }
     };
     let request = match parse_verify_request(&msg) {
         Ok(r) => r,
-        Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "dsr/verify: request field parse error");
+            return (StatusCode::BAD_REQUEST, "invalid request body").into_response();
+        }
     };
     match state.worker.verify_erasure(&request, now_ms()) {
         Ok(decision) => (
@@ -374,11 +391,10 @@ async fn handle_verify(
             })),
         )
             .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("verification failed: {e}"),
-        )
-            .into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, dsr_id = %msg.dsr_id, "dsr/verify: verification engine error");
+            (StatusCode::INTERNAL_SERVER_ERROR, "verification failed").into_response()
+        }
     }
 }
 
@@ -386,6 +402,19 @@ async fn handle_verify(
 #[allow(clippy::unwrap_used, reason = "tests")]
 mod tests {
     use super::*;
+
+    /// F28/F15 (CAA-360 2026-06-13): `build_state_from_env` must reject any key
+    /// shorter than 32 chars and return `None` (route not mounted, fail-CLOSED).
+    #[test]
+    fn build_state_rejects_short_internal_auth_key() {
+        // 31-char key — just below the minimum floor.
+        std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", "a".repeat(31));
+        assert!(
+            build_state_from_env().is_none(),
+            "31-char key must not mount the DSR route (< 32 floor)"
+        );
+        std::env::remove_var("CORELINK_INTERNAL_AUTH_KEY");
+    }
 
     #[test]
     fn placeholder_worker_builds_with_12_canonical_adapters() {

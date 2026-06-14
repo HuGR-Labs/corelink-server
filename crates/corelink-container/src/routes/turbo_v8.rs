@@ -51,7 +51,8 @@
 
 #![forbid(unsafe_code)]
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use axum::{
     extract::{Path, Query, State},
@@ -95,6 +96,17 @@ pub const TURBO_STATUS_ROUTE: &str = "/v8/artifacts/status";
 /// `DefaultBodyLimit` (which axum honours as the innermost limit) — while still
 /// bounding the body so an authenticated PAT cannot OOM the shared container.
 pub const TURBO_BODY_LIMIT_BYTES: usize = 100 * 1024 * 1024;
+
+/// Maximum concurrent in-flight `PUT /v8/artifacts/:hash` requests for a
+/// single tenant. Excess PUTs are rejected with 429 (Too Many Requests).
+///
+/// Rationale: each Turbo PUT buffers up to `TURBO_BODY_LIMIT_BYTES` (100 MiB)
+/// in memory. Without a concurrency cap, a single authenticated tenant can open
+/// N concurrent PUTs and consume N × 100 MiB of heap, OOM-ing their container.
+/// Capping at 4 bounds peak per-tenant working set to ~400 MiB while still
+/// allowing realistic parallel builds (Turborepo's default parallelism is 2–4
+/// concurrent tasks). Excess requests get 429, not 503 — the client retries.
+pub const TURBO_PUT_CONCURRENCY_LIMIT: usize = 4;
 
 // ── Query parameters ──────────────────────────────────────────────────────────
 
@@ -145,11 +157,21 @@ pub struct TurboRouteState {
     /// in dev/CI (not enforced). The telemetry `events`/static `status` verbs
     /// are NOT billable and are not gated. Set by `routes::build_with_factory`.
     pub quota: Option<crate::routes::QuotaGate>,
+    /// Per-tenant in-flight PUT concurrency counter (F24 — self-DoS guard).
+    ///
+    /// Maps `tenant_id → count` of PUT requests currently in-flight (body
+    /// buffered in memory). Incremented at the START of `handle_put` AFTER the
+    /// scope/quota gates; decremented via a drop guard when the handler returns.
+    /// When the count reaches [`TURBO_PUT_CONCURRENCY_LIMIT`] the handler returns
+    /// 429 immediately, before buffering any body bytes.
+    pub(crate) put_inflight: Arc<Mutex<HashMap<String, usize>>>,
 }
 
 impl core::fmt::Debug for TurboRouteState {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("TurboRouteState").finish_non_exhaustive()
+        f.debug_struct("TurboRouteState")
+            .field("put_inflight", &"Arc<Mutex<HashMap<..>>>")
+            .finish_non_exhaustive()
     }
 }
 
@@ -195,6 +217,7 @@ pub fn build_handlers() -> TurboRouteState {
                     return TurboRouteState {
                         handler,
                         quota: None,
+                        put_inflight: Arc::new(Mutex::new(HashMap::new())),
                     };
                 }
                 Some(Err(e)) => {
@@ -212,6 +235,7 @@ pub fn build_handlers() -> TurboRouteState {
     TurboRouteState {
         handler,
         quota: None,
+        put_inflight: Arc::new(Mutex::new(HashMap::new())),
     }
 }
 
@@ -327,6 +351,69 @@ async fn handle_put(
             return resp;
         }
     }
+    // F24 — per-tenant PUT concurrency guard (self-DoS hardening).
+    //
+    // Each in-flight PUT body is buffered in memory (up to TURBO_BODY_LIMIT_BYTES
+    // = 100 MiB). Cap the per-tenant in-flight count at TURBO_PUT_CONCURRENCY_LIMIT
+    // so a single tenant cannot hold N × 100 MiB simultaneously. Reject excess
+    // with 429 (client MUST retry, body has not been read). The guard uses a
+    // plain Mutex (held only for O(1) map operations) so it never blocks the
+    // async executor.
+    let tenant_key = caller_tenant.clone();
+    {
+        let mut inflight = match state.put_inflight.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                tracing::error!(
+                    tenant_id = %caller_tenant,
+                    error = %e,
+                    "turbo PUT concurrency tracker mutex poisoned; failing closed"
+                );
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "concurrency tracker unavailable",
+                )
+                    .into_response();
+            }
+        };
+        let count = inflight.entry(tenant_key.clone()).or_insert(0);
+        if *count >= TURBO_PUT_CONCURRENCY_LIMIT {
+            tracing::warn!(
+                tenant_id = %caller_tenant,
+                in_flight = *count,
+                limit = TURBO_PUT_CONCURRENCY_LIMIT,
+                "turbo PUT concurrency limit reached; returning 429"
+            );
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                "too many concurrent artifact uploads",
+            )
+                .into_response();
+        }
+        *count += 1;
+    }
+    // RAII decrement: run on every return path (success, error, panic).
+    struct PutGuard {
+        inflight: Arc<Mutex<HashMap<String, usize>>>,
+        tenant_key: String,
+    }
+    impl Drop for PutGuard {
+        fn drop(&mut self) {
+            if let Ok(mut g) = self.inflight.lock() {
+                if let Some(c) = g.get_mut(&self.tenant_key) {
+                    *c = c.saturating_sub(1);
+                    if *c == 0 {
+                        g.remove(&self.tenant_key);
+                    }
+                }
+            }
+        }
+    }
+    let _guard = PutGuard {
+        inflight: Arc::clone(&state.put_inflight),
+        tenant_key,
+    };
+
     let now_ms = 0u64;
     let req = TurboPutRequest::new(
         hash,
@@ -908,5 +995,78 @@ mod tests {
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    // ── F24: per-tenant PUT concurrency guard ─────────────────────────────────
+
+    #[test]
+    fn put_inflight_counter_is_shared_across_clones() {
+        // `TurboRouteState::clone` shares the `Arc<Mutex<..>>` — so all
+        // route handler invocations (axum clones state per request) see the
+        // SAME counter. Verify the Arc is truly shared, not deep-copied.
+        let state = build_handlers();
+        let state2 = state.clone();
+        {
+            let mut g = state.put_inflight.lock().unwrap();
+            g.insert(TEST_AUTH_TENANT.to_owned(), 3);
+        }
+        let g = state2.put_inflight.lock().unwrap();
+        assert_eq!(
+            g.get(TEST_AUTH_TENANT),
+            Some(&3),
+            "cloned state must share the same inflight counter"
+        );
+    }
+
+    #[tokio::test]
+    async fn put_at_limit_returns_429() {
+        // Simulate reaching TURBO_PUT_CONCURRENCY_LIMIT by pre-seeding the
+        // counter, then issue one more PUT — must get 429.
+        let state = fixture();
+        {
+            let mut g = state.put_inflight.lock().unwrap();
+            g.insert(
+                TEST_AUTH_TENANT.to_owned(),
+                TURBO_PUT_CONCURRENCY_LIMIT,
+            );
+        }
+        let app = router(state);
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri("/v8/artifacts/h_limit?teamId=team_x")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .body(Body::from(b"data".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "at-limit PUT must return 429"
+        );
+    }
+
+    #[tokio::test]
+    async fn put_below_limit_succeeds_and_decrements_counter() {
+        // A PUT that succeeds must release its concurrency slot (counter goes
+        // back to 0 after the request completes, not leaked).
+        let state = fixture();
+        let app = router(state.clone());
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri("/v8/artifacts/h_decr?teamId=team_y")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .body(Body::from(b"data".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        // After the handler returns, the guard must have decremented the counter.
+        let g = state.put_inflight.lock().unwrap();
+        assert_eq!(
+            g.get(TEST_AUTH_TENANT),
+            None, // removed when count reaches 0
+            "concurrency counter must be released after PUT completes"
+        );
     }
 }

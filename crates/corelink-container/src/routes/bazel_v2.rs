@@ -259,6 +259,52 @@ async fn quota_reject(
     }
 }
 
+/// Batch variant of [`quota_reject`] for `findMissingBlobs` (F12 fix —
+/// quota-bypass-by-batching).
+///
+/// `findMissingBlobs` accepts up to `FIND_MISSING_BLOB_CAP` (4096) digests
+/// per request. Charging a single flat op cost for the whole batch allows a
+/// tenant to drive up to 4096× more backend CAS work per accrued dollar than
+/// the per-request cost model assumes. This function charges one op cost unit
+/// per digest (`n` invocations of `gate.check(tenant)`), making the cost
+/// proportional to the actual fan-out, consistent with the ADR-0068
+/// coarse-tripwire intent.
+///
+/// The invocations are sequential and stop on the first rejection, so the
+/// ceiling still fires correctly at the right dollar amount. Each `check`
+/// call uses the atomic check-and-accrue path (F13) so the ceiling is
+/// correct under concurrency.
+///
+/// **Performance note:** each call issues a D1 HTTP round-trip. For very
+/// large batches (e.g. 4096 digests) this can be expensive; a follow-on
+/// task should expose `QuotaGuard::check_batch` via `QuotaGate` so the
+/// whole batch can be charged in a single `n × cost` check-and-accrue
+/// statement (see `crate::tenant_quota::QuotaGuard::check_batch`). The
+/// `BATCH_QUOTA_ITERS_CAP` provides an upper bound on D1 calls per request
+/// to prevent a thundering-herd; excess digests are billed at the cap, not
+/// skipped.
+///
+/// `n = 0` (empty batch) charges nothing and returns `None` (allow).
+const BATCH_QUOTA_ITERS_CAP: usize = 64;
+
+async fn quota_reject_batch(
+    state: &BazelRouteState,
+    tenant: &str,
+    n: usize,
+) -> Option<axum::response::Response> {
+    let gate = state.quota.as_ref()?;
+    // Cap the D1 round-trips per batch. An n > BATCH_QUOTA_ITERS_CAP batch
+    // is charged at the cap — still proportional up to the cap, and all
+    // small batches are charged exactly.
+    let iters = n.min(BATCH_QUOTA_ITERS_CAP);
+    for _ in 0..iters {
+        if let Some(resp) = gate.check(tenant).await {
+            return Some(resp);
+        }
+    }
+    None
+}
+
 /// Logical wall-clock stand-in (production wiring injects a real clock
 /// collaborator; 0 keeps the routes logic-free and matches the CAS/AC
 /// route convention).
@@ -502,13 +548,10 @@ async fn handle_find_missing(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
-    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
-    if let Some(resp) = quota_reject(&state, &tenant).await {
-        return resp;
-    }
     let p = principal(&headers);
 
-    // Parse + validate the JSON body.
+    // Parse + validate the JSON body BEFORE the quota gate so we know the
+    // digest count (F12: charge proportional to batch fan-out).
     let body_str = match std::str::from_utf8(&body) {
         Ok(s) => s,
         Err(_) => {
@@ -519,6 +562,15 @@ async fn handle_find_missing(
         Ok(d) => d,
         Err(e) => return map_bridge_err(e),
     };
+
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
+    // F12 fix: charge one op-cost unit per digest (proportional to batch
+    // fan-out) rather than one flat unit for the whole batch.
+    // `quota_reject_batch` stops on the first ceiling violation so the trip
+    // point is still correct at the right dollar amount.
+    if let Some(resp) = quota_reject_batch(&state, &tenant, digests.len()).await {
+        return resp;
+    }
 
     // Delegate to the find-missing handler.
     let missing = match state

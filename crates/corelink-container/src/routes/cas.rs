@@ -123,6 +123,17 @@ pub fn build_handlers() -> (Arc<dyn CasReadHandler>, Arc<dyn CasWriteHandler>) {
             // Empty-or-absent → default (see storage::env_or; mirrors the
             // AC fix for the 2026-06-05 prod incident — latent here).
             let bucket = crate::storage::env_or("R2_CAS_BUCKET", "corelink-cas-prod");
+            // F7 (2026-06-13 CAA-360 audit) — CAS residency. The CAS storage
+            // region is keyed per-env from `R2_CAS_REGION` (FROZEN CONTRACT),
+            // set by `[env.prod-<region>].vars` in `wrangler.toml` and forwarded
+            // by the DO `container.start({env})` list (F8). This is what makes a
+            // regional env (sam/lhr/nrt/syd) key its CAS objects under its OWN
+            // region instead of the US default — closing the Schrems-II / GDPR
+            // Art. 44 gap for CAS content. The default `"iad"` applies only to
+            // the IAD env; a regional env that lacks the binding silently
+            // degrades to IAD, so the binding is asserted by the residency
+            // invariant test (`residency_invariant_every_regional_env_sets_cas_region`)
+            // that fails the build if any `[env.prod-<r>]` omits `R2_CAS_REGION`.
             let region = crate::storage::env_or("R2_CAS_REGION", "iad");
 
             // Construction is now sync-only (commit ead0f37a removed the
@@ -404,6 +415,57 @@ mod tests {
         );
         assert!(CAS_READ_ROUTE.contains(":tenant"));
         assert!(CAS_READ_ROUTE.contains(":hash"));
+    }
+
+    /// F7 (2026-06-13 CAA-360 audit) — CAS data-residency invariant.
+    ///
+    /// Every non-IAD regional prod env (`[env.prod-sam|lhr|nrt|syd]`) MUST set
+    /// `R2_CAS_REGION` in its `.vars` so the container keys that region's CAS
+    /// objects under its OWN region instead of silently defaulting to the US
+    /// `"iad"` (the Schrems-II / GDPR Art. 44 gap). This test fails the build if
+    /// any regional env omits the binding — the fail-CLOSED, fail-LOUD guard
+    /// that stops a future env-block edit from re-opening the residency hole.
+    ///
+    /// We assert the binding *exists* per region (the F7 contract). The bucket
+    /// stays `corelink-cas-prod` until per-region CAS buckets are provisioned
+    /// (infra follow-up), so we do not assert the bucket here.
+    #[test]
+    fn residency_invariant_every_regional_env_sets_cas_region() {
+        // wrangler.toml lives at the repo root; this crate is at
+        // crates/corelink-container, so climb two parents.
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let wrangler_path = std::path::Path::new(manifest_dir)
+            .join("..")
+            .join("..")
+            .join("wrangler.toml");
+        let toml = std::fs::read_to_string(&wrangler_path).unwrap_or_else(|e| {
+            panic!("cannot read {}: {e}", wrangler_path.display());
+        });
+
+        // Each non-IAD regional env must declare its CAS region. The IAD env is
+        // exempt: its `R2_CAS_REGION` default ("iad") is the residency-correct
+        // value, so an absent binding there is not a cross-border leak.
+        for region in ["sam", "lhr", "nrt", "syd"] {
+            let header = format!("[env.prod-{region}.vars]");
+            let start = toml.find(&header).unwrap_or_else(|| {
+                panic!("wrangler.toml missing `{header}` env block");
+            });
+            // Bound the search to this env block: from its header to the next
+            // top-level `[` section after the header line.
+            let after_header = start + header.len();
+            let block_end = toml[after_header..]
+                .find("\n[")
+                .map_or(toml.len(), |rel| after_header + rel);
+            let block = &toml[start..block_end];
+            let expected = format!("R2_CAS_REGION = \"{region}\"");
+            assert!(
+                block.contains(&expected),
+                "[env.prod-{region}] must set `{expected}` (F7 CAS residency \
+                 invariant): a regional env without R2_CAS_REGION keys its CAS \
+                 objects under the US default \"iad\" — a cross-border leak. \
+                 Add the binding to wrangler.toml."
+            );
+        }
     }
 
     #[test]

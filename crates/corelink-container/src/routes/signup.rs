@@ -258,8 +258,9 @@ pub fn parse_and_verify_pilot_token(
         _ => return Err(TokenError::Malformed),
     };
     // 2) split body into the 4 canonical underscore-separated fields:
-    //    `pilot_<env>_<unix_ms>_<16-hex>`. We use rsplitn so the
-    //    `<env>` field cannot smuggle an underscore.
+    //    `pilot_<env>_<unix_ms>_<16-hex>`. We use splitn(4) to ensure
+    //    exactly 4 fields; the env allowlist ({"staging","prod"}) and
+    //    u64 timestamp validation provide the real security barrier.
     let parts: Vec<&str> = body.splitn(4, '_').collect();
     if parts.len() != 4 {
         return Err(TokenError::BadStructure);

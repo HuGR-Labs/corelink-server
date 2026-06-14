@@ -247,7 +247,7 @@ name = "corelink-prod"
 # R2_S3_ENDPOINT + D1_DATABASE_ID are non-secret container-storage config: the
 # DO forwards them (plus the R2/CF_API_TOKEN secrets) into container.start({env}).
 # Account-scoped R2 S3 endpoint; D1 id = corelink-config-prod (CONFIG_DB binding).
-vars = { ENVIRONMENT = "prod", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562", R2_AC_BUCKET = "corelink-ac-iad", R2_AC_REGION = "iad" }
+vars = { ENVIRONMENT = "prod", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562", R2_AC_BUCKET = "corelink-ac-iad", R2_AC_REGION = "iad", R2_CAS_REGION = "iad" }
 
 # ── Worker route bindings (Wave 32 Phase G+ — DNS cutover) ────────────────
 #
@@ -554,8 +554,13 @@ crons = [
 #   - The same container image tag as IAD (`:6b816156-r2`) — same binary,
 #     different region bucket config injected via env vars at container start.
 #   - Regional R2 bucket vars forwarded to the container: R2_AC_BUCKET,
-#     R2_AC_REGION, R2_CHUNK_BUCKET, R2_CHUNK_REGION.
-#   - CAS bucket = corelink-cas-prod (IAD-only global bucket, shared by all regions)
+#     R2_AC_REGION, R2_CHUNK_BUCKET, R2_CHUNK_REGION, R2_CAS_REGION.
+#   - CAS bucket = corelink-cas-prod (single global R2 bucket today); F7
+#     (2026-06-13 audit) makes CAS residency-aware by KEYING each region's CAS
+#     objects under its own R2_CAS_REGION (sam/lhr/nrt/syd, not "iad"). Per-region
+#     CAS *buckets* (corelink-cas-<region>) are an infra follow-up; until they
+#     exist the bytes still land in corelink-cas-prod but under a region-correct
+#     key, and the cas.rs residency invariant test enforces the per-env binding.
 #   - Same global D1 (corelink-config-prod) + KV bindings as [env.prod]
 #   - Route: <region>.corelink-api.humangr.com/*
 #
@@ -584,6 +589,11 @@ R2_AC_BUCKET = "corelink-ac-sam"
 R2_AC_REGION = "sam"
 R2_CHUNK_BUCKET = "corelink-chunk-sam"
 R2_CHUNK_REGION = "sam"
+# F7 (2026-06-13 audit) — CAS residency. Key CAS objects under this region so
+# SAM/BR tenant blobs are NOT keyed under "iad". Per-region CAS *buckets* are an
+# infra follow-up (R2_CAS_BUCKET stays corelink-cas-prod until they exist); the
+# region key is the code-level residency invariant verified by the cas.rs test.
+R2_CAS_REGION = "sam"
 
 [[env.prod-sam.routes]]
 pattern = "sam.corelink-api.humangr.com"
@@ -702,6 +712,11 @@ R2_AC_BUCKET = "corelink-ac-lhr"
 R2_AC_REGION = "lhr"
 R2_CHUNK_BUCKET = "corelink-chunk-lhr"
 R2_CHUNK_REGION = "lhr"
+# F7 (2026-06-13 audit) — CAS residency. EU CAS bytes key under "lhr" (not the
+# US default "iad"), closing the Schrems-II / GDPR Art. 44 gap for CAS content.
+# Per-region CAS *buckets* are an infra follow-up (R2_CAS_BUCKET stays
+# corelink-cas-prod until they exist); the region key is the residency invariant.
+R2_CAS_REGION = "lhr"
 
 [[env.prod-lhr.routes]]
 pattern = "lhr.corelink-api.humangr.com"
@@ -820,6 +835,10 @@ R2_AC_BUCKET = "corelink-ac-nrt"
 R2_AC_REGION = "nrt"
 R2_CHUNK_BUCKET = "corelink-chunk-nrt"
 R2_CHUNK_REGION = "nrt"
+# F7 (2026-06-13 audit) — CAS residency. NRT/JP CAS bytes key under "nrt", not
+# the US default "iad". Per-region CAS *buckets* are an infra follow-up
+# (R2_CAS_BUCKET stays corelink-cas-prod until they exist); region key = invariant.
+R2_CAS_REGION = "nrt"
 
 [[env.prod-nrt.routes]]
 pattern = "nrt.corelink-api.humangr.com"
@@ -938,6 +957,10 @@ R2_AC_BUCKET = "corelink-ac-syd"
 R2_AC_REGION = "syd"
 R2_CHUNK_BUCKET = "corelink-chunk-syd"
 R2_CHUNK_REGION = "syd"
+# F7 (2026-06-13 audit) — CAS residency. SYD/AU CAS bytes key under "syd", not
+# the US default "iad". Per-region CAS *buckets* are an infra follow-up
+# (R2_CAS_BUCKET stays corelink-cas-prod until they exist); region key = invariant.
+R2_CAS_REGION = "syd"
 
 [[env.prod-syd.routes]]
 pattern = "syd.corelink-api.humangr.com"

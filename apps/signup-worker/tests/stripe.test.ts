@@ -1304,6 +1304,53 @@ describe("handleStripeWebhook", () => {
         ).toBeUndefined();
     });
 
+    // ------------------------------------------------------------------
+    // F35: updateTierSelectionTierByCustomer must not update inactive rows.
+    // When a `customer.subscription.updated` event simultaneously cancels AND
+    // changes the price (e.g. status='canceled', new price→'max'), both the tier
+    // update and the deactivation write run concurrently via Promise.all. Without
+    // the `AND subscription_state = 'active'` filter, the tier update writes a
+    // stale tier onto the now-inactive row. The filter makes it a no-op.
+    // ------------------------------------------------------------------
+
+    it("F35: subscription.updated canceled with a new tier → tier UPDATE SQL carries AND subscription_state='active' filter", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_f35_cancel_with_tier",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_f35",
+                    customer: "cus_f35",
+                    status: "canceled", // non-granting → deactivateTierSelectionByCustomer fires
+                    current_period_end: Math.floor(nowMs / 1000) + 30 * 24 * 3600,
+                    // Price maps to 'max' → tier update would run (newTier non-null)
+                    items: { data: [{ price: { id: "price_max_www" } }] },
+                    metadata: { tenant_id: "tenant_f35" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // The deactivation write always runs (access gate correctness).
+        const deact = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("'inactive'"),
+        );
+        expect(deact).toBeDefined();
+
+        // The tier update SQL MUST carry the active-only filter (F35 fix).
+        const tierUpdate = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("SET tier"),
+        );
+        expect(tierUpdate).toBeDefined();
+        expect(tierUpdate!.sql).toContain("subscription_state = 'active'");
+        expect(tierUpdate!.params).toContain("max");
+        expect(tierUpdate!.params).toContain("cus_f35");
+    });
+
     it("customer.subscription.updated with UNKNOWN price → tier left untouched (never guess)", async () => {
         const db = fakeDb();
         const nowMs = Date.now();
@@ -1905,6 +1952,92 @@ describe("handleStripeWebhook", () => {
             (c) => c.sql.includes("tier_selections") && c.sql.includes("'active'"),
         );
         expect(lateActivation).toBeUndefined();
+    });
+
+    // ------------------------------------------------------------------
+    // F34: invoice.payment_failed missing fallback revocation path
+    // A terminal invoice.payment_failed whose payload omits `customer` must
+    // STILL revoke the canonical access gate (tier_selections), keyed by
+    // subscription id via tenant_billing (exactly as subscription.updated and
+    // subscription.deleted do). Without the fix, `tier_selections.subscription_state`
+    // stays 'active' and the tenant retains paid-tier access despite exhausted dunning.
+    // ------------------------------------------------------------------
+
+    it("F34: invoice.payment_failed terminal with NO customer → gate STILL revoked by subscription id (fail-closed fallback)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_pf_no_customer",
+            type: "invoice.payment_failed",
+            data: {
+                object: {
+                    // subscription present — always available on invoice objects.
+                    subscription: "sub_pf_nocust",
+                    // NOTE: `customer` field intentionally omitted — the F34 bug scenario.
+                    attempt_count: 4,
+                    next_payment_attempt: null, // terminal: Stripe has given up
+                    metadata: { tenant_id: "tenant_pf_nocust" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // Secondary mirror: tenant_billing.status='past_due' (keyed by subscription id).
+        const billing = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tenant_billing") && c.params.includes("past_due"),
+        );
+        expect(billing).toBeDefined();
+        expect(billing!.params).toContain("sub_pf_nocust");
+        // Must NOT have written current_period_end_ms (status-only SQL).
+        expect(billing!.sql).not.toContain("current_period_end_ms");
+
+        // CANONICAL gate: tier_selections MUST be flipped inactive — keyed by
+        // subscription id (via tenant_billing subquery), NOT by customer (absent).
+        // This is the F34 fix: the fallback path that was previously missing.
+        const deact = db.runCalls.find(
+            (c) =>
+                c.sql.includes("UPDATE tier_selections") &&
+                c.sql.includes("'inactive'") &&
+                c.sql.includes("tenant_billing"),
+        );
+        expect(deact).toBeDefined();
+        expect(deact!.params).toContain("sub_pf_nocust");
+    });
+
+    // Also pin the EXISTING happy-path (customer present) to ensure it still
+    // uses the customer-keyed path, not the subscription fallback.
+    it("F34: invoice.payment_failed terminal WITH customer → gate revoked by customer (primary path unchanged)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_pf_with_customer",
+            type: "invoice.payment_failed",
+            data: {
+                object: {
+                    subscription: "sub_pf_cust",
+                    customer: "cus_pf_cust",
+                    attempt_count: 4,
+                    next_payment_attempt: null,
+                    metadata: { tenant_id: "tenant_pf_cust" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // Should use the customer-keyed path (deactivateTierSelectionByCustomer),
+        // NOT the subscription-id fallback.
+        const deactByCustomer = db.runCalls.find(
+            (c) =>
+                c.sql.includes("UPDATE tier_selections") &&
+                c.sql.includes("'inactive'") &&
+                !c.sql.includes("tenant_billing"), // customer path has no subquery
+        );
+        expect(deactByCustomer).toBeDefined();
+        expect(deactByCustomer!.params).toContain("cus_pf_cust");
     });
 
     it("terminal-state: a late invoice.payment_failed after cancel is guarded too (status-only UPDATE carries the guard)", async () => {

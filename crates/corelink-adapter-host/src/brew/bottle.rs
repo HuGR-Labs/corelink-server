@@ -202,7 +202,25 @@ impl BottleService {
                 }
                 true
             }
-            None => false,
+            None => {
+                // Tag-addressed path (e.g. `.../manifests/8.5.0`): no URL-declared
+                // digest to verify against. Compute and log the sha256 of the
+                // fetched bytes so operators can detect cache-poisoning in the
+                // audit trail even for mutable-tag manifests stored in
+                // PUBLIC_NAMESPACE. The bytes are NOT refused — brew clients
+                // re-verify manifest→blob chains against their formula DSL.
+                let computed = sha256_hex(&bytes);
+                tracing::warn!(
+                    tenant_id = %tenant_id,
+                    canonical_path = %canonical,
+                    cas_key = %cas_key,
+                    computed_sha256 = %computed,
+                    size_bytes = bytes.len(),
+                    "brew: tag-manifest cached without URL-declared digest \
+                     (best-effort integrity); sha256 logged for audit trail"
+                );
+                false
+            }
         };
 
         // Audit-emit-BEFORE-mutation. On audit failure we do NOT

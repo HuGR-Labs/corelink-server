@@ -69,8 +69,11 @@ pub struct OciAdapterConfig {
 
     /// HMAC-SHA256 signing key for realm bearer tokens. Wrapped in
     /// [`SecretWrap`] so drops zeroize and `Debug` refuses to leak.
-    /// MUST be ≥32 bytes (raw, not hex) per
-    /// [`Self::sanity_check`]. Source env: `HUGR_OCI_TOKEN_KEY`.
+    /// MUST be ≥32 characters of key material per [`Self::sanity_check`].
+    /// Use `openssl rand -hex 32` (64 chars → 256-bit key) — the raw
+    /// string bytes become the HMAC key directly; hex chars are NOT
+    /// decoded at load time, so 64 hex chars = 64 key bytes = 512-bit
+    /// effective entropy. Source env: `CORELINK_OCI_TOKEN_KEY`.
     pub token_signing_key: SecretWrap,
 
     /// CAS-side blob store port.

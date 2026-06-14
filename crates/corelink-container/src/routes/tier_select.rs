@@ -59,6 +59,106 @@ use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
+// ──────────────────────────────────────────────────────────────────────────────
+// F6/F10: success_url / cancel_url host allowlist.
+//
+// The ONLY valid destination hosts for the Stripe Checkout redirect are the
+// CoreLink-owned origins.  A scheme-only `starts_with("https://")` check is
+// not a meaningful control: an authenticated user can supply any https URL and
+// Stripe will redirect the post-payment browser there, leaking the Checkout
+// Session id (Stripe appends `{CHECKOUT_SESSION_ID}` to the URL).
+//
+// Fix: parse the URL with the `url` crate (already a transitive dep via
+// `reqwest`) and assert that:
+//   • scheme is exactly "https"
+//   • host is in ALLOWED_REDIRECT_HOSTS (exact match, case-insensitive)
+//   • no userinfo/`@` component (embedded credentials)
+//   • port is absent (standard 443 implied) — non-standard ports are rejected
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Exact set of CoreLink-owned hostnames that may appear in `success_url` /
+/// `cancel_url`.  Must be kept in sync with the deployed admin-ui and app
+/// origins.  Case-insensitive comparison (`.to_ascii_lowercase()` on the
+/// parsed host).
+const ALLOWED_REDIRECT_HOSTS: &[&str] = &[
+    "corelink-admin.humangr.com",
+    "corelink-app.humangr.com",
+];
+
+/// Validate a single redirect URL (success or cancel).  Fail-CLOSED: any
+/// parse failure, wrong scheme, disallowed host, present userinfo, or
+/// non-standard port is a hard `BadRequest`.  Emits a structured `tracing`
+/// warning (never logs the full URL to avoid accidental credential exposure).
+fn validate_redirect_url(raw: &str, field: &str) -> Result<(), TierSelectHttpError> {
+    // Keep the existing https prefix check as an early fast-path (avoids a
+    // full URL parse on obviously-bad inputs — the `url` parse below is the
+    // authoritative gate).
+    if !raw.starts_with("https://") {
+        tracing::warn!(
+            field,
+            "redirect URL rejected: scheme is not https (fail-closed, F6/F10)"
+        );
+        return Err(TierSelectHttpError::BadRequest);
+    }
+
+    let parsed = match url::Url::parse(raw) {
+        Ok(u) => u,
+        Err(_) => {
+            tracing::warn!(
+                field,
+                "redirect URL rejected: URL parse failed (fail-closed, F6/F10)"
+            );
+            return Err(TierSelectHttpError::BadRequest);
+        }
+    };
+
+    // Scheme must be exactly "https" (the Url parser normalises to lowercase).
+    if parsed.scheme() != "https" {
+        tracing::warn!(
+            field,
+            "redirect URL rejected: non-https scheme (fail-closed, F6/F10)"
+        );
+        return Err(TierSelectHttpError::BadRequest);
+    }
+
+    // Reject userinfo (embedded credentials — `user:pass@host`).
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        tracing::warn!(
+            field,
+            "redirect URL rejected: userinfo present (fail-closed, F6/F10)"
+        );
+        return Err(TierSelectHttpError::BadRequest);
+    }
+
+    // Reject non-standard ports.  An explicit `:443` is also rejected to keep
+    // the check simple and consistent with the admin-ui's server-built URLs
+    // (which never specify a port).
+    if parsed.port().is_some() {
+        tracing::warn!(
+            field,
+            "redirect URL rejected: explicit port present (fail-closed, F6/F10)"
+        );
+        return Err(TierSelectHttpError::BadRequest);
+    }
+
+    // Host must be in the allowlist (case-insensitive).
+    let host = parsed
+        .host_str()
+        .map(|h| h.to_ascii_lowercase())
+        .unwrap_or_default();
+    if !ALLOWED_REDIRECT_HOSTS.iter().any(|&allowed| allowed == host) {
+        tracing::warn!(
+            field,
+            host = %host,
+            allowlist = ?ALLOWED_REDIRECT_HOSTS,
+            "redirect URL rejected: host not in CoreLink allowlist (fail-closed, F6/F10)"
+        );
+        return Err(TierSelectHttpError::BadRequest);
+    }
+
+    Ok(())
+}
+
 /// Header carrying the internal shared secret (worker → container trust
 /// boundary). Identical mechanism to `internal_pat.rs`.
 pub const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
@@ -338,13 +438,17 @@ fn authorize_and_validate(
         ParsedTier::Enterprise => return Err(TierSelectHttpError::UseInquiryForm),
         ParsedTier::Invalid => return Err(TierSelectHttpError::BadRequest),
     };
-    // (4) redirect URLs must be https (the Worker builds these from a
-    // trusted origin; this is defense-in-depth against a misconfigured
-    // caller — never redirect a paid customer to a non-TLS URL).
-    if tier.is_paid()
-        && (!body.success_url.starts_with("https://") || !body.cancel_url.starts_with("https://"))
-    {
-        return Err(TierSelectHttpError::BadRequest);
+    // (4) F6/F10: redirect URLs must point to a CoreLink-owned origin.
+    // The Worker normally builds these server-side from a trusted origin, but
+    // an authenticated user can POST directly to the Worker bypassing the
+    // admin-ui and supply arbitrary https:// URLs.  Validate both URLs against
+    // the host allowlist (parse URL → assert host ∈ ALLOWED_REDIRECT_HOSTS,
+    // reject userinfo/@/explicit ports).  Fail-CLOSED: any violation → 400,
+    // structured tracing warning.  The https scheme check is also enforced
+    // inside `validate_redirect_url`.
+    if tier.is_paid() {
+        validate_redirect_url(&body.success_url, "success_url")?;
+        validate_redirect_url(&body.cancel_url, "cancel_url")?;
     }
     Ok((tenant_id, tier))
 }
@@ -896,6 +1000,80 @@ mod tests {
         bad.success_url = "http://evil.example/upgraded".to_owned();
         let e = authorize_and_validate(&state(), &h, &bad).unwrap_err();
         assert_eq!(e, TierSelectHttpError::BadRequest);
+    }
+
+    // ── F6/F10: redirect URL host allowlist ─────────────────────────────────
+    // The scheme-only check was replaced with a strict host allowlist
+    // (ALLOWED_REDIRECT_HOSTS). These tests pin: (a) off-list https host
+    // rejected, (b) userinfo rejected, (c) explicit port rejected, (d)
+    // cancel_url off-list rejected, (e) both on-list accepted.
+
+    #[test]
+    fn f6_rejects_https_success_url_with_off_allowlist_host() {
+        // An attacker-controlled https URL passes the old scheme check but
+        // must be rejected by the new allowlist gate (F6/F10 fix).
+        let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
+        let mut bad = req("pro");
+        bad.success_url =
+            "https://attacker.example/steal?s={CHECKOUT_SESSION_ID}".to_owned();
+        let e = authorize_and_validate(&state(), &h, &bad).unwrap_err();
+        assert_eq!(e, TierSelectHttpError::BadRequest);
+    }
+
+    #[test]
+    fn f6_rejects_success_url_with_userinfo() {
+        let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
+        let mut bad = req("pro");
+        bad.success_url =
+            "https://user:pass@corelink-admin.humangr.com/upgraded".to_owned();
+        let e = authorize_and_validate(&state(), &h, &bad).unwrap_err();
+        assert_eq!(e, TierSelectHttpError::BadRequest);
+    }
+
+    #[test]
+    fn f6_rejects_success_url_with_explicit_port() {
+        let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
+        let mut bad = req("pro");
+        bad.success_url =
+            "https://corelink-admin.humangr.com:8443/upgraded".to_owned();
+        let e = authorize_and_validate(&state(), &h, &bad).unwrap_err();
+        assert_eq!(e, TierSelectHttpError::BadRequest);
+    }
+
+    #[test]
+    fn f6_rejects_off_allowlist_cancel_url() {
+        let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
+        let mut bad = req("pro");
+        bad.cancel_url = "https://evil.example/cancel".to_owned();
+        let e = authorize_and_validate(&state(), &h, &bad).unwrap_err();
+        assert_eq!(e, TierSelectHttpError::BadRequest);
+    }
+
+    #[test]
+    fn f6_accepts_both_urls_on_allowlist() {
+        // Both corelink-admin.humangr.com and corelink-app.humangr.com are
+        // in ALLOWED_REDIRECT_HOSTS — a valid combination must pass.
+        let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
+        let mut good = req("pro");
+        good.success_url =
+            "https://corelink-app.humangr.com/en/upgraded?session_id={CHECKOUT_SESSION_ID}"
+                .to_owned();
+        good.cancel_url = "https://corelink-app.humangr.com/en/pricing".to_owned();
+        let result = authorize_and_validate(&state(), &h, &good);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn f6_redirect_check_not_applied_to_free_tier() {
+        // The https/allowlist check is only applied to paid tiers (the free
+        // path has no Checkout redirect).  An off-list URL for a free request
+        // must NOT be rejected.
+        let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
+        let mut free = req("free");
+        free.success_url = "http://localhost:3000/welcome".to_owned();
+        free.cancel_url = "http://localhost:3000/cancel".to_owned();
+        let (_t, tier) = authorize_and_validate(&state(), &h, &free).unwrap();
+        assert_eq!(tier, RequestedTier::Free);
     }
 
     #[test]

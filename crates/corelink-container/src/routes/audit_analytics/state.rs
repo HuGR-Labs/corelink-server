@@ -83,10 +83,31 @@ pub fn router(state: AuditAnalyticsRouteState) -> Router {
 /// Production wiring swaps `shadow_factory` for a per-region Neon
 /// binding (deferred follow-on WI — needs `tokio-postgres` driver +
 /// `app.current_tenant` GUC SET inside every transaction).
+///
+/// # Security note — F11 (in-memory rate-limiter durability gap)
+///
+/// The [`InMemoryTokenBucketRateLimiter`] constructed here stores token-
+/// bucket state in **process RAM only**. It is non-durable across container
+/// cold-starts: the per-tenant DO container has a 5-minute idle timeout, so
+/// a tenant that waits out the idle window forces a container recycle, gets a
+/// fresh full-bucket (10 tokens), and can issue up to 10 burst analytics
+/// queries before the next refill tick — an effective ~2× rate-limit bypass
+/// per cold-start cycle. The impact is bounded (read-only analytics aggregate
+/// over the Neon shadow; no billing/auth path; not cross-tenant).
+///
+/// **Recommended follow-on (owner-gated):** replace `InMemoryTokenBucketRateLimiter`
+/// with a durable per-tenant D1 counter using the atomic
+/// `INSERT … ON CONFLICT … DO UPDATE … RETURNING count` pattern proven in
+/// `session_exchange.ts::checkMintThrottle`, or move the gate to the
+/// Worker/DO layer where state is durable across container recycles.
+/// Track as a post-launch hardening item; does NOT block launch.
 #[must_use]
 pub fn build_state(shadow_factory: Arc<dyn ShadowSinkFactory>) -> AuditAnalyticsRouteState {
     let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
     let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
+    // NOTE (F11): InMemoryTokenBucketRateLimiter is non-durable — token
+    // counts reset on container cold-start (5-min idle timeout). See the
+    // security note on `build_state` for the follow-on hardening plan.
     let rate_limiter: Arc<dyn RateLimiter> = Arc::new(InMemoryTokenBucketRateLimiter::new(
         rl_audit,
         rl_metrics,
