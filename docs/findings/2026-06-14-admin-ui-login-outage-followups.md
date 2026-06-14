@@ -23,7 +23,21 @@ fixed (see PR #267 / the bundle branch + CHANGELOG); this doc captures the
    `max-age=0` (cf-cache MISS every load). Fixed with `public/_headers`
    (immutable). Once edge-cached, origin load + CF cost drop.
 
-## Follow-ups (open)
+## Follow-ups — STATUS (all resolved 2026-06-14 in this bundle)
+
+- **FU-1 (e2e false-green): DONE** — `scripts/e2e-admin-ui-render-smoke.mjs` +
+  `.github/workflows/e2e-admin-ui-render.yml` (browser render smoke; validated it
+  catches the outage).
+- **FU-2 (/en/welcome 500): DONE** — middleware `signInUrl` + fail-closed catch +
+  defensive `auth()` + `error.tsx` (see below; this section kept for the analysis).
+- **FU-3 (local build contamination): MITIGATED** — deploy via clean build; the
+  stray `@sentry/core` is tree-shaken (no-op without DSN) so it doesn't poison the
+  client bundle in practice. Root reclaim of disk done via `cargo clean`.
+- **FU-4 (deploy timeout vs Mac load): DONE** — `admin-ui-deploy.yml`
+  `timeout-minutes` 20→40; root cause was actually ENOSPC (disk full) — see
+  [[shared-mac-disk-full]] memory; freed 10.7G via `cargo clean` of the dev tree.
+
+## Follow-ups (original analysis)
 
 ### FU-1 — `e2e-clerk-signup` is FALSE-GREEN for the frontend  *(quality debt)*
 The scheduled prod e2e (`scripts/e2e-clerk-signup.sh`, 5 stages) exercises the

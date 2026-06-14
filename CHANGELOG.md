@@ -78,6 +78,17 @@ Each entry cross-references:
   loads the auth pages in headless Chromium and fails on a client-side
   exception — closing the gap that let `e2e-clerk-signup` stay green through
   this outage (it only tests the backend).
+- **admin-ui: `/en/welcome` returned HTTP 500 (post-signup landing).** The
+  enforcement middleware ran `auth.protect()` with no `signInUrl`, so a signed-out
+  request couldn't build a redirect and threw; the middleware's `catch {}`
+  swallowed it and fell through to render the protected page, whose server-side
+  `auth()` then found no Clerk middleware context and threw during SSR → 500.
+  Fixed by passing `{ signInUrl: "/sign-in" }` to `clerkMiddleware` (signed-out →
+  clean 307), making the middleware catch FAIL CLOSED on enforced paths (redirect
+  to `/sign-in`, never serve a protected page anonymously) with error logging,
+  and wrapping the welcome page's `auth()` so a thrown context redirects to
+  `/sign-in` (locale-less) instead of crashing — backed by a new
+  `(authenticated)/error.tsx` boundary.
 - **admin-ui: immutable edge-caching for `/_next/static` (`public/_headers`).**
   Workers Assets served the content-hashed chunks `cache-control: max-age=0,
   must-revalidate` (cf-cache MISS every request) so each SPA page load re-fetched
