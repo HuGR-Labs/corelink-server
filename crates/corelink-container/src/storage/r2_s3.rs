@@ -921,7 +921,7 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
                 warn!(
                     key = %key,
                     "R2AcHandler::update divergent body — refusing to overwrite a \
-                     proven AC result (INV-AC-IMMUTABILITY)"
+                     proven AC result (INV-AC-RESULT-HASH-IMMUTABLE)"
                 );
                 self.emit_update_sli(false);
                 return Err(AcHandlerError::DivergentBody {
