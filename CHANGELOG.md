@@ -22,6 +22,24 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **migrations(0064): make the `tenant` table rebuild D1-applicable — add
+  `PRAGMA legacy_alter_table=ON` + recreate the residency triggers.** The
+  0064 rebuild (widen `tenant.tier` CHECK to add `'max'`) failed on
+  `corelink-config-prod` with `no such table: main.tenant` inside
+  `trg_blob_meta_region_match_insert`: SQLite 3.25+ (the D1 fork) re-parses
+  every trigger/view body during `ALTER TABLE … RENAME`, and five residency
+  triggers on OTHER tables (blob_meta/ac_meta/audit_outbox) reference `tenant`
+  in their bodies — during the DROP→RENAME window the re-parse hits a missing
+  `tenant`. Fixed with `PRAGMA legacy_alter_table=ON` (SQLite "12-step" step 2,
+  a connection flag honoured in-transaction by D1). Also recreates the three
+  `trg_tenant_primary_region_*` triggers, which SQLite drops together with the
+  table — the original file wrongly assumed they "survive name-bound", which
+  would have silently dropped residency enforcement (INV-REGION-NO-CROSS-LEAK)
+  post-rebuild. Migration stays additive in effect (verified: rows copied 1:1,
+  CHECK set only grows). The failed prod apply rolled back atomically (D1 runs
+  each migration file as one transaction) — prod was never left partial.
+
 ### Security
 - **cas-erase: complete the WP-B CAS-erase WRITE path — wire the real R2
   `CasBlobEraser` (hugit-P2 seam B).** The `POST /_internal/cas/:tenant/:hash/erase`
