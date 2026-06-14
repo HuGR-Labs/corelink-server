@@ -1,0 +1,14 @@
+# Cloudflare Workers static-assets headers.
+# https://developers.cloudflare.com/workers/static-assets/headers
+# https://opennext.js.org/cloudflare/caching#static-assets-caching
+#
+# Next.js content-hashes every file under /_next/static, so the bytes behind a
+# given URL never change — they are safe to cache forever. Without this, Workers
+# Assets serves them `cache-control: public, max-age=0, must-revalidate`
+# (cf-cache MISS on every request), so each SPA page load re-fetches ~20 chunks
+# from the worker origin. That drove both the CF cost (the "Wave 32" rate-limit
+# rule's motivation) AND — until the rule was scoped to exclude static assets —
+# the per-load 429 burst that crashed sign-in/up. Immutable edge caching fixes
+# the root: chunks become cf-cache HITs and stop hitting the origin.
+/_next/static/*
+  Cache-Control: public,max-age=31536000,immutable

@@ -64,6 +64,14 @@ Each entry cross-references:
   Smart-CAPTCHA / Turnstile, injected at runtime) and `connect-src` was missing
   `https://corelink-analytics.humangr.com` (the first-party PLG event sink) —
   both added so enforce-mode CSP no longer blocks them.
+- **admin-ui: immutable edge-caching for `/_next/static` (`public/_headers`).**
+  Workers Assets served the content-hashed chunks `cache-control: max-age=0,
+  must-revalidate` (cf-cache MISS every request) so each SPA page load re-fetched
+  ~20 chunks from the worker origin — the cost driver behind the "Wave 32" CF
+  rate-limit rule and the per-load burst that crashed login. Adds the
+  OpenNext-recommended `public/_headers` (`/_next/static/* →
+  public,max-age=31536000,immutable`) so chunks become cf-cache HITs and stop
+  hitting the origin.
 - **migrations(0064): make the `tenant` table rebuild D1-applicable — add
   `PRAGMA legacy_alter_table=ON` + recreate the residency triggers.** The
   0064 rebuild (widen `tenant.tier` CHECK to add `'max'`) failed on
