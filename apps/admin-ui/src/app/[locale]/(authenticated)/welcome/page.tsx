@@ -41,24 +41,33 @@ export default async function WelcomePage(props: {
   const mod = await import("@clerk/nextjs/server").catch(() => null);
   let claims: WelcomeClaims = {};
   if (mod) {
-    const session = await (
-      mod as {
-        auth: () => Promise<{
-          sessionClaims?: {
-            publicMetadata?: WelcomeClaims;
-          };
-        }>;
-      }
-    ).auth();
-    // Clerk v6: publicMetadata is nested under sessionClaims.publicMetadata
-    claims = session.sessionClaims?.publicMetadata ?? {};
+    try {
+      const session = await (
+        mod as {
+          auth: () => Promise<{
+            sessionClaims?: {
+              publicMetadata?: WelcomeClaims;
+            };
+          }>;
+        }
+      ).auth();
+      // Clerk v6: publicMetadata is nested under sessionClaims.publicMetadata
+      claims = session.sessionClaims?.publicMetadata ?? {};
+    } catch {
+      // Defensive: `auth()` throws if the Clerk middleware request context is
+      // unavailable for this render (an OpenNext edge edge-case). Never 500 the
+      // post-signup landing — send the user to sign-in to re-establish a session
+      // rather than crashing. The error.tsx boundary is the last-resort net.
+      redirect(`/${locale}/sign-in`);
+    }
   }
 
-  // Branch 3: no tenant provisioned yet — webhook still running or session
-  // expired. Redirect to /sign-up so the user re-authenticates.
+  // Branch 3: no tenant provisioned yet — webhook still running or the session
+  // carries no tenant. Send to sign-in to re-establish the session (a brand-new
+  // signup whose webhook is mid-flight will have its tenant within ~2s).
   // p95 webhook latency target ≤ 2s (acceptance §2); rare edge case.
   if (!claims.tenant_id) {
-    redirect(`/${locale}/sign-up`);
+    redirect(`/${locale}/sign-in`);
   }
 
   const region = claims.region ?? "auto";

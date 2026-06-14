@@ -72,6 +72,7 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
                 auth: { protect: () => Promise<unknown> },
                 request: NextRequest,
               ) => Promise<Response> | Response,
+              options?: { signInUrl?: string },
             ) => (req: NextRequest) => Promise<Response>;
           }
         | null;
@@ -80,16 +81,25 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
         // (server-side `auth()` must resolve) but own their signed-out
         // redirect themselves — everything else is enforced here.
         const enforce = !isSelfGatedPath(pathname);
-        const handler = mod.clerkMiddleware(async (auth, _request) => {
-          if (enforce) {
-            // Real enforcement: unauthenticated requests to protected paths
-            // are redirected to sign-in by Clerk (return URL preserved).
-            await auth.protect();
-          }
-          const res = NextResponse.next({ request: { headers: requestHeaders } });
-          applySecurityHeaders(res, nonce);
-          return res;
-        });
+        const handler = mod.clerkMiddleware(
+          async (auth, _request) => {
+            if (enforce) {
+              // Real enforcement: unauthenticated requests to protected paths
+              // are redirected to sign-in by Clerk (return URL preserved).
+              await auth.protect();
+            }
+            const res = NextResponse.next({ request: { headers: requestHeaders } });
+            applySecurityHeaders(res, nonce);
+            return res;
+          },
+          // signInUrl MUST point at this app's real (locale-less) sign-in route.
+          // Without it, `auth.protect()` on a signed-out request cannot build a
+          // redirect and THROWS — which the catch below previously swallowed,
+          // letting the request fall through and render a protected page whose
+          // server-side `auth()` then 500'd (the /en/welcome outage). With it,
+          // `protect()` returns a clean 307 to /sign-in and the page never runs.
+          { signInUrl: "/sign-in" },
+        );
         const result = await handler(req);
         // Preserve Clerk's response verbatim (set-cookie, handshake headers,
         // and the sign-in redirect from `auth.protect()`) while guaranteeing
@@ -100,7 +110,16 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
         return augmented;
       }
     } catch {
-      // Defensive: never crash middleware. Fall through to default response.
+      // Fail CLOSED: if Clerk enforcement errors on an ENFORCED path, never
+      // fall through and serve the protected page anonymously (that both leaks
+      // the page and 500s when its `auth()` finds no middleware context).
+      // Redirect to sign-in instead. Self-gated paths own their gating, so they
+      // fall through to render as before.
+      if (!isSelfGatedPath(pathname)) {
+        const redirectRes = NextResponse.redirect(new URL("/sign-in", req.url));
+        applySecurityHeaders(redirectRes, nonce);
+        return redirectRes;
+      }
     }
   }
 
