@@ -14,10 +14,10 @@ import { useTranslations } from "next-intl";
 import { track } from "@/lib/analytics";
 
 
-const SignUp = dynamic(
-  () => import("@clerk/nextjs").then((m) => m.SignUp),
-  { ssr: false },
-);
+// Import the widget together with its `<ClerkProvider>` (see ClerkSignUp.tsx).
+// `ssr: false` keeps the whole `@clerk/nextjs` graph out of the edge-runtime
+// SSR pass; the wrapper supplies the provider the widget requires.
+const ClerkSignUp = dynamic(() => import("./ClerkSignUp"), { ssr: false });
 
 export default function SignUpPage(): React.ReactElement {
   const t = useTranslations("auth");
@@ -47,18 +47,7 @@ export default function SignUpPage(): React.ReactElement {
   }
   return (
     <main className="mx-auto max-w-md p-8">
-      {/*
-       * forceRedirectUrl: always land on /en/welcome after Clerk completes
-       * sign-up, regardless of the Clerk dashboard "redirect URL" setting.
-       * fallbackRedirectUrl: safety net if Clerk ignores forceRedirectUrl
-       * (e.g. email-verification flows that redirect independently).
-       * /en/welcome is used because next-intl requires the locale prefix;
-       * the default locale is "en" (src/i18n/request.ts).
-       */}
-      <SignUp
-        forceRedirectUrl="/en/welcome"
-        fallbackRedirectUrl="/en/welcome"
-      />
+      <ClerkSignUp />
     </main>
   );
 }
