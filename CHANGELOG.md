@@ -46,6 +46,24 @@ Each entry cross-references:
   Starter→20/Pro→40/Team→80/Scale→160/Max→320; absent for cache-only tenants).
 
 ### Fixed
+- **admin-ui: prod login was completely broken (`Application error: a
+  client-side exception`) — three compounding root causes fixed.** (1) A
+  Cloudflare zone rate-limit rule ("Wave 32", 10 req/10s/IP across all corelink
+  hosts) counted the ~20 static-chunk requests every SPA page load fires from
+  one IP, so `/sign-in` + `/sign-up` 429'd (CF error 1015) on their own JS
+  bundles → `Loading chunk failed` → page crash. The rule now EXCLUDES static
+  assets (`/_next/`, `/assets/`, `/img/`, `/fonts/`, `/static/`) and allows 50
+  req/10s/IP for dynamic requests (infra change on zone humangr.com). (2) The
+  `/sign-in` + `/sign-up` widgets (`<SignIn>`/`<SignUp>`) rendered with NO
+  `<ClerkProvider>` ancestor (those routes live outside the
+  `[locale]/(authenticated)` provider group), so Clerk threw `useSession can
+  only be used within the <ClerkProvider />`; both now mount their own provider
+  inside the existing `ssr:false` dynamic boundary (`ClerkSignIn.tsx` /
+  `ClerkSignUp.tsx`) — keeping `@clerk/nextjs` out of the edge-SSR pass. (3)
+  CSP gaps: `script-src` was missing `https://challenges.cloudflare.com` (Clerk
+  Smart-CAPTCHA / Turnstile, injected at runtime) and `connect-src` was missing
+  `https://corelink-analytics.humangr.com` (the first-party PLG event sink) —
+  both added so enforce-mode CSP no longer blocks them.
 - **migrations(0064): make the `tenant` table rebuild D1-applicable — add
   `PRAGMA legacy_alter_table=ON` + recreate the residency triggers.** The
   0064 rebuild (widen `tenant.tier` CHECK to add `'max'`) failed on

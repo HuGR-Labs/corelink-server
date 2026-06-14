@@ -8,10 +8,13 @@
  * Directives baseline:
  *   - default-src 'self'         (deny-by-default for most fetch contexts)
  *   - script-src  'self' nonce + clerk.corelink-app.humangr.com
+ *                                + https://challenges.cloudflare.com (Clerk Smart
+ *                                  CAPTCHA / Turnstile — injected by the widget)
  *                                + https://plausible.io
  *                                + https://js.stripe.com
  *   - style-src   'self' 'unsafe-inline' nonce  (Tailwind + Clerk widgets)
- *   - connect-src 'self' + api.corelink.humangr.com + clerk.corelink-app.humangr.com
+ *   - connect-src 'self' + corelink-api.humangr.com + corelink-analytics.humangr.com
+ *                                + clerk.corelink-app.humangr.com
  *                                + https://plausible.io
  *                                + https://api.stripe.com
  *                                + https://m.stripe.network
@@ -52,7 +55,7 @@ export interface CspOptions {
 export function buildCspDirectives(nonce: string): string[] {
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' https://clerk.corelink-app.humangr.com https://plausible.io https://js.stripe.com`,
+    `script-src 'self' 'nonce-${nonce}' https://clerk.corelink-app.humangr.com https://challenges.cloudflare.com https://plausible.io https://js.stripe.com`,
     // 'unsafe-inline' on style-src is acceptable: required by Tailwind CSS JIT (inline
     // <style> blocks) and by Clerk's modal overlay styles. NEVER on script-src.
     // Source: https://clerk.com/docs/security/content-security-policy
@@ -63,7 +66,10 @@ export function buildCspDirectives(nonce: string): string[] {
     //   https://checkout.stripe.com — required for Stripe Checkout session fetch
     //   https://billing.stripe.com  — required for Stripe Customer Portal redirect
     // Source: https://docs.stripe.com/security/guide#content-security-policy
-    "connect-src 'self' https://corelink-api.humangr.com https://clerk.corelink-app.humangr.com https://plausible.io https://api.stripe.com https://m.stripe.network https://checkout.stripe.com https://billing.stripe.com",
+    // corelink-analytics.humangr.com — first-party PLG event sink
+    //   (src/lib/analytics.ts default endpoint `/v1/event`). Without it the
+    //   enforce-mode CSP refuses the signup/usage beacons (connect-src).
+    "connect-src 'self' https://corelink-api.humangr.com https://corelink-analytics.humangr.com https://clerk.corelink-app.humangr.com https://plausible.io https://api.stripe.com https://m.stripe.network https://checkout.stripe.com https://billing.stripe.com",
     // frame-src addition: https://clerk.corelink-app.humangr.com for Clerk modal/popup auth steps
     // Source: https://clerk.com/docs/security/content-security-policy
     "frame-src https://js.stripe.com https://hooks.stripe.com https://challenges.cloudflare.com https://clerk.corelink-app.humangr.com",

@@ -12,10 +12,10 @@ import dynamic from "next/dynamic";
 import { useTranslations } from "next-intl";
 
 
-const SignIn = dynamic(
-  () => import("@clerk/nextjs").then((m) => m.SignIn),
-  { ssr: false },
-);
+// Import the widget together with its `<ClerkProvider>` (see ClerkSignIn.tsx).
+// `ssr: false` keeps the whole `@clerk/nextjs` graph out of the edge-runtime
+// SSR pass; the wrapper supplies the provider the widget requires.
+const ClerkSignIn = dynamic(() => import("./ClerkSignIn"), { ssr: false });
 
 export default function SignInPage(): React.ReactElement {
   const t = useTranslations("auth");
@@ -36,7 +36,7 @@ export default function SignInPage(): React.ReactElement {
   }
   return (
     <main className="mx-auto max-w-md p-8">
-      <SignIn />
+      <ClerkSignIn />
     </main>
   );
 }
