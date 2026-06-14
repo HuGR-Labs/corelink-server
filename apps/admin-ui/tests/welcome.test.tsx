@@ -227,7 +227,12 @@ describe("WelcomePage rendering branches", () => {
     ).toBeTruthy();
   });
 
-  it("branch 3: redirects to /sign-up when tenant_id absent", async () => {
+  it("branch 3: redirects to the locale-less /sign-in when tenant_id absent", async () => {
+    // The redirect target is the locale-less /sign-in (the only real sign-in
+    // route — there is no [locale]/sign-in), matching the /upgrade page. A
+    // session with no tenant (webhook mid-flight or no session) goes there to
+    // re-establish, rather than the old /en/sign-up (which 404'd for the
+    // authenticated case). See the /en/welcome 500 fix.
     const clerk = await import("@clerk/nextjs/server");
     vi.mocked(clerk.auth).mockResolvedValue({
       userId: "user_3",
@@ -241,6 +246,22 @@ describe("WelcomePage rendering branches", () => {
 
     await expect(
       WelcomePage({ params: Promise.resolve({ locale: "en" }) }),
-    ).rejects.toThrow("REDIRECT:/en/sign-up");
+    ).rejects.toThrow("REDIRECT:/sign-in");
+  });
+
+  it("redirects to /sign-in when auth() throws (no middleware context — never 500s)", async () => {
+    // Defensive: if Clerk's `auth()` throws (edge context unavailable), the page
+    // must redirect to sign-in, not crash with a 500.
+    const clerk = await import("@clerk/nextjs/server");
+    vi.mocked(clerk.auth).mockRejectedValue(
+      new Error("auth() called but Clerk can't detect clerkMiddleware()"),
+    );
+
+    const pageModule = await import("@/app/[locale]/(authenticated)/welcome/page");
+    const WelcomePage = pageModule.default;
+
+    await expect(
+      WelcomePage({ params: Promise.resolve({ locale: "en" }) }),
+    ).rejects.toThrow("REDIRECT:/sign-in");
   });
 });
