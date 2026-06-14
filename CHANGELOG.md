@@ -39,6 +39,20 @@ Each entry cross-references:
   post-rebuild. Migration stays additive in effect (verified: rows copied 1:1,
   CHECK set only grows). The failed prod apply rolled back atomically (D1 runs
   each migration file as one transaction) — prod was never left partial.
+- **worker→container env: forward `ERASURE_SALT_KEY` + `FABRIC_INTROSPECT_AUTH_KEY`
+  to the native container (`durable_object.ts` `container.start({env})`).** The DSR
+  Wave 1 erasure adapters (#254) and the corelink-runners introspect route (#261)
+  read these from the container's process env, but the Worker DO's explicit env
+  forward-list never included them. Effect before this fix (caught during prod
+  deploy 2026-06-13): `POST /internal/v1/auth/introspect` stayed unmounted (404),
+  and the DSR erasure would have fallen back to a PREDICTABLE non-secret salt
+  instead of `ERASURE_SALT_KEY`. Both are now forwarded; introspect mounts and the
+  GDPR erasure path uses the real salt. (CAS-erase / tier-select / pat-mint were
+  already forwarded and unaffected.) A follow-up audit then cross-checked EVERY
+  `env::var` the container reads against the forward-list and closed the remaining
+  (currently-unset, so no-op today) gaps — `R2_TDK_HEX`, `SIGNUP_TOKEN_KEY`,
+  `CORELINK_PORTAL_RETURN_URL`, and the BYOK provider region/vault vars — so a
+  future secret-set reaches the container instead of silently doing nothing.
 
 ### Security
 - **cas-erase: complete the WP-B CAS-erase WRITE path — wire the real R2

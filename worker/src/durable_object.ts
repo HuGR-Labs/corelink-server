@@ -472,6 +472,30 @@ export class CoreLinkServer implements DurableObject {
           STRIPE_PRICE_ID_PRO: this.env.STRIPE_PRICE_ID_PRO ?? "",
           STRIPE_PRICE_ID_MAX: this.env.STRIPE_PRICE_ID_MAX ?? "",
           CORELINK_DPA_VERSION: this.env.CORELINK_DPA_VERSION ?? "",
+          // DSR Wave 1 (#254): the container's erasure adapters derive the
+          // pseudonymization/idempotency salt from ERASURE_SALT_KEY. If absent the
+          // container falls back to a PREDICTABLE non-secret salt — forward it so
+          // the real secret is used (launch-required GDPR path).
+          ERASURE_SALT_KEY: this.env.ERASURE_SALT_KEY ?? "",
+          // corelink-runners auth seam (#261): `POST /internal/v1/auth/introspect`
+          // mounts in the container only when FABRIC_INTROSPECT_AUTH_KEY (+ PAT +
+          // D1) are present. Forward it or the route stays unmounted (404).
+          FABRIC_INTROSPECT_AUTH_KEY: this.env.FABRIC_INTROSPECT_AUTH_KEY ?? "",
+          // Complete the env contract (2026-06-13 audit): every var the container
+          // reads via env::var MUST be forwarded, else setting the secret later
+          // silently never reaches the container (the class of bug that hid the
+          // ERASURE_SALT_KEY gap). These are unset in prod today (features off /
+          // CAS fallback-derivation), so forwarding empty strings is a no-op now
+          // but makes a future secret-set "just work".
+          R2_TDK_HEX: this.env.R2_TDK_HEX ?? "",
+          SIGNUP_TOKEN_KEY: this.env.SIGNUP_TOKEN_KEY ?? "",
+          CORELINK_PORTAL_RETURN_URL: this.env.CORELINK_PORTAL_RETURN_URL ?? "",
+          // BYOK (enterprise) provider regions/vault — off for the SMB launch.
+          AWS_REGION: this.env.AWS_REGION ?? "",
+          GCP_REGION: this.env.GCP_REGION ?? "",
+          CORELINK_BYOK_AZURE_REGION: this.env.CORELINK_BYOK_AZURE_REGION ?? "",
+          CORELINK_BYOK_AZURE_VAULT_URL: this.env.CORELINK_BYOK_AZURE_VAULT_URL ?? "",
+          CORELINK_BYOK_VAULT_REGION: this.env.CORELINK_BYOK_VAULT_REGION ?? "",
           // ADR-MULTI-REGION-V1 — per-region R2 bucket overrides.
           // Absent/empty → container defaults to IAD (corelink-ac-iad / iad).
           // Set by [env.prod-<region>].vars in wrangler.toml.
