@@ -378,6 +378,32 @@ mod tests {
     use super::*;
     use corelink_handler_ac::{AuditEventKind, Sli};
 
+    /// `map_err` must map an `Internal` error to 503 ONLY when it carries the
+    /// storage-unavailable sentinel; any other `Internal` is a generic 500.
+    /// Kills the cargo-mutants "replace match guard with true" mutant on the
+    /// `if msg.starts_with(STORAGE_UNAVAILABLE_SENTINEL)` guard — with the guard
+    /// forced to `true`, the non-sentinel case below would wrongly become 503.
+    #[test]
+    fn map_err_internal_is_503_only_for_storage_sentinel() {
+        let storage = map_err(AcHandlerError::Internal(format!(
+            "{STORAGE_UNAVAILABLE_SENTINEL}R2_TDK_HEX unset"
+        )));
+        assert_eq!(
+            storage.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "sentinel-tagged Internal must be 503"
+        );
+
+        let generic = map_err(AcHandlerError::Internal(
+            "lock poisoned: unrelated failure".to_string(),
+        ));
+        assert_eq!(
+            generic.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "non-sentinel Internal must be 500, not 503 (guard must not be `true`)"
+        );
+    }
+
     /// Test fixture: returns the route state plus the underlying
     /// audit + SLI sinks so each test can verify emit ordering.
     fn fixture() -> (
