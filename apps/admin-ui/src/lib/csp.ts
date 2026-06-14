@@ -60,6 +60,12 @@ export function buildCspDirectives(nonce: string): string[] {
     // <style> blocks) and by Clerk's modal overlay styles. NEVER on script-src.
     // Source: https://clerk.com/docs/security/content-security-policy
     `style-src 'self' 'unsafe-inline' 'nonce-${nonce}'`,
+    // worker-src: Clerk's Smart CAPTCHA (Cloudflare Turnstile) and Clerk itself
+    // spawn a Web Worker from a `blob:` URL. Without an explicit worker-src the
+    // browser falls back to default-src ('self'), which forbids blob: → the
+    // worker is refused under enforce-mode CSP and bot-protection breaks.
+    // Source: https://clerk.com/docs/security/content-security-policy
+    "worker-src 'self' blob:",
     "img-src 'self' data: https:",
     "font-src 'self' data:",
     // connect-src additions vs Phase 0 baseline:
@@ -69,7 +75,10 @@ export function buildCspDirectives(nonce: string): string[] {
     // corelink-analytics.humangr.com — first-party PLG event sink
     //   (src/lib/analytics.ts default endpoint `/v1/event`). Without it the
     //   enforce-mode CSP refuses the signup/usage beacons (connect-src).
-    "connect-src 'self' https://corelink-api.humangr.com https://corelink-analytics.humangr.com https://clerk.corelink-app.humangr.com https://plausible.io https://api.stripe.com https://m.stripe.network https://checkout.stripe.com https://billing.stripe.com",
+    // clerk-telemetry.com — Clerk SDK telemetry beacon (default on); without it
+    //   enforce-mode CSP throws a violation on every widget mount (noise, not a
+    //   functional break). Source: https://clerk.com/docs/security/content-security-policy
+    "connect-src 'self' https://corelink-api.humangr.com https://corelink-analytics.humangr.com https://clerk.corelink-app.humangr.com https://clerk-telemetry.com https://plausible.io https://api.stripe.com https://m.stripe.network https://checkout.stripe.com https://billing.stripe.com",
     // frame-src addition: https://clerk.corelink-app.humangr.com for Clerk modal/popup auth steps
     // Source: https://clerk.com/docs/security/content-security-policy
     "frame-src https://js.stripe.com https://hooks.stripe.com https://challenges.cloudflare.com https://clerk.corelink-app.humangr.com",

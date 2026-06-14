@@ -42,6 +42,12 @@ const CSP_HEADER_KEY =
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // This app imports `next/image` zero times. Disabling the optimizer removes
+  // the on-the-fly `/_next/image` endpoint as a CPU/cost amplification surface
+  // on the Worker (it would otherwise re-encode per unique url+w+q tuple). The
+  // CF rate-limit rule meters /_next/image, but turning it off entirely is the
+  // belt-and-suspenders fix. Re-enable (drop this) if `next/image` is adopted.
+  images: { unoptimized: true },
   // OpenNext (@opennextjs/cloudflare) compat:
   //   - `output: "standalone"` is REQUIRED — OpenNext expects
   //     `.next/standalone/apps/admin-ui/.next/server/pages-manifest.json`.

@@ -81,6 +81,32 @@ describe("CSP header generation", () => {
     expect(frame).toContain("https://clerk.corelink-app.humangr.com");
   });
 
+  it("allows Clerk Smart-CAPTCHA / Turnstile: script-src + frame-src challenges, worker-src blob:", () => {
+    // Clerk bot-protection (Cloudflare Turnstile) injects a script from
+    // challenges.cloudflare.com at runtime, renders it in a frame, AND spawns a
+    // Web Worker from a blob: URL. Missing any of these breaks sign-in/up under
+    // enforce-mode CSP. Source: https://clerk.com/docs/security/content-security-policy
+    const directives = buildCspDirectives("n");
+    const script = directives.find((d) => d.startsWith("script-src")) ?? "";
+    const frame = directives.find((d) => d.startsWith("frame-src")) ?? "";
+    const worker = directives.find((d) => d.startsWith("worker-src")) ?? "";
+    expect(script).toContain("https://challenges.cloudflare.com");
+    expect(frame).toContain("https://challenges.cloudflare.com");
+    expect(worker).toContain("'self'");
+    expect(worker).toContain("blob:");
+    // blob: workers must NOT be permitted on script-src (only worker-src).
+    expect(script).not.toContain("blob:");
+  });
+
+  it("allows the first-party analytics sink + Clerk telemetry on connect-src", () => {
+    const connect =
+      buildCspDirectives("n").find((d) => d.startsWith("connect-src")) ?? "";
+    // PLG event beacon (src/lib/analytics.ts default endpoint).
+    expect(connect).toContain("https://corelink-analytics.humangr.com");
+    // Clerk SDK telemetry (default-on; avoids enforce-mode violation noise).
+    expect(connect).toContain("https://clerk-telemetry.com");
+  });
+
   it("style-src includes 'unsafe-inline' (required by Tailwind + Clerk widgets)", () => {
     // 'unsafe-inline' is acceptable on style-src per OWASP guidance when nonce is
     // also present; required by Tailwind CSS JIT and Clerk modal overlay styles.
