@@ -12,27 +12,25 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
   buildCspHeader,
+  buildCspHeaderValue,
   generateNonce,
   STATIC_SECURITY_HEADERS,
 } from "@/lib/csp";
 import { isPublicPath, isSelfGatedPath } from "@/lib/route-matcher";
 
-function applySecurityHeaders(res: NextResponse, nonce: string): void {
-  // WI-S16-007 deliverable 4: CSP rollout flag.
-  //   CSP_ENFORCEMENT=enforce      → enforce mode (production default).
-  //   CSP_ENFORCEMENT=report-only  → report-only (staging baseline window).
-  //   unset                        → enforce in production, report-only elsewhere.
+// WI-S16-007 deliverable 4: CSP rollout flag.
+//   CSP_ENFORCEMENT=enforce      → enforce mode (production default).
+//   CSP_ENFORCEMENT=report-only  → report-only (staging baseline window).
+//   unset                        → enforce in production, report-only elsewhere.
+function isReportOnly(): boolean {
   const rawMode = (process.env["CSP_ENFORCEMENT"] ?? "").toLowerCase();
-  const mode =
-    rawMode === "enforce"
-      ? "enforce"
-      : rawMode === "report-only"
-        ? "report-only"
-        : process.env["NODE_ENV"] === "production"
-          ? "enforce"
-          : "report-only";
-  const reportOnly = mode === "report-only";
-  const csp = buildCspHeader({ nonce, reportOnly });
+  if (rawMode === "enforce") return false;
+  if (rawMode === "report-only") return true;
+  return process.env["NODE_ENV"] !== "production";
+}
+
+function applySecurityHeaders(res: NextResponse, nonce: string): void {
+  const csp = buildCspHeader({ nonce, reportOnly: isReportOnly() });
   res.headers.set(csp.name, csp.value);
   res.headers.set("x-nonce", nonce);
   for (const h of STATIC_SECURITY_HEADERS) {
@@ -48,6 +46,17 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
   // via `headers()` (needed for <Script nonce={...}>).
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-nonce", nonce);
+  // CRITICAL: Next auto-injects the nonce onto its own inline bootstrap scripts
+  // by reading the per-request nonce from the `content-security-policy` REQUEST
+  // header (not `x-nonce`, and not the report-only variant). Without this the
+  // served CSP carries our per-request nonce but Next's inline scripts carry
+  // none → they are blocked under enforce-mode CSP. We always set the enforce
+  // header name here purely to feed Next's nonce extractor; the actual SERVED
+  // response header still honors report-only mode via applySecurityHeaders().
+  requestHeaders.set(
+    "content-security-policy",
+    buildCspHeaderValue(nonce),
+  );
 
   // For public paths or auth UI we never invoke Clerk middleware.
   // Clerk integration runs only for protected paths; we keep this stub
