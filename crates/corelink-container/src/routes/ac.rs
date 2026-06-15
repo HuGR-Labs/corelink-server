@@ -598,10 +598,14 @@ mod tests {
     fn fixture_unavailable() -> AcRouteState {
         let shared = Arc::new(UnavailableAcHandler);
         let lookup: Arc<dyn AcLookupHandler> = shared.clone();
-        let update: Arc<dyn AcUpdateHandler> = shared;
+        let update: Arc<dyn AcUpdateHandler> = shared.clone();
+        let delete: Arc<dyn AcDeleteHandler> = shared.clone();
+        let list: Arc<dyn AcListHandler> = shared;
         AcRouteState {
             lookup,
             update,
+            delete,
+            list,
             quota: None,
         }
     }

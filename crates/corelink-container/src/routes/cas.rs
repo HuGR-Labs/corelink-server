@@ -672,10 +672,14 @@ mod tests {
     fn fixture_unavailable() -> CasRouteState {
         let shared = Arc::new(UnavailableCasHandler);
         let read: Arc<dyn CasReadHandler> = shared.clone();
-        let write: Arc<dyn CasWriteHandler> = shared;
+        let write: Arc<dyn CasWriteHandler> = shared.clone();
+        let delete: Arc<dyn CasDeleteHandler> = shared.clone();
+        let list: Arc<dyn CasListHandler> = shared;
         CasRouteState {
             read,
             write,
+            delete,
+            list,
             tombstones: None,
             quota: None,
         }
