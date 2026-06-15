@@ -2,15 +2,17 @@
 audience: customer
 classification: public (post-NDA)
 wi: WI-S14-006
-version: "1.0.0"
-updated: "2026-05-14"
+version: "1.1.0"
+updated: "2026-06-15"
 ---
 
 # CoreLink BYOK — Customer Kill Switch
 
+> **Feature availability notice:** BYOK (Bring Your Own Key) is a planned Enterprise-tier feature and is **not yet enabled in the launched data plane.** This document describes BYOK operational procedures for customers on whom BYOK has been explicitly provisioned. If you have not received explicit confirmation that BYOK is active for your tenant, it is not. Contact your CoreLink account representative for availability.
+
 ## Overview
 
-As a CoreLink BYOK customer, you have **full crypto sovereignty** over your
+As a CoreLink BYOK customer (once provisioned), you have **full crypto sovereignty** over your
 data. You can revoke access to your Customer-Managed Key (CMK) at any time
 and CoreLink will automatically cease all access within **≤ 5 minutes**.
 
