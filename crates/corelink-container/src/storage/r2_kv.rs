@@ -17,8 +17,13 @@
 //! The `tenant_prefix_16` is HMAC-derived from the tenant UUID via
 //! [`corelink_tenant_path::derive_prefix`] (same scheme as the CAS/AC
 //! stores) so cross-tenant keys are unguessable even with raw bucket
-//! access. Non-UUID tenants (test fixtures) fall back to a padded,
-//! truncated raw string — mirroring [`r2_s3::R2AcHandler::r2_key`].
+//! access. On the production path this is the ONLY accepted prefix: a
+//! missing TDK or a non-UUID tenant fails CLOSED
+//! ([`TurboBridgeError::Internal`]) rather than degrade to a public,
+//! predictable prefix — mirroring [`r2_s3::R2AcHandler`]. The padded,
+//! truncated raw-string fallback is gated behind `#[cfg(test)]` and is
+//! unreachable in production (a same-millisecond UUIDv7 prefix collision
+//! would otherwise share a keyspace).
 //!
 //! ## Testability seam
 //!
@@ -103,15 +108,38 @@ impl R2KvStore {
     /// verbatim after the prefix — traversal sequences (`../`, leading
     /// `/`) are stored as literal key bytes, never resolved, so they can
     /// never escape the caller's `<prefix16>/` namespace.
-    fn object_key(&self, tenant: &str, key: &str) -> String {
+    ///
+    /// # Errors
+    ///
+    /// On the production path the prefix is ALWAYS the secret-keyed
+    /// `derive_prefix(tdk, uuid)`. When the TDK is absent or the tenant
+    /// is not a canonical UUID the key is NOT derivable — this returns
+    /// [`TurboBridgeError::Internal`] (fail CLOSED) rather than a public,
+    /// predictable `pad16` prefix. The `pad16` fallback would let two
+    /// tenants onboarded in the same millisecond (UUIDv7) collide into a
+    /// SHARED Turbo keyspace (cross-tenant cache leak/poisoning). This
+    /// mirrors the CAS/AC `R2CasHandler`/`R2AcHandler` posture exactly.
+    fn object_key(&self, tenant: &str, key: &str) -> Result<String, TurboBridgeError> {
         let prefix = match &self.tdk {
             Some(tdk) => match Uuid::try_parse(tenant) {
                 Ok(uid) => derive_prefix(tdk, uid).to_string(),
+                // Non-UUID tenant: test fixtures use the raw padded
+                // prefix; the production path fails CLOSED.
+                #[cfg(test)]
                 Err(_) => pad16(tenant),
+                #[cfg(not(test))]
+                Err(_) => return Err(non_derivable_tenant_err()),
             },
+            // No TDK is only reachable under `#[cfg(test)]`:
+            // `build_r2_kv_from_env` fails closed when `R2_TDK_HEX` is
+            // unset/invalid, so the production store is never built with
+            // `tdk = None`.
+            #[cfg(test)]
             None => pad16(tenant),
+            #[cfg(not(test))]
+            None => return Err(non_derivable_tenant_err()),
         };
-        format!("{prefix}/{key}")
+        Ok(format!("{prefix}/{key}"))
     }
 
     /// Block on an async backend op from inside the running multi-thread
@@ -127,7 +155,7 @@ impl R2KvStore {
 
 impl CasReadStore for R2KvStore {
     fn read(&self, tenant: &str, key: &str) -> Result<Vec<u8>, TurboBridgeError> {
-        let object_key = self.object_key(tenant, key);
+        let object_key = self.object_key(tenant, key)?;
         match Self::block_on(self.backend.get(&object_key)) {
             Ok(Some(bytes)) => Ok(bytes),
             Ok(None) => Err(TurboBridgeError::NotFound {
@@ -143,14 +171,18 @@ impl CasReadStore for R2KvStore {
 
 impl CasWriteStore for R2KvStore {
     fn write(&self, tenant: &str, key: &str, bytes: Vec<u8>) -> Result<(), TurboBridgeError> {
-        let object_key = self.object_key(tenant, key);
+        let object_key = self.object_key(tenant, key)?;
         Self::block_on(self.backend.put(&object_key, bytes))
             .map_err(|e| TurboBridgeError::Internal(format!("r2 kv put: {e}")))
     }
 }
 
 /// Pad-or-truncate a non-UUID tenant string to a stable 16-char prefix.
-/// Test-mode fallback only (matches `r2_s3` raw-prefix behavior).
+/// PUBLIC, predictable namespace — TEST FIXTURES ONLY. It must NEVER be
+/// used on the production path: two tenants whose first 16 chars collide
+/// (trivial for same-millisecond UUIDv7 ids) would share a keyspace. The
+/// production path fails CLOSED instead (see [`R2KvStore::object_key`]).
+#[cfg(test)]
 fn pad16(tenant: &str) -> String {
     let mut p = tenant.to_owned();
     p.truncate(16);
@@ -158,6 +190,21 @@ fn pad16(tenant: &str) -> String {
         p.push('0');
     }
     p
+}
+
+/// The fail-CLOSED error for a non-derivable tenant on the production
+/// Turbo path (no TDK, or a non-UUID tenant). Surfaced as
+/// [`TurboBridgeError::Internal`] so the op NEVER writes/reads under a
+/// public, predictable `pad16` prefix (INV-TENANT-ISOLATION). Mirrors the
+/// CAS/AC `R2*Handler` 500 posture.
+#[cfg(not(test))]
+fn non_derivable_tenant_err() -> TurboBridgeError {
+    tracing::error!(
+        "Turbo R2KvStore: tenant prefix is not derivable on the production path \
+         (missing TDK or non-UUID tenant); refusing a public predictable prefix \
+         (fail-closed, INV-TENANT-ISOLATION)"
+    );
+    TurboBridgeError::Internal("non-derivable tenant prefix (INV-TENANT-ISOLATION)".to_owned())
 }
 
 /// Build an [`R2KvStore`] (R2-backed) from environment variables, or
@@ -176,13 +223,29 @@ pub async fn build_r2_kv_from_env() -> Option<Result<R2KvStore, String>> {
     let env = StorageEnv::from_env()?;
     let bucket =
         super::non_empty_env("R2_TURBO_BUCKET").unwrap_or_else(|| "corelink-turbo-prod".to_owned());
-    let tdk_bytes = load_tdk_from_env();
+    // FAIL CLOSED — mirror `build_r2_cas_handler_from_env`: storage creds
+    // are present, so this is the production data plane and the secret
+    // TDK is MANDATORY. Without it the per-tenant prefix would degrade to
+    // a public, predictable scheme and let two tenants onboarded in the
+    // same millisecond (UUIDv7) collide into one SHARED Turbo keyspace
+    // (cross-tenant cache leak/poisoning). Refuse to construct the store
+    // (the route falls back / does not serve) rather than serve in the
+    // silently-degraded public-prefix mode (INV-TENANT-ISOLATION).
+    let Some(tdk_bytes) = load_tdk_from_env() else {
+        tracing::error!(
+            "R2_TDK_HEX required for production tenant prefixing but is unset/invalid; \
+             refusing to build the R2 Turbo KV store (fail-closed, INV-TENANT-ISOLATION)"
+        );
+        return Some(Err(
+            "R2_TDK_HEX required for production tenant prefixing".to_owned(),
+        ));
+    };
     let client = match R2S3Client::new(&env, &bucket).await {
         Ok(c) => c,
         Err(e) => return Some(Err(e)),
     };
     let backend: Arc<dyn KvBackend> = Arc::new(R2Backend { client });
-    Some(Ok(R2KvStore::new(backend, tdk_bytes)))
+    Some(Ok(R2KvStore::new(backend, Some(tdk_bytes))))
 }
 
 /// Load the tenant derivation key from `R2_TDK_HEX` (64 hex / 32 bytes).
@@ -250,23 +313,60 @@ mod tests {
         R2KvStore::new(Arc::new(backend), None)
     }
 
+    // ── F1/F2 — production posture: a TDK + UUID tenant HMACs the prefix,
+    //    never the public pad16 of the tenant string ──
+
+    /// With a TDK configured (the PRODUCTION posture — `build_r2_kv_from_env`
+    /// now fails closed without one), a canonical UUID tenant resolves to
+    /// the secret-keyed `derive_prefix` HMAC, NOT the public, predictable
+    /// `pad16` prefix. This is the regression pin for finding #4: the
+    /// Turbo store mirrors CAS/AC and never serves under a predictable
+    /// 16-char-truncated prefix that two same-millisecond UUIDv7 tenants
+    /// could collide into.
+    #[test]
+    fn iso_tdk_path_uses_hmac_prefix_not_pad16() {
+        let tdk = Zeroizing::new([0x5au8; 32]);
+        let s = R2KvStore::new(Arc::new(FakeBackend::new()), Some(tdk.clone()));
+        let tenant = "0190abcd-1234-75ab-8def-0123456789ab";
+        let ok = s.object_key(tenant, "artifact").unwrap();
+        let prefix = ok.split('/').next().unwrap();
+        assert_eq!(prefix.len(), 16, "prefix must be 16 chars: {ok}");
+        // Must NOT be the public pad16 of the raw tenant string.
+        assert_ne!(
+            prefix,
+            pad16(tenant),
+            "production prefix leaked the public pad16 tenant prefix (F1/F2)"
+        );
+        // And it must equal the canonical secret-keyed derivation.
+        let expected = derive_prefix(
+            &TenantDerivationKey::from_bytes(tdk),
+            Uuid::try_parse(tenant).unwrap(),
+        )
+        .to_string();
+        assert_eq!(prefix, expected, "prefix must be derive_prefix(tdk, uuid)");
+    }
+
     // ── §1.2 Tenant isolation [P0][sec] — pure object_key, no runtime ──
 
     #[test]
     fn iso_object_key_isolates_by_tenant_prefix() {
         let s = store_with(FakeBackend::new());
-        let k = s.object_key("teamA", "turbo-artifact-hash-xyz");
+        let k = s.object_key("teamA", "turbo-artifact-hash-xyz").unwrap();
         assert_eq!(k, "teamA00000000000/turbo-artifact-hash-xyz");
         // Different tenant → different prefix → no full-key collision.
-        assert_ne!(k, s.object_key("teamB", "turbo-artifact-hash-xyz"));
+        assert_ne!(k, s.object_key("teamB", "turbo-artifact-hash-xyz").unwrap());
     }
 
     #[test]
     fn iso_object_key_pads_short_truncates_long_tenants() {
         let s = store_with(FakeBackend::new());
-        assert!(s.object_key("x", "k").starts_with("x000000000000000/"));
+        assert!(s
+            .object_key("x", "k")
+            .unwrap()
+            .starts_with("x000000000000000/"));
         assert!(s
             .object_key("0123456789abcdefGHIJ", "k")
+            .unwrap()
             .starts_with("0123456789abcdef/"));
     }
 
@@ -282,7 +382,7 @@ mod tests {
             "..%2F..%2Fvictim",
             "a/../../b",
         ] {
-            let ok = s.object_key("teamA", evil);
+            let ok = s.object_key("teamA", evil).unwrap();
             assert!(
                 ok.starts_with("teamA00000000000/"),
                 "key {evil:?} escaped prefix: {ok}"
@@ -397,7 +497,10 @@ mod tests {
         #[test]
         fn prop_object_key_deterministic(t in "[a-zA-Z0-9_-]{1,40}", k in ".{0,200}") {
             let s = store_with(FakeBackend::new());
-            proptest::prop_assert_eq!(s.object_key(&t, &k), s.object_key(&t, &k));
+            proptest::prop_assert_eq!(
+                s.object_key(&t, &k).unwrap(),
+                s.object_key(&t, &k).unwrap()
+            );
         }
 
         /// A-ISO-3 [sec]: distinct tenants never share a full object key for
@@ -408,7 +511,10 @@ mod tests {
         ) {
             proptest::prop_assume!(pad16(&t1) != pad16(&t2));
             let s = store_with(FakeBackend::new());
-            proptest::prop_assert_ne!(s.object_key(&t1, &k), s.object_key(&t2, &k));
+            proptest::prop_assert_ne!(
+                s.object_key(&t1, &k).unwrap(),
+                s.object_key(&t2, &k).unwrap()
+            );
         }
 
         /// A-RT-2 [sec]: key opacity — the opaque key appears verbatim after
@@ -417,7 +523,7 @@ mod tests {
         #[test]
         fn prop_key_opacity_no_escape(t in "[a-zA-Z0-9_-]{1,16}", k in ".{1,200}") {
             let s = store_with(FakeBackend::new());
-            let ok = s.object_key(&t, &k);
+            let ok = s.object_key(&t, &k).unwrap();
             let expected_prefix = format!("{}/", pad16(&t));
             proptest::prop_assert!(ok.starts_with(&expected_prefix));
             proptest::prop_assert_eq!(&ok[expected_prefix.len()..], &k);
