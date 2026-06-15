@@ -24,7 +24,16 @@ export default function ClerkSignIn(): React.ReactElement {
     <ClerkProvider
       publishableKey={process.env["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"]}
     >
-      <SignIn />
+      {/*
+       * forceRedirectUrl: after sign-in, land on the authenticated dashboard —
+       * NOT the marketing home. The Clerk instance "paths" are all null, so the
+       * default after-sign-in was "/" (the public landing, which has no
+       * ClerkProvider and shows no signed-in state) → users perceived "can't
+       * sign in / it bounces to home". An already-signed-in user hitting
+       * /sign-in is also redirected straight here instead of bouncing to "/".
+       * /en/customer is the (authenticated)-group dashboard (default locale en).
+       */}
+      <SignIn forceRedirectUrl="/en/customer" fallbackRedirectUrl="/en/customer" />
     </ClerkProvider>
   );
 }

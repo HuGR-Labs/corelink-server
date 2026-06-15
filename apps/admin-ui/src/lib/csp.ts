@@ -12,7 +12,8 @@
  *                                  CAPTCHA / Turnstile — injected by the widget)
  *                                + https://plausible.io
  *                                + https://js.stripe.com
- *   - style-src   'self' 'unsafe-inline' nonce  (Tailwind + Clerk widgets)
+ *   - style-src   'self' 'unsafe-inline'  (Tailwind + Clerk inline widget styles;
+ *                                NO nonce — a nonce disables 'unsafe-inline' per CSP3)
  *   - connect-src 'self' + corelink-api.humangr.com + corelink-analytics.humangr.com
  *                                + clerk.corelink-app.humangr.com
  *                                + https://plausible.io
@@ -56,10 +57,16 @@ export function buildCspDirectives(nonce: string): string[] {
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' https://clerk.corelink-app.humangr.com https://challenges.cloudflare.com https://plausible.io https://js.stripe.com`,
-    // 'unsafe-inline' on style-src is acceptable: required by Tailwind CSS JIT (inline
-    // <style> blocks) and by Clerk's modal overlay styles. NEVER on script-src.
-    // Source: https://clerk.com/docs/security/content-security-policy
-    `style-src 'self' 'unsafe-inline' 'nonce-${nonce}'`,
+    // style-src uses 'unsafe-inline' (NO nonce) — required by Tailwind's inline
+    // <style> + Clerk's runtime-injected widget styles. CRITICAL: a nonce MUST
+    // NOT appear here. Per CSP3, when a nonce (or hash) is present the browser
+    // IGNORES 'unsafe-inline' — which blocked every inline style Clerk injects,
+    // rendering the sign-in/up widget completely UNSTYLED in prod (the Clerk
+    // widget can't carry our per-request nonce). 'unsafe-inline' on style-src is
+    // accepted per OWASP (styles are not a script-execution XSS vector); the
+    // nonce stays on script-src where it actually hardens XSS. NEVER add a nonce
+    // or 'unsafe-inline' to script-src. Source: https://clerk.com/docs/security/content-security-policy
+    "style-src 'self' 'unsafe-inline'",
     // worker-src: Clerk's Smart CAPTCHA (Cloudflare Turnstile) and Clerk itself
     // spawn a Web Worker from a `blob:` URL. Without an explicit worker-src the
     // browser falls back to default-src ('self'), which forbids blob: → the
