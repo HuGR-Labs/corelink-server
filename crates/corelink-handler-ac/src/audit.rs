@@ -20,6 +20,17 @@ pub enum AuditEventKind {
     UpdateCommitted,
     /// `corelink.ac.update.denied` — emitted on cross-tenant rejection.
     UpdateDenied,
+    /// `corelink.ac.delete.attempted` — emitted on delete entry.
+    DeleteAttempted,
+    /// `corelink.ac.delete.committed` — emitted after a delete completes
+    /// (idempotent: fires whether or not the ref existed).
+    DeleteCommitted,
+    /// `corelink.ac.delete.denied` — emitted on cross-tenant rejection.
+    DeleteDenied,
+    /// `corelink.ac.list.attempted` — emitted on list entry.
+    ListAttempted,
+    /// `corelink.ac.list.denied` — emitted on cross-tenant rejection.
+    ListDenied,
 }
 
 impl AuditEventKind {
@@ -34,6 +45,11 @@ impl AuditEventKind {
             Self::UpdateAttempted => "corelink.ac.update.attempted",
             Self::UpdateCommitted => "corelink.ac.update.committed",
             Self::UpdateDenied => "corelink.ac.update.denied",
+            Self::DeleteAttempted => "corelink.ac.delete.attempted",
+            Self::DeleteCommitted => "corelink.ac.delete.committed",
+            Self::DeleteDenied => "corelink.ac.delete.denied",
+            Self::ListAttempted => "corelink.ac.list.attempted",
+            Self::ListDenied => "corelink.ac.list.denied",
         }
     }
 }

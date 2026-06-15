@@ -498,6 +498,15 @@ export class CoreLinkServer implements DurableObject {
           // container falls back to a PREDICTABLE non-secret salt — forward it so
           // the real secret is used (launch-required GDPR path).
           ERASURE_SALT_KEY: this.env.ERASURE_SALT_KEY ?? "",
+          // DSR G3 (#269): the container signs an Ed25519 erasure attestation on
+          // VerifiedComplete, reading the seed/key-id/region from these env vars
+          // (`routes/dsr/attestation.rs` from_seed/key_id/resolve_region). They
+          // MUST be forwarded or setting ERASURE_ATTESTATION_SEED_HEX later never
+          // reaches the container and attestation silently no-ops (fail-OPEN) —
+          // the exact ERASURE_SALT_KEY-class gap. (caught by check-env-contract.py)
+          ERASURE_ATTESTATION_SEED_HEX: this.env.ERASURE_ATTESTATION_SEED_HEX ?? "",
+          ERASURE_ATTESTATION_KEY_ID: this.env.ERASURE_ATTESTATION_KEY_ID ?? "",
+          ERASURE_ATTESTATION_REGION: this.env.ERASURE_ATTESTATION_REGION ?? "",
           // corelink-runners auth seam (#261): `POST /internal/v1/auth/introspect`
           // mounts in the container only when FABRIC_INTROSPECT_AUTH_KEY (+ PAT +
           // D1) are present. Forward it or the route stays unmounted (404).

@@ -8,10 +8,21 @@
  * audit arms. `verify_erasure` is idempotent, so re-sweeping a DSR is harmless
  * — the bounded window simply keeps the sweep cheap.
  *
- * Reads `dsr_erasure_log` (D1) for the candidate DSRs; needs only the ids + the
- * SLA-clock anchor (the per-DSR salt / raw subject are NOT retained and the
- * sweep does not use them). Inert until `CORELINK_INTERNAL_AUTH_KEY` is bound
- * (task #46).
+ * Reads TWO candidate sources (deduped by `dsr_id`):
+ *
+ *   1. `dsr_requested` (G4) — the durable "requested at enqueue" anchor. This is
+ *      the load-bearing source: a DSR that FAILS before any backend tombstone
+ *      (audit-fail-closed) has NO `dsr_erasure_log` row, so without this anchor
+ *      its SLA breach would go UNDETECTED. We enumerate `status='requested'` rows
+ *      past the 24h deadline and verify them; a `VerifiedComplete` (ok response)
+ *      flips the row to `status='verified'` so it stops being re-enumerated.
+ *   2. `dsr_erasure_log` — DSRs that produced at least one tombstone (the legacy
+ *      source; kept so a DSR with a log row but no requested row, e.g. enqueued
+ *      before this migration, is still swept).
+ *
+ * Needs only the ids + the SLA-clock anchor (the per-DSR salt / raw subject are
+ * NOT retained and the sweep does not use them). Inert until
+ * `CORELINK_INTERNAL_AUTH_KEY` is bound (task #46).
  */
 
 /** Light verify wire shape — mirrors the container's `DsrVerifyV1`. */
@@ -27,6 +38,7 @@ export interface D1Lite {
   prepare(sql: string): {
     bind(...vals: unknown[]): {
       all(): Promise<{ results?: Array<Record<string, unknown>> }>;
+      run(): Promise<unknown>;
     };
   };
 }
@@ -68,9 +80,9 @@ export function msFromIso(iso: string): number {
 export async function postVerify(
   env: DsrVerifyCronEnv,
   body: DsrVerifyV1,
-): Promise<{ ok: boolean; status: number }> {
+): Promise<{ ok: boolean; status: number; decision: string }> {
   if (!env.CORELINK_INTERNAL_AUTH_KEY) {
-    return { ok: false, status: 0 };
+    return { ok: false, status: 0, decision: "" };
   }
   const req = new Request(`${env.CORELINK_API_BASE}/_internal/dsr/verify`, {
     method: "POST",
@@ -84,12 +96,21 @@ export async function postVerify(
     const resp = env.CORELINK_API_SVC
       ? await env.CORELINK_API_SVC.fetch(req)
       : await fetch(req);
-    return { ok: resp.ok, status: resp.status };
+    let decision = "";
+    if (resp.ok) {
+      try {
+        const j = (await resp.json()) as { decision?: string };
+        decision = String(j.decision ?? "");
+      } catch {
+        // non-JSON 200 — treat as a successful transport with unknown decision.
+      }
+    }
+    return { ok: resp.ok, status: resp.status, decision };
   } catch (err) {
     console.error(
       `[dsr-verify-cron] verify call threw dsr_id=${body.dsr_id}: ${(err as Error).message.slice(0, 120)}`,
     );
-    return { ok: false, status: 0 };
+    return { ok: false, status: 0, decision: "" };
   }
 }
 
@@ -108,9 +129,43 @@ export async function runDsrVerifySweep(
   if (!env.CORELINK_INTERNAL_AUTH_KEY) {
     return { swept: 0, failed: 0, skipped: true };
   }
-  const olderThan = isoFromMs(nowMs - DEADLINE_MS);
-  const newerThan = isoFromMs(nowMs - WINDOW_MS);
-  const res = await env.CONFIG_DB.prepare(
+  const deadlineMs = nowMs - DEADLINE_MS;
+  const windowMs = nowMs - WINDOW_MS;
+  const olderThan = isoFromMs(deadlineMs);
+  const newerThan = isoFromMs(windowMs);
+
+  // Source 1 (G4, load-bearing): the durable "requested" anchor. Catches DSRs
+  // that failed before ANY tombstone (no dsr_erasure_log row). requested_at is
+  // epoch-ms (INTEGER), so compare in ms directly.
+  //
+  // NO lower (WINDOW_MS) bound here, deliberately: a DSR stuck at
+  // status='requested' is EXACTLY the breach this anchor exists to surface, and
+  // it self-expires from a 7-day window after one week — silencing the alert
+  // precisely for the permanently-stuck case. The set is self-limiting (a
+  // completed DSR flips to 'verified' and drops out), so enumerating every
+  // past-deadline 'requested' row is bounded and cheap. The WINDOW_MS lower
+  // bound stays on the dsr_erasure_log source below (cost cap on the large
+  // tombstone table, where a row's absence is not itself a breach signal).
+  let requested: Array<Record<string, unknown>> = [];
+  try {
+    const reqRes = await env.CONFIG_DB.prepare(
+      `SELECT dsr_id, tenant_id, requested_at
+         FROM dsr_requested
+        WHERE status = 'requested' AND requested_at <= ?1`,
+    )
+      .bind(deadlineMs)
+      .all();
+    requested = reqRes.results ?? [];
+  } catch (err) {
+    // dsr_requested may not exist on an env that hasn't applied 0069 yet —
+    // degrade to the dsr_erasure_log source rather than failing the sweep.
+    console.error(
+      `[dsr-verify-cron] dsr_requested query failed (degrading to log source): ${(err as Error).message.slice(0, 120)}`,
+    );
+  }
+
+  // Source 2 (legacy): DSRs that produced at least one tombstone.
+  const logRes = await env.CONFIG_DB.prepare(
     `SELECT dsr_id, tenant_id, MIN(started_at) AS queued_at
        FROM dsr_erasure_log
       WHERE started_at <= ?1 AND started_at >= ?2
@@ -119,22 +174,65 @@ export async function runDsrVerifySweep(
     .bind(olderThan, newerThan)
     .all();
 
-  let swept = 0;
-  let failed = 0;
-  for (const r of res.results ?? []) {
+  // Merge + dedupe by dsr_id (requested anchor wins — its queued_at is the true
+  // SLA-clock anchor; the log MIN(started_at) is a backend-write proxy).
+  interface Candidate {
+    dsr_id: string;
+    tenant_id: string;
+    queued_at_ms: number;
+    fromRequested: boolean;
+  }
+  const byId = new Map<string, Candidate>();
+  for (const r of requested) {
     const dsr_id = String(r.dsr_id ?? "");
     const tenant_id = String(r.tenant_id ?? "");
-    const queued_at = String(r.queued_at ?? "");
-    if (!dsr_id || !tenant_id) {
-      continue;
-    }
-    const out = await postVerify(env, {
+    if (!dsr_id || !tenant_id) continue;
+    byId.set(dsr_id, {
       dsr_id,
       tenant_id,
-      queued_at_ms: msFromIso(queued_at),
+      queued_at_ms: Number(r.requested_at ?? 0),
+      fromRequested: true,
+    });
+  }
+  for (const r of logRes.results ?? []) {
+    const dsr_id = String(r.dsr_id ?? "");
+    const tenant_id = String(r.tenant_id ?? "");
+    if (!dsr_id || !tenant_id || byId.has(dsr_id)) continue;
+    byId.set(dsr_id, {
+      dsr_id,
+      tenant_id,
+      queued_at_ms: msFromIso(String(r.queued_at ?? "")),
+      fromRequested: false,
+    });
+  }
+
+  let swept = 0;
+  let failed = 0;
+  for (const c of byId.values()) {
+    const out = await postVerify(env, {
+      dsr_id: c.dsr_id,
+      tenant_id: c.tenant_id,
+      queued_at_ms: c.queued_at_ms,
     });
     if (out.ok) {
       swept += 1;
+      // Flip the requested anchor to 'verified' ONLY on verified_complete — a
+      // verified_partial / sla_breached still returns HTTP 200 but the erasure
+      // is NOT done, so it must stay enumerable for the next sweep. Best-effort
+      // (re-sweep is idempotent if the flip is dropped).
+      if (c.fromRequested && out.decision === "verified_complete") {
+        try {
+          await env.CONFIG_DB.prepare(
+            "UPDATE dsr_requested SET status = 'verified' WHERE dsr_id = ?1",
+          )
+            .bind(c.dsr_id)
+            .run();
+        } catch (err) {
+          console.error(
+            `[dsr-verify-cron] status flip failed dsr_id=${c.dsr_id}: ${(err as Error).message.slice(0, 120)}`,
+          );
+        }
+      }
     } else {
       failed += 1;
     }

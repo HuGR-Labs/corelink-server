@@ -209,6 +209,9 @@ corelink-ratelimit = { workspace = true }
 corelink-pat = { workspace = true }
 # WI-S11-008: DSR erasure orchestrator behind `/_internal/dsr/erase`.
 corelink-privacy-erasure-worker = { workspace = true }
+# WI-S11-008 G3: Ed25519 erasure-attestation signing on VerifiedComplete
+# (`routes/dsr/attestation.rs`), persisted to `erasure_attestations` (0032).
+corelink-erasure-attestation = { workspace = true }
 # FINDING Gap 1 — the cargo adapter's `CargoAdapterConfig.auditor` is an
 # `Arc<dyn corelink_audit::ports::AuditEmitter>`; the container constructs it
 # (InMemoryAuditEmitter) when mounting `/cargo/*` (see `routes/cargo.rs`).

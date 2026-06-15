@@ -32,6 +32,7 @@
 pub mod d1_http;
 pub mod r2_kv;
 pub mod r2_s3;
+pub mod region_map;
 
 /// Configuration for the native-container storage layer, sourced
 /// entirely from environment variables.

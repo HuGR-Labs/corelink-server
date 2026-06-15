@@ -40,16 +40,44 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::get,
-    Router,
+    Json, Router,
 };
 use corelink_handler_ac::{
-    AcHandlerError, AcLookupHandler, AcLookupRequest, AcLookupResponse, AcUpdateHandler,
-    AcUpdateRequest, AcUpdateResponse, InMemoryAcHandler, InMemoryAuditSink, InMemorySliObserver,
+    AcDeleteHandler, AcDeleteRequest, AcDeleteResponse, AcHandlerError, AcListHandler,
+    AcListRequest, AcListResponse, AcLookupHandler, AcLookupRequest, AcLookupResponse,
+    AcUpdateHandler, AcUpdateRequest, AcUpdateResponse, InMemoryAcHandler, InMemoryAuditSink,
+    InMemorySliObserver,
 };
+
+/// Canonical AC list route path — `GET /v1/ac/:tenant` (D-7).
+pub const AC_LIST_ROUTE: &str = "/v1/ac/:tenant";
+
+/// Default page size for the AC list route when `?limit` is absent.
+const DEFAULT_LIST_LIMIT: u32 = 200;
+/// Hard cap on the AC list page size (contract: `1..=1000`).
+const MAX_LIST_LIMIT: u32 = 1000;
+
+/// Query parameters for the paginated AC list route (`?limit=&cursor=`).
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct ListQuery {
+    /// Requested page size; clamped to `1..=1000` (default 200).
+    pub limit: Option<u32>,
+    /// Opaque continuation cursor from a prior page.
+    pub cursor: Option<String>,
+}
+
+/// Clamp a requested `?limit` into the `1..=1000` contract window,
+/// defaulting to 200 when absent or zero.
+fn clamp_limit(requested: Option<u32>) -> u32 {
+    match requested {
+        None | Some(0) => DEFAULT_LIST_LIMIT,
+        Some(n) => n.min(MAX_LIST_LIMIT),
+    }
+}
 
 /// Canonical AC lookup route path (axum-0.7 / matchit-0.7 `:name` captures).
 ///
@@ -73,6 +101,11 @@ pub struct AcRouteState {
     pub lookup: Arc<dyn AcLookupHandler>,
     /// Update handler (separate trait object — see crate-level docs).
     pub update: Arc<dyn AcUpdateHandler>,
+    /// Delete handler (D-1) — write-capable. In production this points at
+    /// the same shared handler instance as `lookup`/`update`.
+    pub delete: Arc<dyn AcDeleteHandler>,
+    /// List handler (D-7) — read-capable paginated ref enumeration.
+    pub list: Arc<dyn AcListHandler>,
     /// Optional per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
     /// `Some` in production (D1-backed); checked at the TOP of each handler,
     /// AFTER the scope gate, BEFORE storage. `None` in dev/CI (not enforced).
@@ -123,6 +156,22 @@ impl AcUpdateHandler for UnavailableAcHandler {
     }
 }
 
+impl AcDeleteHandler for UnavailableAcHandler {
+    fn delete(&self, _req: AcDeleteRequest) -> Result<AcDeleteResponse, AcHandlerError> {
+        Err(AcHandlerError::Internal(format!(
+            "{STORAGE_UNAVAILABLE_SENTINEL}R2 AC handler refused to build (R2_TDK_HEX unset/invalid)"
+        )))
+    }
+}
+
+impl AcListHandler for UnavailableAcHandler {
+    fn list(&self, _req: AcListRequest) -> Result<AcListResponse, AcHandlerError> {
+        Err(AcHandlerError::Internal(format!(
+            "{STORAGE_UNAVAILABLE_SENTINEL}R2 AC handler refused to build (R2_TDK_HEX unset/invalid)"
+        )))
+    }
+}
+
 /// Build the canonical `(Arc<dyn AcLookupHandler>, Arc<dyn AcUpdateHandler>)`
 /// pair for the current build target.
 ///
@@ -146,7 +195,16 @@ impl AcUpdateHandler for UnavailableAcHandler {
 /// charter `trait-abstraction-defer` rule (tracked as
 /// `WI-S04-CF-WIRING`).
 #[must_use]
-pub fn build_handlers() -> (Arc<dyn AcLookupHandler>, Arc<dyn AcUpdateHandler>) {
+#[allow(
+    clippy::type_complexity,
+    reason = "builder returns a fixed lookup/update/delete/list (D-1/D-7) handler tuple; a named alias would orphan this function's doc block"
+)]
+pub fn build_handlers() -> (
+    Arc<dyn AcLookupHandler>,
+    Arc<dyn AcUpdateHandler>,
+    Arc<dyn AcDeleteHandler>,
+    Arc<dyn AcListHandler>,
+) {
     #[cfg(not(target_arch = "wasm32"))]
     {
         use crate::storage::{r2_s3, StorageEnv};
@@ -181,8 +239,10 @@ pub fn build_handlers() -> (Arc<dyn AcLookupHandler>, Arc<dyn AcUpdateHandler>) 
                     );
                     let shared: Arc<r2_s3::R2AcHandler> = Arc::new(handler);
                     let lookup: Arc<dyn AcLookupHandler> = shared.clone();
-                    let update: Arc<dyn AcUpdateHandler> = shared;
-                    return (lookup, update);
+                    let update: Arc<dyn AcUpdateHandler> = shared.clone();
+                    let delete: Arc<dyn AcDeleteHandler> = shared.clone();
+                    let list: Arc<dyn AcListHandler> = shared;
+                    return (lookup, update, delete, list);
                 }
                 Some(Err(e)) => {
                     // F1 (CAA-360) fail-CLOSED + LOUD: storage creds ARE present
@@ -204,8 +264,10 @@ pub fn build_handlers() -> (Arc<dyn AcLookupHandler>, Arc<dyn AcUpdateHandler>) 
                     );
                     let shared: Arc<UnavailableAcHandler> = Arc::new(UnavailableAcHandler);
                     let lookup: Arc<dyn AcLookupHandler> = shared.clone();
-                    let update: Arc<dyn AcUpdateHandler> = shared;
-                    return (lookup, update);
+                    let update: Arc<dyn AcUpdateHandler> = shared.clone();
+                    let delete: Arc<dyn AcDeleteHandler> = shared.clone();
+                    let list: Arc<dyn AcListHandler> = shared;
+                    return (lookup, update, delete, list);
                 }
                 None => {
                     // Should not happen: we already checked is_some().
@@ -221,8 +283,10 @@ pub fn build_handlers() -> (Arc<dyn AcLookupHandler>, Arc<dyn AcUpdateHandler>) 
         let sli = Arc::new(InMemorySliObserver::new());
         let shared: Arc<InMemoryAcHandler> = Arc::new(InMemoryAcHandler::new(audit, sli));
         let lookup: Arc<dyn AcLookupHandler> = shared.clone();
-        let update: Arc<dyn AcUpdateHandler> = shared;
-        (lookup, update)
+        let update: Arc<dyn AcUpdateHandler> = shared.clone();
+        let delete: Arc<dyn AcDeleteHandler> = shared.clone();
+        let list: Arc<dyn AcListHandler> = shared;
+        (lookup, update, delete, list)
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -238,7 +302,11 @@ pub fn build_handlers() -> (Arc<dyn AcLookupHandler>, Arc<dyn AcUpdateHandler>) 
 /// Build the axum `Router` exposing the AC lookup + update routes.
 pub fn router(state: AcRouteState) -> Router {
     Router::new()
-        .route(AC_LOOKUP_ROUTE, get(handle_lookup).put(handle_update))
+        .route(
+            AC_LOOKUP_ROUTE,
+            get(handle_lookup).put(handle_update).delete(handle_delete),
+        )
+        .route(AC_LIST_ROUTE, get(handle_list_refs))
         .with_state(state)
 }
 
@@ -337,6 +405,103 @@ async fn handle_update(
     }
 }
 
+/// `DELETE /v1/ac/:tenant/:action_digest` handler — delete a ref (D-1).
+///
+/// Idempotent: returns 204 No Content whether the ref existed or not.
+/// Requires a WRITE-capable PAT (mirrors `handle_update`).
+async fn handle_delete(
+    State(state): State<AcRouteState>,
+    Path((tenant, action_digest)): Path<(String, String)>,
+    auth: crate::auth_tenant::AuthTenant,
+    scope: crate::scope::CacheScope,
+) -> impl IntoResponse {
+    // Cross-tenant: deny 403 BEFORE any storage access (mirrors lookup).
+    if tenant != auth.0 {
+        return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
+    // Scope gate (fail-CLOSED): delete is a cache WRITE — require `cas:rw`.
+    if !scope.can_write() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    if let Some(gate) = state.quota.as_ref() {
+        if let Some(resp) = gate.check(&auth.0).await {
+            return resp;
+        }
+    }
+    let now_ms = 0u64;
+    let req = AcDeleteRequest::new(
+        auth.0.clone(),
+        action_digest,
+        format!("anon@{}", auth.0),
+        auth.0,
+        now_ms,
+    );
+    match state.delete.delete(req) {
+        // Idempotent: 204 No Content for both deleted-existing and absent.
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => map_err(e),
+    }
+}
+
+/// `GET /v1/ac/:tenant` handler — paginated ref enumeration (D-7).
+///
+/// Requires a READ-capable PAT. Returns
+/// `{ "refs": [...], "next_cursor": <opaque|null> }`.
+async fn handle_list_refs(
+    State(state): State<AcRouteState>,
+    Path(tenant): Path<String>,
+    auth: crate::auth_tenant::AuthTenant,
+    scope: crate::scope::CacheScope,
+    Query(q): Query<ListQuery>,
+) -> impl IntoResponse {
+    // Cross-tenant: deny 403 BEFORE any storage access.
+    if tenant != auth.0 {
+        return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
+    // Scope gate (fail-CLOSED): list is a cache READ — require read cap.
+    if !scope.can_read() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    if let Some(gate) = state.quota.as_ref() {
+        if let Some(resp) = gate.check(&auth.0).await {
+            return resp;
+        }
+    }
+    let now_ms = 0u64;
+    let req = AcListRequest::new(
+        auth.0.clone(),
+        format!("anon@{}", auth.0),
+        auth.0,
+        clamp_limit(q.limit),
+        q.cursor,
+        now_ms,
+    );
+    match state.list.list(req) {
+        Ok(resp) => {
+            let refs: Vec<_> = resp
+                .refs
+                .into_iter()
+                .map(|r| {
+                    serde_json::json!({
+                        "ref_key": r.ref_key,
+                        "updated_at": r.updated_at,
+                        "size": r.size,
+                    })
+                })
+                .collect();
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "refs": refs,
+                    "next_cursor": resp.next_cursor,
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => map_err(e),
+    }
+}
+
 /// Map an [`AcHandlerError`] to the canonical HTTP response.
 fn map_err(e: AcHandlerError) -> axum::response::Response {
     match e {
@@ -415,13 +580,17 @@ mod tests {
         let sli = Arc::new(InMemorySliObserver::new());
         let shared = Arc::new(InMemoryAcHandler::new(audit.clone(), sli.clone()));
         let lookup: Arc<dyn AcLookupHandler> = shared.clone();
-        let update: Arc<dyn AcUpdateHandler> = shared;
+        let update: Arc<dyn AcUpdateHandler> = shared.clone();
+        let delete: Arc<dyn AcDeleteHandler> = shared.clone();
+        let list: Arc<dyn AcListHandler> = shared;
         (
             audit,
             sli,
             AcRouteState {
                 lookup,
                 update,
+                delete,
+                list,
                 quota: None,
             },
         )
@@ -433,10 +602,14 @@ mod tests {
     fn fixture_unavailable() -> AcRouteState {
         let shared = Arc::new(UnavailableAcHandler);
         let lookup: Arc<dyn AcLookupHandler> = shared.clone();
-        let update: Arc<dyn AcUpdateHandler> = shared;
+        let update: Arc<dyn AcUpdateHandler> = shared.clone();
+        let delete: Arc<dyn AcDeleteHandler> = shared.clone();
+        let list: Arc<dyn AcListHandler> = shared;
         AcRouteState {
             lookup,
             update,
+            delete,
+            list,
             quota: None,
         }
     }
@@ -462,7 +635,7 @@ mod tests {
 
     #[test]
     fn build_handlers_returns_usable_pair() {
-        let (lookup, _update) = build_handlers();
+        let (lookup, _update, _delete, _list) = build_handlers();
         let res = lookup.lookup(AcLookupRequest::new("t1", "d1", "anon", "t1", 0));
         assert!(matches!(res, Err(AcHandlerError::Miss { .. })));
         // Router constructor smoke.
@@ -690,6 +863,187 @@ mod tests {
             .method(Method::GET)
             .uri(format!("/v1/ac/{TEST_TENANT}/ghost"))
             .header("x-corelink-tenant-id", TEST_TENANT)
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    // ── D-1 delete + D-7 list ────────────────────────────────────────────────
+
+    #[test]
+    fn list_route_constant_uses_colon_syntax() {
+        assert_eq!(AC_LIST_ROUTE, "/v1/ac/:tenant");
+        assert!(!AC_LIST_ROUTE.contains('{'));
+    }
+
+    #[test]
+    fn clamp_limit_enforces_contract_window() {
+        assert_eq!(clamp_limit(None), 200);
+        assert_eq!(clamp_limit(Some(0)), 200);
+        assert_eq!(clamp_limit(Some(50)), 50);
+        assert_eq!(clamp_limit(Some(1000)), 1000);
+        assert_eq!(clamp_limit(Some(5000)), 1000);
+    }
+
+    /// DELETE an existing ref → 204; a repeated DELETE → 204 (idempotent).
+    #[tokio::test]
+    async fn delete_existing_then_repeat_both_204() {
+        let (_a, _s, st) = fixture();
+        // Seed a ref via the write path.
+        st.update
+            .update(AcUpdateRequest::new(
+                TEST_TENANT,
+                "d1",
+                b"r".to_vec(),
+                "anon@t1",
+                TEST_TENANT,
+                1,
+            ))
+            .expect("seed");
+        let app = router(st);
+        let del = || {
+            Request::builder()
+                .method(Method::DELETE)
+                .uri(format!("/v1/ac/{TEST_TENANT}/d1"))
+                .header("x-corelink-tenant-id", TEST_TENANT)
+                .header(crate::scope::SCOPE_HEADER, "cas:rw")
+                .body(Body::empty())
+                .expect("request")
+        };
+        let resp = app.clone().oneshot(del()).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+        // Repeat delete (now absent) MUST also be 204.
+        let resp2 = app.oneshot(del()).await.expect("oneshot");
+        assert_eq!(resp2.status(), StatusCode::NO_CONTENT);
+    }
+
+    /// DELETE with a read-only PAT → 403 (write capability required).
+    #[tokio::test]
+    async fn delete_with_read_only_scope_returns_403() {
+        let (_a, _s, st) = fixture();
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::DELETE)
+            .uri(format!("/v1/ac/{TEST_TENANT}/d1"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// Cross-tenant DELETE → 403 (path tenant != authenticated tenant).
+    #[tokio::test]
+    async fn cross_tenant_delete_returns_403() {
+        let (_a, _s, st) = fixture();
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::DELETE)
+            .uri("/v1/ac/victim/d1")
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// GET list returns the tenant's refs (read-only PAT is sufficient).
+    #[tokio::test]
+    async fn list_returns_tenant_refs() {
+        let (_a, _s, st) = fixture();
+        for d in ["d1", "d2", "d3"] {
+            st.update
+                .update(AcUpdateRequest::new(
+                    TEST_TENANT,
+                    d,
+                    b"r".to_vec(),
+                    "anon@t1",
+                    TEST_TENANT,
+                    1,
+                ))
+                .expect("seed");
+        }
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/v1/ac/{TEST_TENANT}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let v: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        let refs = v["refs"].as_array().expect("refs array");
+        assert_eq!(refs.len(), 3);
+        assert!(v.get("next_cursor").is_some());
+    }
+
+    /// List pagination: limit=1 returns one entry + a non-null cursor; the
+    /// cursor fetches the next page.
+    #[tokio::test]
+    async fn list_pagination_cursor_walks_pages() {
+        let (_a, _s, st) = fixture();
+        for d in ["d1", "d2"] {
+            st.update
+                .update(AcUpdateRequest::new(
+                    TEST_TENANT,
+                    d,
+                    b"r".to_vec(),
+                    "anon@t1",
+                    TEST_TENANT,
+                    1,
+                ))
+                .expect("seed");
+        }
+        let app = router(st);
+        let page1 = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/v1/ac/{TEST_TENANT}?limit=1"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.clone().oneshot(page1).await.expect("oneshot");
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let v: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(v["refs"].as_array().expect("refs").len(), 1);
+        let cursor = v["next_cursor"].as_str().expect("cursor present").to_owned();
+        let page2 = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/v1/ac/{TEST_TENANT}?limit=1&cursor={cursor}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::empty())
+            .expect("request");
+        let resp2 = app.oneshot(page2).await.expect("oneshot");
+        let body2 = axum::body::to_bytes(resp2.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let v2: serde_json::Value = serde_json::from_slice(&body2).expect("json");
+        assert_eq!(v2["refs"].as_array().expect("refs").len(), 1);
+        // The two pages return distinct refs.
+        assert_ne!(v["refs"][0]["ref_key"], v2["refs"][0]["ref_key"]);
+    }
+
+    /// Cross-tenant LIST → 403.
+    #[tokio::test]
+    async fn cross_tenant_list_returns_403() {
+        let (_a, _s, st) = fixture();
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/v1/ac/victim")
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
             .body(Body::empty())
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");

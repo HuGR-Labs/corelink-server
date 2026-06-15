@@ -32,6 +32,24 @@ impl Region {
         }
     }
 
+    /// Parse the canonical lowercase region string (the value stored in the
+    /// D1 `region` CHECK columns + `tenant.primary_region`). Returns `None` for
+    /// any value outside the current 4-region baseline — including the
+    /// residency macro-regions `apac` / `afr`, which are valid
+    /// `tenant.primary_region` values but have no attestation signing key yet
+    /// (the caller treats `None` as "no attestation region" and skips signing
+    /// fail-OPEN rather than mis-attributing the region).
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "wnam" => Some(Self::Wnam),
+            "enam" => Some(Self::Enam),
+            "weur" => Some(Self::Weur),
+            "sam" => Some(Self::Sam),
+            _ => None,
+        }
+    }
+
     /// Return the R2 audit bucket name for this region.
     ///
     /// Convention: `corelink-audit-{region}`.
@@ -63,5 +81,17 @@ mod tests {
     #[test]
     fn audit_bucket_name() {
         assert_eq!(Region::Weur.audit_bucket(), "corelink-audit-weur");
+    }
+
+    #[test]
+    fn parse_roundtrips_canonical_and_rejects_unknown() {
+        for r in [Region::Wnam, Region::Enam, Region::Weur, Region::Sam] {
+            assert_eq!(Region::parse(r.as_str()), Some(r));
+        }
+        // Residency macro-regions with no attestation key yet → None.
+        assert_eq!(Region::parse("apac"), None);
+        assert_eq!(Region::parse("afr"), None);
+        assert_eq!(Region::parse(""), None);
+        assert_eq!(Region::parse("WEUR"), None); // case-sensitive (canonical lowercase)
     }
 }

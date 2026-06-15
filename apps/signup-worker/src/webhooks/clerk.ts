@@ -18,6 +18,8 @@
  * handler exits 200 without re-provisioning.
  */
 
+import { insertTenant } from "../lib/d1.js";
+
 export interface ClerkUserCreatedEvent {
   type: "user.created";
   data: {
@@ -284,6 +286,28 @@ export async function handleUserDeleted(
       { status: 500, headers: { "content-type": "application/json" } },
     );
   }
+  // G4 (WI-S11-008): write a durable "DSR requested" anchor BEFORE enqueue so the
+  // 24h verify sweep can detect an SLA breach even when the erasure fails before
+  // ANY backend tombstone lands (audit-fail-closed → no dsr_erasure_log row).
+  // Idempotent: dsr_id is the deterministic name-based UUID, so a Svix
+  // redelivery is an INSERT-OR-IGNORE no-op. Best-effort: a D1 failure here must
+  // NOT block the enqueue (the queue + orchestrator + audit chain are the
+  // primary obligation path); the sweep degrades to its dsr_erasure_log source.
+  if (env.CONFIG_DB) {
+    try {
+      await env.CONFIG_DB.prepare(
+        "INSERT OR IGNORE INTO dsr_requested (dsr_id, tenant_id, requested_at, status) " +
+          "VALUES (?1, ?2, ?3, 'requested')",
+      )
+        .bind(msg.dsr_id, tenantId, msg.queued_at_ms)
+        .run();
+    } catch (reqErr) {
+      console.error(
+        `[clerk-webhook] dsr_requested write failed dsr_id=${msg.dsr_id} svix=${svixId}: ${String(reqErr)}`,
+      );
+    }
+  }
+
   await env.DSR_QUEUE.send(msg);
   // dsr_id is a pseudonymous id; tenant_id is not secret. erasure_salt is NEVER logged.
   console.log(
@@ -398,14 +422,92 @@ export async function verifySvixSignature(ctx: VerifyContext): Promise<boolean> 
 }
 
 /**
- * Derive a CF region code from the request's `cf.colo` field.
- * The colo string (e.g. "ORD", "GRU", "FRA") is the closest CF PoP to the
- * end-user; we lower-case it for storage and map a small set of well-known
- * codes to canonical region names. Anything unknown falls back to `auto`.
+ * Canonical CoreLink data-residency MACRO region codes. These — NOT colo codes —
+ * are what `tenant.primary_region` holds (D1 CHECK in migrations 0023/0028). The
+ * MUST mirror `worker/src/region-map.ts` MacroRegion + the Rust region_map.rs.
  */
-export function regionFromColo(colo: string | undefined | null): string {
-  if (!colo || typeof colo !== "string") return "auto";
-  return colo.toLowerCase();
+export type MacroRegion = "wnam" | "enam" | "weur" | "sam" | "apac" | "afr";
+
+/**
+ * Macro regions whose serving infra is actually DEPLOYED; signup MUST reject the
+ * rest with a terminal 422 (never silently downgrade to US — backlog #29).
+ *
+ * Launch (Phase 1) = US-only. Only `wnam`/`enam` map to a colo (`iad`) that has a
+ * live DO + container + R2 bucket. The other canonical macros (`weur`→lhr,
+ * `sam`→sam, `apac`→nrt, `afr`) have NO regional Worker `[[services]]` binding and
+ * NO per-region CAS/AC bucket yet, so the residency guard would (correctly,
+ * fail-closed) 503 every request from such a tenant. Provisioning a region we
+ * cannot serve onboards customers straight into a 503 wall — so signup rejects
+ * them up front instead. Re-add a macro here ONLY once its regional Worker
+ * binding + per-region bucket + container region var are deployed (the EU/SAM
+ * serving build-out — tracked as the residency Phase-2 follow-up).
+ */
+export const PROVISIONED_MACROS: ReadonlySet<MacroRegion> = new Set<MacroRegion>([
+  "wnam",
+  "enam",
+]);
+
+/**
+ * Thrown when a tenant's geo-derived macro region is a VALID canonical region
+ * but is NOT provisioned in Phase 1 (apac/afr today). Caught by the webhook
+ * handler and mapped to a TERMINAL 422 (no Svix retry) — signup MUST reject the
+ * tenant rather than silently downgrade them to a US region (backlog #29).
+ */
+export class UnprovisionedRegionError extends Error {
+  readonly region: string;
+  constructor(region: string) {
+    super(`data-residency region '${region}' is not provisioned`);
+    this.name = "UnprovisionedRegionError";
+    this.region = region;
+  }
+}
+
+/**
+ * Map a CF colo code (the closest PoP to the end-user, e.g. "FRA", "GRU",
+ * "NRT") to a canonical MACRO residency region. The mapping is geo-coarse:
+ * European colos → weur, South-American → sam, Asia-Pacific → apac, everything
+ * else (incl. unknown/absent) → enam (the genuine US-east default).
+ *
+ * NOTE: this returns the macro region the tenant SHOULD be assigned. Whether
+ * that region is actually servable is a SEPARATE check (`PROVISIONED_MACROS`) —
+ * an unprovisioned macro is REJECTED at signup, never silently downgraded.
+ */
+export function regionFromColo(colo: string | undefined | null): MacroRegion {
+  if (!colo || typeof colo !== "string") return "enam";
+  const c = colo.trim().toUpperCase();
+  if (c.length === 0) return "enam";
+  // Western-European colos → weur (the EU residency region; closing the leak).
+  const WEUR = new Set([
+    "LHR", "LCY", "MAN", "EDI", // UK + Ireland-adjacent
+    "DUB",
+    "FRA", "MUC", "DUS", "HAM", "STR", "TXL", "BER", // Germany
+    "CDG", "MRS", "LYS", // France
+    "AMS", "BRU", "ARN", "CPH", "HEL", "OSL", "VIE", "ZRH", "GVA",
+    "MAD", "BCD", "BCN", "LIS", "MXP", "FCO", "PMO", "WAW", "PRG", "BUD",
+  ]);
+  // South-American colos → sam.
+  const SAM = new Set([
+    "GRU", "GIG", "BSB", "POA", "FOR", "REC", "CWB", "CNF", // Brazil
+    "EZE", "SCL", "BOG", "LIM", "UIO", "MDE", "MVD", "ASU",
+  ]);
+  // Asia-Pacific colos → apac (valid macro but NOT provisioned in Phase 1).
+  const APAC = new Set([
+    "NRT", "KIX", "ITM", "HND", // Japan
+    "ICN", "TPE", "HKG", "SIN", "KUL", "BKK", "CGK", "MNL",
+    "BOM", "DEL", "MAA", "BLR", "HYD", "CCU",
+    "SYD", "MEL", "PER", "BNE", "AKL", // Oceania
+  ]);
+  if (WEUR.has(c)) return "weur";
+  if (SAM.has(c)) return "sam";
+  if (APAC.has(c)) return "apac";
+  // North-American + African + Middle-Eastern + anything unknown → enam
+  // (the genuine US-east default for unspecified/unmapped geos).
+  return "enam";
+}
+
+/** True iff the macro region is provisioned in Phase 1 (signup-acceptable). */
+export function isProvisionedMacro(region: string): region is MacroRegion {
+  return (PROVISIONED_MACROS as ReadonlySet<string>).has(region);
 }
 
 /**
@@ -436,7 +538,17 @@ export function tenantSlugFor(user: ClerkUserCreatedEvent["data"]): string {
 }
 
 interface ApiClient {
-  createTenant(name: string, ownerUserId: string): Promise<{ id: string }>;
+  /**
+   * Insert the tenant row with its data-residency MACRO region (backlog #29).
+   * `region` is the geo-derived, provisioned macro (wnam/enam/weur/sam) — the
+   * caller has already rejected unprovisioned macros. The region is persisted as
+   * `tenant.primary_region` (NO LONGER hardcoded to 'enam').
+   */
+  createTenant(
+    name: string,
+    ownerUserId: string,
+    region: MacroRegion,
+  ): Promise<{ id: string }>;
   configureTenant(
     tenantId: string,
     region: string,
@@ -513,8 +625,17 @@ export async function autoProvisionFromClerkEvent(input: {
   const name = tenantSlugFor(user);
   const region = regionFromColo(input.colo);
 
-  // 1. Create tenant.
-  const tenant = await input.api.createTenant(name, user.id);
+  // backlog #29: REJECT unprovisioned macro regions (apac/afr today) BEFORE any
+  // tenant write. Silently downgrading them to a US region is the residency leak
+  // we're closing. This throws BEFORE createTenant, so no orphan row is created;
+  // the webhook handler maps it to a terminal 422 (no Svix retry — it is a
+  // permanent "region not available", not a transient failure).
+  if (!isProvisionedMacro(region)) {
+    throw new UnprovisionedRegionError(region);
+  }
+
+  // 1. Create tenant with its resolved residency macro region.
+  const tenant = await input.api.createTenant(name, user.id, region);
   await input.analytics.emit("signup_completed", tenant.id, user.id, {
     auth_provider:
       user.external_accounts?.[0]?.provider ?? "email",
@@ -690,6 +811,20 @@ export async function handleClerkWebhook(
       metadata_published: result.metadata_published,
     });
   } catch (err) {
+    // backlog #29: an unprovisioned residency region is a TERMINAL, permanent
+    // condition — NOT a transient failure. Return 422 (no Svix retry) so the
+    // tenant is cleanly rejected rather than redelivered forever. No tenant row
+    // was written (the throw is BEFORE createTenant).
+    if (err instanceof UnprovisionedRegionError) {
+      console.error(
+        `[clerk-webhook] rejecting signup: region '${err.region}' not provisioned ` +
+          `(user=${event.data.id}, svix=${svixId})`,
+      );
+      return new Response(
+        JSON.stringify({ ok: false, error: "region_not_provisioned", region: err.region }),
+        { status: 422, headers: { "content-type": "application/json" } },
+      );
+    }
     // Webhook returns 500 so Svix retries with backoff. Do not leak error
     // body — log a redacted summary upstream.
     return new Response(
@@ -726,9 +861,14 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
 
   return {
     // ── createTenant ──────────────────────────────────────────────────────────
-    // Generates a UUIDv7 tenant_id, inserts the tenant row to D1 CONFIG_DB.
-    // Returns { id: tenant_id }.
-    async createTenant(name: string, ownerUserId: string): Promise<{ id: string }> {
+    // Generates a UUIDv7 tenant_id, inserts the tenant row to D1 CONFIG_DB with
+    // the geo-derived residency MACRO region (backlog #29 — NO LONGER hardcoded
+    // to 'enam'). Returns { id: tenant_id }.
+    async createTenant(
+      name: string,
+      ownerUserId: string,
+      region: MacroRegion,
+    ): Promise<{ id: string }> {
       const tenantId = crypto.randomUUID();
       if (!env.CONFIG_DB) {
         // Dev/CI without D1 binding — return a stable fake.
@@ -743,14 +883,17 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
 
-      await env.CONFIG_DB.prepare(
-        "INSERT OR IGNORE INTO tenant " +
-          "(tenant_id, primary_region, tenant_state, email_hash, clerk_user_id, " +
-          " created_at_ms, updated_at_ms, created_ms, updated_ms) " +
-          "VALUES (?1, 'enam', 'active', ?2, ?3, ?4, ?4, ?4, ?4)",
-      )
-        .bind(tenantId, emailHash, ownerUserId, nowMs)
-        .run();
+      // backlog #29: use the PARAMETERIZED insertTenant helper (it threads the
+      // chosen `primary_region` instead of the old hardcoded 'enam' inline
+      // INSERT). insertTenant is INSERT OR IGNORE — same race-safety as before.
+      await insertTenant(env.CONFIG_DB, {
+        tenantId,
+        primaryRegion: region,
+        tenantSlug: name,
+        emailHash,
+        clerkUserId: ownerUserId,
+        nowMs,
+      });
 
       // Read back the WINNING tenant by clerk_user_id. Under concurrent
       // duplicate Clerk delivery, INSERT OR IGNORE may have skipped our row
@@ -767,11 +910,11 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
     },
 
     // ── configureTenant ───────────────────────────────────────────────────────
-    // The region is embedded in the tenant row at INSERT time (primary_region
-    // defaults to 'enam'; per-colo override would update this column).
-    // For now this is a no-op: the region from `regionFromColo` is passed here
-    // but D1 already has 'enam'; a future improvement would UPDATE primary_region
-    // to the CF colo-derived value.
+    // The region is now persisted in the tenant row at INSERT time by
+    // createTenant (backlog #29 — the geo-derived macro, not a hardcoded 'enam').
+    // This stays a no-op: primary_region is IMMUTABLE post-INSERT (migration 0028
+    // trigger), so there is nothing for configureTenant to update. The
+    // region_assigned analytics event is still emitted by the orchestrator.
     async configureTenant(
       _tenantId: string,
       _region: string,

@@ -105,6 +105,155 @@ impl CasWriteRequest {
     }
 }
 
+/// Delete request — `DELETE /v1/cas/{tenant}/{hash}` canonical shape.
+///
+/// DELETE is **idempotent**: deleting a present blob and deleting an
+/// absent one both succeed (the route maps a successful delete to
+/// HTTP 204 No Content in either case). The handler still enforces the
+/// cross-tenant gate + emits the audit row exactly like the write path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CasDeleteRequest {
+    /// Tenant from URL path.
+    pub tenant: String,
+    /// Lower-case hex content hash from URL path.
+    pub hash: String,
+    /// Caller principal (already-authenticated upstream).
+    pub principal: String,
+    /// Caller's authenticated tenant (must equal `tenant`).
+    pub caller_tenant: String,
+    /// Wall-clock timestamp in unix-millis.
+    pub at_unix_ms: u64,
+}
+
+impl CasDeleteRequest {
+    /// Construct a [`CasDeleteRequest`] from its fields.
+    #[must_use]
+    pub fn new(
+        tenant: impl Into<String>,
+        hash: impl Into<String>,
+        principal: impl Into<String>,
+        caller_tenant: impl Into<String>,
+        at_unix_ms: u64,
+    ) -> Self {
+        Self {
+            tenant: tenant.into(),
+            hash: hash.into(),
+            principal: principal.into(),
+            caller_tenant: caller_tenant.into(),
+            at_unix_ms,
+        }
+    }
+}
+
+/// Delete response — idempotent acknowledgement.
+///
+/// `existed` reports whether the blob was present before the delete (for
+/// diagnostics / audit detail). The HTTP route returns 204 No Content
+/// regardless of `existed` — DELETE is idempotent by contract.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CasDeleteResponse {
+    /// True if the blob existed (and was removed); false if it was
+    /// already absent (idempotent no-op).
+    pub existed: bool,
+}
+
+impl CasDeleteResponse {
+    /// Construct a [`CasDeleteResponse`] from its fields.
+    #[must_use]
+    pub fn new(existed: bool) -> Self {
+        Self { existed }
+    }
+}
+
+/// List request — `GET /v1/cas/{tenant}` paginated blob enumeration.
+///
+/// `limit` is clamped to `1..=1000` by the route (default 200). `cursor`
+/// is the opaque continuation token returned by a previous page (`None`
+/// for the first page).
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CasListRequest {
+    /// Tenant from URL path.
+    pub tenant: String,
+    /// Caller principal (already-authenticated upstream).
+    pub principal: String,
+    /// Caller's authenticated tenant (must equal `tenant`).
+    pub caller_tenant: String,
+    /// Max entries to return this page (route-clamped to `1..=1000`).
+    pub limit: u32,
+    /// Opaque pagination cursor from a prior page (`None` ⇒ first page).
+    pub cursor: Option<String>,
+    /// Wall-clock timestamp in unix-millis.
+    pub at_unix_ms: u64,
+}
+
+impl CasListRequest {
+    /// Construct a [`CasListRequest`] from its fields.
+    #[must_use]
+    pub fn new(
+        tenant: impl Into<String>,
+        principal: impl Into<String>,
+        caller_tenant: impl Into<String>,
+        limit: u32,
+        cursor: Option<String>,
+        at_unix_ms: u64,
+    ) -> Self {
+        Self {
+            tenant: tenant.into(),
+            principal: principal.into(),
+            caller_tenant: caller_tenant.into(),
+            limit,
+            cursor,
+            at_unix_ms,
+        }
+    }
+}
+
+/// One enumerated CAS blob (the per-entry shape of the D-8 list body).
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CasBlobEntry {
+    /// Lower-case hex content hash (the blob's CAS key, tenant-prefix
+    /// stripped — never the raw storage key).
+    pub hash: String,
+    /// Object size in bytes.
+    pub size: u64,
+    /// RFC-3339 creation timestamp (the storage object's last-modified).
+    pub created_at: String,
+}
+
+impl CasBlobEntry {
+    /// Construct a [`CasBlobEntry`] from its fields.
+    #[must_use]
+    pub fn new(hash: impl Into<String>, size: u64, created_at: impl Into<String>) -> Self {
+        Self {
+            hash: hash.into(),
+            size,
+            created_at: created_at.into(),
+        }
+    }
+}
+
+/// List response — one page of blobs + an opaque continuation cursor.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CasListResponse {
+    /// Blobs on this page (already tenant-scoped + hash-stripped).
+    pub blobs: Vec<CasBlobEntry>,
+    /// Opaque cursor for the next page, or `None` when exhausted.
+    pub next_cursor: Option<String>,
+}
+
+impl CasListResponse {
+    /// Construct a [`CasListResponse`] from its fields.
+    #[must_use]
+    pub fn new(blobs: Vec<CasBlobEntry>, next_cursor: Option<String>) -> Self {
+        Self { blobs, next_cursor }
+    }
+}
+
 /// Write response — durable content hash + persistence outcome.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]

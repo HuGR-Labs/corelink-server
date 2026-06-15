@@ -14,7 +14,10 @@ use std::sync::Mutex;
 use crate::audit::{AuditEvent, AuditEventKind, AuditSink};
 use crate::error::CasHandlerError;
 use crate::observer::{Sli, SliObservation, SliObserver};
-use crate::request::{CasReadRequest, CasReadResponse, CasWriteRequest, CasWriteResponse};
+use crate::request::{
+    CasBlobEntry, CasDeleteRequest, CasDeleteResponse, CasListRequest, CasListResponse,
+    CasReadRequest, CasReadResponse, CasWriteRequest, CasWriteResponse,
+};
 
 /// Trait every concrete CAS read handler implements.
 ///
@@ -65,6 +68,48 @@ pub trait CasWriteHandler: Send + Sync + core::fmt::Debug {
     /// Returns variants of [`CasHandlerError`] per the trait
     /// contract (see crate-level invariants).
     fn write(&self, req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError>;
+}
+
+/// Trait every concrete CAS delete handler implements (D-8).
+///
+/// DELETE is **idempotent** by contract: deleting a present blob and
+/// deleting an absent one both return `Ok` (the route maps both to HTTP
+/// 204 No Content). Implementors **MUST**:
+///
+/// 1. On `CrossTenantDenied`, emit `AuditEventKind::DeleteDenied` BEFORE
+///    returning (fail-CLOSED ordering, mirrors the write path).
+/// 2. Emit `AuditEventKind::DeleteAttempted` BEFORE the storage delete.
+/// 3. Emit `Sli::AvailCasPut` + `Sli::LatencyCasPutP99` observations on
+///    EVERY return path (delete folds into the PUT availability bucket
+///    — both are mutations on the canonical-18 SLI registry).
+/// 4. On success emit `AuditEventKind::DeleteCommitted`.
+pub trait CasDeleteHandler: Send + Sync + core::fmt::Debug {
+    /// Delete one CAS blob (idempotent).
+    ///
+    /// # Errors
+    ///
+    /// Returns variants of [`CasHandlerError`] per the trait contract.
+    fn delete(&self, req: CasDeleteRequest) -> Result<CasDeleteResponse, CasHandlerError>;
+}
+
+/// Trait every concrete CAS list handler implements (D-8).
+///
+/// Enumeration MUST stay within the authenticated tenant's derived
+/// storage prefix — a tenant must never enumerate another tenant's
+/// blobs. Implementors **MUST**:
+///
+/// 1. On `CrossTenantDenied`, emit `AuditEventKind::ListDenied` BEFORE
+///    returning.
+/// 2. Emit `AuditEventKind::ListAttempted` BEFORE the enumeration.
+/// 3. Emit `Sli::AvailCasGet` + `Sli::LatencyCasGetP99` observations on
+///    EVERY return path (list folds into the GET availability bucket).
+pub trait CasListHandler: Send + Sync + core::fmt::Debug {
+    /// Enumerate one page of the tenant's CAS blobs.
+    ///
+    /// # Errors
+    ///
+    /// Returns variants of [`CasHandlerError`] per the trait contract.
+    fn list(&self, req: CasListRequest) -> Result<CasListResponse, CasHandlerError>;
 }
 
 /// Deterministic in-memory CAS handler. Intended for unit tests,
@@ -380,6 +425,161 @@ impl CasWriteHandler for InMemoryCasHandler {
             content_hash: req.claimed_hash,
             durable,
         })
+    }
+}
+
+impl CasDeleteHandler for InMemoryCasHandler {
+    fn delete(&self, req: CasDeleteRequest) -> Result<CasDeleteResponse, CasHandlerError> {
+        // Delete folds availability into the PUT (mutation) SLI bucket.
+        let emit = |outcome_is_err: bool| {
+            self.sli.observe(SliObservation {
+                sli: Sli::AvailCasPut,
+                is_error: outcome_is_err,
+                latency_us: 0,
+            });
+            self.sli.observe(SliObservation {
+                sli: Sli::LatencyCasPutP99,
+                is_error: outcome_is_err,
+                latency_us: 0,
+            });
+        };
+
+        // Cross-tenant — audit BEFORE rejection (fail-CLOSED ordering).
+        if !Self::check_tenant(&req.tenant, &req.caller_tenant) {
+            self.audit
+                .emit(AuditEvent {
+                    kind: AuditEventKind::DeleteDenied,
+                    tenant: req.tenant.clone(),
+                    hash: req.hash.clone(),
+                    principal: req.principal.clone(),
+                    at_unix_ms: req.at_unix_ms,
+                })
+                .map_err(CasHandlerError::AuditFailed)?;
+            emit(true);
+            return Err(CasHandlerError::CrossTenantDenied {
+                caller: req.caller_tenant,
+                requested_tenant: req.tenant,
+            });
+        }
+
+        // DeleteAttempted audit BEFORE mutation.
+        self.audit
+            .emit(AuditEvent {
+                kind: AuditEventKind::DeleteAttempted,
+                tenant: req.tenant.clone(),
+                hash: req.hash.clone(),
+                principal: req.principal.clone(),
+                at_unix_ms: req.at_unix_ms,
+            })
+            .map_err(CasHandlerError::AuditFailed)?;
+
+        // Idempotent delete: remove if present, no-op if absent.
+        let existed = {
+            let mut g = self
+                .objects
+                .lock()
+                .map_err(|_| CasHandlerError::Internal("storage lock poisoned".into()))?;
+            g.remove(&(req.tenant.clone(), req.hash.clone())).is_some()
+        };
+
+        // DeleteCommitted audit AFTER the delete (fires whether or not
+        // the blob existed — DELETE is idempotent).
+        self.audit
+            .emit(AuditEvent {
+                kind: AuditEventKind::DeleteCommitted,
+                tenant: req.tenant.clone(),
+                hash: req.hash.clone(),
+                principal: req.principal.clone(),
+                at_unix_ms: req.at_unix_ms,
+            })
+            .map_err(CasHandlerError::AuditFailed)?;
+        emit(false);
+        Ok(CasDeleteResponse { existed })
+    }
+}
+
+impl CasListHandler for InMemoryCasHandler {
+    fn list(&self, req: CasListRequest) -> Result<CasListResponse, CasHandlerError> {
+        // List folds availability into the GET (read) SLI bucket.
+        let emit = |outcome_is_err: bool| {
+            self.sli.observe(SliObservation {
+                sli: Sli::AvailCasGet,
+                is_error: outcome_is_err,
+                latency_us: 0,
+            });
+            self.sli.observe(SliObservation {
+                sli: Sli::LatencyCasGetP99,
+                is_error: outcome_is_err,
+                latency_us: 0,
+            });
+        };
+
+        // Cross-tenant — audit BEFORE rejection.
+        if !Self::check_tenant(&req.tenant, &req.caller_tenant) {
+            self.audit
+                .emit(AuditEvent {
+                    kind: AuditEventKind::ListDenied,
+                    tenant: req.tenant.clone(),
+                    hash: String::new(),
+                    principal: req.principal.clone(),
+                    at_unix_ms: req.at_unix_ms,
+                })
+                .map_err(CasHandlerError::AuditFailed)?;
+            emit(true);
+            return Err(CasHandlerError::CrossTenantDenied {
+                caller: req.caller_tenant,
+                requested_tenant: req.tenant,
+            });
+        }
+
+        // ListAttempted audit BEFORE enumeration.
+        self.audit
+            .emit(AuditEvent {
+                kind: AuditEventKind::ListAttempted,
+                tenant: req.tenant.clone(),
+                hash: String::new(),
+                principal: req.principal.clone(),
+                at_unix_ms: req.at_unix_ms,
+            })
+            .map_err(CasHandlerError::AuditFailed)?;
+
+        // Enumerate this tenant's blobs, sorted by hash for a stable,
+        // cursor-paginatable order. The opaque cursor is the last hash
+        // returned on the prior page; this page starts strictly after it.
+        let g = self
+            .objects
+            .lock()
+            .map_err(|_| CasHandlerError::Internal("storage lock poisoned".into()))?;
+        let mut hashes: Vec<(String, usize)> = g
+            .iter()
+            .filter(|((t, _), _)| t == &req.tenant)
+            .map(|((_, h), bytes)| (h.clone(), bytes.len()))
+            .collect();
+        drop(g);
+        hashes.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let after = req.cursor.clone();
+        let limit = req.limit.max(1) as usize;
+        let mut blobs = Vec::new();
+        let mut next_cursor: Option<String> = None;
+        for (h, size) in hashes
+            .into_iter()
+            .filter(|(h, _)| after.as_ref().map_or(true, |c| h > c))
+        {
+            if blobs.len() == limit {
+                // There is at least one more entry beyond this page; the
+                // last entry we emitted is the next cursor.
+                next_cursor = blobs.last().map(|e: &CasBlobEntry| e.hash.clone());
+                break;
+            }
+            // The in-memory fake has no real timestamp; emit the unix
+            // epoch as a deterministic RFC-3339 stand-in (the R2 impl
+            // surfaces the object's true last-modified).
+            blobs.push(CasBlobEntry::new(h, size as u64, "1970-01-01T00:00:00Z"));
+        }
+
+        emit(false);
+        Ok(CasListResponse { blobs, next_cursor })
     }
 }
 

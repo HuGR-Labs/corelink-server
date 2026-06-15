@@ -32,6 +32,21 @@ pub enum AuditEventKind {
     /// `corelink.cas.write.denied` — emitted on cross-tenant or
     /// auth rejection BEFORE the rejection response.
     WriteDenied,
+    /// `corelink.cas.delete.attempted` — emitted on every delete entry
+    /// BEFORE the storage delete.
+    DeleteAttempted,
+    /// `corelink.cas.delete.committed` — emitted after a delete
+    /// completes (idempotent: fires whether or not the blob existed).
+    DeleteCommitted,
+    /// `corelink.cas.delete.denied` — emitted on cross-tenant or auth
+    /// rejection BEFORE the rejection response.
+    DeleteDenied,
+    /// `corelink.cas.list.attempted` — emitted on every list entry
+    /// BEFORE the storage enumeration.
+    ListAttempted,
+    /// `corelink.cas.list.denied` — emitted on cross-tenant or auth
+    /// rejection BEFORE the rejection response.
+    ListDenied,
     /// `corelink.cas.correctness.violation` — emitted whenever a
     /// hash mismatch is observed (zero-budget SLO-CORRECT-CAS).
     CorrectnessViolation,
@@ -49,6 +64,11 @@ impl AuditEventKind {
             Self::WriteAttempted => "corelink.cas.write.attempted",
             Self::WriteCommitted => "corelink.cas.write.committed",
             Self::WriteDenied => "corelink.cas.write.denied",
+            Self::DeleteAttempted => "corelink.cas.delete.attempted",
+            Self::DeleteCommitted => "corelink.cas.delete.committed",
+            Self::DeleteDenied => "corelink.cas.delete.denied",
+            Self::ListAttempted => "corelink.cas.list.attempted",
+            Self::ListDenied => "corelink.cas.list.denied",
             Self::CorrectnessViolation => "corelink.cas.correctness.violation",
         }
     }

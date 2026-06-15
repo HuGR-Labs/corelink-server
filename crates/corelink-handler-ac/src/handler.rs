@@ -130,6 +130,145 @@ impl AcUpdateResponse {
     }
 }
 
+/// AC delete request — `DELETE /v1/ac/{tenant}/{action_digest}` (D-1).
+///
+/// DELETE is **idempotent**: deleting a present ref and deleting an
+/// absent one both succeed (the route maps both to HTTP 204).
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AcDeleteRequest {
+    /// Tenant from URL path.
+    pub tenant: String,
+    /// Canonical action digest from URL path.
+    pub action_digest: String,
+    /// Caller principal.
+    pub principal: String,
+    /// Caller's authenticated tenant.
+    pub caller_tenant: String,
+    /// Wall-clock unix-millis.
+    pub at_unix_ms: u64,
+}
+
+impl AcDeleteRequest {
+    /// Construct from fields.
+    #[must_use]
+    pub fn new(
+        tenant: impl Into<String>,
+        action_digest: impl Into<String>,
+        principal: impl Into<String>,
+        caller_tenant: impl Into<String>,
+        at_unix_ms: u64,
+    ) -> Self {
+        Self {
+            tenant: tenant.into(),
+            action_digest: action_digest.into(),
+            principal: principal.into(),
+            caller_tenant: caller_tenant.into(),
+            at_unix_ms,
+        }
+    }
+}
+
+/// AC delete response — idempotent acknowledgement.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AcDeleteResponse {
+    /// True if the ref existed (and was removed); false if absent
+    /// (idempotent no-op). The route returns 204 either way.
+    pub existed: bool,
+}
+
+impl AcDeleteResponse {
+    /// Construct from fields.
+    #[must_use]
+    pub fn new(existed: bool) -> Self {
+        Self { existed }
+    }
+}
+
+/// AC list request — `GET /v1/ac/{tenant}` paginated ref enumeration (D-7).
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AcListRequest {
+    /// Tenant from URL path.
+    pub tenant: String,
+    /// Caller principal.
+    pub principal: String,
+    /// Caller's authenticated tenant.
+    pub caller_tenant: String,
+    /// Max entries to return this page (route-clamped to `1..=1000`).
+    pub limit: u32,
+    /// Opaque pagination cursor from a prior page (`None` ⇒ first page).
+    pub cursor: Option<String>,
+    /// Wall-clock unix-millis.
+    pub at_unix_ms: u64,
+}
+
+impl AcListRequest {
+    /// Construct from fields.
+    #[must_use]
+    pub fn new(
+        tenant: impl Into<String>,
+        principal: impl Into<String>,
+        caller_tenant: impl Into<String>,
+        limit: u32,
+        cursor: Option<String>,
+        at_unix_ms: u64,
+    ) -> Self {
+        Self {
+            tenant: tenant.into(),
+            principal: principal.into(),
+            caller_tenant: caller_tenant.into(),
+            limit,
+            cursor,
+            at_unix_ms,
+        }
+    }
+}
+
+/// One enumerated AC ref (the per-entry shape of the D-7 list body).
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AcRefEntry {
+    /// The ref key (action digest, tenant-prefix stripped — never the
+    /// raw storage key).
+    pub ref_key: String,
+    /// RFC-3339 last-update timestamp (storage object last-modified).
+    pub updated_at: String,
+    /// Stored result-payload size in bytes.
+    pub size: u64,
+}
+
+impl AcRefEntry {
+    /// Construct from fields.
+    #[must_use]
+    pub fn new(ref_key: impl Into<String>, updated_at: impl Into<String>, size: u64) -> Self {
+        Self {
+            ref_key: ref_key.into(),
+            updated_at: updated_at.into(),
+            size,
+        }
+    }
+}
+
+/// AC list response — one page of refs + an opaque continuation cursor.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AcListResponse {
+    /// Refs on this page (already tenant-scoped + key-stripped).
+    pub refs: Vec<AcRefEntry>,
+    /// Opaque cursor for the next page, or `None` when exhausted.
+    pub next_cursor: Option<String>,
+}
+
+impl AcListResponse {
+    /// Construct from fields.
+    #[must_use]
+    pub fn new(refs: Vec<AcRefEntry>, next_cursor: Option<String>) -> Self {
+        Self { refs, next_cursor }
+    }
+}
+
 /// Trait every AC lookup handler implements.
 ///
 /// Implementors **MUST**:
@@ -163,6 +302,41 @@ pub trait AcUpdateHandler: Send + Sync + core::fmt::Debug {
     ///
     /// See [`AcHandlerError`].
     fn update(&self, req: AcUpdateRequest) -> Result<AcUpdateResponse, AcHandlerError>;
+}
+
+/// Trait every AC delete handler implements (D-1).
+///
+/// DELETE is **idempotent** (present + absent both `Ok`; the route maps
+/// both to 204). Implementors **MUST**:
+///
+/// 1. On cross-tenant access emit `DeleteDenied` BEFORE the rejection.
+/// 2. Emit `DeleteAttempted` BEFORE mutation.
+/// 3. Emit `Sli::AvailAcLookup` on every entry (delete folds into the
+///    AC availability bucket per the canonical-18 SLI registry).
+pub trait AcDeleteHandler: Send + Sync + core::fmt::Debug {
+    /// Delete one AC ref (idempotent).
+    ///
+    /// # Errors
+    ///
+    /// See [`AcHandlerError`].
+    fn delete(&self, req: AcDeleteRequest) -> Result<AcDeleteResponse, AcHandlerError>;
+}
+
+/// Trait every AC list handler implements (D-7).
+///
+/// Enumeration MUST stay within the authenticated tenant's derived
+/// storage prefix. Implementors **MUST**:
+///
+/// 1. On cross-tenant access emit `ListDenied` BEFORE the rejection.
+/// 2. Emit `ListAttempted` BEFORE enumeration.
+/// 3. Emit `Sli::AvailAcLookup` on every entry.
+pub trait AcListHandler: Send + Sync + core::fmt::Debug {
+    /// Enumerate one page of the tenant's AC refs.
+    ///
+    /// # Errors
+    ///
+    /// See [`AcHandlerError`].
+    fn list(&self, req: AcListRequest) -> Result<AcListResponse, AcHandlerError>;
 }
 
 /// Deterministic in-memory AC handler.
@@ -366,6 +540,139 @@ impl AcUpdateHandler for InMemoryAcHandler {
         Ok(AcUpdateResponse {
             action_digest: req.action_digest,
             durable,
+        })
+    }
+}
+
+impl AcDeleteHandler for InMemoryAcHandler {
+    fn delete(&self, req: AcDeleteRequest) -> Result<AcDeleteResponse, AcHandlerError> {
+        let emit = |outcome_is_err: bool| {
+            self.sli.observe(SliObservation {
+                sli: Sli::AvailAcLookup,
+                is_error: outcome_is_err,
+                latency_us: 0,
+            });
+        };
+
+        if !Self::check_tenant(&req.tenant, &req.caller_tenant) {
+            self.audit
+                .emit(AuditEvent {
+                    kind: AuditEventKind::DeleteDenied,
+                    tenant: req.tenant.clone(),
+                    action_digest: req.action_digest.clone(),
+                    principal: req.principal.clone(),
+                    at_unix_ms: req.at_unix_ms,
+                })
+                .map_err(AcHandlerError::AuditFailed)?;
+            emit(true);
+            return Err(AcHandlerError::CrossTenantDenied {
+                caller: req.caller_tenant,
+                requested_tenant: req.tenant,
+            });
+        }
+
+        self.audit
+            .emit(AuditEvent {
+                kind: AuditEventKind::DeleteAttempted,
+                tenant: req.tenant.clone(),
+                action_digest: req.action_digest.clone(),
+                principal: req.principal.clone(),
+                at_unix_ms: req.at_unix_ms,
+            })
+            .map_err(AcHandlerError::AuditFailed)?;
+
+        // Idempotent delete: remove if present, no-op if absent.
+        let existed = {
+            let mut g = self
+                .entries
+                .lock()
+                .map_err(|_| AcHandlerError::Internal("entry lock poisoned".into()))?;
+            g.remove(&(req.tenant.clone(), req.action_digest.clone()))
+                .is_some()
+        };
+
+        self.audit
+            .emit(AuditEvent {
+                kind: AuditEventKind::DeleteCommitted,
+                tenant: req.tenant.clone(),
+                action_digest: req.action_digest.clone(),
+                principal: req.principal.clone(),
+                at_unix_ms: req.at_unix_ms,
+            })
+            .map_err(AcHandlerError::AuditFailed)?;
+        emit(false);
+        Ok(AcDeleteResponse { existed })
+    }
+}
+
+impl AcListHandler for InMemoryAcHandler {
+    fn list(&self, req: AcListRequest) -> Result<AcListResponse, AcHandlerError> {
+        let emit = |outcome_is_err: bool| {
+            self.sli.observe(SliObservation {
+                sli: Sli::AvailAcLookup,
+                is_error: outcome_is_err,
+                latency_us: 0,
+            });
+        };
+
+        if !Self::check_tenant(&req.tenant, &req.caller_tenant) {
+            self.audit
+                .emit(AuditEvent {
+                    kind: AuditEventKind::ListDenied,
+                    tenant: req.tenant.clone(),
+                    action_digest: String::new(),
+                    principal: req.principal.clone(),
+                    at_unix_ms: req.at_unix_ms,
+                })
+                .map_err(AcHandlerError::AuditFailed)?;
+            emit(true);
+            return Err(AcHandlerError::CrossTenantDenied {
+                caller: req.caller_tenant,
+                requested_tenant: req.tenant,
+            });
+        }
+
+        self.audit
+            .emit(AuditEvent {
+                kind: AuditEventKind::ListAttempted,
+                tenant: req.tenant.clone(),
+                action_digest: String::new(),
+                principal: req.principal.clone(),
+                at_unix_ms: req.at_unix_ms,
+            })
+            .map_err(AcHandlerError::AuditFailed)?;
+
+        let g = self
+            .entries
+            .lock()
+            .map_err(|_| AcHandlerError::Internal("entry lock poisoned".into()))?;
+        let mut refs: Vec<(String, usize)> = g
+            .iter()
+            .filter(|((t, _), _)| t == &req.tenant)
+            .map(|((_, d), payload)| (d.clone(), payload.len()))
+            .collect();
+        drop(g);
+        refs.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let after = req.cursor.clone();
+        let limit = req.limit.max(1) as usize;
+        let mut out = Vec::new();
+        let mut next_cursor: Option<String> = None;
+        for (d, size) in refs
+            .into_iter()
+            .filter(|(d, _)| after.as_ref().map_or(true, |c| d > c))
+        {
+            if out.len() == limit {
+                next_cursor = out.last().map(|e: &AcRefEntry| e.ref_key.clone());
+                break;
+            }
+            out.push(AcRefEntry::new(d, "1970-01-01T00:00:00Z", size as u64));
+        }
+
+        emit(false);
+        Ok(AcListResponse {
+            refs: out,
+            next_cursor,
         })
     }
 }

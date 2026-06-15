@@ -113,6 +113,59 @@ Each entry cross-references:
   OpenNext-recommended `public/_headers` (`/_next/static/* →
   public,max-age=31536000,immutable`) so chunks become cf-cache HITs and stop
   hitting the origin.
+- **dsr(WI-S11-008): close three GDPR Art.17 erasure gaps — truthful docstring,
+  signed attestation on `VerifiedComplete`, and a durable pre-tombstone SLA
+  anchor.**
+  - **G1** — the `routes/dsr.rs` header docstring claimed a "WAVE 0 PLACEHOLDER …
+    NO real data is deleted yet" while `build_d1_worker` already wires the Wave-1
+    REAL transports (D1 erase-set per ADR-S11-013, R2 CAS/AC delete, Stripe
+    pseudonymize, 8 documented NotApplicable). Rewritten to describe the live
+    Wave-1 state so auditors no longer wrongly conclude nothing deletes.
+  - **G3** — on the 24h verify sweep landing `VerifiedComplete`, the container now
+    signs an Ed25519 erasure attestation (`corelink-erasure-attestation`) and
+    indexes it in `erasure_attestations` (+ upserts the matching public key into
+    `erasure_public_keys`) so the existing `GET /v1/public/keys/erasure/{region}.pub`
+    verifier can serve it. Per-region key reproduced deterministically from a
+    write-only seed (`ErasureSigningKey::from_seed`); idempotent + fail-OPEN.
+  - **G4** — the verify cron only enumerated `dsr_erasure_log`, so a DSR that
+    failed before ANY backend tombstone (audit-fail-closed) had no row and its SLA
+    breach went undetected. New migration `0069_dsr_requested.sql` + a
+    write-at-enqueue anchor in `handleUserDeleted`; the sweep now enumerates both
+    sources (deduped), flipping the anchor to `verified` only on
+    `verified_complete`.
+- **Pre-merge adversarial-verification hardening (4-dimension fleet review of the
+  above).** A multi-agent review (tenant-isolation / residency-leak / GDPR-Art.17 /
+  build-contract) confirmed the bundle PASS on every dimension (cross-tenant
+  delete/list impossible; EU→US leak impossible; attestation real-Ed25519 +
+  VerifiedComplete-only; compiles + matches the clw wire contract) and surfaced
+  these follow-ups, all closed here:
+  - **Residency: launch only the regions we can actually serve.** `PROVISIONED_MACROS`
+    dropped `weur`/`sam` → **`{wnam, enam}`** (both → the live `iad` colo). The
+    regional Workers (`prod-lhr`/`sam`/`nrt`/`syd`) have no `[[services]]` binding and
+    no per-region bucket yet, so the residency guard (correctly, fail-closed) 503s
+    every request from a non-IAD tenant — provisioning such a region onboards a
+    customer straight into a 503 wall. Signup now rejects those macros up front with
+    the existing terminal 422; re-add a macro only once its regional serving infra is
+    deployed (the EU/SAM build-out — residency Phase-2 follow-up).
+  - **G3 attestation would have silently no-op'd in prod.** `secrets-checklist` #155
+    documented `ERASURE_ATTESTATION_REGION = iad`, but `Region::parse()` accepts only
+    macro codes (`wnam|enam|weur|sam`); `iad` → `None` → `sign_and_persist` returns
+    early (fail-OPEN) so ZERO attestations would ever be emitted. Corrected the
+    example to the macro (`enam`) + flagged #154 (`KEY_ID` is parsed as a `u64`).
+  - **Residency build-guard widened to the full key surface.** The wrangler.toml
+    invariant test now asserts `R2_AC_REGION` + `R2_CHUNK_REGION` per regional env
+    (not just `R2_CAS_REGION`) — AC objects embed output digests/command metadata and
+    are equally residency-bearing.
+  - **G4 anchor no longer self-expires.** Dropped the 7-day lower bound on the
+    `dsr_requested` enumeration — a permanently-stuck DSR is exactly the breach the
+    durable anchor exists to surface, and the set is self-limiting (completed DSRs
+    flip to `verified`).
+  - **G3 attestation secrets are now forwarded to the container.** The DO
+    `container.start({env})` forward-list was missing `ERASURE_ATTESTATION_SEED_HEX`
+    / `_KEY_ID` / `_REGION` (the container reads all three via `env::var`), so
+    setting the seed would never reach the container and attestation would silently
+    no-op — the exact `ERASURE_SALT_KEY`-class gap. Added the three forwards (+ Env
+    types); `check-env-contract.py` now passes (29/29 forwarded).
 - **migrations(0064): make the `tenant` table rebuild D1-applicable — add
   `PRAGMA legacy_alter_table=ON` + recreate the residency triggers.** The
   0064 rebuild (widen `tenant.tier` CHECK to add `'max'`) failed on

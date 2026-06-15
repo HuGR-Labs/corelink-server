@@ -140,6 +140,15 @@ pub mod oci;
 /// the mutable simple index in a per-tenant D1 KV. Env-gated mount in
 /// [`build_with_factory`].
 pub mod pip;
+/// Data-residency guard middleware (backlog #29 — Schrems II leak). A router
+/// `layer` that runs BEFORE any handler: it reads the trusted
+/// `x-corelink-primary-region` macro (set by the edge Worker), maps it to a colo
+/// via the FROZEN [`crate::storage::region_map`], and rejects with 409
+/// `residency_violation` if it does not match THIS container's own
+/// `R2_CAS_REGION` — defence-in-depth against a mis-bound regional Worker
+/// landing an EU tenant's bytes in a US container. Disjoint from cas.rs/ac.rs
+/// (no handler-body edits); wired as one `.layer(...)` line in [`build_with_factory`].
+pub mod residency;
 /// Pilot signup route (wave-29 stream-1; closes DEBT-027 engineering-side).
 /// Surfaces `POST /v1/signup/pilot/{token}` over an HMAC-SHA256
 /// signed token + per-IP rate-limit + fail-CLOSED audit emit. See
@@ -302,7 +311,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         );
     }
 
-    let (cas_read, cas_write) = cas::build_handlers();
+    let (cas_read, cas_write, cas_delete, cas_list) = cas::build_handlers();
     // 410-Gone tombstone read gate (hugit-P2 seam B, WP-B). Wired from env
     // (D1-backed) when D1 creds are present so an erased hash answers 410 even
     // before the (#254-gated) erase WRITE route is mounted; `None` in dev/CI ⇒
@@ -313,13 +322,17 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     let cas_state = cas::CasRouteState {
         read: cas_read.clone(),
         write: cas_write.clone(),
+        delete: cas_delete,
+        list: cas_list,
         tombstones: cas_tombstones,
         quota: quota.clone(),
     };
-    let (ac_lookup, ac_update) = ac::build_handlers();
+    let (ac_lookup, ac_update, ac_delete, ac_list) = ac::build_handlers();
     let ac_state = ac::AcRouteState {
         lookup: ac_lookup.clone(),
         update: ac_update.clone(),
+        delete: ac_delete,
+        list: ac_list,
         quota: quota.clone(),
     };
     // Cache adapters share the SAME CAS trait objects (one R2 connection) —
@@ -537,6 +550,13 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
              (/cargo/*, /brew/*, /npm/*, /pip/*) NOT mounted (dev/CI mode)"
         );
     }
+
+    // backlog #29 (Schrems II residency leak): data-residency guard. Runs BEFORE
+    // every handler — rejects (409) any request whose trusted
+    // x-corelink-primary-region macro does not map to THIS container's
+    // R2_CAS_REGION colo. Defence-in-depth backstop for a mis-bound regional
+    // Worker; zero storage I/O on the reject path. Disjoint from cas.rs/ac.rs.
+    router = router.layer(axum::middleware::from_fn(residency::residency_guard));
 
     router
 }

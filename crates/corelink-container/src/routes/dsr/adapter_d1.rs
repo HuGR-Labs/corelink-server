@@ -71,8 +71,10 @@ const NAMESPACE_TABLES: &[&str] = &["adapter_cache_map", "adapter_npm_meta", "ad
 #[cfg(test)]
 const RETAIN_SET: &[&str] = &[
     "dsr_erasure_log",
+    "dsr_requested",
     "dpa_acceptances",
     "erasure_attestation",
+    "erasure_attestations",
     "export_audit_log",
     "stripe_customers",
     "stripe_subscriptions",
