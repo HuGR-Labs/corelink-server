@@ -59,6 +59,12 @@ zone_name = "humangr.com"
 
 [vars]
 CORELINK_API_BASE = "https://corelink-api.humangr.com"
+# Deployment environment. Load-bearing for fail-CLOSED behavior in
+# deriveErasureSalt (clerk.ts): when ERASURE_SALT_KEY is absent and ENVIRONMENT
+# starts with "prod", salt derivation THROWS rather than falling back to a
+# predictable non-secret SHA-256 that would break GDPR/LGPD pseudonymization
+# unlinkability. This worker is the prod signup deployment, so it MUST be "prod".
+ENVIRONMENT = "prod"
 
 # Service binding to the main CoreLink Worker. Required: a public custom-domain
 # fetch (`https://corelink-api.humangr.com`) from one Worker to another on the

@@ -49,8 +49,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - name: Setup Rust nightly
-        uses: dtolnay/rust-toolchain@5b842231ba77f5c045dba54ac5560fed2db780e2 # nightly as of 2026-04-29
+      # ROOT FIX (2026-06-15): do NOT use `dtolnay/rust-toolchain@nightly` here.
+      # On the shared self-hosted Mac it ran `rustup` nightly channel-update +
+      # component-removal against the SHARED `~/.rustup`, deleting the `rustup`
+      # shim mid-run → every `~/.cargo/bin/cargo` symlink dangled → `os error 2`
+      # on EVERY other Rust gate (and the clw build box, same host) all day.
+      # Use the pre-installed HOST nightly toolchain on PATH instead — the exact
+      # pattern the per-crate fuzz-smoke jobs already use (corelink-meta/worker/
+      # hash/...). It never installs/mutates rustup, so it cannot corrupt the
+      # shared toolchain.
+      - name: Put host nightly toolchain on PATH (cargo-fuzz needs nightly; no rustup mutation)
+        run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
 
       - name: Install cargo-fuzz (pinned)
         # Pin the exact cargo-fuzz version so future upstream changes

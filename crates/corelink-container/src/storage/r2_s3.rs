@@ -373,9 +373,9 @@ impl R2CasHandler {
     /// `R2_TDK_HEX` is unset) — so the raw-padded public-prefix
     /// fallback used by simple non-UUID test fixtures is gated behind
     /// `#[cfg(test)]` and is unreachable in production (F1/F2).
-    fn r2_key(&self, tenant: &str, digest: &str) -> String {
-        let prefix = tenant_prefix(self.tdk.as_ref(), tenant);
-        R2S3Client::blob_key(&self.cas_region, &prefix, digest)
+    fn r2_key(&self, tenant: &str, digest: &str) -> Result<String, String> {
+        let prefix = tenant_prefix(self.tdk.as_ref(), tenant)?;
+        Ok(R2S3Client::blob_key(&self.cas_region, &prefix, digest))
     }
 
     /// Emit both SLI observations (availability + latency).
@@ -403,40 +403,73 @@ impl R2CasHandler {
 /// the tenant string) exists ONLY for unit-test fixtures whose tenant
 /// is a simple non-UUID string (e.g. `"t1"`); it is gated behind
 /// `#[cfg(test)]` and is unreachable in production.
-fn tenant_prefix(tdk: Option<&TenantDerivationKey>, tenant: &str) -> String {
+///
+/// # Errors
+///
+/// Returns `Err(String)` on the production path when the prefix is NOT
+/// derivable — the tenant id is not a canonical UUID, or the handler
+/// was somehow constructed without a TDK. The callers
+/// ([`R2CasHandler::r2_key`] / `r2_list_prefix` and their AC twins)
+/// propagate this as a 500/`Internal` so the op NEVER touches R2 under
+/// a degraded/empty prefix that would collapse every non-derivable
+/// tenant into one SHARED keyspace (cross-tenant read/overwrite/
+/// delete/list). Fail CLOSED, never silent co-residence.
+fn tenant_prefix(tdk: Option<&TenantDerivationKey>, tenant: &str) -> Result<String, String> {
     match tdk {
         Some(tdk) => match Uuid::try_parse(tenant) {
-            Ok(uid) => derive_prefix(tdk, uid).to_string(),
+            Ok(uid) => Ok(derive_prefix(tdk, uid).to_string()),
+            // Non-UUID tenant: in test builds the simple raw-padded
+            // fixture prefix is allowed; on the production path it is a
+            // SEV-class invariant violation that must fail CLOSED (see
+            // `derive_tenant_prefix_strict`).
             #[cfg(test)]
-            Err(_) => raw_padded_prefix(tenant),
-            // In production every tenant id is a canonical UUIDv7. A
-            // non-UUID tenant reaching the real handler is a SEV-class
-            // invariant violation, not a degrade — refuse to address
-            // it under a public/predictable prefix. Emitting an empty
-            // prefix yields an unusable, isolated key space (`<region>//<digest>`)
-            // and a loud structured error, never silent cross-tenant
-            // co-residence.
+            Err(_) => Ok(raw_padded_prefix(tenant)),
             #[cfg(not(test))]
-            Err(_) => {
-                tracing::error!(
-                    "tenant id is not a canonical UUID on the production storage path; \
-                     refusing to derive a public tenant prefix (INV-TENANT-ISOLATION)"
-                );
-                String::new()
-            }
+            Err(_) => derive_tenant_prefix_strict(Some(tdk), tenant),
         },
         // No TDK is only reachable under `#[cfg(test)]`: the production
         // builders fail closed when `R2_TDK_HEX` is unset, so the real
         // handler is never constructed with `tdk = None` (F1/F2).
         #[cfg(test)]
-        None => raw_padded_prefix(tenant),
+        None => Ok(raw_padded_prefix(tenant)),
         #[cfg(not(test))]
-        None => {
+        None => derive_tenant_prefix_strict(None, tenant),
+    }
+}
+
+/// Production-strict tenant-prefix derivation — the single fail-CLOSED
+/// authority for the live storage path.
+///
+/// The ONLY non-degraded outcome is a secret-keyed `derive_prefix(tdk,
+/// uuid)` over a canonical UUID tenant under a present TDK. Every other
+/// input is non-derivable and returns `Err`: there is NO empty/public/
+/// predictable fallback. An empty prefix would key objects under
+/// `<region>//<digest>`, collapsing every non-derivable tenant into one
+/// SHARED keyspace (cross-tenant read/overwrite/delete/list) — so the
+/// op MUST fail before it ever reaches R2 (INV-TENANT-ISOLATION).
+///
+/// This function is NOT `#[cfg(test)]`-gated (unlike the
+/// `raw_padded_prefix` fixture path) so the production fail-closed
+/// contract is directly covered by the regression suite.
+fn derive_tenant_prefix_strict(
+    tdk: Option<&TenantDerivationKey>,
+    tenant: &str,
+) -> Result<String, String> {
+    let Some(tdk) = tdk else {
+        tracing::error!(
+            "R2 storage handler constructed without a TDK on the production path; \
+             refusing to derive a tenant prefix (INV-TENANT-ISOLATION)"
+        );
+        return Err("missing TDK on production storage path (INV-TENANT-ISOLATION)".to_owned());
+    };
+    match Uuid::try_parse(tenant) {
+        Ok(uid) => Ok(derive_prefix(tdk, uid).to_string()),
+        Err(_) => {
             tracing::error!(
-                "R2 storage handler constructed without a TDK on the production path; \
-                 refusing to derive a public tenant prefix (INV-TENANT-ISOLATION)"
+                "tenant id is not a canonical UUID on the production storage path; \
+                 refusing to derive a tenant prefix (INV-TENANT-ISOLATION)"
             );
-            String::new()
+            Err("non-derivable tenant prefix (INV-TENANT-ISOLATION)".to_owned())
         }
     }
 }
@@ -520,7 +553,15 @@ impl CasReadHandler for R2CasHandler {
             ))
             .map_err(CasHandlerError::AuditFailed)?;
 
-        let key = self.r2_key(&req.tenant, &req.hash);
+        // Fail CLOSED if the tenant prefix is not derivable: never touch
+        // R2 under a degraded/empty (SHARED) prefix.
+        let key = match self.r2_key(&req.tenant, &req.hash) {
+            Ok(k) => k,
+            Err(e) => {
+                emit(true);
+                return Err(CasHandlerError::Internal(e));
+            }
+        };
         debug!(key = %key, "R2CasHandler::read");
 
         // CRITICAL — must wrap in `block_in_place`.
@@ -658,7 +699,15 @@ impl CasWriteHandler for R2CasHandler {
             });
         }
 
-        let key = self.r2_key(&req.tenant, &req.claimed_hash);
+        // Fail CLOSED if the tenant prefix is not derivable: never touch
+        // R2 under a degraded/empty (SHARED) prefix.
+        let key = match self.r2_key(&req.tenant, &req.claimed_hash) {
+            Ok(k) => k,
+            Err(e) => {
+                emit(true);
+                return Err(CasHandlerError::Internal(e));
+            }
+        };
         debug!(key = %key, bytes = req.bytes.len(), "R2CasHandler::write");
 
         // CRITICAL — `block_in_place` rationale: see the matching
@@ -698,9 +747,9 @@ impl R2CasHandler {
     /// (layer 5 of `INV-TENANT-ISOLATION`); the trailing slash bounds
     /// the prefix so one tenant's prefix can never be a prefix of
     /// another's. Enumeration / delete NEVER widen beyond this.
-    fn r2_list_prefix(&self, tenant: &str) -> String {
-        let prefix = tenant_prefix(self.tdk.as_ref(), tenant);
-        format!("{}/{}/", self.cas_region, prefix)
+    fn r2_list_prefix(&self, tenant: &str) -> Result<String, String> {
+        let prefix = tenant_prefix(self.tdk.as_ref(), tenant)?;
+        Ok(format!("{}/{}/", self.cas_region, prefix))
     }
 }
 
@@ -746,7 +795,15 @@ impl CasDeleteHandler for R2CasHandler {
             ))
             .map_err(CasHandlerError::AuditFailed)?;
 
-        let key = self.r2_key(&req.tenant, &req.hash);
+        // Fail CLOSED if the tenant prefix is not derivable: never touch
+        // R2 under a degraded/empty (SHARED) prefix.
+        let key = match self.r2_key(&req.tenant, &req.hash) {
+            Ok(k) => k,
+            Err(e) => {
+                emit(true);
+                return Err(CasHandlerError::Internal(e));
+            }
+        };
         debug!(key = %key, "R2CasHandler::delete");
 
         // S3 DeleteObject is idempotent: deleting an absent key succeeds.
@@ -824,8 +881,16 @@ impl CasListHandler for R2CasHandler {
             .map_err(CasHandlerError::AuditFailed)?;
 
         // Enumeration is bounded to the tenant's derived prefix —
-        // cross-tenant keys cannot appear in the result.
-        let prefix = self.r2_list_prefix(&req.tenant);
+        // cross-tenant keys cannot appear in the result. Fail CLOSED if
+        // the prefix is not derivable: an empty prefix would list a
+        // SHARED keyspace across every non-derivable tenant.
+        let prefix = match self.r2_list_prefix(&req.tenant) {
+            Ok(p) => p,
+            Err(e) => {
+                emit(true);
+                return Err(CasHandlerError::Internal(e));
+            }
+        };
         debug!(prefix = %prefix, "R2CasHandler::list");
 
         let handle = tokio::runtime::Handle::current();
@@ -963,9 +1028,9 @@ impl R2AcHandler {
     /// the same always-HMAC tenant prefix (F1/F2). The handler cannot
     /// be built without a TDK on the production path (see
     /// [`build_r2_ac_handler_from_env`]).
-    fn r2_key(&self, tenant: &str, action_digest: &str) -> String {
-        let prefix = tenant_prefix(self.tdk.as_ref(), tenant);
-        R2S3Client::blob_key(&self.ac_region, &prefix, action_digest)
+    fn r2_key(&self, tenant: &str, action_digest: &str) -> Result<String, String> {
+        let prefix = tenant_prefix(self.tdk.as_ref(), tenant)?;
+        Ok(R2S3Client::blob_key(&self.ac_region, &prefix, action_digest))
     }
 
     /// Emit the (avail, latency) SLI pair for the lookup path. The
@@ -1026,7 +1091,15 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
             ))
             .map_err(AcHandlerError::AuditFailed)?;
 
-        let key = self.r2_key(&req.tenant, &req.action_digest);
+        // Fail CLOSED if the tenant prefix is not derivable: never touch
+        // R2 under a degraded/empty (SHARED) prefix.
+        let key = match self.r2_key(&req.tenant, &req.action_digest) {
+            Ok(k) => k,
+            Err(e) => {
+                self.emit_lookup_sli(true);
+                return Err(AcHandlerError::Internal(e));
+            }
+        };
         debug!(key = %key, "R2AcHandler::lookup");
 
         // CRITICAL — `block_in_place` rationale: this sync trait method
@@ -1117,7 +1190,15 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
             ))
             .map_err(AcHandlerError::AuditFailed)?;
 
-        let key = self.r2_key(&req.tenant, &req.action_digest);
+        // Fail CLOSED if the tenant prefix is not derivable: never touch
+        // R2 under a degraded/empty (SHARED) prefix.
+        let key = match self.r2_key(&req.tenant, &req.action_digest) {
+            Ok(k) => k,
+            Err(e) => {
+                self.emit_update_sli(true);
+                return Err(AcHandlerError::Internal(e));
+            }
+        };
         debug!(
             key = %key,
             bytes = req.result_payload.len(),
@@ -1207,9 +1288,9 @@ impl R2AcHandler {
     /// `<region>/<tenant_prefix>/`. Same isolation guarantee as
     /// [`R2CasHandler::r2_list_prefix`]; enumeration / delete never
     /// widen beyond this tenant's derived prefix.
-    fn r2_list_prefix(&self, tenant: &str) -> String {
-        let prefix = tenant_prefix(self.tdk.as_ref(), tenant);
-        format!("{}/{}/", self.ac_region, prefix)
+    fn r2_list_prefix(&self, tenant: &str) -> Result<String, String> {
+        let prefix = tenant_prefix(self.tdk.as_ref(), tenant)?;
+        Ok(format!("{}/{}/", self.ac_region, prefix))
     }
 }
 
@@ -1252,7 +1333,15 @@ impl corelink_handler_ac::AcDeleteHandler for R2AcHandler {
             ))
             .map_err(AcHandlerError::AuditFailed)?;
 
-        let key = self.r2_key(&req.tenant, &req.action_digest);
+        // Fail CLOSED if the tenant prefix is not derivable: never touch
+        // R2 under a degraded/empty (SHARED) prefix.
+        let key = match self.r2_key(&req.tenant, &req.action_digest) {
+            Ok(k) => k,
+            Err(e) => {
+                self.emit_update_sli(true);
+                return Err(AcHandlerError::Internal(e));
+            }
+        };
         debug!(key = %key, "R2AcHandler::delete");
 
         // S3 DeleteObject is idempotent. CRITICAL — `block_in_place`.
@@ -1322,8 +1411,16 @@ impl corelink_handler_ac::AcListHandler for R2AcHandler {
             ))
             .map_err(AcHandlerError::AuditFailed)?;
 
-        // Enumeration is bounded to the tenant's derived prefix.
-        let prefix = self.r2_list_prefix(&req.tenant);
+        // Enumeration is bounded to the tenant's derived prefix. Fail
+        // CLOSED if the prefix is not derivable: an empty prefix would
+        // list a SHARED keyspace across every non-derivable tenant.
+        let prefix = match self.r2_list_prefix(&req.tenant) {
+            Ok(p) => p,
+            Err(e) => {
+                self.emit_lookup_sli(true);
+                return Err(AcHandlerError::Internal(e));
+            }
+        };
         debug!(prefix = %prefix, "R2AcHandler::list");
 
         let handle = tokio::runtime::Handle::current();
@@ -1449,7 +1546,7 @@ mod tests {
     #[tokio::test]
     async fn r2_cas_handler_key_uses_region_and_prefix() {
         let handler = make_test_handler("iad").await;
-        let key = handler.r2_key("tenant-abc", "abc123hash0000001");
+        let key = handler.r2_key("tenant-abc", "abc123hash0000001").unwrap();
         // Key must start with the region segment.
         assert!(key.starts_with("iad/"), "key: {key}");
         // Key must end with the digest.
@@ -1709,7 +1806,7 @@ mod tests {
         let handler = make_test_handler_with_tdk("iad").await;
         // A canonical UUIDv7-shaped tenant id.
         let tenant = "0190abcd-1234-75ab-8def-0123456789ab";
-        let key = handler.r2_key(tenant, &"d".repeat(64));
+        let key = handler.r2_key(tenant, &"d".repeat(64)).unwrap();
         let parts: Vec<&str> = key.split('/').collect();
         assert_eq!(parts.len(), 3, "key: {key}");
         let prefix = parts[1];
@@ -1731,6 +1828,46 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
+    // F2 — production prefix derivation FAILS CLOSED for a non-derivable
+    // tenant (never an empty `<region>//<digest>` SHARED keyspace).
+    // ---------------------------------------------------------------
+
+    /// The production-strict derivation (`derive_tenant_prefix_strict`,
+    /// the authority the live `tenant_prefix` path delegates to) MUST
+    /// refuse a non-UUID tenant and a missing TDK — there is NO public/
+    /// empty fallback. This is the regression pin for finding #2/#8: a
+    /// non-derivable tenant on the prod path errors out instead of
+    /// keying under `<region>//<digest>` (a SHARED, cross-tenant
+    /// keyspace).
+    #[test]
+    fn prod_strict_prefix_fails_closed_for_non_derivable_tenant() {
+        let tdk = TenantDerivationKey::from_bytes(fake_tdk());
+
+        // Non-UUID tenant under a present TDK → Err (no raw-padded
+        // fallback on the prod path).
+        let err = derive_tenant_prefix_strict(Some(&tdk), "tenant-abc")
+            .expect_err("non-UUID tenant must fail closed on the prod path");
+        assert!(
+            err.contains("INV-TENANT-ISOLATION"),
+            "error must cite the isolation invariant: {err}"
+        );
+
+        // Missing TDK → Err (the production builders fail closed before
+        // this, but the derivation itself must not produce a prefix).
+        assert!(
+            derive_tenant_prefix_strict(None, "0190abcd-1234-75ab-8def-0123456789ab").is_err(),
+            "absent TDK must fail closed"
+        );
+
+        // Sanity: a canonical UUID under a present TDK IS derivable and
+        // is exactly the secret-keyed prefix (never empty).
+        let ok = derive_tenant_prefix_strict(Some(&tdk), "0190abcd-1234-75ab-8def-0123456789ab")
+            .expect("a canonical UUID tenant must derive a prefix");
+        assert_eq!(ok.len(), 16, "derived prefix must be 16 chars, got {ok:?}");
+        assert!(!ok.is_empty(), "derived prefix must never be empty");
+    }
+
+    // ---------------------------------------------------------------
     // F7 — CAS storage is residency-aware: keyed by the handler's
     // region, never a process-global. A regional handler MUST prefix
     // its keys with that region.
@@ -1745,7 +1882,9 @@ mod tests {
     async fn r2_cas_keys_are_residency_scoped_per_region() {
         for region in ["iad", "lhr", "sam", "nrt", "syd"] {
             let handler = make_test_handler_with_tdk(region).await;
-            let key = handler.r2_key("0190abcd-1234-75ab-8def-0123456789ab", &"a".repeat(64));
+            let key = handler
+                .r2_key("0190abcd-1234-75ab-8def-0123456789ab", &"a".repeat(64))
+                .unwrap();
             assert!(
                 key.starts_with(&format!("{region}/")),
                 "CAS key for region {region} must be region-scoped (residency): {key}"
@@ -1753,7 +1892,9 @@ mod tests {
         }
         // A non-iad region must NOT collapse to the iad default.
         let lhr = make_test_handler_with_tdk("lhr").await;
-        let key = lhr.r2_key("0190abcd-1234-75ab-8def-0123456789ab", &"a".repeat(64));
+        let key = lhr
+            .r2_key("0190abcd-1234-75ab-8def-0123456789ab", &"a".repeat(64))
+            .unwrap();
         assert!(
             !key.starts_with("iad/"),
             "EU (lhr) CAS write fell back to the US (iad) key space: {key}"

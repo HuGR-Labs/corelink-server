@@ -487,6 +487,7 @@ const CAS_REGIONS: &[&str] = &["sam", "iad", "lhr", "nrt", "syd"];
 const DEFAULT_CAS_BUCKET: &str = "corelink-cas-prod";
 
 /// Length (chars) of the materialised tenant prefix in an R2 key.
+#[cfg(test)]
 const TENANT_PREFIX_LEN: usize = 16;
 
 /// Production [`CasBlobEraser`] over R2.
@@ -533,16 +534,30 @@ impl R2CasBlobEraser {
     /// the tenant string to 16 chars (the writer's non-UUID/dev fallback).
     /// Keeping the two derivations identical is what makes the erase key match
     /// the stored object **by construction**.
-    fn tenant_prefix(&self, tenant: &str) -> String {
+    fn tenant_prefix(&self, tenant: &str) -> Result<String, String> {
         if let Ok(uid) = Uuid::try_parse(tenant) {
-            derive_prefix(&self.tdk, uid).to_string()
-        } else {
+            return Ok(derive_prefix(&self.tdk, uid).to_string());
+        }
+        // Non-UUID tenant: FAIL CLOSED on the prod erasure path. A degraded
+        // truncate+pad prefix collapses non-derivable tenants into a SHARED
+        // keyspace — on the GDPR erasure path that risks erasing under (or
+        // missing) the wrong tenant's prefix. Same fail-closed posture as the
+        // CAS/AC storage layer (audit 2026-06-15 #2/#8). cfg(test) keeps the
+        // deterministic pad for fixtures only.
+        #[cfg(not(test))]
+        {
+            Err(format!(
+                "non-derivable tenant '{tenant}' on R2 CAS erase — refusing degraded prefix (fail-closed)"
+            ))
+        }
+        #[cfg(test)]
+        {
             let mut p = tenant.to_owned();
             p.truncate(TENANT_PREFIX_LEN);
             while p.len() < TENANT_PREFIX_LEN {
                 p.push('0');
             }
-            p
+            Ok(p)
         }
     }
 }
@@ -550,7 +565,7 @@ impl R2CasBlobEraser {
 #[async_trait]
 impl CasBlobEraser for R2CasBlobEraser {
     async fn erase_blob(&self, tenant: &str, digest: &str) -> Result<(), String> {
-        let prefix = self.tenant_prefix(tenant);
+        let prefix = self.tenant_prefix(tenant)?;
         let env = crate::storage::StorageEnv::from_env()
             .ok_or_else(|| "StorageEnv unavailable for R2 CAS erase".to_owned())?;
         let client =
@@ -771,7 +786,7 @@ mod tests {
         // What the WRITER derives (R2CasHandler::r2_key UUID branch).
         let writer_prefix = derive_prefix(&tdk, uid).to_string();
         // What the ERASER derives.
-        let eraser_prefix = eraser.tenant_prefix(tenant_uuid);
+        let eraser_prefix = eraser.tenant_prefix(tenant_uuid).unwrap();
         assert_eq!(eraser_prefix, writer_prefix, "prefix must match the writer");
         assert_eq!(writer_prefix.len(), TENANT_PREFIX_LEN);
         // And the assembled LIST key is the leading path of the blob key.
@@ -787,7 +802,7 @@ mod tests {
     #[test]
     fn eraser_prefix_pads_non_uuid_tenant_to_16() {
         let eraser = R2CasBlobEraser::new(test_tdk(), "corelink-cas-prod".to_owned());
-        let prefix = eraser.tenant_prefix("t1");
+        let prefix = eraser.tenant_prefix("t1").unwrap();
         assert_eq!(prefix.len(), TENANT_PREFIX_LEN);
         assert!(prefix.starts_with("t1"), "prefix={prefix}");
     }

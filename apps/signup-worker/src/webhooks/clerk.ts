@@ -12,10 +12,12 @@
  *   5. Emit `signup_completed`, `tenant_created`, `region_assigned`,
  *      `pat_issued` events to the `analytics_events` D1 table.
  *
- * Idempotency: Clerk re-fires webhooks on transient failure. We treat the
- * webhook's `svix-id` header as the idempotency key — if a row already
- * exists in `analytics_events` with `properties.svix_id` matching, the
- * handler exits 200 without re-provisioning.
+ * Idempotency: Clerk re-fires webhooks on transient failure. We short-circuit
+ * ONLY when provisioning is COMPLETE — the tenant row AND a still-live PAT
+ * exist. A tenant row alone is NOT proof (a prior attempt may have died after
+ * the tenant write but before the PAT mint); in that case we re-enter the
+ * idempotent provisioning flow so the PAT + Clerk publicMetadata are re-issued
+ * before we ack.
  */
 
 import { insertTenant } from "../lib/d1.js";
@@ -757,9 +759,17 @@ export async function handleClerkWebhook(
   const colo =
     (request as Request & { cf?: { colo?: string } }).cf?.colo ?? null;
 
-  // Idempotency: if we've already provisioned a tenant for this Clerk user,
-  // return the cached tenant_id without re-provisioning. Checks D1 CONFIG_DB
-  // by clerk_user_id (migration 0055).
+  // Idempotency: short-circuit ONLY when provisioning is COMPLETE — i.e. the
+  // tenant row exists AND a still-live PAT exists for it. Keying idempotency on
+  // tenant existence ALONE (finding #18) is a fail-open trap: if a prior attempt
+  // committed the tenant row but then the PAT mint (step 3) failed transiently,
+  // a Svix redelivery would see the orphan tenant and ack "already provisioned"
+  // WITHOUT ever re-issuing the PAT, leaving a paying signup permanently unable
+  // to authenticate to the cache, silently. So when the tenant exists but has no
+  // live PAT, we FALL THROUGH and re-enter autoProvisionFromClerkEvent — which is
+  // idempotent (createTenant INSERT-OR-IGNORE + read-back adopts the existing
+  // tenant; issuePat mints a fresh PAT row; publishUserMetadata re-PATCHes Clerk)
+  // — so the PAT + publicMetadata are re-issued and only THEN do we ack.
   if (env.CONFIG_DB) {
     try {
       const existing = await env.CONFIG_DB
@@ -767,7 +777,23 @@ export async function handleClerkWebhook(
         .bind(event.data.id)
         .first<{ tenant_id: string }>();
       if (existing !== null) {
-        return Response.json({ ok: true, tenant_id: existing.tenant_id, idempotent: true });
+        // A tenant row is NOT proof of complete provisioning — require a live
+        // (non-expired) PAT before treating the signup as done.
+        const livePat = await env.CONFIG_DB
+          .prepare(
+            "SELECT pat_id FROM pat WHERE tenant_id = ?1 AND expires_ms > ?2 LIMIT 1",
+          )
+          .bind(existing.tenant_id, Date.now())
+          .first<{ pat_id: string }>();
+        if (livePat !== null) {
+          return Response.json({ ok: true, tenant_id: existing.tenant_id, idempotent: true });
+        }
+        // Tenant exists but NO live PAT — a prior attempt died mid-provision.
+        // Do NOT ack; fall through to re-issue the PAT + re-publish metadata.
+        console.error(
+          `[clerk-webhook] tenant ${existing.tenant_id} exists with NO live PAT — ` +
+            `re-completing provisioning (user=${event.data.id}, svix=${svixId})`,
+        );
       }
     } catch {
       // D1 errors on idempotency check are non-fatal — fall through to provision.
