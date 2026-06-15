@@ -64,9 +64,15 @@ jobs:
 
       - name: Run render smoke
         id: smoke
+        # Run from apps/admin-ui so Node resolves `playwright` from
+        # apps/admin-ui/node_modules (where `pnpm install` + `playwright install
+        # chromium` ran above). Previously this ran from the repo root, where the
+        # root node_modules is empty on a clean runner → ERR_MODULE_NOT_FOUND
+        # before the browser ever launched (the smoke had never once run green).
+        working-directory: apps/admin-ui
         env:
           BASE_URL: ${{ github.event.inputs.base_url || 'https://corelink-app.humangr.com' }}
-        run: node scripts/e2e-admin-ui-render-smoke.mjs
+        run: node ../../scripts/e2e-admin-ui-render-smoke.mjs
 
       - name: Open issue on failure
         if: failure() && steps.smoke.outcome == 'failure'

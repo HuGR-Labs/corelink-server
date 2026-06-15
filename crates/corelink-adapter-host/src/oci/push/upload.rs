@@ -147,6 +147,15 @@ pub async fn patch(
         .map_err(|e| {
             if e.starts_with("upload session not found") {
                 OciAdapterError::UploadSessionMissing(upload_uuid.to_string())
+            } else if e.starts_with("too many open upload sessions") {
+                // Global in-flight byte ceiling reached on the append path → 429
+                // (a capacity limit, not a server fault). Without this branch the
+                // ceiling rejection fell through to a generic 500. `limit` carries
+                // the advisory the port embedded; clients back off via Retry-After.
+                OciAdapterError::TooManyOpenSessions {
+                    limit: parse_session_limit(&e),
+                    retry_after_secs: 60,
+                }
             } else {
                 OciAdapterError::Cas(e)
             }

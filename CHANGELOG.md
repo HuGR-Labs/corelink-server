@@ -22,7 +22,37 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **Runners item-1 — per-tenant `max_concurrency` entitlement (Option B).** Migration
+  `0070_runners_entitlement` adds the `runners_entitlement` table (keyed on `tenant_id`,
+  `CHECK(max_concurrency > 0)` so absence = no entitlement, never a 0 row), and
+  `/internal/v1/auth/introspect` now resolves `max_concurrency` from that entitlement table —
+  NOT derived from the cache tier (the ratified Option-B axis). Fail-CLOSED: D1 fault → 503
+  (never a guessed cap); absent row → field omitted. Conformance vector updated. Deploy step:
+  apply 0070 across the 5 envs + ping the runners TL to flip `FABRIC_AUTH_BACKEND`.
+- **OCI registry DoS hardening (audit #5/#6).** Per-tenant open-upload-session cap, a global
+  in-flight byte ceiling (512 MiB) checked before buffering each PATCH chunk, a lazy reaper for
+  stale sessions, and a 413 on oversized manifests — bounding memory against a malicious or
+  runaway `docker push`. The in-flight byte-ceiling rejection now returns **429 + Retry-After**
+  on the append path (was a generic 500) with an accurate operator message.
+- **Container request rate-limit layer (audit #14/#16).** A per-tenant token-bucket Tower layer
+  (`ratelimit_layer.rs`); over-burst → 429 + Retry-After. Availability-first + documented:
+  absent/sentinel tenants pass through (handlers fail-closed downstream on auth); a future
+  `#[non_exhaustive]` arm fails CLOSED to 429.
+- **PAT signing-key rotation overlap.** Multi-key HMAC verification (`corelink-pat`) validates a
+  PAT against the current key OR a still-trusted previous key (constant-time over all keys, no
+  early return — never leaks which key matched); empty key set fails closed. Single-key callers
+  are unchanged (delegate via `slice::from_ref`). TS mirror (`verifyPatHmacMulti`) matches the
+  Rust semantics. Enables zero-downtime `PAT_SIGNING_KEY` rotation.
+
 ### Fixed
+- **admin-ui render-smoke workflow never ran (false-green-defeating false alarm).** The
+  `e2e-admin-ui-render` job installed Playwright into `apps/admin-ui/node_modules` but ran the
+  smoke script from the repo root, so `import { chromium } from "playwright"` failed
+  `ERR_MODULE_NOT_FOUND` before any browser launched — it had never once run green, while spamming
+  a `sev-1` "E2E REGRESSION" issue every run. The smoke step now runs with
+  `working-directory: apps/admin-ui` (relative script path), so it resolves Playwright and actually
+  exercises prod. (Prod was verified healthy throughout — this was a broken harness, not a regression.)
 - **Real customer onboarding rejected by Svix-PoP residency mis-derivation (launch-blocker).** The Clerk
   `user.created` webhook is delivered by **Svix** (server-to-server), so `request.cf.colo` is Svix's
   sender PoP — **not** the end-user's location. The signup-worker derived the tenant's data-residency

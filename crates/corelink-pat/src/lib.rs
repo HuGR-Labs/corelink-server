@@ -117,9 +117,11 @@ pub use scopes::{
     SCOPE_ADMIN_TOKENS, SCOPE_ADMIN_USERS, SCOPE_CACHE_DELETE, SCOPE_CACHE_FIND, SCOPE_CACHE_R,
     SCOPE_CACHE_RW, SCOPE_CACHE_W, SCOPE_EXECUTE_ACTION, SCOPE_KNOWN_MASK, SCOPE_REPORT_RESULT,
 };
-pub use sig::{compute_hmac_sig, verify_hmac_sig};
+pub use sig::{compute_hmac_sig, verify_hmac_sig, verify_hmac_sig_multi};
 pub use types::{
     Pat, PatEnv, PatHash, PatId, PatPlaintext, PatSigningKey, PatTokenId, PrincipalId, TenantId,
     PAT_TOKEN_ID_LEN,
 };
-pub use verify::{verify_hmac_only, verify_with_hash, VerifiedPat};
+pub use verify::{
+    verify_hmac_only, verify_hmac_only_multi, verify_with_hash, verify_with_hash_multi, VerifiedPat,
+};

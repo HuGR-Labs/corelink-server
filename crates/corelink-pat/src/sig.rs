@@ -66,11 +66,51 @@ pub fn verify_hmac_sig(
     preimage: &[u8],
     sig_bytes: &[u8],
 ) -> Result<(), PatError> {
+    verify_hmac_sig_multi(std::slice::from_ref(key), preimage, sig_bytes)
+}
+
+/// Constant-time verify the truncated HMAC signature against an
+/// **overlap key set** — the canonical key plus any rotation
+/// predecessor/successor (`key_management.md §3.2.1`, 24h overlap).
+///
+/// A PAT minted under any key in `keys` validates, so an operator can
+/// rotate `PAT_SIGNING_KEY` (incident response, scheduled rotation)
+/// while old-key tokens stay valid through the overlap window —
+/// instead of an instant fleet-wide auth outage.
+///
+/// # Constant-time discipline
+///
+/// Every key in the (small, fixed) set is evaluated; the loop does
+/// **not** early-return on the first match. The per-key result is
+/// folded into a single accumulator via [`subtle::Choice`] so the
+/// observable latency does not leak *which* key matched (which would
+/// reveal whether a token is on the old vs. new key during rotation).
+///
+/// # Fail-closed
+///
+/// An empty `keys` set returns [`PatError::InvalidPat`] — no key set
+/// bound ⇒ nothing verifies.
+pub fn verify_hmac_sig_multi(
+    keys: &[PatSigningKey],
+    preimage: &[u8],
+    sig_bytes: &[u8],
+) -> Result<(), PatError> {
     if sig_bytes.len() != PAT_HMAC_SIG_RAW_LEN {
         return Err(PatError::Malformed);
     }
-    let expected = compute_hmac_sig(key, preimage);
-    if bool::from(expected.ct_eq(sig_bytes)) {
+    // Fail-closed: an absent key set cannot validate anything.
+    if keys.is_empty() {
+        return Err(PatError::InvalidPat);
+    }
+    // Fold over the full set without early-return; OR the per-key
+    // constant-time comparisons so neither the match position nor the
+    // matching-key identity leaks via timing.
+    let mut matched = subtle::Choice::from(0u8);
+    for key in keys {
+        let expected = compute_hmac_sig(key, preimage);
+        matched |= expected.ct_eq(sig_bytes);
+    }
+    if bool::from(matched) {
         Ok(())
     } else {
         Err(PatError::InvalidPat)

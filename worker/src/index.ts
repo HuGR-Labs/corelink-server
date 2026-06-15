@@ -72,6 +72,17 @@ export interface Env {
   // REQUIRED: extractAuth() fails closed (503) when this secret is absent
   // or decodes to fewer than 32 bytes. Never optional in any deployed env.
   PAT_SIGNING_KEY: string;
+  // OPTIONAL rotation overlap keys (key_management.md §3.2.1, 24h overlap).
+  // During a PAT_SIGNING_KEY rotation, bind the OUTGOING key as
+  // PAT_SIGNING_KEY_PREV (and/or stage the INCOMING key as
+  // PAT_SIGNING_KEY_NEW) so a PAT minted under either sibling still
+  // HMAC-verifies through the overlap window — rotation (incl. rotate-on-
+  // compromise) is then NOT an instant fleet-wide auth outage. Each is a
+  // hex string (≥ 32 bytes decoded); a malformed sibling is ignored (the
+  // current key remains the load-bearing gate). Bound via:
+  // `wrangler secret put PAT_SIGNING_KEY_PREV` / `..._NEW`.
+  PAT_SIGNING_KEY_PREV?: string;
+  PAT_SIGNING_KEY_NEW?: string;
   // Stream-5: shared secret for `/_internal/pat/mint` (passed to container
   // at boot + verified before forwarding). Bound via:
   // `wrangler secret put CORELINK_INTERNAL_AUTH_KEY`
@@ -768,8 +779,17 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
   // which point key rotation is the primary response. This is the decided
   // posture, not a TODO. Wiring adapter_pat::PatVerifier onto the native plane
   // as a container-side backstop is tracked as a TODO (F3 fix item 1).
-  const hmacOk = await verifyPatHmac(
-    signingKeyRaw,
+  // Overlap key set: the current key plus any rotation siblings
+  // (PAT_SIGNING_KEY_PREV / _NEW). A PAT minted under any of them
+  // HMAC-verifies during the rotation overlap window so rotation is not
+  // a fleet-wide auth outage. Siblings are best-effort: present-but-
+  // malformed siblings are dropped (verifyPatHmacMulti tolerates a null
+  // decode per key); the current key — already validated above — stays
+  // the load-bearing gate.
+  const signingKeySet = [signingKeyRaw, env.PAT_SIGNING_KEY_PREV, env.PAT_SIGNING_KEY_NEW]
+    .filter((k): k is string => typeof k === "string" && k.length >= 64);
+  const hmacOk = await verifyPatHmacMulti(
+    signingKeySet,
     parsed.hmacPreimage,
     parsed.hmacSigBytes,
   );
@@ -1038,6 +1058,42 @@ function base64urlDecode(s: string): Uint8Array | null {
  *
  * Returns true only if the MAC matches; false on any mismatch or error.
  */
+/**
+ * Verify the PAT HMAC against an OVERLAP KEY SET (key_management.md §3.2.1).
+ *
+ * Mirrors the Rust `verify_hmac_sig_multi`: a PAT minted under ANY key in the
+ * set verifies, so an operator can rotate PAT_SIGNING_KEY (incl. rotate-on-
+ * compromise) while old-key tokens stay valid through the overlap window —
+ * instead of an instant fleet-wide auth outage.
+ *
+ * Constant-time discipline: every key is evaluated (no early-return on the
+ * first match) and the per-key results are folded with a bitwise OR, so the
+ * observable latency does not leak WHICH key matched (which would reveal
+ * whether a token is on the old vs. new key during rotation). Each per-key
+ * compare itself uses crypto.subtle.timingSafeEqual.
+ *
+ * Fail-closed: an empty key set returns false (nothing verifies). The caller
+ * guarantees the current key is present and well-formed before calling.
+ */
+async function verifyPatHmacMulti(
+  signingKeysHex: string[],
+  hmacPreimage: Uint8Array,
+  expectedSigBytes: Uint8Array,
+): Promise<boolean> {
+  // Fail-closed: no key set bound ⇒ nothing verifies.
+  if (signingKeysHex.length === 0) {
+    return false;
+  }
+  let matched = 0;
+  for (const keyHex of signingKeysHex) {
+    // Do NOT early-return on a match: fold every key so the matching-key
+    // identity does not leak via timing.
+    const ok = await verifyPatHmac(keyHex, hmacPreimage, expectedSigBytes);
+    matched |= ok ? 1 : 0;
+  }
+  return matched !== 0;
+}
+
 async function verifyPatHmac(
   signingKeyHex: string,
   hmacPreimage: Uint8Array,

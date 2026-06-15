@@ -278,27 +278,63 @@ export async function checkStorageQuota(
 }
 
 /**
+ * Tracks whether the "request-quota flag is ON but no counter backend exists"
+ * warning has already been emitted, so we log it ONCE per Worker isolate
+ * rather than on every request (a per-request log would flood the logs and is
+ * itself a cost/availability hazard). Module-scoped: reset on each cold start,
+ * which is the desired cadence for a misconfiguration signal.
+ */
+let requestQuotaMisconfigWarned = false;
+
+/**
  * Check whether the tenant is within their monthly request quota.
  *
- * TODO(request-counter): request quota enforcement is deferred until a
- * monthly_request_counts table is wired. This function currently always
- * returns ok:true for all tiers, including 'free'. Controlled by the
- * REQUEST_QUOTA_ENABLED feature flag (Env.REQUEST_QUOTA_ENABLED).
+ * ## Enforcement status (HONEST): NOT YET ENFORCED — no counter backend
  *
- * When the counter table exists, the check will be:
+ * Request-rate limiting at the *data plane* is enforced in-app by the
+ * container's `corelink-ratelimit` token-bucket middleware (per-tenant
+ * req/s + burst; see `crates/corelink-container/src/routes/ratelimit_layer.rs`).
+ * This function is the SEPARATE *monthly aggregate* request-count cap from the
+ * signed rate card (`requestsPerMonthMax`), which requires a durable
+ * per-tenant monthly counter that does NOT yet exist.
+ *
+ * TODO(request-counter): wire a `monthly_request_counts(tenant_id, year_month,
+ * request_count)` table + an atomic increment on the allow path, then change
+ * the body to:
  *   SELECT request_count FROM monthly_request_counts
  *   WHERE tenant_id = ?1 AND year_month = ?2
- * and return ok:false + 429 if request_count >= quota.requestsPerMonthMax.
+ * returning ok:false + 429 (Retry-After = secondsUntilNextMonthStart) when
+ * request_count >= quota.requestsPerMonthMax. Until then this function CANNOT
+ * enforce the cap — it has no DB handle and no counter to read.
+ *
+ * Because we must NOT silently ship a no-op that *claims* enforcement, the
+ * `REQUEST_QUOTA_ENABLED` flag is honoured explicitly:
+ *   - flag OFF (default) → ok:true, no log (enforcement is openly deferred).
+ *   - flag ON            → ok:true (fail-OPEN for availability), but emit a
+ *     LOUD once-per-isolate warning that the operator asked for enforcement
+ *     the backend cannot yet deliver. Flipping the flag must never give a
+ *     false sense of a cap being applied.
  *
  * F21: accepts TierResult for consistency with checkStorageQuota; when
- * d1Error=true the check is a no-op (returns ok:true) — the same
- * fail-open symmetry applies.
+ * d1Error=true the check is a no-op (returns ok:true) — the same fail-open
+ * symmetry applies.
  */
 export function checkRequestQuota(
   _tierResult: TierResult,
-  _requestQuotaEnabled: boolean,
+  requestQuotaEnabled: boolean,
 ): QuotaCheckResult {
-  // Deferred — see function docstring.
+  if (requestQuotaEnabled && !requestQuotaMisconfigWarned) {
+    requestQuotaMisconfigWarned = true;
+    // INV-NO-PII-IN-LOGS: no tenant id logged.
+    console.warn(
+      "[quota] REQUEST_QUOTA_ENABLED=true but the monthly_request_counts " +
+        "backend is NOT wired — monthly request-cap enforcement is a NO-OP " +
+        "(failing OPEN). See checkRequestQuota TODO(request-counter). " +
+        "Per-second rate limiting IS enforced by the container token-bucket.",
+    );
+  }
+  // Deferred — see function docstring. No counter backend ⇒ cannot enforce;
+  // fail-OPEN to preserve availability (consistent with the file's posture).
   return { ok: true };
 }
 

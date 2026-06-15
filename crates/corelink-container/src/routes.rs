@@ -149,6 +149,16 @@ pub mod pip;
 /// landing an EU tenant's bytes in a US container. Disjoint from cas.rs/ac.rs
 /// (no handler-body edits); wired as one `.layer(...)` line in [`build_with_factory`].
 pub mod residency;
+/// Per-tenant request-rate token-bucket middleware (audit #14/#16). A router
+/// `layer` wrapping the already-built `corelink-ratelimit` engine: it charges
+/// one token per request against the DO-injected `x-corelink-tenant-id`
+/// tenant's bucket and rejects over-limit traffic with 429 + `Retry-After`.
+/// Wired with ONE `.layer(...)` line in [`build_with_factory`] so it covers
+/// the composed data plane (CAS/AC, Bazel, Turbo, sccache, adapters) but NOT
+/// the `/_health` probe or `/_internal/*` routes (those mount in `main.rs`
+/// AFTER `build_with_factory` returns). Fail-OPEN on absent tenant + on the
+/// limiter's own internal fault (logged); see module docs.
+pub mod ratelimit_layer;
 /// Pilot signup route (wave-29 stream-1; closes DEBT-027 engineering-side).
 /// Surfaces `POST /v1/signup/pilot/{token}` over an HMAC-SHA256
 /// signed token + per-IP rate-limit + fail-CLOSED audit emit. See
@@ -557,6 +567,21 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // R2_CAS_REGION colo. Defence-in-depth backstop for a mis-bound regional
     // Worker; zero storage I/O on the reject path. Disjoint from cas.rs/ac.rs.
     router = router.layer(axum::middleware::from_fn(residency::residency_guard));
+
+    // audit #14/#16 (request-rate limiting): per-tenant token-bucket gate over
+    // the metered data plane. Charges one token per request against the
+    // DO-injected `x-corelink-tenant-id` tenant's bucket (100 req/s sustained,
+    // burst 200 — see `ratelimit_layer` consts) and 429s + Retry-After over the
+    // limit. Applied here (NOT in `main.rs`) so it wraps exactly the data-plane
+    // routers — the `/_health` readiness probe and `/_internal/*` surfaces are
+    // merged later in `main.rs` and stay OUTSIDE this layer by construction.
+    // Fail-OPEN on absent tenant (non-billable traffic) + on the limiter's own
+    // internal fault (logged), prioritising paid-plane availability.
+    let rate_limit_state = ratelimit_layer::RateLimitLayerState::new();
+    router = router.layer(axum::middleware::from_fn_with_state(
+        rate_limit_state,
+        ratelimit_layer::rate_limit_layer,
+    ));
 
     router
 }
