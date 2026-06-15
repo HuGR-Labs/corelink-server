@@ -23,6 +23,43 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **Pre-launch due-diligence audit remediation (82-agent audit 2026-06-15 → NO-GO → launch-blocker fixes).**
+  An 82-agent adversarial audit (37 finders × 2-vote refutation) returned 21 confirmed CRITICAL/HIGH;
+  this closes the launch-blocking subset (full report: `docs/security/2026-06-15-launch-due-diligence-audit.md`):
+  - **signup orphan-tenant (CRITICAL #18):** the Svix-retry idempotency check short-circuited on tenant
+    existence alone, so a retry after a mid-provision (post-tenant, pre-PAT) failure ack'd "already
+    provisioned" and never re-issued the PAT — a permanent silent PAT-less orphan (a paid signup that can
+    never authenticate). Idempotency is now keyed on provisioning being COMPLETE (tenant AND a live PAT);
+    a retry re-issues the PAT + re-publishes Clerk metadata.
+  - **GDPR salt fail-open (HIGH #19/#20):** `deriveErasureSalt` only fail-closes when `ENVIRONMENT`
+    starts with `prod`, but the signup-worker `wrangler.toml` never bound `ENVIRONMENT` → prod silently
+    used the predictable SHA-256 fallback salt (pseudonymization-unlinkability breach). `ENVIRONMENT="prod"`
+    is now bound.
+  - **storage fail-OPEN → fail-CLOSED (HIGH #2/#8/#4):** a non-derivable tenant (non-UUID id, or a
+    missing/invalid `R2_TDK_HEX`) on the prod path degraded to an empty/predictable prefix and the op
+    PROCEEDED — collapsing such tenants into one SHARED keyspace (cross-tenant read/overwrite/delete/list).
+    CAS (`r2_s3.rs`), Turbo (`r2_kv.rs`) and the CAS erasure path (`cas_erase.rs`) now FAIL CLOSED
+    (Internal/500, never a degraded prefix); the raw-pad fallback is `cfg(test)`-only; `build_r2_kv_from_env`
+    fail-closes when creds are present but the TDK is absent (mirrors CAS/AC).
+  - **OCI token-key env-name drift (HIGH #21):** the prod deploy gate + runbook provisioned/verified
+    `HUGR_OCI_TOKEN_KEY` while the container reads `CORELINK_OCI_TOKEN_KEY` → the OCI route silently never
+    mounted in prod behind a green gate. Reconciled the gate/tooling to `CORELINK_OCI_TOKEN_KEY` (operator
+    must re-put the live CF secret under the new name — noted in the allowlist).
+  - **admin-ui CSP nonce defeated (HIGH #12/#13):** prod served a Content-Security-Policy whose nonce was
+    the hardcoded public literal `nonce-STATIC` (from `next.config.ts`), overriding the per-request
+    middleware nonce — so the nonce gave zero XSS protection (`nonce="STATIC"` is reusable by anyone).
+    Removed the static CSP; the per-request middleware nonce is now the single source and is set on the
+    forwarded request headers so Next applies it to inline scripts.
+  - **DPA/Privacy doc truthfulness (HIGH #10/#11):** the DPA sold WEUR/SAM residency (signup rejects them
+    — US-only at launch) and BYOK / "CoreLink cannot decrypt your data" / Schrems-II at-rest guarantees the
+    launched data plane does not deliver (R2_TDK_HEX is key-prefix derivation, not envelope encryption).
+    Docs corrected to the actual launch posture (US-only; BYOK = planned, not yet wired).
+  - **test-fixture compile break (D-7/D-8):** `fixture_unavailable()` (cas/ac route tests) was not updated
+    when the route state gained `delete`/`list` fields — the crate's test target failed to compile (masked
+    on CI by the shared-toolchain `os error 2` outage). Wired the fail-closed Unavailable handlers into both
+    fixtures.
+  Deferred to post-launch fast-follow (owner-waived 2026-06-15): data-plane rate-limiting, Bazel SHA-256
+  digest, OCI DoS bounds, PAT signing-key rotation overlap.
 - **CAA-360 adversarial audit + full remediation (35 confirmed findings, all severities).**
   A 16-agent 360° pen-test + multi-perspective review (3 Opus pentest + 3 Opus + 5 Sonnet +
   5 Haiku, adversarially verified — 12 false-positives refuted) found a coherent root-cause
