@@ -660,7 +660,7 @@ impl AcListHandler for InMemoryAcHandler {
         let mut next_cursor: Option<String> = None;
         for (d, size) in refs
             .into_iter()
-            .filter(|(d, _)| after.as_ref().is_none_or(|c| d > c))
+            .filter(|(d, _)| after.as_ref().map_or(true, |c| d > c))
         {
             if out.len() == limit {
                 next_cursor = out.last().map(|e: &AcRefEntry| e.ref_key.clone());

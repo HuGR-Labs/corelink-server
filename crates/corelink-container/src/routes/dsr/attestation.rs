@@ -220,7 +220,7 @@ pub(super) fn sign_and_persist(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, reason = "tests")]
+#[allow(clippy::unwrap_used, clippy::expect_used, reason = "tests")]
 mod tests {
     use corelink_erasure_attestation::{
         verify_attestation_signature, ErasureAttestationPayload, ErasureAttestationSigner,

@@ -195,6 +195,10 @@ impl AcListHandler for UnavailableAcHandler {
 /// charter `trait-abstraction-defer` rule (tracked as
 /// `WI-S04-CF-WIRING`).
 #[must_use]
+#[allow(
+    clippy::type_complexity,
+    reason = "builder returns a fixed lookup/update/delete/list (D-1/D-7) handler tuple; a named alias would orphan this function's doc block"
+)]
 pub fn build_handlers() -> (
     Arc<dyn AcLookupHandler>,
     Arc<dyn AcUpdateHandler>,

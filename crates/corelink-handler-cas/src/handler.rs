@@ -564,7 +564,7 @@ impl CasListHandler for InMemoryCasHandler {
         let mut next_cursor: Option<String> = None;
         for (h, size) in hashes
             .into_iter()
-            .filter(|(h, _)| after.as_ref().is_none_or(|c| h > c))
+            .filter(|(h, _)| after.as_ref().map_or(true, |c| h > c))
         {
             if blobs.len() == limit {
                 // There is at least one more entry beyond this page; the

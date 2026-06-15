@@ -208,6 +208,10 @@ impl CasListHandler for UnavailableCasHandler {
 /// [`UnavailableCasHandler`] (HTTP 503), never the silent `InMemory`
 /// fallback.
 #[must_use]
+#[allow(
+    clippy::type_complexity,
+    reason = "builder returns a fixed read/write/delete/list (D-8) handler tuple; a named alias would orphan this function's doc block"
+)]
 pub fn build_handlers() -> (
     Arc<dyn CasReadHandler>,
     Arc<dyn CasWriteHandler>,
