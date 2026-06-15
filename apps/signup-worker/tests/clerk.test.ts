@@ -591,6 +591,152 @@ describe("handleClerkWebhook (B4: fail-loud BEFORE any tenant write)", () => {
     // flow cleanly once the secret is set.
     expect(createTenantCalled).toBe(false);
   });
+
+  it(
+    "retry after a mid-provision failure (tenant row exists but NO live PAT) " +
+      "RE-ISSUES the PAT instead of acking idempotent (finding #18)",
+    async () => {
+      const secretRaw = "supersecret-raw-bytes-with-good-entropy";
+      const secret = `whsec_${btoa(secretRaw)}`;
+      const body = JSON.stringify({
+        type: "user.created",
+        data: {
+          id: "user_orphan",
+          email_addresses: [{ id: "em_1", email_address: "alice@acme.com" }],
+          primary_email_address_id: "em_1",
+          external_accounts: [{ provider: "oauth_github", username: "alice-codes" }],
+        },
+      });
+      const req = await signedUserCreated(secretRaw, body);
+
+      // CONFIG_DB models a PRIOR attempt that committed the tenant row but died
+      // before minting the PAT: the tenant SELECT returns a row, the live-PAT
+      // SELECT returns null. The OLD (tenant-existence-only) idempotency check
+      // would short-circuit here and ack `idempotent: true`, leaving the user
+      // permanently PAT-less. The fix must FALL THROUGH and re-provision.
+      const configDb = {
+        prepare(query: string) {
+          return {
+            bind() {
+              return this;
+            },
+            async first() {
+              if (query.includes("FROM tenant WHERE clerk_user_id")) {
+                return { tenant_id: "t_orphan" }; // tenant row exists
+              }
+              if (query.includes("FROM pat WHERE tenant_id")) {
+                return null; // NO live PAT — provisioning never completed
+              }
+              return null;
+            },
+            async run() {
+              return { success: true };
+            },
+            async all() {
+              return { results: [] };
+            },
+          };
+        },
+      };
+      const env = {
+        CLERK_WEBHOOK_SECRET: secret,
+        CONFIG_DB: configDb,
+        CORELINK_INTERNAL_AUTH_KEY: "internal-key", // secret now present on retry
+      } as unknown as AutoProvisionEnv;
+
+      let issuePatCalled = false;
+      let createTenantCalled = false;
+      const apiFactory = (() => ({
+        async createTenant() {
+          createTenantCalled = true;
+          return { id: "t_orphan" };
+        },
+        async configureTenant() {},
+        async issuePat() {
+          issuePatCalled = true;
+          return { id: "pat_reissued", plaintext: "ct_reissued" };
+        },
+        async publishUserMetadata() {},
+      })) as unknown as Parameters<typeof handleClerkWebhook>[2];
+
+      const res = await handleClerkWebhook(req, env, apiFactory);
+      const json = (await res.json()) as Record<string, unknown>;
+
+      expect(res.status).toBe(200);
+      // The load-bearing assertions: we did NOT short-circuit on tenant
+      // existence — the PAT was re-issued and metadata re-published.
+      expect(issuePatCalled).toBe(true);
+      expect(createTenantCalled).toBe(true);
+      expect(json["idempotent"]).toBeUndefined();
+      expect(json["tenant_id"]).toBe("t_orphan");
+    },
+  );
+
+  it(
+    "fully-provisioned retry (tenant row + live PAT) short-circuits idempotent, " +
+      "NO re-provision (finding #18 regression guard)",
+    async () => {
+      const secretRaw = "supersecret-raw-bytes-with-good-entropy";
+      const secret = `whsec_${btoa(secretRaw)}`;
+      const body = JSON.stringify({
+        type: "user.created",
+        data: { id: "user_done", email_addresses: [] },
+      });
+      const req = await signedUserCreated(secretRaw, body);
+
+      const configDb = {
+        prepare(query: string) {
+          return {
+            bind() {
+              return this;
+            },
+            async first() {
+              if (query.includes("FROM tenant WHERE clerk_user_id")) {
+                return { tenant_id: "t_done" };
+              }
+              if (query.includes("FROM pat WHERE tenant_id")) {
+                return { pat_id: "pat_live" }; // live PAT exists → fully provisioned
+              }
+              return null;
+            },
+            async run() {
+              return { success: true };
+            },
+            async all() {
+              return { results: [] };
+            },
+          };
+        },
+      };
+      const env = {
+        CLERK_WEBHOOK_SECRET: secret,
+        CONFIG_DB: configDb,
+        CORELINK_INTERNAL_AUTH_KEY: "internal-key",
+      } as unknown as AutoProvisionEnv;
+
+      let issuePatCalled = false;
+      const apiFactory = (() => ({
+        async createTenant() {
+          return { id: "t_done" };
+        },
+        async configureTenant() {},
+        async issuePat() {
+          issuePatCalled = true;
+          return { id: "x", plaintext: "y" };
+        },
+        async publishUserMetadata() {},
+      })) as unknown as Parameters<typeof handleClerkWebhook>[2];
+
+      const res = await handleClerkWebhook(req, env, apiFactory);
+      const json = (await res.json()) as Record<string, unknown>;
+
+      expect(res.status).toBe(200);
+      expect(json["idempotent"]).toBe(true);
+      expect(json["tenant_id"]).toBe("t_done");
+      // No re-provision when already complete.
+      expect(issuePatCalled).toBe(false);
+    },
+  );
 });
 
 describe("defaultApiClient.createTenant (concurrent-duplicate webhook → no orphan PAT)", () => {
