@@ -786,7 +786,7 @@ mod tests {
         // What the WRITER derives (R2CasHandler::r2_key UUID branch).
         let writer_prefix = derive_prefix(&tdk, uid).to_string();
         // What the ERASER derives.
-        let eraser_prefix = eraser.tenant_prefix(tenant_uuid);
+        let eraser_prefix = eraser.tenant_prefix(tenant_uuid).unwrap();
         assert_eq!(eraser_prefix, writer_prefix, "prefix must match the writer");
         assert_eq!(writer_prefix.len(), TENANT_PREFIX_LEN);
         // And the assembled LIST key is the leading path of the blob key.
@@ -802,7 +802,7 @@ mod tests {
     #[test]
     fn eraser_prefix_pads_non_uuid_tenant_to_16() {
         let eraser = R2CasBlobEraser::new(test_tdk(), "corelink-cas-prod".to_owned());
-        let prefix = eraser.tenant_prefix("t1");
+        let prefix = eraser.tenant_prefix("t1").unwrap();
         assert_eq!(prefix.len(), TENANT_PREFIX_LEN);
         assert!(prefix.starts_with("t1"), "prefix={prefix}");
     }
