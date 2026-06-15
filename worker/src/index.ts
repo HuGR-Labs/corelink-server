@@ -25,7 +25,8 @@ import { RolloutController } from "./rollout_controller.js";
 import { EventLogDO } from "./event_log_do.js";
 import { getTierForTenant, checkStorageQuota, checkRequestQuota } from "./lib/quota.js";
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
-import { handleSessionExchange } from "./lib/session_exchange.js";
+import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchange.js";
+import { handleTenantLookup } from "./lib/tenant_lookup.js";
 import { coloForMacro } from "./region-map.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -164,6 +165,8 @@ type RouteKind =
   | "signup"
   | "onboarding"
   | "session_exchange"
+  | "tenant_lookup"
+  | "token_exchange"
   | "internal"
   | "health_container"
   | "not_found";
@@ -563,6 +566,26 @@ function matchRoute(url: URL): RouteMatch {
   // so introspect 404'd end-to-end — fixed 2026-06-13.)
   if (path === "/internal/v1/auth/introspect") {
     return { tenantId: "_system", pathSuffix: path, routeKind: "fabric_introspect" };
+  }
+
+  // githugr authz #3 — tenant lookup. EXACT /internal/v1/auth/tenant/lookup.
+  // Handled AT the Worker (not forwarded): a parameterized D1 read of the
+  // tenant by clerk_user_id, gated by the shared CORELINK_INTERNAL_AUTH_KEY (the
+  // gate runs inside handleTenantLookup). Distinct from /_internal/* (underscore)
+  // and from the runners FABRIC introspect secret above.
+  if (path === "/internal/v1/auth/tenant/lookup") {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "tenant_lookup" };
+  }
+
+  // githugr authz #1 — RFC 8693 token exchange. EXACT
+  // /internal/v1/auth/token-exchange. Handled AT the Worker: verifies the Clerk
+  // session, 403s on session.tenant ≠ audience (the cross-tenant-write
+  // rejection), and mints a ~300s tenant-scoped PAT via the container. Internal-
+  // auth gated (githugr backend) AND session-gated (user) — both inside the
+  // handler. The caller holds a session + the internal secret, not a PAT, so this
+  // is matched BEFORE the generic PAT-required /v1/* arms.
+  if (path === "/internal/v1/auth/token-exchange") {
+    return { tenantId: "_anonymous", pathSuffix: path, routeKind: "token_exchange" };
   }
 
   // Stripe billing webhook — EXACT /v1/billing/stripe-webhook (mounted in the
@@ -1459,6 +1482,23 @@ const handler: ExportedHandler<Env> = {
     if (route.routeKind === "session_exchange") {
       const sessResp = await handleSessionExchange(request, env, requestId);
       return applyCors(sessResp, request);
+    }
+
+    // githugr authz #3 — tenant lookup (POST /internal/v1/auth/tenant/lookup).
+    // Internal-auth gated; parameterized D1 read; fail-CLOSED 404 when no tenant
+    // maps to the subject. CORS applied here, mirroring the arms above.
+    if (route.routeKind === "tenant_lookup") {
+      const lookupResp = await handleTenantLookup(request, env, requestId);
+      return applyCors(lookupResp, request);
+    }
+
+    // githugr authz #1 — token exchange (POST /internal/v1/auth/token-exchange).
+    // Internal-auth + Clerk-session gated; 403 on session.tenant ≠ audience (the
+    // cross-tenant-write rejection); mints a ~300s tenant-scoped PAT via the
+    // container. Fully fail-CLOSED; never forwards the session token past the edge.
+    if (route.routeKind === "token_exchange") {
+      const xchgResp = await handleTokenExchange(request, env, requestId);
+      return applyCors(xchgResp, request);
     }
 
     // Not found — timing-padded to prevent cross-tenant enumeration

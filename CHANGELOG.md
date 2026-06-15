@@ -22,6 +22,35 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **githugr cross-tenant authz — `/internal/v1/auth/tenant/lookup` (#3) + `/internal/v1/auth/token-exchange` (#1).**
+  Two Worker-hosted, internal-auth-gated endpoints that unblock githugr's two audit CRITICALs (the window
+  authenticates via the shared Clerk instance; fine-grained authorization is the engine's — ADR-0007).
+  Ratified by the githugr GREENLIGHT (2026-06-15).
+  - **#3 tenant lookup** — `POST /internal/v1/auth/tenant/lookup` resolves the shared Clerk `sub`
+    (clerk_user_id) → `{ tenant_id, role:"owner", tier, tenant_state }` via a parameterized D1 read,
+    **fail-CLOSED 404** when no tenant maps. Keyed on `sub` (no `github_id` column — both sides trust the
+    same JWT). The email fallback is documented N/A: `tenant.email_hash` is a `SHA-256(clerk_user_id)`
+    privacy surrogate, not a raw-email hash, so no email→tenant mapping exists (moot — `sub` is always
+    available). githugr persists the returned `tenant_id` as each repo's `owner_tenant`.
+  - **#1 RFC 8693 token exchange** — `POST /internal/v1/auth/token-exchange` exchanges
+    `(Clerk session JWT + audience)` for a ~300s tenant-scoped `cas:rw` PAT, and **403s when
+    `session.tenant ≠ audience`** — the exact cross-tenant-WRITE rejection githugr's engine relies on.
+    Triple-gated: internal-auth (githugr backend) AND a valid user session AND audience match. Reuses the
+    audited shared Clerk verifier (`lib/clerk_auth.ts`) and the single container mint authority
+    (`/_internal/pat/mint` via the `_system` DO) — no second JWT verifier, no second mint path. Admin scope
+    is refused (least privilege); the Argon2id hash is never leaked; the session token never leaves the edge.
+  - Implemented Worker-side (`worker/src/lib/{internal_auth,tenant_lookup,session_exchange}.ts`,
+    `worker/src/index.ts`) because the JWT verifier + D1 binding already live there — each endpoint sits
+    where its core dependency is (introspect stays container-side for the Argon2id PatVerifier).
+
+### Fixed
+- **session-exchange tests (stale, drive-by):** `worker/tests/session_exchange.test.ts` carried two
+  pre-existing reds — a `principal` assertion not updated after F-01 (the response now returns the opaque
+  derived UUID, never the raw Clerk id) and two tests polluted by the F20 module-scoped in-memory
+  mint-throttle counter (fixed via per-test principals). Product behavior was correct; the tests were
+  corrected.
+
 ### Security
 - **Pre-launch due-diligence audit remediation (82-agent audit 2026-06-15 → NO-GO → launch-blocker fixes).**
   An 82-agent adversarial audit (37 finders × 2-vote refutation) returned 21 confirmed CRITICAL/HIGH;
