@@ -115,6 +115,9 @@ export interface Env {
   // secrets + provider vars the native container reads from its own process env.
   R2_TDK_HEX?: string;
   ERASURE_SALT_KEY?: string;
+  ERASURE_ATTESTATION_SEED_HEX?: string;
+  ERASURE_ATTESTATION_KEY_ID?: string;
+  ERASURE_ATTESTATION_REGION?: string;
   FABRIC_INTROSPECT_AUTH_KEY?: string;
   SIGNUP_TOKEN_KEY?: string;
   CORELINK_OCI_TOKEN_KEY?: string;

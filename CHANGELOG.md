@@ -160,6 +160,12 @@ Each entry cross-references:
     `dsr_requested` enumeration — a permanently-stuck DSR is exactly the breach the
     durable anchor exists to surface, and the set is self-limiting (completed DSRs
     flip to `verified`).
+  - **G3 attestation secrets are now forwarded to the container.** The DO
+    `container.start({env})` forward-list was missing `ERASURE_ATTESTATION_SEED_HEX`
+    / `_KEY_ID` / `_REGION` (the container reads all three via `env::var`), so
+    setting the seed would never reach the container and attestation would silently
+    no-op — the exact `ERASURE_SALT_KEY`-class gap. Added the three forwards (+ Env
+    types); `check-env-contract.py` now passes (29/29 forwarded).
 - **migrations(0064): make the `tenant` table rebuild D1-applicable — add
   `PRAGMA legacy_alter_table=ON` + recreate the residency triggers.** The
   0064 rebuild (widen `tenant.tier` CHECK to add `'max'`) failed on
