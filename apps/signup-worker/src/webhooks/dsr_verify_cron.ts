@@ -137,14 +137,23 @@ export async function runDsrVerifySweep(
   // Source 1 (G4, load-bearing): the durable "requested" anchor. Catches DSRs
   // that failed before ANY tombstone (no dsr_erasure_log row). requested_at is
   // epoch-ms (INTEGER), so compare in ms directly.
+  //
+  // NO lower (WINDOW_MS) bound here, deliberately: a DSR stuck at
+  // status='requested' is EXACTLY the breach this anchor exists to surface, and
+  // it self-expires from a 7-day window after one week — silencing the alert
+  // precisely for the permanently-stuck case. The set is self-limiting (a
+  // completed DSR flips to 'verified' and drops out), so enumerating every
+  // past-deadline 'requested' row is bounded and cheap. The WINDOW_MS lower
+  // bound stays on the dsr_erasure_log source below (cost cap on the large
+  // tombstone table, where a row's absence is not itself a breach signal).
   let requested: Array<Record<string, unknown>> = [];
   try {
     const reqRes = await env.CONFIG_DB.prepare(
       `SELECT dsr_id, tenant_id, requested_at
          FROM dsr_requested
-        WHERE status = 'requested' AND requested_at <= ?1 AND requested_at >= ?2`,
+        WHERE status = 'requested' AND requested_at <= ?1`,
     )
-      .bind(deadlineMs, windowMs)
+      .bind(deadlineMs)
       .all();
     requested = reqRes.results ?? [];
   } catch (err) {

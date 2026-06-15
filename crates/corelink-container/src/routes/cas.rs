@@ -755,14 +755,24 @@ mod tests {
                 .find("\n[")
                 .map_or(toml.len(), |rel| after_header + rel);
             let block = &toml[start..block_end];
-            let expected = format!("R2_CAS_REGION = \"{region}\"");
-            assert!(
-                block.contains(&expected),
-                "[env.prod-{region}] must set `{expected}` (F7 CAS residency \
-                 invariant): a regional env without R2_CAS_REGION keys its CAS \
-                 objects under the US default \"iad\" — a cross-border leak. \
-                 Add the binding to wrangler.toml."
-            );
+            // Every residency-bearing key space must be pinned to this region.
+            // CAS was the original F7 invariant; AC objects (which embed output
+            // digests + command metadata) and chunk objects are equally
+            // residency-bearing, and key under R2_AC_REGION / R2_CHUNK_REGION
+            // (both default to "iad" in cas.rs/ac.rs `env_or`). A regional env
+            // that drops ANY of the three silently keys that space under the US
+            // default — the same cross-border leak the CAS check guards. Assert
+            // all three so the build-time guard covers the full key surface.
+            for var in ["R2_CAS_REGION", "R2_AC_REGION", "R2_CHUNK_REGION"] {
+                let expected = format!("{var} = \"{region}\"");
+                assert!(
+                    block.contains(&expected),
+                    "[env.prod-{region}] must set `{expected}` (residency \
+                     invariant): a regional env without {var} keys that object \
+                     space under the US default \"iad\" — a cross-border leak. \
+                     Add the binding to wrangler.toml."
+                );
+            }
         }
     }
 

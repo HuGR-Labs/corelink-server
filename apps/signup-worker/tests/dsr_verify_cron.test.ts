@@ -192,6 +192,40 @@ describe("runDsrVerifySweep", () => {
     expect((await runDsrVerifySweep(env, now)).swept).toBe(1);
   });
 
+  it("G4: the requested-anchor query has NO lower (window) bound — a stuck DSR never ages out", async () => {
+    // The whole point of the durable anchor is to surface a DSR that never
+    // completes; a 7-day lower bound would silence the alert for exactly that
+    // permanently-stuck case after one week. Assert the query shape directly
+    // (the mock returns rows verbatim, so behaviour can't catch this).
+    let requestedSql = "";
+    const now = Date.now();
+    const captureDb: D1Lite = {
+      prepare: (sql: string) => {
+        if (sql.includes("dsr_requested") && sql.includes("SELECT")) requestedSql = sql;
+        return {
+          bind: () => ({
+            all: async () => ({ results: [] }),
+            run: async () => ({}),
+          }),
+        };
+      },
+    };
+    await runDsrVerifySweep(
+      {
+        CORELINK_API_BASE: "https://api",
+        CORELINK_INTERNAL_AUTH_KEY: "k",
+        CORELINK_API_SVC: svc(200),
+        CONFIG_DB: captureDb,
+      },
+      now,
+    );
+    expect(requestedSql).toContain("status = 'requested'");
+    expect(requestedSql).toContain("requested_at <= ?1");
+    // No second (>=) bound on the durable anchor → never ages out.
+    expect(requestedSql).not.toMatch(/requested_at\s*>=/);
+    expect(requestedSql).not.toContain("?2");
+  });
+
   it("G4: degrades to dsr_erasure_log when dsr_requested is absent (migration not applied)", async () => {
     const now = Date.now();
     const env: DsrVerifyCronEnv = {

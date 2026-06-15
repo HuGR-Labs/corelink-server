@@ -428,12 +428,23 @@ export async function verifySvixSignature(ctx: VerifyContext): Promise<boolean> 
  */
 export type MacroRegion = "wnam" | "enam" | "weur" | "sam" | "apac" | "afr";
 
-/** Macro regions provisioned in Phase 1; signup MUST reject the rest. */
+/**
+ * Macro regions whose serving infra is actually DEPLOYED; signup MUST reject the
+ * rest with a terminal 422 (never silently downgrade to US — backlog #29).
+ *
+ * Launch (Phase 1) = US-only. Only `wnam`/`enam` map to a colo (`iad`) that has a
+ * live DO + container + R2 bucket. The other canonical macros (`weur`→lhr,
+ * `sam`→sam, `apac`→nrt, `afr`) have NO regional Worker `[[services]]` binding and
+ * NO per-region CAS/AC bucket yet, so the residency guard would (correctly,
+ * fail-closed) 503 every request from such a tenant. Provisioning a region we
+ * cannot serve onboards customers straight into a 503 wall — so signup rejects
+ * them up front instead. Re-add a macro here ONLY once its regional Worker
+ * binding + per-region bucket + container region var are deployed (the EU/SAM
+ * serving build-out — tracked as the residency Phase-2 follow-up).
+ */
 export const PROVISIONED_MACROS: ReadonlySet<MacroRegion> = new Set<MacroRegion>([
   "wnam",
   "enam",
-  "weur",
-  "sam",
 ]);
 
 /**
