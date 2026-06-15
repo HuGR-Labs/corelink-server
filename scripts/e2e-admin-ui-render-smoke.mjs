@@ -41,6 +41,15 @@ async function checkPage(browser, target) {
   const page = await ctx.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message.split("\n")[0]}`));
+  // CSP violations (script OR style) — a blocked inline style left the Clerk
+  // widget unstyled in prod while the page still "rendered" + threw no pageerror,
+  // so the render check alone missed it. Any CSP refusal is a failure.
+  page.on("console", (m) => {
+    const t = m.text();
+    if (/Content Security Policy|violates the following|Refused to (load|apply|execute)/i.test(t)) {
+      errors.push(`csp: ${t.split("\n")[0].slice(0, 160)}`);
+    }
+  });
   page.on("response", (r) => {
     const u = r.url();
     if (r.status() >= 400 && /\/_next\/static\/|\.js(\?|$)/.test(u)) {

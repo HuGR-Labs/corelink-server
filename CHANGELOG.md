@@ -46,6 +46,22 @@ Each entry cross-references:
   Starter→20/Pro→40/Team→80/Scale→160/Max→320; absent for cache-only tenants).
 
 ### Fixed
+- **admin-ui: Clerk sign-in/up widget rendered UNSTYLED, and sign-in bounced to
+  the marketing home — two follow-on prod login defects fixed.** (1) `style-src`
+  carried BOTH `'unsafe-inline'` and a per-request `'nonce-…'`; per CSP3 a nonce
+  (or hash) makes the browser IGNORE `'unsafe-inline'`, so every inline style
+  Clerk injects at runtime was refused and the widget rendered with no CSS
+  ("tela toda bugada"). The Clerk widget cannot carry our per-request nonce, so
+  the nonce is now dropped from `style-src` (kept on `script-src`, where it
+  actually hardens XSS); `'unsafe-inline'` on style-src is accepted per OWASP
+  (styles are not a script-execution vector). (2) After a successful sign-in
+  users landed on `/` (the marketing home, which has no `ClerkProvider` and
+  shows no signed-in state) — the Clerk instance's redirect "paths" are all
+  null, so the default after-sign-in was `/`. `<SignIn>`/`<SignUp>` now set
+  `forceRedirectUrl`/`fallbackRedirectUrl` to the authenticated dashboard
+  (`/en/customer`) / `/en/welcome`. The render smoke now also FAILS on ANY CSP
+  violation console message (`Refused to apply/load/execute`), closing the gap
+  that let the unstyled-but-rendering widget pass the prior render check.
 - **admin-ui: prod login was completely broken (`Application error: a
   client-side exception`) — three compounding root causes fixed.** (1) A
   Cloudflare zone rate-limit rule ("Wave 32", 10 req/10s/IP across all corelink

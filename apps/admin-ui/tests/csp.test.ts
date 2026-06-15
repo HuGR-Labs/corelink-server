@@ -10,13 +10,17 @@ import {
 } from "@/lib/csp";
 
 describe("CSP header generation", () => {
-  it("includes the nonce in script-src and style-src", () => {
+  it("nonce-hardens script-src; style-src uses 'unsafe-inline' WITHOUT a nonce", () => {
     const nonce = "test-nonce-12345";
     const directives = buildCspDirectives(nonce);
     const script = directives.find((d) => d.startsWith("script-src"));
     const style = directives.find((d) => d.startsWith("style-src"));
     expect(script).toContain(`'nonce-${nonce}'`);
-    expect(style).toContain(`'nonce-${nonce}'`);
+    // style-src MUST NOT carry a nonce: per CSP3 a nonce disables 'unsafe-inline',
+    // which blocks Clerk's runtime-injected inline widget styles (prod sign-in
+    // rendered unstyled). 'unsafe-inline' is the intended style policy.
+    expect(style).toContain("'unsafe-inline'");
+    expect(style).not.toContain("nonce-");
   });
 
   it("never emits unsafe-eval or unsafe-hashes", () => {
