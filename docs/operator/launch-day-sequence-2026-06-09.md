@@ -19,13 +19,13 @@ set at launch from the operator dashboards. The Worker deploy gate
 Confirm each script's exact flags via `bash scripts/<name> --help` before running.
 
 **0. Pre-reqs** — `.env.local` backed up (CF API token, `CORELINK_INTERNAL_AUTH_KEY`,
-`PAT_SIGNING_KEY`, `HUGR_OCI_TOKEN_KEY`); R2 AC/CAS buckets provisioned.
+`PAT_SIGNING_KEY`, `CORELINK_OCI_TOKEN_KEY`); R2 AC/CAS buckets provisioned.
 
 **D1 — LIVE secrets into Cloudflare** (the deploy gate depends on these):
 - `bash scripts/put-secrets-prod.sh --mvp-only` — reads `scripts/secrets-mvp-allowlist.txt`
   (CF×3, Clerk×2, Stripe×6 incl. `STRIPE_WEBHOOK_SECRET` + `STRIPE_PRICE_ID_TEAM/_PRO`,
   `CORELINK_INTERNAL_AUTH_KEY` + `CORELINK_DPA_VERSION` (no key → **no signups**),
-  `R2_S3_*`, BetterStack, PagerDuty, Resend, `PAT_SIGNING_KEY`, `HUGR_OCI_TOKEN_KEY`).
+  `R2_S3_*`, BetterStack, PagerDuty, Resend, `PAT_SIGNING_KEY`, `CORELINK_OCI_TOKEN_KEY`).
 - Verify: `bash scripts/verify-secrets-deployed.sh` → exit 0.
 
 **D2 — D1 migrations** (runner now accepts the real count = **60**, was hard-paused at 52):

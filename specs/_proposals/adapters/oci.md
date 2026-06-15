@@ -165,7 +165,7 @@ OCI uses scoped bearer tokens. Flow:
 3. Adapter validates PAT, returns short-lived (1h) opaque token with embedded tenant + scope.
 4. Client retries original op with `Authorization: Bearer <token>`.
 
-Token format: `corelink-pat_<tenant>_<scope>_<expiry>_<hmac(...)>`. HMAC keyed on `HUGR_OCI_TOKEN_KEY` env (separate from PAT-signing key). Constant-time compare on verify (`subtle::ConstantTimeEq`).
+Token format: `corelink-pat_<tenant>_<scope>_<expiry>_<hmac(...)>`. HMAC keyed on `CORELINK_OCI_TOKEN_KEY` env (separate from PAT-signing key). Constant-time compare on verify (`subtle::ConstantTimeEq`).
 
 PAT scopes: `oci:repository:<name>:pull`, `oci:repository:<name>:push`. Granular per repo within a tenant.
 
