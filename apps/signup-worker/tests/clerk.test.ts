@@ -54,15 +54,29 @@ describe("tenantSlugFor", () => {
   });
 });
 
-describe("regionFromColo", () => {
-  it("lowercases CF colo codes", () => {
-    expect(regionFromColo("ORD")).toBe("ord");
-    expect(regionFromColo("GRU")).toBe("gru");
+describe("regionFromColo (backlog #29 — colo → MACRO residency region)", () => {
+  it("maps EU colos to weur (closes the Schrems II leak)", () => {
+    expect(regionFromColo("LHR")).toBe("weur");
+    expect(regionFromColo("FRA")).toBe("weur");
+    expect(regionFromColo("CDG")).toBe("weur");
+    expect(regionFromColo("AMS")).toBe("weur");
   });
-  it("falls back to auto on missing colo", () => {
-    expect(regionFromColo(null)).toBe("auto");
-    expect(regionFromColo(undefined)).toBe("auto");
-    expect(regionFromColo("")).toBe("auto");
+  it("maps South-American colos to sam", () => {
+    expect(regionFromColo("GRU")).toBe("sam");
+    expect(regionFromColo("EZE")).toBe("sam");
+  });
+  it("maps Asia-Pacific colos to apac (valid macro, unprovisioned)", () => {
+    expect(regionFromColo("NRT")).toBe("apac");
+    expect(regionFromColo("SYD")).toBe("apac");
+    expect(regionFromColo("SIN")).toBe("apac");
+  });
+  it("maps North-American + unknown + absent colos to enam (US-east default)", () => {
+    expect(regionFromColo("ORD")).toBe("enam");
+    expect(regionFromColo("IAD")).toBe("enam");
+    expect(regionFromColo("ZZZ")).toBe("enam");
+    expect(regionFromColo(null)).toBe("enam");
+    expect(regionFromColo(undefined)).toBe("enam");
+    expect(regionFromColo("")).toBe("enam");
   });
 });
 
@@ -71,8 +85,8 @@ describe("autoProvisionFromClerkEvent", () => {
     const calls: string[] = [];
     const emits: Array<{ name: string; tenantId: string | null; props: Record<string, unknown> }> = [];
     const api = {
-      async createTenant(name: string, ownerUserId: string) {
-        calls.push(`createTenant(${name},${ownerUserId})`);
+      async createTenant(name: string, ownerUserId: string, region: string) {
+        calls.push(`createTenant(${name},${ownerUserId},${region})`);
         return { id: "t_1" };
       },
       async configureTenant(tenantId: string, region: string, plan: "free") {
@@ -107,18 +121,18 @@ describe("autoProvisionFromClerkEvent", () => {
 
     expect(result).toMatchObject({
       tenant_id: "t_1",
-      region: "ord",
+      region: "enam",
       plan: "free",
       pat_id: "pat_1",
       pat_plaintext: "ct_test_secret_xyz",
     });
     expect(calls).toEqual([
-      "createTenant(alice-codes-default,user_2abc)",
-      "configureTenant(t_1,ord,free)",
+      "createTenant(alice-codes-default,user_2abc,enam)",
+      "configureTenant(t_1,enam,free)",
       "issuePat(t_1,read-write)",
       `publishUserMetadata(user_2abc,${JSON.stringify({
         tenant_id: "t_1",
-        region: "ord",
+        region: "enam",
         pat_plaintext: "ct_test_secret_xyz",
       })})`,
     ]);
@@ -158,6 +172,34 @@ describe("autoProvisionFromClerkEvent", () => {
     expect(result.tenant_id).toBe("t_dead");
     expect(result.pat_plaintext).toBe("ct_dead");
     expect(result.metadata_published).toBe(false);
+  });
+
+  it("REJECTS an unprovisioned macro region (apac) before any tenant write (backlog #29)", async () => {
+    let createTenantCalled = false;
+    const api = {
+      async createTenant(_n: string, _u: string, _r: string) {
+        createTenantCalled = true;
+        return { id: "t_never" };
+      },
+      async configureTenant() {},
+      async issuePat() {
+        return { id: "pat_never", plaintext: "ct_never" };
+      },
+      async publishUserMetadata() {},
+    };
+    const analytics = { async emit() {} };
+    // NRT → apac (valid macro, NOT provisioned in Phase 1) → must reject.
+    await expect(
+      autoProvisionFromClerkEvent({
+        event: fakeUser(),
+        colo: "NRT",
+        svixId: "msg_apac",
+        api,
+        analytics,
+      }),
+    ).rejects.toThrow(/not provisioned/);
+    // No tenant row was written — the throw is BEFORE createTenant.
+    expect(createTenantCalled).toBe(false);
   });
 
   it("re-throws Clerk metadata 5xx (transient; let Svix retry)", async () => {
@@ -579,8 +621,10 @@ describe("defaultApiClient.createTenant (concurrent-duplicate webhook → no orp
           _query: query,
           bind(...values: unknown[]) {
             if (query.includes("INSERT OR IGNORE INTO tenant")) {
-              // VALUES (?1=tenant_id, ?2=email_hash, ?3=clerk_user_id, ?4=...).
-              boundClerkUserId = values[2] as string;
+              // backlog #29: createTenant now uses the parameterized insertTenant
+              // helper, whose bind order is
+              // (?1=tenant_id, ?2=primary_region, ?3=email_hash, ?4=clerk_user_id, ?5=...).
+              boundClerkUserId = values[3] as string;
             } else if (
               query.includes("SELECT tenant_id FROM tenant WHERE clerk_user_id")
             ) {
@@ -640,7 +684,7 @@ describe("defaultApiClient.createTenant (concurrent-duplicate webhook → no orp
     } as unknown as AutoProvisionEnv;
 
     const api = defaultApiClient(env);
-    const { id } = await api.createTenant("alice-codes-default", ownerUserId);
+    const { id } = await api.createTenant("alice-codes-default", ownerUserId, "enam");
 
     // The fix: adopt the durable winner. The OLD code returned its own random
     // crypto.randomUUID() here (an orphan id with no tenant row) — this assert

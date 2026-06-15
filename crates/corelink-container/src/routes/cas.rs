@@ -30,16 +30,44 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::get,
-    Router,
+    Json, Router,
 };
 use corelink_handler_cas::{
-    CasHandlerError, CasReadHandler, CasReadRequest, CasReadResponse, CasWriteHandler,
-    CasWriteRequest, CasWriteResponse, InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver,
+    CasDeleteHandler, CasDeleteRequest, CasDeleteResponse, CasHandlerError, CasListHandler,
+    CasListRequest, CasListResponse, CasReadHandler, CasReadRequest, CasReadResponse,
+    CasWriteHandler, CasWriteRequest, CasWriteResponse, InMemoryAuditSink, InMemoryCasHandler,
+    InMemorySliObserver,
 };
+
+/// Canonical CAS list route path — `GET /v1/cas/:tenant` (D-8).
+pub const CAS_LIST_ROUTE: &str = "/v1/cas/:tenant";
+
+/// Default page size for the CAS list route when `?limit` is absent.
+const DEFAULT_LIST_LIMIT: u32 = 200;
+/// Hard cap on the CAS list page size (contract: `1..=1000`).
+const MAX_LIST_LIMIT: u32 = 1000;
+
+/// Query parameters for the paginated CAS list route (`?limit=&cursor=`).
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct ListQuery {
+    /// Requested page size; clamped to `1..=1000` (default 200).
+    pub limit: Option<u32>,
+    /// Opaque continuation cursor from a prior page.
+    pub cursor: Option<String>,
+}
+
+/// Clamp a requested `?limit` into the `1..=1000` contract window,
+/// defaulting to 200 when absent or zero.
+fn clamp_limit(requested: Option<u32>) -> u32 {
+    match requested {
+        None | Some(0) => DEFAULT_LIST_LIMIT,
+        Some(n) => n.min(MAX_LIST_LIMIT),
+    }
+}
 
 /// Canonical CAS read route path (matchit-0.7 / axum-0.7 `:name` captures).
 ///
@@ -62,6 +90,11 @@ pub struct CasRouteState {
     pub read: Arc<dyn CasReadHandler>,
     /// Write handler (separate trait object — see crate-level docs).
     pub write: Arc<dyn CasWriteHandler>,
+    /// Delete handler (D-8) — write-capable. In production this points at
+    /// the same shared handler instance as `read`/`write`.
+    pub delete: Arc<dyn CasDeleteHandler>,
+    /// List handler (D-8) — read-capable paginated blob enumeration.
+    pub list: Arc<dyn CasListHandler>,
     /// Optional 410-Gone tombstone store (hugit-P2 seam B, WP-B). When present,
     /// `GET` consults it FIRST: an erased `(tenant, hash)` short-circuits to
     /// HTTP 410 Gone (never 404, never 200) before the R2 lookup. `None` (the
@@ -119,6 +152,22 @@ impl CasWriteHandler for UnavailableCasHandler {
     }
 }
 
+impl CasDeleteHandler for UnavailableCasHandler {
+    fn delete(&self, _req: CasDeleteRequest) -> Result<CasDeleteResponse, CasHandlerError> {
+        Err(CasHandlerError::Internal(format!(
+            "{STORAGE_UNAVAILABLE_SENTINEL}R2 CAS handler refused to build (R2_TDK_HEX unset/invalid)"
+        )))
+    }
+}
+
+impl CasListHandler for UnavailableCasHandler {
+    fn list(&self, _req: CasListRequest) -> Result<CasListResponse, CasHandlerError> {
+        Err(CasHandlerError::Internal(format!(
+            "{STORAGE_UNAVAILABLE_SENTINEL}R2 CAS handler refused to build (R2_TDK_HEX unset/invalid)"
+        )))
+    }
+}
+
 /// Build the canonical `Arc<dyn CasReadHandler>` for the current
 /// build target and runtime environment.
 ///
@@ -159,7 +208,12 @@ impl CasWriteHandler for UnavailableCasHandler {
 /// [`UnavailableCasHandler`] (HTTP 503), never the silent `InMemory`
 /// fallback.
 #[must_use]
-pub fn build_handlers() -> (Arc<dyn CasReadHandler>, Arc<dyn CasWriteHandler>) {
+pub fn build_handlers() -> (
+    Arc<dyn CasReadHandler>,
+    Arc<dyn CasWriteHandler>,
+    Arc<dyn CasDeleteHandler>,
+    Arc<dyn CasListHandler>,
+) {
     #[cfg(not(target_arch = "wasm32"))]
     {
         use crate::storage::{r2_s3, StorageEnv};
@@ -204,8 +258,10 @@ pub fn build_handlers() -> (Arc<dyn CasReadHandler>, Arc<dyn CasWriteHandler>) {
                     // one Arc behind both trait objects.
                     let shared: Arc<r2_s3::R2CasHandler> = Arc::new(handler);
                     let read: Arc<dyn CasReadHandler> = shared.clone();
-                    let write: Arc<dyn CasWriteHandler> = shared;
-                    return (read, write);
+                    let write: Arc<dyn CasWriteHandler> = shared.clone();
+                    let delete: Arc<dyn CasDeleteHandler> = shared.clone();
+                    let list: Arc<dyn CasListHandler> = shared;
+                    return (read, write, delete, list);
                 }
                 Some(Err(e)) => {
                     // F1 (CAA-360) fail-CLOSED + LOUD: storage creds ARE present
@@ -227,8 +283,10 @@ pub fn build_handlers() -> (Arc<dyn CasReadHandler>, Arc<dyn CasWriteHandler>) {
                     );
                     let shared: Arc<UnavailableCasHandler> = Arc::new(UnavailableCasHandler);
                     let read: Arc<dyn CasReadHandler> = shared.clone();
-                    let write: Arc<dyn CasWriteHandler> = shared;
-                    return (read, write);
+                    let write: Arc<dyn CasWriteHandler> = shared.clone();
+                    let delete: Arc<dyn CasDeleteHandler> = shared.clone();
+                    let list: Arc<dyn CasListHandler> = shared;
+                    return (read, write, delete, list);
                 }
                 None => {
                     // Should not happen: we already checked is_some().
@@ -244,8 +302,10 @@ pub fn build_handlers() -> (Arc<dyn CasReadHandler>, Arc<dyn CasWriteHandler>) {
         let sli = Arc::new(InMemorySliObserver::new());
         let shared: Arc<InMemoryCasHandler> = Arc::new(InMemoryCasHandler::new(audit, sli));
         let read: Arc<dyn CasReadHandler> = shared.clone();
-        let write: Arc<dyn CasWriteHandler> = shared;
-        (read, write)
+        let write: Arc<dyn CasWriteHandler> = shared.clone();
+        let delete: Arc<dyn CasDeleteHandler> = shared.clone();
+        let list: Arc<dyn CasListHandler> = shared;
+        (read, write, delete, list)
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -266,7 +326,11 @@ pub fn build_handlers() -> (Arc<dyn CasReadHandler>, Arc<dyn CasWriteHandler>) {
 /// disambiguates by HTTP method (GET vs PUT).
 pub fn router(state: CasRouteState) -> Router {
     Router::new()
-        .route(CAS_READ_ROUTE, get(handle_read).put(handle_write))
+        .route(
+            CAS_READ_ROUTE,
+            get(handle_read).put(handle_write).delete(handle_delete),
+        )
+        .route(CAS_LIST_ROUTE, get(handle_list))
         .with_state(state)
 }
 
@@ -394,6 +458,103 @@ async fn handle_write(
     }
 }
 
+/// `DELETE /v1/cas/:tenant/:hash` handler — delete a blob (D-8).
+///
+/// Idempotent: returns 204 No Content whether the blob existed or not.
+/// Requires a WRITE-capable PAT (mirrors `handle_write`).
+async fn handle_delete(
+    State(state): State<CasRouteState>,
+    Path((tenant, hash)): Path<(String, String)>,
+    auth: crate::auth_tenant::AuthTenant,
+    scope: crate::scope::CacheScope,
+) -> impl IntoResponse {
+    // Cross-tenant: deny 403 BEFORE any storage access (mirrors read).
+    if tenant != auth.0 {
+        return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
+    // Scope gate (fail-CLOSED): delete is a cache WRITE — require `cas:rw`.
+    if !scope.can_write() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    if let Some(gate) = state.quota.as_ref() {
+        if let Some(resp) = gate.check(&auth.0).await {
+            return resp;
+        }
+    }
+    let now_ms = 0u64;
+    let req = CasDeleteRequest::new(
+        auth.0.clone(),
+        hash,
+        format!("anon@{}", auth.0),
+        auth.0,
+        now_ms,
+    );
+    match state.delete.delete(req) {
+        // Idempotent: 204 No Content for both deleted-existing and absent.
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => map_err(e),
+    }
+}
+
+/// `GET /v1/cas/:tenant` handler — paginated blob enumeration (D-8).
+///
+/// Requires a READ-capable PAT. Returns
+/// `{ "blobs": [...], "next_cursor": <opaque|null> }`.
+async fn handle_list(
+    State(state): State<CasRouteState>,
+    Path(tenant): Path<String>,
+    auth: crate::auth_tenant::AuthTenant,
+    scope: crate::scope::CacheScope,
+    Query(q): Query<ListQuery>,
+) -> impl IntoResponse {
+    // Cross-tenant: deny 403 BEFORE any storage access.
+    if tenant != auth.0 {
+        return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
+    // Scope gate (fail-CLOSED): list is a cache READ — require read cap.
+    if !scope.can_read() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    if let Some(gate) = state.quota.as_ref() {
+        if let Some(resp) = gate.check(&auth.0).await {
+            return resp;
+        }
+    }
+    let now_ms = 0u64;
+    let req = CasListRequest::new(
+        auth.0.clone(),
+        format!("anon@{}", auth.0),
+        auth.0,
+        clamp_limit(q.limit),
+        q.cursor,
+        now_ms,
+    );
+    match state.list.list(req) {
+        Ok(resp) => {
+            let blobs: Vec<_> = resp
+                .blobs
+                .into_iter()
+                .map(|b| {
+                    serde_json::json!({
+                        "hash": b.hash,
+                        "size": b.size,
+                        "created_at": b.created_at,
+                    })
+                })
+                .collect();
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "blobs": blobs,
+                    "next_cursor": resp.next_cursor,
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => map_err(e),
+    }
+}
+
 /// Map a [`CasHandlerError`] to the canonical HTTP response.
 fn map_err(e: CasHandlerError) -> axum::response::Response {
     // Log the full error before mapping so operators retain a
@@ -469,10 +630,14 @@ mod tests {
         let sli = Arc::new(InMemorySliObserver::new());
         let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
         let read: Arc<dyn CasReadHandler> = shared.clone();
-        let write: Arc<dyn CasWriteHandler> = shared;
+        let write: Arc<dyn CasWriteHandler> = shared.clone();
+        let delete: Arc<dyn CasDeleteHandler> = shared.clone();
+        let list: Arc<dyn CasListHandler> = shared;
         CasRouteState {
             read,
             write,
+            delete,
+            list,
             tombstones: None,
             quota: None,
         }
@@ -485,13 +650,17 @@ mod tests {
         let sli = Arc::new(InMemorySliObserver::new());
         let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
         let read: Arc<dyn CasReadHandler> = shared.clone();
-        let write: Arc<dyn CasWriteHandler> = shared;
+        let write: Arc<dyn CasWriteHandler> = shared.clone();
+        let delete: Arc<dyn CasDeleteHandler> = shared.clone();
+        let list: Arc<dyn CasListHandler> = shared;
         let store = Arc::new(crate::routes::cas_erase::InMemoryTombstoneStore::new());
         store.seed(tenant, hash);
         let tombstones: Arc<dyn crate::routes::cas_erase::TombstoneStore> = store;
         CasRouteState {
             read,
             write,
+            delete,
+            list,
             tombstones: Some(tombstones),
             quota: None,
         }
@@ -600,7 +769,7 @@ mod tests {
     #[test]
     fn build_handlers_returns_usable_pair() {
         // Smoke test the build_handlers shape on the native target.
-        let (read, _write) = build_handlers();
+        let (read, _write, _delete, _list) = build_handlers();
         let bytes = b"hello".to_vec();
         let hash = fake_hash(&bytes);
         // We don't have a seed entry point on the trait alone, so
@@ -820,7 +989,9 @@ mod tests {
         let sli = Arc::new(InMemorySliObserver::new());
         let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
         let read: Arc<dyn CasReadHandler> = shared.clone();
-        let write: Arc<dyn CasWriteHandler> = shared;
+        let write: Arc<dyn CasWriteHandler> = shared.clone();
+        let delete: Arc<dyn CasDeleteHandler> = shared.clone();
+        let list: Arc<dyn CasListHandler> = shared;
 
         let store = InMemoryQuotaStore::new();
         store.seed(
@@ -839,6 +1010,8 @@ mod tests {
         CasRouteState {
             read,
             write,
+            delete,
+            list,
             tombstones: None,
             quota: Some(gate),
         }
@@ -874,7 +1047,9 @@ mod tests {
         let sli = Arc::new(InMemorySliObserver::new());
         let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
         let read: Arc<dyn CasReadHandler> = shared.clone();
-        let write: Arc<dyn CasWriteHandler> = shared;
+        let write: Arc<dyn CasWriteHandler> = shared.clone();
+        let delete: Arc<dyn CasDeleteHandler> = shared.clone();
+        let list: Arc<dyn CasListHandler> = shared;
         // Empty store ⇒ fresh tenant at the $5 tripwire with 0 accrued.
         let store: Arc<dyn QuotaStore> = Arc::new(InMemoryQuotaStore::new());
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(1_700_000_000_000));
@@ -882,6 +1057,8 @@ mod tests {
         let st = CasRouteState {
             read,
             write,
+            delete,
+            list,
             tombstones: None,
             quota: Some(crate::routes::QuotaGate::new_for_test(guard, 1_000)),
         };

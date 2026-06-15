@@ -97,6 +97,26 @@ Each entry cross-references:
   OpenNext-recommended `public/_headers` (`/_next/static/* →
   public,max-age=31536000,immutable`) so chunks become cf-cache HITs and stop
   hitting the origin.
+- **dsr(WI-S11-008): close three GDPR Art.17 erasure gaps — truthful docstring,
+  signed attestation on `VerifiedComplete`, and a durable pre-tombstone SLA
+  anchor.**
+  - **G1** — the `routes/dsr.rs` header docstring claimed a "WAVE 0 PLACEHOLDER …
+    NO real data is deleted yet" while `build_d1_worker` already wires the Wave-1
+    REAL transports (D1 erase-set per ADR-S11-013, R2 CAS/AC delete, Stripe
+    pseudonymize, 8 documented NotApplicable). Rewritten to describe the live
+    Wave-1 state so auditors no longer wrongly conclude nothing deletes.
+  - **G3** — on the 24h verify sweep landing `VerifiedComplete`, the container now
+    signs an Ed25519 erasure attestation (`corelink-erasure-attestation`) and
+    indexes it in `erasure_attestations` (+ upserts the matching public key into
+    `erasure_public_keys`) so the existing `GET /v1/public/keys/erasure/{region}.pub`
+    verifier can serve it. Per-region key reproduced deterministically from a
+    write-only seed (`ErasureSigningKey::from_seed`); idempotent + fail-OPEN.
+  - **G4** — the verify cron only enumerated `dsr_erasure_log`, so a DSR that
+    failed before ANY backend tombstone (audit-fail-closed) had no row and its SLA
+    breach went undetected. New migration `0069_dsr_requested.sql` + a
+    write-at-enqueue anchor in `handleUserDeleted`; the sweep now enumerates both
+    sources (deduped), flipping the anchor to `verified` only on
+    `verified_complete`.
 - **migrations(0064): make the `tenant` table rebuild D1-applicable — add
   `PRAGMA legacy_alter_table=ON` + recreate the residency triggers.** The
   0064 rebuild (widen `tenant.tier` CHECK to add `'max'`) failed on

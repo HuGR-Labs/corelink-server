@@ -79,6 +79,36 @@ impl ErasureSigningKey {
         }
     }
 
+    /// Construct a signing key deterministically from a 32-byte secret seed.
+    ///
+    /// Unlike [`Self::generate`] (random, ephemeral), this reproduces the SAME
+    /// Ed25519 keypair on every process start from a stable secret — the shape
+    /// a Cloudflare-Workers / container deployment needs: the per-region signing
+    /// seed is held in a write-only secret (`wrangler secret put` / env), so the
+    /// public key served by `GET /v1/public/keys/erasure/{region}.pub` stays
+    /// stable across restarts and an attestation signed today still verifies
+    /// against a key fetched later.
+    ///
+    /// The `seed` is the raw Ed25519 secret-scalar seed (`SECRET_KEY_LENGTH` =
+    /// 32 bytes); callers MUST keep it out of logs / Debug / errors.
+    #[must_use]
+    pub fn from_seed(
+        key_id: u64,
+        region: Region,
+        created_at_ms: u64,
+        overlap_until_ms: u64,
+        seed: [u8; 32],
+    ) -> Self {
+        let signing_key = SigningKey::from_bytes(&seed);
+        Self {
+            key_id,
+            region,
+            created_at_ms,
+            overlap_until_ms,
+            signing_key,
+        }
+    }
+
     /// Derive the corresponding public key.
     #[must_use]
     pub fn public_key(&self) -> ErasurePublicKey {
@@ -213,6 +243,17 @@ mod tests {
         let sk = ErasureSigningKey::generate(2, Region::Sam, 0, 0);
         let pk = sk.public_key();
         assert_eq!(pk.fingerprint().len(), 64);
+    }
+
+    #[test]
+    fn from_seed_is_deterministic() {
+        let seed = [7u8; 32];
+        let a = ErasureSigningKey::from_seed(5, Region::Enam, 100, 200, seed);
+        let b = ErasureSigningKey::from_seed(5, Region::Enam, 100, 200, seed);
+        // Same seed → same public key (PEM) → attestations verify across restarts.
+        assert_eq!(a.public_key().pem, b.public_key().pem);
+        assert_eq!(a.key_id, 5);
+        assert_eq!(a.region, Region::Enam);
     }
 
     #[test]

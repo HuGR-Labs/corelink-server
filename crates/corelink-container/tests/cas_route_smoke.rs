@@ -41,7 +41,8 @@ use axum::{
     http::{Request, StatusCode},
 };
 use corelink_handler_cas::{
-    CasReadHandler, CasWriteHandler, InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver,
+    CasDeleteHandler, CasListHandler, CasReadHandler, CasWriteHandler, InMemoryAuditSink,
+    InMemoryCasHandler, InMemorySliObserver,
 };
 use corelink_server::routes::cas::{self, CasRouteState, CAS_READ_ROUTE};
 use tower::ServiceExt;
@@ -51,12 +52,16 @@ fn fresh_state() -> CasRouteState {
     let sli = Arc::new(InMemorySliObserver::new());
     let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
     let read: Arc<dyn CasReadHandler> = shared.clone();
-    let write: Arc<dyn CasWriteHandler> = shared;
+    let write: Arc<dyn CasWriteHandler> = shared.clone();
+    let delete: Arc<dyn CasDeleteHandler> = shared.clone();
+    let list: Arc<dyn CasListHandler> = shared;
     // No tombstone store wired in the smoke test ⇒ classic 200/404 behaviour
     // (the 410-Gone gate is exercised in `routes::cas`'s unit tests).
     CasRouteState {
         read,
         write,
+        delete,
+        list,
         tombstones: None,
         // No $-ceiling gate in the smoke test (gate is exercised in
         // `routes::cas`'s unit tests + the `tenant_quota` suite).

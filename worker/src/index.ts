@@ -26,6 +26,7 @@ import { EventLogDO } from "./event_log_do.js";
 import { getTierForTenant, checkStorageQuota, checkRequestQuota } from "./lib/quota.js";
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
 import { handleSessionExchange } from "./lib/session_exchange.js";
+import { coloForMacro } from "./region-map.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -322,6 +323,12 @@ const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   // unforgeable cf-connecting-ip). Strip any client-supplied value first so a
   // client can never smuggle a forged client IP past the rate-limiter.
   "x-corelink-client-ip",
+  // backlog #29 (residency): the Worker is the SOLE setter of
+  // x-corelink-primary-region (from the trusted D1 tenant.primary_region) on the
+  // regional fan-out path. Strip any client value on EVERY forward so a client
+  // can never smuggle a forged residency macro past the container's residency
+  // guard. The local DO/container path never sets it (IAD-resident by default).
+  "x-corelink-primary-region",
 ];
 
 /**
@@ -1820,60 +1827,118 @@ const handler: ExportedHandler<Env> = {
     }
 
     // WI-MULTI-REGION-V1: per-tenant region routing. Look up tenant.primary_region
-    // from D1 and fan-out to the regional Worker via Service Binding when set to
-    // a non-IAD region. The regional Worker's container reads the same request
-    // path + writes/reads its regional R2 bucket. Fail-open: if the lookup throws
-    // or the binding is missing, fall through to local IAD DO (preserves
-    // availability over strict regional pinning).
+    // from D1, map the MACRO code to its serving colo via the FROZEN region map,
+    // and fan-out to the regional Worker via Service Binding when the colo is
+    // non-IAD. (backlog #29 — Schrems II residency leak.)
+    //
+    // The previous code routed by literal colo strings ("lhr"/"nrt"/"syd") that
+    // the macro `primary_region` NEVER equals (D1 holds wnam/enam/weur/sam/...),
+    // so EU `weur` tenants never matched "lhr" and stayed on IAD = US storage.
+    // The colo map removes that vocabulary mismatch.
+    //
+    // FAIL-CLOSED for non-IAD residency regions: if the macro maps to a non-IAD
+    // colo but the matching Service Binding is missing, OR if the D1 lookup
+    // throws, we return 503 — we DO NOT fall through to the IAD path, because
+    // that fall-through is precisely the cross-border leak. wnam/enam map to IAD
+    // (the local path) so they legitimately fall through to the DO below.
     if (
       resolvedTenantId !== "_anonymous" &&
       resolvedTenantId !== "_system" &&
       resolvedTenantId !== "_pending"
     ) {
+      let primaryRegion: string | undefined;
       try {
         const row = await env.CONFIG_DB
           .prepare("SELECT primary_region FROM tenant WHERE tenant_id = ?1 LIMIT 1")
           .bind(resolvedTenantId)
           .first<{ primary_region: string }>();
-        const region = row?.primary_region;
-        let regionalBinding: { fetch: typeof fetch } | undefined;
-        if (region === "sam") regionalBinding = env.PROD_SAM;
-        else if (region === "lhr") regionalBinding = env.PROD_LHR;
-        else if (region === "nrt") regionalBinding = env.PROD_NRT;
-        else if (region === "syd") regionalBinding = env.PROD_SYD;
-        if (regionalBinding !== undefined) {
-          // Forward verbatim to the regional Worker. The regional Worker re-runs
-          // PAT validation (PAT_SIGNING_KEY is shared across envs) + writes to
-          // its regional R2 bucket. Service Binding bypasses CF edge error 1014
-          // (CNAME Cross-User Banned). See cf_worker_to_worker_service_binding.
-          const regionalReq = new Request(request, {
-            headers: (() => {
-              const h = new Headers(request.headers);
-              // Strip ALL client-suppliable trust headers BEFORE the Worker
-              // sets its own (delete-then-set). The Worker legitimately sets
-              // x-corelink-fanout-from below from a server-trusted constant.
-              stripClientTrustHeaders(h);
-              h.set("x-request-id", requestId);
-              h.set("x-corelink-route-kind", route.routeKind);
-              h.set("x-corelink-token-prefix", auth.tokenPrefix);
-              h.set("x-corelink-tenant-id", resolvedTenantId);
-              // H1: forward the D1-resolved PAT scope as a server-trust header.
-              // stripClientTrustHeaders above already deleted any client value.
-              h.set("x-corelink-scope", auth.scope);
-              // F1: forward CF's unforgeable client IP as x-corelink-client-ip
-              // (the client-forgeable x-forwarded-for was stripped above) so the
-              // regional Worker/container rate-limits signup off a trusted IP.
-              h.set("x-corelink-client-ip", request.headers.get("cf-connecting-ip") ?? "");
-              h.set("x-corelink-fanout-from", "prod");
-              return h;
-            })(),
-          });
-          const regionalResp = await regionalBinding.fetch(regionalReq);
-          return applyCors(regionalResp, request);
-        }
+        primaryRegion = row?.primary_region;
       } catch (_err) {
-        // Fail-open: D1 hiccup or binding misconfigured → stay on IAD path.
+        // D1 hiccup: we cannot establish residency. FAIL-CLOSED — refuse rather
+        // than risk routing an EU tenant to US storage on a transient error.
+        return applyCors(
+          new Response(
+            JSON.stringify({
+              error: "RESIDENCY_UNAVAILABLE",
+              message: "could not resolve tenant data-residency region",
+              request_id: requestId,
+            }),
+            {
+              status: 503,
+              headers: { "Content-Type": "application/json", "X-Request-Id": requestId },
+            },
+          ),
+          request,
+        );
       }
+
+      const colo = primaryRegion !== undefined ? coloForMacro(primaryRegion) : undefined;
+      // Non-IAD residency: must fan-out to the matching regional Service Binding.
+      // colo === undefined here means an unknown/unprovisioned macro (e.g. afr) —
+      // also fail-closed (never serve such a tenant from IAD).
+      if (primaryRegion !== undefined && colo !== "iad") {
+        let regionalBinding: { fetch: typeof fetch } | undefined;
+        if (colo === "lhr") regionalBinding = env.PROD_LHR;
+        else if (colo === "sam") regionalBinding = env.PROD_SAM;
+        else if (colo === "nrt") regionalBinding = env.PROD_NRT;
+
+        if (regionalBinding === undefined) {
+          // FAIL-CLOSED: non-IAD residency but the regional binding is missing
+          // (or the macro is unprovisioned/unknown). Refuse — do NOT fall
+          // through to IAD, which would store the tenant's data cross-border.
+          return applyCors(
+            new Response(
+              JSON.stringify({
+                error: "RESIDENCY_UNAVAILABLE",
+                message: `data-residency region '${primaryRegion}' is not currently servable`,
+                request_id: requestId,
+              }),
+              {
+                status: 503,
+                headers: { "Content-Type": "application/json", "X-Request-Id": requestId },
+              },
+            ),
+            request,
+          );
+        }
+
+        // Forward verbatim to the regional Worker. The regional Worker re-runs
+        // PAT validation (PAT_SIGNING_KEY is shared across envs) + writes to
+        // its regional R2 bucket. Service Binding bypasses CF edge error 1014
+        // (CNAME Cross-User Banned). See cf_worker_to_worker_service_binding.
+        const regionalReq = new Request(request, {
+          headers: (() => {
+            const h = new Headers(request.headers);
+            // Strip ALL client-suppliable trust headers BEFORE the Worker
+            // sets its own (delete-then-set). The Worker legitimately sets
+            // x-corelink-fanout-from + x-corelink-primary-region below from
+            // server-trusted values.
+            stripClientTrustHeaders(h);
+            h.set("x-request-id", requestId);
+            h.set("x-corelink-route-kind", route.routeKind);
+            h.set("x-corelink-token-prefix", auth.tokenPrefix);
+            h.set("x-corelink-tenant-id", resolvedTenantId);
+            // H1: forward the D1-resolved PAT scope as a server-trust header.
+            // stripClientTrustHeaders above already deleted any client value.
+            h.set("x-corelink-scope", auth.scope);
+            // F1: forward CF's unforgeable client IP as x-corelink-client-ip
+            // (the client-forgeable x-forwarded-for was stripped above) so the
+            // regional Worker/container rate-limits signup off a trusted IP.
+            h.set("x-corelink-client-ip", request.headers.get("cf-connecting-ip") ?? "");
+            h.set("x-corelink-fanout-from", "prod");
+            // backlog #29: the trusted residency macro the container's residency
+            // guard cross-checks against its own R2_CAS_REGION (defence-in-depth
+            // against a mis-bound regional Worker). Set AFTER the strip so no
+            // client value survives.
+            h.set("x-corelink-primary-region", primaryRegion as string);
+            return h;
+          })(),
+        });
+        const regionalResp = await regionalBinding.fetch(regionalReq);
+        return applyCors(regionalResp, request);
+      }
+      // colo === "iad" (wnam/enam) or primaryRegion undefined (tenant with no
+      // row): fall through to the local IAD DO path below.
     }
 
     // Route to the per-tenant DO. idFromName(resolvedTenantId) guarantees

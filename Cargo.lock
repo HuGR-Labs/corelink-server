@@ -2244,6 +2244,7 @@ dependencies = [
  "corelink-byok",
  "corelink-cf-bindings",
  "corelink-core",
+ "corelink-erasure-attestation",
  "corelink-handler-ac",
  "corelink-handler-admin",
  "corelink-handler-cas",

@@ -38,9 +38,9 @@ use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::{Credentials, Region};
 use aws_sdk_s3::Client;
 use corelink_handler_cas::{
-    AuditEvent, AuditEventKind, AuditSink, CasHandlerError, CasReadHandler, CasReadRequest,
-    CasReadResponse, CasWriteHandler, CasWriteRequest, CasWriteResponse, InMemoryAuditSink,
-    InMemorySliObserver, SliObservation, SliObserver,
+    AuditEvent, AuditEventKind, AuditSink, CasDeleteHandler, CasHandlerError, CasListHandler,
+    CasReadHandler, CasReadRequest, CasReadResponse, CasWriteHandler, CasWriteRequest,
+    CasWriteResponse, InMemoryAuditSink, InMemorySliObserver, SliObservation, SliObserver,
 };
 use corelink_hash::Digest;
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
@@ -239,6 +239,67 @@ impl R2S3Client {
             }
         }
         Ok(keys)
+    }
+
+    /// List ONE page of objects under `prefix`, returning per-object
+    /// metadata + an opaque continuation token for the next page.
+    ///
+    /// Used by the D-7 / D-8 paginated enumeration routes. Unlike
+    /// [`Self::list_objects_v2`] (which drains every page for erasure),
+    /// this returns a single S3 `ListObjectsV2` page so the HTTP route
+    /// can stream pages back to the client under its own cursor. The
+    /// S3 V2 continuation token IS the route's opaque `next_cursor`.
+    ///
+    /// `max_keys` is clamped into `1..=1000` (the S3 hard cap). Each
+    /// returned tuple is `(full_key, size_bytes, rfc3339_last_modified)`;
+    /// the caller strips the `<region>/<tenant_prefix>/` segments to
+    /// recover the bare digest.
+    ///
+    /// # Errors
+    /// Returns `Err(String)` on any transport/service error.
+    pub async fn list_objects_page(
+        &self,
+        prefix: &str,
+        max_keys: u32,
+        cursor: Option<&str>,
+    ) -> Result<(Vec<(String, u64, String)>, Option<String>), String> {
+        let max_keys = max_keys.clamp(1, 1000) as i32;
+        let mut req = self
+            .inner
+            .list_objects_v2()
+            .bucket(&self.bucket)
+            .prefix(prefix)
+            .max_keys(max_keys);
+        if let Some(token) = cursor {
+            req = req.continuation_token(token);
+        }
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| format!("R2 list-page failed for prefix {prefix}: {e}"))?;
+
+        let mut out = Vec::new();
+        for obj in resp.contents() {
+            let Some(key) = obj.key() else { continue };
+            let size = u64::try_from(obj.size().unwrap_or(0)).unwrap_or(0);
+            // RFC-3339 last-modified; absent ⇒ unix epoch (deterministic
+            // fallback rather than a panic / skipped row).
+            let last_modified = obj
+                .last_modified()
+                .and_then(|dt| dt.fmt(aws_sdk_s3::primitives::DateTimeFormat::DateTime).ok())
+                .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_owned());
+            out.push((key.to_owned(), size, last_modified));
+        }
+
+        // Only surface a next cursor when S3 says the listing is
+        // truncated AND hands back a token (fail-safe: a missing token
+        // on a truncated page ends pagination rather than looping).
+        let next = if resp.is_truncated().unwrap_or(false) {
+            resp.next_continuation_token().map(str::to_owned)
+        } else {
+            None
+        };
+        Ok((out, next))
     }
 
     /// Compute the R2 object key for a blob.
@@ -631,6 +692,174 @@ impl CasWriteHandler for R2CasHandler {
     }
 }
 
+impl R2CasHandler {
+    /// The tenant-scoped LIST prefix: `<region>/<tenant_prefix>/`. Every
+    /// key returned under this prefix belongs to exactly this tenant
+    /// (layer 5 of `INV-TENANT-ISOLATION`); the trailing slash bounds
+    /// the prefix so one tenant's prefix can never be a prefix of
+    /// another's. Enumeration / delete NEVER widen beyond this.
+    fn r2_list_prefix(&self, tenant: &str) -> String {
+        let prefix = tenant_prefix(self.tdk.as_ref(), tenant);
+        format!("{}/{}/", self.cas_region, prefix)
+    }
+}
+
+impl CasDeleteHandler for R2CasHandler {
+    fn delete(
+        &self,
+        req: corelink_handler_cas::CasDeleteRequest,
+    ) -> Result<corelink_handler_cas::CasDeleteResponse, CasHandlerError> {
+        use corelink_handler_cas::observer::Sli;
+        use corelink_handler_cas::CasDeleteResponse;
+
+        // Delete folds availability into the PUT (mutation) SLI bucket.
+        let emit = |is_error: bool| {
+            self.emit_sli(Sli::AvailCasPut, Sli::LatencyCasPutP99, is_error);
+        };
+
+        // Cross-tenant denial — audit BEFORE returning.
+        if req.tenant != req.caller_tenant {
+            self.audit
+                .emit(AuditEvent::new(
+                    AuditEventKind::DeleteDenied,
+                    req.tenant.clone(),
+                    req.hash.clone(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                ))
+                .map_err(CasHandlerError::AuditFailed)?;
+            emit(true);
+            return Err(CasHandlerError::CrossTenantDenied {
+                caller: req.caller_tenant,
+                requested_tenant: req.tenant,
+            });
+        }
+
+        // DeleteAttempted audit BEFORE mutation.
+        self.audit
+            .emit(AuditEvent::new(
+                AuditEventKind::DeleteAttempted,
+                req.tenant.clone(),
+                req.hash.clone(),
+                req.principal.clone(),
+                req.at_unix_ms,
+            ))
+            .map_err(CasHandlerError::AuditFailed)?;
+
+        let key = self.r2_key(&req.tenant, &req.hash);
+        debug!(key = %key, "R2CasHandler::delete");
+
+        // S3 DeleteObject is idempotent: deleting an absent key succeeds.
+        // `existed` is best-effort (S3 does not report prior presence on a
+        // plain DeleteObject); we report `true` on a clean delete so the
+        // diagnostic is monotone, never a silent success on a transport
+        // error. CRITICAL — `block_in_place`: see `read` above.
+        let handle = tokio::runtime::Handle::current();
+        let result = tokio::task::block_in_place(|| handle.block_on(self.client.delete(&key)));
+
+        match result {
+            Ok(()) => {
+                self.audit
+                    .emit(AuditEvent::new(
+                        AuditEventKind::DeleteCommitted,
+                        req.tenant.clone(),
+                        req.hash.clone(),
+                        req.principal.clone(),
+                        req.at_unix_ms,
+                    ))
+                    .map_err(CasHandlerError::AuditFailed)?;
+                emit(false);
+                Ok(CasDeleteResponse::new(true))
+            }
+            Err(e) => {
+                // Fail CLOSED on a storage fault: never a silent success.
+                warn!(error = %e, key = %key, "R2CasHandler::delete error");
+                emit(true);
+                Err(CasHandlerError::Internal(e))
+            }
+        }
+    }
+}
+
+impl CasListHandler for R2CasHandler {
+    fn list(
+        &self,
+        req: corelink_handler_cas::CasListRequest,
+    ) -> Result<corelink_handler_cas::CasListResponse, CasHandlerError> {
+        use corelink_handler_cas::observer::Sli;
+        use corelink_handler_cas::{CasBlobEntry, CasListResponse};
+
+        // List folds availability into the GET (read) SLI bucket.
+        let emit = |is_error: bool| {
+            self.emit_sli(Sli::AvailCasGet, Sli::LatencyCasGetP99, is_error);
+        };
+
+        // Cross-tenant denial — audit BEFORE returning.
+        if req.tenant != req.caller_tenant {
+            self.audit
+                .emit(AuditEvent::new(
+                    AuditEventKind::ListDenied,
+                    req.tenant.clone(),
+                    String::new(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                ))
+                .map_err(CasHandlerError::AuditFailed)?;
+            emit(true);
+            return Err(CasHandlerError::CrossTenantDenied {
+                caller: req.caller_tenant,
+                requested_tenant: req.tenant,
+            });
+        }
+
+        // ListAttempted audit BEFORE enumeration.
+        self.audit
+            .emit(AuditEvent::new(
+                AuditEventKind::ListAttempted,
+                req.tenant.clone(),
+                String::new(),
+                req.principal.clone(),
+                req.at_unix_ms,
+            ))
+            .map_err(CasHandlerError::AuditFailed)?;
+
+        // Enumeration is bounded to the tenant's derived prefix —
+        // cross-tenant keys cannot appear in the result.
+        let prefix = self.r2_list_prefix(&req.tenant);
+        debug!(prefix = %prefix, "R2CasHandler::list");
+
+        let handle = tokio::runtime::Handle::current();
+        let result = tokio::task::block_in_place(|| {
+            handle.block_on(self.client.list_objects_page(
+                &prefix,
+                req.limit,
+                req.cursor.as_deref(),
+            ))
+        });
+
+        match result {
+            Ok((rows, next_cursor)) => {
+                let blobs = rows
+                    .into_iter()
+                    .map(|(key, size, last_modified)| {
+                        // Strip `<region>/<tenant_prefix>/` to recover the
+                        // bare digest; never leak the storage key layout.
+                        let hash = key.rsplit('/').next().unwrap_or(&key).to_owned();
+                        CasBlobEntry::new(hash, size, last_modified)
+                    })
+                    .collect();
+                emit(false);
+                Ok(CasListResponse::new(blobs, next_cursor))
+            }
+            Err(e) => {
+                warn!(error = %e, prefix = %prefix, "R2CasHandler::list error");
+                emit(true);
+                Err(CasHandlerError::Internal(e))
+            }
+        }
+    }
+}
+
 /// Build an `R2CasHandler` from environment variables.
 ///
 /// Returns `None` when storage credentials are not configured (dev /
@@ -967,6 +1196,160 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
             Err(e) => {
                 warn!(error = %e, key = %key, "R2AcHandler::update error");
                 self.emit_update_sli(true);
+                Err(AcHandlerError::Internal(e))
+            }
+        }
+    }
+}
+
+impl R2AcHandler {
+    /// The tenant-scoped LIST prefix for AC refs:
+    /// `<region>/<tenant_prefix>/`. Same isolation guarantee as
+    /// [`R2CasHandler::r2_list_prefix`]; enumeration / delete never
+    /// widen beyond this tenant's derived prefix.
+    fn r2_list_prefix(&self, tenant: &str) -> String {
+        let prefix = tenant_prefix(self.tdk.as_ref(), tenant);
+        format!("{}/{}/", self.ac_region, prefix)
+    }
+}
+
+impl corelink_handler_ac::AcDeleteHandler for R2AcHandler {
+    fn delete(
+        &self,
+        req: corelink_handler_ac::AcDeleteRequest,
+    ) -> Result<corelink_handler_ac::AcDeleteResponse, corelink_handler_ac::AcHandlerError> {
+        use corelink_handler_ac::{
+            AcDeleteResponse, AcHandlerError, AuditEvent as AcAuditEvent,
+            AuditEventKind as AcAuditEventKind,
+        };
+
+        // Cross-tenant denial — audit BEFORE returning.
+        if req.tenant != req.caller_tenant {
+            self.audit
+                .emit(AcAuditEvent::new(
+                    AcAuditEventKind::DeleteDenied,
+                    req.tenant.clone(),
+                    req.action_digest.clone(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                ))
+                .map_err(AcHandlerError::AuditFailed)?;
+            self.emit_update_sli(true);
+            return Err(AcHandlerError::CrossTenantDenied {
+                caller: req.caller_tenant,
+                requested_tenant: req.tenant,
+            });
+        }
+
+        // DeleteAttempted audit BEFORE mutation.
+        self.audit
+            .emit(AcAuditEvent::new(
+                AcAuditEventKind::DeleteAttempted,
+                req.tenant.clone(),
+                req.action_digest.clone(),
+                req.principal.clone(),
+                req.at_unix_ms,
+            ))
+            .map_err(AcHandlerError::AuditFailed)?;
+
+        let key = self.r2_key(&req.tenant, &req.action_digest);
+        debug!(key = %key, "R2AcHandler::delete");
+
+        // S3 DeleteObject is idempotent. CRITICAL — `block_in_place`.
+        let handle = tokio::runtime::Handle::current();
+        let result = tokio::task::block_in_place(|| handle.block_on(self.client.delete(&key)));
+
+        match result {
+            Ok(()) => {
+                self.audit
+                    .emit(AcAuditEvent::new(
+                        AcAuditEventKind::DeleteCommitted,
+                        req.tenant.clone(),
+                        req.action_digest.clone(),
+                        req.principal.clone(),
+                        req.at_unix_ms,
+                    ))
+                    .map_err(AcHandlerError::AuditFailed)?;
+                self.emit_update_sli(false);
+                Ok(AcDeleteResponse::new(true))
+            }
+            Err(e) => {
+                // Fail CLOSED on a storage fault: never a silent success.
+                warn!(error = %e, key = %key, "R2AcHandler::delete error");
+                self.emit_update_sli(true);
+                Err(AcHandlerError::Internal(e))
+            }
+        }
+    }
+}
+
+impl corelink_handler_ac::AcListHandler for R2AcHandler {
+    fn list(
+        &self,
+        req: corelink_handler_ac::AcListRequest,
+    ) -> Result<corelink_handler_ac::AcListResponse, corelink_handler_ac::AcHandlerError> {
+        use corelink_handler_ac::{
+            AcHandlerError, AcListResponse, AcRefEntry, AuditEvent as AcAuditEvent,
+            AuditEventKind as AcAuditEventKind,
+        };
+
+        // Cross-tenant denial — audit BEFORE returning.
+        if req.tenant != req.caller_tenant {
+            self.audit
+                .emit(AcAuditEvent::new(
+                    AcAuditEventKind::ListDenied,
+                    req.tenant.clone(),
+                    String::new(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                ))
+                .map_err(AcHandlerError::AuditFailed)?;
+            self.emit_lookup_sli(true);
+            return Err(AcHandlerError::CrossTenantDenied {
+                caller: req.caller_tenant,
+                requested_tenant: req.tenant,
+            });
+        }
+
+        // ListAttempted audit BEFORE enumeration.
+        self.audit
+            .emit(AcAuditEvent::new(
+                AcAuditEventKind::ListAttempted,
+                req.tenant.clone(),
+                String::new(),
+                req.principal.clone(),
+                req.at_unix_ms,
+            ))
+            .map_err(AcHandlerError::AuditFailed)?;
+
+        // Enumeration is bounded to the tenant's derived prefix.
+        let prefix = self.r2_list_prefix(&req.tenant);
+        debug!(prefix = %prefix, "R2AcHandler::list");
+
+        let handle = tokio::runtime::Handle::current();
+        let result = tokio::task::block_in_place(|| {
+            handle.block_on(self.client.list_objects_page(
+                &prefix,
+                req.limit,
+                req.cursor.as_deref(),
+            ))
+        });
+
+        match result {
+            Ok((rows, next_cursor)) => {
+                let refs = rows
+                    .into_iter()
+                    .map(|(key, size, last_modified)| {
+                        let ref_key = key.rsplit('/').next().unwrap_or(&key).to_owned();
+                        AcRefEntry::new(ref_key, last_modified, size)
+                    })
+                    .collect();
+                self.emit_lookup_sli(false);
+                Ok(AcListResponse::new(refs, next_cursor))
+            }
+            Err(e) => {
+                warn!(error = %e, prefix = %prefix, "R2AcHandler::list error");
+                self.emit_lookup_sli(true);
                 Err(AcHandlerError::Internal(e))
             }
         }

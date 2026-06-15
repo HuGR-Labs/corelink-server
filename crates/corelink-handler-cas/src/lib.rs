@@ -65,9 +65,14 @@ pub mod request;
 
 pub use audit::{AuditEvent, AuditEventKind, AuditSink, InMemoryAuditSink};
 pub use error::CasHandlerError;
-pub use handler::{CasReadHandler, CasWriteHandler, InMemoryCasHandler};
+pub use handler::{
+    CasDeleteHandler, CasListHandler, CasReadHandler, CasWriteHandler, InMemoryCasHandler,
+};
 pub use observer::{InMemorySliObserver, SliObservation, SliObserver};
-pub use request::{CasReadRequest, CasReadResponse, CasWriteRequest, CasWriteResponse};
+pub use request::{
+    CasBlobEntry, CasDeleteRequest, CasDeleteResponse, CasListRequest, CasListResponse,
+    CasReadRequest, CasReadResponse, CasWriteRequest, CasWriteResponse,
+};
 
 /// Placeholder for the real wasm32 CF-Worker CAS handler. Currently
 /// gated to `cfg(target_arch = "wasm32")` and **not implemented**;

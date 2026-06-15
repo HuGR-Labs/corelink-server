@@ -6,14 +6,31 @@
 //! [`crate::routes::internal_pat`]), deserializes the request, maps it to a
 //! canonical [`ErasureRequest`], and drives the 12-backend erasure orchestrator.
 //!
-//! ## WAVE 0 PLACEHOLDER
+//! ## WAVE 1 — LIVE (real data IS deleted)
 //!
-//! The 12 backend adapters are the in-memory no-op `InMemoryBackendErasureAdapter`s.
-//! The full pipeline (Clerk `user.deleted` → queue → consumer → this endpoint →
-//! orchestrator → audit + idempotency ledger) is wired and exercised end-to-end,
-//! but **NO real data is deleted yet**. Wave 1 swaps each canonical adapter for
-//! its real transport (D1 / R2 / Stripe / KV / Loki). Until then the endpoint
-//! returns 200 (orchestrated, audited, ledger-recorded) without erasing.
+//! `build_d1_worker` wires the canonical 12-backend orchestrator with its REAL
+//! transports (the all-placeholder `build_placeholder_worker` survives only as
+//! the unconfigured-env fallback, e.g. tests). On a configured prod env the
+//! pipeline (Clerk `user.deleted` → queue → consumer → this endpoint →
+//! orchestrator → audit + idempotency ledger → 24h verify cron) actually erases:
+//!
+//! - **D1** (`adapter_d1`): real erase-set — every subject-indexed row across the
+//!   canonical D1 erase-set is deleted per ADR-S11-013.
+//! - **R2 CAS** (`adapter_r2_cas`) + **R2 AC** (`adapter_r2_ac`): the tenant's
+//!   content-addressed + action-cache objects are deleted (keyed by the same
+//!   `derive_prefix(tdk, tenant)` the write path used — matches by construction).
+//! - **Stripe** (`adapter_stripe`): customer PII is pseudonymized (crypto-erase /
+//!   detach, not a hard customer delete — billing records must survive for tax).
+//! - The remaining **8** backends are reconciled to `NotApplicable` with a
+//!   documented reason each (Neon / KV / Loki / R2 audit·legal-hold·evidence are
+//!   NOT shipped in prod, so there is no durable subject PII to erase) — a
+//!   truthful GDPR audit record, NOT a silent skip.
+//!
+//! Every state mutation is preceded (fail-CLOSED, ADR-S11-002) by a durable
+//! CloudEvents audit envelope in `audit_outbox`, recorded in the D1 idempotency
+//! ledger (so a retry never double-erases), and re-confirmed by the 24h
+//! verification sweep. On `VerifiedComplete` the verify path additionally signs
+//! and persists an Ed25519 erasure attestation (see [`attestation`]).
 
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -50,6 +67,7 @@ mod adapter_not_applicable;
 mod adapter_r2_ac;
 mod adapter_r2_cas;
 mod adapter_stripe;
+mod attestation;
 mod audit;
 mod d1util;
 mod ledger;
@@ -80,6 +98,10 @@ pub struct DsrQueuedV1 {
 pub struct DsrRouteState {
     internal_auth_key: String,
     worker: Arc<InMemoryErasureWorker>,
+    /// D1 client for the verify-path attestation signer (G3). `None` in the
+    /// unconfigured/test fallback (all-placeholder worker) — attestation is then
+    /// skipped (fail-OPEN), exactly as when the seed secret is unset.
+    d1: Option<Arc<crate::storage::d1_http::D1HttpClient>>,
 }
 
 impl std::fmt::Debug for DsrRouteState {
@@ -88,6 +110,7 @@ impl std::fmt::Debug for DsrRouteState {
         f.debug_struct("DsrRouteState")
             .field("internal_auth_key", &"<redacted>")
             .field("worker", &self.worker)
+            .field("d1", &self.d1.as_ref().map(|_| "[D1HttpClient]"))
             .finish()
     }
 }
@@ -136,7 +159,7 @@ pub fn build_placeholder_worker() -> Result<InMemoryErasureWorker, String> {
 /// still in-memory placeholders (increments 3-4). `None` when `StorageEnv`
 /// is not configured (so the route falls back to the all-placeholder
 /// worker — e.g. in tests / unconfigured envs).
-fn build_d1_worker() -> Option<InMemoryErasureWorker> {
+fn build_d1_worker() -> Option<(InMemoryErasureWorker, Arc<crate::storage::d1_http::D1HttpClient>)> {
     let storage_env = crate::storage::StorageEnv::from_env()?;
     let d1 = Arc::new(crate::storage::d1_http::D1HttpClient::new(&storage_env).ok()?);
 
@@ -204,7 +227,8 @@ fn build_d1_worker() -> Option<InMemoryErasureWorker> {
         })
         .collect();
 
-    InMemoryErasureWorker::try_new(audit, ledger, adapters).ok()
+    let worker = InMemoryErasureWorker::try_new(audit, ledger, adapters).ok()?;
+    Some((worker, d1))
 }
 
 /// Build the route state from env. `None` when `CORELINK_INTERNAL_AUTH_KEY` is
@@ -223,14 +247,16 @@ pub fn build_state_from_env() -> Option<DsrRouteState> {
     }
     // Prefer the real D1-backed worker; fall back to the all-placeholder
     // worker when storage is unconfigured (keeps the route mountable in
-    // tests / partially-configured envs).
-    let worker = match build_d1_worker() {
-        Some(w) => w,
-        None => build_placeholder_worker().ok()?,
+    // tests / partially-configured envs). The D1 handle (when present) also
+    // drives the verify-path attestation signer (G3).
+    let (worker, d1) = match build_d1_worker() {
+        Some((w, d1)) => (w, Some(d1)),
+        None => (build_placeholder_worker().ok()?, None),
     };
     Some(DsrRouteState {
         internal_auth_key,
         worker: Arc::new(worker),
+        d1,
     })
 }
 
@@ -382,15 +408,25 @@ async fn handle_verify(
         }
     };
     match state.worker.verify_erasure(&request, now_ms()) {
-        Ok(decision) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "ok": true,
-                "dsr_id": msg.dsr_id,
-                "decision": decision_label(&decision),
-            })),
-        )
-            .into_response(),
+        Ok(decision) => {
+            // G3: on a fully-verified erasure, sign + persist an Ed25519
+            // attestation (best-effort, fail-OPEN — the erasure is already
+            // complete + audited; attestation is an extra evidence artifact).
+            if matches!(decision, ErasureDecision::VerifiedComplete { .. }) {
+                if let Some(d1) = state.d1.as_ref() {
+                    attestation::sign_and_persist(d1, &msg.dsr_id, &msg.tenant_id, now_ms());
+                }
+            }
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "ok": true,
+                    "dsr_id": msg.dsr_id,
+                    "decision": decision_label(&decision),
+                })),
+            )
+                .into_response()
+        }
         Err(e) => {
             tracing::error!(error = %e, dsr_id = %msg.dsr_id, "dsr/verify: verification engine error");
             (StatusCode::INTERNAL_SERVER_ERROR, "verification failed").into_response()
