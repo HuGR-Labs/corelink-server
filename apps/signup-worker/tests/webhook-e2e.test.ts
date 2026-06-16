@@ -75,7 +75,12 @@ class InMemoryD1 {
                 table.push(row);
               }
             } else if (tableName === "pat") {
+              // Store named columns so the WP-1 pat-liveness SELECT (tenant_id +
+              // expires_ms) can match. Seed INSERTs use the column order
+              // (pat_id, tenant_id, expires_ms).
               row["pat_id"] = boundValues[0];
+              row["tenant_id"] = boundValues[1];
+              row["expires_ms"] = boundValues[2];
               table.push(row);
             } else {
               table.push(row);
@@ -95,6 +100,15 @@ class InMemoryD1 {
           const row = table.find((r) => r["_clerk_user_id"] === clerkUserId);
           if (row) return { tenant_id: row["tenant_id"] } as T;
           return null;
+        }
+        // Handle WP-1: SELECT pat_id FROM pat WHERE tenant_id = ?1 AND expires_ms > ?2
+        if (query.includes("FROM pat") && query.includes("expires_ms")) {
+          const tenantId = boundValues[0];
+          const minExpires = Number(boundValues[1]);
+          const row = self
+            .getTable("pat")
+            .find((r) => r["tenant_id"] === tenantId && Number(r["expires_ms"]) > minExpires);
+          return row ? ({ pat_id: row["pat_id"] } as T) : null;
         }
         return null;
       },
@@ -256,6 +270,48 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
     expect(metadataCalled.length).toBe(1);
   });
 
+  it("provisions to enam even when Svix delivers from a European PoP (cf.colo is Svix's, not the user's)", async () => {
+    // REGRESSION: a Clerk webhook is delivered by Svix (server-to-server), so
+    // request.cf.colo is Svix's sender PoP, NOT the end-user's. Before the fix,
+    // a European Svix PoP (e.g. "FRA") was geo-mapped to `weur` and then REJECTED
+    // by PROVISIONED_MACROS (US-only at launch) with a 422 — a legitimate signup
+    // lost to Svix routing. The handler now ignores the webhook colo and defaults
+    // to the launch-served region (enam), so the signup MUST succeed.
+    const regions: string[] = [];
+    const env: AutoProvisionEnv = {
+      CLERK_WEBHOOK_SECRET: WEBHOOK_SECRET,
+      CORELINK_API_BASE: "https://corelink-api.humangr.com",
+      CORELINK_INTERNAL_AUTH_KEY: "test-internal-auth-key-e2e",
+    };
+    const stubApi = () => ({
+      async createTenant(_name: string, _ownerUserId: string, region: string) {
+        regions.push(region);
+        return { id: "eu-tenant-uuid" };
+      },
+      async configureTenant(_t: string, region: string, _p: "free") {
+        regions.push(region);
+      },
+      async issuePat() {
+        return { id: "pat-eu", plaintext: "corelink_pat_EUTOKEN" };
+      },
+      async publishUserMetadata() {},
+    });
+
+    const event = makeUserCreatedEvent("user_eu_signup");
+    const req = await makeWebhookRequest(event, WEBHOOK_SECRET);
+    // Attach a European Svix sender PoP — pre-fix this forced weur → 422.
+    Object.defineProperty(req, "cf", { value: { colo: "FRA" }, configurable: true });
+
+    const resp = await handleClerkWebhook(req, env, stubApi);
+
+    expect(resp.status).toBe(200); // NOT 422 region_not_provisioned
+    // Every region the handler assigned is the launch default enam — never weur.
+    expect(regions.length).toBeGreaterThan(0);
+    for (const r of regions) {
+      expect(r).toBe("enam");
+    }
+  });
+
   it("idempotency: second webhook for same clerk_user_id returns cached tenant_id", async () => {
     const db = new InMemoryD1();
     // Pre-seed the tenant row as if already provisioned.
@@ -263,6 +319,12 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
       "INSERT OR IGNORE INTO tenant (tenant_id, primary_region, tenant_state, email_hash, clerk_user_id, created_at_ms, updated_at_ms, created_ms, updated_ms) VALUES (?1, ?2, 'active', ?3, ?4, ?5, ?5, ?5, ?5)",
     )
       .bind("cached-tenant-uuid", "enam", "hash", "user_2abc", Date.now())
+      .run();
+    // WP-1 (#269): idempotency requires tenant AND a LIVE pat — a tenant row
+    // alone is not "complete provisioning". Seed a non-expired pat so this models
+    // a fully-provisioned tenant (column order: pat_id, tenant_id, expires_ms).
+    db.prepare("INSERT OR IGNORE INTO pat (pat_id, tenant_id, expires_ms) VALUES (?1, ?2, ?3)")
+      .bind("cached-pat-id", "cached-tenant-uuid", Date.now() + 3_600_000)
       .run();
 
     const env: AutoProvisionEnv = {

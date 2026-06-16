@@ -652,7 +652,10 @@ export async function autoProvisionFromClerkEvent(input: {
   await input.api.configureTenant(tenant.id, region, "free");
   await input.analytics.emit("region_assigned", tenant.id, user.id, {
     region,
-    source: "geo_ip_cf_colo",
+    // Honest source: when a real user-geo colo is supplied it is geo-derived;
+    // the webhook path supplies none (Svix's PoP ≠ the user), so it is the
+    // launch-served default (enam). See the colo note in the webhook handler.
+    source: input.colo ? "geo_ip_cf_colo" : "launch_default",
     svix_id: input.svixId,
   });
 
@@ -756,8 +759,21 @@ export async function handleClerkWebhook(
   }
   const event = parsed as ClerkUserCreatedEvent;
 
-  const colo =
-    (request as Request & { cf?: { colo?: string } }).cf?.colo ?? null;
+  // RESIDENCY SOURCE — do NOT derive the tenant region from this webhook's
+  // `cf.colo`. A Clerk webhook is delivered by SVIX (server-to-server), so
+  // `request.cf.colo` is SVIX's sender PoP, NOT the end-user's location. Deriving
+  // residency from it is a category error: e.g. a US user whose webhook Svix routes
+  // via a European PoP (observed live: `sender-9YMgn` → `weur`) would be assigned
+  // `weur` and then REJECTED by PROVISIONED_MACROS (US-only at launch) — a
+  // legitimate paying signup lost to the luck of Svix's routing. The webhook
+  // carries no reliable user-geo signal, and at launch ONLY enam/wnam (IAD) is
+  // actually served (see PROVISIONED_MACROS), so webhook-provisioned tenants
+  // default to the launch-served region (enam, via regionFromColo's null default).
+  // Real per-tenant residency selection is a deliberate post-signup action, wired
+  // when the EU/SAM serving build-out lands (residency Phase-2). (Svix's sender PoP
+  // is still captured in the request logs for diagnostics — it just never drives
+  // provisioning.)
+  const colo = null;
 
   // Idempotency: short-circuit ONLY when provisioning is COMPLETE — i.e. the
   // tenant row exists AND a still-live PAT exists for it. Keying idempotency on
