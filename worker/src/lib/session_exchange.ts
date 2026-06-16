@@ -133,6 +133,38 @@ const MAX_IN_MEMORY_BURST = 5;
 const MAX_IN_MEMORY_MINT_ENTRIES = 50_000;
 
 /**
+ * Canonicalize a mint-request scope label to a D1 `pat.scope` value.
+ *
+ * The D1 `pat` table has `CHECK (scope IN ('read-write','read-only','admin'))`
+ * (migration 0037). Callers of {@link mintScopedPat} pass the container's mint
+ * scope LABELS (`'cas:rw'` for the data plane) OR an already-canonical D1 value
+ * (auth_rotate replays the OLD row's `pat.scope`, which is already canonical).
+ * Both must be normalised to the CHECK-legal value before the INSERT, or the row
+ * silently fails the CHECK and the token never authenticates.
+ *
+ * Mapping (the ONLY accepted inputs — least privilege, no wildcard pass-through):
+ *   - `'cas:rw'` / `'read-write'` → `'read-write'` (SCOPE_CACHE_RW data plane)
+ *   - `'admin'`                   → `'admin'`
+ *   - `'read-only'`               → `'read-only'`
+ *
+ * An unmappable scope returns `null` → the caller fails CLOSED with a 500 rather
+ * than writing a CHECK-violating (or privilege-escalating) row.
+ */
+function canonicalizePatScope(scope: string): "read-write" | "read-only" | "admin" | null {
+  switch (scope) {
+    case "cas:rw":
+    case "read-write":
+      return "read-write";
+    case "admin":
+      return "admin";
+    case "read-only":
+      return "read-only";
+    default:
+      return null;
+  }
+}
+
+/**
  * Per-principal fixed-window mint throttle for `/v1/session/exchange`.
  *
  * A still-valid Clerk session could otherwise loop-mint unbounded PATs (each
@@ -413,6 +445,18 @@ export async function mintScopedPat(
   // correlation). The hashing is identical regardless of source.
   const principalId = await clerkUserIdToPrincipalUuid(principalSource);
 
+  // ── Canonicalize the scope to a D1-legal value BEFORE any expensive work ────
+  // The minted PAT only authenticates if its `pat` row is persisted, and the
+  // `pat.scope` CHECK accepts only ('read-write','read-only','admin'). Reject an
+  // unmappable scope NOW (fail-CLOSED 500) rather than after the container mint —
+  // a token we could never persist must never be returned, and we avoid burning
+  // an Argon2id mint on a request we will reject anyway.
+  const canonicalScope = canonicalizePatScope(scope);
+  if (canonicalScope === null) {
+    console.error(`[${requestId}] mint scoped pat: unmappable scope (cannot persist)`);
+    return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
+  }
+
   // ── Per-principal mint throttle (fail-CLOSED 429) ──────────────────────────
   // The session is verified, but a still-valid session must not loop-mint
   // unbounded PATs. Cap mints per derived principal UUID per fixed window
@@ -486,6 +530,73 @@ export async function mintScopedPat(
   ) {
     console.error(`[${requestId}] session exchange mint body missing fields`);
     return reapiError("INTERNAL_ERROR", "session exchange mint malformed", 500, requestId);
+  }
+
+  // ── Persist the `pat` row (fail-CLOSED) — the load-bearing fix ──────────────
+  // The container's /_internal/pat/mint COMPUTES the token + its Argon2id hash
+  // but does NOT write the D1 `pat` row — by contract the CALLER persists it (the
+  // signup-worker + customer plane do; this shared mint chokepoint previously did
+  // NOT, so every minted exchange/runner token 401'd at extractAuth because no row
+  // existed). We INSERT the row HERE, using the returned `hash`, BEFORE handing the
+  // token back. On ANY persistence failure we fail CLOSED (500, no token): a token
+  // that cannot authenticate is strictly worse than an honest error.
+  //
+  // Schema (migration 0037 + 0054): pat(pat_id, tenant_id, pat_hash, scope,
+  // expires_ms, token_id, shown_once_token UNIQUE, shown_once_consumed, created_ms).
+  //   - pat_hash      = the container's Argon2id `hash` (the auth digest extractAuth
+  //                     does NOT re-derive here, but the row's existence + token_id
+  //                     lookup is what extractAuth needs; hash is the canonical
+  //                     stored secret artifact). Missing/empty hash on a 200 →
+  //                     fail-CLOSED (never write a hash-less row).
+  //   - scope         = the canonical D1 value (CHECK-legal; computed above).
+  //   - shown_once_token = the per-pat-unique `token_id` (UNIQUE column). The token
+  //                     is handed to the caller directly (not via the one-time
+  //                     dashboard reveal), so shown_once_consumed=1 and we use the
+  //                     non-secret, naturally-unique token_id rather than the raw
+  //                     plaintext (which must never be stored).
+  //   - tenant_id     = FK to tenant(tenant_id); an absent tenant → INSERT throws →
+  //                     fail-CLOSED (no working token handed back).
+  if (typeof minted.hash !== "string" || minted.hash.length === 0) {
+    // A 200 with no Argon2id hash means we cannot persist an authenticatable row.
+    console.error(`[${requestId}] session exchange mint 200 missing hash; cannot persist`);
+    return reapiError("INTERNAL_ERROR", "session exchange mint malformed", 500, requestId);
+  }
+  try {
+    const insertResult = await env.CONFIG_DB.prepare(
+      "INSERT INTO pat " +
+        "(pat_id, tenant_id, pat_hash, scope, expires_ms, token_id, " +
+        " shown_once_token, shown_once_consumed, created_ms) " +
+        "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)",
+    )
+      .bind(
+        minted.pat_id,
+        tenantId,
+        minted.hash,
+        canonicalScope,
+        minted.expires_ms,
+        minted.token_id,
+        // shown_once_token: the unique, non-secret token_id (NEVER the plaintext).
+        minted.token_id,
+        Date.now(),
+      )
+      .run();
+    // A plain INSERT (not OR IGNORE) surfaces FK / UNIQUE / CHECK violations as a
+    // throw (the primary signal, caught below). As a belt-and-braces guard against
+    // a silent no-op, fail CLOSED if D1 explicitly reports zero rows changed — a
+    // token whose row was not written cannot authenticate. `meta.changes` is
+    // present on the real D1 driver; when absent (e.g. a partial test double) we
+    // trust the no-throw success path.
+    const changes = (insertResult as { meta?: { changes?: number } } | undefined)?.meta?.changes;
+    if (typeof changes === "number" && changes < 1) {
+      console.error(`[${requestId}] session exchange pat persist wrote no row`);
+      return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
+    }
+  } catch (err: unknown) {
+    // FK (tenant absent) / UNIQUE (token_id|shown_once_token|pat_hash collision) /
+    // CHECK (scope) / transport — all fail CLOSED; do NOT return the token.
+    const message = err instanceof Error ? err.message : "unknown error";
+    console.error(`[${requestId}] session exchange pat persist failed: ${message.slice(0, 80)}`);
+    return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
   }
 
   // ── Return the public exchange response (NEVER the Argon2id hash) ───────────

@@ -42,12 +42,18 @@ function makeCtx(): ExecutionContext {
 
 function makeConfigDb(clerkUserToTenant: Map<string, string>): D1Database {
   return {
-    prepare: (_sql: string) => ({
+    prepare: (sql: string) => ({
       bind: (...args: unknown[]) => ({
         first: async <T>() => {
+          // Throttle INSERT…ON CONFLICT…RETURNING count → 1 (under cap).
+          if (sql.includes("session_exchange_throttle")) {
+            return { count: 1 } as T;
+          }
           const tenantId = clerkUserToTenant.get(args[0] as string);
           return (tenantId ? { tenant_id: tenantId } : null) as T | null;
         },
+        // mintScopedPat now persists the pat row after a successful mint.
+        run: async () => ({ success: true }) as unknown as D1Result,
       }),
     }),
   } as unknown as D1Database;

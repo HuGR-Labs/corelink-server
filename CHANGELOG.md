@@ -312,6 +312,28 @@ Each entry cross-references:
   `/`-based traversal). (CAS-hash defense-in-depth is a follow-up.)
 
 ### Fixed
+- **CRITICAL — `mintScopedPat` now persists the `pat` D1 row (minted tokens never authenticated).**
+  The shared mint chokepoint `mintScopedPat` (`worker/src/lib/session_exchange.ts`) called the
+  container's `/_internal/pat/mint`, which COMPUTES a token + its Argon2id hash but — by contract —
+  does NOT write the `pat` table; the CALLER must. Only the signup-worker + customer plane did. So
+  every token from **`handleSessionExchange` (hugit), `handleTokenExchange` (githugr), and
+  `handleRunnerMint` (D-9 runners)** was returned but never persisted → the Worker's `extractAuth`
+  (`SELECT … FROM pat WHERE token_id = ?`) found no row → **401, the token never authenticated**
+  (confirmed live: minted tokens 401'd identically to bogus ones until the row was hand-inserted).
+  `mintScopedPat` now **INSERTs the `pat` row into `CONFIG_DB` using the mint's returned `hash`,
+  BEFORE returning the token** — mirroring the signup-worker's `insertPat`. The fix is at the single
+  chokepoint, so it repairs all three callers at once:
+  - `pat_hash` = the container's Argon2id `hash` (previously received on the wire but discarded);
+    a 200 mint with a missing/empty hash now **fails CLOSED (500)** rather than writing a hash-less row.
+  - `scope` is **canonicalized to the D1 `CHECK (scope IN ('read-write','read-only','admin'))`**
+    set (`cas:rw`/`read-write` → `read-write`, `admin` → `admin`, `read-only` → `read-only`); an
+    unmappable scope **fails CLOSED (500)** instead of silently violating the CHECK.
+  - `shown_once_token` (a UNIQUE column) is set to the per-pat-unique, non-secret `token_id` with
+    `shown_once_consumed = 1` (the token is returned directly, not via the one-time dashboard reveal);
+    the raw plaintext is never stored.
+  - **Fail-CLOSED ordering:** any INSERT failure (FK to `tenant` absent, UNIQUE/CHECK violation,
+    transport error) returns a 500 and the token is **NOT** returned — a token that cannot
+    authenticate is strictly worse than an honest error.
 - **CAA-360 #6 — real audit-event timestamps across CAS / AC / Bazel REAPI / Turbo.** Every audit
   event on these data-plane routes was stamped `now_ms = 0` (a `0u64` stand-in / `const fn now_ms()
   -> 0`), making the audit log un-orderable and un-correlatable. All 11 sites now use the production
