@@ -36,6 +36,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use crate::wall_clock::{SystemWallClock, WallClock};
 use corelink_handler_cas::{
     CasDeleteHandler, CasDeleteRequest, CasDeleteResponse, CasHandlerError, CasListHandler,
     CasListRequest, CasListResponse, CasReadHandler, CasReadRequest, CasReadResponse,
@@ -389,10 +390,10 @@ async fn handle_read(
             }
         }
     }
-    // Logical clock stand-in: production wiring threads a
-    // `WallClock` collaborator. We use the handler-supplied
-    // `at_unix_ms` to keep the route logic-free.
-    let now_ms = 0u64;
+    // CAA-360 #6: real audit-event timestamp from the production SystemWallClock
+    // (was hardcoded `0u64`, which stamped every audit event with epoch 0 and
+    // made the audit log un-orderable / un-correlatable).
+    let now_ms = SystemWallClock.now_ms();
     let req = CasReadRequest::new(
         auth.0.clone(),
         hash,
@@ -440,7 +441,7 @@ async fn handle_write(
             return resp;
         }
     }
-    let now_ms = 0u64;
+    let now_ms = SystemWallClock.now_ms();
     let req = CasWriteRequest::new(
         auth.0.clone(),
         hash,
@@ -485,7 +486,7 @@ async fn handle_delete(
             return resp;
         }
     }
-    let now_ms = 0u64;
+    let now_ms = SystemWallClock.now_ms();
     let req = CasDeleteRequest::new(
         auth.0.clone(),
         hash,
@@ -524,7 +525,7 @@ async fn handle_list(
             return resp;
         }
     }
-    let now_ms = 0u64;
+    let now_ms = SystemWallClock.now_ms();
     let req = CasListRequest::new(
         auth.0.clone(),
         format!("anon@{}", auth.0),

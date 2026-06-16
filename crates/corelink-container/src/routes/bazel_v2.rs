@@ -305,11 +305,13 @@ async fn quota_reject_batch(
     None
 }
 
-/// Logical wall-clock stand-in (production wiring injects a real clock
-/// collaborator; 0 keeps the routes logic-free and matches the CAS/AC
-/// route convention).
-const fn now_ms() -> u64 {
-    0u64
+/// Real wall-clock millis for audit-event timestamps (CAA-360 #6). Previously a
+/// `const fn` returning `0`, which stamped every Bazel REAPI audit event with
+/// epoch 0 — making the audit log un-orderable/un-correlatable. Uses the
+/// production [`crate::wall_clock::SystemWallClock`]; CAS/AC/Turbo were fixed the same way.
+fn now_ms() -> u64 {
+    use crate::wall_clock::WallClock as _;
+    crate::wall_clock::SystemWallClock.now_ms()
 }
 
 // ─── Error mapping ────────────────────────────────────────────────────────────

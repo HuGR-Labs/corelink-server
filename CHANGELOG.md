@@ -22,6 +22,13 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **CAA-360 #6 — real audit-event timestamps across CAS / AC / Bazel REAPI / Turbo.** Every audit
+  event on these data-plane routes was stamped `now_ms = 0` (a `0u64` stand-in / `const fn now_ms()
+  -> 0`), making the audit log un-orderable and un-correlatable. All 11 sites now use the production
+  `SystemWallClock.now_ms()` (the same `WallClock` the admin-pilot routes use). No behavior change
+  beyond truthful timestamps.
+
 ### Fixed (CAA-360 audit — storage hardening batch)
 - **#19 OCI in-flight byte ceiling made atomic.** The 512 MiB cross-tenant upload ceiling used a
   load-check-then-`fetch_add`, so two concurrent `PATCH` appends could both pass a stale read and

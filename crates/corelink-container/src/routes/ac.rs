@@ -46,6 +46,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use crate::wall_clock::{SystemWallClock, WallClock};
 use corelink_handler_ac::{
     AcDeleteHandler, AcDeleteRequest, AcDeleteResponse, AcHandlerError, AcListHandler,
     AcListRequest, AcListResponse, AcLookupHandler, AcLookupRequest, AcLookupResponse,
@@ -338,9 +339,9 @@ async fn handle_lookup(
             return resp;
         }
     }
-    // Logical clock stand-in (handler is the source of truth in
-    // production; see cas.rs for the same rationale).
-    let now_ms = 0u64;
+    // CAA-360 #6: real audit-event timestamp from the production SystemWallClock
+    // (was hardcoded `0u64`; see cas.rs for the same fix).
+    let now_ms = SystemWallClock.now_ms();
     let req = AcLookupRequest::new(
         auth.0.clone(),
         action_digest,
@@ -383,7 +384,7 @@ async fn handle_update(
             return resp;
         }
     }
-    let now_ms = 0u64;
+    let now_ms = SystemWallClock.now_ms();
     let req = AcUpdateRequest::new(
         auth.0.clone(),
         action_digest,
@@ -428,7 +429,7 @@ async fn handle_delete(
             return resp;
         }
     }
-    let now_ms = 0u64;
+    let now_ms = SystemWallClock.now_ms();
     let req = AcDeleteRequest::new(
         auth.0.clone(),
         action_digest,
@@ -467,7 +468,7 @@ async fn handle_list_refs(
             return resp;
         }
     }
-    let now_ms = 0u64;
+    let now_ms = SystemWallClock.now_ms();
     let req = AcListRequest::new(
         auth.0.clone(),
         format!("anon@{}", auth.0),
