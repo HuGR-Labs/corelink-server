@@ -971,6 +971,23 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
+    #[tokio::test]
+    async fn get_malformed_hash_returns_400() {
+        // CAA-360 #9: a non-canonical :hash is rejected with 400 BEFORE storage,
+        // even WITH valid auth + scope (the digest gate runs before the scope
+        // gate). Covers the gate against a mutant that disables/inverts it.
+        let app = router(fixture());
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/v1/cas/{TEST_TENANT}/not-a-canonical-hash"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
     // ── 410-Gone tombstone read gate (hugit-P2 seam B, WP-B) ─────────────────
 
     /// A GET for an ERASED `(tenant, hash)` returns HTTP 410 Gone — NOT 404,
