@@ -201,6 +201,46 @@ function isValidTier(value: string): value is Tier {
   );
 }
 
+/**
+ * Name of the server-trusted header carrying the tenant's resolved per-tier
+ * storage cap (bytes) to the container, where the byte-accounting reservation
+ * uses it to seed a FRESH `tenant_storage_state` row with the REAL cap instead
+ * of the legacy hard-coded `0` (which the container conflated with "unlimited",
+ * leaving a fresh/unsynced tenant uncapped). The Worker is the SOLE setter (it
+ * is the quota-resolution authority); it MUST be in {@link stripClientTrustHeaders}
+ * so a client can never forge it — exactly like `x-corelink-tenant-id`.
+ */
+export const STORAGE_QUOTA_HEADER = "x-corelink-storage-quota-bytes";
+
+/**
+ * Compute the value of {@link STORAGE_QUOTA_HEADER} for a resolved tier, or
+ * `null` when the header MUST NOT be injected (so the container's fail-closed
+ * `None` default applies).
+ *
+ * Semantics, kept symmetric with the container's `storage_quota_from_headers` +
+ * fresh-row seed:
+ *   - tier cap is a finite byte count → the decimal string of that count
+ *     (the container seeds `bytes_quota = n`);
+ *   - tier is genuinely unlimited (`storageBytesMax === MAX_SAFE_INTEGER`,
+ *     i.e. enterprise/team) → `"0"` (the container's deliberate
+ *     unlimited sentinel — distinct from absence);
+ *   - the tier was derived from a D1 error (`d1Error === true`) → `null`
+ *     (cap unconfirmed; do not inject — let the container fail closed on a
+ *     fresh row rather than seed a possibly-wrong cap). The verb-aware
+ *     storage-quota gate already fails writes closed on a D1 error, so a fresh
+ *     tenant cannot slip through here either.
+ */
+export function storageQuotaHeaderValue(tierResult: TierResult): string | null {
+  if (tierResult.d1Error) {
+    return null;
+  }
+  const max = QUOTAS[tierResult.tier].storageBytesMax;
+  if (max === Number.MAX_SAFE_INTEGER) {
+    return "0"; // genuine unlimited tier
+  }
+  return String(max);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Storage quota check
 // ─────────────────────────────────────────────────────────────────────────────

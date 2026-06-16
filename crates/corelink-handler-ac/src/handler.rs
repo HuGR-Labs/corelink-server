@@ -83,10 +83,26 @@ pub struct AcUpdateRequest {
     pub caller_tenant: String,
     /// Wall-clock unix-millis.
     pub at_unix_ms: u64,
+    /// The tenant's **resolved per-tier storage cap in bytes** (from the
+    /// Worker-trusted `x-corelink-storage-quota-bytes` header), threaded to the
+    /// byte-accounting reservation to seed a fresh `tenant_storage_state` row.
+    ///
+    /// - `Some(n)`, `n > 0` — finite cap; a fresh row seeds `bytes_quota = n`.
+    /// - `Some(0)` — genuinely-unlimited tier; a fresh row seeds the `0` sentinel.
+    /// - `None` — indeterminate; a fresh row FAILS CLOSED (never created
+    ///   uncapped). An existing row keeps its already-seeded cap.
+    ///
+    /// Defaults to `None` so existing `::new` call sites compile unchanged and
+    /// inherit the fail-closed default; set with [`Self::with_storage_quota_bytes`].
+    pub storage_quota_bytes: Option<i64>,
 }
 
 impl AcUpdateRequest {
     /// Construct from fields.
+    ///
+    /// `storage_quota_bytes` defaults to `None` (indeterminate cap → fail-closed
+    /// on a fresh row); set the resolved cap with
+    /// [`Self::with_storage_quota_bytes`].
     #[must_use]
     pub fn new(
         tenant: impl Into<String>,
@@ -103,7 +119,17 @@ impl AcUpdateRequest {
             principal: principal.into(),
             caller_tenant: caller_tenant.into(),
             at_unix_ms,
+            storage_quota_bytes: None,
         }
+    }
+
+    /// Attach the resolved per-tier storage cap (bytes) used to seed a fresh
+    /// `tenant_storage_state` row. See [`Self::storage_quota_bytes`] for the
+    /// `Some(n)` / `Some(0)` / `None` semantics.
+    #[must_use]
+    pub fn with_storage_quota_bytes(mut self, cap: Option<i64>) -> Self {
+        self.storage_quota_bytes = cap;
+        self
     }
 }
 

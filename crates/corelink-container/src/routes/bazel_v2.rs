@@ -561,7 +561,17 @@ async fn handle_cas_write(
     );
     match state
         .adapter
-        .cas_put(&instance, &digest, body.to_vec(), &p, &tenant, now_ms())
+        .cas_put(
+            &instance,
+            &digest,
+            body.to_vec(),
+            corelink_bazel_bridge::adapter::WriteCtx {
+                principal: &p,
+                caller_tenant: &tenant,
+                at_unix_ms: now_ms(),
+                storage_quota_bytes: crate::byte_accounting::storage_quota_from_headers(&headers),
+            },
+        )
     {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => map_bridge_err(e),
@@ -649,7 +659,17 @@ async fn handle_ac_write(
     };
     match state
         .adapter
-        .ac_put(&instance, &digest, body.to_vec(), &p, &tenant, now_ms())
+        .ac_put(
+            &instance,
+            &digest,
+            body.to_vec(),
+            corelink_bazel_bridge::adapter::WriteCtx {
+                principal: &p,
+                caller_tenant: &tenant,
+                at_unix_ms: now_ms(),
+                storage_quota_bytes: crate::byte_accounting::storage_quota_from_headers(&headers),
+            },
+        )
     {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => map_bridge_err(e),

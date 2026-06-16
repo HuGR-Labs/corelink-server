@@ -503,7 +503,12 @@ async fn handle_write(
         format!("anon@{}", auth.0),
         auth.0.clone(),
         now_ms,
-    );
+    )
+    // Thread the Worker-resolved per-tier storage cap (server-trusted header)
+    // into the reservation so the decorator seeds a FRESH `tenant_storage_state`
+    // row with the REAL cap (not the legacy uncapped `0`). Absent ⇒ `None` ⇒
+    // fail-CLOSED on an unseeded tenant (never treated as unlimited).
+    .with_storage_quota_bytes(crate::byte_accounting::storage_quota_from_headers(&headers));
     // Storage byte accounting (finding #1 / cluster B+C) is enforced INSIDE
     // `state.write` by the [`crate::byte_accounting::AccountingCasHandler`]
     // decorator (wired in `routes::build_with_factory` when D1 is present):
