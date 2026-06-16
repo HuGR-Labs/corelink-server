@@ -33,6 +33,7 @@ import {
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
 import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchange.js";
 import { handleRunnerMint, handleRunnerRevoke } from "./lib/runner_mint.js";
+import { handleAuthRotate } from "./lib/auth_rotate.js";
 import { handleTenantLookup } from "./lib/tenant_lookup.js";
 import { resolveConsumerKey, type InternalConsumer } from "./lib/internal_auth.js";
 import { coloForMacro } from "./region-map.js";
@@ -234,6 +235,7 @@ type RouteKind =
   | "token_exchange"
   | "runner_mint"
   | "runner_revoke"
+  | "auth_rotate"
   | "internal"
   | "health_container"
   | "not_found";
@@ -679,6 +681,18 @@ function matchRoute(url: URL): RouteMatch {
   // dispatcher on job teardown (TTL is the backstop).
   if (path === "/internal/v1/runner/revoke") {
     return { tenantId: "_system", pathSuffix: path, routeKind: "runner_revoke" };
+  }
+
+  // clw `auth rotate` seam — atomic mint-new + revoke-old. EXACT
+  // /internal/v1/auth/rotate. Internal-auth gated (same pat_mint consumer key as
+  // runner-mint/revoke); reads the old `pat` row for its tenant + scope, mints an
+  // equivalent new PAT via the container's single mint authority, then revokes the
+  // old pat_id via the existing `UPDATE pat SET revoked_at_ms` surface. The clw
+  // backend (holding the internal key) calls this — no Clerk session, no PAT — so
+  // it is matched BEFORE the generic /v1/* arms and distinct from the /_internal/*
+  // (underscore) family.
+  if (path === "/internal/v1/auth/rotate") {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "auth_rotate" };
   }
 
   // Stripe billing webhook — EXACT /v1/billing/stripe-webhook (mounted in the
@@ -1668,6 +1682,17 @@ const handler: ExportedHandler<Env> = {
     if (route.routeKind === "runner_revoke") {
       const revokeResp = await handleRunnerRevoke(request, env, requestId);
       return applyCors(revokeResp, request);
+    }
+
+    // clw `auth rotate` (POST /internal/v1/auth/rotate). Internal-auth gated
+    // (pat_mint consumer key + shared fallback); reads the old PAT's tenant +
+    // scope, mints an equivalent new PAT via the container's single mint authority
+    // (FRESH server-trusted request to the _system DO — no inbound headers
+    // forwarded), then revokes the old pat_id ONLY after the mint succeeds (no
+    // zero-valid-PAT window). Fully fail-CLOSED. CORS applied here.
+    if (route.routeKind === "auth_rotate") {
+      const rotateResp = await handleAuthRotate(request, env, requestId);
+      return applyCors(rotateResp, request);
     }
 
     // Not found — timing-padded to prevent cross-tenant enumeration
