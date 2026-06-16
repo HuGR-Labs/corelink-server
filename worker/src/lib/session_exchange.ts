@@ -38,6 +38,7 @@
 import type { D1Database, DurableObjectNamespace } from "@cloudflare/workers-types";
 import type { Env } from "../index.js";
 import { verifyClerkSessionAndResolveTenant } from "./clerk_auth.js";
+import { requireInternalAuth } from "./internal_auth.js";
 
 /**
  * Default lifetime of the exchanged PAT, in seconds. Short-lived by design:
@@ -50,11 +51,29 @@ import { verifyClerkSessionAndResolveTenant } from "./clerk_auth.js";
 const EXCHANGE_PAT_TTL_SECONDS = 3600;
 
 /**
+ * Lifetime of the PAT minted by `POST /internal/v1/auth/token-exchange` (#1,
+ * githugr authz). ~300s by design (RFC 8693 short-TTL token exchange): the
+ * githugr window caches the org-scoped PAT per session until this TTL, so the
+ * blast radius of a leaked exchange token is bounded to a few minutes. The
+ * container clamps `ttl_seconds=0` to "no expiry"; we never send 0.
+ */
+const TOKEN_EXCHANGE_PAT_TTL_SECONDS = 300;
+
+/**
  * Scope label minted for the exchanged PAT. `cas:rw` grants cache read/write
  * (the forge's data-plane surface) WITHOUT any admin bit — least privilege.
  * Maps to `SCOPE_CACHE_RW` in the container's internal_pat scope table.
  */
 const EXCHANGE_PAT_SCOPE = "cas:rw";
+
+/**
+ * Scope labels the token-exchange endpoint will mint. The container's
+ * internal_pat scope table accepts `"cas:rw"` / `"read-write"` (→ SCOPE_CACHE_RW)
+ * and `"admin"` — token-exchange deliberately refuses `"admin"` (least
+ * privilege: a session-derived, short-TTL token must never carry admin bits).
+ * An unrecognized scope → 400.
+ */
+const TOKEN_EXCHANGE_ALLOWED_SCOPES = new Set(["cas:rw", "read-write"]);
 
 /**
  * Mint-throttle window length, in ms (60s). The per-principal cap is enforced
@@ -316,14 +335,51 @@ export async function handleSessionExchange(
   }
   const { tenantId, clerkUserId } = clerkAuth;
 
-  // ── 4. Mint a short-lived cas:rw PAT via the container (REUSE the one mint) ─
+  // ── 4. Mint a short-lived cas:rw PAT (REUSE the one container mint) ─────────
+  return mintScopedPat(
+    env,
+    requestId,
+    tenantId,
+    clerkUserId,
+    EXCHANGE_PAT_TTL_SECONDS,
+    EXCHANGE_PAT_SCOPE,
+    internalAuthKey,
+  );
+}
+
+/**
+ * Mint a tenant-scoped, short-lived PAT for an ALREADY-VERIFIED principal, by
+ * REUSING the container's audited `/_internal/pat/mint` via the `_system` DO.
+ *
+ * Shared by {@link handleSessionExchange} (hugit Seam C, 3600s) and
+ * {@link handleTokenExchange} (githugr #1, 300s). The single mint authority
+ * (one signing key, one audit emit, one revocation surface) is preserved —
+ * there is no second mint path. Every failure path is fail-CLOSED.
+ *
+ * The caller MUST have verified the session and resolved `tenantId` /
+ * `clerkUserId` (and, for token-exchange, the audience match) BEFORE calling
+ * this — it performs no authentication of its own beyond the per-principal
+ * mint throttle.
+ *
+ * @returns the public {@link SessionExchangeResponse} (200) or a fail-CLOSED
+ *   `reapiError` Response (429 throttle, 500 upstream/malformed).
+ */
+async function mintScopedPat(
+  env: Env,
+  requestId: string,
+  tenantId: string,
+  clerkUserId: string,
+  ttlSeconds: number,
+  scope: string,
+  internalAuthKey: string,
+): Promise<Response> {
   // Route to the _system DO which fronts the container, then call the audited
   // /_internal/pat/mint route with the SERVER-trusted internal-auth header.
   // The browser/client can never supply that header — it never leaves the
   // backend (least-privilege: identical to the `internal` route arm).
   const principalId = await clerkUserIdToPrincipalUuid(clerkUserId);
 
-  // ── 3b. Per-principal mint throttle (fail-CLOSED 429) ──────────────────────
+  // ── Per-principal mint throttle (fail-CLOSED 429) ──────────────────────────
   // The session is verified, but a still-valid session must not loop-mint
   // unbounded PATs. Cap mints per derived principal UUID per fixed window
   // BEFORE the (expensive) container Argon2id mint + D1 insert.
@@ -335,8 +391,8 @@ export async function handleSessionExchange(
   const mintBody = JSON.stringify({
     tenant_id: tenantId,
     principal_id: principalId,
-    scopes: EXCHANGE_PAT_SCOPE,
-    ttl_seconds: EXCHANGE_PAT_TTL_SECONDS,
+    scopes: scope,
+    ttl_seconds: ttlSeconds,
   });
 
   const namespace: DurableObjectNamespace = env.CORELINK_SERVER;
@@ -398,7 +454,7 @@ export async function handleSessionExchange(
     return reapiError("INTERNAL_ERROR", "session exchange mint malformed", 500, requestId);
   }
 
-  // ── 5. Return the public exchange response (NEVER the Argon2id hash) ────────
+  // ── Return the public exchange response (NEVER the Argon2id hash) ───────────
   const out: SessionExchangeResponse = {
     token_plaintext: minted.token_plaintext,
     pat_id: minted.pat_id,
@@ -418,4 +474,111 @@ export async function handleSessionExchange(
       "X-Request-Id": requestId,
     },
   });
+}
+
+/**
+ * #1 — RFC 8693 token exchange: `POST /internal/v1/auth/token-exchange`.
+ *
+ * githugr's window holds a per-request Bearer = the user's Clerk session JWT and
+ * needs a SHORT-TTL CoreLink PAT bound to a SPECIFIC tenant (the repo's
+ * `owner_tenant`). This endpoint exchanges (session JWT + `audience`) for that
+ * PAT and — critically — **403s when the session's tenant ≠ audience**. That
+ * 403 IS githugr's cross-tenant-WRITE rejection (their audit CRITICAL #1): the
+ * engine then validates the returned PAT via `/internal/v1/auth/introspect` and
+ * a forged/borrowed session for tenant A can never obtain a PAT for tenant B.
+ *
+ * Contract (ratified — githugr GREENLIGHT 2026-06-15):
+ *   - Bearer = Clerk `__session` JWT (verified by the same shared pipeline as
+ *     every other Clerk path: azp re-assert + issuer pin + tenant resolve).
+ *   - Body `{ audience: "<owner_tenant uuid>", scope?: "cas:rw" }`.
+ *   - **403 on `session.tenant ≠ audience`.**
+ *   - ~300s tenant-scoped PAT (least privilege; admin scope refused).
+ *
+ * Defense-in-depth: ALSO internal-auth gated — only githugr's trusted backend
+ * (holding `CORELINK_INTERNAL_AUTH_KEY`) may call it, AND it must present a
+ * valid user session AND the audience must match. Three independent checks.
+ *
+ * Fail-CLOSED throughout: internal-auth (401/403), method (405), secrets (403),
+ * session (401/403), audience required+match (400/403), bad scope (400),
+ * throttle (429), upstream (500).
+ */
+export async function handleTokenExchange(
+  request: Request,
+  env: Env,
+  requestId: string,
+): Promise<Response> {
+  // ── 1. Method gate ─────────────────────────────────────────────────────────
+  if (request.method !== "POST") {
+    return reapiError("METHOD_NOT_ALLOWED", "token exchange requires POST", 405, requestId);
+  }
+
+  // ── 2. Internal-auth gate (only githugr's backend may call) ────────────────
+  const authErr = requireInternalAuth(request, env, requestId);
+  if (authErr) {
+    return authErr;
+  }
+
+  // ── 3. Fail-CLOSED on required server secrets ──────────────────────────────
+  const internalAuthKey = env.CORELINK_INTERNAL_AUTH_KEY;
+  const clerkSecretKey = env.CLERK_SECRET_KEY;
+  if (
+    !internalAuthKey ||
+    internalAuthKey.length === 0 ||
+    !clerkSecretKey ||
+    clerkSecretKey.length === 0
+  ) {
+    return reapiError("FORBIDDEN", "token exchange unavailable", 403, requestId);
+  }
+
+  // ── 4. Parse the body (audience required; scope optional) ──────────────────
+  interface TokenExchangeRequest {
+    readonly audience?: unknown;
+    readonly scope?: unknown;
+  }
+  let body: TokenExchangeRequest;
+  try {
+    body = (await request.json()) as TokenExchangeRequest;
+  } catch {
+    return reapiError("BAD_REQUEST", "invalid request body", 400, requestId);
+  }
+  const audience = body.audience;
+  if (typeof audience !== "string" || audience.length === 0) {
+    // audience is the WHOLE point of this endpoint (the cross-tenant defense);
+    // a token exchange with no target tenant is rejected.
+    return reapiError("BAD_REQUEST", "audience (target tenant) required", 400, requestId);
+  }
+  let scope = EXCHANGE_PAT_SCOPE;
+  if (typeof body.scope === "string" && body.scope.length > 0) {
+    if (!TOKEN_EXCHANGE_ALLOWED_SCOPES.has(body.scope)) {
+      // Refuse unknown / admin scope (least privilege).
+      return reapiError("BAD_REQUEST", "unsupported scope", 400, requestId);
+    }
+    scope = body.scope;
+  }
+
+  // ── 5. Verify the Clerk session + resolve the tenant (shared pipeline) ─────
+  const clerkAuth = await verifyClerkSessionAndResolveTenant(request, env, requestId);
+  if (!clerkAuth.ok) {
+    return clerkAuth.response;
+  }
+  const { tenantId, clerkUserId } = clerkAuth;
+
+  // ── 6. CROSS-TENANT REJECTION — the githugr CRITICAL ───────────────────────
+  // The session resolves to `tenantId`; the caller asked for `audience`. If they
+  // differ, the session does NOT own the target tenant → 403. This is the exact
+  // rejection githugr's engine relies on to block cross-tenant writes.
+  if (audience !== tenantId) {
+    return reapiError("FORBIDDEN", "session tenant does not match audience", 403, requestId);
+  }
+
+  // ── 7. Mint the short-TTL tenant-scoped PAT (REUSE the one container mint) ──
+  return mintScopedPat(
+    env,
+    requestId,
+    tenantId,
+    clerkUserId,
+    TOKEN_EXCHANGE_PAT_TTL_SECONDS,
+    scope,
+    internalAuthKey,
+  );
 }

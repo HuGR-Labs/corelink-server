@@ -147,7 +147,12 @@ describe("POST /v1/session/exchange — seam C session→PAT exchange (WP-C)", (
     expect(body["pat_id"]).toBe(CANNED_MINT.pat_id);
     expect(body["token_id"]).toBe(CANNED_MINT.token_id);
     expect(body["expires_ms"]).toBe(CANNED_MINT.expires_ms);
-    expect(body["principal"]).toBe("user_abc");
+    // F-01: `principal` is the OPAQUE derived UUID, NEVER the raw Clerk user id
+    // (surfacing `user_abc` would leak the upstream IdP subject to the client).
+    expect(body["principal"]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(body["principal"]).not.toBe("user_abc");
     expect(body["tenant"]).toBe("acme-default");
   });
 
@@ -291,11 +296,14 @@ describe("POST /v1/session/exchange — seam C session→PAT exchange (WP-C)", (
   });
 
   it("collapses a container mint failure to a fail-CLOSED 500 (no internal status leak)", async () => {
-    mockVerifyToken.mockResolvedValue(validClaims("user_abc"));
+    // Unique principal: the F20 in-memory mint-throttle backstop is module-scoped
+    // and persists across tests in this file, so a per-test user id keeps each
+    // test independent of the others' mint counts.
+    mockVerifyToken.mockResolvedValue(validClaims("user_mintfail"));
     const captured: { req?: Request } = {};
     const env = makeEnv({
       captured,
-      clerkUserToTenant: new Map([["user_abc", "acme-default"]]),
+      clerkUserToTenant: new Map([["user_mintfail", "acme-default"]]),
       mintStatus: 401,
       mintBody: { error: "unauthorized" },
     });
@@ -309,11 +317,12 @@ describe("POST /v1/session/exchange — seam C session→PAT exchange (WP-C)", (
   });
 
   it("returns 500 when the container mint response is malformed (missing fields)", async () => {
-    mockVerifyToken.mockResolvedValue(validClaims("user_abc"));
+    // Unique principal — see the F20 module-scoped throttle note above.
+    mockVerifyToken.mockResolvedValue(validClaims("user_malformed"));
     const captured: { req?: Request } = {};
     const env = makeEnv({
       captured,
-      clerkUserToTenant: new Map([["user_abc", "acme-default"]]),
+      clerkUserToTenant: new Map([["user_malformed", "acme-default"]]),
       mintBody: { pat_id: "only-this" }, // missing token_plaintext / token_id / expires_ms
     });
 
