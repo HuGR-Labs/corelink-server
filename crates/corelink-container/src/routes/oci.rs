@@ -549,6 +549,7 @@ pub fn router(
     manifest_kv: Arc<dyn ManifestKvStore>,
     verifier: Arc<PatVerifier>,
     token_signing_key: SecretWrap,
+    quota: Option<crate::routes::QuotaGate>,
 ) -> Router {
     let moat = Arc::new(MoatCache::production(
         cas_read,
@@ -591,7 +592,46 @@ pub fn router(
     );
     // `.merge` (NOT `nest_service`): the adapter owns `/v2/*` + `/token`
     // verbatim and the Worker forwards the path unchanged.
-    Router::new().merge(oci_router(state))
+    let mut router = Router::new().merge(oci_router(state));
+    // Per-tenant monthly $-ceiling gate (ADR-0068): OCI previously bypassed the
+    // Worker `$`-ceiling/quota path entirely (cluster B). Charge the flat per-op
+    // cost on write methods (PUT/POST/PATCH — manifest pushes + blob upload
+    // legs) so OCI is subject to the SAME ceiling as CAS/AC/Bazel/Turbo. Blob
+    // BYTE accrual is already enforced by the `AccountingCasHandler` decorator
+    // wrapping the shared `cas_write`. The isolation/cost-attribution key is the
+    // Worker-set `x-corelink-tenant-id` (forged ⇒ over-charges its OWN tenant);
+    // a missing header skips the charge fail-OPEN (cost accounting must not deny
+    // a valid op for lack of a label). 402 over-ceiling / 503 fail-CLOSED.
+    if let Some(gate) = quota {
+        router = router.layer(axum::middleware::from_fn_with_state(gate, oci_quota_gate));
+    }
+    router
+}
+
+/// Per-tenant `$`-ceiling charge for OCI write methods (cluster B — OCI was
+/// outside the quota path). Read methods (GET/HEAD) are not charged here; the
+/// adapter's bearer-scope check authorizes them. See the `router` doc.
+async fn oci_quota_gate(
+    axum::extract::State(gate): axum::extract::State<crate::routes::QuotaGate>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::http::Method;
+    let is_write = matches!(*req.method(), Method::PUT | Method::POST | Method::PATCH);
+    if is_write {
+        let tenant = req
+            .headers()
+            .get("x-corelink-tenant-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .unwrap_or("");
+        if !tenant.is_empty() {
+            if let Some(resp) = gate.check(tenant).await {
+                return resp;
+            }
+        }
+    }
+    next.run(req).await
 }
 
 // No `oci_gate`: per-op authorization is the adapter's bearer-scope
@@ -796,6 +836,7 @@ mod tests {
             Arc::new(OciKvFake::default()),
             verifier,
             SecretWrap::new(OCI_KEY.to_owned()),
+            None,
         )
     }
 
@@ -857,6 +898,7 @@ mod tests {
             Arc::new(OciKvFake::default()),
             verifier,
             SecretWrap::new(OCI_KEY.to_owned()),
+            None,
         );
 
         // Exchange the read-only PAT (requesting push,pull) for a bearer.
@@ -1021,6 +1063,7 @@ mod tests {
             Arc::new(OciKvFake::default()),
             verifier,
             SecretWrap::new(OCI_KEY.to_owned()),
+            None,
         );
 
         // Leg 1: exchange the PAT (Basic) for an HMAC bearer at /token.
@@ -1187,6 +1230,7 @@ mod tests {
             Arc::new(OciKvFake::default()),
             verifier,
             SecretWrap::new(OCI_KEY.to_owned()),
+            None,
         );
 
         // Obtain a push+pull bearer for the test tenant.
@@ -1407,6 +1451,7 @@ mod tests {
             Arc::new(OciKvFake::default()),
             verifier,
             SecretWrap::new(OCI_KEY.to_owned()),
+            None,
         );
 
         // Get a push bearer.

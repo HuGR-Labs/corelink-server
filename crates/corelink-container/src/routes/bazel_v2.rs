@@ -42,11 +42,12 @@
 
 #![forbid(unsafe_code)]
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use axum::{
-    extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    extract::{FromRequestParts, Path, State},
+    http::{request::Parts, HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post, put},
     Router,
@@ -93,11 +94,108 @@ pub struct BazelRouteState {
     /// at the TOP of each billable REAPI handler, AFTER scope+tenant, BEFORE
     /// storage. `None` in dev/CI (skipped). See [`crate::native_pat_gate`].
     pub pat_gate: Option<Arc<crate::native_pat_gate::NativePatGate>>,
+    /// Per-tenant in-flight CAS/AC write concurrency counter (cluster F — the
+    /// Bazel write path buffers the full ~10 MiB body before any gate and had
+    /// NO per-tenant concurrency cap, so a single authenticated tenant could
+    /// open N concurrent PUTs and consume N × body-limit of heap). Mirrors the
+    /// Turbo `put_inflight` guard: a `FromRequestParts` extractor
+    /// ([`BazelPutGuard`]) declared AHEAD of `body: Bytes` increments this
+    /// BEFORE the body is buffered and rejects the over-cap PUT 429; the RAII
+    /// [`BazelPutSlot`] releases on return. `Arc<Mutex<..>>` shared across the
+    /// per-request state clones.
+    pub(crate) put_inflight: Arc<Mutex<HashMap<String, usize>>>,
 }
+
+/// Maximum concurrent in-flight Bazel CAS/AC writes for a single tenant. Excess
+/// writes are rejected 429 BEFORE the (up to 10 MiB) body is buffered. Bounds
+/// peak per-tenant write heap; mirrors [`super::turbo_v8::TURBO_PUT_CONCURRENCY_LIMIT`].
+pub const BAZEL_WRITE_CONCURRENCY_LIMIT: usize = 8;
 
 impl core::fmt::Debug for BazelRouteState {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("BazelRouteState").finish_non_exhaustive()
+    }
+}
+
+/// RAII release of one per-tenant in-flight Bazel write slot (decrements on
+/// every return path — success, error, panic). See [`BazelPutGuard`].
+pub(crate) struct BazelPutSlot {
+    inflight: Arc<Mutex<HashMap<String, usize>>>,
+    tenant_key: String,
+}
+
+impl Drop for BazelPutSlot {
+    fn drop(&mut self) {
+        if let Ok(mut g) = self.inflight.lock() {
+            if let Some(c) = g.get_mut(&self.tenant_key) {
+                *c = c.saturating_sub(1);
+                if *c == 0 {
+                    g.remove(&self.tenant_key);
+                }
+            }
+        }
+    }
+}
+
+/// `FromRequestParts` extractor reserving a per-tenant in-flight Bazel write slot
+/// BEFORE the body is buffered (cluster F — pre-buffer OOM guard). Declared ahead
+/// of `body: Bytes` in the write handlers so axum 0.7 runs it first: a tenant
+/// already at [`BAZEL_WRITE_CONCURRENCY_LIMIT`] is rejected 429 with no body
+/// read. Mirrors `turbo_v8::PutConcurrencyGuard`.
+pub(crate) struct BazelPutGuard {
+    _slot: BazelPutSlot,
+}
+
+#[axum::async_trait]
+impl FromRequestParts<BazelRouteState> for BazelPutGuard {
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &BazelRouteState,
+    ) -> Result<Self, Self::Rejection> {
+        // Reserve per AUTHENTICATED tenant (fail-CLOSED on missing/sentinel —
+        // mirrors `caller_tenant`): an unauthenticated request never reserves a
+        // slot and never buffers a body.
+        let raw = parts
+            .headers
+            .get("x-corelink-tenant-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .unwrap_or("");
+        if raw.is_empty() || TENANT_SENTINELS.contains(&raw) {
+            return Err(unauthenticated_tenant());
+        }
+        let tenant_key = raw.to_owned();
+        {
+            let mut inflight = match state.put_inflight.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::error!(tenant_id = %tenant_key, error = %e, "bazel write concurrency tracker poisoned; failing closed");
+                    return Err((
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "concurrency tracker unavailable",
+                    )
+                        .into_response());
+                }
+            };
+            let count = inflight.entry(tenant_key.clone()).or_insert(0);
+            if *count >= BAZEL_WRITE_CONCURRENCY_LIMIT {
+                tracing::warn!(tenant_id = %tenant_key, in_flight = *count, limit = BAZEL_WRITE_CONCURRENCY_LIMIT, "bazel write concurrency limit reached; 429 BEFORE body buffering");
+                return Err((
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "too many concurrent uploads",
+                )
+                    .into_response());
+            }
+            *count += 1;
+        }
+        Ok(Self {
+            _slot: BazelPutSlot {
+                inflight: Arc::clone(&state.put_inflight),
+                tenant_key,
+            },
+        })
     }
 }
 
@@ -138,6 +236,7 @@ pub fn build_handlers_from(
         // Default OFF; `routes::build_with_factory` sets the D1-backed gate.
         quota: None,
         pat_gate: None,
+        put_inflight: Arc::new(Mutex::new(HashMap::new())),
     }
 }
 
@@ -422,6 +521,10 @@ async fn handle_cas_write(
     Path((instance, uuid, hash, size)): Path<(String, String, String, String)>,
     scope: crate::scope::CacheScope,
     headers: HeaderMap,
+    // cluster F: pre-body per-tenant concurrency reservation (declared AHEAD of
+    // `body: Bytes`, so axum runs it BEFORE the ~10 MiB body is buffered). 429 on
+    // over-cap; the RAII slot releases on return.
+    _concurrency: BazelPutGuard,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
     // Scope gate (fail-CLOSED): the PAT must carry a cache-WRITE capability
@@ -516,6 +619,8 @@ async fn handle_ac_write(
     Path((instance, hash, size)): Path<(String, String, String)>,
     scope: crate::scope::CacheScope,
     headers: HeaderMap,
+    // cluster F: pre-body per-tenant concurrency reservation (see handle_cas_write).
+    _concurrency: BazelPutGuard,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
     // Scope gate (fail-CLOSED): AC update is a cache WRITE; require `cas:rw`
@@ -1349,5 +1454,65 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // ── cluster F: per-tenant pre-body write concurrency cap ──────────────────
+
+    /// With the tenant AT `BAZEL_WRITE_CONCURRENCY_LIMIT` in-flight writes, the
+    /// next CAS write is rejected 429 BEFORE its body is buffered — the
+    /// `BazelPutGuard` `FromRequestParts` extractor runs ahead of `body: Bytes`.
+    /// Proven deterministically by sending a body LARGER than the global 10 MiB
+    /// limit: if the body were buffered first, the body-limit layer would reject
+    /// it; because the concurrency guard runs first, we get 429 and the oversized
+    /// body is never read.
+    #[tokio::test]
+    async fn cas_write_at_concurrency_limit_returns_429_before_body() {
+        let state = make_state();
+        {
+            let mut g = state.put_inflight.lock().unwrap();
+            g.insert(TENANT.to_owned(), BAZEL_WRITE_CONCURRENCY_LIMIT);
+        }
+        let app = router(state);
+        let oversized = Body::from(vec![0u8; 11 * 1024 * 1024]); // > 10 MiB
+        let uri = format!("/bazel/v2/{TENANT}/uploads/u1/blobs/{HASH_A}/5");
+        let req = Request::builder()
+            .uri(&uri)
+            .method("PUT")
+            .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(oversized)
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "an at-limit Bazel write must be rejected 429 by the pre-body concurrency guard"
+        );
+    }
+
+    /// A write BELOW the limit succeeds and releases its slot (counter back to 0).
+    #[tokio::test]
+    async fn cas_write_below_limit_releases_slot() {
+        let state = make_state();
+        let app = router(state.clone());
+        let payload = b"slot-release".to_vec();
+        let hash = fake_hash(&payload);
+        let size = payload.len();
+        let uri = format!("/bazel/v2/{TENANT}/uploads/u1/blobs/{hash}/{size}");
+        let req = Request::builder()
+            .uri(&uri)
+            .method("PUT")
+            .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::from(payload))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+        let g = state.put_inflight.lock().unwrap();
+        assert_eq!(
+            g.get(TENANT),
+            None,
+            "the concurrency slot must be released after the write completes"
+        );
     }
 }

@@ -311,6 +311,242 @@ impl ByteStore for D1ByteStore {
     }
 }
 
+// ── Accounting decorators (reserve → commit → release) ────────────────────────
+//
+// Cluster B + C (cycle-2 nuclear red-team). #297 wired `accrue` only on the
+// NATIVE CAS/AC route handlers, AFTER the R2 PUT committed, with no
+// pre-reservation and a dead `release`. That left three holes:
+//
+//   * Cluster B — the Bazel REAPI, OCI, and language-adapter (cargo/brew/npm/
+//     pip) write surfaces ALL drive the SAME `CasWriteHandler` / `AcUpdateHandler`
+//     trait objects, but none of them ran the route-level accrual, so their
+//     writes never moved `bytes_used` — a Free tenant stored unbounded TB at $0.
+//   * Cluster C — the accrual ran AFTER the PUT (race: two concurrent writes
+//     both pass the cap, an over-cap blob is durably committed before the 402),
+//     and deletes never decremented `bytes_used` (headroom leaked forever).
+//
+// The decorators below close BOTH at the single chokepoint every CAS/AC write
+// surface flows through — the write/delete trait objects themselves. Wrapping
+// there means native CAS/AC, Bazel, OCI, and every language adapter inherit
+// IDENTICAL reserve→commit→release semantics with zero per-surface duplication:
+//
+//   write:  reserve(len) BEFORE inner.write()  ──► OverCap ⇒ 402 (NO R2 PUT runs,
+//           so NO over-cap blob is ever durably written); transport err ⇒ 503
+//           (fail-CLOSED). After the write: inner Err ⇒ release(len) (reservation
+//           rolled back); idempotent re-write (`durable == false`, stored nothing
+//           new) ⇒ release(len) (net zero, no double-count).
+//   delete: inner.delete() then release(reclaimed_bytes) so the freed bytes drop
+//           out of `bytes_used`.
+//
+// The reservation is the SAME atomic single-statement D1 UPSERT
+// ([`ByteStore::check_and_accrue`]) used before — the cap check and the
+// increment are serialized in one statement, so two concurrent over-cap
+// reservations can NEVER both pass. The decorators bridge the async accountant
+// to the sync handler traits with `block_in_place` + `block_on`, exactly as the
+// R2 handlers bridge their own async S3 I/O.
+
+/// Sentinel prefix carried in `CasHandlerError::Internal` / `AcHandlerError::Internal`
+/// by an accounting decorator when a write is refused because it would push the
+/// tenant past its storage cap. The route `map_err` maps this to HTTP **402**
+/// (Payment Required — "storage quota exceeded"), distinct from a generic 500.
+pub const OVER_CAP_SENTINEL: &str = "storage-over-cap: ";
+
+/// Sentinel prefix carried in `…::Internal` by an accounting decorator when the
+/// byte-accounting backend (D1) is unavailable. The route `map_err` maps this to
+/// HTTP **503** — fail-CLOSED: a write we cannot account is refused, never
+/// silently allowed (that would re-open the unbounded-storage hole).
+pub const ACCT_UNAVAILABLE_SENTINEL: &str = "storage-accounting-unavailable: ";
+
+/// Bridge an async accountant call onto the sync handler trait by blocking on the
+/// current tokio runtime — the same `block_in_place` + `block_on` pattern the R2
+/// handlers use for their async S3 I/O.
+fn block_on_accrue(acc: &ByteAccountant, tenant: &str, bytes: i64) -> Result<AccrueOutcome, String> {
+    let handle = tokio::runtime::Handle::current();
+    tokio::task::block_in_place(|| handle.block_on(acc.accrue(tenant, bytes)))
+}
+
+/// Bridge an async release call onto the sync handler trait (see [`block_on_accrue`]).
+fn block_on_release(acc: &ByteAccountant, tenant: &str, bytes: i64) {
+    let handle = tokio::runtime::Handle::current();
+    if let Err(e) = tokio::task::block_in_place(|| handle.block_on(acc.release(tenant, bytes))) {
+        // A failed release over-counts the tenant (conservative — never widens
+        // the cap), so log + continue rather than fail an already-committed op.
+        tracing::warn!(error = %e, tenant = %tenant, bytes, "byte-accounting: release failed (counter over-counts; conservative)");
+    }
+}
+
+/// Storage-byte-accounting decorator over the CAS write + delete trait objects.
+///
+/// Holds the inner `R2CasHandler` (behind both trait objects) + the accountant.
+/// Implements [`corelink_handler_cas::CasWriteHandler`] and
+/// [`corelink_handler_cas::CasDeleteHandler`] with reserve→commit→release; see
+/// the module-section comment above for the full discipline.
+#[derive(Debug)]
+pub struct AccountingCasHandler {
+    write_inner: Arc<dyn corelink_handler_cas::CasWriteHandler>,
+    delete_inner: Arc<dyn corelink_handler_cas::CasDeleteHandler>,
+    accountant: Arc<ByteAccountant>,
+}
+
+impl AccountingCasHandler {
+    /// Wrap the CAS write + delete handlers with byte accounting.
+    #[must_use]
+    pub fn new(
+        write_inner: Arc<dyn corelink_handler_cas::CasWriteHandler>,
+        delete_inner: Arc<dyn corelink_handler_cas::CasDeleteHandler>,
+        accountant: Arc<ByteAccountant>,
+    ) -> Self {
+        Self {
+            write_inner,
+            delete_inner,
+            accountant,
+        }
+    }
+}
+
+impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
+    fn write(
+        &self,
+        req: corelink_handler_cas::CasWriteRequest,
+    ) -> Result<corelink_handler_cas::CasWriteResponse, corelink_handler_cas::CasHandlerError> {
+        use corelink_handler_cas::CasHandlerError;
+        let tenant = req.tenant.clone();
+        let byte_len = i64::try_from(req.bytes.len()).unwrap_or(i64::MAX);
+        // RESERVE before the R2 PUT (cluster-C): an over-cap reservation is
+        // rejected here, so the inner write — the durable R2 PUT — NEVER runs
+        // and no over-cap blob is committed.
+        match block_on_accrue(&self.accountant, &tenant, byte_len) {
+            Ok(AccrueOutcome::Accrued) => {}
+            Ok(AccrueOutcome::OverCap) => {
+                return Err(CasHandlerError::Internal(format!(
+                    "{OVER_CAP_SENTINEL}cas write would exceed storage cap"
+                )));
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "cas: byte reservation failed; failing closed");
+                return Err(CasHandlerError::Internal(format!(
+                    "{ACCT_UNAVAILABLE_SENTINEL}{e}"
+                )));
+            }
+        }
+        // COMMIT (the durable write).
+        match self.write_inner.write(req) {
+            Ok(resp) => {
+                // An idempotent re-write stored NOTHING new (`durable == false`),
+                // so roll the reservation back to avoid double-counting.
+                if !resp.durable {
+                    block_on_release(&self.accountant, &tenant, byte_len);
+                }
+                Ok(resp)
+            }
+            Err(e) => {
+                // The write failed AFTER we reserved — RELEASE the reservation
+                // so a failed PUT does not permanently consume headroom.
+                block_on_release(&self.accountant, &tenant, byte_len);
+                Err(e)
+            }
+        }
+    }
+}
+
+impl corelink_handler_cas::CasDeleteHandler for AccountingCasHandler {
+    fn delete(
+        &self,
+        req: corelink_handler_cas::CasDeleteRequest,
+    ) -> Result<corelink_handler_cas::CasDeleteResponse, corelink_handler_cas::CasHandlerError> {
+        let tenant = req.tenant.clone();
+        let resp = self.delete_inner.delete(req)?;
+        // RELEASE the reclaimed bytes so a delete frees the tenant's headroom
+        // (cluster-C: deletes that never decrement leak the cap forever).
+        let reclaimed = i64::try_from(resp.reclaimed_bytes).unwrap_or(i64::MAX);
+        if reclaimed > 0 {
+            block_on_release(&self.accountant, &tenant, reclaimed);
+        }
+        Ok(resp)
+    }
+}
+
+/// Storage-byte-accounting decorator over the AC update + delete trait objects.
+///
+/// Same reserve→commit→release discipline as [`AccountingCasHandler`], over the
+/// `AcUpdateHandler` / `AcDeleteHandler` surface (Bazel AC writes + native AC).
+#[derive(Debug)]
+pub struct AccountingAcHandler {
+    update_inner: Arc<dyn corelink_handler_ac::AcUpdateHandler>,
+    delete_inner: Arc<dyn corelink_handler_ac::AcDeleteHandler>,
+    accountant: Arc<ByteAccountant>,
+}
+
+impl AccountingAcHandler {
+    /// Wrap the AC update + delete handlers with byte accounting.
+    #[must_use]
+    pub fn new(
+        update_inner: Arc<dyn corelink_handler_ac::AcUpdateHandler>,
+        delete_inner: Arc<dyn corelink_handler_ac::AcDeleteHandler>,
+        accountant: Arc<ByteAccountant>,
+    ) -> Self {
+        Self {
+            update_inner,
+            delete_inner,
+            accountant,
+        }
+    }
+}
+
+impl corelink_handler_ac::AcUpdateHandler for AccountingAcHandler {
+    fn update(
+        &self,
+        req: corelink_handler_ac::AcUpdateRequest,
+    ) -> Result<corelink_handler_ac::AcUpdateResponse, corelink_handler_ac::AcHandlerError> {
+        use corelink_handler_ac::AcHandlerError;
+        let tenant = req.tenant.clone();
+        let byte_len = i64::try_from(req.result_payload.len()).unwrap_or(i64::MAX);
+        match block_on_accrue(&self.accountant, &tenant, byte_len) {
+            Ok(AccrueOutcome::Accrued) => {}
+            Ok(AccrueOutcome::OverCap) => {
+                return Err(AcHandlerError::Internal(format!(
+                    "{OVER_CAP_SENTINEL}ac write would exceed storage cap"
+                )));
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "ac: byte reservation failed; failing closed");
+                return Err(AcHandlerError::Internal(format!(
+                    "{ACCT_UNAVAILABLE_SENTINEL}{e}"
+                )));
+            }
+        }
+        match self.update_inner.update(req) {
+            Ok(resp) => {
+                // Idempotent / divergent-refused AC writes that stored nothing
+                // new (`durable == false`) roll the reservation back.
+                if !resp.durable {
+                    block_on_release(&self.accountant, &tenant, byte_len);
+                }
+                Ok(resp)
+            }
+            Err(e) => {
+                block_on_release(&self.accountant, &tenant, byte_len);
+                Err(e)
+            }
+        }
+    }
+}
+
+impl corelink_handler_ac::AcDeleteHandler for AccountingAcHandler {
+    fn delete(
+        &self,
+        req: corelink_handler_ac::AcDeleteRequest,
+    ) -> Result<corelink_handler_ac::AcDeleteResponse, corelink_handler_ac::AcHandlerError> {
+        let tenant = req.tenant.clone();
+        let resp = self.delete_inner.delete(req)?;
+        let reclaimed = i64::try_from(resp.reclaimed_bytes).unwrap_or(i64::MAX);
+        if reclaimed > 0 {
+            block_on_release(&self.accountant, &tenant, reclaimed);
+        }
+        Ok(resp)
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -529,6 +765,184 @@ mod tests {
         assert!(
             ["sam", "iad", "lhr", "nrt", "syd"].contains(&r.as_str()),
             "region must be a canonical 5-region literal"
+        );
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "tests are allowed to use these primitives"
+)]
+mod decorator_tests {
+    //! Regression net for the reserve→commit→release decorators (cluster C).
+    use super::testing::{InMemoryByteStore, Row};
+    use super::*;
+    use corelink_handler_cas::{
+        CasDeleteHandler, CasDeleteRequest, CasReadHandler, CasReadRequest, CasWriteHandler,
+        CasWriteRequest, InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver,
+    };
+
+    const REGION: &str = "iad";
+
+    /// Build an `AccountingCasHandler` over a fresh InMemory CAS backing + a byte
+    /// store, returning the decorator, the underlying handler (to inspect stored
+    /// blobs), and the byte store (to assert the counter).
+    fn cas_fixture(
+        seed: Option<(&str, Row)>,
+    ) -> (
+        Arc<AccountingCasHandler>,
+        Arc<InMemoryCasHandler>,
+        Arc<InMemoryByteStore>,
+    ) {
+        let audit = Arc::new(InMemoryAuditSink::new());
+        let sli = Arc::new(InMemorySliObserver::new());
+        let inner = Arc::new(InMemoryCasHandler::new(audit, sli));
+        let store = Arc::new(InMemoryByteStore::new());
+        if let Some((tenant, row)) = seed {
+            store.seed(tenant, REGION, row);
+        }
+        let acc = Arc::new(ByteAccountant::new(
+            store.clone() as Arc<dyn ByteStore>,
+            REGION.to_owned(),
+        ));
+        let dec = Arc::new(AccountingCasHandler::new(
+            inner.clone() as Arc<dyn CasWriteHandler>,
+            inner.clone() as Arc<dyn CasDeleteHandler>,
+            acc,
+        ));
+        (dec, inner, store)
+    }
+
+    /// CAA-360 #9 digest validator wants a real content hash; the InMemory
+    /// handler accepts any (tenant, hash) it is given (it does not hash-verify),
+    /// so we use an arbitrary 64-hex string.
+    fn hash_for(bytes: &[u8]) -> String {
+        corelink_handler_cas::handler::fake_hash(bytes)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn over_cap_write_returns_402_sentinel_and_leaves_no_blob() {
+        // Tenant AT a 4-byte cap; a larger write must be refused at the
+        // RESERVATION (BEFORE the inner write), so NO blob is stored.
+        let (dec, inner, store) = cas_fixture(Some(("t-cap", Row { used: 4, quota: 4 })));
+        let body = b"way-over-the-cap".to_vec();
+        let hash = hash_for(&body);
+        let err = dec
+            .write(CasWriteRequest::new(
+                "t-cap",
+                hash.clone(),
+                body,
+                "p",
+                "t-cap",
+                1,
+            ))
+            .expect_err("over-cap write must be refused");
+        match err {
+            corelink_handler_cas::CasHandlerError::Internal(ref m) => {
+                assert!(m.starts_with(OVER_CAP_SENTINEL), "must carry the over-cap sentinel: {m}");
+            }
+            other => panic!("expected over-cap Internal, got {other:?}"),
+        }
+        // The reservation was refused, so the inner store never ran: NO blob.
+        let read = inner.read(CasReadRequest::new("t-cap", hash, "p", "t-cap", 2));
+        assert!(
+            matches!(read, Err(corelink_handler_cas::CasHandlerError::NotFound { .. })),
+            "an over-cap write must leave NO blob in storage (reserve-before-commit)"
+        );
+        // Counter unchanged (the atomic reservation did not move it).
+        assert_eq!(store.used("t-cap", REGION), 4, "over-cap reservation must not move the counter");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn under_cap_write_accrues_then_delete_releases() {
+        let (dec, _inner, store) = cas_fixture(None);
+        let body = b"hello-bytes".to_vec();
+        let n = body.len() as i64;
+        let hash = hash_for(&body);
+        dec.write(CasWriteRequest::new("t1", hash.clone(), body, "p", "t1", 1))
+            .expect("write");
+        assert_eq!(store.used("t1", REGION), n, "a durable write must accrue its bytes");
+        // DELETE must RELEASE the reclaimed bytes so the counter drops to 0.
+        dec.delete(CasDeleteRequest::new("t1", hash, "p", "t1", 2))
+            .expect("delete");
+        assert_eq!(
+            store.used("t1", REGION),
+            0,
+            "a delete must decrement bytes_used by the reclaimed size"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn idempotent_rewrite_does_not_double_count() {
+        let (dec, _inner, store) = cas_fixture(None);
+        let body = b"same-bytes".to_vec();
+        let n = body.len() as i64;
+        let hash = hash_for(&body);
+        dec.write(CasWriteRequest::new("t1", hash.clone(), body.clone(), "p", "t1", 1))
+            .expect("first write");
+        // Second identical write is idempotent (`durable == false`) → the
+        // decorator rolls the reservation back, so the counter stays at n.
+        dec.write(CasWriteRequest::new("t1", hash, body, "p", "t1", 2))
+            .expect("second write");
+        assert_eq!(
+            store.used("t1", REGION),
+            n,
+            "an idempotent re-write must NOT double-count (reservation rolled back)"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn failed_inner_write_releases_reservation() {
+        // An inner write that errors (cross-tenant denial) must roll the
+        // reservation back — a failed PUT must not consume headroom.
+        let (dec, _inner, store) = cas_fixture(None);
+        let body = b"abc".to_vec();
+        let hash = hash_for(&body);
+        // `tenant != caller_tenant` ⇒ the inner InMemory handler returns
+        // CrossTenantDenied AFTER the decorator reserved.
+        let err = dec.write(CasWriteRequest::new("victim", hash, body, "p", "attacker", 1));
+        assert!(err.is_err(), "cross-tenant write must error");
+        assert_eq!(
+            store.used("victim", REGION),
+            0,
+            "a failed inner write must release its reservation (no leaked headroom)"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn two_concurrent_over_cap_reservations_cannot_both_pass() {
+        // The concurrency-correctness assertion: a tenant with room for exactly
+        // ONE 10-byte blob (cap 10, used 0) faces TWO concurrent 10-byte writes.
+        // The atomic single-statement reservation guarantees AT MOST ONE
+        // succeeds; the other is refused over-cap. (Two non-atomic check-then-act
+        // writes could both read used=0 and both pass → counter 20 > cap 10.)
+        let (dec, _inner, store) = cas_fixture(Some(("t-race", Row { used: 0, quota: 10 })));
+        let d1 = dec.clone();
+        let d2 = dec.clone();
+        let b1 = b"0123456789".to_vec(); // 10 bytes
+        let b2 = b"abcdefghij".to_vec(); // 10 bytes, distinct hash
+        let h1 = hash_for(&b1);
+        let h2 = hash_for(&b2);
+        let t1 = tokio::spawn(async move {
+            d1.write(CasWriteRequest::new("t-race", h1, b1, "p", "t-race", 1))
+        });
+        let t2 = tokio::spawn(async move {
+            d2.write(CasWriteRequest::new("t-race", h2, b2, "p", "t-race", 2))
+        });
+        let r1 = t1.await.unwrap();
+        let r2 = t2.await.unwrap();
+        let successes = [r1.is_ok(), r2.is_ok()].iter().filter(|b| **b).count();
+        assert_eq!(
+            successes, 1,
+            "exactly ONE of two concurrent over-cap writes may pass (atomic reserve)"
+        );
+        assert_eq!(
+            store.used("t-race", REGION),
+            10,
+            "the counter must never exceed the cap under concurrency"
         );
     }
 }

@@ -115,12 +115,12 @@ pub struct CasRouteState {
     /// serve a forged tenant's PAT. `None` in dev/CI (skipped). See
     /// [`crate::native_pat_gate`].
     pub pat_gate: Option<std::sync::Arc<crate::native_pat_gate::NativePatGate>>,
-    /// Optional per-tenant storage byte accountant (red-team finding #1 —
-    /// storage-cap enforcement). `Some` in production (D1-backed) — `accrue`d
-    /// after a successful write (fail-CLOSED 503 / over-cap reject) and
-    /// `release`d after a delete. `None` in dev/CI (not enforced). See
-    /// [`crate::byte_accounting`].
-    pub bytes: Option<std::sync::Arc<crate::byte_accounting::ByteAccountant>>,
+    // Storage byte accounting (red-team finding #1 / cluster B+C) is NOT a route
+    // field: it is enforced INSIDE the `write`/`delete` trait objects above by
+    // the [`crate::byte_accounting::AccountingCasHandler`] decorator (wired in
+    // `routes::build_with_factory`), so EVERY surface that shares these handlers
+    // — native CAS, Bazel, OCI, cargo/brew/npm/pip — gets identical, atomic,
+    // reserve→commit→release accounting with no per-route plumbing.
 }
 
 impl core::fmt::Debug for CasRouteState {
@@ -496,7 +496,6 @@ async fn handle_write(
         }
     }
     let now_ms = SystemWallClock.now_ms();
-    let byte_len = i64::try_from(body.len()).unwrap_or(i64::MAX);
     let req = CasWriteRequest::new(
         auth.0.clone(),
         hash,
@@ -505,36 +504,17 @@ async fn handle_write(
         auth.0.clone(),
         now_ms,
     );
+    // Storage byte accounting (finding #1 / cluster B+C) is enforced INSIDE
+    // `state.write` by the [`crate::byte_accounting::AccountingCasHandler`]
+    // decorator (wired in `routes::build_with_factory` when D1 is present):
+    // reserve→commit→release happens AT the write trait object — the SINGLE
+    // chokepoint every CAS write surface (native / Bazel / OCI / adapters)
+    // shares. So the cap is enforced atomically BEFORE the R2 PUT, and an
+    // over-cap or accounting-fault write surfaces here as a sentinel-tagged
+    // `Internal` error that `map_err` maps to 402 / 503. The route no longer
+    // accrues (that would double-count through the decorated handler).
     match state.write.write(req) {
         Ok(resp) => {
-            // Storage byte accounting (finding #1): accrue ONLY a fresh durable
-            // insert's bytes (an idempotent re-write stored nothing new, so
-            // `durable == false` ⇒ no double-count) AFTER the write committed,
-            // BEFORE returning success. Over-cap ⇒ 402 (the tenant is over its
-            // storage cap); a transport fault ⇒ 503 fail-CLOSED (we will not
-            // return success for a write we could not account).
-            if resp.durable {
-                if let Some(acc) = state.bytes.as_ref() {
-                    match acc.accrue(&auth.0, byte_len).await {
-                        Ok(crate::byte_accounting::AccrueOutcome::Accrued) => {}
-                        Ok(crate::byte_accounting::AccrueOutcome::OverCap) => {
-                            return (
-                                StatusCode::PAYMENT_REQUIRED,
-                                "storage quota exceeded",
-                            )
-                                .into_response();
-                        }
-                        Err(e) => {
-                            tracing::error!(error = %e, "cas: byte accrual failed; failing closed");
-                            return (
-                                StatusCode::SERVICE_UNAVAILABLE,
-                                "storage accounting unavailable",
-                            )
-                                .into_response();
-                        }
-                    }
-                }
-            }
             let code = if resp.durable {
                 StatusCode::CREATED
             } else {
@@ -586,19 +566,15 @@ async fn handle_delete(
         auth.0.clone(),
         now_ms,
     );
+    // Storage byte accounting (finding #1 / cluster-C): the reclaimed bytes are
+    // RELEASED inside `state.delete` by the
+    // [`crate::byte_accounting::AccountingCasHandler`] decorator (it reads the
+    // size-bearing `CasDeleteResponse::reclaimed_bytes` the R2 delete handler now
+    // populates via a pre-delete HEAD) so `bytes_used` drops. Idempotent: 204 No
+    // Content for both deleted-existing and absent.
     match state.delete.delete(req) {
-        // Idempotent: 204 No Content for both deleted-existing and absent.
-        // Storage byte accounting (finding #1): release the reclaimed bytes from
-        // the tenant's counter when a blob actually existed. The byte SIZE of the
-        // deleted blob is sourced from the size-bearing delete response if/when
-        // the handler crate surfaces it (`reclaimed_bytes`); today `CasDeleteResponse`
-        // reports only `existed`, so the release plumbing
-        // ([`crate::byte_accounting::ByteAccountant::release`]) is in place and
-        // unit-tested, awaiting that size on the response. A failed release
-        // over-counts (conservative), never under-counts — so it never widens the
-        // cap; we therefore log + continue rather than fail the (succeeded) delete.
         Ok(resp) => {
-            let _ = resp.existed; // size not yet on the response; see comment above.
+            let _ = resp.existed;
             StatusCode::NO_CONTENT.into_response()
         }
         Err(e) => map_err(e),
@@ -696,6 +672,21 @@ fn map_err(e: CasHandlerError) -> axum::response::Response {
         CasHandlerError::Internal(ref msg) if msg.starts_with(STORAGE_UNAVAILABLE_SENTINEL) => {
             (StatusCode::SERVICE_UNAVAILABLE, "storage unavailable").into_response()
         }
+        // Storage byte-accounting decorator (finding #1 / cluster B+C): an
+        // over-cap reservation ⇒ 402 (the tenant is over its storage cap); an
+        // accounting-backend fault ⇒ 503 fail-CLOSED. Both ride a sentinel-tagged
+        // `Internal` from `AccountingCasHandler` so they are distinct from a
+        // generic 500.
+        CasHandlerError::Internal(ref msg)
+            if msg.starts_with(crate::byte_accounting::OVER_CAP_SENTINEL) =>
+        {
+            (StatusCode::PAYMENT_REQUIRED, "storage quota exceeded").into_response()
+        }
+        CasHandlerError::Internal(ref msg)
+            if msg.starts_with(crate::byte_accounting::ACCT_UNAVAILABLE_SENTINEL) =>
+        {
+            (StatusCode::SERVICE_UNAVAILABLE, "storage accounting unavailable").into_response()
+        }
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal").into_response(),
     }
 }
@@ -755,7 +746,6 @@ mod tests {
             tombstones: None,
             quota: None,
             pat_gate: None,
-            bytes: None,
         }
     }
 
@@ -780,7 +770,6 @@ mod tests {
             tombstones: Some(tombstones),
             quota: None,
             pat_gate: None,
-            bytes: None,
         }
     }
 
@@ -801,7 +790,6 @@ mod tests {
             tombstones: None,
             quota: None,
             pat_gate: None,
-            bytes: None,
         }
     }
 
@@ -1166,7 +1154,6 @@ mod tests {
             tombstones: None,
             quota: Some(gate),
             pat_gate: None,
-            bytes: None,
         }
     }
 
@@ -1215,7 +1202,6 @@ mod tests {
             tombstones: None,
             quota: Some(crate::routes::QuotaGate::new_for_test(guard, 1_000)),
             pat_gate: None,
-            bytes: None,
         };
         let app = router(st);
         let req = Request::builder()
@@ -1231,17 +1217,22 @@ mod tests {
 
     // ── finding #1: storage byte accounting (cap enforcement) ────────────────
 
-    /// Fixture whose state carries a [`ByteAccountant`] over an in-memory byte
-    /// store seeded AT a tiny cap, so the next durable write trips the cap.
+    /// Fixture whose `write`/`delete` trait objects are wrapped in the
+    /// [`AccountingCasHandler`] decorator over an in-memory byte store seeded AT
+    /// a tiny cap, so the next write trips the cap (mirrors the production wiring
+    /// in `routes::build_with_factory`).
     fn fixture_over_storage_cap(tenant: &str) -> CasRouteState {
-        use crate::byte_accounting::{testing::InMemoryByteStore, testing::Row, ByteAccountant, ByteStore};
+        use crate::byte_accounting::{
+            testing::InMemoryByteStore, testing::Row, AccountingCasHandler, ByteAccountant,
+            ByteStore,
+        };
 
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
         let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
         let read: Arc<dyn CasReadHandler> = shared.clone();
-        let write: Arc<dyn CasWriteHandler> = shared.clone();
-        let delete: Arc<dyn CasDeleteHandler> = shared.clone();
+        let raw_write: Arc<dyn CasWriteHandler> = shared.clone();
+        let raw_delete: Arc<dyn CasDeleteHandler> = shared.clone();
         let list: Arc<dyn CasListHandler> = shared;
 
         let store = Arc::new(InMemoryByteStore::new());
@@ -1249,6 +1240,9 @@ mod tests {
         store.seed(tenant, "iad", Row { used: 4, quota: 4 });
         let store_dyn: Arc<dyn ByteStore> = store;
         let acc = Arc::new(ByteAccountant::new(store_dyn, "iad".to_owned()));
+        let acct = Arc::new(AccountingCasHandler::new(raw_write, raw_delete, acc));
+        let write: Arc<dyn CasWriteHandler> = acct.clone();
+        let delete: Arc<dyn CasDeleteHandler> = acct;
 
         CasRouteState {
             read,
@@ -1258,14 +1252,16 @@ mod tests {
             tombstones: None,
             quota: None,
             pat_gate: None,
-            bytes: Some(acc),
         }
     }
 
     /// The KILLING finding-#1 test: with the storage counter AT the cap, a PUT
     /// that would store new bytes is rejected 402 — the previously-inert storage
     /// cap now trips on a real HTTP write.
-    #[tokio::test]
+    // multi_thread: the `AccountingCasHandler` decorator bridges the async
+    // accountant to the sync write trait with `block_in_place`, which requires a
+    // multi-thread runtime (matches production `#[tokio::main]`).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn put_over_storage_cap_returns_402() {
         let app = router(fixture_over_storage_cap(TEST_TENANT));
         let bytes = b"more-bytes-than-the-cap-allows".to_vec();
@@ -1284,19 +1280,28 @@ mod tests {
     /// Control: an uncapped tenant's PUT accrues its bytes and succeeds (201) —
     /// proving the counter MOVES (it never did before finding #1) and the gate
     /// is not a blanket block.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn put_under_storage_cap_accrues_and_succeeds() {
-        use crate::byte_accounting::{testing::InMemoryByteStore, ByteAccountant, ByteStore};
+        use crate::byte_accounting::{
+            testing::InMemoryByteStore, AccountingCasHandler, ByteAccountant, ByteStore,
+        };
 
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
         let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
         let read: Arc<dyn CasReadHandler> = shared.clone();
-        let write: Arc<dyn CasWriteHandler> = shared.clone();
-        let delete: Arc<dyn CasDeleteHandler> = shared.clone();
+        let raw_write: Arc<dyn CasWriteHandler> = shared.clone();
+        let raw_delete: Arc<dyn CasDeleteHandler> = shared.clone();
         let list: Arc<dyn CasListHandler> = shared;
         let store = Arc::new(InMemoryByteStore::new()); // empty ⇒ uncapped fresh row
         let store_dyn: Arc<dyn ByteStore> = store.clone();
+        let acct = Arc::new(AccountingCasHandler::new(
+            raw_write,
+            raw_delete,
+            Arc::new(ByteAccountant::new(store_dyn, "iad".to_owned())),
+        ));
+        let write: Arc<dyn CasWriteHandler> = acct.clone();
+        let delete: Arc<dyn CasDeleteHandler> = acct;
         let st = CasRouteState {
             read,
             write,
@@ -1305,7 +1310,6 @@ mod tests {
             tombstones: None,
             quota: None,
             pat_gate: None,
-            bytes: Some(Arc::new(ByteAccountant::new(store_dyn, "iad".to_owned()))),
         };
         let app = router(st);
         let body = b"hello-cas".to_vec();
@@ -1364,7 +1368,6 @@ mod tests {
             tombstones: None,
             quota: None,
             pat_gate: Some(Arc::new(NativePatGate::new_for_test(verifier))),
-            bytes: None,
         };
         let app = router(st);
         let req = Request::builder()

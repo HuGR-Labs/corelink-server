@@ -172,6 +172,48 @@ impl R2S3Client {
         }
     }
 
+    /// Read the byte size of the object stored under `key` WITHOUT
+    /// downloading its body (S3 `HeadObject`).
+    ///
+    /// Returns `Ok(Some(size))` when the object exists, `Ok(None)` when it is
+    /// absent (HTTP 404 / `NoSuchKey`), and `Err(String)` on any other
+    /// transport/service error. Used by the storage byte-accounting delete
+    /// path ([`crate::byte_accounting`]) to learn how many bytes a delete
+    /// reclaims so it can `release` exactly that amount from
+    /// `tenant_storage_state.bytes_used` — a HEAD, not a GET, so it costs no
+    /// egress for an arbitrarily large blob.
+    ///
+    /// # Errors
+    /// Returns `Err(String)` on any non-404 transport/service error.
+    pub async fn head_size(&self, key: &str) -> Result<Option<u64>, String> {
+        debug!(
+            bucket = %self.bucket,
+            key = %key,
+            "R2S3Client::head_size"
+        );
+        let result = self
+            .inner
+            .head_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await;
+        match result {
+            Ok(output) => Ok(Some(u64::try_from(output.content_length().unwrap_or(0)).unwrap_or(0))),
+            Err(sdk_err) => {
+                // A HeadObject on an absent key surfaces as a NotFound service
+                // error (R2 returns 404). Treat it as "no object" (release
+                // nothing) rather than an error — the delete is idempotent.
+                if let aws_sdk_s3::error::SdkError::ServiceError(ref se) = sdk_err {
+                    if se.err().is_not_found() {
+                        return Ok(None);
+                    }
+                }
+                Err(format!("R2 head failed for key {key}: {sdk_err}"))
+            }
+        }
+    }
+
     /// Hard-delete the object stored under `key`.
     ///
     /// S3 `DeleteObject` is idempotent — deleting a key that does not
@@ -811,7 +853,17 @@ impl CasDeleteHandler for R2CasHandler {
         // plain DeleteObject); we report `true` on a clean delete so the
         // diagnostic is monotone, never a silent success on a transport
         // error. CRITICAL — `block_in_place`: see `read` above.
+        //
+        // Storage byte-accounting (finding #1 / cluster-C): HEAD the object
+        // BEFORE deleting to learn its size (a HEAD, not a GET — no egress),
+        // so the route's byte accountant can `release` exactly the reclaimed
+        // bytes. A HEAD error is non-fatal: we proceed with the delete and
+        // report `reclaimed_bytes = 0` (a failed release over-counts the
+        // tenant — conservative, never under-counts the cap).
         let handle = tokio::runtime::Handle::current();
+        let reclaimed = tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key)))
+            .unwrap_or(None)
+            .unwrap_or(0);
         let result = tokio::task::block_in_place(|| handle.block_on(self.client.delete(&key)));
 
         match result {
@@ -826,7 +878,7 @@ impl CasDeleteHandler for R2CasHandler {
                     ))
                     .map_err(CasHandlerError::AuditFailed)?;
                 emit(false);
-                Ok(CasDeleteResponse::new(true))
+                Ok(CasDeleteResponse::with_reclaimed(reclaimed > 0, reclaimed))
             }
             Err(e) => {
                 // Fail CLOSED on a storage fault: never a silent success.
@@ -1345,7 +1397,12 @@ impl corelink_handler_ac::AcDeleteHandler for R2AcHandler {
         debug!(key = %key, "R2AcHandler::delete");
 
         // S3 DeleteObject is idempotent. CRITICAL — `block_in_place`.
+        // HEAD before delete to learn the reclaimed size for byte-accounting
+        // (finding #1 / cluster-C); a HEAD error is non-fatal (release 0).
         let handle = tokio::runtime::Handle::current();
+        let reclaimed = tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key)))
+            .unwrap_or(None)
+            .unwrap_or(0);
         let result = tokio::task::block_in_place(|| handle.block_on(self.client.delete(&key)));
 
         match result {
@@ -1360,7 +1417,7 @@ impl corelink_handler_ac::AcDeleteHandler for R2AcHandler {
                     ))
                     .map_err(AcHandlerError::AuditFailed)?;
                 self.emit_update_sli(false);
-                Ok(AcDeleteResponse::new(true))
+                Ok(AcDeleteResponse::with_reclaimed(reclaimed > 0, reclaimed))
             }
             Err(e) => {
                 // Fail CLOSED on a storage fault: never a silent success.
