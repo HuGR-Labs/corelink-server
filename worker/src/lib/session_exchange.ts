@@ -117,6 +117,22 @@ const _inMemoryMintCounts = new Map<string, number>();
 const MAX_IN_MEMORY_BURST = 5;
 
 /**
+ * Hard ceiling on the number of DISTINCT principals tracked in
+ * {@link _inMemoryMintCounts} at once (CAA-360 #16 fix).
+ *
+ * The map is module-scoped (per isolate) and previously grew one entry per
+ * distinct principal for the isolate's entire lifetime — an unbounded-growth /
+ * slow-leak hazard on a long-lived isolate under principal churn. We now bound
+ * it with an LRU policy: each access moves the principal to the most-recent end
+ * (delete-then-set on a JS Map, which preserves insertion order), and once the
+ * map exceeds this ceiling the least-recently-used entry is evicted. The
+ * durable D1 counter remains the primary throttle, so an evicted principal only
+ * loses its tighter in-isolate burst memory (worst case: its per-isolate burst
+ * counter resets) — never a correctness hole in the persistent gate.
+ */
+const MAX_IN_MEMORY_MINT_ENTRIES = 50_000;
+
+/**
  * Per-principal fixed-window mint throttle for `/v1/session/exchange`.
  *
  * A still-valid Clerk session could otherwise loop-mint unbounded PATs (each
@@ -190,8 +206,20 @@ async function checkMintThrottle(
   // Applied on EVERY request (both D1-healthy and D1-outage paths) so the
   // in-process ceiling is always current. It is intentionally a tighter cap
   // than the durable window to bound within-isolate Argon2id CPU cost.
+  // LRU touch: delete-then-set moves this principal to the most-recently-used
+  // end of the insertion-ordered Map, so eviction below removes the oldest
+  // (least-recently-used) principal rather than an actively-minting one.
   const inMemCount = (_inMemoryMintCounts.get(principalId) ?? 0) + 1;
+  _inMemoryMintCounts.delete(principalId);
   _inMemoryMintCounts.set(principalId, inMemCount);
+  // Bound the map (CAA-360 #16): we add at most one entry per call, so evicting
+  // a single LRU entry whenever we exceed the ceiling keeps size <= the cap.
+  if (_inMemoryMintCounts.size > MAX_IN_MEMORY_MINT_ENTRIES) {
+    const lru = _inMemoryMintCounts.keys().next().value;
+    if (lru !== undefined) {
+      _inMemoryMintCounts.delete(lru);
+    }
+  }
   if (inMemCount > MAX_IN_MEMORY_BURST) {
     console.error(
       `[${requestId}] session exchange in-memory backstop fired (d1_failed=${String(d1Failed)})`,

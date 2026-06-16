@@ -22,6 +22,7 @@ import {
   checkRequestQuota,
   secondsUntilNextMonthStart,
   type Tier,
+  type TierResult,
 } from "../src/lib/quota.js";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
@@ -249,16 +250,21 @@ describe("getTierForTenant", () => {
 
 describe("checkStorageQuota", () => {
   const FREE_MAX = 10 * 1_073_741_824; // 10 GB
+  // TierResult helper (F21): a confirmed (non-D1-error) tier resolution.
+  const ok = (tier: Tier): TierResult => ({ tier, d1Error: false });
+  // A confirmed read (non-mutating) and a confirmed write (mutating).
+  const READ = false;
+  const WRITE = true;
 
   it("returns ok:true when bytes_used is below the free-tier ceiling", async () => {
     const db = makeQuotaD1Mock({ storageBytes: FREE_MAX - 1 });
-    const result = await checkStorageQuota(db, TEST_TENANT_ID, "free");
+    const result = await checkStorageQuota(db, TEST_TENANT_ID, ok("free"), WRITE);
     expect(result.ok).toBe(true);
   });
 
   it("returns ok:false with Retry-After when bytes_used >= free-tier ceiling", async () => {
     const db = makeQuotaD1Mock({ storageBytes: FREE_MAX });
-    const result = await checkStorageQuota(db, TEST_TENANT_ID, "free");
+    const result = await checkStorageQuota(db, TEST_TENANT_ID, ok("free"), WRITE);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.retryAfterSec).toBeGreaterThan(0);
@@ -270,20 +276,59 @@ describe("checkStorageQuota", () => {
 
   it("returns ok:true for enterprise tier regardless of bytes_used (no cap)", async () => {
     const db = makeQuotaD1Mock({ storageBytes: Number.MAX_SAFE_INTEGER - 1 });
-    const result = await checkStorageQuota(db, TEST_TENANT_ID, "enterprise");
-    expect(result.ok).toBe(true);
-  });
-
-  it("returns ok:true on D1 error (fail-open)", async () => {
-    const db = makeQuotaD1Mock({ throwOnStorageQuery: true });
-    const result = await checkStorageQuota(db, TEST_TENANT_ID, "free");
+    const result = await checkStorageQuota(db, TEST_TENANT_ID, ok("enterprise"), WRITE);
     expect(result.ok).toBe(true);
   });
 
   it("treats null SUM result (no rows) as 0 bytes — within quota", async () => {
     const db = makeQuotaD1Mock({ storageBytes: null });
-    const result = await checkStorageQuota(db, TEST_TENANT_ID, "free");
+    const result = await checkStorageQuota(db, TEST_TENANT_ID, ok("free"), WRITE);
     expect(result.ok).toBe(true);
+  });
+
+  // ── CAA-360 #25: verb-aware D1-error posture ──────────────────────────────
+
+  it("fails OPEN on a storage-query D1 error for a READ request", async () => {
+    const db = makeQuotaD1Mock({ throwOnStorageQuery: true });
+    const result = await checkStorageQuota(db, TEST_TENANT_ID, ok("free"), READ);
+    expect(result.ok).toBe(true);
+  });
+
+  it("fails CLOSED with a short Retry-After on a storage-query D1 error for a WRITE request", async () => {
+    const db = makeQuotaD1Mock({ throwOnStorageQuery: true });
+    const result = await checkStorageQuota(db, TEST_TENANT_ID, ok("free"), WRITE);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.retryAfterSec).toBeGreaterThan(0);
+      // Short transient retry — NOT the until-next-month cycle wait.
+      expect(result.retryAfterSec).toBeLessThanOrEqual(60);
+      expect(result.reason).toContain("unverifiable");
+    }
+  });
+
+  it("fails OPEN on an unconfirmed (tier-lookup D1 error) tier for a READ request", async () => {
+    const db = makeQuotaD1Mock({ storageBytes: FREE_MAX }); // would be over-cap IF checked
+    const result = await checkStorageQuota(
+      db,
+      TEST_TENANT_ID,
+      { tier: "free", d1Error: true },
+      READ,
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("fails CLOSED on an unconfirmed (tier-lookup D1 error) tier for a WRITE request", async () => {
+    const db = makeQuotaD1Mock({ storageBytes: 0 }); // would be under-cap IF checked
+    const result = await checkStorageQuota(
+      db,
+      TEST_TENANT_ID,
+      { tier: "free", d1Error: true },
+      WRITE,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain("unverifiable");
+    }
   });
 });
 
