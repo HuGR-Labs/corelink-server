@@ -58,6 +58,13 @@ const TENANT_ID_TABLES: &[&str] = &[
     "ratelimit_buckets",
     "byok_envelope",
     "adapter_oci_kv",
+    // CAA-360 #4: tenant-linked NPS/CSAT PII (recipient_hash); `tenant_id`-keyed
+    // (migration 0046). Not a legal-retention category, so it IS erased on a DSR
+    // (GDPR Art.17) — distinct from the retained fiscal `stripe_*` records.
+    "survey_responses",
+    // CAA-360 #11: per-tenant spend ledger (`tenant_id` PK, migration 0068-era).
+    // Operational quota state, not a fiscal invoice record → erased on a DSR.
+    "tenant_quota",
 ];
 
 /// Erase-set tables keyed by a `namespace` column. The bound value is the
@@ -259,6 +266,20 @@ mod tests {
                 !RETAIN_SET.contains(t),
                 "RETAIN-set table {t} must NEVER be in the D1 erase-set (ADR-S11-013)"
             );
+        }
+    }
+
+    #[test]
+    fn tenant_linked_pii_tables_are_in_the_erase_set() {
+        // CAA-360 #4/#11 regression: these tenant_id-keyed tables carry tenant PII
+        // / spend state and MUST be erased on a DSR (GDPR Art.17). A removal would
+        // silently leave tenant data behind after an erasure request.
+        for t in ["survey_responses", "tenant_quota"] {
+            assert!(
+                TENANT_ID_TABLES.contains(&t),
+                "{t} must be in the D1 erase-set (tenant PII; CAA-360 #4/#11)"
+            );
+            assert!(!RETAIN_SET.contains(&t), "{t} is not a retain-set table");
         }
     }
 
