@@ -12,7 +12,7 @@ use subtle::ConstantTimeEq;
 use crate::argon::verify_argon2id;
 use crate::error::PatError;
 use crate::format::{parse_plaintext, PatPlaintextParts};
-use crate::sig::verify_hmac_sig;
+use crate::sig::verify_hmac_sig_multi;
 use crate::types::{PatEnv, PatHash, PatSigningKey, PatTokenId};
 
 /// Result of a successful end-to-end verify. Carries the parsed
@@ -49,6 +49,30 @@ pub fn verify_with_hash(
     stored_hash: &PatHash,
     signing_key: &PatSigningKey,
 ) -> Result<VerifiedPat, PatError> {
+    verify_with_hash_multi(
+        plaintext,
+        expected_token_id,
+        stored_hash,
+        std::slice::from_ref(signing_key),
+    )
+}
+
+/// Overlap-aware variant of [`verify_with_hash`]: the HMAC step is
+/// checked against a **key set** (current + rotation predecessor/
+/// successor) per `key_management.md §3.2.1`. A PAT minted under any
+/// key in `signing_keys` validates, so rotating `PAT_SIGNING_KEY`
+/// (incident response or scheduled) does not instantly invalidate the
+/// live fleet during the overlap window.
+///
+/// Fail-closed: an empty `signing_keys` set rejects (see
+/// [`crate::sig::verify_hmac_sig_multi`]). Constant-time over the set
+/// — neither the matching key nor a token_id mismatch position leaks.
+pub fn verify_with_hash_multi(
+    plaintext: &str,
+    expected_token_id: &PatTokenId,
+    stored_hash: &PatHash,
+    signing_keys: &[PatSigningKey],
+) -> Result<VerifiedPat, PatError> {
     let parts: PatPlaintextParts = parse_plaintext(plaintext)?;
 
     // Token id must match the one looked up from the DB.
@@ -68,8 +92,8 @@ pub fn verify_with_hash(
         return Err(PatError::InvalidPat);
     }
 
-    // Step 3a — HMAC fast-fail.
-    verify_hmac_sig(signing_key, &parts.hmac_preimage, &parts.hmac_sig_bytes)?;
+    // Step 3a — HMAC fast-fail over the overlap key set.
+    verify_hmac_sig_multi(signing_keys, &parts.hmac_preimage, &parts.hmac_sig_bytes)?;
 
     // Step 3c — Argon2id PHC verify.
     verify_argon2id(&parts.random_secret_b64, stored_hash)?;
@@ -86,7 +110,17 @@ pub fn verify_hmac_only(
     plaintext: &str,
     signing_key: &PatSigningKey,
 ) -> Result<(PatEnv, PatTokenId), PatError> {
+    verify_hmac_only_multi(plaintext, std::slice::from_ref(signing_key))
+}
+
+/// Overlap-aware variant of [`verify_hmac_only`]: HMAC fast-fail
+/// against a **key set** (current + rotation predecessor/successor)
+/// per `key_management.md §3.2.1`. Fail-closed on an empty set.
+pub fn verify_hmac_only_multi(
+    plaintext: &str,
+    signing_keys: &[PatSigningKey],
+) -> Result<(PatEnv, PatTokenId), PatError> {
     let parts = parse_plaintext(plaintext)?;
-    verify_hmac_sig(signing_key, &parts.hmac_preimage, &parts.hmac_sig_bytes)?;
+    verify_hmac_sig_multi(signing_keys, &parts.hmac_preimage, &parts.hmac_sig_bytes)?;
     Ok((parts.env, parts.token_id))
 }

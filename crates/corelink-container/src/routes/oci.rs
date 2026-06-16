@@ -61,7 +61,9 @@
 
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use axum::Router;
@@ -95,6 +97,36 @@ const OCI_SERVICE_PRINCIPAL: &str = "oci-adapter-host";
 /// 429 by the adapter error layer.
 const OCI_MAX_OPEN_SESSIONS_PER_TENANT: usize = 4;
 
+/// Global ceiling on in-flight upload bytes across ALL tenants (audit #6 /
+/// WP-OCI-DOS).
+///
+/// The shared `_oci` Durable Object process holds all tenants' upload sessions
+/// in a single heap. Without a cross-tenant ceiling, N tenants each with 4
+/// open sessions could together accumulate N × 4 × 5 GiB of heap — unbounded
+/// memory exhaustion. This constant caps the TOTAL buffered bytes at any
+/// instant across all open sessions.
+///
+/// 512 MiB is sized so that the maximum realistic multi-tenant burst (e.g.
+/// 10 concurrent tenants each pushing a 50 MiB layer) fits comfortably, while
+/// a single tenant cannot fill more than a bounded fraction of the ceiling with
+/// their per-tenant session cap. When the ceiling is reached, new `PATCH`
+/// chunks are rejected with a port error that surfaces as `429 + Retry-After`.
+const OCI_MAX_INFLIGHT_BYTES: u64 = 512 * 1024 * 1024; // 512 MiB
+
+/// Idle timeout after which an upload session is considered abandoned and is
+/// reaped on the next `open_upload` call (lazy reap — audit #6 / WP-OCI-DOS).
+///
+/// OCI clients that crash or disconnect mid-push leave open sessions that hold
+/// memory indefinitely. Without a reaper the per-tenant cap (F25) would
+/// permanently lock a tenant out of pushing if their client crashed between
+/// `POST` (open) and `PUT` (finalize). 15 minutes covers realistic slow
+/// uploads on poor network links while recycling abandoned sessions promptly.
+///
+/// The reaper is lazy (runs inside `open_upload` under the same mutex lock),
+/// so there is no background thread or tokio task — correct for the
+/// single-threaded Durable Object runtime.
+const OCI_SESSION_IDLE_TIMEOUT_MS: u64 = 15 * 60 * 1000; // 15 min
+
 /// Bearer-realm URL the adapter advertises in `Www-Authenticate` on a
 /// `/v2/` 401, pointing OCI clients at the `/token` exchange. Flat prod
 /// hostname per the deployment note (`corelink-oci.humangr.com`); the
@@ -108,6 +140,18 @@ const OCI_BEARER_REALM: &str = "https://corelink-oci.humangr.com/token";
 pub const OCI_TOKEN_KEY_ENV: &str = "CORELINK_OCI_TOKEN_KEY";
 
 // ── BlobStore port → the shared MoatCache ───────────────────────────────────
+
+/// Per-session state for an in-flight OCI blob upload.
+///
+/// Keyed by `<tenant-text>:<uuid>` in [`OciMoatStore::uploads`].
+struct UploadSession {
+    /// Accumulated chunk bytes (grows with each `PATCH`).
+    buf: Vec<u8>,
+    /// Wall-clock ms of the last successful `append_chunk` (or session
+    /// open if no chunks have arrived yet). Used by the lazy reaper
+    /// ([`OCI_SESSION_IDLE_TIMEOUT_MS`]) to evict abandoned sessions.
+    last_active_ms: u64,
+}
 
 /// OCI `BlobStore` port → the 2-level [`MoatCache`].
 ///
@@ -131,10 +175,25 @@ pub const OCI_TOKEN_KEY_ENV: &str = "CORELINK_OCI_TOKEN_KEY";
 /// verification. The buffer is NOT durable (process restart drops
 /// in-flight uploads) — acceptable for the single-container deployment;
 /// see OPEN DECISIONS.
+///
+/// DoS mitigations (audit #6 / WP-OCI-DOS):
+///
+/// * `inflight_bytes` — atomic counter of bytes currently held across ALL
+///   open sessions. Capped at [`OCI_MAX_INFLIGHT_BYTES`]; `PATCH` that
+///   would push the counter over the ceiling is rejected with a port error
+///   mapped to `429 + Retry-After` by the adapter layer.
+/// * Lazy session reaper — `open_upload` evicts sessions idle for more
+///   than [`OCI_SESSION_IDLE_TIMEOUT_MS`] ms before checking the per-tenant
+///   cap, so a crashed client cannot permanently lock its tenant out of
+///   pushing. No background thread is required (DO runtime is
+///   single-threaded).
 struct OciMoatStore {
     moat: Arc<MoatCache>,
-    /// `uuid → accumulated chunk bytes` for in-flight upload sessions.
-    uploads: Mutex<HashMap<String, Vec<u8>>>,
+    /// `<tenant-text>:<uuid>` → session state for in-flight uploads.
+    uploads: Mutex<HashMap<String, UploadSession>>,
+    /// Bytes currently buffered across ALL open upload sessions.
+    /// Updated atomically; never allowed to exceed [`OCI_MAX_INFLIGHT_BYTES`].
+    inflight_bytes: AtomicU64,
 }
 
 impl std::fmt::Debug for OciMoatStore {
@@ -148,8 +207,19 @@ impl OciMoatStore {
         Self {
             moat,
             uploads: Mutex::new(HashMap::new()),
+            inflight_bytes: AtomicU64::new(0),
         }
     }
+}
+
+/// Return the current wall-clock time in milliseconds since the Unix epoch.
+/// Saturates to `u64::MAX` on overflow (impossible in practice before year
+/// ~5 × 10⁸ CE, but matches the `wallclock_unix_ms` sentinel pattern).
+fn now_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or(0)
 }
 
 /// True iff `upload_uuid` was minted for `tenant`. Sessions are minted as
@@ -174,13 +244,44 @@ impl BlobStore for OciMoatStore {
         // `<tenant-text>:<uuid>`). Reject with an error string that the adapter
         // maps to 429 when the count is at the cap. The check+insert is atomic
         // because we hold the mutex for the entire operation.
+        //
+        // Lazy reaper (audit #6 / WP-OCI-DOS): BEFORE counting, evict all
+        // sessions whose last-active timestamp is older than
+        // `OCI_SESSION_IDLE_TIMEOUT_MS`. This prevents a crashed client from
+        // permanently locking its tenant out of the per-tenant cap. Reaped
+        // bytes are subtracted from the global `inflight_bytes` counter.
         let tenant_text = tenant.to_canonical_text();
         let session_prefix = format!("{tenant_text}:");
         let uuid = format!("{tenant_text}:{}", Uuid::new_v4().simple());
+        let now = now_unix_ms();
         let mut g = self
             .uploads
             .lock()
             .map_err(|e| format!("oci upload buf poisoned: {e}"))?;
+
+        // Lazy reap: collect abandoned sessions (idle > timeout).
+        let stale_keys: Vec<String> = g
+            .iter()
+            .filter(|(_, s)| now.saturating_sub(s.last_active_ms) > OCI_SESSION_IDLE_TIMEOUT_MS)
+            .map(|(k, _)| k.clone())
+            .collect();
+        for key in &stale_keys {
+            if let Some(session) = g.remove(key) {
+                let freed = u64::try_from(session.buf.len()).unwrap_or(0);
+                // Saturating sub: inflight_bytes must never underflow.
+                self.inflight_bytes.fetch_sub(
+                    self.inflight_bytes.load(Ordering::Relaxed).min(freed),
+                    Ordering::Relaxed,
+                );
+                tracing::info!(
+                    session_uuid = %key,
+                    bytes_freed = freed,
+                    "oci: reaped abandoned upload session (idle > {}ms) (audit #6)",
+                    OCI_SESSION_IDLE_TIMEOUT_MS,
+                );
+            }
+        }
+
         let open_count = g
             .keys()
             .filter(|k| k.starts_with(&session_prefix))
@@ -196,7 +297,13 @@ impl BlobStore for OciMoatStore {
                 "too many open upload sessions for tenant (limit {OCI_MAX_OPEN_SESSIONS_PER_TENANT})"
             ));
         }
-        g.insert(uuid.clone(), Vec::new());
+        g.insert(
+            uuid.clone(),
+            UploadSession {
+                buf: Vec::new(),
+                last_active_ms: now,
+            },
+        );
         Ok(uuid)
     }
 
@@ -209,18 +316,50 @@ impl BlobStore for OciMoatStore {
         if !upload_uuid_belongs_to(tenant, upload_uuid) {
             return Err(format!("upload session not found: {upload_uuid}"));
         }
+        let chunk_len = u64::try_from(chunk.len())
+            .map_err(|e| format!("oci chunk len overflow: {e}"))?;
+        // Global in-flight byte ceiling check (audit #6 / WP-OCI-DOS).
+        // Perform the check BEFORE acquiring the session mutex so a
+        // ceiling violation doesn't block other tenants for the lock
+        // duration. The check is not perfectly atomic with the extend
+        // below (two concurrent appends could race to push inflight_bytes
+        // over the limit by at most one chunk each), but the ceiling is a
+        // conservative soft cap — a one-chunk race window is acceptable
+        // and far smaller than the gap between the limit and OOM.
+        let current = self.inflight_bytes.load(Ordering::Relaxed);
+        if current.saturating_add(chunk_len) > OCI_MAX_INFLIGHT_BYTES {
+            tracing::warn!(
+                tenant_id = %tenant.to_canonical_text(),
+                inflight_bytes = current,
+                chunk_len,
+                limit = OCI_MAX_INFLIGHT_BYTES,
+                "oci: global in-flight byte ceiling reached; rejecting PATCH chunk (audit #6)"
+            );
+            // Keep the "too many open upload sessions" prefix so the adapter
+            // maps it to 429 (the append path matches this prefix too), but make
+            // the message ACCURATE — this is the global in-flight BYTE ceiling,
+            // not the per-tenant session count, so report the byte limit.
+            return Err(format!(
+                "too many open upload sessions for tenant: in-flight byte ceiling \
+                 reached (limit {OCI_MAX_INFLIGHT_BYTES} bytes)"
+            ));
+        }
         let mut g = self
             .uploads
             .lock()
             .map_err(|e| format!("oci upload buf poisoned: {e}"))?;
-        let buf = g
+        let session = g
             .get_mut(upload_uuid)
             // EXACT shape the adapter matches on to emit a 404
             // BLOB_UPLOAD_UNKNOWN (`oci::push::upload` checks
             // `e.starts_with("upload session not found")`).
             .ok_or_else(|| format!("upload session not found: {upload_uuid}"))?;
-        buf.extend_from_slice(&chunk);
-        u64::try_from(buf.len()).map_err(|e| format!("oci upload len overflow: {e}"))
+        session.buf.extend_from_slice(&chunk);
+        session.last_active_ms = now_unix_ms();
+        // Credit the global byte counter now that we've confirmed the
+        // chunk was actually appended.
+        self.inflight_bytes.fetch_add(chunk_len, Ordering::Relaxed);
+        u64::try_from(session.buf.len()).map_err(|e| format!("oci upload len overflow: {e}"))
     }
 
     async fn finalize_upload(
@@ -232,7 +371,7 @@ impl BlobStore for OciMoatStore {
         if !upload_uuid_belongs_to(tenant, upload_uuid) {
             return Err(format!("upload session not found: {upload_uuid}"));
         }
-        let buf = {
+        let session = {
             let mut g = self
                 .uploads
                 .lock()
@@ -240,11 +379,18 @@ impl BlobStore for OciMoatStore {
             g.remove(upload_uuid)
                 .ok_or_else(|| format!("upload session not found: {upload_uuid}"))?
         };
-        let assembled = Bytes::from(buf.clone());
+        // Release the bytes from the global counter BEFORE the async moat
+        // write so the ceiling opens up as early as possible.
+        let freed = u64::try_from(session.buf.len()).unwrap_or(0);
+        self.inflight_bytes.fetch_sub(
+            self.inflight_bytes.load(Ordering::Relaxed).min(freed),
+            Ordering::Relaxed,
+        );
+        let assembled = Bytes::from(session.buf.clone());
         // Persist content-addressed under the per-tenant namespace,
         // mapping the OCI digest (`blob_key`) → blake3 content hash.
         self.moat
-            .put(&tenant.to_canonical_text(), blob_key, buf)
+            .put(&tenant.to_canonical_text(), blob_key, session.buf)
             .await
             .map_err(|e| match e {
                 MoatError::Backend(m) => m,
@@ -256,10 +402,18 @@ impl BlobStore for OciMoatStore {
         if !upload_uuid_belongs_to(tenant, upload_uuid) {
             return Err(format!("upload session not found: {upload_uuid}"));
         }
-        self.uploads
+        let removed = self
+            .uploads
             .lock()
             .map_err(|e| format!("oci upload buf poisoned: {e}"))?
             .remove(upload_uuid);
+        if let Some(session) = removed {
+            let freed = u64::try_from(session.buf.len()).unwrap_or(0);
+            self.inflight_bytes.fetch_sub(
+                self.inflight_bytes.load(Ordering::Relaxed).min(freed),
+                Ordering::Relaxed,
+            );
+        }
         Ok(())
     }
 
@@ -454,6 +608,7 @@ pub fn router(
 )]
 mod tests {
     use std::collections::HashMap;
+    use std::sync::atomic::Ordering;
     use std::sync::Mutex;
 
     use axum::body::Body;
@@ -1061,6 +1216,202 @@ mod tests {
         assert!(
             resp.headers().contains_key("retry-after"),
             "429 response must carry a Retry-After header"
+        );
+    }
+
+    /// Audit #6 / WP-OCI-DOS — global in-flight byte ceiling.
+    ///
+    /// Sending a chunk that would push the global inflight byte counter over
+    /// [`OCI_MAX_INFLIGHT_BYTES`] must be rejected with the same
+    /// "too many open upload sessions" port error (the adapter maps this to
+    /// 429). This verifies that a single tenant cannot exhaust the shared
+    /// heap by sending one very large chunk even if it stays below the blob
+    /// size limit.
+    ///
+    /// We bypass the ceiling constant by directly manipulating the atomic
+    /// counter on the `OciMoatStore` — we don't need to allocate GiBs of
+    /// RAM to test the guard.
+    #[tokio::test]
+    async fn append_chunk_respects_global_inflight_ceiling() {
+        let cas = Arc::new(StubCas::default());
+        let moat = Arc::new(MoatCache::production(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()),
+            "oci-test-ceiling",
+        ));
+        let store = OciMoatStore::new(moat);
+        let tenant = TenantId::from_uuid(Uuid::from_u128(0xCE117));
+
+        let uuid = store.open_upload(&tenant).await.unwrap();
+
+        // Pre-load the global counter to just below the ceiling so a
+        // 1-byte chunk tip it over.
+        store
+            .inflight_bytes
+            .store(OCI_MAX_INFLIGHT_BYTES, Ordering::Relaxed);
+
+        let err = store
+            .append_chunk(&tenant, &uuid, Bytes::from_static(b"x"))
+            .await
+            .unwrap_err();
+        assert!(
+            err.contains("too many open upload sessions"),
+            "expected ceiling error, got: {err}"
+        );
+
+        // After cancel the counter is released and a fresh session can accept
+        // chunks (reset counter so the test is self-contained).
+        store.cancel_upload(&tenant, &uuid).await.unwrap();
+        store.inflight_bytes.store(0, Ordering::Relaxed);
+
+        let uuid2 = store.open_upload(&tenant).await.unwrap();
+        let ok = store
+            .append_chunk(&tenant, &uuid2, Bytes::from_static(b"hello"))
+            .await;
+        assert!(ok.is_ok(), "chunk must succeed when counter is reset");
+    }
+
+    /// Audit #6 / WP-OCI-DOS — lazy abandoned-session reaper.
+    ///
+    /// Sessions that have been idle for longer than [`OCI_SESSION_IDLE_TIMEOUT_MS`]
+    /// are reaped on the next `open_upload`. This prevents a crashed client from
+    /// permanently locking its tenant out of the per-tenant session cap (F25).
+    ///
+    /// We inject a stale session directly into the store's upload map to avoid
+    /// needing to sleep for the full 15-minute timeout.
+    #[tokio::test]
+    async fn open_upload_reaps_abandoned_sessions() {
+        let cas = Arc::new(StubCas::default());
+        let moat = Arc::new(MoatCache::production(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()),
+            "oci-test-reaper",
+        ));
+        let store = OciMoatStore::new(moat);
+        let tenant = TenantId::from_uuid(Uuid::from_u128(0xABAD1DEA));
+        let tenant_text = tenant.to_canonical_text();
+
+        // Fill the per-tenant cap with synthetic stale sessions (last_active
+        // set to epoch 0, guaranteed older than any timeout).
+        {
+            let mut g = store.uploads.lock().unwrap();
+            for i in 0..OCI_MAX_OPEN_SESSIONS_PER_TENANT {
+                let stale_uuid = format!("{tenant_text}:stale{i:04}");
+                g.insert(
+                    stale_uuid,
+                    UploadSession {
+                        buf: vec![0u8; 1024],
+                        last_active_ms: 0, // epoch → always stale
+                    },
+                );
+            }
+            // Reflect the fake bytes in the global counter.
+            store
+                .inflight_bytes
+                .store((OCI_MAX_OPEN_SESSIONS_PER_TENANT as u64) * 1024, Ordering::Relaxed);
+        }
+
+        // The cap is now full (OCI_MAX_OPEN_SESSIONS_PER_TENANT stale
+        // sessions). Without the reaper, open_upload would return an error.
+        // With the reaper, all stale sessions are evicted BEFORE the cap check
+        // and a new session is opened successfully.
+        let result = store.open_upload(&tenant).await;
+        assert!(
+            result.is_ok(),
+            "open_upload must reap stale sessions and succeed; got: {:?}",
+            result.err()
+        );
+
+        // Stale sessions freed their bytes from the global counter.
+        // The new session added 0 bytes (empty buffer), so inflight_bytes
+        // should be 0 after reap.
+        assert_eq!(
+            store.inflight_bytes.load(Ordering::Relaxed),
+            0,
+            "inflight_bytes must be 0 after stale sessions are reaped"
+        );
+    }
+
+    /// Audit #5 / WP-OCI-DOS — manifest PUT body cap.
+    ///
+    /// A `PUT /v2/<repo>/manifests/<ref>` body larger than
+    /// `MAX_MANIFEST_BYTES` (4 MiB) must be rejected with `413 Payload Too
+    /// Large` before any heap allocation for schema parsing. This exercises
+    /// the full HTTP path through the router so we see the correct status code.
+    #[tokio::test]
+    async fn manifest_put_oversized_body_returns_413() {
+        use corelink_adapter_host::oci::server::handlers::MAX_MANIFEST_BYTES;
+
+        let key = test_key();
+        let tenant_uuid = Uuid::from_u128(0x0DEBAD);
+        let (plaintext, pat) = mint(
+            PatEnv::Pat,
+            PatTenantId(tenant_uuid),
+            PrincipalId(Uuid::from_u128(0xF00D)),
+            PatScopes::from_u64(SCOPE_CACHE_RW),
+            None,
+            &key,
+            1,
+        )
+        .unwrap();
+        let pt = plaintext.into_string();
+        let lookup = OneTokenLookup {
+            token_id: pat.token_id.as_str().to_owned(),
+            row: PatRow {
+                tenant_id: pat.tenant_id.0.to_string(),
+                pat_hash: pat.hash.as_str().to_owned(),
+                scope: SCOPE_RW.to_owned(),
+            },
+        };
+        let verifier = Arc::new(PatVerifier::new(Arc::new(lookup), key));
+        let cas = Arc::new(StubCas::default());
+        let app = router(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()),
+            Arc::new(OciKvFake::default()),
+            verifier,
+            SecretWrap::new(OCI_KEY.to_owned()),
+        );
+
+        // Get a push bearer.
+        let token_resp = app
+            .clone()
+            .oneshot(req(
+                Method::GET,
+                "/token?scope=repository:myimg:push,pull",
+                Some(&basic(&pt)),
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(token_resp.status(), StatusCode::OK);
+        let body_bytes = axum::body::to_bytes(token_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        let bearer = format!("Bearer {}", json["token"].as_str().expect("token field"));
+
+        // Send a body that is 1 byte over the cap — must be 413.
+        let oversized = vec![b'x'; MAX_MANIFEST_BYTES + 1];
+        let resp = app
+            .oneshot(
+                HttpRequest::builder()
+                    .method(Method::PUT)
+                    .uri("/v2/myimg/manifests/latest")
+                    .header("authorization", bearer)
+                    .header("content-type", "application/vnd.oci.image.manifest.v1+json")
+                    .body(Body::from(oversized))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "oversized manifest body must return 413"
         );
     }
 }

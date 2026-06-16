@@ -65,7 +65,12 @@ pub const fn status_for(err: &OciAdapterError) -> StatusCode {
         OciAdapterError::DigestMismatch { .. }
         | OciAdapterError::ManifestInvalid(_)
         | OciAdapterError::InvalidRepoName(_) => StatusCode::BAD_REQUEST,
-        OciAdapterError::BlobOversized(_) => StatusCode::PAYLOAD_TOO_LARGE,
+        // Manifest body exceeded the hard server cap (audit #5 / WP-OCI-DOS).
+        // 413 matches the blob-oversize wire shape so clients can apply the
+        // same back-off logic.
+        OciAdapterError::BlobOversized(_) | OciAdapterError::ManifestOversized => {
+            StatusCode::PAYLOAD_TOO_LARGE
+        }
         OciAdapterError::UploadSessionMissing(_) | OciAdapterError::NotFound => {
             StatusCode::NOT_FOUND
         }

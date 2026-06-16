@@ -5,6 +5,15 @@
 //! under L2.10's 500-LOC HARD CAP. The dispatch logic itself —
 //! including the path-tail parser + URL decoder + repo-name validator
 //! — lives in [`super::dispatch`].
+//!
+//! # DoS mitigations (WP-OCI-DOS, audit #5)
+//!
+//! **Manifest PUT body cap** — `PUT /v2/<repo>/manifests/<ref>` buffers
+//! the whole body before schema validation. Without a cap an attacker
+//! can send a multi-GB body to fill the container's heap (shared Durable
+//! Object process). We reject bodies larger than [`MAX_MANIFEST_BYTES`]
+//! with `413 Payload Too Large` BEFORE calling `to_bytes`, so the axum
+//! body-drain itself is bounded.
 
 use axum::body::Body;
 use axum::extract::State;
@@ -15,6 +24,26 @@ use super::dispatch::{parse_v2_tail, urldecode, V2Path};
 use crate::oci::audit::OciAuditEvent;
 use crate::oci::error::OciAdapterError;
 use crate::oci::server::core::{err_response, status_for, AppState};
+
+/// Hard upper bound on manifest body size (bytes).
+///
+/// OCI manifests are JSON documents: a realistic fat image index
+/// (thousands of platforms) is well under 1 MiB. 4 MiB gives ≥10×
+/// headroom while bounding the heap allocation per `PUT
+/// /v2/<repo>/manifests/<ref>` to a fixed ceiling regardless of how
+/// large a body the client streams.
+///
+/// Bodies that exceed this limit are rejected with `413 Payload Too
+/// Large` BEFORE any allocation or schema parsing (the axum
+/// `to_bytes(body, MAX_MANIFEST_BYTES)` call fails fast).
+///
+/// Spec reference: OCI Distribution Spec v1.1 §manifest-put has no
+/// defined size limit; we impose one as a service-level DoS guard
+/// (audit #5 / WP-OCI-DOS).
+///
+/// `pub` so integration tests and sibling modules can reference the exact
+/// threshold without hard-coding a magic number.
+pub const MAX_MANIFEST_BYTES: usize = 4 * 1024 * 1024; // 4 MiB
 
 /// `GET /v2/` — liveness + auth probe per OCI Distribution Spec v1.1
 /// §2.1. Returns 200 if a valid bearer token is supplied, 401 +
@@ -388,9 +417,13 @@ async fn dispatch_manifest(
                 .get(axum::http::header::CONTENT_TYPE)
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or("");
-            let bytes = axum::body::to_bytes(body, usize::MAX)
+            // DoS guard (audit #5 / WP-OCI-DOS): cap the manifest body
+            // BEFORE buffering. `to_bytes` fails fast when the body
+            // exceeds `MAX_MANIFEST_BYTES`; we never allocate a
+            // larger-than-cap buffer. Over-limit → 413.
+            let bytes = axum::body::to_bytes(body, MAX_MANIFEST_BYTES)
                 .await
-                .map_err(|e| OciAdapterError::Kv(format!("body drain: {e}")))?;
+                .map_err(|_| OciAdapterError::ManifestOversized)?;
             crate::oci::push::manifest::put(
                 state.config.metadata_kv.as_ref(),
                 state.config.auditor.as_ref(),
@@ -409,5 +442,19 @@ async fn dispatch_manifest(
         // shape uniform with non-existent references.
         Method::DELETE => Err(OciAdapterError::NotFound),
         _ => Err(OciAdapterError::NotFound),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MAX_MANIFEST_BYTES;
+
+    /// Mutation guard (cargo-mutants): pin the exact byte threshold so a
+    /// `*`→`+` corruption of the `4 * 1024 * 1024` expression is caught (the
+    /// DoS guard's value is load-bearing, not arbitrary).
+    #[test]
+    fn max_manifest_bytes_is_exactly_4_mib() {
+        assert_eq!(MAX_MANIFEST_BYTES, 4_194_304);
+        assert_eq!(MAX_MANIFEST_BYTES, 4 * 1024 * 1024);
     }
 }

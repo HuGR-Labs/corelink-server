@@ -43,7 +43,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use corelink_pat::{verify_hmac_only, verify_with_hash, PatHash, PatSigningKey};
+use corelink_pat::{verify_hmac_only_multi, verify_with_hash_multi, PatHash, PatSigningKey};
 
 use crate::scope::{requires_cache_read, requires_cache_write};
 use crate::storage::d1_http::D1HttpClient;
@@ -152,34 +152,58 @@ impl PatRowLookup for D1HttpClient {
 /// that impls that adapter's `TenantResolver` port.
 pub struct PatVerifier {
     lookup: Arc<dyn PatRowLookup>,
-    signing_key: Arc<PatSigningKey>,
+    /// The HMAC overlap key set: `PAT_SIGNING_KEY` (current) plus any
+    /// `PAT_SIGNING_KEY_PREV` / `PAT_SIGNING_KEY_NEW` rotation siblings.
+    /// A PAT minted under any key in the set validates during the
+    /// rotation overlap window (`key_management.md §3.2.1`), so rotating
+    /// the current key on compromise does NOT instantly invalidate the
+    /// live fleet. Always non-empty by construction (fail-closed
+    /// otherwise — see [`PatVerifier::new`] / [`PatVerifier::from_env`]).
+    signing_keys: Arc<Vec<PatSigningKey>>,
 }
 
 impl std::fmt::Debug for PatVerifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PatVerifier")
             .field("lookup", &"Arc<dyn PatRowLookup>")
-            .field("signing_key", &"[REDACTED]")
+            .field("signing_keys", &format_args!("[{} REDACTED]", self.signing_keys.len()))
             .finish()
     }
 }
 
 impl PatVerifier {
-    /// Construct from an explicit row source + signing key (used by the
-    /// production wiring and by tests with a fake lookup).
+    /// Construct from an explicit row source + a single signing key
+    /// (used by the production wiring and by tests with a fake lookup).
     #[must_use]
     pub fn new(lookup: Arc<dyn PatRowLookup>, signing_key: Arc<PatSigningKey>) -> Self {
+        Self::with_key_set(lookup, vec![(*signing_key).clone()])
+    }
+
+    /// Construct from an explicit row source + an HMAC overlap key set
+    /// (current + optional rotation predecessor/successor). The order is
+    /// irrelevant (verify is constant-time over the whole set). An empty
+    /// set fails CLOSED — every verify returns `InvalidPat`.
+    #[must_use]
+    pub fn with_key_set(lookup: Arc<dyn PatRowLookup>, signing_keys: Vec<PatSigningKey>) -> Self {
         Self {
             lookup,
-            signing_key,
+            signing_keys: Arc::new(signing_keys),
         }
     }
 
     /// Build the production verifier from process env: a D1 HTTP client
-    /// (from [`StorageEnv`]) plus the hex-encoded `PAT_SIGNING_KEY`.
-    /// Returns `None` when any required input is missing/invalid, so the
-    /// caller can fail-CLOSED (not mount the adapter route) in dev/CI —
-    /// mirroring `internal_pat::build_state_from_env`.
+    /// (from [`StorageEnv`]) plus the HMAC overlap key set —
+    /// `PAT_SIGNING_KEY` (required, current) and the optional rotation
+    /// siblings `PAT_SIGNING_KEY_PREV` / `PAT_SIGNING_KEY_NEW`.
+    /// Returns `None` when the D1 client or the *current* key is
+    /// missing/invalid, so the caller can fail-CLOSED (not mount the
+    /// adapter route) in dev/CI — mirroring
+    /// `internal_pat::build_state_from_env`.
+    ///
+    /// An optional sibling that is *present but malformed* (bad hex /
+    /// too short) fails CLOSED too: the whole verifier is refused rather
+    /// than silently dropping a key the operator believes is live. An
+    /// *absent* sibling is simply omitted from the set.
     #[must_use]
     pub fn from_env() -> Option<Self> {
         let storage_env = StorageEnv::from_env()?;
@@ -187,19 +211,44 @@ impl PatVerifier {
             .map_err(|e| tracing::warn!(error = %e, "adapter PAT verifier: D1 client init failed"))
             .ok()?;
 
-        let signing_key_hex = non_empty_env("PAT_SIGNING_KEY")?;
-        let key_bytes = hex::decode(signing_key_hex.trim())
-            .map_err(|_| {
-                tracing::warn!("PAT_SIGNING_KEY is not valid hex; adapter routes NOT mounted")
-            })
-            .ok()?;
-        let signing_key = PatSigningKey::from_bytes(key_bytes)
-            .map_err(
-                |e| tracing::warn!(error = %e, "PAT_SIGNING_KEY invalid; adapter routes NOT mounted"),
-            )
-            .ok()?;
+        // Current key is REQUIRED.
+        let current = Self::decode_key_env("PAT_SIGNING_KEY")??;
 
-        Some(Self::new(Arc::new(d1), Arc::new(signing_key)))
+        let mut signing_keys = vec![current];
+
+        // Optional rotation overlap siblings. `None` ⇒ absent (skip);
+        // `Some(None)` ⇒ present-but-malformed (fail CLOSED).
+        for name in ["PAT_SIGNING_KEY_PREV", "PAT_SIGNING_KEY_NEW"] {
+            match Self::decode_key_env(name) {
+                None => {} // absent — not part of the overlap set
+                Some(Some(key)) => signing_keys.push(key),
+                Some(None) => return None, // present but invalid — refuse to mount
+            }
+        }
+
+        Some(Self::with_key_set(Arc::new(d1), signing_keys))
+    }
+
+    /// Decode one hex `PatSigningKey` from the named env var.
+    ///
+    /// - `None` — the var is absent / empty (caller decides whether that
+    ///   is fatal: required for the current key, fine for siblings).
+    /// - `Some(None)` — the var is set but malformed (bad hex or < 32
+    ///   bytes); the caller treats this as fail-CLOSED.
+    /// - `Some(Some(key))` — a valid key.
+    fn decode_key_env(name: &str) -> Option<Option<PatSigningKey>> {
+        let raw = non_empty_env(name)?;
+        let Ok(key_bytes) = hex::decode(raw.trim()) else {
+            tracing::warn!("{name} is not valid hex; adapter routes NOT mounted");
+            return Some(None);
+        };
+        match PatSigningKey::from_bytes(key_bytes) {
+            Ok(key) => Some(Some(key)),
+            Err(e) => {
+                tracing::warn!(error = %e, "{name} invalid; adapter routes NOT mounted");
+                Some(None)
+            }
+        }
     }
 
     /// The full Option-B verification pipeline, returning the PAT's owning
@@ -216,8 +265,10 @@ impl PatVerifier {
         pat_plaintext: &str,
     ) -> Result<(String, bool), VerifyError> {
         // 1. HMAC fast-reject (pre-D1). A forged token is rejected here
-        //    without a D1 round-trip. Uniform InvalidPat.
-        let (_env, token_id) = verify_hmac_only(pat_plaintext, &self.signing_key)
+        //    without a D1 round-trip. Uniform InvalidPat. Checked against
+        //    the overlap key set so a token minted under the rotation
+        //    predecessor/successor still fast-passes here.
+        let (_env, token_id) = verify_hmac_only_multi(pat_plaintext, &self.signing_keys)
             .map_err(|_| VerifyError::InvalidPat)?;
 
         // 2. D1 lookup by the non-secret token_id (expiry filtered in SQL).
@@ -248,10 +299,10 @@ impl PatVerifier {
         //    constant-time matches token_id, re-checks HMAC, then
         //    Argon2id-verifies the secret segment against the stored hash.
         let plaintext = pat_plaintext.to_owned();
-        let signing_key = Arc::clone(&self.signing_key);
+        let signing_keys = Arc::clone(&self.signing_keys);
         let stored_hash = PatHash::from_phc_string(row.pat_hash);
         let verify_result = tokio::task::spawn_blocking(move || {
-            verify_with_hash(&plaintext, &token_id, &stored_hash, &signing_key)
+            verify_with_hash_multi(&plaintext, &token_id, &stored_hash, &signing_keys)
         })
         .await
         .map_err(|e| VerifyError::Backend(format!("verify join: {e}")))?;
@@ -415,6 +466,50 @@ mod tests {
         let resolved = verifier.verify(&pt).await.unwrap();
         assert_eq!(resolved, tenant);
         assert_eq!(lookup.call_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn pat_minted_under_prev_key_validates_during_overlap() {
+        // Rotation overlap: the verifier's CURRENT key differs from the key
+        // the PAT was minted under, but the old key is still in the overlap
+        // set — so the PAT must still validate (no instant fleet-wide outage).
+        let old_key = test_key();
+        let new_key = Arc::new(PatSigningKey::from_bytes(vec![0x11u8; 32]).unwrap());
+        let (pt, tid, hash, tenant) = mint_pat(&old_key, 60, SCOPE_CACHE_RW);
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
+        // Overlap set = [new (current), old (prev)].
+        let verifier = PatVerifier::with_key_set(
+            lookup.clone(),
+            vec![(*new_key).clone(), (*old_key).clone()],
+        );
+        assert_eq!(verifier.verify(&pt).await.unwrap(), tenant);
+    }
+
+    #[tokio::test]
+    async fn pat_rejected_when_minting_key_not_in_overlap_set() {
+        // After the overlap window closes (old key dropped), a PAT minted
+        // under the now-retired key must be rejected.
+        let old_key = test_key();
+        let new_key = Arc::new(PatSigningKey::from_bytes(vec![0x11u8; 32]).unwrap());
+        let (pt, tid, hash, tenant) = mint_pat(&old_key, 61, SCOPE_CACHE_RW);
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
+        // Overlap set = [new] only — old key retired.
+        let verifier = PatVerifier::with_key_set(lookup.clone(), vec![(*new_key).clone()]);
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(matches!(err, VerifyError::InvalidPat));
+        assert_eq!(lookup.call_count(), 0, "bad HMAC must not reach D1");
+    }
+
+    #[tokio::test]
+    async fn empty_key_set_fails_closed() {
+        // No key bound ⇒ nothing verifies (fail-closed).
+        let key = test_key();
+        let (pt, tid, hash, tenant) = mint_pat(&key, 62, SCOPE_CACHE_RW);
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
+        let verifier = PatVerifier::with_key_set(lookup.clone(), vec![]);
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(matches!(err, VerifyError::InvalidPat));
+        assert_eq!(lookup.call_count(), 0, "empty key set rejects pre-D1");
     }
 
     #[tokio::test]

@@ -63,13 +63,17 @@
 //! `max_concurrency` is the per-tenant runner concurrency cap. It is a
 //! **top-level** integer field, present ONLY when the tenant has a **Runners
 //! entitlement**, and absent for cache-only tenants (`skip_serializing_if`).
-//! The server-side ladder maps the plan → cap:
-//! `starter→20, pro→40, team→80, scale→160, max→320`; `enterprise` is custom
-//! and is OMITTED (the runners `CoreLinkPlanStore` supplies its own custom cap).
-//! Since no tenant carries a Runners entitlement yet, the derivation returns
-//! `None` for now — but the field, the ladder mapping, and the `Option` wiring
-//! are present and correct so the runners `CoreLinkPlanStore` parses this exact
-//! shape the moment the entitlement lights up.
+//!
+//! The cap is a **SEPARATE entitlement axis from the cache tier** (runners TL
+//! ratified): it is read from the dedicated `runners_entitlement` D1 table by a
+//! single keyed lookup (`SELECT max_concurrency FROM runners_entitlement WHERE
+//! tenant_id = ?1`, migration 0070), **NOT** derived from the cache-plan ladder.
+//! A row present → `Some(row.max_concurrency)`; absent (the table starts empty)
+//! → `None`, the field is omitted, and the tenant is treated as cache-only with
+//! no Runners entitlement (the fabric rejects the placement — empty table = no
+//! cap = reject). The `plan` field stays = the cache tier (informational only)
+//! and never feeds the cap. The runners `CoreLinkPlanStore` parses this exact
+//! shape.
 //!
 //! `rate_ceiling_per_min` remains **omitted** (M1) — net-new product data not
 //! yet decided; the fabric's `StaticPlans` supplies that cap. The response
@@ -188,9 +192,10 @@ pub struct IntrospectResponse {
     pub plan: Option<String>,
     /// Per-tenant runner concurrency cap (M2, runners seam). Present ONLY when
     /// the tenant holds a Runners entitlement; absent for cache-only tenants
-    /// (`skip_serializing_if`). Derived server-side from the plan via the
-    /// ratified ladder ([`max_concurrency_for_plan`]). The runners
-    /// `CoreLinkPlanStore` parses this exact field.
+    /// (`skip_serializing_if`). Read from the dedicated `runners_entitlement` D1
+    /// table ([`runner_concurrency_for_tenant`], migration 0070) — a SEPARATE
+    /// entitlement axis from the cache tier, NOT derived from the plan. The
+    /// runners `CoreLinkPlanStore` parses this exact field.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_concurrency: Option<u32>,
     /// Per-tenant request rate ceiling (per minute). OMITTED at M1; reserved
@@ -215,8 +220,9 @@ impl IntrospectResponse {
     /// A `valid: true` response carrying the resolved tenant + plan.
     ///
     /// `max_concurrency` is supplied by the caller — it is `Some(cap)` ONLY when
-    /// the tenant holds a Runners entitlement (the ratified ladder), and `None`
-    /// (field omitted) for cache-only tenants. See [`max_concurrency_for_tenant`].
+    /// the tenant holds a Runners entitlement (the `runners_entitlement` D1 row),
+    /// and `None` (field omitted) for cache-only tenants. See
+    /// [`runner_concurrency_for_tenant`].
     #[must_use]
     fn valid(tenant_id: String, plan: String, max_concurrency: Option<u32>) -> Self {
         Self {
@@ -233,49 +239,89 @@ impl IntrospectResponse {
 // Runner concurrency cap (M2 — runners seam, ratified)
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// The ratified server-side plan → runner concurrency ladder. Mirrors the
-/// runners `CoreLinkPlanStore`'s expected mapping:
-/// `starter→20, pro→40, team→80, scale→160, max→320`.
-///
-/// `enterprise` is **custom** (the runners side carries its own cap) and any
-/// non-runner-bearing tier (`free`, `solo`, …) has no runner cap — both return
-/// `None`, so the wire field is omitted.
-#[must_use]
-fn max_concurrency_for_plan(plan: &str) -> Option<u32> {
-    match plan {
-        "starter" => Some(20),
-        "pro" => Some(40),
-        "team" => Some(80),
-        "scale" => Some(160),
-        "max" => Some(320),
-        // `enterprise` (custom) and every cache-only tier → omitted.
-        _ => None,
-    }
-}
-
-/// Whether the tenant holds a **Runners entitlement**. The `max_concurrency`
-/// field is populated ONLY for such tenants; cache-only tenants get the field
-/// omitted (M2 contract).
-///
-/// No tenant carries a Runners entitlement yet, so this returns `false` for
-/// every tenant for now. When the entitlement source lands (a D1
-/// `entitlements` lookup keyed on `tenant_id`), wire it HERE — the ladder and
-/// the `Option` plumbing are already correct and the wire shape will not move.
-#[must_use]
-fn tenant_has_runners_entitlement(_tenant_id: &str) -> bool {
-    false
-}
+/// SQL: the tenant's runner concurrency cap from the dedicated
+/// `runners_entitlement` table (migration 0070). The cap is a SEPARATE
+/// entitlement axis from the cache tier — keyed on `tenant_id`, NOT derived
+/// from the plan ladder. A row is present ONLY for a tenant that actually holds
+/// a Runners entitlement; the table's `CHECK(max_concurrency > 0)` guarantees a
+/// present row always carries a real positive cap.
+const RUNNERS_ENTITLEMENT_SQL: &str =
+    "SELECT max_concurrency FROM runners_entitlement WHERE tenant_id = ?1 LIMIT 1";
 
 /// Resolve the per-tenant runner concurrency cap for the introspection
-/// response: `Some(cap)` from the ratified ladder ONLY when the tenant holds a
-/// Runners entitlement, else `None` (field omitted).
-#[must_use]
-fn max_concurrency_for_tenant(tenant_id: &str, plan: &str) -> Option<u32> {
-    if tenant_has_runners_entitlement(tenant_id) {
-        max_concurrency_for_plan(plan)
-    } else {
-        None
-    }
+/// response by querying the `runners_entitlement` D1 table.
+///
+/// - Row present → `Ok(Some(cap))` (the tenant holds a Runners entitlement).
+/// - No row → `Ok(None)` (cache-only tenant; the wire field is omitted and the
+///   fabric treats the absent cap as "no Runners entitlement" → reject).
+///
+/// This is a SEPARATE axis from the cache tier ([`tier_for_tenant`]): the cap
+/// comes ONLY from this table, never from the plan.
+///
+/// # Fail-CLOSED
+///
+/// A genuine D1 backend fault surfaces as `Err(String)` so the route maps it to
+/// **503** rather than guessing a cap (consistent with [`tier_for_tenant`]):
+/// the fabric must never be handed a WRONG entitlement. A non-fault "no row"
+/// is `Ok(None)`, not an error.
+///
+/// A stored value outside `u32` (or `≤ 0`, which the table CHECK forbids) is
+/// treated as a backend fault (`Err`) — the cap is a hard entitlement, so an
+/// out-of-contract row is fail-CLOSED rather than silently truncated.
+///
+/// # Errors
+///
+/// Returns `Err(String)` only on a D1 backend fault or an out-of-contract
+/// stored value (so the route can 503).
+pub async fn runner_concurrency_for_tenant(
+    d1: &D1HttpClient,
+    tenant_id: &str,
+) -> Result<Option<u32>, String> {
+    let rows = d1
+        .query(
+            RUNNERS_ENTITLEMENT_SQL,
+            &[serde_json::Value::String(tenant_id.to_owned())],
+        )
+        .await?;
+    decode_runner_cap(&rows)
+}
+
+/// Pure decode of the `runners_entitlement` query result into the wire cap.
+///
+/// Split from [`runner_concurrency_for_tenant`] so the entitlement-row logic is
+/// unit-testable without a network: the I/O wrapper does the keyed query, this
+/// function maps rows → cap. See [`runner_concurrency_for_tenant`] for the
+/// full contract.
+///
+/// # Errors
+///
+/// Returns `Err(String)` when the entitlement row carries a `max_concurrency`
+/// value that is non-positive or outside `u32` range (out-of-contract — the
+/// table's `CHECK(max_concurrency > 0)` should make this impossible, so it is
+/// treated as a backend fault and fails CLOSED → 503).
+fn decode_runner_cap(rows: &[crate::storage::d1_http::D1Row]) -> Result<Option<u32>, String> {
+    let Some(raw) = rows.first().and_then(|row| row.get("max_concurrency")) else {
+        // No entitlement row → cache-only tenant → field omitted.
+        return Ok(None);
+    };
+
+    // The row exists; it MUST carry a positive, u32-range integer (the table's
+    // CHECK(max_concurrency > 0) enforces positivity at write time). Anything
+    // else is an out-of-contract row → fail-CLOSED (Err → 503), never a guess.
+    let cap = raw
+        .as_u64()
+        .filter(|v| *v >= 1 && *v <= u64::from(u32::MAX))
+        .ok_or_else(|| {
+            format!("runners_entitlement.max_concurrency out of u32 range or non-positive: {raw}")
+        })?;
+
+    // The filter above already bounds `cap` to `1..=u32::MAX`, so this cast is
+    // lossless.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "cap is range-checked to 1..=u32::MAX immediately above"
+    )]
+    Ok(Some(cap as u32))
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -411,15 +457,22 @@ async fn handle_introspect(
             //       never serve a wrong plan). ──────────────────────────────
             match tier_for_tenant(&state.d1, &tenant_id).await {
                 Ok(plan) => {
-                    // M2 (runners seam): populate `max_concurrency` ONLY for a
-                    // tenant with a Runners entitlement (ratified ladder); a
-                    // cache-only tenant gets the field omitted.
-                    let max_concurrency = max_concurrency_for_tenant(&tenant_id, &plan);
-                    (
-                        StatusCode::OK,
-                        Json(IntrospectResponse::valid(tenant_id, plan, max_concurrency)),
-                    )
-                        .into_response()
+                    // M2 (runners seam): the cap is a SEPARATE entitlement axis
+                    // — read from `runners_entitlement` (migration 0070), NOT
+                    // derived from `plan`. Present ONLY for a tenant with a row;
+                    // a cache-only tenant gets the field omitted. A D1 fault
+                    // fails CLOSED (503 — never guess a cap).
+                    match runner_concurrency_for_tenant(&state.d1, &tenant_id).await {
+                        Ok(max_concurrency) => (
+                            StatusCode::OK,
+                            Json(IntrospectResponse::valid(tenant_id, plan, max_concurrency)),
+                        )
+                            .into_response(),
+                        Err(e) => {
+                            tracing::error!(error = %e, "auth_introspect: runner entitlement resolution failed");
+                            StatusCode::SERVICE_UNAVAILABLE.into_response()
+                        }
+                    }
                 }
                 Err(e) => {
                     tracing::error!(error = %e, "auth_introspect: tier resolution failed");
@@ -714,32 +767,72 @@ mod tests {
         assert!(!v.as_object().unwrap().contains_key("rate_ceiling_per_min"));
     }
 
-    #[test]
-    fn max_concurrency_ladder_matches_ratified_mapping() {
-        // The exact ratified plan → cap ladder.
-        assert_eq!(max_concurrency_for_plan("starter"), Some(20));
-        assert_eq!(max_concurrency_for_plan("pro"), Some(40));
-        assert_eq!(max_concurrency_for_plan("team"), Some(80));
-        assert_eq!(max_concurrency_for_plan("scale"), Some(160));
-        assert_eq!(max_concurrency_for_plan("max"), Some(320));
-        // enterprise is custom → omitted; cache-only tiers have no runner cap.
-        assert_eq!(max_concurrency_for_plan("enterprise"), None);
-        assert_eq!(max_concurrency_for_plan("free"), None);
-        assert_eq!(max_concurrency_for_plan("solo"), None);
-        assert_eq!(max_concurrency_for_plan("org"), None);
+    /// Build a one-row `runners_entitlement` result set carrying the given
+    /// `max_concurrency` JSON value (mirrors what `D1HttpClient::query` returns
+    /// for `SELECT max_concurrency ...`).
+    fn entitlement_rows(max_concurrency: serde_json::Value) -> Vec<crate::storage::d1_http::D1Row> {
+        let mut row = serde_json::Map::new();
+        row.insert("max_concurrency".to_owned(), max_concurrency);
+        vec![row]
     }
 
     #[test]
-    fn max_concurrency_omitted_without_runners_entitlement() {
-        // INVARIANT: with no tenant carrying a Runners entitlement yet, the cap
-        // is omitted for every tenant even on a ladder-bearing plan.
-        for plan in ["starter", "pro", "team", "scale", "max"] {
-            assert_eq!(
-                max_concurrency_for_tenant("33333333-3333-3333-3333-333333333333", plan),
-                None,
-                "cache-only tenant must NOT receive a runner cap (plan={plan})"
-            );
-        }
+    fn decode_runner_cap_present_row_yields_some() {
+        // A `runners_entitlement` row → Some(cap), read from the TABLE value
+        // (the separate entitlement axis), not any plan ladder.
+        assert_eq!(
+            decode_runner_cap(&entitlement_rows(serde_json::json!(40))).unwrap(),
+            Some(40),
+            "an entitlement row must yield the stored cap"
+        );
+        // Any positive cap passes through verbatim — it is NOT clamped to a
+        // ladder. A bespoke per-tenant value is honoured.
+        assert_eq!(
+            decode_runner_cap(&entitlement_rows(serde_json::json!(7))).unwrap(),
+            Some(7)
+        );
+    }
+
+    #[test]
+    fn decode_runner_cap_absent_row_yields_none() {
+        // Empty result set (no entitlement) → None → field omitted → cache-only.
+        assert_eq!(
+            decode_runner_cap(&[]).unwrap(),
+            None,
+            "no entitlement row must yield None (cache-only; field omitted)"
+        );
+    }
+
+    #[test]
+    fn decode_runner_cap_out_of_contract_row_fails_closed() {
+        // The table CHECK forbids these, but if one ever appears the decode
+        // fails CLOSED (Err → 503), never a guessed/truncated cap.
+        assert!(
+            decode_runner_cap(&entitlement_rows(serde_json::json!(0))).is_err(),
+            "zero cap is out-of-contract → Err"
+        );
+        assert!(
+            decode_runner_cap(&entitlement_rows(serde_json::json!(-5))).is_err(),
+            "negative cap is out-of-contract → Err"
+        );
+        assert!(
+            decode_runner_cap(&entitlement_rows(serde_json::json!(u64::from(u32::MAX) + 1)))
+                .is_err(),
+            "cap beyond u32 range is out-of-contract → Err"
+        );
+        assert!(
+            decode_runner_cap(&entitlement_rows(serde_json::json!("forty"))).is_err(),
+            "non-integer cap is out-of-contract → Err"
+        );
+    }
+
+    #[test]
+    fn decode_runner_cap_accepts_u32_max() {
+        assert_eq!(
+            decode_runner_cap(&entitlement_rows(serde_json::json!(u32::MAX))).unwrap(),
+            Some(u32::MAX),
+            "u32::MAX is the inclusive upper bound and must round-trip"
+        );
     }
 
     // ── Invalid PAT → {valid:false} ──────────────────────────────────────────

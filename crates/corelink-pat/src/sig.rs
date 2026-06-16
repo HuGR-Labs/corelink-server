@@ -66,13 +66,91 @@ pub fn verify_hmac_sig(
     preimage: &[u8],
     sig_bytes: &[u8],
 ) -> Result<(), PatError> {
+    verify_hmac_sig_multi(std::slice::from_ref(key), preimage, sig_bytes)
+}
+
+/// Constant-time verify the truncated HMAC signature against an
+/// **overlap key set** — the canonical key plus any rotation
+/// predecessor/successor (`key_management.md §3.2.1`, 24h overlap).
+///
+/// A PAT minted under any key in `keys` validates, so an operator can
+/// rotate `PAT_SIGNING_KEY` (incident response, scheduled rotation)
+/// while old-key tokens stay valid through the overlap window —
+/// instead of an instant fleet-wide auth outage.
+///
+/// # Constant-time discipline
+///
+/// Every key in the (small, fixed) set is evaluated; the loop does
+/// **not** early-return on the first match. The per-key result is
+/// folded into a single accumulator via [`subtle::Choice`] so the
+/// observable latency does not leak *which* key matched (which would
+/// reveal whether a token is on the old vs. new key during rotation).
+///
+/// # Fail-closed
+///
+/// An empty `keys` set returns [`PatError::InvalidPat`] — no key set
+/// bound ⇒ nothing verifies.
+pub fn verify_hmac_sig_multi(
+    keys: &[PatSigningKey],
+    preimage: &[u8],
+    sig_bytes: &[u8],
+) -> Result<(), PatError> {
     if sig_bytes.len() != PAT_HMAC_SIG_RAW_LEN {
         return Err(PatError::Malformed);
     }
-    let expected = compute_hmac_sig(key, preimage);
-    if bool::from(expected.ct_eq(sig_bytes)) {
+    // Fail-closed: an absent key set cannot validate anything.
+    if keys.is_empty() {
+        return Err(PatError::InvalidPat);
+    }
+    // Fold over the full set without early-return; OR the per-key
+    // constant-time comparisons so neither the match position nor the
+    // matching-key identity leaks via timing.
+    let mut matched = subtle::Choice::from(0u8);
+    for key in keys {
+        let expected = compute_hmac_sig(key, preimage);
+        matched |= expected.ct_eq(sig_bytes);
+    }
+    if bool::from(matched) {
         Ok(())
     } else {
         Err(PatError::InvalidPat)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, reason = "tests")]
+mod fold_tests {
+    use super::*;
+    use crate::types::PatSigningKey;
+
+    fn key(b: u8) -> PatSigningKey {
+        PatSigningKey::from_bytes(vec![b; 32]).expect("32-byte key")
+    }
+
+    /// Mutation guard (cargo-mutants): the per-key fold in `verify_hmac_sig_multi`
+    /// MUST be `|=` (OR), never `^=` (XOR). A key set containing the SAME matching
+    /// key twice must still validate — under XOR the two matches cancel
+    /// (`1 ^ 1 = 0`) and a valid PAT would be wrongly rejected. This pins the OR
+    /// semantics (and the real property: a duplicated key never breaks validation).
+    #[test]
+    fn multi_fold_is_or_duplicate_matching_key_validates() {
+        let k = key(0x42);
+        let preimage = b"token_id.random_secret";
+        let sig = compute_hmac_sig(&k, preimage);
+        assert!(
+            verify_hmac_sig_multi(&[k.clone(), k.clone()], preimage, &sig).is_ok(),
+            "duplicate matching key must validate (OR-fold, not XOR)"
+        );
+    }
+
+    /// A single matching key among non-matching ones validates; an all-miss set
+    /// rejects. (Complements the dup-key OR guard above.)
+    #[test]
+    fn multi_fold_matches_one_of_many_and_rejects_none() {
+        let good = key(0x11);
+        let preimage = b"abc.def";
+        let sig = compute_hmac_sig(&good, preimage);
+        assert!(verify_hmac_sig_multi(&[key(0x22), good.clone(), key(0x33)], preimage, &sig).is_ok());
+        assert!(verify_hmac_sig_multi(&[key(0x22), key(0x33)], preimage, &sig).is_err());
     }
 }

@@ -121,6 +121,16 @@ pub enum OciAdapterError {
         /// Advisory retry delay in seconds.
         retry_after_secs: u32,
     },
+
+    /// The manifest `PUT` body exceeds the hard server-side limit
+    /// ([`crate::oci::server::handlers::MAX_MANIFEST_BYTES`]).
+    ///
+    /// OCI manifests are JSON documents; realistic fat indexes are well
+    /// under 1 MiB. A body larger than the cap is rejected with `413
+    /// Payload Too Large` *before* it is buffered into heap, so no
+    /// large allocation ever occurs (audit #5 / WP-OCI-DOS).
+    #[error("manifest body exceeds server limit")]
+    ManifestOversized,
 }
 
 /// Wire-shape error envelope per OCI Distribution Spec v1.1.
@@ -156,7 +166,7 @@ impl OciAdapterError {
             Self::Cas(_) | Self::Kv(_) | Self::Audit(_) => "UNKNOWN",
             Self::DigestMismatch { .. } => "DIGEST_INVALID",
             Self::BlobOversized(_) => "SIZE_INVALID",
-            Self::ManifestInvalid(_) => "MANIFEST_INVALID",
+            Self::ManifestInvalid(_) | Self::ManifestOversized => "MANIFEST_INVALID",
             Self::UploadSessionMissing(_) => "BLOB_UPLOAD_UNKNOWN",
             Self::NotFound => "NAME_UNKNOWN",
             Self::CatalogDisabled => "DENIED",
