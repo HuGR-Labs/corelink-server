@@ -367,26 +367,95 @@ impl AdminMutateHandler for D1AdminHandler {
     }
 }
 
-/// Read the operator-only shared secret from the environment.
+/// Minimum accepted length (chars) for any internal-auth shared secret.
 ///
-/// Returns `Some` only when `CORELINK_INTERNAL_AUTH_KEY` is set and at
-/// least 32 chars (mirrors `internal_pat::build_state_from_env` — both
-/// gates use the same 32-char floor so the two internal-auth routes
-/// stay consistent; F29 fix). When `None`, the admin handlers fail CLOSED
-/// (403) — privileged logic never runs without a properly sized gate.
-/// The secrets-checklist instructs `openssl rand -hex 32` (64 chars);
-/// anything shorter is rejected here.
+/// Shared 32-char floor used by EVERY internal-auth reader in the
+/// container (admin, mint, erase, DSR, introspect) so all gates stay
+/// consistent (F29 fix). The secrets-checklist instructs
+/// `openssl rand -hex 32` (64 chars); anything shorter is rejected.
+pub(crate) const INTERNAL_AUTH_KEY_MIN_LEN: usize = 32;
+
+/// Per-consumer internal-auth key split (red-team #3).
+///
+/// A single shared `CORELINK_INTERNAL_AUTH_KEY` previously gated FIVE
+/// high-privilege internal surfaces (any-tenant PAT mint, GDPR erase,
+/// CAS erase, admin, pilots) — one leak granted ALL of them. This helper
+/// reads a **consumer-specific** key first and only falls back to the
+/// shared key when the specific one is unset/blank/too-short, so each
+/// surface can be rotated to its own credential without a flag day
+/// (mirrors the #8 OCI dual-name pattern — additive, deployable BEFORE
+/// the new prod secrets exist).
+///
+/// Resolution order (fail-CLOSED at each step):
+/// 1. `specific_env` — used iff set AND ≥ [`INTERNAL_AUTH_KEY_MIN_LEN`];
+/// 2. else `CORELINK_INTERNAL_AUTH_KEY` — used iff set AND ≥ floor;
+/// 3. else `None` — the handler fails CLOSED (403), exactly as today.
+///
+/// A set-but-too-short `specific_env` does NOT hard-fail the surface; it
+/// is treated as absent and the shared key is tried (so a misconfigured
+/// new secret degrades to today's behaviour rather than locking the
+/// surface out). Both too-short ⇒ `None`.
 #[must_use]
-pub fn internal_auth_key_from_env() -> Option<Arc<str>> {
-    let key = std::env::var("CORELINK_INTERNAL_AUTH_KEY").ok()?;
-    if key.len() < 32 {
+pub(crate) fn resolve_internal_auth_key(specific_env: &str) -> Option<Arc<str>> {
+    // 1. Consumer-specific key, when present and properly sized.
+    match std::env::var(specific_env) {
+        Ok(key) if key.len() >= INTERNAL_AUTH_KEY_MIN_LEN => {
+            return Some(Arc::from(key.as_str()));
+        }
+        Ok(key) if !key.is_empty() => {
+            tracing::warn!(
+                env = specific_env,
+                "consumer-specific internal-auth key set but < 32 chars; \
+                 falling back to CORELINK_INTERNAL_AUTH_KEY (use `openssl rand -hex 32`)"
+            );
+        }
+        _ => {}
+    }
+    // 2. Shared fallback key.
+    let shared = std::env::var("CORELINK_INTERNAL_AUTH_KEY").ok()?;
+    if shared.len() < INTERNAL_AUTH_KEY_MIN_LEN {
         tracing::warn!(
-            "CORELINK_INTERNAL_AUTH_KEY too short (< 32 chars); \
-             /v1/admin/* handlers will fail CLOSED (403) (use `openssl rand -hex 32`)"
+            env = specific_env,
+            "neither the consumer-specific key nor CORELINK_INTERNAL_AUTH_KEY \
+             is ≥ 32 chars; this surface will fail CLOSED (403) (use `openssl rand -hex 32`)"
         );
         return None;
     }
-    Some(Arc::from(key.as_str()))
+    Some(Arc::from(shared.as_str()))
+}
+
+/// Read the operator-only **admin/pilots** shared secret from the
+/// environment (red-team #3).
+///
+/// Reads `CORELINK_ADMIN_AUTH_KEY` first, falling back to the shared
+/// `CORELINK_INTERNAL_AUTH_KEY` when unset/blank/too-short (see
+/// [`resolve_internal_auth_key`]). When `None`, the admin handlers fail
+/// CLOSED (403) — privileged logic never runs without a properly sized
+/// gate.
+#[must_use]
+pub fn internal_auth_key_from_env() -> Option<Arc<str>> {
+    resolve_internal_auth_key("CORELINK_ADMIN_AUTH_KEY")
+}
+
+/// Read the **DSR / CAS-erase** shared secret from the environment
+/// (red-team #3).
+///
+/// Reads `CORELINK_ERASE_AUTH_KEY` first, falling back to the shared
+/// `CORELINK_INTERNAL_AUTH_KEY` when unset/blank/too-short (see
+/// [`resolve_internal_auth_key`]). When `None`, the erase surfaces fail
+/// CLOSED (403).
+///
+/// # Wiring note (LEAD)
+///
+/// `main.rs` currently seeds the CAS-erase route with
+/// [`internal_auth_key_from_env`] (the ADMIN key). To complete the #3
+/// split, `main.rs` should call THIS function for `cas_erase`, and
+/// `dsr::build_state_from_env` (outside this file) should read the erase
+/// key too. Until those two one-line swaps land, both surfaces keep
+/// working via the shared-key fallback.
+#[must_use]
+pub fn erase_auth_key_from_env() -> Option<Arc<str>> {
+    resolve_internal_auth_key("CORELINK_ERASE_AUTH_KEY")
 }
 
 /// Build the axum `Router` exposing the admin read + mutate routes.
@@ -1188,6 +1257,111 @@ mod tests {
     }
 
     // ── F29: minimum key length is 32 chars ───────────────────────────────────
+
+    // ── #3: per-consumer internal-auth key split ──────────────────────────────
+
+    /// Serializes the env-mutating key-split tests (they all read/write the
+    /// same fixed env-var names, so they must not run concurrently).
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Clear every key the split helper reads, so a test starts from a clean
+    /// env regardless of ambient CI vars.
+    fn clear_key_env() {
+        std::env::remove_var("CORELINK_INTERNAL_AUTH_KEY");
+        std::env::remove_var("CORELINK_ADMIN_AUTH_KEY");
+        std::env::remove_var("CORELINK_ERASE_AUTH_KEY");
+        std::env::remove_var("CORELINK_PAT_MINT_AUTH_KEY");
+    }
+
+    const KEY_A: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"; // 32 chars
+    const KEY_B: &str = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"; // 32 chars
+
+    /// #3: when the consumer-specific key is present (and ≥ 32), it is used —
+    /// NOT the shared key.
+    #[test]
+    fn split_specific_key_present_is_used() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_key_env();
+        std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_A);
+        std::env::set_var("CORELINK_ADMIN_AUTH_KEY", KEY_B);
+        let resolved = resolve_internal_auth_key("CORELINK_ADMIN_AUTH_KEY")
+            .expect("specific key present");
+        assert_eq!(&*resolved, KEY_B, "the specific key must win over the shared key");
+        clear_key_env();
+    }
+
+    /// #3: when the consumer-specific key is ABSENT, fall back to the shared
+    /// `CORELINK_INTERNAL_AUTH_KEY`.
+    #[test]
+    fn split_specific_absent_falls_back_to_shared() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_key_env();
+        std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_A);
+        // No CORELINK_ERASE_AUTH_KEY set.
+        let resolved = resolve_internal_auth_key("CORELINK_ERASE_AUTH_KEY")
+            .expect("falls back to shared");
+        assert_eq!(&*resolved, KEY_A);
+        clear_key_env();
+    }
+
+    /// #3: a set-but-too-short specific key is treated as absent and the
+    /// shared key is used (a misconfigured new secret degrades, never locks
+    /// the surface out).
+    #[test]
+    fn split_specific_too_short_falls_back_to_shared() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_key_env();
+        std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_A);
+        std::env::set_var("CORELINK_PAT_MINT_AUTH_KEY", "too-short"); // < 32
+        let resolved = resolve_internal_auth_key("CORELINK_PAT_MINT_AUTH_KEY")
+            .expect("too-short specific → shared fallback");
+        assert_eq!(&*resolved, KEY_A);
+        clear_key_env();
+    }
+
+    /// #3: when BOTH the specific and the shared key are absent (or too short)
+    /// → `None`, so the gate fails CLOSED (403), exactly as before the split.
+    #[test]
+    fn split_both_absent_is_none_fail_closed() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_key_env();
+        assert!(
+            resolve_internal_auth_key("CORELINK_ADMIN_AUTH_KEY").is_none(),
+            "no keys at all → None (fail CLOSED)"
+        );
+        // Shared present but too short, specific absent → still None.
+        std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", "short");
+        assert!(
+            resolve_internal_auth_key("CORELINK_ADMIN_AUTH_KEY").is_none(),
+            "shared too short + specific absent → None"
+        );
+        clear_key_env();
+    }
+
+    /// #3: `internal_auth_key_from_env` (admin) and `erase_auth_key_from_env`
+    /// read DISTINCT specific vars but share the same fallback — so the operator
+    /// can rotate admin and erase independently. Pins the two readers point at
+    /// their contracted env names.
+    #[test]
+    fn split_admin_and_erase_read_distinct_keys() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_key_env();
+        std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_A); // shared fallback
+        std::env::set_var("CORELINK_ADMIN_AUTH_KEY", KEY_B);
+        // erase has no specific key → falls back to shared KEY_A;
+        // admin has its own KEY_B.
+        let admin = internal_auth_key_from_env().expect("admin key");
+        let erase = erase_auth_key_from_env().expect("erase key");
+        assert_eq!(&*admin, KEY_B, "admin reads CORELINK_ADMIN_AUTH_KEY");
+        assert_eq!(&*erase, KEY_A, "erase falls back to shared (no specific set)");
+        // Now give erase its own key — the two diverge.
+        std::env::set_var("CORELINK_ERASE_AUTH_KEY", KEY_A);
+        std::env::set_var("CORELINK_ADMIN_AUTH_KEY", KEY_B);
+        std::env::remove_var("CORELINK_INTERNAL_AUTH_KEY");
+        assert_eq!(&*internal_auth_key_from_env().expect("admin"), KEY_B);
+        assert_eq!(&*erase_auth_key_from_env().expect("erase"), KEY_A);
+        clear_key_env();
+    }
 
     /// F29: `internal_auth_key_from_env` uses `< 32` (not `< 16`); verify the
     /// boundary by checking the lengths that the gate MUST reject and accept.
