@@ -81,6 +81,7 @@
 //!   it requires moving the D1 pat-row write into the container. Deferred to a
 //!   separate change.
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -113,6 +114,102 @@ const SCOPE_ADMIN_ALL: u64 = SCOPE_CACHE_RW
     | SCOPE_ADMIN_USERS;
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Mint concurrency backstop (red-team #7)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Default ceiling on concurrent in-flight mints (red-team #7).
+///
+/// Each `/_internal/pat/mint` call runs one Argon2id hash, which is
+/// deliberately CPU- AND memory-hard. An authenticated-but-malicious (or
+/// looping/buggy) caller firing thousands of concurrent mints would
+/// otherwise exhaust the container's CPU/RAM. Bounding the number of
+/// SIMULTANEOUS Argon2id computations caps the worst-case memory + CPU
+/// footprint regardless of request rate. Excess concurrent calls are
+/// rejected with `429 Too Many Requests` (fail-CLOSED — we shed load
+/// rather than thrash). 16 is generous for the real signup-webhook caller
+/// (one mint per new tenant) while bounding the Argon2id working set to a
+/// small multiple of a single hash.
+pub const DEFAULT_MAX_INFLIGHT_MINTS: u32 = 16;
+
+/// Env var overriding [`DEFAULT_MAX_INFLIGHT_MINTS`].
+pub const MAX_INFLIGHT_MINTS_ENV: &str = "PAT_MINT_MAX_INFLIGHT";
+
+/// A process-global bounded counter of in-flight mints (red-team #7).
+///
+/// `try_acquire` atomically reserves a slot iff the in-flight count is
+/// below `max`; the returned [`MintSlot`] releases the slot on drop (RAII,
+/// so an early-return / panic in the handler cannot leak a permit).
+#[derive(Debug)]
+pub struct MintInflightLimiter {
+    inflight: AtomicU32,
+    max: u32,
+}
+
+impl MintInflightLimiter {
+    /// Construct a limiter with the given concurrent-mint ceiling.
+    ///
+    /// A `max` of 0 is clamped to 1 so the limiter can never wedge the
+    /// surface entirely closed via misconfiguration.
+    #[must_use]
+    pub fn new(max: u32) -> Self {
+        Self {
+            inflight: AtomicU32::new(0),
+            max: max.max(1),
+        }
+    }
+
+    /// Build the limiter from [`MAX_INFLIGHT_MINTS_ENV`], falling back to
+    /// [`DEFAULT_MAX_INFLIGHT_MINTS`] when unset/empty/non-numeric.
+    #[must_use]
+    pub fn from_env() -> Self {
+        let max = std::env::var(MAX_INFLIGHT_MINTS_ENV)
+            .ok()
+            .and_then(|raw| raw.trim().parse::<u32>().ok())
+            .filter(|v| *v > 0)
+            .unwrap_or(DEFAULT_MAX_INFLIGHT_MINTS);
+        Self::new(max)
+    }
+
+    /// Atomically reserve an in-flight slot. Returns `Some(MintSlot)` when
+    /// a slot was reserved (caller may proceed) or `None` when the ceiling
+    /// is already reached (caller must shed with 429).
+    #[must_use]
+    pub fn try_acquire(self: &Arc<Self>) -> Option<MintSlot> {
+        // CAS loop: increment only while strictly under the ceiling, so we
+        // never transiently exceed `max` (no over-admission).
+        let mut cur = self.inflight.load(Ordering::Acquire);
+        loop {
+            if cur >= self.max {
+                return None;
+            }
+            match self.inflight.compare_exchange_weak(
+                cur,
+                cur + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Some(MintSlot { limiter: self.clone() }),
+                Err(actual) => cur = actual,
+            }
+        }
+    }
+}
+
+/// RAII permit for one in-flight mint; releases its slot on drop.
+#[derive(Debug)]
+pub struct MintSlot {
+    limiter: Arc<MintInflightLimiter>,
+}
+
+impl Drop for MintSlot {
+    fn drop(&mut self) {
+        // Release the reserved slot. `fetch_sub` cannot underflow: a slot
+        // is only ever released by the unique owner that reserved it.
+        self.limiter.inflight.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // State
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -125,6 +222,9 @@ pub struct InternalPatRouteState {
     pub signing_key: Arc<PatSigningKey>,
     /// Signing key generation (monotonic counter; 1 at boot).
     pub signing_key_id: u32,
+    /// Concurrency backstop bounding simultaneous Argon2id mints
+    /// (red-team #7). Shared across clones so the ceiling is process-wide.
+    pub inflight: Arc<MintInflightLimiter>,
 }
 
 impl std::fmt::Debug for InternalPatRouteState {
@@ -133,6 +233,7 @@ impl std::fmt::Debug for InternalPatRouteState {
             .field("internal_auth_key", &"[REDACTED]")
             .field("signing_key", &"[REDACTED]")
             .field("signing_key_id", &self.signing_key_id)
+            .field("inflight", &self.inflight)
             .finish()
     }
 }
@@ -273,6 +374,27 @@ async fn handle_mint(
             .into_response();
     }
 
+    // ── 1a. Concurrency backstop (red-team #7) ─────────────────────────────────
+    // Bound the number of SIMULTANEOUS Argon2id mints so a loop (even an
+    // authenticated one) cannot exhaust CPU/RAM. The RAII `_slot` releases
+    // the permit on EVERY return path (drop), including the error returns
+    // below. Acquired AFTER the auth gate so an unauthenticated flood is
+    // already shed at 401 (cheap) and never consumes a mint permit.
+    let _slot = match state.inflight.try_acquire() {
+        Some(slot) => slot,
+        None => {
+            tracing::warn!(
+                event = "PatMintShed",
+                "internal_pat: mint shed — too many concurrent mints (429)"
+            );
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(serde_json::json!({ "error": "too_many_requests" })),
+            )
+                .into_response();
+        }
+    };
+
     // ── 1b. Parse the JSON body — ONLY after the auth gate passed (M3) ─────────
     let req: MintRequest = match serde_json::from_slice(&body) {
         Ok(r) => r,
@@ -402,25 +524,37 @@ fn hex_nibble(b: u8) -> Option<u8> {
 
 /// Build the route state from env vars at binary boot time.
 ///
-/// - `CORELINK_INTERNAL_AUTH_KEY` — shared secret for the auth header gate.
-///   Must be at least 32 bytes (ASCII). Missing or shorter than 32 chars →
-///   route is NOT mounted (fail-CLOSED: we never mint PATs without a properly
-///   sized secret gate). The secrets-checklist instructs `openssl rand -hex 32`
-///   (64 chars); anything shorter is rejected here.
+/// - `CORELINK_PAT_MINT_AUTH_KEY` — **consumer-specific** secret for the
+///   mint auth header gate (red-team #3). Falls back to the shared
+///   `CORELINK_INTERNAL_AUTH_KEY` when unset/blank/too-short (see
+///   [`crate::routes::admin::resolve_internal_auth_key`]). The selected key
+///   must be at least 32 chars; if NEITHER is properly sized the route is
+///   NOT mounted (fail-CLOSED: we never mint PATs without a properly sized
+///   secret gate). The secrets-checklist instructs `openssl rand -hex 32`
+///   (64 chars); anything shorter is rejected.
+///
+///   Splitting the mint off its own key means a leak of the shared
+///   signup-worker secret no longer, by itself, exercises the any-tenant
+///   admin-PAT mint — once the operator provisions `CORELINK_PAT_MINT_AUTH_KEY`.
 /// - `PAT_SIGNING_KEY` — hex-encoded HMAC signing key (≥ 32 bytes decoded).
 ///   Missing → route returns 503 (same fail-CLOSED policy).
 ///
 /// Returns `None` when either key is absent or invalid; the caller logs
 /// a warning and skips mounting the route (dev/CI without secrets).
 pub fn build_state_from_env() -> Option<InternalPatRouteState> {
-    let auth_key = std::env::var("CORELINK_INTERNAL_AUTH_KEY").ok()?;
-    if auth_key.len() < 32 {
-        tracing::warn!(
-            "CORELINK_INTERNAL_AUTH_KEY too short (< 32 chars); \
-             /_internal/pat/mint route NOT mounted (use `openssl rand -hex 32`)"
-        );
-        return None;
-    }
+    // Red-team #3: read the mint-specific key first, fall back to the
+    // shared key. `resolve_internal_auth_key` already enforces the 32-char
+    // floor on whichever key it returns, and returns `None` when neither is
+    // properly sized → route NOT mounted (fail-CLOSED).
+    let auth_key = crate::routes::admin::resolve_internal_auth_key("CORELINK_PAT_MINT_AUTH_KEY")
+        .or_else(|| {
+            tracing::warn!(
+                "no usable mint auth key (CORELINK_PAT_MINT_AUTH_KEY / \
+                 CORELINK_INTERNAL_AUTH_KEY both unset or < 32 chars); \
+                 /_internal/pat/mint route NOT mounted (use `openssl rand -hex 32`)"
+            );
+            None
+        })?;
 
     let signing_key_hex = std::env::var("PAT_SIGNING_KEY").ok()?;
     let key_bytes = hex_decode(&signing_key_hex)?;
@@ -431,9 +565,10 @@ pub fn build_state_from_env() -> Option<InternalPatRouteState> {
         .ok()?;
 
     Some(InternalPatRouteState {
-        internal_auth_key: Arc::from(auth_key.as_str()),
+        internal_auth_key: auth_key,
         signing_key: Arc::new(signing_key),
         signing_key_id: 1,
+        inflight: Arc::new(MintInflightLimiter::from_env()),
     })
 }
 
@@ -461,6 +596,18 @@ mod tests {
             internal_auth_key: Arc::from("test-internal-auth-key-32-bytes-x"),
             signing_key: Arc::new(key),
             signing_key_id: 1,
+            inflight: Arc::new(MintInflightLimiter::new(DEFAULT_MAX_INFLIGHT_MINTS)),
+        }
+    }
+
+    /// Variant of [`test_state`] with a custom in-flight ceiling (red-team #7).
+    fn test_state_with_inflight(max: u32) -> InternalPatRouteState {
+        let key = PatSigningKey::from_bytes(vec![0x42u8; 32]).unwrap();
+        InternalPatRouteState {
+            internal_auth_key: Arc::from("test-internal-auth-key-32-bytes-x"),
+            signing_key: Arc::new(key),
+            signing_key_id: 1,
+            inflight: Arc::new(MintInflightLimiter::new(max)),
         }
     }
 
@@ -566,6 +713,113 @@ mod tests {
         );
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // ── #7: mint concurrency backstop (in-flight limiter) ─────────────────────
+
+    #[test]
+    fn inflight_limiter_admits_up_to_max_then_sheds() {
+        let lim = Arc::new(MintInflightLimiter::new(2));
+        let s1 = lim.try_acquire().expect("first slot");
+        let s2 = lim.try_acquire().expect("second slot");
+        // Ceiling reached → third acquire is shed.
+        assert!(lim.try_acquire().is_none(), "over-ceiling acquire must shed");
+        // Releasing one slot (drop) frees capacity again.
+        drop(s1);
+        let s3 = lim.try_acquire().expect("slot freed after drop");
+        drop(s2);
+        drop(s3);
+        // Fully drained → acquires succeed again.
+        assert!(lim.try_acquire().is_some());
+    }
+
+    #[test]
+    fn inflight_limiter_clamps_zero_max_to_one() {
+        // A mis-set ceiling of 0 must NOT wedge the surface shut entirely.
+        let lim = Arc::new(MintInflightLimiter::new(0));
+        let s = lim.try_acquire().expect("zero-max clamps to 1 → one slot");
+        assert!(lim.try_acquire().is_none());
+        drop(s);
+    }
+
+    #[tokio::test]
+    async fn mint_sheds_429_when_inflight_ceiling_reached() {
+        // Red-team #7: with the ceiling held by an in-flight slot, an
+        // authenticated mint is shed with 429 (NOT 200) — proving the loop
+        // cannot force unbounded concurrent Argon2id work.
+        let state = test_state_with_inflight(1);
+        // Hold the single permit so the handler sees a full limiter.
+        let _held = state.inflight.try_acquire().expect("hold the only slot");
+        let app = router(state.clone());
+        let req = make_mint_request(
+            &state.internal_auth_key,
+            serde_json::json!({
+                "tenant_id": Uuid::now_v7(),
+                "principal_id": Uuid::now_v7(),
+                "scopes": "admin",
+                "ttl_seconds": 86400
+            }),
+        );
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn mint_releases_slot_after_completion() {
+        // Red-team #7: the RAII slot must be released once the mint returns, so
+        // a serial sequence of mints (ceiling 1) all succeed — the limiter
+        // bounds CONCURRENCY, not lifetime throughput.
+        let state = test_state_with_inflight(1);
+        for _ in 0..3 {
+            let app = router(state.clone());
+            let req = make_mint_request(
+                &state.internal_auth_key,
+                serde_json::json!({
+                    "tenant_id": Uuid::now_v7(),
+                    "principal_id": Uuid::now_v7(),
+                    "scopes": "cas:rw",
+                    "ttl_seconds": 86400
+                }),
+            );
+            let resp = app.oneshot(req).await.unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::OK,
+                "each serial mint must reacquire the freed slot"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn unauthenticated_flood_does_not_consume_mint_slot() {
+        // Red-team #7 interaction with #3 ordering: an UNauthenticated caller is
+        // shed at 401 BEFORE a mint permit is taken, so an unauth flood cannot
+        // exhaust the in-flight budget and DoS legitimate mints.
+        let state = test_state_with_inflight(1);
+        let app = router(state.clone());
+        // Wrong auth → 401, no permit consumed.
+        let bad = make_mint_request(
+            "wrong-secret",
+            serde_json::json!({
+                "tenant_id": Uuid::now_v7(),
+                "principal_id": Uuid::now_v7(),
+                "scopes": "admin",
+                "ttl_seconds": 86400
+            }),
+        );
+        assert_eq!(app.oneshot(bad).await.unwrap().status(), StatusCode::UNAUTHORIZED);
+        // A subsequent AUTHED mint still has its slot available → 200.
+        let app2 = router(state.clone());
+        let good = make_mint_request(
+            &state.internal_auth_key,
+            serde_json::json!({
+                "tenant_id": Uuid::now_v7(),
+                "principal_id": Uuid::now_v7(),
+                "scopes": "admin",
+                "ttl_seconds": 86400
+            }),
+        );
+        assert_eq!(app2.oneshot(good).await.unwrap().status(), StatusCode::OK);
     }
 
     // ── M2: constant-time auth gate ───────────────────────────────────────────

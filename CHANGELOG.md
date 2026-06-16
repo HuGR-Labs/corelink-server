@@ -48,6 +48,23 @@ Each entry cross-references:
     tenant binding) at the top of each billable CAS/AC/Bazel/Turbo handler, with a
     short-TTL verified-token cache keyed by SHA-256 fingerprint so the hot path
     skips Argon2id. Defense-in-depth ON TOP of the existing HMAC gate; env-gated.
+- **Red-team brutal #3/#6/#7 — control-plane hardening (container).**
+  - **#3 (HIGH)** — a single `CORELINK_INTERNAL_AUTH_KEY` gated five high-privilege
+    internal surfaces (any-tenant PAT mint, GDPR/CAS erase, admin, pilots); one leak
+    granted all. Introduced per-consumer keys via additive fallback
+    (`resolve_internal_auth_key` in `routes/admin.rs`): mint reads
+    `CORELINK_PAT_MINT_AUTH_KEY`, admin/pilots read `CORELINK_ADMIN_AUTH_KEY`, erase
+    reads `CORELINK_ERASE_AUTH_KEY`, each falling back to `CORELINK_INTERNAL_AUTH_KEY`
+    when unset/blank/< 32 chars; both absent ⇒ `None` ⇒ fail CLOSED (403), unchanged.
+    Deployable before prod secrets exist (mirrors the #8 OCI dual-name pattern).
+  - **#6 (LOW)** — a brand-new tenant's FIRST billable op bypassed the monthly
+    `$`-ceiling (the fresh-row path in `tenant_quota.rs` called `accrue` unconditionally).
+    Added atomic `QuotaStore::seed_checked_accrue` (D1 `INSERT … ON CONFLICT … WHERE
+    accrued + delta <= budget RETURNING`) so the first op is ceiling-checked too (402
+    when it alone exceeds the cap); no TOCTOU.
+  - **#7 (LOW)** — `/_internal/pat/mint` ran an unbounded Argon2id per call. Added a
+    process-wide in-flight cap (`MintInflightLimiter`, default 16, env
+    `PAT_MINT_MAX_INFLIGHT`); excess concurrent mints shed with `429` (fail-CLOSED).
 - **CAA-360 #27/#29/#30 — worker auth hardening bundle.**
   - **#27** — `internal_auth.ts requireInternalAuth` compared the shared secret with `ctEqStr`, which
     returned early on a length mismatch (a length oracle). Replaced with the same padded
