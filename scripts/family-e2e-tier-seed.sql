@@ -23,6 +23,20 @@
 -- created_at_ms / subscription_started_at_ms use a fixed launch-window epoch (2026-06-16T00:00:00Z = 1781568000000)
 -- to keep the seed reproducible (no now()).
 
+-- ── tenant parent rows (FK target) ───────────────────────────────────────────
+-- `pat.tenant_id` and `tier_selections.tenant_id` both FK → tenant(tenant_id), so the
+-- tenant rows MUST exist before the tier/quota/pat rows (an empty `tenant` table makes
+-- every downstream INSERT fail the FK and write 0 rows — the exact ROUND-2 trap).
+-- primary_region='wnam' (the default global CAS region); created/updated use the fixed epoch.
+INSERT INTO tenant (tenant_id, primary_region, created_at_ms, updated_at_ms) VALUES
+  ('00000000-0000-4000-8000-0000000f0001', 'wnam', 1781568000000, 1781568000000),
+  ('00000000-0000-4000-8000-0000000f0002', 'wnam', 1781568000000, 1781568000000),
+  ('00000000-0000-4000-8000-0000000f0003', 'wnam', 1781568000000, 1781568000000),
+  ('00000000-0000-4000-8000-0000000f0004', 'wnam', 1781568000000, 1781568000000),
+  ('00000000-0000-4000-8000-0000000f0005', 'wnam', 1781568000000, 1781568000000),
+  ('00000000-0000-4000-8000-0000000f0006', 'wnam', 1781568000000, 1781568000000)
+  ON CONFLICT(tenant_id) DO NOTHING;
+
 -- ── free ─────────────────────────────────────────────────────────────────────
 INSERT INTO tier_selections (tenant_id, tier, subscription_state, schema_version, correlation_id, subscription_started_at_ms)
   VALUES ('00000000-0000-4000-8000-0000000f0001', 'free', 'active', 1, 'family-e2e-seed-free', 1781568000000)
