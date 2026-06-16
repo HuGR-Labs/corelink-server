@@ -15,9 +15,10 @@
  *   - header missing / wrong → 401.
  *   - match → `null` (caller proceeds).
  *
- * The compare mirrors index.ts `ctEqStr` exactly (the established Worker
- * constant-time pattern). It is replicated locally — like `reapiError` is in
- * the sibling lib modules — to avoid a runtime import cycle (index.ts ⇄ lib/*).
+ * The compare mirrors the padded `crypto.subtle.timingSafeEqual` gate index.ts
+ * uses for `/_internal/*` (no length oracle; CAA-360 #27). It is replicated
+ * locally — like `reapiError` is in the sibling lib modules — to avoid a
+ * runtime import cycle (index.ts ⇄ lib/*).
  */
 
 import type { Env } from "../index.js";
@@ -33,19 +34,35 @@ const INTERNAL_AUTH_HEADER = "x-corelink-internal-auth";
 const MIN_INTERNAL_AUTH_KEY_LEN = 32;
 
 /**
- * Constant-time string compare — byte-for-byte identical to index.ts
- * `ctEqStr`. Length is compared first (the secret length is a fixed,
- * non-sensitive 64-hex constant, consistent with the existing Worker gate).
+ * Constant-time secret compare WITHOUT a length oracle (CAA-360 #27).
+ *
+ * The prior `ctEqStr` returned early on `a.length !== b.length`, taking a
+ * timing path that depended on the provided length — a (weak) length oracle.
+ * This mirrors the padded `crypto.subtle.timingSafeEqual` gate that
+ * `index.ts` uses for `/_internal/*`: copy the provided bytes into a fixed
+ * buffer sized to the EXPECTED length (zero-pad short input / truncate long
+ * input), run exactly ONE `timingSafeEqual` over equal-length buffers, then AND
+ * with a single length-equality bit. No branch depends on the provided length,
+ * and a wrong length that happens to share the expected prefix is still
+ * rejected by the length bit.
+ *
+ * The caller guarantees `expected` is non-empty (≥ MIN_INTERNAL_AUTH_KEY_LEN).
  */
-function ctEqStr(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
+function constantTimeSecretEqual(expected: string, provided: string): boolean {
+  const enc = new TextEncoder();
+  const expectedBytes = enc.encode(expected);
+  const providedBytes = enc.encode(provided);
+  const fixed = new Uint8Array(expectedBytes.length);
+  const copyLen =
+    providedBytes.length < expectedBytes.length
+      ? providedBytes.length
+      : expectedBytes.length;
+  fixed.set(providedBytes.subarray(0, copyLen));
+  const bytesEqual = crypto.subtle.timingSafeEqual(fixed, expectedBytes);
+  // Single integer compare (not a per-char path) → no length oracle; a length
+  // mismatch can never authenticate even if the prefix bytes match.
+  const lenEqual = providedBytes.length === expectedBytes.length;
+  return bytesEqual && lenEqual;
 }
 
 /**
@@ -79,7 +96,7 @@ export function requireInternalAuth(request: Request, env: Env, requestId: strin
     return reapiError("FORBIDDEN", "internal endpoint unavailable", 403, requestId);
   }
   const provided = request.headers.get(INTERNAL_AUTH_HEADER) ?? "";
-  if (!ctEqStr(expected, provided)) {
+  if (!constantTimeSecretEqual(expected, provided)) {
     return reapiError("UNAUTHORIZED", "internal auth required", 401, requestId);
   }
   return null;
