@@ -340,6 +340,29 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         );
     }
 
+    // Native data-plane PAT possession gate (red-team #4) + per-tenant storage
+    // byte accounting (#1). Built from env (PAT_SIGNING_KEY + StorageEnv / D1);
+    // `None` in dev/CI ⇒ the native plane skips the Argon2id backstop and the
+    // storage accrual, mirroring the quota/tombstone fail-safe env-gates above.
+    // ONE gate/accountant is cloned (cheap `Arc`) into every billable native
+    // state (CAS/AC/Bazel/Turbo) so all four surfaces re-verify the bearer PAT
+    // against D1 (never trusting the Worker-injected tenant header) and accrue
+    // bytes against the same `tenant_storage_state` row.
+    let native_pat_gate = crate::native_pat_gate::native_pat_gate_from_env();
+    if native_pat_gate.is_none() {
+        tracing::warn!(
+            "native PAT gate disabled: PAT_SIGNING_KEY/StorageEnv absent — native \
+             CAS/AC/Bazel/Turbo do NOT re-verify the bearer PAT (dev/CI mode)"
+        );
+    }
+    let byte_accountant = crate::byte_accounting::byte_accountant_from_env();
+    if byte_accountant.is_none() {
+        tracing::warn!(
+            "storage byte-accounting disabled: D1 StorageEnv absent — CAS/AC writes \
+             NOT accrued against tenant_storage_state.bytes_used (dev/CI mode)"
+        );
+    }
+
     let (cas_read, cas_write, cas_delete, cas_list) = cas::build_handlers();
     // 410-Gone tombstone read gate (hugit-P2 seam B, WP-B). Wired from env
     // (D1-backed) when D1 creds are present so an erased hash answers 410 even
@@ -355,6 +378,8 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         list: cas_list,
         tombstones: cas_tombstones,
         quota: quota.clone(),
+        pat_gate: native_pat_gate.clone(),
+        bytes: byte_accountant.clone(),
     };
     let (ac_lookup, ac_update, ac_delete, ac_list) = ac::build_handlers();
     let ac_state = ac::AcRouteState {
@@ -363,6 +388,8 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         delete: ac_delete,
         list: ac_list,
         quota: quota.clone(),
+        pat_gate: native_pat_gate.clone(),
+        bytes: byte_accountant.clone(),
     };
     // Cache adapters share the SAME CAS trait objects (one R2 connection) —
     // clone BEFORE they are moved into the Bazel bridge below. cargo writes
@@ -382,6 +409,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // same backing store. No new R2 connections are opened.
     let mut bazel_state = bazel_v2::build_handlers_from(cas_read, cas_write, ac_lookup, ac_update);
     bazel_state.quota = quota.clone();
+    bazel_state.pat_gate = native_pat_gate.clone();
     // SECURITY (admin control-plane gate): the `/v1/admin/*` and
     // `/v1/admin/pilots/*` surfaces are OPERATOR-ONLY — they must NOT be
     // reachable by any authenticated tenant PAT. We gate them behind the
@@ -434,6 +462,8 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     let customer_state = customer::build_handlers_from_env();
     let mut turbo_state = turbo_v8::build_handlers();
     turbo_state.quota = quota.clone();
+    turbo_state.pat_gate = native_pat_gate.clone();
+    turbo_state.bytes = byte_accountant.clone();
     let mut router = Router::new()
         .merge(cas::router(cas_state))
         .merge(ac::router(ac_state))

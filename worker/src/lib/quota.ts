@@ -22,8 +22,9 @@
  *   enterprise no caps
  *
  * Storage quota is enforced via SUM(bytes_used) from tenant_storage_state.
- * Request quota is deferred behind a feature flag until a monthly request
- * counter table is wired (TODO below). Over quota → HTTP 429 + Retry-After.
+ * Request quota is enforced via an atomic monthly counter UPSERT against
+ * monthly_request_counts (migration 0071), gated by REQUEST_QUOTA_ENABLED.
+ * Over quota → HTTP 429 + Retry-After.
  *
  * INV-NO-PII-IN-LOGS: tenant_id is not logged; only included in structured
  * responses forwarded to the caller.
@@ -68,9 +69,10 @@ export interface Quota {
   /** Maximum aggregate storage bytes across all regions. */
   readonly storageBytesMax: number;
   /**
-   * Maximum HTTP requests per calendar month.
-   * TODO(request-counter): deferred until a monthly counter table exists.
-   * Caps follow the signed rate card but are NOT yet enforced (storage is).
+   * Maximum HTTP requests per calendar month. Enforced by
+   * {@link checkRequestQuota} via the monthly_request_counts counter
+   * (migration 0071) when REQUEST_QUOTA_ENABLED is on. MAX_SAFE_INTEGER
+   * means "no cap" (team / enterprise). Caps follow the signed rate card.
    */
   readonly requestsPerMonthMax: number;
 }
@@ -319,64 +321,134 @@ export async function checkStorageQuota(
 }
 
 /**
- * Tracks whether the "request-quota flag is ON but no counter backend exists"
- * warning has already been emitted, so we log it ONCE per Worker isolate
- * rather than on every request (a per-request log would flood the logs and is
- * itself a cost/availability hazard). Module-scoped: reset on each cold start,
- * which is the desired cadence for a misconfiguration signal.
+ * Current UTC calendar month as a fixed `YYYY-MM` bucket key (e.g. `2026-06`).
+ *
+ * The bucket boundary matches {@link secondsUntilNextMonthStart} (both are
+ * UTC-calendar-month aligned), so a tenant's counter implicitly resets when a
+ * new month's first request INSERTs a fresh `(tenant_id, year_month)` row and
+ * the advertised Retry-After lands exactly on that reset.
  */
-let requestQuotaMisconfigWarned = false;
+function currentYearMonthUtc(): string {
+  // `toISOString()` is always UTC `YYYY-MM-DDТHH:mm:ss.sssZ`; slice → `YYYY-MM`.
+  return new Date().toISOString().slice(0, 7);
+}
 
 /**
- * Check whether the tenant is within their monthly request quota.
+ * Check whether the tenant is within their monthly request quota AND count
+ * this request.
  *
- * ## Enforcement status (HONEST): NOT YET ENFORCED — no counter backend
+ * ## Enforcement (red-team #5 fix)
  *
- * Request-rate limiting at the *data plane* is enforced in-app by the
- * container's `corelink-ratelimit` token-bucket middleware (per-tenant
- * req/s + burst; see `crates/corelink-container/src/routes/ratelimit_layer.rs`).
- * This function is the SEPARATE *monthly aggregate* request-count cap from the
- * signed rate card (`requestsPerMonthMax`), which requires a durable
- * per-tenant monthly counter that does NOT yet exist.
+ * This is the *monthly aggregate* request-count cap from the signed rate card
+ * (`requestsPerMonthMax`). It is DISTINCT from the *data-plane* per-second rate
+ * limit enforced in-app by the container's `corelink-ratelimit` token-bucket
+ * middleware (per-tenant req/s + burst; see
+ * `crates/corelink-container/src/routes/ratelimit_layer.rs`). A slow-but-steady
+ * tenant can stay under the per-second limit yet exceed the contracted monthly
+ * allowance — this closes that gap at the Worker edge.
  *
- * TODO(request-counter): wire a `monthly_request_counts(tenant_id, year_month,
- * request_count)` table + an atomic increment on the allow path, then change
- * the body to:
- *   SELECT request_count FROM monthly_request_counts
- *   WHERE tenant_id = ?1 AND year_month = ?2
- * returning ok:false + 429 (Retry-After = secondsUntilNextMonthStart) when
- * request_count >= quota.requestsPerMonthMax. Until then this function CANNOT
- * enforce the cap — it has no DB handle and no counter to read.
+ * Backing: the `monthly_request_counts(tenant_id, year_month, request_count)`
+ * table (migration 0071). Enforcement is a single ATOMIC increment-and-check
+ * UPSERT, so concurrent isolates cannot race a read-modify-write:
  *
- * Because we must NOT silently ship a no-op that *claims* enforcement, the
- * `REQUEST_QUOTA_ENABLED` flag is honoured explicitly:
- *   - flag OFF (default) → ok:true, no log (enforcement is openly deferred).
- *   - flag ON            → ok:true (fail-OPEN for availability), but emit a
- *     LOUD once-per-isolate warning that the operator asked for enforcement
- *     the backend cannot yet deliver. Flipping the flag must never give a
- *     false sense of a cap being applied.
+ *   INSERT INTO monthly_request_counts (tenant_id, year_month, request_count, updated_at_ms)
+ *   VALUES (?1, ?2, 1, ?3)
+ *   ON CONFLICT(tenant_id, year_month)
+ *   DO UPDATE SET request_count = request_count + 1, updated_at_ms = ?3
+ *   RETURNING request_count;
  *
- * F21: accepts TierResult for consistency with checkStorageQuota; when
- * d1Error=true the check is a no-op (returns ok:true) — the same fail-open
- * symmetry applies.
+ * The post-increment `request_count` is compared to
+ * `QUOTAS[tier].requestsPerMonthMax`. When it EXCEEDS the cap (i.e. this is the
+ * request that crossed the line, or any beyond) the function returns
+ * ok:false + Retry-After = {@link secondsUntilNextMonthStart}; the caller maps
+ * that to HTTP 429.
+ *
+ * ## Flag semantics (`REQUEST_QUOTA_ENABLED`)
+ *
+ *   - flag OFF (default) → ok:true WITHOUT touching the counter. Enforcement is
+ *     openly off; we do not even pay the write. (Storage quota is unaffected.)
+ *   - flag ON            → atomic increment + cap check as above.
+ *
+ * ## D1-error / unconfirmed-tier posture
+ *
+ * Consistent with {@link checkStorageQuota} and the file's documented posture,
+ * this READ-style check fails OPEN:
+ *   - `tierResult.d1Error === true` (tier unconfirmed) → ok:true, no count
+ *     (we cannot know the cap; avoid a false-positive 429 for a paid tenant).
+ *   - the UPSERT throws (transient store error) → ok:true (availability).
+ * Uncapped tiers (team / enterprise, MAX_SAFE_INTEGER) skip the counter write
+ * entirely — there is nothing to enforce and no reason to pay a D1 write.
+ *
+ * @param db                  D1 handle (CONFIG_DB) carrying monthly_request_counts.
+ * @param tenantId            Resolved tenant id (the counter key; never logged).
+ * @param tierResult          Result from {@link getTierForTenant} (tier + d1Error).
+ * @param requestQuotaEnabled REQUEST_QUOTA_ENABLED flag (off → no-op, no write).
  */
-export function checkRequestQuota(
-  _tierResult: TierResult,
+export async function checkRequestQuota(
+  db: D1Database,
+  tenantId: string,
+  tierResult: TierResult,
   requestQuotaEnabled: boolean,
-): QuotaCheckResult {
-  if (requestQuotaEnabled && !requestQuotaMisconfigWarned) {
-    requestQuotaMisconfigWarned = true;
-    // INV-NO-PII-IN-LOGS: no tenant id logged.
-    console.warn(
-      "[quota] REQUEST_QUOTA_ENABLED=true but the monthly_request_counts " +
-        "backend is NOT wired — monthly request-cap enforcement is a NO-OP " +
-        "(failing OPEN). See checkRequestQuota TODO(request-counter). " +
-        "Per-second rate limiting IS enforced by the container token-bucket.",
-    );
+): Promise<QuotaCheckResult> {
+  // Flag off → enforcement is openly disabled; do not touch the counter.
+  if (!requestQuotaEnabled) {
+    return { ok: true };
   }
-  // Deferred — see function docstring. No counter backend ⇒ cannot enforce;
-  // fail-OPEN to preserve availability (consistent with the file's posture).
-  return { ok: true };
+
+  // Unconfirmed tier (tier lookup hit a D1 error) → fail OPEN, no count. We
+  // cannot know which cap applies, so counting against a fallback 'free' cap
+  // would false-positive a paid tenant during a partial outage (F21 symmetry).
+  if (tierResult.d1Error) {
+    return { ok: true };
+  }
+
+  const tier = tierResult.tier;
+  const cap = QUOTAS[tier].requestsPerMonthMax;
+
+  // Uncapped tier (team / enterprise) → nothing to enforce; skip the write.
+  if (cap === Number.MAX_SAFE_INTEGER) {
+    return { ok: true };
+  }
+
+  const yearMonth = currentYearMonthUtc();
+  const nowMs = Date.now();
+
+  // Atomic increment-and-check (single round trip; no read-modify-write race).
+  interface CountRow { request_count: number }
+  let row: CountRow | null = null;
+  try {
+    row = await db
+      .prepare(
+        "INSERT INTO monthly_request_counts (tenant_id, year_month, request_count, updated_at_ms) " +
+          "VALUES (?1, ?2, 1, ?3) " +
+          "ON CONFLICT(tenant_id, year_month) " +
+          "DO UPDATE SET request_count = request_count + 1, updated_at_ms = ?3 " +
+          "RETURNING request_count",
+      )
+      .bind(tenantId, yearMonth, nowMs)
+      .first<CountRow>();
+  } catch {
+    // Transient store error → fail OPEN (availability), consistent with the
+    // file's posture. The request is NOT counted; the DO/container remain the
+    // deeper net on mutations.
+    return { ok: true };
+  }
+
+  // A successful RETURNING UPSERT always yields exactly one row; treat a
+  // (theoretically impossible) null as 0 → within cap, fail-open.
+  const count = row?.request_count ?? 0;
+
+  // The cap is a maximum allowance: reject only requests BEYOND it (count > cap).
+  // The request whose increment lands exactly ON the cap is still served.
+  if (count <= cap) {
+    return { ok: true };
+  }
+
+  return {
+    ok: false,
+    retryAfterSec: secondsUntilNextMonthStart(),
+    reason: `Monthly request quota exceeded: ${count} requests this month, limit is ${cap} (tier: ${tier})`,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -23,6 +23,72 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **Red-team data-plane bundle (brutal red-team #1/#2/#4).**
+  - **#1 (HIGH) — storage quota was structurally inert.** Nothing on the container
+    data plane ever incremented `tenant_storage_state.bytes_used`, so per-tier
+    storage caps never tripped (a Free tenant could store unbounded TB at $0). New
+    `byte_accounting::ByteAccountant` does an ATOMIC check-and-accrue UPSERT against
+    `tenant_storage_state` (`INSERT … ON CONFLICT(tenant_id, region) DO UPDATE SET
+    bytes_used = bytes_used + ? WHERE bytes_quota = 0 OR bytes_used + ? <=
+    bytes_quota RETURNING bytes_used`) wired into the CAS/AC/Turbo write handlers
+    (over-cap ⇒ 402, transport fault ⇒ 503 fail-CLOSED), plus a saturating
+    `release` for deletes. Env-gated (`None` in dev/CI), mirroring the `QuotaGate`.
+  - **#2 (HIGH) — Turbo PUT buffered up to 100 MiB BEFORE the concurrency cap.**
+    The per-tenant in-flight reservation lived inside `handle_put`, AFTER the
+    `body: Bytes` extractor, so a burst of concurrent PUTs each buffered ~100 MiB
+    before the cap-check ran. Converted to a `PutConcurrencyGuard`
+    `FromRequestParts` extractor declared AHEAD of the body extractor, so a 5th
+    concurrent PUT is rejected 429 BEFORE any body byte is read; the RAII `PutSlot`
+    releases the slot on drop.
+  - **#4 (HIGH) — native plane proved possession with HMAC only.** A leaked
+    `PAT_SIGNING_KEY` could forge any tenant's PAT (the random secret, stored only
+    as an Argon2id hash, was never checked on the native path). New
+    `native_pat_gate::NativePatGate` re-runs the full Option-B verification (the
+    shared `adapter_pat::PatVerifier` — Argon2id against the stored `pat_hash` +
+    tenant binding) at the top of each billable CAS/AC/Bazel/Turbo handler, with a
+    short-TTL verified-token cache keyed by SHA-256 fingerprint so the hot path
+    skips Argon2id. Defense-in-depth ON TOP of the existing HMAC gate; env-gated.
+- **Red-team brutal #3/#6/#7 — control-plane hardening (container).**
+  - **#3 (HIGH)** — a single `CORELINK_INTERNAL_AUTH_KEY` gated five high-privilege
+    internal surfaces (any-tenant PAT mint, GDPR/CAS erase, admin, pilots); one leak
+    granted all. Introduced per-consumer keys via additive fallback
+    (`resolve_internal_auth_key` in `routes/admin.rs`): mint reads
+    `CORELINK_PAT_MINT_AUTH_KEY`, admin/pilots read `CORELINK_ADMIN_AUTH_KEY`, erase
+    reads `CORELINK_ERASE_AUTH_KEY`, each falling back to `CORELINK_INTERNAL_AUTH_KEY`
+    when unset/blank/< 32 chars; both absent ⇒ `None` ⇒ fail CLOSED (403), unchanged.
+    Deployable before prod secrets exist (mirrors the #8 OCI dual-name pattern).
+  - **#6 (LOW)** — a brand-new tenant's FIRST billable op bypassed the monthly
+    `$`-ceiling (the fresh-row path in `tenant_quota.rs` called `accrue` unconditionally).
+    Added atomic `QuotaStore::seed_checked_accrue` (D1 `INSERT … ON CONFLICT … WHERE
+    accrued + delta <= budget RETURNING`) so the first op is ceiling-checked too (402
+    when it alone exceeds the cap); no TOCTOU.
+  - **#7 (LOW)** — `/_internal/pat/mint` ran an unbounded Argon2id per call. Added a
+    process-wide in-flight cap (`MintInflightLimiter`, default 16, env
+    `PAT_MINT_MAX_INFLIGHT`); excess concurrent mints shed with `429` (fail-CLOSED).
+- **Red-team #3 (worker) — per-consumer internal-auth key split.** The Worker's
+  `/_internal/*` gate authenticated every internal surface (PAT mint, admin, erase) with the single
+  shared `CORELINK_INTERNAL_AUTH_KEY`, so one leaked secret unlocked all of them. It now mirrors the
+  container's just-merged Rust split: a new `resolveConsumerKey` (in `internal_auth.ts`) selects a
+  PER-CONSUMER key by path — `/_internal/pat/mint` → `CORELINK_PAT_MINT_AUTH_KEY`, `/_internal/admin/*`
+  → `CORELINK_ADMIN_AUTH_KEY`, `/_internal/dsr/*` (and other data-plane internal routes) →
+  `CORELINK_ERASE_AUTH_KEY` — each used iff set AND ≥ 32 chars, else falling back to the shared key
+  (≥ 32), else fail-CLOSED (403). The same padded `crypto.subtle.timingSafeEqual` compare is retained
+  (no length oracle). The new env names are added to the Worker `Env` interface. **OPERATOR (launch
+  step):** provision the three new secrets via `wrangler secret put` per env to complete the split;
+  until then the shared-key fallback preserves current behaviour. (`scripts/secrets-mvp-allowlist.txt`
+  needs the three new names appended.)
+- **Red-team #5 — monthly request-count quota is now actually enforced.** `checkRequestQuota` was a
+  hard-coded no-op (`requestsPerMonthMax` read by nothing, the `if (!requestCheck.ok)` branch dead, no
+  counter table), so the contracted per-month request cap was unenforced. Added migration
+  `0071_monthly_request_counts.sql` (`monthly_request_counts(tenant_id, year_month, request_count, …)`,
+  PK `(tenant_id, year_month)`). `checkRequestQuota` is now async and does an ATOMIC
+  increment-and-check UPSERT (`… ON CONFLICT DO UPDATE SET request_count = request_count + 1 RETURNING
+  request_count`), compares the post-increment count to `QUOTAS[tier].requestsPerMonthMax`, and returns
+  `429` + `Retry-After = secondsUntilNextMonthStart()` when exceeded. Gated by `REQUEST_QUOTA_ENABLED`
+  (off → no counter write); fails OPEN on a D1 error and skips the write for uncapped tiers, matching
+  the file's posture. Wired at the real call site in `index.ts` (replacing the no-op). Adds
+  `checkRequestQuota` unit tests (under cap → ok; at cap → ok; over cap → 429; D1 error → fail-open;
+  uncapped/unconfirmed-tier → ok).
 - **CAA-360 #27/#29/#30 — worker auth hardening bundle.**
   - **#27** — `internal_auth.ts requireInternalAuth` compared the shared secret with `ctEqStr`, which
     returned early on a length mismatch (a length oracle). Replaced with the same padded

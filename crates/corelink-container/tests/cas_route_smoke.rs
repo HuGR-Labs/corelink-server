@@ -66,6 +66,8 @@ fn fresh_state() -> CasRouteState {
         // No $-ceiling gate in the smoke test (gate is exercised in
         // `routes::cas`'s unit tests + the `tenant_quota` suite).
         quota: None,
+        pat_gate: None,
+        bytes: None,
     }
 }
 

@@ -262,6 +262,54 @@ pub trait QuotaStore: std::fmt::Debug + Send + Sync {
         Ok(true)
     }
 
+    /// **Atomic seed-and-check** for a tenant's FIRST billable op (red-team
+    /// #6): atomically INSERT a fresh quota row (default tripwire,
+    /// `accrued = delta_micros`, anchored at `seed_anchor_ms`) IFF that first
+    /// op fits under the default ceiling, and — if a row already exists by the
+    /// time the statement runs (a concurrent first-op won the race) — fall
+    /// through to the SAME ceiling-guarded increment as the steady path.
+    ///
+    /// This closes the gap where a brand-new tenant's first op bypassed the
+    /// $-ceiling: the prior fresh-row path called [`Self::accrue`]
+    /// UNCONDITIONALLY, so a single first op larger than the budget (e.g. a
+    /// fat batch) could exceed the cap before any check ran.
+    ///
+    /// Returns:
+    /// - `Ok(true)`  — seeded (or incremented) within the ceiling;
+    /// - `Ok(false)` — the first op alone would exceed the ceiling (NOT
+    ///   applied; caller rejects 402);
+    /// - `Err(_)`    — store / transport error (caller rejects 503).
+    ///
+    /// The default implementation is a get → check → seed two-step (correct
+    /// for the single-threaded in-memory test store, which serializes via its
+    /// `Mutex`); `D1QuotaStore` overrides it with a single atomic
+    /// `INSERT … ON CONFLICT DO UPDATE … WHERE accrued + delta <= budget`.
+    async fn seed_checked_accrue(
+        &self,
+        tenant_id: &str,
+        delta_micros: i64,
+        seed_anchor_ms: i64,
+        updated_at_ms: i64,
+    ) -> Result<bool, String> {
+        // A row may have appeared since the caller's `get` (concurrent
+        // first-op). If so, route through the ceiling-guarded increment so
+        // the two first-ops sum under one budget check rather than the
+        // second blindly seeding over the first.
+        if self.get(tenant_id).await?.is_some() {
+            return self
+                .check_and_accrue(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms)
+                .await;
+        }
+        // Brand-new row: the first op must itself fit under the default
+        // tripwire (a fresh tenant always carries `DEFAULT_MONTHLY_BUDGET`).
+        if delta_micros > DEFAULT_MONTHLY_BUDGET_USD_MICROS {
+            return Ok(false);
+        }
+        self.accrue(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms)
+            .await?;
+        Ok(true)
+    }
+
     /// **Atomic cycle-roll** (CAA-360 #5/#20): if the tenant's stored cycle is
     /// stale (`cycle_anchor_ms + CYCLE_LENGTH_MS <= now_ms`), reset its accrued
     /// counter to 0 and advance the anchor to `now_ms` — in a SINGLE conditional
@@ -417,14 +465,30 @@ impl QuotaGuard {
                     }
                 }
             } else {
-                // Brand-new tenant (no row): seed atomically via `accrue`
-                // (INSERT … ON CONFLICT DO UPDATE), so two concurrent first-ops
-                // cannot lose-update each other. A single op's cost is far below
-                // the default tripwire, so a fresh op is always within budget.
-                if self.store.accrue(tenant, cost, now_ms, now_ms).await.is_err() {
-                    return Some(
-                        (StatusCode::SERVICE_UNAVAILABLE, "quota accrual failed").into_response(),
-                    );
+                // Brand-new tenant (no row): seed atomically AND ceiling-check
+                // the FIRST op (red-team #6). The prior path called `accrue`
+                // UNCONDITIONALLY, so a first op larger than the default
+                // tripwire (e.g. a fat `check_batch`) bypassed the $-ceiling.
+                // `seed_checked_accrue` seeds `accrued = cost` only when
+                // `cost <= budget`, and races a concurrent first-op through the
+                // same atomic ceiling-guarded increment (no lost-update, no
+                // over-admission).
+                match self.store.seed_checked_accrue(tenant, cost, now_ms, now_ms).await {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        return Some(
+                            (
+                                StatusCode::PAYMENT_REQUIRED,
+                                "monthly $-ceiling exceeded; raise the cap or wait for the cycle to reset",
+                            )
+                                .into_response(),
+                        );
+                    }
+                    Err(_) => {
+                        return Some(
+                            (StatusCode::SERVICE_UNAVAILABLE, "quota accrual failed").into_response(),
+                        );
+                    }
                 }
             }
         } else {
@@ -640,6 +704,73 @@ impl QuotaStore for D1QuotaStore {
         Ok(!rows.is_empty())
     }
 
+    /// Production override for red-team #6 — atomic seed-and-ceiling-check of a
+    /// brand-new tenant's first op in a SINGLE statement.
+    ///
+    /// SQL:
+    /// ```sql
+    /// INSERT INTO tenant_quota
+    ///     (tenant_id, monthly_budget_usd_micros, accrued_usd_micros,
+    ///      cycle_anchor_ms, updated_at_ms)
+    /// VALUES (?1, ?4, ?2, ?3, ?5)
+    /// ON CONFLICT(tenant_id) DO UPDATE
+    ///     SET accrued_usd_micros = accrued_usd_micros + ?2,
+    ///         updated_at_ms      = ?5
+    ///   WHERE accrued_usd_micros + ?2 <= monthly_budget_usd_micros
+    /// RETURNING accrued_usd_micros
+    /// ```
+    ///
+    /// - **INSERT path** (no row yet): the row is created with
+    ///   `accrued = delta`; the new row is only returned when
+    ///   `delta <= budget` is enforced app-side first (a fresh row carries the
+    ///   default tripwire, so we reject a first op above it BEFORE the INSERT
+    ///   rather than persist an over-cap row).
+    /// - **ON CONFLICT path** (a concurrent first-op already seeded the row):
+    ///   the increment applies only under the ceiling — `RETURNING` yields a
+    ///   row ⇒ `Ok(true)`, no row ⇒ ceiling exceeded ⇒ `Ok(false)`.
+    /// - **D1 error** → `Err(String)` → caller rejects 503 (fail-CLOSED).
+    async fn seed_checked_accrue(
+        &self,
+        tenant_id: &str,
+        delta_micros: i64,
+        seed_anchor_ms: i64,
+        updated_at_ms: i64,
+    ) -> Result<bool, String> {
+        // The first op of a brand-new tenant must itself fit under the default
+        // tripwire that the freshly-INSERTed row will carry. Reject above-cap
+        // first ops BEFORE persisting a row, so we never seed an over-ceiling
+        // row (the ON CONFLICT WHERE only guards the increment path).
+        if delta_micros > DEFAULT_MONTHLY_BUDGET_USD_MICROS {
+            return Ok(false);
+        }
+        let rows = self
+            .client
+            .query(
+                "INSERT INTO tenant_quota \
+                     (tenant_id, monthly_budget_usd_micros, accrued_usd_micros, \
+                      cycle_anchor_ms, updated_at_ms) \
+                 VALUES (?1, ?4, ?2, ?3, ?5) \
+                 ON CONFLICT(tenant_id) DO UPDATE \
+                     SET accrued_usd_micros = accrued_usd_micros + ?2, \
+                         updated_at_ms      = ?5 \
+                   WHERE accrued_usd_micros + ?2 <= monthly_budget_usd_micros \
+                 RETURNING accrued_usd_micros",
+                &[
+                    serde_json::Value::String(tenant_id.to_owned()),
+                    serde_json::Value::from(delta_micros),
+                    serde_json::Value::from(seed_anchor_ms),
+                    serde_json::Value::from(DEFAULT_MONTHLY_BUDGET_USD_MICROS),
+                    serde_json::Value::from(updated_at_ms),
+                ],
+            )
+            .await?;
+        // A returned row means either the INSERT created the seed row or the
+        // ON CONFLICT increment stayed under the ceiling. An empty set means
+        // the existing row's increment would breach the ceiling (the INSERT
+        // path always returns its new row).
+        Ok(!rows.is_empty())
+    }
+
     /// Production override (CAA-360 #5/#20): atomic conditional cycle reset in a
     /// SINGLE statement. Rolls ONLY if the row is still stale; a concurrent op
     /// that already advanced the anchor makes this a no-op (idempotent), so two
@@ -691,6 +822,39 @@ mod tests {
         assert!(guard.check("tenant-a", 1_000_000).await.is_none());
         // A second $1 op — still under $5, allowed (accrual carried).
         assert!(guard.check("tenant-a", 1_000_000).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn brand_new_tenant_first_op_over_ceiling_rejects_402() {
+        // Red-team #6: a brand-new tenant (NO row) whose VERY FIRST billable op
+        // exceeds the default $5 tripwire must be rejected 402 — the prior
+        // fresh-row path called `accrue` unconditionally and would have
+        // admitted (and persisted) this over-cap op. A $6 op (> $5 default)
+        // must trip the ceiling on the first op.
+        let store = InMemoryQuotaStore::new(); // empty → brand-new tenant
+        let (guard, _clock) = guard_with(store, T0);
+        let resp = guard
+            .check("tenant-new-fat", 6_000_000)
+            .await
+            .expect("first op over ceiling must be rejected");
+        assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
+    }
+
+    #[tokio::test]
+    async fn brand_new_tenant_first_op_under_ceiling_seeds_and_allows() {
+        // Red-team #6 control: a fresh tenant's first op UNDER the ceiling is
+        // still admitted and seeds the row (accrual carried to the next op).
+        let store = InMemoryQuotaStore::new();
+        let (guard, _clock) = guard_with(store, T0);
+        // First op: $4 (< $5) — allowed, seeds accrued = $4.
+        assert!(guard.check("tenant-new-ok", 4_000_000).await.is_none());
+        // Second op: $2 would project to $6 > $5 — now rejected (proves the
+        // first op's spend was actually persisted, not bypassed).
+        let resp = guard
+            .check("tenant-new-ok", 2_000_000)
+            .await
+            .expect("second op trips the cap");
+        assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
     }
 
     #[tokio::test]

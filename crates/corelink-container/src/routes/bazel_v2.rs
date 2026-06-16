@@ -88,6 +88,11 @@ pub struct BazelRouteState {
     /// REAPI handler, AFTER the scope gate + tenant resolve, BEFORE storage.
     /// `None` in dev/CI (not enforced). Set by `routes::build_with_factory`.
     pub quota: Option<crate::routes::QuotaGate>,
+    /// Optional native PAT possession gate (red-team finding #4 — defense-in-
+    /// depth). `Some` in production; re-runs the full Argon2id Option-B verify
+    /// at the TOP of each billable REAPI handler, AFTER scope+tenant, BEFORE
+    /// storage. `None` in dev/CI (skipped). See [`crate::native_pat_gate`].
+    pub pat_gate: Option<Arc<crate::native_pat_gate::NativePatGate>>,
 }
 
 impl core::fmt::Debug for BazelRouteState {
@@ -132,6 +137,7 @@ pub fn build_handlers_from(
         find_missing,
         // Default OFF; `routes::build_with_factory` sets the D1-backed gate.
         quota: None,
+        pat_gate: None,
     }
 }
 
@@ -259,6 +265,26 @@ async fn quota_reject(
     }
 }
 
+/// Run the native PAT possession gate (finding #4) when it is wired.
+///
+/// Reads the bearer PAT from the `Authorization` header and re-verifies it
+/// (Argon2id, full Option-B pipeline) against the resolved `tenant`. `Some(resp)`
+/// ⇒ REJECT (401 forged/wrong-tenant / 503 verifier fault); `None` ⇒ proceed (or
+/// when the gate is absent in dev/CI). Called at the TOP of each billable
+/// handler, AFTER the scope gate + tenant resolve, BEFORE storage.
+async fn pat_gate_reject(
+    state: &BazelRouteState,
+    tenant: &str,
+    headers: &HeaderMap,
+) -> Option<axum::response::Response> {
+    let gate = state.pat_gate.as_ref()?;
+    let bearer = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    gate.verify(tenant, bearer).await.err()
+}
+
 /// Batch variant of [`quota_reject`] for `findMissingBlobs` (F12 fix —
 /// quota-bypass-by-batching; closed completely by CAA-360 #14/#18).
 ///
@@ -359,6 +385,10 @@ async fn handle_cas_read(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    // Native PAT possession gate (finding #4) — AFTER scope+tenant, BEFORE storage.
+    if let Some(resp) = pat_gate_reject(&state, &tenant, &headers).await {
+        return resp;
+    }
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
     if let Some(resp) = quota_reject(&state, &tenant).await {
         return resp;
@@ -407,6 +437,10 @@ async fn handle_cas_write(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    // Native PAT possession gate (finding #4) — AFTER scope+tenant, BEFORE storage.
+    if let Some(resp) = pat_gate_reject(&state, &tenant, &headers).await {
+        return resp;
+    }
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
     if let Some(resp) = quota_reject(&state, &tenant).await {
         return resp;
@@ -449,6 +483,10 @@ async fn handle_ac_read(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    // Native PAT possession gate (finding #4) — AFTER scope+tenant, BEFORE storage.
+    if let Some(resp) = pat_gate_reject(&state, &tenant, &headers).await {
+        return resp;
+    }
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
     if let Some(resp) = quota_reject(&state, &tenant).await {
         return resp;
@@ -491,6 +529,10 @@ async fn handle_ac_write(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    // Native PAT possession gate (finding #4) — AFTER scope+tenant, BEFORE storage.
+    if let Some(resp) = pat_gate_reject(&state, &tenant, &headers).await {
+        return resp;
+    }
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
     if let Some(resp) = quota_reject(&state, &tenant).await {
         return resp;
@@ -533,6 +575,11 @@ async fn handle_find_missing(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    // Native PAT possession gate (finding #4) — AFTER scope+tenant, BEFORE any
+    // body parse or storage access.
+    if let Some(resp) = pat_gate_reject(&state, &tenant, &headers).await {
+        return resp;
+    }
     let p = principal(&headers);
 
     // Parse + validate the JSON body BEFORE the quota gate so we know the
@@ -1261,6 +1308,44 @@ mod tests {
             .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .header("content-type", "application/json")
             .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // ── finding #4: native PAT possession gate ───────────────────────────────
+
+    /// A Bazel CAS read with the PAT gate wired but NO bearer Authorization
+    /// header is rejected 401 — the native gate fails CLOSED on a missing token
+    /// even though the Worker-set tenant header is present (defense-in-depth on
+    /// the previously HMAC-only Bazel REAPI surface).
+    #[tokio::test]
+    async fn pat_gate_missing_bearer_returns_401() {
+        use crate::adapter_pat::PatRow;
+        use crate::native_pat_gate::testing::verifier_with_row;
+        use crate::native_pat_gate::NativePatGate;
+        use corelink_pat::PatSigningKey;
+
+        let mut state = make_state();
+        let key = Arc::new(PatSigningKey::from_bytes(vec![0x42u8; 32]).expect("key"));
+        let verifier = verifier_with_row(
+            "no-such-token".to_owned(),
+            PatRow {
+                tenant_id: TENANT.to_owned(),
+                pat_hash: String::new(),
+                scope: "cas:rw".to_owned(),
+            },
+            key,
+        );
+        state.pat_gate = Some(Arc::new(NativePatGate::new_for_test(verifier)));
+        let app = router(state);
+        let req = Request::builder()
+            .uri(format!("/bazel/v2/{TENANT}/blobs/{HASH_A}/5"))
+            .method("GET")
+            .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            // No Authorization header — the gate rejects.
+            .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
