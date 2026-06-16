@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CoreLink — Painel de Engenharia: Musk · Thiel · House</title>
+<style>
+  :root{
+    --bg:#0e1116; --card:#171c24; --card2:#1d232d; --ink:#e6edf3; --mut:#9aa7b4;
+    --line:#2a313c; --musk:#5aa9ff; --thiel:#b58bff; --house:#ff8a6b;
+    --crit:#ff5d5d; --maj:#ffb02e; --mod:#ffd966; --min:#7ee0a1; --ok:#5ad19a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:980px;margin:0 auto;padding:34px 22px 90px;}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:-.4px}
+  .sub{color:var(--mut);margin:0 0 26px;font-size:15px}
+  h2{font-size:23px;margin:40px 0 4px;display:flex;align-items:center;gap:10px}
+  .dot{width:13px;height:13px;border-radius:50%}
+  .lede{color:var(--mut);margin:0 0 18px;font-size:15px;border-left:3px solid var(--line);padding-left:12px}
+  .verdict{background:linear-gradient(180deg,#1a2230,#151a22);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin:0 0 10px}
+  .verdict h3{margin:0 0 8px;font-size:16px;color:#cdd9e5}
+  .verdict p{margin:8px 0;color:#d7e0ea}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:18px 20px;margin:14px 0;}
+  .card h3{margin:0 0 4px;font-size:18px;line-height:1.35}
+  .tags{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+  .badge{font-size:11px;font-weight:700;letter-spacing:.4px;padding:2px 8px;border-radius:20px;text-transform:uppercase}
+  .b-crit{background:rgba(255,93,93,.16);color:var(--crit);border:1px solid rgba(255,93,93,.4)}
+  .b-maj{background:rgba(255,176,46,.14);color:var(--maj);border:1px solid rgba(255,176,46,.38)}
+  .b-mod{background:rgba(255,217,102,.12);color:var(--mod);border:1px solid rgba(255,217,102,.34)}
+  .b-min{background:rgba(126,224,161,.12);color:var(--min);border:1px solid rgba(126,224,161,.34)}
+  .b-lens{background:#222a35;color:var(--mut);border:1px solid var(--line)}
+  .row{margin:11px 0 0;padding:11px 13px;border-radius:9px;background:var(--card2)}
+  .row .k{font-size:11px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;color:var(--mut);display:block;margin-bottom:3px}
+  .row.said .k{color:#cdd9e5}
+  .row.op .k{color:var(--ok)}
+  .row.rec .k{color:var(--musk)}
+  .row.alt .k{color:var(--thiel)}
+  .row p{margin:0}
+  code{background:#0b0e13;border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:13px;color:#cfe3ff}
+  .agree{font-weight:700}
+  .agree.y{color:var(--ok)} .agree.p{color:var(--mod)} .agree.n{color:var(--crit)}
+  .foot{margin-top:40px;color:var(--mut);font-size:13px;border-top:1px solid var(--line);padding-top:16px}
+  .pill{display:inline-block;background:#11202b;border:1px solid #1f3a4a;color:#7fd1ff;border-radius:20px;padding:2px 10px;font-size:12px;margin:2px 4px 2px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Painel de Engenharia — Musk · Thiel · House</h1>
+  <p class="sub">CoreLink · 2026-06-16 · auditoria brutal (workflow <code>corelink-engineering-panel</code>, 53 agents) · 30 findings confirmados (1 crítico, 11 major, 11 moderate, 7 minor) · cada um verificado por um cético independente.</p>
+
+  <div class="verdict">
+    <h3>🎯 Veredito geral (síntese do painel)</h3>
+    <p><b>Rigor de plataforma Série-C soldado num produto que ainda não vendeu pro primeiro SMB.</b> A disciplina de engenharia é real e às vezes excelente (invariantes TLA+, content-addressing, cultura de gate) — mas apontada pros problemas errados: tem stack de DR multi-região e árvore de 1.499 specs, enquanto o audit-export entrega um vetor vazio e a suíte de testes do Worker está toda vermelha e gateada por nada.</p>
+    <p><b>Sobre-construído onde não importa, oco onde está o dinheiro.</b> Consertável — mas só se parar de adicionar rigor e fizer as 3-4 alegações que sustentam o valuation virarem verdade.</p>
+  </div>
+
+  <!-- ============ MUSK ============ -->
+  <h2><span class="dot" style="background:var(--musk)"></span>Elon Musk <span style="font-size:14px;color:var(--mut);font-weight:400">— "a melhor peça é nenhuma peça" / deletar / custo / idiot-index</span></h2>
+  <p class="lede"><b>Resumo do Musk:</b> você construiu uma frota de build privada de um laptop só pra um produto de $30/mês, e uma stack de failover multi-região pra um produto single-region que nem lançou. Deleta o que não carrega peso e otimiza só depois.</p>
+
+  <div class="card">
+    <div class="tags"><span class="badge b-maj">major</span><span class="badge b-lens">over-engineering</span></div>
+    <h3>1. Deleta a stack de DR multi-região inteira</h3>
+    <div class="row said"><span class="k">O que ele disse</span><p><code>corelink-replication</code> + <code>-coordinator</code> + <code>-replica-worker</code> + <code>-failover-router</code> + <code>-rollout-controller</code>: uma FSM PRIMARY/HOT_STANDBY/REPLICA resolvendo durabilidade multi-região que o R2 já te dá de graça — e nem está plugada no container.</p></div>
+    <div class="row op"><span class="k">Minha opinião — <span class="agree y">concordo</span></span><p>Real e caro de manter. É generalidade especulativa clássica: resolve um problema que você não tem (single-region) e que a infra (R2) já resolve. Cada cra-te desses é superfície de bug + carga de CI + custo cognitivo.</p></div>
+    <div class="row rec"><span class="k">Minha recomendação</span><p>Mover pra um branch/arquivo morto (<code>archive/</code>) com um ADR de "ressuscitar quando houver requisito multi-região real". Não deletar o histórico — arquivar. Tira do build, tira do gate, tira da cabeça.</p></div>
+    <div class="row alt"><span class="k">Alternativa</span><p>Se você acredita que multi-região é o diferencial de 12 meses, mantenha SÓ a interface/trait (o contrato) compilando e delete as 5 implementações — assim a direção fica documentada sem carregar o peso morto.</p></div>
+  </div>
+
+  <div class="card">
+    <div class="tags"><span class="badge b-maj">major</span><span class="badge b-lens">efficiency · COGS</span></div>
+    <h3>2. 97 workflows de CI, 42 mil linhas, TODOS pregados num Mac só</h3>
+    <div class="row said"><span class="k">O que ele disse</span><p>184 jobs pinados em <code>[self-hosted, mac, corelink-builder]</code>, zero hospedado. Esse Mac É a sua frota de build, e ele cai sob carga (load 336, disco 98-100%, corrompendo o cargo cache). Maior idiot-index do repo.</p></div>
+    <div class="row op"><span class="k">Minha opinião — <span class="agree y">concordo 100%</span></span><p>Isso é literalmente o gargalo que te travou esta madrugada inteira (a "fila idiota de CI"). Não é teoria — é a causa-raiz dos timeouts e dos admin-merges que tive que fazer. O Mac compartilhado como CI é a fragilidade nº1 operacional.</p></div>
+    <div class="row rec"><span class="k">Minha recomendação</span><p>Mover ~90% dos jobs (lint, testes unitários, typecheck, gates de doc) pra <code>ubuntu-latest</code> hospedado. Deixar no Mac SÓ o que exige macOS de verdade (se houver). Custo de runner hospedado &lt;&lt; custo de um Mac que cai. Dogfood: usar o próprio CoreLink como cache do CI.</p></div>
+    <div class="row alt"><span class="k">Alternativa</span><p>Se quer manter self-hosted por custo, separe em DOIS runners (CI ≠ a máquina de dev/deploy) e ponha um limite de concorrência + um guard de disco — assim um storm de CI não derruba teu ambiente de trabalho. Menos ideal, mas mais barato.</p></div>
+  </div>
+
+  <div class="card">
+    <div class="tags"><span class="badge b-maj">major</span><span class="badge b-lens">efficiency</span></div>
+    <h3>3. Container fala com D1 pela REST API pública, sem timeout — e até 5 round-trips por cache-hit</h3>
+    <div class="row said"><span class="k">O que ele disse</span><p>Toda leitura de DB do data-plane é um hop de internet sem deadline; o gateway relê a mesma row de tenant de três jeitos diferentes — até 5 round-trips D1 sequenciais por hit.</p></div>
+    <div class="row op"><span class="k">Minha opinião — <span class="agree y">concordo (ataca a margem)</span></span><p>Num produto que vende latência de cache, hops de internet sem timeout no hot path são veneno duplo: latência pro cliente (perde o "é rápido") e risco de hang sem deadline. Os 5 round-trips são desperdício direto de COGS/latência.</p></div>
+    <div class="row rec"><span class="k">Minha recomendação</span><p>(a) Timeout/deadline obrigatório em todo client D1 (fail-fast). (b) Coalescer as 3 leituras da row de tenant numa só (resolver tenant 1×/request e passar adiante via extension/contexto). Já é uma das correções que o time tocou no plano nativo.</p></div>
+    <div class="row alt"><span class="k">Alternativa</span><p>Cachear a row de tenant no edge (Worker/DO) com TTL curto e injetar no header já resolvida — o container não relê o D1 no caminho quente. Mais rápido ainda, ao custo de uma janela de staleness de segundos.</p></div>
+  </div>
+
+  <div class="card">
+    <div class="tags"><span class="badge b-mod">moderate</span><span class="badge b-lens">over-engineering</span></div>
+    <h3>4. Fragmentação de crates + 1.499 specs / gate de 463 asserts (razão spec:produto invertida)</h3>
+    <div class="row said"><span class="k">O que ele disse</span><p>O charter "trait-abstraction-defer" (161 invocações) divide cada primitiva em pure-logic + -real + -traits → máquina de fragmentação. E 1.499 arquivos de spec atrás de um validador de 463 asserts pra um cache SMB pré-launch.</p></div>
+    <div class="row op"><span class="k">Minha opinião — <span class="agree p">concordo em parte</span></span><p>O Musk está certo que a razão está invertida PRA O ESTÁGIO (pré-launch, 1 dev). Mas cuidado: parte dessa estrutura é o que permite o multi-agente e os gates que acharam esses bugs. Não é puro desperdício — é rigor caro cedo demais.</p></div>
+    <div class="row rec"><span class="k">Minha recomendação</span><p>Não refatorar agora (risco alto, valor baixo pré-launch). Congelar a regra: parar de criar novos crates/specs por reflexo; novas features ficam in-crate até provarem que precisam sair. Deixar a consolidação pra pós-launch.</p></div>
+    <div class="row alt"><span class="k">Alternativa</span><p>Consolidar agressivamente AGORA os crates com 1 consumidor só (fusão mecânica, baixo risco) — reduz a superfície de build/CI sem tocar a lógica. Ataca o sintoma (tempo de build) sem o risco de um refactor profundo.</p></div>
+  </div>
+
+  <!-- ============ THIEL ============ -->
+  <h2><span class="dot" style="background:var(--thiel)"></span>Peter Thiel <span style="font-size:14px;color:var(--mut);font-weight:400">— moat real ou fake / risco escondido / a verdade que ninguém admite</span></h2>
+  <p class="lede"><b>Resumo do Thiel:</b> a tese de valuation ("network-effect: mais tenants → cache mais cheio → mais barato pra todos") <b>não existe no código</b>. E você está vendendo SKUs cujo backend não existe.</p>
+
+  <div class="card">
+    <div class="tags"><span class="badge b-maj">major</span><span class="badge b-lens">moat</span></div>
+    <h3>1. 🧨 O moat de network-effect NÃO EXISTE no código</h3>
+    <div class="row said"><span class="k">O que ele disse</span><p>Cada byte é guardado POR TENANT, por design deliberado (<code>r2_s3.rs</code> key = <code>&lt;region&gt;/&lt;tenant_prefix&gt;/&lt;digest&gt;</code>, <code>cross_tenant_enabled</code> default false). O dedup cross-tenant de deps públicas está <b>explicitamente forfeitado</b> (<code>npm.rs:130</code>: "the network-effect moat ... is forfeited"). As superfícies flagship não compartilham nada.</p></div>
+    <div class="row op"><span class="k">Minha opinião — <span class="agree y">concordo, e é o achado mais importante de todos</span></span><p>Esse é estratégico, não bug. O DD de aquisição chegou na MESMA conclusão independente (DB-4) — dois workflows convergindo nisso é sinal forte. O pitch de "moat de rede" e a realidade do código se contradizem. Isso reseta valuation e narrativa, não é um fix de PR.</p></div>
+    <div class="row rec"><span class="k">Minha recomendação</span><p><b>Decisão tua, não minha.</b> Duas saídas honestas: (A) construir o dedup cross-tenant de verdade pra deps PÚBLICAS/determinísticas (com refcount + provenance/pin contra poisoning) e isolar as privadas — aí o moat vira real; é trabalho de meses. (B) reescrever a narrativa: o diferencial é execução/preço/UX, não arquitetura. Não dá pra vender (A) e entregar isolamento-por-tenant.</p></div>
+    <div class="row alt"><span class="k">Alternativa (caminho do meio)</span><p>Dedup cross-tenant SÓ no namespace <code>_public</code> (deps determinísticas verificáveis: hash bate com o upstream pinado), mantendo blobs privados 100% isolados. Captura ~80% do efeito-rede com ~20% do risco de poisoning — mas exige o pin de upstream no write (ver risco do House/Thiel abaixo).</p></div>
+  </div>
+
+  <div class="card">
+    <div class="tags"><span class="badge b-maj">major</span><span class="badge b-lens">moat / risco</span></div>
+    <h3>2. Vendendo SKUs sem backend (Runners, Team, SSO)</h3>
+    <div class="row said"><span class="k">O que ele disse</span><p>A página de preço vende Runners — <b>zero código de provisionamento</b> no repo. Team/SSO/dashboard renderizam <code>0 / [] / —</code>. E o Stripe cobra por todos.</p></div>
+    <div class="row op"><span class="k">Minha opinião — <span class="agree y">concordo (risco legal/reputacional)</span></span><p>Cobrar por feature que não existe é o tipo de coisa que vira chargeback, review ruim e até problema de consumidor. Não é "roadmap otimista" — é o checkout aceitando dinheiro por nada.</p></div>
+    <div class="row rec"><span class="k">Minha recomendação</span><p>Antes do launch: ou esconder/desabilitar no checkout os SKUs sem backend (Runners/Team/SSO viram "waitlist"/"em breve", não comprável), ou gateá-los atrás de uma flag que retorna 402/"não disponível". Vender só o que entrega.</p></div>
+    <div class="row alt"><span class="k">Alternativa</span><p>Manter comprável como "early access" com expectativa EXPLÍCITA (provisionamento manual por você, SLA de "X dias") — só se você consegue honrar manualmente no volume de launch. Arriscado, mas preserva o sinal de demanda.</p></div>
+  </div>
+
+  <div class="card">
+    <div class="tags"><span class="badge b-maj">major</span><span class="badge b-lens">moat</span></div>
+    <h3>3. Toda superfície é protocolo público padrão → clonável com um repoint de uma linha</h3>
+    <div class="row said"><span class="k">O que ele disse</span><p>CAS/Bazel/Turbo/sccache/OCI/cargo são protocolos públicos. Um concorrente reaponta o client numa linha. A defensibilidade é execução, não arquitetura.</p></div>
+    <div class="row op"><span class="k">Minha opinião — <span class="agree p">concordo, mas com nuance</span></span><p>Verdade que a interface é commodity — mas isso é uma FORÇA de adoção (zero lock-in de cliente, drop-in). O erro é vender "arquitetura defensável"; o certo é assumir que o moat tem que vir de preço+UX+rede (volta no item 1) ou de dados (o cache cheio).</p></div>
+    <div class="row rec"><span class="k">Minha recomendação</span><p>Aceitar a commodity como vantagem de aquisição e investir o moat onde ele pode existir: o efeito-rede do cache público (item 1) + switching cost por integração profunda no CI do cliente. Parar de chamar a arquitetura de moat.</p></div>
+    <div class="row alt"><span class="k">Alternativa</span><p>Criar lock-in suave via features proprietárias em cima do protocolo aberto (analytics de cache, políticas de governança, insights de COGS) — o protocolo entra grátis, o valor que segura está na camada de cima.</p></div>
+  </div>
+
+  <!-- ============ HOUSE ============ -->
+  <h2><span class="dot" style="background:var(--house)"></span>Dr. House <span style="font-size:14px;color:var(--mut);font-weight:400">— "todo mundo mente": docs, testes, comentários, CHANGELOG</span></h2>
+  <p class="lede"><b>Resumo do House:</b> o código diz que é auditado, isolado e capeado. Sob teste, não é nenhum dos três. O maior mentiroso é a suíte de testes que passa por engano.</p>
+
+  <div class="card">
+    <div class="tags"><span class="badge b-crit">CRÍTICO</span><span class="badge b-lens">test-lies / compliance</span></div>
+    <h3>1. Compliance é vila de Potemkin — o audit-export entrega vetor vazio em produção</h3>
+    <div class="row said"><span class="k">O que ele disse</span><p><code>routes.rs:429</code> monta o export via <code>InMemoryAuditExporter</code> (sink de teste), e o boot (<code>main.rs:297</code>) nunca troca por um durável. <code>export_window</code> retorna <code>Vec::new()</code>. Todos os adapters emitem pra sinks <code>InMemory</code> que morrem no restart. <code>GET /v1/audit/export</code> devolve uma janela VAZIA (mas com proof válido) pra todo tenant pagante.</p></div>
+    <div class="row op"><span class="k">Minha opinião — <span class="agree n">concordo — isto é launch-blocker</span></span><p>O DD de aquisição confirmou independente (DB-2). Vender governança/compliance com um log de auditoria que prova o conjunto vazio é a feature sendo falsa na camada que a diferencia. O primeiro pedido de auditor/SAR/incidente detona.</p></div>
+    <div class="row rec"><span class="k">Minha recomendação</span><p>Não lançar a feature de audit até estar real ponta-a-ponta: (1) um sink durável (D1 ou R2 <code>corelink-audit-archive</code>) que os handlers realmente alimentam; (2) o export lendo do mesmo store, trocado no boot como o shadow_factory é; (3) 1 teste de integração: escreve op auditada → derruba estado in-proc → <code>/v1/audit/export</code> retorna a linha com proof. <b>Já vou abrir frente pra isso.</b></p></div>
+    <div class="row alt"><span class="k">Alternativa</span><p>Se o durável completo não cabe no prazo de launch: tirar a claim de compliance da página de preço e marcar o endpoint como beta, em vez de entregar um log falso. Honestidade &gt; feature fake.</p></div>
+  </div>
+
+  <div class="card">
+    <div class="tags"><span class="badge b-maj">major</span><span class="badge b-lens">test-lies</span></div>
+    <h3>2. A suíte de testes do Worker está TODA vermelha e gateada por nada — testes de auth "passam" via 503</h3>
+    <div class="row said"><span class="k">O que ele disse</span><p>56/115 testes de auth+routing e 9/23 de quota falham AGORA em main. Os de tenant-isolation/scope/quota-429 "passam" só porque o Env de teste não tem <code>PAT_SIGNING_KEY</code> → auth fail-closed com 503 ANTES do assert rodar (o teste espera 403/429 e engole o 503). É a maior alavanca de tudo.</p></div>
+    <div class="row op"><span class="k">Minha opinião — <span class="agree n">concordo — esta é a correção de maior alavanca</span></span><p>Brutal e certeiro. Eu mesmo bati nesses "~85 reds pré-existentes" a madrugada toda e os tratei como "não-gateados". O House está certo: o problema não é que são ignorados — é que os que "passam" passam pela razão errada. Isso esconde TODOS os outros bugs de correção (o ceiling fail-open, o audit vazio, o gap do plano nativo) — eles sobrevivem porque nenhum gate verde roda o assert que os pegaria.</p></div>
+    <div class="row rec"><span class="k">Minha recomendação</span><p>1 job de CI Node-capaz, REQUERIDO, rodando o vitest do Worker como gate vermelho-bloqueante — com <code>PAT_SIGNING_KEY</code> real + um <code>TEST_PAT_TOKEN</code> HMAC-válido, pra os testes de auth/isolation/quota exercitarem o branch de verdade em vez de verde-por-503. <b>Frente paralela já.</b></p></div>
+    <div class="row alt"><span class="k">Alternativa</span><p>Se ligar o gate vermelho-bloqueante agora trava o merge de tudo: ligá-lo em modo "report-only" por 1 wave (mostra os reds sem bloquear) enquanto o time zera os reds reais, e SÓ ENTÃO flipa pra bloqueante. Mais lento, mas não congela o repo.</p></div>
+  </div>
+
+  <div class="card">
+    <div class="tags"><span class="badge b-mod">moderate</span><span class="badge b-lens">code-quality</span></div>
+    <h3>3. O teto de $ documentado como "fail-CLOSED" na verdade falha OPEN</h3>
+    <div class="row said"><span class="k">O que ele disse</span><p>O gate de $-ceiling diz "espelha o env-gate fail-CLOSED dos adapters", mas falha OPEN — gasto não-metrado quando o env D1 está ausente.</p></div>
+    <div class="row op"><span class="k">Minha opinião — <span class="agree y">concordo (é drift perigoso)</span></span><p>Comentário mentindo sobre a polaridade do fail é exatamente o que o House caça. Em prod sem o env D1, o teto não protege — gasto ilimitado. Combina com o finding do red-team de que a quota de storage também não enforça.</p></div>
+    <div class="row rec"><span class="k">Minha recomendação</span><p>Decidir a polaridade certa e fazer código + comentário baterem. Pra o caminho de dinheiro, fail-CLOSED (503) quando não dá pra cost-check é o correto — melhor recusar do que servir grátis. Garantir que o env D1 esteja setado nos 5 envs prod (senão o gate é no-op). <b>Vai no bundle de quota.</b></p></div>
+    <div class="row alt"><span class="k">Alternativa</span><p>Fail-OPEN mas com alarme LOUD + métrica (serve, mas grita que está sem cost-control) — aceitável só se disponibilidade &gt; receita pra esse SKU e você monitora. Pro money-path eu não recomendo.</p></div>
+  </div>
+
+  <div class="card">
+    <div class="tags"><span class="badge b-mod">moderate</span><span class="badge b-lens">security</span></div>
+    <h3>4. O extractor "authenticated tenant" não autentica NADA — confia num header de texto plano</h3>
+    <div class="row said"><span class="k">O que ele disse</span><p>No plano nativo CAS/AC, a "autenticação de tenant" confia num header plaintext <code>x-corelink-tenant-id</code> — sem segundo fator (Argon2id só nos adapters).</p></div>
+    <div class="row op"><span class="k">Minha opinião — <span class="agree y">concordo — e o red-team confirmou como exploit</span></span><p>Esse é o mesmo gap que o red-team (#4) provou explorável: vazou <code>PAT_SIGNING_KEY</code> → forja PAT cross-tenant. Convergência tripla (House + red-team + DD R-5).</p></div>
+    <div class="row rec"><span class="k">Minha recomendação</span><p><b>Já corrigido pelo time</b> nesta wave: o agent A1 plugou o <code>NativePatGate</code> (backstop Argon2id via <code>adapter_pat::PatVerifier</code>, com cache por token) no topo de CAS/AC/Bazel/Turbo. Falta integrar + verificar local.</p></div>
+    <div class="row alt"><span class="k">Alternativa</span><p>Se a latência do Argon2id no hot path incomodar mesmo com cache: assinar o header de tenant com um MAC curto no edge (Worker) e verificar no container — mais barato que Argon2id, fecha o gap de header-forjado, mas não cobre o vazamento do signing key tão bem quanto o re-verify.</p></div>
+  </div>
+
+  <div class="foot">
+    <p><b>Onde já estou agindo (frentes de código, em paralelo):</b></p>
+    <span class="pill">native PAT gate → fecha o item House #4 / red-team #4</span>
+    <span class="pill">storage-quota accrual → red-team #1</span>
+    <span class="pill">request-cap + key-split → red-team #5/#3</span>
+    <span class="pill">audit-chain durável (House #1) → abrindo frente</span>
+    <span class="pill">$-ceiling fail-closed (House #3) → bundle quota</span>
+    <span class="pill">CI vitest gate real (House #2) → abrindo frente</span>
+    <p style="margin-top:14px"><b>Decisões que são tuas (não código):</b> o moat (Thiel #1 / DD DB-4) · SKUs sem backend (Thiel #2) · deletar a stack de DR (Musk #1) · migrar CI pro hospedado (Musk #2) · teto de 20 tenants (capacity, do DD).</p>
+    <p style="margin-top:10px;color:#7f8b97">Relatório-fonte: <code>docs/security/2026-06-16-engineering-panel.md</code> (30 findings) · DD: <code>2026-06-16-engineering-dd-brutal.md</code> · red-team: <code>2026-06-16-redteam-brutal.md</code>.</p>
+  </div>
+</div>
+</body>
+</html>
