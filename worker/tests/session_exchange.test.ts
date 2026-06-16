@@ -45,15 +45,43 @@ function makeCtx(): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
-/** CONFIG_DB mock: returns `{ tenant_id }` for a known clerk_user_id, else null. */
-function makeConfigDb(clerkUserToTenant: Map<string, string>): D1Database {
+/**
+ * CONFIG_DB mock.
+ *
+ * Resolves the tenant lookup (clerk_user_id → tenant_id), the per-principal mint
+ * throttle (`session_exchange_throttle` INSERT…RETURNING count), and the pat
+ * persistence INSERT that {@link mintScopedPat} now performs after a successful
+ * container mint. `patInsertCapture` records the binds of that INSERT so a test
+ * can assert the exact columns; `patInsertThrows` simulates an FK/UNIQUE/CHECK
+ * failure (fail-CLOSED path).
+ */
+function makeConfigDb(
+  clerkUserToTenant: Map<string, string>,
+  opts: { patInsertCapture?: { binds?: unknown[] }; patInsertThrows?: boolean } = {},
+): D1Database {
   return {
-    prepare: (_sql: string) => ({
+    prepare: (sql: string) => ({
       bind: (...args: unknown[]) => ({
         first: async <T>() => {
+          // Throttle INSERT…ON CONFLICT…RETURNING count → 1 (under cap).
+          if (sql.includes("session_exchange_throttle")) {
+            return { count: 1 } as T;
+          }
+          // Tenant lookup by clerk_user_id.
           const clerkUserId = args[0] as string;
           const tenantId = clerkUserToTenant.get(clerkUserId);
           return (tenantId ? { tenant_id: tenantId } : null) as T | null;
+        },
+        run: async () => {
+          if (sql.includes("INSERT INTO pat")) {
+            if (opts.patInsertThrows) {
+              throw new Error("D1 pat INSERT constraint failure (FK/UNIQUE/CHECK)");
+            }
+            if (opts.patInsertCapture) {
+              opts.patInsertCapture.binds = args;
+            }
+          }
+          return { success: true } as unknown as D1Result;
         },
       }),
     }),
@@ -96,6 +124,8 @@ function makeEnv(opts: {
   withInternalKey?: boolean;
   mintStatus?: number;
   mintBody?: unknown;
+  patInsertCapture?: { binds?: unknown[] };
+  patInsertThrows?: boolean;
 }): Env {
   return {
     CORELINK_SERVER: makeMintNamespace(opts.captured, {
@@ -103,7 +133,10 @@ function makeEnv(opts: {
       ...(opts.mintBody !== undefined ? { body: opts.mintBody } : {}),
     }),
     ENVIRONMENT: "test",
-    CONFIG_DB: makeConfigDb(opts.clerkUserToTenant),
+    CONFIG_DB: makeConfigDb(opts.clerkUserToTenant, {
+      ...(opts.patInsertCapture !== undefined ? { patInsertCapture: opts.patInsertCapture } : {}),
+      ...(opts.patInsertThrows !== undefined ? { patInsertThrows: opts.patInsertThrows } : {}),
+    }),
     CLERK_SECRET_KEY: opts.withClerkSecret === false ? undefined : CLERK_SECRET,
     CORELINK_INTERNAL_AUTH_KEY: opts.withInternalKey === false ? undefined : INTERNAL_KEY,
   } as Env;
@@ -329,5 +362,94 @@ describe("POST /v1/session/exchange — seam C session→PAT exchange (WP-C)", (
     const resp = await exchangeFetch(env, { Authorization: "Bearer clerk.jwt" });
 
     expect(resp.status).toBe(500);
+  });
+
+  // ── pat-row persistence (the MINTSCOPEDPAT-PERSIST fix) ─────────────────────
+
+  it("PERSIST: on a successful mint, INSERTs the pat row with the right columns", async () => {
+    mockVerifyToken.mockResolvedValue(validClaims("user_persist_ok"));
+    const captured: { req?: Request } = {};
+    const patInsertCapture: { binds?: unknown[] } = {};
+    const env = makeEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_persist_ok", "acme-default"]]),
+      patInsertCapture,
+    });
+
+    const resp = await exchangeFetch(env, { Authorization: "Bearer clerk.jwt" });
+
+    expect(resp.status).toBe(200);
+    expect(patInsertCapture.binds).toBeDefined();
+    const binds = patInsertCapture.binds!;
+    // (pat_id, tenant_id, pat_hash, scope, expires_ms, token_id,
+    //  shown_once_token, [consumed=1 literal], created_ms)
+    expect(binds[0]).toBe(CANNED_MINT.pat_id); // pat_id
+    expect(binds[1]).toBe("acme-default"); // tenant_id (FK)
+    expect(binds[2]).toBe(CANNED_MINT.hash); // pat_hash = the container's Argon2id hash
+    expect(binds[3]).toBe("read-write"); // scope canonicalized from cas:rw
+    expect(binds[4]).toBe(CANNED_MINT.expires_ms); // expires_ms
+    expect(binds[5]).toBe(CANNED_MINT.token_id); // token_id
+    expect(binds[6]).toBe(CANNED_MINT.token_id); // shown_once_token = unique token_id
+    expect(binds[6]).not.toBe(CANNED_MINT.token_plaintext); // NEVER the raw plaintext
+    expect(typeof binds[7]).toBe("number"); // created_ms = Date.now()
+  });
+
+  it("PERSIST: cas:rw is canonicalized to the D1 CHECK-legal 'read-write'", async () => {
+    // The session-exchange caller always passes cas:rw; assert the stored scope
+    // is the CHECK-legal canonical value (a raw 'cas:rw' would fail the CHECK).
+    mockVerifyToken.mockResolvedValue(validClaims("user_scope_map"));
+    const captured: { req?: Request } = {};
+    const patInsertCapture: { binds?: unknown[] } = {};
+    const env = makeEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_scope_map", "acme-default"]]),
+      patInsertCapture,
+    });
+
+    await exchangeFetch(env, { Authorization: "Bearer clerk.jwt" });
+
+    expect(patInsertCapture.binds![3]).toBe("read-write");
+  });
+
+  it("PERSIST: fail-CLOSED 500 + NO token when the pat INSERT throws (FK/UNIQUE/CHECK)", async () => {
+    mockVerifyToken.mockResolvedValue(validClaims("user_persist_fk"));
+    const captured: { req?: Request } = {};
+    const env = makeEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_persist_fk", "acme-default"]]),
+      patInsertThrows: true,
+    });
+
+    const resp = await exchangeFetch(env, { Authorization: "Bearer clerk.jwt" });
+
+    expect(resp.status).toBe(500);
+    const body = (await resp.json()) as Record<string, unknown>;
+    expect(body["error"]).toBe("INTERNAL_ERROR");
+    // The token must NEVER be returned when its row could not be persisted.
+    expect(body["token_plaintext"]).toBeUndefined();
+  });
+
+  it("PERSIST: fail-CLOSED 500 when the mint 200 has no Argon2id hash", async () => {
+    mockVerifyToken.mockResolvedValue(validClaims("user_nohash"));
+    const captured: { req?: Request } = {};
+    // A 200 with all public fields but NO hash → cannot persist an authenticatable
+    // row → fail-CLOSED (never write a hash-less row, never return the token).
+    const env = makeEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_nohash", "acme-default"]]),
+      mintBody: {
+        token_plaintext: "corelink_pat_x.y.z",
+        pat_id: "aaaa1111-2222-3333-4444-555555555555",
+        token_id: "fedcba9876543210",
+        expires_ms: 1893456000000,
+        // hash deliberately omitted
+      },
+    });
+
+    const resp = await exchangeFetch(env, { Authorization: "Bearer clerk.jwt" });
+
+    expect(resp.status).toBe(500);
+    const body = (await resp.json()) as Record<string, unknown>;
+    expect(body["token_plaintext"]).toBeUndefined();
   });
 });
