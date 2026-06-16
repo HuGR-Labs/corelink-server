@@ -31,6 +31,15 @@ Each entry cross-references:
   — idempotent; a no-op if a concurrent op already rolled) followed by the SAME atomic
   `check_and_accrue` as the steady path; brand-new rows seed via the atomic `accrue` (INSERT … ON
   CONFLICT). No boundary path does a non-atomic absolute write anymore.
+- **CAA-360 #14/#18 (completed) — Bazel `findMissingBlobs` charges the monthly $-ceiling for EVERY
+  digest in the batch, uncapped.** The batch quota gate previously charged at most
+  `BATCH_QUOTA_ITERS_CAP = 64` op-units per request via a per-digest loop, so a batch over 64
+  digests (up to the 4096 REAPI cap) was under-charged — a tenant could drive up to 64× more
+  backend existence-probe work per accrued dollar than the cost model assumes. The gate now charges
+  the full `n × cost` in a single atomic `QuotaGuard::check_batch` statement (one D1 round-trip, no
+  iteration cap), via the new `QuotaGate::check_batch`. Adds route tests proving a 150-digest batch
+  trips 402 (would have wrongly passed under the 64-cap) and an 80-digest batch under budget
+  proceeds.
 
 ### Security
 - **CAA-360 #9 (completed) — digest-format gate extended to the native CAS routes.** `GET/PUT/DELETE

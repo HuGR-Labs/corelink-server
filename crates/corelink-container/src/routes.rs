@@ -239,6 +239,25 @@ impl QuotaGate {
         self.guard.check(tenant, self.cost_micros).await
     }
 
+    /// Charge a BATCH of `n` flat-cost billable ops against `tenant`'s
+    /// monthly $-ceiling in a SINGLE check-and-accrue (CAA-360 #14/#18).
+    ///
+    /// `findMissingBlobs` fans one request out to up to `FIND_MISSING_BLOB_CAP`
+    /// (4096) backend existence probes, so charging one flat op cost for the
+    /// whole batch let a tenant drive thousands of probes per accrued dollar
+    /// (the per-request cost model assumes one). The prior fix charged per
+    /// digest in a loop capped at 64 iterations, which still under-charged any
+    /// batch over 64 digests. This delegates to
+    /// [`crate::tenant_quota::QuotaGuard::check_batch`], which charges the FULL
+    /// `n × cost` in one atomic statement — proportional for every batch size,
+    /// no per-digest D1 round-trips, and no iteration cap.
+    ///
+    /// `Some(resp)` ⇒ REJECT (402 over-ceiling / 503 fail-CLOSED); `None` ⇒
+    /// proceed. `n = 0` charges nothing and returns `None`.
+    pub async fn check_batch(&self, tenant: &str, n: usize) -> Option<axum::response::Response> {
+        self.guard.check_batch(tenant, n, self.cost_micros).await
+    }
+
     /// Construct a gate from an explicit guard + per-op cost. Used by route
     /// integration tests to wire a hermetic in-memory quota store (the
     /// production path uses [`Self::from_env`]).

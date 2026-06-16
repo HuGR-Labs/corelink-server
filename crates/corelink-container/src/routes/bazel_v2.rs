@@ -260,49 +260,32 @@ async fn quota_reject(
 }
 
 /// Batch variant of [`quota_reject`] for `findMissingBlobs` (F12 fix —
-/// quota-bypass-by-batching).
+/// quota-bypass-by-batching; closed completely by CAA-360 #14/#18).
 ///
 /// `findMissingBlobs` accepts up to `FIND_MISSING_BLOB_CAP` (4096) digests
 /// per request. Charging a single flat op cost for the whole batch allows a
 /// tenant to drive up to 4096× more backend CAS work per accrued dollar than
-/// the per-request cost model assumes. This function charges one op cost unit
-/// per digest (`n` invocations of `gate.check(tenant)`), making the cost
-/// proportional to the actual fan-out, consistent with the ADR-0068
-/// coarse-tripwire intent.
+/// the per-request cost model assumes. This charges one op cost unit per
+/// digest (`n × cost`), making the cost proportional to the actual fan-out,
+/// consistent with the ADR-0068 coarse-tripwire intent.
 ///
-/// The invocations are sequential and stop on the first rejection, so the
-/// ceiling still fires correctly at the right dollar amount. Each `check`
-/// call uses the atomic check-and-accrue path (F13) so the ceiling is
-/// correct under concurrency.
-///
-/// **Performance note:** each call issues a D1 HTTP round-trip. For very
-/// large batches (e.g. 4096 digests) this can be expensive; a follow-on
-/// task should expose `QuotaGuard::check_batch` via `QuotaGate` so the
-/// whole batch can be charged in a single `n × cost` check-and-accrue
-/// statement (see `crate::tenant_quota::QuotaGuard::check_batch`). The
-/// `BATCH_QUOTA_ITERS_CAP` provides an upper bound on D1 calls per request
-/// to prevent a thundering-herd; excess digests are billed at the cap, not
-/// skipped.
+/// The charge is a SINGLE [`crate::routes::QuotaGate::check_batch`] call,
+/// which issues one atomic check-and-accrue statement (`n × cost` in one D1
+/// round-trip). This replaces the prior per-digest loop that was capped at 64
+/// iterations: that cap under-charged every batch over 64 digests (CAA-360
+/// #14/#18 — up to a 64× dilution at the 4096-digest cap), while also paying
+/// one D1 round-trip per digest. Charging the whole batch in one statement
+/// removes BOTH the enforcement gap and the round-trip cost, so there is no
+/// iteration cap to leak through.
 ///
 /// `n = 0` (empty batch) charges nothing and returns `None` (allow).
-const BATCH_QUOTA_ITERS_CAP: usize = 64;
-
 async fn quota_reject_batch(
     state: &BazelRouteState,
     tenant: &str,
     n: usize,
 ) -> Option<axum::response::Response> {
     let gate = state.quota.as_ref()?;
-    // Cap the D1 round-trips per batch. An n > BATCH_QUOTA_ITERS_CAP batch
-    // is charged at the cap — still proportional up to the cap, and all
-    // small batches are charged exactly.
-    let iters = n.min(BATCH_QUOTA_ITERS_CAP);
-    for _ in 0..iters {
-        if let Some(resp) = gate.check(tenant).await {
-            return Some(resp);
-        }
-    }
-    None
+    gate.check_batch(tenant, n).await
 }
 
 /// Real wall-clock millis for audit-event timestamps (CAA-360 #6). Previously a
@@ -566,10 +549,10 @@ async fn handle_find_missing(
     };
 
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
-    // F12 fix: charge one op-cost unit per digest (proportional to batch
-    // fan-out) rather than one flat unit for the whole batch.
-    // `quota_reject_batch` stops on the first ceiling violation so the trip
-    // point is still correct at the right dollar amount.
+    // F12 + CAA-360 #14/#18: charge one op-cost unit per digest (proportional
+    // to the full batch fan-out, uncapped) in a single atomic check-and-accrue
+    // so the ceiling trips at the right dollar amount with no per-digest
+    // round-trips and no iteration cap to dilute large batches.
     if let Some(resp) = quota_reject_batch(&state, &tenant, digests.len()).await {
         return resp;
     }
@@ -819,6 +802,97 @@ mod tests {
         let missing = v["missingBlobDigests"].as_array().expect("array");
         assert_eq!(missing.len(), 1);
         assert_eq!(missing[0]["hash"], hash_absent);
+    }
+
+    // ── findMissingBlobs — quota charged for EVERY digest (CAA-360 #14/#18) ────
+
+    /// Build a `BazelRouteState` whose quota gate is seeded so the tenant has
+    /// `budget_micros` of headroom at a flat `1` micro-USD per op. Mirrors
+    /// `cas::fixture_over_ceiling`'s wiring (in-memory store + fake clock).
+    fn make_state_with_quota(tenant: &str, budget_micros: i64) -> BazelRouteState {
+        use crate::tenant_quota::{InMemoryQuotaStore, QuotaGuard, QuotaState, QuotaStore};
+        use crate::wall_clock::InMemoryFakeWallClock;
+
+        let mut state = build_handlers();
+        let store = InMemoryQuotaStore::new();
+        store.seed(
+            tenant,
+            QuotaState {
+                monthly_budget_usd_micros: budget_micros,
+                accrued_usd_micros: 0,
+                cycle_anchor_ms: 1_700_000_000_000,
+            },
+        );
+        let store: Arc<dyn QuotaStore> = Arc::new(store);
+        // Clock pinned AT the anchor so the cycle never rolls mid-test.
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(1_700_000_000_000));
+        let guard = Arc::new(QuotaGuard::new(store, clock));
+        state.quota = Some(crate::routes::QuotaGate::new_for_test(guard, 1));
+        state
+    }
+
+    /// A `findMissingBlobs` batch of N > 64 digests must be charged for ALL N
+    /// digests, not the legacy 64-iteration cap. With a budget of 100 micro-USD
+    /// at 1 µ$/op, a 150-digest batch costs 150 µ$ — over the ceiling → 402.
+    /// Under the old `BATCH_QUOTA_ITERS_CAP = 64`, only 64 µ$ would have been
+    /// charged (64 < 100), so the batch would have WRONGLY returned 200. This
+    /// test fails on that regression and passes on the proportional charge.
+    #[tokio::test]
+    async fn find_missing_charges_every_digest_beyond_cap_trips_402() {
+        let state = make_state_with_quota(TENANT, 100);
+        let app = router(state);
+
+        // 150 distinct, canonical 64-hex digests (> the old 64 cap).
+        let blob_digests: Vec<serde_json::Value> = (0..150u32)
+            .map(|i| serde_json::json!({ "hash": format!("{i:064x}"), "sizeBytes": 5 }))
+            .collect();
+        let body = serde_json::json!({ "blobDigests": blob_digests }).to_string();
+
+        let req = Request::builder()
+            .uri(format!("/bazel/v2/{TENANT}/findMissingBlobs"))
+            .method("POST")
+            .header("x-corelink-tenant-id", TENANT)
+            .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::PAYMENT_REQUIRED,
+            "150-digest batch (150 µ$) must exceed the 100 µ$ ceiling — proves \
+             every digest is charged, not a 64-capped subset"
+        );
+    }
+
+    /// Control: a batch that fits under the ceiling proceeds (200), proving the
+    /// batch gate is proportional, not a blanket block. 80 digests = 80 µ$ < 100.
+    #[tokio::test]
+    async fn find_missing_under_ceiling_proceeds() {
+        let state = make_state_with_quota(TENANT, 100);
+        let app = router(state);
+
+        let blob_digests: Vec<serde_json::Value> = (0..80u32)
+            .map(|i| serde_json::json!({ "hash": format!("{i:064x}"), "sizeBytes": 5 }))
+            .collect();
+        let body = serde_json::json!({ "blobDigests": blob_digests }).to_string();
+
+        let req = Request::builder()
+            .uri(format!("/bazel/v2/{TENANT}/findMissingBlobs"))
+            .method("POST")
+            .header("x-corelink-tenant-id", TENANT)
+            .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "80-digest batch (80 µ$) is under the 100 µ$ ceiling — must proceed"
+        );
     }
 
     // ── Cross-tenant denial — CAS read ────────────────────────────────────────
