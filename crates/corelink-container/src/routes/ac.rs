@@ -311,6 +311,17 @@ pub fn router(state: AcRouteState) -> Router {
         .with_state(state)
 }
 
+/// CAA-360 #9: a canonical action/content digest is EXACTLY 64 lowercase hex
+/// chars (BLAKE3-256 / SHA-256). The `:action_digest` / `:hash` path segment is
+/// used to derive the R2 object key, so it MUST be validated BEFORE storage —
+/// a malformed, oversized, or non-hex segment is rejected with 400 and never
+/// reaches the storage layer (defense-in-depth alongside the axum single-segment
+/// route, which already prevents `/`-based path traversal). Lowercase-only keeps
+/// the content-addressing key canonical (no case-variant key collisions).
+pub(crate) fn is_canonical_digest(d: &str) -> bool {
+    d.len() == 64 && d.bytes().all(|b| b.is_ascii_digit() || matches!(b, b'a'..=b'f'))
+}
+
 /// `GET /v1/ac/:tenant/:action_digest` handler — lookup.
 async fn handle_lookup(
     State(state): State<AcRouteState>,
@@ -325,6 +336,10 @@ async fn handle_lookup(
     // storage access (no tenant quoted in the body). Mirrors bazel_v2.
     if tenant != auth.0 {
         return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
+    // CAA-360 #9: reject a malformed action_digest BEFORE it derives an R2 key.
+    if !is_canonical_digest(&action_digest) {
+        return (StatusCode::BAD_REQUEST, "malformed action_digest").into_response();
     }
     // Scope gate (fail-CLOSED): AC lookup is a cache READ — require
     // `cas:rw` or `cas:r`. BEFORE any storage access. NO-OP for `cas:rw`.
@@ -370,6 +385,10 @@ async fn handle_update(
     // match. Deny 403 BEFORE any storage access on mismatch.
     if tenant != auth.0 {
         return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
+    // CAA-360 #9: reject a malformed action_digest BEFORE it derives an R2 key.
+    if !is_canonical_digest(&action_digest) {
+        return (StatusCode::BAD_REQUEST, "malformed action_digest").into_response();
     }
     // Scope gate (fail-CLOSED): AC update is a cache WRITE — require
     // `cas:rw`. A read-only (`cas:r`) token is rejected here. NO-OP for
@@ -419,6 +438,10 @@ async fn handle_delete(
     // Cross-tenant: deny 403 BEFORE any storage access (mirrors lookup).
     if tenant != auth.0 {
         return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
+    // CAA-360 #9: reject a malformed action_digest BEFORE it derives an R2 key.
+    if !is_canonical_digest(&action_digest) {
+        return (StatusCode::BAD_REQUEST, "malformed action_digest").into_response();
     }
     // Scope gate (fail-CLOSED): delete is a cache WRITE — require `cas:rw`.
     if !scope.can_write() {
@@ -543,6 +566,27 @@ fn map_err(e: AcHandlerError) -> axum::response::Response {
 mod tests {
     use super::*;
     use corelink_handler_ac::{AuditEventKind, Sli};
+
+    /// A canonical 64-lowercase-hex action digest for router-level tests — the
+    /// HTTP handlers now reject non-canonical digests with 400 (CAA-360 #9), so
+    /// router tests must use a realistic digest. (Store-level tests call the
+    /// handler trait directly, bypass the route gate, and keep their short stubs.)
+    const VALID_DIGEST: &str =
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    #[test]
+    fn is_canonical_digest_accepts_only_64_lowercase_hex() {
+        // CAA-360 #9: the digest gate must accept exactly 64 lowercase hex and
+        // reject everything else BEFORE it can become an R2 key.
+        assert!(is_canonical_digest(&"0123456789abcdef".repeat(4))); // 64 lc hex
+        assert!(is_canonical_digest(&"a".repeat(64)));
+        assert!(!is_canonical_digest(&"a".repeat(63)), "too short");
+        assert!(!is_canonical_digest(&"a".repeat(65)), "too long");
+        assert!(!is_canonical_digest(&"A".repeat(64)), "uppercase not canonical");
+        assert!(!is_canonical_digest(&"g".repeat(64)), "non-hex char");
+        assert!(!is_canonical_digest("../../../etc/passwd"), "path traversal");
+        assert!(!is_canonical_digest(""), "empty");
+    }
 
     /// `map_err` must map an `Internal` error to 503 ONLY when it carries the
     /// storage-unavailable sentinel; any other `Internal` is a generic 500.
@@ -774,7 +818,7 @@ mod tests {
         let app = router(st);
         let req = Request::builder()
             .method(Method::PUT)
-            .uri(format!("/v1/ac/{TEST_TENANT}/d1"))
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .body(Body::from(b"result".to_vec()))
@@ -790,7 +834,7 @@ mod tests {
         let app = router(st);
         let req = Request::builder()
             .method(Method::PUT)
-            .uri(format!("/v1/ac/{TEST_TENANT}/d1"))
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:r")
             .body(Body::from(b"result".to_vec()))
@@ -812,7 +856,7 @@ mod tests {
         let app = router(fixture_unavailable());
         let req = Request::builder()
             .method(Method::GET)
-            .uri(format!("/v1/ac/{TEST_TENANT}/ghost"))
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:r")
             .body(Body::empty())
@@ -829,7 +873,7 @@ mod tests {
         let app = router(fixture_unavailable());
         let req = Request::builder()
             .method(Method::PUT)
-            .uri(format!("/v1/ac/{TEST_TENANT}/d1"))
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .body(Body::from(b"result".to_vec()))
@@ -846,7 +890,7 @@ mod tests {
         let app = router(st);
         let req = Request::builder()
             .method(Method::GET)
-            .uri(format!("/v1/ac/{TEST_TENANT}/ghost"))
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:r")
             .body(Body::empty())
@@ -862,7 +906,7 @@ mod tests {
         let app = router(st);
         let req = Request::builder()
             .method(Method::GET)
-            .uri(format!("/v1/ac/{TEST_TENANT}/ghost"))
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .body(Body::empty())
             .expect("request");
@@ -906,7 +950,7 @@ mod tests {
         let del = || {
             Request::builder()
                 .method(Method::DELETE)
-                .uri(format!("/v1/ac/{TEST_TENANT}/d1"))
+                .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
                 .header("x-corelink-tenant-id", TEST_TENANT)
                 .header(crate::scope::SCOPE_HEADER, "cas:rw")
                 .body(Body::empty())
@@ -926,7 +970,7 @@ mod tests {
         let app = router(st);
         let req = Request::builder()
             .method(Method::DELETE)
-            .uri(format!("/v1/ac/{TEST_TENANT}/d1"))
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:r")
             .body(Body::empty())
@@ -942,7 +986,7 @@ mod tests {
         let app = router(st);
         let req = Request::builder()
             .method(Method::DELETE)
-            .uri("/v1/ac/victim/d1")
+            .uri("/v1/ac/victim/{VALID_DIGEST}")
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .body(Body::empty())

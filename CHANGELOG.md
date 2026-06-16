@@ -22,6 +22,14 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+- **CAA-360 #9 — strict digest-format gate on the native Action Cache routes.** The
+  `:action_digest` path segment on `GET/PUT/DELETE /v1/ac/:tenant/:action_digest` was used to
+  derive the R2 object key with no charset/length validation. The handlers now reject any digest
+  that is not exactly 64 lowercase hex chars (BLAKE3-256 / SHA-256) with **400** BEFORE it reaches
+  storage — defense-in-depth alongside the axum single-segment route (which already blocks
+  `/`-based traversal). (CAS-hash defense-in-depth is a follow-up.)
+
 ### Fixed
 - **CAA-360 #6 — real audit-event timestamps across CAS / AC / Bazel REAPI / Turbo.** Every audit
   event on these data-plane routes was stamped `now_ms = 0` (a `0u64` stand-in / `const fn now_ms()
