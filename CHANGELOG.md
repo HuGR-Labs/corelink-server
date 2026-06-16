@@ -22,6 +22,14 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+- **GDPR/DSR erasure completeness — `survey_responses` + `tenant_quota` added to the D1 erase-set
+  (CAA-360 audit #4/#11).** Both tables are `tenant_id`-keyed and carried tenant data that a
+  Right-to-Erasure (GDPR Art.17) request left behind: `survey_responses` holds NPS/CSAT PII
+  (`recipient_hash`); `tenant_quota` is the per-tenant spend ledger. Neither is a legal-retention
+  category (distinct from the retained `stripe_*` fiscal records), so both are now erased on a DSR
+  and covered by the post-erase `remaining_rows` verify sweep. Regression test pins their presence.
+
 ### Added
 - **Runners item-1 — per-tenant `max_concurrency` entitlement (Option B).** Migration
   `0070_runners_entitlement` adds the `runners_entitlement` table (keyed on `tenant_id`,
