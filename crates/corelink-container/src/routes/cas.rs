@@ -359,6 +359,11 @@ async fn handle_read(
     if tenant != auth.0 {
         return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
     }
+    // CAA-360 #9: reject a malformed CAS hash BEFORE it derives an R2 key
+    // (defense-in-depth alongside the AC gate; reuses the shared validator).
+    if !super::ac::is_canonical_digest(&hash) {
+        return (StatusCode::BAD_REQUEST, "malformed hash").into_response();
+    }
     // Scope gate (fail-CLOSED): the PAT must carry a cache-READ capability
     // (`cas:rw` or `cas:r`) in the Worker-trusted `x-corelink-scope` header.
     // BEFORE any storage access. Today every prod PAT is `cas:rw` so this is
@@ -428,6 +433,10 @@ async fn handle_write(
     if tenant != auth.0 {
         return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
     }
+    // CAA-360 #9: reject a malformed CAS hash BEFORE it derives an R2 key.
+    if !super::ac::is_canonical_digest(&hash) {
+        return (StatusCode::BAD_REQUEST, "malformed hash").into_response();
+    }
     // Scope gate (fail-CLOSED): the PAT must carry a cache-WRITE capability
     // (`cas:rw`) BEFORE any storage access. A read-only (`cas:r`) token is
     // rejected here. NO-OP for current `cas:rw` traffic.
@@ -476,6 +485,10 @@ async fn handle_delete(
     // Cross-tenant: deny 403 BEFORE any storage access (mirrors read).
     if tenant != auth.0 {
         return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
+    // CAA-360 #9: reject a malformed CAS hash BEFORE it derives an R2 key.
+    if !super::ac::is_canonical_digest(&hash) {
+        return (StatusCode::BAD_REQUEST, "malformed hash").into_response();
     }
     // Scope gate (fail-CLOSED): delete is a cache WRITE — require `cas:rw`.
     if !scope.can_write() {
@@ -899,7 +912,7 @@ mod tests {
         let app = router(fixture_unavailable());
         let req = Request::builder()
             .method(Method::GET)
-            .uri(format!("/v1/cas/{TEST_TENANT}/deadbeef"))
+            .uri(format!("/v1/cas/{TEST_TENANT}/0000000000000000000000000000000000000000000000000000000000000000"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:r")
             .body(Body::empty())
@@ -935,7 +948,7 @@ mod tests {
         let app = router(fixture());
         let req = Request::builder()
             .method(Method::GET)
-            .uri(format!("/v1/cas/{TEST_TENANT}/deadbeef"))
+            .uri(format!("/v1/cas/{TEST_TENANT}/0000000000000000000000000000000000000000000000000000000000000000"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:r")
             .body(Body::empty())
@@ -950,7 +963,7 @@ mod tests {
         let app = router(fixture());
         let req = Request::builder()
             .method(Method::GET)
-            .uri(format!("/v1/cas/{TEST_TENANT}/deadbeef"))
+            .uri(format!("/v1/cas/{TEST_TENANT}/0000000000000000000000000000000000000000000000000000000000000000"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .body(Body::empty())
             .expect("request");
@@ -965,7 +978,7 @@ mod tests {
     /// read.
     #[tokio::test]
     async fn get_erased_hash_returns_410_gone() {
-        const ERASED: &str = "erasedhash01";
+        const ERASED: &str = "1111111111111111111111111111111111111111111111111111111111111111";
         let app = router(fixture_with_tombstone(TEST_TENANT, ERASED));
         let req = Request::builder()
             .method(Method::GET)
@@ -985,7 +998,7 @@ mod tests {
         let app = router(fixture_with_tombstone(TEST_TENANT, "some-other-hash"));
         let req = Request::builder()
             .method(Method::GET)
-            .uri(format!("/v1/cas/{TEST_TENANT}/livehash99"))
+            .uri(format!("/v1/cas/{TEST_TENANT}/0000000000000000000000000000000000000000000000000000000000000000"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:r")
             .body(Body::empty())
@@ -1045,7 +1058,7 @@ mod tests {
         let app = router(fixture_over_ceiling(TEST_TENANT));
         let req = Request::builder()
             .method(Method::GET)
-            .uri(format!("/v1/cas/{TEST_TENANT}/deadbeef"))
+            .uri(format!("/v1/cas/{TEST_TENANT}/0000000000000000000000000000000000000000000000000000000000000000"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:r")
             .body(Body::empty())
@@ -1084,7 +1097,7 @@ mod tests {
         let app = router(st);
         let req = Request::builder()
             .method(Method::GET)
-            .uri(format!("/v1/cas/{TEST_TENANT}/deadbeef"))
+            .uri(format!("/v1/cas/{TEST_TENANT}/0000000000000000000000000000000000000000000000000000000000000000"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:r")
             .body(Body::empty())

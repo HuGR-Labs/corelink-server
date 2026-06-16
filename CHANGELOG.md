@@ -23,6 +23,12 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **CAA-360 #9 (completed) — digest-format gate extended to the native CAS routes.** `GET/PUT/DELETE
+  /v1/cas/:tenant/:hash` now reject a non-canonical `:hash` (not exactly 64 lowercase hex) with 400
+  BEFORE it derives an R2 object key, reusing the shared `is_canonical_digest` validator (the AC
+  routes were gated in the prior PR). The enumeration route (no single hash) is not gated.
+
+### Security
 - **CAA-360 #9 — strict digest-format gate on the native Action Cache routes.** The
   `:action_digest` path segment on `GET/PUT/DELETE /v1/ac/:tenant/:action_digest` was used to
   derive the R2 object key with no charset/length validation. The handlers now reject any digest
