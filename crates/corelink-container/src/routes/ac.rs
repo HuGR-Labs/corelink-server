@@ -449,7 +449,11 @@ async fn handle_update(
         format!("anon@{}", auth.0),
         auth.0.clone(),
         now_ms,
-    );
+    )
+    // Thread the Worker-resolved per-tier storage cap so the decorator seeds a
+    // FRESH `tenant_storage_state` row with the REAL cap (not uncapped `0`).
+    // Absent ⇒ `None` ⇒ fail-CLOSED on an unseeded tenant.
+    .with_storage_quota_bytes(crate::byte_accounting::storage_quota_from_headers(&headers));
     // Storage byte accounting (finding #1 / cluster B+C) is enforced INSIDE
     // `state.update` by the [`crate::byte_accounting::AccountingAcHandler`]
     // decorator (reserve→commit→release at the AC update trait object, shared
@@ -1236,6 +1240,9 @@ mod tests {
             .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            // Worker-injected per-tier cap seeds the fresh row; without it the
+            // reservation fails CLOSED (no cap ⇒ 503). See storage_quota_from_headers.
+            .header(crate::byte_accounting::STORAGE_QUOTA_HEADER, "1000000")
             .body(Body::from(body))
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");

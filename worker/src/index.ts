@@ -23,7 +23,13 @@ import type { D1Database, DurableObjectNamespace, ExecutionContext, ExportedHand
 import { CoreLinkServer } from "./durable_object.js";
 import { RolloutController } from "./rollout_controller.js";
 import { EventLogDO } from "./event_log_do.js";
-import { getTierForTenant, checkStorageQuota, checkRequestQuota } from "./lib/quota.js";
+import {
+  getTierForTenant,
+  checkStorageQuota,
+  checkRequestQuota,
+  storageQuotaHeaderValue,
+  STORAGE_QUOTA_HEADER,
+} from "./lib/quota.js";
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
 import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchange.js";
 import { handleTenantLookup } from "./lib/tenant_lookup.js";
@@ -379,6 +385,13 @@ const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   // forward path. Stripping here means no client can smuggle a forged
   // tenant-id regardless of which path is taken.
   "x-corelink-tenant-id",
+  // Storage-quota seed strip (storage-quota fail-open fix): the Worker is the
+  // SOLE setter of x-corelink-storage-quota-bytes (the tenant's resolved
+  // per-tier storage cap, from QUOTAS[tier].storageBytesMax). The container
+  // seeds a fresh tenant_storage_state row's bytes_quota from it, so a forged
+  // value could let a client seed an arbitrarily-large (or unlimited "0") cap.
+  // Strip any client value on every forward — same posture as the tenant-id.
+  STORAGE_QUOTA_HEADER,
   // F1: the forgeable client-supplied XFF must be stripped on every forward —
   // the container's signup rate-limit now reads the server-trusted
   // x-corelink-client-ip (set by the Worker from cf-connecting-ip), never XFF.
@@ -1931,8 +1944,17 @@ const handler: ExportedHandler<Env> = {
     // availability, byte-adding writes (PUT/POST) fail CLOSED so an outage
     // cannot be used to write past the cap. The DO's CAS quota enforcement
     // (quota_fsm_state) provides the deeper safety net on mutations.
+    //
+    // The resolved per-tier storage cap is also forwarded to the container as
+    // the server-trusted STORAGE_QUOTA_HEADER so the container's byte-accounting
+    // reservation seeds a FRESH tenant_storage_state row with the REAL cap
+    // (not the legacy uncapped `0`). It is set ONLY for a real tenant with a
+    // confirmed tier; `null` (system/anon/pending, or a D1-error tier) ⇒ the
+    // header is omitted and the container fails closed on an unseeded tenant.
+    let storageQuotaHeader: string | null = null;
     if (resolvedTenantId !== "_anonymous" && resolvedTenantId !== "_system" && resolvedTenantId !== "_pending") {
       const quotaTier = await getTierForTenant(env.CONFIG_DB, resolvedTenantId);
+      storageQuotaHeader = storageQuotaHeaderValue(quotaTier);
       // Request-count quota is ENFORCED BY DEFAULT (fail-CLOSED). The monthly
       // per-tenant request cap is a CONTRACTED ceiling, so an unset env var in
       // prod must NOT silently disable it (Cluster D). The gate is an explicit
@@ -2102,6 +2124,14 @@ const handler: ExportedHandler<Env> = {
             h.set("x-corelink-route-kind", route.routeKind);
             h.set("x-corelink-token-prefix", auth.tokenPrefix);
             h.set("x-corelink-tenant-id", resolvedTenantId);
+            // Storage-quota fail-open fix: forward the resolved per-tier storage
+            // cap so the regional container seeds a fresh tenant_storage_state
+            // row with the REAL cap (not uncapped `0`). Omitted when null
+            // (system/anon/pending or D1-error tier) ⇒ container fails closed.
+            // stripClientTrustHeaders above already deleted any client value.
+            if (storageQuotaHeader !== null) {
+              h.set(STORAGE_QUOTA_HEADER, storageQuotaHeader);
+            }
             // H1: forward the D1-resolved PAT scope as a server-trust header.
             // stripClientTrustHeaders above already deleted any client value.
             h.set("x-corelink-scope", auth.scope);
@@ -2148,6 +2178,16 @@ const handler: ExportedHandler<Env> = {
         // Worker auth; the DO MUST NOT trust any client-supplied value for it
         // (overwritten here unconditionally).
         h.set("x-corelink-tenant-id", resolvedTenantId);
+        // Storage-quota fail-open fix: forward the resolved per-tier storage cap
+        // so the container's byte-accounting reservation seeds a fresh
+        // tenant_storage_state row with the REAL cap (not the legacy uncapped
+        // `0`). Omitted when null (system/anon/pending or a D1-error tier) ⇒ the
+        // container fails closed on an unseeded tenant (absence ≠ unlimited).
+        // stripClientTrustHeaders above already deleted any client value (the
+        // Worker is the sole setter — exactly like x-corelink-tenant-id).
+        if (storageQuotaHeader !== null) {
+          h.set(STORAGE_QUOTA_HEADER, storageQuotaHeader);
+        }
         // H1: forward the D1-resolved PAT scope as a server-trust header so the
         // container can ENFORCE it. stripClientTrustHeaders above already deleted
         // any client-supplied x-corelink-scope (the Worker is the sole setter).

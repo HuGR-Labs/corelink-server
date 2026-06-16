@@ -81,10 +81,34 @@ pub struct CasWriteRequest {
     pub caller_tenant: String,
     /// Wall-clock timestamp in unix-millis.
     pub at_unix_ms: u64,
+    /// The tenant's **resolved per-tier storage cap in bytes**, as established
+    /// by the quota-resolution authority (the Worker, via the server-trusted
+    /// `x-corelink-storage-quota-bytes` header) and threaded down to the byte-
+    /// accounting reservation. Semantics (the fresh-row seed source):
+    ///
+    /// - `Some(n)` with `n > 0` — a real finite cap. A fresh
+    ///   `tenant_storage_state` row is seeded with `bytes_quota = n` (NOT the
+    ///   legacy hard-coded `0`, which would mean "unlimited").
+    /// - `Some(0)` — the tenant is on a **genuinely unlimited** tier
+    ///   (enterprise/team); a fresh row is seeded with the `0` sentinel
+    ///   deliberately.
+    /// - `None` — the cap is **indeterminate** for this request (e.g. the
+    ///   header was absent on a non-PAT-resolved surface). A fresh row then
+    ///   FAILS CLOSED — it is NEVER created uncapped. An *existing* row keeps
+    ///   its already-seeded cap (the reservation's UPDATE branch is unaffected).
+    ///
+    /// Defaults to `None` (set explicitly via [`Self::with_storage_quota_bytes`]
+    /// by the route handler that reads the Worker header), so the 30+ existing
+    /// `::new` call sites compile unchanged and inherit the fail-closed default.
+    pub storage_quota_bytes: Option<i64>,
 }
 
 impl CasWriteRequest {
     /// Construct a [`CasWriteRequest`] from its fields.
+    ///
+    /// `storage_quota_bytes` defaults to `None` (indeterminate cap → fail-closed
+    /// on a fresh row); set the resolved cap with
+    /// [`Self::with_storage_quota_bytes`].
     #[must_use]
     pub fn new(
         tenant: impl Into<String>,
@@ -101,7 +125,18 @@ impl CasWriteRequest {
             principal: principal.into(),
             caller_tenant: caller_tenant.into(),
             at_unix_ms,
+            storage_quota_bytes: None,
         }
+    }
+
+    /// Attach the resolved per-tier storage cap (bytes) used to seed a fresh
+    /// `tenant_storage_state` row in the byte-accounting reservation. See
+    /// [`Self::storage_quota_bytes`] for the `Some(n)` / `Some(0)` / `None`
+    /// semantics.
+    #[must_use]
+    pub fn with_storage_quota_bytes(mut self, cap: Option<i64>) -> Self {
+        self.storage_quota_bytes = cap;
+        self
     }
 }
 

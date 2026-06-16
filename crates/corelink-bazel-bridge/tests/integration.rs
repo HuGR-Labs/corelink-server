@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use corelink_bazel_bridge::{
-    adapter::BazelAdapter,
+    adapter::{BazelAdapter, WriteCtx},
     digest::Digest,
     error::BazelBridgeError,
     find_missing::{
@@ -83,7 +83,7 @@ fn end_to_end_cas_get_hit() {
 
     // Write via adapter first.
     adapter
-        .cas_put(TENANT, &digest, bytes.clone(), "ci", TENANT, 1)
+        .cas_put(TENANT, &digest, bytes.clone(), WriteCtx { principal: "ci", caller_tenant: TENANT, at_unix_ms: 1, storage_quota_bytes: Some(0) })
         .expect("put");
 
     // Now parse the REAPI GET URI.
@@ -136,7 +136,7 @@ fn end_to_end_cas_put_via_upload_uri() {
     };
     assert_eq!(upload_id, uuid);
     adapter
-        .cas_put(&instance, &digest, bytes.clone(), "ci", TENANT, 0)
+        .cas_put(&instance, &digest, bytes.clone(), WriteCtx { principal: "ci", caller_tenant: TENANT, at_unix_ms: 0, storage_quota_bytes: Some(0) })
         .expect("put");
 
     // Verify with a GET.
@@ -164,7 +164,7 @@ fn end_to_end_cas_put_size_mismatch_rejected() {
         other => panic!("{other:?}"),
     };
     let err = adapter
-        .cas_put(&instance, &digest, bytes, "ci", TENANT, 0)
+        .cas_put(&instance, &digest, bytes, WriteCtx { principal: "ci", caller_tenant: TENANT, at_unix_ms: 0, storage_quota_bytes: Some(0) })
         .expect_err("size mismatch");
     assert!(matches!(err, BazelBridgeError::SizeMismatch { .. }));
 }
@@ -184,7 +184,7 @@ fn end_to_end_ac_put_and_get_via_uri() {
         other => panic!("{other:?}"),
     };
     adapter
-        .ac_put(&instance, &digest, payload.clone(), "ci", TENANT, 0)
+        .ac_put(&instance, &digest, payload.clone(), WriteCtx { principal: "ci", caller_tenant: TENANT, at_unix_ms: 0, storage_quota_bytes: Some(0) })
         .expect("ac put");
 
     // Read.
@@ -309,7 +309,7 @@ fn end_to_end_ac_put_cross_tenant_denied() {
     let adapter = make_adapter();
     let digest = Digest::new(HASH_B, 0).expect("digest");
     let err = adapter
-        .ac_put("victim", &digest, vec![], "attacker", "attacker_corp", 0)
+        .ac_put("victim", &digest, vec![], WriteCtx { principal: "attacker", caller_tenant: "attacker_corp", at_unix_ms: 0, storage_quota_bytes: Some(0) })
         .expect_err("cross-tenant");
     assert!(matches!(err, BazelBridgeError::CrossTenantDenied { .. }));
 }

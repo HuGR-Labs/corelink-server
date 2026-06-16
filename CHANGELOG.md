@@ -23,6 +23,30 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **Storage-quota fail-OPEN on a fresh/unsynced tenant — fresh-row cap source (cluster N4).**
+  The container's storage byte-accounting reservation
+  (`crates/corelink-container/src/byte_accounting.rs`) seeded a **fresh**
+  `tenant_storage_state` row with `bytes_quota = 0`, and its cap-check treats
+  `0` as **UNLIMITED** — so a brand-new (or not-yet-synced) tenant was **uncapped**
+  until some external sync wrote the real cap, and `0` was conflated with the
+  genuine enterprise-unlimited sentinel. A fresh row is now seeded with the
+  tenant's **real per-tier storage cap**, sourced from the quota-resolution
+  authority (the Worker): on every data-plane write-forward the Worker injects the
+  resolved cap as a new **server-trusted** header `x-corelink-storage-quota-bytes`
+  (value = `QUOTAS[tier].storageBytesMax`; genuine-unlimited tiers send `"0"`),
+  added to `stripClientTrustHeaders` so a client can never forge it (sole-setter,
+  exactly like `x-corelink-tenant-id`). The container threads the cap to the
+  reservation, which seeds the fresh row's `bytes_quota` with it; `0` is now
+  reserved for genuine-unlimited ONLY. When the row is missing AND no cap is
+  available the reservation **fails CLOSED** (503) — absence is never treated as
+  unlimited (matching the canonical billing crate's missing-row posture). Existing
+  rows (already seeded with a real cap) are unaffected.
+  (`worker/src/lib/quota.ts` `storageQuotaHeaderValue`, `worker/src/index.ts`
+  inject+strip; `crates/corelink-handler-cas` + `corelink-handler-ac`
+  `with_storage_quota_bytes`; `corelink-bazel-bridge` `WriteCtx`; container
+  `cas.rs` / `ac.rs` / `bazel_v2.rs` / `turbo_v8.rs` thread the header. Regression:
+  Rust fresh-capped over/under-cap, genuine-unlimited, indeterminate fail-closed +
+  decorator nets; worker vitest cap-injected + strip-list.)
 - **Cluster D/E/G — fail-closed request quota, error-string scrub, mint rate limit (cycle-2 nuclear red-team).**
   - **Cluster D — monthly request-count quota failed OPEN in prod.** The Worker gated
     enforcement on `REQUEST_QUOTA_ENABLED === "true"`, which is unset in production, so

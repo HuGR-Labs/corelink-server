@@ -543,10 +543,24 @@ async fn handle_put(
     // fail-CLOSED. (Turbo's KV is opaque-keyed with no durable/idempotent bit, so
     // every stored PUT is charged; an inner failure releases the reservation.)
     if let Some(acc) = state.bytes.as_ref() {
-        match acc.accrue(&caller_tenant, byte_len).await {
+        // The Worker-resolved per-tier cap (server-trusted header) seeds a fresh
+        // `tenant_storage_state` row; `None` ⇒ fail-CLOSED on an unseeded tenant.
+        let quota_seed = crate::byte_accounting::storage_quota_from_headers(&headers);
+        match acc.accrue(&caller_tenant, byte_len, quota_seed).await {
             Ok(crate::byte_accounting::AccrueOutcome::Accrued) => {}
             Ok(crate::byte_accounting::AccrueOutcome::OverCap) => {
                 return (StatusCode::PAYMENT_REQUIRED, "storage quota exceeded").into_response();
+            }
+            Ok(crate::byte_accounting::AccrueOutcome::Indeterminate) => {
+                tracing::error!(
+                    tenant = %caller_tenant,
+                    "turbo: storage cap indeterminate for an unseeded tenant; failing closed"
+                );
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "storage accounting unavailable",
+                )
+                    .into_response();
             }
             Err(e) => {
                 tracing::error!(error = %e, "turbo: byte reservation failed; failing closed");

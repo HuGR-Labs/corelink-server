@@ -34,6 +34,26 @@ use corelink_handler_cas::{
 use crate::digest::Digest;
 use crate::error::BazelBridgeError;
 
+/// Caller context for a REAPI v2 write (`cas_put` / `ac_put`).
+///
+/// Groups the per-call metadata that travels alongside the payload so the write
+/// methods stay within the argument-count budget (one cohesive context value
+/// instead of four loose params).
+#[derive(Clone, Copy, Debug)]
+pub struct WriteCtx<'a> {
+    /// Already-authenticated caller principal.
+    pub principal: &'a str,
+    /// Caller's authenticated tenant (must equal the `instance`).
+    pub caller_tenant: &'a str,
+    /// Wall-clock timestamp in unix-millis.
+    pub at_unix_ms: u64,
+    /// The tenant's Worker-resolved per-tier storage cap in bytes, threaded to
+    /// the byte-accounting reservation to seed a FRESH `tenant_storage_state`
+    /// row. `None` ⇒ indeterminate ⇒ fail-CLOSED on an unseeded tenant; `Some(0)`
+    /// ⇒ genuine-unlimited tier. See `CasWriteRequest::with_storage_quota_bytes`.
+    pub storage_quota_bytes: Option<i64>,
+}
+
 /// REAPI v2 adapter wrapping the four CoreLink handler traits.
 ///
 /// Callers obtain one by calling [`BazelAdapter::new`]; the adapter is
@@ -113,11 +133,9 @@ impl BazelAdapter {
         instance: &str,
         digest: &Digest,
         bytes: Vec<u8>,
-        principal: &str,
-        caller_tenant: &str,
-        at_unix_ms: u64,
+        ctx: WriteCtx<'_>,
     ) -> Result<(), BazelBridgeError> {
-        check_tenant(instance, caller_tenant)?;
+        check_tenant(instance, ctx.caller_tenant)?;
         // INV-BAZEL-DIGEST-VALIDATE: size_bytes MUST match actual bytes len.
         let actual_len = bytes.len() as u64;
         if actual_len != digest.size_bytes {
@@ -126,14 +144,18 @@ impl BazelAdapter {
                 actual: actual_len,
             });
         }
+        // Thread the Worker-resolved per-tier storage cap into the reservation so
+        // the byte-accounting decorator seeds a fresh row with the real cap;
+        // `None` ⇒ fail-CLOSED on an unseeded tenant (never uncapped).
         let req = CasWriteRequest::new(
             instance,
             &digest.hash,
             bytes,
-            principal,
-            caller_tenant,
-            at_unix_ms,
-        );
+            ctx.principal,
+            ctx.caller_tenant,
+            ctx.at_unix_ms,
+        )
+        .with_storage_quota_bytes(ctx.storage_quota_bytes);
         self.cas_write
             .write(req)
             .map(|_| ())
@@ -183,19 +205,20 @@ impl BazelAdapter {
         instance: &str,
         digest: &Digest,
         payload: Vec<u8>,
-        principal: &str,
-        caller_tenant: &str,
-        at_unix_ms: u64,
+        ctx: WriteCtx<'_>,
     ) -> Result<(), BazelBridgeError> {
-        check_tenant(instance, caller_tenant)?;
+        check_tenant(instance, ctx.caller_tenant)?;
+        // Thread the Worker-resolved per-tier cap (see `cas_put`); `None` ⇒
+        // fail-CLOSED on an unseeded tenant.
         let req = AcUpdateRequest::new(
             instance,
             &digest.hash,
             payload,
-            principal,
-            caller_tenant,
-            at_unix_ms,
-        );
+            ctx.principal,
+            ctx.caller_tenant,
+            ctx.at_unix_ms,
+        )
+        .with_storage_quota_bytes(ctx.storage_quota_bytes);
         self.ac_update
             .update(req)
             .map(|_| ())
@@ -297,7 +320,7 @@ mod tests {
         let hash = fake_hash(bytes);
         let digest = Digest::new(&hash, bytes.len() as u64).expect("digest");
         adapter
-            .cas_put(tenant, &digest, bytes.to_vec(), "p1", tenant, 0)
+            .cas_put(tenant, &digest, bytes.to_vec(), WriteCtx { principal: "p1", caller_tenant: tenant, at_unix_ms: 0, storage_quota_bytes: Some(0) })
             .expect("seed cas");
         digest
     }
@@ -332,7 +355,7 @@ mod tests {
         // Claim size_bytes = 10 but actual len = 5.
         let digest = Digest::new(&hash, 10).expect("digest");
         let err = adapter
-            .cas_put(TENANT, &digest, bytes, "p1", TENANT, 0)
+            .cas_put(TENANT, &digest, bytes, WriteCtx { principal: "p1", caller_tenant: TENANT, at_unix_ms: 0, storage_quota_bytes: Some(0) })
             .expect_err("size mismatch");
         assert!(matches!(err, BazelBridgeError::SizeMismatch { .. }));
     }
@@ -355,7 +378,7 @@ mod tests {
         let digest = Digest::new(&hash, 8).expect("digest");
         let payload = b"action_result_bytes".to_vec();
         adapter
-            .ac_put(TENANT, &digest, payload.clone(), "p1", TENANT, 0)
+            .ac_put(TENANT, &digest, payload.clone(), WriteCtx { principal: "p1", caller_tenant: TENANT, at_unix_ms: 0, storage_quota_bytes: Some(0) })
             .expect("ac put");
         let got = adapter
             .ac_get(TENANT, &digest, "p1", TENANT, 0)
@@ -380,7 +403,7 @@ mod tests {
         let hash = "e".repeat(64);
         let digest = Digest::new(&hash, 0).expect("digest");
         let err = adapter
-            .ac_put("victim", &digest, vec![], "p1", "attacker", 0)
+            .ac_put("victim", &digest, vec![], WriteCtx { principal: "p1", caller_tenant: "attacker", at_unix_ms: 0, storage_quota_bytes: Some(0) })
             .expect_err("denied");
         assert!(matches!(err, BazelBridgeError::CrossTenantDenied { .. }));
     }
@@ -404,7 +427,7 @@ mod tests {
         let hash = fake_hash(&bytes);
         let digest = Digest::new(&hash, 1).expect("digest");
         let err = adapter
-            .cas_put(TENANT, &digest, bytes, "p1", TENANT, 0)
+            .cas_put(TENANT, &digest, bytes, WriteCtx { principal: "p1", caller_tenant: TENANT, at_unix_ms: 0, storage_quota_bytes: Some(0) })
             .expect_err("audit fail");
         assert!(matches!(err, BazelBridgeError::AuditFailed(_)));
     }

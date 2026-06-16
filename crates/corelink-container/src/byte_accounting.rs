@@ -81,14 +81,51 @@ pub fn region_from_env() -> String {
     crate::storage::env_or("R2_CAS_REGION", "iad")
 }
 
+/// Name of the **server-trusted** request header carrying the tenant's resolved
+/// per-tier storage cap in bytes, set SOLELY by the Worker (the quota-resolution
+/// authority) on every data-plane write-forward and stripped from any client-
+/// supplied value (`stripClientTrustHeaders`), exactly like `x-corelink-tenant-id`.
+///
+/// Value semantics (parsed by [`storage_quota_from_headers`]):
+/// - a non-negative integer string `"n"` → `Some(n)` (`"0"` = genuine-unlimited);
+/// - absent / empty / unparseable → `None` (indeterminate → fail-closed on a
+///   fresh row).
+pub const STORAGE_QUOTA_HEADER: &str = "x-corelink-storage-quota-bytes";
+
+/// Parse the Worker-set [`STORAGE_QUOTA_HEADER`] into a cap to seed a fresh
+/// `tenant_storage_state` row. Returns `None` (indeterminate) when the header is
+/// absent, empty, non-ASCII-decodable, not a valid `i64`, or negative — every
+/// such case fails CLOSED on a fresh row rather than seeding it uncapped.
+#[must_use]
+pub fn storage_quota_from_headers(headers: &axum::http::HeaderMap) -> Option<i64> {
+    let raw = headers.get(STORAGE_QUOTA_HEADER)?.to_str().ok()?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    match raw.parse::<i64>() {
+        Ok(n) if n >= 0 => Some(n),
+        _ => None,
+    }
+}
+
 /// Outcome of an [`ByteAccountant::accrue`] attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccrueOutcome {
-    /// The bytes were accrued (under the cap, or the row is uncapped).
+    /// The bytes were accrued (under the cap, or the row is genuinely uncapped).
     Accrued,
     /// The accrual would push `bytes_used` past `bytes_quota` (the cap tripped).
-    /// The caller MUST reject the write (the bytes were NOT counted).
+    /// The caller MUST reject the write (the bytes were NOT counted) → HTTP 402.
     OverCap,
+    /// The reservation could NOT be resolved because the cap was **indeterminate**
+    /// for a tenant with no existing `tenant_storage_state` row: there is no
+    /// prior row to read a cap from AND the caller supplied no resolved cap
+    /// (`storage_quota_bytes == None`). We FAIL CLOSED rather than seed an
+    /// uncapped row — a fresh/unsynced tenant must NEVER be treated as unlimited
+    /// (only a genuine unlimited-tier tenant, which the caller signals with an
+    /// explicit `Some(0)`). The caller maps this to HTTP 503 (fail-closed),
+    /// matching the canonical billing crate's `TenantStorageStateMissing`
+    /// posture. (`Some(n)` callers never see this — they seed the fresh row.)
+    Indeterminate,
 }
 
 /// Backing store for the per-tenant byte counter.
@@ -100,19 +137,32 @@ pub enum AccrueOutcome {
 #[async_trait]
 pub trait ByteStore: std::fmt::Debug + Send + Sync {
     /// ATOMIC check-and-accrue: add `bytes` to the `(tenant, region)` row's
-    /// `bytes_used`, seeding a fresh uncapped row when none exists, ONLY IF the
-    /// row is uncapped (`bytes_quota = 0`) or the result stays within
-    /// `bytes_quota`.
+    /// `bytes_used`, gated by the cap.
+    ///
+    /// `quota_seed` carries the tenant's resolved per-tier storage cap, used
+    /// ONLY to seed a **fresh** row (the INSERT branch); an existing row keeps
+    /// its already-stored `bytes_quota` (the UPDATE branch):
+    ///
+    /// - `Some(n)`, `n > 0` — a fresh row is seeded with `bytes_quota = n` (the
+    ///   real cap, NOT the legacy hard-coded `0` that meant "unlimited"). The
+    ///   accrual is applied iff it stays within the cap.
+    /// - `Some(0)` — a genuinely-unlimited tier: a fresh row is seeded with the
+    ///   `0` sentinel and the accrual always applies.
+    /// - `None` — the cap is **indeterminate**. An *existing* row accrues against
+    ///   its stored cap as normal; a **missing** row must NOT be created (we
+    ///   never seed an uncapped row from absence) → `Indeterminate` (fail-closed).
     ///
     /// Returns:
     /// - `Ok(AccrueOutcome::Accrued)` — applied;
     /// - `Ok(AccrueOutcome::OverCap)` — refused (over the cap; counter unchanged);
+    /// - `Ok(AccrueOutcome::Indeterminate)` — refused (no row + no cap; fail-closed);
     /// - `Err(_)` — transport / decode error (the caller fails CLOSED).
     async fn check_and_accrue(
         &self,
         tenant_id: &str,
         region: &str,
         bytes: i64,
+        quota_seed: Option<i64>,
         now_ms: i64,
     ) -> Result<AccrueOutcome, String>;
 
@@ -146,24 +196,35 @@ impl ByteAccountant {
         Self { store, region }
     }
 
-    /// Accrue `bytes` of newly-written storage against `tenant`.
+    /// Accrue `bytes` of newly-written storage against `tenant`, seeding a fresh
+    /// `tenant_storage_state` row with `quota_seed` (the tenant's resolved
+    /// per-tier cap) when none exists.
     ///
     /// Called by a billable write handler AFTER the store write committed and
     /// BEFORE returning success. A non-positive `bytes` (e.g. an idempotent
     /// re-write that stored nothing new) accrues nothing and returns
     /// [`AccrueOutcome::Accrued`].
     ///
+    /// See [`ByteStore::check_and_accrue`] for the `quota_seed` semantics
+    /// (`Some(n)` finite cap / `Some(0)` genuine-unlimited / `None`
+    /// indeterminate → fail-closed on a fresh row).
+    ///
     /// # Errors
     ///
     /// Returns `Err(String)` on a store transport / decode error; the caller
     /// fails CLOSED (503).
-    pub async fn accrue(&self, tenant: &str, bytes: i64) -> Result<AccrueOutcome, String> {
+    pub async fn accrue(
+        &self,
+        tenant: &str,
+        bytes: i64,
+        quota_seed: Option<i64>,
+    ) -> Result<AccrueOutcome, String> {
         if bytes <= 0 {
             return Ok(AccrueOutcome::Accrued);
         }
         let now_ms = current_unix_ms();
         self.store
-            .check_and_accrue(tenant, &self.region, bytes, now_ms)
+            .check_and_accrue(tenant, &self.region, bytes, quota_seed, now_ms)
             .await
     }
 
@@ -241,43 +302,115 @@ impl ByteStore for D1ByteStore {
         tenant_id: &str,
         region: &str,
         bytes: i64,
+        quota_seed: Option<i64>,
         now_ms: i64,
     ) -> Result<AccrueOutcome, String> {
-        // Atomic check-and-accrue. On a fresh row the INSERT seeds an UNCAPPED
-        // row (`bytes_quota = 0`) at `bytes_used = bytes` — a single op is far
-        // below any realistic cap and the DO refreshes the real cap on its next
-        // sweep. On conflict the increment happens DB-side, gated by the
-        // serialized cap predicate so concurrent over-cap writes cannot both
-        // pass. A non-empty result set ⇒ the predicate matched (accrued); an
-        // empty set ⇒ the cap tripped (refused, counter unchanged).
-        let rows = self
-            .client
-            .query(
-                "INSERT INTO tenant_storage_state \
-                   (tenant_id, region, bytes_used, bytes_quota, \
-                    bytes_used_updated_at_ms, last_synced_at_ms, \
-                    bytes_reclaimed_lifetime, created_at_ms, updated_at_ms) \
-                 VALUES (?1, ?2, ?3, 0, ?4, ?4, 0, ?4, ?4) \
-                 ON CONFLICT(tenant_id, region) DO UPDATE SET \
-                   bytes_used               = bytes_used + ?3, \
-                   bytes_used_updated_at_ms = ?4, \
-                   updated_at_ms            = ?4 \
-                 WHERE tenant_storage_state.bytes_quota = 0 \
-                    OR tenant_storage_state.bytes_used + ?3 \
-                       <= tenant_storage_state.bytes_quota \
-                 RETURNING bytes_used",
-                &[
-                    serde_json::Value::String(tenant_id.to_owned()),
-                    serde_json::Value::String(region.to_owned()),
-                    serde_json::Value::from(bytes),
-                    serde_json::Value::from(now_ms),
-                ],
-            )
-            .await?;
-        if rows.is_empty() {
-            Ok(AccrueOutcome::OverCap)
-        } else {
-            Ok(AccrueOutcome::Accrued)
+        match quota_seed {
+            // ── Resolved cap (`Some`): atomic check-and-accrue UPSERT ─────────
+            // On a FRESH row the INSERT seeds `bytes_quota = ?5` — the tenant's
+            // REAL per-tier cap (`?5 = 0` ONLY for a genuinely-unlimited tier;
+            // a fresh row is therefore NEVER created uncapped from absence). On
+            // conflict the increment happens DB-side, gated by the serialized
+            // cap predicate (`bytes_quota = 0` unlimited OR projected total
+            // within cap) so concurrent over-cap writes cannot both pass.
+            //
+            // A FRESH-row INSERT seeding a `?5`-byte cap with a `bytes`-sized
+            // first write can itself be over that cap — the INSERT would then
+            // create a row already past its own cap. To keep the fresh-row check
+            // serialized too, the INSERT is guarded: when the very first write
+            // exceeds a finite seed cap, no row is created and the result set is
+            // empty ⇒ OverCap (nothing committed). We express that by only
+            // INSERTing when `?5 = 0` (unlimited) or `bytes <= ?5`; otherwise
+            // the statement degrades to a conflict-less no-op (empty set).
+            //
+            // A non-empty result set ⇒ accrued; an empty set ⇒ the cap tripped
+            // (existing-row UPDATE predicate failed, or fresh-row INSERT guard
+            // failed) — refused, counter unchanged.
+            Some(seed) => {
+                let rows = self
+                    .client
+                    .query(
+                        "INSERT INTO tenant_storage_state \
+                           (tenant_id, region, bytes_used, bytes_quota, \
+                            bytes_used_updated_at_ms, last_synced_at_ms, \
+                            bytes_reclaimed_lifetime, created_at_ms, updated_at_ms) \
+                         SELECT ?1, ?2, ?3, ?5, ?4, ?4, 0, ?4, ?4 \
+                           WHERE ?5 = 0 OR ?3 <= ?5 \
+                         ON CONFLICT(tenant_id, region) DO UPDATE SET \
+                           bytes_used               = bytes_used + ?3, \
+                           bytes_used_updated_at_ms = ?4, \
+                           updated_at_ms            = ?4 \
+                         WHERE tenant_storage_state.bytes_quota = 0 \
+                            OR tenant_storage_state.bytes_used + ?3 \
+                               <= tenant_storage_state.bytes_quota \
+                         RETURNING bytes_used",
+                        &[
+                            serde_json::Value::String(tenant_id.to_owned()),
+                            serde_json::Value::String(region.to_owned()),
+                            serde_json::Value::from(bytes),
+                            serde_json::Value::from(now_ms),
+                            serde_json::Value::from(seed),
+                        ],
+                    )
+                    .await?;
+                if rows.is_empty() {
+                    Ok(AccrueOutcome::OverCap)
+                } else {
+                    Ok(AccrueOutcome::Accrued)
+                }
+            }
+            // ── Indeterminate cap (`None`): UPDATE-ONLY, never seed a row ──────
+            // With no resolved cap we must NOT create a row (that would seed it
+            // uncapped from absence — the very fail-open this fix closes). We run
+            // an UPDATE-only against the existing row, gated by the SAME cap
+            // predicate. Outcomes:
+            //   - one row back ⇒ accrued against the existing (already-seeded) cap;
+            //   - empty back   ⇒ either the row is MISSING (→ Indeterminate,
+            //     fail-closed) or it EXISTS but the cap tripped (→ OverCap). We
+            //     disambiguate with one keyed existence read on the empty path.
+            None => {
+                let rows = self
+                    .client
+                    .query(
+                        "UPDATE tenant_storage_state SET \
+                           bytes_used               = bytes_used + ?3, \
+                           bytes_used_updated_at_ms = ?4, \
+                           updated_at_ms            = ?4 \
+                         WHERE tenant_id = ?1 AND region = ?2 \
+                           AND (bytes_quota = 0 \
+                                OR bytes_used + ?3 <= bytes_quota) \
+                         RETURNING bytes_used",
+                        &[
+                            serde_json::Value::String(tenant_id.to_owned()),
+                            serde_json::Value::String(region.to_owned()),
+                            serde_json::Value::from(bytes),
+                            serde_json::Value::from(now_ms),
+                        ],
+                    )
+                    .await?;
+                if !rows.is_empty() {
+                    return Ok(AccrueOutcome::Accrued);
+                }
+                // Empty: disambiguate missing-row (fail-closed) from cap-tripped.
+                let existing = self
+                    .client
+                    .query(
+                        "SELECT bytes_used FROM tenant_storage_state \
+                           WHERE tenant_id = ?1 AND region = ?2",
+                        &[
+                            serde_json::Value::String(tenant_id.to_owned()),
+                            serde_json::Value::String(region.to_owned()),
+                        ],
+                    )
+                    .await?;
+                if existing.is_empty() {
+                    // No row AND no resolved cap → never seed uncapped.
+                    Ok(AccrueOutcome::Indeterminate)
+                } else {
+                    // Row exists but the cap predicate failed → over the cap.
+                    Ok(AccrueOutcome::OverCap)
+                }
+            }
         }
     }
 
@@ -359,10 +492,17 @@ pub const ACCT_UNAVAILABLE_SENTINEL: &str = "storage-accounting-unavailable: ";
 
 /// Bridge an async accountant call onto the sync handler trait by blocking on the
 /// current tokio runtime — the same `block_in_place` + `block_on` pattern the R2
-/// handlers use for their async S3 I/O.
-fn block_on_accrue(acc: &ByteAccountant, tenant: &str, bytes: i64) -> Result<AccrueOutcome, String> {
+/// handlers use for their async S3 I/O. `quota_seed` is the request's resolved
+/// per-tier cap (used to seed a fresh `tenant_storage_state` row; see
+/// [`ByteStore::check_and_accrue`]).
+fn block_on_accrue(
+    acc: &ByteAccountant,
+    tenant: &str,
+    bytes: i64,
+    quota_seed: Option<i64>,
+) -> Result<AccrueOutcome, String> {
     let handle = tokio::runtime::Handle::current();
-    tokio::task::block_in_place(|| handle.block_on(acc.accrue(tenant, bytes)))
+    tokio::task::block_in_place(|| handle.block_on(acc.accrue(tenant, bytes, quota_seed)))
 }
 
 /// Bridge an async release call onto the sync handler trait (see [`block_on_accrue`]).
@@ -412,14 +552,29 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
         use corelink_handler_cas::CasHandlerError;
         let tenant = req.tenant.clone();
         let byte_len = i64::try_from(req.bytes.len()).unwrap_or(i64::MAX);
-        // RESERVE before the R2 PUT (cluster-C): an over-cap reservation is
-        // rejected here, so the inner write — the durable R2 PUT — NEVER runs
-        // and no over-cap blob is committed.
-        match block_on_accrue(&self.accountant, &tenant, byte_len) {
+        // The Worker-resolved per-tier cap (threaded via the request) seeds a
+        // FRESH `tenant_storage_state` row; `None` ⇒ indeterminate ⇒ a fresh row
+        // FAILS CLOSED (never seeded uncapped).
+        let quota_seed = req.storage_quota_bytes;
+        // RESERVE before the R2 PUT (cluster-C): an over-cap / indeterminate
+        // reservation is rejected here, so the inner write — the durable R2 PUT
+        // — NEVER runs and no uncounted blob is committed.
+        match block_on_accrue(&self.accountant, &tenant, byte_len, quota_seed) {
             Ok(AccrueOutcome::Accrued) => {}
             Ok(AccrueOutcome::OverCap) => {
                 return Err(CasHandlerError::Internal(format!(
                     "{OVER_CAP_SENTINEL}cas write would exceed storage cap"
+                )));
+            }
+            Ok(AccrueOutcome::Indeterminate) => {
+                // Fresh/unsynced tenant + no resolved cap → we refuse to seed an
+                // uncapped row. Fail CLOSED (503) — absence is NOT unlimited.
+                tracing::error!(
+                    tenant = %tenant,
+                    "cas: storage cap indeterminate for an unseeded tenant; failing closed"
+                );
+                return Err(CasHandlerError::Internal(format!(
+                    "{ACCT_UNAVAILABLE_SENTINEL}storage cap indeterminate (no row, no resolved cap)"
                 )));
             }
             Err(e) => {
@@ -501,11 +656,22 @@ impl corelink_handler_ac::AcUpdateHandler for AccountingAcHandler {
         use corelink_handler_ac::AcHandlerError;
         let tenant = req.tenant.clone();
         let byte_len = i64::try_from(req.result_payload.len()).unwrap_or(i64::MAX);
-        match block_on_accrue(&self.accountant, &tenant, byte_len) {
+        // Worker-resolved per-tier cap (seeds a FRESH row; `None` ⇒ fail-closed).
+        let quota_seed = req.storage_quota_bytes;
+        match block_on_accrue(&self.accountant, &tenant, byte_len, quota_seed) {
             Ok(AccrueOutcome::Accrued) => {}
             Ok(AccrueOutcome::OverCap) => {
                 return Err(AcHandlerError::Internal(format!(
                     "{OVER_CAP_SENTINEL}ac write would exceed storage cap"
+                )));
+            }
+            Ok(AccrueOutcome::Indeterminate) => {
+                tracing::error!(
+                    tenant = %tenant,
+                    "ac: storage cap indeterminate for an unseeded tenant; failing closed"
+                );
+                return Err(AcHandlerError::Internal(format!(
+                    "{ACCT_UNAVAILABLE_SENTINEL}storage cap indeterminate (no row, no resolved cap)"
                 )));
             }
             Err(e) => {
@@ -613,22 +779,40 @@ pub(crate) mod testing {
             tenant_id: &str,
             region: &str,
             bytes: i64,
+            quota_seed: Option<i64>,
             _now_ms: i64,
         ) -> Result<AccrueOutcome, String> {
             let mut rows = self
                 .rows
                 .lock()
                 .map_err(|_| "InMemoryByteStore: poisoned lock".to_owned())?;
-            let row = rows
-                .entry((tenant_id.to_owned(), region.to_owned()))
-                .or_insert_with(Row::default);
-            // Uncapped (quota == 0) always accrues; otherwise the projected
-            // total must stay within the cap (mirrors the D1 WHERE predicate).
-            if row.quota != 0 && row.used.saturating_add(bytes) > row.quota {
-                return Ok(AccrueOutcome::OverCap);
+            let key = (tenant_id.to_owned(), region.to_owned());
+            match rows.get_mut(&key) {
+                // ── Existing row: accrue against its already-seeded cap ───────
+                // (mirrors the D1 UPDATE / UPSERT-conflict branch). The
+                // `quota_seed` does NOT overwrite an existing cap.
+                Some(row) => {
+                    if row.quota != 0 && row.used.saturating_add(bytes) > row.quota {
+                        return Ok(AccrueOutcome::OverCap);
+                    }
+                    row.used = row.used.saturating_add(bytes);
+                    Ok(AccrueOutcome::Accrued)
+                }
+                // ── Fresh row: seed from `quota_seed` (mirrors the D1 INSERT) ─
+                None => match quota_seed {
+                    // No resolved cap → never seed uncapped; fail CLOSED.
+                    None => Ok(AccrueOutcome::Indeterminate),
+                    // Finite cap whose very first write already exceeds it →
+                    // refuse, no row created (mirrors the D1 INSERT guard).
+                    Some(seed) if seed != 0 && bytes > seed => Ok(AccrueOutcome::OverCap),
+                    // Seed the fresh row with the real cap (`0` = genuine
+                    // unlimited) and apply the first write.
+                    Some(seed) => {
+                        rows.insert(key, Row { used: bytes, quota: seed });
+                        Ok(AccrueOutcome::Accrued)
+                    }
+                },
             }
-            row.used = row.used.saturating_add(bytes);
-            Ok(AccrueOutcome::Accrued)
         }
 
         async fn release(
@@ -660,6 +844,7 @@ pub(crate) mod testing {
             _tenant_id: &str,
             _region: &str,
             _bytes: i64,
+            _quota_seed: Option<i64>,
             _now_ms: i64,
         ) -> Result<AccrueOutcome, String> {
             Err("simulated D1 transport error".to_owned())
@@ -693,15 +878,63 @@ mod tests {
         ByteAccountant::new(store, REGION.to_owned())
     }
 
+    /// The genuine-unlimited cap seed (`Some(0)`), kept readable in the tests.
+    const UNLIMITED: Option<i64> = Some(0);
+
     #[tokio::test]
-    async fn accrue_increments_bytes_used_uncapped() {
+    async fn accrue_increments_bytes_used_for_genuine_unlimited() {
         // The load-bearing finding-#1 assertion: a write accrues bytes_used (the
-        // counter the storage cap reads — previously NEVER moved).
+        // counter the storage cap reads — previously NEVER moved). A genuine
+        // unlimited tier seeds the fresh row with the `0` sentinel deliberately.
         let store = Arc::new(InMemoryByteStore::new());
         let acc = accountant(store.clone());
-        assert_eq!(acc.accrue("t1", 1_000).await.unwrap(), AccrueOutcome::Accrued);
-        assert_eq!(acc.accrue("t1", 500).await.unwrap(), AccrueOutcome::Accrued);
+        assert_eq!(acc.accrue("t1", 1_000, UNLIMITED).await.unwrap(), AccrueOutcome::Accrued);
+        assert_eq!(acc.accrue("t1", 500, UNLIMITED).await.unwrap(), AccrueOutcome::Accrued);
         assert_eq!(store.used("t1", REGION), 1_500, "concurrent accruals must sum");
+    }
+
+    #[tokio::test]
+    async fn fresh_capped_tenant_first_write_seeds_real_cap_not_zero() {
+        // (b) A FRESH capped tenant whose first write is UNDER the seeded cap
+        // accrues AND the seeded row carries the REAL cap (not 0/unlimited) — so
+        // a later over-cap write is correctly refused. This is the core fix:
+        // a fresh row must NOT be uncapped.
+        let store = Arc::new(InMemoryByteStore::new());
+        let acc = accountant(store.clone());
+        // First write 600 under a 1000-byte cap → accrues, seeds quota=1000.
+        assert_eq!(acc.accrue("t-fresh", 600, Some(1_000)).await.unwrap(), AccrueOutcome::Accrued);
+        assert_eq!(store.used("t-fresh", REGION), 600);
+        // The seeded cap is REAL: a follow-up that would exceed 1000 is refused
+        // even with `None` (the existing row's stored cap governs).
+        assert_eq!(acc.accrue("t-fresh", 500, None).await.unwrap(), AccrueOutcome::OverCap);
+        assert_eq!(store.used("t-fresh", REGION), 600, "over-cap must not move the counter");
+        // And exactly filling the remaining headroom is allowed.
+        assert_eq!(acc.accrue("t-fresh", 400, None).await.unwrap(), AccrueOutcome::Accrued);
+        assert_eq!(store.used("t-fresh", REGION), 1_000);
+    }
+
+    #[tokio::test]
+    async fn fresh_capped_tenant_first_write_over_cap_is_refused_not_uncapped() {
+        // (a) A FRESH capped tenant whose VERY FIRST write already exceeds the
+        // seeded cap must be refused (OverCap) with NO row created — NOT accrued
+        // uncapped. (The pre-fix bug seeded quota=0 and let it through unbounded.)
+        let store = Arc::new(InMemoryByteStore::new());
+        let acc = accountant(store.clone());
+        assert_eq!(acc.accrue("t-big", 5_000, Some(1_000)).await.unwrap(), AccrueOutcome::OverCap);
+        assert_eq!(store.used("t-big", REGION), 0, "a refused first write must create no row");
+    }
+
+    #[tokio::test]
+    async fn fresh_tenant_with_no_resolved_cap_fails_closed() {
+        // (d) A row missing AND the cap header absent (`None`) must FAIL CLOSED
+        // (Indeterminate) — never seeded uncapped. Absence is NOT unlimited.
+        let store = Arc::new(InMemoryByteStore::new());
+        let acc = accountant(store.clone());
+        assert_eq!(
+            acc.accrue("t-unknown", 100, None).await.unwrap(),
+            AccrueOutcome::Indeterminate
+        );
+        assert_eq!(store.used("t-unknown", REGION), 0, "fail-closed must create no row");
     }
 
     #[tokio::test]
@@ -711,17 +944,17 @@ mod tests {
         let store = Arc::new(InMemoryByteStore::new());
         store.seed("t-cap", REGION, Row { used: 900, quota: 1_000 });
         let acc = accountant(store.clone());
-        assert_eq!(acc.accrue("t-cap", 200).await.unwrap(), AccrueOutcome::OverCap);
+        assert_eq!(acc.accrue("t-cap", 200, None).await.unwrap(), AccrueOutcome::OverCap);
         assert_eq!(
             store.used("t-cap", REGION),
             900,
             "an over-cap accrual must not move the counter"
         );
         // A write that exactly fills the cap is allowed (`<=` predicate).
-        assert_eq!(acc.accrue("t-cap", 100).await.unwrap(), AccrueOutcome::Accrued);
+        assert_eq!(acc.accrue("t-cap", 100, None).await.unwrap(), AccrueOutcome::Accrued);
         assert_eq!(store.used("t-cap", REGION), 1_000);
         // Now AT the cap; one more byte trips it.
-        assert_eq!(acc.accrue("t-cap", 1).await.unwrap(), AccrueOutcome::OverCap);
+        assert_eq!(acc.accrue("t-cap", 1, None).await.unwrap(), AccrueOutcome::OverCap);
     }
 
     #[tokio::test]
@@ -740,9 +973,10 @@ mod tests {
     async fn zero_or_negative_byte_ops_are_noops() {
         let store = Arc::new(InMemoryByteStore::new());
         let acc = accountant(store.clone());
-        // A no-new-bytes write (idempotent re-write) accrues nothing.
-        assert_eq!(acc.accrue("t0", 0).await.unwrap(), AccrueOutcome::Accrued);
-        assert_eq!(acc.accrue("t0", -5).await.unwrap(), AccrueOutcome::Accrued);
+        // A no-new-bytes write (idempotent re-write) accrues nothing — and never
+        // reaches the store, so even a `None` cap is a safe no-op (no fresh row).
+        assert_eq!(acc.accrue("t0", 0, None).await.unwrap(), AccrueOutcome::Accrued);
+        assert_eq!(acc.accrue("t0", -5, None).await.unwrap(), AccrueOutcome::Accrued);
         acc.release("t0", 0).await.unwrap();
         assert_eq!(store.used("t0", REGION), 0);
     }
@@ -752,7 +986,7 @@ mod tests {
         // The handler maps an accrue Err to 503 (fail-CLOSED) — assert the error
         // propagates rather than being silently swallowed.
         let acc = accountant(Arc::new(ErroringByteStore));
-        assert!(acc.accrue("t-err", 100).await.is_err());
+        assert!(acc.accrue("t-err", 100, Some(1_000)).await.is_err());
     }
 
     #[test]
@@ -831,14 +1065,10 @@ mod decorator_tests {
         let body = b"way-over-the-cap".to_vec();
         let hash = hash_for(&body);
         let err = dec
-            .write(CasWriteRequest::new(
-                "t-cap",
-                hash.clone(),
-                body,
-                "p",
-                "t-cap",
-                1,
-            ))
+            .write(
+                CasWriteRequest::new("t-cap", hash.clone(), body, "p", "t-cap", 1)
+                    .with_storage_quota_bytes(Some(4)),
+            )
             .expect_err("over-cap write must be refused");
         match err {
             corelink_handler_cas::CasHandlerError::Internal(ref m) => {
@@ -862,8 +1092,12 @@ mod decorator_tests {
         let body = b"hello-bytes".to_vec();
         let n = body.len() as i64;
         let hash = hash_for(&body);
-        dec.write(CasWriteRequest::new("t1", hash.clone(), body, "p", "t1", 1))
-            .expect("write");
+        // Fresh tenant with a real resolved cap — seeds the row with the cap.
+        dec.write(
+            CasWriteRequest::new("t1", hash.clone(), body, "p", "t1", 1)
+                .with_storage_quota_bytes(Some(1_000_000)),
+        )
+        .expect("write");
         assert_eq!(store.used("t1", REGION), n, "a durable write must accrue its bytes");
         // DELETE must RELEASE the reclaimed bytes so the counter drops to 0.
         dec.delete(CasDeleteRequest::new("t1", hash, "p", "t1", 2))
@@ -876,17 +1110,68 @@ mod decorator_tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn genuine_unlimited_tenant_accrues_unbounded() {
+        // (c) A genuine unlimited-tier tenant (cap signalled as `Some(0)`)
+        // accrues without bound: a fresh row is seeded with the `0` sentinel and
+        // a large write far past any finite cap still succeeds + is counted.
+        let (dec, _inner, store) = cas_fixture(None);
+        let body = vec![b'x'; 4096];
+        let n = body.len() as i64;
+        let hash = hash_for(&body);
+        dec.write(
+            CasWriteRequest::new("t-unl", hash, body, "p", "t-unl", 1)
+                .with_storage_quota_bytes(Some(0)),
+        )
+        .expect("unlimited write must succeed");
+        assert_eq!(store.used("t-unl", REGION), n, "unlimited tenant still accrues bytes_used");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn fresh_tenant_no_cap_header_fails_closed_no_blob() {
+        // (d) at the decorator: a fresh tenant whose request carries NO resolved
+        // cap (`None`) must be refused (indeterminate → 503 sentinel) with NO
+        // blob stored — absence is never treated as unlimited.
+        let (dec, inner, store) = cas_fixture(None);
+        let body = b"no-cap-known".to_vec();
+        let hash = hash_for(&body);
+        let err = dec
+            .write(CasWriteRequest::new("t-nocap", hash.clone(), body, "p", "t-nocap", 1))
+            .expect_err("indeterminate-cap write must be refused");
+        match err {
+            corelink_handler_cas::CasHandlerError::Internal(ref m) => {
+                assert!(
+                    m.starts_with(ACCT_UNAVAILABLE_SENTINEL),
+                    "must carry the accounting-unavailable (fail-closed/503) sentinel: {m}"
+                );
+            }
+            other => panic!("expected fail-closed Internal, got {other:?}"),
+        }
+        let read = inner.read(CasReadRequest::new("t-nocap", hash, "p", "t-nocap", 2));
+        assert!(
+            matches!(read, Err(corelink_handler_cas::CasHandlerError::NotFound { .. })),
+            "an indeterminate-cap write must leave NO blob (fail-closed before commit)"
+        );
+        assert_eq!(store.used("t-nocap", REGION), 0, "fail-closed must create no row");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn idempotent_rewrite_does_not_double_count() {
         let (dec, _inner, store) = cas_fixture(None);
         let body = b"same-bytes".to_vec();
         let n = body.len() as i64;
         let hash = hash_for(&body);
-        dec.write(CasWriteRequest::new("t1", hash.clone(), body.clone(), "p", "t1", 1))
-            .expect("first write");
+        dec.write(
+            CasWriteRequest::new("t1", hash.clone(), body.clone(), "p", "t1", 1)
+                .with_storage_quota_bytes(Some(1_000_000)),
+        )
+        .expect("first write");
         // Second identical write is idempotent (`durable == false`) → the
         // decorator rolls the reservation back, so the counter stays at n.
-        dec.write(CasWriteRequest::new("t1", hash, body, "p", "t1", 2))
-            .expect("second write");
+        dec.write(
+            CasWriteRequest::new("t1", hash, body, "p", "t1", 2)
+                .with_storage_quota_bytes(Some(1_000_000)),
+        )
+        .expect("second write");
         assert_eq!(
             store.used("t1", REGION),
             n,
@@ -903,7 +1188,10 @@ mod decorator_tests {
         let hash = hash_for(&body);
         // `tenant != caller_tenant` ⇒ the inner InMemory handler returns
         // CrossTenantDenied AFTER the decorator reserved.
-        let err = dec.write(CasWriteRequest::new("victim", hash, body, "p", "attacker", 1));
+        let err = dec.write(
+            CasWriteRequest::new("victim", hash, body, "p", "attacker", 1)
+                .with_storage_quota_bytes(Some(1_000_000)),
+        );
         assert!(err.is_err(), "cross-tenant write must error");
         assert_eq!(
             store.used("victim", REGION),

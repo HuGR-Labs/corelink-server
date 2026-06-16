@@ -503,7 +503,12 @@ async fn handle_write(
         format!("anon@{}", auth.0),
         auth.0.clone(),
         now_ms,
-    );
+    )
+    // Thread the Worker-resolved per-tier storage cap (server-trusted header)
+    // into the reservation so the decorator seeds a FRESH `tenant_storage_state`
+    // row with the REAL cap (not the legacy uncapped `0`). Absent ⇒ `None` ⇒
+    // fail-CLOSED on an unseeded tenant (never treated as unlimited).
+    .with_storage_quota_bytes(crate::byte_accounting::storage_quota_from_headers(&headers));
     // Storage byte accounting (finding #1 / cluster B+C) is enforced INSIDE
     // `state.write` by the [`crate::byte_accounting::AccountingCasHandler`]
     // decorator (wired in `routes::build_with_factory` when D1 is present):
@@ -1320,6 +1325,10 @@ mod tests {
             .uri(format!("/v1/cas/{TEST_TENANT}/{hash}"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            // The Worker injects the resolved per-tier storage cap; a fresh row
+            // (empty store) is seeded from it. Without it the reservation fails
+            // CLOSED (no cap ⇒ 503) — see byte_accounting::storage_quota_from_headers.
+            .header(crate::byte_accounting::STORAGE_QUOTA_HEADER, "1000000")
             .body(Body::from(body))
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");

@@ -253,6 +253,16 @@ impl MoatCache {
         let content_hash = (self.hasher)(&bytes);
         let content_len = bytes.len() as u64;
         let handler = Arc::clone(&self.cas_write);
+        // NOTE (storage-cap seeding): the moat's `BlobStore`/`CasStore` port
+        // signatures carry no request headers, so the cap is left at its
+        // fail-closed default (`storage_quota_bytes == None`). For an EXISTING
+        // `tenant_storage_state` row the byte-accounting decorator accrues
+        // against the row's already-seeded cap (correct). For a tenant with NO
+        // row yet, the decorator FAILS CLOSED (never seeds an uncapped row) —
+        // the deliberate posture: a fresh tenant is seeded on its first NATIVE
+        // CAS/AC/Bazel/Turbo write (which carries the Worker cap header), after
+        // which moat/adapter (brew/npm/pip/oci) writes accrue normally. Absence
+        // of a cap is never treated as unlimited.
         let req = CasWriteRequest::new(
             namespace,
             &content_hash,
