@@ -1325,6 +1325,10 @@ mod tests {
             .uri(format!("/v1/cas/{TEST_TENANT}/{hash}"))
             .header("x-corelink-tenant-id", TEST_TENANT)
             .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            // The Worker injects the resolved per-tier storage cap; a fresh row
+            // (empty store) is seeded from it. Without it the reservation fails
+            // CLOSED (no cap ⇒ 503) — see byte_accounting::storage_quota_from_headers.
+            .header(crate::byte_accounting::STORAGE_QUOTA_HEADER, "1000000")
             .body(Body::from(body))
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
