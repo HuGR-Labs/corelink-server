@@ -63,6 +63,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::wall_clock::{SystemWallClock, WallClock};
 use corelink_turbo_bridge::{
     adapter::{CasAdapterTurboHandler, InMemoryKvStore},
     audit::InMemoryTurboAuditSink,
@@ -313,7 +314,7 @@ async fn handle_get(
             return resp;
         }
     }
-    let now_ms = 0u64;
+    let now_ms = SystemWallClock.now_ms();
     let req = TurboGetRequest::new(
         hash,
         params.team_id,
@@ -425,7 +426,7 @@ async fn handle_put(
         tenant_key,
     };
 
-    let now_ms = 0u64;
+    let now_ms = SystemWallClock.now_ms();
     let req = TurboPutRequest::new(
         hash,
         params.team_id,
