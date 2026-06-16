@@ -66,6 +66,43 @@ pub enum NpmAdapterError {
 }
 
 impl NpmAdapterError {
+    /// True for variants whose inner string carries INTERNAL backend detail
+    /// (D1 / Cloudflare API errors, possibly SQL; R2 storage topology; the
+    /// derived per-tenant R2 prefix; upstream host/transport detail) that
+    /// MUST NOT reach the client (Cluster E — A27 / A29).
+    #[must_use]
+    pub const fn leaks_internal_detail(&self) -> bool {
+        matches!(
+            self,
+            Self::Bind(_)
+                | Self::Auth(_)
+                | Self::Cas(_)
+                | Self::Kv(_)
+                | Self::Upstream(_)
+                | Self::Audit(_)
+                | Self::MetadataParse(_)
+        )
+    }
+
+    /// The CLIENT-FACING response body for this error (Cluster E).
+    ///
+    /// Backend-fault variants collapse to an opaque, class-keyed string plus a
+    /// `ref` correlation id (joined to the server-side `tracing::error!` that
+    /// carries the real detail). `IntegrityMismatch` (hashes) and
+    /// `TarballOversized` keep their actionable, non-leaking messages.
+    #[must_use]
+    pub fn client_message(&self, request_id: &str) -> String {
+        if self.leaks_internal_detail() {
+            let class = match self {
+                Self::Auth(_) => "authentication failed",
+                _ => "internal error",
+            };
+            format!("{class} (ref: {request_id})")
+        } else {
+            self.to_string()
+        }
+    }
+
     /// Map an error variant to the HTTP status code the axum layer
     /// emits.
     #[must_use]
@@ -122,5 +159,38 @@ mod tests {
         let rendered = format!("{err}");
         assert!(rendered.contains("abc"));
         assert!(rendered.contains("def"));
+    }
+
+    // ── Cluster E (A27/A29): client_message scrubs internal backend detail ────
+
+    #[test]
+    fn backend_fault_client_message_is_opaque_and_ref_tagged() {
+        let raw = "D1 HTTP 500: no such table: pat in SELECT ... FROM pat";
+        for err in [
+            NpmAdapterError::Auth(format!("backend: {raw}")),
+            NpmAdapterError::Cas(raw.into()),
+            NpmAdapterError::Kv(raw.into()),
+            NpmAdapterError::Upstream(raw.into()),
+            NpmAdapterError::Audit(raw.into()),
+            NpmAdapterError::MetadataParse(raw.into()),
+        ] {
+            assert!(err.leaks_internal_detail(), "{err:?} must be flagged leaky");
+            let msg = err.client_message("RIDn");
+            assert!(!msg.contains("D1"), "leaked D1: {msg}");
+            assert!(!msg.contains("SELECT"), "leaked SQL: {msg}");
+            assert!(!msg.contains("FROM pat"), "leaked SQL: {msg}");
+            assert!(msg.contains("RIDn"), "missing correlation ref: {msg}");
+        }
+    }
+
+    #[test]
+    fn safe_variants_keep_actionable_message() {
+        let im = NpmAdapterError::IntegrityMismatch {
+            expected: "aaa".into(),
+            actual: "bbb".into(),
+        };
+        assert!(!im.leaks_internal_detail());
+        let msg = im.client_message("RID");
+        assert!(msg.contains("aaa") && msg.contains("bbb"));
     }
 }

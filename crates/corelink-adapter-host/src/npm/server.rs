@@ -223,7 +223,19 @@ async fn handle_tarball(
 /// Map a [`NpmAdapterError`] to an HTTP response.
 fn error_response(err: &NpmAdapterError) -> Response {
     let code = StatusCode::from_u16(err.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    let body = err.to_string();
+    // Cluster E (A27/A29): scrub internal backend detail (raw D1/CF/R2 error,
+    // possibly SQL; R2 storage topology; derived per-tenant prefix; upstream
+    // host/transport) from the client body. Mint a correlation id, log the REAL
+    // detail server-side only, and return an opaque, ref-tagged message.
+    let request_id = uuid::Uuid::new_v4().simple().to_string();
+    if err.leaks_internal_detail() {
+        tracing::error!(
+            request_id = %request_id,
+            detail = %err,
+            "npm: backend error (scrubbed from client response; see ref)"
+        );
+    }
+    let body = err.client_message(&request_id);
     let mut h = HeaderMap::new();
     h.insert(
         header::CONTENT_TYPE,

@@ -81,9 +81,9 @@
 //!   it requires moving the D1 pat-row write into the container. Deferred to a
 //!   separate change.
 
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::{
     body::Bytes,
@@ -210,6 +210,130 @@ impl Drop for MintSlot {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Mint RATE limit (cluster G)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Default mints allowed per [`MINT_RATE_WINDOW`] before a 429 is returned
+/// (cluster G).
+///
+/// The concurrency backstop ([`MintInflightLimiter`]) bounds *simultaneous*
+/// Argon2id work, but NOT the sustained RATE: an internal-auth holder firing
+/// serial mints (each completing before the next starts) stays under any
+/// concurrency cap while still driving the container's Argon2id CPU/RAM at
+/// 100% indefinitely. This fixed-window rate limit caps the *throughput* of
+/// mints, mirroring the Worker-side `session_exchange.ts` `checkMintThrottle`
+/// fixed-window pattern but enforced container-side.
+///
+/// 60 mints/minute is generous for the only legitimate caller (the
+/// signup-webhook + session/token-exchange paths mint a handful per
+/// real user event) while bounding sustained Argon2id cost to ~1 hash/s.
+pub const DEFAULT_MAX_MINTS_PER_WINDOW: u32 = 60;
+
+/// Fixed window length for the mint rate limit (cluster G). One minute,
+/// matching the Worker-side `MINT_THROTTLE_WINDOW_MS`.
+pub const MINT_RATE_WINDOW: Duration = Duration::from_secs(60);
+
+/// Env var overriding [`DEFAULT_MAX_MINTS_PER_WINDOW`].
+pub const MAX_MINTS_PER_WINDOW_ENV: &str = "PAT_MINT_MAX_PER_MINUTE";
+
+/// Process-global fixed-window mint RATE limiter (cluster G).
+///
+/// Semantics: a single GLOBAL counter (NOT per-caller) over a rolling fixed
+/// window. The mint surface has exactly one trusted class of caller (holders
+/// of the internal-auth secret), so a global throughput ceiling is the right
+/// shape — it bounds the container's total sustained Argon2id work regardless
+/// of how the load is distributed across callers, and cannot be evaded by
+/// rotating a per-caller key. The counter + window are kept in an in-memory
+/// [`Mutex`]; this is correct + sufficient for the single-container
+/// deployment (the limiter resets on process restart, exactly like the
+/// Worker-side in-memory backstop). When the window's count reaches the cap,
+/// further mints are shed with `429` until the window rolls.
+#[derive(Debug)]
+pub struct MintRateLimiter {
+    /// Start of the current window, in ms since the Unix epoch.
+    window_start_ms: AtomicU64,
+    /// Mints admitted in the current window.
+    count: Mutex<u32>,
+    /// Max mints admitted per window.
+    max_per_window: u32,
+    /// Window length in ms.
+    window_ms: u64,
+    /// Clock — injectable for deterministic tests. Defaults to wall-clock.
+    now_ms: fn() -> u64,
+}
+
+/// Wall-clock milliseconds since the Unix epoch (saturating).
+fn wallclock_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or(0)
+}
+
+impl MintRateLimiter {
+    /// Construct a limiter with the given per-window ceiling and the default
+    /// [`MINT_RATE_WINDOW`]. A `max` of 0 is clamped to 1 so a misconfig can
+    /// never wedge the surface fully shut.
+    #[must_use]
+    pub fn new(max_per_window: u32) -> Self {
+        Self::with_clock(max_per_window, MINT_RATE_WINDOW, wallclock_ms)
+    }
+
+    /// Construct with an explicit window + clock (tests inject a fixed clock).
+    #[must_use]
+    pub fn with_clock(max_per_window: u32, window: Duration, now_ms: fn() -> u64) -> Self {
+        Self {
+            window_start_ms: AtomicU64::new(now_ms()),
+            count: Mutex::new(0),
+            max_per_window: max_per_window.max(1),
+            window_ms: u64::try_from(window.as_millis()).unwrap_or(u64::MAX),
+            now_ms,
+        }
+    }
+
+    /// Build the limiter from [`MAX_MINTS_PER_WINDOW_ENV`], falling back to
+    /// [`DEFAULT_MAX_MINTS_PER_WINDOW`] when unset/empty/non-numeric.
+    #[must_use]
+    pub fn from_env() -> Self {
+        let max = std::env::var(MAX_MINTS_PER_WINDOW_ENV)
+            .ok()
+            .and_then(|raw| raw.trim().parse::<u32>().ok())
+            .filter(|v| *v > 0)
+            .unwrap_or(DEFAULT_MAX_MINTS_PER_WINDOW);
+        Self::new(max)
+    }
+
+    /// Atomically roll the window if it has elapsed, then admit-or-reject one
+    /// mint. Returns `true` when admitted (caller may proceed), `false` when
+    /// the current window is already at the cap (caller must shed with 429).
+    ///
+    /// The whole roll+increment is done under the count mutex so concurrent
+    /// callers cannot race past the cap (the lock serialises the read-modify-
+    /// write, exactly as the Worker-side single-statement UPSERT does).
+    #[must_use]
+    pub fn try_admit(&self) -> bool {
+        let now = (self.now_ms)();
+        // Hold the count lock for the whole decision (roll + check + bump).
+        let Ok(mut count) = self.count.lock() else {
+            // Poisoned mutex (a prior panic while holding it). Fail-CLOSED:
+            // refuse the mint rather than admit under an unknown counter.
+            return false;
+        };
+        let start = self.window_start_ms.load(Ordering::Acquire);
+        if now.saturating_sub(start) >= self.window_ms {
+            // Window elapsed → roll: reset start + count.
+            self.window_start_ms.store(now, Ordering::Release);
+            *count = 0;
+        }
+        if *count >= self.max_per_window {
+            return false;
+        }
+        *count += 1;
+        true
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // State
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -225,6 +349,11 @@ pub struct InternalPatRouteState {
     /// Concurrency backstop bounding simultaneous Argon2id mints
     /// (red-team #7). Shared across clones so the ceiling is process-wide.
     pub inflight: Arc<MintInflightLimiter>,
+    /// Fixed-window RATE limiter bounding mint THROUGHPUT (cluster G).
+    /// Complements `inflight` (concurrency): an internal-auth holder firing
+    /// SERIAL mints stays under any concurrency cap but is bounded here.
+    /// Shared across clones so the window is process-wide.
+    pub rate: Arc<MintRateLimiter>,
 }
 
 impl std::fmt::Debug for InternalPatRouteState {
@@ -234,6 +363,7 @@ impl std::fmt::Debug for InternalPatRouteState {
             .field("signing_key", &"[REDACTED]")
             .field("signing_key_id", &self.signing_key_id)
             .field("inflight", &self.inflight)
+            .field("rate", &self.rate)
             .finish()
     }
 }
@@ -370,6 +500,25 @@ async fn handle_mint(
         return (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({ "error": "unauthorized" })),
+        )
+            .into_response();
+    }
+
+    // ── 1a-rate. Fixed-window mint RATE limit (cluster G) ──────────────────────
+    // The concurrency backstop below bounds SIMULTANEOUS Argon2id work, but a
+    // serial loop of mints (each completing before the next) stays under any
+    // concurrency cap while still pinning the container's Argon2id CPU/RAM. Cap
+    // the THROUGHPUT too: over the per-window ceiling ⇒ 429. Checked AFTER the
+    // auth gate (an unauthenticated flood is already shed at 401, cheaply) and
+    // BEFORE a concurrency permit / the Argon2id mint is taken.
+    if !state.rate.try_admit() {
+        tracing::warn!(
+            event = "PatMintRateLimited",
+            "internal_pat: mint shed — mint rate limit exceeded (429)"
+        );
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({ "error": "too_many_requests" })),
         )
             .into_response();
     }
@@ -569,6 +718,7 @@ pub fn build_state_from_env() -> Option<InternalPatRouteState> {
         signing_key: Arc::new(signing_key),
         signing_key_id: 1,
         inflight: Arc::new(MintInflightLimiter::from_env()),
+        rate: Arc::new(MintRateLimiter::from_env()),
     })
 }
 
@@ -597,6 +747,9 @@ mod tests {
             signing_key: Arc::new(key),
             signing_key_id: 1,
             inflight: Arc::new(MintInflightLimiter::new(DEFAULT_MAX_INFLIGHT_MINTS)),
+            // Generous rate ceiling so the concurrency/auth tests are not
+            // perturbed by the rate gate; the rate gate has dedicated tests.
+            rate: Arc::new(MintRateLimiter::new(DEFAULT_MAX_MINTS_PER_WINDOW)),
         }
     }
 
@@ -608,6 +761,21 @@ mod tests {
             signing_key: Arc::new(key),
             signing_key_id: 1,
             inflight: Arc::new(MintInflightLimiter::new(max)),
+            rate: Arc::new(MintRateLimiter::new(DEFAULT_MAX_MINTS_PER_WINDOW)),
+        }
+    }
+
+    /// Variant of [`test_state`] with a custom per-window mint RATE cap
+    /// (cluster G). The in-flight ceiling stays generous so only the RATE
+    /// gate is exercised.
+    fn test_state_with_rate(max_per_window: u32) -> InternalPatRouteState {
+        let key = PatSigningKey::from_bytes(vec![0x42u8; 32]).unwrap();
+        InternalPatRouteState {
+            internal_auth_key: Arc::from("test-internal-auth-key-32-bytes-x"),
+            signing_key: Arc::new(key),
+            signing_key_id: 1,
+            inflight: Arc::new(MintInflightLimiter::new(DEFAULT_MAX_INFLIGHT_MINTS)),
+            rate: Arc::new(MintRateLimiter::new(max_per_window)),
         }
     }
 
@@ -809,6 +977,128 @@ mod tests {
         );
         assert_eq!(app.oneshot(bad).await.unwrap().status(), StatusCode::UNAUTHORIZED);
         // A subsequent AUTHED mint still has its slot available → 200.
+        let app2 = router(state.clone());
+        let good = make_mint_request(
+            &state.internal_auth_key,
+            serde_json::json!({
+                "tenant_id": Uuid::now_v7(),
+                "principal_id": Uuid::now_v7(),
+                "scopes": "admin",
+                "ttl_seconds": 86400
+            }),
+        );
+        assert_eq!(app2.oneshot(good).await.unwrap().status(), StatusCode::OK);
+    }
+
+    // ── cluster G: mint RATE limit (fixed window) ─────────────────────────────
+
+    #[test]
+    fn rate_limiter_admits_up_to_cap_then_sheds_within_window() {
+        // A fixed clock (no window roll) → the limiter admits exactly
+        // `max_per_window` mints then sheds the rest.
+        fn frozen_clock() -> u64 {
+            1_000_000
+        }
+        let lim = MintRateLimiter::with_clock(3, MINT_RATE_WINDOW, frozen_clock);
+        assert!(lim.try_admit(), "1st admit");
+        assert!(lim.try_admit(), "2nd admit");
+        assert!(lim.try_admit(), "3rd admit (at cap)");
+        assert!(!lim.try_admit(), "4th admit must be shed (over cap)");
+        assert!(!lim.try_admit(), "still shed within the same window");
+    }
+
+    #[test]
+    fn rate_limiter_clamps_zero_cap_to_one() {
+        // A mis-set cap of 0 must NOT wedge the surface fully shut.
+        fn frozen_clock() -> u64 {
+            5_000
+        }
+        let lim = MintRateLimiter::with_clock(0, MINT_RATE_WINDOW, frozen_clock);
+        assert!(lim.try_admit(), "zero cap clamps to 1 → one mint admitted");
+        assert!(!lim.try_admit(), "second is shed");
+    }
+
+    #[test]
+    fn rate_limiter_rolls_window_and_refreshes_budget() {
+        // Use thread-local time so a single fn-pointer clock can advance.
+        use std::cell::Cell;
+        thread_local! {
+            static NOW: Cell<u64> = const { Cell::new(0) };
+        }
+        fn tl_clock() -> u64 {
+            NOW.with(Cell::get)
+        }
+        let window = Duration::from_secs(60);
+        let lim = MintRateLimiter::with_clock(2, window, tl_clock);
+        // Window 1 (t=0): fill the budget.
+        assert!(lim.try_admit());
+        assert!(lim.try_admit());
+        assert!(!lim.try_admit(), "window 1 budget exhausted");
+        // Advance past the window → budget refreshes.
+        NOW.with(|c| c.set(60_001));
+        assert!(lim.try_admit(), "window rolled → budget refreshed");
+        assert!(lim.try_admit());
+        assert!(!lim.try_admit(), "window 2 budget exhausted");
+    }
+
+    #[tokio::test]
+    async fn mint_sheds_429_when_rate_cap_reached() {
+        // Cluster G: with a rate cap of 1/window, the SECOND mint in the
+        // window is shed with 429 even though concurrency is free and the
+        // first mint already completed (serial, not concurrent). Proves the
+        // RATE gate bounds throughput, not just simultaneity.
+        let state = test_state_with_rate(1);
+        // 1st mint succeeds.
+        let app = router(state.clone());
+        let req = make_mint_request(
+            &state.internal_auth_key,
+            serde_json::json!({
+                "tenant_id": Uuid::now_v7(),
+                "principal_id": Uuid::now_v7(),
+                "scopes": "cas:rw",
+                "ttl_seconds": 86400
+            }),
+        );
+        assert_eq!(app.oneshot(req).await.unwrap().status(), StatusCode::OK);
+        // 2nd mint in the same window is rate-shed with 429.
+        let app2 = router(state.clone());
+        let req2 = make_mint_request(
+            &state.internal_auth_key,
+            serde_json::json!({
+                "tenant_id": Uuid::now_v7(),
+                "principal_id": Uuid::now_v7(),
+                "scopes": "cas:rw",
+                "ttl_seconds": 86400
+            }),
+        );
+        assert_eq!(
+            app2.oneshot(req2).await.unwrap().status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "over-rate serial mint must be shed with 429 (cluster G)"
+        );
+    }
+
+    #[tokio::test]
+    async fn unauthenticated_flood_does_not_consume_rate_budget() {
+        // Cluster G interaction with the auth gate: an UNauthenticated caller
+        // is shed at 401 BEFORE the rate budget is touched, so an unauth flood
+        // cannot exhaust the per-window budget and DoS legitimate mints.
+        let state = test_state_with_rate(1);
+        let app = router(state.clone());
+        let bad = make_mint_request(
+            "wrong-secret",
+            serde_json::json!({
+                "tenant_id": Uuid::now_v7(),
+                "principal_id": Uuid::now_v7(),
+                "scopes": "admin",
+                "ttl_seconds": 86400
+            }),
+        );
+        assert_eq!(
+            app.oneshot(bad).await.unwrap().status(),
+            StatusCode::UNAUTHORIZED
+        );
+        // The single rate-budget slot is still available → an authed mint 200s.
         let app2 = router(state.clone());
         let good = make_mint_request(
             &state.internal_auth_key,

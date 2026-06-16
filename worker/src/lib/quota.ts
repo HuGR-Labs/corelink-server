@@ -23,7 +23,10 @@
  *
  * Storage quota is enforced via SUM(bytes_used) from tenant_storage_state.
  * Request quota is enforced via an atomic monthly counter UPSERT against
- * monthly_request_counts (migration 0071), gated by REQUEST_QUOTA_ENABLED.
+ * monthly_request_counts (migration 0071). Enforcement is ON BY DEFAULT
+ * (fail-CLOSED): the Worker derives the boolean from an explicit opt-OUT
+ * kill-switch (REQUEST_QUOTA_DISABLED="true" → off; unset → ENFORCED), so a
+ * missing prod env var keeps the contracted cap live (Cluster D).
  * Over quota → HTTP 429 + Retry-After.
  *
  * INV-NO-PII-IN-LOGS: tenant_id is not logged; only included in structured
@@ -71,7 +74,7 @@ export interface Quota {
   /**
    * Maximum HTTP requests per calendar month. Enforced by
    * {@link checkRequestQuota} via the monthly_request_counts counter
-   * (migration 0071) when REQUEST_QUOTA_ENABLED is on. MAX_SAFE_INTEGER
+   * (migration 0071), enforced by default (Cluster D). MAX_SAFE_INTEGER
    * means "no cap" (team / enterprise). Caps follow the signed rate card.
    */
   readonly requestsPerMonthMax: number;
@@ -363,11 +366,16 @@ function currentYearMonthUtc(): string {
  * ok:false + Retry-After = {@link secondsUntilNextMonthStart}; the caller maps
  * that to HTTP 429.
  *
- * ## Flag semantics (`REQUEST_QUOTA_ENABLED`)
+ * ## Flag semantics (`requestQuotaEnabled`)
  *
- *   - flag OFF (default) → ok:true WITHOUT touching the counter. Enforcement is
- *     openly off; we do not even pay the write. (Storage quota is unaffected.)
- *   - flag ON            → atomic increment + cap check as above.
+ * The caller derives this boolean fail-CLOSED from the opt-OUT kill-switch
+ * `REQUEST_QUOTA_DISABLED` (Cluster D): unset/anything-but-"true" ⇒ ENABLED.
+ * This function itself only sees the resolved boolean:
+ *
+ *   - `false` (dev/test, kill-switch on) → ok:true WITHOUT touching the counter.
+ *     Enforcement is openly off; we do not even pay the write. (Storage quota is
+ *     unaffected.)
+ *   - `true`  (DEFAULT, incl. unset prod env) → atomic increment + cap check.
  *
  * ## D1-error / unconfirmed-tier posture
  *
@@ -382,7 +390,9 @@ function currentYearMonthUtc(): string {
  * @param db                  D1 handle (CONFIG_DB) carrying monthly_request_counts.
  * @param tenantId            Resolved tenant id (the counter key; never logged).
  * @param tierResult          Result from {@link getTierForTenant} (tier + d1Error).
- * @param requestQuotaEnabled REQUEST_QUOTA_ENABLED flag (off → no-op, no write).
+ * @param requestQuotaEnabled Resolved enforcement boolean (fail-CLOSED default;
+ *                            derived from the REQUEST_QUOTA_DISABLED opt-out
+ *                            kill-switch). false → no-op, no write.
  */
 export async function checkRequestQuota(
   db: D1Database,

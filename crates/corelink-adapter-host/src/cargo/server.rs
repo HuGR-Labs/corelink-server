@@ -275,16 +275,27 @@ async fn collect_body(request: Request, limit: u64) -> Result<Vec<u8>, CargoAdap
 
 impl IntoResponse for CargoAdapterError {
     fn into_response(self) -> Response {
-        let (status, body) = match &self {
-            Self::Auth(msg) => (StatusCode::UNAUTHORIZED, format!("auth: {msg}")),
-            Self::Cas(msg) => (StatusCode::BAD_GATEWAY, format!("cas: {msg}")),
-            Self::Audit(msg) => (StatusCode::SERVICE_UNAVAILABLE, format!("audit: {msg}")),
-            Self::BodyOversized(bytes) => (
-                StatusCode::PAYLOAD_TOO_LARGE,
-                format!("body exceeds limit: {bytes} bytes"),
-            ),
-            Self::Bind(err) => (StatusCode::INTERNAL_SERVER_ERROR, format!("bind: {err}")),
+        let status = match &self {
+            Self::Auth(_) => StatusCode::UNAUTHORIZED,
+            Self::Cas(_) => StatusCode::BAD_GATEWAY,
+            Self::Audit(_) => StatusCode::SERVICE_UNAVAILABLE,
+            Self::BodyOversized(_) => StatusCode::PAYLOAD_TOO_LARGE,
+            Self::Bind(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
+        // Cluster E (A27/A29): scrub internal backend detail (raw D1/CF/R2
+        // error, possibly SQL; R2 storage topology; derived per-tenant prefix)
+        // from the client body. Mint a correlation id, log the REAL detail
+        // server-side only, and return an opaque, ref-tagged message.
+        let request_id = uuid::Uuid::new_v4().simple().to_string();
+        if self.leaks_internal_detail() {
+            tracing::error!(
+                request_id = %request_id,
+                // Display carries the full internal detail — server-side only.
+                detail = %self,
+                "cargo: backend error (scrubbed from client response; see ref)"
+            );
+        }
+        let body = self.client_message(&request_id);
         let mut response = Response::new(Body::from(body));
         *response.status_mut() = status;
         response

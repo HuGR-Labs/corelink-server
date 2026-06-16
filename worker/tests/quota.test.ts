@@ -417,6 +417,60 @@ describe("checkRequestQuota", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Cluster D — request-quota gate is fail-CLOSED / ENFORCED BY DEFAULT
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("Cluster D — request quota default-on / fail-closed", () => {
+  const ok = (tier: Tier): TierResult => ({ tier, d1Error: false });
+
+  // The Worker derives `requestQuotaEnabled` from the opt-OUT kill-switch
+  // (worker/src/index.ts): enforcement is LIVE unless REQUEST_QUOTA_DISABLED
+  // === "true". Mirror that exact derivation here so the test pins the
+  // fail-closed semantics, not just the function.
+  const deriveEnabled = (envVal: string | undefined): boolean => envVal !== "true";
+
+  it("an UNSET env var ⇒ enforcement is ENABLED (fail-closed default)", () => {
+    expect(deriveEnabled(undefined)).toBe(true);
+  });
+
+  it("env var = anything-but-'true' ⇒ still ENABLED", () => {
+    expect(deriveEnabled("")).toBe(true);
+    expect(deriveEnabled("false")).toBe(true);
+    expect(deriveEnabled("0")).toBe(true);
+    expect(deriveEnabled("yes")).toBe(true);
+  });
+
+  it("ONLY env var === 'true' disables enforcement (dev/test opt-out)", () => {
+    expect(deriveEnabled("true")).toBe(false);
+  });
+
+  it("with NO flag set, an over-cap tenant gets a 429-shaped reject (gate is LIVE)", async () => {
+    // No REQUEST_QUOTA_DISABLED ⇒ derived boolean is true ⇒ the counter is
+    // consulted and an over-cap count is rejected. This is the prod posture:
+    // a missing env var does NOT silently disable the contracted cap.
+    const requestQuotaEnabled = deriveEnabled(undefined);
+    expect(requestQuotaEnabled).toBe(true);
+    const db = makeQuotaD1Mock({
+      requestCountAfterIncrement: QUOTAS.free.requestsPerMonthMax + 1,
+    });
+    const result = await checkRequestQuota(db, TEST_TENANT_ID, ok("free"), requestQuotaEnabled);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.retryAfterSec).toBeGreaterThan(0);
+      expect(result.reason).toContain("Monthly request quota exceeded");
+    }
+  });
+
+  it("with the dev/test kill-switch ON, the counter is NOT consulted (no-op)", async () => {
+    const requestQuotaEnabled = deriveEnabled("true"); // → false
+    expect(requestQuotaEnabled).toBe(false);
+    const db = makeQuotaD1Mock({ requestCountAfterIncrement: 9_999_999 }); // over-cap IF checked
+    const result = await checkRequestQuota(db, TEST_TENANT_ID, ok("free"), requestQuotaEnabled);
+    expect(result.ok).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // secondsUntilNextMonthStart
 // ─────────────────────────────────────────────────────────────────────────────
 

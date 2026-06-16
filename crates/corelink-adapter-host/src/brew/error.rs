@@ -48,3 +48,66 @@ pub enum BrewAdapterError {
     #[error("audit: {0}")]
     Audit(String),
 }
+
+impl BrewAdapterError {
+    /// True for variants whose inner string carries INTERNAL backend detail
+    /// (D1 / Cloudflare API errors, possibly SQL; R2 storage topology; the
+    /// derived per-tenant R2 prefix; upstream host/transport detail) that
+    /// MUST NOT reach the client (Cluster E — A27 / A29).
+    #[must_use]
+    pub const fn leaks_internal_detail(&self) -> bool {
+        matches!(
+            self,
+            Self::Bind(_) | Self::Auth(_) | Self::Cas(_) | Self::Upstream(_) | Self::Audit(_)
+        )
+    }
+
+    /// The CLIENT-FACING response body for this error (Cluster E).
+    ///
+    /// Backend-fault variants collapse to an opaque, class-keyed string plus a
+    /// `ref` correlation id (joined to the server-side `tracing::error!` that
+    /// carries the real detail). `BottleOversized` keeps its actionable,
+    /// non-leaking message.
+    #[must_use]
+    pub fn client_message(&self, request_id: &str) -> String {
+        if self.leaks_internal_detail() {
+            let class = match self {
+                Self::Auth(_) => "authentication failed",
+                _ => "internal error",
+            };
+            format!("{class} (ref: {request_id})")
+        } else {
+            self.to_string()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backend_fault_client_message_is_opaque_and_ref_tagged() {
+        let raw = "R2 GetObject failed: bucket corelink-cas key tenants/abc/...";
+        for err in [
+            BrewAdapterError::Auth(format!("backend: {raw}")),
+            BrewAdapterError::Cas(raw.into()),
+            BrewAdapterError::Upstream(raw.into()),
+            BrewAdapterError::Audit(raw.into()),
+        ] {
+            assert!(err.leaks_internal_detail(), "{err:?} must be flagged leaky");
+            let msg = err.client_message("RIDb");
+            assert!(!msg.contains("R2"), "leaked R2 topology: {msg}");
+            assert!(!msg.contains("bucket"), "leaked bucket: {msg}");
+            assert!(!msg.contains("tenants/"), "leaked per-tenant prefix: {msg}");
+            assert!(msg.contains("RIDb"), "missing correlation ref: {msg}");
+        }
+    }
+
+    #[test]
+    fn oversized_keeps_actionable_message() {
+        let e = BrewAdapterError::BottleOversized(9001);
+        assert!(!e.leaks_internal_detail());
+        assert!(e.client_message("RID").contains("9001"));
+    }
+}
