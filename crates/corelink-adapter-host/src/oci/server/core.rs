@@ -91,7 +91,24 @@ pub fn err_response(
     scope: Option<&str>,
 ) -> axum::response::Response {
     let status = status_for(err);
-    let body = serde_json::to_vec(&err.to_envelope()).unwrap_or_default();
+    // Cluster E: mint a per-error correlation id. For backend-fault variants
+    // (Auth/Cas/Kv/Audit/Bind) the wire `message` is opaque + carries this
+    // `ref`, and the REAL detail (raw D1/CF/R2 error, possibly SQL; R2 storage
+    // topology; the derived per-tenant prefix) is logged HERE only — never sent
+    // to the client. A24: the OCI `/token` PAT-verify path is unauth-reachable,
+    // so its backend fault must never leak the CF D1 API error string.
+    let request_id = uuid::Uuid::new_v4().simple().to_string();
+    if err.leaks_internal_detail() {
+        tracing::error!(
+            request_id = %request_id,
+            code = err.oci_code(),
+            // `err` Display carries the full internal detail — logged
+            // server-side ONLY (never crosses the wire).
+            detail = %err,
+            "oci: backend error (scrubbed from client response; see ref)"
+        );
+    }
+    let body = serde_json::to_vec(&err.to_envelope(&request_id)).unwrap_or_default();
     let mut headers = HeaderMap::new();
     if let Ok(v) = "application/json".parse() {
         headers.insert(axum::http::header::CONTENT_TYPE, v);

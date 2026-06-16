@@ -1492,4 +1492,107 @@ mod tests {
             "oversized manifest body must return 413"
         );
     }
+
+    // ── Cluster E / A24: UNAUTH /token backend fault is OPAQUE ─────────────────
+
+    /// `PatRowLookup` that always fails with a RAW backend string mimicking the
+    /// CF D1 HTTP API error (status + body, possibly SQL). The verifier maps
+    /// this to `VerifyError::Backend`, which the OCI resolver surfaces as the
+    /// adapter `Auth` error — the A24 leak path.
+    struct BackendErrLookup;
+    #[async_trait]
+    impl PatRowLookup for BackendErrLookup {
+        async fn lookup(&self, _token_id: &str) -> Result<Option<PatRow>, String> {
+            Err(
+                "D1 HTTP 500 Internal Server Error: {\"errors\":[{\"code\":7500,\
+                 \"message\":\"no such table: pat in SELECT tenant_id, pat_hash, scope FROM pat WHERE token_id = ?1\"}]}"
+                    .to_owned(),
+            )
+        }
+    }
+
+    #[tokio::test]
+    async fn token_backend_fault_is_opaque_to_unauth_caller() {
+        // A24 (UNAUTH-reachable, highest priority): the OCI `/token` leg runs
+        // the PAT-verify backend. When that backend faults, the public response
+        // must NOT echo the raw CF D1 API error (status / body / SQL). An
+        // UNauthenticated caller (it presents only a syntactically-valid PAT in
+        // Basic, never a verified credential) must learn nothing about the
+        // internal store. The OCI error envelope SHAPE is preserved; only the
+        // `message` content is scrubbed to an opaque, ref-tagged string.
+        let key = test_key();
+        // A real (HMAC-valid) PAT so verification proceeds PAST the cheap
+        // fast-reject and actually hits the (faulting) D1 lookup.
+        let tenant_uuid = Uuid::from_u128(0xA24);
+        let (plaintext, _pat) = mint(
+            PatEnv::Pat,
+            PatTenantId(tenant_uuid),
+            PrincipalId(Uuid::from_u128(0xBEEF)),
+            PatScopes::from_u64(SCOPE_CACHE_RW),
+            None,
+            &key,
+            1,
+        )
+        .unwrap();
+        let pt = plaintext.into_string();
+        let verifier = Arc::new(PatVerifier::new(Arc::new(BackendErrLookup), key));
+        let cas = Arc::new(StubCas::default());
+        let app = router(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()),
+            Arc::new(OciKvFake::default()),
+            verifier,
+            SecretWrap::new(OCI_KEY.to_owned()),
+            None,
+        );
+
+        let resp = app
+            .oneshot(req(
+                Method::GET,
+                "/token?scope=repository:alpine:pull",
+                Some(&basic(&pt)),
+                None,
+            ))
+            .await
+            .unwrap();
+        // The exchange fails (backend fault) — but the wire body must be clean.
+        let status = resp.status();
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body = String::from_utf8_lossy(&body_bytes);
+
+        // Envelope SHAPE preserved (clients depend on it): { "errors": [...] }.
+        let json: serde_json::Value =
+            serde_json::from_slice(&body_bytes).expect("OCI error envelope must remain valid JSON");
+        assert!(
+            json.get("errors").and_then(|e| e.as_array()).is_some(),
+            "OCI error envelope shape must be preserved"
+        );
+
+        // NO internal detail crosses the wire (the heart of A24).
+        for needle in [
+            "D1",
+            "HTTP 500",
+            "no such table",
+            "SELECT",
+            "FROM pat",
+            "token_id",
+            "errors\":[{\"code\":7500", // raw CF error object
+            "backend",
+        ] {
+            assert!(
+                !body.contains(needle),
+                "A24: scrubbed /token body leaked internal detail {needle:?}; got: {body}"
+            );
+        }
+        // It IS the opaque, code-keyed message + a correlation ref.
+        assert!(
+            body.contains("authentication failed") && body.contains("ref:"),
+            "A24: expected opaque ref-tagged message, got: {body}"
+        );
+        // The status is the auth-failure shape (401), unchanged.
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
 }

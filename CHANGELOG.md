@@ -23,6 +23,37 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **Cluster D/E/G — fail-closed request quota, error-string scrub, mint rate limit (cycle-2 nuclear red-team).**
+  - **Cluster D — monthly request-count quota failed OPEN in prod.** The Worker gated
+    enforcement on `REQUEST_QUOTA_ENABLED === "true"`, which is unset in production, so
+    the contracted per-month request cap was never enforced. The gate is now fail-CLOSED:
+    enforcement is ON by default and disabled only by the explicit opt-OUT kill-switch
+    `REQUEST_QUOTA_DISABLED === "true"` (dev/test). A missing prod env var keeps the cap
+    live (`worker/src/index.ts`, `worker/src/lib/quota.ts`; vitest: request quota
+    default-on / fail-closed). **Owner op: no env var to set in prod — leaving
+    `REQUEST_QUOTA_DISABLED` unset is the enforced state; ensure it is NOT set to "true"
+    in prod.**
+  - **Cluster E — raw backend error strings + storage topology leaked into public HTTP
+    responses.** The adapter + OCI error paths interpolated the inner backend `String`
+    (raw Cloudflare D1 API errors incl. status/body and possibly SQL; R2 storage
+    topology; the derived per-tenant R2 prefix; upstream host/transport) into the
+    client-facing body. **A24 (unauth-reachable):** the OCI `/token` PAT-verify backend
+    fault leaked the raw CF D1 error into the public 401. **A27/A28/A29:** the
+    cargo/brew/npm/pip + OCI error envelopes surfaced the same internals verbatim. Every
+    public-facing error path now returns an opaque, class-keyed message + a correlation
+    `ref` (request id); the real detail is logged server-side only via `tracing::error!`.
+    Existing REAPI/OCI envelope SHAPES + status codes are preserved — only the
+    `message`/body content is scrubbed; safe variants (digest/integrity mismatch,
+    oversized, not-found) keep their actionable messages (`crates/corelink-adapter-host`
+    `{oci,cargo,brew,pip,npm}/error.rs` + `*/server.rs`).
+  - **Cluster G — `/_internal/pat/mint` had concurrency but no RATE limit.** #297 added
+    a concurrency semaphore, but an internal-auth holder firing SERIAL mints stayed under
+    the concurrency cap while pinning Argon2id CPU/RAM indefinitely. A process-global
+    fixed-window RATE limiter (`MintRateLimiter`, default 60 mints/min, env-tunable via
+    `PAT_MINT_MAX_PER_MINUTE`) now bounds mint throughput; over-rate ⇒ 429. Checked after
+    the auth gate (unauth floods shed at 401 first) and before the concurrency permit /
+    Argon2id work. In-memory, per-container, resets on restart (documented). The
+    concurrency semaphore is kept (`crates/corelink-container/src/routes/internal_pat.rs`).
 - **Storage byte-accounting: sibling write surfaces + reserve-before-commit (cycle-2 nuclear red-team, clusters B/C/F).**
   - **Cluster B — byte accounting only covered the native plane.** Bazel REAPI, OCI,
     and the cargo/brew/npm/pip language adapters all drive the SAME shared

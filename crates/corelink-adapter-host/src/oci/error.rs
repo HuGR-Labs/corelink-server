@@ -152,11 +152,55 @@ pub struct OciErrorEnvelope {
 pub struct OciErrorEntry {
     /// OCI Distribution Spec v1.1 error code (UPPER_SNAKE).
     pub code: &'static str,
-    /// Human-readable message; safe to surface to clients.
+    /// Human-readable message. SCRUBBED of internal backend detail for
+    /// backend-fault variants (Cluster E) — see
+    /// [`OciAdapterError::client_message`].
     pub message: String,
 }
 
 impl OciAdapterError {
+    /// True for variants whose inner string carries INTERNAL backend detail
+    /// (D1 / Cloudflare API errors, possibly SQL; R2 storage topology; the
+    /// derived per-tenant R2 prefix) that MUST NOT reach the client (A24 /
+    /// A28 / A29). Their wire `message` is replaced with an opaque,
+    /// reference-only string; the real detail is logged server-side.
+    ///
+    /// `Auth(_)` is the highest-priority case: the OCI `/token` leg is
+    /// UNAUTHENTICATED-reachable and its PAT-verify backend fault otherwise
+    /// leaked the raw CF D1 API error (status + body, possibly SQL) into the
+    /// public 401 response body.
+    #[must_use]
+    pub const fn leaks_internal_detail(&self) -> bool {
+        matches!(
+            self,
+            Self::Bind(_) | Self::Auth(_) | Self::Cas(_) | Self::Kv(_) | Self::Audit(_)
+        )
+    }
+
+    /// The CLIENT-FACING message for this error (Cluster E).
+    ///
+    /// For backend-fault variants ([`Self::leaks_internal_detail`]) this is a
+    /// fixed, opaque string keyed by the failure class plus a `ref` request
+    /// id the operator can correlate to the server-side `tracing::error!`
+    /// line that DOES carry the real detail. For every other variant (digest
+    /// mismatch, oversized, not-found, invalid repo name, throttled — none of
+    /// which carry internal topology) the original, already-safe message is
+    /// kept so clients retain the actionable signal they depend on.
+    #[must_use]
+    pub fn client_message(&self, request_id: &str) -> String {
+        if self.leaks_internal_detail() {
+            let class = match self {
+                Self::Auth(_) => "authentication failed",
+                // Bind only appears at boot, never on a served request, but
+                // scrub it defensively too.
+                _ => "internal error",
+            };
+            format!("{class} (ref: {request_id})")
+        } else {
+            self.to_string()
+        }
+    }
+
     /// OCI Distribution Spec v1.1 error code string.
     #[must_use]
     pub const fn oci_code(&self) -> &'static str {
@@ -179,14 +223,82 @@ impl OciAdapterError {
         }
     }
 
-    /// Build a single-entry envelope ready to JSON-serialize.
+    /// Build a single-entry envelope ready to JSON-serialize, with the
+    /// `message` SCRUBBED of internal backend detail (Cluster E).
+    ///
+    /// `request_id` is the correlation handle echoed in the scrubbed message
+    /// (`ref: …`) and logged alongside the real detail server-side, so an
+    /// operator can join a client-visible opaque error to its full cause
+    /// without that cause ever crossing the wire.
     #[must_use]
-    pub fn to_envelope(&self) -> OciErrorEnvelope {
+    pub fn to_envelope(&self, request_id: &str) -> OciErrorEnvelope {
         OciErrorEnvelope {
             errors: vec![OciErrorEntry {
                 code: self.oci_code(),
-                message: self.to_string(),
+                message: self.client_message(request_id),
             }],
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "tests are allowed to use these primitives"
+)]
+mod tests {
+    use super::*;
+
+    const RID: &str = "abc123ref";
+
+    #[test]
+    fn backend_fault_message_is_opaque_and_ref_tagged() {
+        // Cluster E: every internal-detail-bearing variant scrubs its message
+        // and carries the correlation ref. The raw inner string never appears.
+        let raw = "D1 HTTP 500: no such table: pat in SELECT ... FROM pat";
+        for err in [
+            OciAdapterError::Auth(format!("backend: {raw}")),
+            OciAdapterError::Cas(raw.to_owned()),
+            OciAdapterError::Kv(raw.to_owned()),
+            OciAdapterError::Audit(raw.to_owned()),
+        ] {
+            assert!(err.leaks_internal_detail(), "{err:?} must be flagged leaky");
+            let msg = err.client_message(RID);
+            assert!(!msg.contains("D1"), "leaked D1: {msg}");
+            assert!(!msg.contains("SELECT"), "leaked SQL: {msg}");
+            assert!(!msg.contains("FROM pat"), "leaked SQL: {msg}");
+            assert!(!msg.contains("backend"), "leaked backend tag: {msg}");
+            assert!(msg.contains(RID), "missing correlation ref: {msg}");
+        }
+        // Auth uses the auth-specific class; the rest use the generic class.
+        assert!(OciAdapterError::Auth("x".into())
+            .client_message(RID)
+            .starts_with("authentication failed"));
+    }
+
+    #[test]
+    fn safe_variants_keep_their_actionable_message() {
+        // Variants that carry NO internal topology keep their useful message.
+        let dm = OciAdapterError::DigestMismatch {
+            declared: "sha256:aaa".into(),
+            computed: "sha256:bbb".into(),
+        };
+        assert!(!dm.leaks_internal_detail());
+        let msg = dm.client_message(RID);
+        assert!(msg.contains("sha256:aaa") && msg.contains("sha256:bbb"));
+        // NotFound stays the bare, non-leaking string.
+        assert_eq!(OciAdapterError::NotFound.client_message(RID), "not found");
+    }
+
+    #[test]
+    fn envelope_shape_preserved_with_scrubbed_message() {
+        let env = OciAdapterError::Auth("backend: D1 HTTP 500: secret".into()).to_envelope(RID);
+        let json = serde_json::to_string(&env).unwrap();
+        assert!(json.contains("\"errors\""), "envelope shape must survive");
+        assert!(json.contains("UNAUTHORIZED"), "code preserved");
+        assert!(!json.contains("D1"), "scrubbed body must not leak D1: {json}");
+        assert!(json.contains(RID), "ref present: {json}");
     }
 }

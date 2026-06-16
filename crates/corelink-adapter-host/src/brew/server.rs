@@ -134,17 +134,26 @@ async fn handle_bottle_request(
 
 impl IntoResponse for BrewAdapterError {
     fn into_response(self) -> Response {
-        let (status, body) = match &self {
-            Self::Auth(msg) => (StatusCode::UNAUTHORIZED, format!("auth: {msg}")),
-            Self::Cas(msg) => (StatusCode::BAD_GATEWAY, format!("cas: {msg}")),
-            Self::Upstream(msg) => (StatusCode::BAD_GATEWAY, format!("upstream: {msg}")),
-            Self::BottleOversized(bytes) => (
-                StatusCode::PAYLOAD_TOO_LARGE,
-                format!("bottle exceeds limit: {bytes} bytes"),
-            ),
-            Self::Audit(msg) => (StatusCode::SERVICE_UNAVAILABLE, format!("audit: {msg}")),
-            Self::Bind(err) => (StatusCode::INTERNAL_SERVER_ERROR, format!("bind: {err}")),
+        let status = match &self {
+            Self::Auth(_) => StatusCode::UNAUTHORIZED,
+            Self::Cas(_) | Self::Upstream(_) => StatusCode::BAD_GATEWAY,
+            Self::BottleOversized(_) => StatusCode::PAYLOAD_TOO_LARGE,
+            Self::Audit(_) => StatusCode::SERVICE_UNAVAILABLE,
+            Self::Bind(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
+        // Cluster E (A27/A29): scrub internal backend detail (raw D1/CF/R2
+        // error, possibly SQL; R2 storage topology; derived per-tenant prefix;
+        // upstream host/transport) from the client body. Mint a correlation id,
+        // log the REAL detail server-side only, return an opaque ref-tagged msg.
+        let request_id = uuid::Uuid::new_v4().simple().to_string();
+        if self.leaks_internal_detail() {
+            tracing::error!(
+                request_id = %request_id,
+                detail = %self,
+                "brew: backend error (scrubbed from client response; see ref)"
+            );
+        }
+        let body = self.client_message(&request_id);
         let mut response = Response::new(Body::from(body));
         *response.status_mut() = status;
         response

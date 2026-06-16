@@ -105,9 +105,11 @@ export interface Env {
   // Per-tier quota enforcement (worker/src/lib/quota.ts).
   // Storage quota is always enforced for finite-quota tiers.
   // Monthly request-count quota is backed by the monthly_request_counts table
-  // (migration 0071) and enforced when this flag === "true" (atomic
-  // increment-and-check). Unset/anything-else → request-count cap not enforced.
-  REQUEST_QUOTA_ENABLED?: string;
+  // (migration 0071) and is ENFORCED BY DEFAULT (fail-CLOSED). It is an explicit
+  // opt-OUT kill-switch: enforcement runs (atomic increment-and-check) UNLESS
+  // this flag === "true". Set REQUEST_QUOTA_DISABLED="true" ONLY in dev/test to
+  // skip the counter; an unset var in prod keeps the contracted cap LIVE.
+  REQUEST_QUOTA_DISABLED?: string;
   // Container storage credentials (WP-S1 StorageEnv contract). The DO forwards
   // these to the native container via container.start({ env }) so it can reach
   // R2 (S3 API) + D1 (HTTP API). Absent → container falls back to InMemory
@@ -1921,8 +1923,9 @@ const handler: ExportedHandler<Env> = {
     // Skip for system/anonymous tenants (no billing record exists for them).
     //
     // Storage quota: enforced from SUM(tenant_storage_state.bytes_used).
-    // Request quota: enforced via the monthly_request_counts atomic counter
-    // when REQUEST_QUOTA_ENABLED is on — see worker/src/lib/quota.ts.
+    // Request quota: enforced BY DEFAULT via the monthly_request_counts atomic
+    // counter (fail-CLOSED) — disabled only by REQUEST_QUOTA_DISABLED="true"
+    // (dev/test). See worker/src/lib/quota.ts.
     //
     // D1-error posture is verb-aware (CAA-360 #25): reads fail OPEN for
     // availability, byte-adding writes (PUT/POST) fail CLOSED so an outage
@@ -1930,7 +1933,13 @@ const handler: ExportedHandler<Env> = {
     // (quota_fsm_state) provides the deeper safety net on mutations.
     if (resolvedTenantId !== "_anonymous" && resolvedTenantId !== "_system" && resolvedTenantId !== "_pending") {
       const quotaTier = await getTierForTenant(env.CONFIG_DB, resolvedTenantId);
-      const requestQuotaEnabled = env.REQUEST_QUOTA_ENABLED === "true";
+      // Request-count quota is ENFORCED BY DEFAULT (fail-CLOSED). The monthly
+      // per-tenant request cap is a CONTRACTED ceiling, so an unset env var in
+      // prod must NOT silently disable it (Cluster D). The gate is an explicit
+      // opt-OUT kill-switch: enforcement is live UNLESS REQUEST_QUOTA_DISABLED
+      // === "true" (set only in dev/test). Mirrors the fail-closed posture of
+      // the other quota/security gates in this file.
+      const requestQuotaEnabled = env.REQUEST_QUOTA_DISABLED !== "true";
 
       // A storage-increasing op is a write verb (PUT uploads / POST). DELETE
       // reduces storage and reads (GET/HEAD) cannot grow it, so both stay
@@ -1968,7 +1977,7 @@ const handler: ExportedHandler<Env> = {
       }
 
       // Monthly request-count quota (red-team #5): atomic increment-and-check
-      // against monthly_request_counts when REQUEST_QUOTA_ENABLED is on. Reads
+      // against monthly_request_counts (enforced by default; Cluster D). Reads
       // fail OPEN on a D1 error (availability), same posture as storage. This
       // is the aggregate monthly cap, distinct from the container's per-second
       // token-bucket rate limit.
