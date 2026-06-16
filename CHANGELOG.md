@@ -23,6 +23,23 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **CAA-360 #27/#29/#30 — worker auth hardening bundle.**
+  - **#27** — `internal_auth.ts requireInternalAuth` compared the shared secret with `ctEqStr`, which
+    returned early on a length mismatch (a length oracle). Replaced with the same padded
+    `crypto.subtle.timingSafeEqual` gate `index.ts` uses for `/_internal/*`: the provided bytes are
+    copied into a fixed buffer sized to the expected secret, one `timingSafeEqual` runs over
+    equal-length buffers, then ANDed with a single length-equality bit — no branch depends on the
+    provided length. (index.ts's own `ctEqStr` is retained: it is used only for non-secret PAT
+    env-segment matching, which carries no oracle.)
+  - **#29** — `extractAuth` docstring drift: it documented `SELECT tenant_id, pat_hash, expires_ms …
+    WHERE … expires_ms > now_ms`, but the actual query is `SELECT tenant_id, expires_ms, scope …
+    WHERE token_id = ?1 AND revoked_at_ms IS NULL` with expiry checked in application code. Docstring
+    corrected to match (removes false assurance of a SQL-level expiry filter).
+  - **#30** — `clerk_auth.ts` fell back to a weak issuer shape-check (`https` + host contains
+    "clerk") when `CLERK_ISSUER_URL` was unset. In `ENVIRONMENT === "production"` it now fails CLOSED
+    (issuer pin required) instead of shape-checking, with a loud operator log. **OPERATOR (launch
+    step):** set `CLERK_ISSUER_URL` via `wrangler secret put CLERK_ISSUER_URL --env prod` BEFORE the
+    next Worker deploy or Clerk session auth will 401 (merge ≠ deploy; the Worker deploys manually).
 - **CAA-360 #25 — storage-quota gate fails CLOSED on D1 errors for write verbs.** `checkStorageQuota`
   previously returned `ok:true` (fail-OPEN) on every D1 error path — both the storage-`SUM` query
   `catch` and the unconfirmed-tier (`tierResult.d1Error`) branch — so a D1 outage let a tenant write

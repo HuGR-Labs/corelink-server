@@ -657,10 +657,13 @@ function extractFirstSegment(path: string): string | null {
  *   3. HMAC-SHA256 fast-fail (if PAT_SIGNING_KEY is bound): reject in < 1ms
  *      if the `hmac_sig` segment does not match the signing key. This blocks
  *      random-string brute-force without touching D1 at all.
- *   4. D1 lookup by `token_id` — SELECT tenant_id, pat_hash, expires_ms FROM pat
- *      WHERE token_id = ?1 AND expires_ms > now_ms. Any token not in the D1
- *      store → 401. This kills the "any 32–256 char string accepted" vulnerability.
- *   5. Expiry check: expires_ms > Date.now().
+ *   4. D1 lookup by `token_id` — SELECT tenant_id, expires_ms, scope FROM pat
+ *      WHERE token_id = ?1 AND revoked_at_ms IS NULL LIMIT 1. Any token not in
+ *      the D1 store → 401. This kills the "any 32–256 char string accepted"
+ *      vulnerability. (Expiry is NOT filtered in SQL — it is checked in
+ *      application code in step 5 below, so an expired token is fetched then
+ *      rejected, distinguishing `pat_expired` from `pat_not_found`.)
+ *   5. Expiry check (application-side): reject when expires_ms <= Date.now().
  *   6. Return resolved tenant_id (UUID string from D1 row).
  *
  * Constant-time discipline:

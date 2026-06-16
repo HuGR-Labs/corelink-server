@@ -159,8 +159,24 @@ export async function verifyClerkSessionAndResolveTenant(
           response: reapiError("UNAUTHORIZED", "clerk session issuer invalid", 401, requestId),
         };
       }
+    } else if (env.ENVIRONMENT === "production") {
+      // CAA-360 #30: in PRODUCTION the issuer MUST be exact-pinned. With
+      // CLERK_ISSUER_URL unset we fail CLOSED rather than fall back to the weak
+      // shape-check — otherwise a misconfigured prod deploy would accept tokens
+      // from ANY https issuer whose host merely contains "clerk" (e.g. another
+      // Clerk instance). Fail-closed forces the operator to provision the pin.
+      // OPERATOR (launch step): `wrangler secret put CLERK_ISSUER_URL --env prod`
+      // BEFORE deploying this Worker, or all Clerk session auth will 401.
+      console.error(
+        `[${requestId}] CLERK_ISSUER_URL unset in production — failing CLOSED (issuer pin required)`,
+      );
+      return {
+        ok: false,
+        response: reapiError("UNAUTHORIZED", "clerk session issuer invalid", 401, requestId),
+      };
     } else {
-      // Shape-check fallback: block non-Clerk issuers conservatively.
+      // Non-production shape-check fallback: block non-Clerk issuers
+      // conservatively. (Prod requires the exact pin above.)
       if (
         typeof iss !== "string" ||
         iss.length === 0 ||
