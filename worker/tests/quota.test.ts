@@ -5,10 +5,11 @@
  * Also exercises the quota enforcement path in the Worker handler via the
  * existing workerFetch test harness pattern.
  *
- * Test inventory (18 tests):
+ * Test inventory:
  *   Quota constants          (3 tests)
- *   getTierForTenant         (6 tests)
- *   checkStorageQuota        (5 tests)
+ *   getTierForTenant         (8 tests)
+ *   checkStorageQuota        (9 tests)
+ *   checkRequestQuota        (7 tests)  ← red-team #5: monthly request cap
  *   secondsUntilNextMonth    (1 test)
  *   Worker 429 integration   (3 tests)
  */
@@ -51,6 +52,14 @@ function makeQuotaD1Mock(opts: {
   patRow?: { tenant_id: string; expires_ms: number } | null;
   throwOnTierQuery?: boolean;
   throwOnStorageQuery?: boolean;
+  /**
+   * Post-increment request_count returned by the monthly_request_counts UPSERT
+   * (the atomic increment-and-check in checkRequestQuota). Default 1 (first
+   * request of the month).
+   */
+  requestCountAfterIncrement?: number;
+  /** Make the monthly_request_counts UPSERT throw (D1 error → fail-open). */
+  throwOnRequestCountQuery?: boolean;
 }): D1Database {
   const {
     tierSelectionsRow = null,
@@ -60,6 +69,8 @@ function makeQuotaD1Mock(opts: {
     patRow = { tenant_id: TEST_TENANT_ID, expires_ms: Date.now() + 3_600_000 },
     throwOnTierQuery = false,
     throwOnStorageQuery = false,
+    requestCountAfterIncrement = 1,
+    throwOnRequestCountQuery = false,
   } = opts;
 
   return {
@@ -69,7 +80,14 @@ function makeQuotaD1Mock(opts: {
           const isTierSelQuery = sql.includes("tier_selections");
           const isTenantTierQuery = sql.includes("FROM tenant") && sql.includes("tier");
           const isStorageQuery = sql.includes("tenant_storage_state");
+          const isRequestCountQuery = sql.includes("monthly_request_counts");
           const isPatQuery = sql.includes("FROM pat");
+
+          if (isRequestCountQuery) {
+            if (throwOnRequestCountQuery) throw new Error("D1 request-count error");
+            // Mirror the atomic UPSERT ... RETURNING request_count.
+            return { request_count: requestCountAfterIncrement } as T | null;
+          }
 
           if (isTierSelQuery) {
             if (throwOnTierQuery) throw new Error("D1 tier_selections error");
@@ -329,6 +347,72 @@ describe("checkStorageQuota", () => {
     if (!result.ok) {
       expect(result.reason).toContain("unverifiable");
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// checkRequestQuota — monthly request-count cap (red-team #5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("checkRequestQuota", () => {
+  const ok = (tier: Tier): TierResult => ({ tier, d1Error: false });
+  const ENABLED = true;
+  const DISABLED = false;
+
+  it("no-op (ok:true) without touching the counter when the flag is OFF", async () => {
+    const db = makeQuotaD1Mock({ requestCountAfterIncrement: 9_999_999 }); // would be over-cap IF checked
+    const result = await checkRequestQuota(db, TEST_TENANT_ID, ok("free"), DISABLED);
+    expect(result.ok).toBe(true);
+  });
+
+  it("returns ok:true when the post-increment count is UNDER the tier cap", async () => {
+    // free cap = 500K; this is request #1 of the month.
+    const db = makeQuotaD1Mock({ requestCountAfterIncrement: 1 });
+    const result = await checkRequestQuota(db, TEST_TENANT_ID, ok("free"), ENABLED);
+    expect(result.ok).toBe(true);
+  });
+
+  it("returns ok:true on the request that lands exactly ON the cap (count === cap)", async () => {
+    const db = makeQuotaD1Mock({ requestCountAfterIncrement: QUOTAS.free.requestsPerMonthMax });
+    const result = await checkRequestQuota(db, TEST_TENANT_ID, ok("free"), ENABLED);
+    expect(result.ok).toBe(true);
+  });
+
+  it("returns ok:false + 429-shaped Retry-After when the count EXCEEDS the cap", async () => {
+    const db = makeQuotaD1Mock({ requestCountAfterIncrement: QUOTAS.free.requestsPerMonthMax + 1 });
+    const result = await checkRequestQuota(db, TEST_TENANT_ID, ok("free"), ENABLED);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.retryAfterSec).toBeGreaterThan(0);
+      expect(result.retryAfterSec).toBeLessThanOrEqual(2_678_400);
+      expect(result.reason).toContain("Monthly request quota exceeded");
+      expect(result.reason).toContain("free");
+    }
+  });
+
+  it("skips the counter for uncapped tiers (enterprise) → always ok:true", async () => {
+    const db = makeQuotaD1Mock({ requestCountAfterIncrement: Number.MAX_SAFE_INTEGER });
+    const result = await checkRequestQuota(db, TEST_TENANT_ID, ok("enterprise"), ENABLED);
+    expect(result.ok).toBe(true);
+  });
+
+  it("fails OPEN (ok:true) on a counter-UPSERT D1 error", async () => {
+    const db = makeQuotaD1Mock({ throwOnRequestCountQuery: true });
+    const result = await checkRequestQuota(db, TEST_TENANT_ID, ok("free"), ENABLED);
+    expect(result.ok).toBe(true);
+  });
+
+  it("fails OPEN (ok:true) without counting when the tier is unconfirmed (d1Error)", async () => {
+    // Would be over-cap IF the counter were consulted; an unconfirmed tier must
+    // never false-positive a paid tenant during a partial D1 outage (F21).
+    const db = makeQuotaD1Mock({ requestCountAfterIncrement: 9_999_999 });
+    const result = await checkRequestQuota(
+      db,
+      TEST_TENANT_ID,
+      { tier: "free", d1Error: true },
+      ENABLED,
+    );
+    expect(result.ok).toBe(true);
   });
 });
 
