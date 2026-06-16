@@ -134,7 +134,10 @@ function computeRotateTtlSeconds(_oldExpiresMs: number): number {
  *   7. ONLY after the mint succeeds: revoke the OLD pat_id via the existing
  *      idempotent `revoked_at_ms IS NULL` soft-revoke.
  *   8. Return `{ token_plaintext, pat_id (new), token_id, expires_ms,
- *      rotated_from }`.
+ *      rotated_from, revoke_pending }`. `revoke_pending` is `true` ONLY when the
+ *      new mint succeeded but the old-PAT revoke write failed (D1 transient) — the
+ *      caller still gets a working new credential and must retry the idempotent
+ *      revoke; the old PAT's bounded expiry is the backstop.
  *
  * principal-source choice: we pass the OLD `pat_id` as `principalSource`. It is a
  * stable, server-issued, non-PII identifier, so the rotated PAT's derived
@@ -273,6 +276,7 @@ export async function handleAuthRotate(
   // revoked_at_ms IS NULL`. INV-PAT-REVOKE-PROPAGATION: the native plane, adapters
   // and OCI all filter `revoked_at_ms IS NULL`, so the old token stops being
   // honored immediately. The new PAT already exists → no zero-valid-PAT window.
+  let revokePending = false;
   try {
     await env.CONFIG_DB.prepare(
       "UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id = ?2 AND revoked_at_ms IS NULL",
@@ -281,13 +285,15 @@ export async function handleAuthRotate(
       .run();
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
-    // The NEW PAT is already minted and valid. A failed old-PAT revoke leaves the
-    // old PAT alive too — not ideal, but the caller HAS a working new credential,
-    // and the old PAT keeps its original (bounded) expiry. Surface a 500 so the
-    // caller knows the old key may still be live and can retry the revoke (the
-    // dedicated revoke surface is idempotent).
-    console.error(`[${requestId}] auth rotate old-pat revoke failed: ${message.slice(0, 80)}`);
-    return reapiError("INTERNAL_ERROR", "auth rotate revoke failed", 500, requestId);
+    // The NEW PAT is already minted and valid — that is the whole point of rotate,
+    // so we MUST return it rather than throwing it away on a revoke hiccup (a 500
+    // here would orphan a valid minted PAT and force the caller to re-mint). Instead
+    // return 200 with the new token AND `revoke_pending: true`, so the caller has a
+    // working credential and a clear signal that the OLD key may still be live and
+    // the (idempotent) revoke must be retried via POST /internal/v1/runner/revoke.
+    // The old PAT keeps its original bounded expiry as the backstop.
+    console.error(`[${requestId}] auth rotate old-pat revoke failed (revoke_pending): ${message.slice(0, 80)}`);
+    revokePending = true;
   }
 
   // ── 8. Return the rotated envelope ─────────────────────────────────────────
@@ -298,6 +304,7 @@ export async function handleAuthRotate(
       token_id: minted.token_id,
       expires_ms: minted.expires_ms,
       rotated_from: patId,
+      revoke_pending: revokePending,
     }),
     {
       status: 200,

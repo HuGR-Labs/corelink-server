@@ -59,6 +59,7 @@ function makeConfigDb(opts: {
   oldRow: OldPatRow | null;
   revokeCapture?: { binds?: unknown[]; called?: boolean };
   throttleCount?: number;
+  revokeThrows?: boolean;
 }): D1Database {
   return {
     prepare: (sql: string) => ({
@@ -73,9 +74,14 @@ function makeConfigDb(opts: {
           return null as T | null;
         },
         run: async () => {
-          if (sql.includes("UPDATE pat SET revoked_at_ms") && opts.revokeCapture) {
-            opts.revokeCapture.binds = args;
-            opts.revokeCapture.called = true;
+          if (sql.includes("UPDATE pat SET revoked_at_ms")) {
+            if (opts.revokeThrows) {
+              throw new Error("D1 revoke transport error");
+            }
+            if (opts.revokeCapture) {
+              opts.revokeCapture.binds = args;
+              opts.revokeCapture.called = true;
+            }
           }
           return { success: true } as unknown as D1Result;
         },
@@ -114,6 +120,7 @@ function makeEnv(opts: {
   mintStatus?: number;
   withInternalKey?: boolean;
   withPatMintKey?: boolean;
+  revokeThrows?: boolean;
 }): Env {
   return {
     CORELINK_SERVER: makeMintNamespace(opts.captured ?? {}, { status: opts.mintStatus }),
@@ -121,6 +128,7 @@ function makeEnv(opts: {
     CONFIG_DB: makeConfigDb({
       oldRow: opts.oldRow ?? null,
       revokeCapture: opts.revokeCapture,
+      revokeThrows: opts.revokeThrows,
     }),
     CORELINK_INTERNAL_AUTH_KEY: opts.withInternalKey === false ? undefined : INTERNAL_KEY,
     CORELINK_PAT_MINT_AUTH_KEY: opts.withPatMintKey ? PAT_MINT_KEY : undefined,
@@ -280,6 +288,37 @@ describe("POST /internal/v1/auth/rotate — clw auth rotate", () => {
     expect(resp.status).toBe(500); // mint error propagated
     expect(captured.req).toBeDefined(); // mint WAS attempted
     expect(revokeCapture.called).toBeUndefined(); // old PAT left INTACT
+  });
+
+  // ── (f) mint OK + revoke fails → 200 + new token + revoke_pending ─────────
+  it("(f) revoke failure after a successful mint returns 200 + new token + revoke_pending:true", async () => {
+    const captured: { req?: Request } = {};
+    // Mint succeeds (200), but the old-pat revoke UPDATE throws (D1 transient).
+    const env = makeEnv({ captured, oldRow: activeRow("read-write"), revokeThrows: true });
+    // Unique pat_id ⇒ a fresh per-principal mint-throttle counter (the in-memory
+    // burst backstop is module-scoped across this file).
+    const uniqueId = "ffffffff-1111-2222-3333-444444444444";
+    const resp = await rotateFetch(env, { auth: INTERNAL_KEY, body: { pat_id: uniqueId } });
+    expect(resp.status).toBe(200); // the new PAT is returned, NOT thrown away
+    const body = (await resp.json()) as {
+      token_plaintext: string;
+      rotated_from: string;
+      revoke_pending: boolean;
+    };
+    expect(body.token_plaintext).toBe(CANNED_MINT.token_plaintext); // caller HAS the new credential
+    expect(body.rotated_from).toBe(uniqueId);
+    expect(body.revoke_pending).toBe(true); // old key may still be live → retry the idempotent revoke
+    expect(captured.req).toBeDefined(); // mint WAS attempted
+  });
+
+  // ── (b) happy path sets revoke_pending:false ──────────────────────────────
+  it("(b) a successful rotate sets revoke_pending:false", async () => {
+    const env = makeEnv({ captured: {}, oldRow: activeRow("read-write") });
+    const uniqueId = "bbbbbbbb-9999-8888-7777-666666666666";
+    const resp = await rotateFetch(env, { auth: INTERNAL_KEY, body: { pat_id: uniqueId } });
+    expect(resp.status).toBe(200);
+    const body = (await resp.json()) as { revoke_pending: boolean };
+    expect(body.revoke_pending).toBe(false);
   });
 
   // ── unmappable scope → 422 (preserve scope exactly; never escalate) ───────
