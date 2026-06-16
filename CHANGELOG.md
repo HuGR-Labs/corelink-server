@@ -23,6 +23,23 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **CAA-360 #25 — storage-quota gate fails CLOSED on D1 errors for write verbs.** `checkStorageQuota`
+  previously returned `ok:true` (fail-OPEN) on every D1 error path — both the storage-`SUM` query
+  `catch` and the unconfirmed-tier (`tierResult.d1Error`) branch — so a D1 outage let a tenant write
+  past their storage cap unbounded at the edge. The gate is now **verb-aware**: it takes an
+  `isMutating` flag and on a D1 error fails **CLOSED** (`429` + a short `Retry-After`) for byte-adding
+  writes (`PUT`/`POST`) while keeping reads available (fail-OPEN), mirroring the residency gate's
+  fail-closed posture. The DO's CAS quota FSM remains the deeper net; this closes the edge hole. Adds
+  unit tests for read-fail-open / write-fail-closed on both the SUM-error and unconfirmed-tier paths
+  (and repairs 5 pre-existing type-broken `checkStorageQuota` tests).
+- **CAA-360 #16 — `_inMemoryMintCounts` mint-throttle backstop is now bounded (LRU).** The
+  module-scoped per-isolate map in `session_exchange.ts` grew one entry per distinct principal for the
+  isolate's lifetime (unbounded-growth / slow-leak under principal churn). Each access now LRU-touches
+  the principal (delete-then-set on the insertion-ordered Map) and the least-recently-used entry is
+  evicted once the map exceeds `MAX_IN_MEMORY_MINT_ENTRIES` (50 000). The durable D1 counter remains
+  the primary throttle, so eviction never opens a hole in the persistent gate.
+
+### Security
 - **CAA-360 #5/#20 — tenant_quota cycle-roll TOCTOU eliminated (money path).** The cycle-roll /
   fresh-row path in `QuotaGuard::check` used a read-decide-absolute-`put`: two concurrent ops at the
   monthly-cycle boundary each computed `accrued = cost` and overwrote each other, so only ONE op's

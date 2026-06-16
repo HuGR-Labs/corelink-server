@@ -2,9 +2,12 @@
  * Per-tier quota definitions and enforcement helpers for the CoreLink Worker.
  *
  * Quota checks run AFTER PAT auth succeeds and BEFORE forwarding to the
- * Durable Object. Enforcement is fail-open on D1 errors (quota status
- * unknown → allow through) to preserve availability; DO performs its own
- * deeper quota enforcement (CAS / quota_fsm_state) on every mutation.
+ * Durable Object. On a D1 error the posture is verb-aware (CAA-360 #25):
+ * READ-style requests fail OPEN (quota status unknown → allow through) to
+ * preserve availability, while MUTATING (PUT/POST) requests fail CLOSED with a
+ * short Retry-After so an outage cannot be used to write past the cap. The DO
+ * performs its own deeper quota enforcement (CAS / quota_fsm_state) on every
+ * mutation.
  *
  * Tier taxonomy (canonical 6-tier launch ladder + legacy classes). Numbers
  * come from the signed launch rate card (apps/docs/src/lib/pricing.ts
@@ -203,6 +206,14 @@ export type QuotaCheckResult =
   | { readonly ok: false; readonly retryAfterSec: number; readonly reason: string };
 
 /**
+ * Retry-After (seconds) advertised when a storage-quota check on a MUTATING
+ * request cannot be resolved due to a transient D1 error (CAA-360 #25).
+ * Deliberately short — the condition is a store blip, not a real monthly-cap
+ * breach, so the client should retry promptly rather than wait out the cycle.
+ */
+const STORAGE_QUOTA_D1_ERROR_RETRY_SEC = 2;
+
+/**
  * Check whether the tenant is within their storage quota.
  *
  * Reads SUM(bytes_used) across all regions for the tenant from
@@ -225,21 +236,51 @@ export type QuotaCheckResult =
  * file's documented "fail-open on D1 errors" intent.
  *
  * retryAfterSec is set to seconds-until-next-UTC-month-start (capped at
- * 31 days = 2678400 s), consistent with the ADR-0020 Retry-After semantic.
+ * 31 days = 2678400 s) for a real over-cap breach, consistent with the
+ * ADR-0020 Retry-After semantic.
+ *
+ * # D1-error posture (CAA-360 #25 fix)
+ *
+ * When the quota cannot be confirmed because of a transient D1 error (either
+ * the tier lookup errored — `tierResult.d1Error` — or the storage SUM query
+ * threw), the failure mode now depends on the request verb:
+ *
+ *   - **READ-style requests** (`isMutating === false`) → fail OPEN (ok:true),
+ *     preserving availability — a read cannot grow storage past the cap.
+ *   - **MUTATING requests** (`isMutating === true`, i.e. PUT/POST writes that
+ *     ADD bytes) → fail CLOSED with a SHORT Retry-After, so a D1 outage cannot
+ *     be used to write past the storage cap unbounded. This mirrors the
+ *     residency gate's fail-closed posture on writes. The DO's CAS quota FSM
+ *     is the deeper net; this closes the edge hole.
  *
  * @param tierResult  Result from {@link getTierForTenant} carrying the
  *                    resolved tier and the d1Error flag (F21).
+ * @param isMutating  Whether the request adds storage (PUT/POST write verbs).
+ *                    Controls the D1-error failure mode (fail-closed on writes).
  */
 export async function checkStorageQuota(
   db: D1Database,
   tenantId: string,
   tierResult: TierResult,
+  isMutating: boolean,
 ): Promise<QuotaCheckResult> {
-  // F21 fix: if the tier lookup itself errored, skip the storage check to
-  // avoid a false-positive 429 (an unconfirmed 'free' tier + actual high
-  // usage = incorrect denial for a paid tenant).
+  // On a D1 error we cannot confirm storage headroom (CAA-360 #25). Reads fail
+  // OPEN (availability); writes fail CLOSED with a short Retry-After so an
+  // outage cannot be used to write past the cap unbounded.
+  const onD1Error = (): QuotaCheckResult =>
+    isMutating
+      ? {
+          ok: false,
+          retryAfterSec: STORAGE_QUOTA_D1_ERROR_RETRY_SEC,
+          reason: "storage quota temporarily unverifiable (store error); retry",
+        }
+      : { ok: true };
+
+  // F21 + #25: if the tier lookup itself errored, the tier is unconfirmed.
+  // Reads pass through (avoid a false-positive 429 for a paid tenant); writes
+  // fail closed (cannot confirm headroom on a byte-adding op).
   if (tierResult.d1Error) {
-    return { ok: true };
+    return onD1Error();
   }
 
   const tier = tierResult.tier;
@@ -260,8 +301,8 @@ export async function checkStorageQuota(
       .bind(tenantId)
       .first<SumRow>();
   } catch {
-    // D1 error → fail open.
-    return { ok: true };
+    // D1 error → fail open on reads, fail closed on writes (CAA-360 #25).
+    return onD1Error();
   }
 
   const totalBytes = row?.total_bytes ?? 0;

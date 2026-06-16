@@ -1869,15 +1869,27 @@ const handler: ExportedHandler<Env> = {
     // Storage quota: enforced from SUM(tenant_storage_state.bytes_used).
     // Request quota: deferred (TODO) — see worker/src/lib/quota.ts.
     //
-    // Fail-open on D1 errors to preserve availability; the DO's CAS quota
-    // enforcement (quota_fsm_state) provides the safety net on mutations.
+    // D1-error posture is verb-aware (CAA-360 #25): reads fail OPEN for
+    // availability, byte-adding writes (PUT/POST) fail CLOSED so an outage
+    // cannot be used to write past the cap. The DO's CAS quota enforcement
+    // (quota_fsm_state) provides the deeper safety net on mutations.
     if (resolvedTenantId !== "_anonymous" && resolvedTenantId !== "_system" && resolvedTenantId !== "_pending") {
       const quotaTier = await getTierForTenant(env.CONFIG_DB, resolvedTenantId);
       const requestQuotaEnabled = env.REQUEST_QUOTA_ENABLED === "true";
 
+      // A storage-increasing op is a write verb (PUT uploads / POST). DELETE
+      // reduces storage and reads (GET/HEAD) cannot grow it, so both stay
+      // available during a D1 outage.
+      const isStorageMutating = request.method === "PUT" || request.method === "POST";
+
       // Storage quota check. (OCI never reaches this PAT-gate path — see the
       // dedicated pass-through branch above; the container enforces OCI quota.)
-      const storageCheck = await checkStorageQuota(env.CONFIG_DB, resolvedTenantId, quotaTier);
+      const storageCheck = await checkStorageQuota(
+        env.CONFIG_DB,
+        resolvedTenantId,
+        quotaTier,
+        isStorageMutating,
+      );
       if (!storageCheck.ok) {
         const retryAfter = String(storageCheck.retryAfterSec);
         return applyCors(
