@@ -23,6 +23,16 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **CAA-360 #5/#20 — tenant_quota cycle-roll TOCTOU eliminated (money path).** The cycle-roll /
+  fresh-row path in `QuotaGuard::check` used a read-decide-absolute-`put`: two concurrent ops at the
+  monthly-cycle boundary each computed `accrued = cost` and overwrote each other, so only ONE op's
+  spend was counted (lost-update → $-ceiling over-admission). The roll now goes through a new atomic
+  `roll_if_stale` (a single conditional `UPDATE … SET accrued=0, anchor=now WHERE anchor+cycle<=now`
+  — idempotent; a no-op if a concurrent op already rolled) followed by the SAME atomic
+  `check_and_accrue` as the steady path; brand-new rows seed via the atomic `accrue` (INSERT … ON
+  CONFLICT). No boundary path does a non-atomic absolute write anymore.
+
+### Security
 - **CAA-360 #9 (completed) — digest-format gate extended to the native CAS routes.** `GET/PUT/DELETE
   /v1/cas/:tenant/:hash` now reject a non-canonical `:hash` (not exactly 64 lowercase hex) with 400
   BEFORE it derives an R2 object key, reusing the shared `is_canonical_digest` validator (the AC
