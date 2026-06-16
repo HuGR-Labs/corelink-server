@@ -379,24 +379,25 @@ export async function handleSessionExchange(
  * Mint a tenant-scoped, short-lived PAT for an ALREADY-VERIFIED principal, by
  * REUSING the container's audited `/_internal/pat/mint` via the `_system` DO.
  *
- * Shared by {@link handleSessionExchange} (hugit Seam C, 3600s) and
- * {@link handleTokenExchange} (githugr #1, 300s). The single mint authority
- * (one signing key, one audit emit, one revocation surface) is preserved —
- * there is no second mint path. Every failure path is fail-CLOSED.
+ * Shared by {@link handleSessionExchange} (hugit Seam C, 3600s),
+ * {@link handleTokenExchange} (githugr #1, 300s), and the D-9 runner-mint
+ * (`handleRunnerMint` in lib/runner_mint.ts, job-bounded TTL). The single mint
+ * authority (one signing key, one audit emit, one revocation surface) is
+ * preserved — there is no second mint path. Every failure path is fail-CLOSED.
  *
- * The caller MUST have verified the session and resolved `tenantId` /
- * `clerkUserId` (and, for token-exchange, the audience match) BEFORE calling
- * this — it performs no authentication of its own beyond the per-principal
- * mint throttle.
+ * The caller MUST have authorized the request (verified the session + resolved
+ * `tenantId` + matched the audience; or, for runner-mint, internal-auth +
+ * runners-entitlement) BEFORE calling this — it performs no authentication of
+ * its own beyond the per-principal mint throttle.
  *
  * @returns the public {@link SessionExchangeResponse} (200) or a fail-CLOSED
  *   `reapiError` Response (429 throttle, 500 upstream/malformed).
  */
-async function mintScopedPat(
+export async function mintScopedPat(
   env: Env,
   requestId: string,
   tenantId: string,
-  clerkUserId: string,
+  principalSource: string,
   ttlSeconds: number,
   scope: string,
   internalAuthKey: string,
@@ -405,7 +406,12 @@ async function mintScopedPat(
   // /_internal/pat/mint route with the SERVER-trusted internal-auth header.
   // The browser/client can never supply that header — it never leaves the
   // backend (least-privilege: identical to the `internal` route arm).
-  const principalId = await clerkUserIdToPrincipalUuid(clerkUserId);
+  //
+  // `principalSource` is the stable string from which the per-principal UUID is
+  // SHA-256-derived (Clerk user id for the session/token-exchange callers; the
+  // runner `job_id` for the D-9 runner-mint caller — giving per-job audit
+  // correlation). The hashing is identical regardless of source.
+  const principalId = await clerkUserIdToPrincipalUuid(principalSource);
 
   // ── Per-principal mint throttle (fail-CLOSED 429) ──────────────────────────
   // The session is verified, but a still-valid session must not loop-mint

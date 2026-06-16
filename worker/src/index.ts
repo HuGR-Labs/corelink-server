@@ -32,6 +32,7 @@ import {
 } from "./lib/quota.js";
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
 import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchange.js";
+import { handleRunnerMint, handleRunnerRevoke } from "./lib/runner_mint.js";
 import { handleTenantLookup } from "./lib/tenant_lookup.js";
 import { resolveConsumerKey, type InternalConsumer } from "./lib/internal_auth.js";
 import { coloForMacro } from "./region-map.js";
@@ -231,6 +232,8 @@ type RouteKind =
   | "session_exchange"
   | "tenant_lookup"
   | "token_exchange"
+  | "runner_mint"
+  | "runner_revoke"
   | "internal"
   | "health_container"
   | "not_found";
@@ -657,6 +660,25 @@ function matchRoute(url: URL): RouteMatch {
   // is matched BEFORE the generic PAT-required /v1/* arms.
   if (path === "/internal/v1/auth/token-exchange") {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "token_exchange" };
+  }
+
+  // corelink-runners D-9 — per-job runner PAT mint. EXACT
+  // /internal/v1/runner/mint. Handled AT the Worker (like token-exchange):
+  // internal-auth gated (pat_mint consumer key + shared fallback), runners-
+  // entitlement checked, then a short-TTL tenant-scoped PAT is minted via the
+  // container's single mint authority. The trusted DISPATCHER calls this — no
+  // Clerk session, no PAT — so it is matched BEFORE the generic /v1/* arms and
+  // distinct from the /_internal/* (underscore) family.
+  if (path === "/internal/v1/runner/mint") {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "runner_mint" };
+  }
+
+  // corelink-runners D-9 — runner PAT revoke by pat_id. EXACT
+  // /internal/v1/runner/revoke. Internal-auth gated (same pat_mint key); reuses
+  // the existing `UPDATE pat SET revoked_at_ms` revocation surface. Called by the
+  // dispatcher on job teardown (TTL is the backstop).
+  if (path === "/internal/v1/runner/revoke") {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "runner_revoke" };
   }
 
   // Stripe billing webhook — EXACT /v1/billing/stripe-webhook (mounted in the
@@ -1624,6 +1646,28 @@ const handler: ExportedHandler<Env> = {
     if (route.routeKind === "token_exchange") {
       const xchgResp = await handleTokenExchange(request, env, requestId);
       return applyCors(xchgResp, request);
+    }
+
+    // corelink-runners D-9 — runner PAT mint (POST /internal/v1/runner/mint).
+    // Internal-auth gated (pat_mint consumer key + shared fallback) + runners-
+    // entitlement checked; mints a job-bounded tenant-scoped PAT via the
+    // container's single mint authority. Handled AT the Worker: the handler
+    // builds a FRESH server-trusted request to the _system DO (it never forwards
+    // the inbound request), so client trust headers can never reach the mint
+    // route — the same posture as token-exchange. CORS applied here.
+    if (route.routeKind === "runner_mint") {
+      const mintResp = await handleRunnerMint(request, env, requestId);
+      return applyCors(mintResp, request);
+    }
+
+    // corelink-runners D-9 — runner PAT revoke (POST /internal/v1/runner/revoke).
+    // Internal-auth gated; revokes by pat_id via the existing
+    // `UPDATE pat SET revoked_at_ms` surface (INV-PAT-REVOKE-PROPAGATION). The
+    // handler touches CONFIG_DB directly — no inbound headers are forwarded. CORS
+    // applied here.
+    if (route.routeKind === "runner_revoke") {
+      const revokeResp = await handleRunnerRevoke(request, env, requestId);
+      return applyCors(revokeResp, request);
     }
 
     // Not found — timing-padded to prevent cross-tenant enumeration

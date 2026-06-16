@@ -22,6 +22,34 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **D-9 — per-job runner PAT mint + revoke (corelink-runners seam).** Two new
+  internal-auth-gated Worker routes let the trusted dispatcher provision a
+  disposable runner with a cache credential without giving the runner a Clerk
+  session or a bootstrap secret:
+  - `POST /internal/v1/runner/mint` mints a short-TTL (5400s = 90-minute job
+    hard-cap + margin), tenant-scoped `cas:rw` PAT. It is gated by the per-consumer
+    `CORELINK_PAT_MINT_AUTH_KEY` (with fallback to the shared
+    `CORELINK_INTERNAL_AUTH_KEY`, the #297 per-consumer-key pattern), then checks
+    the dedicated `runners_entitlement` table (migration 0070) — a tenant with no
+    row is **not entitled to Runners** (403), a SEPARATE authorization axis from
+    the cache tier. The principal is derived `SHA-256(job_id) → UUID` for per-job
+    audit correlation. `admin`/`owner` scope is **refused** (least privilege). The
+    mint REUSES the single mint authority (`mintScopedPat` → the container's
+    audited `/_internal/pat/mint` via the `_system` DO) — no second mint path and
+    no new signing key — so the per-principal mint throttle rate-limits runaway
+    runner-mint automatically.
+  - `POST /internal/v1/runner/revoke` revokes a runner PAT by `pat_id` for the
+    dispatcher's job-teardown (the TTL is the backstop), REUSING the existing
+    revocation surface (the idempotent `UPDATE pat SET revoked_at_ms` write on the
+    shared `pat` table that the customer revoke route performs;
+    INV-PAT-REVOKE-PROPAGATION).
+
+  Both paths are fully fail-CLOSED (missing secret/binding → deny, bad body → 400,
+  not entitled → 403) and handled AT the Worker — the handler builds a fresh
+  server-trusted request to the DO, so client trust headers can never reach the
+  mint route (the same posture as `/internal/v1/auth/token-exchange`).
+
 ### Security
 - **Storage-quota fail-OPEN on a fresh/unsynced tenant — fresh-row cap source (cluster N4).**
   The container's storage byte-accounting reservation

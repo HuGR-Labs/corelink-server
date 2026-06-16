@@ -147,3 +147,39 @@ export function requireInternalAuth(request: Request, env: Env, requestId: strin
   }
   return null;
 }
+
+/**
+ * Gate an inbound request on a SPECIFIC internal-auth consumer's key.
+ *
+ * Resolves the consumer's dedicated key via {@link resolveConsumerKey} (the
+ * #297 per-consumer-key + shared-fallback pattern): the dedicated key if set and
+ * properly sized, else the shared `CORELINK_INTERNAL_AUTH_KEY`, else `null`. A
+ * `null` resolution means NO properly sized gate is bound → fail CLOSED (403).
+ *
+ * Used by the D-9 runner-mint / runner-revoke routes (`pat_mint` consumer →
+ * `CORELINK_PAT_MINT_AUTH_KEY` with shared fallback), mirroring the container's
+ * `/_internal/pat/mint` per-consumer gate so leaking one surface's secret does
+ * not unlock the rest of the `/internal/*` family.
+ *
+ * @returns `null` when the caller is authorized (proceed); otherwise a
+ *   fail-CLOSED error {@link Response} (403 if no sized key is bound, 401 if the
+ *   header is missing/wrong) that the caller must return verbatim.
+ */
+export function requireConsumerAuth(
+  request: Request,
+  env: Env,
+  consumer: InternalConsumer,
+  requestId: string,
+): Response | null {
+  const expected = resolveConsumerKey(env, consumer);
+  if (expected === null) {
+    // Neither the dedicated nor the shared key qualifies → unavailable.
+    // Fail CLOSED; do not reveal which precondition failed.
+    return reapiError("FORBIDDEN", "internal endpoint unavailable", 403, requestId);
+  }
+  const provided = request.headers.get(INTERNAL_AUTH_HEADER) ?? "";
+  if (!constantTimeSecretEqual(expected, provided)) {
+    return reapiError("UNAUTHORIZED", "internal auth required", 401, requestId);
+  }
+  return null;
+}
