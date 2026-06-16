@@ -27,6 +27,7 @@ import { getTierForTenant, checkStorageQuota, checkRequestQuota } from "./lib/qu
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
 import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchange.js";
 import { handleTenantLookup } from "./lib/tenant_lookup.js";
+import { resolveConsumerKey, type InternalConsumer } from "./lib/internal_auth.js";
 import { coloForMacro } from "./region-map.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -83,14 +84,29 @@ export interface Env {
   // `wrangler secret put PAT_SIGNING_KEY_PREV` / `..._NEW`.
   PAT_SIGNING_KEY_PREV?: string;
   PAT_SIGNING_KEY_NEW?: string;
-  // Stream-5: shared secret for `/_internal/pat/mint` (passed to container
-  // at boot + verified before forwarding). Bound via:
+  // Stream-5: shared secret for `/_internal/*` (passed to container at boot +
+  // verified before forwarding). Bound via:
   // `wrangler secret put CORELINK_INTERNAL_AUTH_KEY`
+  //
+  // This is the SHARED fallback. The per-consumer key split below mirrors the
+  // container's just-merged Rust split (red-team #3): each internal consumer
+  // gets its OWN key so a single leak does not unlock every internal surface.
+  // Resolution per consumer (see lib/internal_auth.ts `resolveConsumerKey`):
+  // use the consumer-specific key iff set AND >= 32 chars; else the shared key
+  // iff >= 32; else fail-CLOSED. FROZEN names (identical to the Rust side):
   CORELINK_INTERNAL_AUTH_KEY?: string;
+  // Per-consumer internal-auth keys (red-team #3 split). Each falls back to
+  // CORELINK_INTERNAL_AUTH_KEY when unset/short. Provisioned by the operator
+  // (`wrangler secret put …`) — see LEAD FLAGS in the PR. The container reads
+  // the same names on its side.
+  CORELINK_PAT_MINT_AUTH_KEY?: string; // gate for `/_internal/pat/mint`
+  CORELINK_ADMIN_AUTH_KEY?: string;    // gate for admin `/_internal/*` routes
+  CORELINK_ERASE_AUTH_KEY?: string;    // gate for erase `/_internal/*` routes
   // Per-tier quota enforcement (worker/src/lib/quota.ts).
   // Storage quota is always enforced for finite-quota tiers.
-  // Request quota is deferred until a monthly counter table is wired;
-  // set REQUEST_QUOTA_ENABLED=true once the table exists.
+  // Monthly request-count quota is backed by the monthly_request_counts table
+  // (migration 0071) and enforced when this flag === "true" (atomic
+  // increment-and-check). Unset/anything-else → request-count cap not enforced.
   REQUEST_QUOTA_ENABLED?: string;
   // Container storage credentials (WP-S1 StorageEnv contract). The DO forwards
   // these to the native container via container.start({ env }) so it can reach
@@ -147,6 +163,35 @@ export interface Env {
   PROD_LHR?: { fetch: typeof fetch };
   PROD_NRT?: { fetch: typeof fetch };
   PROD_SYD?: { fetch: typeof fetch };
+}
+
+/**
+ * Map a `/_internal/*` path to its auth CONSUMER (red-team #3 key split).
+ *
+ * The container exposes three internal surfaces with distinct blast radii:
+ *   - `/_internal/pat/mint`  → `pat_mint` (CORELINK_PAT_MINT_AUTH_KEY)
+ *   - `/_internal/admin/*`   → `admin`    (CORELINK_ADMIN_AUTH_KEY)
+ *   - `/_internal/dsr/*`     → `erase`    (CORELINK_ERASE_AUTH_KEY)
+ *
+ * Anything else under `/_internal/*` (e.g. `/_internal/cas/*`) defaults to the
+ * most-privileged data-plane consumer, `erase` — its key (and, via fallback,
+ * the shared key) gates the CAS delete surface used by the DSR/erasure path.
+ * Every consumer falls back to the shared CORELINK_INTERNAL_AUTH_KEY when its
+ * dedicated key is unset (see resolveConsumerKey), so this never widens access.
+ *
+ * `pathSuffix` is the server-derived route path (NOT client-suppliable beyond
+ * the URL itself, which already selected the `internal` routeKind).
+ */
+function internalConsumerForPath(pathSuffix: string): InternalConsumer {
+  if (pathSuffix === "/_internal/pat/mint") {
+    return "pat_mint";
+  }
+  if (pathSuffix.startsWith("/_internal/admin/")) {
+    return "admin";
+  }
+  // DSR/erase surface (`/_internal/dsr/*`) and any other internal data-plane
+  // route (`/_internal/cas/*`, …) gate on the erase consumer key.
+  return "erase";
 }
 
 /** Parsed route context derived from matching the request URL. */
@@ -1356,12 +1401,18 @@ const handler: ExportedHandler<Env> = {
 
     // Internal routes — `/_internal/*` — authenticated by X-Corelink-Internal-Auth.
     // Bypasses PAT auth entirely; DO forwards directly to the container.
-    // Security: CORELINK_INTERNAL_AUTH_KEY must be set; if absent, deny all
-    // internal requests (fail-CLOSED — never open an unauthenticated proxy).
+    //
+    // Security (red-team #3): the gate uses the PER-CONSUMER key split, mirroring
+    // the container's Rust split — a leak of one consumer's secret must not unlock
+    // every internal surface. The consumer is derived from the path prefix; each
+    // consumer key falls back to the shared CORELINK_INTERNAL_AUTH_KEY when its
+    // dedicated key is unset/short (resolveConsumerKey). If neither qualifies,
+    // deny (fail-CLOSED — never open an unauthenticated proxy).
     if (route.routeKind === "internal") {
-      const internalAuthKey = env.CORELINK_INTERNAL_AUTH_KEY;
+      const internalConsumer = internalConsumerForPath(route.pathSuffix);
+      const internalAuthKey = resolveConsumerKey(env, internalConsumer);
       if (!internalAuthKey || internalAuthKey.length === 0) {
-        // Key not bound on this Worker — deny (fail-CLOSED).
+        // No properly sized key bound for this consumer — deny (fail-CLOSED).
         return applyCors(
           reapiError("FORBIDDEN", "internal route unavailable", 403, requestId),
           request,
@@ -1870,7 +1921,8 @@ const handler: ExportedHandler<Env> = {
     // Skip for system/anonymous tenants (no billing record exists for them).
     //
     // Storage quota: enforced from SUM(tenant_storage_state.bytes_used).
-    // Request quota: deferred (TODO) — see worker/src/lib/quota.ts.
+    // Request quota: enforced via the monthly_request_counts atomic counter
+    // when REQUEST_QUOTA_ENABLED is on — see worker/src/lib/quota.ts.
     //
     // D1-error posture is verb-aware (CAA-360 #25): reads fail OPEN for
     // availability, byte-adding writes (PUT/POST) fail CLOSED so an outage
@@ -1915,8 +1967,17 @@ const handler: ExportedHandler<Env> = {
         );
       }
 
-      // Request quota check (currently no-op until counter table is wired)
-      const requestCheck = checkRequestQuota(quotaTier, requestQuotaEnabled);
+      // Monthly request-count quota (red-team #5): atomic increment-and-check
+      // against monthly_request_counts when REQUEST_QUOTA_ENABLED is on. Reads
+      // fail OPEN on a D1 error (availability), same posture as storage. This
+      // is the aggregate monthly cap, distinct from the container's per-second
+      // token-bucket rate limit.
+      const requestCheck = await checkRequestQuota(
+        env.CONFIG_DB,
+        resolvedTenantId,
+        quotaTier,
+        requestQuotaEnabled,
+      );
       if (!requestCheck.ok) {
         const retryAfter = String(requestCheck.retryAfterSec);
         return applyCors(

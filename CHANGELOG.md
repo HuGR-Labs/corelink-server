@@ -65,6 +65,30 @@ Each entry cross-references:
   - **#7 (LOW)** — `/_internal/pat/mint` ran an unbounded Argon2id per call. Added a
     process-wide in-flight cap (`MintInflightLimiter`, default 16, env
     `PAT_MINT_MAX_INFLIGHT`); excess concurrent mints shed with `429` (fail-CLOSED).
+- **Red-team #3 (worker) — per-consumer internal-auth key split.** The Worker's
+  `/_internal/*` gate authenticated every internal surface (PAT mint, admin, erase) with the single
+  shared `CORELINK_INTERNAL_AUTH_KEY`, so one leaked secret unlocked all of them. It now mirrors the
+  container's just-merged Rust split: a new `resolveConsumerKey` (in `internal_auth.ts`) selects a
+  PER-CONSUMER key by path — `/_internal/pat/mint` → `CORELINK_PAT_MINT_AUTH_KEY`, `/_internal/admin/*`
+  → `CORELINK_ADMIN_AUTH_KEY`, `/_internal/dsr/*` (and other data-plane internal routes) →
+  `CORELINK_ERASE_AUTH_KEY` — each used iff set AND ≥ 32 chars, else falling back to the shared key
+  (≥ 32), else fail-CLOSED (403). The same padded `crypto.subtle.timingSafeEqual` compare is retained
+  (no length oracle). The new env names are added to the Worker `Env` interface. **OPERATOR (launch
+  step):** provision the three new secrets via `wrangler secret put` per env to complete the split;
+  until then the shared-key fallback preserves current behaviour. (`scripts/secrets-mvp-allowlist.txt`
+  needs the three new names appended.)
+- **Red-team #5 — monthly request-count quota is now actually enforced.** `checkRequestQuota` was a
+  hard-coded no-op (`requestsPerMonthMax` read by nothing, the `if (!requestCheck.ok)` branch dead, no
+  counter table), so the contracted per-month request cap was unenforced. Added migration
+  `0071_monthly_request_counts.sql` (`monthly_request_counts(tenant_id, year_month, request_count, …)`,
+  PK `(tenant_id, year_month)`). `checkRequestQuota` is now async and does an ATOMIC
+  increment-and-check UPSERT (`… ON CONFLICT DO UPDATE SET request_count = request_count + 1 RETURNING
+  request_count`), compares the post-increment count to `QUOTAS[tier].requestsPerMonthMax`, and returns
+  `429` + `Retry-After = secondsUntilNextMonthStart()` when exceeded. Gated by `REQUEST_QUOTA_ENABLED`
+  (off → no counter write); fails OPEN on a D1 error and skips the write for uncapped tiers, matching
+  the file's posture. Wired at the real call site in `index.ts` (replacing the no-op). Adds
+  `checkRequestQuota` unit tests (under cap → ok; at cap → ok; over cap → 429; D1 error → fail-open;
+  uncapped/unconfirmed-tier → ok).
 - **CAA-360 #27/#29/#30 — worker auth hardening bundle.**
   - **#27** — `internal_auth.ts requireInternalAuth` compared the shared secret with `ctEqStr`, which
     returned early on a length mismatch (a length oracle). Replaced with the same padded
