@@ -22,6 +22,20 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed (CAA-360 audit — storage hardening batch)
+- **#19 OCI in-flight byte ceiling made atomic.** The 512 MiB cross-tenant upload ceiling used a
+  load-check-then-`fetch_add`, so two concurrent `PATCH` appends could both pass a stale read and
+  overrun it. Replaced with a `compare_exchange_weak` reserve loop (the reservation IS the credit);
+  bytes are released on the session-not-found failure path.
+- **#7 Turbo R2 build-failure now fails CLOSED (503), not silent in-memory.** When storage creds are
+  present but `R2KvStore` refuses to build, the route previously fell back to the non-durable
+  `InMemoryKvStore` silently (fail-OPEN → silent data loss). It now mounts a fail-CLOSED
+  `UnavailableTurboHandler` whose every verb returns 503 (mirrors `cas.rs::UnavailableCasHandler`).
+- **#21 D1 FK non-enforcement documented.** D1/SQLite doesn't enforce FOREIGN KEYs, so tenant-keyed
+  tables (`tenant_quota`, `cas_tombstone`) intentionally omit FK clauses; referential integrity is an
+  application invariant (DSR deletes children before the parent tenant; inserts require the tenant to
+  pre-exist). Documented in the DSR adapter (no migration change — FK clauses would be inert on D1).
+
 ### Security
 - **GDPR/DSR erasure completeness — `survey_responses` + `tenant_quota` added to the D1 erase-set
   (CAA-360 audit #4/#11).** Both tables are `tenant_id`-keyed and carried tenant data that a
