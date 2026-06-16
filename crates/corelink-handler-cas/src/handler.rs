@@ -473,13 +473,17 @@ impl CasDeleteHandler for InMemoryCasHandler {
             })
             .map_err(CasHandlerError::AuditFailed)?;
 
-        // Idempotent delete: remove if present, no-op if absent.
-        let existed = {
+        // Idempotent delete: remove if present, no-op if absent. Capture the
+        // removed blob's length for `reclaimed_bytes` (byte-accounting release).
+        let (existed, reclaimed_bytes) = {
             let mut g = self
                 .objects
                 .lock()
                 .map_err(|_| CasHandlerError::Internal("storage lock poisoned".into()))?;
-            g.remove(&(req.tenant.clone(), req.hash.clone())).is_some()
+            match g.remove(&(req.tenant.clone(), req.hash.clone())) {
+                Some(bytes) => (true, bytes.len() as u64),
+                None => (false, 0u64),
+            }
         };
 
         // DeleteCommitted audit AFTER the delete (fires whether or not
@@ -494,7 +498,7 @@ impl CasDeleteHandler for InMemoryCasHandler {
             })
             .map_err(CasHandlerError::AuditFailed)?;
         emit(false);
-        Ok(CasDeleteResponse { existed })
+        Ok(CasDeleteResponse::with_reclaimed(existed, reclaimed_bytes))
     }
 }
 

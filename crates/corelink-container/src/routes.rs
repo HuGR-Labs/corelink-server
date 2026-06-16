@@ -363,7 +363,33 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         );
     }
 
-    let (cas_read, cas_write, cas_delete, cas_list) = cas::build_handlers();
+    let (cas_read, cas_write_raw, cas_delete_raw, cas_list) = cas::build_handlers();
+    // Storage byte accounting (red-team #1 / cluster B+C): wrap the CAS write +
+    // delete trait objects in the reserve→commit→release decorator at the SINGLE
+    // chokepoint every CAS write surface flows through (native CAS, Bazel REAPI,
+    // OCI, and the cargo/brew/npm/pip language adapters all drive these SAME
+    // `Arc<dyn …>` objects). Wrapping here means all of them inherit identical,
+    // atomic, fail-CLOSED byte accounting — no per-surface duplication, and the
+    // previously-uncounted sibling planes (cluster B) are closed for free. When
+    // the accountant is absent (dev/CI, no D1) the raw handlers pass through
+    // unwrapped. read/list are not write surfaces and stay unwrapped.
+    let (cas_write, cas_delete): (
+        Arc<dyn corelink_handler_cas::CasWriteHandler>,
+        Arc<dyn corelink_handler_cas::CasDeleteHandler>,
+    ) = match byte_accountant.as_ref() {
+        Some(acc) => {
+            let acct = Arc::new(crate::byte_accounting::AccountingCasHandler::new(
+                cas_write_raw.clone(),
+                cas_delete_raw.clone(),
+                acc.clone(),
+            ));
+            (
+                acct.clone() as Arc<dyn corelink_handler_cas::CasWriteHandler>,
+                acct as Arc<dyn corelink_handler_cas::CasDeleteHandler>,
+            )
+        }
+        None => (cas_write_raw, cas_delete_raw),
+    };
     // 410-Gone tombstone read gate (hugit-P2 seam B, WP-B). Wired from env
     // (D1-backed) when D1 creds are present so an erased hash answers 410 even
     // before the (#254-gated) erase WRITE route is mounted; `None` in dev/CI ⇒
@@ -379,9 +405,28 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         tombstones: cas_tombstones,
         quota: quota.clone(),
         pat_gate: native_pat_gate.clone(),
-        bytes: byte_accountant.clone(),
     };
-    let (ac_lookup, ac_update, ac_delete, ac_list) = ac::build_handlers();
+    let (ac_lookup, ac_update_raw, ac_delete_raw, ac_list) = ac::build_handlers();
+    // Storage byte accounting (cluster B+C) for the AC plane: same decorator
+    // chokepoint over the AC update + delete trait objects, shared with the
+    // Bazel REAPI AC write surface. `None` (dev/CI) ⇒ raw handlers pass through.
+    let (ac_update, ac_delete): (
+        Arc<dyn corelink_handler_ac::AcUpdateHandler>,
+        Arc<dyn corelink_handler_ac::AcDeleteHandler>,
+    ) = match byte_accountant.as_ref() {
+        Some(acc) => {
+            let acct = Arc::new(crate::byte_accounting::AccountingAcHandler::new(
+                ac_update_raw.clone(),
+                ac_delete_raw.clone(),
+                acc.clone(),
+            ));
+            (
+                acct.clone() as Arc<dyn corelink_handler_ac::AcUpdateHandler>,
+                acct as Arc<dyn corelink_handler_ac::AcDeleteHandler>,
+            )
+        }
+        None => (ac_update_raw, ac_delete_raw),
+    };
     let ac_state = ac::AcRouteState {
         lookup: ac_lookup.clone(),
         update: ac_update.clone(),
@@ -389,7 +434,6 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         list: ac_list,
         quota: quota.clone(),
         pat_gate: native_pat_gate.clone(),
-        bytes: byte_accountant.clone(),
     };
     // Cache adapters share the SAME CAS trait objects (one R2 connection) —
     // clone BEFORE they are moved into the Bazel bridge below. cargo writes
@@ -589,6 +633,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                             oci_manifest_kv,
                             verifier.clone(),
                             corelink_core::SecretWrap::new(token_key),
+                            quota.clone(),
                         ));
                     }
                     _ => {

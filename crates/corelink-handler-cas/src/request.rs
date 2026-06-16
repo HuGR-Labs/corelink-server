@@ -157,13 +157,35 @@ pub struct CasDeleteResponse {
     /// True if the blob existed (and was removed); false if it was
     /// already absent (idempotent no-op).
     pub existed: bool,
+    /// Bytes reclaimed by the delete (the size of the removed blob), `0`
+    /// when the blob was absent or its size could not be determined. The
+    /// storage byte-accounting decorator releases exactly this many bytes
+    /// from `tenant_storage_state.bytes_used` so a delete frees the tenant's
+    /// headroom (red-team finding #1 / cluster-C — deletes that never
+    /// decrement leak the cap forever).
+    pub reclaimed_bytes: u64,
 }
 
 impl CasDeleteResponse {
-    /// Construct a [`CasDeleteResponse`] from its fields.
+    /// Construct a [`CasDeleteResponse`] reporting only existence (reclaimed
+    /// size unknown ⇒ `0`). Kept for callers/tests that do not surface a
+    /// size; prefer [`Self::with_reclaimed`] on the durable path so deletes
+    /// release bytes.
     #[must_use]
     pub fn new(existed: bool) -> Self {
-        Self { existed }
+        Self {
+            existed,
+            reclaimed_bytes: 0,
+        }
+    }
+
+    /// Construct a [`CasDeleteResponse`] carrying the reclaimed byte size.
+    #[must_use]
+    pub fn with_reclaimed(existed: bool, reclaimed_bytes: u64) -> Self {
+        Self {
+            existed,
+            reclaimed_bytes,
+        }
     }
 }
 

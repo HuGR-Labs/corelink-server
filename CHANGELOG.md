@@ -23,6 +23,35 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **Storage byte-accounting: sibling write surfaces + reserve-before-commit (cycle-2 nuclear red-team, clusters B/C/F).**
+  - **Cluster B — byte accounting only covered the native plane.** Bazel REAPI, OCI,
+    and the cargo/brew/npm/pip language adapters all drive the SAME shared
+    `CasWriteHandler`/`AcUpdateHandler` trait objects but never accrued bytes, so a
+    Free tenant could store unbounded TB at $0 via those planes; OCI also bypassed
+    the `$`-ceiling quota path entirely. Byte accounting is now enforced at that
+    single chokepoint by the new `byte_accounting::AccountingCasHandler` /
+    `AccountingAcHandler` decorators (wrapping the write+delete trait objects in
+    `routes::build_with_factory`), so native CAS/AC, Bazel, OCI, and every adapter
+    inherit identical accounting. OCI write methods (PUT/POST/PATCH) are now also
+    charged against the per-tenant monthly `$`-ceiling via an `oci_quota_gate` layer.
+  - **Cluster C — accrue-after-commit race + dead release.** Accrual ran AFTER the
+    R2 PUT with no pre-reservation (two concurrent writes could both pass the cap;
+    an over-cap blob was durably committed before the 402) and deletes never
+    decremented `bytes_used`. The decorators now **reserve → commit → release**:
+    the atomic single-statement D1 UPSERT runs BEFORE the R2 PUT (over-cap ⇒ 402
+    with NO blob written; accounting fault ⇒ 503 fail-CLOSED), an idempotent
+    re-write or a failed inner write rolls the reservation back, and deletes
+    `release` the reclaimed bytes (CAS/AC delete responses now carry
+    `reclaimed_bytes`, sourced from a pre-delete R2 `HeadObject`). Turbo (its own
+    `R2KvStore`, not the shared handler) was converted to reserve-before-commit at
+    its route handler. Regression tests prove: two concurrent over-cap reservations
+    cannot both pass, an over-cap write leaves no blob, and a delete decrements the
+    counter.
+  - **Cluster F — no concurrency cap on Bazel writes.** The Bazel CAS/AC write path
+    buffered the full ~10 MiB body before any gate with no per-tenant concurrency
+    cap. Added a `BazelPutGuard` `FromRequestParts` extractor (mirrors the Turbo
+    `PutConcurrencyGuard`) that reserves a per-tenant slot BEFORE the body is
+    buffered and rejects the over-cap write 429.
 - **Red-team data-plane bundle (brutal red-team #1/#2/#4).**
   - **#1 (HIGH) — storage quota was structurally inert.** Nothing on the container
     data plane ever incremented `tenant_storage_state.bytes_used`, so per-tier

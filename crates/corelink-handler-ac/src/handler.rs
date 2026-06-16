@@ -176,13 +176,30 @@ pub struct AcDeleteResponse {
     /// True if the ref existed (and was removed); false if absent
     /// (idempotent no-op). The route returns 204 either way.
     pub existed: bool,
+    /// Bytes reclaimed by the delete (the size of the removed AC payload),
+    /// `0` when absent or unknown. The storage byte-accounting decorator
+    /// releases exactly this many bytes from `tenant_storage_state.bytes_used`
+    /// (red-team finding #1 / cluster-C).
+    pub reclaimed_bytes: u64,
 }
 
 impl AcDeleteResponse {
-    /// Construct from fields.
+    /// Construct reporting only existence (reclaimed size unknown ⇒ `0`).
     #[must_use]
     pub fn new(existed: bool) -> Self {
-        Self { existed }
+        Self {
+            existed,
+            reclaimed_bytes: 0,
+        }
+    }
+
+    /// Construct carrying the reclaimed byte size.
+    #[must_use]
+    pub fn with_reclaimed(existed: bool, reclaimed_bytes: u64) -> Self {
+        Self {
+            existed,
+            reclaimed_bytes,
+        }
     }
 }
 
@@ -581,14 +598,18 @@ impl AcDeleteHandler for InMemoryAcHandler {
             })
             .map_err(AcHandlerError::AuditFailed)?;
 
-        // Idempotent delete: remove if present, no-op if absent.
-        let existed = {
+        // Idempotent delete: remove if present, no-op if absent. Capture the
+        // removed payload's length so the response can report `reclaimed_bytes`
+        // (byte-accounting release).
+        let (existed, reclaimed_bytes) = {
             let mut g = self
                 .entries
                 .lock()
                 .map_err(|_| AcHandlerError::Internal("entry lock poisoned".into()))?;
-            g.remove(&(req.tenant.clone(), req.action_digest.clone()))
-                .is_some()
+            match g.remove(&(req.tenant.clone(), req.action_digest.clone())) {
+                Some(payload) => (true, payload.len() as u64),
+                None => (false, 0u64),
+            }
         };
 
         self.audit
@@ -601,7 +622,7 @@ impl AcDeleteHandler for InMemoryAcHandler {
             })
             .map_err(AcHandlerError::AuditFailed)?;
         emit(false);
-        Ok(AcDeleteResponse { existed })
+        Ok(AcDeleteResponse::with_reclaimed(existed, reclaimed_bytes))
     }
 }
 

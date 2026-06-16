@@ -534,6 +534,30 @@ async fn handle_put(
 
     let now_ms = SystemWallClock.now_ms();
     let byte_len = i64::try_from(body.len()).unwrap_or(i64::MAX);
+    // Storage byte accounting (finding #1 / cluster-C): Turbo writes the artifact
+    // to R2 directly via its OWN `R2KvStore` (NOT the shared `CasWriteHandler`, so
+    // the `AccountingCasHandler` decorator does not cover it) — so the
+    // reserve→commit→release discipline is applied HERE at the route. RESERVE
+    // BEFORE `handler.put` so an over-cap PUT is rejected 402 BEFORE the R2 write
+    // and no over-cap artifact is committed; a reservation fault ⇒ 503
+    // fail-CLOSED. (Turbo's KV is opaque-keyed with no durable/idempotent bit, so
+    // every stored PUT is charged; an inner failure releases the reservation.)
+    if let Some(acc) = state.bytes.as_ref() {
+        match acc.accrue(&caller_tenant, byte_len).await {
+            Ok(crate::byte_accounting::AccrueOutcome::Accrued) => {}
+            Ok(crate::byte_accounting::AccrueOutcome::OverCap) => {
+                return (StatusCode::PAYMENT_REQUIRED, "storage quota exceeded").into_response();
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "turbo: byte reservation failed; failing closed");
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "storage accounting unavailable",
+                )
+                    .into_response();
+            }
+        }
+    }
     let req = TurboPutRequest::new(
         hash,
         params.team_id,
@@ -546,32 +570,19 @@ async fn handle_put(
     );
     match state.handler.put(req) {
         Ok(resp) => {
-            // Storage byte accounting (finding #1): Turbo writes the artifact to
-            // R2 directly, so accrue its bytes AFTER the write committed, BEFORE
-            // returning success. Over-cap ⇒ 402; transport fault ⇒ 503
-            // fail-CLOSED. (Turbo's KV is opaque-keyed with no durable/idempotent
-            // bit on the response, so every stored PUT is charged.)
-            if let Some(acc) = state.bytes.as_ref() {
-                match acc.accrue(&caller_tenant, byte_len).await {
-                    Ok(crate::byte_accounting::AccrueOutcome::Accrued) => {}
-                    Ok(crate::byte_accounting::AccrueOutcome::OverCap) => {
-                        return (StatusCode::PAYMENT_REQUIRED, "storage quota exceeded")
-                            .into_response();
-                    }
-                    Err(e) => {
-                        tracing::error!(error = %e, "turbo: byte accrual failed; failing closed");
-                        return (
-                            StatusCode::SERVICE_UNAVAILABLE,
-                            "storage accounting unavailable",
-                        )
-                            .into_response();
-                    }
-                }
-            }
             let body = PutArtifactResponse { urls: resp.urls };
             (StatusCode::OK, Json(body)).into_response()
         }
-        Err(e) => map_err(e),
+        Err(e) => {
+            // The R2 write failed AFTER we reserved — RELEASE the reservation so a
+            // failed PUT does not permanently consume the tenant's headroom.
+            if let Some(acc) = state.bytes.as_ref() {
+                if let Err(re) = acc.release(&caller_tenant, byte_len).await {
+                    tracing::warn!(error = %re, "turbo: reservation release after failed PUT failed (over-counts; conservative)");
+                }
+            }
+            map_err(e)
+        }
     }
 }
 
