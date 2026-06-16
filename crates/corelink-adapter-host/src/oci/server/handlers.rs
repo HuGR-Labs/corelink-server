@@ -444,3 +444,17 @@ async fn dispatch_manifest(
         _ => Err(OciAdapterError::NotFound),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::MAX_MANIFEST_BYTES;
+
+    /// Mutation guard (cargo-mutants): pin the exact byte threshold so a
+    /// `*`→`+` corruption of the `4 * 1024 * 1024` expression is caught (the
+    /// DoS guard's value is load-bearing, not arbitrary).
+    #[test]
+    fn max_manifest_bytes_is_exactly_4_mib() {
+        assert_eq!(MAX_MANIFEST_BYTES, 4_194_304);
+        assert_eq!(MAX_MANIFEST_BYTES, 4 * 1024 * 1024);
+    }
+}

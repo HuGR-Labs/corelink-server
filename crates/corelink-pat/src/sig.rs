@@ -116,3 +116,41 @@ pub fn verify_hmac_sig_multi(
         Err(PatError::InvalidPat)
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, reason = "tests")]
+mod fold_tests {
+    use super::*;
+    use crate::types::PatSigningKey;
+
+    fn key(b: u8) -> PatSigningKey {
+        PatSigningKey::from_bytes(vec![b; 32]).expect("32-byte key")
+    }
+
+    /// Mutation guard (cargo-mutants): the per-key fold in `verify_hmac_sig_multi`
+    /// MUST be `|=` (OR), never `^=` (XOR). A key set containing the SAME matching
+    /// key twice must still validate — under XOR the two matches cancel
+    /// (`1 ^ 1 = 0`) and a valid PAT would be wrongly rejected. This pins the OR
+    /// semantics (and the real property: a duplicated key never breaks validation).
+    #[test]
+    fn multi_fold_is_or_duplicate_matching_key_validates() {
+        let k = key(0x42);
+        let preimage = b"token_id.random_secret";
+        let sig = compute_hmac_sig(&k, preimage);
+        assert!(
+            verify_hmac_sig_multi(&[k.clone(), k.clone()], preimage, &sig).is_ok(),
+            "duplicate matching key must validate (OR-fold, not XOR)"
+        );
+    }
+
+    /// A single matching key among non-matching ones validates; an all-miss set
+    /// rejects. (Complements the dup-key OR guard above.)
+    #[test]
+    fn multi_fold_matches_one_of_many_and_rejects_none() {
+        let good = key(0x11);
+        let preimage = b"abc.def";
+        let sig = compute_hmac_sig(&good, preimage);
+        assert!(verify_hmac_sig_multi(&[key(0x22), good.clone(), key(0x33)], preimage, &sig).is_ok());
+        assert!(verify_hmac_sig_multi(&[key(0x22), key(0x33)], preimage, &sig).is_err());
+    }
+}
