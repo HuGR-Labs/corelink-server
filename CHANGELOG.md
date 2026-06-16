@@ -23,6 +23,31 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **Red-team data-plane bundle (brutal red-team #1/#2/#4).**
+  - **#1 (HIGH) — storage quota was structurally inert.** Nothing on the container
+    data plane ever incremented `tenant_storage_state.bytes_used`, so per-tier
+    storage caps never tripped (a Free tenant could store unbounded TB at $0). New
+    `byte_accounting::ByteAccountant` does an ATOMIC check-and-accrue UPSERT against
+    `tenant_storage_state` (`INSERT … ON CONFLICT(tenant_id, region) DO UPDATE SET
+    bytes_used = bytes_used + ? WHERE bytes_quota = 0 OR bytes_used + ? <=
+    bytes_quota RETURNING bytes_used`) wired into the CAS/AC/Turbo write handlers
+    (over-cap ⇒ 402, transport fault ⇒ 503 fail-CLOSED), plus a saturating
+    `release` for deletes. Env-gated (`None` in dev/CI), mirroring the `QuotaGate`.
+  - **#2 (HIGH) — Turbo PUT buffered up to 100 MiB BEFORE the concurrency cap.**
+    The per-tenant in-flight reservation lived inside `handle_put`, AFTER the
+    `body: Bytes` extractor, so a burst of concurrent PUTs each buffered ~100 MiB
+    before the cap-check ran. Converted to a `PutConcurrencyGuard`
+    `FromRequestParts` extractor declared AHEAD of the body extractor, so a 5th
+    concurrent PUT is rejected 429 BEFORE any body byte is read; the RAII `PutSlot`
+    releases the slot on drop.
+  - **#4 (HIGH) — native plane proved possession with HMAC only.** A leaked
+    `PAT_SIGNING_KEY` could forge any tenant's PAT (the random secret, stored only
+    as an Argon2id hash, was never checked on the native path). New
+    `native_pat_gate::NativePatGate` re-runs the full Option-B verification (the
+    shared `adapter_pat::PatVerifier` — Argon2id against the stored `pat_hash` +
+    tenant binding) at the top of each billable CAS/AC/Bazel/Turbo handler, with a
+    short-TTL verified-token cache keyed by SHA-256 fingerprint so the hot path
+    skips Argon2id. Defense-in-depth ON TOP of the existing HMAC gate; env-gated.
 - **CAA-360 #27/#29/#30 — worker auth hardening bundle.**
   - **#27** — `internal_auth.ts requireInternalAuth` compared the shared secret with `ctEqStr`, which
     returned early on a length mismatch (a length oracle). Replaced with the same padded

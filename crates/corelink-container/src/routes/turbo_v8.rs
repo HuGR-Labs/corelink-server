@@ -159,13 +159,25 @@ pub struct TurboRouteState {
     /// in dev/CI (not enforced). The telemetry `events`/static `status` verbs
     /// are NOT billable and are not gated. Set by `routes::build_with_factory`.
     pub quota: Option<crate::routes::QuotaGate>,
-    /// Per-tenant in-flight PUT concurrency counter (F24 — self-DoS guard).
+    /// Optional native PAT possession gate (red-team finding #4 — defense-in-
+    /// depth). `Some` in production; re-runs the full Argon2id Option-B verify
+    /// at the TOP of the billable artifact handlers, AFTER scope, BEFORE storage.
+    /// `None` in dev/CI (skipped). See [`crate::native_pat_gate`].
+    pub pat_gate: Option<Arc<crate::native_pat_gate::NativePatGate>>,
+    /// Optional per-tenant storage byte accountant (red-team finding #1).
+    /// `Some` in production — Turbo writes to R2 directly (via the `R2KvStore`
+    /// handler), so a successful PUT `accrue`s its body bytes (over-cap ⇒ 402 /
+    /// fault ⇒ 503). `None` in dev/CI. See [`crate::byte_accounting`].
+    pub bytes: Option<Arc<crate::byte_accounting::ByteAccountant>>,
+    /// Per-tenant in-flight PUT concurrency counter (finding #2 — pre-buffer
+    /// self-DoS guard).
     ///
     /// Maps `tenant_id → count` of PUT requests currently in-flight (body
-    /// buffered in memory). Incremented at the START of `handle_put` AFTER the
-    /// scope/quota gates; decremented via a drop guard when the handler returns.
-    /// When the count reaches [`TURBO_PUT_CONCURRENCY_LIMIT`] the handler returns
-    /// 429 immediately, before buffering any body bytes.
+    /// buffered in memory). The reservation is taken by the
+    /// [`PutConcurrencyGuard`] `FromRequestParts` extractor — which axum runs
+    /// BEFORE the `body: Bytes` extractor — so a 6th concurrent PUT is rejected
+    /// 429 BEFORE its (up to 100 MiB) body is read into the heap. The RAII guard
+    /// the extractor yields releases the slot when the handler returns.
     pub(crate) put_inflight: Arc<Mutex<HashMap<String, usize>>>,
 }
 
@@ -174,6 +186,124 @@ impl core::fmt::Debug for TurboRouteState {
         f.debug_struct("TurboRouteState")
             .field("put_inflight", &"Arc<Mutex<HashMap<..>>>")
             .finish_non_exhaustive()
+    }
+}
+
+// ── Pre-buffer PUT concurrency guard (finding #2) ──────────────────────────────
+
+/// RAII release of one per-tenant in-flight PUT slot.
+///
+/// Decrements the tenant's `put_inflight` count on `Drop`, so the slot is freed
+/// on EVERY return path (success, handler error, panic). Carried out of the
+/// [`PutConcurrencyGuard`] extractor into the handler so the slot stays held for
+/// the whole request lifetime (including the body buffer + storage write).
+pub(crate) struct PutSlot {
+    inflight: Arc<Mutex<HashMap<String, usize>>>,
+    tenant_key: String,
+}
+
+impl Drop for PutSlot {
+    fn drop(&mut self) {
+        if let Ok(mut g) = self.inflight.lock() {
+            if let Some(c) = g.get_mut(&self.tenant_key) {
+                *c = c.saturating_sub(1);
+                if *c == 0 {
+                    g.remove(&self.tenant_key);
+                }
+            }
+        }
+    }
+}
+
+/// `FromRequestParts` extractor that reserves a per-tenant in-flight PUT slot.
+///
+/// # Why an extractor (finding #2 — pre-buffer OOM guard)
+///
+/// The slot reservation USED to live inside `handle_put`, AFTER the
+/// `body: axum::body::Bytes` extractor had already buffered up to
+/// [`TURBO_BODY_LIMIT_BYTES`] (100 MiB) into the heap. So a burst of concurrent
+/// PUTs each buffered ~100 MiB BEFORE the cap-check ran — `burst × 100 MiB` of
+/// transient heap could OOM the shared container regardless of the cap.
+///
+/// As a [`FromRequestParts`] extractor this runs while only request **parts**
+/// (headers/method/uri) are available — axum 0.7 runs every `FromRequestParts`
+/// extractor BEFORE the single `FromRequest` body extractor (`Bytes`). Declaring
+/// it AHEAD of `body: Bytes` in the handler signature therefore does the
+/// lock+count+increment BEFORE a single body byte is read: an over-cap request
+/// is rejected 429 with no buffering. The yielded [`PutSlot`] RAII-releases the
+/// slot when the handler returns.
+pub(crate) struct PutConcurrencyGuard {
+    /// The reserved slot — released on drop. Held by the handler for the whole
+    /// request (it is NOT dropped at the end of extraction).
+    _slot: PutSlot,
+}
+
+#[axum::async_trait]
+impl axum::extract::FromRequestParts<TurboRouteState> for PutConcurrencyGuard {
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &TurboRouteState,
+    ) -> Result<Self, Self::Rejection> {
+        // The isolation tenant is the DO-injected, PAT-resolved authenticated
+        // tenant. A missing/empty header fails CLOSED (401) — the same gate the
+        // `AuthTenant` extractor enforces; we mirror it here so the reservation
+        // is per AUTHENTICATED tenant (an unauthenticated request never reserves
+        // a slot, and never buffers a body).
+        let tenant = parts
+            .headers
+            .get("x-corelink-tenant-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .unwrap_or("");
+        // Sentinels the Worker/DO use for non-tenant traffic — never a real
+        // tenant (mirrors `auth_tenant::AuthTenant`'s set).
+        const TENANT_SENTINELS: &[&str] = &["_anonymous", "_unknown", "_system", "_pending"];
+        if tenant.is_empty() || TENANT_SENTINELS.contains(&tenant) {
+            return Err((StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response());
+        }
+        let tenant_key = tenant.to_owned();
+
+        {
+            let mut inflight = match state.put_inflight.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::error!(
+                        tenant_id = %tenant_key,
+                        error = %e,
+                        "turbo PUT concurrency tracker mutex poisoned; failing closed"
+                    );
+                    return Err((
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "concurrency tracker unavailable",
+                    )
+                        .into_response());
+                }
+            };
+            let count = inflight.entry(tenant_key.clone()).or_insert(0);
+            if *count >= TURBO_PUT_CONCURRENCY_LIMIT {
+                tracing::warn!(
+                    tenant_id = %tenant_key,
+                    in_flight = *count,
+                    limit = TURBO_PUT_CONCURRENCY_LIMIT,
+                    "turbo PUT concurrency limit reached; returning 429 BEFORE body buffering"
+                );
+                return Err((
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "too many concurrent artifact uploads",
+                )
+                    .into_response());
+            }
+            *count += 1;
+        }
+
+        Ok(Self {
+            _slot: PutSlot {
+                inflight: Arc::clone(&state.put_inflight),
+                tenant_key,
+            },
+        })
     }
 }
 
@@ -219,6 +349,8 @@ pub fn build_handlers() -> TurboRouteState {
                     return TurboRouteState {
                         handler,
                         quota: None,
+                        pat_gate: None,
+                        bytes: None,
                         put_inflight: Arc::new(Mutex::new(HashMap::new())),
                     };
                 }
@@ -232,6 +364,8 @@ pub fn build_handlers() -> TurboRouteState {
                     return TurboRouteState {
                         handler: Arc::new(UnavailableTurboHandler),
                         quota: None,
+                        pat_gate: None,
+                        bytes: None,
                         put_inflight: Arc::new(Mutex::new(HashMap::new())),
                     };
                 }
@@ -247,6 +381,8 @@ pub fn build_handlers() -> TurboRouteState {
     TurboRouteState {
         handler,
         quota: None,
+        pat_gate: None,
+        bytes: None,
         put_inflight: Arc::new(Mutex::new(HashMap::new())),
     }
 }
@@ -290,6 +426,7 @@ async fn handle_get(
     Query(params): Query<ArtifactQuery>,
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
+    headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
     // Scope gate (fail-CLOSED): Turbo GET is a cache READ — require
     // `cas:rw` or `cas:r`. BEFORE any audit or storage. NO-OP for `cas:rw`.
@@ -305,6 +442,16 @@ async fn handle_get(
     // Mirrors the MAX_HASH_LEN guard; maps to 400 via `map_err`.
     if let Err(e) = validate_team_id(&params.team_id) {
         return map_err(e);
+    }
+    // Native PAT possession gate (finding #4) — AFTER scope, BEFORE storage.
+    if let Some(gate) = state.pat_gate.as_ref() {
+        let bearer = headers
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        if let Err(resp) = gate.verify(&caller_tenant, bearer).await {
+            return resp;
+        }
     }
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1): charge the
     // flat per-op cost, AFTER the scope gate, BEFORE storage. 402 over-ceiling /
@@ -341,6 +488,13 @@ async fn handle_put(
     Query(params): Query<ArtifactQuery>,
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
+    headers: axum::http::HeaderMap,
+    // finding #2: the concurrency reservation is a `FromRequestParts` extractor
+    // declared AHEAD of `body: Bytes`, so axum runs it (lock+count+increment,
+    // 429 on over-cap) BEFORE the body is buffered into the heap. Holding
+    // `_concurrency` for the whole handler keeps the slot reserved until return;
+    // its `PutSlot` RAII-releases on drop.
+    _concurrency: PutConcurrencyGuard,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
     // Scope gate (fail-CLOSED): Turbo PUT is a cache WRITE — require
@@ -356,6 +510,16 @@ async fn handle_put(
     if let Err(e) = validate_team_id(&params.team_id) {
         return map_err(e);
     }
+    // Native PAT possession gate (finding #4) — AFTER scope, BEFORE storage.
+    if let Some(gate) = state.pat_gate.as_ref() {
+        let bearer = headers
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        if let Err(resp) = gate.verify(&caller_tenant, bearer).await {
+            return resp;
+        }
+    }
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1) — see
     // `handle_get`. AFTER the scope gate, BEFORE storage.
     if let Some(gate) = state.quota.as_ref() {
@@ -363,70 +527,9 @@ async fn handle_put(
             return resp;
         }
     }
-    // F24 — per-tenant PUT concurrency guard (self-DoS hardening).
-    //
-    // Each in-flight PUT body is buffered in memory (up to TURBO_BODY_LIMIT_BYTES
-    // = 100 MiB). Cap the per-tenant in-flight count at TURBO_PUT_CONCURRENCY_LIMIT
-    // so a single tenant cannot hold N × 100 MiB simultaneously. Reject excess
-    // with 429 (client MUST retry, body has not been read). The guard uses a
-    // plain Mutex (held only for O(1) map operations) so it never blocks the
-    // async executor.
-    let tenant_key = caller_tenant.clone();
-    {
-        let mut inflight = match state.put_inflight.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                tracing::error!(
-                    tenant_id = %caller_tenant,
-                    error = %e,
-                    "turbo PUT concurrency tracker mutex poisoned; failing closed"
-                );
-                return (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "concurrency tracker unavailable",
-                )
-                    .into_response();
-            }
-        };
-        let count = inflight.entry(tenant_key.clone()).or_insert(0);
-        if *count >= TURBO_PUT_CONCURRENCY_LIMIT {
-            tracing::warn!(
-                tenant_id = %caller_tenant,
-                in_flight = *count,
-                limit = TURBO_PUT_CONCURRENCY_LIMIT,
-                "turbo PUT concurrency limit reached; returning 429"
-            );
-            return (
-                StatusCode::TOO_MANY_REQUESTS,
-                "too many concurrent artifact uploads",
-            )
-                .into_response();
-        }
-        *count += 1;
-    }
-    // RAII decrement: run on every return path (success, error, panic).
-    struct PutGuard {
-        inflight: Arc<Mutex<HashMap<String, usize>>>,
-        tenant_key: String,
-    }
-    impl Drop for PutGuard {
-        fn drop(&mut self) {
-            if let Ok(mut g) = self.inflight.lock() {
-                if let Some(c) = g.get_mut(&self.tenant_key) {
-                    *c = c.saturating_sub(1);
-                    if *c == 0 {
-                        g.remove(&self.tenant_key);
-                    }
-                }
-            }
-        }
-    }
-    let _guard = PutGuard {
-        inflight: Arc::clone(&state.put_inflight),
-        tenant_key,
-    };
 
     let now_ms = SystemWallClock.now_ms();
+    let byte_len = i64::try_from(body.len()).unwrap_or(i64::MAX);
     let req = TurboPutRequest::new(
         hash,
         params.team_id,
@@ -434,11 +537,33 @@ async fn handle_put(
         body.to_vec(),
         None, // duration_ms — Phase 0: not parsed from headers
         format!("anon@{caller_tenant}"),
-        caller_tenant,
+        caller_tenant.clone(),
         now_ms,
     );
     match state.handler.put(req) {
         Ok(resp) => {
+            // Storage byte accounting (finding #1): Turbo writes the artifact to
+            // R2 directly, so accrue its bytes AFTER the write committed, BEFORE
+            // returning success. Over-cap ⇒ 402; transport fault ⇒ 503
+            // fail-CLOSED. (Turbo's KV is opaque-keyed with no durable/idempotent
+            // bit on the response, so every stored PUT is charged.)
+            if let Some(acc) = state.bytes.as_ref() {
+                match acc.accrue(&caller_tenant, byte_len).await {
+                    Ok(crate::byte_accounting::AccrueOutcome::Accrued) => {}
+                    Ok(crate::byte_accounting::AccrueOutcome::OverCap) => {
+                        return (StatusCode::PAYMENT_REQUIRED, "storage quota exceeded")
+                            .into_response();
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "turbo: byte accrual failed; failing closed");
+                        return (
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            "storage accounting unavailable",
+                        )
+                            .into_response();
+                    }
+                }
+            }
             let body = PutArtifactResponse { urls: resp.urls };
             (StatusCode::OK, Json(body)).into_response()
         }
@@ -1142,6 +1267,52 @@ mod tests {
             g.get(TEST_AUTH_TENANT),
             None, // removed when count reaches 0
             "concurrency counter must be released after PUT completes"
+        );
+    }
+
+    // ── finding #2: the cap is enforced PRE-BUFFER (FromRequestParts) ─────────
+
+    /// The KILLING finding-#2 test: a 5th concurrent PUT is rejected 429 BEFORE
+    /// its body is buffered into the heap.
+    ///
+    /// The `PutConcurrencyGuard` is a `FromRequestParts` extractor declared
+    /// AHEAD of `body: Bytes`; axum runs every `FromRequestParts` extractor
+    /// before the single body extractor. We prove the ordering deterministically:
+    /// with the tenant AT the cap, this PUT carries a body LARGER than the route's
+    /// 100 MiB `DefaultBodyLimit`. If the body were buffered first (the OLD,
+    /// in-handler guard), axum's body-limit layer would reject the oversized body
+    /// (413/400). Because the concurrency extractor runs FIRST, we get **429**
+    /// instead — and the oversized body is never read (the `Body` is streamed
+    /// lazily; the extractor short-circuits before any of it is consumed, so the
+    /// test stays cheap).
+    #[tokio::test]
+    async fn fifth_concurrent_put_rejected_429_before_body_buffering() {
+        let state = fixture();
+        {
+            let mut g = state.put_inflight.lock().unwrap();
+            // Tenant already AT the limit (4 in-flight).
+            g.insert(TEST_AUTH_TENANT.to_owned(), TURBO_PUT_CONCURRENCY_LIMIT);
+        }
+        let app = router(state);
+        // A body strictly larger than the route's 100 MiB DefaultBodyLimit. If the
+        // body extractor ran before the concurrency guard, the body-limit layer
+        // would reject the oversized body; the pre-buffer guard makes it 429
+        // without reading the body.
+        let oversized = Body::from(vec![0u8; TURBO_BODY_LIMIT_BYTES + 1]);
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri("/v8/artifacts/h_oversized?teamId=team_x")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .body(oversized)
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "the 5th concurrent PUT must be rejected 429 by the FromRequestParts \
+             guard BEFORE the body is buffered (else the oversized body would be \
+             rejected by the body-limit layer instead)"
         );
     }
 }

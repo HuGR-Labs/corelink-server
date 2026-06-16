@@ -111,6 +111,15 @@ pub struct AcRouteState {
     /// `Some` in production (D1-backed); checked at the TOP of each handler,
     /// AFTER the scope gate, BEFORE storage. `None` in dev/CI (not enforced).
     pub quota: Option<crate::routes::QuotaGate>,
+    /// Optional native PAT possession gate (red-team finding #4 — defense-in-
+    /// depth). `Some` in production; re-runs the full Argon2id Option-B verify
+    /// at the TOP of each billable handler, AFTER scope+tenant, BEFORE storage.
+    /// `None` in dev/CI (skipped). See [`crate::native_pat_gate`].
+    pub pat_gate: Option<std::sync::Arc<crate::native_pat_gate::NativePatGate>>,
+    /// Optional per-tenant storage byte accountant (red-team finding #1).
+    /// `Some` in production — `accrue`d after a durable AC update (over-cap ⇒
+    /// 402 / fault ⇒ 503). `None` in dev/CI. See [`crate::byte_accounting`].
+    pub bytes: Option<std::sync::Arc<crate::byte_accounting::ByteAccountant>>,
 }
 
 impl core::fmt::Debug for AcRouteState {
@@ -322,12 +331,35 @@ pub(crate) fn is_canonical_digest(d: &str) -> bool {
     d.len() == 64 && d.bytes().all(|b| b.is_ascii_digit() || matches!(b, b'a'..=b'f'))
 }
 
+/// Run the native PAT possession gate (finding #4) when it is wired.
+///
+/// Reads the bearer PAT from the `Authorization` header and re-verifies it
+/// (Argon2id, full Option-B pipeline) against the claimed `tenant`. `Some(resp)`
+/// ⇒ REJECT (401 forged/wrong-tenant / 503 verifier fault); `None` ⇒ proceed (or
+/// when the gate is absent in dev/CI).
+async fn pat_gate_reject(
+    state: &AcRouteState,
+    tenant: &str,
+    headers: &axum::http::HeaderMap,
+) -> Option<axum::response::Response> {
+    let gate = state.pat_gate.as_ref()?;
+    let bearer = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    match gate.verify(tenant, bearer).await {
+        Ok(()) => None,
+        Err(resp) => Some(resp),
+    }
+}
+
 /// `GET /v1/ac/:tenant/:action_digest` handler — lookup.
 async fn handle_lookup(
     State(state): State<AcRouteState>,
     Path((tenant, action_digest)): Path<(String, String)>,
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
+    headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
     // The authenticated tenant (DO-injected `x-corelink-tenant-id`,
     // PAT-resolved by the Worker) is the SOLE isolation key. The path
@@ -345,6 +377,10 @@ async fn handle_lookup(
     // `cas:rw` or `cas:r`. BEFORE any storage access. NO-OP for `cas:rw`.
     if !scope.can_read() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    // Native PAT possession gate (finding #4) — AFTER scope, BEFORE storage.
+    if let Some(resp) = pat_gate_reject(&state, &auth.0, &headers).await {
+        return resp;
     }
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1): charge the
     // flat per-op cost, AFTER the scope gate, BEFORE storage. 402 over-ceiling /
@@ -378,6 +414,7 @@ async fn handle_update(
     Path((tenant, action_digest)): Path<(String, String)>,
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
+    headers: axum::http::HeaderMap,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
     // See `handle_lookup`: the authenticated tenant is the sole
@@ -396,6 +433,10 @@ async fn handle_update(
     if !scope.can_write() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
+    // Native PAT possession gate (finding #4) — AFTER scope, BEFORE storage.
+    if let Some(resp) = pat_gate_reject(&state, &auth.0, &headers).await {
+        return resp;
+    }
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1) — see
     // `handle_lookup`. AFTER the scope gate, BEFORE storage.
     if let Some(gate) = state.quota.as_ref() {
@@ -404,16 +445,43 @@ async fn handle_update(
         }
     }
     let now_ms = SystemWallClock.now_ms();
+    let byte_len = i64::try_from(body.len()).unwrap_or(i64::MAX);
     let req = AcUpdateRequest::new(
         auth.0.clone(),
         action_digest,
         body.to_vec(),
         format!("anon@{}", auth.0),
-        auth.0,
+        auth.0.clone(),
         now_ms,
     );
     match state.update.update(req) {
         Ok(resp) => {
+            // Storage byte accounting (finding #1): accrue ONLY a fresh durable
+            // insert's bytes (an idempotent re-write stored nothing new) AFTER
+            // the write committed, BEFORE returning success. Over-cap ⇒ 402;
+            // transport fault ⇒ 503 fail-CLOSED.
+            if resp.durable {
+                if let Some(acc) = state.bytes.as_ref() {
+                    match acc.accrue(&auth.0, byte_len).await {
+                        Ok(crate::byte_accounting::AccrueOutcome::Accrued) => {}
+                        Ok(crate::byte_accounting::AccrueOutcome::OverCap) => {
+                            return (
+                                StatusCode::PAYMENT_REQUIRED,
+                                "storage quota exceeded",
+                            )
+                                .into_response();
+                        }
+                        Err(e) => {
+                            tracing::error!(error = %e, "ac: byte accrual failed; failing closed");
+                            return (
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                "storage accounting unavailable",
+                            )
+                                .into_response();
+                        }
+                    }
+                }
+            }
             let code = if resp.durable {
                 StatusCode::CREATED
             } else {
@@ -434,6 +502,7 @@ async fn handle_delete(
     Path((tenant, action_digest)): Path<(String, String)>,
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
+    headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
     // Cross-tenant: deny 403 BEFORE any storage access (mirrors lookup).
     if tenant != auth.0 {
@@ -447,6 +516,10 @@ async fn handle_delete(
     if !scope.can_write() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
+    // Native PAT possession gate (finding #4) — AFTER scope, BEFORE storage.
+    if let Some(resp) = pat_gate_reject(&state, &auth.0, &headers).await {
+        return resp;
+    }
     if let Some(gate) = state.quota.as_ref() {
         if let Some(resp) = gate.check(&auth.0).await {
             return resp;
@@ -457,12 +530,21 @@ async fn handle_delete(
         auth.0.clone(),
         action_digest,
         format!("anon@{}", auth.0),
-        auth.0,
+        auth.0.clone(),
         now_ms,
     );
     match state.delete.delete(req) {
         // Idempotent: 204 No Content for both deleted-existing and absent.
-        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        // Storage byte accounting (finding #1): release reclaimed bytes when the
+        // ref existed. `AcDeleteResponse` reports only `existed` (no byte size),
+        // so the release plumbing
+        // ([`crate::byte_accounting::ByteAccountant::release`]) is wired + unit-
+        // tested, awaiting a size on the response. A failed release over-counts
+        // (conservative — never widens the cap), so it never fails the delete.
+        Ok(resp) => {
+            let _ = resp.existed; // size not yet on the response; see comment above.
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(e) => map_err(e),
     }
 }
@@ -476,6 +558,7 @@ async fn handle_list_refs(
     Path(tenant): Path<String>,
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
+    headers: axum::http::HeaderMap,
     Query(q): Query<ListQuery>,
 ) -> impl IntoResponse {
     // Cross-tenant: deny 403 BEFORE any storage access.
@@ -485,6 +568,10 @@ async fn handle_list_refs(
     // Scope gate (fail-CLOSED): list is a cache READ — require read cap.
     if !scope.can_read() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    // Native PAT possession gate (finding #4) — AFTER scope, BEFORE storage.
+    if let Some(resp) = pat_gate_reject(&state, &auth.0, &headers).await {
+        return resp;
     }
     if let Some(gate) = state.quota.as_ref() {
         if let Some(resp) = gate.check(&auth.0).await {
@@ -637,6 +724,8 @@ mod tests {
                 delete,
                 list,
                 quota: None,
+                pat_gate: None,
+                bytes: None,
             },
         )
     }
@@ -656,6 +745,8 @@ mod tests {
             delete,
             list,
             quota: None,
+            pat_gate: None,
+            bytes: None,
         }
     }
 
@@ -1093,5 +1184,97 @@ mod tests {
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    // ── finding #1: storage byte accounting (cap enforcement) ────────────────
+
+    /// The KILLING finding-#1 test: with the storage counter AT the cap, an AC
+    /// update that would store new bytes is rejected 402 — the previously-inert
+    /// storage cap now trips on a real HTTP write.
+    #[tokio::test]
+    async fn update_over_storage_cap_returns_402() {
+        use crate::byte_accounting::{testing::InMemoryByteStore, testing::Row, ByteAccountant, ByteStore};
+
+        let (_a, _s, mut st) = fixture();
+        let store = Arc::new(InMemoryByteStore::new());
+        store.seed(TEST_TENANT, "iad", Row { used: 4, quota: 4 }); // at the cap
+        let store_dyn: Arc<dyn ByteStore> = store;
+        st.bytes = Some(Arc::new(ByteAccountant::new(store_dyn, "iad".to_owned())));
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::from(b"result-bytes-over-cap".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
+    }
+
+    /// Control: an uncapped tenant's AC update accrues its bytes and succeeds
+    /// (201) — proving the storage counter MOVES (it never did before #1).
+    #[tokio::test]
+    async fn update_under_storage_cap_accrues_and_succeeds() {
+        use crate::byte_accounting::{testing::InMemoryByteStore, ByteAccountant, ByteStore};
+
+        let (_a, _s, mut st) = fixture();
+        let store = Arc::new(InMemoryByteStore::new()); // uncapped fresh row
+        let store_dyn: Arc<dyn ByteStore> = store.clone();
+        st.bytes = Some(Arc::new(ByteAccountant::new(store_dyn, "iad".to_owned())));
+        let app = router(st);
+        let body = b"result".to_vec();
+        let body_len = body.len() as i64;
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::from(body))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        assert_eq!(
+            store.used(TEST_TENANT, "iad"),
+            body_len,
+            "a durable AC update must accrue its bytes into the storage counter"
+        );
+    }
+
+    // ── finding #4: native PAT possession gate ───────────────────────────────
+
+    /// A request with the PAT gate wired but NO bearer Authorization header is
+    /// rejected 401 — the native gate fails CLOSED on a missing token (defense-
+    /// in-depth, even with the Worker-set tenant header present).
+    #[tokio::test]
+    async fn pat_gate_missing_bearer_returns_401() {
+        use crate::adapter_pat::PatRow;
+        use crate::native_pat_gate::testing::verifier_with_row;
+        use crate::native_pat_gate::NativePatGate;
+        use corelink_pat::PatSigningKey;
+
+        let (_a, _s, mut st) = fixture();
+        let key = Arc::new(PatSigningKey::from_bytes(vec![0x42u8; 32]).expect("key"));
+        let verifier = verifier_with_row(
+            "no-such-token".to_owned(),
+            PatRow {
+                tenant_id: TEST_TENANT.to_owned(),
+                pat_hash: String::new(),
+                scope: "cas:rw".to_owned(),
+            },
+            key,
+        );
+        st.pat_gate = Some(Arc::new(NativePatGate::new_for_test(verifier)));
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            // No Authorization header — the gate rejects.
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 }
