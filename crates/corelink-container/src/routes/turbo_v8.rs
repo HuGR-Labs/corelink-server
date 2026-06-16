@@ -67,8 +67,9 @@ use corelink_turbo_bridge::{
     adapter::{CasAdapterTurboHandler, InMemoryKvStore},
     audit::InMemoryTurboAuditSink,
     error::validate_team_id,
-    TurboArtifactHandler, TurboBridgeError, TurboEventsRequest, TurboGetRequest, TurboPutRequest,
-    TurboStatusRequest,
+    TurboArtifactHandler, TurboBridgeError, TurboEventsRequest, TurboEventsResponse,
+    TurboGetRequest, TurboGetResponse, TurboPutRequest, TurboPutResponse, TurboStatusRequest,
+    TurboStatusResponse,
 };
 
 // ── Route constants ───────────────────────────────────────────────────────────
@@ -221,7 +222,17 @@ pub fn build_handlers() -> TurboRouteState {
                     };
                 }
                 Some(Err(e)) => {
-                    tracing::error!(error = %e, "Turbo R2KvStore build failed, falling back to InMemory");
+                    // CAA-360 #7: storage creds ARE present but R2KvStore refused
+                    // to build → do NOT silently fall back to the non-durable
+                    // InMemory store (fail-OPEN → silent data loss). Mount the
+                    // fail-CLOSED UnavailableTurboHandler so every verb 503s LOUDLY
+                    // until storage is fixed (mirrors cas.rs UnavailableCasHandler).
+                    tracing::error!(error = %e, "Turbo R2KvStore build failed; mounting fail-CLOSED 503 handler (audit #7)");
+                    return TurboRouteState {
+                        handler: Arc::new(UnavailableTurboHandler),
+                        quota: None,
+                        put_inflight: Arc::new(Mutex::new(HashMap::new())),
+                    };
                 }
                 None => {}
             }
@@ -479,6 +490,41 @@ async fn handle_status(
 
 // ── Error mapping ─────────────────────────────────────────────────────────────
 
+/// Sentinel prefix on a [`TurboBridgeError::Internal`] message that [`map_err`]
+/// maps to HTTP **503** (storage unavailable) rather than the generic 500.
+const TURBO_STORAGE_UNAVAILABLE_SENTINEL: &str = "turbo-storage-unavailable: ";
+
+/// Fail-CLOSED stand-in mounted when storage creds ARE present but the durable
+/// `R2KvStore` refused to build (CAA-360 #7). A silent `InMemoryKvStore` fallback
+/// there would serve a NON-durable cache with no alarm (fail-OPEN → silent data
+/// loss); every verb here instead returns a sentinel `Internal` error that
+/// [`map_err`] maps to 503. Mirrors `cas.rs::UnavailableCasHandler`.
+#[derive(Debug)]
+struct UnavailableTurboHandler;
+
+impl UnavailableTurboHandler {
+    fn unavailable() -> TurboBridgeError {
+        TurboBridgeError::Internal(format!(
+            "{TURBO_STORAGE_UNAVAILABLE_SENTINEL}R2KvStore refused to build"
+        ))
+    }
+}
+
+impl TurboArtifactHandler for UnavailableTurboHandler {
+    fn put(&self, _req: TurboPutRequest) -> Result<TurboPutResponse, TurboBridgeError> {
+        Err(Self::unavailable())
+    }
+    fn get(&self, _req: TurboGetRequest) -> Result<TurboGetResponse, TurboBridgeError> {
+        Err(Self::unavailable())
+    }
+    fn events(&self, _req: TurboEventsRequest) -> Result<TurboEventsResponse, TurboBridgeError> {
+        Err(Self::unavailable())
+    }
+    fn status(&self) -> Result<TurboStatusResponse, TurboBridgeError> {
+        Err(Self::unavailable())
+    }
+}
+
 /// Map a [`TurboBridgeError`] to the canonical HTTP response.
 ///
 /// All error details are logged before mapping so operators have a
@@ -500,6 +546,14 @@ fn map_err(e: TurboBridgeError) -> axum::response::Response {
             // Fail-CLOSED: audit pipeline down = 503; never serve/commit
             // without the audit row.
             (StatusCode::SERVICE_UNAVAILABLE, "audit closed").into_response()
+        }
+        // CAA-360 #7: storage-unavailable (R2KvStore refused to build) → 503,
+        // distinct from a generic 500, so clients retry rather than treat it as
+        // a permanent server fault.
+        TurboBridgeError::Internal(ref msg)
+            if msg.starts_with(TURBO_STORAGE_UNAVAILABLE_SENTINEL) =>
+        {
+            (StatusCode::SERVICE_UNAVAILABLE, "storage unavailable").into_response()
         }
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal").into_response(),
     }
@@ -568,6 +622,26 @@ mod tests {
         // Status should always succeed.
         let resp = state.handler.status().expect("status");
         assert_eq!(resp.status, "enabled");
+    }
+
+    #[test]
+    fn unavailable_turbo_handler_503s_loud_not_silent_inmemory() {
+        // CAA-360 #7: when R2KvStore fails to build with creds present, the route
+        // must 503 LOUDLY on every verb — never silently degrade to a non-durable
+        // InMemory store. All verbs share one error path (Self::unavailable);
+        // assert it carries the sentinel and that map_err turns it into 503.
+        let err = UnavailableTurboHandler::unavailable();
+        assert!(
+            matches!(&err, TurboBridgeError::Internal(m) if m.starts_with(TURBO_STORAGE_UNAVAILABLE_SENTINEL)),
+            "unavailable error must carry the storage-unavailable sentinel"
+        );
+        assert_eq!(map_err(err).status(), StatusCode::SERVICE_UNAVAILABLE);
+        // status() routes through the same error → 503 (not 500, not a fake OK).
+        let h = UnavailableTurboHandler;
+        assert_eq!(
+            map_err(h.status().expect_err("must be unavailable")).status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
     }
 
     // ── GET happy path ────────────────────────────────────────────────────────

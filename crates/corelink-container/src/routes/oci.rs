@@ -334,39 +334,64 @@ impl BlobStore for OciMoatStore {
         // over the limit by at most one chunk each), but the ceiling is a
         // conservative soft cap — a one-chunk race window is acceptable
         // and far smaller than the gap between the limit and OOM.
-        let current = self.inflight_bytes.load(Ordering::Relaxed);
-        if current.saturating_add(chunk_len) > OCI_MAX_INFLIGHT_BYTES {
-            tracing::warn!(
-                tenant_id = %tenant.to_canonical_text(),
-                inflight_bytes = current,
-                chunk_len,
-                limit = OCI_MAX_INFLIGHT_BYTES,
-                "oci: global in-flight byte ceiling reached; rejecting PATCH chunk (audit #6)"
-            );
-            // Keep the "too many open upload sessions" prefix so the adapter
-            // maps it to 429 (the append path matches this prefix too), but make
-            // the message ACCURATE — this is the global in-flight BYTE ceiling,
-            // not the per-tenant session count, so report the byte limit.
-            return Err(format!(
-                "too many open upload sessions for tenant: in-flight byte ceiling \
-                 reached (limit {OCI_MAX_INFLIGHT_BYTES} bytes)"
-            ));
+        // CAA-360 #19: ATOMICALLY reserve the chunk's bytes against the global
+        // ceiling with a compare_exchange loop, instead of a load-check-then-add
+        // (which let two concurrent appends both pass a stale read and overrun
+        // the ceiling by up to one chunk each). The reservation IS the credit —
+        // there is no separate fetch_add below; on any later failure (session
+        // not found) the reserved bytes are released.
+        loop {
+            let current = self.inflight_bytes.load(Ordering::Relaxed);
+            let next = current.saturating_add(chunk_len);
+            if next > OCI_MAX_INFLIGHT_BYTES {
+                tracing::warn!(
+                    tenant_id = %tenant.to_canonical_text(),
+                    inflight_bytes = current,
+                    chunk_len,
+                    limit = OCI_MAX_INFLIGHT_BYTES,
+                    "oci: global in-flight byte ceiling reached; rejecting PATCH chunk (audit #6/#19)"
+                );
+                // Keep the "too many open upload sessions" prefix so the adapter
+                // maps it to 429 (the append path matches this prefix too), but make
+                // the message ACCURATE — this is the global in-flight BYTE ceiling,
+                // not the per-tenant session count, so report the byte limit.
+                return Err(format!(
+                    "too many open upload sessions for tenant: in-flight byte ceiling \
+                     reached (limit {OCI_MAX_INFLIGHT_BYTES} bytes)"
+                ));
+            }
+            // Reserve `next` only if no concurrent writer moved the counter; on a
+            // race (Err), retry with a fresh load.
+            if self
+                .inflight_bytes
+                .compare_exchange_weak(current, next, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+            {
+                break;
+            }
         }
         let mut g = self
             .uploads
             .lock()
             .map_err(|e| format!("oci upload buf poisoned: {e}"))?;
-        let session = g
-            .get_mut(upload_uuid)
-            // EXACT shape the adapter matches on to emit a 404
-            // BLOB_UPLOAD_UNKNOWN (`oci::push::upload` checks
-            // `e.starts_with("upload session not found")`).
-            .ok_or_else(|| format!("upload session not found: {upload_uuid}"))?;
+        let session = match g.get_mut(upload_uuid) {
+            Some(s) => s,
+            None => {
+                // The chunk will NOT be appended — release the bytes we reserved
+                // above so the ceiling is not permanently consumed by a failed append.
+                self.inflight_bytes.fetch_sub(
+                    self.inflight_bytes.load(Ordering::Relaxed).min(chunk_len),
+                    Ordering::Relaxed,
+                );
+                // EXACT shape the adapter matches on to emit a 404
+                // BLOB_UPLOAD_UNKNOWN (`oci::push::upload` checks
+                // `e.starts_with("upload session not found")`).
+                return Err(format!("upload session not found: {upload_uuid}"));
+            }
+        };
         session.buf.extend_from_slice(&chunk);
         session.last_active_ms = now_unix_ms();
-        // Credit the global byte counter now that we've confirmed the
-        // chunk was actually appended.
-        self.inflight_bytes.fetch_add(chunk_len, Ordering::Relaxed);
+        // (No fetch_add here — the bytes were atomically reserved above (#19).)
         u64::try_from(session.buf.len()).map_err(|e| format!("oci upload len overflow: {e}"))
     }
 

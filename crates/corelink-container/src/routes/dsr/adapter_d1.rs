@@ -21,6 +21,17 @@
 //!   deleting the `tenant` row covers them.
 //! - **SQL safety.** Table + column names are compile-time constants
 //!   (never request input); only the tenant id is a bound `?1` parameter.
+//! - **D1 does NOT enforce FOREIGN KEYs (CAA-360 #21).** D1/SQLite ships with
+//!   `PRAGMA foreign_keys = OFF` and D1 does not expose a reliable per-connection
+//!   way to turn it on, so tenant-keyed tables (`tenant_quota`, `cas_tombstone`,
+//!   …) intentionally omit FK declarations — they would be inert. Referential
+//!   integrity is therefore an APPLICATION invariant, maintained two ways:
+//!   (1) on erase, child rows are deleted BEFORE the parent `tenant` row (the
+//!   ordering above), so no orphan is ever left pointing at a deleted tenant;
+//!   (2) on insert, the writing path only creates a `tenant_quota` /
+//!   `cas_tombstone` row for a tenant that already exists (provisioned first).
+//!   Adding `FOREIGN KEY` clauses to the migrations would NOT change runtime
+//!   behavior on D1 and is deliberately not done (see migrations 0066/0067).
 
 use std::sync::Arc;
 
