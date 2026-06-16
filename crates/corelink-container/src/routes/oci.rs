@@ -139,6 +139,14 @@ const OCI_BEARER_REALM: &str = "https://corelink-oci.humangr.com/token";
 /// container mount ([`crate::routes::build_with_factory`]).
 pub const OCI_TOKEN_KEY_ENV: &str = "CORELINK_OCI_TOKEN_KEY";
 
+/// Legacy env var name for the OCI session HMAC key (CAA-360 #8). Prod was
+/// deployed with `HUGR_OCI_TOKEN_KEY` while the code canonicalized to
+/// `CORELINK_OCI_TOKEN_KEY` — the drift would fail the OCI route CLOSED in prod.
+/// The mount reads the canonical name first and falls back to this legacy name
+/// so the route works regardless; rename the prod secret to the canonical name
+/// to retire this fallback.
+pub const OCI_TOKEN_KEY_ENV_LEGACY: &str = "HUGR_OCI_TOKEN_KEY";
+
 // ── BlobStore port → the shared MoatCache ───────────────────────────────────
 
 /// Per-session state for an in-flight OCI blob upload.

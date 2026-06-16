@@ -458,6 +458,11 @@ pub struct AdminMutateBody {
 /// surface as an opaque 500). Reconciling the two enums is an additive-only
 /// auth-migration follow-up (do NOT widen 0039 destructively) — tracked in
 /// the PR for #35.
+// CAA-360 #26: this is the narrower **settable** ladder (6, current product
+// tiers). The **resolve** set is `auth_introspect.rs::VALID_TIERS` (8 — also
+// accepts the back-compat `team`/`org` that the `tenant.tier` CHECK still allows
+// for existing rows but are deliberately NOT settable here). Invariant:
+// settable ⊂ resolvable ⊂ D1-CHECK — keep that subset relationship if changing.
 const TIER_SELECTIONS_TIERS: [&str; 6] = ["free", "solo", "starter", "pro", "max", "enterprise"];
 
 /// Validate + normalize an operator-supplied `tier` string against the

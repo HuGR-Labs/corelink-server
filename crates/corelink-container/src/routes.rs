@@ -511,7 +511,11 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                 // (fail-CLOSED) if the KV or the key is absent.
                 match (
                     crate::adapter_oci_kv::oci_kv_from_env(),
-                    crate::storage::non_empty_env(oci::OCI_TOKEN_KEY_ENV),
+                    // CAA-360 #8: canonical name first, then the legacy
+                    // HUGR_OCI_TOKEN_KEY prod was deployed with (name drift), so the
+                    // OCI route mounts regardless of which secret name is set.
+                    crate::storage::non_empty_env(oci::OCI_TOKEN_KEY_ENV)
+                        .or_else(|| crate::storage::non_empty_env(oci::OCI_TOKEN_KEY_ENV_LEGACY)),
                 ) {
                     (Some(oci_kv), Some(token_key)) => {
                         let oci_map: Arc<dyn crate::adapter_cache::UrlMapStore> = d1.clone();
