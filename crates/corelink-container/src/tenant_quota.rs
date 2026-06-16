@@ -261,6 +261,37 @@ pub trait QuotaStore: std::fmt::Debug + Send + Sync {
             .await?;
         Ok(true)
     }
+
+    /// **Atomic cycle-roll** (CAA-360 #5/#20): if the tenant's stored cycle is
+    /// stale (`cycle_anchor_ms + CYCLE_LENGTH_MS <= now_ms`), reset its accrued
+    /// counter to 0 and advance the anchor to `now_ms` — in a SINGLE conditional
+    /// statement so two concurrent ops at the cycle boundary cannot both
+    /// reset+absolute-write and lose each other's spend (the prior roll path used
+    /// a read-decide-`put` absolute write, a lost-update TOCTOU). Idempotent: if
+    /// the row is fresh, not yet stale, or already rolled by a concurrent op, it
+    /// is a no-op. After this, the caller routes through the SAME atomic
+    /// [`Self::check_and_accrue`] as the steady-state path.
+    ///
+    /// The default impl is a non-atomic get→put (fine for the single-threaded
+    /// in-memory test store); `D1QuotaStore` overrides it with the atomic
+    /// conditional `UPDATE`.
+    async fn roll_if_stale(&self, tenant_id: &str, now_ms: i64) -> Result<(), String> {
+        if let Some(state) = self.get(tenant_id).await? {
+            if state.cycle_elapsed(now_ms) {
+                self.put(
+                    tenant_id,
+                    QuotaState {
+                        monthly_budget_usd_micros: state.monthly_budget_usd_micros,
+                        accrued_usd_micros: 0,
+                        cycle_anchor_ms: now_ms,
+                    },
+                    now_ms,
+                )
+                .await?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// The per-tenant monthly $-ceiling gate.
@@ -352,31 +383,49 @@ impl QuotaGuard {
         let rolling = existing.is_none() || state.cycle_elapsed(now_ms);
 
         if rolling {
-            // ── Cycle roll / fresh row path ───────────────────────────────────
-            // An absolute write is correct here because the new accrued value
-            // is computed (cost of this one op), NOT derived from the stale /
-            // absent prior row. We still check against the budget (a single op
-            // over the budget trips immediately even on a fresh cycle).
-            let baseline_accrued = 0i64;
-            let projected = baseline_accrued.saturating_add(cost);
-            if projected > state.monthly_budget_usd_micros {
-                return Some(
-                    (
-                        StatusCode::PAYMENT_REQUIRED,
-                        "monthly $-ceiling exceeded; raise the cap or wait for the cycle to reset",
-                    )
-                        .into_response(),
-                );
-            }
-            let rolled = QuotaState {
-                monthly_budget_usd_micros: state.monthly_budget_usd_micros,
-                accrued_usd_micros: cost,
-                cycle_anchor_ms: now_ms,
-            };
-            if self.store.put(tenant, rolled, now_ms).await.is_err() {
-                return Some(
-                    (StatusCode::SERVICE_UNAVAILABLE, "quota accrual failed").into_response(),
-                );
+            // ── Cycle roll / fresh row path (CAA-360 #5/#20) ──────────────────
+            // The prior implementation did a read-decide-absolute-`put` here,
+            // which is a lost-update TOCTOU: two concurrent ops at the cycle
+            // boundary each computed `accrued = cost` and overwrote each other,
+            // so only ONE op's spend was counted (over-admission). Now atomic.
+            if existing.is_some() {
+                // Stale existing row: atomically roll it (idempotent conditional
+                // reset — a no-op if a concurrent op already rolled) …
+                if self.store.roll_if_stale(tenant, now_ms).await.is_err() {
+                    return Some(
+                        (StatusCode::SERVICE_UNAVAILABLE, "quota accrual failed").into_response(),
+                    );
+                }
+                // … then the SAME atomic check-and-accrue as the steady path, so
+                // concurrent post-roll ops each accrue under one serialized
+                // budget check (no over-admission).
+                match self.store.check_and_accrue(tenant, cost, now_ms, now_ms).await {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        return Some(
+                            (
+                                StatusCode::PAYMENT_REQUIRED,
+                                "monthly $-ceiling exceeded; raise the cap or wait for the cycle to reset",
+                            )
+                                .into_response(),
+                        );
+                    }
+                    Err(_) => {
+                        return Some(
+                            (StatusCode::SERVICE_UNAVAILABLE, "quota accrual failed").into_response(),
+                        );
+                    }
+                }
+            } else {
+                // Brand-new tenant (no row): seed atomically via `accrue`
+                // (INSERT … ON CONFLICT DO UPDATE), so two concurrent first-ops
+                // cannot lose-update each other. A single op's cost is far below
+                // the default tripwire, so a fresh op is always within budget.
+                if self.store.accrue(tenant, cost, now_ms, now_ms).await.is_err() {
+                    return Some(
+                        (StatusCode::SERVICE_UNAVAILABLE, "quota accrual failed").into_response(),
+                    );
+                }
             }
         } else {
             // ── Steady-state path (F13 fix): atomic check-and-accrue ─────────
@@ -590,6 +639,26 @@ impl QuotaStore for D1QuotaStore {
         // the cycle-roll / fresh-row path uses `put` via `QuotaGuard::check`.
         Ok(!rows.is_empty())
     }
+
+    /// Production override (CAA-360 #5/#20): atomic conditional cycle reset in a
+    /// SINGLE statement. Rolls ONLY if the row is still stale; a concurrent op
+    /// that already advanced the anchor makes this a no-op (idempotent), so two
+    /// boundary ops cannot both reset+absolute-write and lose spend.
+    async fn roll_if_stale(&self, tenant_id: &str, now_ms: i64) -> Result<(), String> {
+        self.client
+            .query(
+                "UPDATE tenant_quota \
+                    SET accrued_usd_micros = 0, cycle_anchor_ms = ?2, updated_at_ms = ?2 \
+                  WHERE tenant_id = ?1 AND cycle_anchor_ms + ?3 <= ?2",
+                &[
+                    serde_json::Value::String(tenant_id.to_owned()),
+                    serde_json::Value::from(now_ms),
+                    serde_json::Value::from(CYCLE_LENGTH_MS),
+                ],
+            )
+            .await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -639,6 +708,37 @@ mod tests {
         // A $1 op would project to $5.50 > $5 ⇒ rejected 402.
         let resp = guard.check("tenant-b", 1_000_000).await.expect("rejected");
         assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
+    }
+
+    #[tokio::test]
+    async fn cycle_roll_resets_accrued_then_accrues_correctly() {
+        // CAA-360 #5/#20: a tenant AT the cap whose cycle has fully elapsed must
+        // roll (accrued reset) and admit the new op — exercising the new
+        // roll_if_stale + check_and_accrue path that replaced the lost-update
+        // read-decide-absolute-`put`.
+        let store = InMemoryQuotaStore::new();
+        store.seed(
+            "tenant-roll",
+            QuotaState {
+                monthly_budget_usd_micros: 5_000_000,
+                accrued_usd_micros: 5_000_000, // pinned at the cap last cycle
+                cycle_anchor_ms: i64::try_from(T0).unwrap(),
+            },
+        );
+        // One full cycle + 1ms past the anchor ⇒ the cycle is stale.
+        let later = T0 + u64::try_from(CYCLE_LENGTH_MS).unwrap() + 1;
+        let (guard, _clock) = guard_with(store, later);
+        // Despite being at the cap last cycle, the op is admitted (rolled).
+        assert!(
+            guard.check("tenant-roll", 1_000_000).await.is_none(),
+            "post-roll op must be admitted — the cycle reset accrued to 0"
+        );
+        // A second op in the SAME new cycle accrues on top ($1 + $1 < $5) —
+        // proving the roll set accrued to this op's cost, not stale + cost.
+        assert!(
+            guard.check("tenant-roll", 1_000_000).await.is_none(),
+            "second post-roll op accrues within the fresh cycle"
+        );
     }
 
     #[tokio::test]
