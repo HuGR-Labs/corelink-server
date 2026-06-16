@@ -33,7 +33,6 @@ use std::sync::OnceLock;
 use argon2::{Algorithm, Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier, Version};
 use password_hash::{Salt, SaltString};
 use rand_core::OsRng;
-use subtle::ConstantTimeEq;
 
 use crate::error::PatError;
 use crate::types::PatHash;
@@ -208,18 +207,19 @@ fn dummy_phc() -> &'static PatHash {
 ///
 /// # Constant-time properties
 ///
-/// The dummy plaintext is fixed; the real input is also passed
-/// through a constant-time string compare against the dummy
-/// plaintext via [`subtle::ConstantTimeEq`] so the hash function
-/// receives a well-defined input regardless of the caller's input.
-/// Mann-Whitney indistinguishability assertion lives in
-/// `tests/constant_time.rs`.
+/// Timing is equalized by ALWAYS running the (expensive) Argon2id verify below
+/// against a fixed dummy PHC — identical work to the hot path — so the cold path
+/// (no PAT row) is indistinguishable from a real verify. The caller's
+/// `plaintext` is intentionally NOT compared here: a compare would add no timing
+/// guarantee (the Argon2id verify IS the pad), and the prior `ct_eq` over
+/// different-length slices short-circuited on length so it equalized nothing.
+/// Mann-Whitney indistinguishability assertion lives in `tests/constant_time.rs`.
 pub fn dummy_verify_for_constant_time(plaintext: &str) -> Result<(), PatError> {
+    // CAA-360 #32: removed a discarded `plaintext.ct_eq(dummy_pt)` here — it was
+    // dead code (result unused + ct_eq length-short-circuits), providing neither
+    // timing equalization nor anti-DCE. The real pad is the Argon2id verify below.
+    let _ = plaintext;
     let dummy_pt = "dummy_constant_time_pad_v1";
-    // Constant-time check (consume `_eq` to defeat dead-code
-    // optimisation). The result is discarded — we always invoke the
-    // hasher with the dummy plaintext so the work is identical.
-    let _eq = plaintext.as_bytes().ct_eq(dummy_pt.as_bytes());
     let stored = dummy_phc();
     // Hardcoded fallback dummy PHC ensures Argon2id work always runs
     // even if startup initialization fails. This is computed once at

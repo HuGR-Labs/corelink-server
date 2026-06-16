@@ -29,6 +29,18 @@ Each entry cross-references:
   (`recipient_hash`); `tenant_quota` is the per-tenant spend ledger. Neither is a legal-retention
   category (distinct from the retained `stripe_*` fiscal records), so both are now erased on a DSR
   and covered by the post-erase `remaining_rows` verify sweep. Regression test pins their presence.
+### Fixed (CAA-360 audit — config/hygiene batch)
+- **#8 OCI token-key env drift:** prod was deployed with `HUGR_OCI_TOKEN_KEY` but the code
+  canonicalized to `CORELINK_OCI_TOKEN_KEY`, failing the OCI route CLOSED in prod. The mount now
+  reads the canonical name first and falls back to the legacy `HUGR_OCI_TOKEN_KEY`, so the route
+  works regardless (rename the prod secret to retire the fallback).
+- **#32 dead constant-time code:** removed a discarded `plaintext.ct_eq(dummy_pt)` in
+  `dummy_verify_for_constant_time` — dead code (result unused; `ct_eq` length-short-circuits) that
+  provided neither timing equalization nor anti-DCE. The timing pad is the always-run Argon2id
+  verify; doc corrected (no change to the constant-time guarantee).
+- **#26 tier-list divergence:** documented the intentional asymmetry between
+  `auth_introspect::VALID_TIERS` (resolve set, 8 — accepts back-compat `team`/`org`) and
+  `admin::TIER_SELECTIONS_TIERS` (settable ladder, 6); settable ⊂ resolvable ⊂ D1-CHECK, cross-referenced.
 
 ### Added
 - **Runners item-1 — per-tenant `max_concurrency` entitlement (Option B).** Migration

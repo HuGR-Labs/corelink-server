@@ -106,6 +106,15 @@ use crate::storage::d1_http::D1HttpClient;
 /// `corelink_tier_selection::tier::TierKind::as_str` and the worker
 /// `isValidTier` allow-list in `worker/src/lib/quota.ts`. A D1 value not in
 /// this set is treated as absent and falls through to the next lookup tier.
+///
+/// CAA-360 #26 — intentional asymmetry vs `admin.rs::TIER_SELECTIONS_TIERS`:
+/// this is the **resolve/read** set (8 tiers — it must accept every value the
+/// `tenant.tier` CHECK allows, INCLUDING the back-compat `team`/`org` retained
+/// by migration 0064 for existing rows). `admin.rs::TIER_SELECTIONS_TIERS` is
+/// the narrower **settable/write** ladder (6 — the current product tiers; it
+/// deliberately omits the deprecated `team`/`org` so they cannot be assigned
+/// anew). settable ⊂ resolvable ⊂ D1-CHECK, so no tier is ever unresolvable.
+/// Keep these two in that subset relationship if either changes.
 const VALID_TIERS: [&str; 8] = [
     "free",
     "solo",
