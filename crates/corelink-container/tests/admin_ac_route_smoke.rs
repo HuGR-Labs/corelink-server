@@ -71,11 +71,11 @@ fn admin_state_with_gate() -> AdminRouteState {
 #[tokio::test]
 async fn ac_lookup_route_reaches_handler_and_returns_handler_miss_404() {
     let (lookup, update, delete, list) = ac::build_handlers();
-    let state = AcRouteState { lookup, update, delete, list, quota: None };
+    let state = AcRouteState { lookup, update, delete, list, quota: None, pat_gate: None, bytes: None };
     let app = ac::router(state);
 
     let req = Request::builder()
-        .uri("/v1/ac/tenant-a/digest-xyz")
+        .uri("/v1/ac/tenant-a/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
         .method("GET")
         // `AuthTenant` reads `x-corelink-tenant-id` and the handler 403s
         // unless it equals the `:tenant` path segment — mirror `tenant-a`.
@@ -105,11 +105,11 @@ async fn ac_lookup_route_reaches_handler_and_returns_handler_miss_404() {
 #[tokio::test]
 async fn ac_update_route_reaches_handler_and_returns_handler_created_201() {
     let (lookup, update, delete, list) = ac::build_handlers();
-    let state = AcRouteState { lookup, update, delete, list, quota: None };
+    let state = AcRouteState { lookup, update, delete, list, quota: None, pat_gate: None, bytes: None };
     let app = ac::router(state);
 
     let req = Request::builder()
-        .uri("/v1/ac/tenant-a/digest-xyz")
+        .uri("/v1/ac/tenant-a/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
         .method("PUT")
         // `AuthTenant` reads `x-corelink-tenant-id` and the handler 403s
         // unless it equals the `:tenant` path segment — mirror `tenant-a`.
@@ -126,7 +126,7 @@ async fn ac_update_route_reaches_handler_and_returns_handler_created_201() {
     let bytes = to_bytes(resp.into_body(), 1 << 20).await.expect("body");
     let body = String::from_utf8(bytes.to_vec()).expect("utf8 body");
     assert_eq!(
-        body, "digest-xyz",
+        body, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "body must echo the path-captured action_digest — proves \
          the `:action_digest` segment was parsed as a path param, \
          not a literal `{{action_digest}}` segment"
@@ -142,7 +142,7 @@ async fn ac_update_route_reaches_handler_and_returns_handler_created_201() {
 #[tokio::test]
 async fn ac_lookup_route_missing_tenant_header_returns_401() {
     let (lookup, update, delete, list) = ac::build_handlers();
-    let state = AcRouteState { lookup, update, delete, list, quota: None };
+    let state = AcRouteState { lookup, update, delete, list, quota: None, pat_gate: None, bytes: None };
     let app = ac::router(state);
 
     let req = Request::builder()
@@ -169,7 +169,7 @@ async fn ac_lookup_route_missing_tenant_header_returns_401() {
 #[tokio::test]
 async fn ac_lookup_route_path_tenant_ne_header_returns_403() {
     let (lookup, update, delete, list) = ac::build_handlers();
-    let state = AcRouteState { lookup, update, delete, list, quota: None };
+    let state = AcRouteState { lookup, update, delete, list, quota: None, pat_gate: None, bytes: None };
     let app = ac::router(state);
 
     let req = Request::builder()
@@ -280,7 +280,7 @@ async fn admin_read_route_does_not_match_literal_braces_uri() {
 #[tokio::test]
 async fn route_state_constructs_without_panic_on_native() {
     let (lookup, update, delete, list) = ac::build_handlers();
-    let _ac_router = ac::router(AcRouteState { lookup, update, delete, list, quota: None });
+    let _ac_router = ac::router(AcRouteState { lookup, update, delete, list, quota: None, pat_gate: None, bytes: None });
 
     let _admin_router = admin::router(admin_state_with_gate());
 

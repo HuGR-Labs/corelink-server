@@ -482,6 +482,10 @@ async fn handle_get(
 ///
 /// Accepts raw `application/octet-stream` body.  Returns 200 +
 /// `{"urls": [...]}` on success.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "axum handler — every parameter is a request extractor (State / Path / Query / headers / body); they are not a refactorable argument list. Mirrors tier_select.rs / audit_export/stream.rs handler allows."
+)]
 async fn handle_put(
     State(state): State<TurboRouteState>,
     Path(hash): Path<String>,

@@ -131,8 +131,8 @@ pub trait ByteStore: std::fmt::Debug + Send + Sync {
 /// The per-tenant storage byte accountant.
 ///
 /// Holds the [`ByteStore`] + the container's region. Clone is cheap (one `Arc`
-/// + a small `String`) so it drops into per-route state alongside the existing
-/// quota collaborators.
+/// plus a small `String`), so it drops into per-route state alongside the
+/// existing quota collaborators.
 #[derive(Clone, Debug)]
 pub struct ByteAccountant {
     store: Arc<dyn ByteStore>,

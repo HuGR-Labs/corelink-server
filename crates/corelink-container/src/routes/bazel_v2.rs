@@ -282,10 +282,7 @@ async fn pat_gate_reject(
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    match gate.verify(tenant, bearer).await {
-        Ok(()) => None,
-        Err(resp) => Some(resp),
-    }
+    gate.verify(tenant, bearer).await.err()
 }
 
 /// Batch variant of [`quota_reject`] for `findMissingBlobs` (F12 fix —
