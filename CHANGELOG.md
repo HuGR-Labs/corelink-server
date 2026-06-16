@@ -23,6 +23,32 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **`clw auth rotate` — atomic PAT rotation (`POST /internal/v1/auth/rotate`).**
+  A new internal-auth-gated Worker route closes the `clw auth rotate` stub (which
+  previously advised re-login and returned `rotated:false`). It rotates a PAT in
+  one call — **mint an equivalent new PAT for the same tenant + revoke the old** —
+  with no re-login:
+  - Gated by the per-consumer `CORELINK_PAT_MINT_AUTH_KEY` (with fallback to the
+    shared `CORELINK_INTERNAL_AUTH_KEY`, the #297 per-consumer-key pattern) — the
+    clw backend holds the key; an end-user PAT cannot call it.
+  - Reads the **old `pat` row** (`tenant_id`, `scope`, `expires_ms`,
+    `revoked_at_ms`) by `pat_id`, so the new PAT inherits the old PAT's **tenant +
+    scope exactly**. An unknown or already-revoked `pat_id` → **404** (never
+    silently mints); a scope the single mint authority cannot reproduce (e.g.
+    `read-only`) → **422** (never escalates).
+  - **Mints NEW first, revokes OLD only after the mint succeeds** — so a mint
+    failure never leaves the caller with zero valid PATs. The mint REUSES the
+    single mint authority (`mintScopedPat` → the container's audited
+    `/_internal/pat/mint` via the `_system` DO) — no second mint path, no new
+    signing key. The revoke REUSES the existing idempotent
+    `UPDATE pat SET revoked_at_ms ... WHERE revoked_at_ms IS NULL` surface
+    (INV-PAT-REVOKE-PROPAGATION). The principal is derived `SHA-256(old pat_id) →
+    UUID` for stable per-key audit correlation.
+
+  Fully fail-CLOSED (missing secret → deny, bad body → 400, unknown/revoked pat →
+  404, mint failure → propagate without revoking) and handled AT the Worker (a
+  fresh server-trusted request to the DO, so client trust headers can never reach
+  the mint route) — the same posture as `/internal/v1/runner/mint`.
 - **D-9 — per-job runner PAT mint + revoke (corelink-runners seam).** Two new
   internal-auth-gated Worker routes let the trusted dispatcher provision a
   disposable runner with a cache credential without giving the runner a Clerk
