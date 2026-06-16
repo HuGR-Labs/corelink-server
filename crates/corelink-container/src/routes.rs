@@ -459,7 +459,18 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // Customer dashboard (WP-3): D1-backed handler when the D1 env is
     // present; InMemory fallback for dev/CI (fail-closed env-gate,
     // mirroring `adapter_pat::PatVerifier::from_env`).
-    let customer_state = customer::build_handlers_from_env();
+    let mut customer_state = customer::build_handlers_from_env();
+    // Native PAT possession backstop (cycle-2 nuclear red-team, cluster A — the
+    // customer control plane was UN-gated, so a leaked PAT_SIGNING_KEY could
+    // HMAC-forge a PAT that minted a genuine cas:rw PAT for any victim tenant).
+    // Wire the SAME gate the native CAS/AC/Bazel/Turbo states carry — EXACTLY as
+    // `bazel_state.pat_gate = native_pat_gate.clone();` above.
+    customer_state.pat_gate = native_pat_gate.clone();
+    // `/v1/users/me` gets the identical backstop (it reflected a forged PAT's
+    // claimed identity un-gated).
+    let users_state = users::UsersRouteState {
+        pat_gate: native_pat_gate.clone(),
+    };
     let mut turbo_state = turbo_v8::build_handlers();
     turbo_state.quota = quota.clone();
     turbo_state.pat_gate = native_pat_gate.clone();
@@ -471,7 +482,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         .merge(admin_pilot::router(pilot_admin_state))
         .merge(audit_export::router(audit_export_state))
         .merge(audit_analytics::router(audit_analytics_state))
-        .merge(users::router())
+        .merge(users::router(users_state))
         .merge(customer::router(customer_state))
         .merge(bazel_v2::router(bazel_state))
         .merge(turbo_v8::router(turbo_state));

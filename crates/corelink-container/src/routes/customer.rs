@@ -71,6 +71,17 @@ pub struct CustomerRouteState {
     pub team: Arc<dyn CustomerTeamHandler>,
     /// Audit query handler.
     pub audit: Arc<dyn CustomerAuditHandler>,
+    /// Optional native PAT possession gate (cycle-2 nuclear red-team, cluster A
+    /// — CRITICAL). `Some` in production (`PAT_SIGNING_KEY` + D1) — re-runs the
+    /// full Argon2id Option-B verify on the bearer PAT against the claimed
+    /// tenant at the TOP of each handler, BEFORE any storage/handler access, so
+    /// a leaked `PAT_SIGNING_KEY` cannot HMAC-forge a PAT that reaches the
+    /// control plane and mints a genuine `cas:rw` PAT for a victim tenant. The
+    /// gate is SKIPPED for Clerk-session callers (already edge-verified — they
+    /// carry `x-corelink-token-prefix: clerk` and no bearer). `None` in dev/CI
+    /// (skipped — same posture as the native plane). Mirrors
+    /// [`super::cas::CasRouteState::pat_gate`]. See [`crate::native_pat_gate`].
+    pub pat_gate: Option<std::sync::Arc<crate::native_pat_gate::NativePatGate>>,
 }
 
 impl core::fmt::Debug for CustomerRouteState {
@@ -99,6 +110,10 @@ pub fn build_handlers_from_env() -> CustomerRouteState {
             keys: shared.clone(),
             team: shared.clone(),
             audit: shared,
+            // Wired by `routes.rs` from `native_pat_gate_from_env()` (mirrors
+            // the native CAS/AC/Bazel/Turbo states); `None` here so the factory
+            // stays env-pure (dev/CI default = skipped).
+            pat_gate: None,
         },
         None => {
             tracing::warn!(
@@ -127,6 +142,8 @@ pub fn build_handlers() -> CustomerRouteState {
         keys: shared.clone(),
         team: shared.clone(),
         audit: shared,
+        // Dev/CI default = skipped; `routes.rs` overwrites with the env gate.
+        pat_gate: None,
     }
 }
 
@@ -195,10 +212,99 @@ fn principal(headers: &HeaderMap) -> String {
     header_or(headers, "x-corelink-token-prefix", "_unknown")
 }
 
+/// The `x-corelink-token-prefix` value the Worker stamps for a Clerk-session
+/// caller on the customer plane (see `worker/src/index.ts` `customer_v1` arm,
+/// `h.set("x-corelink-token-prefix", "clerk")`). A Clerk caller was already
+/// edge-verified (the Worker validated the session JWT + resolved the tenant
+/// from D1) and carries NO bearer PAT — the Worker `delete`s `authorization`
+/// before forwarding — so the PAT Argon2id backstop is not applicable to it and
+/// is skipped (mirrors how the native plane only runs the gate on the PAT path).
+const CLERK_TOKEN_PREFIX: &str = "clerk";
+
 /// Logical wall-clock: 0 in routes (handler-provided `at_unix_ms` acts as
 /// stand-in; production wiring threads a real clock collaborator).
 fn now_ms() -> u64 {
     0u64
+}
+
+/// Run the native PAT possession backstop (cycle-2 nuclear red-team, cluster A)
+/// when it is wired, EXCEPT for Clerk-session callers.
+///
+/// The control plane (`/v1/customer/*`) is reached by two caller classes:
+/// - **PAT callers** (CLI): the Worker forwards the raw `Authorization: Bearer
+///   <pat>` AND `x-corelink-token-prefix: <pat-prefix>`. The Worker proved
+///   possession with an HMAC-only fast check, so a leaked `PAT_SIGNING_KEY`
+///   lets an attacker forge a valid-looking PAT for ANY tenant. This gate
+///   re-runs the FULL Argon2id Option-B verify (same `PatVerifier` the native
+///   plane uses) and binds it to the claimed `tenant` — a forged PAT (right
+///   HMAC, wrong/no random secret) ⇒ 401; a genuine PAT for tenant A presented
+///   for tenant B ⇒ 401.
+/// - **Clerk-session callers** (dashboard): the Worker sets
+///   `x-corelink-token-prefix: clerk` and forwards NO bearer (it `delete`s
+///   `authorization`). They were already edge-verified, so the PAT backstop is
+///   skipped — running it would 401 every legitimate dashboard request.
+///
+/// `Some(resp)` ⇒ REJECT (401 forged/wrong-tenant / 503 verifier fault);
+/// `None` ⇒ proceed (PAT verified, Clerk caller, or gate absent in dev/CI).
+/// Called at the TOP of each handler, AFTER the fail-CLOSED tenant resolution,
+/// BEFORE any storage/handler access.
+async fn pat_gate_reject(
+    state: &CustomerRouteState,
+    tenant: &str,
+    headers: &HeaderMap,
+) -> Option<axum::response::Response> {
+    let gate = state.pat_gate.as_ref()?;
+    // Clerk-session callers are edge-verified and carry no bearer — skip the
+    // PAT Argon2id check for them (mirrors the native plane only gating the PAT
+    // path). The token-prefix is a server-trusted header (the Worker strips any
+    // client-supplied value before setting it).
+    if principal(headers) == CLERK_TOKEN_PREFIX {
+        return None;
+    }
+    let bearer = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    gate.verify(tenant, bearer).await.err()
+}
+
+/// True when the requested mint `scopes` ask for ANY write or admin/owner
+/// capability — the privilege a read-only principal must NOT be able to grant
+/// itself (cluster A self-escalation: a `cas:r` PAT minting a `cas:rw` PAT).
+///
+/// The customer mint accepts free-form scope strings; the admin-ui sends
+/// `cache:read` / `cache:write`, and the internal spellings (`cas:rw` / `cas:w`
+/// / `read-write` / `admin`) and role names (`Owner`) also confer write/admin
+/// privilege. We treat the token set as the union of the cache-write grammar
+/// (`crate::scope::requires_cache_write`, which already covers `cas:rw` /
+/// `cas:w` / `read-write` / `admin`) PLUS the customer-plane spellings
+/// `cache:write` and the privileged role names `owner` / `admin`. Match is
+/// case-insensitive + exact-token (no substring), so `cache:read` /
+/// `read-only` / `cas:r` are NOT flagged (a read-only mint is allowed from any
+/// authenticated caller).
+fn mint_requests_write(scopes: &[String]) -> bool {
+    scopes.iter().any(|s| {
+        let t = s.trim();
+        // Cache-write grammar (shared with the native write gate): catches
+        // `cas:rw` / `cas:w` / `read-write` / `admin` in any case.
+        if crate::scope::requires_cache_write(&t.to_ascii_lowercase()) {
+            return true;
+        }
+        // Customer-plane / role spellings that also confer write or admin
+        // privilege and are not part of the cache-scope grammar.
+        matches!(
+            t.to_ascii_lowercase().as_str(),
+            "cache:write" | "cache:rw" | "write" | "owner" | "admin"
+        )
+    })
+}
+
+/// True when `role` is a privileged team role (`Owner` / `Admin`) — granting it
+/// is a write/admin mutation a read-only principal must not perform (cluster A).
+/// `Developer` / `Viewer` are non-privileged and allowed from any authenticated
+/// caller. Case-insensitive exact match.
+fn role_is_privileged(role: &str) -> bool {
+    matches!(role.trim().to_ascii_lowercase().as_str(), "owner" | "admin")
 }
 
 // ─── Query param shapes ───────────────────────────────────────────────────────
@@ -256,6 +362,11 @@ async fn handle_overview(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    // Native PAT possession backstop (cluster A) — reject a forged-HMAC / wrong-
+    // tenant PAT BEFORE any storage access. Skipped for Clerk callers + dev/CI.
+    if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
+        return resp;
+    }
     let p = principal(&headers);
     let req = OverviewRequest::new(t, p, now_ms());
     match state.overview.overview(req) {
@@ -309,6 +420,9 @@ async fn handle_usage(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
+        return resp;
+    }
     let p = principal(&headers);
     let req = UsageRequest::new(t, p, q.period, now_ms());
     match state.usage.usage(req) {
@@ -344,6 +458,9 @@ async fn handle_audit(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
+        return resp;
+    }
     let p = principal(&headers);
     // `kind` is comma-separated; split into event_types Vec.
     let event_types: Vec<String> = q
@@ -389,6 +506,9 @@ async fn handle_billing(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
+        return resp;
+    }
     let p = principal(&headers);
     let req = BillingRequest::new(t, p, now_ms());
     match state.billing.billing(req) {
@@ -425,6 +545,9 @@ async fn handle_billing_portal(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
+        return resp;
+    }
     let p = principal(&headers);
     let req = PortalRequest::new(t, p, now_ms());
     match state.billing.portal_url(req) {
@@ -447,6 +570,9 @@ async fn handle_keys_list(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
+        return resp;
+    }
     let p = principal(&headers);
     let req = KeysListRequest::new(t, p, now_ms());
     match state.keys.list(req) {
@@ -484,6 +610,28 @@ async fn handle_keys_create(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
+        return resp;
+    }
+    // Privilege-escalation gate (cluster A): a read-only principal must NOT be
+    // able to MINT a write/admin credential (which would let a `cas:r` PAT
+    // bootstrap a `cas:rw` PAT for itself — a self-escalation that survives key
+    // rotation). The caller's capability comes from the Worker-trusted
+    // `x-corelink-scope` header (the same `cache:write` capability the native
+    // CAS/AC write handlers enforce via `CacheScope::can_write`). If the
+    // requested scopes ask for any write/admin capability AND the caller lacks
+    // cache-write, reject 403 BEFORE the mint. Clerk-session callers carry the
+    // dashboard `read-write` scope (Worker-set), so they are unaffected.
+    if mint_requests_write(&body.scopes) {
+        let caller_scope = header_or(&headers, crate::scope::SCOPE_HEADER, "");
+        if !crate::scope::requires_cache_write(&caller_scope) {
+            return (
+                StatusCode::FORBIDDEN,
+                "insufficient scope to mint a write/admin credential",
+            )
+                .into_response();
+        }
+    }
     let p = principal(&headers);
     let req = KeyCreateRequest::new(t, p, body.name, body.scopes, now_ms());
     match state.keys.create(req) {
@@ -517,6 +665,9 @@ async fn handle_keys_revoke(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
+        return resp;
+    }
     let p = principal(&headers);
     let req = KeyRevokeRequest::new(t, p, pat_id, now_ms());
     match state.keys.revoke(req) {
@@ -548,6 +699,9 @@ async fn handle_team_list(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
+        return resp;
+    }
     let p = principal(&headers);
     let req = TeamListRequest::new(t, p, now_ms());
     match state.team.list(req) {
@@ -579,6 +733,23 @@ async fn handle_team_invite(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
+    if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
+        return resp;
+    }
+    // Privilege-escalation gate (cluster A): inviting a privileged role
+    // (`Owner` / `Admin`) is a write/admin mutation — a read-only principal
+    // must not be able to add a privileged member. Mirrors the keys-create
+    // scope gate. A read-only caller may still invite a `Developer` / `Viewer`.
+    if role_is_privileged(&body.role) {
+        let caller_scope = header_or(&headers, crate::scope::SCOPE_HEADER, "");
+        if !crate::scope::requires_cache_write(&caller_scope) {
+            return (
+                StatusCode::FORBIDDEN,
+                "insufficient scope to invite a privileged role",
+            )
+                .into_response();
+        }
+    }
     let p = principal(&headers);
     let req = TeamInviteRequest::new(t, p, body.email, body.role, now_ms());
     match state.team.invite(req) {
@@ -662,6 +833,7 @@ mod tests {
             keys: shared.clone(),
             team: shared.clone(),
             audit: shared.clone(),
+            pat_gate: None,
         };
         (state, shared)
     }
@@ -884,6 +1056,10 @@ mod tests {
             .method("POST")
             .header("x-corelink-tenant-id", "t4")
             .header("x-corelink-token-prefix", "clpat_t4")
+            // Minting a write credential (`cache:write`) requires a write-capable
+            // caller (cluster-A scope gate): a read-only principal cannot
+            // self-escalate. A real write-scoped PAT caller carries this header.
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .header("content-type", "application/json")
             .body(Body::from(body))
             .unwrap();
@@ -1054,5 +1230,341 @@ mod tests {
         // constructs — the D1 handler does no I/O at build time.)
         let state = build_handlers_from_env();
         let _router = router(state);
+    }
+
+    // ── Native PAT possession backstop (cluster A) ────────────────────────────
+    //
+    // The customer control plane was UN-gated: a leaked PAT_SIGNING_KEY let an
+    // attacker HMAC-forge a valid-looking PAT for any tenant, which reached
+    // `handle_keys_create` with NO possession check and minted a genuine cas:rw
+    // PAT for the victim. These tests prove the gate closes that chain when it
+    // is `Some`, preserves dev behavior when `None`, and skips Clerk callers.
+
+    use crate::adapter_pat::PatRow as VerifierPatRow;
+    use crate::native_pat_gate::testing::verifier_with_row;
+    use crate::native_pat_gate::NativePatGate;
+    use corelink_pat::{
+        mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId, SCOPE_CACHE_RW,
+    };
+    use uuid::Uuid;
+
+    fn test_key() -> Arc<PatSigningKey> {
+        Arc::new(PatSigningKey::from_bytes(vec![0x42u8; 32]).expect("32-byte key"))
+    }
+
+    /// Mint a real PAT for `tenant_u128`; return `(plaintext, token_id, pat_hash, tenant_string)`.
+    fn mint_pat(key: &PatSigningKey, tenant_u128: u128) -> (String, String, String, String) {
+        let tenant_id = TenantId(Uuid::from_u128(tenant_u128));
+        let (plaintext, pat) = mint(
+            PatEnv::Pat,
+            tenant_id,
+            PrincipalId(Uuid::from_u128(tenant_u128 + 1)),
+            PatScopes::from_u64(SCOPE_CACHE_RW),
+            None,
+            key,
+            1,
+        )
+        .expect("mint");
+        (
+            plaintext.into_string(),
+            pat.token_id.as_str().to_owned(),
+            pat.hash.as_str().to_owned(),
+            pat.tenant_id.0.to_string(),
+        )
+    }
+
+    /// Build a fixture state whose `pat_gate` is wired over a single known PAT
+    /// row for `tenant` (Argon2id-verifiable). Mirrors the native-plane tests.
+    fn fixture_with_gate(
+        token_id: String,
+        pat_hash: String,
+        tenant: String,
+        key: Arc<PatSigningKey>,
+    ) -> (CustomerRouteState, Arc<InMemoryCustomerHandler>) {
+        let (mut state, shared) = fixture();
+        let row = VerifierPatRow {
+            tenant_id: tenant,
+            pat_hash,
+            scope: "cas:rw".to_owned(),
+        };
+        let verifier = verifier_with_row(token_id, row, key);
+        state.pat_gate = Some(Arc::new(NativePatGate::new_for_test(verifier)));
+        (state, shared)
+    }
+
+    /// KILLING cluster-A test: a forged-HMAC PAT (no real random secret) is
+    /// REJECTED 401 on `POST /v1/customer/keys` when the gate is wired — it can
+    /// no longer mint a genuine PAT for the victim tenant. Here D1 stores the
+    /// hash of a DIFFERENT secret for the presented token_id, so Argon2id fails.
+    #[tokio::test]
+    async fn forged_pat_rejected_401_on_keys_create() {
+        let key = test_key();
+        // The PAT the attacker presents (right HMAC/format)…
+        let (pt, tid, _hash, tenant) = mint_pat(&key, 100);
+        // …but D1 holds the hash of a DIFFERENT secret ⇒ Argon2id possession
+        // check fails (models the forged/leaked-HMAC token).
+        let (_pt2, _tid2, other_hash, _t2) = mint_pat(&key, 101);
+        let (state, _shared) = fixture_with_gate(tid, other_hash, tenant.clone(), key);
+        let app = router(state);
+
+        let body = serde_json::to_string(&serde_json::json!({
+            "name": "attacker-key",
+            "scopes": ["cache:read"],
+        }))
+        .unwrap();
+        let req = Request::builder()
+            .uri("/v1/customer/keys")
+            .method("POST")
+            .header("x-corelink-tenant-id", tenant)
+            .header("x-corelink-token-prefix", "clpat_forged")
+            .header(axum::http::header::AUTHORIZATION, format!("Bearer {pt}"))
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "a forged-HMAC PAT must be rejected by the Argon2id backstop, never mint"
+        );
+    }
+
+    /// A genuine PAT for its own tenant PASSES the backstop and mints (201).
+    #[tokio::test]
+    async fn genuine_pat_passes_backstop_and_mints() {
+        let key = test_key();
+        let (pt, tid, hash, tenant) = mint_pat(&key, 102);
+        let (state, _shared) = fixture_with_gate(tid, hash, tenant.clone(), key);
+        let app = router(state);
+
+        let body = serde_json::to_string(&serde_json::json!({
+            "name": "legit-key",
+            "scopes": ["cache:read"],
+        }))
+        .unwrap();
+        let req = Request::builder()
+            .uri("/v1/customer/keys")
+            .method("POST")
+            .header("x-corelink-tenant-id", tenant)
+            // rw scope so the (read-only) mint passes the scope gate too.
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(axum::http::header::AUTHORIZATION, format!("Bearer {pt}"))
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CREATED);
+    }
+
+    /// A genuine PAT for tenant A presented against tenant B's header is REJECTED
+    /// 401 (cross-tenant takeover defense) — the gate binds possession to the
+    /// claimed tenant.
+    #[tokio::test]
+    async fn genuine_pat_for_wrong_tenant_rejected_on_keys_create() {
+        let key = test_key();
+        let (pt, tid, hash, tenant_a) = mint_pat(&key, 103);
+        // Gate is wired for tenant_a's PAT, but the request claims a different
+        // tenant in the header (the attacker's victim).
+        let (state, _shared) = fixture_with_gate(tid, hash, tenant_a, key);
+        let app = router(state);
+
+        let body = serde_json::to_string(&serde_json::json!({
+            "name": "x", "scopes": ["cache:read"],
+        }))
+        .unwrap();
+        let req = Request::builder()
+            .uri("/v1/customer/keys")
+            .method("POST")
+            .header("x-corelink-tenant-id", "victim-tenant-zzz")
+            .header(axum::http::header::AUTHORIZATION, format!("Bearer {pt}"))
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// Clerk-session callers (edge-verified, no bearer) STILL pass when the gate
+    /// is wired — the backstop is skipped for `x-corelink-token-prefix: clerk`.
+    #[tokio::test]
+    async fn clerk_caller_skips_backstop_and_mints() {
+        let key = test_key();
+        // Gate wired for some unrelated PAT; the Clerk request carries NO bearer.
+        let (_pt, tid, hash, gated_tenant) = mint_pat(&key, 104);
+        let (state, _shared) = fixture_with_gate(tid, hash, gated_tenant, key);
+        let app = router(state);
+
+        let body = serde_json::to_string(&serde_json::json!({
+            "name": "dashboard-key",
+            "scopes": ["cache:read", "cache:write"],
+        }))
+        .unwrap();
+        let req = Request::builder()
+            .uri("/v1/customer/keys")
+            .method("POST")
+            .header("x-corelink-tenant-id", "dashboard-tenant")
+            // Clerk sentinel + the dashboard read-write scope the Worker sets.
+            .header("x-corelink-token-prefix", "clerk")
+            .header(crate::scope::SCOPE_HEADER, "read-write")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::CREATED,
+            "a Clerk-session caller is edge-verified and must skip the PAT backstop"
+        );
+    }
+
+    /// `None`-gate preserves the prior dev/CI behavior: no bearer, no PAT gate,
+    /// the mint still succeeds (the gate is purely additive in prod).
+    #[tokio::test]
+    async fn none_gate_preserves_dev_behavior() {
+        let (state, _shared) = fixture(); // pat_gate: None
+        let app = router(state);
+        let body = serde_json::to_string(&serde_json::json!({
+            "name": "dev-key", "scopes": ["cache:read", "cache:write"],
+        }))
+        .unwrap();
+        let req = Request::builder()
+            .uri("/v1/customer/keys")
+            .method("POST")
+            .header("x-corelink-tenant-id", "dev-tenant")
+            // dev/CI: scope present so the read-write mint passes the scope gate.
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CREATED);
+    }
+
+    // ── Scope gate on mint (cluster A self-escalation) ────────────────────────
+
+    /// A read-only caller (`cas:r`) CANNOT mint a write credential — 403 BEFORE
+    /// the mint. This kills the self-escalation chain (a read-only PAT bootstraps
+    /// a read-write PAT for itself, which would survive key rotation).
+    #[tokio::test]
+    async fn read_only_caller_cannot_mint_write_pat() {
+        let (state, _shared) = fixture(); // None gate isolates the scope check.
+        let app = router(state);
+        let body = serde_json::to_string(&serde_json::json!({
+            "name": "escalation", "scopes": ["cache:read", "cache:write"],
+        }))
+        .unwrap();
+        let req = Request::builder()
+            .uri("/v1/customer/keys")
+            .method("POST")
+            .header("x-corelink-tenant-id", "ro-tenant")
+            .header(crate::scope::SCOPE_HEADER, "cas:r") // read-only caller
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// A read-only caller MAY still mint a read-only credential (the gate only
+    /// blocks privilege ESCALATION, not lateral read-only mints).
+    #[tokio::test]
+    async fn read_only_caller_may_mint_read_only_pat() {
+        let (state, _shared) = fixture();
+        let app = router(state);
+        let body = serde_json::to_string(&serde_json::json!({
+            "name": "ro-key", "scopes": ["cache:read"],
+        }))
+        .unwrap();
+        let req = Request::builder()
+            .uri("/v1/customer/keys")
+            .method("POST")
+            .header("x-corelink-tenant-id", "ro-tenant")
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CREATED);
+    }
+
+    /// A read-write caller CAN mint a write credential (happy path — the scope
+    /// gate is a NO-OP for a sufficiently-scoped principal).
+    #[tokio::test]
+    async fn read_write_caller_can_mint_write_pat() {
+        let (state, _shared) = fixture();
+        let app = router(state);
+        let body = serde_json::to_string(&serde_json::json!({
+            "name": "rw-key", "scopes": ["cache:read", "cache:write"],
+        }))
+        .unwrap();
+        let req = Request::builder()
+            .uri("/v1/customer/keys")
+            .method("POST")
+            .header("x-corelink-tenant-id", "rw-tenant")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CREATED);
+    }
+
+    /// Pure-unit coverage of the `mint_requests_write` classifier (kills mutants
+    /// on the token set): write/admin/owner spellings flag; read-only do not.
+    #[test]
+    fn mint_requests_write_classifier() {
+        for s in [
+            "cache:write",
+            "cas:rw",
+            "cas:w",
+            "read-write",
+            "admin",
+            "Owner",
+            "WRITE",
+        ] {
+            assert!(
+                mint_requests_write(&[s.to_owned()]),
+                "{s:?} must be classified as a write/admin mint"
+            );
+        }
+        for s in ["cache:read", "cas:r", "read-only", "viewer", ""] {
+            assert!(
+                !mint_requests_write(&[s.to_owned()]),
+                "{s:?} must NOT be classified as a write/admin mint"
+            );
+        }
+        // A list containing ANY write token flags.
+        assert!(mint_requests_write(&["cache:read".into(), "cache:write".into()]));
+    }
+
+    /// A read-only caller cannot invite a privileged role; a non-privileged
+    /// invite from a read-only caller is permitted (mirrors the keys-mint gate).
+    #[tokio::test]
+    async fn read_only_caller_cannot_invite_privileged_role() {
+        let (state, _shared) = fixture();
+        let app = router(state);
+        let body = serde_json::to_string(&serde_json::json!({
+            "email": "evil@example.com", "role": "Owner",
+        }))
+        .unwrap();
+        let req = Request::builder()
+            .uri("/v1/customer/team/invite")
+            .method("POST")
+            .header("x-corelink-tenant-id", "ro-tenant")
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn role_is_privileged_classifier() {
+        assert!(role_is_privileged("Owner"));
+        assert!(role_is_privileged("admin"));
+        assert!(!role_is_privileged("Developer"));
+        assert!(!role_is_privileged("Viewer"));
+        assert!(!role_is_privileged(""));
     }
 }

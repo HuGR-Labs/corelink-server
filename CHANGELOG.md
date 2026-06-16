@@ -48,6 +48,24 @@ Each entry cross-references:
     tenant binding) at the top of each billable CAS/AC/Bazel/Turbo handler, with a
     short-TTL verified-token cache keyed by SHA-256 fingerprint so the hot path
     skips Argon2id. Defense-in-depth ON TOP of the existing HMAC gate; env-gated.
+- **Red-team nuclear cluster A (CRITICAL) — customer control plane + `/v1/users/me`
+  were UN-gated by the `#4` possession backstop.** PR #297 wired
+  `native_pat_gate::NativePatGate` onto the native CAS/AC/Bazel/Turbo planes but left
+  `/v1/customer/*` and `/v1/users/me` without it. Because the Worker proves PAT
+  possession with an HMAC-only fast check, a leaked `PAT_SIGNING_KEY` let an attacker
+  HMAC-forge a PAT for ANY victim tenant, reach `customer.rs` with no possession check,
+  and have `handle_keys_create` mint a GENUINE `cas:rw` PAT for the victim (durable,
+  survives key rotation) → cross-tenant takeover + shared-cache poisoning. Separately
+  the control plane enforced no scope gate, so a read-only PAT could self-mint a
+  read-write PAT. Fix: thread the SAME `NativePatGate` into `CustomerRouteState` and a
+  new `UsersRouteState`, and run the full Argon2id Option-B verify (bound to the claimed
+  tenant) at the TOP of every `/v1/customer/*` handler and `/v1/users/me` BEFORE any
+  storage/handler access — forged/wrong-tenant ⇒ 401, verifier fault ⇒ 503 (fail-CLOSED).
+  Clerk-session callers (`x-corelink-token-prefix: clerk`, edge-verified, no bearer) skip
+  the PAT check; `None` in dev/CI preserves current behavior. Added a scope gate on mint:
+  a read-only principal (`x-corelink-scope` lacking cache-write) requesting a write/admin
+  credential — or inviting a privileged `Owner`/`Admin` team role — is rejected 403 before
+  the mutation (mirrors the native write-scope gate).
 - **Red-team brutal #3/#6/#7 — control-plane hardening (container).**
   - **#3 (HIGH)** — a single `CORELINK_INTERNAL_AUTH_KEY` gated five high-privilege
     internal surfaces (any-tenant PAT mint, GDPR/CAS erase, admin, pilots); one leak
