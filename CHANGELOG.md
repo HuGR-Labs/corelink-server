@@ -22,6 +22,22 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **Real customer onboarding rejected by Svix-PoP residency mis-derivation (launch-blocker).** The Clerk
+  `user.created` webhook is delivered by **Svix** (server-to-server), so `request.cf.colo` is Svix's
+  sender PoP — **not** the end-user's location. The signup-worker derived the tenant's data-residency
+  region from that colo (`regionFromColo`), so when Svix routed a delivery via a European PoP (observed
+  live: `sender-9YMgn` → `weur`) the signup was geo-assigned `weur` and then **rejected** by
+  `PROVISIONED_MACROS` (US-only at launch) with a terminal 422 — a legitimate paying signup lost to the
+  luck of Svix's routing. The webhook carries no reliable user-geo signal and at launch only enam/wnam
+  (IAD) is actually served, so webhook-provisioned tenants now default to the launch-served region
+  (`enam`); the Svix colo never drives provisioning. Per-tenant residency selection becomes a deliberate
+  post-signup action when the EU/SAM serving build-out lands (residency Phase-2). Also corrects the
+  `region_assigned` analytics `source` (`launch_default` when no real user-geo colo is supplied).
+  Drive-by: fixed a pre-existing stale `webhook-e2e` idempotency test (the #269 WP-1 change keyed
+  idempotency on tenant **AND** a live PAT; the test seeded only the tenant) + taught the in-memory D1
+  fake to answer the pat-liveness query.
+
 ### Added
 - **githugr cross-tenant authz — `/internal/v1/auth/tenant/lookup` (#3) + `/internal/v1/auth/token-exchange` (#1).**
   Two Worker-hosted, internal-auth-gated endpoints that unblock githugr's two audit CRITICALs (the window
