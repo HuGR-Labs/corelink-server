@@ -94,6 +94,7 @@ fn fixture_with_chain(
         audit_sink: audit_sink.clone() as Arc<dyn ExportAuditSink>,
         pager_page_size: R2_LIST_PAGE_SIZE,
         wall_clock: default_wall_clock(),
+        pat_gate: None,
     };
     (state, exporter, audit_sink)
 }
@@ -293,6 +294,7 @@ async fn chain_tamper_emits_verify_failed_sev0() {
         audit_sink: state_orig.audit_sink.clone(),
         pager_page_size: state_orig.pager_page_size,
         wall_clock: state_orig.wall_clock.clone(),
+        pat_gate: None,
     };
     let app = router(state);
 
@@ -409,6 +411,7 @@ async fn audit_failure_aborts_with_503() {
         audit_sink: bad as Arc<dyn ExportAuditSink>,
         pager_page_size: state.pager_page_size,
         wall_clock: state.wall_clock.clone(),
+        pat_gate: None,
     };
     let app = router(state);
 
@@ -527,6 +530,7 @@ async fn abort_trailer_emitted_on_mid_stream_chain_break() {
         audit_sink: state_orig.audit_sink.clone(),
         pager_page_size: state_orig.pager_page_size,
         wall_clock: state_orig.wall_clock.clone(),
+        pat_gate: None,
     };
     let app = router(state);
 
@@ -660,6 +664,7 @@ async fn customer_cli_handles_abort_trailer_gracefully() {
             audit_sink: state_orig.audit_sink.clone(),
             pager_page_size: state_orig.pager_page_size,
             wall_clock: state_orig.wall_clock.clone(),
+            pat_gate: None,
         };
         let app = router(state);
         let resp = app
@@ -842,6 +847,7 @@ async fn wave19_audit_row_payload_and_trailer_payload_byte_identical() {
         audit_sink: state_orig.audit_sink.clone(),
         pager_page_size: state_orig.pager_page_size,
         wall_clock: state_orig.wall_clock.clone(),
+        pat_gate: None,
     };
     let app = router(state);
 

@@ -132,6 +132,35 @@ pub struct CasRouteState {
     // reserve→commit→release accounting with no per-route plumbing.
 }
 
+impl CasRouteState {
+    /// Construct a [`CasRouteState`] from its public collaborators, initializing
+    /// the crate-private per-tenant in-flight write counter ([`Self::put_inflight`])
+    /// to empty. This is the supported constructor for callers OUTSIDE the crate
+    /// (e.g. integration smoke tests) that cannot name the `pub(crate)` field.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        read: Arc<dyn CasReadHandler>,
+        write: Arc<dyn CasWriteHandler>,
+        delete: Arc<dyn CasDeleteHandler>,
+        list: Arc<dyn CasListHandler>,
+        tombstones: Option<Arc<dyn crate::routes::cas_erase::TombstoneStore>>,
+        quota: Option<crate::routes::QuotaGate>,
+        pat_gate: Option<std::sync::Arc<crate::native_pat_gate::NativePatGate>>,
+    ) -> Self {
+        Self {
+            read,
+            write,
+            delete,
+            list,
+            tombstones,
+            quota,
+            pat_gate,
+            put_inflight: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+}
+
 impl core::fmt::Debug for CasRouteState {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("CasRouteState").finish_non_exhaustive()

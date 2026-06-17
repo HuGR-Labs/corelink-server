@@ -130,6 +130,32 @@ pub struct AcRouteState {
     // `routes::build_with_factory`) — shared with the Bazel AC write surface.
 }
 
+impl AcRouteState {
+    /// Construct an [`AcRouteState`] from its public collaborators, initializing
+    /// the crate-private per-tenant in-flight write counter ([`Self::put_inflight`])
+    /// to empty. Supported constructor for callers OUTSIDE the crate (integration
+    /// smoke tests) that cannot name the `pub(crate)` field.
+    #[must_use]
+    pub fn new(
+        lookup: Arc<dyn AcLookupHandler>,
+        update: Arc<dyn AcUpdateHandler>,
+        delete: Arc<dyn AcDeleteHandler>,
+        list: Arc<dyn AcListHandler>,
+        quota: Option<crate::routes::QuotaGate>,
+        pat_gate: Option<std::sync::Arc<crate::native_pat_gate::NativePatGate>>,
+    ) -> Self {
+        Self {
+            lookup,
+            update,
+            delete,
+            list,
+            quota,
+            pat_gate,
+            put_inflight: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+}
+
 impl core::fmt::Debug for AcRouteState {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("AcRouteState").finish_non_exhaustive()
