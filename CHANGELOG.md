@@ -23,6 +23,18 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **npm metadata cache-poisoning via name normalization collision (rt-nuclear #7).**
+  Unscoped npm package metadata is cached in the SHARED cross-tenant `_public` namespace keyed by the
+  **normalized** name (`trim().to_ascii_lowercase()`), but the upstream fetch used the **raw** path
+  name and never checked that the fetched JSON's canonical `name` matched the requested package. A
+  read-only PAT (any tenant) could `GET /npm/<t>/<RawName>` where `<RawName>` normalizes to a popular
+  package's `_public` key yet resolves upstream to different-identity content — poisoning every
+  tenant's view of that package for the TTL (wrong versions / `dist.shasum` → broken or pinned
+  installs). The metadata refresh now **binds the stored content's canonical `name` to the requested
+  key** (`require_metadata_name_matches`, fail-CLOSED → `502 MetadataNameMismatch`, mirroring the
+  tarball integrity-mismatch contract), and the cache-hit path **self-heals** (a name-mismatched
+  entry is re-fetched, not served). Tarball bytes were already per-tenant + SHA-verified, so this was
+  an integrity/availability attack, not RCE.
 - **Read-only PAT could self-escalate to read-write via divergent scope matching (rt-nuclear #15).**
   The self-serve key-mint escalation gate (`routes::customer::mint_requests_write`) used exact-token
   matching while the D1 scope persister (`customer_d1::map_requested_scopes`) used substring matching

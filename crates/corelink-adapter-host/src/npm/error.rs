@@ -63,6 +63,20 @@ pub enum NpmAdapterError {
     /// parsed. Maps to `502 Bad Gateway`.
     #[error("metadata parse: {0}")]
     MetadataParse(String),
+
+    /// Upstream metadata's canonical `name` does not match the requested
+    /// (normalized) package — a case/trim/encoding alias that would poison the
+    /// SHARED `_public` metadata namespace cross-tenant (rt-nuclear #7). The
+    /// adapter REJECTS the cache store (fail-CLOSED), mirroring the tarball
+    /// `IntegrityMismatch` contract. Maps to `502 Bad Gateway`. Both names are
+    /// public package identifiers, so the message is non-leaking.
+    #[error("metadata name mismatch: requested {requested}, upstream returned {fetched}")]
+    MetadataNameMismatch {
+        /// The requested package name, normalized.
+        requested: String,
+        /// The canonical `name` the upstream metadata carried (normalized).
+        fetched: String,
+    },
 }
 
 impl NpmAdapterError {
@@ -111,7 +125,10 @@ impl NpmAdapterError {
             Self::Bind(_) => 500,
             Self::Auth(_) => 401,
             Self::Cas(_) | Self::Kv(_) | Self::Audit(_) => 503,
-            Self::Upstream(_) | Self::IntegrityMismatch { .. } | Self::MetadataParse(_) => 502,
+            Self::Upstream(_)
+            | Self::IntegrityMismatch { .. }
+            | Self::MetadataParse(_)
+            | Self::MetadataNameMismatch { .. } => 502,
             Self::TarballOversized(_) => 413,
         }
     }
