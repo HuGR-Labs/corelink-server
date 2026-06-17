@@ -594,6 +594,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                     brew_cas_write,
                     brew_map,
                     verifier.clone(),
+                    quota.clone(),
                 ));
 
                 // npm: shared map + verifier + the D1-backed metadata KV table
@@ -607,6 +608,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                             npm_map,
                             npm_meta_kv,
                             verifier.clone(),
+                            quota.clone(),
                         ));
                     }
                     None => {
@@ -662,6 +664,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                     pip_map,
                     d1,
                     verifier,
+                    quota.clone(),
                 ));
             }
             None => {

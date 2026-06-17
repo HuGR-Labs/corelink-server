@@ -264,6 +264,15 @@ impl TenantResolver for NpmPatResolver {
     }
 }
 
+/// State for [`npm_gate`]: the shared tenant resolver (F27 two-layer write
+/// enforcement) + the optional per-tenant monthly `$`-ceiling [`QuotaGate`]
+/// (rt-nuclear #22 — the npm/pip/brew adapters had NO container-side $-ceiling).
+#[derive(Clone)]
+struct NpmGateState {
+    resolver: TenantResolverHandle,
+    quota: Option<crate::routes::QuotaGate>,
+}
+
 /// Build the `/npm/*` sub-router from shared CAS handlers + the url→hash
 /// map + the npm metadata KV + the PAT verifier.
 ///
@@ -279,6 +288,7 @@ pub fn router(
     map: Arc<dyn UrlMapStore>,
     meta_kv: Arc<NpmKvStore>,
     verifier: Arc<PatVerifier>,
+    quota: Option<crate::routes::QuotaGate>,
 ) -> Router {
     let moat = Arc::new(MoatCache::production(
         cas_read,
@@ -332,9 +342,10 @@ pub fn router(
     // use an inner gate only because its inner route is a catch-all `/{*path}`.)
     // The SAME resolver is threaded into the gate for two-layer write enforcement
     // (F27) — one PAT verification, not two.
+    let gate_state = NpmGateState { resolver, quota };
     Router::new()
         .nest_service("/npm", adapter)
-        .layer(middleware::from_fn_with_state(resolver, npm_gate))
+        .layer(middleware::from_fn_with_state(gate_state, npm_gate))
 }
 
 /// Gate layer: per-operation cache-scope enforcement + two-layer write
@@ -353,10 +364,11 @@ pub fn router(
 /// the nested param routes at routing time, before an inner layer could rewrite
 /// the path (see [`router`]).
 async fn npm_gate(
-    axum::extract::State(resolver): axum::extract::State<TenantResolverHandle>,
+    axum::extract::State(state): axum::extract::State<NpmGateState>,
     mut req: Request,
     next: Next,
 ) -> Response {
+    let resolver = &state.resolver;
     let scope = req
         .headers()
         .get(SCOPE_HEADER)
@@ -422,6 +434,26 @@ async fn npm_gate(
                         return (StatusCode::UNAUTHORIZED, "invalid PAT").into_response();
                     }
                 }
+            }
+        }
+    }
+
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1; rt-nuclear
+    // #22): charge the flat per-op cost AFTER the scope + F27 checks, BEFORE the
+    // adapter runs. The cost-attribution tenant is the Worker-set, server-trusted
+    // `x-corelink-tenant-id` (a forged header can over-charge ITS OWN tenant,
+    // never another); a missing/empty header skips the charge fail-OPEN. 402
+    // over-ceiling / 503 fail-CLOSED. Mirrors `cargo_gate`.
+    if let Some(gate) = state.quota.as_ref() {
+        let tenant = req
+            .headers()
+            .get("x-corelink-tenant-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .unwrap_or("");
+        if !tenant.is_empty() {
+            if let Some(resp) = gate.check(tenant).await {
+                return resp;
             }
         }
     }
@@ -613,6 +645,7 @@ mod tests {
             Arc::new(FakeMap::default()),
             npm_kv(Arc::new(FakeKv::default())),
             verifier,
+            None,
         )
     }
 
@@ -749,6 +782,7 @@ mod tests {
             Arc::new(FakeMap::default()),
             npm_kv(kv_backend),
             verifier,
+            None,
         );
 
         // path-tenant \"ignored\" ≠ the PAT tenant → proves the path tenant is
@@ -844,6 +878,7 @@ mod tests {
             map,
             npm_kv(kv_backend),
             verifier,
+            None,
         );
 
         let resp = app

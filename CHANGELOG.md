@@ -53,6 +53,13 @@ Each entry cross-references:
   very next write. The in-memory test store mirrors the same semantics.
 
 ### Security
+- **npm/pip/brew cache adapters had NO container-side $-ceiling gate (rt-nuclear #22).**
+  Unlike cargo and OCI, the npm/pip/brew adapter gates enforced cache scope + F27 write capability but
+  did NOT charge the per-tenant monthly `$`-ceiling, so a tenant over its billing ceiling could keep
+  driving cache ops on those surfaces (cost-control bypass). Each gate now carries the same optional
+  `QuotaGate` cargo/OCI use and charges the flat per-op cost (server-trusted `x-corelink-tenant-id`
+  cost-attribution, missing/empty skips fail-OPEN) after the scope/F27 checks and before the adapter
+  runs — 402 over-ceiling / 503 fail-CLOSED.
 - **Audit export/analytics had no Argon2id PAT-possession backstop → leaked PAT_SIGNING_KEY = cross-tenant audit exfil (rt-nuclear #17).**
   The `/v1/audit/export` and `/v1/audit/analytics/*` surfaces trusted the Worker-resolved tenant header
   without re-verifying PAT possession, so a leaked `PAT_SIGNING_KEY` (which lets an attacker HMAC-forge a

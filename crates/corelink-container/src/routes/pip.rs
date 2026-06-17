@@ -270,6 +270,14 @@ impl TenantResolver for PipPatResolver {
     }
 }
 
+/// State for [`pip_gate`]: the shared tenant resolver (F27) + the optional
+/// per-tenant monthly `$`-ceiling [`QuotaGate`] (rt-nuclear #22).
+#[derive(Clone)]
+struct PipGateState {
+    resolver: TenantResolverHandle,
+    quota: Option<crate::routes::QuotaGate>,
+}
+
 /// Build the `/pip/*` sub-router from shared CAS handlers + the
 /// url→hash map (reused for the wheel moat) + the PAT verifier.
 ///
@@ -295,6 +303,7 @@ pub fn router(
     map: Arc<dyn UrlMapStore>,
     d1: Arc<D1HttpClient>,
     verifier: Arc<PatVerifier>,
+    quota: Option<crate::routes::QuotaGate>,
 ) -> Router {
     let moat = Arc::new(MoatCache::production(
         cas_read,
@@ -354,9 +363,10 @@ pub fn router(
     // The SAME resolver is threaded into the gate for two-layer write enforcement
     // (F27) — one PAT verification, not two.
     let adapter = build_router(state);
+    let gate_state = PipGateState { resolver, quota };
     Router::new()
         .nest_service("/pip", adapter)
-        .layer(middleware::from_fn_with_state(resolver, pip_gate))
+        .layer(middleware::from_fn_with_state(gate_state, pip_gate))
 }
 
 /// Gate layer: per-operation cache-scope enforcement + two-layer write
@@ -374,10 +384,11 @@ pub fn router(
 /// outer is required because axum 0.7 matches the nested param routes at routing
 /// time, before an inner layer could rewrite the path (see [`router`]).
 async fn pip_gate(
-    axum::extract::State(resolver): axum::extract::State<TenantResolverHandle>,
+    axum::extract::State(state): axum::extract::State<PipGateState>,
     mut req: Request,
     next: Next,
 ) -> Response {
+    let resolver = &state.resolver;
     let scope = req
         .headers()
         .get(SCOPE_HEADER)
@@ -442,6 +453,25 @@ async fn pip_gate(
                         return (StatusCode::UNAUTHORIZED, "invalid PAT").into_response();
                     }
                 }
+            }
+        }
+    }
+
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1; rt-nuclear
+    // #22): charge the flat per-op cost AFTER the scope + F27 checks, BEFORE the
+    // adapter runs. Cost-attribution tenant = the server-trusted
+    // `x-corelink-tenant-id`; missing/empty skips fail-OPEN. 402 over-ceiling /
+    // 503 fail-CLOSED. Mirrors `cargo_gate`.
+    if let Some(gate) = state.quota.as_ref() {
+        let tenant = req
+            .headers()
+            .get("x-corelink-tenant-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .unwrap_or("");
+        if !tenant.is_empty() {
+            if let Some(resp) = gate.check(tenant).await {
+                return resp;
             }
         }
     }
@@ -666,9 +696,13 @@ mod tests {
         // Mirror prod `router`: the gate is an OUTER layer wrapping the mount.
         // The SAME resolver is threaded in for two-layer write enforcement (F27).
         let adapter = build_router(state);
+        let gate_state = PipGateState {
+            resolver,
+            quota: None,
+        };
         Router::new()
             .nest_service("/pip", adapter)
-            .layer(middleware::from_fn_with_state(resolver, pip_gate))
+            .layer(middleware::from_fn_with_state(gate_state, pip_gate))
     }
 
     /// Router whose verifier rejects ALL PATs (empty lookup); stores unused.
