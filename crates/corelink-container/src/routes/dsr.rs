@@ -237,14 +237,22 @@ fn build_d1_worker() -> Option<(InMemoryErasureWorker, Arc<crate::storage::d1_ht
 /// F28/F15 of the 2026-06-13 CAA-360 security audit.
 #[must_use]
 pub fn build_state_from_env() -> Option<DsrRouteState> {
-    let internal_auth_key = std::env::var("CORELINK_INTERNAL_AUTH_KEY").ok()?;
-    if internal_auth_key.len() < 32 {
-        tracing::warn!(
-            "CORELINK_INTERNAL_AUTH_KEY too short (< 32 chars); \
-             /_internal/dsr/* NOT mounted (fail-CLOSED)"
-        );
-        return None;
-    }
+    // rt-nuclear #18/#19: DSR (GDPR mass-erase) MUST gate on the dedicated ERASE
+    // key (CORELINK_ERASE_AUTH_KEY), not the shared key directly — so the #297
+    // per-consumer split actually reaches this destructive surface. Prefers the
+    // dedicated key, falls back to the shared CORELINK_INTERNAL_AUTH_KEY (so this
+    // is non-breaking until the per-consumer secret #158 is provisioned), and
+    // preserves the ≥32-char fail-CLOSED floor (F28/F15).
+    let internal_auth_key = match crate::routes::admin::erase_auth_key_from_env() {
+        Some(k) if k.len() >= 32 => k.to_string(),
+        _ => {
+            tracing::warn!(
+                "no usable CORELINK_ERASE_AUTH_KEY / CORELINK_INTERNAL_AUTH_KEY \
+                 (< 32 chars); /_internal/dsr/* NOT mounted (fail-CLOSED)"
+            );
+            return None;
+        }
+    };
     // Prefer the real D1-backed worker; fall back to the all-placeholder
     // worker when storage is unconfigured (keeps the route mountable in
     // tests / partially-configured envs). The D1 handle (when present) also

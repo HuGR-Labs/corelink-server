@@ -22,8 +22,20 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+- **Wire CAS-erase + DSR to the dedicated `CORELINK_ERASE_AUTH_KEY` (rt-nuclear #18–21).**
+  The #297 per-consumer-key split never reached the destructive surfaces: `/_internal/cas/*/erase`
+  was seeded from the ADMIN key and `/_internal/dsr/*` read the shared `CORELINK_INTERNAL_AUTH_KEY`
+  directly — so an admin-key leak could drive irreversible erases and the GDPR mass-erase surface
+  honored no dedicated key. Both now resolve `CORELINK_ERASE_AUTH_KEY` (via `erase_auth_key_from_env`),
+  making the #297 split real on the erase plane. Non-breaking: still falls back to the shared key until
+  the per-consumer secret is provisioned; ≥32-char fail-CLOSED floor preserved. (Removing the shared
+  fallback for destructive consumers + per-tenant authz on erase/DSR are tracked follow-ups.)
+
 ### Added
 - **Bazel REAPI v2 CAS — SHA-256 in a surface-tagged keyspace (concern D).**
+  Genuine `bazel --remote_cache` uploads (SHA-256 content addressing, REAPI v2
+  default) no longer fail the BLAKE3-only durable gate. The fix is **Option A**
   Genuine `bazel --remote_cache` uploads (SHA-256 content addressing, REAPI v2
   default) no longer fail the BLAKE3-only durable gate. The fix is **Option A**
   (surface-tagged keyspace), NOT a relaxation of the shared content-addressing

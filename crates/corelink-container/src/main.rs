@@ -354,7 +354,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // route stays UNMOUNTED (fail-CLOSED) — it can never tombstone a blob whose
     // bytes it could not address (mirrors the DSR R2 CAS adapter's fail-closed
     // posture). The read-side 410 gate is wired separately in `routes::cas`.
-    let cas_erase_auth_key = corelink_server::routes::admin::internal_auth_key_from_env();
+    // rt-nuclear #20/#21: CAS-erase MUST gate on the dedicated ERASE key
+    // (CORELINK_ERASE_AUTH_KEY), not the ADMIN key — so an admin-key leak cannot
+    // drive irreversible erases. `erase_auth_key_from_env` still falls back to the
+    // shared CORELINK_INTERNAL_AUTH_KEY when the dedicated key is unset, so this is
+    // non-breaking until the per-consumer secret (#158) is provisioned.
+    let cas_erase_auth_key = corelink_server::routes::admin::erase_auth_key_from_env();
     if let Some(cas_erase_state) =
         corelink_server::routes::cas_erase::build_state_from_env(cas_erase_auth_key)
     {
