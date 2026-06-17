@@ -23,6 +23,21 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **`/_internal/dsr/erase` trusted the body-asserted `tenant_id` → shared-internal-key GDPR mass-erase
+  (rt-nuclear #18/#19).** The 12-backend erasure orchestrator's docstring promised a tenant pre-check but
+  never implemented it, so possession of the shared internal-auth key alone could erase ANY tenant's entire
+  dataset by asserting a forged `tenant_id` in the request body (GDPR Art. 17 mass-erase / cross-tenant
+  destruction). `process_erasure` now runs a legitimacy pre-check BEFORE the `started.v1` audit emit and
+  BEFORE any backend fan-out: it binds the erase to a durable, D1-authenticated `dsr_requested` row
+  (`migrations/d1/0069`) matching `(dsr_id, tenant_id)` with `status IN ('requested','verified')` — a row the
+  legitimate Clerk `user.deleted` path always writes with a D1-authenticated tenant, and a forged request
+  never has. New `DsrLegitimacyStore` trait (in-memory + allow-all-test + failing fixtures in
+  `corelink-privacy-erasure-worker`; D1-backed `D1DsrLegitimacyStore` over `dsr_requested` in the container)
+  injected via the new `InMemoryErasureWorker::try_new_with_legitimacy`. Fail-CLOSED on BOTH absence and
+  store error (a D1 fault → `Rejected`, never erase — an irreversible op must DENY on ambiguity). No
+  `started.v1` and no tombstone are emitted on the reject path (no fan-out, no state mutation); the SEV-1
+  signal is the `Rejected` decision arm. The container route uses the D1 store on the configured path and an
+  empty (fail-CLOSED) in-memory store on the unconfigured/placeholder path — never an allow-all store.
 - **OCI writes bypassed the monthly request-count quota (rt-nuclear #8, request-count half).**
   PR #318 closed the OCI `$`-ceiling bypass but the SIBLING gap remained: OCI billable writes were never
   counted against the per-tenant monthly request cap (`monthly_request_counts`, migration 0071), because

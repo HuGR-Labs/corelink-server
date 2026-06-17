@@ -212,6 +212,7 @@ pub mod backends;
 pub mod error;
 pub mod event;
 pub mod idempotency;
+pub mod legitimacy;
 pub mod orchestrator;
 pub mod pseudonymize;
 pub mod report;
@@ -238,6 +239,10 @@ pub use event::{
 pub use idempotency::{
     ErasureIdempotencyLedger, FailingErasureIdempotencyLedger, InMemoryErasureIdempotencyLedger,
     LedgerOutcome,
+};
+pub use legitimacy::{
+    AllowAllDsrLegitimacyStore, DsrLegitimacyError, DsrLegitimacyStore, FailingDsrLegitimacyStore,
+    InMemoryDsrLegitimacyStore,
 };
 pub use orchestrator::{ErasureWorker, InMemoryErasureWorker};
 pub use report::{

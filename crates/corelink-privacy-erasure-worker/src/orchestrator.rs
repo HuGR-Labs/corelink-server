@@ -6,9 +6,19 @@
 //!
 //! 1. **Audit `started.v1` BEFORE state observation** — canonical
 //!    fail-CLOSED envelope per ADR-S11-002 split-tier.
-//! 2. **Tenant pre-check** — `payload.tenant_id == request.tenant_id`
-//!    (cross-tenant attack mitigation per WI AC-009; reject with
-//!    `Rejected` decision arm + SEV-1 alert hook).
+//! 2. **Tenant legitimacy pre-check** (rt-nuclear #18/#19) — BEFORE the
+//!    `started.v1` emit + ANY backend fan-out, the orchestrator binds the
+//!    erase to a durable, D1-authenticated `dsr_requested` row matching
+//!    `(request.dsr_id, request.tenant_id)` (`status IN
+//!    ('requested','verified')`). Possession of the shared internal-auth
+//!    key alone is NOT sufficient to erase an arbitrary body-asserted
+//!    `tenant_id` (GDPR Art. 17 mass-erase / cross-tenant destruction):
+//!    a legitimate erasure ALWAYS has such a row (written by the Clerk
+//!    `user.deleted` path with a D1-authenticated `tenant_id`); a forged
+//!    one does not. Absent row → [`crate::event::ErasureDecision::Rejected`]
+//!    + SEV-1 alert hook, NO fan-out. Store error (D1 fault) → REJECT too:
+//!    erasure is IRREVERSIBLE so an ambiguous legitimacy check must DENY
+//!    (fail-CLOSED, the opposite of fail-open). See [`crate::legitimacy`].
 //! 3. **Per-backend fan-out** — for each canonical backend kind in
 //!    canonical order: per-backend audit `backend_completed.v1`
 //!    BEFORE the canonical D1 `dsr_erasure_log` tombstone insert.
@@ -40,6 +50,7 @@ use crate::event::{
     BACKEND_COUNT,
 };
 use crate::idempotency::{ErasureIdempotencyLedger, LedgerOutcome};
+use crate::legitimacy::{AllowAllDsrLegitimacyStore, DsrLegitimacyStore};
 
 /// Canonical 12-backend orchestrator. Composes the audit sink + the
 /// idempotency ledger + 12 backend adapters via `Arc` handles; the
@@ -51,6 +62,10 @@ pub struct InMemoryErasureWorker {
     audit: Arc<dyn ErasureAuditSink>,
     ledger: Arc<dyn ErasureIdempotencyLedger>,
     adapters: Vec<Arc<dyn BackendErasureAdapter>>,
+    /// rt-nuclear #18/#19: the legitimacy pre-check store. Bound to the
+    /// D1 `dsr_requested` table in production; defaults to the allow-all
+    /// test/legacy fixture in the 3-arg [`Self::try_new`].
+    legitimacy: Arc<dyn DsrLegitimacyStore>,
     mutex: Arc<Mutex<()>>,
 }
 
@@ -74,6 +89,35 @@ impl InMemoryErasureWorker {
         ledger: Arc<dyn ErasureIdempotencyLedger>,
         adapters: Vec<Arc<dyn BackendErasureAdapter>>,
     ) -> Result<Self, ErasureWorkerError> {
+        // Legacy / test convenience: the 3-arg constructor installs the
+        // allow-all legitimacy fixture so the crate's fan-out tests (which
+        // exercise the erasure pipeline, NOT the rt-nuclear #18/#19 authz
+        // gate) keep passing unchanged. ⛔ Production wiring MUST use
+        // [`Self::try_new_with_legitimacy`] with a D1-backed store — the
+        // container `/_internal/dsr/erase` route does exactly that.
+        Self::try_new_with_legitimacy(
+            audit,
+            ledger,
+            adapters,
+            Arc::new(AllowAllDsrLegitimacyStore::new()),
+        )
+    }
+
+    /// Construct with an explicit [`DsrLegitimacyStore`] (rt-nuclear
+    /// #18/#19). This is the production constructor: the container route
+    /// passes a D1-backed store over `dsr_requested` so a forged
+    /// body-asserted `tenant_id` cannot drive an erase.
+    ///
+    /// # Errors
+    ///
+    /// - [`ErasureWorkerError::Config`] when the 12 adapters are not in
+    ///   canonical order or count (same invariant as [`Self::try_new`]).
+    pub fn try_new_with_legitimacy(
+        audit: Arc<dyn ErasureAuditSink>,
+        ledger: Arc<dyn ErasureIdempotencyLedger>,
+        adapters: Vec<Arc<dyn BackendErasureAdapter>>,
+        legitimacy: Arc<dyn DsrLegitimacyStore>,
+    ) -> Result<Self, ErasureWorkerError> {
         if adapters.len() != BACKEND_COUNT {
             return Err(ErasureWorkerError::Config(format!(
                 "expected {BACKEND_COUNT} canonical adapters; got {got}",
@@ -95,6 +139,7 @@ impl InMemoryErasureWorker {
             audit,
             ledger,
             adapters,
+            legitimacy,
             mutex: Arc::new(Mutex::new(())),
         })
     }
@@ -109,6 +154,12 @@ impl InMemoryErasureWorker {
     #[must_use]
     pub fn ledger(&self) -> &Arc<dyn ErasureIdempotencyLedger> {
         &self.ledger
+    }
+
+    /// Borrow the legitimacy pre-check store (rt-nuclear #18/#19).
+    #[must_use]
+    pub fn legitimacy(&self) -> &Arc<dyn DsrLegitimacyStore> {
+        &self.legitimacy
     }
 
     /// Borrow the backend adapter for a canonical `BackendKind`.
@@ -183,6 +234,38 @@ impl ErasureWorker for InMemoryErasureWorker {
         let _guard = self.mutex.lock().map_err(|_| {
             ErasureWorkerError::Internal("erasure orchestrator mutex poisoned".to_string())
         })?;
+
+        // rt-nuclear #18/#19: tenant legitimacy pre-check BEFORE the
+        // `started.v1` emit AND BEFORE any backend fan-out. Bind the erase
+        // to a durable, D1-authenticated `dsr_requested` row matching
+        // `(dsr_id, tenant_id)`. Possession of the shared internal-auth
+        // key alone MUST NOT erase an arbitrary body-asserted tenant
+        // (GDPR Art. 17 mass-erase / cross-tenant destruction). A
+        // legitimate erasure ALWAYS has such a row; a forged one does not.
+        //
+        // Fail-CLOSED on BOTH absence and store error: erasure is
+        // IRREVERSIBLE, so an ambiguous legitimacy check must DENY (the
+        // opposite of a fail-open availability gate). We do NOT emit
+        // `started.v1` on the reject path — that envelope means "the
+        // erasure has begun"; a rejected request never begins. The
+        // SEV-1 signal is the `Rejected` decision arm itself
+        // (`ErasureDecision::is_sev1() == true`), surfaced to the caller
+        // with NO fan-out and NO state mutation.
+        match self.legitimacy.is_requested(request.dsr_id, request.tenant_id) {
+            Ok(true) => {}
+            Ok(false) => {
+                return Ok(ErasureDecision::Rejected {
+                    reason: "dsr_not_requested_for_tenant".to_string(),
+                });
+            }
+            Err(_) => {
+                // Fail-CLOSED: a legitimacy store fault (D1 down) must
+                // NOT permit an unverified irreversible erase.
+                return Ok(ErasureDecision::Rejected {
+                    reason: "dsr_legitimacy_check_unavailable".to_string(),
+                });
+            }
+        }
 
         // 1. Audit `started.v1` BEFORE any state mutation. Per
         //    ADR-S11-002 split-tier: DSR is regulatory-grade
@@ -487,6 +570,9 @@ mod tests {
     use crate::backends::canonical_in_memory_adapters;
     use crate::event::ErasureSalt;
     use crate::idempotency::InMemoryErasureIdempotencyLedger;
+    use crate::legitimacy::{
+        FailingDsrLegitimacyStore, InMemoryDsrLegitimacyStore,
+    };
     use uuid::Uuid;
 
     fn fixed_uuid(seed: u8) -> Uuid {
@@ -516,6 +602,32 @@ mod tests {
         let worker =
             InMemoryErasureWorker::try_new(audit.clone(), ledger.clone(), adapters_dyn).unwrap();
         (worker, audit, ledger, adapters_typed)
+    }
+
+    /// Build a worker with an explicit legitimacy store (rt-nuclear
+    /// #18/#19 tests) + fresh canonical adapters/audit/ledger so the
+    /// authz gate is exercised in isolation.
+    fn worker_with_legitimacy(
+        legitimacy: Arc<dyn DsrLegitimacyStore>,
+    ) -> (
+        InMemoryErasureWorker,
+        Arc<InMemoryErasureAuditSink>,
+        Arc<InMemoryErasureIdempotencyLedger>,
+    ) {
+        let audit = Arc::new(InMemoryErasureAuditSink::new());
+        let ledger = Arc::new(InMemoryErasureIdempotencyLedger::new());
+        let adapters_dyn: Vec<Arc<dyn BackendErasureAdapter>> = canonical_in_memory_adapters()
+            .iter()
+            .map(|a| Arc::clone(a) as Arc<dyn BackendErasureAdapter>)
+            .collect();
+        let worker = InMemoryErasureWorker::try_new_with_legitimacy(
+            audit.clone(),
+            ledger.clone(),
+            adapters_dyn,
+            legitimacy,
+        )
+        .unwrap();
+        (worker, audit, ledger)
     }
 
     fn fresh_request() -> ErasureRequest {
@@ -625,6 +737,60 @@ mod tests {
         assert!(partial);
         // Ledger snapshot is preserved (verification doesn't mutate).
         assert_eq!(ledger.snapshot(req.dsr_id).unwrap().len(), BACKEND_COUNT);
+    }
+
+    // ---- rt-nuclear #18/#19: tenant legitimacy authz gate ----
+
+    #[test]
+    fn legitimacy_present_erase_proceeds() {
+        // A (dsr_id, tenant_id) present in the legitimacy store → the
+        // erase proceeds (Started) with the full canonical fan-out.
+        let legit = Arc::new(InMemoryDsrLegitimacyStore::new());
+        let req = fresh_request();
+        legit.insert_requested(req.dsr_id, req.tenant_id);
+        let (worker, audit, ledger) =
+            worker_with_legitimacy(legit as Arc<dyn DsrLegitimacyStore>);
+        let d = worker.process_erasure(&req, 1_000).unwrap();
+        let started = matches!(d, ErasureDecision::Started { .. });
+        assert!(started);
+        // 1 started + 12 backend_completed → fan-out actually happened.
+        assert_eq!(audit.len(), 1 + BACKEND_COUNT);
+        assert_eq!(ledger.snapshot(req.dsr_id).unwrap().len(), BACKEND_COUNT);
+    }
+
+    #[test]
+    fn legitimacy_absent_rejects_with_no_fanout() {
+        // ABSENT (dsr_id, tenant_id) → Rejected, and CRITICALLY no
+        // fan-out: zero audit envelopes (not even `started`) and zero
+        // ledger tombstones prove no backend was ever called.
+        let legit = Arc::new(InMemoryDsrLegitimacyStore::new()); // empty
+        let (worker, audit, ledger) =
+            worker_with_legitimacy(legit as Arc<dyn DsrLegitimacyStore>);
+        let req = fresh_request();
+        let d = worker.process_erasure(&req, 1_000).unwrap();
+        let rejected = matches!(d, ErasureDecision::Rejected { .. });
+        assert!(rejected);
+        assert_eq!(audit.len(), 0, "no started/backend_completed on reject");
+        assert_eq!(
+            ledger.snapshot(req.dsr_id).unwrap().len(),
+            0,
+            "no backend was called → no tombstone"
+        );
+    }
+
+    #[test]
+    fn legitimacy_store_error_rejects_fail_closed() {
+        // A legitimacy store ERROR (D1 fault) → fail-CLOSED Reject; an
+        // ambiguous legitimacy check on an IRREVERSIBLE op must DENY.
+        let legit = Arc::new(FailingDsrLegitimacyStore::new());
+        let (worker, audit, ledger) =
+            worker_with_legitimacy(legit as Arc<dyn DsrLegitimacyStore>);
+        let req = fresh_request();
+        let d = worker.process_erasure(&req, 1_000).unwrap();
+        let rejected = matches!(d, ErasureDecision::Rejected { .. });
+        assert!(rejected);
+        assert_eq!(audit.len(), 0, "fail-closed: no fan-out on store error");
+        assert_eq!(ledger.snapshot(req.dsr_id).unwrap().len(), 0);
     }
 
     #[test]
