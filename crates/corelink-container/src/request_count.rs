@@ -386,8 +386,13 @@ mod tests {
     use super::*;
     use crate::wall_clock::InMemoryFakeWallClock;
 
-    /// 2026-06-15T00:00:00Z, in Unix-epoch ms.
-    const T0: u64 = 1_750_000_000_000;
+    /// 2026-06-15T00:00:00Z, in Unix-epoch ms. (1_750_000_000_000 — the value
+    /// this constant carried before — is actually 2025-06-14T22:13:20Z, NOT a
+    /// 2026-06 midnight; it made the fixed-clock tests compute year_month
+    /// "2025-06" and miss every "2026-06"-keyed pre-load. Cross-check:
+    /// 2026-06-16T00:00:00Z = 1_781_568_000_000 (the tier-seed epoch), so
+    /// 2026-06-15T00:00:00Z = that minus one day.)
+    const T0: u64 = 1_781_481_600_000;
 
     /// In-memory counter keyed by `(tenant, year_month)`.
     #[derive(Debug, Default)]
