@@ -71,3 +71,47 @@ durable-gate change must be reworked per Option A/B.
 ## CHANGELOG (when it ships)
 Bazel REAPI v2 CAS uploads no longer 422; REAPI boundary verifies SHA-256; native CAS + sccache
 remain BLAKE3-only; INV-CAS-INTEGRITY updated to record the surface-scoped digest function.
+
+---
+
+## DECISION (ratified 2026-06-16, corelink-server TL — true-SOTA mandate)
+
+**Option A is RATIFIED.** Rationale: it is the only path that does **not** relax the shared
+CRITICAL content-addressing gate. Option B admits SHA-256 onto the durable gate (even surface-gated)
+and requires a superseding ADR amending ADR-0044 §5 — a security-model relaxation we refuse without
+necessity. Option A keeps each keyspace **single-function** (never mixed): BLAKE3 in the native CAS
+keyspace, SHA-256 only under a surface-tagged `bazel/sha256/` prefix.
+
+**Key clarification of "BLAKE3-only" under Option A:** the durable gate is **surface-PARTITIONED**,
+not literally BLAKE3-only-everywhere. It verifies the *keyspace's canonical function* — BLAKE3 for
+native/sccache, SHA-256 for the Bazel keyspace — and the two never mix within one key. This is
+required because `verify_content_hash` re-verifies on **read** (bitrot): a SHA-256-keyed blob must be
+re-verifiable as SHA-256, so the function is selected by the blob's keyspace, threaded as an explicit
+`DigestAlgo` enum (NOT inferred from string length — that would be a silent gate).
+
+### Surface map (recon-confirmed 2026-06-16, exact edit sites)
+
+| Component | File:line | Current | Option A edit |
+|---|---|---|---|
+| Durable gate | `corelink-container/src/storage/r2_s3.rs:553` `verify_content_hash` | BLAKE3-only (`Digest::compute` = blake3) | take a `DigestAlgo` param; compute BLAKE3 **or** SHA-256 per the keyspace's algo. Native callers pass `Blake3` (behaviour unchanged). |
+| Read call site | `r2_s3.rs:632` (bitrot re-verify) | `verify_content_hash(&req.hash, &bytes)` | pass `req`'s algo (from the surface tag) |
+| Write call site | `r2_s3.rs:725` | `verify_content_hash(&req.claimed_hash, &req.bytes)` | pass `req`'s algo |
+| Key builder | `r2_s3.rs:356` `blob_key(region, prefix, digest)` | `{region}/{prefix}/{digest}` | Bazel surface → `{region}/{prefix}/bazel/sha256/{digest}`; native unchanged |
+| Read request | `corelink-handler-cas/src/request.rs:6` `CasReadRequest` (`#[non_exhaustive]`) | no surface field | add `algo: DigestAlgo` (default `Blake3` via a `with_algo` builder so the 30+ `::new` sites compile unchanged) |
+| Write request | `request.rs:71` `CasWriteRequest` (`#[non_exhaustive]`) | no surface field | same `with_algo` builder pattern as `with_storage_quota_bytes` already uses |
+| REAPI boundary | `corelink-container/src/routes/bazel_v2.rs:519` `handle_cas_write` | `parse_digest` → `adapter.cas_put` | add `verify_sha256(&digest.hash, &body)` before delegate (defense-in-depth + early clean 422) |
+| Adapter write | `corelink-bazel-bridge/src/adapter.rs:131` `cas_put` | builds `CasWriteRequest::new(...)` | `.with_algo(DigestAlgo::Sha256)` |
+| Adapter read | `adapter.rs:103` `cas_get` | builds `CasReadRequest::new(...)` | `.with_algo(DigestAlgo::Sha256)` |
+| SHA-256 compute | (new) e.g. `corelink-bazel-bridge::digest::verify_sha256` | none on origin (reverted, never pushed) | write fresh: `sha2::Sha256` + constant-time compare; mirror `pip/wheel.rs::verify_sha256` |
+
+`DigestAlgo` enum (`Blake3 | Sha256`) lives where both `corelink-handler-cas` and the container can
+see it (handler-cas crate, re-exported). Native/sccache write+read paths pass `Blake3` explicitly;
+only the Bazel adapter passes `Sha256`.
+
+### Why NOT implemented in this window
+Ratified + surface-mapped 2026-06-16 ~21:00 while the shared Mac was at **load 121** (clw release
+cross-build running; crash line ~336). This change is a multi-crate CRITICAL-invariant edit that MUST
+pass `cargo clippy -D` + `cargo test -p corelink-server` (container) + `tsc` before merge, and that
+compile-verify cannot run safely under that load (os-error-2 storm risk). Implementation is staged
+for the next **quiet-Mac** window (post clw build / around the 4am nuclear slot). Two truly-trivial
+green items shipped instead: seed tenant FK rows (#308) + audit-artifact hygiene (#309).
