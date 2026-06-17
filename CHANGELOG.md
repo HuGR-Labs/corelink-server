@@ -23,6 +23,52 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **`/_internal/dsr/erase` trusted the body-asserted `tenant_id` → shared-internal-key GDPR mass-erase
+  (rt-nuclear #18/#19).** The 12-backend erasure orchestrator's docstring promised a tenant pre-check but
+  never implemented it, so possession of the shared internal-auth key alone could erase ANY tenant's entire
+  dataset by asserting a forged `tenant_id` in the request body (GDPR Art. 17 mass-erase / cross-tenant
+  destruction). `process_erasure` now runs a legitimacy pre-check BEFORE the `started.v1` audit emit and
+  BEFORE any backend fan-out: it binds the erase to a durable, D1-authenticated `dsr_requested` row
+  (`migrations/d1/0069`) matching `(dsr_id, tenant_id)` with `status IN ('requested','verified')` — a row the
+  legitimate Clerk `user.deleted` path always writes with a D1-authenticated tenant, and a forged request
+  never has. New `DsrLegitimacyStore` trait (in-memory + allow-all-test + failing fixtures in
+  `corelink-privacy-erasure-worker`; D1-backed `D1DsrLegitimacyStore` over `dsr_requested` in the container)
+  injected via the new `InMemoryErasureWorker::try_new_with_legitimacy`. Fail-CLOSED on BOTH absence and
+  store error (a D1 fault → `Rejected`, never erase — an irreversible op must DENY on ambiguity). No
+  `started.v1` and no tombstone are emitted on the reject path (no fan-out, no state mutation); the SEV-1
+  signal is the `Rejected` decision arm. The container route uses the D1 store on the configured path and an
+  empty (fail-CLOSED) in-memory store on the unconfigured/placeholder path — never an allow-all store.
+- **OCI writes bypassed the monthly request-count quota (rt-nuclear #8, request-count half).**
+  PR #318 closed the OCI `$`-ceiling bypass but the SIBLING gap remained: OCI billable writes were never
+  counted against the per-tenant monthly request cap (`monthly_request_counts`, migration 0071), because
+  that metering is Worker-edge-only and the Worker forwards `/v2/*` + `/token` RAW (returning before its
+  `checkRequestQuota` block, and stripping `x-corelink-tenant-id`). New container-side
+  `request_count::RequestCountGate` (a Rust mirror of `worker/src/lib/quota.ts::checkRequestQuota`: the
+  same atomic increment-and-check UPSERT, the same per-tier caps, the same fail-OPEN posture, 429 +
+  Retry-After over the cap) is wired into the OCI router and metered per write method (PUT/POST/PATCH),
+  keyed on the SAME verified-HMAC-bearer tenant `oci_quota_gate` already resolves for the `$`-ceiling
+  (never a request header — the Worker strips it, and a write with no valid bearer is 401'd by the data
+  plane, so it is left unmetered). `None` in dev/CI without a D1 storage env, mirroring the `$`-ceiling gate.
+- **Worker-edge D1 cost-amplification on over-quota tenants (rt-nuclear #24).**
+  The Worker quota pipeline ran `getTierForTenant` + `checkStorageQuota` BEFORE the cheap monthly
+  request-count check, so a $-ceiling-capped / over-quota tenant re-paid the full storage-SUM D1 read
+  on every request all month. The pipeline now does the single atomic monthly-counter UPSERT FIRST
+  (`incrementMonthlyRequestCount`) and, once a tenant is over even the lowest tier cap (FREE = 500K/mo),
+  rejects with 429 via the resolved-tier cap comparison BEFORE the storage-SUM read — skipping that read
+  on the doomed path. Counting happens exactly once (no double increment); under-cap requests keep the
+  same gates and the same order of the rest. `checkRequestQuota` is preserved (now a thin wrapper over the
+  new `incrementMonthlyRequestCount` + `requestCapResultForCount` split); paid tenants over 500K still get
+  full headroom.
+- **DSR/erase internal-auth key mismatch in the full-split config (rt-nuclear #23).**
+  Server PR #317 wired the container's DSR + CAS-erase surfaces to `erase_auth_key_from_env()`
+  (`CORELINK_ERASE_AUTH_KEY`, shared-key fallback), and the main Worker's `/_internal/dsr/*` gate already
+  resolves the erase consumer key the same way. The signup-worker — the live driver of the GDPR erasure
+  path (`Clerk user.deleted` → queue → `/_internal/dsr/erase`, plus the 24h verify cron) — routes its
+  calls THROUGH the main Worker but injected only the shared `CORELINK_INTERNAL_AUTH_KEY`. The moment a
+  dedicated `CORELINK_ERASE_AUTH_KEY` is provisioned (the intended full-split config), the main Worker's
+  erase gate would 401 those calls and silently break BOTH erase surfaces. The signup-worker now resolves
+  the erase key erase-first / shared-fallback (new `resolveEraseAuthKey`, mirroring the container + main
+  Worker) on both the erase consumer and the verify cron, so the keys agree in every config.
 - **Turbo PUT charged storage bytes on every idempotent re-write (rt-nuclear #25).**
   The Turbo bridge's `CasWriteStore::write` returned `()`, so the turbo_v8 route accrued the body bytes
   on EVERY PUT — a CI cache re-pushing the same content-keyed artifact (the common case) double-charged

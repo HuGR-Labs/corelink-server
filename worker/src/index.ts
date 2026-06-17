@@ -26,8 +26,10 @@ import { EventLogDO } from "./event_log_do.js";
 import {
   getTierForTenant,
   checkStorageQuota,
-  checkRequestQuota,
+  incrementMonthlyRequestCount,
+  requestCapResultForCount,
   storageQuotaHeaderValue,
+  FREE_REQUEST_CAP,
   STORAGE_QUOTA_HEADER,
 } from "./lib/quota.js";
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
@@ -2022,8 +2024,27 @@ const handler: ExportedHandler<Env> = {
     // header is omitted and the container fails closed on an unseeded tenant.
     let storageQuotaHeader: string | null = null;
     if (resolvedTenantId !== "_anonymous" && resolvedTenantId !== "_system" && resolvedTenantId !== "_pending") {
-      const quotaTier = await getTierForTenant(env.CONFIG_DB, resolvedTenantId);
-      storageQuotaHeader = storageQuotaHeaderValue(quotaTier);
+      // Helper: emit the shared 429 quota-exceeded response shape.
+      const quotaExceeded = (reason: string, retryAfterSec: number): Response =>
+        applyCors(
+          new Response(
+            JSON.stringify({
+              error: "QUOTA_EXCEEDED",
+              message: reason,
+              request_id: requestId,
+            }),
+            {
+              status: 429,
+              headers: {
+                "Content-Type": "application/json",
+                "Retry-After": String(retryAfterSec),
+                "X-Request-Id": requestId,
+              },
+            },
+          ),
+          request,
+        );
+
       // Request-count quota is ENFORCED BY DEFAULT (fail-CLOSED). The monthly
       // per-tenant request cap is a CONTRACTED ceiling, so an unset env var in
       // prod must NOT silently disable it (Cluster D). The gate is an explicit
@@ -2031,6 +2052,44 @@ const handler: ExportedHandler<Env> = {
       // === "true" (set only in dev/test). Mirrors the fail-closed posture of
       // the other quota/security gates in this file.
       const requestQuotaEnabled = env.REQUEST_QUOTA_DISABLED !== "true";
+
+      // ── rt-nuclear #24: cheap monthly request-count check FIRST ───────────
+      // Do the single atomic counter UPSERT (the cheapest D1 op in the quota
+      // pipeline) BEFORE the costlier checkStorageQuota (1 SUM read). A
+      // $-ceiling-capped / over-quota tenant already over even the LOWEST tier
+      // cap (FREE = 500K/mo) is 429'd here WITHOUT re-paying the storage-SUM
+      // read on every request all month long. Counting happens exactly once
+      // (no double increment).
+      //
+      // Correctness vs. paid tenants: when the post-increment count is within
+      // the FREE cap it is within EVERY tier's cap, so the request gate is
+      // already cleared regardless of tier (`withinFreeCap`). Only when the
+      // count EXCEEDS the free cap does the tier matter — a paid tenant has
+      // real headroom and must NOT be rejected; a free tenant gets the 429.
+      // getTierForTenant is resolved unconditionally because the SERVED path
+      // needs the tier for both the storage check and the server-trusted
+      // STORAGE_QUOTA_HEADER forwarded to the container.
+      const inc = await incrementMonthlyRequestCount(
+        env.CONFIG_DB,
+        resolvedTenantId,
+        requestQuotaEnabled,
+      );
+      const withinFreeCap = !inc.counted || inc.count <= FREE_REQUEST_CAP;
+
+      const quotaTier = await getTierForTenant(env.CONFIG_DB, resolvedTenantId);
+      storageQuotaHeader = storageQuotaHeaderValue(quotaTier);
+
+      // Monthly request-count quota (red-team #5): compare the already-counted
+      // value against the tenant's RESOLVED tier cap. No re-increment. Within
+      // the free cap → already within every cap, skip the comparison. Over the
+      // free cap → a free tenant rejects HERE, before the storage SUM below; a
+      // paid tenant under its (higher) cap passes through.
+      if (!withinFreeCap) {
+        const requestCheck = requestCapResultForCount(inc.count, quotaTier.tier);
+        if (!requestCheck.ok) {
+          return quotaExceeded(requestCheck.reason, requestCheck.retryAfterSec);
+        }
+      }
 
       // A storage-increasing op is a write verb (PUT uploads / POST). DELETE
       // reduces storage and reads (GET/HEAD) cannot grow it, so both stay
@@ -2046,58 +2105,7 @@ const handler: ExportedHandler<Env> = {
         isStorageMutating,
       );
       if (!storageCheck.ok) {
-        const retryAfter = String(storageCheck.retryAfterSec);
-        return applyCors(
-          new Response(
-            JSON.stringify({
-              error: "QUOTA_EXCEEDED",
-              message: storageCheck.reason,
-              request_id: requestId,
-            }),
-            {
-              status: 429,
-              headers: {
-                "Content-Type": "application/json",
-                "Retry-After": retryAfter,
-                "X-Request-Id": requestId,
-              },
-            },
-          ),
-          request,
-        );
-      }
-
-      // Monthly request-count quota (red-team #5): atomic increment-and-check
-      // against monthly_request_counts (enforced by default; Cluster D). Reads
-      // fail OPEN on a D1 error (availability), same posture as storage. This
-      // is the aggregate monthly cap, distinct from the container's per-second
-      // token-bucket rate limit.
-      const requestCheck = await checkRequestQuota(
-        env.CONFIG_DB,
-        resolvedTenantId,
-        quotaTier,
-        requestQuotaEnabled,
-      );
-      if (!requestCheck.ok) {
-        const retryAfter = String(requestCheck.retryAfterSec);
-        return applyCors(
-          new Response(
-            JSON.stringify({
-              error: "QUOTA_EXCEEDED",
-              message: requestCheck.reason,
-              request_id: requestId,
-            }),
-            {
-              status: 429,
-              headers: {
-                "Content-Type": "application/json",
-                "Retry-After": retryAfter,
-                "X-Request-Id": requestId,
-              },
-            },
-          ),
-          request,
-        );
+        return quotaExceeded(storageCheck.reason, storageCheck.retryAfterSec);
       }
     }
 

@@ -57,6 +57,9 @@ use corelink_privacy_erasure_worker::event::{
 use corelink_privacy_erasure_worker::idempotency::{
     ErasureIdempotencyLedger, InMemoryErasureIdempotencyLedger,
 };
+use corelink_privacy_erasure_worker::legitimacy::{
+    DsrLegitimacyStore, InMemoryDsrLegitimacyStore,
+};
 use corelink_privacy_erasure_worker::orchestrator::{ErasureWorker, InMemoryErasureWorker};
 
 // WI-S11-008 Wave 1 real transports. The 4 effective/pseudonymize backends
@@ -71,6 +74,7 @@ mod attestation;
 mod audit;
 mod d1util;
 mod ledger;
+mod legitimacy;
 
 const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 
@@ -151,7 +155,14 @@ pub fn build_placeholder_worker() -> Result<InMemoryErasureWorker, String> {
         .iter()
         .map(|k| Arc::new(InMemoryBackendErasureAdapter::new(*k)) as Arc<dyn BackendErasureAdapter>)
         .collect();
-    InMemoryErasureWorker::try_new(audit, ledger, adapters).map_err(|e| e.to_string())
+    // rt-nuclear #18/#19: with no D1 there is no `dsr_requested` table to
+    // authenticate a request against, so the placeholder worker MUST
+    // fail-CLOSED — an EMPTY in-memory legitimacy store reports every
+    // (dsr_id, tenant_id) as NOT requested → every erase is Rejected.
+    // (NEVER the allow-all store on a route-mountable path.)
+    let legitimacy: Arc<dyn DsrLegitimacyStore> = Arc::new(InMemoryDsrLegitimacyStore::new());
+    InMemoryErasureWorker::try_new_with_legitimacy(audit, ledger, adapters, legitimacy)
+        .map_err(|e| e.to_string())
 }
 
 /// Build the canonical orchestrator with the REAL D1-backed ledger + audit
@@ -166,6 +177,11 @@ fn build_d1_worker() -> Option<(InMemoryErasureWorker, Arc<crate::storage::d1_ht
     let audit: Arc<dyn ErasureAuditSink> = Arc::new(audit::D1ErasureAuditSink::new(Arc::clone(&d1)));
     let ledger: Arc<dyn ErasureIdempotencyLedger> =
         Arc::new(ledger::D1ErasureIdempotencyLedger::new(Arc::clone(&d1)));
+    // rt-nuclear #18/#19: bind every erase to a D1-authenticated
+    // `dsr_requested` row (GDPR mass-erase authz gate). Fail-CLOSED on a
+    // D1 fault (the trait surfaces Err → the orchestrator Rejects).
+    let legitimacy: Arc<dyn DsrLegitimacyStore> =
+        Arc::new(legitimacy::D1DsrLegitimacyStore::new(Arc::clone(&d1)));
     // Helper: a not-shipped backend reconciled to NotApplicable (ADR-S11-013).
     let na = |kind: BackendKind, reason: &'static str| -> Arc<dyn BackendErasureAdapter> {
         Arc::new(adapter_not_applicable::NotApplicableAdapter::new(kind, reason))
@@ -227,7 +243,8 @@ fn build_d1_worker() -> Option<(InMemoryErasureWorker, Arc<crate::storage::d1_ht
         })
         .collect();
 
-    let worker = InMemoryErasureWorker::try_new(audit, ledger, adapters).ok()?;
+    let worker =
+        InMemoryErasureWorker::try_new_with_legitimacy(audit, ledger, adapters, legitimacy).ok()?;
     Some((worker, d1))
 }
 
@@ -372,8 +389,11 @@ async fn handle_erase(
         }
     };
     match state.worker.process_erasure(&request, now_ms()) {
-        // Cross-tenant / policy rejection (tenant pre-check). Should never
-        // happen on the trusted internal path; fail closed if it does.
+        // rt-nuclear #18/#19 tenant legitimacy pre-check rejected this
+        // request: no `dsr_requested` row matches (dsr_id, tenant_id), OR
+        // the D1 legitimacy lookup faulted (fail-CLOSED). A forged
+        // body-asserted tenant_id (shared-internal-key mass-erase attempt)
+        // lands here — no fan-out happened, no data was erased. 422.
         Ok(ErasureDecision::Rejected { .. }) => {
             (StatusCode::UNPROCESSABLE_ENTITY, "erasure rejected").into_response()
         }

@@ -22,6 +22,12 @@ workers_dev = false
 #   CORELINK_INTERNAL_AUTH_KEY   — shared secret for X-Corelink-Internal-Auth header.
 #                                  Must match the container + main worker binding.
 #                                  Used to call /_internal/pat/mint on the container.
+#   CORELINK_ERASE_AUTH_KEY      — OPTIONAL dedicated erase/DSR consumer secret
+#                                  (red-team #3 split). When the full-split config
+#                                  provisions this on the container + main worker,
+#                                  it MUST also be bound here so the DSR erase/verify
+#                                  calls authenticate (rt-nuclear #23). Unset ⇒ the
+#                                  DSR path falls back to CORELINK_INTERNAL_AUTH_KEY.
 #
 # D1 bindings:
 #   CONFIG_DB  — corelink-prod-d1 (tenant, pat, tenant_billing tables).

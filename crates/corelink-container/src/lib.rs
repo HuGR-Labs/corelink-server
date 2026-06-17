@@ -110,6 +110,14 @@ pub mod byok_orchestrator;
 pub mod customer_d1;
 #[cfg(feature = "neon-real")]
 pub mod neon_shadow_factory;
+/// Per-tenant monthly **request-count** middleware primitive (rt-nuclear #8):
+/// the container-side mirror of `worker/src/lib/quota.ts::checkRequestQuota`,
+/// backed by the `monthly_request_counts` D1 table (migration 0071). Wired into
+/// the OCI router so OCI billable writes — which the Worker forwards RAW and so
+/// never counts — are metered against the tenant's monthly request cap, keyed
+/// on the verified-HMAC-bearer tenant (the same one #318's `$`-ceiling gate
+/// resolves). Fail-OPEN (SLO-style allowance, not a cost cap).
+pub mod request_count;
 pub mod routes;
 /// Cache-scope enforcement helper + extractor.
 ///

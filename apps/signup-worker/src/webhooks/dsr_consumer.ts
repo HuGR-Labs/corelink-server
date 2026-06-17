@@ -15,10 +15,18 @@
  */
 
 import type { DsrQueuedV1 } from "./clerk.js";
+import { resolveEraseAuthKey } from "../lib/erase-auth-key.js";
 
 /** Minimal env surface the consumer needs (kept independent of the full Worker Env). */
 export interface DsrConsumerEnv {
   CORELINK_API_BASE: string;
+  /**
+   * Dedicated erase/DSR consumer secret (red-team #3 per-consumer split).
+   * Preferred for the `x-corelink-internal-auth` header on the erase call so
+   * it matches the main-Worker / container erase gate in the full-split config
+   * (rt-nuclear #23); falls back to the shared key below.
+   */
+  CORELINK_ERASE_AUTH_KEY?: string;
   /** Shared secret for the `x-corelink-internal-auth` header on the container call. */
   CORELINK_INTERNAL_AUTH_KEY?: string;
   /** Service binding to the main CoreLink Worker (bypasses CF edge error 1014). */
@@ -44,11 +52,16 @@ export async function processErasureMessage(
   msg: DsrQueuedV1,
   env: DsrConsumerEnv,
 ): Promise<{ ok: boolean; status: number }> {
-  if (!env.CORELINK_INTERNAL_AUTH_KEY) {
+  // rt-nuclear #23: send the ERASE consumer key (shared-key fallback) so the
+  // header matches the main-Worker / container erase gate in the full-split
+  // config. Resolution mirrors `erase_auth_key_from_env()` + the main Worker's
+  // `resolveConsumerKey(env, "erase")`.
+  const eraseAuthKey = resolveEraseAuthKey(env);
+  if (!eraseAuthKey) {
     // Cannot authenticate to the container — retry rather than DROP a GDPR
     // erasure obligation (self-heals once the secret is bound).
     console.error(
-      `[dsr-consumer] CORELINK_INTERNAL_AUTH_KEY absent — retrying erasure dsr_id=${msg.dsr_id}`,
+      `[dsr-consumer] no erase/internal auth key bound — retrying erasure dsr_id=${msg.dsr_id}`,
     );
     return { ok: false, status: 0 };
   }
@@ -56,7 +69,7 @@ export async function processErasureMessage(
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-corelink-internal-auth": env.CORELINK_INTERNAL_AUTH_KEY,
+      "x-corelink-internal-auth": eraseAuthKey,
     },
     body: JSON.stringify(msg),
   });

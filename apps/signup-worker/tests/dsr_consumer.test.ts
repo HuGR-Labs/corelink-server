@@ -77,6 +77,23 @@ describe("processErasureMessage", () => {
     expect(body.schema).toBe("dev.hugr.corelink.dsr.queued.v1");
   });
 
+  it("rt-nuclear #23: sends the dedicated CORELINK_ERASE_AUTH_KEY when set (full-split config)", async () => {
+    let captured: Request | undefined;
+    const env: DsrConsumerEnv = {
+      CORELINK_API_BASE: "https://api",
+      CORELINK_ERASE_AUTH_KEY: "dedicated-erase-key",
+      CORELINK_INTERNAL_AUTH_KEY: "shared-key",
+      CORELINK_API_SVC: {
+        fetch: (async (req: Request) => {
+          captured = req;
+          return new Response("ok", { status: 200 });
+        }) as unknown as typeof fetch,
+      },
+    };
+    await processErasureMessage(msg(), env);
+    expect(captured?.headers.get("x-corelink-internal-auth")).toBe("dedicated-erase-key");
+  });
+
   it("not ok (→ retry) on a transport throw", async () => {
     const env: DsrConsumerEnv = {
       CORELINK_API_BASE: "https://api",
