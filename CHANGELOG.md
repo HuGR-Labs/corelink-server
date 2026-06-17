@@ -22,6 +22,18 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **githugr Clerk sessions on the exchange seams (multi-issuer, Option B).** `/v1/session/exchange` and
+  `/internal/v1/auth/token-exchange` now accept sessions from the SEPARATE githugr Clerk instance
+  (`clerk.githugr.com`) IN ADDITION to CoreLink's — opt-in per call-site (`allowGithugrIssuer`), routed
+  by the (routing-only) unverified `iss`, verified networklessly against githugr's PUBLIC `jwtKey` (no
+  githugr secret crosses into CoreLink), and resolved to a single fixed `GITHUGR_TENANT_ID` (githugr is
+  ONE non-billing CoreLink tenant; the forge does its own per-user isolation via the passed-through
+  `principal`). `CLERK_ISSUER_URL` is left untouched, so CoreLink's own dashboard + onboarding are
+  unaffected. Armed only when all three settings are present (`GITHUGR_CLERK_ISSUER_URL`,
+  `GITHUGR_CLERK_JWT_KEY`, `GITHUGR_TENANT_ID`); absent ⇒ dormant (githugr sessions 401, no behavior
+  change). A separate `GITHUGR_AZP_ALLOWLIST` const keeps githugr's azp from widening CoreLink's.
+
 ### Fixed
 - **Turbo write byte-accounting TOCTOU: concurrent same-key PUTs double-released `prior_len`
   (rt-nuclear verify C1).** The #324 byte-delta fix read `prior_len` via a non-serialized presence

@@ -29,6 +29,20 @@ const mockVerifyToken = vi.mocked(verifyToken);
 const INTERNAL_KEY = "test-internal-auth-key-0123456789"; // ≥16 chars
 const CLERK_SECRET = "sk_test_clerk_secret";
 
+// githugr multi-issuer (Option B) test fixtures.
+const GITHUGR_ISSUER = "https://clerk.githugr.com";
+const GITHUGR_JWT_KEY = "-----BEGIN PUBLIC KEY-----\nMOCKKEY\n-----END PUBLIC KEY-----";
+const GITHUGR_TENANT = "ee30f7ba-fc25-4d71-939e-ebe130b4c6a3";
+const GITHUGR_AZP = "https://www.githugr.com";
+
+/** A JWT whose UNVERIFIED payload carries `iss`/`sub` — for the peek-routing in
+ *  `verifyClerkSessionAndResolveTenant`. The signature is mock (`verifyToken` is
+ *  mocked), but the payload must really base64url-decode so routing picks the path. */
+function bearerWithIssuer(iss: string, sub = "user_g"): string {
+  const b64url = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
+  return `${b64url({ alg: "RS256", typ: "JWT" })}.${b64url({ iss, sub })}.sig`;
+}
+
 /** A representative container /_internal/pat/mint 200 response. */
 const CANNED_MINT = {
   token_plaintext: "corelink_pat_abcdef0123456789.rndsecret.hmacsig",
@@ -126,8 +140,16 @@ function makeEnv(opts: {
   mintBody?: unknown;
   patInsertCapture?: { binds?: unknown[] };
   patInsertThrows?: boolean;
+  withGithugr?: boolean;
 }): Env {
   return {
+    ...(opts.withGithugr
+      ? {
+          GITHUGR_CLERK_ISSUER_URL: GITHUGR_ISSUER,
+          GITHUGR_CLERK_JWT_KEY: GITHUGR_JWT_KEY,
+          GITHUGR_TENANT_ID: GITHUGR_TENANT,
+        }
+      : {}),
     CORELINK_SERVER: makeMintNamespace(opts.captured, {
       ...(opts.mintStatus !== undefined ? { status: opts.mintStatus } : {}),
       ...(opts.mintBody !== undefined ? { body: opts.mintBody } : {}),
@@ -451,5 +473,51 @@ describe("POST /v1/session/exchange — seam C session→PAT exchange (WP-C)", (
     expect(resp.status).toBe(500);
     const body = (await resp.json()) as Record<string, unknown>;
     expect(body["token_plaintext"]).toBeUndefined();
+  });
+});
+
+describe("POST /v1/session/exchange — githugr multi-issuer (Option B, single tenant)", () => {
+  it("a githugr-issuer session resolves to the FIXED githugr tenant (no per-user D1 lookup)", async () => {
+    mockVerifyToken.mockResolvedValue({ sub: "user_g", azp: GITHUGR_AZP, iss: GITHUGR_ISSUER } as never);
+    const captured: { req?: Request } = {};
+    // EMPTY tenant map: a clerk_user_id→tenant lookup would 403. A 200 proves the
+    // fixed-tenant resolution path (Option B) was taken, not the D1 lookup.
+    const env = makeEnv({ captured, clerkUserToTenant: new Map(), withGithugr: true });
+    const resp = await exchangeFetch(env, {
+      Authorization: `Bearer ${bearerWithIssuer(GITHUGR_ISSUER, "user_g")}`,
+    });
+    expect(resp.status).toBe(200);
+    const body = (await resp.json()) as Record<string, unknown>;
+    expect(body["tenant"]).toBe(GITHUGR_TENANT);
+  });
+
+  it("rejects (401) a githugr token whose azp is not in the githugr allowlist", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_g",
+      azp: "https://evil.example",
+      iss: GITHUGR_ISSUER,
+    } as never);
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map(), withGithugr: true });
+    const resp = await exchangeFetch(env, {
+      Authorization: `Bearer ${bearerWithIssuer(GITHUGR_ISSUER, "user_g")}`,
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("with githugr configured, a CoreLink-issuer session STILL uses the CoreLink tenant lookup (no regression)", async () => {
+    mockVerifyToken.mockResolvedValue(validClaims("user_abc"));
+    const captured: { req?: Request } = {};
+    const env = makeEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_abc", "acme-default"]]),
+      withGithugr: true,
+    });
+    const resp = await exchangeFetch(env, {
+      Authorization: `Bearer ${bearerWithIssuer("https://clerk.humangr.com", "user_abc")}`,
+    });
+    expect(resp.status).toBe(200);
+    const body = (await resp.json()) as Record<string, unknown>;
+    expect(body["tenant"]).toBe("acme-default");
   });
 });
