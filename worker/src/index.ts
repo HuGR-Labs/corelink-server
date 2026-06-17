@@ -883,12 +883,49 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
   // Overlap key set: the current key plus any rotation siblings
   // (PAT_SIGNING_KEY_PREV / _NEW). A PAT minted under any of them
   // HMAC-verifies during the rotation overlap window so rotation is not
-  // a fleet-wide auth outage. Siblings are best-effort: present-but-
-  // malformed siblings are dropped (verifyPatHmacMulti tolerates a null
-  // decode per key); the current key — already validated above — stays
-  // the load-bearing gate.
-  const signingKeySet = [signingKeyRaw, env.PAT_SIGNING_KEY_PREV, env.PAT_SIGNING_KEY_NEW]
-    .filter((k): k is string => typeof k === "string" && k.length >= 64);
+  // a fleet-wide auth outage.
+  //
+  // Finding #7 (HIGH) — symmetry with the container's fail-CLOSED stance:
+  // a sibling that is ABSENT (unset / empty) is benign and simply skipped,
+  // but a sibling that is PRESENT (env var set, non-empty) yet FAILS the
+  // validity check (decodes to < 32 bytes / wrong length) is a LOUD FATAL
+  // config error — never silently dropped. Silently dropping it would let a
+  // one-character typo in a rotation sibling at deploy silently shrink the
+  // overlap set (the container's `from_env` already refuses to mount in that
+  // case), so we fail CLOSED (503) and alert the operator instead.
+  const signingKeySet: string[] = [signingKeyRaw];
+  for (const [name, sibling] of [
+    ["PAT_SIGNING_KEY_PREV", env.PAT_SIGNING_KEY_PREV],
+    ["PAT_SIGNING_KEY_NEW", env.PAT_SIGNING_KEY_NEW],
+  ] as const) {
+    // ABSENT (undefined / null / empty) → benign skip.
+    if (typeof sibling !== "string" || sibling.length === 0) {
+      continue;
+    }
+    // PRESENT but INVALID → LOUD fatal config error, fail CLOSED. Symmetric
+    // with the container's `Some(None) => return None` refusal in
+    // `adapter_pat::from_env`, which mirrors `hex::decode` + `>= 32 bytes`:
+    // a valid signing key is an EVEN-length, all-hex string of >= 64 chars
+    // (>= 32 bytes). This rejects ALL of finding #7's named malformations —
+    // a short value, an odd-length hex string, and a non-hex typo — none of
+    // which must be silently dropped (which would shrink the overlap set).
+    const isValidHexKey =
+      sibling.length >= 64 &&
+      sibling.length % 2 === 0 &&
+      /^[0-9a-fA-F]+$/.test(sibling);
+    if (!isValidHexKey) {
+      console.error(
+        JSON.stringify({
+          event: "pat_signing_key_sibling_malformed",
+          severity: "CRITICAL",
+          sibling: name,
+          message: `${name} is PRESENT but is not a valid signing key (need an even-length all-hex string of >= 64 chars / >= 32 bytes; got hex length ${sibling.length}) — failing closed (503). Fix or unset the rotation sibling and redeploy.`,
+        }),
+      );
+      return { ok: false, reason: "signing_key_not_configured" };
+    }
+    signingKeySet.push(sibling);
+  }
   const hmacOk = await verifyPatHmacMulti(
     signingKeySet,
     parsed.hmacPreimage,

@@ -88,19 +88,26 @@ pub struct TurboPutResponse {
     /// Store URL(s) returned to the Turbo client.  Turbo treats 200 + this
     /// body as "uploaded successfully"; the URL is informational.
     pub urls: Vec<String>,
+    /// Byte length of the object PREVIOUSLY stored at this key, or `None` for a
+    /// fresh insert. rt34 finding #3/#4/#5/#6: Turbo keys are opaque (NOT
+    /// content-addressed), so an overwrite can change the stored size. The route
+    /// accrues the full new bytes up front, then RELEASES `prior_len` on an
+    /// overwrite — netting the true on-disk delta (`new - prior`) instead of the
+    /// old all-or-nothing rollback that let a tenant store unbounded bytes free.
+    pub prior_len: Option<u64>,
     /// Whether the PUT stored a NEW key (`true`) or overwrote an existing one
-    /// (`false`). The route rolls back the storage byte charge when `false`
-    /// (an idempotent re-write stored nothing new), mirroring the CAS
-    /// decorator's `durable` contract (rt-nuclear #25).
+    /// (`false`). Kept for back-compat; derived as `prior_len.is_none()`.
     pub durable: bool,
 }
 
 impl TurboPutResponse {
-    /// Construct a [`TurboPutResponse`] with the given URLs (durable insert).
+    /// Construct a [`TurboPutResponse`] with the given URLs (fresh durable
+    /// insert: `prior_len = None`, `durable = true`).
     #[must_use]
     pub fn new(urls: Vec<String>) -> Self {
         Self {
             urls,
+            prior_len: None,
             durable: true,
         }
     }
@@ -108,10 +115,12 @@ impl TurboPutResponse {
     /// Construct the canonical single-URL response for a stored artifact.
     ///
     /// `tenant` and `hash` are used to form the canonical CoreLink URL.
-    /// `durable` is `true` for a fresh insert, `false` for an idempotent
-    /// overwrite (the route uses it to avoid double-charging storage bytes).
+    /// `prior_len` is `None` for a fresh insert, `Some(n)` when an existing
+    /// `n`-byte object was overwritten (the route releases `n` to reconcile the
+    /// storage byte delta). `durable` is derived as `prior_len.is_none()` and
+    /// kept consistent for back-compat.
     #[must_use]
-    pub fn for_artifact(tenant: &str, hash: &str, durable: bool) -> Self {
+    pub fn for_artifact(tenant: &str, hash: &str, prior_len: Option<u64>) -> Self {
         Self {
             urls: vec![format!(
                 "/{version}/artifacts/{hash}?teamId={tenant}",
@@ -119,7 +128,8 @@ impl TurboPutResponse {
                 hash = hash,
                 tenant = tenant,
             )],
-            durable,
+            durable: prior_len.is_none(),
+            prior_len,
         }
     }
 }
@@ -323,9 +333,10 @@ impl TurboArtifactHandler for InMemoryTurboHandler {
             .map_err(|e| TurboBridgeError::AuditFailed(e.to_string()))?;
 
         // Durable store (opaque key — no hash verification). `insert` returns the
-        // prior value: `Some` ⇒ idempotent overwrite (`durable = false`); `None`
-        // ⇒ fresh key (`durable = true`) — see rt-nuclear #25.
-        let durable = {
+        // prior value: `Some(prev)` ⇒ overwrite (report `prev.len()` so the route
+        // releases the prior charge); `None` ⇒ fresh key (charge full) — rt34
+        // finding #3/#4/#5/#6.
+        let prior_len = {
             let mut g = self
                 .objects
                 .lock()
@@ -339,7 +350,7 @@ impl TurboArtifactHandler for InMemoryTurboHandler {
                 ),
                 req.bytes,
             )
-            .is_none()
+            .map(|v| v.len() as u64)
         };
 
         // PutCommitted audit AFTER durable store.
@@ -357,7 +368,7 @@ impl TurboArtifactHandler for InMemoryTurboHandler {
         Ok(TurboPutResponse::for_artifact(
             &req.team_id,
             &req.hash,
-            durable,
+            prior_len,
         ))
     }
 

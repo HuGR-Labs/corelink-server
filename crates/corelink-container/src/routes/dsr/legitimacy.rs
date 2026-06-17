@@ -25,7 +25,12 @@ use super::d1util::d1_query_blocking;
 use crate::storage::d1_http::D1HttpClient;
 
 /// Durable legitimacy store backed by the D1 `dsr_requested` table.
-pub(super) struct D1DsrLegitimacyStore {
+///
+/// Shared by BOTH erase legs: the DSR mass-erase orchestrator (this module)
+/// and the per-blob CAS-erase route (`crate::routes::cas_erase`). Single
+/// source of truth for "what makes an erasure legitimate" so the two legs
+/// can never drift apart (r34 #8/#9).
+pub(crate) struct D1DsrLegitimacyStore {
     d1: Arc<D1HttpClient>,
 }
 
@@ -40,8 +45,24 @@ impl std::fmt::Debug for D1DsrLegitimacyStore {
 
 impl D1DsrLegitimacyStore {
     /// Construct over a shared [`D1HttpClient`].
-    pub(super) fn new(d1: Arc<D1HttpClient>) -> Self {
+    pub(crate) fn new(d1: Arc<D1HttpClient>) -> Self {
         Self { d1 }
+    }
+
+    /// Build from env (`StorageEnv`). Returns `None` when the D1 env is
+    /// absent or the client cannot be built, so callers fail-CLOSED (do not
+    /// mount the erase route). Used by the per-blob CAS-erase route
+    /// (`crate::routes::cas_erase::build_state_from_env`).
+    #[must_use]
+    pub(crate) fn from_env() -> Option<Self> {
+        let env = crate::storage::StorageEnv::from_env()?;
+        match D1HttpClient::new(&env) {
+            Ok(c) => Some(Self::new(Arc::new(c))),
+            Err(e) => {
+                tracing::warn!(error = %e, "cas_erase: D1 client build failed (legitimacy)");
+                None
+            }
+        }
     }
 }
 

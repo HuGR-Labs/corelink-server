@@ -74,7 +74,7 @@ mod attestation;
 mod audit;
 mod d1util;
 mod ledger;
-mod legitimacy;
+pub(crate) mod legitimacy;
 
 const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 

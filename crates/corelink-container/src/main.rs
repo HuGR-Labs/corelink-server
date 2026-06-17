@@ -55,6 +55,27 @@ use tracing::{info, warn};
 /// so the health endpoint remains available.
 static STORAGE_BACKING: OnceLock<&'static str> = OnceLock::new();
 
+/// Decide whether a missing native PAT gate is a FATAL boot condition
+/// (red-team finding #7, HIGH).
+///
+/// The native data planes (CAS / AC / Bazel / Turbo) mount with the
+/// container-side Argon2id possession backstop ONLY when
+/// `adapter_pat::PatVerifier::from_env()` (and thus
+/// `native_pat_gate_from_env()`) builds. That builder returns `None` not only
+/// in dev/CI (benign) but ALSO in prod when a `PAT_SIGNING_KEY` rotation
+/// sibling (`PAT_SIGNING_KEY_PREV` / `_NEW`) is PRESENT-but-malformed — a
+/// one-character typo at deploy. In that case the planes would silently mount
+/// WITHOUT the backstop fleet-wide: a silent security downgrade.
+///
+/// This pure predicate isolates the policy so it is unit-testable (the caller
+/// does the `std::process::exit(1)`): in prod (`prod == true`) a missing gate
+/// (`gate_present == false`) is fatal; otherwise (dev/CI, or the gate is
+/// present) it is not.
+#[must_use]
+const fn should_fatal_on_missing_gate(prod: bool, gate_present: bool) -> bool {
+    prod && !gate_present
+}
+
 /// Liveness probe for two callers:
 /// (1) the DO's `waitForContainerHealth` — only checks status === 200;
 /// (2) `scripts/smoke-prod-corelink.sh` check [2] — asserts 200 *and*
@@ -102,6 +123,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Unwrap is safe: this is the only setter and it runs before the listener.
     let _ = STORAGE_BACKING.set(storage_backing);
     info!(storage = storage_backing, "storage backing selected");
+
+    // ── Native PAT-gate fail-CLOSED boot guard (red-team finding #7, HIGH) ──
+    // The native planes (CAS/AC/Bazel/Turbo) only carry their container-side
+    // Argon2id possession backstop when `adapter_pat::PatVerifier::from_env()`
+    // builds. That builder fails-CLOSED to `None` on a PRESENT-but-malformed
+    // `PAT_SIGNING_KEY` rotation sibling — and in PROD that `None` would
+    // silently mount the planes WITHOUT the backstop fleet-wide. So in prod a
+    // missing gate is FATAL: we refuse to boot rather than serve degraded.
+    //
+    // Prod is detected by the same two signals that PROVE prod: the D1 /
+    // `StorageEnv` config is present (durable backing, not the InMemory
+    // dev/CI fallback) AND `PAT_SIGNING_KEY` is set. Re-calling `from_env()`
+    // here is fine — both are idempotent, side-effect-free env reads.
+    {
+        let storage_present = corelink_server::storage::StorageEnv::from_env().is_some();
+        let signing_key_present = std::env::var("PAT_SIGNING_KEY")
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false);
+        let prod = storage_present && signing_key_present;
+        let gate_present =
+            corelink_server::adapter_pat::PatVerifier::from_env().is_some();
+        if should_fatal_on_missing_gate(prod, gate_present) {
+            tracing::error!(
+                event = "native_pat_gate_missing_in_prod",
+                severity = "FATAL",
+                "PROD detected (D1 + PAT_SIGNING_KEY present) but the native PAT \
+                 verifier did NOT build — refusing to boot the data plane WITHOUT \
+                 its Argon2id possession backstop. The most likely cause is a \
+                 PRESENT-but-malformed PAT_SIGNING_KEY rotation sibling \
+                 (PAT_SIGNING_KEY_PREV / PAT_SIGNING_KEY_NEW): bad hex, < 32 bytes, \
+                 or a stray newline. Fix the sibling secret (or unset it) and \
+                 redeploy."
+            );
+            std::process::exit(1);
+        }
+    }
 
     let port: u16 = std::env::var("PORT")
         .ok()
@@ -511,4 +568,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_fatal_on_missing_gate;
+
+    /// Finding #7 truth table: the boot guard fails fatal ONLY when prod is
+    /// detected AND the native PAT gate did not build. Dev/CI (not prod) is
+    /// never fatal regardless of the gate; a present gate in prod is fine.
+    #[test]
+    fn fatal_only_when_prod_and_gate_missing() {
+        // prod + gate missing → FATAL (the silent-downgrade case finding #7
+        // closes).
+        assert!(should_fatal_on_missing_gate(true, false));
+        // prod + gate present → OK (the backstop is wired).
+        assert!(!should_fatal_on_missing_gate(true, true));
+        // dev/CI + gate missing → OK (benign; this is the normal dev posture).
+        assert!(!should_fatal_on_missing_gate(false, false));
+        // dev/CI + gate present → OK.
+        assert!(!should_fatal_on_missing_gate(false, true));
+    }
 }

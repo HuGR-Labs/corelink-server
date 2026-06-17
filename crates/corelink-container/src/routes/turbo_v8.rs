@@ -584,14 +584,25 @@ async fn handle_put(
     );
     match state.handler.put(req) {
         Ok(resp) => {
-            // rt-nuclear #25: an idempotent re-write (`durable == false`) stored
-            // NOTHING new, so ROLL BACK the byte reservation we accrued above —
-            // otherwise every re-PUT of the same artifact double-charges storage
-            // bytes. Mirrors the `AccountingCasHandler` `durable == false` contract.
-            if !resp.durable {
-                if let Some(acc) = state.bytes.as_ref() {
-                    if let Err(re) = acc.release(&caller_tenant, byte_len).await {
-                        tracing::warn!(error = %re, "turbo: reservation release on idempotent re-write failed (over-counts; conservative)");
+            // rt34 finding #3/#4/#5/#6: Turbo keys are OPAQUE/client-chosen (NOT
+            // content-addressed), so an overwrite can change the stored SIZE. We
+            // already accrued the full new body length (`byte_len`) above —
+            // keeping that preserves the over-cap fail-closed check. Now reconcile
+            // `bytes_used` to the TRUE on-disk delta: release the PRIOR size on an
+            // overwrite (`prior_len = Some(n)`), netting `old + new - prior` (the
+            // correct new total, since `old >= prior` held inductively). A fresh
+            // insert (`prior_len == None`) releases nothing — the full new charge
+            // stays. The OLD all-or-nothing rollback released the FULL new
+            // reservation on ANY overwrite, letting a tenant store unbounded bytes
+            // for free (PUT 1 byte, then PUT 100 MiB under the same key ⇒ released
+            // the 100 MiB while it stayed on disk).
+            if let Some(prior) = resp.prior_len {
+                let prior_i64 = i64::try_from(prior).unwrap_or(i64::MAX);
+                if prior_i64 > 0 {
+                    if let Some(acc) = state.bytes.as_ref() {
+                        if let Err(re) = acc.release(&caller_tenant, prior_i64).await {
+                            tracing::warn!(error = %re, "turbo: prior-size release on overwrite failed (over-counts; conservative)");
+                        }
                     }
                 }
             }
@@ -1308,6 +1319,108 @@ mod tests {
             None, // removed when count reaches 0
             "concurrency counter must be released after PUT completes"
         );
+    }
+
+    // ── rt34 #3/#4/#5/#6: storage byte-delta accounting (NOT all-or-nothing) ──
+
+    /// Region the test accountant is keyed on. Must match the value we read the
+    /// `InMemoryByteStore` back with.
+    const TEST_BYTES_REGION: &str = "iad";
+
+    /// `0` cap = genuine unlimited — keeps every PUT under the cap so the test
+    /// exercises the byte-DELTA math, not the over-cap gate. Seeded via the
+    /// server-trusted `x-corelink-storage-quota-bytes` header.
+    const UNLIMITED_QUOTA_HEADER: &str = "0";
+
+    /// Build a route state wired with a real `ByteAccountant` over an in-memory
+    /// `ByteStore`, so PUTs flow through the byte-delta reconciliation. Returns
+    /// the state and the store handle for `bytes_used` assertions.
+    fn fixture_with_byte_accounting() -> (
+        TurboRouteState,
+        Arc<crate::byte_accounting::testing::InMemoryByteStore>,
+    ) {
+        let store = Arc::new(crate::byte_accounting::testing::InMemoryByteStore::new());
+        let dyn_store: Arc<dyn crate::byte_accounting::ByteStore> = store.clone();
+        let acc = Arc::new(crate::byte_accounting::ByteAccountant::new(
+            dyn_store,
+            TEST_BYTES_REGION.to_owned(),
+        ));
+        let mut state = build_handlers();
+        state.bytes = Some(acc);
+        (state, store)
+    }
+
+    /// Issue a PUT of `body` to `hash` and assert 200. Carries the unlimited
+    /// quota header so the fresh `tenant_storage_state` row seeds (else 503).
+    async fn put_artifact(app: &Router, hash: &str, body: Vec<u8>) {
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v8/artifacts/{hash}?teamId=team_x"))
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .header(
+                crate::byte_accounting::STORAGE_QUOTA_HEADER,
+                UNLIMITED_QUOTA_HEADER,
+            )
+            .body(Body::from(body))
+            .expect("request");
+        let resp = app.clone().oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK, "PUT {hash} must 200");
+    }
+
+    /// The KILLING rt34 test: storage `bytes_used` tracks the TRUE on-disk delta
+    /// across overwrites — the OLD all-or-nothing rollback let a tenant store
+    /// unbounded bytes for free (PUT 1B then PUT 100MiB under the same key
+    /// released the whole 100MiB while it stayed on disk).
+    ///
+    /// Covers the five delta cases: fresh insert charges full; same-size
+    /// overwrite nets 0; GROW 1→big nets +(big-1); SHRINK big→1 decreases
+    /// bytes_used. (The probe-error-treated-as-fresh case is covered at the
+    /// store layer in `r2_kv::rt_write_probe_error_fails_closed_to_none`.)
+    #[tokio::test]
+    async fn put_overwrite_accounts_true_byte_delta_not_all_or_nothing() {
+        let (state, store) = fixture_with_byte_accounting();
+        let app = router(state);
+        let used = || store.used(TEST_AUTH_TENANT, TEST_BYTES_REGION);
+
+        // 1) Fresh insert of 1 byte → charge full (used = 1).
+        put_artifact(&app, "k", vec![b'a']).await;
+        assert_eq!(used(), 1, "fresh insert charges the full new bytes");
+
+        // 2) Same-size overwrite (1 → 1) → net 0 (accrue 1, release prior 1).
+        put_artifact(&app, "k", vec![b'b']).await;
+        assert_eq!(used(), 1, "same-size overwrite nets zero");
+
+        // 3) GROW 1 → 100 (the exploit shape) → +99 (accrue 100, release prior 1).
+        put_artifact(&app, "k", vec![0u8; 100]).await;
+        assert_eq!(
+            used(),
+            100,
+            "grow must add the delta — the OLD rollback would have released the \
+             full 100 leaving used≈1 with 100 bytes on disk (the bypass)"
+        );
+
+        // 4) SHRINK 100 → 1 → -99 (accrue 1, release prior 100).
+        put_artifact(&app, "k", vec![b'c']).await;
+        assert_eq!(used(), 1, "shrink must decrease bytes_used to the new size");
+    }
+
+    /// A SECOND distinct key is charged independently — proves the release
+    /// targets the OVERWRITTEN key's prior, not the whole tenant.
+    #[tokio::test]
+    async fn put_distinct_keys_accumulate_independently() {
+        let (state, store) = fixture_with_byte_accounting();
+        let app = router(state);
+        let used = || store.used(TEST_AUTH_TENANT, TEST_BYTES_REGION);
+
+        put_artifact(&app, "k1", vec![0u8; 10]).await;
+        assert_eq!(used(), 10);
+        // Fresh second key: no prior to release → full add.
+        put_artifact(&app, "k2", vec![0u8; 25]).await;
+        assert_eq!(used(), 35, "two fresh keys sum (no spurious release)");
+        // Overwrite k1 same size: net 0 → total unchanged.
+        put_artifact(&app, "k1", vec![1u8; 10]).await;
+        assert_eq!(used(), 35, "same-size overwrite of one key leaves the total");
     }
 
     // ── finding #2: the cap is enforced PRE-BUFFER (FromRequestParts) ─────────
