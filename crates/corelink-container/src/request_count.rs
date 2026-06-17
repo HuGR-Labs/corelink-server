@@ -136,7 +136,7 @@ fn year_month_parts(now_ms: i64) -> (i64, u32) {
 fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = (y - era * 400) as i64;
+    let yoe = y - era * 400;
     let m = m as i64;
     let d = d as i64;
     let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
@@ -267,9 +267,7 @@ impl RequestCountGate {
         };
         // Uncapped tier (team / enterprise) → nothing to enforce; skip the
         // write (no reason to pay a D1 round-trip).
-        let Some(cap) = cap_for_tier(&tier) else {
-            return None;
-        };
+        let cap = cap_for_tier(&tier)?;
 
         // Atomic increment-and-check. A store error → fail-OPEN (the op is not
         // counted; the data plane remains the deeper net).

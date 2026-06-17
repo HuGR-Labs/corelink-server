@@ -629,6 +629,12 @@ impl TenantResolver for OciPatResolver {
 /// (`scope.allows(repo, action)` on every `/v2` op) plus the `/token`
 /// downscope to the PAT's capability. A header gate would 403 every
 /// request under pass-through.
+// Wiring/DI constructor: each argument is a distinct production collaborator
+// (CAS read/write handlers, URL-map + manifest KV stores, PAT verifier, realm
+// signing key, and the two optional quota gates). Bundling them into a params
+// struct adds indirection without removing any real coupling, so the
+// too-many-arguments lint is suppressed here by intent.
+#[allow(clippy::too_many_arguments)]
 pub fn router(
     cas_read: Arc<dyn CasReadHandler>,
     cas_write: Arc<dyn CasWriteHandler>,
