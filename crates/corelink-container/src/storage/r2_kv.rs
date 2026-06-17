@@ -170,22 +170,33 @@ impl CasReadStore for R2KvStore {
 }
 
 impl CasWriteStore for R2KvStore {
-    fn write(&self, tenant: &str, key: &str, bytes: Vec<u8>) -> Result<bool, TurboBridgeError> {
+    fn write(
+        &self,
+        tenant: &str,
+        key: &str,
+        bytes: Vec<u8>,
+    ) -> Result<Option<u64>, TurboBridgeError> {
         let object_key = self.object_key(tenant, key)?;
-        // rt-nuclear #25: detect an idempotent overwrite so the route does not
-        // double-charge storage bytes. Turbo artifacts are content-keyed, so a key
-        // that already exists holds the same artifact. Probe presence BEFORE the
-        // PUT; a probe error fails CLOSED to `durable = true` (charge the bytes —
-        // a missed roll-back over-counts the tenant, conservative, never under).
-        // (The `KvBackend` port exposes only get/put; the prod R2 backend's `get`
-        // is the presence probe — same call `read` already uses.)
-        let preexisted = matches!(
-            Self::block_on(self.backend.get(&object_key)),
-            Ok(Some(_))
-        );
+        // rt34 finding #3/#4/#5/#6: Turbo keys are OPAQUE/client-chosen (NOT
+        // content-addressed), so an overwrite can change the stored SIZE. The
+        // route accrues the full new bytes up front, then RELEASES the PRIOR
+        // size on an overwrite — netting the true on-disk delta (`new - prior`).
+        // Probe presence BEFORE the PUT and capture the prior byte length; a
+        // probe error fails CLOSED to `Ok(None)` (treat as fresh ⇒ charge the
+        // full new bytes — a missed prior-release over-counts the tenant,
+        // conservative, never under). (The `KvBackend` port exposes only
+        // get/put; the prod R2 backend's `get` is the presence probe — the same
+        // call `read` already uses.)
+        let prior_len = match Self::block_on(self.backend.get(&object_key)) {
+            Ok(Some(prior)) => Some(prior.len() as u64),
+            Ok(None) => None,
+            // Fail CLOSED: treat a probe error as a fresh insert ⇒ charge the
+            // full new bytes (do not release anything we cannot confirm).
+            Err(_) => None,
+        };
         Self::block_on(self.backend.put(&object_key, bytes))
             .map_err(|e| TurboBridgeError::Internal(format!("r2 kv put: {e}")))?;
-        Ok(!preexisted)
+        Ok(prior_len)
     }
 }
 
@@ -286,6 +297,10 @@ mod tests {
     struct FakeBackend {
         store: Arc<Mutex<HashMap<String, Vec<u8>>>>,
         fault: Arc<Mutex<Option<String>>>,
+        /// When set, ONLY `get` errors (the presence probe) — `put` still
+        /// succeeds. Used to exercise the rt34 probe-error fail-CLOSED path
+        /// where `write` must report `None` (charge full) yet the body is stored.
+        get_only_fault: Arc<Mutex<Option<String>>>,
     }
 
     impl FakeBackend {
@@ -293,11 +308,17 @@ mod tests {
             Self {
                 store: Arc::new(Mutex::new(HashMap::new())),
                 fault: Arc::new(Mutex::new(None)),
+                get_only_fault: Arc::new(Mutex::new(None)),
             }
         }
         /// Inject a backend failure: subsequent get/put return Err(msg).
         fn fail(&self, msg: &str) {
             *self.fault.lock().unwrap() = Some(msg.to_owned());
+        }
+        /// Inject a GET-only failure: subsequent `get` returns Err(msg) but
+        /// `put` still succeeds.
+        fn fail_get_only(&self, msg: &str) {
+            *self.get_only_fault.lock().unwrap() = Some(msg.to_owned());
         }
     }
 
@@ -305,6 +326,9 @@ mod tests {
     impl KvBackend for FakeBackend {
         async fn get(&self, object_key: &str) -> Result<Option<Vec<u8>>, String> {
             if let Some(e) = self.fault.lock().unwrap().clone() {
+                return Err(e);
+            }
+            if let Some(e) = self.get_only_fault.lock().unwrap().clone() {
                 return Err(e);
             }
             Ok(self.store.lock().unwrap().get(object_key).cloned())
@@ -417,12 +441,70 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn rt_last_write_wins_and_empty_overwrite() {
         let s = store_with(FakeBackend::new());
-        s.write("t", "k", b"v1".to_vec()).unwrap();
-        s.write("t", "k", b"v2".to_vec()).unwrap();
+        // Fresh insert ⇒ no prior (None). 2-byte body.
+        assert_eq!(s.write("t", "k", b"v1".to_vec()).unwrap(), None);
+        // Overwrite ⇒ reports the PRIOR byte length (2).
+        assert_eq!(s.write("t", "k", b"v2".to_vec()).unwrap(), Some(2));
         assert_eq!(s.read("t", "k").unwrap(), b"v2");
-        // Empty PUT is a real overwrite, not a no-op.
-        s.write("t", "k", vec![]).unwrap();
+        // Empty PUT is a real overwrite, not a no-op; prior was 2 bytes.
+        assert_eq!(s.write("t", "k", vec![]).unwrap(), Some(2));
         assert_eq!(s.read("t", "k").unwrap(), Vec::<u8>::new());
+        // Re-write over the now-empty object ⇒ prior is Some(0).
+        assert_eq!(s.write("t", "k", b"new".to_vec()).unwrap(), Some(0));
+    }
+
+    /// rt34 finding #3/#4/#5/#6 — the byte-delta contract `write` exposes:
+    ///   fresh insert ⇒ None (route charges full new);
+    ///   same-size overwrite ⇒ Some(n) where n == new len (route releases n ⇒ net 0);
+    ///   GROW 1→big ⇒ Some(1) (route releases 1 ⇒ net +(big-1));
+    ///   SHRINK big→1 ⇒ Some(big) (route releases big ⇒ net -(big-1)).
+    /// The route accrues the full NEW len up front and releases `prior_len`;
+    /// this test pins the prior-len values that drive that reconciliation.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn rt_write_reports_prior_len_for_byte_delta() {
+        let s = store_with(FakeBackend::new());
+        // Fresh insert: no prior ⇒ route keeps the full new charge.
+        assert_eq!(s.write("t", "k", b"x".to_vec()).unwrap(), None, "fresh ⇒ None");
+        // Same-size overwrite (1→1): prior = 1 ⇒ release 1, net 0.
+        assert_eq!(
+            s.write("t", "k", b"y".to_vec()).unwrap(),
+            Some(1),
+            "same-size overwrite ⇒ prior len 1 (net 0 after release)"
+        );
+        // GROW 1 → 1000: prior = 1 ⇒ release 1, net +(1000-1).
+        let big = vec![0u8; 1000];
+        assert_eq!(
+            s.write("t", "k", big.clone()).unwrap(),
+            Some(1),
+            "grow ⇒ prior len 1 (net +999)"
+        );
+        // SHRINK 1000 → 1: prior = 1000 ⇒ release 1000, net -(1000-1).
+        assert_eq!(
+            s.write("t", "k", b"z".to_vec()).unwrap(),
+            Some(1000),
+            "shrink ⇒ prior len 1000 (net -999)"
+        );
+    }
+
+    /// rt34: a probe (get) ERROR on the presence check fails CLOSED to `None`
+    /// (treat as fresh ⇒ the route charges the full new bytes, never releasing
+    /// an unconfirmed prior), while the PUT body is still stored. A missed
+    /// prior-release over-counts the tenant — conservative, never under-counts.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn rt_write_probe_error_fails_closed_to_none() {
+        let backend = FakeBackend::new();
+        let s = R2KvStore::new(Arc::new(backend.clone()), None);
+        // Seed a real prior object so a WORKING probe would return Some(11).
+        assert_eq!(s.write("t", "k", b"prior-bytes".to_vec()).unwrap(), None);
+        // Now error ONLY the presence-probe `get`; `put` still succeeds.
+        backend.fail_get_only("R2 503 on probe");
+        // Probe error ⇒ write reports None (fail CLOSED: do NOT release the
+        // unconfirmed prior), even though a prior object DID exist.
+        assert_eq!(
+            s.write("t", "k", b"new-body".to_vec()).unwrap(),
+            None,
+            "probe error must fail CLOSED to None (charge full, release nothing)"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

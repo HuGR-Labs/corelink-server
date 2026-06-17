@@ -54,6 +54,9 @@ use axum::{
 use subtle::ConstantTimeEq;
 
 use corelink_handler_cas_erase::{erase_outcome, prepare_erase, EraseOutcome};
+use corelink_privacy_erasure_worker::legitimacy::DsrLegitimacyStore;
+
+use crate::routes::dsr::legitimacy::D1DsrLegitimacyStore;
 
 /// HTTP header carrying the shared internal-auth secret (mirrors
 /// [`crate::routes::internal_pat`] byte-for-byte).
@@ -111,6 +114,16 @@ pub struct CasEraseRouteState {
     pub eraser: Arc<dyn CasBlobEraser>,
     /// Shared internal-auth secret (constant-time compared).
     pub internal_auth_key: Arc<str>,
+    /// DSR legitimacy pre-check (rt-nuclear #18/#19, r34 #8/#9). Binds the
+    /// per-blob erase to a durable, D1-authenticated `dsr_requested` row so a
+    /// leaked internal/erase key alone CANNOT erase arbitrary blobs: the
+    /// attacker cannot forge a `dsr_requested` row (written only by the
+    /// D1-authenticated Clerk `user.deleted` path). `None` only in the
+    /// in-memory/test fallback; `build_state_from_env` fail-CLOSES (route
+    /// unmounted) if it cannot be built in prod, so a `None` here on a
+    /// mounted prod route is unreachable — and the handler treats `None` as
+    /// DENY (503) regardless.
+    pub legitimacy: Option<Arc<dyn DsrLegitimacyStore>>,
 }
 
 impl core::fmt::Debug for CasEraseRouteState {
@@ -129,11 +142,16 @@ pub fn router(state: CasEraseRouteState) -> Router {
         .with_state(state)
 }
 
-/// Erase request body. `tenant` is the authenticated tenant; `reason` is a
+/// Erase request body. `tenant` is the authenticated tenant; `dsr_id` is the
+/// canonical UUID of the DSR ticket that legitimately requested this erasure
+/// (REQUIRED — missing/invalid ⇒ 400 at deserialization); `reason` is a
 /// bounded, free-form audit string.
 #[derive(Debug, serde::Deserialize)]
 struct EraseBody {
     tenant: String,
+    /// DSR request id. The erase is authorised ONLY if a live `dsr_requested`
+    /// row exists for `(dsr_id, tenant)` — see [`CasEraseRouteState::legitimacy`].
+    dsr_id: Uuid,
     #[serde(default)]
     reason: String,
 }
@@ -224,6 +242,72 @@ async fn handle_erase(
                 .into_response();
         }
     };
+
+    // 4b. DSR legitimacy gate (rt-nuclear #18/#19, r34 #8/#9). The
+    //     internal-auth gate alone proves only "holds the shared/erase key";
+    //     it does NOT prove "this erasure was legitimately requested". A
+    //     leaked key would otherwise allow arbitrary cross-tenant blob
+    //     deletion + permanent 410-Gone poison with no proof-of-request.
+    //     Bind the erase to a durable, D1-authenticated `dsr_requested` row
+    //     for THIS (dsr_id, tenant) — which a leaked-key attacker cannot
+    //     forge. Placed AFTER cross-tenant/digest validation and BEFORE the
+    //     irreversible R2 delete. Fail-CLOSED on every ambiguity.
+    //
+    //     The tenant is bound as a UUID so a `dsr_id` legitimate for tenant A
+    //     cannot authorise erasing tenant B (`is_requested` keys on BOTH).
+    let tenant_uuid = match Uuid::try_parse(&req.tenant) {
+        Ok(u) => u,
+        Err(_) => {
+            // A non-UUID tenant can never match a `dsr_requested` row (the
+            // table stores canonical UUID tenant ids written by the
+            // D1-authenticated Clerk path) → DENY rather than bypass the gate.
+            tracing::warn!("cas_erase: non-UUID tenant on erase — denying (no legitimacy possible)");
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({ "error": "forbidden" })),
+            )
+                .into_response();
+        }
+    };
+    match &state.legitimacy {
+        Some(store) => match store.is_requested(req.dsr_id, tenant_uuid) {
+            Ok(true) => { /* legitimate — proceed */ }
+            Ok(false) => {
+                // No live `dsr_requested` row for (dsr_id, tenant): not a
+                // legitimate erasure request (or wrong tenant). 403.
+                tracing::warn!(
+                    dsr_id = %req.dsr_id,
+                    "cas_erase: no dsr_requested row for (dsr_id, tenant) — forbidden"
+                );
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(serde_json::json!({ "error": "forbidden" })),
+                )
+                    .into_response();
+            }
+            Err(e) => {
+                // Ambiguous legitimacy (D1 fault). Erasure is IRREVERSIBLE,
+                // so a store error MUST DENY (fail-CLOSED), never proceed.
+                tracing::error!(error = %e, "cas_erase: legitimacy lookup failed — fail-CLOSED (503)");
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(serde_json::json!({ "error": "legitimacy_unavailable" })),
+                )
+                    .into_response();
+            }
+        },
+        None => {
+            // No legitimacy store wired. In prod this is unreachable
+            // (`build_state_from_env` fail-CLOSES to an unmounted route), but
+            // if it ever happens the irreversible erase MUST NOT run.
+            tracing::error!("cas_erase: legitimacy store absent — fail-CLOSED (503)");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "error": "legitimacy_unavailable" })),
+            )
+                .into_response();
+        }
+    }
 
     // 5. Sample prior tombstone presence (for idempotent-outcome reporting).
     let was_tombstoned = match state.tombstones.is_tombstoned(&req.tenant, &hash).await {
@@ -603,8 +687,9 @@ impl CasBlobEraser for R2CasBlobEraser {
 /// Build the route state from env.
 ///
 /// Returns `Some` only when ALL of the prod transports build from env: the
-/// **R2 TDK** (`R2_TDK_HEX`), the **D1 tombstone store**, and the supplied
-/// **internal-auth key**. Any missing piece ⇒ `None` and the route is NOT
+/// **R2 TDK** (`R2_TDK_HEX`), the **D1 tombstone store**, the **D1 DSR
+/// legitimacy store**, and the supplied **internal-auth key**. Any missing
+/// piece ⇒ `None` and the route is NOT
 /// mounted (fail-CLOSED): the container never runs a half-built erase that
 /// could drop the tombstone without deleting the bytes, or — the load-bearing
 /// failure mode — derive the WRONG R2 key and silently no-op the deletion
@@ -622,6 +707,14 @@ pub fn build_state_from_env(internal_auth_key: Option<Arc<str>>) -> Option<CasEr
     // D1-backed tombstone store; absent D1 env ⇒ unmounted.
     let tombstones: Arc<dyn TombstoneStore> = Arc::new(D1TombstoneStore::from_env()?);
 
+    // D1-backed DSR legitimacy gate (rt-nuclear #18/#19, r34 #8/#9). Fail
+    // CLOSED in prod: if the legitimacy store cannot be built (no D1), the
+    // route is NOT mounted — same posture as the erase-key/TDK gate above. We
+    // MUST NOT mount the irreversible erase route without a legitimacy anchor,
+    // or a leaked internal key would be sufficient to erase arbitrary blobs.
+    let legitimacy: Arc<dyn DsrLegitimacyStore> =
+        Arc::new(D1DsrLegitimacyStore::from_env()?);
+
     let cas_bucket = crate::storage::env_or("R2_CAS_BUCKET", DEFAULT_CAS_BUCKET);
     let eraser: Arc<dyn CasBlobEraser> =
         Arc::new(R2CasBlobEraser::new(Arc::new(tdk), cas_bucket));
@@ -630,6 +723,7 @@ pub fn build_state_from_env(internal_auth_key: Option<Arc<str>>) -> Option<CasEr
         tombstones,
         eraser,
         internal_auth_key,
+        legitimacy: Some(legitimacy),
     })
 }
 
@@ -672,22 +766,58 @@ mod tests {
     use axum::http::{Method, Request};
     use tower::ServiceExt;
 
-    const TEST_KEY: &str = "test-internal-auth-key-32-bytes-x";
-    const TENANT: &str = "t1";
-    const DIGEST: &str = "deadbeef0123";
+    use corelink_privacy_erasure_worker::legitimacy::{
+        FailingDsrLegitimacyStore, InMemoryDsrLegitimacyStore,
+    };
 
+    const TEST_KEY: &str = "test-internal-auth-key-32-bytes-x";
+    // The legitimacy gate keys on a canonical UUID tenant (the `dsr_requested`
+    // table stores UUID tenant ids), so the route fixtures use a UUID tenant.
+    const TENANT: &str = "550e8400-e29b-41d4-a716-446655440000";
+    // A different legitimate tenant (cross-tenant forgery test).
+    const TENANT_B: &str = "11111111-2222-3333-4444-555555555555";
+    const DIGEST: &str = "deadbeef0123";
+    // The DSR id the in-memory legitimacy store is seeded with for TENANT.
+    const DSR_ID: &str = "99999999-8888-7777-6666-555544443333";
+
+    /// Build a route state with an in-memory legitimacy store pre-seeded so
+    /// `(DSR_ID, TENANT)` is legitimate. Returns the eraser + tombstone fakes
+    /// for assertions.
     fn state() -> (CasEraseRouteState, Arc<InMemoryBlobEraser>, Arc<InMemoryTombstoneStore>) {
+        let legit = InMemoryDsrLegitimacyStore::new();
+        legit.insert_requested(
+            Uuid::try_parse(DSR_ID).expect("dsr uuid"),
+            Uuid::try_parse(TENANT).expect("tenant uuid"),
+        );
+        build_state(Arc::new(legit))
+    }
+
+    /// Build a route state with an explicit legitimacy store.
+    fn build_state(
+        legitimacy: Arc<dyn DsrLegitimacyStore>,
+    ) -> (CasEraseRouteState, Arc<InMemoryBlobEraser>, Arc<InMemoryTombstoneStore>) {
         let tombstones = Arc::new(InMemoryTombstoneStore::new());
         let eraser = Arc::new(InMemoryBlobEraser::new());
         let st = CasEraseRouteState {
             tombstones: tombstones.clone(),
             eraser: eraser.clone(),
             internal_auth_key: Arc::from(TEST_KEY),
+            legitimacy: Some(legitimacy),
         };
         (st, eraser, tombstones)
     }
 
     fn erase_req(auth: &str, tenant: &str, digest: &str, body_tenant: &str) -> Request<Body> {
+        erase_req_dsr(auth, tenant, digest, body_tenant, DSR_ID)
+    }
+
+    fn erase_req_dsr(
+        auth: &str,
+        tenant: &str,
+        digest: &str,
+        body_tenant: &str,
+        dsr_id: &str,
+    ) -> Request<Body> {
         let mut b = Request::builder()
             .method(Method::POST)
             .uri(format!("/_internal/cas/{tenant}/{digest}/erase"));
@@ -695,7 +825,8 @@ mod tests {
             b = b.header(INTERNAL_AUTH_HEADER, auth);
         }
         b.body(Body::from(
-            serde_json::json!({ "tenant": body_tenant, "reason": "dsr" }).to_string(),
+            serde_json::json!({ "tenant": body_tenant, "dsr_id": dsr_id, "reason": "dsr" })
+                .to_string(),
         ))
         .expect("request")
     }
@@ -728,14 +859,14 @@ mod tests {
     #[tokio::test]
     async fn erase_cross_tenant_is_403_before_storage() {
         let (st, eraser, _t) = state();
-        // path tenant t1, body tenant t2 → cross-tenant.
+        // path tenant TENANT, body tenant TENANT_B → cross-tenant (pure handler).
         let resp = router(st)
-            .oneshot(erase_req(TEST_KEY, "t1", DIGEST, "t2"))
+            .oneshot(erase_req(TEST_KEY, TENANT, DIGEST, TENANT_B))
             .await
             .expect("oneshot");
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-        assert!(!eraser.was_erased("t2", DIGEST));
-        assert!(!eraser.was_erased("t1", DIGEST));
+        assert!(!eraser.was_erased(TENANT_B, DIGEST));
+        assert!(!eraser.was_erased(TENANT, DIGEST));
     }
 
     #[tokio::test]
@@ -775,6 +906,114 @@ mod tests {
         let t = InMemoryTombstoneStore::new();
         assert!(!t.upsert(TENANT, DIGEST, "r", 1).await.expect("u1"));
         assert!(t.upsert(TENANT, DIGEST, "r", 2).await.expect("u2"));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // DSR legitimacy gate (rt-nuclear #18/#19, r34 #8/#9) — leaked-key defense
+    // ──────────────────────────────────────────────────────────────────────
+
+    /// Valid auth + a present `dsr_requested` row (seeded) ⇒ the erase
+    /// proceeds (200) and the bytes are deleted.
+    #[tokio::test]
+    async fn erase_with_legit_dsr_row_proceeds() {
+        let (st, eraser, tombstones) = state();
+        let resp = router(st)
+            .oneshot(erase_req(TEST_KEY, TENANT, DIGEST, TENANT))
+            .await
+            .expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(eraser.was_erased(TENANT, DIGEST));
+        assert!(tombstones.is_tombstoned(TENANT, DIGEST).await.expect("q"));
+    }
+
+    /// Valid auth + a `dsr_id` with NO matching `dsr_requested` row ⇒ 403 and
+    /// NOTHING is erased (the leaked-internal-key blast radius is closed).
+    #[tokio::test]
+    async fn erase_no_dsr_row_is_403_and_no_delete() {
+        // Empty legitimacy store: every (dsr_id, tenant) is NOT requested.
+        let (st, eraser, tombstones) = build_state(Arc::new(InMemoryDsrLegitimacyStore::new()));
+        let resp = router(st)
+            .oneshot(erase_req(TEST_KEY, TENANT, DIGEST, TENANT))
+            .await
+            .expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        assert!(!eraser.was_erased(TENANT, DIGEST), "no delete without a legit row");
+        assert!(!tombstones.is_tombstoned(TENANT, DIGEST).await.expect("q"));
+    }
+
+    /// Legitimacy store FAULT (D1 error) ⇒ fail-CLOSED 503, NOTHING erased.
+    /// Erasure is irreversible — ambiguous legitimacy must DENY.
+    #[tokio::test]
+    async fn erase_legitimacy_error_is_503_fail_closed() {
+        let (st, eraser, tombstones) = build_state(Arc::new(FailingDsrLegitimacyStore::new()));
+        let resp = router(st)
+            .oneshot(erase_req(TEST_KEY, TENANT, DIGEST, TENANT))
+            .await
+            .expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(!eraser.was_erased(TENANT, DIGEST), "no delete on legitimacy fault");
+        assert!(!tombstones.is_tombstoned(TENANT, DIGEST).await.expect("q"));
+    }
+
+    /// No legitimacy store wired (state.legitimacy == None) ⇒ fail-CLOSED 503.
+    /// (Unreachable in prod — build_state_from_env fail-CLOSES the route — but
+    /// the handler must still DENY if it ever occurs.)
+    #[tokio::test]
+    async fn erase_legitimacy_none_is_503_fail_closed() {
+        let tombstones = Arc::new(InMemoryTombstoneStore::new());
+        let eraser = Arc::new(InMemoryBlobEraser::new());
+        let st = CasEraseRouteState {
+            tombstones,
+            eraser: eraser.clone(),
+            internal_auth_key: Arc::from(TEST_KEY),
+            legitimacy: None,
+        };
+        let resp = router(st)
+            .oneshot(erase_req(TEST_KEY, TENANT, DIGEST, TENANT))
+            .await
+            .expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(!eraser.was_erased(TENANT, DIGEST));
+    }
+
+    /// Cross-tenant via the legitimacy gate: a `dsr_id` legitimate for TENANT
+    /// CANNOT authorise erasing TENANT_B (the gate binds on BOTH dsr_id AND
+    /// tenant). Here path==body==TENANT_B (so the pure cross-tenant check
+    /// passes) but only `(DSR_ID, TENANT)` is seeded ⇒ 403 from the gate.
+    #[tokio::test]
+    async fn erase_dsr_id_for_other_tenant_is_403() {
+        // Seed legitimacy ONLY for TENANT, then attempt to erase TENANT_B's
+        // blob with TENANT's dsr_id.
+        let legit = InMemoryDsrLegitimacyStore::new();
+        legit.insert_requested(
+            Uuid::try_parse(DSR_ID).expect("dsr uuid"),
+            Uuid::try_parse(TENANT).expect("tenant uuid"),
+        );
+        let (st, eraser, tombstones) = build_state(Arc::new(legit));
+        let resp = router(st)
+            .oneshot(erase_req_dsr(TEST_KEY, TENANT_B, DIGEST, TENANT_B, DSR_ID))
+            .await
+            .expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        assert!(!eraser.was_erased(TENANT_B, DIGEST), "no cross-tenant erase via foreign dsr_id");
+        assert!(!tombstones.is_tombstoned(TENANT_B, DIGEST).await.expect("q"));
+    }
+
+    /// A missing `dsr_id` field in the body ⇒ 400 (deserialization rejects it
+    /// before any storage touch). Required-field enforcement.
+    #[tokio::test]
+    async fn erase_missing_dsr_id_is_400() {
+        let body = serde_json::json!({ "tenant": TENANT, "reason": "dsr" }).to_string();
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/_internal/cas/{TENANT}/{DIGEST}/erase"))
+            .header(INTERNAL_AUTH_HEADER, TEST_KEY)
+            .body(Body::from(body))
+            .expect("request");
+        let (st, eraser, _t) = state();
+        let resp = router(st).oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert!(!eraser.was_erased(TENANT, DIGEST));
     }
 
     // ──────────────────────────────────────────────────────────────────────

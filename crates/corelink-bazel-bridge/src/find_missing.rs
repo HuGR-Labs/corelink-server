@@ -26,9 +26,12 @@
 //! # Implementation
 //!
 //! [`InMemoryFindMissing`] delegates to any [`corelink_handler_cas::CasReadHandler`]
-//! via a sequential loop. The `NotFound` variant means the blob is missing;
-//! every other error is propagated (audit failures, cross-tenant denials,
-//! etc.) so fail-CLOSED semantics are preserved.
+//! via a sequential loop, using the CHEAP [`corelink_handler_cas::CasReadHandler::exists`]
+//! HEAD-semantics probe — never a full `read()` (which would download +
+//! rehash every present blob; r34 #10). `exists() == Ok(false)` means the
+//! blob is missing; `Ok(true)` means present; every other error is
+//! propagated (audit failures, cross-tenant denials, etc.) so fail-CLOSED
+//! semantics are preserved.
 
 use std::sync::Arc;
 
@@ -82,12 +85,25 @@ pub trait FindMissingHandler: Send + Sync + core::fmt::Debug {
 }
 
 /// In-memory `findMissingBlobs` implementation backed by any
-/// [`CasReadHandler`]. Delegates existence checks via `handler.read()`.
+/// [`CasReadHandler`]. Delegates existence checks via the cheap
+/// `handler.exists()` HEAD probe — NOT `read()`.
 ///
-/// A `NotFound` result means the blob is absent — the digest is added
-/// to the missing list. Every other [`CasHandlerError`] variant is
-/// converted to the appropriate [`BazelBridgeError`] and propagated
-/// so audit/cross-tenant invariants are preserved.
+/// # Why `exists()` and not `read()` (r34 #10)
+///
+/// `findMissingBlobs` is supposed to be a cheap HEAD/exists probe.
+/// Probing existence via `read()` forced a FULL blob download + content
+/// rehash per digest; looped up to the batch cap (4096) that became tens
+/// of GiB of R2 GET egress + rehash CPU per request, repeatable by any
+/// free tenant. [`CasReadHandler::exists`] is a HEAD-semantics probe (the
+/// R2 handler overrides it with an `HeadObject`), so the probe transfers
+/// no body and performs no rehash.
+///
+/// `exists()` returns `Ok(false)` for an absent blob (the digest is added
+/// to the missing list) and `Ok(true)` for a present one (not missing).
+/// Every other [`CasHandlerError`] variant is converted to the
+/// appropriate [`BazelBridgeError`] and propagated so audit/cross-tenant
+/// invariants are preserved (the storage-layer `NotFound` is absorbed by
+/// `exists` into `Ok(false)` and never surfaces here).
 pub struct InMemoryFindMissing {
     cas: Arc<dyn CasReadHandler>,
 }
@@ -140,9 +156,20 @@ impl FindMissingHandler for InMemoryFindMissing {
                 at_unix_ms,
             )
             .with_algo(DigestAlgo::Sha256);
-            match self.cas.read(req) {
-                Ok(_) => {
+            // CHEAP existence probe — `exists()` is HEAD semantics (no
+            // body download, no rehash). The R2 handler overrides it with
+            // an `HeadObject`; this is what removes the per-digest
+            // full-GET + rehash amplification (r34 #10). Present ⇒ NOT
+            // missing; absent (`Ok(false)`) ⇒ missing; the storage-layer
+            // `NotFound` is absorbed into `Ok(false)` by `exists` so it
+            // never reaches this match. Every other error propagates
+            // exactly as before (fail-CLOSED, audit/cross-tenant intact).
+            match self.cas.exists(req) {
+                Ok(true) => {
                     // Blob present — do not add to missing list.
+                }
+                Ok(false) => {
+                    missing.push(digest.clone());
                 }
                 Err(CasHandlerError::NotFound { .. }) => {
                     missing.push(digest.clone());
@@ -161,12 +188,12 @@ impl FindMissingHandler for InMemoryFindMissing {
                 }
                 Err(CasHandlerError::HashMismatch { .. }) | Err(CasHandlerError::Internal(_)) => {
                     return Err(BazelBridgeError::Internal(
-                        "cas read returned unexpected error during find_missing".into(),
+                        "cas exists returned unexpected error during find_missing".into(),
                     ));
                 }
                 Err(_) => {
                     return Err(BazelBridgeError::Internal(
-                        "cas read returned unrecognised error during find_missing".into(),
+                        "cas exists returned unrecognised error during find_missing".into(),
                     ));
                 }
             }
@@ -230,11 +257,56 @@ pub fn build_find_missing_response(missing: Vec<Digest>) -> Result<String, Bazel
 )]
 mod tests {
     use super::*;
+    use core::sync::atomic::{AtomicUsize, Ordering};
     use corelink_handler_cas::handler::fake_hash;
-    use corelink_handler_cas::{InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver};
+    use corelink_handler_cas::{
+        CasReadResponse, InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver,
+    };
 
     const HASH_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const HASH_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    /// A `CasReadHandler` whose `read()` is FORBIDDEN on the
+    /// `findMissingBlobs` probe path: it increments a counter that MUST
+    /// remain 0. The cheap `exists()` HEAD probe is the only method
+    /// `find_missing` may invoke (r34 #10). `exists()` answers from an
+    /// in-memory presence set without ever touching `read()`.
+    #[derive(Debug)]
+    struct ProbeOnlyCas {
+        /// Hashes that are "present" in this fake store.
+        present: std::collections::HashSet<String>,
+        /// Incremented on EVERY `read()` call — must stay 0 on the probe
+        /// path (a full GET would be an egress+rehash amplification bug).
+        read_calls: AtomicUsize,
+        /// Incremented on every `exists()` call — proves the probe path
+        /// actually drove the cheap method.
+        exists_calls: AtomicUsize,
+    }
+
+    impl ProbeOnlyCas {
+        fn new(present: &[&str]) -> Self {
+            Self {
+                present: present.iter().map(|s| (*s).to_owned()).collect(),
+                read_calls: AtomicUsize::new(0),
+                exists_calls: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl CasReadHandler for ProbeOnlyCas {
+        fn read(&self, _req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
+            // A full-GET on the probe path is the bug WP-F removes. Record
+            // it so the assertion can fail loudly rather than silently
+            // re-introducing the egress+rehash amplification.
+            self.read_calls.fetch_add(1, Ordering::SeqCst);
+            panic!("find_missing MUST NOT call read() on the existence-probe path (r34 #10)");
+        }
+
+        fn exists(&self, req: CasReadRequest) -> Result<bool, CasHandlerError> {
+            self.exists_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(self.present.contains(&req.hash))
+        }
+    }
 
     fn make_handler() -> (Arc<InMemoryAuditSink>, InMemoryCasHandler) {
         let audit = Arc::new(InMemoryAuditSink::new());
@@ -315,6 +387,42 @@ mod tests {
             .find_missing("t1", "p1", "t1", 0, &digests)
             .expect_err("too large");
         assert!(matches!(err, BazelBridgeError::BatchTooLarge { .. }));
+    }
+
+    /// r34 #10 regression: the `findMissingBlobs` probe path MUST use the
+    /// cheap `exists()` HEAD probe and MUST NOT call `read()` (a full GET +
+    /// rehash). `ProbeOnlyCas::read()` panics, so any full-GET on the probe
+    /// path would crash the test; the assertions also pin the explicit
+    /// call counters (read==0, exists==N) and the present/absent split.
+    #[test]
+    fn find_missing_probe_uses_exists_never_read() {
+        let cas = Arc::new(ProbeOnlyCas::new(&[HASH_A]));
+        let fm = InMemoryFindMissing::new(cas.clone());
+
+        let present = valid_digest(HASH_A);
+        let absent = valid_digest(HASH_B);
+        let missing = fm
+            .find_missing("t1", "p1", "t1", 0, &[present, absent.clone()])
+            .expect("find_missing");
+
+        // Only the absent digest is reported missing — present semantics
+        // preserved under the exists() path.
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0], absent);
+
+        // The load-bearing assertion: NOT ONE read() (full GET) happened on
+        // the probe path — only the cheap exists() HEAD probe ran, once per
+        // digest.
+        assert_eq!(
+            cas.read_calls.load(Ordering::SeqCst),
+            0,
+            "find_missing must never call read() on the existence-probe path (r34 #10)"
+        );
+        assert_eq!(
+            cas.exists_calls.load(Ordering::SeqCst),
+            2,
+            "find_missing must probe each digest via exists() exactly once"
+        );
     }
 
     #[test]

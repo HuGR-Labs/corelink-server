@@ -23,6 +23,45 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **OCI registry reads bypassed ALL quota/billing brakes (rt-nuclear r34 #1/#11).** `oci_quota_gate`
+  metered only write methods (`is_write`), so `docker pull` / blob+manifest `GET`/`HEAD` against the
+  shared `_oci` container were unmetered free egress AND evaded the monthly request-count cap. Reads
+  carrying a verified HMAC bearer now increment the monthly request-count gate (fail-OPEN, so no false
+  402s on availability); the per-request `$`-ceiling stays write-only, consistent with the native read plane.
+- **OCI `/token` Argon2id verify had no concurrency bound → OOM griefing of the shared container
+  (rt-nuclear r34 #2).** A flood of concurrent `GET /token` with a valid PAT fanned out unbounded 64-MiB
+  Argon2id allocations on the single shared `_oci` container (registry outage for all tenants).
+  `PatVerifier::verify_capability` now acquires a process-wide bounded `Semaphore` permit (sized to the
+  container RAM / `m_cost` budget) before BOTH blocking Argon2id paths (the hot verify and the
+  constant-time dummy-burn); a forged token is shed by the cheap HMAC fast-reject BEFORE any permit is
+  taken, and overload fails CLOSED (denial, never a bypass).
+- **A present-but-malformed `PAT_SIGNING_KEY` rotation sibling silently disabled the native Argon2id
+  backstop fleet-wide (rt-nuclear r34 #7).** A malformed `PAT_SIGNING_KEY_PREV`/`_NEW` made
+  `PatVerifier::from_env()` return `None`, which mounted the native CAS/AC/Bazel/Turbo planes WITHOUT the
+  only container-side possession check. The container now fails CLOSED at startup: in prod (D1 +
+  `PAT_SIGNING_KEY` present) a `None` gate is fatal (`process::exit(1)`), and the Worker's verify-key
+  assembly raises a loud config error on a present-but-malformed sibling instead of silently dropping it
+  (Worker/container symmetry).
+- **Turbo storage byte-accounting bypass via opaque-key overwrite (rt-nuclear r34 #3/#4/#5/#6).** Turbo
+  artifact keys are opaque and never content-verified, but the `#25` idempotent-rollback keyed "durable"
+  on KEY EXISTENCE, so re-PUTting an existing key with a larger body rolled back the FULL byte reservation
+  → unbounded R2 storage at `bytes_used ≈ 0` (the per-tenant storage cap became inert). `CasWriteStore::write`
+  now returns the prior object's size (`Option<u64>`) and the route reconciles the true on-disk DELTA
+  (release the prior size, not the new size) — correct on grow / shrink / same-size / fresh-insert; a
+  presence-probe error fails CLOSED (charges the full new bytes).
+- **Per-blob CAS-erase had NO legitimacy gate → leaked-key cross-tenant deletion + permanent 410 poison
+  (rt-nuclear r34 #8/#9).** `POST /_internal/cas/:tenant/:hash/erase` gated only on the internal-auth key,
+  so a leaked key could irreversibly erase + permanently 410-tombstone ANY tenant's blobs (the #18/#19 fix
+  hardened only the DSR mass-erase leg). The route now requires a `dsr_id` and runs the SAME D1
+  `dsr_requested` legitimacy pre-check as the mass-erase leg — both legs share ONE `D1DsrLegitimacyStore`
+  (single source of erasure-authz truth, no drift) — fail-CLOSED (403 when no live row, 503 on D1 fault);
+  the route refuses to mount without the legitimacy store. **Breaking:** callers of the per-blob erase route
+  (e.g. `clw` D-1) must now send a `dsr_id` backed by a live `dsr_requested` row.
+- **Bazel `findMissingBlobs` was a full-GET + full-rehash existence probe → 4096× R2-egress/CPU
+  amplification (rt-nuclear r34 #10).** The REAPI missing-blobs probe downloaded and re-hashed every
+  candidate blob merely to test existence (~40 GiB egress + 40 GiB SHA-256 per ~$4 metered, repeatable).
+  It now uses a HEAD existence probe (`CasReadHandler::exists` via `head_size` — no body, no rehash), the
+  SOTA REAPI behavior.
 - **`/_internal/dsr/erase` trusted the body-asserted `tenant_id` → shared-internal-key GDPR mass-erase
   (rt-nuclear #18/#19).** The 12-backend erasure orchestrator's docstring promised a tenant pre-check but
   never implemented it, so possession of the shared internal-auth key alone could erase ANY tenant's entire

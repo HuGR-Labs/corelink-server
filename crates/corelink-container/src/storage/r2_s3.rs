@@ -814,6 +814,94 @@ impl CasReadHandler for R2CasHandler {
             }
         }
     }
+
+    /// Cheap existence probe — a single S3 `HeadObject`, NO body
+    /// download and NO content rehash.
+    ///
+    /// This is the override that removes the `findMissingBlobs`
+    /// egress+rehash amplification (r34 #10): the REAPI bridge probes
+    /// existence per digest, and the default trait `exists` would route
+    /// through [`Self::read`] (a full GET + read-path re-verify per blob).
+    /// Here we HEAD instead — `Ok(true)` when present, `Ok(false)` on
+    /// absence, every other error propagated so the fail-CLOSED contract
+    /// holds.
+    ///
+    /// Audit/SLI posture mirrors [`Self::read`]: a cross-tenant probe is
+    /// denied (and audited as `ReadDenied`) before any storage touch, and
+    /// a `ReadAttempted` row is emitted before the lookup. A HEAD reveals
+    /// only presence (not bytes), so there is no read-path content
+    /// re-verification and no `ReadServed`/`CorrectnessCas` emission — the
+    /// probe never serves trusted content.
+    fn exists(&self, req: CasReadRequest) -> Result<bool, CasHandlerError> {
+        use corelink_handler_cas::observer::Sli;
+
+        let emit = |is_error: bool| {
+            self.emit_sli(Sli::AvailCasGet, Sli::LatencyCasGetP99, is_error);
+        };
+
+        // Cross-tenant denial — audit BEFORE returning (mirrors `read`).
+        if req.tenant != req.caller_tenant {
+            self.audit
+                .emit(AuditEvent::new(
+                    AuditEventKind::ReadDenied,
+                    req.tenant.clone(),
+                    req.hash.clone(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                ))
+                .map_err(CasHandlerError::AuditFailed)?;
+            emit(true);
+            return Err(CasHandlerError::CrossTenantDenied {
+                caller: req.caller_tenant,
+                requested_tenant: req.tenant,
+            });
+        }
+
+        // ReadAttempted audit BEFORE lookup.
+        self.audit
+            .emit(AuditEvent::new(
+                AuditEventKind::ReadAttempted,
+                req.tenant.clone(),
+                req.hash.clone(),
+                req.principal.clone(),
+                req.at_unix_ms,
+            ))
+            .map_err(CasHandlerError::AuditFailed)?;
+
+        // Fail CLOSED if the tenant prefix is not derivable: never touch
+        // R2 under a degraded/empty (SHARED) prefix. `req.algo` routes the
+        // probe into the blob's own keyspace (`bazel/sha256/` for SHA-256,
+        // native for BLAKE3) so the HEAD targets the SAME key `read` would.
+        let key = match self.r2_key(&req.tenant, &req.hash, req.algo) {
+            Ok(k) => k,
+            Err(e) => {
+                emit(true);
+                return Err(CasHandlerError::Internal(e));
+            }
+        };
+        debug!(key = %key, "R2CasHandler::exists");
+
+        // CRITICAL — `block_in_place` rationale: see `read` above. This is
+        // a HEAD (`head_size`), not a GET — no body transfer, no rehash.
+        let handle = tokio::runtime::Handle::current();
+        let result = tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key)));
+
+        match result {
+            Ok(Some(_)) => {
+                emit(false);
+                Ok(true)
+            }
+            Ok(None) => {
+                emit(false);
+                Ok(false)
+            }
+            Err(e) => {
+                warn!(error = %e, key = %key, "R2CasHandler::exists error");
+                emit(true);
+                Err(CasHandlerError::Internal(e))
+            }
+        }
+    }
 }
 
 impl CasWriteHandler for R2CasHandler {

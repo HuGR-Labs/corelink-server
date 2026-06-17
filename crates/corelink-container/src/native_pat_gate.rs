@@ -202,6 +202,19 @@ fn fingerprint(token: &str) -> String {
 /// `PAT_SIGNING_KEY` / D1 storage env). Mirrors
 /// [`crate::adapter_pat::PatVerifier::from_env`]'s fail-CLOSED env-gate — when
 /// the verifier can't build, the native gate is simply not wired.
+///
+/// # PROD safety (red-team finding #7, HIGH)
+///
+/// A `None` here is benign in dev/CI but a SILENT SECURITY DOWNGRADE in prod:
+/// the native planes would mount WITHOUT this Argon2id backstop. The most
+/// likely prod cause is a PRESENT-but-malformed `PAT_SIGNING_KEY` rotation
+/// sibling, which [`crate::adapter_pat::PatVerifier::from_env`] correctly
+/// fails-CLOSED on. The container's boot path (`main.rs`) therefore treats a
+/// `None` from this builder as a FATAL boot condition WHEN prod is detected
+/// (D1 + `PAT_SIGNING_KEY` present) via `should_fatal_on_missing_gate` — it
+/// refuses to boot rather than serve degraded. The teeth live in `main.rs`;
+/// this builder keeps its dev/CI-friendly `Option` shape so route wiring is
+/// unchanged.
 #[must_use]
 pub fn native_pat_gate_from_env() -> Option<Arc<NativePatGate>> {
     let verifier = PatVerifier::from_env()?;

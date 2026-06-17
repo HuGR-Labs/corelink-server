@@ -39,6 +39,45 @@ pub trait CasReadHandler: Send + Sync + core::fmt::Debug {
     /// Returns variants of [`CasHandlerError`] per the trait
     /// contract (see crate-level invariants).
     fn read(&self, req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError>;
+
+    /// Cheap existence probe — MUST NOT download or rehash the blob
+    /// (HEAD semantics).
+    ///
+    /// Returns `Ok(true)` when the blob is present, `Ok(false)` when it
+    /// is absent (the storage-layer `NotFound`), and propagates every
+    /// other [`CasHandlerError`] (cross-tenant denial, audit failure,
+    /// internal/transport error) unchanged so the fail-CLOSED contract
+    /// of [`Self::read`] is preserved on the probe path.
+    ///
+    /// # Why this exists
+    ///
+    /// Bazel REAPI v2 `findMissingBlobs` is supposed to be a cheap
+    /// HEAD/exists probe. Probing existence via [`Self::read`] forces a
+    /// FULL blob download + SHA-256/BLAKE3 rehash per digest — looped up
+    /// to the batch cap (4096) it becomes tens of GiB of R2 GET egress +
+    /// rehash CPU per request, repeatable (r34 #10). Implementors backed
+    /// by an object store MUST override this with a HEAD/metadata lookup
+    /// that transfers no body and performs no rehash.
+    ///
+    /// # Default
+    ///
+    /// The default falls back to [`Self::read`] (downloads + rehashes)
+    /// and merely maps the outcome to a boolean. It is CORRECT but NOT
+    /// cheap — it exists only so existing in-process/test handlers keep
+    /// working without an override. Every storage-backed handler
+    /// (e.g. the R2 adapter) overrides it with a true HEAD.
+    ///
+    /// # Errors
+    ///
+    /// Returns variants of [`CasHandlerError`] per the trait contract;
+    /// `NotFound` is mapped to `Ok(false)` rather than propagated.
+    fn exists(&self, req: CasReadRequest) -> Result<bool, CasHandlerError> {
+        match self.read(req) {
+            Ok(_) => Ok(true),
+            Err(CasHandlerError::NotFound { .. }) => Ok(false),
+            Err(other) => Err(other),
+        }
+    }
 }
 
 /// Trait every concrete CAS write handler implements. Same

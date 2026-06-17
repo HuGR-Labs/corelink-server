@@ -41,9 +41,11 @@
 //! unreachable, corrupt row) surface as [`VerifyError::Backend`].
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use corelink_pat::{verify_hmac_only_multi, verify_with_hash_multi, PatHash, PatSigningKey};
+use tokio::sync::Semaphore;
 
 use crate::scope::{requires_cache_read, requires_cache_write};
 use crate::storage::d1_http::D1HttpClient;
@@ -147,6 +149,24 @@ impl PatRowLookup for D1HttpClient {
     }
 }
 
+/// Process-wide cap on the number of Argon2id verifications running
+/// concurrently (red-team finding #2, HIGH). Argon2id is deliberately
+/// memory-hard: each verify allocates ~`m_cost` MiB (64 MiB at the
+/// production cost). With NO cap, a flood of concurrent `GET /token`
+/// requests bearing a valid PAT fans out unbounded 64-MiB allocations on
+/// `spawn_blocking` threads and OOM-kills the shared container — a registry
+/// outage for ALL tenants. Sizing: floor(usable_RAM_MiB / (m_cost_MiB *
+/// safety)); on a standard-1 instance (~4 GiB) with a 64-MiB `m_cost` and a
+/// ~4× safety headroom for the runtime + other allocations ⇒ ~16-24. We
+/// pick 16 as the conservative floor.
+const ARGON2_VERIFY_PERMITS: usize = 16;
+
+/// How long a verify will wait for an Argon2id permit before declaring the
+/// verifier overloaded. Short by design: a `/token` caller waiting longer
+/// than this is better served a fast fail-CLOSED than a stalled request that
+/// holds an async task (and its connection) hostage under a DoS flood.
+const ARGON2_PERMIT_WAIT: Duration = Duration::from_millis(250);
+
 /// Container-side PAT → tenant verifier (Option B). Trait-agnostic: each
 /// adapter route module wraps an `Arc<PatVerifier>` in a thin newtype
 /// that impls that adapter's `TenantResolver` port.
@@ -160,6 +180,13 @@ pub struct PatVerifier {
     /// live fleet. Always non-empty by construction (fail-closed
     /// otherwise — see [`PatVerifier::new`] / [`PatVerifier::from_env`]).
     signing_keys: Arc<Vec<PatSigningKey>>,
+    /// Process-wide bound on concurrent Argon2id work (finding #2). A permit
+    /// is acquired AFTER the cheap HMAC fast-reject (so forged tokens never
+    /// consume one) and held ONLY across the `spawn_blocking` Argon2id call —
+    /// both on the hot path and on the None-row dummy-burn path (which also
+    /// runs Argon2id for timing parity). Acquire-timeout ⇒ `Backend`
+    /// ("overloaded"), fail-CLOSED.
+    argon2_permits: Arc<Semaphore>,
 }
 
 impl std::fmt::Debug for PatVerifier {
@@ -167,6 +194,10 @@ impl std::fmt::Debug for PatVerifier {
         f.debug_struct("PatVerifier")
             .field("lookup", &"Arc<dyn PatRowLookup>")
             .field("signing_keys", &format_args!("[{} REDACTED]", self.signing_keys.len()))
+            .field(
+                "argon2_permits_available",
+                &self.argon2_permits.available_permits(),
+            )
             .finish()
     }
 }
@@ -188,6 +219,10 @@ impl PatVerifier {
         Self {
             lookup,
             signing_keys: Arc::new(signing_keys),
+            // Process-wide Argon2id concurrency cap (finding #2). Constructed
+            // here so EVERY constructor path (`new`, `from_env`, and the test
+            // wiring) gets the bound without changing any public signature.
+            argon2_permits: Arc::new(Semaphore::new(ARGON2_VERIFY_PERMITS)),
         }
     }
 
@@ -285,9 +320,31 @@ impl PatVerifier {
             // defence). Errors here are ignored: it is timing padding, not
             // an auth decision.
             None => {
+                // The dummy burn ALSO runs Argon2id (for timing parity), so it
+                // must be bounded by the same gate — otherwise an attacker who
+                // floods valid-HMAC tokens for NON-existent token_ids could
+                // OOM the container exactly like the hot path. Acquire a permit
+                // (bounded wait) before the blocking burn; on overload, skip
+                // the burn and return the uniform InvalidPat. (The lost timing
+                // parity under sustained overload is acceptable: the request
+                // already shares its fate with every other overloaded one, so
+                // there is no per-token oracle to exploit.)
+                let permit = match tokio::time::timeout(
+                    ARGON2_PERMIT_WAIT,
+                    Arc::clone(&self.argon2_permits).acquire_owned(),
+                )
+                .await
+                {
+                    Ok(Ok(permit)) => permit,
+                    // Acquire failed (timeout) or the semaphore was closed —
+                    // skip the burn and fail-CLOSED uniformly.
+                    _ => return Err(VerifyError::InvalidPat),
+                };
                 let plaintext = pat_plaintext.to_owned();
                 let _ = tokio::task::spawn_blocking(move || {
-                    corelink_pat::dummy_verify_for_constant_time(&plaintext)
+                    let r = corelink_pat::dummy_verify_for_constant_time(&plaintext);
+                    drop(permit); // hold the permit ONLY across the blocking work
+                    r
                 })
                 .await;
                 return Err(VerifyError::InvalidPat);
@@ -301,8 +358,31 @@ impl PatVerifier {
         let plaintext = pat_plaintext.to_owned();
         let signing_keys = Arc::clone(&self.signing_keys);
         let stored_hash = PatHash::from_phc_string(row.pat_hash);
+        // Finding #2: bound concurrent Argon2id. Acquire a permit (bounded
+        // wait) BEFORE the blocking work; on acquire-timeout the verifier is
+        // overloaded — return `Backend` (reusing the existing variant, which
+        // the OCI `/token` handler and the native gate already map to a
+        // non-leaky fail-CLOSED rejection) rather than letting the request pile
+        // on more 64-MiB allocations. The permit is moved into the blocking
+        // closure and dropped there, so it is held ONLY across the Argon2id.
+        let permit = match tokio::time::timeout(
+            ARGON2_PERMIT_WAIT,
+            Arc::clone(&self.argon2_permits).acquire_owned(),
+        )
+        .await
+        {
+            Ok(Ok(permit)) => permit,
+            Ok(Err(_closed)) => {
+                return Err(VerifyError::Backend("pat verifier overloaded".into()))
+            }
+            Err(_timeout) => {
+                return Err(VerifyError::Backend("pat verifier overloaded".into()))
+            }
+        };
         let verify_result = tokio::task::spawn_blocking(move || {
-            verify_with_hash_multi(&plaintext, &token_id, &stored_hash, &signing_keys)
+            let r = verify_with_hash_multi(&plaintext, &token_id, &stored_hash, &signing_keys);
+            drop(permit); // release the Argon2id permit the moment the work ends
+            r
         })
         .await
         .map_err(|e| VerifyError::Backend(format!("verify join: {e}")))?;
@@ -317,6 +397,24 @@ impl PatVerifier {
         let can_write = requires_cache_write(&row.scope);
 
         Ok((row.tenant_id, can_write))
+    }
+
+    /// Test-only constructor that overrides the Argon2id concurrency bound so
+    /// a unit test can drive the semaphore to exhaustion deterministically
+    /// (the production const is too large to fill in a test). Not part of the
+    /// public production surface.
+    #[cfg(test)]
+    #[must_use]
+    fn with_key_set_and_permits(
+        lookup: Arc<dyn PatRowLookup>,
+        signing_keys: Vec<PatSigningKey>,
+        permits: usize,
+    ) -> Self {
+        Self {
+            lookup,
+            signing_keys: Arc::new(signing_keys),
+            argon2_permits: Arc::new(Semaphore::new(permits)),
+        }
     }
 
     /// The full Option-B verification pipeline. Returns the PAT's owning
@@ -610,5 +708,67 @@ mod tests {
             VerifyError::Backend(m) => assert!(m.contains("d1 unreachable")),
             other => panic!("expected Backend, got {other:?}"),
         }
+    }
+
+    /// Finding #2: the Argon2id concurrency gate bounds work — when every
+    /// permit is held, a hot-path verify (valid HMAC + real D1 row, so it
+    /// reaches the Argon2id stage) must give up after the bounded wait and
+    /// surface `Backend("…overloaded…")` rather than piling on another
+    /// 64-MiB Argon2id allocation. We model "all permits held" by building a
+    /// verifier with ZERO permits, so the acquire can never succeed and the
+    /// timeout path is exercised deterministically.
+    #[tokio::test]
+    async fn exhausted_argon2_permits_yields_backend_overloaded() {
+        let key = test_key();
+        let (pt, tid, hash, tenant) = mint_pat(&key, 70, SCOPE_CACHE_RW);
+        // A live row so the pipeline gets PAST the HMAC fast-reject and the D1
+        // lookup, all the way to the permit acquire that guards Argon2id.
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
+        let verifier =
+            PatVerifier::with_key_set_and_permits(lookup.clone(), vec![(*key).clone()], 0);
+        let err = verifier.verify(&pt).await.unwrap_err();
+        match err {
+            VerifyError::Backend(m) => {
+                assert!(m.contains("overloaded"), "expected overloaded, got {m}")
+            }
+            other => panic!("expected Backend(overloaded), got {other:?}"),
+        }
+        // The D1 row WAS consulted (we are past the fast-reject) — the gate
+        // sits AFTER the lookup, on the expensive stage only.
+        assert_eq!(lookup.call_count(), 1);
+    }
+
+    /// The permit gate must NOT consume a permit for a forged token: the HMAC
+    /// fast-reject fires first, so even with zero permits a forged token is
+    /// still a plain `InvalidPat` (an attacker without the key cannot drive the
+    /// verifier into the overloaded path).
+    #[tokio::test]
+    async fn forged_token_does_not_touch_argon2_permits() {
+        let key = test_key();
+        let lookup = Arc::new(FakeLookup::empty());
+        let verifier =
+            PatVerifier::with_key_set_and_permits(lookup.clone(), vec![(*key).clone()], 0);
+        let err = verifier
+            .verify("corelink_pat_not-a-real-token")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, VerifyError::InvalidPat),
+            "forged token must fast-reject before the permit gate"
+        );
+        assert_eq!(lookup.call_count(), 0);
+    }
+
+    /// With permits available, the hot path still succeeds end-to-end — the
+    /// gate is transparent under normal load (no regression to the verify
+    /// pipeline).
+    #[tokio::test]
+    async fn verify_succeeds_when_permits_available() {
+        let key = test_key();
+        let (pt, tid, hash, tenant) = mint_pat(&key, 71, SCOPE_CACHE_RW);
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
+        let verifier =
+            PatVerifier::with_key_set_and_permits(lookup, vec![(*key).clone()], 2);
+        assert_eq!(verifier.verify(&pt).await.unwrap(), tenant);
     }
 }
