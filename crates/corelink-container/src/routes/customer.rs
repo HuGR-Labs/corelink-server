@@ -288,12 +288,16 @@ fn mint_requests_write(scopes: &[String]) -> bool {
     // rt-nuclear #15: this gate previously used exact-token match while the
     // persister used substring match (`s.contains("write")`), so `"writes"` was
     // FALSE here yet persisted `read-write` — a read-only PAT self-escalated.
-    // Now the gate fires for anything NOT provably read-only — the write/admin
-    // grammar OR an unrecognized token (fail-CLOSED: the persister rejects
-    // unknown tokens with 4xx, and a read-only caller is blocked here first).
-    !matches!(
+    // The gate fires iff the mint would persist a write/admin credential — the
+    // EXACT invariant the persister enforces (`mint_requests_write(v)` ⟺
+    // `classify(v) ∈ {ReadWrite, Admin}`). Unrecognized tokens are NOT flagged
+    // here (a benign non-cache token like "viewer" must not read as a write
+    // mint); they are instead REJECTED by the persister with 4xx, which is where
+    // the escalation is actually closed — so `"writes"` reaches the persister and
+    // is refused there rather than silently persisted as read-write.
+    matches!(
         crate::scope::classify_requested_scopes(scopes),
-        Ok(crate::scope::RequestedScopeClass::ReadOnly)
+        Ok(crate::scope::RequestedScopeClass::ReadWrite | crate::scope::RequestedScopeClass::Admin)
     )
 }
 

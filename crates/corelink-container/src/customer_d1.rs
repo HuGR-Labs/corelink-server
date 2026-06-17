@@ -1275,6 +1275,18 @@ mod tests {
             matches!(err, CustomerHandlerError::Unauthorized(_)),
             "{err:?}"
         );
+        // rt-nuclear #15 REGRESSION: a substring-y token like "writes" must NOT
+        // silently persist `read-write` (the old `s.contains("write")` mapper bug
+        // that let a read-only PAT self-escalate). It is unrecognized ⇒ REJECTED
+        // (fail-CLOSED) — this is where the escalation is actually closed, since
+        // the mint gate intentionally treats unknown tokens as non-write.
+        for evil in ["writes", "cache:write-x", "my-write"] {
+            let err = map_requested_scopes(&[evil.to_owned()]).unwrap_err();
+            assert!(
+                matches!(err, CustomerHandlerError::Unauthorized(_)),
+                "{evil:?} must be rejected, not mapped to read-write; got {err:?}"
+            );
+        }
     }
 
     // ── Calendar helpers ─────────────────────────────────────────────────────
