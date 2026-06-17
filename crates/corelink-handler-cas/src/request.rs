@@ -1,5 +1,7 @@
 //! Request / response envelopes for the CAS handler surface.
 
+use crate::digest_algo::DigestAlgo;
+
 /// Read request — `GET /v1/cas/{tenant}/{hash}` canonical shape.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -16,12 +18,23 @@ pub struct CasReadRequest {
     pub caller_tenant: String,
     /// Wall-clock timestamp in unix-millis.
     pub at_unix_ms: u64,
+    /// The content-addressing digest function for this request's keyspace.
+    ///
+    /// Defaults to [`DigestAlgo::Blake3`] (native CAS + sccache) so the 30+
+    /// existing `::new` call sites keep BLAKE3 behaviour unchanged. Only the
+    /// Bazel REAPI v2 adapter sets [`DigestAlgo::Sha256`] (via
+    /// [`Self::with_algo`]), which routes the blob into the surface-tagged
+    /// `bazel/sha256/` keyspace and re-verifies it as SHA-256 on read.
+    pub algo: DigestAlgo,
 }
 
 impl CasReadRequest {
     /// Construct a [`CasReadRequest`] from its fields. Provided
     /// because the struct is `#[non_exhaustive]` per charter, which
     /// prevents struct-literal construction from outside the crate.
+    ///
+    /// `algo` defaults to [`DigestAlgo::Blake3`]; set the Bazel SHA-256
+    /// keyspace via [`Self::with_algo`].
     #[must_use]
     pub fn new(
         tenant: impl Into<String>,
@@ -36,7 +49,17 @@ impl CasReadRequest {
             principal: principal.into(),
             caller_tenant: caller_tenant.into(),
             at_unix_ms,
+            algo: DigestAlgo::Blake3,
         }
+    }
+
+    /// Select the content-addressing digest function (keyspace tag) for this
+    /// read. Native/sccache leave the [`DigestAlgo::Blake3`] default; the
+    /// Bazel REAPI v2 adapter passes [`DigestAlgo::Sha256`].
+    #[must_use]
+    pub fn with_algo(mut self, algo: DigestAlgo) -> Self {
+        self.algo = algo;
+        self
     }
 }
 
@@ -101,6 +124,14 @@ pub struct CasWriteRequest {
     /// by the route handler that reads the Worker header), so the 30+ existing
     /// `::new` call sites compile unchanged and inherit the fail-closed default.
     pub storage_quota_bytes: Option<i64>,
+    /// The content-addressing digest function for this write's keyspace.
+    ///
+    /// Defaults to [`DigestAlgo::Blake3`] (native CAS + sccache) so the 30+
+    /// existing `::new` call sites keep BLAKE3 behaviour unchanged. Only the
+    /// Bazel REAPI v2 adapter sets [`DigestAlgo::Sha256`] (via
+    /// [`Self::with_algo`]), which verifies `claimed_hash == SHA-256(bytes)`
+    /// and stores the blob under the surface-tagged `bazel/sha256/` keyspace.
+    pub algo: DigestAlgo,
 }
 
 impl CasWriteRequest {
@@ -126,6 +157,7 @@ impl CasWriteRequest {
             caller_tenant: caller_tenant.into(),
             at_unix_ms,
             storage_quota_bytes: None,
+            algo: DigestAlgo::Blake3,
         }
     }
 
@@ -136,6 +168,15 @@ impl CasWriteRequest {
     #[must_use]
     pub fn with_storage_quota_bytes(mut self, cap: Option<i64>) -> Self {
         self.storage_quota_bytes = cap;
+        self
+    }
+
+    /// Select the content-addressing digest function (keyspace tag) for this
+    /// write. Native/sccache leave the [`DigestAlgo::Blake3`] default; the
+    /// Bazel REAPI v2 adapter passes [`DigestAlgo::Sha256`].
+    #[must_use]
+    pub fn with_algo(mut self, algo: DigestAlgo) -> Self {
+        self.algo = algo;
         self
     }
 }

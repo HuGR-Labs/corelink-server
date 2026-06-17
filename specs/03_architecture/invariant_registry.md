@@ -81,8 +81,8 @@ Upgrade de severidade requer ADR.
 
 | ID | Nome | Severidade | Descrição | Enforcement |
 |---|---|---|---|---|
-| **INV-CAS-INTEGRITY** | Blob body hash matches path digest | CRITICAL | `hash_fn(body) == path.digest` para todo R2 object em `cas-*` buckets | Write-time check (reject if mismatch) + scrub periódico + client-side verify |
-| **INV-CAS-IDEMPOTENCY** (alias histórico: `INV-CASIdempotency`) | Same content → same digest | CRITICAL | Upload do mesmo byte-sequence **DEVE** resultar no mesmo `digest` determinístico | Algorithm choice (BLAKE3/SHA-256) + test de idempotência |
+| **INV-CAS-INTEGRITY** | Blob body hash matches path digest | CRITICAL | `hash_fn(body) == path.digest` para todo R2 object em `cas-*` buckets, onde `hash_fn` é **determinado pela surface/keyspace** (BLAKE3 para CAS nativo + sccache; SHA-256 para Bazel REAPI v2, armazenado sob o prefixo schema-versionado `<region>/<tenant_prefix>/bazel/sha256/<digest>` e verificado no boundary REAPI). As duas funções **nunca se misturam dentro de um keyspace** — o nativo permanece BLAKE3-only (ADR-0044 §1); SHA-256 é o "new type + schema-versioned key prefix" documentado em ADR-0044 §5, threadado explicitamente via `DigestAlgo` (nunca inferido do comprimento da string) | Write-time check (reject if mismatch) + scrub periódico + client-side verify |
+| **INV-CAS-IDEMPOTENCY** (alias histórico: `INV-CASIdempotency`) | Same content → same digest | CRITICAL | Upload do mesmo byte-sequence **DEVE** resultar no mesmo `digest` determinístico, **por surface**: o mesmo conteúdo na mesma surface mapeia para o mesmo `digest` + mesmo keyspace (BLAKE3 → keyspace nativo; SHA-256 → `…/bazel/sha256/`), nunca colidindo entre surfaces | Algorithm choice (BLAKE3/SHA-256) + test de idempotência |
 | **INV-CAS-IMMUTABILITY** | Blob bytes never change post-creation | CRITICAL | Após primeira write, body é read-only (substituição de body requer path novo por causa de INV-CAS-INTEGRITY) | R2 versioning + write-once contract |
 
 ### 3.3 Action Cache (domain AC)

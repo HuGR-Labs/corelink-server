@@ -13,6 +13,12 @@ workspace = true
 [dependencies]
 thiserror = { workspace = true }
 corelink-slo = { workspace = true }
+# The in-memory CAS fake mirrors the surface-tagged digest function: it
+# verifies BLAKE3 via the deterministic `fake_hash` stand-in and SHA-256
+# (the Bazel REAPI keyspace) via a real SHA-256 so the test double stays
+# faithful to the `DigestAlgo::Sha256` path.
+sha2 = { workspace = true }
+hex = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

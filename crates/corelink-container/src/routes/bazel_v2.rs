@@ -442,6 +442,9 @@ fn map_bridge_err(e: BazelBridgeError) -> axum::response::Response {
         BazelBridgeError::SizeMismatch { .. } => {
             (StatusCode::UNPROCESSABLE_ENTITY, "size mismatch")
         }
+        BazelBridgeError::DigestMismatch { .. } => {
+            (StatusCode::UNPROCESSABLE_ENTITY, "digest mismatch")
+        }
         BazelBridgeError::CrossTenantDenied { .. } => (StatusCode::FORBIDDEN, "cross-tenant"),
         BazelBridgeError::AuditFailed(_) => (StatusCode::SERVICE_UNAVAILABLE, "audit closed"),
         BazelBridgeError::BatchTooLarge { .. } => {
@@ -553,6 +556,16 @@ async fn handle_cas_write(
         Ok(d) => d,
         Err(e) => return map_bridge_err(e),
     };
+    // REAPI v2 content-addressing boundary check (defense-in-depth + early
+    // clean 422): the uploaded bytes MUST hash (SHA-256, the REAPI default) to
+    // the client digest BEFORE we delegate to the shared handler. The durable
+    // gate re-verifies the SHA-256 keyspace independently on write AND read
+    // (bitrot); this boundary rejection just gives a clean error and never
+    // admits poisoned bytes into the `bazel/sha256/` keyspace. `DigestMismatch`
+    // maps to 422 via `map_bridge_err`.
+    if let Err(e) = corelink_bazel_bridge::digest::verify_sha256(&digest.hash, &body) {
+        return map_bridge_err(e);
+    }
     tracing::debug!(
         instance = %instance,
         upload_id = %uuid,
@@ -761,7 +774,7 @@ mod tests {
         body::{to_bytes, Body},
         http::Request,
     };
-    use corelink_handler_cas::handler::fake_hash;
+    use corelink_bazel_bridge::digest::sha256_hex;
     use tower::ServiceExt;
 
     const HASH_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -799,7 +812,7 @@ mod tests {
     async fn cas_read_hit_returns_200_with_bytes() {
         let state = make_state();
         let payload = b"hello bazel".to_vec();
-        let hash = fake_hash(&payload);
+        let hash = sha256_hex(&payload);
         let app = router(state.clone());
 
         seed_cas_via_route(&app, TENANT, &hash, &payload).await;
@@ -845,7 +858,7 @@ mod tests {
     async fn cas_write_then_read_round_trip() {
         let state = make_state();
         let payload = b"round trip data".to_vec();
-        let hash = fake_hash(&payload);
+        let hash = sha256_hex(&payload);
         let app = router(state);
 
         seed_cas_via_route(&app, TENANT, &hash, &payload).await;
@@ -945,7 +958,7 @@ mod tests {
     async fn find_missing_partial_returns_only_absent() {
         let state = make_state();
         let payload = b"present blob".to_vec();
-        let hash = fake_hash(&payload);
+        let hash = sha256_hex(&payload);
         let app = router(state);
 
         seed_cas_via_route(&app, TENANT, &hash, &payload).await;
@@ -1118,10 +1131,38 @@ mod tests {
         let state = make_state();
         let app = router(state);
         let payload = b"five!".to_vec(); // 5 bytes
-        let hash = fake_hash(&payload);
+        let hash = sha256_hex(&payload);
         // Claim size 99 but send 5 bytes.
         let uuid = "test-uuid-mismatch";
         let uri = format!("/bazel/v2/{TENANT}/uploads/{uuid}/blobs/{hash}/99");
+        let req = Request::builder()
+            .uri(&uri)
+            .method("PUT")
+            .header("x-corelink-tenant-id", TENANT)
+            .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::from(payload))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    // ── CAS write with a MISMATCHED sha256 digest returns 422 ─────────────────
+
+    /// REAPI v2 content-addresses with SHA-256: a write whose body does NOT
+    /// hash to the client-supplied digest is rejected 422 at the REAPI
+    /// boundary (`verify_sha256`) BEFORE delegating to the shared handler —
+    /// poisoned bytes never enter the `bazel/sha256/` keyspace.
+    #[tokio::test]
+    async fn cas_write_sha256_mismatch_returns_422() {
+        let state = make_state();
+        let app = router(state);
+        let payload = b"honest bazel bytes".to_vec();
+        // A well-formed but WRONG sha256 digest (correct length, wrong value).
+        let wrong_hash = "0".repeat(64);
+        let size = payload.len();
+        let uuid = "test-uuid-poison";
+        let uri = format!("/bazel/v2/{TENANT}/uploads/{uuid}/blobs/{wrong_hash}/{size}");
         let req = Request::builder()
             .uri(&uri)
             .method("PUT")
@@ -1222,7 +1263,7 @@ mod tests {
     async fn cas_write_missing_scope_returns_403_insufficient_scope() {
         let app = router(make_state());
         let payload = b"no-scope-write".to_vec();
-        let hash = fake_hash(&payload);
+        let hash = sha256_hex(&payload);
         let size = payload.len();
         let uuid = "test-uuid-noscope";
         let uri = format!("/bazel/v2/{TENANT}/uploads/{uuid}/blobs/{hash}/{size}");
@@ -1245,7 +1286,7 @@ mod tests {
     async fn cas_write_read_only_scope_returns_403() {
         let app = router(make_state());
         let payload = b"read-only-cannot-write".to_vec();
-        let hash = fake_hash(&payload);
+        let hash = sha256_hex(&payload);
         let size = payload.len();
         let uuid = "test-uuid-readonly";
         let uri = format!("/bazel/v2/{TENANT}/uploads/{uuid}/blobs/{hash}/{size}");
@@ -1331,7 +1372,7 @@ mod tests {
     async fn cas_write_admin_scope_succeeds() {
         let app = router(make_state());
         let payload = b"admin-writes-ok".to_vec();
-        let hash = fake_hash(&payload);
+        let hash = sha256_hex(&payload);
         let size = payload.len();
         let uuid = "test-uuid-admin";
         let uri = format!("/bazel/v2/{TENANT}/uploads/{uuid}/blobs/{hash}/{size}");
@@ -1392,7 +1433,7 @@ mod tests {
     async fn cas_write_missing_tenant_header_returns_401() {
         let app = router(make_state());
         let payload = b"no-tenant".to_vec();
-        let hash = fake_hash(&payload);
+        let hash = sha256_hex(&payload);
         let size = payload.len();
         let uri = format!("/bazel/v2/{TENANT}/uploads/u1/blobs/{hash}/{size}");
         let req = Request::builder()
@@ -1516,7 +1557,7 @@ mod tests {
         let state = make_state();
         let app = router(state.clone());
         let payload = b"slot-release".to_vec();
-        let hash = fake_hash(&payload);
+        let hash = sha256_hex(&payload);
         let size = payload.len();
         let uri = format!("/bazel/v2/{TENANT}/uploads/u1/blobs/{hash}/{size}");
         let req = Request::builder()

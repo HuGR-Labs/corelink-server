@@ -40,10 +40,13 @@ use aws_sdk_s3::Client;
 use corelink_handler_cas::{
     AuditEvent, AuditEventKind, AuditSink, CasDeleteHandler, CasHandlerError, CasListHandler,
     CasReadHandler, CasReadRequest, CasReadResponse, CasWriteHandler, CasWriteRequest,
-    CasWriteResponse, InMemoryAuditSink, InMemorySliObserver, SliObservation, SliObserver,
+    CasWriteResponse, DigestAlgo, InMemoryAuditSink, InMemorySliObserver, SliObservation,
+    SliObserver,
 };
 use corelink_hash::Digest;
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
+use sha2::{Digest as _, Sha256};
+use subtle::ConstantTimeEq;
 use tracing::{debug, warn};
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -344,17 +347,30 @@ impl R2S3Client {
         Ok((out, next))
     }
 
-    /// Compute the R2 object key for a blob.
+    /// Compute the R2 object key for a blob, surface-partitioned by the
+    /// keyspace's content-addressing function ([`DigestAlgo`]).
     ///
-    /// Key format: `<region>/<tenant_prefix_16>/<digest>`. The
-    /// `tenant_prefix` is computed by the caller; on the production path
-    /// it is always `derive_prefix(secret_tdk, tenant_uuid)` (the
-    /// handlers fail closed without a TDK — F1/F2). `region` is the
-    /// handler's residency region (F7), so each regional env keys its
-    /// objects under its own region.
+    /// - **`Blake3`** (native CAS + sccache): `<region>/<tenant_prefix_16>/<digest>`.
+    /// - **`Sha256`** (Bazel REAPI v2): `<region>/<tenant_prefix_16>/bazel/sha256/<digest>`.
+    ///
+    /// The `bazel/sha256/` segment sits AFTER the tenant prefix so the
+    /// secret-keyed HMAC tenant isolation (layer 5 of `INV-TENANT-ISOLATION`)
+    /// is fully preserved; the sub-prefix only partitions the digest function
+    /// WITHIN a tenant's namespace. Each keyspace is single-function: a
+    /// SHA-256 blob is never co-resident with a BLAKE3 blob under one key,
+    /// so the durable gate's read-path re-verification always applies the
+    /// blob's own function (Option A, ADR-0044).
+    ///
+    /// The `tenant_prefix` is computed by the caller; on the production path
+    /// it is always `derive_prefix(secret_tdk, tenant_uuid)` (the handlers
+    /// fail closed without a TDK — F1/F2). `region` is the handler's
+    /// residency region (F7), so each regional env keys under its own region.
     #[must_use]
-    pub fn blob_key(region: &str, tenant_prefix: &str, digest: &str) -> String {
-        format!("{region}/{tenant_prefix}/{digest}")
+    pub fn blob_key(region: &str, tenant_prefix: &str, digest: &str, algo: DigestAlgo) -> String {
+        match algo {
+            DigestAlgo::Blake3 => format!("{region}/{tenant_prefix}/{digest}"),
+            DigestAlgo::Sha256 => format!("{region}/{tenant_prefix}/bazel/sha256/{digest}"),
+        }
     }
 }
 
@@ -415,9 +431,9 @@ impl R2CasHandler {
     /// `R2_TDK_HEX` is unset) — so the raw-padded public-prefix
     /// fallback used by simple non-UUID test fixtures is gated behind
     /// `#[cfg(test)]` and is unreachable in production (F1/F2).
-    fn r2_key(&self, tenant: &str, digest: &str) -> Result<String, String> {
+    fn r2_key(&self, tenant: &str, digest: &str, algo: DigestAlgo) -> Result<String, String> {
         let prefix = tenant_prefix(self.tdk.as_ref(), tenant)?;
-        Ok(R2S3Client::blob_key(&self.cas_region, &prefix, digest))
+        Ok(R2S3Client::blob_key(&self.cas_region, &prefix, digest, algo))
     }
 
     /// Emit both SLI observations (availability + latency).
@@ -534,11 +550,24 @@ fn raw_padded_prefix(tenant: &str) -> String {
 
 /// Enforce the CAS content-addressing invariant
 /// (`INV-CAS-INTEGRITY`): the supplied `bytes` MUST hash to
-/// `claimed_hash` under the canonical BLAKE3 digest.
+/// `claimed_hash` under the **keyspace's canonical digest function**,
+/// selected explicitly by `algo`:
+///
+/// - [`DigestAlgo::Blake3`] — native CAS + sccache (the BLAKE3 keyspace).
+/// - [`DigestAlgo::Sha256`] — the Bazel REAPI v2 `bazel/sha256/` keyspace.
+///
+/// The function is threaded as an EXPLICIT [`DigestAlgo`] (never inferred
+/// from hash-string length — that would be a silent gate). The durable gate
+/// is therefore surface-PARTITIONED, not literally BLAKE3-only-everywhere:
+/// each keyspace is single-function and the two never mix within one key, so
+/// the read-path re-verification (bitrot) always re-applies the SAME function
+/// the blob was admitted under (Option A, ADR-0044). A native/sccache caller
+/// always passes `Blake3` (behaviour unchanged); only the Bazel adapter
+/// passes `Sha256`.
 ///
 /// Returns `Ok(())` on a match, or `Err(actual_hex)` carrying the hash
-/// actually computed from the bytes so the caller can build the
-/// `HashMismatch` error and the `CorrectnessViolation` audit event.
+/// actually computed from the bytes (under `algo`) so the caller can build
+/// the `HashMismatch` error and the `CorrectnessViolation` audit event.
 ///
 /// A malformed `claimed_hash` (not canonical 64-char lowercase hex) is
 /// itself a mismatch — the durable store never persists/serves bytes
@@ -550,11 +579,35 @@ fn raw_padded_prefix(tenant: &str) -> String {
 /// — funnels through `R2CasHandler`, so this one gate closes the
 /// cache-poisoning hole across all of them. (The in-memory handler
 /// enforces the same invariant for dev/test.)
-fn verify_content_hash(claimed_hash: &str, bytes: &[u8]) -> Result<(), String> {
-    let actual = Digest::compute(bytes);
-    match Digest::from_hex(claimed_hash) {
-        Ok(claimed) if claimed.verify_constant_time(&actual) => Ok(()),
-        _ => Err(actual.to_hex()),
+fn verify_content_hash(algo: DigestAlgo, claimed_hash: &str, bytes: &[u8]) -> Result<(), String> {
+    match algo {
+        DigestAlgo::Blake3 => {
+            let actual = Digest::compute(bytes);
+            match Digest::from_hex(claimed_hash) {
+                Ok(claimed) if claimed.verify_constant_time(&actual) => Ok(()),
+                _ => Err(actual.to_hex()),
+            }
+        }
+        DigestAlgo::Sha256 => {
+            let mut hasher = Sha256::new();
+            hasher.update(bytes);
+            let actual_hex = hex::encode(hasher.finalize());
+            let claimed_lower = claimed_hash.to_ascii_lowercase();
+            // Constant-time compare (same posture as the BLAKE3 path's
+            // `verify_constant_time`): a malformed/short claim simply does not
+            // match — never admitted.
+            if actual_hex.len() == claimed_lower.len()
+                && actual_hex
+                    .as_bytes()
+                    .ct_eq(claimed_lower.as_bytes())
+                    .unwrap_u8()
+                    == 1
+            {
+                Ok(())
+            } else {
+                Err(actual_hex)
+            }
+        }
     }
 }
 
@@ -596,8 +649,10 @@ impl CasReadHandler for R2CasHandler {
             .map_err(CasHandlerError::AuditFailed)?;
 
         // Fail CLOSED if the tenant prefix is not derivable: never touch
-        // R2 under a degraded/empty (SHARED) prefix.
-        let key = match self.r2_key(&req.tenant, &req.hash) {
+        // R2 under a degraded/empty (SHARED) prefix. `req.algo` routes the
+        // read into the blob's own keyspace (`bazel/sha256/` for SHA-256,
+        // native for BLAKE3) so read-back is single-function.
+        let key = match self.r2_key(&req.tenant, &req.hash, req.algo) {
             Ok(k) => k,
             Err(e) => {
                 emit(true);
@@ -629,7 +684,7 @@ impl CasReadHandler for R2CasHandler {
                 // is served as trusted CAS content. A mismatch is a
                 // `CorrectnessViolation`, never a hit. (See
                 // `verify_content_hash`.)
-                if let Err(actual) = verify_content_hash(&req.hash, &bytes) {
+                if let Err(actual) = verify_content_hash(req.algo, &req.hash, &bytes) {
                     self.audit
                         .emit(AuditEvent::new(
                             AuditEventKind::CorrectnessViolation,
@@ -722,7 +777,7 @@ impl CasWriteHandler for R2CasHandler {
         // PUT; on mismatch emit `CorrectnessViolation` + a
         // `CorrectnessCas` SLI failure and reject with 422
         // `HashMismatch`. Nothing is written.
-        if let Err(actual) = verify_content_hash(&req.claimed_hash, &req.bytes) {
+        if let Err(actual) = verify_content_hash(req.algo, &req.claimed_hash, &req.bytes) {
             self.audit
                 .emit(AuditEvent::new(
                     AuditEventKind::CorrectnessViolation,
@@ -743,7 +798,7 @@ impl CasWriteHandler for R2CasHandler {
 
         // Fail CLOSED if the tenant prefix is not derivable: never touch
         // R2 under a degraded/empty (SHARED) prefix.
-        let key = match self.r2_key(&req.tenant, &req.claimed_hash) {
+        let key = match self.r2_key(&req.tenant, &req.claimed_hash, req.algo) {
             Ok(k) => k,
             Err(e) => {
                 emit(true);
@@ -838,8 +893,10 @@ impl CasDeleteHandler for R2CasHandler {
             .map_err(CasHandlerError::AuditFailed)?;
 
         // Fail CLOSED if the tenant prefix is not derivable: never touch
-        // R2 under a degraded/empty (SHARED) prefix.
-        let key = match self.r2_key(&req.tenant, &req.hash) {
+        // R2 under a degraded/empty (SHARED) prefix. DELETE is native-only
+        // (the Bazel REAPI bridge exposes no delete surface), so the BLAKE3
+        // keyspace applies.
+        let key = match self.r2_key(&req.tenant, &req.hash, DigestAlgo::Blake3) {
             Ok(k) => k,
             Err(e) => {
                 emit(true);
@@ -1082,7 +1139,14 @@ impl R2AcHandler {
     /// [`build_r2_ac_handler_from_env`]).
     fn r2_key(&self, tenant: &str, action_digest: &str) -> Result<String, String> {
         let prefix = tenant_prefix(self.tdk.as_ref(), tenant)?;
-        Ok(R2S3Client::blob_key(&self.ac_region, &prefix, action_digest))
+        // AC keys are native (BLAKE3) keyspace — REAPI AC action digests are
+        // stored under the same scheme as native CAS (no `bazel/sha256/` tag).
+        Ok(R2S3Client::blob_key(
+            &self.ac_region,
+            &prefix,
+            action_digest,
+            DigestAlgo::Blake3,
+        ))
     }
 
     /// Emit the (avail, latency) SLI pair for the lookup path. The
@@ -1596,14 +1660,21 @@ mod tests {
 
     #[test]
     fn blob_key_format_is_canonical() {
-        let key = R2S3Client::blob_key("iad", "abcdef1234567890", "deadbeef00000001");
+        let key = R2S3Client::blob_key(
+            "iad",
+            "abcdef1234567890",
+            "deadbeef00000001",
+            DigestAlgo::Blake3,
+        );
         assert_eq!(key, "iad/abcdef1234567890/deadbeef00000001");
     }
 
     #[tokio::test]
     async fn r2_cas_handler_key_uses_region_and_prefix() {
         let handler = make_test_handler("iad").await;
-        let key = handler.r2_key("tenant-abc", "abc123hash0000001").unwrap();
+        let key = handler
+            .r2_key("tenant-abc", "abc123hash0000001", DigestAlgo::Blake3)
+            .unwrap();
         // Key must start with the region segment.
         assert!(key.starts_with("iad/"), "key: {key}");
         // Key must end with the digest.
@@ -1641,7 +1712,7 @@ mod tests {
     fn verify_content_hash_accepts_matching_digest() {
         let bytes = b"the quick brown fox";
         let claimed = Digest::compute(bytes).to_hex();
-        assert!(verify_content_hash(&claimed, bytes).is_ok());
+        assert!(verify_content_hash(DigestAlgo::Blake3, &claimed, bytes).is_ok());
     }
 
     #[test]
@@ -1649,7 +1720,7 @@ mod tests {
         // Claim the digest of "A" but hand over the bytes of "B".
         let claimed = Digest::compute(b"A").to_hex();
         let actual_expected = Digest::compute(b"B").to_hex();
-        let err = verify_content_hash(&claimed, b"B").expect_err("must reject");
+        let err = verify_content_hash(DigestAlgo::Blake3, &claimed, b"B").expect_err("must reject");
         // The reported `actual` is the TRUE hash of the bytes given,
         // not the (lying) claimed hash.
         assert_eq!(err, actual_expected);
@@ -1660,8 +1731,96 @@ mod tests {
     fn verify_content_hash_rejects_malformed_claim() {
         // A non-canonical claimed hash can never be validated — treat
         // as a mismatch, never persist/serve under an unparseable key.
-        assert!(verify_content_hash("not-a-hash", b"anything").is_err());
-        assert!(verify_content_hash("", b"anything").is_err());
+        assert!(verify_content_hash(DigestAlgo::Blake3, "not-a-hash", b"anything").is_err());
+        assert!(verify_content_hash(DigestAlgo::Blake3, "", b"anything").is_err());
+    }
+
+    // ── Surface-tagged SHA-256 keyspace (Option A / ADR-0044) ──────────────
+
+    /// Real SHA-256 of `bytes` as lowercase hex (test helper).
+    fn sha256_hex_t(bytes: &[u8]) -> String {
+        let mut h = Sha256::new();
+        h.update(bytes);
+        hex::encode(h.finalize())
+    }
+
+    #[test]
+    fn verify_content_hash_sha256_accepts_correct_and_rejects_mismatch() {
+        let bytes = b"bazel reapi blob";
+        let good = sha256_hex_t(bytes);
+        assert!(verify_content_hash(DigestAlgo::Sha256, &good, bytes).is_ok());
+
+        // Wrong claim → Err carrying the TRUE sha256 of the bytes.
+        let err = verify_content_hash(DigestAlgo::Sha256, &"0".repeat(64), bytes)
+            .expect_err("must reject");
+        assert_eq!(err, good);
+    }
+
+    #[test]
+    fn verify_content_hash_sha256_rejects_malformed_claim() {
+        assert!(verify_content_hash(DigestAlgo::Sha256, "not-hex", b"x").is_err());
+        assert!(verify_content_hash(DigestAlgo::Sha256, "", b"x").is_err());
+    }
+
+    #[test]
+    fn verify_content_hash_algos_do_not_cross() {
+        // A correct BLAKE3 claim is NOT accepted under the SHA-256 keyspace,
+        // and vice-versa — the gate is single-function per keyspace, never
+        // blanket OR-accept (the bug Option A refuses to ship).
+        let bytes = b"single-function keyspace";
+        let blake3_claim = Digest::compute(bytes).to_hex();
+        let sha256_claim = sha256_hex_t(bytes);
+
+        assert!(verify_content_hash(DigestAlgo::Blake3, &blake3_claim, bytes).is_ok());
+        assert!(verify_content_hash(DigestAlgo::Sha256, &blake3_claim, bytes).is_err());
+        assert!(verify_content_hash(DigestAlgo::Sha256, &sha256_claim, bytes).is_ok());
+        assert!(verify_content_hash(DigestAlgo::Blake3, &sha256_claim, bytes).is_err());
+    }
+
+    #[test]
+    fn blob_key_keyspace_isolation_native_vs_bazel() {
+        let digest = "a".repeat(64);
+        let native = R2S3Client::blob_key("iad", "abcdef1234567890", &digest, DigestAlgo::Blake3);
+        let bazel = R2S3Client::blob_key("iad", "abcdef1234567890", &digest, DigestAlgo::Sha256);
+
+        // Native: <region>/<prefix>/<digest> — no bazel sub-prefix.
+        assert_eq!(native, format!("iad/abcdef1234567890/{digest}"));
+        assert!(!native.contains("bazel/sha256/"));
+
+        // Bazel: the sha256 keyspace sub-prefix sits AFTER the tenant prefix.
+        assert_eq!(bazel, format!("iad/abcdef1234567890/bazel/sha256/{digest}"));
+        assert!(bazel.starts_with("iad/abcdef1234567890/"));
+
+        // The two keyspaces never collide for the same digest.
+        assert_ne!(native, bazel);
+    }
+
+    /// Round-trip keyspace isolation through the handler's key derivation: a
+    /// SHA-256 (Bazel) read/write derives the `bazel/sha256/` key, while a
+    /// BLAKE3 (native) request for the SAME digest derives a DIFFERENT key —
+    /// so a SHA-256 blob is never found under the native keyspace and vice
+    /// versa. (`r2_key` is the production key authority; this exercises it
+    /// without S3 I/O.)
+    #[tokio::test]
+    async fn r2_key_round_trip_keyspace_isolation() {
+        let handler = make_test_handler_with_tdk("iad").await;
+        let uuid = "00000000-0000-4000-8000-000000000001";
+        let digest = "b".repeat(64);
+
+        let native_key = handler
+            .r2_key(uuid, &digest, DigestAlgo::Blake3)
+            .expect("native key");
+        let bazel_key = handler
+            .r2_key(uuid, &digest, DigestAlgo::Sha256)
+            .expect("bazel key");
+
+        // Same tenant prefix (HMAC tenant isolation preserved), divergent
+        // keyspace tail.
+        assert!(bazel_key.contains("/bazel/sha256/"));
+        assert!(!native_key.contains("/bazel/sha256/"));
+        assert_ne!(native_key, bazel_key);
+        // A SHA-256 blob's key is NOT a hit under the native keyspace.
+        assert!(!bazel_key.starts_with(&native_key));
     }
 
     /// The load-bearing security regression: a WRITE whose bytes do not
@@ -1863,7 +2022,9 @@ mod tests {
         let handler = make_test_handler_with_tdk("iad").await;
         // A canonical UUIDv7-shaped tenant id.
         let tenant = "0190abcd-1234-75ab-8def-0123456789ab";
-        let key = handler.r2_key(tenant, &"d".repeat(64)).unwrap();
+        let key = handler
+            .r2_key(tenant, &"d".repeat(64), DigestAlgo::Blake3)
+            .unwrap();
         let parts: Vec<&str> = key.split('/').collect();
         assert_eq!(parts.len(), 3, "key: {key}");
         let prefix = parts[1];
@@ -1940,7 +2101,11 @@ mod tests {
         for region in ["iad", "lhr", "sam", "nrt", "syd"] {
             let handler = make_test_handler_with_tdk(region).await;
             let key = handler
-                .r2_key("0190abcd-1234-75ab-8def-0123456789ab", &"a".repeat(64))
+                .r2_key(
+                    "0190abcd-1234-75ab-8def-0123456789ab",
+                    &"a".repeat(64),
+                    DigestAlgo::Blake3,
+                )
                 .unwrap();
             assert!(
                 key.starts_with(&format!("{region}/")),
@@ -1950,7 +2115,11 @@ mod tests {
         // A non-iad region must NOT collapse to the iad default.
         let lhr = make_test_handler_with_tdk("lhr").await;
         let key = lhr
-            .r2_key("0190abcd-1234-75ab-8def-0123456789ab", &"a".repeat(64))
+            .r2_key(
+                "0190abcd-1234-75ab-8def-0123456789ab",
+                &"a".repeat(64),
+                DigestAlgo::Blake3,
+            )
             .unwrap();
         assert!(
             !key.starts_with("iad/"),

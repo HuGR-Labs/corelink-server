@@ -227,7 +227,12 @@ mod tests {
     fn list_prefix_layout_matches_blob_key() {
         // The LIST prefix MUST be the leading path of the whole-blob key
         // <region>/<prefix>/<digest>.
-        let key = R2S3Client::blob_key("iad", "abcdef1234567890", "deadbeef");
+        let key = R2S3Client::blob_key(
+            "iad",
+            "abcdef1234567890",
+            "deadbeef",
+            corelink_handler_cas::DigestAlgo::Blake3,
+        );
         let prefix = cas_list_prefix("iad", "abcdef1234567890");
         assert!(key.starts_with(&prefix), "key={key} prefix={prefix}");
     }

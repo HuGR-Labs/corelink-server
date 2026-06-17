@@ -45,6 +45,21 @@ pub enum BazelBridgeError {
         actual: u64,
     },
 
+    /// The uploaded bytes do not hash (SHA-256, the REAPI v2 content-
+    /// addressing function) to the client-supplied digest. The REAPI write
+    /// boundary verifies this BEFORE delegating to the shared handler (a
+    /// clean early rejection + defense-in-depth; the durable gate re-verifies
+    /// the SHA-256 keyspace independently). Distinct from
+    /// [`Self::SizeMismatch`] (byte length) and [`Self::InvalidDigest`]
+    /// (malformed digest).
+    ///
+    /// HTTP 422 equivalent.
+    #[error("digest mismatch: {reason}")]
+    DigestMismatch {
+        /// Human-readable explanation (expected vs actual SHA-256).
+        reason: String,
+    },
+
     /// Caller attempted to access another tenant's objects. Fail-CLOSED.
     ///
     /// HTTP 403 equivalent.
@@ -90,6 +105,7 @@ impl BazelBridgeError {
         match self {
             Self::NotFound { .. } => 404,
             Self::InvalidDigest { .. } | Self::SizeMismatch { .. } => 400,
+            Self::DigestMismatch { .. } => 422,
             Self::CrossTenantDenied { .. } => 403,
             Self::AuditFailed(_) => 503,
             Self::BatchTooLarge { .. } => 413,

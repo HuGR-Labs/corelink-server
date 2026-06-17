@@ -58,12 +58,14 @@
 #![deny(missing_debug_implementations)]
 
 pub mod audit;
+pub mod digest_algo;
 pub mod error;
 pub mod handler;
 pub mod observer;
 pub mod request;
 
 pub use audit::{AuditEvent, AuditEventKind, AuditSink, InMemoryAuditSink};
+pub use digest_algo::DigestAlgo;
 pub use error::CasHandlerError;
 pub use handler::{
     CasDeleteHandler, CasListHandler, CasReadHandler, CasWriteHandler, InMemoryCasHandler,

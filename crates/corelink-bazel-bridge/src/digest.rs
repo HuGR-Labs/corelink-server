@@ -15,8 +15,46 @@
 //!    implement.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
+use subtle::ConstantTimeEq;
 
 use crate::error::BazelBridgeError;
+
+/// Compute the SHA-256 of `bytes` as a 64-char lowercase hex string.
+///
+/// This is the REAPI v2 content-addressing function (SHA-256 is the REAPI
+/// default), used by the boundary integrity check [`verify_sha256`].
+#[must_use]
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
+/// REAPI-boundary content-addressing check: do `bytes` hash (SHA-256) to
+/// `expected_hex`? Constant-time compare; `expected_hex` is matched
+/// case-insensitively (REAPI digests are lowercase hex, but we normalise
+/// defensively). Mirrors `corelink-adapter-host::pip::wheel::verify_sha256`.
+///
+/// This is defense-in-depth at the REAPI write boundary (a clean early 422
+/// before delegating to the shared handler); the durable gate re-verifies
+/// the SHA-256 keyspace independently on write AND read (bitrot).
+///
+/// # Errors
+///
+/// Returns [`BazelBridgeError::DigestMismatch`] (mapped to a 422 by the route)
+/// when the SHA-256 of `bytes` does not equal `expected_hex`.
+pub fn verify_sha256(expected_hex: &str, bytes: &[u8]) -> Result<(), BazelBridgeError> {
+    let actual = sha256_hex(bytes);
+    let exp_lower = expected_hex.to_ascii_lowercase();
+    if actual.as_bytes().ct_eq(exp_lower.as_bytes()).unwrap_u8() == 1 {
+        Ok(())
+    } else {
+        Err(BazelBridgeError::DigestMismatch {
+            reason: format!("SHA-256 mismatch: expected={exp_lower} actual={actual}"),
+        })
+    }
+}
 
 /// A validated REAPI v2 content digest: SHA-256 hash + expected byte size.
 ///
@@ -281,5 +319,58 @@ mod tests {
         assert!(text.contains("sizeBytes"));
         let back: DigestJson = serde_json::from_str(&text).expect("from_str");
         assert_eq!(back.size_bytes, 99);
+    }
+
+    // ── REAPI v2 SHA-256 boundary verify ──────────────────────────────────
+
+    #[test]
+    fn sha256_hex_matches_known_vector() {
+        // SHA256("abc") = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn verify_sha256_accepts_correct_digest() {
+        let bytes = b"bazel build target";
+        let hex = sha256_hex(bytes);
+        assert!(verify_sha256(&hex, bytes).is_ok());
+    }
+
+    #[test]
+    fn verify_sha256_accepts_uppercase_expected() {
+        let bytes = b"bazel build target";
+        let hex = sha256_hex(bytes).to_ascii_uppercase();
+        assert!(verify_sha256(&hex, bytes).is_ok());
+    }
+
+    #[test]
+    fn verify_sha256_rejects_mismatch() {
+        let bytes = b"bazel build target";
+        let wrong = "0".repeat(64);
+        assert!(matches!(
+            verify_sha256(&wrong, bytes),
+            Err(BazelBridgeError::DigestMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn verify_sha256_is_byte_sensitive() {
+        // A 1-byte difference must reject.
+        let a = b"hello world";
+        let b = b"hello worlD";
+        let hex = sha256_hex(b);
+        assert!(matches!(
+            verify_sha256(&hex, a),
+            Err(BazelBridgeError::DigestMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn verify_sha256_mismatch_is_422() {
+        let err = verify_sha256(&"0".repeat(64), b"x").expect_err("mismatch");
+        assert_eq!(err.http_status(), 422);
     }
 }

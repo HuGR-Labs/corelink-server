@@ -16,6 +16,11 @@ corelink-handler-ac = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# REAPI v2 content-addresses with SHA-256; the bridge verifies the client
+# digest against the bytes at the boundary (constant-time) before delegating.
+sha2 = { workspace = true }
+hex = { workspace = true }
+subtle = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

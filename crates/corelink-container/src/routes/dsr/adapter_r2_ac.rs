@@ -181,7 +181,12 @@ impl BackendErasureAdapter for R2AcEraseAdapter {
             let digest = col_str(row, "action_digest").ok_or_else(|| {
                 ErasureBackendError::Transport("ac_meta.action_digest missing/non-text".to_owned())
             })?;
-            let key = R2S3Client::blob_key(&region, &prefix, &digest);
+            let key = R2S3Client::blob_key(
+                &region,
+                &prefix,
+                &digest,
+                corelink_handler_cas::DigestAlgo::Blake3,
+            );
             targets.push((self.bucket_for(&region), key));
         }
 
@@ -250,7 +255,12 @@ mod tests {
     fn ac_key_layout_matches_handler() {
         // The erase key MUST equal what R2AcHandler wrote:
         // <region>/<tenant_prefix_hex>/<action_digest>.
-        let key = R2S3Client::blob_key("iad", "abcdef1234567890", "a".repeat(64).as_str());
+        let key = R2S3Client::blob_key(
+            "iad",
+            "abcdef1234567890",
+            "a".repeat(64).as_str(),
+            corelink_handler_cas::DigestAlgo::Blake3,
+        );
         assert_eq!(key, format!("iad/abcdef1234567890/{}", "a".repeat(64)));
     }
 

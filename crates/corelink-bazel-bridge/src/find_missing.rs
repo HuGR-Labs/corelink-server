@@ -32,7 +32,7 @@
 
 use std::sync::Arc;
 
-use corelink_handler_cas::{CasHandlerError, CasReadHandler, CasReadRequest};
+use corelink_handler_cas::{CasHandlerError, CasReadHandler, CasReadRequest, DigestAlgo};
 use serde::{Deserialize, Serialize};
 
 use crate::digest::{Digest, DigestJson};
@@ -129,13 +129,17 @@ impl FindMissingHandler for InMemoryFindMissing {
         let mut missing = Vec::new();
 
         for digest in digests {
+            // findMissingBlobs is a REAPI-only (Bazel) surface; existence MUST
+            // be probed in the SHA-256 `bazel/sha256/` keyspace the writes land
+            // in, else every Bazel blob reports missing (cache never hits).
             let req = CasReadRequest::new(
                 tenant,
                 digest.hash.as_str(),
                 principal,
                 caller_tenant,
                 at_unix_ms,
-            );
+            )
+            .with_algo(DigestAlgo::Sha256);
             match self.cas.read(req) {
                 Ok(_) => {
                     // Blob present — do not add to missing list.

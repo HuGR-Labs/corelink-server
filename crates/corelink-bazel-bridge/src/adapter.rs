@@ -28,7 +28,7 @@ use corelink_handler_ac::{
     AcHandlerError, AcLookupHandler, AcLookupRequest, AcUpdateHandler, AcUpdateRequest,
 };
 use corelink_handler_cas::{
-    CasHandlerError, CasReadHandler, CasReadRequest, CasWriteHandler, CasWriteRequest,
+    CasHandlerError, CasReadHandler, CasReadRequest, CasWriteHandler, CasWriteRequest, DigestAlgo,
 };
 
 use crate::digest::Digest;
@@ -109,7 +109,11 @@ impl BazelAdapter {
         at_unix_ms: u64,
     ) -> Result<Vec<u8>, BazelBridgeError> {
         check_tenant(instance, caller_tenant)?;
-        let req = CasReadRequest::new(instance, &digest.hash, principal, caller_tenant, at_unix_ms);
+        // REAPI v2 content-addresses with SHA-256: tag the read into the
+        // surface-partitioned `bazel/sha256/` keyspace so the durable gate
+        // re-verifies it as SHA-256 (never BLAKE3) on the bitrot read path.
+        let req = CasReadRequest::new(instance, &digest.hash, principal, caller_tenant, at_unix_ms)
+            .with_algo(DigestAlgo::Sha256);
         self.cas_read
             .read(req)
             .map(|resp| resp.bytes)
@@ -147,6 +151,10 @@ impl BazelAdapter {
         // Thread the Worker-resolved per-tier storage cap into the reservation so
         // the byte-accounting decorator seeds a fresh row with the real cap;
         // `None` ⇒ fail-CLOSED on an unseeded tenant (never uncapped).
+        // REAPI v2 content-addresses with SHA-256: tag the write into the
+        // surface-partitioned `bazel/sha256/` keyspace; the durable gate
+        // verifies `claimed_hash == SHA-256(bytes)` (never BLAKE3) and stores
+        // under that sub-prefix so read-back is single-function.
         let req = CasWriteRequest::new(
             instance,
             &digest.hash,
@@ -155,7 +163,8 @@ impl BazelAdapter {
             ctx.caller_tenant,
             ctx.at_unix_ms,
         )
-        .with_storage_quota_bytes(ctx.storage_quota_bytes);
+        .with_storage_quota_bytes(ctx.storage_quota_bytes)
+        .with_algo(DigestAlgo::Sha256);
         self.cas_write
             .write(req)
             .map(|_| ())
@@ -294,6 +303,7 @@ mod tests {
     use corelink_handler_ac::{
         InMemoryAcHandler, InMemoryAuditSink as AcAuditSink, InMemorySliObserver as AcSliObserver,
     };
+    use crate::digest::sha256_hex;
     use corelink_handler_cas::handler::fake_hash;
     use corelink_handler_cas::{InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver};
 
@@ -317,7 +327,10 @@ mod tests {
     const TENANT: &str = "acme";
 
     fn seed_cas_blob(adapter: &BazelAdapter, tenant: &str, bytes: &[u8]) -> Digest {
-        let hash = fake_hash(bytes);
+        // The Bazel CAS keyspace content-addresses with SHA-256 (the adapter
+        // tags writes `DigestAlgo::Sha256`), so the in-memory fake now verifies
+        // a real SHA-256 digest.
+        let hash = sha256_hex(bytes);
         let digest = Digest::new(&hash, bytes.len() as u64).expect("digest");
         adapter
             .cas_put(tenant, &digest, bytes.to_vec(), WriteCtx { principal: "p1", caller_tenant: tenant, at_unix_ms: 0, storage_quota_bytes: Some(0) })
