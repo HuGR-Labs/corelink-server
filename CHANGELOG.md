@@ -53,6 +53,13 @@ Each entry cross-references:
   very next write. The in-memory test store mirrors the same semantics.
 
 ### Security
+- **Audit export/analytics had no Argon2id PAT-possession backstop → leaked PAT_SIGNING_KEY = cross-tenant audit exfil (rt-nuclear #17).**
+  The `/v1/audit/export` and `/v1/audit/analytics/*` surfaces trusted the Worker-resolved tenant header
+  without re-verifying PAT possession, so a leaked `PAT_SIGNING_KEY` (which lets an attacker HMAC-forge a
+  bearer) could read any victim tenant's audit log / analytics. These routes now carry the SAME optional
+  `NativePatGate` the native CAS/AC/Bazel/Turbo states use: when wired (prod), each handler re-runs the
+  full Argon2id Option-B verify of the bearer against the authenticated tenant AFTER the scope+tenant
+  gate and BEFORE any data access (401 forged/wrong-tenant, 503 verifier fault); `None` in dev/CI.
 - **OCI in-flight byte ceiling was global-only → one tenant could starve all (rt-nuclear #3/#12).**
   The OCI blob-upload path enforced only a GLOBAL 512 MiB in-flight ceiling, so a single tenant could
   fill the entire ceiling (its session cap × layer size easily exceeds it) and `429` every other

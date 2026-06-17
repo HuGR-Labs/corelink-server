@@ -50,6 +50,13 @@ pub struct AuditExportRouteState {
     /// [`crate::wall_clock::InMemoryFakeWallClock`] for deterministic
     /// rate-limit timing.
     pub wall_clock: Arc<dyn WallClock>,
+    /// Optional native PAT possession gate (rt-nuclear #17 — defense-in-depth).
+    /// `Some` in production (PAT_SIGNING_KEY + D1) — re-runs the full Argon2id
+    /// Option-B verify at the TOP of the export handler, AFTER the scope+tenant
+    /// gate, BEFORE any data access, so a leaked `PAT_SIGNING_KEY` cannot serve a
+    /// forged tenant's audit log. `None` in dev/CI (skipped). Mirrors
+    /// `cas::CasRouteState::pat_gate`. See [`crate::native_pat_gate`].
+    pub pat_gate: Option<Arc<crate::native_pat_gate::NativePatGate>>,
 }
 
 /// Manual `Debug` impl (wave-20 A-P3-02 closure): the `dyn` trait-object
@@ -94,6 +101,7 @@ pub fn build_state() -> AuditExportRouteState {
             audit_sink,
             pager_page_size: R2_LIST_PAGE_SIZE,
             wall_clock,
+            pat_gate: None,
         }
     }
     #[cfg(target_arch = "wasm32")]

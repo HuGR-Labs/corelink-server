@@ -44,6 +44,7 @@ pub(super) async fn handle_event_count(
     auth: crate::auth_tenant::AuthTenant,
     prelude: Option<Extension<RequestPrelude>>,
     Query(query): Query<EventCountQuery>,
+    headers: axum::http::HeaderMap,
 ) -> axum::response::Response {
     let tenant = match Uuid::parse_str(auth.0.trim()) {
         Ok(t) => t,
@@ -51,6 +52,13 @@ pub(super) async fn handle_event_count(
             return (StatusCode::BAD_REQUEST, "tenant: invalid uuid in header").into_response();
         }
     };
+    // Native PAT possession gate (rt-nuclear #17 — defense-in-depth): re-verify the
+    // bearer PAT resolves to the authenticated tenant BEFORE any data access, so a
+    // leaked PAT_SIGNING_KEY cannot serve a forged tenant's analytics. Mirrors
+    // `cas::pat_gate_reject`. `None` in dev/CI ⇒ skipped.
+    if let Some(resp) = super::pat_gate_reject(&state, &auth.0, &headers).await {
+        return resp;
+    }
     if query.from >= query.to {
         return emit_or_503(
             &state,

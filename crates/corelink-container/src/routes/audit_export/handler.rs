@@ -54,6 +54,7 @@ pub(super) async fn handle_export(
     auth: crate::auth_tenant::AuthTenant,
     Path(path_tenant_str): Path<String>,
     Query(query): Query<AuditExportQuery>,
+    headers: axum::http::HeaderMap,
 ) -> axum::response::Response {
     // 1. Auth — the authenticated tenant is the PAT-resolved
     //    `x-corelink-tenant-id` header bound by `AuthTenant` (the SOLE
@@ -95,6 +96,23 @@ pub(super) async fn handle_export(
             return resp;
         }
         return (StatusCode::FORBIDDEN, "cross-tenant audit-export denied").into_response();
+    }
+
+    // 1c. Native PAT possession gate (rt-nuclear #17 — defense-in-depth): a leaked
+    //     `PAT_SIGNING_KEY` lets an attacker HMAC-forge a bearer for the audit
+    //     surface. Re-verify the bearer PAT (full Argon2id Option-B pipeline)
+    //     resolves to the AUTHENTICATED tenant, AFTER the scope+tenant gate, BEFORE
+    //     any data access. `Some(resp)` ⇒ REJECT (401 forged/wrong-tenant; 503
+    //     verifier fault); `None` ⇒ proceed (or gate absent in dev/CI). Mirrors
+    //     `cas::pat_gate_reject`.
+    if let Some(gate) = state.pat_gate.as_ref() {
+        let bearer = headers
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        if let Err(resp) = gate.verify(&auth.0, bearer).await {
+            return resp;
+        }
     }
 
     // 2. Parse the window. Reject inverted / equal bounds at the

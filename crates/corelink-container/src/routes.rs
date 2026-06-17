@@ -500,8 +500,14 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         wall_clock: crate::wall_clock::default_wall_clock(),
         internal_auth_key: admin_internal_auth_key,
     };
-    let audit_export_state = audit_export::build_state();
-    let audit_analytics_state = audit_analytics::build_state(shadow_factory);
+    let mut audit_export_state = audit_export::build_state();
+    // Native PAT possession backstop (rt-nuclear #17): the audit-export +
+    // analytics surfaces were UN-gated, so a leaked PAT_SIGNING_KEY could forge a
+    // bearer to exfiltrate any victim tenant's audit log / analytics. Wire the
+    // SAME gate the native CAS/AC/Bazel/Turbo states carry.
+    audit_export_state.pat_gate = native_pat_gate.clone();
+    let mut audit_analytics_state = audit_analytics::build_state(shadow_factory);
+    audit_analytics_state.pat_gate = native_pat_gate.clone();
     // Customer dashboard (WP-3): D1-backed handler when the D1 env is
     // present; InMemory fallback for dev/CI (fail-closed env-gate,
     // mirroring `adapter_pat::PatVerifier::from_env`).
