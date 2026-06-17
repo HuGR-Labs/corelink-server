@@ -65,6 +65,7 @@
 
 #![forbid(unsafe_code)]
 
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -531,17 +532,97 @@ fn block_on_release(acc: &ByteAccountant, tenant: &str, bytes: i64) {
     }
 }
 
+/// Number of per-`(tenant, hash)` serialization-lock shards held by an
+/// [`AccountingCasHandler`].
+///
+/// rt-nuclear C2 (CAS write-vs-delete byte-accounting race): `delete_if_present`
+/// in `r2_s3` serializes the HEAD+DELETE measure-and-delete **per key**, but that
+/// lock covers delete-vs-delete ONLY. A concurrent overwrite-`write` of the SAME
+/// content-addressed key takes NO part in it, so a `delete` of key K (size L) can
+/// observe size L and `release` L while a racing `write` independently
+/// reserves+commits its own bytes — the two operations' reserve/release no longer
+/// net to the true on-disk total, UNDER-counting `bytes_used` by up to L when the
+/// write wins (the blob is on disk but the counter was decremented) → a
+/// storage-quota evasion.
+///
+/// We close that by serializing the FULL reserve→commit→release of a `write` and
+/// the FULL delete→release of a `delete` against the SAME `(tenant, hash)` under
+/// one lock — so their accounting sequences can never interleave for one key,
+/// while distinct keys stay fully concurrent.
+///
+/// A FIXED, power-of-two shard array keeps the lock set **memory-bounded** (no
+/// per-key map that grows with the live keyspace and needs pruning, unlike the
+/// `r2_s3` delete map): every `(tenant, hash)` deterministically maps to one of
+/// these shards. Distinct keys that collide on a shard serialize (a rare,
+/// correctness-preserving false-share); the same key ALWAYS maps to the same
+/// shard, which is the property the race requires. 256 shards keep cross-key
+/// contention negligible for any realistic per-container concurrency.
+const CAS_LOCK_SHARDS: usize = 256;
+
+impl AccountingCasHandler {
+    /// Acquire the per-`(tenant, hash)` serialization guard (the shard the key
+    /// hashes to) and block on it via the SAME `block_in_place` + `block_on`
+    /// bridge the R2 handlers use for their async I/O.
+    ///
+    /// Held by BOTH [`Self::write`] (across reserve→inner-PUT→release) and
+    /// [`Self::delete`] (across inner-delete→release) so a write and a delete of
+    /// the SAME content-addressed key cannot interleave their byte-accounting
+    /// sequences (rt-nuclear C2). The returned guard must be held for the whole
+    /// accounting sequence.
+    ///
+    /// Returns an [`tokio::sync::OwnedMutexGuard`] (the shard `Arc` is cloned so
+    /// the guard owns its reference and need not borrow the array) — held by the
+    /// caller across the entire reserve/commit/release sequence.
+    fn lock_for(&self, tenant: &str, hash: &str) -> tokio::sync::OwnedMutexGuard<()> {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        tenant.hash(&mut hasher);
+        // A separator so `(a, bc)` and `(ab, c)` cannot collapse to one key.
+        0u8.hash(&mut hasher);
+        hash.hash(&mut hasher);
+        // Map the key hash onto a shard. The modulo is correct for any shard
+        // count; `CAS_LOCK_SHARDS` (256) is a power of two so the distribution is
+        // uniform and the op is a single cheap division off a 64-bit hash.
+        let idx = (hasher.finish() as usize) % self.key_locks.len();
+        // `idx < len` by construction (modulo), so `get` is always `Some`; the
+        // `unwrap_or_else` is unreachable totality that keeps clippy's
+        // `indexing_slicing` happy without a panic path.
+        let lock = self
+            .key_locks
+            .get(idx)
+            .map(Arc::clone)
+            .unwrap_or_else(|| Arc::new(tokio::sync::Mutex::new(())));
+        let handle = tokio::runtime::Handle::current();
+        tokio::task::block_in_place(|| handle.block_on(lock.lock_owned()))
+    }
+}
+
 /// Storage-byte-accounting decorator over the CAS write + delete trait objects.
 ///
 /// Holds the inner `R2CasHandler` (behind both trait objects) + the accountant.
 /// Implements [`corelink_handler_cas::CasWriteHandler`] and
 /// [`corelink_handler_cas::CasDeleteHandler`] with reserve→commit→release; see
 /// the module-section comment above for the full discipline.
-#[derive(Debug)]
+///
+/// `key_locks` is a FIXED [`CAS_LOCK_SHARDS`]-wide array of per-`(tenant, hash)`
+/// serialization locks (see [`CAS_LOCK_SHARDS`] for the rt-nuclear C2 rationale):
+/// both `write` and `delete` acquire the shard their key maps to for their entire
+/// reserve/commit/release sequence, so a write and a delete of the SAME key can
+/// never interleave their accounting (which would under-count `bytes_used`).
 pub struct AccountingCasHandler {
     write_inner: Arc<dyn corelink_handler_cas::CasWriteHandler>,
     delete_inner: Arc<dyn corelink_handler_cas::CasDeleteHandler>,
     accountant: Arc<ByteAccountant>,
+    /// Fixed, memory-bounded shard array of per-`(tenant, hash)` async locks.
+    key_locks: Arc<Vec<Arc<tokio::sync::Mutex<()>>>>,
+}
+
+impl core::fmt::Debug for AccountingCasHandler {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("AccountingCasHandler")
+            .field("accountant", &self.accountant)
+            .field("key_lock_shards", &self.key_locks.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl AccountingCasHandler {
@@ -552,10 +633,14 @@ impl AccountingCasHandler {
         delete_inner: Arc<dyn corelink_handler_cas::CasDeleteHandler>,
         accountant: Arc<ByteAccountant>,
     ) -> Self {
+        let key_locks = (0..CAS_LOCK_SHARDS)
+            .map(|_| Arc::new(tokio::sync::Mutex::new(())))
+            .collect::<Vec<_>>();
         Self {
             write_inner,
             delete_inner,
             accountant,
+            key_locks: Arc::new(key_locks),
         }
     }
 }
@@ -572,6 +657,12 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
         // FRESH `tenant_storage_state` row; `None` ⇒ indeterminate ⇒ a fresh row
         // FAILS CLOSED (never seeded uncapped).
         let quota_seed = req.storage_quota_bytes;
+        // rt-nuclear C2: hold the per-`(tenant, hash)` serialization guard across
+        // the WHOLE reserve→commit→release below, so a concurrent `delete` of the
+        // SAME content-addressed key cannot interleave its delete→release with our
+        // reserve/release and under-count `bytes_used`. Distinct keys map to other
+        // shards and stay concurrent.
+        let _key_guard = self.lock_for(&tenant, &req.claimed_hash);
         // RESERVE before the R2 PUT (cluster-C): an over-cap / indeterminate
         // reservation is rejected here, so the inner write — the durable R2 PUT
         // — NEVER runs and no uncounted blob is committed.
@@ -626,6 +717,13 @@ impl corelink_handler_cas::CasDeleteHandler for AccountingCasHandler {
         req: corelink_handler_cas::CasDeleteRequest,
     ) -> Result<corelink_handler_cas::CasDeleteResponse, corelink_handler_cas::CasHandlerError> {
         let tenant = req.tenant.clone();
+        // rt-nuclear C2: hold the SAME per-`(tenant, hash)` serialization guard the
+        // write path uses, across the WHOLE inner-delete→release below, so a
+        // concurrent overwrite-`write` of the SAME content-addressed key cannot
+        // interleave its reserve/release with our delete→release (which would let
+        // the delete release this key's bytes while the write re-commits them →
+        // `bytes_used` under-count). Distinct keys hash to other shards (concurrent).
+        let _key_guard = self.lock_for(&tenant, &req.hash);
         let resp = self.delete_inner.delete(req)?;
         // RELEASE the reclaimed bytes so a delete frees the tenant's headroom
         // (cluster-C: deletes that never decrement leak the cap forever).
@@ -1297,6 +1395,116 @@ mod decorator_tests {
             store.used("t-race", REGION),
             10,
             "the counter must never exceed the cap under concurrency"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_write_vs_delete_same_key_nets_to_truth() {
+        // rt-nuclear C2: a `delete` of CAS key K (size L) racing a concurrent
+        // overwrite-`write` of the SAME (tenant, hash) must leave `bytes_used`
+        // EQUAL to the on-disk reality — L when the write wins (blob present), 0
+        // when the delete wins (blob absent). Before the fix the delete's
+        // release(L) and the write's independent reserve/release could interleave
+        // so the two did NOT net to the true on-disk total, UNDER-counting
+        // `bytes_used` by up to L (storage-quota evasion). The per-(tenant, hash)
+        // decorator lock now serializes the full reserve/commit/release of WRITE
+        // against the full delete/release of DELETE for one key, so the counter
+        // always tracks the truth (and never underflows).
+        //
+        // Many iterations exercise the scheduler so an unserialized interleaving
+        // would be hit with overwhelming probability.
+        let body = b"race-the-same-key".to_vec();
+        let n = body.len() as i64;
+        let hash = hash_for(&body);
+        for iter in 0..200u64 {
+            // Fresh fixture per iteration with the key already present + the
+            // counter already reflecting it (the on-disk truth at the start).
+            let (dec, inner, store) = cas_fixture(Some(("t", Row { used: n, quota: 0 })));
+            // Seed the blob on disk so a `delete` actually reclaims `n` bytes.
+            dec.write(
+                CasWriteRequest::new("t", hash.clone(), body.clone(), "p", "t", iter)
+                    .with_storage_quota_bytes(Some(0)),
+            )
+            .expect("seed write");
+            // The seed write was a fresh insert (durable), so it accrued another
+            // `n`; normalise the counter back to the single-copy on-disk truth so
+            // the race starts from a consistent (counter == on-disk) state.
+            store.seed("t", REGION, Row { used: n, quota: 0 });
+
+            let dw = dec.clone();
+            let dd = dec.clone();
+            let hw = hash.clone();
+            let hd = hash.clone();
+            let bw = body.clone();
+            // Concurrent overwrite-WRITE and DELETE of the SAME (tenant, hash).
+            let tw = tokio::spawn(async move {
+                let _ = dw.write(
+                    CasWriteRequest::new("t", hw, bw, "p", "t", 1)
+                        .with_storage_quota_bytes(Some(0)),
+                );
+            });
+            let td = tokio::spawn(async move {
+                let _ = dd.delete(CasDeleteRequest::new("t", hd, "p", "t", 2));
+            });
+            tw.await.unwrap();
+            td.await.unwrap();
+
+            // The on-disk truth after the race: is the blob present?
+            let present = inner
+                .read(CasReadRequest::new("t", hash.clone(), "p", "t", 3))
+                .is_ok();
+            let counter = store.used("t", REGION);
+            let expected = if present { n } else { 0 };
+            assert_eq!(
+                counter, expected,
+                "iter {iter}: bytes_used ({counter}) must equal the on-disk truth \
+                 ({expected}; present={present}) — write-vs-delete accounting must net exactly"
+            );
+            assert!(
+                counter >= 0,
+                "iter {iter}: bytes_used must never underflow below zero"
+            );
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn distinct_keys_write_and_delete_stay_concurrent() {
+        // The lock must serialize only the SAME (tenant, hash): a write of key A
+        // and a delete of key B must both proceed and account independently
+        // (different shards / no false dependency on the happy path).
+        let (dec, _inner, store) = cas_fixture(None);
+        let ba = b"key-a-bytes".to_vec();
+        let bb = b"key-b-different".to_vec();
+        let na = ba.len() as i64;
+        let nb = bb.len() as i64;
+        let ha = hash_for(&ba);
+        let hb = hash_for(&bb);
+        // Pre-seed key B so its delete reclaims real bytes; counter reflects B.
+        dec.write(
+            CasWriteRequest::new("t", hb.clone(), bb, "p", "t", 1)
+                .with_storage_quota_bytes(Some(0)),
+        )
+        .expect("seed B");
+        assert_eq!(store.used("t", REGION), nb, "seed of B accrues B's bytes");
+
+        let dw = dec.clone();
+        let dd = dec.clone();
+        let tw = tokio::spawn(async move {
+            dw.write(
+                CasWriteRequest::new("t", ha, ba, "p", "t", 2)
+                    .with_storage_quota_bytes(Some(0)),
+            )
+        });
+        let td = tokio::spawn(async move { dd.delete(CasDeleteRequest::new("t", hb, "p", "t", 3)) });
+        tw.await.unwrap().expect("write A");
+        td.await.unwrap().expect("delete B");
+
+        // Net effect: +na (A written) and −nb (B deleted) over the seeded nb →
+        // exactly na. Distinct keys never block each other and account cleanly.
+        assert_eq!(
+            store.used("t", REGION),
+            na,
+            "distinct-key write + delete must account independently (only A's bytes remain)"
         );
     }
 }

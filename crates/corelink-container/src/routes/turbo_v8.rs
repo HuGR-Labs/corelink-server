@@ -52,7 +52,9 @@
 #![forbid(unsafe_code)]
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 
 use axum::{
     extract::{Path, Query, State},
@@ -62,6 +64,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore};
 
 use crate::wall_clock::{SystemWallClock, WallClock};
 use corelink_turbo_bridge::{
@@ -109,6 +112,56 @@ pub const TURBO_BODY_LIMIT_BYTES: usize = 100 * 1024 * 1024;
 /// allowing realistic parallel builds (Turborepo's default parallelism is 2–4
 /// concurrent tasks). Excess requests get 429, not 503 — the client retries.
 pub const TURBO_PUT_CONCURRENCY_LIMIT: usize = 4;
+
+/// Per-route request-body cap for `POST /v8/artifacts/events` (64 KiB).
+///
+/// C4: the events route is "accept-and-drop" telemetry — it has NO storage,
+/// no `PutConcurrencyGuard`, and no legitimate reason to buffer a large body.
+/// Without its own cap it would inherit the router-wide
+/// [`TURBO_BODY_LIMIT_BYTES`] (100 MiB), letting an authenticated tenant OOM
+/// the shared container by POSTing 100 MiB "telemetry" bodies. This small
+/// route-specific `DefaultBodyLimit` makes axum reject (413) oversized
+/// telemetry BEFORE buffering. Real Turbo `/events` payloads are a few KiB of
+/// JSON, so 64 KiB is generous headroom.
+pub const EVENTS_BODY_LIMIT_BYTES: usize = 64 * 1024;
+
+/// Process-wide cap on concurrent large Turbo PUTs (C5).
+///
+/// [`PutConcurrencyGuard`] is PER-TENANT (4 × 100 MiB each). With N distinct
+/// authenticated tenants, peak transient heap is `N × 4 × 100 MiB` — N tenants
+/// can together OOM the shared container even though each is within its own
+/// per-tenant cap. This is a SECOND, PROCESS-WIDE budget, reserved (like the
+/// per-tenant guard) in a `FromRequestParts` extractor — which axum 0.7 runs
+/// BEFORE the `body: Bytes` body extractor — so a permit is taken (or the
+/// request 503s) BEFORE a single body byte is buffered.
+///
+/// Sizing mirrors the `adapter_pat::ARGON2_VERIFY_PERMITS` rationale: on a
+/// standard-1 instance (~4 GiB) each in-flight PUT buffers up to
+/// [`TURBO_BODY_LIMIT_BYTES`] (100 MiB). floor(4096 MiB / 100 MiB) ≈ 40, but
+/// the body buffer is not the only allocation (runtime, R2 client buffers,
+/// the `body.to_vec()` clone in `handle_put` transiently DOUBLES the body),
+/// so we apply a ~2.5× safety headroom and pick **16** as the conservative
+/// process-wide floor — 16 × 100 MiB ≈ 1.6 GiB peak PUT working set, leaving
+/// ample room for the rest of the process. Beyond 16 concurrent PUTs the
+/// extractor fails CLOSED (503) after a short acquire wait rather than
+/// blocking forever.
+pub const GLOBAL_TURBO_PUT_PERMITS: usize = 16;
+
+/// How long the global-budget extractor waits for a permit before declaring
+/// the container globally saturated and returning 503. Short by design (same
+/// rationale as `adapter_pat::ARGON2_PERMIT_WAIT`): a caller waiting longer is
+/// better served a fast fail than a stalled request holding a connection
+/// hostage under a flood.
+const GLOBAL_PUT_PERMIT_WAIT: Duration = Duration::from_millis(250);
+
+/// Number of fixed per-object write locks (C1). A power of two so the shard
+/// index is a cheap mask. 1024 `tokio::sync::Mutex<()>` (each is a few words)
+/// is a constant, memory-BOUNDED footprint — there is no per-key map that can
+/// grow or need eviction. Same-object PUTs hash to the same shard and
+/// serialize; the false-sharing rate of distinct objects colliding on a shard
+/// is ~1/1024, which only ever costs a little extra serialization, never
+/// correctness.
+const TURBO_WRITE_LOCK_SHARDS: usize = 1024;
 
 // ── Query parameters ──────────────────────────────────────────────────────────
 
@@ -179,6 +232,66 @@ pub struct TurboRouteState {
     /// 429 BEFORE its (up to 100 MiB) body is read into the heap. The RAII guard
     /// the extractor yields releases the slot when the handler returns.
     pub(crate) put_inflight: Arc<Mutex<HashMap<String, usize>>>,
+    /// Fixed array of per-object async write locks (C1 — same-key write
+    /// serialization).
+    ///
+    /// `handle_put` accrues the full new body, then `R2KvStore::write` does a
+    /// NON-serialized GET-presence probe to capture `prior_len`, then the route
+    /// `release`s that `prior_len`. Two concurrent PUTs to the SAME stored
+    /// object both probe the same prior size `L` and both release `L` —
+    /// double-releasing `bytes_used` and underflowing the tenant's accounting
+    /// while real storage is unchanged (re-grow + repeat ⇒ unbounded free
+    /// storage). The fix serializes the whole probe→put→release sequence per
+    /// stored object. The lock IDENTITY is `(caller_tenant, team_id, hash)` —
+    /// exactly the tuple that maps to ONE R2 object (`tenant = caller_tenant`,
+    /// storage key = `"<team_id>/<hash>"` per `corelink_turbo_bridge::adapter`,
+    /// HMAC-prefixed per tenant in `R2KvStore::object_key`). We index a FIXED
+    /// `TURBO_WRITE_LOCK_SHARDS`-wide array by a stable hash of that tuple, so
+    /// the footprint is constant (no growing/evicting map) yet same-object
+    /// writes always serialize. Distinct objects rarely collide on a shard
+    /// (~1/1024) and a collision only adds a little serialization, never a
+    /// correctness defect.
+    pub(crate) write_locks: Arc<Vec<AsyncMutex<()>>>,
+}
+
+/// Process-wide Turbo-PUT byte/concurrency budget (C5). A single
+/// [`Semaphore`] shared by EVERY [`TurboRouteState`] (and thus every tenant)
+/// in the process, sized to [`GLOBAL_TURBO_PUT_PERMITS`]. Lazily initialised
+/// so it is a true singleton regardless of how many routers are built (prod
+/// builds one; tests build many).
+static GLOBAL_TURBO_PUT_BUDGET: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+/// Accessor for the process-wide PUT budget (C5).
+fn global_turbo_put_budget() -> Arc<Semaphore> {
+    Arc::clone(
+        GLOBAL_TURBO_PUT_BUDGET.get_or_init(|| Arc::new(Semaphore::new(GLOBAL_TURBO_PUT_PERMITS))),
+    )
+}
+
+/// Build a fresh fixed-size array of per-object write locks (C1).
+fn new_write_locks() -> Arc<Vec<AsyncMutex<()>>> {
+    let mut v = Vec::with_capacity(TURBO_WRITE_LOCK_SHARDS);
+    for _ in 0..TURBO_WRITE_LOCK_SHARDS {
+        v.push(AsyncMutex::new(()));
+    }
+    Arc::new(v)
+}
+
+/// Stable shard index for an object's write lock (C1). Hashes the lock
+/// identity tuple `(caller_tenant, team_id, hash)` — the tuple that maps to a
+/// single stored R2 object — into `[0, TURBO_WRITE_LOCK_SHARDS)`.
+fn write_lock_shard(tenant: &str, team_id: &str, hash: &str) -> usize {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    tenant.hash(&mut h);
+    0u8.hash(&mut h); // domain separator so ("a","b") ≠ ("ab","")
+    team_id.hash(&mut h);
+    0u8.hash(&mut h);
+    hash.hash(&mut h);
+    // TURBO_WRITE_LOCK_SHARDS is a power of two ⇒ the mask is exact. Mask in
+    // u64 first; the result is `< TURBO_WRITE_LOCK_SHARDS` (1024) so it always
+    // fits a usize on every target without a truncating cast.
+    let mask = (TURBO_WRITE_LOCK_SHARDS as u64) - 1;
+    usize::try_from(h.finish() & mask).unwrap_or(0)
 }
 
 impl core::fmt::Debug for TurboRouteState {
@@ -307,6 +420,64 @@ impl axum::extract::FromRequestParts<TurboRouteState> for PutConcurrencyGuard {
     }
 }
 
+// ── Global process-wide PUT budget guard (C5) ──────────────────────────────────
+
+/// `FromRequestParts` extractor that reserves ONE permit from the
+/// process-wide [`GLOBAL_TURBO_PUT_BUDGET`] semaphore (C5).
+///
+/// # Why an extractor (same reason as [`PutConcurrencyGuard`])
+///
+/// The per-tenant [`PutConcurrencyGuard`] bounds ONE tenant to
+/// `TURBO_PUT_CONCURRENCY_LIMIT × TURBO_BODY_LIMIT_BYTES`, but with N tenants
+/// the aggregate transient heap is `N × that` — N tenants can together OOM the
+/// shared container. This extractor adds a SECOND, process-wide bound. As a
+/// `FromRequestParts` extractor axum runs it BEFORE the `body: Bytes`
+/// extractor, so the permit is reserved (or the request 503s) BEFORE any body
+/// byte is buffered. The held [`OwnedSemaphorePermit`] RAII-releases the
+/// permit when the handler returns (success, error, or panic).
+///
+/// Under global saturation we wait at most [`GLOBAL_PUT_PERMIT_WAIT`] for a
+/// permit, then fail CLOSED with 503 (Service Unavailable) rather than block
+/// the request forever — the client retries.
+pub(crate) struct GlobalPutBudgetGuard {
+    /// Held for the whole request; releases the permit on drop.
+    _permit: OwnedSemaphorePermit,
+}
+
+#[axum::async_trait]
+impl axum::extract::FromRequestParts<TurboRouteState> for GlobalPutBudgetGuard {
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(
+        _parts: &mut axum::http::request::Parts,
+        _state: &TurboRouteState,
+    ) -> Result<Self, Self::Rejection> {
+        let budget = global_turbo_put_budget();
+        match tokio::time::timeout(GLOBAL_PUT_PERMIT_WAIT, budget.acquire_owned()).await {
+            Ok(Ok(permit)) => Ok(Self { _permit: permit }),
+            // `acquire_owned` only errs if the semaphore is closed — we never
+            // close it, so this is unreachable, but fail CLOSED if it happens.
+            Ok(Err(_)) => Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "global upload budget unavailable",
+            )
+                .into_response()),
+            // Timed out waiting: the container is globally saturated.
+            Err(_) => {
+                tracing::warn!(
+                    permits = GLOBAL_TURBO_PUT_PERMITS,
+                    "turbo PUT global budget saturated; returning 503 BEFORE body buffering"
+                );
+                Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server busy: too many concurrent uploads",
+                )
+                    .into_response())
+            }
+        }
+    }
+}
+
 // ── Handler construction ──────────────────────────────────────────────────────
 
 /// Build the [`TurboRouteState`] for the current build target and runtime.
@@ -352,6 +523,7 @@ pub fn build_handlers() -> TurboRouteState {
                         pat_gate: None,
                         bytes: None,
                         put_inflight: Arc::new(Mutex::new(HashMap::new())),
+                        write_locks: new_write_locks(),
                     };
                 }
                 Some(Err(e)) => {
@@ -367,6 +539,7 @@ pub fn build_handlers() -> TurboRouteState {
                         pat_gate: None,
                         bytes: None,
                         put_inflight: Arc::new(Mutex::new(HashMap::new())),
+                        write_locks: new_write_locks(),
                     };
                 }
                 None => {}
@@ -384,6 +557,7 @@ pub fn build_handlers() -> TurboRouteState {
         pat_gate: None,
         bytes: None,
         put_inflight: Arc::new(Mutex::new(HashMap::new())),
+        write_locks: new_write_locks(),
     }
 }
 
@@ -402,14 +576,29 @@ pub fn router(state: TurboRouteState) -> Router {
         // Fixed-path routes registered BEFORE the wildcard `:hash` routes so
         // matchit prefers the literal segments `events` / `status` over the
         // capture.
-        .route(TURBO_EVENTS_ROUTE, post(handle_events))
+        //
+        // C4: the events route is "accept-and-drop" telemetry with NO storage
+        // and NO concurrency guard, so it must NOT inherit the 100 MiB artifact
+        // body limit below. We layer its OWN tiny `EVENTS_BODY_LIMIT_BYTES`
+        // (64 KiB) directly on the route handler — axum honours the INNERMOST
+        // `DefaultBodyLimit`, so this per-route layer overrides the outer 100
+        // MiB default for `/events` only, and axum rejects oversized telemetry
+        // (413) BEFORE buffering it. The artifact GET/PUT and the static
+        // `status` route keep the 100 MiB limit.
+        .route(
+            TURBO_EVENTS_ROUTE,
+            post(handle_events)
+                .layer(axum::extract::DefaultBodyLimit::max(EVENTS_BODY_LIMIT_BYTES)),
+        )
         .route(TURBO_STATUS_ROUTE, post(handle_status))
         .route(TURBO_GET_ROUTE, get(handle_get).put(handle_put))
         // Per-route body cap: Turbo build artifacts are legitimately larger than
         // the 10 MiB global limit set in `main.rs`. This inner `DefaultBodyLimit`
         // layer overrides the outer global default for the `/v8/artifacts/*`
         // routes only (axum honours the innermost limit) while still bounding the
-        // body at 100 MiB so a PAT cannot OOM the shared container.
+        // body at 100 MiB so a PAT cannot OOM the shared container. The `events`
+        // route above carries its own (smaller, innermost) limit so this does
+        // NOT widen its cap back to 100 MiB.
         .layer(axum::extract::DefaultBodyLimit::max(TURBO_BODY_LIMIT_BYTES))
         .with_state(state)
 }
@@ -499,6 +688,12 @@ async fn handle_put(
     // `_concurrency` for the whole handler keeps the slot reserved until return;
     // its `PutSlot` RAII-releases on drop.
     _concurrency: PutConcurrencyGuard,
+    // C5: the process-wide PUT budget — a SECOND `FromRequestParts` extractor
+    // (so it too runs BEFORE `body: Bytes`). It reserves one of
+    // `GLOBAL_TURBO_PUT_PERMITS` global permits (503 on global saturation)
+    // BEFORE the body is buffered, bounding aggregate cross-tenant heap. The
+    // held permit RAII-releases when the handler returns.
+    _global_budget: GlobalPutBudgetGuard,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
     // Scope gate (fail-CLOSED): Turbo PUT is a cache WRITE — require
@@ -531,6 +726,33 @@ async fn handle_put(
             return resp;
         }
     }
+
+    // C1 — per-object write serialization. Acquire the per-(tenant, team, hash)
+    // async lock BEFORE `accrue` and hold it through the `handler.put`
+    // (probe→put inside `R2KvStore::write`) and the `release`/reconcile below.
+    // This makes the whole reserve→probe→commit→release sequence atomic per
+    // STORED object: two concurrent same-key PUTs no longer both observe the
+    // same `prior_len` and double-release it (which underflowed `bytes_used`
+    // while real storage was unchanged ⇒ unbounded free storage). Different
+    // objects hash to different shards and stay concurrent. The lock identity
+    // matches the storage object exactly: `tenant = caller_tenant`, storage key
+    // = `"<team_id>/<hash>"` (see `corelink_turbo_bridge::adapter` +
+    // `R2KvStore::object_key`). Held to the end of the handler via `_write_lock`.
+    let shard = write_lock_shard(&caller_tenant, &params.team_id, &hash);
+    // `shard` is masked into `[0, TURBO_WRITE_LOCK_SHARDS)` and `write_locks`
+    // has exactly that many entries, so `get` is always `Some`; `.get()` (vs
+    // indexing) keeps the workspace `indexing_slicing = deny` lint satisfied.
+    // The `None` arm is structurally unreachable — fail CLOSED 503 rather than
+    // proceed unserialized (which would reopen the C1 double-release window).
+    let Some(lock_cell) = state.write_locks.get(shard) else {
+        tracing::error!(shard, "turbo write-lock shard out of range (unreachable)");
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "write serialization unavailable",
+        )
+            .into_response();
+    };
+    let _write_lock = lock_cell.lock().await;
 
     let now_ms = SystemWallClock.now_ms();
     let byte_len = i64::try_from(body.len()).unwrap_or(i64::MAX);
@@ -635,6 +857,13 @@ async fn handle_put(
 async fn handle_events(
     State(state): State<TurboRouteState>,
     auth: crate::auth_tenant::AuthTenant,
+    // C5: events shares the process-wide budget so a telemetry FLOOD cannot
+    // OOM the container either. As a `FromRequestParts` extractor it runs (and
+    // 503s on global saturation) BEFORE the `body: Bytes` extractor buffers
+    // anything; combined with the 64 KiB `EVENTS_BODY_LIMIT_BYTES` route cap
+    // (C4) this bounds aggregate events heap to ≤ GLOBAL_TURBO_PUT_PERMITS ×
+    // 64 KiB. The permit RAII-releases when the handler returns.
+    _global_budget: GlobalPutBudgetGuard,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
     let principal = format!("anon@{}", auth.0);
@@ -1466,6 +1695,243 @@ mod tests {
             "the 5th concurrent PUT must be rejected 429 by the FromRequestParts \
              guard BEFORE the body is buffered (else the oversized body would be \
              rejected by the body-limit layer instead)"
+        );
+    }
+
+    // ── C1: per-object write serialization (no double-release / no underflow) ──
+
+    /// The KILLING C1 test: N CONCURRENT shrink-PUTs to the SAME key must net
+    /// the TRUE on-disk delta — never double-release the prior size.
+    ///
+    /// Without the per-object lock, two+ concurrent same-key PUTs each probe
+    /// the SAME prior length `L` (`R2KvStore::write`'s GET-presence probe is not
+    /// serialized) and each `release(L)`, underflowing `bytes_used` well below
+    /// the true on-disk size while real storage is unchanged. We prime a large
+    /// (1000-byte) object, then fire N=8 concurrent tiny (1-byte) overwrites.
+    /// The TRUE final size is 1 byte, so `bytes_used` MUST equal 1 — never a
+    /// double-released value (which would be 0 / underflowed, or some racy
+    /// value < 1). The per-key `tokio::sync::Mutex` serializes probe→put→release
+    /// so exactly ONE prior gets released per real overwrite.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_same_key_shrink_puts_net_true_delta_no_double_release() {
+        let (state, store) = fixture_with_byte_accounting();
+        let app = router(state);
+        let used = || store.used(TEST_AUTH_TENANT, TEST_BYTES_REGION);
+
+        // Prime the key with a large object: bytes_used = 1000.
+        put_artifact(&app, "shared", vec![0u8; 1000]).await;
+        assert_eq!(used(), 1000, "primed large object");
+
+        // Fire N concurrent tiny (1-byte) overwrites of the SAME key.
+        const N: usize = 8;
+        let mut handles = Vec::with_capacity(N);
+        for i in 0..N {
+            let app = app.clone();
+            handles.push(tokio::spawn(async move {
+                let req = Request::builder()
+                    .method(Method::PUT)
+                    .uri("/v8/artifacts/shared?teamId=team_x")
+                    .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+                    .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+                    .header(
+                        crate::byte_accounting::STORAGE_QUOTA_HEADER,
+                        UNLIMITED_QUOTA_HEADER,
+                    )
+                    .body(Body::from(vec![b'a' + (i as u8 % 26)]))
+                    .expect("request");
+                app.oneshot(req).await.expect("oneshot").status()
+            }));
+        }
+        for h in handles {
+            assert_eq!(h.await.expect("join"), StatusCode::OK, "each PUT 200s");
+        }
+
+        // The TRUE on-disk size is 1 byte (last writer wins, all writes are
+        // 1 byte). With the per-key lock, each overwrite releases exactly its
+        // own prior, so bytes_used reconciles to the true size: 1. Without the
+        // lock, concurrent probes would each see prior=1000 and double/N-tuple
+        // -release it, underflowing bytes_used to 0 (saturating) — the bug.
+        assert_eq!(
+            used(),
+            1,
+            "concurrent same-key shrinks must net the TRUE on-disk size (1), \
+             not a double-released / underflowed value"
+        );
+    }
+
+    /// Distinct keys are NOT serialized against each other (the per-object lock
+    /// only serializes the SAME object): concurrent PUTs to different keys both
+    /// land and accumulate independently.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_distinct_key_puts_stay_concurrent_and_sum() {
+        let (state, store) = fixture_with_byte_accounting();
+        let app = router(state);
+        let used = || store.used(TEST_AUTH_TENANT, TEST_BYTES_REGION);
+
+        let mut handles = Vec::new();
+        for i in 0..6u32 {
+            let app = app.clone();
+            handles.push(tokio::spawn(async move {
+                let req = Request::builder()
+                    .method(Method::PUT)
+                    .uri(format!("/v8/artifacts/key{i}?teamId=team_x"))
+                    .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+                    .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+                    .header(
+                        crate::byte_accounting::STORAGE_QUOTA_HEADER,
+                        UNLIMITED_QUOTA_HEADER,
+                    )
+                    .body(Body::from(vec![0u8; 10]))
+                    .expect("request");
+                app.oneshot(req).await.expect("oneshot").status()
+            }));
+        }
+        for h in handles {
+            assert_eq!(h.await.expect("join"), StatusCode::OK);
+        }
+        assert_eq!(used(), 60, "six fresh distinct 10-byte keys sum to 60");
+    }
+
+    /// The shard index is a pure deterministic function of the lock identity
+    /// tuple and always lands in `[0, TURBO_WRITE_LOCK_SHARDS)`; distinct
+    /// identities generally map to distinct shards (sanity, not a guarantee).
+    #[test]
+    fn write_lock_shard_in_range_and_deterministic() {
+        let a = write_lock_shard("tenantA", "team1", "hash1");
+        let b = write_lock_shard("tenantA", "team1", "hash1");
+        assert_eq!(a, b, "shard must be deterministic for a fixed identity");
+        for (t, team, h) in [
+            ("t", "x", "h"),
+            ("tenant-uuid", "default", "deadbeef"),
+            ("", "", ""),
+        ] {
+            assert!(
+                write_lock_shard(t, team, h) < TURBO_WRITE_LOCK_SHARDS,
+                "shard must be in range"
+            );
+        }
+        // Domain separation: ("a","b",_) must not collapse to ("ab","",_).
+        assert_ne!(
+            write_lock_shard("a", "b", "h"),
+            write_lock_shard("ab", "", "h"),
+            "domain-separated identity components must not alias"
+        );
+    }
+
+    // ── C4: events route has its OWN small body cap (413 over it) ──────────────
+
+    /// An events POST OVER the small `EVENTS_BODY_LIMIT_BYTES` (64 KiB) cap is
+    /// rejected (413) — the route must NOT inherit the 100 MiB artifact limit,
+    /// so a telemetry body cannot OOM the container. A normal small telemetry
+    /// POST still 200s.
+    #[tokio::test]
+    async fn events_over_small_cap_rejected_normal_still_200() {
+        let app = test_router();
+
+        // Over the 64 KiB events cap (but WELL under the 100 MiB artifact cap,
+        // so a 200 here would prove the route wrongly inherited the big limit).
+        let oversized = vec![0u8; EVENTS_BODY_LIMIT_BYTES + 1];
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/v8/artifacts/events")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header("content-type", "application/json")
+            .body(Body::from(oversized))
+            .expect("request");
+        let resp = app.clone().oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "events body over the 64 KiB cap must be rejected 413, NOT accepted \
+             under the 100 MiB artifact limit"
+        );
+
+        // A normal small telemetry POST still succeeds.
+        let small = Request::builder()
+            .method(Method::POST)
+            .uri("/v8/artifacts/events")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"sessionId":"abc","source":"LOCAL"}"#))
+            .expect("request");
+        let resp = app.oneshot(small).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK, "small telemetry still 200s");
+    }
+
+    /// A 100 MiB artifact PUT is NOT rejected by the events cap (proves the
+    /// small cap is route-LOCAL to `/events`, not applied to artifact PUTs).
+    /// We assert the artifact route still accepts a body LARGER than the events
+    /// cap (a 1 MiB body — far above 64 KiB, far below 100 MiB).
+    #[tokio::test]
+    async fn artifact_put_not_constrained_by_events_cap() {
+        let app = test_router();
+        let body = vec![0u8; EVENTS_BODY_LIMIT_BYTES * 4]; // 256 KiB > events cap
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri("/v8/artifacts/bigart?teamId=team_x")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .body(Body::from(body))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "an artifact PUT above the events cap (but under 100 MiB) must NOT be \
+             413'd — the small cap is route-local to /events"
+        );
+    }
+
+    // ── C5: process-wide PUT budget ────────────────────────────────────────────
+
+    /// The process-wide budget is a TRUE singleton (every call to
+    /// `global_turbo_put_budget()` returns the SAME `Arc<Semaphore>`), so all
+    /// tenants/routers in the process share one budget. (We assert identity
+    /// only — NOT live `available_permits`, which concurrent PUT tests mutate.)
+    #[test]
+    fn global_budget_is_process_wide_singleton() {
+        let s1 = global_turbo_put_budget();
+        let s2 = global_turbo_put_budget();
+        assert!(
+            Arc::ptr_eq(&s1, &s2),
+            "global budget must be a process-wide singleton shared by all tenants"
+        );
+    }
+
+    /// Unit test of the permit-accounting SEMANTICS on a fresh semaphore sized
+    /// exactly like the global budget — isolated from the live singleton so it
+    /// cannot flake against concurrent PUT tests. Proves: exactly
+    /// `GLOBAL_TURBO_PUT_PERMITS` permits are acquirable; one more times out
+    /// within `GLOBAL_PUT_PERMIT_WAIT` (the extractor's 503 path); dropping the
+    /// held permits restores the budget.
+    #[tokio::test]
+    async fn global_budget_permit_accounting_saturates_then_restores() {
+        let sem = Arc::new(Semaphore::new(GLOBAL_TURBO_PUT_PERMITS));
+        let mut held = Vec::new();
+        for _ in 0..GLOBAL_TURBO_PUT_PERMITS {
+            held.push(
+                Arc::clone(&sem)
+                    .acquire_owned()
+                    .await
+                    .expect("permit available within the configured count"),
+            );
+        }
+        assert_eq!(sem.available_permits(), 0, "budget fully drained");
+        // One more acquire must time out (saturated) — exactly the path the
+        // `GlobalPutBudgetGuard` extractor maps to 503.
+        let timed_out =
+            tokio::time::timeout(GLOBAL_PUT_PERMIT_WAIT, Arc::clone(&sem).acquire_owned())
+                .await
+                .is_err();
+        assert!(
+            timed_out,
+            "beyond the permit count, acquire must time out → extractor returns 503"
+        );
+        drop(held);
+        assert_eq!(
+            sem.available_permits(),
+            GLOBAL_TURBO_PUT_PERMITS,
+            "permits restored on drop (RAII release)"
         );
     }
 }

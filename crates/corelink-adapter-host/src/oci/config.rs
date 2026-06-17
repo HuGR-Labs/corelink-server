@@ -12,9 +12,10 @@
 //! - [`OciAdapterConfig::multipart_chunk_size_bytes`] = 16 MiB. R2
 //!   multipart-upload minimum part size is 5 MiB; 16 MiB is the
 //!   sweet-spot per `corelink-r2-multipart` benchmarks.
-//! - [`OciAdapterConfig::token_ttl_secs`] = 3600 (1 hour). OCI clients
-//!   refresh tokens implicitly on 401; longer TTLs increase the
-//!   replay window if the HMAC key leaks.
+//! - [`OciAdapterConfig::token_ttl_secs`] = 300 (5 min). OCI clients
+//!   refresh tokens implicitly on 401; the stateless HMAC bearer is not
+//!   re-checked against D1 revocation during its life, so a short TTL
+//!   bounds the leaked/revoked-PAT replay window (rt-nuclear verify C6).
 
 use std::sync::Arc;
 
@@ -121,7 +122,14 @@ pub mod defaults {
     /// 16 MiB.
     pub const MULTIPART_CHUNK_SIZE_BYTES: u64 = 16 * 1024 * 1024;
     /// 1h.
-    pub const TOKEN_TTL_SECS: u64 = 3600;
+    // rt-nuclear verify C6: the realm bearer is a STATELESS HMAC token that is
+    // NEVER re-checked against D1 `revoked_at` during its lifetime, so a
+    // leaked-then-revoked PAT keeps full registry read/write for the whole TTL.
+    // 3600s was far too long a replay window; 300s (5 min) is the industry-
+    // standard registry bearer TTL (Docker/GHCR/Quay) and OCI clients re-exchange
+    // transparently on 401, so large pulls/pushes are unaffected while revocation
+    // latency on the OCI plane is bounded to ≤5 min.
+    pub const TOKEN_TTL_SECS: u64 = 300;
     /// `_catalog` MUST be off by default — cross-tenant leak risk.
     pub const ENABLE_CATALOG: bool = false;
     /// Minimum acceptable HMAC key bytes (raw).
