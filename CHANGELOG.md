@@ -23,6 +23,15 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **Read-only PAT could self-escalate to read-write via divergent scope matching (rt-nuclear #15).**
+  The self-serve key-mint escalation gate (`routes::customer::mint_requests_write`) used exact-token
+  matching while the D1 scope persister (`customer_d1::map_requested_scopes`) used substring matching
+  (`s.contains("write")`). A scope token like `"writes"` / `"cache:write-x"` was therefore FALSE for
+  the gate (so a read-only caller's scope was never checked) yet TRUE for the persister (so it stored
+  a genuine `read-write` PAT) — letting any read-only credential mint itself a full read-write one.
+  Both now share **one exact-token classifier** (`scope::classify_requested_scopes`, the single source
+  of truth) and **unrecognized scope tokens are rejected (fail-CLOSED)** rather than silently mapped to
+  a privilege.
 - **OCI $-ceiling gate now resolves the tenant from the verified bearer (rt-nuclear #2/#8/#9).**
   The OCI push surface bypassed the per-tenant monthly $-ceiling entirely: the Worker strips
   `x-corelink-tenant-id` on the OCI pass-through, and `oci_quota_gate` keyed the charge on that

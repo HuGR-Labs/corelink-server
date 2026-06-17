@@ -273,18 +273,23 @@ pub fn map_billing_status(d1_status: Option<&str>) -> &'static str {
 /// `read-write`; otherwise (incl. the canonical `["cache:read"]` and an
 /// empty request — least privilege) → `read-only`.
 fn map_requested_scopes(requested: &[String]) -> Result<&'static str, CustomerHandlerError> {
-    if requested.iter().any(|s| s.contains("admin")) {
-        return Err(CustomerHandlerError::Unauthorized(
+    // SINGLE source of truth with the mint escalation gate
+    // (`routes::customer::mint_requests_write`), via `scope::classify_requested_scopes`.
+    // rt-nuclear #15: this used to substring-match (`s.contains("write")`) while
+    // the gate exact-matched, so `"writes"` skipped the gate yet persisted
+    // `read-write` (read-only PAT self-escalation). Now both share one exact-token
+    // classifier, and unrecognized tokens are REJECTED (fail-CLOSED) rather than
+    // silently mapped to a privilege.
+    match crate::scope::classify_requested_scopes(requested) {
+        Ok(crate::scope::RequestedScopeClass::ReadOnly) => Ok("read-only"),
+        Ok(crate::scope::RequestedScopeClass::ReadWrite) => Ok("read-write"),
+        Ok(crate::scope::RequestedScopeClass::Admin) => Err(CustomerHandlerError::Unauthorized(
             "the admin scope is not grantable via self-serve key creation".to_owned(),
-        ));
+        )),
+        Err(token) => Err(CustomerHandlerError::Unauthorized(format!(
+            "unrecognized scope token {token:?}; valid self-serve scopes: cache:read, cache:write"
+        ))),
     }
-    if requested
-        .iter()
-        .any(|s| s.contains("write") || s == "cas:rw")
-    {
-        return Ok("read-write");
-    }
-    Ok("read-only")
 }
 
 /// D1 `pat.scope` string → dashboard scopes list (inverse of

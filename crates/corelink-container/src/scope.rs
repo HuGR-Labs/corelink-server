@@ -94,6 +94,60 @@ pub fn requires_cache_write(scope: &str) -> bool {
     tokens(scope).any(|t| matches!(t, "cas:rw" | "cas:w" | "read-write" | "admin"))
 }
 
+/// Classification of a self-serve key-mint scope request.
+///
+/// `Admin` is the privileged class (never grantable self-serve); `ReadWrite`
+/// carries a cache-write capability; `ReadOnly` is the least-privilege default
+/// (incl. the canonical `["cache:read"]` and an empty request).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RequestedScopeClass {
+    /// Least privilege — read-only cache access.
+    ReadOnly,
+    /// Carries a cache-write capability.
+    ReadWrite,
+    /// Privileged (admin/owner) — not grantable via self-serve key creation.
+    Admin,
+}
+
+/// Classify a requested-scope list with the EXACT-token grammar (case-insensitive,
+/// whitespace/comma-tokenized, trimmed) — the **single source of truth** shared by
+/// the self-serve mint escalation gate (`routes::customer::mint_requests_write`)
+/// and the D1 scope persister (`customer_d1::map_requested_scopes`).
+///
+/// Returns `Err(token)` for any token that is not a recognized read / write /
+/// admin scope. **Fail-CLOSED:** unknown grammar can never silently map to a
+/// privilege — closing the substring-vs-exact-token divergence (rt-nuclear #15)
+/// where `"writes"` skipped the exact-token gate yet a `s.contains("write")`
+/// persister granted `read-write`.
+///
+/// # Errors
+///
+/// `Err(unrecognized_token)` when any token is outside the read/write/admin
+/// vocabulary, so the caller can reject the mint rather than guess a privilege.
+pub fn classify_requested_scopes(requested: &[String]) -> Result<RequestedScopeClass, String> {
+    let mut admin = false;
+    let mut write = false;
+    for raw in requested {
+        for t in tokens(raw) {
+            match t.to_ascii_lowercase().as_str() {
+                "admin" | "owner" => admin = true,
+                "cas:rw" | "cas:w" | "read-write" | "cache:write" | "cache:rw" | "write" => {
+                    write = true;
+                }
+                "cas:r" | "read-only" | "cache:read" => {}
+                other => return Err(other.to_owned()),
+            }
+        }
+    }
+    Ok(if admin {
+        RequestedScopeClass::Admin
+    } else if write {
+        RequestedScopeClass::ReadWrite
+    } else {
+        RequestedScopeClass::ReadOnly
+    })
+}
+
 /// Read the trusted [`SCOPE_HEADER`] value off the request parts, trimmed.
 ///
 /// Returns `""` when the header is absent or non-UTF-8 (⇒ fail-CLOSED at the
@@ -157,6 +211,33 @@ impl<S: Send + Sync> FromRequestParts<S> for CacheScope {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
+
+    #[test]
+    fn classify_requested_scopes_is_exact_token_and_fail_closed() {
+        use RequestedScopeClass::{Admin, ReadOnly, ReadWrite};
+        let one = |s: &str| vec![s.to_owned()];
+        // Canonical self-serve inputs.
+        assert_eq!(classify_requested_scopes(&one("cache:read")), Ok(ReadOnly));
+        assert_eq!(classify_requested_scopes(&one("cache:write")), Ok(ReadWrite));
+        assert_eq!(classify_requested_scopes(&one("cas:rw")), Ok(ReadWrite));
+        assert_eq!(classify_requested_scopes(&one("read-write")), Ok(ReadWrite));
+        assert_eq!(classify_requested_scopes(&[]), Ok(ReadOnly)); // least privilege
+        assert_eq!(classify_requested_scopes(&one("admin")), Ok(Admin));
+        assert_eq!(classify_requested_scopes(&one("owner")), Ok(Admin));
+        // Case-insensitive.
+        assert_eq!(classify_requested_scopes(&one("CACHE:WRITE")), Ok(ReadWrite));
+        // rt-nuclear #15 REGRESSION: substring-y tokens that the old persister
+        // mapped to read-write via `s.contains("write")` must NOT silently become
+        // a privilege — they are unrecognized ⇒ Err (fail-CLOSED), never ReadWrite.
+        for evil in ["writes", "cache:write-x", "my-write", "rewrite", "writable"] {
+            assert!(
+                classify_requested_scopes(&one(evil)).is_err(),
+                "{evil:?} must be rejected, not silently classified",
+            );
+        }
+        // A read token mixed with an unknown token still fails closed.
+        assert!(classify_requested_scopes(&["cache:read".into(), "writes".into()]).is_err());
+    }
 
     #[test]
     fn cas_rw_grants_read_and_write() {
