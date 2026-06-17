@@ -170,10 +170,22 @@ impl CasReadStore for R2KvStore {
 }
 
 impl CasWriteStore for R2KvStore {
-    fn write(&self, tenant: &str, key: &str, bytes: Vec<u8>) -> Result<(), TurboBridgeError> {
+    fn write(&self, tenant: &str, key: &str, bytes: Vec<u8>) -> Result<bool, TurboBridgeError> {
         let object_key = self.object_key(tenant, key)?;
+        // rt-nuclear #25: detect an idempotent overwrite so the route does not
+        // double-charge storage bytes. Turbo artifacts are content-keyed, so a key
+        // that already exists holds the same artifact. Probe presence BEFORE the
+        // PUT; a probe error fails CLOSED to `durable = true` (charge the bytes —
+        // a missed roll-back over-counts the tenant, conservative, never under).
+        // (The `KvBackend` port exposes only get/put; the prod R2 backend's `get`
+        // is the presence probe — same call `read` already uses.)
+        let preexisted = matches!(
+            Self::block_on(self.backend.get(&object_key)),
+            Ok(Some(_))
+        );
         Self::block_on(self.backend.put(&object_key, bytes))
-            .map_err(|e| TurboBridgeError::Internal(format!("r2 kv put: {e}")))
+            .map_err(|e| TurboBridgeError::Internal(format!("r2 kv put: {e}")))?;
+        Ok(!preexisted)
     }
 }
 

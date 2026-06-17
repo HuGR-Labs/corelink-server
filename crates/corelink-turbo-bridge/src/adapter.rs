@@ -57,12 +57,22 @@ pub trait CasReadStore: Send + Sync + core::fmt::Debug {
 /// Opaque KV write port.  Implementations store bytes under `(tenant, key)`
 /// without verifying hash integrity.
 pub trait CasWriteStore: Send + Sync + core::fmt::Debug {
-    /// Upsert `bytes` under `(tenant, key)`.
+    /// Upsert `bytes` under `(tenant, key)`, returning whether the write stored a
+    /// NEW key.
+    ///
+    /// `Ok(true)`  — the key did not previously exist (a fresh, durable insert).
+    /// `Ok(false)` — the key already existed (an idempotent overwrite: Turbo
+    ///               artifacts are content-keyed, so the same key holds the same
+    ///               bytes). The route uses this to ROLL BACK the storage byte
+    ///               charge on an overwrite (rt-nuclear #25 — every idempotent
+    ///               re-write was double-charging storage bytes), mirroring the
+    ///               CAS decorator's `durable == false` contract.
     ///
     /// # Errors
     ///
     /// Returns [`TurboBridgeError::Internal`] on backend error.
-    fn write(&self, tenant: &str, key: &str, bytes: Vec<u8>) -> Result<(), TurboBridgeError>;
+    fn write(&self, tenant: &str, key: &str, bytes: Vec<u8>)
+        -> Result<bool, TurboBridgeError>;
 }
 
 // ── InMemoryKvStore ───────────────────────────────────────────────────────────
@@ -109,12 +119,20 @@ impl CasReadStore for InMemoryKvStore {
 }
 
 impl CasWriteStore for InMemoryKvStore {
-    fn write(&self, tenant: &str, key: &str, bytes: Vec<u8>) -> Result<(), TurboBridgeError> {
-        self.objects
+    fn write(
+        &self,
+        tenant: &str,
+        key: &str,
+        bytes: Vec<u8>,
+    ) -> Result<bool, TurboBridgeError> {
+        // `HashMap::insert` returns the prior value: `Some` ⇒ the key already
+        // existed (overwrite ⇒ `Ok(false)`); `None` ⇒ a fresh key (`Ok(true)`).
+        let prior = self
+            .objects
             .lock()
             .map_err(|_| TurboBridgeError::Internal("kv lock poisoned".into()))?
             .insert((tenant.to_owned(), key.to_owned()), bytes);
-        Ok(())
+        Ok(prior.is_none())
     }
 }
 
@@ -191,7 +209,8 @@ impl TurboArtifactHandler for CasAdapterTurboHandler {
         // Storage: tenant dimension is the authenticated `caller_tenant`; the
         // key carries `team_id` as a sub-namespace so two teams under one tenant
         // stay partitioned.
-        self.writer
+        let durable = self
+            .writer
             .write(
                 &req.caller_tenant,
                 &format!("{}/{}", req.team_id, req.hash),
@@ -211,7 +230,11 @@ impl TurboArtifactHandler for CasAdapterTurboHandler {
             ))
             .map_err(|e| TurboBridgeError::AuditFailed(e.to_string()))?;
 
-        Ok(TurboPutResponse::for_artifact(&req.team_id, &req.hash))
+        Ok(TurboPutResponse::for_artifact(
+            &req.team_id,
+            &req.hash,
+            durable,
+        ))
     }
 
     fn get(&self, req: TurboGetRequest) -> Result<TurboGetResponse, TurboBridgeError> {
@@ -318,6 +341,40 @@ mod tests {
             ))
             .expect("get");
         assert_eq!(resp.bytes, data);
+    }
+
+    /// rt-nuclear #25: the FIRST PUT of a key is durable (`durable == true`);
+    /// an idempotent re-PUT of the SAME (tenant, team, hash) reports
+    /// `durable == false`, so the route can roll back the byte charge and not
+    /// double-charge storage on every re-write.
+    #[test]
+    fn adapter_put_reports_durable_then_overwrite() {
+        let (_, _, h) = fixture();
+        let mk = || {
+            TurboPutRequest::new(
+                "hash_dup", "team_x", "my-repo", b"same-bytes".to_vec(), None, "ci_runner",
+                "team_x", 1,
+            )
+        };
+        let first = h.put(mk()).expect("first put");
+        assert!(first.durable, "first PUT of a fresh key must be durable=true");
+        let second = h.put(mk()).expect("second put");
+        assert!(
+            !second.durable,
+            "an idempotent re-PUT must report durable=false (no double-charge)"
+        );
+    }
+
+    /// The opaque write port itself reports new-vs-overwrite (the bit the
+    /// adapter threads up): `Ok(true)` on a fresh key, `Ok(false)` on overwrite.
+    #[test]
+    fn in_memory_kv_write_reports_new_then_overwrite() {
+        let store = InMemoryKvStore::new();
+        assert!(store.write("t", "k", b"v1".to_vec()).expect("w1"), "fresh key ⇒ true");
+        assert!(
+            !store.write("t", "k", b"v2".to_vec()).expect("w2"),
+            "overwrite ⇒ false"
+        );
     }
 
     #[test]

@@ -88,20 +88,30 @@ pub struct TurboPutResponse {
     /// Store URL(s) returned to the Turbo client.  Turbo treats 200 + this
     /// body as "uploaded successfully"; the URL is informational.
     pub urls: Vec<String>,
+    /// Whether the PUT stored a NEW key (`true`) or overwrote an existing one
+    /// (`false`). The route rolls back the storage byte charge when `false`
+    /// (an idempotent re-write stored nothing new), mirroring the CAS
+    /// decorator's `durable` contract (rt-nuclear #25).
+    pub durable: bool,
 }
 
 impl TurboPutResponse {
-    /// Construct a [`TurboPutResponse`] with the given URLs.
+    /// Construct a [`TurboPutResponse`] with the given URLs (durable insert).
     #[must_use]
     pub fn new(urls: Vec<String>) -> Self {
-        Self { urls }
+        Self {
+            urls,
+            durable: true,
+        }
     }
 
     /// Construct the canonical single-URL response for a stored artifact.
     ///
     /// `tenant` and `hash` are used to form the canonical CoreLink URL.
+    /// `durable` is `true` for a fresh insert, `false` for an idempotent
+    /// overwrite (the route uses it to avoid double-charging storage bytes).
     #[must_use]
-    pub fn for_artifact(tenant: &str, hash: &str) -> Self {
+    pub fn for_artifact(tenant: &str, hash: &str, durable: bool) -> Self {
         Self {
             urls: vec![format!(
                 "/{version}/artifacts/{hash}?teamId={tenant}",
@@ -109,6 +119,7 @@ impl TurboPutResponse {
                 hash = hash,
                 tenant = tenant,
             )],
+            durable,
         }
     }
 }
@@ -311,8 +322,10 @@ impl TurboArtifactHandler for InMemoryTurboHandler {
             ))
             .map_err(|e| TurboBridgeError::AuditFailed(e.to_string()))?;
 
-        // Durable store (opaque key — no hash verification).
-        {
+        // Durable store (opaque key — no hash verification). `insert` returns the
+        // prior value: `Some` ⇒ idempotent overwrite (`durable = false`); `None`
+        // ⇒ fresh key (`durable = true`) — see rt-nuclear #25.
+        let durable = {
             let mut g = self
                 .objects
                 .lock()
@@ -325,8 +338,9 @@ impl TurboArtifactHandler for InMemoryTurboHandler {
                     format!("{}/{}", req.team_id, req.hash),
                 ),
                 req.bytes,
-            );
-        }
+            )
+            .is_none()
+        };
 
         // PutCommitted audit AFTER durable store.
         self.audit
@@ -340,7 +354,11 @@ impl TurboArtifactHandler for InMemoryTurboHandler {
             ))
             .map_err(|e| TurboBridgeError::AuditFailed(e.to_string()))?;
 
-        Ok(TurboPutResponse::for_artifact(&req.team_id, &req.hash))
+        Ok(TurboPutResponse::for_artifact(
+            &req.team_id,
+            &req.hash,
+            durable,
+        ))
     }
 
     fn get(&self, req: TurboGetRequest) -> Result<TurboGetResponse, TurboBridgeError> {

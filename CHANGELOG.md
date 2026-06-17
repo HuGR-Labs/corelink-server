@@ -23,6 +23,13 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **Turbo PUT charged storage bytes on every idempotent re-write (rt-nuclear #25).**
+  The Turbo bridge's `CasWriteStore::write` returned `()`, so the turbo_v8 route accrued the body bytes
+  on EVERY PUT — a CI cache re-pushing the same content-keyed artifact (the common case) double-charged
+  storage on each re-run. `CasWriteStore::write` now returns `Result<bool>` (true = new key, false =
+  overwrite), threaded through `TurboPutResponse::durable`; the route rolls back the byte reservation
+  when `durable == false`, mirroring the `AccountingCasHandler` `durable` contract. The R2-backed store
+  probes presence before the PUT (fail-CLOSED to durable on a probe error — never under-charge).
 - **Concurrent double-DELETE over-released storage bytes (rt-nuclear #6/#10/#14).**
   The CAS and AC delete handlers measured the blob size with a HEAD and then issued a separate idempotent
   `DeleteObject`. Because S3 `DeleteObject` reports neither prior presence nor prior size, two concurrent

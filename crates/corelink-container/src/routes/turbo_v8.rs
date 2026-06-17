@@ -584,6 +584,17 @@ async fn handle_put(
     );
     match state.handler.put(req) {
         Ok(resp) => {
+            // rt-nuclear #25: an idempotent re-write (`durable == false`) stored
+            // NOTHING new, so ROLL BACK the byte reservation we accrued above —
+            // otherwise every re-PUT of the same artifact double-charges storage
+            // bytes. Mirrors the `AccountingCasHandler` `durable == false` contract.
+            if !resp.durable {
+                if let Some(acc) = state.bytes.as_ref() {
+                    if let Err(re) = acc.release(&caller_tenant, byte_len).await {
+                        tracing::warn!(error = %re, "turbo: reservation release on idempotent re-write failed (over-counts; conservative)");
+                    }
+                }
+            }
             let body = PutArtifactResponse { urls: resp.urls };
             (StatusCode::OK, Json(body)).into_response()
         }
