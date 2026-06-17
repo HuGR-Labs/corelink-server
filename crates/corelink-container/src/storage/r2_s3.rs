@@ -63,6 +63,17 @@ pub struct R2S3Client {
     inner: Client,
     /// Default bucket for CAS blobs (e.g. `corelink-cas-prod`).
     bucket: String,
+    /// Per-key serialization locks for [`Self::delete_if_present`] (rt-nuclear
+    /// #6/#10/#14 — concurrent double-DELETE over-release). HEAD-then-DELETE is
+    /// non-atomic and S3 `DeleteObject` neither reports prior size nor supports a
+    /// "delete-and-return-size" op, so two racing deletes of the same key both
+    /// HEAD the size and both report it reclaimed → the byte accountant releases
+    /// it twice → free headroom. We serialize the measure-and-delete per key in
+    /// this process so AT MOST ONE racer observes the object present (HEAD ⇒
+    /// `Some(size)`) and removes it; every other racer HEADs absent AFTER the
+    /// delete and returns `None` (releases 0). The map is pruned on release so it
+    /// does not grow without bound.
+    delete_locks: std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl R2S3Client {
@@ -106,6 +117,7 @@ impl R2S3Client {
         Ok(Self {
             inner: Client::from_conf(s3_config),
             bucket: bucket.into(),
+            delete_locks: std::sync::Mutex::new(std::collections::HashMap::new()),
         })
     }
 
@@ -240,6 +252,78 @@ impl R2S3Client {
             .await
             .map_err(|e| format!("R2 delete failed for key {key}: {e}"))?;
         Ok(())
+    }
+
+    /// Atomically (per-key, in-process) measure-and-delete: HEAD the object,
+    /// delete it, and return `Some(prior_size)` to the racer that actually
+    /// observed-and-removed it — `None` to every racer that saw it already
+    /// absent (rt-nuclear #6/#10/#14 — concurrent double-DELETE over-release).
+    ///
+    /// S3 `DeleteObject` is idempotent and reports neither prior presence nor
+    /// prior size, so a naive HEAD-then-DELETE lets two concurrent deletes of the
+    /// same key BOTH read the size and BOTH report it reclaimed — the byte
+    /// accountant then releases the bytes twice, manufacturing free headroom. We
+    /// serialize the measure-and-delete under a per-key async lock: the HEAD runs
+    /// INSIDE the critical section, so a second racer that enters after the first
+    /// committed its delete HEADs absent and returns `None` (releases 0). Only the
+    /// request that genuinely removed the object returns its size.
+    ///
+    /// A HEAD error fails CLOSED to `Some(0)` semantics via the caller (we still
+    /// delete, but report 0 reclaimed — a missed release over-counts the tenant,
+    /// which is conservative; it never widens the cap).
+    ///
+    /// # Errors
+    /// Returns `Err(String)` on a `DeleteObject` transport/service error.
+    pub async fn delete_if_present(&self, key: &str) -> Result<Option<u64>, String> {
+        // Acquire (or create) the per-key serialization lock.
+        let lock = {
+            let mut locks = match self.delete_locks.lock() {
+                Ok(g) => g,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            std::sync::Arc::clone(
+                locks
+                    .entry(key.to_owned())
+                    .or_insert_with(|| std::sync::Arc::new(tokio::sync::Mutex::new(()))),
+            )
+        };
+        let _guard = lock.lock().await;
+
+        // HEAD inside the critical section: the prior size is observed ONLY by the
+        // racer that is about to remove the object. A second racer enters here
+        // after this racer's DELETE committed and sees the object absent.
+        let prior = match self.head_size(key).await {
+            Ok(opt) => opt,
+            Err(e) => {
+                // Ambiguous prior state: still delete (idempotent) but report
+                // nothing reclaimed — conservative (never over-credit headroom).
+                warn!(error = %e, key = %key, "R2S3Client::delete_if_present HEAD error; reporting 0 reclaimed");
+                None
+            }
+        };
+
+        let result = self.delete(key).await;
+
+        // Prune the per-key lock entry once no other task is waiting on it (we are
+        // the sole holder ⇒ strong_count == 1 after dropping our local `lock`
+        // would be 1; here we still hold `_guard`+`lock`, so check for ==2: our
+        // `lock` clone + the map's). Keeps `delete_locks` from growing unbounded.
+        {
+            let mut locks = match self.delete_locks.lock() {
+                Ok(g) => g,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            if let Some(entry) = locks.get(key) {
+                // map holds 1 ref; this function holds `lock` (1) ⇒ 2 means no
+                // other waiter. Drop the map entry so it can be GC'd.
+                if std::sync::Arc::strong_count(entry) <= 2 {
+                    locks.remove(key);
+                }
+            }
+        }
+
+        result?;
+        Ok(prior)
     }
 
     /// List every object key under `prefix` (paginated via the V2
@@ -810,6 +894,44 @@ impl CasWriteHandler for R2CasHandler {
         // CRITICAL — `block_in_place` rationale: see the matching
         // comment in `<Self as CasReadHandler>::read` above.
         let handle = tokio::runtime::Handle::current();
+
+        // Idempotent-rewrite detection (rt-nuclear #13 — byte double-charge).
+        // CAS is content-addressed: the key already embeds the verified content
+        // hash, so an object that already exists under this key holds the SAME
+        // bytes (the hash was verified above). HEAD before PUT (mirrors the AC
+        // path's GET-and-compare, but for CAS a presence HEAD suffices): if the
+        // blob is already present we SKIP the re-PUT and return `durable=false`,
+        // so the `AccountingCasHandler` decorator does NOT charge the bytes a
+        // second time on an idempotent re-write. A HEAD error fails CLOSED to the
+        // PUT path (correctness over the accounting optimisation — a transient
+        // HEAD blip must never drop a write); a duplicate PUT is harmless (same
+        // bytes) and the worst case is the legacy double-charge, never data loss.
+        match tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key))) {
+            Ok(Some(_)) => {
+                // Already durable under this content-addressed key → idempotent
+                // no-op; do not re-PUT and do not re-charge the bytes.
+                self.audit
+                    .emit(AuditEvent::new(
+                        AuditEventKind::WriteCommitted,
+                        req.tenant.clone(),
+                        req.claimed_hash.clone(),
+                        req.principal.clone(),
+                        req.at_unix_ms,
+                    ))
+                    .map_err(CasHandlerError::AuditFailed)?;
+                self.sli
+                    .observe(SliObservation::new(Sli::CorrectnessCas, false, 0));
+                emit(false);
+                return Ok(CasWriteResponse::new(req.claimed_hash, false));
+            }
+            Ok(None) => { /* absent — fall through to the PUT below */ }
+            Err(e) => {
+                // Ambiguous prior state: fall through to the PUT (fail-CLOSED to a
+                // durable write) rather than risk dropping a fresh blob.
+                warn!(error = %e, key = %key, "R2CasHandler::write pre-PUT HEAD error; PUTting");
+            }
+        }
+
         let result =
             tokio::task::block_in_place(|| handle.block_on(self.client.put(&key, req.bytes)));
 
@@ -911,20 +1033,21 @@ impl CasDeleteHandler for R2CasHandler {
         // diagnostic is monotone, never a silent success on a transport
         // error. CRITICAL — `block_in_place`: see `read` above.
         //
-        // Storage byte-accounting (finding #1 / cluster-C): HEAD the object
-        // BEFORE deleting to learn its size (a HEAD, not a GET — no egress),
-        // so the route's byte accountant can `release` exactly the reclaimed
-        // bytes. A HEAD error is non-fatal: we proceed with the delete and
-        // report `reclaimed_bytes = 0` (a failed release over-counts the
-        // tenant — conservative, never under-counts the cap).
+        // Storage byte-accounting (finding #1 / cluster-C) + concurrent
+        // double-DELETE over-release (rt-nuclear #6/#10/#14): the size measurement
+        // and the delete are serialized per-key by `delete_if_present`, which
+        // returns the reclaimed size to AT MOST ONE racer — every other racer sees
+        // the object already gone and gets `None` (releases 0). This makes the
+        // release reflect what THIS request actually removed, so two racing
+        // deletes can never both credit the same bytes. CRITICAL — `block_in_place`:
+        // see `read` above.
         let handle = tokio::runtime::Handle::current();
-        let reclaimed = tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key)))
-            .unwrap_or(None)
-            .unwrap_or(0);
-        let result = tokio::task::block_in_place(|| handle.block_on(self.client.delete(&key)));
+        let result =
+            tokio::task::block_in_place(|| handle.block_on(self.client.delete_if_present(&key)));
 
         match result {
-            Ok(()) => {
+            Ok(prior) => {
+                let reclaimed = prior.unwrap_or(0);
                 self.audit
                     .emit(AuditEvent::new(
                         AuditEventKind::DeleteCommitted,
@@ -1460,17 +1583,18 @@ impl corelink_handler_ac::AcDeleteHandler for R2AcHandler {
         };
         debug!(key = %key, "R2AcHandler::delete");
 
-        // S3 DeleteObject is idempotent. CRITICAL — `block_in_place`.
-        // HEAD before delete to learn the reclaimed size for byte-accounting
-        // (finding #1 / cluster-C); a HEAD error is non-fatal (release 0).
+        // Byte-accounting (finding #1 / cluster-C) + concurrent double-DELETE
+        // over-release (rt-nuclear #6/#10/#14): `delete_if_present` serializes the
+        // measure-and-delete per key and returns the reclaimed size to AT MOST ONE
+        // racer, so two racing deletes can never both credit the same bytes.
+        // CRITICAL — `block_in_place`.
         let handle = tokio::runtime::Handle::current();
-        let reclaimed = tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key)))
-            .unwrap_or(None)
-            .unwrap_or(0);
-        let result = tokio::task::block_in_place(|| handle.block_on(self.client.delete(&key)));
+        let result =
+            tokio::task::block_in_place(|| handle.block_on(self.client.delete_if_present(&key)));
 
         match result {
-            Ok(()) => {
+            Ok(prior) => {
+                let reclaimed = prior.unwrap_or(0);
                 self.audit
                     .emit(AcAuditEvent::new(
                         AcAuditEventKind::DeleteCommitted,
@@ -1931,6 +2055,94 @@ mod tests {
         // GET missing key → None
         let missing = client.get("__no_such_key__").await.expect("get");
         assert!(missing.is_none(), "missing key must return None");
+    }
+
+    /// rt-nuclear #13 regression (live R2): the FIRST CAS write of a content hash
+    /// returns `durable=true` (a real PUT); an idempotent re-write of the SAME
+    /// content returns `durable=false` (HEAD hit → no re-PUT), so the
+    /// `AccountingCasHandler` decorator rolls the reservation back and does NOT
+    /// double-charge the bytes. Gated behind `#[ignore]` like `storage_r2_round_trip`.
+    #[tokio::test]
+    #[ignore = "requires live R2 credentials (R2_S3_ACCESS_KEY_ID etc.)"]
+    async fn cas_idempotent_rewrite_reports_durable_false() {
+        let env = StorageEnv::from_env().expect("all R2 env vars must be set to run this test");
+        let bucket =
+            std::env::var("R2_TEST_BUCKET").unwrap_or_else(|_| "corelink-cas-prod".to_owned());
+        let client = R2S3Client::new(&env, &bucket).await.expect("client");
+        let audit = Arc::new(InMemoryAuditSink::new());
+        let sli = Arc::new(InMemorySliObserver::new());
+        let handler = R2CasHandler::new(client, "iad", None, audit, sli);
+
+        // Unique content per run so parallel runs / prior state don't collide.
+        let payload = format!(
+            "rt-nuclear-13-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        )
+        .into_bytes();
+        let tenant = "t-rt13";
+        let claimed = Digest::compute(&payload).to_hex();
+
+        let first = handler
+            .write(CasWriteRequest::new(
+                tenant,
+                claimed.clone(),
+                payload.clone(),
+                "p",
+                tenant,
+                1,
+            ))
+            .expect("first write");
+        assert!(first.durable, "first write of a fresh hash must be durable=true");
+
+        let second = handler
+            .write(CasWriteRequest::new(
+                tenant,
+                claimed.clone(),
+                payload,
+                "p",
+                tenant,
+                2,
+            ))
+            .expect("second write");
+        assert!(
+            !second.durable,
+            "an idempotent re-write must report durable=false (HEAD hit → no re-PUT, no re-charge)"
+        );
+    }
+
+    /// rt-nuclear #6/#10/#14 regression (live R2): `delete_if_present` returns the
+    /// reclaimed size to the FIRST delete and `None` (release 0) to the SECOND —
+    /// two deletes of the same key can never both credit the same bytes. Run with
+    /// the same live-R2 env as `storage_r2_round_trip`.
+    #[tokio::test]
+    #[ignore = "requires live R2 credentials (R2_S3_ACCESS_KEY_ID etc.)"]
+    async fn delete_if_present_credits_size_once_then_none() {
+        let env = StorageEnv::from_env().expect("all R2 env vars must be set to run this test");
+        let bucket =
+            std::env::var("R2_TEST_BUCKET").unwrap_or_else(|_| "corelink-cas-prod".to_owned());
+        let client = R2S3Client::new(&env, &bucket).await.expect("client");
+
+        let key = format!(
+            "test/delete-once/{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+        let payload = b"rt-nuclear-6-10-14".to_vec();
+        let size = payload.len() as u64;
+        client.put(&key, payload).await.expect("put");
+
+        // First delete observes-and-removes → Some(size).
+        let first = client.delete_if_present(&key).await.expect("first delete");
+        assert_eq!(first, Some(size), "the first delete must credit the reclaimed size");
+
+        // Second delete sees the key already gone → None (releases 0).
+        let second = client.delete_if_present(&key).await.expect("second delete");
+        assert_eq!(second, None, "a second delete must credit 0 (no double-release)");
     }
 
     // ---------------------------------------------------------------

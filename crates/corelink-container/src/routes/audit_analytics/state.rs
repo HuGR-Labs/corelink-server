@@ -40,6 +40,12 @@ pub struct AuditAnalyticsRouteState {
     /// [`crate::wall_clock::InMemoryFakeWallClock`] for deterministic
     /// rate-limit timing.
     pub wall_clock: Arc<dyn WallClock>,
+    /// Optional native PAT possession gate (rt-nuclear #17 — defense-in-depth).
+    /// `Some` in production — re-runs the full Argon2id Option-B verify at the TOP
+    /// of each analytics handler, AFTER the scope+tenant gate, BEFORE any data
+    /// access, so a leaked `PAT_SIGNING_KEY` cannot serve a forged tenant's
+    /// analytics. `None` in dev/CI (skipped). Mirrors `cas::CasRouteState::pat_gate`.
+    pub pat_gate: Option<Arc<crate::native_pat_gate::NativePatGate>>,
 }
 
 impl core::fmt::Debug for AuditAnalyticsRouteState {
@@ -120,5 +126,6 @@ pub fn build_state(shadow_factory: Arc<dyn ShadowSinkFactory>) -> AuditAnalytics
         rate_limiter,
         audit_sink,
         wall_clock,
+        pat_gate: None,
     }
 }

@@ -129,6 +129,14 @@ impl TenantResolver for BrewPatResolver {
     }
 }
 
+/// State for [`brew_gate`]: the shared tenant resolver (F27) + the optional
+/// per-tenant monthly `$`-ceiling [`QuotaGate`] (rt-nuclear #22).
+#[derive(Clone)]
+struct BrewGateState {
+    resolver: SharedTenantResolver,
+    quota: Option<crate::routes::QuotaGate>,
+}
+
 /// Build the `/brew/*` sub-router from shared CAS handlers + the url→hash map
 /// + the PAT verifier.
 ///
@@ -143,6 +151,7 @@ pub fn router(
     cas_write: Arc<dyn CasWriteHandler>,
     map: Arc<dyn UrlMapStore>,
     verifier: Arc<PatVerifier>,
+    quota: Option<crate::routes::QuotaGate>,
 ) -> Router {
     let moat = Arc::new(MoatCache::production(
         cas_read,
@@ -184,7 +193,8 @@ pub fn router(
     // to two-layer write enforcement (F27): scope header AND the PAT-derived
     // `can_write` from the resolver's single verification (no redundant second
     // PAT verify).
-    let adapter = adapter.layer(middleware::from_fn_with_state(resolver, brew_gate));
+    let gate_state = BrewGateState { resolver, quota };
+    let adapter = adapter.layer(middleware::from_fn_with_state(gate_state, brew_gate));
     Router::new().nest_service("/brew", adapter)
 }
 
@@ -200,10 +210,11 @@ pub fn router(
 /// rewrites the path to `/<bottle-path>` so the adapter's catch-all and the
 /// upstream fetch see the real bottle path.
 async fn brew_gate(
-    axum::extract::State(resolver): axum::extract::State<SharedTenantResolver>,
+    axum::extract::State(state): axum::extract::State<BrewGateState>,
     mut req: Request,
     next: Next,
 ) -> Response {
+    let resolver = &state.resolver;
     let scope = req
         .headers()
         .get(SCOPE_HEADER)
@@ -275,6 +286,25 @@ async fn brew_gate(
                         return (StatusCode::UNAUTHORIZED, "invalid PAT").into_response();
                     }
                 }
+            }
+        }
+    }
+
+    // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1; rt-nuclear
+    // #22): charge the flat per-op cost AFTER the scope + F27 checks, BEFORE the
+    // adapter runs. Cost-attribution tenant = the server-trusted
+    // `x-corelink-tenant-id`; missing/empty skips fail-OPEN. 402 over-ceiling /
+    // 503 fail-CLOSED. Mirrors `cargo_gate`.
+    if let Some(gate) = state.quota.as_ref() {
+        let tenant = req
+            .headers()
+            .get("x-corelink-tenant-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .unwrap_or("");
+        if !tenant.is_empty() {
+            if let Some(resp) = gate.check(tenant).await {
+                return resp;
             }
         }
     }
@@ -423,6 +453,7 @@ mod tests {
             cas as Arc<dyn CasWriteHandler>,
             Arc::new(FakeMap::default()),
             verifier,
+            None,
         )
     }
 
@@ -435,6 +466,59 @@ mod tests {
             b = b.header(SCOPE_HEADER, s);
         }
         b.body(Body::empty()).unwrap()
+    }
+
+    /// Router whose gate carries a `QuotaGate` seeded so the tenant is already AT
+    /// its monthly $-ceiling — the next billable op trips it (rt-nuclear #22).
+    fn router_over_ceiling(tenant: &str) -> Router {
+        use crate::tenant_quota::{InMemoryQuotaStore, QuotaGuard, QuotaState, QuotaStore};
+        use crate::wall_clock::InMemoryFakeWallClock;
+
+        let cas: Arc<StubCas> = Arc::new(StubCas::default());
+        let verifier = Arc::new(PatVerifier::new(Arc::new(EmptyLookup), test_key()));
+        let store = InMemoryQuotaStore::new();
+        store.seed(
+            tenant,
+            QuotaState {
+                monthly_budget_usd_micros: 5_000_000,
+                accrued_usd_micros: 5_000_000, // already at the $5 cap
+                cycle_anchor_ms: 1_700_000_000_000,
+            },
+        );
+        let store: Arc<dyn QuotaStore> = Arc::new(store);
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(1_700_000_000_000));
+        let guard = Arc::new(QuotaGuard::new(store, clock));
+        let gate = crate::routes::QuotaGate::new_for_test(guard, 1);
+        router(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()),
+            verifier,
+            Some(gate),
+        )
+    }
+
+    /// rt-nuclear #22 — the container-side $-ceiling gate is now wired on brew: a
+    /// scope-valid GET whose cost-attribution tenant is already AT its monthly
+    /// ceiling is rejected 402 Payment Required AT THE GATE, BEFORE the adapter
+    /// (proven by the all-rejecting verifier never being reached).
+    #[tokio::test]
+    async fn brew_over_ceiling_request_returns_402_at_the_gate() {
+        let tenant = "11111111-1111-1111-1111-111111111111";
+        let app = router_over_ceiling(tenant);
+        let req = HttpRequest::builder()
+            .method(Method::GET)
+            .uri("/brew/t/v2/x")
+            .header(SCOPE_HEADER, "cas:r")
+            .header("x-corelink-tenant-id", tenant)
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::PAYMENT_REQUIRED,
+            "an over-ceiling brew request must be 402 at the gate (rt-nuclear #22)"
+        );
     }
 
     #[tokio::test]
@@ -542,6 +626,7 @@ mod tests {
             cas as Arc<dyn CasWriteHandler>,
             Arc::new(FakeMap::default()),
             verifier,
+            None,
         );
 
         // PUT with `cas:rw` scope header but a read-only PAT: the gate's
@@ -610,6 +695,7 @@ mod tests {
             cas as Arc<dyn CasWriteHandler>,
             map,
             verifier,
+            None,
         );
 
         // path-tenant "ignored" ≠ the PAT tenant → proves the path tenant is

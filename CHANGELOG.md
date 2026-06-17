@@ -22,7 +22,75 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **Turbo PUT charged storage bytes on every idempotent re-write (rt-nuclear #25).**
+  The Turbo bridge's `CasWriteStore::write` returned `()`, so the turbo_v8 route accrued the body bytes
+  on EVERY PUT — a CI cache re-pushing the same content-keyed artifact (the common case) double-charged
+  storage on each re-run. `CasWriteStore::write` now returns `Result<bool>` (true = new key, false =
+  overwrite), threaded through `TurboPutResponse::durable`; the route rolls back the byte reservation
+  when `durable == false`, mirroring the `AccountingCasHandler` `durable` contract. The R2-backed store
+  probes presence before the PUT (fail-CLOSED to durable on a probe error — never under-charge).
+- **Concurrent double-DELETE over-released storage bytes (rt-nuclear #6/#10/#14).**
+  The CAS and AC delete handlers measured the blob size with a HEAD and then issued a separate idempotent
+  `DeleteObject`. Because S3 `DeleteObject` reports neither prior presence nor prior size, two concurrent
+  deletes of the same key BOTH HEAD the size and BOTH report it reclaimed — the byte accountant then
+  released the bytes twice, manufacturing free storage headroom (a quota-bypass primitive). Both planes
+  now go through a new `R2S3Client::delete_if_present`, which serializes the measure-and-delete under a
+  per-key in-process async lock and returns the reclaimed size to AT MOST ONE racer (`Some(size)`); every
+  other racer HEADs the key absent and gets `None` → releases 0. The release now reflects what THIS
+  request actually removed.
+- **R2 CAS write always reported `durable=true` → byte double-charge on idempotent re-write (rt-nuclear #13).**
+  `R2CasHandler::write` returned `CasWriteResponse::new(hash, true)` unconditionally, so every re-write of
+  an already-stored content hash was reported as a fresh durable insert. The `AccountingCasHandler`
+  decorator charges the bytes on the reservation and only rolls them back when `durable == false`, so an
+  idempotent re-write was charged a SECOND time — a tenant could inflate (or, symmetrically, a churning
+  client could drift) `bytes_used`. The CAS write now HEADs the content-addressed key before the PUT
+  (mirroring the AC update's GET-and-compare): an already-present blob skips the re-PUT and returns
+  `durable=false` (HEAD error fails CLOSED to the PUT, never dropping a write), so the decorator does not
+  re-charge.
+
+### Fixed
+- **Storage cap frozen at first-write, never reseeded on tier downgrade (rt-nuclear #16).**
+  `D1ByteStore::check_and_accrue`'s `ON CONFLICT DO UPDATE` updated `bytes_used`/timestamps but NOT
+  `bytes_quota`, so a tenant whose tier was DOWNGRADED kept the old (higher) cap forever — the new
+  lower cap never took effect and the tenant could keep storing past their entitlement. The conflict
+  branch now RECONCILES `bytes_quota` to the incoming authoritative cap when it is a real finite value
+  (`COALESCE(NULLIF(?5,0), …existing)`, so a genuinely-unlimited `Some(0)` carrier never clobbers a
+  finite stored cap), and gates the write by the effective new cap so the downgrade is enforced on the
+  very next write. The in-memory test store mirrors the same semantics.
+
 ### Security
+- **npm/pip/brew cache adapters had NO container-side $-ceiling gate (rt-nuclear #22).**
+  Unlike cargo and OCI, the npm/pip/brew adapter gates enforced cache scope + F27 write capability but
+  did NOT charge the per-tenant monthly `$`-ceiling, so a tenant over its billing ceiling could keep
+  driving cache ops on those surfaces (cost-control bypass). Each gate now carries the same optional
+  `QuotaGate` cargo/OCI use and charges the flat per-op cost (server-trusted `x-corelink-tenant-id`
+  cost-attribution, missing/empty skips fail-OPEN) after the scope/F27 checks and before the adapter
+  runs — 402 over-ceiling / 503 fail-CLOSED.
+- **Audit export/analytics had no Argon2id PAT-possession backstop → leaked PAT_SIGNING_KEY = cross-tenant audit exfil (rt-nuclear #17).**
+  The `/v1/audit/export` and `/v1/audit/analytics/*` surfaces trusted the Worker-resolved tenant header
+  without re-verifying PAT possession, so a leaked `PAT_SIGNING_KEY` (which lets an attacker HMAC-forge a
+  bearer) could read any victim tenant's audit log / analytics. These routes now carry the SAME optional
+  `NativePatGate` the native CAS/AC/Bazel/Turbo states use: when wired (prod), each handler re-runs the
+  full Argon2id Option-B verify of the bearer against the authenticated tenant AFTER the scope+tenant
+  gate and BEFORE any data access (401 forged/wrong-tenant, 503 verifier fault); `None` in dev/CI.
+- **OCI in-flight byte ceiling was global-only → one tenant could starve all (rt-nuclear #3/#12).**
+  The OCI blob-upload path enforced only a GLOBAL 512 MiB in-flight ceiling, so a single tenant could
+  fill the entire ceiling (its session cap × layer size easily exceeds it) and `429` every other
+  tenant's pushes — a cross-tenant availability DoS. `append_chunk` now ALSO reserves each chunk against
+  a per-tenant byte budget (`OCI_MAX_INFLIGHT_BYTES_PER_TENANT = 1/8` of the global = 64 MiB), checked
+  atomically under the `tenant_inflight` lock; a chunk over a tenant's own slice is rejected 429 (and
+  rolls back its global reservation). The per-tenant counter is released on finalize / cancel / failed
+  append / idle-reap, exactly like the global counter.
+- **Native CAS/AC write planes had no per-tenant pre-buffer concurrency cap (rt-nuclear #11).**
+  The native `PUT /v1/cas/:tenant/:hash` and `PUT /v1/ac/:tenant/:digest` handlers buffered the full
+  request body into heap before any gate ran and, unlike the Bazel REAPI surface, had NO per-tenant
+  concurrency limit — so a single authenticated tenant could open N concurrent PUTs and consume
+  N × body-limit of heap (memory-exhaustion DoS). Both planes now reserve a per-tenant in-flight slot
+  via a `FromRequestParts` extractor (`CasPutGuard` / `AcPutGuard`) declared AHEAD of `body: Bytes`,
+  mirroring the proven `bazel_v2::BazelPutGuard`: a tenant already at the limit (`CAS/AC_WRITE_
+  CONCURRENCY_LIMIT = 8`) is rejected `429 Too Many Requests` BEFORE the body is read, fail-CLOSED on
+  a missing/sentinel tenant; the RAII slot releases on every return path.
 - **npm metadata cache-poisoning via name normalization collision (rt-nuclear #7).**
   Unscoped npm package metadata is cached in the SHARED cross-tenant `_public` namespace keyed by the
   **normalized** name (`trim().to_ascii_lowercase()`), but the upstream fetch used the **raw** path

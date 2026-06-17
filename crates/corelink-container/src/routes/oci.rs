@@ -113,6 +113,17 @@ const OCI_MAX_OPEN_SESSIONS_PER_TENANT: usize = 4;
 /// chunks are rejected with a port error that surfaces as `429 + Retry-After`.
 const OCI_MAX_INFLIGHT_BYTES: u64 = 512 * 1024 * 1024; // 512 MiB
 
+/// Per-tenant slice of the global in-flight byte ceiling (rt-nuclear #3/#12 —
+/// noisy-neighbour starvation). The global [`OCI_MAX_INFLIGHT_BYTES`] alone lets
+/// a SINGLE tenant fill the entire 512 MiB ceiling (its session cap × max layer
+/// size easily exceeds it), starving every other tenant's pushes (a `429` DoS
+/// against innocent tenants). We additionally bound each tenant to `1/8` of the
+/// global ceiling (64 MiB) so no one tenant can monopolise more than its slice;
+/// a `PATCH` that would push a tenant's own in-flight bytes over this slice is
+/// rejected with the same `429`-mapped port error, and the bytes are released on
+/// finalize / cancel / failed-append exactly like the global counter.
+const OCI_MAX_INFLIGHT_BYTES_PER_TENANT: u64 = OCI_MAX_INFLIGHT_BYTES / 8; // 64 MiB
+
 /// Idle timeout after which an upload session is considered abandoned and is
 /// reaped on the next `open_upload` call (lazy reap — audit #6 / WP-OCI-DOS).
 ///
@@ -202,6 +213,12 @@ struct OciMoatStore {
     /// Bytes currently buffered across ALL open upload sessions.
     /// Updated atomically; never allowed to exceed [`OCI_MAX_INFLIGHT_BYTES`].
     inflight_bytes: AtomicU64,
+    /// Per-tenant in-flight upload bytes (rt-nuclear #3/#12 — noisy-neighbour
+    /// starvation). Keyed by tenant canonical text; each entry is bounded by
+    /// [`OCI_MAX_INFLIGHT_BYTES_PER_TENANT`]. Mutated under this lock INSIDE the
+    /// `append_chunk` reservation so the per-tenant budget is enforced atomically
+    /// with the buffer extend; pruned to zero on release.
+    tenant_inflight: Mutex<HashMap<String, u64>>,
 }
 
 impl std::fmt::Debug for OciMoatStore {
@@ -216,6 +233,24 @@ impl OciMoatStore {
             moat,
             uploads: Mutex::new(HashMap::new()),
             inflight_bytes: AtomicU64::new(0),
+            tenant_inflight: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Release `bytes` from a tenant's per-tenant in-flight counter (rt-nuclear
+    /// #3/#12), saturating at zero and pruning the entry when it reaches 0 so the
+    /// map does not grow without bound. Mirror of the global `fetch_sub` release.
+    fn release_tenant_bytes(&self, tenant_text: &str, bytes: u64) {
+        if bytes == 0 {
+            return;
+        }
+        if let Ok(mut t) = self.tenant_inflight.lock() {
+            if let Some(c) = t.get_mut(tenant_text) {
+                *c = c.saturating_sub(bytes);
+                if *c == 0 {
+                    t.remove(tenant_text);
+                }
+            }
         }
     }
 }
@@ -281,6 +316,15 @@ impl BlobStore for OciMoatStore {
                     self.inflight_bytes.load(Ordering::Relaxed).min(freed),
                     Ordering::Relaxed,
                 );
+                // Also release the reaped session's bytes from its tenant's
+                // per-tenant counter (rt-nuclear #3/#12) — the session key is
+                // `<tenant-text>:<uuid>`, so the tenant text is the prefix before
+                // the first `:`. (`uploads` is held; `release_tenant_bytes` takes
+                // the distinct `tenant_inflight` lock — consistent uploads→tenant
+                // ordering, no deadlock.)
+                if let Some((reaped_tenant, _)) = key.split_once(':') {
+                    self.release_tenant_bytes(reaped_tenant, freed);
+                }
                 tracing::info!(
                     session_uuid = %key,
                     bytes_freed = freed,
@@ -370,6 +414,43 @@ impl BlobStore for OciMoatStore {
                 break;
             }
         }
+        // PER-TENANT byte budget (rt-nuclear #3/#12 — noisy-neighbour starvation):
+        // the global ceiling alone lets ONE tenant fill all 512 MiB and 429 every
+        // other tenant. Reserve the chunk against the tenant's own slice
+        // (`OCI_MAX_INFLIGHT_BYTES_PER_TENANT`) too; over-slice ⇒ release the
+        // GLOBAL reservation we just took and reject 429. Done under the
+        // `tenant_inflight` lock so the per-tenant check-and-reserve is atomic.
+        let tenant_text = tenant.to_canonical_text();
+        {
+            let mut t = self
+                .tenant_inflight
+                .lock()
+                .map_err(|e| format!("oci tenant inflight poisoned: {e}"))?;
+            let cur = t.get(&tenant_text).copied().unwrap_or(0);
+            let next = cur.saturating_add(chunk_len);
+            if next > OCI_MAX_INFLIGHT_BYTES_PER_TENANT {
+                drop(t);
+                // Roll back the global reservation; this append does not proceed.
+                self.inflight_bytes.fetch_sub(
+                    self.inflight_bytes.load(Ordering::Relaxed).min(chunk_len),
+                    Ordering::Relaxed,
+                );
+                tracing::warn!(
+                    tenant_id = %tenant_text,
+                    tenant_inflight_bytes = cur,
+                    chunk_len,
+                    limit = OCI_MAX_INFLIGHT_BYTES_PER_TENANT,
+                    "oci: per-tenant in-flight byte budget reached; rejecting PATCH chunk (rt-nuclear #3/#12)"
+                );
+                // Keep the "too many open upload sessions" prefix so the adapter
+                // maps it to 429; make the message accurate (per-tenant byte slice).
+                return Err(format!(
+                    "too many open upload sessions for tenant: per-tenant in-flight \
+                     byte budget reached (limit {OCI_MAX_INFLIGHT_BYTES_PER_TENANT} bytes)"
+                ));
+            }
+            t.insert(tenant_text.clone(), next);
+        }
         let mut g = self
             .uploads
             .lock()
@@ -378,11 +459,14 @@ impl BlobStore for OciMoatStore {
             Some(s) => s,
             None => {
                 // The chunk will NOT be appended — release the bytes we reserved
-                // above so the ceiling is not permanently consumed by a failed append.
+                // above (BOTH counters) so the ceilings are not permanently
+                // consumed by a failed append.
                 self.inflight_bytes.fetch_sub(
                     self.inflight_bytes.load(Ordering::Relaxed).min(chunk_len),
                     Ordering::Relaxed,
                 );
+                drop(g);
+                self.release_tenant_bytes(&tenant_text, chunk_len);
                 // EXACT shape the adapter matches on to emit a 404
                 // BLOB_UPLOAD_UNKNOWN (`oci::push::upload` checks
                 // `e.starts_with("upload session not found")`).
@@ -391,7 +475,8 @@ impl BlobStore for OciMoatStore {
         };
         session.buf.extend_from_slice(&chunk);
         session.last_active_ms = now_unix_ms();
-        // (No fetch_add here — the bytes were atomically reserved above (#19).)
+        // (No fetch_add here — the bytes were atomically reserved above (#19) and
+        // mirrored into the per-tenant counter.)
         u64::try_from(session.buf.len()).map_err(|e| format!("oci upload len overflow: {e}"))
     }
 
@@ -412,13 +497,14 @@ impl BlobStore for OciMoatStore {
             g.remove(upload_uuid)
                 .ok_or_else(|| format!("upload session not found: {upload_uuid}"))?
         };
-        // Release the bytes from the global counter BEFORE the async moat
-        // write so the ceiling opens up as early as possible.
+        // Release the bytes from the global AND per-tenant counters BEFORE the
+        // async moat write so the ceilings open up as early as possible.
         let freed = u64::try_from(session.buf.len()).unwrap_or(0);
         self.inflight_bytes.fetch_sub(
             self.inflight_bytes.load(Ordering::Relaxed).min(freed),
             Ordering::Relaxed,
         );
+        self.release_tenant_bytes(&tenant.to_canonical_text(), freed);
         let assembled = Bytes::from(session.buf.clone());
         // Persist content-addressed under the per-tenant namespace,
         // mapping the OCI digest (`blob_key`) → blake3 content hash.
@@ -446,6 +532,7 @@ impl BlobStore for OciMoatStore {
                 self.inflight_bytes.load(Ordering::Relaxed).min(freed),
                 Ordering::Relaxed,
             );
+            self.release_tenant_bytes(&tenant.to_canonical_text(), freed);
         }
         Ok(())
     }
@@ -1392,6 +1479,74 @@ mod tests {
             .append_chunk(&tenant, &uuid2, Bytes::from_static(b"hello"))
             .await;
         assert!(ok.is_ok(), "chunk must succeed when counter is reset");
+    }
+
+    /// rt-nuclear #3/#12 — per-tenant in-flight byte budget (noisy-neighbour
+    /// starvation). With ONE tenant at its per-tenant slice (well below the
+    /// GLOBAL ceiling), that tenant's next chunk is rejected 429-mapped, while a
+    /// DIFFERENT tenant can still push — proving the per-tenant cap isolates
+    /// tenants. The counter is released on cancel so the tenant recovers.
+    #[tokio::test]
+    async fn append_chunk_respects_per_tenant_inflight_budget() {
+        let cas = Arc::new(StubCas::default());
+        let moat = Arc::new(MoatCache::production(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()),
+            "oci-test-per-tenant",
+        ));
+        let store = OciMoatStore::new(moat);
+        let hog = TenantId::from_uuid(Uuid::from_u128(0x803));
+        let victim = TenantId::from_uuid(Uuid::from_u128(0x71C7100));
+
+        // The global counter is far below the global ceiling — only the
+        // per-tenant slice should trip here.
+        let hog_uuid = store.open_upload(&hog).await.unwrap();
+        store
+            .tenant_inflight
+            .lock()
+            .unwrap()
+            .insert(hog.to_canonical_text(), OCI_MAX_INFLIGHT_BYTES_PER_TENANT);
+
+        let err = store
+            .append_chunk(&hog, &hog_uuid, Bytes::from_static(b"x"))
+            .await
+            .unwrap_err();
+        assert!(
+            err.contains("too many open upload sessions"),
+            "expected per-tenant budget 429-mapped error, got: {err}"
+        );
+        // The global counter must NOT have been left credited by the rejected
+        // append (the global reservation was rolled back).
+        assert_eq!(
+            store.inflight_bytes.load(Ordering::Relaxed),
+            0,
+            "a per-tenant-budget rejection must roll back the global reservation"
+        );
+
+        // A DIFFERENT tenant is unaffected — no cross-tenant starvation.
+        let victim_uuid = store.open_upload(&victim).await.unwrap();
+        let ok = store
+            .append_chunk(&victim, &victim_uuid, Bytes::from_static(b"hello"))
+            .await;
+        assert!(
+            ok.is_ok(),
+            "a second tenant must still push while the first is at its per-tenant budget"
+        );
+
+        // After the hog cancels, its per-tenant counter is released and it can
+        // push again.
+        store.cancel_upload(&hog, &hog_uuid).await.unwrap();
+        store
+            .tenant_inflight
+            .lock()
+            .unwrap()
+            .remove(&hog.to_canonical_text());
+        let hog_uuid2 = store.open_upload(&hog).await.unwrap();
+        let recovered = store
+            .append_chunk(&hog, &hog_uuid2, Bytes::from_static(b"again"))
+            .await;
+        assert!(recovered.is_ok(), "tenant must recover after its budget is released");
     }
 
     /// Audit #6 / WP-OCI-DOS — lazy abandoned-session reaper.

@@ -56,6 +56,7 @@ async fn cross_tenant_reject_returns_503_on_audit_sink_failure() {
         audit_sink: sink as Arc<dyn ExportAuditSink>,
         pager_page_size: R2_LIST_PAGE_SIZE,
         wall_clock: default_wall_clock(),
+        pat_gate: None,
     };
     let app = router(state);
     let uri = format!("/v1/audit/{auth_tenant}/export?from=0&to=1000&tenant={attempted}",);
@@ -100,6 +101,7 @@ async fn missing_tenant_header_returns_401() {
         audit_sink: sink as Arc<dyn ExportAuditSink>,
         pager_page_size: R2_LIST_PAGE_SIZE,
         wall_clock: default_wall_clock(),
+        pat_gate: None,
     };
     let app = router(state);
     // NO `x-corelink-tenant-id` header — `AuthTenant` fails CLOSED
@@ -149,6 +151,7 @@ async fn path_tenant_ne_header_returns_403_and_audits_sev1() {
         audit_sink: sink.clone() as Arc<dyn ExportAuditSink>,
         pager_page_size: R2_LIST_PAGE_SIZE,
         wall_clock: default_wall_clock(),
+        pat_gate: None,
     };
     let app = router(state);
     // Path `:tenant` is `path_tenant` (0xBB) but the authenticated
@@ -204,6 +207,7 @@ async fn rate_limit_deny_returns_503_on_audit_sink_failure() {
         audit_sink: sink.clone() as Arc<dyn ExportAuditSink>,
         pager_page_size: R2_LIST_PAGE_SIZE,
         wall_clock: default_wall_clock(),
+        pat_gate: None,
     };
     let app = router(state);
     // First request: consume the token (200 expected; no failure
@@ -269,6 +273,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
         audit_sink: sink as Arc<dyn ExportAuditSink>,
         pager_page_size: R2_LIST_PAGE_SIZE,
         wall_clock: fake.clone() as Arc<dyn WallClock>,
+        pat_gate: None,
     };
     let app = router(state);
 
@@ -354,6 +359,7 @@ async fn wall_clock_saturated_to_zero_returns_503_and_emits_clock_unavailable_ro
         audit_sink: sink_dyn,
         pager_page_size: R2_LIST_PAGE_SIZE,
         wall_clock: fake as Arc<dyn WallClock>,
+        pat_gate: None,
     };
     let app = router(state);
 
@@ -527,6 +533,7 @@ async fn export_window_exceeding_30_days_returns_400() {
         audit_sink: sink as Arc<dyn ExportAuditSink>,
         pager_page_size: R2_LIST_PAGE_SIZE,
         wall_clock: default_wall_clock(),
+        pat_gate: None,
     };
     let app = router(state);
 
@@ -571,6 +578,7 @@ async fn export_window_at_30_day_boundary_is_allowed() {
         audit_sink: sink as Arc<dyn ExportAuditSink>,
         pager_page_size: R2_LIST_PAGE_SIZE,
         wall_clock: default_wall_clock(),
+        pat_gate: None,
     };
     let app = router(state);
 
@@ -588,5 +596,64 @@ async fn export_window_at_30_day_boundary_is_allowed() {
         resp.status(),
         StatusCode::OK,
         "window == 30 days MUST pass the span gate (inclusive boundary)"
+    );
+}
+
+/// rt-nuclear #17 — the native PAT possession gate, when wired, rejects an
+/// audit-export request whose bearer does NOT prove possession of the
+/// authenticated tenant's PAT (here: no bearer at all → fail-CLOSED 401). This
+/// is the Argon2id backstop that contains a leaked `PAT_SIGNING_KEY`: a forged
+/// HMAC bearer for a victim tenant cannot exfiltrate that tenant's audit log.
+#[tokio::test]
+async fn forged_pat_is_rejected_when_gate_present() {
+    use crate::adapter_pat::PatRow;
+    use crate::native_pat_gate::testing::verifier_with_row;
+    use crate::native_pat_gate::NativePatGate;
+    use corelink_pat::PatSigningKey;
+    use tower::ServiceExt;
+
+    let tenant = Uuid::from_u128(0x171C7117);
+    let sink = Arc::new(InMemoryExportAuditSink::new());
+    let exporter: Arc<dyn AuditExporter> = Arc::new(InMemoryAuditExporter::new());
+    let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
+    let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
+    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(InMemoryTokenBucketRateLimiter::new(
+        rl_audit,
+        rl_metrics,
+        audit_export_rate_limit_config(),
+    ));
+    let key = Arc::new(PatSigningKey::from_bytes(vec![0x42u8; 32]).expect("key"));
+    let verifier = verifier_with_row(
+        "no-such-token".to_owned(),
+        PatRow {
+            tenant_id: tenant.to_string(),
+            pat_hash: String::new(),
+            scope: "cas:rw".to_owned(),
+        },
+        key,
+    );
+    let state = AuditExportRouteState {
+        exporter,
+        rate_limiter,
+        audit_sink: sink as Arc<dyn ExportAuditSink>,
+        pager_page_size: R2_LIST_PAGE_SIZE,
+        wall_clock: default_wall_clock(),
+        pat_gate: Some(Arc::new(NativePatGate::new_for_test(verifier))),
+    };
+    let app = router(state);
+    // Valid authenticated tenant + window, but NO Authorization bearer — the
+    // possession gate must fail CLOSED with 401 BEFORE any data access.
+    let uri = format!("/v1/audit/{tenant}/export?from=0&to=1000");
+    let req = axum::http::Request::builder()
+        .uri(uri)
+        .header(TENANT_ID_HEADER, tenant.to_string())
+        .header("x-corelink-tenant-id", tenant.to_string())
+        .body(axum::body::Body::empty())
+        .expect("req");
+    let resp = app.oneshot(req).await.expect("oneshot");
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "an un-possessed (forged) PAT must be rejected 401 by the native gate"
     );
 }

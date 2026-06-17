@@ -106,3 +106,23 @@ pub use types::{
     MAX_TIMELINE_BUCKETS, REGION_SOURCE_FALLBACK, REGION_SOURCE_PRELUDE,
     REQUEST_PRELUDE_MISSING_EXIT, ROUTE_EVENT_COUNT, ROUTE_TIMELINE, TENANT_ID_HEADER,
 };
+
+/// Run the native PAT possession gate (rt-nuclear #17) when it is wired on the
+/// analytics route state. Reads the bearer PAT from the `Authorization` header
+/// and re-verifies it (Argon2id, full Option-B pipeline) against the claimed
+/// `tenant`. `Some(resp)` ⇒ REJECT (401 forged/wrong-tenant / 503 verifier
+/// fault); `None` ⇒ proceed (or when the gate is absent in dev/CI). Called at the
+/// TOP of each analytics handler, AFTER the scope+tenant gate, BEFORE any data
+/// access. Mirrors `cas::pat_gate_reject`.
+pub(super) async fn pat_gate_reject(
+    state: &AuditAnalyticsRouteState,
+    tenant: &str,
+    headers: &axum::http::HeaderMap,
+) -> Option<axum::response::Response> {
+    let gate = state.pat_gate.as_ref()?;
+    let bearer = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    gate.verify(tenant, bearer).await.err()
+}

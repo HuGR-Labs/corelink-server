@@ -56,18 +56,11 @@ fn fresh_state() -> CasRouteState {
     let delete: Arc<dyn CasDeleteHandler> = shared.clone();
     let list: Arc<dyn CasListHandler> = shared;
     // No tombstone store wired in the smoke test ⇒ classic 200/404 behaviour
-    // (the 410-Gone gate is exercised in `routes::cas`'s unit tests).
-    CasRouteState {
-        read,
-        write,
-        delete,
-        list,
-        tombstones: None,
-        // No $-ceiling gate in the smoke test (gate is exercised in
-        // `routes::cas`'s unit tests + the `tenant_quota` suite).
-        quota: None,
-        pat_gate: None,
-    }
+    // (the 410-Gone gate is exercised in `routes::cas`'s unit tests). No
+    // $-ceiling gate either (exercised in `routes::cas`'s unit tests + the
+    // `tenant_quota` suite). `CasRouteState::new` initializes the crate-private
+    // per-tenant in-flight write counter — the field is not nameable here.
+    CasRouteState::new(read, write, delete, list, None, None, None)
 }
 
 /// CAS read against a fresh handler MUST reach the handler and

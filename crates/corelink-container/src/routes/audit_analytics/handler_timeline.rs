@@ -44,6 +44,7 @@ pub(super) async fn handle_timeline(
     auth: crate::auth_tenant::AuthTenant,
     prelude: Option<Extension<RequestPrelude>>,
     Query(query): Query<TimelineQuery>,
+    headers: axum::http::HeaderMap,
 ) -> axum::response::Response {
     let tenant = match Uuid::parse_str(auth.0.trim()) {
         Ok(t) => t,
@@ -51,6 +52,10 @@ pub(super) async fn handle_timeline(
             return (StatusCode::BAD_REQUEST, "tenant: invalid uuid in header").into_response();
         }
     };
+    // Native PAT possession gate (rt-nuclear #17) — see `handle_event_count`.
+    if let Some(resp) = super::pat_gate_reject(&state, &auth.0, &headers).await {
+        return resp;
+    }
     if query.from >= query.to {
         return emit_or_503(
             &state,

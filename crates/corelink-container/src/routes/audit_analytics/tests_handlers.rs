@@ -73,7 +73,7 @@ async fn tenant_isolation_violation_returns_503_on_audit_sink_failure() {
         to: 1_000,
         event_type: None,
     };
-    let resp = handle_event_count(State(state.clone()), auth.clone(), None, Query(query))
+    let resp = handle_event_count(State(state.clone()), auth.clone(), None, Query(query), axum::http::HeaderMap::new())
         .await
         .into_response();
     assert_eq!(
@@ -90,7 +90,7 @@ async fn tenant_isolation_violation_returns_503_on_audit_sink_failure() {
         to: 1_000,
         granularity: Some(100),
     };
-    let resp2 = handle_timeline(State(state), auth, None, Query(tq))
+    let resp2 = handle_timeline(State(state), auth, None, Query(tq), axum::http::HeaderMap::new())
         .await
         .into_response();
     assert_eq!(
@@ -125,7 +125,7 @@ async fn handle_timeline_error_arm_returns_503_on_audit_sink_failure() {
         to: 1_000,
         granularity: Some(100),
     };
-    let resp = handle_timeline(State(state), auth, None, Query(tq))
+    let resp = handle_timeline(State(state), auth, None, Query(tq), axum::http::HeaderMap::new())
         .await
         .into_response();
     assert_eq!(
@@ -189,6 +189,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
             auth.clone(),
             None,
             Query(query.clone()),
+            axum::http::HeaderMap::new(),
         )
         .await
         .into_response();
@@ -207,6 +208,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
         auth.clone(),
         None,
         Query(query.clone()),
+        axum::http::HeaderMap::new(),
     )
     .await
     .into_response();
@@ -220,7 +222,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
     // refilled (refill=1 token/s × 60s = 60 tokens, clamped to
     // burst=10). The next request MUST allow.
     fake.advance(std::time::Duration::from_secs(60));
-    let resp_after_advance = handle_event_count(State(state), auth, None, Query(query))
+    let resp_after_advance = handle_event_count(State(state), auth, None, Query(query), axum::http::HeaderMap::new())
         .await
         .into_response();
     assert_eq!(
@@ -274,7 +276,7 @@ async fn analytics_wall_clock_saturated_to_zero_returns_503_and_emits_clock_unav
         event_type: None,
     };
 
-    let resp = handle_event_count(State(state.clone()), auth, None, Query(query))
+    let resp = handle_event_count(State(state.clone()), auth, None, Query(query), axum::http::HeaderMap::new())
         .await
         .into_response();
     assert_eq!(

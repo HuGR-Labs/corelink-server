@@ -327,6 +327,22 @@ impl ByteStore for D1ByteStore {
             // (existing-row UPDATE predicate failed, or fresh-row INSERT guard
             // failed) — refused, counter unchanged.
             Some(seed) => {
+                // rt-nuclear #16: RECONCILE the stored cap on conflict. The
+                // previous ON CONFLICT updated `bytes_used`/timestamps but NOT
+                // `bytes_quota`, so a tenant whose tier was DOWNGRADED kept the
+                // old (higher) cap forever — the new lower cap never took effect.
+                // We now reseed `bytes_quota` to the incoming authoritative cap
+                // `?5` WHEN it is a real finite value (`?5 > 0`); a `Some(0)`
+                // (genuinely-unlimited) incoming cap is NOT clobbered onto the
+                // stored cap (`COALESCE(NULLIF(?5,0), …existing)` keeps the
+                // existing cap), so an unlimited carrier never silently lowers a
+                // finite cap and the finding's "do not clobber a legit unlimited"
+                // rule holds. The cap PREDICATE is evaluated against the EFFECTIVE
+                // new cap so a downgrade is enforced on this very write:
+                //   - incoming unlimited (`?5 = 0`)        ⇒ pass (unlimited);
+                //   - existing unlimited + finite incoming ⇒ gate by `?5`;
+                //   - finite incoming                      ⇒ gate by `?5`;
+                //   - else (existing finite, unlimited in) ⇒ gate by stored cap.
                 let rows = self
                     .client
                     .query(
@@ -338,11 +354,11 @@ impl ByteStore for D1ByteStore {
                            WHERE ?5 = 0 OR ?3 <= ?5 \
                          ON CONFLICT(tenant_id, region) DO UPDATE SET \
                            bytes_used               = bytes_used + ?3, \
+                           bytes_quota              = COALESCE(NULLIF(?5, 0), tenant_storage_state.bytes_quota), \
                            bytes_used_updated_at_ms = ?4, \
                            updated_at_ms            = ?4 \
-                         WHERE tenant_storage_state.bytes_quota = 0 \
-                            OR tenant_storage_state.bytes_used + ?3 \
-                               <= tenant_storage_state.bytes_quota \
+                         WHERE ?5 = 0 \
+                            OR tenant_storage_state.bytes_used + ?3 <= ?5 \
                          RETURNING bytes_used",
                         &[
                             serde_json::Value::String(tenant_id.to_owned()),
@@ -770,6 +786,16 @@ pub(crate) mod testing {
                 .and_then(|r| r.get(&(tenant.to_owned(), region.to_owned())).map(|row| row.used))
                 .unwrap_or(0)
         }
+
+        /// Read a row's `bytes_quota` (test assertion helper); `0` when absent.
+        #[must_use]
+        pub fn quota(&self, tenant: &str, region: &str) -> i64 {
+            self.rows
+                .lock()
+                .ok()
+                .and_then(|r| r.get(&(tenant.to_owned(), region.to_owned())).map(|row| row.quota))
+                .unwrap_or(0)
+        }
     }
 
     #[async_trait]
@@ -788,11 +814,28 @@ pub(crate) mod testing {
                 .map_err(|_| "InMemoryByteStore: poisoned lock".to_owned())?;
             let key = (tenant_id.to_owned(), region.to_owned());
             match rows.get_mut(&key) {
-                // ── Existing row: accrue against its already-seeded cap ───────
-                // (mirrors the D1 UPDATE / UPSERT-conflict branch). The
-                // `quota_seed` does NOT overwrite an existing cap.
+                // ── Existing row: accrue against the AUTHORITATIVE cap ────────
+                // (mirrors the D1 UPSERT-conflict branch incl. rt-nuclear #16).
+                // A finite incoming `quota_seed` (`Some(n)`, `n > 0`) RECONCILES
+                // the stored cap (tier downgrade takes effect) and gates this
+                // write by the new cap; an unlimited / absent incoming cap does
+                // NOT clobber the stored cap and gates by the stored value.
                 Some(row) => {
-                    if row.quota != 0 && row.used.saturating_add(bytes) > row.quota {
+                    // Reseed the stored cap only when the incoming cap is finite.
+                    if let Some(seed) = quota_seed {
+                        if seed != 0 {
+                            row.quota = seed;
+                        }
+                    }
+                    // Effective cap for this write: the finite incoming cap when
+                    // provided, else the (possibly just-reconciled) stored cap.
+                    let effective_quota = match quota_seed {
+                        Some(seed) if seed != 0 => seed,
+                        _ => row.quota,
+                    };
+                    if effective_quota != 0
+                        && row.used.saturating_add(bytes) > effective_quota
+                    {
                         return Ok(AccrueOutcome::OverCap);
                     }
                     row.used = row.used.saturating_add(bytes);
@@ -911,6 +954,29 @@ mod tests {
         // And exactly filling the remaining headroom is allowed.
         assert_eq!(acc.accrue("t-fresh", 400, None).await.unwrap(), AccrueOutcome::Accrued);
         assert_eq!(store.used("t-fresh", REGION), 1_000);
+    }
+
+    #[tokio::test]
+    async fn tier_downgrade_reseeds_stored_cap_to_lower_value() {
+        // rt-nuclear #16: a row seeded with a HIGH cap, then a write carrying a
+        // LOWER (finite) cap, must RECONCILE the stored cap down — the downgrade
+        // takes effect (previously the ON CONFLICT never updated bytes_quota, so
+        // the tenant kept the old higher cap forever).
+        let store = Arc::new(InMemoryByteStore::new());
+        store.seed("t-down", REGION, Row { used: 300, quota: 10_000 });
+        let acc = accountant(store.clone());
+        // A 100-byte write carrying the NEW lower cap (500) reconciles the stored
+        // cap down to 500 and accrues (300 + 100 = 400 <= 500).
+        assert_eq!(acc.accrue("t-down", 100, Some(500)).await.unwrap(), AccrueOutcome::Accrued);
+        assert_eq!(store.quota("t-down", REGION), 500, "stored cap must be reseeded to the lower tier cap");
+        assert_eq!(store.used("t-down", REGION), 400);
+        // The new lower cap is now enforced: a write that fits the OLD cap but
+        // exceeds the NEW one is refused.
+        assert_eq!(acc.accrue("t-down", 200, Some(500)).await.unwrap(), AccrueOutcome::OverCap);
+        assert_eq!(store.used("t-down", REGION), 400, "an over-(new)-cap write must not move the counter");
+        // An unlimited / absent incoming cap must NOT clobber the finite stored cap.
+        assert_eq!(acc.accrue("t-down", 1, UNLIMITED).await.unwrap(), AccrueOutcome::Accrued);
+        assert_eq!(store.quota("t-down", REGION), 500, "an unlimited carrier must not lower/raise the stored finite cap");
     }
 
     #[tokio::test]

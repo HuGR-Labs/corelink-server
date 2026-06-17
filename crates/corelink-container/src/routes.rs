@@ -405,6 +405,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         tombstones: cas_tombstones,
         quota: quota.clone(),
         pat_gate: native_pat_gate.clone(),
+        put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
     let (ac_lookup, ac_update_raw, ac_delete_raw, ac_list) = ac::build_handlers();
     // Storage byte accounting (cluster B+C) for the AC plane: same decorator
@@ -434,6 +435,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         list: ac_list,
         quota: quota.clone(),
         pat_gate: native_pat_gate.clone(),
+        put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
     // Cache adapters share the SAME CAS trait objects (one R2 connection) —
     // clone BEFORE they are moved into the Bazel bridge below. cargo writes
@@ -498,8 +500,14 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         wall_clock: crate::wall_clock::default_wall_clock(),
         internal_auth_key: admin_internal_auth_key,
     };
-    let audit_export_state = audit_export::build_state();
-    let audit_analytics_state = audit_analytics::build_state(shadow_factory);
+    let mut audit_export_state = audit_export::build_state();
+    // Native PAT possession backstop (rt-nuclear #17): the audit-export +
+    // analytics surfaces were UN-gated, so a leaked PAT_SIGNING_KEY could forge a
+    // bearer to exfiltrate any victim tenant's audit log / analytics. Wire the
+    // SAME gate the native CAS/AC/Bazel/Turbo states carry.
+    audit_export_state.pat_gate = native_pat_gate.clone();
+    let mut audit_analytics_state = audit_analytics::build_state(shadow_factory);
+    audit_analytics_state.pat_gate = native_pat_gate.clone();
     // Customer dashboard (WP-3): D1-backed handler when the D1 env is
     // present; InMemory fallback for dev/CI (fail-closed env-gate,
     // mirroring `adapter_pat::PatVerifier::from_env`).
@@ -586,6 +594,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                     brew_cas_write,
                     brew_map,
                     verifier.clone(),
+                    quota.clone(),
                 ));
 
                 // npm: shared map + verifier + the D1-backed metadata KV table
@@ -599,6 +608,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                             npm_map,
                             npm_meta_kv,
                             verifier.clone(),
+                            quota.clone(),
                         ));
                     }
                     None => {
@@ -654,6 +664,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                     pip_map,
                     d1,
                     verifier,
+                    quota.clone(),
                 ));
             }
             None => {
