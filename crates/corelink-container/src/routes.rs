@@ -405,6 +405,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         tombstones: cas_tombstones,
         quota: quota.clone(),
         pat_gate: native_pat_gate.clone(),
+        put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
     let (ac_lookup, ac_update_raw, ac_delete_raw, ac_list) = ac::build_handlers();
     // Storage byte accounting (cluster B+C) for the AC plane: same decorator
@@ -434,6 +435,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         list: ac_list,
         quota: quota.clone(),
         pat_gate: native_pat_gate.clone(),
+        put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
     // Cache adapters share the SAME CAS trait objects (one R2 connection) —
     // clone BEFORE they are moved into the Bazel bridge below. cargo writes

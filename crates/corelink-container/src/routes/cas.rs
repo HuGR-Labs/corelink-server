@@ -27,11 +27,12 @@
 //! 2026-05-14 closure list, this transitions `SLO-AVAIL-CAS-GET`
 //! from "Sli-bound deferred" to "Sli emitted at handler layer".
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use axum::{
-    extract::{Path, Query, State},
-    http::StatusCode,
+    extract::{FromRequestParts, Path, Query, State},
+    http::{request::Parts, StatusCode},
     response::IntoResponse,
     routing::get,
     Json, Router,
@@ -115,6 +116,14 @@ pub struct CasRouteState {
     /// serve a forged tenant's PAT. `None` in dev/CI (skipped). See
     /// [`crate::native_pat_gate`].
     pub pat_gate: Option<std::sync::Arc<crate::native_pat_gate::NativePatGate>>,
+    /// Per-tenant in-flight CAS write concurrency counter (cluster F — the native
+    /// CAS write path buffers the full body before any gate and had NO per-tenant
+    /// concurrency cap, so a single authenticated tenant could open N concurrent
+    /// PUTs and consume N × body-limit of heap). Mirrors the Bazel `put_inflight`
+    /// guard: a `FromRequestParts` extractor ([`CasPutGuard`]) declared AHEAD of
+    /// `body: Bytes` increments this BEFORE the body is buffered and rejects the
+    /// over-cap PUT 429; the RAII [`CasPutSlot`] releases on return.
+    pub(crate) put_inflight: Arc<Mutex<HashMap<String, usize>>>,
     // Storage byte accounting (red-team finding #1 / cluster B+C) is NOT a route
     // field: it is enforced INSIDE the `write`/`delete` trait objects above by
     // the [`crate::byte_accounting::AccountingCasHandler`] decorator (wired in
@@ -126,6 +135,102 @@ pub struct CasRouteState {
 impl core::fmt::Debug for CasRouteState {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("CasRouteState").finish_non_exhaustive()
+    }
+}
+
+/// Maximum concurrent in-flight native CAS writes for a single tenant. Excess
+/// writes are rejected 429 BEFORE the body is buffered. Bounds peak per-tenant
+/// write heap; mirrors [`super::bazel_v2::BAZEL_WRITE_CONCURRENCY_LIMIT`].
+pub const CAS_WRITE_CONCURRENCY_LIMIT: usize = 8;
+
+/// Sentinels the Worker/DO use for non-tenant traffic — never a real tenant.
+/// Mirrors `auth_tenant::AuthTenant`'s sentinel set so the pre-body write guard
+/// fails CLOSED on the same non-authenticated values.
+const TENANT_SENTINELS: &[&str] = &["_anonymous", "_unknown", "_system", "_pending"];
+
+/// Canonical fail-CLOSED 401 for a missing/sentinel authenticated tenant in the
+/// pre-body write guard. Does not leak which condition tripped.
+fn unauthenticated_tenant() -> axum::response::Response {
+    (StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response()
+}
+
+/// RAII release of one per-tenant in-flight CAS write slot (decrements on every
+/// return path — success, error, panic). See [`CasPutGuard`].
+pub(crate) struct CasPutSlot {
+    inflight: Arc<Mutex<HashMap<String, usize>>>,
+    tenant_key: String,
+}
+
+impl Drop for CasPutSlot {
+    fn drop(&mut self) {
+        if let Ok(mut g) = self.inflight.lock() {
+            if let Some(c) = g.get_mut(&self.tenant_key) {
+                *c = c.saturating_sub(1);
+                if *c == 0 {
+                    g.remove(&self.tenant_key);
+                }
+            }
+        }
+    }
+}
+
+/// `FromRequestParts` extractor reserving a per-tenant in-flight CAS write slot
+/// BEFORE the body is buffered (cluster F — pre-buffer OOM guard). Declared ahead
+/// of `body: Bytes` in `handle_write` so axum 0.7 runs it first: a tenant already
+/// at [`CAS_WRITE_CONCURRENCY_LIMIT`] is rejected 429 with no body read. Mirrors
+/// `bazel_v2::BazelPutGuard` exactly.
+pub(crate) struct CasPutGuard {
+    _slot: CasPutSlot,
+}
+
+#[axum::async_trait]
+impl FromRequestParts<CasRouteState> for CasPutGuard {
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &CasRouteState,
+    ) -> Result<Self, Self::Rejection> {
+        // Reserve per AUTHENTICATED tenant (fail-CLOSED on missing/sentinel —
+        // mirrors `AuthTenant`): an unauthenticated request never reserves a slot
+        // and never buffers a body.
+        let raw = parts
+            .headers
+            .get("x-corelink-tenant-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .unwrap_or("");
+        if raw.is_empty() || TENANT_SENTINELS.contains(&raw) {
+            return Err(unauthenticated_tenant());
+        }
+        let tenant_key = raw.to_owned();
+        {
+            let mut inflight = match state.put_inflight.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::error!(tenant_id = %tenant_key, error = %e, "cas write concurrency tracker poisoned; failing closed");
+                    return Err((
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "concurrency tracker unavailable",
+                    )
+                        .into_response());
+                }
+            };
+            let count = inflight.entry(tenant_key.clone()).or_insert(0);
+            if *count >= CAS_WRITE_CONCURRENCY_LIMIT {
+                tracing::warn!(tenant_id = %tenant_key, in_flight = *count, limit = CAS_WRITE_CONCURRENCY_LIMIT, "cas write concurrency limit reached; 429 BEFORE body buffering");
+                return Err(
+                    (StatusCode::TOO_MANY_REQUESTS, "too many concurrent uploads").into_response(),
+                );
+            }
+            *count += 1;
+        }
+        Ok(Self {
+            _slot: CasPutSlot {
+                inflight: Arc::clone(&state.put_inflight),
+                tenant_key,
+            },
+        })
     }
 }
 
@@ -466,6 +571,10 @@ async fn handle_write(
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
     headers: axum::http::HeaderMap,
+    // cluster F: pre-body per-tenant concurrency reservation (declared AHEAD of
+    // `body: Bytes`, so axum runs it BEFORE the body is buffered). 429 on over-cap;
+    // the RAII slot releases on return. Mirrors `bazel_v2::BazelPutGuard`.
+    _concurrency: CasPutGuard,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
     // See `handle_read`: the authenticated tenant is the sole
@@ -751,6 +860,7 @@ mod tests {
             tombstones: None,
             quota: None,
             pat_gate: None,
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -775,6 +885,7 @@ mod tests {
             tombstones: Some(tombstones),
             quota: None,
             pat_gate: None,
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -795,6 +906,7 @@ mod tests {
             tombstones: None,
             quota: None,
             pat_gate: None,
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -974,6 +1086,62 @@ mod tests {
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::CREATED);
+    }
+
+    /// cluster F: with the tenant AT `CAS_WRITE_CONCURRENCY_LIMIT` in-flight
+    /// writes, the next CAS write is rejected 429 BEFORE its body is buffered —
+    /// the `CasPutGuard` `FromRequestParts` extractor runs ahead of `body: Bytes`.
+    /// Proven deterministically by sending a body LARGER than the 10 MiB global
+    /// limit: if the body were buffered first, the body-limit layer would reject
+    /// it; because the concurrency guard runs first, we get 429 and the oversized
+    /// body is never read.
+    #[tokio::test]
+    async fn cas_write_at_concurrency_limit_returns_429_before_body() {
+        let state = fixture();
+        {
+            let mut g = state.put_inflight.lock().expect("lock");
+            g.insert(TEST_TENANT.to_owned(), CAS_WRITE_CONCURRENCY_LIMIT);
+        }
+        let app = router(state);
+        let oversized = Body::from(vec![0u8; 11 * 1024 * 1024]); // > 10 MiB
+        let hash = "0000000000000000000000000000000000000000000000000000000000000000";
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/cas/{TEST_TENANT}/{hash}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(oversized)
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "an at-limit native CAS write must be rejected 429 by the pre-body concurrency guard"
+        );
+    }
+
+    /// A write BELOW the limit succeeds and releases its slot (counter back to 0).
+    #[tokio::test]
+    async fn cas_write_below_limit_releases_slot() {
+        let state = fixture();
+        let app = router(state.clone());
+        let bytes = b"cas-slot-release".to_vec();
+        let hash = fake_hash(&bytes);
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/cas/{TEST_TENANT}/{hash}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::from(bytes))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let g = state.put_inflight.lock().expect("lock");
+        assert_eq!(
+            g.get(TEST_TENANT),
+            None,
+            "the concurrency slot must be released after the write completes"
+        );
     }
 
     /// A `cas:r` (read-only) PUT is rejected 403 "insufficient scope"
@@ -1159,6 +1327,7 @@ mod tests {
             tombstones: None,
             quota: Some(gate),
             pat_gate: None,
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -1207,6 +1376,7 @@ mod tests {
             tombstones: None,
             quota: Some(crate::routes::QuotaGate::new_for_test(guard, 1_000)),
             pat_gate: None,
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         };
         let app = router(st);
         let req = Request::builder()
@@ -1257,6 +1427,7 @@ mod tests {
             tombstones: None,
             quota: None,
             pat_gate: None,
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -1315,6 +1486,7 @@ mod tests {
             tombstones: None,
             quota: None,
             pat_gate: None,
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         };
         let app = router(st);
         let body = b"hello-cas".to_vec();
@@ -1377,6 +1549,7 @@ mod tests {
             tombstones: None,
             quota: None,
             pat_gate: Some(Arc::new(NativePatGate::new_for_test(verifier))),
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         };
         let app = router(st);
         let req = Request::builder()

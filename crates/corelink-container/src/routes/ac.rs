@@ -37,11 +37,12 @@
 //! BEFORE the response. This pins `INV-TENANT-ISOLATION` at the
 //! route boundary on top of the handler-layer enforcement.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use axum::{
-    extract::{Path, Query, State},
-    http::StatusCode,
+    extract::{FromRequestParts, Path, Query, State},
+    http::{request::Parts, StatusCode},
     response::IntoResponse,
     routing::get,
     Json, Router,
@@ -116,6 +117,13 @@ pub struct AcRouteState {
     /// at the TOP of each billable handler, AFTER scope+tenant, BEFORE storage.
     /// `None` in dev/CI (skipped). See [`crate::native_pat_gate`].
     pub pat_gate: Option<std::sync::Arc<crate::native_pat_gate::NativePatGate>>,
+    /// Per-tenant in-flight AC write concurrency counter (cluster F — the native
+    /// AC update path buffers the full body before any gate and had NO per-tenant
+    /// concurrency cap). Mirrors the Bazel/CAS `put_inflight` guard: a
+    /// `FromRequestParts` extractor ([`AcPutGuard`]) declared AHEAD of `body: Bytes`
+    /// increments this BEFORE the body is buffered and rejects the over-cap PUT
+    /// 429; the RAII [`AcPutSlot`] releases on return.
+    pub(crate) put_inflight: Arc<Mutex<HashMap<String, usize>>>,
     // Storage byte accounting (finding #1 / cluster B+C) is enforced INSIDE the
     // `update`/`delete` trait objects above by the
     // [`crate::byte_accounting::AccountingAcHandler`] decorator (wired in
@@ -125,6 +133,102 @@ pub struct AcRouteState {
 impl core::fmt::Debug for AcRouteState {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("AcRouteState").finish_non_exhaustive()
+    }
+}
+
+/// Maximum concurrent in-flight native AC writes for a single tenant. Excess
+/// writes are rejected 429 BEFORE the body is buffered; mirrors
+/// [`super::cas::CAS_WRITE_CONCURRENCY_LIMIT`].
+pub const AC_WRITE_CONCURRENCY_LIMIT: usize = 8;
+
+/// Sentinels the Worker/DO use for non-tenant traffic — never a real tenant.
+/// Mirrors `auth_tenant::AuthTenant`'s sentinel set so the pre-body write guard
+/// fails CLOSED on the same non-authenticated values.
+const TENANT_SENTINELS: &[&str] = &["_anonymous", "_unknown", "_system", "_pending"];
+
+/// Canonical fail-CLOSED 401 for a missing/sentinel authenticated tenant in the
+/// pre-body write guard. Does not leak which condition tripped.
+fn unauthenticated_tenant() -> axum::response::Response {
+    (StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response()
+}
+
+/// RAII release of one per-tenant in-flight AC write slot (decrements on every
+/// return path — success, error, panic). See [`AcPutGuard`].
+pub(crate) struct AcPutSlot {
+    inflight: Arc<Mutex<HashMap<String, usize>>>,
+    tenant_key: String,
+}
+
+impl Drop for AcPutSlot {
+    fn drop(&mut self) {
+        if let Ok(mut g) = self.inflight.lock() {
+            if let Some(c) = g.get_mut(&self.tenant_key) {
+                *c = c.saturating_sub(1);
+                if *c == 0 {
+                    g.remove(&self.tenant_key);
+                }
+            }
+        }
+    }
+}
+
+/// `FromRequestParts` extractor reserving a per-tenant in-flight AC write slot
+/// BEFORE the body is buffered (cluster F — pre-buffer OOM guard). Declared ahead
+/// of `body: Bytes` in `handle_update` so axum 0.7 runs it first: a tenant already
+/// at [`AC_WRITE_CONCURRENCY_LIMIT`] is rejected 429 with no body read. Mirrors
+/// `bazel_v2::BazelPutGuard` exactly.
+pub(crate) struct AcPutGuard {
+    _slot: AcPutSlot,
+}
+
+#[axum::async_trait]
+impl FromRequestParts<AcRouteState> for AcPutGuard {
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AcRouteState,
+    ) -> Result<Self, Self::Rejection> {
+        // Reserve per AUTHENTICATED tenant (fail-CLOSED on missing/sentinel —
+        // mirrors `AuthTenant`): an unauthenticated request never reserves a slot
+        // and never buffers a body.
+        let raw = parts
+            .headers
+            .get("x-corelink-tenant-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .unwrap_or("");
+        if raw.is_empty() || TENANT_SENTINELS.contains(&raw) {
+            return Err(unauthenticated_tenant());
+        }
+        let tenant_key = raw.to_owned();
+        {
+            let mut inflight = match state.put_inflight.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::error!(tenant_id = %tenant_key, error = %e, "ac write concurrency tracker poisoned; failing closed");
+                    return Err((
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "concurrency tracker unavailable",
+                    )
+                        .into_response());
+                }
+            };
+            let count = inflight.entry(tenant_key.clone()).or_insert(0);
+            if *count >= AC_WRITE_CONCURRENCY_LIMIT {
+                tracing::warn!(tenant_id = %tenant_key, in_flight = *count, limit = AC_WRITE_CONCURRENCY_LIMIT, "ac write concurrency limit reached; 429 BEFORE body buffering");
+                return Err(
+                    (StatusCode::TOO_MANY_REQUESTS, "too many concurrent uploads").into_response(),
+                );
+            }
+            *count += 1;
+        }
+        Ok(Self {
+            _slot: AcPutSlot {
+                inflight: Arc::clone(&state.put_inflight),
+                tenant_key,
+            },
+        })
     }
 }
 
@@ -412,6 +516,10 @@ async fn handle_update(
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
     headers: axum::http::HeaderMap,
+    // cluster F: pre-body per-tenant concurrency reservation (declared AHEAD of
+    // `body: Bytes`, so axum runs it BEFORE the body is buffered). 429 on over-cap;
+    // the RAII slot releases on return. Mirrors `bazel_v2::BazelPutGuard`.
+    _concurrency: AcPutGuard,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
     // See `handle_lookup`: the authenticated tenant is the sole
@@ -715,6 +823,7 @@ mod tests {
                 list,
                 quota: None,
                 pat_gate: None,
+                put_inflight: Arc::new(Mutex::new(HashMap::new())),
             },
         )
     }
@@ -735,6 +844,7 @@ mod tests {
             list,
             quota: None,
             pat_gate: None,
+            put_inflight: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -904,6 +1014,57 @@ mod tests {
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::CREATED);
+    }
+
+    /// cluster F: with the tenant AT `AC_WRITE_CONCURRENCY_LIMIT` in-flight
+    /// writes, the next AC update is rejected 429 BEFORE its body is buffered —
+    /// the `AcPutGuard` `FromRequestParts` extractor runs ahead of `body: Bytes`.
+    /// Proven deterministically with a body LARGER than the 10 MiB global limit.
+    #[tokio::test]
+    async fn ac_write_at_concurrency_limit_returns_429_before_body() {
+        let (_a, _s, st) = fixture();
+        {
+            let mut g = st.put_inflight.lock().expect("lock");
+            g.insert(TEST_TENANT.to_owned(), AC_WRITE_CONCURRENCY_LIMIT);
+        }
+        let app = router(st);
+        let oversized = Body::from(vec![0u8; 11 * 1024 * 1024]); // > 10 MiB
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(oversized)
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "an at-limit native AC write must be rejected 429 by the pre-body concurrency guard"
+        );
+    }
+
+    /// An AC update BELOW the limit succeeds and releases its slot.
+    #[tokio::test]
+    async fn ac_write_below_limit_releases_slot() {
+        let (_a, _s, st) = fixture();
+        let inflight = st.put_inflight.clone();
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::from(b"result".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let g = inflight.lock().expect("lock");
+        assert_eq!(
+            g.get(TEST_TENANT),
+            None,
+            "the concurrency slot must be released after the AC write completes"
+        );
     }
 
     /// A `cas:r` (read-only) AC update is rejected 403 "insufficient scope".

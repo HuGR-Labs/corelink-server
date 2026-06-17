@@ -23,6 +23,15 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **Native CAS/AC write planes had no per-tenant pre-buffer concurrency cap (rt-nuclear #11).**
+  The native `PUT /v1/cas/:tenant/:hash` and `PUT /v1/ac/:tenant/:digest` handlers buffered the full
+  request body into heap before any gate ran and, unlike the Bazel REAPI surface, had NO per-tenant
+  concurrency limit — so a single authenticated tenant could open N concurrent PUTs and consume
+  N × body-limit of heap (memory-exhaustion DoS). Both planes now reserve a per-tenant in-flight slot
+  via a `FromRequestParts` extractor (`CasPutGuard` / `AcPutGuard`) declared AHEAD of `body: Bytes`,
+  mirroring the proven `bazel_v2::BazelPutGuard`: a tenant already at the limit (`CAS/AC_WRITE_
+  CONCURRENCY_LIMIT = 8`) is rejected `429 Too Many Requests` BEFORE the body is read, fail-CLOSED on
+  a missing/sentinel tenant; the RAII slot releases on every return path.
 - **npm metadata cache-poisoning via name normalization collision (rt-nuclear #7).**
   Unscoped npm package metadata is cached in the SHARED cross-tenant `_public` namespace keyed by the
   **normalized** name (`trim().to_ascii_lowercase()`), but the upstream fetch used the **raw** path
