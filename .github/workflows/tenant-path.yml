@@ -72,8 +72,8 @@ jobs:
       # see CLAUDE.md "the rustup proxy is broken" note.
       - name: Put host nightly toolchain on PATH (cargo-fuzz needs nightly)
         run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
-      - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+      - name: Install cargo-fuzz (guarded + pinned — avoid shared ~/.cargo/bin write race)
+        run: command -v cargo-fuzz >/dev/null 2>&1 || cargo install cargo-fuzz --locked --version =0.13.1
       - name: Cargo cache (fuzz)
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
         with:
@@ -94,7 +94,7 @@ jobs:
       # see CLAUDE.md "the rustup proxy is broken" note.
       - name: Put host nightly toolchain on PATH (cargo-fuzz needs nightly)
         run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
-      - run: cargo install cargo-fuzz --locked
+      - run: command -v cargo-fuzz >/dev/null 2>&1 || cargo install cargo-fuzz --locked --version =0.13.1
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
         with:
           workspaces: "crates/tenant-path/fuzz -> target"
