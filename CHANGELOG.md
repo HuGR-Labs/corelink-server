@@ -23,6 +23,17 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **OCI writes bypassed the monthly request-count quota (rt-nuclear #8, request-count half).**
+  PR #318 closed the OCI `$`-ceiling bypass but the SIBLING gap remained: OCI billable writes were never
+  counted against the per-tenant monthly request cap (`monthly_request_counts`, migration 0071), because
+  that metering is Worker-edge-only and the Worker forwards `/v2/*` + `/token` RAW (returning before its
+  `checkRequestQuota` block, and stripping `x-corelink-tenant-id`). New container-side
+  `request_count::RequestCountGate` (a Rust mirror of `worker/src/lib/quota.ts::checkRequestQuota`: the
+  same atomic increment-and-check UPSERT, the same per-tier caps, the same fail-OPEN posture, 429 +
+  Retry-After over the cap) is wired into the OCI router and metered per write method (PUT/POST/PATCH),
+  keyed on the SAME verified-HMAC-bearer tenant `oci_quota_gate` already resolves for the `$`-ceiling
+  (never a request header — the Worker strips it, and a write with no valid bearer is 401'd by the data
+  plane, so it is left unmetered). `None` in dev/CI without a D1 storage env, mirroring the `$`-ceiling gate.
 - **Turbo PUT charged storage bytes on every idempotent re-write (rt-nuclear #25).**
   The Turbo bridge's `CasWriteStore::write` returned `()`, so the turbo_v8 route accrued the body bytes
   on EVERY PUT — a CI cache re-pushing the same content-keyed artifact (the common case) double-charged

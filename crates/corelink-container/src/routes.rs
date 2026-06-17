@@ -340,6 +340,20 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         );
     }
 
+    // Per-tenant monthly REQUEST-count gate (rt-nuclear #8 — the request-count
+    // half). Backs the OCI surface, which the Worker forwards RAW and so never
+    // counts against `monthly_request_counts` (migration 0071). D1-backed;
+    // `None` in dev/CI (no D1 storage env), mirroring the $-ceiling gate above.
+    // Only the OCI router consumes it — the native + other-adapter surfaces are
+    // already metered at the Worker edge by `checkRequestQuota`.
+    let request_count = crate::request_count::RequestCountGate::from_env();
+    if request_count.is_none() {
+        tracing::warn!(
+            "request-count: D1 storage env absent; OCI monthly request-count cap NOT \
+             enforced (dev/CI mode)"
+        );
+    }
+
     // Native data-plane PAT possession gate (red-team #4) + per-tenant storage
     // byte accounting (#1). Built from env (PAT_SIGNING_KEY + StorageEnv / D1);
     // `None` in dev/CI ⇒ the native plane skips the Argon2id backstop and the
@@ -644,6 +658,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                             verifier.clone(),
                             corelink_core::SecretWrap::new(token_key),
                             quota.clone(),
+                            request_count.clone(),
                         ));
                     }
                     _ => {

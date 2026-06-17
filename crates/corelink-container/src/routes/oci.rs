@@ -637,6 +637,7 @@ pub fn router(
     verifier: Arc<PatVerifier>,
     token_signing_key: SecretWrap,
     quota: Option<crate::routes::QuotaGate>,
+    request_count: Option<crate::request_count::RequestCountGate>,
 ) -> Router {
     // rt-nuclear #2/#8/#9: the OCI $-ceiling gate must resolve the cost-attribution
     // tenant from the VERIFIED HMAC bearer (the Worker strips `x-corelink-tenant-id`
@@ -702,9 +703,21 @@ pub fn router(
     // bypass), and trusting an unverified header/token claim would let a tenant
     // charge a victim. A write with no VALID bearer is left uncharged because the
     // adapter's data plane 401s it (no billable work succeeds). 402 over-ceiling.
-    if let Some(gate) = quota {
+    //
+    // rt-nuclear #8 (request-count half): the SAME middleware also meters OCI
+    // write methods against the tenant's monthly REQUEST-count cap
+    // (`monthly_request_counts`, migration 0071) — keyed on the SAME verified
+    // bearer. The Worker forwards OCI RAW and returns before its
+    // `checkRequestQuota` block, so OCI writes bypassed the request cap exactly
+    // as they bypassed the $-ceiling; this closes the sibling gap container-side.
+    // 429 over the cap (SLO-style, fail-OPEN — unlike the fail-CLOSED $-ceiling).
+    //
+    // Wire the layer when EITHER gate is present (they are independent axes; in
+    // dev/CI without a D1 storage env BOTH are `None` and no layer mounts).
+    if quota.is_some() || request_count.is_some() {
         let gate_state = OciCostGate {
-            gate,
+            gate: quota,
+            request_count,
             realm_key: Arc::new(gate_realm_key),
         };
         router = router.layer(axum::middleware::from_fn_with_state(gate_state, oci_quota_gate));
@@ -712,12 +725,16 @@ pub fn router(
     router
 }
 
-/// State for [`oci_quota_gate`]: the `$`-ceiling [`QuotaGate`](crate::routes::QuotaGate)
-/// plus a copy of the OCI realm HMAC signing key, used to VERIFY the bearer token
-/// and recover its tenant (the cost-attribution key) — see the `router` doc.
+/// State for [`oci_quota_gate`]: the per-tenant `$`-ceiling
+/// [`QuotaGate`](crate::routes::QuotaGate) and the monthly request-count
+/// [`RequestCountGate`](crate::request_count::RequestCountGate) (each optional /
+/// independent), plus a copy of the OCI realm HMAC signing key used to VERIFY
+/// the bearer token and recover its tenant (the attribution key) — see the
+/// `router` doc.
 #[derive(Clone)]
 struct OciCostGate {
-    gate: crate::routes::QuotaGate,
+    gate: Option<crate::routes::QuotaGate>,
+    request_count: Option<crate::request_count::RequestCountGate>,
     realm_key: Arc<SecretWrap>,
 }
 
@@ -751,15 +768,28 @@ async fn oci_quota_gate(
     use axum::http::Method;
     let is_write = matches!(*req.method(), Method::PUT | Method::POST | Method::PATCH);
     if is_write {
-        // Cost-attribution tenant comes from the VERIFIED HMAC bearer, never a
+        // Attribution tenant comes from the VERIFIED HMAC bearer, never a
         // request header: the Worker strips `x-corelink-tenant-id` on the OCI
         // pass-through (the old header read was always empty ⇒ charge always
-        // skipped — a total $-ceiling bypass, rt-nuclear #2/#8/#9). A write with
-        // no valid bearer is 401'd by the adapter data plane, so it is left
-        // uncharged (no billable work succeeds).
+        // skipped — a total bypass, rt-nuclear #2/#8/#9). A write with no valid
+        // bearer is 401'd by the adapter data plane, so it is left unmetered (no
+        // billable work succeeds).
         if let Some(tenant) = oci_bearer_tenant(&st.realm_key, req.headers()) {
-            if let Some(resp) = st.gate.check(&tenant).await {
-                return resp;
+            // $-ceiling (fail-CLOSED, 402 over — PR #318).
+            if let Some(gate) = st.gate.as_ref() {
+                if let Some(resp) = gate.check(&tenant).await {
+                    return resp;
+                }
+            }
+            // Monthly request-count cap (fail-OPEN, 429 over — rt-nuclear #8).
+            // Run AFTER the $-ceiling so an over-budget write rejects 402 before
+            // it consumes a request-count slot (the two checks are independent
+            // axes; ordering only matters for which response wins on a write
+            // that trips both, and the $-cap is the harder business guarantee).
+            if let Some(rc) = st.request_count.as_ref() {
+                if let Some(resp) = rc.check_and_increment(&tenant).await {
+                    return resp;
+                }
             }
         }
     }
@@ -969,6 +999,7 @@ mod tests {
             verifier,
             SecretWrap::new(OCI_KEY.to_owned()),
             None,
+            None,
         )
     }
 
@@ -1030,6 +1061,7 @@ mod tests {
             Arc::new(OciKvFake::default()),
             verifier,
             SecretWrap::new(OCI_KEY.to_owned()),
+            None,
             None,
         );
 
@@ -1195,6 +1227,7 @@ mod tests {
             Arc::new(OciKvFake::default()),
             verifier,
             SecretWrap::new(OCI_KEY.to_owned()),
+            None,
             None,
         );
 
@@ -1362,6 +1395,7 @@ mod tests {
             Arc::new(OciKvFake::default()),
             verifier,
             SecretWrap::new(OCI_KEY.to_owned()),
+            None,
             None,
         );
 
@@ -1652,6 +1686,7 @@ mod tests {
             verifier,
             SecretWrap::new(OCI_KEY.to_owned()),
             None,
+            None,
         );
 
         // Get a push bearer.
@@ -1745,6 +1780,7 @@ mod tests {
             verifier,
             SecretWrap::new(OCI_KEY.to_owned()),
             None,
+            None,
         );
 
         let resp = app
@@ -1835,6 +1871,160 @@ mod tests {
         assert!(
             oci_bearer_tenant(&key, &axum::http::HeaderMap::new()).is_none(),
             "no Authorization header ⇒ no tenant",
+        );
+    }
+
+    // ── rt-nuclear #8: OCI write metered against the monthly request-count cap ──
+
+    /// In-memory [`RequestCountStore`](crate::request_count::RequestCountStore)
+    /// for the OCI gate test; pre-seedable to drive the over-cap (429) path.
+    #[derive(Debug, Default)]
+    struct GateCounter(Mutex<HashMap<(String, String), i64>>);
+    #[async_trait]
+    impl crate::request_count::RequestCountStore for GateCounter {
+        async fn increment(
+            &self,
+            tenant_id: &str,
+            year_month: &str,
+            _now_ms: i64,
+        ) -> Result<i64, String> {
+            let mut m = self.0.lock().unwrap();
+            let c = m
+                .entry((tenant_id.to_owned(), year_month.to_owned()))
+                .or_insert(0);
+            *c += 1;
+            Ok(*c)
+        }
+    }
+
+    /// Fixed-tier resolver for the OCI gate test.
+    #[derive(Debug)]
+    struct GateTier(&'static str);
+    #[async_trait]
+    impl crate::request_count::TierResolver for GateTier {
+        async fn tier(&self, _tenant_id: &str) -> Result<String, String> {
+            Ok(self.0.to_owned())
+        }
+    }
+
+    #[tokio::test]
+    async fn oci_write_over_request_count_cap_is_429_keyed_on_bearer_tenant() {
+        // rt-nuclear #8 (request-count half): an OCI WRITE method is metered
+        // against the tenant's monthly request-count cap (`monthly_request_counts`),
+        // keyed on the SAME verified-HMAC-bearer tenant the $-ceiling gate uses
+        // (#318). The Worker forwards OCI RAW and never counts these, so the
+        // container must. Pre-seed the counter to the free cap so the write is
+        // the (cap+1)-th request → the gate rejects it 429 BEFORE the adapter.
+        let key = test_key();
+        let tenant_uuid = Uuid::from_u128(0xD00D);
+        let (plaintext, pat) = mint(
+            PatEnv::Pat,
+            PatTenantId(tenant_uuid),
+            PrincipalId(Uuid::from_u128(0x5151)),
+            PatScopes::from_u64(SCOPE_CACHE_RW),
+            None,
+            &key,
+            1,
+        )
+        .unwrap();
+        let pt = plaintext.into_string();
+        let lookup = OneTokenLookup {
+            token_id: pat.token_id.as_str().to_owned(),
+            row: PatRow {
+                tenant_id: pat.tenant_id.0.to_string(),
+                pat_hash: pat.hash.as_str().to_owned(),
+                scope: SCOPE_RW.to_owned(),
+            },
+        };
+        let verifier = Arc::new(PatVerifier::new(Arc::new(lookup), key));
+
+        // Pre-seed the request-count store at the free cap, keyed on the bearer
+        // tenant's canonical UUID text + the CURRENT UTC month (the gate derives
+        // the same bucket from the system clock).
+        let store = Arc::new(GateCounter::default());
+        let now_ms = i64::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        )
+        .unwrap();
+        let tenant_text = TenantId::from_uuid(tenant_uuid).to_canonical_text();
+        let year_month = crate::request_count::year_month_utc(now_ms);
+        store.0.lock().unwrap().insert(
+            (tenant_text, year_month),
+            crate::request_count::CAP_FREE, // next op is the (cap+1)-th
+        );
+
+        let rc_gate = crate::request_count::RequestCountGate::new(
+            store,
+            Arc::new(GateTier("free")),
+            Arc::new(crate::wall_clock::SystemWallClock::new()),
+        );
+
+        let cas = Arc::new(StubCas::default());
+        let app = router(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()),
+            Arc::new(OciKvFake::default()),
+            verifier,
+            SecretWrap::new(OCI_KEY.to_owned()),
+            None,          // no $-ceiling gate in this test
+            Some(rc_gate), // request-count gate under test
+        );
+
+        // Exchange the PAT for a push,pull bearer.
+        let resp = app
+            .clone()
+            .oneshot(req(
+                Method::GET,
+                "/token?scope=repository:alpine:push,pull",
+                Some(&basic(&pt)),
+                Some(SCOPE_RW),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let bearer = json["token"].as_str().expect("token field").to_owned();
+
+        // A WRITE (manifest PUT) with the valid bearer → over the cap → 429.
+        // The gate runs as the outer layer, so it rejects BEFORE the adapter.
+        let put = HttpRequest::builder()
+            .method(Method::PUT)
+            .uri("/v2/alpine/manifests/latest")
+            .header("authorization", format!("Bearer {bearer}"))
+            .header("content-type", "application/vnd.oci.image.manifest.v1+json")
+            .body(Body::from(r#"{"schemaVersion":2}"#))
+            .unwrap();
+        let resp = app.clone().oneshot(put).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "an OCI write over the monthly request-count cap must be 429"
+        );
+        assert!(
+            resp.headers().contains_key(axum::http::header::RETRY_AFTER),
+            "a 429 must carry Retry-After (next-month-start)"
+        );
+
+        // A READ (GET) is NOT metered by this gate — it reaches the adapter
+        // (absent blob ⇒ 404), proving only write methods are counted.
+        let get = req(
+            Method::GET,
+            "/v2/alpine/blobs/sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            Some(&format!("Bearer {bearer}")),
+            None,
+        );
+        let resp = app.oneshot(get).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "reads are not request-count metered; GET reaches the adapter"
         );
     }
 }
