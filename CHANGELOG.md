@@ -22,6 +22,17 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **R2 CAS write always reported `durable=true` → byte double-charge on idempotent re-write (rt-nuclear #13).**
+  `R2CasHandler::write` returned `CasWriteResponse::new(hash, true)` unconditionally, so every re-write of
+  an already-stored content hash was reported as a fresh durable insert. The `AccountingCasHandler`
+  decorator charges the bytes on the reservation and only rolls them back when `durable == false`, so an
+  idempotent re-write was charged a SECOND time — a tenant could inflate (or, symmetrically, a churning
+  client could drift) `bytes_used`. The CAS write now HEADs the content-addressed key before the PUT
+  (mirroring the AC update's GET-and-compare): an already-present blob skips the re-PUT and returns
+  `durable=false` (HEAD error fails CLOSED to the PUT, never dropping a write), so the decorator does not
+  re-charge.
+
 ### Security
 - **Native CAS/AC write planes had no per-tenant pre-buffer concurrency cap (rt-nuclear #11).**
   The native `PUT /v1/cas/:tenant/:hash` and `PUT /v1/ac/:tenant/:digest` handlers buffered the full

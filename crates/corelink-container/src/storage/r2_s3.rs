@@ -810,6 +810,44 @@ impl CasWriteHandler for R2CasHandler {
         // CRITICAL — `block_in_place` rationale: see the matching
         // comment in `<Self as CasReadHandler>::read` above.
         let handle = tokio::runtime::Handle::current();
+
+        // Idempotent-rewrite detection (rt-nuclear #13 — byte double-charge).
+        // CAS is content-addressed: the key already embeds the verified content
+        // hash, so an object that already exists under this key holds the SAME
+        // bytes (the hash was verified above). HEAD before PUT (mirrors the AC
+        // path's GET-and-compare, but for CAS a presence HEAD suffices): if the
+        // blob is already present we SKIP the re-PUT and return `durable=false`,
+        // so the `AccountingCasHandler` decorator does NOT charge the bytes a
+        // second time on an idempotent re-write. A HEAD error fails CLOSED to the
+        // PUT path (correctness over the accounting optimisation — a transient
+        // HEAD blip must never drop a write); a duplicate PUT is harmless (same
+        // bytes) and the worst case is the legacy double-charge, never data loss.
+        match tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key))) {
+            Ok(Some(_)) => {
+                // Already durable under this content-addressed key → idempotent
+                // no-op; do not re-PUT and do not re-charge the bytes.
+                self.audit
+                    .emit(AuditEvent::new(
+                        AuditEventKind::WriteCommitted,
+                        req.tenant.clone(),
+                        req.claimed_hash.clone(),
+                        req.principal.clone(),
+                        req.at_unix_ms,
+                    ))
+                    .map_err(CasHandlerError::AuditFailed)?;
+                self.sli
+                    .observe(SliObservation::new(Sli::CorrectnessCas, false, 0));
+                emit(false);
+                return Ok(CasWriteResponse::new(req.claimed_hash, false));
+            }
+            Ok(None) => { /* absent — fall through to the PUT below */ }
+            Err(e) => {
+                // Ambiguous prior state: fall through to the PUT (fail-CLOSED to a
+                // durable write) rather than risk dropping a fresh blob.
+                warn!(error = %e, key = %key, "R2CasHandler::write pre-PUT HEAD error; PUTting");
+            }
+        }
+
         let result =
             tokio::task::block_in_place(|| handle.block_on(self.client.put(&key, req.bytes)));
 
@@ -1931,6 +1969,62 @@ mod tests {
         // GET missing key → None
         let missing = client.get("__no_such_key__").await.expect("get");
         assert!(missing.is_none(), "missing key must return None");
+    }
+
+    /// rt-nuclear #13 regression (live R2): the FIRST CAS write of a content hash
+    /// returns `durable=true` (a real PUT); an idempotent re-write of the SAME
+    /// content returns `durable=false` (HEAD hit → no re-PUT), so the
+    /// `AccountingCasHandler` decorator rolls the reservation back and does NOT
+    /// double-charge the bytes. Gated behind `#[ignore]` like `storage_r2_round_trip`.
+    #[tokio::test]
+    #[ignore = "requires live R2 credentials (R2_S3_ACCESS_KEY_ID etc.)"]
+    async fn cas_idempotent_rewrite_reports_durable_false() {
+        let env = StorageEnv::from_env().expect("all R2 env vars must be set to run this test");
+        let bucket =
+            std::env::var("R2_TEST_BUCKET").unwrap_or_else(|_| "corelink-cas-prod".to_owned());
+        let client = R2S3Client::new(&env, &bucket).await.expect("client");
+        let audit = Arc::new(InMemoryAuditSink::new());
+        let sli = Arc::new(InMemorySliObserver::new());
+        let handler = R2CasHandler::new(client, "iad", None, audit, sli);
+
+        // Unique content per run so parallel runs / prior state don't collide.
+        let payload = format!(
+            "rt-nuclear-13-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        )
+        .into_bytes();
+        let tenant = "t-rt13";
+        let claimed = Digest::compute(&payload).to_hex();
+
+        let first = handler
+            .write(CasWriteRequest::new(
+                tenant,
+                claimed.clone(),
+                payload.clone(),
+                "p",
+                tenant,
+                1,
+            ))
+            .expect("first write");
+        assert!(first.durable, "first write of a fresh hash must be durable=true");
+
+        let second = handler
+            .write(CasWriteRequest::new(
+                tenant,
+                claimed.clone(),
+                payload,
+                "p",
+                tenant,
+                2,
+            ))
+            .expect("second write");
+        assert!(
+            !second.durable,
+            "an idempotent re-write must report durable=false (HEAD hit → no re-PUT, no re-charge)"
+        );
     }
 
     // ---------------------------------------------------------------
