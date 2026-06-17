@@ -25,6 +25,8 @@
  * `CORELINK_INTERNAL_AUTH_KEY` is bound (task #46).
  */
 
+import { resolveEraseAuthKey } from "../lib/erase-auth-key.js";
+
 /** Light verify wire shape — mirrors the container's `DsrVerifyV1`. */
 export interface DsrVerifyV1 {
   dsr_id: string;
@@ -46,6 +48,12 @@ export interface D1Lite {
 /** Minimal env surface the sweep needs. */
 export interface DsrVerifyCronEnv {
   CORELINK_API_BASE: string;
+  /**
+   * Dedicated erase/DSR consumer secret (red-team #3 split). Preferred for the
+   * `x-corelink-internal-auth` header so it matches the main-Worker / container
+   * erase gate in the full-split config (rt-nuclear #23); shared-key fallback.
+   */
+  CORELINK_ERASE_AUTH_KEY?: string;
   /** Shared secret for the `x-corelink-internal-auth` header. */
   CORELINK_INTERNAL_AUTH_KEY?: string;
   /** Service binding to the main CoreLink Worker (bypasses CF edge error 1014). */
@@ -81,14 +89,18 @@ export async function postVerify(
   env: DsrVerifyCronEnv,
   body: DsrVerifyV1,
 ): Promise<{ ok: boolean; status: number; decision: string }> {
-  if (!env.CORELINK_INTERNAL_AUTH_KEY) {
+  // rt-nuclear #23: erase-key-first, shared-fallback (mirrors the container +
+  // main-Worker erase gate) so the verify call authenticates in the full-split
+  // config rather than 401'ing the moment a dedicated erase key is provisioned.
+  const eraseAuthKey = resolveEraseAuthKey(env);
+  if (!eraseAuthKey) {
     return { ok: false, status: 0, decision: "" };
   }
   const req = new Request(`${env.CORELINK_API_BASE}/_internal/dsr/verify`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-corelink-internal-auth": env.CORELINK_INTERNAL_AUTH_KEY,
+      "x-corelink-internal-auth": eraseAuthKey,
     },
     body: JSON.stringify(body),
   });
@@ -126,7 +138,9 @@ export async function runDsrVerifySweep(
   env: DsrVerifyCronEnv,
   nowMs: number,
 ): Promise<{ swept: number; failed: number; skipped: boolean }> {
-  if (!env.CORELINK_INTERNAL_AUTH_KEY) {
+  // Inert only when NEITHER the dedicated erase key nor the shared key is bound
+  // (rt-nuclear #23: same erase-first, shared-fallback resolution as postVerify).
+  if (!resolveEraseAuthKey(env)) {
     return { swept: 0, failed: 0, skipped: true };
   }
   const deadlineMs = nowMs - DEADLINE_MS;

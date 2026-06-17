@@ -460,10 +460,61 @@ export async function checkRequestQuota(
     return { ok: true };
   }
 
+  // Atomic increment-and-check (single round trip; no read-modify-write race).
+  const inc = await incrementMonthlyRequestCount(db, tenantId, true);
+  if (!inc.counted) {
+    // Transient store error → fail OPEN (availability); not counted.
+    return { ok: true };
+  }
+  return requestCapResultForCount(inc.count, tier);
+}
+
+/** Lowest monthly request cap across all tiers (the FREE tier ceiling). Any
+ * tenant whose post-increment count is <= this value is within EVERY tier's
+ * request cap, so the request-quota gate can be cleared without knowing the
+ * tenant's tier. Used by the Worker edge pipeline to short-circuit the cheap
+ * request-count check ahead of the costlier tier/storage D1 lookups
+ * (rt-nuclear #24). */
+export const FREE_REQUEST_CAP = QUOTAS.free.requestsPerMonthMax;
+
+/** Outcome of the atomic monthly-counter increment. */
+export interface RequestCountIncrement {
+  /** True iff the counter was atomically incremented and a count returned. A
+   * disabled gate or a transient D1 error yields `counted:false` (fail-open;
+   * the caller must NOT enforce a cap). */
+  readonly counted: boolean;
+  /** Post-increment count for this UTC month (0 when `counted` is false). */
+  readonly count: number;
+}
+
+/**
+ * Atomically increment-and-read this tenant's monthly request counter (a single
+ * round trip, no read-modify-write race) and return the post-increment count.
+ *
+ * This is the WRITE half of {@link checkRequestQuota}, factored out so the
+ * Worker edge can run the cheap counter check FIRST and short-circuit a 429 for
+ * an over-cap tenant BEFORE paying the costlier tier-lookup + storage-SUM D1
+ * reads (rt-nuclear #24 — D1 cost-amplification on doomed/over-cap requests).
+ *
+ * Posture (unchanged from the original inline logic):
+ *   - `requestQuotaEnabled === false` → no write; `counted:false` (gate off).
+ *   - UPSERT throws (transient store error) → `counted:false` (fail OPEN).
+ * The cap COMPARISON lives in {@link requestCapResultForCount} so it can be
+ * applied against either the FREE cap (short-circuit) or the tenant's resolved
+ * tier cap (paid headroom) without a second write.
+ */
+export async function incrementMonthlyRequestCount(
+  db: D1Database,
+  tenantId: string,
+  requestQuotaEnabled: boolean,
+): Promise<RequestCountIncrement> {
+  if (!requestQuotaEnabled) {
+    return { counted: false, count: 0 };
+  }
+
   const yearMonth = currentYearMonthUtc();
   const nowMs = Date.now();
 
-  // Atomic increment-and-check (single round trip; no read-modify-write race).
   interface CountRow { request_count: number }
   let row: CountRow | null = null;
   try {
@@ -481,19 +532,28 @@ export async function checkRequestQuota(
     // Transient store error → fail OPEN (availability), consistent with the
     // file's posture. The request is NOT counted; the DO/container remain the
     // deeper net on mutations.
-    return { ok: true };
+    return { counted: false, count: 0 };
   }
 
   // A successful RETURNING UPSERT always yields exactly one row; treat a
   // (theoretically impossible) null as 0 → within cap, fail-open.
-  const count = row?.request_count ?? 0;
+  return { counted: true, count: row?.request_count ?? 0 };
+}
 
-  // The cap is a maximum allowance: reject only requests BEYOND it (count > cap).
-  // The request whose increment lands exactly ON the cap is still served.
+/**
+ * Pure cap comparison for an already-incremented monthly count against a tier's
+ * `requestsPerMonthMax`. No D1 access — the increment happened in
+ * {@link incrementMonthlyRequestCount}. Uncapped tiers (team / enterprise)
+ * always pass.
+ *
+ * The cap is a maximum allowance: reject only requests BEYOND it (count > cap);
+ * the request whose increment lands exactly ON the cap is still served.
+ */
+export function requestCapResultForCount(count: number, tier: Tier): QuotaCheckResult {
+  const cap = QUOTAS[tier].requestsPerMonthMax;
   if (count <= cap) {
     return { ok: true };
   }
-
   return {
     ok: false,
     retryAfterSec: secondsUntilNextMonthStart(),
