@@ -551,6 +551,14 @@ pub fn router(
     token_signing_key: SecretWrap,
     quota: Option<crate::routes::QuotaGate>,
 ) -> Router {
+    // rt-nuclear #2/#8/#9: the OCI $-ceiling gate must resolve the cost-attribution
+    // tenant from the VERIFIED HMAC bearer (the Worker strips `x-corelink-tenant-id`
+    // on the OCI pass-through, and an unverified header/claim would let a tenant
+    // charge a victim). Capture a copy of the realm signing key for the gate BEFORE
+    // `token_signing_key` is moved into the adapter config below. `SecretWrap` is not
+    // `Clone` (secret-copy discipline); reconstruct one explicit copy via `new`.
+    let gate_realm_key = SecretWrap::new(token_signing_key.expose().to_owned());
+
     let moat = Arc::new(MoatCache::production(
         cas_read,
         cas_write,
@@ -598,35 +606,72 @@ pub fn router(
     // cost on write methods (PUT/POST/PATCH — manifest pushes + blob upload
     // legs) so OCI is subject to the SAME ceiling as CAS/AC/Bazel/Turbo. Blob
     // BYTE accrual is already enforced by the `AccountingCasHandler` decorator
-    // wrapping the shared `cas_write`. The isolation/cost-attribution key is the
-    // Worker-set `x-corelink-tenant-id` (forged ⇒ over-charges its OWN tenant);
-    // a missing header skips the charge fail-OPEN (cost accounting must not deny
-    // a valid op for lack of a label). 402 over-ceiling / 503 fail-CLOSED.
+    // wrapping the shared `cas_write`.
+    //
+    // rt-nuclear #2/#8/#9: the cost-attribution tenant is resolved from the
+    // VERIFIED HMAC bearer (`gate_realm_key`), NOT a request header. The Worker
+    // strips `x-corelink-tenant-id` on the OCI pass-through (so the old header
+    // read was always empty ⇒ the charge was always skipped — a total $-ceiling
+    // bypass), and trusting an unverified header/token claim would let a tenant
+    // charge a victim. A write with no VALID bearer is left uncharged because the
+    // adapter's data plane 401s it (no billable work succeeds). 402 over-ceiling.
     if let Some(gate) = quota {
-        router = router.layer(axum::middleware::from_fn_with_state(gate, oci_quota_gate));
+        let gate_state = OciCostGate {
+            gate,
+            realm_key: Arc::new(gate_realm_key),
+        };
+        router = router.layer(axum::middleware::from_fn_with_state(gate_state, oci_quota_gate));
     }
     router
+}
+
+/// State for [`oci_quota_gate`]: the `$`-ceiling [`QuotaGate`](crate::routes::QuotaGate)
+/// plus a copy of the OCI realm HMAC signing key, used to VERIFY the bearer token
+/// and recover its tenant (the cost-attribution key) — see the `router` doc.
+#[derive(Clone)]
+struct OciCostGate {
+    gate: crate::routes::QuotaGate,
+    realm_key: Arc<SecretWrap>,
+}
+
+/// Recover the tenant from a `/v2/*` request's `Authorization: Bearer <token>`
+/// header by VERIFYING the adapter's HMAC realm token (`corelink_adapter_host::
+/// oci::auth::verify`). Returns `None` when there is no bearer or it fails
+/// verification (expired / forged / malformed) — the data plane 401s those, so
+/// the gate leaves them uncharged. Verifying (not just parsing) is load-bearing:
+/// the tenant segment is attacker-controlled, so an unverified read would let one
+/// tenant bill another.
+fn oci_bearer_tenant(realm_key: &SecretWrap, headers: &axum::http::HeaderMap) -> Option<String> {
+    let raw = headers.get(axum::http::header::AUTHORIZATION)?.to_str().ok()?;
+    let token = raw.strip_prefix("Bearer ").or_else(|| raw.strip_prefix("bearer "))?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    corelink_adapter_host::oci::auth::verify(realm_key, token, now)
+        .ok()
+        .map(|vt| vt.tenant.to_canonical_text())
 }
 
 /// Per-tenant `$`-ceiling charge for OCI write methods (cluster B — OCI was
 /// outside the quota path). Read methods (GET/HEAD) are not charged here; the
 /// adapter's bearer-scope check authorizes them. See the `router` doc.
 async fn oci_quota_gate(
-    axum::extract::State(gate): axum::extract::State<crate::routes::QuotaGate>,
+    axum::extract::State(st): axum::extract::State<OciCostGate>,
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     use axum::http::Method;
     let is_write = matches!(*req.method(), Method::PUT | Method::POST | Method::PATCH);
     if is_write {
-        let tenant = req
-            .headers()
-            .get("x-corelink-tenant-id")
-            .and_then(|v| v.to_str().ok())
-            .map(str::trim)
-            .unwrap_or("");
-        if !tenant.is_empty() {
-            if let Some(resp) = gate.check(tenant).await {
+        // Cost-attribution tenant comes from the VERIFIED HMAC bearer, never a
+        // request header: the Worker strips `x-corelink-tenant-id` on the OCI
+        // pass-through (the old header read was always empty ⇒ charge always
+        // skipped — a total $-ceiling bypass, rt-nuclear #2/#8/#9). A write with
+        // no valid bearer is 401'd by the adapter data plane, so it is left
+        // uncharged (no billable work succeeds).
+        if let Some(tenant) = oci_bearer_tenant(&st.realm_key, req.headers()) {
+            if let Some(resp) = st.gate.check(&tenant).await {
                 return resp;
             }
         }
@@ -1594,5 +1639,47 @@ mod tests {
         );
         // The status is the auth-failure shape (401), unchanged.
         assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn oci_bearer_tenant_resolves_only_a_verified_bearer() {
+        // rt-nuclear #2/#8/#9: the $-ceiling cost-attribution tenant is recovered
+        // by VERIFYING the HMAC bearer (not a request header the Worker strips,
+        // and not an unverified token claim that would let one tenant bill
+        // another).
+        use corelink_adapter_host::oci::auth::{mint, OciScope};
+        let key = SecretWrap::new("0123456789abcdef0123456789abcdef".to_owned());
+        let tenant = TenantId::from_uuid(
+            Uuid::parse_str("00000000-0000-4000-8000-0000000abcde").expect("uuid"),
+        );
+        let scope = OciScope::new("t/img", vec!["push".to_owned(), "pull".to_owned()]);
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_secs();
+        let token = mint(&key, &tenant, &scope, now, 300).expect("mint");
+
+        let mut h = axum::http::HeaderMap::new();
+        h.insert(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {token}").parse().expect("hv"),
+        );
+        // valid bearer → its tenant
+        assert_eq!(
+            oci_bearer_tenant(&key, &h).as_deref(),
+            Some(tenant.to_canonical_text().as_str()),
+            "a verified bearer must resolve to its tenant",
+        );
+        // forged bearer (wrong realm key) → None (cannot bill a victim)
+        let attacker_key = SecretWrap::new("fedcba9876543210fedcba9876543210".to_owned());
+        assert!(
+            oci_bearer_tenant(&attacker_key, &h).is_none(),
+            "a bearer that fails HMAC verify must NOT resolve a tenant",
+        );
+        // absent bearer → None (the data plane 401s the write; left uncharged)
+        assert!(
+            oci_bearer_tenant(&key, &axum::http::HeaderMap::new()).is_none(),
+            "no Authorization header ⇒ no tenant",
+        );
     }
 }

@@ -23,6 +23,16 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **OCI $-ceiling gate now resolves the tenant from the verified bearer (rt-nuclear #2/#8/#9).**
+  The OCI push surface bypassed the per-tenant monthly $-ceiling entirely: the Worker strips
+  `x-corelink-tenant-id` on the OCI pass-through, and `oci_quota_gate` keyed the charge on that
+  (always-empty) header — so every billable OCI write (manifest/blob-upload/finalize) skipped the
+  ceiling, letting any Free-tier PAT drive unbounded backend cost (margin attack). The gate now
+  recovers the cost-attribution tenant by **HMAC-verifying the realm bearer** (`oci::auth::verify`,
+  the same token the data plane checks) — never a forgeable header/claim. A write with no valid
+  bearer is left uncharged because the data plane 401s it (no billable work). (The per-tenant OCI
+  byte ceiling #3/#12, the `/token` Argon2id cost #4, and the Worker-edge request-count for OCI #8
+  are tracked OCI follow-ups.)
 - **Wire CAS-erase + DSR to the dedicated `CORELINK_ERASE_AUTH_KEY` (rt-nuclear #18–21).**
   The #297 per-consumer-key split never reached the destructive surfaces: `/_internal/cas/*/erase`
   was seeded from the ADMIN key and `/_internal/dsr/*` read the shared `CORELINK_INTERNAL_AUTH_KEY`
