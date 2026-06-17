@@ -576,7 +576,21 @@ impl CasBlobEraser for R2CasBlobEraser {
             // LISTing it (rather than a bare DELETE) lets a re-erase of an
             // absent blob short-circuit and stays robust if a future multipart
             // path ever keys companion objects under the same digest prefix.
-            let key = crate::storage::r2_s3::R2S3Client::blob_key(region, &prefix, digest);
+            // Native BLAKE3 keyspace — correct by design for this per-blob
+            // erase: it is the native-CAS single-blob DELETE surface (clw D-1),
+            // reached only with a BLAKE3 digest. Bazel REAPI exposes no
+            // per-blob delete, and the Bazel `bazel/sha256/` keyspace is fully
+            // covered by the GDPR Art.17 full-tenant erasure, which is
+            // prefix-wide (`<region>/<tenant_prefix>/` → deletes everything
+            // beneath, including `…/bazel/sha256/*`; see
+            // `dsr/adapter_r2_cas.rs::list_and_delete_cas`). So a tenant wipe
+            // leaves no Bazel residue; this path stays native-keyspace-scoped.
+            let key = crate::storage::r2_s3::R2S3Client::blob_key(
+                region,
+                &prefix,
+                digest,
+                corelink_handler_cas::DigestAlgo::Blake3,
+            );
             let keys = client.list_objects_v2(&key).await?;
             for k in keys {
                 client.delete(&k).await?;
@@ -790,8 +804,18 @@ mod tests {
         assert_eq!(eraser_prefix, writer_prefix, "prefix must match the writer");
         assert_eq!(writer_prefix.len(), TENANT_PREFIX_LEN);
         // And the assembled LIST key is the leading path of the blob key.
-        let blob_key = crate::storage::r2_s3::R2S3Client::blob_key("iad", &writer_prefix, DIGEST);
-        let list_key = crate::storage::r2_s3::R2S3Client::blob_key("iad", &eraser_prefix, DIGEST);
+        let blob_key = crate::storage::r2_s3::R2S3Client::blob_key(
+            "iad",
+            &writer_prefix,
+            DIGEST,
+            corelink_handler_cas::DigestAlgo::Blake3,
+        );
+        let list_key = crate::storage::r2_s3::R2S3Client::blob_key(
+            "iad",
+            &eraser_prefix,
+            DIGEST,
+            corelink_handler_cas::DigestAlgo::Blake3,
+        );
         assert_eq!(list_key, blob_key);
         assert!(blob_key.starts_with("iad/"), "key={blob_key}");
         assert!(blob_key.ends_with(&format!("/{DIGEST}")), "key={blob_key}");

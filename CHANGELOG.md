@@ -23,6 +23,27 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Bazel REAPI v2 CAS — SHA-256 in a surface-tagged keyspace (concern D).**
+  Genuine `bazel --remote_cache` uploads (SHA-256 content addressing, REAPI v2
+  default) no longer fail the BLAKE3-only durable gate. The fix is **Option A**
+  (surface-tagged keyspace), NOT a relaxation of the shared content-addressing
+  gate:
+  - Native CAS + sccache stay **BLAKE3-only**; Bazel blobs are stored under a
+    **schema-versioned key prefix** `<region>/<tenant_prefix>/bazel/sha256/<digest>`
+    — the "new type + schema-versioned prefix" path ADR-0044 §5 already documented.
+    The two functions **never mix within a keyspace**.
+  - The durable content-hash gate is **surface-partitioned**: it verifies the
+    keyspace's canonical function (BLAKE3 native / SHA-256 Bazel) on **both write
+    and read** (bitrot re-verify), selected by an explicit `DigestAlgo` enum
+    threaded through `CasReadRequest`/`CasWriteRequest` — **never inferred from the
+    hash string length** (which would be a silent gate). `corelink-hash::Digest`
+    (the native sealed BLAKE3 newtype) is untouched.
+  - The REAPI boundary (`routes/bazel_v2.rs::handle_cas_write`) verifies the
+    client SHA-256 against the body before delegating (early clean **422** on
+    mismatch; defense-in-depth with the durable gate).
+  - GDPR Art.17 full-tenant erasure already covers the new keyspace (it is
+    prefix-wide under `<region>/<tenant_prefix>/`); `INV-CAS-INTEGRITY` /
+    `INV-CAS-IDEMPOTENCY` updated to record the surface-determined `hash_fn`.
 - **`clw auth rotate` — atomic PAT rotation (`POST /internal/v1/auth/rotate`).**
   A new internal-auth-gated Worker route closes the `clw auth rotate` stub (which
   previously advised re-login and returned `rotated:false`). It rotates a PAT in

@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use corelink_bazel_bridge::{
     adapter::{BazelAdapter, WriteCtx},
-    digest::Digest,
+    digest::{sha256_hex, Digest},
     error::BazelBridgeError,
     find_missing::{
         build_find_missing_response, parse_find_missing_request, FindMissingHandler,
@@ -77,7 +77,8 @@ fn reapi_version_is_pinned() {
 fn end_to_end_cas_get_hit() {
     let adapter = make_adapter();
     let bytes = b"hello bazel".to_vec();
-    let hash = fake_hash(&bytes);
+    // Bazel CAS keyspace content-addresses with SHA-256.
+    let hash = sha256_hex(&bytes);
     let size = bytes.len() as u64;
     let digest = Digest::new(&hash, size).expect("digest");
 
@@ -121,7 +122,7 @@ fn end_to_end_cas_get_miss_returns_not_found() {
 fn end_to_end_cas_put_via_upload_uri() {
     let adapter = make_adapter();
     let bytes = b"artifact content".to_vec();
-    let hash = fake_hash(&bytes);
+    let hash = sha256_hex(&bytes);
     let size = bytes.len() as u64;
     let uuid = "550e8400-e29b-41d4-a716-446655440000";
     let path = format!("/{TENANT}/uploads/{uuid}/blobs/{hash}/{size}");

@@ -368,11 +368,13 @@ impl CasWriteHandler for InMemoryCasHandler {
             })
             .map_err(CasHandlerError::AuditFailed)?;
 
-        // Verify claimed hash against bytes. The in-memory fake uses
-        // a deterministic stand-in (`len`+`first byte hex`) so tests
-        // can construct mismatches without pulling blake3. Production
-        // handler uses `corelink_hash::CanonicalHash`.
-        let actual_hash = fake_hash(&req.bytes);
+        // Verify claimed hash against bytes under the keyspace's tagged
+        // digest function (`req.algo`): the deterministic `fake_hash`
+        // stand-in for the native BLAKE3 keyspace (so tests can construct
+        // mismatches without pulling blake3) or a real SHA-256 for the Bazel
+        // REAPI `Sha256` keyspace. Production handler uses
+        // `corelink_hash::CanonicalHash` / `sha2` respectively.
+        let actual_hash = expected_content_hash(req.algo, &req.bytes);
         if actual_hash != req.claimed_hash {
             self.audit
                 .emit(AuditEvent {
@@ -600,6 +602,30 @@ pub fn fake_hash(bytes: &[u8]) -> String {
     s
 }
 
+/// Real SHA-256 of `bytes` as 64-char lowercase hex — the Bazel REAPI v2
+/// content-addressing function. Used by the in-memory fake's write verify
+/// when [`crate::DigestAlgo::Sha256`] is the request's keyspace tag.
+#[must_use]
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest as _, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
+/// The content hash the in-memory fake expects for a given keyspace tag:
+/// the deterministic [`fake_hash`] stand-in for [`crate::DigestAlgo::Blake3`]
+/// (native/sccache), or a real [`sha256_hex`] for [`crate::DigestAlgo::Sha256`]
+/// (the Bazel REAPI keyspace). Keeps the fake faithful to the surface-tagged
+/// single-function keyspace partitioning.
+#[must_use]
+pub fn expected_content_hash(algo: crate::DigestAlgo, bytes: &[u8]) -> String {
+    match algo {
+        crate::DigestAlgo::Blake3 => fake_hash(bytes),
+        crate::DigestAlgo::Sha256 => sha256_hex(bytes),
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -640,6 +666,7 @@ mod tests {
                 principal: "p1".into(),
                 caller_tenant: "t1".into(),
                 at_unix_ms: 1,
+                algo: crate::DigestAlgo::Blake3,
             })
             .expect("read");
         assert_eq!(resp.bytes, bytes);
@@ -679,6 +706,7 @@ mod tests {
                 principal: "attacker".into(),
                 caller_tenant: "attacker_tenant".into(),
                 at_unix_ms: 1,
+                algo: crate::DigestAlgo::Blake3,
             })
             .expect_err("denied");
         assert!(matches!(err, CasHandlerError::CrossTenantDenied { .. }));
@@ -703,6 +731,7 @@ mod tests {
                 principal: "p1".into(),
                 caller_tenant: "t1".into(),
                 at_unix_ms: 1,
+                algo: crate::DigestAlgo::Blake3,
             })
             .expect_err("not found");
         assert!(matches!(err, CasHandlerError::NotFound { .. }));
@@ -726,6 +755,7 @@ mod tests {
                 principal: "p1".into(),
                 caller_tenant: "t1".into(),
                 at_unix_ms: 1,
+                algo: crate::DigestAlgo::Blake3,
             })
             .expect_err("mismatch");
         assert!(matches!(err, CasHandlerError::HashMismatch { .. }));
@@ -755,6 +785,8 @@ mod tests {
                 principal: "p1".into(),
                 caller_tenant: "t1".into(),
                 at_unix_ms: 1,
+                storage_quota_bytes: None,
+                algo: crate::DigestAlgo::Blake3,
             })
             .expect("write");
         assert_eq!(resp.content_hash, hash);
@@ -788,6 +820,8 @@ mod tests {
                 principal: "p1".into(),
                 caller_tenant: "t1".into(),
                 at_unix_ms: 1,
+                storage_quota_bytes: None,
+                algo: crate::DigestAlgo::Blake3,
             })
             .expect_err("mismatch");
         match err {
@@ -831,6 +865,8 @@ mod tests {
                 principal: "p1".into(),
                 caller_tenant: "t1".into(),
                 at_unix_ms: 1,
+                storage_quota_bytes: None,
+                algo: crate::DigestAlgo::Blake3,
             })
             .expect_err("audit closed");
         assert!(matches!(err, CasHandlerError::AuditFailed(_)));
@@ -852,6 +888,8 @@ mod tests {
                 principal: "attacker".into(),
                 caller_tenant: "attacker_tenant".into(),
                 at_unix_ms: 1,
+                storage_quota_bytes: None,
+                algo: crate::DigestAlgo::Blake3,
             })
             .expect_err("denied");
         assert!(matches!(err, CasHandlerError::CrossTenantDenied { .. }));

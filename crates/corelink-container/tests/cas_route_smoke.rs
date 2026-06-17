@@ -78,7 +78,12 @@ async fn cas_read_route_reaches_handler_and_returns_handler_not_found_404() {
     let app = cas::router(fresh_state());
 
     let req = Request::builder()
-        .uri("/v1/cas/tenant-a/abc123")
+        // A VALID canonical digest (64 lowercase hex). The CAA-360 #9 guard in
+        // `cas_read` rejects a malformed hash with 400 BEFORE the not-found path,
+        // so a valid digest is required for the request to reach the handler's
+        // not-found 404 this test pins (the guard's 400 is itself handler-emitted,
+        // but we assert the original 404/"not found" contract).
+        .uri("/v1/cas/tenant-a/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
         .method("GET")
         // `AuthTenant` reads `x-corelink-tenant-id` and the handler 403s
         // unless it equals the `:tenant` path segment — mirror `tenant-a`.
@@ -112,7 +117,12 @@ async fn cas_read_route_does_not_match_literal_braces_uri() {
     let app = cas::router(fresh_state());
 
     let req = Request::builder()
-        .uri("/v1/cas/%7Btenant%7D/%7Bhash%7D")
+        // Literal-brace TENANT segment is the route-matching pin (`%7B…%7D`
+        // decodes to `{tenant}` and must be treated as path DATA, reaching the
+        // handler — not a literal-route collision). The hash is a valid 64-hex
+        // digest so the CAA-360 #9 malformed-hash guard passes and the request
+        // still lands on the handler's not-found 404.
+        .uri("/v1/cas/%7Btenant%7D/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
         .method("GET")
         // The `:tenant` path segment decodes to the literal `{tenant}`;
         // `AuthTenant` reads `x-corelink-tenant-id` and the handler 403s
