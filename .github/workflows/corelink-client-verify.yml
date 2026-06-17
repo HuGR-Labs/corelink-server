@@ -132,8 +132,18 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # actions/checkout@v6.0.3
-      - uses: dtolnay/rust-toolchain@5b842231ba77f5c045dba54ac5560fed2db780e2  # dtolnay/rust-toolchain@nightly@2026-05-15
-      - run: cargo install cargo-fuzz --locked
+      # ROOT FIX (2026-06-17): do NOT use `dtolnay/rust-toolchain@nightly` here.
+      # It runs `rustup` channel-update + component ops against the SHARED
+      # ~/.rustup on the self-hosted Mac, deleting the `rustup` shim mid-run so
+      # every ~/.cargo/bin/cargo symlink dangles → `os error 2` / exit-127
+      # `cargo: command not found` on every other Rust gate AND the clw build box
+      # (same host). The 89270bb9 fix did this for the other fuzz jobs but missed
+      # this file. Put the pre-installed host nightly toolchain on PATH instead.
+      - name: Put host nightly toolchain on PATH (cargo-fuzz needs nightly)
+        run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
+      # Guarded + version-pinned: only install when absent, so concurrent
+      # per-crate fuzz jobs never race on writing the shared ~/.cargo/bin shim.
+      - run: command -v cargo-fuzz >/dev/null 2>&1 || cargo install cargo-fuzz --locked --version =0.13.1
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
         with:
           workspaces: "crates/corelink-client-verify/fuzz -> target"
@@ -150,8 +160,18 @@ jobs:
     if: github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # actions/checkout@v6.0.3
-      - uses: dtolnay/rust-toolchain@5b842231ba77f5c045dba54ac5560fed2db780e2  # dtolnay/rust-toolchain@nightly@2026-05-15
-      - run: cargo install cargo-fuzz --locked
+      # ROOT FIX (2026-06-17): do NOT use `dtolnay/rust-toolchain@nightly` here.
+      # It runs `rustup` channel-update + component ops against the SHARED
+      # ~/.rustup on the self-hosted Mac, deleting the `rustup` shim mid-run so
+      # every ~/.cargo/bin/cargo symlink dangles → `os error 2` / exit-127
+      # `cargo: command not found` on every other Rust gate AND the clw build box
+      # (same host). The 89270bb9 fix did this for the other fuzz jobs but missed
+      # this file. Put the pre-installed host nightly toolchain on PATH instead.
+      - name: Put host nightly toolchain on PATH (cargo-fuzz needs nightly)
+        run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
+      # Guarded + version-pinned: only install when absent, so concurrent
+      # per-crate fuzz jobs never race on writing the shared ~/.cargo/bin shim.
+      - run: command -v cargo-fuzz >/dev/null 2>&1 || cargo install cargo-fuzz --locked --version =0.13.1
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
         with:
           workspaces: "crates/corelink-client-verify/fuzz -> target"

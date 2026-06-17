@@ -337,12 +337,18 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - uses: dtolnay/rust-toolchain@5b842231ba77f5c045dba54ac5560fed2db780e2 # nightly as of 2026-04-29
+      # ROOT FIX (2026-06-17): do NOT use `dtolnay/rust-toolchain@nightly` — it
+      # mutates the SHARED ~/.rustup on the self-hosted Mac and nukes the rustup
+      # shim (os-error-2 / exit-127 across the host). Use the pre-installed host
+      # nightly toolchain on PATH (same pattern as fuzz-nightly.yml + the per-crate
+      # fuzz jobs).
+      - name: Put host nightly toolchain on PATH (cargo-fuzz needs nightly)
+        run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
 
-      - name: Install cargo-fuzz (pinned)
-        # Pin the exact cargo-fuzz version so future upstream changes
-        # (e.g. libfuzzer flag semantics) don't silently alter coverage.
-        run: cargo install cargo-fuzz --locked --version =0.13.1
+      - name: Install cargo-fuzz (guarded + pinned)
+        # Guard: only install when absent, so concurrent fuzz jobs never race on
+        # the shared ~/.cargo/bin shim. Pin the exact version for reproducibility.
+        run: command -v cargo-fuzz >/dev/null 2>&1 || cargo install cargo-fuzz --locked --version =0.13.1
 
       - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
