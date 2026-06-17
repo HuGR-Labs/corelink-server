@@ -23,6 +23,15 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **Concurrent double-DELETE over-released storage bytes (rt-nuclear #6/#10/#14).**
+  The CAS and AC delete handlers measured the blob size with a HEAD and then issued a separate idempotent
+  `DeleteObject`. Because S3 `DeleteObject` reports neither prior presence nor prior size, two concurrent
+  deletes of the same key BOTH HEAD the size and BOTH report it reclaimed — the byte accountant then
+  released the bytes twice, manufacturing free storage headroom (a quota-bypass primitive). Both planes
+  now go through a new `R2S3Client::delete_if_present`, which serializes the measure-and-delete under a
+  per-key in-process async lock and returns the reclaimed size to AT MOST ONE racer (`Some(size)`); every
+  other racer HEADs the key absent and gets `None` → releases 0. The release now reflects what THIS
+  request actually removed.
 - **R2 CAS write always reported `durable=true` → byte double-charge on idempotent re-write (rt-nuclear #13).**
   `R2CasHandler::write` returned `CasWriteResponse::new(hash, true)` unconditionally, so every re-write of
   an already-stored content hash was reported as a fresh durable insert. The `AccountingCasHandler`
