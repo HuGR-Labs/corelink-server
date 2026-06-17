@@ -63,6 +63,18 @@ export interface Env {
   // or the prod issuer shown in the Clerk dashboard → API Keys → Frontend API URL.
   // Without this secret the worker falls back to the shape-check (https + "clerk").
   CLERK_ISSUER_URL?: string;
+  // ── githugr multi-issuer (Option B — exchange/token-exchange paths only) ──────
+  // The SEPARATE githugr Clerk instance accepted on the exchange seams IN ADDITION
+  // to CoreLink's, WITHOUT touching CLERK_ISSUER_URL (so CoreLink's own dashboard +
+  // onboarding keep validating CoreLink's instance). All three must be set to arm
+  // the githugr path; absent ⇒ githugr sessions simply 401 (no behavior change).
+  //   GITHUGR_CLERK_ISSUER_URL — `https://clerk.githugr.com` (the iss to accept).
+  //   GITHUGR_CLERK_JWT_KEY    — githugr's PUBLIC instance key (PEM) for networkless
+  //                              verify; public, no secret crosses products.
+  //   GITHUGR_TENANT_ID        — the single CoreLink tenant every githugr session maps to.
+  GITHUGR_CLERK_ISSUER_URL?: string;
+  GITHUGR_CLERK_JWT_KEY?: string;
+  GITHUGR_TENANT_ID?: string;
   STRIPE_SECRET_KEY?: string;
   // L3 money path — forwarded to the container by the DO (see durable_object.ts);
   // the tier-select route is unmounted (404) without CORELINK_DPA_VERSION, and

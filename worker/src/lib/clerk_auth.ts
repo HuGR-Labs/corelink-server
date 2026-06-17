@@ -46,6 +46,17 @@ export const CLERK_AZP_ALLOWLIST = [
   "https://corelink-app.humangr.com",
 ] as const;
 
+/**
+ * Authorized parties for the **githugr** Clerk instance (`clerk.githugr.com`).
+ *
+ * SEPARATE from {@link CLERK_AZP_ALLOWLIST} on purpose: githugr is a DIFFERENT
+ * Clerk instance, accepted ONLY on the exchange/token-exchange paths (opt-in via
+ * `allowGithugrIssuer`), and ONLY when its issuer + jwtKey + fixed tenant are all
+ * configured. Keeping it separate means widening githugr's azp can never widen
+ * CoreLink's own dashboard/onboarding azp set. (rt — single-githugr-tenant / Option B.)
+ */
+export const GITHUGR_AZP_ALLOWLIST = ["https://www.githugr.com"] as const;
+
 /** Result of the shared Clerk-session → tenant resolution pipeline. */
 export type ClerkAuthResult =
   | { ok: true; tenantId: string; clerkUserId: string }
@@ -82,6 +93,7 @@ export async function verifyClerkSessionAndResolveTenant(
   request: Request,
   env: Env,
   requestId: string,
+  opts?: { allowGithugrIssuer?: boolean },
 ): Promise<ClerkAuthResult> {
   // Extract the Clerk session token from the Authorization header.
   const authz = request.headers.get("authorization") ?? "";
@@ -92,6 +104,29 @@ export async function verifyClerkSessionAndResolveTenant(
       ok: false,
       response: reapiError("UNAUTHORIZED", "clerk session required", 401, requestId),
     };
+  }
+
+  // ── Multi-issuer (opt-in, exchange paths only) ──────────────────────────────
+  // The exchange/token-exchange seams (Option B) accept sessions from the SEPARATE
+  // githugr Clerk instance (`clerk.githugr.com`) IN ADDITION to CoreLink's. We
+  // route by the UNVERIFIED issuer (peeked for routing only — the real signature
+  // verify happens inside `verifyGithugrSession`), and ONLY when the caller opted
+  // in AND all three githugr settings are configured. This NEVER touches the
+  // shared `CLERK_ISSUER_URL` path below (dashboard/onboarding stay CoreLink-only),
+  // so it cannot break CoreLink's own login. githugr is ONE CoreLink tenant
+  // (owner-ratified Option B): a githugr session resolves to the fixed
+  // `GITHUGR_TENANT_ID`, NOT a per-user `clerk_user_id` lookup.
+  if (
+    opts?.allowGithugrIssuer &&
+    env.GITHUGR_CLERK_ISSUER_URL &&
+    env.GITHUGR_CLERK_ISSUER_URL.length > 0 &&
+    env.GITHUGR_CLERK_JWT_KEY &&
+    env.GITHUGR_CLERK_JWT_KEY.length > 0 &&
+    env.GITHUGR_TENANT_ID &&
+    env.GITHUGR_TENANT_ID.length > 0 &&
+    peekUnverifiedIssuer(sessionToken) === env.GITHUGR_CLERK_ISSUER_URL
+  ) {
+    return verifyGithugrSession(sessionToken, env, requestId);
   }
 
   // Fail-CLOSED when the Clerk verification secret is unbound — no JWKS-backed
@@ -230,4 +265,92 @@ export async function verifyClerkSessionAndResolveTenant(
   }
 
   return { ok: true, tenantId, clerkUserId };
+}
+
+/**
+ * Peek the UNVERIFIED `iss` claim of a JWT — for ROUTING ONLY (deciding which
+ * Clerk instance minted it). The signature is NOT checked here; the caller MUST
+ * verify the token authoritatively before trusting any claim. Malformed input →
+ * `undefined`, so the caller falls through to the default (CoreLink) issuer path,
+ * which then rejects it.
+ */
+function peekUnverifiedIssuer(token: string): string | undefined {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return undefined;
+    const payloadB64 = parts[1];
+    if (!payloadB64) return undefined;
+    // base64url → base64 (+ pad) → JSON. Clerk payloads are ASCII JSON.
+    const b64 = payloadB64.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64.padEnd(Math.ceil(b64.length / 4) * 4, "=");
+    const claims = JSON.parse(atob(padded)) as Record<string, unknown>;
+    const iss = claims["iss"];
+    return typeof iss === "string" ? iss : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Verify a session minted by the **githugr** Clerk instance and resolve it to the
+ * FIXED githugr CoreLink tenant (Option B — githugr is ONE CoreLink tenant; the
+ * forge does its own per-user isolation using the passed-through `clerkUserId` =
+ * principal). Networkless verification via githugr's PUBLIC `jwtKey` — no githugr
+ * secret crosses into CoreLink. The caller has already confirmed the three
+ * `GITHUGR_*` settings are present and that the unverified issuer matches; this
+ * re-verifies signature + azp + issuer authoritatively (fail-CLOSED on any miss).
+ */
+async function verifyGithugrSession(
+  sessionToken: string,
+  env: Env,
+  requestId: string,
+): Promise<ClerkAuthResult> {
+  try {
+    const claims = await verifyToken(sessionToken, {
+      jwtKey: env.GITHUGR_CLERK_JWT_KEY,
+      authorizedParties: [...GITHUGR_AZP_ALLOWLIST],
+    });
+
+    // azp MUST be present AND in the githugr allowlist (the library skips the
+    // authorizedParties check when azp is absent — re-assert it ourselves).
+    const azp = (claims as Record<string, unknown>)["azp"];
+    if (
+      typeof azp !== "string" ||
+      azp.length === 0 ||
+      !(GITHUGR_AZP_ALLOWLIST as readonly string[]).includes(azp)
+    ) {
+      return {
+        ok: false,
+        response: reapiError("UNAUTHORIZED", "clerk session azp invalid", 401, requestId),
+      };
+    }
+
+    // Exact issuer pin to the githugr instance (authoritative — the peek was
+    // routing-only).
+    const iss = (claims as Record<string, unknown>)["iss"];
+    if (iss !== env.GITHUGR_CLERK_ISSUER_URL) {
+      return {
+        ok: false,
+        response: reapiError("UNAUTHORIZED", "clerk session issuer invalid", 401, requestId),
+      };
+    }
+
+    if (!claims.sub) {
+      return {
+        ok: false,
+        response: reapiError("UNAUTHORIZED", "clerk session missing subject", 401, requestId),
+      };
+    }
+
+    // Option B: every githugr session resolves to the single configured githugr
+    // tenant. `clerkUserId` (= the Clerk `sub`) flows through as the principal so
+    // the forge can isolate users WITHIN that one tenant. No clerk_user_id → tenant
+    // D1 lookup (githugr users are NOT individual CoreLink tenants).
+    return { ok: true, tenantId: env.GITHUGR_TENANT_ID as string, clerkUserId: claims.sub };
+  } catch {
+    return {
+      ok: false,
+      response: reapiError("UNAUTHORIZED", "invalid clerk session", 401, requestId),
+    };
+  }
 }

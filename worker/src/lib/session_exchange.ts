@@ -389,7 +389,9 @@ export async function handleSessionExchange(
   // lookup by clerk_user_id (no row → 403; D1 error → 500). The secret guard
   // above already asserted CLERK_SECRET_KEY presence, so the helper's own
   // fail-closed branch never fires here.
-  const clerkAuth = await verifyClerkSessionAndResolveTenant(request, env, requestId);
+  const clerkAuth = await verifyClerkSessionAndResolveTenant(request, env, requestId, {
+    allowGithugrIssuer: true,
+  });
   if (!clerkAuth.ok) {
     return clerkAuth.response;
   }
@@ -702,7 +704,9 @@ export async function handleTokenExchange(
   }
 
   // ── 5. Verify the Clerk session + resolve the tenant (shared pipeline) ─────
-  const clerkAuth = await verifyClerkSessionAndResolveTenant(request, env, requestId);
+  const clerkAuth = await verifyClerkSessionAndResolveTenant(request, env, requestId, {
+    allowGithugrIssuer: true,
+  });
   if (!clerkAuth.ok) {
     return clerkAuth.response;
   }
