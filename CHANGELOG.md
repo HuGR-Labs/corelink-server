@@ -42,6 +42,16 @@ Each entry cross-references:
   `durable=false` (HEAD error fails CLOSED to the PUT, never dropping a write), so the decorator does not
   re-charge.
 
+### Fixed
+- **Storage cap frozen at first-write, never reseeded on tier downgrade (rt-nuclear #16).**
+  `D1ByteStore::check_and_accrue`'s `ON CONFLICT DO UPDATE` updated `bytes_used`/timestamps but NOT
+  `bytes_quota`, so a tenant whose tier was DOWNGRADED kept the old (higher) cap forever — the new
+  lower cap never took effect and the tenant could keep storing past their entitlement. The conflict
+  branch now RECONCILES `bytes_quota` to the incoming authoritative cap when it is a real finite value
+  (`COALESCE(NULLIF(?5,0), …existing)`, so a genuinely-unlimited `Some(0)` carrier never clobbers a
+  finite stored cap), and gates the write by the effective new cap so the downgrade is enforced on the
+  very next write. The in-memory test store mirrors the same semantics.
+
 ### Security
 - **OCI in-flight byte ceiling was global-only → one tenant could starve all (rt-nuclear #3/#12).**
   The OCI blob-upload path enforced only a GLOBAL 512 MiB in-flight ceiling, so a single tenant could
