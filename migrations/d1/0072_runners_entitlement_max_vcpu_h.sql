@@ -1,0 +1,54 @@
+-- Migration 0072: per-tenant monthly vCPU-hour ceiling on `runners_entitlement`.
+--
+-- ## What this adds
+--
+-- A SEPARATE additive entitlement field, `max_vcpu_h`, alongside the existing
+-- `max_concurrency` cap on the same `runners_entitlement` table (migration 0070).
+-- It is the per-tenant **monthly vCPU-hour ceiling** (vCPU-hours) — the total
+-- compute the tenant's Runners jobs may consume in a calendar month. The runner
+-- ↔ server introspect contract carries it as `max_vcpu_h: Option<u32>` (frozen,
+-- ratified). The operator-provisioned tier ladder is:
+--   solo 100 / starter 240 / pro 600 / max 1200 / team 2400 vCPU-h per month;
+-- Enterprise is bespoke (an operator-set per-tenant value). The wire type is
+-- u32 (vCPU-hours); a positive integer.
+--
+-- ## Why a SEPARATE axis from `max_concurrency`
+--
+-- `max_concurrency` bounds INSTANTANEOUS parallelism (how many runners may run
+-- at once); `max_vcpu_h` bounds CUMULATIVE monthly COMPUTE. Two independent
+-- abuse/entitlement axes on the one entitlement table, both keyed by tenant_id
+-- and both read by the single `/internal/v1/auth/introspect` lookup
+-- (`SELECT max_concurrency, max_vcpu_h FROM runners_entitlement WHERE
+-- tenant_id = ?1`).
+--
+-- ## Why NULLABLE — and the intentional asymmetry vs `max_concurrency`
+--
+-- The column is NULLABLE with NO default, so every existing row gets NULL.
+-- On the wire, an absent `max_vcpu_h` ⇒ **wall-off** (the runners fabric treats
+-- the absent vCPU-hour ceiling as "no monthly compute cap to enforce" and lets
+-- the job through), NOT a reject. This is the deliberate asymmetry: an absent
+-- `max_concurrency` ⇒ no Runners entitlement ⇒ REJECT, while an absent
+-- `max_vcpu_h` ⇒ wall-off (proceed). Because of that, NULL/absent is the
+-- correct, safe default for the back-fill — no CHECK NOT NULL, no default value.
+--
+-- ## Why no CHECK constraint
+--
+-- SQLite/D1 `ALTER TABLE ... ADD COLUMN` cannot attach a CHECK that references
+-- the new column without rebuilding the table, and the field is
+-- operator-provisioned (the wire type u32 is enforced at the introspect-decode
+-- boundary, fail-CLOSED, exactly as the `max_concurrency` decode does). So the
+-- migration adds the bare column and SKIPS the CHECK by design.
+--
+-- ## Idempotency / additive-only / replay posture
+--
+-- This is an `ALTER TABLE ... ADD COLUMN`. SQLite has **no** `ADD COLUMN IF NOT
+-- EXISTS`, so — unlike the `CREATE TABLE IF NOT EXISTS` table-creating
+-- migrations 0070/0071 — re-running THIS migration on a schema that already has
+-- the column FAILS ("duplicate column name"). That matches how other ALTER
+-- migrations in this repo are handled: each is applied exactly once by the
+-- forward-only migration runner and is never replayed. The migration is still
+-- additive-only (INV-AUTH-MIGRATION-ADDITIVE): it adds a NEW column and never
+-- alters/drops/renames an existing object, so it needs no ADR waiver and no
+-- `-- additive-allowed:` suppression.
+
+ALTER TABLE runners_entitlement ADD COLUMN max_vcpu_h INTEGER;

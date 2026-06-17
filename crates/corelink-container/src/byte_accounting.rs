@@ -739,11 +739,35 @@ impl corelink_handler_cas::CasDeleteHandler for AccountingCasHandler {
 ///
 /// Same reserve→commit→release discipline as [`AccountingCasHandler`], over the
 /// `AcUpdateHandler` / `AcDeleteHandler` surface (Bazel AC writes + native AC).
-#[derive(Debug)]
+///
+/// `key_locks` is a FIXED [`CAS_LOCK_SHARDS`]-wide array of per-`(tenant,
+/// action_digest)` serialization locks — the EXACT mirror of
+/// [`AccountingCasHandler`]'s (see [`CAS_LOCK_SHARDS`] for the rt-nuclear C2
+/// rationale). AC entries are mutable (a result payload's size can change), so a
+/// concurrent AC `update` + `delete` of the SAME key has the identical
+/// write-vs-delete byte-accounting race the CAS plane already closed: the delete
+/// releases a stale `reclaimed_bytes` while the update independently
+/// reserves/commits → `bytes_used` UNDER-count (storage-quota evasion). Both
+/// `update` and `delete` acquire the shard their `action_digest` maps to for
+/// their entire reserve/commit/release sequence, so a write and a delete of the
+/// SAME key can never interleave their accounting; distinct keys map to other
+/// shards and stay fully concurrent.
 pub struct AccountingAcHandler {
     update_inner: Arc<dyn corelink_handler_ac::AcUpdateHandler>,
     delete_inner: Arc<dyn corelink_handler_ac::AcDeleteHandler>,
     accountant: Arc<ByteAccountant>,
+    /// Fixed, memory-bounded shard array of per-`(tenant, action_digest)` async
+    /// locks (mirrors [`AccountingCasHandler::key_locks`]).
+    key_locks: Arc<Vec<Arc<tokio::sync::Mutex<()>>>>,
+}
+
+impl core::fmt::Debug for AccountingAcHandler {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("AccountingAcHandler")
+            .field("accountant", &self.accountant)
+            .field("key_lock_shards", &self.key_locks.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl AccountingAcHandler {
@@ -754,11 +778,49 @@ impl AccountingAcHandler {
         delete_inner: Arc<dyn corelink_handler_ac::AcDeleteHandler>,
         accountant: Arc<ByteAccountant>,
     ) -> Self {
+        let key_locks = (0..CAS_LOCK_SHARDS)
+            .map(|_| Arc::new(tokio::sync::Mutex::new(())))
+            .collect::<Vec<_>>();
         Self {
             update_inner,
             delete_inner,
             accountant,
+            key_locks: Arc::new(key_locks),
         }
+    }
+
+    /// Acquire the per-`(tenant, action_digest)` serialization guard (the shard
+    /// the key hashes to) and block on it via the SAME `block_in_place` +
+    /// `block_on` bridge the R2 handlers use for their async I/O.
+    ///
+    /// Byte-identical to [`AccountingCasHandler::lock_for`]. Held by BOTH
+    /// [`Self::update`] (across reserve→inner-update→release) and [`Self::delete`]
+    /// (across inner-delete→release) so an update and a delete of the SAME AC key
+    /// cannot interleave their byte-accounting sequences (rt-nuclear C2 sibling).
+    /// The returned guard must be held for the whole accounting sequence.
+    ///
+    /// Returns an [`tokio::sync::OwnedMutexGuard`] (the shard `Arc` is cloned so
+    /// the guard owns its reference and need not borrow the array).
+    fn lock_for(&self, tenant: &str, key: &str) -> tokio::sync::OwnedMutexGuard<()> {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        tenant.hash(&mut hasher);
+        // A separator so `(a, bc)` and `(ab, c)` cannot collapse to one key.
+        0u8.hash(&mut hasher);
+        key.hash(&mut hasher);
+        // Map the key hash onto a shard. The modulo is correct for any shard
+        // count; `CAS_LOCK_SHARDS` (256) is a power of two so the distribution is
+        // uniform and the op is a single cheap division off a 64-bit hash.
+        let idx = (hasher.finish() as usize) % self.key_locks.len();
+        // `idx < len` by construction (modulo), so `get` is always `Some`; the
+        // `unwrap_or_else` is unreachable totality that keeps clippy's
+        // `indexing_slicing` happy without a panic path.
+        let lock = self
+            .key_locks
+            .get(idx)
+            .map(Arc::clone)
+            .unwrap_or_else(|| Arc::new(tokio::sync::Mutex::new(())));
+        let handle = tokio::runtime::Handle::current();
+        tokio::task::block_in_place(|| handle.block_on(lock.lock_owned()))
     }
 }
 
@@ -772,6 +834,12 @@ impl corelink_handler_ac::AcUpdateHandler for AccountingAcHandler {
         let byte_len = i64::try_from(req.result_payload.len()).unwrap_or(i64::MAX);
         // Worker-resolved per-tier cap (seeds a FRESH row; `None` ⇒ fail-closed).
         let quota_seed = req.storage_quota_bytes;
+        // rt-nuclear C2 sibling (AC plane): hold the per-`(tenant, action_digest)`
+        // serialization guard across the WHOLE reserve→commit→release below, so a
+        // concurrent `delete` of the SAME AC key cannot interleave its
+        // delete→release with our reserve/release and under-count `bytes_used`.
+        // Distinct keys map to other shards and stay concurrent.
+        let _key_guard = self.lock_for(&tenant, &req.action_digest);
         match block_on_accrue(&self.accountant, &tenant, byte_len, quota_seed) {
             Ok(AccrueOutcome::Accrued) => {}
             Ok(AccrueOutcome::OverCap) => {
@@ -818,6 +886,14 @@ impl corelink_handler_ac::AcDeleteHandler for AccountingAcHandler {
         req: corelink_handler_ac::AcDeleteRequest,
     ) -> Result<corelink_handler_ac::AcDeleteResponse, corelink_handler_ac::AcHandlerError> {
         let tenant = req.tenant.clone();
+        // rt-nuclear C2 sibling (AC plane): hold the SAME per-`(tenant,
+        // action_digest)` serialization guard the update path uses, across the
+        // WHOLE inner-delete→release below, so a concurrent `update` of the SAME
+        // AC key cannot interleave its reserve/release with our delete→release
+        // (which would let the delete release this key's bytes while the update
+        // re-commits them → `bytes_used` under-count). Distinct keys hash to other
+        // shards (concurrent).
+        let _key_guard = self.lock_for(&tenant, &req.action_digest);
         let resp = self.delete_inner.delete(req)?;
         let reclaimed = i64::try_from(resp.reclaimed_bytes).unwrap_or(i64::MAX);
         if reclaimed > 0 {
@@ -1184,6 +1260,169 @@ mod decorator_tests {
     };
 
     const REGION: &str = "iad";
+
+    /// AC-plane fixtures (rt-nuclear C2 sibling): the AC `update`-vs-`delete`
+    /// write-vs-delete byte-accounting race, mirroring the CAS suite below.
+    mod ac {
+        use super::{ByteAccountant, ByteStore, InMemoryByteStore, Row, REGION};
+        use corelink_handler_ac::{
+            AcDeleteHandler, AcDeleteRequest, AcLookupHandler, AcLookupRequest, AcUpdateHandler,
+            AcUpdateRequest, InMemoryAcHandler, InMemoryAuditSink, InMemorySliObserver,
+        };
+        use std::sync::Arc;
+
+        use crate::byte_accounting::AccountingAcHandler;
+
+        /// Build an `AccountingAcHandler` over a fresh InMemory AC backing + a
+        /// byte store, returning the decorator, the underlying handler (to inspect
+        /// stored entries), and the byte store (to assert the counter). Mirrors
+        /// the CAS `cas_fixture` below.
+        fn ac_fixture(
+            seed: Option<(&str, Row)>,
+        ) -> (
+            Arc<AccountingAcHandler>,
+            Arc<InMemoryAcHandler>,
+            Arc<InMemoryByteStore>,
+        ) {
+            let audit = Arc::new(InMemoryAuditSink::new());
+            let sli = Arc::new(InMemorySliObserver::new());
+            let inner = Arc::new(InMemoryAcHandler::new(audit, sli));
+            let store = Arc::new(InMemoryByteStore::new());
+            if let Some((tenant, row)) = seed {
+                store.seed(tenant, REGION, row);
+            }
+            let acc = Arc::new(ByteAccountant::new(
+                store.clone() as Arc<dyn ByteStore>,
+                REGION.to_owned(),
+            ));
+            let dec = Arc::new(AccountingAcHandler::new(
+                inner.clone() as Arc<dyn AcUpdateHandler>,
+                inner.clone() as Arc<dyn AcDeleteHandler>,
+                acc,
+            ));
+            (dec, inner, store)
+        }
+
+        /// Is the AC key present on disk in the inner handler?
+        fn is_present(inner: &InMemoryAcHandler, tenant: &str, digest: &str) -> bool {
+            inner
+                .lookup(AcLookupRequest::new(tenant, digest, "p", tenant, 9))
+                .is_ok()
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+        async fn concurrent_update_vs_delete_same_key_nets_to_truth() {
+            // rt-nuclear C2 sibling (AC plane): an AC `delete` of key K (size L)
+            // racing a concurrent `update` of the SAME (tenant, action_digest)
+            // must leave `bytes_used` EQUAL to the on-disk reality — L when the
+            // update wins (entry present), 0 when the delete wins (entry absent).
+            // Before the AC-plane lock, the delete's release(L) and the update's
+            // independent reserve/release could interleave so the two did NOT net
+            // to the true on-disk total, UNDER-counting `bytes_used` by up to L
+            // (storage-quota evasion). The per-(tenant, action_digest) decorator
+            // lock now serializes the full reserve/commit/release of UPDATE against
+            // the full delete/release of DELETE for one key, so the counter always
+            // tracks the truth (and never underflows).
+            //
+            // The InMemory AC handler is content-addressed: re-`update` with the
+            // SAME body is an idempotent no-op when the entry is present (durable =
+            // false ⇒ the decorator rolls the reservation back) but a durable
+            // re-insert once the delete has removed it (⇒ accrues L). Either way
+            // the lock makes the (counter == on-disk) invariant hold each race.
+            let digest = "a".repeat(64);
+            let body = b"ac-race-the-same-key".to_vec();
+            let n = body.len() as i64;
+            for iter in 0..200u64 {
+                // Fresh fixture per iteration with the entry already present + the
+                // counter already reflecting it (the on-disk truth at the start).
+                let (dec, inner, store) = ac_fixture(Some(("t", Row { used: n, quota: 0 })));
+                // Seed the entry on disk so a `delete` actually reclaims `n` bytes.
+                dec.update(
+                    AcUpdateRequest::new("t", digest.clone(), body.clone(), "p", "t", iter)
+                        .with_storage_quota_bytes(Some(0)),
+                )
+                .expect("seed update");
+                // The seed update was a fresh insert (durable), so it accrued
+                // another `n`; normalise the counter back to the single-copy
+                // on-disk truth so the race starts from (counter == on-disk).
+                store.seed("t", REGION, Row { used: n, quota: 0 });
+
+                let du = dec.clone();
+                let dd = dec.clone();
+                let dgu = digest.clone();
+                let dgd = digest.clone();
+                let bu = body.clone();
+                // Concurrent UPDATE and DELETE of the SAME (tenant, action_digest).
+                let tu = tokio::spawn(async move {
+                    let _ = du.update(
+                        AcUpdateRequest::new("t", dgu, bu, "p", "t", 1)
+                            .with_storage_quota_bytes(Some(0)),
+                    );
+                });
+                let td = tokio::spawn(async move {
+                    let _ = dd.delete(AcDeleteRequest::new("t", dgd, "p", "t", 2));
+                });
+                tu.await.unwrap();
+                td.await.unwrap();
+
+                // The on-disk truth after the race: is the entry present?
+                let present = is_present(&inner, "t", &digest);
+                let counter = store.used("t", REGION);
+                let expected = if present { n } else { 0 };
+                assert_eq!(
+                    counter, expected,
+                    "iter {iter}: bytes_used ({counter}) must equal the on-disk truth \
+                     ({expected}; present={present}) — AC update-vs-delete accounting must net exactly"
+                );
+                assert!(
+                    counter >= 0,
+                    "iter {iter}: bytes_used must never underflow below zero"
+                );
+            }
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+        async fn distinct_keys_update_and_delete_stay_concurrent() {
+            // The lock must serialize only the SAME (tenant, action_digest): an
+            // update of key A and a delete of key B must both proceed and account
+            // independently (different shards / no false dependency).
+            let (dec, _inner, store) = ac_fixture(None);
+            let dig_a = "a".repeat(64);
+            let dig_b = "b".repeat(64);
+            let ba = b"ac-key-a-bytes".to_vec();
+            let bb = b"ac-key-b-different".to_vec();
+            let na = ba.len() as i64;
+            let nb = bb.len() as i64;
+            // Pre-seed key B so its delete reclaims real bytes; counter reflects B.
+            dec.update(
+                AcUpdateRequest::new("t", dig_b.clone(), bb, "p", "t", 1)
+                    .with_storage_quota_bytes(Some(0)),
+            )
+            .expect("seed B");
+            assert_eq!(store.used("t", REGION), nb, "seed of B accrues B's bytes");
+
+            let du = dec.clone();
+            let dd = dec.clone();
+            let tu = tokio::spawn(async move {
+                du.update(
+                    AcUpdateRequest::new("t", dig_a, ba, "p", "t", 2)
+                        .with_storage_quota_bytes(Some(0)),
+                )
+            });
+            let td =
+                tokio::spawn(async move { dd.delete(AcDeleteRequest::new("t", dig_b, "p", "t", 3)) });
+            tu.await.unwrap().expect("update A");
+            td.await.unwrap().expect("delete B");
+
+            // Net effect: +na (A written) and −nb (B deleted) over the seeded nb →
+            // exactly na. Distinct keys never block each other and account cleanly.
+            assert_eq!(
+                store.used("t", REGION),
+                na,
+                "distinct-key update + delete must account independently (only A's bytes remain)"
+            );
+        }
+    }
 
     /// Build an `AccountingCasHandler` over a fresh InMemory CAS backing + a byte
     /// store, returning the decorator, the underlying handler (to inspect stored

@@ -1722,8 +1722,14 @@ mod tests {
         put_artifact(&app, "shared", vec![0u8; 1000]).await;
         assert_eq!(used(), 1000, "primed large object");
 
-        // Fire N concurrent tiny (1-byte) overwrites of the SAME key.
-        const N: usize = 8;
+        // Fire N concurrent tiny (1-byte) overwrites of the SAME key. N MUST be
+        // <= TURBO_PUT_CONCURRENCY_LIMIT (4): the per-tenant PutConcurrencyGuard
+        // 429s the (limit+1)th in-flight PUT, so N > 4 made this test flaky (a
+        // 429 tripped the "each PUT 200s" assert depending on scheduling). 4
+        // concurrent same-key shrinks still exercise the double-release race
+        // (without the per-key lock they'd each probe prior=1000 and N-tuple
+        // -release it), so the lock's correctness is proven deterministically.
+        const N: usize = 4;
         let mut handles = Vec::with_capacity(N);
         for i in 0..N {
             let app = app.clone();

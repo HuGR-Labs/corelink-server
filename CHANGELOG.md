@@ -22,7 +22,26 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **`max_vcpu_h` on the runners introspect entitlement (runner↔server contract).** The
+  `/internal/v1/auth/introspect` response now carries an optional `max_vcpu_h` (u32 vCPU-hours,
+  `skip_serializing_if`) alongside `max_concurrency`, read from a new nullable `max_vcpu_h` column on
+  `runners_entitlement` (migration `0072`). Per-tenant monthly compute ceiling (100/240/600/1200/2400 by
+  tier; Enterprise bespoke). Intentional fail-closed ASYMMETRY vs `max_concurrency`: absent
+  `max_concurrency` ⇒ "no Runners entitlement → reject"; absent `max_vcpu_h` ⇒ "entitled, compute-wall
+  OFF" (byte-compatible; arms when populated). `conformance/corelink-introspect.json` updated.
+
 ### Fixed
+- **CAS *write*-vs-*delete* byte-accounting race on the AC plane (rt-nuclear verify, C2 sibling).** The
+  `AccountingAcHandler` `update()`/`delete()` decorators shared no per-key lock (only the CAS handler did),
+  so a concurrent AC `update` + `delete` of the same `action_digest` released a stale `reclaimed_bytes` →
+  `bytes_used` under-count → storage-quota evasion. Fixed by lifting the same per-`(tenant, action_digest)`
+  sharded lock onto `AccountingAcHandler`, held across both `update()` and `delete()`.
+- **Flaky Turbo concurrent-shrink regression test (C1).** `concurrent_same_key_shrink_puts_net_true_delta`
+  fired N=8 concurrent same-tenant PUTs, but `PutConcurrencyGuard` caps at 4/tenant, so excess overlap
+  intermittently 429'd and tripped the "each PUT 200s" assert (it passed in #326 by a scheduling fluke).
+  Reduced N to 4 (= the admitted cap); the 4-way same-key shrink still exercises the double-release race
+  deterministically (the per-key lock itself was proven correct — never the source of the flake).
 - **Turbo write byte-accounting TOCTOU: concurrent same-key PUTs double-released `prior_len`
   (rt-nuclear verify C1).** The #324 byte-delta fix read `prior_len` via a non-serialized presence
   probe, so 2-4 concurrent PUTs to the same key (within the per-tenant cap) all observed the same prior

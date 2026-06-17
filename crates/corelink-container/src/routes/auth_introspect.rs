@@ -47,7 +47,7 @@
 //!   ```
 //! - Valid PAT, tenant with a Runners entitlement (200):
 //!   ```text
-//!   { "valid": true, "tenant_id": "<uuid>", "plan": "pro", "max_concurrency": 40 }
+//!   { "valid": true, "tenant_id": "<uuid>", "plan": "pro", "max_concurrency": 40, "max_vcpu_h": 240 }
 //!   ```
 //! - Invalid PAT (200, uniform — NO oracle on *why* and NO tenant_id):
 //!   ```text
@@ -74,6 +74,15 @@
 //! cap = reject). The `plan` field stays = the cache tier (informational only)
 //! and never feeds the cap. The runners `CoreLinkPlanStore` parses this exact
 //! shape.
+//!
+//! `max_vcpu_h` (the per-tenant monthly vCPU-hour ceiling, migration 0072) is a
+//! SECOND additive field on the SAME `runners_entitlement` lookup
+//! (`SELECT max_concurrency, max_vcpu_h FROM runners_entitlement WHERE
+//! tenant_id = ?1`). It carries the deliberate **asymmetry** vs
+//! `max_concurrency`: an absent `max_vcpu_h` ⇒ **wall-off** (the fabric enforces
+//! no monthly compute cap and lets the job through), NOT a reject. Present →
+//! `Some(vcpu_h)`; the column is NULLABLE so existing rows back-fill to
+//! `None`/absent (wall-off).
 //!
 //! `rate_ceiling_per_min` remains **omitted** (M1) — net-new product data not
 //! yet decided; the fabric's `StaticPlans` supplies that cap. The response
@@ -207,6 +216,17 @@ pub struct IntrospectResponse {
     /// runners `CoreLinkPlanStore` parses this exact field.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_concurrency: Option<u32>,
+    /// Per-tenant monthly vCPU-hour ceiling (vCPU-hours; runners seam, migration
+    /// 0072). Read from the SAME `runners_entitlement` D1 row as
+    /// [`max_concurrency`](Self::max_concurrency) — a SEPARATE additive field on
+    /// that lookup, NOT derived from the plan. Present ONLY when the entitlement
+    /// row carries a (NULLABLE) `max_vcpu_h` value; absent
+    /// (`skip_serializing_if`) when the column is NULL. Note the intentional
+    /// asymmetry vs `max_concurrency`: an absent `max_vcpu_h` ⇒ **wall-off** (the
+    /// fabric enforces no monthly compute cap), NOT a reject. The runners
+    /// `CoreLinkPlanStore` parses this exact field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_vcpu_h: Option<u32>,
     /// Per-tenant request rate ceiling (per minute). OMITTED at M1; reserved
     /// for forward compatibility.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -222,61 +242,81 @@ impl IntrospectResponse {
             tenant_id: None,
             plan: None,
             max_concurrency: None,
+            max_vcpu_h: None,
             rate_ceiling_per_min: None,
         }
     }
 
     /// A `valid: true` response carrying the resolved tenant + plan.
     ///
-    /// `max_concurrency` is supplied by the caller — it is `Some(cap)` ONLY when
-    /// the tenant holds a Runners entitlement (the `runners_entitlement` D1 row),
-    /// and `None` (field omitted) for cache-only tenants. See
-    /// [`runner_concurrency_for_tenant`].
+    /// `max_concurrency` and `max_vcpu_h` are supplied by the caller — each is
+    /// `Some(..)` ONLY when the tenant's `runners_entitlement` D1 row carries
+    /// that (per-field NULLABLE) value, and `None` (field omitted) otherwise. See
+    /// [`runner_concurrency_for_tenant`]. Note their asymmetric semantics on the
+    /// wire: absent `max_concurrency` ⇒ reject, absent `max_vcpu_h` ⇒ wall-off.
     #[must_use]
-    fn valid(tenant_id: String, plan: String, max_concurrency: Option<u32>) -> Self {
+    fn valid(
+        tenant_id: String,
+        plan: String,
+        max_concurrency: Option<u32>,
+        max_vcpu_h: Option<u32>,
+    ) -> Self {
         Self {
             valid: true,
             tenant_id: Some(tenant_id),
             plan: Some(plan),
             max_concurrency,
+            max_vcpu_h,
             rate_ceiling_per_min: None,
         }
     }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Runner concurrency cap (M2 — runners seam, ratified)
+// Runner entitlement: concurrency cap + monthly vCPU-hour ceiling
+// (M2 — runners seam, ratified; vCPU-h added migration 0072)
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// SQL: the tenant's runner concurrency cap from the dedicated
-/// `runners_entitlement` table (migration 0070). The cap is a SEPARATE
-/// entitlement axis from the cache tier — keyed on `tenant_id`, NOT derived
-/// from the plan ladder. A row is present ONLY for a tenant that actually holds
-/// a Runners entitlement; the table's `CHECK(max_concurrency > 0)` guarantees a
-/// present row always carries a real positive cap.
+/// SQL: the tenant's runner entitlement from the dedicated `runners_entitlement`
+/// table — both the `max_concurrency` cap (migration 0070) and the monthly
+/// `max_vcpu_h` ceiling (migration 0072), read in one keyed lookup. The
+/// entitlement is a SEPARATE axis from the cache tier — keyed on `tenant_id`,
+/// NOT derived from the plan ladder. A row is present ONLY for a tenant that
+/// actually holds a Runners entitlement; the table's `CHECK(max_concurrency > 0)`
+/// guarantees a present row always carries a real positive concurrency cap.
+/// `max_vcpu_h` is NULLABLE (it may be absent on a row that still has a
+/// concurrency cap — the asymmetry: absent ⇒ wall-off).
 const RUNNERS_ENTITLEMENT_SQL: &str =
-    "SELECT max_concurrency FROM runners_entitlement WHERE tenant_id = ?1 LIMIT 1";
+    "SELECT max_concurrency, max_vcpu_h FROM runners_entitlement WHERE tenant_id = ?1 LIMIT 1";
 
-/// Resolve the per-tenant runner concurrency cap for the introspection
-/// response by querying the `runners_entitlement` D1 table.
+/// Resolve the per-tenant runner entitlement for the introspection response by
+/// querying the `runners_entitlement` D1 table — returns
+/// `(max_concurrency, max_vcpu_h)`.
 ///
-/// - Row present → `Ok(Some(cap))` (the tenant holds a Runners entitlement).
-/// - No row → `Ok(None)` (cache-only tenant; the wire field is omitted and the
-///   fabric treats the absent cap as "no Runners entitlement" → reject).
+/// - Row present → `Ok((Some(cap), max_vcpu_h))` (the tenant holds a Runners
+///   entitlement). `max_vcpu_h` is `Some(..)` only if that NULLABLE column is set.
+/// - No row → `Ok((None, None))` (cache-only tenant; both wire fields omitted —
+///   the fabric treats the absent concurrency cap as "no Runners entitlement"
+///   → reject).
 ///
-/// This is a SEPARATE axis from the cache tier ([`tier_for_tenant`]): the cap
-/// comes ONLY from this table, never from the plan.
+/// This is a SEPARATE axis from the cache tier ([`tier_for_tenant`]): the
+/// entitlement comes ONLY from this table, never from the plan.
+///
+/// # Wire asymmetry
+///
+/// An absent `max_concurrency` ⇒ reject; an absent `max_vcpu_h` ⇒ wall-off
+/// (the fabric enforces no monthly compute cap). Both map to `None`/omitted here.
 ///
 /// # Fail-CLOSED
 ///
 /// A genuine D1 backend fault surfaces as `Err(String)` so the route maps it to
-/// **503** rather than guessing a cap (consistent with [`tier_for_tenant`]):
-/// the fabric must never be handed a WRONG entitlement. A non-fault "no row"
-/// is `Ok(None)`, not an error.
+/// **503** rather than guessing an entitlement (consistent with
+/// [`tier_for_tenant`]): the fabric must never be handed a WRONG entitlement. A
+/// non-fault "no row" is `Ok((None, None))`, not an error.
 ///
-/// A stored value outside `u32` (or `≤ 0`, which the table CHECK forbids) is
-/// treated as a backend fault (`Err`) — the cap is a hard entitlement, so an
-/// out-of-contract row is fail-CLOSED rather than silently truncated.
+/// A stored value outside `u32` (or, for `max_concurrency`, `≤ 0` which the
+/// table CHECK forbids) is treated as a backend fault (`Err`) — the entitlement
+/// is hard, so an out-of-contract row is fail-CLOSED rather than truncated.
 ///
 /// # Errors
 ///
@@ -285,17 +325,19 @@ const RUNNERS_ENTITLEMENT_SQL: &str =
 pub async fn runner_concurrency_for_tenant(
     d1: &D1HttpClient,
     tenant_id: &str,
-) -> Result<Option<u32>, String> {
+) -> Result<(Option<u32>, Option<u32>), String> {
     let rows = d1
         .query(
             RUNNERS_ENTITLEMENT_SQL,
             &[serde_json::Value::String(tenant_id.to_owned())],
         )
         .await?;
-    decode_runner_cap(&rows)
+    let max_concurrency = decode_runner_cap(&rows)?;
+    let max_vcpu_h = decode_runner_vcpu_h(&rows)?;
+    Ok((max_concurrency, max_vcpu_h))
 }
 
-/// Pure decode of the `runners_entitlement` query result into the wire cap.
+/// Pure decode of the `runners_entitlement` query result into the concurrency cap.
 ///
 /// Split from [`runner_concurrency_for_tenant`] so the entitlement-row logic is
 /// unit-testable without a network: the I/O wrapper does the keyed query, this
@@ -331,6 +373,56 @@ fn decode_runner_cap(rows: &[crate::storage::d1_http::D1Row]) -> Result<Option<u
         reason = "cap is range-checked to 1..=u32::MAX immediately above"
     )]
     Ok(Some(cap as u32))
+}
+
+/// Pure decode of the `runners_entitlement` query result into the monthly
+/// vCPU-hour ceiling (`max_vcpu_h`, migration 0072).
+///
+/// Mirrors [`decode_runner_cap`] but reads the `max_vcpu_h` column, which is
+/// NULLABLE (and has no CHECK). The asymmetry vs the concurrency cap is on the
+/// WIRE, not in the decode: a missing column / SQL NULL maps to `Ok(None)` (⇒
+/// the field is omitted ⇒ the fabric walls off — proceeds with no monthly cap).
+/// `Ok(None)` therefore covers BOTH "no entitlement row at all" AND "row present
+/// but `max_vcpu_h` is NULL".
+///
+/// A PRESENT, non-null value is still validated as a positive `u32` and fails
+/// CLOSED (`Err` → 503) if out-of-contract — the wire type is `u32` (vCPU-hours)
+/// and a stored garbage value must never be silently truncated or served. (A
+/// zero is rejected as out-of-contract: a ceiling is provisioned positive; a
+/// "no ceiling" is expressed by NULL/absence, not a zero.)
+///
+/// # Errors
+///
+/// Returns `Err(String)` when the entitlement row carries a PRESENT, non-null
+/// `max_vcpu_h` value that is non-positive or outside `u32` range.
+fn decode_runner_vcpu_h(rows: &[crate::storage::d1_http::D1Row]) -> Result<Option<u32>, String> {
+    let Some(raw) = rows.first().and_then(|row| row.get("max_vcpu_h")) else {
+        // No entitlement row, OR no such column in the result → field omitted.
+        return Ok(None);
+    };
+
+    // The column is NULLABLE: a SQL NULL → JSON null → wall-off (None/omitted),
+    // NOT an error. This is the intentional asymmetry vs `max_concurrency`.
+    if raw.is_null() {
+        return Ok(None);
+    }
+
+    // A present, non-null value MUST be a positive, u32-range integer (the wire
+    // type). Anything else is out-of-contract → fail-CLOSED (Err → 503).
+    let ceiling = raw
+        .as_u64()
+        .filter(|v| *v >= 1 && *v <= u64::from(u32::MAX))
+        .ok_or_else(|| {
+            format!("runners_entitlement.max_vcpu_h out of u32 range or non-positive: {raw}")
+        })?;
+
+    // The filter above already bounds `ceiling` to `1..=u32::MAX`, so this cast
+    // is lossless.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "ceiling is range-checked to 1..=u32::MAX immediately above"
+    )]
+    Ok(Some(ceiling as u32))
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -466,15 +558,22 @@ async fn handle_introspect(
             //       never serve a wrong plan). ──────────────────────────────
             match tier_for_tenant(&state.d1, &tenant_id).await {
                 Ok(plan) => {
-                    // M2 (runners seam): the cap is a SEPARATE entitlement axis
-                    // — read from `runners_entitlement` (migration 0070), NOT
-                    // derived from `plan`. Present ONLY for a tenant with a row;
-                    // a cache-only tenant gets the field omitted. A D1 fault
-                    // fails CLOSED (503 — never guess a cap).
+                    // M2 (runners seam): the entitlement is a SEPARATE axis —
+                    // read from `runners_entitlement` (migrations 0070 + 0072),
+                    // NOT derived from `plan`. One lookup returns both the
+                    // concurrency cap and the monthly vCPU-h ceiling. Present
+                    // ONLY for a tenant with a row (vCPU-h only if that NULLABLE
+                    // column is set); a cache-only tenant gets both omitted. A D1
+                    // fault fails CLOSED (503 — never guess an entitlement).
                     match runner_concurrency_for_tenant(&state.d1, &tenant_id).await {
-                        Ok(max_concurrency) => (
+                        Ok((max_concurrency, max_vcpu_h)) => (
                             StatusCode::OK,
-                            Json(IntrospectResponse::valid(tenant_id, plan, max_concurrency)),
+                            Json(IntrospectResponse::valid(
+                                tenant_id,
+                                plan,
+                                max_concurrency,
+                                max_vcpu_h,
+                            )),
                         )
                             .into_response(),
                         Err(e) => {
@@ -736,6 +835,7 @@ mod tests {
             "11111111-1111-1111-1111-111111111111".to_owned(),
             "pro".to_owned(),
             None,
+            None,
         );
         let v = serde_json::to_value(&resp).unwrap();
         assert_eq!(v["valid"], serde_json::json!(true));
@@ -748,6 +848,10 @@ mod tests {
         assert!(
             !obj.contains_key("max_concurrency"),
             "cache-only: max_concurrency must be omitted"
+        );
+        assert!(
+            !obj.contains_key("max_vcpu_h"),
+            "cache-only: max_vcpu_h must be omitted"
         );
         assert!(
             !obj.contains_key("rate_ceiling_per_min"),
@@ -763,6 +867,7 @@ mod tests {
             "22222222-2222-2222-2222-222222222222".to_owned(),
             "pro".to_owned(),
             Some(40),
+            None,
         );
         let v = serde_json::to_value(&resp).unwrap();
         assert_eq!(v["valid"], serde_json::json!(true));
@@ -772,16 +877,56 @@ mod tests {
             serde_json::json!(40),
             "max_concurrency must be a top-level integer when entitled"
         );
+        // max_vcpu_h stays omitted when None (the asymmetric wall-off default).
+        assert!(
+            !v.as_object().unwrap().contains_key("max_vcpu_h"),
+            "max_vcpu_h must be omitted when None"
+        );
         // rate_ceiling_per_min stays omitted (still M1).
+        assert!(!v.as_object().unwrap().contains_key("rate_ceiling_per_min"));
+    }
+
+    #[test]
+    fn valid_response_with_vcpu_h_serialises_max_vcpu_h() {
+        // The full runners-entitlement 200 shape: both caps present as top-level
+        // integers — the exact byte-shape pinned in conformance/corelink-introspect.json
+        // (pro/40 → max_vcpu_h 240) and mirrored by the runners CoreLinkPlanStore.
+        let resp = IntrospectResponse::valid(
+            "11111111-1111-4111-8111-111111111111".to_owned(),
+            "pro".to_owned(),
+            Some(40),
+            Some(240),
+        );
+        let v = serde_json::to_value(&resp).unwrap();
+        assert_eq!(v["valid"], serde_json::json!(true));
+        assert_eq!(v["max_concurrency"], serde_json::json!(40));
+        assert_eq!(
+            v["max_vcpu_h"],
+            serde_json::json!(240),
+            "max_vcpu_h must be a top-level integer (vCPU-hours) when provisioned"
+        );
         assert!(!v.as_object().unwrap().contains_key("rate_ceiling_per_min"));
     }
 
     /// Build a one-row `runners_entitlement` result set carrying the given
     /// `max_concurrency` JSON value (mirrors what `D1HttpClient::query` returns
-    /// for `SELECT max_concurrency ...`).
+    /// for `SELECT max_concurrency, max_vcpu_h ...`). The `max_vcpu_h` column is
+    /// omitted from the row, modelling a pre-0072 / NULL-vCPU-h row.
     fn entitlement_rows(max_concurrency: serde_json::Value) -> Vec<crate::storage::d1_http::D1Row> {
         let mut row = serde_json::Map::new();
         row.insert("max_concurrency".to_owned(), max_concurrency);
+        vec![row]
+    }
+
+    /// Build a one-row `runners_entitlement` result set carrying BOTH columns
+    /// (mirrors a post-0072 row with a provisioned `max_vcpu_h`).
+    fn entitlement_rows_with_vcpu_h(
+        max_concurrency: serde_json::Value,
+        max_vcpu_h: serde_json::Value,
+    ) -> Vec<crate::storage::d1_http::D1Row> {
+        let mut row = serde_json::Map::new();
+        row.insert("max_concurrency".to_owned(), max_concurrency);
+        row.insert("max_vcpu_h".to_owned(), max_vcpu_h);
         vec![row]
     }
 
@@ -842,6 +987,116 @@ mod tests {
             Some(u32::MAX),
             "u32::MAX is the inclusive upper bound and must round-trip"
         );
+    }
+
+    // ── decode_runner_vcpu_h (migration 0072) ────────────────────────────────
+
+    #[test]
+    fn decode_runner_vcpu_h_present_row_yields_some() {
+        // A row WITH max_vcpu_h surfaces the stored ceiling verbatim (vCPU-hours;
+        // the separate additive axis — NOT a plan-derived value).
+        assert_eq!(
+            decode_runner_vcpu_h(&entitlement_rows_with_vcpu_h(
+                serde_json::json!(40),
+                serde_json::json!(240)
+            ))
+            .unwrap(),
+            Some(240),
+            "a row with max_vcpu_h must yield the stored ceiling"
+        );
+        // A bespoke (Enterprise) value is honoured, not clamped to the ladder.
+        assert_eq!(
+            decode_runner_vcpu_h(&entitlement_rows_with_vcpu_h(
+                serde_json::json!(8),
+                serde_json::json!(5000)
+            ))
+            .unwrap(),
+            Some(5000)
+        );
+    }
+
+    #[test]
+    fn decode_runner_vcpu_h_null_column_yields_none_walloff() {
+        // A row present but max_vcpu_h SQL NULL → None (field omitted ⇒ wall-off).
+        // This is the intentional asymmetry vs max_concurrency: NULL is NOT an
+        // error here.
+        assert_eq!(
+            decode_runner_vcpu_h(&entitlement_rows_with_vcpu_h(
+                serde_json::json!(40),
+                serde_json::Value::Null
+            ))
+            .unwrap(),
+            None,
+            "NULL max_vcpu_h must yield None (wall-off), not Err"
+        );
+    }
+
+    #[test]
+    fn decode_runner_vcpu_h_absent_column_yields_none() {
+        // A row WITHOUT the max_vcpu_h column at all (pre-0072 result shape) → None.
+        assert_eq!(
+            decode_runner_vcpu_h(&entitlement_rows(serde_json::json!(40))).unwrap(),
+            None,
+            "a row missing the max_vcpu_h column must yield None (wall-off)"
+        );
+    }
+
+    #[test]
+    fn decode_runner_vcpu_h_no_row_yields_none() {
+        // No entitlement row at all → None (field omitted).
+        assert_eq!(
+            decode_runner_vcpu_h(&[]).unwrap(),
+            None,
+            "no entitlement row must yield None for max_vcpu_h"
+        );
+    }
+
+    #[test]
+    fn decode_runner_vcpu_h_out_of_contract_value_fails_closed() {
+        // A PRESENT, non-null value that is out-of-contract fails CLOSED (Err →
+        // 503), never a guessed/truncated ceiling. (NULL is wall-off; these are
+        // not NULL.)
+        for bad in [
+            serde_json::json!(0),
+            serde_json::json!(-5),
+            serde_json::json!(u64::from(u32::MAX) + 1),
+            serde_json::json!("lots"),
+        ] {
+            assert!(
+                decode_runner_vcpu_h(&entitlement_rows_with_vcpu_h(serde_json::json!(40), bad))
+                    .is_err(),
+                "out-of-contract max_vcpu_h must fail closed"
+            );
+        }
+    }
+
+    #[test]
+    fn decode_runner_vcpu_h_accepts_u32_max() {
+        assert_eq!(
+            decode_runner_vcpu_h(&entitlement_rows_with_vcpu_h(
+                serde_json::json!(40),
+                serde_json::json!(u32::MAX)
+            ))
+            .unwrap(),
+            Some(u32::MAX),
+            "u32::MAX is the inclusive upper bound for max_vcpu_h"
+        );
+    }
+
+    #[test]
+    fn introspect_response_roundtrips_max_vcpu_h() {
+        // Deserialize the full wire shape (the runners repo mirrors this) and
+        // confirm max_vcpu_h round-trips as a top-level u32.
+        let json = serde_json::json!({
+            "valid": true,
+            "tenant_id": "11111111-1111-4111-8111-111111111111",
+            "plan": "pro",
+            "max_concurrency": 40,
+            "max_vcpu_h": 240
+        });
+        let parsed: IntrospectResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(parsed.max_concurrency, Some(40));
+        assert_eq!(parsed.max_vcpu_h, Some(240));
     }
 
     // ── Invalid PAT → {valid:false} ──────────────────────────────────────────
