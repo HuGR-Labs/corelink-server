@@ -43,6 +43,14 @@ Each entry cross-references:
   re-charge.
 
 ### Security
+- **OCI in-flight byte ceiling was global-only → one tenant could starve all (rt-nuclear #3/#12).**
+  The OCI blob-upload path enforced only a GLOBAL 512 MiB in-flight ceiling, so a single tenant could
+  fill the entire ceiling (its session cap × layer size easily exceeds it) and `429` every other
+  tenant's pushes — a cross-tenant availability DoS. `append_chunk` now ALSO reserves each chunk against
+  a per-tenant byte budget (`OCI_MAX_INFLIGHT_BYTES_PER_TENANT = 1/8` of the global = 64 MiB), checked
+  atomically under the `tenant_inflight` lock; a chunk over a tenant's own slice is rejected 429 (and
+  rolls back its global reservation). The per-tenant counter is released on finalize / cancel / failed
+  append / idle-reap, exactly like the global counter.
 - **Native CAS/AC write planes had no per-tenant pre-buffer concurrency cap (rt-nuclear #11).**
   The native `PUT /v1/cas/:tenant/:hash` and `PUT /v1/ac/:tenant/:digest` handlers buffered the full
   request body into heap before any gate ran and, unlike the Bazel REAPI surface, had NO per-tenant
