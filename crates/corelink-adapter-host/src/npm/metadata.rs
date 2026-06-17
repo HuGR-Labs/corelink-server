@@ -77,18 +77,24 @@ pub async fn serve_metadata(
     if let Some((bytes, inserted)) = cached {
         if is_fresh(inserted, now, ttl_seconds) {
             // Validate the cached JSON is still parseable (defence in depth).
-            validate_metadata_json(&bytes)?;
-            emit_npm_audit(
-                auditor,
-                event_types::METADATA_CACHE_HIT,
-                tenant,
-                now,
-                serde_json::json!({ "pkg": pkg }),
-            )?;
-            return Ok(MetadataResponse {
-                body: bytes,
-                pkg: pkg.to_owned(),
-            });
+            let parsed = validate_metadata_json(&bytes)?;
+            // rt-nuclear #7 self-heal: only serve a cached entry whose canonical
+            // identity matches the requested key. A poisoned/aliased entry (name
+            // != requested) falls through to a fresh upstream fetch — which the
+            // refresh path re-binds correctly — instead of being served.
+            if require_metadata_name_matches(&parsed, pkg).is_ok() {
+                emit_npm_audit(
+                    auditor,
+                    event_types::METADATA_CACHE_HIT,
+                    tenant,
+                    now,
+                    serde_json::json!({ "pkg": pkg }),
+                )?;
+                return Ok(MetadataResponse {
+                    body: bytes,
+                    pkg: pkg.to_owned(),
+                });
+            }
         }
     }
 
@@ -106,7 +112,13 @@ async fn refresh_from_upstream(
 ) -> Result<MetadataResponse, NpmAdapterError> {
     let raw = upstream.fetch_metadata(pkg).await?;
     // Validate before caching to fail-CLOSED on malformed upstream.
-    validate_metadata_json(&raw)?;
+    let parsed = validate_metadata_json(&raw)?;
+    // rt-nuclear #7: the upstream fetch uses the RAW path `pkg` while the KV key
+    // is normalized (trim+lowercase), so a case/trim/encoding alias could fetch
+    // DIFFERENT registry content yet store it under a popular package's SHARED
+    // `_public` key — cross-tenant metadata poisoning. Bind the stored content's
+    // canonical identity to the requested key before caching (fail-CLOSED).
+    require_metadata_name_matches(&parsed, pkg)?;
     // Audit BEFORE the KV write (audit-fail-CLOSED contract).
     emit_npm_audit(
         auditor,
@@ -140,6 +152,30 @@ pub fn validate_metadata_json(bytes: &[u8]) -> Result<serde_json::Value, NpmAdap
         ));
     }
     Ok(v)
+}
+
+/// Require that the upstream metadata's canonical top-level `name` matches the
+/// requested package (both [`normalise_pkg_name`]-normalized).
+///
+/// The registry — not us — owns a package's canonical identity, so binding the
+/// stored content to the requested key collapses case/trim/encoding aliasing
+/// that would otherwise let one upstream identity be cached under another
+/// package's SHARED `_public` KV key (rt-nuclear #7 cross-tenant poisoning).
+///
+/// # Errors
+///
+/// [`NpmAdapterError::MetadataNameMismatch`] when the names differ — including a
+/// missing/blank `name` (fail-CLOSED).
+fn require_metadata_name_matches(
+    parsed: &serde_json::Value,
+    pkg: &str,
+) -> Result<(), NpmAdapterError> {
+    let fetched = normalise_pkg_name(parsed.get("name").and_then(|n| n.as_str()).unwrap_or_default());
+    let requested = normalise_pkg_name(pkg);
+    if fetched != requested {
+        return Err(NpmAdapterError::MetadataNameMismatch { requested, fetched });
+    }
+    Ok(())
 }
 
 /// Extract `dist.shasum` for a specific version from npm metadata
@@ -176,6 +212,25 @@ pub fn extract_shasum(
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn require_metadata_name_matches_binds_identity_to_key() {
+        let json = |name: &str| serde_json::json!({ "name": name, "versions": {} });
+        // Exact + case/trim-normalized match → Ok (the realistic registry case:
+        // a case-variant request returns the canonical package).
+        assert!(require_metadata_name_matches(&json("lodash"), "lodash").is_ok());
+        assert!(require_metadata_name_matches(&json("lodash"), "LoDash").is_ok());
+        assert!(require_metadata_name_matches(&json("lodash"), "  lodash ").is_ok());
+        // rt-nuclear #7: upstream returned content for a DIFFERENT identity than
+        // the requested (normalized) key → REJECTED (would otherwise poison the
+        // shared `_public` key with another package's metadata).
+        let err = require_metadata_name_matches(&json("evil-pkg"), "lodash").unwrap_err();
+        assert!(matches!(err, NpmAdapterError::MetadataNameMismatch { .. }), "{err:?}");
+        assert_eq!(err.status_code(), 502);
+        // Missing / blank `name` is fail-CLOSED.
+        assert!(require_metadata_name_matches(&serde_json::json!({}), "lodash").is_err());
+        assert!(require_metadata_name_matches(&json(""), "lodash").is_err());
+    }
 
     #[test]
     fn kv_key_normalises_package_name() {
