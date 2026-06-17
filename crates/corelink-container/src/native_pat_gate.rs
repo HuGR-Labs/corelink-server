@@ -54,9 +54,18 @@ use crate::adapter_pat::{PatVerifier, VerifyError};
 
 /// TTL of a cached verified-PAT entry. Bounds the window in which a revoked PAT
 /// could still pass the native gate (the Worker + the adapter D1 lookup remain
-/// the authoritative revocation surfaces); 60s keeps Argon2id off the hot path
-/// for a build's burst of requests while staying short.
-pub const VERIFY_CACHE_TTL: Duration = Duration::from_secs(60);
+/// the authoritative revocation surfaces).
+///
+/// rt-nuclear verify C3: a cache hit returns `Ok` WITHOUT re-consulting D1, so a
+/// PAT revoked mid-TTL keeps native CAS/AC/Bazel/Turbo access until the entry
+/// expires. The previous 60s window was too long for a leaked-then-revoked PAT;
+/// 5s bounds revocation latency on the native plane to ≤5s while still skipping
+/// Argon2id for a build's burst. The extra re-verifies are bounded by the
+/// process-wide Argon2id semaphore (`adapter_pat::ARGON2_VERIFY_PERMITS`), and a
+/// cache hit adds NO D1 round-trip to the hot path (deliberate, for a latency-
+/// sensitive cache — immediate revocation would require a per-request D1 read or
+/// a cross-process revocation epoch; the tight TTL is the correct launch control).
+pub const VERIFY_CACHE_TTL: Duration = Duration::from_secs(5);
 
 /// A cached, verified PAT: the resolved tenant + when the entry expires.
 #[derive(Debug, Clone)]

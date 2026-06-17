@@ -23,6 +23,29 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **Turbo write byte-accounting TOCTOU: concurrent same-key PUTs double-released `prior_len`
+  (rt-nuclear verify C1).** The #324 byte-delta fix read `prior_len` via a non-serialized presence
+  probe, so 2-4 concurrent PUTs to the same key (within the per-tenant cap) all observed the same prior
+  size and all released it → `bytes_used` underflowed ~prior/round → re-grow + repeat → unbounded free
+  storage. Fixed by serializing the probe→put→release per `(tenant, key)` with a memory-bounded sharded
+  async lock (1024 shards) in `turbo_v8::handle_put`; distinct keys stay concurrent.
+- **Turbo `/v8/artifacts/events` OOM + no global in-flight budget (rt-nuclear verify C4/C5).** The
+  telemetry events route inherited the 100 MiB artifact body limit with no concurrency guard, and the
+  PUT concurrency cap was per-tenant only (4×100 MiB) with no process-wide ceiling — so concurrent
+  100 MiB POSTs (one tenant via events, or N tenants via PUT) could OOM the shared container. The events
+  route now has a 64 KiB body limit; a process-wide `Semaphore` (16 permits) is reserved in a
+  `FromRequestParts` extractor BEFORE the body is buffered (503 on global saturation).
+- **CAS write-vs-delete byte-accounting race (rt-nuclear verify C2).** `AccountingCasHandler::write`
+  (reserve→PUT→release) and `::delete` (release HEAD-measured `reclaimed_bytes`) shared no per-key lock
+  (the existing per-key lock covered delete-vs-delete only), so racing a delete against an overwrite of
+  the same CAS hash released a stale size → `bytes_used` under-count. Fixed by lifting a per-`(tenant,
+  hash)` sharded lock (256 shards) into the decorator, held by BOTH `write()` and `delete()`.
+- **Native plane & OCI bearer honored a revoked PAT for the full cache/token TTL (rt-nuclear verify
+  C3/C6).** A `NativePatGate` cache hit returned `Ok` without re-checking D1 revocation (revoked PAT
+  valid up to 60s on the native plane), and the stateless OCI realm bearer (1h) was never re-checked
+  against D1 (revoked PAT kept registry r/w up to 60 min). Both windows are now bounded to the
+  industry-standard control for cached/stateless credentials: native `VERIFY_CACHE_TTL` 60s→5s, OCI
+  `TOKEN_TTL_SECS` 3600s→300s (clients re-auth on 401 transparently; no added hot-path D1 latency).
 - **OCI registry reads bypassed ALL quota/billing brakes (rt-nuclear r34 #1/#11).** `oci_quota_gate`
   metered only write methods (`is_write`), so `docker pull` / blob+manifest `GET`/`HEAD` against the
   shared `_oci` container were unmetered free egress AND evaded the monthly request-count cap. Reads
