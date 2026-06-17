@@ -283,20 +283,22 @@ async fn pat_gate_reject(
 /// `read-only` / `cas:r` are NOT flagged (a read-only mint is allowed from any
 /// authenticated caller).
 fn mint_requests_write(scopes: &[String]) -> bool {
-    scopes.iter().any(|s| {
-        let t = s.trim();
-        // Cache-write grammar (shared with the native write gate): catches
-        // `cas:rw` / `cas:w` / `read-write` / `admin` in any case.
-        if crate::scope::requires_cache_write(&t.to_ascii_lowercase()) {
-            return true;
-        }
-        // Customer-plane / role spellings that also confer write or admin
-        // privilege and are not part of the cache-scope grammar.
-        matches!(
-            t.to_ascii_lowercase().as_str(),
-            "cache:write" | "cache:rw" | "write" | "owner" | "admin"
-        )
-    })
+    // SINGLE source of truth with the D1 scope persister
+    // (`customer_d1::map_requested_scopes`), via `scope::classify_requested_scopes`.
+    // rt-nuclear #15: this gate previously used exact-token match while the
+    // persister used substring match (`s.contains("write")`), so `"writes"` was
+    // FALSE here yet persisted `read-write` — a read-only PAT self-escalated.
+    // The gate fires iff the mint would persist a write/admin credential — the
+    // EXACT invariant the persister enforces (`mint_requests_write(v)` ⟺
+    // `classify(v) ∈ {ReadWrite, Admin}`). Unrecognized tokens are NOT flagged
+    // here (a benign non-cache token like "viewer" must not read as a write
+    // mint); they are instead REJECTED by the persister with 4xx, which is where
+    // the escalation is actually closed — so `"writes"` reaches the persister and
+    // is refused there rather than silently persisted as read-write.
+    matches!(
+        crate::scope::classify_requested_scopes(scopes),
+        Ok(crate::scope::RequestedScopeClass::ReadWrite | crate::scope::RequestedScopeClass::Admin)
+    )
 }
 
 /// True when `role` is a privileged team role (`Owner` / `Admin`) — granting it
