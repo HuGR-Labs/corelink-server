@@ -15,6 +15,11 @@ import { describe, it, expect, vi } from "vitest";
 import type { D1Database } from "@cloudflare/workers-types";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
+import {
+  TEST_PAT_SIGNING_KEY,
+  TEST_PAT_TOKEN_ID,
+  mintTestPat,
+} from "./setup.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Test helpers
@@ -29,20 +34,22 @@ function makeCtx(): ExecutionContext {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Canonical test PAT (format only — not cryptographically valid; HMAC fast-fail
-// is skipped because PAT_SIGNING_KEY is absent in the test env).
+// Canonical test PAT — CRYPTOGRAPHICALLY VALID under TEST_PAT_SIGNING_KEY.
+//
+// The native plane's sole possession gate is a 128-bit truncated HMAC-SHA256
+// over `<token_id>.<random_secret>` keyed by PAT_SIGNING_KEY (src/index.ts).
+// Previously this token carried an all-`A` placeholder sig and the test env left
+// PAT_SIGNING_KEY UNSET, so extractAuth failed CLOSED (503) before the HMAC/D1
+// logic — "passing" PAT tests were passing on the misconfig, not the auth path.
+// We now mint a REAL signed token (and makeEnv() binds the matching key below)
+// so PAT-gated tests reach the real auth/route logic. The no-key ⇒ 503
+// fail-closed path is covered by an EXPLICIT negative test (see below).
 //
 // Format: corelink_pat_<16-char-Crockford-b32>.<43-char-base64url>.<22-char-base64url>
 // Total:  9 + 3 + 1 + 16 + 1 + 43 + 1 + 22 = 96 chars
 // ──────────────────────────────────────────────────────────────────────────────
-const TEST_TOKEN_ID = "AAAAAAAAAAAAAAAA"; // 16 Crockford b32 chars
-const TEST_PAT_TOKEN =
-  "corelink_pat_" +
-  TEST_TOKEN_ID +
-  "." +
-  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" + // 43 base64url chars
-  "." +
-  "AAAAAAAAAAAAAAAAAAAAAA"; // 22 base64url chars
+const TEST_TOKEN_ID = TEST_PAT_TOKEN_ID; // 16 Crockford b32 chars
+const TEST_PAT_TOKEN = await mintTestPat();
 // Sanity: 96 chars total
 if (TEST_PAT_TOKEN.length !== 96) {
   throw new Error(`TEST_PAT_TOKEN length ${TEST_PAT_TOKEN.length} !== 96`);
@@ -140,6 +147,11 @@ function makeEnv(doStubStatus = 503, d1Override?: D1Database): Env {
     CORELINK_SERVER: namespace,
     ENVIRONMENT: "test",
     CONFIG_DB: d1,
+    // F18: the native-plane possession gate (extractAuth) fails CLOSED (503) when
+    // PAT_SIGNING_KEY is absent/short. Bind the fixed valid test key so PAT-gated
+    // tests reach the real HMAC + D1 auth logic instead of short-circuiting to 503.
+    // The fail-closed path is covered explicitly by the negative test below.
+    PAT_SIGNING_KEY: TEST_PAT_SIGNING_KEY,
   };
 }
 
@@ -1370,7 +1382,11 @@ describe("X-Request-Id forwarding to DO", () => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 describe("PAT format validation — parsePat edge cases", () => {
-  // Helper: build a PAT-shaped token with a specific env and token_id
+  // Helper: build a PAT-shaped token with a PLACEHOLDER (all-A) hmac_sig and a
+  // specific env / token_id. Such a token PARSES but FAILS the HMAC fast-fail
+  // (the all-A sig isn't a real MAC) — used by the negative tests below that
+  // assert the parser/charset rejections (401), all reached at/before the HMAC
+  // gate, so a real signature is irrelevant to what they prove.
   function makePat(env: "pat" | "ci" | "ro", tokenId = TEST_TOKEN_ID): string {
     return (
       "corelink_" + env + "_" +
@@ -1382,19 +1398,31 @@ describe("PAT format validation — parsePat edge cases", () => {
     );
   }
 
-  it("accepts env=ci (95 chars, token in D1) → 503 (reaches DO)", async () => {
-    // Build a ci-env PAT with TEST_TOKEN_ID — the D1 mock recognises it.
-    const ciPat = makePat("ci");
+  // Helper: mint a CRYPTOGRAPHICALLY VALID ci/ro-env PAT for TEST_TOKEN_ID.
+  // The HMAC preimage is `<token_id>.<random_secret>` — the env segment is NOT
+  // part of it (see parsePat in src/index.ts) — so we mint the canonical
+  // pat-env token (whose sig verifies under TEST_PAT_SIGNING_KEY for the default
+  // token_id/secret the D1 mock recognises) and rewrite ONLY the env prefix to
+  // get the 95-char ci/ro variant carrying the SAME valid signature.
+  async function mintEnvPat(env: "ci" | "ro"): Promise<string> {
+    const patToken = await mintTestPat(); // corelink_pat_<id>.<secret>.<sig>
+    return patToken.replace(/^corelink_pat_/, `corelink_${env}_`);
+  }
+
+  it("accepts env=ci (valid sig, 95 chars, token in D1) → 503 (reaches DO)", async () => {
+    // Validly-signed ci-env PAT with TEST_TOKEN_ID — the D1 mock recognises it,
+    // so it clears parse + HMAC + D1 lookup and reaches the DO stub (503).
+    const ciPat = await mintEnvPat("ci");
     expect(ciPat.length).toBe(95);
     const resp = await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/p`, {
       headers: { Authorization: `Bearer ${ciPat}` },
     });
-    // Should reach the DO (503 from stub), not 401
+    // Reaches the DO (503 from stub), not 401 — proves the ci env is accepted.
     expect(resp.status).toBe(503);
   });
 
-  it("accepts env=ro (95 chars, token in D1) → 503 (reaches DO)", async () => {
-    const roPat = makePat("ro");
+  it("accepts env=ro (valid sig, 95 chars, token in D1) → 503 (reaches DO)", async () => {
+    const roPat = await mintEnvPat("ro");
     expect(roPat.length).toBe(95);
     const resp = await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/p`, {
       headers: { Authorization: `Bearer ${roPat}` },
@@ -1459,6 +1487,37 @@ describe("PAT format validation — parsePat edge cases", () => {
       headers: { Authorization: `Bearer ${bad}` },
     });
     expect(resp.status).toBe(401);
+  });
+
+  it("fail-closed: no PAT_SIGNING_KEY in env => 503 (intentional, NOT a masked 401)", async () => {
+    // F18 — explicit coverage of the fail-CLOSED native-plane gate. When the
+    // signing key is ABSENT, extractAuth must short-circuit to 503 (operator
+    // misconfig / alert) BEFORE any HMAC or D1 work — never silently skip the
+    // possession check and never collapse into a 401. This is the path that, as
+    // the SILENT default, made "passing" PAT tests pass on misconfig (test
+    // theater); asserting it on PURPOSE here is what lets every OTHER PAT test
+    // bind a real key and exercise the real auth logic.
+    //
+    // A VALID-format, validly-signed PAT is presented so the ONLY reason this
+    // can return 503 is the absent key (not a malformed token): with a key bound
+    // the same request flows to the DO. `PAT_SIGNING_KEY: undefined` overrides
+    // makeEnv()'s default bound key.
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
+    }, { PAT_SIGNING_KEY: undefined });
+    expect(resp.status).toBe(503);
+    const body = await resp.json() as { error: string };
+    // The 503 envelope is the worker's misconfig signal, NOT an UNAUTHORIZED 401.
+    expect(body.error).not.toBe("UNAUTHORIZED");
+  });
+
+  it("fail-closed: too-short PAT_SIGNING_KEY (<64 hex) => 503", async () => {
+    // A present-but-too-short key (< 32 decoded bytes) is also a LOUD misconfig:
+    // extractAuth must fail CLOSED (503), never weaken to accept it.
+    const resp = await workerFetch("http://localhost/api/v2/t/p", {
+      headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
+    }, { PAT_SIGNING_KEY: "abcd" });
+    expect(resp.status).toBe(503);
   });
 
   it("HMAC fast-fail: rejects if PAT_SIGNING_KEY is set but sig is wrong", async () => {
