@@ -1,0 +1,32 @@
+# trivy ignore file — GRANULAR (path-scoped) form.
+#
+# Used by .github/workflows/trivy.yml for BOTH `trivy fs` (JS/npm dependency
+# CVEs) and `trivy config` (IaC / Dockerfile / config misconfig).
+#
+# WHY the YAML form (not plain .trivyignore): plain .trivyignore matches by ID
+# GLOBALLY — `AVD-DS-0002` there would mute "runs as root" in EVERY Dockerfile,
+# including a real deployed one. The YAML form scopes each exemption to a PATH,
+# so the gate stays sharp everywhere else.
+#
+# Policy: EVERY entry MUST carry a `statement` (the risk classification + why it
+# does not apply). Entries that ACCEPT a real risk (vs. classify an in-context
+# false positive) additionally require Owner sign-off. Mirrors `.cargo/audit.toml`
+# (Rust) and `pnpm.auditConfig.ignoreCves` (npm).
+
+misconfigurations:
+  - id: AVD-DS-0002
+    paths:
+      - "apps/get-corelink-worker/test/smoke-install.Dockerfile"
+    statement: >-
+      In-context FALSE POSITIVE, not an accepted risk. This is an ephemeral
+      smoke-test image that verifies the PUBLIC install script on a clean Debian;
+      it is never deployed and never pushed (built, run once in CI, discarded).
+      It MUST run as root: the install script does `mv /tmp/corelink
+      /usr/local/bin/corelink` and falls back to `sudo` for non-root, but
+      debian-bookworm-slim ships no sudo — so a non-root USER would break the very
+      install path the smoke test exists to exercise. DS-0002 (deployed images
+      should not run as root) does not apply to a throwaway test container that is
+      root by design.
+
+# vulnerabilities: (none — the ws@7.5.10 CVE-2026-48779 is FIXED via a pnpm
+# override, not suppressed; Cargo.lock/RustSec is cargo-deny's lane, skipped in fs)
