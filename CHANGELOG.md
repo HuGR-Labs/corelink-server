@@ -85,6 +85,24 @@ Each entry cross-references:
   `docs/security/2026-06-18-gitleaks-baseline-triage.md`.
 
 ### Fixed
+- **Legal-doc hygiene — sub-processor source-of-truth + broken internal path refs.**
+  Reconciled the sub-processor source of truth so the DPA, the legal disclosure
+  (`legal/sub-processors.md`), and the auto-generated public page can no longer
+  drift: `legal/sub-processors.md` now documents the single chain explicitly —
+  the engineering source of truth is `specs/_compliance/VENDOR-RISK-REGISTER.md`
+  (from which `scripts/gen-public-subprocessors.py` generates the public
+  `/trust/subprocessors` page under the `.github/workflows/subprocessors-sync.yml`
+  drift gate), while `legal/sub-processors.md` is the authoritative *contractual*
+  disclosure that must be updated in the same PR; corrected the legacy "Change
+  Process" wording that wrongly implied the page was generated from the legal
+  file itself, and aligned the generator docstring. Also fixed broken internal
+  path references in the DPA suite: `specs/03_architecture/canonical/security_model.md`
+  → `specs/03_architecture/security_model.md` (DPA en-US/es-419/pt-BR + EU SCC
+  Annex II), `specs/03_architecture/canonical/resilience_patterns.md`
+  → `specs/03_architecture/resilience_patterns.md` (EU SCC), and
+  `legal/lia/tia-template.md` → `legal/tia-template.md` (DPA all 3 locales).
+  Sub-processor list contents and the privacy/DPO contact email were left
+  untouched (legal-fact decisions). Doc/config only.
 - **D1 migration apply tooling — DR-hardening against the ledger-desync / re-provision landmine
   (#19).** The two stale prod-apply scripts (`scripts/apply-d1-migrations-prod.sh`,
   `scripts/d-day-migrations-apply-prod.sh`) hard-paused on a brittle hardcoded

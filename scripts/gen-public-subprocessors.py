@@ -2,7 +2,10 @@
 """gen-public-subprocessors.py — Auto-generate the public sub-processors page
 from `specs/_compliance/VENDOR-RISK-REGISTER.md`.
 
-This is the **single source of truth → public surface** generator. It enforces
+The internal Vendor Risk Register is the **engineering source of truth** for
+the public page; `legal/sub-processors.md` is the **authoritative contractual
+disclosure** (referenced by the DPA §3) and must be kept consistent with the
+register's active customer-data subset in the same PR. This generator enforces
 that the customer-facing
 `apps/docs/docs/trust/subprocessors.mdx` page can never drift away from the
 internal vendor register, satisfying:
