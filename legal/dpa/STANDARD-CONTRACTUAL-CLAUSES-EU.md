@@ -74,14 +74,14 @@ where applicable.
 ## 4. Annex II — Technical and organisational measures
 
 The TOMs required under Clause 8.6 and Annex II are described in DPA §8 and
-`specs/03_architecture/canonical/security_model.md`. Highlights:
+`specs/03_architecture/security_model.md`. Highlights:
 
 - Pseudonymisation and encryption (TLS 1.3+; AES-256/XChaCha20-Poly1305 at
   rest; per-tenant key separation; Enterprise BYOK).
 - Confidentiality, integrity, availability, and resilience of processing
   systems (multi-region active-active; PAT-REGION-FAILOVER-001).
 - Restoration of availability after an incident (RTO/RPO per
-  `specs/03_architecture/canonical/resilience_patterns.md`).
+  `specs/03_architecture/resilience_patterns.md`).
 - Process for regularly testing, assessing, and evaluating effectiveness
   (annual external pentest; weekly chaos drills; continuous monitoring via
   Drata/Vanta).
