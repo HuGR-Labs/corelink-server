@@ -22,6 +22,20 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **`specs/_runbooks/RB-INCIDENT-RESPONSE.md` (DRAFT)** — master incident-response
+  runbook, authored to close a compliance-doc gap: the DPA §9 (all 3 locales), the
+  PCI-DSS SAQ-A Q19, and a sealed S20 adversarial-summary finding all cite this path,
+  but the file did not exist. Grounds the IR flow (detection → triage/severity →
+  containment → breach-notification decision-tree handoff → eradication/recovery →
+  postmortem handoff → the DPA's 72h regulatory/customer-notification timeline) in the
+  existing artifacts (`RB-ONCALL-ESCALATION-MATRIX.md`, `RB-POSTMORTEM-PROCESS.md`,
+  `RB-SECURITY-VULNERABILITY-INTAKE.md`, `legal/breach-notification/rb-breach-notif-decision-tree.yaml`
+  + templates/dry-run scenarios, the `emitLifecycleEvent` PagerDuty wiring, and the
+  `corelink-slo`/`corelink-telemetry` crates). Carries a prominent DRAFT/pending-owner+legal
+  header and marks owner-gated / not-yet-built capabilities explicitly. `validate_specs.py`
+  green (0 failures).
+
 ### Changed
 - **Consolidated SAFE minor/patch JS/Node dependency bumps** across the workspace
   (dependabot groups `root-tooling-minor-patch` #339, `apps/admin-ui` npm-minor-patch
