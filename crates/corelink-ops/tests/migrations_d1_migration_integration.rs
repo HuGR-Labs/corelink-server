@@ -1,10 +1,14 @@
 //! Integration test: replay every `migrations/d1/*.sql` against an
 //! in-memory SQLite database and assert there are no hard ordering
-//! failures. Known schema dependency hazards (e.g. `0023` references
-//! `billing_events_staging` which is never created by any migration in
-//! the chain, `0031` references `tenants` plural where only `tenant`
-//! singular is declared) are pinned in [`KNOWN_HAZARDS`] so future
-//! regressions become diff-visible.
+//! failures. Two allow-lists keep historical exceptions diff-visible:
+//! [`KNOWN_HAZARDS`] (files that legitimately SKIP a statement under the
+//! D1-IF-NOT-EXISTS rewrite) and [`PRE_EXISTING_FAILURES`] (files with a
+//! pre-existing hard failure surfaced for the first time). Both are
+//! currently EMPTY — every prior pin (KNOWN_HAZARDS 0023/0028/0031/0041/0064,
+//! PRE_EXISTING_FAILURES 0027/0036/0037) was retired after the underlying
+//! migration was corrected. Each list has a stale-entry guard that panics
+//! if a pinned file no longer matches its pinned outcome, so dead pins
+//! cannot silently accumulate.
 //!
 //! Run:
 //!     cargo test -p corelink-d1-migrations --test d1_migration_integration -- --nocapture
@@ -50,31 +54,17 @@ const KNOWN_HAZARDS: &[(&str, &str)] = &[
 ///
 /// IMPORTANT: this is an explicit pin. Adding new entries here means
 /// the migration corpus has regressed and a separate fix is needed.
-const PRE_EXISTING_FAILURES: &[(&str, &str)] = &[
-    (
-        "0027_region_provisioning.sql",
-        "CREATE TABLE region_migration_progress places PRIMARY KEY (tenant_id, \
-         migration_run_id) BEFORE source_region column declaration. SQLite rejects \
-         table-level constraints interleaved with column defs. Follow-up: move PK \
-         to the end of the column list in a 0027b additive correction.",
-    ),
-    (
-        "0036_oncall_pages.sql",
-        "CREATE TABLE oncall_shifts interleaves CONSTRAINT clauses BETWEEN column defs \
-         (correlation_id appears AFTER shift_positive_duration constraint). SQLite syntax \
-         requires all column defs to precede table-level constraints. This will likely \
-         also fail D1 if/when re-applied to a fresh database; the existing prod D1 may \
-         have been hand-rolled. Follow-up: re-issue as 0036b additive migration.",
-    ),
-    (
-        "0037_signup_orchestration.sql",
-        "CREATE INDEX on tenant(email_hash) + tenant(tenant_state) — the `tenant` table \
-         was first declared in 0023 with only {tenant_id, primary_region, created_at_ms, \
-         updated_at_ms}. The CREATE TABLE IF NOT EXISTS in 0037 is a NO-OP because the \
-         table already exists, so the new columns are not added. Follow-up: split into \
-         ALTER TABLE ADD COLUMN statements per INV-AUTH-MIGRATION-ADDITIVE.",
-    ),
-];
+///
+/// STALE-ENTRY GUARD: like [`KNOWN_HAZARDS`], any file pinned here that
+/// now replays cleanly (or skips instead of hard-failing) is flagged by
+/// the `stale_failures` panic below so dead pins cannot silently
+/// accumulate. The three original entries (0027 / 0036 / 0037) were
+/// removed (2026-06-18) after a full in-memory replay showed all of them
+/// now apply cleanly — the underlying migrations were corrected in
+/// earlier schema-shape-unification waves (the same pass that retired the
+/// old KNOWN_HAZARDS pins). The list is empty again until a genuinely
+/// new pre-existing failure is surfaced.
+const PRE_EXISTING_FAILURES: &[(&str, &str)] = &[];
 
 #[test]
 fn every_migration_replays_against_in_memory_sqlite() {
@@ -108,8 +98,13 @@ fn every_migration_replays_against_in_memory_sqlite() {
     let mut unexpected_hazards: Vec<String> = Vec::new();
     let mut missing_hazards: Vec<String> = Vec::new();
     let mut unexpected_failures: Vec<String> = Vec::new();
+    // Mirror of `missing_hazards` for the failure pin-list: any file
+    // pinned in PRE_EXISTING_FAILURES that did NOT hard-fail this run is a
+    // dead pin and must be removed (stale-entry guard, see panic #4).
+    let mut stale_failures: Vec<String> = Vec::new();
 
     for (fname, outcome) in &report.per_file {
+        let pinned_failure = PRE_EXISTING_FAILURES.iter().any(|(name, _)| name == fname);
         match outcome {
             MigrationOutcome::AppliedClean => {
                 println!("  clean   {fname}");
@@ -118,11 +113,21 @@ fn every_migration_replays_against_in_memory_sqlite() {
                 if KNOWN_HAZARDS.iter().any(|(name, _)| name == fname) {
                     missing_hazards.push(fname.clone());
                 }
+                // Likewise: a clean file pinned as a pre-existing hard
+                // failure is a stale pin.
+                if pinned_failure {
+                    stale_failures.push(fname.clone());
+                }
             }
             MigrationOutcome::AppliedWithKnownD1Skip { skip_count } => {
                 println!("  skip    {fname}  ({skip_count} stmt(s))");
                 if !KNOWN_HAZARDS.iter().any(|(name, _)| name == fname) {
                     unexpected_hazards.push(fname.clone());
+                }
+                // A skip (not a hard failure) also means a
+                // PRE_EXISTING_FAILURES pin no longer reflects reality.
+                if pinned_failure {
+                    stale_failures.push(fname.clone());
                 }
             }
             MigrationOutcome::FailedHardOrdering { failures } => {
@@ -170,6 +175,19 @@ fn every_migration_replays_against_in_memory_sqlite() {
             "\nKNOWN_HAZARDS allow-list is stale — these files now apply \
              cleanly and should be removed from the list:\n  {}",
             missing_hazards.join("\n  ")
+        );
+    }
+
+    // 4. If a file pinned as a PRE_EXISTING_FAILURE no longer hard-fails
+    //    (it now applies cleanly or merely skips), the pin is dead and
+    //    must be removed so stale failure-pins can't silently accumulate.
+    //    Mirrors guard #3 for the KNOWN_HAZARDS list.
+    if !stale_failures.is_empty() {
+        panic!(
+            "\nPRE_EXISTING_FAILURES pin-list is stale — these files no \
+             longer hard-fail under in-memory replay and must be removed \
+             from the list (the underlying migration was fixed):\n  {}",
+            stale_failures.join("\n  ")
         );
     }
 }

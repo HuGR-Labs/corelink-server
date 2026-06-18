@@ -60,7 +60,15 @@ readonly DB_BINDING="CONFIG_DB"
 readonly DB_ENV="prod"
 # DB_NAME retained for log messages / backwards-compat references only.
 readonly DB_NAME="corelink-config-prod"
-readonly EXPECTED_FILE_COUNT=52
+# EXPECTED_FILE_COUNT is computed DYNAMICALLY from the actual
+# migrations/d1/*.sql files at runtime (see pre-flight below), NOT hardcoded.
+# A hardcoded baseline (was 52) goes stale on every new migration and would
+# HARD-PAUSE a legitimate re-provision once the file count drifts — exactly
+# the ledger-desync landmine this DR-hardening removes. The guard's INTENT
+# (detect a truncated / empty migrations dir before touching prod) is kept:
+# we still hard-pause if the dynamic count is 0. True ledger-vs-files drift
+# is owned by wrangler's internal d1_migrations table, which skips
+# already-applied migrations idempotently.
 readonly ADDITIVE_AUDIT_SCRIPT="${REPO_ROOT}/scripts/d-day-migrations-additive-audit.sh"
 readonly ADDITIVE_CHECK_SCRIPT="${REPO_ROOT}/scripts/check_migrations_additive.py"
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -201,20 +209,18 @@ done < <(find "${MIGRATIONS_DIR}" -maxdepth 1 -name '*.sql' -print0 | sort -z)
 
 ACTUAL_COUNT="${#SQL_FILES[@]}"
 
+# Dynamic baseline: derive the expected count from the files actually on disk
+# instead of a stale hardcoded constant. This keeps the truncation guard alive
+# (count==0 still hard-pauses) without going stale on every new migration.
+readonly EXPECTED_FILE_COUNT="${ACTUAL_COUNT}"
+
 if [[ "${ACTUAL_COUNT}" -eq 0 ]]; then
-    err "no .sql files found in ${MIGRATIONS_DIR}"
+    err "HARD PAUSE (Wave-32 W4): no .sql files found in ${MIGRATIONS_DIR}."
+    err "The migrations dir is empty or truncated — refusing to apply against prod."
     exit 1
 fi
 
-if [[ "${ACTUAL_COUNT}" -ne "${EXPECTED_FILE_COUNT}" ]]; then
-    err "HARD PAUSE (Wave-32 W4): expected ${EXPECTED_FILE_COUNT} migration files, found ${ACTUAL_COUNT}."
-    err "Spec assumes exactly ${EXPECTED_FILE_COUNT} migrations. If migrations were added or"
-    err "removed, amend the spec + update EXPECTED_FILE_COUNT in this script."
-    err "See: specs/_audits/2026-05-27-w32-phaseD-migrations-prep-seal.md §3"
-    exit 1
-fi
-
-log "migration file count: ${ACTUAL_COUNT} (matches spec expectation of ${EXPECTED_FILE_COUNT})"
+log "migration file count: ${ACTUAL_COUNT} (dynamic; derived from migrations/d1/*.sql)"
 
 # ── Additive guard (Wave-32 W4) ───────────────────────────────────────────────
 

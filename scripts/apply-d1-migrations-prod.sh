@@ -42,7 +42,15 @@ readonly MIGRATIONS_DIR="$REPO_ROOT/migrations/d1"
 # database_id d64742ea-e102-40b2-a844-ff02e3f94562, migrations_dir migrations/d1).
 readonly DB_NAME="CONFIG_DB"
 readonly DB_ENV="prod"
-readonly EXPECTED_FILE_COUNT=62
+# EXPECTED_FILE_COUNT is computed DYNAMICALLY from the actual
+# migrations/d1/*.sql files at runtime (see pre-flight §1), NOT hardcoded.
+# A hardcoded baseline (was 62) goes stale on every new migration and would
+# HARD-PAUSE a legitimate re-provision once the file count drifts — exactly
+# the ledger-desync landmine this DR-hardening removes. The guard's INTENT
+# (detect a truncated / empty migrations dir before touching prod) is kept:
+# we still hard-pause if the dynamic count is 0. True ledger-vs-files drift
+# is owned by wrangler's internal d1_migrations table, which skips
+# already-applied migrations idempotently.
 # Computed via CREATE TABLE analysis across all 61 migration files.
 # Re-derived 2026-06-09 for the 60-migration set: grep-count of unique table
 # names = 80 (was 75 across 52 files; +5 net from the adapter/billing/pilot
@@ -107,20 +115,18 @@ mapfile -t SQL_FILES < <(
 
 ACTUAL_COUNT="${#SQL_FILES[@]}"
 
+# Dynamic baseline: derive the expected count from the files actually on disk
+# instead of a stale hardcoded constant. This keeps the truncation guard alive
+# (count==0 still hard-pauses) without going stale on every new migration.
+readonly EXPECTED_FILE_COUNT="$ACTUAL_COUNT"
+
 if [[ "$ACTUAL_COUNT" -eq 0 ]]; then
-    err "no .sql files found in $MIGRATIONS_DIR"
+    err "HARD PAUSE: no .sql files found in $MIGRATIONS_DIR"
+    err "The migrations dir is empty or truncated — refusing to apply against prod."
     exit 1
 fi
 
-if [[ "$ACTUAL_COUNT" -ne "$EXPECTED_FILE_COUNT" ]]; then
-    err "HARD PAUSE: expected $EXPECTED_FILE_COUNT migration files, found $ACTUAL_COUNT"
-    err "The spec assumed $EXPECTED_FILE_COUNT migrations. If migrations were added or"
-    err "removed, amend the spec and this script before proceeding."
-    err "See Wave 32 Phase D prep audit §4 for the baseline count."
-    exit 1
-fi
-
-log "migration file count: $ACTUAL_COUNT (matches spec expectation of $EXPECTED_FILE_COUNT)"
+log "migration file count: $ACTUAL_COUNT (dynamic; derived from migrations/d1/*.sql)"
 
 # ── 2. Additive guard (CTRL-AUDIT-EMIT-BEFORE-MUTATION) ─────────────────────
 

@@ -23,6 +23,7 @@ on:
       - 'scripts/d1-migration-runner.sh'
       - 'scripts/d1-migration-verify.py'
       - 'scripts/check_migrations_additive.py'
+      - 'scripts/check_migration_prefixes.py'
       - 'crates/corelink-ops/**'
       - '.github/workflows/d1-migration-validate.yml'
   push:
@@ -42,6 +43,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Run unique-prefix lint (no duplicate 4-digit prefixes)
+        run: |
+          python3 scripts/check_migration_prefixes.py
 
       - name: Run additive-only gate (INV-AUTH-MIGRATION-ADDITIVE)
         run: |
