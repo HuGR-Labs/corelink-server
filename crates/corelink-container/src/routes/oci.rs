@@ -71,6 +71,7 @@ use bytes::Bytes;
 use uuid::Uuid;
 
 use corelink_adapter_host::oci::config::defaults;
+use corelink_adapter_host::oci::digest::OciDigest;
 use corelink_adapter_host::oci::ports::{
     BlobStore, ManifestKvStore, PortResult, ResolvedPat, TenantResolver,
 };
@@ -506,6 +507,20 @@ impl BlobStore for OciMoatStore {
         );
         self.release_tenant_bytes(&tenant.to_canonical_text(), freed);
         let assembled = Bytes::from(session.buf.clone());
+        // rt-nuclear cycle-2 #2: ENFORCE the content-addressing invariant in the
+        // store, BEFORE persisting. `finalize_upload` both ASSEMBLES and PERSISTS,
+        // so the caller cannot verify the declared digest before this write (it
+        // has no bytes until we return them) — a digest-LIE (`?digest=` ≠ the
+        // bytes) would otherwise be persisted under `blob_key` with NO rollback
+        // port, breaking content-addressing within the tenant's registry. Reuse
+        // the SAME `OciDigest` verify the push handler uses (so the declared
+        // algorithm is honored; sha512 is rejected as unsupported, consistent
+        // with the upstream verify) and reject a mismatch HERE, before `moat.put`,
+        // so a lying digest NEVER reaches the persistent slot (fail-closed; no
+        // rollback needed).
+        OciDigest::parse(blob_key)
+            .and_then(|d| d.verify_against_bytes(&session.buf))
+            .map_err(|e| format!("oci finalize: content does not match declared digest {blob_key}: {e:?}"))?;
         // Persist content-addressed under the per-tenant namespace,
         // mapping the OCI digest (`blob_key`) → blake3 content hash.
         self.moat
@@ -1280,6 +1295,39 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(pulled.as_ref(), bytes.as_slice());
+    }
+
+    #[tokio::test]
+    async fn finalize_rejects_digest_lie_and_persists_nothing() {
+        // rt-nuclear cycle-2 #2: a finalize that declares a digest NOT matching
+        // the uploaded bytes MUST be rejected BEFORE the bytes are persisted, so
+        // no digest-lie ever lands in the (tenant, blob_key) slot — content-
+        // addressing is enforced by the store itself, not just the caller.
+        let cas = Arc::new(StubCas::default());
+        let moat = Arc::new(MoatCache::production(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()),
+            "oci-test",
+        ));
+        let store = OciMoatStore::new(moat);
+        let tenant = TenantId::from_uuid(Uuid::from_u128(0xC));
+        let uuid = store.open_upload(&tenant).await.unwrap();
+        store
+            .append_chunk(&tenant, &uuid, Bytes::from_static(b"real-content"))
+            .await
+            .unwrap();
+        // A lying digest (64 hex zeros) — NOT sha256("real-content").
+        let lie = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+        assert!(
+            store.finalize_upload(&tenant, &uuid, lie).await.is_err(),
+            "a digest-lie finalize must be rejected"
+        );
+        // And NOTHING was persisted under the lying key (no poisoned slot).
+        assert!(
+            store.get_blob(&tenant, lie).await.unwrap().is_none(),
+            "a rejected digest-lie must not leave a persisted slot"
+        );
     }
 
     #[tokio::test]
