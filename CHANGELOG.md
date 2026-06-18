@@ -50,6 +50,14 @@ Each entry cross-references:
   `docs/security/2026-06-18-gitleaks-baseline-triage.md`.
 
 ### Security
+- **OCI blob upload could persist a digest-lie (cache poisoning — rt-nuclear cycle-2 #2).**
+  `OciMoatStore::finalize_upload` ASSEMBLED and PERSISTED the uploaded bytes before the push handler's
+  `verify_against_bytes` ran, and a mismatch left the bytes persisted under the (lying) `?digest=` key
+  with no rollback — so a tenant could store content M under a `sha256:X` it does not hash to, breaking
+  content-addressing within its registry. The store now verifies the declared digest against the
+  assembled bytes (reusing `OciDigest::verify_against_bytes`, honoring the declared algorithm) BEFORE
+  `moat.put` and rejects a mismatch fail-closed — a lying digest never reaches the persistent slot (no
+  rollback needed). Regression test added (digest-lie finalize → error + nothing persisted).
 - **Turbo `/v8/artifacts/events` could starve real cache writes (rt-nuclear cycle-2 #4/#8).** The
   accept-and-drop telemetry route shared the process-wide PUT write budget (`GlobalPutBudgetGuard`), so
   a telemetry flood / slow-body `/events` POST held PUT permits and 503'd legitimate Turbo cache writes
