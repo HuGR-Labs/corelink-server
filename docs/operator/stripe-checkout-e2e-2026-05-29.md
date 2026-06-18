@@ -70,7 +70,7 @@ Note: `current_period_end_ms` is null because the `checkout.session.completed` e
 ### Issue 3: STRIPE_WEBHOOK_SECRET mismatch
 
 **Symptom:** Worker returned HTTP 400 `invalid_signature` on all webhook deliveries; `stripe_webhook_events_processed` count = 0 (never had a successful delivery).  
-**Root cause:** The `STRIPE_WEBHOOK_SECRET` set in the worker via `wrangler secret put` did not match the signing secret of Stripe webhook endpoint `we_1TcaMDLh0hhAZjwol9KDCJTp`. The `.env.local` value (`whsec_alpM24iXee6H8qmkslxK255KSUUfRUGL`) was stale/wrong.  
+**Root cause:** The `STRIPE_WEBHOOK_SECRET` set in the worker via `wrangler secret put` did not match the signing secret of Stripe webhook endpoint `we_1TcaMDLh0hhAZjwol9KDCJTp`. The `.env.local` value (`whsec_<REDACTED — a webhook signing secret was committed here; redacted 2026-06-18 by the gitleaks baseline; the endpoint above was deleted and the secret is stale/dead — confirm rotation in Stripe>`) was stale/wrong.  
 **Fix:**
 1. Deleted old webhook endpoint `we_1TcaMDLh0hhAZjwol9KDCJTp`
 2. Created new endpoint `we_1TcaeeLh0hhAZjwoWambOOhJ` (same URL + events)

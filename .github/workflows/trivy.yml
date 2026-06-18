@@ -1,0 +1,96 @@
+name: trivy (JS-deps CVE + IaC misconfig)
+
+# Launch-hardening scan that closes the gap cargo-deny does NOT cover:
+#   COVERS     → JS/npm dependency CVEs (worker/ + apps/* Node graph) and
+#                IaC / Dockerfile / config misconfiguration.
+#   DOES *NOT* → Rust crate advisories — cargo-deny + cargo-audit own those
+#                (RustSec); trivy fs is run with `--scanners vuln` only and we
+#                deliberately do not duplicate that Rust-advisory job here.
+#
+# Runner: the self-hosted LINUX fleet `[self-hosted, Linux, X64]` (the repo has
+# NO GitHub-hosted runners — pnpm-audit.yml records the ubuntu-latest "no runner"
+# failure). This fleet is OFF the disk-starved `[self-hosted, mac, corelink-builder]`
+# build fleet; this is a light download + filesystem scan (no compilation), so it
+# will not ENOSPC. trivy is pinned for Linux-64bit to match this runner.
+#
+# Trivy is installed as a VERSION-pinned release BINARY (curl the tarball +
+# verify its sha256 checksum), not via a marketplace action — this matches the
+# repo's no-unpinned-action posture (every `uses:` is a 40-char SHA) without
+# taking on an action SHA. Bump of the trivy version / checksum requires the
+# same tooling-pin review as an action SHA bump (FF-HR-005 / ADR-S12-045 §6).
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trivy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned trivy release + its published Linux-64bit tarball sha256.
+  # Source of truth: https://github.com/aquasecurity/trivy/releases/tag/v0.71.1
+  TRIVY_VERSION: '0.71.1'
+  TRIVY_SHA256: '3cbae37cd440cd8676e5ce9207fe460b5641c7579a17e9d00f8894928c41a88d'
+
+jobs:
+  trivy:
+    name: trivy fs (JS vuln) + config (IaC misconfig)
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false  # scan-only job never pushes — don't keep the token
+
+      - name: Install trivy (pinned binary + checksum verify)
+        # Download the version-pinned release tarball and fail closed unless its
+        # sha256 matches TRIVY_SHA256. No marketplace action, no unpinned curl.
+        # Install into the workspace + prepend to $GITHUB_PATH (NOT `sudo install`
+        # to /usr/local/bin — self-hosted runners often lack passwordless sudo).
+        run: |
+          set -euo pipefail
+          tarball="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          url="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${tarball}"
+          curl -fsSL -o "${tarball}" "${url}"
+          echo "${TRIVY_SHA256}  ${tarball}" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/trivy-bin"
+          tar -xzf "${tarball}" -C "${RUNNER_TEMP}/trivy-bin" trivy
+          rm -f "${tarball}"
+          echo "${RUNNER_TEMP}/trivy-bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/trivy-bin/trivy" --version
+
+      - name: trivy fs — JS/npm dependency CVEs (vuln only)
+        # Filesystem vuln scan. The VALUE is the JS lockfiles (pnpm-lock.yaml at
+        # root + worker/ and apps/* package manifests) — cargo-deny is Rust-only
+        # so the Node graph is otherwise unscanned by the Rust lane.
+        # `--scanners vuln` keeps this to dependency CVEs (no secret/misconfig
+        # noise here). Cargo.lock is SKIPPED on purpose: RustSec is cargo-deny's
+        # lane (which already owns e.g. the pyo3 0.24.2 advisory via deny.toml) —
+        # double-gating the same Rust advisory in two tools with two DBs is the
+        # divergence we avoid. trivy here = the JS/npm graph cargo-deny can't see.
+        run: |
+          trivy fs . \
+            --scanners vuln \
+            --severity HIGH,CRITICAL \
+            --skip-files Cargo.lock \
+            --ignorefile .trivyignore.yaml \
+            --exit-code 1 \
+            --no-progress
+
+      - name: trivy config — IaC / Dockerfile / config misconfig
+        # Misconfiguration scan over Dockerfile + CI/wrangler/IaC config. This is
+        # the net-new surface nothing else in the repo covers today.
+        # NOTE: `trivy config` does NOT accept `--no-progress` in 0.71.1 (it is an
+        # fs/image-scan flag) — passing it makes the subcommand FATAL. Use `-q`.
+        run: |
+          trivy config . \
+            --severity HIGH,CRITICAL \
+            --ignorefile .trivyignore.yaml \
+            --exit-code 1 \
+            -q

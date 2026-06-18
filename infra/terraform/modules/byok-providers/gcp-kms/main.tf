@@ -48,6 +48,14 @@ resource "google_iam_workload_identity_pool_provider" "byok" {
   attribute_mapping = {
     "google.subject" = "assertion.sub"
   }
+
+  # Fail-closed at the PROVIDER (defense-in-depth, closes trivy GCP-0068): only
+  # accept tokens whose `sub` is the expected CoreLink runtime subject. Without
+  # this the provider would federate ANY `sub` from the issuer — even though the
+  # SA `wif_binding` below already restricts impersonation to this exact subject.
+  # Pinning the condition here rejects an unexpected subject at federation time,
+  # one layer earlier than the IAM binding.
+  attribute_condition = "assertion.sub == \"${var.corelink_runtime_subject}\""
 }
 
 # Allow the runtime principal (mapped via the WIF provider) to impersonate

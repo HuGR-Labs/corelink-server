@@ -1,0 +1,62 @@
+# gitleaks config — secret-leak scanning for CoreLink.
+#
+# Extends the built-in ruleset (AWS / GCP / GitHub / Stripe sk_live / private
+# keys / generic high-entropy) AND adds rules the default set MISSES but that
+# matter to us (Stripe webhook secrets `whsec_` — the 2026-06-18 baseline caught
+# a stale committed one the default ruleset did NOT flag).
+#
+# Allowlist philosophy: suppress the deliberate FIXTURE/SPEC/DOC-REFERENCE/TEST
+# example values BY PATH/VALUE, but DELIBERATELY keep operational trees
+# (docs/operator/, scripts/, crates/*/src/, apps/server/src/, worker/src/) IN
+# scope — that is where a real leak would land (and did: the whsec was in
+# docs/operator/). Tune from real findings; never mute an operational dir.
+title = "CoreLink gitleaks config"
+
+[extend]
+useDefault = true
+
+# ── Custom rules: high-value secret shapes the default ruleset misses ─────────
+[[rules]]
+id = "stripe-webhook-secret"
+description = "Stripe webhook signing secret (whsec_…) — the default ruleset does not flag these"
+regex = '''whsec_[A-Za-z0-9]{24,}'''
+keywords = ["whsec_"]
+
+[[rules]]
+id = "corelink-internal-auth-hex"
+description = "A 64-hex internal-auth/signing key assigned to a CORELINK_*_AUTH_KEY / PAT_SIGNING_KEY (openssl rand -hex 32)"
+regex = '''(?i)(CORELINK_[A-Z_]*AUTH_KEY|PAT_SIGNING_KEY[A-Z_]*)\s*[:=]\s*["']?([a-f0-9]{64})["']?'''
+secretGroup = 2
+keywords = ["auth_key", "signing_key", "CORELINK_", "PAT_SIGNING"]
+
+[allowlist]
+description = "CoreLink deliberate test/example/fixture/spec values — NOT operational secrets"
+# Pure example / fixture / spec / doc-REFERENCE / test trees. These legitimately
+# carry placeholder tokens by design. NOTE: operational docs (docs/operator/),
+# scripts/, and all src/ trees are INTENTIONALLY absent here so a real leak there
+# is still caught.
+paths = [
+  '''\.gitleaks\.toml$''',
+  '''(^|/)conformance/.*\.json$''',
+  '''(^|/)openapi/.*\.(json|ya?ml)$''',
+  '''(^|/)apps/docs/''',
+  '''(^|/)specs/''',
+  '''(^|/)tests?/''',
+  '''(^|/).*\.test\.(ts|js|rs)$''',
+  '''(^|/).*_test\.rs$''',
+  '''(^|/)tools/cli/tests/''',
+]
+# Value-based: non-secret by nature (test keys, public keys, disclosed identifiers,
+# mock placeholders, the canonical jwt.io example). Live prod keys (sk_live_,
+# whsec_<real>, CF tokens, Clerk sk_live) are NOT here → flagged anywhere they appear.
+regexes = [
+  '''sk_test_[A-Za-z0-9]+''',                                   # Stripe TEST secret keys
+  '''pk_(test|live)_[A-Za-z0-9]+''',                            # publishable keys are PUBLIC by design
+  '''-----BEGIN PUBLIC KEY-----''',                             # public keys are not secrets
+  '''SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c''',            # the canonical jwt.io HS256 example sig
+  '''eyJhbGciOiJIUzI1NiJ9''',                                   # {"alg":"HS256"} header of example JWTs
+  '''(?i)mock(key)?''',                                         # test mock placeholders
+  '''00000000-0000-4000-8000-000000000001''',                  # disclosed dev tenant UUID
+  '''ee30f7ba-fc25-4d71-939e-ebe130b4c6a3''',                  # githugr showcase tenant UUID (non-secret)
+]
+stopwords = ["example", "placeholder", "dummy", "mock", "sample", "redacted", "your-", "changeme", "token_id"]

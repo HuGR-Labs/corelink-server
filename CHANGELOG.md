@@ -40,6 +40,26 @@ Each entry cross-references:
   tier; Enterprise bespoke). Intentional fail-closed ASYMMETRY vs `max_concurrency`: absent
   `max_concurrency` ⇒ "no Runners entitlement → reject"; absent `max_vcpu_h` ⇒ "entitled, compute-wall
   OFF" (byte-compatible; arms when populated). `conformance/corelink-introspect.json` updated.
+- **Launch-hardening scanners: gitleaks (secret-leak) + trivy (JS-dep CVE + IaC misconfig) CI gates.**
+  Two pinned-binary, no-sudo gates on the self-hosted Linux runner. `gitleaks` (`.gitleaks.toml`) extends
+  the default ruleset with a custom Stripe-`whsec_` rule (the default set misses webhook secrets — the
+  baseline caught a stale committed one) and a `CORELINK_*_AUTH_KEY`/`PAT_SIGNING_KEY` 64-hex rule; PR
+  runs scan the `base..head` range, dispatch runs scan full history. `trivy` (`.trivyignore.yaml`,
+  path-scoped) scans the JS/npm graph (`--scanners vuln`, `Cargo.lock` skipped → RustSec stays
+  cargo-deny's lane) and IaC/Dockerfile misconfig. Baseline triage:
+  `docs/security/2026-06-18-gitleaks-baseline-triage.md`.
+
+### Security
+- **Redacted a committed Stripe webhook signing secret** (`whsec_…`, stale/dead — its endpoint was
+  already deleted) from `docs/operator/stripe-checkout-e2e-2026-05-29.md`. ⚠️ Operator action: confirm
+  the secret is rotated/revoked in Stripe (it remains in git history).
+- **GCP Workload Identity Federation provider now fails closed (trivy GCP-0068).** The BYOK GCP-KMS WIF
+  provider (`infra/terraform/modules/byok-providers/gcp-kms`) had no `attribute_condition`, so it would
+  federate any `sub` from the issuer (impersonation was still gated one layer later by the subject-pinned
+  SA binding). Added `attribute_condition = assertion.sub == <corelink_runtime_subject>` so an unexpected
+  subject is rejected at federation time. No behavior change for the one intended principal.
+- **Bumped `ws` 7.5.10 → 7.5.11 (CVE-2026-48779)** via a pnpm override. Transitive dev-tooling dep
+  (Lighthouse/puppeteer CI perf-audit graph), not the production runtime; patch bump within v7.
 
 ### Fixed
 - **CAS *write*-vs-*delete* byte-accounting race on the AC plane (rt-nuclear verify, C2 sibling).** The
