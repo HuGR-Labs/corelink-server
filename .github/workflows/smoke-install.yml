@@ -30,6 +30,12 @@ on:
     - cron: "0 6 * * *"  # daily at 06:00 UTC
   workflow_dispatch:
 
+# Least-privilege: this smoke test only checks out + builds + runs a throwaway
+# Docker image — no writes (no gh-api, comments, pushes, or releases). A default
+# broad token scope is unnecessary attack surface on the self-hosted runner.
+permissions:
+  contents: read
+
 jobs:
   smoke:
     runs-on: [self-hosted, mac, corelink-builder]
