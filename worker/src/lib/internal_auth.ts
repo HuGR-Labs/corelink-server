@@ -93,8 +93,13 @@ export function resolveConsumerKey(env: Env, consumer: InternalConsumer): string
  * rejected by the length bit.
  *
  * The caller guarantees `expected` is non-empty (≥ MIN_INTERNAL_AUTH_KEY_LEN).
+ *
+ * Exported for reuse by the #11 fan-out metering gate in `index.ts`, which must
+ * match a server-trusted fan-out marker against `CORELINK_INTERNAL_AUTH_KEY` in
+ * constant time (a client-forged value must never match). Same canonical padded
+ * `timingSafeEqual` semantics as the `/_internal/*` gate — no hand-rolled compare.
  */
-function constantTimeSecretEqual(expected: string, provided: string): boolean {
+export function constantTimeSecretEqual(expected: string, provided: string): boolean {
   const enc = new TextEncoder();
   const expectedBytes = enc.encode(expected);
   const providedBytes = enc.encode(provided);

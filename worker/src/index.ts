@@ -37,7 +37,11 @@ import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchan
 import { handleRunnerMint, handleRunnerRevoke } from "./lib/runner_mint.js";
 import { handleAuthRotate } from "./lib/auth_rotate.js";
 import { handleTenantLookup } from "./lib/tenant_lookup.js";
-import { resolveConsumerKey, type InternalConsumer } from "./lib/internal_auth.js";
+import {
+  resolveConsumerKey,
+  constantTimeSecretEqual,
+  type InternalConsumer,
+} from "./lib/internal_auth.js";
 import { coloForMacro } from "./region-map.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -2106,6 +2110,42 @@ const handler: ExportedHandler<Env> = {
       // the other quota/security gates in this file.
       const requestQuotaEnabled = env.REQUEST_QUOTA_DISABLED !== "true";
 
+      // ── #11: multi-region fan-out over-count fix ──────────────────────────
+      // A regional Worker invocation that is itself an INTERNAL fan-out sub-
+      // request of one logical client request must NOT re-meter that request:
+      // the PRIMARY Worker already incremented the monthly counter once before
+      // it fanned out. Counting again here double-charges multi-region tenants
+      // (customer-unfavourable).
+      //
+      // FORGERY-SAFE (tech-lead review of b5ba30c1): the fan-out marker MUST be
+      // a value a client cannot forge. The public edge does NOT ingress-strip
+      // x-corelink-fanout-from, so a PRESENCE check on the header alone would let
+      // ANY client send `x-corelink-fanout-from: anything` to SKIP metering → a
+      // request-quota BYPASS (fail-OPEN — worse than the over-count it replaced).
+      // So the marker carries the shared server-to-server secret
+      // CORELINK_INTERNAL_AUTH_KEY (bound on [env.prod] AND every regional worker
+      // env — prod-sam/lhr/nrt/syd — per ADR-MULTI-REGION-V1 §Consequences and the
+      // wrangler.toml per-region secret block). The primary Worker sets the header
+      // to that secret AFTER stripClientTrustHeaders on the fan-out forward, and it
+      // travels ONLY over the service binding (never to a client). We treat the
+      // request as a fan-out ONLY on a CONSTANT-TIME match against that secret:
+      // a forged value ("prod", a random guess, "") does NOT match → metering
+      // still happens. Fail-SAFE: if the secret is unbound, the match can never
+      // succeed → every request meters (no bypass).
+      //
+      // SCOPE: this gates ONLY the metering (the increment + the request-cap
+      // comparison). Tier resolution (getTierForTenant) and the server-trusted
+      // STORAGE_QUOTA_HEADER forwarding stay UNCONDITIONAL below — a fan-out
+      // sub-request still needs the resolved storage cap forwarded to its
+      // regional container, and gating those would re-introduce the regional
+      // storage-header regression.
+      const fanoutHeader = request.headers.get("x-corelink-fanout-from");
+      const isFanout =
+        fanoutHeader !== null &&
+        typeof env.CORELINK_INTERNAL_AUTH_KEY === "string" &&
+        env.CORELINK_INTERNAL_AUTH_KEY.length > 0 &&
+        constantTimeSecretEqual(env.CORELINK_INTERNAL_AUTH_KEY, fanoutHeader);
+
       // ── rt-nuclear #24: cheap monthly request-count check FIRST ───────────
       // Do the single atomic counter UPSERT (the cheapest D1 op in the quota
       // pipeline) BEFORE the costlier checkStorageQuota (1 SUM read). A
@@ -2122,13 +2162,24 @@ const handler: ExportedHandler<Env> = {
       // getTierForTenant is resolved unconditionally because the SERVED path
       // needs the tier for both the storage check and the server-trusted
       // STORAGE_QUOTA_HEADER forwarded to the container.
-      const inc = await incrementMonthlyRequestCount(
-        env.CONFIG_DB,
-        resolvedTenantId,
-        requestQuotaEnabled,
-      );
+      // #11: skip the metering UPSERT on an internal fan-out sub-request (the
+      // primary Worker already counted this logical request). `counted:false`
+      // yields `withinFreeCap === true`, so the request-cap comparison below is
+      // also skipped — a fan-out sub-request is never re-metered nor 429'd on
+      // the request cap.
+      const inc = isFanout
+        ? { counted: false, count: 0 }
+        : await incrementMonthlyRequestCount(
+            env.CONFIG_DB,
+            resolvedTenantId,
+            requestQuotaEnabled,
+          );
       const withinFreeCap = !inc.counted || inc.count <= FREE_REQUEST_CAP;
 
+      // UNCONDITIONAL (also on fan-out): the served path — including a fan-out
+      // sub-request forwarding to its regional container — needs the resolved
+      // tier for the server-trusted STORAGE_QUOTA_HEADER. Gating these on
+      // !isFanout would re-introduce the regional storage-header regression.
       const quotaTier = await getTierForTenant(env.CONFIG_DB, resolvedTenantId);
       storageQuotaHeader = storageQuotaHeaderValue(quotaTier);
 
@@ -2269,7 +2320,19 @@ const handler: ExportedHandler<Env> = {
             // (the client-forgeable x-forwarded-for was stripped above) so the
             // regional Worker/container rate-limits signup off a trusted IP.
             h.set("x-corelink-client-ip", request.headers.get("cf-connecting-ip") ?? "");
-            h.set("x-corelink-fanout-from", "prod");
+            // #11 (forgery-safe): mark the internal fan-out with the shared
+            // server-to-server secret CORELINK_INTERNAL_AUTH_KEY, NOT a guessable
+            // literal. The regional Worker accepts the fan-out (and so SKIPS
+            // re-metering) only on a constant-time match against this same secret
+            // (see the isFanout gate above) — a client-forged x-corelink-fanout-from
+            // can never match, so it can never bypass metering. The value flows
+            // ONLY over this service binding (set AFTER stripClientTrustHeaders),
+            // never back to a client. If the secret is unbound the header is
+            // omitted ⇒ the regional Worker meters (fail-SAFE over-count, never a
+            // bypass).
+            if (env.CORELINK_INTERNAL_AUTH_KEY && env.CORELINK_INTERNAL_AUTH_KEY.length > 0) {
+              h.set("x-corelink-fanout-from", env.CORELINK_INTERNAL_AUTH_KEY);
+            }
             // backlog #29: the trusted residency macro the container's residency
             // guard cross-checks against its own R2_CAS_REGION (defence-in-depth
             // against a mis-bound regional Worker). Set AFTER the strip so no
