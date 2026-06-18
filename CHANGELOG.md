@@ -85,6 +85,22 @@ Each entry cross-references:
   `docs/security/2026-06-18-gitleaks-baseline-triage.md`.
 
 ### Fixed
+- **D1 migration apply tooling — DR-hardening against the ledger-desync / re-provision landmine
+  (#19).** The two stale prod-apply scripts (`scripts/apply-d1-migrations-prod.sh`,
+  `scripts/d-day-migrations-apply-prod.sh`) hard-paused on a brittle hardcoded
+  `EXPECTED_FILE_COUNT` (62 / 52) — with 71 migration files on disk both would HARD-PAUSE on any
+  legitimate re-provision. The count is now computed **dynamically** from the actual
+  `migrations/d1/*.sql` files at runtime (the truncation guard — count==0 hard-pauses — is kept;
+  true ledger-vs-files drift is owned by wrangler's idempotent `d1_migrations` ledger). Added a
+  **unique-4-digit-prefix lint** (`scripts/check_migration_prefixes.py`) wired into the fast
+  `d1-migration-validate` CI gate that FAILS if two migrations share a 4-digit prefix (prevents the
+  duplicate-`0044` class going forward; the existing already-applied `0044` pair is grandfathered as
+  an exact-set exception). Fixed the replay test
+  (`crates/corelink-ops/tests/migrations_d1_migration_integration.rs`): removed the now-stale
+  `PRE_EXISTING_FAILURES` pins (0027 / 0036 / 0037 — verified all three now replay cleanly against
+  in-memory SQLite, the underlying migrations were corrected in earlier waves) and added a
+  stale-entry guard mirroring the `KNOWN_HAZARDS` pattern so dead failure-pins can't silently
+  accumulate.
 - **Turbo `/events` fairness — residual slowloris + per-tenant monopolisation gaps (rt-nuclear
   cycle-2 #8 + #9).** A prior fix gave `POST /v8/artifacts/events` its own
   `GLOBAL_TURBO_EVENTS_BUDGET` (decoupled from the PUT write budget) but left two residuals on the
