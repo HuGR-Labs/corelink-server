@@ -99,6 +99,27 @@ Each entry cross-references:
   hardening — the existing events-budget behaviour is unchanged. Regression tests cover the 408
   slow-body release and the per-tenant cap (hog 429'd, other tenant still served).
   (`crates/corelink-container/src/routes/turbo_v8.rs`).
+- **Per-tenant fairness for the Argon2id PAT-verify pool (red-team #1/#12, HIGH — auth hot path).**
+  The container-side `PatVerifier` (`crates/corelink-container/src/adapter_pat.rs`) bounded total
+  Argon2id concurrency with ONE process-wide semaphore (`ARGON2_VERIFY_PERMITS = 16`) but was not
+  per-tenant-fair: a single tenant flooding distinct PATs (each forcing a fresh Argon2id verify)
+  could take all 16 permits and 503 the native plane for every OTHER tenant (#1). Added a two-tier
+  gate — the global bound is now paired with a lazily-created per-tenant `Semaphore`
+  (`ARGON2_PER_TENANT_PERMITS = max(2, ARGON2_VERIFY_PERMITS/4) = 4`), acquired in a CONSISTENT
+  order (global → per-tenant, deadlock-free) and RAII-released on every path (success/error/timeout).
+  One tenant can now hold at most 1/4 of the pool, so ≥3/4 stays reachable by others under a flood;
+  exceeding the sub-cap fails CLOSED with the same `Backend("overloaded")` signal as a global timeout.
+  FAIL-SAFE: a poisoned per-tenant map falls back to global-only bounding (a bookkeeping fault never
+  blocks a legitimate auth). For #12, the cheap D1 row lookup already runs BEFORE the expensive
+  Argon2id verify (a valid-HMAC token for a nonexistent/expired/revoked `token_id` is decided at the
+  D1 stage, not via a full Argon2id) — confirmed, no reorder needed; additionally the None-row
+  timing-parity dummy burn is now routed through one shared synthetic per-tenant bucket so a
+  leaked-key flood across bogus `token_id`s cannot drain the global pool through that path either.
+  Adds 4 deterministic concurrency tests proving the fairness invariant (tenant A saturated ⇒ tenant B
+  not starved), the global bound still holding, the fail-safe fall-through, and the same-tenant /
+  distinct-PAT containment. (Shuttle — the deterministic async-interleaving tester — is NOT wired in
+  this workspace; retrofitting it cannot model the `spawn_blocking` + real Argon2id path, so it is
+  flagged as the owner-aware follow-up rather than half-wired.)
 - **OCI signing-key legacy alias was a silent no-op + the env-contract gate was off PRs (A4
   secrets/config hygiene #6/#17/#18/#24).** Prod's Worker holds the OCI session HMAC key under the
   legacy name `HUGR_OCI_TOKEN_KEY` (CAA-360 #8 name drift); the container reads
