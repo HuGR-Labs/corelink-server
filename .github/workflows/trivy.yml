@@ -7,11 +7,13 @@ name: trivy (JS-deps CVE + IaC misconfig)
 #                (RustSec); trivy fs is run with `--scanners vuln` only and we
 #                deliberately do not duplicate that Rust-advisory job here.
 #
-# Runner: the self-hosted LINUX fleet `[self-hosted, Linux, X64]` (the repo has
-# NO GitHub-hosted runners — pnpm-audit.yml records the ubuntu-latest "no runner"
-# failure). This fleet is OFF the disk-starved `[self-hosted, mac, corelink-builder]`
-# build fleet; this is a light download + filesystem scan (no compilation), so it
-# will not ENOSPC. trivy is pinned for Linux-64bit to match this runner.
+# Runner: the self-hosted macOS fleet `[self-hosted, mac, corelink-builder]`. The
+# Linux fleet `[self-hosted, Linux, X64]` is DOWN (no runner registered, 2026-06-18)
+# and the repo has NO GitHub-hosted runners (pnpm-audit.yml records the ubuntu-latest
+# "no runner" failure), so the scanner runs on the Mac fleet — the same move already
+# made for semgrep/cargo-deny/cargo-audit. This is a light download + filesystem scan
+# (no Rust compilation) so it does not contend for disk with the Rust build jobs.
+# trivy is pinned for macOS-64bit to match the Intel/x86_64 fleet.
 #
 # Trivy is installed as a VERSION-pinned release BINARY (curl the tarball +
 # verify its sha256 checksum), not via a marketplace action — this matches the
@@ -31,15 +33,16 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Pinned trivy release + its published Linux-64bit tarball sha256.
-  # Source of truth: https://github.com/aquasecurity/trivy/releases/tag/v0.71.1
+  # Pinned trivy release + its published macOS-64bit tarball sha256 (the Mac fleet
+  # is Intel/x86_64). Source of truth (trivy_0.71.1_checksums.txt):
+  # https://github.com/aquasecurity/trivy/releases/tag/v0.71.1
   TRIVY_VERSION: '0.71.1'
-  TRIVY_SHA256: '3cbae37cd440cd8676e5ce9207fe460b5641c7579a17e9d00f8894928c41a88d'
+  TRIVY_SHA256: 'de123352f519c6310d5471b5271b029c02b04f3cce33597b87f60064e1760a3f'
 
 jobs:
   trivy:
     name: trivy fs (JS vuln) + config (IaC misconfig)
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
 
     steps:
@@ -55,10 +58,10 @@ jobs:
         # to /usr/local/bin — self-hosted runners often lack passwordless sudo).
         run: |
           set -euo pipefail
-          tarball="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          tarball="trivy_${TRIVY_VERSION}_macOS-64bit.tar.gz"
           url="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${tarball}"
           curl -fsSL -o "${tarball}" "${url}"
-          echo "${TRIVY_SHA256}  ${tarball}" | sha256sum -c -
+          echo "${TRIVY_SHA256}  ${tarball}" | shasum -a 256 -c -
           mkdir -p "${RUNNER_TEMP}/trivy-bin"
           tar -xzf "${tarball}" -C "${RUNNER_TEMP}/trivy-bin" trivy
           rm -f "${tarball}"
