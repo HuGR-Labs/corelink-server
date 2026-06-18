@@ -775,8 +775,6 @@ async fn oci_quota_gate(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    use axum::http::Method;
-    let is_write = matches!(*req.method(), Method::PUT | Method::POST | Method::PATCH);
     // Attribution tenant comes from the VERIFIED HMAC bearer, never a request
     // header: the Worker strips `x-corelink-tenant-id` on the OCI pass-through
     // (the old header read was always empty ⇒ charge always skipped — a total
@@ -785,12 +783,17 @@ async fn oci_quota_gate(
     // is left unmetered exactly as before — we only ADD metering when a tenant is
     // resolvable, preserving the current auth semantics for reads.
     if let Some(tenant) = oci_bearer_tenant(&st.realm_key, req.headers()) {
-        // $-ceiling (fail-CLOSED, 402 over — PR #318): write methods ONLY.
-        if is_write {
-            if let Some(gate) = st.gate.as_ref() {
-                if let Some(resp) = gate.check(&tenant).await {
-                    return resp;
-                }
+        // $-ceiling (fail-CLOSED, 402 over): charged on EVERY method INCLUDING
+        // reads (rt-nuclear cycle-2 #3). R2 Class-B GETs have real COGS, and the
+        // native CAS/AC plane (cas.rs / ac.rs) charges reads against the same
+        // per-tenant monthly $-ceiling. The previous write-only gate (PR #318)
+        // let an authenticated tenant pull unlimited OCI blobs/manifests without
+        // ever hitting their ceiling — unmetered egress/R2-GET cost-amplification
+        // and a read-path carve-out the native plane does not have. Unauthenticated
+        // reads (no resolvable bearer tenant) remain unmetered, exactly as before.
+        if let Some(gate) = st.gate.as_ref() {
+            if let Some(resp) = gate.check(&tenant).await {
+                return resp;
             }
         }
         // Monthly request-count cap (fail-OPEN, 429 over — rt-nuclear #8/#11):

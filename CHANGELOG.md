@@ -50,6 +50,17 @@ Each entry cross-references:
   `docs/security/2026-06-18-gitleaks-baseline-triage.md`.
 
 ### Security
+- **Read-only PAT could revoke/enumerate ANY credential in its tenant (rt-nuclear cycle-2 #7).**
+  `handle_keys_revoke` and `handle_keys_list` (customer plane) gated only on tenant + PAT possession —
+  not scope — so a `cas:r` cache-pull token could revoke the owner's PAT (intra-tenant credential-DoS /
+  org lockout) or enumerate every credential (the attack's recon step). Both now require cache-write
+  capability (`requires_cache_write`), matching `handle_keys_create`; dashboard (`read-write`) + `cas:rw`
+  callers are unaffected. Regression tests added (403 on `cas:r` revoke + list).
+- **OCI registry reads bypassed the monthly $-ceiling (rt-nuclear cycle-2 #3).** The OCI per-tenant
+  $-ceiling gate was wrapped in `if is_write`, so an authenticated tenant could pull unlimited blobs/
+  manifests without ever hitting their ceiling — unmetered R2-GET cost-amplification and a read-path
+  carve-out the native CAS/AC plane (which charges reads identically) does not have. The gate now runs
+  on every OCI method with a resolvable bearer tenant; unauthenticated reads stay unmetered as before.
 - **Closed GitHub Actions template-injection (shell-injection) in three PR-triggered workflows**
   (`dependabot-policy.yml`, `mutation-pr.yml`, `openapi-validate.yml`). Attacker-controllable context
   values — the PR base branch ref (`github.event.pull_request.base.ref` / `github.base_ref`) and the
