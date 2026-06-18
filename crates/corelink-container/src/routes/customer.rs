@@ -575,6 +575,19 @@ async fn handle_keys_list(
     if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
         return resp;
     }
+    // Privilege gate (rt-nuclear cycle-2 #7): key MANAGEMENT (enumerating the
+    // tenant's PATs / BYOK status) is an admin op, not cache access. A read-only
+    // (`cas:r`) cache token must not enumerate other principals' credentials —
+    // info-disclosure + the recon step of the revoke attack. Mirror the
+    // mint/revoke gate. Dashboard (`read-write`) + `cas:rw` pass; `cas:r` → 403.
+    let caller_scope = header_or(&headers, crate::scope::SCOPE_HEADER, "");
+    if !crate::scope::requires_cache_write(&caller_scope) {
+        return (
+            StatusCode::FORBIDDEN,
+            "insufficient scope to list credentials",
+        )
+            .into_response();
+    }
     let p = principal(&headers);
     let req = KeysListRequest::new(t, p, now_ms());
     match state.keys.list(req) {
@@ -669,6 +682,20 @@ async fn handle_keys_revoke(
     };
     if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
         return resp;
+    }
+    // Privilege gate (rt-nuclear cycle-2 #7): revoking a credential is a
+    // destructive admin op. A read-only (`cas:r`) principal must NOT be able to
+    // revoke ANY credential in the tenant (incl. the owner's) — that is an
+    // intra-tenant credential-DoS / owner-lockout. Mirror the mint gate
+    // (`handle_keys_create`): require cache-write capability. Dashboard
+    // (`read-write`) + `cas:rw` callers pass; a read-only token is rejected 403.
+    let caller_scope = header_or(&headers, crate::scope::SCOPE_HEADER, "");
+    if !crate::scope::requires_cache_write(&caller_scope) {
+        return (
+            StatusCode::FORBIDDEN,
+            "insufficient scope to revoke a credential",
+        )
+            .into_response();
     }
     let p = principal(&headers);
     let req = KeyRevokeRequest::new(t, p, pat_id, now_ms());
@@ -1487,6 +1514,42 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::CREATED);
+    }
+
+    /// rt-nuclear cycle-2 #7: a read-only (`cas:r`) caller MUST NOT revoke a
+    /// credential — revoking any PAT in the tenant (incl. the owner's) is an
+    /// intra-tenant credential-DoS / owner-lockout. The scope gate fires before
+    /// any revoke logic, so a fake pat_id still 403s (not 404).
+    #[tokio::test]
+    async fn read_only_caller_cannot_revoke_credential() {
+        let (state, _shared) = fixture(); // None gate isolates the scope check.
+        let app = router(state);
+        let req = Request::builder()
+            .uri("/v1/customer/keys/some-pat-id/revoke")
+            .method("POST")
+            .header("x-corelink-tenant-id", "ro-tenant")
+            .header(crate::scope::SCOPE_HEADER, "cas:r") // read-only caller
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// rt-nuclear cycle-2 #7: a read-only caller MUST NOT enumerate the tenant's
+    /// credentials (the recon step of the revoke attack + info-disclosure).
+    #[tokio::test]
+    async fn read_only_caller_cannot_list_credentials() {
+        let (state, _shared) = fixture();
+        let app = router(state);
+        let req = Request::builder()
+            .uri("/v1/customer/keys")
+            .method("GET")
+            .header("x-corelink-tenant-id", "ro-tenant")
+            .header(crate::scope::SCOPE_HEADER, "cas:r") // read-only caller
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
     /// A read-write caller CAN mint a write credential (happy path — the scope
