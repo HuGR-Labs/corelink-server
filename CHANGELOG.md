@@ -85,6 +85,20 @@ Each entry cross-references:
   `docs/security/2026-06-18-gitleaks-baseline-triage.md`.
 
 ### Fixed
+- **Turbo `/events` fairness — residual slowloris + per-tenant monopolisation gaps (rt-nuclear
+  cycle-2 #8 + #9).** A prior fix gave `POST /v8/artifacts/events` its own
+  `GLOBAL_TURBO_EVENTS_BUDGET` (decoupled from the PUT write budget) but left two residuals on the
+  events pool. **#8 (slow-body):** the handler buffered the body via the unbounded `Bytes` extractor,
+  so a slowloris dribbling its (≤ 64 KiB) body could pin an events permit + slot indefinitely — the
+  handler now reads the raw body under an `EVENTS_BODY_READ_TIMEOUT` (5s) deadline (and the existing
+  64 KiB `EVENTS_BODY_LIMIT_BYTES` cap → 413), aborting a stalled body with 408 so the held permit +
+  slot RAII-release. **#9 (per-tenant cap):** `/events` had only the process-wide budget, so one
+  tenant could take every permit and starve other tenants — added a per-tenant `EventsConcurrencyGuard`
+  (`FromRequestParts`, runs before the body) capping each tenant at `EVENTS_CONCURRENCY_LIMIT` (4)
+  in-flight (429 over it), mirroring the PUT plane's `PutConcurrencyGuard`/`PutSlot`. Additive
+  hardening — the existing events-budget behaviour is unchanged. Regression tests cover the 408
+  slow-body release and the per-tenant cap (hog 429'd, other tenant still served).
+  (`crates/corelink-container/src/routes/turbo_v8.rs`).
 - **OCI signing-key legacy alias was a silent no-op + the env-contract gate was off PRs (A4
   secrets/config hygiene #6/#17/#18/#24).** Prod's Worker holds the OCI session HMAC key under the
   legacy name `HUGR_OCI_TOKEN_KEY` (CAA-360 #8 name drift); the container reads

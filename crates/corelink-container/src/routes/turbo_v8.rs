@@ -157,6 +157,34 @@ pub const GLOBAL_TURBO_PUT_PERMITS: usize = 16;
 /// writes. 16 is ample for telemetry; events are tiny + accept-and-drop.
 pub const GLOBAL_TURBO_EVENTS_PERMITS: usize = 16;
 
+/// Maximum concurrent in-flight `POST /v8/artifacts/events` requests for a
+/// single tenant (rt-nuclear cycle-2 #9). Excess events POSTs are rejected with
+/// 429 (Too Many Requests).
+///
+/// The PUT path already has a per-tenant cap ([`TURBO_PUT_CONCURRENCY_LIMIT`]),
+/// but `/events` had only the PROCESS-WIDE [`GLOBAL_TURBO_EVENTS_PERMITS`]
+/// budget — so one tenant could open all 16 events permits and monopolise the
+/// telemetry pool, starving every OTHER tenant's `/events` (an intra-plane,
+/// per-tenant fairness gap). This per-tenant cap mirrors the PUT guard so no
+/// single tenant can hog more than its share of the events pool. Telemetry is
+/// tiny + accept-and-drop, so 4 concurrent is ample headroom for one tenant.
+pub const EVENTS_CONCURRENCY_LIMIT: usize = 4;
+
+/// Maximum wall-time a `POST /v8/artifacts/events` body may take to stream in
+/// before the handler aborts it (rt-nuclear cycle-2 #8 — slow-body slowloris).
+///
+/// `/events` holds one [`GLOBAL_TURBO_EVENTS_PERMITS`] permit (and now one
+/// per-tenant [`EVENTS_CONCURRENCY_LIMIT`] slot) for the WHOLE request — from
+/// permit-acquisition through body read. Without a server-side read deadline a
+/// client can dribble its (≤ 64 KiB) body one byte at a time and pin a permit +
+/// a slot indefinitely; `EVENTS_CONCURRENCY_LIMIT` such clients per tenant, or
+/// `GLOBAL_TURBO_EVENTS_PERMITS` across tenants, slowloris the events pool to a
+/// standstill. The handler reads the body under this timeout; a stalled body is
+/// aborted with 408 (Request Timeout), which returns the handler and RAII-frees
+/// the permit + slot. A real Turbo `/events` payload is a few KiB of JSON over a
+/// healthy connection, so a few seconds is generous for any legitimate client.
+const EVENTS_BODY_READ_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// How long the global-budget extractor waits for a permit before declaring
 /// the container globally saturated and returning 503. Short by design (same
 /// rationale as `adapter_pat::ARGON2_PERMIT_WAIT`): a caller waiting longer is
@@ -242,6 +270,20 @@ pub struct TurboRouteState {
     /// 429 BEFORE its (up to 100 MiB) body is read into the heap. The RAII guard
     /// the extractor yields releases the slot when the handler returns.
     pub(crate) put_inflight: Arc<Mutex<HashMap<String, usize>>>,
+    /// Per-tenant in-flight `/events` concurrency counter (rt-nuclear cycle-2
+    /// #9 — events fairness).
+    ///
+    /// Maps `tenant_id → count` of `POST /v8/artifacts/events` requests
+    /// currently in-flight. The PUT plane already has a per-tenant cap
+    /// ([`put_inflight`](Self::put_inflight)); `/events` had only the
+    /// process-wide [`GLOBAL_TURBO_EVENTS_PERMITS`] budget, so one tenant could
+    /// take every events permit and starve all other tenants' telemetry. The
+    /// reservation is taken by the [`EventsConcurrencyGuard`] `FromRequestParts`
+    /// extractor (which axum runs BEFORE the body is read), capped at
+    /// [`EVENTS_CONCURRENCY_LIMIT`] per tenant (429 over it). The RAII
+    /// [`EventsSlot`] the extractor yields releases the slot on every return
+    /// path (success, error, panic, body-read timeout).
+    pub(crate) events_inflight: Arc<Mutex<HashMap<String, usize>>>,
     /// Fixed array of per-object async write locks (C1 — same-key write
     /// serialization).
     ///
@@ -544,6 +586,115 @@ impl axum::extract::FromRequestParts<TurboRouteState> for EventsBudgetGuard {
     }
 }
 
+// ── Per-tenant /events concurrency guard (rt-nuclear cycle-2 #9) ───────────────
+
+/// RAII release of one per-tenant in-flight `/events` slot.
+///
+/// Decrements the tenant's `events_inflight` count on `Drop`, so the slot is
+/// freed on EVERY return path (success, handler error, panic, body-read
+/// timeout). Carried out of the [`EventsConcurrencyGuard`] extractor into the
+/// handler so the slot stays held for the whole request lifetime (including the
+/// timed body read). Mirrors [`PutSlot`].
+pub(crate) struct EventsSlot {
+    inflight: Arc<Mutex<HashMap<String, usize>>>,
+    tenant_key: String,
+}
+
+impl Drop for EventsSlot {
+    fn drop(&mut self) {
+        if let Ok(mut g) = self.inflight.lock() {
+            if let Some(c) = g.get_mut(&self.tenant_key) {
+                *c = c.saturating_sub(1);
+                if *c == 0 {
+                    g.remove(&self.tenant_key);
+                }
+            }
+        }
+    }
+}
+
+/// `FromRequestParts` extractor that reserves a per-tenant in-flight `/events`
+/// slot (rt-nuclear cycle-2 #9 — events fairness).
+///
+/// The process-wide [`EventsBudgetGuard`] bounds the events pool in aggregate,
+/// but with no PER-TENANT cap one tenant could take all
+/// [`GLOBAL_TURBO_EVENTS_PERMITS`] permits and starve every other tenant's
+/// telemetry. This mirrors the PUT plane's [`PutConcurrencyGuard`]: as a
+/// `FromRequestParts` extractor it runs BEFORE the body is read, caps the tenant
+/// at [`EVENTS_CONCURRENCY_LIMIT`] in-flight (429 over it), and yields an
+/// [`EventsSlot`] that RAII-releases the slot when the handler returns. Like the
+/// PUT guard it fails CLOSED (401) on a missing/sentinel tenant.
+pub(crate) struct EventsConcurrencyGuard {
+    /// The reserved slot — released on drop. Held by the handler for the whole
+    /// request (it is NOT dropped at the end of extraction).
+    _slot: EventsSlot,
+}
+
+#[axum::async_trait]
+impl axum::extract::FromRequestParts<TurboRouteState> for EventsConcurrencyGuard {
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &TurboRouteState,
+    ) -> Result<Self, Self::Rejection> {
+        // Per AUTHENTICATED tenant — same fail-CLOSED tenant resolution as the
+        // PUT guard (`PutConcurrencyGuard`) and `AuthTenant`: a missing/empty or
+        // sentinel tenant 401s and never reserves a slot.
+        let tenant = parts
+            .headers
+            .get("x-corelink-tenant-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .unwrap_or("");
+        const TENANT_SENTINELS: &[&str] = &["_anonymous", "_unknown", "_system", "_pending"];
+        if tenant.is_empty() || TENANT_SENTINELS.contains(&tenant) {
+            return Err((StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response());
+        }
+        let tenant_key = tenant.to_owned();
+
+        {
+            let mut inflight = match state.events_inflight.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::error!(
+                        tenant_id = %tenant_key,
+                        error = %e,
+                        "turbo /events concurrency tracker mutex poisoned; failing closed"
+                    );
+                    return Err((
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "concurrency tracker unavailable",
+                    )
+                        .into_response());
+                }
+            };
+            let count = inflight.entry(tenant_key.clone()).or_insert(0);
+            if *count >= EVENTS_CONCURRENCY_LIMIT {
+                tracing::warn!(
+                    tenant_id = %tenant_key,
+                    in_flight = *count,
+                    limit = EVENTS_CONCURRENCY_LIMIT,
+                    "turbo /events per-tenant concurrency limit reached; returning 429"
+                );
+                return Err((
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "too many concurrent telemetry posts for this tenant",
+                )
+                    .into_response());
+            }
+            *count += 1;
+        }
+
+        Ok(Self {
+            _slot: EventsSlot {
+                inflight: Arc::clone(&state.events_inflight),
+                tenant_key,
+            },
+        })
+    }
+}
+
 // ── Handler construction ──────────────────────────────────────────────────────
 
 /// Build the [`TurboRouteState`] for the current build target and runtime.
@@ -589,6 +740,7 @@ pub fn build_handlers() -> TurboRouteState {
                         pat_gate: None,
                         bytes: None,
                         put_inflight: Arc::new(Mutex::new(HashMap::new())),
+                        events_inflight: Arc::new(Mutex::new(HashMap::new())),
                         write_locks: new_write_locks(),
                     };
                 }
@@ -605,6 +757,7 @@ pub fn build_handlers() -> TurboRouteState {
                         pat_gate: None,
                         bytes: None,
                         put_inflight: Arc::new(Mutex::new(HashMap::new())),
+                        events_inflight: Arc::new(Mutex::new(HashMap::new())),
                         write_locks: new_write_locks(),
                     };
                 }
@@ -623,6 +776,7 @@ pub fn build_handlers() -> TurboRouteState {
         pat_gate: None,
         bytes: None,
         put_inflight: Arc::new(Mutex::new(HashMap::new())),
+        events_inflight: Arc::new(Mutex::new(HashMap::new())),
         write_locks: new_write_locks(),
     }
 }
@@ -918,8 +1072,27 @@ async fn handle_put(
 /// F3 (defense-in-depth): require the `AuthTenant` extractor — fail-CLOSED 401
 /// on a missing/sentinel tenant. The Worker PAT-gates this path, but the
 /// container must not trust that; an unauthenticated request never reaches the
-/// handler. `AuthTenant` is `FromRequestParts`, so it precedes the `Bytes`
-/// body extractor (axum 0.7 ordering rule).
+/// handler. `AuthTenant` is `FromRequestParts`, so it precedes the body
+/// extractor (axum 0.7 ordering rule).
+///
+/// # Fairness hardening (rt-nuclear cycle-2 #8 + #9)
+///
+/// `/events` holds a process-wide [`EventsBudgetGuard`] permit AND a per-tenant
+/// [`EventsConcurrencyGuard`] slot for the WHOLE request. Two residual fairness
+/// gaps are closed here:
+///
+/// - **#8 (slow-body):** the body is buffered manually under an
+///   [`EVENTS_BODY_READ_TIMEOUT`] deadline rather than via the unbounded
+///   `Bytes` extractor, so a slowloris dribbling its body can no longer pin a
+///   permit + slot indefinitely — a stalled body aborts with 408 and the
+///   permit/slot RAII-release when the handler returns. The body is still read
+///   under the [`EVENTS_BODY_LIMIT_BYTES`] (64 KiB) cap (413 over it), so the
+///   C4 OOM bound is preserved.
+/// - **#9 (per-tenant cap):** the [`EventsConcurrencyGuard`] extractor (a
+///   `FromRequestParts`, so it runs before the body is read) bounds one tenant
+///   to [`EVENTS_CONCURRENCY_LIMIT`] in-flight events POSTs (429 over it),
+///   mirroring the PUT plane's per-tenant guard — so one tenant cannot
+///   monopolise the shared events pool.
 async fn handle_events(
     State(state): State<TurboRouteState>,
     auth: crate::auth_tenant::AuthTenant,
@@ -928,14 +1101,61 @@ async fn handle_events(
     // Sharing the PUT budget (the old C5 design) let a telemetry flood / slow-body
     // events POST hold PUT permits and starve real cache writes (cross-plane DoS).
     // As a `FromRequestParts` extractor it runs (and 503s on saturation) BEFORE
-    // the `body: Bytes` extractor buffers anything; combined with the 64 KiB
-    // `EVENTS_BODY_LIMIT_BYTES` route cap (C4) this keeps the same OOM bound
-    // (≤ permits × 64 KiB) on the events pool while isolating it from writes.
+    // the body is read; combined with the 64 KiB `EVENTS_BODY_LIMIT_BYTES` cap
+    // (C4) this keeps the same OOM bound (≤ permits × 64 KiB) on the events pool
+    // while isolating it from writes.
     _events_budget: EventsBudgetGuard,
-    body: axum::body::Bytes,
+    // rt-nuclear cycle-2 #9: per-tenant events concurrency cap. A
+    // `FromRequestParts` extractor (runs before the body) capping one tenant to
+    // `EVENTS_CONCURRENCY_LIMIT` in-flight (429 over it) so no tenant hogs the
+    // pool. Held for the whole handler; its `EventsSlot` RAII-releases on return.
+    _events_concurrency: EventsConcurrencyGuard,
+    // #8: take the RAW body (not the unbounded `Bytes` extractor) so the body
+    // read happens INSIDE the handler under an `EVENTS_BODY_READ_TIMEOUT`
+    // deadline — a slow/stalled body is aborted (408) rather than pinning the
+    // permit + slot it holds.
+    body: axum::body::Body,
 ) -> impl IntoResponse {
+    // #8: bound the body read by wall-time AND by the events body cap (C4). On a
+    // stalled body the timeout fires (408) and the handler returns, dropping the
+    // held permit (`EventsBudgetGuard`) and per-tenant slot (`EventsSlot`); on an
+    // over-cap body `to_bytes` errors and we map it to 413 — preserving the
+    // existing 64 KiB cap behaviour without relying on the `Bytes` extractor.
+    let bytes = match tokio::time::timeout(
+        EVENTS_BODY_READ_TIMEOUT,
+        axum::body::to_bytes(body, EVENTS_BODY_LIMIT_BYTES),
+    )
+    .await
+    {
+        Ok(Ok(b)) => b,
+        // Body exceeded the events cap (or a transport error) — reject 413,
+        // matching the prior `DefaultBodyLimit`-driven behaviour. Failing CLOSED
+        // (413) rather than silently accepting keeps the OOM bound intact.
+        Ok(Err(_)) => {
+            return (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "events body too large or unreadable",
+            )
+                .into_response();
+        }
+        // #8: the body did not finish streaming within the deadline — a
+        // slowloris. Abort 408; the permit + per-tenant slot release on return.
+        Err(_) => {
+            tracing::warn!(
+                tenant_id = %auth.0,
+                timeout_secs = EVENTS_BODY_READ_TIMEOUT.as_secs(),
+                "turbo /events body read timed out (slow body); returning 408 and \
+                 releasing the held events permit + slot"
+            );
+            return (
+                StatusCode::REQUEST_TIMEOUT,
+                "events body read timed out",
+            )
+                .into_response();
+        }
+    };
     let principal = format!("anon@{}", auth.0);
-    let req = TurboEventsRequest::new(body.to_vec(), principal, 0u64);
+    let req = TurboEventsRequest::new(bytes.to_vec(), principal, 0u64);
     match state.handler.events(req) {
         Ok(_) => StatusCode::OK.into_response(),
         Err(e) => map_err(e),
@@ -1953,6 +2173,158 @@ mod tests {
             StatusCode::OK,
             "an artifact PUT above the events cap (but under 100 MiB) must NOT be \
              413'd — the small cap is route-local to /events"
+        );
+    }
+
+    // ── rt-nuclear cycle-2 #8: /events slow-body read timeout ──────────────────
+
+    /// #8 (slowloris on the events pool): a `POST /v8/artifacts/events` whose
+    /// body never finishes streaming must NOT pin the held events permit + slot
+    /// forever — the server-side `EVENTS_BODY_READ_TIMEOUT` aborts it with 408,
+    /// which returns the handler and RAII-releases the permit + the per-tenant
+    /// slot. We assert (a) the request resolves to 408 well within a bound far
+    /// shorter than "forever", and (b) the per-tenant slot is released after
+    /// (so a stalled body did not leak a slot).
+    #[tokio::test]
+    async fn events_slow_body_times_out_408_and_releases_slot() {
+        let state = fixture();
+        let app = router(state.clone());
+
+        // A body that yields ONE chunk then never completes (a slowloris that
+        // dribbles a byte and stalls) — the canonical slow-body attack.
+        let stalled = Body::from_stream(async_stream::stream! {
+            yield Ok::<_, std::io::Error>(axum::body::Bytes::from_static(b"{"));
+            // Never produce EOF: pend forever. The handler's read timeout, not
+            // the stream, must end the request.
+            futures::future::pending::<()>().await;
+            // Unreachable, but satisfies the stream's item-type inference.
+            yield Ok(axum::body::Bytes::new());
+        });
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/v8/artifacts/events")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header("content-type", "application/json")
+            .body(stalled)
+            .expect("request");
+
+        // Bound the whole call by a deadline a bit longer than the handler's read
+        // timeout: if the handler did NOT enforce its own timeout this outer
+        // bound would fire (test would hang/err here), proving the regression.
+        let resp = tokio::time::timeout(
+            EVENTS_BODY_READ_TIMEOUT + Duration::from_secs(3),
+            app.oneshot(req),
+        )
+        .await
+        .expect("handler must self-abort the slow body — it must NOT hang forever")
+        .expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::REQUEST_TIMEOUT,
+            "a stalled events body must be aborted 408 by the server read timeout"
+        );
+
+        // The per-tenant slot must be released (back to 0 ⇒ entry removed) — a
+        // timed-out request must not leak its concurrency slot.
+        let g = state.events_inflight.lock().unwrap();
+        assert_eq!(
+            g.get(TEST_AUTH_TENANT),
+            None,
+            "the events concurrency slot must be released after a 408 timeout"
+        );
+    }
+
+    // ── rt-nuclear cycle-2 #9: per-tenant /events concurrency cap ───────────────
+
+    #[test]
+    fn events_inflight_counter_is_shared_across_clones() {
+        // `TurboRouteState::clone` shares the `Arc<Mutex<..>>` — axum clones the
+        // state per request, so every `/events` invocation must see the SAME
+        // per-tenant counter. Mirrors `put_inflight_counter_is_shared_across_clones`.
+        let state = build_handlers();
+        let state2 = state.clone();
+        {
+            let mut g = state.events_inflight.lock().unwrap();
+            g.insert(TEST_AUTH_TENANT.to_owned(), 2);
+        }
+        let g = state2.events_inflight.lock().unwrap();
+        assert_eq!(
+            g.get(TEST_AUTH_TENANT),
+            Some(&2),
+            "cloned state must share the same events inflight counter"
+        );
+    }
+
+    /// #9 (per-tenant fairness): one tenant AT its `/events` concurrency cap is
+    /// rejected 429 — while a DIFFERENT tenant (at 0 in-flight) is still served.
+    /// Proves the cap is PER-TENANT, so one tenant cannot monopolise the events
+    /// pool and starve others. Mirrors the PUT plane's `put_at_limit_returns_429`.
+    #[tokio::test]
+    async fn events_per_tenant_cap_429s_hog_but_other_tenant_still_served() {
+        const OTHER_TENANT: &str = "22222222-2222-2222-2222-222222222222";
+        let state = fixture();
+        // Pre-seed the noisy tenant AT its cap (simulating EVENTS_CONCURRENCY_LIMIT
+        // already-in-flight events POSTs for that tenant).
+        {
+            let mut g = state.events_inflight.lock().unwrap();
+            g.insert(TEST_AUTH_TENANT.to_owned(), EVENTS_CONCURRENCY_LIMIT);
+        }
+        let app = router(state.clone());
+
+        // The hog's next events POST is rejected 429 (BEFORE the body is read).
+        let hog = Request::builder()
+            .method(Method::POST)
+            .uri("/v8/artifacts/events")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"sessionId":"x"}"#))
+            .expect("request");
+        let resp = app.clone().oneshot(hog).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "a tenant at its per-tenant events cap must be 429'd"
+        );
+
+        // A DIFFERENT tenant (0 in-flight) is still served — the cap did not
+        // close the whole pool, only the hog's share.
+        let other = Request::builder()
+            .method(Method::POST)
+            .uri("/v8/artifacts/events")
+            .header("x-corelink-tenant-id", OTHER_TENANT)
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"sessionId":"y"}"#))
+            .expect("request");
+        let resp = app.oneshot(other).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "another tenant under its cap must still be served — fairness, not a \
+             global lockout"
+        );
+    }
+
+    /// A normal events POST releases its per-tenant slot on completion (the
+    /// counter returns to 0 ⇒ entry removed, not leaked). Mirrors
+    /// `put_below_limit_succeeds_and_decrements_counter`.
+    #[tokio::test]
+    async fn events_below_cap_succeeds_and_releases_slot() {
+        let state = fixture();
+        let app = router(state.clone());
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/v8/artifacts/events")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"sessionId":"ok"}"#))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let g = state.events_inflight.lock().unwrap();
+        assert_eq!(
+            g.get(TEST_AUTH_TENANT),
+            None,
+            "the events concurrency slot must be released after a successful POST"
         );
     }
 
