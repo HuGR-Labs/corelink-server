@@ -65,7 +65,7 @@ _Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` wit
 
 ```bash
 curl -X POST \
-  'https://api.corelink.humangr.com/v1/billing/stripe-webhook' \
+  'https://corelink-api.humangr.com/v1/billing/stripe-webhook' \
   -H 'Stripe-Signature: t=1714000000,v1=<hex>' \
   -H 'Stripe-Signature: string' \
   -H 'Content-Type: application/json' \
@@ -99,7 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
     "#)?;
     let resp = client
-        .post("https://api.corelink.humangr.com/v1/billing/stripe-webhook")
+        .post("https://corelink-api.humangr.com/v1/billing/stripe-webhook")
         .header("Stripe-Signature", "t=1714000000,v1=<hex>")
         .header("Stripe-Signature", "string")
         .header("Content-Type", "application/json")
@@ -133,7 +133,7 @@ def main() -> None:
   "type": "checkout.session.completed"
 }
     resp = httpx.post(
-        "https://api.corelink.humangr.com/v1/billing/stripe-webhook",
+        "https://corelink-api.humangr.com/v1/billing/stripe-webhook",
         headers=headers,
         json=body,
     )
@@ -165,7 +165,7 @@ func main() {
   "livemode": false,
   "type": "checkout.session.completed"
 }`)
-    req, err := http.NewRequest("POST", "https://api.corelink.humangr.com/v1/billing/stripe-webhook", bytes.NewReader(body))
+    req, err := http.NewRequest("POST", "https://corelink-api.humangr.com/v1/billing/stripe-webhook", bytes.NewReader(body))
     if err != nil {
         panic(err)
     }
@@ -185,7 +185,7 @@ func main() {
 ### JavaScript (fetch)
 
 ```javascript
-const resp = await fetch("https://api.corelink.humangr.com/v1/billing/stripe-webhook", {
+const resp = await fetch("https://corelink-api.humangr.com/v1/billing/stripe-webhook", {
   method: "POST",
   headers: {
     "Stripe-Signature": "t=1714000000,v1=<hex>",

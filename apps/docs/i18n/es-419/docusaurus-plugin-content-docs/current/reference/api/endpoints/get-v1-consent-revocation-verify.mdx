@@ -53,7 +53,7 @@ _Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` wit
 
 ```bash
 curl -X GET \
-  'https://api.corelink.humangr.com/v1/consent/revocation/verify?revocation_id=00000000-0000-7000-8000-000000000000'
+  'https://corelink-api.humangr.com/v1/consent/revocation/verify?revocation_id=00000000-0000-7000-8000-000000000000'
 ```
 
 ### Rust (reqwest)
@@ -66,7 +66,7 @@ use serde_json::Value;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let resp = client
-        .get("https://api.corelink.humangr.com/v1/consent/revocation/verify?revocation_id=00000000-0000-7000-8000-000000000000")
+        .get("https://corelink-api.humangr.com/v1/consent/revocation/verify?revocation_id=00000000-0000-7000-8000-000000000000")
 
         .send()
         .await?
@@ -85,7 +85,7 @@ import httpx
 def main() -> None:
     headers = {}
     resp = httpx.get(
-        "https://api.corelink.humangr.com/v1/consent/revocation/verify?revocation_id=00000000-0000-7000-8000-000000000000",
+        "https://corelink-api.humangr.com/v1/consent/revocation/verify?revocation_id=00000000-0000-7000-8000-000000000000",
         headers=headers,
     )
     resp.raise_for_status()
@@ -109,7 +109,7 @@ import (
 
 func main() {
     var body []byte
-    req, err := http.NewRequest("GET", "https://api.corelink.humangr.com/v1/consent/revocation/verify?revocation_id=00000000-0000-7000-8000-000000000000", nil)
+    req, err := http.NewRequest("GET", "https://corelink-api.humangr.com/v1/consent/revocation/verify?revocation_id=00000000-0000-7000-8000-000000000000", nil)
     if err != nil {
         panic(err)
     }
@@ -127,7 +127,7 @@ func main() {
 ### JavaScript (fetch)
 
 ```javascript
-const resp = await fetch("https://api.corelink.humangr.com/v1/consent/revocation/verify?revocation_id=00000000-0000-7000-8000-000000000000", {
+const resp = await fetch("https://corelink-api.humangr.com/v1/consent/revocation/verify?revocation_id=00000000-0000-7000-8000-000000000000", {
   method: "GET",
   headers: {},
 });

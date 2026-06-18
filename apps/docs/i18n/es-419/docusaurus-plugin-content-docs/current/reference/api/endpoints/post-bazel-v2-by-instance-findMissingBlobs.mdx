@@ -49,7 +49,7 @@ _Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` wit
 
 ```bash
 curl -X POST \
-  'https://api.corelink.humangr.com/bazel/v2/string/findMissingBlobs' \
+  'https://corelink-api.humangr.com/bazel/v2/string/findMissingBlobs' \
   -H 'Authorization: Bearer <YOUR_PAT>' \
   -H 'Content-Type: application/json' \
   -d '{}'
@@ -68,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 {}
     "#)?;
     let resp = client
-        .post("https://api.corelink.humangr.com/bazel/v2/string/findMissingBlobs")
+        .post("https://corelink-api.humangr.com/bazel/v2/string/findMissingBlobs")
         .header("Authorization", "Bearer <YOUR_PAT>")
         .header("Content-Type", "application/json")
         .json(&body)
@@ -93,7 +93,7 @@ def main() -> None:
     }
     body = {}
     resp = httpx.post(
-        "https://api.corelink.humangr.com/bazel/v2/string/findMissingBlobs",
+        "https://corelink-api.humangr.com/bazel/v2/string/findMissingBlobs",
         headers=headers,
         json=body,
     )
@@ -118,7 +118,7 @@ import (
 
 func main() {
     body := []byte(`{}`)
-    req, err := http.NewRequest("POST", "https://api.corelink.humangr.com/bazel/v2/string/findMissingBlobs", bytes.NewReader(body))
+    req, err := http.NewRequest("POST", "https://corelink-api.humangr.com/bazel/v2/string/findMissingBlobs", bytes.NewReader(body))
     if err != nil {
         panic(err)
     }
@@ -137,7 +137,7 @@ func main() {
 ### JavaScript (fetch)
 
 ```javascript
-const resp = await fetch("https://api.corelink.humangr.com/bazel/v2/string/findMissingBlobs", {
+const resp = await fetch("https://corelink-api.humangr.com/bazel/v2/string/findMissingBlobs", {
   method: "POST",
   headers: {
     "Authorization": "Bearer <YOUR_PAT>",

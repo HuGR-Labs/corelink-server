@@ -55,7 +55,7 @@ _Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` wit
 
 ```bash
 curl -X GET \
-  'https://api.corelink.humangr.com/v1/privacy/dsr/00000000-0000-7000-8000-000000000000/status' \
+  'https://corelink-api.humangr.com/v1/privacy/dsr/00000000-0000-7000-8000-000000000000/status' \
   -H 'Authorization: Bearer <YOUR_PAT>'
 ```
 
@@ -69,7 +69,7 @@ use serde_json::Value;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let resp = client
-        .get("https://api.corelink.humangr.com/v1/privacy/dsr/00000000-0000-7000-8000-000000000000/status")
+        .get("https://corelink-api.humangr.com/v1/privacy/dsr/00000000-0000-7000-8000-000000000000/status")
         .header("Authorization", "Bearer <YOUR_PAT>")
         .send()
         .await?
@@ -90,7 +90,7 @@ def main() -> None:
         "Authorization": "Bearer <YOUR_PAT>",
     }
     resp = httpx.get(
-        "https://api.corelink.humangr.com/v1/privacy/dsr/00000000-0000-7000-8000-000000000000/status",
+        "https://corelink-api.humangr.com/v1/privacy/dsr/00000000-0000-7000-8000-000000000000/status",
         headers=headers,
     )
     resp.raise_for_status()
@@ -114,7 +114,7 @@ import (
 
 func main() {
     var body []byte
-    req, err := http.NewRequest("GET", "https://api.corelink.humangr.com/v1/privacy/dsr/00000000-0000-7000-8000-000000000000/status", nil)
+    req, err := http.NewRequest("GET", "https://corelink-api.humangr.com/v1/privacy/dsr/00000000-0000-7000-8000-000000000000/status", nil)
     if err != nil {
         panic(err)
     }
@@ -132,7 +132,7 @@ func main() {
 ### JavaScript (fetch)
 
 ```javascript
-const resp = await fetch("https://api.corelink.humangr.com/v1/privacy/dsr/00000000-0000-7000-8000-000000000000/status", {
+const resp = await fetch("https://corelink-api.humangr.com/v1/privacy/dsr/00000000-0000-7000-8000-000000000000/status", {
   method: "GET",
   headers: {
     "Authorization": "Bearer <YOUR_PAT>",

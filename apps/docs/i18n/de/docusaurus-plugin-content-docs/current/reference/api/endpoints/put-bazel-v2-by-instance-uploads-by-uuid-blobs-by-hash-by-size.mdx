@@ -52,7 +52,7 @@ _Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` wit
 
 ```bash
 curl -X PUT \
-  'https://api.corelink.humangr.com/bazel/v2/string/uploads/00000000-0000-7000-8000-000000000000/blobs/string/0' \
+  'https://corelink-api.humangr.com/bazel/v2/string/uploads/00000000-0000-7000-8000-000000000000/blobs/string/0' \
   -H 'Authorization: Bearer <YOUR_PAT>' \
   -H 'Content-Type: application/json' \
   -d '{}'
@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 {}
     "#)?;
     let resp = client
-        .put("https://api.corelink.humangr.com/bazel/v2/string/uploads/00000000-0000-7000-8000-000000000000/blobs/string/0")
+        .put("https://corelink-api.humangr.com/bazel/v2/string/uploads/00000000-0000-7000-8000-000000000000/blobs/string/0")
         .header("Authorization", "Bearer <YOUR_PAT>")
         .header("Content-Type", "application/json")
         .json(&body)
@@ -96,7 +96,7 @@ def main() -> None:
     }
     body = {}
     resp = httpx.put(
-        "https://api.corelink.humangr.com/bazel/v2/string/uploads/00000000-0000-7000-8000-000000000000/blobs/string/0",
+        "https://corelink-api.humangr.com/bazel/v2/string/uploads/00000000-0000-7000-8000-000000000000/blobs/string/0",
         headers=headers,
         json=body,
     )
@@ -121,7 +121,7 @@ import (
 
 func main() {
     body := []byte(`{}`)
-    req, err := http.NewRequest("PUT", "https://api.corelink.humangr.com/bazel/v2/string/uploads/00000000-0000-7000-8000-000000000000/blobs/string/0", bytes.NewReader(body))
+    req, err := http.NewRequest("PUT", "https://corelink-api.humangr.com/bazel/v2/string/uploads/00000000-0000-7000-8000-000000000000/blobs/string/0", bytes.NewReader(body))
     if err != nil {
         panic(err)
     }
@@ -140,7 +140,7 @@ func main() {
 ### JavaScript (fetch)
 
 ```javascript
-const resp = await fetch("https://api.corelink.humangr.com/bazel/v2/string/uploads/00000000-0000-7000-8000-000000000000/blobs/string/0", {
+const resp = await fetch("https://corelink-api.humangr.com/bazel/v2/string/uploads/00000000-0000-7000-8000-000000000000/blobs/string/0", {
   method: "PUT",
   headers: {
     "Authorization": "Bearer <YOUR_PAT>",

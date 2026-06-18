@@ -427,7 +427,25 @@ def render_responses(endpoint: Endpoint, spec: Spec) -> str:
 # --------------------------------------------------------------------------- #
 
 
-_DEFAULT_BASE_URL = "https://api.corelink.humangr.com"
+_DEFAULT_BASE_URL = "https://corelink-api.humangr.com"
+
+
+def _base_url(spec: Spec) -> str:
+    """Resolve the example base URL.
+
+    Prefers the first **HTTPS** ``servers[].url`` declared in the OpenAPI
+    spec (the canonical production host), falling back to
+    ``_DEFAULT_BASE_URL`` when the spec declares none. This keeps the
+    generated examples pointed at whatever host the contract advertises
+    rather than a hardcoded literal that can drift dead.
+    """
+    servers = spec.raw.get("servers")
+    if isinstance(servers, list):
+        for entry in servers:
+            url = (entry or {}).get("url") if isinstance(entry, dict) else None
+            if isinstance(url, str) and url.startswith("https://"):
+                return url.rstrip("/")
+    return _DEFAULT_BASE_URL
 
 
 def _example_payload(schema: dict[str, Any] | None, spec: Spec, seen: set[str] | None = None) -> Any:
@@ -557,7 +575,7 @@ def _example_headers(endpoint: Endpoint, spec: Spec) -> list[tuple[str, str]]:
 
 def _example_url(endpoint: Endpoint, spec: Spec) -> str:
     """Build a full example URL including substituted path and query params."""
-    base = _DEFAULT_BASE_URL + _example_path(endpoint, spec)
+    base = _base_url(spec) + _example_path(endpoint, spec)
     query: list[str] = []
     for raw in endpoint.parameters:
         p = _resolve_param(raw, spec)

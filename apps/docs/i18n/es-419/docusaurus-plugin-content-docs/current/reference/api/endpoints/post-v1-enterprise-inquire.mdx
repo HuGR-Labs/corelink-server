@@ -59,7 +59,7 @@ _Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` wit
 
 ```bash
 curl -X POST \
-  'https://api.corelink.humangr.com/v1/enterprise/inquire' \
+  'https://corelink-api.humangr.com/v1/enterprise/inquire' \
   -H 'Content-Type: application/json' \
   -d '{
   "byok_provider": "aws",
@@ -91,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
     "#)?;
     let resp = client
-        .post("https://api.corelink.humangr.com/v1/enterprise/inquire")
+        .post("https://corelink-api.humangr.com/v1/enterprise/inquire")
         .header("Content-Type", "application/json")
         .json(&body)
         .send()
@@ -121,7 +121,7 @@ def main() -> None:
   "work_email": "test-tenant@example.com"
 }
     resp = httpx.post(
-        "https://api.corelink.humangr.com/v1/enterprise/inquire",
+        "https://corelink-api.humangr.com/v1/enterprise/inquire",
         headers=headers,
         json=body,
     )
@@ -153,7 +153,7 @@ func main() {
   "name": "string",
   "work_email": "test-tenant@example.com"
 }`)
-    req, err := http.NewRequest("POST", "https://api.corelink.humangr.com/v1/enterprise/inquire", bytes.NewReader(body))
+    req, err := http.NewRequest("POST", "https://corelink-api.humangr.com/v1/enterprise/inquire", bytes.NewReader(body))
     if err != nil {
         panic(err)
     }
@@ -171,7 +171,7 @@ func main() {
 ### JavaScript (fetch)
 
 ```javascript
-const resp = await fetch("https://api.corelink.humangr.com/v1/enterprise/inquire", {
+const resp = await fetch("https://corelink-api.humangr.com/v1/enterprise/inquire", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",

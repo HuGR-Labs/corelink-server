@@ -113,6 +113,17 @@ Each entry cross-references:
   pending exactly this harness — was un-skipped and now passes. Final: 369 passed, 0 failed, 0 skipped
   (main config) + 22 passed (miniflare config). No tests left skipped-with-reason; the pool is usable via the
   programmatic miniflare v4 API.
+- **Docs site pointed customers at dead hosts on the first-5-minutes path.** The auto-generated REST API
+  reference (50 endpoint pages × 5 language samples) and the static OpenAPI download both targeted the
+  non-resolving `api.corelink.humangr.com`; the quickstart/installation/first-PAT pages sent sign-up and
+  welcome links at the dead apex/`app.corelink.humangr.com` hosts; and several pages named the dead
+  `docs.corelink.humangr.com`. Fixed the generator (`scripts/gen-api-reference.py`) to resolve the
+  example base URL from the OpenAPI `servers[]` (canonical `https://corelink-api.humangr.com`) instead of
+  a hardcoded literal, regenerated all 50 pages, and corrected the remaining hand-written + i18n pages and
+  the static `openapi-corelink-v1.yaml` `servers` block to the canonical flat hosts (`corelink-api` /
+  `corelink-app` / `corelink-docs`.humangr.com). Also added the missing `static/img/og-image.png` (the
+  Docusaurus `og:image`/`twitter:image` config 404'd — only the `.svg` existed) and replaced the
+  `:::note Placeholder` admonition on the primary-nav **Explanation** landing page with real content.
 - **Container Stripe-webhook materializer could (re-)grant a paid entitlement on a non-granting
   subscription status (money-path defense-in-depth).** On `customer.subscription.updated`,
   `reconcile_tier` → `persist_tier_change` → `upsert_tier` (`SQL_UPSERT_TIER`) UNCONDITIONALLY wrote

@@ -17,12 +17,24 @@ description: Why CoreLink chose content-addressable storage, how dedup works at 
 the way it is. For *how* to use it, see [Como fazer](/how-to/); for the
 *API surface*, see [Referência](/reference/).
 
-:::note Placeholder explanation page
-Full architectural narratives — content-addressing rationale, dedup
-proof, multi-region read-path, BYOK envelope model — land in subsequent
-work items. This page anchors the Explicação quadrant of the Diátaxis
-sidebar.
-:::
+CoreLink is a **multi-tenant, content-addressable cache and
+storage-governance platform** built on Cloudflare (Workers, Durable
+Objects, Containers, R2, and D1). Every object is keyed by the SHA-256
+of its bytes, which is the single design decision that the rest of the
+system follows from — it is summarised below and expanded in the topics
+that follow.
+
+- **Content addressing** makes integrity verification free (the key
+  *is* the checksum) and deduplication automatic (identical bytes
+  collapse to one stored object), while keeping tenants isolated by key
+  namespace rather than by a per-tenant encryption boundary.
+- **Cloudflare-native placement** keeps reads and writes at the edge: a
+  Durable Object fronts each tenant's cache coordination, R2 holds the
+  bytes with zero egress fees, and the heavier execution surface runs in
+  a Container.
+- **Governance is first-class**, not bolted on: storage quotas, tier
+  entitlements, audit chaining, and data-subject-request erasure are
+  modelled in the same data plane as the cache itself.
 
 ## Topics this page will cover
 

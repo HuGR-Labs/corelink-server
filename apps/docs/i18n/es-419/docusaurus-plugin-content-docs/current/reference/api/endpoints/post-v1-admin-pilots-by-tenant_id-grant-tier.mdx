@@ -55,7 +55,7 @@ _Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` wit
 
 ```bash
 curl -X POST \
-  'https://api.corelink.humangr.com/v1/admin/pilots/00000000-0000-7000-8000-000000000000/grant-tier' \
+  'https://corelink-api.humangr.com/v1/admin/pilots/00000000-0000-7000-8000-000000000000/grant-tier' \
   -H 'Content-Type: application/json' \
   -d '{
   "cap_bytes": 0,
@@ -79,7 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
     "#)?;
     let resp = client
-        .post("https://api.corelink.humangr.com/v1/admin/pilots/00000000-0000-7000-8000-000000000000/grant-tier")
+        .post("https://corelink-api.humangr.com/v1/admin/pilots/00000000-0000-7000-8000-000000000000/grant-tier")
         .header("Content-Type", "application/json")
         .json(&body)
         .send()
@@ -105,7 +105,7 @@ def main() -> None:
   "tier": "string"
 }
     resp = httpx.post(
-        "https://api.corelink.humangr.com/v1/admin/pilots/00000000-0000-7000-8000-000000000000/grant-tier",
+        "https://corelink-api.humangr.com/v1/admin/pilots/00000000-0000-7000-8000-000000000000/grant-tier",
         headers=headers,
         json=body,
     )
@@ -133,7 +133,7 @@ func main() {
   "cap_bytes": 0,
   "tier": "string"
 }`)
-    req, err := http.NewRequest("POST", "https://api.corelink.humangr.com/v1/admin/pilots/00000000-0000-7000-8000-000000000000/grant-tier", bytes.NewReader(body))
+    req, err := http.NewRequest("POST", "https://corelink-api.humangr.com/v1/admin/pilots/00000000-0000-7000-8000-000000000000/grant-tier", bytes.NewReader(body))
     if err != nil {
         panic(err)
     }
@@ -151,7 +151,7 @@ func main() {
 ### JavaScript (fetch)
 
 ```javascript
-const resp = await fetch("https://api.corelink.humangr.com/v1/admin/pilots/00000000-0000-7000-8000-000000000000/grant-tier", {
+const resp = await fetch("https://corelink-api.humangr.com/v1/admin/pilots/00000000-0000-7000-8000-000000000000/grant-tier", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
