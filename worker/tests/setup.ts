@@ -33,3 +33,76 @@ if (typeof globalThis.crypto === "undefined") {
     };
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Shared test PAT signing key + minting helper (House #2 — honest auth harness).
+//
+// WHY THIS EXISTS: the native plane (extractAuth in src/index.ts) fails CLOSED
+// with a 503 when PAT_SIGNING_KEY is absent or < 64 hex chars (< 32 bytes). For
+// a long time the unit-test env left this key UNSET, so every PAT-gated test
+// short-circuited to 503 BEFORE reaching any auth/route logic — a 503 (misconfig)
+// is indistinguishable from a real 401 (bad/forged/expired PAT), and "green"
+// tests were passing on the misconfig, not on the logic they claimed to cover
+// (test theater, adversarial-audit finding).
+//
+// The fix: ship a FIXED, valid test signing key here (64 hex chars = 32 bytes,
+// the minimum extractAuth accepts) and mint canonical PATs whose HMAC-SHA256 sig
+// verifies under it, so PAT-gated tests reach the REAL auth/route logic. The
+// fail-closed (no-key ⇒ 503) path is still covered — but now by an EXPLICIT
+// negative test (tests/index.test.ts) instead of being the silent default.
+//
+// This key is a test fixture ONLY. It is never a real secret: production binds
+// PAT_SIGNING_KEY as a write-only Cloudflare secret.
+// ──────────────────────────────────────────────────────────────────────────────
+
+/** Fixed 64-hex-char (32-byte) test signing key — meets extractAuth's ≥32-byte floor. */
+export const TEST_PAT_SIGNING_KEY = "ab".repeat(32);
+
+/** Canonical token_id used by the shared D1 mocks (16 Crockford-b32 chars). */
+export const TEST_PAT_TOKEN_ID = "AAAAAAAAAAAAAAAA";
+
+/** Canonical 43-char base64url random_secret segment. */
+export const TEST_PAT_SECRET = "A".repeat(43);
+
+/** Decode a hex string to bytes. */
+function hexToBytes(hex: string): Uint8Array {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  return out;
+}
+
+/** Encode bytes to base64url-no-pad (matches the Worker's `base64url`). */
+function b64urlNoPad(bytes: Uint8Array): string {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/**
+ * Mint a canonical PAT whose HMAC-SHA256 sig verifies under `signingKeyHex`
+ * using the SAME algorithm the Worker verifies with: a 128-bit (16-byte)
+ * truncated HMAC-SHA256 over the preimage `<token_id>.<random_secret>`.
+ *
+ * Defaults reproduce the canonical fixture (TEST_PAT_TOKEN_ID / TEST_PAT_SECRET
+ * signed by TEST_PAT_SIGNING_KEY). Override to mint mismatched/foreign tokens.
+ */
+export async function mintTestPat(opts?: {
+  signingKeyHex?: string;
+  tokenId?: string;
+  secret?: string;
+}): Promise<string> {
+  const signingKeyHex = opts?.signingKeyHex ?? TEST_PAT_SIGNING_KEY;
+  const tokenId = opts?.tokenId ?? TEST_PAT_TOKEN_ID;
+  const secret = opts?.secret ?? TEST_PAT_SECRET;
+  const preimage = new TextEncoder().encode(`${tokenId}.${secret}`);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    hexToBytes(signingKeyHex),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const macBuf = await crypto.subtle.sign("HMAC", key, preimage);
+  const sig16 = new Uint8Array(macBuf, 0, 16); // 128-bit truncated MAC
+  return `corelink_pat_${tokenId}.${secret}.${b64urlNoPad(sig16)}`;
+}

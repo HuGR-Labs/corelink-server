@@ -103,6 +103,19 @@ Each entry cross-references:
   First-order model (documented caveats); turns "margin asserted" into "margin measured".
 
 ### Fixed
+- **Worker vitest harness was dishonest — PAT-gated tests passed on a 503 misconfig, not on auth logic.**
+  The unit-test env left `PAT_SIGNING_KEY` UNSET, so the native-plane possession gate (`extractAuth`)
+  failed CLOSED (503) BEFORE reaching any HMAC/D1 auth or route logic; a 503 (misconfig) was
+  indistinguishable from a real 401 (bad/forged/expired PAT), so "green" PAT tests were passing on the
+  misconfig (test theater, adversarial-audit finding). Fixed the harness in `worker/tests/setup.ts` by
+  exporting a fixed valid test signing key (`TEST_PAT_SIGNING_KEY`, 64 hex = 32 bytes) plus a `mintTestPat()`
+  helper that mints canonical PATs whose 128-bit truncated HMAC-SHA256 sig verifies under it; `index.test.ts`
+  now binds that key in `makeEnv()` and presents a validly-signed `TEST_PAT_TOKEN`, so PAT-gated tests
+  exercise the real auth path. The fail-closed path is now covered on PURPOSE by an explicit negative test
+  (`no PAT_SIGNING_KEY in env => 503`, plus a too-short-key variant) instead of being the silent default.
+  This honesty turned 54 previously-503-red tests green and surfaced 2 placeholder-sig `parsePat` ci/ro
+  tests that must move from `→ 503` to `→ 401` (tracked follow-up); the remaining pre-existing worker-vitest
+  reds (e.g. `integration.test.ts`'s own un-keyed `makeEnv`) are out of scope for this harness fix.
 - **k6 load tests defaulted their target host to the third-party `staging.corelink.dev` domain.**
   `corelink.dev` is an unrelated company (CoreLink Development); a local run without
   `K6_TARGET_HOST` set would have aimed load traffic at someone else's domain. Retargeted the
