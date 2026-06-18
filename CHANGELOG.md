@@ -50,6 +50,20 @@ Each entry cross-references:
   cargo-deny's lane) and IaC/Dockerfile misconfig. Baseline triage:
   `docs/security/2026-06-18-gitleaks-baseline-triage.md`.
 
+### Fixed
+- **Container Stripe-webhook materializer could (re-)grant a paid entitlement on a non-granting
+  subscription status (money-path defense-in-depth).** On `customer.subscription.updated`,
+  `reconcile_tier` → `persist_tier_change` → `upsert_tier` (`SQL_UPSERT_TIER`) UNCONDITIONALLY wrote
+  `tier_selections.subscription_state='active'` for ANY status, so a subscription that had dropped to
+  `past_due`/`unpaid`/`incomplete`/`incomplete_expired`/`paused`/`canceled` (or an unknown status) on a
+  recognized plan would re-grant the canonical access gate — the materializer is a SECOND writer of that
+  gate and, unlike the authoritative signup-worker, had no payment-status check (the only prior guard was
+  an accidental plan/price mismatch). Added a status gate mirroring the signup-worker's
+  `subscriptionStatusGrantsAccess` (granting set = `active`, `trialing` ONLY; everything else fail-safe):
+  a non-granting status now SKIPS the `'active'` entitlement upsert (and its `tier_changed` audit) while
+  still recording the `subscription.materialized` audit + the `stripe_subscriptions` row with the real
+  status. `active`/`trialing` behavior is unchanged. Regression test added.
+
 ### Security
 - **OCI blob upload could persist a digest-lie (cache poisoning — rt-nuclear cycle-2 #2).**
   `OciMoatStore::finalize_upload` ASSEMBLED and PERSISTED the uploaded bytes before the push handler's

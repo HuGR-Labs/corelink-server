@@ -120,6 +120,21 @@ fn tier_to_mat(e: TierSelectError) -> MaterializerError {
     }
 }
 
+/// Whether a Stripe subscription `status` means the tenant still has
+/// entitlement. Mirrors the signup-worker's `subscriptionStatusGrantsAccess`
+/// (`apps/signup-worker/src/webhooks/stripe.ts`): ONLY `active` and `trialing`
+/// keep access; everything else (`past_due`, `unpaid`, `incomplete`,
+/// `incomplete_expired`, `paused`, `canceled`, unknown/absent) loses it.
+/// Fail-safe: an unknown/absent status is treated as NOT entitled.
+///
+/// This is the defense-in-depth gate that prevents the container materializer
+/// (a SECOND writer of the canonical `subscription_state` gate) from
+/// (re-)granting `subscription_state='active'` on a `customer.subscription.updated`
+/// carrying a recognized plan but a non-granting payment status.
+fn subscription_status_grants_access(status: &str) -> bool {
+    matches!(status, "active" | "trialing")
+}
+
 /// Production [`StateMaterializer`] implementation.
 pub struct D1SubscriptionStateHandler {
     d1: Arc<dyn BillingD1Writer>,
@@ -294,7 +309,7 @@ impl D1SubscriptionStateHandler {
 
         // 3) Tier reconciliation (only for *.updated arm).
         if env.event_type == "customer.subscription.updated" {
-            self.reconcile_tier(env, &tenant_id, now_ms)?;
+            self.reconcile_tier(env, &tenant_id, &status, now_ms)?;
         } else if canceled {
             // On cancel, downgrade tenant to Free (per
             // dispatcher contract — `customer.subscription.deleted`
@@ -310,6 +325,7 @@ impl D1SubscriptionStateHandler {
         &self,
         env: &StripeWebhookEnvelope,
         tenant_id: &str,
+        status: &str,
         now_ms: u64,
     ) -> Result<(), MaterializerError> {
         let plan_id = env
@@ -333,6 +349,26 @@ impl D1SubscriptionStateHandler {
             .tier_selector
             .compute_tier(plan_id, seat_count)
             .map_err(tier_to_mat)?;
+
+        // SUBSCRIPTION-STATUS GATE (defense-in-depth, mirrors the
+        // signup-worker's `subscriptionStatusGrantsAccess`): this materializer
+        // is a SECOND writer of the canonical `tier_selections.subscription_state`
+        // gate, and `persist_tier_change` → `upsert_tier` UNCONDITIONALLY writes
+        // `subscription_state='active'`. A `customer.subscription.updated`
+        // carrying a recognized plan but a NON-granting status (`past_due`,
+        // `unpaid`, `incomplete`, `incomplete_expired`, `paused`, `canceled`,
+        // unknown) must therefore NOT reach the 'active' upsert — otherwise it
+        // (re-)grants a paid entitlement for unpaid/lapsed money. We skip the
+        // entitlement write (and its tier_changed audit) for non-granting
+        // statuses; the `subscription.materialized` audit + the
+        // `stripe_subscriptions` row (with the real status) were already
+        // recorded above, so the event remains fully observable. The
+        // signup-worker (the authority) is responsible for actively flipping
+        // the gate to a non-active state.
+        if !subscription_status_grants_access(status) {
+            return Ok(());
+        }
+
         self.persist_tier_change(tenant_id, new_tier, env, now_ms)
     }
 
@@ -648,6 +684,71 @@ mod tests {
             .unwrap();
         let e = env(
             "evt_su",
+            "customer.subscription.updated",
+            serde_json::json!({
+                "object": {
+                    "id": "sub_1",
+                    "status": "active",
+                    "metadata": { "tenant_id": "ten_1" },
+                    "plan": { "id": "plan_pro" },
+                    "quantity": 5,
+                }
+            }),
+        );
+        handler.on_subscription_updated(&e).unwrap();
+        assert_eq!(d1.tier_for("ten_1"), Some("pro".to_string()));
+        assert_eq!(audit.count_event("corelink.tenant.tier_changed.v1"), 1);
+    }
+
+    #[test]
+    fn subscription_updated_non_granting_status_does_not_grant_active() {
+        // Regression (money-path webhook status gate): a
+        // customer.subscription.updated carrying a RECOGNIZED plan but a
+        // NON-granting status (past_due / unpaid) MUST NOT (re-)grant the
+        // canonical 'active' entitlement. `active` still does.
+        for non_granting in ["past_due", "unpaid"] {
+            let (handler, d1, audit) = fixture();
+            // Tenant starts on a non-active baseline (free), so a granted
+            // 'active' write would be an observable upgrade.
+            d1.upsert_tier("ten_1", "free", 1_700_000_000_000, "init")
+                .unwrap();
+            let e = env(
+                "evt_su",
+                "customer.subscription.updated",
+                serde_json::json!({
+                    "object": {
+                        "id": "sub_1",
+                        "status": non_granting,
+                        "metadata": { "tenant_id": "ten_1" },
+                        "plan": { "id": "plan_pro" },
+                        "quantity": 5,
+                    }
+                }),
+            );
+            handler.on_subscription_updated(&e).unwrap();
+            // Entitlement gate NOT advanced to the paid 'pro' tier: the
+            // materializer skipped the 'active' upsert for the non-granting
+            // status (tier stays at the pre-existing baseline).
+            assert_eq!(
+                d1.tier_for("ten_1"),
+                Some("free".to_string()),
+                "status={non_granting} must NOT grant the paid tier (subscription_state='active')"
+            );
+            // No tier-change entitlement audit was emitted (the gate fired
+            // before persist_tier_change).
+            assert_eq!(
+                audit.count_event("corelink.tenant.tier_changed.v1"),
+                0,
+                "status={non_granting} must not emit a tier_changed entitlement audit"
+            );
+        }
+
+        // Control: an `active` status with the same recognized plan DOES grant.
+        let (handler, d1, audit) = fixture();
+        d1.upsert_tier("ten_1", "free", 1_700_000_000_000, "init")
+            .unwrap();
+        let e = env(
+            "evt_su_ok",
             "customer.subscription.updated",
             serde_json::json!({
                 "object": {
