@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CoreLink — SOTA Tooling: blindagem · verificação · performance (recomendações do TL)</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#121722; --panel2:#171d2b; --line:#222b3d;
+    --ink:#e6edf3; --mut:#93a1b5; --dim:#6b7890;
+    --green:#3fb950; --amber:#d29922; --red:#f85149; --blue:#58a6ff; --violet:#bc8cff;
+    --chip:#1f2737;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 22px 80px}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:-.3px}
+  h2{font-size:19px;margin:38px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:15px;margin:18px 0 8px;color:var(--mut);text-transform:uppercase;letter-spacing:.6px}
+  .sub{color:var(--mut);margin:0 0 20px}
+  p{margin:10px 0}
+  a{color:var(--blue);text-decoration:none}
+  code{background:#0d1119;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#cdd9e5}
+  .grid{display:grid;gap:14px}
+  .cards{grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .card.hi{border-color:#2c5a33;box-shadow:0 0 0 1px #1d3a22 inset}
+  .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--chip);color:var(--mut);border:1px solid var(--line);margin:0 6px 6px 0;vertical-align:middle}
+  .free{color:var(--green);border-color:#244a2b}
+  .paid{color:var(--amber);border-color:#4a3a14}
+  .skip{color:var(--dim)}
+  .sev-hi{color:var(--red)} .sev-md{color:var(--amber)}
+  .lead{background:linear-gradient(180deg,#13202e,#101620);border:1px solid #1d3450;border-radius:14px;padding:18px 20px;margin:18px 0}
+  .lead h2{border:0;margin:0 0 10px;color:#cfe6ff}
+  ol.steps{counter-reset:s;list-style:none;padding:0;margin:8px 0}
+  ol.steps li{position:relative;padding:10px 12px 10px 44px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);margin:8px 0}
+  ol.steps li:before{counter-increment:s;content:counter(s);position:absolute;left:12px;top:10px;width:22px;height:22px;border-radius:50%;background:var(--blue);color:#001;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13.5px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  tr:hover td{background:#0f141d}
+  .pri{font-weight:700}
+  .tl{font-size:13px;color:var(--mut);font-style:italic;border-left:3px solid var(--blue);padding:2px 0 2px 12px;margin:8px 0}
+  .callout{background:#1a1410;border:1px solid #4a3a14;border-radius:12px;padding:16px 18px;margin:18px 0}
+  .callout.good{background:#0f1a12;border-color:#244a2b}
+  .muted{color:var(--mut)}
+  .pill{font-size:12px;padding:1px 7px;border-radius:6px;background:#0d1119;border:1px solid var(--line);color:var(--mut)}
+  .foot{margin-top:40px;color:var(--dim);font-size:12.5px;border-top:1px solid var(--line);padding-top:14px}
+  .big{font-size:30px;font-weight:700;color:var(--green)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>SOTA Tooling — blindagem · verificação · performance</h1>
+  <p class="sub">Síntese dos 3 levantamentos (Opus) + recomendações do Tech Lead · 2026‑06‑17 · CoreLink (Cloudflare Workers/DO/Containers/R2/D1 + ~71 crates Rust + Worker TS)</p>
+
+  <div class="lead">
+    <h2>TL;DR — o que eu faria, em ordem</h2>
+    <p><b>Quase tudo que importa é grátis e roda FORA do Mac compartilhado</b> (pre‑commit, runners grátis do GitHub, ou nightly) — ou seja, isto <b>blinda o sistema E alivia o gargalo do Mac</b> ao mesmo tempo. Caixa nova no curto prazo: ~<b>$10/mês</b> (Caido Pro); o resto que vale a pena é grátis no nosso porte (CodSpeed, Semgrep, Honeycomb, Socket).</p>
+    <div class="callout good" style="margin:12px 0 0">
+      <b>Insight que fecha o argumento:</b> as ferramentas que teriam <b>pego os achados de HOJE</b> são todas grátis —
+      <b>loom/shuttle</b> teriam pego as corridas de byte‑accounting (Turbo/CAS) que confirmei agora, e
+      <b>nuclei + Web‑Cache‑Vulnerability‑Scanner</b> teriam pego o cache‑poisoning do brew/turbo. Não temos DAST nem verificação de concorrência hoje — são os 2 maiores buracos.
+    </div>
+  </div>
+
+  <h2>★ TOP‑7 — adotar esta semana (tudo grátis)</h2>
+  <div class="grid cards">
+    <div class="card hi"><span class="tag free">FREE</span><span class="tag">concorrência</span>
+      <h3 style="margin-top:2px;color:var(--ink)">loom + shuttle</h3>
+      <p>Verificação exaustiva de interleavings de threads. <b>Teria pego as corridas TOCTOU de byte‑accounting que achamos hoje</b> (Turbo C1, CAS/AC C2). ROI #1 dado o padrão dos achados.</p>
+      <p class="tl">TL: wire nos hot‑paths de accrue/release e no novo lock per‑key. Vira gate.</p>
+    </div>
+    <div class="card hi"><span class="tag free">FREE</span><span class="tag">DAST</span>
+      <h3 style="margin-top:2px;color:var(--ink)">nuclei + Web‑Cache‑Vulnerability‑Scanner</h3>
+      <p>Nosso <b>maior ponto cego</b>: zero DAST. Sonda cache‑poisoning/abuso nas superfícies HTTP (CAS/AC/REAPI/Turbo/OCI/brew) — exatamente a classe que o nuclear achou no brew (C7) e Turbo.</p>
+      <p class="tl">TL: nightly contra staging; templates próprios pro content‑addressing.</p>
+    </div>
+    <div class="card hi"><span class="tag free">FREE</span><span class="tag">secrets</span>
+      <h3 style="margin-top:2px;color:var(--ink)">gitleaks (pre‑commit) + trufflehog (CI)</h3>
+      <p>Hoje só inventariamos <i>nomes</i> de env. Nada varre commits/histórico por <code>sk_live</code>/<code>whsec</code>/token CF vivos. Crítico — o <code>.env.local</code> tem chaves de prod reais.</p>
+      <p class="tl">TL: pre‑commit bloqueia antes de vazar; CI varre histórico.</p>
+    </div>
+    <div class="card"><span class="tag free">FREE</span><span class="tag">supply‑chain</span>
+      <h3 style="margin-top:2px;color:var(--ink)">grype + trivy</h3>
+      <p>Já <b>geramos</b> SBOM (Cosign/SLSA‑3) mas nunca escaneamos por CVE — nem a imagem OCI. grype lê o SBOM existente; trivy faz imagem + IaC.</p>
+      <p class="tl">TL: roda em runner grátis do GitHub — não toca no Mac.</p>
+    </div>
+    <div class="card"><span class="tag free">FREE</span><span class="tag">CI‑security</span>
+      <h3 style="margin-top:2px;color:var(--ink)">zizmor</h3>
+      <p>SAST de workflows GHA (injection, <code>pull_request_target</code>). Alto valor porque os runners <b>são o Mac do founder</b> (classe tj‑actions/breach).</p>
+      <p class="tl">TL: barato, pega o caminho de exploit mais provável dado self‑hosted.</p>
+    </div>
+    <div class="card"><span class="tag free">FREE</span><span class="tag">perf‑gate</span>
+      <h3 style="margin-top:2px;color:var(--ink)">iai‑callgrind</h3>
+      <p>Gate de regressão por <b>contagem de instruções</b> — imune ao ruído do Mac (roda sob Valgrind no Linux CI, nem toca no Mac). Fecha "não temos gate de performance".</p>
+      <p class="tl">TL: nos kernels quentes — BLAKE3/SHA‑256, Argon2id, framing, accounting D1.</p>
+    </div>
+    <div class="card"><span class="tag free">FREE</span><span class="tag">load‑test</span>
+      <h3 style="margin-top:2px;color:var(--ink)">k6 + oha</h3>
+      <p>Nunca load‑testamos os hot‑paths do cache. Simula bursts de docker‑pull / REAPI findMissing / Turbo PUT multi‑tenant, com thresholds como pass/fail de CI. <b>Reporta contagem de ops R2 por classe — o knob real de COGS.</b></p>
+      <p class="tl">TL: R2 egress é $0; o custo é <b>op‑count</b> (Class‑A PUT = 12,5× Class‑B). Storms de PUT pequeno (Turbo/sccache) são o risco de margem.</p>
+    </div>
+  </div>
+
+  <h2>Tier 1 — adotar em seguida (grátis, aprofunda correção & visibilidade)</h2>
+  <table>
+    <tr><th>Ferramenta</th><th>Área</th><th>O que ganha</th><th>$</th></tr>
+    <tr><td class="pri">Kani</td><td>verificação</td><td>Prova bounded de funções puras (digest/HMAC/idempotência/accounting). Camada de <i>prova</i> acima de proptest+fuzz; alinha com nosso TLA+.</td><td><span class="tag free">FREE</span></td></tr>
+    <tr><td class="pri">proptest‑state‑machine</td><td>verificação</td><td>Correção de sequências de operações em cada superfície de cache (estende o proptest que já temos).</td><td><span class="tag free">FREE</span></td></tr>
+    <tr><td class="pri">OCI distribution‑spec conformance + Schemathesis</td><td>verificação</td><td>Prova as superfícies OCI/REAPI/Turbo contra a spec (+ selo de conformidade). Black‑box → <b>alivia o Mac</b>.</td><td><span class="tag free">FREE</span></td></tr>
+    <tr><td class="pri">dhat‑rs</td><td>performance</td><td>Gate de pico de heap determinístico — endereça os vetores de <b>OOM do container</b> que achamos hoje (Turbo C4/C5). Imune ao ruído do Mac.</td><td><span class="tag free">FREE</span></td></tr>
+    <tr><td class="pri">tokio‑console + samply</td><td>performance</td><td>Stalls de async (<code>block_in_place</code> — usamos!) + flamegraph nativo no macOS.</td><td><span class="tag free">FREE</span></td></tr>
+    <tr><td class="pri">llvm‑cov diff‑coverage GATE + cargo‑semver‑checks + insta</td><td>verificação</td><td>Já temos <code>cargo‑llvm‑cov</code>+<code>nextest</code> mas a cobertura é <b>só relatório (não falha)</b>. Liga o gate; semver‑checks trava breaking nas crates; insta = snapshot dos wire‑formats/JSON do money‑path.</td><td><span class="tag free">FREE</span></td></tr>
+    <tr><td class="pri">OTel → Grafana Cloud (free) + Workers Observability + Analytics Engine</td><td>perf/obs</td><td>Um backend pro container + edge; substrato pra dashboards de <b>COGS por tenant/request</b>.</td><td><span class="tag free">FREE</span></td></tr>
+    <tr><td class="pri">Blacksmith</td><td>CI</td><td><b>Tirar a CI do Mac compartilhado</b> — 3.000 min/mês grátis, swap drop‑in de <code>runs‑on:</code>, ~2× mais rápido. Meta‑fix da nossa dor crônica.</td><td><span class="tag free">FREE (3k min)</span></td></tr>
+  </table>
+
+  <h2>Vale pagar (pouco $, alto valor)</h2>
+  <table>
+    <tr><th>Ferramenta</th><th>Pra quê</th><th>Custo real</th><th>TL diz</th></tr>
+    <tr><td class="pri">CodSpeed</td><td>Gate de perf gerenciado no PR ("iai‑callgrind as a service"), dashboard de histórico</td><td><b>$0 pra nós hoje</b> (free ≤5 users em repo privado); $15/user/mês Pro</td><td>Adotar grátis já</td></tr>
+    <tr><td class="pri">Caido Pro</td><td>Proxy interceptador (Rust) pra sessões manuais de authz / isolamento de tenant</td><td><b>~$10/mês</b> (CE grátis pra começar)</td><td>Único cash novo que recomendo já</td></tr>
+    <tr><td class="pri">Honeycomb</td><td>Caça de latência multi‑tenant (BubbleUp, classe‑líder)</td><td><b>Grátis 20M eventos/mês</b>; paga só acima</td><td>Free tier cobre o launch</td></tr>
+    <tr><td class="pri">Semgrep platform + Assistant</td><td>Dataflow cross‑file + triagem por IA (já usamos Semgrep local)</td><td><b>$0</b> (1 contribuidor → Pro grátis)</td><td>Ligar o free tier</td></tr>
+    <tr><td class="pri">Socket.dev</td><td>Detecção comportamental de pacote npm malicioso (além de CVE)</td><td>Free tier; pago escala por seat</td><td>Free tier já</td></tr>
+    <tr><td class="pri">Namespace / Depot</td><td>Runners de CI cache‑native (on‑brand: somos cache). Bazel/Turbo‑native = inteligência competitiva</td><td>Namespace ~$100/mês Team · Depot ~$0,004/min após 2k</td><td>Só quando passar do free do Blacksmith / quando a frota de runners (campanha #1) existir</td></tr>
+  </table>
+
+  <h3>Pular (intangível / caro demais)</h3>
+  <p class="muted">Antithesis ($20k–$100k+/ano — melhor DST autônomo, mas enterprise/forma errada pré‑receita) · Burp Pro ($475/ano — nuclei+Caido cobrem) · WAF/RASP de terceiros (Cloudflare já dá) · OPA/Rego (redundante) · k6 Cloud · cargo‑vet completo.</p>
+
+  <h2>Plano de execução (faseado)</h2>
+  <ol class="steps">
+    <li><b>Semana 1 — blindagem grátis, fora do Mac:</b> loom/shuttle nos hot‑paths de concorrência · gitleaks pre‑commit + trufflehog CI · grype+trivy+zizmor em runner grátis do GitHub · nuclei + WCVS nightly contra staging. <span class="muted">(fecha os 2 maiores buracos: concorrência + DAST/cache‑poisoning)</span></li>
+    <li><b>Semana 2 — correção & perf:</b> iai‑callgrind + dhat (gates de instrução/heap) · suíte k6 reportando op‑class · Kani nos kernels de digest/HMAC/accounting · ligar o gate de diff‑coverage (llvm‑cov) · <b>Blacksmith</b> pra mover a CI do Mac.</li>
+    <li><b>Contínuo / pago‑quando‑justifica:</b> CodSpeed (grátis agora) · Honeycomb (free tier) · Caido Pro ($10/mês) · OCI/REAPI conformance no CI · Namespace/Depot quando a frota de runners da campanha #1 chegar.</li>
+  </ol>
+
+  <h2>O que cada levantamento já confirmou do nosso estado</h2>
+  <div class="grid cards">
+    <div class="card"><h3 style="color:var(--ink)">Já temos (não duplicar)</h3>
+      <p class="muted">Semgrep, cargo‑fuzz (18 targets/10 crates), Cosign keyless + SLSA‑3 + SBOM (cyclonedx), action‑sha‑audit + actionlint, CodeQL, cargo‑deny/audit, cargo‑mutants, proptest, TLA+, reproducible‑build, cargo‑llvm‑cov + nextest (mas <b>cobertura não‑gated</b>).</p>
+    </div>
+    <div class="card"><h3 style="color:var(--ink)">3 maiores buracos — segurança</h3>
+      <p>① Sem credential‑scanning de fonte/histórico. ② <b>Zero DAST</b> e zero teste de cache‑poisoning nas superfícies‑joia. ③ Artefato/imagem nunca escaneados por CVE + workflows GHA não‑SAST'd (apesar do SHA‑pin manual).</p>
+    </div>
+    <div class="card"><h3 style="color:var(--ink)">3 maiores buracos — verificação</h3>
+      <p>① <b>Sem verificação de concorrência</b> (= a corrida que escapou hoje) → loom+shuttle. ② Sem conformance de protocolo OCI/Bazel/Turbo. ③ Cobertura medida mas não‑gated + sem contratos executáveis cross‑crate/wire.</p>
+    </div>
+    <div class="card"><h3 style="color:var(--ink)">3 maiores buracos — performance</h3>
+      <p>① Sem gate de regressão nos hot‑paths. ② Sem load/stress dos APIs de cache (RPS de quebra desconhecido). ③ <b>Sem atribuição de COGS por request</b> (margem é afirmada, não medida) — o knob é op‑count R2, não egress.</p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <b>Flags de verificação (preços/versões que se movem):</b> tiers exatos do CodSpeed, free‑tier 2026 do Grafana/Honeycomb, status do Baselime pós‑aquisição Cloudflare, nome canônico atual do crate iai‑callgrind, limites de repo privado do Codecov, pricing do Antithesis. Confirmar antes de comprometer.
+  </div>
+
+  <p class="foot">
+    Fontes (relatórios completos, gerados por 3 agentes Opus hoje):
+    <code>docs/research/2026-06-17-sota-security-hardening.md</code> ·
+    <code>docs/research/2026-06-17-sota-verification-audit.md</code> ·
+    <code>docs/research/2026-06-17-sota-performance.md</code>.
+    Recomendações e priorização: CoreLink Tech Lead.
+  </p>
+
+</div>
+</body>
+</html>
