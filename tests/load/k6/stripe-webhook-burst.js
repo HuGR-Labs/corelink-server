@@ -24,7 +24,7 @@
 //
 // USAGE
 // -----
-//   K6_TARGET_HOST=https://staging.corelink.dev \
+//   K6_TARGET_HOST=https://staging.corelink.humangr.com \
 //   K6_STRIPE_WHSEC=$STAGING_WHSEC \
 //   k6 run tests/load/k6/stripe-webhook-burst.js
 
@@ -33,7 +33,7 @@ import crypto from 'k6/crypto';
 import { check } from 'k6';
 import { Counter } from 'k6/metrics';
 
-const TARGET_HOST = __ENV.K6_TARGET_HOST || 'https://staging.corelink.dev';
+const TARGET_HOST = __ENV.K6_TARGET_HOST || 'https://staging.corelink.humangr.com';
 const STRIPE_WHSEC = __ENV.K6_STRIPE_WHSEC || '';
 
 // setup() runs once per test; module-load runs ALSO during `k6 inspect`

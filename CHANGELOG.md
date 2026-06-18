@@ -60,8 +60,19 @@ Each entry cross-references:
   subject is rejected at federation time. No behavior change for the one intended principal.
 - **Bumped `ws` 7.5.10 → 7.5.11 (CVE-2026-48779)** via a pnpm override. Transitive dev-tooling dep
   (Lighthouse/puppeteer CI perf-audit graph), not the production runtime; patch bump within v7.
+- **R2 op-class COGS instrumentation on the k6 cache load tests.** New
+  `tests/load/k6/lib/cogs.js` attributes synthetic cache traffic to R2 op-classes
+  (Class-A writes $4.50/1M, Class-B reads $0.36/1M — egress is $0, op-count is the COGS knob)
+  and prints an estimated $ cost + `$/1M cache ops` in the summary. Wired into `cas-write-read.js`
+  (Class-A per successful CAS write; Class-B per cache MISS — a HIT serves from edge ≈ 0 R2 GET).
+  First-order model (documented caveats); turns "margin asserted" into "margin measured".
 
 ### Fixed
+- **k6 load tests defaulted their target host to the third-party `staging.corelink.dev` domain.**
+  `corelink.dev` is an unrelated company (CoreLink Development); a local run without
+  `K6_TARGET_HOST` set would have aimed load traffic at someone else's domain. Retargeted the
+  default to our `staging.corelink.humangr.com` (matching the endurance workflow) across the suite;
+  CI is unaffected (it always sets `K6_TARGET_HOST` from a validated staging secret).
 - **CAS *write*-vs-*delete* byte-accounting race on the AC plane (rt-nuclear verify, C2 sibling).** The
   `AccountingAcHandler` `update()`/`delete()` decorators shared no per-key lock (only the CAS handler did),
   so a concurrent AC `update` + `delete` of the same `action_digest` released a stale `reclaimed_bytes` →
