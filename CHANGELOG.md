@@ -50,6 +50,12 @@ Each entry cross-references:
   `docs/security/2026-06-18-gitleaks-baseline-triage.md`.
 
 ### Security
+- **Turbo `/v8/artifacts/events` could starve real cache writes (rt-nuclear cycle-2 #4/#8).** The
+  accept-and-drop telemetry route shared the process-wide PUT write budget (`GlobalPutBudgetGuard`), so
+  a telemetry flood / slow-body `/events` POST held PUT permits and 503'd legitimate Turbo cache writes
+  fleet-wide (cross-plane DoS at ~$0 attacker cost). `/events` now holds a permit from its OWN dedicated
+  budget (`EventsBudgetGuard` / `GLOBAL_TURBO_EVENTS_PERMITS`), isolating telemetry from writes while
+  preserving the original OOM bound (≤ permits × 64 KiB) on the events pool.
 - **Read-only PAT could revoke/enumerate ANY credential in its tenant (rt-nuclear cycle-2 #7).**
   `handle_keys_revoke` and `handle_keys_list` (customer plane) gated only on tenant + PAT possession —
   not scope — so a `cas:r` cache-pull token could revoke the owner's PAT (intra-tenant credential-DoS /
