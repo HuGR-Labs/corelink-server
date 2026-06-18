@@ -24,7 +24,7 @@
 //
 // USAGE
 // -----
-//   K6_TARGET_HOST=https://staging.corelink.dev \
+//   K6_TARGET_HOST=https://staging.corelink.humangr.com \
 //   K6_AUTH_BEARER=$STAGING_PAT \
 //   k6 run tests/load/k6/signup-orchestration.js
 //
@@ -39,7 +39,7 @@ import { randomString } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
 // ─────────────────────────────────────────────────────────────────────────
 // Target host + auth resolution.
 // ─────────────────────────────────────────────────────────────────────────
-const TARGET_HOST = __ENV.K6_TARGET_HOST || 'https://staging.corelink.dev';
+const TARGET_HOST = __ENV.K6_TARGET_HOST || 'https://staging.corelink.humangr.com';
 const AUTH_BEARER = __ENV.K6_AUTH_BEARER || '';
 
 // Extract hostname without using the WHATWG URL global (k6/goja lacks it).

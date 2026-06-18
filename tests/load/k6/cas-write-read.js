@@ -31,8 +31,9 @@ import crypto from 'k6/crypto';
 import { check } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
 import { SharedArray } from 'k6/data';
+import { recordClassA, recordClassB, formatCogs, cogsBlock } from './lib/cogs.js';
 
-const TARGET_HOST = __ENV.K6_TARGET_HOST || 'https://staging.corelink.dev';
+const TARGET_HOST = __ENV.K6_TARGET_HOST || 'https://staging.corelink.humangr.com';
 const AUTH_BEARER = __ENV.K6_AUTH_BEARER || '';
 
 // Defer env-required gate to setup() (k6 inspect runs module-load only).
@@ -121,8 +122,12 @@ export function putBlob() {
     tags: { endpoint: 'cas_put' },
   });
   putLatency.add(res.timings.duration);
+  const putOk = res.status === 200 || res.status === 201 || res.status === 204;
+  // COGS: a successful CAS write drives one R2 Class-A PutObject (first-order;
+  // a dedup HEAD on an already-present digest would instead be Class-B).
+  if (putOk) recordClassA(1);
   check(res, {
-    'put 200/201/204': (r) => r.status === 200 || r.status === 201 || r.status === 204,
+    'put 200/201/204': () => putOk,
   });
 }
 
@@ -144,7 +149,12 @@ export function getBlob() {
   // `crates/corelink-cas/src/headers.rs`).
   const cacheHeader = res.headers['X-Corelink-Cache'] || res.headers['x-corelink-cache'];
   if (cacheHeader === 'hit') cacheHit.add(1);
-  else if (cacheHeader === 'miss') cacheMiss.add(1);
+  else if (cacheHeader === 'miss') {
+    cacheMiss.add(1);
+    // COGS: a cache MISS falls through to one R2 Class-B GetObject; a HIT is
+    // served from edge and drives ~0 R2 reads.
+    recordClassB(1);
+  }
 
   check(res, {
     'get 2xx or 404 (seed cold)': (r) => (r.status >= 200 && r.status < 300) || r.status === 404,
@@ -162,8 +172,11 @@ export function handleSummary(data) {
   const ratioOk = ratio >= 0.9;
   // eslint-disable-next-line no-console
   console.log(`CAS GET hit-ratio = ${(ratio * 100).toFixed(2)}% (${hits}/${total}) — floor 90% → ${ratioOk ? 'PASS' : 'FAIL'}`);
+  // eslint-disable-next-line no-console
+  console.log(formatCogs(data));
 
+  const cogs = cogsBlock(data);
   return {
-    'stdout': JSON.stringify({ cache_hit_ratio: ratio, hit_ratio_pass: ratioOk }, null, 2),
+    'stdout': JSON.stringify({ cache_hit_ratio: ratio, hit_ratio_pass: ratioOk, r2_cogs: cogs }, null, 2),
   };
 }

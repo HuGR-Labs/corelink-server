@@ -33,7 +33,7 @@ import { check } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
 import { randomString } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
 
-const TARGET_HOST = __ENV.K6_TARGET_HOST || 'https://staging.corelink.dev';
+const TARGET_HOST = __ENV.K6_TARGET_HOST || 'https://staging.corelink.humangr.com';
 const AUTH_BEARER = __ENV.K6_AUTH_BEARER || '';
 const MFA_STUB    = __ENV.K6_MFA_STUB_TOKEN || '';
 

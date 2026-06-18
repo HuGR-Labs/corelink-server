@@ -76,10 +76,10 @@
 //
 // USAGE (CI 2h nightly):
 //   DURATION=2h \
-//   K6_TARGET_HOST=https://staging.corelink.dev \
+//   K6_TARGET_HOST=https://staging.corelink.humangr.com \
 //   K6_AUTH_BEARER=$STAGING_PAT \
 //   K6_ENDURANCE_CONFIRM=yes \
-//   K6_PROMETHEUS_RW_SERVER_URL=https://prom-rw.staging.corelink.dev/api/v1/write \
+//   K6_PROMETHEUS_RW_SERVER_URL=https://prom-rw.staging.corelink.humangr.com/api/v1/write \
 //   k6 run --out experimental-prometheus-rw \
 //     tests/load/k6/scenarios/endurance-24h.js
 //
@@ -94,7 +94,7 @@ import { SharedArray } from 'k6/data';
 // ─────────────────────────────────────────────────────────────────────────
 // Env + safety
 // ─────────────────────────────────────────────────────────────────────────
-const TARGET_HOST = __ENV.K6_TARGET_HOST || 'https://staging.corelink.dev';
+const TARGET_HOST = __ENV.K6_TARGET_HOST || 'https://staging.corelink.humangr.com';
 const AUTH_BEARER = __ENV.K6_AUTH_BEARER || '';
 const DURATION = __ENV.DURATION || '24h';
 const VUS = parseInt(__ENV.VUS || '50', 10);
