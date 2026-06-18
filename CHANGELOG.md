@@ -22,6 +22,23 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Changed
+- **Consolidated SAFE minor/patch JS/Node dependency bumps** across the workspace
+  (dependabot groups `root-tooling-minor-patch` #339, `apps/admin-ui` npm-minor-patch
+  #289, `apps/docs` docs-minor-patch #314). Touches root + every `apps/*` +
+  `worker` `package.json` and regenerates `pnpm-lock.yaml`: `wrangler` →4.101.0,
+  `@cloudflare/workers-types` →4.20260617.1, `@cloudflare/vitest-pool-workers` →0.16.16,
+  `miniflare` →4.20260616.0, `@vitest/coverage-istanbul` →4.1.9; admin-ui `react`/
+  `react-dom`/`@types/react*` →19.2.x, `@radix-ui/*`, `@tailwindcss/postcss`/`tailwindcss`
+  →4.3.1, `@playwright/test` →1.61.0, `happy-dom` →20.10.6; docs `@sentry/browser`
+  →10.58.0, `@typescript-eslint/*` →8.61.1, `protobufjs` →8.6.4. **No framework majors:**
+  the two MAJOR dependabot groups (`#290` admin-ui-major — Next 16 / Clerk / Stripe /
+  Sentry, and `#315` docs-major — eslint 10) are intentionally **DEFERRED to a QA'd
+  post-launch upgrade** because they break the CI `lint` gates and are runtime-risky on
+  the launch checkout UI. Verified: admin-ui + docs build/typecheck/**lint** green;
+  worker/analytics/get-corelink/signup typecheck green; `next@15.5.18`, `eslint@9`,
+  `@clerk/nextjs@6`, `@stripe/stripe-js@4`, `@sentry/nextjs@8` unchanged.
+
 ### Added
 - **githugr Clerk sessions on the exchange seams (multi-issuer, Option B).** `/v1/session/exchange` and
   `/internal/v1/auth/token-exchange` now accept sessions from the SEPARATE githugr Clerk instance
