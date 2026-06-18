@@ -87,6 +87,13 @@ jobs:
     timeout-minutes: 10
     if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
 
+    # Pass the PR base branch via env (NOT interpolated directly into run: shell) —
+    # template-injection-safe (a branch name can carry shell metacharacters). The
+    # actor-guard above already restricts this pull_request_target job to dependabot,
+    # so this is defense-in-depth.
+    env:
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+
     steps:
       # ---------------------------------------------------------------------
       # Step 1 — Checkout the PR head so we can inspect Cargo.lock diffs.
@@ -172,7 +179,7 @@ jobs:
           set -euo pipefail
           banned_regex='(AGPL|GPL-[23]|SSPL|Commons-Clause|BUSL|CDLA-Sharing)'
           found=0
-          for f in $(git diff --name-only "origin/${{ github.event.pull_request.base.ref }}"...HEAD -- '*package-lock.json' '*pnpm-lock.yaml' 'apps/**/package.json' 'crates/**/package.json' 'package.json' 2>/dev/null || true); do
+          for f in $(git diff --name-only "origin/$BASE_REF"...HEAD -- '*package-lock.json' '*pnpm-lock.yaml' 'apps/**/package.json' 'crates/**/package.json' 'package.json' 2>/dev/null || true); do
             if grep -E "\"license\".*${banned_regex}" "$f" 2>/dev/null; then
               echo "::error::Banned license in $f"
               found=1
@@ -189,7 +196,7 @@ jobs:
       - name: Forbid skip-hook / skip-ci flags
         run: |
           set -euo pipefail
-          base="origin/${{ github.event.pull_request.base.ref }}"
+          base="origin/$BASE_REF"
           if git log "${base}"..HEAD --format=%B | grep -E -- '--no-verify|--no-gpg-sign|\[skip ci\]|\[ci skip\]'; then
             echo "::error::Dependabot PR contains skip-hook/skip-ci marker — policy violation."
             exit 1
@@ -204,7 +211,7 @@ jobs:
       - name: Forbid governance-file modifications
         run: |
           set -euo pipefail
-          base="origin/${{ github.event.pull_request.base.ref }}"
+          base="origin/$BASE_REF"
           mapfile -t changed < <(git diff --name-only "${base}"...HEAD)
           forbidden_regex='^(\.github/(CODEOWNERS|workflows/.*\.yml|dependabot\.yml)|SECURITY\.md|deny\.toml|cosign\.pub|\.well-known/.*|specs/_security/.*)$'
           violations=()
