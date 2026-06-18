@@ -47,6 +47,7 @@
 //! unreachable, corrupt row) surface as [`VerifyError::Backend`].
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -197,6 +198,25 @@ const ARGON2_PER_TENANT_PERMITS: usize = {
     }
 };
 
+/// Upper bound on the number of live per-tenant Argon2id semaphores the
+/// verifier retains (#1/#12 follow-up: bound the per-tenant map growth). The
+/// `per_tenant_permits` map lazily creates one `Arc<Semaphore>` per distinct
+/// real `tenant_id`; with NO bound it accumulates one entry forever — a slow
+/// unbounded-memory creep over a long-running container. We cap it as an LRU:
+/// when the map is full and a NEW tenant must be inserted, we evict the
+/// least-recently-used entry **that is fully idle** (see
+/// [`PatVerifier::per_tenant_semaphore`]).
+///
+/// 10k is deliberately generous: each entry is tiny (a `String` key + an
+/// `Arc<Semaphore>`, well under ~100 B), so the whole map is ~MB-scale even
+/// full — far below the Argon2id `m_cost` pressure the permits themselves
+/// guard. A real SMB fleet has far fewer than 10k *concurrently-active*
+/// tenants, so steady-state eviction is rare; the cap exists to defeat a
+/// long-tail / adversarial churn of distinct tenant_ids, not to throttle
+/// legitimate multi-tenancy. A re-inserted evicted tenant simply recreates an
+/// (idle) semaphore — semantically identical to never having evicted it.
+const PER_TENANT_MAP_CAP: usize = 10_000;
+
 /// Synthetic per-tenant bucket key for the None-row timing-parity dummy burn
 /// (finding #12, defence-in-depth). A valid-HMAC token for a NON-existent /
 /// expired / revoked token_id has no real owning tenant, yet the dummy Argon2id
@@ -213,6 +233,17 @@ const UNKNOWN_TOKEN_BUCKET: &str = "\0argon2-dummy-burn-bucket\0";
 /// than this is better served a fast fail-CLOSED than a stalled request that
 /// holds an async task (and its connection) hostage under a DoS flood.
 const ARGON2_PERMIT_WAIT: Duration = Duration::from_millis(250);
+
+/// One entry in the bounded per-tenant Argon2id semaphore LRU
+/// (`PatVerifier::per_tenant_permits`): the tenant's `Arc<Semaphore>` plus the
+/// monotonic tick at which it was last touched (created or fetched). The tick
+/// orders the LRU; the smallest tick among the **idle** entries is the eviction
+/// candidate. Cloning yields a fresh `Arc` clone of the same semaphore.
+#[derive(Clone)]
+struct PerTenantEntry {
+    sem: Arc<Semaphore>,
+    last_access: u64,
+}
 
 /// Container-side PAT → tenant verifier (Option B). Trait-agnostic: each
 /// adapter route module wraps an `Arc<PatVerifier>` in a thin newtype
@@ -245,11 +276,28 @@ pub struct PatVerifier {
     /// work or the async acquire (it is dropped before either). FAIL-SAFE: a
     /// poisoned lock falls back to global-only bounding (a bookkeeping fault
     /// must never block a legitimate auth) -- see [`Self::per_tenant_semaphore`].
-    per_tenant_permits: Arc<Mutex<HashMap<String, Arc<Semaphore>>>>,
+    ///
+    /// BOUNDED (#1/#12 follow-up): the map is an LRU capped at
+    /// [`Self::per_tenant_map_cap`]. Each entry carries its semaphore plus a
+    /// monotonic last-access tick (the [`PerTenantEntry`]); on a get-or-insert
+    /// that would exceed the cap, the least-recently-used **fully-idle** entry
+    /// is evicted first (never an active/contended one, never the shared
+    /// [`UNKNOWN_TOKEN_BUCKET`]). This caps the steady-state memory the map can
+    /// retain without ever disrupting an in-flight verify.
+    per_tenant_permits: Arc<Mutex<HashMap<String, PerTenantEntry>>>,
+    /// Monotonic clock for the LRU recency order on `per_tenant_permits`. Bumped
+    /// on every get-or-insert; the smallest tick is the least-recently-used.
+    /// `u64` never realistically wraps (one tick per verify ⇒ ~10^11 years at
+    /// 1M/s), so a simple increment is sound.
+    per_tenant_tick: Arc<AtomicU64>,
     /// The cap each per-tenant semaphore is created with
     /// ([`ARGON2_PER_TENANT_PERMITS`] in production). A field (not a const) so a
     /// test can shrink it to drive the two-tier interaction deterministically.
     per_tenant_cap: usize,
+    /// LRU capacity of the `per_tenant_permits` map
+    /// ([`PER_TENANT_MAP_CAP`] in production). A field (not a const) so a test
+    /// can shrink it to drive the eviction path deterministically.
+    per_tenant_map_cap: usize,
 }
 
 impl std::fmt::Debug for PatVerifier {
@@ -288,8 +336,11 @@ impl PatVerifier {
             argon2_permits: Arc::new(Semaphore::new(ARGON2_VERIFY_PERMITS)),
             // Per-tenant fairness sub-limit (finding #1). Empty map; tenant
             // semaphores are created lazily on first verify for that tenant.
+            // BOUNDED LRU (#1/#12 follow-up): capped at PER_TENANT_MAP_CAP.
             per_tenant_permits: Arc::new(Mutex::new(HashMap::new())),
+            per_tenant_tick: Arc::new(AtomicU64::new(0)),
             per_tenant_cap: ARGON2_PER_TENANT_PERMITS,
+            per_tenant_map_cap: PER_TENANT_MAP_CAP,
         }
     }
 
@@ -363,9 +414,24 @@ impl PatVerifier {
     /// still protects against OOM; we merely lose per-tenant fairness for the
     /// rare poisoned-lock window.
     ///
-    /// The `Mutex` is held ONLY for the brief get-or-insert and is dropped
-    /// before the caller awaits the (async) permit acquire or runs Argon2id —
-    /// so it never serializes the verify path nor risks a lock-across-await.
+    /// The `Mutex` is held ONLY for the brief get-or-insert (+ any LRU
+    /// eviction) and is dropped before the caller awaits the (async) permit
+    /// acquire or runs Argon2id — so it never serializes the verify path nor
+    /// risks a lock-across-await.
+    ///
+    /// BOUNDED LRU (#1/#12 follow-up): the map is capped at
+    /// [`Self::per_tenant_map_cap`]. A get bumps the entry's recency tick. An
+    /// insert that would exceed the cap first evicts the least-recently-used
+    /// entry **that is fully idle** — `available_permits() == per_tenant_cap`,
+    /// i.e. no in-flight verify holds any of its permits — so eviction can never
+    /// disrupt an active or contended tenant. The shared
+    /// [`UNKNOWN_TOKEN_BUCKET`] is NEVER an eviction candidate. If no idle entry
+    /// can be freed (every entry is in-flight — pathological, far beyond a 10k
+    /// real-tenant working set), we skip eviction and let the map grow past the
+    /// cap transiently rather than block/evict an active tenant; it shrinks back
+    /// as those verifies complete and a later insert finds an idle victim.
+    /// Re-inserting an evicted tenant simply recreates its (idle) semaphore —
+    /// semantically identical.
     fn per_tenant_semaphore(&self, tenant: &str) -> Option<Arc<Semaphore>> {
         let mut map = match self.per_tenant_permits.lock() {
             Ok(guard) => guard,
@@ -373,12 +439,55 @@ impl PatVerifier {
             // NOT block auth on bookkeeping — fall back to global-only.
             Err(_poisoned) => return None,
         };
-        if let Some(sem) = map.get(tenant) {
-            return Some(Arc::clone(sem));
+        let tick = self.per_tenant_tick.fetch_add(1, Ordering::Relaxed);
+        if let Some(entry) = map.get_mut(tenant) {
+            entry.last_access = tick; // touch ⇒ most-recently-used
+            return Some(Arc::clone(&entry.sem));
+        }
+        // New tenant. Enforce the LRU cap BEFORE inserting: if at/over capacity,
+        // evict the least-recently-used FULLY-IDLE entry (never the shared
+        // UNKNOWN_TOKEN_BUCKET, never an in-flight tenant).
+        if map.len() >= self.per_tenant_map_cap {
+            self.evict_one_idle(&mut map);
         }
         let sem = Arc::new(Semaphore::new(self.per_tenant_cap));
-        map.insert(tenant.to_owned(), Arc::clone(&sem));
+        map.insert(
+            tenant.to_owned(),
+            PerTenantEntry {
+                sem: Arc::clone(&sem),
+                last_access: tick,
+            },
+        );
         Some(sem)
+    }
+
+    /// Evict the single least-recently-used entry that is SAFE to drop: fully
+    /// idle (`available_permits() == per_tenant_cap` ⇒ no in-flight verify holds
+    /// a permit) and NOT the shared [`UNKNOWN_TOKEN_BUCKET`]. If no such entry
+    /// exists, evict nothing (the map grows transiently past the cap rather than
+    /// disrupt an active tenant). Caller holds the map lock.
+    fn evict_one_idle(&self, map: &mut HashMap<String, PerTenantEntry>) {
+        let mut victim: Option<(&str, u64)> = None;
+        for (key, entry) in map.iter() {
+            // SAFETY INVARIANTS for eviction:
+            //  - never the synthetic dummy-burn bucket (must always exist), and
+            //  - only a fully-idle semaphore (no permit checked out) so an
+            //    active/contended tenant is never disrupted.
+            if key == UNKNOWN_TOKEN_BUCKET {
+                continue;
+            }
+            if entry.sem.available_permits() != self.per_tenant_cap {
+                continue; // in-flight verify(s) for this tenant — do not evict
+            }
+            match victim {
+                Some((_, best_tick)) if entry.last_access >= best_tick => {}
+                _ => victim = Some((key.as_str(), entry.last_access)),
+            }
+        }
+        if let Some((key, _)) = victim {
+            let key = key.to_owned();
+            map.remove(&key);
+        }
     }
 
     /// Acquire the per-tenant Argon2id permit for `tenant` under the same
@@ -551,6 +660,23 @@ impl PatVerifier {
         Ok((row.tenant_id, can_write))
     }
 
+    /// Test-only: shrink the per-tenant LRU map cap so the eviction path can be
+    /// driven deterministically (the production cap of 10k is too large to fill
+    /// in a unit test). Returns `self` for chaining off a constructor.
+    #[cfg(test)]
+    #[must_use]
+    fn with_map_cap(mut self, cap: usize) -> Self {
+        self.per_tenant_map_cap = cap;
+        self
+    }
+
+    /// Test-only: current number of live per-tenant semaphore entries (LRU map
+    /// size). Used to assert the map stays bounded under distinct-tenant churn.
+    #[cfg(test)]
+    fn per_tenant_map_len(&self) -> usize {
+        self.per_tenant_permits.lock().expect("map lock").len()
+    }
+
     /// Test-only constructor that overrides the Argon2id concurrency bound so
     /// a unit test can drive the semaphore to exhaustion deterministically
     /// (the production const is too large to fill in a test). Not part of the
@@ -587,7 +713,9 @@ impl PatVerifier {
             signing_keys: Arc::new(signing_keys),
             argon2_permits: Arc::new(Semaphore::new(permits)),
             per_tenant_permits: Arc::new(Mutex::new(HashMap::new())),
+            per_tenant_tick: Arc::new(AtomicU64::new(0)),
             per_tenant_cap: per_tenant_permits,
+            per_tenant_map_cap: PER_TENANT_MAP_CAP,
         }
     }
 
@@ -1145,5 +1273,114 @@ mod tests {
         );
         // (pt1 unused beyond minting — it shares the bucket identity with pt2.)
         let _ = pt1;
+    }
+
+    /// BOUNDED-MAP INVARIANT (#1/#12 follow-up): the per-tenant semaphore map
+    /// must stay bounded under a churn of MANY distinct tenants, while an
+    /// actively-contended tenant's bucket is NEVER evicted.
+    ///
+    /// Setup: map cap = 4 (tiny, so eviction fires fast). We pin tenant
+    /// "active" by HOLDING a permit on its bucket (an in-flight verify ⇒ NOT
+    /// fully idle ⇒ ineligible for eviction). Then we touch 50 fresh distinct
+    /// tenant_ids through the SAME get-or-insert path the verify uses. We assert:
+    ///   (a) the map never exceeds the cap (bounded — no unbounded creep), and
+    ///   (b) the "active" tenant's exact `Arc<Semaphore>` is still resident and
+    ///       identical (same allocation) — contention shields it from eviction.
+    #[tokio::test]
+    async fn per_tenant_map_is_bounded_but_keeps_contended_tenant() {
+        let key = test_key();
+        let lookup = Arc::new(FakeLookup::empty());
+        // Map cap 4; per-tenant cap 2; global plenty (irrelevant here — we
+        // exercise per_tenant_semaphore directly).
+        let verifier = PatVerifier::with_key_set_and_permits_per_tenant(
+            lookup,
+            vec![(*key).clone()],
+            8,
+            2,
+        )
+        .with_map_cap(4);
+
+        // Pin an actively-contended tenant: create its bucket and HOLD one of
+        // its permits, so it is NOT fully idle (available < per_tenant_cap) and
+        // must never be evicted.
+        let active = "active-tenant";
+        let active_sem = verifier
+            .per_tenant_semaphore(active)
+            .expect("active tenant sem");
+        let _hold = Arc::clone(&active_sem)
+            .try_acquire_owned()
+            .expect("hold one active permit");
+        assert!(
+            active_sem.available_permits() < 2,
+            "active tenant has an in-flight permit ⇒ not idle"
+        );
+        let active_ptr = Arc::as_ptr(&active_sem);
+
+        // Churn 50 distinct fresh tenants through the same path verify uses.
+        for i in 0..50 {
+            let t = format!("churn-tenant-{i}");
+            let _ = verifier.per_tenant_semaphore(&t).expect("churn tenant sem");
+            // (a) BOUNDED: the map never exceeds its cap under churn.
+            assert!(
+                verifier.per_tenant_map_len() <= 4,
+                "map must stay bounded (≤ cap) — got {} at i={i}",
+                verifier.per_tenant_map_len()
+            );
+        }
+
+        // (b) The contended tenant survived the entire churn — same key AND the
+        // SAME underlying semaphore allocation (never evicted+recreated).
+        let still = verifier
+            .per_tenant_semaphore(active)
+            .expect("active tenant still resident");
+        assert_eq!(
+            Arc::as_ptr(&still),
+            active_ptr,
+            "an actively-contended tenant must NOT be evicted (same Arc)"
+        );
+        assert!(
+            still.available_permits() < 2,
+            "and its held permit is still accounted (no reset via eviction)"
+        );
+    }
+
+    /// The shared synthetic dummy-burn bucket ([`UNKNOWN_TOKEN_BUCKET`]) must
+    /// NEVER be evicted, even when it is fully idle and the LRU is over capacity
+    /// and churning — evicting it would lose the bounded dummy-burn cap.
+    #[tokio::test]
+    async fn unknown_token_bucket_is_never_evicted() {
+        let key = test_key();
+        let lookup = Arc::new(FakeLookup::empty());
+        let verifier = PatVerifier::with_key_set_and_permits_per_tenant(
+            lookup,
+            vec![(*key).clone()],
+            8,
+            2,
+        )
+        .with_map_cap(3);
+
+        // Create the synthetic bucket (idle — no in-flight burn), exactly as the
+        // None-row dummy-burn path does, then leave it untouched (LRU-stale).
+        let dummy = verifier
+            .per_tenant_semaphore(UNKNOWN_TOKEN_BUCKET)
+            .expect("dummy bucket");
+        let dummy_ptr = Arc::as_ptr(&dummy);
+
+        // Churn well past the cap. The dummy bucket is fully idle and becomes
+        // the least-recently-used entry, yet must be exempt from eviction.
+        for i in 0..30 {
+            let t = format!("churn-{i}");
+            let _ = verifier.per_tenant_semaphore(&t).expect("churn");
+            assert!(verifier.per_tenant_map_len() <= 3, "bounded under churn");
+        }
+
+        let still = verifier
+            .per_tenant_semaphore(UNKNOWN_TOKEN_BUCKET)
+            .expect("dummy bucket must still be resident");
+        assert_eq!(
+            Arc::as_ptr(&still),
+            dummy_ptr,
+            "UNKNOWN_TOKEN_BUCKET must never be evicted (same Arc)"
+        );
     }
 }
