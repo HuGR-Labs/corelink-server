@@ -55,7 +55,7 @@ _Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` wit
 
 ```bash
 curl -X POST \
-  'https://api.corelink.humangr.com/v1/admin/ops/00000000-0000-7000-8000-000000000000/approve' \
+  'https://corelink-api.humangr.com/v1/admin/ops/00000000-0000-7000-8000-000000000000/approve' \
   -H 'Authorization: Bearer <YOUR_PAT>' \
   -H 'X-Admin-Operation-Reason: string'
 ```
@@ -70,7 +70,7 @@ use serde_json::Value;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let resp = client
-        .post("https://api.corelink.humangr.com/v1/admin/ops/00000000-0000-7000-8000-000000000000/approve")
+        .post("https://corelink-api.humangr.com/v1/admin/ops/00000000-0000-7000-8000-000000000000/approve")
         .header("Authorization", "Bearer <YOUR_PAT>")
         .header("X-Admin-Operation-Reason", "string")
         .send()
@@ -93,7 +93,7 @@ def main() -> None:
         "X-Admin-Operation-Reason": "string",
     }
     resp = httpx.post(
-        "https://api.corelink.humangr.com/v1/admin/ops/00000000-0000-7000-8000-000000000000/approve",
+        "https://corelink-api.humangr.com/v1/admin/ops/00000000-0000-7000-8000-000000000000/approve",
         headers=headers,
     )
     resp.raise_for_status()
@@ -117,7 +117,7 @@ import (
 
 func main() {
     var body []byte
-    req, err := http.NewRequest("POST", "https://api.corelink.humangr.com/v1/admin/ops/00000000-0000-7000-8000-000000000000/approve", nil)
+    req, err := http.NewRequest("POST", "https://corelink-api.humangr.com/v1/admin/ops/00000000-0000-7000-8000-000000000000/approve", nil)
     if err != nil {
         panic(err)
     }
@@ -136,7 +136,7 @@ func main() {
 ### JavaScript (fetch)
 
 ```javascript
-const resp = await fetch("https://api.corelink.humangr.com/v1/admin/ops/00000000-0000-7000-8000-000000000000/approve", {
+const resp = await fetch("https://corelink-api.humangr.com/v1/admin/ops/00000000-0000-7000-8000-000000000000/approve", {
   method: "POST",
   headers: {
     "Authorization": "Bearer <YOUR_PAT>",

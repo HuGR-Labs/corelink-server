@@ -63,7 +63,7 @@ You will be asked to:
 If you prefer the API:
 
 ```bash
-curl -X POST https://api.corelink.humangr.com/v1/tenant/$TENANT_ID/offboard \
+curl -X POST https://corelink-api.humangr.com/v1/tenant/$TENANT_ID/offboard \
   -H "Authorization: Bearer $CORELINK_TOKEN" \
   -H "X-Corelink-MFA-Step-Up: $STEP_UP_TOKEN" \
   -d '{"reason": "switching to in-house solution"}'
@@ -120,7 +120,7 @@ You can revert to ACTIVE at any time during the first 45 days,
 with full data:
 
 ```bash
-curl -X POST https://api.corelink.humangr.com/v1/tenant/$TENANT_ID/offboard/revert \
+curl -X POST https://corelink-api.humangr.com/v1/tenant/$TENANT_ID/offboard/revert \
   -H "Authorization: Bearer $CORELINK_TOKEN"
 ```
 

@@ -4,5 +4,5 @@
   <path d="M120 160a40 40 0 0 1 40-40h12v20h-12a20 20 0 0 0 0 40h12v20h-12a40 40 0 0 1-40-40Zm40 0a20 20 0 0 1 20-20h20a20 20 0 0 1 0 40h-20a20 20 0 0 1-20-20Z" fill="#ffffff"/>
   <text x="320" y="200" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="84" font-weight="700">CoreLink</text>
   <text x="320" y="280" fill="#93c5fd" font-family="Inter, system-ui, sans-serif" font-size="34">Multi-tenant content-addressable cache on Cloudflare</text>
-  <text x="60" y="540" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="28">docs.corelink.humangr.com</text>
+  <text x="60" y="540" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="28">corelink-docs.humangr.com</text>
 </svg>

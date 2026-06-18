@@ -62,7 +62,7 @@ _Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` wit
 
 ```bash
 curl -X POST \
-  'https://api.corelink.humangr.com/v1/dpa/re-accept' \
+  'https://corelink-api.humangr.com/v1/dpa/re-accept' \
   -H 'Authorization: Bearer <YOUR_PAT>' \
   -H 'Content-Type: application/json' \
   -d '{
@@ -99,7 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
     "#)?;
     let resp = client
-        .post("https://api.corelink.humangr.com/v1/dpa/re-accept")
+        .post("https://corelink-api.humangr.com/v1/dpa/re-accept")
         .header("Authorization", "Bearer <YOUR_PAT>")
         .header("Content-Type", "application/json")
         .json(&body)
@@ -133,7 +133,7 @@ def main() -> None:
   }
 }
     resp = httpx.post(
-        "https://api.corelink.humangr.com/v1/dpa/re-accept",
+        "https://corelink-api.humangr.com/v1/dpa/re-accept",
         headers=headers,
         json=body,
     )
@@ -167,7 +167,7 @@ func main() {
     "wording_id": "00000000-0000-7000-8000-000000000000"
   }
 }`)
-    req, err := http.NewRequest("POST", "https://api.corelink.humangr.com/v1/dpa/re-accept", bytes.NewReader(body))
+    req, err := http.NewRequest("POST", "https://corelink-api.humangr.com/v1/dpa/re-accept", bytes.NewReader(body))
     if err != nil {
         panic(err)
     }
@@ -186,7 +186,7 @@ func main() {
 ### JavaScript (fetch)
 
 ```javascript
-const resp = await fetch("https://api.corelink.humangr.com/v1/dpa/re-accept", {
+const resp = await fetch("https://corelink-api.humangr.com/v1/dpa/re-accept", {
   method: "POST",
   headers: {
     "Authorization": "Bearer <YOUR_PAT>",

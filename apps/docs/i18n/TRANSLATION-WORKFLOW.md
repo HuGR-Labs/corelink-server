@@ -132,7 +132,7 @@ TMX is consumed by:
    typecheck, build.
 2. Native-speaker reviewer comments on the PR (required for legal/regulatory
    pages; advisory for technical docs).
-3. Merge to `main` → Docusaurus build + deploy to `docs.corelink.humangr.com` with
+3. Merge to `main` → Docusaurus build + deploy to `corelink-docs.humangr.com` with
    per-locale subpaths (`/pt-BR/...`, `/es-419/...`, `/de/...`).
 
 ## 3. SLA & stale-content policy

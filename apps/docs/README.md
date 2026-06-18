@@ -1,7 +1,7 @@
 # `apps/docs` — CoreLink public documentation
 
 Public documentation for CoreLink, published to
-[docs.corelink.humangr.com](https://docs.corelink.humangr.com) on Cloudflare Pages.
+[corelink-docs.humangr.com](https://corelink-docs.humangr.com) on Cloudflare Pages.
 
 Built with [Docusaurus 3](https://docusaurus.io/), organized per the
 [Diátaxis framework](https://diataxis.fr/) (tutorial / how-to /
@@ -69,15 +69,15 @@ or understanding?** That answer picks the folder. If unsure, read the
 
 1. In the Cloudflare dashboard, open the **corelink-docs** Pages
    project → **Custom domains** → **Set up a custom domain**.
-2. Enter `docs.corelink.humangr.com`.
+2. Enter `corelink-docs.humangr.com`.
 3. Cloudflare auto-creates a `CNAME docs → <project>.pages.dev` record
    on the `corelink.humangr.com` zone (since the zone is on the same account).
    No manual DNS change is needed if the zone is on Cloudflare; if the
    zone lives elsewhere, add a `CNAME` record manually.
 4. SSL: Cloudflare provisions a Let's Encrypt certificate automatically
    within ~5 minutes. HSTS is enabled at the zone level.
-5. Verify: `dig docs.corelink.humangr.com` returns a `*.pages.dev` CNAME, and
-   `curl -I https://docs.corelink.humangr.com` returns `200` with
+5. Verify: `dig corelink-docs.humangr.com` returns a `*.pages.dev` CNAME, and
+   `curl -I https://corelink-docs.humangr.com` returns `200` with
    `strict-transport-security` present.
 
 The repo also ships `static/CNAME` so that mirror deploys to GitHub

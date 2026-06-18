@@ -27,10 +27,10 @@ info:
     name: Proprietary
     url: https://corelink.humangr.com/legal/terms
 servers:
-  - url: https://api.corelink.humangr.com
-    description: Production
-  - url: https://api.staging.corelink.humangr.com
-    description: Staging
+  - url: https://corelink-api.humangr.com
+    description: Production (Cloudflare Durable Object + container)
+  - url: http://localhost:50051
+    description: Local dev (axum container, PORT env default)
 tags:
   - name: signup
     description: Customer onboarding orchestration (atomic tenant + DPA + first PAT
