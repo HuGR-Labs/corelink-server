@@ -11,6 +11,12 @@ compatibility_flags = ["nodejs_compat"]
 # Lesson: a prior public *.workers.dev staging URL drew a $36 bot bill.
 workers_dev = false
 
+# Native retained Workers Logs (zero-cost; queryable in the CF dashboard).
+# Not Logpush to an external sink (that needs an owner-provided destination).
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 # Bindings below are placeholders — actual values are configured per
 # environment via `wrangler secret put` and Pages dashboard.
 #

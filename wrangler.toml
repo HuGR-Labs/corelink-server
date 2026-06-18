@@ -25,6 +25,18 @@ main = "worker/src/index.ts"
 # preview URLs (which require Authorization, not bot-scannable).
 workers_dev = false
 
+# ── Workers Observability (native retained logs) ─────────────────────────────
+# Zero-cost native feature: retains + makes Worker logs queryable in the CF
+# dashboard (Workers Logs / Workers Logpush "Logs Engine") so an operator isn't
+# blind at launch. This is NOT Logpush to an external sink — that needs an
+# owner-provided destination and is deliberately left off here.
+# head_sampling_rate = 1 → keep 100% of invocation logs.
+# NOTE: [observability] is NOT inherited by named [env.*] environments, so each
+# deployed env below (prod + regional prod-*) re-declares its own block.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 # [limits] cpu_ms cap per request — hard upper bound that aborts runaway
 # request handlers before CF bills extra CPU. Default is 50ms on Workers
 # Paid plan; raised to 100ms (P1-3: HMAC auth path 5-15ms overhead caused
@@ -249,6 +261,11 @@ name = "corelink-prod"
 # Account-scoped R2 S3 endpoint; D1 id = corelink-config-prod (CONFIG_DB binding).
 vars = { ENVIRONMENT = "prod", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562", R2_AC_BUCKET = "corelink-ac-iad", R2_AC_REGION = "iad", R2_CAS_REGION = "iad" }
 
+# Native retained Workers Logs (per-env; not inherited from top-level).
+[env.prod.observability]
+enabled = true
+head_sampling_rate = 1
+
 # ── Worker route bindings (Wave 32 Phase G+ — DNS cutover) ────────────────
 #
 # With `workers_dev = false` at top-level (security hardening per d398fa45),
@@ -438,6 +455,11 @@ class_name = "EventLogDO"
 name = "corelink-staging"
 vars = { ENVIRONMENT = "staging" }
 
+# Native retained Workers Logs (per-env; not inherited from top-level).
+[env.staging.observability]
+enabled = true
+head_sampling_rate = 1
+
 [[env.staging.r2_buckets]]
 binding = "CAS_BUCKET"
 bucket_name = "corelink-cas-staging"
@@ -581,6 +603,11 @@ crons = [
 name = "corelink-prod-sam"
 workers_dev = false
 
+# Native retained Workers Logs (per-env; not inherited from top-level).
+[env.prod-sam.observability]
+enabled = true
+head_sampling_rate = 1
+
 [env.prod-sam.vars]
 ENVIRONMENT = "prod-sam"
 R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
@@ -703,6 +730,11 @@ instance_type = "standard-1"
 [env.prod-lhr]
 name = "corelink-prod-lhr"
 workers_dev = false
+
+# Native retained Workers Logs (per-env; not inherited from top-level).
+[env.prod-lhr.observability]
+enabled = true
+head_sampling_rate = 1
 
 [env.prod-lhr.vars]
 ENVIRONMENT = "prod-lhr"
@@ -827,6 +859,11 @@ instance_type = "standard-1"
 name = "corelink-prod-nrt"
 workers_dev = false
 
+# Native retained Workers Logs (per-env; not inherited from top-level).
+[env.prod-nrt.observability]
+enabled = true
+head_sampling_rate = 1
+
 [env.prod-nrt.vars]
 ENVIRONMENT = "prod-nrt"
 R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
@@ -948,6 +985,11 @@ instance_type = "standard-1"
 [env.prod-syd]
 name = "corelink-prod-syd"
 workers_dev = false
+
+# Native retained Workers Logs (per-env; not inherited from top-level).
+[env.prod-syd.observability]
+enabled = true
+head_sampling_rate = 1
 
 [env.prod-syd.vars]
 ENVIRONMENT = "prod-syd"

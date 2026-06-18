@@ -20,6 +20,7 @@
  */
 
 import type { D1Database, DurableObjectNamespace, ExecutionContext, ExportedHandler } from "@cloudflare/workers-types";
+import * as Sentry from "@sentry/cloudflare";
 import { CoreLinkServer } from "./durable_object.js";
 import { RolloutController } from "./rollout_controller.js";
 import { EventLogDO } from "./event_log_do.js";
@@ -195,6 +196,15 @@ export interface Env {
   PROD_LHR?: { fetch: typeof fetch };
   PROD_NRT?: { fetch: typeof fetch };
   PROD_SYD?: { fetch: typeof fetch };
+  // ── Observability (Sentry error tracking) ───────────────────────────────────
+  // OPTIONAL. The Sentry hook (see `export default` at the bottom of this file)
+  // is a COMPLETE no-op until the operator sets SENTRY_DSN via
+  // `wrangler secret put SENTRY_DSN --env prod` (and per regional env). When
+  // unset the SDK init receives an empty DSN and never sends — so tests + the
+  // pre-launch posture stay inert. Mirrors apps/analytics-worker/src/index.ts.
+  SENTRY_DSN?: string;
+  // OPTIONAL release tag surfaced on Sentry events (deploy SHA / version).
+  SENTRY_RELEASE?: string;
 }
 
 /**
@@ -1412,7 +1422,7 @@ function getServerNonce(): number {
 // Main fetch handler
 // ──────────────────────────────────────────────────────────────────────────────
 
-const handler: ExportedHandler<Env> = {
+const baseHandler: ExportedHandler<Env> = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const requestStart = Date.now();
     const requestId = resolveRequestId(request);
@@ -2441,6 +2451,53 @@ const handler: ExportedHandler<Env> = {
     return applyCors(finalResponse, request);
   },
 };
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Sentry error-tracking wrapper (observability)
+// ──────────────────────────────────────────────────────────────────────────────
+//
+// Mirrors apps/analytics-worker/src/index.ts EXACTLY: init is gated on
+// `env.SENTRY_DSN` (empty DSN ⇒ the SDK treats init as a no-op), so the hook is
+// COMPLETELY inert until the operator sets the secret. `withSentry` captures any
+// unhandled error thrown out of the fetch handler before the runtime 500s, with
+// no behavior change to the (already error-mapped) success paths.
+//
+// INV-NO-PII-IN-LOGS: scrub Authorization / Cookie / API-key headers from every
+// event before it leaves the Worker (same scrub list as analytics-worker), and
+// sendDefaultPii=false so Sentry never auto-attaches request bodies / IPs.
+
+const SENTRY_SENSITIVE_HEADER_PATTERN =
+  /^(authorization|cookie|set-cookie|x-api-key|x-corelink-internal-auth|proxy-authorization)$/i;
+
+function scrubSentryEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
+  if (event.request?.headers) {
+    const h = event.request.headers as Record<string, string>;
+    for (const k of Object.keys(h)) {
+      if (SENTRY_SENSITIVE_HEADER_PATTERN.test(k)) {
+        h[k] = "[Filtered]";
+      }
+    }
+  }
+  return event;
+}
+
+const handler = Sentry.withSentry(
+  (env: Env) => ({
+    // Empty string when the secret is unset → Sentry SDK init is a no-op.
+    dsn: env.SENTRY_DSN ?? "",
+    environment: env.ENVIRONMENT,
+    release: env.SENTRY_RELEASE ?? "unknown",
+    sendDefaultPii: false,
+    tracesSampleRate: 0.1,
+    sampleRate: 1.0,
+    beforeSend(event: Sentry.ErrorEvent) {
+      return scrubSentryEvent(event);
+    },
+  }),
+  // `@sentry/cloudflare` re-bundles `@cloudflare/workers-types`; the cast keeps
+  // both type graphs happy without weakening the inner handler's types.
+  baseHandler as unknown as Parameters<typeof Sentry.withSentry>[1],
+) as ExportedHandler<Env>;
 
 export default handler;
 export { CoreLinkServer, RolloutController, EventLogDO };

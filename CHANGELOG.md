@@ -40,6 +40,23 @@ Each entry cross-references:
   `@clerk/nextjs@6`, `@stripe/stripe-js@4`, `@sentry/nextjs@8` unchanged.
 
 ### Added
+- **Worker-plane observability: native retained Workers Logs + an inert Sentry hook.** An operator was
+  blind on the Worker plane at launch (no `[observability]` anywhere, no Sentry on the main Worker). Now:
+  (1) every Worker `wrangler.toml` carries an `[observability]` block (`enabled = true`,
+  `head_sampling_rate = 1`) — the zero-cost native retained/queryable Workers Logs feature — added
+  top-level AND per deployed env (the block is NOT inherited by named `[env.*]`): main Worker
+  `prod` + `staging` + the four regional `prod-{sam,lhr,nrt,syd}`, plus `signup-worker`,
+  `analytics-worker` (`prod`/`staging`), `get-corelink-worker` (`prod`), and `corelink-clerk-cf` (`prod`).
+  (2) The MAIN Worker (`worker/src/index.ts`) now wires `@sentry/cloudflare` error tracking via
+  `Sentry.withSentry`, mirroring `apps/analytics-worker` EXACTLY: init is gated on `env.SENTRY_DSN`
+  (empty DSN ⇒ a COMPLETE no-op, so it stays inert until the operator sets the secret), `sendDefaultPii=false`,
+  and a `beforeSend` scrub of Authorization/Cookie/API-key/`x-corelink-internal-auth` headers
+  (INV-NO-PII-IN-LOGS). `SENTRY_DSN?`/`SENTRY_RELEASE?` added to the Worker `Env` interface; the dep is
+  `@sentry/cloudflare@^8.45.0` (same version as analytics-worker). This is NOT Logpush to an external sink
+  (that needs an owner-provided destination and is deliberately left off). **Operator activation** (all
+  manual, post-merge): (a) deploy the Workers so the `[observability]` blocks take effect; (b)
+  `wrangler secret put SENTRY_DSN --env prod` (and per regional env) to arm error tracking — until set the
+  hook sends nothing; (c) OPTIONALLY configure a Logpush destination if logs must leave Cloudflare.
 - **githugr Clerk sessions on the exchange seams (multi-issuer, Option B).** `/v1/session/exchange` and
   `/internal/v1/auth/token-exchange` now accept sessions from the SEPARATE githugr Clerk instance
   (`clerk.githugr.com`) IN ADDITION to CoreLink's — opt-in per call-site (`allowGithugrIssuer`), routed
