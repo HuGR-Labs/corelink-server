@@ -113,6 +113,18 @@ Each entry cross-references:
   evidence path can no longer pass. Sub-processor list contents and the DPO email
   are unchanged.
 - **Legal-doc hygiene — sub-processor source-of-truth + broken internal path refs.**
+- **Bounded the adapter PAT verifier's per-tenant Argon2id semaphore map (memory creep).**
+  `PatVerifier.per_tenant_permits` (`crates/corelink-container/src/adapter_pat.rs`) lazily
+  created one `Arc<Semaphore>` per distinct real `tenant_id` and never evicted — a slow
+  unbounded-memory creep over a long-running container (the #1/#12 follow-up flagged at the
+  merge of #354). It is now an LRU bounded at 10k entries: when the map is full and a NEW
+  tenant must be inserted, the verifier evicts the least-recently-used entry that is FULLY
+  IDLE (`available_permits == per_tenant_cap` ⇒ no in-flight verify for that tenant), so
+  eviction can never disrupt an active or contended tenant; a re-inserted evicted tenant
+  lazily recreates its (idle) semaphore — semantically identical. The single shared
+  `UNKNOWN_TOKEN_BUCKET` (dummy-burn) is never evicted. The two-tier global→per-tenant
+  acquire order, the no-lock-across-await discipline, and the poisoned-lock fail-safe
+  (fall back to global-only bounding) are all unchanged.
   Reconciled the sub-processor source of truth so the DPA, the legal disclosure
   (`legal/sub-processors.md`), and the auto-generated public page can no longer
   drift: `legal/sub-processors.md` now documents the single chain explicitly —
