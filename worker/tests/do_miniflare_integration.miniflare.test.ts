@@ -35,6 +35,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { TEST_PAT_SIGNING_KEY, mintTestPat } from "./setup.js";
 
 const WORKER_DIR = resolve(__dirname, "..");
 // wrangler writes dist/ relative to wrangler.toml's directory (worktree root)
@@ -91,6 +92,12 @@ beforeAll(async () => {
     bindings: {
       ENVIRONMENT: "miniflare-test",
       PAGERDUTY_ROUTING_KEY: "",
+      // Honest auth harness (#345): the native plane (extractAuth) fails CLOSED
+      // with 503 SERVICE_UNAVAILABLE unless PAT_SIGNING_KEY is bound AND the PAT
+      // HMAC verifies. Bind the fixed valid test key so the auth/route logic is
+      // actually exercised in workerd (a real 401 on bad PATs, the DO's
+      // CONTAINER_UNAVAILABLE on valid ones) — not masked by a misconfig 503.
+      PAT_SIGNING_KEY: TEST_PAT_SIGNING_KEY,
     },
     // D1 database binding — in-memory SQLite seeded with the test PAT row.
     d1Databases: {
@@ -150,6 +157,24 @@ beforeAll(async () => {
     SECOND_TOKEN_ID,
   ).run();
 
+  // Seed the `tenant` table with a primary_region (WI-MULTI-REGION-V1). After a
+  // PAT authenticates, the Worker reads tenant.primary_region to decide regional
+  // fan-out (backlog #29 residency). A MISSING `tenant` table makes that SELECT
+  // throw → the Worker fails CLOSED with 503 RESIDENCY_UNAVAILABLE before
+  // reaching the DO. Seeding both tenants with a `wnam` macro (maps to colo
+  // `iad`, the local/non-fanout path via region-map) lets the request fall
+  // through to the DO so the assertion sees the DO's CONTAINER_UNAVAILABLE
+  // (not a residency fail-close). `wnam` = US-West, no cross-border fanout.
+  await d1.exec(
+    "CREATE TABLE IF NOT EXISTS tenant (" +
+      "tenant_id TEXT NOT NULL PRIMARY KEY, " +
+      "primary_region TEXT)",
+  );
+  const seedTenant =
+    "INSERT OR IGNORE INTO tenant (tenant_id, primary_region) VALUES (?1, ?2)";
+  await d1.prepare(seedTenant).bind(TEST_TENANT_ID, "wnam").run();
+  await d1.prepare(seedTenant).bind(SECOND_TENANT_ID, "wnam").run();
+
   // Warm up: dispatch a health check to confirm the worker is ready
   const health = await mf.dispatchFetch("https://corelink.test/health");
   if (health.status !== 200) {
@@ -164,28 +189,19 @@ afterAll(async () => {
   }
 });
 
-// Canonical test PAT — format-valid CoreLink PAT recognised by the D1 mock
-// seeded in beforeAll. Must match the token_id inserted into D1.
+// Canonical test PAT — CRYPTOGRAPHICALLY VALID under TEST_PAT_SIGNING_KEY
+// (honest auth harness, #345) and recognised by the D1 row seeded in beforeAll.
+// Its token_id MUST match the token_id inserted into D1. With PAT_SIGNING_KEY
+// bound in the harness, an unsigned all-"A" sig would now fail the HMAC
+// fast-fail, so the token must be properly minted.
 const TEST_TOKEN_ID = "AAAAAAAAAAAAAAAA"; // 16 Crockford b32
 const TEST_TENANT_ID = "00000000-0000-0000-0000-000000000001";
-const VALID_TOKEN =
-  "corelink_pat_" +
-  TEST_TOKEN_ID +
-  "." +
-  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" + // 43 base64url
-  "." +
-  "AAAAAAAAAAAAAAAAAAAAAA"; // 22 base64url (total 96)
+const VALID_TOKEN = await mintTestPat({ tokenId: TEST_TOKEN_ID });
 
 // Second tenant — distinct token_id + tenant_id — for cross-tenant isolation.
 const SECOND_TOKEN_ID = "BBBBBBBBBBBBBBBB"; // 16 Crockford b32
 const SECOND_TENANT_ID = "00000000-0000-0000-0000-000000000002";
-const SECOND_TOKEN =
-  "corelink_pat_" +
-  SECOND_TOKEN_ID +
-  "." +
-  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" + // 43 base64url
-  "." +
-  "AAAAAAAAAAAAAAAAAAAAAA"; // 22 base64url (total 96)
+const SECOND_TOKEN = await mintTestPat({ tokenId: SECOND_TOKEN_ID });
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Health endpoint in workerd
@@ -212,10 +228,13 @@ describe("miniflare: GET /health in workerd", () => {
     expect(resp.headers.get("x-request-id")).toBe(rid);
   });
 
-  it("includes env field in response body", async () => {
+  it("omits env field from response body (F19: no env disclosure on unauth)", async () => {
+    // F19 (src/index.ts): the deployment environment must NOT be disclosed on
+    // unauthenticated endpoints. /health serves {"status":"ok"} only — no `env`.
     const resp = await dispatchFetch("/health");
-    const body = await resp.json() as { env: string };
-    expect(typeof body.env).toBe("string");
+    const body = await resp.json() as { status: string; env?: string };
+    expect(body.status).toBe("ok");
+    expect(body.env).toBeUndefined();
   });
 });
 

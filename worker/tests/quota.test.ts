@@ -27,6 +27,7 @@ import {
 } from "../src/lib/quota.js";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
+import { TEST_PAT_SIGNING_KEY, mintTestPat } from "./setup.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -34,13 +35,11 @@ import type { Env } from "../src/index.js";
 
 const TEST_TENANT_ID = "00000000-0000-0000-0000-000000000001";
 const TEST_TOKEN_ID = "AAAAAAAAAAAAAAAA";
-const TEST_PAT_TOKEN =
-  "corelink_pat_" +
-  TEST_TOKEN_ID +
-  "." +
-  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
-  "." +
-  "AAAAAAAAAAAAAAAAAAAAAA";
+// Honest auth harness (#345 / House #2): a CRYPTOGRAPHICALLY VALID PAT signed by
+// TEST_PAT_SIGNING_KEY (bound in makeEnv below). The native plane fails closed
+// (503) on an unsigned PAT / unset key, which would mask the 429 quota path —
+// so the integration tests must mint a real signed token to reach the gate.
+const TEST_PAT_TOKEN = await mintTestPat({ tokenId: TEST_TOKEN_ID });
 
 /** Build a minimal D1 mock that routes queries by SQL keyword. */
 function makeQuotaD1Mock(opts: {
@@ -158,6 +157,10 @@ function makeEnv(d1: D1Database, doStubStatus = 503): Env {
     CORELINK_SERVER: namespace,
     ENVIRONMENT: "test",
     CONFIG_DB: d1,
+    // Honest auth harness (#345): bind the valid test signing key so the minted
+    // TEST_PAT_TOKEN's HMAC verifies and the request reaches the quota gate
+    // (instead of fail-closing to 503 on an unset PAT_SIGNING_KEY).
+    PAT_SIGNING_KEY: TEST_PAT_SIGNING_KEY,
   };
 }
 
@@ -487,15 +490,13 @@ describe("secondsUntilNextMonthStart", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("Worker quota enforcement — HTTP 429", () => {
-  // TODO(House#2 — CI vitest real-PAT harness): this end-to-end workerFetch test
-  // cannot reach checkStorageQuota in the test env because TEST_PAT_TOKEN is not
-  // verifiable without a real PAT_SIGNING_KEY, so the request resolves no tenant
-  // and falls through to the DO stub (503) BEFORE the quota gate. The storage-quota
-  // LOGIC itself is fully covered + green by the direct checkStorageQuota unit tests
-  // above (at-limit ⇒ 429). Un-skip once House #2 lands a real PAT_SIGNING_KEY +
-  // HMAC-valid TEST_PAT_TOKEN harness. Pre-existing red on main; not a rt-fix-wave
-  // regression. Tracked: CAA-360 / House #2 CI-gate.
-  it.skip("returns 429 with Retry-After when free-tier storage is exhausted", async () => {
+  // House #2 (#345) landed the honest PAT harness: TEST_PAT_TOKEN is now an
+  // HMAC-valid PAT signed by TEST_PAT_SIGNING_KEY (bound in makeEnv), so this
+  // end-to-end workerFetch request authenticates, resolves the tenant, and
+  // reaches checkStorageQuota — the at-limit storage row drives the real 429.
+  // (Previously skipped because the unset PAT_SIGNING_KEY fail-closed to 503
+  // before the quota gate could fire.)
+  it("returns 429 with Retry-After when free-tier storage is exhausted", async () => {
     const FREE_MAX = 10 * 1_073_741_824;
     const d1 = makeQuotaD1Mock({
       storageBytes: FREE_MAX, // at-limit
