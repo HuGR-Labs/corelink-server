@@ -25,6 +25,12 @@
 //!    and reject a bad signature in ≤100µs, *before* any D1 round-trip,
 //!    so forged tokens cannot drive D1 query cost.
 //! 2. **D1 lookup** by the non-secret `token_id` (expiry filtered in SQL).
+//!    This row lookup runs BEFORE the expensive Argon2id verify (finding #12):
+//!    a valid-HMAC token for a nonexistent / expired / revoked / wrong-tenant
+//!    `token_id` is decided here at the cheap D1 stage, so a leaked-signing-key
+//!    attacker minting valid-HMAC tokens for bogus `token_id`s never reaches a
+//!    full Argon2id verify (the dummy timing-burn it DOES hit is itself bounded
+//!    — global permit + a single shared synthetic per-tenant bucket).
 //! 3. **Full verify** ([`verify_with_hash`]) — constant-time `token_id`
 //!    match + HMAC + Argon2id of the secret segment against the stored
 //!    PHC hash. Run on a blocking thread (Argon2id is CPU-heavy).
@@ -40,12 +46,13 @@
 //! attacker *why* a token was rejected. Only genuine backend faults (D1
 //! unreachable, corrupt row) surface as [`VerifyError::Backend`].
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use corelink_pat::{verify_hmac_only_multi, verify_with_hash_multi, PatHash, PatSigningKey};
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::scope::{requires_cache_read, requires_cache_write};
 use crate::storage::d1_http::D1HttpClient;
@@ -161,6 +168,46 @@ impl PatRowLookup for D1HttpClient {
 /// pick 16 as the conservative floor.
 const ARGON2_VERIFY_PERMITS: usize = 16;
 
+/// Per-tenant sub-cap on concurrent Argon2id verifications (red-team finding
+/// #1, HIGH — per-tenant fairness). The global [`ARGON2_VERIFY_PERMITS`] bound
+/// alone is NOT fair: a single tenant flooding distinct PATs (each forcing a
+/// fresh Argon2id verify) could take ALL of the global permits and 503 the
+/// native plane for EVERY OTHER tenant. We add a per-tenant semaphore so no
+/// single tenant can hold more than this many global permits at once — the
+/// remaining global capacity stays available to serve other tenants.
+///
+/// Sizing: `max(2, ARGON2_VERIFY_PERMITS / 4)` = 4 at the production global cap
+/// of 16. Rationale:
+/// - A LEGITIMATE tenant's adapter (cargo/npm/oci/…) almost never needs more
+///   than a couple of *simultaneous* in-flight Argon2id verifies — each request
+///   verifies once, briefly, then the result is reused; 4 leaves comfortable
+///   headroom for genuine bursts without starving the tenant itself.
+/// - It caps any ONE tenant at 1/4 of the global pool, so at least 3/4 of the
+///   capacity (≥12 permits) is always reachable by other tenants even under a
+///   single-tenant flood — fairness without sacrificing the OOM/CPU guard.
+/// - The floor of 2 keeps the sub-cap meaningful (never 0/1) if the global cap
+///   is ever tuned down (e.g. a test override), so a tenant can always make
+///   forward progress.
+const ARGON2_PER_TENANT_PERMITS: usize = {
+    let quarter = ARGON2_VERIFY_PERMITS / 4;
+    if quarter > 2 {
+        quarter
+    } else {
+        2
+    }
+};
+
+/// Synthetic per-tenant bucket key for the None-row timing-parity dummy burn
+/// (finding #12, defence-in-depth). A valid-HMAC token for a NON-existent /
+/// expired / revoked token_id has no real owning tenant, yet the dummy Argon2id
+/// burn (run for timing parity) still consumes a GLOBAL permit. A leaked-key
+/// attacker could spread a flood across many bogus token_ids to drain the
+/// global pool through this path. Routing every dummy burn through ONE shared
+/// synthetic bucket caps the *total* concurrent dummy burns at the per-tenant
+/// sub-cap — so the unknown-token path can never starve real tenants. The key
+/// is not a valid tenant UUID, so it cannot collide with a real tenant bucket.
+const UNKNOWN_TOKEN_BUCKET: &str = "\0argon2-dummy-burn-bucket\0";
+
 /// How long a verify will wait for an Argon2id permit before declaring the
 /// verifier overloaded. Short by design: a `/token` caller waiting longer
 /// than this is better served a fast fail-CLOSED than a stalled request that
@@ -187,6 +234,22 @@ pub struct PatVerifier {
     /// runs Argon2id for timing parity). Acquire-timeout ⇒ `Backend`
     /// ("overloaded"), fail-CLOSED.
     argon2_permits: Arc<Semaphore>,
+    /// Per-tenant Argon2id sub-limit (finding #1, fairness). A lazily-created
+    /// `Arc<Semaphore>` per `tenant_id`, each capped at
+    /// [`ARGON2_PER_TENANT_PERMITS`]. A verify acquires the global permit
+    /// FIRST, then this tenant's permit (CONSISTENT order => no deadlock), so a
+    /// single tenant flooding distinct PATs can hold at most
+    /// `ARGON2_PER_TENANT_PERMITS` global permits at once -- leaving the rest of
+    /// the global pool for other tenants. Wrapped in a `Mutex` only to guard
+    /// the map's get-or-insert; the `Mutex` is NEVER held across the Argon2id
+    /// work or the async acquire (it is dropped before either). FAIL-SAFE: a
+    /// poisoned lock falls back to global-only bounding (a bookkeeping fault
+    /// must never block a legitimate auth) -- see [`Self::per_tenant_semaphore`].
+    per_tenant_permits: Arc<Mutex<HashMap<String, Arc<Semaphore>>>>,
+    /// The cap each per-tenant semaphore is created with
+    /// ([`ARGON2_PER_TENANT_PERMITS`] in production). A field (not a const) so a
+    /// test can shrink it to drive the two-tier interaction deterministically.
+    per_tenant_cap: usize,
 }
 
 impl std::fmt::Debug for PatVerifier {
@@ -223,6 +286,10 @@ impl PatVerifier {
             // here so EVERY constructor path (`new`, `from_env`, and the test
             // wiring) gets the bound without changing any public signature.
             argon2_permits: Arc::new(Semaphore::new(ARGON2_VERIFY_PERMITS)),
+            // Per-tenant fairness sub-limit (finding #1). Empty map; tenant
+            // semaphores are created lazily on first verify for that tenant.
+            per_tenant_permits: Arc::new(Mutex::new(HashMap::new())),
+            per_tenant_cap: ARGON2_PER_TENANT_PERMITS,
         }
     }
 
@@ -286,6 +353,66 @@ impl PatVerifier {
         }
     }
 
+    /// Resolve (get-or-create) the per-tenant Argon2id semaphore for `tenant`,
+    /// for the two-tier fairness gate (finding #1).
+    ///
+    /// Returns `Some(sem)` with a clone of the tenant's `Arc<Semaphore>`, or
+    /// `None` to signal FAIL-SAFE fall-through to global-only bounding. We
+    /// return `None` (rather than propagating an error) on a poisoned lock so a
+    /// bookkeeping fault can NEVER block a legitimate auth — the global bound
+    /// still protects against OOM; we merely lose per-tenant fairness for the
+    /// rare poisoned-lock window.
+    ///
+    /// The `Mutex` is held ONLY for the brief get-or-insert and is dropped
+    /// before the caller awaits the (async) permit acquire or runs Argon2id —
+    /// so it never serializes the verify path nor risks a lock-across-await.
+    fn per_tenant_semaphore(&self, tenant: &str) -> Option<Arc<Semaphore>> {
+        let mut map = match self.per_tenant_permits.lock() {
+            Ok(guard) => guard,
+            // Poisoned: a previous holder panicked while mutating the map. Do
+            // NOT block auth on bookkeeping — fall back to global-only.
+            Err(_poisoned) => return None,
+        };
+        if let Some(sem) = map.get(tenant) {
+            return Some(Arc::clone(sem));
+        }
+        let sem = Arc::new(Semaphore::new(self.per_tenant_cap));
+        map.insert(tenant.to_owned(), Arc::clone(&sem));
+        Some(sem)
+    }
+
+    /// Acquire the per-tenant Argon2id permit for `tenant` under the same
+    /// bounded wait as the global permit, returning a held
+    /// `Option<OwnedSemaphorePermit>`:
+    ///
+    /// - `Ok(Some(permit))` — tenant permit held (the common case).
+    /// - `Ok(None)` — FAIL-SAFE: per-tenant bookkeeping was unavailable
+    ///   (poisoned lock), so we proceed under the GLOBAL bound only. A legit
+    ///   auth is never blocked by a bookkeeping fault.
+    /// - `Err(())` — the tenant is at its sub-cap and did not free a permit
+    ///   within the wait. The caller maps this to the SAME overloaded
+    ///   fail-CLOSED as a global-permit timeout, so one tenant's flood cannot
+    ///   monopolise the global pool.
+    ///
+    /// MUST be called AFTER the global permit is held (consistent acquire order
+    /// global→per-tenant ⇒ deadlock-free).
+    async fn acquire_per_tenant(
+        &self,
+        tenant: &str,
+    ) -> Result<Option<OwnedSemaphorePermit>, ()> {
+        let Some(sem) = self.per_tenant_semaphore(tenant) else {
+            // Fail-safe: no per-tenant bookkeeping ⇒ global-only.
+            return Ok(None);
+        };
+        match tokio::time::timeout(ARGON2_PERMIT_WAIT, sem.acquire_owned()).await {
+            Ok(Ok(permit)) => Ok(Some(permit)),
+            // Semaphore closed (never happens in practice — we never close it)
+            // OR the per-tenant sub-cap was saturated for the whole wait. Both
+            // collapse to a fail-CLOSED overloaded signal.
+            Ok(Err(_)) | Err(_) => Err(()),
+        }
+    }
+
     /// The full Option-B verification pipeline, returning the PAT's owning
     /// tenant id **and** whether it carries cache WRITE capability.
     ///
@@ -340,10 +467,22 @@ impl PatVerifier {
                     // skip the burn and fail-CLOSED uniformly.
                     _ => return Err(VerifyError::InvalidPat),
                 };
+                // Finding #12: cap the dummy-burn path through ONE shared
+                // synthetic bucket (consistent global→per-tenant order) so a
+                // leaked-key flood across bogus token_ids cannot drain the
+                // global pool via this path. On sub-cap saturation OR fail-safe
+                // fall-through we simply skip the burn and fail-CLOSED uniformly
+                // (the lost timing parity under flood is acceptable — every
+                // request shares its fate, so there is no per-token oracle).
+                let _tenant_permit = match self.acquire_per_tenant(UNKNOWN_TOKEN_BUCKET).await {
+                    Ok(maybe_permit) => maybe_permit,
+                    Err(()) => return Err(VerifyError::InvalidPat),
+                };
                 let plaintext = pat_plaintext.to_owned();
                 let _ = tokio::task::spawn_blocking(move || {
                     let r = corelink_pat::dummy_verify_for_constant_time(&plaintext);
-                    drop(permit); // hold the permit ONLY across the blocking work
+                    drop(permit); // hold the global permit ONLY across the blocking work
+                    drop(_tenant_permit); // release the synthetic-bucket permit too
                     r
                 })
                 .await;
@@ -379,9 +518,22 @@ impl PatVerifier {
                 return Err(VerifyError::Backend("pat verifier overloaded".into()))
             }
         };
+        // Finding #1: per-tenant fairness. With the GLOBAL permit already held,
+        // acquire this tenant's sub-permit (consistent order global→per-tenant
+        // ⇒ deadlock-free). If the tenant is at its sub-cap, fail-CLOSED with
+        // the SAME overloaded signal as a global timeout — so ONE tenant
+        // flooding distinct PATs cannot drain the whole global pool and starve
+        // others. The `permit` (global) is dropped on this early return by
+        // RAII, so a per-tenant rejection does NOT leak a global permit.
+        // `Ok(None)` is the fail-safe fall-through to global-only bounding.
+        let tenant_permit = match self.acquire_per_tenant(&row.tenant_id).await {
+            Ok(maybe_permit) => maybe_permit,
+            Err(()) => return Err(VerifyError::Backend("pat verifier overloaded".into())),
+        };
         let verify_result = tokio::task::spawn_blocking(move || {
             let r = verify_with_hash_multi(&plaintext, &token_id, &stored_hash, &signing_keys);
-            drop(permit); // release the Argon2id permit the moment the work ends
+            drop(permit); // release the global Argon2id permit the moment the work ends
+            drop(tenant_permit); // release the per-tenant permit too (RAII, both paths)
             r
         })
         .await
@@ -410,10 +562,32 @@ impl PatVerifier {
         signing_keys: Vec<PatSigningKey>,
         permits: usize,
     ) -> Self {
+        Self::with_key_set_and_permits_per_tenant(
+            lookup,
+            signing_keys,
+            permits,
+            ARGON2_PER_TENANT_PERMITS,
+        )
+    }
+
+    /// Test-only constructor that overrides BOTH the global Argon2id concurrency
+    /// bound AND the per-tenant sub-cap, so the fairness test can drive the
+    /// two-tier interaction deterministically (e.g. a per-tenant cap small
+    /// enough to saturate while global headroom remains for other tenants).
+    #[cfg(test)]
+    #[must_use]
+    fn with_key_set_and_permits_per_tenant(
+        lookup: Arc<dyn PatRowLookup>,
+        signing_keys: Vec<PatSigningKey>,
+        permits: usize,
+        per_tenant_permits: usize,
+    ) -> Self {
         Self {
             lookup,
             signing_keys: Arc::new(signing_keys),
             argon2_permits: Arc::new(Semaphore::new(permits)),
+            per_tenant_permits: Arc::new(Mutex::new(HashMap::new())),
+            per_tenant_cap: per_tenant_permits,
         }
     }
 
@@ -770,5 +944,206 @@ mod tests {
         let verifier =
             PatVerifier::with_key_set_and_permits(lookup, vec![(*key).clone()], 2);
         assert_eq!(verifier.verify(&pt).await.unwrap(), tenant);
+    }
+
+    // ------------------------------------------------------------------
+    // Finding #1 — per-tenant fairness (concurrency).
+    //
+    // NOTE ON TOOLING: the ideal tester here is SHUTTLE (deterministic async
+    // interleaving for `tokio::sync::Semaphore`), but shuttle is NOT a
+    // dependency anywhere in this workspace (no Cargo.lock entry, no usage) and
+    // retrofitting it is heavy — it requires swapping `tokio::sync` for its
+    // shimmed primitives AND it cannot model the `spawn_blocking` + real
+    // Argon2id crypto on the verify path. Per the WP brief, we do NOT half-wire
+    // shuttle; the deterministic-stress `#[tokio::test]` below proves the
+    // fairness INVARIANT directly. Wiring shuttle (a feature-gated
+    // sync-primitive swap on this module) is the owner-aware follow-up.
+    // ------------------------------------------------------------------
+
+    /// FAIRNESS INVARIANT (finding #1): a single tenant A that has SATURATED its
+    /// per-tenant Argon2id sub-cap must NOT be able to deny tenant B its verify,
+    /// even though A could in principle hold many global permits. We prove this
+    /// directly by exhausting tenant A's per-tenant semaphore (held open) and
+    /// showing a fresh B verify still succeeds while global headroom remains.
+    ///
+    /// Setup: global cap = 8 (plenty), per-tenant cap = 2. We pre-acquire BOTH
+    /// of tenant A's per-tenant permits and hold them — modelling "A is at its
+    /// fair share". A third A-verify is then capped at the per-tenant gate
+    /// (fail-CLOSED overloaded), while B — a DIFFERENT tenant — sails through on
+    /// its own untouched per-tenant semaphore. This is the anti-starvation
+    /// property: one tenant's flood is contained to its own bucket.
+    #[tokio::test]
+    async fn per_tenant_cap_contains_one_tenant_without_starving_another() {
+        let key = test_key();
+        let (pt_a, tid_a, hash_a, tenant_a) = mint_pat(&key, 80, SCOPE_CACHE_RW);
+        let (pt_b, tid_b, hash_b, tenant_b) = mint_pat(&key, 81, SCOPE_CACHE_RW);
+        assert_ne!(tenant_a, tenant_b);
+
+        let mut rows = HashMap::new();
+        rows.insert(tid_a.clone(), row(&hash_a, &tenant_a, "cas:rw"));
+        rows.insert(tid_b.clone(), row(&hash_b, &tenant_b, "cas:rw"));
+        let lookup = Arc::new(FakeLookup {
+            rows,
+            calls: AtomicUsize::new(0),
+            backend_err: None,
+        });
+
+        // Global cap 8 (ample headroom), per-tenant sub-cap 2.
+        let verifier = PatVerifier::with_key_set_and_permits_per_tenant(
+            lookup.clone(),
+            vec![(*key).clone()],
+            8,
+            2,
+        );
+
+        // Saturate tenant A's per-tenant semaphore by HOLDING both of its
+        // permits — model A's in-flight flood occupying its whole fair share.
+        let sem_a = verifier
+            .per_tenant_semaphore(&tenant_a)
+            .expect("tenant A semaphore");
+        let _hold1 = Arc::clone(&sem_a).try_acquire_owned().expect("permit 1");
+        let _hold2 = Arc::clone(&sem_a).try_acquire_owned().expect("permit 2");
+        assert_eq!(sem_a.available_permits(), 0, "A at its per-tenant cap");
+
+        // A THIRD verify for tenant A must be denied at the per-tenant gate
+        // (fail-CLOSED overloaded) — A cannot exceed its fair share. Global
+        // permits remain plentiful, so this is the per-tenant bound at work,
+        // NOT the global one.
+        let err_a = verifier.verify(&pt_a).await.unwrap_err();
+        match err_a {
+            VerifyError::Backend(m) => assert!(
+                m.contains("overloaded"),
+                "A beyond its cap must be overloaded, got {m}"
+            ),
+            other => panic!("expected Backend(overloaded) for A, got {other:?}"),
+        }
+
+        // CRUX: tenant B is NOT starved by A's saturation — B's verify runs on
+        // its OWN per-tenant semaphore and global headroom, and SUCCEEDS.
+        let resolved_b = verifier.verify(&pt_b).await.expect("B must not be starved");
+        assert_eq!(resolved_b, tenant_b);
+    }
+
+    /// The GLOBAL bound still holds with the two-tier gate in place: with the
+    /// global pool exhausted (0 permits) but a generous per-tenant cap, a verify
+    /// is still rejected at the GLOBAL gate (acquired FIRST) — proving the
+    /// per-tenant tier did not weaken the OOM/CPU guard, and that the global
+    /// permit is acquired before the per-tenant one (consistent order).
+    #[tokio::test]
+    async fn global_bound_still_holds_under_two_tier_gate() {
+        let key = test_key();
+        let (pt, tid, hash, tenant) = mint_pat(&key, 82, SCOPE_CACHE_RW);
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
+        // Global 0 ⇒ no global permit can ever be had; per-tenant 8 ⇒ the
+        // per-tenant tier is wide open, so a rejection here can ONLY be the
+        // global gate (which is acquired first).
+        let verifier = PatVerifier::with_key_set_and_permits_per_tenant(
+            lookup.clone(),
+            vec![(*key).clone()],
+            0,
+            8,
+        );
+        let err = verifier.verify(&pt).await.unwrap_err();
+        match err {
+            VerifyError::Backend(m) => {
+                assert!(m.contains("overloaded"), "expected overloaded, got {m}")
+            }
+            other => panic!("expected Backend(overloaded), got {other:?}"),
+        }
+        assert_eq!(lookup.call_count(), 1, "global gate sits after the D1 lookup");
+    }
+
+    /// FAIL-SAFE: a poisoned per-tenant map must fall back to GLOBAL-only
+    /// bounding — a bookkeeping fault must NEVER block a legitimate auth. We
+    /// poison the lock, then assert a valid verify still succeeds (it proceeds
+    /// under the global bound with `Ok(None)` from the per-tenant acquire).
+    #[tokio::test]
+    async fn poisoned_per_tenant_map_falls_back_to_global_only() {
+        let key = test_key();
+        let (pt, tid, hash, tenant) = mint_pat(&key, 83, SCOPE_CACHE_RW);
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
+        let verifier = PatVerifier::with_key_set_and_permits_per_tenant(
+            lookup.clone(),
+            vec![(*key).clone()],
+            8,
+            2,
+        );
+        // Poison the per-tenant mutex by panicking while holding the guard.
+        let map = Arc::clone(&verifier.per_tenant_permits);
+        let _ = std::thread::spawn(move || {
+            let _guard = map.lock().unwrap();
+            panic!("intentional poison");
+        })
+        .join();
+        assert!(
+            verifier.per_tenant_permits.is_poisoned(),
+            "precondition: map must be poisoned"
+        );
+        // Despite the poison, the legit verify still resolves (fail-safe to
+        // global-only bounding — no auth blocked on bookkeeping).
+        assert_eq!(
+            verifier.verify(&pt).await.expect("fail-safe global-only"),
+            tenant
+        );
+    }
+
+    /// A single tenant flooding distinct PATs (each a DIFFERENT token_id, all
+    /// owned by the SAME tenant) is bounded by that tenant's per-tenant cap:
+    /// once its sub-cap is held, additional concurrent verifies for the same
+    /// tenant are rejected — exactly the abuse vector finding #1 describes
+    /// (distinct PATs each forcing a fresh Argon2id), now contained.
+    #[tokio::test]
+    async fn same_tenant_distinct_pats_share_one_per_tenant_bucket() {
+        let key = test_key();
+        // Two DISTINCT PATs (distinct token_ids + hashes) for the SAME tenant.
+        let (pt1, tid1, hash1, tenant) = mint_pat(&key, 84, SCOPE_CACHE_RW);
+        // Mint a second PAT for the same tenant id (84) — different principal
+        // offset via the mint counter, so a distinct token_id/hash.
+        let tenant_id = TenantId(Uuid::from_u128(84));
+        let (plaintext2, pat2) = mint(
+            PatEnv::Pat,
+            tenant_id,
+            PrincipalId(Uuid::from_u128(99_999)),
+            PatScopes::from_u64(SCOPE_CACHE_RW),
+            None,
+            &key,
+            1,
+        )
+        .unwrap();
+        let pt2 = plaintext2.into_string();
+        let tid2 = pat2.token_id.as_str().to_owned();
+        let hash2 = pat2.hash.as_str().to_owned();
+        assert_ne!(tid1, tid2, "distinct PATs ⇒ distinct token_ids");
+
+        let mut rows = HashMap::new();
+        rows.insert(tid1, row(&hash1, &tenant, "cas:rw"));
+        rows.insert(tid2, row(&hash2, &tenant, "cas:rw"));
+        let lookup = Arc::new(FakeLookup {
+            rows,
+            calls: AtomicUsize::new(0),
+            backend_err: None,
+        });
+
+        // Per-tenant cap 1 so a single held permit saturates the tenant.
+        let verifier = PatVerifier::with_key_set_and_permits_per_tenant(
+            lookup,
+            vec![(*key).clone()],
+            8,
+            1,
+        );
+
+        // Hold the tenant's single per-tenant permit (model PAT #1 in-flight).
+        let sem = verifier.per_tenant_semaphore(&tenant).expect("tenant sem");
+        let _hold = Arc::clone(&sem).try_acquire_owned().expect("hold the only permit");
+
+        // A verify for PAT #2 (same tenant, different token_id) is denied at the
+        // shared per-tenant bucket — the flood is contained per tenant.
+        let err = verifier.verify(&pt2).await.unwrap_err();
+        assert!(
+            matches!(err, VerifyError::Backend(ref m) if m.contains("overloaded")),
+            "second distinct PAT for the SAME tenant must hit the per-tenant cap, got {err:?}"
+        );
+        // (pt1 unused beyond minting — it shares the bucket identity with pt2.)
+        let _ = pt1;
     }
 }
