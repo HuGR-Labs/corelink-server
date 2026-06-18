@@ -121,12 +121,14 @@ async function fetch_(
 // ──────────────────────────────────────────────────────────────────────────────
 
 describe("full pipeline smoke", () => {
-  it("GET /health returns 200 with env field", async () => {
+  it("GET /health returns 200 and omits env (F19: no env disclosure on unauth)", async () => {
+    // F19: the deployment environment must NOT be disclosed on the unauthenticated
+    // /health endpoint. Body is {"status":"ok"} only — no `env` field.
     const resp = await fetch_("http://localhost/health");
     expect(resp.status).toBe(200);
-    const body = await resp.json() as { status: string; env: string };
+    const body = await resp.json() as { status: string; env?: string };
     expect(body.status).toBe("ok");
-    expect(typeof body.env).toBe("string");
+    expect(body.env).toBeUndefined();
   });
 
   it("GET /health does NOT require auth", async () => {

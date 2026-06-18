@@ -200,10 +200,13 @@ describe("GET /health", () => {
     expect(resp.status).toBe(200);
   });
 
-  it("includes env field in JSON body", async () => {
+  it("omits env field from JSON body (F19: no env disclosure on unauth endpoints)", async () => {
+    // F19 (src/index.ts ~L1428): the deployment environment must NOT be disclosed
+    // on unauthenticated endpoints. /health serves only {"status":"ok"} — no `env`.
     const resp = await workerFetch("http://localhost/health");
-    const body = await resp.json() as { env: string };
-    expect(body.env).toBe("test");
+    const body = await resp.json() as { status: string; env?: string };
+    expect(body.status).toBe("ok");
+    expect(body.env).toBeUndefined();
   });
 
   it("does not require Authorization header", async () => {
@@ -2198,7 +2201,11 @@ describe("H1: x-corelink-scope server-trust header", () => {
               } as T;
             }
             if (sql.includes("primary_region")) {
-              return { primary_region: "lhr" } as T;
+              // D1 holds the MACRO code (wnam/enam/weur/sam/...), NOT a colo
+              // string. The worker maps the macro → colo via region-map
+              // (coloForMacro): weur → lhr → env.PROD_LHR. A literal "lhr"
+              // here would NOT match any macro and fail-close (RESIDENCY_UNAVAILABLE).
+              return { primary_region: "weur" } as T;
             }
             void args;
             return null as T;

@@ -26,33 +26,26 @@ vi.mock("@clerk/backend", () => ({ verifyToken: vi.fn() }));
 import { verifyToken } from "@clerk/backend";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
+import { TEST_PAT_SIGNING_KEY, mintTestPat } from "./setup.js";
 
 const mockVerifyToken = vi.mocked(verifyToken);
 
 const CLERK_SECRET = "sk_test_clerk_secret";
 const INTERNAL_KEY = "test-internal-auth-key-0123456789";
 
-// Canonical test PAT (format only — HMAC fast-fail is skipped because
-// PAT_SIGNING_KEY is absent in the test env). Same fixture as index.test.ts.
+// Canonical test PAT — CRYPTOGRAPHICALLY VALID under TEST_PAT_SIGNING_KEY
+// (honest auth harness, #345). The native plane (extractAuth) fails CLOSED
+// with a 503 unless PAT_SIGNING_KEY is bound AND the PAT's HMAC verifies, so
+// PAT-surface regression tests must mint a real signed PAT and bind the key
+// (makeBridgeEnv does the latter). The earlier inline all-"A" fixture relied
+// on the now-removed "PAT_SIGNING_KEY absent ⇒ skip HMAC" theater and 503'd.
 const TEST_TOKEN_ID = "AAAAAAAAAAAAAAAA"; // 16 Crockford b32 chars
-const TEST_PAT_TOKEN =
-  "corelink_pat_" +
-  TEST_TOKEN_ID +
-  "." +
-  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" + // 43 base64url chars
-  "." +
-  "AAAAAAAAAAAAAAAAAAAAAA"; // 22 base64url chars
+const TEST_PAT_TOKEN = await mintTestPat({ tokenId: TEST_TOKEN_ID });
 if (TEST_PAT_TOKEN.length !== 96) {
   throw new Error(`TEST_PAT_TOKEN length ${TEST_PAT_TOKEN.length} !== 96`);
 }
 const REVOKED_TOKEN_ID = "DDDDDDDDDDDDDDDD";
-const REVOKED_PAT_TOKEN =
-  "corelink_pat_" +
-  REVOKED_TOKEN_ID +
-  "." +
-  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
-  "." +
-  "AAAAAAAAAAAAAAAAAAAAAA";
+const REVOKED_PAT_TOKEN = await mintTestPat({ tokenId: REVOKED_TOKEN_ID });
 
 const TEST_TENANT_ID = "00000000-0000-0000-0000-000000000001";
 const CLERK_TENANT_ID = "00000000-0000-0000-0000-00000000c1e7";
@@ -143,6 +136,10 @@ function makeBridgeEnv(opts: {
     CORELINK_SERVER: makeCaptureNamespace(opts.captured),
     ENVIRONMENT: "test",
     CONFIG_DB: makeDualD1({ pats: opts.pats, clerkUserToTenant: opts.clerkUserToTenant }),
+    // Honest auth harness (#345): bind the valid test signing key so a minted
+    // PAT's HMAC verifies and the PAT surface reaches the real auth/route logic
+    // (instead of fail-closing to 503 on an unset key).
+    PAT_SIGNING_KEY: TEST_PAT_SIGNING_KEY,
     CLERK_SECRET_KEY: opts.withClerkSecret === false ? undefined : CLERK_SECRET,
     // Bound ON PURPOSE: the least-privilege assertion below must prove the
     // customer_v1 Clerk forward does NOT inject internal-auth even when the

@@ -80,6 +80,22 @@ Each entry cross-references:
   wired `scripts/check-env-contract.py` (pure-grep container env-contract gate) into the
   `secrets-drift` PR workflow so any future read-but-not-forwarded var fails the PR. No key material
   changes; retire by renaming the prod secret to the canonical name.
+- **Worker vitest test-debt cleared — the suite is now honest and fully green (no unexplained reds).**
+  After the honest-PAT harness (#345) landed, 10 worker vitest tests were red because their expectations
+  predated either that harness or two product hardenings. All were stale TEST bugs (NO product code
+  changed): (1) three `/health` env-field assertions (`index.test.ts`, `integration.test.ts`,
+  `do_miniflare_integration.miniflare.test.ts`) still expected a `body.env` field that F19 intentionally
+  OMITS on unauthenticated endpoints — now assert `env` is absent; (2) the region-fanout scope test
+  (`index.test.ts` H1) seeded `primary_region: "lhr"` (a colo string) where the worker now expects a MACRO
+  code (`coloForMacro`: `weur → lhr`) — fixed to seed `weur`; (3) the two `customer_clerk_bridge` PAT-surface
+  regressions and (4) the five `do_miniflare_integration` auth/isolation tests used the pre-harness unsigned
+  all-"A" PAT and unset `PAT_SIGNING_KEY`, so `extractAuth` fail-closed to 503 instead of exercising the real
+  401/DO path — now mint HMAC-valid PATs via `mintTestPat` and bind `TEST_PAT_SIGNING_KEY` (the miniflare
+  harness also now seeds a `tenant.primary_region` row so authenticated requests fall through to the DO's
+  `CONTAINER_UNAVAILABLE`). The previously `.skip`-ed quota-429 integration test in `quota.test.ts` — skipped
+  pending exactly this harness — was un-skipped and now passes. Final: 369 passed, 0 failed, 0 skipped
+  (main config) + 22 passed (miniflare config). No tests left skipped-with-reason; the pool is usable via the
+  programmatic miniflare v4 API.
 - **Container Stripe-webhook materializer could (re-)grant a paid entitlement on a non-granting
   subscription status (money-path defense-in-depth).** On `customer.subscription.updated`,
   `reconcile_tier` → `persist_tier_change` → `upsert_tier` (`SQL_UPSERT_TIER`) UNCONDITIONALLY wrote
