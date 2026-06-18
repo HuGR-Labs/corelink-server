@@ -16,6 +16,12 @@ compatibility_date = "2026-04-01"
 # never exposed on workers.dev — only via humangr.com custom route.
 workers_dev = false
 
+# Native retained Workers Logs (zero-cost; queryable in the CF dashboard).
+# Not Logpush to an external sink (that needs an owner-provided destination).
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 [limits]
 cpu_ms = 10
 
@@ -65,6 +71,11 @@ crons = [
 name = "corelink-analytics-prod"
 vars = { ENVIRONMENT = "prod", ALLOWED_ORIGINS = "https://corelink-docs.humangr.com,https://corelink-admin.humangr.com,https://corelink-app.humangr.com", PLAUSIBLE_DOMAIN = "corelink-docs.humangr.com", DIGEST_RECIPIENT = "gustavo@humangr.com", DIGEST_FROM = "noreply@humangr.com" }
 
+# Native retained Workers Logs (per-env; not inherited from top-level).
+[env.prod.observability]
+enabled = true
+head_sampling_rate = 1
+
 [[env.prod.routes]]
 pattern = "corelink-analytics.humangr.com/*"
 zone_name = "humangr.com"
@@ -86,6 +97,11 @@ crons = [
 [env.staging]
 name = "corelink-analytics-staging"
 vars = { ENVIRONMENT = "staging", ALLOWED_ORIGINS = "https://corelink-docs.humangr.com,https://corelink-admin.humangr.com,https://corelink-app.humangr.com", PLAUSIBLE_DOMAIN = "corelink-docs.humangr.com", DIGEST_RECIPIENT = "gustavo@humangr.com", DIGEST_FROM = "noreply@humangr.com" }
+
+# Native retained Workers Logs (per-env; not inherited from top-level).
+[env.staging.observability]
+enabled = true
+head_sampling_rate = 1
 
 [[env.staging.d1_databases]]
 binding = "ANALYTICS_DB"

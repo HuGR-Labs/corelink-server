@@ -19,7 +19,8 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@clerk/backend": "2.33.3"
+    "@clerk/backend": "2.33.3",
+    "@sentry/cloudflare": "^8.45.0"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.16.16",

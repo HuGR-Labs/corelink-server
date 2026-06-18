@@ -21,6 +21,12 @@ name = "corelink-clerk-cf-poc"
 main = "build/worker/shim.mjs"
 compatibility_date = "2026-04-01"
 
+# Native retained Workers Logs (zero-cost; queryable in the CF dashboard).
+# Not Logpush to an external sink (that needs an owner-provided destination).
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 [build]
 command = "cargo build --target wasm32-unknown-unknown --release -p corelink-clerk-cf"
 
@@ -140,3 +146,8 @@ crons = ["0 6 * * *"]
 [env.prod]
 name = "corelink-clerk-cf-poc-prod"
 vars = { ENVIRONMENT = "prod", STATUSPAGE_PAGE_ID = "PLACEHOLDER_STATUSPAGE_PAGE_ID_PROD", STATUSPAGE_METRIC_DSR_RESOLUTION_HOURS = "PLACEHOLDER_STATUSPAGE_METRIC_DSR_RESOLUTION_HOURS_PROD", STATUSPAGE_TENANT_ID = "PLACEHOLDER_STATUSPAGE_TENANT_ID_PROD" }
+
+# Native retained Workers Logs (per-env; not inherited from top-level).
+[env.prod.observability]
+enabled = true
+head_sampling_rate = 1
