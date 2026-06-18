@@ -41,7 +41,8 @@ Each entry cross-references:
   `max_concurrency` ⇒ "no Runners entitlement → reject"; absent `max_vcpu_h` ⇒ "entitled, compute-wall
   OFF" (byte-compatible; arms when populated). `conformance/corelink-introspect.json` updated.
 - **Launch-hardening scanners: gitleaks (secret-leak) + trivy (JS-dep CVE + IaC misconfig) CI gates.**
-  Two pinned-binary, no-sudo gates on the self-hosted Linux runner. `gitleaks` (`.gitleaks.toml`) extends
+  Two pinned-binary, no-sudo gates on the self-hosted macOS fleet (the Linux fleet is down — see Fixed).
+  `gitleaks` (`.gitleaks.toml`) extends
   the default ruleset with a custom Stripe-`whsec_` rule (the default set misses webhook secrets — the
   baseline caught a stale committed one) and a `CORELINK_*_AUTH_KEY`/`PAT_SIGNING_KEY` 64-hex rule; PR
   runs scan the `base..head` range, dispatch runs scan full history. `trivy` (`.trivyignore.yaml`,
@@ -85,6 +86,14 @@ Each entry cross-references:
   fixes verified locally with `zizmor` + `actionlint`. (The remaining lower-severity zizmor findings —
   safe `number`/`sha` values, `excessive-permissions`, `artipacked` — are a separate owner-aware phased
   sweep per `docs/launch/2026-06-18-sota-tooling-roadmap.md`.)
+- **gitleaks + trivy scanners moved off the down Linux fleet onto the macOS fleet.** The self-hosted
+  `[self-hosted, Linux, X64]` fleet has no runner registered (2026-06-18), so the two launch-hardening
+  scanner gates were stranded queued. Both now `runs-on: [self-hosted, mac, corelink-builder]` (the same
+  move already made for `semgrep`/`cargo-deny`/`cargo-audit`) with the macOS-x64 release binary +
+  checksum (`gitleaks_8.30.1_darwin_x64`, `trivy_0.71.1_macOS-64bit`, authoritative `…_checksums.txt`)
+  and `shasum -a 256 -c -` (macOS has no `sha256sum`). Light scans (no Rust compile) so they do not
+  contend for disk with the build jobs. Install path verified locally on the Intel fleet arch; the heavy
+  Linux-determinism jobs (`reproducible-build`, `ffi-matrix`) remain Linux-pinned pending a Linux runner.
 - **Redacted a committed Stripe webhook signing secret** (`whsec_…`, stale/dead — its endpoint was
   already deleted) from `docs/operator/stripe-checkout-e2e-2026-05-29.md`. ⚠️ Operator action: confirm
   the secret is rotated/revoked in Stripe (it remains in git history).
