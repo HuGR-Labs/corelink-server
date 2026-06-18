@@ -85,6 +85,19 @@ Each entry cross-references:
   `docs/security/2026-06-18-gitleaks-baseline-triage.md`.
 
 ### Fixed
+- **Vendor-review-evidence gap — `legal_review_evidence:` paths now exist + are existence-checked.**
+  `legal/sub-processors.md` (and `legal/dpa/SUB-PROCESSOR-COMMITMENTS.md`) declare
+  `legal_review_evidence:` paths under `docs/compliance/vendor-reviews/`, but that
+  directory did not exist and `scripts/validate_sub_processors.py` only checked the
+  path *format*, not *existence* — so the gap passed silently. Created
+  `docs/compliance/vendor-reviews/` with a `README.md` (evidence-store doc), a
+  `_TEMPLATE.md`, and a per-sub-processor evidence stub at the exact path each
+  disclosure references (all clearly marked `STATUS: TEMPLATE — pending the actual
+  legal review record`; no review outcomes fabricated — owner/counsel to complete).
+  Hardened the validator with a path-EXISTENCE check (d.2) alongside the existing
+  format check (d.1), anchored to the repo root, so a well-formed-but-missing
+  evidence path can no longer pass. Sub-processor list contents and the DPO email
+  are unchanged.
 - **Legal-doc hygiene — sub-processor source-of-truth + broken internal path refs.**
   Reconciled the sub-processor source of truth so the DPA, the legal disclosure
   (`legal/sub-processors.md`), and the auto-generated public page can no longer

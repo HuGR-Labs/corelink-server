@@ -5,7 +5,10 @@ WI-S11-005 §6.1 scope:
   (a) YAML schema validation
   (b) semver bump on any change
   (c) per-sub-processor required fields validation
-  (d) Legal Review evidence path check per sub-processor
+  (d) Legal Review evidence path check per sub-processor:
+        - (d.1) path FORMAT (docs/compliance/vendor-reviews/*.md)
+        - (d.2) path EXISTENCE — the referenced evidence file MUST exist
+          (closes the gap where a well-formed but missing path passed silently)
 
 Usage:
   python scripts/validate_sub_processors.py [--previous-version VERSION]
@@ -78,8 +81,16 @@ def semver_gt(a: str, b: str) -> bool:
     return parts(a) > parts(b)
 
 
-def validate_sub_processors(data: dict[str, Any], previous_version: str | None) -> list[str]:
-    """Validate sub-processors frontmatter. Returns list of error messages."""
+def validate_sub_processors(
+    data: dict[str, Any],
+    previous_version: str | None,
+    repo_root: str = ".",
+) -> list[str]:
+    """Validate sub-processors frontmatter. Returns list of error messages.
+
+    repo_root anchors the existence check for legal_review_evidence paths,
+    which are declared repo-root-relative (docs/compliance/vendor-reviews/*.md).
+    """
     errors: list[str] = []
 
     # (a) Required top-level fields
@@ -135,13 +146,26 @@ def validate_sub_processors(data: dict[str, Any], previous_version: str | None) 
             if field not in sp:
                 errors.append(f"{prefix} (id={sp_id!r}): missing required field {field!r}")
 
-        # (d) Legal Review evidence path format check
+        # (d.1) Legal Review evidence path FORMAT check
         evidence = sp.get("legal_review_evidence", "")
-        if evidence and not EVIDENCE_PATH_RE.match(str(evidence)):
+        evidence_format_ok = bool(evidence) and bool(EVIDENCE_PATH_RE.match(str(evidence)))
+        if evidence and not evidence_format_ok:
             errors.append(
                 f"{prefix} (id={sp_id!r}): legal_review_evidence {evidence!r} must match "
                 "pattern docs/compliance/vendor-reviews/*.md"
             )
+
+        # (d.2) Legal Review evidence path EXISTENCE check.
+        # A well-formed path that points at a non-existent file is the exact
+        # gap this validator previously let pass silently — fail on it.
+        if evidence_format_ok:
+            evidence_abs = os.path.join(repo_root, str(evidence))
+            if not os.path.isfile(evidence_abs):
+                errors.append(
+                    f"{prefix} (id={sp_id!r}): legal_review_evidence {evidence!r} "
+                    "does not exist — create the evidence file under "
+                    "docs/compliance/vendor-reviews/ (see _TEMPLATE.md)"
+                )
 
         # data_categories_processed must be a list
         if "data_categories_processed" in sp:
@@ -190,7 +214,13 @@ def main() -> int:
         print(f"ERROR parsing frontmatter: {e}", file=sys.stderr)
         return 1
 
-    errors = validate_sub_processors(data, args.previous_version)
+    # Evidence paths are declared repo-root-relative. Derive the repo root
+    # from the sub-processors.md location (legal/sub-processors.md -> root)
+    # so the existence check works regardless of the invoking CWD.
+    abs_file = os.path.abspath(file_path)
+    repo_root = os.path.dirname(os.path.dirname(abs_file))
+
+    errors = validate_sub_processors(data, args.previous_version, repo_root)
 
     if errors:
         print(f"VALIDATION FAILED: {file_path}", file=sys.stderr)
