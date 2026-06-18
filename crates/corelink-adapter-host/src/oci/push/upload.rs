@@ -225,6 +225,7 @@ pub async fn put(
     declared_digest: &str,
     trailing_chunk: Option<AxumBytes>,
     blob_size_limit_bytes: u64,
+    storage_cap_bytes: Option<i64>,
     now_unix_ms: u64,
 ) -> Result<axum::response::Response, OciAdapterError> {
     check_repo_push(repo, scope)?;
@@ -266,7 +267,7 @@ pub async fn put(
     // splits assemble vs commit). We need the bytes back to verify
     // the declared digest before we commit visibility.
     let bytes = cas
-        .finalize_upload(tenant, upload_uuid, &parsed.to_wire())
+        .finalize_upload(tenant, upload_uuid, &parsed.to_wire(), storage_cap_bytes)
         .await
         .map_err(|e| {
             if e.starts_with("upload session not found") {

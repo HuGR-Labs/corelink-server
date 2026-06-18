@@ -93,7 +93,12 @@ impl CasStore for BrewMoatStore {
 
     async fn put(&self, _tenant_id: &str, cas_key: &str, bytes: Vec<u8>) -> Result<(), CasError> {
         self.moat
-            .put(PUBLIC_NAMESPACE, cas_key, bytes)
+            // `None`: brew bottles accrue against the tenant's EXISTING
+            // `tenant_storage_state` row's stored cap (seeded on the first
+            // native write). The OCI surface (WP #10) is the one that threads a
+            // resolved cap; brew/npm/pip keep the prior fail-closed-on-fresh-row
+            // posture.
+            .put(PUBLIC_NAMESPACE, cas_key, bytes, None)
             .await
             .map_err(|e| match e {
                 MoatError::Backend(m) => CasError::Backend(m),

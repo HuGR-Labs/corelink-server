@@ -166,7 +166,10 @@ impl CasStore for NpmMoatStore {
     ) -> Result<(), NpmAdapterError> {
         // SECURITY: per-tenant namespace (not PUBLIC) — see the type doc.
         self.moat
-            .put(&tenant.to_string(), &digest.to_hex(), bytes)
+            // `None`: npm tarballs accrue against the tenant's EXISTING
+            // `tenant_storage_state` row's stored cap (the OCI surface — WP #10 —
+            // is the one that threads a resolved cap; npm keeps the prior posture).
+            .put(&tenant.to_string(), &digest.to_hex(), bytes, None)
             .await
             .map_err(|e| match e {
                 MoatError::Backend(m) => NpmAdapterError::Cas(m),

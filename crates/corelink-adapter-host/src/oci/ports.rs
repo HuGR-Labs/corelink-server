@@ -86,11 +86,22 @@ pub trait BlobStore: Send + Sync + fmt::Debug {
     /// persist under the `(tenant, blob_key)` slot. `blob_key` is the
     /// OCI digest wire string (`"sha256:<hex>"`); the implementation
     /// MAY further translate to a CAS-internal address.
+    ///
+    /// `storage_cap_bytes` is the tenant's RESOLVED per-tier storage cap
+    /// (bytes), recovered from the VERIFIED bearer token (resolved at
+    /// `/token` mint). The implementation threads it into the byte-accounting
+    /// reservation so the persist reserves against the resolved cap and is
+    /// REJECTED when it would exceed it (a DOWNGRADED tenant pushing
+    /// exclusively over OCI is then capped). Semantics mirror the native CAS
+    /// path's `CasWriteRequest::with_storage_quota_bytes`:
+    /// `Some(n)` finite cap / `Some(0)` genuine-unlimited / `None`
+    /// indeterminate → fail-closed on an unseeded tenant.
     async fn finalize_upload(
         &self,
         tenant: &TenantId,
         upload_uuid: &str,
         blob_key: &str,
+        storage_cap_bytes: Option<i64>,
     ) -> PortResult<Bytes>;
 
     /// Cancel + reap an upload session (called when declared-digest
@@ -144,6 +155,19 @@ pub struct ResolvedPat {
     pub tenant: TenantId,
     /// `true` iff the PAT grants cache WRITE (e.g. `cas:rw` / `admin`).
     pub can_write: bool,
+    /// The tenant's RESOLVED per-tier storage cap (bytes), resolved in the
+    /// SAME `/token` re-verify call (the seam where OCI knows the tenant).
+    /// Embedded in the minted bearer so the finalize-blob write reserves
+    /// against the resolved (possibly-downgraded) cap. Semantics mirror the
+    /// native plane's `STORAGE_QUOTA_HEADER`:
+    /// - `Some(n)`, `n > 0` — a finite cap;
+    /// - `Some(0)` — a genuinely-unlimited tier (the deliberate sentinel);
+    /// - `None` — INDETERMINATE (resolver could not confirm the cap) → the
+    ///   data plane fails CLOSED on an unseeded tenant (never uncapped).
+    ///
+    /// The default `resolve_pat_capability` reports `None` (fail-safe); the
+    /// container's Option-B resolver overrides it with the D1-resolved cap.
+    pub storage_cap_bytes: Option<i64>,
 }
 
 /// PAT → [`TenantId`] resolver port. Wave-33 Stream B's
@@ -172,6 +196,9 @@ pub trait TenantResolver: Send + Sync + fmt::Debug {
         Ok(ResolvedPat {
             tenant,
             can_write: false,
+            // FAIL-SAFE: a resolver that cannot determine the cap reports
+            // indeterminate → the data plane fails closed on an unseeded tenant.
+            storage_cap_bytes: None,
         })
     }
 }
@@ -231,6 +258,7 @@ pub mod testing {
             tenant: &TenantId,
             upload_uuid: &str,
             blob_key: &str,
+            _storage_cap_bytes: Option<i64>,
         ) -> PortResult<Bytes> {
             let mut g = self.inner.lock();
             let buf = g

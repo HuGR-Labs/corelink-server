@@ -129,7 +129,10 @@ impl CasStore for PipMoatStore {
         bytes: Vec<u8>,
     ) -> Result<(), PipAdapterError> {
         self.moat
-            .put(PUBLIC_NAMESPACE, &digest.to_hex(), bytes)
+            // `None`: pip wheels accrue against the tenant's EXISTING
+            // `tenant_storage_state` row's stored cap (the OCI surface — WP #10 —
+            // is the one that threads a resolved cap; pip keeps the prior posture).
+            .put(PUBLIC_NAMESPACE, &digest.to_hex(), bytes, None)
             .await
             .map_err(|e| match e {
                 MoatError::Backend(m) => PipAdapterError::Cas(m),

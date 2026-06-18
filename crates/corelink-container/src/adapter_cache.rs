@@ -249,20 +249,22 @@ impl MoatCache {
         namespace: &str,
         url_hash: &str,
         bytes: Vec<u8>,
+        storage_quota_bytes: Option<i64>,
     ) -> Result<(), MoatError> {
         let content_hash = (self.hasher)(&bytes);
         let content_len = bytes.len() as u64;
         let handler = Arc::clone(&self.cas_write);
-        // NOTE (storage-cap seeding): the moat's `BlobStore`/`CasStore` port
-        // signatures carry no request headers, so the cap is left at its
-        // fail-closed default (`storage_quota_bytes == None`). For an EXISTING
-        // `tenant_storage_state` row the byte-accounting decorator accrues
-        // against the row's already-seeded cap (correct). For a tenant with NO
-        // row yet, the decorator FAILS CLOSED (never seeds an uncapped row) —
-        // the deliberate posture: a fresh tenant is seeded on its first NATIVE
-        // CAS/AC/Bazel/Turbo write (which carries the Worker cap header), after
-        // which moat/adapter (brew/npm/pip/oci) writes accrue normally. Absence
-        // of a cap is never treated as unlimited.
+        // Storage-cap seeding: `storage_quota_bytes` is the caller's RESOLVED
+        // per-tier cap, threaded into the byte-accounting reservation
+        // (`CasWriteRequest::with_storage_quota_bytes`) so a fresh
+        // `tenant_storage_state` row is seeded with the REAL cap and a
+        // DOWNGRADED tenant's stored cap is reconciled on this write (rt-nuclear
+        // #16). The OCI surface (WP #10) resolves the cap at `/token` mint and
+        // passes it here via the verified bearer; the brew/npm/pip surfaces pass
+        // `None` (their writes accrue against an EXISTING row's stored cap; a
+        // tenant with NO row yet is seeded on its first NATIVE write, which
+        // carries the Worker cap header). `None` ⇒ fail-closed on an unseeded
+        // tenant — absence is never treated as unlimited.
         let req = CasWriteRequest::new(
             namespace,
             &content_hash,
@@ -270,7 +272,8 @@ impl MoatCache {
             self.principal.as_str(),
             namespace,
             unix_ms_now(),
-        );
+        )
+        .with_storage_quota_bytes(storage_quota_bytes);
         let result = tokio::task::spawn_blocking(move || handler.write(req))
             .await
             .map_err(|e| MoatError::Backend(format!("cas write join: {e}")))?;
@@ -362,7 +365,7 @@ mod tests {
         let map = Arc::new(FakeUrlMap::default());
         let m = moat(in_memory_cas(), Arc::clone(&map));
         let bytes = b"bottle-bytes".to_vec();
-        m.put(PUBLIC_NAMESPACE, "urlhash1", bytes.clone())
+        m.put(PUBLIC_NAMESPACE, "urlhash1", bytes.clone(), None)
             .await
             .unwrap();
         let got = m.get(PUBLIC_NAMESPACE, "urlhash1").await.unwrap();
@@ -382,10 +385,10 @@ mod tests {
         let map = Arc::new(FakeUrlMap::default());
         let m = moat(in_memory_cas(), Arc::clone(&map));
         let bytes = b"shared-public-dep".to_vec();
-        m.put(PUBLIC_NAMESPACE, "urlA", bytes.clone())
+        m.put(PUBLIC_NAMESPACE, "urlA", bytes.clone(), None)
             .await
             .unwrap();
-        m.put(PUBLIC_NAMESPACE, "urlB", bytes.clone())
+        m.put(PUBLIC_NAMESPACE, "urlB", bytes.clone(), None)
             .await
             .unwrap();
         // Both map rows resolve to the SAME content_hash.

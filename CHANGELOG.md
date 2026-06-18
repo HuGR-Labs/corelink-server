@@ -103,6 +103,22 @@ Each entry cross-references:
   `legal/lia/tia-template.md` → `legal/tia-template.md` (DPA all 3 locales).
   Sub-processor list contents and the privacy/DPO contact email were left
   untouched (legal-fact decisions). Doc/config only.
+- **OCI registry storage-cap on downgrade (WP #10).** An OCI blob push reached the byte-accounting
+  moat (`MoatCache::put`) with the per-tier storage cap hard-coded to `None`, and the Worker forwards
+  the OCI `/v2/*` + `/token` surface RAW (it cannot resolve the cap for the two-leg flow, so it never
+  sets the native `x-corelink-storage-quota-bytes` header). A **DOWNGRADED** tenant pushing exclusively
+  over OCI therefore over-stored up to its stale cap until a native CAS/AC write reseeded the row. The
+  cap is now resolved at the `/token` mint — the one seam where OCI knows the tenant (full Option-B PAT
+  re-verify) — via a container-side `tier → cap` resolver (`oci_cap.rs`) that ports the Worker's
+  `QUOTAS[tier].storageBytesMax` derivation (`tier_selections(active) → tenant.tier → free`,
+  fail-CLOSED on a D1 error). The resolved cap is embedded in the **signed** HMAC bearer (token wire
+  format extended to `corelink-oci.<tenant>.<scope>.<cap>.<expiry>.<hmac>`; re-signed over the new
+  preimage so a tenant cannot forge a larger cap — OCI has no live customer bearers pre-launch, so no
+  back-compat shim) and threaded at finalize (`finalize_upload → MoatCache::put →
+  CasWriteRequest::with_storage_quota_bytes`). An OCI write now reserves against the resolved cap and is
+  rejected (402-equivalent) when over it; an unresolvable cap fails CLOSED on an unseeded tenant,
+  mirroring the native plane. Regression tests prove over-cap reject / under-cap accrue / fresh-tenant
+  fail-closed; the digest-verify-before-commit invariant (#2) stays green.
 - **D1 migration apply tooling — DR-hardening against the ledger-desync / re-provision landmine
   (#19).** The two stale prod-apply scripts (`scripts/apply-d1-migrations-prod.sh`,
   `scripts/d-day-migrations-apply-prod.sh`) hard-paused on a brittle hardcoded

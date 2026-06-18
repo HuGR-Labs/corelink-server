@@ -41,7 +41,7 @@ async fn seed_blob(rig: &TestRig, _repo: &str, bytes: &[u8]) -> String {
         .await
         .expect("chunk");
     rig.cas
-        .finalize_upload(&rig.tenant, &uuid, &key)
+        .finalize_upload(&rig.tenant, &uuid, &key, None)
         .await
         .expect("finalize");
     digest.to_wire()

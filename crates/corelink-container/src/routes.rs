@@ -650,6 +650,15 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                         let oci_manifest_kv: Arc<
                             dyn corelink_adapter_host::oci::ports::ManifestKvStore,
                         > = oci_kv;
+                        // WP #10: resolve the tenant's RESOLVED per-tier storage
+                        // cap at `/token` mint (the only seam where OCI knows the
+                        // tenant). Reuses the SAME D1 client the moat map uses;
+                        // the cap is embedded in the signed bearer and reserved
+                        // against at finalize. The Worker forwards OCI RAW and
+                        // never sets the native `STORAGE_QUOTA_HEADER`, so this is
+                        // the sole carrier of the cap for the OCI plane.
+                        let oci_cap_resolver: Arc<dyn crate::oci_cap::TenantCapResolver> =
+                            Arc::new(crate::oci_cap::D1TenantCapResolver::new(d1.clone()));
                         router = router.merge(oci::router(
                             oci_cas_read,
                             oci_cas_write,
@@ -659,6 +668,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                             corelink_core::SecretWrap::new(token_key),
                             quota.clone(),
                             request_count.clone(),
+                            Some(oci_cap_resolver),
                         ));
                     }
                     _ => {

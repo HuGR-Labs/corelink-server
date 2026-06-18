@@ -157,10 +157,17 @@ pub async fn token(
         scope.restricted_to_read()
     };
     let now_secs = (state.clock_unix_ms)() / 1000;
+    // Embed the RESOLVED per-tier storage cap (resolved by the Option-B
+    // resolver in the SAME re-verify above) into the SIGNED bearer, so the
+    // OCI data plane can reserve a finalize-blob write against the cap — the
+    // Worker forwards OCI RAW and never sets the native plane's
+    // STORAGE_QUOTA_HEADER, so this token field is the ONLY carrier. `None`
+    // (indeterminate) encodes as the fail-closed sentinel.
     let token = match crate::oci::auth::mint(
         &state.config.token_signing_key,
         &resolved.tenant,
         &granted,
+        resolved.storage_cap_bytes,
         now_secs,
         state.config.token_ttl_secs,
     ) {
@@ -229,6 +236,10 @@ pub async fn dispatch_v2(
     };
     let tenant = verified.tenant;
     let scope = &verified.scope;
+    // The signed, resolved per-tier storage cap rides in the verified bearer
+    // (set at `/token` mint). Threaded into the blob finalize so an OCI push
+    // reserves against the resolved (possibly-downgraded) cap.
+    let storage_cap_bytes = verified.storage_cap_bytes;
     let Some(parsed) = parse_v2_tail(tail) else {
         return err_response(
             &OciAdapterError::NotFound,
@@ -238,7 +249,7 @@ pub async fn dispatch_v2(
     };
     let now_ms = (state.clock_unix_ms)();
     let result = route_dispatch(
-        parsed, method, uri, headers, body, &state, &tenant, scope, now_ms,
+        parsed, method, uri, headers, body, &state, &tenant, scope, storage_cap_bytes, now_ms,
     )
     .await;
     match result {
@@ -261,6 +272,7 @@ async fn route_dispatch(
     state: &AppState,
     tenant: &corelink_core::TenantId,
     scope: &crate::oci::auth::OciScope,
+    storage_cap_bytes: Option<i64>,
     now_ms: u64,
 ) -> Result<axum::response::Response, OciAdapterError> {
     match parsed {
@@ -296,7 +308,7 @@ async fn route_dispatch(
         },
         V2Path::BlobUploadsSession { repo, uuid } => {
             dispatch_blob_upload_session(
-                state, tenant, scope, &repo, &uuid, method, uri, body, now_ms,
+                state, tenant, scope, storage_cap_bytes, &repo, &uuid, method, uri, body, now_ms,
             )
             .await
         }
@@ -324,6 +336,7 @@ async fn dispatch_blob_upload_session(
     state: &AppState,
     tenant: &corelink_core::TenantId,
     scope: &crate::oci::auth::OciScope,
+    storage_cap_bytes: Option<i64>,
     repo: &str,
     uuid: &str,
     method: Method,
@@ -368,6 +381,7 @@ async fn dispatch_blob_upload_session(
                 &declared,
                 trailing,
                 state.config.blob_size_limit_bytes,
+                storage_cap_bytes,
                 now_ms,
             )
             .await
