@@ -522,6 +522,14 @@ export class CoreLinkServer implements DurableObject {
           // OCI token-mint signing key — read by the container's OCI adapter.
           // (Gap caught by scripts/check-env-contract.py on its first run, 2026-06-13.)
           CORELINK_OCI_TOKEN_KEY: this.env.CORELINK_OCI_TOKEN_KEY ?? "",
+          // Legacy alias of CORELINK_OCI_TOKEN_KEY (CAA-360 #8 name drift): the
+          // prod Worker holds the OCI signing key under HUGR_OCI_TOKEN_KEY, and the
+          // container reads it via the routes.rs `.or_else(...)` fallback. Forward
+          // it too — otherwise that fallback is a silent no-op (the value never
+          // reaches the container). Retire once the prod secret is renamed to the
+          // canonical name. See crates/corelink-container/src/routes/oci.rs
+          // (OCI_TOKEN_KEY_ENV_LEGACY).
+          HUGR_OCI_TOKEN_KEY: this.env.HUGR_OCI_TOKEN_KEY ?? "",
           CORELINK_PORTAL_RETURN_URL: this.env.CORELINK_PORTAL_RETURN_URL ?? "",
           // BYOK (enterprise) provider regions/vault — off for the SMB launch.
           AWS_REGION: this.env.AWS_REGION ?? "",

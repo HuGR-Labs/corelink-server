@@ -51,6 +51,18 @@ Each entry cross-references:
   `docs/security/2026-06-18-gitleaks-baseline-triage.md`.
 
 ### Fixed
+- **OCI signing-key legacy alias was a silent no-op + the env-contract gate was off PRs (A4
+  secrets/config hygiene #6/#17/#18/#24).** Prod's Worker holds the OCI session HMAC key under the
+  legacy name `HUGR_OCI_TOKEN_KEY` (CAA-360 #8 name drift); the container reads
+  `CORELINK_OCI_TOKEN_KEY` first and falls back to `HUGR_OCI_TOKEN_KEY` via `.or_else(...)`
+  (`crates/corelink-container/src/routes.rs:646`, kept intact), so OCI works in prod only through
+  that fallback — yet the Worker DO never forwarded `HUGR_OCI_TOKEN_KEY` to the container, making the
+  fallback the ERASURE_SALT_KEY/F8 class of silent no-op. Forwarded `HUGR_OCI_TOKEN_KEY` alongside
+  `CORELINK_OCI_TOKEN_KEY` in `worker/src/durable_object.ts` container.start (and declared it on the
+  `Env` interface), documented it as a legacy-alias row in `docs/internal/secrets-checklist.md`, and
+  wired `scripts/check-env-contract.py` (pure-grep container env-contract gate) into the
+  `secrets-drift` PR workflow so any future read-but-not-forwarded var fails the PR. No key material
+  changes; retire by renaming the prod secret to the canonical name.
 - **Container Stripe-webhook materializer could (re-)grant a paid entitlement on a non-granting
   subscription status (money-path defense-in-depth).** On `customer.subscription.updated`,
   `reconcile_tier` → `persist_tier_change` → `upsert_tier` (`SQL_UPSERT_TIER`) UNCONDITIONALLY wrote

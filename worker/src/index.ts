@@ -173,6 +173,10 @@ export interface Env {
   FABRIC_INTROSPECT_AUTH_KEY?: string;
   SIGNUP_TOKEN_KEY?: string;
   CORELINK_OCI_TOKEN_KEY?: string;
+  // Legacy alias of CORELINK_OCI_TOKEN_KEY (CAA-360 #8 name drift) — the prod
+  // Worker secret. Forwarded to the container, which reads it via the routes.rs
+  // `.or_else(...)` fallback. See durable_object.ts forward block.
+  HUGR_OCI_TOKEN_KEY?: string;
   CORELINK_PORTAL_RETURN_URL?: string;
   AWS_REGION?: string;
   GCP_REGION?: string;
