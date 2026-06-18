@@ -14,23 +14,22 @@ import { describe, it, expect } from "vitest";
 import type { D1Database } from "@cloudflare/workers-types";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
+import { TEST_PAT_SIGNING_KEY, mintTestPat } from "./setup.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────────────────────────────────────
 
-// Canonical test PAT — format-valid CoreLink PAT; D1 mock recognises its
-// token_id (AAAAAAAAAAAAAAAA) and returns a non-expired row for it.
+// Canonical test PAT — a CRYPTOGRAPHICALLY VALID CoreLink PAT: its hmac_sig
+// verifies under TEST_PAT_SIGNING_KEY (bound in makeEnvWithStub below), and the
+// D1 mock recognises its token_id (AAAAAAAAAAAAAAAA) and returns a non-expired
+// row. So "reaches DO" tests clear parse + HMAC + D1 lookup and hit the stub —
+// rather than short-circuiting on a missing signing key (503) the way an
+// all-placeholder sig used to. mintTestPat() defaults reproduce this token_id.
 // Format: corelink_pat_<16-char-Crockford-b32>.<43-char-base64url>.<22-char-base64url>
 const TEST_TOKEN_ID = "AAAAAAAAAAAAAAAA";
 const TEST_TENANT_ID = "00000000-0000-0000-0000-000000000001";
-const VALID_TOKEN =
-  "corelink_pat_" +
-  TEST_TOKEN_ID +
-  "." +
-  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
-  "." +
-  "AAAAAAAAAAAAAAAAAAAAAA"; // total 96 chars
+const VALID_TOKEN = await mintTestPat({ tokenId: TEST_TOKEN_ID }); // 96 chars, valid sig
 
 /**
  * Build a minimal D1 mock that recognises the test token_id and returns a
@@ -100,6 +99,10 @@ function makeEnvWithStub(
     } as unknown as DurableObjectNamespace,
     ENVIRONMENT: "test",
     CONFIG_DB: makeTestD1(),
+    // Bind the shared valid test signing key so the native-plane PAT gate
+    // (extractAuth) reaches real HMAC + D1 auth instead of failing CLOSED with
+    // pat_signing_key_absent (503) — the harness-honesty fix (House #2).
+    PAT_SIGNING_KEY: TEST_PAT_SIGNING_KEY,
   };
 }
 

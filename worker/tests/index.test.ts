@@ -1382,7 +1382,11 @@ describe("X-Request-Id forwarding to DO", () => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 describe("PAT format validation — parsePat edge cases", () => {
-  // Helper: build a PAT-shaped token with a specific env and token_id
+  // Helper: build a PAT-shaped token with a PLACEHOLDER (all-A) hmac_sig and a
+  // specific env / token_id. Such a token PARSES but FAILS the HMAC fast-fail
+  // (the all-A sig isn't a real MAC) — used by the negative tests below that
+  // assert the parser/charset rejections (401), all reached at/before the HMAC
+  // gate, so a real signature is irrelevant to what they prove.
   function makePat(env: "pat" | "ci" | "ro", tokenId = TEST_TOKEN_ID): string {
     return (
       "corelink_" + env + "_" +
@@ -1394,19 +1398,31 @@ describe("PAT format validation — parsePat edge cases", () => {
     );
   }
 
-  it("accepts env=ci (95 chars, token in D1) → 503 (reaches DO)", async () => {
-    // Build a ci-env PAT with TEST_TOKEN_ID — the D1 mock recognises it.
-    const ciPat = makePat("ci");
+  // Helper: mint a CRYPTOGRAPHICALLY VALID ci/ro-env PAT for TEST_TOKEN_ID.
+  // The HMAC preimage is `<token_id>.<random_secret>` — the env segment is NOT
+  // part of it (see parsePat in src/index.ts) — so we mint the canonical
+  // pat-env token (whose sig verifies under TEST_PAT_SIGNING_KEY for the default
+  // token_id/secret the D1 mock recognises) and rewrite ONLY the env prefix to
+  // get the 95-char ci/ro variant carrying the SAME valid signature.
+  async function mintEnvPat(env: "ci" | "ro"): Promise<string> {
+    const patToken = await mintTestPat(); // corelink_pat_<id>.<secret>.<sig>
+    return patToken.replace(/^corelink_pat_/, `corelink_${env}_`);
+  }
+
+  it("accepts env=ci (valid sig, 95 chars, token in D1) → 503 (reaches DO)", async () => {
+    // Validly-signed ci-env PAT with TEST_TOKEN_ID — the D1 mock recognises it,
+    // so it clears parse + HMAC + D1 lookup and reaches the DO stub (503).
+    const ciPat = await mintEnvPat("ci");
     expect(ciPat.length).toBe(95);
     const resp = await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/p`, {
       headers: { Authorization: `Bearer ${ciPat}` },
     });
-    // Should reach the DO (503 from stub), not 401
+    // Reaches the DO (503 from stub), not 401 — proves the ci env is accepted.
     expect(resp.status).toBe(503);
   });
 
-  it("accepts env=ro (95 chars, token in D1) → 503 (reaches DO)", async () => {
-    const roPat = makePat("ro");
+  it("accepts env=ro (valid sig, 95 chars, token in D1) → 503 (reaches DO)", async () => {
+    const roPat = await mintEnvPat("ro");
     expect(roPat.length).toBe(95);
     const resp = await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/p`, {
       headers: { Authorization: `Bearer ${roPat}` },

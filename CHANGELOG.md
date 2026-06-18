@@ -113,9 +113,14 @@ Each entry cross-references:
   now binds that key in `makeEnv()` and presents a validly-signed `TEST_PAT_TOKEN`, so PAT-gated tests
   exercise the real auth path. The fail-closed path is now covered on PURPOSE by an explicit negative test
   (`no PAT_SIGNING_KEY in env => 503`, plus a too-short-key variant) instead of being the silent default.
-  This honesty turned 54 previously-503-red tests green and surfaced 2 placeholder-sig `parsePat` ci/ro
-  tests that must move from `→ 503` to `→ 401` (tracked follow-up); the remaining pre-existing worker-vitest
-  reds (e.g. `integration.test.ts`'s own un-keyed `makeEnv`) are out of scope for this harness fix.
+  This honesty turned 54 previously-503-red tests green. Follow-up (same branch): the 2 surfaced
+  `parsePat` ci/ro tests now mint a VALIDLY-SIGNED 95-char ci/ro PAT (via `mintTestPat()` with only the
+  env prefix rewritten — the HMAC preimage `<token_id>.<random_secret>` excludes the env segment) so they
+  assert the REAL accepted-env behavior (clears parse + HMAC + D1 → reaches the DO stub, 503), not the old
+  no-key 503 theater. `integration.test.ts`'s OWN `makeEnv` now also binds `TEST_PAT_SIGNING_KEY` and its
+  `VALID_TOKEN` is minted with a real signature, un-503-ing its ~7 "reaches DO" pipeline tests. The
+  remaining pre-existing worker-vitest reds (`customer_clerk_bridge.test.ts` + the `*.miniflare.test.ts`
+  suites — the miniflare pool is unusable in this env) are genuinely separate and out of scope here.
 - **k6 load tests defaulted their target host to the third-party `staging.corelink.dev` domain.**
   `corelink.dev` is an unrelated company (CoreLink Development); a local run without
   `K6_TARGET_HOST` set would have aimed load traffic at someone else's domain. Retargeted the
