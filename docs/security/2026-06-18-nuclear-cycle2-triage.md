@@ -32,6 +32,34 @@ Status legend: ✅ fixed+verified · 🔧 fixing · 📋 designed (owner-aware /
 - **PR E — OCI cache-poisoning (#2):** verify-before-commit (split assemble/commit in the BlobStore port, or add `delete_blob` rollback). Careful port change.
 - **#11 (multi-region over-count):** worker `index.ts` — gate the quota block on `!isFanout`. Lowest priority (over-count, not a bypass).
 
+## TL cold-verify nuance on the REMAINING findings (why fixed-clean vs owner-aware)
+Fixed this run were the clean, clear-cut, low-blast-radius "missing-check" bugs (#7 missing scope
+gate, #3 missing read-charge, #4 wrong shared budget). Cold-verifying the rest revealed they are
+**not** clean bug-fixes — each rebalances a *deliberate* design or hot-path, so each is an
+owner-aware decision, not a madrugada auto-fix:
+- **#1 / #12 (Argon2id per-tenant fairness):** the real fix (two-tier global+per-tenant semaphore in
+  `adapter_pat.rs`) sits on the **PAT-verification hot path that runs on EVERY native/adapter request**
+  — highest blast radius (a bug breaks all auth). Needs careful concurrency design + testing, not a rush.
+  (#1's PAT-mint-cap amplifier is a clean complementary add: `SELECT COUNT(*)` cap in `customer_d1` create.)
+- **#5 (OCI in-flight ceiling):** the per-tenant cap EXISTS (`global/8` = 64 MiB, deliberate); the fix
+  is a **tuning trade-off** (smaller slice resists the 8-account saturation but throttles legit large
+  container pushes) — needs real OCI push-size data to pick the value.
+- **#6 / #10 (adapter byte-accounting):** the adapter NOT seeding the cap is a **deliberate fail-closed
+  posture** (`adapter_cache.rs:260-273` — "absence of a cap is never treated as unlimited"; a fresh
+  tenant is seeded on its first native write). #6 is an availability/UX limitation (adapter-only tenant
+  must do one native write first), NOT a quota-evasion; #10's downgrade gap may be mitigated by the
+  Worker cross-region SUM gate (`quota.ts:344`) — verify the gate's behavior before changing the posture.
+- **#2 (OCI digest-lie poisoning):** REAL (verify-after-persist, no rollback port) but intra-tenant; the
+  correct fix (verify-BEFORE-commit) is a **BlobStore port split** (assemble vs commit) across prod+fake — a careful multi-file port change.
+- **#8 / #9:** #4 already isolated events from writes; residual = a server **body-read timeout** layer
+  (#8) + a per-tenant `/events` counter (#9) — events-pool-only impact now (low).
+- **#11:** an OVER-count (double-charges multi-region tenants — customer-*unfavorable*, not a bypass);
+  worker `index.ts` `!isFanout` gate. Lowest priority; fixing it stops over-charging customers.
+
+**Recommendation:** greenlight a focused, CI-healthy fix-wave for #1/#12 (auth hot-path — highest value,
+needs care) and #2 (poisoning), with workload input for #5; #6/#10 need the Worker-gate behavior
+confirmed first; #11 is a quick customer-favorable cleanup.
+
 ## Constraint note
 Self-hosted Linux CI is DOWN + the Mac cancels long jobs (see `ci-infra-state` memory) → these
 Rust fixes are LOCAL-verified (`cargo check`/targeted tests) + `--admin` merged with the documented
