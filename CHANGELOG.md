@@ -52,6 +52,29 @@ Each entry cross-references:
   the launch checkout UI. Verified: admin-ui + docs build/typecheck/**lint** green;
   worker/analytics/get-corelink/signup typecheck green; `next@15.5.18`, `eslint@9`,
   `@clerk/nextjs@6`, `@stripe/stripe-js@4`, `@sentry/nextjs@8` unchanged.
+- **Migrated the DEFERRED framework-MAJOR dependabot groups** (`#290` admin-ui-major,
+  `#315` docs-major) on branch `deps/majors-migration` — NOT merged; staged for owner
+  runtime-QA of the launch checkout/sign-in UI before it lands. **admin-ui:** `next`
+  15.5.18→**16.2.9**, `@clerk/nextjs` 6.39.3→**7.5.3**, `@sentry/nextjs` 8→**10.58.0**,
+  `@stripe/stripe-js` 4→**9.8.0** (dead dep — imported nowhere), `react-markdown`
+  9→**10.1.0**, `uuid` 11→**14.0.0**, `typescript` 5.7→**6.0.3**, `vitest`/`@vitest/coverage-v8`
+  3→**4.1.9**, `jsdom` 26→**29.1.1**, `jest-axe` 9→**10**, `@types/node` 22→**25.9.3**,
+  `eslint-config-next` 15→**16.2.9**. **Lint migration:** Next 16 removed `next lint`
+  (and the `eslint` next-config option), so `.eslintrc.json` (eslintrc) was replaced by a
+  flat-config `eslint.config.mjs` (`eslint-config-next/core-web-vitals`) and the `lint`
+  script is now `eslint .`. Next-16 codemods committed deliberately: `tsconfig.json`
+  `jsx: preserve→react-jsx` + `.next/dev/types` include; `next-env.d.ts` `reference→import`.
+  **Two PR-table targets adjusted (incompatible-as-specified):** `eslint` stays at **`^9`**
+  (the PR's `10.5.0` triggers `scopeManager.addGlobals is not a function` — `eslint-plugin-react`
+  has no ESLint-10-compatible release; `eslint-config-next@16` peers `eslint>=9.0.0`), and
+  `@vitejs/plugin-react` is **`^5.2.0`** not the PR's 6.0.2 (6 requires Vite 8; vitest 4 bundles
+  Vite 6). The four NEW `react-hooks/*` recommended-as-error rules from eslint-config-next 16
+  are set to `warn` (visible, not disabled) pending owner triage. **docs:** `eslint`/`@eslint/js`
+  bumped within `^9` (→9.39.4) — eslint 10 is BLOCKED for docs too by `eslint-plugin-react`
+  (kept at `^7.37.5`). **Verified green:** admin-ui `next build` (+ OpenNext `cf:build`) /
+  `tsc --noEmit` / `eslint .` (0 errors); admin-ui tests 344/344; docs `build` (4 locales) /
+  `tsc` / `eslint` (`--max-warnings=0`) / tests 298/298; worker/analytics/get-corelink/signup
+  typecheck; `pnpm install --frozen-lockfile` consistent.
 
 ### Added
 - **Worker-plane observability: native retained Workers Logs + an inert Sentry hook.** An operator was
