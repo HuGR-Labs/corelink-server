@@ -173,6 +173,23 @@ Each entry cross-references:
   `VALID_TOKEN` is minted with a real signature, un-503-ing its ~7 "reaches DO" pipeline tests. The
   remaining pre-existing worker-vitest reds (`customer_clerk_bridge.test.ts` + the `*.miniflare.test.ts`
   suites — the miniflare pool is unusable in this env) are genuinely separate and out of scope here.
+- **Multi-region request-quota OVER-count: a fan-out sub-request was metered a second time (#11).**
+  The Worker's monthly request-quota block ran its counter UPSERT on EVERY invocation, including the
+  internal region fan-out sub-request that the primary Worker issues to a regional Worker. A single
+  logical request from a multi-region tenant was therefore counted twice (customer-unfavourable
+  double-charge), not a security bypass. Fixed by gating ONLY the metering (the
+  `incrementMonthlyRequestCount` UPSERT + the request-cap comparison) on `isFanout`. The fan-out
+  marker is **forgery-safe**: because the public edge does NOT ingress-strip `x-corelink-fanout-from`
+  before the quota gate, a mere presence check would let any client forge the header to skip metering
+  (a request-quota BYPASS, fail-open). Instead the primary Worker sets the header to the shared
+  server-to-server secret `CORELINK_INTERNAL_AUTH_KEY` (bound on `[env.prod]` and every regional
+  worker env per ADR-MULTI-REGION-V1) on the fan-out forward — over the service binding only, after
+  `stripClientTrustHeaders` — and the regional Worker treats the request as a fan-out only on a
+  CONSTANT-TIME match (`constantTimeSecretEqual`) against that secret. A forged value never matches,
+  so it still meters; if the secret is unbound the match can never succeed, so every request meters
+  (fail-SAFE). Tier resolution (`getTierForTenant`) and the server-trusted `STORAGE_QUOTA_HEADER`
+  forwarding stay UNCONDITIONAL so a fan-out sub-request still forwards the resolved storage cap to
+  its regional container.
 - **k6 load tests defaulted their target host to the third-party `staging.corelink.dev` domain.**
   `corelink.dev` is an unrelated company (CoreLink Development); a local run without
   `K6_TARGET_HOST` set would have aimed load traffic at someone else's domain. Retargeted the
