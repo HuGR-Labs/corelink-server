@@ -14,6 +14,12 @@ on:
     - cron: '30 6 * * *'
   workflow_dispatch:
 
+# Least-privilege: this build/test matrix only checks out + compiles + tests —
+# no writes (no gh-api, comments, pushes, or releases). A default broad token
+# scope is unnecessary attack surface on the self-hosted runner.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
