@@ -80,11 +80,17 @@ impl TestRig {
 
     /// Build a bearer token for `scope` with the rig's signing key.
     /// `now_secs` mirrors the fixed-clock value to avoid expiry skew.
+    ///
+    /// Mints with the genuine-unlimited cap sentinel (`Some(0)`) so the
+    /// in-memory blob store (which ignores the cap) and the smoke/push tests
+    /// are unaffected; cap-enforcement is exercised at the container seam
+    /// (`routes/oci.rs`) where the real byte-accounting moat lives.
     pub fn mint_token(&self, scope: &corelink_adapter_host::oci::auth::OciScope) -> String {
         corelink_adapter_host::oci::auth::mint(
             &self.token_signing_key,
             &self.tenant,
             scope,
+            Some(0),
             FIXED_NOW_MS / 1000,
             defaults::TOKEN_TTL_SECS,
         )

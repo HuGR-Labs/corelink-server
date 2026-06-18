@@ -486,6 +486,7 @@ impl BlobStore for OciMoatStore {
         tenant: &TenantId,
         upload_uuid: &str,
         blob_key: &str,
+        storage_cap_bytes: Option<i64>,
     ) -> PortResult<Bytes> {
         if !upload_uuid_belongs_to(tenant, upload_uuid) {
             return Err(format!("upload session not found: {upload_uuid}"));
@@ -522,9 +523,19 @@ impl BlobStore for OciMoatStore {
             .and_then(|d| d.verify_against_bytes(&session.buf))
             .map_err(|e| format!("oci finalize: content does not match declared digest {blob_key}: {e:?}"))?;
         // Persist content-addressed under the per-tenant namespace,
-        // mapping the OCI digest (`blob_key`) → blake3 content hash.
+        // mapping the OCI digest (`blob_key`) → blake3 content hash. Thread the
+        // RESOLVED per-tier storage cap (from the verified bearer) so the
+        // byte-accounting reservation reserves against it — a DOWNGRADED tenant
+        // pushing exclusively over OCI is rejected once over the resolved cap,
+        // and an indeterminate cap (`None`) fails CLOSED on an unseeded tenant
+        // (mirrors native).
         self.moat
-            .put(&tenant.to_canonical_text(), blob_key, session.buf)
+            .put(
+                &tenant.to_canonical_text(),
+                blob_key,
+                session.buf,
+                storage_cap_bytes,
+            )
             .await
             .map_err(|e| match e {
                 MoatError::Backend(m) => m,
@@ -587,7 +598,21 @@ impl BlobStore for OciMoatStore {
 /// UUID text into a [`TenantId`]. Every failure collapses to the port's
 /// `String` error (the adapter maps it to `401`); a malformed tenant
 /// UUID from D1 is a backend fault, also surfaced as the port error.
-struct OciPatResolver(Arc<PatVerifier>);
+/// OCI `TenantResolver` over the shared Option-B [`PatVerifier`], plus the
+/// per-tier storage-cap resolver ([`crate::oci_cap::TenantCapResolver`]) used to
+/// resolve the tenant's RESOLVED (possibly-downgraded) storage cap in the SAME
+/// `/token` re-verify call. The cap is surfaced on [`ResolvedPat`] and embedded
+/// in the minted bearer (WP #10) so the OCI finalize-blob write reserves against
+/// it — closing the cap-on-downgrade residual where the Worker (which forwards
+/// OCI RAW) cannot set the native plane's `STORAGE_QUOTA_HEADER`.
+///
+/// `cap_resolver` is `Option` so dev/CI (no D1 storage env) keeps minting bearers
+/// (with an indeterminate cap → data-plane fail-closed on an unseeded tenant),
+/// exactly mirroring the native plane when the cap header is absent.
+struct OciPatResolver {
+    verifier: Arc<PatVerifier>,
+    cap_resolver: Option<Arc<dyn crate::oci_cap::TenantCapResolver>>,
+}
 
 impl std::fmt::Debug for OciPatResolver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -607,7 +632,7 @@ impl TenantResolver for OciPatResolver {
         // so the `/token` exchange downscopes the registry grant — a
         // read-only PAT cannot mint a `push` bearer.
         let (tenant_text, can_write) =
-            self.0
+            self.verifier
                 .verify_capability(pat.expose())
                 .await
                 .map_err(|e| match e {
@@ -616,9 +641,19 @@ impl TenantResolver for OciPatResolver {
                 })?;
         let uuid = Uuid::parse_str(&tenant_text)
             .map_err(|e| format!("backend: malformed tenant uuid: {e}"))?;
+        // Resolve the tenant's RESOLVED per-tier storage cap at THIS seam (the
+        // only place OCI knows the tenant). `None` when no resolver is wired
+        // (dev/CI) OR the cap is indeterminate (D1 error) → embedded as the
+        // fail-closed sentinel; the finalize-blob reservation then refuses to
+        // seed an uncapped row, mirroring native.
+        let storage_cap_bytes = match self.cap_resolver.as_ref() {
+            Some(r) => r.resolve_storage_cap(&tenant_text).await,
+            None => None,
+        };
         Ok(ResolvedPat {
             tenant: TenantId::from_uuid(uuid),
             can_write,
+            storage_cap_bytes,
         })
     }
 }
@@ -659,6 +694,7 @@ pub fn router(
     token_signing_key: SecretWrap,
     quota: Option<crate::routes::QuotaGate>,
     request_count: Option<crate::request_count::RequestCountGate>,
+    cap_resolver: Option<Arc<dyn crate::oci_cap::TenantCapResolver>>,
 ) -> Router {
     // rt-nuclear #2/#8/#9: the OCI $-ceiling gate must resolve the cost-attribution
     // tenant from the VERIFIED HMAC bearer (the Worker strips `x-corelink-tenant-id`
@@ -675,7 +711,10 @@ pub fn router(
         OCI_SERVICE_PRINCIPAL,
     ));
     let cas: Arc<dyn BlobStore> = Arc::new(OciMoatStore::new(moat));
-    let resolver: Arc<dyn TenantResolver> = Arc::new(OciPatResolver(verifier));
+    let resolver: Arc<dyn TenantResolver> = Arc::new(OciPatResolver {
+        verifier,
+        cap_resolver,
+    });
     let auditor: Arc<dyn AuditEmitter> = Arc::new(InMemoryAuditEmitter::new());
 
     let config = OciAdapterConfig::new(
@@ -1012,6 +1051,23 @@ mod tests {
             Ok(CasWriteResponse::new(req.claimed_hash, true))
         }
     }
+    impl corelink_handler_cas::CasDeleteHandler for StubCas {
+        fn delete(
+            &self,
+            req: corelink_handler_cas::CasDeleteRequest,
+        ) -> Result<corelink_handler_cas::CasDeleteResponse, CasHandlerError> {
+            let removed = self
+                .0
+                .lock()
+                .unwrap()
+                .remove(&(req.tenant.clone(), req.hash.clone()));
+            let reclaimed = removed.as_ref().map(|b| b.len() as u64).unwrap_or(0);
+            Ok(corelink_handler_cas::CasDeleteResponse::with_reclaimed(
+                removed.is_some(),
+                reclaimed,
+            ))
+        }
+    }
 
     fn test_key() -> Arc<PatSigningKey> {
         Arc::new(PatSigningKey::from_bytes(vec![0x42u8; 32]).unwrap())
@@ -1031,6 +1087,7 @@ mod tests {
             SecretWrap::new(OCI_KEY.to_owned()),
             None,
             None,
+            None, // cap resolver: tests use StubCas (no byte-accounting); cap is inert
         )
     }
 
@@ -1094,6 +1151,7 @@ mod tests {
             SecretWrap::new(OCI_KEY.to_owned()),
             None,
             None,
+            None, // cap resolver: tests use StubCas (no byte-accounting); cap is inert
         );
 
         // Exchange the read-only PAT (requesting push,pull) for a bearer.
@@ -1260,6 +1318,7 @@ mod tests {
             SecretWrap::new(OCI_KEY.to_owned()),
             None,
             None,
+            None, // cap resolver: tests use StubCas (no byte-accounting); cap is inert
         );
 
         // Leg 1: exchange the PAT (Basic) for an HMAC bearer at /token.
@@ -1320,7 +1379,7 @@ mod tests {
         // A lying digest (64 hex zeros) — NOT sha256("real-content").
         let lie = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
         assert!(
-            store.finalize_upload(&tenant, &uuid, lie).await.is_err(),
+            store.finalize_upload(&tenant, &uuid, lie, None).await.is_err(),
             "a digest-lie finalize must be rejected"
         );
         // And NOTHING was persisted under the lying key (no poisoned slot).
@@ -1356,7 +1415,7 @@ mod tests {
             .is_err());
         assert!(store.cancel_upload(&tenant_b, &uuid).await.is_err());
         assert!(store
-            .finalize_upload(&tenant_b, &uuid, "sha256:00")
+            .finalize_upload(&tenant_b, &uuid, "sha256:00", None)
             .await
             .is_err());
 
@@ -1366,6 +1425,112 @@ mod tests {
             .append_chunk(&tenant_a, &uuid, Bytes::from_static(b"x"))
             .await
             .is_ok());
+    }
+
+    /// Build an `OciMoatStore` whose moat write handler is the REAL
+    /// `AccountingCasHandler` (byte-accounting) over an in-memory `ByteStore`,
+    /// so a `finalize_upload` reserves against the threaded cap exactly as
+    /// production does. Returns the store + the byte store (to assert the
+    /// counter) + the byte region.
+    fn accounting_oci_store() -> (
+        OciMoatStore,
+        Arc<crate::byte_accounting::testing::InMemoryByteStore>,
+        String,
+    ) {
+        use crate::byte_accounting::{
+            testing::InMemoryByteStore, AccountingCasHandler, ByteAccountant,
+        };
+        // `StubCas` is non-verifying (accepts any claimed_hash) — the moat's
+        // `production` ctor wires the real `canonical_hash_hex`, which a verifying
+        // in-memory handler would reject. The byte-accounting decorator wraps it
+        // exactly as production wraps the R2 handler.
+        let inner = Arc::new(StubCas::default());
+        let byte_store = Arc::new(InMemoryByteStore::new());
+        let region = "iad".to_owned();
+        let accountant = Arc::new(ByteAccountant::new(byte_store.clone(), region.clone()));
+        let acct = Arc::new(AccountingCasHandler::new(
+            Arc::clone(&inner) as Arc<dyn CasWriteHandler>,
+            Arc::clone(&inner) as Arc<dyn corelink_handler_cas::CasDeleteHandler>,
+            accountant,
+        ));
+        let moat = Arc::new(MoatCache::production(
+            inner as Arc<dyn CasReadHandler>,
+            acct as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()),
+            "oci-cap-test",
+        ));
+        (OciMoatStore::new(moat), byte_store, region)
+    }
+
+    /// Push a blob of `len` bytes through open→append→finalize under `cap`.
+    async fn push_blob(store: &OciMoatStore, tenant: &TenantId, len: usize, cap: Option<i64>)
+        -> Result<(), String> {
+        let bytes = vec![0xABu8; len];
+        let digest = corelink_adapter_host::oci::digest::OciDigest::compute(
+            corelink_adapter_host::oci::digest::OciDigestAlgo::Sha256,
+            &bytes,
+        )
+        .map_err(|e| format!("{e:?}"))?;
+        let uuid = store.open_upload(tenant).await?;
+        store
+            .append_chunk(tenant, &uuid, Bytes::from(bytes))
+            .await?;
+        store
+            .finalize_upload(tenant, &uuid, &digest.to_wire(), cap)
+            .await
+            .map(|_| ())
+    }
+
+    #[tokio::test]
+    async fn downgraded_tenant_oci_write_over_resolved_cap_is_rejected() {
+        // WP #10 regression. A DOWNGRADED tenant (resolved cap = 1000 bytes)
+        // pushing exclusively over OCI:
+        //   * an UNDER-cap push succeeds and accrues bytes_used;
+        //   * an OVER-cap push is REJECTED (the resolved cap threaded from the
+        //     bearer reserves against `tenant_storage_state`), so OCI can no
+        //     longer over-store past the (possibly stale) cap.
+        let (store, byte_store, region) = accounting_oci_store();
+        let tenant = TenantId::from_uuid(Uuid::from_u128(0xD0_0D));
+        let t_text = tenant.to_canonical_text();
+        let cap = Some(1_000i64);
+
+        // 600 < 1000 → accrues, seeds the row with the REAL cap.
+        push_blob(&store, &tenant, 600, cap)
+            .await
+            .expect("under-cap OCI push must succeed");
+        assert_eq!(byte_store.used(&t_text, &region), 600);
+
+        // 500 more would total 1100 > 1000 → REJECTED (over the resolved cap).
+        let err = push_blob(&store, &tenant, 500, cap)
+            .await
+            .expect_err("over-cap OCI push must be rejected");
+        assert!(
+            err.contains(crate::byte_accounting::OVER_CAP_SENTINEL),
+            "over-cap rejection must carry the 402 sentinel; got: {err}"
+        );
+        // The rejected push did NOT move the counter.
+        assert_eq!(byte_store.used(&t_text, &region), 600);
+    }
+
+    #[tokio::test]
+    async fn oci_write_with_indeterminate_cap_on_fresh_tenant_fails_closed() {
+        // WP #10 fail-closed mirror of native: an unresolvable cap (`None`) on a
+        // tenant with NO `tenant_storage_state` row must be REFUSED (never seed
+        // an uncapped row from absence) — absence is never treated as unlimited.
+        let (store, byte_store, region) = accounting_oci_store();
+        let tenant = TenantId::from_uuid(Uuid::from_u128(0xFEED));
+        let err = push_blob(&store, &tenant, 100, None)
+            .await
+            .expect_err("indeterminate cap on a fresh tenant must fail closed");
+        assert!(
+            err.contains(crate::byte_accounting::ACCT_UNAVAILABLE_SENTINEL),
+            "fresh-tenant indeterminate cap must fail closed (503 sentinel); got: {err}"
+        );
+        assert_eq!(
+            byte_store.used(&tenant.to_canonical_text(), &region),
+            0,
+            "a fail-closed push must not seed or move the counter"
+        );
     }
 
     #[tokio::test]
@@ -1461,6 +1626,7 @@ mod tests {
             SecretWrap::new(OCI_KEY.to_owned()),
             None,
             None,
+            None, // cap resolver: tests use StubCas (no byte-accounting); cap is inert
         );
 
         // Obtain a push+pull bearer for the test tenant.
@@ -1751,6 +1917,7 @@ mod tests {
             SecretWrap::new(OCI_KEY.to_owned()),
             None,
             None,
+            None, // cap resolver: tests use StubCas (no byte-accounting); cap is inert
         );
 
         // Get a push bearer.
@@ -1845,6 +2012,7 @@ mod tests {
             SecretWrap::new(OCI_KEY.to_owned()),
             None,
             None,
+            None, // cap resolver: tests use StubCas (no byte-accounting); cap is inert
         );
 
         let resp = app
@@ -1912,7 +2080,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_secs();
-        let token = mint(&key, &tenant, &scope, now, 300).expect("mint");
+        let token = mint(&key, &tenant, &scope, Some(0), now, 300).expect("mint");
 
         let mut h = axum::http::HeaderMap::new();
         h.insert(
@@ -2036,6 +2204,7 @@ mod tests {
             SecretWrap::new(OCI_KEY.to_owned()),
             None,          // no $-ceiling gate in this test
             Some(rc_gate), // request-count gate under test
+            None,          // cap resolver inert (StubCas)
         );
 
         // Exchange the PAT for a push,pull bearer.
@@ -2157,6 +2326,7 @@ mod tests {
             SecretWrap::new(OCI_KEY.to_owned()),
             None,          // no $-ceiling gate in this test (write $-path covered elsewhere)
             Some(rc_gate), // request-count gate under test (now charged on reads too)
+            None,          // cap resolver inert (StubCas)
         );
 
         // Exchange the PAT for a push,pull bearer.

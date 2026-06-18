@@ -110,6 +110,12 @@ pub mod byok_orchestrator;
 pub mod customer_d1;
 #[cfg(feature = "neon-real")]
 pub mod neon_shadow_factory;
+/// Container-side resolution of a tenant's resolved per-tier storage cap for the
+/// OCI `/token` mint (WP #10). Ports the Worker's `tier → storageBytesMax`
+/// derivation so a DOWNGRADED tenant pushing exclusively over OCI reserves
+/// against the resolved cap (the Worker forwards OCI RAW and never sets the
+/// native `STORAGE_QUOTA_HEADER`). Fail-CLOSED on an unconfirmable tier.
+pub mod oci_cap;
 /// Per-tenant monthly **request-count** middleware primitive (rt-nuclear #8):
 /// the container-side mirror of `worker/src/lib/quota.ts::checkRequestQuota`,
 /// backed by the `monthly_request_counts` D1 table (migration 0071). Wired into

@@ -14,19 +14,41 @@
 //! ## Token shape
 //!
 //! ```text
-//! corelink-oci.<tenant-uuid>.<scope-b64>.<expiry-unix-secs>.<hmac-b64>
+//! corelink-oci.<tenant-uuid>.<scope-b64>.<cap>.<expiry-unix-secs>.<hmac-b64>
 //! ```
 //!
 //! - `tenant-uuid` is the canonical UUIDv7 text form (hyphenated lowercase).
 //! - `scope-b64` is URL-safe base64 (no pad) of the raw scope string,
 //!   so embedded `:` chars don't collide with the field separator.
+//! - `cap` carries the tenant's RESOLVED per-tier storage cap (bytes),
+//!   resolved at `/token` mint from the (possibly-downgraded) tenant
+//!   record. It is either a non-negative integer (`"0"` = the deliberate
+//!   genuine-unlimited sentinel, matching the Worker's
+//!   `STORAGE_QUOTA_HEADER` semantics) or the literal `"-"` meaning
+//!   **indeterminate** (the cap could not be resolved → the data plane
+//!   threads `None` → the byte-accounting reservation FAILS CLOSED on an
+//!   unseeded tenant, mirroring the native CAS/AC path).
 //! - `expiry-unix-secs` is `now + token_ttl_secs` at mint time.
 //! - `hmac-b64` is HMAC-SHA256 (URL-safe base64, no pad) over the
-//!   exact preimage `<tenant>.<scope-b64>.<expiry>`, keyed with
+//!   exact preimage `<tenant>.<scope-b64>.<cap>.<expiry>`, keyed with
 //!   [`crate::oci::config::OciAdapterConfig::token_signing_key`].
 //!
 //! Verify is `subtle::ConstantTimeEq` on the recomputed HMAC. Wrong
 //! key, expired, or malformed → [`OciAdapterError::InvalidToken`].
+//!
+//! ## Why the cap rides INSIDE the signed token
+//!
+//! On the OCI two-leg flow the data plane (`/v2/*`) never re-presents the
+//! PAT — it presents only this HMAC bearer — and the Worker forwards OCI
+//! RAW (it cannot resolve the per-tier cap for OCI, so the
+//! `STORAGE_QUOTA_HEADER` the native plane relies on is never set). The
+//! cap is therefore resolved exactly once, at `/token` mint (where the PAT
+//! is fully re-verified container-side and the tenant is known), and
+//! embedded in the SIGNED bearer so the finalize-blob write can reserve
+//! against the resolved cap. The HMAC covers the cap, so a tenant cannot
+//! forge a larger cap. OCI has NO live customer bearers pre-launch, so the
+//! field is added unconditionally (no dual-format/back-compat needed); the
+//! parser rejects any malformed token (wrong field count) as before.
 
 use base64::Engine as _;
 use hmac::{Hmac, Mac};
@@ -143,6 +165,18 @@ pub struct VerifiedToken {
     pub tenant: TenantId,
     /// Scope grant.
     pub scope: OciScope,
+    /// Resolved per-tier storage cap (bytes) carried at mint time.
+    ///
+    /// - `Some(n)`, `n > 0` — a finite cap; a finalize-blob write reserves
+    ///   against it (seeds a fresh `tenant_storage_state` row and gates the
+    ///   write), so a DOWNGRADED tenant pushing exclusively over OCI is
+    ///   rejected once over the resolved cap.
+    /// - `Some(0)` — a genuinely-unlimited tier (the deliberate sentinel).
+    /// - `None` — the cap was **indeterminate** at mint (encoded as `"-"`);
+    ///   the data plane treats this as fail-closed (the byte-accounting
+    ///   reservation refuses to seed an uncapped row), mirroring the native
+    ///   plane's posture when the Worker cap header is absent.
+    pub storage_cap_bytes: Option<i64>,
     /// Unix-seconds expiry.
     pub expiry: u64,
 }
@@ -157,8 +191,37 @@ fn b64_url_no_pad_decode(s: &str) -> Result<Vec<u8>, OciAdapterError> {
         .map_err(|_| OciAdapterError::InvalidToken)
 }
 
-fn hmac_preimage(tenant_text: &str, scope_b64: &str, expiry: u64) -> String {
-    format!("{tenant_text}.{scope_b64}.{expiry}")
+fn hmac_preimage(tenant_text: &str, scope_b64: &str, cap_field: &str, expiry: u64) -> String {
+    format!("{tenant_text}.{scope_b64}.{cap_field}.{expiry}")
+}
+
+/// Encode the resolved storage cap into the token's `cap` field.
+///
+/// `Some(n)` (`n >= 0`) → the decimal string of `n` (`"0"` = genuine
+/// unlimited, matching the Worker's `STORAGE_QUOTA_HEADER` sentinel);
+/// `None` → the literal `"-"` (indeterminate → data-plane fail-closed).
+/// A defensive negative `n` (never produced by the resolver) collapses to
+/// `"-"` (fail-closed) rather than encoding a nonsensical cap.
+fn encode_cap(cap: Option<i64>) -> String {
+    match cap {
+        Some(n) if n >= 0 => n.to_string(),
+        _ => String::from("-"),
+    }
+}
+
+/// Decode the token's `cap` field back into `Option<i64>`.
+///
+/// `"-"` → `None` (indeterminate). A non-negative integer → `Some(n)`. Any
+/// other shape (negative, non-numeric, empty) is REJECTED as a malformed
+/// token rather than silently treated as unlimited — fail-closed parsing.
+fn decode_cap(field: &str) -> Result<Option<i64>, OciAdapterError> {
+    if field == "-" {
+        return Ok(None);
+    }
+    match field.parse::<i64>() {
+        Ok(n) if n >= 0 => Ok(Some(n)),
+        _ => Err(OciAdapterError::InvalidToken),
+    }
 }
 
 fn hmac_sign(key: &SecretWrap, preimage: &str) -> Result<Vec<u8>, OciAdapterError> {
@@ -185,17 +248,19 @@ pub fn mint(
     key: &SecretWrap,
     tenant: &TenantId,
     scope: &OciScope,
+    storage_cap_bytes: Option<i64>,
     now_unix_secs: u64,
     ttl_secs: u64,
 ) -> Result<String, OciAdapterError> {
     let tenant_text = tenant.to_canonical_text();
     let scope_b64 = b64_url_no_pad(scope.to_wire().as_bytes());
+    let cap_field = encode_cap(storage_cap_bytes);
     let expiry = now_unix_secs.saturating_add(ttl_secs);
-    let preimage = hmac_preimage(&tenant_text, &scope_b64, expiry);
+    let preimage = hmac_preimage(&tenant_text, &scope_b64, &cap_field, expiry);
     let sig = hmac_sign(key, &preimage)?;
     let sig_b64 = b64_url_no_pad(&sig);
     Ok(format!(
-        "{TOKEN_PREFIX}{tenant_text}.{scope_b64}.{expiry}.{sig_b64}"
+        "{TOKEN_PREFIX}{tenant_text}.{scope_b64}.{cap_field}.{expiry}.{sig_b64}"
     ))
 }
 
@@ -216,14 +281,14 @@ pub fn verify(
         .strip_prefix(TOKEN_PREFIX)
         .ok_or(OciAdapterError::InvalidToken)?;
     let parts: Vec<&str> = stripped.split('.').collect();
-    let [tenant_text, scope_b64, expiry_text, sig_b64] = parts.as_slice() else {
+    let [tenant_text, scope_b64, cap_field, expiry_text, sig_b64] = parts.as_slice() else {
         return Err(OciAdapterError::InvalidToken);
     };
     // Recompute HMAC. Constant-time compare on the raw sig bytes.
     let expiry: u64 = expiry_text
         .parse()
         .map_err(|_| OciAdapterError::InvalidToken)?;
-    let preimage = hmac_preimage(tenant_text, scope_b64, expiry);
+    let preimage = hmac_preimage(tenant_text, scope_b64, cap_field, expiry);
     let recomputed = hmac_sign(key, &preimage)?;
     let provided = b64_url_no_pad_decode(sig_b64)?;
     if recomputed.len() != provided.len() {
@@ -244,9 +309,14 @@ pub fn verify(
     let scope_raw = b64_url_no_pad_decode(scope_b64)?;
     let scope_str = std::str::from_utf8(&scope_raw).map_err(|_| OciAdapterError::InvalidToken)?;
     let scope = OciScope::parse(scope_str).map_err(|_| OciAdapterError::InvalidToken)?;
+    // Decode the signed cap AFTER the HMAC check (the field is covered by the
+    // signature, so a forged/tampered cap is already rejected above); a
+    // malformed cap field is a malformed token (fail-closed parse).
+    let storage_cap_bytes = decode_cap(cap_field)?;
     Ok(VerifiedToken {
         tenant: TenantId::from_uuid(tenant_uuid),
         scope,
+        storage_cap_bytes,
         expiry,
     })
 }
@@ -327,15 +397,47 @@ mod tests {
 
     #[test]
     fn mint_verify_roundtrip() {
-        let token = mint(&key(), &tenant(), &scope(), 1000, 3600).expect("mint");
+        let token = mint(&key(), &tenant(), &scope(), Some(1_000_000), 1000, 3600).expect("mint");
         let v = verify(&key(), &token, 1500).expect("verify");
         assert_eq!(v.tenant, tenant());
         assert_eq!(v.scope.repo, "alpine");
+        // The signed cap round-trips intact.
+        assert_eq!(v.storage_cap_bytes, Some(1_000_000));
+    }
+
+    #[test]
+    fn cap_field_roundtrips_all_shapes() {
+        // Finite cap, genuine-unlimited sentinel (`Some(0)`), and indeterminate
+        // (`None`) all survive mint→verify exactly — the data plane relies on the
+        // exact value to seed/gate the byte-accounting reservation.
+        for cap in [Some(42i64), Some(0i64), None] {
+            let token = mint(&key(), &tenant(), &scope(), cap, 1000, 3600).expect("mint");
+            let v = verify(&key(), &token, 1500).expect("verify");
+            assert_eq!(v.storage_cap_bytes, cap, "cap {cap:?} must round-trip");
+        }
+    }
+
+    #[test]
+    fn tampered_cap_field_rejected() {
+        // Flip the signed cap to a larger value WITHOUT re-signing → the HMAC no
+        // longer covers the preimage → InvalidToken. Proves a tenant cannot forge
+        // a bigger cap by editing the bearer (the cap is inside the signature).
+        let token = mint(&key(), &tenant(), &scope(), Some(100), 1000, 3600).expect("mint");
+        let stripped = token.strip_prefix(TOKEN_PREFIX).expect("prefix");
+        let parts: Vec<&str> = stripped.split('.').collect();
+        let [tenant_text, scope_b64, _cap, expiry, sig] = parts.as_slice() else {
+            panic!("expected tenant.scope.cap.expiry.sig");
+        };
+        // Rebuild with cap bumped 100 → 999999999 but the ORIGINAL sig.
+        let forged =
+            format!("{TOKEN_PREFIX}{tenant_text}.{scope_b64}.999999999.{expiry}.{sig}");
+        let err = verify(&key(), &forged, 1500).expect_err("forged cap must reject");
+        assert!(matches!(err, OciAdapterError::InvalidToken));
     }
 
     #[test]
     fn expired_token_rejected() {
-        let token = mint(&key(), &tenant(), &scope(), 1000, 60).expect("mint");
+        let token = mint(&key(), &tenant(), &scope(), Some(0), 1000, 60).expect("mint");
         // now = 2000, expiry = 1060.
         let err = verify(&key(), &token, 2000).expect_err("must reject");
         assert!(matches!(err, OciAdapterError::InvalidToken));
@@ -343,7 +445,7 @@ mod tests {
 
     #[test]
     fn wrong_key_rejected() {
-        let token = mint(&key(), &tenant(), &scope(), 1000, 3600).expect("mint");
+        let token = mint(&key(), &tenant(), &scope(), Some(0), 1000, 3600).expect("mint");
         let other = SecretWrap::new("b".repeat(32));
         let err = verify(&other, &token, 1500).expect_err("must reject");
         assert!(matches!(err, OciAdapterError::InvalidToken));
@@ -351,7 +453,7 @@ mod tests {
 
     #[test]
     fn tampered_token_rejected() {
-        let token = mint(&key(), &tenant(), &scope(), 1000, 3600).expect("mint");
+        let token = mint(&key(), &tenant(), &scope(), Some(0), 1000, 3600).expect("mint");
         // Flip last char of sig by re-assembling the string. Avoids
         // any `unsafe` per `#![forbid(unsafe_code)]`.
         let mut tampered = String::with_capacity(token.len());

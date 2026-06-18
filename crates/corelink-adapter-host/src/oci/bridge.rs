@@ -123,6 +123,7 @@ impl BlobStore for OciBlobBridge {
         _tenant: &TenantId,
         upload_uuid: &str,
         blob_key: &str,
+        _storage_cap_bytes: Option<i64>,
     ) -> PortResult<Bytes> {
         let buf = {
             let mut g = self
@@ -385,7 +386,10 @@ mod tests {
         let blob_key = fake_hash(&chunk);
         let uuid = bridge.open_upload(&t).await.unwrap();
         let _len = bridge.append_chunk(&t, &uuid, chunk.clone()).await.unwrap();
-        let result = bridge.finalize_upload(&t, &uuid, &blob_key).await.unwrap();
+        let result = bridge
+            .finalize_upload(&t, &uuid, &blob_key, None)
+            .await
+            .unwrap();
         assert_eq!(result, chunk);
     }
 
@@ -401,7 +405,7 @@ mod tests {
             .append_chunk(&t, &uuid, Bytes::from(data.clone()))
             .await
             .unwrap();
-        bridge.finalize_upload(&t, &uuid, &hash).await.unwrap();
+        bridge.finalize_upload(&t, &uuid, &hash, None).await.unwrap();
         let got = bridge.get_blob(&t, &hash).await.unwrap();
         assert_eq!(got, Some(Bytes::from(data)));
     }
