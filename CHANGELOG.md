@@ -50,6 +50,16 @@ Each entry cross-references:
   `docs/security/2026-06-18-gitleaks-baseline-triage.md`.
 
 ### Security
+- **Closed GitHub Actions template-injection (shell-injection) in three PR-triggered workflows**
+  (`dependabot-policy.yml`, `mutation-pr.yml`, `openapi-validate.yml`). Attacker-controllable context
+  values — the PR base branch ref (`github.event.pull_request.base.ref` / `github.base_ref`) and the
+  PR labels JSON — were interpolated by `${{ … }}` directly into `run:` shell, where a branch name or
+  label carrying shell metacharacters could execute (the tj-actions/breach class; `dependabot-policy`
+  is `pull_request_target`, the high-privilege trigger). Each is now passed via a job-scoped `env:` and
+  referenced as a shell variable (data, not code-substitution) — behavior-identical. Found by `zizmor`;
+  fixes verified locally with `zizmor` + `actionlint`. (The remaining lower-severity zizmor findings —
+  safe `number`/`sha` values, `excessive-permissions`, `artipacked` — are a separate owner-aware phased
+  sweep per `docs/launch/2026-06-18-sota-tooling-roadmap.md`.)
 - **Redacted a committed Stripe webhook signing secret** (`whsec_…`, stale/dead — its endpoint was
   already deleted) from `docs/operator/stripe-checkout-e2e-2026-05-29.md`. ⚠️ Operator action: confirm
   the secret is rotated/revoked in Stripe (it remains in git history).

@@ -76,6 +76,12 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
+    # PR context passed via env (not interpolated into run: shell) —
+    # template-injection-safe (branch names + label JSON can carry shell
+    # metacharacters). This job is pull_request-only (if: above).
+    env:
+      PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+      PR_LABELS_JSON: ${{ toJson(github.event.pull_request.labels) }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -85,7 +91,7 @@ jobs:
         id: base
         run: |
           set -e
-          BASE_REF="${{ github.event.pull_request.base.ref }}"
+          BASE_REF="$PR_BASE_REF"
           git fetch origin "$BASE_REF" --depth=1
           mkdir -p /tmp/openapi-base
           if git show "origin/${BASE_REF}:openapi/corelink-v1.yaml" \
@@ -117,7 +123,7 @@ jobs:
       - name: Allow breaking change only with `breaking-api-ok` label
         if: steps.base.outputs.has_base == 'true' && steps.diff.outputs.code != '0'
         run: |
-          if echo '${{ toJson(github.event.pull_request.labels) }}' | grep -q '"breaking-api-ok"'; then
+          if echo "$PR_LABELS_JSON" | grep -q '"breaking-api-ok"'; then
             echo "::warning::breaking API change accepted (label: breaking-api-ok)"
             exit 0
           fi
