@@ -147,6 +147,16 @@ pub const EVENTS_BODY_LIMIT_BYTES: usize = 64 * 1024;
 /// blocking forever.
 pub const GLOBAL_TURBO_PUT_PERMITS: usize = 16;
 
+/// Process-wide concurrency budget for the accept-and-drop `/v8/artifacts/events`
+/// telemetry route — SEPARATE from the PUT write budget (rt-nuclear cycle-2
+/// #4/#8). Events previously shared `GLOBAL_TURBO_PUT_BUDGET` (the C5 OOM guard),
+/// but that let a telemetry flood / slow-body events POST hold PUT permits and
+/// starve real cache writes (cross-plane DoS). A dedicated budget keeps the C5
+/// OOM bound (≤ this many × `EVENTS_BODY_LIMIT_BYTES` ≈ 16 × 64 KiB = 1 MiB
+/// aggregate events heap) WITHOUT letting worthless telemetry starve billable
+/// writes. 16 is ample for telemetry; events are tiny + accept-and-drop.
+pub const GLOBAL_TURBO_EVENTS_PERMITS: usize = 16;
+
 /// How long the global-budget extractor waits for a permit before declaring
 /// the container globally saturated and returning 503. Short by design (same
 /// rationale as `adapter_pat::ARGON2_PERMIT_WAIT`): a caller waiting longer is
@@ -265,6 +275,18 @@ static GLOBAL_TURBO_PUT_BUDGET: OnceLock<Arc<Semaphore>> = OnceLock::new();
 fn global_turbo_put_budget() -> Arc<Semaphore> {
     Arc::clone(
         GLOBAL_TURBO_PUT_BUDGET.get_or_init(|| Arc::new(Semaphore::new(GLOBAL_TURBO_PUT_PERMITS))),
+    )
+}
+
+/// Process-wide `/events` telemetry budget — SEPARATE from the PUT budget so a
+/// telemetry flood cannot starve real cache writes (rt-nuclear cycle-2 #4/#8).
+static GLOBAL_TURBO_EVENTS_BUDGET: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+/// Accessor for the process-wide `/events` budget.
+fn global_turbo_events_budget() -> Arc<Semaphore> {
+    Arc::clone(
+        GLOBAL_TURBO_EVENTS_BUDGET
+            .get_or_init(|| Arc::new(Semaphore::new(GLOBAL_TURBO_EVENTS_PERMITS))),
     )
 }
 
@@ -471,6 +493,50 @@ impl axum::extract::FromRequestParts<TurboRouteState> for GlobalPutBudgetGuard {
                 Err((
                     StatusCode::SERVICE_UNAVAILABLE,
                     "server busy: too many concurrent uploads",
+                )
+                    .into_response())
+            }
+        }
+    }
+}
+
+/// Per-request guard over the SEPARATE `/events` telemetry budget
+/// ([`GLOBAL_TURBO_EVENTS_PERMITS`]) — decoupled from the PUT write budget so a
+/// telemetry flood / slow-body events POST cannot starve real cache writes
+/// (rt-nuclear cycle-2 #4/#8). As a `FromRequestParts` extractor it acquires
+/// (and 503s on saturation) BEFORE the `Bytes` body is buffered — preserving the
+/// C5 OOM bound on events (≤ permits × `EVENTS_BODY_LIMIT_BYTES`) on its own pool.
+pub(crate) struct EventsBudgetGuard {
+    /// Held for the whole request; releases the permit on drop.
+    _permit: OwnedSemaphorePermit,
+}
+
+#[axum::async_trait]
+impl axum::extract::FromRequestParts<TurboRouteState> for EventsBudgetGuard {
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(
+        _parts: &mut axum::http::request::Parts,
+        _state: &TurboRouteState,
+    ) -> Result<Self, Self::Rejection> {
+        let budget = global_turbo_events_budget();
+        match tokio::time::timeout(GLOBAL_PUT_PERMIT_WAIT, budget.acquire_owned()).await {
+            Ok(Ok(permit)) => Ok(Self { _permit: permit }),
+            // `acquire_owned` only errs if the semaphore is closed — never closed
+            // here, but fail CLOSED if it ever is.
+            Ok(Err(_)) => {
+                Err((StatusCode::SERVICE_UNAVAILABLE, "events budget unavailable").into_response())
+            }
+            // Timed out: the events pool is saturated. A telemetry flood now 503s
+            // ITS OWN route without touching the PUT write plane.
+            Err(_) => {
+                tracing::warn!(
+                    permits = GLOBAL_TURBO_EVENTS_PERMITS,
+                    "turbo /events budget saturated; returning 503 BEFORE body buffering"
+                );
+                Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server busy: too many concurrent telemetry posts",
                 )
                     .into_response())
             }
@@ -857,13 +923,15 @@ async fn handle_put(
 async fn handle_events(
     State(state): State<TurboRouteState>,
     auth: crate::auth_tenant::AuthTenant,
-    // C5: events shares the process-wide budget so a telemetry FLOOD cannot
-    // OOM the container either. As a `FromRequestParts` extractor it runs (and
-    // 503s on global saturation) BEFORE the `body: Bytes` extractor buffers
-    // anything; combined with the 64 KiB `EVENTS_BODY_LIMIT_BYTES` route cap
-    // (C4) this bounds aggregate events heap to ≤ GLOBAL_TURBO_PUT_PERMITS ×
-    // 64 KiB. The permit RAII-releases when the handler returns.
-    _global_budget: GlobalPutBudgetGuard,
+    // C5 + rt-nuclear cycle-2 #4/#8: events holds a permit from its OWN
+    // dedicated budget (`GLOBAL_TURBO_EVENTS_PERMITS`), NOT the PUT write budget.
+    // Sharing the PUT budget (the old C5 design) let a telemetry flood / slow-body
+    // events POST hold PUT permits and starve real cache writes (cross-plane DoS).
+    // As a `FromRequestParts` extractor it runs (and 503s on saturation) BEFORE
+    // the `body: Bytes` extractor buffers anything; combined with the 64 KiB
+    // `EVENTS_BODY_LIMIT_BYTES` route cap (C4) this keeps the same OOM bound
+    // (≤ permits × 64 KiB) on the events pool while isolating it from writes.
+    _events_budget: EventsBudgetGuard,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
     let principal = format!("anon@{}", auth.0);
