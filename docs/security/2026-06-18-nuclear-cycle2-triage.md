@@ -20,7 +20,7 @@ Status legend: ✅ fixed+verified · 🔧 fixing · 📋 designed (owner-aware /
 | 6 | high | authed | nuclear-confirmed (4/5) — adapter writes (cargo/npm/brew/pip) don't thread the per-tier cap header → #297 seeding gap on the adapter plane | 📋 thread cap into adapter CasWriteRequest |
 | 8 | med | free-tenant | partially addressed by #4 — slow-body `/events` now holds only the SEPARATE events budget (can't touch PUT); the residual (a slow-body holding an *events* permit) needs a server body-read timeout layer | 🔧 #4 isolates it; body-timeout = follow-up |
 | 9 | med | free-tenant | nuclear-confirmed (4/5) — `/events` has no per-tenant concurrency cap (the PUT sibling does) | 📋 per-tenant `/events` guard |
-| 10 | med | authed | nuclear-confirmed (5/5) — adapter writes don't reconcile a downgraded cap (#297 reconcile gap) | 📋 (same path as #6) |
+| 10 | med | authed | **cold-verify NARROWS this** — `checkStorageQuota` (quota.ts:344) SUMs actual `bytes_used` vs the RESOLVED (downgraded) cap on every PAT-gated write → native + cargo/npm/brew/pip are MITIGATED; residual is **OCI-only** (OCI bypasses the Worker gate, so a *downgraded* tenant over-stores via OCI until a native write reseeds) | 📋 OCI-only: thread the resolved cap into the container OCI write path (or run a Worker SUM gate for OCI) |
 | 11 | med | authed | nuclear-confirmed (3/5) — multi-region fanout double-counts the monthly request quota (OVER-count — conservative, customer-unfavorable, not a bypass) | 📋 gate quota block on `!isFanout` (worker) |
 | 12 | med | leaked-secret | nuclear-confirmed (5/5) — leaked `PAT_SIGNING_KEY` → valid-HMAC nonexistent-tenant PATs force Argon2id work → adapter-pool starvation (depends on a leaked secret) | 📋 isolate OCI verify pool + per-tenant Argon2 cap (overlaps #1) |
 
@@ -47,8 +47,13 @@ owner-aware decision, not a madrugada auto-fix:
 - **#6 / #10 (adapter byte-accounting):** the adapter NOT seeding the cap is a **deliberate fail-closed
   posture** (`adapter_cache.rs:260-273` — "absence of a cap is never treated as unlimited"; a fresh
   tenant is seeded on its first native write). #6 is an availability/UX limitation (adapter-only tenant
-  must do one native write first), NOT a quota-evasion; #10's downgrade gap may be mitigated by the
-  Worker cross-region SUM gate (`quota.ts:344`) — verify the gate's behavior before changing the posture.
+  must do one native write first), NOT a quota-evasion (a fresh tenant's adapter write fails CLOSED — it
+  cannot over-store). **#10 — cold-verified + NARROWED:** `checkStorageQuota` (quota.ts:306/344) SUMs
+  actual `bytes_used` vs the RESOLVED (downgraded) cap on EVERY PAT-gated write, so the downgrade IS
+  enforced on the native + cargo/npm/brew/pip planes regardless of the container's stale row. The ONLY
+  residual is **OCI** (its pass-through bypasses the Worker quota gate), where a *downgraded* tenant
+  could over-store until a native write reseeds the container row. Fix scope is therefore OCI-only:
+  thread the resolved cap into the container OCI write path, or add a Worker-side SUM gate for OCI.
 - **#2 (OCI digest-lie poisoning):** REAL (verify-after-persist, no rollback port) but intra-tenant; the
   correct fix (verify-BEFORE-commit) is a **BlobStore port split** (assemble vs commit) across prod+fake — a careful multi-file port change.
 - **#8 / #9:** #4 already isolated events from writes; residual = a server **body-read timeout** layer
