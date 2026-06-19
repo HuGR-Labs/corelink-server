@@ -116,6 +116,21 @@ COPY migrations ./migrations
 # incremental, and removing it eliminates the fingerprint-staleness
 # class that the prior stub-build layout could trigger.
 ENV CARGO_INCREMENTAL=0
+# Container build profile override — SCOPED to this Docker build only (env-level
+# CARGO_PROFILE_RELEASE_* override), it does NOT touch the shared [profile.release]
+# in Cargo.toml (which keeps lto="fat" + codegen-units=1 for the size-critical
+# wasm edge bundle + CLI release artifacts where that profile belongs).
+#
+# Why: a long-running native SERVER container gains ~nothing from fat-LTO's
+# marginal size/perf, but pays a huge SERIAL cost — fat LTO + codegen-units=1 made
+# a cold build ~2h AND is why adding build cores didn't help (the fat-LTO link is
+# single-threaded). thin LTO + parallel codegen cuts a cold build to ~25-40min and
+# lets more cores actually scale. opt-level=3 / strip / panic=abort are inherited
+# unchanged, so runtime behavior + binary semantics are identical (just slightly
+# less cross-crate inlining). NOTE: this changes the binary bytes vs the fat-LTO
+# baseline — the nightly reproducible-build gate's expected hash must be refreshed.
+ENV CARGO_PROFILE_RELEASE_LTO=thin
+ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=corelink-cargo-registry \
     --mount=type=cache,target=/usr/local/cargo/git,id=corelink-cargo-git \
     --mount=type=cache,target=/build/target,id=corelink-target,sharing=locked \
