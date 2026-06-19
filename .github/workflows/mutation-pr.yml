@@ -134,4 +134,6 @@ jobs:
             sed 's/^/  TIMEOUT: /' "$timed_out"
           fi
           echo "✅ All changed-line mutants were caught (or none were generated)."
-          [ -f "$out/caught.txt" ] && sed 's/^/  caught: /' "$out/caught.txt" || true
+          if [ -f "$out/caught.txt" ]; then
+            sed 's/^/  caught: /' "$out/caught.txt"
+          fi

@@ -34,10 +34,9 @@ concurrency:
 jobs:
   vale:
     name: vale lint (error → fail)
-    # Self-hosted, native Vale binary. errata-ai/vale-action ships a Linux
-    # x86_64 reviewdog that ENOEXECs on the macOS fleet, and GitHub-hosted
-    # runners do not start on this account (billing-blocked) — so install a
-    # checksum-pinned Vale and run it directly.
+    # Native Vale binary. errata-ai/vale-action ships a reviewdog wrapper we
+    # avoid (no-unpinned-action posture) — so install a checksum-pinned Vale
+    # (Linux x86_64 release asset) and run it directly.
     #
     # RATCHET SCOPE: enforcement covers only the md/mdx files CHANGED by the
     # PR (diff vs the merge-commit's first parent). Full rule strength on
@@ -48,9 +47,9 @@ jobs:
     timeout-minutes: 10
     env:
       VALE_VERSION: 3.9.1
-      # sha256 from the official vale_3.9.1_checksums.txt release asset.
-      VALE_SHA256_X86_64: 4f7852dadad2980f0eaadf9a89f7d42085d97a65804b79577a483acba1ee6c8e
-      VALE_SHA256_ARM64: 3d4b5038332784d9828cc6c31b55277603c9e210cc503979bbf4e6e2659aeaa9
+      # sha256 from the official vale_3.9.1_checksums.txt release asset
+      # (vale_3.9.1_Linux_64-bit.tar.gz). ubuntu-latest is always x86_64.
+      VALE_SHA256_X86_64: fbc2eb47d0b8c50220ed1a2c5c611fbe0904ed567d638143d482016a18fd2db0
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -61,14 +60,11 @@ jobs:
       - name: Install Vale (pinned, checksum-verified)
         run: |
           set -euo pipefail
-          case "$(uname -m)" in
-            arm64)  TARBALL="vale_${VALE_VERSION}_macOS_arm64.tar.gz";  SHA="$VALE_SHA256_ARM64" ;;
-            x86_64) TARBALL="vale_${VALE_VERSION}_macOS_64-bit.tar.gz"; SHA="$VALE_SHA256_X86_64" ;;
-            *) echo "unsupported runner arch: $(uname -m)" >&2; exit 1 ;;
-          esac
+          TARBALL="vale_${VALE_VERSION}_Linux_64-bit.tar.gz"
+          SHA="$VALE_SHA256_X86_64"
           curl -fsSLo "$RUNNER_TEMP/$TARBALL" \
             "https://github.com/errata-ai/vale/releases/download/v${VALE_VERSION}/${TARBALL}"
-          echo "$SHA  $RUNNER_TEMP/$TARBALL" | shasum -a 256 -c -
+          echo "$SHA  $RUNNER_TEMP/$TARBALL" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/$TARBALL" -C "$RUNNER_TEMP" vale
           "$RUNNER_TEMP/vale" --version
 

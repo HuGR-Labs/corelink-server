@@ -99,18 +99,17 @@ jobs:
     name: tfsec
     runs-on: ubuntu-latest
     # Native tfsec (no container action). `aquasecurity/tfsec-sarif-action` is a
-    # Docker container action — Linux-only — which HARD-FAILS on the macOS
-    # self-hosted fleet ("Container action is only supported on Linux"). We
-    # download the pinned tfsec darwin binary from GitHub Releases (SHA-256
-    # verified, mirroring the supply-chain pin pattern in tla_check.yml) and run
-    # it directly. (2026-06-02)
+    # Docker container action we avoid (no-unpinned-action posture). We download
+    # the pinned tfsec linux binary from GitHub Releases (SHA-256 verified,
+    # mirroring the supply-chain pin pattern in tla_check.yml) and run it
+    # directly on the GitHub-hosted ubuntu-latest fleet.
     env:
       TFSEC_VERSION: "1.28.14"
-      # SHA-256 of the RAW `tfsec-darwin-amd64` release asset for the version
+      # SHA-256 of the RAW `tfsec-linux-amd64` release asset for the version
       # above. The published checksums.txt only covers the .tar.gz archives, so
-      # this hash was captured + verified out-of-band against two independent
-      # downloads. Re-pin requires re-deriving this hash for the new version.
-      TFSEC_SHA256_PINNED: "99e5a17e6b3cff458998f252212064c3bb156a9d3fb67760d12ff26e46ea2e1a"
+      # this hash was captured + verified out-of-band against an independent
+      # download. Re-pin requires re-deriving this hash for the new version.
+      TFSEC_SHA256_PINNED: "a32d0799bbefababaa4fcd814da9f4d251cd932789590b99d1d5fcb89ace6f68"
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -121,13 +120,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/tfsec"
           BIN="$RUNNER_TEMP/tfsec/tfsec"
           curl -fsSL -o "$BIN" \
-            "https://github.com/aquasecurity/tfsec/releases/download/v${TFSEC_VERSION}/tfsec-darwin-amd64"
-          # sha256sum (Linux) with shasum -a 256 fallback (macOS host).
-          if command -v sha256sum >/dev/null 2>&1; then
-            ACTUAL_SHA="$(sha256sum "$BIN" | awk '{print $1}')"
-          else
-            ACTUAL_SHA="$(shasum -a 256 "$BIN" | awk '{print $1}')"
-          fi
+            "https://github.com/aquasecurity/tfsec/releases/download/v${TFSEC_VERSION}/tfsec-linux-amd64"
+          ACTUAL_SHA="$(sha256sum "$BIN" | awk '{print $1}')"
           echo "tfsec SHA-256 actual: ${ACTUAL_SHA}"
           echo "tfsec SHA-256 expect: ${TFSEC_SHA256_PINNED}"
           # HARD-FAIL on hash drift (supply-chain pin per WI-S01-007).

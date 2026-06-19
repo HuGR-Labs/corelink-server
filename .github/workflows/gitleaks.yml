@@ -6,12 +6,9 @@ name: gitleaks (secret-leak scan)
 # DEFAULT ruleset missed — `.gitleaks.toml` adds a custom `whsec_` rule + tunes
 # the fixture/spec allowlist (operational trees stay in scope).
 #
-# Runner: the self-hosted macOS fleet `[self-hosted, mac, corelink-builder]`. The
-# Linux fleet `[self-hosted, Linux, X64]` is DOWN (no runner registered, 2026-06-18)
-# and the repo has NO GitHub-hosted runners (pnpm-audit.yml records the ubuntu-latest
-# "no runner" failure), so the scanner runs on the Mac fleet — the same move already
-# made for semgrep/cargo-deny/cargo-audit. gitleaks is a light git-log scan (no Rust
-# compile, ~70 MB graph) so it does not contend for disk with the Rust build jobs.
+# Runner: GitHub-hosted `ubuntu-latest` (the CI migration off the self-hosted Mac
+# fleet). gitleaks is a light git-log scan (no Rust compile, ~70 MB graph). The
+# pinned binary is the Linux x86_64 release asset.
 #
 # gitleaks is installed as a VERSION-pinned release BINARY (curl tarball + verify
 # sha256), matching the repo's no-unpinned-action posture (every `uses:` is a
@@ -30,11 +27,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Pinned gitleaks release + its published darwin_x64 tarball sha256 (the Mac
-  # fleet is Intel/x86_64). Source of truth (gitleaks_8.30.1_checksums.txt):
+  # Pinned gitleaks release + its published linux_x64 tarball sha256 (runs on the
+  # GitHub-hosted ubuntu-latest fleet, x86_64). Source of truth
+  # (gitleaks_8.30.1_checksums.txt):
   # https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1
   GITLEAKS_VERSION: '8.30.1'
-  GITLEAKS_SHA256: 'dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709'
+  GITLEAKS_SHA256: '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'
 
 jobs:
   gitleaks:
@@ -56,10 +54,10 @@ jobs:
         # passwordless sudo).
         run: |
           set -euo pipefail
-          tarball="gitleaks_${GITLEAKS_VERSION}_darwin_x64.tar.gz"
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
           curl -fsSL -o "${tarball}" "${url}"
-          echo "${GITLEAKS_SHA256}  ${tarball}" | shasum -a 256 -c -
+          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
           mkdir -p "${RUNNER_TEMP}/gitleaks-bin"
           tar -xzf "${tarball}" -C "${RUNNER_TEMP}/gitleaks-bin" gitleaks
           rm -f "${tarball}"
