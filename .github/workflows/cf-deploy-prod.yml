@@ -18,6 +18,11 @@ on:
         description: 'Type "deploy-prod" to confirm production deploy'
         required: true
         type: string
+      env:
+        description: 'Which prod env to deploy (prod | prod-sam | prod-lhr | prod-nrt | prod-syd). All 5 serve live traffic; dispatch once per env.'
+        required: false
+        type: string
+        default: prod
   workflow_run:
     workflows: ["release-cli"]
     types: [completed]
@@ -27,7 +32,10 @@ permissions:
   id-token: write  # for OIDC if we move CF auth to OIDC in future
 
 env:
-  WRANGLER_ENV: prod
+  # Defaults to the main prod env (covers the workflow_run/release trigger which
+  # has no inputs). Manual dispatch can target any of the 5 live prod envs so a
+  # container repin can be rolled to all regions (prod + prod-{sam,lhr,nrt,syd}).
+  WRANGLER_ENV: ${{ github.event.inputs.env || 'prod' }}
 
 jobs:
   # ---------------------------------------------------------------------------
