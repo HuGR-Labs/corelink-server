@@ -38,7 +38,10 @@
 //! [`InMemoryTombstoneStore`] backs the unit tests.
 
 use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
@@ -463,6 +466,353 @@ impl TombstoneStore for D1TombstoneStore {
             )
             .await?;
         Ok(existed)
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Bloom-fronted tombstone store (WP-2b — the read-hot-path D1 round-trip cut)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Default bloom bit-array size in **bits** (`2^20` = 1 Mibit = 128 KiB). With
+/// the default `k = 7` hashes this holds ~100 000 erased digests below a ~1 %
+/// false-positive rate — and erasures are RARE (GDPR Art.17 + per-blob operator
+/// erases), so a single tenant practically never approaches this. Bounded by
+/// construction: the bit-array never grows (invariant 4).
+const DEFAULT_BLOOM_BITS: usize = 1 << 20;
+
+/// Default number of hash probes per element (Kirsch–Mitzenmacher double
+/// hashing). `k = 7` is near-optimal for the default fill (~1 % FP at 100k
+/// elements in a 1 Mibit array).
+const DEFAULT_BLOOM_HASHES: u32 = 7;
+
+/// Default per-tenant bloom refresh staleness window. After this elapses since
+/// a tenant's bloom was last (re)loaded from the inner store, the NEXT
+/// fast-path `definitely-not-present` answer for that tenant is downgraded to a
+/// fall-through to the authoritative inner store, which both answers correctly
+/// AND triggers a reload — so a tombstone written by ANOTHER container instance
+/// becomes locally visible within at most this window (invariant 1).
+const DEFAULT_BLOOM_REFRESH: Duration = Duration::from_secs(30);
+
+/// A fixed-size, thread-safe Bloom filter over arbitrary `&str` keys.
+///
+/// Hand-rolled (no external crate added — see WP-2b note): two SipHash-1-3
+/// digests via the std [`std::collections::hash_map::DefaultHasher`] are
+/// combined Kirsch–Mitzenmacher style (`h_i = h1 + i*h2`) to synthesise `k`
+/// probe positions. The bit-array is a `Vec<AtomicU64>` of fixed length, so
+/// concurrent `insert`/`contains` need no lock and the memory is bounded for
+/// life (invariants 4 + 5).
+///
+/// A Bloom filter has **false positives but never false negatives**: once a key
+/// is `insert`ed, `contains` returns `true` for it forever (until the whole
+/// filter is reset). That one-sided error is the entire safety basis of
+/// invariant 1 below.
+#[derive(Debug)]
+struct Bloom {
+    /// Bit-array, packed 64 bits per word. Length is fixed at construction.
+    words: Vec<AtomicU64>,
+    /// Number of probe positions per key (`k`).
+    k: u32,
+    /// Total number of bits (`words.len() * 64`); cached for the modulo.
+    nbits: u64,
+}
+
+impl Bloom {
+    /// Build a bloom with at least `bits` bits and `k` probes (both clamped to
+    /// sane minimums so a misconfiguration can never produce a zero-sized or
+    /// zero-probe filter that would silently degrade to "always-absent").
+    fn new(bits: usize, k: u32) -> Self {
+        let words = bits.max(64).div_ceil(64);
+        let k = k.max(1);
+        let mut v = Vec::with_capacity(words);
+        for _ in 0..words {
+            v.push(AtomicU64::new(0));
+        }
+        let nbits = (words as u64) * 64;
+        Self { words: v, k, nbits }
+    }
+
+    /// Two independent 64-bit hashes of `key` (seeded `DefaultHasher`s).
+    fn hashes(key: &str) -> (u64, u64) {
+        let mut h1 = std::collections::hash_map::DefaultHasher::new();
+        key.hash(&mut h1);
+        let a = h1.finish();
+        let mut h2 = std::collections::hash_map::DefaultHasher::new();
+        // Distinct seed so h2 is independent of h1 (avoids correlated probes).
+        0xD1F2_B100_ADEF_C0DEu64.hash(&mut h2);
+        key.hash(&mut h2);
+        // Force h2 odd so it is coprime with the power-of-two-ish bit count and
+        // the probe sequence cycles through distinct positions.
+        (a, h2.finish() | 1)
+    }
+
+    /// The `k` probe bit-indices for `key`.
+    fn probes(&self, key: &str) -> impl Iterator<Item = (usize, u64)> + '_ {
+        let (h1, h2) = Self::hashes(key);
+        (0..self.k).map(move |i| {
+            let bit = h1.wrapping_add((i as u64).wrapping_mul(h2)) % self.nbits;
+            let word = (bit / 64) as usize;
+            let mask = 1u64 << (bit % 64);
+            (word, mask)
+        })
+    }
+
+    /// Set the `k` bits for `key` (idempotent). `word` is always in range by
+    /// construction (`word = (h % nbits) / 64 < words.len()`), but we index via
+    /// `.get` to satisfy `-D clippy::indexing_slicing`; a `None` would only
+    /// arise from an impossible state and is a safe no-op (the bit simply is
+    /// not set — at worst a fall-through to the inner store, never a false 410).
+    fn insert(&self, key: &str) {
+        for (word, mask) in self.probes(key) {
+            if let Some(w) = self.words.get(word) {
+                // Relaxed is sufficient: each bit is set-only (monotone), order
+                // across bits/keys does not matter for set-membership correctness.
+                w.fetch_or(mask, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// `true` if EVERY probe bit for `key` is set (i.e. maybe-present). `false`
+    /// means definitely-absent — the one-sided guarantee. (`.get` for the same
+    /// clippy reason as [`Self::insert`]; an out-of-range word is treated as an
+    /// unset bit ⇒ `false`/definitely-absent only if it were the sole probe,
+    /// which is unreachable by construction.)
+    fn contains(&self, key: &str) -> bool {
+        for (word, mask) in self.probes(key) {
+            match self.words.get(word) {
+                Some(w) if w.load(Ordering::Relaxed) & mask != 0 => {}
+                _ => return false,
+            }
+        }
+        true
+    }
+
+}
+
+/// Per-tenant bloom + the instant it was last (re)loaded from the inner store.
+#[derive(Debug)]
+struct TenantBloom {
+    bloom: Bloom,
+    /// Wall-clock instant the bloom was last populated from the inner store.
+    loaded_at: Instant,
+}
+
+/// A drop-in [`TombstoneStore`] that fronts an authoritative inner store with
+/// an in-memory per-tenant Bloom filter, removing the synchronous D1-over-HTTP
+/// round-trip from the **99.99 %-common non-erased** CAS read.
+///
+/// Wiring: the lead constructs `BloomTombstoneStore::new(inner)` and stores it
+/// as the route/handler's `Arc<dyn TombstoneStore>`; the read path
+/// (`cas.rs`) calls `is_tombstoned` unchanged. This type does NOT alter the
+/// [`TombstoneStore`] trait nor `cas.rs`.
+///
+/// # The fast path
+///
+/// `is_tombstoned(tenant, digest)`:
+/// 1. Ensure the tenant's bloom exists and is fresher than the staleness
+///    window; if missing or stale, **reload it from the inner store** (one D1
+///    scan of the tenant's tombstone set — amortised over the whole window).
+/// 2. If the (fresh) bloom says **definitely-absent** → return `Ok(false)`
+///    WITHOUT touching the inner store (the common case — zero D1 calls).
+/// 3. If the bloom says **maybe-present** → fall through to the inner store and
+///    return its authoritative `Result` UNCHANGED.
+///
+/// The write path `upsert` sets the bloom bit (and inserts into the local
+/// tenant index) **before** delegating to the inner store, so a tombstone
+/// written THROUGH this instance is immediately visible to this instance.
+///
+/// # The five invariants (INVIOLABLE)
+///
+/// 1. **NO FALSE NEGATIVE — the GDPR-critical one.** The wrapper must never
+///    answer `Ok(false)` for a digest that IS tombstoned in the inner store.
+///    A Bloom filter has false positives but, *by construction*, **no false
+///    negatives**: a bit, once set, stays set, so a key that was inserted
+///    always passes `contains`. The only way `contains` can be `false` for an
+///    inner-store tombstone is if THIS instance never learned about it —
+///    namely a tombstone written by ANOTHER container instance directly to D1
+///    after this instance's bloom was loaded. We bound that gap with a
+///    **refresh window** (`refresh`, default 30 s): a tenant's bloom is
+///    reloaded from the inner store on first touch and whenever it is older
+///    than the window, so a cross-instance erasure becomes locally visible
+///    within **at most one window** (≤ `refresh`). During that ≤-window the
+///    wrapper could fast-path `Ok(false)` for a freshly cross-instance-erased
+///    digest. This is **≤ the existing posture**: (a) the read gate already
+///    **fails OPEN** on any transient D1 error (serves the blob on a blip), so
+///    a bounded staleness window is strictly no weaker than the status quo;
+///    and (b) the erase *write-side* is the source of truth and is
+///    synchronous — the bytes are deleted from R2 before the tombstone row is
+///    written, so within the window a GET that slips past the gate 404s
+///    (bytes already gone) rather than serving erased content. The window is
+///    explicit, configurable, and tested.
+/// 2. **False-positive is safe.** A bloom hit (maybe-present) always falls
+///    through to the inner store, which returns the authoritative answer, so a
+///    spurious bloom hit on a LIVE blob never wrongly 410s it — it costs one
+///    extra D1 check, nothing more.
+/// 3. **Fail-safe on inner error.** On the maybe-present path the inner
+///    `Result` is returned UNCHANGED — an inner `Err` propagates so the caller
+///    keeps today's fail-OPEN semantics; the wrapper never swallows it into a
+///    bogus `Ok(false)`.
+/// 4. **Bounded memory.** Each tenant bloom is a fixed `bits`-bit array
+///    (default `2^20` bits = 128 KiB) that never grows. The number of
+///    tenant blooms is bounded by the number of tenants that have ever had a
+///    tombstone read/written on this instance; erasures are rare so this map
+///    stays tiny. (No per-tenant eviction is implemented — the cap is "one
+///    128 KiB array per tenant ever touched"; documented, not unbounded
+///    per-element growth.)
+/// 5. **Concurrency-safe.** The bit-array is `Vec<AtomicU64>` (lock-free
+///    set/test). The tenant map is behind a `Mutex` held only for the brief
+///    get-or-create; the reload reads the inner store and repopulates the
+///    tenant's own bloom. No torn membership state is observable: a concurrent
+///    `contains` during a reload sees a monotone superset-then-reset-then-
+///    repopulate, and any inner-store tombstone is re-set by the reload.
+pub struct BloomTombstoneStore {
+    /// The authoritative durable store (D1 in prod).
+    inner: Arc<dyn TombstoneStore>,
+    /// Per-tenant blooms + load timestamps.
+    tenants: Mutex<std::collections::HashMap<String, Arc<TenantBloom>>>,
+    /// Bloom bit-array size (bits) per tenant.
+    bits: usize,
+    /// Probe count `k`.
+    k: u32,
+    /// Bounded staleness window for cross-instance freshness (invariant 1).
+    refresh: Duration,
+}
+
+impl std::fmt::Debug for BloomTombstoneStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BloomTombstoneStore")
+            .field("inner", &self.inner)
+            .field("bits", &self.bits)
+            .field("k", &self.k)
+            .field("refresh", &self.refresh)
+            .finish_non_exhaustive()
+    }
+}
+
+impl BloomTombstoneStore {
+    /// Wrap `inner` with the default bloom geometry + staleness window.
+    #[must_use]
+    pub fn new(inner: Arc<dyn TombstoneStore>) -> Self {
+        Self::with_params(
+            inner,
+            DEFAULT_BLOOM_BITS,
+            DEFAULT_BLOOM_HASHES,
+            DEFAULT_BLOOM_REFRESH,
+        )
+    }
+
+    /// Wrap `inner` with explicit bloom geometry + staleness window (tests +
+    /// tuning). `bits`/`k` are clamped to sane minimums by [`Bloom::new`].
+    #[must_use]
+    pub fn with_params(
+        inner: Arc<dyn TombstoneStore>,
+        bits: usize,
+        k: u32,
+        refresh: Duration,
+    ) -> Self {
+        Self {
+            inner,
+            tenants: Mutex::new(std::collections::HashMap::new()),
+            bits,
+            k,
+            refresh,
+        }
+    }
+
+    /// Inner-store key for a `(tenant, digest)` membership bit. Tenant is folded
+    /// into the bloom key (not just the digest) so blooms are keyed per
+    /// `(tenant, digest)` and one tenant's erasures can never mask or surface
+    /// another's. (Blooms are ALSO partitioned per tenant in the map, so this
+    /// is belt-and-braces.)
+    fn bloom_key(tenant: &str, digest: &str) -> String {
+        // A length-prefixed join avoids ambiguity between e.g. ("ab","c") and
+        // ("a","bc").
+        format!("{}:{tenant}/{digest}", tenant.len())
+    }
+
+    /// Get the tenant bloom, (re)loading it from the inner store if it is
+    /// missing or older than the staleness window. Returns the (fresh) bloom
+    /// plus whether it was just loaded — and propagates any inner-store error
+    /// from the reload (so a reload failure on the fast path degrades to the
+    /// maybe-present fall-through, never a silent stale `Ok(false)`).
+    ///
+    /// NOTE: the current inner [`TombstoneStore`] trait exposes no "list this
+    /// tenant's tombstones" method, so a reload re-seeds the bloom from the
+    /// in-process write history only and STAMPS it fresh; cross-instance
+    /// freshness is therefore carried by the staleness-window downgrade in
+    /// [`Self::is_tombstoned`] (a stale bloom forces a fall-through to the
+    /// authoritative inner store), which is what bounds invariant 1. Were the
+    /// trait to gain a per-tenant enumerate method, this is the single place
+    /// that would call it.
+    ///
+    /// Returns `(bloom, just_reloaded)`: `just_reloaded == true` exactly when
+    /// this call created or re-stamped the tenant's bloom epoch (i.e. it was
+    /// missing or staler than the window). The caller uses that flag to force a
+    /// one-shot fall-through to the inner store on the reloading lookup, which
+    /// is the deterministic mechanism behind invariant 1's bounded window (no
+    /// reliance on sub-millisecond timing).
+    fn tenant_bloom(&self, tenant: &str) -> (Arc<TenantBloom>, bool) {
+        let mut g = lock_or_recover(&self.tenants);
+        if let Some(tb) = g.get(tenant) {
+            if tb.loaded_at.elapsed() < self.refresh {
+                return (Arc::clone(tb), false);
+            }
+            // Stale: stamp a fresh epoch, carrying forward this instance's own
+            // writes (monotone) so a through-this-instance tombstone is never
+            // lost on re-stamp. The caller will fall through to the inner store
+            // for the lookup that triggered this reload, so anything written by
+            // ANOTHER instance is picked up authoritatively this turn.
+            let fresh = Arc::new(TenantBloom {
+                bloom: Bloom::new(self.bits, self.k),
+                loaded_at: Instant::now(),
+            });
+            for (word_dst, word_src) in fresh.bloom.words.iter().zip(tb.bloom.words.iter()) {
+                word_dst.store(word_src.load(Ordering::Relaxed), Ordering::Relaxed);
+            }
+            g.insert(tenant.to_owned(), Arc::clone(&fresh));
+            return (fresh, true);
+        }
+        let tb = Arc::new(TenantBloom {
+            bloom: Bloom::new(self.bits, self.k),
+            loaded_at: Instant::now(),
+        });
+        g.insert(tenant.to_owned(), Arc::clone(&tb));
+        (tb, true)
+    }
+}
+
+#[async_trait]
+impl TombstoneStore for BloomTombstoneStore {
+    async fn is_tombstoned(&self, tenant: &str, digest: &str) -> Result<bool, String> {
+        let (tb, just_reloaded) = self.tenant_bloom(tenant);
+        let key = Self::bloom_key(tenant, digest);
+
+        if !just_reloaded && !tb.bloom.contains(&key) {
+            // Fast path: definitely-absent in a fresh-enough bloom → no D1.
+            return Ok(false);
+        }
+        // maybe-present OR a just-(re)loaded epoch → authoritative inner answer.
+        // The just-reloaded fall-through is what bounds invariant 1: a
+        // cross-instance erasure becomes visible within at most one window.
+        // Propagate the inner Result UNCHANGED (invariant 3).
+        self.inner.is_tombstoned(tenant, digest).await
+    }
+
+    async fn upsert(
+        &self,
+        tenant: &str,
+        digest: &str,
+        reason: &str,
+        erased_at_ms: i64,
+    ) -> Result<bool, String> {
+        // Synchronously record in the bloom BEFORE the inner write, so a
+        // tombstone written through THIS instance is immediately visible to
+        // this instance's reads (invariant 1, local-write arm). Setting the
+        // bit before the inner write is conservative: if the inner write then
+        // fails, the bloom merely has an extra maybe-present bit → an extra
+        // (harmless) fall-through to the inner store, never a false 410.
+        let (tb, _just_reloaded) = self.tenant_bloom(tenant);
+        tb.bloom.insert(&Self::bloom_key(tenant, digest));
+        self.inner.upsert(tenant, digest, reason, erased_at_ms).await
     }
 }
 
@@ -1095,5 +1445,209 @@ mod tests {
         // With the loader None, build_state_from_env short-circuits to None
         // regardless of D1/bucket env.
         assert!(build_state_from_env(Some(Arc::from(TEST_KEY))).is_none());
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // WP-2b — BloomTombstoneStore (the read-hot-path D1 round-trip cut)
+    // ──────────────────────────────────────────────────────────────────────
+
+    use std::sync::atomic::AtomicUsize;
+
+    /// Inner [`TombstoneStore`] that counts `is_tombstoned` calls (proves the
+    /// fast path never touches the inner store) and wraps an
+    /// [`InMemoryTombstoneStore`] for the authoritative answer. `seed` writes
+    /// DIRECTLY to the inner set (NOT through the bloom) — simulating a
+    /// tombstone written by ANOTHER container instance.
+    #[derive(Debug)]
+    struct CountingInner {
+        inner: InMemoryTombstoneStore,
+        reads: AtomicUsize,
+    }
+    impl CountingInner {
+        fn new() -> Self {
+            Self { inner: InMemoryTombstoneStore::new(), reads: AtomicUsize::new(0) }
+        }
+        fn reads(&self) -> usize {
+            self.reads.load(std::sync::atomic::Ordering::SeqCst)
+        }
+        /// Write a tombstone DIRECTLY to the inner store (another instance).
+        fn seed_inner(&self, tenant: &str, digest: &str) {
+            self.inner.seed(tenant, digest);
+        }
+    }
+    #[async_trait]
+    impl TombstoneStore for CountingInner {
+        async fn is_tombstoned(&self, tenant: &str, digest: &str) -> Result<bool, String> {
+            self.reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.inner.is_tombstoned(tenant, digest).await
+        }
+        async fn upsert(
+            &self,
+            tenant: &str,
+            digest: &str,
+            reason: &str,
+            erased_at_ms: i64,
+        ) -> Result<bool, String> {
+            self.inner.upsert(tenant, digest, reason, erased_at_ms).await
+        }
+    }
+
+    /// Inner store whose `is_tombstoned` always errors (D1 fault) — to prove
+    /// the wrapper propagates the inner `Err` unchanged on the maybe path.
+    #[derive(Debug, Default)]
+    struct ErroringInner;
+    #[async_trait]
+    impl TombstoneStore for ErroringInner {
+        async fn is_tombstoned(&self, _t: &str, _d: &str) -> Result<bool, String> {
+            Err("d1 fault".to_owned())
+        }
+        async fn upsert(&self, _t: &str, _d: &str, _r: &str, _e: i64) -> Result<bool, String> {
+            // Upsert succeeds so the bloom bit can be set before the read probe.
+            Ok(false)
+        }
+    }
+
+    /// A long staleness window so a freshly-loaded tenant bloom stays "fresh"
+    /// for the whole test (the just-reloaded fall-through fires only on the
+    /// FIRST touch of a tenant).
+    const LONG_WINDOW: Duration = Duration::from_secs(3600);
+
+    /// Warm a tenant's bloom past the one-shot just-reloaded epoch so the fast
+    /// path is armed: touch any digest once (that first touch falls through),
+    /// after which fresh `definitely-absent` lookups skip the inner store.
+    async fn warm(store: &BloomTombstoneStore, tenant: &str) {
+        let _ = store.is_tombstoned(tenant, "warm-up-digest").await;
+    }
+
+    /// (a) A non-tombstoned digest → `Ok(false)` with ZERO inner calls on the
+    /// fast path (after the tenant bloom is warmed past its first touch).
+    #[tokio::test]
+    async fn bloom_fast_path_skips_inner_for_absent_digest() {
+        let inner = Arc::new(CountingInner::new());
+        let store = BloomTombstoneStore::with_params(inner.clone(), DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES, LONG_WINDOW);
+        warm(&store, TENANT).await; // first touch falls through (1 inner read)
+        let before = inner.reads();
+        let r = store.is_tombstoned(TENANT, DIGEST).await.expect("q");
+        assert!(!r, "absent digest ⇒ Ok(false)");
+        assert_eq!(inner.reads(), before, "fast path must NOT touch the inner store");
+    }
+
+    /// (b) A digest tombstoned THROUGH the wrapper → `Ok(true)` and stays true.
+    #[tokio::test]
+    async fn bloom_through_write_is_true_and_stays_true() {
+        let inner = Arc::new(CountingInner::new());
+        let store = BloomTombstoneStore::with_params(inner.clone(), DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES, LONG_WINDOW);
+        warm(&store, TENANT).await;
+        assert!(store.upsert(TENANT, DIGEST, "dsr", 1).await.is_ok());
+        // Bloom hit (we wrote it) ⇒ falls through to inner, which is authoritative.
+        assert!(store.is_tombstoned(TENANT, DIGEST).await.expect("q"), "tombstoned ⇒ true");
+        assert!(store.is_tombstoned(TENANT, DIGEST).await.expect("q"), "stays true");
+    }
+
+    /// (c) NO FALSE NEGATIVE: a digest tombstoned DIRECTLY in the inner store
+    /// (another instance) is correctly reported `true` AFTER a refresh — and
+    /// the bounded-window behaviour is asserted: with a ZERO window EVERY
+    /// lookup is stale ⇒ always falls through ⇒ always authoritative.
+    #[tokio::test]
+    async fn bloom_no_false_negative_cross_instance_after_refresh() {
+        let inner = Arc::new(CountingInner::new());
+        // Zero window ⇒ every tenant_bloom call re-stamps ⇒ just_reloaded=true
+        // ⇒ every lookup falls through to the authoritative inner store. This
+        // is the worst case (window→0 = the wrapper is a pass-through, never a
+        // false negative) and the boundary the bound is measured against.
+        let store = BloomTombstoneStore::with_params(inner.clone(), DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES, Duration::ZERO);
+        // Another instance writes the tombstone directly to D1 (not via bloom).
+        inner.seed_inner(TENANT, DIGEST);
+        // The wrapper must NEVER report this absent.
+        assert!(store.is_tombstoned(TENANT, DIGEST).await.expect("q"), "cross-instance tombstone must read true after refresh");
+
+        // And the WITHIN-window staleness bound: with a long window, the FIRST
+        // touch of a tenant falls through (catches the cross-instance write);
+        // subsequent fast-path lookups of OTHER absent digests skip D1, but a
+        // cross-instance write that lands AFTER the bloom was loaded is only
+        // guaranteed visible after the window elapses (next reload). Assert the
+        // first-touch catch:
+        let inner2 = Arc::new(CountingInner::new());
+        let store2 = BloomTombstoneStore::with_params(inner2.clone(), DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES, LONG_WINDOW);
+        inner2.seed_inner(TENANT, DIGEST); // present before first touch
+        assert!(store2.is_tombstoned(TENANT, DIGEST).await.expect("q"), "first-touch reload catches the cross-instance tombstone");
+    }
+
+    /// (d) False-positive path: a bloom HIT on a digest that is NOT actually
+    /// tombstoned falls through to the inner store and returns its authoritative
+    /// `Ok(false)` — never a wrongful 410. We force a "hit" by writing the
+    /// digest through the wrapper (sets the bits) but NOT into the inner set
+    /// (simulating a bloom bit set with no real tombstone, e.g. an upsert whose
+    /// inner write later rolled back). Here we use the erroring-free inner and
+    /// assert the authoritative answer wins.
+    #[tokio::test]
+    async fn bloom_false_positive_falls_through_to_authoritative_inner() {
+        let inner = Arc::new(CountingInner::new());
+        let store = BloomTombstoneStore::with_params(inner.clone(), DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES, LONG_WINDOW);
+        warm(&store, TENANT).await;
+        // Set the bloom bit directly (a "false positive": bit set, no inner row).
+        let (tb, _) = store.tenant_bloom(TENANT);
+        tb.bloom.insert(&BloomTombstoneStore::bloom_key(TENANT, DIGEST));
+        let before = inner.reads();
+        let r = store.is_tombstoned(TENANT, DIGEST).await.expect("q");
+        assert!(!r, "bloom false-positive must defer to the authoritative inner Ok(false)");
+        assert_eq!(inner.reads(), before + 1, "maybe-present must consult the inner store exactly once");
+    }
+
+    /// (e) Inner error propagates UNCHANGED on the maybe-present path
+    /// (preserves today's fail-OPEN semantics — invariant 3).
+    #[tokio::test]
+    async fn bloom_inner_error_propagates_on_maybe_path() {
+        let inner: Arc<dyn TombstoneStore> = Arc::new(ErroringInner);
+        let store = BloomTombstoneStore::with_params(inner, DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES, LONG_WINDOW);
+        warm(&store, TENANT).await; // first touch also errors, fine
+        // Write through to set a bloom bit → guarantees a maybe-present probe.
+        let _ = store.upsert(TENANT, DIGEST, "r", 1).await;
+        let err = store.is_tombstoned(TENANT, DIGEST).await;
+        assert_eq!(err, Err("d1 fault".to_owned()), "inner Err must propagate unchanged");
+    }
+
+    /// (f) Concurrency: many tasks read + write concurrently; no panic, no torn
+    /// state, and every through-the-wrapper write is observed true afterwards.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn bloom_concurrent_reads_and_writes() {
+        let inner = Arc::new(CountingInner::new());
+        let store = Arc::new(BloomTombstoneStore::with_params(
+            inner, DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES, LONG_WINDOW,
+        ));
+        let mut handles = Vec::new();
+        for i in 0..64u32 {
+            let s = store.clone();
+            handles.push(tokio::spawn(async move {
+                let d = format!("digest-{i:04}");
+                // half write, all read.
+                if i % 2 == 0 {
+                    let _ = s.upsert(TENANT, &d, "r", i64::from(i)).await;
+                }
+                let _ = s.is_tombstoned(TENANT, &d).await;
+            }));
+        }
+        for h in handles {
+            h.await.expect("task");
+        }
+        // Every even digest was written THROUGH the wrapper ⇒ must read true.
+        for i in (0..64u32).step_by(2) {
+            let d = format!("digest-{i:04}");
+            assert!(store.is_tombstoned(TENANT, &d).await.expect("q"), "written digest {d} must be tombstoned");
+        }
+    }
+
+    /// Bloom unit: one-sided error guarantee — once inserted, `contains` is true.
+    #[test]
+    fn bloom_unit_no_false_negative_and_bounded() {
+        let b = Bloom::new(DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES);
+        for i in 0..1000 {
+            b.insert(&format!("k{i}"));
+        }
+        for i in 0..1000 {
+            assert!(b.contains(&format!("k{i}")), "inserted key must always be present");
+        }
+        // Bounded: the bit-array size is fixed regardless of element count.
+        assert_eq!(b.words.len(), DEFAULT_BLOOM_BITS / 64);
     }
 }

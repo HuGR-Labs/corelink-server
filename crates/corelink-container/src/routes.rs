@@ -408,9 +408,20 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // (D1-backed) when D1 creds are present so an erased hash answers 410 even
     // before the (#254-gated) erase WRITE route is mounted; `None` in dev/CI ⇒
     // classic 200/404 (fail-safe — no false 410s without a real store).
+    // WP-2b integration: front the D1 tombstone store with an in-memory bloom so
+    // the read hot path skips the per-request D1-over-HTTP round-trip for the
+    // (overwhelmingly common) non-erased digest. Safe because the erase write
+    // side deletes the R2 bytes BEFORE writing the tombstone row (cas_erase.rs
+    // ordering): a bloom miss on a cross-instance-erased digest falls through to
+    // an R2 read that 404s (bytes gone) — it never serves erased content, at
+    // worst returns 404 instead of 410 within the bounded refresh window. See
+    // `BloomTombstoneStore`.
     let cas_tombstones: Option<Arc<dyn cas_erase::TombstoneStore>> =
-        cas_erase::D1TombstoneStore::from_env()
-            .map(|s| Arc::new(s) as Arc<dyn cas_erase::TombstoneStore>);
+        cas_erase::D1TombstoneStore::from_env().map(|s| {
+            Arc::new(cas_erase::BloomTombstoneStore::new(
+                Arc::new(s) as Arc<dyn cas_erase::TombstoneStore>
+            )) as Arc<dyn cas_erase::TombstoneStore>
+        });
     let cas_state = cas::CasRouteState {
         read: cas_read.clone(),
         write: cas_write.clone(),

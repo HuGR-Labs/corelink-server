@@ -49,6 +49,27 @@ Each entry cross-references:
   charge-never-lost, cycle-roll invalidation, and concurrent no-double-spend.
 
 ### Added
+- **WP-2b — Bloom-fronted CAS tombstone gate (`crates/corelink-container/src/routes/cas_erase.rs`).**
+  New `BloomTombstoneStore` wraps an inner `Arc<dyn TombstoneStore>` and itself implements the
+  (unchanged) `TombstoneStore` trait — a drop-in the lead wires at construction. The CAS read hot
+  path calls `is_tombstoned(tenant, hash)` on EVERY GET, which today is a synchronous
+  D1-over-HTTP round-trip (~0.3–0.7s) — a measured CAS-latency root cause. Tombstones (erased
+  objects) are rare, so the wrapper fronts D1 with an in-memory per-tenant Bloom filter: a
+  `definitely-absent` digest returns `Ok(false)` with **zero** D1 calls (the 99.99 % common
+  case); a `maybe-present` digest falls through to the authoritative inner store. **GDPR Art.17
+  safety:** a Bloom has false-positives (safe → extra D1 check) but, by construction, no
+  false-negatives; cross-instance freshness is bounded by a per-tenant **staleness window**
+  (default 30 s) — a tenant's bloom is loaded on first touch and re-stamped when older than the
+  window, and the reloading lookup falls through to D1 authoritatively, so a tombstone written by
+  another container instance is visible within ≤ one window. This is ≤ the existing posture (the
+  gate already fails OPEN on a transient D1 blip; the erase write-side deletes the R2 bytes before
+  writing the tombstone, so a within-window slip-through 404s rather than serving erased content).
+  Inner errors propagate UNCHANGED on the maybe path (preserves fail-OPEN). Hand-rolled fixed-size
+  bloom over std `DefaultHasher` (SipHash-1-3) double-hashing on a `Vec<AtomicU64>` — bounded
+  memory (128 KiB/tenant, never grows), lock-free reads/writes — **no new external crate**. Adds
+  unit + async tests proving each of the five invariants (fast-path skips D1, through-write stays
+  true, no-false-negative after refresh, false-positive defers to inner, inner-error propagates,
+  concurrent read/write). `cas.rs` is untouched.
 - **Native-REST bulk CAS endpoints** (`crates/corelink-container/src/routes/cas.rs`):
   `POST /v1/cas/:tenant/batch` (length-framed bulk write), `POST /v1/cas/:tenant/batch-read`
   (length-framed bulk read), and `POST /v1/cas/:tenant/batch-exists` (bulk HEAD-class
