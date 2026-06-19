@@ -277,31 +277,27 @@ jobs:
     name: Vale prose lint
     # ADVISORY (never fails on findings — `--no-exit`): full-tree error-level
     # report, i.e. the legacy prose-debt burn-down list. The ENFORCING gate is
-    # docs-vale.yml, scoped to the files each PR changes. Self-hosted with a
-    # checksum-pinned native Vale: errata-ai/vale-action ships a Linux
-    # reviewdog that ENOEXECs on macOS, and GitHub-hosted runners do not
-    # start on this account (billing-blocked).
+    # docs-vale.yml, scoped to the files each PR changes. Installs a
+    # checksum-pinned native Vale (Linux x86_64 release asset) rather than
+    # errata-ai/vale-action, keeping the no-unpinned-action posture.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       VALE_VERSION: 3.9.1
-      # sha256 from the official vale_3.9.1_checksums.txt release asset.
-      VALE_SHA256_X86_64: 4f7852dadad2980f0eaadf9a89f7d42085d97a65804b79577a483acba1ee6c8e
-      VALE_SHA256_ARM64: 3d4b5038332784d9828cc6c31b55277603c9e210cc503979bbf4e6e2659aeaa9
+      # sha256 from the official vale_3.9.1_checksums.txt release asset
+      # (vale_3.9.1_Linux_64-bit.tar.gz). ubuntu-latest is always x86_64.
+      VALE_SHA256_X86_64: fbc2eb47d0b8c50220ed1a2c5c611fbe0904ed567d638143d482016a18fd2db0
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Install Vale (pinned, checksum-verified)
         run: |
           set -euo pipefail
-          case "$(uname -m)" in
-            arm64)  TARBALL="vale_${VALE_VERSION}_macOS_arm64.tar.gz";  SHA="$VALE_SHA256_ARM64" ;;
-            x86_64) TARBALL="vale_${VALE_VERSION}_macOS_64-bit.tar.gz"; SHA="$VALE_SHA256_X86_64" ;;
-            *) echo "unsupported runner arch: $(uname -m)" >&2; exit 1 ;;
-          esac
+          TARBALL="vale_${VALE_VERSION}_Linux_64-bit.tar.gz"
+          SHA="$VALE_SHA256_X86_64"
           curl -fsSLo "$RUNNER_TEMP/$TARBALL" \
             "https://github.com/errata-ai/vale/releases/download/v${VALE_VERSION}/${TARBALL}"
-          echo "$SHA  $RUNNER_TEMP/$TARBALL" | shasum -a 256 -c -
+          echo "$SHA  $RUNNER_TEMP/$TARBALL" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/$TARBALL" -C "$RUNNER_TEMP" vale
           "$RUNNER_TEMP/vale" --version
 
@@ -415,19 +411,15 @@ jobs:
           path: apps/docs/build
 
       - name: Locate system Chrome for axe-core/cli
-        # The self-hosted Mac fleet ships Google Chrome pre-installed, so the
-        # old `apt-get install chromium-browser` (Linux-only; hard-fails on
-        # macOS) is unnecessary. @axe-core/cli drives Chrome via the bundled
-        # chromedriver, which honours $CHROME_PATH; point it at the system app
-        # and fail loudly (not silently) if Chrome is somehow absent.
+        # GitHub-hosted ubuntu-latest ships google-chrome-stable pre-installed.
+        # @axe-core/cli drives Chrome via the bundled chromedriver, which honours
+        # $CHROME_PATH; point it at the system binary and fail loudly (not
+        # silently) if Chrome is somehow absent.
         run: |
           set -euo pipefail
-          chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-          if [ ! -x "$chrome" ]; then
-            chrome="$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || true)"
-          fi
+          chrome="$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
           if [ -z "$chrome" ] || [ ! -x "$chrome" ]; then
-            echo "::error::No system Chrome found for @axe-core/cli on the self-hosted Mac fleet (expected /Applications/Google Chrome.app)." >&2
+            echo "::error::No system Chrome found for @axe-core/cli on the ubuntu-latest runner (expected google-chrome-stable on PATH)." >&2
             exit 1
           fi
           echo "Using system Chrome: $chrome"
