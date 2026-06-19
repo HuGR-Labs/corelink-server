@@ -26,9 +26,13 @@ permissions:
   pull-requests: write
   issues: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   flag-legal-review:
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     steps:
       - name: Add legal-review-required label
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0

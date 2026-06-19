@@ -42,7 +42,7 @@ env:
 jobs:
   trivy:
     name: trivy fs (JS vuln) + config (IaC misconfig)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:

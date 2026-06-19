@@ -28,10 +28,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate-quickstart:
     name: validate quickstart MDX vs CLI surface
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     # Soft-fail: surface as a warning annotation, do not block merges.
     continue-on-error: true

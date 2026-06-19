@@ -39,7 +39,7 @@ env:
 jobs:
   gitleaks:
     name: gitleaks detect
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:

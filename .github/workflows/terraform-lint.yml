@@ -34,7 +34,7 @@ concurrency:
 jobs:
   fmt:
     name: terraform fmt
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -50,7 +50,7 @@ jobs:
 
   validate:
     name: terraform validate (${{ matrix.env }})
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -76,7 +76,7 @@ jobs:
 
   tflint:
     name: tflint
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -97,7 +97,7 @@ jobs:
 
   tfsec:
     name: tfsec
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     # Native tfsec (no container action). `aquasecurity/tfsec-sarif-action` is a
     # Docker container action — Linux-only — which HARD-FAILS on the macOS
     # self-hosted fleet ("Container action is only supported on Linux"). We

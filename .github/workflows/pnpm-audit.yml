@@ -63,6 +63,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # -----------------------------------------------------------------------
   # Advisory scan: blocking on HIGH+ prod advisories, non-blocking on full.
@@ -74,7 +78,7 @@ jobs:
     # Do NOT route to [self-hosted, mac, corelink-builder] — that fleet is
     # shared with all Rust build jobs and the Mac cannot afford idle network
     # slots (ref: cargo-audit.yml "stop heavy-gate stampede" note).
-    runs-on: [self-hosted, macOS]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
