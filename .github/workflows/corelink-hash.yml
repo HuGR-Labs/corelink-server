@@ -41,7 +41,7 @@ jobs:
   pr-gate:
     name: PR gate (crate-scoped clippy + tests + canonical vectors)
     # Off-Mac on Blacksmith. Single-crate Rust build → 4 vCPU (right-sized).
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # actions/checkout@v6.0.3
 
@@ -70,7 +70,7 @@ jobs:
   wasm-build:
     name: WASM target builds (CF Workers compile compatibility)
     # Off-Mac on Blacksmith. Single-crate wasm check → 4 vCPU (right-sized).
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # actions/checkout@v6.0.3
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
