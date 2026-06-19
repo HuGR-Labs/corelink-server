@@ -34,7 +34,7 @@ use axum::{
     extract::{FromRequestParts, Path, Query, State},
     http::{request::Parts, StatusCode},
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use crate::wall_clock::{SystemWallClock, WallClock};
@@ -83,6 +83,42 @@ pub const CAS_READ_ROUTE: &str = "/v1/cas/:tenant/:hash";
 /// Canonical CAS write route path. The write path reuses the same
 /// template; axum disambiguates by HTTP method (GET vs PUT).
 pub const CAS_WRITE_ROUTE: &str = "/v1/cas/:tenant/:hash";
+
+/// `POST /v1/cas/:tenant/batch` — bulk write (length-framed upload).
+///
+/// The single-object `PUT /v1/cas/:tenant/:hash` path costs one D1 round-trip
+/// per object (auth/pat-gate/quota/storage), which dominates wall-clock on bulk
+/// git ingest (thousands of tiny loose objects). This route collapses N objects
+/// into ONE request: ONE auth + ONE scope check + ONE pat-gate + ONE quota
+/// charge + a batched storage commit.
+pub const CAS_BATCH_ROUTE: &str = "/v1/cas/:tenant/batch";
+
+/// `POST /v1/cas/:tenant/batch-read` — bulk read (length-framed download).
+pub const CAS_BATCH_READ_ROUTE: &str = "/v1/cas/:tenant/batch-read";
+
+/// `POST /v1/cas/:tenant/batch-exists` — bulk HEAD-class existence probe.
+pub const CAS_BATCH_EXISTS_ROUTE: &str = "/v1/cas/:tenant/batch-exists";
+
+/// FROZEN upload content-type for all three batch routes (the manifest+bytes
+/// wire format). A request that does not declare it is rejected 415 — the
+/// length-framed body is NOT a generic octet-stream and must not be misparsed.
+pub const BATCH_CONTENT_TYPE: &str = "application/x-hugit-cas-batch";
+
+/// Additional content-type accepted on the two READ-side batch routes
+/// (`batch-read`, `batch-exists`), whose request bodies are plain NDJSON hash
+/// lists. The upload route (`batch`) accepts ONLY [`BATCH_CONTENT_TYPE`].
+pub const NDJSON_CONTENT_TYPE: &str = "application/x-ndjson";
+
+/// FROZEN per-batch object-count cap (applies to all three routes). Over ⇒ 413.
+/// Bounds the per-request fan-out so one request can't enqueue an unbounded
+/// number of D1 existence/storage ops behind a single quota charge.
+pub const BATCH_MAX_OBJECTS: usize = 2_000;
+
+/// FROZEN per-batch object-bytes cap (applies to `batch` + `batch-read`). Over
+/// ⇒ 413. Sits UNDER the container's GLOBAL 10 MiB `DefaultBodyLimit`
+/// (main.rs), so the body limit is unchanged: 8 MiB is the batch-payload
+/// ceiling, the extra 2 MiB headroom covers the manifest framing.
+pub const BATCH_MAX_BYTES: usize = 8 * 1024 * 1024;
 
 /// Shared route state — distinct trait objects for read and write.
 #[derive(Clone)]
@@ -483,7 +519,80 @@ pub fn router(state: CasRouteState) -> Router {
             get(handle_read).put(handle_write).delete(handle_delete),
         )
         .route(CAS_LIST_ROUTE, get(handle_list))
+        // Bulk routes. These are SIBLINGS of `/v1/cas/:tenant/:hash`, not
+        // captures of it: matchit-0.7 ranks the static `batch` / `batch-read` /
+        // `batch-exists` literals ABOVE the `:hash` wildcard, so `POST
+        // /v1/cas/t/batch` matches this route and `GET /v1/cas/t/<hash>` still
+        // matches the read route (no method collision either — these are POST).
+        .route(CAS_BATCH_ROUTE, post(handle_batch_write))
+        .route(CAS_BATCH_READ_ROUTE, post(handle_batch_read))
+        .route(CAS_BATCH_EXISTS_ROUTE, post(handle_batch_exists))
         .with_state(state)
+}
+
+/// `true` if `headers` declares a `Content-Type` whose media type (ignoring any
+/// `; charset=…` suffix and ASCII case) is one of `accepted`. Used by the batch
+/// routes for the FROZEN 415 gate: a wrong/absent type is rejected BEFORE the
+/// body is parsed (the length-framed wire format must not be misread as a
+/// generic octet-stream).
+fn content_type_is(headers: &axum::http::HeaderMap, accepted: &[&str]) -> bool {
+    let ct = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    // Strip parameters (`application/x-ndjson; charset=utf-8`) and trim.
+    let media = ct.split(';').next().unwrap_or("").trim();
+    accepted.iter().any(|a| media.eq_ignore_ascii_case(a))
+}
+
+/// 413 over-cap body shared by `/batch` and `/batch-read` (FROZEN contract).
+fn batch_too_large() -> axum::response::Response {
+    (
+        StatusCode::PAYLOAD_TOO_LARGE,
+        Json(serde_json::json!({
+            "error": "batch_too_large",
+            "limit_objects": BATCH_MAX_OBJECTS,
+            "limit_bytes": BATCH_MAX_BYTES,
+        })),
+    )
+        .into_response()
+}
+
+/// One manifest line of a `/batch` upload: a claimed content hash + the exact
+/// byte length that follows for that object in the concatenated payload.
+#[derive(serde::Deserialize)]
+struct BatchUploadManifestEntry {
+    /// Claimed blake3 content hash (validated canonical per object).
+    hash: String,
+    /// Exact byte length of this object in the length-framed payload.
+    len: u64,
+}
+
+/// One NDJSON request line of `/batch-read` and `/batch-exists`.
+#[derive(serde::Deserialize)]
+struct BatchHashRequest {
+    /// Requested content hash.
+    hash: String,
+}
+
+/// Split a length-framed batch body into its manifest text and the raw payload
+/// bytes at the FIRST blank line (`\n\n`). The manifest is the bytes before the
+/// terminating blank line; the payload is everything after it. `None` ⇒ no blank
+/// line terminator present (a framing error ⇒ 400 for the whole request).
+fn split_manifest(body: &[u8]) -> Option<(&[u8], &[u8])> {
+    // The manifest is newline-delimited JSON terminated by a SINGLE blank line.
+    // After the last manifest line's `\n` there is one more `\n` (the blank
+    // line), so the separator is `\n\n`. An empty manifest (zero objects) is
+    // still framed by a leading blank line, i.e. the body begins with `\n`.
+    let sep = body.windows(2).position(|w| w == b"\n\n")?;
+    // `sep` is the index of the manifest-terminating `\n`; `sep + 1` is the
+    // blank line's `\n`. The manifest is `..=sep` (includes the terminating
+    // newline) and the payload is everything after the blank line (`sep + 2..`).
+    // `position` guarantees `sep + 1 < body.len()`, so `sep + 2 <= body.len()`
+    // and both `split_at` indices are in bounds (no panic — clippy-safe).
+    let (manifest, rest) = body.split_at(sep + 1);
+    let payload = rest.get(1..).unwrap_or(&[]);
+    Some((manifest, payload))
 }
 
 /// Run the native PAT possession gate (finding #4) when it is wired.
@@ -667,6 +776,424 @@ async fn handle_write(
         }
         Err(e) => map_err(e),
     }
+}
+
+/// `POST /v1/cas/:tenant/batch` — bulk write (length-framed upload).
+///
+/// # Wire format (FROZEN)
+///
+/// The body is, in order: (a) a MANIFEST of newline-delimited JSON, one line per
+/// object `{"hash":"<blake3-64hex>","len":<u64>}` in upload order; (b) a single
+/// blank line `\n` terminating the manifest; (c) the concatenated raw object
+/// bytes in manifest order, each exactly `len` bytes — there is NO per-object
+/// delimiter, the manifest's `len` fields frame the payload.
+///
+/// # Gate sequence (mirrors `handle_write`)
+///
+/// Cross-tenant 403 → 415 wrong content-type → write-scope 403 → pat-gate →
+/// then **ONE** [`QuotaGate::check_batch`] charge of `n` (the object count) for
+/// the whole request. We charge ONCE per batch, NEVER per object: a per-object
+/// charge would re-introduce the #318 quota-bypass-by-batching regression in
+/// reverse — it would N×-bill a single auth'd request — and the cost model is
+/// per-op, so `check_batch(tenant, n)` is the proportional, single-round-trip
+/// charge (same shape as `bazel_v2::quota_reject_batch`). No tombstone gate
+/// (writes are not tombstone-gated — mirrors `handle_write`).
+///
+/// # Per-object isolation
+///
+/// Each object is committed independently via `state.write.write(...)`, which is
+/// the SAME content-verify the single PUT relies on (the write handler hashes
+/// the bytes and returns `HashMismatch` on a forged claim) — the batch route
+/// does not re-implement the hash check, it delegates to the one chokepoint. A
+/// per-object failure (hash mismatch, storage fault) yields that object's
+/// `status:"error"` with a message; the REST of the batch still commits. We do
+/// NOT fail the whole batch on one bad object: bulk git ingest must make
+/// forward progress and report the bad object, not lose the good ones.
+///
+/// # Caps (FROZEN)
+///
+/// ≤ [`BATCH_MAX_OBJECTS`] objects AND ≤ [`BATCH_MAX_BYTES`] of object bytes,
+/// whichever is hit first ⇒ otherwise 413 `batch_too_large`. The byte cap is
+/// checked against the manifest's declared `sum(len)` so an over-cap request is
+/// rejected before any storage write.
+///
+/// # Response 200
+///
+/// JSON array `[{"hash":"…","status":"created|exists|error","error":<msg|null>}]`
+/// in manifest order (`created` = fresh write, `exists` = idempotent
+/// already-present, `error` = per-object failure).
+async fn handle_batch_write(
+    State(state): State<CasRouteState>,
+    Path(tenant): Path<String>,
+    auth: crate::auth_tenant::AuthTenant,
+    scope: crate::scope::CacheScope,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    // Cross-tenant: path echo must equal the authenticated tenant (mirrors
+    // handle_write) — 403 BEFORE any parse or storage access.
+    if tenant != auth.0 {
+        return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
+    // FROZEN: the length-framed upload is ONLY the batch content-type. A wrong
+    // or absent type ⇒ 415 before the body is parsed.
+    if !content_type_is(&headers, &[BATCH_CONTENT_TYPE]) {
+        return (StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported media type").into_response();
+    }
+    // Write-scope gate (fail-CLOSED): a batch upload is a cache WRITE — require
+    // `cas:rw` (mirrors handle_write).
+    if !scope.can_write() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    // Native PAT possession gate (finding #4) — AFTER scope, BEFORE storage.
+    if let Some(resp) = pat_gate_reject(&state, &auth.0, &headers).await {
+        return resp;
+    }
+
+    // ── Parse + frame-validate the whole request (any framing error ⇒ 400) ──
+    let Some((manifest_bytes, payload)) = split_manifest(&body) else {
+        return (StatusCode::BAD_REQUEST, "missing manifest terminator").into_response();
+    };
+    let manifest_text = match std::str::from_utf8(manifest_bytes) {
+        Ok(s) => s,
+        Err(_) => return (StatusCode::BAD_REQUEST, "manifest not utf-8").into_response(),
+    };
+    let mut entries: Vec<BatchUploadManifestEntry> = Vec::new();
+    for line in manifest_text.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<BatchUploadManifestEntry>(line) {
+            Ok(e) => entries.push(e),
+            Err(_) => return (StatusCode::BAD_REQUEST, "malformed manifest").into_response(),
+        }
+    }
+
+    // ── Caps (FROZEN): ≤ N objects AND ≤ B bytes, whichever first ⇒ 413 ──
+    let total_len: u64 = entries.iter().map(|e| e.len).sum();
+    if entries.len() > BATCH_MAX_OBJECTS || total_len > BATCH_MAX_BYTES as u64 {
+        return batch_too_large();
+    }
+    // Framing: the declared lengths must exactly account for the payload bytes
+    // (no slack, no truncation) ⇒ otherwise 400 for the WHOLE request.
+    if total_len != payload.len() as u64 {
+        return (StatusCode::BAD_REQUEST, "payload length mismatch").into_response();
+    }
+
+    // ── ONE quota charge for the whole batch (n = object count) ──
+    if let Some(gate) = state.quota.as_ref() {
+        if let Some(resp) = gate.check_batch(&auth.0, entries.len()).await {
+            return resp;
+        }
+    }
+
+    // ── Commit each object independently; per-object errors do not abort ──
+    let now_ms = SystemWallClock.now_ms();
+    let quota_cap = crate::byte_accounting::storage_quota_from_headers(&headers);
+    let mut results = Vec::with_capacity(entries.len());
+    let mut offset: usize = 0;
+    for entry in &entries {
+        let end = offset + entry.len as usize;
+        // `sum(entry.len) == payload.len()` was asserted above (framing gate),
+        // so `offset..end` is always in bounds; `.get()` keeps it panic-free
+        // (clippy `indexing_slicing`) — the `unwrap_or(&[])` is unreachable.
+        let slice = payload.get(offset..end).unwrap_or(&[]);
+        offset = end;
+        // Canonical-hash gate (defense-in-depth, mirrors the single PUT). A
+        // non-canonical claim is a per-object error, not a batch abort.
+        if !super::ac::is_canonical_digest(&entry.hash) {
+            results.push(serde_json::json!({
+                "hash": entry.hash, "status": "error", "error": "malformed hash",
+            }));
+            continue;
+        }
+        let req = CasWriteRequest::new(
+            auth.0.clone(),
+            entry.hash.clone(),
+            slice.to_vec(),
+            format!("anon@{}", auth.0),
+            auth.0.clone(),
+            now_ms,
+        )
+        .with_storage_quota_bytes(quota_cap);
+        // Content-verify + storage commit happen INSIDE state.write (the same
+        // chokepoint the single PUT uses): the handler hashes the bytes and
+        // returns HashMismatch on a forged claim; the accounting decorator
+        // reserves/commits the bytes. durable=true ⇒ fresh, false ⇒ idempotent.
+        match state.write.write(req) {
+            Ok(resp) => {
+                let status = if resp.durable { "created" } else { "exists" };
+                results.push(serde_json::json!({
+                    "hash": entry.hash, "status": status, "error": serde_json::Value::Null,
+                }));
+            }
+            Err(e) => {
+                let msg = batch_object_error_message(&e);
+                results.push(serde_json::json!({
+                    "hash": entry.hash, "status": "error", "error": msg,
+                }));
+            }
+        }
+    }
+    (StatusCode::OK, Json(serde_json::Value::Array(results))).into_response()
+}
+
+/// Compact per-object error message for a `/batch` upload failure. Mirrors the
+/// `map_err` taxonomy (NotFound/HashMismatch/CrossTenant/Audit/Internal) but
+/// keeps a single object's failure OUT of the batch's HTTP status — the request
+/// is 200 and the failure is reported in that object's `error` field. We never
+/// leak internal storage detail (same discipline as `map_err`).
+fn batch_object_error_message(e: &CasHandlerError) -> String {
+    match e {
+        CasHandlerError::HashMismatch { .. } => "content hash mismatch".to_owned(),
+        CasHandlerError::NotFound { .. } => "not found".to_owned(),
+        CasHandlerError::CrossTenantDenied { .. } => "cross-tenant".to_owned(),
+        CasHandlerError::AuditFailed(_) => "audit closed".to_owned(),
+        CasHandlerError::Internal(ref msg)
+            if msg.starts_with(crate::byte_accounting::OVER_CAP_SENTINEL) =>
+        {
+            "storage quota exceeded".to_owned()
+        }
+        _ => "internal error".to_owned(),
+    }
+}
+
+/// `POST /v1/cas/:tenant/batch-read` — bulk read (length-framed download).
+///
+/// # Request
+///
+/// NDJSON `{"hash":"<blake3>"}` lines. Accepts [`BATCH_CONTENT_TYPE`] or
+/// [`NDJSON_CONTENT_TYPE`] (the read-side body is a plain hash list).
+///
+/// # Gate sequence
+///
+/// Cross-tenant 403 → 415 → read-scope 403 → pat-gate → ONE
+/// [`QuotaGate::check_batch`] charge of `n` (the hash count). Per hash the
+/// tombstone gate is applied FIRST (mirrors `handle_read`: an erased
+/// `(tenant, hash)` ⇒ `gone`), then the R2 read.
+///
+/// # Response 200
+///
+/// A MANIFEST of `{"hash":"…","len":<u64>,"status":"ok|absent|gone"}` NDJSON
+/// lines + a single blank line `\n` + the concatenated raw bytes of the `ok`
+/// objects in manifest order. `absent` (404-class) and `gone` (410-class
+/// tombstoned) contribute zero bytes.
+async fn handle_batch_read(
+    State(state): State<CasRouteState>,
+    Path(tenant): Path<String>,
+    auth: crate::auth_tenant::AuthTenant,
+    scope: crate::scope::CacheScope,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    if tenant != auth.0 {
+        return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
+    if !content_type_is(&headers, &[BATCH_CONTENT_TYPE, NDJSON_CONTENT_TYPE]) {
+        return (StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported media type").into_response();
+    }
+    if !scope.can_read() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    if let Some(resp) = pat_gate_reject(&state, &auth.0, &headers).await {
+        return resp;
+    }
+
+    let hashes = match parse_ndjson_hashes(&body) {
+        Ok(h) => h,
+        Err(rejection) => return rejection.into_response(),
+    };
+    // FROZEN cap: object count only on the request side (the response byte
+    // volume is bounded by what is actually stored, but the request fan-out is
+    // capped here so one request can't drive N unbounded reads behind one
+    // charge).
+    if hashes.len() > BATCH_MAX_OBJECTS {
+        return batch_too_large();
+    }
+
+    // ONE quota charge for the whole batch.
+    if let Some(gate) = state.quota.as_ref() {
+        if let Some(resp) = gate.check_batch(&auth.0, hashes.len()).await {
+            return resp;
+        }
+    }
+
+    let now_ms = SystemWallClock.now_ms();
+    // Build the manifest and the payload in lock-step (manifest order). We cap
+    // the accumulated payload at BATCH_MAX_BYTES: a tenant could request 2000
+    // large blobs whose stored bytes exceed 8 MiB, which would blow the global
+    // 10 MiB response budget — so an `ok` object that would push the payload
+    // over the cap aborts the WHOLE request 413 (FROZEN: ≤ 8 MiB per batch).
+    let mut manifest = String::new();
+    let mut payload: Vec<u8> = Vec::new();
+    for hash in &hashes {
+        // Non-canonical hash ⇒ it cannot name a stored blob; report absent
+        // (it is not a framing error and must not abort the batch).
+        if !super::ac::is_canonical_digest(hash) {
+            manifest.push_str(&format!(
+                "{}\n",
+                serde_json::json!({"hash": hash, "len": 0, "status": "absent"})
+            ));
+            continue;
+        }
+        // Tombstone gate FIRST (mirrors handle_read): an erased blob is `gone`,
+        // never resurrected, never reported absent. A lookup fault fails OPEN to
+        // the normal read (the erase write-side is the source of truth).
+        if let Some(tombstones) = state.tombstones.as_ref() {
+            match tombstones.is_tombstoned(&auth.0, hash).await {
+                Ok(true) => {
+                    manifest.push_str(&format!(
+                        "{}\n",
+                        serde_json::json!({"hash": hash, "len": 0, "status": "gone"})
+                    ));
+                    continue;
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    tracing::warn!(error = %e, "cas batch-read: tombstone gate lookup failed; serving normally");
+                }
+            }
+        }
+        let req = CasReadRequest::new(
+            auth.0.clone(),
+            hash.clone(),
+            format!("anon@{}", auth.0),
+            auth.0.clone(),
+            now_ms,
+        );
+        match state.read.read(req) {
+            Ok(resp) => {
+                if payload.len() + resp.bytes.len() > BATCH_MAX_BYTES {
+                    return batch_too_large();
+                }
+                manifest.push_str(&format!(
+                    "{}\n",
+                    serde_json::json!({"hash": hash, "len": resp.bytes.len(), "status": "ok"})
+                ));
+                payload.extend_from_slice(&resp.bytes);
+            }
+            Err(CasHandlerError::NotFound { .. }) => {
+                manifest.push_str(&format!(
+                    "{}\n",
+                    serde_json::json!({"hash": hash, "len": 0, "status": "absent"})
+                ));
+            }
+            Err(e) => return map_err(e),
+        }
+    }
+    // Manifest + single blank-line terminator + concatenated payload.
+    let mut out = manifest.into_bytes();
+    out.push(b'\n');
+    out.extend_from_slice(&payload);
+    (StatusCode::OK, out).into_response()
+}
+
+/// `POST /v1/cas/:tenant/batch-exists` — bulk HEAD-class existence probe.
+///
+/// # Request
+///
+/// NDJSON `{"hash":"<blake3>"}` lines (≤ [`BATCH_MAX_OBJECTS`] hashes). Accepts
+/// [`BATCH_CONTENT_TYPE`] or [`NDJSON_CONTENT_TYPE`].
+///
+/// # Probe method
+///
+/// HEAD-class: this MUST NOT read object bytes. The `CasReadHandler` trait has
+/// no dedicated `exists`/HEAD method, so the cheapest correct probe available is
+/// a `state.read.read(...)` whose `Ok`/`NotFound` outcome is mapped to
+/// `present` — the bytes are discarded and never enter the response. (When a
+/// true HEAD probe is added to the handler trait this should switch to it; until
+/// then a read-and-discard is the only correct existence signal.) ONE
+/// [`QuotaGate::check_batch`] charge of `n`.
+///
+/// # Response 200
+///
+/// JSON array `[{"hash":"…","present":<bool>}]` in request order.
+async fn handle_batch_exists(
+    State(state): State<CasRouteState>,
+    Path(tenant): Path<String>,
+    auth: crate::auth_tenant::AuthTenant,
+    scope: crate::scope::CacheScope,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    if tenant != auth.0 {
+        return (StatusCode::FORBIDDEN, "cross-tenant").into_response();
+    }
+    if !content_type_is(&headers, &[BATCH_CONTENT_TYPE, NDJSON_CONTENT_TYPE]) {
+        return (StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported media type").into_response();
+    }
+    if !scope.can_read() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    if let Some(resp) = pat_gate_reject(&state, &auth.0, &headers).await {
+        return resp;
+    }
+
+    let hashes = match parse_ndjson_hashes(&body) {
+        Ok(h) => h,
+        Err(rejection) => return rejection.into_response(),
+    };
+    if hashes.len() > BATCH_MAX_OBJECTS {
+        return batch_too_large();
+    }
+
+    if let Some(gate) = state.quota.as_ref() {
+        if let Some(resp) = gate.check_batch(&auth.0, hashes.len()).await {
+            return resp;
+        }
+    }
+
+    let now_ms = SystemWallClock.now_ms();
+    let mut results = Vec::with_capacity(hashes.len());
+    for hash in &hashes {
+        // A non-canonical hash cannot name a stored blob ⇒ present=false (it is
+        // not a framing error).
+        let present = if !super::ac::is_canonical_digest(hash) {
+            false
+        } else {
+            let req = CasReadRequest::new(
+                auth.0.clone(),
+                hash.clone(),
+                format!("anon@{}", auth.0),
+                auth.0.clone(),
+                now_ms,
+            );
+            // HEAD-class existence probe: `CasReadHandler::exists` is overridden
+            // by the R2 handler as a single S3 `HeadObject` with NO body fetch
+            // (r2_s3.rs) — using `read()` here would fetch every present object's
+            // full bytes (tens of GiB of R2 GET egress over a closure-sized probe
+            // — the exact anti-pattern the trait's `exists` default warns about),
+            // defeating the whole point of a cheap dedup probe. `Ok(true)` ⇒
+            // present; `Ok(false)`/`Err` ⇒ false (conservative — never claim a
+            // blob is present on a storage fault; the caller re-uploads, which is
+            // idempotent).
+            matches!(state.read.exists(req), Ok(true))
+        };
+        results.push(serde_json::json!({ "hash": hash, "present": present }));
+    }
+    (StatusCode::OK, Json(serde_json::Value::Array(results))).into_response()
+}
+
+/// Parse an NDJSON `{"hash":"…"}` request body into an ordered list of hashes.
+/// Blank lines are skipped; any malformed line ⇒ `Err((400, msg))` for the whole
+/// request (a framing error — same discipline as the upload manifest). The error
+/// is the small `(StatusCode, &str)` tuple (not a built `Response`) so the
+/// `Result` stays cheap (clippy `result_large_err`); the caller turns it into a
+/// response with `.into_response()`.
+fn parse_ndjson_hashes(body: &[u8]) -> Result<Vec<String>, (StatusCode, &'static str)> {
+    let text = std::str::from_utf8(body)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "request not utf-8"))?;
+    let mut hashes = Vec::new();
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<BatchHashRequest>(line) {
+            Ok(r) => hashes.push(r.hash),
+            Err(_) => return Err((StatusCode::BAD_REQUEST, "malformed request line")),
+        }
+    }
+    Ok(hashes)
 }
 
 /// `DELETE /v1/cas/:tenant/:hash` handler — delete a blob (D-8).
@@ -1591,5 +2118,537 @@ mod tests {
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // ── bulk CAS batch endpoints (hugit-P2: git-ingest fast path) ────────────
+
+    /// Build a length-framed `/batch` upload body from `(hash, bytes)` pairs:
+    /// the NDJSON manifest, a blank-line terminator, then the concatenated raw
+    /// bytes — the FROZEN wire format.
+    fn build_batch_upload(objs: &[(String, Vec<u8>)]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for (hash, bytes) in objs {
+            out.extend_from_slice(
+                format!("{}\n", serde_json::json!({"hash": hash, "len": bytes.len()})).as_bytes(),
+            );
+        }
+        out.push(b'\n'); // blank-line terminator
+        for (_h, bytes) in objs {
+            out.extend_from_slice(bytes);
+        }
+        out
+    }
+
+    /// (a) Happy path: a 3-object batch upload returns 200 with every object
+    /// `created`.
+    #[tokio::test]
+    async fn batch_upload_all_created() {
+        let app = router(fixture());
+        let objs: Vec<(String, Vec<u8>)> = (0u8..3)
+            .map(|i| {
+                let b = vec![i; (i as usize) + 1];
+                (fake_hash(&b), b)
+            })
+            .collect();
+        let body = build_batch_upload(&objs);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(axum::http::header::CONTENT_TYPE, BATCH_CONTENT_TYPE)
+            .body(Body::from(body))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let arr: Vec<serde_json::Value> = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(arr.len(), 3);
+        for entry in &arr {
+            assert_eq!(entry["status"], "created");
+            assert!(entry["error"].is_null());
+        }
+    }
+
+    /// (b) Re-upload of already-present objects returns `exists` (idempotent).
+    #[tokio::test]
+    async fn batch_reupload_returns_exists() {
+        let st = fixture();
+        let b = b"reupload-me".to_vec();
+        let objs = vec![(fake_hash(&b), b)];
+        let body = build_batch_upload(&objs);
+        // First upload.
+        let req1 = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(axum::http::header::CONTENT_TYPE, BATCH_CONTENT_TYPE)
+            .body(Body::from(body.clone()))
+            .expect("request");
+        let r1 = router(st.clone()).oneshot(req1).await.expect("oneshot");
+        assert_eq!(r1.status(), StatusCode::OK);
+        // Second upload — same bytes ⇒ exists.
+        let req2 = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(axum::http::header::CONTENT_TYPE, BATCH_CONTENT_TYPE)
+            .body(Body::from(body))
+            .expect("request");
+        let r2 = router(st).oneshot(req2).await.expect("oneshot");
+        let bytes = axum::body::to_bytes(r2.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let arr: Vec<serde_json::Value> = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(arr[0]["status"], "exists");
+    }
+
+    /// (c) One object with WRONG bytes (claimed hash != actual) is reported
+    /// `error`; the OTHER objects in the same batch still `created`.
+    #[tokio::test]
+    async fn batch_upload_one_bad_object_others_commit() {
+        let app = router(fixture());
+        let good = b"good-object".to_vec();
+        let bad_bytes = b"actual-bytes".to_vec();
+        // Claim a hash that does not match bad_bytes ⇒ HashMismatch in the
+        // write handler. fake_hash of DIFFERENT bytes gives a wrong claim of the
+        // correct len, so the framing still holds but the content-verify fails.
+        let wrong_claim = fake_hash(b"different");
+        let objs = vec![
+            (fake_hash(&good), good.clone()),
+            (wrong_claim, bad_bytes.clone()),
+        ];
+        // Hand-build so the manifest len matches the ACTUAL payload bytes (the
+        // framing is correct; only the per-object content-hash is wrong).
+        let mut body = Vec::new();
+        body.extend_from_slice(
+            format!(
+                "{}\n",
+                serde_json::json!({"hash": fake_hash(&good), "len": good.len()})
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(
+            format!(
+                "{}\n",
+                serde_json::json!({"hash": fake_hash(b"different"), "len": bad_bytes.len()})
+            )
+            .as_bytes(),
+        );
+        body.push(b'\n');
+        body.extend_from_slice(&good);
+        body.extend_from_slice(&bad_bytes);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(axum::http::header::CONTENT_TYPE, BATCH_CONTENT_TYPE)
+            .body(Body::from(body))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK, "one bad object must NOT 4xx the whole batch");
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let arr: Vec<serde_json::Value> = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(arr[0]["status"], "created");
+        assert_eq!(arr[1]["status"], "error");
+        assert_eq!(arr[1]["error"], "content hash mismatch");
+        let _ = objs; // keep the descriptive binding alive for readers
+    }
+
+    /// (d1) Over-cap on object COUNT (2001 objects) ⇒ 413 batch_too_large.
+    #[tokio::test]
+    async fn batch_upload_over_object_cap_returns_413() {
+        let app = router(fixture());
+        // 2001 zero-length objects: framing trivially holds (empty payload), so
+        // the ONLY thing that can trip is the object-count cap.
+        let mut manifest = String::new();
+        let zero_hash = "0".repeat(64);
+        for _ in 0..(BATCH_MAX_OBJECTS + 1) {
+            manifest.push_str(&format!(
+                "{}\n",
+                serde_json::json!({"hash": zero_hash, "len": 0})
+            ));
+        }
+        let mut body = manifest.into_bytes();
+        body.push(b'\n'); // terminator; empty payload follows
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(axum::http::header::CONTENT_TYPE, BATCH_CONTENT_TYPE)
+            .body(Body::from(body))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let v: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(v["error"], "batch_too_large");
+        assert_eq!(v["limit_objects"], BATCH_MAX_OBJECTS);
+        assert_eq!(v["limit_bytes"], BATCH_MAX_BYTES);
+    }
+
+    /// (d2) Over-cap on declared BYTES (> 8 MiB sum(len)) ⇒ 413. We assert on
+    /// the manifest's declared length so we never need to ship 8 MiB of body.
+    #[tokio::test]
+    async fn batch_upload_over_byte_cap_returns_413() {
+        let app = router(fixture());
+        // Two objects whose DECLARED lengths sum just over 8 MiB. The byte-cap
+        // check runs on sum(len) BEFORE the payload-length framing check, so an
+        // over-cap request is rejected without shipping the bytes.
+        let zero_hash = "0".repeat(64);
+        let half = (BATCH_MAX_BYTES / 2) as u64 + 1;
+        let mut body = Vec::new();
+        for _ in 0..2 {
+            body.extend_from_slice(
+                format!("{}\n", serde_json::json!({"hash": zero_hash, "len": half})).as_bytes(),
+            );
+        }
+        body.push(b'\n');
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(axum::http::header::CONTENT_TYPE, BATCH_CONTENT_TYPE)
+            .body(Body::from(body))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    /// (e) Wrong Content-Type ⇒ 415 BEFORE the body is parsed.
+    #[tokio::test]
+    async fn batch_upload_wrong_content_type_returns_415() {
+        let app = router(fixture());
+        let b = b"x".to_vec();
+        let body = build_batch_upload(&[(fake_hash(&b), b)]);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(axum::http::header::CONTENT_TYPE, "application/octet-stream")
+            .body(Body::from(body))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    }
+
+    /// (f) Framing mismatch: declared sum(len) != payload bytes ⇒ 400 for the
+    /// whole request.
+    #[tokio::test]
+    async fn batch_upload_framing_mismatch_returns_400() {
+        let app = router(fixture());
+        let bytes = b"five!".to_vec(); // 5 bytes
+        // Declare len=4 (one short) ⇒ sum(len) != payload.len().
+        let mut body = Vec::new();
+        body.extend_from_slice(
+            format!("{}\n", serde_json::json!({"hash": fake_hash(&bytes), "len": 4})).as_bytes(),
+        );
+        body.push(b'\n');
+        body.extend_from_slice(&bytes);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(axum::http::header::CONTENT_TYPE, BATCH_CONTENT_TYPE)
+            .body(Body::from(body))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    /// (i) Cross-tenant (path tenant != auth tenant) ⇒ 403 BEFORE any parse.
+    #[tokio::test]
+    async fn batch_upload_cross_tenant_returns_403() {
+        let app = router(fixture());
+        let b = b"x".to_vec();
+        let body = build_batch_upload(&[(fake_hash(&b), b)]);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/v1/cas/other-tenant/batch")
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(axum::http::header::CONTENT_TYPE, BATCH_CONTENT_TYPE)
+            .body(Body::from(body))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// A read-only (`cas:r`) batch upload is rejected 403 (write scope required).
+    #[tokio::test]
+    async fn batch_upload_read_only_scope_returns_403() {
+        let app = router(fixture());
+        let b = b"x".to_vec();
+        let body = build_batch_upload(&[(fake_hash(&b), b)]);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .header(axum::http::header::CONTENT_TYPE, BATCH_CONTENT_TYPE)
+            .body(Body::from(body))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// (g) batch-read round-trip: seed two blobs, request three hashes (two
+    /// present + one absent), assert the manifest statuses and that the
+    /// concatenated payload is exactly the present blobs' bytes in order.
+    #[tokio::test]
+    async fn batch_read_round_trip_with_absent() {
+        let st = fixture();
+        let a = b"first-blob".to_vec();
+        let bb = b"second-blob-longer".to_vec();
+        let ha = fake_hash(&a);
+        let hb = fake_hash(&bb);
+        // Seed via the write trait object (the shared backing store).
+        st.write
+            .write(CasWriteRequest::new(
+                TEST_TENANT,
+                ha.clone(),
+                a.clone(),
+                "anon@t1",
+                TEST_TENANT,
+                1,
+            ))
+            .expect("seed a");
+        st.write
+            .write(CasWriteRequest::new(
+                TEST_TENANT,
+                hb.clone(),
+                bb.clone(),
+                "anon@t1",
+                TEST_TENANT,
+                2,
+            ))
+            .expect("seed b");
+        let missing = "0".repeat(64);
+        let ndjson = format!(
+            "{}\n{}\n{}\n",
+            serde_json::json!({"hash": ha}),
+            serde_json::json!({"hash": missing}),
+            serde_json::json!({"hash": hb}),
+        );
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch-read"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .header(axum::http::header::CONTENT_TYPE, NDJSON_CONTENT_TYPE)
+            .body(Body::from(ndjson))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        // Split manifest / payload at the blank-line terminator.
+        let (manifest, payload) = split_manifest(&bytes).expect("framed response");
+        let manifest = std::str::from_utf8(manifest).expect("utf8");
+        let lines: Vec<&str> = manifest.lines().filter(|l| !l.is_empty()).collect();
+        assert_eq!(lines.len(), 3);
+        let l0: serde_json::Value = serde_json::from_str(lines[0]).expect("l0");
+        let l1: serde_json::Value = serde_json::from_str(lines[1]).expect("l1");
+        let l2: serde_json::Value = serde_json::from_str(lines[2]).expect("l2");
+        assert_eq!(l0["status"], "ok");
+        assert_eq!(l1["status"], "absent");
+        assert_eq!(l2["status"], "ok");
+        // Payload = a || bb (present objects, in manifest order).
+        let mut expected = a.clone();
+        expected.extend_from_slice(&bb);
+        assert_eq!(payload, expected.as_slice());
+    }
+
+    /// batch-read reports a tombstoned hash as `gone` (mirrors handle_read's
+    /// 410 gate), not `absent`.
+    #[tokio::test]
+    async fn batch_read_tombstoned_is_gone() {
+        const ERASED: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+        let app = router(fixture_with_tombstone(TEST_TENANT, ERASED));
+        let ndjson = format!("{}\n", serde_json::json!({"hash": ERASED}));
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch-read"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .header(axum::http::header::CONTENT_TYPE, NDJSON_CONTENT_TYPE)
+            .body(Body::from(ndjson))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let (manifest, _payload) = split_manifest(&bytes).expect("framed");
+        let line = std::str::from_utf8(manifest)
+            .expect("utf8")
+            .lines()
+            .next()
+            .expect("one line");
+        let v: serde_json::Value = serde_json::from_str(line).expect("json");
+        assert_eq!(v["status"], "gone");
+    }
+
+    /// (h) batch-exists reports present/absent correctly (HEAD-class).
+    #[tokio::test]
+    async fn batch_exists_present_and_absent() {
+        let st = fixture();
+        let a = b"exists-me".to_vec();
+        let ha = fake_hash(&a);
+        st.write
+            .write(CasWriteRequest::new(
+                TEST_TENANT,
+                ha.clone(),
+                a.clone(),
+                "anon@t1",
+                TEST_TENANT,
+                1,
+            ))
+            .expect("seed");
+        let missing = "0".repeat(64);
+        let ndjson = format!(
+            "{}\n{}\n",
+            serde_json::json!({"hash": ha}),
+            serde_json::json!({"hash": missing}),
+        );
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch-exists"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .header(axum::http::header::CONTENT_TYPE, NDJSON_CONTENT_TYPE)
+            .body(Body::from(ndjson))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let arr: Vec<serde_json::Value> = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["present"], true);
+        assert_eq!(arr[1]["present"], false);
+    }
+
+    /// batch-exists over the 2000-hash cap ⇒ 413.
+    #[tokio::test]
+    async fn batch_exists_over_cap_returns_413() {
+        let app = router(fixture());
+        let zero_hash = "0".repeat(64);
+        let mut body = String::new();
+        for _ in 0..(BATCH_MAX_OBJECTS + 1) {
+            body.push_str(&format!("{}\n", serde_json::json!({"hash": zero_hash})));
+        }
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch-exists"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .header(axum::http::header::CONTENT_TYPE, NDJSON_CONTENT_TYPE)
+            .body(Body::from(body))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    /// The batch quota charge is ONE call of `n` (the object count), NOT one per
+    /// object. We seed a quota store with EXACTLY enough budget for n charges at
+    /// cost-per-op=1 and assert a 3-object batch passes; a per-object loop that
+    /// also added an extra implicit charge, or a wrong `n`, would mis-bill. The
+    /// companion assertion: with budget for only n-1, the SAME batch trips 402.
+    #[tokio::test]
+    async fn batch_upload_charges_quota_once_for_n() {
+        use crate::tenant_quota::{InMemoryQuotaStore, QuotaGuard, QuotaState, QuotaStore};
+        use crate::wall_clock::InMemoryFakeWallClock;
+
+        fn state_with_budget(budget_micros: i64) -> CasRouteState {
+            let audit = Arc::new(InMemoryAuditSink::new());
+            let sli = Arc::new(InMemorySliObserver::new());
+            let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
+            let read: Arc<dyn CasReadHandler> = shared.clone();
+            let write: Arc<dyn CasWriteHandler> = shared.clone();
+            let delete: Arc<dyn CasDeleteHandler> = shared.clone();
+            let list: Arc<dyn CasListHandler> = shared;
+            let store = InMemoryQuotaStore::new();
+            store.seed(
+                TEST_TENANT,
+                QuotaState {
+                    monthly_budget_usd_micros: budget_micros,
+                    accrued_usd_micros: 0,
+                    cycle_anchor_ms: 1_700_000_000_000,
+                },
+            );
+            let store: Arc<dyn QuotaStore> = Arc::new(store);
+            let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(1_700_000_000_000));
+            let guard = Arc::new(QuotaGuard::new(store, clock));
+            CasRouteState::new(
+                read,
+                write,
+                delete,
+                list,
+                None,
+                Some(crate::routes::QuotaGate::new_for_test(guard, 1)),
+                None,
+            )
+        }
+
+        let objs: Vec<(String, Vec<u8>)> = (0u8..3)
+            .map(|i| {
+                let b = vec![i + 1; (i as usize) + 1];
+                (fake_hash(&b), b)
+            })
+            .collect();
+        let body = build_batch_upload(&objs);
+
+        // Budget for exactly 3 charges (cost=1 each) ⇒ the single check_batch(_,3)
+        // fits ⇒ 200.
+        let req_ok = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(axum::http::header::CONTENT_TYPE, BATCH_CONTENT_TYPE)
+            .body(Body::from(body.clone()))
+            .expect("request");
+        let r_ok = router(state_with_budget(3))
+            .oneshot(req_ok)
+            .await
+            .expect("oneshot");
+        assert_eq!(r_ok.status(), StatusCode::OK, "budget for n=3 must admit the batch");
+
+        // Budget for only 2 ⇒ a single check_batch(_,3) over-projects ⇒ 402.
+        let req_402 = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(axum::http::header::CONTENT_TYPE, BATCH_CONTENT_TYPE)
+            .body(Body::from(body))
+            .expect("request");
+        let r_402 = router(state_with_budget(2))
+            .oneshot(req_402)
+            .await
+            .expect("oneshot");
+        assert_eq!(
+            r_402.status(),
+            StatusCode::PAYMENT_REQUIRED,
+            "the batch charge must be n (=3); budget for 2 must trip 402"
+        );
     }
 }

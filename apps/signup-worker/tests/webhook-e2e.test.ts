@@ -9,7 +9,9 @@
  *   1. svix signature verification gates side effects
  *   2. Idempotent provisioning: second webhook with same clerk_user_id → 200 + cached tenant_id
  *   3. Happy path: tenant INSERT, mint call, PAT INSERT, Clerk metadata PATCH
- *   4. Correct session claim shape: { tenant_id, region, pat_plaintext }
+ *   4. Metadata split: public_metadata { tenant_id, region } (session claims,
+ *      no secret) + private_metadata { pat_plaintext, pat_revealed_at }
+ *      (backend-only) per CTRL-CRED-001.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -244,13 +246,19 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
         mintCalled.push(`issuePat:${tenantId}:${scope}`);
         return { id: "pat-uuid-001", plaintext: "corelink_pat_TESTTOKEN" };
       },
-      async publishUserMetadata(userId: string, meta: Record<string, unknown>) {
+      async publishUserMetadata(
+        userId: string,
+        publicMeta: Record<string, unknown>,
+        privateMeta: Record<string, unknown>,
+      ) {
         metadataCalled.push(`publishMetadata:${userId}`);
-        // Verify the correct fields are present.
-        expect(meta["tenant_id"]).toBe("tenant-uuid-001");
+        // public_metadata: legit session claims only — NO secret.
+        expect(publicMeta["tenant_id"]).toBe("tenant-uuid-001");
         // region is derived from CF colo — in tests it falls back to "auto"
-        expect(typeof meta["region"]).toBe("string");
-        expect(typeof meta["pat_plaintext"]).toBe("string");
+        expect(typeof publicMeta["region"]).toBe("string");
+        expect(publicMeta).not.toHaveProperty("pat_plaintext");
+        // private_metadata (backend-only) carries the one-time secret.
+        expect(typeof privateMeta["pat_plaintext"]).toBe("string");
       },
     };
 
@@ -502,9 +510,11 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
     });
   });
 
-  it("session claim shape: publishUserMetadata receives { tenant_id, region, pat_plaintext }", async () => {
-    // Verify the exact claim shape the /welcome page reads.
-    const capturedMetadata: Record<string, unknown>[] = [];
+  it("metadata split: tenant_id/region → public_metadata, pat_plaintext → private_metadata (CTRL-CRED-001)", async () => {
+    // Verify the secret never lands on the JWT/client surface (public_metadata)
+    // and the session claims the /welcome page reads carry no secret.
+    const capturedPublic: Record<string, unknown>[] = [];
+    const capturedPrivate: Record<string, unknown>[] = [];
 
     const env: AutoProvisionEnv = {
       CLERK_WEBHOOK_SECRET: WEBHOOK_SECRET,
@@ -521,8 +531,13 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
       async issuePat() {
         return { id: "pat-claim-test", plaintext: "corelink_pat_CLAIMTEST" };
       },
-      async publishUserMetadata(_userId: string, meta: Record<string, unknown>) {
-        capturedMetadata.push(meta);
+      async publishUserMetadata(
+        _userId: string,
+        publicMeta: Record<string, unknown>,
+        privateMeta: Record<string, unknown>,
+      ) {
+        capturedPublic.push(publicMeta);
+        capturedPrivate.push(privateMeta);
       },
     });
 
@@ -531,13 +546,20 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
     const resp = await handleClerkWebhook(req, env, claimCapturingApi);
 
     expect(resp.status).toBe(200);
-    expect(capturedMetadata).toHaveLength(1);
-    const claims = capturedMetadata[0]!;
-    // These three keys are what welcome/page.tsx reads from sessionClaims.
-    expect(typeof claims["tenant_id"]).toBe("string");
-    expect(typeof claims["region"]).toBe("string");
-    expect(typeof claims["pat_plaintext"]).toBe("string");
-    // pat_plaintext must NOT be empty.
-    expect((claims["pat_plaintext"] as string).length).toBeGreaterThan(0);
+    expect(capturedPublic).toHaveLength(1);
+    expect(capturedPrivate).toHaveLength(1);
+
+    const pub = capturedPublic[0]!;
+    // public_metadata = the legit session claims welcome/page.tsx reads.
+    expect(typeof pub["tenant_id"]).toBe("string");
+    expect(typeof pub["region"]).toBe("string");
+    // The secret must NOT ride public_metadata (JWT/client-readable).
+    expect(pub).not.toHaveProperty("pat_plaintext");
+
+    const priv = capturedPrivate[0]!;
+    // private_metadata (backend-only) carries the one-time secret + clock.
+    expect(typeof priv["pat_plaintext"]).toBe("string");
+    expect((priv["pat_plaintext"] as string).length).toBeGreaterThan(0);
+    expect(typeof priv["pat_revealed_at"]).toBe("number");
   });
 });
