@@ -330,12 +330,13 @@ export interface AutoProvisionResult {
   pat_id: string;
   pat_plaintext: string;
   /**
-   * Whether Clerk publicMetadata was successfully patched with
-   * `{ tenant_id, region, pat_plaintext }`. False means the Clerk PATCH
-   * returned a 4xx (typically 404 — user deleted between webhook emit and
-   * handler run). Tenant + PAT rows are still persisted in D1; the metadata
-   * gap can be reconciled out-of-band. 5xx Clerk failures are re-thrown so
-   * Svix retries the whole webhook.
+   * Whether the Clerk metadata PATCH succeeded — `public_metadata` set to
+   * `{ tenant_id, region }` and `private_metadata` set to
+   * `{ pat_plaintext, pat_revealed_at }`. False means the Clerk PATCH returned
+   * a 4xx (typically 404 — user deleted between webhook emit and handler run).
+   * Tenant + PAT rows are still persisted in D1; the metadata gap can be
+   * reconciled out-of-band. 5xx Clerk failures are re-thrown so Svix retries
+   * the whole webhook.
    */
   metadata_published: boolean;
 }
@@ -562,7 +563,8 @@ interface ApiClient {
   ): Promise<{ id: string; plaintext: string }>;
   publishUserMetadata(
     userId: string,
-    metadata: Record<string, unknown>,
+    publicMetadata: Record<string, unknown>,
+    privateMetadata: Record<string, unknown>,
   ): Promise<void>;
 }
 
@@ -667,12 +669,16 @@ export async function autoProvisionFromClerkEvent(input: {
     svix_id: input.svixId,
   });
 
-  // 4. Push tenant_id + region + one-time PAT into Clerk session metadata so
-  //    /welcome can render it without round-tripping the API. PAT plaintext
-  //    is removed from publicMetadata by a follow-up scheduled action after
-  //    the user's first session — for Phase-0 it lives there until they
-  //    log out (acceptable per CTRL-CRED-001 because (a) it's shown once,
-  //    (b) Clerk metadata is encrypted at rest, (c) admin-ui never logs it).
+  // 4. Push tenant_id + region into Clerk PUBLIC metadata (legit session
+  //    claims) and the one-time PAT plaintext into Clerk PRIVATE metadata
+  //    (backend-only — never in the JWT, never client-readable) so /welcome
+  //    can reveal it once via a server-side Clerk Backend API read. The PAT
+  //    plaintext is cleared from private_metadata two ways (CTRL-CRED-001):
+  //    (a) the client-driven /welcome reveal PATCHes it to null, and (b) a
+  //    guaranteed server-side scrub cron (pat_scrub_cron.ts) clears it for any
+  //    user whose reveal is older than a short TTL — so an un-visited /welcome
+  //    cannot leave the secret resident. `pat_revealed_at` (epoch-ms) is the
+  //    reveal-age clock the cron reads.
   //
   // Idempotency: tenant + PAT are already persisted in D1 above. If Clerk
   // rejects the metadata patch with a 4xx (404 = user deleted between webhook
@@ -682,11 +688,13 @@ export async function autoProvisionFromClerkEvent(input: {
   // and re-thrown so Svix retries the whole event with backoff.
   let metadataPublished = false;
   try {
-    await input.api.publishUserMetadata(user.id, {
-      tenant_id: tenant.id,
-      region,
-      pat_plaintext: pat.plaintext,
-    });
+    await input.api.publishUserMetadata(
+      user.id,
+      // public_metadata — legit session claims only (NO secret).
+      { tenant_id: tenant.id, region },
+      // private_metadata — the one-time secret + its reveal-age clock.
+      { pat_plaintext: pat.plaintext, pat_revealed_at: Date.now() },
+    );
     metadataPublished = true;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1048,12 +1056,16 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
     },
 
     // ── publishUserMetadata ───────────────────────────────────────────────────
-    // Writes tenant_id + region + pat_plaintext to Clerk public metadata.
-    // The session claims become available on the user's NEXT session refresh
-    // (Clerk propagates metadata to JWT on next token issue).
+    // Writes tenant_id + region to Clerk PUBLIC metadata (legit session claims
+    // that ride the JWT) and pat_plaintext to Clerk PRIVATE metadata
+    // (backend-only — never in the JWT, never client-readable). The public
+    // claims become available on the user's NEXT session refresh; the private
+    // secret is read server-side by /welcome (Clerk Backend API) and cleared by
+    // the /welcome reveal + the scrub cron (CTRL-CRED-001).
     async publishUserMetadata(
       userId: string,
-      metadata: Record<string, unknown>,
+      publicMetadata: Record<string, unknown>,
+      privateMetadata: Record<string, unknown>,
     ): Promise<void> {
       if (!env.CLERK_SECRET_KEY) {
         // Dev/CI without Clerk secret — silently skip.
@@ -1067,8 +1079,11 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
             authorization: `Bearer ${env.CLERK_SECRET_KEY}`,
             "content-type": "application/json",
           },
-          // NEVER log this body — `metadata.pat_plaintext` is a secret.
-          body: JSON.stringify({ public_metadata: metadata }),
+          // NEVER log this body — `private_metadata.pat_plaintext` is a secret.
+          body: JSON.stringify({
+            public_metadata: publicMetadata,
+            private_metadata: privateMetadata,
+          }),
         },
       );
       if (!resp.ok) {
