@@ -55,6 +55,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -82,7 +86,7 @@ jobs:
   # -----------------------------------------------------------------------
   cargo-audit-pr:
     name: cargo-audit PR gate
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deny_warnings == 'true')
     steps:
@@ -127,7 +131,7 @@ jobs:
   # -----------------------------------------------------------------------
   cargo-audit-daily:
     name: cargo-audit daily cron
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deny_warnings == 'false')
     steps:

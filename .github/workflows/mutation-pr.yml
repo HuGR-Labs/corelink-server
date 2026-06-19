@@ -50,7 +50,7 @@ env:
 jobs:
   mutants-diff:
     name: cargo-mutants (changed lines only)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     # Pass the PR base branch via env (not interpolated into run: shell) —
     # template-injection-safe (a branch name can carry shell metacharacters).
     env:

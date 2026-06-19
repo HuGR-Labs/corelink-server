@@ -61,7 +61,7 @@ env:
 jobs:
   verify:
     name: Pre-cutover weekly verify + digest
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
       regression: ${{ steps.verify.outputs.regression }}
