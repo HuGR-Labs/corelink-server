@@ -84,6 +84,10 @@ describe("autoProvisionFromClerkEvent", () => {
   it("provisions tenant + region + plan + PAT and emits the 4 funnel events", async () => {
     const calls: string[] = [];
     const emits: Array<{ name: string; tenantId: string | null; props: Record<string, unknown> }> = [];
+    // Capture the two metadata objects so we can assert the secret split:
+    // tenant_id/region → public, pat_plaintext → private (NEVER public).
+    let capturedPublic: Record<string, unknown> | null = null;
+    let capturedPrivate: Record<string, unknown> | null = null;
     const api = {
       async createTenant(name: string, ownerUserId: string, region: string) {
         calls.push(`createTenant(${name},${ownerUserId},${region})`);
@@ -96,8 +100,14 @@ describe("autoProvisionFromClerkEvent", () => {
         calls.push(`issuePat(${tenantId},${scope})`);
         return { id: "pat_1", plaintext: "ct_test_secret_xyz" };
       },
-      async publishUserMetadata(userId: string, metadata: Record<string, unknown>) {
-        calls.push(`publishUserMetadata(${userId},${JSON.stringify(metadata)})`);
+      async publishUserMetadata(
+        userId: string,
+        publicMetadata: Record<string, unknown>,
+        privateMetadata: Record<string, unknown>,
+      ) {
+        calls.push(`publishUserMetadata(${userId})`);
+        capturedPublic = publicMetadata;
+        capturedPrivate = privateMetadata;
       },
     };
     const analytics = {
@@ -130,12 +140,18 @@ describe("autoProvisionFromClerkEvent", () => {
       "createTenant(alice-codes-default,user_2abc,enam)",
       "configureTenant(t_1,enam,free)",
       "issuePat(t_1,read-write)",
-      `publishUserMetadata(user_2abc,${JSON.stringify({
-        tenant_id: "t_1",
-        region: "enam",
-        pat_plaintext: "ct_test_secret_xyz",
-      })})`,
+      "publishUserMetadata(user_2abc)",
     ]);
+
+    // ── CTRL-CRED-001: PAT plaintext goes to PRIVATE metadata ONLY ──────────
+    // public_metadata carries ONLY the legit session claims, no secret.
+    expect(capturedPublic).toEqual({ tenant_id: "t_1", region: "enam" });
+    expect(capturedPublic).not.toHaveProperty("pat_plaintext");
+    // private_metadata carries the one-time secret + its reveal-age clock.
+    expect(capturedPrivate).not.toBeNull();
+    const priv = capturedPrivate as unknown as Record<string, unknown>;
+    expect(priv).toMatchObject({ pat_plaintext: "ct_test_secret_xyz" });
+    expect(typeof priv["pat_revealed_at"]).toBe("number");
     expect(emits.map((e) => e.name)).toEqual([
       "signup_completed",
       "tenant_created",

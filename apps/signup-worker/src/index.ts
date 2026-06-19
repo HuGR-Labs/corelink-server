@@ -16,6 +16,7 @@ import type { StripeWebhookEnv } from "./webhooks/stripe.js";
 import { handleErasureQueueBatch } from "./webhooks/dsr_consumer.js";
 import type { QueueMessageBatch } from "./webhooks/dsr_consumer.js";
 import { runDsrVerifySweep } from "./webhooks/dsr_verify_cron.js";
+import { runPatScrubSweep } from "./webhooks/pat_scrub_cron.js";
 import { withSecurityHeaders } from "./security-headers.js";
 
 type WorkerEnv = AutoProvisionEnv & StripeWebhookEnv;
@@ -77,20 +78,40 @@ const baseHandler: ExportedHandler<SignupEnv> = {
     }
   },
 
-  // DSR 24h verification sweep (Cron Trigger). Re-fingerprints every DSR past
-  // its 24h SLA deadline via the container /_internal/dsr/verify endpoint.
-  // Inert until CORELINK_INTERNAL_AUTH_KEY is bound (task #46).
+  // Hourly Cron Trigger (`0 * * * *`). Drives two independent sweeps:
+  //   1. DSR 24h verification sweep — re-fingerprints every DSR past its 24h
+  //      SLA deadline via the container /_internal/dsr/verify endpoint (inert
+  //      until CORELINK_INTERNAL_AUTH_KEY is bound, task #46).
+  //   2. PAT-plaintext scrub (CTRL-CRED-001) — clears `private_metadata.
+  //      pat_plaintext` for any Clerk user whose reveal is older than the TTL,
+  //      so an un-visited /welcome cannot leave the secret resident (inert
+  //      until CLERK_SECRET_KEY is bound).
   async scheduled(_event, env: SignupEnv, ctx: ExecutionContext): Promise<void> {
+    const nowMs = Date.now();
+
     const db = env.CONFIG_DB;
-    if (!db) {
-      return;
+    if (db) {
+      ctx.waitUntil(
+        runDsrVerifySweep({ ...env, CONFIG_DB: db }, nowMs)
+          .then((r) => {
+            if (!r.skipped) {
+              console.log(
+                `[dsr-verify-cron] swept=${r.swept} failed=${r.failed}`,
+              );
+            }
+          })
+          .catch((err: unknown) => {
+            Sentry.captureException(err);
+          }),
+      );
     }
+
     ctx.waitUntil(
-      runDsrVerifySweep({ ...env, CONFIG_DB: db }, Date.now())
+      runPatScrubSweep(env, nowMs)
         .then((r) => {
           if (!r.skipped) {
             console.log(
-              `[dsr-verify-cron] swept=${r.swept} failed=${r.failed}`,
+              `[pat-scrub-cron] scanned=${r.scanned} scrubbed=${r.scrubbed} failed=${r.failed}`,
             );
           }
         })
