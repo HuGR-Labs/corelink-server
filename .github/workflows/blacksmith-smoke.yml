@@ -1,0 +1,36 @@
+# Blacksmith runner smoke — validates the off-Mac builder is wired before we
+# spend free-tier minutes on the heavy container build.
+#
+# Why this exists: prod container builds currently run on the founder's Mac
+# (`runs-on: [self-hosted, mac, corelink-builder]`), which is dev-only + fragile.
+# Blacksmith gives Linux x86 runners that build the linux/amd64 container image
+# NATIVELY (no Docker-VM hop like on the Mac). This 1-minute job confirms the
+# `blacksmith` runner label resolves and that Docker + buildx are present, so the
+# real `container-build-push-prod` workflow can be authored against confirmed facts
+# without burning minutes on a misconfigured heavy build.
+#
+# Manual-only. Costs ~1 runner-minute.
+name: blacksmith-smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Blacksmith runner smoke (validate off-Mac builder)
+    runs-on: blacksmith
+    timeout-minutes: 5
+    steps:
+      - name: Runner identity + build tooling availability
+        run: |
+          echo "=== uname ==="; uname -a
+          echo "=== cpu / mem ==="; nproc; free -h || true
+          echo "=== disk (build needs headroom for the Rust release build) ==="; df -h / || true
+          echo "=== docker ==="; docker version --format '{{.Server.Version}}' 2>/dev/null || echo "NO docker daemon"
+          echo "=== buildx (required by scripts/build-container-prod.sh) ==="; docker buildx version 2>/dev/null || echo "NO buildx"
+          echo "=== node (for wrangler containers push) ==="; node --version 2>/dev/null || echo "no node"
+          echo "=== git ==="; git --version
+          echo "SMOKE OK — if you see docker + buildx versions above, Blacksmith is ready for the container build."
