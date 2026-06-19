@@ -9,9 +9,18 @@ import { WelcomeStream } from "./WelcomeStream";
 /**
  * /welcome — the single post-signup screen (PLG framework §4 step 3).
  *
- * Server component — reads `tenant_id`, `region`, and the one-time
- * `pat_plaintext` from Clerk publicMetadata (populated by the signup-worker
+ * Server component — reads `tenant_id` and `region` from Clerk publicMetadata
+ * (session claims), and the one-time `pat_plaintext` SERVER-SIDE via the Clerk
+ * Backend API from the user's `private_metadata` (populated by the signup-worker
  * `user.created` webhook, CTRL-CRED-001).
+ *
+ * SECURITY (2026-06-19, CRED-pat-plaintext): `pat_plaintext` is NO LONGER in
+ * `public_metadata`/the session JWT. `public_metadata` carries only
+ * `{tenant_id, region}` (legit session claims). The secret lives in
+ * `private_metadata` (backend-only — never in the JWT, never readable by
+ * `useUser()`), so it must be fetched here via `clerkClient().users.getUser()`.
+ * Because this is a server component the plaintext reaches the browser only in
+ * this single rendered response (shown once), then is cleared by the action.
  *
  * Three rendering branches:
  *  1. `pat_plaintext` present: one-time reveal panel (PAT + install one-liner
@@ -23,14 +32,12 @@ import { WelcomeStream } from "./WelcomeStream";
  *
  * CTRL-CRED-001: PAT plaintext is NEVER logged, NEVER passed to client-side
  * state beyond this render, NEVER stored in localStorage/sessionStorage/cookie.
- * It is cleared from Clerk publicMetadata by `clearPatPlaintext()` in
+ * It is cleared from Clerk privateMetadata by `clearPatPlaintext()` in
  * `./actions.ts` when the user confirms they have saved the token.
  */
 type WelcomeClaims = {
   tenant_id?: string;
   region?: string;
-  /** One-time PAT plaintext set by the signup-worker. Cleared after first view. */
-  pat_plaintext?: string;
 };
 
 export default async function WelcomePage(props: {
@@ -43,19 +50,24 @@ export default async function WelcomePage(props: {
 
   const mod = await import("@clerk/nextjs/server").catch(() => null);
   let claims: WelcomeClaims = {};
+  let userId: string | null = null;
   if (mod) {
     try {
       const session = await (
         mod as {
           auth: () => Promise<{
+            userId?: string | null;
             sessionClaims?: {
               publicMetadata?: WelcomeClaims;
             };
           }>;
         }
       ).auth();
-      // Clerk v6: publicMetadata is nested under sessionClaims.publicMetadata
+      // Clerk v6: publicMetadata is nested under sessionClaims.publicMetadata.
+      // public_metadata carries ONLY {tenant_id, region} now (the PAT moved to
+      // private_metadata — see the SECURITY note above).
       claims = session.sessionClaims?.publicMetadata ?? {};
+      userId = session.userId ?? null;
     } catch {
       // Defensive: `auth()` throws if the Clerk middleware request context is
       // unavailable for this render (an OpenNext edge edge-case). Never 500 the
@@ -75,9 +87,39 @@ export default async function WelcomePage(props: {
 
   const region = claims.region ?? "auto";
 
+  // Read the one-time PAT plaintext SERVER-SIDE from Clerk private_metadata via
+  // the Backend API. private_metadata is NEVER in the session claims/JWT, so it
+  // can only be fetched here with CLERK_SECRET_KEY. Failures (missing key, API
+  // error) degrade gracefully to the "already retrieved" branch — never 500 nor
+  // leak — and never log the secret.
+  let patPlaintext: string | undefined;
+  if (mod && userId) {
+    try {
+      const clerk = await (
+        mod as {
+          clerkClient: () => Promise<{
+            users: {
+              getUser: (id: string) => Promise<{
+                privateMetadata?: { pat_plaintext?: unknown };
+              }>;
+            };
+          }>;
+        }
+      ).clerkClient();
+      const u = await clerk.users.getUser(userId);
+      const raw = u.privateMetadata?.pat_plaintext;
+      if (typeof raw === "string" && raw.length > 0) {
+        patPlaintext = raw;
+      }
+    } catch {
+      // Backend API unavailable / not configured — fall through to branch 2.
+      patPlaintext = undefined;
+    }
+  }
+
   // Branch 2: tenant provisioned, but PAT already retrieved (pat_plaintext
   // was cleared after first visit by clearPatPlaintext server action).
-  if (!claims.pat_plaintext) {
+  if (!patPlaintext) {
     return (
       <main
         className="mx-auto max-w-2xl p-8"
@@ -119,7 +161,7 @@ export default async function WelcomePage(props: {
   }
 
   // Branch 1: first visit — pat_plaintext present, render one-time reveal panel.
-  const pat = claims.pat_plaintext;
+  const pat = patPlaintext;
 
   return (
     <main className="mx-auto max-w-2xl p-8" data-testid="welcome-root">

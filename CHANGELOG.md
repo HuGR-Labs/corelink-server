@@ -22,6 +22,17 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+- **admin-ui `/welcome` no longer reads the one-time PAT plaintext from the Clerk
+  session JWT** (`CRED-pat-plaintext`, HIGH). The welcome page now fetches
+  `pat_plaintext` SERVER-SIDE from the user's Clerk `private_metadata` via the
+  Backend API (`clerkClient().users.getUser()`) instead of `sessionClaims`, and the
+  "I've saved my token" clear targets `private_metadata.pat_plaintext` (via
+  `clerkClient().users.updateUser()`) rather than `public_metadata`. This matches the
+  signup-worker moving the secret off all client-readable/JWT-broadcast surfaces into
+  backend-only `private_metadata` (`public_metadata` retains only `{tenant_id, region}`).
+  Files: `apps/admin-ui/src/app/[locale]/(authenticated)/welcome/{page.tsx,actions.ts}`.
+
 ### Added
 - **`specs/_runbooks/RB-INCIDENT-RESPONSE.md` (DRAFT)** — master incident-response
   runbook, authored to close a compliance-doc gap: the DPA §9 (all 3 locales), the

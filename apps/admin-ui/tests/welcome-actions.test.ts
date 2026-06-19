@@ -4,6 +4,10 @@
  * Separate file from welcome.test.tsx because the CopyPatButton tests
  * need `vi.mock("@/app/[locale]/(authenticated)/welcome/actions")` while these
  * tests import the REAL actions module.
+ *
+ * SECURITY (2026-06-19, CRED-pat-plaintext): the clear now targets Clerk
+ * `private_metadata.pat_plaintext` via the Backend API `users.updateUser`
+ * (clerkClient), NOT public_metadata via a raw PATCH.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -19,6 +23,7 @@ vi.mock("next/cache", () => ({
 
 vi.mock("@clerk/nextjs/server", () => ({
   auth: vi.fn(),
+  clerkClient: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -28,6 +33,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 describe("clearPatPlaintext action", () => {
   const MOCK_USER_ID = "user_test123";
   const MOCK_SECRET_KEY = "sk_test_mockkey";
+  let updateUser: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     process.env.CLERK_SECRET_KEY = MOCK_SECRET_KEY;
@@ -35,22 +41,16 @@ describe("clearPatPlaintext action", () => {
     const clerk = await import("@clerk/nextjs/server");
     vi.mocked(clerk.auth).mockResolvedValue({
       userId: MOCK_USER_ID,
-      sessionClaims: {
-        publicMetadata: {
-          tenant_id: "tenant-uuid-001",
-          region: "ord",
-        },
-      },
+    } as never);
+
+    updateUser = vi.fn().mockResolvedValue({});
+    vi.mocked(clerk.clerkClient).mockResolvedValue({
+      users: { updateUser },
     } as never);
 
     const nav = await import("next/navigation");
     vi.mocked(nav.redirect).mockImplementation((_path: string) => {
       throw new Error("NEXT_REDIRECT");
-    });
-
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
     });
   });
 
@@ -59,28 +59,20 @@ describe("clearPatPlaintext action", () => {
     vi.clearAllMocks();
   });
 
-  it("calls Clerk PATCH API with null pat_plaintext", async () => {
+  it("calls Clerk Backend API updateUser with null private_metadata.pat_plaintext", async () => {
     const { clearPatPlaintext } = await import(
       "@/app/[locale]/(authenticated)/welcome/actions"
     );
 
     await expect(clearPatPlaintext()).rejects.toThrow("NEXT_REDIRECT");
 
-    expect(global.fetch).toHaveBeenCalledOnce();
-    const [url, opts] = (global.fetch as ReturnType<typeof vi.fn>).mock
-      .calls[0] as [string, RequestInit];
-    expect(url).toBe(`https://api.clerk.com/v1/users/${MOCK_USER_ID}`);
-    expect(opts.method).toBe("PATCH");
-    expect(opts.headers).toMatchObject({
-      authorization: `Bearer ${MOCK_SECRET_KEY}`,
-      "content-type": "application/json",
-    });
-    const body = JSON.parse(opts.body as string) as {
-      public_metadata: Record<string, unknown>;
-    };
-    expect(body.public_metadata.pat_plaintext).toBeNull();
-    expect(body.public_metadata.tenant_id).toBe("tenant-uuid-001");
-    expect(body.public_metadata.region).toBe("ord");
+    expect(updateUser).toHaveBeenCalledOnce();
+    const [id, params] = updateUser.mock.calls[0] as [
+      string,
+      { privateMetadata: Record<string, unknown> },
+    ];
+    expect(id).toBe(MOCK_USER_ID);
+    expect(params.privateMetadata).toHaveProperty("pat_plaintext", null);
   });
 
   it("revalidates /customer and redirects after clearing PAT", async () => {
@@ -100,7 +92,6 @@ describe("clearPatPlaintext action", () => {
     const clerk = await import("@clerk/nextjs/server");
     vi.mocked(clerk.auth).mockResolvedValue({
       userId: null,
-      sessionClaims: {},
     } as never);
 
     const { clearPatPlaintext } = await import(
@@ -110,11 +101,8 @@ describe("clearPatPlaintext action", () => {
     await expect(clearPatPlaintext()).rejects.toThrow("no_active_session");
   });
 
-  it("throws if Clerk API returns non-200", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-    });
+  it("throws if the Clerk Backend API update fails", async () => {
+    updateUser.mockRejectedValue(Object.assign(new Error("boom"), { status: 500 }));
     const { clearPatPlaintext } = await import(
       "@/app/[locale]/(authenticated)/welcome/actions"
     );

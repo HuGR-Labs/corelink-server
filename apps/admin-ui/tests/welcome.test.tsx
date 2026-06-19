@@ -21,6 +21,7 @@ vi.mock("next/cache", () => ({
 
 vi.mock("@clerk/nextjs/server", () => ({
   auth: vi.fn(),
+  clerkClient: vi.fn(),
 }));
 
 // Mock the welcome actions module for CopyPatButton isolation
@@ -164,17 +165,25 @@ describe("WelcomePage rendering branches", () => {
     vi.clearAllMocks();
   });
 
-  it("branch 1: renders PAT reveal when pat_plaintext is present", async () => {
+  it("branch 1: renders PAT reveal when pat_plaintext present in private_metadata (read via Backend API)", async () => {
     const clerk = await import("@clerk/nextjs/server");
+    // public_metadata (session claims) carries ONLY tenant_id + region now.
     vi.mocked(clerk.auth).mockResolvedValue({
       userId: "user_1",
       sessionClaims: {
         publicMetadata: {
           tenant_id: "tenant-abc",
           region: "iad",
-          pat_plaintext: "corelink_pat_secret",
         },
       },
+    } as never);
+    // The PAT plaintext is read SERVER-SIDE from private_metadata via the
+    // Clerk Backend API — never from the session JWT.
+    const getUser = vi.fn().mockResolvedValue({
+      privateMetadata: { pat_plaintext: "corelink_pat_secret" },
+    });
+    vi.mocked(clerk.clerkClient).mockResolvedValue({
+      users: { getUser },
     } as never);
 
     const pageModule = await import("@/app/[locale]/(authenticated)/welcome/page");
@@ -194,9 +203,12 @@ describe("WelcomePage rendering branches", () => {
     expect(
       container.querySelector("[data-testid='install-section']"),
     ).toBeTruthy();
+    // Confirms the reveal came from the Backend-API read of the user's
+    // private_metadata — not from session claims.
+    expect(getUser).toHaveBeenCalledWith("user_1");
   });
 
-  it("branch 2: renders already-retrieved panel when pat_plaintext absent", async () => {
+  it("branch 2: renders already-retrieved panel when private_metadata has no pat_plaintext", async () => {
     const clerk = await import("@clerk/nextjs/server");
     vi.mocked(clerk.auth).mockResolvedValue({
       userId: "user_2",
@@ -207,6 +219,12 @@ describe("WelcomePage rendering branches", () => {
         },
       },
     } as never);
+    // Backend API returns a user whose private_metadata has no pat_plaintext
+    // (already cleared) → already-retrieved branch.
+    const getUser = vi.fn().mockResolvedValue({ privateMetadata: {} });
+    vi.mocked(clerk.clerkClient).mockResolvedValue({
+      users: { getUser },
+    } as never);
 
     const pageModule = await import("@/app/[locale]/(authenticated)/welcome/page");
     const WelcomePage = pageModule.default;
@@ -216,6 +234,7 @@ describe("WelcomePage rendering branches", () => {
     });
     const { container } = render(element as React.ReactElement);
 
+    expect(getUser).toHaveBeenCalledWith("user_2");
     expect(
       container.querySelector("[data-testid='welcome-already-retrieved']"),
     ).toBeTruthy();
