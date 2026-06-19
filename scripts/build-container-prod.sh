@@ -64,6 +64,31 @@ log()  { printf '[build-container-prod] %s\n' "$*"; }
 warn() { printf '[build-container-prod] WARN: %s\n' "$*" >&2; }
 die()  { printf '[build-container-prod] FATAL: %s\n' "$*" >&2; exit 1; }
 
+# bounded_run <seconds> <cmd...> — run a command but never block longer than
+# <seconds>; returns the command's exit code, or 124 if it was killed for
+# exceeding the bound. Portable across macOS (no GNU `timeout` by default — the
+# build host is the founder's Mac) and Linux: prefers `timeout`/`gtimeout`,
+# else falls back to a pure-bash background+watchdog. WHY THIS EXISTS: the
+# server binary ignores `--version`/`--help` and instead BOOTS (blocking
+# forever); an unbounded foreground `docker run --rm ... --version` once hung
+# this build for 30+ minutes. Every flag-probe below MUST go through this.
+bounded_run() {
+    local secs="$1"; shift
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "${secs}s" "$@"; return $?
+    elif command -v gtimeout >/dev/null 2>&1; then
+        gtimeout "${secs}s" "$@"; return $?
+    fi
+    # Pure-bash fallback: run in background, kill if it overruns.
+    "$@" & local pid=$!
+    local waited=0
+    while kill -0 "$pid" 2>/dev/null; do
+        [ "$waited" -ge "$secs" ] && { kill -TERM "$pid" 2>/dev/null; sleep 1; kill -KILL "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; return 124; }
+        sleep 1; waited=$(( waited + 1 ))
+    done
+    wait "$pid"; return $?
+}
+
 usage() {
     sed -n '2,/^$/p' "$0"
     exit 2
@@ -209,12 +234,21 @@ if [ "$SKIP_SMOKE" -eq 1 ]; then
     log "Smoke probe skipped (--no-smoke)."
 else
     log "Running binary smoke (docker run --rm --version / --help)..."
-    # Try --version first; fall back to --help (many servers don't expose --version).
-    if docker run --rm --platform "$ARCH" "$FULL_TAG_PROD" --version 2>/dev/null; then
+    # Try --version first; fall back to --help (many servers don't expose
+    # --version). BOTH are bounded (bounded_run): the CoreLink server binary
+    # ignores these flags and BOOTS instead — an unbounded probe hangs the
+    # build forever. A bound-kill (124) just means "flag unsupported" → fall
+    # through to the authoritative detached start-probe below.
+    # Named so a bound-killed probe can't leave a lingering booted container
+    # (the failure mode that produced the 30-min hang). Force-remove before and
+    # after each attempt.
+    docker rm -f corelink-smoke-flagprobe >/dev/null 2>&1 || true
+    if bounded_run 8 docker run --rm --name corelink-smoke-flagprobe --platform "$ARCH" "$FULL_TAG_PROD" --version >/dev/null 2>&1; then
         log "Binary smoke (--version): PASS"
-    elif docker run --rm --platform "$ARCH" "$FULL_TAG_PROD" --help 2>/dev/null; then
+    elif { docker rm -f corelink-smoke-flagprobe >/dev/null 2>&1 || true; bounded_run 8 docker run --rm --name corelink-smoke-flagprobe --platform "$ARCH" "$FULL_TAG_PROD" --help >/dev/null 2>&1; }; then
         log "Binary smoke (--help): PASS"
     else
+        docker rm -f corelink-smoke-flagprobe >/dev/null 2>&1 || true
         # The server binary may not accept --version/--help and instead blocks
         # on port binding. Try launching with a 2-second timeout to confirm
         # it at least starts without an immediate panic.
