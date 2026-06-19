@@ -4,6 +4,12 @@
 
 name = "corelink"
 compatibility_date = "2026-04-01"
+# nodejs_compat: required by @sentry/cloudflare (worker/src/index.ts), which imports
+# node:async_hooks (AsyncLocalStorage). Without it the prod deploy is rejected by the
+# CF API with `No such module "node:async_hooks"` [10021]. Top-level so it applies to
+# ALL envs (prod + prod-sam/lhr/nrt/syd + staging); matches the other workers
+# (apps/signup-worker, apps/get-corelink-worker). date 2026-04-01 ≥ the flag's floor.
+compatibility_flags = ["nodejs_compat"]
 
 # Worker (control plane) — Wave 32 Phase B implementation
 main = "worker/src/index.ts"

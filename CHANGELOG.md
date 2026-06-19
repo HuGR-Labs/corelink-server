@@ -99,6 +99,14 @@ Each entry cross-references:
   `docs/security/2026-06-18-gitleaks-baseline-triage.md`.
 
 ### Fixed
+- **Main worker was not deployable — added the missing `nodejs_compat` flag.** `@sentry/cloudflare`
+  (added to `worker/src/index.ts` for observability) imports `node:async_hooks`, which the CF API
+  rejected at deploy with `No such module "node:async_hooks"` [10021] because the root `wrangler.toml`
+  set no `compatibility_flags`. Added `compatibility_flags = ["nodejs_compat"]` top-level (covers
+  prod + the 4 regional envs + staging; `compatibility_date` 2026-04-01 is past the flag's floor) —
+  matching `apps/signup-worker` / `apps/get-corelink-worker`. Verified `wrangler deploy --env prod
+  --dry-run` builds clean. (This is why prod was stale: `main` failed a clean deploy. Follow-up: a
+  `wrangler deploy --dry-run` CI gate so "merged" implies "deployable.")
 - **Vendor-review-evidence gap — `legal_review_evidence:` paths now exist + are existence-checked.**
   `legal/sub-processors.md` (and `legal/dpa/SUB-PROCESSOR-COMMITMENTS.md`) declare
   `legal_review_evidence:` paths under `docs/compliance/vendor-reviews/`, but that
