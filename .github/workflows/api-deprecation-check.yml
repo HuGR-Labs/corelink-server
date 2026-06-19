@@ -41,7 +41,7 @@ concurrency:
 jobs:
   validate-deprecations:
     name: validate deprecation lead-times + required metadata
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Checkout (full history; needed to diff base vs head)

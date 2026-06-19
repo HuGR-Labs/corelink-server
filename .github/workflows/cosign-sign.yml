@@ -43,6 +43,10 @@ permissions:
   id-token: write
   packages: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: humangr-labs/corelink-worker
@@ -53,7 +57,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   sign-release:
     name: build, push & cosign-sign
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
 
     outputs:
@@ -157,7 +161,7 @@ jobs:
   trigger-cf-deploy:
     name: trigger CF deploy webhook
     needs: sign-release
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:

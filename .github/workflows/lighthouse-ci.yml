@@ -29,7 +29,7 @@ concurrency:
 jobs:
   lhci:
     name: lighthouse-ci (≥ 95)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:
       run:

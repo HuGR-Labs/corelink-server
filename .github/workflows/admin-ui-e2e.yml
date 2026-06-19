@@ -32,7 +32,7 @@ concurrency:
 jobs:
   legacy-e2e:
     name: playwright legacy (chromium)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
@@ -77,7 +77,7 @@ jobs:
 
   critical-e2e:
     name: playwright critical-flows (${{ matrix.browser }})
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false

@@ -34,7 +34,7 @@ permissions:
 jobs:
   verify-sha-pinning:
     name: Verify all GHA actions SHA-pinned
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Checkout repository

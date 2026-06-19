@@ -37,7 +37,7 @@ concurrency:
 jobs:
   lint-and-validate:
     name: lint + meta-schema + JSON sync
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -74,7 +74,7 @@ jobs:
   breaking-change-detection:
     name: breaking-change detection (vs base branch)
     if: github.event_name == 'pull_request'
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     # PR context passed via env (not interpolated into run: shell) —
     # template-injection-safe (branch names + label JSON can carry shell

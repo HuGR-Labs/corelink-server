@@ -54,10 +54,14 @@ permissions:
   contents: write       # commit notes branch + create draft release
   pull-requests: write  # open editorial PR
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   generate:
     name: Generate release notes draft
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout full history
