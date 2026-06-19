@@ -1,19 +1,20 @@
-# Build + push the prod container image on a GitHub-HOSTED Linux runner
-# (`ubuntu-latest`) — i.e. OFF the founder's dev Mac.
+# Build + push the prod container image as a repeatable, dispatchable workflow.
 #
-# Why: the prod container is a native Rust binary in a Docker image; today it's
-# built on the self-hosted Mac (`[self-hosted, mac, corelink-builder]`), which is
-# dev-only + fragile (os-error-2, contention, crashes). GitHub-hosted ubuntu-latest
-# is Linux x86 with docker + buildx pre-installed → builds the linux/amd64 image
-# natively, with NO third-party (Blacksmith needs a GitHub Org; this account is
-# personal) and NO dependency on the founder's machine.
+# RUNS ON THE SELF-HOSTED MAC. Both off-Mac options were tried and ruled out
+# (2026-06-19):
+#   - Blacksmith — requires a GitHub *Organization*; this account is personal → unsupported.
+#   - GitHub-hosted `ubuntu-latest` — billing-blocked (no payment method; private-repo
+#     Actions refused to start: "recent account payments have failed or your spending
+#     limit needs to be increased").
+# So the build stays on the Mac (the accepted fallback). This workflow at least makes
+# it a clean, logged, one-command dispatch instead of ad-hoc local scripts.
 #
-# Cost: GitHub Actions minutes. Private-repo Free tier = 2000 min/mo; a build is
-# ~20-40 min (cacheable). Set a $0 spending limit (Settings → Billing → Actions)
-# to make it HARD-STOP at the free tier — never any charge.
+# To TRULY get off the Mac later (no Org, no GitHub-hosted billing): stand up a cheap
+# cloud VM (Hetzner-class) as a self-hosted GitHub runner and point this `runs-on` at
+# it — which is literally CoreLink's own ephemeral-runners thesis dogfooded.
 #
-# Manual-only. Runs the same scripts the Mac path ran (build → multi-region push),
-# so the result is identical to the 2026-06-18 prod redeploy, just off-Mac.
+# Manual-only. Requires a Mac builder runner online. Runs the same scripts the
+# 2026-06-18 prod redeploy ran (build → multi-region push).
 name: container-build-push-prod
 
 on:
@@ -29,8 +30,8 @@ permissions:
 
 jobs:
   build-push:
-    name: build + push prod container (ubuntu-latest, off-Mac)
-    runs-on: ubuntu-latest
+    name: build + push prod container (self-hosted Mac)
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 75
     steps:
       - name: Confirm intent
@@ -44,9 +45,9 @@ jobs:
         with:
           fetch-depth: 0 # full history so `git rev-parse --short HEAD` resolves the image tag
 
-      - name: Runner proof (off-Mac) + tooling
+      - name: Runner + tooling check
         run: |
-          echo "=== runner (should be Linux, NOT the Mac) ==="; uname -a
+          echo "=== runner ==="; uname -a
           echo "=== docker ==="; docker version --format '{{.Server.Version}}'
           echo "=== buildx ==="; docker buildx version
           echo "=== disk ==="; df -h /
