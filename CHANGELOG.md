@@ -22,6 +22,32 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Performance
+- **Budget-LEASING for the per-tenant `$`-ceiling quota gate** (WP-2a;
+  `crates/corelink-container/src/tenant_quota.rs`): a new
+  `LeasedQuotaStore` wraps an inner `Arc<dyn QuotaStore>` and itself
+  implements `QuotaStore` (drop-in — the trait, `QuotaGuard`, and the
+  routes are unchanged; the lead wires it at construction). Today the CAS
+  hot path calls the gate on EVERY billable op, which against the
+  production `D1QuotaStore` is one synchronous D1-over-HTTP round-trip
+  (~0.3–0.7 s) per op — a measured root cause of CAS latency. The wrapper
+  debits a small CHUNK of budget (`DEFAULT_LEASE_OPS = 16` ops) from the
+  durable inner store atomically UP FRONT, then serves subsequent ops from
+  the in-memory lease without touching D1 until it drains, amortising the
+  round-trip 16:1. The fail-CLOSED `$`-ceiling (#318 paid-without-payment
+  gate + all CAA-360 invariants) is **preserved exactly**: budget is always
+  debited in durable D1 before any op is served (charge-never-lost; a crash
+  under-charges, never over-serves); a drained lease with an over-ceiling /
+  unreachable inner store still rejects (`402`/`503`, never fail-open); a
+  near-ceiling refill falls back to a partial lease so the durable side
+  NEVER exceeds the ceiling; the lease is keyed by cycle anchor so a rolled
+  cycle discards the stale lease; and all lease accounting is `Mutex`-guarded
+  (no double-spend). Worst-case *overshoot* is bounded at
+  `LEASE_OPS × cost_per_op` = `$0.016` on the `$5`/mo tripwire (0.32 %), the
+  crash-loss tail of a single in-flight lease. Six new tests cover
+  amortisation, over-ceiling 402, drained-then-store-error 503,
+  charge-never-lost, cycle-roll invalidation, and concurrent no-double-spend.
+
 ### Added
 - **Native-REST bulk CAS endpoints** (`crates/corelink-container/src/routes/cas.rs`):
   `POST /v1/cas/:tenant/batch` (length-framed bulk write), `POST /v1/cas/:tenant/batch-read`

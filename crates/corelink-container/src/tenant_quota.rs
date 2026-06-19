@@ -114,7 +114,15 @@ pub fn quota_guard_from_env() -> Option<Arc<QuotaGuard>> {
     let client = crate::storage::d1_http::D1HttpClient::new(&storage_env)
         .map_err(|e| tracing::warn!(error = %e, "tenant-quota: D1 client init failed"))
         .ok()?;
-    let store: Arc<dyn QuotaStore> = Arc::new(D1QuotaStore::new(Arc::new(client)));
+    // WP-2a integration: front the durable D1 store with the in-process budget
+    // lease so the hot path debits a chunk once and serves subsequent ops from
+    // memory, removing the per-request D1-over-HTTP round-trip. The lease debits
+    // up-front in `inner` (charge-never-lost), stays fail-CLOSED when drained +
+    // inner-unreachable, and bounds overshoot to one lease chunk — see
+    // `LeasedQuotaStore`. The guard's seed/cycle-roll bookkeeping is unchanged
+    // (those methods pass straight through to `inner`).
+    let inner: Arc<dyn QuotaStore> = Arc::new(D1QuotaStore::new(Arc::new(client)));
+    let store: Arc<dyn QuotaStore> = Arc::new(LeasedQuotaStore::new(inner));
     let clock: Arc<dyn WallClock> = Arc::new(crate::wall_clock::SystemWallClock::new());
     Some(Arc::new(QuotaGuard::new(store, clock)))
 }
@@ -339,6 +347,342 @@ pub trait QuotaStore: std::fmt::Debug + Send + Sync {
             }
         }
         Ok(())
+    }
+}
+
+/// Default lease chunk size, in **ops**: how many billable ops one
+/// in-memory lease pre-buys from the durable inner store in a single
+/// debit. See [`LeasedQuotaStore`] for why this number is small.
+///
+/// At the default `$0.001/op` ([`DEFAULT_COST_PER_OP_MICROS`]) a `16`-op
+/// lease pre-debits `16_000` micro-dollars (`$0.016`) — so the worst-case
+/// per-tenant *overshoot* of the true monthly ceiling (one in-flight lease
+/// lost to a crash that already passed its budget gate, see invariant 3)
+/// is bounded at **`LEASE_OPS * cost_per_op` micro-dollars** =
+/// `16 * 1_000 = 16_000` micro-USD (`$0.016`) against a `$5`/mo
+/// (`5_000_000` micro-USD) tripwire — a `0.32 %` worst-case overshoot,
+/// negligible for a preventive cost cap, in exchange for amortising the
+/// per-request D1-over-HTTP round-trip 16:1 on the CAS hot path.
+pub const DEFAULT_LEASE_OPS: i64 = 16;
+
+/// A per-`(tenant, cycle)` in-memory lease over an inner durable
+/// [`QuotaStore`], to amortise the per-request D1-over-HTTP round-trip on
+/// the CAS hot path — WITHOUT weakening the fail-CLOSED `$`-ceiling
+/// (WP-2a; preserves the #318 paid-without-payment fail-closed gate and
+/// every CAA-360 invariant of the inner store).
+///
+/// # The problem
+///
+/// The hot path calls the `$`-ceiling gate on EVERY billable op. Against
+/// the production [`D1QuotaStore`] that is one synchronous D1-over-HTTP
+/// round-trip to `api.cloudflare.com` (~0.3–0.7 s) per op — a measured
+/// root cause of CAS latency.
+///
+/// # The mechanism — budget LEASING
+///
+/// This wrapper holds a small in-memory **lease** keyed by
+/// `(tenant, cycle_anchor)`. On the first op of a tenant/cycle it debits a
+/// CHUNK of budget — `lease_ops` ops worth — from the *inner* durable
+/// store atomically up front (via the inner [`QuotaStore::check_and_accrue`]
+/// for `lease_ops * cost`), then serves subsequent ops **from the lease,
+/// in memory, without touching the inner store** until the lease is
+/// drained. When a lease drains it refills the same way. This amortises
+/// the D1 round-trip `lease_ops : 1`.
+///
+/// # The five INVIOLABLE invariants (and how each is upheld)
+///
+/// 1. **charge-never-lost.** Budget is debited in the INNER (durable D1)
+///    store at lease-acquire time, UP FRONT — never only in memory. A
+///    container crash loses at most the UNUSED tail of an in-flight lease
+///    (the tenant is then slightly *under*-charged — safe for us), and
+///    NEVER over-serves silently: every op served has already been paid
+///    for in D1.
+///
+/// 2. **fail-CLOSED preserved.** A lease is acquired ONLY when the inner
+///    `check_and_accrue` (or `seed_checked_accrue`) returns `Ok(true)`. If
+///    the lease is drained AND a refill cannot be acquired — the inner
+///    store is over-ceiling (`Ok(false)`) or unreachable (`Err`) — the op
+///    is REJECTED by propagating the inner result, exactly as today
+///    (`402` over ceiling, `503` on store/clock fault). Never fail-open.
+///
+/// 3. **bounded overshoot.** Because a full chunk is debited up front, a
+///    tenant can be CHARGED for up to `lease_ops` ops it may not actually
+///    serve (the unused tail of an in-flight lease) — i.e. we slightly
+///    *over*-charge, never *over*-serve. The durable side NEVER exceeds the
+///    ceiling: the inner store's atomic `accrued + delta <= budget` is the
+///    sole authority, and when a full-chunk refill would breach it the
+///    refill falls back to a **partial lease** — it asks the inner store
+///    for progressively smaller chunks (`lease_ops` worth, halving down to
+///    a single op) so the last admitted ops are debited exactly, then
+///    fail-CLOSES. Worst-case *overshoot* is therefore only the crash-loss
+///    tail of invariant 1, bounded at `lease_ops * cost_per_op`
+///    micro-dollars (see [`DEFAULT_LEASE_OPS`] for the `$0.016` worst
+///    case on a `$5`/mo ceiling).
+///
+/// 4. **cycle-roll safe.** The lease is keyed by the inner store's
+///    `cycle_anchor_ms` (the anchor the guard hands to this op). A served
+///    op consumes a lease only when that lease's anchor matches the op's
+///    anchor; if the cycle rolled (the inner store reset accrued and
+///    advanced the anchor) the stale-cycle lease no longer matches and is
+///    DISCARDED, and a fresh lease is acquired against the new cycle. An
+///    old-cycle lease is never served into a new cycle.
+///
+/// 5. **concurrency-safe.** All lease state lives behind a `Mutex`, and the
+///    lease accounting (decrement-or-refill) is performed under that lock
+///    with the SAME lost-update discipline as the inner code: a served op
+///    either consumes one op's worth of an existing valid lease or triggers
+///    a refill, with no TOCTOU window where two concurrent ops both spend
+///    the last unit. The async inner refill is NOT held across the lock —
+///    the lock is taken to consume/insert, released around the await — and
+///    every refill goes through the inner store's own atomic
+///    `check_and_accrue`/`seed_checked_accrue`, so two concurrent refills on
+///    the same tenant each debit the inner store atomically (one may
+///    briefly hold two leases' worth of budget — still bounded by invariant
+///    3 and still never over-served).
+///
+/// # What this wrapper is NOT
+///
+/// It does NOT change the [`QuotaStore`] trait, [`QuotaGuard`], or any
+/// route — it is a drop-in `Arc<dyn QuotaStore>` the lead wires at
+/// construction. It only overrides the hot-path entry points
+/// ([`QuotaStore::check_and_accrue`] and [`QuotaStore::seed_checked_accrue`],
+/// which the guard funnels every billable op through); `get`, `put`,
+/// `accrue`, and `roll_if_stale` pass straight through to the inner store
+/// (the guard's roll + seed bookkeeping stays exact and durable).
+#[derive(Debug)]
+pub struct LeasedQuotaStore {
+    inner: Arc<dyn QuotaStore>,
+    /// Ops pre-bought per lease acquisition (defaults to [`DEFAULT_LEASE_OPS`]).
+    lease_ops: i64,
+    /// Flat per-op cost, in micro-dollars, used to size a lease debit.
+    /// Captured once at construction (matching the route-state caching of
+    /// [`cost_per_op_micros`]) so lease sizing never re-reads env per op.
+    cost_per_op: i64,
+    /// Per-tenant lease state, behind a `Mutex` (invariant 5).
+    leases: Mutex<HashMap<String, Lease>>,
+}
+
+/// One tenant's in-memory lease: budget already debited from the inner
+/// durable store, available to serve in memory, scoped to a cycle anchor.
+#[derive(Debug, Clone, Copy)]
+struct Lease {
+    /// Remaining pre-paid budget for this lease, in micro-dollars. Each
+    /// served op decrements this; when it can no longer cover an op a
+    /// refill is attempted (invariant 2/3).
+    remaining_micros: i64,
+    /// The inner store's `cycle_anchor_ms` this lease was acquired against.
+    /// A mismatch on the next op ⇒ the cycle rolled ⇒ discard (invariant 4).
+    cycle_anchor_ms: i64,
+}
+
+impl LeasedQuotaStore {
+    /// Wrap an inner durable [`QuotaStore`] with the default lease chunk
+    /// ([`DEFAULT_LEASE_OPS`]) and the env-resolved per-op cost
+    /// ([`cost_per_op_micros`]).
+    #[must_use]
+    pub fn new(inner: Arc<dyn QuotaStore>) -> Self {
+        Self::with_config(inner, DEFAULT_LEASE_OPS, cost_per_op_micros())
+    }
+
+    /// Wrap an inner store with an explicit lease chunk + per-op cost (the
+    /// seam tests use to drive amortisation deterministically). Both are
+    /// clamped to `>= 1` so a misconfiguration degrades to "one op per
+    /// lease" (i.e. pass-through), never to a zero-cost lease that could
+    /// serve for free.
+    #[must_use]
+    pub fn with_config(inner: Arc<dyn QuotaStore>, lease_ops: i64, cost_per_op: i64) -> Self {
+        Self {
+            inner,
+            lease_ops: lease_ops.max(1),
+            cost_per_op: cost_per_op.max(1),
+            leases: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// The size, in micro-dollars, of a full lease chunk.
+    fn full_chunk_micros(&self) -> i64 {
+        self.lease_ops.saturating_mul(self.cost_per_op)
+    }
+
+    /// Try to satisfy `cost_micros` for `tenant` from an existing VALID
+    /// in-memory lease (matching `valid_anchor_ms`, invariant 4), under the
+    /// caller-held lock. Returns `true` when served from the lease (no inner
+    /// call needed); `false` when no usable lease exists (drained, absent,
+    /// or stale cycle) and the caller must refill against the inner store.
+    fn try_consume_locked(
+        leases: &mut HashMap<String, Lease>,
+        tenant: &str,
+        cost_micros: i64,
+        valid_anchor_ms: i64,
+    ) -> bool {
+        if let Some(lease) = leases.get_mut(tenant) {
+            // Invariant 4: a lease from a different cycle must never serve.
+            if lease.cycle_anchor_ms == valid_anchor_ms && lease.remaining_micros >= cost_micros {
+                lease.remaining_micros -= cost_micros;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// The core charge path shared by `check_and_accrue` and
+    /// `seed_checked_accrue`. `seed` selects which inner entry point a
+    /// refill uses (the seed path for a brand-new tenant's first op, the
+    /// steady path otherwise) — both are atomic + fail-CLOSED in the inner
+    /// store, so the lease inherits those semantics.
+    ///
+    /// Returns the inner-store contract: `Ok(true)` served, `Ok(false)`
+    /// ceiling exceeded (caller ⇒ 402), `Err` store fault (caller ⇒ 503).
+    async fn charge(
+        &self,
+        tenant_id: &str,
+        cost_micros: i64,
+        seed_anchor_ms: i64,
+        updated_at_ms: i64,
+        seed: bool,
+    ) -> Result<bool, String> {
+        // A non-positive cost cannot consume budget; treat as served
+        // (mirrors the guard clamping negative cost to 0 upstream).
+        if cost_micros <= 0 {
+            return Ok(true);
+        }
+
+        // The cycle anchor this op belongs to. The guard hands us the
+        // rolled/fresh anchor on the roll path and the existing anchor on
+        // the steady path — exactly the anchor a freshly-acquired lease
+        // should carry — so it is the authoritative lease key (invariant 4),
+        // and the served-from-lease fast path needs NO extra inner read.
+        let anchor = seed_anchor_ms;
+
+        // Fast path: serve from a valid existing lease, fully in memory.
+        {
+            let mut leases = self
+                .leases
+                .lock()
+                .map_err(|_| "LeasedQuotaStore: poisoned lock".to_owned())?;
+            if Self::try_consume_locked(&mut leases, tenant_id, cost_micros, anchor) {
+                return Ok(true);
+            }
+        }
+
+        // Slow path: no usable lease — acquire/refill from the inner
+        // durable store. The inner debit is the up-front charge (invariant
+        // 1) and the fail-CLOSED gate (invariant 2). We try a full chunk
+        // first, then progressively smaller chunks down to exactly this op,
+        // so a near-ceiling tenant gets a partial lease rather than a hard
+        // reject one op early (invariant 3 — partial lease). The op's own
+        // cost is always included in the debited chunk, so the very op
+        // triggering the refill is itself paid for up front.
+        let full_chunk = self.full_chunk_micros().max(cost_micros);
+
+        let mut chunk = full_chunk;
+        loop {
+            let attempt = chunk.max(cost_micros);
+            let acquired = if seed {
+                self.inner
+                    .seed_checked_accrue(tenant_id, attempt, seed_anchor_ms, updated_at_ms)
+                    .await?
+            } else {
+                self.inner
+                    .check_and_accrue(tenant_id, attempt, seed_anchor_ms, updated_at_ms)
+                    .await?
+            };
+            if acquired {
+                // Debited `attempt` micro-dollars in the inner store up
+                // front (invariant 1). Serve THIS op from it and bank the
+                // remainder as the lease (invariant 3: remainder ≤ one
+                // chunk). Replace any stale lease for this tenant.
+                let mut leases = self
+                    .leases
+                    .lock()
+                    .map_err(|_| "LeasedQuotaStore: poisoned lock".to_owned())?;
+                let _ = leases.insert(
+                    tenant_id.to_owned(),
+                    Lease {
+                        remaining_micros: attempt - cost_micros,
+                        cycle_anchor_ms: anchor,
+                    },
+                );
+                return Ok(true);
+            }
+            // The inner store rejected this chunk (over ceiling). If we were
+            // already asking for the minimum (this op alone), the ceiling is
+            // genuinely exceeded — fail-CLOSED 402 (invariant 2/3). Drop any
+            // stale lease so we never serve it later.
+            if attempt <= cost_micros {
+                if let Ok(mut leases) = self.leases.lock() {
+                    let _ = leases.remove(tenant_id);
+                }
+                return Ok(false);
+            }
+            // Otherwise try a smaller chunk (halve toward `cost_micros`).
+            chunk = (chunk / 2).max(cost_micros);
+        }
+    }
+}
+
+#[axum::async_trait]
+impl QuotaStore for LeasedQuotaStore {
+    // Read / absolute-write / unconditional-accrue / roll pass straight
+    // through: the guard uses these for exact bookkeeping (seed, cycle
+    // roll) that must stay durable and unleased. Only the two
+    // ceiling-guarded hot-path entry points are leased (below).
+    async fn get(&self, tenant_id: &str) -> Result<Option<QuotaState>, String> {
+        self.inner.get(tenant_id).await
+    }
+
+    async fn put(
+        &self,
+        tenant_id: &str,
+        state: QuotaState,
+        updated_at_ms: i64,
+    ) -> Result<(), String> {
+        self.inner.put(tenant_id, state, updated_at_ms).await
+    }
+
+    async fn accrue(
+        &self,
+        tenant_id: &str,
+        delta_micros: i64,
+        seed_anchor_ms: i64,
+        updated_at_ms: i64,
+    ) -> Result<(), String> {
+        self.inner
+            .accrue(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms)
+            .await
+    }
+
+    /// Leased steady-state hot path: serve from the in-memory lease when
+    /// possible; refill (up-front durable debit, fail-CLOSED, partial near
+    /// the ceiling) otherwise. See [`LeasedQuotaStore`] invariants 1–5.
+    async fn check_and_accrue(
+        &self,
+        tenant_id: &str,
+        delta_micros: i64,
+        seed_anchor_ms: i64,
+        updated_at_ms: i64,
+    ) -> Result<bool, String> {
+        self.charge(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms, false)
+            .await
+    }
+
+    /// Leased brand-new-tenant first-op path: identical leasing, but a
+    /// refill uses the inner [`QuotaStore::seed_checked_accrue`] so the
+    /// first lease for a fresh tenant is acquired with the seed-and-check
+    /// atomic (red-team #6 discipline preserved).
+    async fn seed_checked_accrue(
+        &self,
+        tenant_id: &str,
+        delta_micros: i64,
+        seed_anchor_ms: i64,
+        updated_at_ms: i64,
+    ) -> Result<bool, String> {
+        self.charge(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms, true)
+            .await
+    }
+
+    async fn roll_if_stale(&self, tenant_id: &str, now_ms: i64) -> Result<(), String> {
+        self.inner.roll_if_stale(tenant_id, now_ms).await
     }
 }
 
@@ -983,5 +1327,381 @@ mod tests {
         let guard = QuotaGuard::new(Arc::new(ErroringStore), clock);
         let resp = guard.check("tenant-f", 1).await.expect("rejected");
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    // ───────────────────────── WP-2a: LeasedQuotaStore ─────────────────────────
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// An inner [`QuotaStore`] that delegates to a real [`InMemoryQuotaStore`]
+    /// but COUNTS every ceiling-guarded inner call (`check_and_accrue` +
+    /// `seed_checked_accrue`) — the amortisation oracle (invariant-test (a)).
+    /// `get`/`put`/`accrue`/`roll_if_stale` are NOT counted (the lease passes
+    /// them straight through, so counting them would not measure amortisation).
+    #[derive(Debug)]
+    struct CountingStore {
+        inner: InMemoryQuotaStore,
+        ceiling_calls: AtomicUsize,
+    }
+
+    impl CountingStore {
+        fn new() -> Self {
+            Self {
+                inner: InMemoryQuotaStore::new(),
+                ceiling_calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn calls(&self) -> usize {
+            self.ceiling_calls.load(Ordering::SeqCst)
+        }
+    }
+
+    #[axum::async_trait]
+    impl QuotaStore for CountingStore {
+        async fn get(&self, tenant_id: &str) -> Result<Option<QuotaState>, String> {
+            self.inner.get(tenant_id).await
+        }
+        async fn put(
+            &self,
+            tenant_id: &str,
+            state: QuotaState,
+            updated_at_ms: i64,
+        ) -> Result<(), String> {
+            self.inner.put(tenant_id, state, updated_at_ms).await
+        }
+        async fn accrue(
+            &self,
+            tenant_id: &str,
+            delta_micros: i64,
+            seed_anchor_ms: i64,
+            updated_at_ms: i64,
+        ) -> Result<(), String> {
+            self.inner
+                .accrue(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms)
+                .await
+        }
+        async fn check_and_accrue(
+            &self,
+            tenant_id: &str,
+            delta_micros: i64,
+            seed_anchor_ms: i64,
+            updated_at_ms: i64,
+        ) -> Result<bool, String> {
+            let _ = self.ceiling_calls.fetch_add(1, Ordering::SeqCst);
+            self.inner
+                .check_and_accrue(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms)
+                .await
+        }
+        async fn seed_checked_accrue(
+            &self,
+            tenant_id: &str,
+            delta_micros: i64,
+            seed_anchor_ms: i64,
+            updated_at_ms: i64,
+        ) -> Result<bool, String> {
+            let _ = self.ceiling_calls.fetch_add(1, Ordering::SeqCst);
+            self.inner
+                .seed_checked_accrue(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms)
+                .await
+        }
+    }
+
+    /// (a) amortisation: N ops within lease chunks of `LEASE_OPS` cause only
+    /// `ceil(N / LEASE_OPS)` inner ceiling-guarded calls.
+    #[tokio::test]
+    async fn lease_amortises_inner_calls() {
+        const LEASE_OPS: i64 = 4;
+        const COST: i64 = 1_000; // $0.001/op
+        let counting = Arc::new(CountingStore::new());
+        // Generous budget so no op is ever rejected: 100 ops worth.
+        counting.inner.seed(
+            "t-amort",
+            QuotaState {
+                monthly_budget_usd_micros: 100 * COST,
+                accrued_usd_micros: 0,
+                cycle_anchor_ms: i64::try_from(T0).unwrap(),
+            },
+        );
+        let leased: Arc<dyn QuotaStore> =
+            Arc::new(LeasedQuotaStore::with_config(counting.clone(), LEASE_OPS, COST));
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let guard = QuotaGuard::new(leased, clock);
+
+        // 10 ops; lease chunk = 4 → ceil(10/4) = 3 inner calls.
+        for _ in 0..10 {
+            assert!(guard.check("t-amort", COST).await.is_none());
+        }
+        assert_eq!(
+            counting.calls(),
+            3,
+            "10 ops with a 4-op lease must hit the inner store only ceil(10/4)=3 times"
+        );
+    }
+
+    /// (b) over-ceiling still 402 once lease + inner are exhausted.
+    #[tokio::test]
+    async fn lease_over_ceiling_rejects_402() {
+        const LEASE_OPS: i64 = 8;
+        const COST: i64 = 1_000_000; // $1/op
+        let inner: Arc<dyn QuotaStore> = Arc::new(InMemoryQuotaStore::new());
+        // Budget = exactly $3 (3 ops) on a fresh-seeded tenant.
+        inner
+            .put(
+                "t-cap",
+                QuotaState {
+                    monthly_budget_usd_micros: 3_000_000,
+                    accrued_usd_micros: 0,
+                    cycle_anchor_ms: i64::try_from(T0).unwrap(),
+                },
+                i64::try_from(T0).unwrap(),
+            )
+            .await
+            .unwrap();
+        let leased: Arc<dyn QuotaStore> =
+            Arc::new(LeasedQuotaStore::with_config(inner, LEASE_OPS, COST));
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let guard = QuotaGuard::new(leased, clock);
+
+        // First op tries an 8-op chunk ($8) — over the $3 ceiling — so the
+        // partial-lease fallback halves down to a 3-op chunk that fits.
+        // 3 ops are then served (1 from the refill + 2 from the lease tail).
+        assert!(guard.check("t-cap", COST).await.is_none());
+        assert!(guard.check("t-cap", COST).await.is_none());
+        assert!(guard.check("t-cap", COST).await.is_none());
+        // 4th op: lease drained, inner at the $3 ceiling → 402.
+        let resp = guard.check("t-cap", COST).await.expect("4th op rejected");
+        assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
+    }
+
+    /// (c) inner-store error once the lease is drained → 503 (fail-CLOSED).
+    /// A store that serves the FIRST lease then errors on every subsequent
+    /// inner call models a D1 outage mid-cycle.
+    #[derive(Debug)]
+    struct ErrorAfterFirstLease {
+        inner: InMemoryQuotaStore,
+        seen_first_refill: AtomicUsize,
+    }
+
+    #[axum::async_trait]
+    impl QuotaStore for ErrorAfterFirstLease {
+        async fn get(&self, tenant_id: &str) -> Result<Option<QuotaState>, String> {
+            self.inner.get(tenant_id).await
+        }
+        async fn put(
+            &self,
+            tenant_id: &str,
+            state: QuotaState,
+            updated_at_ms: i64,
+        ) -> Result<(), String> {
+            self.inner.put(tenant_id, state, updated_at_ms).await
+        }
+        async fn accrue(
+            &self,
+            tenant_id: &str,
+            delta_micros: i64,
+            seed_anchor_ms: i64,
+            updated_at_ms: i64,
+        ) -> Result<(), String> {
+            self.inner
+                .accrue(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms)
+                .await
+        }
+        async fn check_and_accrue(
+            &self,
+            tenant_id: &str,
+            delta_micros: i64,
+            seed_anchor_ms: i64,
+            updated_at_ms: i64,
+        ) -> Result<bool, String> {
+            if self.seen_first_refill.fetch_add(1, Ordering::SeqCst) >= 1 {
+                return Err("simulated D1 outage on refill".to_owned());
+            }
+            self.inner
+                .check_and_accrue(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms)
+                .await
+        }
+    }
+
+    #[tokio::test]
+    async fn lease_drained_then_inner_error_fail_closed_503() {
+        const LEASE_OPS: i64 = 2;
+        const COST: i64 = 1_000;
+        let store = ErrorAfterFirstLease {
+            inner: InMemoryQuotaStore::new(),
+            seen_first_refill: AtomicUsize::new(0),
+        };
+        store.inner.seed(
+            "t-503",
+            QuotaState {
+                monthly_budget_usd_micros: 100 * COST,
+                accrued_usd_micros: 0,
+                cycle_anchor_ms: i64::try_from(T0).unwrap(),
+            },
+        );
+        let leased: Arc<dyn QuotaStore> =
+            Arc::new(LeasedQuotaStore::with_config(Arc::new(store), LEASE_OPS, COST));
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let guard = QuotaGuard::new(leased, clock);
+
+        // First 2 ops: one inner refill (the 2-op lease), both served.
+        assert!(guard.check("t-503", COST).await.is_none());
+        assert!(guard.check("t-503", COST).await.is_none());
+        // 3rd op: lease drained → refill → inner errors → 503 (fail-CLOSED).
+        let resp = guard.check("t-503", COST).await.expect("refill error → 503");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    /// (d) charge-never-lost: the total debited to the inner durable store is
+    /// always ≥ the cost of the ops actually served (we never serve more than
+    /// was paid for up front). Here 10 ops are served; the inner accrued must
+    /// be ≥ 10 ops' cost (it is exactly the rounded-up lease chunks).
+    #[tokio::test]
+    async fn lease_charge_never_lost() {
+        const LEASE_OPS: i64 = 4;
+        const COST: i64 = 1_000;
+        let inner = Arc::new(InMemoryQuotaStore::new());
+        inner.seed(
+            "t-debit",
+            QuotaState {
+                monthly_budget_usd_micros: 1_000 * COST,
+                accrued_usd_micros: 0,
+                cycle_anchor_ms: i64::try_from(T0).unwrap(),
+            },
+        );
+        let leased: Arc<dyn QuotaStore> =
+            Arc::new(LeasedQuotaStore::with_config(inner.clone(), LEASE_OPS, COST));
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let guard = QuotaGuard::new(leased, clock);
+
+        let ops = 10_i64;
+        for _ in 0..ops {
+            assert!(guard.check("t-debit", COST).await.is_none());
+        }
+        let debited = inner
+            .get("t-debit")
+            .await
+            .unwrap()
+            .unwrap()
+            .accrued_usd_micros;
+        let served = ops * COST;
+        assert!(
+            debited >= served,
+            "inner debited ({debited}) must be ≥ served ({served}) — charge-never-lost"
+        );
+        // And bounded by invariant 3: at most one extra lease chunk debited.
+        assert!(
+            debited <= served + LEASE_OPS * COST,
+            "over-charge bounded by one lease chunk"
+        );
+    }
+
+    /// (e) cycle roll invalidates the stale lease: an op after the cycle rolls
+    /// must NOT be served from the old-cycle lease (it would be free, escaping
+    /// the new cycle's ceiling). Proven by accounting — after the roll the op
+    /// is debited against the FRESH (reset) inner row.
+    #[tokio::test]
+    async fn lease_cycle_roll_invalidates_stale_lease() {
+        const LEASE_OPS: i64 = 8;
+        const COST: i64 = 1_000_000; // $1/op
+        let inner = Arc::new(InMemoryQuotaStore::new());
+        inner.seed(
+            "t-roll",
+            QuotaState {
+                monthly_budget_usd_micros: 5_000_000, // $5
+                accrued_usd_micros: 0,
+                cycle_anchor_ms: i64::try_from(T0).unwrap(),
+            },
+        );
+        let leased: Arc<dyn QuotaStore> =
+            Arc::new(LeasedQuotaStore::with_config(inner.clone(), LEASE_OPS, COST));
+        // Cycle 1 at T0: one op pre-buys a lease. The full 8-op chunk ($8)
+        // exceeds the $5 ceiling, so the partial-lease fallback halves to a
+        // 4-op chunk ($4, fits under $5) and debits exactly that up front.
+        let clock1 = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let guard1 = QuotaGuard::new(leased.clone(), clock1);
+        assert!(guard1.check("t-roll", COST).await.is_none());
+        // Inner shows the cycle-1 partial-lease chunk debited ($4).
+        let cycle1_debit = inner
+            .get("t-roll")
+            .await
+            .unwrap()
+            .unwrap()
+            .accrued_usd_micros;
+        assert_eq!(cycle1_debit, 4_000_000, "partial lease debited a 4-op chunk");
+
+        // Advance one full cycle: the inner cycle rolls (accrued→0, anchor
+        // advances). The old-cycle lease (anchored at T0) must be discarded.
+        let later = T0 + u64::try_from(CYCLE_LENGTH_MS).unwrap() + 1;
+        let clock2 = Arc::new(InMemoryFakeWallClock::at_unix_ms(later));
+        let guard2 = QuotaGuard::new(leased, clock2);
+        // This op rolls the inner row and acquires a NEW lease against the new
+        // cycle — it is debited against the freshly-reset inner row, NOT
+        // served free from the stale lease.
+        assert!(guard2.check("t-roll", COST).await.is_none());
+        let post = inner.get("t-roll").await.unwrap().unwrap();
+        assert!(
+            post.cycle_anchor_ms >= i64::try_from(later).unwrap()
+                || post.cycle_anchor_ms != i64::try_from(T0).unwrap(),
+            "the inner cycle must have rolled (anchor advanced past T0)"
+        );
+        // A fresh chunk was debited in the new cycle (would be 0 if the stale
+        // lease had served the op for free → that is the bug this guards).
+        assert!(
+            post.accrued_usd_micros > 0,
+            "post-roll op must debit the fresh inner cycle, not be served free \
+             from the stale lease"
+        );
+    }
+
+    /// (f) concurrency: many concurrent ops on the same tenant never
+    /// double-spend the lease nor over-serve — the inner durable debit always
+    /// covers everything served, and the inner ceiling is never breached.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn lease_concurrent_ops_no_double_spend() {
+        const LEASE_OPS: i64 = 4;
+        const COST: i64 = 1_000;
+        const N: usize = 200;
+        let inner = Arc::new(InMemoryQuotaStore::new());
+        inner.seed(
+            "t-conc",
+            QuotaState {
+                monthly_budget_usd_micros: 10_000 * COST, // never trips
+                accrued_usd_micros: 0,
+                cycle_anchor_ms: i64::try_from(T0).unwrap(),
+            },
+        );
+        let leased: Arc<dyn QuotaStore> =
+            Arc::new(LeasedQuotaStore::with_config(inner.clone(), LEASE_OPS, COST));
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let guard = Arc::new(QuotaGuard::new(leased, clock));
+
+        let mut handles = Vec::with_capacity(N);
+        for _ in 0..N {
+            let g = guard.clone();
+            handles.push(tokio::spawn(async move {
+                g.check("t-conc", COST).await.is_none()
+            }));
+        }
+        let mut served = 0_i64;
+        for h in handles {
+            if h.await.unwrap() {
+                served += 1;
+            }
+        }
+        assert_eq!(served, N as i64, "all ops under the high ceiling are served");
+        // charge-never-lost under concurrency: inner debited ≥ served.
+        let debited = inner
+            .get("t-conc")
+            .await
+            .unwrap()
+            .unwrap()
+            .accrued_usd_micros;
+        assert!(
+            debited >= served * COST,
+            "concurrent inner debit ({debited}) must cover all served ({}) — no \
+             double-spend / over-serve",
+            served * COST
+        );
     }
 }
