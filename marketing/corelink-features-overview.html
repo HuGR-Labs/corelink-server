@@ -1,0 +1,882 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CoreLink + Family — What It Does &amp; What It Solves</title><style>
+:root{--ink:#1c2024;--muted:#5b636b;--accent:#6e40c9;--line:#e4e2ec;--soft:#f7f6fb}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;color:var(--ink);background:#fff}
+.hero{background:linear-gradient(135deg,#2b1055,#6e40c9 65%,#a371f7);color:#fff;padding:56px 28px 46px;text-align:center}
+.hero h1{margin:0 0 10px;font-size:34px;letter-spacing:-.6px}
+.hero p{margin:0 auto;max-width:760px;font-size:18px;opacity:.96}
+.hero .k{margin:22px auto 0;max-width:820px;font-size:14.5px;opacity:.9}
+.hero .n{margin-top:24px;font-size:15px;font-weight:600;background:rgba(255,255,255,.16);display:inline-block;padding:8px 18px;border-radius:30px}
+nav{position:sticky;top:0;background:rgba(255,255,255,.97);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:11px 0;z-index:5}
+nav .in{max-width:1060px;margin:0 auto;padding:0 20px;display:flex;flex-wrap:wrap;gap:7px}
+nav a{font-size:12.5px;text-decoration:none;color:var(--ink);padding:4px 11px;border:1px solid var(--line);border-radius:20px}
+nav a:hover{border-color:var(--accent);color:var(--accent)}
+main{max-width:1060px;margin:0 auto;padding:10px 20px 60px}
+section{margin:42px 0 0}
+section h2{font-size:24px;margin:0 0 4px;padding-left:14px;border-left:5px solid var(--accent)}
+.blurb{margin:0 0 20px 19px;color:var(--muted);font-size:16px;max-width:860px}
+.caps{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:16px}
+.cap{border:1px solid var(--line);border-radius:12px;padding:18px 20px;background:#fff}
+.cap:hover{box-shadow:0 4px 18px rgba(28,32,36,.07)}
+.ct{font-size:17px;font-weight:700;margin-bottom:7px}
+.cd{font-size:15px;margin-bottom:12px}
+.cs{font-size:14.5px;background:var(--soft);border-radius:8px;padding:11px 13px}
+.sl{display:inline-block;color:var(--accent);font-weight:800;font-size:11px;letter-spacing:.6px;text-transform:uppercase;margin-right:7px}
+footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 20px;border-top:1px solid var(--line);margin-top:30px}
+</style></head><body>
+<div class="hero">
+<h1>CoreLink&nbsp;+&nbsp;Family</h1>
+<p>The infrastructure that lets teams ship code at warp speed — without spending fortunes or hitting the bottlenecks that slow everyone down.</p>
+<p class="k">We remove the boring, expensive parts of building software: slow and costly CI, huge dependencies that take forever, slow builds and setups, parallelization that costs a fortune, and pull requests no one can review. You keep your tools; we make them fast and cheap.</p>
+<div class="n">200 capabilities · 11 areas · what each does &amp; what it solves</div>
+</div>
+<nav><div class="in"><a href="#s0">Cache Surfaces &amp; Compatibility</a><a href="#s1">Content-Addressed Core &amp; Network Effect</a><a href="#s2">Storage Governance &amp; Cost Control</a><a href="#s3">Accounts, Access &amp; Multi-Tenancy</a><a href="#s4">Billing &amp; Self-Serve Signup</a><a href="#s5">Compliance, Privacy &amp; Trust</a><a href="#s6">CoreLink Runners (Build Acceleration)</a><a href="#s7">CoreLink Workspaces</a><a href="#s8">Security &amp; Safety</a><a href="#s9">The HuGR Family (the Stack)</a><a href="#s10">Why It Wins (Positioning)</a></div></nav>
+<main><section id="s0">
+      <h2>Cache Surfaces &amp; Compatibility</h2>
+      <p class="blurb">CoreLink is a single shared storage engine that plugs directly into the development tools teams already use, so their software builds run dramatically faster and cheaper without anyone installing or learning anything new.</p>
+      <div class="caps"><div class="cap">
+          <div class="ct">Works with the tools teams already use</div>
+          <div class="cd">CoreLink connects to all the major build and packaging tools a software team already runs, by changing a single setting rather than installing anything new.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes the cost, risk, and lock-in of adopting a proprietary tool, so customers can switch on the value in minutes with zero migration.</div>
+        </div><div class="cap">
+          <div class="ct">Store-once shared library of build results</div>
+          <div class="cd">It keeps a single copy of every unique piece of a software build and reuses it instead of producing or downloading it again.</div>
+          <div class="cs"><span class="sl">Solves</span>Eliminates the massive waste of teams rebuilding and re-downloading the same things over and over, cutting both wait time and storage cost.</div>
+        </div><div class="cap">
+          <div class="ct">Skip work that&#x27;s already been done</div>
+          <div class="cd">When a build step has already been run by anyone on the team, CoreLink instantly returns the finished result instead of running it again.</div>
+          <div class="cs"><span class="sl">Solves</span>Turns &#x27;rebuild everything&#x27; into &#x27;rebuild almost nothing,&#x27; saving hours of engineer and compute time on every run.</div>
+        </div><div class="cap">
+          <div class="ct">Faster builds for large codebases</div>
+          <div class="cd">It plugs into the build systems used by big engineering organizations so their automated testing and compiling reuse prior results across the whole team.</div>
+          <div class="cs"><span class="sl">Solves</span>Stops large teams from repeating enormous build workloads on every code change, directly reducing expensive build-server hours.</div>
+        </div><div class="cap">
+          <div class="ct">Drop-in replacement for paid caching services</div>
+          <div class="cd">It serves as a self-hosted alternative to the paid build-caching subscriptions some teams currently buy from outside vendors.</div>
+          <div class="cs"><span class="sl">Solves</span>Replaces a recurring third-party bill and the slow no-cache fallback with a cache the customer fully controls.</div>
+        </div><div class="cap">
+          <div class="ct">Private container image registry</div>
+          <div class="cd">CoreLink acts as a private home for the packaged application images teams ship, deduplicating shared pieces between them.</div>
+          <div class="cs"><span class="sl">Solves</span>Spares teams from standing up and maintaining their own registry while shrinking storage by sharing common layers.</div>
+        </div><div class="cap">
+          <div class="ct">Shared cache for programming-language packages</div>
+          <div class="cd">It mirrors and stores the common code libraries that languages like Rust, JavaScript, Python, and others pull in, so they&#x27;re fetched once and reused.</div>
+          <div class="cs"><span class="sl">Solves</span>Stops every machine and automated job from re-downloading the same dependencies, speeding up setup and keeping builds working even when the public source is down.</div>
+        </div><div class="cap">
+          <div class="ct">One engine behind every tool</div>
+          <div class="cd">Every supported tool reads and writes through the same single storage engine rather than separate per-tool systems.</div>
+          <div class="cs"><span class="sl">Solves</span>Means every tool a team uses contributes to and benefits from the same shared cache, multiplying savings and lowering CoreLink&#x27;s own running costs.</div>
+        </div><div class="cap">
+          <div class="ct">Network-effect shared cache for public content</div>
+          <div class="cd">Publicly available components are stored once and served to every customer, while each customer&#x27;s private content stays isolated to them.</div>
+          <div class="cs"><span class="sl">Solves</span>Creates a compounding advantage where each new customer makes the cache fuller, faster, and cheaper for everyone, a defensible moat a single-customer cache cannot match.</div>
+        </div><div class="cap">
+          <div class="ct">Tamper-proof content verification</div>
+          <div class="cd">Every item is checked against its expected fingerprint before it&#x27;s stored and again when it&#x27;s served back.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents one customer from poisoning the shared cache with bad or malicious content, protecting everyone who relies on it.</div>
+        </div><div class="cap">
+          <div class="ct">Read-only and read-write access levels</div>
+          <div class="cd">Teams can hand out keys that only read from the cache versus keys that can also write to it, consistently across every tool.</div>
+          <div class="cs"><span class="sl">Solves</span>Limits the damage of a leaked or stolen credential, since a read-only key can never corrupt the shared cache.</div>
+        </div><div class="cap">
+          <div class="ct">See and delete what&#x27;s stored (privacy compliance)</div>
+          <div class="cd">Customers can list everything CoreLink holds for them and permanently erase specific items, with deleted content guaranteed never to come back.</div>
+          <div class="cs"><span class="sl">Solves</span>Satisfies data-deletion obligations under privacy law and turns an opaque storage pile into something customers can audit and govern.</div>
+        </div><div class="cap">
+          <div class="ct">Keep data in the customer&#x27;s region</div>
+          <div class="cd">Cached content for a given region is physically stored in that region, with a safeguard that blocks any region from accidentally defaulting elsewhere.</div>
+          <div class="cs"><span class="sl">Solves</span>Meets cross-border data-residency rules for European and other customers without changing how they use the product.</div>
+        </div><div class="cap">
+          <div class="ct">Fair-use protection in shared infrastructure</div>
+          <div class="cd">CoreLink caps how much any single customer can do at once so heavy usage from one never overwhelms the shared service.</div>
+          <div class="cs"><span class="sl">Solves</span>Keeps the service fast and stable for everyone and avoids the cost of building separate infrastructure for each customer.</div>
+        </div><div class="cap">
+          <div class="ct">Fail loudly, never lose data silently</div>
+          <div class="cd">If storage is misconfigured, CoreLink openly reports an outage instead of quietly falling back to a temporary store that would lose data.</div>
+          <div class="cs"><span class="sl">Solves</span>Turns a configuration mistake into an obvious, fixable alert rather than silent data loss that breaks the durability customers pay for.</div>
+        </div><div class="cap">
+          <div class="ct">Cache-accelerated build machines (planned expansion)</div>
+          <div class="cd">A documented next step pairs the cache with low-cost build machines so customers get both faster and cheaper automated builds.</div>
+          <div class="cs"><span class="sl">Solves</span>Targets the rising cost of build infrastructure with a model where a fuller shared cache lowers cost for the customer and improves CoreLink&#x27;s margin at the same time.</div>
+        </div></div>
+    </section><section id="s1">
+      <h2>Content-Addressed Core &amp; Network Effect</h2>
+      <p class="blurb">This is the engine that stores every piece of code and build output once, proves it hasn&#x27;t been tampered with, and lets the shared system get faster and cheaper for everyone as more customers join.</p>
+      <div class="caps"><div class="cap">
+          <div class="ct">Store-it-once deduplication</div>
+          <div class="cd">Recognizes when content is identical to something already stored and keeps just one copy instead of saving the same thing over and over.</div>
+          <div class="cs"><span class="sl">Solves</span>Eliminates the cost and time of repeatedly uploading and storing the same dependencies and build outputs, which is the core driver of being both faster and cheaper.</div>
+        </div><div class="cap">
+          <div class="ct">Tamper-proof fingerprinting</div>
+          <div class="cd">Gives every stored item a unique fingerprint derived from its actual contents, and refuses to trust any fingerprint that wasn&#x27;t genuinely calculated from real data.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes the risk that a bad actor could pass off fake or corrupted content as legitimate, turning a common security weakness into something the system simply cannot accept.</div>
+        </div><div class="cap">
+          <div class="ct">Verify-before-save guarantee</div>
+          <div class="cd">Checks that every piece of content actually matches its claimed fingerprint before it is ever saved, and blocks the save if it doesn&#x27;t.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents poisoned or mismatched content from being stored and later served to customers, protecting the integrity of everyone&#x27;s shared cache.</div>
+        </div><div class="cap">
+          <div class="ct">Skip work that&#x27;s already been done</div>
+          <div class="cd">Lets build tools reuse the finished result of a previous build step instead of recomputing it from scratch.</div>
+          <div class="cs"><span class="sl">Solves</span>Cuts out redundant recompilation, which is the single biggest source of wasted build time and infrastructure cost for engineering teams.</div>
+        </div><div class="cap">
+          <div class="ct">Smart handling of large files</div>
+          <div class="cd">Breaks big files into pieces in a way that, when only a small part changes, lets the system re-upload only the changed piece rather than the whole file.</div>
+          <div class="cs"><span class="sl">Solves</span>Avoids re-shipping multi-gigabyte artifacts every time a tiny change is made, dramatically reducing bandwidth and storage cost for large binaries and machine-learning assets.</div>
+        </div><div class="cap">
+          <div class="ct">Customer-to-customer isolation</div>
+          <div class="cd">Keeps each customer&#x27;s private content walled off so no one can even detect, let alone access, what another customer has stored.</div>
+          <div class="cs"><span class="sl">Solves</span>Closes the trust gap that would otherwise make a shared system unsafe, ensuring confidential code and assets stay private.</div>
+        </div><div class="cap">
+          <div class="ct">Cryptographic ownership locking</div>
+          <div class="cd">Cryptographically ties each cached build result to the customer who created it, using a secret key that storage operators do not hold.</div>
+          <div class="cs"><span class="sl">Solves</span>Stops even a privileged insider with storage access from forging or swapping a customer&#x27;s content, which is the central protection against tampering in a shared system.</div>
+        </div><div class="cap">
+          <div class="ct">Double-checked integrity</div>
+          <div class="cd">Independently re-verifies cached build results both when they are saved and again when they are downloaded.</div>
+          <div class="cs"><span class="sl">Solves</span>Means a single compromised point can&#x27;t quietly slip corrupted content through, shielding customers from poisoned build outputs.</div>
+        </div><div class="cap">
+          <div class="ct">One universal format across all tools</div>
+          <div class="cd">Uses a single common fingerprinting standard so content stored by one type of build tool can be reused by completely different ones.</div>
+          <div class="cs"><span class="sl">Solves</span>Lets every tool contribute to and draw from the same shared pool, so the cache fills up faster and delivers more savings across the whole customer base.</div>
+        </div><div class="cap">
+          <div class="ct">Abuse and flood protection</div>
+          <div class="cd">Identifies and drops hostile traffic at the edge before it can consume any computing resources, and enforces strict size limits on incoming requests.</div>
+          <div class="cs"><span class="sl">Solves</span>Keeps the service available and responsive for paying customers even when under attack, protecting both uptime and operating cost.</div>
+        </div><div class="cap">
+          <div class="ct">Cost-efficient cleanup of cold content</div>
+          <div class="cd">Tracks what is actually being used and safely removes stale, unused content while protecting anything still in demand.</div>
+          <div class="cs"><span class="sl">Solves</span>Keeps storage costs bounded as the system scales, directly protecting the healthy operating margin of the product.</div>
+        </div><div class="cap">
+          <div class="ct">Faster repeat lookups</div>
+          <div class="cd">Remembers recent &#x27;not found&#x27; answers so common repeated checks are resolved instantly instead of doing expensive full searches every time.</div>
+          <div class="cs"><span class="sl">Solves</span>Reduces latency and infrastructure load from repetitive lookups while carefully avoiding any wrong answer that could cause unnecessary uploads.</div>
+        </div><div class="cap">
+          <div class="ct">Measured savings reporting</div>
+          <div class="cd">Counts how much content is reused versus newly stored, producing a concrete measure of the savings the system delivers.</div>
+          <div class="cs"><span class="sl">Solves</span>Turns the cost-savings story into something measured and provable rather than asserted, and flags when efficiency is slipping.</div>
+        </div><div class="cap">
+          <div class="ct">Complete, unskippable audit trail</div>
+          <div class="cd">Records an audit event for every change to stored content and refuses to make the change if the record can&#x27;t be written.</div>
+          <div class="cs"><span class="sl">Solves</span>Guarantees there is no untracked activity in a shared system, which is essential for compliance, due diligence, and detecting suspicious behavior.</div>
+        </div><div class="cap">
+          <div class="ct">Shared commons for public code (planned)</div>
+          <div class="cd">Envisions storing widely-used public, open-source dependencies a single time and sharing them safely across all customers while keeping private content isolated.</div>
+          <div class="cs"><span class="sl">Solves</span>Creates a compounding advantage where each new customer makes builds faster and cheaper for everyone, a self-reinforcing moat a single-customer system can never match.</div>
+        </div></div>
+    </section><section id="s2">
+      <h2>Storage Governance &amp; Cost Control</h2>
+      <p class="blurb">The controls that keep CoreLink&#x27;s shared storage service profitable and predictable by making sure every customer pays for what they use, no one can run up surprise costs, and bills always match reality.</p>
+      <div class="caps"><div class="cap">
+          <div class="ct">Clear plan ladder with built-in limits</div>
+          <div class="cd">Offers a simple set of plans, each with its own storage and usage allowance, from a free tier up to an unlimited business tier.</div>
+          <div class="cs"><span class="sl">Solves</span>Gives small-business customers transparent, predictable pricing and gives the business one authoritative definition of what each paying customer is entitled to.</div>
+        </div><div class="cap">
+          <div class="ct">Pay-before-you-use enforcement</div>
+          <div class="cd">Grants a paid plan&#x27;s higher limits only once payment is actually confirmed, never while a checkout is merely started or abandoned.</div>
+          <div class="cs"><span class="sl">Solves</span>Closes a revenue leak where someone could begin a paid signup, walk away without paying, and still receive the full paid service for free.</div>
+        </div><div class="cap">
+          <div class="ct">Storage limit enforcement</div>
+          <div class="cd">Tracks how much each customer is storing and blocks new uploads once they reach their plan&#x27;s storage allowance.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents the core money-loser of a shared storage service: a free or low-tier customer quietly hoarding unlimited data at the company&#x27;s expense.</div>
+        </div><div class="cap">
+          <div class="ct">Monthly usage limit enforcement</div>
+          <div class="cd">Counts each customer&#x27;s activity over the month and stops it once the plan&#x27;s monthly allowance is used up.</div>
+          <div class="cs"><span class="sl">Solves</span>Catches the steady, low-and-slow heavy user who never trips a per-second speed limit but far exceeds the volume they actually pay for.</div>
+        </div><div class="cap">
+          <div class="ct">Monthly spending ceiling per customer</div>
+          <div class="cd">Sets a capped dollar amount each customer can cost the company per month and halts their billable activity once that ceiling is hit.</div>
+          <div class="cs"><span class="sl">Solves</span>Eliminates the risk of a single customer running up an unbounded infrastructure bill, keeping the company&#x27;s costs predictable from day one.</div>
+        </div><div class="cap">
+          <div class="ct">Fail-safe defaults that protect revenue</div>
+          <div class="cd">Keeps protections switched on by default and refuses risky actions whenever it can&#x27;t confirm a customer&#x27;s limits, rather than letting them through.</div>
+          <div class="cs"><span class="sl">Solves</span>Ensures a misconfiguration, outage, or forgotten setting can never silently turn off billing protection or let unbounded usage slip through.</div>
+        </div><div class="cap">
+          <div class="ct">Resilience during infrastructure hiccups</div>
+          <div class="cd">Continues letting paying customers read their own data during a temporary database glitch while still refusing to allow new over-limit storage.</div>
+          <div class="cs"><span class="sl">Solves</span>Stops a brief outage from either wrongly locking out paying customers or being exploited to sneak past limits, protecting both trust and revenue.</div>
+        </div><div class="cap">
+          <div class="ct">Accurate accounting under heavy concurrent use</div>
+          <div class="cd">Counts storage exactly even when many uploads and deletions happen at the same instant, so the running total never drifts.</div>
+          <div class="cs"><span class="sl">Solves</span>Closes loopholes where rapid simultaneous activity could under-count usage and let a customer store far more than their limit allows.</div>
+        </div><div class="cap">
+          <div class="ct">Reclaiming space when uploads abandon midway</div>
+          <div class="cd">Temporarily holds room for large in-progress uploads and automatically gives it back if the upload stalls or crashes.</div>
+          <div class="cs"><span class="sl">Solves</span>Lets big legitimate uploads succeed without falsely tripping limits, while never letting a failed upload permanently waste a customer&#x27;s allowance.</div>
+        </div><div class="cap">
+          <div class="ct">Instant effect when customers change plans</div>
+          <div class="cd">Applies a customer&#x27;s new limits on their very next action when they downgrade, pause, or cancel a plan.</div>
+          <div class="cs"><span class="sl">Solves</span>Stops customers who scale down or cancel from keeping their old, higher allowances and continuing to cost more than they now pay.</div>
+        </div><div class="cap">
+          <div class="ct">Automatic cleanup of old, unused data</div>
+          <div class="cd">Retires data that has gone cold after a plan-based retention window, keeping it briefly recoverable before permanent removal.</div>
+          <div class="cs"><span class="sl">Solves</span>Keeps storage costs in line with what each plan pays for and protects against accidentally deleting data that is still in use.</div>
+        </div><div class="cap">
+          <div class="ct">Self-healing capacity near the limit</div>
+          <div class="cd">Automatically frees up space for customers approaching their storage cap so their work keeps flowing instead of abruptly stopping.</div>
+          <div class="cs"><span class="sl">Solves</span>Avoids hard service interruptions for active customers nearing their limit, reducing churn and support load without slowing them down.</div>
+        </div><div class="cap">
+          <div class="ct">Honest &#x27;try again later&#x27; guidance</div>
+          <div class="cd">Tells customers exactly when to retry: at the start of next month if they hit a real limit, or in a moment if it was just a temporary blip.</div>
+          <div class="cs"><span class="sl">Solves</span>Replaces confusing rejections with clear guidance, cutting wasted retries, support tickets, and customer frustration.</div>
+        </div><div class="cap">
+          <div class="ct">Daily billing accuracy reconciliation</div>
+          <div class="cd">Cross-checks recorded usage against what was billed every day and flags or auto-corrects any discrepancy.</div>
+          <div class="cs"><span class="sl">Solves</span>Catches under- or over-charging before it becomes lost revenue or a customer-trust problem, keeping invoices provably correct.</div>
+        </div><div class="cap">
+          <div class="ct">Abuse and fraud detection</div>
+          <div class="cd">Watches for usage patterns that signal misuse such as using the service as free compute or for scraping, and flags them for human review.</div>
+          <div class="cs"><span class="sl">Solves</span>Protects margins and reputation from bad actors while keeping the judgment transparent and contestable so legitimate customers aren&#x27;t wrongly cut off.</div>
+        </div></div>
+    </section><section id="s3">
+      <h2>Accounts, Access &amp; Multi-Tenancy</h2>
+      <p class="blurb">This is the part of CoreLink that signs customers up, gives them a secure key to use the service, and keeps every customer&#x27;s data walled off from everyone else&#x27;s on the shared platform.</p>
+      <div class="caps"><div class="cap">
+          <div class="ct">Instant self-serve sign-up</div>
+          <div class="cd">When someone signs up, the system automatically creates their account and hands them a working access key in seconds, with no manual steps or sales call.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes the cost and friction of human-assisted onboarding, so the product can be sold to small teams at scale and customers start using it immediately.</div>
+        </div><div class="cap">
+          <div class="ct">Sign-up that never half-finishes</div>
+          <div class="cd">Every sign-up either completes fully or cleanly undoes itself, and the system retries safely without ever creating duplicate accounts or double charges.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents paying customers from being silently stuck unable to log in and prevents billing errors, protecting revenue and trust at the most fragile moment of the funnel.</div>
+        </div><div class="cap">
+          <div class="ct">Secure, long-lived access keys</div>
+          <div class="cd">Each customer gets a strong machine-to-machine access key they can use indefinitely without logging in each time, and the key is checked on every request.</div>
+          <div class="cs"><span class="sl">Solves</span>Lets developers and their automated tools connect once and keep working, removing repeated login friction while keeping access tightly controlled.</div>
+        </div><div class="cap">
+          <div class="ct">Stolen-database protection for keys</div>
+          <div class="cd">Access keys are never stored in a usable form, and the plaintext key is wiped from memory immediately after it is handed to the customer.</div>
+          <div class="cs"><span class="sl">Solves</span>Means that even a full database breach would not hand attackers working credentials, sharply limiting the damage and liability of a worst-case leak.</div>
+        </div><div class="cap">
+          <div class="ct">Fast, forgery-proof key checking</div>
+          <div class="cd">The system rejects fake or guessed keys almost instantly while still rigorously proving that a real key is genuinely held by the caller.</div>
+          <div class="cs"><span class="sl">Solves</span>Stops impersonation and credential-guessing attacks without slowing down legitimate traffic or running up compute cost on every request.</div>
+        </div><div class="cap">
+          <div class="ct">Strict separation between customers</div>
+          <div class="cd">Every action is tied to the verified owner of the key being used, and the system refuses to trust any customer&#x27;s claim about who they are.</div>
+          <div class="cs"><span class="sl">Solves</span>Guarantees that unrelated companies can safely share the same platform without ever seeing, touching, or poisoning each other&#x27;s data, which is the core safety promise of a shared service.</div>
+        </div><div class="cap">
+          <div class="ct">Per-customer storage walls</div>
+          <div class="cd">Each customer&#x27;s stored data is filed under a private, unguessable label unique to them.</div>
+          <div class="cs"><span class="sl">Solves</span>Ensures one customer&#x27;s files can never collide with or be discovered by another, reinforcing isolation as a structural guarantee rather than a hope.</div>
+        </div><div class="cap">
+          <div class="ct">Layered, last-line access enforcement</div>
+          <div class="cd">Even deep inside the system, every access key is re-verified and re-bound to its rightful owner rather than trusting earlier checks.</div>
+          <div class="cs"><span class="sl">Solves</span>Closes the doomsday scenario where one compromised secret could let an attacker forge access, providing a second independent line of defense against the most serious breaches.</div>
+        </div><div class="cap">
+          <div class="ct">Fine-grained permissions</div>
+          <div class="cd">Each key carries an exact set of permissions, so a key meant only to read the cache cannot delete data, change billing, or manage users.</div>
+          <div class="cs"><span class="sl">Solves</span>Limits the blast radius of any single leaked key and lets customers safely hand narrow keys to tools and teammates without over-granting power.</div>
+        </div><div class="cap">
+          <div class="ct">Zero-downtime key rotation</div>
+          <div class="cd">Customers can replace an access key in one step, with the new key working before the old one is retired so there is never a gap.</div>
+          <div class="cs"><span class="sl">Solves</span>Lets teams follow good security hygiene and respond to suspected leaks without any service interruption or mass re-setup.</div>
+        </div><div class="cap">
+          <div class="ct">Instant, everywhere revocation</div>
+          <div class="cd">Revoking a key shuts it off across every part of the platform at once.</div>
+          <div class="cs"><span class="sl">Solves</span>Means a leaked or compromised key can be killed immediately and completely, with no forgotten back doors left open.</div>
+        </div><div class="cap">
+          <div class="ct">Abuse and cost throttling</div>
+          <div class="cd">The system caps how fast keys can be created per user, even during an outage.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents an attacker or runaway script from running up the platform&#x27;s compute bill or degrading service for everyone.</div>
+        </div><div class="cap">
+          <div class="ct">Hardened internal control channels</div>
+          <div class="cd">The private channels used to create, look up, and exchange credentials each require their own dedicated secret and are checked in a way that gives attackers no clues.</div>
+          <div class="cs"><span class="sl">Solves</span>Contains damage so that compromising one internal component cannot unlock the others, shrinking the impact of any single failure.</div>
+        </div><div class="cap">
+          <div class="ct">Browser and partner sign-in bridges</div>
+          <div class="cd">A logged-in user, or an approved partner product, can be safely converted into a short-lived, narrowly-scoped access key without ever handling the platform&#x27;s internal secrets.</div>
+          <div class="cs"><span class="sl">Solves</span>Enables web apps and partner integrations to work securely against CoreLink, opening new distribution channels without weakening the core access model.</div>
+        </div><div class="cap">
+          <div class="ct">Cross-customer access lockout for partners</div>
+          <div class="cd">When a partner product requests access, the system refuses any attempt to obtain a key for a customer other than the one the user actually belongs to.</div>
+          <div class="cs"><span class="sl">Solves</span>Closes a critical loophole where a borrowed or forged session could reach into another company&#x27;s account, protecting against the highest-severity breach class.</div>
+        </div><div class="cap">
+          <div class="ct">Privacy-protected identities and erasure</div>
+          <div class="cd">Real user identities are replaced with anonymized stand-ins throughout the system, and account deletion automatically triggers an auditable, guaranteed data-erasure process.</div>
+          <div class="cs"><span class="sl">Solves</span>Keeps personal identifiers out of logs and records and turns privacy-law obligations like the right to be forgotten into a reliable, provable workflow, reducing compliance and legal risk.</div>
+        </div><div class="cap">
+          <div class="ct">Region-aware onboarding</div>
+          <div class="cd">Sign-ups are only accepted in regions where the service is actually live, and are clearly refused otherwise rather than quietly routed elsewhere.</div>
+          <div class="cs"><span class="sl">Solves</span>Avoids onboarding customers into a broken experience and prevents accidental data-residency violations from forcing data into the wrong region.</div>
+        </div><div class="cap">
+          <div class="ct">Separately-sold add-on entitlements</div>
+          <div class="cd">Access to premium capabilities like managed build runners is tracked on its own dial, independent of the customer&#x27;s main storage plan.</div>
+          <div class="cs"><span class="sl">Solves</span>Lets new revenue lines be metered and sold on their own terms without disrupting existing pricing, supporting the planned expansion into build acceleration.</div>
+        </div><div class="cap">
+          <div class="ct">Phishing-resistant admin sign-in (built, awaiting activation)</div>
+          <div class="cd">The logic for hardware-key-based extra verification on sensitive admin actions is fully built and tested, ready to switch on with a real device.</div>
+          <div class="cs"><span class="sl">Solves</span>Lays the groundwork for the strongest available protection on the most powerful accounts, getting ahead of the risk before it is needed.</div>
+        </div></div>
+    </section><section id="s4">
+      <h2>Billing &amp; Self-Serve Signup</h2>
+      <p class="blurb">This is how customers sign up, pick a plan, pay, and get exactly the service level they paid for — all on their own, with no sales calls or manual setup.</p>
+      <div class="caps"><div class="cap">
+          <div class="ct">Sign up and start for free instantly</div>
+          <div class="cd">New customers can create an account and begin using the free plan immediately, with no payment step.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes signup friction so prospects can try the product without commitment, widening the top of the sales funnel.</div>
+        </div><div class="cap">
+          <div class="ct">Self-serve plan selection and checkout</div>
+          <div class="cd">Customers choose a paid plan and complete payment themselves through a secure, hosted checkout page.</div>
+          <div class="cs"><span class="sl">Solves</span>Eliminates the cost and delay of a manual sales-and-onboarding process for everyday customers, letting revenue scale without headcount.</div>
+        </div><div class="cap">
+          <div class="ct">Card data never touches our systems</div>
+          <div class="cd">All card entry and payment processing happen on the payment provider&#x27;s own hosted pages, so the company never handles raw card details.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes the heavy compliance burden and breach liability that come with storing or handling payment card data.</div>
+        </div><div class="cap">
+          <div class="ct">Customers manage their own billing</div>
+          <div class="cd">Customers can update their card, switch plans, or cancel anytime through a self-service billing portal.</div>
+          <div class="cs"><span class="sl">Solves</span>Cuts billing-related support tickets to near zero, saving operational time and improving customer satisfaction.</div>
+        </div><div class="cap">
+          <div class="ct">Pay-for-what-you-paid-for enforcement</div>
+          <div class="cd">The system grants a customer the paid service level only once their payment has actually cleared, and otherwise serves the free level.</div>
+          <div class="cs"><span class="sl">Solves</span>Closes a revenue leak where someone could select a paid plan, abandon payment, and still receive paid service for free.</div>
+        </div><div class="cap">
+          <div class="ct">Usage limits tied to each plan</div>
+          <div class="cd">Each plan carries clear storage and monthly-usage allowances that are automatically enforced as customers use the product.</div>
+          <div class="cs"><span class="sl">Solves</span>Ties what a customer gets to what they pay, protecting margins and preventing free-plan abuse — the core revenue lever.</div>
+        </div><div class="cap">
+          <div class="ct">Automatic plan changes and renewals</div>
+          <div class="cd">Upgrades, downgrades, and ongoing renewals automatically and immediately adjust the customer&#x27;s service level with no manual intervention.</div>
+          <div class="cs"><span class="sl">Solves</span>Keeps entitlements perfectly in step with what each customer is paying, eliminating manual billing operations and reconciliation errors.</div>
+        </div><div class="cap">
+          <div class="ct">Graceful handling of failed payments</div>
+          <div class="cd">A single failed charge keeps service active while the provider retries, but a payment that definitively fails downgrades the customer.</div>
+          <div class="cs"><span class="sl">Solves</span>Recovers at-risk revenue and cuts off non-payers without punishing customers for a one-time card glitch.</div>
+        </div><div class="cap">
+          <div class="ct">Clean cancel and easy re-subscribe</div>
+          <div class="cd">Canceled customers lose paid access but can sign back up for a paid plan at any time without getting stuck.</div>
+          <div class="cs"><span class="sl">Solves</span>Avoids lock-out bugs that frustrate returning customers and lose win-back revenue.</div>
+        </div><div class="cap">
+          <div class="ct">Reliable, no-double-charge payments</div>
+          <div class="cd">The system prevents duplicate charges from double-clicks or network retries and rides out temporary payment-provider outages.</div>
+          <div class="cs"><span class="sl">Solves</span>Protects customers from being billed twice and protects revenue from being lost during transient outages — both major trust and support costs.</div>
+        </div><div class="cap">
+          <div class="ct">Guaranteed accurate billing events</div>
+          <div class="cd">Every payment notification is processed exactly once, so a customer always gets the access they paid for and revenue is counted once.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents both silent paid-but-no-access failures and double-counted or missed revenue in the books.</div>
+        </div><div class="cap">
+          <div class="ct">Plan-and-price consistency safeguard</div>
+          <div class="cd">The system cross-checks that the plan a customer paid for matches the service level they are about to receive and halts if they disagree.</div>
+          <div class="cs"><span class="sl">Solves</span>Catches mismatches where a customer could pay for one plan but be served a different, wrong one — protecting both revenue and customer trust.</div>
+        </div><div class="cap">
+          <div class="ct">Legal agreement required before payment</div>
+          <div class="cd">Customers must accept the current data-processing agreement before any paid relationship can begin.</div>
+          <div class="cs"><span class="sl">Solves</span>Ensures every paying customer is under a valid contract automatically, meeting privacy-law obligations without manual paperwork.</div>
+        </div><div class="cap">
+          <div class="ct">Enterprise deals routed to sales</div>
+          <div class="cd">The largest, custom tier cannot be bought through self-checkout and is automatically directed to a sales inquiry.</div>
+          <div class="cs"><span class="sl">Solves</span>Keeps high-value, custom-contract deals on the sales path instead of letting anyone self-purchase an uncapped tier.</div>
+        </div><div class="cap">
+          <div class="ct">Tamper-evident record of every billing action</div>
+          <div class="cd">Every billing decision is recorded before any money or service change happens, creating a trustworthy audit trail.</div>
+          <div class="cs"><span class="sl">Solves</span>Provides reliable evidence for disputes, audits, and compliance, and ensures failures never leave billing in a half-applied state.</div>
+        </div><div class="cap">
+          <div class="ct">Privacy-law data erasure that keeps invoices</div>
+          <div class="cd">When a customer requests data deletion, their personal details are scrubbed from the payment provider while invoices are retained.</div>
+          <div class="cs"><span class="sl">Solves</span>Satisfies right-to-erasure rules while preserving the financial records required by tax and accounting law — a real compliance trap for self-serve billing.</div>
+        </div><div class="cap">
+          <div class="ct">Fast signups that survive payment-provider outages</div>
+          <div class="cd">Account creation completes immediately and the payment link is established afterward, retrying automatically if the provider is briefly unavailable.</div>
+          <div class="cs"><span class="sl">Solves</span>Keeps signups fast and reliable even during third-party outages, so the company never loses a new customer to a momentary glitch.</div>
+        </div><div class="cap">
+          <div class="ct">Hardened, fail-safe billing infrastructure</div>
+          <div class="cd">The payment system only goes live when fully and correctly configured, refuses forged or replayed payment notifications, and never exposes sensitive credentials.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents misconfiguration, fraud, and credential leaks from corrupting billing or causing paid customers to be silently dropped.</div>
+        </div></div>
+    </section><section id="s5">
+      <h2>Compliance, Privacy &amp; Trust</h2>
+      <p class="blurb">The built-in legal and trust machinery that lets a small team confidently sell to privacy-strict customers in Europe, Brazil, and beyond, and pass the security reviews enterprises demand, without hiring a compliance department.</p>
+      <div class="caps"><div class="cap">
+          <div class="ct">Automatic full account deletion</div>
+          <div class="cd">When a customer closes their account, their data is genuinely scrubbed everywhere it lives, automatically.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes the costly, error-prone manual deletion projects normally needed to honor the legal right to be forgotten.</div>
+        </div><div class="cap">
+          <div class="ct">Safe, repeatable deletion</div>
+          <div class="cd">A deletion request can be retried safely and will only ever run once, even if the same request arrives multiple times.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents corrupted records, double-billing of effort, and half-finished deletions that would otherwise create compliance gaps.</div>
+        </div><div class="cap">
+          <div class="ct">Legally-correct deletion across every system</div>
+          <div class="cd">Deletes data where the law allows and de-identifies it where records must be kept (such as tax invoices or security logs), applying the right rule to each system.</div>
+          <div class="cs"><span class="sl">Solves</span>Avoids the dual liability of either breaking accounting and audit trails or failing to actually erase personal data.</div>
+        </div><div class="cap">
+          <div class="ct">Cryptographic proof of deletion</div>
+          <div class="cd">Issues a tamper-proof certificate that a customer or their auditor can independently verify to confirm their data was truly deleted.</div>
+          <div class="cs"><span class="sl">Solves</span>Turns &#x27;trust us, it&#x27;s gone&#x27; into hard evidence, a real selling point with security-conscious buyers and a faster close on enterprise deals.</div>
+        </div><div class="cap">
+          <div class="ct">Deletion deadline monitoring</div>
+          <div class="cd">Continuously checks that every deletion finishes on time and raises an urgent alert with a response plan if any one stalls.</div>
+          <div class="cs"><span class="sl">Solves</span>Converts a silent missed legal deadline into a visible, fixable incident instead of a hidden compliance exposure.</div>
+        </div><div class="cap">
+          <div class="ct">Honest deletion records</div>
+          <div class="cd">Records exactly what was deleted and clearly explains why each remaining system did not apply.</div>
+          <div class="cs"><span class="sl">Solves</span>Eliminates &#x27;compliance theater&#x27; that itself becomes a liability when an auditor examines the deletion trail.</div>
+        </div><div class="cap">
+          <div class="ct">Data stays in the customer&#x27;s region</div>
+          <div class="cd">Routes and stores each customer&#x27;s data in their chosen region and blocks, at two independent layers, any attempt to place it elsewhere.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes the cross-border data-residency barrier that otherwise kills deals with European and Brazilian customers.</div>
+        </div><div class="cap">
+          <div class="ct">Only promise regions we can actually serve</div>
+          <div class="cd">Refuses sign-ups for regions the platform cannot yet legally and reliably host, before any data is taken on.</div>
+          <div class="cs"><span class="sl">Solves</span>Avoids the compliance and reliability landmine of accepting customers whose data you cannot keep where you promised.</div>
+        </div><div class="cap">
+          <div class="ct">Controlled region moves</div>
+          <div class="cd">Treats moving a customer&#x27;s data to another region as a reviewed legal event requiring sign-off and a waiting period, not a casual setting change.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents an accidental admin action from triggering an unauthorized, unauditable cross-border data transfer.</div>
+        </div><div class="cap">
+          <div class="ct">Tamper-evident activity log</div>
+          <div class="cd">Records every significant action in a sealed, append-only log where any edit, deletion, or reordering is mathematically detectable.</div>
+          <div class="cs"><span class="sl">Solves</span>Provides the trustworthy audit trail that security certifications and incident investigations depend on.</div>
+        </div><div class="cap">
+          <div class="ct">Daily integrity check on the activity log</div>
+          <div class="cd">Automatically re-verifies the entire activity log every day and fails loudly the moment anything looks altered.</div>
+          <div class="cs"><span class="sl">Solves</span>Ensures tampering is caught within a day, which is the actual control auditors require, not just the theoretical ability to detect it.</div>
+        </div><div class="cap">
+          <div class="ct">Self-service audit-trail export</div>
+          <div class="cd">Lets customers download their own complete activity history with built-in proof that it has not been doctored.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes manual legal and support requests and gives customers ready-made evidence for their own audits.</div>
+        </div><div class="cap">
+          <div class="ct">No personal data in logs by design</div>
+          <div class="cd">Stores only disguised versions of identifiers in logs, so raw emails and IDs cannot be recorded even by mistake.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents logs from quietly becoming a new store of personal data that expands privacy risk and audit scope.</div>
+        </div><div class="cap">
+          <div class="ct">Right-sized log retention by plan</div>
+          <div class="cd">Automatically keeps each customer&#x27;s records for the period appropriate to their plan and the law, then reaps them.</div>
+          <div class="cs"><span class="sl">Solves</span>Avoids both the cost and privacy risk of keeping data too long and the compliance failure of deleting it too soon.</div>
+        </div><div class="cap">
+          <div class="ct">Continuous SOC 2 evidence collection</div>
+          <div class="cd">Automatically pushes compliance evidence into a security-certification platform on an ongoing basis.</div>
+          <div class="cs"><span class="sl">Solves</span>Replaces the quarterly manual scramble to assemble audit evidence with always-on, defensible compliance.</div>
+        </div><div class="cap">
+          <div class="ct">Signed data-processing agreements</div>
+          <div class="cd">Captures a customer&#x27;s acceptance of the required B2B data agreement, in their language, with a verifiable receipt.</div>
+          <div class="cs"><span class="sl">Solves</span>Provides the signed legal agreement that customer procurement and legal teams demand before a deal can proceed.</div>
+        </div><div class="cap">
+          <div class="ct">Graceful handling of agreement updates</div>
+          <div class="cd">When the data agreement materially changes, gives customers a grace period and then limits new activity until they re-accept, while keeping their existing data accessible.</div>
+          <div class="cs"><span class="sl">Solves</span>Meets the legal need for re-consent on material changes without abruptly cutting off customers or their data.</div>
+        </div><div class="cap">
+          <div class="ct">Provable consent and easy revocation</div>
+          <div class="cd">Keeps a verifiable record of informed consent and makes withdrawing consent just as strong and simple as giving it.</div>
+          <div class="cs"><span class="sl">Solves</span>Closes the common legal weak spot where consent withdrawal is harder to prove than the original consent.</div>
+        </div><div class="cap">
+          <div class="ct">Versioned, multi-language privacy notices</div>
+          <div class="cd">Publishes privacy notices that stay consistent across languages and trigger re-consent when materially changed.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents shipping inconsistent or unreviewed privacy notices and keeps notice changes auditable.</div>
+        </div><div class="cap">
+          <div class="ct">Sub-processor transparency and advance notice</div>
+          <div class="cd">Maintains a public list of the outside vendors handling customer data and notifies customers ahead of any change, with a channel to object.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes a recurring legal and communications burden and supplies the vendor disclosures customers&#x27; own compliance teams require.</div>
+        </div><div class="cap">
+          <div class="ct">Structured breach notification</div>
+          <div class="cd">Drives any data-breach notification through a defined, timed, multi-language, fully-logged process aligned to legal reporting clocks.</div>
+          <div class="cs"><span class="sl">Solves</span>Turns a high-stakes, deadline-driven breach response from a panicked scramble into a measurable, defensible procedure.</div>
+        </div><div class="cap">
+          <div class="ct">Self-service privacy rights portal</div>
+          <div class="cd">Lets customers exercise all of their data rights (access, portability, correction, deletion, restriction, and objection) themselves, with deadlines tracked per jurisdiction.</div>
+          <div class="cs"><span class="sl">Solves</span>Lets a small team meet every statutory rights deadline without hiring dedicated privacy operations staff.</div>
+        </div><div class="cap">
+          <div class="ct">Re-authentication for destructive requests</div>
+          <div class="cd">Requires a customer to re-verify their identity before any request that would delete or alter their data.</div>
+          <div class="cs"><span class="sl">Solves</span>Stops a hijacked session from being used to irreversibly destroy or change a victim&#x27;s data.</div>
+        </div><div class="cap">
+          <div class="ct">Public, independently-verifiable proof</div>
+          <div class="cd">Anchors its signed records in a public, third-party transparency log so relying parties can verify them without having to trust CoreLink.</div>
+          <div class="cs"><span class="sl">Solves</span>Delivers the strongest possible non-repudiation story for the most demanding security and partner reviews.</div>
+        </div></div>
+    </section><section id="s6">
+      <h2>CoreLink Runners (Build Acceleration)</h2>
+      <p class="blurb">CoreLink Runners is an on-demand build-and-test compute service that makes software teams&#x27; build pipelines dramatically faster and cheaper by reusing CoreLink&#x27;s shared cache of already-built components.</p>
+      <div class="caps"><div class="cap">
+          <div class="ct">Speed-and-savings flywheel</div>
+          <div class="cd">By reusing work already done and stored in the shared cache, it cuts the time and computing power a typical build needs by roughly five to ten times.</div>
+          <div class="cs"><span class="sl">Solves</span>Breaks the usual trade-off where faster builds cost more, so customers get speed while the company keeps a high profit margin on a low price.</div>
+        </div><div class="cap">
+          <div class="ct">Shared-cache network advantage</div>
+          <div class="cd">Common, publicly available software building blocks are stored once and reused across all customers, so the service gets faster and cheaper for everyone as more customers join.</div>
+          <div class="cs"><span class="sl">Solves</span>Creates a durable competitive advantage that a smaller or single-customer rival cannot match, turning a commodity feature into a defensible moat.</div>
+        </div><div class="cap">
+          <div class="ct">Customer data isolation</div>
+          <div class="cd">Only public, identical-for-everyone building blocks are ever shared between customers, while each customer&#x27;s private build results stay walled off to that customer.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes the biggest risk of a shared system, a leak of one customer&#x27;s private work to another, which is the one failure a multi-customer service can never afford.</div>
+        </div><div class="cap">
+          <div class="ct">Pay-only-when-building compute</div>
+          <div class="cd">Build machines start up on demand for each job, run the work, and shut down immediately, so customers only pay for compute while a build is actually happening.</div>
+          <div class="cs"><span class="sl">Solves</span>Eliminates the wasted cost of paying for idle reserved capacity, which is what normally erodes the profitability of build services.</div>
+        </div><div class="cap">
+          <div class="ct">Flat pricing with unlimited usage</div>
+          <div class="cd">Customers pay a simple flat fee based on how many builds they want to run at the same time, with no per-minute charges and the cache included for free.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes the meter anxiety and unpredictable bills of competitors that charge by the minute, making costs predictable and far cheaper for heavy users.</div>
+        </div><div class="cap">
+          <div class="ct">Well-timed market entry</div>
+          <div class="cd">The launch is aimed at the moment a major industry player begins charging more for the build setup many teams use today, with a pitch of unlimited usage at a lower price.</div>
+          <div class="cs"><span class="sl">Solves</span>Captures demand at the exact moment large numbers of potential customers are already shopping for a cheaper alternative.</div>
+        </div><div class="cap">
+          <div class="ct">Single trusted permission check</div>
+          <div class="cd">When a build machine starts a job, one central service confirms which customer it belongs to and exactly what they are allowed to run.</div>
+          <div class="cs"><span class="sl">Solves</span>Avoids duplicating sensitive security logic in multiple places, removing a major source of bugs and security gaps between the cache and the build service.</div>
+        </div><div class="cap">
+          <div class="ct">Separate locks for separate jobs</div>
+          <div class="cd">The build service uses its own dedicated access key, kept separate from the keys used for other internal operations, and shuts itself off entirely if that key is missing or misconfigured.</div>
+          <div class="cs"><span class="sl">Solves</span>Limits the damage if any single key leaks, and ensures a botched setup fails safely shut rather than dangerously open.</div>
+        </div><div class="cap">
+          <div class="ct">Build service sold as its own product line</div>
+          <div class="cd">A customer&#x27;s allowance for the build service, how many parallel builds they can run, is tracked separately from their cache plan.</div>
+          <div class="cs"><span class="sl">Solves</span>Lets the build service be sold and priced on its own without a cache purchase accidentally granting or blocking build access, keeping the two product lines clean.</div>
+        </div><div class="cap">
+          <div class="ct">Monthly compute spending cap</div>
+          <div class="cd">Each customer also has a monthly ceiling on total compute usage, set according to their plan.</div>
+          <div class="cs"><span class="sl">Solves</span>Protects the company&#x27;s profit margin from a single runaway customer driving compute costs above what their plan covers.</div>
+        </div><div class="cap">
+          <div class="ct">Safe-by-default access rules</div>
+          <div class="cd">If a customer has no build-service allowance on file they are denied access, while a customer who simply has no monthly ceiling set is still allowed to run.</div>
+          <div class="cs"><span class="sl">Solves</span>Gets the safe choice right in every case, locking out non-paying users while never accidentally blocking legitimate paying customers.</div>
+        </div><div class="cap">
+          <div class="ct">Reliable decisions under failure</div>
+          <div class="cd">If the system cannot reliably look up a customer&#x27;s plan due to a temporary database problem, it refuses the job rather than guessing.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents a glitch from over- or under-provisioning compute, which would risk both customer fairness and company margin.</div>
+        </div><div class="cap">
+          <div class="ct">Per-job credentials that expire fast</div>
+          <div class="cd">Each disposable build machine gets a short-lived, tightly limited credential good only for that one job and only for cache access, with no administrative powers.</div>
+          <div class="cs"><span class="sl">Solves</span>Contains the worst case of running customers&#x27; code on shared machines, so a compromised build machine can do almost nothing and its access expires on its own.</div>
+        </div><div class="cap">
+          <div class="ct">Automatic credential cleanup</div>
+          <div class="cd">When a job finishes, the build machine&#x27;s credential is revoked immediately, and it expires automatically anyway if cleanup is ever missed.</div>
+          <div class="cs"><span class="sl">Solves</span>Confines a leaked credential to a single job and makes teardown safely repeatable even when a machine crashes mid-job.</div>
+        </div><div class="cap">
+          <div class="ct">Abuse and flood protection</div>
+          <div class="cd">The system limits how fast credentials can be issued, automatically throttling any malfunctioning or hostile machine trying to request a flood of them.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents a misbehaving or attacking machine from overwhelming the system or sprawling credentials, without needing a separately built defense.</div>
+        </div><div class="cap">
+          <div class="ct">Seamless key rotation</div>
+          <div class="cd">A customer&#x27;s access key can be swapped for a fresh one in a single step that issues the new key before retiring the old, with no gap and no need to log back in.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes downtime and disruption during routine key changes, and prevents rotation from ever accidentally granting more access than the original key had.</div>
+        </div><div class="cap">
+          <div class="ct">Locked cross-team contract</div>
+          <div class="cd">The exact format of the data exchanged between the cache product and the separately built compute service is frozen and verified by a shared reference test.</div>
+          <div class="cs"><span class="sl">Solves</span>Stops the two independently developed systems from drifting apart and silently breaking build placement.</div>
+        </div><div class="cap">
+          <div class="ct">Proven on the company&#x27;s own builds</div>
+          <div class="cd">CoreLink already runs all of its own software builds on this same cache and self-hosted machine setup.</div>
+          <div class="cs"><span class="sl">Solves</span>Gives investors and partners credible, real-world proof that the core technology works today rather than being an unproven promise.</div>
+        </div></div>
+    </section><section id="s7">
+      <h2>CoreLink Workspaces</h2>
+      <p class="blurb">CoreLink Workspaces turns an entire development environment — code, dependencies, tools, and build progress — into a single reusable object that any machine can pick up and become productive on in seconds, so teams stop wasting time and money rebuilding the same setup over and over.</p>
+      <div class="caps"><div class="cap">
+          <div class="ct">The reusable workspace</div>
+          <div class="cd">It captures a complete project environment — code, dependencies, tools, and build progress — as one shareable object that any disposable machine can load and work on instantly.</div>
+          <div class="cs"><span class="sl">Solves</span>It eliminates the slow, repetitive setup tax where every new machine has to reinstall and rebuild everything from scratch before anyone can get to work.</div>
+        </div><div class="cap">
+          <div class="ct">One foundation, four products</div>
+          <div class="cd">The same workspace foundation powers four offerings — automated build machines, AI-agent sandboxes, cloud developer desktops, and a bottomless storage drive — by attaching different kinds of compute to it.</div>
+          <div class="cs"><span class="sl">Solves</span>It avoids the cost and fragmentation of building four separate products, so engineering effort compounds into one platform instead of being duplicated.</div>
+        </div><div class="cap">
+          <div class="ct">Born-warm environments</div>
+          <div class="cd">Because shared public building blocks are already stored once and reused across customers, a brand-new workspace arrives mostly ready instead of empty.</div>
+          <div class="cs"><span class="sl">Solves</span>It removes the cold-start delay competitors suffer on every new environment, getting customers productive faster while costing less to deliver.</div>
+        </div><div class="cap">
+          <div class="ct">Pick up where you left off, anywhere</div>
+          <div class="cd">It lets a person save their working environment and restore it on any other machine, downloading only what they actually need as they need it.</div>
+          <div class="cs"><span class="sl">Solves</span>It ends the daily frustration and lost hours of recreating a working setup whenever someone switches machines or spins up a fresh one.</div>
+        </div><div class="cap">
+          <div class="ct">Cheap, fast, throwaway compute</div>
+          <div class="cd">It runs the actual work on lightweight, securely isolated machines on low-cost infrastructure that spin up fast and shut down when done.</div>
+          <div class="cs"><span class="sl">Solves</span>It cuts the high price and slow startup of conventional managed cloud environments while keeping each customer&#x27;s work safely separated.</div>
+        </div><div class="cap">
+          <div class="ct">Editable workspaces that still save efficiently</div>
+          <div class="cd">It lets a workspace be changed and re-saved like a normal folder while only the parts that actually changed get stored.</div>
+          <div class="cs"><span class="sl">Solves</span>It avoids re-storing an entire environment every time someone makes a small edit, keeping storage costs and save times low.</div>
+        </div><div class="cap">
+          <div class="ct">Guaranteed-ready (pinned) workspaces</div>
+          <div class="cd">It offers paid tiers that keep chosen workspaces permanently ready — protected from cleanup, copied close to users in every region, and kept on standby for instant use.</div>
+          <div class="cs"><span class="sl">Solves</span>It replaces an unpredictable &#x27;sometimes the first run is slow&#x27; experience with a dependable readiness guarantee customers can rely on and pay for.</div>
+        </div><div class="cap">
+          <div class="ct">Sell-once-store-once economics</div>
+          <div class="cd">Because identical content is physically stored a single time but every customer who reserves it is billed, the same stored data is sold many times over.</div>
+          <div class="cs"><span class="sl">Solves</span>It turns storage from a thin-margin commodity into a high-margin product while keeping prices honest enough that customers won&#x27;t bother doing it themselves.</div>
+        </div><div class="cap">
+          <div class="ct">Skip-the-rerun acceleration</div>
+          <div class="cd">It remembers the results of work that has already been done and returns them instantly instead of redoing identical work.</div>
+          <div class="cs"><span class="sl">Solves</span>It removes the wasted time and compute cost of repeatedly rebuilding and re-testing things that have not changed.</div>
+        </div><div class="cap">
+          <div class="ct">Customer control over stored data</div>
+          <div class="cd">It lets each customer see exactly what they have stored and delete specific items or clean up in bulk to reclaim space.</div>
+          <div class="cs"><span class="sl">Solves</span>It prevents storage from becoming an opaque, ever-growing black box, giving customers visibility, cost control, and the ability to remove mistakes or sensitive content.</div>
+        </div><div class="cap">
+          <div class="ct">Effortless, lockout-proof credential rotation</div>
+          <div class="cd">It allows access keys to be swapped out safely and instantly without ever exposing the most sensitive controls to end users.</div>
+          <div class="cs"><span class="sl">Solves</span>It removes the friction and lockout risk of rotating credentials, improving security hygiene without operational disruption.</div>
+        </div><div class="cap">
+          <div class="ct">Verified right-to-be-forgotten deletion</div>
+          <div class="cd">It carries out a customer&#x27;s data-deletion request across every system and then independently re-checks, on a schedule, that the deletion truly happened.</div>
+          <div class="cs"><span class="sl">Solves</span>It meets strict privacy-law obligations and removes the legal risk of a deletion that silently failed — which is itself a reportable breach.</div>
+        </div><div class="cap">
+          <div class="ct">Tamper-proof, deduplicated storage</div>
+          <div class="cd">It stores content in a way that detects any corruption or tampering and automatically avoids keeping duplicate copies of identical data.</div>
+          <div class="cs"><span class="sl">Solves</span>It guarantees data integrity customers can trust while slashing the storage footprint, and handles very large files reliably without failed or timed-out uploads.</div>
+        </div><div class="cap">
+          <div class="ct">Regional placement and data residency</div>
+          <div class="cd">It can keep copies of content in specific geographic regions, close to where the work runs.</div>
+          <div class="cs"><span class="sl">Solves</span>It lowers latency for users and satisfies legal requirements that certain data stay within particular countries or regions.</div>
+        </div><div class="cap">
+          <div class="ct">Strict private-by-default isolation</div>
+          <div class="cd">Every action is checked against the customer&#x27;s permissions, and private content is walled off per customer while only public, shared building blocks are reused across everyone.</div>
+          <div class="cs"><span class="sl">Solves</span>It protects a shared multi-customer system from the catastrophic risk of one customer ever seeing another&#x27;s private data, making the shared model a strength rather than a liability.</div>
+        </div><div class="cap">
+          <div class="ct">Automatic storage cleanup</div>
+          <div class="cd">It automatically retires stale content according to each plan&#x27;s retention rules once storage approaches its limits, while never touching anything a customer has reserved.</div>
+          <div class="cs"><span class="sl">Solves</span>It stops storage costs from growing endlessly and is the necessary safeguard that makes the paid &#x27;always-ready&#x27; tiers profitable to offer.</div>
+        </div></div>
+    </section><section id="s8">
+      <h2>Security &amp; Safety</h2>
+      <p class="blurb">The protections that keep each customer&#x27;s data private, their costs predictable, and the shared system trustworthy and abuse-proof.</p>
+      <div class="caps"><div class="cap">
+          <div class="ct">Strong, attacker-resistant login keys</div>
+          <div class="cd">Verifies each customer&#x27;s access key with bank-grade cryptography that is deliberately expensive for attackers to crack but instant for legitimate users.</div>
+          <div class="cs"><span class="sl">Solves</span>Stops attackers from guessing or cracking stolen keys, protecting customer accounts and the company&#x27;s reputation.</div>
+        </div><div class="cap">
+          <div class="ct">Fast rejection of fake keys</div>
+          <div class="cd">Throws out obviously forged access keys in a fraction of a millisecond before doing any costly checking.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents attackers from overwhelming the system with junk login attempts, avoiding downtime and wasted infrastructure cost.</div>
+        </div><div class="cap">
+          <div class="ct">No information leaked through response timing</div>
+          <div class="cd">Makes every login attempt take the same amount of time whether the key is valid or not, adding extra random delay on sensitive paths.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes a subtle channel attackers use to discover which accounts exist or to slowly guess credentials.</div>
+        </div><div class="cap">
+          <div class="ct">Safe key rotation without outages</div>
+          <div class="cd">Lets the operator swap out the master signing keys on a schedule or during an incident while existing customer keys keep working through the changeover.</div>
+          <div class="cs"><span class="sl">Solves</span>Eliminates the self-inflicted outage that key changes would otherwise cause, so security maintenance never disrupts paying customers.</div>
+        </div><div class="cap">
+          <div class="ct">Each customer&#x27;s data stays sealed off from others</div>
+          <div class="cd">The entry layer ignores any identity, location, or permission claim sent by the customer and stamps in only the values the system itself has verified.</div>
+          <div class="cs"><span class="sl">Solves</span>Makes it structurally impossible for one customer to impersonate another and reach their data, the single biggest risk in a shared platform.</div>
+        </div><div class="cap">
+          <div class="ct">Tamper-proof stored content</div>
+          <div class="cd">Re-checks that every uploaded file actually matches its claimed fingerprint before it is saved into the shared store.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents a malicious customer from corrupting the shared cache that everyone relies on, protecting the integrity that makes the product valuable.</div>
+        </div><div class="cap">
+          <div class="ct">Read-only keys can&#x27;t be upgraded to write access</div>
+          <div class="cd">Enforces that a credential granted view-only permission can never be turned into one that can change or overwrite stored content.</div>
+          <div class="cs"><span class="sl">Solves</span>Ensures a shared or leaked read-only key cannot be used to tamper with data, closing a privilege-escalation route found in security testing.</div>
+        </div><div class="cap">
+          <div class="ct">Fair sharing under heavy load</div>
+          <div class="cd">Caps how much of the shared upload capacity any single customer can consume and limits each customer&#x27;s request rate to their plan.</div>
+          <div class="cs"><span class="sl">Solves</span>Stops one heavy or hostile customer from starving everyone else or crashing the service, protecting reliability for all.</div>
+        </div><div class="cap">
+          <div class="ct">Edge-level flood protection</div>
+          <div class="cd">Blocks abusive traffic surges from a single source at the network edge before they ever reach the core system.</div>
+          <div class="cs"><span class="sl">Solves</span>Absorbs denial-of-service attacks cheaply and early, keeping the service available without burning compute on attack traffic.</div>
+        </div><div class="cap">
+          <div class="ct">Hard spending cap, soft usage cap</div>
+          <div class="cd">Firmly blocks a customer once they hit their monthly spending limit, while keeping availability limits flexible so a billing glitch never wrongly blocks a paying customer.</div>
+          <div class="cs"><span class="sl">Solves</span>Protects the company from unbounded free usage and the customer from surprise bills, with the right trade-off on each side.</div>
+        </div><div class="cap">
+          <div class="ct">Storage limits can&#x27;t be forged</div>
+          <div class="cd">Sets each customer&#x27;s storage allowance solely from their paid plan and discards any allowance the customer tries to claim for themselves.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents customers from granting themselves unlimited storage and running up the company&#x27;s infrastructure bill.</div>
+        </div><div class="cap">
+          <div class="ct">Locked-down internal controls</div>
+          <div class="cd">Guards the system&#x27;s privileged internal operations with their own separate, individually-secured keys rather than one shared master key.</div>
+          <div class="cs"><span class="sl">Solves</span>Ensures that a single leaked internal secret can&#x27;t unlock every sensitive operation, containing the blast radius of any breach.</div>
+        </div><div class="cap">
+          <div class="ct">Two-person approval for destructive actions</div>
+          <div class="cd">Requires two separate, non-colluding administrators to sign off before the most dangerous operations, like erasing customer data, can run.</div>
+          <div class="cs"><span class="sl">Solves</span>Stops a single rogue or compromised administrator account from unilaterally deleting or stealing customer data.</div>
+        </div><div class="cap">
+          <div class="ct">Protected payment and billing events</div>
+          <div class="cd">Verifies that every incoming payment notification is genuine and recent, and ignores any source-of-truth a sender tries to assert.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents fraudsters from faking or replaying payment events to unlock paid plans for free, protecting revenue.</div>
+        </div><div class="cap">
+          <div class="ct">Blocked attempts to redirect internal requests</div>
+          <div class="cd">Validates that any outbound request the system makes on a customer&#x27;s behalf stays at its intended destination.</div>
+          <div class="cs"><span class="sl">Solves</span>Stops attackers from tricking the server into reaching internal systems, a common path into a company&#x27;s infrastructure.</div>
+        </div><div class="cap">
+          <div class="ct">Automated leaked-secret and vulnerability scanning</div>
+          <div class="cd">Continuously scans new code for accidentally committed passwords, known software vulnerabilities, banned licenses, and insecure configurations, blocking anything that fails.</div>
+          <div class="cs"><span class="sl">Solves</span>Catches secrets, legal license risks, and security holes before they ever reach production, and has already caught a real leaked credential.</div>
+        </div><div class="cap">
+          <div class="ct">Trusted, tamper-checked build supply chain</div>
+          <div class="cd">Pins and verifies every third-party tool and component used to build the product so none can be silently swapped for a malicious version.</div>
+          <div class="cs"><span class="sl">Solves</span>Defends against supply-chain attacks that would otherwise inject malicious code straight into the systems handling customer payments.</div>
+        </div><div class="cap">
+          <div class="ct">Guaranteed-complete configuration of secrets</div>
+          <div class="cd">Automatically checks that every secret and setting the running system needs is actually provisioned and delivered where it&#x27;s expected.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents outages caused by a missing or misrouted credential and ensures no undocumented secret slips into the system.</div>
+        </div></div>
+    </section><section id="s9">
+      <h2>The HuGR Family (the Stack)</h2>
+      <p class="blurb">A connected family of products for software teams in the AI-agent era, all built on one shared foundation so that customers sign in once, pay through one place, and get a stack that makes building software faster and cheaper as it grows.</p>
+      <div class="caps"><div class="cap">
+          <div class="ct">One foundation behind every product</div>
+          <div class="cd">Every product in the family is built on the same core storage-and-memory engine instead of each one reinventing its own.</div>
+          <div class="cs"><span class="sl">Solves</span>Avoids the cost and slowness of building four or five overlapping products, so each new offering is mostly a thin add-on and the engineering effort compounds rather than being duplicated.</div>
+        </div><div class="cap">
+          <div class="ct">One login across the whole family</div>
+          <div class="cd">A customer signs in once and that single identity works across every product in the family without a second login or signup.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes the friction and abandonment that come from making customers create separate accounts for each product, and keeps one trusted source of who-is-who.</div>
+        </div><div class="cap">
+          <div class="ct">One key authority and instant kill-switch</div>
+          <div class="cd">All access credentials across the family are issued and revoked from a single trusted authority with one audit trail.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents the security and compliance nightmare of many products each issuing their own keys, so a credential can be cut off everywhere at once and there is only one master secret to protect.</div>
+        </div><div class="cap">
+          <div class="ct">Disposable, self-expiring access for automated jobs</div>
+          <div class="cd">Short-lived, automatically-expiring access can be handed to throwaway machines for the duration of a single job and pulled back when the job ends.</div>
+          <div class="cs"><span class="sl">Solves</span>Stops long-lived secrets from leaking into temporary, untrusted compute, removing a major breach risk in automated workflows.</div>
+        </div><div class="cap">
+          <div class="ct">Strict customer-data separation</div>
+          <div class="cd">Every request is checked so one customer can never reach another customer&#x27;s private data, with access denied by default when ownership is unclear.</div>
+          <div class="cs"><span class="sl">Solves</span>Protects against cross-customer data exposure, the kind of incident that destroys trust and triggers regulatory liability in a shared platform.</div>
+        </div><div class="cap">
+          <div class="ct">Build-acceleration compute (Runners)</div>
+          <div class="cd">Spins up on-demand compute that comes pre-loaded with the customer&#x27;s cached work so builds and tests run fast, priced as a flat plan rather than by the minute.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes the per-minute pricing that punishes teams running many or frequent builds, while a hard usage ceiling makes it structurally impossible to lose money on any single customer.</div>
+        </div><div class="cap">
+          <div class="ct">Compute sold separately from storage</div>
+          <div class="cd">A customer can buy the build-acceleration compute on its own without being forced into a larger storage plan, and the two are billed independently.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents customers from overpaying for capacity they don&#x27;t need and lets the business charge fairly for two distinct kinds of value.</div>
+        </div><div class="cap">
+          <div class="ct">Proof of who actually ran your job</div>
+          <div class="cd">Each completed job comes with a tamper-proof, independently checkable signature proving it ran on the genuine platform.</div>
+          <div class="cs"><span class="sl">Solves</span>Gives customers cryptographic confidence that results weren&#x27;t forged or run by an impostor, the trust anchor any remote-compute service needs.</div>
+        </div><div class="cap">
+          <div class="ct">Portable workspaces (Workspaces)</div>
+          <div class="cd">Captures an entire project environment as a reusable snapshot that any machine can rebuild from in seconds without reinstalling everything.</div>
+          <div class="cs"><span class="sl">Solves</span>Eliminates the wasted time of rebuilding environments from scratch every time and re-doing full builds after tiny changes.</div>
+        </div><div class="cap">
+          <div class="ct">Git-compatible collaboration built for agent fleets (hugit)</div>
+          <div class="cd">Keeps the familiar version-control model but reworks the teamwork flow so many AI agents can work in parallel without blocking each other.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes the bottlenecks of a workflow designed for one human typing at a time, which becomes a wall when dozens of agents collaborate under one person&#x27;s direction.</div>
+        </div><div class="cap">
+          <div class="ct">Web home for repositories and teams (githugr)</div>
+          <div class="cd">Provides the human-facing website for hosting code, reviewing changes, and collaborating, reusing the family&#x27;s shared login and compute.</div>
+          <div class="cs"><span class="sl">Solves</span>Gives the family a friendly visual front door instead of being command-line only, so non-experts can use it and teams have one place to work together.</div>
+        </div><div class="cap">
+          <div class="ct">Secrets vault and safe credential proxy (Wallet)</div>
+          <div class="cd">Stores real API keys in a locked vault and hands out masked, instantly-revocable stand-in tokens, so apps and AI agents never see the actual secret.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents API keys from leaking through code, agents, or teammates, with the ability to revoke or rotate access instantly if something goes wrong.</div>
+        </div><div class="cap">
+          <div class="ct">AI build-team management discipline (the methodology)</div>
+          <div class="cd">A structured method that breaks work into non-conflicting pieces for AI coding agents and rigorously checks every result before it&#x27;s accepted.</div>
+          <div class="cs"><span class="sl">Solves</span>Tackles the chaos of fleets of coding agents producing conflicting work, runaway cost, and unreliable output, and is the very approach that built this entire product family.</div>
+        </div><div class="cap">
+          <div class="ct">Network-effect efficiency moat</div>
+          <div class="cd">Identical public building blocks are stored once and safely shared across all customers while every customer&#x27;s private work stays fully isolated.</div>
+          <div class="cs"><span class="sl">Solves</span>Turns scale into a durable advantage, more customers make the platform faster and cheaper for everyone, an edge a smaller competitor cannot match, while never mixing private data.</div>
+        </div><div class="cap">
+          <div class="ct">Guaranteed warm storage as a paid tier (Pinning)</div>
+          <div class="cd">Lets customers pay to keep chosen data permanently ready and pre-loaded across regions instead of being cleaned up over time.</div>
+          <div class="cs"><span class="sl">Solves</span>Protects the business from runaway storage costs while selling a premium speed guarantee, and resolves the catch that savings normally only show up on later builds, not the first cold one.</div>
+        </div><div class="cap">
+          <div class="ct">Works with the tools teams already use</div>
+          <div class="cd">The shared storage foundation plugs into multiple popular build and programming toolchains out of the box.</div>
+          <div class="cs"><span class="sl">Solves</span>Lets customers adopt the platform without changing their existing tools, and means a result cached once is reusable everywhere instead of being re-cached per tool.</div>
+        </div><div class="cap">
+          <div class="ct">One compliant data-deletion path across the family</div>
+          <div class="cd">When a user is deleted in the shared identity layer, that single event triggers verifiable erasure of their data across every product that holds it.</div>
+          <div class="cs"><span class="sl">Solves</span>Gives the whole family one auditable, regulation-ready deletion story instead of many ad-hoc ones, reducing privacy-compliance risk and manual effort.</div>
+        </div><div class="cap">
+          <div class="ct">Built-in drift protection between products</div>
+          <div class="cd">The shared agreements that let the products talk to each other are continuously checked so a change on one side can&#x27;t silently break another.</div>
+          <div class="cs"><span class="sl">Solves</span>Prevents the silent breakages and outages that creep in when separately-maintained products fall out of sync over time.</div>
+        </div></div>
+    </section><section id="s10">
+      <h2>Why It Wins (Positioning)</h2>
+      <p class="blurb">CoreLink&#x27;s case for why customers choose it — a fully-built, fact-checked sales and positioning library that lets a lean vendor sell trustworthy infrastructure to skeptical, security-conscious buyers without overpromising.</p>
+      <div class="caps"><div class="cap">
+          <div class="ct">Honest competitor comparison</div>
+          <div class="cd">Lays out, for each rival, where the competitor wins first and where CoreLink wins, plus a clear list of cases where CoreLink is openly not the right choice.</div>
+          <div class="cs"><span class="sl">Solves</span>Wins the trust of skeptical technical buyers who instantly distrust competitor-bashing, and shortens the sales cycle by quickly qualifying or disqualifying a prospect.</div>
+        </div><div class="cap">
+          <div class="ct">Every claim is provable</div>
+          <div class="cd">Ties every number and bold statement in the sales material back to a verifiable internal source, with a rule that no uncited claim is allowed.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes the biggest objection a cautious buyer has toward a young vendor — &#x27;prove it&#x27; — so the company never has to bluff and buyers can verify independently.</div>
+        </div><div class="cap">
+          <div class="ct">Objection-handling playbook</div>
+          <div class="cd">Provides ready, non-defensive answers to the 30 most common deal-stalling fears, each acknowledging the concern before countering it with evidence.</div>
+          <div class="cs"><span class="sl">Solves</span>Lets a small team handle tough procurement pushback consistently and credibly instead of improvising, keeping deals from stalling.</div>
+        </div><div class="cap">
+          <div class="ct">Vendor-continuity assurance</div>
+          <div class="cd">Answers the &#x27;you&#x27;re a tiny company, what if you disappear&#x27; fear with concrete safeguards, including a one-command export of all customer data to any other storage provider.</div>
+          <div class="cs"><span class="sl">Solves</span>Defuses the hardest objection for a small vendor by making the customer&#x27;s exit a guaranteed, contract-able right rather than a matter of trust.</div>
+        </div><div class="cap">
+          <div class="ct">No lock-in by design</div>
+          <div class="cd">Guarantees customers can leave at any time with a single command, free data export, and a migration credit for moving both in and out.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes the lock-in fear that blocks adoption of any storage vendor, turning &#x27;how do we get out&#x27; from a hostage negotiation into a simple setting change.</div>
+        </div><div class="cap">
+          <div class="ct">Lower-bill economics</div>
+          <div class="cd">Highlights that CoreLink does not charge the data-transfer fees that dominate the cost of competing setups, backed by a public cost calculator.</div>
+          <div class="cs"><span class="sl">Solves</span>Turns the &#x27;too expensive&#x27; worry into a savings story by eliminating the single largest hidden cost in running a build cache yourself.</div>
+        </div><div class="cap">
+          <div class="ct">Security guarantees that are mechanically enforced</div>
+          <div class="cd">Frames its core security promises — keeping customers&#x27; data fully separated, honoring where data is stored, and customer-controlled encryption — as conditions automatically checked and enforced on every change, not marketing claims.</div>
+          <div class="cs"><span class="sl">Solves</span>Counters an industry full of empty security claims by giving buyers and their auditors guarantees they can independently confirm, which rivals cannot offer.</div>
+        </div><div class="cap">
+          <div class="ct">Customer-controlled encryption</div>
+          <div class="cd">Lets customers hold their own encryption keys so CoreLink cannot read their data, with a kill switch that cuts off access within minutes and no hidden operator override.</div>
+          <div class="cs"><span class="sl">Solves</span>Wins regulated buyers worried about legal-disclosure demands or insider threats by making &#x27;we cannot decrypt your data&#x27; a structural fact, not a promise.</div>
+        </div><div class="cap">
+          <div class="ct">Tamper-proof, independently verifiable audit trail</div>
+          <div class="cd">Provides an activity record that a customer&#x27;s own auditor can independently re-verify end to end, kept for seven years, rather than ordinary logs.</div>
+          <div class="cs"><span class="sl">Solves</span>Satisfies auditors and regulators burned by fake compliance records, by letting them check the evidence themselves instead of taking the vendor&#x27;s word.</div>
+        </div><div class="cap">
+          <div class="ct">Guaranteed data residency</div>
+          <div class="cd">Keeps each customer&#x27;s data within their chosen region across all systems, with a per-customer proof and legally reviewed data-protection agreements in multiple languages.</div>
+          <div class="cs"><span class="sl">Solves</span>Wins European and Brazilian privacy-law approvals that single-region competitors cannot meet, turning data sovereignty into a contractual guarantee.</div>
+        </div><div class="cap">
+          <div class="ct">Long-term stability promise</div>
+          <div class="cd">Commits in writing to a two-year notice before retiring anything customers rely on, with that floor automatically enforced so it can only ever be extended.</div>
+          <div class="cs"><span class="sl">Solves</span>Removes the fear of betting heavy daily workloads on a young vendor by giving large buyers the long-term stability commitment they require before integrating.</div>
+        </div><div class="cap">
+          <div class="ct">Graceful overload handling</div>
+          <div class="cd">Explains that when usage limits are hit, the system signals a brief slow-down that retries automatically so builds still finish, with clear signals to self-diagnose.</div>
+          <div class="cs"><span class="sl">Solves</span>Answers the &#x27;a traffic spike will break my pipeline overnight&#x27; fear, removing a major perceived integration risk.</div>
+        </div><div class="cap">
+          <div class="ct">Master question-and-answer library</div>
+          <div class="cd">Acts as the single source of truth with 50 canonical answers covering pricing, security, compliance, performance, operations, and migration.</div>
+          <div class="cs"><span class="sl">Solves</span>Keeps every answer consistent across conversations for a lean sales team, since consistency itself signals reliability to buyers.</div>
+        </div><div class="cap">
+          <div class="ct">Pricing and margin discipline</div>
+          <div class="cd">Maintains an internal worksheet mapping each pricing tier to its true cost, target margins, and discount limits.</div>
+          <div class="cs"><span class="sl">Solves</span>Lets the team negotiate confidently without ever discounting below cost, protecting the healthy margins that make the business model viable.</div>
+        </div><div class="cap">
+          <div class="ct">Low-risk, reversible migration</div>
+          <div class="cd">Lets a customer run CoreLink alongside their current cache, switch over with one change, and roll back instantly, with a short no-commitment pilot offered.</div>
+          <div class="cs"><span class="sl">Solves</span>Defeats the &#x27;switching is too disruptive&#x27; objection by making every step reversible, the only credible pitch to engineers protecting their daily workflow.</div>
+        </div><div class="cap">
+          <div class="ct">Build-it-yourself cost teardown</div>
+          <div class="cd">Breaks down the year-plus of engineering effort and ongoing transfer costs a team would spend to replicate CoreLink in-house.</div>
+          <div class="cs"><span class="sl">Solves</span>Reframes &#x27;we can just build this&#x27; from a feature debate into an honest cost-of-engineering-time decision most leaders would rather avoid.</div>
+        </div><div class="cap">
+          <div class="ct">Compliance-readiness story</div>
+          <div class="cd">Presents a dated, evidence-backed path toward major security and privacy certifications, with the supporting materials shareable under confidentiality.</div>
+          <div class="cs"><span class="sl">Solves</span>Turns a &#x27;no certification yet&#x27; procurement blocker into a credible in-progress conversation that lets deals advance before certifications land.</div>
+        </div><div class="cap">
+          <div class="ct">Measure-it-yourself integrity stance</div>
+          <div class="cd">Declines to promise specific savings and instead offers a short trial period where the buyer measures the real benefit against their existing setup.</div>
+          <div class="cs"><span class="sl">Solves</span>Builds trust with technical buyers who distrust inflated promises, making honesty plus proof more persuasive than a guarantee they wouldn&#x27;t believe.</div>
+        </div><div class="cap">
+          <div class="ct">Works across every toolchain</div>
+          <div class="cd">Plugs into a wide range of programming languages, build tools, and container and machine-learning pipelines through one shared system rather than a single-ecosystem tool.</div>
+          <div class="cs"><span class="sl">Solves</span>Counters being pigeonholed as a one-tool product and offers polyglot teams a single solution in place of many separate caches.</div>
+        </div><div class="cap">
+          <div class="ct">Win-win flywheel and network-effect moat</div>
+          <div class="cd">Describes how the same technology makes builds faster for customers and cheaper to run for CoreLink, while every new customer makes the shared cache faster and cheaper for all.</div>
+          <div class="cs"><span class="sl">Solves</span>Gives the business a defensible growth story that a smaller or single-customer competitor cannot match.</div>
+        </div><div class="cap">
+          <div class="ct">Build-acceleration pricing angle</div>
+          <div class="cd">Frames a planned compute offering as unlimited usage at a flat per-capacity price, undercutting rivals that bill per minute and penalize heavy users.</div>
+          <div class="cs"><span class="sl">Solves</span>Positions CoreLink against the entire field on the cost axis buyers feel most, while a tailwind of rivals raising prices opens the door.</div>
+        </div><div class="cap">
+          <div class="ct">Founder-origin credibility narrative</div>
+          <div class="cd">Tells the authentic story of a solo founder solving their own problem and openly listing what is not yet built alongside what is.</div>
+          <div class="cs"><span class="sl">Solves</span>Turns the small-vendor weakness into a credibility asset with technical audiences allergic to marketing-speak, by earning belief through candor.</div>
+        </div><div class="cap">
+          <div class="ct">Customer-retention save motion</div>
+          <div class="cd">Defines disciplined plays for keeping at-risk customers, with discount limits tied to true cost and a cap on how often a customer can be saved.</div>
+          <div class="cs"><span class="sl">Solves</span>Protects margin at renewal time by turning warning signs into a repeatable, founder-led response instead of reflexive money-losing discounts.</div>
+        </div></div>
+    </section></main>
+<footer>CoreLink &amp; the HuGR family — feature overview · June 2026. A plain-language companion to the full technical catalogue.</footer>
+</body></html>
