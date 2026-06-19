@@ -318,6 +318,21 @@ Each entry cross-references:
   status. `active`/`trialing` behavior is unchanged. Regression test added.
 
 ### Security
+- **PAT plaintext no longer rides the session JWT / client surface (CRED, HIGH — CTRL-CRED-001).**
+  The signup-worker wrote the freshly-minted PAT plaintext into Clerk **`public_metadata`**, which is
+  client-readable (`useUser()`) AND embedded in the session JWT — so the secret was broadcast to every
+  service that validated the session (incl. githugr) and, because the only clear was the client-driven
+  `/welcome` reveal, it persisted FOREVER for any user who never opened `/welcome`. Fixed: the signup
+  flow now writes `pat_plaintext` (+ a `pat_revealed_at` clock) to Clerk **`private_metadata`**
+  (backend-only — never in the JWT, never client-readable); `public_metadata` keeps ONLY the legit
+  session claims `{ tenant_id, region }`. Added a **guaranteed hourly scrub cron**
+  (`apps/signup-worker/src/webhooks/pat_scrub_cron.ts`, wired into the worker's `scheduled()` on the
+  existing `0 * * * *` tick) that clears `private_metadata.pat_plaintext` for any user whose reveal is
+  older than a 1h TTL (fail-closed: a secret with no usable reveal clock is also scrubbed), so an
+  un-visited `/welcome` cannot leave the secret resident. The e2e check (`scripts/e2e-clerk-signup.sh`)
+  now asserts the PAT is ABSENT from `public_metadata` and present in `private_metadata`. Unit tests
+  cover the metadata split and the scrub cron (stale→PATCH null, fresh→skip). The plaintext is never
+  logged on any path. (signup-worker; `apps/admin-ui` welcome-read side tracked separately as WP-B.)
 - **OCI blob upload could persist a digest-lie (cache poisoning — rt-nuclear cycle-2 #2).**
   `OciMoatStore::finalize_upload` ASSEMBLED and PERSISTED the uploaded bytes before the push handler's
   `verify_against_bytes` ran, and a mismatch left the bytes persisted under the (lying) `?digest=` key

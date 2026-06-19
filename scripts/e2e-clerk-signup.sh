@@ -8,8 +8,9 @@
 #   1. Create a real Clerk user via the Clerk Backend API
 #   2. Poll D1 every 2s (up to 30s) for the tenant row
 #   3. Query the pat row for that tenant
-#   4. Inspect Clerk publicMetadata for tenant_id + pat_plaintext
-#   5. Exercise /v1/users/me with the minted PAT
+#   4. Inspect Clerk metadata split: tenant_id/region in public_metadata,
+#      pat_plaintext in private_metadata ONLY (NOT public) — CTRL-CRED-001
+#   5. Exercise /v1/users/me with the minted PAT (read from private_metadata)
 #   6. DELETE the test user from Clerk (trap-guarded cleanup)
 #
 # Usage:
@@ -295,9 +296,13 @@ info "  scope:     ${PAT_SCOPE}"
 info "  expires_ms: ${PAT_EXPIRES}"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STAGE 4 — Inspect Clerk publicMetadata
+# STAGE 4 — Inspect Clerk metadata (CTRL-CRED-001)
+#   public_metadata  → { tenant_id, region }  (legit session claims, NO secret)
+#   private_metadata → { pat_plaintext, ... } (backend-only — the PAT lives here)
+# The PAT plaintext MUST NOT appear in public_metadata (it would ride the
+# session JWT + be client-readable). This stage asserts that split.
 # ─────────────────────────────────────────────────────────────────────────────
-step "4 — Inspect Clerk publicMetadata for user ${TEST_USER_ID}"
+step "4 — Inspect Clerk metadata split for user ${TEST_USER_ID}"
 
 META_RESP=$(curl -sS \
   --max-time 15 \
@@ -309,7 +314,9 @@ META_RESP=$(curl -sS \
 
 META_TENANT_ID=$(printf '%s' "${META_RESP}" | jq -r '.public_metadata.tenant_id // empty' 2>/dev/null || true)
 META_REGION=$(printf '%s' "${META_RESP}" | jq -r '.public_metadata.region // empty' 2>/dev/null || true)
-META_PAT_RAW=$(printf '%s' "${META_RESP}" | jq -r '.public_metadata.pat_plaintext // empty' 2>/dev/null || true)
+# SECURITY: the PAT plaintext must come from PRIVATE metadata, never public.
+META_PUBLIC_PAT=$(printf '%s' "${META_RESP}" | jq -r '.public_metadata.pat_plaintext // empty' 2>/dev/null || true)
+META_PAT_RAW=$(printf '%s' "${META_RESP}" | jq -r '.private_metadata.pat_plaintext // empty' 2>/dev/null || true)
 
 # Security: never log the full pat_plaintext
 if [[ -n "${META_PAT_RAW}" ]] && [[ "${META_PAT_RAW}" != "null" ]]; then
@@ -340,17 +347,26 @@ if [[ "${META_TENANT_ID}" != "${TENANT_ID}" ]]; then
   exit 1
 fi
 
-if [[ "${META_PAT_PUBLISHED}" != "true" ]]; then
-  fail "publicMetadata.pat_plaintext is missing"
+# CTRL-CRED-001: the secret must NOT be in public_metadata (JWT/client surface).
+if [[ -n "${META_PUBLIC_PAT}" ]] && [[ "${META_PUBLIC_PAT}" != "null" ]]; then
+  fail "SECURITY REGRESSION: pat_plaintext present in public_metadata — it must live in private_metadata only"
   echo ""
-  echo "HARD PAUSE: metadata_published = false (pat_plaintext missing)"
+  echo "HARD PAUSE: the PAT plaintext is on the JWT/client-readable surface."
   exit 1
 fi
 
-pass "Clerk publicMetadata populated"
-info "  metadata.tenant_id: ${META_TENANT_ID}"
-info "  metadata.region:    ${META_REGION}"
-info "  metadata.pat_plaintext: <${PAT_LEN} chars, last4=${PAT_LAST4}>"
+if [[ "${META_PAT_PUBLISHED}" != "true" ]]; then
+  fail "privateMetadata.pat_plaintext is missing (PAT not delivered via private_metadata)"
+  echo ""
+  echo "HARD PAUSE: metadata_published = false (private pat_plaintext missing)"
+  exit 1
+fi
+
+pass "Clerk metadata split correct (public claims, private PAT)"
+info "  public_metadata.tenant_id:  ${META_TENANT_ID}"
+info "  public_metadata.region:     ${META_REGION}"
+info "  public_metadata.pat_plaintext: ABSENT (correct — secret is private)"
+info "  private_metadata.pat_plaintext: <${PAT_LEN} chars, last4=${PAT_LAST4}>"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STAGE 5 — Exercise PAT against /v1/users/me

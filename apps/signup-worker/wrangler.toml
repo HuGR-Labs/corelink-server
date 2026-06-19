@@ -23,8 +23,11 @@ head_sampling_rate = 1
 # Secrets (bind via `wrangler secret put`):
 #   CLERK_WEBHOOK_SECRET         — svix signing key from Clerk dashboard.
 #   CLERK_SECRET_KEY             — Clerk Backend API secret key (sk_test_... or sk_live_...).
-#                                  Used to write tenant_id + region + pat_plaintext to
-#                                  Clerk public metadata for the /welcome session claim.
+#                                  Writes tenant_id + region to Clerk PUBLIC metadata
+#                                  (session claim) and the one-time pat_plaintext to
+#                                  PRIVATE metadata (backend-only) for the /welcome reveal.
+#                                  Also used by the hourly PAT-scrub cron (CTRL-CRED-001)
+#                                  to clear stale private_metadata.pat_plaintext.
 #   CORELINK_INTERNAL_AUTH_KEY   — shared secret for X-Corelink-Internal-Auth header.
 #                                  Must match the container + main worker binding.
 #                                  Used to call /_internal/pat/mint on the container.
@@ -113,9 +116,12 @@ max_batch_timeout = 30
 max_retries = 10
 dead_letter_queue = "corelink-dsr-erasure-dlq"
 
-# DSR 24h verification sweep (WI-S11-008 incr 5). Hourly tick → src/index.ts
-# `scheduled()` → runDsrVerifySweep → container POST /_internal/dsr/verify for
-# every DSR past its 24h SLA deadline (idempotent; inert until
-# CORELINK_INTERNAL_AUTH_KEY is bound — task #46).
+# Hourly Cron Trigger → src/index.ts `scheduled()`. Drives TWO sweeps:
+#   1. DSR 24h verification sweep (WI-S11-008 incr 5) → runDsrVerifySweep →
+#      container POST /_internal/dsr/verify for every DSR past its 24h SLA
+#      deadline (idempotent; inert until CORELINK_INTERNAL_AUTH_KEY bound — #46).
+#   2. PAT-plaintext scrub (CTRL-CRED-001) → runPatScrubSweep → Clerk Backend
+#      API PATCH clearing private_metadata.pat_plaintext for any user whose
+#      reveal is older than the TTL (inert until CLERK_SECRET_KEY bound).
 [triggers]
 crons = ["0 * * * *"]
