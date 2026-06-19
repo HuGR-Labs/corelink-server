@@ -1,0 +1,70 @@
+# Build + push the prod container image on a GitHub-HOSTED Linux runner
+# (`ubuntu-latest`) — i.e. OFF the founder's dev Mac.
+#
+# Why: the prod container is a native Rust binary in a Docker image; today it's
+# built on the self-hosted Mac (`[self-hosted, mac, corelink-builder]`), which is
+# dev-only + fragile (os-error-2, contention, crashes). GitHub-hosted ubuntu-latest
+# is Linux x86 with docker + buildx pre-installed → builds the linux/amd64 image
+# natively, with NO third-party (Blacksmith needs a GitHub Org; this account is
+# personal) and NO dependency on the founder's machine.
+#
+# Cost: GitHub Actions minutes. Private-repo Free tier = 2000 min/mo; a build is
+# ~20-40 min (cacheable). Set a $0 spending limit (Settings → Billing → Actions)
+# to make it HARD-STOP at the free tier — never any charge.
+#
+# Manual-only. Runs the same scripts the Mac path ran (build → multi-region push),
+# so the result is identical to the 2026-06-18 prod redeploy, just off-Mac.
+name: container-build-push-prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "build" to confirm building + pushing the prod container image to the CF registries.'
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  build-push:
+    name: build + push prod container (ubuntu-latest, off-Mac)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Confirm intent
+        run: |
+          if [ "${{ inputs.confirm }}" != "build" ]; then
+            echo "::error::Type 'build' in the confirm input to proceed."; exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0 # full history so `git rev-parse --short HEAD` resolves the image tag
+
+      - name: Runner proof (off-Mac) + tooling
+        run: |
+          echo "=== runner (should be Linux, NOT the Mac) ==="; uname -a
+          echo "=== docker ==="; docker version --format '{{.Server.Version}}'
+          echo "=== buildx ==="; docker buildx version
+          echo "=== disk ==="; df -h /
+
+      - name: Build prod container image (Dockerfile → corelink-server:prod + :<sha>)
+        run: bash scripts/build-container-prod.sh
+
+      - name: Install wrangler (4.x — required for [[containers]] push)
+        run: npm install -g wrangler@4.95.0
+
+      - name: Push image to the 5 CF Containers registries
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          WRANGLER: wrangler
+        run: bash scripts/push-container-multiregion.sh --apply
+
+      - name: Next step (repin + deploy)
+        run: |
+          echo "Built+pushed corelink-server:$(git rev-parse --short HEAD) to the CF registries."
+          echo "NEXT (off-Mac too): repin wrangler.toml [[env.*.containers]] image= to the new tag, then run cf-deploy-prod."
