@@ -29,7 +29,7 @@ permissions:
 jobs:
   build-push:
     name: build + push prod container (ubuntu-latest, off-Mac)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 75
     steps:
       - name: Confirm intent
