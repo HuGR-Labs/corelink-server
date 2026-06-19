@@ -23,6 +23,21 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Native-REST bulk CAS endpoints** (`crates/corelink-container/src/routes/cas.rs`):
+  `POST /v1/cas/:tenant/batch` (length-framed bulk write), `POST /v1/cas/:tenant/batch-read`
+  (length-framed bulk read), and `POST /v1/cas/:tenant/batch-exists` (bulk HEAD-class
+  existence probe). The single-object `/v1/cas/:tenant/:hash` path costs one D1 round-trip
+  per object, which dominates wall-clock on bulk git ingest; these collapse N objects into
+  ONE request — one auth + one scope check + one PAT-gate + a **single** `QuotaGate::check_batch(n)`
+  charge (never per-object, preserving the #318 $-ceiling discipline) + batched storage. FROZEN
+  contract: upload content-type `application/x-hugit-cas-batch` (415 otherwise; read-side routes
+  also accept `application/x-ndjson`), caps of ≤2000 objects AND ≤8 MiB per batch (413
+  `batch_too_large`, sits under the global 10 MiB body limit), framing errors ⇒ 400, cross-tenant
+  ⇒ 403. The upload commits each object independently (per-object `created`/`exists`/`error`)
+  so one bad object never aborts the batch; content-verify and storage are delegated to the SAME
+  `state.write`/`state.read` chokepoints the single-object path uses. Full route + framing-helper
+  + 16 route tests (happy/idempotent/per-object-error/over-cap/415/400/round-trip/tombstone-gone/
+  exists/cross-tenant/quota-charged-once).
 - **`specs/_runbooks/RB-INCIDENT-RESPONSE.md` (DRAFT)** — master incident-response
   runbook, authored to close a compliance-doc gap: the DPA §9 (all 3 locales), the
   PCI-DSS SAQ-A Q19, and a sealed S20 adversarial-summary finding all cite this path,
