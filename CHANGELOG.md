@@ -99,6 +99,13 @@ Each entry cross-references:
   `docs/security/2026-06-18-gitleaks-baseline-triage.md`.
 
 ### Fixed
+- **`build-container-prod.sh` smoke probe could hang the build indefinitely.** Step 6 ran an
+  unbounded foreground `docker run --rm … --version`; the CoreLink server binary ignores that flag
+  and BOOTS instead of exiting, so the probe blocked forever (observed: a 30+ minute hang during the
+  prod redeploy, with a stray booted container left running). Added a portable `bounded_run` helper
+  (prefers `timeout`/`gtimeout`, pure-bash watchdog fallback for the macOS build host) wrapping both
+  flag-probes, and named the probe containers so a bound-killed probe is force-removed instead of
+  lingering. A bound-kill now cleanly falls through to the authoritative detached gRPC start-probe.
 - **Main worker was not deployable — added the missing `nodejs_compat` flag.** `@sentry/cloudflare`
   (added to `worker/src/index.ts` for observability) imports `node:async_hooks`, which the CF API
   rejected at deploy with `No such module "node:async_hooks"` [10021] because the root `wrangler.toml`
