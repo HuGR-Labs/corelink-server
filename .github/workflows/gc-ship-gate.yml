@@ -38,6 +38,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -55,7 +59,7 @@ jobs:
   # --------------------------------------------------------------------
   prop-and-tests:
     name: corelink-gc tests (lib + prop @ 10k iter + chaos)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -84,7 +88,7 @@ jobs:
   # --------------------------------------------------------------------
   rb-dry-runs:
     name: RB-FM-300 / RB-FM-404 / RB-FM-305 host-side dry-runs
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: [prop-and-tests]
     steps:
@@ -114,7 +118,7 @@ jobs:
   # --------------------------------------------------------------------
   dashboard-smoke:
     name: DASH-GC parse smoke
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -144,7 +148,7 @@ jobs:
   # --------------------------------------------------------------------
   gc-ship-gate:
     name: GC ship gate (aggregate)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 1
     needs: [prop-and-tests, rb-dry-runs, dashboard-smoke]
     steps:

@@ -66,6 +66,10 @@ permissions:
   checks: write
   pull-requests: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -82,7 +86,7 @@ jobs:
   # the `paths:` filter), or (c) workflow_dispatch.
   perf-regression:
     name: criterion regression gate
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     if: >-
       github.event_name == 'workflow_dispatch'

@@ -47,6 +47,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -66,7 +70,7 @@ jobs:
   # --------------------------------------------------------------------
   prop-and-tests:
     name: corelink-{analytics,telemetry,tracing,audit-chain,slo} tests (lib + prop @ 10k iter)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -104,7 +108,7 @@ jobs:
   # --------------------------------------------------------------------
   rb-dry-runs:
     name: RB-FM-153 + RB-OBS-CARDINALITY-001 host-side dry-runs
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: [prop-and-tests]
     steps:
@@ -131,7 +135,7 @@ jobs:
   # --------------------------------------------------------------------
   dashboard-smoke:
     name: DASH-* + dash-slo-multi-burn parse smoke
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -170,7 +174,7 @@ jobs:
   # --------------------------------------------------------------------
   s09-ship-gate:
     name: S-09 ship gate (aggregate)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 1
     needs: [prop-and-tests, rb-dry-runs, dashboard-smoke]
     steps:

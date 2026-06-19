@@ -40,6 +40,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -57,7 +61,7 @@ jobs:
   # --------------------------------------------------------------------
   prop-and-tests:
     name: corelink-{ratelimit,cas,billing,rate-headers} tests (lib + prop @ 10k iter)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -92,7 +96,7 @@ jobs:
   # --------------------------------------------------------------------
   rb-dry-runs:
     name: RB-FM-250 host-side dry-run
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: [prop-and-tests]
     steps:
@@ -116,7 +120,7 @@ jobs:
   # --------------------------------------------------------------------
   dashboard-smoke:
     name: DASH-RATE parse smoke
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -146,7 +150,7 @@ jobs:
   # --------------------------------------------------------------------
   s08-ship-gate:
     name: S-08 ship gate (aggregate)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 1
     needs: [prop-and-tests, rb-dry-runs, dashboard-smoke]
     steps:
