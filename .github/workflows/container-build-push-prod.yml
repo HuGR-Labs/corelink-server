@@ -1,18 +1,34 @@
-# Build + push the prod container image on a GitHub-HOSTED Linux runner
-# (`ubuntu-latest`) — OFF the founder's dev Mac.
+# Build + push the prod container image on a GitHub-HOSTED Linux runner — OFF the
+# founder's dev Mac.
 #
 # History: the off-Mac build was blocked twice on 2026-06-19 — Blacksmith needs a
 # GitHub Org (account was personal), and GitHub-hosted was billing-blocked. BOTH
 # were resolved when the account moved to the `HumanGuardrail` GitHub Org + a paid
-# GitHub plan was added. So we're back on GitHub-hosted ubuntu-latest: Linux x86
-# with docker + buildx pre-installed → builds the linux/amd64 image natively, no
-# Mac, no Docker-Desktop-on-the-laptop, no third-party.
-# (Blacksmith is now also viable as a faster/cached future option, but ubuntu-latest
-#  is the simplest path and needs no extra setup.)
+# GitHub plan was added. So we're back on GitHub-hosted runners: Linux x86 with
+# docker + buildx → builds the linux/amd64 image natively, no Mac, no
+# Docker-Desktop-on-the-laptop, no third-party.
 #
-# Cost: GitHub Actions minutes (paid plan includes a monthly allotment; a build is
-# ~20-40 min, cacheable). Manual-only. Runs the same scripts the Mac path ran
-# (build → multi-region push), so the result matches the prior prod redeploy.
+# === 2026-06-20: persist the Dockerfile cache MOUNTS across runs ===
+#
+# The Dockerfile is fast (~10-15 min) ONLY on a host with a PERSISTENT BuildKit
+# (the founder's Mac): it uses `--mount=type=cache` for the cargo registry, the
+# cargo git db, and `/build/target`. On an EPHEMERAL GitHub-hosted runner those
+# mounts start EMPTY every run → a full cold compile of the 71-crate workspace
+# (~57-120 min, $20+ burned). The fix: make the ephemeral runner behave like the
+# warm Mac by persisting the three cache mounts into the GitHub Actions cache via
+# `reproducible-containers/buildkit-cache-dance` (inject-before / extract-after) +
+# `actions/cache` for the across-run store.
+#
+# HARD CONSTRAINT (do NOT change): we do NOT touch the Dockerfile's dependency
+# caching DESIGN. No cargo-chef, no stub/skeleton dep layer, no layer-cached deps.
+# The Dockerfile header documents a PROD INCIDENT caused exactly by layer-cached
+# deps (a stub binary shipped, bit-identical image hashes). The cache-MOUNT design
+# is deliberate + incident-proof. We persist the MOUNTS, nothing else.
+#
+# The build step uses docker/build-push-action with `load: true` so the image is
+# loaded into the local docker daemon as `corelink-server:<short-sha>` (the ref
+# `scripts/push-container-multiregion.sh` consumes as LOCAL_REF) + `:prod`. Push
+# stays exactly as before: scripts/push-container-multiregion.sh --apply.
 name: container-build-push-prod
 
 on:
@@ -25,11 +41,13 @@ on:
 
 permissions:
   contents: read
+  # cache write (actions/cache + buildkit-cache-dance save) needs actions: write.
+  actions: write
 
 jobs:
   build-push:
-    name: build + push prod container (ubuntu-latest, off-Mac)
-    runs-on: Turbo
+    name: build + push prod container (cache-mount persisted, off-Mac)
+    runs-on: ubuntu-x64-4core
     timeout-minutes: 240
     steps:
       - name: Confirm intent
@@ -43,15 +61,83 @@ jobs:
         with:
           fetch-depth: 0 # full history so `git rev-parse --short HEAD` resolves the image tag
 
-      - name: Runner + tooling check (proof it's off-Mac Linux)
+      - name: Compute short SHA + reproducible-build args
+        id: meta
         run: |
-          echo "=== runner ==="; uname -a
-          echo "=== docker ==="; docker version --format '{{.Server.Version}}'
-          echo "=== buildx ==="; docker buildx version
-          echo "=== disk ==="; df -h /
+          # ADR-0015: SOURCE_DATE_EPOCH from HEAD commit timestamp (matches
+          # scripts/build-container-prod.sh). RUST_VERSION mirrors the script;
+          # both are passed as build-args for fidelity with the prior path.
+          {
+            echo "short_sha=$(git rev-parse --short HEAD)"
+            echo "source_date_epoch=$(git log -1 --format=%ct)"
+            echo "rust_version=1.91"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Build prod container image (Dockerfile → corelink-server:prod + :<sha>)
-        run: bash scripts/build-container-prod.sh
+      - name: Set up Docker Buildx (gha-cache-capable builder)
+        id: buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      # Persist the three Dockerfile cache mounts across runs. actions/cache holds
+      # the across-run store; buildkit-cache-dance injects it INTO the build's
+      # cache mounts before build and extracts it back after. Key busts on a
+      # Cargo.lock change (deps changed) or a Dockerfile change (mount layout).
+      - name: Cache cargo mounts (across-run store)
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        id: cargo-cache
+        with:
+          path: cache-mount
+          key: corelink-container-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('Dockerfile') }}
+          restore-keys: |
+            corelink-container-cargo-${{ hashFiles('**/Cargo.lock') }}-
+            corelink-container-cargo-
+
+      - name: Inject cargo cache mounts into BuildKit
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          cache-dir: cache-mount
+          # cache-map keys = subdir under cache-dir; values = mount target + id
+          # matching the Dockerfile `--mount=type=cache,id=...` values EXACTLY.
+          cache-map: |
+            {
+              "corelink-cargo-registry": {
+                "target": "/usr/local/cargo/registry",
+                "id": "corelink-cargo-registry"
+              },
+              "corelink-cargo-git": {
+                "target": "/usr/local/cargo/git",
+                "id": "corelink-cargo-git"
+              },
+              "corelink-target": {
+                "target": "/build/target",
+                "id": "corelink-target"
+              }
+            }
+          # If the across-run store hit, the mounts are already populated by inject
+          # — skip the post-build extraction (nothing new to save).
+          skip-extraction: ${{ steps.cargo-cache.outputs.cache-hit }}
+
+      - name: Build prod container image (Dockerfile → corelink-server:<sha> + :prod)
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          load: true   # load into the local docker daemon for the push script
+          push: false
+          # LOCAL_REF the push script consumes is `corelink-server:<short-sha>`
+          # (scripts/push-container-multiregion.sh:57). :prod kept for parity.
+          tags: |
+            corelink-server:prod
+            corelink-server:${{ steps.meta.outputs.short_sha }}
+          # NB: the Dockerfile hardcodes FROM rust:1.91 + does not declare
+          # ARG RUST_VERSION / ARG SOURCE_DATE_EPOCH, so these build-args are
+          # currently inert (BuildKit ignores undeclared args). Passed anyway to
+          # mirror scripts/build-container-prod.sh and to stay correct if the
+          # Dockerfile later wires the ARGs.
+          build-args: |
+            RUST_VERSION=${{ steps.meta.outputs.rust_version }}
+            SOURCE_DATE_EPOCH=${{ steps.meta.outputs.source_date_epoch }}
 
       - name: Install wrangler (4.x — required for [[containers]] push)
         run: npm install -g wrangler@4.95.0
