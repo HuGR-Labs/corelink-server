@@ -149,7 +149,9 @@ function rotateFetch(
   const init: RequestInit = { method, headers };
   if (method === "POST") {
     init.body =
-      opts.body !== undefined ? JSON.stringify(opts.body) : JSON.stringify({ pat_id: OLD_PAT_ID });
+      opts.body !== undefined
+        ? JSON.stringify(opts.body)
+        : JSON.stringify({ pat_id: OLD_PAT_ID, owner_tenant: TENANT });
   }
   const req = new Request("http://localhost/internal/v1/auth/rotate", init);
   return workerHandler.fetch!(req, env, makeCtx());
@@ -208,7 +210,10 @@ describe("POST /internal/v1/auth/rotate — clw auth rotate", () => {
     const captured: { req?: Request } = {};
     const revokeCapture: { binds?: unknown[]; called?: boolean } = {};
     const env = makeEnv({ captured, oldRow: activeRow("read-write"), revokeCapture });
-    const resp = await rotateFetch(env, { auth: INTERNAL_KEY, body: { pat_id: OLD_PAT_ID } });
+    const resp = await rotateFetch(env, {
+      auth: INTERNAL_KEY,
+      body: { pat_id: OLD_PAT_ID, owner_tenant: TENANT },
+    });
 
     expect(resp.status).toBe(200);
     const out = (await resp.json()) as Record<string, unknown>;
@@ -298,7 +303,10 @@ describe("POST /internal/v1/auth/rotate — clw auth rotate", () => {
     // Unique pat_id ⇒ a fresh per-principal mint-throttle counter (the in-memory
     // burst backstop is module-scoped across this file).
     const uniqueId = "ffffffff-1111-2222-3333-444444444444";
-    const resp = await rotateFetch(env, { auth: INTERNAL_KEY, body: { pat_id: uniqueId } });
+    const resp = await rotateFetch(env, {
+      auth: INTERNAL_KEY,
+      body: { pat_id: uniqueId, owner_tenant: TENANT },
+    });
     expect(resp.status).toBe(200); // the new PAT is returned, NOT thrown away
     const body = (await resp.json()) as {
       token_plaintext: string;
@@ -315,7 +323,10 @@ describe("POST /internal/v1/auth/rotate — clw auth rotate", () => {
   it("(b) a successful rotate sets revoke_pending:false", async () => {
     const env = makeEnv({ captured: {}, oldRow: activeRow("read-write") });
     const uniqueId = "bbbbbbbb-9999-8888-7777-666666666666";
-    const resp = await rotateFetch(env, { auth: INTERNAL_KEY, body: { pat_id: uniqueId } });
+    const resp = await rotateFetch(env, {
+      auth: INTERNAL_KEY,
+      body: { pat_id: uniqueId, owner_tenant: TENANT },
+    });
     expect(resp.status).toBe(200);
     const body = (await resp.json()) as { revoke_pending: boolean };
     expect(body.revoke_pending).toBe(false);
@@ -330,6 +341,37 @@ describe("POST /internal/v1/auth/rotate — clw auth rotate", () => {
     expect(resp.status).toBe(422);
     expect(captured.req).toBeUndefined(); // never minted (no escalation)
     expect(revokeCapture.called).toBeUndefined();
+  });
+
+  // ── (REV-S2) cross-tenant rotate is refused ────────────────────────────────
+  it("(REV-S2) 403 when owner_tenant does not match the PAT's tenant — no cross-tenant mint", async () => {
+    const captured: { req?: Request } = {};
+    const revokeCapture: { binds?: unknown[]; called?: boolean } = {};
+    // The PAT belongs to TENANT, but the caller names a DIFFERENT tenant.
+    const env = makeEnv({ captured, oldRow: activeRow("read-write"), revokeCapture });
+    const resp = await rotateFetch(env, {
+      auth: INTERNAL_KEY,
+      body: { pat_id: OLD_PAT_ID, owner_tenant: "99999999-9999-9999-9999-999999999999" },
+    });
+    expect(resp.status).toBe(403);
+    expect(captured.req).toBeUndefined(); // NEVER minted a credential for the wrong tenant
+    expect(revokeCapture.called).toBeUndefined(); // never revoked
+  });
+
+  it("(REV-S2) backward-compat: rotates when owner_tenant absent — deprecated (not yet required)", async () => {
+    // Progressive hardening: owner_tenant is validated when present (cross-tenant 403,
+    // asserted in the test above) but not yet REQUIRED — the off-repo clw caller must
+    // roll out sending it before we flip to mandatory, else a deploy would 400 it.
+    // Absent → proceed (mint) + warn.
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, oldRow: activeRow() });
+    const resp = await rotateFetch(env, { auth: INTERNAL_KEY, body: { pat_id: OLD_PAT_ID } });
+    // The precise backward-compat regression guard: a MISSING owner_tenant is no
+    // longer a 400. It now passes the field gate and proceeds — 200 (minted) or 429
+    // (mint-throttle, which is module-scoped and may be saturated by earlier tests in
+    // the suite). Either proves it got PAST the owner_tenant gate (not rejected for it).
+    expect(resp.status).not.toBe(400);
+    expect([200, 429]).toContain(resp.status);
   });
 
   // ── body / method gates ────────────────────────────────────────────────────

@@ -7,6 +7,7 @@
 //! to directly.
 
 use std::fmt;
+use std::net::IpAddr;
 
 use bytes::Bytes;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
@@ -14,6 +15,12 @@ use reqwest::Client;
 use url::Url;
 
 use crate::npm::error::NpmAdapterError;
+
+/// Maximum number of HTTP redirects the upstream client follows. The npm
+/// registry serves metadata and tarballs from its own origin, so redirects
+/// are rare — but when one occurs it must never bounce to an internal host
+/// (see [`ssrf_safe_redirect_policy`]).
+const NPM_UPSTREAM_MAX_REDIRECTS: usize = 5;
 
 /// `Accept` header value for npm JSON metadata responses.
 pub const NPM_ACCEPT: &str = "application/json";
@@ -50,6 +57,7 @@ impl UpstreamClient {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .user_agent(ADAPTER_USER_AGENT)
+            .redirect(ssrf_safe_redirect_policy(NPM_UPSTREAM_MAX_REDIRECTS))
             .build()
             .map_err(|e| NpmAdapterError::Upstream(format!("client build: {e}")))?;
         Ok(Self { client, base })
@@ -145,6 +153,58 @@ impl UpstreamClient {
     }
 }
 
+/// True when `host` is a literal IP address in a range that must never be
+/// reachable from an outbound upstream fetch (loopback, RFC-1918 / RFC-4193
+/// private space, link-local — which includes the 169.254.169.254
+/// cloud-metadata endpoint — and the unspecified address). DNS host names are
+/// not classified; the surface this closes is a redirect `Location` pointing
+/// straight at an internal IP literal.
+fn host_is_internal_ip(host: &str) -> bool {
+    let stripped = host.strip_prefix('[').and_then(|h| h.strip_suffix(']'));
+    let candidate = stripped.unwrap_or(host);
+    let Ok(ip) = candidate.parse::<IpAddr>() else {
+        return false;
+    };
+    match ip {
+        IpAddr::V4(v4) => {
+            let [a, b, _, _] = v4.octets();
+            v4.is_private()
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                || (a == 100 && (b & 0xc0) == 0x40)
+        }
+        IpAddr::V6(v6) => {
+            let [s0, ..] = v6.segments();
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || (s0 & 0xfe00) == 0xfc00
+                || (s0 & 0xffc0) == 0xfe80
+                || v6.to_ipv4().is_some_and(|m| {
+                    m.is_private() || m.is_loopback() || m.is_link_local() || m.is_unspecified()
+                })
+        }
+    }
+}
+
+/// Build a redirect policy that follows up to `max` redirects but REFUSES any
+/// hop whose `Location` resolves to an internal IP literal (SSRF guard). The
+/// reqwest DEFAULT policy follows up to 10 hops to ANY host — including
+/// RFC-1918 / metadata addresses; this policy closes that on every hop.
+fn ssrf_safe_redirect_policy(max: usize) -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(move |attempt| {
+        if attempt.previous().len() >= max {
+            return attempt.stop();
+        }
+        match attempt.url().host_str() {
+            Some(host) if host_is_internal_ip(host) => attempt.stop(),
+            _ => attempt.follow(),
+        }
+    })
+}
+
 /// Join `path` onto `upstream` and verify the result stays on the SAME origin
 /// (scheme + host + port). `Url::join` host-swaps when `path` carries a scheme
 /// (`https://evil/…`) or a protocol-relative authority (`//evil/…`) — this is
@@ -197,6 +257,25 @@ mod tests {
         let base = Url::parse("https://registry.npmjs.org").expect("parse");
         let client = UpstreamClient::new(base);
         assert!(client.is_ok());
+    }
+
+    #[test]
+    fn internal_ip_hosts_are_classified_ssrf() {
+        for h in [
+            "127.0.0.1",
+            "10.0.0.5",
+            "192.168.1.1",
+            "169.254.169.254",
+            "0.0.0.0",
+            "[::1]",
+            "[fc00::1]",
+            "[::ffff:10.0.0.1]",
+        ] {
+            assert!(host_is_internal_ip(h), "{h} must be flagged internal");
+        }
+        for h in ["registry.npmjs.org", "1.1.1.1", "[2606:4700::1111]"] {
+            assert!(!host_is_internal_ip(h), "{h} must NOT be flagged internal");
+        }
     }
 
     #[test]

@@ -164,15 +164,18 @@ async fn handle_tarball(
     // Derive version from tarball filename: <pkg>-<version>.tgz
     let version = derive_version_from_filename(&tarball_file, &pkg);
 
-    let dist_shasum = match version.as_deref().and_then(|v| {
-        meta_json
-            .get("versions")
-            .and_then(|vs| vs.get(v))
-            .and_then(|vobj| vobj.get("dist"))
-            .and_then(|d| d.get("shasum"))
-            .and_then(|s| s.as_str())
-            .map(|s| s.to_owned())
-    }) {
+    // The `dist` object holds both the legacy SHA1 `shasum` and the modern
+    // SHA512 SRI `integrity`. We require at least one usable integrity source.
+    let dist = version
+        .as_deref()
+        .and_then(|v| meta_json.get("versions").and_then(|vs| vs.get(v)))
+        .and_then(|vobj| vobj.get("dist"));
+
+    let dist_shasum = match dist
+        .and_then(|d| d.get("shasum"))
+        .and_then(|s| s.as_str())
+        .map(str::to_owned)
+    {
         Some(s) => s,
         None => {
             return error_response(&NpmAdapterError::MetadataParse(format!(
@@ -180,6 +183,13 @@ async fn handle_tarball(
             )))
         }
     };
+
+    // SHA512 SRI (`dist.integrity`) — preferred over the broken SHA1 `shasum`.
+    // Absent on very old packages; the verify path falls back to SHA1 then.
+    let dist_integrity = dist
+        .and_then(|d| d.get("integrity"))
+        .and_then(|s| s.as_str())
+        .map(str::to_owned);
 
     // Construct the canonical upstream tarball URL.
     let tarball_url = format!(
@@ -192,6 +202,7 @@ async fn handle_tarball(
         &pkg,
         version.as_deref().unwrap_or("unknown"),
         &dist_shasum,
+        dist_integrity.as_deref(),
         &tenant,
         &cfg.cas,
         &state.upstream,

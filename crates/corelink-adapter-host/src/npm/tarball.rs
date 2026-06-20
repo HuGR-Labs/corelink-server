@@ -11,21 +11,27 @@
 //! > metadata-published hash) BEFORE storing in CAS; fail-CLOSED
 //! > with audit emit on mismatch.
 //!
-//! is enforced by [`verify_sha1`] before the CAS `put`. On mismatch
-//! the adapter emits `corelink.npm.tarball.integrity_mismatch.v1`
-//! (fail-CLOSED) and returns [`NpmAdapterError::IntegrityMismatch`].
+//! is enforced before the CAS `put`. On mismatch the adapter emits
+//! `corelink.npm.tarball.integrity_mismatch.v1` (fail-CLOSED) and
+//! returns [`NpmAdapterError::IntegrityMismatch`].
 //!
-//! npm's `dist.shasum` is a SHA1 hex string. This module uses SHA1
-//! to match upstream semantics; the `subtle::ConstantTimeEq` compare
-//! prevents timing leaks.
+//! Integrity is verified against the STRONGEST hash the registry
+//! publishes: npm's `dist.integrity` is a Subresource-Integrity (SRI)
+//! string — `sha512-<base64>` for modern packages. We prefer SHA512
+//! ([`verify_integrity`]) and fall back to the legacy `dist.shasum`
+//! (SHA1, [`verify_sha1`]) ONLY when no usable SHA512 SRI is present
+//! (very old packages). SHA1 is cryptographically broken, so the
+//! SHA512 path is the security-load-bearing one. All compares are
+//! constant-time (`subtle::ConstantTimeEq`) to avoid timing leaks.
 
 use std::sync::Arc;
 
+use base64::Engine as _;
 use bytes::Bytes;
 use corelink_audit::ports::AuditEmitter;
 use corelink_core::types::digest::Digest;
 use corelink_core::types::tenant::TenantId;
-use sha2::{Digest as _, Sha256};
+use sha2::{Digest as _, Sha256, Sha512};
 use subtle::ConstantTimeEq;
 use url::Url;
 
@@ -190,6 +196,83 @@ pub fn verify_sha1(bytes: &[u8], expected_hex: &str) -> Result<(), NpmAdapterErr
     }
 }
 
+/// Parse the SHA512 entry out of an npm `dist.integrity` Subresource
+/// Integrity (SRI) string and return its raw 64 digest bytes.
+///
+/// `dist.integrity` is a space-separated list of `<alg>-<base64>`
+/// metadata items (SRI; W3C). npm publishes `sha512-...` for modern
+/// packages and MAY list several algorithms. We select the SHA512 item
+/// (the strongest npm publishes) and decode its standard-base64 body.
+///
+/// Returns `None` if no syntactically valid `sha512-` item is present
+/// (then the caller falls back to the legacy SHA1 `dist.shasum`).
+#[must_use]
+pub fn parse_sha512_sri(integrity: &str) -> Option<Vec<u8>> {
+    for item in integrity.split_whitespace() {
+        if let Some(b64) = item.strip_prefix("sha512-") {
+            // SRI bodies are STANDARD base64 (with padding). A 512-bit
+            // digest is exactly 64 bytes; reject anything else as
+            // malformed rather than trusting a short/long value.
+            if let Ok(raw) = base64::engine::general_purpose::STANDARD.decode(b64) {
+                if raw.len() == 64 {
+                    return Some(raw);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Constant-time compare: do the downloaded tarball bytes' SHA512 match
+/// the expected raw digest from the `dist.integrity` SRI?
+///
+/// This is the cryptographically-strong integrity path (SHA1 is broken)
+/// and is preferred over [`verify_sha1`] whenever a usable `sha512-`
+/// SRI is published. `expected_raw` is the 64-byte raw SHA512 digest as
+/// returned by [`parse_sha512_sri`].
+///
+/// # Errors
+///
+/// Returns [`NpmAdapterError::IntegrityMismatch`] on mismatch (the
+/// `expected`/`actual` fields are hex-encoded for the audit record).
+pub fn verify_sha512(bytes: &[u8], expected_raw: &[u8]) -> Result<(), NpmAdapterError> {
+    let mut hasher = Sha512::new();
+    hasher.update(bytes);
+    let actual = hasher.finalize();
+    if actual.as_slice().ct_eq(expected_raw).unwrap_u8() == 1 {
+        Ok(())
+    } else {
+        Err(NpmAdapterError::IntegrityMismatch {
+            expected: hex::encode(expected_raw),
+            actual: hex::encode(actual),
+        })
+    }
+}
+
+/// Verify the downloaded tarball against the STRONGEST integrity hash
+/// the registry published, preferring SHA512.
+///
+/// Order: if `dist_integrity` carries a valid `sha512-` SRI, verify
+/// against SHA512 ([`verify_sha512`]) — the broken-SHA1 `dist.shasum`
+/// is then irrelevant. Only when no usable SHA512 SRI is present (very
+/// old packages, or a metadata source that omits `integrity`) do we
+/// fall back to the legacy SHA1 `dist.shasum` ([`verify_sha1`]) so the
+/// adapter still serves those packages with the best check available.
+///
+/// # Errors
+///
+/// Returns [`NpmAdapterError::IntegrityMismatch`] on mismatch.
+pub fn verify_tarball_integrity(
+    bytes: &[u8],
+    dist_shasum: &str,
+    dist_integrity: Option<&str>,
+) -> Result<(), NpmAdapterError> {
+    if let Some(raw) = dist_integrity.and_then(parse_sha512_sri) {
+        return verify_sha512(bytes, &raw);
+    }
+    verify_sha1(bytes, dist_shasum)
+}
+
 /// Body bytes of a served tarball response.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -206,10 +289,17 @@ pub struct TarballResponse {
 /// 1. Derive CAS key from tarball URL.
 /// 2. CAS `get`. Hit → emit `tarball.cache_hit.v1`, return.
 /// 3. Miss → fetch from upstream with size cap.
-/// 4. **MANDATORY** SHA1 verify vs `dist_shasum` (constant time). Mismatch
-///    → emit `tarball.integrity_mismatch.v1` (fail-CLOSED) + return error.
+/// 4. **MANDATORY** integrity verify (constant time): SHA512 vs the
+///    `dist_integrity` SRI when present, else legacy SHA1 vs `dist_shasum`.
+///    Mismatch → emit `tarball.integrity_mismatch.v1` (fail-CLOSED) + error.
 /// 5. Emit `tarball.stored.v1` BEFORE CAS `put`.
 /// 6. CAS `put`. Return.
+///
+/// `dist_integrity` is the npm metadata `dist.integrity` SRI string
+/// (`sha512-<base64>`), if the upstream metadata published it. When a
+/// usable `sha512-` item is present it is the load-bearing check and the
+/// SHA1 `dist_shasum` is ignored; SHA1 is the fallback for legacy
+/// packages with no SHA512 SRI.
 ///
 /// # Errors
 ///
@@ -223,6 +313,7 @@ pub async fn serve_tarball(
     pkg: &str,
     version: &str,
     dist_shasum: &str,
+    dist_integrity: Option<&str>,
     tenant: &TenantId,
     cas: &CasStoreHandle,
     upstream: &UpstreamClient,
@@ -275,8 +366,9 @@ pub async fn serve_tarball(
             other => other,
         })?;
 
-    // MANDATORY integrity check pre-CAS-store (fail-CLOSED).
-    if let Err(err) = verify_sha1(&downloaded, dist_shasum) {
+    // MANDATORY integrity check pre-CAS-store (fail-CLOSED): SHA512 SRI
+    // preferred, SHA1 only as the legacy fallback.
+    if let Err(err) = verify_tarball_integrity(&downloaded, dist_shasum, dist_integrity) {
         if let NpmAdapterError::IntegrityMismatch { expected, actual } = &err {
             emit_npm_audit(
                 auditor,
@@ -363,6 +455,91 @@ mod tests {
             result,
             Err(NpmAdapterError::IntegrityMismatch { .. })
         ));
+    }
+
+    /// Build a `sha512-<base64>` SRI string for `bytes` (mirrors what the
+    /// npm registry publishes in `dist.integrity`).
+    fn sri_for(bytes: &[u8]) -> String {
+        let mut h = Sha512::new();
+        h.update(bytes);
+        let raw = h.finalize();
+        format!(
+            "sha512-{}",
+            base64::engine::general_purpose::STANDARD.encode(raw)
+        )
+    }
+
+    #[test]
+    fn parse_sha512_sri_extracts_64_bytes() {
+        let sri = sri_for(b"abc");
+        let raw = parse_sha512_sri(&sri).expect("valid sha512 SRI");
+        assert_eq!(raw.len(), 64);
+    }
+
+    #[test]
+    fn parse_sha512_sri_picks_sha512_from_multi_alg_list() {
+        // SRI may list several algorithms space-separated; we must pick sha512.
+        let sri = format!("sha1-bogusbogusbogusbogus= {}", sri_for(b"abc"));
+        let raw = parse_sha512_sri(&sri).expect("sha512 item selected");
+        assert_eq!(raw.len(), 64);
+    }
+
+    #[test]
+    fn parse_sha512_sri_none_when_only_weaker_algs() {
+        assert!(parse_sha512_sri("sha256-AAAA= sha1-BBBB=").is_none());
+        assert!(parse_sha512_sri("").is_none());
+    }
+
+    #[test]
+    fn verify_sha512_accepts_match() {
+        let bytes = b"hello world";
+        let raw = parse_sha512_sri(&sri_for(bytes)).unwrap();
+        assert!(verify_sha512(bytes, &raw).is_ok());
+    }
+
+    #[test]
+    fn verify_sha512_rejects_mismatch() {
+        let raw = parse_sha512_sri(&sri_for(b"original")).unwrap();
+        let result = verify_sha512(b"tampered", &raw);
+        assert!(matches!(
+            result,
+            Err(NpmAdapterError::IntegrityMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn verify_tarball_integrity_prefers_sha512_over_sha1() {
+        // The SHA1 shasum is DELIBERATELY wrong; with a valid SHA512 SRI the
+        // verifier must use SHA512 and pass — proving SHA1 is not the gate
+        // when a strong hash is available.
+        let bytes = b"package-bytes";
+        let sri = sri_for(bytes);
+        let bad_sha1 = "0".repeat(40);
+        assert!(verify_tarball_integrity(bytes, &bad_sha1, Some(&sri)).is_ok());
+    }
+
+    #[test]
+    fn verify_tarball_integrity_sha512_rejects_tampered_even_with_good_sha1() {
+        // Attacker forges a SHA1 collision (theoretically): SHA1 matches but
+        // the SHA512 SRI does not → must still REJECT (SHA512 is load-bearing).
+        let real = b"package-bytes";
+        let tampered = b"evil-bytes!!!";
+        let sri = sri_for(real); // SHA512 of the REAL bytes
+        let sha1_of_tampered = sha1_hex(tampered); // SHA1 "matches" tampered
+        let result = verify_tarball_integrity(tampered, &sha1_of_tampered, Some(&sri));
+        assert!(matches!(
+            result,
+            Err(NpmAdapterError::IntegrityMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn verify_tarball_integrity_falls_back_to_sha1_when_no_sri() {
+        // No SHA512 SRI (legacy package) → SHA1 path is used.
+        let bytes = b"legacy-package";
+        let sha1 = sha1_hex(bytes);
+        assert!(verify_tarball_integrity(bytes, &sha1, None).is_ok());
+        assert!(verify_tarball_integrity(bytes, &"0".repeat(40), None).is_err());
     }
 
     #[test]

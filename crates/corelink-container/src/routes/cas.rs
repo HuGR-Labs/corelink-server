@@ -666,15 +666,22 @@ async fn handle_read(
     // wired, an erased `(tenant, hash)` short-circuits to HTTP 410 Gone — BEFORE
     // the R2 GET, so it is a single keyed D1 lookup off the hot path. An erased
     // artifact MUST return 410 (never 404 "never existed", never 200 resurrect).
-    // A lookup-transport error fails OPEN to the normal read path: a transient
-    // D1 blip must not 410 a live blob (the erase write-side is the source of
-    // truth; the read gate is advisory). `None` ⇒ classic 200/404.
+    // A lookup-transport error fails CLOSED to 503 (PEN-2/REV-S1): an erased
+    // artifact is GDPR/DSR-deleted, and confidentiality of legally-erased data
+    // outweighs availability of a live blob during a transient D1 blip — never
+    // resurrect (200) erased bytes just because the gate couldn't be consulted.
+    // `None` ⇒ no gate wired ⇒ classic 200/404.
     if let Some(tombstones) = state.tombstones.as_ref() {
         match tombstones.is_tombstoned(&auth.0, &hash).await {
             Ok(true) => return (StatusCode::GONE, "erased").into_response(),
             Ok(false) => {}
             Err(e) => {
-                tracing::warn!(error = %e, "cas: tombstone gate lookup failed; serving normally");
+                tracing::warn!(error = %e, "cas: tombstone gate lookup failed; failing CLOSED (503)");
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "tombstone gate unavailable",
+                )
+                    .into_response();
             }
         }
     }
@@ -1050,7 +1057,16 @@ async fn handle_batch_read(
                 }
                 Ok(false) => {}
                 Err(e) => {
-                    tracing::warn!(error = %e, "cas batch-read: tombstone gate lookup failed; serving normally");
+                    // PEN-2/REV-S1: fail CLOSED, identical to the single-read gate
+                    // (handle_read ~678). A tombstone-lookup transport error must NOT
+                    // serve a possibly-erased (GDPR) object — fail the whole batch
+                    // rather than risk resurrecting erased bytes during a D1 blip.
+                    tracing::warn!(error = %e, "cas batch-read: tombstone gate lookup failed; failing CLOSED (503)");
+                    return (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "tombstone gate unavailable",
+                    )
+                        .into_response();
                 }
             }
         }
@@ -1841,6 +1857,67 @@ mod tests {
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Tombstone store whose `is_tombstoned` always errors — simulates a
+    /// transient D1 transport fault on the read gate.
+    #[derive(Debug, Default)]
+    struct ErroringTombstoneStore;
+    #[axum::async_trait]
+    impl crate::routes::cas_erase::TombstoneStore for ErroringTombstoneStore {
+        async fn is_tombstoned(&self, _tenant: &str, _digest: &str) -> Result<bool, String> {
+            Err("d1 transport fault".to_owned())
+        }
+        async fn upsert(
+            &self,
+            _tenant: &str,
+            _digest: &str,
+            _reason: &str,
+            _erased_at_ms: i64,
+        ) -> Result<bool, String> {
+            Ok(false)
+        }
+    }
+
+    /// Route state whose tombstone gate always errors (D1 fault).
+    fn fixture_erroring_tombstone() -> CasRouteState {
+        let audit = Arc::new(InMemoryAuditSink::new());
+        let sli = Arc::new(InMemorySliObserver::new());
+        let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
+        let read: Arc<dyn CasReadHandler> = shared.clone();
+        let write: Arc<dyn CasWriteHandler> = shared.clone();
+        let delete: Arc<dyn CasDeleteHandler> = shared.clone();
+        let list: Arc<dyn CasListHandler> = shared;
+        let tombstones: Arc<dyn crate::routes::cas_erase::TombstoneStore> =
+            Arc::new(ErroringTombstoneStore);
+        CasRouteState {
+            read,
+            write,
+            delete,
+            list,
+            tombstones: Some(tombstones),
+            quota: None,
+            pat_gate: None,
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        }
+    }
+
+    /// PEN-2 / REV-S1 regression: when the tombstone (GDPR-erasure) gate lookup
+    /// ERRORS (transient D1 fault), the read fails CLOSED with 503 — it must
+    /// NEVER fall through to the R2 read and risk resurrecting an erased blob.
+    #[tokio::test]
+    async fn get_with_tombstone_gate_error_fails_closed_503() {
+        const HASH: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+        let app = router(fixture_erroring_tombstone());
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/v1/cas/{TEST_TENANT}/{HASH}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     // ── per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1) ─────────

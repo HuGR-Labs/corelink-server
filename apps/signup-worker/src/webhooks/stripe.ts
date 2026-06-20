@@ -698,6 +698,58 @@ async function deactivateTierSelectionBySubscription(
 }
 
 /**
+ * Re-activate the canonical access gate after a DUNNING RECOVERY: flip
+ * `tier_selections.subscription_state` back to 'active' when Stripe reports a
+ * subscription has returned to active/trialing WITHOUT a fresh checkout session
+ * (payment-method fix + automatic retry succeeds, an operator marks an invoice
+ * paid, or an incomplete state resolves to trialing). Stripe fires
+ * `customer.subscription.updated` with grantsAccess=true in those cases but
+ * never re-runs checkout.session.completed, so without this the paying tenant is
+ * stranded with subscription_state='inactive' and the quota gate denies them.
+ *
+ * TERMINAL-CANCEL GUARD (critical): a CANCEL and a DUNNING deactivation BOTH
+ * leave `tier_selections.subscription_state='inactive'`, so that column alone
+ * cannot tell a recoverable dunning lapse from a terminal cancel. Stripe
+ * webhooks are unordered — a late, out-of-order `subscription.updated(active)`
+ * arriving AFTER `subscription.deleted` must NOT resurrect a canceled
+ * subscription (re-subscribing must go through checkout). We therefore gate the
+ * re-activation on the authoritative `tenant_billing.status != 'canceled'`
+ * (mirroring updateBillingSubscription's audit-fix-4 guard): the tenant is
+ * resolved through `tenant_billing` BY THIS SUBSCRIPTION ID, and a canceled
+ * billing row makes the re-activation a no-op. Keyed by subscription id (not
+ * customer) precisely so we can join `tenant_billing` for that guard;
+ * subscription objects always carry their own id.
+ *
+ * This NEVER inserts — it can ONLY resurrect a row a prior checkout already
+ * created — so the single-activation-writer invariant holds (checkout remains
+ * the sole CREATOR). Restores `subscription_started_at_ms` to a fresh non-null
+ * value (the prior deactivate set it NULL) so the re-activated row still
+ * satisfies the 0039 `subscription_started_when_active` CHECK. `tier` is left to
+ * the separate `updateTierSelectionTierByCustomer` propagation. Idempotent: the
+ * `WHERE … <> 'active'` filter makes a redelivery a no-op (and prevents shifting
+ * the activation timestamp of an already-active row).
+ */
+async function reactivateTierSelectionBySubscription(
+    db: D1DatabaseLike,
+    opts: { stripeSubscriptionId: string; nowMs: number },
+): Promise<void> {
+    await db
+        .prepare(
+            `UPDATE tier_selections
+             SET subscription_state = 'active',
+                 subscription_started_at_ms = ?2
+             WHERE tenant_id IN (
+                       SELECT tenant_id FROM tenant_billing
+                       WHERE stripe_subscription_id = ?1
+                         AND status != 'canceled'
+                   )
+               AND subscription_state <> 'active'`,
+        )
+        .bind(opts.stripeSubscriptionId, opts.nowMs)
+        .run();
+}
+
+/**
  * Propagate an in-place plan change (Stripe price swap on the SAME subscription)
  * to `tier_selections.tier`. checkout.session.completed is the only OTHER writer
  * of `tier`, so without this a tenant who upgrades/downgrades inside Stripe keeps
@@ -1097,7 +1149,37 @@ export async function handleStripeWebhook(
                     }),
                 );
 
-                // (a) Propagate an in-place plan change to the entitlement tier.
+                // (a) DUNNING-RECOVERY re-activation. A subscription that
+                // returns to active/trialing WITHOUT a fresh checkout session
+                // (payment-method fix + auto-retry, an operator marking an
+                // invoice paid, or an incomplete→trialing resolution) fires this
+                // event with grantsAccess=true but NEVER re-runs
+                // checkout.session.completed — so the previously-deactivated
+                // tier_selections row would strand a paying tenant at
+                // subscription_state='inactive' (quota gate denies access). We
+                // therefore un-deactivate the EXISTING paid row here.
+                //
+                // SAFETY: reactivateTierSelectionBySubscription NEVER inserts
+                // (single-activation-writer invariant: checkout remains the sole
+                // CREATOR) and is guarded on `tenant_billing.status != 'canceled'`
+                // so a late, out-of-order updated(active) AFTER a cancel can NOT
+                // resurrect a terminated subscription (re-subscribe must go
+                // through checkout — mirrors the updateBillingSubscription guard).
+                // Keyed by subscription id so we can join tenant_billing for that
+                // guard (subscription objects always carry their own id).
+                //
+                // NOTE: writes flush via Promise.all (unordered), so a combined
+                // recovery + price-change leaves the tier propagation below a
+                // no-op IF it loses the race with this re-activation (it is gated
+                // on an 'active' row) — a benign tier-LABEL staleness on the row,
+                // not an access defect; reconciled by the next subscription event
+                // (same posture as the F35 race note above).
+                if (grantsAccess) {
+                    requiredWrites.push(
+                        reactivateTierSelectionBySubscription(db, { stripeSubscriptionId, nowMs }),
+                    );
+                }
+                // (b) Propagate an in-place plan change to the entitlement tier.
                 // Only when we recognise the price → tier (else leave the
                 // existing tier untouched; never guess). Tier propagation is an
                 // enrichment (not a safety control), so it stays customer-gated:
@@ -1110,12 +1192,10 @@ export async function handleStripeWebhook(
                         }),
                     );
                 }
-                // (b) Keep the access gate in sync with the Stripe status. A
+                // (c) Keep the access gate in sync with the Stripe status. A
                 // subscription that drops to past_due/unpaid/paused/canceled here
                 // (not just on a separate deleted/payment_failed event) must lose
-                // entitlement. We do NOT flip back to 'active' on this event —
-                // activation only happens via checkout.session.completed (single
-                // activation writer).
+                // entitlement.
                 //
                 // FAIL-SAFE: entitlement REVOCATION must NOT depend on the
                 // subscription object carrying a `customer` field (it may not).
@@ -1212,10 +1292,19 @@ export async function handleStripeWebhook(
             const stripeCustomerId = obj["customer"] as string | undefined;
             const attemptCount = obj["attempt_count"] as number | undefined;
             const nextAttempt = obj["next_payment_attempt"]; // null when Stripe has given up
-            // Terminal when Stripe will not retry again (next_payment_attempt is
-            // explicitly null and present in the payload).
+            // Terminal when Stripe will not retry again. Two signals:
+            //   1. `next_payment_attempt` is explicitly null AND present — the
+            //      standard subscription-invoice dunning-exhausted signal.
+            //   2. invoice `status === 'uncollectible'` — Stripe's definitive
+            //      "given up" state, which off-cycle / manual / credit-note
+            //      invoices may carry WITHOUT a `next_payment_attempt` key at
+            //      all (the field-presence check (1) misses those, leaving a
+            //      permanently-failed tenant entitled). Both default to
+            //      NON-terminal when absent, preserving the fail-safe posture
+            //      for transient first-attempt failures (we never grant here).
             const isTerminalFailure =
-                "next_payment_attempt" in obj && nextAttempt === null;
+                ("next_payment_attempt" in obj && nextAttempt === null) ||
+                obj["status"] === "uncollectible";
 
             if (
                 env.BILLING_DB &&

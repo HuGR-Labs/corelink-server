@@ -1090,13 +1090,24 @@ async fn handle_list(
 async fn handle_create(
     State(state): State<PilotAdminRouteState>,
     headers: HeaderMap,
-    Json(body): Json<CreatePilotBody>,
+    // M3 (F16 pattern): body taken as raw `Bytes` so the `HeaderMap`
+    // `FromRequestParts` extractor resolves BEFORE the body is buffered.
+    // The admin gate runs FIRST; an unauthenticated caller is rejected
+    // without the container ever JSON-parsing an arbitrarily-large body.
+    // JSON deserialisation runs only AFTER the gate passes — mirrors
+    // `admin::handle_mutate`.
+    body: axum::body::Bytes,
 ) -> Response {
     // No target tenant — create mints a NEW id, so the gate runs at the
     // global-operator scope (mirrors `handle_list`).
     let scope = match require_admin_scope(&state, &headers, None) {
         Ok(s) => s,
         Err(r) => return r,
+    };
+    // Body parsed ONLY after the auth gate passes (M3).
+    let body: CreatePilotBody = match serde_json::from_slice(&body) {
+        Ok(b) => b,
+        Err(_) => return (StatusCode::BAD_REQUEST, "invalid_body").into_response(),
     };
     // L4 input validation.
     let slug = body.slug.trim();
@@ -1179,7 +1190,11 @@ async fn handle_grant_tier(
     State(state): State<PilotAdminRouteState>,
     headers: HeaderMap,
     Path(tenant_id): Path<String>,
-    Json(body): Json<GrantTierBody>,
+    // M3 (F16 pattern): raw `Bytes` body. `HeaderMap` + `Path` are
+    // `FromRequestParts` extractors and resolve before the body buffer,
+    // so the admin gate runs BEFORE any JSON parse of an attacker-supplied
+    // body. JSON deserialisation happens only after the gate passes.
+    body: axum::body::Bytes,
 ) -> Response {
     let tenant_uuid = match parse_tenant_uuid(&tenant_id) {
         Ok(u) => u,
@@ -1188,6 +1203,11 @@ async fn handle_grant_tier(
     let scope = match require_admin_scope(&state, &headers, Some(tenant_uuid)) {
         Ok(s) => s,
         Err(r) => return r,
+    };
+    // Body parsed ONLY after the auth gate passes (M3).
+    let body: GrantTierBody = match serde_json::from_slice(&body) {
+        Ok(b) => b,
+        Err(_) => return (StatusCode::BAD_REQUEST, "invalid_body").into_response(),
     };
     if body.tier != "pilot" {
         return (StatusCode::BAD_REQUEST, "tier must be 'pilot'").into_response();
@@ -1920,6 +1940,14 @@ mod tests {
 
     // ── create handler (router) ──────────────────────────────────────────────
 
+    /// Serialise a JSON request body to the raw `Bytes` the handlers now
+    /// accept (M3: body is parsed only AFTER the auth gate, so the handlers
+    /// take `axum::body::Bytes` rather than `Json<T>`). Takes a `Value` so
+    /// no production request struct needs a test-only `Serialize` derive.
+    fn body_bytes(body: &Value) -> axum::body::Bytes {
+        axum::body::Bytes::from(serde_json::to_vec(body).expect("serialize body"))
+    }
+
     /// Build the request headers that clear the operator gate.
     fn operator_headers() -> HeaderMap {
         let mut headers = HeaderMap::new();
@@ -1941,10 +1969,7 @@ mod tests {
         let resp = handle_create(
             State(state),
             operator_headers(),
-            Json(CreatePilotBody {
-                slug: "  beta-co  ".to_owned(),
-                cap_bytes: Some(42),
-            }),
+            body_bytes(&json!({ "slug": "  beta-co  ", "cap_bytes": 42 })),
         )
         .await;
         assert_eq!(resp.status(), StatusCode::CREATED);
@@ -1975,10 +2000,7 @@ mod tests {
         let resp = handle_create(
             State(state),
             operator_headers(),
-            Json(CreatePilotBody {
-                slug: "   ".to_owned(),
-                cap_bytes: None,
-            }),
+            body_bytes(&json!({ "slug": "   " })),
         )
         .await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -1995,10 +2017,23 @@ mod tests {
         let resp = handle_create(
             State(state),
             HeaderMap::new(),
-            Json(CreatePilotBody {
-                slug: "x".to_owned(),
-                cap_bytes: None,
-            }),
+            body_bytes(&json!({ "slug": "x" })),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// M3 regression: an unauthenticated caller supplying a syntactically
+    /// INVALID body must be rejected by the auth gate (403) BEFORE the body
+    /// is ever JSON-parsed — never a 400 body-parse error. A 400 here would
+    /// prove the body was parsed before the gate (the M3 anti-pattern).
+    #[tokio::test]
+    async fn handle_create_gates_auth_before_parsing_invalid_body() {
+        let (state, _store, _audit, _c) = fixture();
+        let resp = handle_create(
+            State(state),
+            HeaderMap::new(),
+            axum::body::Bytes::from_static(b"not-json-at-all"),
         )
         .await;
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
@@ -2011,10 +2046,7 @@ mod tests {
         let resp = handle_create(
             State(state),
             operator_headers(),
-            Json(CreatePilotBody {
-                slug: "x".to_owned(),
-                cap_bytes: None,
-            }),
+            body_bytes(&json!({ "slug": "x" })),
         )
         .await;
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);

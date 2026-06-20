@@ -51,6 +51,8 @@ use corelink_handler_admin::{
 use serde::Deserialize;
 use subtle::ConstantTimeEq;
 
+use crate::wall_clock::{SystemWallClock, WallClock};
+
 /// Request header carrying the operator-only shared secret. The admin
 /// control plane is operator-only (mirrors `/_internal/pat/mint`): it is
 /// gated behind the `CORELINK_INTERNAL_AUTH_KEY` shared secret, NOT
@@ -674,7 +676,10 @@ async fn handle_read(
         );
         return (StatusCode::FORBIDDEN, "forbidden").into_response();
     }
-    let now_ms = 0u64;
+    // Real wall-clock timestamp for the audit record (was hardcoded
+    // epoch-zero, which made admin audit rows un-orderable). Matches the
+    // CAS/AC/Bazel/Turbo audit path (`SystemWallClock.now_ms()`).
+    let now_ms = SystemWallClock.now_ms();
     // The caller is the trusted operator (it cleared the internal-auth
     // gate above), so we derive the admin principal from the gated
     // context — NOT from any client-supplied field.
@@ -725,7 +730,10 @@ async fn handle_mutate(
             return (StatusCode::BAD_REQUEST, "invalid_body").into_response();
         }
     };
-    let now_ms = 0u64;
+    // Real wall-clock timestamp for the audit record (was hardcoded
+    // epoch-zero, which made admin audit rows un-orderable). Matches the
+    // CAS/AC/Bazel/Turbo audit path (`SystemWallClock.now_ms()`).
+    let now_ms = SystemWallClock.now_ms();
     // Build the request from the body's OPERATION fields only. The
     // initiator principal + is_admin flag are derived from the gated
     // operator context (is_admin = true), NOT from the body. Dual-

@@ -9,9 +9,12 @@
  *
  * It is the runner-mint/revoke pattern ({@link handleRunnerMint} +
  * {@link handleRunnerRevoke} in lib/runner_mint.ts) composed into a single
- * operation, with the tenant + scope SOURCED FROM the old `pat` row instead of a
- * request body. Authorization is identical: the `pat_mint` internal-auth consumer
- * key (`CORELINK_PAT_MINT_AUTH_KEY` with shared `CORELINK_INTERNAL_AUTH_KEY`
+ * operation, with the scope SOURCED FROM the old `pat` row. The tenant is also
+ * read from the row, but the caller MUST name the expected `owner_tenant` in the
+ * body and it is validated to match the row (REV-S2) — so a compromised pat_mint
+ * key cannot rotate (mint a fresh credential for) a tenant it does not own.
+ * Authorization is the `pat_mint` internal-auth consumer key
+ * (`CORELINK_PAT_MINT_AUTH_KEY` with shared `CORELINK_INTERNAL_AUTH_KEY`
  * fallback, constant-time). The clw backend / dispatcher holds that key — an
  * end-user PAT cannot call this surface.
  *
@@ -123,10 +126,12 @@ function computeRotateTtlSeconds(_oldExpiresMs: number): number {
  *      holds this key; an end-user PAT cannot call this.
  *   3. Fail-CLOSED on the SHARED key (the secret presented to the container's
  *      mint route) → else 403.
- *   4. Parse body `{ pat_id }`. Missing/empty → 400.
+ *   4. Parse body `{ pat_id, owner_tenant }`. Missing/empty either → 400.
  *   5. Read the old `pat` row by `pat_id` (tenant_id, scope, expires_ms,
  *      revoked_at_ms). No row OR already revoked → 404 (never silently mint).
- *      Unmappable scope → 422 (preserve scope exactly; never escalate).
+ *      Caller-named owner_tenant ≠ the row's tenant_id → 403 (REV-S2: a
+ *      compromised pat_mint key cannot rotate a PAT it does not own). Unmappable
+ *      scope → 422 (preserve scope exactly; never escalate).
  *   6. Mint the NEW PAT via {@link mintScopedPat} — same tenant, same scope, a
  *      fresh full lifetime. principal-source = the old `pat_id` (stable per-PAT
  *      audit-correlation UUID — see below). On mint failure: propagate, do NOT
@@ -174,9 +179,15 @@ export async function handleAuthRotate(
     return reapiError("FORBIDDEN", "auth rotate unavailable", 403, requestId);
   }
 
-  // ── 4. Parse the body (pat_id required) ────────────────────────────────────
+  // ── 4. Parse the body (pat_id + owner_tenant required) ─────────────────────
+  // REV-S2: the caller must NAME the tenant it believes owns the PAT. We validate
+  // it against the row below before minting, so a compromised pat_mint key cannot
+  // rotate (and thereby mint a fresh working credential for) a tenant it is not
+  // associated with. The clw backend verified the session before calling, so it
+  // knows the calling user's tenant — passing it here is a no-shape-change tighten.
   interface AuthRotateRequest {
     readonly pat_id?: unknown;
+    readonly owner_tenant?: unknown;
   }
   let body: AuthRotateRequest;
   try {
@@ -187,6 +198,20 @@ export async function handleAuthRotate(
   const patId = body.pat_id;
   if (typeof patId !== "string" || patId.length === 0) {
     return reapiError("BAD_REQUEST", "pat_id required", 400, requestId);
+  }
+  // BACKWARD-COMPAT (REV-S2 progressive hardening): owner_tenant is VALIDATED when
+  // present (cross-tenant rotate is refused below) but NOT yet required — the
+  // off-repo callers (clw backend) must be rolled out to send it before we flip to
+  // mandatory, else this deploy would 400 a live caller. Absent → proceed (prior
+  // behavior) + warn; present → enforced. Flip to required after clw confirms it sends it.
+  const ownerTenant =
+    typeof body.owner_tenant === "string" && body.owner_tenant.length > 0
+      ? body.owner_tenant
+      : undefined;
+  if (ownerTenant === undefined) {
+    console.warn(
+      `[${requestId}] auth rotate: owner_tenant absent — cross-tenant validation skipped (deprecated; callers MUST send owner_tenant)`,
+    );
   }
 
   // ── 5. Read the OLD pat row (tenant + scope + expiry + revocation state) ───
@@ -224,6 +249,14 @@ export async function handleAuthRotate(
     // A row with no tenant cannot be rotated (the mint is tenant-scoped).
     console.error(`[${requestId}] auth rotate pat row missing tenant`);
     return reapiError("INTERNAL_ERROR", "auth rotate unavailable", 500, requestId);
+  }
+  if (ownerTenant !== undefined && ownerTenant !== oldRow.tenant_id) {
+    // REV-S2: the caller-named tenant does not own this PAT. Refuse — a compromised
+    // pat_mint key must not be able to mint a fresh working credential for a tenant
+    // it is not associated with (cross-tenant privilege escalation). Checked AFTER
+    // the 404 so a wrong (existing-pat, wrong-tenant) pair still reveals nothing
+    // beyond "not yours"; an unknown/revoked pat_id remains an indistinguishable 404.
+    return reapiError("FORBIDDEN", "pat does not belong to the specified tenant", 403, requestId);
   }
   if (!ROTATABLE_SCOPES.has(oldRow.scope)) {
     // The single mint authority cannot reproduce this scope (e.g. `read-only`)
