@@ -673,6 +673,12 @@ impl PatVerifier {
     /// Test-only: current number of live per-tenant semaphore entries (LRU map
     /// size). Used to assert the map stays bounded under distinct-tenant churn.
     #[cfg(test)]
+    #[allow(
+        clippy::expect_used,
+        reason = "test-only helper; a poisoned mutex here is itself a test bug \
+                  and should fail loudly. Mirrors the test module's allow — this \
+                  cfg(test) method sits on the impl block, outside that module's scope."
+    )]
     fn per_tenant_map_len(&self) -> usize {
         self.per_tenant_permits.lock().expect("map lock").len()
     }
