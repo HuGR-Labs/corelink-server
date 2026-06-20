@@ -160,6 +160,17 @@ jobs:
         with:
           node-version: '22'
 
+      # The Worker (main = worker/src/index.ts) imports @clerk/backend +
+      # @sentry/cloudflare; `wrangler deploy` esbuild-bundles it and needs
+      # worker/node_modules present. On the self-hosted Mac these existed from
+      # local dev; a clean ubuntu runner must install them. Repo is a pnpm
+      # workspace (pnpm@10.32.1); `--filter worker...` installs the worker + its
+      # deps only (not the heavy admin-ui/docs members).
+      - name: Install worker deps (pnpm workspace)
+        run: |
+          npm install -g pnpm@10.32.1
+          pnpm install --frozen-lockfile --filter worker...
+
       - name: Install wrangler
         run: npm install -g wrangler@4.95.0  # pinned exact (audit 2026-06-11); v3 cannot parse [[env.*.containers]] arrays (verified 2026-06-05)
 
