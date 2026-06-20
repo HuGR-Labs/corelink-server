@@ -64,15 +64,23 @@ jobs:
 
       - name: Run render smoke
         id: smoke
-        # Run from apps/admin-ui so Node resolves `playwright` from
-        # apps/admin-ui/node_modules (where `pnpm install` + `playwright install
-        # chromium` ran above). Previously this ran from the repo root, where the
-        # root node_modules is empty on a clean runner → ERR_MODULE_NOT_FOUND
-        # before the browser ever launched (the smoke had never once run green).
+        # ESM resolves bare imports from the SCRIPT's own directory (scripts/),
+        # NOT the cwd — so `node ../../scripts/…mjs` (even with cwd=apps/admin-ui)
+        # still can't find @playwright/test, which lives in apps/admin-ui/node_modules
+        # under pnpm's non-hoisted layout. (The prior "run from apps/admin-ui"
+        # comment was wrong about ESM resolution — which is exactly why this smoke
+        # had never once run green: ERR_MODULE_NOT_FOUND before the browser launched,
+        # so the page checks never executed.) COPY the script into apps/admin-ui so
+        # its import resolves from apps/admin-ui/node_modules. Verified: passes 3/3
+        # against prod with this layout.
         working-directory: apps/admin-ui
         env:
           BASE_URL: ${{ github.event.inputs.base_url || 'https://corelink-app.humangr.com' }}
-        run: node ../../scripts/e2e-admin-ui-render-smoke.mjs
+        run: |
+          cp ../../scripts/e2e-admin-ui-render-smoke.mjs ./.render-smoke.mjs
+          node ./.render-smoke.mjs; rc=$?
+          rm -f ./.render-smoke.mjs
+          exit $rc
 
       - name: Open issue on failure
         if: failure() && steps.smoke.outcome == 'failure'
