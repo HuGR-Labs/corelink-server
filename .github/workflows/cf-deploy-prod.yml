@@ -43,7 +43,7 @@ jobs:
   # ---------------------------------------------------------------------------
   gate-secrets-checklist:
     name: gate — secrets checklist drift
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     steps:
       - name: Confirm intent (manual dispatch only)
         if: github.event_name == 'workflow_dispatch'
@@ -71,7 +71,7 @@ jobs:
   gate-cf-secrets-populated:
     name: gate — CF secrets populated
     needs: gate-secrets-checklist
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -147,7 +147,7 @@ jobs:
     needs:
       - gate-secrets-checklist
       - gate-cf-secrets-populated
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     environment: production
     steps:
       - name: Checkout
