@@ -21,8 +21,14 @@
  *
  * Requires Playwright. In CI install once: `npx playwright install --with-deps chromium`.
  * On the self-hosted Mac the chromium-headless-shell is already cached.
+ *
+ * NB: import from `@playwright/test` (the package admin-ui actually depends on),
+ * NOT the bare `playwright` package — the latter is NOT installed, so importing it
+ * threw ERR_MODULE_NOT_FOUND before the browser ever launched, which is why this
+ * smoke had been failing on EVERY run (chronic red, ~5+ days) without ever
+ * exercising a single page. `@playwright/test` re-exports `chromium`.
  */
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 
 const BASE = process.env.BASE_URL || process.argv[2] || "https://corelink-app.humangr.com";
 
