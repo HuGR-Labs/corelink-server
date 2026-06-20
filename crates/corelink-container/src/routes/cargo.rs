@@ -191,7 +191,7 @@ pub fn router(
 /// still runs and rejects any invalid PAT → 401).
 async fn cargo_gate(
     axum::extract::State(state): axum::extract::State<CargoGateState>,
-    req: Request,
+    mut req: Request,
     next: Next,
 ) -> Response {
     let scope = req
@@ -222,6 +222,11 @@ async fn cargo_gate(
     // already verifies the same PAT to resolve the tenant). Read requests skip
     // this (the adapter's resolver still verifies the PAT for auth; only the
     // write-capability cross-check is gated here).
+    // REV-S3: for PUT, the PAT-derived tenant id from the F27 verify below is the
+    // AUTHORITATIVE cost-attribution key (it cannot be spoofed by a Worker-set
+    // header). We capture it here and prefer it over `x-corelink-tenant-id` for
+    // the $-ceiling gate.
+    let mut resolved_tenant_for_quota: Option<String> = None;
     if is_write {
         let pat_token = req
             .headers()
@@ -238,6 +243,16 @@ async fn cargo_gate(
                 match state.resolver.resolve_with_capability(&pat_plaintext).await {
                     Ok(resolved) if resolved.can_write => {
                         // PAT grants write — both layers pass; continue.
+                        // REV-S3: thread the authoritative, crypto-verified
+                        // tenant id from THIS single PAT verification into a
+                        // typed request extension so the downstream adapter's
+                        // `handle_put` reuses it instead of running Argon2id a
+                        // second time. Server-internal typed storage — not
+                        // client-settable — so this is not a trust downgrade.
+                        resolved_tenant_for_quota = Some(resolved.tenant_id.clone());
+                        req.extensions_mut().insert(
+                            server::GateResolvedTenant(resolved.tenant_id),
+                        );
                     }
                     Ok(_no_write) => {
                         tracing::warn!(
@@ -270,23 +285,44 @@ async fn cargo_gate(
 
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1): charge the
     // flat per-op cost AFTER the scope gate, BEFORE the adapter runs PAT auth +
-    // CAS. The isolation tenant is the Worker-set, server-trusted
-    // `x-corelink-tenant-id` (the adapter re-derives the tenant from the PAT for
-    // storage; the header is only the cost-attribution key here — a forged
-    // header can over-charge ITS OWN tenant, never another). A missing/empty
-    // header skips the charge fail-OPEN: cost-accounting must never deny a
-    // scope-valid op for lack of a label. 402 over-ceiling / 503 fail-CLOSED.
+    // CAS. 402 over-ceiling / 503 fail-CLOSED.
+    //
+    // REV-S3 (quota fail-OPEN closed): the cost-attribution tenant is sourced,
+    // in priority order:
+    //   1. the PAT-resolved tenant id from the F27 verify above (PUT only) —
+    //      AUTHORITATIVE, cannot be spoofed by a Worker-set header; then
+    //   2. the Worker-set, server-trusted `x-corelink-tenant-id` header
+    //      (the only source available for reads, where no PAT verify runs in
+    //      this gate). A forged header can over-charge only ITS OWN tenant.
+    // If the gate is configured but NO tenant id is available, we now fail
+    // CLOSED (503) instead of silently skipping the charge: a missing label is
+    // a Worker header-injection regression (or direct container access) and
+    // must surface immediately rather than letting a tenant exceed its
+    // $-ceiling unmetered.
     if let Some(gate) = state.quota.as_ref() {
-        let tenant = req
-            .headers()
-            .get("x-corelink-tenant-id")
-            .and_then(|v| v.to_str().ok())
-            .map(str::trim)
-            .unwrap_or("");
-        if !tenant.is_empty() {
-            if let Some(resp) = gate.check(tenant).await {
-                return resp;
-            }
+        let tenant = match resolved_tenant_for_quota {
+            Some(ref t) if !t.is_empty() => t.as_str(),
+            _ => req
+                .headers()
+                .get("x-corelink-tenant-id")
+                .and_then(|v| v.to_str().ok())
+                .map(str::trim)
+                .unwrap_or(""),
+        };
+        if tenant.is_empty() {
+            tracing::error!(
+                "cargo: quota gate active but no tenant id for cost attribution \
+                 (missing x-corelink-tenant-id and no PAT-resolved tenant) — \
+                 failing CLOSED (REV-S3)"
+            );
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "cost-attribution tenant unavailable",
+            )
+                .into_response();
+        }
+        if let Some(resp) = gate.check(tenant).await {
+            return resp;
         }
     }
     next.run(req).await

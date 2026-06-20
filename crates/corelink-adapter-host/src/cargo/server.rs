@@ -62,6 +62,30 @@ impl std::fmt::Debug for CargoRouterState {
     }
 }
 
+/// Tenant id already resolved by an UPSTREAM gate layer (the container's
+/// `cargo_gate`) from a SINGLE PAT verification.
+///
+/// When the adapter is mounted behind the container's two-layer write gate
+/// (F27), the gate runs the full HMAC + Argon2id PAT verify
+/// (`resolve_with_capability`) on every PUT to derive the tenant and the
+/// `can_write` bit. Re-running `resolve_tenant` in [`handle_put`] would run
+/// Argon2id a *second* time on the same request (REV-S3) — pure latency on the
+/// CAS hot path. The gate therefore inserts this typed extension carrying the
+/// authoritative, crypto-verified tenant id, and `handle_put` consumes it
+/// instead of re-resolving.
+///
+/// ## Trust model
+///
+/// This is a request *extension* — server-internal typed storage, NOT derived
+/// from any client-supplied header. An HTTP client cannot inject a Rust-typed
+/// extension over the wire; the only producer is the gate middleware, and only
+/// AFTER a successful PAT verification. In standalone mode (adapter run without
+/// the gate, e.g. `run_cargo_adapter` or hermetic tests) the extension is
+/// absent and `handle_put` falls back to a full `resolve_tenant` — so the
+/// adapter remains self-sufficient and fail-CLOSED on auth.
+#[derive(Debug, Clone)]
+pub struct GateResolvedTenant(pub String);
+
 /// Hash a value to a short, stable hex correlation handle for logging
 /// (INV-NO-PII-IN-LOGS). First 8 bytes of SHA-256, hex-encoded —
 /// consistent with the `hash_for_log` convention in `internal_pat.rs`
@@ -213,19 +237,33 @@ async fn handle_put(
         None => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let pat = match extract_bearer(&headers) {
-        Ok(pat) => pat,
-        Err(err) => {
-            state.auditor.emit_auth_failed(&err.to_string());
-            return err.into_response();
-        }
-    };
+    // REV-S3: if an upstream gate (the container's `cargo_gate`) already ran the
+    // full HMAC + Argon2id PAT verification for this PUT, it threaded the
+    // authoritative tenant id in via the [`GateResolvedTenant`] extension. Reuse
+    // it instead of re-running Argon2id (a redundant second verify, ~40-200ms on
+    // the CAS hot path). The extension is server-internal typed storage — never
+    // client-supplied — so this is not a trust downgrade. When absent (standalone
+    // adapter / hermetic tests) we fall back to a full `resolve_tenant`, which
+    // remains fail-CLOSED on auth.
+    let tenant_id = if let Some(GateResolvedTenant(t)) =
+        request.extensions().get::<GateResolvedTenant>().cloned()
+    {
+        t
+    } else {
+        let pat = match extract_bearer(&headers) {
+            Ok(pat) => pat,
+            Err(err) => {
+                state.auditor.emit_auth_failed(&err.to_string());
+                return err.into_response();
+            }
+        };
 
-    let tenant_id = match resolve_tenant(&state.tenant_resolver, &pat).await {
-        Ok(t) => t,
-        Err(err) => {
-            state.auditor.emit_auth_failed(&err.to_string());
-            return err.into_response();
+        match resolve_tenant(&state.tenant_resolver, &pat).await {
+            Ok(t) => t,
+            Err(err) => {
+                state.auditor.emit_auth_failed(&err.to_string());
+                return err.into_response();
+            }
         }
     };
 
@@ -310,6 +348,7 @@ pub fn _unused_marker(_: &SharedCasStore) {}
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
+    clippy::indexing_slicing,
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
@@ -350,5 +389,123 @@ mod tests {
         let full = Sha256::digest(input.as_bytes());
         let expected: String = full.iter().take(8).map(|b| format!("{b:02x}")).collect();
         assert_eq!(hash_for_log(input), expected);
+    }
+
+    // --- REV-S3: PUT reuses the gate-resolved tenant, never re-verifying ---
+
+    use std::sync::Mutex as StdMutex;
+
+    use crate::cargo::ports::{
+        CasError, CasStore, TenantResolveError, TenantResolver,
+    };
+    use axum::body::Body;
+    use http::Request as HttpRequest;
+    use tower::ServiceExt as _; // for `oneshot`
+
+    /// CAS that records the tenant id of every `put` so the test can assert
+    /// which tenant the write was attributed to.
+    #[derive(Debug, Default)]
+    struct RecordingCas {
+        puts: StdMutex<Vec<(String, String)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl CasStore for RecordingCas {
+        async fn get(
+            &self,
+            _tenant_id: &str,
+            _digest_hex: &str,
+        ) -> Result<Option<Vec<u8>>, CasError> {
+            Ok(None)
+        }
+
+        async fn put(
+            &self,
+            tenant_id: &str,
+            digest_hex: &str,
+            _bytes: Vec<u8>,
+        ) -> Result<(), CasError> {
+            self.puts
+                .lock()
+                .unwrap()
+                .push((tenant_id.to_owned(), digest_hex.to_owned()));
+            Ok(())
+        }
+    }
+
+    /// Resolver that PANICS if invoked — proves the PUT fast-path skips the
+    /// (Argon2id-backed) PAT verification when the gate already resolved.
+    #[derive(Debug, Default)]
+    struct PanicResolver;
+
+    #[async_trait::async_trait]
+    impl TenantResolver for PanicResolver {
+        async fn resolve(&self, _pat: &str) -> Result<String, TenantResolveError> {
+            panic!("resolver must NOT run when GateResolvedTenant is present (REV-S3)");
+        }
+    }
+
+    fn test_config(cas: Arc<dyn CasStore>) -> CargoAdapterConfig {
+        use std::net::{Ipv4Addr, SocketAddr};
+        CargoAdapterConfig::new(
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+            crate::cargo::config::DEFAULT_BODY_SIZE_LIMIT_BYTES,
+            cas,
+            Arc::new(PanicResolver),
+            Arc::new(corelink_audit::ports::InMemoryAuditEmitter::new()),
+        )
+    }
+
+    /// REV-S3 regression: when an upstream gate inserts [`GateResolvedTenant`],
+    /// `handle_put` reuses it and does NOT call the resolver a second time. The
+    /// `PanicResolver` would abort the test if `resolve` ran; the write is
+    /// attributed to the gate-resolved tenant.
+    #[tokio::test]
+    async fn put_reuses_gate_resolved_tenant_without_reverifying() {
+        let cas = Arc::new(RecordingCas::default());
+        let router = build_router(test_config(cas.clone()));
+
+        let key = "a".repeat(64);
+        let req = HttpRequest::builder()
+            .method(http::Method::PUT)
+            .uri(format!("/{key}"))
+            // NOTE: no Authorization header at all — the extension is the only
+            // tenant source, proving the resolver is never consulted.
+            .extension(GateResolvedTenant("tenant-from-gate".to_owned()))
+            .body(Body::from(vec![1u8, 2, 3]))
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let puts = cas.puts.lock().unwrap();
+        assert_eq!(puts.len(), 1, "exactly one CAS put");
+        assert_eq!(
+            puts[0].0, "tenant-from-gate",
+            "write attributed to the gate-resolved tenant"
+        );
+        assert_eq!(puts[0].1, key, "write keyed by the path digest");
+    }
+
+    /// REV-S3 regression (fallback): with NO gate extension and NO bearer, the
+    /// standalone adapter fails CLOSED on auth (401) rather than writing — the
+    /// fallback `resolve_tenant` path still runs. (Here the missing
+    /// Authorization header is rejected by `extract_bearer` BEFORE the resolver,
+    /// so `PanicResolver` is never reached.)
+    #[tokio::test]
+    async fn put_without_gate_extension_or_bearer_is_unauthorized() {
+        let cas = Arc::new(RecordingCas::default());
+        let router = build_router(test_config(cas.clone()));
+
+        let key = "a".repeat(64);
+        let req = HttpRequest::builder()
+            .method(http::Method::PUT)
+            .uri(format!("/{key}"))
+            .body(Body::from(vec![1u8, 2, 3]))
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(cas.puts.lock().unwrap().len(), 0, "no write on auth failure");
     }
 }

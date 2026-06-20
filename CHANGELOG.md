@@ -22,7 +22,72 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **Admin-route audit hardening (REV-S1)** — two container admin-plane defects
+  closed: (1) `admin_pilot::handle_create` and `handle_grant_tier` now take the
+  request body as raw `Bytes` and JSON-parse it ONLY after the internal-auth gate
+  passes (M3 pattern, matching `admin::handle_mutate`), so an unauthenticated
+  caller can no longer force the container to deserialize an arbitrarily-large
+  body pre-auth; (2) `admin::handle_read` and `handle_mutate` now stamp audit
+  records with the real `SystemWallClock.now_ms()` instead of a hardcoded
+  epoch-zero timestamp, restoring orderability of the admin forensic log
+  (matches the CAS/AC/Bazel/Turbo audit path).
+
 ### Security
+- **Internal PAT revoke/rotate are now tenant-scoped (REV-S2, blast-radius
+  bound).** `POST /internal/v1/runner/revoke` and `POST /internal/v1/auth/rotate`
+  previously keyed only on `pat_id`: a holder of the `pat_mint` internal-auth key
+  could revoke ANY tenant's PAT (targeted DoS on a customer's primary API key) or
+  rotate ANY tenant's PAT into a fresh working credential (cross-tenant privilege
+  escalation). Both now REQUIRE an `owner_tenant` in the body. Revoke adds a
+  `tenant_id = owner_tenant` predicate to the soft-revoke UPDATE; rotate validates
+  `owner_tenant === oldRow.tenant_id` (403 on mismatch) before minting — bounding a
+  compromised mint key to only the tenant it names. Files:
+  `worker/src/lib/runner_mint.ts`, `worker/src/lib/auth_rotate.ts`.
+- **DO container-start race (REV-S2).** Concurrent requests to a stopped Durable
+  Object could each pass the `containerStatus === "stopped"` check and double-call
+  `container.start()` (double cold-start telemetry + competing health polls).
+  `startContainer` now flips the in-memory status to `"starting"` SYNCHRONOUSLY
+  before its first `await`, so any concurrent re-entry falls into the
+  `waitForContainerReady` branch. File: `worker/src/durable_object.ts`.
+- **CAS read tombstone (GDPR-erasure) gate now fails CLOSED on D1 error**
+  (`PEN-2`/`REV-S1`). On a CAS read, a transient D1 transport fault in the
+  `is_tombstoned` lookup previously fell through to the normal R2 read path,
+  which could resurrect (serve 200) a legally-erased artifact during a D1 blip.
+  The gate now returns `503 Service Unavailable` on a lookup error instead of
+  serving the bytes — confidentiality of GDPR/DSR-erased data outweighs
+  availability of a live blob during an outage. File:
+  `crates/corelink-container/src/routes/cas.rs` (single-read gate only).
+- **Package-proxy upstream clients: SSRF redirect hardening + brew request
+  timeout** (REV-O2, REV-S3). The npm/pip/brew adapter `reqwest` clients no
+  longer follow redirects under reqwest's permissive default policy (up to 10
+  hops to ANY host). Each client now installs a bounded (≤5 hop) custom redirect
+  policy that REFUSES any hop whose `Location` resolves to an internal IP literal
+  — loopback, RFC-1918/RFC-4193 private space, link-local (incl. the
+  `169.254.169.254` cloud-metadata endpoint), CGNAT `100.64/10`, broadcast,
+  documentation, and the unspecified address — closing the SSRF hole where a
+  first-hop upstream could bounce the request at an internal/metadata target.
+  Legitimate public-CDN redirects (ghcr→download CDN, pypi.org→
+  files.pythonhosted.org) still follow. Separately, the brew upstream client
+  gained the 30s total + 10s connect timeouts the npm/pip clients already had,
+  so a slow/adversarial ghcr.io can no longer pin a Tokio task indefinitely.
+  Files: `crates/corelink-adapter-host/src/{brew,npm,pip}/upstream.rs`.
+- **cargo plane: quota gate no longer fails OPEN on a missing tenant label, and
+  PUT no longer runs Argon2id twice** (`REV-S3`). (1) The `/cargo/*` per-tenant
+  `$`-ceiling gate (ADR-0068) now attributes cost to the PAT-resolved tenant id
+  for writes (authoritative, un-spoofable) and falls back to the Worker-set
+  `x-corelink-tenant-id` for reads; if NO tenant id is available it now fails
+  CLOSED (503) instead of silently skipping the charge — a missing label is a
+  Worker header-injection regression and must surface, not let a tenant exceed
+  its ceiling unmetered. (2) The container write-gate threads the tenant id from
+  its single F27 PAT verification into a typed, server-internal request
+  extension (`GateResolvedTenant`); the adapter's `handle_put` reuses it instead
+  of re-running the HMAC + Argon2id verify a second time — eliminating ~40-200ms
+  of redundant CAS-hot-path latency and making the surface's "exactly ONE PAT
+  verification per request" doc claim accurate. Files:
+  `crates/corelink-container/src/routes/cargo.rs`,
+  `crates/corelink-adapter-host/src/cargo/server.rs`.
+
 - **Per-consumer introspect keys (blast-radius isolation)** — the
   `/internal/v1/auth/introspect` gate now accepts a SET of dedicated service
   secrets, one per distinct consumer, so a compromised consumer can never present
@@ -42,6 +107,30 @@ Each entry cross-references:
   signup-worker moving the secret off all client-readable/JWT-broadcast surfaces into
   backend-only `private_metadata` (`public_metadata` retains only `{tenant_id, region}`).
   Files: `apps/admin-ui/src/app/[locale]/(authenticated)/welcome/{page.tsx,actions.ts}`.
+- **npm + pip planes: quota gate no longer fails OPEN on a missing tenant label**
+  (`REV-S3`, mirrors the cargo plane fix). The `/npm/*` and `/pip/*` per-tenant
+  `$`-ceiling gates (ADR-0068) previously attributed cost ONLY to the Worker-set
+  `x-corelink-tenant-id` header and SILENTLY SKIPPED the charge when it was
+  missing/empty — an unmetered quota bypass on any billable op that reached the
+  gate without the header. Both gates now attribute cost to the PAT-resolved
+  tenant id for writes (authoritative, un-spoofable via the F27 verify), fall
+  back to the header for reads, and FAIL CLOSED (`503`) when neither is
+  available, so a missing label surfaces as a Worker header-injection regression
+  instead of letting a tenant exceed its ceiling unmetered. Regression tests
+  assert a billable op with no tenant header now `503`s rather than skipping.
+  Files: `crates/corelink-container/src/routes/{npm,pip}.rs`.
+- **npm tarball integrity now verifies SHA512, not just broken SHA1** (`REV-S3`).
+  The npm cache-fill previously verified downloaded tarball integrity ONLY
+  against the legacy SHA1 `dist.shasum` (cryptographically broken — a forged
+  tarball with a SHA1 collision would have been stored + served as authentic).
+  The adapter now prefers the SHA512 `dist.integrity` SRI (`sha512-<base64>`)
+  that the npm registry publishes for modern packages — the strong hash is
+  load-bearing and a tarball that fails SHA512 is rejected (fail-CLOSED + audit
+  emit) even if its SHA1 matches; SHA1 remains only as a fallback for legacy
+  packages with no SHA512 SRI. Files:
+  `crates/corelink-adapter-host/src/npm/tarball.rs` (new `verify_sha512` /
+  `parse_sha512_sri` / `verify_tarball_integrity`),
+  `crates/corelink-adapter-host/src/npm/server.rs` (threads `dist.integrity`).
 ### Performance
 - **Budget-LEASING for the per-tenant `$`-ceiling quota gate** (WP-2a;
   `crates/corelink-container/src/tenant_quota.rs`): a new
@@ -119,6 +208,17 @@ Each entry cross-references:
   green (0 failures).
 
 ### Changed
+- **`customer_d1.rs::map_billing_status` — REV-S5 known-limitation made explicit (no
+  behavior change).** Audit REV-S5 flags that the `incomplete` (pending FIRST payment)
+  `tenant_billing.status` is collapsed onto the dashboard `past_due`, so a pending first
+  payment reads as a renewal failure. The recommended fix (a distinct `pending` status)
+  cannot land in `customer_d1.rs` alone: the dashboard status set is a FROZEN cross-team
+  contract (the `apps/admin-ui` `customer-types.ts` union + the `tenant_billing.status`
+  CHECK in `specs/03_architecture/data_model.md` have no `pending` value). The `incomplete`
+  arm is split out (still → `past_due`, byte-identical output) and a guard test
+  (`billing_status_map_stays_in_frozen_dashboard_union`) now trips if the map ever emits a
+  value outside the frozen union — forcing a future fix to widen the contract in the same
+  change. Emitted statuses are unchanged.
 - **Consolidated SAFE minor/patch JS/Node dependency bumps** across the workspace
   (dependabot groups `root-tooling-minor-patch` #339, `apps/admin-ui` npm-minor-patch
   #289, `apps/docs` docs-minor-patch #314). Touches root + every `apps/*` +
@@ -181,6 +281,20 @@ Each entry cross-references:
   `docs/security/2026-06-18-gitleaks-baseline-triage.md`.
 
 ### Fixed
+- **Stripe/Clerk webhook audit fixes (billing dunning-recovery, terminal payment detection, DSR legal-hold).**
+  Three findings in `apps/signup-worker/src/webhooks/`: (1) REV-S5 (medium) —
+  `customer.subscription.updated` returning to active/trialing after a dunning lapse (payment-method fix +
+  auto-retry, an operator marking an invoice paid, or an incomplete→trialing resolution) never re-activated
+  `tier_selections`, stranding a PAYING tenant at `subscription_state='inactive'` (quota gate denies access).
+  Added a re-activation path (`reactivateTierSelectionBySubscription`) gated on `tenant_billing.status != 'canceled'`
+  so a late out-of-order `updated(active)` after a cancel can NOT resurrect a terminated subscription, and which
+  NEVER inserts (checkout stays the single activation writer). (2) REV-S5 (low) — `invoice.payment_failed` terminal
+  detection relied solely on `'next_payment_attempt' in obj && === null`, missing off-cycle/manual/credit-note
+  invoices Stripe marks `status: 'uncollectible'` without that key; added `status === 'uncollectible'` as an
+  additional terminal condition. (3) REV-O1 (low) — the Clerk `user.deleted` erasure trigger hardcoded
+  `legal_hold: false`, making the CTRL-PRIV-033 preservation branch unreachable; `buildErasureQueueMessage` now
+  takes an explicit `legalHold` resolved from a `tenant_legal_hold` source-of-truth (`tenantUnderLegalHold`), so a
+  held tenant's deletion preserves rather than erases. Files: `webhooks/stripe.ts`, `webhooks/clerk.ts` (+ tests).
 - **`build-container-prod.sh` smoke probe could hang the build indefinitely.** Step 6 ran an
   unbounded foreground `docker run --rm … --version`; the CoreLink server binary ignores that flag
   and BOOTS instead of exiting, so the probe blocked forever (observed: a 30+ minute hang during the

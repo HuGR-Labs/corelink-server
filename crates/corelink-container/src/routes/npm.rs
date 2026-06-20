@@ -405,6 +405,12 @@ async fn npm_gate(
     // record does not authorise — without a redundant second verify. The npm
     // resolver collapses every verification failure into `NpmAdapterError::Auth`,
     // so any resolver `Err` is treated as a fail-CLOSED write denial (401).
+    //
+    // REV-S3 (mirror cargo_gate): for a write, the PAT-derived tenant id from
+    // the F27 verify is the AUTHORITATIVE cost-attribution key (it cannot be
+    // spoofed by a Worker-set header). Capture it here and prefer it over
+    // `x-corelink-tenant-id` for the $-ceiling gate below.
+    let mut resolved_tenant_for_quota: Option<String> = None;
     if is_write {
         let pat_token = req
             .headers()
@@ -421,6 +427,9 @@ async fn npm_gate(
                 match resolver.resolve_with_capability(&pat_plaintext).await {
                     Ok(resolved) if resolved.can_write => {
                         // PAT grants write — both layers pass; continue.
+                        // REV-S3: capture the crypto-verified tenant id from THIS
+                        // single PAT verification as the authoritative quota key.
+                        resolved_tenant_for_quota = Some(resolved.tenant_id.to_string());
                     }
                     Ok(_no_write) => {
                         tracing::warn!(
@@ -443,21 +452,43 @@ async fn npm_gate(
 
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1; rt-nuclear
     // #22): charge the flat per-op cost AFTER the scope + F27 checks, BEFORE the
-    // adapter runs. The cost-attribution tenant is the Worker-set, server-trusted
-    // `x-corelink-tenant-id` (a forged header can over-charge ITS OWN tenant,
-    // never another); a missing/empty header skips the charge fail-OPEN. 402
-    // over-ceiling / 503 fail-CLOSED. Mirrors `cargo_gate`.
+    // adapter runs. 402 over-ceiling / 503 fail-CLOSED. Mirrors `cargo_gate`.
+    //
+    // REV-S3 (quota fail-OPEN closed): the cost-attribution tenant is sourced,
+    // in priority order:
+    //   1. the PAT-resolved tenant id from the F27 verify above (writes only) —
+    //      AUTHORITATIVE, cannot be spoofed by a Worker-set header; then
+    //   2. the Worker-set, server-trusted `x-corelink-tenant-id` header (the
+    //      only source for reads, where no PAT verify runs in this gate). A
+    //      forged header can over-charge only ITS OWN tenant.
+    // If the gate is configured but NO tenant id is available, we now fail
+    // CLOSED (503) instead of silently skipping the charge: a missing label is a
+    // Worker header-injection regression (or direct container access) and must
+    // surface immediately rather than let a tenant exceed its $-ceiling unmetered.
     if let Some(gate) = state.quota.as_ref() {
-        let tenant = req
-            .headers()
-            .get("x-corelink-tenant-id")
-            .and_then(|v| v.to_str().ok())
-            .map(str::trim)
-            .unwrap_or("");
-        if !tenant.is_empty() {
-            if let Some(resp) = gate.check(tenant).await {
-                return resp;
-            }
+        let tenant = match resolved_tenant_for_quota {
+            Some(ref t) if !t.is_empty() => t.as_str(),
+            _ => req
+                .headers()
+                .get("x-corelink-tenant-id")
+                .and_then(|v| v.to_str().ok())
+                .map(str::trim)
+                .unwrap_or(""),
+        };
+        if tenant.is_empty() {
+            tracing::error!(
+                "npm: quota gate active but no tenant id for cost attribution \
+                 (missing x-corelink-tenant-id and no PAT-resolved tenant) — \
+                 failing CLOSED (REV-S3)"
+            );
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "cost-attribution tenant unavailable",
+            )
+                .into_response();
+        }
+        if let Some(resp) = gate.check(tenant).await {
+            return resp;
         }
     }
 
@@ -733,6 +764,50 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// Router whose verifier rejects ALL PATs but whose per-tenant `$`-ceiling
+    /// quota gate is ACTIVE (hermetic in-memory store + fake clock). Used to
+    /// prove the gate's cost-attribution does NOT fall open when no tenant id
+    /// is available (REV-S3).
+    fn router_with_quota() -> Router {
+        let cas: Arc<StubCas> = Arc::new(StubCas::default());
+        let verifier = Arc::new(PatVerifier::new(Arc::new(EmptyLookup), test_key()));
+        let store = Arc::new(crate::tenant_quota::InMemoryQuotaStore::new());
+        let clock = Arc::new(crate::wall_clock::InMemoryFakeWallClock::at_unix_ms(
+            1_700_000_000_000,
+        ));
+        let guard = Arc::new(crate::tenant_quota::QuotaGuard::new(store, clock));
+        // $1/op flat cost — a fresh tenant (under the $5 tripwire) would be
+        // ADMITTED, so a 503 here is unambiguously the no-tenant fail-CLOSED
+        // path, not an over-ceiling 402.
+        let gate = crate::routes::QuotaGate::new_for_test(guard, 1_000_000);
+        router(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()),
+            npm_kv(Arc::new(FakeKv::default())),
+            verifier,
+            Some(gate),
+        )
+    }
+
+    #[tokio::test]
+    async fn quota_gate_without_tenant_header_fails_closed_not_skipped() {
+        // REV-S3 regression: a billable op (scope-valid GET) that reaches an
+        // ACTIVE quota gate with NO `x-corelink-tenant-id` and no PAT-resolved
+        // tenant must FAIL CLOSED (503) — the prior code silently skipped the
+        // charge (fail-OPEN), an unmetered $-ceiling bypass.
+        let app = router_with_quota();
+        let resp = app
+            .oneshot(get("/npm/t/lodash", Some("corelink_whatever"), Some(SCOPE_RW)))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "no-tenant billable op must fail closed (503), not skip the charge"
+        );
     }
 
     #[tokio::test]

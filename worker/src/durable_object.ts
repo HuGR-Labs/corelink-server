@@ -437,6 +437,28 @@ export class CoreLinkServer implements DurableObject {
       return { ok: false, reason: "no_container_binding" };
     }
 
+    // CONCURRENT-START GUARD (REV-S2):
+    // Cloudflare DOs are single-threaded but ASYNC-concurrent — each `await`
+    // below (emitLifecycleEvent, transitionStatus, container.start) is a yield
+    // point at which another queued fetch() can run. If two requests arrive
+    // while status is "stopped"/"degraded", both pass the ensureContainerRunning
+    // check and both enter startContainer, double-calling container.start() and
+    // double-counting cold starts. Closing the race requires flipping the
+    // IN-MEMORY status to "starting" SYNCHRONOUSLY here — before the first await
+    // — so any concurrent request that runs ensureContainerRunning next sees
+    // "starting" and falls into the waitForContainerReady branch instead of
+    // re-entering this method. (We avoid blockConcurrencyWhile here so we do not
+    // serialize ALL fetches for the full ~90s startup window; the in-memory flip
+    // is sufficient because the check and this flip are in the same microtask
+    // turn with no intervening await.) The persisted write happens via
+    // transitionStatus below; the in-memory field is the load-bearing guard.
+    if (this.lifecycleState.containerStatus === "starting") {
+      // A concurrent caller already won the start; defer to the wait path.
+      return this.waitForContainerReady(requestId);
+    }
+    // Synchronous in-memory flip (containerStatus is readonly → replace the object).
+    this.lifecycleState = { ...this.lifecycleState, containerStatus: "starting" };
+
     const tenantHash = await hashForLog(this.lifecycleState.tenantId ?? "_unknown");
     const newColdStartCount = this.lifecycleState.coldStartCount + 1;
 
@@ -452,6 +474,8 @@ export class CoreLinkServer implements DurableObject {
       this.env.ENVIRONMENT,
     );
 
+    // Persist the "starting" status (the in-memory flip above already closed the
+    // concurrent-start race; this durably records it across DO eviction).
     await this.transitionStatus("starting", requestId);
 
     try {

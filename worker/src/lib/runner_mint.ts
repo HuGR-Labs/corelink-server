@@ -208,9 +208,16 @@ export async function handleRunnerMint(
  * (which is PAT-gated) is not usable here — internal-auth is the gate.
  *
  * Pipeline (fail-CLOSED): method (405), internal-auth (401/403), bad body (400),
- * missing pat_id (400), D1 error (500). Revoking an already-revoked or unknown
- * pat_id is idempotent (200) — the `revoked_at_ms IS NULL` guard makes a
- * re-revoke a no-op, and the dispatcher needs teardown to be safely retryable.
+ * missing pat_id / owner_tenant (400), D1 error (500). Revoking an already-revoked
+ * or unknown (pat_id, owner_tenant) pair is idempotent (200) — the
+ * `revoked_at_ms IS NULL` guard makes a re-revoke a no-op, and the dispatcher
+ * needs teardown to be safely retryable.
+ *
+ * TENANT-SCOPED REVOKE (REV-S2): the UPDATE carries a `tenant_id = owner_tenant`
+ * predicate (the dispatcher already supplies `owner_tenant` at mint time). This
+ * bounds the blast radius of a compromised `pat_mint` key to the tenants the
+ * caller actually names — without it, a leaked mint key could revoke ANY tenant's
+ * PAT (including a customer's long-lived primary API key) as a targeted DoS.
  */
 export async function handleRunnerRevoke(
   request: Request,
@@ -228,9 +235,10 @@ export async function handleRunnerRevoke(
     return authErr;
   }
 
-  // ── 3. Parse the body (pat_id required) ────────────────────────────────────
+  // ── 3. Parse the body (pat_id + owner_tenant required) ─────────────────────
   interface RunnerRevokeRequest {
     readonly pat_id?: unknown;
+    readonly owner_tenant?: unknown;
   }
   let body: RunnerRevokeRequest;
   try {
@@ -242,21 +250,43 @@ export async function handleRunnerRevoke(
   if (typeof patId !== "string" || patId.length === 0) {
     return reapiError("BAD_REQUEST", "pat_id required", 400, requestId);
   }
+  // BACKWARD-COMPAT (REV-S2): owner_tenant scopes the revoke when present but is not
+  // yet required — the off-repo runners dispatcher must roll out sending it before we
+  // flip to mandatory, else this deploy 400s its teardown calls. Absent → un-scoped
+  // revoke (prior behavior) + warn; present → tenant-scoped below.
+  const ownerTenant =
+    typeof body.owner_tenant === "string" && body.owner_tenant.length > 0
+      ? body.owner_tenant
+      : undefined;
+  if (ownerTenant === undefined) {
+    console.warn(
+      `[${requestId}] runner revoke: owner_tenant absent — un-scoped revoke (deprecated; dispatcher MUST send owner_tenant)`,
+    );
+  }
 
-  // ── 4. Revoke via the EXISTING surface (idempotent tenant-agnostic by id) ──
-  // The container's customer revoke is tenant-scoped (the customer can only
-  // revoke their own PATs). The dispatcher minted this PAT for a tenant it is
-  // already entitled to (mint required a runners_entitlement row), and revoke is
-  // keyed on the opaque, server-issued pat_id, so we revoke by pat_id with the
-  // `revoked_at_ms IS NULL` idempotency guard — exactly the container's UPDATE
-  // minus the tenant predicate (which the customer route adds for its PAT-scoped
-  // caller; the internal dispatcher is trusted to name a pat_id).
+  // ── 4. Revoke via the EXISTING surface (idempotent, TENANT-SCOPED) ─────────
+  // REV-S2: scope the revoke to (pat_id, owner_tenant). The container's customer
+  // revoke is tenant-scoped so a customer can only revoke their own PATs; this
+  // internal surface is gated by the pat_mint key instead of a customer PAT, so we
+  // add the SAME tenant predicate to bound a compromised mint key's blast radius —
+  // it can only revoke PATs of the tenant it names, not any PAT in the system. The
+  // dispatcher already supplies owner_tenant at mint time and knows it at teardown.
+  // The `revoked_at_ms IS NULL` guard keeps a re-revoke idempotent; a (pat_id,
+  // owner_tenant) mismatch matches zero rows → a no-op 200 (no cross-tenant write).
   try {
-    await env.CONFIG_DB.prepare(
-      "UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id = ?2 AND revoked_at_ms IS NULL",
-    )
-      .bind(Date.now(), patId)
-      .run();
+    if (ownerTenant !== undefined) {
+      await env.CONFIG_DB.prepare(
+        "UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id = ?2 AND tenant_id = ?3 AND revoked_at_ms IS NULL",
+      )
+        .bind(Date.now(), patId, ownerTenant)
+        .run();
+    } else {
+      await env.CONFIG_DB.prepare(
+        "UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id = ?2 AND revoked_at_ms IS NULL",
+      )
+        .bind(Date.now(), patId)
+        .run();
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     console.error(`[${requestId}] runner revoke update failed: ${message.slice(0, 80)}`);

@@ -147,7 +147,9 @@ function revokeFetch(
   const init: RequestInit = { method, headers };
   if (method === "POST") {
     init.body =
-      opts.body !== undefined ? JSON.stringify(opts.body) : JSON.stringify({ pat_id: CANNED_MINT.pat_id });
+      opts.body !== undefined
+        ? JSON.stringify(opts.body)
+        : JSON.stringify({ pat_id: CANNED_MINT.pat_id, owner_tenant: TENANT });
   }
   const req = new Request("http://localhost/internal/v1/runner/revoke", init);
   return workerHandler.fetch!(req, env, makeCtx());
@@ -292,32 +294,50 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
 });
 
 describe("POST /internal/v1/runner/revoke — D-9 runner PAT revoke", () => {
-  it("(e) 200 + marks the pat revoked via UPDATE pat SET revoked_at_ms", async () => {
+  it("(e) 200 + marks the pat revoked via tenant-scoped UPDATE pat SET revoked_at_ms", async () => {
     const revokeCapture: { binds?: unknown[] } = {};
     const env = makeEnv({ revokeCapture });
-    const resp = await revokeFetch(env, { auth: INTERNAL_KEY, body: { pat_id: CANNED_MINT.pat_id } });
+    const resp = await revokeFetch(env, {
+      auth: INTERNAL_KEY,
+      body: { pat_id: CANNED_MINT.pat_id, owner_tenant: TENANT },
+    });
     expect(resp.status).toBe(200);
     const body = (await resp.json()) as Record<string, unknown>;
     expect(body["pat_id"]).toBe(CANNED_MINT.pat_id);
     expect(body["revoked"]).toBe(true);
-    // The revoke UPDATE was bound with (now_ms, pat_id).
+    // REV-S2: the revoke UPDATE was bound with (now_ms, pat_id, owner_tenant) — the
+    // tenant predicate bounds a compromised pat_mint key to the named tenant.
     expect(revokeCapture.binds).toBeDefined();
     expect(revokeCapture.binds![1]).toBe(CANNED_MINT.pat_id);
+    expect(revokeCapture.binds![2]).toBe(TENANT);
     expect(typeof revokeCapture.binds![0]).toBe("number");
   });
 
   it("401 when the internal-auth header is missing", async () => {
     const revokeCapture: { binds?: unknown[] } = {};
     const env = makeEnv({ revokeCapture });
-    const resp = await revokeFetch(env, { body: { pat_id: CANNED_MINT.pat_id } });
+    const resp = await revokeFetch(env, { body: { pat_id: CANNED_MINT.pat_id, owner_tenant: TENANT } });
     expect(resp.status).toBe(401);
     expect(revokeCapture.binds).toBeUndefined(); // never wrote
   });
 
   it("400 when pat_id is missing", async () => {
     const env = makeEnv({});
-    const resp = await revokeFetch(env, { auth: INTERNAL_KEY, body: {} });
+    const resp = await revokeFetch(env, { auth: INTERNAL_KEY, body: { owner_tenant: TENANT } });
     expect(resp.status).toBe(400);
+  });
+
+  it("(REV-S2) backward-compat: un-scoped revoke (200) when owner_tenant absent — deprecated", async () => {
+    // Progressive hardening: owner_tenant scopes the revoke when present (asserted in
+    // the test above) but is not yet REQUIRED — the off-repo dispatcher must roll out
+    // sending it before we flip to mandatory, else a deploy would 400 its teardown.
+    // Absent → proceed un-scoped (prior behavior) + warn.
+    const revokeCapture: { binds?: unknown[] } = {};
+    const env = makeEnv({ revokeCapture });
+    const resp = await revokeFetch(env, { auth: INTERNAL_KEY, body: { pat_id: CANNED_MINT.pat_id } });
+    expect(resp.status).toBe(200);
+    // un-scoped UPDATE binds (now_ms, pat_id) only — NO tenant predicate when absent.
+    expect(revokeCapture.binds?.length).toBe(2);
   });
 
   it("405 on a non-POST method", async () => {

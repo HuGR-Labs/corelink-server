@@ -1118,6 +1118,9 @@ mod tests {
             .uri("/v1/customer/keys")
             .method("GET")
             .header("x-corelink-tenant-id", "t5")
+            // #336 (rt-nuclear #7): listing credentials requires a cache-write
+            // (dashboard `read-write`) scope — a read-only PAT must not enumerate keys.
+            .header("x-corelink-scope", "read-write")
             .header("x-corelink-token-prefix", "clpat_t5")
             .body(Body::empty())
             .unwrap();
@@ -1147,6 +1150,9 @@ mod tests {
             .uri("/v1/customer/keys/pat_rev/revoke")
             .method("POST")
             .header("x-corelink-tenant-id", "t6")
+            // #336 (rt-nuclear #7): revoking a credential requires a cache-write
+            // (dashboard `read-write`) scope — a read-only PAT must not revoke keys.
+            .header("x-corelink-scope", "read-write")
             .header("x-corelink-token-prefix", "clpat_t6")
             .body(Body::empty())
             .unwrap();

@@ -458,6 +458,54 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
       expect(msg.dsr_id).toBe(json.dsr_id);
     });
 
+    it("a tenant UNDER LEGAL HOLD → erasure enqueued with legal_hold=true (preserve, not destroy) (REV-O1)", async () => {
+      // REV-O1: the hold flag was hardcoded false, so the CTRL-PRIV-033
+      // preservation branch was unreachable from the only live erasure trigger.
+      // The handler now consults a `tenant_legal_hold` source-of-truth. This
+      // stub answers the tenant lookup AND reports an ACTIVE hold for the tenant.
+      const sent: unknown[] = [];
+      const heldDb = {
+        prepare(query: string) {
+          let bound: unknown[] = [];
+          const stmt = {
+            bind(...v: unknown[]) {
+              bound = v;
+              return stmt;
+            },
+            async run() {
+              return { success: true };
+            },
+            async first<T = unknown>(): Promise<T | null> {
+              if (query.includes("clerk_user_id")) {
+                return { tenant_id: "tenant-held-1" } as T;
+              }
+              if (query.includes("tenant_legal_hold")) {
+                // bound[0] is the tenant_id; report an active hold for it.
+                return bound[0] === "tenant-held-1" ? ({ held: 1 } as T) : null;
+              }
+              return null;
+            },
+          };
+          return stmt;
+        },
+      };
+      const env: AutoProvisionEnv = {
+        CLERK_WEBHOOK_SECRET: WEBHOOK_SECRET,
+        CORELINK_API_BASE: "https://corelink-api.humangr.com",
+        CONFIG_DB: heldDb as unknown as ConfigDb,
+        DSR_QUEUE: { send: async (m: unknown) => { sent.push(m); } },
+        ERASURE_SALT_KEY: "test-erasure-salt-key",
+      };
+      const resp = await handleClerkWebhook(await deletedReq("user_held_1"), env, defaultApiClient);
+      expect(resp.status).toBe(200);
+      expect(sent).toHaveLength(1);
+      const msg = sent[0] as Record<string, unknown>;
+      // The crux: a held tenant's deletion carries legal_hold=true so the
+      // downstream adapters PRESERVE the data instead of erasing it.
+      expect(msg.legal_hold).toBe(true);
+      expect(msg.tenant_id).toBe("tenant-held-1");
+    });
+
     it("is idempotent: a redelivered user.deleted yields the same dsr_id", async () => {
       const db = new InMemoryD1();
       await seedTenant(db, "tenant-uuid-2", "user_del_2");
@@ -507,6 +555,21 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
       expect(noKey.erasure_salt_hex).toHaveLength(64);
       expect(withKey.erasure_salt_hex).not.toBe(noKey.erasure_salt_hex);
       expect(withKey.dsr_id).toBe(noKey.dsr_id); // dsr_id is independent of the salt key
+    });
+
+    it("buildErasureQueueMessage: legal_hold flows through (default false; true PRESERVES per CTRL-PRIV-033) (REV-O1)", async () => {
+      const unheld = await buildErasureQueueMessage({ clerkUserId: "u", tenantId: "t", nowMs: 1, saltKey: "k" });
+      expect(unheld.legal_hold).toBe(false); // default — no hold
+      const held = await buildErasureQueueMessage({
+        clerkUserId: "u",
+        tenantId: "t",
+        nowMs: 1,
+        saltKey: "k",
+        legalHold: true,
+      });
+      // The hold flag is no longer hardcoded — a held tenant carries legal_hold=true,
+      // reaching the adapter preservation branch (adapter_d1.rs:202 et al).
+      expect(held.legal_hold).toBe(true);
     });
   });
 

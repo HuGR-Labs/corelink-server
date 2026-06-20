@@ -1159,6 +1159,130 @@ describe("handleStripeWebhook", () => {
         expect(db.runCalls.find((c) => c.sql.includes("UPDATE tenant_billing"))).toBeUndefined();
     });
 
+    it("invoice.payment_failed (uncollectible, NO next_payment_attempt key) → tier_selections deactivated (REV-S5)", async () => {
+        // REV-S5: off-cycle / manual / credit-note invoices that Stripe marks
+        // `status: 'uncollectible'` may omit `next_payment_attempt` entirely. The
+        // old field-presence-only check left such a definitively-failed invoice as
+        // non-terminal → tenant kept paid access indefinitely. The status-based
+        // fallback now treats `uncollectible` as terminal.
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_pf_uncollectible",
+            type: "invoice.payment_failed",
+            data: {
+                object: {
+                    subscription: "sub_pf3",
+                    customer: "cus_pf3",
+                    attempt_count: 2,
+                    status: "uncollectible", // definitively failed; NO next_payment_attempt key
+                    metadata: { tenant_id: "tenant_pf3" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        const deact = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("'inactive'"),
+        );
+        expect(deact).toBeDefined();
+        expect(deact!.params).toContain("cus_pf3");
+        expect(
+            db.runCalls.find(
+                (c) => c.sql.includes("UPDATE tenant_billing") && c.params.includes("past_due"),
+            ),
+        ).toBeDefined();
+    });
+
+    // ------------------------------------------------------------------
+    // REV-S5: dunning RECOVERY — subscription.updated back to active/trialing
+    // must RE-ACTIVATE the access gate (no fresh checkout fires)
+    // ------------------------------------------------------------------
+
+    it("customer.subscription.updated (recovery: status=active) → tier_selections RE-activated by customer (REV-S5)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const periodEndSec = Math.floor(nowMs / 1000) + 30 * 24 * 3600;
+        const event = {
+            id: "evt_sub_recovery",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_recovery",
+                    status: "active", // dunning recovered (payment method fixed / invoice marked paid)
+                    current_period_end: periodEndSec,
+                    customer: "cus_recovery",
+                    metadata: { tenant_id: "tenant_recovery" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // The gate is flipped BACK to 'active' via a bare UPDATE keyed by
+        // subscription id, guarded on tenant_billing.status != 'canceled' (never
+        // an INSERT, so the single-activation-writer invariant holds).
+        const react = db.runCalls.find(
+            (c) =>
+                c.sql.includes("UPDATE tier_selections") &&
+                c.sql.includes("'active'") &&
+                !c.sql.includes("'inactive'"),
+        );
+        expect(react).toBeDefined();
+        expect(react!.params).toContain("sub_recovery");
+        // Guarded on a non-canceled billing row (terminal-cancel protection).
+        expect(react!.sql).toContain("status != 'canceled'");
+        // It must NOT be an INSERT/activation upsert (that would create a row).
+        expect(react!.sql).not.toContain("INSERT INTO tier_selections");
+        // And it must NOT have deactivated (active status grants access).
+        expect(
+            db.runCalls.find(
+                (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("'inactive'"),
+            ),
+        ).toBeUndefined();
+    });
+
+    it("customer.subscription.updated (status=past_due) → NO re-activation, gate deactivated (REV-S5 guard)", async () => {
+        // The recovery branch must be gated on grantsAccess — a non-granting
+        // status must NOT re-activate; it must deactivate.
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_sub_pastdue",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_pastdue",
+                    status: "past_due",
+                    customer: "cus_pastdue",
+                    metadata: { tenant_id: "tenant_pastdue" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // No re-activation write (would set state='active').
+        expect(
+            db.runCalls.find(
+                (c) =>
+                    c.sql.includes("UPDATE tier_selections") &&
+                    c.sql.includes("'active'") &&
+                    !c.sql.includes("'inactive'"),
+            ),
+        ).toBeUndefined();
+        // Deactivation DID run (past_due does not grant access).
+        expect(
+            db.runCalls.find(
+                (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("'inactive'"),
+            ),
+        ).toBeDefined();
+    });
+
     // ------------------------------------------------------------------
     // GAP #2: customer.subscription.deleted → tier_selections → 'inactive'
     // ------------------------------------------------------------------
@@ -1945,13 +2069,21 @@ describe("handleStripeWebhook", () => {
         expect(update).toBeDefined();
         expect(update!.sql).toContain("status != 'canceled'");
 
-        // And the canonical gate was NOT resurrected: no tier_selections write
-        // sets subscription_state back to 'active' on this event (activation
-        // only ever happens via checkout.session.completed).
+        // And the canonical gate is NOT resurrected for a CANCELED subscription.
+        // A dunning-recovery re-activation statement IS issued on any
+        // grantsAccess updated event, but it is GUARDED on
+        // `tenant_billing.status != 'canceled'`, so against a canceled row it is
+        // a definitive no-op (re-subscribing must go through checkout). Assert
+        // the guard is present on any tier_selections→'active' write here.
         const lateActivation = db.runCalls.find(
-            (c) => c.sql.includes("tier_selections") && c.sql.includes("'active'"),
+            (c) =>
+                c.sql.includes("tier_selections") &&
+                c.sql.includes("'active'") &&
+                !c.sql.includes("'inactive'"),
         );
-        expect(lateActivation).toBeUndefined();
+        if (lateActivation) {
+            expect(lateActivation.sql).toContain("status != 'canceled'");
+        }
     });
 
     // ------------------------------------------------------------------

@@ -201,6 +201,17 @@ export async function buildErasureQueueMessage(input: {
   nowMs: number;
   saltKey: string | undefined;
   environment?: string;
+  /**
+   * Whether the tenant is under a legal hold (litigation / regulatory /
+   * retention obligation). When true, the erasure orchestrator and every
+   * backend adapter PRESERVE the data instead of erasing it (CTRL-PRIV-033;
+   * adapter_d1.rs:202, adapter_r2_cas.rs:157, adapter_r2_ac.rs:144 all return
+   * NotApplicable on `legal_hold == true`). Resolved by the caller from the
+   * tenant's legal-hold state. Defaults to false — the absence of a hold — so
+   * existing callers are unaffected; the caller MUST pass `true` for a held
+   * tenant or the preservation branch is never reached.
+   */
+  legalHold?: boolean;
 }): Promise<DsrQueuedV1> {
   const dsrId = await deterministicDsrId(input.clerkUserId);
   const saltHex = await deriveErasureSalt(dsrId, input.saltKey, input.environment);
@@ -211,10 +222,57 @@ export async function buildErasureQueueMessage(input: {
     subject_id: input.tenantId, // 1 Clerk user : 1 tenant — tenant is the deletion unit
     erasure_salt_hex: saltHex,
     queued_at_ms: input.nowMs,
-    legal_hold: false,
+    legal_hold: input.legalHold ?? false,
     source: "clerk.user.deleted",
     clerk_user_id: input.clerkUserId,
   };
+}
+
+/**
+ * Resolve whether `tenantId` is under a legal hold from D1.
+ *
+ * Legal hold is an OPERATOR-ONLY control (litigation / regulatory / unpaid-
+ * invoice retention) with no self-serve surface at launch; it is recorded in a
+ * dedicated `tenant_legal_hold` table (one row per held tenant, cleared by
+ * setting `released_at_ms`). A self-serve account deletion (Clerk
+ * `user.deleted`) MUST honor an active hold by carrying `legal_hold: true` into
+ * the erasure message so the CTRL-PRIV-033 preservation branch in the
+ * orchestrator/adapters fires and the legally-retained data is NOT destroyed.
+ *
+ * Posture on a query error → `false` (NOT held). This is deliberate: the
+ * `tenant_legal_hold` table is not yet provisioned in prod, and a missing table
+ * surfaces here as a thrown error. Returning `true` on error would make EVERY
+ * account deletion a no-op preservation and silently break the live GDPR
+ * right-to-erasure obligation — a far larger harm than the low-severity, not-
+ * yet-built hold feature. So until an operator provisions the table (and a hold
+ * actually exists), this resolves to false and erasure proceeds exactly as it
+ * does today; the moment the table + a row exist, a held tenant's deletion
+ * carries `legal_hold: true` and preservation kicks in. An ABSENT row (the
+ * common case once the table exists — no hold) likewise returns false.
+ *
+ * NOTE: this wires the previously-dead CTRL-PRIV-033 branch to a real
+ * source-of-truth. The hold WRITE surface (operator tooling + the
+ * `tenant_legal_hold` migration) is the operator's launch step; this is the
+ * READ side that the live erasure trigger consults.
+ */
+async function tenantUnderLegalHold(
+  db: NonNullable<AutoProvisionEnv["CONFIG_DB"]>,
+  tenantId: string,
+): Promise<boolean> {
+  try {
+    const row = await db
+      .prepare(
+        "SELECT 1 AS held FROM tenant_legal_hold WHERE tenant_id = ?1 AND released_at_ms IS NULL LIMIT 1",
+      )
+      .bind(tenantId)
+      .first<{ held: number }>();
+    return row != null;
+  } catch {
+    // Hold table not yet provisioned / transient read error → no hold exists
+    // that we can honor; let erasure proceed (preserving the live obligation).
+    // See the posture note above for why this is false, not true.
+    return false;
+  }
 }
 
 /**
@@ -267,6 +325,15 @@ export async function handleUserDeleted(
     );
   }
 
+  // Honor an operator legal hold: a held tenant's data MUST be PRESERVED, not
+  // erased, even when the (self-serve, or attacker-driven) Clerk account is
+  // deleted. Resolve the hold from D1 and carry it into the message so the
+  // CTRL-PRIV-033 preservation branch is actually reachable (it was dead while
+  // legal_hold was hardcoded false). CONFIG_DB is the same binding used for the
+  // tenant lookup above; if it is absent we cannot read a hold and proceed
+  // as un-held (no hold capability provisioned).
+  const legalHold = env.CONFIG_DB ? await tenantUnderLegalHold(env.CONFIG_DB, tenantId) : false;
+
   let msg: DsrQueuedV1;
   try {
     msg = await buildErasureQueueMessage({
@@ -275,6 +342,7 @@ export async function handleUserDeleted(
       nowMs: Date.now(),
       saltKey: env.ERASURE_SALT_KEY,
       environment: env.ENVIRONMENT,
+      legalHold,
     });
   } catch (saltErr) {
     // F9 (CAA-360 2026-06-13): ERASURE_SALT_KEY absent in prod → fail CLOSED.

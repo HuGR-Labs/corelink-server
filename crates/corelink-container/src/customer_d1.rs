@@ -258,11 +258,34 @@ impl SliObserver for TracingCustomerSliObserver {
 /// status): `paid`→`active`, `past_due`→`past_due`,
 /// `canceled`→`canceled`, `incomplete`→`past_due`,
 /// `inactive`/no-row/unknown→`inactive`.
+///
+/// AUDIT REV-S5 (low, KNOWN-LIMITATION, deferred — contract-level fix):
+/// `incomplete` (Stripe's "subscription created, first payment not yet
+/// settled") is collapsed onto `past_due`, so a pending FIRST payment is
+/// surfaced to the dashboard as a renewal FAILURE. The audit recommends a
+/// distinct `pending`/`awaiting_payment` status. We do NOT introduce one
+/// here: the dashboard status set is FROZEN and shared cross-team —
+/// `apps/admin-ui/src/lib/customer-types.ts` types it as the closed union
+/// `"trialing" | "active" | "past_due" | "canceled" | "inactive"`, and
+/// `specs/03_architecture/data_model.md` pins the `tenant_billing.status`
+/// CHECK to `('active','past_due','canceled')`. Emitting a new `pending`
+/// string from this map alone would drift the backend off that frozen
+/// contract (the frontend renders `data.status` verbatim and could not
+/// classify it). A real fix must land as a coordinated change across the
+/// TS union + the spec CHECK + (optionally) a new `BillingResponse` field
+/// — out of scope for a `customer_d1.rs`-only patch. The `incomplete` arm
+/// is split out below (still → `past_due`, byte-for-byte identical output)
+/// purely to make this decision explicit and give that future fix an
+/// anchor; it changes NO emitted value.
 #[must_use]
 pub fn map_billing_status(d1_status: Option<&str>) -> &'static str {
     match d1_status {
         Some("paid") => "active",
-        Some("past_due" | "incomplete") => "past_due",
+        Some("past_due") => "past_due",
+        // KNOWN-LIMITATION (REV-S5): would ideally map to a distinct
+        // `pending`, but the frozen cross-team status union has no such
+        // value — keep `past_due` until that contract is widened.
+        Some("incomplete") => "past_due",
         Some("canceled") => "canceled",
         _ => "inactive",
     }
@@ -1251,6 +1274,49 @@ mod tests {
         assert_eq!(map_billing_status(Some("inactive")), "inactive");
         assert_eq!(map_billing_status(None), "inactive"); // no-row
         assert_eq!(map_billing_status(Some("weird")), "inactive");
+    }
+
+    /// AUDIT REV-S5 (known-limitation guard): the dashboard status the map
+    /// emits MUST stay inside the frozen cross-team union
+    /// (`apps/admin-ui/src/lib/customer-types.ts`:
+    /// `"trialing" | "active" | "past_due" | "canceled" | "inactive"`) and
+    /// the `tenant_billing.status` CHECK in
+    /// `specs/03_architecture/data_model.md` (`active`/`past_due`/`canceled`).
+    /// In particular `incomplete` (pending FIRST payment) is collapsed onto
+    /// `past_due` ON PURPOSE — there is no `pending`/`awaiting_payment` value
+    /// in the frozen contract yet. If a future change starts emitting a new
+    /// string from this map, it MUST widen that union + the spec CHECK in the
+    /// SAME change; this test is the tripwire that forces that coordination.
+    #[test]
+    fn billing_status_map_stays_in_frozen_dashboard_union() {
+        const FROZEN_DASHBOARD_STATUSES: &[&str] =
+            &["trialing", "active", "past_due", "canceled", "inactive"];
+        for d1_status in [
+            Some("paid"),
+            Some("past_due"),
+            Some("incomplete"),
+            Some("canceled"),
+            Some("inactive"),
+            Some("unrecognized_future_value"),
+            None,
+        ] {
+            let mapped = map_billing_status(d1_status);
+            assert!(
+                FROZEN_DASHBOARD_STATUSES.contains(&mapped),
+                "map_billing_status({d1_status:?}) = {mapped:?} is OUTSIDE the \
+                 frozen dashboard status union {FROZEN_DASHBOARD_STATUSES:?} \
+                 (REV-S5): widen apps/admin-ui customer-types.ts + the \
+                 data_model.md CHECK in the same change before emitting it",
+            );
+        }
+        // The specific REV-S5 collapse is intentional and asserted here so
+        // the deferral is explicit, not accidental.
+        assert_eq!(
+            map_billing_status(Some("incomplete")),
+            "past_due",
+            "REV-S5: 'incomplete' deliberately collapses onto 'past_due' until \
+             a distinct 'pending' status is added to the frozen contract",
+        );
     }
 
     #[test]
