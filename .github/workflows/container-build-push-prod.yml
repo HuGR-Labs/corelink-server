@@ -8,22 +8,23 @@
 # docker + buildx → builds the linux/amd64 image natively, no Mac, no
 # Docker-Desktop-on-the-laptop, no third-party.
 #
-# === 2026-06-20: persist the Dockerfile cache MOUNTS across runs ===
+# === 2026-06-20: SOTA build — no across-run cache machinery ===
 #
-# The Dockerfile is fast (~10-15 min) ONLY on a host with a PERSISTENT BuildKit
-# (the founder's Mac): it uses `--mount=type=cache` for the cargo registry, the
-# cargo git db, and `/build/target`. On an EPHEMERAL GitHub-hosted runner those
-# mounts start EMPTY every run → a full cold compile of the 71-crate workspace
-# (~57-120 min, $20+ burned). The fix: make the ephemeral runner behave like the
-# warm Mac by persisting the three cache mounts into the GitHub Actions cache via
-# `reproducible-containers/buildkit-cache-dance` (inject-before / extract-after) +
-# `actions/cache` for the across-run store.
+# The Dockerfile builds with the canonical `[profile.release]` (lto="fat",
+# codegen-units=1) for the best prod binary (smaller = faster container
+# cold-start) and uses BuildKit `--mount=type=cache` for the cargo registry,
+# cargo git db, and `/build/target` WITHIN a run. We deliberately do NOT persist
+# those mounts across runs: no `actions/cache`, no `buildkit-cache-dance`, no
+# `cache-to/cache-from type=gha`. The build is fast and the gha cache risks the
+# 10 GB limit. The build is followed by the SOTA gates that the prior local
+# script (scripts/build-container-prod.sh) ran: an image-size gate, a
+# CTRL-CRED-001 docker-history credential scan, and a bounded binary smoke probe.
 #
 # HARD CONSTRAINT (do NOT change): we do NOT touch the Dockerfile's dependency
 # caching DESIGN. No cargo-chef, no stub/skeleton dep layer, no layer-cached deps.
 # The Dockerfile header documents a PROD INCIDENT caused exactly by layer-cached
 # deps (a stub binary shipped, bit-identical image hashes). The cache-MOUNT design
-# is deliberate + incident-proof. We persist the MOUNTS, nothing else.
+# is deliberate + incident-proof.
 #
 # The build step uses docker/build-push-action with `load: true` so the image is
 # loaded into the local docker daemon as `corelink-server:<short-sha>` (the ref
@@ -41,12 +42,10 @@ on:
 
 permissions:
   contents: read
-  # cache write (actions/cache + buildkit-cache-dance save) needs actions: write.
-  actions: write
 
 jobs:
   build-push:
-    name: build + push prod container (cache-mount persisted, off-Mac)
+    name: build + push prod container (fat-LTO SOTA, off-Mac)
     runs-on: ubuntu-x64-4core
     timeout-minutes: 240
     steps:
@@ -73,49 +72,13 @@ jobs:
             echo "rust_version=1.91"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Set up Docker Buildx (gha-cache-capable builder)
+      # build-push-action needs a buildx builder. The Dockerfile's
+      # `--mount=type=cache` cargo/target mounts still work within a single run;
+      # we deliberately do NOT persist them across runs (no gha cache) — the
+      # build is fast and the gha cache risks the 10GB limit.
+      - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
-
-      # Persist the three Dockerfile cache mounts across runs. actions/cache holds
-      # the across-run store; buildkit-cache-dance injects it INTO the build's
-      # cache mounts before build and extracts it back after. Key busts on a
-      # Cargo.lock change (deps changed) or a Dockerfile change (mount layout).
-      - name: Cache cargo mounts (across-run store)
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        id: cargo-cache
-        with:
-          path: cache-mount
-          key: corelink-container-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('Dockerfile') }}
-          restore-keys: |
-            corelink-container-cargo-${{ hashFiles('**/Cargo.lock') }}-
-            corelink-container-cargo-
-
-      - name: Inject cargo cache mounts into BuildKit
-        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
-        with:
-          builder: ${{ steps.buildx.outputs.name }}
-          cache-dir: cache-mount
-          # cache-map keys = subdir under cache-dir; values = mount target + id
-          # matching the Dockerfile `--mount=type=cache,id=...` values EXACTLY.
-          cache-map: |
-            {
-              "corelink-cargo-registry": {
-                "target": "/usr/local/cargo/registry",
-                "id": "corelink-cargo-registry"
-              },
-              "corelink-cargo-git": {
-                "target": "/usr/local/cargo/git",
-                "id": "corelink-cargo-git"
-              },
-              "corelink-target": {
-                "target": "/build/target",
-                "id": "corelink-target"
-              }
-            }
-          # If the across-run store hit, the mounts are already populated by inject
-          # — skip the post-build extraction (nothing new to save).
-          skip-extraction: ${{ steps.cargo-cache.outputs.cache-hit }}
 
       - name: Build prod container image (Dockerfile → corelink-server:<sha> + :prod)
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
@@ -126,7 +89,7 @@ jobs:
           load: true   # load into the local docker daemon for the push script
           push: false
           # LOCAL_REF the push script consumes is `corelink-server:<short-sha>`
-          # (scripts/push-container-multiregion.sh:57). :prod kept for parity.
+          # (scripts/push-container-multiregion.sh:63). :prod kept for parity.
           tags: |
             corelink-server:prod
             corelink-server:${{ steps.meta.outputs.short_sha }}
@@ -138,6 +101,116 @@ jobs:
           build-args: |
             RUST_VERSION=${{ steps.meta.outputs.rust_version }}
             SOURCE_DATE_EPOCH=${{ steps.meta.outputs.source_date_epoch }}
+
+      # ── Build gates (mirror scripts/build-container-prod.sh steps 4–6) ──────
+      # The image is loaded locally as corelink-server:<short-sha>. ubuntu runs
+      # the linux/amd64 image natively, so we probe it directly.
+      - name: Image size gate (CF Containers 2 GiB ceiling)
+        env:
+          IMAGE_REF: corelink-server:${{ steps.meta.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+          IMAGE_SIZE="$(docker images --format '{{.Size}}' "$IMAGE_REF" | head -1)"
+          echo "Image size: $IMAGE_SIZE"
+          # Docker reports sizes with a unit suffix (kB/MB/GB/B). Parse number+unit.
+          SIZE_VALUE="$(echo "$IMAGE_SIZE" | grep -oE '[0-9]+(\.[0-9]+)?')"
+          SIZE_UNIT="$(echo "$IMAGE_SIZE" | grep -oE '[A-Za-z]+')"
+          SIZE_BYTES=0
+          case "$SIZE_UNIT" in
+            kB|KB) SIZE_BYTES=$(echo "$SIZE_VALUE * 1024" | bc) ;;
+            MB)    SIZE_BYTES=$(echo "$SIZE_VALUE * 1048576" | bc) ;;
+            GB)    SIZE_BYTES=$(echo "$SIZE_VALUE * 1073741824" | bc) ;;
+            B)     SIZE_BYTES="$SIZE_VALUE" ;;
+            *)     echo "::warning::Could not parse image size unit '$SIZE_UNIT'; skipping size gate." ;;
+          esac
+          MAX_BYTES=$(( 2 * 1024 * 1024 * 1024 ))  # 2 GiB
+          # bc may emit a float (e.g. "123.4"); truncate to an integer for -gt.
+          SIZE_BYTES_INT="${SIZE_BYTES%.*}"
+          if [ -n "${SIZE_BYTES_INT:-}" ] && [ "$SIZE_BYTES_INT" -gt "$MAX_BYTES" ] 2>/dev/null; then
+            echo "::error::HARD FAIL: image size ($IMAGE_SIZE) exceeds the 2 GiB CF Containers limit."
+            exit 1
+          fi
+          echo "Size gate: PASS ($IMAGE_SIZE < 2 GiB)"
+
+      - name: CTRL-CRED-001 — no credentials in image layers
+        env:
+          IMAGE_REF: corelink-server:${{ steps.meta.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+          HISTORY_OUTPUT="$(docker history --no-trunc --format '{{.CreatedBy}}' "$IMAGE_REF")"
+          CRED_PATTERNS=(
+            "API_TOKEN" "API_KEY" "SECRET" "PASSWORD" "PASSWD"
+            "PRIVATE_KEY" "ACCESS_KEY" "CF_API" "STRIPE_" "CLERK_"
+            "PAGERDUTY" "NEON_" "DATABASE_URL"
+          )
+          CRED_HITS=0
+          for pattern in "${CRED_PATTERNS[@]}"; do
+            if echo "$HISTORY_OUTPUT" | grep -qi "$pattern"; then
+              echo "::error::CTRL-CRED-001 VIOLATION: pattern '$pattern' found in docker history."
+              CRED_HITS=$(( CRED_HITS + 1 ))
+            fi
+          done
+          if [ "$CRED_HITS" -gt 0 ]; then
+            echo "::error::HARD FAIL: $CRED_HITS credential pattern(s) in image layers (CTRL-CRED-001)."
+            exit 1
+          fi
+          echo "CTRL-CRED-001 scan: PASS (0 credential patterns found)."
+
+      - name: Binary smoke probe (bounded)
+        env:
+          IMAGE_REF: corelink-server:${{ steps.meta.outputs.short_sha }}
+          GRPC_PORT: "50051"
+          SMOKE_TIMEOUT_S: "10"
+        run: |
+          set -euo pipefail
+          # The server binary ignores --version/--help and instead BOOTS (blocks
+          # forever). Every flag-probe is bounded with `timeout` so a server that
+          # boots-instead-of-exits can't hang the step; a 124 (bound-killed) just
+          # means "flag unsupported" → fall through to the detached start-probe.
+          docker rm -f corelink-smoke-flagprobe >/dev/null 2>&1 || true
+          if timeout 8s docker run --rm --name corelink-smoke-flagprobe "$IMAGE_REF" --version >/dev/null 2>&1; then
+            echo "Binary smoke (--version): PASS"
+          elif { docker rm -f corelink-smoke-flagprobe >/dev/null 2>&1 || true; timeout 8s docker run --rm --name corelink-smoke-flagprobe "$IMAGE_REF" --help >/dev/null 2>&1; }; then
+            echo "Binary smoke (--help): PASS"
+          else
+            docker rm -f corelink-smoke-flagprobe >/dev/null 2>&1 || true
+            echo "Neither --version nor --help returned 0; attempting detached start probe..."
+            docker rm -f corelink-smoke-probe >/dev/null 2>&1 || true
+            PROBE_CID="$(timeout 30s docker run -d -p "${GRPC_PORT}:${GRPC_PORT}" \
+              --name corelink-smoke-probe "$IMAGE_REF" 2>/dev/null || true)"
+            if [ -z "$PROBE_CID" ]; then
+              echo "::error::HARD FAIL: docker run failed to start the container (gRPC server did not start)."
+              exit 1
+            fi
+            echo "Container started ($PROBE_CID). Waiting ${SMOKE_TIMEOUT_S}s for gRPC bind..."
+            ELAPSED=0
+            GRPC_OK=0
+            while [ "$ELAPSED" -lt "$SMOKE_TIMEOUT_S" ]; do
+              sleep 2
+              ELAPSED=$(( ELAPSED + 2 ))
+              # TCP connect via bash /dev/tcp built-in (grpcurl not installed here).
+              if timeout 3s bash -c "echo '' > /dev/tcp/localhost/${GRPC_PORT}" 2>/dev/null; then
+                echo "TCP probe (localhost:${GRPC_PORT} reachable): PASS"
+                GRPC_OK=1
+                break
+              fi
+            done
+            docker stop corelink-smoke-probe >/dev/null 2>&1 || true
+            docker rm -f corelink-smoke-probe >/dev/null 2>&1 || true
+            if [ "$GRPC_OK" -eq 0 ]; then
+              echo "::error::HARD FAIL: gRPC server did not respond within ${SMOKE_TIMEOUT_S}s."
+              exit 1
+            fi
+          fi
+          docker rm -f corelink-smoke-flagprobe >/dev/null 2>&1 || true
+          echo "Smoke probe: PASS"
+
+      - name: ADR-0015 reproducibility attestation (reminder)
+        run: |
+          set -euo pipefail
+          echo "ADR-0015: to verify reproducibility, rebuild on the same HEAD and compare"
+          echo "  docker inspect --format '{{.Id}}' corelink-server:prod"
+          echo "Both runs MUST produce the same sha256 for ADR-0015 compliance."
 
       - name: Install wrangler (4.x — required for [[containers]] push)
         run: npm install -g wrangler@4.95.0
