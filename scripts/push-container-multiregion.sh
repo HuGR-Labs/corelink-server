@@ -53,11 +53,22 @@ while [[ $# -gt 0 ]]; do
 done
 
 TAG="${SHA}-${SUFFIX}"
-ACCT="$(grep '^CLOUDFLARE_ACCOUNT_ID=' "$REPO_ROOT/.env.local" | head -1 | cut -d= -f2-)"
+# Account id: prefer the CLOUDFLARE_ACCOUNT_ID env var (set in CI from a secret),
+# fall back to .env.local for local runs (gitignored, absent in CI). Either source
+# works; we just need a non-empty value for the registry path.
+ACCT="${CLOUDFLARE_ACCOUNT_ID:-}"
+if [ -z "$ACCT" ] && [ -f "$REPO_ROOT/.env.local" ]; then
+    ACCT="$(grep '^CLOUDFLARE_ACCOUNT_ID=' "$REPO_ROOT/.env.local" | head -1 | cut -d= -f2-)"
+fi
 LOCAL_REF="corelink-server:${SHA}"
 
 log() { printf '[%s] %s\n' "$(basename "$0")" "$*"; }
 err() { printf '[%s] ERROR: %s\n' "$(basename "$0")" "$*" >&2; }
+
+if [ -z "$ACCT" ]; then
+    err "CLOUDFLARE_ACCOUNT_ID is unset and not found in .env.local — cannot build the registry path."
+    exit 2
+fi
 
 log "Account ID:    $ACCT"
 log "Local image:   $LOCAL_REF"
