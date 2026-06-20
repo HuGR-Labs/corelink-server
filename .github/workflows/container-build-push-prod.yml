@@ -29,8 +29,8 @@ permissions:
 jobs:
   build-push:
     name: build + push prod container (ubuntu-latest, off-Mac)
-    runs-on: [self-hosted, mac, corelink-builder]
-    timeout-minutes: 120
+    runs-on: ubuntu-x64-4core
+    timeout-minutes: 240
     steps:
       - name: Confirm intent
         run: |
