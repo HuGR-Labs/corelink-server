@@ -11,3 +11,7 @@ self-hosted-runner:
   labels:
     - mac
     - corelink-builder
+    # GitHub-hosted larger runner (4 vCPU x64) used by
+    # container-build-push-prod.yml. Declared here so actionlint does not flag
+    # the org-defined larger-runner label as unknown.
+    - ubuntu-x64-4core
