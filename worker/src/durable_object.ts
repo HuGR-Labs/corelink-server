@@ -511,6 +511,12 @@ export class CoreLinkServer implements DurableObject {
           // mounts in the container only when FABRIC_INTROSPECT_AUTH_KEY (+ PAT +
           // D1) are present. Forward it or the route stays unmounted (404).
           FABRIC_INTROSPECT_AUTH_KEY: this.env.FABRIC_INTROSPECT_AUTH_KEY ?? "",
+          // HuGR toolkits introspect consumer (#398): the per-consumer key the
+          // container's auth_introspect gate ALSO accepts. Must be forwarded too —
+          // else setting the worker secret never reaches the container and HuGR's
+          // token 401s (the check-env-contract gap that caught this).
+          FABRIC_INTROSPECT_AUTH_KEY_HUGR:
+            this.env.FABRIC_INTROSPECT_AUTH_KEY_HUGR ?? "",
           // Complete the env contract (2026-06-13 audit): every var the container
           // reads via env::var MUST be forwarded, else setting the secret later
           // silently never reaches the container (the class of bug that hid the

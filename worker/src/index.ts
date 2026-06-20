@@ -176,6 +176,7 @@ export interface Env {
   ERASURE_ATTESTATION_KEY_ID?: string;
   ERASURE_ATTESTATION_REGION?: string;
   FABRIC_INTROSPECT_AUTH_KEY?: string;
+  FABRIC_INTROSPECT_AUTH_KEY_HUGR?: string; // HuGR toolkits introspect consumer (#398) — forwarded to the container
   SIGNUP_TOKEN_KEY?: string;
   CORELINK_OCI_TOKEN_KEY?: string;
   // Legacy alias of CORELINK_OCI_TOKEN_KEY (CAA-360 #8 name drift) — the prod
