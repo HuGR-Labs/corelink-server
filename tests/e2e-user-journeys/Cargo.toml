@@ -1,6 +1,6 @@
 [package]
 name = "e2e-user-journeys"
-description = "BLACK-BOX end-to-end user-journey suite — the real ship gate. Tests simulate a paying customer using only the public HTTP API and CLI binary. Zero internal-crate deps. Expected RED until the P0 remediation wave lands."
+description = "BLACK-BOX end-to-end user-journey suite — the real ship gate. Tests simulate a paying customer using only the public HTTP API and CLI binary. Zero internal-crate deps. Modular harness: one journey module per surface, filled by a fleet of agents."
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.78"
