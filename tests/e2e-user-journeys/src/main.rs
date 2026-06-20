@@ -51,6 +51,16 @@ mod personas;
 
 use harness::{build_client, Config, JourneyStatus};
 
+/// Char-safe prefix truncation for the terminal display box. Slicing `&s[..n]`
+/// panics when byte `n` lands inside a multibyte UTF-8 char (e.g. a `→`/`—` in a
+/// journey name or failure detail) — this truncates on a char boundary instead.
+fn trunc(s: &str, max: usize) -> &str {
+    match s.char_indices().nth(max) {
+        Some((i, _)) => &s[..i],
+        None => s,
+    }
+}
+
 fn main() {
     let cfg = Config::from_env();
     let client = build_client();
@@ -80,15 +90,15 @@ fn main() {
                 ("⊙", "GATED")
             }
         };
-        let title = if r.name.len() > 62 { &r.name[..62] } else { r.name };
+        let title = trunc(r.name, 62);
         println!("│ {icon} [{label}] ({:>6}ms) {title}", r.duration_ms);
         match &r.status {
             JourneyStatus::Fail(msg) => {
-                let t = if msg.len() > 200 { &msg[..200] } else { msg };
+                let t = trunc(msg, 200);
                 println!("│         DETAIL: {t}");
             }
             JourneyStatus::Gated(reason) => {
-                let t = if reason.len() > 200 { &reason[..200] } else { reason };
+                let t = trunc(reason, 200);
                 println!("│         REASON: {t}");
             }
             JourneyStatus::Pass => {}
@@ -129,7 +139,7 @@ fn print_header(cfg: &Config) {
     println!("╔══════════════════════════════════════════════════════════════════╗");
     println!("║       CoreLink E2E User-Journey Suite — Black-Box Ship Gate       ║");
     println!("╠══════════════════════════════════════════════════════════════════╣");
-    let ep = &cfg.endpoint[..cfg.endpoint.len().min(54)];
+    let ep = trunc(&cfg.endpoint, 54);
     println!("║  Endpoint: {ep:<54} ║");
     println!("║  Tenant:   {:<54} ║", set(cfg.tenant.is_some()));
     println!("║  Tenant B: {:<54} ║", set(cfg.tenant_b.is_some()));
