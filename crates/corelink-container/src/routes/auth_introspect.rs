@@ -28,6 +28,13 @@
 //! - If `FABRIC_INTROSPECT_AUTH_KEY` is absent or shorter than 32 chars, the
 //!   route is **NOT mounted** ([`build_state_from_env`] returns `None`, warn
 //!   log) — the same fail-CLOSED posture as `internal_pat`.
+//! - **Multiple consumers, isolated secrets:** additional consumers each carry
+//!   their OWN dedicated key so a compromised consumer can never present (nor
+//!   leak the blast radius of) another's credential. The primary
+//!   `FABRIC_INTROSPECT_AUTH_KEY` is the corelink-runners fabric; optional
+//!   `FABRIC_INTROSPECT_AUTH_KEY_HUGR` (≥ 32 chars, else ignored with a warn) is
+//!   the HuGR toolkits fleet. The gate checks the header against EVERY configured
+//!   key without short-circuiting, so the timing reveals no consumer identity.
 //!
 //! # Request shape
 //!
@@ -146,9 +153,14 @@ const DEFAULT_TIER: &str = "free";
 /// Route state injected at boot time.
 #[derive(Clone)]
 pub struct AuthIntrospectRouteState {
-    /// Dedicated shared secret for the `X-Corelink-Internal-Auth` header —
-    /// sourced from `FABRIC_INTROSPECT_AUTH_KEY` (NOT the mint secret).
-    internal_auth_key: Arc<str>,
+    /// Accepted shared secrets for the `X-Corelink-Internal-Auth` header — one per
+    /// distinct CONSUMER, each an independently-rotatable secret so a compromised
+    /// consumer can never present (or share the blast radius of) another's
+    /// credential. Always non-empty: index 0 is the primary
+    /// `FABRIC_INTROSPECT_AUTH_KEY` (the corelink-runners fabric); additional
+    /// entries are other consumers (e.g. the HuGR toolkits fleet via
+    /// `FABRIC_INTROSPECT_AUTH_KEY_HUGR`).
+    internal_auth_keys: Vec<Arc<str>>,
     /// The full container-side PAT verification pipeline (Option B).
     verifier: Arc<PatVerifier>,
     /// D1 HTTP client used to resolve the tenant's effective tier.
@@ -158,7 +170,11 @@ pub struct AuthIntrospectRouteState {
 impl std::fmt::Debug for AuthIntrospectRouteState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AuthIntrospectRouteState")
-            .field("internal_auth_key", &"[REDACTED]")
+            // count only — never the values
+            .field(
+                "internal_auth_keys",
+                &format_args!("[{} key(s), REDACTED]", self.internal_auth_keys.len()),
+            )
             .field("verifier", &self.verifier)
             .field("d1", &"Arc<D1HttpClient>")
             .finish()
@@ -167,7 +183,8 @@ impl std::fmt::Debug for AuthIntrospectRouteState {
 
 impl AuthIntrospectRouteState {
     /// Construct from explicit collaborators (used by the production wiring and
-    /// by tests).
+    /// by tests). Seeds the accepted-key set with the single primary key; use
+    /// [`with_auth_key`](Self::with_auth_key) to register additional consumers.
     #[must_use]
     pub fn new(
         internal_auth_key: Arc<str>,
@@ -175,10 +192,21 @@ impl AuthIntrospectRouteState {
         d1: Arc<D1HttpClient>,
     ) -> Self {
         Self {
-            internal_auth_key,
+            internal_auth_keys: vec![internal_auth_key],
             verifier,
             d1,
         }
+    }
+
+    /// Register an ADDITIONAL accepted service-auth key for a distinct consumer
+    /// (e.g. the HuGR toolkits fleet). Each consumer holds its own secret, so a
+    /// compromised consumer cannot authenticate as — nor leak the credential of —
+    /// any other. Caller is responsible for the ≥ [`MIN_FABRIC_AUTH_KEY_LEN`]
+    /// length floor (enforced by [`build_state_from_env`] for env-sourced keys).
+    #[must_use]
+    pub fn with_auth_key(mut self, key: Arc<str>) -> Self {
+        self.internal_auth_keys.push(key);
+        self
     }
 }
 
@@ -529,7 +557,17 @@ async fn handle_introspect(
     body: Bytes,
 ) -> Response {
     // ── 1. Dedicated-secret gate (constant-time; reused gate) ───────────────
-    if !internal_auth_ok(state.internal_auth_key.as_bytes(), &headers) {
+    // Check the presented header against EVERY configured consumer key. We
+    // OR-combine with `|=` (NOT short-circuiting `||`) so all keys are always
+    // evaluated: the response time does not reveal WHICH consumer's key matched
+    // (no consumer-identity oracle), and the number of constant-time comparisons
+    // is independent of the outcome. A caller with no/ wrong key is rejected
+    // identically regardless of how many consumers are configured.
+    let mut auth_ok = false;
+    for key in &state.internal_auth_keys {
+        auth_ok |= internal_auth_ok(key.as_bytes(), &headers);
+    }
+    if !auth_ok {
         return (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({ "error": "unauthorized" })),
@@ -638,11 +676,30 @@ pub fn build_state_from_env() -> Option<AuthIntrospectRouteState> {
         })
         .ok()?;
 
-    Some(AuthIntrospectRouteState::new(
+    let mut state = AuthIntrospectRouteState::new(
         Arc::from(auth_key.as_str()),
         Arc::new(verifier),
         Arc::new(d1),
-    ))
+    );
+
+    // Optional ADDITIONAL consumer keys — each a distinct, independently-rotatable
+    // secret so a consumer never shares another's blast radius. Today: the HuGR
+    // toolkits fleet (37 MCP Workers) authenticating to introspect with their OWN
+    // key, NOT the corelink-runners `FABRIC_INTROSPECT_AUTH_KEY`. A present-but-
+    // too-short value is a misconfiguration → warn + ignore (fail-CLOSED: that
+    // consumer simply can't authenticate, rather than weakening the gate).
+    if let Ok(hugr_key) = std::env::var("FABRIC_INTROSPECT_AUTH_KEY_HUGR") {
+        if hugr_key.len() >= MIN_FABRIC_AUTH_KEY_LEN {
+            state = state.with_auth_key(Arc::from(hugr_key.as_str()));
+        } else {
+            tracing::warn!(
+                "FABRIC_INTROSPECT_AUTH_KEY_HUGR set but too short (< 32 chars); \
+                 HuGR introspect consumer NOT enabled"
+            );
+        }
+    }
+
+    Some(state)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -805,6 +862,63 @@ mod tests {
         );
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn additional_consumer_key_passes_gate_and_unknown_key_rejected() {
+        // The HuGR toolkits fleet authenticates with its OWN introspect key (not
+        // the runners' primary `FABRIC_INTROSPECT_AUTH_KEY`). Both configured
+        // consumer keys must pass the auth gate; an unconfigured key must 401.
+        // We assert the GATE outcome only (!= 401 = passed), independent of the
+        // downstream PAT pipeline, so the test isolates the multi-key gate.
+        const HUGR_KEY: &str = "hugr-fabric-introspect-key-32-chars!";
+        let mk_app = || {
+            let verifier = Arc::new(PatVerifier::new(
+                Arc::new(FakeLookup::with_row("x", row_for("h", "t"))),
+                test_key(),
+            ));
+            let state =
+                AuthIntrospectRouteState::new(Arc::from(TEST_AUTH_KEY), verifier, unreachable_d1())
+                    .with_auth_key(Arc::from(HUGR_KEY));
+            router(state)
+        };
+        let body = serde_json::json!({ "token": "corelink_pat_x" });
+
+        // Primary (runners) key → gate passes.
+        let resp = mk_app()
+            .oneshot(introspect_request(Some(TEST_AUTH_KEY), body.clone()))
+            .await
+            .unwrap();
+        assert_ne!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "primary runners key must pass the gate"
+        );
+
+        // HuGR consumer key → gate passes identically (own secret).
+        let resp = mk_app()
+            .oneshot(introspect_request(Some(HUGR_KEY), body.clone()))
+            .await
+            .unwrap();
+        assert_ne!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "HuGR consumer key must pass the gate"
+        );
+
+        // An unconfigured key (right length, wrong value) → still 401.
+        let resp = mk_app()
+            .oneshot(introspect_request(
+                Some("some-other-unconfigured-32char-key!!"),
+                body,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "an unconfigured key must be rejected"
+        );
     }
 
     // ── Valid PAT → {valid, tenant_id, plan} ─────────────────────────────────

@@ -23,6 +23,16 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **Per-consumer introspect keys (blast-radius isolation)** — the
+  `/internal/v1/auth/introspect` gate now accepts a SET of dedicated service
+  secrets, one per distinct consumer, so a compromised consumer can never present
+  (nor leak the blast radius of) another's credential. Primary
+  `FABRIC_INTROSPECT_AUTH_KEY` = the corelink-runners fabric; new optional
+  `FABRIC_INTROSPECT_AUTH_KEY_HUGR` (≥32 chars, else ignored with a warn) = the
+  HuGR toolkits fleet (37 MCP Workers) consuming CoreLink auth via Mode B
+  introspection. The gate checks the header against every configured key WITHOUT
+  short-circuiting (no consumer-identity timing oracle) and stays fail-CLOSED.
+  File: `crates/corelink-container/src/routes/auth_introspect.rs`.
 - **admin-ui `/welcome` no longer reads the one-time PAT plaintext from the Clerk
   session JWT** (`CRED-pat-plaintext`, HIGH). The welcome page now fetches
   `pat_plaintext` SERVER-SIDE from the user's Clerk `private_metadata` via the
