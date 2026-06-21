@@ -23,6 +23,11 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **`docker push` looped on an empty-scope auth challenge** — when a client presented an
+  insufficiently-scoped bearer (docker reuses its scope-less `docker login` token for the first
+  blob HEAD), the data-plane 401 re-advertised the bearer's EMPTY scope instead of the REQUIRED
+  `repository:<repo>:<action>` scope, so docker re-auth'd empty and looped. The route-dispatch
+  error now re-advertises the required scope (computed from the path + method).
 - **`docker push` got `405 Method Not Allowed` on `POST /token`** — real `docker push`
   obtains its bearer via the OAuth2 token endpoint (Docker token spec): a
   `POST /token` with an `application/x-www-form-urlencoded` body
