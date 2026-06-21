@@ -23,6 +23,10 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **`docker push` blob HEAD 401'd because `push` didn't imply `pull`** — `OciScope::allows`
+  required an exact action match, but docker reuses its push-scoped token for the pre-push blob
+  HEAD (a pull). OCI convention is that a push grant implies pull; `allows` now honours that
+  (push⇒pull; pull still does NOT imply push, so read-only PATs can't write).
 - **`docker push` looped on an empty-scope auth challenge** — when a client presented an
   insufficiently-scoped bearer (docker reuses its scope-less `docker login` token for the first
   blob HEAD), the data-plane 401 re-advertised the bearer's EMPTY scope instead of the REQUIRED
