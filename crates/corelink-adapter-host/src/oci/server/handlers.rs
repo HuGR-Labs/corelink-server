@@ -177,11 +177,15 @@ pub async fn token(
         Ok(t) => t,
         Err(e) => return err_response(&e, None, None),
     };
+    // NB: `issued_at`, if present, MUST be an RFC3339 *string* per the Docker
+    // token spec — docker's Go client decodes it as `time.Time` and a numeric
+    // value fails with `Time.UnmarshalJSON: input is not a JSON string`, breaking
+    // `docker login`/`push`. It is OPTIONAL, so we omit it (docker defaults it to
+    // the request time); `expires_in` alone fully drives the client's TTL.
     let body = serde_json::json!({
         "token": token,
         "access_token": token,
         "expires_in": state.config.token_ttl_secs,
-        "issued_at": now_secs,
     });
     let mut h = HeaderMap::new();
     if let Ok(v) = "application/json".parse() {

@@ -23,6 +23,10 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **`docker login`/`push` failed decoding the OCI `/token` response** — the response
+  returned `issued_at` as a unix NUMBER, but docker's Go client decodes it as an RFC3339
+  `time.Time` string (`Time.UnmarshalJSON: input is not a JSON string`). `issued_at` is
+  optional, so it is now omitted (docker defaults it; `expires_in` drives the TTL).
 - **`docker login` to the OCI registry always 401'd** (found pushing with a real docker
   client). `docker login` first requests a scope-LESS `/token` (a registry-level
   credential check) before any repository scope; the OCI `/token` handler fed the empty
