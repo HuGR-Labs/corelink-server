@@ -23,6 +23,15 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **`docker login` to the OCI registry always 401'd** (found pushing with a real docker
+  client). `docker login` first requests a scope-LESS `/token` (a registry-level
+  credential check) before any repository scope; the OCI `/token` handler fed the empty
+  `scope=` to `OciScope::parse`, which returned `Auth("unsupported scope resource")` → 401,
+  so login (and therefore push) always failed even with a valid PAT. `OciScope::parse("")`
+  now yields the empty registry-level scope (grants nothing; renders back to `""` so the
+  minted bearer round-trips through verify and the `/v2/` base check returns 200); a
+  present-but-malformed scope is still a hard 401. Also provisioned the realm host
+  `corelink-oci.humangr.com` (CNAME + Worker route) so the advertised realm resolves.
 - **cargo/sccache + OCI/docker were unusable by the REAL clients** (found driving the
   actual toolchains through the real user path — Clerk signup → PAT → client — not curl).
   Two distinct blockers the curl-level checks missed:

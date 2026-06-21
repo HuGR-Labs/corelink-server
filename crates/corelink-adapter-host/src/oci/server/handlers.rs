@@ -134,6 +134,9 @@ pub async fn token(
                 .find_map(|p| p.strip_prefix("scope=").map(urldecode))
         })
         .unwrap_or_default();
+    // Empty `scope_str` (docker login's credential-check token) parses to the
+    // empty registry scope (see `OciScope::parse`), so the minted bearer passes
+    // the `/v2/` base recheck; a present-but-malformed scope is still a hard 401.
     let scope = match crate::oci::auth::OciScope::parse(&scope_str) {
         Ok(s) => s,
         Err(e) => return err_response(&e, None, None),
