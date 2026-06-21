@@ -98,10 +98,19 @@ fn billing_state(cfg: &Config, client: &Client) -> JourneyResult {
     JourneyResult::pass(name, ms(start))
 }
 
-/// Happy/edge: `POST /v1/customer/billing/portal` → 200 with a `portal_url`
-/// string (the Stripe customer-portal hand-off the upgrade/cancel UI links to).
+/// Happy/edge: `POST /v1/customer/billing/portal`.
+///
+/// The Stripe customer-portal hand-off only exists once the tenant has a Stripe
+/// CUSTOMER. The seed e2e tenant has no Stripe customer, so `portal_url` errs
+/// `NotFound` and the handler returns **404 "not found"**
+/// (`routes/customer.rs::handle_billing_portal` → `map_err(NotFound)` →
+/// 404). That is the CORRECT behaviour for a non-Stripe-backed tenant — not a
+/// bug — so a 404 here is GATED (the journey needs a real Stripe-backed test
+/// tenant to drive the happy `200 {portal_url}` path). A `200` (when run against
+/// a Stripe tenant) must still carry a non-empty `portal_url`; any other status
+/// (e.g. 5xx) is a real failure.
 fn billing_portal(cfg: &Config, client: &Client) -> JourneyResult {
-    let name = "Billing: POST /v1/customer/billing/portal → 200 with portal_url";
+    let name = "Billing: POST /v1/customer/billing/portal → portal_url (or 404 if no Stripe cust)";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 
@@ -123,11 +132,22 @@ fn billing_portal(cfg: &Config, client: &Client) -> JourneyResult {
         Err(e) => return JourneyResult::fail(name, ms(start), format!("POST {url}: {e}")),
     };
     let status = resp.status().as_u16();
+
+    // Non-Stripe-backed tenant: portal_url → NotFound → 404. Expected; GATE so
+    // the happy path is exercised only against a Stripe-backed test account.
+    if status == 404 {
+        return JourneyResult::gated(
+            name,
+            "404 'not found' — the e2e tenant has no Stripe customer, so portal_url \
+             errs NotFound (correct for a non-Stripe tenant). The happy \
+             200 {portal_url} path needs a real Stripe-backed test tenant.",
+        );
+    }
     if status != 200 {
         return JourneyResult::fail(
             name,
             ms(start),
-            format!("POST /v1/customer/billing/portal got {status} (expected 200). url={url}"),
+            format!("POST /v1/customer/billing/portal got {status} (expected 200 or 404). url={url}"),
         );
     }
     let body: Value = match resp.json() {

@@ -3000,6 +3000,7 @@ dependencies = [
 name = "e2e-user-journeys"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "hex",
  "reqwest",
  "serde_json",
