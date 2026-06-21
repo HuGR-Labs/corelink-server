@@ -25,6 +25,17 @@ const BREW_UPSTREAM_CONNECT_TIMEOUT_SECS: u64 = 10;
 /// [`ssrf_safe_redirect_policy`]).
 const BREW_UPSTREAM_MAX_REDIRECTS: usize = 5;
 
+/// `Accept` header for upstream fetches. ghcr.io content-negotiates MANIFEST
+/// requests on this header and returns **404** (not 401) for a manifest GET that
+/// omits it — even WITH a valid anonymous token (verified live against ghcr.io
+/// 2026-06-21: token-only → 404; token + these media types → 200). The OCI +
+/// Docker manifest/index media types make manifest fetches succeed; the trailing
+/// `*/*` keeps blob/tarball fetches (which ignore `Accept`) working unchanged.
+const OCI_ACCEPT: &str = "application/vnd.oci.image.index.v1+json,\
+application/vnd.oci.image.manifest.v1+json,\
+application/vnd.docker.distribution.manifest.list.v2+json,\
+application/vnd.docker.distribution.manifest.v2+json,*/*";
+
 /// Reqwest-backed upstream bottle fetcher.
 #[non_exhaustive]
 #[derive(Debug)]
@@ -79,6 +90,7 @@ impl UpstreamFetcher {
         let mut response = self
             .client
             .get(url.clone())
+            .header(reqwest::header::ACCEPT, OCI_ACCEPT)
             .send()
             .await
             .map_err(|err| BrewAdapterError::Upstream(format!("send: {err}")))?;
@@ -95,6 +107,7 @@ impl UpstreamFetcher {
                     .client
                     .get(url.clone())
                     .bearer_auth(token)
+                    .header(reqwest::header::ACCEPT, OCI_ACCEPT)
                     .send()
                     .await
                     .map_err(|err| BrewAdapterError::Upstream(format!("send (authed): {err}")))?;

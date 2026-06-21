@@ -28,7 +28,10 @@ Each entry cross-references:
   homebrew/core bottles) with a Bearer challenge → `Upstream` → HTTP 502, so
   Homebrew on CoreLink was non-functional. Now performs the anonymous OCI-token
   dance (parse `WWW-Authenticate`, fetch the realm token SSRF-guarded to the
-  upstream host, retry once). Needs a container redeploy to take effect. Caught by
+  upstream host, retry once) AND sends the OCI/Docker manifest `Accept` header —
+  ghcr.io returns **404** for a manifest GET that omits it, even with a valid
+  token (verified live), which was the second half of the 502. Needs a container
+  redeploy to take effect. Caught by
   the e2e user-journey suite smoke.
 - **Admin-route audit hardening (REV-S1)** — two container admin-plane defects
   closed: (1) `admin_pilot::handle_create` and `handle_grant_tier` now take the
