@@ -23,6 +23,10 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **`docker pull` rejected every manifest with "content size of zero"** — `HEAD
+  /v2/<repo>/manifests/<ref>` returned `Content-Length: 0` (empty body, no length header) so
+  docker's tag resolution read a zero-size descriptor and aborted the pull. HEAD now carries the
+  same Content-Type + an explicit Content-Length (the manifest's real size) as GET, no body.
 - **`docker push` blob HEAD 401'd because `push` didn't imply `pull`** — `OciScope::allows`
   required an exact action match, but docker reuses its push-scoped token for the pre-push blob
   HEAD (a pull). OCI convention is that a push grant implies pull; `allows` now honours that
