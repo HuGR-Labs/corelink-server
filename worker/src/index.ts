@@ -129,6 +129,7 @@ export interface Env {
   CORELINK_PAT_MINT_AUTH_KEY?: string; // gate for `/_internal/pat/mint`
   CORELINK_ADMIN_AUTH_KEY?: string;    // gate for admin `/_internal/*` routes
   CORELINK_ERASE_AUTH_KEY?: string;    // gate for erase `/_internal/*` routes
+  CORELINK_RUNNER_MINT_AUTH_KEY?: string; // gate for `/internal/v1/runner/{mint,revoke}` (runner dispatcher; scoped away from signup's pat_mint)
   // Per-tier quota enforcement (worker/src/lib/quota.ts).
   // Storage quota is always enforced for finite-quota tiers.
   // Monthly request-count quota is backed by the monthly_request_counts table

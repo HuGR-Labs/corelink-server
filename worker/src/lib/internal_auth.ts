@@ -43,11 +43,19 @@ const MIN_INTERNAL_AUTH_KEY_LEN = 32;
  * so the split can be rolled out per-consumer without a flag-day.
  *
  * FROZEN env names (identical to the Rust control-plane side):
- *   - pat_mint → CORELINK_PAT_MINT_AUTH_KEY (`/_internal/pat/mint`)
- *   - admin    → CORELINK_ADMIN_AUTH_KEY    (admin `/_internal/*`)
- *   - erase    → CORELINK_ERASE_AUTH_KEY    (erase `/_internal/*`)
+ *   - pat_mint    → CORELINK_PAT_MINT_AUTH_KEY    (`/_internal/pat/mint` — signup + clw)
+ *   - admin       → CORELINK_ADMIN_AUTH_KEY       (admin `/_internal/*`)
+ *   - erase       → CORELINK_ERASE_AUTH_KEY       (erase `/_internal/*`)
+ *   - runner_mint → CORELINK_RUNNER_MINT_AUTH_KEY (`/internal/v1/runner/{mint,revoke}`)
+ *
+ * `runner_mint` is WORKER-ONLY by design: the runner mint/revoke routes are
+ * handled AT the Worker (not proxied to a container `/_internal/*` gate), and the
+ * Worker→container mint authority call uses the shared key regardless. Giving the
+ * untrusted runner dispatcher its OWN consumer key (distinct from signup's
+ * `pat_mint`) means a leaked runner key can ONLY mint/revoke per-job runner PATs —
+ * never the signup PAT-mint, erase, or admin surfaces (least privilege, A6).
  */
-export type InternalConsumer = "pat_mint" | "admin" | "erase";
+export type InternalConsumer = "pat_mint" | "admin" | "erase" | "runner_mint";
 
 /**
  * Resolve the internal-auth key to verify against for a given consumer.
@@ -68,7 +76,9 @@ export function resolveConsumerKey(env: Env, consumer: InternalConsumer): string
       ? env.CORELINK_PAT_MINT_AUTH_KEY
       : consumer === "admin"
         ? env.CORELINK_ADMIN_AUTH_KEY
-        : env.CORELINK_ERASE_AUTH_KEY;
+        : consumer === "erase"
+          ? env.CORELINK_ERASE_AUTH_KEY
+          : env.CORELINK_RUNNER_MINT_AUTH_KEY;
   if (specific && specific.length >= MIN_INTERNAL_AUTH_KEY_LEN) {
     return specific;
   }

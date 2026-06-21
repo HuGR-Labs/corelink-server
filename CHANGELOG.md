@@ -60,6 +60,14 @@ Each entry cross-references:
   by the new e2e user-journey suite (`tests/e2e-user-journeys`).
 
 ### Security
+- **Runner-mint internal-auth scoped to its own consumer key** — the runner
+  dispatcher's `/internal/v1/runner/{mint,revoke}` now authenticate with a NEW
+  `runner_mint` consumer (`CORELINK_RUNNER_MINT_AUTH_KEY`), distinct from signup's
+  `pat_mint`. The untrusted runner-spawn-Worker thus gets a key that can ONLY
+  mint/revoke per-job runner PATs — never the signup PAT-mint, erase, or admin
+  surfaces (A6 least-privilege). ADDITIVE: falls back to the shared
+  `CORELINK_INTERNAL_AUTH_KEY` until set, so no break before provisioning; the
+  Worker→container mint authority still uses the shared key. Checklist row #161.
 - **Internal PAT revoke/rotate are now tenant-scoped (REV-S2, blast-radius
   bound).** `POST /internal/v1/runner/revoke` and `POST /internal/v1/auth/rotate`
   previously keyed only on `pat_id`: a holder of the `pat_mint` internal-auth key

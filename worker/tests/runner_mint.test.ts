@@ -22,7 +22,7 @@ import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
 
 const INTERNAL_KEY = "test-internal-auth-key-0123456789"; // ≥32 chars
-const PAT_MINT_KEY = "test-pat-mint-auth-key-0123456789ab"; // ≥32 chars, distinct
+const RUNNER_MINT_KEY = "test-pat-mint-auth-key-0123456789ab"; // ≥32 chars, distinct
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
 const JOB_ID = "job-abc-0001";
@@ -105,7 +105,7 @@ function makeEnv(opts: {
   entitled?: Set<string>;
   revokeCapture?: { binds?: unknown[] };
   withInternalKey?: boolean;
-  withPatMintKey?: boolean;
+  withRunnerMintKey?: boolean;
 }): Env {
   return {
     CORELINK_SERVER: makeMintNamespace(opts.captured ?? {}),
@@ -115,7 +115,7 @@ function makeEnv(opts: {
       revokeCapture: opts.revokeCapture,
     }),
     CORELINK_INTERNAL_AUTH_KEY: opts.withInternalKey === false ? undefined : INTERNAL_KEY,
-    CORELINK_PAT_MINT_AUTH_KEY: opts.withPatMintKey ? PAT_MINT_KEY : undefined,
+    CORELINK_RUNNER_MINT_AUTH_KEY: opts.withRunnerMintKey ? RUNNER_MINT_KEY : undefined,
   } as Env;
 }
 
@@ -215,18 +215,18 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     expect(p1["principal_id"]).toBe(p2["principal_id"]);
   });
 
-  it("(b) the per-consumer pat_mint key is accepted (shared key path independent)", async () => {
+  it("(b) the per-consumer runner_mint key is accepted (shared key path independent)", async () => {
     const captured: { req?: Request } = {};
-    const env = makeEnv({ captured, entitled: new Set([TENANT]), withPatMintKey: true });
-    // Caller presents the dedicated pat_mint key, NOT the shared key.
-    const resp = await mintFetch(env, { auth: PAT_MINT_KEY, body: { owner_tenant: TENANT, job_id: JOB_ID } });
+    const env = makeEnv({ captured, entitled: new Set([TENANT]), withRunnerMintKey: true });
+    // Caller presents the dedicated runner_mint key, NOT the shared key.
+    const resp = await mintFetch(env, { auth: RUNNER_MINT_KEY, body: { owner_tenant: TENANT, job_id: JOB_ID } });
     expect(resp.status).toBe(200);
     expect(captured.req).toBeDefined();
   });
 
-  it("(b) when a dedicated pat_mint key is bound, the shared key is rejected", async () => {
+  it("(b) when a dedicated runner_mint key is bound, the shared key is rejected", async () => {
     const captured: { req?: Request } = {};
-    const env = makeEnv({ captured, entitled: new Set([TENANT]), withPatMintKey: true });
+    const env = makeEnv({ captured, entitled: new Set([TENANT]), withRunnerMintKey: true });
     const resp = await mintFetch(env, { auth: INTERNAL_KEY, body: { owner_tenant: TENANT, job_id: JOB_ID } });
     expect(resp.status).toBe(401);
     expect(captured.req).toBeUndefined();
