@@ -256,18 +256,14 @@ export async function handleRunnerRevoke(
   if (typeof patId !== "string" || patId.length === 0) {
     return reapiError("BAD_REQUEST", "pat_id required", 400, requestId);
   }
-  // BACKWARD-COMPAT (REV-S2): owner_tenant scopes the revoke when present but is not
-  // yet required — the off-repo runners dispatcher must roll out sending it before we
-  // flip to mandatory, else this deploy 400s its teardown calls. Absent → un-scoped
-  // revoke (prior behavior) + warn; present → tenant-scoped below.
-  const ownerTenant =
-    typeof body.owner_tenant === "string" && body.owner_tenant.length > 0
-      ? body.owner_tenant
-      : undefined;
-  if (ownerTenant === undefined) {
-    console.warn(
-      `[${requestId}] runner revoke: owner_tenant absent — un-scoped revoke (deprecated; dispatcher MUST send owner_tenant)`,
-    );
+  // REV-S2 (now MANDATORY): owner_tenant scopes EVERY revoke. The runners
+  // dispatcher's PR-B is deployed + proven to send owner_tenant on every call
+  // (green-lit 2026-06-21, no lockstep required), so the backward-compat un-scoped
+  // path is CLOSED: a compromised runner_mint key can no longer revoke another
+  // tenant's PAT by guessing a pat_id — an absent/empty owner_tenant is a hard 400.
+  const ownerTenant = body.owner_tenant;
+  if (typeof ownerTenant !== "string" || ownerTenant.length === 0) {
+    return reapiError("BAD_REQUEST", "owner_tenant required", 400, requestId);
   }
 
   // ── 4. Revoke via the EXISTING surface (idempotent, TENANT-SCOPED) ─────────
@@ -280,19 +276,11 @@ export async function handleRunnerRevoke(
   // The `revoked_at_ms IS NULL` guard keeps a re-revoke idempotent; a (pat_id,
   // owner_tenant) mismatch matches zero rows → a no-op 200 (no cross-tenant write).
   try {
-    if (ownerTenant !== undefined) {
-      await env.CONFIG_DB.prepare(
-        "UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id = ?2 AND tenant_id = ?3 AND revoked_at_ms IS NULL",
-      )
-        .bind(Date.now(), patId, ownerTenant)
-        .run();
-    } else {
-      await env.CONFIG_DB.prepare(
-        "UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id = ?2 AND revoked_at_ms IS NULL",
-      )
-        .bind(Date.now(), patId)
-        .run();
-    }
+    await env.CONFIG_DB.prepare(
+      "UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id = ?2 AND tenant_id = ?3 AND revoked_at_ms IS NULL",
+    )
+      .bind(Date.now(), patId, ownerTenant)
+      .run();
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     console.error(`[${requestId}] runner revoke update failed: ${message.slice(0, 80)}`);

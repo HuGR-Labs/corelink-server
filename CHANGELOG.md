@@ -70,6 +70,12 @@ Each entry cross-references:
   by the new e2e user-journey suite (`tests/e2e-user-journeys`).
 
 ### Security
+- **`owner_tenant` is now MANDATORY on `/internal/v1/runner/revoke` (REV-S2 closed)** — the
+  revoke UPDATE always carries `AND tenant_id = owner_tenant`, and an absent/empty
+  `owner_tenant` is a hard 400 (no UPDATE runs). This closes the backward-compat un-scoped
+  window: a compromised `runner_mint` key can no longer revoke ANOTHER tenant's PAT by
+  guessing a `pat_id`. Safe to flip now — the runners dispatcher's PR-B is deployed + proven
+  to send `owner_tenant` on every revoke (green-lit by the Runners TL 2026-06-21, no lockstep).
 - **Runner-mint internal-auth scoped to its own consumer key** — the runner
   dispatcher's `/internal/v1/runner/{mint,revoke}` now authenticate with a NEW
   `runner_mint` consumer (`CORELINK_RUNNER_MINT_AUTH_KEY`), distinct from signup's
