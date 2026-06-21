@@ -102,9 +102,34 @@ pub async fn head(
         .await
         .map_err(OciAdapterError::Kv)?
         .ok_or(OciAdapterError::NotFound)?;
+    // A HEAD must carry the SAME Content-Type + Content-Length as the GET (just
+    // no body). Without the explicit Content-Length the empty body yields
+    // `Content-Length: 0`, and docker pull rejects the descriptor with
+    // "content size of zero: invalid argument" — so tag resolution (HEAD
+    // manifests/<tag>) breaks every pull. Mirror the GET's content-type slot.
+    let ct_key = manifest_ct_key(repo, reference);
+    let ct_bytes = kv.get(tenant, &ct_key).await.map_err(OciAdapterError::Kv)?;
+    let ct_str = match ct_bytes {
+        Some(b) => String::from_utf8(b.to_vec())
+            .unwrap_or_else(|_| String::from("application/vnd.oci.image.manifest.v1+json")),
+        None => String::from("application/vnd.oci.image.manifest.v1+json"),
+    };
     let manifest_digest =
         crate::oci::digest::OciDigest::compute(crate::oci::digest::OciDigestAlgo::Sha256, &body)?;
     let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        ct_str
+            .parse()
+            .map_err(|_| OciAdapterError::Kv(String::from("ct header parse")))?,
+    );
+    headers.insert(
+        header::CONTENT_LENGTH,
+        body.len()
+            .to_string()
+            .parse()
+            .map_err(|_| OciAdapterError::Kv(String::from("len header parse")))?,
+    );
     headers.insert(
         "Docker-Content-Digest",
         manifest_digest
