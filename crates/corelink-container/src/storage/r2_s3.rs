@@ -556,8 +556,29 @@ impl R2CasHandler {
 /// a degraded/empty prefix that would collapse every non-derivable
 /// tenant into one SHARED keyspace (cross-tenant read/overwrite/
 /// delete/list). Fail CLOSED, never silent co-residence.
+/// Fixed, reserved sentinel UUID for the public shared-dedup namespace
+/// ([`crate::adapter_cache::PUBLIC_NAMESPACE`] = `_public`). `_public` is NOT a
+/// tenant UUID — it's the intentional cross-tenant namespace for public,
+/// deterministic content (Homebrew bottles, public npm/PyPI; the network-effect
+/// moat). It has NO per-tenant isolation requirement (the content is public),
+/// but it MUST get a STABLE prefix so every caller storing the same public blob
+/// dedups to the same R2 key. We derive it from this fixed sentinel under the
+/// SAME secret TDK: TDK-keyed (not a predictable raw prefix), reserved so it can
+/// never collide with a real (random v4/v7) tenant's HMAC prefix, and identical
+/// across callers. Hex spells `__public` in the leading bytes. Without this,
+/// `_public` storage writes fail CLOSED (non-derivable) and the public bottle /
+/// package cache is non-functional (the brew 502 root cause, 2026-06-21).
+const PUBLIC_NAMESPACE_UUID: Uuid = Uuid::from_u128(0x5f5f_7075_626c_6963_0000_0000_0000_0001);
+
 fn tenant_prefix(tdk: Option<&TenantDerivationKey>, tenant: &str) -> Result<String, String> {
     match tdk {
+        // Public shared-dedup namespace: stable, TDK-keyed, reserved sentinel
+        // prefix (see PUBLIC_NAMESPACE_UUID). Scoped to the EXACT `_public`
+        // string — real UUID tenants are unaffected, other non-UUID tenants
+        // still fail CLOSED below.
+        Some(tdk) if tenant == crate::adapter_cache::PUBLIC_NAMESPACE => {
+            Ok(derive_prefix(tdk, PUBLIC_NAMESPACE_UUID).to_string())
+        }
         Some(tdk) => match Uuid::try_parse(tenant) {
             Ok(uid) => Ok(derive_prefix(tdk, uid).to_string()),
             // Non-UUID tenant: in test builds the simple raw-padded
@@ -2383,6 +2404,28 @@ mod tests {
             .expect("a canonical UUID tenant must derive a prefix");
         assert_eq!(ok.len(), 16, "derived prefix must be 16 chars, got {ok:?}");
         assert!(!ok.is_empty(), "derived prefix must never be empty");
+    }
+
+    #[test]
+    fn public_namespace_resolves_a_stable_isolated_derived_prefix() {
+        // The brew-502 root cause: `_public` (the shared cross-tenant dedup
+        // namespace) is not a UUID, so the prod path failed CLOSED on it. It MUST
+        // instead resolve a stable, secret-keyed prefix — public content is shared
+        // by design, but every caller must dedup the same blob to the same key.
+        let tdk = TenantDerivationKey::from_bytes(fake_tdk());
+        let p = tenant_prefix(Some(&tdk), crate::adapter_cache::PUBLIC_NAMESPACE)
+            .expect("_public must resolve a prefix (not fail closed)");
+        assert_eq!(p.len(), 16, "prefix must be 16 chars: {p:?}");
+        // Secret-keyed reserved-sentinel HMAC (NOT a predictable raw prefix).
+        assert_eq!(p, derive_prefix(&tdk, PUBLIC_NAMESPACE_UUID).to_string());
+        // Deterministic across calls (so cross-tenant dedup actually dedups).
+        assert_eq!(
+            p,
+            tenant_prefix(Some(&tdk), crate::adapter_cache::PUBLIC_NAMESPACE).unwrap()
+        );
+        // Reserved: it never collides with a real (UUID) tenant's prefix.
+        let real = tenant_prefix(Some(&tdk), "0190abcd-1234-75ab-8def-0123456789ab").unwrap();
+        assert_ne!(p, real, "_public must not collide with a real tenant prefix");
     }
 
     // ---------------------------------------------------------------

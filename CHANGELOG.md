@@ -32,9 +32,15 @@ Each entry cross-references:
   ghcr.io returns **404** for a manifest GET that omits it, even with a valid
   token (verified live); AND strips the `/brew/<tenant>/` route prefix the Worker
   forwards verbatim (nest_service preserves the full path) — it was sent to ghcr as
-  `ghcr.io/brew/<tenant>/v2/…` → 404, the THIRD and final half of the 502 (also fixes
-  the `_public` cross-tenant bottle dedup, whose CAS key had embedded the tenant). Needs a container
-  redeploy to take effect. Caught by
+  `ghcr.io/brew/<tenant>/v2/…` → 404. Those three fixed the upstream FETCH; the public
+  bottle STORE then surfaced two more: (4) the shared `_public` dedup namespace had no
+  `tenant_storage_state` row, so byte-accounting failed CLOSED (`storage cap
+  indeterminate`) — seeded uncapped per region (migration 0073); (5) `_public` is not a
+  UUID, so the R2 key prefix derivation fail-CLOSED'd it (INV-TENANT-ISOLATION) — now
+  derived from a reserved sentinel UUID (`storage/r2_s3.rs`: stable, secret-keyed, never
+  collides with a real tenant, consistent so the cross-tenant dedup actually dedups).
+  Verified end-to-end LIVE (brew manifest → 200). Needs a container redeploy to take
+  effect. Caught by
   the e2e user-journey suite smoke.
 - **Admin-route audit hardening (REV-S1)** — two container admin-plane defects
   closed: (1) `admin_pilot::handle_create` and `handle_grant_tier` now take the
