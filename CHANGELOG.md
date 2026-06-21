@@ -23,6 +23,23 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **cargo/sccache + OCI/docker were unusable by the REAL clients** (found driving the
+  actual toolchains through the real user path — Clerk signup → PAT → client — not curl).
+  Two distinct blockers the curl-level checks missed:
+  - **cargo: the sccache health-probe was rejected.** sccache PUTs/GETs `.sccache_check`
+    on startup to verify the backend; `cargo/translate.rs::normalize_key` required keys to
+    be EXACTLY 64-hex (it assumed every sccache key is a BLAKE3 digest) → `.sccache_check`
+    → 400 → sccache disabled the CoreLink backend. Since the cargo surface now content-
+    addresses the bytes via the MoatCache (the key is only the per-tenant url-map label,
+    not the CAS digest), `normalize_key` now accepts any SAFE bounded single-segment key
+    (hex digests lowercased; control keys verbatim; traversal/separators/over-long
+    rejected).
+  - **OCI: the registry's advertised host didn't exist.** `routes/oci.rs::OCI_BEARER_REALM`
+    advertises `corelink-oci.humangr.com/token` in `Www-Authenticate`, but that host was a
+    deployment-note never provisioned — no DNS, no Worker route — so real `docker
+    login/push` failed with "no such host". Added the CNAME (→ workers.dev, proxied) + the
+    `corelink-oci.humangr.com/*` Worker route so the host-agnostic `/v2/` + `/token` OCI
+    paths serve on the advertised host.
 - **cargo/sccache surface 502'd on every PUT in prod** — the cargo adapter passed the
   sccache key (`blake3(rustc-cmdline + input fingerprints)` — a hash of the compile
   INPUTS, not of the cached OUTPUT) straight through as the CAS `digest_hex`, but the

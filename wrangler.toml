@@ -289,6 +289,15 @@ head_sampling_rate = 1
 pattern = "corelink-api.humangr.com/*"
 zone_name = "humangr.com"
 
+# OCI registry host — the realm the OCI adapter advertises in Www-Authenticate
+# (`routes/oci.rs::OCI_BEARER_REALM` = corelink-oci.humangr.com/token). The host
+# was a deployment-note never provisioned (no DNS, no route) so real `docker
+# login/push` failed; CNAME + this route added 2026-06-21 so the /v2/ + /token
+# OCI paths (host-agnostic in the worker) serve on the advertised host.
+[[env.prod.routes]]
+pattern = "corelink-oci.humangr.com/*"
+zone_name = "humangr.com"
+
 # WI-MULTI-REGION-V1 Service Bindings: prod worker can fan-out to regional
 # workers via per-tenant routing. Worker code reads tenant.primary_region
 # from D1 and forwards to the matching regional Service Binding when
