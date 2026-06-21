@@ -30,7 +30,10 @@ Each entry cross-references:
   dance (parse `WWW-Authenticate`, fetch the realm token SSRF-guarded to the
   upstream host, retry once) AND sends the OCI/Docker manifest `Accept` header —
   ghcr.io returns **404** for a manifest GET that omits it, even with a valid
-  token (verified live), which was the second half of the 502. Needs a container
+  token (verified live); AND strips the `/brew/<tenant>/` route prefix the Worker
+  forwards verbatim (nest_service preserves the full path) — it was sent to ghcr as
+  `ghcr.io/brew/<tenant>/v2/…` → 404, the THIRD and final half of the 502 (also fixes
+  the `_public` cross-tenant bottle dedup, whose CAS key had embedded the tenant). Needs a container
   redeploy to take effect. Caught by
   the e2e user-journey suite smoke.
 - **Admin-route audit hardening (REV-S1)** — two container admin-plane defects

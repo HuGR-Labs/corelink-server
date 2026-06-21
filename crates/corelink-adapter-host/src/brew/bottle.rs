@@ -54,6 +54,20 @@ pub fn canonical_bottle_path(raw_path: &str) -> String {
     // Strip leading slash.
     let trimmed = no_query.strip_prefix('/').unwrap_or(no_query);
 
+    // Drop the `brew/<tenant>/` route-mount prefix. The Worker forwards the FULL
+    // request path (`pathSuffix: path`) and the container nests the adapter with
+    // `nest_service` (NOT `nest`), which PRESERVES the full path — so the handler
+    // receives `/brew/<tenant>/v2/…`, not `/v2/…`. Without this strip the upstream
+    // URL became `ghcr.io/brew/<tenant>/v2/…` → 404 → `Upstream` → HTTP 502 (every
+    // bottle fetch failed), and the CAS key embedded the tenant (defeating the
+    // `_public` cross-tenant bottle dedup). Only strips when the path actually
+    // starts with `brew/<seg>/`, so already-relative inputs (tests, internal
+    // callers) are unchanged.
+    let trimmed = trimmed
+        .strip_prefix("brew/")
+        .and_then(|after| after.split_once('/').map(|(_tenant, rest)| rest))
+        .unwrap_or(trimmed);
+
     // Strip trailing slashes.
     let trimmed = trimmed.trim_end_matches('/');
 
@@ -260,6 +274,28 @@ mod tests {
             canonical_bottle_path("/v2/homebrew/core/curl/"),
             "v2/homebrew/core/curl"
         );
+    }
+
+    #[test]
+    fn canonical_strips_brew_tenant_route_prefix() {
+        // The PROD input shape: the Worker forwards the full path and the
+        // adapter is nested with `nest_service`, so the handler gets
+        // `/brew/<tenant>/v2/…`. The upstream-relative path must drop
+        // `brew/<tenant>/` (else ghcr.io/brew/<tenant>/… → 404 → 502).
+        assert_eq!(
+            canonical_bottle_path(
+                "/brew/00000000-0000-4000-8000-0000000f0002/v2/homebrew/core/jq/manifests/1.7"
+            ),
+            "v2/homebrew/core/jq/manifests/1.7"
+        );
+        // Cross-tenant dedup: the SAME bottle under a DIFFERENT tenant
+        // canonicalizes identically (the `_public` moat).
+        assert_eq!(
+            canonical_bottle_path("/brew/tenant-a/v2/homebrew/core/jq/blobs/sha256:abc"),
+            canonical_bottle_path("/brew/tenant-b/v2/homebrew/core/jq/blobs/sha256:abc")
+        );
+        // Already-relative input (internal callers / tests) is unchanged.
+        assert_eq!(canonical_bottle_path("/v2/foo"), "v2/foo");
     }
 
     #[test]
