@@ -292,11 +292,21 @@ pub fn unique_blob(prefix: &str) -> Vec<u8> {
     format!("{prefix}-{}", uuid::Uuid::new_v4()).into_bytes()
 }
 
-/// Lowercase-hex SHA-256 of `bytes` (the CAS content address).
+/// Lowercase-hex SHA-256 of `bytes`. Use for OPAQUE keys (AC action digests,
+/// Turbo artifact hashes) where the server does NOT recompute the address from
+/// the body — a unique string suffices.
 pub fn sha256_hex(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
     hex::encode(h.finalize())
+}
+
+/// Lowercase-hex BLAKE3 of `bytes` — the **native CAS content address**.
+/// CoreLink CAS verifies `body`'s BLAKE3 against the URL `{hash}` and returns
+/// 422 "content hash mismatch" on divergence (`routes/cas.rs`). So CAS journeys
+/// MUST address with this, NOT [`sha256_hex`].
+pub fn blake3_hex(bytes: &[u8]) -> String {
+    hex::encode(blake3::hash(bytes).as_bytes())
 }
 
 // ── assert helpers ────────────────────────────────────────────────────────────

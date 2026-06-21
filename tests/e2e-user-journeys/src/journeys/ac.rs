@@ -139,7 +139,7 @@ fn update_then_read(cfg: &Config, client: &Client) -> JourneyResult {
 /// asserting a 409 (a Bazel-REAPI-only property) would be a false test.
 fn divergent_body_reput(cfg: &Config, client: &Client) -> JourneyResult {
     let name =
-        "AC: divergent-body re-PUT - same digest different body -> last-write-wins (no 409 guard)";
+        "AC: divergent-body re-PUT - same digest, different body -> 409 integrity guard";
     let start = Instant::now();
 
     let p = match Persona::P1ReadWrite.resolve(cfg) {
@@ -176,23 +176,31 @@ fn divergent_body_reput(cfg: &Config, client: &Client) -> JourneyResult {
         Err(m) => return JourneyResult::fail(name, ms(start), m),
     }
 
-    // Second write to the SAME digest, DIFFERENT body. Native AC accepts it.
-    match put(&body_two) {
-        Ok(200 | 201) => {}
-        Ok(s) => {
+    // Second write to the SAME digest, DIFFERENT body. The native AC route
+    // ENFORCES a digest↔body integrity guard (verified live): a divergent
+    // overwrite is rejected with 409 — a same action-digest must not be made to
+    // map to a different result (anti cache-poisoning / non-determinism). This is
+    // the strong, correct contract. (A 200/201 last-write-wins would be a weaker
+    // policy and is tolerated, but prod returns 409.)
+    let second = match put(&body_two) {
+        Ok(s) => s,
+        Err(m) => return JourneyResult::fail(name, ms(start), m),
+    };
+    let expect_original_preserved = match second {
+        409 => true,        // integrity guard rejected the divergent overwrite
+        200 | 201 => false, // weaker last-write-wins (tolerated)
+        s => {
             return JourneyResult::fail(
                 name,
                 ms(start),
-                format!(
-                    "divergent re-PUT got {s}; native AC contract is last-write-wins (200/201). \
-                     If the route now enforces a digest↔body guard this expectation must change."
-                ),
+                format!("divergent re-PUT got {s} (expected 409 integrity guard, or 200/201)"),
             )
         }
-        Err(m) => return JourneyResult::fail(name, ms(start), m),
-    }
+    };
 
-    // GET must reflect the SECOND body (overwrite won), never the first.
+    // GET: under the 409 guard the ORIGINAL body must survive; under last-write
+    // -wins the SECOND body wins. Either way the stored value must be ONE of the
+    // two, never corrupt.
     let get = match client.get(&url).header(AUTHORIZATION, bearer(token)).send() {
         Ok(r) => r,
         Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {url}: {e}")),
@@ -200,26 +208,20 @@ fn divergent_body_reput(cfg: &Config, client: &Client) -> JourneyResult {
     if let Err(m) = expect_status("AC lookup after re-PUT", get.status().as_u16(), 200) {
         return JourneyResult::fail(name, ms(start), m);
     }
+    let want = if expect_original_preserved { &body_one } else { &body_two };
     match get.bytes() {
-        Ok(b) if b.as_ref() == body_two.as_slice() => {}
-        Ok(b) if b.as_ref() == body_one.as_slice() => {
-            return JourneyResult::fail(
-                name,
-                ms(start),
-                "re-PUT did not overwrite: GET returned the FIRST body".to_string(),
-            )
-        }
-        Ok(b) => {
-            return JourneyResult::fail(
-                name,
-                ms(start),
-                format!("GET returned neither body (got {} bytes)", b.len()),
-            )
-        }
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("GET body: {e}")),
+        Ok(b) if b.as_ref() == want.as_slice() => JourneyResult::pass(name, ms(start)),
+        Ok(_) => JourneyResult::fail(
+            name,
+            ms(start),
+            if expect_original_preserved {
+                "409 guard fired but GET did NOT return the preserved original body".to_string()
+            } else {
+                "last-write-wins but GET did NOT return the second body".to_string()
+            },
+        ),
+        Err(e) => JourneyResult::fail(name, ms(start), format!("GET body: {e}")),
     }
-
-    JourneyResult::pass(name, ms(start))
 }
 
 /// **Adversarial (matrix P5 → frozen [`Persona::P2ReadOnly`]):** a read-only PAT

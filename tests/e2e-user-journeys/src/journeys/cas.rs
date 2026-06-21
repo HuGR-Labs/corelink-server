@@ -12,7 +12,7 @@ use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
 use crate::harness::{
-    bearer, expect_denied, sha256_hex, unique_blob, url_cas, Config, JourneyResult,
+    bearer, expect_denied, blake3_hex, unique_blob, url_cas, Config, JourneyResult,
 };
 use crate::personas::Persona;
 
@@ -41,7 +41,7 @@ fn cache_miss_then_hit(cfg: &Config, client: &Client) -> JourneyResult {
     let token = p1.token.expect("P1 always has a token");
 
     let blob = unique_blob("corelink-e2e-cas");
-    let hash = sha256_hex(&blob);
+    let hash = blake3_hex(&blob);
     let url = url_cas(cfg, &p1.tenant, &hash);
 
     // PUT.
@@ -134,7 +134,7 @@ fn tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
     let token_b = b.token.expect("P6 has a token");
 
     let blob = unique_blob("tenant-a-secret");
-    let hash = sha256_hex(&blob);
+    let hash = blake3_hex(&blob);
 
     // Tenant A PUTs under tenant A's path.
     let url_a = url_cas(cfg, &a.tenant, &hash);

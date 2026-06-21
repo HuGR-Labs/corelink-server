@@ -78,14 +78,15 @@ fn onboarding_ping(cfg: &Config, client: &Client) -> JourneyResult {
             return JourneyResult::fail(name, ms(start), format!("/v1/users/me not JSON: {e}"))
         }
     };
-    for field in ["user_id", "email_hash", "locale", "created_at_ms"] {
-        if body[field].is_null() {
-            return JourneyResult::fail(
-                name,
-                ms(start),
-                format!("/v1/users/me missing required field '{field}'"),
-            );
-        }
+    // Real /v1/users/me contract (routes/users.rs): the authenticated caller's
+    // identity reflection — `{tenant_id, token_prefix, route_kind}`. The key proof
+    // is that a valid PAT resolved to a non-empty tenant_id (auth wired end-to-end).
+    if body["tenant_id"].as_str().unwrap_or("").is_empty() {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("/v1/users/me missing/empty tenant_id (auth not resolved): {body}"),
+        );
     }
 
     JourneyResult::pass(name, ms(start))
