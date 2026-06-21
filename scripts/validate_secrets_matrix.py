@@ -153,12 +153,14 @@ ALLOWLIST_REGEX = re.compile(
     # credential material (test config, R2 bucket names/regions, CF resource IDs).
     #   Test-only alt PAT key — crates/corelink-pat/tests/emit_e2e_seed.rs
     r"|CORELINK_PAT_SIGNING_KEY_HEX$"
-    #   E2E user-journey harness config + test-minted PATs (tests/e2e-user-journeys)
-    r"|CORELINK_E2E_BAZEL_TEST$"
-    r"|CORELINK_E2E_ENDPOINT$"
-    r"|CORELINK_E2E_QUOTA_TEST$"
-    r"|CORELINK_E2E_TOKEN$"
-    r"|CORELINK_E2E_TOKEN_TENANT_B$"
+    #   E2E user-journey harness config + test-minted PATs (tests/e2e-user-journeys).
+    #   The ENTIRE `CORELINK_E2E_*` namespace is black-box test configuration —
+    #   endpoint, per-persona PATs, tenant ids, run flags (RUN_SLOW), DSR/introspect
+    #   fixtures. NONE are deployed prod secrets; they're supplied OOB only when the
+    #   suite is run live. Prefix-allowlisted so the whole namespace stays covered as
+    #   the suite grows (was 5 individually-listed vars; the 45-journey rebuild added
+    #   RUN_SLOW/TENANT(_B)/PAT_*/TOMBSTONED_HASH/INTROSPECT_KEY).
+    r"|CORELINK_E2E_"
     #   Cloudflare D1 database UUID — committed in wrangler.toml [[d1_databases]];
     #   a resource identifier, not a credential (CF_API_TOKEN gates access).
     r"|D1_DATABASE_ID$"
