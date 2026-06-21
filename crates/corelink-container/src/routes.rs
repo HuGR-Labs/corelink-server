@@ -604,13 +604,21 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         match crate::adapter_cache::d1_map_from_env() {
             Some(d1) => {
                 // cargo (sccache): PRIVATE per-tenant moat namespace (no _public).
+                // Thread the SAME D1-backed per-tier cap resolver OCI uses so a
+                // FRESH tenant's first cargo write auto-seeds its
+                // `tenant_storage_state` row with the REAL cap (else the
+                // indeterminate-cap reservation fails CLOSED → 502 on a brand-new
+                // sccache user's first PUT). Reuses the moat's D1 client.
                 let cargo_map: Arc<dyn crate::adapter_cache::UrlMapStore> = d1.clone();
+                let cargo_cap_resolver: Arc<dyn crate::oci_cap::TenantCapResolver> =
+                    Arc::new(crate::oci_cap::D1TenantCapResolver::new(d1.clone()));
                 router = router.merge(cargo::router(
                     cargo_cas_read,
                     cargo_cas_write,
                     cargo_map,
                     cargo::resolver_from_verifier(verifier.clone()),
                     quota.clone(),
+                    Some(cargo_cap_resolver),
                 ));
 
                 // brew: shared map + verifier (public bottles, cross-tenant dedup).

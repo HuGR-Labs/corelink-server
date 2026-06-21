@@ -16,7 +16,8 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
@@ -24,9 +25,10 @@ use corelink_adapter_host::cargo::ports::{
     ResolvedTenant, TenantResolveError, TenantResolver,
 };
 use corelink_handler_cas::{
-    handler::fake_hash, CasReadHandler, CasWriteHandler, InMemoryAuditSink, InMemoryCasHandler,
-    InMemorySliObserver,
+    handler::fake_hash, CasHandlerError, CasReadHandler, CasReadRequest, CasReadResponse,
+    CasWriteHandler, CasWriteRequest, CasWriteResponse,
 };
+use corelink_server::adapter_cache::UrlMapStore;
 use corelink_server::routes::cargo;
 use tower::ServiceExt;
 
@@ -69,15 +71,78 @@ impl TenantResolver for StubResolver {
     }
 }
 
+/// Hermetic in-memory url→content-hash map (the `MoatCache` map port). The
+/// cargo surface now rides the 2-level moat, so the smoke router needs a real
+/// map for the PUT→GET round-trips.
+#[derive(Default)]
+struct FakeUrlMap(Mutex<HashMap<(String, String), String>>);
+#[async_trait::async_trait]
+impl UrlMapStore for FakeUrlMap {
+    async fn get(&self, ns: &str, url_hash: &str) -> Result<Option<String>, String> {
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .get(&(ns.to_owned(), url_hash.to_owned()))
+            .cloned())
+    }
+    async fn put(
+        &self,
+        ns: &str,
+        url_hash: &str,
+        content_hash: &str,
+        _len: u64,
+    ) -> Result<(), String> {
+        self.0
+            .lock()
+            .unwrap()
+            .insert((ns.to_owned(), url_hash.to_owned()), content_hash.to_owned());
+        Ok(())
+    }
+}
+
+/// Non-verifying in-memory CAS (accepts any `claimed_hash`), keyed by
+/// `(tenant, hash)`. The cargo surface rides `MoatCache::production`, which
+/// content-addresses bytes via the REAL blake3 `canonical_hash_hex` and passes
+/// THAT as the claimed hash — a verifying handler keyed on `fake_hash` would
+/// reject it (HashMismatch → 502). This stub mirrors the OCI route tests'
+/// `StubCas`: it stores/serves by whatever hash the moat computed, so the moat
+/// round-trips end-to-end.
+#[derive(Debug, Default)]
+struct StubCas(Mutex<HashMap<(String, String), Vec<u8>>>);
+impl CasReadHandler for StubCas {
+    fn read(&self, req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
+        match self.0.lock().unwrap().get(&(req.tenant.clone(), req.hash.clone())) {
+            Some(b) => Ok(CasReadResponse::new(b.clone(), req.hash.clone())),
+            None => Err(CasHandlerError::NotFound {
+                tenant: req.tenant,
+                hash: req.hash,
+            }),
+        }
+    }
+}
+impl CasWriteHandler for StubCas {
+    fn write(&self, req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError> {
+        self.0
+            .lock()
+            .unwrap()
+            .insert((req.tenant, req.claimed_hash.clone()), req.bytes);
+        Ok(CasWriteResponse::new(req.claimed_hash, true))
+    }
+}
+
 fn cargo_router() -> axum::Router {
-    let audit = Arc::new(InMemoryAuditSink::new());
-    let sli = Arc::new(InMemorySliObserver::new());
-    let shared = Arc::new(InMemoryCasHandler::new(audit, sli));
+    let shared = Arc::new(StubCas::default());
     let read: Arc<dyn CasReadHandler> = shared.clone();
     let write: Arc<dyn CasWriteHandler> = shared;
+    let map: Arc<dyn UrlMapStore> = Arc::new(FakeUrlMap::default());
     // No $-ceiling gate in this smoke test (the route shape is identical with
     // or without it; the gate is exercised by the tenant_quota unit tests).
-    cargo::router(read, write, Arc::new(StubResolver), None)
+    // `None` cap resolver: the in-memory CAS handler does no byte-accounting, so
+    // the fresh-row seed cap is inert here (the cap-threading is unit-tested in
+    // `routes::cargo`'s test module). The route SHAPE is identical with or
+    // without it.
+    cargo::router(read, write, map, Arc::new(StubResolver), None, None)
     // (no separate verifier arg: the gate's two-layer write check now uses the
     // resolver's `resolve_with_capability` — a single PAT verification.)
 }
@@ -286,9 +351,14 @@ async fn tenant_comes_from_pat_not_path() {
 }
 
 #[tokio::test]
-async fn malformed_short_key_is_rejected() {
-    // A key that is not 64-hex must NOT 200 — the adapter's key validation
-    // rejects it (400) once the gate forwards it.
+async fn unstored_arbitrary_key_is_a_miss_not_a_200() {
+    // The cargo surface now rides the 2-level moat: the URL `<key>` is the
+    // sccache cache LABEL (a hash of compile INPUTS), not a CoreLink content
+    // hash, so the adapter does NOT validate it as 64-hex (it passes any key to
+    // the moat as the url-map label). An UNSTORED key — hex-shaped or not — is
+    // therefore a legitimate cache MISS (404), never a 200. (Pre-moat this path
+    // hashed the key as a CAS digest and 400'd a non-hex key; that validation no
+    // longer applies.)
     let app = cargo_router();
     let req = Request::builder()
         .method("GET")
@@ -298,5 +368,9 @@ async fn malformed_short_key_is_rejected() {
         .body(Body::empty())
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        resp.status(),
+        StatusCode::NOT_FOUND,
+        "an unstored cargo key is a moat miss (404), not a 200"
+    );
 }
