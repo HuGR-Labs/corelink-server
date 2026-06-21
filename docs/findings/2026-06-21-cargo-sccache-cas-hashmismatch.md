@@ -1,5 +1,10 @@
 # Finding: cargo/sccache surface is broken in prod (502 HashMismatch)
 
+> **✅ RESOLVED 2026-06-21** — fixed in PR #434 (route cargo through the 2-level `MoatCache`,
+> per-tenant namespace), pinned + deployed to all 5 prod envs as image `d443af5f-r1`, and
+> **verified LIVE**: `PUT /cargo/<t>/<key>` → 200 + `GET` round-trip MATCH (the 502 is gone).
+> Original diagnosis preserved below for the record.
+
 > **Found:** 2026-06-21, e2e gated-surface black-box validation (the "#2" sweep after the runner key-split).
 > **Severity:** surface-broken, but **NOT a launch-blocker** — sccache/cargo is the
 > **expansion campaign #1 (CI/build-acceleration, phase 3, post-launch)** surface, not the launch
