@@ -128,7 +128,7 @@ pub enum BrewAdapterError {
 
 ## 6. Auth + multi-tenancy
 
-PAT-based, same pattern as cargo/npm/pip. `Authorization: Bearer hugr-pat_<token>`. Brew supports custom auth via `HOMEBREW_BOTTLE_DOMAIN` chained with `HOMEBREW_GITHUB_API_TOKEN` (env var) — we accept the PAT in that env var slot when running brew against the adapter.
+PAT-based, same pattern as cargo/npm/pip. `Authorization: Bearer corelink_<token>`. A real `brew` client (Homebrew 6.x, verified 2026-06-21) only attaches the `Authorization` header from `CurlGitHubPackagesDownloadStrategy`, which is selected only when the bottle URL still matches `ghcr.io`. A bare custom `HOMEBREW_BOTTLE_DOMAIN` selects the plain `CurlDownloadStrategy` and sends NO auth header (and `HOMEBREW_GITHUB_API_TOKEN` is never sent to bottle downloads). The working authenticated invocation is `HOMEBREW_ARTIFACT_DOMAIN=https://corelink-api.humangr.com/brew/<tenant>` + `HOMEBREW_DOCKER_REGISTRY_TOKEN=corelink_<PAT>` (the latter becomes `Authorization: Bearer corelink_<PAT>` via `brew.sh`).
 
 PAT scope: `brew:read`.
 
