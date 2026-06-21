@@ -23,6 +23,39 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **`docker push` got `405 Method Not Allowed` on `POST /token`** — real `docker push`
+  obtains its bearer via the OAuth2 token endpoint (Docker token spec): a
+  `POST /token` with an `application/x-www-form-urlencoded` body
+  (`grant_type=password`, `service`, `scope`, `username`, `password`). The OCI adapter
+  only registered `GET /token`, so the POST dead-ended at `405` and push could never
+  authenticate. The route now serves `GET` **and** `POST`: the shared `issue_token`
+  helper (scope-parse → PAT capability re-verify → write-downscope → mint) backs both;
+  `POST /token` takes the PAT from the form `password` field (falling back to the
+  `Authorization: Basic` header) and the scope from the form `scope` field. The form
+  body is parsed manually (no new axum `form` feature) and hard-capped at 64 KiB on this
+  unauth-reachable surface. Read-only PATs are still downscoped to pull-only (no scope
+  escalation). Covered by `tests/oci_token_post.rs` (form round-trip, Basic fallback,
+  read-only downscope, no-creds→401-not-405, full `docker push` flow via `POST /token`).
+- **A fresh tenant's FIRST cargo/sccache write 502'd** — `PUT /cargo/<tenant>/<key>`
+  for a tenant that had never done a native CAS write (so had no `tenant_storage_state`
+  row) reached `MoatCache::put` with the storage cap hard-coded to `None`; the
+  byte-accounting reservation then fails CLOSED (502) rather than seed an uncapped row.
+  `CargoMoatStore` now resolves the tenant's RESOLVED per-tier storage cap container-side
+  via the shared `oci_cap::D1TenantCapResolver` (the SAME resolver OCI uses, keyed by the
+  PAT-derived tenant) and threads it into `MoatCache::put`, so a brand-new sccache user's
+  first write auto-seeds the row with the REAL cap. An indeterminate cap (no resolver in
+  dev/CI, or a D1 error) stays `None` — absence is never treated as unlimited.
+- **brew bottle-cache auth docs corrected to the only working client config** — the
+  brew adapter docs (module + `auth.rs` + `specs/_proposals/adapters/brew.md`) claimed
+  a real `brew` client authenticates by setting `HOMEBREW_BOTTLE_DOMAIN` +
+  `HOMEBREW_GITHUB_API_TOKEN`. Verified against Homebrew 6.x this never sends an
+  `Authorization` header: a bare custom `HOMEBREW_BOTTLE_DOMAIN` selects the plain
+  `CurlDownloadStrategy` (no auth header), and only `CurlGitHubPackagesDownloadStrategy`
+  (selected only for `ghcr.io`-matching URLs) attaches one. The docs now specify the
+  working invocation — `HOMEBREW_ARTIFACT_DOMAIN=https://corelink-api.humangr.com/brew/<tenant>`
+  + `HOMEBREW_DOCKER_REGISTRY_TOKEN=corelink_<PAT>` — which yields
+  `Authorization: Bearer corelink_<PAT>` on every bottle GET, exactly what the adapter
+  accepts. Docs-only; the server auth code was already correct.
 - **`docker push` 401-looped** — the data-plane `/v2/*` auth challenge advertised a
   WILDCARD `repository:*:pull` scope, so docker requested a `*`-scoped token which the
   exact-match `OciScope::allows(repo, action)` then rejected on the retry. The challenge now

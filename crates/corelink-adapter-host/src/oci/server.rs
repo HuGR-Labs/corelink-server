@@ -7,6 +7,7 @@
 //! | `GET` | `/v2/` | [`handlers::api_version`] |
 //! | `GET` | `/v2/_catalog` | [`handlers::catalog`] (always 401 — disabled) |
 //! | `GET` | `/token` | [`handlers::token`] (PAT → bearer exchange) |
+//! | `POST` | `/token` | [`handlers::token_post`] (OAuth2 `grant_type=password`, real `docker push`) |
 //! | `GET` | `/v2/:name/blobs/:digest` | [`crate::oci::pull::blob::get`] |
 //! | `HEAD` | `/v2/:name/blobs/:digest` | [`crate::oci::pull::blob::head`] |
 //! | `POST` | `/v2/:name/blobs/uploads/` | [`crate::oci::push::upload::open`] |
@@ -39,7 +40,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v2/", get(handlers::api_version))
         .route("/v2", get(handlers::api_version))
         .route("/v2/_catalog", get(handlers::catalog))
-        .route("/token", get(handlers::token))
+        .route("/token", get(handlers::token).post(handlers::token_post))
         .route("/v2/*rest", any(handlers::dispatch_v2))
         .with_state(state)
         .layer(middleware::from_fn(log_request))

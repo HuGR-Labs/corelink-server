@@ -186,12 +186,23 @@ jobs:
       - name: Install wrangler
         run: npm install -g wrangler@4.95.0  # pinned exact (audit 2026-06-11); v3 cannot parse [[env.*.containers]] arrays (verified 2026-06-05)
 
-      - name: Deploy Worker (prod)
+      - name: Install jq (CF rollout-verify parser)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends jq
+
+      - name: Deploy Worker + verify container rollout (prod)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          # The container env blocks deploy via the auto-named registry image.
+          # scripts/deploy-container-prod.sh runs `wrangler deploy` then POLLS the
+          # CF Containers applications API until the running configuration.image
+          # matches the wrangler.toml pin — re-deploying if the first deploy
+          # didn't roll the running instances (a known CF Containers beta
+          # behavior). Use the globally-installed wrangler (no local node_modules
+          # path on the ubuntu runner).
+          WRANGLER: wrangler
         run: |
-          wrangler deploy --env "${WRANGLER_ENV}"
+          bash scripts/deploy-container-prod.sh --apply --env "${WRANGLER_ENV}"
 
       - name: Emit deploy audit event
         if: success()

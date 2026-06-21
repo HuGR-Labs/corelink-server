@@ -42,12 +42,22 @@
 # the bin crate on warm cache are still cheap (deps cached in mount).
 #
 # Cold-build cost: unchanged from prior layout (~10–15 min on amd64).
-# Warm-build cost: comparable (~1–3 min for a one-file bin-crate edit)
-# because the cargo cache mount still holds compiled deps.
+# Warm-build cost: comparable (a few min for a one-file edit) — the cargo
+# cache mount still holds compiled DEPS; only the ~93 first-party crates are
+# force-cleaned+recompiled (see the "first-party clean" RUN step below).
 # Layer-hash invariant: any change under `crates/`, `tools/`,
 # `tests/`, `migrations/`, `apps/migrate-single-to-multi-region/`,
 # `Cargo.toml`, or `Cargo.lock` busts the build RUN step and produces
 # a fresh binary in the output image.
+#
+# === 2026-06-21 RECURRENCE: stale FIRST-PARTY .rlib in the target mount ===
+#
+# The 2026-05-28 mount layout fixed stale IMAGE LAYERS but the stale-BINARY
+# class recurred: cargo reused stale first-party `.rlib`s from the persistent
+# `id=corelink-target` mount on a committed source change. Robust fix lives on
+# the build RUN step below — force-clean exactly the first-party workspace
+# members (via `cargo metadata --no-deps`) before building, keeping the dep
+# cache. See that step's comment for the full root-cause + rationale.
 #
 # Wave-33 Stage 2.B.2 — Dockerfile referenced a `src/` at repo root that
 # never existed; binary lives in `crates/corelink-container/`. The
@@ -61,13 +71,18 @@
 # together when bumping the Rust toolchain.
 FROM rust:1.91-slim-bookworm@sha256:ac77791dbc2ab3cd3ab732fe9b45b0414a794743da99e679fa99e8faa3b6c1e3 AS builder
 
-# Deps pra compilar protos e linkagem
+# Deps pra compilar protos e linkagem.
+# `jq` is builder-only (never copied into the runtime stage): the build RUN
+# step below uses it to parse `cargo metadata --no-deps` into the exact set of
+# first-party workspace member packages to force-clean from the cargo target
+# cache mount (see the "first-party clean" comment on the build RUN step).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     protobuf-compiler \
     libprotobuf-dev \
     pkg-config \
     libssl-dev \
     ca-certificates \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -115,13 +130,58 @@ COPY migrations ./migrations
 # `CARGO_INCREMENTAL=0` — release builds don't benefit much from
 # incremental, and removing it eliminates the fingerprint-staleness
 # class that the prior stub-build layout could trigger.
+#
+# === 2026-06-21 RECURRENCE FIX — first-party clean (WHY this RUN step) ===
+#
+# The 2026-05-28 cache-MOUNT layout (above) fixed stale-IMAGE-LAYER staleness
+# but did NOT fully fix stale-BINARY staleness, and the bug RECURRED: a
+# committed source change under `crates/corelink-container` or
+# `crates/corelink-adapter-host` (and, in principle, ANY first-party crate)
+# sometimes did NOT recompile — `cargo build` reused a stale `.rlib` from the
+# persistent `id=corelink-target` cache mount despite `CARGO_INCREMENTAL=0`.
+#
+# Root cause: the COPY layers bust the *image-layer* cache key, so this RUN
+# step re-executes on any source change — but the `/build/target` CACHE MOUNT
+# is, by design, NOT part of that image layer. It survives across builds and
+# carries cargo's compiled `.rlib`s + fingerprint database. Under the
+# `wrangler containers build` / BuildKit caching path, cargo's fingerprint
+# check has been observed to conclude a first-party crate is up-to-date and
+# reuse the stale artifact, even though its source bytes changed. The old
+# workaround was to manually prepend a `cargo clean -p corelink-server
+# -p corelink-adapter-host` — but that hard-codes two crates and misses every
+# other first-party crate the binary links (corelink-byok, corelink-ac, …).
+#
+# Robust fix (keeps the dep cache, never a cold rebuild): before `cargo build`,
+# force-clean EXACTLY the first-party workspace members — and only those — out
+# of the target mount. The authoritative member list is `cargo metadata
+# --no-deps` (93 members today; auto-tracks adds/removes — no hard-coded list
+# to drift). `cargo clean --release -p <member>...` removes only those crates'
+# release artifacts + fingerprints; every third-party dependency `.rlib` stays
+# in the mount (and the registry/git source caches are untouched), so the
+# rebuild recompiles ONLY first-party code and relinks. Result: any committed
+# first-party source change ALWAYS yields a fresh binary, while a warm build is
+# still cheap (deps cached) — a clean of 93 small first-party crates is far
+# cheaper than a cold rebuild of the full dependency graph.
+#
+# We pin the toolchain default before `cargo metadata` (the metadata read needs
+# a usable cargo; it does not compile anything). `--locked` keeps Cargo.lock
+# authoritative for both the metadata read and the build.
 ENV CARGO_INCREMENTAL=0
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=corelink-cargo-registry \
     --mount=type=cache,target=/usr/local/cargo/git,id=corelink-cargo-git \
     --mount=type=cache,target=/build/target,id=corelink-target,sharing=locked \
-    cargo build --release -p corelink-server --bin corelink-server \
- && mkdir -p /out \
- && cp /build/target/release/corelink-server /out/corelink-server
+    set -eu; \
+    FIRST_PARTY="$(cargo metadata --no-deps --format-version 1 --locked \
+        | jq -r '.packages[].name')"; \
+    echo "Force-cleaning first-party workspace members from the target cache mount:"; \
+    echo "$FIRST_PARTY" | tr '\n' ' '; echo; \
+    CLEAN_ARGS=""; \
+    for pkg in $FIRST_PARTY; do CLEAN_ARGS="$CLEAN_ARGS -p $pkg"; done; \
+    # shellcheck disable=SC2086 -- $CLEAN_ARGS is an intentional list of -p flags
+    cargo clean --release --locked $CLEAN_ARGS; \
+    cargo build --release --locked -p corelink-server --bin corelink-server; \
+    mkdir -p /out; \
+    cp /build/target/release/corelink-server /out/corelink-server
 
 # ---- Runtime stage ----
 # HO-1: digest-pinned per Wave-32 Phase E audit (supply-chain integrity).
