@@ -90,9 +90,25 @@ const CARGO_SERVICE_PRINCIPAL: &str = "cargo-adapter-host";
 /// url-map; `get` resolves the map then fetches the blob. Identical to
 /// [`super::brew::BrewMoatStore`] EXCEPT the namespace is the **tenant id** — the
 /// cargo cache is PRIVATE per-tenant (no cross-tenant dedup; never `_public`).
+///
+/// ## Fresh-tenant cap seeding (`cap_resolver`)
+///
+/// A tenant that has NEVER done a native CAS write has no `tenant_storage_state`
+/// row. The byte-accounting reservation FAILS CLOSED (502) when asked to seed
+/// such a row with an indeterminate cap (`None`) — so a brand-new sccache user's
+/// FIRST `PUT /cargo/<tenant>/<key>` 502'd. We close that exactly as OCI does
+/// (WP #10): resolve the tenant's RESOLVED per-tier storage cap container-side
+/// via the shared [`crate::oci_cap::TenantCapResolver`] (keyed by the tenant id
+/// the cargo adapter already derived from the PAT) and thread it into
+/// [`MoatCache::put`] so the row auto-seeds with the REAL cap on the first write.
+///
+/// `cap_resolver` is `Option` so dev/CI (no D1 storage env) keeps the previous
+/// `None`/fail-closed posture; an indeterminate cap from the resolver (D1 error)
+/// also stays `None` — absence is NEVER treated as unlimited.
 #[derive(Debug)]
 struct CargoMoatStore {
     moat: Arc<MoatCache>,
+    cap_resolver: Option<Arc<dyn crate::oci_cap::TenantCapResolver>>,
 }
 
 #[async_trait]
@@ -106,11 +122,19 @@ impl CasStore for CargoMoatStore {
     }
 
     async fn put(&self, tenant_id: &str, key: &str, bytes: Vec<u8>) -> Result<(), CasError> {
-        // `None`: cargo objects accrue against the tenant's EXISTING
-        // `tenant_storage_state` row (seeded on its first native write), same
-        // fail-closed-on-fresh-row posture as brew/npm/pip.
+        // Resolve the tenant's RESOLVED per-tier storage cap so a FRESH tenant
+        // (no `tenant_storage_state` row — e.g. a new sccache user whose first
+        // request is a cargo PUT) auto-seeds the row with the REAL cap instead
+        // of hitting the `None`-cap fail-closed 502. Mirrors OCI (WP #10), keyed
+        // by the tenant id the adapter already derived from the PAT. No resolver
+        // (dev/CI) OR an indeterminate cap (D1 error) ⇒ `None` ⇒ the previous
+        // fail-closed posture — absence is never treated as unlimited.
+        let storage_cap_bytes = match self.cap_resolver.as_ref() {
+            Some(r) => r.resolve_storage_cap(tenant_id).await,
+            None => None,
+        };
         self.moat
-            .put(tenant_id, key, bytes, None)
+            .put(tenant_id, key, bytes, storage_cap_bytes)
             .await
             .map_err(|e| match e {
                 MoatError::Backend(m) => CasError::Backend(m),
@@ -178,12 +202,19 @@ struct CargoGateState {
 /// (via [`resolver_from_verifier`]) while tests pass a hermetic stub. The CAS
 /// handlers are the SAME `Arc<dyn …>` trait objects the cas/bazel/turbo
 /// surfaces use (no new R2 connection).
+///
+/// `cap_resolver` resolves the tenant's RESOLVED per-tier storage cap so a fresh
+/// tenant's FIRST cargo write auto-seeds its `tenant_storage_state` row instead
+/// of failing closed (502). Production wires the shared
+/// [`crate::oci_cap::D1TenantCapResolver`] (the SAME resolver OCI uses); tests /
+/// dev-CI pass `None` (keeping the previous fail-closed-on-fresh-row posture).
 pub fn router(
     cas_read: Arc<dyn CasReadHandler>,
     cas_write: Arc<dyn CasWriteHandler>,
     map: Arc<dyn UrlMapStore>,
     resolver: SharedTenantResolver,
     quota: Option<crate::routes::QuotaGate>,
+    cap_resolver: Option<Arc<dyn crate::oci_cap::TenantCapResolver>>,
 ) -> Router {
     // 2-level moat (key→content_hash→blob), namespaced per-tenant — see
     // [`CargoMoatStore`] for why the old direct-digest bridge 502'd.
@@ -193,7 +224,7 @@ pub fn router(
         map,
         CARGO_SERVICE_PRINCIPAL,
     ));
-    let cas: Arc<dyn CasStore> = Arc::new(CargoMoatStore { moat });
+    let cas: Arc<dyn CasStore> = Arc::new(CargoMoatStore { moat, cap_resolver });
     let auditor: Arc<dyn AuditEmitter> = Arc::new(InMemoryAuditEmitter::new());
     // bind_addr is unused by `build_router` (only `run_cargo_adapter` binds);
     // pass an ephemeral placeholder.
@@ -374,4 +405,165 @@ async fn cargo_gate(
         }
     }
     next.run(req).await
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "tests are allowed to use these primitives"
+)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    use corelink_handler_cas::{
+        CasHandlerError, CasReadRequest, CasReadResponse, CasWriteRequest, CasWriteResponse,
+    };
+
+    use crate::oci_cap::TenantCapResolver;
+
+    use super::*;
+
+    /// Hermetic in-memory url→content-hash map (the `MoatCache` map port).
+    #[derive(Default)]
+    struct FakeUrlMap(Mutex<HashMap<(String, String), String>>);
+    #[async_trait]
+    impl UrlMapStore for FakeUrlMap {
+        async fn get(&self, ns: &str, url_hash: &str) -> Result<Option<String>, String> {
+            Ok(self
+                .0
+                .lock()
+                .unwrap()
+                .get(&(ns.to_owned(), url_hash.to_owned()))
+                .cloned())
+        }
+        async fn put(
+            &self,
+            ns: &str,
+            url_hash: &str,
+            content_hash: &str,
+            _len: u64,
+        ) -> Result<(), String> {
+            self.0
+                .lock()
+                .unwrap()
+                .insert((ns.to_owned(), url_hash.to_owned()), content_hash.to_owned());
+            Ok(())
+        }
+    }
+
+    /// `CasWriteHandler` that RECORDS the `storage_quota_bytes` of the last
+    /// write request (proving the resolved cap is threaded all the way into
+    /// `CasWriteRequest`), and accepts any claimed hash.
+    #[derive(Debug, Default)]
+    struct RecordingCasWrite {
+        last_cap: Mutex<Option<Option<i64>>>,
+    }
+    impl CasWriteHandler for RecordingCasWrite {
+        fn write(&self, req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError> {
+            *self.last_cap.lock().unwrap() = Some(req.storage_quota_bytes);
+            Ok(CasWriteResponse::new(req.claimed_hash, true))
+        }
+    }
+    impl CasReadHandler for RecordingCasWrite {
+        fn read(&self, _req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
+            Err(CasHandlerError::Internal("not used".into()))
+        }
+    }
+
+    /// `TenantCapResolver` that returns a FIXED cap for the configured tenant
+    /// and `None` (indeterminate) for everyone else.
+    #[derive(Debug)]
+    struct StubCapResolver {
+        tenant: String,
+        cap: Option<i64>,
+    }
+    #[async_trait]
+    impl TenantCapResolver for StubCapResolver {
+        async fn resolve_storage_cap(&self, tenant_id: &str) -> Option<i64> {
+            if tenant_id == self.tenant {
+                self.cap
+            } else {
+                None
+            }
+        }
+    }
+
+    fn store_with_resolver(
+        cap_resolver: Option<Arc<dyn TenantCapResolver>>,
+    ) -> (CargoMoatStore, Arc<RecordingCasWrite>) {
+        let rec = Arc::new(RecordingCasWrite::default());
+        let read: Arc<dyn CasReadHandler> = rec.clone();
+        let write: Arc<dyn CasWriteHandler> = rec.clone();
+        let map: Arc<dyn UrlMapStore> = Arc::new(FakeUrlMap::default());
+        let moat = Arc::new(MoatCache::production(
+            read,
+            write,
+            map,
+            CARGO_SERVICE_PRINCIPAL,
+        ));
+        (CargoMoatStore { moat, cap_resolver }, rec)
+    }
+
+    /// THE fix: a fresh tenant's cargo write carries the RESOLVED per-tier cap
+    /// (so the byte-accounting reservation seeds the `tenant_storage_state` row
+    /// instead of failing closed 502 on the indeterminate `None`).
+    #[tokio::test]
+    async fn put_threads_resolved_cap_into_cas_write() {
+        let tenant = "fresh-tenant-xyz";
+        let resolver: Arc<dyn TenantCapResolver> = Arc::new(StubCapResolver {
+            tenant: tenant.to_owned(),
+            cap: Some(50 * 1_073_741_824), // solo tier cap
+        });
+        let (store, rec) = store_with_resolver(Some(resolver));
+
+        store
+            .put(tenant, "url-key-1", b"sccache-artifact".to_vec())
+            .await
+            .expect("put must succeed");
+
+        let recorded = rec.last_cap.lock().unwrap().expect("a write happened");
+        assert_eq!(
+            recorded,
+            Some(50 * 1_073_741_824),
+            "the resolved per-tier cap must reach CasWriteRequest::storage_quota_bytes \
+             so a fresh tenant_storage_state row seeds (no 502)"
+        );
+    }
+
+    /// With NO resolver wired (dev/CI), the cap stays `None` — the previous
+    /// fail-closed-on-fresh-row posture is preserved.
+    #[tokio::test]
+    async fn put_with_no_resolver_keeps_none_cap() {
+        let (store, rec) = store_with_resolver(None);
+        store
+            .put("any-tenant", "url-key-2", b"x".to_vec())
+            .await
+            .expect("put must succeed");
+        let recorded = rec.last_cap.lock().unwrap().expect("a write happened");
+        assert_eq!(recorded, None, "no resolver ⇒ None cap (fail-closed posture)");
+    }
+
+    /// An INDETERMINATE cap from the resolver (D1 error → `None`) is threaded as
+    /// `None` — absence is never upgraded to unlimited.
+    #[tokio::test]
+    async fn put_with_indeterminate_cap_threads_none() {
+        // The resolver only knows "known-tenant"; everyone else ⇒ None.
+        let resolver: Arc<dyn TenantCapResolver> = Arc::new(StubCapResolver {
+            tenant: "known-tenant".to_owned(),
+            cap: Some(10 * 1_073_741_824),
+        });
+        let (store, rec) = store_with_resolver(Some(resolver));
+        store
+            .put("unknown-tenant", "url-key-3", b"y".to_vec())
+            .await
+            .expect("put must succeed");
+        let recorded = rec.last_cap.lock().unwrap().expect("a write happened");
+        assert_eq!(
+            recorded, None,
+            "indeterminate resolver cap must stay None (never unlimited)"
+        );
+    }
 }

@@ -23,6 +23,15 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **A fresh tenant's FIRST cargo/sccache write 502'd** — `PUT /cargo/<tenant>/<key>`
+  for a tenant that had never done a native CAS write (so had no `tenant_storage_state`
+  row) reached `MoatCache::put` with the storage cap hard-coded to `None`; the
+  byte-accounting reservation then fails CLOSED (502) rather than seed an uncapped row.
+  `CargoMoatStore` now resolves the tenant's RESOLVED per-tier storage cap container-side
+  via the shared `oci_cap::D1TenantCapResolver` (the SAME resolver OCI uses, keyed by the
+  PAT-derived tenant) and threads it into `MoatCache::put`, so a brand-new sccache user's
+  first write auto-seeds the row with the REAL cap. An indeterminate cap (no resolver in
+  dev/CI, or a D1 error) stays `None` — absence is never treated as unlimited.
 - **`docker push` 401-looped** — the data-plane `/v2/*` auth challenge advertised a
   WILDCARD `repository:*:pull` scope, so docker requested a `*`-scoped token which the
   exact-match `OciScope::allows(repo, action)` then rejected on the retry. The challenge now
