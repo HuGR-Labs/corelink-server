@@ -41,6 +41,22 @@ pub enum V2Path {
     },
 }
 
+impl V2Path {
+    /// The repository name this path targets — used to build the SPECIFIC
+    /// `repository:<repo>:<action>` auth challenge (a wildcard `repository:*`
+    /// challenge mints a bearer the exact-match `OciScope::allows` then rejects).
+    #[must_use]
+    pub fn repo(&self) -> &str {
+        match self {
+            V2Path::Blob { repo, .. }
+            | V2Path::BlobUploadsOpen { repo }
+            | V2Path::BlobUploadsSession { repo, .. }
+            | V2Path::Manifest { repo, .. }
+            | V2Path::TagsList { repo } => repo,
+        }
+    }
+}
+
 /// Parse the `/v2/*rest` tail into a [`V2Path`].
 ///
 /// `tail` does NOT include the leading `/v2/`. Recognized shapes:

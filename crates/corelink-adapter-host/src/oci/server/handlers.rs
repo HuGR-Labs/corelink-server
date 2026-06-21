@@ -212,6 +212,23 @@ pub async fn dispatch_v2(
             None,
         );
     };
+    // Parse the tail BEFORE the auth check so the `Www-Authenticate` challenge
+    // names the SPECIFIC repo + action. A wildcard `repository:*:pull` challenge
+    // makes docker request a `*`-scoped token, which the exact-match
+    // `OciScope::allows(repo, action)` then rejects → an endless push 401-loop.
+    let Some(parsed) = parse_v2_tail(tail) else {
+        return err_response(
+            &OciAdapterError::NotFound,
+            Some(&state.config.bearer_realm),
+            None,
+        );
+    };
+    let challenge_action = if matches!(method, Method::GET | Method::HEAD) {
+        "pull"
+    } else {
+        "push,pull"
+    };
+    let challenge_scope = format!("repository:{}:{}", parsed.repo(), challenge_action);
     let Some(bearer) = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -220,7 +237,7 @@ pub async fn dispatch_v2(
         return err_response(
             &OciAdapterError::Auth(String::from("missing bearer")),
             Some(&state.config.bearer_realm),
-            Some("repository:*:pull"),
+            Some(&challenge_scope),
         );
     };
     let now_secs = (state.clock_unix_ms)() / 1000;
@@ -238,7 +255,7 @@ pub async fn dispatch_v2(
                 },
                 now_ms,
             );
-            return err_response(&e, Some(&state.config.bearer_realm), None);
+            return err_response(&e, Some(&state.config.bearer_realm), Some(&challenge_scope));
         }
     };
     let tenant = verified.tenant;
@@ -247,13 +264,6 @@ pub async fn dispatch_v2(
     // (set at `/token` mint). Threaded into the blob finalize so an OCI push
     // reserves against the resolved (possibly-downgraded) cap.
     let storage_cap_bytes = verified.storage_cap_bytes;
-    let Some(parsed) = parse_v2_tail(tail) else {
-        return err_response(
-            &OciAdapterError::NotFound,
-            Some(&state.config.bearer_realm),
-            None,
-        );
-    };
     let now_ms = (state.clock_unix_ms)();
     let result = route_dispatch(
         parsed, method, uri, headers, body, &state, &tenant, scope, storage_cap_bytes, now_ms,

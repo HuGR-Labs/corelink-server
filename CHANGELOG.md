@@ -23,6 +23,11 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **`docker push` 401-looped** — the data-plane `/v2/*` auth challenge advertised a
+  WILDCARD `repository:*:pull` scope, so docker requested a `*`-scoped token which the
+  exact-match `OciScope::allows(repo, action)` then rejected on the retry. The challenge now
+  names the SPECIFIC repo + action (`repository:<repo>:pull` for reads, `…:push,pull` for
+  writes) via a new `V2Path::repo()`, so docker's scoped token actually authorizes the op.
 - **`docker login`/`push` failed decoding the OCI `/token` response** — the response
   returned `issued_at` as a unix NUMBER, but docker's Go client decodes it as an RFC3339
   `time.Time` string (`Time.UnmarshalJSON: input is not a JSON string`). `issued_at` is
