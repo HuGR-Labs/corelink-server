@@ -392,7 +392,13 @@ pub async fn dispatch_v2(
     .await;
     match result {
         Ok(resp) => resp,
-        Err(e) => err_response(&e, Some(&state.config.bearer_realm), None),
+        // On a data-plane error, re-advertise the REQUIRED scope (not the empty
+        // scope the bearer carried) so a client that presented an insufficiently-
+        // scoped token (e.g. docker reusing its scope-less `docker login` token for
+        // a blob HEAD) re-auths for the right `repository:<repo>:<action>` instead
+        // of looping on an empty-scope challenge. (Ignored by err_response for
+        // non-401 statuses.)
+        Err(e) => err_response(&e, Some(&state.config.bearer_realm), Some(&challenge_scope)),
     }
 }
 
