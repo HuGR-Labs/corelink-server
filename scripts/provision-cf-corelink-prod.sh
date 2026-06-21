@@ -513,6 +513,14 @@ echo "=== Step 3: R2 Buckets ==="
 # CAS (canonical, no specific region required — global)
 provision_r2 "corelink-cas-prod" ""
 
+# Turbo (Turborepo remote-cache artifact store). `R2_TURBO_BUCKET` defaults to
+# `corelink-turbo-prod` (storage/r2_kv.rs) and is unset across all envs, so this
+# ONE bucket backs every env. It was previously NEVER provisioned → every
+# `GET/PUT /v8/artifacts/*` 500'd ("internal", missing-bucket S3 error) while
+# /status still 200'd — Turborepo was non-functional in prod. Caught by the e2e
+# user-journey suite (tests/e2e-user-journeys), fixed by creating this bucket.
+provision_r2 "corelink-turbo-prod" ""
+
 # AC per-region (INV-DATA-RESIDENCY: pinned by locationHint — lowercase per CF API)
 # CF locationHint codes as of 2026-05-26: wnam, enam, weur, eeur, apac, oc, auto
 #   sam = enam (closest: Eastern N. America; CF has no WLAM/SAM code)
