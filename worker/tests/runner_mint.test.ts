@@ -327,17 +327,18 @@ describe("POST /internal/v1/runner/revoke — D-9 runner PAT revoke", () => {
     expect(resp.status).toBe(400);
   });
 
-  it("(REV-S2) backward-compat: un-scoped revoke (200) when owner_tenant absent — deprecated", async () => {
-    // Progressive hardening: owner_tenant scopes the revoke when present (asserted in
-    // the test above) but is not yet REQUIRED — the off-repo dispatcher must roll out
-    // sending it before we flip to mandatory, else a deploy would 400 its teardown.
-    // Absent → proceed un-scoped (prior behavior) + warn.
+  it("(REV-S2) owner_tenant is now MANDATORY: absent → 400, NO revoke runs", async () => {
+    // Hardening complete: the off-repo dispatcher's PR-B is deployed + proven to
+    // always send owner_tenant (green-lit 2026-06-21, no lockstep), so the
+    // backward-compat un-scoped path is CLOSED. Absent owner_tenant → hard 400 and
+    // NO UPDATE — a compromised runner_mint key can never revoke another tenant's
+    // PAT by guessing a pat_id.
     const revokeCapture: { binds?: unknown[] } = {};
     const env = makeEnv({ revokeCapture });
     const resp = await revokeFetch(env, { auth: INTERNAL_KEY, body: { pat_id: CANNED_MINT.pat_id } });
-    expect(resp.status).toBe(200);
-    // un-scoped UPDATE binds (now_ms, pat_id) only — NO tenant predicate when absent.
-    expect(revokeCapture.binds?.length).toBe(2);
+    expect(resp.status).toBe(400);
+    // No UPDATE is prepared when owner_tenant is missing (fail-CLOSED before D1).
+    expect(revokeCapture.binds).toBeUndefined();
   });
 
   it("405 on a non-POST method", async () => {
