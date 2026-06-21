@@ -595,23 +595,24 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     if let Some(verifier) = crate::adapter_pat::PatVerifier::from_env() {
         let verifier = Arc::new(verifier);
 
-        // cargo (sccache): only the shared verifier; no moat (per-tenant CAS).
-        // The $-ceiling gate (when present) is threaded into the gate layer so
-        // sccache ops are charged alongside CAS/AC/Bazel/Turbo.
-        // The resolver (built from the shared verifier) ALSO backs the gate's
-        // two-layer write capability check (F27: scope header AND the PAT-derived
-        // `can_write` from the resolver's single verification — no redundant
-        // second PAT verify).
-        router = router.merge(cargo::router(
-            cargo_cas_read,
-            cargo_cas_write,
-            cargo::resolver_from_verifier(verifier.clone()),
-            quota.clone(),
-        ));
-
-        // brew/npm/pip share the 2-level moat map (the D1-over-HTTP client).
+        // cargo/brew/npm/oci/pip ALL ride the 2-level moat map (the D1-over-HTTP
+        // client). cargo JOINED the moat (private per-tenant namespace) to fix the
+        // sccache-key-as-CAS-digest HashMismatch 502, so it now also needs the D1
+        // map. A per-adapter env builder that returns None skips ONLY that adapter
+        // (fail-CLOSED). The $-ceiling gate + the resolver's two-layer write check
+        // (F27: scope header AND the PAT-derived `can_write`) are threaded into each.
         match crate::adapter_cache::d1_map_from_env() {
             Some(d1) => {
+                // cargo (sccache): PRIVATE per-tenant moat namespace (no _public).
+                let cargo_map: Arc<dyn crate::adapter_cache::UrlMapStore> = d1.clone();
+                router = router.merge(cargo::router(
+                    cargo_cas_read,
+                    cargo_cas_write,
+                    cargo_map,
+                    cargo::resolver_from_verifier(verifier.clone()),
+                    quota.clone(),
+                ));
+
                 // brew: shared map + verifier (public bottles, cross-tenant dedup).
                 let brew_map: Arc<dyn crate::adapter_cache::UrlMapStore> = d1.clone();
                 router = router.merge(brew::router(
@@ -705,8 +706,8 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
             }
             None => {
                 tracing::warn!(
-                    "D1 moat map unavailable from env; /brew/*, /npm/*, /pip/* NOT \
-                     mounted (fail-CLOSED) — /cargo/* (no moat) unaffected"
+                    "D1 moat map unavailable from env; /cargo/*, /brew/*, /npm/*, \
+                     /v2/* (OCI), /pip/* NOT mounted (fail-CLOSED)"
                 );
             }
         }

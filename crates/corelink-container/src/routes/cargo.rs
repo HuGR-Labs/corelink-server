@@ -62,18 +62,61 @@ use axum::Router;
 use async_trait::async_trait;
 use corelink_adapter_host::cargo::config::DEFAULT_BODY_SIZE_LIMIT_BYTES;
 use corelink_adapter_host::cargo::ports::{
-    ResolvedTenant, SharedTenantResolver, TenantResolveError, TenantResolver,
+    CasError, CasStore, ResolvedTenant, SharedTenantResolver, TenantResolveError, TenantResolver,
 };
-use corelink_adapter_host::cargo::{server, CargoAdapterConfig, CargoCasBridge};
+use corelink_adapter_host::cargo::{server, CargoAdapterConfig};
 use corelink_audit::ports::{AuditEmitter, InMemoryAuditEmitter};
 use corelink_handler_cas::{CasReadHandler, CasWriteHandler};
 
+use crate::adapter_cache::{MoatCache, MoatError, UrlMapStore};
 use crate::adapter_pat::{PatVerifier, VerifyError};
 use crate::scope::{requires_cache_read, requires_cache_write, SCOPE_HEADER};
 
 /// Service principal recorded on adapter CAS operations. Identifies the
 /// adapter-host service, NOT the end-user PAT (which the resolver verified).
 const CARGO_SERVICE_PRINCIPAL: &str = "cargo-adapter-host";
+
+/// cargo's `CasStore` port → the 2-level [`MoatCache`], namespaced PER-TENANT.
+///
+/// sccache is a key→value cache: the key is `blake3(rustc-cmdline + input
+/// fingerprints)` — a hash of the compile INPUTS, NOT of the cached OUTPUT bytes.
+/// The previous `CargoCasBridge` passed that key straight through as the CAS
+/// `digest_hex`, but the CAS write VERIFIES `claimed == blake3(content)` (see
+/// `handler.rs::HashMismatch`), so every sccache PUT failed integrity and 502'd.
+///
+/// Routing through `MoatCache` fixes it: `put` computes `content_hash =
+/// blake3(bytes)`, stores the blob content-addressed (the verify now passes —
+/// claimed == actual), and records `(namespace, key) → content_hash` in the
+/// url-map; `get` resolves the map then fetches the blob. Identical to
+/// [`super::brew::BrewMoatStore`] EXCEPT the namespace is the **tenant id** — the
+/// cargo cache is PRIVATE per-tenant (no cross-tenant dedup; never `_public`).
+#[derive(Debug)]
+struct CargoMoatStore {
+    moat: Arc<MoatCache>,
+}
+
+#[async_trait]
+impl CasStore for CargoMoatStore {
+    async fn get(&self, tenant_id: &str, key: &str) -> Result<Option<Vec<u8>>, CasError> {
+        // PRIVATE per-tenant namespace = the tenant id (NOT brew's `_public`).
+        // `key` is the sccache key; the moat maps it to the content hash.
+        self.moat.get(tenant_id, key).await.map_err(|e| match e {
+            MoatError::Backend(m) => CasError::Backend(m),
+        })
+    }
+
+    async fn put(&self, tenant_id: &str, key: &str, bytes: Vec<u8>) -> Result<(), CasError> {
+        // `None`: cargo objects accrue against the tenant's EXISTING
+        // `tenant_storage_state` row (seeded on its first native write), same
+        // fail-closed-on-fresh-row posture as brew/npm/pip.
+        self.moat
+            .put(tenant_id, key, bytes, None)
+            .await
+            .map_err(|e| match e {
+                MoatError::Backend(m) => CasError::Backend(m),
+            })
+    }
+}
 
 /// Thin shell adapting the shared [`PatVerifier`] (Option B) to cargo's
 /// `TenantResolver` port. Identical pattern to brew/npm/pip: the container
@@ -138,14 +181,19 @@ struct CargoGateState {
 pub fn router(
     cas_read: Arc<dyn CasReadHandler>,
     cas_write: Arc<dyn CasWriteHandler>,
+    map: Arc<dyn UrlMapStore>,
     resolver: SharedTenantResolver,
     quota: Option<crate::routes::QuotaGate>,
 ) -> Router {
-    let cas = Arc::new(CargoCasBridge::new(
+    // 2-level moat (key→content_hash→blob), namespaced per-tenant — see
+    // [`CargoMoatStore`] for why the old direct-digest bridge 502'd.
+    let moat = Arc::new(MoatCache::production(
         cas_read,
         cas_write,
+        map,
         CARGO_SERVICE_PRINCIPAL,
     ));
+    let cas: Arc<dyn CasStore> = Arc::new(CargoMoatStore { moat });
     let auditor: Arc<dyn AuditEmitter> = Arc::new(InMemoryAuditEmitter::new());
     // bind_addr is unused by `build_router` (only `run_cargo_adapter` binds);
     // pass an ephemeral placeholder.

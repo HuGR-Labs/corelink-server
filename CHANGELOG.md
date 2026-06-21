@@ -23,6 +23,16 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **cargo/sccache surface 502'd on every PUT in prod** — the cargo adapter passed the
+  sccache key (`blake3(rustc-cmdline + input fingerprints)` — a hash of the compile
+  INPUTS, not of the cached OUTPUT) straight through as the CAS `digest_hex`, but the
+  CAS write verifies `claimed == blake3(content)` (`handler.rs::HashMismatch`), so every
+  sccache store failed integrity → HTTP 502 (the surface never worked against the
+  verifying CAS). Now routes cargo through the same 2-level `MoatCache` brew/npm/pip use
+  (`put` content-addresses the bytes + records `(namespace,key)→content_hash`; `get`
+  resolves the map then fetches), namespaced PER-TENANT (private; never `_public`). Gains
+  content dedup for free. Found in the e2e gated-surface sweep (bazel REAPI v2 CAS+AC and
+  the OCI registry validated working in the same sweep). Needs a container redeploy.
 - **Homebrew bottle proxy was 502ing in prod** — the brew upstream fetcher did a
   plain unauthenticated GET to ghcr.io, which 401s ALL pulls (even public
   homebrew/core bottles) with a Bearer challenge → `Upstream` → HTTP 502, so
