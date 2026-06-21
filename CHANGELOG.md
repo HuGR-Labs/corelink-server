@@ -32,6 +32,13 @@ Each entry cross-references:
   records with the real `SystemWallClock.now_ms()` instead of a hardcoded
   epoch-zero timestamp, restoring orderability of the admin forensic log
   (matches the CAS/AC/Bazel/Turbo audit path).
+- **Turborepo remote cache was non-functional in prod** — the `corelink-turbo-prod`
+  R2 bucket (the default `R2_TURBO_BUCKET`, backing every env) was never provisioned,
+  so `GET/PUT /v8/artifacts/*` returned a generic 500 ("internal", a missing-bucket S3
+  error) while `/status` still 200'd. Created the bucket (live fix, no redeploy — the
+  turbo store uses the R2 S3 API, not a binding) and added it to
+  `scripts/provision-cf-corelink-prod.sh` so it is provisioned reproducibly. Discovered
+  by the new e2e user-journey suite (`tests/e2e-user-journeys`).
 
 ### Security
 - **Internal PAT revoke/rotate are now tenant-scoped (REV-S2, blast-radius
