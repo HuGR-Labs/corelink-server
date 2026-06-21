@@ -23,6 +23,13 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **Homebrew bottle proxy was 502ing in prod** — the brew upstream fetcher did a
+  plain unauthenticated GET to ghcr.io, which 401s ALL pulls (even public
+  homebrew/core bottles) with a Bearer challenge → `Upstream` → HTTP 502, so
+  Homebrew on CoreLink was non-functional. Now performs the anonymous OCI-token
+  dance (parse `WWW-Authenticate`, fetch the realm token SSRF-guarded to the
+  upstream host, retry once). Needs a container redeploy to take effect. Caught by
+  the e2e user-journey suite smoke.
 - **Admin-route audit hardening (REV-S1)** — two container admin-plane defects
   closed: (1) `admin_pilot::handle_create` and `handle_grant_tier` now take the
   request body as raw `Bytes` and JSON-parse it ONLY after the internal-auth gate
