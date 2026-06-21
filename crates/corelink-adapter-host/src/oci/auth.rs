@@ -164,7 +164,18 @@ impl OciScope {
     /// Does this scope grant `action` on `repo`?
     #[must_use]
     pub fn allows(&self, repo: &str, action: &str) -> bool {
-        self.repo == repo && self.actions.iter().any(|a| a == action)
+        if self.repo != repo {
+            return false;
+        }
+        if self.actions.iter().any(|a| a == action) {
+            return true;
+        }
+        // OCI convention: a `push` grant IMPLIES `pull` (you can read what you
+        // can write). docker requests a push-scoped token for a push and reuses
+        // it for the pre-push blob HEAD (a `pull`); without this implication that
+        // HEAD 401s and the whole `docker push` fails. The reverse does NOT hold
+        // (a pull-only / read-only-PAT token never grants push).
+        action == "pull" && self.actions.iter().any(|a| a == "push")
     }
 
     /// Downscope to READ-only: grant `pull` (and ONLY pull) on the same
@@ -420,6 +431,19 @@ mod tests {
         assert!(s.allows("alpine", "push"));
         assert!(!s.allows("alpine", "delete"));
         assert!(!s.allows("nginx", "pull"));
+    }
+
+    #[test]
+    fn push_implies_pull_but_not_vice_versa() {
+        // OCI convention: a push-scoped token can also pull (docker uses its push
+        // token for the pre-push blob HEAD). A pull-only token CANNOT push.
+        let push_only = OciScope::parse("repository:r:push").expect("parse");
+        assert!(push_only.allows("r", "push"));
+        assert!(push_only.allows("r", "pull"), "push must imply pull");
+        assert!(!push_only.allows("r", "delete"));
+        let pull_only = OciScope::parse("repository:r:pull").expect("parse");
+        assert!(pull_only.allows("r", "pull"));
+        assert!(!pull_only.allows("r", "push"), "pull must NOT imply push");
     }
 
     #[test]
