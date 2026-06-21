@@ -76,12 +76,30 @@ impl UpstreamFetcher {
         // upstream origin (scheme + host + port).
         let url = join_within_upstream(&self.upstream_domain, canonical_path)?;
 
-        let response = self
+        let mut response = self
             .client
             .get(url.clone())
             .send()
             .await
             .map_err(|err| BrewAdapterError::Upstream(format!("send: {err}")))?;
+
+        // OCI registry anonymous-token dance. ghcr.io (the default bottle host)
+        // 401s an UNAUTHENTICATED pull — even of PUBLIC homebrew/core bottles —
+        // with a `WWW-Authenticate: Bearer realm=…,service=…,scope=…` challenge.
+        // We must fetch the anonymous token from that realm and retry once with
+        // it, or EVERY bottle fetch fails closed: the pre-fix plain GET returned
+        // 401 → `Upstream` → HTTP 502 (Homebrew on CoreLink was non-functional).
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            if let Some(token) = self.anon_token_for(&response).await? {
+                response = self
+                    .client
+                    .get(url.clone())
+                    .bearer_auth(token)
+                    .send()
+                    .await
+                    .map_err(|err| BrewAdapterError::Upstream(format!("send (authed): {err}")))?;
+            }
+        }
 
         let status = response.status();
         if !status.is_success() {
@@ -123,6 +141,97 @@ impl UpstreamFetcher {
 
         Ok(buf)
     }
+
+    /// Resolve an anonymous OCI bearer token from a 401's
+    /// `WWW-Authenticate: Bearer realm=…,service=…,scope=…` challenge, then the
+    /// caller retries the fetch with it. Returns `Ok(None)` when the response
+    /// carries no parseable Bearer challenge (so the caller surfaces the 401).
+    ///
+    /// SSRF guard: the token `realm` MUST be `https` and stay on the SAME host
+    /// as the configured upstream — a challenge is never followed to an
+    /// arbitrary host.
+    async fn anon_token_for(
+        &self,
+        challenged: &reqwest::Response,
+    ) -> Result<Option<String>, BrewAdapterError> {
+        let header = match challenged
+            .headers()
+            .get(reqwest::header::WWW_AUTHENTICATE)
+        {
+            Some(h) => h
+                .to_str()
+                .map_err(|_| BrewAdapterError::Upstream("non-ascii WWW-Authenticate".to_owned()))?,
+            None => return Ok(None),
+        };
+        let Some((realm, service, scope)) = parse_bearer_challenge(header) else {
+            return Ok(None);
+        };
+        let realm_url = Url::parse(&realm)
+            .map_err(|err| BrewAdapterError::Upstream(format!("token realm parse: {err}")))?;
+        if realm_url.scheme() != "https"
+            || realm_url.host_str() != self.upstream_domain.host_str()
+        {
+            return Err(BrewAdapterError::Upstream(
+                "SSRF guard: token realm escapes the configured upstream host".to_owned(),
+            ));
+        }
+        let mut token_url = realm_url;
+        {
+            let mut qp = token_url.query_pairs_mut();
+            if let Some(s) = service.as_deref() {
+                qp.append_pair("service", s);
+            }
+            if let Some(s) = scope.as_deref() {
+                qp.append_pair("scope", s);
+            }
+        }
+        let resp = self
+            .client
+            .get(token_url)
+            .send()
+            .await
+            .map_err(|err| BrewAdapterError::Upstream(format!("token fetch: {err}")))?;
+        if !resp.status().is_success() {
+            return Err(BrewAdapterError::Upstream(format!(
+                "token endpoint status: {}",
+                resp.status()
+            )));
+        }
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|err| BrewAdapterError::Upstream(format!("token json: {err}")))?;
+        // ghcr.io returns `{"token":"…"}`; the spec also permits `access_token`.
+        let token = body
+            .get("token")
+            .or_else(|| body.get("access_token"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned);
+        Ok(token)
+    }
+}
+
+/// Parse a `WWW-Authenticate: Bearer realm="…",service="…",scope="…"` challenge
+/// into `(realm, service, scope)`. Returns `None` if the header is not a Bearer
+/// challenge or carries no `realm`. ghcr.io's challenge values contain no commas,
+/// so a comma split of the param list is sufficient for the bottle upstream.
+fn parse_bearer_challenge(header: &str) -> Option<(String, Option<String>, Option<String>)> {
+    let rest = header
+        .strip_prefix("Bearer ")
+        .or_else(|| header.strip_prefix("bearer "))?;
+    let (mut realm, mut service, mut scope) = (None, None, None);
+    for part in rest.split(',') {
+        if let Some((k, v)) = part.trim().split_once('=') {
+            let v = v.trim().trim_matches('"').to_owned();
+            match k.trim() {
+                "realm" => realm = Some(v),
+                "service" => service = Some(v),
+                "scope" => scope = Some(v),
+                _ => {}
+            }
+        }
+    }
+    realm.map(|r| (r, service, scope))
 }
 
 /// Copy `chunk` into `buf`. Wrapped in a tiny helper to keep the
@@ -283,6 +392,22 @@ mod tests {
         for h in ["ghcr.io", "1.1.1.1", "8.8.8.8", "[2606:4700::1111]"] {
             assert!(!host_is_internal_ip(h), "{h} must NOT be flagged internal");
         }
+    }
+
+    #[test]
+    fn parse_ghcr_bearer_challenge() {
+        // The exact shape ghcr.io returns for an anonymous homebrew bottle pull.
+        let h = r#"Bearer realm="https://ghcr.io/token",service="ghcr.io",scope="repository:homebrew/core/jq:pull""#;
+        let (realm, service, scope) = parse_bearer_challenge(h).expect("parses");
+        assert_eq!(realm, "https://ghcr.io/token");
+        assert_eq!(service.as_deref(), Some("ghcr.io"));
+        assert_eq!(scope.as_deref(), Some("repository:homebrew/core/jq:pull"));
+    }
+
+    #[test]
+    fn parse_non_bearer_challenge_is_none() {
+        assert!(parse_bearer_challenge(r#"Basic realm="x""#).is_none());
+        assert!(parse_bearer_challenge("Bearer service=\"ghcr.io\"").is_none()); // no realm
     }
 
     #[tokio::test]
