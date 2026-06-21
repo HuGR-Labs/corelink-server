@@ -11,7 +11,7 @@ use std::time::Instant;
 use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
-use crate::harness::{bearer, sha256_hex, url_cas, Config, JourneyResult};
+use crate::harness::{bearer, blake3_hex, url_cas, Config, JourneyResult};
 use crate::personas::Persona;
 
 /// Run the quota journeys.
@@ -51,7 +51,7 @@ fn quota_hard_cap(cfg: &Config, client: &Client) -> JourneyResult {
         if mb.len() < blob.len() {
             blob[..mb.len()].copy_from_slice(mb);
         }
-        let hash = sha256_hex(&blob);
+        let hash = blake3_hex(&blob);
         let url = url_cas(cfg, &p1.tenant, &hash);
 
         let resp = match client
@@ -65,7 +65,9 @@ fn quota_hard_cap(cfg: &Config, client: &Client) -> JourneyResult {
             Err(e) => return JourneyResult::fail(name, ms(start), format!("PUT #{i}: {e}")),
         };
         let status = resp.status().as_u16();
-        if status == 429 {
+        // Hard cap = 402 (ADR-0068 monthly $-ceiling) or 429 (rate cap). Either
+        // proves the cap is enforced, not silently overaged.
+        if status == 402 || status == 429 {
             return JourneyResult::pass(name, ms(start)); // hard cap enforced
         }
         if status == 404 || status >= 500 {
