@@ -20,6 +20,8 @@ use axum::extract::State;
 use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::response::IntoResponse;
 
+use corelink_core::SecretWrap;
+
 use super::dispatch::{parse_v2_tail, urldecode, V2Path};
 use crate::oci::audit::OciAuditEvent;
 use crate::oci::error::OciAdapterError;
@@ -107,37 +109,27 @@ pub async fn catalog(
     )
 }
 
-/// `GET /token?service=...&scope=...` — exchange `Basic` for `Bearer`.
-pub async fn token(
-    State(state): State<AppState>,
-    uri: Uri,
-    headers: HeaderMap,
+/// Shared core of the `/token` exchange used by BOTH the `GET` (RFC-style
+/// docker token endpoint) and the `POST` (OAuth2 `grant_type=password`
+/// token endpoint, used by real `docker push`) handlers.
+///
+/// Given the already-extracted `pat` and the raw `scope` string it: parses
+/// the scope (empty → empty registry scope, so `docker login`'s
+/// credential-check token round-trips), re-verifies the PAT capability via
+/// the [`crate::oci::ports::TenantResolver`], downscopes the grant to the
+/// PAT's real `can_write` capability (a read-only PAT requesting `push`
+/// gets pull-only — no scope escalation), mints the HMAC-signed bearer with
+/// the RESOLVED per-tier storage cap embedded, and serializes the
+/// `{token, access_token, expires_in}` JSON the docker client expects.
+async fn issue_token(
+    state: &AppState,
+    pat: SecretWrap,
+    scope_str: &str,
 ) -> axum::response::Response {
-    let Some(basic) = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-    else {
-        return err_response(
-            &OciAdapterError::Auth(String::from("missing basic auth on /token")),
-            Some(&state.config.bearer_realm),
-            Some("repository:*:pull"),
-        );
-    };
-    let pat = match crate::oci::auth::parse_basic_authorization(basic) {
-        Ok(p) => p,
-        Err(e) => return err_response(&e, Some(&state.config.bearer_realm), None),
-    };
-    let scope_str = uri
-        .query()
-        .and_then(|q| {
-            q.split('&')
-                .find_map(|p| p.strip_prefix("scope=").map(urldecode))
-        })
-        .unwrap_or_default();
     // Empty `scope_str` (docker login's credential-check token) parses to the
     // empty registry scope (see `OciScope::parse`), so the minted bearer passes
     // the `/v2/` base recheck; a present-but-malformed scope is still a hard 401.
-    let scope = match crate::oci::auth::OciScope::parse(&scope_str) {
+    let scope = match crate::oci::auth::OciScope::parse(scope_str) {
         Ok(s) => s,
         Err(e) => return err_response(&e, None, None),
     };
@@ -193,6 +185,135 @@ pub async fn token(
     }
     let bytes = serde_json::to_vec(&body).unwrap_or_default();
     (StatusCode::OK, h, Body::from(bytes)).into_response()
+}
+
+/// `GET /token?service=...&scope=...` — exchange `Basic` for `Bearer`.
+///
+/// The PAT is carried in the `Authorization: Basic` header; the requested
+/// scope (if any) is the `scope=` query parameter. This is the classic
+/// docker token endpoint shape (`docker login` + `docker pull`).
+pub async fn token(
+    State(state): State<AppState>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> axum::response::Response {
+    let Some(basic) = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    else {
+        return err_response(
+            &OciAdapterError::Auth(String::from("missing basic auth on /token")),
+            Some(&state.config.bearer_realm),
+            Some("repository:*:pull"),
+        );
+    };
+    let pat = match crate::oci::auth::parse_basic_authorization(basic) {
+        Ok(p) => p,
+        Err(e) => return err_response(&e, Some(&state.config.bearer_realm), None),
+    };
+    let scope_str = uri
+        .query()
+        .and_then(|q| {
+            q.split('&')
+                .find_map(|p| p.strip_prefix("scope=").map(urldecode))
+        })
+        .unwrap_or_default();
+    issue_token(&state, pat, &scope_str).await
+}
+
+/// `POST /token` — the OAuth2 token endpoint real `docker push` uses (Docker
+/// token spec, "OAuth2 token-exchange"). The body is
+/// `application/x-www-form-urlencoded` with `grant_type=password`,
+/// `service`, `scope`, and the credentials carried EITHER as `username` +
+/// `password` form fields OR (refresh-token / fallback) as an
+/// `Authorization: Basic` header.
+///
+/// docker's `client/registry` sends the PAT as the form `password` (with
+/// `username` = the login user, which we ignore — only the PAT matters).
+/// We accept the `Authorization: Basic` header as a fallback so a client
+/// that only sets the header (no body credentials) still works.
+///
+/// We parse the form body manually (the adapter does not enable axum's
+/// `form` feature) using the same `%XX`/`+` decoder the scope/query path
+/// uses, keeping the dependency surface minimal.
+pub async fn token_post(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Body,
+) -> axum::response::Response {
+    // Bound the form body — a token-exchange form is a few hundred bytes; cap
+    // hard so an unauth-reachable endpoint cannot be used to fill the heap.
+    let raw = match axum::body::to_bytes(body, MAX_TOKEN_FORM_BYTES).await {
+        Ok(b) => b,
+        Err(_) => {
+            return err_response(
+                &OciAdapterError::Auth(String::from("token form body too large")),
+                Some(&state.config.bearer_realm),
+                None,
+            );
+        }
+    };
+    let form = parse_form(&raw);
+    // PAT: prefer the form `password` field (docker push's OAuth2 flow); fall
+    // back to the `Authorization: Basic` header (refresh-token / header-only
+    // clients). An empty `password` field is treated as absent.
+    let pat = match form
+        .iter()
+        .find(|(k, v)| k == "password" && !v.is_empty())
+        .map(|(_, v)| SecretWrap::new(v.clone()))
+    {
+        Some(p) => p,
+        None => {
+            let Some(basic) = headers
+                .get(axum::http::header::AUTHORIZATION)
+                .and_then(|v| v.to_str().ok())
+            else {
+                return err_response(
+                    &OciAdapterError::Auth(String::from(
+                        "missing credentials on POST /token (form password or Basic header)",
+                    )),
+                    Some(&state.config.bearer_realm),
+                    Some("repository:*:pull"),
+                );
+            };
+            match crate::oci::auth::parse_basic_authorization(basic) {
+                Ok(p) => p,
+                Err(e) => return err_response(&e, Some(&state.config.bearer_realm), None),
+            }
+        }
+    };
+    let scope_str = form
+        .iter()
+        .find(|(k, _)| k == "scope")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    issue_token(&state, pat, &scope_str).await
+}
+
+/// Hard cap on the `POST /token` form body (bytes). A token-exchange form
+/// (`grant_type`, `service`, `scope`, `username`, `password`) is a few
+/// hundred bytes; 64 KiB gives generous headroom while bounding the
+/// allocation on this unauth-reachable endpoint (audit #5 / WP-OCI-DOS
+/// posture, mirrored for the new POST surface).
+const MAX_TOKEN_FORM_BYTES: usize = 64 * 1024;
+
+/// Parse an `application/x-www-form-urlencoded` body into `(key, value)`
+/// pairs. Both key and value are `%XX`/`+` decoded with [`urldecode`]
+/// (same decoder used for the scope/query path). Empty segments are
+/// skipped. Returns a `Vec` (not a map) so a caller can apply its own
+/// first-wins / non-empty selection without an extra allocation step.
+fn parse_form(raw: &[u8]) -> Vec<(String, String)> {
+    let s = match std::str::from_utf8(raw) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    s.split('&')
+        .filter(|seg| !seg.is_empty())
+        .map(|seg| match seg.split_once('=') {
+            Some((k, v)) => (urldecode(k), urldecode(v)),
+            None => (urldecode(seg), String::new()),
+        })
+        .collect()
 }
 
 /// Wildcard `/v2/*rest` dispatch. Parses the tail and routes to the
@@ -477,8 +598,15 @@ async fn dispatch_manifest(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "tests are allowed to use these primitives"
+)]
 mod tests {
-    use super::MAX_MANIFEST_BYTES;
+    use super::{parse_form, MAX_MANIFEST_BYTES, MAX_TOKEN_FORM_BYTES};
 
     /// Mutation guard (cargo-mutants): pin the exact byte threshold so a
     /// `*`→`+` corruption of the `4 * 1024 * 1024` expression is caught (the
@@ -487,5 +615,56 @@ mod tests {
     fn max_manifest_bytes_is_exactly_4_mib() {
         assert_eq!(MAX_MANIFEST_BYTES, 4_194_304);
         assert_eq!(MAX_MANIFEST_BYTES, 4 * 1024 * 1024);
+    }
+
+    #[test]
+    fn max_token_form_bytes_is_exactly_64_kib() {
+        assert_eq!(MAX_TOKEN_FORM_BYTES, 65_536);
+        assert_eq!(MAX_TOKEN_FORM_BYTES, 64 * 1024);
+    }
+
+    /// The real `docker push` OAuth2 form body parses into the expected
+    /// `(key, value)` pairs — including `%XX`/`+` decoding of the PAT and a
+    /// scope whose `:`/`/` separators are percent-encoded by the client.
+    #[test]
+    fn parse_form_decodes_docker_push_token_request() {
+        // What docker's `client/registry` POSTs to the token endpoint.
+        let body = b"grant_type=password\
+&service=corelink-oci\
+&scope=repository%3Afoo%2Fbar%3Apull%2Cpush\
+&username=hugr\
+&password=clp_secret%2Bvalue";
+        let pairs = parse_form(body);
+        let get = |k: &str| {
+            pairs
+                .iter()
+                .find(|(pk, _)| pk == k)
+                .map(|(_, v)| v.as_str())
+        };
+        assert_eq!(get("grant_type"), Some("password"));
+        assert_eq!(get("service"), Some("corelink-oci"));
+        // `%3A`→`:`, `%2F`→`/`, `%2C`→`,` round-trip.
+        assert_eq!(get("scope"), Some("repository:foo/bar:pull,push"));
+        assert_eq!(get("username"), Some("hugr"));
+        // `%2B`→`+` round-trip in the PAT.
+        assert_eq!(get("password"), Some("clp_secret+value"));
+    }
+
+    #[test]
+    fn parse_form_tolerates_empty_and_valueless_segments() {
+        // Empty leading/trailing `&` segments are skipped; a key with no `=`
+        // yields an empty value (defensive — never produced by docker).
+        let pairs = parse_form(b"&a=1&&flag&b=2&");
+        assert_eq!(pairs.len(), 3);
+        assert_eq!(pairs[0], (String::from("a"), String::from("1")));
+        assert_eq!(pairs[1], (String::from("flag"), String::new()));
+        assert_eq!(pairs[2], (String::from("b"), String::from("2")));
+    }
+
+    #[test]
+    fn parse_form_non_utf8_is_empty() {
+        // A non-UTF8 body decodes to no pairs (the handler then falls back to
+        // the Basic header or 401s) rather than panicking.
+        assert!(parse_form(&[0xff, 0xfe, 0x00]).is_empty());
     }
 }

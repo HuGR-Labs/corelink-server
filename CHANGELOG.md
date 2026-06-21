@@ -23,6 +23,19 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **`docker push` got `405 Method Not Allowed` on `POST /token`** — real `docker push`
+  obtains its bearer via the OAuth2 token endpoint (Docker token spec): a
+  `POST /token` with an `application/x-www-form-urlencoded` body
+  (`grant_type=password`, `service`, `scope`, `username`, `password`). The OCI adapter
+  only registered `GET /token`, so the POST dead-ended at `405` and push could never
+  authenticate. The route now serves `GET` **and** `POST`: the shared `issue_token`
+  helper (scope-parse → PAT capability re-verify → write-downscope → mint) backs both;
+  `POST /token` takes the PAT from the form `password` field (falling back to the
+  `Authorization: Basic` header) and the scope from the form `scope` field. The form
+  body is parsed manually (no new axum `form` feature) and hard-capped at 64 KiB on this
+  unauth-reachable surface. Read-only PATs are still downscoped to pull-only (no scope
+  escalation). Covered by `tests/oci_token_post.rs` (form round-trip, Basic fallback,
+  read-only downscope, no-creds→401-not-405, full `docker push` flow via `POST /token`).
 - **`docker push` 401-looped** — the data-plane `/v2/*` auth challenge advertised a
   WILDCARD `repository:*:pull` scope, so docker requested a `*`-scoped token which the
   exact-match `OciScope::allows(repo, action)` then rejected on the retry. The challenge now
