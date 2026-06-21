@@ -2,11 +2,22 @@
 //!
 //! Wave-35 Phase 2 absorbed the former `corelink-adapter-brew` crate into
 //! this module. The adapter is a read-path HTTPS proxy that brew
-//! redirects to via the `HOMEBREW_BOTTLE_DOMAIN` environment override
+//! redirects to via its download-mirror environment overrides
 //! (canonical reference: <https://docs.brew.sh/Manpage#environment>).
-//! With `HOMEBREW_BOTTLE_DOMAIN=http://corelink-brew-adapter`, every
-//! `brew install` triggers a plain HTTPS `GET <domain>/<bottle-path>`
-//! against this adapter. The adapter:
+//!
+//! ## Client config (verified against Homebrew 6.x)
+//!
+//! An AUTHENTICATED mirror must use `HOMEBREW_ARTIFACT_DOMAIN` (not the
+//! bare `HOMEBREW_BOTTLE_DOMAIN`): only the ghcr-matching
+//! `CurlGitHubPackagesDownloadStrategy` attaches the `Authorization`
+//! header, and `HOMEBREW_ARTIFACT_DOMAIN` keeps that strategy while
+//! rewriting the `https://ghcr.io/` prefix to this adapter at fetch
+//! time. A bare custom `HOMEBREW_BOTTLE_DOMAIN` selects the plain
+//! `CurlDownloadStrategy`, which sends NO auth header (see
+//! [`auth`] for the full mechanism + the exact working invocation).
+//! `brew.sh` turns `HOMEBREW_DOCKER_REGISTRY_TOKEN=corelink_<PAT>` into
+//! `Authorization: Bearer corelink_<PAT>` on every bottle GET. The
+//! adapter:
 //!
 //! 1. authenticates the caller via PAT (`Authorization: Bearer
 //!    corelink_<token>`; constant-time compared via `subtle`);

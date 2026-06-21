@@ -23,6 +23,17 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **brew bottle-cache auth docs corrected to the only working client config** — the
+  brew adapter docs (module + `auth.rs` + `specs/_proposals/adapters/brew.md`) claimed
+  a real `brew` client authenticates by setting `HOMEBREW_BOTTLE_DOMAIN` +
+  `HOMEBREW_GITHUB_API_TOKEN`. Verified against Homebrew 6.x this never sends an
+  `Authorization` header: a bare custom `HOMEBREW_BOTTLE_DOMAIN` selects the plain
+  `CurlDownloadStrategy` (no auth header), and only `CurlGitHubPackagesDownloadStrategy`
+  (selected only for `ghcr.io`-matching URLs) attaches one. The docs now specify the
+  working invocation — `HOMEBREW_ARTIFACT_DOMAIN=https://corelink-api.humangr.com/brew/<tenant>`
+  + `HOMEBREW_DOCKER_REGISTRY_TOKEN=corelink_<PAT>` — which yields
+  `Authorization: Bearer corelink_<PAT>` on every bottle GET, exactly what the adapter
+  accepts. Docs-only; the server auth code was already correct.
 - **`docker push` 401-looped** — the data-plane `/v2/*` auth challenge advertised a
   WILDCARD `repository:*:pull` scope, so docker requested a `*`-scoped token which the
   exact-match `OciScope::allows(repo, action)` then rejected on the retry. The challenge now

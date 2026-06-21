@@ -1,9 +1,36 @@
 //! PAT-based authentication shim.
 //!
 //! Brew adapter accepts the bearer token via the standard
-//! `Authorization: Bearer <pat>` header (and, by convention with the
-//! brew client, the same plaintext set in `HOMEBREW_GITHUB_API_TOKEN`).
-//! Tokens are expected to start with the canonical `corelink_` prefix
+//! `Authorization: Bearer <pat>` header.
+//!
+//! ## How a real `brew` client sends this header
+//!
+//! Verified against Homebrew 6.x (`brew.sh` + `download_strategy/`):
+//! the `Authorization` header is added to a bottle download ONLY by
+//! `CurlGitHubPackagesDownloadStrategy`, and that strategy is selected
+//! ONLY when the bottle root URL still matches `ghcr.io`
+//! (`GitHubPackages::URL_REGEX`). A custom `HOMEBREW_BOTTLE_DOMAIN`
+//! pointed straight at CoreLink does NOT match that regex, so brew
+//! falls back to the plain `CurlDownloadStrategy`, which sends NO auth
+//! header — `HOMEBREW_BOTTLE_DOMAIN` alone therefore CANNOT authenticate
+//! against this adapter (and `HOMEBREW_GITHUB_API_TOKEN` is never sent to
+//! bottle downloads at all).
+//!
+//! The working invocation uses `HOMEBREW_ARTIFACT_DOMAIN` (which keeps
+//! the ghcr `CurlGitHubPackagesDownloadStrategy` and rewrites the
+//! `https://ghcr.io/` prefix to the CoreLink mirror at fetch time)
+//! together with `HOMEBREW_DOCKER_REGISTRY_TOKEN` (which `brew.sh`
+//! turns into `HOMEBREW_GITHUB_PACKAGES_AUTH="Bearer <token>"`):
+//!
+//! ```text
+//! export HOMEBREW_ARTIFACT_DOMAIN="https://corelink-api.humangr.com/brew/<tenant>"
+//! export HOMEBREW_DOCKER_REGISTRY_TOKEN="corelink_<PAT>"
+//! brew install <formula>
+//! ```
+//!
+//! That yields `Authorization: Bearer corelink_<PAT>` on every bottle
+//! manifest/blob GET, which [`extract_bearer`] accepts. The PAT is
+//! expected to start with the canonical `corelink_` prefix
 //! per the CoreLink PAT format; the prefix check is a fast-path reject
 //! that runs BEFORE the constant-time resolver lookup, so malformed
 //! input never reaches the per-tenant index.
