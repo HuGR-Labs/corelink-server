@@ -140,9 +140,11 @@ const OCI_MAX_INFLIGHT_BYTES_PER_TENANT: u64 = OCI_MAX_INFLIGHT_BYTES / 8; // 64
 const OCI_SESSION_IDLE_TIMEOUT_MS: u64 = 15 * 60 * 1000; // 15 min
 
 /// Bearer-realm URL the adapter advertises in `Www-Authenticate` on a
-/// `/v2/` 401, pointing OCI clients at the `/token` exchange. Flat prod
-/// hostname per the deployment note (`corelink-oci.humangr.com`); the
-/// adapter only ever emits this string, it does not fetch it.
+/// `/v2/` 401, pointing OCI clients at the `/token` exchange. The dedicated flat
+/// prod host `corelink-oci.humangr.com` — NOW PROVISIONED (CNAME → workers.dev
+/// proxied + the `corelink-oci.humangr.com/*` Worker route, 2026-06-21) so a real
+/// `docker login/push` reaches the host-agnostic `/v2/` + `/token` OCI paths. The
+/// adapter only emits this string; it never fetches it.
 const OCI_BEARER_REALM: &str = "https://corelink-oci.humangr.com/token";
 
 /// Env var holding the raw (≥32-byte) HMAC key the adapter uses to sign

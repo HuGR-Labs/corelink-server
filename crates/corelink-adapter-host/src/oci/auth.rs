@@ -97,6 +97,13 @@ impl OciScope {
     ///
     /// Returns [`OciAdapterError::Auth`] on malformed scope strings.
     pub fn parse(wire: &str) -> Result<Self, OciAdapterError> {
+        // Empty wire = the registry-level (no-repository) scope: the `docker
+        // login` credential-check token requests `/token` with no `scope=`, and
+        // the minted bearer round-trips that empty scope back through verify. Must
+        // parse cleanly (NOT error) or `docker login` 401s on the `/v2/` recheck.
+        if wire.is_empty() {
+            return Ok(Self::empty());
+        }
         let mut parts = wire.splitn(3, ':');
         let resource = parts
             .next()
@@ -128,9 +135,29 @@ impl OciScope {
         })
     }
 
+    /// The empty registry-level scope — no repository, no actions. Used for the
+    /// `docker login` credential-check token: docker requests `/token` with NO
+    /// `scope=` param to verify credentials, expecting a valid bearer that passes
+    /// the `/v2/` base check WITHOUT granting any repository push/pull (those are
+    /// requested in a subsequent scoped token). Previously the handler fed `""` to
+    /// [`Self::parse`], which returned `Auth("unsupported scope resource")` → 401,
+    /// so `docker login` ALWAYS failed.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            repo: String::new(),
+            actions: Vec::new(),
+        }
+    }
+
     /// Render scope back to wire string.
     #[must_use]
     pub fn to_wire(&self) -> String {
+        // The empty registry-level scope renders as "" so it round-trips through
+        // `parse("")` on verify (NOT "repository::", which `parse` rejects).
+        if self.repo.is_empty() && self.actions.is_empty() {
+            return String::new();
+        }
         format!("repository:{}:{}", self.repo, self.actions.join(","))
     }
 
@@ -393,6 +420,25 @@ mod tests {
         assert!(s.allows("alpine", "push"));
         assert!(!s.allows("alpine", "delete"));
         assert!(!s.allows("nginx", "pull"));
+    }
+
+    #[test]
+    fn empty_scope_login_token_roundtrips_and_grants_nothing() {
+        // `docker login` mints a scope-less credential-check token: `parse("")`
+        // must yield the empty scope, it must render back to "" (so the bearer
+        // round-trips through verify and the `/v2/` base check returns 200), and
+        // it must grant NO repository action.
+        let parsed = OciScope::parse("").expect("empty scope must parse, not 401");
+        assert!(parsed.repo.is_empty() && parsed.actions.is_empty());
+        assert_eq!(OciScope::empty().to_wire(), "");
+        assert!(!OciScope::empty().allows("any/repo", "pull"));
+        assert!(!OciScope::empty().allows("any/repo", "push"));
+        // The end-to-end proof: mint with the empty scope and verify it (this is
+        // exactly what failed before — `docker login` always 401'd).
+        let token = mint(&key(), &tenant(), &OciScope::empty(), Some(0), 1000, 3600)
+            .expect("mint empty-scope login token");
+        let v = verify(&key(), &token, 1500).expect("verify empty-scope login token");
+        assert_eq!(v.scope.to_wire(), "");
     }
 
     #[test]
