@@ -85,8 +85,8 @@ function reapiError(error: string, message: string, status: number, requestId: s
  *
  * Pipeline (every step fail-CLOSED):
  *   1. Method gate (POST only → 405).
- *   2. Internal-auth gate — the `pat_mint` consumer key
- *      (`CORELINK_PAT_MINT_AUTH_KEY`) with fallback to the shared
+ *   2. Internal-auth gate — the `runner_mint` consumer key
+ *      (`CORELINK_RUNNER_MINT_AUTH_KEY`) with fallback to the shared
  *      `CORELINK_INTERNAL_AUTH_KEY` (401 wrong/missing header, 403 no sized key).
  *   3. Secrets: a properly sized internal-auth key must be bound to AUTHORIZE
  *      the mint to the container (the mint is server-to-server). The runner-mint
@@ -112,8 +112,11 @@ export async function handleRunnerMint(
     return reapiError("METHOD_NOT_ALLOWED", "runner mint requires POST", 405, requestId);
   }
 
-  // ── 2. Internal-auth gate (pat_mint consumer key, shared fallback) ─────────
-  const authErr = requireConsumerAuth(request, env, "pat_mint", requestId);
+  // ── 2. Internal-auth gate (runner_mint consumer key, shared fallback) ──────
+  // Scoped to the runner dispatcher's OWN key (CORELINK_RUNNER_MINT_AUTH_KEY),
+  // distinct from signup's `pat_mint` — a leaked runner key mints/revokes ONLY
+  // per-job runner PATs, never the signup PAT-mint / erase / admin surfaces.
+  const authErr = requireConsumerAuth(request, env, "runner_mint", requestId);
   if (authErr) {
     return authErr;
   }
@@ -122,7 +125,7 @@ export async function handleRunnerMint(
   // The internal-auth gate above already proved a sized consumer/shared key is
   // bound; we re-read the SHARED key here because that is the secret presented to
   // the container's /_internal/pat/mint route (the mint authority). If only a
-  // dedicated pat_mint key were bound the shared key could still be absent, in
+  // dedicated runner_mint key were bound the shared key could still be absent, in
   // which case the mint to the container cannot be authorized → unavailable.
   const internalAuthKey = env.CORELINK_INTERNAL_AUTH_KEY;
   if (!internalAuthKey || internalAuthKey.length === 0) {
@@ -203,7 +206,7 @@ export async function handleRunnerMint(
  * adapters and OCI (which all filter `revoked_at_ms IS NULL`) immediately stop
  * honoring the token (INV-PAT-REVOKE-PROPAGATION). No new revocation mechanism.
  *
- * Authorized identically to mint: the `pat_mint` consumer key with shared
+ * Authorized identically to mint: the `runner_mint` consumer key with shared
  * fallback. The dispatcher holds no customer PAT, so the customer revoke route
  * (which is PAT-gated) is not usable here — internal-auth is the gate.
  *
@@ -215,7 +218,7 @@ export async function handleRunnerMint(
  *
  * TENANT-SCOPED REVOKE (REV-S2): the UPDATE carries a `tenant_id = owner_tenant`
  * predicate (the dispatcher already supplies `owner_tenant` at mint time). This
- * bounds the blast radius of a compromised `pat_mint` key to the tenants the
+ * bounds the blast radius of a compromised `runner_mint` key to the tenants the
  * caller actually names — without it, a leaked mint key could revoke ANY tenant's
  * PAT (including a customer's long-lived primary API key) as a targeted DoS.
  */
@@ -229,8 +232,11 @@ export async function handleRunnerRevoke(
     return reapiError("METHOD_NOT_ALLOWED", "runner revoke requires POST", 405, requestId);
   }
 
-  // ── 2. Internal-auth gate (pat_mint consumer key, shared fallback) ─────────
-  const authErr = requireConsumerAuth(request, env, "pat_mint", requestId);
+  // ── 2. Internal-auth gate (runner_mint consumer key, shared fallback) ──────
+  // Scoped to the runner dispatcher's OWN key (CORELINK_RUNNER_MINT_AUTH_KEY),
+  // distinct from signup's `pat_mint` — a leaked runner key mints/revokes ONLY
+  // per-job runner PATs, never the signup PAT-mint / erase / admin surfaces.
+  const authErr = requireConsumerAuth(request, env, "runner_mint", requestId);
   if (authErr) {
     return authErr;
   }
