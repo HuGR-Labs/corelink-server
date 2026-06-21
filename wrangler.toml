@@ -401,7 +401,7 @@ class_name = "CoreLinkServer"
 # WP-S1.2 real AC R2 handler + WP-S1.2 real D1 Admin handler + cas.rs
 # block_in_place fix. Once 2aa2be6f's Dockerfile cache invalidation fix proves
 # itself end-to-end in CI, revert to "./Dockerfile".
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-corelinkserver-prod:543cea7e-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-corelinkserver-prod:ddc298a6-r1"
 max_instances = 20
 instance_type = "standard-1"
 # P0-5 — DECISION-GATE-1 Option A: the container reaches R2 (S3 API) + D1 (HTTP
@@ -728,7 +728,7 @@ class_name = "EventLogDO"
 
 [[env.prod-sam.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-sam-corelinkserver-prod:543cea7e-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-sam-corelinkserver-prod:ddc298a6-r1"
 max_instances = 10
 instance_type = "standard-1"
 
@@ -856,7 +856,7 @@ class_name = "EventLogDO"
 
 [[env.prod-lhr.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-lhr-corelinkserver-prod:543cea7e-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-lhr-corelinkserver-prod:ddc298a6-r1"
 max_instances = 10
 instance_type = "standard-1"
 
@@ -983,7 +983,7 @@ class_name = "EventLogDO"
 
 [[env.prod-nrt.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-nrt-corelinkserver-prod:543cea7e-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-nrt-corelinkserver-prod:ddc298a6-r1"
 max_instances = 10
 instance_type = "standard-1"
 
@@ -1110,6 +1110,6 @@ class_name = "EventLogDO"
 
 [[env.prod-syd.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-syd-corelinkserver-prod:543cea7e-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-syd-corelinkserver-prod:ddc298a6-r1"
 max_instances = 10
 instance_type = "standard-1"
