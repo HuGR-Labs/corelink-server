@@ -484,3 +484,167 @@ pub fn url_tier_select(cfg: &Config) -> String {
 pub fn url_introspect(cfg: &Config) -> String {
     format!("{}/internal/v1/auth/introspect", cfg.endpoint)
 }
+
+/// Stripe webhook receiver on the **signup-worker** (a DIFFERENT host from the
+/// API `endpoint`): `POST /webhooks/stripe` (`apps/signup-worker/src/index.ts`).
+/// The base URL is passed explicitly because the signup-worker is not the API
+/// under test — the billing-webhook journey supplies it from its own env var
+/// (`CORELINK_E2E_SIGNUP_WORKER_ENDPOINT`).
+pub fn url_stripe_webhook(signup_worker_base: &str) -> String {
+    format!(
+        "{}/webhooks/stripe",
+        signup_worker_base.trim_end_matches('/')
+    )
+}
+
+// ── Stripe webhook signing (frozen-dep, no `hmac`/`base64` crate) ─────────────
+//
+// The signup-worker verifies `Stripe-Signature: t=<ts>,v1=<hexhmac>` where the
+// HMAC key is the base64-decoded body of a `whsec_<base64>` secret and the
+// signed message is `"${ts}.${raw_body}"` (apps/signup-worker/src/webhooks/
+// stripe.ts `verifyStripeSignature`). To construct a VALID test signature using
+// ONLY the frozen deps (sha2 + hex — no `hmac`, no `base64` crate), we implement
+// the two primitives the contract needs by hand:
+//   - `b64_decode_std` — standard-alphabet base64 (the secret body), and
+//   - `hmac_sha256`    — the RFC 2104 ipad/opad construction over SHA-256.
+// Both are tiny, dependency-free, and exercised only by the GATED webhook
+// journey, so the black-box "frozen deps" rule is preserved.
+
+/// Decode standard-alphabet ('+' '/') base64, ignoring '=' padding and any
+/// internal whitespace. Returns `None` on any non-alphabet byte so a malformed
+/// secret GATES rather than producing a wrong key.
+pub fn b64_decode_std(input: &str) -> Option<Vec<u8>> {
+    const INVALID: u8 = 0xFF;
+    let val = |c: u8| -> u8 {
+        match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => INVALID,
+        }
+    };
+    let mut out = Vec::with_capacity(input.len() / 4 * 3 + 3);
+    let mut acc: u32 = 0;
+    let mut bits = 0u32;
+    for &c in input.as_bytes() {
+        if c == b'=' || c == b'\n' || c == b'\r' || c == b' ' || c == b'\t' {
+            continue;
+        }
+        let v = val(c);
+        if v == INVALID {
+            return None;
+        }
+        acc = (acc << 6) | u32::from(v);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push(((acc >> bits) & 0xFF) as u8);
+        }
+    }
+    Some(out)
+}
+
+/// HMAC-SHA256 (RFC 2104) over `(key, message)`, returning the 32 raw bytes.
+/// Pure `sha2` — no `hmac` crate (frozen-dep rule).
+pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
+    const BLOCK: usize = 64; // SHA-256 block size.
+    let mut block_key = [0u8; BLOCK];
+    if key.len() > BLOCK {
+        // Keys longer than the block are first hashed.
+        let mut h = Sha256::new();
+        h.update(key);
+        let digest = h.finalize();
+        block_key[..32].copy_from_slice(&digest);
+    } else {
+        block_key[..key.len()].copy_from_slice(key);
+    }
+
+    let mut ipad = [0x36u8; BLOCK];
+    let mut opad = [0x5cu8; BLOCK];
+    for i in 0..BLOCK {
+        ipad[i] ^= block_key[i];
+        opad[i] ^= block_key[i];
+    }
+
+    let mut inner = Sha256::new();
+    inner.update(ipad);
+    inner.update(message);
+    let inner_digest = inner.finalize();
+
+    let mut outer = Sha256::new();
+    outer.update(opad);
+    outer.update(inner_digest);
+    let out = outer.finalize();
+
+    let mut result = [0u8; 32];
+    result.copy_from_slice(&out);
+    result
+}
+
+/// Build a valid `Stripe-Signature` header value (`t=<ts>,v1=<hexhmac>`) for a
+/// `whsec_<base64>` secret over `"${ts}.${body}"` — the exact contract the
+/// signup-worker `verifyStripeSignature` checks. Returns `None` if the secret is
+/// not a decodable `whsec_…` value (→ the journey GATES, never sends a bad sig).
+pub fn stripe_signature_header(secret: &str, timestamp_secs: u64, body: &str) -> Option<String> {
+    let b64 = secret.strip_prefix("whsec_")?;
+    let key = b64_decode_std(b64)?;
+    let signed = format!("{timestamp_secs}.{body}");
+    let mac = hmac_sha256(&key, signed.as_bytes());
+    Some(format!("t={timestamp_secs},v1={}", hex::encode(mac)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn b64_decode_matches_known_vectors() {
+        // RFC 4648 examples.
+        assert_eq!(b64_decode_std("Zg==").unwrap(), b"f");
+        assert_eq!(b64_decode_std("Zm8=").unwrap(), b"fo");
+        assert_eq!(b64_decode_std("Zm9v").unwrap(), b"foo");
+        assert_eq!(b64_decode_std("Zm9vYg==").unwrap(), b"foob");
+        // 32 zero bytes (the signup-worker test secret body).
+        assert_eq!(
+            b64_decode_std("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=").unwrap(),
+            vec![0u8; 32]
+        );
+        // Padding/whitespace tolerated; non-alphabet rejected.
+        assert_eq!(b64_decode_std("Zm 9v").unwrap(), b"foo");
+        assert!(b64_decode_std("not*base64").is_none());
+    }
+
+    #[test]
+    fn hmac_sha256_matches_rfc4231_test_case_2() {
+        // RFC 4231 Test Case 2: key="Jefe", data="what do ya want for nothing?".
+        let mac = hmac_sha256(b"Jefe", b"what do ya want for nothing?");
+        assert_eq!(
+            hex::encode(mac),
+            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+        );
+    }
+
+    #[test]
+    fn stripe_signature_header_matches_worker_contract() {
+        // Verified against the Python reference (hmac-sha256 over `${t}.${body}`
+        // with the base64-decoded whsec body) — the exact bytes the signup-worker
+        // `verifyStripeSignature` recomputes. This locks the cross-language
+        // signature contract: if either the HMAC or the message framing drifts,
+        // this fails BEFORE a live run silently 400s on every webhook.
+        let secret = "whsec_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        let header = stripe_signature_header(secret, 1_700_000_000, "{\"id\":\"evt_test\"}")
+            .expect("canonical secret signs");
+        assert_eq!(
+            header,
+            "t=1700000000,v1=8d580b797e256f17241de6d34c5506ffb7d3a156a5f266e321f649357325cf55"
+        );
+    }
+
+    #[test]
+    fn stripe_signature_header_rejects_non_whsec() {
+        assert!(stripe_signature_header("sk_test_not_a_whsec", 1, "{}").is_none());
+        assert!(stripe_signature_header("whsec_***bad***", 1, "{}").is_none());
+    }
+}
