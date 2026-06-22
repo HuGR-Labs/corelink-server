@@ -693,41 +693,63 @@ fn brew_public_bottle_fetch(cfg: &Config, client: &Client) -> JourneyResult {
 
     // A Homebrew bottle manifest path on ghcr.io: `hello` is a tiny, stable
     // formula. The adapter joins the (tenant-stripped) path onto ghcr.io.
-    let url = url_brew(cfg, &p1.tenant, "v2/homebrew/core/hello/manifests/latest");
+    // Homebrew bottles on ghcr are tagged by VERSION, not `latest` (there is no
+    // `latest` tag → ghcr 404 → adapter 502). Pin a stable, long-published version
+    // of the tiny `hello` formula (verified 200 live). Bump if ghcr ever drops it.
+    let url = url_brew(cfg, &p1.tenant, "v2/homebrew/core/hello/manifests/2.12.1");
     // The bottle/manifest fetch needs the OCI/ghcr manifest Accept header — one
-    // of the 5 causes was a missing Accept header → 502.
-    let resp = match client
-        .get(&url)
-        .header(AUTHORIZATION, bearer(token))
-        .header(
-            reqwest::header::ACCEPT,
-            "application/vnd.oci.image.index.v1+json,\
-             application/vnd.docker.distribution.manifest.v2+json,\
-             application/vnd.oci.image.manifest.v1+json",
-        )
-        .send()
-    {
-        Ok(r) => r,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {url}: {e}")),
-    };
-    let status = resp.status().as_u16();
+    // of the 5 causes was a missing Accept header → 502. brew is UPSTREAM-dependent
+    // (ghcr) and a cold path triggers a cache-fill, so a SINGLE 5xx is often a
+    // transient upstream hiccup, NOT the regression — retry up to 3× and only
+    // treat a PERSISTENT 502 as the _public-chain regression (no false-RED on a
+    // one-off ghcr blip).
+    let accept = "application/vnd.oci.image.index.v1+json,\
+                  application/vnd.docker.distribution.manifest.v2+json,\
+                  application/vnd.oci.image.manifest.v1+json";
+    let mut status = 0u16;
+    let mut last_err = String::new();
+    for attempt in 0..3u32 {
+        if attempt > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+        match client
+            .get(&url)
+            .header(AUTHORIZATION, bearer(token))
+            .header(reqwest::header::ACCEPT, accept)
+            .send()
+        {
+            Ok(r) => {
+                status = r.status().as_u16();
+                if status < 500 {
+                    break; // 200/3xx/4xx is definitive — stop retrying
+                }
+            }
+            Err(e) => {
+                last_err = e.to_string();
+                status = 0;
+            }
+        }
+    }
+    if status == 0 {
+        return JourneyResult::fail(name, ms(start), format!("GET {url}: {last_err}"));
+    }
+    // PERSISTENT 502 across retries ⇒ the 5-cause _public chain regressed
+    // (PUBLIC-dedup write fails closed). 503/504 ⇒ upstream/edge transient (gate).
     if status == 502 {
         return JourneyResult::fail(
             name,
             ms(start),
-            "REGRESSION: brew public bottle GET 502 — the 5-cause _public chain \
-             (ghcr token / Accept header / path-strip / _public storage-row / _public \
-             R2-prefix) has regressed; PUBLIC-dedup write fails closed. url="
+            "REGRESSION: brew public bottle GET 502 across 3 retries — the 5-cause \
+             _public chain (ghcr token / Accept / path-strip / _public storage-row / \
+             _public R2-prefix) regressed; PUBLIC-dedup write fails closed. url="
                 .to_string()
                 + &url,
         );
     }
-    // 503/504 = transient upstream/edge ⇒ gate (not a contract violation). A
-    // deny (401/403) would mean auth/scope, surfaced as a fail since P1 is rw.
     if matches!(status, 503 | 504) {
         return JourneyResult::gated(
             name,
-            format!("brew upstream/edge transient ({status}) — not the _public regression; retry"),
+            format!("brew upstream/edge transient ({status}) after 3 retries — not the _public regression"),
         );
     }
     if status != 200 {
