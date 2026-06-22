@@ -23,6 +23,18 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **Stuck-`"starting"` Durable Object wedge → permanent `container_start_timeout` 503 (F-020,
+  prod incident 2026-06-23).** `ensureContainerRunning` (`worker/src/durable_object.ts`) routed a
+  `containerStatus === "starting"` straight to `waitForContainerReady` with NO staleness recovery
+  (unlike `"running"`, which self-heals). Because `lifecycleState` is loaded from DO storage on
+  every isolate, an interrupted start (here: an introspect request flood, F-019) left the `_system`
+  DO persisted-`"starting"` → every request waited on a start that never happened → 90s timeout →
+  503, surviving worker redeploys + container rolls. Onboarding (pat-mint), Stripe billing-webhook,
+  introspect, runner-mint were all down. Fix: stamp `startingAt_ms` on the flip to `"starting"` and,
+  in `ensureContainerRunning`, treat a `"starting"` older than `STALE_STARTING_MS` (= `STARTUP_TIMEOUT_MS`
+  + 30s, so an in-flight cold start is never pre-empted) as stopped + restart. Self-heals on the next
+  request; verified live (`_system` introspect 200 in 4.2s + signup provisions a PAT in ~5s, per-tenant
+  data plane unaffected). Worker-side, no container rebuild.
 - **`docker pull` rejected every manifest with "content size of zero"** — `HEAD
   /v2/<repo>/manifests/<ref>` returned `Content-Length: 0` (empty body, no length header) so
   docker's tag resolution read a zero-size descriptor and aborted the pull. HEAD now carries the
