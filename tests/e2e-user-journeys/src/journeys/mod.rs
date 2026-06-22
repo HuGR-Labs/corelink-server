@@ -34,6 +34,7 @@ pub mod identity;
 pub mod introspect;
 pub mod pat_lifecycle;
 pub mod quota;
+pub mod security;
 pub mod turbo;
 
 /// Run every journey module and concatenate the results, in a stable order.
@@ -52,5 +53,6 @@ pub fn all(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     out.extend(dsr::run(cfg, client));
     out.extend(introspect::run(cfg, client));
     out.extend(audit::run(cfg, client));
+    out.extend(security::run(cfg, client));
     out
 }
