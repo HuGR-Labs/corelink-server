@@ -1,18 +1,18 @@
 ---
 id: "LGPD-RESIDENCY-ATTESTATION-2026-05-15"
 type: "compliance_attestation"
-doc_status: "DRAFT"
-audit_status: "ACTIVE"
+doc_status: "SUPERSEDED"
+audit_status: "INVALID"
 version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-27"
+updated: "2026-06-22"
 sprint: "R5-3"
 parent_wi: "GAP-22"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
-superseded_by: null
+superseded_by: "F-013 (physical per-jurisdiction residency not provisioned; all R2 buckets ENAM/US — see security finding F-013; real attestation pending real residency ship)"
 inherits_from:
   - "SOC2-EVIDENCE-ROLLUP-2026-05-15"
   - "PRIVACY-MODEL"
@@ -20,6 +20,37 @@ inherits_from:
   - "INVARIANT-REGISTRY"
 tags: ["lgpd", "lgpd-art-33", "residency", "attestation", "gap-22", "soc2-cross-framework", "brazil", "sam-region", "anpd"]
 ---
+
+> # ⛔ SUPERSEDED — NOT VALID — DO NOT RELY ON THIS ATTESTATION (2026-06-22)
+>
+> **This attestation is SUPERSEDED and NOT VALID as of 2026-06-22.**
+>
+> The body below (dated 2026-05-15) is preserved unchanged as a **point-in-time
+> record only**. Its core attestation — that Brazilian-data-subject content is
+> physically pinned to an in-jurisdiction `sam` region and does not cross
+> international borders — is **NOT TRUE in production**. Investigation **F-013**
+> established that **physical per-jurisdiction residency is not provisioned: all
+> R2 buckets (including the per-region `*-sam` buckets) are physically located
+> in ENAM (US).** Real per-jurisdiction residency is a **roadmap feature**, not
+> a delivered control.
+>
+> Consequently:
+> - **`scripts/verify-lgpd-residency.py` now FAILS-LOUD** (exits non-zero)
+>   rather than emitting a green attestation, because there is no real
+>   `locationHint`-based in-jurisdiction placement to verify.
+> - The §7 attestation statement, the §2 control surface "operating
+>   effectively" claims, the §3 "R2 bucket placement … `locationHint =
+>   wnam-southamerica-east1`" claim, and the §5 "PASS" residency-leak test
+>   results **must not be relied upon** as evidence of physical residency.
+> - This document **must not be cited to customers, auditors (SOC 2 / ISO /
+>   ANPD), or in any DPA/RFP response** as evidence that data physically stays
+>   in Brazil.
+>
+> **This attestation may be relied upon again only after** real
+> per-jurisdiction residency ships (jurisdiction-local R2 buckets + per-region
+> endpoints), a real `locationHint`-based verification passes, and a new,
+> re-dated attestation is signed. See **F-013** for the ground-truth
+> investigation.
 
 > **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-privacy-residency-enforcement` was absorbed into `corelink-privacy` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-privacy-absorption.md. Canonical consumer path is now `corelink_privacy::*`.
 

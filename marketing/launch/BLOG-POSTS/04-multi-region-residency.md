@@ -1,9 +1,13 @@
 <!-- DRAFT — pending Legal + Marketing + CEO sign-off. Do not publish. -->
 
-# Multi-Region Residency at CoreLink: Schrems II, LGPD, GDPR, and the International Transfer Question
+# Multi-Region Residency at CoreLink (Roadmap): Schrems II, LGPD, GDPR, and the International Transfer Question
+
+> ## ⚠️ ROADMAP — NOT YET GENERALLY AVAILABLE
+> **This post describes a capability CoreLink is *building*, not one that ships today.**
+> At launch, CoreLink operates from a **single US (ENAM) region**: all customer data — CAS blobs, action-cache entries, metadata — is physically stored in the United States. The per-region architecture described below (EU/Frankfurt-Dublin, Brazil/São Paulo, APAC pins; cross-region failover; the residency-proof API; the `INV-REGION-NO-CROSS-LEAK` enforcement) is **future, demand-driven work** offered to enterprise customers on request as we provision jurisdiction-local R2 buckets and per-region endpoints. Cross-border transfers from the US-stored data are governed today by SCCs + supplementary measures in the DPA. Read everything below in the future tense.
 
 > **DRAFT — pending Marketing + Legal + Privacy Officer sign-off.**
-> Compliance deep-dive.
+> Compliance deep-dive (forward-looking / roadmap).
 > Trace: spec contract S-20 §5.2 R-S20-8 · WI-S20-008 §2.1.2 (Post 4) · INV-DATA-RESIDENCY · INV-REGION-NO-CROSS-LEAK · INV-DATA-ERASURE-COMPLETE · sprint S-19 residency.
 
 ---
@@ -12,9 +16,9 @@ International data transfer is the area of compliance where good intentions coll
 
 Customers shipping software in 2026 cannot treat "where the data lives" as a deployment-time afterthought.
 
-CoreLink ships with residency as a first-class concern: four enumerated regions, a structural no-cross-region-leak invariant, a Schrems II Transfer Impact Assessment on file, and DPA language reviewed by external Legal counsel before any lighthouse customer signed it.
+CoreLink is being designed with residency as a first-class concern: a roadmap of enumerated regions, a structural no-cross-region-leak invariant, a Schrems II Transfer Impact Assessment, and DPA language reviewed by external Legal counsel. Today the product runs from a single US (ENAM) region; the per-region capability below is what we are building toward.
 
-This post explains what that means concretely.
+This post explains what we are building and what it will mean concretely.
 
 ## The legal landscape, briefly
 
@@ -26,24 +30,26 @@ Three regimes anchor the design.
 
 **GDPR Article 32.** Beyond cross-border specifics, GDPR Article 32 requires "appropriate technical and organisational measures" to ensure a level of security appropriate to the risk. For a remote build cache holding source-derived artifacts that may contain personal data (build outputs, log fixtures, test data), this implies measurable controls on encryption at rest and in transit, access boundaries, audit, and erasure. Residency is one of those controls.
 
-## Four regions at GA
+## Today: one region. The roadmap: four.
 
-CoreLink GA supports four enumerated regions:
+CoreLink ships today from a **single US region — ENAM (Eastern North America)**. All customer data lives there, in the United States.
 
-- **WNAM** — Western North America.
-- **ENAM** — Eastern North America.
-- **WEUR** — Western Europe.
-- **SAM** — South America.
+The roadmap is a set of enumerated regions, each a complete, independent failure domain:
 
-Each region is a complete failure domain: storage, control plane, audit chain, BYOK unwrap endpoints. The audit chain in WEUR does not become a leaf in the audit chain of WNAM. The CAS blob written in SAM does not get replicated to ENAM as a latency optimization. A tenant who selects WEUR at provisioning time gets a CoreLink that, structurally, does not leave WEUR.
+- **ENAM** — Eastern North America (the region we run today).
+- **WNAM** — Western North America (roadmap).
+- **WEUR** — Western Europe (roadmap).
+- **SAM** — South America (roadmap).
 
-APAC is explicitly anti-scope for GA and is planned post-GA, demand-driven. We would rather ship four regions cleanly than five regions with a soft cross-region story.
+The design intent: each region is a complete failure domain — storage, control plane, audit chain, BYOK unwrap endpoints. The audit chain in WEUR will not become a leaf in the audit chain of WNAM. A CAS blob written in SAM will not be replicated to ENAM as a latency optimization. A tenant who selects WEUR at provisioning time will get a CoreLink that, structurally, does not leave WEUR. That property is what we are building; it is not yet live.
+
+APAC is planned after the initial multi-region set, demand-driven. We would rather ship each region cleanly — with the structural invariants actually enforced — than announce regions whose cross-region story is soft.
 
 ## Tenant-region pinning
 
 The tenant's region binding is established at provisioning. It is stored in the tenant-and-residency control-plane database, and it is part of the enforcement context of every authenticated request. The binding is not a configuration knob exposed to runtime traffic; changing a tenant's region is an explicit administrative operation that emits its own audit-chain leaves, requires customer-side confirmation, and triggers a documented migration path with explicit DSR handling.
 
-Concretely, the residency contract is enforced at three layers.
+Concretely, in the multi-region design the residency contract is enforced at three layers (this is the target architecture; today there is one US region).
 
 **Routing.** The tenant's region binding is resolved at the edge and used to route every authenticated request to the correct regional cluster. A request that reaches a region different from the tenant's binding is refused at the boundary — not load-balanced, not falling back, refused with a documented error class.
 
@@ -83,11 +89,9 @@ Per WI-S20-005, external counsel (Cooley / DLA Piper / Bird & Bird) reviewed and
 
 ## Schrems II: what we did with the Transfer Impact Assessment
 
-For CoreLink customers in the EU using WEUR, the TIA conclusion is straightforward: data does not leave the EU. There is no transfer to assess.
+Once WEUR ships, the TIA conclusion for EU customers using it will be straightforward: data does not leave the EU, so there is no transfer to assess. **That is the roadmap state, not today's.**
 
-For customers using WNAM or ENAM regions for EU-origin data (which we generally do not recommend but is configurable), CoreLink provides a customer-facing TIA template, the SCC module language in the DPA, and a documented evaluation of US surveillance law as it applies to a CoreLink operator. This is published at `docs.corelink.humangr.com/trust/schrems-ii`.
-
-The honest take: customers handling EU-origin personal data should default to WEUR. The TIA exists for the cases where they cannot.
+Today, all CoreLink data — including EU-origin data — is stored in the US (ENAM). For that transfer, CoreLink provides the SCC module language in the DPA, a customer-facing TIA template, and a documented evaluation of US surveillance law as it applies to a CoreLink operator (published at `docs.corelink.humangr.com/trust/schrems-ii`). Customers handling EU-origin personal data who require in-EU storage should treat WEUR as a roadmap commitment available to enterprise on request — not a capability they can select at launch.
 
 ## A customer story (placeholder)
 
@@ -101,7 +105,7 @@ The full lighthouse case study, with the customer's name and the executive's att
 
 CoreLink residency is not a substitute for the customer's own legal evaluation of jurisdiction. It is a substrate that makes the customer's evaluation tractable.
 
-CoreLink residency is also not a guarantee against governmental compulsion of the operator in the region where data resides. It is a guarantee that data does not leak across regions through CoreLink's own systems. Compulsion against the operator is a separate threat surface, addressed in part by BYOK (the operator cannot decrypt unilaterally) and in part by transparency reporting (forthcoming, roadmap).
+CoreLink residency (once multi-region ships) is also not a guarantee against governmental compulsion of the operator in the region where data resides. It is designed to be a guarantee that data does not leak across regions through CoreLink's own systems. Compulsion against the operator is a separate threat surface, addressed in part by BYOK (the operator cannot decrypt unilaterally) and in part by transparency reporting (forthcoming, roadmap).
 
 ## Limits and roadmap
 

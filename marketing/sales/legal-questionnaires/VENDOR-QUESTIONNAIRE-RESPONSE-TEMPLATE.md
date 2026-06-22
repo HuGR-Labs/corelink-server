@@ -72,7 +72,7 @@ Save as `<prospect>-corelink-response-cover-letter-YYYY-MM-DD.pdf`. Sign as Foun
 > - **SOC 2 Type I:** target Q4-2026 fieldwork with Schellman & Co.; report Q1-2027. Today: 83.7% weighted internal readiness, 96.4% green on Drata continuous compliance. The full Type-I-readiness rollup (`SOC2-EVIDENCE-ROLLUP-2026-05-15`) is shareable under NDA.
 > - **ISO 27001:2022:** certification target Q1-2027 with Schellman (Stage 1 Q4-2026 stacked with SOC 2). Today: 98.9% in-scope Annex A coverage on internal crosswalk. NDA-gated crosswalk pack available.
 > - **PCI DSS:** SAQ-A self-attested 2026-05-15. CoreLink itself is not in your PCI CDE — Stripe (PCI L1 Service Provider) handles all cardholder data; CoreLink stores only opaque Stripe tokens.
-> - **LGPD / GDPR:** compliant as processor (joint controller for limited service-telemetry); DPO appointed 2026-05-15 (`dpo@humangr.com`); SCC Modules 2/3 in the DPA; verifiable residency attestation per region.
+> - **LGPD / GDPR:** compliant as processor (joint controller for limited service-telemetry); DPO appointed 2026-05-15 (`dpo@humangr.com`); SCC Modules 2/3 in the DPA. Data is currently stored in a single US (ENAM) region; per-jurisdiction residency is on the roadmap (Enterprise-on-request, not GA).
 > - **HIPAA:** **out of scope by design.** CoreLink is a build-artefact cache and does not sign BAAs. The substrate (Cloudflare / AWS / GCP / Azure) is HIPAA-aligned, but the CoreLink product surface is not engineered for PHI.
 > - **FedRAMP:** **not pursued.** NIST 800-53 Rev 5 Moderate crosswalk at 87% (informational only — not a substitute for ATO). Documented rationale: `specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md`.
 >
@@ -135,11 +135,11 @@ These are the 12 highest-frequency answer blocks. Lift them verbatim when the pr
 
 #### 4. LGPD (Brazil) compliance
 
-> **A:** LGPD-compliant as processor (joint controller for limited service-telemetry). DPO appointed 2026-05-15 (`dpo@humangr.com`). Brazilian-tenant data processed in-region (`sam` São Paulo); Art. 33 §1º residency attestation verified nightly by `scripts/verify-lgpd-residency.py`. 72h ANPD notification commitment. DSR turnaround: 5-business-day acknowledgement / 15-business-day resolution (Art. 18). SCC + supplementary measures for cross-border transfers.
+> **A:** LGPD-compliant as processor (joint controller for limited service-telemetry). DPO appointed 2026-05-15 (`dpo@humangr.com`). CoreLink currently operates from a single US (ENAM) region; Brazilian-tenant data is stored in the United States under SCCs + supplementary measures for cross-border transfer. In-country Brazilian residency (`sam` São Paulo) is on the roadmap, available to Enterprise on request — not generally available at launch. 72h ANPD notification commitment. DSR turnaround: 5-business-day acknowledgement / 15-business-day resolution (Art. 18).
 
 #### 5. GDPR compliance
 
-> **A:** GDPR-compliant as processor (joint controller for limited service-telemetry). DPA at `legal/dpa/v1.0.0` (EN-EU+UK, PT-BR, ES-LATAM locales, external counsel reviewed). Schrems II: SCC Modules 2/3 with supplementary measures (BYOK envelope encryption + region pin). Breach notification 72h to supervisory authority (Art. 33) + without-undue-delay to high-risk affected data subjects (Art. 34). DSR rights (Arts. 15–22) supported with verifiable erasure (`INV-DATA-ERASURE-COMPLETE`, `INV-ERASURE-ATTESTATION-SIGNED`).
+> **A:** GDPR-compliant as processor (joint controller for limited service-telemetry). DPA at `legal/dpa/v1.0.0` (EN-EU+UK, PT-BR, ES-LATAM locales, external counsel reviewed). Schrems II: SCC Modules 2/3 with supplementary measures (BYOK envelope encryption). EU data is currently stored in the US (ENAM) under those SCCs; an EU-region pin (Frankfurt/Dublin) is on the roadmap (Enterprise-on-request, not GA). Breach notification 72h to supervisory authority (Art. 33) + without-undue-delay to high-risk affected data subjects (Art. 34). DSR rights (Arts. 15–22) supported with verifiable erasure (`INV-DATA-ERASURE-COMPLETE`, `INV-ERASURE-ATTESTATION-SIGNED`).
 
 #### 6. HIPAA
 
@@ -159,7 +159,7 @@ These are the 12 highest-frequency answer blocks. Lift them verbatim when the pr
 
 #### 10. Data residency
 
-> **A:** `primary_region` pin is structural — `INV-REGION-NO-CROSS-LEAK` is a CRITICAL invariant. Closed-enum regions: `sam` (São Paulo), `nam` (Iowa/Virginia), `eur` (Frankfurt/Dublin), `oce` (Sydney), `apc` (Tokyo/Singapore), `mea` (Dubai). Every blob / DB / DO instance is pinned to the region's colos. Verify your tenant via `GET /v1/tenant/me/residency-proof` (signed attestation + Merkle inclusion proof against the audit chain).
+> **A:** CoreLink currently operates from a **single US (ENAM) region**; all customer data is stored in the United States. Per-region / per-jurisdiction residency (`sam` São Paulo, `eur` Frankfurt/Dublin, `oce` Sydney, `apc` Tokyo/Singapore, `mea` Dubai) is on the **roadmap** and available to Enterprise customers on request as we provision jurisdiction-local R2 buckets and per-region endpoints — it is **not generally available** at launch. The region-isolation invariant (`INV-REGION-NO-CROSS-LEAK`) and the `GET /v1/tenant/me/residency-proof` attestation API ship together with that capability. Cross-border transfers from the US-stored data are governed by SCCs + supplementary measures in the DPA.
 
 #### 11. Breach notification
 
@@ -186,7 +186,7 @@ Always attach the CoreLink standard DPA `legal/dpa/v1.0.0`. If the prospect prov
 
 1. **Do not silently redline.** Their template is a starting point; their procurement / Legal owns the deviation register.
 2. **Map their clauses to our standard DPA sections.** Send back a clause-by-clause map.
-3. **Where their template is incompatible with our posture, state it explicitly** (e.g. unlimited indemnity, BAA clauses for HIPAA scope we don't sign, jurisdiction clauses that conflict with `sam` region pin). Counter-proposal language inline.
+3. **Where their template is incompatible with our posture, state it explicitly** (e.g. unlimited indemnity, BAA clauses for HIPAA scope we don't sign, in-country data-residency clauses we cannot meet today — data is currently US-only, ENAM). Counter-proposal language inline.
 4. **Engage external counsel for deviations beyond ±15% of our standard.** Escalation path: Founder → external counsel (`legal/legal-externo-engagement-contract.md`) → Schellman pre-audit review.
 
 Standard DPA sections (per `legal/dpa/v1.0.0`):
@@ -253,8 +253,8 @@ Typical themes: GDPR Art. 28 sub-processor controls, Schrems II SCC, data reside
 
 **CoreLink response posture:**
 - Lead with GDPR + Schrems II (canonical phrasing #5).
-- Heavy attach: `legal/dpa/v1.0.0`, SCCs, residency attestation, GDPR-DPIA library.
-- For data-residency: cite `INV-REGION-NO-CROSS-LEAK` + `verify-lgpd-residency.py` nightly run.
+- Heavy attach: `legal/dpa/v1.0.0`, SCCs, GDPR-DPIA library.
+- For data-residency: state current state (single US/ENAM region, US storage, cross-border governed by SCCs + supplementary measures) and the roadmap (per-jurisdiction residency, Enterprise-on-request); do not claim an enforced EU/BR region pin today.
 - For portability (Art. 20): cite CAIQ IPY domain answers + REAPI v2 export.
 
 ### Pattern D — Fortune 500 procurement portal (~30–200 questions; vendor-specific)
