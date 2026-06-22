@@ -22,14 +22,17 @@ use reqwest::blocking::Client;
 
 use crate::harness::{Config, JourneyResult};
 
+pub mod abuse;
 pub mod ac;
 pub mod adapters;
 pub mod audit;
 pub mod bazel;
 pub mod billing;
 pub mod cas;
+pub mod concurrency;
 pub mod dashboard;
 pub mod dsr;
+pub mod edge;
 pub mod identity;
 pub mod introspect;
 pub mod oci;
@@ -43,6 +46,7 @@ pub fn all(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     let mut out = Vec::new();
     out.extend(identity::run(cfg, client));
     out.extend(cas::run(cfg, client));
+    out.extend(concurrency::run(cfg, client));
     out.extend(ac::run(cfg, client));
     out.extend(bazel::run(cfg, client));
     out.extend(turbo::run(cfg, client));
@@ -56,5 +60,7 @@ pub fn all(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     out.extend(introspect::run(cfg, client));
     out.extend(audit::run(cfg, client));
     out.extend(security::run(cfg, client));
+    out.extend(edge::run(cfg, client));
+    out.extend(abuse::run(cfg, client));
     out
 }

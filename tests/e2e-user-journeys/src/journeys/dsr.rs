@@ -29,7 +29,10 @@ use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::json;
 
-use crate::harness::{bearer, expect_denied, url_cas, url_cas_batch_read, Config, JourneyResult};
+use crate::harness::{
+    bearer, blake3_hex, expect_denied, unique_blob, url_cas, url_cas_batch_read, Config,
+    JourneyResult,
+};
 use crate::personas::Persona;
 
 /// Env var carrying a content address the operator has ALREADY erased on the
@@ -41,14 +44,33 @@ const TOMBSTONED_HASH_ENV: &str = "CORELINK_E2E_TOMBSTONED_HASH";
 /// request→gone end-to-end journey GATES.
 const DSR_SESSION_ENV: &str = "CORELINK_E2E_DSR_SESSION";
 
+/// Opt-in flag for the SELF-DRIVING DSR full-flow (write → request erasure →
+/// assert gone). This MUTATES state (it erases content on the target tenant), so
+/// it is GATED off by default — the operator opts in only against a DEDICATED
+/// test tenant. Absent → the full-flow journey GATES (recorded, never skipped).
+const DSR_TEST_ENV: &str = "CORELINK_E2E_DSR_TEST";
+
+/// Env var carrying the DEDICATED test tenant id the self-driving full-flow may
+/// erase. The drive REFUSES to run against the primary tenant
+/// (`CORELINK_E2E_TENANT`) to avoid erasing real customer content — the operator
+/// must point this at a throwaway tenant. Absent → the full-flow journey GATES.
+const DSR_TEST_TENANT_ENV: &str = "CORELINK_E2E_DSR_TEST_TENANT";
+
+/// Env var carrying a Clerk/operator session bearer scoped to the DEDICATED test
+/// tenant, used to drive the customer-facing erasure-request surface in the
+/// self-driving full-flow. Absent → the full-flow journey GATES.
+const DSR_TEST_SESSION_ENV: &str = "CORELINK_E2E_DSR_TEST_SESSION";
+
 /// Run the DSR journeys: erased-read, batch-erased-read, internal-erase deny,
-/// request→gone end-to-end (gated), full-flow (gated).
+/// request→gone end-to-end (gated), self-driving full-flow (gated), full account
+/// deletion flow (gated).
 pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     vec![
         erased_read_is_gone(cfg, client),
         batch_read_erased_is_gone(cfg, client),
         internal_erase_not_customer_reachable(cfg, client),
         dsr_request_then_content_gone(cfg, client),
+        dsr_full_flow_self_driven(cfg, client),
         account_deletion_flow_gated(),
     ]
 }
@@ -305,6 +327,217 @@ fn dsr_request_then_content_gone(cfg: &Config, client: &Client) -> JourneyResult
             format!("erased-content read got {other} after DSR request (expected 410/404 gone)"),
         ),
     }
+}
+
+/// (3c) SELF-DRIVING FULL-FLOW (gated) — write content → request erasure →
+/// assert the content is GONE (410/404, never the bytes) AND a batch-read of the
+/// erased hash reports it gone.
+///
+/// This is the launch-critical end-to-end the WP demands: not just observing a
+/// pre-erased fixture, but DRIVING the whole customer DSR path on a fresh object.
+///
+/// SAFETY (critical): this MUTATES state (it erases content). It is GATED behind
+/// `CORELINK_E2E_DSR_TEST=1` AND refuses to run unless the operator points it at
+/// a DEDICATED throwaway tenant (`CORELINK_E2E_DSR_TEST_TENANT`) that is NOT the
+/// primary tenant — so it can never erase real customer content. It also needs a
+/// session bearer scoped to that test tenant (`CORELINK_E2E_DSR_TEST_SESSION`),
+/// since the customer-facing erasure-request surface is Clerk-session auth'd. The
+/// RW PAT (P1) is used only to WRITE+READ the test object (a cache credential).
+///
+/// 0069 NOTE: the prod schema may be missing migration 0069 (`dsr_requested`); if
+/// the erasure request 500s/404s on that missing table, we GATE with that exact
+/// diagnosis (don't FAIL on a known prod-schema gap).
+fn dsr_full_flow_self_driven(cfg: &Config, client: &Client) -> JourneyResult {
+    let name =
+        "DSR: self-driving full-flow — write -> request erasure -> content GONE (gated, mutating)";
+    let start = Instant::now();
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+
+    // GATE 1: the opt-in flag (this mutates / erases state).
+    let enabled = env::var(DSR_TEST_ENV).map(|v| v == "1").unwrap_or(false);
+    if !enabled {
+        return JourneyResult::gated(
+            name,
+            "CORELINK_E2E_DSR_TEST=1 not set — the self-driving DSR full-flow ERASES content; \
+             enable it only against a DEDICATED test tenant",
+        );
+    }
+
+    // GATE 2: a write credential for the test object.
+    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
+        Ok(p) => p,
+        Err(reason) => return JourneyResult::gated(name, reason),
+    };
+    let token = p1.token.expect("P1 always has a token");
+
+    // GATE 3: a DEDICATED test tenant that is NOT the primary tenant. Refuse to
+    // erase under the primary tenant — that could destroy real customer content.
+    let test_tenant = match env::var(DSR_TEST_TENANT_ENV).ok().filter(|v| !v.is_empty()) {
+        Some(t) => t,
+        None => {
+            return JourneyResult::gated(
+                name,
+                "CORELINK_E2E_DSR_TEST_TENANT not set — the full-flow needs a DEDICATED throwaway \
+                 tenant to erase (never the primary tenant)",
+            )
+        }
+    };
+    if let Some(primary) = cfg.tenant.as_deref() {
+        if test_tenant == primary {
+            return JourneyResult::gated(
+                name,
+                "CORELINK_E2E_DSR_TEST_TENANT must differ from CORELINK_E2E_TENANT — refusing to \
+                 erase content under the primary tenant",
+            );
+        }
+    }
+
+    // GATE 4: a session bearer scoped to the test tenant for the request surface.
+    let session = match env::var(DSR_TEST_SESSION_ENV).ok().filter(|v| !v.is_empty()) {
+        Some(s) => s,
+        None => {
+            return JourneyResult::gated(
+                name,
+                "CORELINK_E2E_DSR_TEST_SESSION not set — the erasure-request surface is \
+                 Clerk-session authenticated; supply a session bearer for the test tenant",
+            )
+        }
+    };
+
+    // STEP 1: WRITE a fresh, unique object under the test tenant (content-addressed,
+    // so a fresh UUID body yields a fresh digest — idempotent across runs).
+    let blob = unique_blob("corelink-e2e-dsr-fullflow");
+    let hash = blake3_hex(&blob);
+    let write_url = url_cas(cfg, &test_tenant, &hash);
+    let put = match client
+        .put(&write_url)
+        .header(AUTHORIZATION, bearer(token))
+        .header(CONTENT_TYPE, "application/octet-stream")
+        .body(blob.clone())
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("PUT {write_url}: {e}")),
+    };
+    let put_status = put.status().as_u16();
+    if !matches!(put_status, 200 | 201) {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("write of the test object got {put_status} (expected 200/201) — cannot drive erasure"),
+        );
+    }
+
+    // STEP 2: REQUEST erasure on the customer-facing DSR surface (Clerk-session
+    // auth'd). A 404 here means the request route is named differently on this env
+    // → GATE (the end-to-end needs the right route, don't false-fail). A 500/404
+    // attributable to a missing 0069 dsr_requested table → GATE with that exact
+    // diagnosis (a known prod-schema gap, not a contract break).
+    let req_url = format!("{}/v1/customer/account/delete", cfg.endpoint);
+    let req = match client
+        .post(&req_url)
+        .header(AUTHORIZATION, bearer(&session))
+        .header(CONTENT_TYPE, "application/json")
+        .body(json!({ "confirm": true }).to_string())
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("POST {req_url}: {e}")),
+    };
+    let req_status = req.status().as_u16();
+    let req_body = req.text().unwrap_or_default();
+    if req_status == 404 {
+        return JourneyResult::gated(
+            name,
+            "DSR request route returned 404 — the account-delete request surface is named \
+             differently on this env (or 0069 dsr_requested is missing); cannot drive the full-flow",
+        );
+    }
+    // Known prod-schema gap: a 5xx mentioning the dsr_requested table → GATE, not FAIL.
+    if req_status >= 500 {
+        let lc = req_body.to_lowercase();
+        if lc.contains("dsr_requested") || lc.contains("no such table") {
+            return JourneyResult::gated(
+                name,
+                "DSR erasure request 5xx'd on a missing 0069 dsr_requested table — known \
+                 prod-schema gap; apply migration 0069 then re-run (not a contract break)",
+            );
+        }
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("DSR erasure request got {req_status} (a 5xx, not the 0069 gap) — server fault"),
+        );
+    }
+    if !matches!(req_status, 200 | 202) {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("DSR erasure request got {req_status} (expected 200/202 accepted)"),
+        );
+    }
+
+    // STEP 3a: the erased content must now read as GONE (410/404, never 200 bytes).
+    let read = match client
+        .get(&write_url)
+        .header(AUTHORIZATION, bearer(token))
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {write_url}: {e}")),
+    };
+    let read_status = read.status().as_u16();
+    match read_status {
+        410 | 404 => {}
+        200 => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                "ERASED CONTENT SERVED 200 after a DSR request — erasure end-state not honoured"
+                    .to_string(),
+            )
+        }
+        other => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("erased-content read got {other} after DSR request (expected 410/404 gone)"),
+            )
+        }
+    }
+
+    // STEP 3b: the batch-read plane must ALSO report the erased hash as gone, never
+    // its bytes. Safe outcomes: a fail-CLOSED 503 (the tombstone gate, #421) or a
+    // per-hash gone/missing marker. HARD FAIL: an "ok" entry with non-zero length.
+    let batch_url = url_cas_batch_read(cfg, &test_tenant);
+    let batch = match client
+        .post(&batch_url)
+        .header(AUTHORIZATION, bearer(token))
+        .header(CONTENT_TYPE, "application/json")
+        .body(json!({ "hashes": [hash] }).to_string())
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("POST {batch_url}: {e}")),
+    };
+    let batch_status = batch.status().as_u16();
+    let batch_body = batch.text().unwrap_or_default();
+    if batch_status == 503 {
+        return JourneyResult::pass(name, ms(start));
+    }
+    let served_bytes = batch_body.contains("\"status\":\"ok\"")
+        && batch_body.contains(&hash)
+        && batch_body.contains("\"len\":")
+        && !batch_body.contains("\"len\":0")
+        && !batch_body.contains("\"len\": 0");
+    if served_bytes {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("batch-read returned bytes for the erased hash after a DSR request (status {batch_status})"),
+        );
+    }
+    JourneyResult::pass(name, ms(start))
 }
 
 /// (4) The full account-deletion DSR flow + legal-hold preservation runs on

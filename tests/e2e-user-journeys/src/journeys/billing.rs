@@ -28,17 +28,50 @@
 //! [`url_tier_select`], and [`url_cas`] for the past-due data-plane probe.
 
 use std::env;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::{json, Value};
 
 use crate::harness::{
-    bearer, expect_denied, sha256_hex, unique_blob, url_cas, url_customer, url_tier_select, Config,
-    JourneyResult,
+    bearer, expect_denied, sha256_hex, stripe_signature_header, unique_blob, url_cas, url_customer,
+    url_stripe_webhook, url_tier_select, Config, JourneyResult,
 };
 use crate::personas::Persona;
+
+// ── Stripe-webhook simulation gate (NO REAL CHARGE) ───────────────────────────
+//
+// The pay→tier path is covered WITHOUT a charge by POSTing a SIGNED test Stripe
+// webhook to the signup-worker and observing the tenant's billing state move.
+// Because that MUTATES a tenant's billing/entitlement state, the whole journey
+// is opt-in behind `CORELINK_E2E_STRIPE_WEBHOOK_TEST=1` PLUS the secret/host/ids
+// the operator must provision. Absent any of them → GATE (recorded, never run).
+//
+// | Env var                                 | Meaning                              |
+// |-----------------------------------------|--------------------------------------|
+// | `CORELINK_E2E_STRIPE_WEBHOOK_TEST`      | `1` to opt into the mutating journey |
+// | `CORELINK_E2E_SIGNUP_WORKER_ENDPOINT`   | base URL of the signup-worker        |
+// | `CORELINK_E2E_STRIPE_WEBHOOK_SECRET`    | the `whsec_…` signing secret         |
+// | `CORELINK_E2E_STRIPE_SUBSCRIPTION_ID`   | the test tenant's Stripe sub id      |
+// | `CORELINK_E2E_STRIPE_CUSTOMER_ID`       | the test tenant's Stripe customer id |
+// | `CORELINK_E2E_STRIPE_PRICE_ID`          | (optional) price id for the tier map |
+
+/// Whether the operator opted into the mutating Stripe-webhook simulation.
+fn webhook_test_enabled() -> bool {
+    env::var("CORELINK_E2E_STRIPE_WEBHOOK_TEST")
+        .map(|v| v == "1")
+        .unwrap_or(false)
+}
+
+/// Current unix time in whole seconds (for the `t=` signature timestamp; the
+/// receiver rejects a skew > 5 minutes, so we sign with the real wall clock).
+fn now_unix_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
 
 /// Run the billing journeys (happy GET billing, happy portal, adversarial
 /// past-due deny, checkout-session creation + unauthed-checkout deny, gated
@@ -51,6 +84,9 @@ pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
         checkout_unauthed_denied(cfg, client),
         checkout_session_authed(cfg, client),
         tier_select_gated(cfg, client),
+        webhook_unsigned_rejected(cfg, client),
+        webhook_tier_upgrade_simulation(cfg, client),
+        webhook_subscription_cancel_simulation(cfg, client),
     ]
 }
 
@@ -411,4 +447,457 @@ fn tier_select_gated(cfg: &Config, _client: &Client) -> JourneyResult {
          the checkout→active→dunning→cancel lifecycle needs Stripe+Clerk — \
          out of scope for the PAT black box",
     )
+}
+
+/// The resolved opt-in config for the mutating Stripe-webhook simulation, or a
+/// gate reason naming the first missing piece. Centralised so every webhook
+/// journey gates on exactly the same, fully-provisioned, opt-in surface.
+struct WebhookCfg {
+    signup_worker_base: String,
+    secret: String,
+    subscription_id: String,
+    customer_id: String,
+    /// Optional Stripe price id — only needed to drive the price→tier map.
+    price_id: Option<String>,
+}
+
+impl WebhookCfg {
+    /// Resolve from env. `Err(reason)` when the operator has NOT fully opted in
+    /// (flag off, or any required value absent) → the journey GATES with that
+    /// reason. NEVER partially runs a mutating webhook.
+    fn resolve() -> Result<Self, String> {
+        if !webhook_test_enabled() {
+            return Err(
+                "CORELINK_E2E_STRIPE_WEBHOOK_TEST=1 not set — the Stripe-webhook → tier \
+                 simulation MUTATES a tenant's billing/entitlement state; opt in only against \
+                 a Stripe-test-backed env with a provisioned test tenant"
+                    .to_string(),
+            );
+        }
+        let var = |k: &str| env::var(k).ok().filter(|v| !v.is_empty());
+        let signup_worker_base = var("CORELINK_E2E_SIGNUP_WORKER_ENDPOINT").ok_or_else(|| {
+            "CORELINK_E2E_SIGNUP_WORKER_ENDPOINT not set — the /webhooks/stripe receiver lives \
+             on the signup-worker (a different host from the API endpoint)"
+                .to_string()
+        })?;
+        let secret = var("CORELINK_E2E_STRIPE_WEBHOOK_SECRET").ok_or_else(|| {
+            "CORELINK_E2E_STRIPE_WEBHOOK_SECRET not set — needed to SIGN the test event so the \
+             receiver's verifyStripeSignature accepts it (whsec_… value)"
+                .to_string()
+        })?;
+        let subscription_id = var("CORELINK_E2E_STRIPE_SUBSCRIPTION_ID").ok_or_else(|| {
+            "CORELINK_E2E_STRIPE_SUBSCRIPTION_ID not set — the webhook keys tenant_billing by \
+             stripe_subscription_id; supply the test tenant's provisioned subscription id"
+                .to_string()
+        })?;
+        let customer_id = var("CORELINK_E2E_STRIPE_CUSTOMER_ID").ok_or_else(|| {
+            "CORELINK_E2E_STRIPE_CUSTOMER_ID not set — the entitlement gate (tier_selections) is \
+             keyed by stripe_customer_id; supply the test tenant's provisioned customer id"
+                .to_string()
+        })?;
+        Ok(WebhookCfg {
+            signup_worker_base,
+            secret,
+            subscription_id,
+            customer_id,
+            price_id: var("CORELINK_E2E_STRIPE_PRICE_ID"),
+        })
+    }
+}
+
+/// Adversarial (cred-free): an UNSIGNED (or wrong-signature) Stripe webhook MUST
+/// be rejected with 400 `invalid_signature` BEFORE any side effect — the
+/// signup-worker verifies the HMAC over `${t}.${body}` against the configured
+/// secret before parsing or writing (`verifyStripeSignature`). This is the
+/// negative half of the money path: an attacker who can POST to /webhooks/stripe
+/// must NOT be able to forge a tier upgrade without the signing secret. It needs
+/// only the signup-worker base URL (no secret), so it runs whenever that URL is
+/// provided; a 2xx here is a launch-blocking forgery hole, a 5xx means the
+/// signature gate did not run before processing.
+fn webhook_unsigned_rejected(_cfg: &Config, client: &Client) -> JourneyResult {
+    let name = "Billing: unsigned Stripe webhook -> 400 (forged tier upgrade rejected)";
+    let start = Instant::now();
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+
+    let base = match env::var("CORELINK_E2E_SIGNUP_WORKER_ENDPOINT")
+        .ok()
+        .filter(|v| !v.is_empty())
+    {
+        Some(b) => b,
+        None => {
+            return JourneyResult::gated(
+                name,
+                "CORELINK_E2E_SIGNUP_WORKER_ENDPOINT not set — no signup-worker host to probe the \
+                 unsigned-webhook deny",
+            )
+        }
+    };
+
+    let url = url_stripe_webhook(&base);
+    // A well-formed subscription.updated body, but NO Stripe-Signature header.
+    let body = json!({
+        "id": "evt_e2e_unsigned_probe",
+        "type": "customer.subscription.updated",
+        "data": { "object": { "id": "sub_e2e_unsigned_probe", "status": "active" } }
+    })
+    .to_string();
+    let resp = match client
+        .post(&url)
+        .header(CONTENT_TYPE, "application/json")
+        .body(body)
+        .send()
+    {
+        Ok(r) => r,
+        // Unreachable signup-worker → the prerequisite (a live receiver) is
+        // absent: GATE, don't FAIL (keeps a no-server run green, per the suite's
+        // gate-not-skip contract).
+        Err(e) if e.is_connect() || e.is_timeout() || e.is_request() => {
+            return JourneyResult::gated(
+                name,
+                format!("signup-worker unreachable ({e}) — no live /webhooks/stripe to probe"),
+            )
+        }
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("POST {url}: {e}")),
+    };
+    let status = resp.status().as_u16();
+
+    // A 2xx is the forgery hole: an unsigned event was accepted (and may have
+    // mutated billing). The receiver returns 400 `invalid_signature` for a bad
+    // sig and 503 only when the secret/db binding is unconfigured (a deploy
+    // misconfig, not a forgery) — so a 503 GATES (env not ready), a 2xx FAILS,
+    // and 400/401/403 PASS (the signature gate rejected before any side effect).
+    if (200..300).contains(&status) {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "MONEY-PATH: unsigned webhook got {status} — a forged Stripe event was accepted \
+                 without a valid signature (tier upgrade forgeable)"
+            ),
+        );
+    }
+    if status == 503 {
+        return JourneyResult::gated(
+            name,
+            "503 from /webhooks/stripe — the receiver's STRIPE_WEBHOOK_SECRET / BILLING_DB is \
+             unconfigured on this env (fail-closed); cannot probe the signature gate here",
+        );
+    }
+    match expect_denied("unsigned webhook", status) {
+        // 400 is the canonical reject; expect_denied also accepts 401/403.
+        Ok(()) => JourneyResult::pass(name, ms(start)),
+        Err(_) if status == 400 => JourneyResult::pass(name, ms(start)),
+        Err(_) => JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "unsigned webhook got {status} — expected 400 invalid_signature (the signature \
+                 gate must reject before any side effect)"
+            ),
+        ),
+    }
+}
+
+/// Happy (opt-in, NO CHARGE): the SAFE pay→tier coverage. Construct a SIGNED test
+/// `customer.subscription.updated(status=active)` for the provisioned test tenant
+/// and POST it to the signup-worker `/webhooks/stripe`; the receiver verifies the
+/// signature, maps `active → paid`, updates `tenant_billing`, and (when the price
+/// maps to a tier) propagates the tier + keeps the canonical entitlement gate in
+/// sync. We assert the webhook is ACCEPTED (200) and then that the tenant's
+/// billing state — read black-box via `GET /v1/customer/billing` with the RW PAT
+/// — reflects an active/paid subscription. No real Stripe charge happens:
+/// creating/POSTing a signed event is not a payment.
+///
+/// GATED in full behind `CORELINK_E2E_STRIPE_WEBHOOK_TEST=1` + the secret/host/
+/// ids (it mutates billing state). A 400 (signature reject) or 503
+/// (secret/db unconfigured) is reported as a gate/fail per the contract below.
+fn webhook_tier_upgrade_simulation(cfg: &Config, client: &Client) -> JourneyResult {
+    let name = "Billing: signed Stripe webhook -> tier upgrade reflected (opt-in, NO charge)";
+    let start = Instant::now();
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+
+    let wh = match WebhookCfg::resolve() {
+        Ok(w) => w,
+        Err(reason) => return JourneyResult::gated(name, reason),
+    };
+    // We need the RW PAT to read the post-webhook billing state black-box.
+    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
+        Ok(p) => p,
+        Err(reason) => return JourneyResult::gated(name, reason),
+    };
+    let token = p1.token.expect("P1 always has a token");
+
+    // Build the signed event. `metadata[tenant_id]` lets the analytics emit
+    // attribute the tenant; the billing/entitlement writes key on the
+    // subscription/customer ids. Include the price id (when supplied) so the
+    // price→tier map can propagate the tier — but never invent one.
+    let ts = now_unix_secs();
+    let mut object = json!({
+        "id": wh.subscription_id,
+        "status": "active",
+        "customer": wh.customer_id,
+        "current_period_end": ts + 30 * 24 * 3600,
+        "metadata": { "tenant_id": cfg.tenant_or_anon() }
+    });
+    if let Some(price) = wh.price_id.as_deref() {
+        object["items"] = json!({ "data": [ { "price": { "id": price } } ] });
+    }
+    let body = json!({
+        "id": format!("evt_e2e_tier_upgrade_{ts}"),
+        "type": "customer.subscription.updated",
+        "data": { "object": object }
+    })
+    .to_string();
+
+    let sig = match stripe_signature_header(&wh.secret, ts, &body) {
+        Some(s) => s,
+        None => {
+            return JourneyResult::gated(
+                name,
+                "CORELINK_E2E_STRIPE_WEBHOOK_SECRET is not a decodable whsec_<base64> value — \
+                 cannot sign the test event",
+            )
+        }
+    };
+
+    let url = url_stripe_webhook(&wh.signup_worker_base);
+    let resp = match client
+        .post(&url)
+        .header(CONTENT_TYPE, "application/json")
+        .header("Stripe-Signature", sig)
+        .body(body)
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) if e.is_connect() || e.is_timeout() || e.is_request() => {
+            return JourneyResult::gated(
+                name,
+                format!("signup-worker unreachable ({e}) — no live /webhooks/stripe receiver"),
+            )
+        }
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("POST {url}: {e}")),
+    };
+    let status = resp.status().as_u16();
+
+    // 503 = receiver's secret/db binding unconfigured on this env (fail-closed),
+    // not a contract violation we can assert against → GATE.
+    if status == 503 {
+        return JourneyResult::gated(
+            name,
+            "503 from /webhooks/stripe — STRIPE_WEBHOOK_SECRET / BILLING_DB unconfigured on the \
+             receiver; cannot drive the simulation here",
+        );
+    }
+    // 400 = our signature did not verify. Most often the provided secret does not
+    // match the deployed one (write-only secrets), so treat as a GATE with a
+    // precise reason rather than a hard FAIL of the suite.
+    if status == 400 {
+        return JourneyResult::gated(
+            name,
+            "400 invalid_signature — the supplied CORELINK_E2E_STRIPE_WEBHOOK_SECRET does not \
+             match the receiver's deployed secret (or the clock skew exceeds 5m); cannot drive \
+             the signed simulation",
+        );
+    }
+    if status != 200 {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("signed webhook got {status} (expected 200 ok). url={url}"),
+        );
+    }
+
+    // The webhook committed. Read the tenant's billing state black-box and assert
+    // it reflects an active/paid subscription — the pay→tier outcome WITHOUT a
+    // charge. We require the `status`/`plan` fields the contract guarantees and
+    // assert the status is not a denied/canceled state.
+    let billing_url = url_customer(cfg, "billing");
+    let bresp = match client
+        .get(&billing_url)
+        .header(AUTHORIZATION, bearer(token))
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {billing_url}: {e}")),
+    };
+    let bstatus = bresp.status().as_u16();
+    if bstatus != 200 {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "webhook 200 but GET /v1/customer/billing got {bstatus} — cannot confirm the \
+                 tier upgrade reflected"
+            ),
+        );
+    }
+    let body: Value = match bresp.json() {
+        Ok(v) => v,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("billing body not JSON: {e}")),
+    };
+    let status_str = body.get("status").and_then(Value::as_str).unwrap_or("");
+    // The active/paid lexicon the contract exposes (routes/customer.rs maps the
+    // tenant_billing/tier_selections state into a customer-facing status). A
+    // canceled/past_due/inactive status after an active webhook is a failure.
+    let is_active = matches!(
+        status_str,
+        "active" | "paid" | "trialing" | "current" | "ok"
+    );
+    if !is_active {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "signed active-subscription webhook accepted (200) but billing status is \
+                 '{status_str}' (expected an active/paid state): {body}"
+            ),
+        );
+    }
+
+    JourneyResult::pass(name, ms(start))
+}
+
+/// Subscription lifecycle (opt-in, NO CHARGE): a SIGNED
+/// `customer.subscription.deleted` (cancel) for the provisioned test tenant must
+/// REVOKE entitlement — the receiver flips `tier_selections` away from 'active'
+/// and marks `tenant_billing` canceled. We POST the signed cancel, assert 200,
+/// then assert the canonical enforcement on the DATA PLANE: a CAS write with the
+/// (now-canceled) tenant's RW PAT is DENIED (402/503 billing-gate, or an auth
+/// deny). This proves cancel/downgrade transitions enforce, not just that a row
+/// changed — and it never charges anything (a webhook is not a payment).
+///
+/// GATED behind the same opt-in surface as the upgrade simulation, AND it
+/// requires `CORELINK_E2E_TENANT` (the CAS data-plane probe needs the tenant
+/// segment). Because it leaves the test tenant CANCELED, run it LAST / against a
+/// throwaway tenant; the operator opts in explicitly.
+fn webhook_subscription_cancel_simulation(cfg: &Config, client: &Client) -> JourneyResult {
+    let name =
+        "Billing: signed cancel webhook -> entitlement revoked on data plane (opt-in, NO charge)";
+    let start = Instant::now();
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+
+    let wh = match WebhookCfg::resolve() {
+        Ok(w) => w,
+        Err(reason) => return JourneyResult::gated(name, reason),
+    };
+    if cfg.tenant.is_none() {
+        return JourneyResult::gated(
+            name,
+            "CORELINK_E2E_TENANT not set — the cancel-enforcement probe writes CAS, which needs \
+             the tenant segment",
+        );
+    }
+    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
+        Ok(p) => p,
+        Err(reason) => return JourneyResult::gated(name, reason),
+    };
+    let token = p1.token.expect("P1 always has a token");
+
+    // Build + sign a customer.subscription.deleted for the provisioned ids.
+    let ts = now_unix_secs();
+    let body = json!({
+        "id": format!("evt_e2e_cancel_{ts}"),
+        "type": "customer.subscription.deleted",
+        "data": { "object": {
+            "id": wh.subscription_id,
+            "status": "canceled",
+            "customer": wh.customer_id,
+            "metadata": { "tenant_id": cfg.tenant_or_anon() }
+        } }
+    })
+    .to_string();
+    let sig = match stripe_signature_header(&wh.secret, ts, &body) {
+        Some(s) => s,
+        None => {
+            return JourneyResult::gated(
+                name,
+                "CORELINK_E2E_STRIPE_WEBHOOK_SECRET is not a decodable whsec_<base64> value — \
+                 cannot sign the cancel event",
+            )
+        }
+    };
+
+    let url = url_stripe_webhook(&wh.signup_worker_base);
+    let resp = match client
+        .post(&url)
+        .header(CONTENT_TYPE, "application/json")
+        .header("Stripe-Signature", sig)
+        .body(body)
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) if e.is_connect() || e.is_timeout() || e.is_request() => {
+            return JourneyResult::gated(
+                name,
+                format!("signup-worker unreachable ({e}) — no live /webhooks/stripe receiver"),
+            )
+        }
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("POST {url}: {e}")),
+    };
+    let status = resp.status().as_u16();
+    if status == 503 {
+        return JourneyResult::gated(
+            name,
+            "503 from /webhooks/stripe — receiver secret/db unconfigured; cannot drive the cancel",
+        );
+    }
+    if status == 400 {
+        return JourneyResult::gated(
+            name,
+            "400 invalid_signature — supplied secret does not match the receiver's deployed \
+             secret (or clock skew > 5m); cannot drive the signed cancel",
+        );
+    }
+    if status != 200 {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("signed cancel webhook got {status} (expected 200 ok). url={url}"),
+        );
+    }
+
+    // Canonical enforcement: a now-canceled tenant must lose paid-tier service.
+    // Probe the data plane with a fresh CAS write; a 2xx is the billing-integrity
+    // failure (paid capacity served after cancel). 402/503 is the billing deny;
+    // 401/403/404 is an acceptable auth-layer deny. (The container reads the
+    // canonical tier_selections gate; entitlement revocation may take a moment to
+    // propagate across edges — a 2xx is still the only outright failure.)
+    let blob = unique_blob("post-cancel-should-be-denied");
+    let hash = sha256_hex(&blob);
+    let cas_url = url_cas(cfg, &p1.tenant, &hash);
+    let cresp = match client
+        .put(&cas_url)
+        .header(AUTHORIZATION, bearer(token))
+        .header(CONTENT_TYPE, "application/octet-stream")
+        .body(blob)
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("PUT {cas_url}: {e}")),
+    };
+    let cstatus = cresp.status().as_u16();
+    if matches!(cstatus, 200 | 201) {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "BILLING-STATE INTEGRITY: a CAS write got {cstatus} AFTER a signed cancel webhook \
+                 — paid-tier capacity served without an active subscription"
+            ),
+        );
+    }
+    if matches!(cstatus, 402 | 503) {
+        return JourneyResult::pass(name, ms(start));
+    }
+    match expect_denied("post-cancel data-plane write", cstatus) {
+        Ok(()) => JourneyResult::pass(name, ms(start)),
+        Err(_) => JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "post-cancel CAS write got {cstatus} — expected a billing deny (402/503) or auth \
+                 deny (401/403/404)"
+            ),
+        ),
+    }
 }
