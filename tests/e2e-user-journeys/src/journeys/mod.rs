@@ -30,6 +30,7 @@ pub mod billing;
 pub mod cas;
 pub mod dashboard;
 pub mod dsr;
+pub mod edge;
 pub mod identity;
 pub mod introspect;
 pub mod oci;
@@ -56,5 +57,6 @@ pub fn all(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     out.extend(introspect::run(cfg, client));
     out.extend(audit::run(cfg, client));
     out.extend(security::run(cfg, client));
+    out.extend(edge::run(cfg, client));
     out
 }
