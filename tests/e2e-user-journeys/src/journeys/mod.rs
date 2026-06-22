@@ -22,6 +22,7 @@ use reqwest::blocking::Client;
 
 use crate::harness::{Config, JourneyResult};
 
+pub mod abuse;
 pub mod ac;
 pub mod adapters;
 pub mod audit;
@@ -60,5 +61,6 @@ pub fn all(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     out.extend(audit::run(cfg, client));
     out.extend(security::run(cfg, client));
     out.extend(edge::run(cfg, client));
+    out.extend(abuse::run(cfg, client));
     out
 }
