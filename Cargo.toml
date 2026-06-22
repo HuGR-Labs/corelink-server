@@ -433,13 +433,13 @@ dashmap = "6"
 parking_lot = "0.12"
 
 # gRPC stack
-tonic = "0.12"
-prost = "0.13"
-tonic-build = "0.12"
+tonic = "0.14"
+prost = "0.14"
+tonic-build = "0.14"
 
 # HTTP server stack (R2-12: Stripe webhook route in apps/server)
 # axum 0.7 + tower + http 1.x align with tonic 0.12 (hyper 1 underneath).
-axum = { version = "0.7", default-features = false, features = ["http1", "tokio", "json"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
 tower = { version = "0.5", default-features = false }
 http = "1"
 http-body-util = "0.1"
@@ -475,7 +475,7 @@ serde_json = "1"
 # buffer overflow). 0.22→0.24 introduced `Py::extract_bound` and a deprecation
 # of `PyBytes::new_bound` (renamed to `PyBytes::new`); see corelink-py call
 # sites for migration shims.
-pyo3 = { version = "0.24.1", features = ["abi3-py310"] }
+pyo3 = { version = "0.29.0", features = ["abi3-py310"] }
 # wasm-bindgen: Rust → WASM JS bridge
 wasm-bindgen = "0.2"
 js-sys = "0.3"
@@ -514,15 +514,15 @@ aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio", 
 serde_jcs = "0.2"
 
 # Crypto / encoding (S-01 foundation)
-hmac = "0.12"
-sha2 = "0.10"
+hmac = "0.13"
+sha2 = "0.11"
 blake3 = { version = "1", features = ["traits-preview"] }
 base64 = "0.22"
 hex = "0.4"
 uuid = { version = "1", features = ["v4", "v7", "serde", "js"] }
 subtle = "2"
 zeroize = { version = "1.8", features = ["derive"] }
-hkdf = "0.12"
+hkdf = "0.13"
 bytes = "1"
 # Ed25519 (FIPS 186-5 EdDSA) — erasure attestation signing (WI-S14-007)
 ed25519-dalek = { version = "2", features = ["rand_core"] }
@@ -669,8 +669,8 @@ corelink-terraform-drift-consumer = { path = "crates/corelink-terraform-drift-co
 corelink-adapter-host = { path = "crates/corelink-adapter-host" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
-toml = "0.8"
-dirs = "5"
+toml = "1.1"
+dirs = "6"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 corelink-cli = { path = "tools/cli" }
 
@@ -678,7 +678,7 @@ corelink-cli = { path = "tools/cli" }
 proptest = "1.5"
 tokio-test = { version = "0.4" }
 tempfile = "3"
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [profile.release]
 # Build otimizado pra Cloudflare Containers + CoreLink CLI release binary.
