@@ -43,7 +43,7 @@ jobs:
     name: PR gate (crate-scoped clippy + tests + canonical vectors)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # actions/checkout@v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
@@ -71,7 +71,7 @@ jobs:
     name: WASM target build (CF Workers compile compatibility)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # actions/checkout@v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
         with:
           targets: wasm32-unknown-unknown
@@ -86,7 +86,7 @@ jobs:
     runs-on: [self-hosted, mac, corelink-builder]
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # actions/checkout@v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
       # Self-hosted Macs already ship rustup+cargo; re-provisioning via
       # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
       # host nightly toolchain (cargo-fuzz requires nightly) on PATH instead —
@@ -109,7 +109,7 @@ jobs:
     runs-on: [self-hosted, mac, corelink-builder]
     if: github.event_name == 'schedule'
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # actions/checkout@v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
       # Self-hosted Macs already ship rustup+cargo; re-provisioning via
       # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
       # host nightly toolchain (cargo-fuzz requires nightly) on PATH instead —
@@ -132,7 +132,7 @@ jobs:
     runs-on: [self-hosted, mac, corelink-builder]
     if: github.event_name == 'schedule'
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # actions/checkout@v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
       # Self-hosted Macs already ship rustup+cargo; re-provisioning via
       # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
       # host toolchain (workspace pins 1.91.1 via rust-toolchain.toml) on PATH
