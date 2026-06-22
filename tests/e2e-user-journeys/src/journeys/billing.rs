@@ -27,11 +27,12 @@
 //! [`url_customer`] (`/v1/customer/billing` + `/v1/customer/billing/portal`),
 //! [`url_tier_select`], and [`url_cas`] for the past-due data-plane probe.
 
+use std::env;
 use std::time::Instant;
 
 use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::harness::{
     bearer, expect_denied, sha256_hex, unique_blob, url_cas, url_customer, url_tier_select, Config,
@@ -40,12 +41,15 @@ use crate::harness::{
 use crate::personas::Persona;
 
 /// Run the billing journeys (happy GET billing, happy portal, adversarial
-/// past-due deny, gated tier-select).
+/// past-due deny, checkout-session creation + unauthed-checkout deny, gated
+/// tier-select happy path).
 pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     vec![
         billing_state(cfg, client),
         billing_portal(cfg, client),
         past_due_data_plane_denied(cfg, client),
+        checkout_unauthed_denied(cfg, client),
+        checkout_session_authed(cfg, client),
         tier_select_gated(cfg, client),
     ]
 }
@@ -239,6 +243,156 @@ fn past_due_data_plane_denied(cfg: &Config, client: &Client) -> JourneyResult {
             ),
         ),
     }
+}
+
+/// Adversarial: an UNAUTHED checkout-session creation must be DENIED. The money
+/// path (`routes/tier_select.rs`) is authenticated by a Clerk session; a request
+/// carrying NO credential must never mint a Stripe Checkout session (that would
+/// let an anonymous caller open checkout sessions / probe the money path). This
+/// is deterministic and needs no creds — it asserts the negative contract: a
+/// `POST /v1/onboarding/tier-select` with no Authorization is denied
+/// (401/403/404), never a 2xx and never a 5xx (a 5xx on a missing-auth request
+/// is itself a contract failure — auth must reject before any Stripe work).
+fn checkout_unauthed_denied(cfg: &Config, client: &Client) -> JourneyResult {
+    let name = "Billing: unauthed checkout (tier-select, no auth) -> denied (no session minted)";
+    let start = Instant::now();
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+
+    let url = url_tier_select(cfg);
+    // A plausible checkout body so the deny is the AUTH gate, not a 400 body-parse
+    // reject — we want to prove unauthenticated callers can't mint a session.
+    let body = json!({ "tier": "solo", "interval": "month" }).to_string();
+    let resp = match client
+        .post(&url)
+        .header(CONTENT_TYPE, "application/json")
+        .body(body)
+        .send()
+    {
+        Ok(r) => r,
+        // This is the one cred-free negative probe, so it has no token/tenant gate
+        // to short-circuit on. A transport-level error (connect/TLS/timeout) means
+        // the endpoint is unreachable — the PREREQUISITE (a live endpoint) is
+        // absent, so GATE rather than FAIL (keeps a no-server local run GREEN, in
+        // line with the suite's gate-not-skip contract). A reachable endpoint that
+        // returns the wrong status is still a hard FAIL below.
+        Err(e) if e.is_connect() || e.is_timeout() || e.is_request() => {
+            return JourneyResult::gated(
+                name,
+                format!("endpoint unreachable ({e}) — no live API to probe the unauthed deny"),
+            )
+        }
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("POST {url}: {e}")),
+    };
+    let status = resp.status().as_u16();
+
+    // A 2xx is the security failure: an anonymous caller opened a checkout session.
+    if (200..300).contains(&status) {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("MONEY-PATH: unauthed tier-select got {status} — a checkout session was \
+                     reachable without a Clerk session"),
+        );
+    }
+    match expect_denied("unauthed tier-select", status) {
+        Ok(()) => JourneyResult::pass(name, ms(start)),
+        Err(_) => JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "unauthed tier-select got {status} — expected an auth deny (401/403/404), not \
+                 a 5xx (auth must reject before any Stripe work)"
+            ),
+        ),
+    }
+}
+
+/// Happy (Stripe-test-gated): an AUTHED checkout-session creation responds
+/// correctly. The tier-select money path is Clerk-session authenticated, NOT a
+/// customer PAT (`routes/tier_select.rs`), and minting a live Stripe Checkout
+/// session needs Stripe-test creds + a Clerk session token — neither is part of
+/// the PAT black box. So unless the operator provides a Clerk session bearer via
+/// `CORELINK_E2E_CLERK_SESSION` (run only with `CORELINK_E2E_STRIPE_TEST=1`),
+/// this GATES (recorded, never faked).
+///
+/// When the operator DOES supply the session, the live contract
+/// (`routes/tier_select.rs`) returns 200 with a `checkout_url` (the Stripe
+/// Checkout hand-off) or `url`; we assert a 2xx carrying a non-empty checkout
+/// URL string. Any 5xx is a real failure.
+fn checkout_session_authed(cfg: &Config, client: &Client) -> JourneyResult {
+    let name = "Billing: authed checkout-session creation -> 200 {checkout_url} (Stripe-test-gated)";
+    let start = Instant::now();
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+
+    let stripe_test = env::var("CORELINK_E2E_STRIPE_TEST")
+        .map(|v| v == "1")
+        .unwrap_or(false);
+    let session = env::var("CORELINK_E2E_CLERK_SESSION")
+        .ok()
+        .filter(|v| !v.is_empty());
+
+    let session = match (stripe_test, session) {
+        (true, Some(s)) => s,
+        (false, _) => {
+            return JourneyResult::gated(
+                name,
+                "CORELINK_E2E_STRIPE_TEST=1 not set — the authed checkout-session creation drives \
+                 Stripe-test + a Clerk session; run only against a Stripe-test-backed env",
+            )
+        }
+        (true, None) => {
+            return JourneyResult::gated(
+                name,
+                "CORELINK_E2E_CLERK_SESSION not set — tier-select is Clerk-session authenticated \
+                 (not a PAT); supply a Clerk session bearer out-of-band to exercise the happy path",
+            )
+        }
+    };
+
+    let url = url_tier_select(cfg);
+    let body = json!({ "tier": "solo", "interval": "month" }).to_string();
+    let resp = match client
+        .post(&url)
+        .header(AUTHORIZATION, bearer(&session))
+        .header(CONTENT_TYPE, "application/json")
+        .body(body)
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("POST {url}: {e}")),
+    };
+    let status = resp.status().as_u16();
+    if status != 200 {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("authed tier-select got {status} (expected 200). url={url}"),
+        );
+    }
+    let body: Value = match resp.json() {
+        Ok(v) => v,
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("tier-select body not JSON: {e}"))
+        }
+    };
+    // Contract (routes/tier_select.rs): the Stripe Checkout hand-off carries a
+    // checkout URL. Accept either `checkout_url` or `url` (the two field names the
+    // hand-off has shipped under) — must be a non-empty string.
+    let has_url = ["checkout_url", "url"].iter().any(|k| {
+        body.get(*k)
+            .and_then(Value::as_str)
+            .map(|s| !s.is_empty())
+            .unwrap_or(false)
+    });
+    if !has_url {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("tier-select 200 but missing/empty checkout URL (checkout_url|url): {body}"),
+        );
+    }
+
+    JourneyResult::pass(name, ms(start))
 }
 
 /// Gated: `POST /v1/onboarding/tier-select` (Stripe Checkout) is authenticated

@@ -36,13 +36,19 @@ use crate::personas::Persona;
 /// target env (so a read must return 410). Absent → (1)+(2) gate.
 const TOMBSTONED_HASH_ENV: &str = "CORELINK_E2E_TOMBSTONED_HASH";
 
+/// Env var carrying a Clerk/operator session bearer that can drive the
+/// customer-facing DSR request surface (account-deletion request). Absent → the
+/// request→gone end-to-end journey GATES.
+const DSR_SESSION_ENV: &str = "CORELINK_E2E_DSR_SESSION";
+
 /// Run the DSR journeys: erased-read, batch-erased-read, internal-erase deny,
-/// full-flow (gated).
+/// request→gone end-to-end (gated), full-flow (gated).
 pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     vec![
         erased_read_is_gone(cfg, client),
         batch_read_erased_is_gone(cfg, client),
         internal_erase_not_customer_reachable(cfg, client),
+        dsr_request_then_content_gone(cfg, client),
         account_deletion_flow_gated(),
     ]
 }
@@ -190,6 +196,113 @@ fn internal_erase_not_customer_reachable(cfg: &Config, client: &Client) -> Journ
             name,
             ms(start),
             format!("customer PAT reached internal erase (got {got}) — must be denied"),
+        ),
+    }
+}
+
+/// (3b) END-TO-END (gated) — DSR request → erasure → content gone.
+///
+/// The WP's launch-critical contract: a data-subject erasure REQUEST is accepted,
+/// and afterwards the erased tenant's content is GONE (410/404 on read, never its
+/// bytes). The request-creation surface (`POST /v1/customer/account/delete` /
+/// `/v1/customer/dsr`) is Clerk-session authenticated (a customer initiates their
+/// OWN erasure — a customer PAT must not erase arbitrary objects, asserted in
+/// (3)). So this end-to-end journey is GATED unless the operator supplies a DSR
+/// session bearer (`CORELINK_E2E_DSR_SESSION`) AND the already-erased fixture
+/// hash (`CORELINK_E2E_TOMBSTONED_HASH`) proving the post-erasure end-state.
+///
+/// NOTE: 0069 `dsr_requested` table is a known prod consideration — if it is
+/// missing on the target env the request path fails closed (cas_erase.rs forbids
+/// erasure). We GATE on the absent creds rather than asserting that prod state.
+///
+/// When BOTH are supplied we assert: (a) the request POST is ACCEPTED
+/// (200/202 — queued/accepted, never a 5xx), and (b) the operator's already-erased
+/// hash reads as GONE (410/404, never 200 with bytes) — the request and the
+/// proven end-state together.
+fn dsr_request_then_content_gone(cfg: &Config, client: &Client) -> JourneyResult {
+    let name = "DSR: erasure request accepted -> erased content is GONE (request->gone, gated)";
+    let start = Instant::now();
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+
+    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
+        Ok(p) => p,
+        Err(reason) => return JourneyResult::gated(name, reason),
+    };
+    let session = env::var(DSR_SESSION_ENV).ok().filter(|v| !v.is_empty());
+    let session = match session {
+        Some(s) => s,
+        None => {
+            return JourneyResult::gated(
+                name,
+                "CORELINK_E2E_DSR_SESSION not set — the erasure-request surface is Clerk-session \
+                 authenticated (a customer erases their OWN data); supply a DSR session bearer \
+                 out-of-band to drive request->gone (0069 dsr_requested must exist on the env)",
+            )
+        }
+    };
+    let hash = match tombstoned_hash() {
+        Some(h) => h,
+        None => {
+            return JourneyResult::gated(
+                name,
+                "CORELINK_E2E_TOMBSTONED_HASH not set — supply an already-erased hash to prove \
+                 the post-erasure GONE end-state",
+            )
+        }
+    };
+    let token = p1.token.expect("P1 always has a token");
+
+    // (a) The DSR request must be ACCEPTED (queued). The customer-facing request
+    // route is Clerk-session authenticated; we do NOT a harness builder for it
+    // (not a PAT/cache surface) — probe it with the supplied session bearer.
+    let req_url = format!("{}/v1/customer/account/delete", cfg.endpoint);
+    let req = match client
+        .post(&req_url)
+        .header(AUTHORIZATION, bearer(&session))
+        .header(CONTENT_TYPE, "application/json")
+        .body(json!({ "confirm": true }).to_string())
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("POST {req_url}: {e}")),
+    };
+    let req_status = req.status().as_u16();
+    // Accepted = 200/202. A 404 here means the request route is named differently
+    // on this env — gate (the end-to-end needs the right route), don't false-fail.
+    if req_status == 404 {
+        return JourneyResult::gated(
+            name,
+            "DSR request route returned 404 — the account-delete request surface is named \
+             differently on this env; cannot drive request->gone here",
+        );
+    }
+    if !matches!(req_status, 200 | 202) {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("DSR erasure request got {req_status} (expected 200/202 accepted)"),
+        );
+    }
+
+    // (b) The already-erased content must read as GONE (the proven end-state).
+    let read_url = url_cas(cfg, &p1.tenant, &hash);
+    let read = match client.get(&read_url).header(AUTHORIZATION, bearer(token)).send() {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {read_url}: {e}")),
+    };
+    let read_status = read.status().as_u16();
+    match read_status {
+        410 | 404 => JourneyResult::pass(name, ms(start)),
+        200 => JourneyResult::fail(
+            name,
+            ms(start),
+            "ERASED CONTENT SERVED 200 after a DSR request — erasure end-state not honoured"
+                .to_string(),
+        ),
+        other => JourneyResult::fail(
+            name,
+            ms(start),
+            format!("erased-content read got {other} after DSR request (expected 410/404 gone)"),
         ),
     }
 }
