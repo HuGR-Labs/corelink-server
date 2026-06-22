@@ -28,12 +28,25 @@ fn quota_drive_enabled(cfg: &Config) -> bool {
             .unwrap_or(false)
 }
 
+/// Number of bounded blobs the aggressive cap-drive will write at most before
+/// declaring the cap unobserved. Bounded BY CONSTRUCTION so a non-near-limit
+/// account cannot fill prod R2 unboundedly (count × size is the hard ceiling).
+const AGGRESSIVE_MAX_BLOBS: usize = 256;
+
+/// Per-blob size for the aggressive cap-drive (64 KiB). With AGGRESSIVE_MAX_BLOBS
+/// this caps the total written at ~16 MiB — enough to push a near-limit test
+/// tenant over its cap, small enough to never balloon prod storage.
+const AGGRESSIVE_BLOB_BYTES: usize = 64 * 1024;
+
 /// Run the quota journeys: under-cap-serves (the positive half) + hard-cap
-/// enforcement (the destructive half, flag-gated).
+/// enforcement (the destructive half, flag-gated) + the bounded aggressive
+/// cap-drive that proves a CLEAN 402/429 (never a 5xx, never silent over-serve)
+/// and that an under-cap write still serves 2xx (flag-gated).
 pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     vec![
         under_cap_serves(cfg, client),
         quota_hard_cap(cfg, client),
+        quota_hard_cap_clean_and_under_cap_serves(cfg, client),
     ]
 }
 
@@ -157,6 +170,141 @@ fn quota_hard_cap(cfg: &Config, client: &Client) -> JourneyResult {
         ms(start),
         format!(
             "sent {MAX_ATTEMPTS}×1KB blobs without a 429. Quota cap not observed — either the test account is far below its limit, or the cap is not enforced. A real cap test needs a near-limit account."
+        ),
+    )
+}
+
+/// The WP's launch-critical cap contract, in ONE flow: (a) an under-cap write
+/// SERVES (2xx) — the cap denies overage, not normal use; then (b) a BOUNDED
+/// aggressive drive pushes the tenant to its cap and asserts the rejection is a
+/// CLEAN 402/429 — explicitly NOT a silent over-serve (a 2xx forever) and NOT a
+/// 5xx (a crash-on-cap; the cap must reject cleanly, not fault).
+///
+/// SAFETY (critical): this MUTATES state (drives a tenant toward its cap). It is
+/// GATED behind `CORELINK_E2E_QUOTA_TEST=1` (or the legacy `CORELINK_E2E_RUN_SLOW=1`)
+/// and the drive is BOUNDED BY CONSTRUCTION — at most `AGGRESSIVE_MAX_BLOBS`
+/// blobs of `AGGRESSIVE_BLOB_BYTES` each (~16 MiB total ceiling), so it can never
+/// fill prod R2 unboundedly. Run it only against a near-limit DEDICATED test
+/// tenant.
+fn quota_hard_cap_clean_and_under_cap_serves(cfg: &Config, client: &Client) -> JourneyResult {
+    let name =
+        "Quota: bounded cap-drive — clean 402/429 (not 5xx, not silent over-serve) + under-cap 2xx";
+    let start = Instant::now();
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+
+    if !quota_drive_enabled(cfg) {
+        return JourneyResult::gated(
+            name,
+            "CORELINK_E2E_QUOTA_TEST=1 (or CORELINK_E2E_RUN_SLOW=1) not set — this drives a tenant \
+             to its cap (bounded, ~16 MiB max); enable only against a near-limit DEDICATED test tenant",
+        );
+    }
+    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
+        Ok(p) => p,
+        Err(reason) => return JourneyResult::gated(name, reason),
+    };
+    if cfg.tenant.is_none() {
+        return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set");
+    }
+    let token = p1.token.expect("P1 has a token");
+
+    // (a) UNDER-CAP first: a single small write must serve 2xx — proving a later
+    // deny means "over cap", not "always denied". If THIS tenant is already at its
+    // cap we cannot prove the positive half here → GATE (needs an under-cap start).
+    let probe = format!("quota-clean-undercap-{}", uuid::Uuid::new_v4()).into_bytes();
+    let probe_hash = blake3_hex(&probe);
+    let probe_url = url_cas(cfg, &p1.tenant, &probe_hash);
+    let probe_resp = match client
+        .put(&probe_url)
+        .header(AUTHORIZATION, bearer(token))
+        .header(CONTENT_TYPE, "application/octet-stream")
+        .body(probe)
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("under-cap PUT {probe_url}: {e}")),
+    };
+    match probe_resp.status().as_u16() {
+        200 | 201 => {}
+        402 | 429 => {
+            return JourneyResult::gated(
+                name,
+                "tenant already at its cap on the first write — the under-cap half needs a tenant \
+                 starting below its limit",
+            )
+        }
+        other => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("under-cap probe PUT got {other} (expected 200/201 serve)"),
+            )
+        }
+    }
+
+    // (b) BOUNDED aggressive drive: write fixed-size blobs until a CLEAN 402/429.
+    // A 5xx is a HARD FAIL — the cap must reject cleanly, never fault. Reaching the
+    // bound without a cap means the tenant is far below its limit (cap unobserved).
+    let template = vec![b'q'; AGGRESSIVE_BLOB_BYTES];
+    for i in 0..AGGRESSIVE_MAX_BLOBS {
+        let mut blob = template.clone();
+        let marker = format!("quota-clean-drive-{}-{i}", uuid::Uuid::new_v4());
+        let mb = marker.as_bytes();
+        if mb.len() < blob.len() {
+            blob[..mb.len()].copy_from_slice(mb);
+        }
+        let hash = blake3_hex(&blob);
+        let url = url_cas(cfg, &p1.tenant, &hash);
+
+        let resp = match client
+            .put(&url)
+            .header(AUTHORIZATION, bearer(token))
+            .header(CONTENT_TYPE, "application/octet-stream")
+            .body(blob)
+            .send()
+        {
+            Ok(r) => r,
+            Err(e) => return JourneyResult::fail(name, ms(start), format!("drive PUT #{i}: {e}")),
+        };
+        let status = resp.status().as_u16();
+        // CLEAN cap rejection — the contract.
+        if matches!(status, 402 | 429) {
+            return JourneyResult::pass(name, ms(start));
+        }
+        // A 5xx under cap pressure = crash-on-cap, NOT a clean rejection → HARD FAIL.
+        if status >= 500 {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("PUT #{i} got {status} — cap rejected with a 5xx (crash-on-cap), not a clean 402/429"),
+            );
+        }
+        // A 404 means the data plane isn't operational; we can't verify the cap.
+        if status == 404 {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("PUT #{i} got 404 — data plane not operational; cannot verify the cap"),
+            );
+        }
+        // Any other non-2xx that isn't a recognised serve is a contract surprise.
+        if !matches!(status, 200 | 201) {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("PUT #{i} got {status} — neither a serve (2xx) nor a clean cap (402/429)"),
+            );
+        }
+    }
+
+    JourneyResult::fail(
+        name,
+        ms(start),
+        format!(
+            "wrote {AGGRESSIVE_MAX_BLOBS}×{AGGRESSIVE_BLOB_BYTES}B (~{} MiB) without a 402/429. Cap not observed — \
+             the test tenant is far below its limit, or the cap is not enforced. The bounded drive \
+             needs a NEAR-LIMIT dedicated test tenant.",
+            (AGGRESSIVE_MAX_BLOBS * AGGRESSIVE_BLOB_BYTES) / (1024 * 1024)
         ),
     )
 }
