@@ -23,6 +23,27 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **brew adapter could be driven as an unrestricted authed ghcr.io proxy + poisoned the shared
+  `_public` namespace (F-005, overnight pentest 2026-06-22).** The brew read-through cache pinned
+  the upstream HOST to `ghcr.io` but applied NO repo-path allowlist, and it cached tag-addressed
+  (mutable) manifests into the cross-tenant `_public` namespace UNVERIFIED (no URL-declared digest
+  to check against) — so any authenticated free tenant could make CoreLink fetch attacker-chosen
+  ghcr.io content and pin those bytes for every later tenant requesting the same path. Fix
+  (`crates/corelink-adapter-host/src/brew/bottle.rs`): (a) a repo-path allowlist
+  (`v2/homebrew/core/…`, `v2/homebrew/cask/…`) enforced BEFORE any cache or network access —
+  off-allowlist paths return `403 ForbiddenRepoPath`; (b) only digest-verified (`…/sha256:<hex>`)
+  bytes are cached into `_public` — mutable tag-addressed paths are served for the current request
+  but NEVER cached. Covered by `tests/brew_adversarial.rs`
+  (`forbidden_repo_path_is_refused_before_any_fetch_or_store`,
+  `tag_addressed_manifest_is_served_but_not_cached_into_public`) + `bottle.rs` unit tests.
+- **brew `$`-ceiling gate failed OPEN on a missing cost-attribution tenant (F-011, REV-S3
+  hardening not ported to brew).** `routes/brew.rs` wrapped the monthly `$`-ceiling check in
+  `if !tenant.is_empty()`, so a billable brew GET with no `x-corelink-tenant-id` was served
+  UNMETERED — where the sibling npm/pip/cargo adapters fail CLOSED (503) for this exact case under
+  REV-S3. Fix: brew now returns `503 "cost-attribution tenant unavailable"` when the quota gate is
+  active and no tenant is resolvable, mirroring npm/pip/cargo. Covered by
+  `brew_missing_tenant_fails_closed_503_when_quota_active` +
+  `brew_empty_tenant_header_fails_closed_503_when_quota_active`.
 - **Stuck-`"starting"` Durable Object wedge → permanent `container_start_timeout` 503 (F-020,
   prod incident 2026-06-23).** `ensureContainerRunning` (`worker/src/durable_object.ts`) routed a
   `containerStatus === "starting"` straight to `waitForContainerReady` with NO staleness recovery

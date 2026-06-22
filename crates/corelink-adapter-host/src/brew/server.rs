@@ -14,6 +14,7 @@
 //! | `BrewAdapterError` variant | HTTP | Why |
 //! |---|---|---|
 //! | `Auth`              | 401 | bad / missing PAT |
+//! | `ForbiddenRepoPath` | 403 | path outside the allowed Homebrew repo namespace |
 //! | `Cas`               | 502 | upstream-CAS dependency failure |
 //! | `Upstream`          | 502 | upstream bottle host failed |
 //! | `BottleOversized`   | 413 | request exceeded `bottle_size_limit_bytes` |
@@ -136,6 +137,7 @@ impl IntoResponse for BrewAdapterError {
     fn into_response(self) -> Response {
         let status = match &self {
             Self::Auth(_) => StatusCode::UNAUTHORIZED,
+            Self::ForbiddenRepoPath(_) => StatusCode::FORBIDDEN,
             Self::Cas(_) | Self::Upstream(_) => StatusCode::BAD_GATEWAY,
             Self::BottleOversized(_) => StatusCode::PAYLOAD_TOO_LARGE,
             Self::Audit(_) => StatusCode::SERVICE_UNAVAILABLE,

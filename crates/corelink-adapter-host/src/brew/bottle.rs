@@ -106,6 +106,31 @@ pub fn expected_sha256(canonical_path: &str) -> Option<&str> {
         .then_some(hex_digest)
 }
 
+/// Allowed Homebrew OCI repo namespaces (canonical, lowercase). A bottle
+/// request MUST resolve under one of these `v2/<repo>/…` prefixes or it is
+/// refused before any upstream fetch (F-005).
+///
+/// Homebrew serves bottles and casks exclusively from these two ghcr.io repos.
+/// Without this allowlist the host-pinned-but-path-unrestricted SSRF guard
+/// (`upstream::join_within_upstream`) would let any authenticated free tenant
+/// drive CoreLink to fetch ARBITRARY ghcr.io content (`v2/<attacker>/<repo>/…`)
+/// and — for tag-addressed paths — pin those attacker-chosen bytes into the
+/// shared cross-tenant `_public` namespace, turning brew into an unrestricted
+/// authenticated ghcr proxy + a cross-tenant cache-poisoning primitive.
+const ALLOWED_REPO_PREFIXES: [&str; 2] = ["v2/homebrew/core/", "v2/homebrew/cask/"];
+
+/// True when `canonical_path` targets an allowed Homebrew repo namespace
+/// (`v2/homebrew/core/…` or `v2/homebrew/cask/…`). The path is already
+/// canonicalized (leading slash + route prefix stripped, lowercased) by
+/// [`canonical_bottle_path`], so a plain prefix match is exact and
+/// case-insensitive. See [`ALLOWED_REPO_PREFIXES`].
+#[must_use]
+fn is_allowed_repo_path(canonical_path: &str) -> bool {
+    ALLOWED_REPO_PREFIXES
+        .iter()
+        .any(|prefix| canonical_path.starts_with(prefix))
+}
+
 /// Lowercase-hex sha256 of `bytes` (the OCI digest algorithm).
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
@@ -157,6 +182,17 @@ impl BottleService {
     /// served), emits the audit row, then stores in CAS — in that order,
     /// so a failed audit emit never leaves a half-stored blob behind.
     ///
+    /// Two F-005 gates protect the shared `_public` namespace:
+    ///
+    /// 1. **Repo-path allowlist** — the request MUST target an allowed Homebrew
+    ///    repo (`v2/homebrew/core/…` or `v2/homebrew/cask/…`) or it is refused
+    ///    with [`BrewAdapterError::ForbiddenRepoPath`] BEFORE any cache or
+    ///    network access (brew is not an unrestricted authed ghcr.io proxy).
+    /// 2. **Digest-only caching** — only digest-verified bytes
+    ///    (`…/sha256:<hex>`) are pinned into `_public`. Mutable tag-addressed
+    ///    paths are served for the current request but NEVER cached, so unverified
+    ///    bytes cannot poison the cross-tenant namespace.
+    ///
     /// `raw_path` is the brew client's request path (with optional
     /// query). `tenant_id` MUST be the value returned by the
     /// configured PAT resolver.
@@ -166,6 +202,16 @@ impl BottleService {
         raw_path: &str,
     ) -> Result<Vec<u8>, BrewAdapterError> {
         let canonical = canonical_bottle_path(raw_path);
+
+        // Repo-path allowlist (F-005). The SSRF guard pins the upstream HOST to
+        // ghcr.io but does NOT restrict the repo PATH — so reject anything that
+        // is not under an allowed Homebrew repo namespace BEFORE touching the
+        // cache or the network. This closes the unrestricted-ghcr-proxy and the
+        // cross-tenant `_public` poisoning vectors at the same chokepoint.
+        if !is_allowed_repo_path(&canonical) {
+            return Err(BrewAdapterError::ForbiddenRepoPath(canonical));
+        }
+
         let cas_key = cas_key_for(&canonical);
 
         // Read-through: CAS hit short-circuits the upstream call.
@@ -188,63 +234,61 @@ impl BottleService {
             .fetch_bottle(&canonical, self.bottle_size_limit_bytes)
             .await?;
 
-        // Pre-store integrity: when the request path is content-addressed
-        // (ghcr.io OCI blob / by-digest manifest, `…/sha256:<hex>`), the
-        // fetched bytes MUST match the URL-declared digest BEFORE the store.
-        // The store is the shared `_public` namespace, so a MITMed/corrupt
-        // upstream response would otherwise be persisted once and served to
-        // every tenant until the read path self-heals. Mismatch → audit row,
-        // no store, no serve (the bytes are corrupt; the brew client would
-        // reject them against the formula DSL anyway).
-        let verified_sha256 = match expected_sha256(&canonical) {
-            Some(expected) => {
-                let computed = sha256_hex(&bytes);
-                if computed != expected {
-                    self.auditor.emit_bottle_integrity_mismatch(
-                        tenant_id,
-                        &cas_key,
-                        &canonical,
-                        expected,
-                        &computed,
-                        bytes.len() as u64,
-                    )?;
-                    return Err(BrewAdapterError::Upstream(format!(
-                        "integrity: upstream bytes do not match the URL-declared \
-                         digest sha256:{expected} (computed sha256:{computed}); \
-                         refusing to cache or serve"
-                    )));
-                }
-                true
-            }
-            None => {
-                // Tag-addressed path (e.g. `.../manifests/8.5.0`): no URL-declared
-                // digest to verify against. Compute and log the sha256 of the
-                // fetched bytes so operators can detect cache-poisoning in the
-                // audit trail even for mutable-tag manifests stored in
-                // PUBLIC_NAMESPACE. The bytes are NOT refused — brew clients
-                // re-verify manifest→blob chains against their formula DSL.
-                let computed = sha256_hex(&bytes);
-                tracing::warn!(
-                    tenant_id = %tenant_id,
-                    canonical_path = %canonical,
-                    cas_key = %cas_key,
-                    computed_sha256 = %computed,
-                    size_bytes = bytes.len(),
-                    "brew: tag-manifest cached without URL-declared digest \
-                     (best-effort integrity); sha256 logged for audit trail"
-                );
-                false
-            }
+        // Caching policy for the shared `_public` namespace (F-005): ONLY
+        // digest-verified bytes may be pinned. A tag-addressed (mutable) path
+        // has no URL-declared digest to verify against, so caching it would let
+        // one tenant's fetch be served verbatim to every later tenant requesting
+        // the same path — the cross-tenant cache-poisoning vector. We therefore
+        // fetch+serve mutable-tag bytes for THIS request but DO NOT cache them.
+        let Some(expected) = expected_sha256(&canonical) else {
+            let computed = sha256_hex(&bytes);
+            tracing::warn!(
+                tenant_id = %tenant_id,
+                canonical_path = %canonical,
+                cas_key = %cas_key,
+                computed_sha256 = %computed,
+                size_bytes = bytes.len(),
+                "brew: tag-addressed manifest served WITHOUT caching \
+                 (no URL-declared digest → refused for the shared _public \
+                 namespace, F-005); sha256 logged for audit trail"
+            );
+            return Ok(bytes);
         };
 
-        // Audit-emit-BEFORE-mutation. On audit failure we do NOT
-        // call `cas.put`, preserving INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER.
+        // Pre-store integrity: the request path is content-addressed (ghcr.io
+        // OCI blob / by-digest manifest, `…/sha256:<hex>`), so the fetched bytes
+        // MUST match the URL-declared digest BEFORE the store. The store is the
+        // shared `_public` namespace, so a MITMed/corrupt upstream response would
+        // otherwise be persisted once and served to every tenant until the read
+        // path self-heals. Mismatch → audit row, no store, no serve (the bytes
+        // are corrupt; the brew client would reject them against the DSL anyway).
+        let computed = sha256_hex(&bytes);
+        if computed != expected {
+            self.auditor.emit_bottle_integrity_mismatch(
+                tenant_id,
+                &cas_key,
+                &canonical,
+                expected,
+                &computed,
+                bytes.len() as u64,
+            )?;
+            return Err(BrewAdapterError::Upstream(format!(
+                "integrity: upstream bytes do not match the URL-declared \
+                 digest sha256:{expected} (computed sha256:{computed}); \
+                 refusing to cache or serve"
+            )));
+        }
+
+        // Audit-emit-BEFORE-mutation. On audit failure we do NOT call `cas.put`,
+        // preserving INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER. Only reached for
+        // digest-verified (content-addressed) paths — the tag-addressed case
+        // returned early above without caching (F-005). `integrity = verified`.
         self.auditor.emit_bottle_cache_fill(
             tenant_id,
             &cas_key,
             &canonical,
             bytes.len() as u64,
-            verified_sha256,
+            true,
         )?;
 
         // Persist.
@@ -372,6 +416,34 @@ mod tests {
         assert_eq!(expected_sha256(&format!("blobs/sha256:{not_hex}")), None);
         let too_long = "a".repeat(65);
         assert_eq!(expected_sha256(&format!("blobs/sha256:{too_long}")), None);
+    }
+
+    #[test]
+    fn allowed_repo_paths_accept_homebrew_core_and_cask() {
+        assert!(is_allowed_repo_path(
+            "v2/homebrew/core/curl/blobs/sha256:abc"
+        ));
+        assert!(is_allowed_repo_path(
+            "v2/homebrew/cask/firefox/manifests/1.0"
+        ));
+        assert!(is_allowed_repo_path("v2/homebrew/core/jq"));
+    }
+
+    #[test]
+    fn forbidden_repo_paths_reject_off_allowlist_repos() {
+        // F-005: arbitrary ghcr.io repos, near-misses, and traversal-ish paths
+        // must NOT be allowed — brew is not an unrestricted ghcr proxy.
+        for p in [
+            "v2/attacker/evil/blobs/sha256:abc",
+            "v2/homebrew/evil/manifests/latest", // wrong sub-repo
+            "v2/library/ubuntu/manifests/latest",
+            "v2/homebrew/coreextra/x", // prefix-confusion: needs the trailing `/`
+            "v2/homebrew", // too short
+            "homebrew/core/curl", // missing the v2/ segment
+            "",
+        ] {
+            assert!(!is_allowed_repo_path(p), "{p} must be rejected");
+        }
     }
 
     #[test]

@@ -36,6 +36,16 @@ pub enum BrewAdapterError {
     #[error("upstream: {0}")]
     Upstream(String),
 
+    /// The requested bottle path is outside the allowed Homebrew repo
+    /// namespace (`homebrew/core`, `homebrew/cask`). The brew adapter is a
+    /// read-through cache for PUBLIC Homebrew bottles only — it MUST NOT be
+    /// usable as an unrestricted authenticated ghcr.io proxy that fetches
+    /// attacker-chosen content into the shared `_public` namespace (F-005).
+    /// Routes map this to HTTP 403. The `String` is the offending (canonical)
+    /// path and is client-safe (it is the caller's own request path).
+    #[error("forbidden repo path: {0}")]
+    ForbiddenRepoPath(String),
+
     /// Upstream Content-Length (or streamed byte total) exceeded the
     /// configured [`crate::brew::BrewAdapterConfig::bottle_size_limit_bytes`].
     /// Routes map this to HTTP 413.
