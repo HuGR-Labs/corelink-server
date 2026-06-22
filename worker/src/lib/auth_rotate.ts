@@ -199,19 +199,20 @@ export async function handleAuthRotate(
   if (typeof patId !== "string" || patId.length === 0) {
     return reapiError("BAD_REQUEST", "pat_id required", 400, requestId);
   }
-  // BACKWARD-COMPAT (REV-S2 progressive hardening): owner_tenant is VALIDATED when
-  // present (cross-tenant rotate is refused below) but NOT yet required — the
-  // off-repo callers (clw backend) must be rolled out to send it before we flip to
-  // mandatory, else this deploy would 400 a live caller. Absent → proceed (prior
-  // behavior) + warn; present → enforced. Flip to required after clw confirms it sends it.
+  // F-006 (overnight red-team): owner_tenant is MANDATORY. A holder of the internal
+  // pat_mint key must NOT be able to mint a fresh working credential for a PAT it
+  // names by id alone — an omitted owner_tenant previously skipped the cross-tenant
+  // check below and minted a cross-tenant PAT (privilege escalation). Require it
+  // (absent/empty → hard 400), exactly like the sibling runner_revoke
+  // (runner_mint.ts:264-267), and always enforce owner_tenant === oldRow.tenant_id
+  // below. The CHANGELOG already documents rotate as requiring owner_tenant, so this
+  // makes the code match the contract.
   const ownerTenant =
     typeof body.owner_tenant === "string" && body.owner_tenant.length > 0
       ? body.owner_tenant
       : undefined;
   if (ownerTenant === undefined) {
-    console.warn(
-      `[${requestId}] auth rotate: owner_tenant absent — cross-tenant validation skipped (deprecated; callers MUST send owner_tenant)`,
-    );
+    return reapiError("BAD_REQUEST", "owner_tenant required", 400, requestId);
   }
 
   // ── 5. Read the OLD pat row (tenant + scope + expiry + revocation state) ───
@@ -250,7 +251,7 @@ export async function handleAuthRotate(
     console.error(`[${requestId}] auth rotate pat row missing tenant`);
     return reapiError("INTERNAL_ERROR", "auth rotate unavailable", 500, requestId);
   }
-  if (ownerTenant !== undefined && ownerTenant !== oldRow.tenant_id) {
+  if (ownerTenant !== oldRow.tenant_id) {
     // REV-S2: the caller-named tenant does not own this PAT. Refuse — a compromised
     // pat_mint key must not be able to mint a fresh working credential for a tenant
     // it is not associated with (cross-tenant privilege escalation). Checked AFTER

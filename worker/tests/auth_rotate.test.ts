@@ -358,20 +358,16 @@ describe("POST /internal/v1/auth/rotate — clw auth rotate", () => {
     expect(revokeCapture.called).toBeUndefined(); // never revoked
   });
 
-  it("(REV-S2) backward-compat: rotates when owner_tenant absent — deprecated (not yet required)", async () => {
-    // Progressive hardening: owner_tenant is validated when present (cross-tenant 403,
-    // asserted in the test above) but not yet REQUIRED — the off-repo clw caller must
-    // roll out sending it before we flip to mandatory, else a deploy would 400 it.
-    // Absent → proceed (mint) + warn.
+  it("(F-006) owner_tenant is MANDATORY — absent → 400, never mints", async () => {
+    // Overnight red-team F-006: an omitted owner_tenant previously skipped the
+    // cross-tenant check and minted a cross-tenant PAT (privilege escalation).
+    // owner_tenant is now REQUIRED (mirrors runner_revoke) — absent → hard 400,
+    // and NOTHING is minted. The CHANGELOG already documented rotate as requiring it.
     const captured: { req?: Request } = {};
     const env = makeEnv({ captured, oldRow: activeRow() });
     const resp = await rotateFetch(env, { auth: INTERNAL_KEY, body: { pat_id: OLD_PAT_ID } });
-    // The precise backward-compat regression guard: a MISSING owner_tenant is no
-    // longer a 400. It now passes the field gate and proceeds — 200 (minted) or 429
-    // (mint-throttle, which is module-scoped and may be saturated by earlier tests in
-    // the suite). Either proves it got PAST the owner_tenant gate (not rejected for it).
-    expect(resp.status).not.toBe(400);
-    expect([200, 429]).toContain(resp.status);
+    expect(resp.status).toBe(400);
+    expect(captured.req).toBeUndefined(); // never minted a credential without an owner assertion
   });
 
   // ── body / method gates ────────────────────────────────────────────────────
