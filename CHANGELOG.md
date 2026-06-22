@@ -23,6 +23,26 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **Worker-side overnight red-team fixes (F-006, F-012, F-014, F-015, F-021).**
+  - **F-006 (HIGH) — `/internal/v1/auth/rotate` cross-tenant mint:** `owner_tenant` was optional
+    (absent → cross-tenant check skipped → a holder of the internal key could mint a fresh PAT for a
+    PAT id it does not own). Now MANDATORY (absent/empty → 400) and always enforced
+    `owner_tenant === pat.tenant_id` (403), mirroring `runner_revoke`; matches the contract the
+    CHANGELOG already documented.
+  - **F-012 — token-prefix header smuggling:** `x-corelink-token-prefix` was not structurally
+    stripped and the OCI/billing/fabric forward arms forward raw, so a client could smuggle a forged
+    prefix. Added it to `CLIENT_TRUST_HEADERS` (stripped on every forward; the Worker is the sole setter).
+  - **F-014 — regional Workers 503'd non-IAD tenants:** the region fan-out branch ran on a fanned-out
+    re-entry where the regional env lacks `PROD_*` bindings → 503. Gated the fan-out on `!isFanout`;
+    a fanned-out request now terminates locally on the regional Worker.
+  - **F-015 — residency bypass via public regional hosts:** the local DO path never stamped
+    `x-corelink-primary-region`, so the container residency backstop saw absent → Allow and a client
+    could place bytes in any region by picking the hostname. The local path now stamps the
+    D1-resolved macro (IAD-resident tenants map to iad → Allow, unchanged; a mismatched region → 409).
+  - **F-021 — hollow LGPD residency attestation:** `verify-lgpd-residency.py` compared the
+    self-written key-prefix to itself (a tautology) on a fixture. It now requires the object's real
+    PHYSICAL location (`physical_region_of`, from a locationHint probe) and fails loud when it cannot
+    be established — never a false-green. (Real per-region buckets remain an infra dependency: F-013.)
 - **Stuck-`"starting"` Durable Object wedge → permanent `container_start_timeout` 503 (F-020,
   prod incident 2026-06-23).** `ensureContainerRunning` (`worker/src/durable_object.ts`) routed a
   `containerStatus === "starting"` straight to `waitForContainerReady` with NO staleness recovery

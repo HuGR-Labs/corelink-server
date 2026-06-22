@@ -196,6 +196,30 @@ def iter_tenants(fixture: dict) -> Iterable[dict]:
         yield entry
 
 
+def physical_region_of(obj: dict) -> Optional[str]:
+    """Authoritative PHYSICAL region of a stored object.
+
+    The ONLY trustworthy residency signal is where the bytes physically live —
+    read from the R2 object's locationHint (a HeadObject / the Cloudflare R2 API),
+    NOT the key prefix (which the container writes from ``R2_CAS_REGION`` and which
+    a misroute or a shared bucket renders meaningless — F-021).
+
+    A live/fixture record carries the result of that real locationHint probe under
+    ``physical_region``; the self-written key-prefix ``region`` is explicitly NOT
+    used here. Returns the canonical macro region, or ``None`` when the physical
+    location cannot be established (e.g. per-region buckets are not yet provisioned
+    — F-013). A ``None`` result MUST be treated as a residency violation, never a
+    pass: the LGPD attestation cannot be honestly signed until a real
+    per-jurisdiction locationHint check runs against real per-region buckets.
+
+    TODO(F-013): populate ``physical_region`` from a live R2 HeadObject locationHint
+    (or the CF R2 bucket-region API) once per-region buckets exist; until then this
+    verifier fails loud rather than emitting a false-green attestation.
+    """
+    loc = obj.get("physical_region")
+    return loc if isinstance(loc, str) and loc else None
+
+
 def verify(
     env: str,
     fixture: dict,
@@ -236,13 +260,21 @@ def verify(
 
         for obj in tenant.get("sampled_objects", []):
             report.objects_sampled += 1
-            observed = obj["region"]
-            if observed != expected_region:
+            # F-021 (overnight red-team): obj["region"] is the key-PREFIX the
+            # container itself wrote (from R2_CAS_REGION) — comparing it to
+            # expected_region is a TAUTOLOGY that proves nothing about physical
+            # jurisdiction. The authoritative signal is the object's PHYSICAL R2
+            # location (HeadObject locationHint / CF R2 API), via physical_region_of().
+            # An unavailable physical location (e.g. per-region buckets not yet
+            # provisioned — F-013) is a VIOLATION (fail-loud), never a silent pass:
+            # the attestation must not be signed on a self-referential check.
+            observed = physical_region_of(obj)
+            if observed is None or observed != expected_region:
                 report.add_violation(
                     Violation(
                         tenant_id=tenant_id,
                         expected_region=expected_region,
-                        observed_region=observed,
+                        observed_region=observed or "<physical-location-unverifiable>",
                         object_uri=obj["uri"],
                     )
                 )

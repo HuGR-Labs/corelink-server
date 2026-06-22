@@ -395,9 +395,13 @@ function handlePreflight(request: Request): Response | null {
  * set internal-auth, so deleting it makes the container's internal-auth-gated
  * admin routes Worker-unreachable by design (operator-only posture).
  *
- * NOTE: `x-corelink-route-kind` / `x-corelink-token-prefix` are NOT listed here
- * on purpose — the Worker unconditionally `.set()`s those itself on every
- * forward, so any client value is already overwritten.
+ * NOTE: `x-corelink-route-kind` is not listed — the Worker unconditionally
+ * `.set()`s it on every forward, so any client value is already overwritten.
+ * `x-corelink-token-prefix` IS listed (F-012, overnight red-team): the prior
+ * "always overwritten" assumption was FALSE on the OCI / billing-webhook / fabric
+ * forward arms (which forward raw and never re-set it), so a client could smuggle
+ * a forged token-prefix there. The Worker is the sole legitimate setter (from the
+ * resolved PAT), so strip any client value structurally on EVERY forward.
  *
  * `x-corelink-tenant-id` IS listed (structural strip): the Worker always
  * `.set()`s it AFTER strip on PAT-backed, internal, onboarding, and fanout
@@ -445,6 +449,12 @@ const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   // can never smuggle a forged residency macro past the container's residency
   // guard. The local DO/container path never sets it (IAD-resident by default).
   "x-corelink-primary-region",
+  // F-012 (overnight red-team): the Worker is the sole legitimate setter of
+  // x-corelink-token-prefix (the resolved PAT prefix, for log/rate-limit keying).
+  // It was NOT structurally stripped and the OCI/billing/fabric arms forward raw
+  // without re-setting it, so a client could smuggle a forged prefix there. Strip
+  // on every forward — same posture as x-corelink-tenant-id.
+  "x-corelink-token-prefix",
 ];
 
 /**
@@ -2240,12 +2250,31 @@ const baseHandler: ExportedHandler<Env> = {
     // throws, we return 503 — we DO NOT fall through to the IAD path, because
     // that fall-through is precisely the cross-border leak. wnam/enam map to IAD
     // (the local path) so they legitimately fall through to the DO below.
+    // F-014: recompute the forgery-safe fan-out marker in THIS scope (the metering
+    // block's isFanout above is scoped to that sibling block). Same constant-time
+    // secret check — a fanned-out request (already on a regional Worker) must not
+    // re-route through the region fan-out below (the regional envs lack PROD_*
+    // bindings → 503). Pure check, no side effects.
+    const regionFanoutHeader = request.headers.get("x-corelink-fanout-from");
+    const isFanout =
+      regionFanoutHeader !== null &&
+      typeof env.CORELINK_INTERNAL_AUTH_KEY === "string" &&
+      env.CORELINK_INTERNAL_AUTH_KEY.length > 0 &&
+      constantTimeSecretEqual(env.CORELINK_INTERNAL_AUTH_KEY, regionFanoutHeader);
+
+    // F-015 (overnight red-team): primaryRegion is hoisted OUT of the block so the
+    // LOCAL DO path below can also stamp x-corelink-primary-region (not just the
+    // fan-out path). Without that stamp, a client hitting a public regional host
+    // (e.g. lhr.corelink-api.humangr.com) directly with a non-matching tenant
+    // reaches that region's container with NO residency header → the container
+    // guard's absent→Allow → cross-region placement. Stamping it lets the
+    // container backstop (residency.rs) reject the mismatch.
+    let primaryRegion: string | undefined;
     if (
       resolvedTenantId !== "_anonymous" &&
       resolvedTenantId !== "_system" &&
       resolvedTenantId !== "_pending"
     ) {
-      let primaryRegion: string | undefined;
       try {
         const row = await env.CONFIG_DB
           .prepare("SELECT primary_region FROM tenant WHERE tenant_id = ?1 LIMIT 1")
@@ -2275,7 +2304,13 @@ const baseHandler: ExportedHandler<Env> = {
       // Non-IAD residency: must fan-out to the matching regional Service Binding.
       // colo === undefined here means an unknown/unprovisioned macro (e.g. afr) —
       // also fail-closed (never serve such a tenant from IAD).
-      if (primaryRegion !== undefined && colo !== "iad") {
+      // F-014 (overnight red-team): gate the fan-out on !isFanout. A request that
+      // ALREADY arrived as a fan-out (isFanout — running on a regional Worker)
+      // must NOT re-route: the regional envs lack the PROD_* service bindings, so
+      // re-entering this branch would hit `regionalBinding === undefined` → 503 for
+      // every non-IAD tenant. A fanned-out request falls through to the local DO
+      // path on the regional Worker (which serves its own region) instead.
+      if (!isFanout && primaryRegion !== undefined && colo !== "iad") {
         let regionalBinding: { fetch: typeof fetch } | undefined;
         if (colo === "lhr") regionalBinding = env.PROD_LHR;
         else if (colo === "sam") regionalBinding = env.PROD_SAM;
@@ -2410,6 +2445,17 @@ const baseHandler: ExportedHandler<Env> = {
         // value (INV-NO-PII-IN-LOGS enforced in durable_object.ts).
         // TODO(F3): wire adapter_pat::PatVerifier onto the native plane as a
         // container-side second possession layer (Option-B extension).
+        // F-015: stamp the trusted residency macro on the LOCAL path too (not only
+        // the fan-out path), so the container's residency backstop (residency.rs)
+        // can cross-check it against its own R2_CAS_REGION. For an IAD-resident
+        // tenant on the IAD container this maps enam/wnam→iad==iad → Allow (no
+        // change); for a client that picked a regional public host with a
+        // non-matching tenant it maps to a different colo → 409 residency_violation.
+        // Omitted for anon/system/pending (primaryRegion undefined). stripClientTrustHeaders
+        // already deleted any client-supplied value (the Worker is the sole setter).
+        if (primaryRegion !== undefined) {
+          h.set("x-corelink-primary-region", primaryRegion);
+        }
         return h;
       })(),
     });
