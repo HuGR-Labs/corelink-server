@@ -29,6 +29,7 @@ use std::sync::{Arc, OnceLock};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
+use corelink_billing::stripe::real::dlq::InMemoryWebhookDlqStore;
 use corelink_billing::stripe::real::webhook_dispatch::{
     RecordingSliRecorder, StateMaterializer, SystemClock, WebhookDispatcher,
 };
@@ -74,6 +75,60 @@ static STORAGE_BACKING: OnceLock<&'static str> = OnceLock::new();
 #[must_use]
 const fn should_fatal_on_missing_gate(prod: bool, gate_present: bool) -> bool {
     prod && !gate_present
+}
+
+/// Canonical `(env-var-name, literal-fallback-key, tier)` table for the
+/// container Stripe-webhook tier reconciliation (F-001).
+///
+/// Each tuple says: the live Stripe price id is read from the env var
+/// `0`; if that env var is unset/empty we fall back to the literal
+/// placeholder key `1` (back-compat with pre-price-id deployments and
+/// the historical test fixtures). Both keys map to tier `2`.
+///
+/// Only the four Stripe-checkout tiers (`Solo/Starter/Pro/Max`) have a
+/// [`TierKind`] variant; `team` is a legacy operator-assigned SKU and
+/// `enterprise` is a contact-sales route (neither flows through this
+/// container path), so they are intentionally absent.
+const TIER_PRICE_ENV_TABLE: &[(&str, &str, TierKind)] = &[
+    ("STRIPE_PRICE_ID_SOLO", "plan_solo", TierKind::Solo),
+    ("STRIPE_PRICE_ID_STARTER", "plan_starter", TierKind::Starter),
+    ("STRIPE_PRICE_ID_PRO", "plan_pro", TierKind::Pro),
+    ("STRIPE_PRICE_ID_MAX", "plan_max", TierKind::Max),
+];
+
+/// Build the container tier mapping from the live `STRIPE_PRICE_ID_*`
+/// env values, falling back to the literal `plan_{tier}` keys when an
+/// env var is unset/empty (F-001 fix).
+fn build_tier_selector() -> InMemoryTierSelector {
+    build_tier_selector_from(|name| std::env::var(name).ok())
+}
+
+/// Pure mapping builder: `lookup` resolves an env-var name to its value
+/// (injected so the policy is unit-testable without touching the
+/// process environment).
+///
+/// For each row: if `lookup(env_name)` yields a non-empty value, map
+/// that real price id → tier; otherwise map the literal `plan_{tier}`
+/// placeholder → tier so test fixtures and pre-price-id deployments
+/// still classify. When the env var IS set, the real price id is the
+/// authoritative key and the literal placeholder is NOT registered
+/// (the real Stripe event never carries it).
+fn build_tier_selector_from<F>(lookup: F) -> InMemoryTierSelector
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let selector = InMemoryTierSelector::new();
+    for (env_name, literal_fallback, tier) in TIER_PRICE_ENV_TABLE {
+        match lookup(env_name) {
+            Some(price_id) if !price_id.trim().is_empty() => {
+                selector.register(price_id.trim(), *tier);
+            }
+            _ => {
+                selector.register(literal_fallback, *tier);
+            }
+        }
+    }
+    selector
 }
 
 /// Liveness probe for two callers:
@@ -525,18 +580,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }
             };
         let billing_audit = Arc::new(InMemoryBillingAuditEmitter::new());
-        // Canonical Stripe-plan-id → tier mapping. Production
-        // operators flip these via the workspace tier config; the
-        // defaults here mirror the canonical 6-tier taxonomy from
-        // `corelink-tier-selection::tier::TierKind` so a fresh
-        // deployment without overrides still classifies the four
-        // paid production plans correctly.
-        let tier_selector = Arc::new(InMemoryTierSelector::with_mapping(&[
-            ("plan_solo", TierKind::Solo),
-            ("plan_starter", TierKind::Starter),
-            ("plan_pro", TierKind::Pro),
-            ("plan_max", TierKind::Max),
-        ]));
+        // Canonical Stripe-plan-id → tier mapping (F-001 fix).
+        //
+        // Real `customer.subscription.updated` events carry
+        // `data.object.plan.id = price_…` (the live Stripe price id),
+        // NOT the literal `plan_solo/…` placeholders. The Worker
+        // forwards the real ids as `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}`
+        // (`worker/src/durable_object.ts:554-558`), so the mapping MUST
+        // be keyed off those env values — otherwise every real event
+        // resolves to `UnknownPlan` → 422 and Stripe stops retrying.
+        //
+        // This mirrors the signup-worker resolver
+        // (`apps/signup-worker/src/webhooks/stripe.ts:287-296`) which
+        // keys the same map off the same env vars. The literal
+        // `plan_{tier}` keys are retained as a backward-compatible
+        // fallback (test fixtures / pre-price-id deployments) ONLY when
+        // the corresponding env var is unset/empty.
+        let tier_selector = Arc::new(build_tier_selector());
         let materializer: Arc<dyn StateMaterializer> = Arc::new(D1SubscriptionStateHandler::new(
             billing_d1.clone(),
             billing_audit.clone(),
@@ -544,14 +604,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ));
         let dispatcher_audit = Arc::new(RealStripeAuditEmitter::new(billing_audit.clone()));
         let idempotency = Arc::new(D1IdempotencyStore::new(billing_d1.clone()));
-        let dispatcher = Arc::new(WebhookDispatcher::new(
-            secret.into_bytes(),
-            idempotency,
-            materializer,
-            dispatcher_audit,
-            Arc::new(RecordingSliRecorder::new()),
-            Arc::new(SystemClock),
-        ));
+        // F-008 closure: wire a DLQ sink so a TRANSIENT materialize
+        // failure quarantines the (already HMAC-verified) event instead
+        // of silently dropping it. The idempotency dedup row is committed
+        // BEFORE materialize, so a Stripe retry hits `AlreadyProcessed`
+        // and skips the handler — without the DLQ the state change is
+        // lost while Stripe records success. The in-memory store captures
+        // the event for the container's lifetime + exposes it via the DLQ
+        // depth/age metrics; the durable D1-backed `WebhookDlqStore`
+        // (`migrations/d1/0045_stripe_webhook_dlq.sql`) is the operator
+        // follow-up so quarantines survive container restarts.
+        let webhook_dlq = Arc::new(InMemoryWebhookDlqStore::new());
+        let dispatcher = Arc::new(
+            WebhookDispatcher::new(
+                secret.into_bytes(),
+                idempotency,
+                materializer,
+                dispatcher_audit,
+                Arc::new(RecordingSliRecorder::new()),
+                Arc::new(SystemClock),
+            )
+            .with_dlq(webhook_dlq),
+        );
         let state = Arc::new(WebhookState::new(dispatcher));
         info!(
             route = corelink_server::webhook::STRIPE_WEBHOOK_ROUTE,
@@ -572,7 +646,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 #[cfg(test)]
 mod tests {
-    use super::should_fatal_on_missing_gate;
+    use super::{build_tier_selector_from, should_fatal_on_missing_gate};
+    use corelink_billing_stripe_materializer::{TierSelectError, TierSelector};
+    use corelink_tier_selection::tier::TierKind;
+    use std::collections::HashMap;
 
     /// Finding #7 truth table: the boot guard fails fatal ONLY when prod is
     /// detected AND the native PAT gate did not build. Dev/CI (not prod) is
@@ -588,5 +665,72 @@ mod tests {
         assert!(!should_fatal_on_missing_gate(false, false));
         // dev/CI + gate present → OK.
         assert!(!should_fatal_on_missing_gate(false, true));
+    }
+
+    /// F-001 regression: when the live `STRIPE_PRICE_ID_*` env values are
+    /// present, the tier selector MUST classify the real `price_…` ids
+    /// (the keys a real `customer.subscription.updated` carries) — not
+    /// the literal `plan_*` placeholders. Before the fix the container
+    /// map only held `plan_*`, so every real event 422'd (`UnknownPlan`).
+    #[test]
+    fn tier_selector_maps_real_price_ids_when_env_set() {
+        let env: HashMap<&str, &str> = HashMap::from([
+            ("STRIPE_PRICE_ID_SOLO", "price_live_solo_abc"),
+            ("STRIPE_PRICE_ID_STARTER", "price_live_starter_def"),
+            ("STRIPE_PRICE_ID_PRO", "price_live_pro_ghi"),
+            ("STRIPE_PRICE_ID_MAX", "price_live_max_jkl"),
+        ]);
+        let sel = build_tier_selector_from(|name| env.get(name).map(|s| (*s).to_string()));
+
+        // Real price ids resolve.
+        assert_eq!(
+            sel.compute_tier("price_live_solo_abc", 1).unwrap(),
+            TierKind::Solo
+        );
+        assert_eq!(
+            sel.compute_tier("price_live_starter_def", 3).unwrap(),
+            TierKind::Starter
+        );
+        assert_eq!(
+            sel.compute_tier("price_live_pro_ghi", 5).unwrap(),
+            TierKind::Pro
+        );
+        assert_eq!(
+            sel.compute_tier("price_live_max_jkl", 1).unwrap(),
+            TierKind::Max
+        );
+
+        // The literal placeholder is NOT registered once the real id wins
+        // (a real Stripe event never carries `plan_solo`).
+        assert!(matches!(
+            sel.compute_tier("plan_solo", 1),
+            Err(TierSelectError::UnknownPlan(_))
+        ));
+    }
+
+    /// F-001: an empty/whitespace env value falls back to the literal
+    /// `plan_{tier}` key so test fixtures + pre-price-id deployments
+    /// still classify (back-compat, no regression for the old wiring).
+    #[test]
+    fn tier_selector_falls_back_to_literal_when_env_unset_or_blank() {
+        let env: HashMap<&str, &str> = HashMap::from([
+            // SOLO unset entirely; STARTER blank; PRO whitespace-only.
+            ("STRIPE_PRICE_ID_MAX", "price_live_max_only"),
+            ("STRIPE_PRICE_ID_STARTER", ""),
+            ("STRIPE_PRICE_ID_PRO", "   "),
+        ]);
+        let sel = build_tier_selector_from(|name| env.get(name).map(|s| (*s).to_string()));
+
+        assert_eq!(sel.compute_tier("plan_solo", 1).unwrap(), TierKind::Solo);
+        assert_eq!(
+            sel.compute_tier("plan_starter", 1).unwrap(),
+            TierKind::Starter
+        );
+        assert_eq!(sel.compute_tier("plan_pro", 1).unwrap(), TierKind::Pro);
+        // MAX had a real id → real id wins.
+        assert_eq!(
+            sel.compute_tier("price_live_max_only", 1).unwrap(),
+            TierKind::Max
+        );
     }
 }

@@ -82,7 +82,7 @@ pub use d1::{
 };
 pub use handler::{D1SubscriptionStateHandler, EVENT_MATERIALIZATION_MATRIX};
 pub use idempotency::D1IdempotencyStore;
-pub use tier::{InMemoryTierSelector, TierSelector};
+pub use tier::{InMemoryTierSelector, TierSelectError, TierSelector};
 
 #[cfg(feature = "cf-billing-real")]
 pub use wasm32_binders::{

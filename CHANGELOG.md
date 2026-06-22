@@ -23,6 +23,26 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **Container Stripe-webhook tier reconciliation 422'd on every real subscription event (F-001).**
+  `crates/corelink-container/src/main.rs` built the `InMemoryTierSelector` from the literal keys
+  `plan_solo/plan_starter/plan_pro/plan_max` and never read the `STRIPE_PRICE_ID_*` env values the
+  Worker forwards (`worker/src/durable_object.ts:554-558`). A real `customer.subscription.updated`
+  carries `data.object.plan.id = price_…`, so `compute_tier` returned `UnknownPlan` →
+  `InvalidPayload` → HTTP 422 (Stripe stops retrying) — container-side tier reconciliation was
+  non-functional in prod. Fix: build the mapping from the live `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}`
+  env values (mirroring the signup-worker resolver), falling back to the literal `plan_{tier}` keys
+  only when an env var is unset/empty. Regression tests pin the real-`price_…`-id path + the
+  back-compat fallback (`main.rs` test module).
+- **Container Stripe-webhook silently dropped a billing-state change on a transient D1 fault
+  (F-008).** `crates/corelink-stripe-real/src/webhook_dispatch.rs` committed the idempotency dedup
+  row BEFORE materializing; a `MaterializerError::Transient` then returned 500 with no rollback and
+  no DLQ, so the Stripe retry hit `AlreadyProcessed` and skipped the handler — the tier change was
+  lost while Stripe recorded success (paid entitlement after cancel, or a lost upgrade). Fix: wire
+  the existing `dlq.rs` into the dispatcher — a transient (or future-variant) materialize failure now
+  quarantines the already-HMAC-verified event into a `WebhookDlqStore` for operator replay
+  (best-effort; the 500 still drives Stripe's retry). New `WebhookDispatcher::with_dlq`; the container
+  wires the in-memory store as the live backstop (durable D1 store is the operator follow-up). A
+  regression test drives transient-then-retry and asserts the event remains recoverable via the DLQ.
 - **Stuck-`"starting"` Durable Object wedge → permanent `container_start_timeout` 503 (F-020,
   prod incident 2026-06-23).** `ensureContainerRunning` (`worker/src/durable_object.ts`) routed a
   `containerStatus === "starting"` straight to `waitForContainerReady` with NO staleness recovery
