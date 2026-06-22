@@ -32,6 +32,7 @@ pub mod dashboard;
 pub mod dsr;
 pub mod identity;
 pub mod introspect;
+pub mod oci;
 pub mod pat_lifecycle;
 pub mod quota;
 pub mod security;
@@ -46,6 +47,7 @@ pub fn all(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     out.extend(bazel::run(cfg, client));
     out.extend(turbo::run(cfg, client));
     out.extend(adapters::run(cfg, client));
+    out.extend(oci::run(cfg, client));
     out.extend(dashboard::run(cfg, client));
     out.extend(pat_lifecycle::run(cfg, client));
     out.extend(billing::run(cfg, client));
