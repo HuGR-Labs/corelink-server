@@ -1,7 +1,7 @@
 ---
 title: "Data handling"
 slug: "/trust/data-handling"
-description: "Where CoreLink stores customer data, how data is encrypted at rest / in flight / in use, residency options (BR / US / EU), and retention windows."
+description: "Where CoreLink stores customer data (today: a single US region), how data is encrypted at rest / in flight / in use, the per-region residency roadmap, and retention windows."
 draft: false
 cross_functional_review: TBD
 pending_signoff:
@@ -43,42 +43,58 @@ outside the CAS surface.
 
 ## Residency
 
-Every CoreLink tenant chooses a `primary_region` at signup. The values are
-a closed enum — there are no exceptions.
+> **Where data lives today (be precise):** CoreLink currently serves every
+> tenant from a **single US region — ENAM (Eastern North America)**. **All
+> customer data — CAS blobs, action-cache entries, metadata, audit chain — is
+> physically stored in the United States.** The per-jurisdiction residency
+> model below (EU/Frankfurt-Dublin, Brazil/São Paulo, APAC, and the rest) is
+> a **roadmap / enterprise-on-request capability**, not a feature you can
+> select at launch. Per-region buckets exist in our architecture but are
+> themselves physically provisioned in ENAM today. We are provisioning
+> jurisdiction-local R2 buckets and per-region endpoints as demand justifies;
+> until that ships and a real `locationHint`-based verification passes, treat
+> any non-US region as a forward-looking commitment.
 
-| Pin | Region | Geography | Used for |
+Cross-border transfers from US-stored data are governed by **SCCs +
+supplementary measures in the DPA** (see [Compliance](./compliance)). That
+processor posture is real today; physical in-jurisdiction storage is not.
+
+### The residency roadmap (not GA)
+
+The target model: every tenant chooses a `primary_region` at provisioning,
+from a closed enum. The intended set:
+
+| Pin | Region | Geography | Status |
 | --- | --- | --- | --- |
-| `sam` | South America (São Paulo) | Brazil | LGPD-bound tenants |
-| `nam` | North America (Iowa / Virginia) | United States | Default for US customers |
-| `eur` | Europe (Frankfurt / Dublin) | EU | GDPR-bound tenants |
-| `oce` | Oceania (Sydney) | AU / NZ | Available on request |
-| `apc` | Asia-Pacific (Tokyo / Singapore) | JP / SG | Available on request |
-| `mea` | Middle East (Dubai) | UAE | Available on request |
+| `nam` | North America (Iowa / Virginia) | United States | **Live today (ENAM) — all data is here now** |
+| `sam` | South America (São Paulo) | Brazil | Roadmap / enterprise-on-request |
+| `eur` | Europe (Frankfurt / Dublin) | EU | Roadmap / enterprise-on-request |
+| `oce` | Oceania (Sydney) | AU / NZ | Roadmap / on request |
+| `apc` | Asia-Pacific (Tokyo / Singapore) | JP / SG | Roadmap / on request |
+| `mea` | Middle East (Dubai) | UAE | Roadmap / on request |
 
-What `primary_region` controls:
+What `primary_region` is designed to control **once per-region residency
+ships** (target architecture, not today's behaviour):
 
-- **R2 object placement.** All blobs are pinned to the colo closest to the
-  region's anchor city. Reads are served from in-region colos.
-- **D1 placement.** Per-tenant D1 database is created in-region.
-- **DO placement.** Durable Object instance is colocated with D1.
-- **Failover semantics.** During a region outage, the failover path is
+- **R2 object placement.** Blobs pinned to in-jurisdiction buckets via a real
+  `locationHint`; reads served from in-region colos. *(Today: all buckets are
+  physically ENAM/US.)*
+- **D1 placement.** Per-tenant D1 database created in-region.
+- **DO placement.** Durable Object instance colocated with D1.
+- **Failover semantics.** During a region outage, the failover path will be
   documented per region in
   [`specs/_runbooks/RB-DR-DRILL.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_runbooks/RB-DR-DRILL.md).
   For Brazil specifically, see
   [Brazil residency & LGPD](/residency/lgpd-brazil) — Art. 33 §1º allows
   out-of-region temporary processing during a documented emergency.
 
-Residency is enforced by `crates/corelink-privacy-residency-enforcement/`
-and verified nightly by `scripts/verify-lgpd-residency.py`. You can also
-verify your own tenant via the admin API:
-
-```bash
-curl -H "Authorization: Bearer $PAT" \
-     https://corelink-api.humangr.com/v1/tenant/me/residency-proof
-```
-
-The response is a signed attestation including the region pin, the last
-verification timestamp, and a Merkle inclusion proof against the audit chain.
+The residency-enforcement crate (`corelink-privacy`) and the verification
+script (`scripts/verify-lgpd-residency.py`) implement the *enforcement
+scaffolding* for this model. **The verifier currently fails-loud** rather than
+emitting a green attestation, because physical per-jurisdiction residency is
+not yet provisioned. A signed per-tenant residency-proof API
+(`/v1/tenant/me/residency-proof`) is part of the same roadmap and is not a
+capability you should rely on today.
 
 ## Encryption
 
@@ -152,6 +168,10 @@ side.
 
 ## Customer data flow (high-level)
 
+> Today all of the storage below is physically in the **US (ENAM)** region.
+> The "region-pinned" labels reflect the target multi-region architecture, not
+> a per-jurisdiction split that is enforced today.
+
 ```
                 ┌─────────────────┐
                 │   Your CI / IDE │
@@ -159,18 +179,18 @@ side.
                          │ TLS 1.3
                          ▼
        ┌─────────────────────────────────┐
-       │ Cloudflare Edge (region-pinned) │
+       │ Cloudflare Edge (US/ENAM today) │
        └────────┬────────────┬───────────┘
                 │            │
         ┌───────┘            └─────────┐
         ▼                              ▼
   ┌────────────┐               ┌──────────────┐
-  │ Workers    │ in-region     │ Durable Obj  │
+  │ Workers    │ US region     │ Durable Obj  │
   │ (isolate)  │◄──────────────┤ (per-tenant) │
   └─────┬──────┘               └──────────────┘
         │
-        ├──► R2 (per-tenant prefix, BYOK envelope if enabled)
-        ├──► D1 (per-tenant DB, region-pinned)
+        ├──► R2 (per-tenant prefix, US/ENAM today, BYOK envelope if enabled)
+        ├──► D1 (per-tenant DB, US/ENAM today)
         ├──► KV (per-tenant namespace, short-TTL only)
         └──► Audit chain (append-only, Merkle-linked)
 ```
@@ -181,9 +201,13 @@ You don't have to take our word for any of the above. Three options:
 
 1. **Read the code.** The repo is
    [`humangr-labs/corelink`](https://github.com/humangr-labs/corelink).
-   Residency enforcement, BYOK envelope, audit chain are all open.
+   The residency-enforcement scaffolding, BYOK envelope, and audit chain are
+   all open. (Note: physical per-jurisdiction residency is roadmap, not GA —
+   today all data is US/ENAM.)
 2. **Hit the admin API.** Endpoints under `/v1/tenant/me/*` return signed
-   attestations of region pin, encryption status, and audit-chain head.
+   attestations of encryption status and audit-chain head. The
+   region-pin/residency-proof attestation is part of the residency roadmap and
+   is not relied-upon today.
 3. **Audit your own data.** Audit-chain inclusion proofs are exportable as
    RFC 6962 proofs you can verify offline. See
    [Audit chain](/security/audit-chain).

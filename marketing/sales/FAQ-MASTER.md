@@ -110,9 +110,9 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 ### P8 — Is pricing different per region?
 
-**Q:** Do you charge more for the SAM (Brazil) region, or for cross-region replication?
+**Q:** Do you charge more for any region, or for cross-region replication?
 
-**A:** Two parts. (1) **Single-region pricing is flat across the four GA regions** — WNAM, ENAM, WEUR, SAM — because the underlying R2 substrate's zero-egress economics travel with the region pin (see `BLOG-POSTS/05-fast-cache-hit-economics.md`). (2) **Cross-region replication** (Enterprise opt-in only) carries a per-replicated-blob storage line on the secondary region; it is metered, transparent, and shown on the invoice. We do not surcharge SAM despite its smaller infrastructure footprint; we do surcharge cross-region active-active because that's where the real cost lives.
+**A:** CoreLink currently operates from a **single US (ENAM) region** — all customer data is stored in the United States — so there is no per-region price differential today: pricing is flat. The R2 substrate's zero-egress economics are what make cache-hit pricing flat (see `BLOG-POSTS/05-fast-cache-hit-economics.md`). Multi-region residency and cross-region replication are on the **roadmap** (see `BLOG-POSTS/04-multi-region-residency.md`); when they ship, replication will be an Enterprise opt-in with a metered, transparent per-replicated-blob storage line shown on the invoice.
 
 **Sources:** `marketing/launch/BLOG-POSTS/04-multi-region-residency.md`; `apps/docs/docs/trust/data-handling.mdx#residency`.
 
@@ -232,7 +232,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** Are you LGPD compliant?
 
-**A:** Yes — compliant as a processor (and joint controller for limited service-telemetry purposes). DPO in place (`dpo@humangr.com`). Brazilian-tenant data is processed **in-region** (`sam` — São Paulo) with full Art. 33 §1º residency attestation; the attestation document (`specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md`) is verified nightly by `scripts/verify-lgpd-residency.py`. Residency enforcement crate: `crates/corelink-privacy-residency-enforcement/`. DSR turnaround: 5-business-day acknowledgement, 15-business-day resolution (Art. 18). Cross-border transfers: SCCs in the DPA with supplementary measures per EDPB recommendation. Breach notification: 72h to ANPD.
+**A:** Yes — compliant as a processor (and joint controller for limited service-telemetry purposes). DPO in place (`dpo@humangr.com`). **Where the data lives today:** CoreLink currently operates from a single US (ENAM) region; all customer data — including Brazilian-tenant data — is stored in the United States and processed under SCCs with supplementary measures per EDPB recommendation. **In-country Brazilian residency (`sam` — São Paulo) is on the roadmap** and available to Enterprise customers on request as we provision Brazil-jurisdiction R2 buckets and per-region endpoints; it is not generally available at launch. DSR turnaround: 5-business-day acknowledgement, 15-business-day resolution (Art. 18). Cross-border transfers: SCCs in the DPA with supplementary measures per EDPB recommendation. Breach notification: 72h to ANPD.
 
 **Sources:** `apps/docs/docs/trust/compliance.mdx#lgpd`; `apps/docs/docs/trust/data-handling.mdx#residency`; `/residency/lgpd-brazil`.
 
@@ -240,7 +240,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** Are you GDPR compliant?
 
-**A:** Yes — compliant as a processor (joint controller for limited service-telemetry purposes). DPA template at `legal/dpa/v1.0.0` — three locales reviewed by external counsel (English EU+UK, Portuguese Brazil, Spanish LATAM). Schrems II: SCC Modules 2/3 plus supplementary measures (BYOK envelope encryption, EU-region pin). Breach notification 72h to supervisory authority (Art. 33) and without-undue-delay to high-risk affected data subjects (Art. 34). DSR rights (Arts. 15–22) supported with verifiable erasure (`INV-DATA-ERASURE-COMPLETE`, `INV-ERASURE-ATTESTATION-SIGNED`). Sub-processor change notice 30 calendar days advance.
+**A:** Yes — compliant as a processor (joint controller for limited service-telemetry purposes). DPA template at `legal/dpa/v1.0.0` — three locales reviewed by external counsel (English EU+UK, Portuguese Brazil, Spanish LATAM). Schrems II: SCC Modules 2/3 plus supplementary measures (BYOK envelope encryption). EU data is currently stored in the US (ENAM) under those SCCs; an EU-region pin (Frankfurt / Dublin) is on the roadmap and available to Enterprise on request, not generally available at launch. Breach notification 72h to supervisory authority (Art. 33) and without-undue-delay to high-risk affected data subjects (Art. 34). DSR rights (Arts. 15–22) supported with verifiable erasure (`INV-DATA-ERASURE-COMPLETE`, `INV-ERASURE-ATTESTATION-SIGNED`). Sub-processor change notice 30 calendar days advance.
 
 **Sources:** `apps/docs/docs/trust/compliance.mdx#gdpr`; `marketing/launch/BLOG-POSTS/04-multi-region-residency.md`.
 
@@ -280,7 +280,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** Pick one — where does my tenant's data live?
 
-**A:** Whichever of the four GA regions you select at provisioning: `wnam` (Western NA), `enam` (Eastern NA), `weur` (Western EU — Frankfurt / Dublin), `sam` (South America — São Paulo). Three additional regions are available on request: `oce` (Sydney), `apc` (Tokyo / Singapore), `mea` (Dubai). Region binding is structural — `INV-REGION-NO-CROSS-LEAK` is a CRITICAL invariant. Every R2 blob, every D1 database, every DO instance is pinned to your region's colos. A request that reaches a region different from the tenant binding is refused at the boundary — not load-balanced, not falling back. You can verify your own tenant's residency via `GET /v1/tenant/me/residency-proof` — signed attestation with Merkle inclusion proof against the audit chain.
+**A:** Today, in the **United States**. CoreLink currently operates from a single US (ENAM, Eastern North America) region; all CAS/AC customer data physically lives in US Cloudflare R2 buckets, with D1 metadata and Durable Object state alongside it. **Per-region / per-jurisdiction residency is on the roadmap** — `wnam` (Western NA), `weur` (Western EU — Frankfurt / Dublin), `sam` (South America — São Paulo), and additional regions (`oce` Sydney, `apc` Tokyo / Singapore, `mea` Dubai) — and is available to Enterprise customers on request as we provision the jurisdiction-local R2 buckets and per-region endpoints that physical residency requires. It is not generally available at launch, so we do not claim physical per-region pinning today. The region-isolation invariant (`INV-REGION-NO-CROSS-LEAK`) and the tenant residency-proof API ship together with that capability.
 
 **Sources:** `apps/docs/docs/trust/data-handling.mdx#residency`; `marketing/launch/BLOG-POSTS/04-multi-region-residency.md`.
 
@@ -322,11 +322,11 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Sources:** `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md`; `marketing/launch/BLOG-POSTS/02-byok-deep-dive.md`.
 
-### PF5 — Multi-region performance: does the SAM region underperform?
+### PF5 — Multi-region performance: will a future SAM region underperform?
 
-**Q:** Is Brazil slower than the US regions?
+**Q:** When the Brazil region ships, will it be slower than the US?
 
-**A:** No structural reason for it to be — `sam` runs on Cloudflare's São Paulo colos with the same R2 + D1 + Workers substrate. Observed p99 in São Paulo during the 30-day staging window: comparable to ENAM (within < 15% variance). The honest caveat is that CI runners *outside* SAM hitting a SAM-pinned tenant pay round-trip latency — keep your runners and tenant in the same region. We do not perform implicit cross-region failover (would violate the residency contract); customers willing to span ENAM + WNAM for higher availability can opt into multi-region active-active explicitly.
+**A:** CoreLink runs from a single US (ENAM) region today, so there is no SAM region to benchmark yet. Architecturally there's no reason a future `sam` deployment would underperform — it would run on Cloudflare's São Paulo colos with the same R2 + D1 + Workers substrate. The honest caveat that will apply: CI runners *outside* a tenant's region pay round-trip latency, so keep your runners and tenant in the same region. We do not plan implicit cross-region failover (it would violate the residency contract); multi-region active-active will be an explicit opt-in when multi-region ships.
 
 **Sources:** `marketing/launch/BLOG-POSTS/04-multi-region-residency.md#failover-within-a-region-set`; `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md#honest-caveats`.
 
@@ -394,7 +394,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** Recovery point objective? Recovery time objective?
 
-**A:** **Backup snapshots:** 35-day rolling retention, encrypted at rest with the same envelope as source. **Failover semantics:** within a residency-compatible set only — AZ failure inside a region fails over to another AZ inside the same residency boundary; whole-region failure falls back to read-only mode from the secondary footprint inside the same region. Customers can opt into multi-region active-active explicitly. **RPO / RTO** targets are tier-dependent and published in your scoping doc for lighthouse / Enterprise; ask Sales for the current targets if your procurement requires them in writing.
+**A:** **Backup snapshots:** 35-day rolling retention, encrypted at rest with the same envelope as source. **Failover semantics:** today CoreLink runs from a single US (ENAM) region; resilience is provided by Cloudflare R2's intra-region durability and Workers/D1 redundancy within that region — data stays in the US. Multi-region active-active and cross-region failover (always within a residency-compatible boundary) are on the roadmap and will be an explicit opt-in when multi-region ships. **RPO / RTO** targets are tier-dependent and published in your scoping doc for lighthouse / Enterprise; ask Sales for the current targets if your procurement requires them in writing.
 
 **Sources:** `apps/docs/docs/trust/data-handling.mdx#retention`; `marketing/launch/BLOG-POSTS/04-multi-region-residency.md#failover-within-a-region-set`; `specs/_runbooks/RB-DR-DRILL.md`.
 

@@ -85,8 +85,8 @@ CSP / CSC responsibility column:
 | BCR-05.1 | Backups tested? | P | CSP | Cold-restore drill spec sealed; first dry-run T-30d pre-GA. Active-failover drill sealed; first cycle outstanding. | A1.3 |
 | BCR-06.1 | Recovery procedures tested at planned intervals? | P | CSP | Cadence: QUARTERLY (cold-restore) + MONTHLY (active-failover) post-GA. Region-outage chaos drill SEALED (`specs/_audits/sealed/2026-05-14-region-outage-chaos-s14.md`). | A1.3 |
 | BCR-07.1 | Customer notified of material outages? | Y | CSP | Status page within 5 min (SEV1); email to affected tenants within 30 min; per-tenant `incident-comms` distribution. | CC2.3 |
-| BCR-08.1 | Capacity planning performed? | Y | CSP | SLO catalog + `CTRL-GC-001` quota + multi-region D1+DO+R2. | A1.1 |
-| BCR-09.1 | Equipment redundancy across regions? | Y | CSP | Multi-region Workers + R2 cross-region replication + per-tenant DO failover. | A1.1 |
+| BCR-08.1 | Capacity planning performed? | Y | CSP | SLO catalog + `CTRL-GC-001` quota + Cloudflare-elastic D1+DO+R2 (single US/ENAM region today; multi-region on roadmap). | A1.1 |
+| BCR-09.1 | Equipment redundancy across regions? | P | CSP | Single US (ENAM) region today, backed by Cloudflare's intra-region durability + per-tenant DO redundancy. Cross-region replication / equipment redundancy across regions is on the roadmap, not GA. | A1.1 |
 | BCR-10.1 | Crisis-communication procedure documented? | Y | CSP | `marketing/launch/CRISIS-COMMS-TEMPLATES.md` (5 templates) + status page operated separately from production fabric (Atlassian Statuspage). | CC2.3 |
 | BCR-11.1 | BCP / DR plan reviewed annually? | P | CSP | Cadence calendarized in `BCP-DR-DRILL-CADENCE.md`; first full review post-GA. GAP-13 closure tracked. | A1.2 |
 
@@ -157,7 +157,7 @@ CSP / CSC responsibility column:
 | DSP-13.1 | Privacy-by-design integrated into SDLC? | Y | CSP | `specs/03_architecture/privacy_model.md` CTRL-PRIV catalog; INV-ONBOARD-DPA-FIRST. | P-CONSENT |
 | DSP-14.1 | Pseudonymization / tokenization for sensitive identifiers? | Y | CSP | Tenant IDs are opaque; salt-rotation for audit-chain PII; payment IDs are Stripe-tokens only. | C1.2 |
 | DSP-15.1 | Encrypted backups? | Y | CSP | Same envelope as source. | C1.1 |
-| DSP-16.1 | Data residency commitments enforced? | Y | CSP | `INV-REGION-NO-CROSS-LEAK` + nightly `verify-lgpd-residency.py`. | P-CONSENT |
+| DSP-16.1 | Data residency commitments enforced? | P | CSP | Single US (ENAM) region today; all customer data stored in the US (no in-jurisdiction residency commitment at launch). Per-region enforcement (`INV-REGION-NO-CROSS-LEAK`, `verify-lgpd-residency.py`) ships with multi-region — roadmap, Enterprise-on-request. | P-CONSENT |
 | DSP-17.1 | Customer-initiated data export supported? | Y | CSP | Admin API export endpoint; verifiable erasure on termination. | P-DSR |
 | DSP-18.1 | Privacy notice published? | Y | CSP | Published; LGPD ROPA + GDPR DPIA library; `privacy@humangr.com` contact. | P-CONSENT |
 | DSP-19.1 | DPO appointed and contact published? | Y | CSP | DPO appointed 2026-05-15 (`dpo@humangr.com`). | P-DSR |

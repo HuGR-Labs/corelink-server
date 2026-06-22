@@ -37,7 +37,7 @@ writing.
 | ISO 27001 status | [ISO 27001:2022](./iso27001) — 98.9% Annex A coverage today, cert target **Q1-2027** stacked with SOC 2 Type I |
 | PCI DSS | [PCI DSS posture](./pci-dss) — **SAQ-A compliant** (self-attested 2026-05-15); CoreLink never sees card data — Stripe Elements tokenizes in browser |
 | FedRAMP | [FedRAMP posture](./fedramp-info) — **Not pursued** today (commercial-market focus); ~85% Moderate baseline covered via SOC 2 + ISO 27001 crosswalk; sponsorship path documented |
-| Where your data lives | [Data handling → Residency](./data-handling#residency) — BR / US / EU pinning per tenant |
+| Where your data lives | [Data handling → Residency](./data-handling#residency) — **single US region (ENAM) today**; per-region BR / EU residency is roadmap / enterprise-on-request |
 | Encryption | [Data handling → Encryption](./data-handling#encryption) — TLS 1.3 in flight, AES-256-GCM at rest, optional BYOK envelope encryption |
 | BYOK matrix | 4 providers: AWS KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault — see [BYOK explanation](/security/byok) |
 | Audit chain | Merkle-linked, RFC 6962 inclusion proofs, 7-year retention — see [Audit chain](/security/audit-chain) |
@@ -99,8 +99,9 @@ back within 1 business day.
 - [**FedRAMP posture**](./fedramp-info) — informational crosswalk only; not
   pursued today; ~85% Moderate baseline substance covered via SOC 2 + ISO 27001;
   sponsorship path documented.
-- [**Data handling**](./data-handling) — where data lives, residency pins,
-  encryption details, retention windows.
+- [**Data handling**](./data-handling) — where data lives (single US region
+  today; per-region residency is roadmap), encryption details, retention
+  windows.
 - [**Sub-processors**](./subprocessors) — public list, 30-day notice mechanism.
 - [**Incident response**](./incident-response) — how we communicate during
   SEV1, status-page subscription, breach-notification commitments.

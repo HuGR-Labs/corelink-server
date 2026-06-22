@@ -63,9 +63,9 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 17 | GDPR — DPIA library | `specs/_compliance/GDPR-DPIA-LIBRARY.md` | NDA |
 | 18 | GDPR — DPIA validator | `scripts/validate_dpia.py` | OPEN-SOURCE |
 | 19 | **LGPD — full audit** | `specs/_compliance/LGPD-FULL-AUDIT-2026-05-15.md` | NDA |
-| 20 | LGPD — residency attestation | `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md` | NDA |
+| 20 | LGPD — residency attestation (ROADMAP — in-jurisdiction residency not yet GA; data currently US/ENAM) | `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md` | NDA |
 | 21 | LGPD — ROPA | `specs/_compliance/LGPD-ROPA-2026-05-15.md` | NDA |
-| 22 | LGPD — residency verifier | `scripts/verify-lgpd-residency.py` | OPEN-SOURCE |
+| 22 | LGPD — residency verifier (fails-loud today: in-jurisdiction residency not yet provisioned; ROADMAP) | `scripts/verify-lgpd-residency.py` | OPEN-SOURCE |
 | 23 | LGPD — DPO monthly checklist | `specs/_compliance/LGPD-DPO-MONTHLY-CHECKLIST.md` | NDA |
 | 24 | **DPO — appointment** | `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md` | NDA |
 | 25 | DPO — responsibilities matrix | `specs/_compliance/DPO-RESPONSIBILITIES-MATRIX.md` | NDA |
@@ -82,10 +82,10 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 36 | BYOK — provider matrix | `compliance/byok-fips-matrix.md` | OPEN-SOURCE |
 | 37 | **Tenant isolation** | `specs/03_architecture/invariant_registry.md` (search `INV-TenantIsolation`) | OPEN-SOURCE |
 | 38 | Tenant isolation — public explainer | `apps/docs/docs/trust/index.mdx` §Posture-at-a-glance | PUBLIC |
-| 39 | **Data residency** | `apps/docs/docs/trust/data-handling.mdx#residency` | PUBLIC |
-| 40 | Residency — invariant | `INV-REGION-NO-CROSS-LEAK` (in `specs/03_architecture/invariant_registry.md`) | OPEN-SOURCE |
-| 41 | Residency — verifier | `scripts/verify-lgpd-residency.py` | OPEN-SOURCE |
-| 42 | Residency — public attestation API | `GET /v1/tenant/me/residency-proof` (live admin API) | PUBLIC |
+| 39 | **Data residency** (current state: single US/ENAM region, US storage; per-jurisdiction residency is ROADMAP) | `apps/docs/docs/trust/data-handling.mdx#residency` | PUBLIC |
+| 40 | Residency — invariant (enforced together with multi-region; ROADMAP) | `INV-REGION-NO-CROSS-LEAK` (in `specs/03_architecture/invariant_registry.md`) | OPEN-SOURCE |
+| 41 | Residency — verifier (fails-loud today; ROADMAP) | `scripts/verify-lgpd-residency.py` | OPEN-SOURCE |
+| 42 | Residency — attestation API (ROADMAP — ships with multi-region; not live today) | `GET /v1/tenant/me/residency-proof` | PUBLIC |
 | 43 | **Audit chain — Merkle proofs** | `apps/docs/docs/security/audit-chain` | PUBLIC |
 | 44 | Audit chain — append-only invariant | `INV-AUDIT-APPEND-ONLY`, `INV-OBS-AUDIT-CHAIN-INTEGRITY` | OPEN-SOURCE |
 | 45 | Audit chain — retention | 7-year retention per `data-handling.mdx#retention` | PUBLIC |
@@ -241,7 +241,7 @@ Hash + sign the ZIP with the CoreLink release-signing key (Cosign). Send the sig
 | HRS | DPO appointment + competence matrix (GAP-05) + Code of Conduct |
 | IAM | auth_model.md + Clerk SSO + INV-TenantIsolation + PAT-DUAL-APPROVAL |
 | IPY | REAPI v2 docs + admin API export + audit-chain Merkle proofs |
-| IVS | Cloudflare substrate + immutable Workers + multi-region D1/DO/R2 |
+| IVS | Cloudflare substrate (single US/ENAM region today; multi-region D1/DO/R2 on roadmap) + immutable Workers |
 | LOG | INV-AUDIT-APPEND-ONLY + R2 Object Lock + Prometheus catalog |
 | SEF | IR-TABLETOP-PLAYBOOK + RB-BREACH-NOTIF + DPA §7 |
 | STA | VENDOR-RISK-REGISTER + sub-processors.mdx + SLSA / Sigstore / SBOM |
