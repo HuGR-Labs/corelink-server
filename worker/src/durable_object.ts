@@ -44,6 +44,13 @@ interface LifecycleState {
   readonly lastHealthCheckMs: number;
   readonly coldStartCount: number;
   readonly tenantId: string | null;
+  /**
+   * Wall-clock (ms) when `containerStatus` last flipped to `"starting"`. Drives
+   * stale-`"starting"` recovery in `ensureContainerRunning`. Optional for
+   * back-compat with lifecycle states persisted before this field existed
+   * (an absent value reads as 0 → treated as immediately stale → self-heals).
+   */
+  readonly startingAt_ms?: number;
 }
 
 type ContainerStatus = "stopped" | "starting" | "running" | "degraded";
@@ -85,6 +92,16 @@ const MAX_HEALTH_FAILURES = 3;
 // at 26s. Per-handler lazy init would cut this back, but the bump is the
 // surgical worker-only fix.
 const STARTUP_TIMEOUT_MS = 90_000;
+
+/**
+ * A `"starting"` status older than this is treated as a DEAD start (the
+ * initiating isolate was evicted, or the start was interrupted mid-flight) and
+ * self-healed by restarting. WITHOUT this, a stuck persisted `"starting"` (loaded
+ * from storage on every isolate) traps every request in `waitForContainerReady`
+ * forever — the 2026-06-23 `_system` wedge (F-020). Must be > `STARTUP_TIMEOUT_MS`
+ * so a legitimately in-flight cold start is never pre-empted.
+ */
+const STALE_STARTING_MS = STARTUP_TIMEOUT_MS + 30_000;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Hashing helpers (INV-NO-PII-IN-LOGS)
@@ -415,6 +432,23 @@ export class CoreLinkServer implements DurableObject {
     }
 
     if (this.lifecycleState.containerStatus === "starting") {
+      // STALE-STARTING DETECTION (mirrors STALE-RUNNING above): a `"starting"`
+      // older than STALE_STARTING_MS means the start that set it died WITHOUT
+      // transitioning (isolate evicted mid-start, or a request flood interrupted
+      // it). Because lifecycleState is loaded from storage on every isolate, that
+      // stale `"starting"` would otherwise trap EVERY request in
+      // waitForContainerReady forever (no self-heal — unlike `"running"` above);
+      // this is the 2026-06-23 `_system` wedge (F-020). Treat it as stopped and
+      // restart. A legitimately in-flight start has a recent startingAt_ms
+      // (< STALE_STARTING_MS, which is > STARTUP_TIMEOUT_MS) → still waits.
+      const startedAt = this.lifecycleState.startingAt_ms ?? 0;
+      if (Date.now() - startedAt > STALE_STARTING_MS) {
+        console.warn(
+          `[${requestId}] lifecycleState=starting but stale (>${STALE_STARTING_MS}ms, no live start) — treating as stopped`,
+        );
+        await this.transitionStatus("stopped", requestId);
+        return this.startContainer(requestId);
+      }
       return this.waitForContainerReady(requestId);
     }
 
@@ -457,7 +491,13 @@ export class CoreLinkServer implements DurableObject {
       return this.waitForContainerReady(requestId);
     }
     // Synchronous in-memory flip (containerStatus is readonly → replace the object).
-    this.lifecycleState = { ...this.lifecycleState, containerStatus: "starting" };
+    // Stamp startingAt_ms so a start that later dies without transitioning is
+    // detectable as stale by ensureContainerRunning (F-020 self-heal).
+    this.lifecycleState = {
+      ...this.lifecycleState,
+      containerStatus: "starting",
+      startingAt_ms: Date.now(),
+    };
 
     const tenantHash = await hashForLog(this.lifecycleState.tenantId ?? "_unknown");
     const newColdStartCount = this.lifecycleState.coldStartCount + 1;
