@@ -134,10 +134,11 @@ monitored — verifiable on request:
   procedure (DR-15). Internal doc:
   [`BCP-DR-DRILL-CADENCE.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/BCP-DR-DRILL-CADENCE.md).
 - **A.5.34 Privacy and protection of PII:** full LGPD + GDPR processor
-  posture, signed DPA, SCCs + supplementary measures. (Data is stored in a
-  single US region today; physical per-jurisdiction residency is roadmap /
-  enterprise-on-request — not a per-region attestation available at launch.)
-  See
+  posture, signed DPA, SCCs + supplementary measures. (Data residency: US/ENAM
+  default + **physically-EU (WEUR) residency live** for EU tenants — EU data
+  stays in the EU; Brazil/`sam` and APAC physical residency are roadmap /
+  enterprise-on-request, with no Cloudflare South-America region for `sam`
+  today.) See
   [Compliance → LGPD/GDPR](./compliance#lgpd-brazil--lei-geral-de-proteção-de-dados).
 - **A.8.2 Privileged access:** WebAuthn-bound admin sessions, MFA freshness
   gate, dual-approval pattern (`PAT-DUAL-APPROVAL-001`) for destructive

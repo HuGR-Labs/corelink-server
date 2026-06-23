@@ -82,10 +82,10 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 36 | BYOK — provider matrix | `compliance/byok-fips-matrix.md` | OPEN-SOURCE |
 | 37 | **Tenant isolation** | `specs/03_architecture/invariant_registry.md` (search `INV-TenantIsolation`) | OPEN-SOURCE |
 | 38 | Tenant isolation — public explainer | `apps/docs/docs/trust/index.mdx` §Posture-at-a-glance | PUBLIC |
-| 39 | **Data residency** (current state: single US/ENAM region, US storage; per-jurisdiction residency is ROADMAP) | `apps/docs/docs/trust/data-handling.mdx#residency` | PUBLIC |
-| 40 | Residency — invariant (enforced together with multi-region; ROADMAP) | `INV-REGION-NO-CROSS-LEAK` (in `specs/03_architecture/invariant_registry.md`) | OPEN-SOURCE |
-| 41 | Residency — verifier (fails-loud today; ROADMAP) | `scripts/verify-lgpd-residency.py` | OPEN-SOURCE |
-| 42 | Residency — attestation API (ROADMAP — ships with multi-region; not live today) | `GET /v1/tenant/me/residency-proof` | PUBLIC |
+| 39 | **Data residency** (US/ENAM default + physically-EU/WEUR live for EU tenants; Brazil/`sam` + APAC are ROADMAP) | `apps/docs/docs/trust/data-handling.mdx#residency` | PUBLIC |
+| 40 | Residency — invariant (enforced for the live regions: `weur`→`lhr` guard refuses cross-region access; further regions ship under the same invariant) | `INV-REGION-NO-CROSS-LEAK` (in `specs/03_architecture/invariant_registry.md`) | OPEN-SOURCE |
+| 41 | LGPD residency — verifier (Brazil-specific; fails-loud today — Cloudflare R2 has no South-America region, so BR physical residency is ROADMAP) | `scripts/verify-lgpd-residency.py` | OPEN-SOURCE |
+| 42 | Residency — attestation API (ROADMAP — signed per-tenant residency-proof not live today) | `GET /v1/tenant/me/residency-proof` | PUBLIC |
 | 43 | **Audit chain — Merkle proofs** | `apps/docs/docs/security/audit-chain` | PUBLIC |
 | 44 | Audit chain — append-only invariant | `INV-AUDIT-APPEND-ONLY`, `INV-OBS-AUDIT-CHAIN-INTEGRITY` | OPEN-SOURCE |
 | 45 | Audit chain — retention | 7-year retention per `data-handling.mdx#retention` | PUBLIC |
@@ -241,7 +241,7 @@ Hash + sign the ZIP with the CoreLink release-signing key (Cosign). Send the sig
 | HRS | DPO appointment + competence matrix (GAP-05) + Code of Conduct |
 | IAM | auth_model.md + Clerk SSO + INV-TenantIsolation + PAT-DUAL-APPROVAL |
 | IPY | REAPI v2 docs + admin API export + audit-chain Merkle proofs |
-| IVS | Cloudflare substrate (single US/ENAM region today; multi-region D1/DO/R2 on roadmap) + immutable Workers |
+| IVS | Cloudflare substrate (US/ENAM default + physically-EU/WEUR region live; further regions on roadmap) + immutable Workers |
 | LOG | INV-AUDIT-APPEND-ONLY + R2 Object Lock + Prometheus catalog |
 | SEF | IR-TABLETOP-PLAYBOOK + RB-BREACH-NOTIF + DPA §7 |
 | STA | VENDOR-RISK-REGISTER + sub-processors.mdx + SLSA / Sigstore / SBOM |

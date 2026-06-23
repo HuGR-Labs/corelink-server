@@ -88,7 +88,7 @@ tags: ["sales", "proof-points", "r-prep", "ga", "numeric-claims", "sources"]
 | 3.8 | ISO/SOC overlap 91% via Drata | `apps/docs/docs/trust/iso27001.mdx` |
 | 3.9 | First-year ISO cert cost envelope $55–90k | `apps/docs/docs/trust/iso27001.mdx` |
 | 3.10 | NIST 800-53 Rev 5 Moderate crosswalk 87% (informational) | `specs/_compliance/NIST-800-53-CROSSWALK.md`; `apps/docs/docs/trust/compliance.mdx#quick-scope-map` |
-| 3.11 | LGPD compliant (processor); DPO in place; in-region (`sam`) Art. 33 §1º attestation | `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md`; verified nightly by `scripts/verify-lgpd-residency.py`; `apps/docs/docs/trust/compliance.mdx#lgpd` |
+| 3.11 | LGPD compliant (processor); DPO in place. EU residency **live** (EU tenants' data stays in physically-EU R2). Brazilian-tenant data is US/ENAM-stored under SCCs; `sam` physical residency is **roadmap** — Cloudflare R2 has no South-America region (the prior `sam` Art. 33 §1º attestation is SUPERSEDED) | `apps/docs/docs/trust/compliance.mdx#lgpd-brazil--lei-geral-de-proteção-de-dados`; `apps/docs/docs/trust/data-handling.mdx#residency` |
 | 3.12 | LGPD DSR turnaround: 5 business days acknowledge, 15 business days resolution | `apps/docs/docs/trust/compliance.mdx#lgpd` |
 | 3.13 | GDPR compliant (processor; joint controller for limited service-telemetry); DPA `legal/dpa/v1.0.0` | `apps/docs/docs/trust/compliance.mdx#gdpr` |
 | 3.14 | DPA reviewed in 3 locales by external counsel (EN EU+UK / PT-BR / ES LATAM) | `BLOG-POSTS/04-multi-region-residency.md#three-locale-legal-review` |

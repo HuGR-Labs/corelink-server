@@ -1,13 +1,14 @@
 <!-- DRAFT — pending Legal + Marketing + CEO sign-off. Do not publish. -->
 
-# Multi-Region Residency at CoreLink (Roadmap): Schrems II, LGPD, GDPR, and the International Transfer Question
+# Multi-Region Residency at CoreLink: Schrems II, LGPD, GDPR, and the International Transfer Question
 
-> ## ⚠️ ROADMAP — NOT YET GENERALLY AVAILABLE
-> **This post describes a capability CoreLink is *building*, not one that ships today.**
-> At launch, CoreLink operates from a **single US (ENAM) region**: all customer data — CAS blobs, action-cache entries, metadata — is physically stored in the United States. The per-region architecture described below (EU/Frankfurt-Dublin, Brazil/São Paulo, APAC pins; cross-region failover; the residency-proof API; the `INV-REGION-NO-CROSS-LEAK` enforcement) is **future, demand-driven work** offered to enterprise customers on request as we provision jurisdiction-local R2 buckets and per-region endpoints. Cross-border transfers from the US-stored data are governed today by SCCs + supplementary measures in the DPA. Read everything below in the future tense.
+> ## ✅ EU RESIDENCY IS LIVE — OTHER REGIONS ON THE ROADMAP
+> **CoreLink runs today from two regions: the US (ENAM) default and a physically-EU (WEUR) region for EU tenants.**
+> EU (`weur`) tenants are served via our London / `lhr` cluster, whose CAS and action-cache blobs are stored in **physically-EU Cloudflare R2 buckets** (`corelink-cas-eu` / `corelink-ac-eu`, both **EEUR / East EU**) — **EU-origin data physically stays in the EU.** The `weur`→`lhr` residency guard enforces `INV-REGION-NO-CROSS-LEAK`.
+> The remaining regions described below — **Brazil / São Paulo (`sam`)** and **APAC** — are **roadmap / enterprise-on-request**. In particular **Cloudflare R2 has no South-America region**, so Brazilian-jurisdiction *physical* residency is not yet possible; `sam`-bound data resides in the US or EU under SCCs + supplementary measures. Read the US + EU material in the present tense and the Brazil / APAC material in the future tense.
 
 > **DRAFT — pending Marketing + Legal + Privacy Officer sign-off.**
-> Compliance deep-dive (forward-looking / roadmap).
+> Compliance deep-dive (US + EU live; Brazil / APAC forward-looking).
 > Trace: spec contract S-20 §5.2 R-S20-8 · WI-S20-008 §2.1.2 (Post 4) · INV-DATA-RESIDENCY · INV-REGION-NO-CROSS-LEAK · INV-DATA-ERASURE-COMPLETE · sprint S-19 residency.
 
 ---
@@ -16,9 +17,9 @@ International data transfer is the area of compliance where good intentions coll
 
 Customers shipping software in 2026 cannot treat "where the data lives" as a deployment-time afterthought.
 
-CoreLink is being designed with residency as a first-class concern: a roadmap of enumerated regions, a structural no-cross-region-leak invariant, a Schrems II Transfer Impact Assessment, and DPA language reviewed by external Legal counsel. Today the product runs from a single US (ENAM) region; the per-region capability below is what we are building toward.
+CoreLink treats residency as a first-class concern: enumerated regions, a structural no-cross-region-leak invariant, a Schrems II Transfer Impact Assessment, and DPA language reviewed by external Legal counsel. Today the product runs from two live regions — the US (ENAM) default and a physically-EU (WEUR) region that keeps EU data in the EU — with Brazil and APAC on the roadmap.
 
-This post explains what we are building and what it will mean concretely.
+This post explains what is live (US + EU) and what we are building toward (Brazil, APAC), and what each means concretely.
 
 ## The legal landscape, briefly
 
@@ -30,26 +31,28 @@ Three regimes anchor the design.
 
 **GDPR Article 32.** Beyond cross-border specifics, GDPR Article 32 requires "appropriate technical and organisational measures" to ensure a level of security appropriate to the risk. For a remote build cache holding source-derived artifacts that may contain personal data (build outputs, log fixtures, test data), this implies measurable controls on encryption at rest and in transit, access boundaries, audit, and erasure. Residency is one of those controls.
 
-## Today: one region. The roadmap: four.
+## Today: two regions live (US + EU). The rest: roadmap.
 
-CoreLink ships today from a **single US region — ENAM (Eastern North America)**. All customer data lives there, in the United States.
+CoreLink ships today from **two live regions**:
 
-The roadmap is a set of enumerated regions, each a complete, independent failure domain:
+- **ENAM** — Eastern North America (United States). The default region; US-tenant data lives here.
+- **WEUR** — Western Europe. EU-tenant CAS and action-cache blobs are stored in **physically-EU Cloudflare R2 buckets** (`corelink-cas-eu` / `corelink-ac-eu`, EEUR), served via our London / `lhr` cluster. **EU-origin data physically stays in the EU.**
 
-- **ENAM** — Eastern North America (the region we run today).
+On the roadmap (enumerated, each a complete and independent failure domain):
+
 - **WNAM** — Western North America (roadmap).
-- **WEUR** — Western Europe (roadmap).
-- **SAM** — South America (roadmap).
+- **SAM** — South America (roadmap). **Note:** Cloudflare R2 currently has **no South-America region**, so Brazilian-jurisdiction *physical* residency is not yet technically possible; `sam`-bound data resides in the US or EU under SCCs until that changes.
+- **APAC** — planned after the above, demand-driven.
 
-The design intent: each region is a complete failure domain — storage, control plane, audit chain, BYOK unwrap endpoints. The audit chain in WEUR will not become a leaf in the audit chain of WNAM. A CAS blob written in SAM will not be replicated to ENAM as a latency optimization. A tenant who selects WEUR at provisioning time will get a CoreLink that, structurally, does not leave WEUR. That property is what we are building; it is not yet live.
+Each region is a complete failure domain — storage, control plane, audit chain, BYOK unwrap endpoints. The audit chain in WEUR does not become a leaf in the audit chain of WNAM. A CAS blob written in WEUR is not replicated to ENAM as a latency optimization. A tenant who selects WEUR at provisioning gets a CoreLink that, structurally, does not leave the EU — that property is **live today** for WEUR (and ENAM). For the roadmap regions, the same structural property is what we are building.
 
-APAC is planned after the initial multi-region set, demand-driven. We would rather ship each region cleanly — with the structural invariants actually enforced — than announce regions whose cross-region story is soft.
+We would rather ship each region cleanly — with the structural invariants actually enforced — than announce regions whose cross-region story is soft.
 
 ## Tenant-region pinning
 
 The tenant's region binding is established at provisioning. It is stored in the tenant-and-residency control-plane database, and it is part of the enforcement context of every authenticated request. The binding is not a configuration knob exposed to runtime traffic; changing a tenant's region is an explicit administrative operation that emits its own audit-chain leaves, requires customer-side confirmation, and triggers a documented migration path with explicit DSR handling.
 
-Concretely, in the multi-region design the residency contract is enforced at three layers (this is the target architecture; today there is one US region).
+Concretely, the residency contract is enforced at three layers. This is live today for the US (ENAM) and EU (WEUR) regions; the roadmap regions ship under the same model.
 
 **Routing.** The tenant's region binding is resolved at the edge and used to route every authenticated request to the correct regional cluster. A request that reaches a region different from the tenant's binding is refused at the boundary — not load-balanced, not falling back, refused with a documented error class.
 
@@ -89,9 +92,9 @@ Per WI-S20-005, external counsel (Cooley / DLA Piper / Bird & Bird) reviewed and
 
 ## Schrems II: what we did with the Transfer Impact Assessment
 
-Once WEUR ships, the TIA conclusion for EU customers using it will be straightforward: data does not leave the EU, so there is no transfer to assess. **That is the roadmap state, not today's.**
+For EU customers on **WEUR**, the TIA conclusion is straightforward: **data does not leave the EU, so there is no transfer to assess.** EU-tenant CAS and action-cache blobs are stored in physically-EU R2 buckets (EEUR), served via the `lhr` cluster. **This is live today.**
 
-Today, all CoreLink data — including EU-origin data — is stored in the US (ENAM). For that transfer, CoreLink provides the SCC module language in the DPA, a customer-facing TIA template, and a documented evaluation of US surveillance law as it applies to a CoreLink operator (published at `docs.corelink.humangr.com/trust/schrems-ii`). Customers handling EU-origin personal data who require in-EU storage should treat WEUR as a roadmap commitment available to enterprise on request — not a capability they can select at launch.
+For data stored under a US (ENAM) binding — including EU-origin data a customer chooses to keep in the US, or any future `sam`-bound data (which resides in the US or EU because Cloudflare has no South-America region) — CoreLink provides the SCC module language in the DPA, a customer-facing TIA template, and a documented evaluation of US surveillance law as it applies to a CoreLink operator (published at `docs.corelink.humangr.com/trust/schrems-ii`). Customers handling EU-origin personal data who require in-EU storage can select WEUR — it is a live capability, not a roadmap commitment.
 
 ## A customer story (placeholder)
 
@@ -105,13 +108,15 @@ The full lighthouse case study, with the customer's name and the executive's att
 
 CoreLink residency is not a substitute for the customer's own legal evaluation of jurisdiction. It is a substrate that makes the customer's evaluation tractable.
 
-CoreLink residency (once multi-region ships) is also not a guarantee against governmental compulsion of the operator in the region where data resides. It is designed to be a guarantee that data does not leak across regions through CoreLink's own systems. Compulsion against the operator is a separate threat surface, addressed in part by BYOK (the operator cannot decrypt unilaterally) and in part by transparency reporting (forthcoming, roadmap).
+CoreLink residency is also not a guarantee against governmental compulsion of the operator in the region where data resides. It is a guarantee that data does not leak across regions through CoreLink's own systems. Compulsion against the operator is a separate threat surface, addressed in part by BYOK (the operator cannot decrypt unilaterally) and in part by transparency reporting (forthcoming, roadmap).
 
 ## Limits and roadmap
 
-**APAC.** We get the question often: why no APAC at GA? The honest answer is that we wanted four regions where the structural invariants are enforced and the operational coverage is solid (24/7 on-call across the regions where we ship). Adding APAC at GA without that operational coverage would weaken the invariant. We will ship APAC when we can ship it without that compromise.
+**APAC.** We get the question often: why no APAC yet? The honest answer is that we ship a region only where the structural invariants are enforced and the operational coverage is solid (24/7 on-call across the regions where we ship). Adding APAC without that operational coverage would weaken the invariant. We will ship APAC when we can ship it without that compromise.
 
-**Custom geo-fencing.** Some customers ask for sub-regional fencing — for example, "data must reside in Germany specifically, not WEUR generally." We do not offer this at GA. The structural argument is that adding sub-regional fencing without a credible operational story for failure modes inside that fence is a residency story that breaks under load. We are scoping a German-data-residency option post-GA based on customer demand, and the engineering decision will be the same one we made for the GA region set: ship it when the invariants are real, not when the marketing copy is.
+**Brazil / South America.** Brazilian-jurisdiction *physical* residency is on the roadmap but is constrained by infrastructure: **Cloudflare R2 has no South-America region**, so we cannot place blobs physically in Brazil today. Until that changes, `sam`-bound data is stored in the US or EU under SCCs + supplementary measures. We will ship `sam` physical residency when the substrate makes it possible to do so honestly.
+
+**Custom geo-fencing.** Some customers ask for sub-regional fencing — for example, "data must reside in Germany specifically, not WEUR generally." We do not offer this today. The structural argument is that adding sub-regional fencing without a credible operational story for failure modes inside that fence is a residency story that breaks under load. We are scoping a German-data-residency option based on customer demand, and the engineering decision will be the same one we made for the live region set: ship it when the invariants are real, not when the marketing copy is.
 
 **Transparency reporting.** Aggregate reporting of governmental data requests, structured against the framework most large vendors now publish, is on the post-GA roadmap. The current shape of CoreLink (operator cannot decrypt under BYOK; audit chain is verifiable independently) constrains what we *could* be compelled to produce; transparency reporting documents what we *have been* asked for.
 
