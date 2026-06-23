@@ -23,6 +23,33 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **GDPR erasure cluster — F-003 + F-004 + F-010 (overnight pentest 2026-06-22).** Three
+  right-to-erasure (Art.17) defects in the CAS/AC erasure path, fixed at the root:
+  - **F-003 (HIGH) — Action-Cache erase never deleted any R2 object yet signed a false
+    `VerifiedComplete`.** The AC erase adapter (`routes/dsr/adapter_r2_ac.rs`) was driven by the
+    `ac_meta` D1 index, but the live Bazel REAPI AC write path never writes `ac_meta` (repo-wide
+    writers = 0), so erase ALWAYS short-circuited `NotApplicable` (no R2 delete) while the verify
+    sweep counted 0 index rows → `CANONICAL_EMPTY_TENANT_HASH` → an Ed25519-signed "complete
+    erasure" attestation for data never deleted. Rewrote the adapter to **LIST-by-prefix delete**
+    across the five regional `corelink-ac-<region>` buckets (`<region>/<tenant_prefix>/`, mirroring
+    the CAS adapter — complete by construction, no dead-index dependency) and to count **actual R2
+    objects** in the verification hash.
+  - **F-004 (HIGH) — erased CAS bytes resurrect-able + readable across 6/7 surfaces.** The 410
+    tombstone gate lived ONLY in the native `cas.rs` read route; writes were ungated and
+    cargo/sccache/brew/npm/pip/Bazel/Turbo/OCI all drive the SAME shared `Arc<dyn Cas{Read,Write}Handler>`
+    with no tombstone check, so a re-PUT of an erased blob resurrected it and any non-native surface
+    served it 200. **Centralized** the gate in a new `TombstoneGatedCasHandler` decorator wired at the
+    shared CAS seam in `routes::build_with_factory` (the same chokepoint as `AccountingCasHandler`):
+    a tombstoned read 404s, a re-PUT of a tombstoned hash is refused 410 (no resurrection), a
+    gate-lookup fault fails CLOSED 503 — inherited by EVERY surface by construction. The native
+    route keeps its inline gate (precise 410).
+  - **F-010 (medium) — bloom tombstone read-gate within-window false negative.** `BloomTombstoneStore`
+    re-seeded its per-tenant bloom from in-process write history ONLY, so a tombstone written by the
+    separate erase-route store (or another instance) read as NOT-tombstoned for the ~30s refresh
+    window after its first read (a no-false-negative / GDPR invariant violation). Added
+    `TombstoneStore::list_tenant_tombstones` and **seed the bloom from the authoritative D1 set on
+    every (re)load**, closing the within-window false negative; added a within-window 410 regression
+    test.
 - **Stuck-`"starting"` Durable Object wedge → permanent `container_start_timeout` 503 (F-020,
   prod incident 2026-06-23).** `ensureContainerRunning` (`worker/src/durable_object.ts`) routed a
   `containerStatus === "starting"` straight to `waitForContainerReady` with NO staleness recovery

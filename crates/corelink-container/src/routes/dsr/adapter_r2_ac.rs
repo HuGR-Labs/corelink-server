@@ -1,27 +1,31 @@
 //! Real R2 Action Cache erase adapter (`BackendKind::R2Ac`), WI-S11-008
 //! Wave 1 increment 3. Hard-deletes a tenant's REAPI Action-Cache result
-//! envelopes from the per-region `corelink-ac-<region>` R2 buckets, then the
-//! `ac_meta` D1 index rows.
+//! envelopes from the per-region `corelink-ac-<region>` R2 buckets.
 //!
-//! AC topology (cold-verified 2026-06-11, ADR-S11-013 §R2-erasure):
+//! AC topology (cold-verified 2026-06-11, ADR-S11-013 §R2-erasure; corrected
+//! 2026-06-22 — F-003):
 //! - AC is stored as **per-region R2 buckets** `corelink-ac-{sam,iad,lhr,nrt,syd}`
 //!   (region in the bucket NAME) — unlike CAS (one bucket, region in the key).
-//! - `ac_meta` (`migrations/d1/0002`) is the **authoritative per-tenant index**:
-//!   PK `(tenant_id, action_digest)` + `region` + a materialised `tenant_prefix`
-//!   BLOB. So AC erase is fully D1-driven — **no S3 LIST needed** (contrast CAS,
-//!   whose native whole-blob path has no durable index — see the ADR).
 //! - The R2 object key is `<region>/<tenant_prefix_hex>/<action_digest>`
-//!   ([`R2S3Client::blob_key`]). Reading the **materialised** `tenant_prefix` is
-//!   rotation-correct: it is frozen at write time, so an entry written under a
-//!   now-rotated `path_key_id` still resolves to the bytes it was stored under
-//!   (re-deriving from the current TDK would not).
+//!   ([`R2S3Client::blob_key`]).
+//! - **Erasure is LIST-by-prefix, NOT index-driven.** The live Bazel REAPI AC
+//!   write path (`R2AcHandler::update`) PUTs the AC envelope to R2 but writes
+//!   **no `ac_meta` D1 index row** (repo-wide `ac_meta` writers = 0). The old
+//!   `ac_meta`-driven erase therefore ALWAYS short-circuited on an empty index
+//!   (`NotApplicable`, no R2 delete) while still signing a `VerifiedComplete`
+//!   attestation — a GDPR Art.17 false-completion (F-003). We now mirror the
+//!   CAS adapter (`adapter_r2_cas`): LIST every object under
+//!   `<region>/<tenant_prefix>/` across the five regional AC buckets and DELETE
+//!   it — **complete by construction**, independent of any D1 index, and robust
+//!   to a deployment whose region changed over time.
+//! - `tenant_prefix` is `derive_prefix(tdk, tenant).to_string()` — the SAME
+//!   derivation the writer used, so the LIST prefix matches the stored objects
+//!   by construction. No TDK ⇒ fail CLOSED (cannot address them).
 //!
 //! `DeleteObject` is idempotent, so a replayed erasure is a safe no-op.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use serde_json::json;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -33,7 +37,7 @@ use corelink_privacy_erasure_worker::event::{BackendErasureOutcome, BackendKind}
 
 use corelink_tenant_path::derive_prefix;
 
-use super::d1util::{col_str, d1_query_blocking, load_tdk, scalar_count};
+use super::d1util::load_tdk;
 use crate::storage::d1_http::D1HttpClient;
 use crate::storage::r2_s3::R2S3Client;
 use crate::storage::StorageEnv;
@@ -43,8 +47,20 @@ use crate::storage::StorageEnv;
 /// `wrangler.toml`. Overridable via `R2_AC_BUCKET_PREFIX` (non-prod envs).
 const DEFAULT_AC_BUCKET_PREFIX: &str = "corelink-ac-";
 
+/// Canonical AC storage regions — the per-region bucket SUFFIX (`corelink-ac-<r>`)
+/// AND the leading `<region>/` key segment. Byte-for-byte the same five-region
+/// sweep the DSR Wave 1 CAS adapter uses (`adapter_r2_cas::CAS_REGIONS`). The
+/// container writes AC through a single global region, but a once-per-account
+/// erase sweeps all five buckets so it is robust to a write region that changed
+/// over time (cheap — a once-per-erase LIST per bucket).
+const AC_REGIONS: &[&str] = &["sam", "iad", "lhr", "nrt", "syd"];
+
 /// Real R2 Action-Cache erase adapter.
 pub(super) struct R2AcEraseAdapter {
+    // Retained for interface symmetry with the other DSR adapters (they all take
+    // a shared D1 client); the AC erase itself is now purely R2 LIST-by-prefix
+    // (no `ac_meta` index read — see the module doc / F-003).
+    #[allow(dead_code, reason = "kept for adapter-construction symmetry with the sibling DSR adapters")]
     d1: Arc<D1HttpClient>,
     bucket_prefix: String,
 }
@@ -68,11 +84,6 @@ impl R2AcEraseAdapter {
         let bucket_prefix = crate::storage::env_or("R2_AC_BUCKET_PREFIX", DEFAULT_AC_BUCKET_PREFIX);
         Self { d1, bucket_prefix }
     }
-
-    /// `corelink-ac-<region>` bucket name for a storage region.
-    fn bucket_for(&self, region: &str) -> String {
-        ac_bucket_name(&self.bucket_prefix, region)
-    }
 }
 
 /// `<prefix><region>` → `corelink-ac-iad`, … (free fn for unit testing).
@@ -80,50 +91,77 @@ fn ac_bucket_name(prefix: &str, region: &str) -> String {
     format!("{prefix}{region}")
 }
 
-/// Delete every `(bucket, key)` R2 target, building one client per distinct
-/// bucket. Driven inside a single `block_in_place`/`block_on` bridge — same
-/// safety envelope as [`super::d1util::d1_query_blocking`]. Returns the count
-/// of objects deleted (`DeleteObject` is idempotent, so a missing object still
-/// counts as erased).
-fn delete_r2_targets(targets: &[(String, String)]) -> Result<u64, ErasureBackendError> {
-    if targets.is_empty() {
-        return Ok(0);
-    }
+/// The per-region LIST prefix for a tenant: `<region>/<tenant_prefix>/`. This is
+/// the leading path of every AC object key `<region>/<tenant_prefix>/<digest>`,
+/// so LISTing it enumerates every Action-Cache envelope the tenant wrote in that
+/// region — independent of any D1 index.
+fn ac_list_prefix(region: &str, tenant_prefix: &str) -> String {
+    format!("{region}/{tenant_prefix}/")
+}
+
+/// LIST every object under each region's `<region>/<tenant_prefix>/` prefix in
+/// that region's `corelink-ac-<region>` bucket and DELETE it; returns the count
+/// deleted. Single `block_in_place`/`block_on` bridge (same envelope as
+/// [`super::d1util::d1_query_blocking`]). A region whose bucket holds nothing for
+/// the tenant contributes zero and is a safe no-op (DeleteObject idempotency).
+fn list_and_delete_ac(
+    bucket_prefix: &str,
+    tenant_prefix: &str,
+) -> Result<u64, ErasureBackendError> {
     tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(async {
             let env = StorageEnv::from_env().ok_or_else(|| {
-                ErasureBackendError::Transport(
-                    "StorageEnv unavailable for R2 AC erase".to_owned(),
-                )
+                ErasureBackendError::Transport("StorageEnv unavailable for R2 AC erase".to_owned())
             })?;
-
-            // Pre-build one client per distinct bucket (avoids a conditional
-            // insert mid-loop; clients are cheap to construct).
-            let mut buckets: Vec<&str> = targets.iter().map(|(b, _)| b.as_str()).collect();
-            buckets.sort_unstable();
-            buckets.dedup();
-            let mut clients: HashMap<&str, R2S3Client> = HashMap::new();
-            for b in buckets {
-                let c = R2S3Client::new(&env, b.to_owned())
-                    .await
-                    .map_err(ErasureBackendError::Transport)?;
-                clients.insert(b, c);
-            }
-
             let mut deleted = 0u64;
-            for (bucket, key) in targets {
-                let Some(client) = clients.get(bucket.as_str()) else {
-                    return Err(ErasureBackendError::Transport(format!(
-                        "no R2 client for bucket {bucket}"
-                    )));
-                };
-                client
-                    .delete(key)
+            for region in AC_REGIONS {
+                let bucket = ac_bucket_name(bucket_prefix, region);
+                let client = R2S3Client::new(&env, bucket)
                     .await
                     .map_err(ErasureBackendError::Transport)?;
-                deleted = deleted.saturating_add(1);
+                let prefix = ac_list_prefix(region, tenant_prefix);
+                let keys = client
+                    .list_objects_v2(&prefix)
+                    .await
+                    .map_err(ErasureBackendError::Transport)?;
+                for key in keys {
+                    client
+                        .delete(&key)
+                        .await
+                        .map_err(ErasureBackendError::Transport)?;
+                    deleted = deleted.saturating_add(1);
+                }
             }
             Ok(deleted)
+        })
+    })
+}
+
+/// Count AC objects still present under the tenant's prefix across all regional
+/// buckets (verification sweep — counts ACTUAL R2 objects, not D1 rows).
+fn count_ac_remaining(
+    bucket_prefix: &str,
+    tenant_prefix: &str,
+) -> Result<u64, ErasureBackendError> {
+    tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(async {
+            let env = StorageEnv::from_env().ok_or_else(|| {
+                ErasureBackendError::Transport("StorageEnv unavailable for R2 AC verify".to_owned())
+            })?;
+            let mut remaining = 0u64;
+            for region in AC_REGIONS {
+                let bucket = ac_bucket_name(bucket_prefix, region);
+                let client = R2S3Client::new(&env, bucket)
+                    .await
+                    .map_err(ErasureBackendError::Transport)?;
+                let prefix = ac_list_prefix(region, tenant_prefix);
+                let keys = client
+                    .list_objects_v2(&prefix)
+                    .await
+                    .map_err(ErasureBackendError::Transport)?;
+                remaining = remaining.saturating_add(keys.len() as u64);
+            }
+            Ok(remaining)
         })
     })
 }
@@ -144,12 +182,11 @@ impl BackendErasureAdapter for R2AcEraseAdapter {
         if legal_hold {
             return Ok(BackendErasureOutcome::NotApplicable);
         }
-        let tid = tenant_id.to_string();
 
-        // The R2 object prefix is derived ONCE per tenant — identical to the
-        // CAS/AC write path `derive_prefix(tdk, tenant).to_string()` (16-char
-        // `URL_SAFE_NO_PAD(HMAC)[..16]`), so the erase keys match the stored
-        // objects by construction. No TDK ⇒ fail CLOSED (cannot address them).
+        // Derive the R2 object prefix the SAME way the AC write path did
+        // (`derive_prefix(tdk, tenant)` → 16-char `URL_SAFE_NO_PAD(HMAC)[..16]`),
+        // so the LIST prefix matches the stored objects by construction. No TDK
+        // ⇒ fail CLOSED (cannot address them — never claim success).
         let tdk = load_tdk().ok_or_else(|| {
             ErasureBackendError::Transport(
                 "R2_TDK_HEX unavailable — cannot derive AC tenant prefix".to_owned(),
@@ -157,48 +194,10 @@ impl BackendErasureAdapter for R2AcEraseAdapter {
         })?;
         let prefix = derive_prefix(&tdk, tenant_id).to_string();
 
-        // 1. Read the authoritative AC index for this tenant.
-        let rows = d1_query_blocking(
-            &self.d1,
-            "SELECT region, action_digest FROM ac_meta WHERE tenant_id = ?1",
-            vec![json!(tid)],
-        )
-        .map_err(ErasureBackendError::Transport)?;
-        if rows.is_empty() {
-            // No AC entries for this tenant → nothing to erase.
-            return Ok(BackendErasureOutcome::NotApplicable);
-        }
-
-        // 2. Resolve each index row to its (bucket, R2 key)
-        //    `<region>/<prefix>/<action_digest>`. A row that cannot be resolved
-        //    is a SEV-1 data anomaly — fail CLOSED (Transport error →
-        //    orchestrator retry) rather than silently skip a PII object.
-        let mut targets: Vec<(String, String)> = Vec::with_capacity(rows.len());
-        for row in &rows {
-            let region = col_str(row, "region").ok_or_else(|| {
-                ErasureBackendError::Transport("ac_meta.region missing/non-text".to_owned())
-            })?;
-            let digest = col_str(row, "action_digest").ok_or_else(|| {
-                ErasureBackendError::Transport("ac_meta.action_digest missing/non-text".to_owned())
-            })?;
-            let key = R2S3Client::blob_key(
-                &region,
-                &prefix,
-                &digest,
-                corelink_handler_cas::DigestAlgo::Blake3,
-            );
-            targets.push((self.bucket_for(&region), key));
-        }
-
-        // 3. Delete the R2 envelopes, THEN the D1 index rows (so a failure
-        //    mid-R2 leaves the index intact for an idempotent retry).
-        let deleted = delete_r2_targets(&targets)?;
-        d1_query_blocking(
-            &self.d1,
-            "DELETE FROM ac_meta WHERE tenant_id = ?1",
-            vec![json!(tid)],
-        )
-        .map_err(ErasureBackendError::Transport)?;
+        // LIST + DELETE every AC envelope under `<region>/<prefix>/` across the
+        // five regional buckets. Complete by construction (no dead `ac_meta`
+        // index dependency — see the module doc / F-003).
+        let deleted = list_and_delete_ac(&self.bucket_prefix, &prefix)?;
 
         Ok(BackendErasureOutcome::Erased {
             records_deleted: deleted,
@@ -209,16 +208,16 @@ impl BackendErasureAdapter for R2AcEraseAdapter {
         &self,
         ctx: VerificationContext,
     ) -> Result<[u8; 32], ErasureBackendError> {
-        // The ac_meta index is deleted last; a fully-erased tenant has zero
-        // remaining rows. (The R2 envelopes are keyed only via this index, so
-        // an empty index ⇒ no orphan can be reached.)
-        let rows = d1_query_blocking(
-            &self.d1,
-            "SELECT COUNT(*) AS n FROM ac_meta WHERE tenant_id = ?1",
-            vec![json!(ctx.tenant_id.to_string())],
-        )
-        .map_err(ErasureBackendError::Transport)?;
-        let remaining = scalar_count(&rows, "n");
+        // Verify against ACTUAL R2 objects (NOT the `ac_meta` D1 index, which the
+        // live write path never populates — F-003): count everything still under
+        // the tenant's `<region>/<prefix>/` across the regional buckets.
+        let tdk = load_tdk().ok_or_else(|| {
+            ErasureBackendError::Transport(
+                "R2_TDK_HEX unavailable — cannot derive AC tenant prefix".to_owned(),
+            )
+        })?;
+        let prefix = derive_prefix(&tdk, ctx.tenant_id).to_string();
+        let remaining = count_ac_remaining(&self.bucket_prefix, &prefix)?;
         if remaining == 0 {
             Ok(CANONICAL_EMPTY_TENANT_HASH)
         } else {
@@ -252,20 +251,24 @@ mod tests {
     }
 
     #[test]
-    fn ac_key_layout_matches_handler() {
-        // The erase key MUST equal what R2AcHandler wrote:
-        // <region>/<tenant_prefix_hex>/<action_digest>.
+    fn five_canonical_ac_regions() {
+        // Same sweep + order as the DSR CAS adapter (adapter_r2_cas::CAS_REGIONS).
+        assert_eq!(AC_REGIONS, &["sam", "iad", "lhr", "nrt", "syd"]);
+    }
+
+    #[test]
+    fn ac_list_prefix_is_leading_path_of_blob_key() {
+        // The LIST prefix MUST be the leading path of the AC envelope key
+        // <region>/<tenant_prefix_hex>/<action_digest> — so LISTing it enumerates
+        // every envelope the tenant wrote (the F-003 complete-by-construction fix).
         let key = R2S3Client::blob_key(
             "iad",
             "abcdef1234567890",
             "a".repeat(64).as_str(),
             corelink_handler_cas::DigestAlgo::Blake3,
         );
-        assert_eq!(key, format!("iad/abcdef1234567890/{}", "a".repeat(64)));
-    }
-
-    #[test]
-    fn empty_target_set_deletes_nothing() {
-        assert_eq!(delete_r2_targets(&[]).unwrap(), 0);
+        let prefix = ac_list_prefix("iad", "abcdef1234567890");
+        assert!(key.starts_with(&prefix), "key={key} prefix={prefix}");
+        assert_eq!(prefix, "iad/abcdef1234567890/");
     }
 }
