@@ -581,6 +581,11 @@ export class CoreLinkServer implements DurableObject {
           // token 401s (the check-env-contract gap that caught this).
           FABRIC_INTROSPECT_AUTH_KEY_HUGR:
             this.env.FABRIC_INTROSPECT_AUTH_KEY_HUGR ?? "",
+          // ASK-2 runner billing usage-push ingest: `POST /internal/v1/billing/usage`
+          // mounts in the container only when BILLING_INGEST_AUTH_KEY (+ D1) are
+          // present. Forward it or the route stays unmounted (404) — the same
+          // env-contract class as FABRIC_INTROSPECT_AUTH_KEY above (check-env-contract.py).
+          BILLING_INGEST_AUTH_KEY: this.env.BILLING_INGEST_AUTH_KEY ?? "",
           // Complete the env contract (2026-06-13 audit): every var the container
           // reads via env::var MUST be forwarded, else setting the secret later
           // silently never reaches the container (the class of bug that hid the

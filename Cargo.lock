@@ -2245,6 +2245,7 @@ dependencies = [
  "corelink-audit-chain",
  "corelink-bazel-bridge",
  "corelink-billing",
+ "corelink-billing-emit",
  "corelink-billing-stripe-materializer",
  "corelink-byok",
  "corelink-cf-bindings",

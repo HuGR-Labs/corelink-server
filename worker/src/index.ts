@@ -178,6 +178,7 @@ export interface Env {
   ERASURE_ATTESTATION_REGION?: string;
   FABRIC_INTROSPECT_AUTH_KEY?: string;
   FABRIC_INTROSPECT_AUTH_KEY_HUGR?: string; // HuGR toolkits introspect consumer (#398) — forwarded to the container
+  BILLING_INGEST_AUTH_KEY?: string; // ASK-2 runner billing usage-push ingest — gate for `/internal/v1/billing/usage`; forwarded to the container
   SIGNUP_TOKEN_KEY?: string;
   CORELINK_OCI_TOKEN_KEY?: string;
   // Legacy alias of CORELINK_OCI_TOKEN_KEY (CAA-360 #8 name drift) — the prod
@@ -253,6 +254,7 @@ type RouteKind =
   | "oci_token"
   | "billing_webhook"
   | "fabric_introspect"
+  | "billing_ingest"
   | "npm"
   | "pip"
   | "brew"
@@ -686,6 +688,18 @@ function matchRoute(url: URL): RouteMatch {
   // so introspect 404'd end-to-end — fixed 2026-06-13.)
   if (path === "/internal/v1/auth/introspect") {
     return { tenantId: "_system", pathSuffix: path, routeKind: "fabric_introspect" };
+  }
+
+  // corelink-runners billing usage-push INGEST — EXACT
+  // /internal/v1/billing/usage (no underscore, mirrors the fabric introspect
+  // contract). The container mounts this route and is the SOLE auth authority,
+  // gated by BILLING_INGEST_AUTH_KEY (a DEDICATED secret, NOT the shared
+  // CORELINK_INTERNAL_AUTH_KEY of /_internal/*, NOR the FABRIC_INTROSPECT_AUTH_KEY).
+  // So the Worker is a pure pass-through: it forwards the caller's
+  // x-corelink-internal-auth (the ingest secret) UNCHANGED to the _system DO and
+  // applies NO edge gate (mirrors the introspect / billing-webhook carve-outs).
+  if (path === "/internal/v1/billing/usage") {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "billing_ingest" };
   }
 
   // githugr authz #3 — tenant lookup. EXACT /internal/v1/auth/tenant/lookup.
@@ -1919,6 +1933,44 @@ const baseHandler: ExportedHandler<Env> = {
         );
       }
       return applyCors(fbResp, request);
+    }
+
+    // corelink-runners billing usage-push ingest — pure pass-through to the
+    // _system DO → container, which is the SOLE auth authority
+    // (BILLING_INGEST_AUTH_KEY). The Worker forwards the caller's
+    // x-corelink-internal-auth (the ingest secret) UNCHANGED and applies NO edge
+    // gate (mirrors the fabric_introspect / billing-webhook carve-outs). See the
+    // matchRoute note.
+    if (route.routeKind === "billing_ingest") {
+      const biDoId = env.CORELINK_SERVER.idFromName("_system");
+      const biStub = env.CORELINK_SERVER.get(biDoId);
+      // Capture the INGEST secret BEFORE stripping client trust headers.
+      const ingestAuth = request.headers.get("x-corelink-internal-auth") ?? "";
+      const biReq = new Request(request, {
+        headers: (() => {
+          const h = new Headers(request.headers);
+          stripClientTrustHeaders(h);
+          h.set("x-request-id", requestId);
+          h.set("x-corelink-route-kind", "billing_ingest");
+          h.set("x-corelink-tenant-id", "_system");
+          // Re-forward the caller's INGEST secret unchanged — the container's
+          // ingest gate is the sole authority; the Worker never inspects it.
+          h.set("x-corelink-internal-auth", ingestAuth);
+          return h;
+        })(),
+      });
+      let biResp: Response;
+      try {
+        biResp = await biStub.fetch(biReq);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        console.error(`[${requestId}] billing ingest DO fetch failed: ${message.slice(0, 80)}`);
+        return applyCors(
+          reapiError("INTERNAL_ERROR", "upstream error", 500, requestId),
+          request,
+        );
+      }
+      return applyCors(biResp, request);
     }
 
     // Customer portal dual-auth dispatch (dashboard revival WP-1) —

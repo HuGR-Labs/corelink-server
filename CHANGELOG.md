@@ -22,6 +22,27 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **Runner billing usage-push INGEST endpoint (ASK-2).** New container route
+  `POST /internal/v1/billing/usage` (`crates/corelink-container/src/routes/billing_ingest.rs`,
+  mounted in `main.rs`) that the corelink-runners fabric calls to push a JSON BATCH of
+  per-lease usage records `{tenant_id, event_kind, qty, billing_period, region, source,
+  time_ms, idem_key}`. It validates each record (billing_period via
+  `validate_billing_period`, uuid tenant_id, canonical event_kind, 3-char region, 64-hex
+  idem_key) all-or-nothing, then idempotently stages the raw events into the canonical
+  `usage_event_staging` D1 table the billing aggregator drains — deduped by `idem_key` (the
+  `(tenant_id, request_id)` PK), returning a per-batch `{accepted, deduped, total}` tally.
+  It does NOT aggregate or touch Stripe (the aggregator owns the rollup + hash chain).
+  Gated by a DEDICATED `BILLING_INGEST_AUTH_KEY` (constant-time compare, reusing the
+  `internal_pat::internal_auth_ok` gate; NOT the shared `CORELINK_INTERNAL_AUTH_KEY` nor
+  `FABRIC_INTROSPECT_AUTH_KEY`) — fail-CLOSED (route unmounted) if absent/<32 chars; 401 on
+  bad auth, 400 on a malformed batch, 503 on a D1 fault. New non-Stripe-billable
+  `UsageEventKind::RunnerSlotSeconds` (`"runner_slot_seconds"`, treated like `ReplayRequest`
+  per the owner-ratified "concurrency priced, minutes unlimited" runner model) added to
+  `corelink-billing-emit`. Worker (`worker/src/index.ts`) routes the path to the `_system`
+  DO as a pure pass-through (FABRIC-secret forwarded unchanged); the DO env-forward contract
+  (`worker/src/durable_object.ts`) carries `BILLING_INGEST_AUTH_KEY` to the container.
+
 ### Fixed
 - **Worker-side overnight red-team fixes (F-006, F-012, F-014, F-015, F-021).**
   - **F-006 (HIGH) — `/internal/v1/auth/rotate` cross-tenant mint:** `owner_tenant` was optional
