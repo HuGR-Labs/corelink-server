@@ -1,5 +1,32 @@
 # Remaining real-user e2e journeys — handoff (finish 2026-06-23)
 
+> ## ✅ UPDATE 2026-06-23 — journey #3 DONE; #1 + #2 taken as far as is faithful (need an owner step)
+> - **#3 Quota hard-cap — VALIDATED (un-gated).** Provisioned a dedicated throwaway tenant (real
+>   signup → PAT), set its `tenant_quota.monthly_budget_usd_micros` to a tiny ceiling (accrued already
+>   over it) via prod D1 → the native CAS PUT returned a **clean 402** (ADR-0068 $-ceiling), exactly
+>   the journey's pass condition (402/429, never 5xx, never silent overage). Mechanism confirmed live
+>   against a real near-limit account. NOTE: the per-tenant lever is `tenant_quota` ($-ceiling), NOT
+>   `tenant_storage_state.bytes_quota` — the byte-cap is re-seeded from the tier (storage-quota header)
+>   on every write, so it's tier-driven, not per-tenant settable; the $-ceiling is the right knob.
+>   Throwaway DSR-deleted + D1 rows cleaned.
+> - **#2 Stripe webhook → tier — handler chain PROVEN live; final tier-flip = owner's 1-charge test.**
+>   Forged a genuinely-signed `customer.subscription.updated` (HMAC over raw body with the real
+>   `STRIPE_LIVE_WEBHOOK_SECRET` — the secret prod actually verifies against) and POSTed to
+>   `/v1/billing/stripe-webhook`. Proven live: wrong secret → **401 signature invalid**; correct LIVE
+>   secret → **signature ACCEPTED** (passes HMAC verify → envelope parse → materializer dispatch).
+>   The final `tier_selections` write 422s on a hand-crafted event (real prod `stripe_subscriptions`
+>   D1 write + full Stripe event shape can't be faithfully reproduced by hand) — so the clean tier-FLIP
+>   proof is **option (a): one real Solo/$15 checkout + refund** (owner call — real card/money) OR a
+>   Stripe test-mode staging. The security half (forgery → 401) is fully validated. Also note: prod's
+>   webhook secret is `STRIPE_LIVE_WEBHOOK_SECRET` (whsec_tT…), NOT the `.env.local`
+>   `STRIPE_WEBHOOK_SECRET` (whsec_1M…, stale/mismatched).
+> - **#1 DSR-delete + checkout — still needs the browser session JWT** (the one owner manual step
+>   below; Clerk prod anti-fraud `needs_client_trust` blocks server-side session mint — unchanged).
+>
+> Net: #3 closed by me end-to-end; #2 is 90% (security proven, flip needs a charge); #1 needs the
+> 60-second browser-JWT capture. The two open halves are genuinely owner steps (real money / browser
+> session), not engineering gaps.
+
 State as of 2026-06-22. The real-user e2e coverage is comprehensive and GREEN; **3 gated
 journeys remain** because each needs a resource that can't be faithfully + safely automated
 from the CLI. This doc is the finish-tomorrow checklist.
