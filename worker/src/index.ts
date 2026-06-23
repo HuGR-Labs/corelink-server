@@ -1828,6 +1828,15 @@ const baseHandler: ExportedHandler<Env> = {
           h.delete("x-corelink-tenant-id");
           h.set("x-request-id", requestId);
           h.set("x-corelink-route-kind", route.routeKind);
+          // F-016 (OCI DoS fairness): the OCI plane has no edge-resolved tenant,
+          // so the container's per-request velocity gate falls back to a per-repo
+          // key — but to also bound abuse per-SOURCE it needs the UNFORGEABLE
+          // client IP. Forward cf-connecting-ip as the server-trusted
+          // x-corelink-client-ip (stripClientTrustHeaders above already deleted
+          // any client-supplied value, so a client cannot spoof it). The true
+          // per-IP EDGE cap is a Cloudflare WAF rule on corelink-oci (infra); this
+          // gives the in-container gate the trusted IP to key on in the meantime.
+          h.set("x-corelink-client-ip", request.headers.get("cf-connecting-ip") ?? "");
           // Deliberately NOT set: x-corelink-tenant-id / x-corelink-scope.
           // The OCI adapter derives the tenant from the OCI Bearer/PAT and
           // enforces per-op scope from its own HMAC bearer token. The raw

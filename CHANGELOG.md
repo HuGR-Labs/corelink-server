@@ -55,6 +55,7 @@ Each entry cross-references:
   (`worker/src/durable_object.ts`) carries `BILLING_INGEST_AUTH_KEY` to the container.
 
 ### Fixed
+- **F-016 OCI per-source fairness (worker-side).** The OCI forward arm now sets the unforgeable `x-corelink-client-ip` (from `cf-connecting-ip`) so the container's per-request velocity gate can key on the real source IP (the OCI plane has no edge-resolved tenant). The per-IP EDGE WAF rule on corelink-oci remains infra.
 - **F-017 — per-tenant rate-limit tier ladder now ENFORCED.** The data-plane rate-limit layer was
   constructed with `RateLimitLayerState::new()` (no tier resolver), so every tenant sat on the team
   default RPS regardless of their billing tier. Wired a D1-backed `TenantTierResolver` at the
