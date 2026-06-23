@@ -247,6 +247,11 @@ async-trait = { workspace = true }
 # Previously dev-dep only; promoted to main dep so the
 # `RealNeonShadowSink` env-var resolution check runs at boot.
 corelink-analytics = { workspace = true }
+# ASK-2 — runner billing usage-push ingest (`routes/billing_ingest.rs`)
+# parses the canonical `UsageEventKind` taxonomy + reuses
+# `validate_billing_period` for the `YYYY-MM` shape so the ingest endpoint
+# never reinvents the billing-emit surface contract.
+corelink-billing-emit = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

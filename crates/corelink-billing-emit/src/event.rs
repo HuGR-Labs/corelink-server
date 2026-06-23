@@ -1,4 +1,4 @@
-//! Canonical [`UsageEvent`] CloudEvents 1.0 envelope + 6-element
+//! Canonical [`UsageEvent`] CloudEvents 1.0 envelope + 7-element
 //! `UsageEventKind` taxonomy + BLAKE3-derived `idem_key` slot.
 //!
 //! ## Why CloudEvents 1.0 (CNCF spec)
@@ -85,9 +85,10 @@ pub const USAGE_EVENT_TYPE: &str = "corelink.billing.usage.recorded";
 /// `corelink_audit_chain::GENESIS_PREV_HASH` convention.
 pub const GENESIS_IDEM_KEY: [u8; 32] = [0u8; 32];
 
-/// Canonical 6-element usage-event kind taxonomy per WI-S10-001 §1
+/// Canonical 7-element usage-event kind taxonomy per WI-S10-001 §1
 /// (StorageBytesHourly / EgressBytes / AcLookup / CasGet / CasPut /
-/// ReplayRequest).
+/// ReplayRequest) + the ASK-2 runner-billing addition
+/// (RunnerSlotSeconds — NON-Stripe-billable, like ReplayRequest).
 ///
 /// `#[non_exhaustive]` so follow-on WIs (S-13 admin / S-19 Stripe) can
 /// extend the taxonomy additively without breaking downstream Stripe /
@@ -127,6 +128,18 @@ pub enum UsageEventKind {
     /// `replay_request` — replay-from-events forensic API hits (NOT
     /// Stripe-billable; audit trail per WI-S10-006).
     ReplayRequest,
+    /// `runner_slot_seconds` — per-lease runner wall-clock occupancy in
+    /// SLOT-SECONDS, pushed by the corelink-runners fabric per finished
+    /// lease (ASK-2 runner billing usage-push ingest). It is
+    /// **NON-Stripe-billable** — treated like [`Self::ReplayRequest`]: it
+    /// feeds the dashboard / reconciliation surface only and is NEVER
+    /// metered to a Stripe SKU. This is the owner-ratified "concurrency
+    /// priced, minutes unlimited" runner pricing model — the billable
+    /// runner axis is the per-tenant CONCURRENCY cap (the
+    /// `runners_entitlement.max_concurrency` entitlement, NOT a per-minute
+    /// meter), so the minutes a tenant burns are unmetered for billing and
+    /// recorded here only for capacity / cost reconciliation.
+    RunnerSlotSeconds,
 }
 
 impl UsageEventKind {
@@ -141,6 +154,7 @@ impl UsageEventKind {
             Self::CasGet => "cas_get",
             Self::CasPut => "cas_put",
             Self::ReplayRequest => "replay_request",
+            Self::RunnerSlotSeconds => "runner_slot_seconds",
         }
     }
 
@@ -151,9 +165,11 @@ impl UsageEventKind {
     pub const fn canonical_unit(self) -> UsageUnit {
         match self {
             Self::StorageBytesHourly | Self::EgressBytes => UsageUnit::Bytes,
-            Self::AcLookup | Self::CasGet | Self::CasPut | Self::ReplayRequest => {
-                UsageUnit::OpCount
-            }
+            Self::AcLookup
+            | Self::CasGet
+            | Self::CasPut
+            | Self::ReplayRequest
+            | Self::RunnerSlotSeconds => UsageUnit::OpCount,
         }
     }
 }
@@ -180,6 +196,7 @@ impl<'de> Deserialize<'de> for UsageEventKind {
             "cas_get" => Ok(Self::CasGet),
             "cas_put" => Ok(Self::CasPut),
             "replay_request" => Ok(Self::ReplayRequest),
+            "runner_slot_seconds" => Ok(Self::RunnerSlotSeconds),
             other => Err(serde::de::Error::custom(format!(
                 "unknown UsageEventKind: {other}"
             ))),
@@ -187,10 +204,10 @@ impl<'de> Deserialize<'de> for UsageEventKind {
     }
 }
 
-/// Canonical 6-element `UsageEventKind` list. Pinned for cardinality
+/// Canonical 7-element `UsageEventKind` list. Pinned for cardinality
 /// estimate + cross-component regression tests.
 #[must_use]
-pub const fn canonical_usage_event_kinds() -> &'static [UsageEventKind; 6] {
+pub const fn canonical_usage_event_kinds() -> &'static [UsageEventKind; 7] {
     &[
         UsageEventKind::StorageBytesHourly,
         UsageEventKind::EgressBytes,
@@ -198,6 +215,7 @@ pub const fn canonical_usage_event_kinds() -> &'static [UsageEventKind; 6] {
         UsageEventKind::CasGet,
         UsageEventKind::CasPut,
         UsageEventKind::ReplayRequest,
+        UsageEventKind::RunnerSlotSeconds,
     ]
 }
 
@@ -594,9 +612,9 @@ mod tests {
     }
 
     #[test]
-    fn canonical_event_kinds_count_is_six() {
+    fn canonical_event_kinds_count_is_seven() {
         let v = canonical_usage_event_kinds();
-        assert_eq!(v.len(), 6);
+        assert_eq!(v.len(), 7);
     }
 
     #[test]
@@ -606,7 +624,7 @@ mod tests {
         for k in v {
             assert!(set.insert(k.as_str()));
         }
-        assert_eq!(set.len(), 6);
+        assert_eq!(set.len(), 7);
     }
 
     #[test]
@@ -620,6 +638,10 @@ mod tests {
         assert_eq!(UsageEventKind::CasGet.as_str(), "cas_get");
         assert_eq!(UsageEventKind::CasPut.as_str(), "cas_put");
         assert_eq!(UsageEventKind::ReplayRequest.as_str(), "replay_request");
+        assert_eq!(
+            UsageEventKind::RunnerSlotSeconds.as_str(),
+            "runner_slot_seconds"
+        );
     }
 
     #[test]
@@ -640,6 +662,10 @@ mod tests {
         assert_eq!(UsageEventKind::CasPut.canonical_unit(), UsageUnit::OpCount);
         assert_eq!(
             UsageEventKind::ReplayRequest.canonical_unit(),
+            UsageUnit::OpCount
+        );
+        assert_eq!(
+            UsageEventKind::RunnerSlotSeconds.canonical_unit(),
             UsageUnit::OpCount
         );
     }

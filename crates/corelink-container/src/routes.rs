@@ -76,6 +76,18 @@ pub mod auth_introspect;
 /// for any Bazel user; backed by the same R2 CAS/AC blobs as the
 /// native `/v1/cas` and `/v1/ac` routes.
 pub mod bazel_v2;
+/// Runner billing usage-push INGEST route (ASK-2):
+/// `POST /internal/v1/billing/usage`. Reached only from the corelink-runners
+/// fabric via the container's internal listener. Gated by the
+/// `X-Corelink-Internal-Auth` header bound to a DEDICATED
+/// `BILLING_INGEST_AUTH_KEY` secret (tight blast radius — distinct from the
+/// mint / introspect / erase secrets). Idempotently stages a JSON BATCH of
+/// raw per-lease usage records into the canonical `usage_event_staging` D1
+/// table the [`corelink_billing_aggregator`] drains + rolls up; it does NOT
+/// aggregate or touch Stripe. Fail-CLOSED (503) on any backend fault, 400
+/// on a malformed batch. Env-gated mount in [`crate::main`] (unmounted in
+/// dev/CI).
+pub mod billing_ingest;
 /// Homebrew bottle cache surface (Phase B): `/brew/<tenant>/<bottle-path>`
 /// nests the `corelink_adapter_host::brew` read-through proxy. Option-B PAT
 /// re-verify via the shared [`crate::adapter_pat`] verifier; public bottle

@@ -448,6 +448,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
+    // ASK-2: `POST /internal/v1/billing/usage` — corelink-runners billing
+    // usage-push INGEST. Gated by a DEDICATED `BILLING_INGEST_AUTH_KEY` (NOT the
+    // mint / introspect / erase secrets — tight blast radius). Mounted only when
+    // that secret (≥32 chars) + the D1 `StorageEnv` are present (fail-CLOSED:
+    // unmounted in dev/CI). Idempotently stages raw per-lease usage records into
+    // the canonical `usage_event_staging` table the aggregator drains; it does
+    // NOT aggregate or touch Stripe.
+    if let Some(billing_ingest_state) =
+        corelink_server::routes::billing_ingest::build_state_from_env()
+    {
+        info!(
+            "routes: /internal/v1/billing/usage mounted (BILLING_INGEST_AUTH_KEY + D1 present)"
+        );
+        app = app.merge(corelink_server::routes::billing_ingest::router(
+            billing_ingest_state,
+        ));
+    } else {
+        warn!(
+            "BILLING_INGEST_AUTH_KEY / D1 config incomplete; \
+             /internal/v1/billing/usage NOT mounted (dev/CI mode)"
+        );
+    }
+
     // WI-S11-008: `POST /_internal/dsr/erase` — gated by the
     // CORELINK_INTERNAL_AUTH_KEY. Drives the 12-backend erasure orchestrator
     // (Wave 1: real D1/R2/Stripe/KV/Loki transports wired in #254).
