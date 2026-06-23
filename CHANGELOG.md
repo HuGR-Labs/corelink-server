@@ -55,6 +55,11 @@ Each entry cross-references:
   (`worker/src/durable_object.ts`) carries `BILLING_INGEST_AUTH_KEY` to the container.
 
 ### Fixed
+- **Go-live review-wave fixes (CP-1, F-MP-2/F-MP-1, F-MP-3, M-1).** From a 6-agent (Opus) go-live review (0 Critical/0 High across code/brutal-audit/security/GDPR):
+  - **CP-1 (MED):** the DO now forwards the per-consumer dedicated internal-auth keys (`CORELINK_PAT_MINT/ADMIN/ERASE_AUTH_KEY`) to the container — previously only the shared key was forwarded, so the blast-radius isolation was inert AND provisioning a dedicated key would 401 the container (self-inflicted outage). Empty when unset ⇒ shared fallback (unchanged).
+  - **F-MP-2 (MED, covers F-MP-1):** the Stripe webhook now QUARANTINES `InvalidPayload`/`UnknownPlan` events to the DLQ (not just `Transient`) — price-map/config drift (e.g. a `team` price) is now observable + replayable instead of silently dropped after Stripe stops 4xx-retrying.
+  - **F-MP-3 (LOW):** the materializer's price-id extraction falls back from legacy `data.object.plan.id` to modern `items.data[0].price.id` (both cache + runners reconcile) — robust to a pinned-Stripe-API-version change.
+  - **M-1 (latent):** scope-guard comment on the DSR CAS erase — gates a future multipart-enabling PR on extending the sweep to the chunk/manifest buckets (no multipart write-sites today).
 - **F-016 OCI per-source fairness (worker-side).** The OCI forward arm now sets the unforgeable `x-corelink-client-ip` (from `cf-connecting-ip`) so the container's per-request velocity gate can key on the real source IP (the OCI plane has no edge-resolved tenant). The per-IP EDGE WAF rule on corelink-oci remains infra.
 - **F-017 — per-tenant rate-limit tier ladder now ENFORCED.** The data-plane rate-limit layer was
   constructed with `RateLimitLayerState::new()` (no tier resolver), so every tenant sat on the team

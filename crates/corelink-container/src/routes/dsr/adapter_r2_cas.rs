@@ -87,6 +87,16 @@ fn cas_list_prefix(region: &str, tenant_prefix: &str) -> String {
 /// LIST every object under each region prefix and DELETE it; returns the count
 /// deleted. Single `block_in_place`/`block_on` bridge (same envelope as
 /// [`super::d1util::d1_query_blocking`]).
+///
+/// M-1 (go-live GDPR audit) — SCOPE GUARD FOR A FUTURE MULTIPART SHIP: this
+/// sweeps the CAS bucket (`corelink-cas-*`) only. It does NOT touch the separate
+/// `corelink-chunk-*` / `corelink-manifest-*` R2 buckets. That is correct +
+/// complete TODAY because the container has zero multipart write-sites (no
+/// `corelink-r2-multipart` dep; `R2_CHUNK_BUCKET` is never written). **If
+/// multipart/chunked CAS writes are ever enabled, THIS function MUST be extended
+/// to LIST-and-delete those buckets too** — otherwise chunked content survives a
+/// "complete" erasure AND the Ed25519 attestation would falsely sign Complete.
+/// Gate the multipart-enabling PR on extending this.
 fn list_and_delete_cas(cas_bucket: &str, tenant_prefix: &str) -> Result<u64, ErasureBackendError> {
     tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(async {
