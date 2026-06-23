@@ -100,10 +100,11 @@ issuance Q1-2027). Audit partner: Schellman. We also crosswalk to **NIST
 
 - **Status:** **Compliant as a processor** — DPA, SCCs, DSR tooling, DPO,
   and breach-notification process are in place. **Important:** CoreLink does
-  **not** currently process Brazilian-tenant data physically in Brazil. All
-  customer data — including data from Brazilian tenants — is stored today in a
-  **single US region (ENAM)**, with cross-border transfers governed by SCCs
-  (ANPD-template clauses) + supplementary measures in the DPA. **Physical
+  **not** currently process Brazilian-tenant data physically in Brazil —
+  **Cloudflare R2 has no South-America region**, so Brazilian-jurisdiction
+  physical storage is not technically available. Brazilian-tenant data is
+  stored in the **US (ENAM)** region, with cross-border transfers governed by
+  SCCs (ANPD-template clauses) + supplementary measures in the DPA. **Physical
   in-jurisdiction residency (`sam` / São Paulo) is a roadmap /
   enterprise-on-request capability, not a feature available at launch.**
 - **DPO:** in-place. DPO contact: `dpo@humangr.com`.
@@ -131,12 +132,14 @@ issuance Q1-2027). Audit partner: Schellman. We also crosswalk to **NIST
 - **DPA:** signed template available at `legal/dpa/v1.0.0`. We countersign
   customer-paper DPAs only when the variance is immaterial; otherwise we
   route to our template plus an addendum.
-- **Cross-border transfers (Schrems II):** all customer data is currently
-  stored in a **single US region (ENAM)**, so EU-origin data is transferred to
-  the US under **SCC Modules 2/3 in the DPA plus supplementary measures (BYOK
-  envelope encryption, TIA on file)**. An **EU-region pin (WEUR)** that keeps
-  EU data in the EU is a **roadmap / enterprise-on-request** capability, not a
-  selectable option at launch.
+- **Cross-border transfers (Schrems II):** **EU data residency is live.** EU
+  (`weur`) tenants are served via our **London / `lhr` cluster**, whose CAS and
+  action-cache blobs are stored in **physically-EU Cloudflare R2 buckets**
+  (`corelink-cas-eu` / `corelink-ac-eu`, both EEUR / East EU) — EU-origin data
+  **stays in the EU**, so for those tenants there is **no third-country transfer
+  to assess**. Where EU-origin data is handled under a US (ENAM) tenant binding,
+  the transfer is governed by **SCC Modules 2/3 in the DPA plus supplementary
+  measures (BYOK envelope encryption, TIA on file)**.
 - **Breach notification:** within **72 hours** of awareness to the supervisory
   authority per Art. 33, and to affected data subjects per Art. 34 when the
   risk is high.
@@ -181,8 +184,8 @@ issuance Q1-2027). Audit partner: Schellman. We also crosswalk to **NIST
 | --- | --- | --- | --- |
 | SOC 2 Security + Availability + Confidentiality + PI + Privacy | Readiness 83.7% | Type I | Q4 2026 fieldwork |
 | SOC 2 (Type II) | — | Type II | Q3 2027 fieldwork |
-| LGPD | Compliant as processor (data in US/ENAM today; `sam` residency = roadmap) | Self-attested + DPO sign-off | DPO monthly checklist |
-| GDPR | Compliant as processor (EU data transferred to US/ENAM under SCCs; WEUR pin = roadmap) | Self-attested + DPA-bound | SCC supplementary refresh T+1m |
+| LGPD | Compliant as processor (BR-tenant data in US/ENAM; `sam` residency = roadmap — no Cloudflare SA region) | Self-attested + DPO sign-off | DPO monthly checklist |
+| GDPR | Compliant as processor (**EU residency live** — `weur` data stays in EU R2; `enam` default for others) | Self-attested + DPA-bound | SCC supplementary refresh T+1m |
 | HIPAA | Out of scope by design | — | No plans |
 | PCI DSS v4.0 SAQ-A | Compliant (self-attested 2026-05-15) | Self-attested + Stripe AOC inherited | Annual recert 2027-05-15 |
 | ISO 27001:2022 | [Crosswalk 98.9% in-scope](./iso27001) (91% SOC 2 overlap) | Stage 1 → Stage 2 | **Q1-2027 certificate** (Stage 1 Q4-2026 stacked with SOC 2) |
