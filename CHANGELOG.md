@@ -158,6 +158,20 @@ Each entry cross-references:
   active and no tenant is resolvable, mirroring npm/pip/cargo. Covered by
   `brew_missing_tenant_fails_closed_503_when_quota_active` +
   `brew_empty_tenant_header_fails_closed_503_when_quota_active`.
+- **`/v1/customer/billing*`, `/overview`, `/audit` had NO scope gate — a read-only (`cas:r`) cache
+  PAT could open the Stripe billing portal (cancel subscription / manage payment methods) and read
+  billing + account + audit financial-PII (F-018).** `handle_billing_portal` / `handle_billing` /
+  `handle_overview` / `handle_audit` (`crates/corelink-container/src/routes/customer.rs`) ran only
+  the fail-CLOSED tenant resolution + the Argon2id PAT-possession backstop, with NO capability check
+  — unlike the sibling key-management + privileged-team routes which gate on
+  `scope::requires_cache_write`. So a least-privilege cache token (e.g. a CI / contractor read-only
+  PAT) escalated to billing-management + financial-PII read on its own tenant (and cross-tenant when
+  composed with F-006 → CK-4). Fix: gate all four billing/PII routes on a write-capable owner/admin
+  scope (`billing_pii_gate_reject`, mirroring the keys/team gate — dashboard Clerk `read-write` +
+  `cas:rw` / `admin` PATs pass; `cas:r` or a missing scope → 403). Cache scopes no longer grant
+  billing-management or PII reads. The route's own happy-path test, which previously asserted 200
+  with NO scope header, now sends the write scope on the happy path; added read-only-→-403 (+ a
+  missing-scope-→-403) regression tests for the portal, overview, billing, and audit surfaces.
 - **Stuck-`"starting"` Durable Object wedge → permanent `container_start_timeout` 503 (F-020,
   prod incident 2026-06-23).** `ensureContainerRunning` (`worker/src/durable_object.ts`) routed a
   `containerStatus === "starting"` straight to `waitForContainerReady` with NO staleness recovery
