@@ -377,7 +377,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         );
     }
 
-    let (cas_read, cas_write_raw, cas_delete_raw, cas_list) = cas::build_handlers();
+    let (cas_read_raw, cas_write_raw, cas_delete_raw, cas_list) = cas::build_handlers();
     // Storage byte accounting (red-team #1 / cluster B+C): wrap the CAS write +
     // delete trait objects in the reserve→commit→release decorator at the SINGLE
     // chokepoint every CAS write surface flows through (native CAS, Bazel REAPI,
@@ -387,7 +387,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // previously-uncounted sibling planes (cluster B) are closed for free. When
     // the accountant is absent (dev/CI, no D1) the raw handlers pass through
     // unwrapped. read/list are not write surfaces and stay unwrapped.
-    let (cas_write, cas_delete): (
+    let (cas_write_acct, cas_delete_acct): (
         Arc<dyn corelink_handler_cas::CasWriteHandler>,
         Arc<dyn corelink_handler_cas::CasDeleteHandler>,
     ) = match byte_accountant.as_ref() {
@@ -422,6 +422,40 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                 Arc::new(s) as Arc<dyn cas_erase::TombstoneStore>
             )) as Arc<dyn cas_erase::TombstoneStore>
         });
+    // F-004 — CENTRALIZE the 410 erasure gate at the shared CAS seam. The native
+    // route's inline tombstone gate (`cas::handle_read`) was the ONLY gate, so
+    // GDPR-erased bytes were re-PUT-able (writes were ungated) and readable via
+    // every OTHER surface (cargo/sccache/brew/npm/pip/Bazel/Turbo/OCI all drive
+    // these SAME shared `Arc<dyn …>` handlers but never checked a tombstone).
+    // Wrap the shared read/write/delete trait objects in
+    // `TombstoneGatedCasHandler` HERE — the same chokepoint `AccountingCasHandler`
+    // uses — so ALL surfaces inherit the erasure gate by construction: a
+    // tombstoned read 404s (never serves erased bytes), a re-PUT of a tombstoned
+    // hash is refused 410 (no resurrection), a gate fault fails CLOSED 503. The
+    // bloom-fronted store (above) keeps this off the hot D1 path for the common
+    // non-erased digest. When no tombstone store is wired (dev/CI) the handlers
+    // pass through ungated. The native route keeps `cas_tombstones` too, so it
+    // still answers a precise 410 (not 404) BEFORE reaching the handler.
+    let (cas_read, cas_write, cas_delete): (
+        Arc<dyn corelink_handler_cas::CasReadHandler>,
+        Arc<dyn corelink_handler_cas::CasWriteHandler>,
+        Arc<dyn corelink_handler_cas::CasDeleteHandler>,
+    ) = match cas_tombstones.as_ref() {
+        Some(ts) => {
+            let gated = Arc::new(cas_erase::TombstoneGatedCasHandler::new(
+                cas_read_raw.clone(),
+                cas_write_acct.clone(),
+                cas_delete_acct.clone(),
+                ts.clone(),
+            ));
+            (
+                gated.clone() as Arc<dyn corelink_handler_cas::CasReadHandler>,
+                gated.clone() as Arc<dyn corelink_handler_cas::CasWriteHandler>,
+                gated as Arc<dyn corelink_handler_cas::CasDeleteHandler>,
+            )
+        }
+        None => (cas_read_raw, cas_write_acct, cas_delete_acct),
+    };
     let cas_state = cas::CasRouteState {
         read: cas_read.clone(),
         write: cas_write.clone(),

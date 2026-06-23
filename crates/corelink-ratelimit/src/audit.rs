@@ -200,6 +200,53 @@ impl RateLimitAuditSink for InMemoryRateLimitAuditSink {
     }
 }
 
+/// Production-safe **bounded** audit sink: accepts every record and
+/// drops it (constant memory, zero heap growth per request).
+///
+/// ## Why this exists (F-022 closure)
+///
+/// [`InMemoryRateLimitAuditSink`] is a **test capture** sink — it pushes
+/// every record onto an unbounded `Vec` that is never drained or capped.
+/// Wiring it into the production data-plane layer
+/// (`corelink-container::routes::ratelimit_layer`) leaks heap on ordinary
+/// in-budget traffic (the limiter emits 1-2 records per request,
+/// unconditionally) and can self-OOM a tenant's data-plane container
+/// under honest sustained load. This sink is the bounded production
+/// default: it satisfies the [`RateLimitAuditSink`] contract with
+/// **O(1)** memory and **no allocation** on the hot path.
+///
+/// ## Forward path
+///
+/// The documented full prod composition is `OutboxAuditSink` (D1
+/// `audit_outbox` INSERT in the bucket-UPDATE batch) + `MultiplexAuditSink`
+/// (SIEM fan-out); those land with the live-DO/D1 wiring (WI-S08-006 PRR
+/// ship gate). Until then this NoOp sink is the correct production
+/// posture — rate-limit audit emit is informational (no SEV-1 arm; see
+/// [`RateLimitEventType::is_sev1`]), so dropping it degrades observability
+/// granularity, NOT correctness or the fail-closed money path. It is
+/// strictly preferable to the unbounded test sink, which trades a leak
+/// for the same (test-only) observability.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoOpRateLimitAuditSink;
+
+impl NoOpRateLimitAuditSink {
+    /// Construct a fresh bounded no-op sink.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl RateLimitAuditSink for NoOpRateLimitAuditSink {
+    #[inline]
+    fn emit(&self, _record: RateLimitAuditRecord) -> Result<(), RateLimitAuditSinkError> {
+        // Bounded by construction: accept-and-drop, O(1) memory, never
+        // allocates. Always `Ok` so the fail-closed envelope never trips
+        // on the informational rate-limit audit arm.
+        Ok(())
+    }
+}
+
 /// Always-failing sink for adversarial tests of the fail-closed
 /// envelope (handler MUST surface 503 when the audit emit fires the
 /// `Store` error).
@@ -292,6 +339,23 @@ mod tests {
         assert_eq!(sink.len(), 2);
         assert_eq!(sink.snapshot_of(RateLimitEventType::Allowed).len(), 1);
         assert_eq!(sink.snapshot_of(RateLimitEventType::Denied429).len(), 1);
+    }
+
+    #[test]
+    fn noop_sink_accepts_and_drops_every_record() {
+        // F-022 regression: the bounded prod sink must accept every
+        // record (so the fail-closed envelope never trips on the
+        // informational rate-limit arm) and retain NO state.
+        let sink = NoOpRateLimitAuditSink::new();
+        for _ in 0..10_000 {
+            sink.emit(rec(RateLimitEventType::Allowed)).unwrap();
+            sink.emit(rec(RateLimitEventType::BucketRefilled)).unwrap();
+        }
+        // NoOp is a zero-sized type — there is nothing to grow. Pin that
+        // it carries no per-record state at the type level.
+        assert_eq!(std::mem::size_of::<NoOpRateLimitAuditSink>(), 0);
+        // Cloning is a no-op copy (Copy) — confirms no shared buffer.
+        let _clone = sink;
     }
 
     #[test]

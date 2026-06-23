@@ -51,8 +51,9 @@ const UNLIMITED: i64 = 0;
 /// `worker/src/lib/quota.ts` `QUOTAS[tier].storageBytesMax` →
 /// `storageQuotaHeaderValue`:
 ///
-/// - a finite tier → `Some(n)` (`n > 0`);
-/// - a genuinely-unlimited tier (`team` / `enterprise`, whose Worker cap is
+/// - a finite tier → `Some(n)` (`n > 0`) — including `team`, whose Worker cap
+///   is a FINITE 1 TiB (`worker/src/lib/quota.ts:88`), NOT unlimited;
+/// - a genuinely-unlimited tier (`enterprise` only, whose Worker cap is
 ///   `MAX_SAFE_INTEGER`) → `Some(0)` (the deliberate unlimited sentinel);
 /// - an UNKNOWN tier string → `free` (the Worker's `isValidTier` fallback +
 ///   default column `DEFAULT 'free'`), NOT unlimited — fail-safe.
@@ -66,8 +67,14 @@ fn tier_to_cap_bytes(tier: &str) -> i64 {
         "starter" => 150 * GIB,
         "pro" | "org" => 500 * GIB,
         "max" => 2_000 * GIB,
-        // team & enterprise are genuinely unlimited (Worker `MAX_SAFE_INTEGER`).
-        "team" | "enterprise" => UNLIMITED,
+        // `team` is a FINITE 1 TiB (= 1024 GiB = 1_099_511_627_776) — the
+        // Worker caps it at exactly that (`quota.ts:88`), NOT unlimited. (Its
+        // `requestsPerMonthMax` is `MAX_SAFE_INTEGER`, which is what some Worker
+        // comments loosely call "unlimited"; the STORAGE cap is finite.)
+        "team" => 1024 * GIB,
+        // enterprise is the ONLY genuinely-unlimited tier (Worker storage cap
+        // `MAX_SAFE_INTEGER`).
+        "enterprise" => UNLIMITED,
         // Unknown / unset tier → the `free` cap (Worker `isValidTier` fallback +
         // `tenant.tier DEFAULT 'free'`). Never unlimited.
         _ => 10 * GIB,
@@ -210,8 +217,14 @@ mod tests {
         assert_eq!(tier_to_cap_bytes("pro"), 500 * GIB);
         assert_eq!(tier_to_cap_bytes("org"), 500 * GIB);
         assert_eq!(tier_to_cap_bytes("max"), 2_000 * GIB);
-        // Unlimited tiers → the `Some(0)` sentinel.
-        assert_eq!(tier_to_cap_bytes("team"), UNLIMITED);
+        // `team` is a FINITE 1 TiB (1024 GiB) — the Worker caps it at exactly
+        // `1_099_511_627_776` (`quota.ts:88`). It is NOT unlimited; mapping it
+        // to the `UNLIMITED` sentinel let `team` over-store unbounded on the
+        // OCI plane (F-002). Pin both the GiB form and the literal byte value.
+        assert_eq!(tier_to_cap_bytes("team"), 1024 * GIB);
+        assert_eq!(tier_to_cap_bytes("team"), 1_099_511_627_776);
+        // enterprise is the ONLY genuinely-unlimited tier → the `Some(0)`
+        // sentinel.
         assert_eq!(tier_to_cap_bytes("enterprise"), UNLIMITED);
         // Unknown / unset tier → the `free` cap (never unlimited).
         assert_eq!(tier_to_cap_bytes("bogus"), 10 * GIB);

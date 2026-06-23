@@ -961,6 +961,13 @@ fn batch_object_error_message(e: &CasHandlerError) -> String {
         {
             "storage quota exceeded".to_owned()
         }
+        // F-004 — a batch re-PUT of an erased hash is refused by the shared
+        // tombstone gate; report it per-object (the rest of the batch proceeds).
+        CasHandlerError::Internal(ref msg)
+            if msg.starts_with(crate::routes::cas_erase::TOMBSTONE_GONE_SENTINEL) =>
+        {
+            "erased".to_owned()
+        }
         _ => "internal error".to_owned(),
     }
 }
@@ -1372,6 +1379,23 @@ fn map_err(e: CasHandlerError) -> axum::response::Response {
             if msg.starts_with(crate::byte_accounting::ACCT_UNAVAILABLE_SENTINEL) =>
         {
             (StatusCode::SERVICE_UNAVAILABLE, "storage accounting unavailable").into_response()
+        }
+        // F-004 — the shared tombstone gate (`TombstoneGatedCasHandler`): a
+        // write that re-PUTs an erased `(tenant, hash)` is refused 410 Gone (an
+        // erased artifact must never be resurrected at the same content address),
+        // and a gate-lookup transport fault fails CLOSED 503 (never serve/commit
+        // when the erasure gate is unconsultable). These ride sentinel-tagged
+        // `Internal` errors from the gate decorator so they are distinct from a
+        // generic 500.
+        CasHandlerError::Internal(ref msg)
+            if msg.starts_with(crate::routes::cas_erase::TOMBSTONE_GONE_SENTINEL) =>
+        {
+            (StatusCode::GONE, "erased").into_response()
+        }
+        CasHandlerError::Internal(ref msg)
+            if msg.starts_with(crate::routes::cas_erase::TOMBSTONE_UNAVAILABLE_SENTINEL) =>
+        {
+            (StatusCode::SERVICE_UNAVAILABLE, "tombstone gate unavailable").into_response()
         }
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal").into_response(),
     }
@@ -1876,6 +1900,9 @@ mod tests {
             _erased_at_ms: i64,
         ) -> Result<bool, String> {
             Ok(false)
+        }
+        async fn list_tenant_tombstones(&self, _tenant: &str) -> Result<Vec<String>, String> {
+            Err("d1 transport fault".to_owned())
         }
     }
 

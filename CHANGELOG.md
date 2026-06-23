@@ -43,6 +43,135 @@ Each entry cross-references:
     self-written key-prefix to itself (a tautology) on a fixture. It now requires the object's real
     PHYSICAL location (`physical_region_of`, from a locationHint probe) and fails loud when it cannot
     be established — never a false-green. (Real per-region buckets remain an infra dependency: F-013.)
+- **Container rate-limit layer overnight red-team fixes (F-016, F-017, F-022).**
+  Scope: `crates/corelink-container/src/routes/ratelimit_layer.rs` + `crates/corelink-ratelimit`.
+  - **F-022 (medium) — unbounded heap growth → self-OOM:** the production rate-limit layer wired the
+    crate's TEST capture sinks (`InMemoryRateLimitAuditSink` / `InMemoryRateLimitMetrics`), which push
+    every decision onto unbounded `Vec`/`HashMap`s never drained or capped — so honest in-budget
+    traffic grows the heap until the tenant's own data-plane container OOMs. Added bounded production
+    sinks `NoOpRateLimitAuditSink` / `NoOpRateLimitMetrics` (zero-sized, O(1) memory, no per-request
+    allocation, no per-tenant label cardinality) to `corelink-ratelimit` and wired them in
+    `RateLimitLayerState`. (Full `OutboxAuditSink`/`MultiplexAuditSink` composition lands with the
+    live-DO/D1 wiring, WI-S08-006; rate-limit audit is informational — no SEV-1 arm — so a bounded
+    drop is correct in the interim.)
+  - **F-017 (medium) — per-tier RPS ladder dead:** the limiter only ever used the hardcoded team
+    default (100 rps/200 burst) for every tenant; `from_persisted`/`update_plan` (the D1
+    `ratelimit_buckets` mirror, migration 0010) were invoked only in tests. Added a
+    `TenantTierResolver` seam + `RateLimitLayerState::with_tier_resolver`: the first request from each
+    tenant resolves its billing tier and applies the canonical ladder
+    (`tier_for_billing_label` → `refill_rate_for_tier` → `update_plan`) so paid tiers get real
+    headroom and free/solo are tightened. Added `seed_persisted_bucket` so `routes.rs`/`main.rs` can
+    reload buckets across restart (the durability half of the residual; the D1-backed resolver +
+    seed-at-start are the documented `routes.rs` seam, kept clean as this fix is file-scoped).
+  - **F-016 (HIGH) — OCI plane had NO per-second limit:** the Worker forwards `/v2/*` + `/token` with
+    `x-corelink-tenant-id` deleted, so the per-tenant gate fail-OPENED for every OCI request, leaving
+    the shared `_oci` pool floodable (even unauthenticated). Added a per-OCI-repo velocity gate
+    (separate, tighter limiter keyed on the repo/realm parsed from the path) so a single repo's req/s
+    is bounded. Residual (Worker/infra, off-repo): a true per-IP edge limit needs `cf-connecting-ip`
+    forwarded on the OCI arm and/or an edge WAF rule on `corelink-oci.humangr.com`.
+- **GDPR erasure cluster — F-003 + F-004 + F-010 (overnight pentest 2026-06-22).** Three
+  right-to-erasure (Art.17) defects in the CAS/AC erasure path, fixed at the root:
+  - **F-003 (HIGH) — Action-Cache erase never deleted any R2 object yet signed a false
+    `VerifiedComplete`.** The AC erase adapter (`routes/dsr/adapter_r2_ac.rs`) was driven by the
+    `ac_meta` D1 index, but the live Bazel REAPI AC write path never writes `ac_meta` (repo-wide
+    writers = 0), so erase ALWAYS short-circuited `NotApplicable` (no R2 delete) while the verify
+    sweep counted 0 index rows → `CANONICAL_EMPTY_TENANT_HASH` → an Ed25519-signed "complete
+    erasure" attestation for data never deleted. Rewrote the adapter to **LIST-by-prefix delete**
+    across the five regional `corelink-ac-<region>` buckets (`<region>/<tenant_prefix>/`, mirroring
+    the CAS adapter — complete by construction, no dead-index dependency) and to count **actual R2
+    objects** in the verification hash.
+  - **F-004 (HIGH) — erased CAS bytes resurrect-able + readable across 6/7 surfaces.** The 410
+    tombstone gate lived ONLY in the native `cas.rs` read route; writes were ungated and
+    cargo/sccache/brew/npm/pip/Bazel/Turbo/OCI all drive the SAME shared `Arc<dyn Cas{Read,Write}Handler>`
+    with no tombstone check, so a re-PUT of an erased blob resurrected it and any non-native surface
+    served it 200. **Centralized** the gate in a new `TombstoneGatedCasHandler` decorator wired at the
+    shared CAS seam in `routes::build_with_factory` (the same chokepoint as `AccountingCasHandler`):
+    a tombstoned read 404s, a re-PUT of a tombstoned hash is refused 410 (no resurrection), a
+    gate-lookup fault fails CLOSED 503 — inherited by EVERY surface by construction. The native
+    route keeps its inline gate (precise 410).
+  - **F-010 (medium) — bloom tombstone read-gate within-window false negative.** `BloomTombstoneStore`
+    re-seeded its per-tenant bloom from in-process write history ONLY, so a tombstone written by the
+    separate erase-route store (or another instance) read as NOT-tombstoned for the ~30s refresh
+    window after its first read (a no-false-negative / GDPR invariant violation). Added
+    `TombstoneStore::list_tenant_tombstones` and **seed the bloom from the authoritative D1 set on
+    every (re)load**, closing the within-window false negative; added a within-window 410 regression
+    test.
+- **Container Stripe-webhook tier reconciliation 422'd on every real subscription event (F-001).**
+  `crates/corelink-container/src/main.rs` built the `InMemoryTierSelector` from the literal keys
+  `plan_solo/plan_starter/plan_pro/plan_max` and never read the `STRIPE_PRICE_ID_*` env values the
+  Worker forwards (`worker/src/durable_object.ts:554-558`). A real `customer.subscription.updated`
+  carries `data.object.plan.id = price_…`, so `compute_tier` returned `UnknownPlan` →
+  `InvalidPayload` → HTTP 422 (Stripe stops retrying) — container-side tier reconciliation was
+  non-functional in prod. Fix: build the mapping from the live `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}`
+  env values (mirroring the signup-worker resolver), falling back to the literal `plan_{tier}` keys
+  only when an env var is unset/empty. Regression tests pin the real-`price_…`-id path + the
+  back-compat fallback (`main.rs` test module).
+- **Container Stripe-webhook silently dropped a billing-state change on a transient D1 fault
+  (F-008).** `crates/corelink-stripe-real/src/webhook_dispatch.rs` committed the idempotency dedup
+  row BEFORE materializing; a `MaterializerError::Transient` then returned 500 with no rollback and
+  no DLQ, so the Stripe retry hit `AlreadyProcessed` and skipped the handler — the tier change was
+  lost while Stripe recorded success (paid entitlement after cancel, or a lost upgrade). Fix: wire
+  the existing `dlq.rs` into the dispatcher — a transient (or future-variant) materialize failure now
+  quarantines the already-HMAC-verified event into a `WebhookDlqStore` for operator replay
+  (best-effort; the 500 still drives Stripe's retry). New `WebhookDispatcher::with_dlq`; the container
+  wires the in-memory store as the live backstop (durable D1 store is the operator follow-up). A
+  regression test drives transient-then-retry and asserts the event remains recoverable via the DLQ.
+- **OCI plane left `team`-tier tenants UNCAPPED (storage-cap drift, F-002).**
+  `oci_cap.rs::tier_to_cap_bytes` mapped `"team" | "enterprise" => UNLIMITED` (the
+  `Some(0)` sentinel), but the Worker caps `team` at a FINITE 1 TiB
+  (`worker/src/lib/quota.ts:88`, `storageBytesMax: 1_099_511_627_776`). The `Some(0)`
+  cap rode the signed OCI bearer into `byte_accounting`, whose upsert predicate
+  (`WHERE ?5 = 0 OR …`) treats `0` as "no cap" → every OCI finalize for a `team`
+  tenant accrued bytes with NO enforcement (contract-cap bypass + COGS overrun via
+  `docker push`). Now `"team" => 1024 * GIB` (= the Worker's 1 TiB literal), leaving
+  ONLY `"enterprise"` genuinely unlimited; the false "team is unlimited" doc comment
+  and the unit test (which asserted the wrong value, green-lighting the drift) are
+  corrected to pin the 1 TiB cap.
+- **OCI manifest PUT accepted a digest-form reference that did not hash the body
+  (digest confusion, F-009).** `oci/push/manifest.rs::put` wrote the client-supplied
+  `reference` verbatim with no check that a `sha256:<hex>` reference matched the
+  computed manifest digest — so `PUT .../manifests/sha256:1111…` of a body hashing to
+  a different digest returned 201 and was served back under the wrong digest address
+  (the blob path already fails closed via `verify_against_bytes`). `put` now rejects a
+  digest-form reference != the computed digest with `400 MANIFEST_INVALID`, mirroring
+  the blob path; tag-form references are unaffected. Regression test added
+  (`tests/oci_adversarial.rs::manifest_digest_reference_confusion_rejected`,
+  with a positive control that a matching digest reference still 201s).
+- **brew adapter could be driven as an unrestricted authed ghcr.io proxy + poisoned the shared
+  `_public` namespace (F-005, overnight pentest 2026-06-22).** The brew read-through cache pinned
+  the upstream HOST to `ghcr.io` but applied NO repo-path allowlist, and it cached tag-addressed
+  (mutable) manifests into the cross-tenant `_public` namespace UNVERIFIED (no URL-declared digest
+  to check against) — so any authenticated free tenant could make CoreLink fetch attacker-chosen
+  ghcr.io content and pin those bytes for every later tenant requesting the same path. Fix
+  (`crates/corelink-adapter-host/src/brew/bottle.rs`): (a) a repo-path allowlist
+  (`v2/homebrew/core/…`, `v2/homebrew/cask/…`) enforced BEFORE any cache or network access —
+  off-allowlist paths return `403 ForbiddenRepoPath`; (b) only digest-verified (`…/sha256:<hex>`)
+  bytes are cached into `_public` — mutable tag-addressed paths are served for the current request
+  but NEVER cached. Covered by `tests/brew_adversarial.rs`
+  (`forbidden_repo_path_is_refused_before_any_fetch_or_store`,
+  `tag_addressed_manifest_is_served_but_not_cached_into_public`) + `bottle.rs` unit tests.
+- **brew `$`-ceiling gate failed OPEN on a missing cost-attribution tenant (F-011, REV-S3
+  hardening not ported to brew).** `routes/brew.rs` wrapped the monthly `$`-ceiling check in
+  `if !tenant.is_empty()`, so a billable brew GET with no `x-corelink-tenant-id` was served
+  UNMETERED — where the sibling npm/pip/cargo adapters fail CLOSED (503) for this exact case under
+  REV-S3. Fix: brew now returns `503 "cost-attribution tenant unavailable"` when the quota gate is
+  active and no tenant is resolvable, mirroring npm/pip/cargo. Covered by
+  `brew_missing_tenant_fails_closed_503_when_quota_active` +
+  `brew_empty_tenant_header_fails_closed_503_when_quota_active`.
+- **`/v1/customer/billing*`, `/overview`, `/audit` had NO scope gate — a read-only (`cas:r`) cache
+  PAT could open the Stripe billing portal (cancel subscription / manage payment methods) and read
+  billing + account + audit financial-PII (F-018).** `handle_billing_portal` / `handle_billing` /
+  `handle_overview` / `handle_audit` (`crates/corelink-container/src/routes/customer.rs`) ran only
+  the fail-CLOSED tenant resolution + the Argon2id PAT-possession backstop, with NO capability check
+  — unlike the sibling key-management + privileged-team routes which gate on
+  `scope::requires_cache_write`. So a least-privilege cache token (e.g. a CI / contractor read-only
+  PAT) escalated to billing-management + financial-PII read on its own tenant (and cross-tenant when
+  composed with F-006 → CK-4). Fix: gate all four billing/PII routes on a write-capable owner/admin
+  scope (`billing_pii_gate_reject`, mirroring the keys/team gate — dashboard Clerk `read-write` +
+  `cas:rw` / `admin` PATs pass; `cas:r` or a missing scope → 403). Cache scopes no longer grant
+  billing-management or PII reads. The route's own happy-path test, which previously asserted 200
+  with NO scope header, now sends the write scope on the happy path; added read-only-→-403 (+ a
+  missing-scope-→-403) regression tests for the portal, overview, billing, and audit surfaces.
 - **Stuck-`"starting"` Durable Object wedge → permanent `container_start_timeout` 503 (F-020,
   prod incident 2026-06-23).** `ensureContainerRunning` (`worker/src/durable_object.ts`) routed a
   `containerStatus === "starting"` straight to `waitForContainerReady` with NO staleness recovery

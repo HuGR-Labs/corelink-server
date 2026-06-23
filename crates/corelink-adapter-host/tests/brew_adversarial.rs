@@ -58,7 +58,7 @@ async fn oversize_bottle_returns_413() {
     .await;
 
     let resp = reqwest::Client::new()
-        .get(format!("http://{addr}/v2/some/big/bottle"))
+        .get(format!("http://{addr}/v2/homebrew/core/big/blobs/sha256:{}", "a".repeat(64)))
         .header("Authorization", format!("Bearer {PAT_A}"))
         .send()
         .await
@@ -137,6 +137,17 @@ async fn tenant_isolation_holds() {
     // two phases — phase 1 stores tenant_a's bytes, phase 2 swaps the
     // upstream mock and runs tenant_b's request. The crucial check is
     // that tenant_b's request does NOT see tenant_a's CAS entry.
+    //
+    // The path is content-addressed (`…/blobs/sha256:<digest-of-bytes_a>`):
+    // digest-addressed bottles are the ONLY ones cached after F-005 (mutable
+    // tag-addressed paths are served but never cached into `_public`), so this
+    // is the path that actually exercises per-tenant CAS isolation. The honest
+    // digest matches bytes_a; bytes_b deliberately differs (a swapped upstream)
+    // and would fail bytes_a's digest — so phase 2 must NOT be a verified store
+    // of bytes_b under that digest. To keep BOTH stores legitimate we give each
+    // tenant its OWN honest digest path.
+    let digest_a = hex::encode(Sha256::digest(&bytes_a));
+    let digest_b = hex::encode(Sha256::digest(&bytes_b));
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(200).set_body_bytes(bytes_a.clone()))
         .up_to_n_times(1)
@@ -168,7 +179,9 @@ async fn tenant_isolation_holds() {
     let client = reqwest::Client::new();
 
     let r_a = client
-        .get(format!("http://{addr}/v2/shared/path"))
+        .get(format!(
+            "http://{addr}/v2/homebrew/core/shared/blobs/sha256:{digest_a}"
+        ))
         .header("Authorization", format!("Bearer {PAT_A}"))
         .send()
         .await
@@ -176,10 +189,12 @@ async fn tenant_isolation_holds() {
     assert_eq!(r_a.status(), 200);
     assert_eq!(r_a.bytes().await.unwrap().to_vec(), bytes_a);
 
-    // Tenant B same URL — must NOT see tenant A's CAS entry; must
-    // refetch upstream and receive bytes_b.
+    // Tenant B different content-addressed URL — must NOT see tenant A's CAS
+    // entry; must refetch upstream and receive bytes_b.
     let r_b = client
-        .get(format!("http://{addr}/v2/shared/path"))
+        .get(format!(
+            "http://{addr}/v2/homebrew/core/shared/blobs/sha256:{digest_b}"
+        ))
         .header("Authorization", format!("Bearer {PAT_B}"))
         .send()
         .await
@@ -195,8 +210,7 @@ async fn tenant_isolation_holds() {
         "tenant B MUST NOT receive tenant A's CAS entry"
     );
 
-    // CAS now has 2 entries (one per tenant) under the same cas_key,
-    // namespaced by tenant_id.
+    // CAS now has 2 entries (one per tenant), namespaced by tenant_id.
     assert_eq!(cas.len(), 2);
     let tenants: std::collections::HashSet<String> =
         cas.keys().into_iter().map(|(t, _)| t).collect();
@@ -235,7 +249,7 @@ async fn upstream_5xx_returns_502_with_no_half_store() {
     .await;
 
     let resp = reqwest::Client::new()
-        .get(format!("http://{addr}/v2/some/bottle"))
+        .get(format!("http://{addr}/v2/homebrew/core/curl/manifests/8.5.0"))
         .header("Authorization", format!("Bearer {PAT_A}"))
         .send()
         .await
@@ -291,6 +305,134 @@ async fn mitm_digest_mismatch_is_refused_and_never_stored() {
     assert_eq!(events[0].tenant_id, TENANT_A);
     assert_eq!(events[0].payload["expected_sha256"], declared);
     assert_eq!(events[0].payload["outcome"], "refused");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn forbidden_repo_path_is_refused_before_any_fetch_or_store() {
+    // F-005: a path OUTSIDE the allowed Homebrew repo namespace
+    // (`homebrew/core` / `homebrew/cask`) must be rejected with 403 BEFORE the
+    // adapter touches the network or the cache — brew is NOT an unrestricted
+    // authenticated ghcr.io proxy. The upstream mock counts ZERO hits.
+    let upstream = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"attacker-controlled".to_vec()))
+        .expect(0) // MUST NOT be reached
+        .mount(&upstream)
+        .await;
+
+    let cas = Arc::new(InMemoryCas::new());
+    let resolver = Arc::new(StaticTenantResolver::new().with(PAT_A, TENANT_A));
+    let audit = Arc::new(InMemoryAuditEmitter::new());
+
+    let upstream_url = Url::parse(&upstream.uri()).unwrap();
+    let (addr, _adapter) = spin_adapter(
+        upstream_url,
+        cas.clone(),
+        resolver,
+        audit.clone(),
+        default_bottle_limit(),
+    )
+    .await;
+
+    let client = reqwest::Client::new();
+    // An attacker-chosen repo + a digest-form ref: even digest-addressed, an
+    // off-allowlist repo must be refused (the proxy-abuse vector).
+    for path in [
+        "/v2/attacker/evil/blobs/sha256:".to_owned() + &"a".repeat(64),
+        "/v2/homebrew/evil/manifests/latest".to_owned(),
+        "/v2/library/ubuntu/manifests/latest".to_owned(),
+        "/etc/passwd".to_owned(),
+    ] {
+        let resp = client
+            .get(format!("http://{addr}{path}"))
+            .header("Authorization", format!("Bearer {PAT_A}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 403, "off-allowlist path {path} must be 403");
+    }
+
+    assert_eq!(cas.len(), 0, "off-allowlist paths must NEVER reach the store");
+    assert_eq!(
+        audit.snapshot().len(),
+        0,
+        "off-allowlist paths must NOT emit an audit row"
+    );
+    let received = upstream.received_requests().await.unwrap();
+    assert!(
+        received.is_empty(),
+        "off-allowlist paths must NEVER reach upstream; saw {received:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tag_addressed_manifest_is_served_but_not_cached_into_public() {
+    // F-005: a tag-addressed (mutable) manifest under an ALLOWED repo is served
+    // to the requesting client but MUST NOT be pinned into the shared `_public`
+    // namespace — only digest-verified bytes may be cached, else one tenant's
+    // fetch poisons every later tenant. Proven by a SECOND request hitting
+    // upstream again (no cache entry to short-circuit it) + an empty CAS.
+    let upstream = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"mutable-manifest-bytes".to_vec()))
+        .mount(&upstream)
+        .await;
+
+    let cas = Arc::new(InMemoryCas::new());
+    let resolver = Arc::new(StaticTenantResolver::new().with(PAT_A, TENANT_A));
+    let audit = Arc::new(InMemoryAuditEmitter::new());
+
+    let upstream_url = Url::parse(&upstream.uri()).unwrap();
+    let (addr, _adapter) = spin_adapter(
+        upstream_url,
+        cas.clone(),
+        resolver,
+        audit.clone(),
+        default_bottle_limit(),
+    )
+    .await;
+
+    let client = reqwest::Client::new();
+    let url = format!("http://{addr}/v2/homebrew/core/jq/manifests/1.7");
+
+    let r1 = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {PAT_A}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r1.status(), 200, "tag-addressed manifest is still served");
+    assert_eq!(r1.bytes().await.unwrap().as_ref(), b"mutable-manifest-bytes");
+
+    let r2 = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {PAT_A}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r2.status(), 200);
+
+    assert_eq!(
+        cas.len(),
+        0,
+        "tag-addressed (mutable) bytes must NEVER be cached into _public (F-005)"
+    );
+    // Both requests reached upstream (no cache short-circuit), proving no
+    // poisonable entry was created.
+    let received = upstream.received_requests().await.unwrap();
+    assert_eq!(
+        received.len(),
+        2,
+        "each tag-addressed request must re-fetch upstream (not served from a cache entry)"
+    );
+    // No cache-fill audit row for an uncached fetch.
+    assert!(
+        audit
+            .snapshot()
+            .iter()
+            .all(|e| e.event_type != EVENT_TYPE_CACHE_FILL),
+        "no cache-fill audit row may be emitted for an uncached tag-addressed fetch"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

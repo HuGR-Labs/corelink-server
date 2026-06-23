@@ -21,23 +21,34 @@ use std::sync::Arc;
 use common::{default_bottle_limit, spin_adapter, InMemoryCas, StaticTenantResolver};
 use corelink_adapter_host::brew::audit::EVENT_TYPE_CACHE_FILL;
 use corelink_audit::ports::InMemoryAuditEmitter;
+use sha2::{Digest as _, Sha256};
 use url::Url;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const BOTTLE_BYTES: &[u8] = b"\x1f\x8b\x08\x00fake-tar-gz-payload";
-const BOTTLE_PATH: &str = "/v2/homebrew/core/curl-8.5.0.bottle.tar.gz";
 const PAT: &str = "corelink_tenant_smoke";
 const TENANT: &str = "tenant-smoke";
+
+/// Content-addressed (digest) bottle blob path. After F-005, ONLY
+/// digest-verified bytes are cached into the shared `_public` namespace, so the
+/// cache-hit / dedup smoke tests use a `…/blobs/sha256:<hex>` path whose digest
+/// matches `BOTTLE_BYTES`. Tag-addressed (mutable) paths are served but NOT
+/// cached — exercised by [`tag_addressed_path_is_served_but_not_cached`].
+fn bottle_digest_path() -> String {
+    let digest = hex::encode(Sha256::digest(BOTTLE_BYTES));
+    format!("/v2/homebrew/core/curl/blobs/sha256:{digest}")
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn second_request_is_a_cache_hit() {
     let upstream = MockServer::start().await;
+    let bottle_path = bottle_digest_path();
 
     // Expect EXACTLY 1 upstream hit across BOTH client requests — the
     // second request must be served from CAS.
     Mock::given(method("GET"))
-        .and(path(BOTTLE_PATH))
+        .and(path(bottle_path.clone()))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_bytes(BOTTLE_BYTES.to_vec())
@@ -65,7 +76,7 @@ async fn second_request_is_a_cache_hit() {
 
     // First request: cache miss, upstream hit, CAS fill, 1 audit row.
     let r1 = client
-        .get(format!("http://{addr}{BOTTLE_PATH}"))
+        .get(format!("http://{addr}{bottle_path}"))
         .header("Authorization", format!("Bearer {PAT}"))
         .send()
         .await
@@ -75,7 +86,7 @@ async fn second_request_is_a_cache_hit() {
 
     // Second request: cache hit, ZERO additional upstream traffic.
     let r2 = client
-        .get(format!("http://{addr}{BOTTLE_PATH}"))
+        .get(format!("http://{addr}{bottle_path}"))
         .header("Authorization", format!("Bearer {PAT}"))
         .send()
         .await
@@ -103,7 +114,9 @@ async fn second_request_is_a_cache_hit() {
     assert_eq!(events[0].event_type, EVENT_TYPE_CACHE_FILL);
     assert_eq!(events[0].tenant_id, TENANT);
     assert_eq!(events[0].payload["adapter"], "brew");
-    assert_eq!(events[0].payload["integrity"], "best-effort");
+    // Digest-addressed path ⇒ the cache-fill is integrity-verified (F-005:
+    // only digest-verified bytes enter the shared `_public` namespace).
+    assert_eq!(events[0].payload["integrity"], "verified-sha256");
     assert_eq!(events[0].payload["bottle_size_bytes"], BOTTLE_BYTES.len());
 
     // CAS: exactly one entry, namespaced to TENANT.
@@ -136,14 +149,19 @@ async fn url_variants_collapse_to_single_cache_entry() {
 
     let client = reqwest::Client::new();
 
-    // Three "different" URLs that canonicalize to the same CAS key.
+    // Three "different" URLs that canonicalize to the same CAS key. The base is
+    // a digest-addressed blob path (the only kind cached after F-005); the
+    // variants differ only in trailing slash / case / query string, all of
+    // which `canonical_bottle_path` normalizes away.
+    let digest = hex::encode(Sha256::digest(BOTTLE_BYTES));
+    let base = format!("/v2/homebrew/core/curl/blobs/sha256:{digest}");
     let variants = [
-        "/v2/homebrew/core/curl",
-        "/v2/homebrew/core/curl/",
-        "/V2/HOMEBREW/CORE/CURL?cdn=us",
+        base.clone(),
+        format!("{base}/"),
+        format!("{}?cdn=us", base.to_uppercase()),
     ];
 
-    for v in variants {
+    for v in &variants {
         let resp = client
             .get(format!("http://{addr}{v}"))
             .header("Authorization", format!("Bearer {PAT}"))

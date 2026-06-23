@@ -68,9 +68,12 @@ const BREW_UPSTREAM_DOMAIN: &str = "https://ghcr.io";
 ///
 /// Pre-store integrity for this SHARED namespace is enforced upstream of this
 /// store, in the adapter's fetch path (`corelink_adapter_host::brew::bottle`):
-/// content-addressed ghcr.io paths (`…/sha256:<hex>`) are verified against the
-/// URL-declared digest BEFORE `put` is ever called — a mismatched fetch is
-/// refused + audited, so corrupt bytes cannot be persisted here. The read path
+/// a repo-path allowlist (`homebrew/core` / `homebrew/cask`) refuses arbitrary
+/// ghcr.io repos before any fetch, content-addressed ghcr.io paths
+/// (`…/sha256:<hex>`) are verified against the URL-declared digest BEFORE `put`
+/// is ever called, and mutable tag-addressed paths are served but NEVER cached
+/// here (only digest-verified bytes enter `_public`) — so unverified bytes
+/// cannot be persisted into this cross-tenant namespace (F-005). The read path
 /// additionally re-verifies blake3 against the stored mapping (self-healing).
 #[derive(Debug)]
 struct BrewMoatStore {
@@ -298,8 +301,12 @@ async fn brew_gate(
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1; rt-nuclear
     // #22): charge the flat per-op cost AFTER the scope + F27 checks, BEFORE the
     // adapter runs. Cost-attribution tenant = the server-trusted
-    // `x-corelink-tenant-id`; missing/empty skips fail-OPEN. 402 over-ceiling /
-    // 503 fail-CLOSED. Mirrors `cargo_gate`.
+    // `x-corelink-tenant-id`. A missing/empty tenant means the gate cannot
+    // attribute the billable op, so we fail CLOSED (503) instead of silently
+    // skipping the charge — a missing label is a Worker header-injection
+    // regression (or direct container access) and must surface immediately
+    // rather than let a tenant exceed its $-ceiling unmetered. This mirrors the
+    // npm/pip/cargo adapters (REV-S3; F-011). 402 over-ceiling / 503 fail-CLOSED.
     if let Some(gate) = state.quota.as_ref() {
         let tenant = req
             .headers()
@@ -307,10 +314,19 @@ async fn brew_gate(
             .and_then(|v| v.to_str().ok())
             .map(str::trim)
             .unwrap_or("");
-        if !tenant.is_empty() {
-            if let Some(resp) = gate.check(tenant).await {
-                return resp;
-            }
+        if tenant.is_empty() {
+            tracing::error!(
+                "brew: quota gate active but no tenant id for cost attribution \
+                 (missing x-corelink-tenant-id) — failing CLOSED (REV-S3)"
+            );
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "cost-attribution tenant unavailable",
+            )
+                .into_response();
+        }
+        if let Some(resp) = gate.check(tenant).await {
+            return resp;
         }
     }
 
@@ -523,6 +539,50 @@ mod tests {
             resp.status(),
             StatusCode::PAYMENT_REQUIRED,
             "an over-ceiling brew request must be 402 at the gate (rt-nuclear #22)"
+        );
+    }
+
+    /// F-011 (REV-S3) — when the quota gate is active, a billable brew GET that
+    /// carries NO `x-corelink-tenant-id` (or an empty one) must fail CLOSED with
+    /// 503, NOT skip the `$`-ceiling check (fail-OPEN). Mirrors npm/pip/cargo.
+    /// Proven AT the gate: the all-rejecting verifier is never reached.
+    #[tokio::test]
+    async fn brew_missing_tenant_fails_closed_503_when_quota_active() {
+        // The seeded tenant is irrelevant — the request omits the header, so the
+        // gate cannot attribute the op and must 503 before checking the budget.
+        let app = router_over_ceiling("11111111-1111-1111-1111-111111111111");
+        let req = HttpRequest::builder()
+            .method(Method::GET)
+            .uri("/brew/t/v2/homebrew/core/curl")
+            .header(SCOPE_HEADER, "cas:r")
+            // NO x-corelink-tenant-id header.
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "brew with quota active + no cost-attribution tenant must 503 (REV-S3, F-011)"
+        );
+    }
+
+    /// F-011 — an empty (whitespace-only) `x-corelink-tenant-id` is treated the
+    /// same as missing: fail CLOSED (503).
+    #[tokio::test]
+    async fn brew_empty_tenant_header_fails_closed_503_when_quota_active() {
+        let app = router_over_ceiling("11111111-1111-1111-1111-111111111111");
+        let req = HttpRequest::builder()
+            .method(Method::GET)
+            .uri("/brew/t/v2/homebrew/core/curl")
+            .header(SCOPE_HEADER, "cas:r")
+            .header("x-corelink-tenant-id", "   ")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "brew with quota active + empty tenant header must 503 (REV-S3, F-011)"
         );
     }
 
