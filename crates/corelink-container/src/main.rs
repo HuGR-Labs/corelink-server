@@ -646,6 +646,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
     use super::{build_tier_selector_from, should_fatal_on_missing_gate};
     use corelink_billing_stripe_materializer::{TierSelectError, TierSelector};
     use corelink_tier_selection::tier::TierKind;
