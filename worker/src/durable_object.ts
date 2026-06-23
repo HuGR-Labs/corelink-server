@@ -556,6 +556,15 @@ export class CoreLinkServer implements DurableObject {
           STRIPE_PRICE_ID_TEAM: this.env.STRIPE_PRICE_ID_TEAM ?? "",
           STRIPE_PRICE_ID_PRO: this.env.STRIPE_PRICE_ID_PRO ?? "",
           STRIPE_PRICE_ID_MAX: this.env.STRIPE_PRICE_ID_MAX ?? "",
+          // Runners-tier prices: the container's seed handler
+          // (`build_runners_resolver` in main.rs) reads these from its OWN env
+          // to map a Runners-tier Stripe subscription → `runners_entitlement`.
+          // Absent ⇒ the Runners seed stays dormant (cache path only).
+          STRIPE_PRICE_ID_RUNNER_STARTER: this.env.STRIPE_PRICE_ID_RUNNER_STARTER ?? "",
+          STRIPE_PRICE_ID_RUNNER_PRO: this.env.STRIPE_PRICE_ID_RUNNER_PRO ?? "",
+          STRIPE_PRICE_ID_RUNNER_TEAM: this.env.STRIPE_PRICE_ID_RUNNER_TEAM ?? "",
+          STRIPE_PRICE_ID_RUNNER_SCALE: this.env.STRIPE_PRICE_ID_RUNNER_SCALE ?? "",
+          STRIPE_PRICE_ID_RUNNER_MAX: this.env.STRIPE_PRICE_ID_RUNNER_MAX ?? "",
           CORELINK_DPA_VERSION: this.env.CORELINK_DPA_VERSION ?? "",
           // DSR Wave 1 (#254): the container's erasure adapters derive the
           // pseudonymization/idempotency salt from ERASURE_SALT_KEY. If absent the
