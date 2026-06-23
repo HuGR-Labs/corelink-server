@@ -542,6 +542,16 @@ export class CoreLinkServer implements DurableObject {
           // Stream-5: internal PAT mint route gate secrets.
           // Container mounts `/_internal/pat/mint` only when both are non-empty.
           CORELINK_INTERNAL_AUTH_KEY: this.env.CORELINK_INTERNAL_AUTH_KEY ?? "",
+          // CP-1 (go-live audit): the container's `resolve_internal_auth_key`
+          // prefers a per-consumer DEDICATED key and falls back to the shared
+          // one. Those dedicated keys MUST be forwarded or (a) the blast-radius
+          // isolation is inert (everything gates on the shared key) AND (b) the
+          // moment an operator provisions a dedicated key, the container — never
+          // receiving it — 401s every mint/admin/erase call (a self-inflicted
+          // outage). Forward them (empty when unset ⇒ shared fallback, unchanged).
+          CORELINK_PAT_MINT_AUTH_KEY: this.env.CORELINK_PAT_MINT_AUTH_KEY ?? "",
+          CORELINK_ADMIN_AUTH_KEY: this.env.CORELINK_ADMIN_AUTH_KEY ?? "",
+          CORELINK_ERASE_AUTH_KEY: this.env.CORELINK_ERASE_AUTH_KEY ?? "",
           PAT_SIGNING_KEY: this.env.PAT_SIGNING_KEY ?? "",
           // L3 money path: `POST /v1/onboarding/tier-select` runs INSIDE the
           // container and reads these from its OWN process env

@@ -136,6 +136,26 @@ fn subscription_status_grants_access(status: &str) -> bool {
     matches!(status, "active" | "trialing")
 }
 
+/// Extract the subscription's price/plan id, tolerant to Stripe API-version
+/// shape (F-MP-3, go-live audit): prefer the legacy `data.object.plan.id`, fall
+/// back to the modern `data.object.items.data[0].price.id`. Both the cache-tier
+/// and Runners reconcile use this so a pinned-API-version change (which can drop
+/// the legacy `plan.id`) doesn't 422 every subscription event.
+fn extract_plan_id(env: &StripeWebhookEnvelope) -> Option<&str> {
+    let obj = env.data.get("object")?;
+    obj.get("plan")
+        .and_then(|p| p.get("id"))
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            obj.get("items")
+                .and_then(|i| i.get("data"))
+                .and_then(|d| d.get(0))
+                .and_then(|it| it.get("price"))
+                .and_then(|p| p.get("id"))
+                .and_then(serde_json::Value::as_str)
+        })
+}
+
 /// Production [`StateMaterializer`] implementation.
 pub struct D1SubscriptionStateHandler {
     d1: Arc<dyn BillingD1Writer>,
@@ -366,14 +386,8 @@ impl D1SubscriptionStateHandler {
         let Some(resolver) = self.runners_resolver.as_ref() else {
             return Ok(false); // dormant (no STRIPE_PRICE_ID_RUNNER_* wired)
         };
-        let Some(plan_id) = env
-            .data
-            .get("object")
-            .and_then(|o| o.get("plan"))
-            .and_then(|p| p.get("id"))
-            .and_then(|v| v.as_str())
-        else {
-            return Ok(false); // no plan.id → let the cache path raise its own error
+        let Some(plan_id) = extract_plan_id(env) else {
+            return Ok(false); // no plan/price id → let the cache path raise its own error
         };
         let Some(ent) = resolver.resolve(plan_id) else {
             return Ok(false); // not a Runners price → cache-tier path
@@ -419,17 +433,12 @@ impl D1SubscriptionStateHandler {
         status: &str,
         now_ms: u64,
     ) -> Result<(), MaterializerError> {
-        let plan_id = env
-            .data
-            .get("object")
-            .and_then(|o| o.get("plan"))
-            .and_then(|p| p.get("id"))
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                MaterializerError::InvalidPayload(
-                    "missing data.object.plan.id (required for tier reconciliation)".to_string(),
-                )
-            })?;
+        let plan_id = extract_plan_id(env).ok_or_else(|| {
+            MaterializerError::InvalidPayload(
+                "missing data.object.plan.id / items.data[].price.id (required for tier reconciliation)"
+                    .to_string(),
+            )
+        })?;
         let seat_count = env
             .data
             .get("object")
@@ -859,6 +868,28 @@ mod tests {
                 "status {non_granting} must NOT seed runners_entitlement"
             );
         }
+    }
+
+    #[test]
+    fn extract_plan_id_falls_back_to_items_price_id() {
+        // F-MP-3: a modern Stripe subscription with NO legacy plan.id but a
+        // nested items.data[0].price.id must still resolve (tier + runners).
+        let (handler, d1, _audit) = fixture_with_runners();
+        let e = env(
+            "evt_items",
+            "customer.subscription.updated",
+            serde_json::json!({
+                "object": {
+                    "id": "sub_items",
+                    "status": "active",
+                    "metadata": { "tenant_id": "ten_items" },
+                    "items": { "data": [ { "price": { "id": "price_runner_team" } } ] }
+                }
+            }),
+        );
+        handler.on_subscription_updated(&e).unwrap();
+        // Resolved via items[].price.id → Runners Team seeded (80/600).
+        assert_eq!(d1.runners_entitlement_of("ten_items"), Some((80, 600)));
     }
 
     #[test]

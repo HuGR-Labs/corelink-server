@@ -746,12 +746,22 @@ impl WebhookDispatcher {
                         AuditOutcome::MaterializerInvalid,
                         Some(token.to_hex()),
                         now_ms,
-                        Some(msg),
+                        Some(msg.clone()),
                     ),
                     canon,
                     AuditOutcome::MaterializerInvalid,
                     start,
                 );
+                // F-MP-2 (go-live audit): QUARANTINE the InvalidPayload event,
+                // not just Transient. A 422 from price-map/config drift (e.g. a
+                // `team` price the container can't map, or a future Stripe API
+                // shape change) is otherwise SILENTLY dropped — Stripe stops
+                // retrying on 4xx and the entitlement reconcile is lost with no
+                // operator signal. The DLQ (depth/age alerting) makes it
+                // observable + replayable. The dedup row is already committed, so
+                // replay-from-DLQ is the recovery path. Genuinely-malformed garbage
+                // also lands here, but a visible quarantine beats a silent loss.
+                self.quarantine_transient(body, &env, canon, &token, &msg, now_ms);
                 DispatchResponse::Unprocessable422
             }
             // `MaterializerError` is `#[non_exhaustive]` in the leaf traits
