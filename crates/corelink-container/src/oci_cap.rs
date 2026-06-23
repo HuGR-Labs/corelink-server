@@ -197,6 +197,20 @@ impl TenantCapResolver for D1TenantCapResolver {
     }
 }
 
+// F-017: the rate-limit layer's per-tenant tier resolver reuses this EXACT D1
+// lookup (`tier_selections` ACTIVE → `tenant.tier` → `free`) — one source of
+// truth for "what tier is this tenant", shared with the OCI storage-cap path.
+// The layer maps the label to the RPS ladder (`refill_rate_for_tier`); a `None`
+// (D1 error / unclassifiable) leaves the bucket on the team-default config —
+// fail-SAFE on availability (never over-throttle a tenant we cannot classify),
+// matching `resolve_storage_cap`'s own indeterminate→fail posture.
+#[async_trait]
+impl crate::routes::ratelimit_layer::TenantTierResolver for D1TenantCapResolver {
+    async fn resolve_tier_label(&self, tenant_id: &str) -> Option<String> {
+        self.resolve_tier(tenant_id).await.ok().flatten()
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,

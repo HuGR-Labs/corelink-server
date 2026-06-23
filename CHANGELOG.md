@@ -22,7 +22,51 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **Runner billing usage-push INGEST endpoint (ASK-2).** New container route
+  `POST /internal/v1/billing/usage` (`crates/corelink-container/src/routes/billing_ingest.rs`,
+  mounted in `main.rs`) that the corelink-runners fabric calls to push a JSON BATCH of
+  per-lease usage records `{tenant_id, event_kind, qty, billing_period, region, source,
+  time_ms, idem_key}`. It validates each record (billing_period via
+  `validate_billing_period`, uuid tenant_id, canonical event_kind, 3-char region, 64-hex
+  idem_key) all-or-nothing, then idempotently stages the raw events into the canonical
+  `usage_event_staging` D1 table the billing aggregator drains — deduped by `idem_key` (the
+  `(tenant_id, request_id)` PK), returning a per-batch `{accepted, deduped, total}` tally.
+  It does NOT aggregate or touch Stripe (the aggregator owns the rollup + hash chain).
+  Gated by a DEDICATED `BILLING_INGEST_AUTH_KEY` (constant-time compare, reusing the
+  `internal_pat::internal_auth_ok` gate; NOT the shared `CORELINK_INTERNAL_AUTH_KEY` nor
+  `FABRIC_INTROSPECT_AUTH_KEY`) — fail-CLOSED (route unmounted) if absent/<32 chars; 401 on
+  bad auth, 400 on a malformed batch, 503 on a D1 fault. New non-Stripe-billable
+  `UsageEventKind::RunnerSlotSeconds` (`"runner_slot_seconds"`, treated like `ReplayRequest`
+  per the owner-ratified "concurrency priced, minutes unlimited" runner model) added to
+  `corelink-billing-emit`. Worker (`worker/src/index.ts`) routes the path to the `_system`
+  DO as a pure pass-through (FABRIC-secret forwarded unchanged); the DO env-forward contract
+  (`worker/src/durable_object.ts`) carries `BILLING_INGEST_AUTH_KEY` to the container.
+
 ### Fixed
+- **F-017 — per-tenant rate-limit tier ladder now ENFORCED.** The data-plane rate-limit layer was
+  constructed with `RateLimitLayerState::new()` (no tier resolver), so every tenant sat on the team
+  default RPS regardless of their billing tier. Wired a D1-backed `TenantTierResolver` at the
+  `routes.rs` construction site, reusing `oci_cap::D1TenantCapResolver`'s exact tier lookup
+  (`tier_selections` ACTIVE → `tenant.tier` → `free`) as one source of truth; the first request from
+  each tenant resolves its tier and applies the canonical RPS ladder. Fail-SAFE: a `StorageEnv`/D1 init
+  failure falls back to the resolver-less (team-default) state — a config gap never bricks the data
+  plane — and an unclassifiable tenant keeps the team default (never over-throttled).
+- **EU residency (F-013) — wire `prod-lhr` to the REAL eu-jurisdiction R2 buckets + make the
+  verifier do a physical check.** The EU env had only a *key-prefix* residency signal: CAS/AC
+  bytes physically landed in US-located buckets (`corelink-cas-prod` / `corelink-ac-lhr`, both
+  ENAM) while keyed under `lhr`. Now `[env.prod-lhr]` binds the real eu-jurisdiction buckets
+  `corelink-cas-eu` / `corelink-ac-eu` (both physically EEUR) via the EU S3 endpoint
+  (`https://…eu.r2.cloudflarestorage.com`): the container's `R2_CAS_BUCKET`/`R2_AC_BUCKET`/
+  `R2_S3_ENDPOINT` vars and the worker `CAS_BUCKET`/`AC_BUCKET_LHR` r2 bindings (now
+  `jurisdiction = "eu"`); `R2_CAS_REGION`/`R2_AC_REGION` stay `"lhr"` (the residency guard maps
+  weur→lhr). `scripts/verify-lgpd-residency.py` `physical_region_of()` now performs a REAL probe
+  of a sampled object's bucket physical `location` via the Cloudflare R2 API
+  (`GET /accounts/{acct}/r2/buckets/{bucket}`, `cf-r2-jurisdiction` header for EU buckets), maps
+  the R2 location code → the canonical macro vocabulary (`EEUR`/`WEUR`→weur, `ENAM`→enam,
+  `WNAM`→wnam, `APAC`/`OC`→apac), and preserves the fail-loud posture (unresolvable → `None` →
+  violation). Adds an embedded `--self-test` for the location→macro mapping. (Requires
+  `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` in env for the live probe.)
 - **Worker-side overnight red-team fixes (F-006, F-012, F-014, F-015, F-021).**
   - **F-006 (HIGH) — `/internal/v1/auth/rotate` cross-tenant mint:** `owner_tenant` was optional
     (absent → cross-tenant check skipped → a holder of the internal key could mint a fresh PAT for a

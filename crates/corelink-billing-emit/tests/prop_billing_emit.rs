@@ -66,6 +66,7 @@ const ALL_KINDS: &[UsageEventKind] = &[
     UsageEventKind::CasGet,
     UsageEventKind::CasPut,
     UsageEventKind::ReplayRequest,
+    UsageEventKind::RunnerSlotSeconds,
 ];
 
 const ALL_REGIONS: &[Region] = &[
@@ -84,18 +85,19 @@ const ALL_REGIONS: &[Region] = &[
 #[test]
 fn canonical_usage_event_kinds_pinned() {
     let v = canonical_usage_event_kinds();
-    assert_eq!(v.len(), 6);
+    assert_eq!(v.len(), 7);
     let mut set = HashSet::new();
     for k in v {
         assert!(set.insert(k.as_str()));
     }
-    assert_eq!(set.len(), 6);
+    assert_eq!(set.len(), 7);
     assert!(set.contains("storage_bytes_hourly"));
     assert!(set.contains("egress_bytes"));
     assert!(set.contains("ac_lookup"));
     assert!(set.contains("cas_get"));
     assert!(set.contains("cas_put"));
     assert!(set.contains("replay_request"));
+    assert!(set.contains("runner_slot_seconds"));
 }
 
 #[test]

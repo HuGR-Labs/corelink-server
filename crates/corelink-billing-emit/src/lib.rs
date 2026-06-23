@@ -17,7 +17,7 @@
 //! INV-BILLING-APPEND-ONLY (HIGH; append-only NDJSON layout
 //! `usage/{tenant}/{billing_period}/{seq:08}.usage.ndjson`),
 //! INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER (HIGH; audit envelope BEFORE
-//! state mutation on every decision arm), and the canonical 6-element
+//! state mutation on every decision arm), and the canonical 7-element
 //! [`UsageEventKind`] taxonomy.
 //!
 //! Specifically, the crate ships:
@@ -30,11 +30,11 @@
 //!    with the canonical [`IdemKey`] slot (32-byte BLAKE3-256 of the
 //!    JCS-canonical bytes with the slot zeroed for the link input —
 //!    Bitcoin-genesis-block convention from S-09 audit chain) +
-//!    [`UsageEventKind`] `#[non_exhaustive]` 6-canonical taxonomy
+//!    [`UsageEventKind`] `#[non_exhaustive]` 7-canonical taxonomy
 //!    (`storage_bytes_hourly` / `egress_bytes` / `ac_lookup` /
-//!    `cas_get` / `cas_put` / `replay_request`) + [`UsageUnit`]
-//!    canonical (Bytes / OpCount) + [`validate_billing_period`]
-//!    `YYYY-MM` shape guard.
+//!    `cas_get` / `cas_put` / `replay_request` /
+//!    `runner_slot_seconds`) + [`UsageUnit`] canonical (Bytes /
+//!    OpCount) + [`validate_billing_period`] `YYYY-MM` shape guard.
 //! 2. The [`idempotency`] module ships
 //!    [`derive_idem_key`] + [`derive_idem_key_from_canonical`]
 //!    (canonical BLAKE3-256 of JCS bytes with the slot zeroed) +
