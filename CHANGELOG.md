@@ -116,6 +116,27 @@ Each entry cross-references:
   (best-effort; the 500 still drives Stripe's retry). New `WebhookDispatcher::with_dlq`; the container
   wires the in-memory store as the live backstop (durable D1 store is the operator follow-up). A
   regression test drives transient-then-retry and asserts the event remains recoverable via the DLQ.
+- **OCI plane left `team`-tier tenants UNCAPPED (storage-cap drift, F-002).**
+  `oci_cap.rs::tier_to_cap_bytes` mapped `"team" | "enterprise" => UNLIMITED` (the
+  `Some(0)` sentinel), but the Worker caps `team` at a FINITE 1 TiB
+  (`worker/src/lib/quota.ts:88`, `storageBytesMax: 1_099_511_627_776`). The `Some(0)`
+  cap rode the signed OCI bearer into `byte_accounting`, whose upsert predicate
+  (`WHERE ?5 = 0 OR …`) treats `0` as "no cap" → every OCI finalize for a `team`
+  tenant accrued bytes with NO enforcement (contract-cap bypass + COGS overrun via
+  `docker push`). Now `"team" => 1024 * GIB` (= the Worker's 1 TiB literal), leaving
+  ONLY `"enterprise"` genuinely unlimited; the false "team is unlimited" doc comment
+  and the unit test (which asserted the wrong value, green-lighting the drift) are
+  corrected to pin the 1 TiB cap.
+- **OCI manifest PUT accepted a digest-form reference that did not hash the body
+  (digest confusion, F-009).** `oci/push/manifest.rs::put` wrote the client-supplied
+  `reference` verbatim with no check that a `sha256:<hex>` reference matched the
+  computed manifest digest — so `PUT .../manifests/sha256:1111…` of a body hashing to
+  a different digest returned 201 and was served back under the wrong digest address
+  (the blob path already fails closed via `verify_against_bytes`). `put` now rejects a
+  digest-form reference != the computed digest with `400 MANIFEST_INVALID`, mirroring
+  the blob path; tag-form references are unaffected. Regression test added
+  (`tests/oci_adversarial.rs::manifest_digest_reference_confusion_rejected`,
+  with a positive control that a matching digest reference still 201s).
 - **Stuck-`"starting"` Durable Object wedge → permanent `container_start_timeout` 503 (F-020,
   prod incident 2026-06-23).** `ensureContainerRunning` (`worker/src/durable_object.ts`) routed a
   `containerStatus === "starting"` straight to `waitForContainerReady` with NO staleness recovery

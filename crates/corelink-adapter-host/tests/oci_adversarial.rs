@@ -179,3 +179,53 @@ async fn push_without_push_scope_rejected() {
     let resp = rig.app().oneshot(req).await.expect("post");
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
+
+/// F-009 regression: a manifest PUT under a DIGEST-form reference whose digest
+/// does not hash the body must fail-CLOSED with 400 MANIFEST_INVALID — mirroring
+/// the blob path's declared-digest check. Otherwise the registry would serve a
+/// manifest under a digest address that does not hash to it (digest confusion).
+#[tokio::test]
+async fn manifest_digest_reference_confusion_rejected() {
+    let rig = TestRig::new();
+    let bearer = rig.mint_token(&OciScope::new("foo", vec![String::from("push")]));
+    let manifest = serde_json::json!({
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "config": {
+            "mediaType": "application/vnd.oci.image.config.v1+json",
+            "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "size": 0
+        },
+        "layers": []
+    });
+    let body = serde_json::to_vec(&manifest).unwrap();
+    let real = OciDigest::compute(OciDigestAlgo::Sha256, &body).expect("compute");
+    // A digest-form reference that is well-formed but does NOT match the body.
+    let wrong = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    assert_ne!(wrong, real.to_wire(), "test fixture must use a mismatching digest");
+
+    let req = Request::builder()
+        .method(Method::PUT)
+        .uri(format!("/v2/foo/manifests/{wrong}"))
+        .header("Authorization", format!("Bearer {bearer}"))
+        .header("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+        .body(Body::from(body.clone()))
+        .unwrap();
+    let resp = rig.app().oneshot(req).await.expect("put");
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let resp_body = resp.into_body().collect().await.unwrap().to_bytes();
+    let v: serde_json::Value = serde_json::from_slice(&resp_body).unwrap();
+    assert_eq!(v["errors"][0]["code"], "MANIFEST_INVALID");
+
+    // Positive control: the SAME body under its TRUE digest succeeds (201) —
+    // the fix must not reject legitimate digest-addressed manifest pushes.
+    let req = Request::builder()
+        .method(Method::PUT)
+        .uri(format!("/v2/foo/manifests/{}", real.to_wire()))
+        .header("Authorization", format!("Bearer {bearer}"))
+        .header("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+        .body(Body::from(body))
+        .unwrap();
+    let resp = rig.app().oneshot(req).await.expect("put");
+    assert_eq!(resp.status(), StatusCode::CREATED);
+}

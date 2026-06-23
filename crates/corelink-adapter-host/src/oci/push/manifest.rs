@@ -152,6 +152,18 @@ pub async fn put(
 ) -> Result<axum::response::Response, OciAdapterError> {
     check_repo_push(repo, scope)?;
     let (validated_media_type, manifest_digest) = validate(&body)?;
+    // Digest-form reference fail-CLOSED (mirrors the blob path's
+    // `verify_against_bytes`, `oci/push/upload.rs:282`). A `PUT
+    // .../manifests/sha256:<hex>` is content-addressed: the supplied digest MUST
+    // hash the body, else the registry would serve a manifest under a digest
+    // address that does not hash to it (digest confusion, F-009). Tag-form
+    // references (no `:`) carry no digest assertion and are stored verbatim.
+    if !is_tag_reference(reference) && reference != manifest_digest.to_wire() {
+        return Err(OciAdapterError::ManifestInvalid(format!(
+            "digest-form reference {reference} does not match manifest body digest {}",
+            manifest_digest.to_wire()
+        )));
+    }
     // The header `Content-Type` MUST match (or be empty / `application/json`)
     // — be permissive: accept any of the canonical OCI/Docker types
     // that we already validated, plus a generic json content-type.
