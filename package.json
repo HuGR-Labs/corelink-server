@@ -45,6 +45,6 @@
     "build": "pnpm -r build"
   },
   "devDependencies": {
-    "wrangler": "^4.101.0"
+    "wrangler": "^4.103.0"
   }
 }

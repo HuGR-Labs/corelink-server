@@ -112,7 +112,7 @@ jobs:
           key: mutants-${{ matrix.crate }}
 
       - name: Install cargo-mutants (prebuilt)
-        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2.81.9
+        uses: taiki-e/install-action@9e1e5806d4a4822de933115878265be9aaa786d9 # v2.82.2
         with:
           tool: cargo-mutants@25.0.1
 
