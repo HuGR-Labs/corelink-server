@@ -23,6 +23,14 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **F-017 — per-tenant rate-limit tier ladder now ENFORCED.** The data-plane rate-limit layer was
+  constructed with `RateLimitLayerState::new()` (no tier resolver), so every tenant sat on the team
+  default RPS regardless of their billing tier. Wired a D1-backed `TenantTierResolver` at the
+  `routes.rs` construction site, reusing `oci_cap::D1TenantCapResolver`'s exact tier lookup
+  (`tier_selections` ACTIVE → `tenant.tier` → `free`) as one source of truth; the first request from
+  each tenant resolves its tier and applies the canonical RPS ladder. Fail-SAFE: a `StorageEnv`/D1 init
+  failure falls back to the resolver-less (team-default) state — a config gap never bricks the data
+  plane — and an unclassifiable tenant keeps the team default (never over-throttled).
 - **Worker-side overnight red-team fixes (F-006, F-012, F-014, F-015, F-021).**
   - **F-006 (HIGH) — `/internal/v1/auth/rotate` cross-tenant mint:** `owner_tenant` was optional
     (absent → cross-tenant check skipped → a holder of the internal key could mint a fresh PAT for a

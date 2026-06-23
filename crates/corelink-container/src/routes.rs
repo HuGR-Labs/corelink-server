@@ -776,7 +776,34 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // merged later in `main.rs` and stay OUTSIDE this layer by construction.
     // Fail-OPEN on absent tenant (non-billable traffic) + on the limiter's own
     // internal fault (logged), prioritising paid-plane availability.
-    let rate_limit_state = ratelimit_layer::RateLimitLayerState::new();
+    //
+    // F-017: wire the D1-backed per-tenant tier resolver so the per-tier RPS
+    // ladder ACTUALLY enforces (without it every tenant sits on the team default).
+    // Build a dedicated D1 client from env — the moat `d1` above is scoped to the
+    // cache-adapter block — and reuse `oci_cap::D1TenantCapResolver` (one source
+    // of truth for the tenant→tier lookup). If StorageEnv/D1 init is unavailable,
+    // fall back to the resolver-less state: a config gap must NEVER brick the data
+    // plane (fail-SAFE → team default for all), and the resolver only TIGHTENS
+    // free/solo + loosens paid, so its absence is non-fatal.
+    let rate_limit_state = match crate::storage::StorageEnv::from_env()
+        .and_then(|env| crate::storage::d1_http::D1HttpClient::new(&env).ok())
+    {
+        Some(client) => {
+            let tier_resolver: Arc<dyn ratelimit_layer::TenantTierResolver> =
+                Arc::new(crate::oci_cap::D1TenantCapResolver::new(Arc::new(client)));
+            ratelimit_layer::RateLimitLayerState::with_tier_resolver(
+                crate::wall_clock::default_wall_clock(),
+                tier_resolver,
+            )
+        }
+        None => {
+            tracing::warn!(
+                "F-017: D1 tier-resolver unavailable (StorageEnv/D1 init); per-tenant \
+                 rate-limit stays on the team default for all tenants (no per-tier ladder)"
+            );
+            ratelimit_layer::RateLimitLayerState::new()
+        }
+    };
     router = router.layer(axum::middleware::from_fn_with_state(
         rate_limit_state,
         ratelimit_layer::rate_limit_layer,
