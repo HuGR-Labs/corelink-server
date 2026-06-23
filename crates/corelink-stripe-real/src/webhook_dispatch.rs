@@ -92,6 +92,7 @@
 use core::fmt;
 use std::sync::{Arc, Mutex};
 
+use crate::dlq::{WebhookDlqRow, WebhookDlqStore};
 use crate::error::WebhookVerifyError;
 use crate::webhook::{verify_webhook_signature, DEFAULT_TOLERANCE_SECONDS};
 
@@ -442,6 +443,18 @@ pub struct WebhookDispatcher {
     /// Signature replay tolerance (seconds). Defaults to
     /// [`DEFAULT_TOLERANCE_SECONDS`] (300).
     tolerance_seconds: u64,
+    /// Dead-letter quarantine sink (F-008 closure). When wired, a
+    /// **transient** materialize failure quarantines the (already
+    /// HMAC-verified) event so it is NOT lost: the idempotency dedup
+    /// row was committed BEFORE materialize (step 5), so a Stripe retry
+    /// hits `AlreadyProcessed` and SKIPS the handler — without this DLQ
+    /// the state change would be permanently dropped while Stripe
+    /// records success. With the DLQ wired the event is operator-replayable
+    /// (`crates/corelink-stripe-real/src/dlq.rs`). `None` keeps the
+    /// legacy behaviour for callers that have not yet provisioned a DLQ
+    /// backend (the failure still returns 500 → Stripe retries within
+    /// its 3-day window; the quarantine adds durability past that).
+    dlq: Option<Arc<dyn WebhookDlqStore>>,
 }
 
 impl fmt::Debug for WebhookDispatcher {
@@ -454,6 +467,7 @@ impl fmt::Debug for WebhookDispatcher {
             .field("audit", &self.audit)
             .field("sli", &self.sli)
             .field("clock", &self.clock)
+            .field("dlq", &self.dlq)
             .finish()
     }
 }
@@ -477,6 +491,7 @@ impl WebhookDispatcher {
             sli,
             clock,
             tolerance_seconds: DEFAULT_TOLERANCE_SECONDS,
+            dlq: None,
         }
     }
 
@@ -485,6 +500,21 @@ impl WebhookDispatcher {
     #[must_use]
     pub const fn with_tolerance_seconds(mut self, tolerance_seconds: u64) -> Self {
         self.tolerance_seconds = tolerance_seconds;
+        self
+    }
+
+    /// Wire a dead-letter quarantine sink (F-008 closure).
+    ///
+    /// On a **transient** materialize failure the dispatcher will
+    /// quarantine the (already HMAC-verified) event into `dlq` so the
+    /// state change is recoverable even though the idempotency dedup row
+    /// was already committed (a Stripe retry would otherwise hit
+    /// `AlreadyProcessed` and silently skip the handler). Production
+    /// wires the canonical D1-backed store; tests inject the in-memory
+    /// fake.
+    #[must_use]
+    pub fn with_dlq(mut self, dlq: Arc<dyn WebhookDlqStore>) -> Self {
+        self.dlq = Some(dlq);
         self
     }
 
@@ -682,6 +712,15 @@ impl WebhookDispatcher {
                 DispatchResponse::Ok200
             }
             Err(MaterializerError::Transient(msg)) => {
+                // F-008 closure: the idempotency dedup row was committed
+                // at step 5 BEFORE this materialize. A Stripe retry would
+                // therefore hit `AlreadyProcessed` and SKIP the handler —
+                // permanently dropping the state change while Stripe
+                // records success. Quarantine the (already HMAC-verified)
+                // event into the DLQ so it is operator-replayable rather
+                // than lost. Best-effort: a DLQ backend failure must NOT
+                // mask the 500 (Stripe still retries within its window).
+                self.quarantine_transient(body, &env, canon, &token, &msg, now_ms);
                 self.emit_audit_and_sli(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",
@@ -719,6 +758,10 @@ impl WebhookDispatcher {
             // crate; treat any future variants as transient so the
             // dispatcher returns 500 (Stripe retries) rather than panicking.
             Err(_) => {
+                // Same lost-event hazard as the explicit `Transient` arm
+                // (the dedup row is already committed) — quarantine too.
+                let msg = "unknown materializer error variant".to_string();
+                self.quarantine_transient(body, &env, canon, &token, &msg, now_ms);
                 self.emit_audit_and_sli(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",
@@ -727,7 +770,7 @@ impl WebhookDispatcher {
                         AuditOutcome::MaterializerFailed,
                         Some(token.to_hex()),
                         now_ms,
-                        Some("unknown materializer error variant".to_string()),
+                        Some(msg),
                     ),
                     canon,
                     AuditOutcome::MaterializerFailed,
@@ -736,6 +779,49 @@ impl WebhookDispatcher {
                 DispatchResponse::InternalError500
             }
         }
+    }
+
+    /// Quarantine a transiently-failed (but already HMAC-verified)
+    /// event into the DLQ (F-008). No-op when no DLQ is wired.
+    ///
+    /// Best-effort by design: the caller still returns 500 so Stripe
+    /// retries within its window; the quarantine is the durable backstop
+    /// for the case where the idempotency dedup row (committed at step 5)
+    /// causes the retry to short-circuit as `AlreadyProcessed`. A DLQ
+    /// backend failure therefore MUST NOT change the HTTP outcome — it is
+    /// observed via the DLQ depth/age metrics, not by failing harder here.
+    ///
+    /// `dlq_row_id` is derived deterministically from the event id
+    /// (BLAKE3) so the DLQ store's `ON CONFLICT (event_id)` idempotency
+    /// keeps a stable row identity across re-quarantines (no `uuid`
+    /// dependency in this wasm32-safe crate).
+    fn quarantine_transient(
+        &self,
+        body: &[u8],
+        env: &StripeWebhookEnvelope,
+        canon: CanonicalWebhookEventType,
+        token: &IdempotencyToken,
+        last_error: &str,
+        now_ms: u64,
+    ) {
+        let Some(dlq) = self.dlq.as_ref() else {
+            return;
+        };
+        let dlq_row_id = format!("dlq_{}", blake3::hash(env.id.as_bytes()).to_hex());
+        let row = WebhookDlqRow::new_quarantine(
+            env.id.clone(),
+            dlq_row_id,
+            canon.label().to_string(),
+            hex::encode(body),
+            // Correlation id = idempotency token hex (ties the DLQ row to
+            // the `*_processed.v1` audit record carrying the same token).
+            token.to_hex(),
+            last_error.to_string(),
+            now_ms,
+        );
+        // Best-effort: drop the error (the 500 already drives Stripe's
+        // retry; DLQ-backend health is surfaced via its own metrics).
+        let _ = dlq.try_quarantine(row);
     }
 
     /// Emit one audit row + one SLI observation. Returns
@@ -912,6 +998,89 @@ mod tests {
         let (d, _, mat, audit, _sli) = fixture();
         mat.arm_error(MaterializerError::Transient("d1 unavailable".to_string()));
         let (body, hdr) = signed_envelope("evt_t1", "invoice.paid", FIXED_TS);
+        let resp = d.process(&body, Some(&hdr));
+        assert_eq!(resp, DispatchResponse::InternalError500);
+        assert_eq!(
+            audit.count_with_outcome(AuditOutcome::MaterializerFailed),
+            1
+        );
+    }
+
+    #[test]
+    fn transient_failure_quarantines_then_retry_remains_in_dlq_for_replay() {
+        // F-008 regression. The dedup row is committed BEFORE materialize,
+        // so a transient materialize failure followed by a Stripe retry
+        // (which short-circuits as AlreadyProcessed) would PERMANENTLY
+        // DROP the state change. With the DLQ wired the event is captured
+        // and stays operator-replayable.
+        use crate::dlq::{DlqReplayOutcome, InMemoryWebhookDlqStore};
+
+        let idem = Arc::new(InMemoryIdempotencyStore::new());
+        let mat = Arc::new(RecordingStateMaterializer::new());
+        let audit = Arc::new(RecordingAuditEmitter::new());
+        let sli = Arc::new(RecordingSliRecorder::new());
+        let dlq = Arc::new(InMemoryWebhookDlqStore::new());
+        let clock = Arc::new(FixedClock::new(FIXED_TS, 0.123));
+        let d = Arc::new(
+            WebhookDispatcher::new(
+                SECRET.to_vec(),
+                idem.clone(),
+                mat.clone(),
+                audit.clone(),
+                sli,
+                clock,
+            )
+            .with_dlq(dlq.clone()),
+        );
+
+        let (body, hdr) =
+            signed_envelope("evt_drop", "customer.subscription.deleted", FIXED_TS);
+
+        // 1st delivery: materialize transiently fails → 500 + quarantine.
+        mat.arm_error(MaterializerError::Transient("d1 over-http blip".to_string()));
+        let r1 = d.process(&body, Some(&hdr));
+        assert_eq!(r1, DispatchResponse::InternalError500);
+        // Dedup row IS committed (the F-008 root cause).
+        assert_eq!(idem.len(), 1);
+        // The event is now quarantined (NOT lost).
+        let now_ms = FIXED_TS.saturating_mul(1_000);
+        assert_eq!(dlq.depth(now_ms).unwrap(), 1, "event quarantined on transient");
+        let row = dlq.get("evt_drop").unwrap().expect("dlq row present");
+        assert_eq!(row.event_type, "customer.subscription.deleted");
+        assert_eq!(row.attempt_count, 1);
+
+        // 2nd delivery (Stripe retry): the dedup row short-circuits as
+        // AlreadyProcessed → handler is SKIPPED (this is the silent-drop
+        // window) → still 200 to Stripe, but the DLQ retains the event so
+        // it can be replayed by an operator.
+        let r2 = d.process(&body, Some(&hdr));
+        assert_eq!(r2, DispatchResponse::Ok200);
+        assert_eq!(mat.call_count(), 0, "retry short-circuits, no re-dispatch");
+        assert_eq!(
+            dlq.depth(now_ms).unwrap(),
+            1,
+            "event still recoverable via DLQ after the AlreadyProcessed retry"
+        );
+
+        // Operator replay drains the depth (proves the recovery path).
+        dlq.record_replay(
+            "evt_drop",
+            "rep_1",
+            "ops_oncall",
+            now_ms + 5_000,
+            DlqReplayOutcome::Succeeded,
+        )
+        .unwrap();
+        assert_eq!(dlq.depth(now_ms + 6_000).unwrap(), 0);
+    }
+
+    #[test]
+    fn transient_failure_without_dlq_returns_500_and_does_not_panic() {
+        // Back-compat: the no-DLQ path is unchanged (500, no quarantine
+        // sink to consult). Asserts `with_dlq` is purely additive.
+        let (d, _, mat, audit, _sli) = fixture();
+        mat.arm_error(MaterializerError::Transient("d1 unavailable".to_string()));
+        let (body, hdr) = signed_envelope("evt_nodlq", "invoice.paid", FIXED_TS);
         let resp = d.process(&body, Some(&hdr));
         assert_eq!(resp, DispatchResponse::InternalError500);
         assert_eq!(
