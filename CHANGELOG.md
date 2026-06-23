@@ -23,6 +23,32 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **Container rate-limit layer overnight red-team fixes (F-016, F-017, F-022).**
+  Scope: `crates/corelink-container/src/routes/ratelimit_layer.rs` + `crates/corelink-ratelimit`.
+  - **F-022 (medium) — unbounded heap growth → self-OOM:** the production rate-limit layer wired the
+    crate's TEST capture sinks (`InMemoryRateLimitAuditSink` / `InMemoryRateLimitMetrics`), which push
+    every decision onto unbounded `Vec`/`HashMap`s never drained or capped — so honest in-budget
+    traffic grows the heap until the tenant's own data-plane container OOMs. Added bounded production
+    sinks `NoOpRateLimitAuditSink` / `NoOpRateLimitMetrics` (zero-sized, O(1) memory, no per-request
+    allocation, no per-tenant label cardinality) to `corelink-ratelimit` and wired them in
+    `RateLimitLayerState`. (Full `OutboxAuditSink`/`MultiplexAuditSink` composition lands with the
+    live-DO/D1 wiring, WI-S08-006; rate-limit audit is informational — no SEV-1 arm — so a bounded
+    drop is correct in the interim.)
+  - **F-017 (medium) — per-tier RPS ladder dead:** the limiter only ever used the hardcoded team
+    default (100 rps/200 burst) for every tenant; `from_persisted`/`update_plan` (the D1
+    `ratelimit_buckets` mirror, migration 0010) were invoked only in tests. Added a
+    `TenantTierResolver` seam + `RateLimitLayerState::with_tier_resolver`: the first request from each
+    tenant resolves its billing tier and applies the canonical ladder
+    (`tier_for_billing_label` → `refill_rate_for_tier` → `update_plan`) so paid tiers get real
+    headroom and free/solo are tightened. Added `seed_persisted_bucket` so `routes.rs`/`main.rs` can
+    reload buckets across restart (the durability half of the residual; the D1-backed resolver +
+    seed-at-start are the documented `routes.rs` seam, kept clean as this fix is file-scoped).
+  - **F-016 (HIGH) — OCI plane had NO per-second limit:** the Worker forwards `/v2/*` + `/token` with
+    `x-corelink-tenant-id` deleted, so the per-tenant gate fail-OPENED for every OCI request, leaving
+    the shared `_oci` pool floodable (even unauthenticated). Added a per-OCI-repo velocity gate
+    (separate, tighter limiter keyed on the repo/realm parsed from the path) so a single repo's req/s
+    is bounded. Residual (Worker/infra, off-repo): a true per-IP edge limit needs `cf-connecting-ip`
+    forwarded on the OCI arm and/or an edge WAF rule on `corelink-oci.humangr.com`.
 - **Stuck-`"starting"` Durable Object wedge → permanent `container_start_timeout` 503 (F-020,
   prod incident 2026-06-23).** `ensureContainerRunning` (`worker/src/durable_object.ts`) routed a
   `containerStatus === "starting"` straight to `waitForContainerReady` with NO staleness recovery
