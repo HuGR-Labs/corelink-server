@@ -23,6 +23,16 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Runners-tier entitlement SEED on Stripe purchase.** When a Runners-tier subscription activates
+  (`customer.subscription.{created,updated}`), the materializer now seeds the per-tenant
+  `runners_entitlement` row (`max_concurrency`, `max_vcpu_h`) instead of `tier_selections` — the
+  separate Runners axis (Option-B). Routes by the Stripe price id: a Runners price seeds the entitlement,
+  any other price reconciles the cache tier exactly as before. Mapping is the owner-ratified loss-proof
+  ladder (`corelink-runners docs/product/pricing.md §2`, on the real ~$0.10/vCPU-h Cloudflare-Containers
+  basis): Starter 20/100 · Pro 40/240 · Team 80/600 · Scale 160/1200 · Max 320/2400 (concurrency/vCPU-h).
+  Env-gated on `STRIPE_PRICE_ID_RUNNER_{STARTER,PRO,TEAM,SCALE,MAX}` — dormant (every subscription →
+  cache path, unchanged) until the operator creates the Runners Stripe Prices at launch. Status-gated +
+  audit-before-write (`corelink.tenant.runners_entitlement_seeded.v1`), mirroring the cache tier path.
 - **Runner billing usage-push INGEST endpoint (ASK-2).** New container route
   `POST /internal/v1/billing/usage` (`crates/corelink-container/src/routes/billing_ingest.rs`,
   mounted in `main.rs`) that the corelink-runners fabric calls to push a JSON BATCH of

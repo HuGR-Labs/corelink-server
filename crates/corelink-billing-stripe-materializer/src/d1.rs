@@ -172,6 +172,15 @@ pub const SQL_READ_TIER: &str = "SELECT tier FROM tier_selections WHERE tenant_i
 /// correlation_id). Already schema-correct (the #172 fix).
 pub const SQL_UPSERT_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?, ?, 'active', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'active', subscription_started_at_ms = excluded.subscription_started_at_ms, correlation_id = excluded.correlation_id";
 
+/// UPSERT a tenant's Runners entitlement (`runners_entitlement`, migrations
+/// 0070 `max_concurrency` + 0072 `max_vcpu_h`). A SEPARATE axis from the cache
+/// tier — seeded when a Runners-tier Stripe subscription activates. Binds
+/// `?1..?4` = (tenant_id, max_concurrency, created_at_ms, max_vcpu_h); `plan` is
+/// the literal `'runners'` marker. `max_concurrency` has a `CHECK > 0` (the
+/// caller only seeds known tiers, all > 0). On re-purchase/upgrade the cap +
+/// ceiling are overwritten; `created_at_ms` is preserved on conflict.
+pub const SQL_UPSERT_RUNNERS_ENTITLEMENT: &str = "INSERT INTO runners_entitlement (tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h) VALUES (?, ?, 'runners', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET max_concurrency = excluded.max_concurrency, max_vcpu_h = excluded.max_vcpu_h";
+
 /// Canonical billing-D1 writer trait.
 ///
 /// All write methods are **idempotent**: calling the same method twice
@@ -231,6 +240,20 @@ pub trait BillingD1Writer: fmt::Debug + Send + Sync {
         now_ms: i64,
         correlation_id: &str,
     ) -> Result<(), BillingD1Error>;
+
+    /// UPSERT a tenant's Runners entitlement (`runners_entitlement`; the
+    /// SEPARATE axis from `tier_selections`). Seeded when a Runners-tier Stripe
+    /// subscription activates. Binds (tenant_id, max_concurrency, now_ms as
+    /// created_at_ms, max_vcpu_h) into [`SQL_UPSERT_RUNNERS_ENTITLEMENT`].
+    /// Idempotent (ON CONFLICT overwrites the cap/ceiling). `max_concurrency`
+    /// is `> 0` by construction (only known tiers are seeded).
+    fn upsert_runners_entitlement(
+        &self,
+        tenant_id: &str,
+        max_concurrency: u32,
+        max_vcpu_h: u32,
+        now_ms: i64,
+    ) -> Result<(), BillingD1Error>;
 }
 
 /// Native in-memory mirror. Stores every materialized row + every
@@ -244,6 +267,9 @@ pub struct InMemoryBillingD1 {
     events_seen: Arc<Mutex<HashMap<String, (String, u64)>>>,
     /// `tenant_id` → (`tier_wire`, `correlation_id`).
     tiers: Arc<Mutex<HashMap<String, (String, String)>>>,
+    /// `tenant_id` → (`max_concurrency`, `max_vcpu_h`) — the Runners
+    /// entitlement mirror (`runners_entitlement`).
+    runners: Arc<Mutex<HashMap<String, (u32, u32)>>>,
     /// If set, every write returns this error (drives fail-CLOSED tests).
     fail_with: Arc<Mutex<Option<BillingD1Error>>>,
 }
@@ -277,6 +303,16 @@ impl InMemoryBillingD1 {
         match self.rows.lock() {
             Ok(g) => g.clone(),
             Err(p) => p.into_inner().clone(),
+        }
+    }
+
+    /// Current Runners entitlement for a tenant, `(max_concurrency, max_vcpu_h)`,
+    /// or `None` if none seeded. Test inspection of `upsert_runners_entitlement`.
+    #[must_use]
+    pub fn runners_entitlement_of(&self, tenant_id: &str) -> Option<(u32, u32)> {
+        match self.runners.lock() {
+            Ok(g) => g.get(tenant_id).copied(),
+            Err(p) => p.into_inner().get(tenant_id).copied(),
         }
     }
 
@@ -406,6 +442,22 @@ impl BillingD1Writer for InMemoryBillingD1 {
             tenant_id.to_string(),
             (tier_wire.to_string(), correlation_id.to_string()),
         );
+        Ok(())
+    }
+
+    fn upsert_runners_entitlement(
+        &self,
+        tenant_id: &str,
+        max_concurrency: u32,
+        max_vcpu_h: u32,
+        _now_ms: i64,
+    ) -> Result<(), BillingD1Error> {
+        self.check_armed()?;
+        let mut g = self
+            .runners
+            .lock()
+            .map_err(|e| BillingD1Error::Transient(format!("runners mutex poisoned: {e}")))?;
+        g.insert(tenant_id.to_string(), (max_concurrency, max_vcpu_h));
         Ok(())
     }
 }
