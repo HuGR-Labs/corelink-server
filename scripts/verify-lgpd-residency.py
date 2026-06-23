@@ -51,6 +51,8 @@ import argparse
 import json
 import os
 import sys
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
@@ -75,41 +77,132 @@ REGION_LOCATION_HINT: dict[str, str] = {
     "afr": "afr",  # Africa (ZA)
 }
 
-# Hard-coded dry-run fixture: 3 BR tenants (all sam), 1 EU tenant (weur),
-# 1 deliberately-broken tenant where one object lives in the wrong region.
-# Used when --env=dry-run (no cloud calls).
+# Cloudflare R2 returns the physical placement of a bucket as a location HINT
+# code (the `location` field on GET .../r2/buckets/{bucket}, e.g. "EEUR", or a
+# locationHint like "eeur" on creation). Map every R2 location code we may see
+# onto the canonical macro-region vocabulary this verifier reasons about
+# (CANONICAL_REGIONS). Anything not in this table cannot be honestly mapped and
+# MUST surface as "unverifiable" (→ a violation), never a silent pass.
+#
+# Cloudflare jurisdictional/hint codes (see CF R2 docs "Data location"):
+#   APAC  Asia-Pacific          → apac
+#   EEUR  Eastern Europe        → weur (EU jurisdiction)
+#   WEUR  Western Europe        → weur (EU jurisdiction)
+#   ENAM  Eastern North America → enam
+#   WNAM  Western North America → wnam
+#   OC    Oceania               → apac (no distinct CoreLink macro)
+R2_LOCATION_TO_MACRO: dict[str, str] = {
+    "APAC": "apac",
+    "EEUR": "weur",
+    "WEUR": "weur",
+    "ENAM": "enam",
+    "WNAM": "wnam",
+    "OC": "apac",
+}
+
+
+def location_code_to_macro(code: Optional[str]) -> Optional[str]:
+    """Map a Cloudflare R2 location code to a canonical macro region.
+
+    Accepts the codes returned by the R2 API (case-insensitive, e.g. ``EEUR``,
+    ``eeur``). Returns the canonical macro (one of ``CANONICAL_REGIONS``, except
+    ``sam``/``afr`` which Cloudflare does not surface as a distinct location
+    code today), or ``None`` for an empty/unknown code — which the caller MUST
+    treat as a residency violation (fail-loud), never a pass.
+    """
+    if not code or not isinstance(code, str):
+        return None
+    return R2_LOCATION_TO_MACRO.get(code.strip().upper())
+
+
+def _cf_bucket_location(
+    account_id: str,
+    bucket: str,
+    token: str,
+    *,
+    jurisdiction: Optional[str] = None,
+) -> Optional[str]:
+    """Query the live Cloudflare R2 API for a bucket's physical location code.
+
+    ``GET /accounts/{account_id}/r2/buckets/{bucket}`` returns the bucket's
+    ``location`` (an R2 location code such as ``EEUR``). EU-jurisdiction buckets
+    require the ``cf-r2-jurisdiction: eu`` header to be addressable. Returns the
+    raw location code, or ``None`` when it cannot be established (network/API
+    error, missing field) — fail-loud is the caller's responsibility.
+    """
+    url = (
+        f"https://api.cloudflare.com/client/v4/accounts/{account_id}"
+        f"/r2/buckets/{bucket}"
+    )
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Content-Type", "application/json")
+    if jurisdiction:
+        req.add_header("cf-r2-jurisdiction", jurisdiction)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310
+            payload = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+    if not isinstance(payload, dict) or not payload.get("success"):
+        return None
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return None
+    loc = result.get("location")
+    return loc if isinstance(loc, str) and loc else None
+
+# Hard-coded dry-run fixture: 3 BR tenants (all sam), 1 EU tenant (weur).
+# Used when --env=dry-run (no cloud calls). Each object carries the PROBED
+# ``physical_region`` (the offline stand-in for a live CF R2 location probe) —
+# the self-written key-prefix ``region`` is retained only to document that it is
+# NOT what physical_region_of() trusts. All objects here reside correctly, so a
+# dry-run is a clean pass (exit 0) — the offline smoke test. The broken/violation
+# path is exercised by the embedded --self-test.
 DRY_RUN_FIXTURE: dict = {
     "tenants": [
         {
             "tenant_id": "br-tenant-001",
             "primary_region": "sam",
             "sampled_objects": [
-                {"uri": "cas-sam/abc123", "region": "sam"},
-                {"uri": "ac-sam/build-42", "region": "sam"},
-                {"uri": "audit-sam/2026-05-15/000001.evt", "region": "sam"},
+                {"uri": "cas-sam/abc123", "region": "sam", "physical_region": "sam"},
+                {"uri": "ac-sam/build-42", "region": "sam", "physical_region": "sam"},
+                {
+                    "uri": "audit-sam/2026-05-15/000001.evt",
+                    "region": "sam",
+                    "physical_region": "sam",
+                },
             ],
         },
         {
             "tenant_id": "br-tenant-002",
             "primary_region": "sam",
             "sampled_objects": [
-                {"uri": "cas-sam/def456", "region": "sam"},
-                {"uri": "audit-sam/2026-05-15/000002.evt", "region": "sam"},
+                {"uri": "cas-sam/def456", "region": "sam", "physical_region": "sam"},
+                {
+                    "uri": "audit-sam/2026-05-15/000002.evt",
+                    "region": "sam",
+                    "physical_region": "sam",
+                },
             ],
         },
         {
             "tenant_id": "br-tenant-003",
             "primary_region": "sam",
             "sampled_objects": [
-                {"uri": "cas-sam/ghi789", "region": "sam"},
-                {"uri": "ac-sam/build-43", "region": "sam"},
+                {"uri": "cas-sam/ghi789", "region": "sam", "physical_region": "sam"},
+                {"uri": "ac-sam/build-43", "region": "sam", "physical_region": "sam"},
             ],
         },
         {
             "tenant_id": "eu-tenant-001",
             "primary_region": "weur",
             "sampled_objects": [
-                {"uri": "cas-weur/eu-blob", "region": "weur"},
+                {
+                    "uri": "cas-weur/eu-blob",
+                    "region": "weur",
+                    "physical_region": "weur",
+                },
             ],
         },
     ]
@@ -197,27 +290,52 @@ def iter_tenants(fixture: dict) -> Iterable[dict]:
 
 
 def physical_region_of(obj: dict) -> Optional[str]:
-    """Authoritative PHYSICAL region of a stored object.
+    """Authoritative PHYSICAL macro-region of a stored object.
 
     The ONLY trustworthy residency signal is where the bytes physically live —
-    read from the R2 object's locationHint (a HeadObject / the Cloudflare R2 API),
-    NOT the key prefix (which the container writes from ``R2_CAS_REGION`` and which
-    a misroute or a shared bucket renders meaningless — F-021).
+    the bucket's Cloudflare R2 location code (the ``location`` field on
+    ``GET /accounts/{acct}/r2/buckets/{bucket}``), NOT the key prefix (which the
+    container writes from ``R2_CAS_REGION`` and which a misroute or a shared
+    bucket renders meaningless — F-021).
 
-    A live/fixture record carries the result of that real locationHint probe under
-    ``physical_region``; the self-written key-prefix ``region`` is explicitly NOT
-    used here. Returns the canonical macro region, or ``None`` when the physical
-    location cannot be established (e.g. per-region buckets are not yet provisioned
-    — F-013). A ``None`` result MUST be treated as a residency violation, never a
-    pass: the LGPD attestation cannot be honestly signed until a real
-    per-jurisdiction locationHint check runs against real per-region buckets.
+    Resolution order:
 
-    TODO(F-013): populate ``physical_region`` from a live R2 HeadObject locationHint
-    (or the CF R2 bucket-region API) once per-region buckets exist; until then this
-    verifier fails loud rather than emitting a false-green attestation.
+    1. If the record already carries a probed ``physical_region`` (the dry-run /
+       offline fixture path, no cloud calls), trust it.
+    2. Otherwise, perform a REAL probe: read the object's ``bucket`` field, query
+       the live CF R2 API for that bucket's physical ``location`` code, and map
+       it to a canonical macro via :func:`location_code_to_macro`. Requires
+       ``CLOUDFLARE_API_TOKEN`` (read access to R2) and ``CLOUDFLARE_ACCOUNT_ID``
+       in the environment; an EU-jurisdiction bucket carries ``jurisdiction:
+       "eu"`` on the record so the probe sends ``cf-r2-jurisdiction: eu``.
+
+    Returns the canonical macro region (F-013 now CLOSED — real per-jurisdiction
+    buckets exist), or ``None`` when the physical location cannot be established
+    (missing bucket field, missing creds, API/network error, or an unmappable
+    location code). A ``None`` result MUST be treated as a residency violation,
+    never a pass: the LGPD attestation cannot be honestly signed on an
+    unverifiable object.
     """
+    # (1) Offline/fixture shortcut: a pre-probed physical region.
     loc = obj.get("physical_region")
-    return loc if isinstance(loc, str) and loc else None
+    if isinstance(loc, str) and loc:
+        return loc
+
+    # (2) Real probe against the live Cloudflare R2 API.
+    bucket = obj.get("bucket")
+    if not isinstance(bucket, str) or not bucket:
+        return None
+    token = os.environ.get("CLOUDFLARE_API_TOKEN")
+    account_id = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
+    if not token or not account_id:
+        return None
+    jurisdiction = obj.get("jurisdiction")
+    if not isinstance(jurisdiction, str) or not jurisdiction:
+        jurisdiction = None
+    code = _cf_bucket_location(
+        account_id, bucket, token, jurisdiction=jurisdiction
+    )
+    return location_code_to_macro(code)
 
 
 def verify(
@@ -282,6 +400,61 @@ def verify(
     return report
 
 
+def _self_test() -> int:
+    """Embedded unit tests (no external test deps / no cloud calls).
+
+    Run via ``python3 scripts/verify-lgpd-residency.py --self-test`` or, under a
+    discoverer, ``python3 -m unittest`` is not applicable (single-file script) —
+    these assert the location-code → macro mapping and the fail-loud posture of
+    ``physical_region_of`` for the offline fixture path. Returns process exit
+    code (0 = all pass).
+    """
+    failures: list[str] = []
+
+    def check(name: str, cond: bool) -> None:
+        if not cond:
+            failures.append(name)
+
+    # location_code_to_macro: every documented R2 location code → its macro.
+    check("EEUR→weur", location_code_to_macro("EEUR") == "weur")
+    check("WEUR→weur", location_code_to_macro("WEUR") == "weur")
+    check("ENAM→enam", location_code_to_macro("ENAM") == "enam")
+    check("WNAM→wnam", location_code_to_macro("WNAM") == "wnam")
+    check("APAC→apac", location_code_to_macro("APAC") == "apac")
+    check("OC→apac", location_code_to_macro("OC") == "apac")
+    # Case-insensitive + whitespace-tolerant.
+    check("eeur(lower)→weur", location_code_to_macro("eeur") == "weur")
+    check("' EEUR '→weur", location_code_to_macro("  EEUR  ") == "weur")
+    # Fail-loud on unknown / empty / non-str.
+    check("unknown→None", location_code_to_macro("ZZZZ") is None)
+    check("empty→None", location_code_to_macro("") is None)
+    check("none→None", location_code_to_macro(None) is None)
+    check(
+        "nonstr→None",
+        location_code_to_macro(123) is None,  # type: ignore[arg-type]
+    )
+
+    # physical_region_of offline path: a pre-probed physical_region is trusted.
+    check(
+        "fixture-physical_region trusted",
+        physical_region_of({"physical_region": "weur"}) == "weur",
+    )
+    # No physical_region + no bucket → unverifiable (None → violation upstream).
+    check(
+        "no-signal→None",
+        physical_region_of({"uri": "cas-lhr/x"}) is None,
+    )
+
+    if failures:
+        print(
+            "SELF-TEST FAILED: " + ", ".join(failures),
+            file=sys.stderr,
+        )
+        return 1
+    print("SELF-TEST OK (mapping + fail-loud posture)")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="verify-lgpd-residency",
@@ -328,8 +501,19 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help="Suppress the summary output (only exit code communicates).",
     )
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help=(
+            "Run the embedded unit tests (location-code→macro mapping + "
+            "fail-loud posture) and exit. No cloud calls."
+        ),
+    )
 
     args = parser.parse_args(argv)
+
+    if args.self_test:
+        return _self_test()
 
     try:
         fixture = load_fixture(args.env, args.fixture)

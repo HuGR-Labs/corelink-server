@@ -23,6 +23,21 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **EU residency (F-013) — wire `prod-lhr` to the REAL eu-jurisdiction R2 buckets + make the
+  verifier do a physical check.** The EU env had only a *key-prefix* residency signal: CAS/AC
+  bytes physically landed in US-located buckets (`corelink-cas-prod` / `corelink-ac-lhr`, both
+  ENAM) while keyed under `lhr`. Now `[env.prod-lhr]` binds the real eu-jurisdiction buckets
+  `corelink-cas-eu` / `corelink-ac-eu` (both physically EEUR) via the EU S3 endpoint
+  (`https://…eu.r2.cloudflarestorage.com`): the container's `R2_CAS_BUCKET`/`R2_AC_BUCKET`/
+  `R2_S3_ENDPOINT` vars and the worker `CAS_BUCKET`/`AC_BUCKET_LHR` r2 bindings (now
+  `jurisdiction = "eu"`); `R2_CAS_REGION`/`R2_AC_REGION` stay `"lhr"` (the residency guard maps
+  weur→lhr). `scripts/verify-lgpd-residency.py` `physical_region_of()` now performs a REAL probe
+  of a sampled object's bucket physical `location` via the Cloudflare R2 API
+  (`GET /accounts/{acct}/r2/buckets/{bucket}`, `cf-r2-jurisdiction` header for EU buckets), maps
+  the R2 location code → the canonical macro vocabulary (`EEUR`/`WEUR`→weur, `ENAM`→enam,
+  `WNAM`→wnam, `APAC`/`OC`→apac), and preserves the fail-loud posture (unresolvable → `None` →
+  violation). Adds an embedded `--self-test` for the location→macro mapping. (Requires
+  `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` in env for the live probe.)
 - **Worker-side overnight red-team fixes (F-006, F-012, F-014, F-015, F-021).**
   - **F-006 (HIGH) — `/internal/v1/auth/rotate` cross-tenant mint:** `owner_tenant` was optional
     (absent → cross-tenant check skipped → a holder of the internal key could mint a fresh PAT for a

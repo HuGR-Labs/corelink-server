@@ -753,25 +753,33 @@ head_sampling_rate = 1
 
 [env.prod-lhr.vars]
 ENVIRONMENT = "prod-lhr"
-R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
+# EU residency (2026-06-23) — the container's CAS/AC R2 config now points at the
+# REAL eu-jurisdiction buckets (corelink-cas-eu / corelink-ac-eu, both physically
+# EEUR) served via the EU S3 endpoint. The non-eu per-region buckets
+# (corelink-*-lhr) are physically ENAM (US) and MUST NOT hold EU bytes — closing
+# the Schrems-II / GDPR Art. 44 gap for real, not just by key prefix.
+R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.eu.r2.cloudflarestorage.com"
 D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562"
-R2_AC_BUCKET = "corelink-ac-lhr"
+R2_CAS_BUCKET = "corelink-cas-eu"
+R2_AC_BUCKET = "corelink-ac-eu"
 R2_AC_REGION = "lhr"
 R2_CHUNK_BUCKET = "corelink-chunk-lhr"
 R2_CHUNK_REGION = "lhr"
-# F7 (2026-06-13 audit) — CAS residency. EU CAS bytes key under "lhr" (not the
-# US default "iad"), closing the Schrems-II / GDPR Art. 44 gap for CAS content.
-# Per-region CAS *buckets* are an infra follow-up (R2_CAS_BUCKET stays
-# corelink-cas-prod until they exist); the region key is the residency invariant.
+# CAS residency region key — the residency guard maps weur→lhr, so the region key
+# stays "lhr" while the bucket bytes physically live in the EU jurisdiction.
 R2_CAS_REGION = "lhr"
 
 [[env.prod-lhr.routes]]
 pattern = "lhr.corelink-api.humangr.com"
 custom_domain = true
 
+# EU residency (2026-06-23): CAS/AC bytes for this EU env bind the real
+# eu-jurisdiction buckets (jurisdiction = "eu" → physically EEUR), not the
+# US-located corelink-cas-prod / corelink-ac-lhr buckets.
 [[env.prod-lhr.r2_buckets]]
 binding = "CAS_BUCKET"
-bucket_name = "corelink-cas-prod"
+bucket_name = "corelink-cas-eu"
+jurisdiction = "eu"
 
 [[env.prod-lhr.r2_buckets]]
 binding = "AC_BUCKET_SAM"
@@ -783,7 +791,8 @@ bucket_name = "corelink-ac-iad"
 
 [[env.prod-lhr.r2_buckets]]
 binding = "AC_BUCKET_LHR"
-bucket_name = "corelink-ac-lhr"
+bucket_name = "corelink-ac-eu"
+jurisdiction = "eu"
 
 [[env.prod-lhr.r2_buckets]]
 binding = "AC_BUCKET_NRT"
