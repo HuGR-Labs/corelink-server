@@ -177,7 +177,8 @@ pub mod tier;
 
 pub use audit::{
     canonical_audit_event_strings, FailingRateLimitAuditSink, InMemoryRateLimitAuditSink,
-    RateLimitAuditRecord, RateLimitAuditSink, RateLimitAuditSinkError, RateLimitEventType,
+    NoOpRateLimitAuditSink, RateLimitAuditRecord, RateLimitAuditSink, RateLimitAuditSinkError,
+    RateLimitEventType,
 };
 pub use bucket::{try_acquire as bucket_try_acquire, BucketDecision, TokenBucketState};
 pub use config::{
@@ -191,13 +192,14 @@ pub use limiter::{
     InMemoryTokenBucketRateLimiter, RateLimitDecision, RateLimitOutcome, RateLimiter,
 };
 pub use metrics::{
-    canonical_metric_names, FailingRateLimitMetrics, InMemoryRateLimitMetrics, RateLimitMetricKind,
-    RateLimitMetricsObserver, RateLimitMetricsObserverError, RateLimitResultLabel,
+    canonical_metric_names, FailingRateLimitMetrics, InMemoryRateLimitMetrics,
+    NoOpRateLimitMetrics, RateLimitMetricKind, RateLimitMetricsObserver,
+    RateLimitMetricsObserverError, RateLimitResultLabel,
 };
 pub use tier::{
-    refill_rate_for_tier, BUSINESS_BURST, BUSINESS_REFILL_RPS, ENTERPRISE_BURST,
-    ENTERPRISE_REFILL_RPS, FREE_BURST, FREE_REFILL_RPS, SOLO_BURST, SOLO_REFILL_RPS, TEAM_BURST,
-    TEAM_REFILL_RPS, TIER_RATE_LADDER,
+    refill_rate_for_tier, tier_for_billing_label, BUSINESS_BURST, BUSINESS_REFILL_RPS,
+    ENTERPRISE_BURST, ENTERPRISE_REFILL_RPS, FREE_BURST, FREE_REFILL_RPS, SOLO_BURST,
+    SOLO_REFILL_RPS, TEAM_BURST, TEAM_REFILL_RPS, TIER_RATE_LADDER,
 };
 
 /// Returns the canonical schema version recorded by the latest

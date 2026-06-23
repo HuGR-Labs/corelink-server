@@ -360,6 +360,88 @@ impl RateLimitMetricsObserver for InMemoryRateLimitMetrics {
     }
 }
 
+/// Production-safe **bounded** metrics observer: accepts every metric
+/// and drops it (constant memory, zero heap growth, zero label
+/// cardinality).
+///
+/// ## Why this exists (F-022 closure)
+///
+/// [`InMemoryRateLimitMetrics`] is a **test capture** observer — every
+/// `record_*` / `observe_*` call inserts a `format!`-built per-tenant
+/// label string into an unbounded `HashMap` (counters/gauges grow with
+/// tenant × dimension cardinality) and pushes onto an unbounded
+/// `duration_samples_per_result` `Vec`. Wired into the production
+/// data-plane layer it grows heap on ordinary traffic without bound. This
+/// observer is the bounded production default: it satisfies the
+/// [`RateLimitMetricsObserver`] contract with **O(1)** memory, **no
+/// allocation**, and **no per-tenant label retention**.
+///
+/// ## Forward path
+///
+/// The live exporter (statsd / Prometheus / CloudWatch) increments an
+/// external time-series store with bounded local state; it lands with the
+/// observability wiring (WI-S08-006). Until then this NoOp observer is the
+/// correct production posture — the cross-tenant-violation SEV-1 canary is
+/// also routed here, so a future exporter must re-surface it; dropping the
+/// (informational) per-tenant gauges in the interim is strictly preferable
+/// to the unbounded test observer's leak.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoOpRateLimitMetrics;
+
+impl NoOpRateLimitMetrics {
+    /// Construct a fresh bounded no-op observer.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl RateLimitMetricsObserver for NoOpRateLimitMetrics {
+    #[inline]
+    fn record_check(
+        &self,
+        _tenant_id: Uuid,
+        _dimension: KeyDimension,
+        _result: RateLimitResultLabel,
+    ) -> Result<(), RateLimitMetricsObserverError> {
+        Ok(())
+    }
+
+    #[inline]
+    fn observe_tokens_remaining(
+        &self,
+        _tenant_id: Uuid,
+        _dimension: KeyDimension,
+        _count: u64,
+    ) -> Result<(), RateLimitMetricsObserverError> {
+        Ok(())
+    }
+
+    #[inline]
+    fn observe_refill_rate(
+        &self,
+        _tenant_id: Uuid,
+        _dimension: KeyDimension,
+        _rate_per_sec: u64,
+    ) -> Result<(), RateLimitMetricsObserverError> {
+        Ok(())
+    }
+
+    #[inline]
+    fn record_middleware_duration_us(
+        &self,
+        _result: RateLimitResultLabel,
+        _duration_us: u64,
+    ) -> Result<(), RateLimitMetricsObserverError> {
+        Ok(())
+    }
+
+    #[inline]
+    fn record_cross_tenant_violation(&self) -> Result<(), RateLimitMetricsObserverError> {
+        Ok(())
+    }
+}
+
 /// Always-failing observer for adversarial tests of the
 /// log-and-continue downgrade path.
 #[derive(Debug, Default)]
@@ -542,6 +624,27 @@ mod tests {
             m.counter_total(RateLimitMetricKind::CrossTenantViolationTotal),
             2
         );
+    }
+
+    #[test]
+    fn noop_metrics_accepts_everything_and_retains_no_state() {
+        // F-022 regression: the bounded prod observer must accept every
+        // metric (never erroring the hot path) and retain NO per-tenant
+        // label state (no unbounded HashMap / sample Vec growth).
+        let m = NoOpRateLimitMetrics::new();
+        for i in 0..10_000u128 {
+            let t = Uuid::from_u128(i); // distinct tenants → would blow up label cardinality on the in-mem sink
+            m.record_check(t, KeyDimension::PerTenant, RateLimitResultLabel::Allowed)
+                .unwrap();
+            m.observe_tokens_remaining(t, KeyDimension::PerTenant, 1)
+                .unwrap();
+            m.observe_refill_rate(t, KeyDimension::PerTenant, 1).unwrap();
+            m.record_middleware_duration_us(RateLimitResultLabel::Allowed, 1)
+                .unwrap();
+            m.record_cross_tenant_violation().unwrap();
+        }
+        // Zero-sized type → no state, no growth, by construction.
+        assert_eq!(std::mem::size_of::<NoOpRateLimitMetrics>(), 0);
     }
 
     #[test]
