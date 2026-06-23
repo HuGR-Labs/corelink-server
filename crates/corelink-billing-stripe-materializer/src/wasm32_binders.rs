@@ -81,7 +81,7 @@ use crate::audit::{BillingAuditEmitter, BillingAuditError, BillingAuditRecord};
 use crate::d1::{
     BillingD1Error, BillingD1Writer, MaterializedRow, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND,
     SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_TIER, SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE,
-    SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
+    SQL_UPSERT_RUNNERS_ENTITLEMENT, SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
 };
 
 // ---------------------------------------------------------------------------
@@ -294,6 +294,40 @@ impl BillingD1Writer for CfD1BillingWriter {
             .map_err(map_d1_error_transient)?;
         Err(BillingD1Error::Transient(
             "wasm32_async_dispatch_pending: upsert_tier staged; dispatch via worker::send::SendFuture layer"
+                .to_owned(),
+        ))
+    }
+
+    fn upsert_runners_entitlement(
+        &self,
+        tenant_id: &str,
+        max_concurrency: u32,
+        _max_vcpu_h: u32,
+        _now_ms: i64,
+    ) -> Result<(), BillingD1Error> {
+        if !self.tenant.ct_eq_str(tenant_id) {
+            return Err(BillingD1Error::InvalidPayload(format!(
+                "cf-d1-binder: upsert_runners_entitlement tenant `{tenant_id}` does not match anchored tenant"
+            )));
+        }
+        if max_concurrency == 0 {
+            // `runners_entitlement.max_concurrency` CHECK (> 0); reject a 0 cap
+            // rather than stage a write the table would reject.
+            return Err(BillingD1Error::InvalidPayload(
+                "cf-d1-binder: max_concurrency must be > 0".to_owned(),
+            ));
+        }
+        self.d1
+            .scoped_query(SQL_UPSERT_RUNNERS_ENTITLEMENT)
+            .map_err(map_d1_error_transient)?;
+        // First positional bind is `tenant_id` (bind #1); the ct-eq probe
+        // anchors the tenant. Binds #2..#4 are
+        // (max_concurrency, created_at_ms = now_ms, max_vcpu_h).
+        self.d1
+            .verify_first_bind(tenant_id)
+            .map_err(map_d1_error_transient)?;
+        Err(BillingD1Error::Transient(
+            "wasm32_async_dispatch_pending: upsert_runners_entitlement staged; dispatch via worker::send::SendFuture layer"
                 .to_owned(),
         ))
     }

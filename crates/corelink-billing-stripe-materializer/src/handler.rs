@@ -43,6 +43,7 @@ use corelink_tier_selection::tier::TierKind;
 use crate::audit::{AuditSeverity, BillingAuditEmitter, BillingAuditError, BillingAuditRecord};
 use crate::clock::{default_mat_clock, MatClock};
 use crate::d1::{BillingD1Error, BillingD1Writer, MaterializedRow};
+use crate::runners::RunnersEntitlementResolver;
 use crate::tier::{TierSelectError, TierSelector};
 
 /// The canonical 10-event × table × audit-event-name matrix.
@@ -140,6 +141,12 @@ pub struct D1SubscriptionStateHandler {
     d1: Arc<dyn BillingD1Writer>,
     audit: Arc<dyn BillingAuditEmitter>,
     tier_selector: Arc<dyn TierSelector>,
+    /// Optional Runners-tier entitlement resolver. `None` (default) ⇒ the
+    /// Runners seed path is dormant and every subscription is treated as a
+    /// cache-tier event (exact pre-existing behavior). Wired via
+    /// [`Self::with_runners_resolver`] once the `STRIPE_PRICE_ID_RUNNER_*`
+    /// prices exist — env-gated activation, mirroring the cache tier selector.
+    runners_resolver: Option<Arc<dyn RunnersEntitlementResolver>>,
     clock: Arc<dyn MatClock>,
 }
 
@@ -149,6 +156,7 @@ impl fmt::Debug for D1SubscriptionStateHandler {
             .field("d1", &self.d1)
             .field("audit", &self.audit)
             .field("tier_selector", &self.tier_selector)
+            .field("runners_resolver", &self.runners_resolver)
             .field("clock", &self.clock)
             .finish()
     }
@@ -173,8 +181,21 @@ impl D1SubscriptionStateHandler {
             d1,
             audit,
             tier_selector,
+            runners_resolver: None,
             clock: default_mat_clock(),
         }
+    }
+
+    /// Wire a [`RunnersEntitlementResolver`] so a Runners-tier subscription
+    /// seeds `runners_entitlement` instead of `tier_selections`. Without it,
+    /// the Runners path is dormant (every subscription → cache-tier path).
+    #[must_use]
+    pub fn with_runners_resolver(
+        mut self,
+        resolver: Arc<dyn RunnersEntitlementResolver>,
+    ) -> Self {
+        self.runners_resolver = Some(resolver);
+        self
     }
 
     /// Inject a custom [`MatClock`] (tests use
@@ -307,9 +328,18 @@ impl D1SubscriptionStateHandler {
             self.d1.upsert_subscription(row).map_err(d1_to_mat)?;
         }
 
-        // 3) Tier reconciliation (only for *.updated arm).
+        // 3) Entitlement reconciliation (only for *.updated arm). Route by
+        // PRODUCT: a Runners-tier price seeds `runners_entitlement`; any other
+        // price reconciles the cache `tier_selections`. `reconcile_runners`
+        // returns Ok(true) when it handled a Runners price (so we must NOT also
+        // run the cache reconcile — a Runners price is not a cache tier and would
+        // 422 UnknownPlan there); Ok(false) when the resolver is dormant or the
+        // price is not a Runners price ⇒ fall through to the cache path (exact
+        // pre-existing behavior).
         if env.event_type == "customer.subscription.updated" {
-            self.reconcile_tier(env, &tenant_id, &status, now_ms)?;
+            if !self.reconcile_runners(env, &tenant_id, &status, now_ms)? {
+                self.reconcile_tier(env, &tenant_id, &status, now_ms)?;
+            }
         } else if canceled {
             // On cancel, downgrade tenant to Free (per
             // dispatcher contract — `customer.subscription.deleted`
@@ -319,6 +349,67 @@ impl D1SubscriptionStateHandler {
         }
 
         Ok(())
+    }
+
+    /// Seed `runners_entitlement` when the subscription's plan is a Runners-tier
+    /// price. Returns `Ok(true)` when it WAS a Runners price (handled — the caller
+    /// must not also run the cache-tier reconcile), `Ok(false)` when the resolver
+    /// is dormant or the price is not a Runners price (caller falls back to the
+    /// cache path). Status-gated + audit-before-write, mirroring `reconcile_tier`.
+    fn reconcile_runners(
+        &self,
+        env: &StripeWebhookEnvelope,
+        tenant_id: &str,
+        status: &str,
+        now_ms: u64,
+    ) -> Result<bool, MaterializerError> {
+        let Some(resolver) = self.runners_resolver.as_ref() else {
+            return Ok(false); // dormant (no STRIPE_PRICE_ID_RUNNER_* wired)
+        };
+        let Some(plan_id) = env
+            .data
+            .get("object")
+            .and_then(|o| o.get("plan"))
+            .and_then(|p| p.get("id"))
+            .and_then(|v| v.as_str())
+        else {
+            return Ok(false); // no plan.id → let the cache path raise its own error
+        };
+        let Some(ent) = resolver.resolve(plan_id) else {
+            return Ok(false); // not a Runners price → cache-tier path
+        };
+        // It IS a Runners-tier price. A non-granting status (past_due, unpaid,
+        // paused, …) must NOT seed the entitlement — same defense-in-depth gate
+        // as the cache tier path. Still "handled" (true) so the caller does not
+        // fall through to the cache reconcile (which would 422 UnknownPlan).
+        if !subscription_status_grants_access(status) {
+            return Ok(true);
+        }
+        // Audit BEFORE the state mutation (fail-CLOSED ordering).
+        self.audit
+            .emit_billing(&BillingAuditRecord {
+                event_name: "corelink.tenant.runners_entitlement_seeded.v1",
+                stripe_event_id: env.id.clone(),
+                stripe_event_type: env.event_type.clone(),
+                tenant_id: tenant_id.to_string(),
+                stripe_object_id: None,
+                severity: AuditSeverity::Notice,
+                ts_ms: now_ms,
+                payload: serde_json::json!({
+                    "max_concurrency": ent.max_concurrency,
+                    "max_vcpu_h": ent.max_vcpu_h,
+                }),
+            })
+            .map_err(audit_to_mat)?;
+        self.d1
+            .upsert_runners_entitlement(
+                tenant_id,
+                ent.max_concurrency,
+                ent.max_vcpu_h,
+                now_ms as i64,
+            )
+            .map_err(d1_to_mat)?;
+        Ok(true)
     }
 
     fn reconcile_tier(
@@ -698,6 +789,98 @@ mod tests {
         handler.on_subscription_updated(&e).unwrap();
         assert_eq!(d1.tier_for("ten_1"), Some("pro".to_string()));
         assert_eq!(audit.count_event("corelink.tenant.tier_changed.v1"), 1);
+    }
+
+    /// Fixture WITH a Runners resolver wired (price `price_runner_team` →
+    /// Team tier: 80 concurrency / 600 vCPU-h).
+    fn fixture_with_runners() -> (
+        D1SubscriptionStateHandler,
+        Arc<InMemoryBillingD1>,
+        Arc<InMemoryBillingAuditEmitter>,
+    ) {
+        let (handler, d1, audit) = fixture();
+        let resolver = Arc::new(
+            crate::runners::InMemoryRunnersEntitlementResolver::new().with_price(
+                "price_runner_team",
+                crate::runners::RunnersEntitlement {
+                    max_concurrency: 80,
+                    max_vcpu_h: 600,
+                },
+            ),
+        );
+        (handler.with_runners_resolver(resolver), d1, audit)
+    }
+
+    #[test]
+    fn runners_subscription_seeds_entitlement_not_tier() {
+        let (handler, d1, audit) = fixture_with_runners();
+        let e = env(
+            "evt_run",
+            "customer.subscription.updated",
+            serde_json::json!({
+                "object": {
+                    "id": "sub_run",
+                    "status": "active",
+                    "metadata": { "tenant_id": "ten_run" },
+                    "plan": { "id": "price_runner_team" }
+                }
+            }),
+        );
+        handler.on_subscription_updated(&e).unwrap();
+        assert_eq!(d1.runners_entitlement_of("ten_run"), Some((80, 600)));
+        assert_eq!(
+            audit.count_event("corelink.tenant.runners_entitlement_seeded.v1"),
+            1
+        );
+        // Separate axis: the cache tier was NOT touched (no UnknownPlan 422).
+        assert_eq!(d1.tier_for("ten_run"), None);
+    }
+
+    #[test]
+    fn runners_price_with_non_granting_status_does_not_seed() {
+        for non_granting in ["past_due", "unpaid", "canceled"] {
+            let (handler, d1, _audit) = fixture_with_runners();
+            let e = env(
+                "evt_run",
+                "customer.subscription.updated",
+                serde_json::json!({
+                    "object": {
+                        "id": "sub_run",
+                        "status": non_granting,
+                        "metadata": { "tenant_id": "ten_run" },
+                        "plan": { "id": "price_runner_team" }
+                    }
+                }),
+            );
+            handler.on_subscription_updated(&e).unwrap();
+            assert_eq!(
+                d1.runners_entitlement_of("ten_run"),
+                None,
+                "status {non_granting} must NOT seed runners_entitlement"
+            );
+        }
+    }
+
+    #[test]
+    fn cache_price_still_routes_to_tier_when_runners_resolver_present() {
+        // A wired resolver must NOT divert cache-tier subscriptions: a
+        // non-Runners price (plan_pro) still reconciles tier_selections.
+        let (handler, d1, _audit) = fixture_with_runners();
+        let e = env(
+            "evt_cache",
+            "customer.subscription.updated",
+            serde_json::json!({
+                "object": {
+                    "id": "sub_cache",
+                    "status": "active",
+                    "metadata": { "tenant_id": "ten_cache" },
+                    "plan": { "id": "plan_pro" }
+                }
+            }),
+        );
+        handler.on_subscription_updated(&e).unwrap();
+        assert_eq!(d1.tier_for("ten_cache"), Some("pro".to_string()));
+        assert_eq!(d1.runners_entitlement_of("ten_cache"), None);
     }
 
     #[test]

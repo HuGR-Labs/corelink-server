@@ -55,7 +55,8 @@ use std::sync::Arc;
 use corelink_billing_stripe_materializer::{
     BillingD1Error, BillingD1Writer, MaterializedRow, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND,
     SQL_INSERT_WEBHOOK_EVENT_PROCESSED, SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_TIER,
-    SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE, SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
+    SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE, SQL_UPSERT_RUNNERS_ENTITLEMENT,
+    SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
 };
 use serde_json::{json, Value};
 
@@ -341,6 +342,34 @@ impl BillingD1Writer for D1HttpBillingWriter {
                 json!(tier_wire),
                 json!(now_ms),
                 json!(correlation_id),
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn upsert_runners_entitlement(
+        &self,
+        tenant_id: &str,
+        max_concurrency: u32,
+        max_vcpu_h: u32,
+        now_ms: i64,
+    ) -> Result<(), BillingD1Error> {
+        if max_concurrency == 0 {
+            // `runners_entitlement.max_concurrency` has a `CHECK (> 0)`; reject a
+            // 0 cap here rather than send a write the table would bounce.
+            return Err(BillingD1Error::InvalidPayload(
+                "upsert_runners_entitlement: max_concurrency must be > 0".to_owned(),
+            ));
+        }
+        // Binds (?1..?4): tenant_id, max_concurrency, created_at_ms (= now_ms),
+        // max_vcpu_h. `plan` is the literal `'runners'` marker in the statement.
+        self.run(
+            SQL_UPSERT_RUNNERS_ENTITLEMENT,
+            vec![
+                json!(tenant_id),
+                json!(max_concurrency),
+                json!(now_ms),
+                json!(max_vcpu_h),
             ],
         )?;
         Ok(())

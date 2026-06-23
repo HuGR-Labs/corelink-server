@@ -61,6 +61,7 @@ pub mod clock;
 mod d1;
 mod handler;
 mod idempotency;
+mod runners;
 mod tier;
 #[cfg(feature = "cf-billing-real")]
 mod wasm32_binders;
@@ -77,11 +78,14 @@ pub use clock::{default_mat_clock, InMemoryFakeMatClock, MatClock};
 pub use d1::{
     BillingD1Error, BillingD1Writer, InMemoryBillingD1, MaterializedRow, SQL_INSERT_DISPUTE,
     SQL_INSERT_REFUND, SQL_INSERT_WEBHOOK_EVENT_PROCESSED, SQL_MARK_SUBSCRIPTION_CANCELED,
-    SQL_READ_TIER, SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE, SQL_UPSERT_SUBSCRIPTION,
-    SQL_UPSERT_TIER,
+    SQL_READ_TIER, SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE, SQL_UPSERT_RUNNERS_ENTITLEMENT,
+    SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
 };
 pub use handler::{D1SubscriptionStateHandler, EVENT_MATERIALIZATION_MATRIX};
 pub use idempotency::D1IdempotencyStore;
+pub use runners::{
+    InMemoryRunnersEntitlementResolver, RunnersEntitlement, RunnersEntitlementResolver,
+};
 pub use tier::{InMemoryTierSelector, TierSelectError, TierSelector};
 
 #[cfg(feature = "cf-billing-real")]

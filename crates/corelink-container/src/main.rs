@@ -35,7 +35,8 @@ use corelink_billing::stripe::real::webhook_dispatch::{
 };
 use corelink_billing_stripe_materializer::{
     BillingD1Writer, D1IdempotencyStore, D1SubscriptionStateHandler, InMemoryBillingAuditEmitter,
-    InMemoryBillingD1, InMemoryTierSelector, RealStripeAuditEmitter,
+    InMemoryBillingD1, InMemoryRunnersEntitlementResolver, InMemoryTierSelector,
+    RealStripeAuditEmitter, RunnersEntitlement,
 };
 use corelink_server::billing_d1_http::D1HttpBillingWriter;
 use corelink_server::routes;
@@ -96,11 +97,61 @@ const TIER_PRICE_ENV_TABLE: &[(&str, &str, TierKind)] = &[
     ("STRIPE_PRICE_ID_MAX", "plan_max", TierKind::Max),
 ];
 
+/// Runners-tier price → `(max_concurrency, max_vcpu_h)` mapping (a SEPARATE
+/// axis from the cache tiers above). Owner-ratified loss-proof ladder
+/// (`corelink-runners docs/product/pricing.md §2`, 2026-06-16) on the real
+/// ~$0.10/vCPU-h Cloudflare-Containers basis: Starter 20/100 · Pro 40/240 ·
+/// Team 80/600 · Scale 160/1200 · Max 320/2400. Keyed on the live
+/// `STRIPE_PRICE_ID_RUNNER_*` price id; unset env ⇒ that tier is dormant (no
+/// literal fallback — a Runners price must be a real Stripe id, never guessed).
+const RUNNER_PRICE_ENV_TABLE: &[(&str, u32, u32)] = &[
+    ("STRIPE_PRICE_ID_RUNNER_STARTER", 20, 100),
+    ("STRIPE_PRICE_ID_RUNNER_PRO", 40, 240),
+    ("STRIPE_PRICE_ID_RUNNER_TEAM", 80, 600),
+    ("STRIPE_PRICE_ID_RUNNER_SCALE", 160, 1200),
+    ("STRIPE_PRICE_ID_RUNNER_MAX", 320, 2400),
+];
+
 /// Build the container tier mapping from the live `STRIPE_PRICE_ID_*`
 /// env values, falling back to the literal `plan_{tier}` keys when an
 /// env var is unset/empty (F-001 fix).
 fn build_tier_selector() -> InMemoryTierSelector {
     build_tier_selector_from(|name| std::env::var(name).ok())
+}
+
+/// Build the Runners entitlement resolver from the live `STRIPE_PRICE_ID_RUNNER_*`
+/// env, or `None` when NONE are set (the Runners seed path stays dormant →
+/// every subscription is a cache-tier event, exactly as before the price IDs
+/// exist). Mirrors [`build_tier_selector`] but with NO literal fallback (a
+/// Runners price must be a real Stripe id) and returns `Option` so the caller
+/// only wires the resolver when at least one Runners price is configured.
+fn build_runners_resolver() -> Option<InMemoryRunnersEntitlementResolver> {
+    build_runners_resolver_from(|name| std::env::var(name).ok())
+}
+
+fn build_runners_resolver_from<F>(lookup: F) -> Option<InMemoryRunnersEntitlementResolver>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let mut resolver = InMemoryRunnersEntitlementResolver::new();
+    for (env_name, max_concurrency, max_vcpu_h) in RUNNER_PRICE_ENV_TABLE {
+        if let Some(price_id) = lookup(env_name) {
+            if !price_id.trim().is_empty() {
+                resolver = resolver.with_price(
+                    price_id.trim(),
+                    RunnersEntitlement {
+                        max_concurrency: *max_concurrency,
+                        max_vcpu_h: *max_vcpu_h,
+                    },
+                );
+            }
+        }
+    }
+    if resolver.is_empty() {
+        None
+    } else {
+        Some(resolver)
+    }
 }
 
 /// Pure mapping builder: `lookup` resolves an env-var name to its value
@@ -620,11 +671,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // fallback (test fixtures / pre-price-id deployments) ONLY when
         // the corresponding env var is unset/empty.
         let tier_selector = Arc::new(build_tier_selector());
-        let materializer: Arc<dyn StateMaterializer> = Arc::new(D1SubscriptionStateHandler::new(
-            billing_d1.clone(),
-            billing_audit.clone(),
-            tier_selector,
-        ));
+        let mut sub_handler =
+            D1SubscriptionStateHandler::new(billing_d1.clone(), billing_audit.clone(), tier_selector);
+        // Runners entitlement seed (env-gated): when STRIPE_PRICE_ID_RUNNER_* are
+        // set, a Runners-tier subscription seeds `runners_entitlement` instead of
+        // `tier_selections`. Dormant (no-op) until those prices exist.
+        if let Some(runners_resolver) = build_runners_resolver() {
+            tracing::info!(
+                "Runners entitlement seed ENABLED ({} tier price(s) wired)",
+                runners_resolver.len()
+            );
+            sub_handler = sub_handler.with_runners_resolver(Arc::new(runners_resolver));
+        } else {
+            tracing::info!(
+                "Runners entitlement seed dormant (no STRIPE_PRICE_ID_RUNNER_* set)"
+            );
+        }
+        let materializer: Arc<dyn StateMaterializer> = Arc::new(sub_handler);
         let dispatcher_audit = Arc::new(RealStripeAuditEmitter::new(billing_audit.clone()));
         let idempotency = Arc::new(D1IdempotencyStore::new(billing_d1.clone()));
         // F-008 closure: wire a DLQ sink so a TRANSIENT materialize
@@ -671,8 +734,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-    use super::{build_tier_selector_from, should_fatal_on_missing_gate};
-    use corelink_billing_stripe_materializer::{TierSelectError, TierSelector};
+    use super::{
+        build_runners_resolver_from, build_tier_selector_from, should_fatal_on_missing_gate,
+    };
+    use corelink_billing_stripe_materializer::{
+        RunnersEntitlement, RunnersEntitlementResolver, TierSelectError, TierSelector,
+    };
     use corelink_tier_selection::tier::TierKind;
     use std::collections::HashMap;
 
@@ -757,5 +824,51 @@ mod tests {
             sel.compute_tier("price_live_max_only", 1).unwrap(),
             TierKind::Max
         );
+    }
+
+    #[test]
+    fn runners_resolver_dormant_when_no_price_ids_set() {
+        // No STRIPE_PRICE_ID_RUNNER_* env → None (Runners seed stays dormant,
+        // every subscription routes to the cache tier path).
+        let env: HashMap<&str, &str> = HashMap::new();
+        let r = build_runners_resolver_from(|name| env.get(name).map(|s| (*s).to_string()));
+        assert!(r.is_none());
+    }
+
+    #[test]
+    fn runners_resolver_maps_set_prices_to_the_ratified_ladder() {
+        let env: HashMap<&str, &str> = HashMap::from([
+            ("STRIPE_PRICE_ID_RUNNER_STARTER", "price_live_run_starter"),
+            ("STRIPE_PRICE_ID_RUNNER_TEAM", "price_live_run_team"),
+            ("STRIPE_PRICE_ID_RUNNER_MAX", "price_live_run_max"),
+            ("STRIPE_PRICE_ID_RUNNER_PRO", ""), // unset/blank → not wired
+        ]);
+        let r = build_runners_resolver_from(|name| env.get(name).map(|s| (*s).to_string()))
+            .expect("at least one runner price set → Some");
+        // Ratified ladder: Starter 20/100, Team 80/600, Max 320/2400.
+        assert_eq!(
+            r.resolve("price_live_run_starter"),
+            Some(RunnersEntitlement {
+                max_concurrency: 20,
+                max_vcpu_h: 100
+            })
+        );
+        assert_eq!(
+            r.resolve("price_live_run_team"),
+            Some(RunnersEntitlement {
+                max_concurrency: 80,
+                max_vcpu_h: 600
+            })
+        );
+        assert_eq!(
+            r.resolve("price_live_run_max"),
+            Some(RunnersEntitlement {
+                max_concurrency: 320,
+                max_vcpu_h: 2400
+            })
+        );
+        // Blank PRO was not wired; a cache price is not a runner price.
+        assert_eq!(r.resolve("price_live_run_pro"), None);
+        assert_eq!(r.resolve("plan_pro"), None);
     }
 }
