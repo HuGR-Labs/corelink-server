@@ -23,6 +23,7 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Runners-tier Stripe prices live + forwarded.** Created the 5 Runners Products/Prices (Starter $16 / Pro $40 / Team $100 / Scale $200 / Max $400, idempotent `scripts/ops/stripe-setup-runners.sh`) and forward `STRIPE_PRICE_ID_RUNNER_*` from the DO to the container so the seed handler activates (no longer dormant).
 - **Runners-tier entitlement SEED on Stripe purchase.** When a Runners-tier subscription activates
   (`customer.subscription.{created,updated}`), the materializer now seeds the per-tenant
   `runners_entitlement` row (`max_concurrency`, `max_vcpu_h`) instead of `tier_selections` — the

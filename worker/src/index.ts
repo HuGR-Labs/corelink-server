@@ -91,6 +91,12 @@ export interface Env {
   STRIPE_PRICE_ID_TEAM?: string;
   STRIPE_PRICE_ID_PRO?: string;
   STRIPE_PRICE_ID_MAX?: string;
+  // Runners-tier prices (forwarded to the container's seed handler).
+  STRIPE_PRICE_ID_RUNNER_STARTER?: string;
+  STRIPE_PRICE_ID_RUNNER_PRO?: string;
+  STRIPE_PRICE_ID_RUNNER_TEAM?: string;
+  STRIPE_PRICE_ID_RUNNER_SCALE?: string;
+  STRIPE_PRICE_ID_RUNNER_MAX?: string;
   CORELINK_DPA_VERSION?: string;
   // PAT HMAC signing key (raw hex, ≥ 32 bytes decoded) — used for the
   // HMAC-SHA256 fast-fail layer in PAT validation (WP-A1 step 2).
