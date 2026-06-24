@@ -42,7 +42,9 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash as _, Hasher as _};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -67,6 +69,13 @@ use crate::adapter_pat::{PatVerifier, VerifyError};
 /// a cross-process revocation epoch; the tight TTL is the correct launch control).
 pub const VERIFY_CACHE_TTL: Duration = Duration::from_secs(5);
 
+/// Number of single-flight shards (see [`NativePatGate::verify_locks`]). A FIXED,
+/// memory-bounded array (same rationale as `byte_accounting::CAS_LOCK_SHARDS`):
+/// no per-fingerprint map that grows with the live token set. 256 keeps
+/// cross-fingerprint false-sharing negligible for any realistic per-container
+/// concurrency.
+const VERIFY_LOCK_SHARDS: usize = 256;
+
 /// A cached, verified PAT: the resolved tenant + when the entry expires.
 #[derive(Debug, Clone)]
 struct CacheEntry {
@@ -83,6 +92,14 @@ struct CacheEntry {
 pub struct NativePatGate {
     verifier: Arc<PatVerifier>,
     cache: Arc<Mutex<HashMap<String, CacheEntry>>>,
+    /// Single-flight shards: concurrent cache-MISSES for the SAME token
+    /// fingerprint coalesce onto ONE verification (the rest await the shard,
+    /// then read the now-populated cache). Without this, a concurrent burst of
+    /// the same PAT (e.g. parallel CAS writes from one CI job) all miss the
+    /// cache simultaneously and stampede the verifier's D1 lookup / Argon2id
+    /// semaphore — which surfaces as 503 "PAT verifier backend error" on some of
+    /// them (the same-key concurrent-write 503 the e2e journey suite caught).
+    verify_locks: Arc<Vec<Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl std::fmt::Debug for NativePatGate {
@@ -98,10 +115,26 @@ impl NativePatGate {
     /// Construct from a shared [`PatVerifier`].
     #[must_use]
     pub fn new(verifier: Arc<PatVerifier>) -> Self {
+        let verify_locks = (0..VERIFY_LOCK_SHARDS)
+            .map(|_| Arc::new(tokio::sync::Mutex::new(())))
+            .collect::<Vec<_>>();
         Self {
             verifier,
             cache: Arc::new(Mutex::new(HashMap::new())),
+            verify_locks: Arc::new(verify_locks),
         }
+    }
+
+    /// The single-flight shard a fingerprint maps to (deterministic; same fp →
+    /// same shard, which is the property coalescing requires).
+    fn lock_for_fp(&self, fp: &str) -> Arc<tokio::sync::Mutex<()>> {
+        let mut hasher = DefaultHasher::new();
+        fp.hash(&mut hasher);
+        let idx = (hasher.finish() as usize) % self.verify_locks.len();
+        self.verify_locks
+            .get(idx)
+            .map(Arc::clone)
+            .unwrap_or_else(|| Arc::new(tokio::sync::Mutex::new(())))
     }
 
     /// Verify that `bearer_or_token` is a genuine PAT (Argon2id possession) that
@@ -142,8 +175,24 @@ impl NativePatGate {
             };
         }
 
-        // Miss → full verification (HMAC fast-reject → D1 lookup → Argon2id →
-        // scope gate). On success cache `fp → (resolved_tenant, now + TTL)`.
+        // Miss → SINGLE-FLIGHT the full verification. Acquire the fingerprint's
+        // shard so a concurrent burst of the same PAT runs ONE verify (D1 +
+        // Argon2id), not N — a stampede that errored the verifier backend and
+        // surfaced as 503 on some requests (the same-key concurrent-write 503).
+        let fp_lock = self.lock_for_fp(&fp);
+        let _flight = fp_lock.lock().await;
+        // Double-checked: the holder we waited behind may have just populated the
+        // cache — take the fast path and skip a redundant D1/Argon2id round.
+        if let Some(cached_tenant) = self.cache_get(&fp) {
+            return if cached_tenant == tenant {
+                Ok(())
+            } else {
+                Err(unauthorized())
+            };
+        }
+
+        // HMAC fast-reject → D1 lookup → Argon2id → scope gate. On success cache
+        // `fp → (resolved_tenant, now + TTL)`.
         match self.verifier.verify(token).await {
             Ok(resolved_tenant) => {
                 self.cache_put(fp, resolved_tenant.clone());
