@@ -55,6 +55,15 @@ Each entry cross-references:
   (`worker/src/durable_object.ts`) carries `BILLING_INGEST_AUTH_KEY` to the container.
 
 ### Fixed
+- **Native PAT gate single-flight (concurrent same-PAT burst no longer 503s).** The
+  `tests/e2e-user-journeys` concurrency journeys caught a reproducible prod defect: a
+  burst of concurrent CAS writes from ONE tenant (e.g. parallel CI jobs caching the same
+  artifact) all missed the `NativePatGate` verify-cache simultaneously and stampeded the
+  verifier's D1 lookup / Argon2id semaphore → `VerifyError::Backend` → HTTP 503 "PAT
+  verifier backend error" on some requests. `NativePatGate::verify` now SINGLE-FLIGHTs the
+  miss path: concurrent misses for the same token fingerprint coalesce onto one
+  verification (256 memory-bounded shards, double-checked cache), so a burst runs one
+  D1+Argon2id round, not N. Confirmed via an 8-concurrent-PUT repro (3/8 were 503 before).
 - **Go-live review-wave fixes (CP-1, F-MP-2/F-MP-1, F-MP-3, M-1).** From a 6-agent (Opus) go-live review (0 Critical/0 High across code/brutal-audit/security/GDPR):
   - **CP-1 (MED):** the DO now forwards the per-consumer dedicated internal-auth keys (`CORELINK_PAT_MINT/ADMIN/ERASE_AUTH_KEY`) to the container — previously only the shared key was forwarded, so the blast-radius isolation was inert AND provisioning a dedicated key would 401 the container (self-inflicted outage). Empty when unset ⇒ shared fallback (unchanged).
   - **F-MP-2 (MED, covers F-MP-1):** the Stripe webhook now QUARANTINES `InvalidPayload`/`UnknownPlan` events to the DLQ (not just `Transient`) — price-map/config drift (e.g. a `team` price) is now observable + replayable instead of silently dropped after Stripe stops 4xx-retrying.
