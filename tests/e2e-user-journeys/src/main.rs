@@ -112,21 +112,39 @@ fn main() {
     println!("└──────────────────────────────────────────────────────────────────────────────┘");
     println!();
 
-    let verdict = if fail > 0 {
-        "RED"
-    } else if pass > 0 {
-        "GREEN"
+    // M1 (gap-map MASTER) — REFUSE GREEN-BY-VACUUM. A run where the persona/cred
+    // map is unset GATES every journey and used to exit 0 "GREEN" — i.e. a green
+    // that asserted nothing (the owner's "green CI ≠ validated" nightmare). The
+    // gate now requires a FLOOR of journeys to have actually PASSED, else RED.
+    // Floor = `CORELINK_E2E_MIN_PASS` (default 1: at least one positive assertion
+    // must run). A provisioned prod run should set it high (e.g. 40) so a silent
+    // provisioning regression that re-gates the suite cannot pass.
+    let min_pass: usize = std::env::var("CORELINK_E2E_MIN_PASS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+
+    let (verdict, exit_red) = if fail > 0 {
+        ("RED (a journey FAILED)".to_owned(), true)
+    } else if pass < min_pass {
+        (
+            format!(
+                "RED — only {pass} PASS < floor {min_pass} ({gated} gated). Nothing substantive \
+                 ran; this is NOT a green. Provision CORELINK_E2E_PAT_* / lower CORELINK_E2E_MIN_PASS."
+            ),
+            true,
+        )
     } else {
-        "GREEN (all journeys gated — set CORELINK_E2E_PAT_* to exercise the live contract)"
+        (format!("GREEN ({pass} PASS, {gated} gated)"), false)
     };
 
     println!("╔══════════════════════════════════════════════════════════════════╗");
-    println!("║  SHIP-GATE: {verdict:<54} ║");
+    println!("║  SHIP-GATE: {:<54} ║", trunc(&verdict, 54));
     println!("╚══════════════════════════════════════════════════════════════════╝");
     println!();
 
-    // Exit non-zero ONLY on a real failure; a gated journey never fails the gate.
-    if fail > 0 {
+    // Exit non-zero on a real failure OR on a below-floor (vacuum) run.
+    if exit_red {
         std::process::exit(1);
     }
 }

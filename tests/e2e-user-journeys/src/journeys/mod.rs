@@ -38,7 +38,10 @@ pub mod introspect;
 pub mod oci;
 pub mod pat_lifecycle;
 pub mod quota;
+pub mod runners;
 pub mod security;
+pub mod shared_cache;
+pub mod team;
 pub mod turbo;
 
 /// Run every journey module and concatenate the results, in a stable order.
@@ -62,5 +65,8 @@ pub fn all(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     out.extend(security::run(cfg, client));
     out.extend(edge::run(cfg, client));
     out.extend(abuse::run(cfg, client));
+    out.extend(shared_cache::run(cfg, client));
+    out.extend(runners::run(cfg, client));
+    out.extend(team::run(cfg, client));
     out
 }

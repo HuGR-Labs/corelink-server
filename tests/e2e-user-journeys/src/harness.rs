@@ -102,6 +102,18 @@ pub struct Config {
     tokens: TokenMap,
     /// Slow / destructive journeys are opt-in via this flag.
     pub run_slow: bool,
+    // ── frozen cross-WP contract knobs (gap-map wave, F-B) ──────────────────
+    /// A KNOWN public/deterministic artifact hash present in the shared
+    /// `_public` namespace — the cross-team dedup-HIT journey (M2) addresses it
+    /// from two tenants to prove tenant B HITs tenant A's public bytes.
+    /// `CORELINK_E2E_PUBLIC_HASH`.
+    pub public_hash: Option<String>,
+    /// Tenant id that holds a live Runners entitlement (M8 admit/over-cap).
+    /// `CORELINK_E2E_RUNNER_TENANT`.
+    pub runner_tenant: Option<String>,
+    /// Email to use for the team-invite / multi-seat journey (M13).
+    /// `CORELINK_E2E_TEAM_INVITE_EMAIL`.
+    pub team_invite_email: Option<String>,
 }
 
 /// The set of named PATs the suite knows how to consume, each from its own env
@@ -120,6 +132,8 @@ struct TokenMap {
     pro: Option<String>,
     enterprise: Option<String>,
     pastdue: Option<String>,
+    /// PAT for a tenant holding a live Runners entitlement (M8).
+    runner: Option<String>,
 }
 
 /// A named PAT slot. Resolved to an actual token (or `None` → gate) via
@@ -148,6 +162,8 @@ pub enum TokenKind {
     Enterprise,
     /// A PAT whose subscription is past-due (billing journeys).
     PastDue,
+    /// A PAT for a tenant holding a live Runners entitlement (M8).
+    Runner,
 }
 
 impl Config {
@@ -174,10 +190,14 @@ impl Config {
                 pro: var("CORELINK_E2E_PAT_PRO"),
                 enterprise: var("CORELINK_E2E_PAT_ENTERPRISE"),
                 pastdue: var("CORELINK_E2E_PAT_PASTDUE"),
+                runner: var("CORELINK_E2E_PAT_RUNNER"),
             },
             run_slow: env::var("CORELINK_E2E_RUN_SLOW")
                 .map(|v| v == "1")
                 .unwrap_or(false),
+            public_hash: var("CORELINK_E2E_PUBLIC_HASH"),
+            runner_tenant: var("CORELINK_E2E_RUNNER_TENANT"),
+            team_invite_email: var("CORELINK_E2E_TEAM_INVITE_EMAIL"),
         }
     }
 
@@ -195,6 +215,7 @@ impl Config {
             TokenKind::Pro => &self.tokens.pro,
             TokenKind::Enterprise => &self.tokens.enterprise,
             TokenKind::PastDue => &self.tokens.pastdue,
+            TokenKind::Runner => &self.tokens.runner,
         };
         slot.as_deref()
     }
@@ -321,14 +342,39 @@ pub fn expect_status(label: &str, got: u16, want: u16) -> Result<(), String> {
 }
 
 /// `Ok(())` iff `got` is one of the "denied" statuses (401 / 403 / 404). Use
-/// for negative paths where any of unauthenticated / forbidden / hidden is an
-/// acceptable deny (e.g. tenant isolation: a miss and a forbid are both safe).
+/// ONLY for negative paths where a 404 is a LEGITIMATE deny — i.e. not-found is
+/// the correct privacy-preserving answer (e.g. tenant isolation: tenant B
+/// reading tenant A's address may correctly 404, revealing nothing).
+///
+/// ⚠️ M3 (gap-map MASTER): do NOT use this to prove an AUTH GATE rejected a
+/// request. A 404 here also matches a BROKEN / unmounted / renamed route — so a
+/// gate that silently disappeared would score as "secure". For "the gate
+/// actively rejected" probes (edge-mint, priv-esc, internal introspect), use
+/// [`expect_gate_denied`] (401/403 only — a 404 there is a FAILURE, because the
+/// gate must exist and answer, not be absent).
 pub fn expect_denied(label: &str, got: u16) -> Result<(), String> {
     if matches!(got, 401 | 403 | 404) {
         Ok(())
     } else {
         Err(format!(
             "{label}: got {got}, expected a deny (401/403/404)"
+        ))
+    }
+}
+
+/// `Ok(())` iff `got` is an ACTIVE auth-gate rejection (401 / 403). A 404 is a
+/// FAILURE here — it means the route is absent/renamed rather than guarded, so
+/// the security property ("the gate rejected this") is unproven. Use for every
+/// probe that must demonstrate a gate actively denied (not merely that a feature
+/// does not exist): edge token-mint, privilege-escalation, internal-introspect
+/// reachability, header-injection strip. M3 (gap-map MASTER).
+pub fn expect_gate_denied(label: &str, got: u16) -> Result<(), String> {
+    if matches!(got, 401 | 403) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{label}: got {got}, expected an ACTIVE gate deny (401/403); a 404 means the \
+             gate is absent/renamed, not that it rejected — security property UNPROVEN"
         ))
     }
 }
