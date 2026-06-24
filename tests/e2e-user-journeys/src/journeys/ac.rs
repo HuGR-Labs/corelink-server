@@ -7,14 +7,18 @@
 //! Cells covered (matrix S3):
 //!   - **Happy** — `update→read` round-trip: PUT an action-result under a fresh
 //!     digest, GET it back, and assert the stored payload matches byte-for-byte.
-//!   - **Edge** — divergent-body re-PUT: PUT the *same* digest with a *different*
-//!     body and observe the live contract. See the FLAG below — the native AC
-//!     route treats `{digest}` as an OPAQUE key (no digest↔body cryptographic
-//!     guard at this layer), so a re-PUT is **last-write-wins**, NOT a 409. The
-//!     journey asserts the real overwrite contract (the read returns the second
-//!     body) rather than a guard the route does not implement.
+//!   - **Edge / M11** — divergent-body re-PUT (integrity guard): PUT the *same*
+//!     digest with a *different* body. The native AC route enforces a hard
+//!     **divergent-body integrity guard**: `AcHandlerError::DivergentBody` maps
+//!     to HTTP **409 Conflict** (`map_err` line ~734 of `routes/ac.rs`). The
+//!     original body MUST be preserved — a same action-digest must not be made to
+//!     map to different result bytes (anti cache-poisoning / non-determinism). The
+//!     journey requires 409 and then GETs the entry to assert the ORIGINAL body
+//!     survived.
 //!   - **Adversarial** — P5 read-only PAT cannot WRITE an AC entry → 403; P10
 //!     tenant-B cannot GET tenant-A's digest → denied (never tenant-A's bytes).
+//!   - **D-7** — `GET /v1/ac/{tenant}` refs list: PUT an AC entry, assert it
+//!     enumerates; cross-tenant list isolation.
 //!
 //! ### Persona-id mapping (matrix vs the frozen `Persona` enum) — FLAGGED
 //! The matrix numbers personas P5 (read-only) and P10 (cross-tenant). The frozen
@@ -22,22 +26,24 @@
 //! [`Persona::P6TenantB`]. This module uses the enum (the contract); the doc
 //! comments keep the matrix Pn label in parentheses for traceability.
 //!
-//! ### Native-AC vs Bazel-AC divergent-body — FLAGGED
-//! The matrix's "divergent-body guard" is a Bazel-REAPI property (the AC key is
-//! the action *digest* and the server can reject a payload whose digest differs).
-//! The NATIVE `/v1/ac` route (`crates/corelink-container/src/routes/ac.rs`,
-//! `handle_update`) stores the body verbatim under the opaque path digest and
-//! returns 201/200 on overwrite — there is no divergent-body rejection here.
-//! Asserting a 409 would be a false test, so the Edge cell pins the actual
-//! last-write-wins contract and the flag documents the gap.
+//! ### Native-AC divergent-body policy — CONFIRMED (M11 fix)
+//! Reading `crates/corelink-container/src/routes/ac.rs` `map_err` confirms that
+//! `AcHandlerError::DivergentBody` is mapped to **409 Conflict** with body
+//! `"divergent body"`. The handler does NOT do last-write-wins for a divergent
+//! body — it rejects the overwrite. The prior version of `divergent_body_reput`
+//! accepted EITHER 409 OR 200/201 (a tautology). M11 fixes that: require 409
+//! strictly, then verify the original body is preserved via a GET.
 
 use std::time::Instant;
 
 use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
+use serde_json::Value;
+
 use crate::harness::{
-    bearer, expect_denied, expect_status, sha256_hex, unique_blob, url_ac, Config, JourneyResult,
+    bearer, expect_denied, expect_status, sha256_hex, unique_blob, url_ac, url_ac_list, Config,
+    JourneyResult,
 };
 use crate::personas::Persona;
 
@@ -46,14 +52,16 @@ fn ms(start: Instant) -> u64 {
     start.elapsed().as_millis() as u64
 }
 
-/// Run the AC journeys — one [`JourneyResult`] per cell (happy / edge /
-/// adversarial-RO / adversarial-cross-tenant).
+/// Run the AC journeys — one [`JourneyResult`] per cell.
 pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     vec![
         update_then_read(cfg, client),
-        divergent_body_reput(cfg, client),
+        divergent_body_integrity_guard(cfg, client),
         read_only_cannot_update(cfg, client),
         cross_tenant_read_denied(cfg, client),
+        // D-7 — refs list
+        list_enumerates_ac_entries(cfg, client),
+        list_cross_tenant_isolation(cfg, client),
     ]
 }
 
@@ -130,16 +138,25 @@ fn update_then_read(cfg: &Config, client: &Client) -> JourneyResult {
     JourneyResult::pass(name, ms(start))
 }
 
-/// **Edge (matrix S3 edge — "divergent-body guard"):** PUT the SAME digest twice
-/// with DIFFERENT bodies and pin the real native-AC contract.
+/// **Edge / M11 — divergent-body integrity guard (FIXED — no tautology):**
+/// PUT the SAME digest twice with DIFFERENT bodies and assert the REAL native-AC
+/// contract.
 ///
-/// FLAG: native `/v1/ac` keys on the opaque path digest with no digest↔body
-/// cryptographic guard, so the second PUT is accepted (last-write-wins) and the
-/// subsequent GET returns the SECOND body. This is the actual deployed behavior;
-/// asserting a 409 (a Bazel-REAPI-only property) would be a false test.
-fn divergent_body_reput(cfg: &Config, client: &Client) -> JourneyResult {
+/// CONTRACT (read from `routes/ac.rs` `map_err`): `AcHandlerError::DivergentBody`
+/// maps to **HTTP 409 Conflict** with body `"divergent body"`. The native AC
+/// route does NOT do last-write-wins for a divergent body — it enforces a hard
+/// integrity guard so that a proven action result for a given digest can never be
+/// silently replaced. The journey:
+///   1. PUTs `body_one` → 201 (created).
+///   2. PUTs `body_two` to the SAME digest → MUST be 409.
+///   3. GETs the entry → MUST return `body_one` exactly (original preserved).
+///
+/// The prior version of this journey was a TAUTOLOGY: it accepted EITHER 409 OR
+/// 200/201, so it passed whether the guard existed or not. This version requires
+/// 409 strictly (not LWW) and pins the original-body-preserved GET assertion.
+fn divergent_body_integrity_guard(cfg: &Config, client: &Client) -> JourneyResult {
     let name =
-        "AC: divergent-body re-PUT - same digest, different body -> 409 integrity guard";
+        "AC M11: divergent-body re-PUT — 409 integrity guard + original body preserved (not LWW)";
     let start = Instant::now();
 
     let p = match Persona::P1ReadWrite.resolve(cfg) {
@@ -156,7 +173,7 @@ fn divergent_body_reput(cfg: &Config, client: &Client) -> JourneyResult {
     let body_two = unique_blob("corelink-e2e-ac-result-TWO");
     let url = url_ac(cfg, &p.tenant, &digest);
 
-    let put = |body: &[u8]| -> Result<u16, String> {
+    let do_put = |body: &[u8]| -> Result<u16, String> {
         client
             .put(&url)
             .header(AUTHORIZATION, bearer(token))
@@ -167,58 +184,59 @@ fn divergent_body_reput(cfg: &Config, client: &Client) -> JourneyResult {
             .map_err(|e| format!("PUT {url}: {e}"))
     };
 
-    // First write.
-    match put(&body_one) {
+    // First write — must succeed (fresh entry).
+    match do_put(&body_one) {
         Ok(200 | 201) => {}
+        Ok(s) => return JourneyResult::fail(name, ms(start), format!("first PUT got {s} (want 200/201)")),
+        Err(m) => return JourneyResult::fail(name, ms(start), m),
+    }
+
+    // Second write to the SAME digest with DIFFERENT bytes — must be 409.
+    // CONTRACT: the native AC route maps DivergentBody → 409. A 200/201 here
+    // means the integrity guard is absent (last-write-wins) and the test FAILS.
+    match do_put(&body_two) {
+        Ok(409) => {} // correct — integrity guard fired
+        Ok(200 | 201) => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                "divergent re-PUT returned 200/201 (last-write-wins) — \
+                 the 409 integrity guard is ABSENT; this is a SECURITY regression \
+                 (action-result cache-poisoning: a different result can replace a \
+                 proven result for the same action digest)".to_string(),
+            )
+        }
         Ok(s) => {
-            return JourneyResult::fail(name, ms(start), format!("first PUT got {s} (want 200/201)"))
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("divergent re-PUT got {s} (expected 409 Conflict from the integrity guard)"),
+            )
         }
         Err(m) => return JourneyResult::fail(name, ms(start), m),
     }
 
-    // Second write to the SAME digest, DIFFERENT body. The native AC route
-    // ENFORCES a digest↔body integrity guard (verified live): a divergent
-    // overwrite is rejected with 409 — a same action-digest must not be made to
-    // map to a different result (anti cache-poisoning / non-determinism). This is
-    // the strong, correct contract. (A 200/201 last-write-wins would be a weaker
-    // policy and is tolerated, but prod returns 409.)
-    let second = match put(&body_two) {
-        Ok(s) => s,
-        Err(m) => return JourneyResult::fail(name, ms(start), m),
-    };
-    let expect_original_preserved = match second {
-        409 => true,        // integrity guard rejected the divergent overwrite
-        200 | 201 => false, // weaker last-write-wins (tolerated)
-        s => {
-            return JourneyResult::fail(
-                name,
-                ms(start),
-                format!("divergent re-PUT got {s} (expected 409 integrity guard, or 200/201)"),
-            )
-        }
-    };
-
-    // GET: under the 409 guard the ORIGINAL body must survive; under last-write
-    // -wins the SECOND body wins. Either way the stored value must be ONE of the
-    // two, never corrupt.
+    // GET: with the 409 guard the ORIGINAL body must be preserved.
     let get = match client.get(&url).header(AUTHORIZATION, bearer(token)).send() {
         Ok(r) => r,
         Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {url}: {e}")),
     };
-    if let Err(m) = expect_status("AC lookup after re-PUT", get.status().as_u16(), 200) {
+    if let Err(m) = expect_status("AC lookup after rejected re-PUT", get.status().as_u16(), 200) {
         return JourneyResult::fail(name, ms(start), m);
     }
-    let want = if expect_original_preserved { &body_one } else { &body_two };
     match get.bytes() {
-        Ok(b) if b.as_ref() == want.as_slice() => JourneyResult::pass(name, ms(start)),
-        Ok(_) => JourneyResult::fail(
+        Ok(b) if b.as_ref() == body_one.as_slice() => JourneyResult::pass(name, ms(start)),
+        Ok(b) if b.as_ref() == body_two.as_slice() => JourneyResult::fail(
             name,
             ms(start),
-            if expect_original_preserved {
-                "409 guard fired but GET did NOT return the preserved original body".to_string()
-            } else {
-                "last-write-wins but GET did NOT return the second body".to_string()
-            },
+            "GET returned body_two even though the 409 fired — original body was REPLACED \
+             (integrity guard is present at the HTTP layer but the handler committed the divergent \
+             bytes anyway)".to_string(),
+        ),
+        Ok(b) => JourneyResult::fail(
+            name,
+            ms(start),
+            format!("GET returned {} bytes that match neither body_one nor body_two — corrupt state", b.len()),
         ),
         Err(e) => JourneyResult::fail(name, ms(start), format!("GET body: {e}")),
     }
@@ -349,6 +367,161 @@ fn cross_tenant_read_denied(cfg: &Config, client: &Client) -> JourneyResult {
     }
     if let Err(m) = expect_denied("tenant B cross-AC-read", status) {
         return JourneyResult::fail(name, ms(start), m);
+    }
+
+    JourneyResult::pass(name, ms(start))
+}
+
+// ── D-7: AC refs list ─────────────────────────────────────────────────────────
+
+/// **D-7a — list enumerates AC entries:** PUT an AC entry, then
+/// `GET /v1/ac/{tenant}` and assert the digest appears in the `refs` array.
+/// Response shape: `{"refs":[{"ref_key","updated_at","size"}…],"next_cursor":<null>}`.
+///
+/// `ref_key` is the opaque action digest used as the PUT path segment.
+fn list_enumerates_ac_entries(cfg: &Config, client: &Client) -> JourneyResult {
+    let name = "AC D-7: GET /v1/ac/{tenant} - list enumerates PUT entries (ref_key present, size correct)";
+    let start = Instant::now();
+
+    let p = match Persona::P1ReadWrite.resolve(cfg) {
+        Ok(p) => p,
+        Err(reason) => return JourneyResult::gated(name, reason),
+    };
+    if cfg.tenant.is_none() {
+        return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set");
+    }
+    let token = p.token.expect("P1 always has a token");
+
+    // PUT an AC entry.
+    let payload = unique_blob("corelink-e2e-ac-list-entry");
+    let digest = sha256_hex(&unique_blob("corelink-e2e-ac-list-key"));
+    let put_url = url_ac(cfg, &p.tenant, &digest);
+    let put = match client
+        .put(&put_url)
+        .header(AUTHORIZATION, bearer(token))
+        .header(CONTENT_TYPE, "application/octet-stream")
+        .body(payload.clone())
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("PUT {put_url}: {e}")),
+    };
+    if !matches!(put.status().as_u16(), 200 | 201) {
+        return JourneyResult::fail(name, ms(start), format!("PUT AC entry got {} (expected 200/201)", put.status()));
+    }
+
+    // GET the list. Use a generous limit so the fresh entry is visible.
+    let list_url = format!("{}?limit=1000", url_ac_list(cfg, &p.tenant));
+    let resp = match client.get(&list_url).header(AUTHORIZATION, bearer(token)).send() {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {list_url}: {e}")),
+    };
+    if resp.status().as_u16() != 200 {
+        return JourneyResult::fail(name, ms(start), format!("GET /ac list got {} (expected 200). url={list_url}", resp.status()));
+    }
+    let body_bytes = match resp.bytes() {
+        Ok(b) => b,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("AC list response body: {e}")),
+    };
+    let parsed: Value = match serde_json::from_slice(&body_bytes) {
+        Ok(v) => v,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("AC list response not JSON: {e}")),
+    };
+    let refs_arr = match parsed.get("refs").and_then(Value::as_array) {
+        Some(a) => a,
+        None => return JourneyResult::fail(name, ms(start), format!("AC list response missing \"refs\" array; got: {parsed}")),
+    };
+
+    // The entry we PUT must appear in the list.
+    let entry = refs_arr.iter().find(|e| {
+        e.get("ref_key").and_then(Value::as_str) == Some(digest.as_str())
+    });
+    let entry = match entry {
+        Some(e) => e,
+        None => return JourneyResult::fail(name, ms(start), format!("PUT AC digest {digest} not found in /ac list ({} entries)", refs_arr.len())),
+    };
+
+    // The `size` field must match the payload length.
+    let size = entry.get("size").and_then(Value::as_u64).unwrap_or(0);
+    let expected_size = payload.len() as u64;
+    if size != expected_size {
+        return JourneyResult::fail(name, ms(start), format!("AC list entry for {digest}: size={size} but payload was {expected_size} bytes"));
+    }
+
+    JourneyResult::pass(name, ms(start))
+}
+
+/// **D-7b — list cross-tenant isolation:** tenant A writes an AC entry; tenant B
+/// lists their own namespace and must NOT see tenant A's digest. Complements the
+/// per-entry GET isolation journey for the list surface.
+fn list_cross_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
+    let name = "AC D-7: list cross-tenant isolation — A's refs must not appear in B's list";
+    let start = Instant::now();
+
+    let a = match Persona::P1ReadWrite.resolve(cfg) {
+        Ok(p) => p,
+        Err(reason) => return JourneyResult::gated(name, reason),
+    };
+    if cfg.tenant.is_none() {
+        return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set");
+    }
+    let b = match Persona::P6TenantB.resolve(cfg) {
+        Ok(p) => p,
+        Err(reason) => return JourneyResult::gated(name, reason),
+    };
+    let token_a = a.token.expect("P1 has a token");
+    let token_b = b.token.expect("P6 has a token");
+
+    // A PUTs a uniquely-named AC entry.
+    let payload_a = unique_blob("ac-list-iso-a");
+    let digest_a = sha256_hex(&unique_blob("ac-list-iso-a-key"));
+    let put_url = url_ac(cfg, &a.tenant, &digest_a);
+    let put = match client
+        .put(&put_url)
+        .header(AUTHORIZATION, bearer(token_a))
+        .header(CONTENT_TYPE, "application/octet-stream")
+        .body(payload_a)
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("A PUT {put_url}: {e}")),
+    };
+    if !matches!(put.status().as_u16(), 200 | 201) {
+        return JourneyResult::fail(name, ms(start), format!("A PUT got {} — cannot verify AC list isolation", put.status()));
+    }
+
+    // B lists their own namespace — must not see A's digest.
+    let list_url_b = format!("{}?limit=1000", url_ac_list(cfg, &b.tenant));
+    let resp = match client.get(&list_url_b).header(AUTHORIZATION, bearer(token_b)).send() {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("B GET {list_url_b}: {e}")),
+    };
+    // If B's list is outright denied (403/401) that is also acceptable isolation.
+    let status = resp.status().as_u16();
+    if matches!(status, 401 | 403) {
+        return JourneyResult::pass(name, ms(start));
+    }
+    if status != 200 {
+        return JourneyResult::fail(name, ms(start), format!("B GET AC list got {status} (expected 200 or deny). url={list_url_b}"));
+    }
+    let body_bytes = match resp.bytes() {
+        Ok(b) => b,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("B AC list response body: {e}")),
+    };
+    let parsed: Value = match serde_json::from_slice(&body_bytes) {
+        Ok(v) => v,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("B AC list response not JSON: {e}")),
+    };
+    let refs_arr = match parsed.get("refs").and_then(Value::as_array) {
+        Some(a) => a,
+        None => return JourneyResult::fail(name, ms(start), format!("B AC list response missing \"refs\" array; got: {parsed}")),
+    };
+    if refs_arr.iter().any(|e| e.get("ref_key").and_then(Value::as_str) == Some(digest_a.as_str())) {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("SECURITY: tenant B's AC list contains tenant A's ref_key {digest_a} — cross-tenant leak"),
+        );
     }
 
     JourneyResult::pass(name, ms(start))

@@ -30,9 +30,12 @@
 # CLERK_SECRET_KEY. No secret is ever echoed.
 #
 # Exit codes:
-#   0 — SHIP   (no FAIL; PASS ≥ 0, GATED allowed)
-#   1 — NO-SHIP (≥1 FAIL)
-#   2 — bootstrap could not even start (no Clerk secret / no curl+jq)
+#   0 — SHIP    (no FAIL AND PASS ≥ CORELINK_E2E_MIN_PASS floor, GATED allowed)
+#   1 — NO-SHIP (≥1 FAIL, OR a below-floor "green-by-vacuum" run: PASS < floor.
+#                Default floor = 1, so a run that gates EVERYTHING — e.g. no
+#                Clerk secret — is NO-SHIP, not a silent green. Set
+#                CORELINK_E2E_MIN_PASS=0 to allow an all-gated run to SHIP.)
+#   2 — could not even start (missing curl/jq/openssl)
 #   3 — usage error
 
 set -euo pipefail
@@ -116,11 +119,14 @@ fi
 
 if [ -z "$CLERK_SECRET" ]; then
   # No Clerk secret → we cannot bootstrap a real user. The WHOLE run gates
-  # (recorded, not a silent skip) and SHIP stays green (nothing was violated).
+  # (recorded, not a silent skip). This used to exit 0 "SHIP" — a green that
+  # asserted NOTHING. The anti-vacuum floor in emit_cert now flips this to
+  # NO-SHIP (vacuum) by default (0 PASS < floor 1), so a credential-less run
+  # can no longer false-certify a launch. Set CORELINK_E2E_MIN_PASS=0 to opt
+  # into the old "all-gated is acceptable" behaviour in throwaway environments.
   gated "bootstrap" "clerk user" "no CLERK_LIVE_SECRET_KEY / CLERK_SECRET_KEY (env or .env.local) — cannot provision a real user"
   emit_cert
-  # All-gated → SHIP (green) per the gate model.
-  exit 0
+  exit "$E2E_VERDICT_RC"
 fi
 pass "bootstrap" "credentials" "Clerk secret loaded (last4=$(last4 "$CLERK_SECRET"))"
 info "API host: ${API_HOST}"
@@ -173,7 +179,5 @@ probe_brew
 # ── verdict + cert (cleanup trap writes nothing; we emit here) ────────────────
 emit_cert
 
-if [ "$E2E_FAIL" -gt 0 ]; then
-  exit 1
-fi
-exit 0
+# E2E_VERDICT_RC is 1 on any FAIL OR a below-floor (vacuum) run, else 0.
+exit "$E2E_VERDICT_RC"

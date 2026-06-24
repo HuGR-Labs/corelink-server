@@ -25,16 +25,27 @@ customer actually runs.
      `user.deleted` webhook enqueues the GDPR erasure). Run via an `EXIT` trap,
      so cleanup happens even on failure.
 
-2. **Exercises each real client**, one `PASS` / `GATED` / `FAIL` line per step:
-   | client | what it does |
-   |--------|--------------|
-   | `docker` | `login` (PAT) → build a tiny `FROM scratch` image → `push` → `pull` → assert the digest round-trips |
-   | `cargo`+`sccache` | a tiny no-dep `cargo build` with `RUSTC_WRAPPER=sccache` + `SCCACHE_WEBDAV_ENDPOINT=.../cargo/<tenant>` + `SCCACHE_WEBDAV_TOKEN=<PAT>`; asserts **no `Cache errors`** in `sccache --show-stats` |
-   | `brew` | asserts the working `HOMEBREW_ARTIFACT_DOMAIN` + `HOMEBREW_DOCKER_REGISTRY_TOKEN` auth shape via a light bottle-GET probe (no heavy `brew install` — the Mac is shared/disk-constrained) |
-   | native CAS/AC | `curl` round-trips with the PAT (BLAKE3-addressed CAS write→read + tenant-isolation deny + an AC write→read) |
-   | bazel REAPI v2 | `curl` upload (`/bazel/v2/<tenant>/uploads/<uuid>/blobs/<sha256>/<size>`) → read |
-   | turbo | `curl` artifact `PUT` → `GET` (`/v8/artifacts/<hash>?teamId=<tenant>`) |
-   | identity | `GET /v1/users/me` must `200` + tenant matches |
+2. **Exercises each surface**, one `PASS` / `GATED` / `FAIL` line per step. Be
+   honest about fidelity: only some surfaces drive a **real client binary**;
+   the rest drive the **raw HTTP contract** with `curl` shaped like the client.
+   `curl` passing does NOT prove the real CLI works — so the raw-HTTP probes are
+   labelled as such in every verdict line and are NOT claimed as real-CLI passes.
+
+   | surface | fidelity | what it does |
+   |---------|----------|--------------|
+   | `docker` | **REAL CLI** | `docker login` (PAT) → build a tiny `FROM scratch` image → `docker push` → `docker pull` → assert the digest round-trips (an **empty** RepoDigest is a **FAIL**, not a pass) |
+   | `cargo`+`sccache` | **REAL CLI** | a tiny no-dep `cargo build` with `RUSTC_WRAPPER=sccache` + `SCCACHE_WEBDAV_ENDPOINT=.../cargo/<tenant>` + `SCCACHE_WEBDAV_TOKEN=<PAT>`; asserts **no `Cache errors`** in `sccache --show-stats` |
+   | native CAS/AC | **raw-HTTP** (no first-party CLI exists) | `curl` round-trips with the PAT; BLAKE3-addressed CAS write→read **with a byte-compare**, tenant-isolation deny, and an AC write→read **with a byte-compare** |
+   | bazel REAPI v2 | **raw-HTTP** (NOT the `bazel` CLI) | `curl` upload (`/bazel/v2/<tenant>/uploads/<uuid>/blobs/<sha256>/<size>`) → read, **with a byte-compare** |
+   | turbo | **raw-HTTP** (NOT the `turbo` CLI) | `curl` artifact `PUT` → `GET` (`/v8/artifacts/<hash>?teamId=<tenant>`), **with a byte-compare** |
+   | `brew` | **raw-HTTP** auth shape + a `brew` binary smoke (GATED) | the bottle-GET `Authorization: Bearer` auth shape via `curl` (no heavy `brew install` — the Mac is shared/disk-constrained); when `brew` is present, a `brew --version` env smoke is recorded **GATED** (it proves the binary runs, NOT a bottle round-trip — so it is never claimed as a real-CLI PASS) |
+   | identity | **raw-HTTP** (no identity CLI) | `GET /v1/users/me` must `200` + tenant matches |
+
+   **A `5xx` is never a `PASS`.** Every status-graded probe classifies the HTTP
+   code: `2xx`/`3xx`/auth-accepted `4xx` (e.g. a `404` for an absent path) =
+   PASS; `401`/`403` (auth rejected) = FAIL; **any `5xx` = FAIL** (a `502` on the
+   `_public` path is the exact fail-closed signature — it means the server
+   refused to serve, never a green); no response = GATED.
 
 3. **Emits a SHIP / NO-SHIP cert** + a machine-readable JSON summary.
 
@@ -46,10 +57,22 @@ customer actually runs.
   skip, **never** blocks the verdict.
 - **FAIL** — the client ran and the live contract was violated → **NO-SHIP**.
 
-`FAIL ⇒ NO-SHIP` and a non-zero exit. `GATED` never blocks. If there is **no**
-Clerk secret at all, the whole run gates (it cannot provision a real user) and the
-verdict stays `SHIP` (nothing was violated) — so the harness is safe to run in any
-environment, credentialed or not.
+`FAIL ⇒ NO-SHIP` and a non-zero exit. `GATED` never blocks **on its own**.
+
+### Anti-vacuum floor (no green-by-vacuum)
+
+A run that gates **everything** (no Clerk secret, no tools) asserts nothing — it
+must **not** print `SHIP`. The harness mirrors the Rust suite's
+`CORELINK_E2E_MIN_PASS` floor: if the number of real `PASS`es is **below** the
+floor, the verdict is **`NO-SHIP (vacuum)`** and the exit is non-zero.
+
+- Default floor = **1** (at least one positive assertion must run). So a
+  credential-less run is now **NO-SHIP**, not a silent green.
+- A provisioned prod run should set it high (e.g. `CORELINK_E2E_MIN_PASS=12`) so
+  a silent provisioning/probe regression that re-gates the suite cannot sail
+  through as `SHIP`.
+- Set `CORELINK_E2E_MIN_PASS=0` to opt back into "all-gated is acceptable" for
+  throwaway/uncredentialed environments.
 
 ### Known GATED-not-FAIL cases (by design)
 
@@ -57,6 +80,9 @@ environment, credentialed or not.
 - **sccache + TLS on this Mac**: the sccache client here hits a TLS
   *"bad protocol version"* against the WebDAV endpoint. That is a known
   client/env issue, **not** a server fault — so a connect/TLS failure is GATED.
+- **`brew` binary smoke**: when `brew` is installed, `brew --version` with the
+  `HOMEBREW_*` env is recorded **GATED** (it only proves the binary runs, not a
+  real bottle round-trip). The bottle auth shape itself is graded via raw HTTP.
 
 ## Running
 
@@ -73,7 +99,8 @@ CORELINK_E2E_OCI_HOST=https://corelink-oci.humangr.com \
 bash scripts/e2e-real-client/run.sh --help
 ```
 
-Exit codes: `0` SHIP · `1` NO-SHIP (≥1 FAIL) · `2` cannot bootstrap (no
+Exit codes: `0` SHIP (no FAIL **and** `PASS ≥ CORELINK_E2E_MIN_PASS`) · `1`
+NO-SHIP (≥1 FAIL **or** a below-floor "vacuum" run) · `2` cannot bootstrap (no
 `curl`/`jq`/`openssl`) · `3` usage error.
 
 The JSON summary is written to `scripts/e2e-real-client/last-run.json` by default

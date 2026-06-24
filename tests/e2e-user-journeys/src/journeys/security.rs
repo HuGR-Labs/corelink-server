@@ -38,8 +38,8 @@ use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
 use crate::harness::{
-    bearer, blake3_hex, expect_denied, sha256_hex, unique_blob, url_cas, url_cas_list, url_ac,
-    url_ac_list, Config, JourneyResult,
+    bearer, blake3_hex, expect_denied, expect_gate_denied, sha256_hex, unique_blob, url_cas,
+    url_cas_list, url_ac, url_ac_list, Config, JourneyResult,
 };
 use crate::personas::Persona;
 
@@ -155,6 +155,8 @@ pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
         out.push(tenant_path_spoofing(cfg, client, s));
         out.push(scope_no_escalation(cfg, client, s));
     }
+    // M18: header-injection strip (cross-cutting, run once, not per-surface).
+    out.push(forged_tenant_header_ignored(cfg, client));
     out
 }
 
@@ -632,6 +634,156 @@ fn scope_no_escalation(cfg: &Config, client: &Client, s: Surface) -> JourneyResu
             }
         }
         Err(m) => return JourneyResult::fail(name, ms(start), m),
+    }
+
+    JourneyResult::pass(name, ms(start))
+}
+
+/// **M18 — Forged tenant-id / scope headers ignored (header-injection strip).**
+///
+/// The Worker strips `x-corelink-tenant-id` and `x-corelink-scope` before
+/// forwarding any request to the container (`worker/src/index.ts`). A customer
+/// PAT for tenant A that ALSO sends forged `x-corelink-tenant-id: <tenantB-id>`
+/// and `x-corelink-scope: cas:admin` headers must NOT:
+///   - gain access to tenant B's namespace (the request must be denied or serve
+///     only tenant A's data — never tenant B's),
+///   - receive elevated scope (the operation must succeed only within P1's
+///     actual read-write scope, not any claimed-admin scope).
+///
+/// Proof strategy: P1 (tenant A) PUTs a small secret blob under tenant B's path
+/// AND sends the forged headers so the server sees the PAT's REAL tenant (A) in
+/// both the Bearer AND the injected id header. If the worker correctly strips
+/// them, the server derives the tenant ONLY from the PAT — which belongs to A —
+/// so a write to B's path must be denied (can't write into another tenant's
+/// namespace regardless of what the headers claim). A 200/201 means the header
+/// was honoured instead of the PAT (priv-esc). The gate actively denies cross-
+/// tenant writes, so `expect_gate_denied` (401/403) is the correct assert: a
+/// 404 would mean the route is absent, not that the strip held. M18.
+///
+/// We probe a GET as well: P1 with `x-corelink-tenant-id: <tenantB>` against
+/// B's path must NOT return a 200 carrying B's data.
+fn forged_tenant_header_ignored(cfg: &Config, client: &Client) -> JourneyResult {
+    let name =
+        "SEC: forged x-corelink-tenant-id / x-corelink-scope headers ignored (header-injection strip)";
+    let start = Instant::now();
+
+    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
+        Ok(p) => p,
+        Err(reason) => return JourneyResult::gated(name, reason),
+    };
+    if cfg.tenant.is_none() {
+        return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set");
+    }
+    let tenant_b_id = match cfg.tenant_b.as_deref() {
+        Some(t) => t,
+        None => return JourneyResult::gated(name, "CORELINK_E2E_TENANT_B not set — header-injection probe needs a second tenant id to forge"),
+    };
+    let token_a = p1.token.expect("P1 has a token");
+
+    // A fresh blob/address for the injection probe — we PUT under tenant B's
+    // path with A's PAT AND the forged tenant-id header (the attacker's attempt
+    // to claim they own B's namespace). The write must NOT succeed.
+    let payload = unique_blob("m18-header-inject-write");
+    let addr = blake3_hex(&payload);
+    let url_b_write = url_cas(cfg, tenant_b_id, &addr);
+
+    let write_resp = match client
+        .put(&url_b_write)
+        .header(AUTHORIZATION, bearer(token_a))
+        .header(CONTENT_TYPE, "application/octet-stream")
+        // Forged headers the attacker injects hoping the server trusts them
+        // over the PAT. The Worker strips these; the container must never see
+        // them with attacker-supplied values.
+        .header("x-corelink-tenant-id", tenant_b_id)
+        .header("x-corelink-scope", "cas:admin")
+        .body(payload)
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("header-injection PUT {url_b_write}: {e}"),
+            )
+        }
+    };
+    let write_st = write_resp.status().as_u16();
+    if matches!(write_st, 200 | 201) {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "SECURITY: forged x-corelink-tenant-id header ACCEPTED — tenant A's PAT wrote \
+                 (got {write_st}) under tenant B's path; the header-injection strip did NOT hold"
+            ),
+        );
+    }
+    if write_st >= 500 {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "header-injection PUT got {write_st} 5xx — the gate must deny (401/403), not crash"
+            ),
+        );
+    }
+    // The cross-tenant-write gate must actively deny (401/403). A 404 here means
+    // the CAS route is absent/renamed, leaving the injection-strip property
+    // unproven. M18.
+    if let Err(m) = expect_gate_denied("forged-header PUT to B's path", write_st) {
+        return JourneyResult::fail(name, ms(start), m);
+    }
+
+    // A GET read probe: P1 with forged x-corelink-tenant-id: B against B's path
+    // must NOT return a 200 carrying B's data. Here a 404 is acceptable (the
+    // object may not exist, or the server returns not-found as a safe deny) —
+    // but a 200 carrying any bytes is a cross-tenant leak. We use expect_denied
+    // (401/403/404) because a not-found-safe-deny on a read is legitimate when
+    // the route IS mounted; what we're guarding against is a 200.
+    let read_probe = unique_blob("m18-header-inject-read");
+    let read_addr = blake3_hex(&read_probe);
+    let url_b_read = url_cas(cfg, tenant_b_id, &read_addr);
+
+    let read_resp = match client
+        .get(&url_b_read)
+        .header(AUTHORIZATION, bearer(token_a))
+        .header("x-corelink-tenant-id", tenant_b_id)
+        .header("x-corelink-scope", "cas:admin")
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("header-injection GET {url_b_read}: {e}"),
+            )
+        }
+    };
+    let read_st = read_resp.status().as_u16();
+    if read_st == 200 {
+        let body_len = read_resp.bytes().map(|b| b.len()).unwrap_or(0);
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "SECURITY: forged x-corelink-tenant-id GET returned 200 ({body_len} bytes) from \
+                 tenant B's path using tenant A's PAT — cross-tenant read via header injection"
+            ),
+        );
+    }
+    if read_st >= 500 {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "header-injection GET got {read_st} 5xx — must deny cleanly, not crash"
+            ),
+        );
+    }
+    if let Err(m) = expect_denied("forged-header GET of B's path", read_st) {
+        return JourneyResult::fail(name, ms(start), m);
     }
 
     JourneyResult::pass(name, ms(start))
