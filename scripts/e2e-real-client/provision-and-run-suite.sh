@@ -128,10 +128,16 @@ TA="$(tenant_of "$PA")"; TB="$(tenant_of "$PB")"
 
 # P2 read-only.
 RO="$(customer_key "$PA" 'e2e-ro' '["cache:read"]')"; PAT_RO="${RO%%|*}"
-# P3 admin — same tenant, admin-scoped. The caller (P_A) carries dashboard
-# read-write scope, so the mint privilege gate (handle_keys_create) lets the
-# write/admin mint through; the minted PAT exercises admin-only surfaces (S11/S17).
-ADM="$(customer_key "$PA" 'e2e-admin' '["cache:read","cache:write","admin"]')"; PAT_ADMIN="${ADM%%|*}"
+# P3 admin — PREFER an operator-provided CORELINK_E2E_PAT_ADMIN (admin scope is
+# NOT self-serve grantable: customer keys.create refuses it — see
+# customer_d1.rs::map_requested_scopes). `provision-personas.py` operator-mints
+# one via /_internal/pat/mint + a D1 seed; we use it when present. The
+# keys.create attempt below is a best-effort fallback (it returns empty for the
+# admin scope, so without the env var P3 simply gates — never a fake pass).
+PAT_ADMIN="$(env_or_empty CORELINK_E2E_PAT_ADMIN)"
+if [ -z "$PAT_ADMIN" ]; then
+  ADM="$(customer_key "$PA" 'e2e-admin' '["cache:read","cache:write","admin"]')"; PAT_ADMIN="${ADM%%|*}"
+fi
 # P4 revoked — create then revoke.
 RV="$(customer_key "$PA" 'e2e-rev' '["cache:read","cache:write"]')"; PAT_REV="${RV%%|*}"; REV_ID="${RV#*|}"
 [ -n "$REV_ID" ] && curl -s -o /dev/null -X POST "$API/v1/customer/keys/$REV_ID/revoke" -H "authorization: Bearer $PA" --max-time 15
