@@ -86,11 +86,20 @@ DOCKERFILE
   fi
   push_digest=$(docker inspect --format '{{index .RepoDigests 0}}' "${repo}:${tag}" 2>/dev/null \
     | sed 's/.*@//' || true)
-  pass "$surface" "docker push" "pushed ${repo}:${tag} (digest=${push_digest:-unknown})"
+  # An EMPTY digest after a "successful" push is NOT a pass — without a digest
+  # there is nothing to verify the round-trip against (the integrity check
+  # below would be vacuously skipped). Empty = FAIL.
+  if [ -z "$push_digest" ]; then
+    fail "$surface" "docker push" "push reported success but docker inspect yielded NO RepoDigest — cannot verify integrity"
+    docker rmi -f "${repo}:${tag}" >/dev/null 2>&1 || true
+    docker logout "$registry" >/dev/null 2>&1 || true
+    return 0
+  fi
+  pass "$surface" "docker push" "pushed ${repo}:${tag} (digest=${push_digest})"
 
   # 4) remove local copies, pull back, assert digest round-trips.
   docker rmi -f "${repo}:${tag}" >/dev/null 2>&1 || true
-  if [ -n "$push_digest" ]; then docker rmi -f "${repo}@${push_digest}" >/dev/null 2>&1 || true; fi
+  docker rmi -f "${repo}@${push_digest}" >/dev/null 2>&1 || true
 
   if ! docker pull "${repo}:${tag}" >/dev/null 2>&1; then
     fail "$surface" "docker pull" "pull of ${repo}:${tag} failed after push"
@@ -101,10 +110,14 @@ DOCKERFILE
   pull_digest=$(docker inspect --format '{{index .RepoDigests 0}}' "${repo}:${tag}" 2>/dev/null \
     | sed 's/.*@//' || true)
 
-  if [ -n "$push_digest" ] && [ -n "$pull_digest" ] && [ "$push_digest" != "$pull_digest" ]; then
+  # Both digests must be present AND equal. An empty pull_digest = FAIL (no
+  # proof the pulled image matches), never a silent pass.
+  if [ -z "$pull_digest" ]; then
+    fail "$surface" "docker digest" "pull succeeded but docker inspect yielded NO RepoDigest — cannot verify round-trip"
+  elif [ "$push_digest" != "$pull_digest" ]; then
     fail "$surface" "docker digest" "digest mismatch push=${push_digest} pull=${pull_digest}"
   else
-    pass "$surface" "docker pull" "round-trip digest verified (${pull_digest:-matched})"
+    pass "$surface" "docker pull" "round-trip digest verified (${pull_digest})"
   fi
 
   # cleanup local image + creds
@@ -184,11 +197,20 @@ TOML
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# brew — assert the WORKING config via a lightweight fetch-style probe.
-#   We do NOT run a heavy `brew install` (shared, disk-constrained Mac). Instead
-#   we verify the adapter accepts the documented HOMEBREW_* auth: a brew bottle
-#   GET sends `Authorization: Bearer <token>`; we replicate that exact request
-#   shape with curl AND, when brew is present, run a guarded `brew fetch` probe.
+# brew — the artifact-domain auth shape, plus a REAL `brew` invocation when the
+#   binary is present.
+#
+#   M5 FIDELITY NOTE: the curl part below is the RAW-HTTP request shape a brew
+#   bottle GET makes (Authorization: Bearer) — it is NOT the brew CLI. It is
+#   honestly labelled "brew auth (raw-HTTP shape)" so the verdict never claims
+#   the real client passed when only curl ran.
+#
+#   M6 FIX: a 5xx here is NEVER a PASS. A 502 is the EXACT `_public`
+#   fail-closed signature (the brew/_public dedup path 502s when its
+#   tenant_storage_state row + sentinel R2 prefix are missing). The previous
+#   `*)` catch-all graded that 502 as PASS — the headline false-confidence bug.
+#   We now classify every status: 2xx/3xx/4xx (auth accepted, path may 404) =
+#   PASS; 401/403 (auth rejected) = FAIL; 5xx = FAIL; no status = GATED.
 # ─────────────────────────────────────────────────────────────────────────────
 probe_brew() {
   local surface="brew"
@@ -201,47 +223,68 @@ probe_brew() {
 
   # Replicate the exact request a brew bottle GET makes: Authorization: Bearer.
   # A bottle path that does not exist must NOT 401 the auth (auth must be
-  # accepted first); a 401/403 here means the auth shape is broken → FAIL.
+  # accepted first). 401/403 = auth shape broken (FAIL). 5xx = server refused
+  # to serve (e.g. the _public fail-closed 502) = FAIL.
   local resp code
   resp=$(_curl GET "${domain}/v2/homebrew/core/hello/blobs/sha256:0000" \
     -H "Authorization: Bearer ${token}")
   code=$(_status "$resp")
-  case "$code" in
-    401|403)
-      fail "$surface" "brew auth" "bottle GET with HOMEBREW_DOCKER_REGISTRY_TOKEN rejected (HTTP ${code}) — auth shape broken"
+  case "$(classify_http "$code")" in
+    none)
+      gated "$surface" "brew auth (raw-HTTP shape)" "no HTTP status from ${domain} (network) — GATED"
       ;;
-    "" )
-      gated "$surface" "brew auth" "no HTTP status from ${domain} (network) — GATED"
+    server5xx)
+      fail "$surface" "brew auth (raw-HTTP shape)" "bottle GET returned HTTP ${code} (5xx) — server refused to serve; a 502 here is the _public fail-closed signature"
+      ;;
+    client4xx)
+      case "$code" in
+        401|403)
+          fail "$surface" "brew auth (raw-HTTP shape)" "bottle GET with HOMEBREW_DOCKER_REGISTRY_TOKEN rejected (HTTP ${code}) — auth shape broken"
+          ;;
+        *)
+          # 404/etc: auth was accepted, the bottle path just does not exist.
+          pass "$surface" "brew auth (raw-HTTP shape)" "HOMEBREW auth accepted (HTTP ${code}, path absent) at ${domain}"
+          ;;
+      esac
+      ;;
+    ok2xx|redirect3xx)
+      pass "$surface" "brew auth (raw-HTTP shape)" "HOMEBREW auth accepted (HTTP ${code}) at ${domain}"
       ;;
     *)
-      # 404/200/302 etc all mean auth was accepted (the path just may not exist).
-      pass "$surface" "brew auth" "HOMEBREW auth accepted (HTTP ${code}) at ${domain}"
+      fail "$surface" "brew auth (raw-HTTP shape)" "bottle GET returned unexpected HTTP ${code:-?}"
       ;;
   esac
 
-  # If the real brew binary is present, run a guarded fetch-style probe too.
+  # M5: drive the REAL brew binary when present. `brew --version` only proves
+  # the binary runs — NOT that it round-trips against our adapter — so it is
+  # GATED (a non-substantive smoke), never a PASS that overclaims fidelity.
+  # A real `brew fetch` would hit the network on every shared-Mac run and is
+  # heavy/disk-constrained, so it is deliberately not run here.
   if have brew; then
     if env HOMEBREW_ARTIFACT_DOMAIN="$domain" \
            HOMEBREW_DOCKER_REGISTRY_TOKEN="$token" \
            HOMEBREW_NO_AUTO_UPDATE=1 \
            brew --version >/dev/null 2>&1; then
-      pass "$surface" "brew config" "brew accepts HOMEBREW_ARTIFACT_DOMAIN/_TOKEN env (config valid)"
+      gated "$surface" "brew CLI" "brew binary present + accepts HOMEBREW_* env (smoke only — no real bottle round-trip; auth verified via raw-HTTP shape above)"
     else
-      gated "$surface" "brew config" "brew present but env probe inconclusive — GATED"
+      gated "$surface" "brew CLI" "brew present but --version probe failed — GATED"
     fi
   else
-    gated "$surface" "brew binary" "brew not installed — auth shape verified via curl only"
+    gated "$surface" "brew CLI" "brew not installed — only the raw-HTTP auth shape was exercised (NOT the brew CLI)"
   fi
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# native CAS/AC — curl round-trips with the PAT.
+# native CAS/AC — RAW-HTTP round-trips with the PAT (NOT a CoreLink CLI — there
+#   is no first-party CAS/AC binary; a paying customer hits these over HTTP).
 #   CAS address = BLAKE3 of the body (server verifies). We compute it if a
 #   blake3 CLI (b3sum) is available; otherwise GATE the write (cannot address).
+#   Round-trips compare BYTES (write a payload, read it back, diff), not just
+#   the HTTP status — a 200 with the wrong/empty body is still a contract break.
 # ─────────────────────────────────────────────────────────────────────────────
 probe_native_cas() {
   local surface="cas"
-  step "native CAS: write → read round-trip + tenant isolation"
+  step "native CAS (raw-HTTP): write → read round-trip + tenant isolation"
 
   if ! have b3sum; then
     gated "$surface" "cas write" "b3sum (BLAKE3 CLI) not installed — cannot compute the content address"
@@ -263,11 +306,17 @@ probe_native_cas() {
         fail "$surface" "cas write" "PUT /v1/cas/${TENANT}/<hash> returned ${code} (expected 2xx)"
       else
         pass "$surface" "cas write" "PUT ok (HTTP ${code})"
-        # read it back
+        # read it back AND byte-compare the returned body to what we wrote.
         resp=$(_curl GET "${API_HOST}/v1/cas/${TENANT}/${hash}" -H "Authorization: Bearer ${PAT}")
         code=$(_status "$resp")
         if [ "$code" = "200" ]; then
-          pass "$surface" "cas read" "GET ok (HTTP 200)"
+          local got
+          got=$(_body "$resp")
+          if [ "$got" = "$blob" ]; then
+            pass "$surface" "cas read" "GET ok (HTTP 200) + bytes round-trip verified"
+          else
+            fail "$surface" "cas read" "GET 200 but body did NOT match what was PUT (byte mismatch)"
+          fi
         else
           fail "$surface" "cas read" "GET after write returned ${code} (expected 200)"
         fi
@@ -296,16 +345,23 @@ probe_native_cas() {
     else
       adigest=$(printf '%s' "$aval" | shasum -a 256 | cut -d' ' -f1)
     fi
+    local apayload="ac-${aval}"
     resp=$(_curl PUT "${API_HOST}/v1/ac/${TENANT}/${adigest}" \
       -H "Authorization: Bearer ${PAT}" \
       -H "Content-Type: application/octet-stream" \
-      --data-binary "ac-${aval}")
+      --data-binary "$apayload")
     code=$(_status "$resp")
     if [ "$code" = "200" ] || [ "$code" = "201" ] || [ "$code" = "204" ]; then
       resp=$(_curl GET "${API_HOST}/v1/ac/${TENANT}/${adigest}" -H "Authorization: Bearer ${PAT}")
       code=$(_status "$resp")
       if [ "$code" = "200" ]; then
-        pass "$surface" "ac round-trip" "AC write+read ok"
+        local agot
+        agot=$(_body "$resp")
+        if [ "$agot" = "$apayload" ]; then
+          pass "$surface" "ac round-trip" "AC write+read ok + bytes round-trip verified"
+        else
+          fail "$surface" "ac round-trip" "AC GET 200 but body did NOT match what was PUT (byte mismatch)"
+        fi
       else
         fail "$surface" "ac round-trip" "AC GET after PUT returned ${code} (expected 200)"
       fi
@@ -318,14 +374,19 @@ probe_native_cas() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# bazel REAPI v2 — write a blob via the upload route, read it back.
+# bazel REAPI v2 — the RAW-HTTP byte-stream shape, NOT the bazel CLI.
+#   This drives the REAPI v2 endpoints over curl (a real `bazel` build with
+#   `--remote_cache=` would need a workspace + toolchain on a shared,
+#   disk-constrained Mac), so it is honestly labelled "bazel REAPI v2
+#   (raw-HTTP, NOT the bazel CLI)". It writes a blob, reads it back, and
+#   byte-compares — not just the HTTP status.
 #   /bazel/v2/<instance>/uploads/<uuid>/blobs/<sha256>/<size>  (PUT)
 #   /bazel/v2/<instance>/blobs/<sha256>/<size>                 (GET)
 #   instance = tenant id. CAS address here is SHA-256 of the body.
 # ─────────────────────────────────────────────────────────────────────────────
 probe_bazel() {
   local surface="bazel"
-  step "bazel REAPI v2: upload → read blob"
+  step "bazel REAPI v2 (raw-HTTP, NOT the bazel CLI): upload → read blob"
 
   if ! have shasum && ! have sha256sum; then
     gated "$surface" "bazel blob" "no sha256 CLI — cannot compute the Bazel CAS digest"
@@ -360,19 +421,29 @@ probe_bazel() {
     -H "Authorization: Bearer ${PAT}")
   code=$(_status "$resp")
   if [ "$code" = "200" ]; then
-    pass "$surface" "bazel read" "blob read back (HTTP 200)"
+    local got
+    got=$(_body "$resp")
+    if [ "$got" = "$body" ]; then
+      pass "$surface" "bazel read" "blob read back (HTTP 200) + bytes round-trip verified"
+    else
+      fail "$surface" "bazel read" "GET 200 but blob body did NOT match what was uploaded (byte mismatch)"
+    fi
   else
     fail "$surface" "bazel read" "GET blob returned ${code} (expected 200)"
   fi
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# turbo — Turborepo remote cache PUT → GET (artifact hash is opaque).
+# turbo — Turborepo remote cache PUT → GET, RAW-HTTP shape (NOT the turbo CLI).
+#   A real `turbo run` with `--api`/`--token`/`--team` would need a JS monorepo
+#   + a cacheable task on a shared Mac, so this exercises the v8 remote-cache
+#   HTTP contract directly and is labelled accordingly. Byte-compares the
+#   artifact on read-back (artifact hash is opaque to the server).
 #   /v8/artifacts/<hash>?teamId=<tenant>  (PUT then GET)
 # ─────────────────────────────────────────────────────────────────────────────
 probe_turbo() {
   local surface="turbo"
-  step "turbo: artifact PUT → GET"
+  step "turbo (raw-HTTP, NOT the turbo CLI): artifact PUT → GET"
 
   local hash body resp code
   body="e2e-turbo-$(date +%s)-$$"
@@ -401,18 +472,26 @@ probe_turbo() {
     -H "Authorization: Bearer ${PAT}")
   code=$(_status "$resp")
   if [ "$code" = "200" ]; then
-    pass "$surface" "turbo get" "artifact retrieved (HTTP 200)"
+    local got
+    got=$(_body "$resp")
+    if [ "$got" = "$body" ]; then
+      pass "$surface" "turbo get" "artifact retrieved (HTTP 200) + bytes round-trip verified"
+    else
+      fail "$surface" "turbo get" "GET 200 but artifact body did NOT match what was PUT (byte mismatch)"
+    fi
   else
     fail "$surface" "turbo get" "GET artifact returned ${code} (expected 200)"
   fi
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# identity — the cheapest real-PAT check: GET /v1/users/me must 200 + match tenant.
+# identity — the cheapest real-PAT check: GET /v1/users/me must 200 + match
+#   tenant. RAW-HTTP (there is no identity CLI); a 5xx is a FAIL (the `!= 200`
+#   branch covers it).
 # ─────────────────────────────────────────────────────────────────────────────
 probe_identity() {
   local surface="identity"
-  step "identity: GET /v1/users/me with the provisioned PAT"
+  step "identity (raw-HTTP): GET /v1/users/me with the provisioned PAT"
   local resp code who
   resp=$(_curl GET "${API_HOST}/v1/users/me" -H "Authorization: Bearer ${PAT}")
   code=$(_status "$resp")

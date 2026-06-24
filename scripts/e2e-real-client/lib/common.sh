@@ -86,6 +86,29 @@ warn() { printf "${_C_YELLOW}[warn]${_C_RESET}  %s\n" "$*" >&2; }
 # when the real client is absent.
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# ── HTTP status classifier (the M6 false-confidence fix) ─────────────────────
+# Classify one HTTP status string into exactly one verdict class, echoed to
+# stdout: "ok2xx" | "client4xx" | "server5xx" | "redirect3xx" | "none".
+#
+# RULE: a 5xx is NEVER a PASS. The committed last-run.json once graded
+# `brew auth … HTTP 502` as PASS — but a 502 is the EXACT `_public` fail-closed
+# signature the Rust suite treats as a hard FAIL (the server refused to serve).
+# So 5xx ⇒ "server5xx" and every caller must FAIL (or GATED with the explicit
+# upstream reason) — never PASS. An empty status (no response) ⇒ "none" (GATED:
+# could be a network/connectivity gap, not a contract violation).
+classify_http() {
+  local code="${1:-}"
+  case "$code" in
+    "")                          printf 'none' ;;
+    2[0-9][0-9])                 printf 'ok2xx' ;;
+    3[0-9][0-9])                 printf 'redirect3xx' ;;
+    4[0-9][0-9])                 printf 'client4xx' ;;
+    5[0-9][0-9])                 printf 'server5xx' ;;
+    [0-9]*)                      printf 'other' ;;
+    *)                           printf 'none' ;;
+  esac
+}
+
 # Last 4 chars of a secret, for safe logging.
 last4() {
   local s="$1"
@@ -100,13 +123,41 @@ last4() {
 # emit_cert — prints the human verdict box + writes the machine-readable JSON
 # summary to ${OUT_JSON} (set by run.sh). Verdict: any FAIL ⇒ NO-SHIP; otherwise
 # SHIP (GATED never blocks). Safe to call more than once (idempotent write).
+# E2E_VERDICT_RC is set by emit_cert to the exit code run.sh should use:
+#   0 — SHIP (no FAIL and the pass-floor was met)
+#   1 — NO-SHIP (≥1 FAIL, OR a below-floor "green-by-vacuum" run)
+# run.sh reads this instead of recomputing the verdict, so the floor cannot be
+# bypassed by an exit path that only checks E2E_FAIL.
+E2E_VERDICT_RC=0
+export E2E_VERDICT_RC  # read cross-file by run.sh's exit paths (silences SC2034)
+
 emit_cert() {
-  local verdict ts
+  local verdict ts min_pass below_floor
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  # ── anti-vacuum FLOOR (mirrors the Rust suite's CORELINK_E2E_MIN_PASS) ──────
+  # A run that GATES everything (no Clerk secret, no tools) used to print
+  # "SHIP" and exit 0 — a green that asserted NOTHING (the owner's
+  # "green CI ≠ validated" nightmare). Require a floor of real PASSes, else
+  # NO-SHIP. Default 1 (at least one positive assertion ran). A provisioned
+  # prod run should set this high (e.g. 12) so a silent provisioning/probe
+  # regression that re-gates the suite cannot sail through as SHIP.
+  min_pass="${CORELINK_E2E_MIN_PASS:-1}"
+  case "$min_pass" in
+    ''|*[!0-9]*) min_pass=1 ;;
+  esac
+  below_floor=0
+  if [ "$E2E_PASS" -lt "$min_pass" ]; then below_floor=1; fi
+
   if [ "$E2E_FAIL" -gt 0 ]; then
     verdict="NO-SHIP"
+    E2E_VERDICT_RC=1
+  elif [ "$below_floor" -eq 1 ]; then
+    verdict="NO-SHIP (vacuum)"
+    E2E_VERDICT_RC=1
   else
     verdict="SHIP"
+    E2E_VERDICT_RC=0
   fi
 
   printf '\n'
@@ -120,12 +171,13 @@ emit_cert() {
   if [ "$E2E_FAIL" -gt 0 ]; then
     printf '%bNO-SHIP%b: %d real-client contract violation(s) — DO NOT launch until green.\n' \
       "$_C_RED" "$_C_RESET" "$E2E_FAIL"
-  elif [ "$E2E_PASS" -eq 0 ]; then
-    printf '%bSHIP (all-gated)%b: nothing failed, but no real client ran — provision creds/tools to certify.\n' \
-      "$_C_YELLOW" "$_C_RESET"
+  elif [ "$below_floor" -eq 1 ]; then
+    printf '%bNO-SHIP (vacuum)%b: only %d PASS < floor %d — nothing substantive ran; this is NOT a green.\n' \
+      "$_C_RED" "$_C_RESET" "$E2E_PASS" "$min_pass"
+    printf '        Provision creds/tools (Clerk secret + real clients) or lower CORELINK_E2E_MIN_PASS.\n'
   else
-    printf '%bSHIP%b: every exercised real client round-tripped against PROD.\n' \
-      "$_C_GREEN" "$_C_RESET"
+    printf '%bSHIP%b: every exercised real client round-tripped against PROD (%d PASS).\n' \
+      "$_C_GREEN" "$_C_RESET" "$E2E_PASS"
   fi
 
   # Build the JSON array body from the recorded rows.

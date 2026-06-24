@@ -32,7 +32,7 @@ use std::time::Instant;
 use reqwest::blocking::Client;
 use serde_json::{json, Value};
 
-use crate::harness::{expect_denied, expect_status, url_introspect, Config, JourneyResult};
+use crate::harness::{expect_gate_denied, expect_status, url_introspect, Config, JourneyResult};
 use crate::personas::Persona;
 
 /// Env var carrying the DEDICATED introspection service secret
@@ -260,7 +260,11 @@ fn adversarial_no_service_key(cfg: &Config, client: &Client) -> JourneyResult {
                         .to_string(),
                 );
             }
-            if let Err(m) = expect_denied("introspect (no service key)", code) {
+            // The introspect route is always-mounted when the secret is
+            // configured. A 404 means the route disappeared, not that the
+            // gate actively rejected — that would leave the security property
+            // unproven. Use expect_gate_denied (401/403 only). M3.
+            if let Err(m) = expect_gate_denied("introspect (no service key)", code) {
                 return JourneyResult::fail(name, ms(start), m);
             }
         }
@@ -292,7 +296,10 @@ fn adversarial_no_service_key(cfg: &Config, client: &Client) -> JourneyResult {
                         .to_string(),
                 );
             }
-            if let Err(m) = expect_denied("introspect (wrong service key)", code) {
+            // Same reasoning: the gate must actively answer 401/403; a 404
+            // means the route is absent/renamed and the rejection is
+            // unproven. M3.
+            if let Err(m) = expect_gate_denied("introspect (wrong service key)", code) {
                 return JourneyResult::fail(name, ms(start), m);
             }
         }

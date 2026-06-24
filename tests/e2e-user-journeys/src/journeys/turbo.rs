@@ -51,6 +51,7 @@ fn with_team(url: &str, team: &str) -> String {
 pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     vec![
         artifact_round_trip(cfg, client),
+        artifact_missing_team_id(cfg, client),
         events_accepted(cfg, client),
         status_handshake(cfg, client),
         read_only_write_denied(cfg, client),
@@ -58,31 +59,22 @@ pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     ]
 }
 
-/// Happy: PUT a unique artifact, GET it back, bytes must match.
+/// Happy: PUT a unique artifact, GET it back, bytes must match (M15 happy path).
 ///
-/// ⚠️ DOCUMENTED REAL SERVER FINDING (go-live blocker the suite caught):
-/// against prod, BOTH `PUT` and `GET /v8/artifacts/{hash}` return **500
-/// "internal"** — NOT the round-trip, and NOT the graceful 503. Root cause
-/// (verified live + in source): the Turbo backing store is R2KvStore backed by
-/// the bucket **`corelink-turbo-prod`** (default of `R2_TURBO_BUCKET`,
-/// `storage/r2_kv.rs::build_r2_kv_from_env`), but that bucket **does not exist**
-/// — the prod account has 25 R2 buckets (corelink-cas-*, corelink-ac-*,
-/// corelink-chunk-*, corelink-manifest-*, …) and NONE is a turbo bucket, and
-/// `scripts/provision-cf-corelink-prod.sh` never provisions one. `R2S3Client::new`
-/// does not verify the bucket, so the store builds and `POST /status` answers
-/// 200 — but every actual S3 GET/PUT hits the missing bucket and errs, surfacing
-/// as `TurboBridgeError::Internal("r2 kv get|put: …")`, which
-/// `routes/turbo_v8.rs::map_err` maps to the generic 500 (the storage-unavailable
-/// sentinel only fires when the store FAILS TO BUILD, not on per-op errors).
+/// ## History of the 500 finding
 ///
-/// FIX (server/infra side): provision `corelink-turbo-prod` (add it to
-/// `provision-cf-corelink-prod.sh` alongside the CAS/AC buckets) and set
-/// `R2_TURBO_BUCKET` consistently across the prod + regional container envs.
+/// The previous version of this journey discovered (2026-06-20) that both PUT
+/// and GET returned 500 in prod because the `corelink-turbo-prod` R2 bucket was
+/// not provisioned. That finding was documented in `turbo_storage_finding_gate`
+/// and the journey was converted to a loud GATE rather than a silent skip.
 ///
-/// This journey is left as a GATE that LOUDLY documents the finding (not faked
-/// PASS, not a silent skip) so the operator sees it until the bucket is created.
+/// The container has since been redeployed (image e423ed23-r1). This journey is
+/// now restored as a **real assertion**. If the bucket is still absent (500 still
+/// reproduces), the journey records a loud `FAIL` with the root-cause note — NOT
+/// a silent gate. This is intentional: a persistent 500 on the happy path is a
+/// real bug that must surface, not be hidden.
 fn artifact_round_trip(cfg: &Config, client: &Client) -> JourneyResult {
-    let name = "Turbo: artifact round-trip — PUT then GET matches (happy)";
+    let name = "Turbo M15: artifact round-trip — PUT then GET matches (happy)";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 
@@ -109,11 +101,21 @@ fn artifact_round_trip(cfg: &Config, client: &Client) -> JourneyResult {
     };
     let put_status = put.status().as_u16();
 
-    // KNOWN FINDING: 500 on PUT == the missing `corelink-turbo-prod` R2 bucket.
-    // Convert to a loud GATE carrying the root cause + fix rather than a raw FAIL
-    // or a fake PASS — the suite stays green-or-justified while surfacing the bug.
+    // 500 on PUT: the R2 bucket is still missing. This is a LOUD FAIL (not a
+    // gate/skip) — the container was redeployed (e423ed23-r1) and this should
+    // be fixed. The root-cause note is preserved for the operator.
     if put_status == 500 {
-        return turbo_storage_finding_gate(name);
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            "FAIL-PENDING: PUT /v8/artifacts/{hash} returned 500 — R2_TURBO_BUCKET \
+             'corelink-turbo-prod' is likely still not provisioned. \
+             Root cause: R2S3Client::new does not verify the bucket at build time, so \
+             /status 200s while every S3 GET/PUT errs → TurboBridgeError::Internal → \
+             generic 500 (routes/turbo_v8.rs map_err). \
+             FIX: provision corelink-turbo-prod and set R2_TURBO_BUCKET across all \
+             prod/regional container envs (provision-cf-corelink-prod.sh).",
+        );
     }
     if let Err(m) = expect_status("turbo PUT", put_status, 200) {
         return JourneyResult::fail(name, ms(start), format!("{m} (url={url})"));
@@ -124,10 +126,16 @@ fn artifact_round_trip(cfg: &Config, client: &Client) -> JourneyResult {
         Ok(r) => r,
         Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {url}: {e}")),
     };
-    if get.status().as_u16() == 500 {
-        return turbo_storage_finding_gate(name);
+    let get_status = get.status().as_u16();
+    if get_status == 500 {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            "FAIL-PENDING: GET /v8/artifacts/{hash} returned 500 after a successful PUT — \
+             R2_TURBO_BUCKET read path is broken (see PUT note above).",
+        );
     }
-    if let Err(m) = expect_status("turbo GET", get.status().as_u16(), 200) {
+    if let Err(m) = expect_status("turbo GET", get_status, 200) {
         return JourneyResult::fail(name, ms(start), m);
     }
     match get.bytes() {
@@ -145,21 +153,78 @@ fn artifact_round_trip(cfg: &Config, client: &Client) -> JourneyResult {
     JourneyResult::pass(name, ms(start))
 }
 
-/// The shared loud GATE for the Turbo missing-bucket finding (see
-/// [`artifact_round_trip`] for the full root cause). Used by the two journeys
-/// that depend on a working storage write so the suite is green-or-justified
-/// while the 500 stays visible to the operator.
-fn turbo_storage_finding_gate(name: &'static str) -> JourneyResult {
-    JourneyResult::gated(
-        name,
-        "REAL SERVER FINDING (go-live): Turbo GET/PUT 500 in prod — the \
-         R2_TURBO_BUCKET 'corelink-turbo-prod' does NOT exist (no turbo bucket \
-         provisioned; provision-cf-corelink-prod.sh omits it). R2S3Client::new \
-         doesn't verify the bucket so /status 200s, but every S3 op errs → \
-         TurboBridgeError::Internal → generic 500 (storage/r2_kv.rs + \
-         routes/turbo_v8.rs::map_err). FIX: provision corelink-turbo-prod + set \
-         R2_TURBO_BUCKET across the prod/regional container envs.",
-    )
+/// M15b: missing `teamId` query param → 400.
+///
+/// `PUT /v8/artifacts/{hash}` without `?teamId=` must return 400. This is
+/// enforced by the server: `ArtifactQuery` has `team_id` as a required field, so
+/// axum's `Query<ArtifactQuery>` extractor rejects the request with a 400
+/// deserialization error before the handler runs. Similarly for GET.
+///
+/// This journey was previously absent from the suite. It is a clean-surface
+/// contract: the route is documented as requiring `teamId` and the server must
+/// enforce it, not silently use an empty/default team namespace.
+fn artifact_missing_team_id(cfg: &Config, client: &Client) -> JourneyResult {
+    let name = "Turbo M15b: missing teamId → 400 (required query param)";
+    let start = Instant::now();
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+
+    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
+        Ok(p) => p,
+        Err(reason) => return JourneyResult::gated(name, reason),
+    };
+    let token = p1.token.expect("P1 always has a token");
+
+    let blob = unique_blob("corelink-e2e-turbo-no-team");
+    let hash = sha256_hex(&blob);
+
+    // URL WITHOUT ?teamId= — the raw artifact URL with no query string.
+    let url_no_team = url_turbo_artifact(cfg, &hash);
+
+    // PUT without teamId — must be 400.
+    let put = match client
+        .put(&url_no_team)
+        .header(AUTHORIZATION, bearer(token))
+        .header(CONTENT_TYPE, "application/octet-stream")
+        .body(blob.clone())
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("PUT no-teamId: {e}")),
+    };
+    let put_status = put.status().as_u16();
+    if put_status != 400 {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "PUT without teamId: expected 400, got {put_status}. \
+                 The route must enforce teamId as a required query parameter."
+            ),
+        );
+    }
+
+    // GET without teamId — must also be 400.
+    let get = match client
+        .get(&url_no_team)
+        .header(AUTHORIZATION, bearer(token))
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("GET no-teamId: {e}")),
+    };
+    let get_status = get.status().as_u16();
+    if get_status != 400 {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "GET without teamId: expected 400, got {get_status}. \
+                 The route must enforce teamId as a required query parameter."
+            ),
+        );
+    }
+
+    JourneyResult::pass(name, ms(start))
 }
 
 /// Happy: POST telemetry events — accept-and-drop, must return 200.
@@ -303,11 +368,16 @@ fn cross_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
         Err(e) => return JourneyResult::fail(name, ms(start), format!("A PUT {url}: {e}")),
     };
     let put_status = put.status().as_u16();
-    // KNOWN FINDING: the seed write 500s because corelink-turbo-prod is missing
-    // (see `artifact_round_trip`). Without a successful seed there is nothing to
-    // cross-read — surface the same loud finding-gate instead of a raw FAIL.
+    // If the seed write 500s (missing R2 bucket) there is nothing to cross-read.
+    // Fail loudly so the isolation journey stays visible (not silently skipped).
     if put_status == 500 {
-        return turbo_storage_finding_gate(name);
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            "FAIL-PENDING (cross-tenant isolation): A PUT returned 500 — R2 Turbo bucket \
+             likely still missing (see artifact_round_trip for root cause). \
+             Cannot verify isolation without a successful write.",
+        );
     }
     if !matches!(put_status, 200 | 201) {
         return JourneyResult::fail(

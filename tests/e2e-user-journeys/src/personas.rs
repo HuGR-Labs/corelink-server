@@ -5,9 +5,34 @@
 //! DENIED. Journey modules ask for a persona and get back a [`Resolved`]
 //! handle (or a gate reason when the persona's token env var is absent).
 //!
-//! The persona ids (P1..P12) follow the journey-matrix plan. The matrix file
-//! was not present in-tree at harness-freeze time (flagged in the CARD); these
-//! ids are the canonical seed the fleet fills against.
+//! ## Persona ids — the CODE numbering is canonical for this crate
+//!
+//! These `Persona::P*` ids are the contract the journey modules bind to (e.g.
+//! `billing.rs` resolves `Persona::P11PastDue`); the `TokenKind` mapping below
+//! is LOAD-BEARING and must not be renumbered.
+//!
+//! ⚠️ They DO NOT line up 1:1 with the `JOURNEY-MATRIX.md` persona table — that
+//! doc uses a DIFFERENT ordering (it was authored separately, after this enum).
+//! The roles are the same set; only the numbers differ. The mapping, so a reader
+//! cross-referencing the matrix is not misled:
+//!
+//! | code (this enum)        | role            | JOURNEY-MATRIX.md row     |
+//! |-------------------------|-----------------|---------------------------|
+//! | `P1ReadWrite`           | RW happy path   | P1 (free signup, RW)      |
+//! | `P2ReadOnly`            | read-only / CI  | P5 (CI consumer, RO)      |
+//! | `P3Admin`               | admin surfaces  | P6 (team owner, admin)    |
+//! | `P4Revoked`             | revoked PAT     | P8 (revoked-PAT holder)   |
+//! | `P5Expired`             | expired PAT     | P9 (expired-PAT holder)   |
+//! | `P6TenantB`             | cross-tenant    | P10 (cross-tenant attacker)|
+//! | `P7Free`..`P10Enterprise`| per-tier plans | P1/P2/P3/P4 (free/solo/pro/ent) |
+//! | `P11PastDue`            | past-due sub    | **P7** (past-due/pending) |
+//! | `P12Anonymous`          | no auth         | (negative: no-auth→401)   |
+//!
+//! Note the flagged divergence the gap-map map called out: **code `P11` =
+//! past-due** (the billing-state-integrity persona, here), whereas
+//! **matrix `P11` = header-forgery attacker** (a separate adversarial role the
+//! `security.rs` journeys cover cred-free, not via a dedicated persona token).
+//! This file keeps the code numbering; the table above is the reconciliation.
 
 use crate::harness::{Config, TokenKind};
 

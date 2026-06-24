@@ -48,7 +48,8 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::json;
 
 use crate::harness::{
-    bearer, blake3_hex, expect_denied, unique_blob, url_cas, url_introspect, Config, JourneyResult,
+    bearer, blake3_hex, expect_gate_denied, unique_blob, url_cas, url_introspect,
+    Config, JourneyResult,
 };
 use crate::personas::Persona;
 
@@ -457,7 +458,10 @@ fn native_plane_forgery_denied(cfg: &Config, client: &Client) -> JourneyResult {
                 ),
             );
         }
-        if let Err(m) = expect_denied(&format!("forgery: {label}"), st) {
+        // The CAS auth gate is always mounted; a 404 here means the route is
+        // absent/renamed, not that the gate rejected. Use expect_gate_denied
+        // (401/403 only) so a missing route does NOT score as "secure". M3.
+        if let Err(m) = expect_gate_denied(&format!("forgery: {label}"), st) {
             return JourneyResult::fail(name, ms(start), m);
         }
     }
@@ -500,7 +504,10 @@ fn mint_internal_auth_required(cfg: &Config, client: &Client) -> JourneyResult {
                     format!("internal route got {st} 5xx with no key — must deny cleanly, not crash"),
                 );
             }
-            if let Err(m) = expect_denied("internal (no key)", st) {
+            // The introspect route is always-mounted when the secret is set.
+            // A 404 means the route is absent/renamed, not an active gate
+            // rejection — use expect_gate_denied (401/403 only). M3.
+            if let Err(m) = expect_gate_denied("internal (no key)", st) {
                 return JourneyResult::fail(name, ms(start), m);
             }
         }
@@ -538,7 +545,9 @@ fn mint_internal_auth_required(cfg: &Config, client: &Client) -> JourneyResult {
                     format!("internal route got {st} 5xx with a wrong key — must deny cleanly"),
                 );
             }
-            if let Err(m) = expect_denied("internal (wrong key)", st) {
+            // Same reasoning as the no-key case: a 404 means the route is
+            // absent, not that the gate actively rejected. M3.
+            if let Err(m) = expect_gate_denied("internal (wrong key)", st) {
                 return JourneyResult::fail(name, ms(start), m);
             }
         }
@@ -592,7 +601,11 @@ fn customer_pat_cannot_reach_internal(cfg: &Config, client: &Client) -> JourneyR
                     format!("internal route got {st} 5xx with a customer PAT — must deny cleanly"),
                 );
             }
-            if let Err(m) = expect_denied("customer PAT → internal", st) {
+            // Privilege-escalation probe: the internal-auth gate must actively
+            // reject the customer PAT. A 404 would mean the route is absent,
+            // not that the privilege boundary held — use expect_gate_denied
+            // (401/403 only). M3.
+            if let Err(m) = expect_gate_denied("customer PAT → internal", st) {
                 return JourneyResult::fail(name, ms(start), m);
             }
             JourneyResult::pass(name, ms(start))
