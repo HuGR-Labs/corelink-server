@@ -1,0 +1,18 @@
+# cargo-mutants configuration.
+#
+# `exclude_globs` removes whole paths from mutation testing. Mutation testing
+# only has signal where in-CI tests can KILL a mutant; a crate with no in-CI
+# tests produces only "surviving" mutants — noise, not a blind spot.
+#
+# tests/e2e-user-journeys is a BLACK-BOX integration harness: a binary that
+# drives real journeys against a LIVE deployment (prod) using provisioned PATs.
+# Its assertions run via `provision-and-run-suite.sh`, never as `cargo test` in
+# CI, so cargo-mutants can never kill a mutant in its journey/harness logic —
+# every changed line surfaces as a false "surviving mutant". (The nightly
+# full-sweep already scopes to product crates via `--package`, so this crate was
+# always outside real mutation scope; only the per-diff PR gate caught it by
+# accident on every e2e-suite PR.) Excluding it makes the per-diff gate correct:
+# mutation testing stays focused on product crates whose tests run in CI.
+exclude_globs = [
+    "tests/e2e-user-journeys/**",
+]
