@@ -235,6 +235,15 @@ def provision():
     out["CORELINK_E2E_FRESH_TENANT"] = ft
     out["CORELINK_E2E_PAT_FRESH"] = mint_pat_on(ft, "cas:rw", "read-write", "e2e-fresh")
 
+    # Signup-worker endpoint — the LIVE Stripe webhook receiver. The unsigned-
+    # webhook DENY journey (#9) POSTs an UNSIGNED forged event here and asserts a
+    # 400 (the signature gate rejects BEFORE any side effect) — safe: no secret,
+    # no mutation. The mutating SIGNED-webhook journeys stay gated (they need the
+    # live whsec + would move real billing state — driven only via a local
+    # signup-worker harness, never injected into prod).
+    out["CORELINK_E2E_SIGNUP_WORKER_ENDPOINT"] = os.environ.get(
+        "E2E_SIGNUP_WORKER_ENDPOINT", "https://corelink-signup.humangr.com")
+
     return out
 
 
