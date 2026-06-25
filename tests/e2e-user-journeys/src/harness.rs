@@ -114,6 +114,21 @@ pub struct Config {
     /// Email to use for the team-invite / multi-seat journey (M13).
     /// `CORELINK_E2E_TEAM_INVITE_EMAIL`.
     pub team_invite_email: Option<String>,
+    // ── dedicated throwaway tenants (Group C / dedicated-tenant wave) ────────
+    /// A DEDICATED throwaway tenant the destructive quota cap-drive targets
+    /// (so it never touches the shared primary tenant). Provisioned with a low
+    /// `tenant_quota` ceiling + accrued headroom so a bounded drive trips 402.
+    /// `CORELINK_E2E_QUOTA_TENANT` (+ `CORELINK_E2E_PAT_QUOTA` token).
+    pub quota_tenant: Option<String>,
+    /// A DEDICATED throwaway tenant in billing `status='past_due'` with a $0
+    /// ceiling — so the P11 past-due data-plane write is denied by the BILLING
+    /// gate (402), proving the billing-state-integrity property on the past-due
+    /// tenant itself (not a cross-tenant 403). `CORELINK_E2E_PASTDUE_TENANT`.
+    pub pastdue_tenant: Option<String>,
+    /// A GUARANTEED-FRESH throwaway tenant (zero prior native CAS write, so no
+    /// `tenant_storage_state` row) exercising the cap-seed first-write path.
+    /// `CORELINK_E2E_FRESH_TENANT` (+ `CORELINK_E2E_PAT_FRESH` token).
+    pub fresh_tenant: Option<String>,
 }
 
 /// The set of named PATs the suite knows how to consume, each from its own env
@@ -134,6 +149,10 @@ struct TokenMap {
     pastdue: Option<String>,
     /// PAT for a tenant holding a live Runners entitlement (M8).
     runner: Option<String>,
+    /// PAT on the dedicated low-ceiling quota tenant (destructive cap-drive).
+    quota: Option<String>,
+    /// PAT on the guaranteed-fresh tenant (cap-seed first-write path).
+    fresh: Option<String>,
 }
 
 /// A named PAT slot. Resolved to an actual token (or `None` → gate) via
@@ -164,6 +183,10 @@ pub enum TokenKind {
     PastDue,
     /// A PAT for a tenant holding a live Runners entitlement (M8).
     Runner,
+    /// A PAT on the dedicated low-ceiling quota tenant (cap-drive).
+    Quota,
+    /// A PAT on the guaranteed-fresh tenant (cap-seed first write).
+    Fresh,
 }
 
 impl Config {
@@ -191,6 +214,8 @@ impl Config {
                 enterprise: var("CORELINK_E2E_PAT_ENTERPRISE"),
                 pastdue: var("CORELINK_E2E_PAT_PASTDUE"),
                 runner: var("CORELINK_E2E_PAT_RUNNER"),
+                quota: var("CORELINK_E2E_PAT_QUOTA"),
+                fresh: var("CORELINK_E2E_PAT_FRESH"),
             },
             run_slow: env::var("CORELINK_E2E_RUN_SLOW")
                 .map(|v| v == "1")
@@ -198,6 +223,9 @@ impl Config {
             public_hash: var("CORELINK_E2E_PUBLIC_HASH"),
             runner_tenant: var("CORELINK_E2E_RUNNER_TENANT"),
             team_invite_email: var("CORELINK_E2E_TEAM_INVITE_EMAIL"),
+            quota_tenant: var("CORELINK_E2E_QUOTA_TENANT"),
+            pastdue_tenant: var("CORELINK_E2E_PASTDUE_TENANT"),
+            fresh_tenant: var("CORELINK_E2E_FRESH_TENANT"),
         }
     }
 
@@ -216,6 +244,8 @@ impl Config {
             TokenKind::Enterprise => &self.tokens.enterprise,
             TokenKind::PastDue => &self.tokens.pastdue,
             TokenKind::Runner => &self.tokens.runner,
+            TokenKind::Quota => &self.tokens.quota,
+            TokenKind::Fresh => &self.tokens.fresh,
         };
         slot.as_deref()
     }

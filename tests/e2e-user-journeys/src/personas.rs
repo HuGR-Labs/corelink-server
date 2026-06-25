@@ -130,6 +130,15 @@ impl Persona {
                 .tenant_b
                 .clone()
                 .ok_or_else(|| "CORELINK_E2E_TENANT_B not set".to_string())?,
+            // P11 addresses its OWN dedicated past-due tenant (billing status
+            // 'past_due' + $0 ceiling) so the data-plane deny is a genuine
+            // BILLING 402 on that tenant — not a cross-tenant 403 against the
+            // shared primary (which would pass for the wrong reason). Falls back
+            // to the primary tenant when no dedicated past-due tenant is set.
+            Persona::P11PastDue => cfg
+                .pastdue_tenant
+                .clone()
+                .unwrap_or_else(|| cfg.tenant_or_anon().to_string()),
             _ => cfg.tenant_or_anon().to_string(),
         };
 

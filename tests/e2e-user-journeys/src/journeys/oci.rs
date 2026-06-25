@@ -172,6 +172,14 @@ fn urlencode(s: &str) -> String {
 
 /// Run the OCI conformance journeys (9 regressions + 5 protocol ops).
 pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
+    // The OCI host is scale-to-zero: the FIRST request after it idles eats a
+    // cold-start — often a >30s client timeout, then a brief 5xx cascade while
+    // the container warms. A real registry client (docker) simply retries
+    // through that window, so a cold-start is not a conformance failure. We
+    // mirror that with a bounded warmup so the assertions below run against a
+    // warm host and a cold-start cannot flake the ship gate. The warmup only
+    // waits for readiness; it asserts nothing.
+    warm_oci(cfg, client);
     vec![
         j1_v2_challenge(cfg, client),
         j2_token_get(cfg, client),
@@ -190,6 +198,27 @@ pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
         j13_ro_push_denied(cfg, client),
         j14_cross_tenant_isolation(cfg, client),
     ]
+}
+
+/// Best-effort warmup: ping `GET /v2/` until the OCI host answers warm (any
+/// non-5xx status — the expected unauth challenge is a 401, which counts) or a
+/// bounded attempt budget is spent. A cold-start surfaces as a request timeout
+/// or a transient 5xx; both are retried (a short pause lets the container finish
+/// booting after a fast 5xx). Never asserts — readiness only.
+fn warm_oci(cfg: &Config, client: &Client) {
+    let url = format!("{}/v2/", oci_base(cfg));
+    for attempt in 0..6 {
+        match client.get(&url).send() {
+            Ok(r) if r.status().as_u16() < 500 => return, // warm (e.g. 401 challenge)
+            _ => {
+                // Timeout or 5xx → still warming. The 30s client timeout already
+                // paces a hung cold-start; pause briefly after a fast 5xx too.
+                if attempt < 5 {
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                }
+            }
+        }
+    }
 }
 
 /// Resolve P1's PAT or a gate reason.

@@ -42,7 +42,7 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
 use crate::harness::{
     bearer, expect_denied, sha256_hex, unique_blob, url_brew, url_cargo, url_npm, url_oci_token,
-    url_oci_v2, url_pip, Config, JourneyResult,
+    url_oci_v2, url_pip, Config, JourneyResult, TokenKind,
 };
 use crate::personas::Persona;
 
@@ -249,18 +249,59 @@ fn cargo_sccache_check_probe_accepted(cfg: &Config, client: &Client) -> JourneyR
 /// GATE this cell with a precise reason rather than fake a fresh tenant. The
 /// regression IS unit-covered server-side (`cargo.rs::tests::
 /// put_threads_resolved_cap_into_cas_write`).
-fn cargo_fresh_tenant_first_write(cfg: &Config, _client: &Client) -> JourneyResult {
+fn cargo_fresh_tenant_first_write(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "cargo: fresh-tenant first write seeds cap (no 502) — cap-seed fix";
-    // Ground the route in the harness contract even though the cell gates.
-    let _url = url_cargo(cfg, cfg.tenant_or_anon(), "e2e/fresh-tenant-probe");
-    JourneyResult::gated(
-        name,
-        "needs a guaranteed-fresh tenant (zero prior native CAS write, so no \
-         tenant_storage_state row) to exercise the cap-seed path — the harness env \
-         contract has no fresh-tenant slot and CORELINK_E2E_TENANT may already have a \
-         storage-state row from CAS journeys. The cap-seed fix is unit-covered \
-         server-side (routes/cargo.rs::put_threads_resolved_cap_into_cas_write).",
-    )
+    let start = Instant::now();
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+
+    // The cap-seed path needs a GUARANTEED-FRESH tenant (zero prior native CAS
+    // write ⇒ no `tenant_storage_state` row), which a black-box client cannot
+    // manufacture itself — the provisioner mints a brand-new tenant + PAT each
+    // run and exposes them as CORELINK_E2E_FRESH_TENANT / CORELINK_E2E_PAT_FRESH.
+    // Absent that pairing we GATE with the precise reason (the fix stays
+    // unit-covered server-side: cargo.rs::put_threads_resolved_cap_into_cas_write).
+    let (Some(tenant), Some(token)) = (cfg.fresh_tenant.clone(), cfg.token(TokenKind::Fresh)) else {
+        return JourneyResult::gated(
+            name,
+            "CORELINK_E2E_FRESH_TENANT / CORELINK_E2E_PAT_FRESH not set — needs a \
+             guaranteed-fresh tenant (zero prior native CAS write, so no \
+             tenant_storage_state row) to exercise the cap-seed path. The fix is \
+             unit-covered server-side (routes/cargo.rs::put_threads_resolved_cap_into_cas_write).",
+        );
+    };
+
+    // The fresh tenant's FIRST cargo PUT must auto-seed its cap container-side
+    // and SERVE (200/201) — the regression was a fail-CLOSED 502 on the absent
+    // tenant_storage_state row. A 502 here = the cap-seed fix has regressed.
+    let blob = unique_blob("corelink-e2e-cargo-fresh-seed");
+    let key = cargo_key(&blob);
+    let url = url_cargo(cfg, &tenant, &key);
+    let put = match client
+        .put(&url)
+        .header(AUTHORIZATION, bearer(token))
+        .header(CONTENT_TYPE, "application/octet-stream")
+        .body(blob)
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("fresh PUT {url}: {e}")),
+    };
+    let status = put.status().as_u16();
+    match status {
+        200 | 201 => JourneyResult::pass(name, ms(start)),
+        502 => JourneyResult::fail(
+            name,
+            ms(start),
+            "REGRESSION: fresh-tenant first cargo PUT 502 — the cap-seed fix is gone; \
+             the absent tenant_storage_state row fails closed instead of auto-seeding"
+                .to_string(),
+        ),
+        other => JourneyResult::fail(
+            name,
+            ms(start),
+            format!("fresh-tenant first cargo PUT got {other} (expected a 200/201 serve, never 502)"),
+        ),
+    }
 }
 
 /// cargo ADVERSARIAL (P5): a read-only PAT must NOT be able to write. The Worker
