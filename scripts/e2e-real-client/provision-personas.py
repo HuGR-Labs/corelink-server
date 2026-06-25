@@ -13,6 +13,7 @@ survive across runs (unlike the ephemeral Clerk-signup TA).
 Env required: CORELINK_INTERNAL_AUTH_KEY, CLOUDFLARE_API_TOKEN, PAT_SIGNING_KEY (mint),
 FABRIC_INTROSPECT_AUTH_KEY (introspect-key export). All read from the process env.
 """
+import hashlib
 import json
 import os
 import sys
@@ -243,6 +244,28 @@ def provision():
     # signup-worker harness, never injected into prod).
     out["CORELINK_E2E_SIGNUP_WORKER_ENDPOINT"] = os.environ.get(
         "E2E_SIGNUP_WORKER_ENDPOINT", "https://corelink-signup.humangr.com")
+
+    # Team member (second seat) — operator-provisioned ACTIVE membership on the
+    # ADMIN tenant (so the admin PAT can list + remove it). ADR-S33-001: the
+    # by-email Clerk invite flow is WP-4/OOB, so the e2e exercises the membership
+    # BACKEND (list / per-seat access / seat-removal-revokes-PATs) via an operator
+    # seat. The member PAT records `principal_id = member_uid` so seat removal
+    # revokes exactly its tokens. A fresh member uid each run.
+    member_uid = f"user_e2e_member_{uuid.uuid4().hex[:16]}"
+    email_hash = hashlib.sha256(f"{member_uid}@example.com".encode()).hexdigest()
+    d1("INSERT OR REPLACE INTO team_member "
+       "(tenant_id,user_id,email_hash,role,status,invited_by,invited_at_ms,joined_at_ms) "
+       "VALUES (?1,?2,?3,'member','active','e2e-operator',?4,?4)",
+       [STABLE_TENANT, member_uid, email_hash, now_ms])
+    m = mint(STABLE_TENANT, "cas:rw")
+    d1("INSERT INTO pat (pat_id,tenant_id,pat_hash,scope,expires_ms,shown_once_token,"
+       "shown_once_consumed,created_ms,token_id,name,principal_id) "
+       "VALUES (?1,?2,?3,?4,?5,?6,1,?7,?8,?9,?10)",
+       [m["pat_id"], STABLE_TENANT, m["hash"], "read-write", m["expires_ms"],
+        str(uuid.uuid4()), now_ms, m["token_id"], "e2e-team-member", member_uid])
+    out["CORELINK_E2E_TEAM_MEMBER_USER_ID"] = member_uid
+    out["CORELINK_E2E_TEAM_MEMBER_TENANT"] = STABLE_TENANT
+    out["CORELINK_E2E_PAT_TEAM_MEMBER"] = m["token_plaintext"]
 
     return out
 
