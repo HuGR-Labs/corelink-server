@@ -179,14 +179,15 @@ fn quota_tripwire_clean_shape(cfg: &Config, client: &Client) -> JourneyResult {
             ),
         );
     }
-    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
-        Ok(p) => p,
-        Err(reason) => return JourneyResult::gated(name, reason),
+    // Prefer the DEDICATED low-ceiling quota tenant (same target as the quota
+    // journeys). By execution order the quota drives have already driven it to
+    // its cap, so the tripwire's first write sees a clean 402/429 immediately —
+    // exactly the signal SHAPE this journey asserts. Falls back to the primary
+    // tenant (which gates as "far below limit") when no dedicated tenant is set.
+    let (tenant, token) = match crate::journeys::quota::quota_target(cfg, name) {
+        Ok(x) => x,
+        Err(gate) => return gate,
     };
-    if cfg.tenant.is_none() {
-        return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set");
-    }
-    let token = p1.token.expect("P1 has a token");
 
     // Bounded, small writes — we are probing the SHAPE of the signal, not trying
     // to exhaust a 10GB cap. The first non-2xx must be a clean cap signal.
@@ -200,7 +201,7 @@ fn quota_tripwire_clean_shape(cfg: &Config, client: &Client) -> JourneyResult {
             blob[..mb.len()].copy_from_slice(mb);
         }
         let hash = blake3_hex(&blob);
-        let url = url_cas(cfg, &p1.tenant, &hash);
+        let url = url_cas(cfg, &tenant, &hash);
 
         let resp = match client
             .put(&url)

@@ -12,8 +12,35 @@ use std::time::Instant;
 use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
-use crate::harness::{bearer, blake3_hex, url_cas, Config, JourneyResult};
+use crate::harness::{bearer, blake3_hex, url_cas, Config, JourneyResult, TokenKind};
 use crate::personas::Persona;
+
+/// Resolve the (tenant, token) the destructive quota drives target.
+///
+/// Prefers a DEDICATED throwaway quota tenant + its PAT
+/// (`CORELINK_E2E_QUOTA_TENANT` / `CORELINK_E2E_PAT_QUOTA`) so the cap-drive
+/// never touches the shared primary tenant — that dedicated tenant is seeded
+/// with a low `tenant_quota` ceiling + accrued headroom, so a bounded drive
+/// deterministically trips 402. Falls back to the primary tenant + P1 RW PAT
+/// (the legacy behaviour, which gates as "cap unobserved" on a far-from-limit
+/// shared tenant). Returns the gate/`JourneyResult` to short-circuit on missing
+/// creds.
+pub(crate) fn quota_target<'a>(
+    cfg: &'a Config,
+    name: &'static str,
+) -> Result<(String, &'a str), JourneyResult> {
+    if let (Some(t), Some(tok)) = (cfg.quota_tenant.clone(), cfg.token(TokenKind::Quota)) {
+        return Ok((t, tok));
+    }
+    let p1 = Persona::P1ReadWrite
+        .resolve(cfg)
+        .map_err(|reason| JourneyResult::gated(name, reason))?;
+    let tenant = cfg
+        .tenant
+        .clone()
+        .ok_or_else(|| JourneyResult::gated(name, "CORELINK_E2E_TENANT not set"))?;
+    Ok((tenant, p1.token.expect("P1 has a token")))
+}
 
 /// Opt-in flag for the destructive near-limit cap drive. `CORELINK_E2E_QUOTA_TEST=1`
 /// is the WP-specified gate; we also honour the legacy `CORELINK_E2E_RUN_SLOW=1`
@@ -43,10 +70,17 @@ const AGGRESSIVE_BLOB_BYTES: usize = 64 * 1024;
 /// cap-drive that proves a CLEAN 402/429 (never a 5xx, never silent over-serve)
 /// and that an under-cap write still serves 2xx (flag-gated).
 pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
+    // Order matters when a DEDICATED quota tenant is used: the cap budget
+    // accrues monotonically across the three journeys (shared tenant), so the
+    // two journeys that need an under-cap SERVE to start (under_cap_serves +
+    // the combined cap-drive's under-cap probe) run BEFORE quota_hard_cap, which
+    // has no under-cap precondition and simply writes until it sees the 402/429.
+    // The provisioner seeds ~3 ops of headroom, enough for both under-cap probes
+    // + one drive write before the cap trips.
     vec![
         under_cap_serves(cfg, client),
-        quota_hard_cap(cfg, client),
         quota_hard_cap_clean_and_under_cap_serves(cfg, client),
+        quota_hard_cap(cfg, client),
     ]
 }
 
@@ -60,19 +94,15 @@ fn under_cap_serves(cfg: &Config, client: &Client) -> JourneyResult {
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 
-    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
-        Ok(p) => p,
-        Err(reason) => return JourneyResult::gated(name, reason),
+    let (tenant, token) = match quota_target(cfg, name) {
+        Ok(x) => x,
+        Err(gate) => return gate,
     };
-    if cfg.tenant.is_none() {
-        return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set");
-    }
-    let token = p1.token.expect("P1 has a token");
 
     // A small unique blob — well under any tier cap for a healthy test tenant.
     let blob = format!("quota-undercap-{}", uuid::Uuid::new_v4()).into_bytes();
     let hash = blake3_hex(&blob);
-    let url = url_cas(cfg, &p1.tenant, &hash);
+    let url = url_cas(cfg, &tenant, &hash);
 
     let resp = match client
         .put(&url)
@@ -118,14 +148,10 @@ fn quota_hard_cap(cfg: &Config, client: &Client) -> JourneyResult {
             "CORELINK_E2E_QUOTA_TEST=1 (or CORELINK_E2E_RUN_SLOW=1) not set — quota hard-cap skipped (write-heavy; run only against a near-limit test account)",
         );
     }
-    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
-        Ok(p) => p,
-        Err(reason) => return JourneyResult::gated(name, reason),
+    let (tenant, token) = match quota_target(cfg, name) {
+        Ok(x) => x,
+        Err(gate) => return gate,
     };
-    if cfg.tenant.is_none() {
-        return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set");
-    }
-    let token = p1.token.expect("P1 has a token");
 
     const MAX_ATTEMPTS: usize = 100;
     let template = vec![b'x'; 1024]; // 1KB
@@ -138,7 +164,7 @@ fn quota_hard_cap(cfg: &Config, client: &Client) -> JourneyResult {
             blob[..mb.len()].copy_from_slice(mb);
         }
         let hash = blake3_hex(&blob);
-        let url = url_cas(cfg, &p1.tenant, &hash);
+        let url = url_cas(cfg, &tenant, &hash);
 
         let resp = match client
             .put(&url)
@@ -199,21 +225,17 @@ fn quota_hard_cap_clean_and_under_cap_serves(cfg: &Config, client: &Client) -> J
              to its cap (bounded, ~16 MiB max); enable only against a near-limit DEDICATED test tenant",
         );
     }
-    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
-        Ok(p) => p,
-        Err(reason) => return JourneyResult::gated(name, reason),
+    let (tenant, token) = match quota_target(cfg, name) {
+        Ok(x) => x,
+        Err(gate) => return gate,
     };
-    if cfg.tenant.is_none() {
-        return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set");
-    }
-    let token = p1.token.expect("P1 has a token");
 
     // (a) UNDER-CAP first: a single small write must serve 2xx — proving a later
     // deny means "over cap", not "always denied". If THIS tenant is already at its
     // cap we cannot prove the positive half here → GATE (needs an under-cap start).
     let probe = format!("quota-clean-undercap-{}", uuid::Uuid::new_v4()).into_bytes();
     let probe_hash = blake3_hex(&probe);
-    let probe_url = url_cas(cfg, &p1.tenant, &probe_hash);
+    let probe_url = url_cas(cfg, &tenant, &probe_hash);
     let probe_resp = match client
         .put(&probe_url)
         .header(AUTHORIZATION, bearer(token))
@@ -254,7 +276,7 @@ fn quota_hard_cap_clean_and_under_cap_serves(cfg: &Config, client: &Client) -> J
             blob[..mb.len()].copy_from_slice(mb);
         }
         let hash = blake3_hex(&blob);
-        let url = url_cas(cfg, &p1.tenant, &hash);
+        let url = url_cas(cfg, &tenant, &hash);
 
         let resp = match client
             .put(&url)
