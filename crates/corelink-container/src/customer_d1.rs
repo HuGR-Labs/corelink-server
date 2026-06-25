@@ -70,7 +70,7 @@ use corelink_handler_customer::{
     KeyCreateRequest, KeyCreateResponse, KeyRevokeRequest, KeyRevokeResponse, KeysListRequest,
     KeysListResponse, OverviewRequest, OverviewResponse, PortalRequest, PortalResponse,
     SliObservation, SliObserver, TeamInviteRequest, TeamInviteResponse, TeamListRequest,
-    TeamListResponse, UsageRequest, UsageResponse,
+    TeamListResponse, TeamRemoveRequest, TeamRemoveResponse, UsageRequest, UsageResponse,
 };
 use corelink_pat::{
     mint::mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId, SCOPE_CACHE_R,
@@ -1061,29 +1061,62 @@ impl CustomerKeysHandler for D1CustomerHandler {
 
 impl CustomerTeamHandler for D1CustomerHandler {
     fn list(&self, req: TeamListRequest) -> Result<TeamListResponse, CustomerHandlerError> {
-        // HONEST v1: there is no team-membership table — the synthesized
-        // single Owner row comes from the tenant's Clerk binding. The
-        // email is NOT stored in D1 (only `email_hash`, CTRL-PRIV-001),
-        // so it is shown as "—" rather than fabricated.
+        // The tenant's Clerk binding is the canonical OWNER (synthesized — the
+        // email is NOT stored in D1, only `email_hash` per CTRL-PRIV-001, so it
+        // is shown as "—"). Additional seats are real `team_member` rows
+        // (ADR-S33-001, migration 0074), appended below.
         let tenant = self
             .tenant_row(&req.caller_tenant)?
             .ok_or_else(|| self.tenant_not_found(&req.caller_tenant))?;
 
-        let user_id =
+        let owner_id =
             col_opt_str(&tenant, "clerk_user_id").unwrap_or_else(|| req.caller_tenant.clone());
         let joined_at = col_opt_i64(&tenant, "created_at_ms")
             .map(ms_to_iso8601)
             .unwrap_or_default();
-        let owner = TeamMemberRow::new(user_id, "—", "Owner", joined_at, "active");
+        let mut members = vec![TeamMemberRow::new(
+            owner_id.clone(),
+            "—",
+            "Owner",
+            joined_at,
+            "active",
+        )];
+
+        // Seats from `team_member` (active + invited; `removed` rows are audit
+        // tombstones and not listed). Skip any duplicate of the synthesized owner.
+        let rows = self.run(
+            "SELECT user_id, role, status, joined_at_ms, invited_at_ms \
+             FROM team_member \
+             WHERE tenant_id = ?1 AND status IN ('active','invited') \
+             ORDER BY invited_at_ms ASC",
+            vec![json!(req.caller_tenant)],
+        )?;
+        for row in &rows {
+            let user_id = col_opt_str(row, "user_id").unwrap_or_default();
+            if user_id.is_empty() || user_id == owner_id {
+                continue;
+            }
+            let role = col_opt_str(row, "role").unwrap_or_else(|| "member".to_owned());
+            let status = col_opt_str(row, "status").unwrap_or_else(|| "invited".to_owned());
+            let joined = col_opt_i64(row, "joined_at_ms")
+                .or_else(|| col_opt_i64(row, "invited_at_ms"))
+                .map(ms_to_iso8601)
+                .unwrap_or_default();
+            members.push(TeamMemberRow::new(user_id, "—", role, joined, status));
+        }
 
         self.emit_sli(false);
-        Ok(TeamListResponse::new(vec![owner]))
+        Ok(TeamListResponse::new(members))
     }
 
     fn invite(&self, req: TeamInviteRequest) -> Result<TeamInviteResponse, CustomerHandlerError> {
-        // Attempted audit first (trait contract), then the HONEST 501:
-        // no membership/invite table exists, so no invite can be durably
-        // recorded — never pretend one was sent.
+        // Attempted audit first (trait contract), then the HONEST 501.
+        // ADR-S33-001 WP-4: the by-EMAIL invitation flow (Clerk invitation →
+        // email acceptance → user binding) is not yet wired, so no invite can be
+        // durably recorded against a real user_id — never pretend one was sent.
+        // ACTIVE seats are provisioned operator-side (the membership BACKEND —
+        // list/remove + PAT revocation — IS live; only the email round-trip is
+        // pending).
         self.emit_audit(
             AuditEventKind::TeamInviteAttempted,
             &req.caller_tenant,
@@ -1094,6 +1127,81 @@ impl CustomerTeamHandler for D1CustomerHandler {
         Err(CustomerHandlerError::NotImplemented(
             "team invites are coming soon".to_owned(),
         ))
+    }
+
+    fn remove(&self, req: TeamRemoveRequest) -> Result<TeamRemoveResponse, CustomerHandlerError> {
+        // Attempted audit BEFORE the mutation (fail-CLOSED ordering).
+        self.emit_audit(
+            AuditEventKind::TeamRemoveAttempted,
+            &req.caller_tenant,
+            &req.principal,
+            &req.target_user_id,
+        )?;
+
+        // The member must exist under THIS tenant and not be the owner.
+        let rows = self.run(
+            "SELECT role, status FROM team_member WHERE tenant_id = ?1 AND user_id = ?2 LIMIT 1",
+            vec![json!(req.caller_tenant), json!(req.target_user_id)],
+        )?;
+        let Some(row) = rows.into_iter().next() else {
+            self.emit_sli(true);
+            return Err(CustomerHandlerError::NotFound {
+                what: format!("team member={}", req.target_user_id),
+            });
+        };
+        let role = col_opt_str(&row, "role").unwrap_or_default();
+        if role.eq_ignore_ascii_case("owner") {
+            self.emit_sli(true);
+            return Err(CustomerHandlerError::Unauthorized(
+                "cannot remove the tenant owner".to_owned(),
+            ));
+        }
+        // Count the member's live PATs BEFORE revoking (the D1 query bridge
+        // returns rows, not an UPDATE changes-count) — this is the revoked total.
+        let live = self.run(
+            "SELECT pat_id FROM pat \
+             WHERE tenant_id = ?1 AND principal_id = ?2 AND revoked_at_ms IS NULL",
+            vec![json!(req.caller_tenant), json!(req.target_user_id)],
+        )?;
+        let revoked_pats = u32::try_from(live.len()).unwrap_or(u32::MAX);
+
+        let now = i64::try_from(self.clock.now_ms()).unwrap_or(i64::MAX);
+
+        // Revoke every live PAT the member holds for this tenant — the
+        // load-bearing security effect of seat removal.
+        self.run(
+            "UPDATE pat SET revoked_at_ms = ?3 \
+             WHERE tenant_id = ?1 AND principal_id = ?2 AND revoked_at_ms IS NULL",
+            vec![
+                json!(req.caller_tenant),
+                json!(req.target_user_id),
+                json!(now),
+            ],
+        )?;
+
+        // Flip the seat to `removed` (retain as an audit tombstone).
+        self.run(
+            "UPDATE team_member SET status = 'removed', joined_at_ms = joined_at_ms \
+             WHERE tenant_id = ?1 AND user_id = ?2",
+            vec![json!(req.caller_tenant), json!(req.target_user_id)],
+        )?;
+
+        self.emit_audit(
+            AuditEventKind::TeamRemoveCommitted,
+            &req.caller_tenant,
+            &req.principal,
+            &req.target_user_id,
+        )?;
+
+        let member = TeamMemberRow::new(
+            req.target_user_id.clone(),
+            "—",
+            if role.is_empty() { "member".to_owned() } else { role },
+            String::new(),
+            "removed",
+        );
+        self.emit_sli(false);
+        Ok(TeamRemoveResponse::new(member, revoked_pats))
     }
 }
 
@@ -2079,6 +2187,109 @@ mod tests {
         let kinds: Vec<_> = f.audit.snapshot().unwrap().iter().map(|e| e.kind).collect();
         assert_eq!(kinds, vec![AuditEventKind::TeamInviteAttempted]);
         assert!(f.db.calls().is_empty(), "501 must not touch D1");
+    }
+
+    #[test]
+    fn team_list_includes_active_members() {
+        // Owner (synthesized from tenant) + one active `team_member` seat.
+        let member = row(&[
+            ("user_id", json!("user_member1")),
+            ("role", json!("member")),
+            ("status", json!("active")),
+            ("joined_at_ms", json!(1_690_000_500_000_i64)),
+            ("invited_at_ms", json!(1_690_000_400_000_i64)),
+        ]);
+        let f = fixture_with(
+            MockD1::with(vec![
+                ("FROM tenant WHERE", vec![tenant_row_fixture()]),
+                ("status IN ('active','invited')", vec![member]),
+            ]),
+            None,
+        );
+        let resp =
+            CustomerTeamHandler::list(&f.handler, TeamListRequest::new(TENANT, "clpat_x", 0))
+                .unwrap();
+        assert_eq!(resp.members.len(), 2, "owner + 1 member");
+        assert_eq!(resp.members[0].role, "Owner");
+        assert_eq!(resp.members[1].user_id, "user_member1");
+        assert_eq!(resp.members[1].status, "active");
+    }
+
+    #[test]
+    fn team_remove_flips_seat_and_revokes_member_pats() {
+        // Member exists (not owner) + holds 2 live PATs → removal revokes both.
+        let f = fixture_with(
+            MockD1::with(vec![
+                (
+                    "role, status FROM team_member",
+                    vec![row(&[("role", json!("member")), ("status", json!("active"))])],
+                ),
+                (
+                    "pat_id FROM pat",
+                    vec![
+                        row(&[("pat_id", json!("pat_a"))]),
+                        row(&[("pat_id", json!("pat_b"))]),
+                    ],
+                ),
+            ]),
+            None,
+        );
+        let resp = f
+            .handler
+            .remove(TeamRemoveRequest::new(TENANT, "clpat_owner", "user_member1", 0))
+            .unwrap();
+        assert_eq!(resp.revoked_pats, 2, "both of the member's live PATs revoked");
+        assert_eq!(resp.member.status, "removed");
+
+        // The load-bearing effects must both have been issued to D1.
+        let sqls: Vec<String> = f.db.calls().into_iter().map(|(s, _)| s).collect();
+        assert!(
+            sqls.iter().any(|s| s.contains("UPDATE pat SET revoked_at_ms")),
+            "must revoke the member's PATs"
+        );
+        assert!(
+            sqls.iter()
+                .any(|s| s.contains("UPDATE team_member SET status = 'removed'")),
+            "must flip the seat to removed"
+        );
+        let kinds: Vec<_> = f.audit.snapshot().unwrap().iter().map(|e| e.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                AuditEventKind::TeamRemoveAttempted,
+                AuditEventKind::TeamRemoveCommitted
+            ]
+        );
+    }
+
+    #[test]
+    fn team_remove_owner_is_rejected() {
+        let f = fixture_with(
+            MockD1::with(vec![(
+                "role, status FROM team_member",
+                vec![row(&[("role", json!("owner")), ("status", json!("active"))])],
+            )]),
+            None,
+        );
+        let err = f
+            .handler
+            .remove(TeamRemoveRequest::new(TENANT, "clpat_x", "user_owner", 0))
+            .unwrap_err();
+        assert!(matches!(err, CustomerHandlerError::Unauthorized(_)), "{err:?}");
+        // No PAT revocation must have been attempted for an owner-removal reject.
+        let sqls: Vec<String> = f.db.calls().into_iter().map(|(s, _)| s).collect();
+        assert!(!sqls.iter().any(|s| s.contains("UPDATE pat")));
+    }
+
+    #[test]
+    fn team_remove_absent_member_is_not_found() {
+        // No canned team_member row → lookup returns empty → NotFound.
+        let f = fixture_with(MockD1::with(vec![]), None);
+        let err = f
+            .handler
+            .remove(TeamRemoveRequest::new(TENANT, "clpat_x", "user_ghost", 0))
+            .unwrap_err();
+        assert!(matches!(err, CustomerHandlerError::NotFound { .. }), "{err:?}");
     }
 
     // ── Audit query ──────────────────────────────────────────────────────────

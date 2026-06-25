@@ -23,6 +23,16 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Team multi-seat: durable membership backend + seat-removal (ADR-S33-001).** Added the
+  `team_member` D1 table (migration 0074) + `pat.principal_id` (migration 0075), turning the
+  team feature from an honest 501/single-owner stub into a real backend: `GET /v1/customer/team`
+  now lists the owner **plus** durable member seats; new `DELETE /v1/customer/team/:user_id`
+  (owner/admin scope only) removes a seat AND **revokes the member's PATs** (`UPDATE pat SET
+  revoked_at_ms WHERE tenant_id=? AND principal_id=?`) — the load-bearing security effect (a
+  removed member loses data-plane access, not just a list entry). The by-email Clerk invitation
+  flow + member session→tenant resolution remain follow-ups (ADR-S33-001 WP-4/WP-5); active seats
+  are operator-provisioned for now. `invite` stays the honest 501 until WP-4. Covered by handler-,
+  D1-, and route-level unit tests (owner-removal rejected, absent→404, PATs revoked).
 - **Runners-tier Stripe prices live + forwarded.** Created the 5 Runners Products/Prices (Starter $16 / Pro $40 / Team $100 / Scale $200 / Max $400, idempotent `scripts/ops/stripe-setup-runners.sh`) and forward `STRIPE_PRICE_ID_RUNNER_*` from the DO to the container so the seed handler activates (no longer dormant).
 - **Runners-tier entitlement SEED on Stripe purchase.** When a Runners-tier subscription activates
   (`customer.subscription.{created,updated}`), the materializer now seeds the per-tenant

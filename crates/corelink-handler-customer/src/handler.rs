@@ -27,7 +27,8 @@ use crate::request::{
     CustomerAuditEventRow, KeyCreateRequest, KeyCreateResponse, KeyRevokeRequest,
     KeyRevokeResponse, KeysListRequest, KeysListResponse, OverviewRequest, OverviewResponse,
     PatRow, PortalRequest, PortalResponse, TeamInviteRequest, TeamInviteResponse, TeamListRequest,
-    TeamListResponse, TeamMemberRow, UsageRequest, UsageResponse,
+    TeamListResponse, TeamMemberRow, TeamRemoveRequest, TeamRemoveResponse, UsageRequest,
+    UsageResponse,
 };
 
 // ─── Trait definitions ────────────────────────────────────────────────────────
@@ -150,6 +151,23 @@ pub trait CustomerTeamHandler: Send + Sync + core::fmt::Debug {
     /// Returns variants of [`CustomerHandlerError`] per the trait
     /// contract.
     fn invite(&self, req: TeamInviteRequest) -> Result<TeamInviteResponse, CustomerHandlerError>;
+
+    /// Remove a member's seat from the caller's tenant.
+    ///
+    /// Implementors **MUST**:
+    /// 1. Emit `AuditEventKind::TeamRemoveAttempted` BEFORE the mutation.
+    /// 2. Flip the member row to `removed` AND revoke every PAT the member holds
+    ///    for this tenant — the load-bearing security effect (a removed seat must
+    ///    lose data-plane access, not merely disappear from the list).
+    /// 3. Reject removing the tenant `owner` (and self-removal of the owner).
+    /// 4. Emit `AuditEventKind::TeamRemoveCommitted` AFTER the durable removal.
+    /// 5. Emit `Sli::AvailControlPlane` on EVERY return path.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` when no such member; `CrossTenantDenied`/`Unauthorized` per the
+    /// trait contract; other [`CustomerHandlerError`] variants on backend faults.
+    fn remove(&self, req: TeamRemoveRequest) -> Result<TeamRemoveResponse, CustomerHandlerError>;
 }
 
 /// Trait every concrete customer audit handler implements.
@@ -690,6 +708,58 @@ impl CustomerTeamHandler for InMemoryCustomerHandler {
 
         self.emit_sli(false);
         Ok(TeamInviteResponse::new(member))
+    }
+
+    fn remove(&self, req: TeamRemoveRequest) -> Result<TeamRemoveResponse, CustomerHandlerError> {
+        // Emit TeamRemoveAttempted BEFORE mutation (fail-CLOSED ordering).
+        self.emit_audit(
+            AuditEventKind::TeamRemoveAttempted,
+            &req.caller_tenant,
+            &req.principal,
+            &req.target_user_id,
+            req.at_unix_ms,
+        )
+        .inspect_err(|_| self.emit_sli(true))?;
+
+        let key = (req.caller_tenant.clone(), req.target_user_id.clone());
+        let member = {
+            let mut g = self.lock_or_err(&self.team, "team lock poisoned")?;
+            let mut m = match g.get(&key) {
+                None => {
+                    self.emit_sli(true);
+                    return Err(CustomerHandlerError::NotFound {
+                        what: "team member".to_owned(),
+                    });
+                }
+                // The tenant owner's seat is not removable.
+                Some(m) if m.role.eq_ignore_ascii_case("owner") => {
+                    self.emit_sli(true);
+                    return Err(CustomerHandlerError::Unauthorized(
+                        "cannot remove the tenant owner".to_owned(),
+                    ));
+                }
+                Some(m) => m.clone(),
+            };
+            // Flip to `removed` (retain as an audit tombstone).
+            m.status = "removed".to_owned();
+            g.insert(key, m.clone());
+            m
+        };
+
+        // The InMemory handler does not bind PATs to a member principal (the keys
+        // map is not principal-keyed), so it reports 0 revoked; the D1 handler is
+        // where the real per-member PAT revocation happens (and is asserted).
+        self.emit_audit(
+            AuditEventKind::TeamRemoveCommitted,
+            &req.caller_tenant,
+            &req.principal,
+            &req.target_user_id,
+            req.at_unix_ms,
+        )
+        .inspect_err(|_| self.emit_sli(true))?;
+
+        self.emit_sli(false);
+        Ok(TeamRemoveResponse::new(member, 0))
     }
 }
 
