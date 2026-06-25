@@ -323,10 +323,16 @@ impl JourneyResult {
 
 // ── HTTP / crypto helpers ─────────────────────────────────────────────────────
 
-/// Build the shared blocking HTTP client (30s timeout, real TLS verification).
+/// Build the shared blocking HTTP client (60s timeout, real TLS verification).
+///
+/// The timeout is 60s (not 30s): occasional prod-edge slowness made single
+/// requests trip a 30s deadline and hard-FAIL otherwise-passing journeys (a
+/// transient-timeout flake → spurious RED gate, seen on the destructive quota
+/// drives + OCI). 60s tolerates a transient 30-60s blip while still bounding a
+/// genuinely hung request.
 pub fn build_client() -> Client {
     Client::builder()
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(60))
         .danger_accept_invalid_certs(false)
         .build()
         .expect("failed to build reqwest client")

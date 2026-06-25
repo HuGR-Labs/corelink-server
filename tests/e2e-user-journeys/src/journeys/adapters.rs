@@ -392,16 +392,101 @@ fn cargo_anonymous_denied(cfg: &Config, client: &Client) -> JourneyResult {
 /// client. GATED with that reason, mirroring the store→fetch gate. (Cross-tenant
 /// isolation IS positively exercised black-box on the native CAS and Turbo
 /// surfaces, which DO accept raw-HTTP writes.)
-fn cargo_cross_tenant_isolation(cfg: &Config, _client: &Client) -> JourneyResult {
+fn cargo_cross_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "cargo: P10 cross-tenant — A stores; B fetches same key → no leak";
-    let _url = url_cargo(cfg, cfg.tenant_or_anon(), "e2e/contract-probe");
-    JourneyResult::gated(
-        name,
-        "needs a real sccache/cargo client — the cross-tenant cell requires a \
-         successful seed write first, but the /cargo WebDAV contract rejects a \
-         raw-HTTP PUT (502, live-probed). Cross-tenant isolation IS \
-         black-box-verified on the native CAS + Turbo surfaces (raw-HTTP-writable).",
-    )
+    let start = Instant::now();
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+
+    // A = primary tenant (P1 RW), B = a DIFFERENT tenant's PAT (P6). Both are
+    // raw-HTTP cargo-writable (the old "/cargo rejects raw PUT → 502" premise was
+    // stale — the cap-seed fix made the first cargo PUT serve 200/201).
+    let a = match Persona::P1ReadWrite.resolve(cfg) {
+        Ok(p) => p,
+        Err(reason) => return JourneyResult::gated(name, reason),
+    };
+    let b = match Persona::P6TenantB.resolve(cfg) {
+        Ok(p) => p,
+        Err(reason) => return JourneyResult::gated(name, reason),
+    };
+    let token_a = a.token.expect("P1 has a token");
+    let token_b = b.token.expect("P6 has a token");
+
+    // A seeds a private cargo artifact under its own tenant namespace.
+    let secret = unique_blob("corelink-e2e-cargo-private-A");
+    let key = cargo_key(&secret);
+    let a_url = url_cargo(cfg, &a.tenant, &key);
+    let put = match client
+        .put(&a_url)
+        .header(AUTHORIZATION, bearer(token_a))
+        .header(CONTENT_TYPE, "application/octet-stream")
+        .body(secret.clone())
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("A seed PUT {a_url}: {e}")),
+    };
+    match put.status().as_u16() {
+        200 | 201 => {}
+        // A at its cap can't seed — that's account state, not a contract break.
+        402 | 429 => {
+            return JourneyResult::gated(
+                name,
+                "A's tenant is at its cap — the isolation seed write needs an under-cap tenant",
+            )
+        }
+        502 => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                "REGRESSION: cargo seed PUT 502 — the MoatCache cap-seed fix is gone".to_string(),
+            )
+        }
+        other => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("A cargo seed PUT got {other} (expected 200/201)"),
+            )
+        }
+    }
+
+    // B (a DIFFERENT tenant) attempts to read A's exact key under A's namespace.
+    // The cargo route binds the path tenant to the PAT's tenant, so this MUST be
+    // denied (403 tenant-mismatch / 401 / 404) — and must NEVER return A's bytes.
+    let resp = match client
+        .get(&a_url)
+        .header(AUTHORIZATION, bearer(token_b))
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("B cross GET {a_url}: {e}")),
+    };
+    let status = resp.status().as_u16();
+    if matches!(status, 200 | 206) {
+        // A successful read is only a LEAK if it returns A's private bytes.
+        let body = resp.bytes().map(|b| b.to_vec()).unwrap_or_default();
+        if body == secret {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                "CROSS-TENANT LEAK: B read A's private cargo artifact bytes under A's tenant"
+                    .to_string(),
+            );
+        }
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("B cross-tenant cargo GET got {status} (expected a 401/403/404 deny)"),
+        );
+    }
+    match expect_denied("cross-tenant cargo read", status) {
+        Ok(()) => JourneyResult::pass(name, ms(start)),
+        Err(_) => JourneyResult::fail(
+            name,
+            ms(start),
+            format!("B cross-tenant cargo GET got {status} (expected a 401/403/404 deny)"),
+        ),
+    }
 }
 
 // ── OCI (two-leg token auth) ────────────────────────────────────────────────
