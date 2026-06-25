@@ -129,6 +129,14 @@ pub struct Config {
     /// `tenant_storage_state` row) exercising the cap-seed first-write path.
     /// `CORELINK_E2E_FRESH_TENANT` (+ `CORELINK_E2E_PAT_FRESH` token).
     pub fresh_tenant: Option<String>,
+    /// The `user_id` of an operator-provisioned ACTIVE team member on the admin
+    /// tenant (ADR-S33-001) — the "second seat". Used by the multi-seat +
+    /// seat-removal journeys. `CORELINK_E2E_TEAM_MEMBER_USER_ID` (+ the member's
+    /// tenant `CORELINK_E2E_TEAM_MEMBER_TENANT` + token `CORELINK_E2E_PAT_TEAM_MEMBER`).
+    pub team_member_user_id: Option<String>,
+    /// The tenant the operator-provisioned team member belongs to (= the admin
+    /// PAT's tenant, so the admin can list/remove the member).
+    pub team_member_tenant: Option<String>,
 }
 
 /// The set of named PATs the suite knows how to consume, each from its own env
@@ -153,6 +161,8 @@ struct TokenMap {
     quota: Option<String>,
     /// PAT on the guaranteed-fresh tenant (cap-seed first-write path).
     fresh: Option<String>,
+    /// PAT belonging to the operator-provisioned team member (the second seat).
+    team_member: Option<String>,
 }
 
 /// A named PAT slot. Resolved to an actual token (or `None` → gate) via
@@ -187,6 +197,8 @@ pub enum TokenKind {
     Quota,
     /// A PAT on the guaranteed-fresh tenant (cap-seed first write).
     Fresh,
+    /// A PAT belonging to an operator-provisioned team member (second seat).
+    TeamMember,
 }
 
 impl Config {
@@ -216,6 +228,7 @@ impl Config {
                 runner: var("CORELINK_E2E_PAT_RUNNER"),
                 quota: var("CORELINK_E2E_PAT_QUOTA"),
                 fresh: var("CORELINK_E2E_PAT_FRESH"),
+                team_member: var("CORELINK_E2E_PAT_TEAM_MEMBER"),
             },
             run_slow: env::var("CORELINK_E2E_RUN_SLOW")
                 .map(|v| v == "1")
@@ -226,6 +239,8 @@ impl Config {
             quota_tenant: var("CORELINK_E2E_QUOTA_TENANT"),
             pastdue_tenant: var("CORELINK_E2E_PASTDUE_TENANT"),
             fresh_tenant: var("CORELINK_E2E_FRESH_TENANT"),
+            team_member_user_id: var("CORELINK_E2E_TEAM_MEMBER_USER_ID"),
+            team_member_tenant: var("CORELINK_E2E_TEAM_MEMBER_TENANT"),
         }
     }
 
@@ -246,6 +261,7 @@ impl Config {
             TokenKind::Runner => &self.tokens.runner,
             TokenKind::Quota => &self.tokens.quota,
             TokenKind::Fresh => &self.tokens.fresh,
+            TokenKind::TeamMember => &self.tokens.team_member,
         };
         slot.as_deref()
     }

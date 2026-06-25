@@ -178,7 +178,9 @@ pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     // through that window, so a cold-start is not a conformance failure. We
     // mirror that with a bounded warmup so the assertions below run against a
     // warm host and a cold-start cannot flake the ship gate. The warmup only
-    // waits for readiness; it asserts nothing.
+    // waits for readiness; it asserts nothing. (Also pre-warmed globally in
+    // `mod::all` before the adapters OCI journeys — this call is the idempotent
+    // belt-and-suspenders when oci::run is invoked on its own.)
     warm_oci(cfg, client);
     vec![
         j1_v2_challenge(cfg, client),
@@ -205,7 +207,11 @@ pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
 /// bounded attempt budget is spent. A cold-start surfaces as a request timeout
 /// or a transient 5xx; both are retried (a short pause lets the container finish
 /// booting after a fast 5xx). Never asserts — readiness only.
-fn warm_oci(cfg: &Config, client: &Client) {
+///
+/// `pub(crate)` so the runner can pre-warm the scale-to-zero OCI host ONCE before
+/// ANY module runs — the `adapters` module's OCI journeys run before this module,
+/// so a warmup local to `oci::run` would be too late for them.
+pub(crate) fn warm_oci(cfg: &Config, client: &Client) {
     let url = format!("{}/v2/", oci_base(cfg));
     for attempt in 0..6 {
         match client.get(&url).send() {

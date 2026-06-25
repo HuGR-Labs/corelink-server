@@ -53,7 +53,10 @@ use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::json;
 
-use crate::harness::{bearer, expect_gate_denied, url_customer, Config, JourneyResult, TokenKind};
+use crate::harness::{
+    bearer, blake3_hex, expect_denied, expect_gate_denied, unique_blob, url_cas, url_customer,
+    Config, JourneyResult, TokenKind,
+};
 use crate::personas::Persona;
 
 /// Run the team-invite / multi-seat journeys (M13).
@@ -348,39 +351,197 @@ fn team_list_responds(cfg: &Config, client: &Client) -> JourneyResult {
 
 // ─── Journey 4: Second seat scoped access — gated OOB ─────────────────────────
 
-/// Drive as far as the invite creates an `"invited"` member record, then gate
-/// the scoped-access assertion because completing the invite requires the
-/// invitee to click the emailed Clerk link and accept. There is no black-box
-/// API endpoint to mint a second-seat PAT without that email round-trip.
+/// **Second seat gains scoped access (multi-seat under one tenant).** With the
+/// membership backend live (ADR-S33-001), an operator-provisioned ACTIVE member
+/// (a second principal on the admin tenant) must (1) appear in the admin's team
+/// list and (2) hold a tenant-scoped PAT that actually works on the data plane.
 ///
-/// This journey documents the OOB dependency precisely rather than silently
-/// skipping it. The `invite_accepted_or_not_implemented` journey already
-/// asserts the invite POST works; this one gates on the next step.
-fn second_seat_scoped_access_gated_oob(_cfg: &Config, _client: &Client) -> JourneyResult {
-    JourneyResult::gated(
-        "Team: second seat gains scoped CAS access (multi-seat under one tenant)",
-        "OOB step required: the invited user must click the Clerk email link and complete \
-         signup/accept before a second-seat PAT is issued. No black-box API exists to \
-         complete the invite or mint a second-seat PAT programmatically. The invite POST \
-         itself is covered by 'invite_accepted_or_not_implemented'. Re-run this journey \
-         once a /v1/customer/team/accept or equivalent invite-completion endpoint lands.",
-    )
+/// The by-EMAIL Clerk invitation round-trip (WP-4) is still OOB and not asserted
+/// here; this journey proves the membership + per-seat access the backend now
+/// supports. Gates cleanly if the member creds are not provisioned.
+fn second_seat_scoped_access_gated_oob(cfg: &Config, client: &Client) -> JourneyResult {
+    let name = "Team: second seat gains scoped CAS access (multi-seat under one tenant)";
+    let start = Instant::now();
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+
+    let (Some(member_token), Some(member_tenant), Some(member_uid)) = (
+        cfg.token(TokenKind::TeamMember),
+        cfg.team_member_tenant.as_deref(),
+        cfg.team_member_user_id.as_deref(),
+    ) else {
+        return JourneyResult::gated(
+            name,
+            "CORELINK_E2E_PAT_TEAM_MEMBER / _TEAM_MEMBER_TENANT / _TEAM_MEMBER_USER_ID not set — \
+             needs an operator-provisioned ACTIVE team member (the by-email Clerk invite flow is \
+             WP-4/OOB). The membership backend (list/seat) is what this asserts.",
+        );
+    };
+    let Some(admin) = cfg.token(TokenKind::Admin) else {
+        return JourneyResult::gated(name, "CORELINK_E2E_PAT_ADMIN not set — needed to list the team");
+    };
+
+    // (1) The member appears in the admin's team list (the seat is registered).
+    let list_url = url_customer(cfg, "team");
+    let listed = match client.get(&list_url).header(AUTHORIZATION, bearer(admin)).send() {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {list_url}: {e}")),
+    };
+    if listed.status().as_u16() != 200 {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("GET team got {} (expected 200 to verify the seat)", listed.status()),
+        );
+    }
+    let body: serde_json::Value = match listed.bytes() {
+        Ok(b) => serde_json::from_slice(&b).unwrap_or(serde_json::Value::Null),
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("team body: {e}")),
+    };
+    let member_listed = body["members"]
+        .as_array()
+        .map(|ms_| ms_.iter().any(|m| m["user_id"].as_str() == Some(member_uid)))
+        .unwrap_or(false);
+    if !member_listed {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("member {member_uid} not present in the team list — seat not registered"),
+        );
+    }
+
+    // (2) The member's tenant-scoped PAT actually works on the data plane.
+    let blob = unique_blob("corelink-e2e-second-seat");
+    let hash = blake3_hex(&blob);
+    let url = url_cas(cfg, member_tenant, &hash);
+    let put = match client
+        .put(&url)
+        .header(AUTHORIZATION, bearer(member_token))
+        .header(CONTENT_TYPE, "application/octet-stream")
+        .body(blob)
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("member PUT {url}: {e}")),
+    };
+    match put.status().as_u16() {
+        200 | 201 => JourneyResult::pass(name, ms(start)),
+        other => JourneyResult::fail(
+            name,
+            ms(start),
+            format!("second-seat member PAT CAS write got {other} (expected 200/201 scoped access)"),
+        ),
+    }
 }
 
 // ─── Journey 5: Seat removal revokes access — gated, no route ─────────────────
 
-/// There is no seat-removal route in the live router. Searched:
-/// `crates/corelink-container/src/routes/customer.rs` (full router fn +
-/// route table comment), `worker/src/index.ts`, and a repo-wide grep for
-/// `TeamRemove`, `team.*remove`, `seat.*remove`, `member.*delete`,
-/// `DELETE.*team`. Only `GET /v1/customer/team` and
-/// `POST /v1/customer/team/invite` exist as of harness-freeze.
-fn seat_removal_gated_no_route(_cfg: &Config, _client: &Client) -> JourneyResult {
-    JourneyResult::gated(
-        "Team: seat removal → invited member's further access is revoked",
-        "No seat-removal route found in crates/corelink-container/src/routes/customer.rs. \
-         Searched for DELETE /v1/customer/team/:user_id and equivalents — route does not \
-         exist. Gate this journey until a seat-removal endpoint lands and add a \
-         url_customer(cfg, \"team/{user_id}/remove\") or equivalent builder.",
+/// **Seat removal revokes the member's access.** With `DELETE
+/// /v1/customer/team/:user_id` live (ADR-S33-001), removing a member must flip
+/// the seat to `removed` AND revoke the member's PATs — so the member's
+/// previously-working data-plane access is then DENIED. This is the load-bearing
+/// security boundary (a removed member must lose access, not just a list entry).
+///
+/// Order: this runs AFTER `second_seat_scoped_access` (which proved the member
+/// could write), so the member starts with access. Gates cleanly if the member
+/// creds are not provisioned.
+fn seat_removal_gated_no_route(cfg: &Config, client: &Client) -> JourneyResult {
+    let name = "Team: seat removal → invited member's further access is revoked";
+    let start = Instant::now();
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+
+    let (Some(member_token), Some(member_tenant), Some(member_uid)) = (
+        cfg.token(TokenKind::TeamMember),
+        cfg.team_member_tenant.as_deref(),
+        cfg.team_member_user_id.as_deref(),
+    ) else {
+        return JourneyResult::gated(
+            name,
+            "CORELINK_E2E_PAT_TEAM_MEMBER / _TEAM_MEMBER_TENANT / _TEAM_MEMBER_USER_ID not set — \
+             needs an operator-provisioned ACTIVE team member to remove.",
+        );
+    };
+    let Some(admin) = cfg.token(TokenKind::Admin) else {
+        return JourneyResult::gated(name, "CORELINK_E2E_PAT_ADMIN not set — needed to remove a seat");
+    };
+
+    // Precondition: the member currently HAS data-plane access (so a later deny
+    // proves the removal, not a pre-existing lack of access).
+    let probe = unique_blob("corelink-e2e-seat-removal-pre");
+    let probe_hash = blake3_hex(&probe);
+    let probe_url = url_cas(cfg, member_tenant, &probe_hash);
+    let pre = match client
+        .put(&probe_url)
+        .header(AUTHORIZATION, bearer(member_token))
+        .header(CONTENT_TYPE, "application/octet-stream")
+        .body(probe)
+        .send()
+    {
+        Ok(r) => r.status().as_u16(),
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("pre-probe {probe_url}: {e}")),
+    };
+    if !matches!(pre, 200 | 201) {
+        return JourneyResult::gated(
+            name,
+            format!("member lacks access BEFORE removal (got {pre}) — cannot prove revocation"),
+        );
+    }
+
+    // Remove the seat (owner/admin scope). Expect 200 + a revoked-PAT count.
+    let del_url = url_customer(cfg, &format!("team/{member_uid}"));
+    let del = match client
+        .delete(&del_url)
+        .header(AUTHORIZATION, bearer(admin))
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("DELETE {del_url}: {e}")),
+    };
+    let dstatus = del.status().as_u16();
+    if dstatus != 200 {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("seat-removal DELETE got {dstatus} (expected 200; 403 ⇒ admin lacked write scope)"),
+        );
+    }
+
+    // The member's access must now be DENIED. The native PAT gate has a ~5s
+    // verify-cache, so poll (bounded) until the deny lands — a real removal takes
+    // effect within that window; a persistent 2xx is the security failure.
+    for attempt in 0..8 {
+        let blob = unique_blob("corelink-e2e-seat-removal-post");
+        let hash = blake3_hex(&blob);
+        let url = url_cas(cfg, member_tenant, &hash);
+        let status = match client
+            .put(&url)
+            .header(AUTHORIZATION, bearer(member_token))
+            .header(CONTENT_TYPE, "application/octet-stream")
+            .body(blob)
+            .send()
+        {
+            Ok(r) => r.status().as_u16(),
+            Err(e) => return JourneyResult::fail(name, ms(start), format!("post-probe {url}: {e}")),
+        };
+        if expect_denied("removed-member CAS write", status).is_ok() {
+            return JourneyResult::pass(name, ms(start));
+        }
+        if !matches!(status, 200 | 201) {
+            // Some non-2xx, non-standard-deny — surface it rather than spin.
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("post-removal member write got {status} (expected a 401/403/404 deny)"),
+            );
+        }
+        if attempt < 7 {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+        }
+    }
+    JourneyResult::fail(
+        name,
+        ms(start),
+        "SEAT-REMOVAL INTEGRITY: removed member's PAT still wrote (2xx) after ~16s — the seat \
+         removal did NOT revoke the member's data-plane access"
+            .to_string(),
     )
 }
