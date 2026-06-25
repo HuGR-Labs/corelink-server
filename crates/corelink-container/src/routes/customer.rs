@@ -37,7 +37,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use corelink_handler_customer::{
@@ -45,7 +45,7 @@ use corelink_handler_customer::{
     CustomerHandlerError, CustomerKeysHandler, CustomerOverviewHandler, CustomerTeamHandler,
     CustomerUsageHandler, InMemoryAuditSink, InMemoryCustomerHandler, InMemorySliObserver,
     KeyCreateRequest, KeyRevokeRequest, KeysListRequest, OverviewRequest, PortalRequest,
-    TeamInviteRequest, TeamListRequest, UsageRequest,
+    TeamInviteRequest, TeamListRequest, TeamRemoveRequest, UsageRequest,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -164,6 +164,7 @@ pub fn router(state: CustomerRouteState) -> Router {
         .route("/v1/customer/keys/:pat_id/revoke", post(handle_keys_revoke))
         .route("/v1/customer/team", get(handle_team_list))
         .route("/v1/customer/team/invite", post(handle_team_invite))
+        .route("/v1/customer/team/:user_id", delete(handle_team_remove))
         .with_state(state)
 }
 
@@ -857,6 +858,55 @@ async fn handle_team_invite(
     }
 }
 
+/// `DELETE /v1/customer/team/:user_id` — remove a member's seat. Owner/admin
+/// only (cache-write scope); flips the seat to `removed` AND revokes the
+/// member's PATs (the load-bearing security effect). Returns 200 with the
+/// removed member + the revoked-PAT count.
+async fn handle_team_remove(
+    State(state): State<CustomerRouteState>,
+    headers: HeaderMap,
+    Path(user_id): Path<String>,
+) -> impl IntoResponse {
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401 first.
+    let t = match tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
+    if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
+        return resp;
+    }
+    // Privilege gate: removing a seat is a destructive admin op that revokes
+    // another principal's credentials. A read-only (`cas:r`) caller must NOT be
+    // able to remove a seat (intra-tenant credential-DoS / member lockout) —
+    // require cache-write capability (mirrors keys-revoke + invite-privileged).
+    let caller_scope = header_or(&headers, crate::scope::SCOPE_HEADER, "");
+    if !crate::scope::requires_cache_write(&caller_scope) {
+        return (
+            StatusCode::FORBIDDEN,
+            "insufficient scope to remove a team member",
+        )
+            .into_response();
+    }
+    let p = principal(&headers);
+    let req = TeamRemoveRequest::new(t, p, user_id, now_ms());
+    match state.team.remove(req) {
+        Ok(resp) => {
+            let body: Value = json!({
+                "member": {
+                    "user_id":   resp.member.user_id,
+                    "email":     resp.member.email,
+                    "role":      resp.member.role,
+                    "joined_at": resp.member.joined_at,
+                    "status":    resp.member.status,
+                },
+                "revoked_pats": resp.revoked_pats,
+            });
+            (StatusCode::OK, Json(body)).into_response()
+        }
+        Err(e) => map_err(e),
+    }
+}
+
 // ─── Error mapping ────────────────────────────────────────────────────────────
 
 /// Map a [`CustomerHandlerError`] to the canonical HTTP response.
@@ -1382,6 +1432,63 @@ mod tests {
         assert_eq!(v["member"]["email"], "alice@example.com");
         assert_eq!(v["member"]["role"], "Developer");
         assert_eq!(v["member"]["status"], "invited");
+    }
+
+    #[tokio::test]
+    async fn team_remove_without_write_scope_is_403() {
+        // A read-only caller (no cache-write scope) must NOT remove a seat —
+        // the privilege gate fires 403 (intra-tenant member-lockout defense).
+        let (state, _) = fixture();
+        let app = router(state);
+        let req = Request::builder()
+            .uri("/v1/customer/team/user_victim")
+            .method("DELETE")
+            .header("x-corelink-tenant-id", "t7")
+            .header("x-corelink-token-prefix", "clpat_t7")
+            .header("x-corelink-scope", "read-only")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn team_remove_with_write_scope_flips_seat() {
+        // Seed a member via invite, then remove it with a write-scoped caller.
+        let (state, _) = fixture();
+        let app = router(state);
+        let invite_body = serde_json::to_string(&serde_json::json!({
+            "email": "bob@example.com", "role": "Developer"
+        }))
+        .unwrap();
+        let invite = Request::builder()
+            .uri("/v1/customer/team/invite")
+            .method("POST")
+            .header("x-corelink-tenant-id", "t7")
+            .header("x-corelink-token-prefix", "clpat_t7")
+            .header("content-type", "application/json")
+            .body(Body::from(invite_body))
+            .unwrap();
+        let iresp = app.clone().oneshot(invite).await.expect("invite oneshot");
+        assert_eq!(iresp.status(), StatusCode::CREATED);
+        let ibytes = to_bytes(iresp.into_body(), 1 << 20).await.expect("body");
+        let iv: serde_json::Value = serde_json::from_slice(&ibytes).expect("json");
+        let user_id = iv["member"]["user_id"].as_str().expect("user_id").to_owned();
+
+        let remove = Request::builder()
+            .uri(format!("/v1/customer/team/{user_id}"))
+            .method("DELETE")
+            .header("x-corelink-tenant-id", "t7")
+            .header("x-corelink-token-prefix", "clpat_t7")
+            .header("x-corelink-scope", "read-write")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(remove).await.expect("remove oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = to_bytes(resp.into_body(), 1 << 20).await.expect("body");
+        let v: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(v["member"]["status"], "removed");
+        assert!(v["revoked_pats"].is_number());
     }
 
     // ── Audit query route ─────────────────────────────────────────────────────

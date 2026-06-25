@@ -63,5 +63,6 @@ pub use request::{
     AuditQueryRequest, AuditQueryResponse, BillingRequest, BillingResponse, KeyCreateRequest,
     KeyCreateResponse, KeyRevokeRequest, KeyRevokeResponse, KeysListRequest, KeysListResponse,
     OverviewRequest, OverviewResponse, PortalRequest, PortalResponse, TeamInviteRequest,
-    TeamInviteResponse, TeamListRequest, TeamListResponse, UsageRequest, UsageResponse,
+    TeamInviteResponse, TeamListRequest, TeamListResponse, TeamRemoveRequest, TeamRemoveResponse,
+    UsageRequest, UsageResponse,
 };

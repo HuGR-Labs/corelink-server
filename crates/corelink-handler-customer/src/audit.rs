@@ -78,8 +78,14 @@ pub enum AuditEventKind {
     TeamInviteCommitted,
     /// `corelink.customer.team.denied` — emitted on cross-tenant or
     /// auth rejection BEFORE the rejection response (covers list +
-    /// invite).
+    /// invite + remove).
     TeamDenied,
+    /// `corelink.customer.team.remove.attempted` — emitted BEFORE the
+    /// seat-removal mutation.
+    TeamRemoveAttempted,
+    /// `corelink.customer.team.remove.committed` — emitted AFTER the seat
+    /// is durably removed and the member's PATs revoked.
+    TeamRemoveCommitted,
 
     // --- Audit query ---
     /// `corelink.customer.audit.query.attempted` — emitted on every
@@ -116,6 +122,8 @@ impl AuditEventKind {
             Self::TeamInviteAttempted => "corelink.customer.team.invite.attempted",
             Self::TeamInviteCommitted => "corelink.customer.team.invite.committed",
             Self::TeamDenied => "corelink.customer.team.denied",
+            Self::TeamRemoveAttempted => "corelink.customer.team.remove.attempted",
+            Self::TeamRemoveCommitted => "corelink.customer.team.remove.committed",
             Self::AuditQueryAttempted => "corelink.customer.audit.query.attempted",
             Self::AuditQueryServed => "corelink.customer.audit.query.served",
             Self::AuditQueryDenied => "corelink.customer.audit.query.denied",

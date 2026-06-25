@@ -801,6 +801,60 @@ impl TeamInviteResponse {
     }
 }
 
+/// Team seat-removal request — `DELETE /v1/customer/team/{user_id}`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct TeamRemoveRequest {
+    /// Caller's authenticated tenant.
+    pub caller_tenant: String,
+    /// Caller principal (must be owner/admin; never self-removal of the owner).
+    pub principal: String,
+    /// The member `user_id` whose seat is being removed.
+    pub target_user_id: String,
+    /// Wall-clock timestamp in unix-millis.
+    pub at_unix_ms: u64,
+}
+
+impl TeamRemoveRequest {
+    /// Construct a [`TeamRemoveRequest`] from its fields.
+    #[must_use]
+    pub fn new(
+        caller_tenant: impl Into<String>,
+        principal: impl Into<String>,
+        target_user_id: impl Into<String>,
+        at_unix_ms: u64,
+    ) -> Self {
+        Self {
+            caller_tenant: caller_tenant.into(),
+            principal: principal.into(),
+            target_user_id: target_user_id.into(),
+            at_unix_ms,
+        }
+    }
+}
+
+/// Team seat-removal response — the removed member + how many PATs were revoked.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct TeamRemoveResponse {
+    /// The removed member row (now `status = "removed"`).
+    pub member: TeamMemberRow,
+    /// How many of the member's PATs were revoked as part of the removal — the
+    /// load-bearing security effect (a removed seat must lose data-plane access).
+    pub revoked_pats: u32,
+}
+
+impl TeamRemoveResponse {
+    /// Construct a [`TeamRemoveResponse`] from its fields.
+    #[must_use]
+    pub fn new(member: TeamMemberRow, revoked_pats: u32) -> Self {
+        Self {
+            member,
+            revoked_pats,
+        }
+    }
+}
+
 // ─── Audit query ─────────────────────────────────────────────────────────────
 
 /// Audit query request — `GET /v1/customer/audit` canonical shape.
