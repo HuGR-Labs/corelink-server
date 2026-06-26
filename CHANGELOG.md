@@ -23,6 +23,18 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **OKF knowledge-wiki foundation: a self-maintaining, code-grounded architecture wiki (OKF v0.1).**
+  Adopts Google's Open Knowledge Format as a vendor-neutral, in-repo concept bundle (`docs/knowledge/`).
+  Ships the frozen `OKF-CoreLink` profile + concept template (`docs/internal/okf-wiki/`), the
+  146-candidate `concept-manifest.yaml` completeness oracle, a stdlib validator `scripts/validate_okf.py`
+  (checks C1–C10b: conformance, code-grounding via `source_files`/`path:line` citations, and SHA-checkpoint
+  freshness — anti-drift via two-tree `git diff`, never `git log -L`), a self-running fixture acceptance
+  suite (`tests/okf/`, 17/17 incl. hermetic git-harnesses for the C5 freshness + C5b SHA-bump checks), the bundle scaffold +
+  deterministic index generator (`scripts/okf_{scaffold,index}.py`), and a fast PR gate
+  (`.github/workflows/okf_wiki.yml`, ubuntu-latest, `fetch-depth: 0`). Concept fill (architecture + 76 ADRs
+  + doc-extraction) follows in subsequent PRs; all 146 candidates start `status: planned` so the foundation
+  is green at 0 concepts. Contract cold-critic-reviewed (FREEZE-OK); residual `source_files`-completeness
+  risk logged in the profile §4.
 - **Cache-HIT header makes the cross-tenant `_public` moat black-box-provable.** The brew adapter's
   `BottleService::fetch` now returns a `CacheFetch { bytes, is_hit }` wrapper (error path unchanged) and
   the brew server sets `X-Cache: HIT` (served from the shared `_public` namespace) or `X-Cache: MISS`
