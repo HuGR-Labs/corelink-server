@@ -34,6 +34,8 @@
 //! | `CORELINK_E2E_PAT_TENANT_B` | A valid PAT for the SECOND tenant |
 //! | `CORELINK_E2E_PAT_FREE/_SOLO/_PRO/_ENTERPRISE/_PASTDUE` | Plan-tier PATs |
 //! | `CORELINK_E2E_RUN_SLOW`     | `1` to enable slow/CLI journeys (bazel, quota) |
+//! | `CORELINK_E2E_MIN_PASS`     | Floor: RED if fewer journeys PASS (anti green-by-vacuum) |
+//! | `CORELINK_E2E_MAX_GATED`    | Ceiling: RED if MORE journeys GATE (catches silent Pass→Gated) |
 //!
 //! Any absent token GATES the journeys that need it — never a silent skip.
 
@@ -124,6 +126,19 @@ fn main() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(1);
 
+    // MAX-GATED CEILING (auditor finding — the floor's dual). The floor catches a
+    // wholesale provisioning collapse (pass count crashes), but NOT a SINGLE
+    // load-bearing journey silently flipping Pass→Gated: with floor 40 and ~110
+    // passing, one control re-gating leaves pass≥floor and the suite still reads
+    // GREEN. A 5xx outage, an unbuilt feature returning a "gated" code, or a
+    // dropped cred would all hide here. The ceiling pins the EXPECTED gated count
+    // (the known-architectural gates): if `gated` rises above it, a journey that
+    // should PASS re-gated → RED. Optional (unset = no ceiling, for bare
+    // `cargo run`); the provisioned wrapper sets it to the baseline gated count.
+    let max_gated: Option<usize> = std::env::var("CORELINK_E2E_MAX_GATED")
+        .ok()
+        .and_then(|v| v.parse().ok());
+
     let (verdict, exit_red) = if fail > 0 {
         ("RED (a journey FAILED)".to_owned(), true)
     } else if pass < min_pass {
@@ -131,6 +146,16 @@ fn main() {
             format!(
                 "RED — only {pass} PASS < floor {min_pass} ({gated} gated). Nothing substantive \
                  ran; this is NOT a green. Provision CORELINK_E2E_PAT_* / lower CORELINK_E2E_MIN_PASS."
+            ),
+            true,
+        )
+    } else if matches!(max_gated, Some(ceil) if gated > ceil) {
+        let ceil = max_gated.unwrap_or(0);
+        (
+            format!(
+                "RED — {gated} GATED > ceiling {ceil}: a journey that should PASS silently \
+                 re-gated (Pass→Gated). Inspect the newly-gated rows above; if the new gate \
+                 is intentional, raise CORELINK_E2E_MAX_GATED."
             ),
             true,
         )
