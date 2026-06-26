@@ -1,0 +1,52 @@
+name: OKF-CoreLink Wiki Nightly (C-AGE / C-REV)
+
+# The secondary OKF freshness checks (contract §4, "Secondary (nightly, WARN)")
+# catch UNdeclared-dependency rot that the per-PR C5 gate cannot see:
+#   - C-AGE : a non-deferred concept whose checkpoint_sha is older than 90 days
+#             is flagged for human re-attestation (the day-60 "confident-but-stale"
+#             failure mode — time as a backstop, never the primary gate).
+#   - C-REV : reverse-coverage — a crate cluster changed since the oldest concept
+#             checkpoint referencing it but NO concept's source_files covers it.
+# These are WARN-only and so are NOT wired into the per-PR gate (okf_wiki.yml);
+# without this schedule they would never run. `--nightly` enables them; the run
+# still exits 0 on WARN (they are non-blocking, surfaced in --verbose output).
+
+on:
+  schedule:
+    # 05:37 UTC daily — staggered off the other crons (GitHub dispatches
+    # scheduled events with lag; an off-the-hour minute avoids the herd).
+    - cron: '37 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  okf-nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        # fetch-depth: 0 — C-AGE reads each checkpoint_sha commit date and C-REV
+        # diffs from the oldest checkpoint; both need full history.
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # actions/checkout@v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: Install PyYAML (venv on system python3)
+        # Mirror okf_wiki.yml: the validator runs on stdlib, but the nested
+        # concept-manifest.yaml (C10/C10b oracle) needs a real YAML parser.
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv
+          .venv/bin/python3 -m pip install --upgrade pip
+          .venv/bin/python3 -m pip install pyyaml
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Validate OKF-CoreLink bundle with nightly WARN checks
+        # --nightly adds C-AGE + C-REV; --verbose so the WARN lines print to the
+        # job log. Still exits 0 unless a blocking C1..C10b failure exists.
+        run: python3 scripts/validate_okf.py --nightly --verbose

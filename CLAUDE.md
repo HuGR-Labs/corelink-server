@@ -10,6 +10,15 @@ Sold **self-serve to SMBs** — NOT enterprise, and NOT "just a build cache."
 It already exposes multiple cache surfaces: native CAS/AC, **Bazel REAPI v2**
 (`routes/bazel_v2.rs`), **Turborepo** (`routes/turbo_v8.rs`), and **sccache** (WebDAV).
 
+## Architecture wiki (OKF)
+
+`docs/knowledge/` is the **code-grounded architecture wiki** — 146 OKF concepts,
+each naming the `source_files` it explains (anti-drift gated against them).
+Browse `docs/knowledge/index.md`, or the rendered site `docs/okf-wiki-site/index.html` (search + cross-link graph; regen via `scripts/okf_render.py`). **Rule: before modifying a
+subsystem, load its concepts first** — don't work blind. Query them with
+`python3 scripts/okf_context.py --file <path>` / `--tag <area>` (add `--full`
+for bodies), or invoke the **`okf-context`** skill.
+
 ## Working on this repo — gotchas that actually bite
 
 - **Toolchain:** the rustup proxy is broken. Put the toolchain on PATH:

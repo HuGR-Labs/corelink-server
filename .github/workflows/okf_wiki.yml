@@ -63,3 +63,12 @@ jobs:
         # C1..C10b has a bad fixture it catches and the golden bundle passes
         # (C5b via a real throwaway-git two-revision harness). The done-oracle.
         run: bash tests/okf/run_fixtures.sh
+
+      - name: Reconciliation worklist (only if validation failed)
+        # Makes a RED freshness gate actionable: if the validator above failed
+        # (most often C5 — a cited line-range drifted under a concept), print the
+        # deterministic "what needs re-authoring" brief so the author sees exactly
+        # which concepts to reconcile, which source files moved, and the diff
+        # hunks — instead of re-deriving it by hand. Reporter, never blocks.
+        if: failure()
+        run: python3 scripts/okf_reconcile.py

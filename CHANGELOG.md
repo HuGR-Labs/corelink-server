@@ -35,6 +35,17 @@ Each entry cross-references:
   + doc-extraction) follows in subsequent PRs; all 146 candidates start `status: planned` so the foundation
   is green at 0 concepts. Contract cold-critic-reviewed (FREEZE-OK); residual `source_files`-completeness
   risk logged in the profile §4.
+- **OKF self-maintaining engine (the wiki keeps itself honest).** Adds three first-class tools + a nightly
+  schedule + an agent procedure that close the maintenance loop around the validator: `scripts/okf_status.py`
+  (deterministic, stdlib-only, line-based) flips each manifest candidate's `status: planned↔active` to match
+  whether its `docs/knowledge/<id>.md` exists — idempotent, `--check` mode reports drift without writing;
+  `scripts/okf_reconcile.py` reuses the frozen C5 two-tree-diff machinery from `validate_okf` to emit the
+  deterministic "what needs re-authoring" worklist (stale concept → drifted source files → changed cited
+  line ranges → diff hunks; `--json`; always exit 0). The new `.github/workflows/okf_nightly.yml` (cron
+  `37 5 * * *` + `workflow_dispatch`) finally runs the secondary `--nightly` C-AGE (90-day staleness) /
+  C-REV (reverse-coverage) WARN checks that previously never executed; the PR gate `okf_wiki.yml` gains an
+  `if: failure()` step that prints the reconciliation worklist so a red freshness gate names exactly which
+  concepts to fix. The LLM half of self-healing is `.claude/skills/okf-reconcile/SKILL.md`.
 - **Cache-HIT header makes the cross-tenant `_public` moat black-box-provable.** The brew adapter's
   `BottleService::fetch` now returns a `CacheFetch { bytes, is_hit }` wrapper (error path unchanged) and
   the brew server sets `X-Cache: HIT` (served from the shared `_public` namespace) or `X-Cache: MISS`
