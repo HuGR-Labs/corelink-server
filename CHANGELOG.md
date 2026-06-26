@@ -23,6 +23,16 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Account-delete erasure sink wired — the route now honors deletions (C-ACCTDEL).** `POST
+  /v1/customer/account/delete` no longer fail-safe-503s in configured envs: `routes.rs` now wires
+  `customer::account_deletion_from_env()` (a `D1HttpCustomerDb` row source + the new
+  `dsr::InProcessErasureSink`). The sink drives the **same** in-process, D1-backed erasure worker the
+  `/_internal/dsr/erase` consumer (the Clerk `user.deleted` path) runs — so a self-serve delete and a
+  webhook erasure converge on one prod-proven engine (no new erasure logic, no CF Queue producer). Still
+  fails CLOSED (503) when `StorageEnv`/erase-key is unset (dev/CI). A legitimacy-gate reject or engine
+  error surfaces as `Err` → the route 500s and the durable `dsr_requested` anchor + 24h verify sweep
+  retry the obligation — never a silent un-honored erasure. Unit tests cover the reject→Err and
+  malformed-message→Err mappings.
 - **Cache-HIT header makes the cross-tenant `_public` moat black-box-provable.** The brew adapter's
   `BottleService::fetch` now returns a `CacheFetch { bytes, is_hit }` wrapper (error path unchanged) and
   the brew server sets `X-Cache: HIT` (served from the shared `_public` namespace) or `X-Cache: MISS`
