@@ -11,7 +11,7 @@ profile_version: '0.1'
 
 This is the reserved machine-generated listing of every concept in `docs/knowledge/` (profile §1 / §2.3). Concepts are grounded code/docs knowledge; author new ones with `scripts/okf_scaffold.py` and re-run this generator. The frozen contract lives outside the bundle at `docs/internal/okf-wiki/01-okf-corelink-profile.contract.md`; the change history is in `/log.md`.
 
-**Concepts: 114**
+**Concepts: 146**
 
 ## planes
 
@@ -150,3 +150,50 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [ADR-S32-001 — Permit BSL-1.0 in the license allowlist](/adr/adr-s32-001-bsl-1.0-license-allowlist.md)
 - [ADR-S33-001 — Team multi-seat: additive membership model (not Clerk Orgs)](/adr/adr-s33-001-team-multi-seat-membership-model.md)
 - [WAIVER-S14-001 — Legal-externo review timeline exception](/adr/waiver-s14-001-legal-externo-timeline.md)
+
+## ops
+
+- [The admin plane: config-singleton CAS + dual-approval mutate + pilot lifecycle](/ops/admin-plane.md)
+- [The audit export + analytics plane and customer re-verification](/ops/audit-analytics-plane.md)
+- [The corelink CLI: JSON output schema & opt-in telemetry](/ops/cli-reference.md)
+- [Cross-team tech-lead handoff: the hugit P2 wave-plan response](/ops/cross-tl-handoff.md)
+- [Launch-day production deploy sequence (Phases D→H)](/ops/deploy-runbook.md)
+- [CF Worker deployment POC: wasm32 trait-adapter gotchas](/ops/dev-deployment.md)
+- [Engineering onboarding & the buddy protocol](/ops/engineering-onboarding.md)
+- [GC / eviction operations](/ops/gc-eviction.md)
+- [Performance playbook](/ops/perf-playbook.md)
+- [Release / GA tag process](/ops/release-process.md)
+- [Reproducible-build process](/ops/reproducible-build.md)
+- [Runners fabric (introspect-gated compute)](/ops/runners-fabric.md)
+- [SDK reference (python/go/javascript)](/ops/sdk-reference.md)
+- [Secrets lifecycle & PAT-scope runbook](/ops/secrets-lifecycle.md)
+
+## security
+
+- [Control-plane attack surface](/security/attack-surface-controlplane.md)
+- [Data-plane attack surface](/security/attack-surface-dataplane.md)
+- [Credential handling & PAT secrecy](/security/credential-handling.md)
+- [Money-path security review](/security/money-path-review.md)
+- [Pentest & red-team learnings](/security/pentest-learnings.md)
+- [Security posture overview](/security/posture-overview.md)
+
+## compliance
+
+- [RFC-6962 audit / transparency chain](/compliance/audit-chain.md)
+- [Data residency posture](/compliance/data-residency.md)
+- [DSR / right-to-erasure pipeline](/compliance/dsr-erasure.md)
+- [Ed25519/JCS erasure attestation](/compliance/erasure-attestation.md)
+- [Sub-processor / vendor DPA reviews](/compliance/sub-processors.md)
+
+## testing
+
+- [End-to-end testing strategy](/testing/e2e-strategy.md)
+- [CI gate machinery & quality gaps](/testing/gate-machinery.md)
+- [Real-user black-box suites & remaining journeys](/testing/real-user-suites.md)
+
+## launch
+
+- [Go-live readiness / launch due-diligence](/launch/go-live-readiness.md)
+- [Money-path: checkout + billing ingest](/launch/money-path.md)
+- [Signup -> tenant onboarding flow](/launch/signup-onboarding.md)
+- [The 6-tier model & DPA-first tier-select checkout](/launch/tier-model.md)
