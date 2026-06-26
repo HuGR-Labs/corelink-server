@@ -248,6 +248,66 @@ fn build_d1_worker() -> Option<(InMemoryErasureWorker, Arc<crate::storage::d1_ht
     Some((worker, d1))
 }
 
+// ─── Account-deletion erasure sink (C-ACCTDEL transport) ───────────────────────
+
+/// Production [`crate::routes::customer::DsrErasureSink`] that drives the SAME
+/// in-process, D1-backed erasure worker the `/_internal/dsr/erase` consumer
+/// (the Clerk `user.deleted` path) runs. A self-serve account-delete request and
+/// a webhook-originated erasure thus converge on ONE prod-proven erasure engine —
+/// no new erasure logic, and no CF Queue producer (the container has none, so the
+/// "enqueue" is a direct, synchronous drive of the worker; `process_erasure` is
+/// sync, with the async D1 round-trips bridged inside the adapters).
+pub struct InProcessErasureSink {
+    worker: Arc<InMemoryErasureWorker>,
+}
+
+impl core::fmt::Debug for InProcessErasureSink {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("InProcessErasureSink").finish()
+    }
+}
+
+impl InProcessErasureSink {
+    /// Wire the sink over a shared D1-backed erasure worker.
+    #[must_use]
+    pub fn new(worker: Arc<InMemoryErasureWorker>) -> Self {
+        Self { worker }
+    }
+}
+
+impl crate::routes::customer::DsrErasureSink for InProcessErasureSink {
+    fn enqueue(&self, message: &serde_json::Value) -> Result<(), String> {
+        // Deserialize + field-parse the canonical dsr.queued.v1 through the EXACT
+        // same path `handle_erase` uses (`parse_request`), then drive the shared
+        // worker. Unknown fields (schema/source/clerk_user_id) are ignored.
+        let msg: DsrQueuedV1 = serde_json::from_value(message.clone())
+            .map_err(|e| format!("dsr.queued.v1 deserialize: {e}"))?;
+        let request = parse_request(&msg)?;
+        match self.worker.process_erasure(&request, now_ms()) {
+            // The requester writes the `dsr_requested` anchor BEFORE enqueue, so a
+            // legitimate request never rejects here. A Reject = legitimacy/D1 fault
+            // → fail-CLOSED (Err → requester maps to 500; the durable anchor + the
+            // 24h verify sweep retry the obligation — never a silent drop).
+            Ok(ErasureDecision::Rejected { .. }) => {
+                Err("erasure rejected (legitimacy gate)".to_owned())
+            }
+            Ok(_decision) => Ok(()),
+            Err(e) => Err(format!("erasure engine error: {e}")),
+        }
+    }
+}
+
+/// Build the production in-process erasure sink over the real D1-backed worker.
+/// `None` when `StorageEnv` is unset (dev/CI) → the account-delete route then
+/// fails CLOSED (503), never a silently-unhonored erasure. The placeholder
+/// (all-no-op, empty-legitimacy) worker is deliberately NOT used here: an
+/// account-delete must reach the real backends or refuse the request.
+#[must_use]
+pub fn build_in_process_erasure_sink() -> Option<Arc<dyn crate::routes::customer::DsrErasureSink>> {
+    let (worker, _d1) = build_d1_worker()?;
+    Some(Arc::new(InProcessErasureSink::new(Arc::new(worker))))
+}
+
 /// Build the route state from env. `None` when `CORELINK_INTERNAL_AUTH_KEY` is
 /// unset or shorter than 32 chars (route not mounted — fail-CLOSED). Mirrors
 /// the ≥32-char floor set by the PAT-signing key standard and recommended by
@@ -527,5 +587,37 @@ mod tests {
             legal_hold: false,
         };
         assert!(parse_request(&msg).is_err());
+    }
+
+    #[test]
+    fn in_process_sink_rejects_unlegitimate_request() {
+        use crate::routes::customer::DsrErasureSink as _;
+        // Placeholder worker = EMPTY legitimacy store → every (dsr_id, tenant) is
+        // NOT-requested → Rejected (pre-fanout, no runtime needed). The sink MUST
+        // surface that as Err (fail-CLOSED) so the requester returns 500 and the
+        // obligation is retried — never a silent "ok" on an un-honored erasure.
+        let sink = InProcessErasureSink::new(Arc::new(build_placeholder_worker().unwrap()));
+        let msg = serde_json::json!({
+            "schema": "dev.hugr.corelink.dsr.queued.v1",
+            "dsr_id": "00000000-0000-7000-8000-000000000001",
+            "tenant_id": "00000000-0000-7000-8000-000000000002",
+            "subject_id": "00000000-0000-7000-8000-000000000002",
+            "erasure_salt_hex": "ab".repeat(32),
+            "queued_at_ms": 1_700_000_000_000_u64,
+            "legal_hold": false,
+            "source": "customer.account.delete",
+        });
+        let err = sink.enqueue(&msg).unwrap_err();
+        assert!(err.contains("rejected"), "unlegitimate erase must Err (got: {err})");
+    }
+
+    #[test]
+    fn in_process_sink_errs_on_malformed_message() {
+        use crate::routes::customer::DsrErasureSink as _;
+        // A body missing the required dsr.queued.v1 fields must fail at
+        // deserialize/parse — never a silent Ok that drops the erasure.
+        let sink = InProcessErasureSink::new(Arc::new(build_placeholder_worker().unwrap()));
+        let bad = serde_json::json!({ "dsr_id": "not-a-uuid", "tenant_id": "x" });
+        assert!(sink.enqueue(&bad).is_err(), "malformed dsr.queued.v1 must Err");
     }
 }
