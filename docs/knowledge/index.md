@@ -11,6 +11,35 @@ profile_version: '0.1'
 
 This is the reserved machine-generated listing of every concept in `docs/knowledge/` (profile §1 / §2.3). Concepts are grounded code/docs knowledge; author new ones with `scripts/okf_scaffold.py` and re-run this generator. The frozen contract lives outside the bundle at `docs/internal/okf-wiki/01-okf-corelink-profile.contract.md`; the change history is in `/log.md`.
 
-**Concepts: 0**
+**Concepts: 19**
 
-_No concepts yet. Empty conformant bundle (0 concepts, 0 stale)._
+## planes
+
+- [Rust container compute plane](/planes/container.md)
+- [Durable Object lifecycle (CoreLinkServer)](/planes/durable-object.md)
+- [Worker → DO → Container request flow](/planes/request-flow.md)
+- [Cloudflare Worker edge plane](/planes/worker-edge.md)
+
+## surfaces
+
+- [Action Cache (AC) surface](/surfaces/action-cache.md)
+- [Bazel REAPI v2 surface](/surfaces/bazel-reapi.md)
+- [Native CAS surface](/surfaces/native-cas.md)
+- [_public package-manager surfaces (npm/pip/brew/oci)](/surfaces/public-packages.md)
+- [sccache / cargo (WebDAV) surface](/surfaces/sccache-cargo.md)
+- [Turborepo v8 remote-cache surface](/surfaces/turborepo.md)
+
+## auth
+
+- [Argon2id adapter-plane verification + scope](/auth/argon2id-verify.md)
+- [D1 PAT store + existence/scope check](/auth/d1-pat-store.md)
+- [Native HMAC fast-reject PAT gate](/auth/hmac-fast-reject.md)
+- [Introspection endpoint (runners fabric authz)](/auth/introspect.md)
+- [The 2-level PAT moat](/auth/pat-moat.md)
+
+## flows
+
+- [Billing quota check flow](/flows/billing-quota-check.md)
+- [CAS write flow](/flows/cas-write.md)
+- [Introspection flow (runners fabric)](/flows/introspection-fabric.md)
+- [PAT verification gauntlet](/flows/pat-gauntlet.md)
