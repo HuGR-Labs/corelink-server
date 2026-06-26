@@ -42,7 +42,8 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::Value;
 
 use crate::harness::{
-    bearer, expect_denied, expect_status, sha256_hex, unique_blob, url_ac, url_ac_list, Config,
+    bearer, expect_denied, expect_gate_denied, expect_status, sha256_hex, unique_blob, url_ac,
+    url_ac_list, Config,
     JourneyResult,
 };
 use crate::personas::Persona;
@@ -281,7 +282,7 @@ fn read_only_cannot_update(cfg: &Config, client: &Client) -> JourneyResult {
             format!("SECURITY: read-only PAT WROTE an AC entry (got {status}) — scope bypass"),
         );
     }
-    if let Err(m) = expect_denied("RO AC update", status) {
+    if let Err(m) = expect_gate_denied("RO AC update", status) {
         return JourneyResult::fail(name, ms(start), m);
     }
 

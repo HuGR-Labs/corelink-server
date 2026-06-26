@@ -34,7 +34,8 @@ use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
 use crate::harness::{
-    bearer, expect_denied, expect_status, sha256_hex, unique_blob, url_turbo_artifact,
+    bearer, expect_denied, expect_gate_denied, expect_status, sha256_hex, unique_blob,
+    url_turbo_artifact,
     url_turbo_events, url_turbo_status, Config, JourneyResult,
 };
 use crate::personas::Persona;
@@ -324,7 +325,7 @@ fn read_only_write_denied(cfg: &Config, client: &Client) -> JourneyResult {
         );
     }
     // Live contract is 403 ("insufficient scope"); accept any deny defensively.
-    if let Err(m) = expect_denied("RO turbo write", status) {
+    if let Err(m) = expect_gate_denied("RO turbo write", status) {
         return JourneyResult::fail(name, ms(start), m);
     }
 

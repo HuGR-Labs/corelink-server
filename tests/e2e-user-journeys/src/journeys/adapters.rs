@@ -344,7 +344,7 @@ fn cargo_readonly_write_denied(cfg: &Config, client: &Client) -> JourneyResult {
             format!("SECURITY: read-only PAT WROTE to cargo (got {status}) — scope not enforced"),
         );
     }
-    if let Err(m) = expect_denied("cargo RO write", status) {
+    if let Err(m) = expect_gate_denied("cargo RO write", status) {
         return JourneyResult::fail(name, ms(start), m);
     }
     JourneyResult::pass(name, ms(start))
@@ -611,7 +611,7 @@ fn oci_token_anonymous_denied(cfg: &Config, client: &Client) -> JourneyResult {
                 "SECURITY: anonymous /token minted a bearer — free credential".to_string(),
             );
         }
-    } else if let Err(m) = expect_denied("oci /token anonymous", tstatus) {
+    } else if let Err(m) = expect_gate_denied("oci /token anonymous", tstatus) {
         return JourneyResult::fail(name, ms(start), m);
     }
 
@@ -629,7 +629,7 @@ fn oci_token_anonymous_denied(cfg: &Config, client: &Client) -> JourneyResult {
             "SECURITY: anonymous /v2/ returned 200 — registry not challenging".to_string(),
         );
     }
-    if let Err(m) = expect_denied("oci /v2 anonymous", vstatus) {
+    if let Err(m) = expect_gate_denied("oci /v2 anonymous", vstatus) {
         return JourneyResult::fail(name, ms(start), m);
     }
     JourneyResult::pass(name, ms(start))
@@ -700,7 +700,7 @@ fn npm_anonymous_denied(cfg: &Config, client: &Client) -> JourneyResult {
             "SECURITY: anonymous npm GET returned 200 — cache not gated".to_string(),
         );
     }
-    if let Err(m) = expect_denied("npm anonymous", status) {
+    if let Err(m) = expect_gate_denied("npm anonymous", status) {
         return JourneyResult::fail(name, ms(start), m);
     }
     JourneyResult::pass(name, ms(start))
@@ -767,7 +767,7 @@ fn pip_anonymous_denied(cfg: &Config, client: &Client) -> JourneyResult {
             "SECURITY: anonymous pip GET returned 200 — cache not gated".to_string(),
         );
     }
-    if let Err(m) = expect_denied("pip anonymous", status) {
+    if let Err(m) = expect_gate_denied("pip anonymous", status) {
         return JourneyResult::fail(name, ms(start), m);
     }
     JourneyResult::pass(name, ms(start))
