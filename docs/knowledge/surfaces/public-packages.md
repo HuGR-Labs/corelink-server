@@ -17,17 +17,20 @@ timestamp: "2026-06-26T00:00:00Z"
 
 These four surfaces turn CoreLink into a read-through caching mirror for the public package ecosystems
 — npm (registry tarballs + metadata), pip (PyPI wheels/sdists + simple index), Homebrew (bottles), and
-OCI (the full Distribution Spec v1.1 registry that docker/podman/buildah/containerd/Helm speak). Public upstream bytes for **pip, brew, and OCI** are stored once under the shared `_public` namespace
+OCI (the full Distribution Spec v1.1 registry that docker/podman/buildah/containerd/Helm speak). Public upstream bytes for **pip and brew** are stored once under the shared `_public` namespace
 and deduped **cross-tenant** — the network-effect moat (`crates/corelink-container/src/routes/pip.rs:115-118`,
-`crates/corelink-container/src/routes/brew.rs:85-95`). **npm is per-tenant today:** npm tarball bytes
-are namespaced per-tenant (`crates/corelink-container/src/routes/npm.rs:40-46`); only npm *metadata*
-splits public/private, and cross-tenant npm tarball dedup is a tracked, not-yet-built enhancement. They
+`crates/corelink-container/src/routes/brew.rs:85-95`). **npm and OCI are per-tenant today:** npm tarball
+bytes are namespaced per-tenant (`crates/corelink-container/src/routes/npm.rs:149-177`) — only npm
+*metadata* splits public/private — and OCI images are likewise stored under the per-tenant namespace,
+isolated by default (`crates/corelink-container/src/routes/oci.rs:188-192`). For both, cross-tenant
+public-byte dedup (npm tarballs / public base images) is a tracked, not-yet-built OPEN DECISION. They
 build on the same [native CAS](/surfaces/native-cas.md) moat the first-party surfaces use.
 
 # Role
 Each surface mounts its `corelink_adapter_host::<pm>` adapter into the container router, derives the
-tenant from the bearer PAT (never the path), enforces per-operation cache scope, and routes immutable
-public bytes through the shared 2-level `MoatCache` under `PUBLIC_NAMESPACE`. Mutable per-package
+tenant from the bearer PAT (never the path), and enforces per-operation cache scope. **pip and brew**
+route immutable public bytes through the shared 2-level `MoatCache` under `PUBLIC_NAMESPACE` (cross-tenant
+dedup); **npm and OCI** store bytes under their per-tenant namespace today. Mutable per-package
 metadata/indexes live in per-tenant (or public-split) D1 KV stores the content-addressed moat cannot
 hold.
 
@@ -51,7 +54,7 @@ hold.
 - Public upstream bytes are deduped cross-tenant under `PUBLIC_NAMESPACE`; the PAT gates access, the public content is shared (`crates/corelink-container/src/routes/pip.rs:32-37`; `crates/corelink-container/src/routes/brew.rs:27-30`).
 - npm `@scoped` (private) packages stay in the per-tenant namespace, never `PUBLIC_NAMESPACE` (`crates/corelink-container/src/routes/npm.rs:97-106`).
 - OCI uses `.merge` not `nest_service` because the first segment after `/v2/` is the OCI repo name, not a tenant — stripping it would corrupt the repo (`crates/corelink-container/src/routes/oci.rs:19-30`).
-- OCI cost/request-count attribution is keyed on the tenant recovered from the verified bearer, not a (stripped, forgeable) header (`crates/corelink-container/src/routes/oci.rs:760-768`).
+- OCI cost/request-count attribution is keyed on the tenant recovered from the verified bearer, not a (stripped, forgeable) header: `oci_bearer_tenant` calls `oci::auth::verify` and recovers the tenant (`crates/corelink-container/src/routes/oci.rs:810-820`), and `oci_quota_gate` charges that resolved tenant (`crates/corelink-container/src/routes/oci.rs:841`).
 
 # Gotchas
 - `_public` writes need BOTH a `tenant_storage_state` row AND a sentinel R2 prefix for byte accounting;
@@ -82,7 +85,8 @@ hold.
 18. `crates/corelink-container/src/routes/oci.rs:690-753` — OCI router (`.merge` mount).
 19. `crates/corelink-container/src/routes/oci.rs:19-30` — why stripping the first segment would corrupt the repo.
 20. `crates/corelink-container/src/routes/oci.rs:754-790` — OCI $-ceiling + request-count gate.
-21. `crates/corelink-container/src/routes/oci.rs:760-768` — cost attribution keyed on the verified bearer, not a header.
+21. `crates/corelink-container/src/routes/oci.rs:810-820` — `oci_bearer_tenant` (verify HMAC bearer → recover tenant); used by `oci_quota_gate` at `crates/corelink-container/src/routes/oci.rs:841` — cost attribution keyed on the verified bearer, not a header.
 22. `crates/corelink-container/src/routes/pip.rs:115-118` — pip wheels dedup cross-tenant under `PUBLIC_NAMESPACE`.
 23. `crates/corelink-container/src/routes/brew.rs:85-95` — brew bottles dedup cross-tenant under `PUBLIC_NAMESPACE`.
-24. `crates/corelink-container/src/routes/npm.rs:40-46` — npm tarball BYTES namespaced per-tenant (cross-tenant dedup is a tracked enhancement).
+24. `crates/corelink-container/src/routes/npm.rs:149-177` — `NpmMoatStore` get/put namespace npm tarball BYTES per-tenant (cross-tenant dedup is a tracked enhancement).
+25. `crates/corelink-container/src/routes/oci.rs:188-192` — OCI images stored under the per-tenant namespace; cross-tenant public-image dedup is a tracked OPEN DECISION.

@@ -40,6 +40,17 @@ Each entry cross-references:
   + doc-extraction) follows in subsequent PRs; all 146 candidates start `status: planned` so the foundation
   is green at 0 concepts. Contract cold-critic-reviewed (FREEZE-OK); residual `source_files`-completeness
   risk logged in the profile §4.
+- **OKF self-maintaining engine (the wiki keeps itself honest).** Adds three first-class tools + a nightly
+  schedule + an agent procedure that close the maintenance loop around the validator: `scripts/okf_status.py`
+  (deterministic, stdlib-only, line-based) flips each manifest candidate's `status: planned↔active` to match
+  whether its `docs/knowledge/<id>.md` exists — idempotent, `--check` mode reports drift without writing;
+  `scripts/okf_reconcile.py` reuses the frozen C5 two-tree-diff machinery from `validate_okf` to emit the
+  deterministic "what needs re-authoring" worklist (stale concept → drifted source files → changed cited
+  line ranges → diff hunks; `--json`; always exit 0). The new `.github/workflows/okf_nightly.yml` (cron
+  `37 5 * * *` + `workflow_dispatch`) finally runs the secondary `--nightly` C-AGE (90-day staleness) /
+  C-REV (reverse-coverage) WARN checks that previously never executed; the PR gate `okf_wiki.yml` gains an
+  `if: failure()` step that prints the reconciliation worklist so a red freshness gate names exactly which
+  concepts to fix. The LLM half of self-healing is `.claude/skills/okf-reconcile/SKILL.md`.
 - **Account-delete erasure sink wired — the route now honors deletions (C-ACCTDEL).** `POST
   /v1/customer/account/delete` no longer fail-safe-503s in configured envs: `routes.rs` now wires
   `customer::account_deletion_from_env()` (a `D1HttpCustomerDb` row source + the new
