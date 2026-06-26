@@ -23,6 +23,11 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **OKF wiki filled to 146/146 code-grounded concepts (waves 1–4 + truth-audit remediation).** The OKF
+  bundle (`docs/knowledge/`) now carries the complete concept set — architecture (planes/surfaces/auth/
+  flows/storage/tenancy/crates), 76 ADR concepts, and 32 doc-extraction concepts — each `path:line`
+  code-grounded and SHA-checkpointed for C5 anti-drift. Adversarially truth-certified (0 BLOCKER; the
+  MAJOR/MINOR findings from the audit wave remediated). `validate_okf.py` → 146 concepts, 0 stale, 0 drift.
 - **OKF knowledge-wiki foundation: a self-maintaining, code-grounded architecture wiki (OKF v0.1).**
   Adopts Google's Open Knowledge Format as a vendor-neutral, in-repo concept bundle (`docs/knowledge/`).
   Ships the frozen `OKF-CoreLink` profile + concept template (`docs/internal/okf-wiki/`), the
