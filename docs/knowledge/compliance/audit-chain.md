@@ -29,7 +29,7 @@ Provide tamper-evident, append-only auditing for security-relevant events (auth,
 - The chain link is `next_hash = BLAKE3(prev_hash_bytes || canonical_bytes(event))`, where the event is canonicalized with RFC 8785 JCS and streamed straight into the hasher `crates/corelink-audit-chain/src/chain.rs:152-162`, with canonical bytes computed via `serde_jcs::to_vec` `crates/corelink-audit-chain/src/chain.rs:97-99`.
 - The 32-byte digest is a `ChainHash` newtype that serializes to lowercase hex on the wire `crates/corelink-audit-chain/src/event.rs:204-229`, and the genesis event uses the Bitcoin-style zero convention `prev_hash = [0u8; 32]` / `sequence_number = 0` `crates/corelink-audit-chain/src/event.rs:79-82`.
 - `HashChainBuilder::append` enforces the link at write time: it rejects a wrong `sequence_number` and rejects an event whose `prev_hash` does not match the current chain head before advancing `crates/corelink-audit-chain/src/chain.rs:285-303`.
-- The daily verifier walks an in-order `[start, end]` slice, recomputes every link with `link_chain_hash`, and advances the running head per event `crates/corelink-audit-chain/src/verifier.rs:186-191`, comparing each event's claimed `prev_hash` to the recomputed head in constant time via `subtle::ConstantTimeEq` `crates/corelink-audit-chain/src/verifier.rs:167-185`.
+- The verifier walks an in-order `[start, end]` slice, recomputes every link with `link_chain_hash`, and advances the running head per event `crates/corelink-audit-chain/src/verifier.rs:186-191` (the *daily* cadence is the DO scheduler cron wired at the WI-S09-007 ship gate, not this verify logic), comparing each event's claimed `prev_hash` to the recomputed head in constant time via `subtle::ConstantTimeEq` `crates/corelink-audit-chain/src/verifier.rs:167-185`.
 - On the first divergence the verifier fails CLOSED — it emits the `chain_break_detected` meta-audit BEFORE returning the `ChainBreak` error carrying the break sequence `crates/corelink-audit-chain/src/verifier.rs:174-184`, and reports the result (count, last good hash, optional break seq) in a `VerifyOutcome` `crates/corelink-audit-chain/src/verifier.rs:53-63`.
 - The verifier also guards tenant isolation (every event's `tenant_id` must match the chain's) and sequence monotonicity before checking the link `crates/corelink-audit-chain/src/verifier.rs:140-156`.
 - For the public witness, an already-signed payload is wrapped as a `SignedEntry` (canonical payload bytes + Ed25519 signature + PEM public key) `crates/corelink-transparency-log/src/entry.rs:28-41` and only its SHA-256 digest is computed `crates/corelink-transparency-log/src/entry.rs:63-66`.
@@ -38,8 +38,8 @@ Provide tamper-evident, append-only auditing for security-relevant events (auth,
 
 # Invariants
 
-- INV-OBS-AUDIT-CHAIN-INTEGRITY: the per-tenant hash chain is unbroken and the daily verifier asserts every link's recomputed hash matches the claimed hash `crates/corelink-audit-chain/src/lib.rs:83-88`.
-- INV-AUDIT-APPEND-ONLY: R2 Object Lock Governance Mode enforces 7-year append-only at the storage level, with tampering caught at verify time via the chain `crates/corelink-audit-chain/src/lib.rs:89-92`.
+- INV-OBS-AUDIT-CHAIN-INTEGRITY: the per-tenant hash chain is unbroken and the verifier asserts every link's recomputed hash matches the claimed hash, failing closed on the first divergence `crates/corelink-audit-chain/src/verifier.rs:167-191`.
+- INV-AUDIT-APPEND-ONLY: 7-year append-only is an **infrastructure** control — R2 Object Lock Governance Mode wired at the WI-S09-007 ship gate (there is no code enforcer for it in this crate); the chain is what catches any post-hoc tampering at verify time `crates/corelink-audit-chain/src/lib.rs:89-92`.
 - Genesis is the zero-hash position by construction: `prev_hash == [0u8; 32]` and `sequence_number == 0`, detected by `is_genesis` `crates/corelink-audit-chain/src/event.rs:439-445`.
 - Sequence numbers are strictly monotonic increasing by 1; the builder advances with `saturating_add(1)` only after both link checks pass `crates/corelink-audit-chain/src/chain.rs:299-302`.
 - Tamper detection surfaces at the first divergent sequence and is fail-CLOSED: the verifier returns `ChainBreak` after emitting the SEV-0 meta-audit `crates/corelink-audit-chain/src/verifier.rs:181-184`.
@@ -74,8 +74,8 @@ Provide tamper-evident, append-only auditing for security-relevant events (auth,
 - `crates/corelink-audit-chain/src/verifier.rs:181-184` — `ChainBreak` returned after meta-audit (fail-closed).
 - `crates/corelink-audit-chain/src/verifier.rs:186-191` — link recompute + running-head advance.
 - `crates/corelink-audit-chain/src/verifier.rs:53-63` — `VerifyOutcome` shape.
-- `crates/corelink-audit-chain/src/lib.rs:83-88` — INV-OBS-AUDIT-CHAIN-INTEGRITY.
-- `crates/corelink-audit-chain/src/lib.rs:89-92` — INV-AUDIT-APPEND-ONLY (R2 Object Lock 7y).
+- `crates/corelink-audit-chain/src/verifier.rs:167-191` — INV-OBS-AUDIT-CHAIN-INTEGRITY enforced by the verify walk (fail-closed on first divergence).
+- `crates/corelink-audit-chain/src/lib.rs:89-92` — INV-AUDIT-APPEND-ONLY (R2 Object Lock 7y — infra, wired WI-S09-007).
 - `crates/corelink-transparency-log/src/entry.rs:28-41` — `SignedEntry` (payload + signature + PEM key).
 - `crates/corelink-transparency-log/src/entry.rs:63-66` — SHA-256 content digest.
 - `crates/corelink-transparency-log/src/entry.rs:71-91` — canonical Rekor `hashedrekord` v0.0.1 builder.

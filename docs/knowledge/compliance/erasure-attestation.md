@@ -15,7 +15,9 @@ tags: ["compliance", "erasure", "ed25519", "jcs", "rfc-8785", "nist-sp-800-88", 
 timestamp: "2026-06-26T00:00:00Z"
 ---
 
-When a BYOK tenant files a DSR erasure request, CoreLink does not merely promise it deleted the data — it destroys CMK access through the KMS provider and emits a cryptographically signed receipt proving the destroy occurred. That receipt is an Ed25519 signature over an RFC 8785 JCS-canonicalized payload, persisted to an R2 audit bucket with 7-year retention and indexed in D1, so the customer and any external auditor can verify it offline with standard Ed25519 tooling and no access to CoreLink infrastructure. This is the control that turns GDPR Art. 17 / LGPD erasure and NIST SP 800-88 Rev.1 §2.4 crypto-erase from a claim into a portable, tamper-evident proof. The sibling control `compliance/dsr-erasure` covers the request orchestration that drives this attestation.
+When a BYOK tenant files a DSR erasure request, the **design** is that CoreLink destroys CMK access through the KMS provider and emits a cryptographically signed receipt proving the destroy occurred — an Ed25519 signature over an RFC 8785 JCS-canonicalized payload that a customer or external auditor can verify offline with standard Ed25519 tooling and no access to CoreLink infrastructure. This concept documents that signing primitive, which is what turns GDPR Art. 17 / LGPD erasure and NIST SP 800-88 Rev.1 §2.4 crypto-erase from a claim into a portable, tamper-evident proof.
+
+**Scope / wiring status (lead-confirmed):** this crate is **pure-logic Ed25519 signing + offline verification only**. The surrounding pieces — the actual KMS CMK-destroy, the R2 (7-year) persistence of the signature, the D1 index, and the public `/v1/public/keys/erasure/{region}.pub` serving endpoint — are the **WI-S11-008 wiring and are NOT yet live**; per the sibling `launch/go-live-readiness` NO-GO audit the attestation signature "is never persisted and has no serving endpoint" today (a non-functional stub), while erasure itself still completes fail-open. Read the present-tense "persisted to R2 / served at the endpoint" statements below as the designed contract, not the running system. The sibling control `compliance/dsr-erasure` covers the request orchestration that would drive this attestation.
 
 # Role
 
@@ -23,7 +25,7 @@ This crate is the pure-logic signing and verification surface for erasure attest
 
 # How it works
 
-- A BYOK erasure destroys CMK access via the KMS provider API, then emits one Ed25519-signed attestation persisted to R2 (7y retention) and indexed in D1 for the public verify endpoint `crates/corelink-erasure-attestation/src/lib.rs:5-14`.
+- By design a BYOK erasure destroys CMK access via the KMS provider API, then emits one Ed25519-signed attestation persisted to R2 (7y retention) and indexed in D1 for the public verify endpoint — but only the signing step is live in this crate; the destroy + R2/D1 persistence + endpoint are WI-S11-008 wiring not yet on the live path (see Scope above) `crates/corelink-erasure-attestation/src/lib.rs:5-14`.
 - The signed payload carries `tenant_id`, `request_id`, `destroyed_ts`, KMS provider/key id, `evidence_hash`, region, and `attestation_key_id` — every field is included in the canonical JSON `crates/corelink-erasure-attestation/src/attestation.rs:17-45`.
 - Signing first JCS-canonicalizes the payload via `serde_jcs::to_string` (RFC 8785) `crates/corelink-erasure-attestation/src/attestation.rs:99`, then signs those canonical bytes with Ed25519 `crates/corelink-erasure-attestation/src/attestation.rs:103`, then base64-encodes the 64-byte signature `crates/corelink-erasure-attestation/src/attestation.rs:104`.
 - The resulting `ErasureAttestation` stores the payload, the base64 signature, and the exact JCS byte string that was signed, which a verifier MUST verify against `crates/corelink-erasure-attestation/src/attestation.rs:52-63`.
@@ -37,7 +39,7 @@ This crate is the pure-logic signing and verification surface for erasure attest
 
 # Invariants
 
-- INV-ERASURE-ATTESTATION-SIGNED (HIGH): every DSR erasure of a BYOK tenant MUST produce exactly one Ed25519-signed attestation persisted in R2 (7y) and indexed in D1 `crates/corelink-erasure-attestation/src/lib.rs:35-39`.
+- INV-ERASURE-ATTESTATION-SIGNED (HIGH): the **designed** contract is that every DSR erasure of a BYOK tenant produces exactly one Ed25519-signed attestation; the signing primitive is live, but the "persisted in R2 (7y) and indexed in D1" half is WI-S11-008 wiring that is not yet on the live path `crates/corelink-erasure-attestation/src/lib.rs:35-39`.
 - The signature MUST be verified against the exact `canonical_payload_jcs` byte string, not a re-serialized payload `crates/corelink-erasure-attestation/src/attestation.rs:60-62`.
 - Identical payloads always canonicalize byte-identically (RFC 8785 determinism), so a signature is stable and reproducible `crates/corelink-erasure-attestation/src/attestation.rs:98-100`.
 - Signing key material is zeroized on drop and never appears in logs, traces, or `Debug` output — the `signing_key` field renders as `[REDACTED]` `crates/corelink-erasure-attestation/src/key.rs:41-52`.

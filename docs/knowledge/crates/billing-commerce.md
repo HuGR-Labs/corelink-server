@@ -5,7 +5,10 @@ description: "The money path — usage aggregation/emit, the idempotent Stripe a
 source_files:
   - "crates/corelink-billing/src/lib.rs"
   - "crates/corelink-billing-stripe/src/lib.rs"
+  - "crates/corelink-billing-stripe/src/signature.rs"
+  - "crates/corelink-billing-stripe/src/idempotency.rs"
   - "crates/corelink-tier-selection/src/lib.rs"
+  - "crates/corelink-tier-selection/src/dpa.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["crates", "billing", "stripe", "tier", "money-path", "commerce"]
@@ -23,14 +26,14 @@ The cluster powers the [money-path checkout + billing ingest](/launch/money-path
 # How it works
 
 - `corelink-billing` is an Option-A aggregator re-exporting the 14 billing primitives (aggregator, emit, reconcile, replay, stripe, materializer, tier, quota, rate-headers, ratelimit, abuse) at canonical `corelink_billing::*` submodule paths (`crates/corelink-billing/src/lib.rs:1-20`, `crates/corelink-billing/src/lib.rs:32-63`).
-- `corelink-billing-stripe` derives the canonical `Idempotency-Key = BLAKE3-256(JCS(aggregate))` so the same aggregate always maps to one Stripe charge regardless of retries (`crates/corelink-billing-stripe/src/lib.rs:14-24`, `crates/corelink-billing-stripe/src/lib.rs:36-41`).
-- It verifies inbound webhooks with HMAC-SHA256 over the `Stripe-Signature: t=…,v1=…` header plus a 5-minute replay window, using a constant-time compare via `subtle::ConstantTimeEq` (`crates/corelink-billing-stripe/src/lib.rs:42-48`).
-- `corelink-tier-selection` runs the checkout pipeline canonicalize → DPA gate → Stripe Checkout Session → D1 row-lock, returning `TierError::DpaRequired` before any Stripe call if the DPA is not accepted (`crates/corelink-tier-selection/src/lib.rs:1-21`, `crates/corelink-tier-selection/src/lib.rs:56-69`).
+- `corelink-billing-stripe` derives the canonical `Idempotency-Key = BLAKE3-256(JCS(aggregate))` in `derive_idempotency_key` so the same aggregate always maps to one Stripe charge regardless of retries (`crates/corelink-billing-stripe/src/idempotency.rs:80-97`).
+- It verifies inbound webhooks in `verify_stripe_signature`: HMAC-SHA256 over the `Stripe-Signature: t=…,v1=…` header, a constant-time `subtle::ConstantTimeEq` compare against every `v1=` candidate (key-rotation tolerant), then a 5-minute replay window (`crates/corelink-billing-stripe/src/signature.rs:198-220`).
+- `corelink-tier-selection` runs the checkout pipeline canonicalize → DPA gate → Stripe Checkout Session → D1 row-lock; the orchestrator invokes the `DpaAcceptanceGate` (`crates/corelink-tier-selection/src/dpa.rs:14-21`) and returns `TierError::DpaRequired` before any Stripe call if the DPA is not accepted (`crates/corelink-tier-selection/src/lib.rs:1-21`, `crates/corelink-tier-selection/src/lib.rs:56-69`).
 
 # Invariants
 
-- `INV-BILLING-NO-DUP`: one canonical idempotency key per aggregate → a single Stripe charge under retry storms, pinned by 10k-iter property tests (`crates/corelink-billing-stripe/src/lib.rs:14-24`).
-- `INV-ONBOARD-DPA-FIRST`: subscription activation calls the DPA gate BEFORE any Stripe API call, for ALL tiers including Free; a non-accepted DPA fails closed (`crates/corelink-tier-selection/src/lib.rs:56-63`).
+- `INV-BILLING-NO-DUP`: one canonical idempotency key per aggregate → a single Stripe charge under retry storms, pinned by 10k-iter property tests (`crates/corelink-billing-stripe/src/idempotency.rs:80-97`).
+- `INV-ONBOARD-DPA-FIRST`: the `DpaAcceptanceGate` is fail-CLOSED (any storage transient → deny) and MUST be invoked BEFORE any Stripe API call, for ALL tiers including Free (`crates/corelink-tier-selection/src/dpa.rs:14-21`); the orchestrator call site enforces that ordering (`crates/corelink-tier-selection/src/lib.rs:56-63`).
 - `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER`: the audit envelope is emitted before state mutation on every decision arm; an audit failure aborts the mutation (`crates/corelink-billing-stripe/src/lib.rs:21-24`, `crates/corelink-tier-selection/src/lib.rs:64-67`).
 - A per-tenant D1 row lock (`INSERT OR IGNORE` on `tier_selection_locks`, 60s window) prevents concurrent tier switches; a contended caller gets `TierError::LockHeld` (`crates/corelink-tier-selection/src/lib.rs:68-69`).
 
@@ -44,9 +47,10 @@ The cluster powers the [money-path checkout + billing ingest](/launch/money-path
 
 1. `crates/corelink-billing/src/lib.rs:1-20` — the single-import aggregator over the 14 billing primitives.
 2. `crates/corelink-billing/src/lib.rs:32-63` — the absorbed-crate list (aggregator/emit/reconcile/stripe/tier/quota/ratelimit/abuse).
-3. `crates/corelink-billing-stripe/src/lib.rs:14-24` — `INV-BILLING-NO-DUP` + audit-before-mutation, property-pinned.
-4. `crates/corelink-billing-stripe/src/lib.rs:36-41` — `Idempotency-Key = BLAKE3-256(JCS(aggregate))` derivation.
-5. `crates/corelink-billing-stripe/src/lib.rs:42-48` — webhook HMAC-SHA256 verify + 5-min replay window, constant-time compare.
-6. `crates/corelink-tier-selection/src/lib.rs:1-21` — the DPA-gated checkout orchestrator + D1 row-lock semantics.
-7. `crates/corelink-tier-selection/src/lib.rs:56-63` — `INV-ONBOARD-DPA-FIRST` (DPA before Stripe, all tiers).
-8. `crates/corelink-tier-selection/src/lib.rs:64-69` — audit-before-mutation + the 60s `tier_selection_locks` row lock.
+3. `crates/corelink-billing-stripe/src/lib.rs:21-24` — `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER`: audit before state mutation on the Stripe arm.
+4. `crates/corelink-billing-stripe/src/idempotency.rs:80-97` — `derive_idempotency_key` = BLAKE3-256(JCS(aggregate)) (`INV-BILLING-NO-DUP`).
+5. `crates/corelink-billing-stripe/src/signature.rs:198-220` — `verify_stripe_signature`: webhook HMAC-SHA256, constant-time multi-candidate compare, 5-min replay window.
+6. `crates/corelink-tier-selection/src/dpa.rs:14-21` — `DpaAcceptanceGate` contract: fail-CLOSED, MUST run before any Stripe call (`INV-ONBOARD-DPA-FIRST`).
+7. `crates/corelink-tier-selection/src/lib.rs:1-21` — the DPA-gated checkout orchestrator + D1 row-lock semantics.
+8. `crates/corelink-tier-selection/src/lib.rs:56-63` — the orchestrator call site invoking the DPA gate before Stripe.
+9. `crates/corelink-tier-selection/src/lib.rs:64-69` — audit-before-mutation + the 60s `tier_selection_locks` row lock.

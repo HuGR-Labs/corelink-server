@@ -33,7 +33,7 @@ The cluster sits below every cache surface ([native CAS](/surfaces/native-cas.md
 
 - Every body is verified before storage: the only path to a `VerifiedBody` runs the hash check — `VerifiedBody::new` computes the digest then `verify_constant_time`, returning `Err(HashMismatch)` on mismatch (`crates/corelink-hash/src/verified_body.rs:33-44`; `crates/corelink-hash/src/lib.rs:9-13`).
 - Security-sensitive digest comparison uses constant-time `verify_constant_time`, not short-circuiting `PartialEq`, so timing cannot leak (`crates/corelink-hash/src/digest.rs:78-79`; `crates/corelink-hash/src/lib.rs:40-45`).
-- No transport may bypass `CasWriteOrchestrator`: the per-blob order verify → R2 → D1 is the load-bearing correctness guarantee against orphan classes (`crates/corelink-reapi/src/lib.rs:56-61`).
+- `CasWriteOrchestrator` is the **designed** correctness spine — its per-blob order verify → R2 → D1 is the guarantee against orphan classes (`crates/corelink-reapi/src/lib.rs:56-61`) — but it is **not yet wired into the live path** (its only consumer was the removed gRPC handler, so it has zero refs in `corelink-container` today). The live native CAS enforces integrity at the type boundary via `VerifiedBody`, whose only constructor runs the BLAKE3 verify, not the orchestrator (`crates/corelink-hash/src/verified_body.rs:33-44`).
 - The whole cluster is memory-safe by construction: `#![forbid(unsafe_code)]` at each crate root (`crates/corelink-cas/src/lib.rs:83`, `crates/corelink-hash/src/lib.rs:49`, `crates/corelink-reapi/src/lib.rs:71`).
 
 # Gotchas
