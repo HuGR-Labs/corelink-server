@@ -23,6 +23,12 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Cache-HIT header makes the cross-tenant `_public` moat black-box-provable.** The brew adapter's
+  `BottleService::fetch` now returns a `CacheFetch { bytes, is_hit }` wrapper (error path unchanged) and
+  the brew server sets `X-Cache: HIT` (served from the shared `_public` namespace) or `X-Cache: MISS`
+  (upstream cache-fill). The `shared_cache` e2e journey now POSITIVELY asserts `X-Cache: HIT` on a second
+  tenant's serve — proving the network-effect moat (one tenant's fill serves another) rather than only
+  inferring it from byte-equality + latency. Unit tests cover the header on both hit and miss.
 - **Team multi-seat: durable membership backend + seat-removal (ADR-S33-001).** Added the
   `team_member` D1 table (migration 0074) + `pat.principal_id` (migration 0075), turning the
   team feature from an honest 501/single-owner stub into a real backend: `GET /v1/customer/team`
