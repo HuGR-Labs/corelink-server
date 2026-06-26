@@ -1,0 +1,58 @@
+name: corelink-server
+
+# Hosted PR gate for the `corelink-server` crate (the corelink-container plane:
+# routes, customer/team/DSR handlers, native PAT gate, adapters wiring). PR lane:
+# crate-scoped clippy (-D warnings) + tests on GitHub-HOSTED ubuntu-latest, so
+# container changes verify in CI WITHOUT loading the self-hosted macOS builder
+# fleet (mirrors corelink-meta.yml::pr-gate). This closes the gap where the
+# container only built in cas_foundation.yml::workspace-build-test on the Mac
+# (nightly + on-demand) — there was no fast per-PR compile gate for it.
+
+on:
+  pull_request:
+    paths:
+      - 'crates/corelink-container/**'
+      - 'crates/corelink-handler-customer/**'
+      - 'migrations/d1/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/corelink-server.yml'
+  # No `push: branches:[main]` — avoids the heavy-gate stampede on main merges.
+  # The PR `paths:` lane + the nightly workspace gate keep coverage continuous.
+  schedule:
+    - cron: '41 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  pr-gate:
+    name: PR gate (crate-scoped clippy + tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # actions/checkout@v6.0.3
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
+        with:
+          components: clippy, rustfmt
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
+        with:
+          workspaces: ". -> target"
+
+      - name: cargo clippy (corelink-server, -D warnings)
+        run: cargo clippy --package corelink-server --all-targets -- -D warnings
+
+      - name: cargo test (corelink-server, debug)
+        run: cargo test --package corelink-server --all-targets
