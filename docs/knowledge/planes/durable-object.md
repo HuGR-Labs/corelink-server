@@ -4,6 +4,7 @@ title: "Durable Object lifecycle (CoreLinkServer)"
 description: "The per-tenant Durable Object that manages the Rust container lifecycle (cold start, health, idle stop) and proxies HTTP to it."
 source_files:
   - "worker/src/durable_object.ts"
+  - "worker/src/index.ts"
 checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
@@ -48,14 +49,15 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
    (`worker/src/durable_object.ts:905-959`).
 
 # Invariants
-- One DO instance per tenant — the DO ID is tenant-derived, never cross-tenant
-  (`worker/src/durable_object.ts:1-26`).
+- One DO instance per tenant — the DO ID is tenant-derived, never cross-tenant; the enforcer is the
+  Worker keying the stub by `idFromName(resolvedTenantId)` (`worker/src/index.ts:2465-2468`).
 - Audit events are emitted BEFORE the state mutation they describe (charter rule)
   (`worker/src/durable_object.ts:505-519`).
 - A concurrent burst cannot double-start the container: the in-memory `"starting"` flip is the
   load-bearing guard, set synchronously before any await (`worker/src/durable_object.ts:474-500`).
 - A stale persisted `"starting"` older than `STALE_STARTING_MS` self-heals to a restart, never wedging
-  every request forever (the F-020 `_system` wedge fix) (`worker/src/durable_object.ts:96-104`).
+  every request forever (the F-020 `_system` wedge fix); the self-heal branch lives in
+  `ensureContainerRunning` (`worker/src/durable_object.ts:398-456`).
 - The proxy never reads or logs the request body (INV-NO-BODY-IN-LOGS)
   (`worker/src/durable_object.ts:251-264`).
 
@@ -79,3 +81,4 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 11. `worker/src/durable_object.ts:748-778` — `waitForContainerHealth` polling `/_health`.
 12. `worker/src/durable_object.ts:852-883` — the idle-timeout destroy path.
 13. `worker/src/durable_object.ts:905-959` — the periodic `alarm` health re-probe + degrade.
+14. `worker/src/index.ts:2465-2468` — the Worker keys the DO stub by `idFromName(resolvedTenantId)` (the per-tenant, never-cross-tenant pinning enforcer).

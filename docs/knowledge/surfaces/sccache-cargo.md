@@ -36,11 +36,11 @@ namespaced per tenant.
 4. `cargo_gate` enforces per-operation scope: PUT requires cache-write, GET/HEAD require cache-read,
    any other method fails closed 403 (`crates/corelink-container/src/routes/cargo.rs:271-298`).
 5. For PUT, the F27 second layer requires the PAT's D1-verified `can_write` bit from the SAME single
-   verification (no redundant verify) (`crates/corelink-container/src/routes/cargo.rs:37-51`).
+   `resolve_with_capability` call (no redundant verify) (`crates/corelink-container/src/routes/cargo.rs:322-339`).
 
 # Invariants
-- Tenant identity comes from the PAT, re-verified against D1; the path `<tenant>` is NEVER trusted for storage (`crates/corelink-container/src/routes/cargo.rs:27-35`).
-- A write must pass BOTH the scope header AND the PAT-derived `can_write` bit (F27), closing the single-header-trust gap (`crates/corelink-container/src/routes/cargo.rs:37-51`).
+- Tenant identity comes from the PAT, re-verified against D1; the path `<tenant>` is NEVER trusted for storage — the injected `resolver_from_verifier` resolves the tenant from the PAT, not the path (`crates/corelink-container/src/routes/cargo.rs:181`).
+- A write must pass BOTH the scope header AND the PAT-derived `can_write` bit (F27), closing the single-header-trust gap — enforced where `resolve_with_capability` returns `can_write` (`crates/corelink-container/src/routes/cargo.rs:322-339`).
 - Per-operation scope is enforced before the adapter runs: PUT→write, GET/HEAD→read (`crates/corelink-container/src/routes/cargo.rs:283-298`).
 - An unmapped HTTP method is denied at the gate rather than assumed safe (fail-closed) (`crates/corelink-container/src/routes/cargo.rs:289-296`).
 
@@ -61,4 +61,4 @@ namespaced per tenant.
 7. `crates/corelink-container/src/routes/cargo.rs:271-298` — `cargo_gate` per-operation scope enforcement.
 8. `crates/corelink-container/src/routes/cargo.rs:283-298` — method→scope mapping + 403.
 9. `crates/corelink-container/src/routes/cargo.rs:289-296` — fail-closed unmapped method.
-10. `crates/corelink-container/src/routes/cargo.rs:37-51` — F27 two-layer write enforcement.
+10. `crates/corelink-container/src/routes/cargo.rs:322-339` — F27 two-layer write enforcement: `resolve_with_capability` + the `can_write` bit from the single verification.

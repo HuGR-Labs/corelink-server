@@ -4,6 +4,7 @@ title: "Native CAS surface"
 description: "CoreLink's first-party content-addressable storage surface — the GET/PUT/DELETE/list + bulk-batch CAS routes every other surface ultimately stores into."
 source_files:
   - "crates/corelink-container/src/routes/cas.rs"
+  - "crates/corelink-container/src/routes/turbo_v8.rs"
 checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
 provenance: "AUTHORED"
 tags: ["surfaces", "cas", "cache", "hot-path"]
@@ -14,9 +15,11 @@ timestamp: "2026-06-26T00:00:00Z"
 
 The native CAS surface is CoreLink's first-party content-addressable cache: a blob is named by its
 own BLAKE3/SHA-256 digest, so a write is idempotent and a read is a pure key lookup. It is the
-foundational data plane — the REAPI (Bazel), Turborepo, sccache/cargo and `_public` package surfaces
-are all alternate front-doors that ultimately marshal into the same R2-backed blob store this surface
-exposes. It sits in the Rust container plane behind the Worker→DO auth hop, so by the time a request
+foundational data plane — the REAPI (Bazel), sccache/cargo and `_public` package surfaces are alternate
+front-doors that share the cloned CAS trait objects (the same R2 blobs this surface exposes). Turborepo
+is the exception: it uses a SEPARATE R2 bucket via its own `R2KvStore`, so there is no cross-surface
+blob visibility with it (`crates/corelink-container/src/routes/turbo_v8.rs:978-980`). It sits in the
+Rust container plane behind the Worker→DO auth hop, so by the time a request
 reaches a handler here the tenant is already authenticated; the surface's job is the cheap
 canonical-key, scope, possession and quota gates BEFORE any storage I/O. It shares the
 digest-validation helper with the [Action Cache surface](/surfaces/action-cache.md).
@@ -71,3 +74,4 @@ path segment.
 10. `crates/corelink-container/src/routes/cas.rs:115` — `BATCH_MAX_OBJECTS` cap.
 11. `crates/corelink-container/src/routes/cas.rs:121` — `BATCH_MAX_BYTES` cap.
 12. `crates/corelink-container/src/routes/cas.rs:881` — over-cap 413 on bulk write.
+13. `crates/corelink-container/src/routes/turbo_v8.rs:978-980` — Turborepo's SEPARATE `R2KvStore` (own bucket) — NOT the shared CAS blobs, so no cross-surface visibility with Turbo.

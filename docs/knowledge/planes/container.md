@@ -5,6 +5,7 @@ description: "The native Rust binary serving the composed axum data-plane on por
 source_files:
   - "crates/corelink-container/src/main.rs"
   - "crates/corelink-container/src/routes.rs"
+  - "crates/corelink-container/src/routes/turbo_v8.rs"
 checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
@@ -60,8 +61,12 @@ surface.
   Argon2id possession backstop (`crates/corelink-container/src/main.rs:253-266`).
 - Privileged routes fail CLOSED: absent secrets ⇒ the route is simply not mounted (404), never an open
   proxy (`crates/corelink-container/src/main.rs:466-479`).
-- The 410-Gone erasure gate and byte-accounting are centralized at the shared CAS chokepoint, so every
-  surface inherits them by construction (`crates/corelink-container/src/routes.rs:437-470`).
+- The SHARED CAS handlers (native CAS/AC, Bazel, cargo, `_public`) inherit the tombstone-410 gate +
+  `AccountingCasHandler` byte-accounting from the single CAS chokepoint
+  (`crates/corelink-container/src/routes.rs:437-470`); Turborepo, however, writes through its OWN
+  `R2KvStore` (separate bucket `corelink-turbo-cache-prod`) — the `AccountingCasHandler` decorator does
+  NOT cover it, so it does NOT inherit the shared 410 tombstone gate (turbo's quota/PAT/accounting are
+  wired separately at its route) (`crates/corelink-container/src/routes/turbo_v8.rs:978-980`).
 - The rate-limit + residency layers wrap exactly the data plane, never `/_health` or `/_internal/*`
   (which mount later in `main`) (`crates/corelink-container/src/routes.rs:782-822`).
 
@@ -86,6 +91,7 @@ surface.
 11. `crates/corelink-container/src/routes.rs:347-390` — shared gates resolved from env (quota, PAT, accountant).
 12. `crates/corelink-container/src/routes.rs:392-480` — shared CAS handler objects + accounting/tombstone wrap.
 13. `crates/corelink-container/src/routes.rs:437-470` — centralized 410-Gone erasure gate at the CAS chokepoint.
+13b. `crates/corelink-container/src/routes/turbo_v8.rs:978-980` — Turbo's OWN `R2KvStore` is NOT decorated by `AccountingCasHandler`, so it does NOT inherit the shared 410 tombstone gate (separate bucket).
 14. `crates/corelink-container/src/routes.rs:641-773` — env-gated cache-adapter (cargo/brew/npm/pip/oci) mounts.
 15. `crates/corelink-container/src/routes.rs:780-822` — residency guard + per-tenant rate-limit outer layers.
 16. `crates/corelink-container/src/routes.rs:782-822` — the rate-limit layer scoped to the data plane only.

@@ -44,7 +44,7 @@ the authenticated tenant; cross-tenant attempts are denied 403 at the route leve
   **before** `lookup`/`update` runs — so this reject path itself writes **no** audit row. (The
   `LookupDenied`/`UpdateDenied` audit rows are emitted by the lookup/update handlers on
   authorized-but-denied paths, not by this route-level cross-tenant 403.)
-- Per-tenant concurrent writes are bounded by `AC_WRITE_CONCURRENCY_LIMIT` (`crates/corelink-container/src/routes/ac.rs:168`).
+- Per-tenant concurrent writes are bounded by `AC_WRITE_CONCURRENCY_LIMIT` — the over-limit 429 guard rejects before body buffering (`crates/corelink-container/src/routes/ac.rs:244-245`).
 - A forged or wrong-tenant bearer PAT is rejected by the possession gate before any storage access (`crates/corelink-container/src/routes/ac.rs:464-481`).
 
 # Gotchas
@@ -65,4 +65,4 @@ the authenticated tenant; cross-tenant attempts are denied 403 at the route leve
 8. `crates/corelink-container/src/routes/ac.rs:496-497` — cross-tenant 403 (lookup), route-level, before storage.
 8b. `crates/corelink-container/src/routes/ac.rs:554-555` — cross-tenant 403 (update), route-level, before storage.
 8c. `crates/corelink-container/src/routes/ac.rs:621-622` — cross-tenant 403 (delete), route-level, before storage.
-9. `crates/corelink-container/src/routes/ac.rs:168` — `AC_WRITE_CONCURRENCY_LIMIT`.
+9. `crates/corelink-container/src/routes/ac.rs:244-245` — the `AC_WRITE_CONCURRENCY_LIMIT` over-limit 429 guard (before body buffering).

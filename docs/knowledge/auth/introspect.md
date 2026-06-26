@@ -30,7 +30,7 @@ route but with its OWN dedicated secret so the two blast radii stay disjoint.
 
 - The route is mounted only when its dedicated secret is present and ≥32 chars; absent/short →
   `build_state_from_env` returns `None` and the route is NOT mounted (fail-CLOSED)
-  (`crates/corelink-container/src/routes/auth_introspect.rs:19-30`).
+  (`crates/corelink-container/src/routes/auth_introspect.rs:660-683`).
 - The caller gate checks the `X-Corelink-Internal-Auth` header against EVERY configured consumer key
   with non-short-circuiting `|=`, so timing reveals no consumer identity; no match → 401
   (`crates/corelink-container/src/routes/auth_introspect.rs:559-576`).
@@ -47,8 +47,8 @@ route but with its OWN dedicated secret so the two blast radii stay disjoint.
 # Invariants
 
 - The route uses a DEDICATED `FABRIC_INTROSPECT_AUTH_KEY`, never the Worker↔container mint secret, so a
-  fabric-key leak cannot mint and a mint-key leak cannot introspect
-  (`crates/corelink-container/src/routes/auth_introspect.rs:19-30`).
+  fabric-key leak cannot mint and a mint-key leak cannot introspect — `build_state_from_env` reads that
+  dedicated key and gates the mount on it (`crates/corelink-container/src/routes/auth_introspect.rs:660-683`).
 - Not reachable from the public internet — mounted on the container listener, reached only via the DO /
   fabric forwarder (`crates/corelink-container/src/routes/auth_introspect.rs:16-18`).
 - A `valid: false` response carries no `tenant_id` and no reason (uniform with `VerifyError`)
@@ -59,20 +59,23 @@ route but with its OWN dedicated secret so the two blast radii stay disjoint.
 # Gotchas
 
 - `max_concurrency` and `max_vcpu_h` carry a deliberate asymmetry: an absent concurrency row ⇒ reject
-  the placement (empty table = no cap = no Runners entitlement), but an absent `max_vcpu_h` ⇒ wall-off
-  (let the job through) (`crates/corelink-container/src/routes/auth_introspect.rs:68-92`).
-- `plan` is the cache tier and is informational only for runners — it NEVER feeds the concurrency cap
-  (`crates/corelink-container/src/routes/auth_introspect.rs:74-83`).
-- The constant-time gate is reused from `internal_pat::internal_auth_ok`, not reinvented here
-  (`crates/corelink-container/src/routes/auth_introspect.rs:24-27`).
+  the placement (empty table = no cap = no Runners entitlement), decoded by `decode_runner_cap`
+  (`crates/corelink-container/src/routes/auth_introspect.rs:382-394`); an absent `max_vcpu_h` ⇒ wall-off
+  (let the job through).
+- `plan` is the cache tier and is informational only for runners — it NEVER feeds the concurrency cap,
+  which comes solely from the SEPARATE `runners_entitlement` decode
+  (`crates/corelink-container/src/routes/auth_introspect.rs:382-394`).
+- The constant-time gate is reused from `internal_pat::internal_auth_ok`, not reinvented here — the
+  multi-key caller gate loops it with non-short-circuiting `|=`
+  (`crates/corelink-container/src/routes/auth_introspect.rs:566-576`).
 
 # Citations
 
 1. `crates/corelink-container/src/routes/auth_introspect.rs:1-12` — why the endpoint exists (fabric tenant/plan resolution).
 2. `crates/corelink-container/src/routes/auth_introspect.rs:16-18` — not public; container-listener only.
-3. `crates/corelink-container/src/routes/auth_introspect.rs:19-30` — dedicated fabric secret, fail-CLOSED (not mounted if absent/short).
-4. `crates/corelink-container/src/routes/auth_introspect.rs:24-27` — reuses the constant-time `internal_auth_ok` gate.
-5. `crates/corelink-container/src/routes/auth_introspect.rs:68-92` — runner entitlement axis + the cap/vCPU asymmetry.
-6. `crates/corelink-container/src/routes/auth_introspect.rs:74-83` — entitlement is separate from `plan`.
+3. `crates/corelink-container/src/routes/auth_introspect.rs:660-683` — `build_state_from_env` mount-gate: dedicated `FABRIC_INTROSPECT_AUTH_KEY` present + ≥32 chars, else `None` (route NOT mounted) — fail-CLOSED.
+4. `crates/corelink-container/src/routes/auth_introspect.rs:566-576` — the multi-key caller gate (`|=` over every configured key, reusing the constant-time `internal_auth_ok`).
+5. `crates/corelink-container/src/routes/auth_introspect.rs:382-394` — `decode_runner_cap`: the runner entitlement decode (empty → reject; out-of-contract → 503) — the cap/vCPU asymmetry origin, separate from `plan`.
+6. `crates/corelink-container/src/routes/auth_introspect.rs:382-394` — entitlement decode is the SEPARATE axis; `plan` (cache tier) never feeds the cap.
 7. `crates/corelink-container/src/routes/auth_introspect.rs:559-576` — non-short-circuit multi-key caller gate.
 8. `crates/corelink-container/src/routes/auth_introspect.rs:592-637` — verify → tier → entitlement → uniform invalid / 503.

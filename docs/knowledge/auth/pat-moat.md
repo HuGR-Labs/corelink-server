@@ -52,8 +52,10 @@ control surfaces (mint, introspect) at the Worker edge.
 - A token that fails the cheap HMAC fast-reject NEVER reaches the Argon2id layer
   (`crates/corelink-container/src/adapter_pat.rs:538-543`).
 - Both layers are constant-time with no length or content oracle — the edge compare
-  (`worker/src/lib/internal_auth.ts:112-127`) and the uniform `InvalidPat` collapse in the container
-  (`crates/corelink-container/src/adapter_pat.rs:43-47`).
+  (`worker/src/lib/internal_auth.ts:112-127`) and the uniform `VerifyError::InvalidPat` returned by
+  EVERY distinguishable container-side rejection (`crates/corelink-container/src/adapter_pat.rs:543`,
+  `crates/corelink-container/src/adapter_pat.rs:598`, `crates/corelink-container/src/adapter_pat.rs:650`,
+  `crates/corelink-container/src/adapter_pat.rs:656`).
 - The edge gate fails CLOSED: an unbound/short secret is unavailable, never an open gate
   (`worker/src/lib/internal_auth.ts:152-158`).
 
@@ -74,6 +76,6 @@ control surfaces (mint, introspect) at the Worker edge.
 1. `worker/src/lib/internal_auth.ts:112-127` — the edge constant-time secret compare with no length oracle.
 2. `worker/src/lib/internal_auth.ts:152-164` — the fail-CLOSED edge gate (403 unbound / 401 wrong / `null` pass).
 3. `crates/corelink-container/src/adapter_pat.rs:5-14` — why the container re-runs full verification (Option B).
-4. `crates/corelink-container/src/adapter_pat.rs:43-47` — uniform `InvalidPat`: no on-the-wire oracle.
+4. `crates/corelink-container/src/adapter_pat.rs:543`, `:598`, `:650`, `:656` — every distinguishable rejection returns the uniform `VerifyError::InvalidPat` (HMAC fast-reject, unknown/expired row, Argon2id mismatch, no-cache-scope): no on-the-wire oracle.
 5. `crates/corelink-container/src/adapter_pat.rs:538-543` — the HMAC fast-reject, pre-D1, no permit consumed.
 6. `crates/corelink-container/src/adapter_pat.rs:602-650` — the deep Argon2id possession proof on a blocking thread.

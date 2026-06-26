@@ -53,8 +53,10 @@ written.
 
 # Invariants
 
-- The PAT plaintext is never logged or persisted at the mint route; the caller writes it to Clerk
-  session metadata once and discards it (`crates/corelink-container/src/routes/internal_pat.rs:63-65`).
+- The PAT plaintext is never logged or persisted at the mint route; the `PatMinted` audit emit logs only
+  a hashed tenant handle, `pat_id`, `token_id`, and scope bits — never the plaintext — and the caller
+  writes the plaintext to Clerk session metadata once and discards it
+  (`crates/corelink-container/src/routes/internal_pat.rs:623-631`).
 - The `admin` scope is never grantable via self-serve key creation; unrecognized tokens fail CLOSED
   (`crates/corelink-container/src/customer_d1.rs:299-318`).
 - Revoke is tenant-scoped: a cross-tenant `pat_id` cannot be revoked (or even observed)
@@ -79,7 +81,7 @@ written.
 4. `crates/corelink-container/src/customer_d1.rs:982-994` — `INSERT INTO pat` (hash + token_id persisted, plaintext not).
 5. `crates/corelink-container/src/customer_d1.rs:1049-1051` — idempotent tenant-scoped revoke UPDATE.
 6. `crates/corelink-container/src/routes/internal_pat.rs:1-13` — the `/_internal/pat/mint` route + internal-auth gate.
-7. `crates/corelink-container/src/routes/internal_pat.rs:63-65` — plaintext never persisted; caller's responsibility.
+7. `crates/corelink-container/src/routes/internal_pat.rs:623-631` — the `PatMinted` emit logs a hashed tenant handle + ids/scope, never the plaintext (plaintext never logged/persisted).
 8. `crates/corelink-container/src/routes/internal_pat.rs:78-82` — M7: signup-worker writes the hash to the D1 row.
 9. `crates/corelink-container/src/routes/internal_pat.rs:586-639` — mint is a pure function returning plaintext + hash.
 10. `crates/corelink-container/src/adapter_pat.rs:144-150` — the verifier's D1 row reader mapping a NULL `scope` to `""`.

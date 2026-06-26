@@ -36,20 +36,22 @@ cross-tenant access is impossible.
 4. The artifact routes get a per-route 100 MiB `DefaultBodyLimit` overriding the 10 MiB global default
    while still bounding the body (`crates/corelink-container/src/routes/turbo_v8.rs:815-822`; `crates/corelink-container/src/routes/turbo_v8.rs:103`).
 5. The isolation tenant is the PAT-resolved authenticated tenant; `teamId` is demoted to a sub-namespace
-   within it (`crates/corelink-container/src/routes/turbo_v8.rs:28-37`).
+   within it (`crates/corelink-container/src/routes/turbo_v8.rs:848`).
 
 # Invariants
-- `teamId` is required on GET/PUT but is NOT a security boundary; the authenticated tenant is the sole isolation key (`crates/corelink-container/src/routes/turbo_v8.rs:28-37`).
+- `teamId` is required on GET/PUT but is NOT a security boundary; the authenticated tenant is the sole isolation key (`crates/corelink-container/src/routes/turbo_v8.rs:848`).
 - An artifact GET requires read capability; an insufficient scope is rejected 403 before storage (`crates/corelink-container/src/routes/turbo_v8.rs:842-843`).
 - The telemetry `events` route is capped at `EVENTS_BODY_LIMIT_BYTES` (64 KiB), not the artifact cap (`crates/corelink-container/src/routes/turbo_v8.rs:126`; `crates/corelink-container/src/routes/turbo_v8.rs:808-812`).
-- Artifact bodies are bounded at `TURBO_BODY_LIMIT_BYTES` (100 MiB) so a PAT cannot OOM the shared container (`crates/corelink-container/src/routes/turbo_v8.rs:103`).
+- Artifact bodies are bounded at `TURBO_BODY_LIMIT_BYTES` (100 MiB) so a PAT cannot OOM the shared container — the bound is applied by the `DefaultBodyLimit::max` layer (`crates/corelink-container/src/routes/turbo_v8.rs:822`).
 
 # Gotchas
 - axum honours the INNERMOST `DefaultBodyLimit`, so the order of the layers matters: the `events`
   route's own 64 KiB limit must be layered directly on its handler, otherwise the outer 100 MiB
   artifact limit would widen telemetry back to 100 MiB and reopen the OOM vector.
-- The Phase-0 backing store is an in-RAM `InMemoryKvStore` that does NOT persist across container
-  restarts; the route handlers and audit surface are unchanged by the planned R2-backed swap.
+- The R2-backed swap is DONE: when storage credentials are configured the handler is backed by the
+  durable `R2KvStore`, so artifacts now persist across container restarts
+  (`crates/corelink-container/src/routes/turbo_v8.rs:705-708`). The in-RAM `InMemoryKvStore` is only the
+  no-credentials dev/CI fallback (the route handlers and audit surface are identical for both backings).
 
 # Citations
 1. `crates/corelink-container/src/routes/turbo_v8.rs:794-823` — the router with static-before-wildcard ordering + body-limit layers.
@@ -59,4 +61,5 @@ cross-tenant access is impossible.
 5. `crates/corelink-container/src/routes/turbo_v8.rs:126` — `EVENTS_BODY_LIMIT_BYTES` (64 KiB).
 6. `crates/corelink-container/src/routes/turbo_v8.rs:815-822` — per-route 100 MiB artifact limit override.
 7. `crates/corelink-container/src/routes/turbo_v8.rs:103` — `TURBO_BODY_LIMIT_BYTES` (100 MiB).
-8. `crates/corelink-container/src/routes/turbo_v8.rs:28-37` — `teamId` sub-namespace vs authenticated-tenant isolation.
+8. `crates/corelink-container/src/routes/turbo_v8.rs:848` — `caller_tenant = auth.0`: the PAT-resolved authenticated tenant is the isolation key; `teamId` is a sub-namespace label only.
+9. `crates/corelink-container/src/routes/turbo_v8.rs:705-708` — the durable `R2KvStore` backing (R2 swap DONE; `InMemoryKvStore` is the no-creds dev fallback).
