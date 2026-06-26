@@ -11,7 +11,7 @@ profile_version: '0.1'
 
 This is the reserved machine-generated listing of every concept in `docs/knowledge/` (profile §1 / §2.3). Concepts are grounded code/docs knowledge; author new ones with `scripts/okf_scaffold.py` and re-run this generator. The frozen contract lives outside the bundle at `docs/internal/okf-wiki/01-okf-corelink-profile.contract.md`; the change history is in `/log.md`.
 
-**Concepts: 19**
+**Concepts: 38**
 
 ## planes
 
@@ -37,9 +37,37 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [Introspection endpoint (runners fabric authz)](/auth/introspect.md)
 - [The 2-level PAT moat](/auth/pat-moat.md)
 
+## storage
+
+- [BYOK envelope encryption at rest](/storage/byok-envelope-encryption.md)
+- [CAS hot-path D1-over-HTTP latency](/storage/cas-hot-path-latency.md)
+- [Chunk / manifest multipart buckets](/storage/chunk-manifest-buckets.md)
+- [D1 CONFIG_DB](/storage/d1-config-db.md)
+- [R2 AC ×5 regional buckets](/storage/r2-ac-regional.md)
+- [R2 CAS bucket topology](/storage/r2-cas-bucket.md)
+
+## tenancy
+
+- [Per-tenant monthly $-ceiling](/tenancy/dollar-ceiling.md)
+- [Tenant governance: rate-limit, customer & user admin](/tenancy/governance.md)
+- [Tenant isolation via idFromName(tenant_id)](/tenancy/isolation.md)
+- [Request-quota enforcement](/tenancy/request-quota.md)
+- [Storage-quota / byte-accounting header](/tenancy/storage-quota-header.md)
+
 ## flows
 
 - [Billing quota check flow](/flows/billing-quota-check.md)
 - [CAS write flow](/flows/cas-write.md)
 - [Introspection flow (runners fabric)](/flows/introspection-fabric.md)
 - [PAT verification gauntlet](/flows/pat-gauntlet.md)
+
+## crates
+
+- [Adapter-host crate cluster (surfaces + KMS)](/crates/adapter-hosts.md)
+- [Audit/analytics crate cluster](/crates/audit-analytics.md)
+- [Auth/PAT crate cluster](/crates/auth-pat.md)
+- [Billing/commerce crate cluster](/crates/billing-commerce.md)
+- [CAS/AC core crate cluster](/crates/cas-ac-core.md)
+- [Container/platform crate cluster](/crates/container-platform.md)
+- [Operations crate cluster (GC, replication, ratelimit, SRE)](/crates/operations.md)
+- [Privacy/compliance crate cluster](/crates/privacy-compliance.md)

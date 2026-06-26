@@ -1,0 +1,77 @@
+---
+type: "TenancyControl"
+title: "Tenant isolation via idFromName(tenant_id)"
+description: "How CoreLink keeps one tenant's traffic, state, and storage keys structurally separate from every other tenant's across the Worker, the Durable Object, and the container."
+source_files:
+  - "worker/src/index.ts"
+  - "crates/corelink-worker/src/tenant.rs"
+  - "crates/corelink-container/src/auth_tenant.rs"
+  - "crates/tenant-path/src/lib.rs"
+checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
+provenance: "AUTHORED"
+tags: ["tenancy", "isolation", "durable-object", "multi-tenant", "security"]
+timestamp: "2026-06-26T00:00:00Z"
+---
+
+# Tenant isolation via idFromName(tenant_id)
+
+CoreLink is a multi-tenant cache: every blob, every counter, every credential belongs to exactly one
+tenant, and a cross-tenant leak is the single worst failure the platform can have. Isolation is enforced
+at three layers that reinforce each other — the Worker routes each request to a *per-tenant* Durable
+Object named by the tenant id, the container refuses to act without a non-sentinel authenticated tenant,
+and every R2/KV/D1 key is namespaced under an HMAC-derived prefix that *cannot* be constructed from a
+mismatched `(tenant_id, prefix)` pair. The trust root is "the tenant id the Worker resolved from the
+PAT"; everything downstream is keyed off that one value and nothing else.
+
+# Role
+
+This control sits at the spine of the plane topology: it is what makes "multi-tenant" safe rather than
+just "shared." It is the boundary the [PAT moat](/auth/pat-moat.md) and the
+[D1 PAT store](/auth/d1-pat-store.md) feed into — auth resolves *which* tenant, and isolation guarantees
+that resolved tenant is the *only* one whose data the rest of the request can touch. Every other tenancy
+control in this directory (the $-ceiling, the request quota, the storage-quota header, governance) is
+keyed on the same trusted tenant id this control establishes.
+
+# How it works
+
+- The Worker maps each tenant to its own Durable Object instance via `idFromName(tenant_id)`, so a single
+  DO is the sole serialization point for that tenant's state — `worker/src/index.ts:56`.
+- Non-tenant system traffic uses reserved sentinel DO names (e.g. `_system`, `_oci`) that are deliberately
+  distinct from any real tenant id — `worker/src/index.ts:1500`.
+- Inside the container the ONLY trustworthy tenant source is the DO-injected `x-corelink-tenant-id` header;
+  the `AuthTenant` extractor reads it and trims it — `crates/corelink-container/src/auth_tenant.rs:24-30`.
+- Storage keys are namespaced by a per-tenant prefix derived via HMAC-SHA256 over the tenant UUID,
+  base64url-encoded and truncated to 16 ASCII chars — `crates/tenant-path/src/lib.rs:5-7`.
+- `TenantCtx::new` takes `(tdk, tenant_id)` and derives the prefix internally, so `ctx.prefix()` is
+  always consistent with `ctx.tenant_id()` by construction — `crates/corelink-worker/src/tenant.rs:55-63`.
+
+# Invariants
+
+- No code path may construct a tenant key from a caller-supplied prefix; the prefix field is private and
+  only the deriving constructor can populate it (`crates/corelink-worker/src/tenant.rs:36-44`).
+- The container fails CLOSED with `401` when the tenant header is empty or a sentinel — it never acts on
+  unauthenticated or non-tenant traffic (`crates/corelink-container/src/auth_tenant.rs:31-34`).
+- The `TenantPrefix` newtype cannot be built from raw bytes outside its crate, so `derive_prefix` is the
+  single trust boundary for namespacing (`crates/tenant-path/src/lib.rs:27-29`).
+
+# Gotchas
+
+- The container trusts `x-corelink-tenant-id` *only because* the Worker strips any client-supplied copy
+  and re-injects the PAT-resolved value; a request that reaches the container plane with a forged header
+  has already had it overwritten upstream — the extractor's job is the fail-closed sentinel check, not
+  origin authentication (`crates/corelink-container/src/auth_tenant.rs:1-3`).
+- The empty string `""` is in the sentinel list, so a present-but-blank header is rejected exactly like a
+  missing one (`crates/corelink-container/src/auth_tenant.rs:19`).
+
+# Citations
+
+1. `worker/src/index.ts:56` — one DO instance per tenant via `idFromName(tenant_id)`.
+2. `worker/src/index.ts:1500` — reserved `_system` sentinel DO name for non-tenant traffic.
+3. `crates/corelink-worker/src/tenant.rs:36-44` — the `TenantCtx` struct with a private, derived prefix field.
+4. `crates/corelink-worker/src/tenant.rs:55-63` — `TenantCtx::new` derives the prefix from `(tdk, tenant_id)`.
+5. `crates/corelink-container/src/auth_tenant.rs:1-3` — the only trustworthy tenant source is the DO-injected header.
+6. `crates/corelink-container/src/auth_tenant.rs:19` — the sentinel set (including the empty string).
+7. `crates/corelink-container/src/auth_tenant.rs:24-30` — the `AuthTenant` extractor reads + trims the header.
+8. `crates/corelink-container/src/auth_tenant.rs:31-34` — fail-CLOSED `401` on empty/sentinel tenant.
+9. `crates/tenant-path/src/lib.rs:5-7` — HMAC-SHA256 prefix derivation, 16-char truncation.
+10. `crates/tenant-path/src/lib.rs:27-29` — the `TenantPrefix` newtype is the single derivation trust boundary.
