@@ -23,6 +23,11 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **OKF wiki filled to 146/146 code-grounded concepts (waves 1–4 + truth-audit remediation).** The OKF
+  bundle (`docs/knowledge/`) now carries the complete concept set — architecture (planes/surfaces/auth/
+  flows/storage/tenancy/crates), 76 ADR concepts, and 32 doc-extraction concepts — each `path:line`
+  code-grounded and SHA-checkpointed for C5 anti-drift. Adversarially truth-certified (0 BLOCKER; the
+  MAJOR/MINOR findings from the audit wave remediated). `validate_okf.py` → 146 concepts, 0 stale, 0 drift.
 - **OKF knowledge-wiki foundation: a self-maintaining, code-grounded architecture wiki (OKF v0.1).**
   Adopts Google's Open Knowledge Format as a vendor-neutral, in-repo concept bundle (`docs/knowledge/`).
   Ships the frozen `OKF-CoreLink` profile + concept template (`docs/internal/okf-wiki/`), the
@@ -46,6 +51,16 @@ Each entry cross-references:
   C-REV (reverse-coverage) WARN checks that previously never executed; the PR gate `okf_wiki.yml` gains an
   `if: failure()` step that prints the reconciliation worklist so a red freshness gate names exactly which
   concepts to fix. The LLM half of self-healing is `.claude/skills/okf-reconcile/SKILL.md`.
+- **Account-delete erasure sink wired — the route now honors deletions (C-ACCTDEL).** `POST
+  /v1/customer/account/delete` no longer fail-safe-503s in configured envs: `routes.rs` now wires
+  `customer::account_deletion_from_env()` (a `D1HttpCustomerDb` row source + the new
+  `dsr::InProcessErasureSink`). The sink drives the **same** in-process, D1-backed erasure worker the
+  `/_internal/dsr/erase` consumer (the Clerk `user.deleted` path) runs — so a self-serve delete and a
+  webhook erasure converge on one prod-proven engine (no new erasure logic, no CF Queue producer). Still
+  fails CLOSED (503) when `StorageEnv`/erase-key is unset (dev/CI). A legitimacy-gate reject or engine
+  error surfaces as `Err` → the route 500s and the durable `dsr_requested` anchor + 24h verify sweep
+  retry the obligation — never a silent un-honored erasure. Unit tests cover the reject→Err and
+  malformed-message→Err mappings.
 - **Cache-HIT header makes the cross-tenant `_public` moat black-box-provable.** The brew adapter's
   `BottleService::fetch` now returns a `CacheFetch { bytes, is_hit }` wrapper (error path unchanged) and
   the brew server sets `X-Cache: HIT` (served from the shared `_public` namespace) or `X-Cache: MISS`

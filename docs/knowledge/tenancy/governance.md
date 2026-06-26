@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/customer.rs"
   - "crates/corelink-container/src/routes/users.rs"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
+checkpoint_sha: "cfb46abdef8a9d460b00c2b13d56f9a4caa328a7"
 provenance: "AUTHORED"
 tags: ["tenancy", "governance", "rate-limit", "customer", "users", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -43,7 +43,7 @@ self-service plane. It rests on the same trusted tenant id established by
 - A stable 128-bit bucket key is derived from the raw tenant string via `tenant_key_uuid`, so non-UUID
   tenants still land in distinct buckets (`crates/corelink-container/src/routes/ratelimit_layer.rs:415`).
 - The customer router exposes the self-serve surface — overview, usage, audit, billing, keys, team — under
-  `/v1/customer/*` (`crates/corelink-container/src/routes/customer.rs:168-183`).
+  `/v1/customer/*` (`crates/corelink-container/src/routes/customer.rs:183-198`).
 - Each customer handler resolves the tenant fail-CLOSED: a missing/empty/sentinel header is an `Err` the
   handler maps to `401` before any storage access
   (`crates/corelink-container/src/routes/customer.rs:210-220`).
