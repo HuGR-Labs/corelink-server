@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/customer.rs"
   - "crates/corelink-container/src/routes/users.rs"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "e111c54808165bb0a085e673949d732a94c3be69"
+checkpoint_sha: "cfb46abdef8a9d460b00c2b13d56f9a4caa328a7"
 provenance: "AUTHORED"
 tags: ["tenancy", "governance", "rate-limit", "customer", "users", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
