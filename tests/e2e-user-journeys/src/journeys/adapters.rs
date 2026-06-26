@@ -41,7 +41,8 @@ use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
 use crate::harness::{
-    bearer, expect_denied, sha256_hex, unique_blob, url_brew, url_cargo, url_npm, url_oci_token,
+    bearer, expect_denied, expect_gate_denied, sha256_hex, unique_blob, url_brew, url_cargo,
+    url_npm, url_oci_token,
     url_oci_v2, url_pip, Config, JourneyResult, TokenKind,
 };
 use crate::personas::Persona;
@@ -359,7 +360,7 @@ fn cargo_anonymous_denied(cfg: &Config, client: &Client) -> JourneyResult {
         return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set");
     }
     let tenant = cfg.tenant_or_anon().to_string();
-    // A plausible key; the deny must happen at the gate, before any lookup.
+    // A plausible key; the deny must happen at the gate, BEFORE any lookup.
     let key = "e2e/anonymous-probe";
     let url = url_cargo(cfg, &tenant, key);
 
@@ -378,7 +379,13 @@ fn cargo_anonymous_denied(cfg: &Config, client: &Client) -> JourneyResult {
             "SECURITY: anonymous GET on cargo returned 200 — auth not enforced".to_string(),
         );
     }
-    if let Err(m) = expect_denied("cargo anonymous", status) {
+    // expect_GATE_denied (401/403 only), NOT expect_denied (auditor finding): the
+    // cargo key is absent and cannot be seeded black-box (raw-HTTP cargo PUT 502s),
+    // so accepting a 404 here meant a fully-DISABLED auth gate (request reaches the
+    // missing-key lookup → 404) scored as "secure". The auth middleware must reject
+    // an anonymous request with 401/403 BEFORE the lookup; a 404 now FAILS — it
+    // proves auth did not gate before the lookup (or the route is absent).
+    if let Err(m) = expect_gate_denied("cargo anonymous", status) {
         return JourneyResult::fail(name, ms(start), m);
     }
     JourneyResult::pass(name, ms(start))

@@ -86,10 +86,20 @@ fn audit_export_rederive(cfg: &Config, client: &Client) -> JourneyResult {
     };
 
     // An empty `rows` is the documented contract for a quiet tenant (the
-    // customer audit sink is distinct from the request-path chain). The SHAPE
-    // contract still holds — pass on the well-formed empty page.
+    // customer audit sink is distinct from the request-path chain, and the
+    // /users/me reads above land in the request-path chain, NOT this sink — so
+    // we cannot deterministically seed it black-box). GATED, not PASS (auditor
+    // finding): an empty page validates NOTHING about row re-derivation, so
+    // passing on it is a false-green that counts toward the floor. We only PASS
+    // when there is at least one row and the per-row + monotonic-ts checks below
+    // actually run. Auto-arms the moment the sink carries a row.
     if rows.is_empty() {
-        return JourneyResult::pass(name, ms(start));
+        return JourneyResult::gated(
+            name,
+            "GET /v1/customer/audit returned an empty rows page (quiet tenant; the \
+             customer audit sink cannot be seeded black-box) — re-derive asserts \
+             nothing on an empty page, so this is GATED not PASS",
+        );
     }
 
     // Re-derive: every row carries the required fields and `ts` is monotonic.

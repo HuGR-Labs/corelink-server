@@ -107,38 +107,64 @@ fn rate_limit_present(cfg: &Config, client: &Client) -> JourneyResult {
     }
     let token = p1.token.expect("P1 always has a token");
 
-    // A fresh, almost-certainly-absent content address: a GET against it is the
-    // cheapest possible authenticated read (a 404/empty, no body served), so the
-    // burst cost is minimal. We are probing the LIMITER, not the data.
+    // DEFAULT: do NOT burst a SHARED prod. The zone WAF throttles aggressively and
+    // RESETS the connection under load rather than returning a clean 429 (live-
+    // observed: a 30-GET burst progressively throttled to a mid-burst connection
+    // error after ~92s). The OLD code (a) passed unless a 5xx appeared — a removed
+    // limiter read GREEN (auditor: VACUOUS) — and (b) hard-FAILED on the connection
+    // reset the WAF itself induces (flaky-red). Both are wrong. By default we
+    // record the limiter's presence as GATED (honestly unproven without a
+    // dedicated host); set CORELINK_E2E_ABUSE_HARD=1 against a non-shared host to
+    // ACTIVELY assert enforcement.
+    if !flag(ABUSE_HARD_ENV) {
+        return JourneyResult::gated(
+            name,
+            "rate-limit burst not run by default — bursting shared prod hammers it and the \
+             zone WAF resets the connection under load (flaky), while never bursting cannot \
+             prove the limiter. Set CORELINK_E2E_ABUSE_HARD=1 on a dedicated host to assert \
+             a clean 429.",
+        );
+    }
+
+    // HARD opt-in: a fresh, almost-certainly-absent content address — the cheapest
+    // authenticated read (404/empty). We are probing the LIMITER, not the data.
+    let burst = 60;
     let probe = unique_blob("abuse-ratelimit-probe");
     let hash = blake3_hex(&probe);
     let url = url_cas(cfg, &p1.tenant, &hash);
 
-    // Modest by default; a touch larger when the operator opts into the hard
-    // variant. Still bounded and small — we never hammer a shared prod.
-    let burst = if flag(ABUSE_HARD_ENV) { 60 } else { 30 };
-
     let mut saw_429 = false;
     let mut saw_5xx: Option<u16> = None;
+    let mut conn_throttled = false;
+    let mut served = 0u32;
     for i in 0..burst {
-        let resp = match client.get(&url).header(AUTHORIZATION, bearer(token)).send() {
-            Ok(r) => r,
-            Err(e) => return JourneyResult::fail(name, ms(start), format!("GET #{i}: {e}")),
-        };
-        let st = resp.status().as_u16();
-        if st == 429 {
-            saw_429 = true;
-            // Well-formed deny: a 429 must carry a 429 status (it does, trivially)
-            // and must NOT also be a 5xx. Nothing else to assert without coupling
-            // to a body shape the contract does not promise. A Retry-After header
-            // is good practice but not contractually required, so we don't fail on
-            // its absence — only assert the limiter sheds cleanly.
-        } else if st >= 500 {
-            saw_5xx = Some(st);
-            break;
+        match client.get(&url).header(AUTHORIZATION, bearer(token)).send() {
+            Ok(r) => {
+                let st = r.status().as_u16();
+                if st == 429 {
+                    saw_429 = true; // clean shed
+                } else if st >= 500 {
+                    saw_5xx = Some(st);
+                    break;
+                } else {
+                    served += 1; // served under the bound
+                }
+            }
+            Err(_) => {
+                // A connection reset/timeout AFTER requests were served is the WAF
+                // shedding at the connection layer (ungraceful but a REAL limiter
+                // engagement). On the FIRST request it means the endpoint is
+                // unreachable — gate rather than mis-attribute it to the limiter.
+                if served > 0 {
+                    conn_throttled = true;
+                    break;
+                }
+                return JourneyResult::gated(
+                    name,
+                    format!("endpoint unreachable on GET #{i} — cannot probe the limiter"),
+                );
+            }
         }
-        // Any non-5xx, non-429 status (200/401/403/404/…) is "served under the
-        // bound" for the purpose of this probe — the limiter let it through.
     }
 
     if let Some(code) = saw_5xx {
@@ -146,17 +172,26 @@ fn rate_limit_present(cfg: &Config, client: &Client) -> JourneyResult {
             name,
             ms(start),
             format!(
-                "ENFORCEMENT: a modest {burst}-GET burst produced a {code} 5xx — the limiter must \
+                "ENFORCEMENT: a {burst}-GET burst produced a {code} 5xx — the limiter must \
                  shed with a clean 429, not crash the data plane"
             ),
         );
     }
-
-    // PASS whether or not a 429 appeared: under the bound everything is served;
-    // over the bound a clean 429 is the correct shed. Both prove the path is
-    // operational and the limiter (if engaged) sheds cleanly. We record which.
-    let _ = saw_429;
-    JourneyResult::pass(name, ms(start))
+    // A 429 (clean shed) OR a connection-level throttle both PROVE the limiter is
+    // present and engaged under the burst → PASS.
+    if saw_429 || conn_throttled {
+        return JourneyResult::pass(name, ms(start));
+    }
+    // The burst was fully served with no 429 and no throttle → enforcement gap.
+    JourneyResult::fail(
+        name,
+        ms(start),
+        format!(
+            "ENFORCEMENT: a hard {burst}-GET burst was fully served with no 429 and no \
+             connection throttle — the rate limiter appears absent or its threshold exceeds \
+             the burst"
+        ),
+    )
 }
 
 /// **$-tripwire / quota signal.** Assert the quota / $-ceiling path returns a

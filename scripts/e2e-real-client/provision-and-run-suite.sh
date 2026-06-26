@@ -190,11 +190,20 @@ echo "  money (M4): stripe-test=$(seen "$STRIPE_TEST") clerk-session=$(seen "$CL
 # lower it for a partial run, but the committed default is a real floor.
 MIN_PASS="${CORELINK_E2E_MIN_PASS:-40}"
 
-echo "==> running the black-box journey suite vs ${API} (MIN_PASS=${MIN_PASS})"
+# Optional MAX-GATED ceiling (the floor's dual): RED if MORE journeys gate than
+# expected — catches a single load-bearing journey silently flipping Pass→Gated
+# (a 5xx outage, an unbuilt feature, a dropped cred), which the floor alone misses.
+# Unset by default because the gated count depends on how much this run
+# provisions (a full-cred run gates ~13; a light run gates more). A CI job that
+# pins its provisioning should export CORELINK_E2E_MAX_GATED=<expected> to arm it.
+MAX_GATED="${CORELINK_E2E_MAX_GATED:-}"
+
+echo "==> running the black-box journey suite vs ${API} (MIN_PASS=${MIN_PASS}${MAX_GATED:+ MAX_GATED=$MAX_GATED})"
 cd "$REPO_ROOT"
 CORELINK_E2E_ENDPOINT="$API" \
 CORELINK_E2E_OCI_ENDPOINT="$OCI" \
 CORELINK_E2E_MIN_PASS="$MIN_PASS" \
+${MAX_GATED:+CORELINK_E2E_MAX_GATED="$MAX_GATED"} \
 CORELINK_E2E_TENANT="$TA" CORELINK_E2E_PAT_RW="$PA" \
 CORELINK_E2E_TENANT_B="$TB" CORELINK_E2E_PAT_TENANT_B="$PB" \
 CORELINK_E2E_PAT_RO="$PAT_RO" CORELINK_E2E_PAT_ADMIN="$PAT_ADMIN" CORELINK_E2E_PAT_REVOKED="$PAT_REV" \

@@ -189,12 +189,17 @@ fn invite_accepted_or_not_implemented(cfg: &Config, client: &Client) -> JourneyR
                 }
             }
         }
-        // 501 = HONEST v1 — D1 team-invite handler not yet live. This is an
-        // explicitly documented, expected production state (customer.rs map_err +
-        // map_err_not_implemented_is_501 unit test). Record as PASS: the endpoint
-        // is reachable, authenticated, and returns the correct honest status code.
+        // 501 = HONEST v1 — by-email Clerk invite (WP-4, ADR-S33-001) not yet
+        // live. This is GATED, not PASS: a not-implemented feature must not count
+        // toward the pass floor (auditor finding — a 501-as-PASS lets the feature
+        // stay unbuilt forever while the journey reads green). Only a real 200/201
+        // carrying a validated `member` record is a PASS. Auto-arms when WP-4 ships.
         501 => {
-            // PASS — fall through.
+            return JourneyResult::gated(
+                name,
+                "team invite returns 501 (WP-4 by-email Clerk invite not yet live) — \
+                 honest not-implemented; only 200/201 with a member record is a PASS",
+            );
         }
         _ => {
             return JourneyResult::fail(
@@ -331,8 +336,19 @@ fn team_list_responds(cfg: &Config, client: &Client) -> JourneyResult {
                 }
             }
         }
-        // 501 = HONEST v1 (team list not yet backed by D1 handler).
-        501 => {}
+        // 501 = HONEST v1 (team list not backed by a D1 handler). GATED, not
+        // PASS (auditor finding): a not-implemented list must not count toward the
+        // pass floor. Now that the membership backend is live (ADR-S33-001) this
+        // arm should not fire in prod — but if list ever regresses to 501 the
+        // journey gates instead of silently reading green. Only a 200 with a
+        // `members` array is a PASS.
+        501 => {
+            return JourneyResult::gated(
+                name,
+                "team list returns 501 (D1 handler not live) — only a 200 with a \
+                 members array is a PASS",
+            );
+        }
         _ => {
             return JourneyResult::fail(
                 name,
