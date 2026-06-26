@@ -162,6 +162,21 @@ pub fn build_handlers() -> CustomerRouteState {
     }
 }
 
+/// Build the production self-serve account-deletion requester: a D1 row source
+/// ([`crate::customer_d1::D1HttpCustomerDb`]) + the in-process DSR erasure sink
+/// ([`crate::routes::dsr::build_in_process_erasure_sink`] — the SAME worker the
+/// Clerk-webhook consumer runs). `None` when the storage/erase env is
+/// unconfigured (dev/CI) → the `POST /v1/customer/account/delete` route then
+/// fails CLOSED (503), never a silently-unhonored GDPR erasure. Wired by
+/// `routes.rs` (the sink is a cross-module collaborator built alongside the DSR
+/// worker), mirroring `native_pat_gate_from_env` → `pat_gate`.
+#[must_use]
+pub fn account_deletion_from_env() -> Option<Arc<dyn AccountDeletionRequester>> {
+    let db = crate::customer_d1::D1HttpCustomerDb::from_env()?;
+    let sink = crate::routes::dsr::build_in_process_erasure_sink()?;
+    Some(Arc::new(D1AccountDeletionRequester::new(Arc::new(db), sink)))
+}
+
 // ─── Router ──────────────────────────────────────────────────────────────────
 
 /// Build the axum `Router` mounting all `/v1/customer/*` routes.

@@ -114,6 +114,18 @@ impl D1HttpCustomerDb {
     pub fn new(d1: Arc<D1HttpClient>) -> Self {
         Self { d1 }
     }
+
+    /// Build the row source over a fresh D1-over-HTTP client from `StorageEnv`.
+    /// `None` when the storage env is unset/invalid (dev/CI) — mirrors
+    /// `D1CustomerHandler::from_env` and `routes::dsr::build_d1_worker`. Used by
+    /// `routes::customer::account_deletion_from_env` to give the self-serve
+    /// account-delete requester its own D1 query seam.
+    #[must_use]
+    pub fn from_env() -> Option<Self> {
+        let storage_env = crate::storage::StorageEnv::from_env()?;
+        let d1 = D1HttpClient::new(&storage_env).ok()?;
+        Some(Self::new(Arc::new(d1)))
+    }
 }
 
 impl core::fmt::Debug for D1HttpCustomerDb {

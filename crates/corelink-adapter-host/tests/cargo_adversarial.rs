@@ -249,14 +249,39 @@ async fn invalid_key_format_returns_400() {
 
     let client = reqwest::Client::new();
 
-    // Key shorter than 64 chars.
+    // A GENUINELY malformed key is rejected at the gate with 400, before any CAS
+    // lookup. `normalize_key` rejects empty / >256-char / traversal (`.`/`..`/`/`)
+    // / illegal-character keys; an over-length key is the unambiguous fixture.
+    //
+    // NOTE: a merely non-64-hex / short key is NOT malformed — sccache's HTTP
+    // backend sends non-hex CONTROL keys (notably `.sccache_check`), so the
+    // adapter ACCEPTS them (see the control-key assertion below). The original
+    // fixture `/shortkey` wrongly expected 400; the sccache-compat fix (translate
+    // .rs) made short non-hex keys VALID, so this asserts the real contract.
+    let too_long = "a".repeat(257);
     let resp = client
-        .get(format!("http://{addr}/shortkey"))
+        .get(format!("http://{addr}/{too_long}"))
         .header("Authorization", format!("Bearer {PAT_A}"))
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 400, "short key must return 400");
+    assert_eq!(resp.status(), 400, "over-length (malformed) key must return 400");
+
+    // Lock in the sccache-compat contract: a non-hex CONTROL key (the
+    // `.sccache_check` startup probe) is ACCEPTED — 404 on a miss, NEVER 400. A
+    // 400 here disables the sccache backend (the real client never works) — the
+    // exact regression the old `/shortkey`-expects-400 test would have masked.
+    let ctrl = client
+        .get(format!("http://{addr}/.sccache_check"))
+        .header("Authorization", format!("Bearer {PAT_A}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        ctrl.status(),
+        404,
+        "non-hex control key (.sccache_check) must be accepted (404 miss), not 400"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
