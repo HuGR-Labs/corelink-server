@@ -49,6 +49,10 @@ const REVOKED_PAT_TOKEN = await mintTestPat({ tokenId: REVOKED_TOKEN_ID });
 
 const TEST_TENANT_ID = "00000000-0000-0000-0000-000000000001";
 const CLERK_TENANT_ID = "00000000-0000-0000-0000-00000000c1e7";
+// Team-member fallback (WP-T4) fixtures: tenant A OWNS the second seat; tenant
+// B is an UNRELATED tenant the member must never resolve to (cross-tenant).
+const TENANT_A_ID = "00000000-0000-0000-0000-0000000000aa";
+const TENANT_B_ID = "00000000-0000-0000-0000-0000000000bb";
 
 function makeCtx(): ExecutionContext {
   return {
@@ -62,12 +66,16 @@ function makeCtx(): ExecutionContext {
  *   - `FROM pat` lookups resolve by token_id, honoring the soft-revocation
  *     predicate `revoked_at_ms IS NULL` (migration 0063);
  *   - `FROM tenant WHERE clerk_user_id` lookups resolve the Clerk bridge's
- *     tenant mapping;
+ *     OWNER tenant mapping (migration 0056);
+ *   - `FROM team_member WHERE user_id` lookups resolve the ADDITIVE
+ *     team-member fallback (migration 0074), honoring the MANDATORY
+ *     `status = 'active'` predicate (an 'invited'/'removed' seat → null);
  *   - everything else (tier/quota/region probes on the PAT path) → null.
  */
 function makeDualD1(opts: {
   pats?: Map<string, { tenant_id: string; expires_ms: number; revoked_at_ms?: number | null }>;
   clerkUserToTenant?: Map<string, string>;
+  teamMembers?: Map<string, { tenant_id: string; status: string }>;
 }): D1Database {
   return {
     prepare: (sql: string) => ({
@@ -83,6 +91,18 @@ function makeDualD1(opts: {
           if (sql.includes("FROM tenant WHERE clerk_user_id")) {
             const tenantId = opts.clerkUserToTenant?.get(args[0] as string);
             return (tenantId ? { tenant_id: tenantId } : null) as T | null;
+          }
+          if (sql.includes("FROM team_member WHERE user_id")) {
+            const member = opts.teamMembers?.get(args[0] as string);
+            // Honor the MANDATORY `status = 'active'` filter: a non-active
+            // (invited/removed) seat must NOT resolve.
+            if (
+              !member ||
+              (sql.includes("status = 'active'") && member.status !== "active")
+            ) {
+              return null as T | null;
+            }
+            return { tenant_id: member.tenant_id } as T | null;
           }
           return null as T | null;
         },
@@ -130,12 +150,13 @@ function makeBridgeEnv(opts: {
   captured: { req?: Request; doName?: string };
   pats?: Map<string, { tenant_id: string; expires_ms: number; revoked_at_ms?: number | null }>;
   clerkUserToTenant?: Map<string, string>;
+  teamMembers?: Map<string, { tenant_id: string; status: string }>;
   withClerkSecret?: boolean;
 }): Env {
   return {
     CORELINK_SERVER: makeCaptureNamespace(opts.captured),
     ENVIRONMENT: "test",
-    CONFIG_DB: makeDualD1({ pats: opts.pats, clerkUserToTenant: opts.clerkUserToTenant }),
+    CONFIG_DB: makeDualD1({ pats: opts.pats, clerkUserToTenant: opts.clerkUserToTenant, teamMembers: opts.teamMembers }),
     // Honest auth harness (#345): bind the valid test signing key so a minted
     // PAT's HMAC verifies and the PAT surface reaches the real auth/route logic
     // (instead of fail-closing to 503 on an unset key).
@@ -368,6 +389,79 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
     expect(h.get("x-corelink-internal-auth")).toBeNull();
     expect(h.get("x-corelink-tenant-id")).toBe(CLERK_TENANT_ID);
     expect(h.get("x-corelink-scope")).toBe("read-write");
+  });
+
+  // ── Team-member fallback (C-RESOLVE / WP-T4) ────────────────────────────────
+
+  it("team_member fallback: an ACTIVE second-seat resolves to the OWNING tenant", async () => {
+    // This Clerk user did NOT provision a tenant (no `tenant.clerk_user_id`
+    // row) but is an ACTIVE member of tenant A. The additive OR-branch must
+    // resolve the session to tenant A.
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_member_a",
+      azp: "https://corelink-app.humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({
+      captured,
+      clerkUserToTenant: new Map(), // NO owner row → forces the fallback
+      teamMembers: new Map([["user_member_a", { tenant_id: TENANT_A_ID, status: "active" }]]),
+    });
+
+    const resp = await customerFetch(env, { Authorization: "Bearer member.clerk.jwt" });
+
+    expect(resp.status).toBe(200);
+    expect(captured.doName).toBe(TENANT_A_ID);
+    expect(captured.req!.headers.get("x-corelink-tenant-id")).toBe(TENANT_A_ID);
+  });
+
+  it("team_member fallback: a member of tenant A does NOT resolve to tenant B (cross-tenant)", async () => {
+    // The member belongs ONLY to tenant A. An unrelated tenant B exists. The
+    // user_id-keyed lookup must yield tenant A — never tenant B.
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_member_a",
+      azp: "https://corelink-app.humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({
+      captured,
+      clerkUserToTenant: new Map(),
+      // Only an A-membership exists; nothing maps this user to tenant B.
+      teamMembers: new Map([["user_member_a", { tenant_id: TENANT_A_ID, status: "active" }]]),
+    });
+
+    const resp = await customerFetch(env, { Authorization: "Bearer member.clerk.jwt" });
+
+    expect(resp.status).toBe(200);
+    expect(captured.doName).toBe(TENANT_A_ID);
+    expect(captured.doName).not.toBe(TENANT_B_ID);
+    expect(captured.req!.headers.get("x-corelink-tenant-id")).toBe(TENANT_A_ID);
+    expect(captured.req!.headers.get("x-corelink-tenant-id")).not.toBe(TENANT_B_ID);
+  });
+
+  it("team_member fallback: a REMOVED member is DENIED (403, never forwards)", async () => {
+    // The mandatory `status = 'active'` filter must exclude a removed seat —
+    // no owner row + no active membership ⇒ 403, no DO forward.
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_removed",
+      azp: "https://corelink-app.humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({
+      captured,
+      clerkUserToTenant: new Map(),
+      teamMembers: new Map([["user_removed", { tenant_id: TENANT_A_ID, status: "removed" }]]),
+    });
+
+    const resp = await customerFetch(env, { Authorization: "Bearer removed.clerk.jwt" });
+
+    expect(resp.status).toBe(403);
+    const body = await resp.json() as { error: string };
+    expect(body.error).toBe("FORBIDDEN");
+    expect(captured.req).toBeUndefined();
   });
 
   it("M2: rejects (401) when CLERK_ISSUER_URL is pinned and iss does not match", async () => {
