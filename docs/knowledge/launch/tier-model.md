@@ -43,8 +43,8 @@ legal (DPA) precondition and a fail-closed audit trail.
 
 # Invariants
 
-- DPA not accepted ⇒ `403 dpa_required` (INV-ONBOARD-DPA-FIRST) at `crates/corelink-container/src/routes/tier_select.rs:291`.
-- A direct paid Checkout for Enterprise is rejected `422 use_inquiry_form` — the UI hint alone is bypassable `crates/corelink-container/src/routes/tier_select.rs:290`.
+- DPA not accepted ⇒ `403 dpa_required` (INV-ONBOARD-DPA-FIRST): the enforcement is `return Err(TierSelectHttpError::DpaRequired)` after the fail-closed store check at `crates/corelink-container/src/routes/tier_select.rs:798` (the `403`/`dpa_required` status mapping itself is the `parts()` arm at `crates/corelink-container/src/routes/tier_select.rs:291`).
+- A direct paid Checkout for Enterprise is rejected `422 use_inquiry_form` — the UI hint alone is bypassable: the enforcement is `ParsedTier::Enterprise => return Err(...UseInquiryForm)` at `crates/corelink-container/src/routes/tier_select.rs:438` (the `422`/`use_inquiry_form` status mapping is the `parts()` arm at `crates/corelink-container/src/routes/tier_select.rs:290`).
 - The route is only mounted when the Stripe config AND `CORELINK_DPA_VERSION` are present; a missing DPA version means the endpoint is NOT mounted `crates/corelink-container/src/routes/tier_select.rs:551`.
 - The DPA gate is fail-CLOSED: a transport error never reads as "accepted" `crates/corelink-container/src/routes/tier_select_store.rs:173-181`.
 - Audit emit returning `Err` ABORTS the whole operation before mutation (audit-before-mutation) — the abort logic lives in `crates/corelink-container/src/routes/tier_select.rs:735-738`, vacuous today since the `tracing`-only adapter (`crates/corelink-container/src/routes/tier_select_audit.rs:75`) never returns `Err`.
@@ -60,8 +60,10 @@ legal (DPA) precondition and a fail-closed audit trail.
 1. `crates/corelink-container/src/routes/tier_select.rs:192` — self-serve vs inquiry tier parsing.
 2. `crates/corelink-container/src/routes/tier_select.rs:477` — the `handle` axum entrypoint.
 3. `crates/corelink-container/src/routes/tier_select.rs:717` — `orchestrate_tier_select` fixed ordering.
-4. `crates/corelink-container/src/routes/tier_select.rs:290` — Enterprise direct-paid → 422 `use_inquiry_form`.
-5. `crates/corelink-container/src/routes/tier_select.rs:291` — DPA-not-accepted → 403 `dpa_required`.
+4. `crates/corelink-container/src/routes/tier_select.rs:438` — Enterprise direct-paid → `return Err(...UseInquiryForm)` (the enforcement).
+4b. `crates/corelink-container/src/routes/tier_select.rs:290` — `parts()` status-mapping arm: `UseInquiryForm` → 422 `use_inquiry_form`.
+5. `crates/corelink-container/src/routes/tier_select.rs:798` — DPA-not-accepted → `return Err(TierSelectHttpError::DpaRequired)` (the enforcement, gated by the fail-closed store check).
+5b. `crates/corelink-container/src/routes/tier_select.rs:291` — `parts()` status-mapping arm: `DpaRequired` → 403 `dpa_required`.
 6. `crates/corelink-container/src/routes/tier_select.rs:551` — mount-only-with-DPA-version build_state guard.
 7. `crates/corelink-container/src/routes/tier_select_store.rs:173-181` — the fail-CLOSED DPA-first D1 check.
 8. `crates/corelink-container/src/routes/tier_select_store.rs:214` — persist `pending_checkout` upsert.

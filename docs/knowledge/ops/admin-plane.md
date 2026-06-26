@@ -14,12 +14,19 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # The admin plane: config-singleton CAS + dual-approval mutate + pilot lifecycle
 
-The admin plane is the operator control surface: runtime configuration (feature flags, rate-limit
-tunables, retention policies) is a per-region Durable-Object config singleton mutated with
-compare-and-swap versioning, and the container's admin routes are the privileged-action gate in front
-of it. Every mutation is internal-auth-gated, dual-approval-bounded, and audit-logged; a missing gate
-key fails closed rather than running privileged logic. This concept ties the operational runbook
-(propagation timing, CAS retry, monthly rollback drill) to the live route code that enforces it.
+The admin plane is the operator control surface. The **LIVE** container admin mutate route gates
+privileged tenant-scoped actions — granting a tenant tier (`set_tenant_tier`) and rotating the admin
+token (`rotate_admin_token`), the only two mutate ops it supports — each internal-auth-gated,
+dual-approval-bounded, MFA-bounded, and audit-logged; a missing gate key fails closed rather than
+running privileged logic (`crates/corelink-container/src/routes/admin.rs:573-586`).
+The per-region Durable-Object config singleton (feature flags, rate-limit tunables, retention policies)
+mutated with compare-and-swap versioning — plus Queue propagation, rollback, and the monthly drill — is a
+**designed control** (implemented in `corelink-config-do`, consumed only by `corelink-ops`), **NOT yet
+wired into the deployed container/worker**: neither crate depends on `corelink-config-do`, and there is
+no `VersionConflict` / `expected_version` enforcer in the container or worker (design-plane only,
+`docs/internal/admin-plane.md:23-53`). The container admin routes do **not** gate the config-singleton.
+This concept ties the operational runbook (propagation timing, CAS retry, monthly rollback drill) to the
+live route code that enforces it, and keeps the config-singleton design described as the unwired target.
 Related: [the operations crate cluster](/crates/operations.md) and [the D1 CONFIG_DB](/storage/d1-config-db.md).
 
 # Role
@@ -65,6 +72,7 @@ behind one fail-closed authorization gate.
 8. `crates/corelink-container/src/routes/admin.rs:401` — specific-then-shared internal-auth key resolution.
 9. `crates/corelink-container/src/routes/admin.rs:464` — the admin read+mutate router.
 10. `crates/corelink-container/src/routes/admin.rs:592` — incomplete dual-approval pair rejected at request construction.
+10b. `crates/corelink-container/src/routes/admin.rs:573-586` — the only two LIVE mutate ops: `set_tenant_tier` + `rotate_admin_token` (the config-singleton CAS is design-plane, not wired here).
 11. `crates/corelink-container/src/routes/admin_pilot.rs:110` — canonical grant-tier pilot route const.
 12. `crates/corelink-container/src/routes/admin_pilot.rs:1141-1179` — pilot create handler emits the `corelink.admin.pilot_*` audit on attempt + success.
 13. `crates/corelink-container/src/routes/admin_pilot.rs:1031-1032` — `build_handlers` returns the `InMemoryPilotStore::new()` baseline.
