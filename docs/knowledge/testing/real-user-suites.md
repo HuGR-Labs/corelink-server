@@ -15,9 +15,10 @@ timestamp: "2026-06-26T00:00:00Z"
 CoreLink's go-live certificate is two black-box suites that sign up as a real user against prod and
 exercise the product the way a customer would: the real-client moat (`run.sh`) and the black-box
 journey suite (`provision-and-run-suite.sh`). This concept records their validated GREEN state and —
-more importantly — the three journeys that remain GATED because each needs a resource that can't be
-faithfully or safely automated from the CLI (a browser Clerk session, a real Stripe charge, a
-near-limit account). It is the operational finish-checklist companion to the
+more importantly — the per-journey closure state: journey 1 (DSR-delete + checkout) is fully gated on
+a browser Clerk session, journey 2 (webhook -> tier) is forgery-proven but flip-gated on a real
+Stripe charge, and journey 3 (quota hard-cap) is validated un-gated. It is the operational
+finish-checklist companion to the
 [e2e strategy](/testing/e2e-strategy.md) gap map and the
 [gate machinery](/testing/gate-machinery.md) quality audit.
 

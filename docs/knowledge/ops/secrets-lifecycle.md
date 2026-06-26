@@ -41,8 +41,8 @@ works within the write-only-secret wall. The PAT-scope authorization itself is e
    (`docs/operator/launch-pat-scope-fix-runbook.md:20-27`).
 4. The fix ships with no DB migration: deploying the container + signup-worker is sufficient and a real
    signup then persists a CHECK-valid `read-write` (`docs/operator/launch-pat-scope-fix-runbook.md:35-40`).
-5. Secrets are set with `printf '%s' "$V" | wrangler secret put` (the runbook's pinning example) — never
-   `echo`, whose trailing newline pollutes the stored secret
+5. Secrets are set with `printf '%s' "$V" | wrangler secret put` (the runbook's pinning example), not
+   `echo` — the cited runbook demonstrates the `printf` discipline
    (`docs/operator/launch-pat-scope-fix-runbook.md:51-56`).
 6. The eventual secrets broker is deferred for launch and designed as a D1-encrypted lease: secrets live
    envelope-encrypted in D1 under a CoreLink-owned KMS/root key, leased TTL-bounded to consumers
@@ -51,8 +51,8 @@ works within the write-only-secret wall. The PAT-scope authorization itself is e
 # Invariants
 - Auth migrations are additive-only: the `pat` table cannot be destructively rebuilt without an owner ADR,
   which is precisely why the scope fix was code-side (`docs/operator/launch-pat-scope-fix-runbook.md:14-19`).
-- Secrets must be set without a trailing newline (`printf`, not `echo`) or the constant-time compare fails
-  with a 401/403 that masquerades as a token mismatch (`docs/operator/launch-pat-scope-fix-runbook.md:51-56`).
+- Secrets are set with `printf`, not `echo`, per the runbook's pinning discipline — a malformed secret
+  surfaces later as a 401/403 that masquerades as a token mismatch (`docs/operator/launch-pat-scope-fix-runbook.md:51-56`).
 - A broker over Cloudflare secrets directly is impossible (write-only) — the broker MUST own its own D1
   envelope + root key to read+lease its secrets (`specs/03_architecture/adrs/ADR-0067-secrets-broker-d1-encrypted-lease-deferred.md:24-30`).
 - Secrets at rest in the broker design MUST be envelope-encrypted; plaintext-in-D1 was explicitly rejected

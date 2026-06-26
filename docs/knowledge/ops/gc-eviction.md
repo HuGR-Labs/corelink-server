@@ -63,9 +63,10 @@ governs turning GC on. The reclaim math it protects is the same per-tenant accou
 - The GC phase machine is monotone forward — no skipping and no backward edge; only the encoded edges or
   a `Failed` transition are legal (`crates/corelink-gc/src/run.rs:105-115`).
 - Probe failure is fail-closed: an unprobeable degrade state MUST be treated as `GcPause`, never silently
-  proceeding, and `GcPause` forces abort within one batch boundary (`crates/corelink-gc/src/degrade.rs:59`).
-- The enterprise TTL admin override is hard-capped at 730 days; a longer override is rejected
-  (`crates/corelink-eviction/src/tier.rs:41`).
+  proceeding (`crates/corelink-gc/src/degrade.rs:17`, `crates/corelink-gc/src/degrade.rs:120`), and
+  `GcPause` forces abort within one batch boundary (`crates/corelink-gc/src/degrade.rs:59`).
+- The enterprise TTL admin override is hard-capped at 730 days; a longer override is rejected by
+  `ttl_for_tier_with_override` with `ExceedsMaxTtl` (`crates/corelink-eviction/src/tier.rs:145-148`).
 - The reservation TTL never drops below the 60s floor nor exceeds the 7d cap, bounding both tiny and
   pathological uploads (`crates/corelink-eviction/src/reservation.rs:50`, `crates/corelink-eviction/src/reservation.rs:54`).
 - A zero `bytes_quota` is defended: the trigger returns below-threshold rather than firing forever
@@ -89,8 +90,10 @@ governs turning GC on. The reclaim math it protects is the same per-tenant accou
 3. `crates/corelink-gc/src/degrade.rs:30-38` — `DegradeKind` enum (Off / GcPause / GcReadOnly).
 4. `crates/corelink-gc/src/degrade.rs:45-50` — `as_str` canonical mnemonics for the metric label.
 5. `crates/corelink-gc/src/degrade.rs:59` — `requires_abort` matches only `GcPause` (the hard stop).
+5b. `crates/corelink-gc/src/degrade.rs:17`, `crates/corelink-gc/src/degrade.rs:120` — the fail-closed-probe contract (unprobeable ⇒ treat as `GcPause`).
 6. `crates/corelink-gc/src/degrade.rs:65` — `blocks_new_runs` matches `GcPause | GcReadOnly`.
 7. `crates/corelink-eviction/src/tier.rs:41` — `MAX_ENTERPRISE_TTL_DAYS = 730` override cap.
+7b. `crates/corelink-eviction/src/tier.rs:145-148` — `ttl_for_tier_with_override` rejects a longer override with `ExceedsMaxTtl`.
 8. `crates/corelink-eviction/src/tier.rs:51-61` — the 5-value `Tier` enum.
 9. `crates/corelink-eviction/src/tier.rs:89-93` — `ttl_for_tier` per-tier TTL resolution.
 10. `crates/corelink-eviction/src/reservation.rs:50` — `MIN_RESERVATION_TTL_MS = 60_000` floor.

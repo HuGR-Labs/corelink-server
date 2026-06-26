@@ -38,7 +38,7 @@ legal (DPA) precondition and a fail-closed audit trail.
 - `orchestrate_tier_select` fixes the ordering audit → lock → DPA-first → active-sub → checkout → persist → release `crates/corelink-container/src/routes/tier_select.rs:717`.
 - The DPA-first check is a durable D1-over-HTTP `SELECT 1 FROM dpa_acceptances` for the current version, fail-CLOSED on transport error `crates/corelink-container/src/routes/tier_select_store.rs:173-181`.
 - A paid selection persists the subscription intent as `pending_checkout` with the mapped `stripe_customer_id` via an upsert `INSERT INTO tier_selections` `crates/corelink-container/src/routes/tier_select_store.rs:214`.
-- The fail-CLOSED audit seam emits the durable entry BEFORE every state mutation through `TierSelectAudit::emit` `crates/corelink-container/src/routes/tier_select_audit.rs:75`.
+- The fail-CLOSED audit seam emits a `tracing` audit log before the state mutation via `TierSelectAudit::emit` (`crates/corelink-container/src/routes/tier_select_audit.rs:75`) — today a `tracing::info!` that always returns `Ok` (the durable D1 audit-chain write is the tracked Wave-37 hardening). The emit-Err-aborts-before-mutation logic lives in `crates/corelink-container/src/routes/tier_select.rs:735-738` (vacuous today since the adapter never returns `Err`).
 - The decision rules (paid set = Solo/Starter/Pro/Max, Free instant, Enterprise inquiry, DPA-first all tiers) are the ADR's decision section `specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md:88-127`.
 
 # Invariants
@@ -47,7 +47,7 @@ legal (DPA) precondition and a fail-closed audit trail.
 - A direct paid Checkout for Enterprise is rejected `422 use_inquiry_form` — the UI hint alone is bypassable `crates/corelink-container/src/routes/tier_select.rs:290`.
 - The route is only mounted when the Stripe config AND `CORELINK_DPA_VERSION` are present; a missing DPA version means the endpoint is NOT mounted `crates/corelink-container/src/routes/tier_select.rs:551`.
 - The DPA gate is fail-CLOSED: a transport error never reads as "accepted" `crates/corelink-container/src/routes/tier_select_store.rs:173-181`.
-- Audit emit returning `Err` ABORTS the whole operation before mutation (audit-before-mutation) `crates/corelink-container/src/routes/tier_select_audit.rs:75`.
+- Audit emit returning `Err` ABORTS the whole operation before mutation (audit-before-mutation) — the abort logic lives in `crates/corelink-container/src/routes/tier_select.rs:735-738`, vacuous today since the `tracing`-only adapter (`crates/corelink-container/src/routes/tier_select_audit.rs:75`) never returns `Err`.
 - Supersession is scoped to tier cardinality/membership only — no invariant, security control, or latency/cost gate changes `specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md:128-144`.
 
 # Gotchas
@@ -65,7 +65,8 @@ legal (DPA) precondition and a fail-closed audit trail.
 6. `crates/corelink-container/src/routes/tier_select.rs:551` — mount-only-with-DPA-version build_state guard.
 7. `crates/corelink-container/src/routes/tier_select_store.rs:173-181` — the fail-CLOSED DPA-first D1 check.
 8. `crates/corelink-container/src/routes/tier_select_store.rs:214` — persist `pending_checkout` upsert.
-9. `crates/corelink-container/src/routes/tier_select_audit.rs:75` — fail-CLOSED audit-before-mutation emit.
+9. `crates/corelink-container/src/routes/tier_select_audit.rs:75` — `tracing`-only audit emit (always `Ok` today; durable D1 chain is Wave-37).
+9b. `crates/corelink-container/src/routes/tier_select.rs:735-738` — emit-Err-aborts-before-mutation orchestration (vacuous today).
 10. `specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md:72-84` — the 6-tier ladder + wire strings.
 11. `specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md:88-127` — the decision (paid set, DPA-first all tiers, Stripe map).
 12. `specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md:117-126` — prices out of the enum.

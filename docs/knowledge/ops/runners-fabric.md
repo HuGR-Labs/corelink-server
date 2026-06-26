@@ -68,8 +68,9 @@ the operational runbook for that gate; its authz mechanism is documented as the
 
 # Gotchas
 - `FABRIC_INTROSPECT_AUTH_KEY` is a DEDICATED secret, NOT `CORELINK_INTERNAL_AUTH_KEY` — a leak of the mint
-  secret cannot introspect, and an optional `_HUGR` second consumer key is supported additively
-  (`crates/corelink-container/src/routes/auth_introspect.rs:567-569`).
+  secret cannot introspect (the dedicated key is read in `build_state_from_env`,
+  `crates/corelink-container/src/routes/auth_introspect.rs:661`), and an optional `_HUGR` second consumer
+  key is supported additively (`crates/corelink-container/src/routes/auth_introspect.rs:691-700`).
 - `max_concurrency` and `max_vcpu_h` are asymmetric: an absent cap ⇒ reject placement, but an absent
   vCPU-h ⇒ wall-off — they are not interchangeable signals
   (`crates/corelink-container/src/routes/auth_introspect.rs:280-298`).
@@ -84,7 +85,7 @@ the operational runbook for that gate; its authz mechanism is documented as the
 4. `crates/corelink-container/src/routes/auth_introspect.rs:318` — the `runners_entitlement` keyed SQL (separate axis).
 5. `crates/corelink-container/src/routes/auth_introspect.rs:353` — `runner_concurrency_for_tenant` one-lookup resolver.
 6. `crates/corelink-container/src/routes/auth_introspect.rs:566-576` — constant-time OR multi-key auth gate.
-7. `crates/corelink-container/src/routes/auth_introspect.rs:567-569` — per-consumer key (dedicated, not the mint key).
+7. `crates/corelink-container/src/routes/auth_introspect.rs:661` — dedicated `FABRIC_INTROSPECT_AUTH_KEY` read; `crates/corelink-container/src/routes/auth_introspect.rs:691-700` — optional `_HUGR` additive consumer key.
 8. `crates/corelink-container/src/routes/auth_introspect.rs:578-590` — body parsed only after the gate; token never logged.
 9. `crates/corelink-container/src/routes/auth_introspect.rs:592-593` — PAT verify (HMAC+D1+Argon2id+scope).
 10. `crates/corelink-container/src/routes/auth_introspect.rs:597-598` — plan resolution.
