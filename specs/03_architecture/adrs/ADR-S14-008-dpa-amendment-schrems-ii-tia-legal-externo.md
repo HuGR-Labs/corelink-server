@@ -26,7 +26,7 @@ supersedes: null
 superseded_by: null
 ---
 
-# ADR-S14-007 — DPA Amendment + Schrems II TIA (EDPB Recommendations 01/2020) + Legal Externo Review Path + Lighthouse Customer + 12th Sign-off Legal Counsel Exception
+# ADR-S14-008 — DPA Amendment + Schrems II TIA (EDPB Recommendations 01/2020) + Legal Externo Review Path + Lighthouse Customer + 12th Sign-off Legal Counsel Exception
 
 ## Status
 

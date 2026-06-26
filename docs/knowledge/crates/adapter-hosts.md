@@ -6,7 +6,7 @@ source_files:
   - "crates/corelink-adapter-host/src/lib.rs"
   - "crates/corelink-bazel-bridge/src/lib.rs"
   - "crates/corelink-byok/src/lib.rs"
-checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
+checkpoint_sha: "30789129fe9bd4fdff000ecea3e6abefed996a2f"
 provenance: "AUTHORED"
 tags: ["crates", "adapters", "bazel", "byok", "kms", "surfaces"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -31,7 +31,7 @@ These crates are the outer ring of the [adapter / package-manager surfaces](/sur
 
 - The adapters stay free of workspace SPI imports — the bridge crate composes them at boot, so a protocol adapter never couples to the CAS core directly (`crates/corelink-adapter-host/src/lib.rs:1-7`).
 - Bazel digests are validated at the boundary: hash must be 64 lowercase hex, size ≤ 4 GiB on writes, PUT body length must equal `size_bytes`, and `findMissingBlobs` rejects batches > 4096 digests (`crates/corelink-bazel-bridge/src/lib.rs:42-50`, `crates/corelink-bazel-bridge/src/lib.rs:68-75`).
-- The bridge is REST-only by invariant `INV-BAZEL-NO-GRPC` — no tonic/prost/gRPC dependency (`crates/corelink-bazel-bridge/src/lib.rs:48-50`). (The id is correct as `INV-BAZEL-NO-GRPC`; the code currently mis-spells it `INV-BAZEL-NO-GROPC` at that line — a one-char code typo tracked as a separate code PR.)
+- The bridge is REST-only by invariant `INV-BAZEL-NO-GRPC` — no tonic/prost/gRPC dependency (`crates/corelink-bazel-bridge/src/lib.rs:48-50`). The invariant id is spelled correctly as `INV-BAZEL-NO-GRPC` in the code (the prior `GROPC` one-char typo was fixed in this change).
 - At most one BYOK provider is active per build, enforced by a compile-time guard, eliminating runtime branching on the crypto hot path (`crates/corelink-byok/src/lib.rs:105-150`).
 
 # Gotchas

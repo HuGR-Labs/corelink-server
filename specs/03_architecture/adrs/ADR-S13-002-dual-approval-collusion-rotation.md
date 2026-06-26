@@ -14,7 +14,7 @@ superseded_by: null
 tags: ["adr", "s13", "admin-plane", "dual-approval", "collusion-rotation", "nist-ac-2-7", "high-risk"]
 ---
 
-# ADR-S13-001: Dual-Approval Enforcement + Collusion-Rotation Defense (PAT-DUAL-APPROVAL-001, NIST AC-2(7))
+# ADR-S13-002: Dual-Approval Enforcement + Collusion-Rotation Defense (PAT-DUAL-APPROVAL-001, NIST AC-2(7))
 
 ## Status
 
