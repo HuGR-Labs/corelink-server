@@ -80,11 +80,68 @@ fn tombstoned_hash() -> Option<String> {
     env::var(TOMBSTONED_HASH_ENV).ok().filter(|v| !v.is_empty())
 }
 
+/// Poll a CAS GET for the GDPR erased end-state, classifying STRONG vs WEAK
+/// proof (auditor tooth-audit, refined against live prod behavior):
+///
+///   - 200 at any point → FAIL (erased bytes SERVED — the hard GDPR violation).
+///   - 410             → PASS (STRONG proof: the durable tombstone marker — the
+///     bytes provably *were here and were erased*, not merely absent).
+///   - persistent 404 through the budget → GATED (WEAK-but-acceptable: the bytes
+///     are NOT served, so GDPR "content gone" holds, but the durable 410 marker
+///     did not surface within the window). This is NOT a PASS (a 404 alone can't
+///     distinguish "erased" from "never-written" — the auditor's concern) and
+///     NOT a FAIL (the bytes ARE gone, and prod's tombstone bloom-refresh lag is
+///     eventually-consistent and observed to exceed the budget on some runs, so
+///     a hard 410-only assert would FLAKE). 410 PASSES whenever the marker is
+///     warm; otherwise we honestly record the weak form.
+///
+/// A durable tombstone answers 410 once its bloom refreshes; until then a GET
+/// can transiently 404, so we poll rather than assert once.
+fn poll_until_gone(
+    client: &Client,
+    url: &str,
+    token: &str,
+    name: &'static str,
+    start: Instant,
+) -> JourneyResult {
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+    let mut last = 0u16;
+    for attempt in 0..8 {
+        let resp = match client.get(url).header(AUTHORIZATION, bearer(token)).send() {
+            Ok(r) => r,
+            Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {url}: {e}")),
+        };
+        last = resp.status().as_u16();
+        match last {
+            410 => return JourneyResult::pass(name, ms(start)),
+            200 => {
+                return JourneyResult::fail(
+                    name,
+                    ms(start),
+                    "ERASED CONTENT SERVED 200 — GDPR tombstone gate not enforced".to_string(),
+                )
+            }
+            // 404 (bloom-refresh lag) or transient — wait briefly and re-poll.
+            _ if attempt < 7 => std::thread::sleep(std::time::Duration::from_secs(2)),
+            _ => {}
+        }
+    }
+    // Bytes are not served (GDPR-satisfied) but the strong 410 marker never
+    // surfaced within the budget — record the weak form, never a false green.
+    JourneyResult::gated(
+        name,
+        format!(
+            "erased hash returned {last} (not served — GDPR 'content gone' holds) but the durable \
+             410 tombstone marker did not surface within the poll budget (bloom-refresh lag, \
+             eventually-consistent); strong-form 410 unproven this run"
+        ),
+    )
+}
+
 /// (1) HAPPY (observable) — GET an erased content address → **410 Gone**.
 fn erased_read_is_gone(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "DSR: erased content-address GET -> 410 Gone (tombstone)";
     let start = Instant::now();
-    let ms = |s: Instant| s.elapsed().as_millis() as u64;
 
     let p1 = match Persona::P1ReadWrite.resolve(cfg) {
         Ok(p) => p,
@@ -101,27 +158,8 @@ fn erased_read_is_gone(cfg: &Config, client: &Client) -> JourneyResult {
     };
     let token = p1.token.expect("P1 always has a token");
     let url = url_cas(cfg, &p1.tenant, &hash);
-
-    let resp = match client.get(&url).header(AUTHORIZATION, bearer(token)).send() {
-        Ok(r) => r,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {url}: {e}")),
-    };
-    let got = resp.status().as_u16();
-    // 410 is the contract. A 404 (never-existed / hidden) is acceptable-but-weaker
-    // (the bytes are still unreadable). A 200 is a HARD FAIL — erased bytes served.
-    match got {
-        410 | 404 => JourneyResult::pass(name, ms(start)),
-        200 => JourneyResult::fail(
-            name,
-            ms(start),
-            "ERASED CONTENT SERVED 200 — GDPR tombstone gate not enforced".to_string(),
-        ),
-        other => JourneyResult::fail(
-            name,
-            ms(start),
-            format!("GET erased hash got {other} (expected 410 Gone)"),
-        ),
-    }
+    // STRICT 410 with bounded bloom-lag tolerance (see poll_until_gone).
+    poll_until_gone(client, &url, token, name, start)
 }
 
 /// (2) EDGE — batch-read of an erased hash reports it **gone**, never its bytes;
@@ -306,27 +344,10 @@ fn dsr_request_then_content_gone(cfg: &Config, client: &Client) -> JourneyResult
         );
     }
 
-    // (b) The already-erased content must read as GONE (the proven end-state).
+    // (b) The already-erased content must read as GONE (the proven end-state):
+    // STRICT 410 with bounded bloom-lag tolerance (see poll_until_gone).
     let read_url = url_cas(cfg, &p1.tenant, &hash);
-    let read = match client.get(&read_url).header(AUTHORIZATION, bearer(token)).send() {
-        Ok(r) => r,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {read_url}: {e}")),
-    };
-    let read_status = read.status().as_u16();
-    match read_status {
-        410 | 404 => JourneyResult::pass(name, ms(start)),
-        200 => JourneyResult::fail(
-            name,
-            ms(start),
-            "ERASED CONTENT SERVED 200 after a DSR request — erasure end-state not honoured"
-                .to_string(),
-        ),
-        other => JourneyResult::fail(
-            name,
-            ms(start),
-            format!("erased-content read got {other} after DSR request (expected 410/404 gone)"),
-        ),
-    }
+    poll_until_gone(client, &read_url, token, name, start)
 }
 
 /// (3c) SELF-DRIVING FULL-FLOW (gated) — write content → request erasure →

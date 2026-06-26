@@ -263,20 +263,23 @@ fn past_due_data_plane_denied(cfg: &Config, client: &Client) -> JourneyResult {
         );
     }
 
-    // The billing-gated denial is specifically 402/503 (matrix S13/P7). We also
-    // accept the auth-layer denials (401/403/404) as a valid deny — what must
-    // never happen is a 2xx. Assert the matrix-precise codes first, then fall
-    // back to the generic deny so the journey can't pass on an unexpected 2xx.
-    if matches!(status, 402 | 503) {
-        return JourneyResult::pass(name, ms(start));
-    }
-    match expect_denied("past-due data-plane write", status) {
-        Ok(()) => JourneyResult::pass(name, ms(start)),
-        Err(_) => JourneyResult::fail(
+    // STRICT (auditor tooth-audit): the past-due deny MUST be the billing-state
+    // gate's 402 (ADR-0068 $-ceiling; ver. live: a past-due tenant's CAS PUT → 402),
+    // tolerating 503 only as a fail-closed. A 401/403/404 is NO LONGER accepted: it
+    // means the past-due credential was rejected by the AUTH layer, so the journey
+    // never exercised the BILLING-STATE gate at all and would pass for the wrong
+    // reason (a mis-provisioned PAT → false green). 2xx is the integrity failure
+    // (handled above).
+    match status {
+        402 => JourneyResult::pass(name, ms(start)),
+        503 => JourneyResult::pass(name, ms(start)), // fail-closed tolerated
+        other => JourneyResult::fail(
             name,
             ms(start),
             format!(
-                "past-due PUT got {status} — expected a billing deny (402/503) or auth deny (401/403/404)"
+                "past-due PUT got {other} — expected the billing-state deny 402 (503 tolerated \
+                 fail-closed). A 401/403/404 means the past-due credential hit the AUTH layer, \
+                 not the billing gate — the billing-state property is UNPROVEN"
             ),
         ),
     }
