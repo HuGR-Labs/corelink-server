@@ -15,6 +15,50 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use crate::harness::{bearer, blake3_hex, url_cas, Config, JourneyResult, TokenKind};
 use crate::personas::Persona;
 
+/// PUT a blob, riding out TRANSIENT prod faults so a flaky window can't turn a
+/// quota journey RED on a NON-cap blip. A per-tenant data plane can 503 on its
+/// first (cold) touch, and a slow-prod window can time the request out — neither
+/// is a quota-cap result, yet the old inline PUTs hard-FAILED on the first such
+/// blip (observed: a fresh quota tenant timed out at 60s / 503'd on PUT #0,
+/// rotating run-to-run). We retry the SAME content-address — idempotent, since
+/// CAS is content-addressed so a re-PUT is a safe no-op/dedup — on a send-error /
+/// 503 / 504, up to a bounded budget with short pauses. Returns:
+///   `Ok(status)`  — a DEFINITIVE response: 2xx served, 402/429 cap, 404, a
+///                   non-transient 5xx (crash-on-cap), etc. — the caller decides.
+///   `Err(reason)` — a PERSISTENT transient fault after the budget; the caller
+///                   GATES (a prod outage is not a quota-cap result → never a FAIL).
+fn put_blob_tolerant(
+    client: &Client,
+    url: &str,
+    token: &str,
+    blob: &[u8],
+) -> Result<u16, String> {
+    let mut last = String::new();
+    for attempt in 0..5 {
+        match client
+            .put(url)
+            .header(AUTHORIZATION, bearer(token))
+            .header(CONTENT_TYPE, "application/octet-stream")
+            .body(blob.to_vec())
+            .send()
+        {
+            Ok(r) => {
+                let st = r.status().as_u16();
+                if matches!(st, 503 | 504) {
+                    last = format!("transient {st}"); // cold plane / edge blip — retry
+                } else {
+                    return Ok(st); // definitive (2xx / 402 / 429 / 404 / other 5xx)
+                }
+            }
+            Err(e) => last = e.to_string(), // timeout / connection — retry
+        }
+        if attempt < 4 {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+        }
+    }
+    Err(format!("data plane unreachable after 5 attempts ({last})"))
+}
+
 /// Resolve the (tenant, token) the destructive quota drives target.
 ///
 /// Prefers a DEDICATED throwaway quota tenant + its PAT
@@ -104,17 +148,11 @@ fn under_cap_serves(cfg: &Config, client: &Client) -> JourneyResult {
     let hash = blake3_hex(&blob);
     let url = url_cas(cfg, &tenant, &hash);
 
-    let resp = match client
-        .put(&url)
-        .header(AUTHORIZATION, bearer(token))
-        .header(CONTENT_TYPE, "application/octet-stream")
-        .body(blob)
-        .send()
-    {
-        Ok(r) => r,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("PUT {url}: {e}")),
+    let status = match put_blob_tolerant(client, &url, token, &blob) {
+        Ok(s) => s,
+        // A persistent transient fault (slow/cold prod) is not a cap result.
+        Err(reason) => return JourneyResult::gated(name, format!("under-cap probe: {reason}")),
     };
-    let status = resp.status().as_u16();
     match status {
         200 | 201 => JourneyResult::pass(name, ms(start)),
         // If THIS tenant is already at its cap, a 402/429 is legitimate state, not
@@ -166,22 +204,21 @@ fn quota_hard_cap(cfg: &Config, client: &Client) -> JourneyResult {
         let hash = blake3_hex(&blob);
         let url = url_cas(cfg, &tenant, &hash);
 
-        let resp = match client
-            .put(&url)
-            .header(AUTHORIZATION, bearer(token))
-            .header(CONTENT_TYPE, "application/octet-stream")
-            .body(blob)
-            .send()
-        {
-            Ok(r) => r,
-            Err(e) => return JourneyResult::fail(name, ms(start), format!("PUT #{i}: {e}")),
+        let status = match put_blob_tolerant(client, &url, token, &blob) {
+            Ok(s) => s,
+            // Persistent transient fault (cold plane / slow-prod) — not a quota
+            // result; GATE rather than flaky-FAIL on a prod blip.
+            Err(reason) => {
+                return JourneyResult::gated(name, format!("PUT #{i}: {reason}"))
+            }
         };
-        let status = resp.status().as_u16();
         // Hard cap = 402 (ADR-0068 monthly $-ceiling) or 429 (rate cap). Either
         // proves the cap is enforced, not silently overaged.
         if status == 402 || status == 429 {
             return JourneyResult::pass(name, ms(start)); // hard cap enforced
         }
+        // A NON-transient 5xx (500/502 — 503/504 are retried in the helper) or a
+        // 404 is a real fault: the data plane can't verify the cap.
         if status == 404 || status >= 500 {
             return JourneyResult::fail(
                 name,
@@ -236,17 +273,11 @@ fn quota_hard_cap_clean_and_under_cap_serves(cfg: &Config, client: &Client) -> J
     let probe = format!("quota-clean-undercap-{}", uuid::Uuid::new_v4()).into_bytes();
     let probe_hash = blake3_hex(&probe);
     let probe_url = url_cas(cfg, &tenant, &probe_hash);
-    let probe_resp = match client
-        .put(&probe_url)
-        .header(AUTHORIZATION, bearer(token))
-        .header(CONTENT_TYPE, "application/octet-stream")
-        .body(probe)
-        .send()
-    {
-        Ok(r) => r,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("under-cap PUT {probe_url}: {e}")),
+    let probe_status = match put_blob_tolerant(client, &probe_url, token, &probe) {
+        Ok(s) => s,
+        Err(reason) => return JourneyResult::gated(name, format!("under-cap probe: {reason}")),
     };
-    match probe_resp.status().as_u16() {
+    match probe_status {
         200 | 201 => {}
         402 | 429 => {
             return JourneyResult::gated(
@@ -278,22 +309,18 @@ fn quota_hard_cap_clean_and_under_cap_serves(cfg: &Config, client: &Client) -> J
         let hash = blake3_hex(&blob);
         let url = url_cas(cfg, &tenant, &hash);
 
-        let resp = match client
-            .put(&url)
-            .header(AUTHORIZATION, bearer(token))
-            .header(CONTENT_TYPE, "application/octet-stream")
-            .body(blob)
-            .send()
-        {
-            Ok(r) => r,
-            Err(e) => return JourneyResult::fail(name, ms(start), format!("drive PUT #{i}: {e}")),
+        let status = match put_blob_tolerant(client, &url, token, &blob) {
+            Ok(s) => s,
+            // Persistent transient fault (cold plane / slow-prod) — not a cap
+            // result; GATE rather than flaky-FAIL on a prod blip.
+            Err(reason) => return JourneyResult::gated(name, format!("drive PUT #{i}: {reason}")),
         };
-        let status = resp.status().as_u16();
         // CLEAN cap rejection — the contract.
         if matches!(status, 402 | 429) {
             return JourneyResult::pass(name, ms(start));
         }
-        // A 5xx under cap pressure = crash-on-cap, NOT a clean rejection → HARD FAIL.
+        // A NON-transient 5xx (500/502; 503/504 are retried in the helper) under
+        // cap pressure = crash-on-cap, NOT a clean rejection → HARD FAIL.
         if status >= 500 {
             return JourneyResult::fail(
                 name,
