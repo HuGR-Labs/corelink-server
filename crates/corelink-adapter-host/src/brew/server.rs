@@ -26,7 +26,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::extract::{Request, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
@@ -124,9 +124,22 @@ async fn handle_bottle_request(
     };
 
     match state.bottle.fetch(&tenant_id, raw_path).await {
-        Ok(bytes) => {
-            let mut response = Response::new(Body::from(bytes));
+        Ok(fetch) => {
+            // C-MOAT: surface the cache-hit signal as the `X-Cache` header so a
+            // client (and the e2e shared_cache journey) can PROVE a
+            // cross-tenant `_public` serve. `HIT` = served from CAS without
+            // touching the network; `MISS` = filled from upstream this request
+            // (or a served-but-not-cached tag-addressed path).
+            let mut response = Response::new(Body::from(fetch.bytes));
             *response.status_mut() = StatusCode::OK;
+            response.headers_mut().insert(
+                "x-cache",
+                if fetch.is_hit {
+                    HeaderValue::from_static("HIT")
+                } else {
+                    HeaderValue::from_static("MISS")
+                },
+            );
             response
         }
         Err(err) => err.into_response(),
@@ -164,3 +177,157 @@ impl IntoResponse for BrewAdapterError {
 
 #[doc(hidden)]
 pub fn _unused_marker(_: &SharedCasStore) {}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::missing_docs_in_private_items
+)]
+mod tests {
+    //! C-MOAT: the `X-Cache` response header must be `HIT` on a CAS serve and
+    //! `MISS` on an upstream fill — the moat-proof signal asserted by the e2e
+    //! `shared_cache` journey.
+    use std::collections::HashMap;
+    use std::net::SocketAddr;
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+    use sha2::{Digest as _, Sha256};
+    use url::Url;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
+    use crate::brew::config::DEFAULT_BOTTLE_SIZE_LIMIT_BYTES;
+    use crate::brew::ports::{CasError, CasStore, TenantResolveError, TenantResolver};
+
+    const PAT: &str = "corelink_tenant_xcache";
+    const TENANT: &str = "tenant-xcache";
+    const BOTTLE_BYTES: &[u8] = b"\x1f\x8b\x08\x00x-cache-payload";
+
+    /// Digest-addressed (cacheable) bottle path whose sha256 matches the bytes.
+    fn digest_path() -> String {
+        let digest = hex::encode(Sha256::digest(BOTTLE_BYTES));
+        format!("/v2/homebrew/core/curl/blobs/sha256:{digest}")
+    }
+
+    /// CAS preloaded so every `get` is a HIT (and `put` is a no-op).
+    #[derive(Debug)]
+    struct HitCas(Vec<u8>);
+    #[async_trait]
+    impl CasStore for HitCas {
+        async fn get(&self, _tenant_id: &str, _cas_key: &str) -> Result<Option<Vec<u8>>, CasError> {
+            Ok(Some(self.0.clone()))
+        }
+        async fn put(&self, _t: &str, _k: &str, _b: Vec<u8>) -> Result<(), CasError> {
+            Ok(())
+        }
+    }
+
+    /// Empty CAS: every `get` is a MISS, `put` succeeds (records nothing).
+    #[derive(Debug, Default)]
+    struct EmptyCas;
+    #[async_trait]
+    impl CasStore for EmptyCas {
+        async fn get(&self, _tenant_id: &str, _cas_key: &str) -> Result<Option<Vec<u8>>, CasError> {
+            Ok(None)
+        }
+        async fn put(&self, _t: &str, _k: &str, _b: Vec<u8>) -> Result<(), CasError> {
+            Ok(())
+        }
+    }
+
+    #[derive(Debug)]
+    struct StaticResolver(Mutex<HashMap<String, String>>);
+    #[async_trait]
+    impl TenantResolver for StaticResolver {
+        async fn resolve(&self, pat: &str) -> Result<String, TenantResolveError> {
+            self.0
+                .lock()
+                .unwrap()
+                .get(pat)
+                .cloned()
+                .ok_or(TenantResolveError::InvalidPat)
+        }
+    }
+
+    fn resolver() -> Arc<StaticResolver> {
+        let mut m = HashMap::new();
+        m.insert(PAT.to_owned(), TENANT.to_owned());
+        Arc::new(StaticResolver(Mutex::new(m)))
+    }
+
+    async fn spin(cas: Arc<dyn CasStore>, upstream: Url) -> SocketAddr {
+        let bind: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let config = BrewAdapterConfig::new(
+            bind,
+            upstream,
+            DEFAULT_BOTTLE_SIZE_LIMIT_BYTES,
+            cas,
+            resolver(),
+            Arc::new(corelink_audit::ports::InMemoryAuditEmitter::new()),
+        );
+        let router = build_router(config).unwrap();
+        let listener = tokio::net::TcpListener::bind(bind).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, router).await;
+        });
+        addr
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cache_hit_sets_x_cache_hit() {
+        // CAS already holds the bytes ⇒ the serve short-circuits upstream; the
+        // dummy upstream URL is never contacted.
+        let addr = spin(
+            Arc::new(HitCas(BOTTLE_BYTES.to_vec())),
+            Url::parse("https://ghcr.io").unwrap(),
+        )
+        .await;
+        let resp = reqwest::Client::new()
+            .get(format!("http://{addr}{}", digest_path()))
+            .header("Authorization", format!("Bearer {PAT}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        assert_eq!(
+            resp.headers().get("x-cache").map(|v| v.as_bytes()),
+            Some(&b"HIT"[..]),
+            "a CAS serve MUST carry X-Cache: HIT"
+        );
+        assert_eq!(resp.bytes().await.unwrap().as_ref(), BOTTLE_BYTES);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cache_miss_sets_x_cache_miss() {
+        // Empty CAS + a mock upstream serving the digest-matching bytes ⇒ the
+        // request fills from upstream, which is a MISS.
+        let upstream = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(BOTTLE_BYTES.to_vec()))
+            .mount(&upstream)
+            .await;
+        let addr = spin(
+            Arc::new(EmptyCas),
+            Url::parse(&upstream.uri()).unwrap(),
+        )
+        .await;
+        let resp = reqwest::Client::new()
+            .get(format!("http://{addr}{}", digest_path()))
+            .header("Authorization", format!("Bearer {PAT}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        assert_eq!(
+            resp.headers().get("x-cache").map(|v| v.as_bytes()),
+            Some(&b"MISS"[..]),
+            "an upstream fill MUST carry X-Cache: MISS"
+        );
+        assert_eq!(resp.bytes().await.unwrap().as_ref(), BOTTLE_BYTES);
+    }
+}

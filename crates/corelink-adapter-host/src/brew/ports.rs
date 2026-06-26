@@ -45,6 +45,23 @@ pub trait CasStore: Send + Sync + Debug {
     async fn put(&self, tenant_id: &str, cas_key: &str, bytes: Vec<u8>) -> Result<(), CasError>;
 }
 
+/// Result of a [`crate::brew::bottle::BottleService::fetch`]: the served bytes
+/// plus whether they came from the cache (C-MOAT).
+///
+/// `is_hit` is the moat-proof signal the brew server turns into the `X-Cache`
+/// response header — `true` ⇒ served from the (cross-tenant `_public`) CAS
+/// without touching the network (`X-Cache: HIT`); `false` ⇒ filled from
+/// upstream this request, or a mutable tag-addressed path served-but-not-cached
+/// (`X-Cache: MISS`). The error path is UNCHANGED — failures still surface as
+/// [`crate::brew::BrewAdapterError`], never as a `CacheFetch`.
+#[derive(Debug, Clone)]
+pub struct CacheFetch {
+    /// The bottle bytes to serve to the client.
+    pub bytes: Vec<u8>,
+    /// `true` iff the bytes were served from CAS (no upstream fetch).
+    pub is_hit: bool,
+}
+
 /// CAS backend failure surface.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]

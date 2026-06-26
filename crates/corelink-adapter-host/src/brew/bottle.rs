@@ -35,7 +35,7 @@ use sha2::{Digest as _, Sha256};
 
 use crate::brew::audit::AuditOrchestrator;
 use crate::brew::error::BrewAdapterError;
-use crate::brew::ports::{CasError, SharedCasStore};
+use crate::brew::ports::{CacheFetch, CasError, SharedCasStore};
 use crate::brew::upstream::UpstreamFetcher;
 
 /// Canonicalize a brew bottle request path. See module docs for the
@@ -196,11 +196,16 @@ impl BottleService {
     /// `raw_path` is the brew client's request path (with optional
     /// query). `tenant_id` MUST be the value returned by the
     /// configured PAT resolver.
+    ///
+    /// Returns a [`CacheFetch`] carrying the served bytes plus the moat-proof
+    /// `is_hit` signal (C-MOAT): `true` on a CAS hit (cross-tenant `_public`
+    /// serve, no network), `false` on an upstream fill or a served-but-not-
+    /// cached tag-addressed path. The error path is UNCHANGED.
     pub async fn fetch(
         &self,
         tenant_id: &str,
         raw_path: &str,
-    ) -> Result<Vec<u8>, BrewAdapterError> {
+    ) -> Result<CacheFetch, BrewAdapterError> {
         let canonical = canonical_bottle_path(raw_path);
 
         // Repo-path allowlist (F-005). The SSRF guard pins the upstream HOST to
@@ -222,7 +227,10 @@ impl BottleService {
                     cas_key = %cas_key,
                     "brew bottle CAS hit"
                 );
-                return Ok(bytes);
+                return Ok(CacheFetch {
+                    bytes,
+                    is_hit: true,
+                });
             }
             Ok(None) => {}
             Err(CasError::Backend(msg)) => return Err(BrewAdapterError::Cas(msg)),
@@ -252,7 +260,11 @@ impl BottleService {
                  (no URL-declared digest → refused for the shared _public \
                  namespace, F-005); sha256 logged for audit trail"
             );
-            return Ok(bytes);
+            // Served from upstream this request (never cached) ⇒ a MISS.
+            return Ok(CacheFetch {
+                bytes,
+                is_hit: false,
+            });
         };
 
         // Pre-store integrity: the request path is content-addressed (ghcr.io
@@ -297,7 +309,11 @@ impl BottleService {
             return Err(BrewAdapterError::Cas(msg));
         }
 
-        Ok(bytes)
+        // Upstream fill (this request fetched + stored) ⇒ a MISS.
+        Ok(CacheFetch {
+            bytes,
+            is_hit: false,
+        })
     }
 }
 
