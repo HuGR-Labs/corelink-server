@@ -51,6 +51,12 @@ jobs:
         with:
           workspaces: ". -> target"
 
+      # corelink-reapi (a transitive dep) has a prost-build script that needs protoc.
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b  # arduino/setup-protoc@v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: cargo clippy (corelink-server, -D warnings)
         run: cargo clippy --package corelink-server --all-targets -- -D warnings
 
