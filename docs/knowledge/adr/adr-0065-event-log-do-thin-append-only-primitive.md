@@ -53,3 +53,5 @@ ordered log.
    Decision: the minimal generic surface, monotonic `seq`, and the explicit NOT-chain-aware stance.
 3. `specs/03_architecture/adrs/ADR-0065-event-log-do-thin-append-only-primitive.md:65-70` — the
    Consequences: consumer owns the chain, CoreLink freezes the retention + monotonicity contract.
+4. `specs/03_architecture/adrs/ADR-0065-event-log-do-thin-append-only-primitive.md:62-63` — the
+   Alternatives-rejected: a D1-table log loses the total-order guarantee under concurrency.

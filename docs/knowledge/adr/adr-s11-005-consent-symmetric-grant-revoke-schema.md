@@ -50,8 +50,7 @@ revoke must be explicit (correcting a prior round-1 fail-open finding).
 1. `specs/03_architecture/adrs/ADR-S11-005-consent-symmetric-grant-revoke-schema.md:23-33` — the
    Context: the "as easy as" interpretations and why UX symmetry alone fails WP29 Op. 06/2014.
 2. `specs/03_architecture/adrs/ADR-S11-005-consent-symmetric-grant-revoke-schema.md:35-53` — the
-   Decision: the identical 6-field `ConsentProofPayload`, shared HMAC verify path, and no fail-open
-   swap.
+   Decision: the identical 6-field `ConsentProofPayload` and shared HMAC verify path.
 3. `specs/03_architecture/adrs/ADR-S11-005-consent-symmetric-grant-revoke-schema.md:68-79` — the
    Consequences: the symmetric audit trail / property tests, the metadata friction, and the forbidden
    cases.

@@ -12,7 +12,7 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # ADR-0024 — Dependency-Track self-host + CVE alerting
 
-CoreLink needs continuous CVE matching against every shipped SBOM dependency to satisfy SOC 2 CC7.1 and the S-12 supply-chain mandate — not just build-time advisory checks. This ADR records why that capability is met by a self-hosted OWASP Dependency-Track instance feeding a Cloudflare-Worker alert webhook, rather than a per-developer SaaS scanner, and what the operational cost of that choice is.
+CoreLink needs continuous CVE matching against every shipped SBOM dependency to satisfy SOC 2 CC7.1 and the S-12 supply-chain mandate — not just build-time advisory checks. This ADR records why the decision is to meet it via a self-hosted OWASP Dependency-Track instance feeding a Cloudflare-Worker alert webhook, rather than a per-developer SaaS scanner, and what the operational cost of that choice is.
 
 # Context
 

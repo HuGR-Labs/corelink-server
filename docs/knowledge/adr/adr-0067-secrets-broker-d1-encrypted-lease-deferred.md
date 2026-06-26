@@ -52,3 +52,5 @@ that works within the platform wall and bounds the leak blast radius flagged as 
    Decision: defer for launch + the D1 envelope-encrypted TTL-lease design.
 3. `specs/03_architecture/adrs/ADR-0067-secrets-broker-d1-encrypted-lease-deferred.md:57-62` — the
    Consequences: the interim, and the KMS key + `secret_lease` table the eventual broker needs.
+4. `specs/03_architecture/adrs/ADR-0067-secrets-broker-d1-encrypted-lease-deferred.md:55` — the
+   Alternatives-rejected: plaintext-in-D1 is rejected (secrets must be envelope-encrypted at rest).

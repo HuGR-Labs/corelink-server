@@ -20,7 +20,7 @@ The S-14 residency/BYOK/erasure stack must be backed by contractual artifacts th
 
 # Decision
 
-The decision authors a comprehensive DPA-amendment template structured for external redline (D1), structures the TIA on the EDPB Recommendations 01/2020 framework with customer-held BYOK CMK as the primary effectiveness argument (D2), engages an external GDPR/Schrems II law firm rather than relying on solo-tier in-house review (D3), closes one lighthouse enterprise customer DPA as contract-closure evidence (D4), and adds a 12th Legal-Counsel sign-off for this legal-touching work item (D5), as set out across the decision section `specs/03_architecture/adrs/ADR-S14-008-dpa-amendment-schrems-ii-tia-legal-externo.md:53-115`. If external review misses the D+30 sprint window, the WAIVER-S14-001 path is taken with a 90-day expiry and a D+60 hard deadline (D6) — see [WAIVER-S14-001](/adr/waiver-s14-001-legal-externo-timeline.md).
+The decision authors a comprehensive DPA-amendment template structured for external redline (D1), structures the TIA on the EDPB Recommendations 01/2020 framework with customer-held BYOK CMK as the primary effectiveness argument (D2), engages an external GDPR/Schrems II law firm rather than relying on solo-tier in-house review (D3), closes one lighthouse enterprise customer DPA as contract-closure evidence (D4), and adds a 12th Legal-Counsel sign-off for this legal-touching work item (D5), as set out across the decision section `specs/03_architecture/adrs/ADR-S14-008-dpa-amendment-schrems-ii-tia-legal-externo.md:53-124`. If external review misses the D+30 sprint window, the WAIVER-S14-001 path is taken with a 90-day expiry and a D+60 hard deadline (D6) — see [WAIVER-S14-001](/adr/waiver-s14-001-legal-externo-timeline.md).
 
 # Consequences
 
@@ -29,5 +29,5 @@ Enterprise contract closure is unblocked and the BYOK effectiveness argument sat
 # Citations
 
 1. `specs/03_architecture/adrs/ADR-S14-008-dpa-amendment-schrems-ii-tia-legal-externo.md:38-47` — the five enterprise artifacts required and the GDPR Art. 46 / LGPD Art. 33 §1 obligations at stake (Context).
-2. `specs/03_architecture/adrs/ADR-S14-008-dpa-amendment-schrems-ii-tia-legal-externo.md:53-115` — the D1-D5 decisions (DPA template, EDPB-framework TIA, external counsel, lighthouse DPA, 12th sign-off).
+2. `specs/03_architecture/adrs/ADR-S14-008-dpa-amendment-schrems-ii-tia-legal-externo.md:53-124` — the D1-D6 decisions (DPA template, EDPB-framework TIA, external counsel, lighthouse DPA, 12th sign-off, and the WAIVER-S14-001 trigger / 90-day expiry / D+60 hard deadline).
 3. `specs/03_architecture/adrs/ADR-S14-008-dpa-amendment-schrems-ii-tia-legal-externo.md:128-145` — the positive/negative consequences and the cost + DPO trade-offs.

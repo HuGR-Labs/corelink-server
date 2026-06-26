@@ -12,7 +12,7 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # ADR-0025 — Hard non-bypassable cosign keyless deploy gate
 
-The deploy boundary is the last mile where a SolarWinds-class supply-chain attack lands: a tampered Worker bundle pushed with stolen deploy credentials would otherwise reach production undetected, because SLSA provenance, SBOMs, and cargo-audit all prove things about the *build* but none of them enforce that the *deployed* artifact is the one CI produced. This ADR records the decision to put a hard cryptographic gate at the CF API boundary itself.
+The deploy boundary is the last mile where a SolarWinds-class supply-chain attack lands: a tampered Worker bundle pushed with stolen deploy credentials would otherwise reach production undetected, because SLSA provenance, SBOMs, and cargo-audit all prove things about the *build* but none of them enforce that the *deployed* artifact is the one CI produced. This ADR records the decision (a DRAFT, ratified at WI-S12-003 SEAL) to put a hard cryptographic gate at the CF API boundary itself.
 
 # Context
 
@@ -32,3 +32,4 @@ SLSA L3 provenance, CycloneDX SBOMs, and cargo-audit+deny each harden the build 
 2. `specs/03_architecture/adrs/ADR-0025-deploy-gate-hard-cosign-keyless.md:52-82` — the hard non-bypassable verifier: keyless OIDC, Rekor inclusion, SAN regex, digest binding, fail-closed (Decision).
 3. `specs/03_architecture/adrs/ADR-0025-deploy-gate-hard-cosign-keyless.md:101-115` — soft-fail and emergency-override modes explicitly rejected (Decision).
 4. `specs/03_architecture/adrs/ADR-0025-deploy-gate-hard-cosign-keyless.md:124-150` — Rekor-outage-blocks-deploy and the latency/dependency trade-offs (Consequences).
+5. `specs/03_architecture/adrs/ADR-0025-deploy-gate-hard-cosign-keyless.md:26` — DRAFT status, ratified at WI-S12-003 SEAL (Status).

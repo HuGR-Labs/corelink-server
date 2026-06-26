@@ -32,3 +32,4 @@ The migration store enforces the 30d cooldown at the application layer with `reg
 2. `specs/03_architecture/adrs/ADR-S11-011-region-migration-cooldown-30d.md:30-35` — Decision: 30d from primary_region last-set + dual approval gate.
 3. `specs/03_architecture/adrs/ADR-S11-011-region-migration-cooldown-30d.md:37-52` — Rationale: TIA window, scheduling, commitment signal, reviewer time.
 4. `specs/03_architecture/adrs/ADR-S11-011-region-migration-cooldown-30d.md:62-69` — Consequences: enforcement, reference timestamp, sign-off, notice reference.
+5. `specs/03_architecture/adrs/ADR-S11-011-region-migration-cooldown-30d.md:54-60` — Alternatives Considered: 7d and 60d rejected, 14d considered but short of buffer for large enterprise tenants.

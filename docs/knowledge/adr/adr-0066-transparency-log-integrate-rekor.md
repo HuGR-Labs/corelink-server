@@ -52,5 +52,6 @@ path so it adds no hot-path latency.
    private-only Merkle export and the build-vs-integrate-vs-defer question.
 2. `specs/03_architecture/adrs/ADR-0066-transparency-log-integrate-rekor.md:30-36` — the Decision: the
    thin Rekor submission seam recording the inclusion proof, off the write path.
-3. `specs/03_architecture/adrs/ADR-0066-transparency-log-integrate-rekor.md:56-61` — the Consequences:
-   the Rekor client + stored proof and the fail-open witnessing posture.
+3. `specs/03_architecture/adrs/ADR-0066-transparency-log-integrate-rekor.md:48-61` — the rejected
+   alternatives (CoreLink-operated log / deferring entirely) and the Consequences: the Rekor client +
+   stored proof and the fail-open witnessing posture.

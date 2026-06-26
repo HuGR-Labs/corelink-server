@@ -16,7 +16,7 @@ CoreLink's spec framework lets work items inherit from canonical sources, but a 
 
 # Context
 
-An audit found `remote_cache_product_profile.md` used normative `inherits_from` language but was not listed as a canonical source in the framework, was typed as a generic `protocol`, and lacked the `doc_status: FROZEN` the inheritance rule (REG-INHERIT-001) requires — so it acted as a canonical source de facto but not de jure (`specs/03_architecture/adrs/ADR-0013-promote-remote-cache-canonical.md:30`). The invariant registry and the key-management (BYOK) doc, created in the same lote, also needed canonical status (`specs/03_architecture/adrs/ADR-0013-promote-remote-cache-canonical.md:37`).
+An audit found `remote_cache_product_profile.md` used normative `inherits_from` language but was not listed as a canonical source in the framework, was typed as a generic `protocol`, and lacked the `doc_status: FROZEN` the inheritance rule (REG-INHERIT-001) requires — so it acted as a canonical source de facto but not de jure (`specs/03_architecture/adrs/ADR-0013-promote-remote-cache-canonical.md:36`). The invariant registry and the key-management (BYOK) doc, created in the same lote, also needed canonical status (`specs/03_architecture/adrs/ADR-0013-promote-remote-cache-canonical.md:37`).
 
 # Decision
 
@@ -30,7 +30,7 @@ Promote three docs to Level-3 canonical sources: the remote-cache product profil
 
 # Citations
 
-1. `specs/03_architecture/adrs/ADR-0013-promote-remote-cache-canonical.md:30` — the de-facto-not-de-jure canonical-source gap.
+1. `specs/03_architecture/adrs/ADR-0013-promote-remote-cache-canonical.md:36` — the de-facto-not-de-jure canonical-source conclusion (Context).
 2. `specs/03_architecture/adrs/ADR-0013-promote-remote-cache-canonical.md:37` — registry + key-management docs also needing promotion.
 3. `specs/03_architecture/adrs/ADR-0013-promote-remote-cache-canonical.md:41-47` — the decision: promote three docs to Level-3.
 4. `specs/03_architecture/adrs/ADR-0013-promote-remote-cache-canonical.md:53-55` — rejected alternatives.

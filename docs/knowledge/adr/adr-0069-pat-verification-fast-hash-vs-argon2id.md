@@ -62,3 +62,5 @@ expiry, or a new isolate).
    Decision: fast keyed hash + lazy dual-read additive migration + the documented post-WP-2 deferral.
 3. `specs/03_architecture/adrs/ADR-0069-pat-verification-fast-hash-vs-argon2id.md:67-75` — the
    Consequences: the latency win, the migration risk, and the indefinite-dual-read reversibility.
+4. `specs/03_architecture/adrs/ADR-0069-pat-verification-fast-hash-vs-argon2id.md:79-81` — the
+   Alternatives-considered: a rejected stop-gap was simply raising the verify-cache TTL (masks cost, not the mismatch).

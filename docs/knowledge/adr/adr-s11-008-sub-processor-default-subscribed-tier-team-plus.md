@@ -32,3 +32,4 @@ All 5 plans get 30-day advance notice emails on sub-processor changes; the `sub_
 2. `specs/03_architecture/adrs/ADR-S11-008-sub-processor-default-subscribed-tier-team-plus.md:35-44` — Decision: all-5-plans + the legal_obligation (non-opt-out) basis.
 3. `specs/03_architecture/adrs/ADR-S11-008-sub-processor-default-subscribed-tier-team-plus.md:46-66` — Rationale: Art. 28.2 / Art. 39 no-tier-carve-out + minimização does not override Art. 39.
 4. `specs/03_architecture/adrs/ADR-S11-008-sub-processor-default-subscribed-tier-team-plus.md:76-82` — Consequences: notice delivery, non-opt-out, broadcast log, sign-off gate.
+5. `specs/03_architecture/adrs/ADR-S11-008-sub-processor-default-subscribed-tier-team-plus.md:68-74` — Correction to v1.0: v1.0 had conflated `marketing_email` (legitimate interest) with `sub_processor_notifications` (legal obligation).

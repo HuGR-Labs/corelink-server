@@ -51,3 +51,5 @@ default is a deliberately conservative symbolic $5/mo tripwire while real usage 
    fail-closed `tenant_quota` ceiling, the pre-serve middleware check, and the $5 tripwire default.
 3. `specs/03_architecture/adrs/ADR-0068-per-tenant-monthly-dollar-ceiling.md:58-63` — the Consequences:
    the additive migration + middleware + `cost(op)` estimate, and pairing with the velocity limit.
+4. `specs/03_architecture/adrs/ADR-0068-per-tenant-monthly-dollar-ceiling.md:55` — the Alternatives-rejected:
+   post-hoc billing alerts (fail-open) only detect overspend after it happens — too late for a hard cap.
