@@ -51,7 +51,7 @@ pub fn all(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     // `adapters` module's OCI journeys run before `oci`, so a warmup local to
     // `oci::run` is too late for them. A cold OCI container otherwise eats a
     // >30s cold-start on the first hit and flakes the gate RED (see warm_oci).
-    oci::warm_oci(cfg, client);
+    let _ = oci::warm_oci(cfg, client);
     out.extend(identity::run(cfg, client));
     out.extend(cas::run(cfg, client));
     out.extend(concurrency::run(cfg, client));

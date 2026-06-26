@@ -181,8 +181,12 @@ pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     // waits for readiness; it asserts nothing. (Also pre-warmed globally in
     // `mod::all` before the adapters OCI journeys — this call is the idempotent
     // belt-and-suspenders when oci::run is invoked on its own.)
-    warm_oci(cfg, client);
+    //
+    // `oci_host_reachable` performs the warmup AND records it as an explicit
+    // PASS/FAIL row so a dead host reds the gate instead of silently gating the
+    // whole module (auditor finding).
     vec![
+        oci_host_reachable(cfg, client),
         j1_v2_challenge(cfg, client),
         j2_token_get(cfg, client),
         j3_token_post(cfg, client),
@@ -211,11 +215,16 @@ pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
 /// `pub(crate)` so the runner can pre-warm the scale-to-zero OCI host ONCE before
 /// ANY module runs — the `adapters` module's OCI journeys run before this module,
 /// so a warmup local to `oci::run` would be too late for them.
-pub(crate) fn warm_oci(cfg: &Config, client: &Client) {
+/// Returns `true` once the host answers warm (any non-5xx), `false` if the
+/// bounded attempt budget is spent without a warm answer (host unreachable /
+/// stuck cold). Callers use the bool to surface an EXPLICIT failure
+/// (`oci_host_reachable`) rather than letting a dead OCI host silently turn the
+/// whole module Gated/erroring (auditor finding).
+pub(crate) fn warm_oci(cfg: &Config, client: &Client) -> bool {
     let url = format!("{}/v2/", oci_base(cfg));
     for attempt in 0..6 {
         match client.get(&url).send() {
-            Ok(r) if r.status().as_u16() < 500 => return, // warm (e.g. 401 challenge)
+            Ok(r) if r.status().as_u16() < 500 => return true, // warm (e.g. 401 challenge)
             _ => {
                 // Timeout or 5xx → still warming. The 30s client timeout already
                 // paces a hung cold-start; pause briefly after a fast 5xx too.
@@ -224,6 +233,29 @@ pub(crate) fn warm_oci(cfg: &Config, client: &Client) {
                 }
             }
         }
+    }
+    false
+}
+
+/// EXPLICIT reachability assertion (auditor tooth-audit): if the scale-to-zero
+/// OCI host never warms within the budget, the registry is genuinely
+/// unreachable — surface ONE hard FAIL here instead of letting every OCI journey
+/// below silently gate/error (a dead host would otherwise read as an all-Gated
+/// module, never RED). A warm host (the normal case) PASSES fast.
+fn oci_host_reachable(cfg: &Config, client: &Client) -> JourneyResult {
+    let name = "OCI: host reachable (scale-to-zero warmup)";
+    let start = Instant::now();
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+    if warm_oci(cfg, client) {
+        JourneyResult::pass(name, ms(start))
+    } else {
+        JourneyResult::fail(
+            name,
+            ms(start),
+            "OCI host GET /v2/ never answered (<500) within the warmup budget — the registry \
+             is unreachable; the OCI conformance journeys below cannot run"
+                .to_string(),
+        )
     }
 }
 

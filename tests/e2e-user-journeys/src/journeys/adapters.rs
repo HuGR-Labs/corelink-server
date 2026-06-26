@@ -841,6 +841,7 @@ fn brew_public_bottle_fetch(cfg: &Config, client: &Client) -> JourneyResult {
                   application/vnd.oci.image.manifest.v1+json";
     let mut status = 0u16;
     let mut last_err = String::new();
+    let mut body = String::new();
     for attempt in 0..3u32 {
         if attempt > 0 {
             std::thread::sleep(std::time::Duration::from_millis(500));
@@ -854,6 +855,9 @@ fn brew_public_bottle_fetch(cfg: &Config, client: &Client) -> JourneyResult {
             Ok(r) => {
                 status = r.status().as_u16();
                 if status < 500 {
+                    // Capture the body on a definitive response so the 200 path
+                    // can assert it is a real manifest, not a hollow 200.
+                    body = r.text().unwrap_or_default();
                     break; // 200/3xx/4xx is definitive — stop retrying
                 }
             }
@@ -890,6 +894,20 @@ fn brew_public_bottle_fetch(cfg: &Config, client: &Client) -> JourneyResult {
             name,
             ms(start),
             format!("brew public bottle GET got {status} (expected 200, hit or cache-fill)"),
+        );
+    }
+    // A 200 must carry a real OCI manifest, not a hollow body (auditor: status-only
+    // check passed on an empty 200). The bottle manifest is JSON; assert non-empty
+    // + a manifest marker ("schemaVersion"/"mediaType" appear in every OCI index).
+    if body.is_empty() || !(body.contains("schemaVersion") || body.contains("mediaType")) {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "brew public bottle GET 200 but body is not a real OCI manifest (len={}) — \
+                 a hollow 200 is not a real cache hit/fill",
+                body.len()
+            ),
         );
     }
     JourneyResult::pass(name, ms(start))
@@ -935,6 +953,32 @@ fn public_fetch_assert(
             name,
             ms(start),
             format!("{surface} public GET got {status} (expected 200, hit or cache-fill)"),
+        );
+    }
+    // 200: assert the body is the REAL public package index, not a hollow/empty
+    // 200 (auditor: the status-only check passed on an empty/garbage body). Markers
+    // verified live: npm metadata carries "dist-tags"; pip PEP-691 simple index
+    // carries "files".
+    let body = match get.text() {
+        Ok(b) => b,
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("{surface} 200 but body read failed: {e}"))
+        }
+    };
+    let marker = match surface {
+        "npm" => "dist-tags",
+        "pip" => "files",
+        _ => "",
+    };
+    if body.is_empty() || (!marker.is_empty() && !body.contains(marker)) {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "{surface} public GET 200 but body lacks the expected '{marker}' marker \
+                 (len={}) — a hollow 200 is not a real cache hit/fill",
+                body.len()
+            ),
         );
     }
     JourneyResult::pass(name, ms(start))
