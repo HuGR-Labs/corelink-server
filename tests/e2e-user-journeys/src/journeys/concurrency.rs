@@ -41,7 +41,7 @@ use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
 use crate::harness::{
-    bearer, blake3_hex, unique_blob, url_cas, url_customer, Config, JourneyResult,
+    bearer, blake3_hex, unique_blob, url_cas, url_customer, Config, JourneyResult, TokenKind,
 };
 use crate::personas::Persona;
 
@@ -395,16 +395,33 @@ fn byte_accounting_under_concurrency(cfg: &Config, client: &Client) -> JourneyRe
     let name = "CONC CAS: byte-accounting under concurrency — no double-count / no loss";
     let start = Instant::now();
 
-    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
-        Ok(p) => p,
-        Err(reason) => return JourneyResult::gated(name, reason),
-    };
-    if cfg.tenant.is_none() {
-        return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set");
-    }
-    let token = p1.token.expect("P1 always has a token");
+    // Prefer a DEDICATED no-other-writers tenant: there the bytes-stored meter
+    // delta is attributable EXACTLY to this journey's writes, so we assert REAL
+    // accounting (delta == written, ± one blob). Verified live: the meter is
+    // precise + read-your-writes consistent (delta == written exactly). WITHOUT
+    // the dedicated tenant we fall back to the shared primary tenant, where a
+    // concurrent writer can inflate the delta — there we can only GATE (record),
+    // never assert (the prior always-gated behavior).
+    let (tenant, token, dedicated) =
+        match (cfg.acct_tenant.as_deref(), cfg.token(TokenKind::Acct)) {
+            (Some(t), Some(tok)) => (t.to_string(), tok, true),
+            _ => {
+                let p1 = match Persona::P1ReadWrite.resolve(cfg) {
+                    Ok(p) => p,
+                    Err(reason) => return JourneyResult::gated(name, reason),
+                };
+                if cfg.tenant.is_none() {
+                    return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set");
+                }
+                (
+                    cfg.tenant_or_anon().to_string(),
+                    p1.token.expect("P1 always has a token"),
+                    false,
+                )
+            }
+        };
 
-    // Probe the usage surface; GATE if it isn't observable black-box.
+    // Probe the usage surface (scoped to `token`'s tenant); GATE if not observable.
     let before = match read_bytes_used(client, cfg, token) {
         Ok(Some(v)) => v,
         Ok(None) => {
@@ -422,7 +439,7 @@ fn byte_accounting_under_concurrency(cfg: &Config, client: &Client) -> JourneyRe
     let single_blob_len = blobs.first().map(|b| b.len() as u64).unwrap_or(0);
     let jobs: Vec<(String, Vec<u8>)> = blobs
         .iter()
-        .map(|b| (url_cas(cfg, &p1.tenant, &blake3_hex(b)), b.clone()))
+        .map(|b| (url_cas(cfg, &tenant, &blake3_hex(b)), b.clone()))
         .collect();
 
     let outcomes = concurrent_puts(client, token, &jobs);
@@ -440,16 +457,29 @@ fn byte_accounting_under_concurrency(cfg: &Config, client: &Client) -> JourneyRe
         }
     }
 
-    let after = match read_bytes_used(client, cfg, token) {
-        Ok(Some(v)) => v,
-        Ok(None) => {
-            return JourneyResult::gated(
-                name,
-                "usage surface stopped reporting bytes-stored after the writes — not observable",
-            )
+    // SETTLE the meter: poll until two consecutive reads agree, so an in-flight
+    // update can't under-report the delta and trip a false loss-FAIL.
+    let mut after = before;
+    let mut prev = u64::MAX;
+    for _ in 0..6 {
+        match read_bytes_used(client, cfg, token) {
+            Ok(Some(v)) => {
+                after = v;
+                if v == prev {
+                    break;
+                }
+                prev = v;
+            }
+            Ok(None) => {
+                return JourneyResult::gated(
+                    name,
+                    "usage surface stopped reporting bytes-stored after the writes — not observable",
+                )
+            }
+            Err(reason) => return JourneyResult::gated(name, reason),
         }
-        Err(reason) => return JourneyResult::gated(name, reason),
-    };
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
 
     // A negative delta is an unambiguous accounting bug (lost/corrupted meter):
     // writing data can never DECREASE bytes-stored.
@@ -464,11 +494,8 @@ fn byte_accounting_under_concurrency(cfg: &Config, client: &Client) -> JourneyRe
     }
     let delta = after - before;
 
-    // A clean N× (or 2×) multiple of the written total is the classic
-    // concurrent double-count signature; flag it as a FAIL. Anything else
-    // (delta == written_total within tolerance, OR an ambiguous value the
-    // eventually-consistent/shared meter could explain) GATES rather than
-    // risk a false positive.
+    // A clean N× (or 2×) multiple of the written total is the classic concurrent
+    // double-count signature — a HARD FAIL in BOTH modes.
     if single_blob_len > 0 {
         let doubled = written_total.checked_mul(2);
         let n_times = written_total.checked_mul(N as u64);
@@ -483,10 +510,37 @@ fn byte_accounting_under_concurrency(cfg: &Config, client: &Client) -> JourneyRe
         }
     }
 
+    if dedicated {
+        // No other writers → the settled delta MUST equal the written bytes,
+        // within one blob of slack (metadata/rounding). Below = lost charge;
+        // above = over-count. This is the real accounting tooth.
+        if delta < written_total {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!(
+                    "ACCOUNTING: dedicated-tenant settled delta {delta} < written {written_total} — bytes-stored UNDER-counted (lost charge)"
+                ),
+            );
+        }
+        if delta > written_total + single_blob_len {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!(
+                    "ACCOUNTING: dedicated-tenant settled delta {delta} > written {written_total} (+1 blob tol {single_blob_len}) — bytes-stored OVER-counted"
+                ),
+            );
+        }
+        return JourneyResult::pass(name, ms(start));
+    }
+
     JourneyResult::gated(
         name,
         format!(
-            "observed bytes-stored delta {delta} for {written_total} written ({N} distinct blobs); usage is eventually-consistent / shareable across writers, so an exact-match assertion is not safe black-box — no double-count/loss signature detected"
+            "observed bytes-stored delta {delta} for {written_total} written ({N} distinct blobs) on \
+             the SHARED primary tenant; a concurrent writer can inflate it, so an exact assert is not \
+             safe — provision CORELINK_E2E_ACCT_TENANT for the strict check. No double-count/loss signature detected"
         ),
     )
 }
