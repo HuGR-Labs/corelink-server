@@ -2198,3 +2198,184 @@ describe("handleStripeWebhook", () => {
         expect(billing!.sql).toContain("status != 'canceled'");
     });
 });
+
+// ---------------------------------------------------------------------------
+// tierFromSubscriptionPrice / detectTierPriceMismatch — focused coverage
+//
+// Both helpers are internal to stripe.ts and exercised via handleStripeWebhook.
+// The reverse-map tests below complete the 5-tier coverage for the tiers not
+// yet pinned in the main suite (starter, team, pro — solo and max are covered
+// above). The mismatch tests pin detectTierPriceMismatch with additional tier
+// combinations beyond the pro/starter case already in the main suite.
+// ---------------------------------------------------------------------------
+
+describe("tierFromSubscriptionPrice / detectTierPriceMismatch", () => {
+    beforeEach(() => {
+        vi.spyOn(globalThis, "fetch").mockResolvedValue({
+            ok: true,
+            status: 200,
+            text: async () => "",
+        } as unknown as Response);
+    });
+
+    // ------------------------------------------------------------------
+    // Reverse-map: given STRIPE_PRICE_ID_<TIER> env + a subscription whose
+    // items.data[0].price.id matches, the correct tier is resolved and
+    // propagated to tier_selections (no metadata[tier] present — the price
+    // alone decides).
+    // ------------------------------------------------------------------
+
+    it("reverse-map: STRIPE_PRICE_ID_STARTER env → price match resolves tier 'starter'", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const periodEndSec = Math.floor(nowMs / 1000) + 30 * 24 * 3600;
+        const event = {
+            id: "evt_price_starter_focused_1",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_price_starter_f",
+                    customer: "cus_price_starter_f",
+                    status: "active",
+                    current_period_end: periodEndSec,
+                    // No metadata[tier] — tierFromSubscriptionPrice alone resolves it.
+                    metadata: { tenant_id: "tenant_price_starter_f" },
+                    items: { data: [{ price: { id: "price_starter_xxx" } }] },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        expect((await handleStripeWebhook(req, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        const propagation = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tier_selections") && c.params.includes("starter"),
+        );
+        expect(propagation).toBeDefined();
+        expect(propagation!.params).toContain("cus_price_starter_f");
+    });
+
+    it("reverse-map: STRIPE_PRICE_ID_TEAM env → price match resolves tier 'team'", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const periodEndSec = Math.floor(nowMs / 1000) + 30 * 24 * 3600;
+        const event = {
+            id: "evt_price_team_focused_1",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_price_team_f",
+                    customer: "cus_price_team_f",
+                    status: "active",
+                    current_period_end: periodEndSec,
+                    metadata: { tenant_id: "tenant_price_team_f" },
+                    items: { data: [{ price: { id: "price_team_yyy" } }] },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        expect((await handleStripeWebhook(req, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        const propagation = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tier_selections") && c.params.includes("team"),
+        );
+        expect(propagation).toBeDefined();
+        expect(propagation!.params).toContain("cus_price_team_f");
+    });
+
+    it("reverse-map: STRIPE_PRICE_ID_PRO env → price match resolves tier 'pro'", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const periodEndSec = Math.floor(nowMs / 1000) + 30 * 24 * 3600;
+        const event = {
+            id: "evt_price_pro_focused_1",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_price_pro_f",
+                    customer: "cus_price_pro_f",
+                    status: "active",
+                    current_period_end: periodEndSec,
+                    metadata: { tenant_id: "tenant_price_pro_f" },
+                    items: { data: [{ price: { id: "price_pro_zzz" } }] },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        expect((await handleStripeWebhook(req, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        const propagation = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tier_selections") && c.params.includes("pro"),
+        );
+        expect(propagation).toBeDefined();
+        expect(propagation!.params).toContain("cus_price_pro_f");
+    });
+
+    // ------------------------------------------------------------------
+    // detectTierPriceMismatch: when metadata[tier] and the price-resolved tier
+    // both resolve AND disagree, the handler fails loud (500) and makes no
+    // writes — never picking a winner.
+    // ------------------------------------------------------------------
+
+    it("detectTierPriceMismatch: metadata[tier]=team but price maps to solo → 500 subscription_tier_price_mismatch, no writes", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_mismatch_team_solo_f",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_mismatch_ts_f",
+                    customer: "cus_mismatch_ts_f",
+                    status: "active",
+                    current_period_end: Math.floor(nowMs / 1000) + 30 * 24 * 3600,
+                    // metadata says TEAM but the subscribed price resolves to SOLO.
+                    metadata: { tenant_id: "tenant_mismatch_ts_f", tier: "team" },
+                    items: { data: [{ price: { id: "price_solo_aaa" } }] },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(500);
+        expect(await res.text()).toBe("subscription_tier_price_mismatch");
+        // No billing/tier write — conflict: never pick a winner.
+        expect(
+            db.runCalls.find(
+                (c) => c.sql.includes("tenant_billing") || c.sql.includes("tier_selections"),
+            ),
+        ).toBeUndefined();
+    });
+
+    it("detectTierPriceMismatch: metadata[tier]=team agrees with STRIPE_PRICE_ID_TEAM price → processes normally (no false positive)", async () => {
+        // detectTierPriceMismatch returns null when both signals agree —
+        // confirm that agreeing team/team subscriptions are not blocked.
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_match_team_f",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_match_team_f",
+                    customer: "cus_match_team_f",
+                    status: "active",
+                    current_period_end: Math.floor(nowMs / 1000) + 30 * 24 * 3600,
+                    metadata: { tenant_id: "tenant_match_team_f", tier: "team" },
+                    items: { data: [{ price: { id: "price_team_yyy" } }] },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+        const update = db.runCalls.find((c) => c.sql.includes("UPDATE tenant_billing"));
+        expect(update).toBeDefined();
+        expect(update!.params).toContain("paid");
+        // Tier propagated to the consistent tier.
+        const tierUpdate = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("SET tier"),
+        );
+        expect(tierUpdate).toBeDefined();
+        expect(tierUpdate!.params).toContain("team");
+    });
+});

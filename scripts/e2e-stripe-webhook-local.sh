@@ -29,6 +29,12 @@
 #   D  bad signature → 400 (no side effect).
 #   E  customer.subscription.deleted → 200; tenant_billing canceled +
 #      tier_selections inactive (revocation reaches the canonical gate).
+#   F  checkout.session.completed (paid, tier=solo) → 200; mirrors A:
+#      pending_checkout→active transition + billing paid + plan=solo.
+#   G  checkout.session.completed (paid, tier=team) → 200; mirrors A:
+#      pending_checkout→active transition + billing paid + plan=team.
+#   H  checkout.session.completed (paid, tier=pro) → 200; mirrors A:
+#      pending_checkout→active transition + billing paid + plan=pro.
 #
 # Usage:  bash scripts/e2e-stripe-webhook-local.sh
 # Exit:   0 = all scenarios PASS;  1 = a scenario failed (see output).
@@ -134,6 +140,21 @@ node "$WRANGLER" d1 execute CONFIG_DB --local --persist-to "$PERSIST" \
   --config "$WORKER_DIR/wrangler.toml" --yes --command \
   "INSERT INTO tier_selections (tenant_id,tier,subscription_state,correlation_id)
    VALUES ('harness-tenant-A','starter','pending_checkout','seed:A');" >/dev/null
+
+# Pre-seed pending_checkout rows so scenarios F/G/H exercise the real
+# pending_checkout→active transition (same structure as scenario A).
+node "$WRANGLER" d1 execute CONFIG_DB --local --persist-to "$PERSIST" \
+  --config "$WORKER_DIR/wrangler.toml" --yes --command \
+  "INSERT INTO tier_selections (tenant_id,tier,subscription_state,correlation_id)
+   VALUES ('harness-tenant-SOLO','solo','pending_checkout','seed:SOLO');" >/dev/null
+node "$WRANGLER" d1 execute CONFIG_DB --local --persist-to "$PERSIST" \
+  --config "$WORKER_DIR/wrangler.toml" --yes --command \
+  "INSERT INTO tier_selections (tenant_id,tier,subscription_state,correlation_id)
+   VALUES ('harness-tenant-TEAM','team','pending_checkout','seed:TEAM');" >/dev/null
+node "$WRANGLER" d1 execute CONFIG_DB --local --persist-to "$PERSIST" \
+  --config "$WORKER_DIR/wrangler.toml" --yes --command \
+  "INSERT INTO tier_selections (tenant_id,tier,subscription_state,correlation_id)
+   VALUES ('harness-tenant-PRO','pro','pending_checkout','seed:PRO');" >/dev/null
 
 # ---------------------------------------------------------------------------
 # 2. .dev.vars with the test whsec (backup + restore any real one).
@@ -296,6 +317,66 @@ E_TB=$(query_d1 "SELECT status FROM tenant_billing WHERE tenant_id='harness-tena
 assert "tenant_billing.status=canceled" canceled "$(field "$E_TB" status)"
 E_TS=$(query_d1 "SELECT subscription_state st FROM tier_selections WHERE tenant_id='harness-tenant-A';")
 assert "tier_selections.subscription_state=inactive (gate revoked)" inactive "$(field "$E_TS" st)"
+
+# ---------------------------------------------------------------------------
+# Scenario F — paid checkout.session.completed → activate (solo)
+# ---------------------------------------------------------------------------
+echo "▶ F: checkout.session.completed (paid, solo) → activate"
+F_BODY=$(cat <<EOF
+{"id":"evt_F_$NOW","type":"checkout.session.completed","data":{"object":{
+  "id":"cs_F","object":"checkout.session","payment_status":"paid",
+  "customer":"cus_F","subscription":"sub_F","amount_total":1500,
+  "metadata":{"tenant_id":"harness-tenant-SOLO","tier":"solo"}}}}
+EOF
+)
+assert "HTTP 200" 200 "$(post_event 1 "$F_BODY")"
+F_TS=$(query_d1 "SELECT subscription_state st, tier, subscription_started_at_ms sa FROM tier_selections WHERE tenant_id='harness-tenant-SOLO';")
+assert "tier_selections.subscription_state=active" active "$(field "$F_TS" st)"
+assert "tier_selections.tier=solo" solo "$(field "$F_TS" tier)"
+F_SA=$(field "$F_TS" sa); [[ -n "$F_SA" && "$F_SA" != "None" ]] && assert "subscription_started_at_ms set (real CHECK satisfied)" ok ok || assert "subscription_started_at_ms set (real CHECK satisfied)" ok "missing"
+F_TB=$(query_d1 "SELECT status, plan FROM tenant_billing WHERE tenant_id='harness-tenant-SOLO';")
+assert "tenant_billing.status=paid" paid "$(field "$F_TB" status)"
+assert "tenant_billing.plan=solo" solo "$(field "$F_TB" plan)"
+
+# ---------------------------------------------------------------------------
+# Scenario G — paid checkout.session.completed → activate (team)
+# ---------------------------------------------------------------------------
+echo "▶ G: checkout.session.completed (paid, team) → activate"
+G_BODY=$(cat <<EOF
+{"id":"evt_G_$NOW","type":"checkout.session.completed","data":{"object":{
+  "id":"cs_G","object":"checkout.session","payment_status":"paid",
+  "customer":"cus_G","subscription":"sub_G","amount_total":4500,
+  "metadata":{"tenant_id":"harness-tenant-TEAM","tier":"team"}}}}
+EOF
+)
+assert "HTTP 200" 200 "$(post_event 1 "$G_BODY")"
+G_TS=$(query_d1 "SELECT subscription_state st, tier, subscription_started_at_ms sa FROM tier_selections WHERE tenant_id='harness-tenant-TEAM';")
+assert "tier_selections.subscription_state=active" active "$(field "$G_TS" st)"
+assert "tier_selections.tier=team" team "$(field "$G_TS" tier)"
+G_SA=$(field "$G_TS" sa); [[ -n "$G_SA" && "$G_SA" != "None" ]] && assert "subscription_started_at_ms set (real CHECK satisfied)" ok ok || assert "subscription_started_at_ms set (real CHECK satisfied)" ok "missing"
+G_TB=$(query_d1 "SELECT status, plan FROM tenant_billing WHERE tenant_id='harness-tenant-TEAM';")
+assert "tenant_billing.status=paid" paid "$(field "$G_TB" status)"
+assert "tenant_billing.plan=team" team "$(field "$G_TB" plan)"
+
+# ---------------------------------------------------------------------------
+# Scenario H — paid checkout.session.completed → activate (pro)
+# ---------------------------------------------------------------------------
+echo "▶ H: checkout.session.completed (paid, pro) → activate"
+H_BODY=$(cat <<EOF
+{"id":"evt_H_$NOW","type":"checkout.session.completed","data":{"object":{
+  "id":"cs_H","object":"checkout.session","payment_status":"paid",
+  "customer":"cus_H","subscription":"sub_H","amount_total":5000,
+  "metadata":{"tenant_id":"harness-tenant-PRO","tier":"pro"}}}}
+EOF
+)
+assert "HTTP 200" 200 "$(post_event 1 "$H_BODY")"
+H_TS=$(query_d1 "SELECT subscription_state st, tier, subscription_started_at_ms sa FROM tier_selections WHERE tenant_id='harness-tenant-PRO';")
+assert "tier_selections.subscription_state=active" active "$(field "$H_TS" st)"
+assert "tier_selections.tier=pro" pro "$(field "$H_TS" tier)"
+H_SA=$(field "$H_TS" sa); [[ -n "$H_SA" && "$H_SA" != "None" ]] && assert "subscription_started_at_ms set (real CHECK satisfied)" ok ok || assert "subscription_started_at_ms set (real CHECK satisfied)" ok "missing"
+H_TB=$(query_d1 "SELECT status, plan FROM tenant_billing WHERE tenant_id='harness-tenant-PRO';")
+assert "tenant_billing.status=paid" paid "$(field "$H_TB" status)"
+assert "tenant_billing.plan=pro" pro "$(field "$H_TB" plan)"
 
 # ---------------------------------------------------------------------------
 # Verdict
