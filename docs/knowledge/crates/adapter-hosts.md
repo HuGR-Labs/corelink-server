@@ -5,6 +5,9 @@ description: "The translation layers that map third-party cache protocols (packa
 source_files:
   - "crates/corelink-adapter-host/src/lib.rs"
   - "crates/corelink-bazel-bridge/src/lib.rs"
+  - "crates/corelink-bazel-bridge/src/digest.rs"
+  - "crates/corelink-bazel-bridge/src/find_missing.rs"
+  - "crates/corelink-bazel-bridge/src/adapter.rs"
   - "crates/corelink-byok/src/lib.rs"
 checkpoint_sha: "30789129fe9bd4fdff000ecea3e6abefed996a2f"
 provenance: "AUTHORED"
@@ -30,8 +33,8 @@ These crates are the outer ring of the [adapter / package-manager surfaces](/sur
 # Invariants
 
 - The adapters stay free of workspace SPI imports — the bridge crate composes them at boot, so a protocol adapter never couples to the CAS core directly (`crates/corelink-adapter-host/src/lib.rs:1-7`).
-- Bazel digests are validated at the boundary: hash must be 64 lowercase hex, size ≤ 4 GiB on writes, PUT body length must equal `size_bytes`, and `findMissingBlobs` rejects batches > 4096 digests (`crates/corelink-bazel-bridge/src/lib.rs:42-50`, `crates/corelink-bazel-bridge/src/lib.rs:68-75`).
-- The bridge is REST-only by invariant `INV-BAZEL-NO-GRPC` — no tonic/prost/gRPC dependency (`crates/corelink-bazel-bridge/src/lib.rs:48-50`). The invariant id is spelled correctly as `INV-BAZEL-NO-GRPC` in the code (the prior `GROPC` one-char typo was fixed in this change).
+- Bazel digests are validated at the boundary: `Digest::parse`/`new` reject a hash that is not 64 lowercase hex and a size > 4 GiB (`crates/corelink-bazel-bridge/src/digest.rs:85-114`); on a write `cas_put` rejects a PUT body whose length ≠ `size_bytes` with `SizeMismatch` (`crates/corelink-bazel-bridge/src/adapter.rs:135-147`); and `findMissingBlobs` rejects batches > 4096 digests (`crates/corelink-bazel-bridge/src/find_missing.rs:138-141`).
+- The bridge is REST-only by invariant `INV-BAZEL-NO-GRPC` — no tonic/prost/gRPC dependency (`crates/corelink-bazel-bridge/src/lib.rs:48-50`). The invariant id is spelled correctly as `INV-BAZEL-NO-GRPC` in the code (the prior `GROPC` one-char typo was fixed).
 - At most one BYOK provider is active per build, enforced by a compile-time guard, eliminating runtime branching on the crypto hot path (`crates/corelink-byok/src/lib.rs:105-150`).
 
 # Gotchas
@@ -44,8 +47,9 @@ These crates are the outer ring of the [adapter / package-manager surfaces](/sur
 
 1. `crates/corelink-adapter-host/src/lib.rs:1-29` — the bridge crate mapping adapter ports to canonical SPI traits via `spawn_blocking`.
 2. `crates/corelink-adapter-host/src/lib.rs:31-66` — the 5 absorbed package-manager adapters under stable submodule paths.
-3. `crates/corelink-bazel-bridge/src/lib.rs:1-50` — REAPI v2 REST → CAS/AC trait mapping, REST-only.
-4. `crates/corelink-bazel-bridge/src/lib.rs:42-50` — the hard digest-validate + find-missing-cap + no-gRPC invariants.
-5. `crates/corelink-bazel-bridge/src/lib.rs:68-75` — `FIND_MISSING_BLOB_CAP` (4096) and `MAX_BLOB_SIZE_BYTES` (4 GiB).
-6. `crates/corelink-byok/src/lib.rs:1-43` — the BYOK microkernel: thin core + one feature-gated provider.
-7. `crates/corelink-byok/src/lib.rs:105-150` — compile-time mutual-exclusion guards (one provider per build).
+3. `crates/corelink-bazel-bridge/src/lib.rs:1-50` — REAPI v2 REST → CAS/AC trait mapping, REST-only (incl. `INV-BAZEL-NO-GRPC`).
+4. `crates/corelink-bazel-bridge/src/digest.rs:85-114` — `Digest::parse`/`new`: 64-lowercase-hex hash + `validate_size` (≤ 4 GiB).
+5. `crates/corelink-bazel-bridge/src/adapter.rs:135-147` — `cas_put`: PUT body length MUST equal `size_bytes` (`SizeMismatch`).
+6. `crates/corelink-bazel-bridge/src/find_missing.rs:138-141` — `FIND_MISSING_BLOB_CAP` (4096) batch rejection.
+7. `crates/corelink-byok/src/lib.rs:1-43` — the BYOK microkernel: thin core + one feature-gated provider.
+8. `crates/corelink-byok/src/lib.rs:105-150` — compile-time mutual-exclusion guards (one provider per build).

@@ -10,6 +10,13 @@ tags: ["launch", "due-diligence", "go-live", "readiness", "security", "complianc
 timestamp: "2026-06-26T00:00:00Z"
 ---
 
+> **SUPERSEDED — historical verdict, not the current state.** This concept transcribes the
+> 2026-06-15 pre-launch due-diligence audit, which returned NO-GO. The two disqualifying CRITICALs
+> (regional fan-out 503 and the PAT-less orphan tenant) — and the money-path/auth/compliance breaks it
+> flagged — have since been fixed and deployed; see [pentest-learnings](/security/pentest-learnings.md)
+> for the closed-out findings. Read the NO-GO verdict and present-tense "today" statements below as the
+> 2026-06-15 snapshot, NOT today's go/no-go decision.
+
 The go-live readiness gate is the pre-launch due-diligence audit: an adversarial sweep (82 agents, 131 raw findings, 21 confirmed) over the load-bearing launch paths — money path, auth/PAT, DSR/GDPR erasure, secrets posture, and data residency — that produces a single ship/no-ship verdict plus the prioritized must-fix set. Its discipline is that a launch promise (residency, proof-of-erasure, BYOK, rate-card caps) cannot be sold if the running data plane cannot deliver it, and that a control must fail CLOSED, not silently degrade. This concept captures WHAT the audit checked, the verdict it returned, and HOW it separates launch-blockers from deferrable debt. Sibling concepts launch/money-path and launch/signup-onboarding cover the Stripe checkout and Clerk provisioning paths in depth.
 
 # Role

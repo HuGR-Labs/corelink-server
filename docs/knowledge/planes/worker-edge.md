@@ -54,8 +54,8 @@ keeps forged tokens cheap to reject before any expensive work.
 # Invariants
 - Tenant isolation is structural: the DO id is derived solely from the PAT-resolved tenant, never the
   URL path segment (`worker/src/index.ts:2465-2468`).
-- A client can never smuggle a server-trust header: the strip list is applied on every forward path
-  before the Worker sets its own values (`worker/src/index.ts:427-466`).
+- A client can never smuggle a server-trust header: `stripClientTrustHeaders` deletes the strip list on
+  every forward path before the Worker sets its own values (`worker/src/index.ts:473-477`).
 - The signing-key gate is mandatory — a missing/short `PAT_SIGNING_KEY` is a 503, never a silent skip
   (`worker/src/index.ts:851-878`).
 - The Worker forwards the D1-resolved `scope` as `x-corelink-scope` and is its sole setter

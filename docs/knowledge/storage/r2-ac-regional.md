@@ -43,9 +43,11 @@ durable tier behind the [Action Cache surface](/surfaces/action-cache.md).
    (`crates/corelink-container/src/routes/ac.rs:360-361`).
 5. The region's uppercase R2 `locationHint` is what physically pins object placement to that region
    (`crates/corelink-region/src/region.rs:44-53`).
-6. Cross-region replication has no direct managed lag metric, so an indirect SLI writes a synthetic
-   probe object per region every 5 minutes and confirms presence in the sibling region
-   (`crates/corelink-region/src/r2_crr.rs:1-34`).
+6. Cross-region replication has no direct managed lag metric, so the **designed** indirect SLI is a
+   synthetic probe object written per region every 5 minutes whose presence the sibling region confirms.
+   The live probe loop (R2 PUT primary → R2 HEAD replica) is **deferred** — the crate ships only the
+   `R2CrrProbe` trait boundary + the cadence / 24 h ceiling metric constants, not the running probe
+   (`crates/corelink-region/src/r2_crr.rs:14-34`).
 
 # Invariants
 - WEUR MUST use the EU DO jurisdiction (Schrems II + GDPR Art. 46); any other jurisdiction for WEUR is a

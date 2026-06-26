@@ -5,6 +5,9 @@ description: "The GDPR/LGPD machinery — the DSR rights orchestrator with MFA-g
 source_files:
   - "crates/corelink-privacy/src/lib.rs"
   - "crates/corelink-dsr/src/lib.rs"
+  - "crates/corelink-dsr/src/mfa.rs"
+  - "crates/corelink-dsr/src/endpoint.rs"
+  - "crates/corelink-dsr/src/audit.rs"
   - "crates/corelink-erasure-attestation/src/lib.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
@@ -24,13 +27,13 @@ The cluster backs the [DSR / erasure pipeline](/compliance/dsr-erasure.md) and t
 
 - `corelink-privacy` is an Option-A aggregator re-exporting the 11 privacy primitives (dsr, statuspage, breach, consent, erasure, notice, pseudonymize, residency, sub_processor, dpa::acceptance, dpa::versioning) at canonical `corelink_privacy::*` paths (`crates/corelink-privacy/src/lib.rs:1-20`, `crates/corelink-privacy/src/lib.rs:32-65`).
 - `corelink-dsr` exposes the 6-arm rights taxonomy (Access / Portability / Rectification / Erasure / Restriction / Objection) with per-jurisdiction SLA mapping (LGPD/GDPR/CCPA) and a UUIDv7 request id (`crates/corelink-dsr/src/lib.rs:30-43`).
-- It gates MFA only on the destructive arms — Erasure + Rectification require step-up; Access/Portability/Restriction/Objection do not — per the ADR-S11-001 friction-vs-security trade-off (`crates/corelink-dsr/src/lib.rs:62-66`).
+- It gates MFA only on the destructive arms — Erasure + Rectification require step-up; Access/Portability/Restriction/Objection do not — per the ADR-S11-001 friction-vs-security trade-off. The `MfaStepUpVerifier` contract treats a `None` token on a destructive arm as `Required` (`crates/corelink-dsr/src/mfa.rs:80-103`); the orchestrator enforces it by branching on `request.is_destructive()` and returning `DsrDecision::MfaRequired` before any store insert (`crates/corelink-dsr/src/endpoint.rs:354-367`).
 - `corelink-erasure-attestation` signs a destroy proof with per-region Ed25519 (FIPS 186-5) over RFC 8785 JCS-canonical JSON, persists it to R2 with 7-year retention, and serves the public key for offline verification (`crates/corelink-erasure-attestation/src/lib.rs:1-33`).
 
 # Invariants
 
-- DSR audit is fail-CLOSED: the `FailingDsrAuditSink` envelope models that DSR is regulatory-grade and NEVER tolerates silent loss, distinct from billing's fail-open split-tier (`crates/corelink-dsr/src/lib.rs:44-53`).
-- Audit emits before store mutation on the DSR run pipeline — `request_received` is recorded before any insert (`crates/corelink-dsr/src/lib.rs:73-75`).
+- DSR audit is fail-CLOSED: the `FailingDsrAuditSink` returns `Err` on every `emit`, modelling that DSR is regulatory-grade and NEVER tolerates silent loss, distinct from billing's fail-open split-tier — an emit failure aborts the arm (`crates/corelink-dsr/src/audit.rs:279-295`).
+- Audit emits before store mutation on the DSR run pipeline — the orchestrator emits `request_received` BEFORE the idempotency lookup or any insert (`crates/corelink-dsr/src/endpoint.rs:307-318`).
 - `INV-ERASURE-ATTESTATION-SIGNED`: every BYOK-tenant erasure produces exactly one Ed25519-signed attestation, persisted in R2 (7y) and indexed in D1 (`crates/corelink-erasure-attestation/src/lib.rs:35-39`).
 - The signing key zeroizes on drop and never appears in logs/traces/errors; verify is constant-time via `ed25519-dalek` (`crates/corelink-erasure-attestation/src/lib.rs:41-49`).
 
@@ -45,9 +48,10 @@ The cluster backs the [DSR / erasure pipeline](/compliance/dsr-erasure.md) and t
 1. `crates/corelink-privacy/src/lib.rs:1-20` — the single-import aggregator over the 11 privacy primitives.
 2. `crates/corelink-privacy/src/lib.rs:32-65` — the absorbed-crate list (dsr/breach/consent/erasure/residency/dpa…).
 3. `crates/corelink-dsr/src/lib.rs:30-43` — the 6-arm DSR taxonomy + per-jurisdiction SLA + UUIDv7 id.
-4. `crates/corelink-dsr/src/lib.rs:44-53` — DSR audit fail-CLOSED (regulatory-grade, no silent loss).
-5. `crates/corelink-dsr/src/lib.rs:62-66` — MFA gate on destructive arms only (Erasure + Rectification).
-6. `crates/corelink-dsr/src/lib.rs:73-75` — audit-emit-before-store-insert in the run pipeline.
+4. `crates/corelink-dsr/src/audit.rs:279-295` — `FailingDsrAuditSink`: DSR audit fail-CLOSED (regulatory-grade, no silent loss).
+5. `crates/corelink-dsr/src/mfa.rs:80-103` — `MfaStepUpVerifier` contract: `None` token on a destructive arm → `Required`.
+6. `crates/corelink-dsr/src/endpoint.rs:354-367` — MFA gate on destructive arms only (`is_destructive` → `MfaRequired`, no insert).
+7. `crates/corelink-dsr/src/endpoint.rs:307-318` — `request_received` audit emitted BEFORE the idempotency lookup / store insert.
 7. `crates/corelink-erasure-attestation/src/lib.rs:1-33` — Ed25519/JCS attestation purpose, R2 7y, public-key verify, 30d rotation.
 8. `crates/corelink-erasure-attestation/src/lib.rs:35-39` — `INV-ERASURE-ATTESTATION-SIGNED` (exactly one signed attestation).
 9. `crates/corelink-erasure-attestation/src/lib.rs:41-49` — key zeroize-on-drop + constant-time verify; no key material in logs.

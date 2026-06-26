@@ -38,7 +38,7 @@ The money path has three moving parts. (1) **Checkout creation** — `StripeChec
 - The ingest route is gated by a DEDICATED `BILLING_INGEST_AUTH_KEY` via a constant-time compare — NOT the Worker↔container key and NOT the introspect key — so an ingest-secret leak shares no blast radius (`crates/corelink-container/src/routes/billing_ingest.rs:29-37`).
 - The ingest route fails CLOSED at boot: if `BILLING_INGEST_AUTH_KEY` is absent or shorter than 32 chars the route is NOT mounted (`crates/corelink-container/src/routes/billing_ingest.rs:548-556`).
 - `idem_key` is the dedup coordinate — re-pushing the same record is a no-op (`deduped`), never a double-count (`crates/corelink-container/src/routes/billing_ingest.rs:85-87`).
-- A single batch is bounded to `MAX_BATCH_RECORDS = 1024` so one caller cannot stage an unbounded batch in one request (`crates/corelink-container/src/routes/billing_ingest.rs:119-121`).
+- A single batch is bounded to `MAX_BATCH_RECORDS = 1024` (`crates/corelink-container/src/routes/billing_ingest.rs:121`) so one caller cannot stage an unbounded batch in one request — the handler rejects an over-cap batch with 400 `batch_too_large` before any staging (`crates/corelink-container/src/routes/billing_ingest.rs:479`).
 - Runner slot-seconds are NOT a Stripe-billable meter — runners are priced on the per-tenant concurrency axis, so this endpoint only stages records for dashboard/capacity reconciliation (`crates/corelink-container/src/routes/billing_ingest.rs:6-12`).
 
 # Gotchas

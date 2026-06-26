@@ -19,9 +19,12 @@ protecting their objects at rest. CoreLink implements this as a microkernel: a t
 and exactly ONE provider plugin per deployment (AWS / GCP / Azure / HashiCorp Vault) realises the trait
 against a real KMS. Provider selection is compile-time via cargo features — multi-provider builds are
 rejected at compile time — which eliminates runtime branching on the hot crypto path and lets cargo-deny
-enforce "only one KMS SDK linked per build." The container wires the production provider behind an
-`Arc<dyn KmsProvider>`, so the rest of the storage layer encrypts/decrypts without knowing which KMS is live. This
-is the at-rest confidentiality complement to the durable [R2 CAS bucket](/storage/r2-cas-bucket.md).
+enforce "only one KMS SDK linked per build." BYOK is the **designed** envelope-encryption layer: the
+container exposes a feature-gated factory that can construct the production provider behind an
+`Arc<dyn KmsProvider>`, but at-rest encryption is **not yet on the live R2 write path** — the default build
+links no real KMS SDK (it uses the in-memory fake) and the live storage layer (`storage.rs`/`r2_s3.rs`) wires
+no `KmsProvider`. It is the intended at-rest confidentiality complement to the durable
+[R2 CAS bucket](/storage/r2-cas-bucket.md), to be activated when the production provider is wired in.
 
 # Role
 - The feature-gated production factory that constructs the live KMS provider as an `Arc<dyn KmsProvider>`

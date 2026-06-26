@@ -19,6 +19,14 @@ subsystem, load its concepts first** — don't work blind. Query them with
 `python3 scripts/okf_context.py --file <path>` / `--tag <area>` (add `--full`
 for bodies), or invoke the **`okf-context`** skill.
 
+**⚠️ Designed ≠ wired — check before claiming.** CoreLink's `//!` doc-comments + `ARCHITECTURE.md`
+describe DESIGNED behavior; several compliance/security features are pure-logic skeleton / **unwired**
+in the deployed container — **BYOK at-rest encryption, `CasWriteOrchestrator`, the erasure-attestation
+serving endpoint, audit-chain R2-Object-Lock + cron, CRR**. The CORE (CAS/AC, PAT auth, billing
+webhook+checkout, tier-gating, DSR-webhook erasure) IS wired + live. Before stating a capability is
+live, **grep the container for the wiring — don't trust the doc-comment**, and keep the pitch/compliance
+posture matched to what's actually wired. (Surfaced by the OKF N-lens sweep 2026-06-26.)
+
 ## Working on this repo — gotchas that actually bite
 
 - **Toolchain:** the rustup proxy is broken. Put the toolchain on PATH:

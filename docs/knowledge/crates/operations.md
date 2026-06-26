@@ -4,8 +4,12 @@ title: "Operations crate cluster (GC, replication, ratelimit, SRE)"
 description: "The background-plane workers — garbage collection with reachability + degrade-mode, soft-delete-first eviction, and the per-tenant token-bucket rate limiter."
 source_files:
   - "crates/corelink-gc/src/lib.rs"
+  - "crates/corelink-gc/src/worker.rs"
   - "crates/corelink-eviction/src/lib.rs"
+  - "crates/corelink-eviction/src/reachable.rs"
+  - "crates/corelink-eviction/src/blob_meta.rs"
   - "crates/corelink-ratelimit/src/lib.rs"
+  - "crates/corelink-ratelimit/src/key.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["crates", "gc", "eviction", "ratelimit", "ops", "sre"]
@@ -29,10 +33,10 @@ The cluster backs the [GC / eviction operations](/ops/gc-eviction.md) runbook an
 
 # Invariants
 
-- GC reclamation is pausable: the degrade probe is honored at every state transition, bounding blast radius of a bad sweep (`crates/corelink-gc/src/lib.rs:40-56`).
-- `INV-EVICT-SOFT-DELETE-FIRST`: eviction soft-deletes via `deleted_at`, never a direct R2 DELETE; physical cleanup is GC's job post-grace (`crates/corelink-eviction/src/lib.rs:50-57`).
-- The reachable-check is race-aware: `a.created_at < evict_started_at_ms` strict-evict with a `>=` protect mirror, so a blob written concurrently with the sweep is protected (`crates/corelink-eviction/src/lib.rs:42-49`).
-- `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION`: rate-limit buckets are per-tenant DO singletons with a tenant-leftmost PK, so cross-tenant throttling is impossible by design (`crates/corelink-ratelimit/src/lib.rs:11-18`).
+- GC reclamation is pausable: `transition_or_abort` probes degrade-mode at every phase boundary and routes a `gc-pause` to `finalize_aborted`, bounding blast radius of a bad sweep (`crates/corelink-gc/src/worker.rs:204-219`).
+- `INV-EVICT-SOFT-DELETE-FIRST`: `soft_delete_for_eviction` sets `deleted_at` via a conditional UPDATE, never a direct R2 DELETE; physical cleanup is GC's job post-grace (`crates/corelink-eviction/src/blob_meta.rs:185-225`).
+- The reachable-check is race-aware: `find_active_reference` uses `a.created_at < evict_started_at_ms` strict-evict with a `>=` protect mirror, so a blob written concurrently with the sweep is protected (`crates/corelink-eviction/src/reachable.rs:70-97`).
+- `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION`: the tenant-leftmost `BucketKey` (tenant_id is the first field) makes rate-limit buckets per-tenant, so cross-tenant throttling is impossible by design (`crates/corelink-ratelimit/src/key.rs:70-78`).
 
 # Gotchas
 
@@ -43,9 +47,9 @@ The cluster backs the [GC / eviction operations](/ops/gc-eviction.md) runbook an
 # Citations
 
 1. `crates/corelink-gc/src/lib.rs:16-39` — the GC run state machine + scheduler (cron → list → spawn-per-tenant).
-2. `crates/corelink-gc/src/lib.rs:40-56` — the `gc-pause` degrade-mode emergency stop with ≤100ms propagation.
-3. `crates/corelink-eviction/src/lib.rs:42-49` — the race-aware reachable check (`created_at < evict_started_at_ms`).
-4. `crates/corelink-eviction/src/lib.rs:50-57` — `INV-EVICT-SOFT-DELETE-FIRST` (soft-delete, never direct R2 DELETE).
-5. `crates/corelink-ratelimit/src/lib.rs:11-18` — `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION` per-tenant DO singleton.
+2. `crates/corelink-gc/src/worker.rs:204-219` — `transition_or_abort`: degrade-probe at every phase boundary → `finalize_aborted` (`gc-pause`).
+3. `crates/corelink-eviction/src/reachable.rs:70-97` — `find_active_reference`: the race-aware reachable check (`created_at < evict_started_at_ms` strict).
+4. `crates/corelink-eviction/src/blob_meta.rs:185-225` — `soft_delete_for_eviction`: `INV-EVICT-SOFT-DELETE-FIRST` (soft-delete UPDATE, never direct R2 DELETE).
+5. `crates/corelink-ratelimit/src/key.rs:70-78` — tenant-leftmost `BucketKey`: `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION`.
 6. `crates/corelink-ratelimit/src/lib.rs:11-18` — RFC 6585 Retry-After seconds clamped to a per-config floor + hard ceiling.
 6b. `crates/corelink-ratelimit/src/lib.rs:28-43` — the tenant-leftmost bucket key + lazy-refill + RFC 6585 Retry-After.
