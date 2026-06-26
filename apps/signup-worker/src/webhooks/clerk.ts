@@ -20,7 +20,7 @@
  * before we ack.
  */
 
-import { insertTenant } from "../lib/d1.js";
+import { insertTenant, acceptTeamInvitation } from "../lib/d1.js";
 
 export interface ClerkUserCreatedEvent {
   type: "user.created";
@@ -234,7 +234,7 @@ export async function buildErasureQueueMessage(input: {
  * Legal hold is an OPERATOR-ONLY control (litigation / regulatory / unpaid-
  * invoice retention) with no self-serve surface at launch; it is recorded in a
  * dedicated `tenant_legal_hold` table (one row per held tenant, cleared by
- * setting `released_at_ms`). A self-serve account deletion (Clerk
+ * DELETING the row). A self-serve account deletion (Clerk
  * `user.deleted`) MUST honor an active hold by carrying `legal_hold: true` into
  * the erasure message so the CTRL-PRIV-033 preservation branch in the
  * orchestrator/adapters fires and the legally-retained data is NOT destroyed.
@@ -260,9 +260,13 @@ async function tenantUnderLegalHold(
   tenantId: string,
 ): Promise<boolean> {
   try {
+    // Frozen schema (migration 0076, C-LEGALHOLD): tenant_legal_hold has
+    // columns (tenant_id, reason, held_at_ms) ONLY. A hold IS the presence of a
+    // row keyed by tenant_id; it is cleared by DELETING the row (there is no
+    // `released_at_ms` soft-delete column). So existence of a row == held.
     const row = await db
       .prepare(
-        "SELECT 1 AS held FROM tenant_legal_hold WHERE tenant_id = ?1 AND released_at_ms IS NULL LIMIT 1",
+        "SELECT 1 AS held FROM tenant_legal_hold WHERE tenant_id = ?1 LIMIT 1",
       )
       .bind(tenantId)
       .first<{ held: number }>();
@@ -608,6 +612,35 @@ export function tenantSlugFor(user: ClerkUserCreatedEvent["data"]): string {
   return `${safe}-default`.slice(0, 64);
 }
 
+/**
+ * The new user's primary email address (the one a team invitation was sent to),
+ * or null when the payload carries no usable address. Mirrors `tenantSlugFor`'s
+ * primary-address selection: prefer `primary_email_address_id`, else the first.
+ */
+export function primaryEmailOf(
+  user: ClerkUserCreatedEvent["data"],
+): string | null {
+  const primary = user.primary_email_address_id
+    ? user.email_addresses.find((e) => e.id === user.primary_email_address_id)
+    : user.email_addresses[0];
+  return primary?.email_address ?? null;
+}
+
+/**
+ * SHA-256 hex of a team invitation's email, normalized (trim + lower-case) so
+ * the hash is stable regardless of how the invite was typed. This is the
+ * `team_member.email_hash` lookup key (CTRL-PRIV-001 — the raw email is never
+ * stored). MUST match the normalization the container's `invite()` uses when it
+ * writes the `invited` row, or an accepted user will never match their seat.
+ */
+export async function emailHashFor(email: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(email.trim().toLowerCase()),
+  );
+  return bytesToHex(digest);
+}
+
 interface ApiClient {
   /**
    * Insert the tenant row with its data-residency MACRO region (backlog #29).
@@ -923,6 +956,32 @@ export async function handleClerkWebhook(
       api: apiFactory(env),
       analytics: d1AnalyticsEmitter(env.ANALYTICS_DB),
     });
+
+    // WP-T3 (ADR-S33-001 WP-4): if this new user was invited to a team, flip the
+    // outstanding `invited` seat to `active` and bind the real Clerk user id.
+    // Runs AFTER the user's own tenant + PAT are provisioned (above) so the user
+    // always has their personal tenant regardless of any invitation. Best-effort
+    // + idempotent: a non-invited signup (the common case) is a no-op (returns
+    // false), and a D1 hiccup here must NOT fail an already-complete signup — the
+    // seat acceptance self-heals on the next webhook redelivery / list refresh.
+    if (env.CONFIG_DB) {
+      try {
+        const email = primaryEmailOf(event.data);
+        if (email) {
+          await acceptTeamInvitation(
+            env.CONFIG_DB,
+            event.data.id,
+            await emailHashFor(email),
+          );
+        }
+      } catch (inviteErr) {
+        console.error(
+          `[clerk-webhook] team-invitation accept failed user=${event.data.id} ` +
+            `svix=${svixId}: ${String(inviteErr)}`,
+        );
+      }
+    }
+
     return Response.json({
       ok: true,
       tenant_id: result.tenant_id,

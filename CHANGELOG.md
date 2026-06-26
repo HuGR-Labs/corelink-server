@@ -29,6 +29,17 @@ Each entry cross-references:
   (upstream cache-fill). The `shared_cache` e2e journey now POSITIVELY asserts `X-Cache: HIT` on a second
   tenant's serve — proving the network-effect moat (one tenant's fill serves another) rather than only
   inferring it from byte-equality + latency. Unit tests cover the header on both hit and miss.
+- **Team multi-seat: by-email invite + accept + member session resolution + legal-hold + account-delete
+  (ADR-S33-001 WP-T2/T3/T4/T5 + DSR).** `invite()` is now real (D1-pure): it INSERTs a `team_member` row
+  (`status='invited'`, SHA-256 of the **normalized** trim+lowercase email per CTRL-PRIV-001) instead of
+  501; the signup-worker `user.created` webhook flips an invited seat to `active` by matching the new
+  user's `email_hash` (both sides normalize identically — the invite→accept join key). The Worker now
+  resolves a **team-member's** Clerk session to the **owning** tenant via an additive `team_member
+  WHERE user_id=? AND status='active'` fallback (owner lookup unchanged; a removed member is denied) —
+  the WP-5 multi-seat login path. Added `tenant_legal_hold` (migration 0076) + the `user.deleted`
+  legal-hold read (preserve-not-erase). New `POST /v1/customer/account/delete` (Clerk-session; enqueues
+  a DSR erasure + `dsr_requested` anchor; fail-safe 503 until the erasure sink is wired). The Clerk
+  invitation EMAIL send remains an owner launch step (OB-1).
 - **Team multi-seat: durable membership backend + seat-removal (ADR-S33-001).** Added the
   `team_member` D1 table (migration 0074) + `pat.principal_id` (migration 0075), turning the
   team feature from an honest 501/single-owner stub into a real backend: `GET /v1/customer/team`

@@ -81,7 +81,7 @@ pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
 /// Gates cleanly if the admin token or invite email env var is absent.
 fn invite_accepted_or_not_implemented(cfg: &Config, client: &Client) -> JourneyResult {
     let name =
-        "Team: admin invites teammate → 201 (InMemory) or 501 (HONEST-v1 D1 not yet live)";
+        "Team: admin invites teammate → 200/201 member.status=invited or 501 (HONEST-v1 not yet live)";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 
@@ -130,44 +130,47 @@ fn invite_accepted_or_not_implemented(cfg: &Config, client: &Client) -> JourneyR
     let status = resp.status().as_u16();
 
     match status {
-        // 201 = InMemory happy path (dev/CI) or future D1 happy path.
+        // 201 = InMemory happy path (dev/CI); 200 = live D1 happy path
+        // (C-INVITE contract, ADR-S33-001: invite() returns member.status='invited').
         201 | 200 => {
             // Parse the response body and assert the invite record is present.
             match resp.bytes() {
                 Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
                     Ok(v) => {
-                        let member_email = v["member"]["email"].as_str().unwrap_or("");
                         let member_status = v["member"]["status"].as_str().unwrap_or("");
-                        if member_email.is_empty() {
+                        // POSITIVE assertion (C-INVITE contract, ADR-S33-001): the
+                        // live invite() impl returns member.status='invited'. 'pending'
+                        // is also accepted as a valid in-flight alias. Any other value —
+                        // including empty/missing (malformed record) or 'active' (the
+                        // member must not be activated before email acceptance) — is a
+                        // hard contract violation.
+                        if !matches!(member_status, "invited" | "pending") {
                             return JourneyResult::fail(
                                 name,
                                 ms(start),
                                 format!(
-                                    "POST invite returned {status} but response missing \
-                                     member.email — body: {v}"
+                                    "POST invite returned {status} but member.status is \
+                                     {member_status:?} — expected 'invited' or 'pending' \
+                                     (a missing/empty status means the member record is \
+                                     malformed; 'active' means the invite skipped email \
+                                     acceptance). body: {v}"
                                 ),
                             );
                         }
-                        if member_email != email {
+                        // Secondary corroborating check: if the response includes
+                        // member.email (some impl variants echo it back), it must match
+                        // the address that was invited. The frozen invite() contract
+                        // stores email_hash per CTRL-PRIV-001 and does NOT guarantee
+                        // the plaintext is echoed, so absence is not a failure — but
+                        // an echo that does not match the requested address is.
+                        let member_email = v["member"]["email"].as_str().unwrap_or("");
+                        if !member_email.is_empty() && member_email != email {
                             return JourneyResult::fail(
                                 name,
                                 ms(start),
                                 format!(
                                     "POST invite returned {status} but member.email \
                                      mismatch: got {member_email:?}, want {email:?}"
-                                ),
-                            );
-                        }
-                        // The invite status should reflect a pending/invited state,
-                        // NOT "active" (the invited user hasn't accepted yet).
-                        if member_status == "active" {
-                            return JourneyResult::fail(
-                                name,
-                                ms(start),
-                                format!(
-                                    "POST invite: member.status is 'active' immediately — \
-                                     invite flow should produce 'invited' (pending email \
-                                     acceptance), not 'active'. Got: {member_status:?}"
                                 ),
                             );
                         }

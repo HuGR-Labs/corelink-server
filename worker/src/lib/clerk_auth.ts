@@ -248,13 +248,28 @@ export async function verifyClerkSessionAndResolveTenant(
       .prepare("SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1 LIMIT 1")
       .bind(clerkUserId)
       .first<{ tenant_id: string }>();
-    if (!row || !row.tenant_id) {
-      return {
-        ok: false,
-        response: reapiError("FORBIDDEN", "no tenant for this session", 403, requestId),
-      };
+    if (row && row.tenant_id) {
+      // OWNER path (UNCHANGED): this Clerk user provisioned the tenant.
+      tenantId = row.tenant_id;
+    } else {
+      // ADDITIVE team-member fallback (C-RESOLVE, WP-T4). Only when the OWNER
+      // lookup above returns no row do we fall back to the team_member table
+      // (migration 0074): a second-seat user resolves to the OWNING tenant.
+      // The `status = 'active'` filter is MANDATORY — an 'invited' or 'removed'
+      // member MUST NOT resolve (a removed seat is denied 403). Index on
+      // (user_id, status) backs this lookup. Still 403 if neither matches.
+      const memberRow = await env.CONFIG_DB
+        .prepare("SELECT tenant_id FROM team_member WHERE user_id = ?1 AND status = 'active' LIMIT 1")
+        .bind(clerkUserId)
+        .first<{ tenant_id: string }>();
+      if (!memberRow || !memberRow.tenant_id) {
+        return {
+          ok: false,
+          response: reapiError("FORBIDDEN", "no tenant for this session", 403, requestId),
+        };
+      }
+      tenantId = memberRow.tenant_id;
     }
-    tenantId = row.tenant_id;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     console.error(`[${requestId}] clerk tenant lookup failed: ${message.slice(0, 80)}`);

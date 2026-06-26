@@ -47,8 +47,10 @@ use corelink_handler_customer::{
     KeyCreateRequest, KeyRevokeRequest, KeysListRequest, OverviewRequest, PortalRequest,
     TeamInviteRequest, TeamListRequest, TeamRemoveRequest, UsageRequest,
 };
+use hmac::{Hmac, Mac};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest as _, Sha256};
 
 // ─── Route state ─────────────────────────────────────────────────────────────
 
@@ -82,6 +84,13 @@ pub struct CustomerRouteState {
     /// (skipped — same posture as the native plane). Mirrors
     /// [`super::cas::CasRouteState::pat_gate`]. See [`crate::native_pat_gate`].
     pub pat_gate: Option<std::sync::Arc<crate::native_pat_gate::NativePatGate>>,
+    /// Self-serve account-deletion requester (C-ACCTDEL): backs
+    /// `POST /v1/customer/account/delete`. `Some` in production once the D1
+    /// requester + erasure sink are wired (by `routes.rs`, mirroring how
+    /// `pat_gate` is wired there); `None` in dev/CI — the route then fails
+    /// CLOSED (503) rather than silently acknowledging a GDPR erasure it cannot
+    /// honor. See [`AccountDeletionRequester`].
+    pub account_deletion: Option<Arc<dyn AccountDeletionRequester>>,
 }
 
 impl core::fmt::Debug for CustomerRouteState {
@@ -114,6 +123,10 @@ pub fn build_handlers_from_env() -> CustomerRouteState {
             // the native CAS/AC/Bazel/Turbo states); `None` here so the factory
             // stays env-pure (dev/CI default = skipped).
             pat_gate: None,
+            // Wired by `routes.rs` (the erasure sink is a cross-module collaborator
+            // built alongside the DSR worker); `None` here keeps the factory
+            // env-pure — the account-delete route then fails CLOSED (503).
+            account_deletion: None,
         },
         None => {
             tracing::warn!(
@@ -144,6 +157,8 @@ pub fn build_handlers() -> CustomerRouteState {
         audit: shared,
         // Dev/CI default = skipped; `routes.rs` overwrites with the env gate.
         pat_gate: None,
+        // Dev/CI default = unwired; the account-delete route fails CLOSED (503).
+        account_deletion: None,
     }
 }
 
@@ -165,6 +180,7 @@ pub fn router(state: CustomerRouteState) -> Router {
         .route("/v1/customer/team", get(handle_team_list))
         .route("/v1/customer/team/invite", post(handle_team_invite))
         .route("/v1/customer/team/:user_id", delete(handle_team_remove))
+        .route("/v1/customer/account/delete", post(handle_account_delete))
         .with_state(state)
 }
 
@@ -907,6 +923,290 @@ async fn handle_team_remove(
     }
 }
 
+/// `POST /v1/customer/account/delete` — self-serve GDPR account erasure (C-ACCTDEL).
+///
+/// A customer erases their OWN account: this is a **Clerk-session-only** surface
+/// (`x-corelink-token-prefix: clerk`, set by the Worker after edge-verifying the
+/// session and stripping the bearer). A cache PAT (`cas:r` / `cas:rw`) is a
+/// data-plane credential and MUST NOT trigger account erasure — a PAT caller gets
+/// 403 (mirrors the e2e contract that the erasure-request surface is session-auth'd).
+///
+/// On accept it mirrors the Clerk `user.deleted` path: build the canonical
+/// `dsr.queued.v1` message + `INSERT OR IGNORE` a `dsr_requested` anchor row, then
+/// enqueue — returning **202 Accepted**. Idempotent (the deterministic `dsr_id` +
+/// `INSERT OR IGNORE` make a repeat request a no-op). Fail-CLOSED: when the
+/// requester is unwired (dev/CI) → 503; on a D1/transport fault → 500 (never a
+/// silent 202 we cannot honor).
+async fn handle_account_delete(
+    State(state): State<CustomerRouteState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401 first.
+    let t = match tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
+    // Clerk-session ONLY. A customer deletes their OWN account via the dashboard;
+    // a cache PAT must not erase the account. (The Worker stamps the `clerk`
+    // token-prefix for an edge-verified session and forwards NO bearer.)
+    if principal(&headers) != CLERK_TOKEN_PREFIX {
+        return (
+            StatusCode::FORBIDDEN,
+            "account deletion requires a dashboard (Clerk) session",
+        )
+            .into_response();
+    }
+    let Some(requester) = state.account_deletion.as_ref() else {
+        // Fail-CLOSED: the erasure path is not wired (dev/CI / unconfigured).
+        // NEVER ack a GDPR erasure we cannot durably honor.
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "account deletion not configured",
+        )
+            .into_response();
+    };
+    match requester.request_erasure(&t) {
+        Ok(()) => (
+            StatusCode::ACCEPTED,
+            Json(json!({ "ok": true, "status": "erasure_requested" })),
+        )
+            .into_response(),
+        // No provisioned account to erase (already deleted / never provisioned).
+        // Idempotent ACK (202) — mirrors the webhook's "no tenant → ack" no-op so
+        // the client UX is uniform and a double-submit is safe.
+        Err(AccountDeletionError::NotFound) => (
+            StatusCode::ACCEPTED,
+            Json(json!({ "ok": true, "status": "no_account" })),
+        )
+            .into_response(),
+        Err(AccountDeletionError::Internal(e)) => {
+            tracing::error!(error = %e, tenant = %t, "account delete: erasure request failed");
+            (StatusCode::INTERNAL_SERVER_ERROR, "erasure request failed").into_response()
+        }
+    }
+}
+
+// ─── Account-deletion (DSR erasure) collaborators (C-ACCTDEL) ──────────────────
+
+/// Failure modes of a self-serve account-deletion request.
+#[derive(Debug)]
+pub enum AccountDeletionError {
+    /// No account/tenant row exists to erase (already deleted / never
+    /// provisioned) — the route maps this to an idempotent 202 no-op.
+    NotFound,
+    /// A D1 / transport / configuration fault — the route fails CLOSED (500) so
+    /// the obligation is retried, never silently dropped.
+    Internal(String),
+}
+
+/// Self-serve account-erasure requester (route collaborator). The production
+/// impl is [`D1AccountDeletionRequester`]; tests supply a mock. Wired into
+/// [`CustomerRouteState::account_deletion`] by `routes.rs` (the erasure sink is a
+/// cross-module collaborator built alongside the DSR worker), exactly as
+/// `pat_gate` is wired there.
+pub trait AccountDeletionRequester: Send + Sync + core::fmt::Debug {
+    /// Durably anchor + enqueue a GDPR erasure for `tenant_id`. Idempotent
+    /// (deterministic `dsr_id` + `INSERT OR IGNORE`). Uses a real wall clock for
+    /// the SLA-anchor `queued_at_ms` (the route's logical clock is 0).
+    ///
+    /// # Errors
+    ///
+    /// [`AccountDeletionError::NotFound`] when no tenant row exists;
+    /// [`AccountDeletionError::Internal`] on any D1 / transport / config fault.
+    fn request_erasure(&self, tenant_id: &str) -> Result<(), AccountDeletionError>;
+}
+
+/// Transport seam for the built `dsr.queued.v1` message. The genuinely
+/// cross-service piece (the container has no CF Queue producer binding): the
+/// production sink is wired in `routes.rs` over the in-process DSR erasure worker
+/// (or a queue producer). Kept behind a trait so [`D1AccountDeletionRequester`]
+/// owns the message construction + the `dsr_requested` anchor (the C-ACCTDEL
+/// D1-observable effects) hermetically, with the transport injected.
+pub trait DsrErasureSink: Send + Sync + core::fmt::Debug {
+    /// Enqueue an already-anchored `dsr.queued.v1` erasure message.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` on any transport failure (the requester maps it to
+    /// [`AccountDeletionError::Internal`] → 500 fail-CLOSED).
+    fn enqueue(&self, message: &Value) -> Result<(), String>;
+}
+
+/// `dev.hugr.corelink.dsr.queued.v1` schema id (FROZEN — mirrors
+/// `apps/signup-worker/src/webhooks/clerk.ts buildErasureQueueMessage`).
+const DSR_QUEUED_SCHEMA: &str = "dev.hugr.corelink.dsr.queued.v1";
+
+/// Deterministic, name-based (v5-shaped) UUID from a subject key — byte-for-byte
+/// the `deterministicDsrId` algorithm in `clerk.ts` (`SHA-256("corelink-dsr-v1:"
+/// + key)`, first 16 bytes, version 5 + RFC-4122 variant). Keying on the Clerk
+/// user id gives the SAME `dsr_id` as the webhook path, so a dashboard-initiated
+/// delete and a Clerk `user.deleted` for the same account are idempotency-compatible.
+#[must_use]
+fn deterministic_dsr_id(subject_key: &str) -> String {
+    let digest = Sha256::digest(format!("corelink-dsr-v1:{subject_key}").as_bytes());
+    let mut b = [0u8; 16];
+    // First 16 bytes of the SHA-256 digest (the digest is 32 bytes — never short).
+    b.copy_from_slice(digest.get(..16).unwrap_or(&[0u8; 16]));
+    b[6] = (b[6] & 0x0f) | 0x50; // version 5 (name-based)
+    b[8] = (b[8] & 0x3f) | 0x80; // RFC 4122 variant
+    // Render via the uuid crate (lowercase, hyphenated 8-4-4-4-12) — no manual
+    // slicing; the version/variant bits set above survive verbatim.
+    uuid::Uuid::from_bytes(b).to_string()
+}
+
+/// Production [`AccountDeletionRequester`] over the [`crate::customer_d1::CustomerD1`]
+/// row-source seam + an injected [`DsrErasureSink`]. Mirrors the Clerk
+/// `user.deleted` path: resolve the account's Clerk id, derive the deterministic
+/// `dsr_id`, honor an operator legal hold, build the canonical `dsr.queued.v1`
+/// message, `INSERT OR IGNORE` the `dsr_requested` anchor (G4), then enqueue.
+pub struct D1AccountDeletionRequester {
+    /// D1 row source (production: `customer_d1::D1HttpCustomerDb`).
+    db: Arc<dyn crate::customer_d1::CustomerD1>,
+    /// Erasure-message transport (wired in `routes.rs`).
+    sink: Arc<dyn DsrErasureSink>,
+}
+
+impl core::fmt::Debug for D1AccountDeletionRequester {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("D1AccountDeletionRequester")
+            .field("db", &"[CustomerD1]")
+            .field("sink", &self.sink)
+            .finish()
+    }
+}
+
+impl D1AccountDeletionRequester {
+    /// Wire the requester over a D1 row source + an erasure sink.
+    #[must_use]
+    pub fn new(db: Arc<dyn crate::customer_d1::CustomerD1>, sink: Arc<dyn DsrErasureSink>) -> Self {
+        Self { db, sink }
+    }
+
+    /// Real wall-clock unix-ms (the SLA anchor — the route's logical clock is 0).
+    fn now_ms() -> u64 {
+        u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0),
+        )
+        .unwrap_or(0)
+    }
+
+    /// `HMAC-SHA256(ERASURE_SALT_KEY, dsr_id)` hex — the per-DSR erasure salt
+    /// (GDPR Art. 4(5) unlinkable pseudonymization), mirroring `clerk.ts`
+    /// `deriveErasureSalt`. Fail-CLOSED: the key is REQUIRED here (the requester
+    /// is only wired in configured/prod envs); an absent/empty key is an
+    /// operator fault that must surface as 500, never a predictable salt.
+    fn derive_salt_hex(dsr_id: &str) -> Result<String, AccountDeletionError> {
+        let key = std::env::var("ERASURE_SALT_KEY")
+            .ok()
+            .filter(|k| !k.is_empty())
+            .ok_or_else(|| {
+                AccountDeletionError::Internal(
+                    "ERASURE_SALT_KEY unset — refusing to derive a predictable erasure salt \
+                     (fail-CLOSED)"
+                        .to_owned(),
+                )
+            })?;
+        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key.as_bytes())
+            .map_err(|e| AccountDeletionError::Internal(format!("erasure salt key invalid: {e}")))?;
+        mac.update(dsr_id.as_bytes());
+        Ok(hex::encode(mac.finalize().into_bytes()))
+    }
+
+    /// Is `tenant_id` under an operator legal hold? Mirrors the webhook's
+    /// `tenantUnderLegalHold` posture against the FROZEN C-LEGALHOLD schema
+    /// (migration 0076: a row's presence == held). A query error (table not yet
+    /// provisioned) → `false`: returning `true` on error would make EVERY
+    /// deletion a no-op preservation and silently break the live erasure
+    /// obligation (a far larger harm than the not-yet-built hold feature).
+    fn under_legal_hold(&self, tenant_id: &str) -> bool {
+        match self.db.query(
+            "SELECT 1 AS held FROM tenant_legal_hold WHERE tenant_id = ?1 LIMIT 1",
+            vec![json!(tenant_id)],
+        ) {
+            Ok(rows) => !rows.is_empty(),
+            Err(_) => false,
+        }
+    }
+}
+
+impl AccountDeletionRequester for D1AccountDeletionRequester {
+    fn request_erasure(&self, tenant_id: &str) -> Result<(), AccountDeletionError> {
+        // Resolve the account row + its Clerk id (subject key for the deterministic
+        // dsr_id). No row → nothing to erase (already deleted) → NotFound.
+        let rows = self
+            .db
+            .query(
+                "SELECT clerk_user_id FROM tenant WHERE tenant_id = ?1 LIMIT 1",
+                vec![json!(tenant_id)],
+            )
+            .map_err(|e| AccountDeletionError::Internal(format!("tenant lookup failed: {e}")))?;
+        let Some(row) = rows.into_iter().next() else {
+            return Err(AccountDeletionError::NotFound);
+        };
+        // Prefer the Clerk user id (dsr_id parity with the webhook path); fall back
+        // to the tenant id when absent (still deterministic + idempotent).
+        let subject_key = row
+            .get("clerk_user_id")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(tenant_id);
+        let dsr_id = deterministic_dsr_id(subject_key);
+        let clerk_user_id = row
+            .get("clerk_user_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+
+        let salt_hex = Self::derive_salt_hex(&dsr_id)?;
+        let legal_hold = self.under_legal_hold(tenant_id);
+        let now_ms = Self::now_ms();
+
+        // Canonical dsr.queued.v1 envelope (mirrors buildErasureQueueMessage):
+        // subject_id == tenant_id (1 Clerk user : 1 tenant — the tenant is the
+        // deletion unit); source distinguishes the self-serve trigger.
+        let message = json!({
+            "schema": DSR_QUEUED_SCHEMA,
+            "dsr_id": dsr_id,
+            "tenant_id": tenant_id,
+            "subject_id": tenant_id,
+            "erasure_salt_hex": salt_hex,
+            "queued_at_ms": now_ms,
+            "legal_hold": legal_hold,
+            "source": "customer.account.delete",
+            "clerk_user_id": clerk_user_id,
+        });
+
+        // G4 (WI-S11-008): write the durable "DSR requested" anchor BEFORE enqueue
+        // so the 24h verify sweep can detect an SLA breach even if the erasure
+        // fails before any backend tombstone lands. Idempotent: dsr_id is
+        // deterministic, so a repeat request is an INSERT-OR-IGNORE no-op. This
+        // row is ALSO the legitimacy gate the /_internal/dsr/erase consumer checks
+        // (dsr_requested must exist for (dsr_id, tenant)) — writing it first makes
+        // the subsequent enqueue authorized by construction.
+        self.db
+            .query(
+                "INSERT OR IGNORE INTO dsr_requested (dsr_id, tenant_id, requested_at, status) \
+                 VALUES (?1, ?2, ?3, 'requested')",
+                vec![
+                    json!(dsr_id),
+                    json!(tenant_id),
+                    json!(i64::try_from(now_ms).unwrap_or(i64::MAX)),
+                ],
+            )
+            .map_err(|e| {
+                AccountDeletionError::Internal(format!("dsr_requested anchor write failed: {e}"))
+            })?;
+
+        // Enqueue the erasure message (transport injected by routes.rs).
+        self.sink
+            .enqueue(&message)
+            .map_err(|e| AccountDeletionError::Internal(format!("erasure enqueue failed: {e}")))?;
+        Ok(())
+    }
+}
+
 // ─── Error mapping ────────────────────────────────────────────────────────────
 
 /// Map a [`CustomerHandlerError`] to the canonical HTTP response.
@@ -972,6 +1272,7 @@ mod tests {
             team: shared.clone(),
             audit: shared.clone(),
             pat_gate: None,
+            account_deletion: None,
         };
         (state, shared)
     }
@@ -1939,5 +2240,249 @@ mod tests {
         assert!(!role_is_privileged("Developer"));
         assert!(!role_is_privileged("Viewer"));
         assert!(!role_is_privileged(""));
+    }
+
+    // ── C-ACCTDEL: account-delete route + requester ───────────────────────────
+
+    use std::sync::Mutex;
+
+    use crate::storage::d1_http::D1Row;
+
+    /// Records the calls it captured; configurable to fail / report NotFound.
+    #[derive(Debug, Default)]
+    struct MockRequester {
+        calls: Mutex<Vec<String>>,
+        fail: bool,
+        not_found: bool,
+    }
+
+    impl AccountDeletionRequester for MockRequester {
+        fn request_erasure(&self, tenant_id: &str) -> Result<(), AccountDeletionError> {
+            self.calls.lock().unwrap().push(tenant_id.to_owned());
+            if self.not_found {
+                return Err(AccountDeletionError::NotFound);
+            }
+            if self.fail {
+                return Err(AccountDeletionError::Internal("boom".to_owned()));
+            }
+            Ok(())
+        }
+    }
+
+    fn fixture_with_requester(req: Arc<dyn AccountDeletionRequester>) -> CustomerRouteState {
+        let (mut state, _) = fixture();
+        state.account_deletion = Some(req);
+        state
+    }
+
+    #[tokio::test]
+    async fn account_delete_clerk_session_returns_202() {
+        let requester = Arc::new(MockRequester::default());
+        let app = router(fixture_with_requester(requester.clone()));
+        let r = Request::builder()
+            .uri("/v1/customer/account/delete")
+            .method("POST")
+            .header("x-corelink-tenant-id", "t-acct")
+            .header("x-corelink-token-prefix", "clerk")
+            .header("content-type", "application/json")
+            .body(Body::from(json!({ "confirm": true }).to_string()))
+            .unwrap();
+        let resp = app.oneshot(r).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+        assert_eq!(requester.calls.lock().unwrap().as_slice(), ["t-acct"]);
+    }
+
+    #[tokio::test]
+    async fn account_delete_pat_caller_is_403() {
+        // A cache PAT (non-`clerk` prefix) must NOT trigger account erasure.
+        let requester = Arc::new(MockRequester::default());
+        let app = router(fixture_with_requester(requester.clone()));
+        let r = Request::builder()
+            .uri("/v1/customer/account/delete")
+            .method("POST")
+            .header("x-corelink-tenant-id", "t-acct")
+            .header("x-corelink-token-prefix", "clpat_abc")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(r).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        assert!(
+            requester.calls.lock().unwrap().is_empty(),
+            "a PAT caller must never reach the requester"
+        );
+    }
+
+    #[tokio::test]
+    async fn account_delete_missing_tenant_is_401() {
+        let app = router(fixture_with_requester(Arc::new(MockRequester::default())));
+        let r = Request::builder()
+            .uri("/v1/customer/account/delete")
+            .method("POST")
+            .header("x-corelink-token-prefix", "clerk")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(r).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn account_delete_unwired_fails_closed_503() {
+        // account_deletion = None (dev/CI) → fail-CLOSED, never a silent 202.
+        let (state, _) = fixture();
+        let app = router(state);
+        let r = Request::builder()
+            .uri("/v1/customer/account/delete")
+            .method("POST")
+            .header("x-corelink-tenant-id", "t-acct")
+            .header("x-corelink-token-prefix", "clerk")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(r).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn account_delete_internal_error_is_500() {
+        let requester = Arc::new(MockRequester {
+            fail: true,
+            ..MockRequester::default()
+        });
+        let app = router(fixture_with_requester(requester));
+        let r = Request::builder()
+            .uri("/v1/customer/account/delete")
+            .method("POST")
+            .header("x-corelink-tenant-id", "t-acct")
+            .header("x-corelink-token-prefix", "clerk")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(r).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn account_delete_no_account_is_idempotent_202() {
+        let requester = Arc::new(MockRequester {
+            not_found: true,
+            ..MockRequester::default()
+        });
+        let app = router(fixture_with_requester(requester));
+        let r = Request::builder()
+            .uri("/v1/customer/account/delete")
+            .method("POST")
+            .header("x-corelink-tenant-id", "t-acct")
+            .header("x-corelink-token-prefix", "clerk")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(r).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    }
+
+    #[test]
+    fn deterministic_dsr_id_is_v5_shaped_and_stable() {
+        let id = deterministic_dsr_id("user_2abc");
+        // Canonical UUID shape, version nibble = 5, RFC-4122 variant (8/9/a/b).
+        assert_eq!(id.len(), 36);
+        let parts: Vec<&str> = id.split('-').collect();
+        assert_eq!(parts.iter().map(|p| p.len()).collect::<Vec<_>>(), vec![8, 4, 4, 4, 12]);
+        assert_eq!(&parts[2][0..1], "5", "version 5 nibble");
+        assert!(matches!(&parts[3][0..1], "8" | "9" | "a" | "b"), "RFC-4122 variant");
+        // Deterministic.
+        assert_eq!(id, deterministic_dsr_id("user_2abc"));
+        assert_ne!(id, deterministic_dsr_id("user_other"));
+    }
+
+    /// Hermetic D1 mock: canned rows keyed by an SQL fragment; records writes.
+    #[derive(Debug, Default)]
+    struct MockReqD1 {
+        tenant_rows: Vec<D1Row>,
+        calls: Mutex<Vec<(String, Vec<Value>)>>,
+    }
+
+    impl crate::customer_d1::CustomerD1 for MockReqD1 {
+        fn query(&self, sql: &str, binds: Vec<Value>) -> Result<Vec<D1Row>, String> {
+            self.calls.lock().unwrap().push((sql.to_owned(), binds));
+            if sql.contains("FROM tenant WHERE tenant_id") {
+                return Ok(self.tenant_rows.clone());
+            }
+            Ok(Vec::new())
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct MockSink {
+        last: Mutex<Option<Value>>,
+    }
+
+    impl DsrErasureSink for MockSink {
+        fn enqueue(&self, message: &Value) -> Result<(), String> {
+            *self.last.lock().unwrap() = Some(message.clone());
+            Ok(())
+        }
+    }
+
+    fn d1row(pairs: &[(&str, Value)]) -> D1Row {
+        pairs.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect()
+    }
+
+    // The requester reads the process-global `ERASURE_SALT_KEY`; all three
+    // behaviors are sequenced in ONE test so a parallel sibling can never observe
+    // a half-mutated env (the rest of the suite never touches this var).
+    #[test]
+    fn requester_dsr_anchor_message_and_salt_failclosed() {
+        // Phase A: salt key SET → success; anchor written BEFORE enqueue; the
+        // enqueued message mirrors buildErasureQueueMessage's shape.
+        std::env::set_var("ERASURE_SALT_KEY", "test-erasure-salt-key-0123456789abcdef");
+        let db = Arc::new(MockReqD1 {
+            tenant_rows: vec![d1row(&[("clerk_user_id", json!("user_2abc"))])],
+            ..MockReqD1::default()
+        });
+        let sink = Arc::new(MockSink::default());
+        let requester = D1AccountDeletionRequester::new(db.clone(), sink.clone());
+        requester.request_erasure("t-acct").expect("must succeed");
+
+        let calls = db.calls.lock().unwrap().clone();
+        let insert = calls
+            .iter()
+            .find(|(sql, _)| sql.contains("INSERT OR IGNORE INTO dsr_requested"))
+            .expect("dsr_requested INSERT must run");
+        let expected_dsr = deterministic_dsr_id("user_2abc");
+        assert_eq!(insert.1[0], json!(expected_dsr));
+        assert_eq!(insert.1[1], json!("t-acct"));
+
+        let msg = sink.last.lock().unwrap().clone().expect("a message was enqueued");
+        assert_eq!(msg["schema"], DSR_QUEUED_SCHEMA);
+        assert_eq!(msg["dsr_id"], json!(expected_dsr));
+        assert_eq!(msg["tenant_id"], "t-acct");
+        assert_eq!(msg["subject_id"], "t-acct");
+        assert_eq!(msg["source"], "customer.account.delete");
+        assert_eq!(msg["legal_hold"], json!(false));
+        assert!(msg["erasure_salt_hex"].as_str().is_some_and(|s| s.len() == 64));
+
+        // Phase B: no tenant row → NotFound, no enqueue.
+        let db2 = Arc::new(MockReqD1::default());
+        let sink2 = Arc::new(MockSink::default());
+        let r2 = D1AccountDeletionRequester::new(db2, sink2.clone());
+        assert!(matches!(
+            r2.request_erasure("ghost"),
+            Err(AccountDeletionError::NotFound)
+        ));
+        assert!(sink2.last.lock().unwrap().is_none(), "no enqueue on NotFound");
+
+        // Phase C: salt key UNSET → fail-CLOSED (Internal), no enqueue.
+        std::env::remove_var("ERASURE_SALT_KEY");
+        let db3 = Arc::new(MockReqD1 {
+            tenant_rows: vec![d1row(&[("clerk_user_id", json!("user_2abc"))])],
+            ..MockReqD1::default()
+        });
+        let sink3 = Arc::new(MockSink::default());
+        let r3 = D1AccountDeletionRequester::new(db3, sink3.clone());
+        assert!(matches!(
+            r3.request_erasure("t-acct"),
+            Err(AccountDeletionError::Internal(_))
+        ));
+        assert!(
+            sink3.last.lock().unwrap().is_none(),
+            "no enqueue when the salt key is unset (fail-CLOSED)"
+        );
     }
 }

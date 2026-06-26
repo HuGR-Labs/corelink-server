@@ -128,3 +128,50 @@ export async function insertPat(
     )
     .run();
 }
+
+/** A single outstanding `invited` team-member row (the acceptance target). */
+interface InvitedMemberRow {
+  tenant_id: string;
+  user_id: string;
+}
+
+/**
+ * Accept an outstanding team invitation (C-ACCEPT, ADR-S33-001 WP-4).
+ *
+ * When a Clerk `user.created` event fires for an email that was previously
+ * invited to a team (a `team_member` row with `status='invited'`, keyed by the
+ * SHA-256 `email_hash` per CTRL-PRIV-001 — never the raw email), flip that seat
+ * to `active`: stamp `joined_at_ms` and bind the real Clerk `user_id` (the
+ * invited row carried the Clerk invitation id as a placeholder, migration 0074).
+ *
+ * Returns `true` iff a row was flipped. A signup whose email matches no
+ * outstanding invitation (the common self-serve case) returns `false` and is a
+ * no-op — the caller treats this as benign.
+ *
+ * The UPDATE re-asserts `status='invited'` so a concurrent acceptance (double
+ * webhook delivery) cannot double-flip or clobber an already-`active` seat.
+ */
+export async function acceptTeamInvitation(
+  db: D1Database,
+  clerkUserId: string,
+  emailHash: string,
+): Promise<boolean> {
+  const invited = await db
+    .prepare(
+      "SELECT tenant_id, user_id FROM team_member " +
+        "WHERE email_hash = ?1 AND status = 'invited' LIMIT 1",
+    )
+    .bind(emailHash)
+    .first<InvitedMemberRow>();
+  if (invited === null) return false;
+
+  await db
+    .prepare(
+      "UPDATE team_member " +
+        "SET status = 'active', joined_at_ms = ?1, user_id = ?2 " +
+        "WHERE tenant_id = ?3 AND user_id = ?4 AND status = 'invited'",
+    )
+    .bind(Date.now(), clerkUserId, invited.tenant_id, invited.user_id)
+    .run();
+  return true;
+}

@@ -21,7 +21,7 @@
 //! | keys create         | `corelink_pat::mint` + D1 `INSERT`; scope map FROZEN (`["cache:read"]`→`read-only`, anything-with-write→`read-write`, `admin` NEVER grantable); token returned once, never logged |
 //! | keys revoke         | `UPDATE pat SET revoked_at_ms=?` tenant-scoped; idempotent |
 //! | team                | single synthesized **Owner** row from `tenant.clerk_user_id`, email `"—"` |
-//! | team/invite         | [`CustomerHandlerError::NotImplemented`] → 501 (invites coming soon) |
+//! | team/invite         | INSERT a `team_member` row (status `invited`, SHA-256 `email_hash` per CTRL-PRIV-001, migration 0074); NO synchronous Clerk call (the email round-trip is an owner follow-up, OB-1) |
 //!
 //! # The sync↔async bridge
 //!
@@ -77,6 +77,7 @@ use corelink_pat::{
     SCOPE_CACHE_RW,
 };
 use serde_json::{json, Value};
+use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
 use crate::storage::d1_http::{D1HttpClient, D1Row};
@@ -324,6 +325,21 @@ fn scope_to_list(scope: &str) -> Vec<String> {
         "read-write" => vec!["cache:read".to_owned(), "cache:write".to_owned()],
         "" => vec![],
         other => vec![other.to_owned()],
+    }
+}
+
+/// Map a dashboard role string onto the FROZEN `team_member.role` CHECK domain
+/// (migration 0074: `owner` / `admin` / `member` / `viewer`). The admin-ui sends
+/// `"Owner"` / `"Admin"` / `"Developer"` / `"Viewer"`; `Developer` (and any
+/// unrecognized value) collapses to the least-privileged `member` so the INSERT
+/// can never violate the CHECK (which would surface as a 500). Case-insensitive.
+fn normalize_invite_role(role: &str) -> &'static str {
+    match role.trim().to_ascii_lowercase().as_str() {
+        "owner" => "owner",
+        "admin" => "admin",
+        "viewer" => "viewer",
+        // `developer` + anything else → the least-privileged seat (CHECK-safe).
+        _ => "member",
     }
 }
 
@@ -1110,23 +1126,72 @@ impl CustomerTeamHandler for D1CustomerHandler {
     }
 
     fn invite(&self, req: TeamInviteRequest) -> Result<TeamInviteResponse, CustomerHandlerError> {
-        // Attempted audit first (trait contract), then the HONEST 501.
-        // ADR-S33-001 WP-4: the by-EMAIL invitation flow (Clerk invitation →
-        // email acceptance → user binding) is not yet wired, so no invite can be
-        // durably recorded against a real user_id — never pretend one was sent.
-        // ACTIVE seats are provisioned operator-side (the membership BACKEND —
-        // list/remove + PAT revocation — IS live; only the email round-trip is
-        // pending).
+        // Attempted audit BEFORE the mutation (fail-CLOSED ordering) — mirrors
+        // `remove()` / `create()`.
         self.emit_audit(
             AuditEventKind::TeamInviteAttempted,
             &req.caller_tenant,
             &req.principal,
             &req.email,
         )?;
-        self.emit_sli(true);
-        Err(CustomerHandlerError::NotImplemented(
-            "team invites are coming soon".to_owned(),
-        ))
+
+        // ADR-S33-001 WP-T2: durably record the invite as a `team_member` row
+        // (status `invited`, migration 0074). NO synchronous Clerk call (OB-1) —
+        // the invitation EMAIL round-trip is an owner follow-up; acceptance is
+        // bound later by the signup-worker `acceptTeamInvitation` helper (C-ACCEPT),
+        // which matches the row by `email_hash` and rebinds `user_id` + flips it to
+        // `active`.
+        //
+        // CTRL-PRIV-001: only the pseudonymized SHA-256 email hash is stored, never
+        // the raw invitee email (mirrors the rest of the D1 schema + 0074's header).
+        // NORMALIZE (trim + lowercase) BEFORE hashing — this is the join key the
+        // signup-worker `acceptTeamInvitation` (C-ACCEPT, `emailHashFor`) matches on,
+        // and it normalizes identically; without it an invite to `Alice@Example.com`
+        // would never flip to `active` when Clerk delivers `alice@example.com`.
+        let email_hash = hex::encode(Sha256::digest(req.email.trim().to_lowercase().as_bytes()));
+        // The role is collapsed onto the FROZEN 0074 CHECK domain (CHECK-safe).
+        let role = normalize_invite_role(&req.role);
+        // No real Clerk user_id exists yet (OB-1) — `team_member.user_id` is NOT
+        // NULL (PK), so a fresh UUID is the invitation-id placeholder 0074 expects
+        // ("carries the Clerk invitation id until acceptance binds the real user").
+        let invitation_id = Uuid::now_v7().to_string();
+        let invited_at_ms = i64::try_from(self.clock.now_ms()).unwrap_or(i64::MAX);
+
+        // `joined_at_ms` is left NULL until acceptance flips the seat to `active`.
+        self.run(
+            "INSERT INTO team_member \
+             (tenant_id, user_id, email_hash, role, status, invited_by, invited_at_ms) \
+             VALUES (?1, ?2, ?3, ?4, 'invited', ?5, ?6)",
+            vec![
+                json!(req.caller_tenant),
+                json!(invitation_id),
+                json!(email_hash),
+                json!(role),
+                json!(req.principal),
+                json!(invited_at_ms),
+            ],
+        )?;
+
+        self.emit_audit(
+            AuditEventKind::TeamInviteCommitted,
+            &req.caller_tenant,
+            &req.principal,
+            &req.email,
+        )?;
+
+        // Response mirrors the `InMemoryCustomerHandler::invite` shape (echoes the
+        // caller-supplied email + requested role; status `invited`). The raw email
+        // is reflected back to the caller that supplied it — it is NOT persisted
+        // (only `email_hash` is).
+        let member = TeamMemberRow::new(
+            invitation_id,
+            req.email.clone(),
+            req.role.clone(),
+            String::new(),
+            "invited",
+        );
+        self.emit_sli(false);
+        Ok(TeamInviteResponse::new(member))
     }
 
     fn remove(&self, req: TeamRemoveRequest) -> Result<TeamRemoveResponse, CustomerHandlerError> {
@@ -2166,27 +2231,70 @@ mod tests {
     }
 
     #[test]
-    fn team_invite_is_honest_501() {
+    fn team_invite_inserts_invited_member_row() {
+        // WP-T2: invite() is now D1-PURE — it INSERTs an `invited` team_member row
+        // (status `invited`, pseudonymized email_hash, CHECK-safe role) and returns
+        // the new member; NO synchronous Clerk call (OB-1).
         let f = fixture_with(MockD1::with(vec![]), None);
-        let err = f
+        let resp = f
             .handler
             .invite(TeamInviteRequest::new(
                 TENANT,
                 "clpat_x",
-                "alice@example.com",
+                "Alice@Example.com",
                 "Developer",
                 0,
             ))
-            .unwrap_err();
-        assert!(
-            matches!(err, CustomerHandlerError::NotImplemented(_)),
-            "{err:?}"
-        );
-        // The Attempted audit still fires (trait contract), and nothing
-        // was written.
+            .expect("invite must succeed");
+        assert_eq!(resp.member.status, "invited");
+        // Response echoes the caller-supplied email + requested role (InMemory shape).
+        assert_eq!(resp.member.email, "Alice@Example.com");
+        assert_eq!(resp.member.role, "Developer");
+
+        // Exactly one D1 write: the team_member INSERT (status='invited').
+        let calls = f.db.calls();
+        let insert = calls
+            .iter()
+            .find(|(sql, _)| sql.contains("INSERT INTO team_member"))
+            .expect("an INSERT INTO team_member must have run");
+        assert!(insert.0.contains("'invited'"), "row must be status=invited");
+        // binds: tenant, user_id(placeholder UUID), email_hash, role, invited_by, invited_at_ms.
+        assert_eq!(insert.1[0], json!(TENANT));
+        // CTRL-PRIV-001: the raw email is NEVER a bind value — only its SHA-256 hash
+        // of the NORMALIZED (trim+lowercase) email — the exact join key the
+        // signup-worker accept side matches on (C-ACCEPT parity).
+        let expected_hash = hex::encode(Sha256::digest(b"alice@example.com"));
+        assert_eq!(insert.1[2], json!(expected_hash));
+        for bind in &insert.1 {
+            assert_ne!(
+                bind.as_str(),
+                Some("Alice@Example.com"),
+                "raw invitee email must never be persisted (CTRL-PRIV-001)"
+            );
+        }
+        // `Developer` collapses onto the CHECK domain → `member`.
+        assert_eq!(insert.1[3], json!("member"));
+        assert_eq!(insert.1[4], json!("clpat_x"), "invited_by = caller principal");
+
+        // Audit: Attempted BEFORE the write, Committed AFTER.
         let kinds: Vec<_> = f.audit.snapshot().unwrap().iter().map(|e| e.kind).collect();
-        assert_eq!(kinds, vec![AuditEventKind::TeamInviteAttempted]);
-        assert!(f.db.calls().is_empty(), "501 must not touch D1");
+        assert_eq!(
+            kinds,
+            vec![
+                AuditEventKind::TeamInviteAttempted,
+                AuditEventKind::TeamInviteCommitted
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_invite_role_maps_to_check_domain() {
+        assert_eq!(normalize_invite_role("Owner"), "owner");
+        assert_eq!(normalize_invite_role("ADMIN"), "admin");
+        assert_eq!(normalize_invite_role("Viewer"), "viewer");
+        assert_eq!(normalize_invite_role("Developer"), "member");
+        assert_eq!(normalize_invite_role("  member "), "member");
+        assert_eq!(normalize_invite_role("anything-else"), "member");
     }
 
     #[test]
