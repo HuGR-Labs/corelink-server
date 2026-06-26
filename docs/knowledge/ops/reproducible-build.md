@@ -3,6 +3,7 @@ type: "Runbook"
 title: "Reproducible-build process"
 description: "Best-effort reproducible builds: the 2-runner SHA-256 diff matrix, the hermetic flag set (SOURCE_DATE_EPOCH + remap-path-prefix + codegen-units=1 + frozen/offline), the ≤5% byte-diff tamper-detection gate ratified by ADR-0015, and customer self-verification."
 source_files:
+  - "rust-toolchain.toml"
   - "docs/build/reproducible.md"
   - "specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md"
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
@@ -16,8 +17,8 @@ timestamp: "2026-06-26T00:00:00Z"
 Reproducible builds are CoreLink's supply-chain tamper-detection defense-in-depth: if two independent
 runners compile the same source commit to within a tiny byte-diff, an attacker who compromises one builder
 but not the other is mechanically detectable. CoreLink runs a **best-effort** version of this — a 2-runner
-SHA-256 diff with a **≤5% byte-diff gate** rather than 100% bit-identical, because Rust 1.84 + LLVM 18 in
-2026 cannot reliably hit 0% (residual DWARF path leaks, runner CPU heterogeneity). The 5% threshold and
+SHA-256 diff with a **≤5% byte-diff gate** rather than 100% bit-identical, because the pinned Rust 1.91.1
+toolchain + LLVM in 2026 cannot reliably hit 0% (residual DWARF path leaks, runner CPU heterogeneity). The 5% threshold and
 the roadmap to 100% post-GA Q3 are ratified in ADR-0015. This is the build-integrity counterpart of the
 GA tag's signed freeze in the [release process](/ops/release-process.md); the decision rationale lives in
 [ADR-0015](/adr/adr-0015-reproducible-build-best-effort.md).
@@ -52,8 +53,9 @@ GA tag's signed freeze in the [release process](/ops/release-process.md); the de
   (`specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md:222-227`).
 - The reproducible matrix uses `--jobs 1` to eliminate link-order non-determinism, even though release CI
   uses parallel jobs for throughput (`docs/build/reproducible.md:161-172`).
-- The rustc toolchain is pinned to exact minor `1.84.0` via `rust-toolchain.toml`; a bump requires the
-  workflow green on the PR + an ADR-0015 amendment (`docs/build/reproducible.md:117-133`).
+- The rustc toolchain is pinned to exact minor `1.91.1` via the `rust-toolchain.toml` `channel` line
+  (`rust-toolchain.toml:13`); a bump requires the workflow green on the PR + an ADR-0015 amendment
+  (`docs/build/reproducible.md:117-133`).
 - A `build.rs` that bypasses `SOURCE_DATE_EPOCH` (e.g. `SystemTime::now()`) is blocked by the pre-commit
   lint `scripts/build_rs_lint.sh` (`docs/build/reproducible.md:222-248`).
 - Threshold change requires Security Lead + Architect sign-off; a toolchain bump requires the workflow
@@ -70,6 +72,7 @@ GA tag's signed freeze in the [release process](/ops/release-process.md); the de
   (`specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md:104-109`).
 
 # Citations
+0. `rust-toolchain.toml:13` — `channel = "1.91.1"`: the exact-minor toolchain pin invariant (the enforcer).
 1. `docs/build/reproducible.md:12-59` — the 2-runner matrix + diff-check architecture + outcomes.
 2. `docs/build/reproducible.md:14-18` — workflow triggers (tag / nightly / manual, not per-PR).
 3. `docs/build/reproducible.md:55-59` — outcome bands (bit_identical / within_threshold / exceeds).

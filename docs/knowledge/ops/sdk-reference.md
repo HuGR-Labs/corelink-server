@@ -3,6 +3,9 @@ type: "Runbook"
 title: "SDK reference (python/go/javascript)"
 description: "The three first-party CoreLink SDKs (PyO3 Python, cgo Go, wasm-bindgen JS/TS): a shared API shape (put/get/stat), client-side BLAKE3 verify default-on per CTRL-CAS-002 via a single Rust truth, the canonical COR_CAS_DIGEST_MISMATCH error, and the explicit opt-out semantics."
 source_files:
+  - "crates/corelink-client-verify/src/error.rs"
+  - "crates/corelink-client-verify/src/digest.rs"
+  - "crates/corelink-client-verify/src/verifier.rs"
   - "docs/sdk/python.md"
   - "docs/sdk/go.md"
   - "docs/sdk/javascript.md"
@@ -47,7 +50,9 @@ server. This runbook is the cross-language contract an integrator reads before w
 - The Go zero-value Config does NOT opt out: the `ClientVerifyExplicitFalse` guard makes a quiet disable
   via an uninitialized struct impossible (`docs/sdk/go.md:69-70`).
 - A `get` that fails the BLAKE3 check raises the canonical `COR_CAS_DIGEST_MISMATCH` error in every
-  language, never returning corrupt bytes (`docs/sdk/javascript.md:106-113`).
+  language, never returning corrupt bytes — the single Rust truth returns `Err(VerifyError::DigestMismatch)`
+  (`crates/corelink-client-verify/src/verifier.rs:106-118`), whose stable code is `COR_CAS_DIGEST_MISMATCH`
+  (`crates/corelink-client-verify/src/error.rs:29-39`, `crates/corelink-client-verify/src/error.rs:65`).
 - The JS bundle is gated at ≤1MB (1,048,576 bytes) after `wasm-opt -O3` as a CI assertion
   (`docs/sdk/javascript.md:113-127`).
 
@@ -70,5 +75,8 @@ server. This runbook is the cross-language contract an integrator reads before w
 7. `docs/sdk/go.md:106-118` — Go two-field explicit opt-out.
 8. `docs/sdk/go.md:121-129` — Go race-detector CI.
 9. `docs/sdk/javascript.md:38-66` — JS/TS API + `clientVerify` default + mismatch throw.
-10. `docs/sdk/javascript.md:106-113` — JS error reference (`COR_CAS_DIGEST_MISMATCH`).
+10. `docs/sdk/javascript.md:106-113` — JS error reference (`COR_CAS_DIGEST_MISMATCH`) (spec).
+10b. `crates/corelink-client-verify/src/verifier.rs:106-118` — `ClientVerifier::verify` returns `Err(VerifyError::DigestMismatch)` on a BLAKE3 mismatch (the enforcer).
+10c. `crates/corelink-client-verify/src/error.rs:29-39`, `crates/corelink-client-verify/src/error.rs:65` — the `DigestMismatch` variant + its canonical `COR_CAS_DIGEST_MISMATCH` code.
+10d. `crates/corelink-client-verify/src/digest.rs:19` — the canonical `COR_CAS_DIGEST_MISMATCH` constant (the single Rust truth, re-exported from `corelink-hash`).
 11. `docs/sdk/javascript.md:113-127` — ≤1MB bundle-size CI gate.

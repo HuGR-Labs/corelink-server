@@ -62,9 +62,12 @@ governs turning GC on. The reclaim math it protects is the same per-tenant accou
 # Invariants
 - The GC phase machine is monotone forward — no skipping and no backward edge; only the encoded edges or
   a `Failed` transition are legal (`crates/corelink-gc/src/run.rs:105-115`).
-- Probe failure is fail-closed: an unprobeable degrade state MUST be treated as `GcPause`, never silently
-  proceeding (`crates/corelink-gc/src/degrade.rs:17`, `crates/corelink-gc/src/degrade.rs:120`), and
-  `GcPause` forces abort within one batch boundary (`crates/corelink-gc/src/degrade.rs:59`).
+- Probe failure is fail-closed *by design contract*: an unprobeable degrade state MUST be treated as
+  `GcPause`, never silently proceeding. This is the DESIGNED degrade contract — a caller-side MUST stated on
+  the `DegradeProbe::probe` trait doc and the module header (`crates/corelink-gc/src/degrade.rs:14-19`,
+  `crates/corelink-gc/src/degrade.rs:117-121`), NOT yet an in-crate enforcer (the caller that must honour it
+  is the deferred cron wiring). What IS enforced in-crate is the consequence: `GcPause` forces abort within
+  one batch boundary via `requires_abort` (`crates/corelink-gc/src/degrade.rs:59`).
 - The enterprise TTL admin override is hard-capped at 730 days; a longer override is rejected by
   `ttl_for_tier_with_override` with `ExceedsMaxTtl` (`crates/corelink-eviction/src/tier.rs:145-148`).
 - The reservation TTL never drops below the 60s floor nor exceeds the 7d cap, bounding both tiny and
@@ -90,7 +93,7 @@ governs turning GC on. The reclaim math it protects is the same per-tenant accou
 3. `crates/corelink-gc/src/degrade.rs:30-38` — `DegradeKind` enum (Off / GcPause / GcReadOnly).
 4. `crates/corelink-gc/src/degrade.rs:45-50` — `as_str` canonical mnemonics for the metric label.
 5. `crates/corelink-gc/src/degrade.rs:59` — `requires_abort` matches only `GcPause` (the hard stop).
-5b. `crates/corelink-gc/src/degrade.rs:17`, `crates/corelink-gc/src/degrade.rs:120` — the fail-closed-probe contract (unprobeable ⇒ treat as `GcPause`).
+5b. `crates/corelink-gc/src/degrade.rs:14-19`, `crates/corelink-gc/src/degrade.rs:117-121` — the fail-closed-probe DESIGN contract (module + `DegradeProbe::probe` trait doc: unprobeable ⇒ caller MUST treat as `GcPause`); a caller-side MUST, NOT an in-crate enforcer.
 6. `crates/corelink-gc/src/degrade.rs:65` — `blocks_new_runs` matches `GcPause | GcReadOnly`.
 7. `crates/corelink-eviction/src/tier.rs:41` — `MAX_ENTERPRISE_TTL_DAYS = 730` override cap.
 7b. `crates/corelink-eviction/src/tier.rs:145-148` — `ttl_for_tier_with_override` rejects a longer override with `ExceedsMaxTtl`.

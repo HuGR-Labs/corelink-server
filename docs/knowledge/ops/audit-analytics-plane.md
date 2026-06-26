@@ -11,6 +11,8 @@ source_files:
   - "crates/corelink-container/src/routes/audit_export/stream.rs"
   - "crates/corelink-container/src/routes/audit_export/state.rs"
   - "crates/corelink-container/src/routes/audit_export/types.rs"
+  - "tools/cli/src/main.rs"
+  - "tools/cli/src/commands/verify_ndjson_http.rs"
   - "docs/cli/audit-export.md"
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
 provenance: "AUTHORED"
@@ -48,12 +50,12 @@ another tenant's rows.
 
 - The export audit row is emitted fail-CLOSED — a sink `Err` aborts with 503 before streaming `crates/corelink-container/src/routes/audit_export/audit_sink.rs:100-105`.
 - Analytics data access is gated per-tenant: the PAT gate rejects forged/wrong-tenant (401) or verifier fault (503) before reads `crates/corelink-container/src/routes/audit_analytics.rs:118`.
-- A mid-stream abort surfaces as sysexits DATAERR (65) on the CLI, distinct from generic exit 1 `docs/cli/audit-export.md:79-89`.
-- The bearer token is never logged, printed, or surfaced in error messages (CTRL-CRED-001) `docs/cli/audit-export.md:91-99`.
+- A mid-stream abort surfaces as sysexits DATAERR (65) on the CLI, distinct from generic exit 1 — the `EXIT_DATAERR = 65` constant and the `AbortedMidStream => EXIT_DATAERR` mapping (`tools/cli/src/commands/verify_ndjson_http.rs:80`, `tools/cli/src/commands/verify_ndjson_http.rs:141`), wired in `main` (`tools/cli/src/main.rs:410-411`).
+- The bearer token is never logged, printed, or surfaced in error messages (CTRL-CRED-001) `tools/cli/src/commands/verify_ndjson_http.rs:104`.
 
 # Gotchas
 
-- The HTTP-fetch path caps the response body at 64 MiB so a malicious server cannot drain CLI memory `docs/cli/audit-export.md:100-102`.
+- The HTTP-fetch path caps the response body at 64 MiB so a malicious server cannot drain CLI memory — `const MAX_BYTES: usize = 64 * 1024 * 1024` (`tools/cli/src/commands/verify_ndjson_http.rs:370`, `tools/cli/src/commands/verify_ndjson_http.rs:378`).
 - If both the `--chain-head-anchor` flag and the response header are present they MUST match constant-time — a mismatch is an error, not a warning `docs/cli/audit-export.md:51-55`.
 
 # Citations
@@ -66,6 +68,9 @@ another tenant's rows.
 6. `crates/corelink-container/src/routes/audit_analytics.rs:118` — per-handler native PAT possession gate (in-barrel impl).
 7. `docs/cli/audit-export.md:10-31` — CLI offline (file) re-verify mode.
 8. `docs/cli/audit-export.md:33-55` — CLI HTTP-aware re-verify + anchor cross-check.
-9. `docs/cli/audit-export.md:79-89` — exit-65 sysexits DATAERR on mid-stream abort.
-10. `docs/cli/audit-export.md:91-99` — token never logged (CTRL-CRED-001) + constant-time anchor compare.
-11. `docs/cli/audit-export.md:100-102` — 64 MiB response-body cap.
+9. `docs/cli/audit-export.md:79-89` — exit-65 sysexits DATAERR on mid-stream abort (spec).
+9b. `tools/cli/src/commands/verify_ndjson_http.rs:80`, `tools/cli/src/commands/verify_ndjson_http.rs:141`, `tools/cli/src/main.rs:410-411` — `EXIT_DATAERR = 65` + `AbortedMidStream => EXIT_DATAERR` mapping + `main` wiring (the enforcer).
+10. `docs/cli/audit-export.md:91-99` — token never logged (CTRL-CRED-001) + constant-time anchor compare (spec).
+10b. `tools/cli/src/commands/verify_ndjson_http.rs:104` — request builder that never includes the Bearer (the enforcer).
+11. `docs/cli/audit-export.md:100-102` — 64 MiB response-body cap (spec).
+11b. `tools/cli/src/commands/verify_ndjson_http.rs:370`, `tools/cli/src/commands/verify_ndjson_http.rs:378` — `MAX_BYTES = 64 MiB` body cap (the enforcer).

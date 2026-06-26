@@ -3,6 +3,7 @@ type: "Runbook"
 title: "Secrets lifecycle & PAT-scope runbook"
 description: "How CoreLink manages secrets and PAT scopes operationally: the write-only Cloudflare secret constraint, the additive PAT-scope launch fix (pat.scope CHECK vs the cas:rw provisioning bug), the printf-not-echo secret-put discipline, and the deferred D1-encrypted-lease secrets broker (ADR-0067)."
 source_files:
+  - "crates/corelink-container/src/scope.rs"
   - "docs/operator/launch-pat-scope-fix-runbook.md"
   - "specs/03_architecture/adrs/ADR-0067-secrets-broker-d1-encrypted-lease-deferred.md"
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
@@ -36,9 +37,10 @@ works within the write-only-secret wall. The PAT-scope authorization itself is e
 2. Because auth migrations are additive-only (CI gate `check_migrations_additive.py`), the fix is
    code-side: provisioning now writes `read-write` and `scope.rs` additively accepts `read-write`/
    `read-only` alongside the legacy `cas:*` forms (`docs/operator/launch-pat-scope-fix-runbook.md:14-27`).
-3. Every auth surface routes through `scope.rs`'s `requires_cache_read/write`, so the single additive
-   change covers the Worker, OCI downscope, and all five adapters
-   (`docs/operator/launch-pat-scope-fix-runbook.md:20-27`).
+3. Every auth surface routes through `scope.rs`'s `requires_cache_read`/`requires_cache_write`, so the
+   single additive change covers the Worker, OCI downscope, and all five adapters — both fns accept the
+   `read-write`/`read-only` forms alongside the legacy `cas:*` tokens and fail-CLOSED on empty/unknown
+   (`crates/corelink-container/src/scope.rs:73`, `crates/corelink-container/src/scope.rs:93`).
 4. The fix ships with no DB migration: deploying the container + signup-worker is sufficient and a real
    signup then persists a CHECK-valid `read-write` (`docs/operator/launch-pat-scope-fix-runbook.md:35-40`).
 5. Secrets are set with `printf '%s' "$V" | wrangler secret put` (the runbook's pinning example), not
@@ -72,7 +74,8 @@ works within the write-only-secret wall. The PAT-scope authorization itself is e
 # Citations
 1. `docs/operator/launch-pat-scope-fix-runbook.md:8-27` — the `pat.scope` CHECK vs `cas:rw` launch-blocker + fix.
 2. `docs/operator/launch-pat-scope-fix-runbook.md:14-19` — additive-only auth migration constraint (code-side fix).
-3. `docs/operator/launch-pat-scope-fix-runbook.md:20-27` — `scope.rs` single chokepoint covers every auth surface.
+3. `docs/operator/launch-pat-scope-fix-runbook.md:20-27` — `scope.rs` single chokepoint covers every auth surface (runbook).
+3b. `crates/corelink-container/src/scope.rs:73`, `crates/corelink-container/src/scope.rs:93` — `requires_cache_read`/`requires_cache_write` accept `read-write`/`read-only`/`cas:*` and fail-closed (the enforcer).
 4. `docs/operator/launch-pat-scope-fix-runbook.md:35-40` — deploy-only, no DB migration.
 5. `docs/operator/launch-pat-scope-fix-runbook.md:41-50` — owner-gated legacy-admin least-privilege back-fill.
 6. `docs/operator/launch-pat-scope-fix-runbook.md:51-56` — `printf`-not-`echo` secret put + `CLERK_JWT_ISSUER` name.

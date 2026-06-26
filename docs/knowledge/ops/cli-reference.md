@@ -3,6 +3,8 @@ type: "Runbook"
 title: "The corelink CLI: JSON output schema & opt-in telemetry"
 description: "The machine-readable --output=json contract (with SemVer discipline) and the default-off, PII-free CLI telemetry policy."
 source_files:
+  - "tools/cli/src/main.rs"
+  - "tools/cli/src/telemetry.rs"
   - "docs/cli/json-output-schema.md"
   - "docs/cli/telemetry.md"
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
@@ -37,8 +39,8 @@ evolves, and exactly what (minimal, anonymous) data the binary may phone home wh
 # Invariants
 
 - SemVer discipline: additive fields are MINOR, removing/renaming is MAJOR, deprecations warn ≥ 90 days `docs/cli/json-output-schema.md:13-15`.
-- The PAT is always redacted in output; passing it as a CLI arg is a hard exit-2 CTRL-CRED-001 violation `docs/cli/json-output-schema.md:186-191`.
-- Telemetry NEVER collects tenant_id, digests, PAT, file paths, IP, hostname, username/email, or any PII `docs/cli/telemetry.md:32-44`.
+- The PAT is always redacted in output; passing it as a CLI arg is a hard exit-2 CTRL-CRED-001 violation, enforced by the raw-args guard in `main` before clap parses (`tools/cli/src/main.rs:370-383`).
+- Telemetry NEVER collects tenant_id, digests, PAT, file paths, IP, hostname, username/email, or any PII — the `TelemetryEvent` payload is structurally PII-free by construction (`tools/cli/src/telemetry.rs:29-73`).
 - The `anonymized_id` is not linked to account/tenant/PAT, is rotatable, and is discardable `docs/cli/telemetry.md:87-94`.
 - Raw telemetry events are deleted within 7 days; only PII-free aggregates persist 90 days `docs/cli/telemetry.md:114-120`.
 
@@ -54,7 +56,9 @@ evolves, and exactly what (minimal, anonymous) data the binary may phone home wh
 3. `docs/cli/json-output-schema.md:34-176` — per-subcommand JSON shapes.
 4. `docs/cli/json-output-schema.md:93-118` — bench read/write latency nullability.
 5. `docs/cli/json-output-schema.md:178-191` — error response + exit codes (1 general, 2 CTRL-CRED-001).
-6. `docs/cli/json-output-schema.md:186-191` — PAT-in-args exit-2 violation.
+6. `docs/cli/json-output-schema.md:186-191` — PAT-in-args exit-2 violation (spec).
+6b. `tools/cli/src/main.rs:370-383` — the `--pat`-in-args raw-args guard → `std::process::exit(2)` (the enforcer).
+6c. `tools/cli/src/telemetry.rs:29-73` — the `TelemetryEvent` PII-free payload (the enforcer of the never-collect invariant).
 7. `docs/cli/telemetry.md:10-15` — opt-in, default-off telemetry.
 8. `docs/cli/telemetry.md:18-29` — the minimal collected field set.
 9. `docs/cli/telemetry.md:32-44` — the never-collected list (no PII).
