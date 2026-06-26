@@ -1,0 +1,65 @@
+name: OKF-CoreLink Wiki Validation
+
+# Gates the knowledge bundle (docs/knowledge/) against the FROZEN OKF-CoreLink
+# profile contract (docs/internal/okf-wiki/01-okf-corelink-profile.contract.md)
+# via scripts/validate_okf.py — checks C1-C10b (+ secondary C-AGE/C-REV nightly).
+#
+# Triggers on changes to the bundle OR to any grounding surface (crates/, specs/)
+# OR to the validator itself: a code change can make a declared-and-cited line
+# range drift (C5), so the gate must re-run when the cited files move.
+
+on:
+  pull_request:
+    paths:
+      - 'docs/knowledge/**'
+      - 'crates/**'
+      - 'specs/**'
+      - 'scripts/validate_okf.py'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/knowledge/**'
+      - 'scripts/validate_okf.py'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  okf-wiki-validation:
+    # ubuntu-latest (zero Mac load) — the self-hosted setup-python hack noted in
+    # spec_validation.yml is N/A here.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        # fetch-depth: 0 — C4/C5 need full history (checkpoint_sha lookup + the
+        # two-tree `git diff <checkpoint_sha> HEAD` freshness diff). A shallow
+        # checkout would make those checks error.
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # actions/checkout@v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: Install PyYAML (venv on system python3)
+        # The validator runs on stdlib alone (hand-rolled YAML-subset reader for
+        # frontmatter), but the nested concept-manifest.yaml (C10/C10b oracle)
+        # needs a real YAML parser. Mirror the house venv idiom so the manifest
+        # checks stay live. (No requirements file — PyYAML is the only dep.)
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv
+          .venv/bin/python3 -m pip install --upgrade pip
+          .venv/bin/python3 -m pip install pyyaml
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Validate OKF-CoreLink knowledge bundle
+        run: python3 scripts/validate_okf.py
+
+      - name: Validator acceptance suite (good + per-check bad fixtures)
+        # Gates the validator's OWN correctness — proves every contract check
+        # C1..C10b has a bad fixture it catches and the golden bundle passes
+        # (C5b via a real throwaway-git two-revision harness). The done-oracle.
+        run: bash tests/okf/run_fixtures.sh

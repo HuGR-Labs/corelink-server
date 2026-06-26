@@ -23,6 +23,23 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **OKF wiki filled to 146/146 code-grounded concepts (waves 1–4 + truth-audit remediation).** The OKF
+  bundle (`docs/knowledge/`) now carries the complete concept set — architecture (planes/surfaces/auth/
+  flows/storage/tenancy/crates), 76 ADR concepts, and 32 doc-extraction concepts — each `path:line`
+  code-grounded and SHA-checkpointed for C5 anti-drift. Adversarially truth-certified (0 BLOCKER; the
+  MAJOR/MINOR findings from the audit wave remediated). `validate_okf.py` → 146 concepts, 0 stale, 0 drift.
+- **OKF knowledge-wiki foundation: a self-maintaining, code-grounded architecture wiki (OKF v0.1).**
+  Adopts Google's Open Knowledge Format as a vendor-neutral, in-repo concept bundle (`docs/knowledge/`).
+  Ships the frozen `OKF-CoreLink` profile + concept template (`docs/internal/okf-wiki/`), the
+  146-candidate `concept-manifest.yaml` completeness oracle, a stdlib validator `scripts/validate_okf.py`
+  (checks C1–C10b: conformance, code-grounding via `source_files`/`path:line` citations, and SHA-checkpoint
+  freshness — anti-drift via two-tree `git diff`, never `git log -L`), a self-running fixture acceptance
+  suite (`tests/okf/`, 17/17 incl. hermetic git-harnesses for the C5 freshness + C5b SHA-bump checks), the bundle scaffold +
+  deterministic index generator (`scripts/okf_{scaffold,index}.py`), and a fast PR gate
+  (`.github/workflows/okf_wiki.yml`, ubuntu-latest, `fetch-depth: 0`). Concept fill (architecture + 76 ADRs
+  + doc-extraction) follows in subsequent PRs; all 146 candidates start `status: planned` so the foundation
+  is green at 0 concepts. Contract cold-critic-reviewed (FREEZE-OK); residual `source_files`-completeness
+  risk logged in the profile §4.
 - **Account-delete erasure sink wired — the route now honors deletions (C-ACCTDEL).** `POST
   /v1/customer/account/delete` no longer fail-safe-503s in configured envs: `routes.rs` now wires
   `customer::account_deletion_from_env()` (a `D1HttpCustomerDb` row source + the new
