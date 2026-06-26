@@ -236,6 +236,15 @@ def provision():
     out["CORELINK_E2E_FRESH_TENANT"] = ft
     out["CORELINK_E2E_PAT_FRESH"] = mint_pat_on(ft, "cas:rw", "read-write", "e2e-fresh")
 
+    # Byte-accounting tenant — a clean tenant with NO other writers, so the
+    # bytes-stored meter delta is attributable EXACTLY to the byte-accounting
+    # journey's concurrent writes (the strict no-double-count / no-loss assert;
+    # on the shared primary tenant a concurrent writer would inflate the delta and
+    # the journey could only GATE). A new UUID each run keeps it empty.
+    act = create_tenant()
+    out["CORELINK_E2E_ACCT_TENANT"] = act
+    out["CORELINK_E2E_PAT_ACCT"] = mint_pat_on(act, "cas:rw", "read-write", "e2e-acct")
+
     # Signup-worker endpoint — the LIVE Stripe webhook receiver. The unsigned-
     # webhook DENY journey (#9) POSTs an UNSIGNED forged event here and asserts a
     # 400 (the signature gate rejects BEFORE any side effect) — safe: no secret,

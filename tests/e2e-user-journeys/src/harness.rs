@@ -137,6 +137,12 @@ pub struct Config {
     /// The tenant the operator-provisioned team member belongs to (= the admin
     /// PAT's tenant, so the admin can list/remove the member).
     pub team_member_tenant: Option<String>,
+    /// A DEDICATED throwaway tenant with NO other writers, used by the
+    /// byte-accounting journey so the bytes-stored meter delta is attributable
+    /// EXACTLY to that journey's writes (on the shared primary tenant a concurrent
+    /// writer pollutes the delta → the assert can only gate). `CORELINK_E2E_ACCT_TENANT`
+    /// (+ `CORELINK_E2E_PAT_ACCT` token).
+    pub acct_tenant: Option<String>,
 }
 
 /// The set of named PATs the suite knows how to consume, each from its own env
@@ -163,6 +169,8 @@ struct TokenMap {
     fresh: Option<String>,
     /// PAT belonging to the operator-provisioned team member (the second seat).
     team_member: Option<String>,
+    /// PAT on the dedicated no-other-writers byte-accounting tenant.
+    acct: Option<String>,
 }
 
 /// A named PAT slot. Resolved to an actual token (or `None` → gate) via
@@ -199,6 +207,8 @@ pub enum TokenKind {
     Fresh,
     /// A PAT belonging to an operator-provisioned team member (second seat).
     TeamMember,
+    /// A PAT on the dedicated no-other-writers byte-accounting tenant.
+    Acct,
 }
 
 impl Config {
@@ -229,6 +239,7 @@ impl Config {
                 quota: var("CORELINK_E2E_PAT_QUOTA"),
                 fresh: var("CORELINK_E2E_PAT_FRESH"),
                 team_member: var("CORELINK_E2E_PAT_TEAM_MEMBER"),
+                acct: var("CORELINK_E2E_PAT_ACCT"),
             },
             run_slow: env::var("CORELINK_E2E_RUN_SLOW")
                 .map(|v| v == "1")
@@ -241,6 +252,7 @@ impl Config {
             fresh_tenant: var("CORELINK_E2E_FRESH_TENANT"),
             team_member_user_id: var("CORELINK_E2E_TEAM_MEMBER_USER_ID"),
             team_member_tenant: var("CORELINK_E2E_TEAM_MEMBER_TENANT"),
+            acct_tenant: var("CORELINK_E2E_ACCT_TENANT"),
         }
     }
 
@@ -262,6 +274,7 @@ impl Config {
             TokenKind::Quota => &self.tokens.quota,
             TokenKind::Fresh => &self.tokens.fresh,
             TokenKind::TeamMember => &self.tokens.team_member,
+            TokenKind::Acct => &self.tokens.acct,
         };
         slot.as_deref()
     }
