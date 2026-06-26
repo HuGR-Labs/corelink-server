@@ -589,6 +589,12 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // Wire the SAME gate the native CAS/AC/Bazel/Turbo states carry — EXACTLY as
     // `bazel_state.pat_gate = native_pat_gate.clone();` above.
     customer_state.pat_gate = native_pat_gate.clone();
+    // Self-serve account-deletion (C-ACCTDEL): wire the GDPR erasure requester
+    // over the same D1 source + the in-process DSR erasure worker (the Clerk
+    // `user.deleted` path's engine). Env-gated: `None` in dev/CI → the
+    // `POST /v1/customer/account/delete` route fails CLOSED (503). Mirrors the
+    // `pat_gate` wiring above (a cross-module collaborator composed at the root).
+    customer_state.account_deletion = customer::account_deletion_from_env();
     // `/v1/users/me` gets the identical backstop (it reflected a forged PAT's
     // claimed identity un-gated).
     let users_state = users::UsersRouteState {
