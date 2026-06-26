@@ -54,11 +54,11 @@ allowed to do on a cache surface.
 - Argon2id concurrency is bounded; an acquire timeout fails CLOSED as `Backend` (503), never piling on
   more 64-MiB allocations (`crates/corelink-container/src/adapter_pat.rs:616-629`).
 - An empty/missing/unrecognized scope grants NOTHING — both read and write return `false`
-  (`crates/corelink-container/src/scope.rs:34-45`).
+  (`crates/corelink-container/src/scope.rs:73-95`).
 - Self-serve scope classification is exact-token and fail-CLOSED: unknown grammar can never silently map
   to a privilege (`crates/corelink-container/src/scope.rs:112-149`).
-- A permit is acquired only AFTER the cheap HMAC fast-reject, so a forged token never consumes one
-  (`crates/corelink-container/src/adapter_pat.rs:160-170`).
+- A permit is acquired only AFTER the cheap HMAC fast-reject (`crates/corelink-container/src/adapter_pat.rs:542-543`),
+  so a forged token never reaches the permit acquire (`crates/corelink-container/src/adapter_pat.rs:616-629`).
 
 # Gotchas
 
@@ -81,6 +81,6 @@ allowed to do on a cache surface.
 5. `crates/corelink-container/src/adapter_pat.rs:602-650` — the Argon2id possession verify on a blocking thread.
 6. `crates/corelink-container/src/adapter_pat.rs:616-629` — permit-acquire timeout → fail-CLOSED `Backend`.
 7. `crates/corelink-container/src/adapter_pat.rs:652-660` — the fail-CLOSED scope gate + write-bit surfacing.
-8. `crates/corelink-container/src/scope.rs:34-45` — fail-CLOSED: empty/missing scope grants nothing.
+8. `crates/corelink-container/src/scope.rs:73-95` — fail-CLOSED: empty/missing scope grants nothing (`requires_cache_read`/`_write`).
 9. `crates/corelink-container/src/scope.rs:67-95` — exact-token `requires_cache_read` / `requires_cache_write`.
 10. `crates/corelink-container/src/scope.rs:112-149` — `classify_requested_scopes`: the single, fail-CLOSED scope truth.

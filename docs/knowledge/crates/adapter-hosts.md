@@ -31,8 +31,8 @@ These crates are the outer ring of the [adapter / package-manager surfaces](/sur
 
 - The adapters stay free of workspace SPI imports — the bridge crate composes them at boot, so a protocol adapter never couples to the CAS core directly (`crates/corelink-adapter-host/src/lib.rs:1-7`).
 - Bazel digests are validated at the boundary: hash must be 64 lowercase hex, size ≤ 4 GiB on writes, PUT body length must equal `size_bytes`, and `findMissingBlobs` rejects batches > 4096 digests (`crates/corelink-bazel-bridge/src/lib.rs:42-50`, `crates/corelink-bazel-bridge/src/lib.rs:68-75`).
-- The bridge is REST-only by invariant `INV-BAZEL-NO-GRPC` — no tonic/prost/gRPC dependency (`crates/corelink-bazel-bridge/src/lib.rs:48-50`).
-- At most one BYOK provider is active per build, enforced by a compile-time guard, eliminating runtime branching on the crypto hot path (`crates/corelink-byok/src/lib.rs:16-32`).
+- The bridge is REST-only by invariant `INV-BAZEL-NO-GRPC` — no tonic/prost/gRPC dependency (`crates/corelink-bazel-bridge/src/lib.rs:48-50`). (The id is correct as `INV-BAZEL-NO-GRPC`; the code currently mis-spells it `INV-BAZEL-NO-GROPC` at that line — a one-char code typo tracked as a separate code PR.)
+- At most one BYOK provider is active per build, enforced by a compile-time guard, eliminating runtime branching on the crypto hot path (`crates/corelink-byok/src/lib.rs:105-150`).
 
 # Gotchas
 
@@ -48,4 +48,4 @@ These crates are the outer ring of the [adapter / package-manager surfaces](/sur
 4. `crates/corelink-bazel-bridge/src/lib.rs:42-50` — the hard digest-validate + find-missing-cap + no-gRPC invariants.
 5. `crates/corelink-bazel-bridge/src/lib.rs:68-75` — `FIND_MISSING_BLOB_CAP` (4096) and `MAX_BLOB_SIZE_BYTES` (4 GiB).
 6. `crates/corelink-byok/src/lib.rs:1-43` — the BYOK microkernel: thin core + one feature-gated provider.
-7. `crates/corelink-byok/src/lib.rs:16-32` — compile-time mutual-exclusion guard (one provider per build).
+7. `crates/corelink-byok/src/lib.rs:105-150` — compile-time mutual-exclusion guards (one provider per build).

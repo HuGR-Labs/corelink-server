@@ -17,12 +17,12 @@ timestamp: "2026-06-26T00:00:00Z"
 
 These four surfaces turn CoreLink into a read-through caching mirror for the public package ecosystems
 — npm (registry tarballs + metadata), pip (PyPI wheels/sdists + simple index), Homebrew (bottles), and
-OCI (the full Distribution Spec v1.1 registry that docker/podman/buildah/containerd/Helm speak). Their
-defining property is the network-effect moat: because public upstream bytes are content-addressed and
-identical across customers, they are stored ONCE under the shared `_public` namespace and deduped
-cross-tenant — the PAT gates *access* while the cached public *content* is shared (safe, it is public
-upstream). Private content (npm `@scoped` packages) stays per-tenant. They build on the same
-[native CAS](/surfaces/native-cas.md) moat the first-party surfaces use.
+OCI (the full Distribution Spec v1.1 registry that docker/podman/buildah/containerd/Helm speak). Public upstream bytes for **pip, brew, and OCI** are stored once under the shared `_public` namespace
+and deduped **cross-tenant** — the network-effect moat (`crates/corelink-container/src/routes/pip.rs:115-118`,
+`crates/corelink-container/src/routes/brew.rs:85-95`). **npm is per-tenant today:** npm tarball bytes
+are namespaced per-tenant (`crates/corelink-container/src/routes/npm.rs:40-46`); only npm *metadata*
+splits public/private, and cross-tenant npm tarball dedup is a tracked, not-yet-built enhancement. They
+build on the same [native CAS](/surfaces/native-cas.md) moat the first-party surfaces use.
 
 # Role
 Each surface mounts its `corelink_adapter_host::<pm>` adapter into the container router, derives the
@@ -83,3 +83,6 @@ hold.
 19. `crates/corelink-container/src/routes/oci.rs:19-30` — why stripping the first segment would corrupt the repo.
 20. `crates/corelink-container/src/routes/oci.rs:754-790` — OCI $-ceiling + request-count gate.
 21. `crates/corelink-container/src/routes/oci.rs:760-768` — cost attribution keyed on the verified bearer, not a header.
+22. `crates/corelink-container/src/routes/pip.rs:115-118` — pip wheels dedup cross-tenant under `PUBLIC_NAMESPACE`.
+23. `crates/corelink-container/src/routes/brew.rs:85-95` — brew bottles dedup cross-tenant under `PUBLIC_NAMESPACE`.
+24. `crates/corelink-container/src/routes/npm.rs:40-46` — npm tarball BYTES namespaced per-tenant (cross-tenant dedup is a tracked enhancement).

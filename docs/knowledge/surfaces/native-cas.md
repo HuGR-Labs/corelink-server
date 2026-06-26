@@ -37,12 +37,14 @@ path segment.
    over the concurrency cap (`crates/corelink-container/src/routes/cas.rs:285-289`).
 5. Bulk uploads are split into a newline-framed manifest + concatenated payload at the first blank
    line by `split_manifest` (`crates/corelink-container/src/routes/cas.rs:582-595`); a wrong/absent
-   content-type is rejected 415 before parse (`crates/corelink-container/src/routes/cas.rs:538-545`).
+   content-type is rejected 415 before parse — the `content_type_is` predicate
+   (`crates/corelink-container/src/routes/cas.rs:538-545`) at the batch-handler call-site
+   (`crates/corelink-container/src/routes/cas.rs:847-848`).
 
 # Invariants
 - A non-canonical `:hash` is rejected 400 BEFORE it derives an R2 key (`crates/corelink-container/src/routes/cas.rs:732`).
 - A path `:tenant` that differs from the authenticated tenant is denied 403 BEFORE storage (`crates/corelink-container/src/routes/cas.rs:728`).
-- A write requires a `cas:rw` (write-capable) scope; a read-only token is rejected 403 (`crates/corelink-container/src/routes/cas.rs:741-743`).
+- A write requires a `cas:rw` (write-capable) scope; a read-only token is rejected 403 (`crates/corelink-container/src/routes/cas.rs:738-739`).
 - A batch is capped at `BATCH_MAX_OBJECTS` objects and `BATCH_MAX_BYTES` of payload, over-cap → 413 (`crates/corelink-container/src/routes/cas.rs:115`; `crates/corelink-container/src/routes/cas.rs:121`; `crates/corelink-container/src/routes/cas.rs:881`).
 - Per-tenant concurrent uploads are bounded; over the limit returns 429 before buffering (`crates/corelink-container/src/routes/cas.rs:285-289`).
 
@@ -60,10 +62,12 @@ path segment.
 3. `crates/corelink-container/src/routes/cas.rs:713-747` — `handle_write`: cross-tenant 403, canonical-digest, scope, native PAT gate order.
 4. `crates/corelink-container/src/routes/cas.rs:728` — the cross-tenant 403.
 5. `crates/corelink-container/src/routes/cas.rs:732` — canonical-digest reject before storage.
-6. `crates/corelink-container/src/routes/cas.rs:741-743` — the write-scope (`cas:rw`) gate.
+6. `crates/corelink-container/src/routes/cas.rs:738-739` — the write-scope (`cas:rw`) gate.
+6b. `crates/corelink-container/src/routes/cas.rs:741-743` — the native PAT possession gate (after scope, before storage).
 7. `crates/corelink-container/src/routes/cas.rs:285-289` — pre-body per-tenant concurrency 429.
 8. `crates/corelink-container/src/routes/cas.rs:582-595` — `split_manifest` length-framed bulk parser.
-9. `crates/corelink-container/src/routes/cas.rs:538-545` — `content_type_is` 415 gate for batch routes.
+9. `crates/corelink-container/src/routes/cas.rs:538-545` — `content_type_is` predicate for the 415 gate.
+9b. `crates/corelink-container/src/routes/cas.rs:847-848` — batch-handler call-site that returns 415 on wrong/absent content-type.
 10. `crates/corelink-container/src/routes/cas.rs:115` — `BATCH_MAX_OBJECTS` cap.
 11. `crates/corelink-container/src/routes/cas.rs:121` — `BATCH_MAX_BYTES` cap.
 12. `crates/corelink-container/src/routes/cas.rs:881` — over-cap 413 on bulk write.

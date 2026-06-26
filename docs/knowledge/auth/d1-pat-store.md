@@ -5,6 +5,8 @@ description: "Where PAT rows live in D1, how they are created and revoked, and t
 source_files:
   - "crates/corelink-container/src/customer_d1.rs"
   - "crates/corelink-container/src/routes/internal_pat.rs"
+  - "crates/corelink-container/src/adapter_pat.rs"
+  - "crates/corelink-container/src/scope.rs"
 checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "d1", "store", "scope"]
@@ -63,8 +65,9 @@ written.
 - The mint route returns the Argon2id `hash` in its 200 body because the signup-worker — not the
   container — is what WRITES that hash to the D1 `pat` row (the M7 follow-up to move the write into the
   container is deferred) (`crates/corelink-container/src/routes/internal_pat.rs:78-82`).
-- `scope` may be NULL on legacy rows; readers map that to `""`, which fails CLOSED at the scope gate
-  rather than erroring (`crates/corelink-container/src/customer_d1.rs:319-323`).
+- `scope` may be NULL on legacy rows; the verifier's D1 row reader maps that to `""`
+  (`crates/corelink-container/src/adapter_pat.rs:144-150`), which then fails CLOSED at the scope gate
+  rather than erroring (`crates/corelink-container/src/scope.rs:73-95`).
 - `last_used_at` is not tracked; the list handler always reports `None`
   (`crates/corelink-container/src/customer_d1.rs:18-20`).
 
@@ -79,3 +82,5 @@ written.
 7. `crates/corelink-container/src/routes/internal_pat.rs:63-65` — plaintext never persisted; caller's responsibility.
 8. `crates/corelink-container/src/routes/internal_pat.rs:78-82` — M7: signup-worker writes the hash to the D1 row.
 9. `crates/corelink-container/src/routes/internal_pat.rs:586-639` — mint is a pure function returning plaintext + hash.
+10. `crates/corelink-container/src/adapter_pat.rs:144-150` — the verifier's D1 row reader mapping a NULL `scope` to `""`.
+11. `crates/corelink-container/src/scope.rs:73-95` — the fail-CLOSED scope gate (`""` grants nothing).

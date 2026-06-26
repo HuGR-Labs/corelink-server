@@ -40,14 +40,16 @@ keeps forged tokens cheap to reject before any expensive work.
    D1 lookup by `token_id` and an application-side expiry check (`worker/src/index.ts:916-1031`).
 6. `stripClientTrustHeaders` deletes every client-suppliable trust header on every forward, then the
    Worker re-sets its own verified values (`worker/src/index.ts:473-477`).
-7. Per-tier quota (storage SUM + monthly request-count, fail-CLOSED by default) runs after auth and
-   before the DO forward (`worker/src/index.ts:2151-2172`).
+7. Per-tier quota (storage SUM + monthly request-count) runs after auth and before the DO forward —
+   request-count fail-CLOSED; storage verb-aware (reads fail-open for availability, byte-adding writes
+   fail-closed) (`worker/src/index.ts:2151-2172`).
 8. The request is routed to the per-tenant DO via `idFromName(resolvedTenantId)`
    (`worker/src/index.ts:2465-2468`) and dispatched with `stub.fetch` (`worker/src/index.ts:2532`).
 9. The forwarded request is augmented: strip-then-set the trusted tenant-id, scope, token-prefix, and
    client-ip headers (`worker/src/index.ts:2470-2528`).
-10. The whole handler is wrapped by `Sentry.withSentry`, inert until `SENTRY_DSN` is set, scrubbing
-    Authorization/Cookie/internal-auth headers (`worker/src/index.ts:2599-2617`).
+10. The whole handler is wrapped by `Sentry.withSentry`, inert until `SENTRY_DSN` is set
+    (`worker/src/index.ts:2599-2617`), scrubbing Authorization/Cookie/internal-auth headers via the
+    `SENTRY_SENSITIVE_HEADER_PATTERN` scrub list (`worker/src/index.ts:2584-2596`).
 
 # Invariants
 - Tenant isolation is structural: the DO id is derived solely from the PAT-resolved tenant, never the
@@ -84,3 +86,4 @@ keeps forged tokens cheap to reject before any expensive work.
 14. `worker/src/index.ts:2532` — `stub.fetch` dispatch to the DO.
 15. `worker/src/index.ts:2546-2553` — 404 timing-pad.
 16. `worker/src/index.ts:2599-2617` — the Sentry wrapper (inert until `SENTRY_DSN`).
+17. `worker/src/index.ts:2584-2596` — `SENTRY_SENSITIVE_HEADER_PATTERN` + `scrubSentryEvent` header-scrub list.

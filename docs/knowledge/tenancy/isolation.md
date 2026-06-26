@@ -7,6 +7,7 @@ source_files:
   - "crates/corelink-worker/src/tenant.rs"
   - "crates/corelink-container/src/auth_tenant.rs"
   - "crates/tenant-path/src/lib.rs"
+  - "crates/tenant-path/src/prefix.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["tenancy", "isolation", "durable-object", "multi-tenant", "security"]
@@ -35,14 +36,15 @@ keyed on the same trusted tenant id this control establishes.
 # How it works
 
 - The Worker maps each tenant to its own Durable Object instance via `idFromName(tenant_id)`, so a single
-  DO is the sole serialization point for that tenant's state — `worker/src/index.ts:56`.
+  DO is the sole serialization point for that tenant's state — `worker/src/index.ts:2465-2467`.
 - Non-tenant system traffic uses reserved sentinel DO names (e.g. `_system`, `_oci`) that are deliberately
   distinct from any real tenant id — `worker/src/index.ts:1500`.
 - Inside the container the ONLY trustworthy tenant source is the DO-injected `x-corelink-tenant-id` header;
   the `AuthTenant` extractor reads it and trims it — `crates/corelink-container/src/auth_tenant.rs:24-30`.
 - Storage keys are namespaced by a per-tenant prefix derived via HMAC-SHA256 over the tenant UUID,
-  base64url-encoded and truncated to 16 ASCII chars — `crates/tenant-path/src/lib.rs:5-7`.
-- `TenantCtx::new` takes `(tdk, tenant_id)` and derives the prefix internally, so `ctx.prefix()` is
+  base64url-encoded and truncated to `TENANT_PREFIX_LEN = 16` ASCII chars by `derive_prefix`
+  (`crates/tenant-path/src/prefix.rs:148-166`; `crates/tenant-path/src/prefix.rs:15`).
+- `TenantCtx::new` takes `(tdk, tenant_id, region)` and derives the prefix internally, so `ctx.prefix()` is
   always consistent with `ctx.tenant_id()` by construction — `crates/corelink-worker/src/tenant.rs:55-63`.
 
 # Invariants
@@ -51,8 +53,9 @@ keyed on the same trusted tenant id this control establishes.
   only the deriving constructor can populate it (`crates/corelink-worker/src/tenant.rs:36-44`).
 - The container fails CLOSED with `401` when the tenant header is empty or a sentinel — it never acts on
   unauthenticated or non-tenant traffic (`crates/corelink-container/src/auth_tenant.rs:31-34`).
-- The `TenantPrefix` newtype cannot be built from raw bytes outside its crate, so `derive_prefix` is the
-  single trust boundary for namespacing (`crates/tenant-path/src/lib.rs:27-29`).
+- The `TenantPrefix` newtype cannot be built from raw bytes outside its crate (its tuple field is private),
+  so `derive_prefix` is the single trust boundary for namespacing (`crates/tenant-path/src/prefix.rs:91-92`;
+  `crates/tenant-path/src/prefix.rs:148-166`; crate-doc rule `crates/tenant-path/src/lib.rs:27`).
 
 # Gotchas
 
@@ -65,7 +68,7 @@ keyed on the same trusted tenant id this control establishes.
 
 # Citations
 
-1. `worker/src/index.ts:56` — one DO instance per tenant via `idFromName(tenant_id)`.
+1. `worker/src/index.ts:2465-2467` — one DO instance per tenant via `idFromName(resolvedTenantId)`.
 2. `worker/src/index.ts:1500` — reserved `_system` sentinel DO name for non-tenant traffic.
 3. `crates/corelink-worker/src/tenant.rs:36-44` — the `TenantCtx` struct with a private, derived prefix field.
 4. `crates/corelink-worker/src/tenant.rs:55-63` — `TenantCtx::new` derives the prefix from `(tdk, tenant_id)`.
@@ -73,5 +76,7 @@ keyed on the same trusted tenant id this control establishes.
 6. `crates/corelink-container/src/auth_tenant.rs:19` — the sentinel set (including the empty string).
 7. `crates/corelink-container/src/auth_tenant.rs:24-30` — the `AuthTenant` extractor reads + trims the header.
 8. `crates/corelink-container/src/auth_tenant.rs:31-34` — fail-CLOSED `401` on empty/sentinel tenant.
-9. `crates/tenant-path/src/lib.rs:5-7` — HMAC-SHA256 prefix derivation, 16-char truncation.
-10. `crates/tenant-path/src/lib.rs:27-29` — the `TenantPrefix` newtype is the single derivation trust boundary.
+9. `crates/tenant-path/src/prefix.rs:148-166` — `derive_prefix`: HMAC-SHA256 derivation + 16-char truncation.
+9b. `crates/tenant-path/src/prefix.rs:15` — `TENANT_PREFIX_LEN = 16`.
+10. `crates/tenant-path/src/prefix.rs:91-92` — the `TenantPrefix` private-tuple newtype (single derivation trust boundary).
+10b. `crates/tenant-path/src/lib.rs:27` — crate-doc public contract: do not construct `TenantPrefix` from raw bytes outside this crate.

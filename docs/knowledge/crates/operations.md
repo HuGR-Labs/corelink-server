@@ -25,7 +25,7 @@ The cluster backs the [GC / eviction operations](/ops/gc-eviction.md) runbook an
 - `corelink-gc` ships the GC run state machine (`GcPhase`/`GcStatus`, partial-UNIQUE on `WHERE status='running'`, monotone phase transitions, idempotent resume) plus the scheduler driving `cron tick → list candidate tenants → spawn worker per tenant` (`crates/corelink-gc/src/lib.rs:16-39`).
 - GC carries a `gc-pause` emergency stop: a `DegradeProbe` consulted at every phase transition with a ≤100ms next-batch propagation gate, so an operator can halt reclamation fleet-wide (`crates/corelink-gc/src/lib.rs:40-56`).
 - `corelink-eviction` is soft-delete-first and reachability-gated: it `UPDATE … SET deleted_at` (NEVER a direct R2 DELETE) only for blobs no live AC entry references, using the strict `<` evict-arm / `>=` protect-arm boundary mirroring the GC TLA semantics (`crates/corelink-eviction/src/lib.rs:42-57`).
-- `corelink-ratelimit` is a lazy-refill token bucket keyed by a tenant-leftmost composite (`per_tenant` / `per_ip` / `per_tenant_per_endpoint`) per DO singleton, emitting RFC 6585 Retry-After seconds clamped to a floor/ceiling (`crates/corelink-ratelimit/src/lib.rs:28-43`).
+- `corelink-ratelimit` is a lazy-refill token bucket keyed by a tenant-leftmost composite (`per_tenant` / `per_ip` / `per_tenant_per_endpoint`) per DO singleton, emitting RFC 6585 Retry-After seconds clamped to a floor/ceiling (`crates/corelink-ratelimit/src/lib.rs:11-18`; `crates/corelink-ratelimit/src/lib.rs:28-43`).
 
 # Invariants
 
@@ -47,4 +47,5 @@ The cluster backs the [GC / eviction operations](/ops/gc-eviction.md) runbook an
 3. `crates/corelink-eviction/src/lib.rs:42-49` — the race-aware reachable check (`created_at < evict_started_at_ms`).
 4. `crates/corelink-eviction/src/lib.rs:50-57` — `INV-EVICT-SOFT-DELETE-FIRST` (soft-delete, never direct R2 DELETE).
 5. `crates/corelink-ratelimit/src/lib.rs:11-18` — `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION` per-tenant DO singleton.
-6. `crates/corelink-ratelimit/src/lib.rs:28-43` — the tenant-leftmost bucket key + lazy-refill + RFC 6585 Retry-After.
+6. `crates/corelink-ratelimit/src/lib.rs:11-18` — RFC 6585 Retry-After seconds clamped to a per-config floor + hard ceiling.
+6b. `crates/corelink-ratelimit/src/lib.rs:28-43` — the tenant-leftmost bucket key + lazy-refill + RFC 6585 Retry-After.

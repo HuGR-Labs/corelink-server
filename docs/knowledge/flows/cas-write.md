@@ -49,7 +49,7 @@ The handler is the trust boundary between the Worker/DO edge (which injects the 
 # Citations
 
 1. `crates/corelink-container/src/routes/cas.rs:259-296` — pre-body per-tenant write-concurrency reservation (429 before buffering).
-2. `crates/corelink-container/src/routes/cas.rs:407-486` — `cas_handler_from_env`: builds the real `R2CasHandler` only with S3 creds present, else in-memory.
+2. `crates/corelink-container/src/routes/cas.rs:407-486` — `build_handlers`: builds the real `R2CasHandler` only with S3 creds present, else in-memory.
 3. `crates/corelink-container/src/routes/cas.rs:605-616` — `pat_gate_reject` helper (reads bearer, re-verifies vs the claimed tenant).
 4. `crates/corelink-container/src/routes/cas.rs:713-785` — `handle_write`: cross-tenant / hash / scope / PAT / quota gates, then the byte-accounted commit and 201/200 result.
 5. `crates/corelink-container/src/routes/cas.rs:728-730` — cross-tenant 403 (authenticated tenant is the isolation key).

@@ -14,7 +14,7 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # Audit/analytics crate cluster
 
-Every security-relevant action in CoreLink must leave a tamper-evident trace, and this cluster is the machinery that guarantees the trace is canonical, PII-free, and chained so a deletion or edit is detectable. It is grouped around one design spine: events are serialized via RFC 8785 JCS before hashing so the digest is deterministic, and the chain links `sha256(prev || content_hash)` without ever re-canonicalizing. `corelink-audit` owns the event taxonomy and the PII-as-hash type system; `corelink-audit-chain` builds and daily-verifies the per-tenant hash chain; `corelink-transparency-log` is the seam that witnesses a signed entry to the public sigstore/Rekor log.
+Every security-relevant action in CoreLink must leave a tamper-evident trace, and this cluster is the machinery that guarantees the trace is canonical, PII-free, and chained so a deletion or edit is detectable. It is grouped around one design spine: events are serialized via RFC 8785 JCS before hashing so the digest is deterministic, then linked without ever re-canonicalizing. The two chain crates use *different* link-hash algorithms, though: `corelink-audit` links via SHA-256 (`sha256(prev_chain_hash || content_hash)`, `crates/corelink-audit/src/lib.rs:20`), while `corelink-audit-chain` links via BLAKE3 (`crates/corelink-audit-chain/src/lib.rs:31`, `crates/corelink-audit-chain/src/lib.rs:36`). `corelink-audit` owns the event taxonomy and the PII-as-hash type system; `corelink-audit-chain` builds and daily-verifies the per-tenant hash chain; `corelink-transparency-log` is the seam that witnesses a signed entry to the public sigstore/Rekor log.
 
 # Role
 

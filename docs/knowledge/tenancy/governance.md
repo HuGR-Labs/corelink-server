@@ -6,6 +6,7 @@ source_files:
   - "crates/corelink-container/src/routes/ratelimit_layer.rs"
   - "crates/corelink-container/src/routes/customer.rs"
   - "crates/corelink-container/src/routes/users.rs"
+  - "crates/corelink-container/src/routes.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["tenancy", "governance", "rate-limit", "customer", "users", "fail-closed"]
@@ -33,8 +34,9 @@ self-service plane. It rests on the same trusted tenant id established by
 
 # How it works
 
-- The rate limiter is wired as ONE `.layer(...)` line at the end of `build_with_factory`, so it covers
-  exactly the composed data-plane router and intentionally excludes `/_health` and `/_internal/*`
+- The rate limiter is wired as ONE `.layer(...)` line at the end of `build_with_factory`
+  (`crates/corelink-container/src/routes.rs:819-822`), so it covers exactly the composed data-plane router
+  and intentionally excludes `/_health` and `/_internal/*`
   (`crates/corelink-container/src/routes/ratelimit_layer.rs:15-22`).
 - The bucket is keyed on the edge-injected `x-corelink-tenant-id`, the only trustworthy tenant source in
   the container (`crates/corelink-container/src/routes/ratelimit_layer.rs:24-35`).
@@ -48,7 +50,7 @@ self-service plane. It rests on the same trusted tenant id established by
 - Revoking a credential is a destructive admin op gated on cache-write capability: a read-only principal
   is rejected `403` (`crates/corelink-container/src/routes/customer.rs:762-775`).
 - `/v1/users/me` reflects the authenticated caller using the shared fail-CLOSED `AuthTenant` extractor and
-  never echoes a sentinel or the raw PAT (`crates/corelink-container/src/routes/users.rs:75-80`).
+  never echoes a sentinel or the raw PAT (`crates/corelink-container/src/routes/users.rs:106-110`).
 
 # Invariants
 
@@ -84,4 +86,5 @@ self-service plane. It rests on the same trusted tenant id established by
 9. `crates/corelink-container/src/routes/customer.rs:227-230` — `principal()` falls back to `_unknown` (audit prefix only).
 10. `crates/corelink-container/src/routes/customer.rs:762-775` — revoke requires cache-write scope; read-only → `403`.
 11. `crates/corelink-container/src/routes/users.rs:18-27` — `/v1/users/me` security model (fail-CLOSED, never reflects the PAT).
-12. `crates/corelink-container/src/routes/users.rs:75-80` — the `/v1/users/me` router via the `AuthTenant` extractor.
+12. `crates/corelink-container/src/routes/users.rs:106-110` — the `handle_me` handler signature using the `AuthTenant` extractor.
+13. `crates/corelink-container/src/routes.rs:819-822` — the single `.layer(...)` wiring of the rate limiter in `build_with_factory`.

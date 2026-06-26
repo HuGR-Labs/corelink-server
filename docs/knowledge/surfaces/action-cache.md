@@ -23,7 +23,7 @@ layer. Its security spine is cross-tenant denial plus a canonical-digest gate; t
 # Role
 It serves `GET /v1/ac/:tenant/:action_digest` (lookup), `PUT` (update), `DELETE`, and the per-tenant
 ref-list route, emitting AC availability/latency SLO observations on each entry. Tenant isolation is
-the authenticated tenant; cross-tenant attempts are denied 403 with an audit row before any response.
+the authenticated tenant; cross-tenant attempts are denied 403 at the route level before any storage access.
 
 # How it works
 1. The router mounts lookup/update/delete on `AC_LOOKUP_ROUTE` plus the ref-list route, each carrying
@@ -39,7 +39,11 @@ the authenticated tenant; cross-tenant attempts are denied 403 with an audit row
 
 # Invariants
 - A non-canonical action digest (not 64 lowercase-hex) is rejected 400 before storage (`crates/corelink-container/src/routes/ac.rs:460-462`).
-- Cross-tenant attempts are rejected HTTP 403 with a `LookupDenied`/`UpdateDenied` audit row before the response, pinning tenant isolation (`crates/corelink-container/src/routes/ac.rs:33-37`).
+- Cross-tenant attempts are rejected **HTTP 403** by the route-level tenant check
+  (`crates/corelink-container/src/routes/ac.rs:496-497`, `:554-555`, `:621-622`), which returns
+  **before** `lookup`/`update` runs — so this reject path itself writes **no** audit row. (The
+  `LookupDenied`/`UpdateDenied` audit rows are emitted by the lookup/update handlers on
+  authorized-but-denied paths, not by this route-level cross-tenant 403.)
 - Per-tenant concurrent writes are bounded by `AC_WRITE_CONCURRENCY_LIMIT` (`crates/corelink-container/src/routes/ac.rs:168`).
 - A forged or wrong-tenant bearer PAT is rejected by the possession gate before any storage access (`crates/corelink-container/src/routes/ac.rs:464-481`).
 
@@ -58,5 +62,7 @@ the authenticated tenant; cross-tenant attempts are denied 403 with an audit row
 5. `crates/corelink-container/src/routes/ac.rs:464-481` — `pat_gate_reject` native PAT possession gate.
 6. `crates/corelink-container/src/routes/ac.rs:613` — `handle_delete`.
 7. `crates/corelink-container/src/routes/ac.rs:667` — `handle_list_refs`.
-8. `crates/corelink-container/src/routes/ac.rs:33-37` — cross-tenant 403 + audit denial (tenant isolation).
+8. `crates/corelink-container/src/routes/ac.rs:496-497` — cross-tenant 403 (lookup), route-level, before storage.
+8b. `crates/corelink-container/src/routes/ac.rs:554-555` — cross-tenant 403 (update), route-level, before storage.
+8c. `crates/corelink-container/src/routes/ac.rs:621-622` — cross-tenant 403 (delete), route-level, before storage.
 9. `crates/corelink-container/src/routes/ac.rs:168` — `AC_WRITE_CONCURRENCY_LIMIT`.

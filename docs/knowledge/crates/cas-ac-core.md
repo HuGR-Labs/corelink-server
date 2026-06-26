@@ -5,6 +5,8 @@ description: "The content-addressable storage primitives — digest integrity, t
 source_files:
   - "crates/corelink-cas/src/lib.rs"
   - "crates/corelink-hash/src/lib.rs"
+  - "crates/corelink-hash/src/verified_body.rs"
+  - "crates/corelink-hash/src/digest.rs"
   - "crates/corelink-reapi/src/lib.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
@@ -29,8 +31,8 @@ The cluster sits below every cache surface ([native CAS](/surfaces/native-cas.md
 
 # Invariants
 
-- Every body is verified before storage: the only path to a `VerifiedBody` runs the hash check (`crates/corelink-hash/src/lib.rs:9-13`).
-- Security-sensitive digest comparison uses constant-time `verify_constant_time`, not short-circuiting `PartialEq`, so timing cannot leak (`crates/corelink-hash/src/lib.rs:40-45`).
+- Every body is verified before storage: the only path to a `VerifiedBody` runs the hash check — `VerifiedBody::new` computes the digest then `verify_constant_time`, returning `Err(HashMismatch)` on mismatch (`crates/corelink-hash/src/verified_body.rs:33-44`; `crates/corelink-hash/src/lib.rs:9-13`).
+- Security-sensitive digest comparison uses constant-time `verify_constant_time`, not short-circuiting `PartialEq`, so timing cannot leak (`crates/corelink-hash/src/digest.rs:78-79`; `crates/corelink-hash/src/lib.rs:40-45`).
 - No transport may bypass `CasWriteOrchestrator`: the per-blob order verify → R2 → D1 is the load-bearing correctness guarantee against orphan classes (`crates/corelink-reapi/src/lib.rs:56-61`).
 - The whole cluster is memory-safe by construction: `#![forbid(unsafe_code)]` at each crate root (`crates/corelink-cas/src/lib.rs:83`, `crates/corelink-hash/src/lib.rs:49`, `crates/corelink-reapi/src/lib.rs:71`).
 
@@ -53,3 +55,5 @@ The cluster sits below every cache surface ([native CAS](/surfaces/native-cas.md
 9. `crates/corelink-reapi/src/lib.rs:56-61` — anti-pattern: never bypass `CasWriteOrchestrator` (orphan-class guard).
 10. `crates/corelink-reapi/src/lib.rs:71` — `#![forbid(unsafe_code)]`.
 11. `crates/corelink-reapi/src/lib.rs:123-128` — the `CasWriteOrchestrator` / outcome exports.
+12. `crates/corelink-hash/src/verified_body.rs:33-44` — `VerifiedBody::new`: compute-then-`verify_constant_time`, `Err(HashMismatch)` on mismatch.
+13. `crates/corelink-hash/src/digest.rs:78-79` — `verify_constant_time` (`ct_eq`) constant-time digest integrity compare.

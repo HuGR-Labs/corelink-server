@@ -19,12 +19,12 @@ protecting their objects at rest. CoreLink implements this as a microkernel: a t
 and exactly ONE provider plugin per deployment (AWS / GCP / Azure / HashiCorp Vault) realises the trait
 against a real KMS. Provider selection is compile-time via cargo features — multi-provider builds are
 rejected at compile time — which eliminates runtime branching on the hot crypto path and lets cargo-deny
-enforce "only one KMS SDK linked per build." The container wires the production provider behind a boxed
-trait object, so the rest of the storage layer encrypts/decrypts without knowing which KMS is live. This
+enforce "only one KMS SDK linked per build." The container wires the production provider behind an
+`Arc<dyn KmsProvider>`, so the rest of the storage layer encrypts/decrypts without knowing which KMS is live. This
 is the at-rest confidentiality complement to the durable [R2 CAS bucket](/storage/r2-cas-bucket.md).
 
 # Role
-- The feature-gated production factory that constructs the live KMS provider as a boxed trait object
+- The feature-gated production factory that constructs the live KMS provider as an `Arc<dyn KmsProvider>`
   (`crates/corelink-container/src/byok.rs:1-9`).
 - The BYOK umbrella crate: the single import target re-exporting the core trait + types and gating the
   four providers (`crates/corelink-byok/src/lib.rs:1-21`).
@@ -36,7 +36,7 @@ is the at-rest confidentiality complement to the durable [R2 CAS bucket](/storag
 2. The four providers are exposed as cargo features `aws`/`gcp`/`azure`/`vault`, at most one active per
    build, with no provider as the default test/CI build
    (`crates/corelink-byok/src/lib.rs:34-43`).
-3. The container constructs the production provider behind a boxed `dyn KmsProvider` via a feature-gated
+3. The container constructs the production provider behind an `Arc<dyn KmsProvider>` via a feature-gated
    async factory so future providers drop in behind the same surface
    (`crates/corelink-container/src/byok.rs:1-9`).
 4. The AWS factory enforces the FIPS endpoint unconditionally and resolves credentials via the standard
@@ -45,12 +45,12 @@ is the at-rest confidentiality complement to the durable [R2 CAS bucket](/storag
 
 # Invariants
 - AT MOST ONE KMS provider may be linked in any build; a multi-provider build is rejected at compile time
-  by the `compile_error!` guard (`crates/corelink-byok/src/lib.rs:16-21`).
+  by the `compile_error!` guards (`crates/corelink-byok/src/lib.rs:105-139`).
 - `Dek`/`WrappedDek` zeroize discipline + `SecretString` credential bytes + `subtle::ConstantTimeEq`
   comparisons are preserved by reference across the wave-35 absorption
   (`crates/corelink-byok/src/lib.rs:64-90`).
 - `#![forbid(unsafe_code)]` holds on both the container factory and the umbrella crate's surface
-  (`crates/corelink-container/src/byok.rs:10`, `crates/corelink-byok/src/lib.rs:52-62`).
+  (`crates/corelink-container/src/byok.rs:10`, `crates/corelink-byok/src/lib.rs:93`).
 
 # Gotchas
 - The container BYOK factory is activated only under its cargo feature (`byok-aws-real`); a default build
@@ -60,11 +60,11 @@ is the at-rest confidentiality complement to the durable [R2 CAS bucket](/storag
   rebuild + redeploy, not a flag flip.
 
 # Citations
-1. `crates/corelink-container/src/byok.rs:1-9` — feature-gated factory returning a boxed `KmsProvider` trait object.
+1. `crates/corelink-container/src/byok.rs:1-9` — feature-gated factory returning an `Arc<dyn KmsProvider>`.
 2. `crates/corelink-container/src/byok.rs:10` — `#![forbid(unsafe_code)]` on the factory.
 3. `crates/corelink-container/src/byok.rs:17-29` — AWS KMS provider construction: FIPS endpoint enforced, SDK credential chain.
 4. `crates/corelink-byok/src/lib.rs:1-21` — umbrella re-export of the core trait/types + microkernel mutual-exclusion intro.
-5. `crates/corelink-byok/src/lib.rs:16-21` — compile-time at-most-one-provider `compile_error!` guard.
+5. `crates/corelink-byok/src/lib.rs:105-139` — compile-time at-most-one-provider `compile_error!` guards.
 6. `crates/corelink-byok/src/lib.rs:34-43` — cargo feature reference (`aws`/`gcp`/`azure`/`vault`), default no provider.
 7. `crates/corelink-byok/src/lib.rs:52-62` — charter compliance: `forbid(unsafe_code)`, zeroize, `SecretString`, `ConstantTimeEq`.
 8. `crates/corelink-byok/src/lib.rs:64-90` — wave-35 absorption preserving zeroize + credential discipline by reference.
