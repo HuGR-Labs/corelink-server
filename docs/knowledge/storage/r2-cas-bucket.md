@@ -6,6 +6,7 @@ source_files:
   - "crates/corelink-container/src/storage.rs"
   - "crates/corelink-container/src/storage/r2_s3.rs"
   - "crates/corelink-region/src/region.rs"
+  - "specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "cas", "s3", "tenant-isolation"]
@@ -19,7 +20,10 @@ cannot use the Worker's R2 binding (that is wasm-only), so it reaches R2 through
 over egress (`aws-sdk-s3` pointed at `https://<account>.r2.cloudflarestorage.com`). Unlike the
 [Action Cache](/storage/r2-ac-regional.md), in the native S3 adapter CAS is **one** bucket: the residency
 region and the tenant are not separate buckets but segments baked into the object key, so tenant
-co-residence is structurally impossible and a region migration is a key-prefix change, not a bucket move.
+co-residence is structurally impossible — while the region is carried only as a **LOGICAL key-prefix
+tag, NOT physical residency**: changing it relabels keys *inside the same physical bucket* and does
+not relocate any bytes, so a key-prefix "region migration" is a false-confidence trap and must NOT be
+mistaken for a residency fix (`specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md:40-51`).
 (Separately, `corelink-region::Region::r2_bucket_name()` does define per-region `corelink-cas-{region}`
 bucket names — `crates/corelink-region/src/region.rs:66-70` — the regional-bucket topology the native
 adapter here does not itself use.) This is the durable tier

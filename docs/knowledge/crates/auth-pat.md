@@ -5,9 +5,12 @@ description: "The identity primitives — the canonical PAT format with its HMAC
 source_files:
   - "crates/corelink-auth/src/lib.rs"
   - "crates/corelink-pat/src/lib.rs"
+  - "crates/corelink-pat/src/types.rs"
   - "crates/corelink-pat/src/sig.rs"
   - "crates/corelink-pat/src/argon.rs"
   - "crates/corelink-clerk/src/lib.rs"
+  - "crates/corelink-clerk/src/jwks.rs"
+  - "crates/corelink-clerk/src/adapter.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["crates", "auth", "pat", "clerk", "jwt", "security"]
@@ -26,20 +29,20 @@ The cluster is the trust spine feeding the [2-level PAT moat](/auth/pat-moat.md)
 
 - `corelink-pat` defines the canonical PAT plaintext `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` and a four-step verify pipeline: parse → `verify_hmac_sig` (rejects unsigned spam in ≤100µs) → DB row lookup by `token_id` → `verify_argon2id` possession proof. The format/pipeline shape lives in the barrel (`crates/corelink-pat/src/lib.rs:11-43`); the HMAC fast-fail enforcer is `verify_hmac_sig` (`crates/corelink-pat/src/sig.rs:64-104`) and the possession proof is `verify_argon2id`, which additionally rejects an OWASP-underprovisioned stored hash (`crates/corelink-pat/src/argon.rs:127-170`).
 - The cold path (parse fail / sig mismatch / row absent) must call `dummy_verify_for_constant_time` so end-to-end latency cannot be used as an existence oracle — the pad is the same Argon2id work as the warm path (`crates/corelink-pat/src/argon.rs:217-256`).
-- `corelink-clerk` validates a Clerk JWT by decoding the header for `kid`, KV-cached JWKS lookup with a single lazy refresh on miss, then explicit `Validation::new(Algorithm::RS256)` so `alg=none`/HS-confusion is rejected at the decoder boundary, then exact `iss`/`aud` allowlist match (`crates/corelink-clerk/src/lib.rs:54-65`, `crates/corelink-clerk/src/lib.rs:72-79`).
+- `corelink-clerk` validates a Clerk JWT by pre-decoding the header JSON and rejecting any `alg != "RS256"` (so `alg=none` (CVE-2015-9235) and `alg=HS256` RS↔HS-confusion (CVE-2018-0114) die before key lookup), then a KV-cached JWKS lookup over RS256/`use=sig` keys only, then exact `iss`/`aud` allowlist match (`crates/corelink-clerk/src/adapter.rs:279-293`, `crates/corelink-clerk/src/jwks.rs:55-66`).
 - `corelink-auth` is an Option-A aggregator re-exporting the 6 auth primitives (`clerk`, `clerk_cf`, `pat`, `schema`, `webauthn`, `tenant_path`) at canonical `corelink_auth::*` submodule paths with behaviour preserved 1:1 (`crates/corelink-auth/src/lib.rs:1-15`, `crates/corelink-auth/src/lib.rs:136-141`).
 
 # Invariants
 
-- PAT secret material is unloggable: `PatPlaintext` has no `Display`/`Serialize`/secret-revealing `Debug`, `PatSigningKey` redacts + zeroizes on drop and rejects keys < 32 bytes (`crates/corelink-pat/src/lib.rs:45-56`).
+- PAT secret material is unloggable: `PatPlaintext` has no `Display`/`Serialize`/secret-revealing `Debug` and zeroizes its inner `String` on drop (`crates/corelink-pat/src/types.rs:41-91`); `PatSigningKey` redacts in `Debug`, derives `ZeroizeOnDrop`, and `from_bytes` rejects keys < 32 bytes with `SigningKeyTooShort` (`crates/corelink-pat/src/types.rs:219-241`).
 - The HMAC fast-fail layer runs before any DB hit, bounding the cost a forged token can impose; the truncated-MAC compare is constant-time, evaluates the whole overlap key set without early-return, and an empty key set fails closed (`crates/corelink-pat/src/sig.rs:64-104`).
-- The Clerk adapter accepts RS256 only — no HS256, no `alg=none`, no allowlist relaxation, HTTPS-only JWKS, ≤120s skew (`crates/corelink-clerk/src/lib.rs:72-79`).
+- The Clerk adapter accepts RS256 only — `validate_inner` rejects any non-`RS256` `alg` (no HS256, no `alg=none`) before key lookup (`crates/corelink-clerk/src/adapter.rs:286-293`), and the JWKS parser drops every non-RS256 / non-`sig` key (`crates/corelink-clerk/src/jwks.rs:62-66`).
 - The aggregator never redefines types or weakens charter guarantees — RLS-default-on, constant-time PAT compare, and `SecretString` are preserved by reference, not re-implemented (`crates/corelink-auth/src/lib.rs:76-91`).
 
 # Gotchas
 
 - Argon2id at OWASP-2024 cost exceeds a CF Worker CPU budget under wasm32, so the deployed Argon2id verify runs only in the host/container plane; the Worker edge does the cheap HMAC fast-fail. See [the Argon2id verify](/auth/argon2id-verify.md).
-- `corelink-clerk`'s `jwt-adapter` feature pulls `ring`, which does not build for `wasm32`; the trait-surface modules stay wasm-clean so `corelink-clerk-cf` can compile the CF Worker bindings.
+- `corelink-clerk`'s `jwt-adapter` feature pulls `ring`, which does not build for `wasm32`; the `adapter`/`env_config` modules are feature-gated while the trait-surface modules (`jwks`, `jwks_cache`, `principal`, `config`, `error`) stay wasm-clean so `corelink-clerk-cf` can compile the CF Worker bindings (`crates/corelink-clerk/src/lib.rs:113-132`).
 - A container CAS 401 means bad HMAC OR no live D1 row — the Argon2id step is only reached once a row exists; it is not necessarily a wrong password.
 
 # Citations
@@ -50,7 +53,8 @@ The cluster is the trust spine feeding the [2-level PAT moat](/auth/pat-moat.md)
 4. `crates/corelink-pat/src/lib.rs:11-43` — canonical PAT format + the 4-step verify pipeline (HMAC fast-fail → Argon2id).
 5. `crates/corelink-pat/src/sig.rs:64-104` — `verify_hmac_sig`: HMAC fast-fail pre-DB, constant-time overlap-set compare, fail-closed on empty key set.
 6. `crates/corelink-pat/src/argon.rs:127-170` — `verify_argon2id` possession proof + OWASP-2024 cost-floor rejection of a downgraded hash.
-7. `crates/corelink-pat/src/lib.rs:45-56` — secret-handling newtype invariants (no Display/Serialize; zeroize; ≥32B key).
+7. `crates/corelink-pat/src/types.rs:41-91` — `PatPlaintext` secret-handling newtype (no Display/Serialize/byte-Debug; `Drop` zeroizes the inner `String`).
+7b. `crates/corelink-pat/src/types.rs:219-241` — `PatSigningKey`: `ZeroizeOnDrop`, redacting `Debug`, and `from_bytes` ≥32-byte floor (`SigningKeyTooShort`).
 8. `crates/corelink-pat/src/argon.rs:217-256` — `dummy_verify_for_constant_time`: the cold-path Argon2id pad against the existence oracle.
-9. `crates/corelink-clerk/src/lib.rs:54-65` — the JWT validate path (kid → JWKS cache → RS256 → iss/aud).
-10. `crates/corelink-clerk/src/lib.rs:72-79` — anti-scope: RS256-only, no `alg=none`, HTTPS-only, ≤120s skew.
+9. `crates/corelink-clerk/src/adapter.rs:279-293` — `validate_inner`: pre-decode header → reject any non-`RS256` `alg` (alg-confusion / `alg=none` defense) before key lookup.
+10. `crates/corelink-clerk/src/jwks.rs:55-66` — `Jwks::parse`: drops every non-RS256 / non-`sig` key at the JWKS boundary.

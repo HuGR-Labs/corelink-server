@@ -4,6 +4,7 @@ title: "ADR-0033 — Audit events: CloudEvents 1.0 + JCS hash chain + PII newtyp
 description: "Why auth audit events use a CloudEvents 1.0 envelope, an atomic outbox, type-system hash newtypes for PII, an RFC-8785 JCS content hash chain, SEV-1 dual fan-out, and per-tenant retention hints."
 source_files:
   - "specs/03_architecture/adrs/ADR-0033-audit-events-cloudevents.md"
+  - "crates/corelink-audit-chain/src/chain.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "audit", "cloudevents", "jcs", "hash-chain", "pii", "s03", "s09"]
@@ -25,6 +26,15 @@ Events use a CloudEvents 1.0 envelope (SIEM-native, JCS-canonicalizable) written
 # Consequences
 
 The design yields forensic completeness, compile-time PII safety, a drift-proof deterministic chain, SIEM-native parsing, and tenant-differentiated retention, traded against a 33-event-type maintenance surface, a load-bearing pinned `serde_jcs` dependency, SIEM-webhook coupling on SEV-1 (non-blocking), a 64-bit hash-prefix collision bound, and a deferred production emitter shim (ADR-0033:246-285).
+
+# Status vs shipped code
+
+One clarification on the hash primitive: the ADR describes the content hash as `SHA-256(JCS-canonicalize(event))`,
+but the shipped per-tenant **chain-link** hash is **BLAKE3-256** over the JCS-canonical bytes
+(`crates/corelink-audit-chain/src/chain.rs:156-160`, streaming variant `:188-191`). SHA-256 survives only
+in the Rekor/transparency `hashedrekord` path, not in the per-tenant audit chain. The decision (atomic
+outbox, hash-newtype PII redaction, read-persisted-JCS-not-recanonicalize, deterministic chain) is
+unchanged — only the named chain digest reflects the shipped BLAKE3.
 
 # Citations
 

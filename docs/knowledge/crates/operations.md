@@ -34,9 +34,9 @@ The cluster backs the [GC / eviction operations](/ops/gc-eviction.md) runbook an
 # Invariants
 
 - GC reclamation is pausable: `transition_or_abort` probes degrade-mode at every phase boundary and routes a `gc-pause` to `finalize_aborted`, bounding blast radius of a bad sweep (`crates/corelink-gc/src/worker.rs:204-219`).
-- `INV-EVICT-SOFT-DELETE-FIRST`: `soft_delete_for_eviction` sets `deleted_at` via a conditional UPDATE, never a direct R2 DELETE; physical cleanup is GC's job post-grace (`crates/corelink-eviction/src/blob_meta.rs:185-225`).
-- The reachable-check is race-aware: `find_active_reference` uses `a.created_at < evict_started_at_ms` strict-evict with a `>=` protect mirror, so a blob written concurrently with the sweep is protected (`crates/corelink-eviction/src/reachable.rs:70-97`).
-- `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION`: the tenant-leftmost `BucketKey` (tenant_id is the first field) makes rate-limit buckets per-tenant, so cross-tenant throttling is impossible by design (`crates/corelink-ratelimit/src/key.rs:70-78`).
+- `INV-EVICT-SOFT-DELETE-FIRST`: `soft_delete_for_eviction` sets `deleted_at_ms = Some(now_ms)` and returns `SoftDeleteOutcome::Deleted`, never a direct R2 DELETE; physical cleanup is GC's job post-grace (`crates/corelink-eviction/src/blob_meta.rs:336-354`).
+- The reachable-check is race-aware: `find_active_reference` uses `row.created_at_ms < evict_started_at_ms` strict-evict, so a row with `created_at_ms >= evict_started_at_ms` (a blob written concurrently with the sweep) is protected (`crates/corelink-eviction/src/reachable.rs:177-199`).
+- `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION`: the tenant-leftmost `BucketKey` (the `tenant_id` `Uuid` is the first field, a dedicated column the scope_key cannot bypass) makes rate-limit buckets per-tenant, so cross-tenant throttling is impossible by design (`crates/corelink-ratelimit/src/key.rs:77-87`).
 
 # Gotchas
 
@@ -48,8 +48,8 @@ The cluster backs the [GC / eviction operations](/ops/gc-eviction.md) runbook an
 
 1. `crates/corelink-gc/src/lib.rs:16-39` — the GC run state machine + scheduler (cron → list → spawn-per-tenant).
 2. `crates/corelink-gc/src/worker.rs:204-219` — `transition_or_abort`: degrade-probe at every phase boundary → `finalize_aborted` (`gc-pause`).
-3. `crates/corelink-eviction/src/reachable.rs:70-97` — `find_active_reference`: the race-aware reachable check (`created_at < evict_started_at_ms` strict).
-4. `crates/corelink-eviction/src/blob_meta.rs:185-225` — `soft_delete_for_eviction`: `INV-EVICT-SOFT-DELETE-FIRST` (soft-delete UPDATE, never direct R2 DELETE).
-5. `crates/corelink-ratelimit/src/key.rs:70-78` — tenant-leftmost `BucketKey`: `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION`.
+3. `crates/corelink-eviction/src/reachable.rs:177-199` — `find_active_reference` impl: the race-aware reachable check (`created_at_ms < evict_started_at_ms` strict; `>=` protected).
+4. `crates/corelink-eviction/src/blob_meta.rs:336-354` — `soft_delete_for_eviction` impl: `INV-EVICT-SOFT-DELETE-FIRST` (sets `deleted_at_ms`, never a direct R2 DELETE).
+5. `crates/corelink-ratelimit/src/key.rs:77-87` — tenant-leftmost `BucketKey` struct (`tenant_id` first field): `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION`.
 6. `crates/corelink-ratelimit/src/lib.rs:11-18` — RFC 6585 Retry-After seconds clamped to a per-config floor + hard ceiling.
 6b. `crates/corelink-ratelimit/src/lib.rs:28-43` — the tenant-leftmost bucket key + lazy-refill + RFC 6585 Retry-After.

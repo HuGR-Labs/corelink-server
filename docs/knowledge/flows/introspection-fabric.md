@@ -13,7 +13,7 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # Introspection flow (runners fabric)
 
-The corelink-runners fabric admits a runner placement only after it knows WHO the request belongs to (tenant), WHAT cache plan they hold, and WHETHER they carry a runners entitlement — and it must never guess any of those. So before placing compute, the fabric calls the container's `/internal/v1/auth/introspect`, which is the single place that owns PAT verification: the fabric sends an opaque PAT and gets back a frozen, minimal result. This flow traces that call across the introspection route (`routes/auth_introspect.rs`) and the shared verifier it delegates to (`adapter_pat.rs`); the verification it runs is the [PAT verification gauntlet](/flows/pat-gauntlet.md).
+The corelink-runners fabric admits a runner placement only after it knows WHO the request belongs to (tenant), WHAT cache plan they hold, and WHETHER they carry a runners entitlement — and it must never guess any of those. So before placing compute, the fabric calls the container's `/internal/v1/auth/introspect`, which does NOT itself own PAT verification — it **delegates to the shared native PAT gauntlet** (`adapter_pat.rs`'s `PatVerifier::verify`) and then layers tenant→plan + runner-entitlement resolution on top. The fabric sends an opaque PAT and gets back a frozen, minimal result. This flow traces that call across the introspection route (`routes/auth_introspect.rs`) and the shared verifier it delegates to (`adapter_pat.rs`); the verification it runs is the [PAT verification gauntlet](/flows/pat-gauntlet.md).
 
 # Role
 
@@ -32,7 +32,7 @@ This endpoint is the runners fabric's authorization oracle. It is the boundary t
 
 # Invariants
 
-- The route is fail-closed at mount: absent or too-short `FABRIC_INTROSPECT_AUTH_KEY` means the endpoint is simply not exposed (`crates/corelink-container/src/routes/auth_introspect.rs:660-668`).
+- The route is fail-closed at mount: absent or too-short `FABRIC_INTROSPECT_AUTH_KEY` means the endpoint is simply not exposed — `build_state_from_env` returns `None` (`crates/corelink-container/src/routes/auth_introspect.rs:660-683`).
 - The caller-auth compare is constant-time and consumer-blind: all configured keys are always evaluated so there is no consumer-identity timing oracle (`crates/corelink-container/src/routes/auth_introspect.rs:566-576`).
 - The body is parsed ONLY after the auth gate passes, and the token is never logged (`crates/corelink-container/src/routes/auth_introspect.rs:578-590`).
 - Every resolution fault fails closed 503 — a tier or entitlement D1 fault never serves a guessed plan or cap (`crates/corelink-container/src/routes/auth_introspect.rs:595-637`).

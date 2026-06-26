@@ -5,6 +5,7 @@ description: "The container's deep PAT possession proof — bounded Argon2id, a 
 source_files:
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
+  - "crates/corelink-container/src/customer_d1.rs"
 checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "argon2id", "scope", "dos"]
@@ -24,9 +25,12 @@ gate before any tenant is returned.
 # Role
 
 This concept is the deep layer of [the 2-level PAT moat](/auth/pat-moat.md) and the engine behind both
-the cache adapters and [the native PAT gate](/auth/hmac-fast-reject.md). The scope half is the
-single source of truth for what a `pat.scope` string from [the D1 PAT store](/auth/d1-pat-store.md) is
-allowed to do on a cache surface.
+the cache adapters and [the native PAT gate](/auth/hmac-fast-reject.md). The scope half here is the
+fail-CLOSED **gate** — it decides what a `pat.scope` string from [the D1 PAT store](/auth/d1-pat-store.md)
+is allowed to DO on a cache surface (`requires_cache_read`/`_write`). It is NOT the only owner of scope:
+the requested→stored scope **vocabulary** (which capability a self-serve key may ever be MINTED with) is
+owned by `customer_d1.rs`'s frozen scope map (see [the D1 PAT store](/auth/d1-pat-store.md)); `scope.rs`
+gates, `customer_d1.rs` persists.
 
 # How it works
 
@@ -71,6 +75,10 @@ allowed to do on a cache surface.
 - `classify_requested_scopes` is the shared truth for the mint escalation gate and the D1 persister; the
   substring-vs-exact-token divergence it closed once let `"writes"` slip through
   (`crates/corelink-container/src/scope.rs:112-149`).
+- ADR-0069 (PAT fast-hash) is NOT in tension with the `Argon2id` here: that decision is about the cheap
+  HMAC **fast-reject** layer, which filters forged/unknown tokens BEFORE any expensive work. `Argon2id`
+  remains the memory-hard possession proof at the bottom of this pipeline (and in the native backstop /
+  adapter plane) — they are DIFFERENT layers (signature filter vs secret proof), not contradictory.
 
 # Citations
 
@@ -83,4 +91,4 @@ allowed to do on a cache surface.
 7. `crates/corelink-container/src/adapter_pat.rs:652-660` — the fail-CLOSED scope gate + write-bit surfacing.
 8. `crates/corelink-container/src/scope.rs:73-95` — fail-CLOSED: empty/missing scope grants nothing (`requires_cache_read`/`_write`).
 9. `crates/corelink-container/src/scope.rs:67-95` — exact-token `requires_cache_read` / `requires_cache_write`.
-10. `crates/corelink-container/src/scope.rs:112-149` — `classify_requested_scopes`: the single, fail-CLOSED scope truth.
+10. `crates/corelink-container/src/scope.rs:112-149` — `classify_requested_scopes`: the fail-CLOSED scope-classification GATE (shared by the mint escalation gate + the D1 persister); the requested→stored scope VOCABULARY is `crates/corelink-container/src/customer_d1.rs:311-324` (see [the D1 PAT store](/auth/d1-pat-store.md)) — `scope.rs` gates, `customer_d1.rs` persists.

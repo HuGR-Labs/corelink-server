@@ -1,18 +1,19 @@
 ---
 type: "ComplianceControl"
 title: "Data residency posture"
-description: "CoreLink's launch data-residency reality: real EU (lhr/corelink-cas-eu) residency, an honest US/ENAM default, a single-bucket native-CAS launch posture, and the container-side residency guard that fail-closed rejects cross-region traffic."
+description: "CoreLink's launch data-residency reality: a single-physical-bucket native-CAS launch posture (region-in-key is a LOGICAL tag, NOT physical residency — per-region CAS buckets are owner-gated/unbuilt-in-code per ADR-S14-009), a genuinely per-region AC path, an honest US/ENAM default, the standing 'do NOT onboard a contractual-EU-residency customer for native CAS' guardrail, and the container-side residency guard that fail-closed rejects cross-region traffic with a 409."
 source_files:
   - specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md
   - docs/security/2026-06-23-secreview-gdpr-residency.md
   - crates/corelink-container/src/routes/residency.rs
+  - crates/corelink-container/src/routes/cas.rs
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
 provenance: "AUTHORED"
 tags: ["compliance", "residency", "gdpr", "lgpd", "schrems-ii", "cas", "r2", "launch-posture"]
 timestamp: "2026-06-26T00:00:00Z"
 ---
 
-Data residency is a compliance control because Schrems II and LGPD Art. 16 require EU-subject bytes to reside **physically** in-region — a logical key prefix does not satisfy this (`specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md:44-47`). CoreLink's posture has two halves: a documented launch decision (native CAS ships single-physical-region with an EU-customer guardrail until per-region buckets land) and a deployed, fail-closed container-side guard that refuses any request whose *present* region header does not match the colo the container serves (an absent region header returns Allow — the F-015/L-2 gap detailed in the gotchas, not a mismatch-refusal). The 2026-06-23 GDPR/residency secreview confirmed the EU residency claim is now genuinely real (prod-lhr physically lands EU bytes in EEUR) and that US is the honest default while BR/APAC are disclosed as roadmap (`docs/security/2026-06-23-secreview-gdpr-residency.md:21-24`).
+Data residency is a compliance control because Schrems II and LGPD Art. 16 require EU-subject bytes to reside **physically** in-region — a logical key prefix does not satisfy this (`specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md:44-47`). CoreLink's posture has two halves: a documented launch decision (native CAS ships single-physical-region with an EU-customer guardrail until per-region buckets land) and a deployed, fail-closed container-side guard that refuses any request whose *present* region header does not match the colo the container serves (an absent region header returns Allow — the F-015/L-2 gap detailed in the gotchas, not a mismatch-refusal). The 2026-06-23 GDPR/residency secreview records that the prod-lhr env is *configured* to bind the EU buckets (`corelink-cas-eu`/`corelink-ac-eu`, `jurisdiction = "eu"`) and that US is the honest default while BR/APAC are disclosed as roadmap (`docs/security/2026-06-23-secreview-gdpr-residency.md:21-24`). But the **authoritative** launch posture is ADR-S14-009: a full per-region native-CAS topology is owner-gated and *unbuilt in code* ("cannot be completed in code alone"), the default single bucket carries region only as a logical key tag, so native-CAS EU physical residency is **not yet a blanket assurance** — the standing launch invariant remains "do NOT onboard a customer with a contractual EU data-residency requirement for native CAS" (`specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md:55-57`, `:75-80`). The genuinely per-region path is **AC** (`corelink-ac-<region>` buckets), not native CAS.
 
 # Role
 
@@ -21,11 +22,11 @@ The residency posture governs where tenant bytes physically rest and stops a mis
 # How it works
 
 - The edge Worker fans EU (`weur`) tenants out to the London (`lhr`) regional Worker and stamps the trusted `x-corelink-primary-region:<macro>` header derived from D1 `tenant.primary_region`; the container guard is the backstop that verifies that claim (`crates/corelink-container/src/routes/residency.rs:5-11`, `crates/corelink-container/src/routes/residency.rs:41-44`).
-- The container reads its own serving colo from the `R2_CAS_REGION` env (default `iad`) — the SAME env the CAS handler keys its bucket from, so guard and storage agree by construction (`crates/corelink-container/src/routes/residency.rs:51-53`).
+- The container reads its own serving colo from the `R2_CAS_REGION` env (default `iad`) — the SAME env the CAS handler stamps into the object key's region prefix, so the guard and the storage *key's* region tag agree by construction (`crates/corelink-container/src/routes/residency.rs:51-53`). The physical bucket, however, is keyed from a SEPARATE env, `R2_CAS_BUCKET` (default `corelink-cas-prod`, `crates/corelink-container/src/routes/cas.rs:414`) — so a matching `R2_CAS_REGION` tag does NOT by itself guarantee a region-local bucket; that is exactly the logical-vs-physical gap ADR-S14-009 flags.
 - The pure `residency_decision` returns `Allow` when the header is absent (local/IAD path, where the Worker never stamps the header) (`crates/corelink-container/src/routes/residency.rs:92-95`).
 - When the header is present, the guard maps the macro via `colo_for_macro`: a match for the container's colo → `Allow`; a different colo, or an unknown/unprovisioned macro (e.g. `afr`) → `Reject` (`crates/corelink-container/src/routes/residency.rs:96-102`).
 - A reject is emitted as HTTP 409 `residency_violation` BEFORE any handler runs, with zero storage I/O on the reject path (`crates/corelink-container/src/routes/residency.rs:62-80`, `crates/corelink-container/src/routes/residency.rs:118-129`).
-- EU residency is physical, not a key-prefix illusion: prod-lhr binds `corelink-cas-eu`/`corelink-ac-eu` with `jurisdiction = "eu"` and the EU S3 endpoint, so EU CAS+AC bytes land in EEUR (`docs/security/2026-06-23-secreview-gdpr-residency.md:99-108`).
+- The **AC** path is genuinely per-region by construction (`corelink-ac-<region>` buckets). For native **CAS**, the prod-lhr env is *configured* to point `R2_CAS_BUCKET` at `corelink-cas-eu` (`jurisdiction = "eu"`, EU S3 endpoint) per the secreview (`docs/security/2026-06-23-secreview-gdpr-residency.md:99-108`) — but ADR-S14-009, the authoritative launch posture, records that a full per-region CAS topology is owner-gated/unbuilt-in-code and the default single bucket carries region only as a logical key tag; so native-CAS EU *physical* residency is NOT yet a blanket assurance and the do-not-onboard-EU-native-CAS guardrail stands (`specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md:40-51`, `:55-57`, `:75-80`).
 - Native CAS's launch reality is a single physical R2 bucket (`corelink-cas-prod`) with region carried only in the key prefix `<region>/<tenant_prefix>/<digest>` from a global `R2_CAS_REGION` var, NOT the tenant's immutable `tenant.primary_region` (`specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md:27-33`).
 
 # Invariants
@@ -48,6 +49,7 @@ The residency posture governs where tenant bytes physically rest and stops a mis
 - `specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md:27-33` — single-bucket native-CAS write reality (global `R2_CAS_REGION`, region-in-key).
 - `specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md:40-51` — logical-vs-physical, the false-confidence trap.
 - `specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md:55-57`, `:75-80` — launch decision + EU-customer guardrail.
-- `docs/security/2026-06-23-secreview-gdpr-residency.md:21-24`, `:99-108` — EU residency is real; US-default honest.
+- `docs/security/2026-06-23-secreview-gdpr-residency.md:21-24`, `:99-108` — prod-lhr is configured to bind the EU buckets; US-default honest (AC is per-region; native-CAS per-region residency stays owner-gated per ADR-S14-009).
+- `crates/corelink-container/src/routes/cas.rs:414` — the CAS handler keys its physical bucket from `R2_CAS_BUCKET` (default `corelink-cas-prod`), a SEPARATE env from the `R2_CAS_REGION` key tag.
 - `docs/security/2026-06-23-secreview-gdpr-residency.md:126-150`, `:152-162`, `:164-178`, `:202-206` — M-1/L-1/L-2 residuals + the no-SA-region fail-loud.
 - `crates/corelink-container/src/routes/residency.rs:5-13`, `:41-53`, `:62-102`, `:118-129` — the container-side residency guard and pure decision.

@@ -8,6 +8,8 @@ source_files:
   - "crates/corelink-container/src/auth_tenant.rs"
   - "crates/tenant-path/src/lib.rs"
   - "crates/tenant-path/src/prefix.rs"
+  - "crates/corelink-container/src/storage/r2_s3.rs"
+  - "crates/corelink-container/src/routes/cargo.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["tenancy", "isolation", "durable-object", "multi-tenant", "security"]
@@ -16,8 +18,12 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # Tenant isolation via idFromName(tenant_id)
 
-CoreLink is a multi-tenant cache: every blob, every counter, every credential belongs to exactly one
-tenant, and a cross-tenant leak is the single worst failure the platform can have. Isolation is enforced
+CoreLink is a multi-tenant cache: every *private* blob, every counter, every credential belongs to exactly one
+tenant, and a cross-tenant leak is the single worst failure the platform can have. (The ONE deliberate
+exception is the `_public` shared namespace — public-package dedup for pip/brew/npm writes digest-verified
+bytes under a reserved `_public` namespace that is intentionally shared across tenants as the network-effect
+moat; it is a non-tenant sentinel, never a real tenant id, and only digest-verified bytes enter it — see the
+gotcha and the `tenant == PUBLIC_NAMESPACE` storage-prefix arm `crates/corelink-container/src/storage/r2_s3.rs:579-581`.) Isolation is enforced
 at three layers that reinforce each other — the Worker routes each request to a *per-tenant* Durable
 Object named by the tenant id, the container refuses to act without a non-sentinel authenticated tenant,
 and every R2/KV/D1 key is namespaced under an HMAC-derived prefix that *cannot* be constructed from a
@@ -65,6 +71,15 @@ keyed on the same trusted tenant id this control establishes.
   origin authentication (`crates/corelink-container/src/auth_tenant.rs:1-3`).
 - The empty string `""` is in the sentinel list, so a present-but-blank header is rejected exactly like a
   missing one (`crates/corelink-container/src/auth_tenant.rs:19`).
+- **The `_public` carve-out is the ONE intentional cross-tenant share.** "Every blob belongs to exactly
+  one tenant" holds for *private* content; public-package dedup (pip/brew/npm) deliberately writes
+  digest-verified bytes under the reserved `_public` namespace, which is shared across tenants by design
+  (the network-effect moat) and derives its OWN sentinel-UUID storage prefix, so it can never collide with
+  a real tenant prefix and `_public` bytes survive a single tenant's DSR erase by design
+  (the shared-prefix arm `crates/corelink-container/src/storage/r2_s3.rs:579-581`, keyed off the reserved
+  sentinel `PUBLIC_NAMESPACE_UUID` `crates/corelink-container/src/storage/r2_s3.rs:571`;
+  acknowledged in `security/attack-surface-dataplane`). cargo/sccache, by contrast, is PRIVATE per-tenant
+  with no `_public` (`crates/corelink-container/src/routes/cargo.rs:92`).
 
 # Citations
 
@@ -80,3 +95,5 @@ keyed on the same trusted tenant id this control establishes.
 9b. `crates/tenant-path/src/prefix.rs:15` — `TENANT_PREFIX_LEN = 16`.
 10. `crates/tenant-path/src/prefix.rs:91-92` — the `TenantPrefix` private-tuple newtype (single derivation trust boundary).
 10b. `crates/tenant-path/src/lib.rs:27` — crate-doc public contract: do not construct `TenantPrefix` from raw bytes outside this crate.
+11. `crates/corelink-container/src/storage/r2_s3.rs:579-581` — the ONE deliberate cross-tenant carve-out: the `tenant == PUBLIC_NAMESPACE` arm derives the shared `_public` dedup prefix (reserved sentinel `:571`).
+12. `crates/corelink-container/src/routes/cargo.rs:92` — cargo/sccache is PRIVATE per-tenant (never `_public`), confirming the carve-out is scoped to public-package dedup only.

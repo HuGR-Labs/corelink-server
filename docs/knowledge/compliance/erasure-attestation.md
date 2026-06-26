@@ -9,6 +9,7 @@ source_files:
   - crates/corelink-erasure-attestation/src/key.rs
   - crates/corelink-erasure-attestation/src/verify.rs
   - crates/corelink-erasure-attestation/src/evidence.rs
+  - crates/corelink-container/src/routes/dsr.rs
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
 provenance: "AUTHORED"
 tags: ["compliance", "erasure", "ed25519", "jcs", "rfc-8785", "nist-sp-800-88", "gdpr-art-17", "byok", "dsr"]
@@ -32,14 +33,14 @@ This crate is the pure-logic signing and verification surface for erasure attest
 - `evidence_hash` is a SHA-256 over the JCS-canonical serialization of an `EvidenceBundle` binding audit-chain segment IDs + KMS destroy timestamp + KMS key id + tenant id `crates/corelink-erasure-attestation/src/evidence.rs:52-61`.
 - The bundle is validated before hashing — empty segment list, KMS key id, or tenant id are rejected so an incomplete evidence bundle cannot be attested `crates/corelink-erasure-attestation/src/evidence.rs:68-85`.
 - Per-region signing keys are generated from the OS CSPRNG (`OsRng`) `crates/corelink-erasure-attestation/src/key.rs:72`, or reconstructed deterministically from a 32-byte secret seed so the served public key stays stable across Workers/container restarts `crates/corelink-erasure-attestation/src/key.rs:95-110`.
-- `public_key()` derives the verifying key and a PEM SubjectPublicKeyInfo (RFC 8410 Ed25519 OID prefix) served at `GET /v1/public/keys/erasure/{region}.pub` `crates/corelink-erasure-attestation/src/key.rs:114-125`.
+- `public_key()` derives the verifying key and a PEM SubjectPublicKeyInfo (RFC 8410 Ed25519 OID prefix) DESIGNED to be served at `GET /v1/public/keys/erasure/{region}.pub` — but that serving endpoint is WI-S11-008 wiring NOT yet live (see Scope above); only the PEM derivation is live in this crate `crates/corelink-erasure-attestation/src/key.rs:114-125`.
 - Offline verification decodes the base64 signature, enforces exactly 64 bytes, and verifies it against the stored canonical JCS bytes using the public key `crates/corelink-erasure-attestation/src/verify.rs:46-60`.
 - Ed25519 was chosen over RSA-2048/ECDSA P-256: 64-byte signatures (cheap for 7y R2 retention), FIPS 186-5 approved, constant-time verify `specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md:39-50`.
 - Keys rotate every 30 days with a 30d overlap window during which both Active and Overlap public keys are served, so a verifier holding a pre-rotation key still verifies post-rotation attestations `crates/corelink-erasure-attestation/src/lib.rs:27-33`.
 
 # Invariants
 
-- INV-ERASURE-ATTESTATION-SIGNED (HIGH): the **designed** contract is that every DSR erasure of a BYOK tenant produces exactly one Ed25519-signed attestation; the signing primitive is live, but the "persisted in R2 (7y) and indexed in D1" half is WI-S11-008 wiring that is not yet on the live path `crates/corelink-erasure-attestation/src/lib.rs:35-39`.
+- INV-ERASURE-ATTESTATION-SIGNED (HIGH): the crate `//!` frames a fail-CLOSED, BYOK-only "every erasure MUST be attested" contract `crates/corelink-erasure-attestation/src/lib.rs:35-39` — but **reconcile that against the SHIPPED path** (sibling `compliance/dsr-erasure`): the live container signs an attestation **best-effort / fail-OPEN**, only on a fully-`VerifiedComplete` 24h verify sweep, and for **ordinary tenants — NOT BYOK-only** (`crates/corelink-container/src/routes/dsr.rs:503`). Absence of an attestation does NOT mean the erasure failed — the erasure is already complete + audited; the attestation is an extra evidence artifact. The signing primitive is live; the "persisted in R2 (7y) and indexed in D1" half is WI-S11-008 wiring not yet on the live path.
 - The signature MUST be verified against the exact `canonical_payload_jcs` byte string, not a re-serialized payload `crates/corelink-erasure-attestation/src/attestation.rs:60-62`.
 - Identical payloads always canonicalize byte-identically (RFC 8785 determinism), so a signature is stable and reproducible `crates/corelink-erasure-attestation/src/attestation.rs:98-100`.
 - Signing key material is zeroized on drop and never appears in logs, traces, or `Debug` output — the `signing_key` field renders as `[REDACTED]` `crates/corelink-erasure-attestation/src/key.rs:41-52`.

@@ -1,13 +1,13 @@
 ---
 type: "TenancyControl"
 title: "Storage-quota / byte-accounting header"
-description: "The Worker-trusted storage-cap header and the atomic byte-accounting that makes the per-tier storage quota live, plus the RFC 9331 over-quota response taxonomy."
+description: "The Worker-trusted storage-cap header and the atomic byte-accounting that makes the per-tier storage quota live, plus the `X-Rate-Limit-Type` over-quota response taxonomy."
 source_files:
   - "crates/corelink-container/src/byte_accounting.rs"
   - "crates/corelink-rate-headers/src/headers.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
-tags: ["tenancy", "quota", "storage", "byte-accounting", "rfc-9331", "fail-closed"]
+tags: ["tenancy", "quota", "storage", "byte-accounting", "rate-limit-type", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
 ---
 
@@ -20,7 +20,8 @@ was structurally inert (a Free tenant could store unbounded TB at `$0`). This co
 The Worker — the quota-resolution authority — sets a server-trusted header carrying the tenant's resolved
 per-tier storage cap, and after a successful write the billable handler does an ATOMIC check-and-accrue
 against `tenant_storage_state`. Over-cap or unaccountable writes fail CLOSED; the public over-quota
-boundary is surfaced to clients through the RFC 9331 response-header taxonomy.
+boundary is surfaced to clients through the `X-Rate-Limit-Type` response-header taxonomy (the sprint
+contract §5 reason vocabulary — NOT "RFC 9331", which is the unrelated ECN/L4S RFC).
 
 # Role
 
@@ -44,7 +45,7 @@ crate is the customer-facing signal that an over-plan boundary (not a bug) cause
 - `AccrueOutcome::OverCap` means the caller must reject the write (bytes NOT counted) and `Indeterminate`
   means a missing row with no resolved cap — never seed an uncapped row from absence
   (`crates/corelink-container/src/byte_accounting.rs:112-130`).
-- The over-quota rejection carries the `over_quota` arm of the RFC 9331 `X-Rate-Limit-Type` taxonomy
+- The over-quota rejection carries the `over_quota` arm of the `X-Rate-Limit-Type` taxonomy
   (storage/bandwidth 100% boundary) (`crates/corelink-rate-headers/src/headers.rs:30-37`).
 - `counts_against_sli` classifies `over_quota` as legitimate over-plan (NOT counted against the SLO),
   distinct from a within-quota bug (`crates/corelink-rate-headers/src/headers.rs:101-105`).

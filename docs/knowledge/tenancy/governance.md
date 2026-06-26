@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/customer.rs"
   - "crates/corelink-container/src/routes/users.rs"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "cfb46abdef8a9d460b00c2b13d56f9a4caa328a7"
+checkpoint_sha: "bdf83b18abf324a57d93b0bc8db8366ddea6e182"
 provenance: "AUTHORED"
 tags: ["tenancy", "governance", "rate-limit", "customer", "users", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -34,21 +34,22 @@ self-service plane. It rests on the same trusted tenant id established by
 
 # How it works
 
-- The rate limiter is wired as ONE `.layer(...)` line at the end of `build_with_factory`
-  (`crates/corelink-container/src/routes.rs:819-822`), so it covers exactly the composed data-plane router
-  and intentionally excludes `/_health` and `/_internal/*`
-  (`crates/corelink-container/src/routes/ratelimit_layer.rs:15-22`).
+- The rate limiter is wired as ONE final `router.layer(axum::middleware::from_fn_with_state(rate_limit_state, rate_limit_layer))`
+  call at the end of `build_with_factory` (`crates/corelink-container/src/routes.rs:825-828`), so it covers exactly the
+  composed data-plane router and intentionally excludes `/_health` and `/_internal/*`
+  (`crates/corelink-container/src/routes/ratelimit_layer.rs:15-22`). When the D1 tier-resolver is unavailable
+  the layer falls back to the team-default `RateLimitLayerState` for all tenants rather than failing the router (F-017).
 - The bucket is keyed on the edge-injected `x-corelink-tenant-id`, the only trustworthy tenant source in
   the container (`crates/corelink-container/src/routes/ratelimit_layer.rs:24-35`).
 - A stable 128-bit bucket key is derived from the raw tenant string via `tenant_key_uuid`, so non-UUID
   tenants still land in distinct buckets (`crates/corelink-container/src/routes/ratelimit_layer.rs:415`).
-- The customer router exposes the self-serve surface — overview, usage, audit, billing, keys, team — under
-  `/v1/customer/*` (`crates/corelink-container/src/routes/customer.rs:183-198`).
-- Each customer handler resolves the tenant fail-CLOSED: a missing/empty/sentinel header is an `Err` the
-  handler maps to `401` before any storage access
-  (`crates/corelink-container/src/routes/customer.rs:210-220`).
-- Revoking a credential is a destructive admin op gated on cache-write capability: a read-only principal
-  is rejected `403` (`crates/corelink-container/src/routes/customer.rs:762-775`).
+- The customer router exposes the self-serve surface — overview, usage, audit, billing, keys, team, account-delete — under
+  `/v1/customer/*` (`crates/corelink-container/src/routes/customer.rs:185-198`).
+- Each customer handler resolves the tenant fail-CLOSED via the `tenant()` helper: a missing/empty/sentinel
+  `x-corelink-tenant-id` returns `Err(())` (the `TENANT_SENTINELS` guard) which the handler maps to `401`
+  before any storage access (`crates/corelink-container/src/routes/customer.rs:225-235`).
+- Revoking a credential is a destructive admin op gated on cache-write capability: `requires_cache_write`
+  rejects a read-only principal with `403 FORBIDDEN` (`crates/corelink-container/src/routes/customer.rs:783-790`).
 - `/v1/users/me` reflects the authenticated caller using the shared fail-CLOSED `AuthTenant` extractor and
   never echoes a sentinel or the raw PAT (`crates/corelink-container/src/routes/users.rs:106-110`).
 
@@ -57,9 +58,9 @@ self-service plane. It rests on the same trusted tenant id established by
 - The data-plane rate limiter never covers the DO readiness probe or the internal shared-secret surfaces
   (`crates/corelink-container/src/routes/ratelimit_layer.rs:18-22`).
 - Every customer surface rejects a missing/sentinel tenant with `401` before touching that tenant's
-  billing/keys/team data (`crates/corelink-container/src/routes/customer.rs:203-220`).
+  billing/keys/team data (`crates/corelink-container/src/routes/customer.rs:225-235`).
 - Credential revocation requires cache-write scope; a read-only token cannot revoke any credential in the
-  tenant (intra-tenant lockout defence) (`crates/corelink-container/src/routes/customer.rs:768-775`).
+  tenant (intra-tenant lockout defence) (`crates/corelink-container/src/routes/customer.rs:783-790`).
 - The user-identity surface never reflects the raw PAT and rejects sentinel tenants like every other v1
   surface (`crates/corelink-container/src/routes/users.rs:18-27`).
 
@@ -68,10 +69,10 @@ self-service plane. It rests on the same trusted tenant id established by
 - The limiter is wired with bounded NoOp sinks in production; the `InMemory*` capture sinks push every
   decision onto unbounded `Vec`/`HashMap`s and self-OOM the container if wired by mistake (the prior bug)
   (`crates/corelink-container/src/routes/ratelimit_layer.rs:38-49`).
-- `principal()` (the token prefix for audit) fails CLOSED to the `_unknown` sentinel, but `tenant()` does
-  NOT — the tenant must be a real, non-sentinel value or the request is `401`, so the audit prefix and the
-  authorization identity have deliberately different fallbacks
-  (`crates/corelink-container/src/routes/customer.rs:227-230`).
+- `principal()` (the token prefix for audit) fails CLOSED to the `_unknown` sentinel
+  (`crates/corelink-container/src/routes/customer.rs:242-245`), but `tenant()` does NOT — the tenant must be
+  a real, non-sentinel value or the request is `401` (`crates/corelink-container/src/routes/customer.rs:231-234`),
+  so the audit prefix and the authorization identity have deliberately different fallbacks.
 
 # Citations
 
@@ -80,11 +81,11 @@ self-service plane. It rests on the same trusted tenant id established by
 3. `crates/corelink-container/src/routes/ratelimit_layer.rs:24-35` — keyed on the edge-injected tenant header.
 4. `crates/corelink-container/src/routes/ratelimit_layer.rs:38-49` — bounded NoOp production sinks (the InMemory-OOM trap).
 5. `crates/corelink-container/src/routes/ratelimit_layer.rs:415` — `tenant_key_uuid` stable 128-bit bucket key.
-6. `crates/corelink-container/src/routes/customer.rs:168-183` — the `/v1/customer/*` router (overview/usage/audit/billing/keys/team).
-7. `crates/corelink-container/src/routes/customer.rs:203-220` — fail-CLOSED tenant resolution (sentinel → `401`).
-8. `crates/corelink-container/src/routes/customer.rs:210-220` — `tenant()` returns `Err` on missing/sentinel before storage access.
-9. `crates/corelink-container/src/routes/customer.rs:227-230` — `principal()` falls back to `_unknown` (audit prefix only).
-10. `crates/corelink-container/src/routes/customer.rs:762-775` — revoke requires cache-write scope; read-only → `403`.
+6. `crates/corelink-container/src/routes/customer.rs:185-198` — the `/v1/customer/*` routes (overview/usage/audit/billing/keys/team/account-delete).
+7. `crates/corelink-container/src/routes/customer.rs:225-235` — `tenant()` fail-CLOSED resolution: missing/empty/sentinel → `Err(())` → `401` before storage access.
+8. `crates/corelink-container/src/routes/customer.rs:231-234` — the `TENANT_SENTINELS`/empty `Err` guard inside `tenant()`.
+9. `crates/corelink-container/src/routes/customer.rs:242-245` — `principal()` falls back to `_unknown` (audit prefix only).
+10. `crates/corelink-container/src/routes/customer.rs:783-790` — revoke requires cache-write scope (`requires_cache_write`); read-only → `403 FORBIDDEN`.
 11. `crates/corelink-container/src/routes/users.rs:18-27` — `/v1/users/me` security model (fail-CLOSED, never reflects the PAT).
 12. `crates/corelink-container/src/routes/users.rs:106-110` — the `handle_me` handler signature using the `AuthTenant` extractor.
-13. `crates/corelink-container/src/routes.rs:819-822` — the single `.layer(...)` wiring of the rate limiter in `build_with_factory`.
+13. `crates/corelink-container/src/routes.rs:825-828` — the single `router.layer(from_fn_with_state(...))` wiring of the rate limiter in `build_with_factory`.

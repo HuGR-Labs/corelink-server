@@ -4,6 +4,7 @@ title: "ADR-0030 — PAT revocation propagation (DO + CF Queue, ≤ 60 s p99)"
 description: "Why PAT revocation uses Neon as source-of-truth with a Durable-Object broadcast cache and CF-Queue cross-region fan-out to hit a single 60 s p99 stale-window SLA."
 source_files:
   - "specs/03_architecture/adrs/ADR-0030-revocation-propagation.md"
+  - "crates/corelink-container/src/customer_d1.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "revocation", "pat", "durable-object", "cf-queue", "auth", "s03"]
@@ -25,6 +26,16 @@ Neon `pat.revoked_at` is the canonical source-of-truth that the verify cold path
 # Consequences
 
 The verify path is fail-closed on the Neon SoT so a cache outage never lets a revoked token through, propagation latency is bounded with tiered SEV alerts, and mass-revoke is atomic, traded against running three storage planes that need a daily reconciliation cron and cross-region lag that can exceed 60 s during a CF Queue outage (graceful but customer-visible) (ADR-0030:72-87). It governs the [D1 PAT store](/auth/d1-pat-store.md) and the [PAT verification gauntlet](/flows/pat-gauntlet.md).
+
+# Status vs shipped code
+
+This ADR is a historical record: it names **Neon `pat.revoked_at`** as the canonical revocation
+source-of-truth. The shipped path differs — PAT state lives in **D1**, and revocation is an idempotent,
+tenant-scoped `UPDATE pat SET revoked_at_ms = ?` keyed on `revoked_at_ms`
+(`crates/corelink-container/src/customer_d1.rs:1061-1062`); the keys-list verify reads the same
+`revoked_at_ms` column (`crates/corelink-container/src/customer_d1.rs:905`). Read "Neon SoT" as
+"the durable PAT store SoT" — today that store is D1, not Neon. The decision (SoT is canonical, hot
+caches are never SoT, fail-closed verify) stands unchanged.
 
 # Citations
 

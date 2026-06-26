@@ -4,6 +4,7 @@ title: "ADR-0069 — PAT verification: fast keyed hash, not Argon2id (high-entro
 description: "Why high-entropy PATs should be verified with a fast keyed hash rather than memory-hard Argon2id, and why the migration is a documented deferral with a lazy dual-read design."
 source_files:
   - "specs/03_architecture/adrs/ADR-0069-pat-verification-fast-hash-vs-argon2id.md"
+  - "crates/corelink-container/src/native_pat_gate.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "auth", "pat", "argon2id", "hash", "performance", "deferred"]
@@ -53,6 +54,16 @@ expiry, or a new isolate).
 - Reversal: the dual-read accepts Argon2id indefinitely, so the change is reversible by reverting the
   mint/re-write side with no data loss. A rejected stop-gap was simply raising the verify-cache TTL,
   which only masks the cost and does not fix the primitive mismatch.
+
+# Status vs shipped code
+
+To avoid reading this ADR as "Argon2id was removed": the fast keyed hash is the **fast-reject** layer, and
+Argon2id remains the **possession backstop**. The shipped native PAT gate verifies the HMAC fast path
+first, then — on a verify-cache miss, at the top of each billable handler, after scope+tenant and before
+storage — runs the Argon2id stored-secret check
+(`crates/corelink-container/src/native_pat_gate.rs:194`, `:140-194`; warm cache hits skip it). They are
+DIFFERENT layers, not a swap: this ADR changes only which primitive the cold stored-secret check uses for
+high-entropy tokens. The decision and the lazy dual-read migration stand unchanged.
 
 # Citations
 

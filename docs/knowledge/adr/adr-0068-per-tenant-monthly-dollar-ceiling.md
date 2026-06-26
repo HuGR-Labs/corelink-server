@@ -4,6 +4,7 @@ title: "ADR-0068 — Per-tenant monthly $-ceiling: a fail-closed spend cap (G1)"
 description: "Why CoreLink enforces a cumulative per-tenant monthly dollar ceiling, fail-closed, on top of the existing velocity rate limit."
 source_files:
   - "specs/03_architecture/adrs/ADR-0068-per-tenant-monthly-dollar-ceiling.md"
+  - "crates/corelink-container/src/tenant_quota.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "quota", "cost-ceiling", "fail-closed", "abuse", "hugit-p2"]
@@ -42,6 +43,14 @@ default is a deliberately conservative symbolic $5/mo tripwire while real usage 
 - The ceiling is owner-tunable per tenant; the $5 default is a tripwire, not a product tier.
 - It pairs with the existing rate limit so the two together bound both axes (velocity *and* spend);
   alerts complement but do not replace the enforced ceiling.
+
+# Status vs shipped code
+
+The Decision text writes the over-ceiling reject as "`402 Payment Required` / `429`", but the shipped
+$-ceiling middleware rejects with **`402 Payment Required` only** — never `429`
+(`crates/corelink-container/src/tenant_quota.rs:799`, `:825`, `:864`). `429 Too Many Requests` belongs to
+the orthogonal request-count / velocity axis, not the cumulative-$ ceiling. Everything else (fail-closed,
+the `tenant_quota` D1 table, the pre-serve `check_and_accrue`, the $5 default tripwire) ships as decided.
 
 # Citations
 
