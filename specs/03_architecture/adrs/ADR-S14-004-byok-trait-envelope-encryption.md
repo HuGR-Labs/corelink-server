@@ -25,7 +25,7 @@ references:
   - "Lote 10.14 codex P0/P1 canonical fixes"
 ---
 
-# ADR-S14-001: BYOK adapter trait + envelope encryption flow
+# ADR-S14-004: BYOK adapter trait + envelope encryption flow
 
 ## Status
 
