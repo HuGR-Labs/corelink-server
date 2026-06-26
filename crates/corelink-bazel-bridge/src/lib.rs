@@ -46,7 +46,7 @@
 //! - **INV-BAZEL-FIND-MISSING-CAP** — `findMissingBlobs` rejects batches
 //!   larger than 4096 digests with a 413-equivalent error
 //!   ([`error::BazelBridgeError::BatchTooLarge`]).
-//! - **INV-BAZEL-NO-GROPC** — this crate MUST NOT depend on tonic, prost,
+//! - **INV-BAZEL-NO-GRPC** — this crate MUST NOT depend on tonic, prost,
 //!   or any gRPC runtime. REST only.
 
 #![forbid(unsafe_code)]
