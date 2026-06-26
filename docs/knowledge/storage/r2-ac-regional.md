@@ -57,8 +57,9 @@ durable tier behind the [Action Cache surface](/surfaces/action-cache.md).
   only via env in non-prod (`crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:84-90`).
 - AC bucket + region are read through `env_or` defaults, so an absent/empty env never yields an empty
   bucket name (`crates/corelink-container/src/routes/ac.rs:360-361`).
-- CRR lag has a 24h p99 ceiling, and a synthetic object still missing past 24h is a hard SEV-2 incident
-  regardless of burn rate (`crates/corelink-region/src/r2_crr.rs:41-58`).
+- The **target** SLO is a 24h p99 CRR-lag ceiling, with a synthetic object still missing past 24h a hard
+  SEV-2 — but the synthetic-probe loop is **deferred** (the crate ships only the `R2CrrProbe` trait boundary
+  + metric constants), so nothing emits this signal yet (`crates/corelink-region/src/r2_crr.rs:41-58`).
 
 # Gotchas
 - The five AC bucket suffixes (`sam,iad,lhr,nrt,syd`) are colo strings, NOT the four macro `Region`

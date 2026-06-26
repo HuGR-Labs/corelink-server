@@ -16,7 +16,7 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # CAS/AC core crate cluster
 
-This is the bottom of CoreLink's value stack: the crates that turn a blob into a content address and refuse to ever store one that does not match its claimed digest. They exist as a cluster because the CAS hot path was historically fragmented across ten separate crates (chunker, dedup, edge, eviction, lru-tracker, manifest, multipart-schema, meta, handler, r2-multipart), and the integrity guarantee (`INV-CAS-INTEGRITY`) has to hold across all of them as one type-driven boundary, not ten independent ones. `corelink-cas` is the aggregator that re-exports the absorbed primitives under one canonical import; `corelink-hash` owns the type that makes a forged write unrepresentable; `corelink-reapi` is the orchestration that pins the write order every transport must obey.
+This is the bottom of CoreLink's value stack: the crates that turn a blob into a content address and refuse to ever store one that does not match its claimed digest. They exist as a cluster because the CAS hot path was historically fragmented across ten separate crates (chunker, dedup, edge, eviction, lru-tracker, manifest, multipart-schema, meta, handler, r2-multipart), and the integrity guarantee (`INV-CAS-INTEGRITY`) has to hold across all of them as one type-driven boundary, not ten independent ones. `corelink-cas` is the aggregator that re-exports the absorbed primitives under one canonical import; `corelink-hash` owns the type that makes a forged write unrepresentable; `corelink-reapi` is the **designed** orchestration for the write order (the `CasWriteOrchestrator` spine — see Invariants: not yet wired into the live path; live integrity is enforced at the type boundary by `VerifiedBody`).
 
 # Role
 

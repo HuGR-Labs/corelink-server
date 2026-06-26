@@ -19,8 +19,8 @@ timestamp: "2026-06-26T00:00:00Z"
 
 CoreLink reclaims storage along two independent but complementary planes: **garbage collection**
 (`corelink-gc`) walks the reachable set and soft-deletes orphaned blobs through a strict phase machine,
-while **eviction** (`corelink-eviction`) enforces per-tier retention TTLs and a 95%-quota pressure
-trigger. Both ship today as pure-logic skeletons with in-memory fakes (the production Cloudflare Cron
+while **eviction** (`corelink-eviction`) computes the per-tier retention TTLs and the 95%-quota pressure
+trigger (pure logic — not yet an in-crate enforcer; see next). Both ship today as pure-logic skeletons with in-memory fakes (the production Cloudflare Cron
 Durable Object wiring is the deferred PRR ship gate), so the load-bearing reality an operator must
 understand is the *state machine + the kill-switch + the rollout gates* — not yet a live cron. This
 runbook is the operator's map of those invariants and the mandatory gradual production rollout that

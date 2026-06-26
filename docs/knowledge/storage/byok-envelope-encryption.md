@@ -1,7 +1,7 @@
 ---
 type: "StorageComponent"
 title: "BYOK envelope encryption at rest"
-description: "How CoreLink wraps data-encryption keys under a customer-controlled KMS (AWS/GCP/Azure/Vault) via a microkernel BYOK core with exactly one provider linked per build."
+description: "How CoreLink is DESIGNED to wrap data-encryption keys under a customer-controlled KMS (AWS/GCP/Azure/Vault) via a microkernel BYOK core with exactly one provider linked per build — note: no KMS provider is constructed in the live container yet (default build links the in-memory fake)."
 source_files:
   - "crates/corelink-container/src/byok.rs"
   - "crates/corelink-byok/src/lib.rs"
