@@ -197,13 +197,16 @@ MIN_PASS="${CORELINK_E2E_MIN_PASS:-40}"
 # provisions (a full-cred run gates ~13; a light run gates more). A CI job that
 # pins its provisioning should export CORELINK_E2E_MAX_GATED=<expected> to arm it.
 MAX_GATED="${CORELINK_E2E_MAX_GATED:-}"
+# Export conditionally (NOT as an inline assignment-prefix word — an empty
+# ${MAX_GATED:+…} expansion in prefix position breaks the env chain). The cargo
+# run below inherits it from the environment when set.
+[ -n "$MAX_GATED" ] && export CORELINK_E2E_MAX_GATED="$MAX_GATED"
 
 echo "==> running the black-box journey suite vs ${API} (MIN_PASS=${MIN_PASS}${MAX_GATED:+ MAX_GATED=$MAX_GATED})"
 cd "$REPO_ROOT"
 CORELINK_E2E_ENDPOINT="$API" \
 CORELINK_E2E_OCI_ENDPOINT="$OCI" \
 CORELINK_E2E_MIN_PASS="$MIN_PASS" \
-${MAX_GATED:+CORELINK_E2E_MAX_GATED="$MAX_GATED"} \
 CORELINK_E2E_TENANT="$TA" CORELINK_E2E_PAT_RW="$PA" \
 CORELINK_E2E_TENANT_B="$TB" CORELINK_E2E_PAT_TENANT_B="$PB" \
 CORELINK_E2E_PAT_RO="$PAT_RO" CORELINK_E2E_PAT_ADMIN="$PAT_ADMIN" CORELINK_E2E_PAT_REVOKED="$PAT_REV" \

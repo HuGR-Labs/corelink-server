@@ -30,7 +30,7 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::json;
 
 use crate::harness::{
-    bearer, blake3_hex, expect_denied, unique_blob, url_cas, url_cas_batch_read, Config,
+    bearer, blake3_hex, expect_gate_denied, unique_blob, url_cas, url_cas_batch_read, Config,
     JourneyResult,
 };
 use crate::personas::Persona;
@@ -212,7 +212,7 @@ fn internal_erase_not_customer_reachable(cfg: &Config, client: &Client) -> Journ
     let got = resp.status().as_u16();
     // A customer PAT must be denied (401/403) or the path not exist at the edge
     // (404). A 200 would mean a customer can erase arbitrary objects — a BUG.
-    match expect_denied(name, got) {
+    match expect_gate_denied(name, got) {
         Ok(()) => JourneyResult::pass(name, ms(start)),
         Err(_) => JourneyResult::fail(
             name,

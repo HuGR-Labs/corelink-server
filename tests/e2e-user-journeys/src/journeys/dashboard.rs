@@ -29,7 +29,7 @@ use reqwest::header::AUTHORIZATION;
 use serde_json::Value;
 
 use crate::harness::{
-    bearer, expect_denied, expect_status, url_customer, Config, JourneyResult,
+    bearer, expect_gate_denied, expect_status, url_customer, Config, JourneyResult,
 };
 use crate::personas::Persona;
 
@@ -238,7 +238,7 @@ fn keys_list_requires_write_scope(cfg: &Config, client: &Client) -> JourneyResul
     }
     // The exact contract is 403 (insufficient scope); accept the deny family so
     // a fail-closed 401 (e.g. tenant gate) is still a pass, never a 200.
-    if let Err(m) = expect_denied("keys list (read-only PAT)", status) {
+    if let Err(m) = expect_gate_denied("keys list (read-only PAT)", status) {
         return JourneyResult::fail(name, dur(), m);
     }
 
@@ -351,7 +351,7 @@ fn overview_no_auth(cfg: &Config, client: &Client) -> JourneyResult {
     }
     // Contract is 401; accept the deny family (401/403/404) so an edge-gate that
     // hides the route is still a pass, never an authenticated leak.
-    if let Err(m) = expect_denied("overview (no auth)", status) {
+    if let Err(m) = expect_gate_denied("overview (no auth)", status) {
         return JourneyResult::fail(name, dur(), m);
     }
 

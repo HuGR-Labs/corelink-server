@@ -35,7 +35,8 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::{json, Value};
 
 use crate::harness::{
-    bearer, expect_denied, sha256_hex, stripe_signature_header, unique_blob, url_cas, url_customer,
+    bearer, expect_denied, expect_gate_denied, sha256_hex, stripe_signature_header, unique_blob,
+    url_cas, url_customer,
     url_stripe_webhook, url_tier_select, Config, JourneyResult,
 };
 use crate::personas::Persona;
@@ -330,7 +331,7 @@ fn checkout_unauthed_denied(cfg: &Config, client: &Client) -> JourneyResult {
                      reachable without a Clerk session"),
         );
     }
-    match expect_denied("unauthed tier-select", status) {
+    match expect_gate_denied("unauthed tier-select", status) {
         Ok(()) => JourneyResult::pass(name, ms(start)),
         Err(_) => JourneyResult::fail(
             name,
