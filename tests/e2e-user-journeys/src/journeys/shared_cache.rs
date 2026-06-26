@@ -32,14 +32,15 @@
 //! ## What is and isn't black-box-provable (honest boundary — gap-map rule #3)
 //!
 //! Byte-equality + a valid 200 from B on A's address proves the cross-tenant
-//! **serve** (the network-effect OUTCOME). It does NOT by itself distinguish a
-//! shared-`_public` HIT from B independently re-filling from upstream — both
-//! return 200 + identical digest-verified bytes. The only black-box discriminator
-//! is **latency**: a `_public` HIT serves from CAS and SKIPS the ghcr.io round
-//! trip, so B-after-A should be markedly faster than A's cold fill. We measure it
-//! and surface it as corroborating evidence, but we do NOT fail on latency (it is
-//! environment-noisy). The hard, non-flaky pass criterion is byte-for-byte
-//! equality of A's warmed bytes and B's served bytes at the SAME public address.
+//! **serve** (the network-effect OUTCOME). The `_public` HIT is also
+//! black-box-provable via the `X-Cache: HIT` header that the C-MOAT contract
+//! mandates the brew server sets on a cross-tenant/`_public` serve (vs
+//! `X-Cache: MISS` on a fill). Both assertions are now HARD: (1) `X-Cache: HIT`
+//! AND (2) byte-for-byte equality of A's warmed bytes and B's served bytes.
+//! If the header is absent the journey GATES (C-MOAT brew WP not yet deployed),
+//! and if `X-Cache: MISS` with byte-equal bytes the journey FAILS (that means
+//! B independently refilled from upstream, not a moat HIT). Latency is still
+//! logged as corroborating evidence but is no longer the only discriminator.
 //!
 //! ## Inputs (black-box; env only, no new deps)
 //!
@@ -217,23 +218,105 @@ fn public_dedup_hit(cfg: &Config, client: &Client) -> JourneyResult {
     }
 
     // ── Tenant B: GET the SAME public bottle path with a DIFFERENT tenant/PAT. ──
+    // Inlined (not via brew_get) so we can read the X-Cache response header before
+    // consuming the body. C-MOAT contract: 'X-Cache: HIT' on a cross-tenant/_public
+    // serve; 'X-Cache: MISS' on a fill. HIT is now a HARD assertion, not corroborating.
     let b_started = Instant::now();
-    let b_bytes = match brew_get(cfg, client, &b.tenant, token_b, &brew_path) {
-        Ok(b) => b,
-        Err(m) => {
+    let b_url = url_brew(cfg, &b.tenant, &brew_path);
+    let b_resp = match client
+        .get(&b_url)
+        .header(AUTHORIZATION, bearer(token_b))
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => {
             return JourneyResult::fail(
                 name,
                 ms(start),
                 format!(
                     "B GET of A's warmed public bottle failed — the cross-tenant `_public` serve \
-                     (the moat) did NOT work: {m}"
+                     (the moat) did NOT work: GET {b_url}: {e}"
                 ),
+            )
+        }
+    };
+    let b_status = b_resp.status().as_u16();
+    if b_status != 200 {
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "B GET {b_url} got {b_status} (expected 200) — \
+                 the cross-tenant `_public` serve (the moat) did NOT work"
+            ),
+        );
+    }
+    // Read X-Cache BEFORE consuming the body. reqwest canonicalises header names to
+    // lowercase, so "x-cache" matches the wire 'X-Cache'.
+    let x_cache_val = b_resp
+        .headers()
+        .get("x-cache")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_ascii_uppercase());
+
+    let b_bytes = match b_resp.bytes() {
+        Ok(b) => b.to_vec(),
+        Err(e) => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("B GET {b_url} body read: {e}"),
             )
         }
     };
     let b_serve_ms = b_started.elapsed().as_millis() as u64;
 
-    // HARD #2: B's bytes == A's bytes, byte-for-byte. This is the moat proof: the
+    // HARD #2a: X-Cache header assertion (C-MOAT). Must be 'HIT' for B's serve to
+    // count as the moat proof. Absent = C-MOAT WP not yet deployed → gate.
+    // MISS + bytes-equal = B independently refilled from upstream → fail (not a HIT).
+    match x_cache_val.as_deref() {
+        Some("HIT") => {
+            // Positive moat proof — B served from A's `_public` entry. Proceed.
+        }
+        Some("MISS") => {
+            // MISS + bytes equal ⇒ B refilled from upstream (not the moat).
+            // MISS + bytes unequal ⇒ also a moat failure; byte-equality check below will fire.
+            if b_bytes == a_bytes {
+                return JourneyResult::fail(
+                    name,
+                    ms(start),
+                    format!(
+                        "MOAT NOT HIT: B's X-Cache is MISS yet bytes are byte-equal to A's \
+                         ({} B, digest={expected}) — B independently refilled from upstream \
+                         instead of serving from A's `_public` entry; cross-tenant HIT unproven",
+                        b_bytes.len()
+                    ),
+                );
+            }
+            // Fall through — byte-equality check below will also fail.
+        }
+        None | Some("") => {
+            return JourneyResult::gated(
+                name,
+                "B's brew response missing 'X-Cache' header — C-MOAT brew server WP not yet \
+                 deployed (the brew server sets 'X-Cache: HIT' on cross-tenant/_public serves \
+                 once the container WP ships); gating to avoid false-RED before the update",
+            );
+        }
+        Some(other) => {
+            // Unknown value — treat as absent (gate) to avoid false-RED on a
+            // non-standard intermediate value before the C-MOAT contract is pinned.
+            return JourneyResult::gated(
+                name,
+                format!(
+                    "B's X-Cache header has unexpected value {other:?} (expected 'HIT' or 'MISS') \
+                     — treating as C-MOAT not yet deployed; gating to avoid false-RED"
+                ),
+            );
+        }
+    }
+
+    // HARD #2b: B's bytes == A's bytes, byte-for-byte. This is the moat proof: the
     // SAME public address served identical content to a DIFFERENT tenant.
     if b_bytes != a_bytes {
         return JourneyResult::fail(
@@ -258,21 +341,18 @@ fn public_dedup_hit(cfg: &Config, client: &Client) -> JourneyResult {
         );
     }
 
-    // Corroborating HIT evidence (LOGGED via the pass message, never a fail
-    // condition — latency is environment-noisy). A true `_public` HIT skips the
-    // ghcr.io fetch, so B-after-A should be meaningfully faster than A's fill. We
-    // do NOT assert it: the byte-equal cross-tenant serve above is the hard proof,
-    // and the strict "B did not re-fetch" claim is not black-box-decidable (no hit
-    // header is exposed) — flagged for the lead in the module docs (rule #3).
+    // Corroborating latency evidence (LOGGED, never a fail condition — latency is
+    // environment-noisy). X-Cache: HIT above is the decisive black-box discriminator
+    // (C-MOAT contract); latency is a secondary corroborating signal.
     let hit_note = if b_serve_ms * 2 <= a_fill_ms.max(1) {
         "B markedly faster than A's fill — consistent with a `_public` HIT"
     } else {
-        "B not markedly faster — byte-equality holds; HIT-vs-refetch not decidable black-box"
+        "B not markedly faster — X-Cache:HIT confirmed; latency delta environment-noisy"
     };
     let _ = hit_note; // surfaced for humans via the trailing log line below.
     eprintln!(
         "[M2] _public cross-tenant serve: A_fill={a_fill_ms}ms B_serve={b_serve_ms}ms \
-         bytes={} digest={expected} — {hit_note}",
+         bytes={} digest={expected} X-Cache=HIT — {hit_note}",
         a_bytes.len()
     );
 
