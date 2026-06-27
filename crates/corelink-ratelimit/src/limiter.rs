@@ -980,7 +980,13 @@ mod tests {
     #[test]
     fn eviction_touches_at_most_sample_k_entries_not_o_n() {
         // K is the documented sample bound; eviction must never exceed it.
-        assert!(LIMITER_EVICTION_SAMPLE_K >= 1);
+        // (Const relation — documents the invariant; clippy would const-fold any
+        // assert over consts, so the allow is the idiomatic way to keep the
+        // documenting check.)
+        #[allow(clippy::assertions_on_constants, reason = "documents the const sample-bound invariant")]
+        {
+            assert!(LIMITER_EVICTION_SAMPLE_K >= 1);
+        }
 
         // Build a map well above K so a full O(n) scan would touch many more
         // than K entries — yet eviction only ever samples K.
