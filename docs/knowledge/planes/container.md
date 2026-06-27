@@ -5,7 +5,7 @@ description: "The native Rust binary serving the composed axum data-plane on por
 source_files:
   - "crates/corelink-container/src/main.rs"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "29e159f2b0c93913ba4c15689fa966195a56deb0"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -35,13 +35,16 @@ surface.
    `/_health` (`crates/corelink-container/src/main.rs:218-231`).
 2. A fail-CLOSED boot guard refuses to start in prod if the native PAT verifier did not build — a
    PRESENT-but-malformed signing-key sibling is FATAL, not a silent downgrade
-   (`crates/corelink-container/src/main.rs:233-267`).
+   (`crates/corelink-container/src/main.rs:233-267`). A companion POSITIVE prod-arming assertion then
+   refuses to boot a HALF-ARMED prod: when an INDEPENDENT R2-region signal says prod, the StorageEnv, PAT
+   verifier, $-ceiling, byte-cap and request-count controls must ALL be armed or it FATAL-exits naming the
+   missing one (`crates/corelink-container/src/main.rs:291-343`).
 3. The composed router is built and given a global 10 MiB body limit + the `/_health` route, then bound
-   to the listener on PORT (`crates/corelink-container/src/main.rs:459-464`,
-   `crates/corelink-container/src/main.rs:725-728`).
+   to the listener on PORT (`crates/corelink-container/src/main.rs:535-540`,
+   `crates/corelink-container/src/main.rs:801-804`).
 4. Privileged routes are env-gated mounts: `/_internal/pat/mint`, `/internal/v1/auth/introspect`,
    `/internal/v1/billing/usage`, `/_internal/dsr/erase`, CAS-erase, tier-select, and the Stripe webhook
-   each mount only when their secrets are present (`crates/corelink-container/src/main.rs:466-723`).
+   each mount only when their secrets are present (`crates/corelink-container/src/main.rs:542-799`).
 5. `build_with_factory` resolves the shared gates from env — the $-ceiling `QuotaGate`, the request-
    count gate, the native PAT gate, and the byte-accountant — warning (not failing) when absent
    (`crates/corelink-container/src/routes.rs:347-390`).
@@ -55,11 +58,11 @@ surface.
 
 # Invariants
 - A single HTTP listener on PORT (default 50051) serves the whole data plane — the DO's only target
-  (`crates/corelink-container/src/main.rs:269-274`).
+  (`crates/corelink-container/src/main.rs:345-348`).
 - In prod a missing native PAT gate is FATAL — the binary refuses to boot the data plane without its
   Argon2id possession backstop (`crates/corelink-container/src/main.rs:253-266`).
 - Privileged routes fail CLOSED: absent secrets ⇒ the route is simply not mounted (404), never an open
-  proxy (`crates/corelink-container/src/main.rs:466-479`).
+  proxy (`crates/corelink-container/src/main.rs:542-555`).
 - The 410-Gone erasure gate and byte-accounting are centralized at the shared CAS chokepoint, so every
   surface inherits them by construction (`crates/corelink-container/src/routes.rs:437-470`).
 - The rate-limit + residency layers wrap exactly the data plane, never `/_health` or `/_internal/*`
@@ -77,11 +80,11 @@ surface.
 2. `crates/corelink-container/src/main.rs:218-231` — boot-time storage-backing selection for `/_health`.
 3. `crates/corelink-container/src/main.rs:233-267` — the fail-CLOSED native-PAT-gate boot guard.
 4. `crates/corelink-container/src/main.rs:253-266` — the FATAL `std::process::exit(1)` on a missing prod gate.
-5. `crates/corelink-container/src/main.rs:269-274` — PORT resolution (default 50051).
-6. `crates/corelink-container/src/main.rs:459-464` — the 10 MiB global body limit + `/_health` route.
-7. `crates/corelink-container/src/main.rs:466-479` — env-gated `/_internal/pat/mint` mount (fail-CLOSED).
-8. `crates/corelink-container/src/main.rs:466-723` — the full set of env-gated privileged route mounts.
-9. `crates/corelink-container/src/main.rs:725-728` — binding the composed router to the PORT listener.
+5. `crates/corelink-container/src/main.rs:345-348` — PORT resolution (default 50051).
+6. `crates/corelink-container/src/main.rs:535-540` — the 10 MiB global body limit + `/_health` route.
+7. `crates/corelink-container/src/main.rs:542-555` — env-gated `/_internal/pat/mint` mount (fail-CLOSED).
+8. `crates/corelink-container/src/main.rs:542-799` — the full set of env-gated privileged route mounts.
+9. `crates/corelink-container/src/main.rs:801-804` — binding the composed router to the PORT listener.
 10. `crates/corelink-container/src/routes.rs:333-341` — `build`/`build_with_factory` router composition.
 11. `crates/corelink-container/src/routes.rs:347-390` — shared gates resolved from env (quota, PAT, accountant).
 12. `crates/corelink-container/src/routes.rs:392-480` — shared CAS handler objects + accounting/tombstone wrap.
@@ -89,3 +92,4 @@ surface.
 14. `crates/corelink-container/src/routes.rs:641-773` — env-gated cache-adapter (cargo/brew/npm/pip/oci) mounts.
 15. `crates/corelink-container/src/routes.rs:780-822` — residency guard + per-tenant rate-limit outer layers.
 16. `crates/corelink-container/src/routes.rs:782-822` — the rate-limit layer scoped to the data plane only.
+17. `crates/corelink-container/src/main.rs:291-343` — positive prod-arming assertion: an independent R2-region signal ⇒ ALL launch controls must be armed, else a FATAL boot refusal (no half-armed prod).
