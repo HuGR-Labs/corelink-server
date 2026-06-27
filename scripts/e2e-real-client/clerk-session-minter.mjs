@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // @ts-check
 /**
- * clerk-session-minter.mjs — SOTA headless-browser Clerk-session minter for the
- * CoreLink e2e suite.
+ * clerk-session-minter.mjs — SOTA FAPI-direct Clerk-session minter for the
+ * CoreLink e2e suite. NO browser, NO `window.Clerk`, NO app page.
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * WHY THIS EXISTS
@@ -16,45 +16,63 @@
  * These surfaces are authenticated by `verifyClerkSessionAndResolveTenant`
  * (worker/src/lib/clerk_auth.ts), which requires a token that:
  *   1. carries `Authorization: Bearer <jwt>`  (journeys call `bearer(&session)`),
- *   2. has `azp` ∈ CLERK_AZP_ALLOWLIST  →  "https://corelink-app.humangr.com"
- *      (this script signs in ON that origin, so ClerkJS stamps that exact azp),
+ *   2. has `azp` ∈ CLERK_AZP_ALLOWLIST  →  "https://corelink-app.humangr.com".
+ *      Clerk's FAPI derives `azp` from the **Origin header** of the request that
+ *      mints the token — so we send `Origin: <CORELINK_APP_URL>` on every FAPI
+ *      call (this is what stamps the exact azp; verified against clerk_auth.ts).
  *   3. has `iss` == CLERK_ISSUER_URL  (the exact-pin; the live FAPI issuer),
  *   4. has a `sub` (the Clerk user id) that maps to a CoreLink tenant row
  *      (tenant.clerk_user_id, written by the signup-worker on user.created).
  *
- * A Clerk session JWT CANNOT be minted purely server-side: Clerk's anti-fraud /
- * bot-detection blocks programmatic sign-in. The sanctioned automation path
- * (https://clerk.com/docs/testing/overview) is a **Testing Token**: a short-lived
- * Backend-API-issued token that, when attached to Frontend-API (FAPI) requests,
- * tells Clerk "this is an authorized automated test — skip bot detection." We
- * drive a real headless Chromium sign-in with that token attached.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE ROBUST FLOW (FAPI-direct — no headless browser)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * The OLD approach navigated headless Chromium to the prod app and waited for
+ * `window.Clerk` — which FAILS, because the prod SPA does not expose ClerkJS to
+ * a headless context ("window.Clerk never loaded"). The robust path drives
+ * Clerk's Frontend API (FAPI) directly with the sanctioned backend primitives:
+ *
+ *   1. Backend API: POST /v1/users               → create throwaway user (id).
+ *   2. Backend API: POST /v1/sign_in_tokens      → a one-time sign-in **ticket**
+ *      ({ user_id }). This is Clerk's "sign a user in without a password" path.
+ *   3. Backend API: POST /v1/testing_tokens      → a Testing Token (the
+ *      documented bot-detection bypass, attached to FAPI as a query param).
+ *   4. FAPI: POST https://<FAPI>/v1/client/sign_ins?__clerk_testing_token=<tt>
+ *           &_clerk_js_version=<v>  body: strategy=ticket&ticket=<signInToken>
+ *      → consumes the ticket, creates the client (Set-Cookie __client) and a
+ *      completed sign_in carrying `created_session_id`.
+ *   5. FAPI: POST https://<FAPI>/v1/client/sessions/<sessionId>/tokens?…
+ *      (Origin: <CORELINK_APP_URL>) → { jwt } — the ~60s default `__session`
+ *      JWT, the exact `Authorization: Bearer <jwt>` shape the worker expects.
+ *   6. TENANT-READINESS GATE (GAP 1, default ON; `--no-wait` to skip): the
+ *      throwaway user gets a CoreLink tenant ONLY when the signup-worker
+ *      `user.created` webhook fires (async, seconds). Until then a session-authed
+ *      call 401/403s (no tenant row). We POLL `${API}/v1/users/me` with the
+ *      bearer until 200. CRITICAL: the JWT lives ~60s, so we RE-MINT a fresh JWT
+ *      (step 5 again, full re-sign-in on session lapse) BEFORE every probe — the
+ *      probe always uses a LIVE bearer. We succeed only on 200, so the emitted
+ *      session is GUARANTEED tenant-ready; budget exhausted ⇒ FAIL LOUD.
+ *   7. FRESHNESS (GAP 2): once ready, mint ONE final fresh JWT right before emit
+ *      so the consumer gets a full ~60s window.
+ *   8. Best-effort resolve the CoreLink tenant id (signup-worker webhook maps
+ *      user.created → tenant; may lag — we poll, never write D1).
+ *   9. Emit `export CORELINK_E2E_{CLERK,DSR,DSR_TEST}_SESSION=<jwt>` to stdout +
+ *      an output file (default /tmp/e2e-clerk-session.sh); print user_id.
+ *  10. `--refresh` re-mints a fresh JWT for the same user (60s TTL); it skips the
+ *      readiness wait if a prior run already recorded the tenant as provisioned
+ *      (sidecar `tenantReady` flag).
+ *
+ * Cookie handling: FAPI is cookie-stateful (the `__client` cookie ties the
+ * sign_in to the session). We use a tiny in-process cookie jar (parse Set-Cookie,
+ * resend on subsequent calls) — no browser, no extra dependency.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * WHAT IT DOES (the sanctioned flow)
+ * FAIL LOUD — never a token we could not actually mint
  * ─────────────────────────────────────────────────────────────────────────────
- *   1. Create a throwaway Clerk user via the Backend API (verified email +
- *      generated password, skip_password_checks). Capture user_id.
- *   2. Fetch a Testing Token via the Backend API.
- *   3. Headless Chromium → load the live app origin (corelink-app.humangr.com),
- *      attach the testing token to every FAPI request (so bot-detection is
- *      bypassed), and sign in with email+password via ClerkJS in-page.
- *   4. Harvest the session JWT via `window.Clerk.session.getToken()` (the same
- *      ~60s `__session` JWT the dashboard sends as the bearer).
- *   5. Best-effort resolve the CoreLink tenant id (the signup-worker webhook
- *      maps user.created → tenant; may take a moment — we poll, never write D1).
- *   6. Emit `export CORELINK_E2E_{CLERK,DSR,DSR_TEST}_SESSION=<jwt>` to stdout
- *      and to an output file (default /tmp/e2e-clerk-session.sh); print user_id.
- *   7. `--refresh` re-harvests a fresh JWT for an already-created user (60s TTL).
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * THE #1 RISK — surfaced loudly, never silently swallowed
- * ─────────────────────────────────────────────────────────────────────────────
- * The testing-token bot-detection bypass is the documented mechanism, but its
- * success against the LIVE production Clerk instance is not guaranteed (the
- * instance may have stricter fraud rules, or the token may be rejected). If
- * sign-in is still blocked, this script FAILS LOUD with the exact Clerk error
- * code/message — it NEVER prints a token it could not actually mint, so a caller
- * can never be fooled into running journeys against a bad bearer.
+ * Any non-2xx FAPI/Backend call aborts the run printing the METHOD, the full URL
+ * (testing token redacted), the STATUS, and the FULL response body — so the next
+ * run shows precisely which call/param is wrong. It NEVER prints a JWT it could
+ * not mint, so a caller can never be fooled into running against a bad bearer.
  *
  * HARD RULE: this script only TALKS to Clerk + the (optional) CoreLink API. It
  * never writes D1, never touches other repo files.
@@ -62,12 +80,6 @@
 
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-
-// ── Playwright (devDependency; installed via `npm i` in this dir) ─────────────
-// Imported lazily with a clear remediation message if it (or the Chromium
-// browser binary) is missing — see ensurePlaywright().
-/** @type {import('playwright').BrowserType | null} */
-let chromium = null;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Config — every knob is env-driven with sane defaults for the LIVE instance.
@@ -110,16 +122,39 @@ const CORELINK_API_ENDPOINT = (
  *  a syntactically valid one Clerk accepts. */
 const EMAIL_DOMAIN = process.env.CORELINK_E2E_EMAIL_DOMAIN || "corelink-e2e.dev";
 
-/** Headless toggle (set CORELINK_E2E_HEADFUL=1 to watch the browser locally). */
-const HEADLESS = process.env.CORELINK_E2E_HEADFUL !== "1";
-
 const CLERK_API = "https://api.clerk.com/v1";
 
+/** Frontend API (FAPI) base URL for this instance. */
+const FAPI_BASE = `https://${CLERK_FAPI_HOST}`;
+
+/** ClerkJS version advertised to FAPI. FAPI requires `_clerk_js_version` on its
+ *  endpoints; the exact value is lenient but must be present. Override via env
+ *  if a future FAPI contract rejects this. */
+const CLERK_JS_VERSION = process.env.CLERK_JS_VERSION || "5.57.0";
+
+/** Where the tenant-readiness probe (GAP 1) calls `/v1/users/me`. Falls back to
+ *  the live prod API host when no explicit endpoint is configured. */
+const TENANT_PROBE_ENDPOINT =
+  CORELINK_API_ENDPOINT || "https://corelink-api.humangr.com";
+
+/** The session-authed readiness endpoint — 200 ⇒ tenant provisioned, 401/403 ⇒
+ *  not yet (signup-worker `user.created` webhook lag). */
+const TENANT_PROBE_PATH = "/v1/users/me";
+
+/** Total budget to wait for the signup-worker to provision the tenant (~120s). */
+const TENANT_WAIT_MS = Number(process.env.CORELINK_E2E_TENANT_WAIT_MS) || 120_000;
+
+/** Delay between readiness probes. */
+const TENANT_WAIT_INTERVAL_MS =
+  Number(process.env.CORELINK_E2E_TENANT_WAIT_INTERVAL_MS) || 3_000;
+
 // ─────────────────────────────────────────────────────────────────────────────
-// CLI args:  node clerk-session-minter.mjs [outfile] [--refresh] [--keep]
+// CLI args:  node clerk-session-minter.mjs [outfile] [--refresh] [--no-wait]
 // ─────────────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
 const REFRESH = argv.includes("--refresh");
+/** Tenant-readiness gate (GAP 1) is ON by default; `--no-wait` skips it. */
+const WAIT_TENANT = !argv.includes("--no-wait");
 const OUT_FILE =
   argv.find((a) => !a.startsWith("--")) || "/tmp/e2e-clerk-session.sh";
 /** Sidecar that records the throwaway user's creds so --refresh can re-sign-in
@@ -139,6 +174,9 @@ function die(msg) {
 function log(msg) {
   console.error(`[clerk-session-minter] ${msg}`);
 }
+
+/** @param {number} ms */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Derive the FAPI host from a publishable key. Clerk publishable keys are
@@ -183,21 +221,6 @@ async function clerkBackend(path, init = {}) {
     throw new Error(`Clerk Backend API ${path} → ${res.status}: ${errs}`);
   }
   return json;
-}
-
-/** Lazily import Playwright with an actionable error if absent. */
-async function ensurePlaywright() {
-  try {
-    const pw = await import("playwright");
-    chromium = pw.chromium;
-  } catch {
-    die(
-      "playwright is not installed. Run, in scripts/e2e-real-client/:\n" +
-        "    npm i\n" +
-        "    npx playwright install chromium\n" +
-        "(see CLERK-SESSION-README.md)",
-    );
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -247,152 +270,347 @@ async function fetchTestingToken() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Steps 3+4 — headless sign-in with the testing token; harvest the session JWT.
+// Step 2b — Backend API: mint a one-time sign-in token (the "ticket").
 // ─────────────────────────────────────────────────────────────────────────────
 /**
- * @param {{email:string,password:string}} creds
- * @param {string} testingToken
- * @returns {Promise<string>} the harvested session JWT
+ * `POST /v1/sign_in_tokens { user_id }` → a one-time ticket that the FAPI
+ * `strategy=ticket` flow consumes to complete a sign-in WITHOUT a password.
+ * This is Clerk's sanctioned "sign a user in programmatically" primitive.
+ *
+ * @param {string} userId
+ * @returns {Promise<string>} the sign-in token (ticket)
  */
-async function harvestSessionJwt(creds, testingToken) {
-  await ensurePlaywright();
-  if (!chromium) die("playwright chromium unavailable after import");
-
-  const browser = await chromium.launch({ headless: HEADLESS });
-  try {
-    const context = await browser.newContext();
-
-    // ── Attach the testing token to EVERY Frontend-API request ───────────────
-    // The documented mechanism: Clerk's FAPI accepts the testing token as the
-    // `__clerk_testing_token` query parameter; when present, bot detection is
-    // skipped for that request. `@clerk/testing` patches fetch to do this; we do
-    // it manually (no extra dep) by rewriting outbound requests to the FAPI host.
-    await context.route("**/*", async (route) => {
-      const req = route.request();
-      const u = new URL(req.url());
-      const isFapi =
-        u.hostname === CLERK_FAPI_HOST ||
-        u.hostname.endsWith(".clerk.accounts.dev") ||
-        u.hostname.startsWith("clerk.");
-      if (isFapi && !u.searchParams.has("__clerk_testing_token")) {
-        u.searchParams.set("__clerk_testing_token", testingToken);
-        return route.continue({ url: u.toString() });
-      }
-      return route.continue();
-    });
-
-    const page = await context.newPage();
-    // Surface page console errors to aid debugging a blocked sign-in.
-    page.on("console", (m) => {
-      if (m.type() === "error") log(`page console.error: ${m.text()}`);
-    });
-
-    // Land on the app origin so ClerkJS initializes with azp = this origin.
-    // Also pass the testing token in the URL (ClerkJS reads it from the query).
-    const landing = `${CORELINK_APP_URL}/?__clerk_testing_token=${encodeURIComponent(
-      testingToken,
-    )}`;
-    log(`navigating headless to ${CORELINK_APP_URL} …`);
-    await page.goto(landing, { waitUntil: "domcontentloaded", timeout: 60_000 });
-
-    // Wait for ClerkJS to be present + loaded on the page.
-    await page
-      .waitForFunction(
-        () => !!(window.Clerk && (window.Clerk.loaded || window.Clerk.client)),
-        { timeout: 30_000 },
-      )
-      .catch(() => {
-        die(
-          "window.Clerk never loaded on " +
-            CORELINK_APP_URL +
-            " — the app did not initialize ClerkJS (wrong CORELINK_APP_URL / " +
-            "publishable key mismatch / page blocked).",
-        );
-      });
-
-    // ── Drive sign-in via ClerkJS in-page, then harvest the session JWT ──────
-    // We do email+password through Clerk.client.signIn, activate the session,
-    // then call session.getToken() — the SAME default `__session` JWT the
-    // dashboard sends as its bearer (azp = this origin, iss = the FAPI issuer).
-    /** @type {{ ok: boolean, jwt?: string, error?: string }} */
-    const result = await page.evaluate(
-      async ({ email, password }) => {
-        // @ts-ignore — Clerk is injected by the app.
-        const Clerk = window.Clerk;
-        try {
-          // Ensure the singleton is loaded.
-          if (Clerk.load) {
-            try {
-              await Clerk.load();
-            } catch {
-              /* already loaded */
-            }
-          }
-          const signIn = Clerk.client.signIn;
-          const attempt = await signIn.create({
-            identifier: email,
-            password,
-          });
-          if (attempt.status !== "complete") {
-            return {
-              ok: false,
-              error:
-                "sign-in not complete (status=" +
-                attempt.status +
-                "); first factor likely requires verification/captcha — " +
-                JSON.stringify(attempt.firstFactorVerification || {}),
-            };
-          }
-          await Clerk.setActive({ session: attempt.createdSessionId });
-          // Default template token = the __session JWT (~60s TTL). This is the
-          // exact bearer shape the worker verifier expects.
-          const jwt = await Clerk.session.getToken();
-          if (!jwt) return { ok: false, error: "getToken() returned null" };
-          return { ok: true, jwt };
-        } catch (e) {
-          // Clerk throws ClerkAPIResponseError with .errors[]; surface verbatim.
-          const errs =
-            e && e.errors
-              ? e.errors
-                  .map((x) => (x.code || "?") + ": " + (x.message || x.longMessage || ""))
-                  .join("; ")
-              : (e && e.message) || String(e);
-          return { ok: false, error: errs };
-        }
-      },
-      creds,
+async function createSignInToken(userId) {
+  log(`creating a sign-in token (ticket) for user_id=${userId} …`);
+  const res = await clerkBackend("/sign_in_tokens", {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId }),
+  });
+  const token = res?.token;
+  if (!token) {
+    die(
+      "sign_in_tokens returned no token: " +
+        JSON.stringify(res).slice(0, 300),
     );
+  }
+  log("got sign-in token (ticket).");
+  return token;
+}
 
-    if (!result.ok || !result.jwt) {
-      const err = result.error || "unknown sign-in error";
-      // The #1 risk, surfaced loud: distinguish a bot/captcha block so the caller
-      // knows the testing-token bypass did NOT take.
-      const looksLikeBotBlock = /captcha|bot|fraud|single_session|too_many|blocked/i.test(
-        err,
-      );
+// ─────────────────────────────────────────────────────────────────────────────
+// FAPI helpers — a tiny cookie-aware client (no browser, no extra dependency).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A minimal cookie jar: stores `Set-Cookie` name=value pairs and replays them on
+ * subsequent requests. FAPI is cookie-stateful (`__client` ties the sign_in to
+ * the client + session), so the same jar MUST span the whole FAPI exchange.
+ */
+function makeCookieJar() {
+  /** @type {Map<string,string>} */
+  const jar = new Map();
+  return {
+    /** @param {Response} res */
+    store(res) {
+      /** @type {string[]} */
+      let setCookies = [];
+      // Node 18.14+/undici: getSetCookie() returns the array un-collapsed.
+      if (typeof res.headers.getSetCookie === "function") {
+        setCookies = res.headers.getSetCookie();
+      } else {
+        const sc = res.headers.get("set-cookie");
+        if (sc) setCookies = [sc];
+      }
+      for (const c of setCookies) {
+        const pair = c.split(";")[0];
+        const eq = pair.indexOf("=");
+        if (eq > 0) jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+      }
+    },
+    header() {
+      if (jar.size === 0) return undefined;
+      return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
+    },
+  };
+}
+
+/** Redact the testing token in a URL for safe logging/errors. */
+function redactUrl(url) {
+  return String(url).replace(/(__clerk_testing_token=)[^&]+/, "$1<redacted>");
+}
+
+/**
+ * Cookie-aware FAPI request. Attaches `_clerk_js_version` + the testing token,
+ * sets `Origin`/`Referer` to the app origin (this is what stamps the JWT `azp`),
+ * carries the cookie jar, and FAILS LOUD with the method, full (redacted) URL,
+ * status, and FULL response body on any non-2xx.
+ *
+ * @param {ReturnType<typeof makeCookieJar>} jar
+ * @param {string} path
+ * @param {{method?:string, form?:Record<string,string>, testingToken:string}} opts
+ * @returns {Promise<any>} parsed JSON body
+ */
+async function fapiFetch(jar, path, { method = "GET", form, testingToken }) {
+  const url = new URL(`${FAPI_BASE}${path}`);
+  url.searchParams.set("_clerk_js_version", CLERK_JS_VERSION);
+  if (testingToken) url.searchParams.set("__clerk_testing_token", testingToken);
+
+  /** @type {Record<string,string>} */
+  const headers = {
+    // azp is derived by FAPI from the Origin header → pin it to the app origin
+    // so the minted JWT passes clerk_auth.ts CLERK_AZP_ALLOWLIST.
+    Origin: CORELINK_APP_URL,
+    Referer: `${CORELINK_APP_URL}/`,
+    Accept: "application/json",
+  };
+  const cookie = jar.header();
+  if (cookie) headers.Cookie = cookie;
+
+  let body;
+  if (form) {
+    headers["Content-Type"] = "application/x-www-form-urlencoded";
+    body = new URLSearchParams(form).toString();
+  }
+
+  const res = await fetch(url, { method, headers, body });
+  jar.store(res);
+
+  const text = await res.text();
+  let json;
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    json = { raw: text };
+  }
+  if (!res.ok) {
+    throw new Error(
+      `Clerk FAPI ${method} ${redactUrl(url)} → ${res.status}\n` +
+        `  response body: ${text.slice(0, 1500)}`,
+    );
+  }
+  return json;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Steps 4+5 — FAPI-direct sign-in via the ticket; mint the ~60s session JWT.
+//
+// Split into pieces so the tenant-readiness poll (GAP 1) can RE-MINT a fresh JWT
+// (the JWT lives ~60s; the underlying Clerk *session* lives far longer) without
+// re-creating the user / re-consuming a one-time ticket on every probe:
+//
+//   establishFapiSession() — consume the ticket, create the __client + session,
+//                            resolve the session id (the expensive, once part).
+//   mintTokenFromSession() — POST sessions/<id>/tokens → a fresh ~60s JWT
+//                            (cheap; safe to call repeatedly on the live session).
+//   freshSignInAndMint()   — the full cold path (ticket+testing token+session+jwt).
+//   remintJwt()            — fresh JWT, cheap path first, full re-sign-in on lapse.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Drive the Frontend API to consume the one-time ticket and establish the client
+ * + session (no browser, no window.Clerk):
+ *   (a) POST /v1/client/sign_ins  strategy=ticket&ticket=<signInToken>  → a
+ *       completed sign_in carrying created_session_id (creates the __client).
+ *   (b) fall back to GET /v1/client to read the active session id if absent.
+ * Returns the cookie jar (carries __client) and the resolved session id so a
+ * caller can mint fresh JWTs against the SAME live session repeatedly.
+ *
+ * @param {string} signInToken  the Backend-API ticket
+ * @param {string} testingToken the Backend-API testing token (bot bypass)
+ * @returns {Promise<{jar: ReturnType<typeof makeCookieJar>, sessionId: string}>}
+ */
+async function establishFapiSession(signInToken, testingToken) {
+  const jar = makeCookieJar();
+
+  // (a) Consume the ticket — creates the client + a completed sign_in.
+  log("FAPI: POST /v1/client/sign_ins (strategy=ticket) …");
+  const signInRes = await fapiFetch(jar, "/v1/client/sign_ins", {
+    method: "POST",
+    testingToken,
+    form: { strategy: "ticket", ticket: signInToken },
+  });
+  // FAPI envelope: { client, response } where `response` is the SignIn object.
+  const signIn = signInRes?.response ?? signInRes;
+  let sessionId = signIn?.created_session_id || null;
+
+  if (!sessionId) {
+    if (signIn?.status && signIn.status !== "complete") {
       die(
-        "headless sign-in FAILED — NO token produced.\n" +
-          "  Clerk error: " +
-          err +
-          "\n" +
-          (looksLikeBotBlock
-            ? "  ⚠ This looks like the bot-detection / captcha gate STILL firing\n" +
-              "    despite the testing token (the known #1 risk against a hardened\n" +
-              "    LIVE instance). Confirm Testing Tokens are enabled for this\n" +
-              "    instance, or run against the test instance. See README.\n"
-            : "  Check email/password, the app origin, and that the user exists.\n"),
+        "FAPI sign-in did not complete (status=" +
+          signIn.status +
+          "). The ticket did not fully sign the user in. Full sign_in object:\n" +
+          JSON.stringify(signIn, null, 2).slice(0, 1500),
       );
     }
+    // (b) Fall back to reading the active session off the client.
+    log("FAPI: GET /v1/client (resolve active session) …");
+    const clientRes = await fapiFetch(jar, "/v1/client", {
+      method: "GET",
+      testingToken,
+    });
+    const client = clientRes?.response ?? clientRes;
+    sessionId =
+      client?.last_active_session_id ||
+      client?.sessions?.[0]?.id ||
+      null;
+  }
 
-    log("harvested a session JWT (sign-in succeeded).");
-    return result.jwt;
-  } finally {
-    await browser.close();
+  if (!sessionId) {
+    die(
+      "could not resolve a session id from the FAPI sign-in / client. " +
+        "sign_ins response:\n" + JSON.stringify(signInRes, null, 2).slice(0, 1500),
+    );
+  }
+  log(`FAPI session id = ${sessionId}`);
+  return { jar, sessionId };
+}
+
+/**
+ * Mint a fresh default ~60s session JWT against an already-established session
+ * (no template) — carries azp = Origin. Cheap; the live Clerk session outlives
+ * any single JWT, so this is the right primitive to refresh a near-expired token.
+ *
+ * @param {ReturnType<typeof makeCookieJar>} jar
+ * @param {string} sessionId
+ * @param {string} testingToken
+ * @returns {Promise<string>} the session JWT
+ */
+async function mintTokenFromSession(jar, sessionId, testingToken) {
+  log(`FAPI: POST /v1/client/sessions/${sessionId}/tokens …`);
+  const tokenRes = await fapiFetch(
+    jar,
+    `/v1/client/sessions/${sessionId}/tokens`,
+    { method: "POST", testingToken },
+  );
+  // The tokens endpoint returns { object:"token", jwt }; tolerate the wrapped shape.
+  const jwt = tokenRes?.jwt || tokenRes?.response?.jwt || null;
+  if (!jwt) {
+    die(
+      "FAPI token mint returned no jwt:\n" +
+        JSON.stringify(tokenRes, null, 2).slice(0, 800),
+    );
+  }
+  return jwt;
+}
+
+/**
+ * The full cold path: mint a one-time ticket + testing token, establish the FAPI
+ * session, and mint the first JWT. Returns the JWT plus the live session context
+ * (jar/sessionId/testingToken) so callers can cheaply re-mint fresh JWTs later.
+ *
+ * @param {{userId:string}} creds
+ * @returns {Promise<{jwt:string, jar:ReturnType<typeof makeCookieJar>, sessionId:string, testingToken:string}>}
+ */
+async function freshSignInAndMint(creds) {
+  // One-time ticket + testing token are both short-lived → mint fresh each time.
+  const signInToken = await createSignInToken(creds.userId);
+  const testingToken = await fetchTestingToken();
+  const { jar, sessionId } = await establishFapiSession(signInToken, testingToken);
+  const jwt = await mintTokenFromSession(jar, sessionId, testingToken);
+  log("minted a session JWT via FAPI (sign-in succeeded).");
+  return { jwt, jar, sessionId, testingToken };
+}
+
+/**
+ * Return a session context carrying a FRESH ~60s JWT. Tries the cheap path first
+ * (re-mint against the existing live session); if that fails (session/client
+ * lapsed, testing token stale, etc.) it transparently does a full re-sign-in.
+ *
+ * @param {{jar:ReturnType<typeof makeCookieJar>, sessionId:string, testingToken:string}} ctx
+ * @param {{userId:string}} creds
+ * @returns {Promise<{jwt:string, jar:ReturnType<typeof makeCookieJar>, sessionId:string, testingToken:string}>}
+ */
+async function remintJwt(ctx, creds) {
+  try {
+    const jwt = await mintTokenFromSession(ctx.jar, ctx.sessionId, ctx.testingToken);
+    return { ...ctx, jwt };
+  } catch (e) {
+    log(
+      "cheap JWT re-mint failed (session/client likely lapsed) → full re-sign-in: " +
+        (e?.message || String(e)).slice(0, 200),
+    );
+    return await freshSignInAndMint(creds);
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Step 5 — best-effort tenant resolution (NEVER writes D1).
+// Step 6 — tenant-readiness gate (GAP 1). The throwaway user only gets a CoreLink
+// tenant when the signup-worker `user.created` webhook fires (async, seconds).
+// Until then a session-authed call returns 401/403 (no tenant row for the
+// clerk_user_id). We POLL /v1/users/me until it returns 200 — and because the JWT
+// lives ~60s (GAP 2), we RE-MINT a fresh JWT before EVERY probe so the probe
+// always uses a LIVE bearer. We succeed (return) only on 200, so the emitted
+// session is GUARANTEED tenant-ready. Budget exhausted still-401 ⇒ FAIL LOUD.
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @param {{jwt:string, jar:ReturnType<typeof makeCookieJar>, sessionId:string, testingToken:string}} ctx
+ * @param {{userId:string}} creds
+ * @returns {Promise<{jwt:string, jar:ReturnType<typeof makeCookieJar>, sessionId:string, testingToken:string}>}
+ *          the session context, with a fresh JWT, proven tenant-ready (200).
+ */
+async function waitForTenantReady(ctx, creds) {
+  const probeUrl = `${TENANT_PROBE_ENDPOINT}${TENANT_PROBE_PATH}`;
+  const deadline = Date.now() + TENANT_WAIT_MS;
+  log(
+    `waiting for tenant provisioning: polling ${probeUrl} ` +
+      `(budget ~${Math.round(TENANT_WAIT_MS / 1000)}s, re-minting a fresh JWT ` +
+      `before each probe) …`,
+  );
+  let attempt = 0;
+  for (;;) {
+    attempt++;
+    // Re-mint a LIVE JWT before EACH probe (the previous one may be ~/over 60s).
+    ctx = await remintJwt(ctx, creds);
+
+    let status = 0;
+    let body = "";
+    try {
+      const res = await fetch(probeUrl, {
+        headers: { Authorization: `Bearer ${ctx.jwt}` },
+      });
+      status = res.status;
+      if (status === 200) {
+        log(
+          `tenant ready: ${probeUrl} → 200 (attempt ${attempt}) — session is USABLE.`,
+        );
+        return ctx;
+      }
+      body = await res.text().catch(() => "");
+    } catch (e) {
+      // Transient network error against the probe — treat like not-ready, retry.
+      body = `fetch error: ${e?.message || String(e)}`;
+    }
+
+    // A status other than 200/401/403 is NOT a provisioning lag → fail loud now.
+    if (status !== 0 && status !== 401 && status !== 403) {
+      die(
+        `tenant readiness probe GET ${probeUrl} returned unexpected ${status} ` +
+          `(expected 200 when ready, or 401/403 while provisioning). Body:\n` +
+          body.slice(0, 600),
+      );
+    }
+
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      die(
+        `tenant never provisioned within ${Math.round(TENANT_WAIT_MS / 1000)}s — ` +
+          "the signup-worker `user.created` webhook never created a tenant row " +
+          `for clerk_user_id=${creds.userId}. Check Svix (webhook delivery) and ` +
+          `the signup-worker logs. Last probe: ${probeUrl} → ${status || "ERR"}` +
+          (body ? `\n  body: ${body.slice(0, 400)}` : ""),
+      );
+    }
+    log(
+      `tenant not ready yet (${probeUrl} → ${status || "ERR"}); waiting ` +
+        `${Math.round(TENANT_WAIT_INTERVAL_MS / 1000)}s ` +
+        `(attempt ${attempt}, ~${Math.round(remaining / 1000)}s left) …`,
+    );
+    await sleep(Math.min(TENANT_WAIT_INTERVAL_MS, Math.max(0, remaining)));
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Step 7 — best-effort tenant resolution (NEVER writes D1).
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * The signup-worker webhook maps user.created → a tenant row
@@ -454,11 +672,14 @@ async function resolveTenantBestEffort(jwt) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Step 6 — emit the exports (stdout + file).
 // ─────────────────────────────────────────────────────────────────────────────
-function emit({ jwt, userId, tenantId }) {
+function emit({ jwt, userId, tenantId, tenantReady }) {
   const lines = [
     "# Generated by clerk-session-minter.mjs — Clerk session JWT (~60s TTL!).",
     `# Minted at ${new Date().toISOString()} for Clerk user_id=${userId}`,
-    "# Re-run with --refresh BEFORE the 60s TTL expires for a fresh JWT.",
+    tenantReady
+      ? "# Tenant-ready: /v1/users/me returned 200 before emit — session is USABLE NOW."
+      : "# NOTE: tenant-readiness NOT verified (--no-wait) — may 401 until the webhook fires.",
+    "# Use IMMEDIATELY (run the Clerk-session journeys within ~60s) or --refresh.",
     `export CORELINK_E2E_CLERK_SESSION='${jwt}'`,
     `export CORELINK_E2E_DSR_SESSION='${jwt}'`,
     `export CORELINK_E2E_DSR_TEST_SESSION='${jwt}'`,
@@ -479,7 +700,10 @@ function emit({ jwt, userId, tenantId }) {
 
   log(`wrote exports → ${OUT_FILE}`);
   log(`Clerk user_id (DSR-delete this on cleanup): ${userId}`);
-  log("⚠ The session JWT lives ~60s. Use it immediately or --refresh.");
+  log(
+    "⚠ The session JWT lives ~60s — run the Clerk-session journeys NOW " +
+      "(source this env LAST, right before the run) or --refresh.",
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -510,19 +734,21 @@ async function main() {
   }
   if (!CLERK_PUBLISHABLE_KEY) {
     log(
-      "WARNING: CLERK_PUBLISHABLE_KEY not set — relying on the app page to load " +
-        "ClerkJS itself and on the default/env FAPI host (" +
+      "note: CLERK_PUBLISHABLE_KEY not set — using the default/env FAPI host (" +
         CLERK_FAPI_HOST +
-        ").",
+        "). The FAPI-direct flow does not require the publishable key.",
     );
   }
   log(`app origin   : ${CORELINK_APP_URL}`);
   log(`FAPI host    : ${CLERK_FAPI_HOST}`);
   log(`output file  : ${OUT_FILE}`);
   log(`mode         : ${REFRESH ? "refresh (reuse existing user)" : "fresh user"}`);
+  log(`tenant gate  : ${WAIT_TENANT ? `wait (~${Math.round(TENANT_WAIT_MS / 1000)}s budget, probe ${TENANT_PROBE_ENDPOINT}${TENANT_PROBE_PATH})` : "DISABLED (--no-wait)"}`);
 
-  /** @type {{userId:string,email:string,password:string}} */
+  /** @type {{userId:string,email:string,password:string,tenantReady?:boolean}} */
   let creds;
+  /** Whether a prior run already proved this user's tenant exists (sidecar). */
+  let tenantAlreadyProvisioned = false;
 
   if (REFRESH) {
     const saved = loadUser();
@@ -533,24 +759,51 @@ async function main() {
       );
     }
     creds = saved;
-    log(`refresh: reusing user_id=${creds.userId}`);
+    tenantAlreadyProvisioned = saved.tenantReady === true;
+    log(
+      `refresh: reusing user_id=${creds.userId}` +
+        (tenantAlreadyProvisioned
+          ? " (tenant already provisioned — skipping readiness wait)"
+          : ""),
+    );
   } else {
     const u = await createThrowawayUser();
     creds = u;
     saveUser(u);
   }
 
-  // The testing token is short-lived; always fetch a fresh one (even on refresh).
-  const testingToken = await fetchTestingToken();
+  // Cold path: create the FAPI session + the first JWT.
+  let ctx = await freshSignInAndMint(creds);
 
-  const jwt = await harvestSessionJwt(
-    { email: creds.email, password: creds.password },
-    testingToken,
-  );
+  // GAP 1 — tenant-readiness gate. Block until /v1/users/me → 200, re-minting a
+  // fresh JWT before each probe (GAP 2). Skipped on --no-wait or when a prior
+  // run already recorded the tenant as provisioned.
+  if (WAIT_TENANT && !tenantAlreadyProvisioned) {
+    ctx = await waitForTenantReady(ctx, creds);
+    tenantAlreadyProvisioned = true;
+    // Persist the flag so a later --refresh skips the wait.
+    saveUser({ ...creds, tenantReady: true });
+  } else if (!WAIT_TENANT) {
+    log(
+      "--no-wait: skipping the tenant-readiness gate — the emitted session may " +
+        "401 until the signup-worker provisions the tenant.",
+    );
+  } else {
+    log("tenant already provisioned (sidecar) — skipping the readiness wait.");
+  }
 
-  const tenantId = await resolveTenantBestEffort(jwt);
+  // GAP 2 / freshness — mint ONE final fresh JWT right before emitting so the
+  // consumer gets a full ~60s window (the probe loop spent some of the last one).
+  ctx = await remintJwt(ctx, creds);
 
-  emit({ jwt, userId: creds.userId, tenantId });
+  const tenantId = await resolveTenantBestEffort(ctx.jwt);
+
+  emit({
+    jwt: ctx.jwt,
+    userId: creds.userId,
+    tenantId,
+    tenantReady: tenantAlreadyProvisioned,
+  });
 }
 
 main().catch((e) => die(e?.stack || e?.message || String(e)));
