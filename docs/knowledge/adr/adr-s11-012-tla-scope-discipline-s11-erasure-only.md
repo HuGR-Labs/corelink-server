@@ -4,6 +4,8 @@ title: "ADR-S11-012 — TLA+ Scope Discipline: S-11 dsr_erasure_atomicity.tla"
 description: "What S-11's single TLA+ spec formally proves (erasure atomicity, consent symmetry, partial residency, audit append-only) and what it explicitly defers to S-14, with the honest partial-coverage flag."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-012-tla-scope-discipline-s11-erasure-only.md"
+  - "specs/tla/region_residency.tla"
+  - "specs/03_architecture/invariant_registry.md"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "s11", "tla-plus", "formal-verification", "scope-discipline"]
@@ -24,7 +26,15 @@ S-11 has 8 WIs in a HIGH_RISK lane and three competing TLA+ requirements: INV-DA
 
 # Consequences
 
-The S-11 spec stays CI-tractable (50k–500k states, ≤30min); the two erasure/consent invariants are fully proven and residency gets meaningful partial coverage; the WI-S11-008 budget holds. The negative: INV-DATA-RESIDENCY's CRITICAL status depends on S-14 delivery (scope risk), and auditors asking for full routing proof are answered with partial TLA+ + 20k property tests + fail-CLOSED custom-domain routing until S-14 ships the full proof (`specs/03_architecture/adrs/ADR-S11-012-tla-scope-discipline-s11-erasure-only.md:96-111`).
+The S-11 spec stays CI-tractable (50k–500k states, ≤30min); the two erasure/consent invariants are fully proven and residency gets meaningful partial coverage; the WI-S11-008 budget holds. The original negative — that INV-DATA-RESIDENCY's CRITICAL status depended on S-14 delivery (scope risk) — and the interim answer to auditors (partial TLA+ + 20k property tests + fail-CLOSED custom-domain routing until the full proof shipped) are recorded at (`specs/03_architecture/adrs/ADR-S11-012-tla-scope-discipline-s11-erasure-only.md:96-111`).
+
+# Status vs shipped
+
+**That residency scope risk is RETIRED.** The deferred cross-region routing proof landed:
+`region_residency.tla` is sealed (`specs/tla/region_residency.tla:1`) and the invariant registry's
+`INV-DATA-RESIDENCY` row now reads **"FULL coverage NOW LANDED"** via `region_residency.tla`
+(`specs/03_architecture/invariant_registry.md:931`). The scope-discipline boundary this ADR drew is
+historical; INV-DATA-RESIDENCY no longer hangs on S-14 delivery.
 
 # Citations
 
@@ -32,3 +42,5 @@ The S-11 spec stays CI-tractable (50k–500k states, ≤30min); the two erasure/
 2. `specs/03_architecture/adrs/ADR-S11-012-tla-scope-discipline-s11-erasure-only.md:41-71` — Decision: what the spec covers + what is deferred to S-14.
 3. `specs/03_architecture/adrs/ADR-S11-012-tla-scope-discipline-s11-erasure-only.md:73-94` — Rationale: state-space blowup, S-11 sufficiency, honest-flag principle.
 4. `specs/03_architecture/adrs/ADR-S11-012-tla-scope-discipline-s11-erasure-only.md:96-111` — Consequences: CI tractability, scope risk, auditor response.
+5. `specs/tla/region_residency.tla:1` — the deferred cross-region routing proof, now LANDED (seal commit `9b4333db`) — retires the scope risk.
+6. `specs/03_architecture/invariant_registry.md:931` — `INV-DATA-RESIDENCY` now reads "FULL coverage NOW LANDED" via `region_residency.tla`.

@@ -34,7 +34,7 @@ evolves, and exactly what (minimal, anonymous) data the binary may phone home wh
 - Telemetry is opt-in, default off — no data leaves the machine until enabled `docs/cli/telemetry.md:10-15`.
 - The collected fields are a fixed, minimal set (version, os, subcommand, outcome, duration, anonymized id) `docs/cli/telemetry.md:18-29`.
 - Opt-in/out is a single config command writing `~/.corelink/config.toml` `docs/cli/telemetry.md:46-64`.
-- Events go to a separate `telemetry.corelink.humangr.com` domain with a 1s timeout and graceful failure: the endpoint const `TELEMETRY_ENDPOINT` (`tools/cli/src/telemetry.rs:24`), the `TIMEOUT_MS = 1_000` client timeout (`tools/cli/src/telemetry.rs:27`), and the detached fire-and-forget POST in `try_emit` whose error is swallowed as a non-blocking `warn!` (`tools/cli/src/telemetry.rs:113-123`) (`docs/cli/telemetry.md:98-111`).
+- Events go to a separate `telemetry.corelink.humangr.com` domain with a 1s timeout and graceful failure: the endpoint const `TELEMETRY_ENDPOINT` (`tools/cli/src/telemetry.rs:24`), the `TIMEOUT_MS = 1_000` client timeout (`tools/cli/src/telemetry.rs:27`), and the detached fire-and-forget POST — `tokio::spawn` (`tools/cli/src/telemetry.rs:104`) whose error is swallowed as a non-blocking `warn!(error = %e, …)` (`tools/cli/src/telemetry.rs:108`) (`docs/cli/telemetry.md:98-111`).
 
 # Invariants
 
@@ -65,5 +65,5 @@ evolves, and exactly what (minimal, anonymous) data the binary may phone home wh
 10. `docs/cli/telemetry.md:46-64` — opt-in/out commands.
 11. `docs/cli/telemetry.md:87-94` — anonymized_id properties.
 12. `docs/cli/telemetry.md:98-111` — separate telemetry domain + graceful failure.
-12b. `tools/cli/src/telemetry.rs:24` / `:27` / `:113-123` — `TELEMETRY_ENDPOINT` (separate domain), `TIMEOUT_MS = 1_000` (1s), and the detached `try_emit` POST with a swallowed non-blocking error (the enforcers of the domain/timeout/graceful-failure claims).
+12b. `tools/cli/src/telemetry.rs:24` / `:27` / `:104` / `:108` — `TELEMETRY_ENDPOINT` (separate domain), `TIMEOUT_MS = 1_000` (1s), the detached `tokio::spawn` POST (`:104`), and the swallowed non-blocking `warn!(error = %e, …)` (`:108`) (the enforcers of the domain/timeout/graceful-failure claims).
 13. `docs/cli/telemetry.md:114-120` — data retention (7d raw / 90d aggregate).

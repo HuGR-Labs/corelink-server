@@ -60,7 +60,7 @@ another tenant's rows.
 # Gotchas
 
 - The HTTP-fetch path caps the response body at 64 MiB so a malicious server cannot drain CLI memory — `const MAX_BYTES: usize = 64 * 1024 * 1024` (`tools/cli/src/commands/verify_ndjson_http.rs:370`, `tools/cli/src/commands/verify_ndjson_http.rs:378`).
-- If both the `--chain-head-anchor` flag and the response header are present they MUST match constant-time — a mismatch is an error, not a warning. The enforcer is `ascii_eq_ct(flag.trim(), header.trim())` at the resolve site `tools/cli/src/commands/verify_ndjson_http.rs:294` (refuses on disagreement), backed by the constant-time helper at `tools/cli/src/commands/verify_ndjson_http.rs:343` (`docs/cli/audit-export.md:51-55`).
+- If both the `--chain-head-anchor` flag and the response header are present they MUST match constant-time — a mismatch is an error, not a warning. The enforcer is `ascii_eq_ct(flag.trim(), header.trim())` at the resolve site `tools/cli/src/commands/verify_ndjson_http.rs:294` (refuses on disagreement), backed by the constant-time helper `fn ascii_eq_ct` at `tools/cli/src/commands/verify_ndjson_http.rs:348` (`docs/cli/audit-export.md:51-55`).
 
 # Citations
 
@@ -76,6 +76,6 @@ another tenant's rows.
 9b. `tools/cli/src/commands/verify_ndjson_http.rs:80`, `tools/cli/src/commands/verify_ndjson_http.rs:141`, `tools/cli/src/main.rs:410-411` — `EXIT_DATAERR = 65` + `AbortedMidStream => EXIT_DATAERR` mapping + `main` wiring (the enforcer).
 10. `docs/cli/audit-export.md:91-99` — token never logged (CTRL-CRED-001) + constant-time anchor compare (spec).
 10b. `tools/cli/src/commands/verify_ndjson_http.rs:102-104` — the `HttpVerifyOutcome` `Display` doc-comment guaranteeing the Display impl never includes the Bearer (the output-surface enforcer). NOTE: `:104` is a doc-comment, NOT a request builder — the outbound request DOES set `Authorization` (`:219-229`); the never-include guarantee is about Display/error output, not the wire.
-10c. `tools/cli/src/commands/verify_ndjson_http.rs:294` / `:343` — `ascii_eq_ct(flag.trim(), header.trim())` constant-time anchor flag-vs-header cross-check (refuses on disagreement) + the constant-time helper (the enforcer of the constant-time-anchor invariant).
+10c. `tools/cli/src/commands/verify_ndjson_http.rs:294` / `:348` — `ascii_eq_ct(flag.trim(), header.trim())` constant-time anchor flag-vs-header cross-check (refuses on disagreement) + the `fn ascii_eq_ct` constant-time helper (the enforcer of the constant-time-anchor invariant).
 11. `docs/cli/audit-export.md:100-102` — 64 MiB response-body cap (spec).
 11b. `tools/cli/src/commands/verify_ndjson_http.rs:370`, `tools/cli/src/commands/verify_ndjson_http.rs:378` — `MAX_BYTES = 64 MiB` body cap (the enforcer).

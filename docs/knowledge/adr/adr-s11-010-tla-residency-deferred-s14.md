@@ -4,6 +4,8 @@ title: "ADR-S11-010 — TLA+ Residency Formal Proof Deferred to S-14"
 description: "Why S-11 ships residency as runtime enforcement + a 20k property test rather than a full TLA+ region_residency.tla proof, which is deferred to S-14 alongside BYOK sovereignty."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-010-tla-residency-deferred-s14.md"
+  - "specs/tla/region_residency.tla"
+  - "specs/03_architecture/invariant_registry.md"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "s11", "tla-plus", "residency", "formal-verification", "deferred"]
@@ -24,7 +26,16 @@ The TLA+ proof of cross-region routing actions (`region_residency.tla`) is **def
 
 # Consequences
 
-S-11 ships without the full cross-region routing proof; the invariant registry keeps `INV-DATA-RESIDENCY` at "S-14 PLANNED"; the S-14 sprint contract must include `region_residency.tla` + `byok_sovereignty.tla`; and this ADR is cited as the deferral rationale in residency audit reports (`specs/03_architecture/adrs/ADR-S11-010-tla-residency-deferred-s14.md:68-73`).
+S-11 ships without the full cross-region routing proof; the S-14 sprint contract must include `region_residency.tla` + `byok_sovereignty.tla`; and this ADR is cited as the deferral rationale in residency audit reports (`specs/03_architecture/adrs/ADR-S11-010-tla-residency-deferred-s14.md:68-73`).
+
+# Status vs shipped
+
+**The deferral recorded by this ADR is RETIRED — the proof has LANDED.** `region_residency.tla`
+(cross-region routing actions) landed early via the R-prep wave (seal commit `9b4333db`,
+`specs/tla/region_residency.tla:1`), and the invariant registry no longer reads "S-14 PLANNED": the
+`INV-DATA-RESIDENCY` row now reads **"FULL coverage NOW LANDED"** via `region_residency.tla`
+(`specs/03_architecture/invariant_registry.md:931`). Read the Context/Decision above as the historical
+S-11 scope call; the formal proof it deferred now ships.
 
 # Citations
 
@@ -32,3 +43,5 @@ S-11 ships without the full cross-region routing proof; the invariant registry k
 2. `specs/03_architecture/adrs/ADR-S11-010-tla-residency-deferred-s14.md:38-42` — Decision: defer `region_residency.tla` to S-14.
 3. `specs/03_architecture/adrs/ADR-S11-010-tla-residency-deferred-s14.md:44-60` — Rationale: industry sufficiency, S-14 BYOK overlap, sprint budget, partial coverage.
 4. `specs/03_architecture/adrs/ADR-S11-010-tla-residency-deferred-s14.md:68-73` — Consequences: S-14 contract obligation + audit-report citation.
+5. `specs/tla/region_residency.tla:1` — the deferred `region_residency.tla` cross-region routing proof, now LANDED (seal commit `9b4333db`).
+6. `specs/03_architecture/invariant_registry.md:931` — `INV-DATA-RESIDENCY` now reads "FULL coverage NOW LANDED" via `region_residency.tla` (the deferral is retired).
