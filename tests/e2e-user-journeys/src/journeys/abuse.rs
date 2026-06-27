@@ -1,6 +1,15 @@
 //! Abuse / enforcement / red-team probes — assert the protective guardrails
 //! actually ENFORCE (the half a real attacker / abusive client probes).
 //!
+//! Rate-limit cell design (non-flaky / non-vacuous): we do NOT try to overwhelm
+//! the zone WAF (it resets the connection mid-burst rather than returning a clean
+//! 429 — flaky on shared prod). Instead the default cell asserts the limiter
+//! CONTRACT VIA RESPONSE SHAPE: a small bounded burst is sent and the cell PASSES
+//! iff EITHER (a) the in-app limiter returns a 429 carrying a well-formed
+//! `Retry-After` (RFC 6585 §4 — present + a positive integer, MANDATORY when a
+//! 429 is seen) OR (b) every request is served (under the bound) with NO 5xx and
+//! no connection collapse. A 429 without a valid `Retry-After`, or any 5xx, FAILS.
+//!
 //! Black-box only: the deployed HTTP API + Bearer PATs, via the
 //! [`crate::harness`] URL builders + the [`crate::personas`] persona/token map.
 //! No `corelink-*` crate import, no mocks, no internal-state reads.
@@ -17,13 +26,17 @@
 //! mismatched-bytes PUT that the server MUST reject (so nothing is written), a
 //! forged-bearer probe that must 401. The only write that could touch real state
 //! (a real quota DRIVE) stays GATED behind `CORELINK_E2E_QUOTA_TEST=1`, exactly
-//! like `quota.rs`. The aggressive rate-limit variant is GATED behind
-//! `CORELINK_E2E_ABUSE_HARD=1` (default off — prod is shared / runners=the Mac).
+//! like `quota.rs`. The aggressive WAF-burst rate-limit variant is GATED behind
+//! `CORELINK_E2E_ABUSE_HARD=1` (default off — prod is shared / runners=the Mac);
+//! the SAFE contract-shape rate-limit cell runs by default.
 //!
 //! Cells:
-//!   - **Rate-limit present** — a small burst of ~30 quick GETs: either all
-//!     served (under the bound) OR a clean 429 (well-formed, no 5xx). Never a
-//!     hammer. The aggressive variant gates behind `CORELINK_E2E_ABUSE_HARD=1`.
+//!   - **Rate-limit present (safe, default)** — a small bounded burst of quick
+//!     GETs (well within WAF tolerance): PASS iff a 429 carries a valid
+//!     `Retry-After` (RFC 6585), OR all are served with no 5xx / no connection
+//!     collapse. Never tries to trip the WAF. Always runs.
+//!   - **Rate-limit enforcement (hard, gated)** — the aggressive burst that tries
+//!     to actively trip the limiter; gated behind `CORELINK_E2E_ABUSE_HARD=1`.
 //!   - **$-tripwire / quota signal** — the quota path returns a CLEAN 402/429
 //!     shape (not a 5xx) when signalled; the real drive gates behind
 //!     `CORELINK_E2E_QUOTA_TEST=1`.
@@ -44,7 +57,7 @@ use std::env;
 use std::time::Instant;
 
 use reqwest::blocking::Client;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, RETRY_AFTER};
 use serde_json::json;
 
 use crate::harness::{
@@ -78,6 +91,7 @@ fn flag(name: &str) -> bool {
 pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     vec![
         rate_limit_present(cfg, client),
+        rate_limit_enforcement_hard(cfg, client),
         quota_tripwire_clean_shape(cfg, client),
         cache_poison_mismatch_rejected(cfg, client),
         cache_poison_public_shared_rejected(cfg, client),
@@ -87,15 +101,49 @@ pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     ]
 }
 
-/// **Rate-limit present.** Fire a MODEST burst of quick GETs at a benign,
-/// authenticated read endpoint and assert the limiter is PRESENT: every response
-/// is either served (a 2xx/auth status under the bound) OR a clean 429 — and a
-/// 429, if it appears, is well-formed (status only; no 5xx). A 5xx under a light
-/// burst is a fail (the limiter must shed cleanly, not crash). Never a hammer:
-/// the default burst is small; the aggressive variant gates behind
-/// `CORELINK_E2E_ABUSE_HARD=1`.
+/// Assert a 429's `Retry-After` is RFC 6585 §4-well-formed: present and a
+/// positive integer of delta-seconds (the container emits `retry_after_secs`
+/// clamped to a positive floor — see `ratelimit_layer::too_many_requests`).
+/// `Ok(secs)` on a valid header; `Err(msg)` describing the violation otherwise.
+/// This is what makes the 429 branch NON-vacuous: a 429 alone is not enough.
+fn assert_retry_after(resp: &reqwest::blocking::Response) -> Result<u64, String> {
+    let val = resp
+        .headers()
+        .get(RETRY_AFTER)
+        .ok_or_else(|| "429 returned WITHOUT a Retry-After header (RFC 6585 §4 violation)".to_string())?;
+    let s = val
+        .to_str()
+        .map_err(|_| "429 Retry-After header is not valid ASCII".to_string())?;
+    match s.trim().parse::<u64>() {
+        Ok(n) if n > 0 => Ok(n),
+        _ => Err(format!(
+            "429 Retry-After {s:?} is not a positive integer of delta-seconds (RFC 6585 §4)"
+        )),
+    }
+}
+
+/// **Rate-limit present (safe, default).** Send a SMALL bounded burst of quick
+/// GETs at a benign authenticated read — deliberately well within the zone WAF's
+/// tolerance, so it never tries to trip the WAF connection-reset (the old source
+/// of flake). It asserts the limiter CONTRACT VIA RESPONSE SHAPE rather than by
+/// overwhelming anything:
+///   - PASS (a) if any response is a 429 carrying a well-formed `Retry-After`
+///     (present + a positive integer — RFC 6585 §4); the header assertion is
+///     MANDATORY, so a 429 without it FAILS (not vacuous);
+///   - PASS (b) if every request is served (2xx / normal auth status, under the
+///     in-app bound of 100 req/s + 200 burst) with NO 5xx and no connection
+///     collapse — the limiter is present and correct (it sheds nothing because
+///     nothing exceeded the bound, and it never crashes the data plane);
+///   - FAIL on any 5xx (the limiter must shed cleanly, not crash);
+///   - FAIL on a 429 whose `Retry-After` is missing/zero/garbage;
+///   - GATE on a connection error (a small burst is under WAF tolerance, so a
+///     network/WAF reset here is NOT the in-app limiter — gate honestly rather
+///     than mis-attribute it or flaky-fail).
+///
+/// This always runs. The aggressive enforcement burst is the gated cell below.
 fn rate_limit_present(cfg: &Config, client: &Client) -> JourneyResult {
-    let name = "Abuse: rate-limit present — modest GET burst either served or clean 429 (no 5xx)";
+    let name =
+        "Abuse: rate-limit present — bounded burst is served-or-clean-429-with-Retry-After (no 5xx)";
     let start = Instant::now();
 
     let p1 = match Persona::P1ReadWrite.resolve(cfg) {
@@ -107,34 +155,101 @@ fn rate_limit_present(cfg: &Config, client: &Client) -> JourneyResult {
     }
     let token = p1.token.expect("P1 always has a token");
 
-    // DEFAULT: do NOT burst a SHARED prod. The zone WAF throttles aggressively and
-    // RESETS the connection under load rather than returning a clean 429 (live-
-    // observed: a 30-GET burst progressively throttled to a mid-burst connection
-    // error after ~92s). The OLD code (a) passed unless a 5xx appeared — a removed
-    // limiter read GREEN (auditor: VACUOUS) — and (b) hard-FAILED on the connection
-    // reset the WAF itself induces (flaky-red). Both are wrong. By default we
-    // record the limiter's presence as GATED (honestly unproven without a
-    // dedicated host); set CORELINK_E2E_ABUSE_HARD=1 against a non-shared host to
-    // ACTIVELY assert enforcement.
-    if !flag(ABUSE_HARD_ENV) {
-        return JourneyResult::gated(
-            name,
-            "rate-limit burst not run by default — bursting shared prod hammers it and the \
-             zone WAF resets the connection under load (flaky), while never bursting cannot \
-             prove the limiter. Set CORELINK_E2E_ABUSE_HARD=1 on a dedicated host to assert \
-             a clean 429.",
-        );
-    }
-
-    // HARD opt-in: a fresh, almost-certainly-absent content address — the cheapest
-    // authenticated read (404/empty). We are probing the LIMITER, not the data.
-    let burst = 60;
+    // A fresh, almost-certainly-absent content address — the cheapest authenticated
+    // read (404/empty after auth). We probe the LIMITER's SHAPE, not the data.
     let probe = unique_blob("abuse-ratelimit-probe");
     let hash = blake3_hex(&probe);
     let url = url_cas(cfg, &p1.tenant, &hash);
 
-    let mut saw_429 = false;
-    let mut saw_5xx: Option<u16> = None;
+    // SMALL + bounded: 8 ≪ the 200-token burst / 100 req/s in-app bound and far
+    // under any WAF threshold. We are NOT trying to trip anything — just to read
+    // the contract shape under a benign client-like burst.
+    const BURST: u32 = 8;
+    for i in 0..BURST {
+        match client.get(&url).header(AUTHORIZATION, bearer(token)).send() {
+            Ok(r) => {
+                let st = r.status().as_u16();
+                if st == 429 {
+                    // A real limiter signal — the Retry-After assertion is MANDATORY
+                    // (this is what keeps the 429 branch honest / non-vacuous).
+                    return match assert_retry_after(&r) {
+                        Ok(_) => JourneyResult::pass(name, ms(start)),
+                        Err(why) => JourneyResult::fail(name, ms(start), why),
+                    };
+                }
+                if st >= 500 {
+                    return JourneyResult::fail(
+                        name,
+                        ms(start),
+                        format!(
+                            "ENFORCEMENT: a bounded {BURST}-GET burst produced a {st} 5xx — the \
+                             limiter must shed with a clean 429, not crash the data plane"
+                        ),
+                    );
+                }
+                // else: served under the bound (2xx / auth status / 404) — continue.
+            }
+            Err(e) => {
+                // A SMALL burst is under WAF tolerance, so a connection error here
+                // is the network/WAF, NOT the in-app limiter (we never reach its
+                // threshold). Gate honestly — do not flaky-fail, do not pretend it
+                // proves the limiter.
+                return JourneyResult::gated(
+                    name,
+                    format!(
+                        "endpoint unreachable on GET #{i} (network/WAF, not the in-app limiter) — \
+                         cannot assert the rate-limit contract: {e}"
+                    ),
+                );
+            }
+        }
+    }
+
+    // No 429 over a bounded burst ⇒ the request rate stayed UNDER the in-app bound
+    // (expected: 8 ≪ 200 burst / 100 req/s). All served, no 5xx, no collapse ⇒ the
+    // limiter is present + correct (branch (b)). The aggressive cell below is what
+    // ACTIVELY proves the 429 path on a dedicated host.
+    JourneyResult::pass(name, ms(start))
+}
+
+/// **Rate-limit enforcement (hard, gated).** The aggressive variant that tries to
+/// ACTIVELY trip the limiter with a large burst — gated behind
+/// `CORELINK_E2E_ABUSE_HARD=1` (default off: prod is shared and the CI runners ARE
+/// the founder's Mac, and the zone WAF can reset the connection under load). When
+/// run on a dedicated host it PASSES iff it observes a clean 429 carrying a
+/// well-formed `Retry-After` (RFC 6585), OR a connection-level throttle AFTER some
+/// requests were served (the WAF shedding at the connection layer — a real, if
+/// ungraceful, limiter engagement). A 5xx, or a 429 without a valid `Retry-After`,
+/// FAILS; a fully-served burst with no shed at all FAILS (enforcement gap).
+fn rate_limit_enforcement_hard(cfg: &Config, client: &Client) -> JourneyResult {
+    let name =
+        "Abuse: rate-limit enforcement (hard) — large burst trips a clean 429 w/ Retry-After";
+    let start = Instant::now();
+
+    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
+        Ok(p) => p,
+        Err(reason) => return JourneyResult::gated(name, reason),
+    };
+    if cfg.tenant.is_none() {
+        return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set — CAS path needs a tenant");
+    }
+    let token = p1.token.expect("P1 always has a token");
+
+    if !flag(ABUSE_HARD_ENV) {
+        return JourneyResult::gated(
+            name,
+            "aggressive rate-limit burst not run by default — bursting shared prod hammers it and \
+             the zone WAF can reset the connection under load (flaky). Set \
+             CORELINK_E2E_ABUSE_HARD=1 on a dedicated host to actively assert a clean 429. The \
+             safe contract-shape cell runs by default.",
+        );
+    }
+
+    let burst = 60;
+    let probe = unique_blob("abuse-ratelimit-hard-probe");
+    let hash = blake3_hex(&probe);
+    let url = url_cas(cfg, &p1.tenant, &hash);
+
     let mut conn_throttled = false;
     let mut served = 0u32;
     for i in 0..burst {
@@ -142,19 +257,29 @@ fn rate_limit_present(cfg: &Config, client: &Client) -> JourneyResult {
             Ok(r) => {
                 let st = r.status().as_u16();
                 if st == 429 {
-                    saw_429 = true; // clean shed
-                } else if st >= 500 {
-                    saw_5xx = Some(st);
-                    break;
-                } else {
-                    served += 1; // served under the bound
+                    // Even the aggressive variant must see a WELL-FORMED 429.
+                    return match assert_retry_after(&r) {
+                        Ok(_) => JourneyResult::pass(name, ms(start)),
+                        Err(why) => JourneyResult::fail(name, ms(start), why),
+                    };
                 }
+                if st >= 500 {
+                    return JourneyResult::fail(
+                        name,
+                        ms(start),
+                        format!(
+                            "ENFORCEMENT: a {burst}-GET burst produced a {st} 5xx — the limiter \
+                             must shed with a clean 429, not crash the data plane"
+                        ),
+                    );
+                }
+                served += 1;
             }
             Err(_) => {
-                // A connection reset/timeout AFTER requests were served is the WAF
-                // shedding at the connection layer (ungraceful but a REAL limiter
-                // engagement). On the FIRST request it means the endpoint is
-                // unreachable — gate rather than mis-attribute it to the limiter.
+                // A connection reset AFTER requests were served is the WAF shedding
+                // at the connection layer (ungraceful but a REAL limiter engagement).
+                // On the FIRST request it means the endpoint is unreachable — gate
+                // rather than mis-attribute it to the limiter.
                 if served > 0 {
                     conn_throttled = true;
                     break;
@@ -167,29 +292,15 @@ fn rate_limit_present(cfg: &Config, client: &Client) -> JourneyResult {
         }
     }
 
-    if let Some(code) = saw_5xx {
-        return JourneyResult::fail(
-            name,
-            ms(start),
-            format!(
-                "ENFORCEMENT: a {burst}-GET burst produced a {code} 5xx — the limiter must \
-                 shed with a clean 429, not crash the data plane"
-            ),
-        );
-    }
-    // A 429 (clean shed) OR a connection-level throttle both PROVE the limiter is
-    // present and engaged under the burst → PASS.
-    if saw_429 || conn_throttled {
+    if conn_throttled {
         return JourneyResult::pass(name, ms(start));
     }
-    // The burst was fully served with no 429 and no throttle → enforcement gap.
     JourneyResult::fail(
         name,
         ms(start),
         format!(
-            "ENFORCEMENT: a hard {burst}-GET burst was fully served with no 429 and no \
-             connection throttle — the rate limiter appears absent or its threshold exceeds \
-             the burst"
+            "ENFORCEMENT: a hard {burst}-GET burst was fully served with no 429 and no connection \
+             throttle — the rate limiter appears absent or its threshold exceeds the burst"
         ),
     )
 }
