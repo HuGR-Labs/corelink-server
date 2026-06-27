@@ -4,8 +4,26 @@
 //! The orchestrator emits a CloudEvents envelope BEFORE every state
 //! mutation (fail-CLOSED per ADR-S11-002): a non-`Ok` return aborts the
 //! erasure with no backend mutation + no idempotency tombstone. This sink
-//! appends the envelope to `audit_outbox`; the S-09 drain worker later
-//! flips `emitted_at` when the event reaches the immutable chain.
+//! appends the envelope to `audit_outbox` as a PLAIN, UNCHAINED row.
+//!
+//! ## Live tamper-evidence posture — NOT yet live (audit #5)
+//!
+//! Be precise about what this path does and does NOT guarantee today:
+//!
+//! * What is LIVE: this sink writes the envelope as an ordinary mutable D1
+//!   row in `audit_outbox` (`emitted_at` left `NULL`). These rows are NOT
+//!   sealed — they carry no BLAKE3 hash-chain link, so the live audit
+//!   trail is **not tamper-evident**: a D1 writer could alter or delete a
+//!   row without detection.
+//! * What is DEFERRED: the BLAKE3 tamper-evident hash chain
+//!   (`HashChainBuilder::append`) is real and property-tested but is
+//!   exercised ONLY in tests. The component meant to drain `audit_outbox`,
+//!   link each event into the immutable chain, and flip `emitted_at` is the
+//!   S-09 drain worker, which is **not yet built**. Until it ships there is
+//!   no live producer of the chain.
+//!
+//! Do not describe the live audit trail as "chained", "sealed", or
+//! "tamper-evident" — that posture begins only when the S-09 drain exists.
 //!
 //! Minimization (CTRL-PRIV-014): the durable envelope NEVER carries the
 //! raw `subject_id`. The production pseudonym is `sha256(subject_id ||
@@ -25,6 +43,11 @@ use crate::customer_d1::ms_to_iso8601;
 use crate::storage::d1_http::D1HttpClient;
 
 /// Durable erasure audit sink backed by the D1 `audit_outbox` table.
+///
+/// Writes UNCHAINED rows (no BLAKE3 seal — see the module-level "Live
+/// tamper-evidence posture" note). The hash-chain link is deferred to the
+/// not-yet-built S-09 drain worker, so the rows this sink emits are mutable
+/// and not yet tamper-evident.
 pub(super) struct D1ErasureAuditSink {
     d1: Arc<D1HttpClient>,
 }

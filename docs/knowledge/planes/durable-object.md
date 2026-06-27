@@ -4,7 +4,7 @@ title: "Durable Object lifecycle (CoreLinkServer)"
 description: "The per-tenant Durable Object that manages the Rust container lifecycle (cold start, health, idle stop) and proxies HTTP to it."
 source_files:
   - "worker/src/durable_object.ts"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "f00ec7b71ab8196df8a6620e3bf5a73bd1bc82b9"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -25,7 +25,9 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 - The container lifecycle manager + gRPC/HTTP proxy, one instance per tenant
   (`worker/src/durable_object.ts:1-26`).
 - The materializer of the container env contract: every secret/credential the container reads is
-  forwarded here through `container.start({ env })` (`worker/src/durable_object.ts:523-659`).
+  forwarded here through `container.start({ env })` — including the erasure-attestation operator flags
+  (`ERASURE_ATTESTATION_REGION`/`_SINGLE_REGION`), guarded by `check-env-contract.py`
+  (`worker/src/durable_object.ts:523-663`).
 
 # How it works
 1. The DO restores its persisted `LifecycleState` under `blockConcurrencyWhile` on every wakeup so a
@@ -41,7 +43,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 6. Cold start emits the `corelink.do.cold_start.v1` audit event BEFORE calling `container.start`, per
    the charter's audit-before-mutation rule (`worker/src/durable_object.ts:505-519`).
 7. `waitForContainerHealth` polls `GET /_health` on the container port until a 200 or the 90s startup
-   timeout (`worker/src/durable_object.ts:748-778`).
+   timeout (`worker/src/durable_object.ts:752-782`).
 8. An idle timer destroys the container after `IDLE_TIMEOUT_MS` (5 min), emitting the death event first
    (`worker/src/durable_object.ts:80-83`, `worker/src/durable_object.ts:852-883`).
 9. A periodic `alarm` re-probes health and marks the container `degraded` after `MAX_HEALTH_FAILURES`
@@ -75,7 +77,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 7. `worker/src/durable_object.ts:398-456` — `ensureContainerRunning` lifecycle state machine.
 8. `worker/src/durable_object.ts:474-500` — the synchronous in-memory `"starting"` concurrent-start guard.
 9. `worker/src/durable_object.ts:505-519` — audit-before-mutation cold-start event + `container.start`.
-10. `worker/src/durable_object.ts:523-659` — the `container.start({ env })` env-contract forward.
-11. `worker/src/durable_object.ts:748-778` — `waitForContainerHealth` polling `/_health`.
+10. `worker/src/durable_object.ts:523-663` — the `container.start({ env })` env-contract forward.
+11. `worker/src/durable_object.ts:752-782` — `waitForContainerHealth` polling `/_health`.
 12. `worker/src/durable_object.ts:852-883` — the idle-timeout destroy path.
 13. `worker/src/durable_object.ts:905-959` — the periodic `alarm` health re-probe + degrade.

@@ -500,9 +500,18 @@ async fn handle_verify(
             // G3: on a fully-verified erasure, sign + persist an Ed25519
             // attestation (best-effort, fail-OPEN — the erasure is already
             // complete + audited; attestation is an extra evidence artifact).
-            if matches!(decision, ErasureDecision::VerifiedComplete { .. }) {
+            if let ErasureDecision::VerifiedComplete { completions } = &decision {
                 if let Some(d1) = state.d1.as_ref() {
-                    attestation::sign_and_persist(d1, &msg.dsr_id, &msg.tenant_id, now_ms());
+                    // Bind the signed attestation to the REAL per-backend
+                    // verification evidence (audit #1 fix): refuses to sign
+                    // unless every backend genuinely re-verified empty.
+                    attestation::sign_and_persist(
+                        d1,
+                        &msg.dsr_id,
+                        &msg.tenant_id,
+                        now_ms(),
+                        completions,
+                    );
                 }
             }
             (

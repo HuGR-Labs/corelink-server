@@ -590,6 +590,10 @@ export class CoreLinkServer implements DurableObject {
           ERASURE_ATTESTATION_SEED_HEX: this.env.ERASURE_ATTESTATION_SEED_HEX ?? "",
           ERASURE_ATTESTATION_KEY_ID: this.env.ERASURE_ATTESTATION_KEY_ID ?? "",
           ERASURE_ATTESTATION_REGION: this.env.ERASURE_ATTESTATION_REGION ?? "",
+          // Brutal-audit #1 fix: the single-region assertion flag gates whether a
+          // post-deletion attestation may sign with the env-default region. MUST be
+          // forwarded or the operator flag silently never reaches the container.
+          ERASURE_ATTESTATION_SINGLE_REGION: this.env.ERASURE_ATTESTATION_SINGLE_REGION ?? "",
           // corelink-runners auth seam (#261): `POST /internal/v1/auth/introspect`
           // mounts in the container only when FABRIC_INTROSPECT_AUTH_KEY (+ PAT +
           // D1) are present. Forward it or the route stays unmounted (404).
