@@ -4,7 +4,8 @@ title: "Release / GA tag process"
 description: "How the v1.0.0-GA tag is cut: the dual-key 2-signer sign-off (ADR-0034b fallback), the spec-corpus + production-wiring + compliance freeze state recorded in the tag, and the acknowledged open carve-outs tracked for post-GA closure."
 source_files:
   - "docs/release/v1.0.0-GA-tag-draft-final.txt"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+  - "scripts/cut-v1-0-0-ga-tag.sh"
+checkpoint_sha: "a367df9b6df02af27b91ef22a6d3a53824eca42d"
 provenance: "AUTHORED"
 tags: ["ops", "release", "ga", "sign-off", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -28,11 +29,15 @@ proves the artifact, and to the GA staffing waiver in
 - The accountability artifact: a 2-key signature with a documented dual-hat fallback, not a solo push.
 
 # How it works
-1. The tag is applied at wave-27 via `scripts/cut-v1-0-0-ga-tag.sh`, only after both 2-key signatures are
-   filed per RB-GA-CUTOVER §8 + ADR-0034b (`docs/release/v1.0.0-GA-tag-draft-final.txt:7-11`).
+1. The tag is applied at wave-27 via the cut script `scripts/cut-v1-0-0-ga-tag.sh` (present in the
+   repo), only after both 2-key signatures are filed per RB-GA-CUTOVER §8 + ADR-0034b
+   (`docs/release/v1.0.0-GA-tag-draft-final.txt:7-11`).
 2. The corpus freeze is recorded: 21 sprints sealed (S01..S21), 197 registry invariants (81+
-   TLA+-verified), 262 spec docs, with `validate_specs.py` + `validate_references.py` at exit 0
-   (`docs/release/v1.0.0-GA-tag-draft-final.txt:13-24`).
+   TLA+-verified), with `validate_specs.py` + `validate_references.py` at exit 0
+   (`docs/release/v1.0.0-GA-tag-draft-final.txt:13-24`). **⚠️ The "262 spec docs" figure is the
+   point-in-time count frozen into the *draft* tag body; the spec corpus has since grown — the LIVE
+   `validate_specs.py` gate is `463/0` (per CLAUDE.md "Gates"), so the cut script re-freezes the
+   then-current count at D-day. Treat 262 as the draft-snapshot value, not the current corpus size.**
 3. The production wiring is enumerated: 4-target Cloudflare binding (D1 ×5 regions, R2 25 buckets, KV,
    Durable Objects) + BYOK 4 providers + the hash-chained audit chain
    (`docs/release/v1.0.0-GA-tag-draft-final.txt:26-44`).
@@ -79,3 +84,4 @@ proves the artifact, and to the GA staffing waiver in
 9. `docs/release/v1.0.0-GA-tag-draft-final.txt:88-90` — DEBT-026 external pentest begins post-GA.
 10. `docs/release/v1.0.0-GA-tag-draft-final.txt:107-132` — the two signers + ADR-0034b dual-hat fallback.
 11. `docs/release/v1.0.0-GA-tag-draft-final.txt:134-138` — DCO + Co-Authored-By provenance trailer.
+12. `scripts/cut-v1-0-0-ga-tag.sh:1` — the GA cut mechanism itself (present in repo; re-freezes the then-current spec count at D-day; live `validate_specs.py` gate is 463/0 per CLAUDE.md, not the draft's 262).

@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/pip.rs"
   - "crates/corelink-container/src/routes/brew.rs"
   - "crates/corelink-container/src/routes/oci.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "a367df9b6df02af27b91ef22a6d3a53824eca42d"
 provenance: "AUTHORED"
 tags: ["surfaces", "public", "npm", "pip", "brew", "oci", "moat"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -47,7 +47,12 @@ hold.
    rides inside the HMAC bearer minted at `/token`, so the gate does pure scope enforcement and no
    path surgery (`crates/corelink-container/src/routes/oci.rs:10-30`; `crates/corelink-container/src/routes/oci.rs:34-45`; `crates/corelink-container/src/routes/oci.rs:690-753`).
 6. OCI also layers a $-ceiling + monthly request-count gate that attributes cost to the tenant
-   recovered from the VERIFIED HMAC bearer, never a request header (`crates/corelink-container/src/routes/oci.rs:754-790`).
+   recovered from the VERIFIED HMAC bearer, never a request header. The live gate charges the $-ceiling
+   (fail-CLOSED, 402 over) on **EVERY method including reads** — a `docker pull` (GET/HEAD of
+   manifests/blobs) does real billable work on the shared cache, matching the native CAS/AC read-charge
+   behavior (`crates/corelink-container/src/routes/oci.rs:842-849`). (The mount-site comment at
+   `crates/corelink-container/src/routes/oci.rs:754-790` still reads "charge on write methods PUT/POST/PATCH" and is STALE — the actual gate
+   body charges all methods.)
 
 # Invariants
 - Tenant identity comes from the bearer PAT (re-verified, Option B); the path `<tenant>` is NEVER trusted (`crates/corelink-container/src/routes/npm.rs:30-32`; `crates/corelink-container/src/routes/pip.rs:28-30`; `crates/corelink-container/src/routes/brew.rs:25-27`).
@@ -84,7 +89,7 @@ hold.
 17. `crates/corelink-container/src/routes/oci.rs:34-45` — OCI two-leg `/token` HMAC bearer auth.
 18. `crates/corelink-container/src/routes/oci.rs:690-753` — OCI router (`.merge` mount).
 19. `crates/corelink-container/src/routes/oci.rs:19-30` — why stripping the first segment would corrupt the repo.
-20. `crates/corelink-container/src/routes/oci.rs:754-790` — OCI $-ceiling + request-count gate.
+20. `crates/corelink-container/src/routes/oci.rs:842-849` — the real OCI $-ceiling charge-all-methods gate (charges on EVERY method incl reads; the `:754-790` mount-site comment is stale).
 21. `crates/corelink-container/src/routes/oci.rs:810-820` — `oci_bearer_tenant` (verify HMAC bearer → recover tenant); used by `oci_quota_gate` at `crates/corelink-container/src/routes/oci.rs:841` — cost attribution keyed on the verified bearer, not a header.
 22. `crates/corelink-container/src/routes/pip.rs:115-118` — pip wheels dedup cross-tenant under `PUBLIC_NAMESPACE`.
 23. `crates/corelink-container/src/routes/brew.rs:85-95` — brew bottles dedup cross-tenant under `PUBLIC_NAMESPACE`.

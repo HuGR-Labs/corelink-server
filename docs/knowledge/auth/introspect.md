@@ -17,12 +17,16 @@ and the tenant's plan before it places work on a runner. Rather than re-implemen
 + Argon2id + D1 liveness) in the fabric, the fabric calls `POST /internal/v1/auth/introspect`, which
 reuses the container's one full verification pipeline and returns a frozen, minimal result. The endpoint
 is the authorization seam between the cache product and the runners entitlement axis. PAT verification,
-the tier/plan resolve, and the concurrency-cap decode all fail-CLOSED (a fault → 503, an empty
-concurrency row → reject), so the fabric never serves a plan or a concurrency cap it could not resolve —
-with ONE deliberate exception: the metered vCPU-hours axis fails **OPEN**. An absent `max_vcpu_h` row is
+the tier/plan resolve, and the concurrency-cap decode fail-CLOSED on a *fault* (a tier or entitlement
+query fault → 503), so the fabric never serves a plan or a cap it could not resolve. An *absent*
+concurrency row is NOT a fault and NOT a reject: `decode_runner_cap` returns `Ok(None)` (the
+`max_concurrency` field is simply omitted — a cache-only tenant carries no Runners entitlement, and the
+FABRIC, not this endpoint, declines to place runner work). And there is ONE deliberate fail-**OPEN**
+axis: the metered vCPU-hours cap. An absent `max_vcpu_h` row is
 decoded as "wall-off / let the job through", so a tenant with no `max_vcpu_h` runs unbounded vCPU-hours
-(see Gotchas). The headline "fail-CLOSED at every step" holds for tenant/plan/concurrency but NOT for the
-vCPU-h cap.
+(see Gotchas). The headline "fail-CLOSED on a fault" holds for tenant/plan/concurrency (a *fault* → 503;
+an *absent* concurrency row → `Ok(None)`, no entitlement) but NOT for the vCPU-h cap (absent → wall-off,
+fail-OPEN).
 
 # Role
 
@@ -63,10 +67,12 @@ route but with its OWN dedicated secret so the two blast radii stay disjoint.
 
 # Gotchas
 
-- `max_concurrency` and `max_vcpu_h` carry a deliberate asymmetry: an absent concurrency row ⇒ reject
-  the placement (empty table = no cap = no Runners entitlement), decoded by `decode_runner_cap`
-  (`crates/corelink-container/src/routes/auth_introspect.rs:382-394`); an absent `max_vcpu_h` ⇒ wall-off
-  (let the job through).
+- `max_concurrency` and `max_vcpu_h` carry a deliberate asymmetry: an absent concurrency row ⇒
+  `decode_runner_cap` returns `Ok(None)` — the field is OMITTED (empty table = no cap = no Runners
+  entitlement), NOT a hard reject from this endpoint; the fabric then declines to place runner work for a
+  cache-only tenant (`crates/corelink-container/src/routes/auth_introspect.rs:382-394`). An absent
+  `max_vcpu_h` ⇒ wall-off (let the job through, fail-OPEN). A row that EXISTS but is out-of-contract
+  (non-positive / out of `u32` range) is the only hard fail-CLOSED arm here → `Err` → 503.
 - `plan` is the cache tier and is informational only for runners — it NEVER feeds the concurrency cap,
   which comes solely from the SEPARATE `runners_entitlement` decode
   (`crates/corelink-container/src/routes/auth_introspect.rs:382-394`).
@@ -80,7 +86,7 @@ route but with its OWN dedicated secret so the two blast radii stay disjoint.
 2. `crates/corelink-container/src/routes/auth_introspect.rs:16-18` — not public; container-listener only.
 3. `crates/corelink-container/src/routes/auth_introspect.rs:660-683` — `build_state_from_env` mount-gate: dedicated `FABRIC_INTROSPECT_AUTH_KEY` present + ≥32 chars, else `None` (route NOT mounted) — fail-CLOSED.
 4. `crates/corelink-container/src/routes/auth_introspect.rs:566-576` — the multi-key caller gate (`|=` over every configured key, reusing the constant-time `internal_auth_ok`).
-5. `crates/corelink-container/src/routes/auth_introspect.rs:382-394` — `decode_runner_cap`: the runner entitlement decode (empty → reject; out-of-contract → 503) — the cap/vCPU asymmetry origin, separate from `plan`.
+5. `crates/corelink-container/src/routes/auth_introspect.rs:382-394` — `decode_runner_cap`: the runner entitlement decode (absent row → `Ok(None)` / field omitted; out-of-contract existing row → 503) — the cap/vCPU asymmetry origin, separate from `plan`.
 6. `crates/corelink-container/src/routes/auth_introspect.rs:382-394` — entitlement decode is the SEPARATE axis; `plan` (cache tier) never feeds the cap.
 7. `crates/corelink-container/src/routes/auth_introspect.rs:559-576` — non-short-circuit multi-key caller gate.
 8. `crates/corelink-container/src/routes/auth_introspect.rs:592-637` — verify → tier → entitlement → uniform invalid / 503.

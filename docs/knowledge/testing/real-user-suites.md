@@ -1,10 +1,11 @@
 ---
 type: "TestStrategy"
 title: "Real-user black-box suites & remaining journeys"
-description: "The state of CoreLink's real-user e2e coverage vs prod (real-client moat + black-box journey suite) and the three gated journeys that need an owner resource to finish."
+description: "The state of CoreLink's real-user e2e coverage vs prod (real-client moat + black-box journey suite) and the three gated journeys that need an owner resource to finish. The PASS/GATED counts are a 2026-06-22 point-in-time snapshot — several were since un-gated; the live runner is the source of truth."
 source_files:
   - "docs/testing/2026-06-22-remaining-e2e-journeys-handoff.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+  - "tests/e2e-user-journeys/src/main.rs"
+checkpoint_sha: "a367df9b6df02af27b91ef22a6d3a53824eca42d"
 provenance: "AUTHORED"
 tags: ["testing", "e2e", "real-user", "black-box", "go-live"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -17,8 +18,12 @@ exercise the product the way a customer would: the real-client moat (`run.sh`) a
 journey suite (`provision-and-run-suite.sh`). This concept records their validated GREEN state and —
 more importantly — the per-journey closure state: journey 1 (DSR-delete + checkout) is fully gated on
 a browser Clerk session, journey 2 (webhook -> tier) is forgery-proven but flip-gated on a real
-Stripe charge, and journey 3 (quota hard-cap) is validated un-gated. It is the operational
-finish-checklist companion to the
+Stripe charge, and journey 3 (quota hard-cap) is validated un-gated. **⚠️ The concrete PASS/FAIL/GATED
+counts below are a 2026-06-22 point-in-time snapshot — the provisioning waves #488/#489/#490 since
+un-gated journeys (more personas now run; several journeys flipped GATED→PASS), so the numbers here
+are NOT the current count. The live runner (`tests/e2e-user-journeys/src/main.rs`) is the source of
+truth: it now emits a per-run PASS/FAIL/GATED tally and a RED-on-vacuum verdict — read its output, do
+not quote these frozen figures as current.** It is the operational finish-checklist companion to the
 [e2e strategy](/testing/e2e-strategy.md) gap map and the
 [gate machinery](/testing/gate-machinery.md) quality audit.
 
@@ -32,9 +37,12 @@ session) from engineering gaps.
 
 - The real-client moat suite (docker login+push+pull, cargo+sccache, brew, bazel, turbo, native
   CAS/AC) is validated 19 PASS / 0 FAIL → SHIP against prod (`docs/testing/2026-06-22-remaining-e2e-journeys-handoff.md:34-36`).
-- The black-box journey suite is 77 PASS / 0 FAIL / 24 GATED → GREEN, covering the security matrix
-  (cross-tenant isolation, real revocation, scope, tenant-path spoof, anon, native-plane forgery,
-  cache-poison, mint-abuse), error/edge, concurrency, and rate-limit (`docs/testing/2026-06-22-remaining-e2e-journeys-handoff.md:37-41`).
+- The black-box journey suite was **77 PASS / 0 FAIL / 24 GATED → GREEN as of the 2026-06-22 snapshot**
+  (since un-gated by #488/#489/#490 — the current tally comes from the live runner, not this figure),
+  covering the security matrix (cross-tenant isolation, real revocation, scope, tenant-path spoof,
+  anon, native-plane forgery, cache-poison, mint-abuse), error/edge, concurrency, and rate-limit
+  (`docs/testing/2026-06-22-remaining-e2e-journeys-handoff.md:37-41`; live tally
+  `tests/e2e-user-journeys/src/main.rs:111-115`).
 - The full real credential lifecycle is exercised through the customer path: signup → tenant + PAT →
   `keys.create` (read-only) → revoke, with `pat.pat_id` (nested) as the revoke handle
   (`docs/testing/2026-06-22-remaining-e2e-journeys-handoff.md:42-44`).
@@ -76,3 +84,5 @@ session) from engineering gaps.
 3. `docs/testing/2026-06-22-remaining-e2e-journeys-handoff.md:34-44` — validated state: real-client moat 19 PASS, black-box 77 PASS/24 GATED, credential lifecycle.
 4. `docs/testing/2026-06-22-remaining-e2e-journeys-handoff.md:48-69` — journey 1 (DSR + checkout) gated on a browser Clerk session.
 5. `docs/testing/2026-06-22-remaining-e2e-journeys-handoff.md:100-105` — how to re-run the green baseline (self-provision + DSR-delete on exit).
+6. `tests/e2e-user-journeys/src/main.rs:111-115` — the live runner's per-run PASS/FAIL/GATED tally (the current count — supersedes the frozen 77/24 snapshot).
+7. `tests/e2e-user-journeys/src/main.rs:117-163` — the RED-on-vacuum / PASS-floor + gated-ceiling verdict that now gates the suite's GREEN.

@@ -34,8 +34,9 @@ control surfaces (mint, introspect) at the Worker edge.
 
 **Qualifier — the "full" verification is cached on the data plane.** On the six cache surfaces the
 native gate is `NativePatGate::verify`, which fronts the full Argon2id path with a 5-second verify
-cache: a cache HIT returns `Ok` after only a constant-time tenant-equality check and **SKIPS D1 +
-Argon2id** for the TTL (`crates/corelink-container/src/native_pat_gate.rs:170-176`). So "re-runs the
+cache: a cache HIT returns `Ok` after only a plain tenant-equality check (a String `==`, not a
+constant-time compare — immaterial, since the tenant-id is not a secret) and **SKIPS D1 + Argon2id**
+for the TTL (`crates/corelink-container/src/native_pat_gate.rs:170-176`). So "re-runs the
 FULL Option-B verification" is true on a cache MISS (and on the first request of each 5s window, which
 single-flights the D1 + Argon2id round) but NOT on every request — a recently-verified PAT is admitted
 on the tenant-equality check alone until its cache entry expires.

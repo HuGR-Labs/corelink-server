@@ -1,15 +1,18 @@
 ---
 type: "Runbook"
 title: "SDK reference (python/go/javascript)"
-description: "The three first-party CoreLink SDKs (PyO3 Python, cgo Go, wasm-bindgen JS/TS): a shared API shape (put/get/stat), client-side BLAKE3 verify default-on per CTRL-CAS-002 via a single Rust truth, the canonical COR_CAS_DIGEST_MISMATCH error, and the explicit opt-out semantics."
+description: "The three first-party CoreLink SDKs (PyO3 Python, cgo Go, wasm-bindgen JS/TS): a shared API shape (put/get/stat) over a real client-side BLAKE3 digest/verify core (single Rust truth, default-on per CTRL-CAS-002, the canonical COR_CAS_DIGEST_MISMATCH error, explicit opt-out) — but the network put/get/stat (the actual blob transfer to the CoreLink server) is a STUB / not yet wired in the shipping crates."
 source_files:
   - "crates/corelink-client-verify/src/error.rs"
   - "crates/corelink-client-verify/src/digest.rs"
   - "crates/corelink-client-verify/src/verifier.rs"
+  - "crates/corelink-wasm/src/lib.rs"
+  - "tools/sdks/python/src/lib.rs"
+  - "tools/sdks/go/src/go_bridge.rs"
   - "docs/sdk/python.md"
   - "docs/sdk/go.md"
   - "docs/sdk/javascript.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+checkpoint_sha: "a367df9b6df02af27b91ef22a6d3a53824eca42d"
 provenance: "AUTHORED"
 tags: ["ops", "sdk", "client-verify", "blake3", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -17,18 +20,37 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # SDK reference (python/go/javascript)
 
-CoreLink ships three first-party client SDKs over the [native CAS surface](/surfaces/native-cas.md) —
+CoreLink defines three first-party client SDKs over the [native CAS surface](/surfaces/native-cas.md) —
 Python (PyO3), Go (cgo cdylib), and JavaScript/TypeScript (wasm-bindgen WASM) — that share one API shape
 (`put`/`get`/`stat`) and one load-bearing safety default: **client-side BLAKE3 verification on every
 `get`, on by default per control CTRL-CAS-002**, implemented through the single Rust truth
 (`corelink-client-verify`) so all three languages cannot disagree about what a valid digest is. The
-content-addressing guarantee is therefore enforced at the edge of the customer's process, not just on the
-server. This runbook is the cross-language contract an integrator reads before wiring a client.
+content-addressing guarantee is therefore enforced at the edge of the customer's process.
+
+> **⚠️ Shipped state — the digest/verify core is real, the network client is a STUB.** What the three
+> crates actually ship today is the **client-side BLAKE3 digest + verify core** wired through the
+> FFI/wasm boundary — `put` computes the real BLAKE3 hex digest locally and `get` runs the real verify
+> against a body. The **network leg (the HTTP transfer of a blob to/from the CoreLink server) is NOT yet
+> wired**: every SDK's `get` returns an empty body from a stub instead of fetching, `put` only hashes the
+> bytes without uploading, and `stat` hard-codes `exists: false`. **A customer cannot transfer a blob with
+> these SDKs as shipped.** Concretely: the JS/wasm `get_inner` returns `Vec::new()` with a `// Stub`
+> comment (`crates/corelink-wasm/src/lib.rs:180-181`), `put_inner` only hashes
+> (`crates/corelink-wasm/src/lib.rs:199`), `stat_inner` returns `exists: false`
+> (`crates/corelink-wasm/src/lib.rs:204-210`), and the constructor's `pat`/`tenant_id` are
+> `#[allow(dead_code)]` because nothing sends them on the wire
+> (`crates/corelink-wasm/src/lib.rs:71`, `crates/corelink-wasm/src/lib.rs:74`); the Python `get` is a
+> documented stub that returns empty bytes (`tools/sdks/python/src/lib.rs:106-110`); the Go bridge's
+> `corelink_go_client_put` computes BLAKE3 only and never uploads
+> (`tools/sdks/go/src/go_bridge.rs:186-217`), and `corelink_go_client_verify_get` is verify-only
+> (`tools/sdks/go/src/go_bridge.rs:236`). The cross-language contract below (API shape, verify-on-get
+> default, opt-out governance, the canonical mismatch error) is real and load-bearing; **the network
+> transport is the open piece.** This runbook is the contract an integrator reads before wiring a client.
 
 # Role
-- The integration surface: the supported, first-party way a customer talks to CAS in three ecosystems.
-- The client-side integrity guard: BLAKE3-verify-on-get, default-on, single-Rust-truth across languages.
-- The opt-out governance: how each language makes disabling verify explicit and noisy, never accidental.
+- The integration surface (DESIGNED): the intended first-party API a customer uses to talk to CAS in
+  three ecosystems — but the network transport is still a stub, so it is not yet a working transfer path.
+- The client-side integrity guard (WIRED): BLAKE3-verify-on-get, default-on, single-Rust-truth across languages.
+- The opt-out governance (WIRED): how each language makes disabling verify explicit and noisy, never accidental.
 
 # How it works
 1. The Python SDK is a PyO3 wrapper with native asyncio; `put(bytes)` returns a 64-char BLAKE3 hex digest
@@ -80,3 +102,10 @@ server. This runbook is the cross-language contract an integrator reads before w
 10c. `crates/corelink-client-verify/src/error.rs:29-39`, `crates/corelink-client-verify/src/error.rs:65` — the `DigestMismatch` variant + its canonical `COR_CAS_DIGEST_MISMATCH` code.
 10d. `crates/corelink-client-verify/src/digest.rs:19` — the canonical `COR_CAS_DIGEST_MISMATCH` constant (the single Rust truth, re-exported from `corelink-hash`).
 11. `docs/sdk/javascript.md:113-127` — ≤1MB bundle-size CI gate.
+12. `crates/corelink-wasm/src/lib.rs:180-181` — JS/wasm `get_inner` returns `Vec::new()` (`// Stub: production impl fetches from server`) — the network get is NOT wired.
+13. `crates/corelink-wasm/src/lib.rs:199` — JS/wasm `put_inner` only computes BLAKE3 (`Digest::compute(data).to_hex()`); no upload.
+14. `crates/corelink-wasm/src/lib.rs:204-210` — JS/wasm `stat_inner` hard-codes `size_bytes: 0, exists: false` (no server stat).
+15. `crates/corelink-wasm/src/lib.rs:71`, `crates/corelink-wasm/src/lib.rs:74` — `pat` / `tenant_id` are `#[allow(dead_code)]`: nothing sends them on the wire yet.
+16. `tools/sdks/python/src/lib.rs:106-110` — Python `get` is a documented stub (`b""`), only the FFI verify pipeline is exercised.
+17. `tools/sdks/go/src/go_bridge.rs:186-217` — Go `corelink_go_client_put` computes the BLAKE3 digest only; no network upload.
+18. `tools/sdks/go/src/go_bridge.rs:236` — Go `corelink_go_client_verify_get` is verify-only (delegates to the single Rust truth); no fetch.
