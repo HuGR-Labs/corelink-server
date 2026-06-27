@@ -49,12 +49,15 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
 
 # Invariants
 
-- Every rejection (forged, wrong tenant, expired, missing) collapses to a uniform 401 with no oracle
-  (`crates/corelink-container/src/native_pat_gate.rs:247-251`).
+- Every rejection (forged, wrong tenant, expired, missing) collapses to a uniform 401 with no oracle —
+  the executed `Err(unauthorized())` call-sites: empty/missing token
+  (`crates/corelink-container/src/native_pat_gate.rs:162`), cached-tenant mismatch (`:174`),
+  cross-tenant genuine PAT (`:204`), and forged/unknown/expired/no-scope (`:208`).
 - A verifier backend (D1) fault fails CLOSED with 503, never serving an un-possession-checked billable op
   (`crates/corelink-container/src/native_pat_gate.rs:208-214`).
 - The cache key is a SHA-256 fingerprint, never the plaintext, so the in-memory map cannot leak a usable
-  secret (`crates/corelink-container/src/native_pat_gate.rs:253-257`).
+  secret — the executed key derivation is `let fp = fingerprint(token)`
+  (`crates/corelink-container/src/native_pat_gate.rs:165`; the SHA-256 `fingerprint` def is `:253-257`).
 - The cache is tenant-bound: a cached entry for tenant A is rejected when presented for tenant B
   (`crates/corelink-container/src/native_pat_gate.rs:167-176`).
 
@@ -79,16 +82,17 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
   the backstop only protects against a malformed-but-present `PAT_SIGNING_KEY` *rotation sibling* (the
   case it was written for), not against the whole storage env going missing.
 - The single-flight shards are a FIXED 256-entry array, not a per-token map — bounded memory by
-  construction (`crates/corelink-container/src/native_pat_gate.rs:72-77`).
+  construction; the executed build in `new()` is `(0..VERIFY_LOCK_SHARDS).map(…).collect()`
+  (`crates/corelink-container/src/native_pat_gate.rs:118-120`; the `VERIFY_LOCK_SHARDS = 256` const is `:72-77`).
 
 # Citations
 
 1. `crates/corelink-container/src/native_pat_gate.rs:1-22` — why the gate exists (leaked-signing-key forgery).
 2. `crates/corelink-container/src/native_pat_gate.rs:57-70` — the 5s cache TTL bounding revocation latency.
-3. `crates/corelink-container/src/native_pat_gate.rs:72-77` — fixed 256 single-flight shards (bounded memory).
+3. `crates/corelink-container/src/native_pat_gate.rs:118-120` — the executed fixed-array build in `new()` (`(0..VERIFY_LOCK_SHARDS).map(…).collect()`); the `VERIFY_LOCK_SHARDS = 256` const is `:72-77`.
 4. `crates/corelink-container/src/native_pat_gate.rs:156-216` — `verify`: fingerprint, cache, single-flight, tenant bind.
-5. `crates/corelink-container/src/native_pat_gate.rs:247-251` — the uniform 401 (no rejection oracle).
-6. `crates/corelink-container/src/native_pat_gate.rs:253-257` — SHA-256 fingerprint cache key, never the plaintext.
+5. `crates/corelink-container/src/native_pat_gate.rs:162`, `:174`, `:204`, `:208` — the executed `Err(unauthorized())` rejection call-sites (the uniform 401; the `unauthorized()` def is `:247-251`).
+6. `crates/corelink-container/src/native_pat_gate.rs:165` — the executed `let fp = fingerprint(token)` cache-key derivation (SHA-256 fingerprint, never the plaintext; the `fingerprint` def is `:253-257`).
 7. `crates/corelink-container/src/native_pat_gate.rs:264-279` — env-gated builder; prod-fatal on a missing gate.
 8. `crates/corelink-container/src/main.rs:78` — the `should_fatal_on_missing_gate` enforcing body `prod && !gate_present` (the executed predicate, not the `:77` fn-sig).
 9. `crates/corelink-container/src/main.rs:253` — boot-path call site enforcing the prod-fatal backstop.

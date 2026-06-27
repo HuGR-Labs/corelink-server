@@ -51,12 +51,16 @@ another tenant's rows.
 - The export audit row is emitted fail-CLOSED — a sink `Err` aborts with 503 before streaming `crates/corelink-container/src/routes/audit_export/audit_sink.rs:100-105`.
 - Analytics data access is gated per-tenant: the PAT gate rejects forged/wrong-tenant (401) or verifier fault (503) before reads `crates/corelink-container/src/routes/audit_analytics.rs:118`.
 - A mid-stream abort surfaces as sysexits DATAERR (65) on the CLI, distinct from generic exit 1 — the `EXIT_DATAERR = 65` constant and the `AbortedMidStream => EXIT_DATAERR` mapping (`tools/cli/src/commands/verify_ndjson_http.rs:80`, `tools/cli/src/commands/verify_ndjson_http.rs:141`), wired in `main` (`tools/cli/src/main.rs:410-411`).
-- The bearer token is never logged, printed, or surfaced in error messages (CTRL-CRED-001) `tools/cli/src/commands/verify_ndjson_http.rs:104`.
+- The bearer token is never logged, printed, or surfaced in `Display`/error messages (CTRL-CRED-001):
+  the `HttpVerifyOutcome` `Display` impl is "intentionally human-readable and never includes the
+  Bearer" per its doc-comment `tools/cli/src/commands/verify_ndjson_http.rs:102-104`. (The Bearer IS,
+  correctly, attached to the outbound request itself — `Authorization` is set on the request builder at
+  `tools/cli/src/commands/verify_ndjson_http.rs:219-229`; the invariant is about output surfaces, not the wire.)
 
 # Gotchas
 
 - The HTTP-fetch path caps the response body at 64 MiB so a malicious server cannot drain CLI memory — `const MAX_BYTES: usize = 64 * 1024 * 1024` (`tools/cli/src/commands/verify_ndjson_http.rs:370`, `tools/cli/src/commands/verify_ndjson_http.rs:378`).
-- If both the `--chain-head-anchor` flag and the response header are present they MUST match constant-time — a mismatch is an error, not a warning `docs/cli/audit-export.md:51-55`.
+- If both the `--chain-head-anchor` flag and the response header are present they MUST match constant-time — a mismatch is an error, not a warning. The enforcer is `ascii_eq_ct(flag.trim(), header.trim())` at the resolve site `tools/cli/src/commands/verify_ndjson_http.rs:294` (refuses on disagreement), backed by the constant-time helper at `tools/cli/src/commands/verify_ndjson_http.rs:343` (`docs/cli/audit-export.md:51-55`).
 
 # Citations
 
@@ -71,6 +75,7 @@ another tenant's rows.
 9. `docs/cli/audit-export.md:79-89` — exit-65 sysexits DATAERR on mid-stream abort (spec).
 9b. `tools/cli/src/commands/verify_ndjson_http.rs:80`, `tools/cli/src/commands/verify_ndjson_http.rs:141`, `tools/cli/src/main.rs:410-411` — `EXIT_DATAERR = 65` + `AbortedMidStream => EXIT_DATAERR` mapping + `main` wiring (the enforcer).
 10. `docs/cli/audit-export.md:91-99` — token never logged (CTRL-CRED-001) + constant-time anchor compare (spec).
-10b. `tools/cli/src/commands/verify_ndjson_http.rs:104` — request builder that never includes the Bearer (the enforcer).
+10b. `tools/cli/src/commands/verify_ndjson_http.rs:102-104` — the `HttpVerifyOutcome` `Display` doc-comment guaranteeing the Display impl never includes the Bearer (the output-surface enforcer). NOTE: `:104` is a doc-comment, NOT a request builder — the outbound request DOES set `Authorization` (`:219-229`); the never-include guarantee is about Display/error output, not the wire.
+10c. `tools/cli/src/commands/verify_ndjson_http.rs:294` / `:343` — `ascii_eq_ct(flag.trim(), header.trim())` constant-time anchor flag-vs-header cross-check (refuses on disagreement) + the constant-time helper (the enforcer of the constant-time-anchor invariant).
 11. `docs/cli/audit-export.md:100-102` — 64 MiB response-body cap (spec).
 11b. `tools/cli/src/commands/verify_ndjson_http.rs:370`, `tools/cli/src/commands/verify_ndjson_http.rs:378` — `MAX_BYTES = 64 MiB` body cap (the enforcer).

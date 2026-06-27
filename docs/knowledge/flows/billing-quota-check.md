@@ -41,7 +41,7 @@ The `QuotaGate` is the economic fail-closed spend cap on the hot path: it conver
 - A brand-new tenant's first op is ceiling-checked, not accrued unconditionally — a fat first op cannot bypass the $-ceiling (`crates/corelink-container/src/tenant_quota.rs:811-837`).
 - A batch is charged proportionally in ONE atomic statement, never per-op-looped and never as a single flat charge (`crates/corelink-container/src/tenant_quota.rs:716-723`).
 - The usage-ingest secret is DEDICATED and distinct from the Worker<->container and introspect/mint secrets, keeping ingest's blast radius tight (`crates/corelink-container/src/routes/billing_ingest.rs:453-465`).
-- Usage staging is idempotent by `(tenant_id, request_id)` — the executed `STAGE_INSERT_SQL` ends `ON CONFLICT (tenant_id, request_id) DO NOTHING` (`crates/corelink-container/src/routes/billing_ingest.rs:192-195`), run by the D1 `stage()` impl which maps each record's `idem_key` onto `request_id` (`crates/corelink-container/src/routes/billing_ingest.rs:250`), so a retried runner push never double-counts.
+- Usage staging is idempotent by `(tenant_id, request_id)` — the executed `STAGE_INSERT_SQL` ends `ON CONFLICT (tenant_id, request_id) DO NOTHING` (`crates/corelink-container/src/routes/billing_ingest.rs:192-195`), run by the D1 `stage()` impl, which binds each record's `idem_key` onto the `request_id` column — the executed 3rd positional param `serde_json::Value::String(record.idem_key.clone())` (`crates/corelink-container/src/routes/billing_ingest.rs:282`) maps to `?3 = request_id` in `STAGE_INSERT_SQL` (`crates/corelink-container/src/routes/billing_ingest.rs:193-194`), so a retried runner push never double-counts.
 
 # Gotchas
 

@@ -37,8 +37,8 @@ path params, builds the REAPI digest, reads Worker-injected caller metadata, and
 
 # Invariants
 - The `:instance` path segment MUST equal the Worker-injected `x-corelink-tenant-id`; a mismatch is 403 with an audit row — enforced by `check_tenant` in the bridge adapter, which returns `CrossTenantDenied` when `instance != caller_tenant` (`crates/corelink-bazel-bridge/src/adapter.rs:241-249`).
-- All routes use the matchit `:name` capture form, never `{name}`, per the DEBT-029 rule (`crates/corelink-container/src/routes/bazel_v2.rs:38-41`).
-- Per-tenant concurrent writes are bounded by `BAZEL_WRITE_CONCURRENCY_LIMIT` (`crates/corelink-container/src/routes/bazel_v2.rs:112`).
+- All routes use the matchit `:name` capture form, never `{name}`, per the DEBT-029 rule — the executed `.route("/bazel/v2/:instance/...")` strings carry the `:name` form (`crates/corelink-container/src/routes/bazel_v2.rs:278-300`; the rule is narrated in the //! at `:38-41`).
+- Per-tenant concurrent writes are bounded by `BAZEL_WRITE_CONCURRENCY_LIMIT` — the executed over-cap guard `if *count >= BAZEL_WRITE_CONCURRENCY_LIMIT { … 429 }` rejects the PUT BEFORE the body is buffered (`crates/corelink-container/src/routes/bazel_v2.rs:183-184`; the const decl is `:112`).
 - The bytes served are the same R2 blobs as the native CAS/AC endpoints (a shared store, not a copy): `bazel_v2::build_handlers_from(cas_read, cas_write, ac_lookup, ac_update)` is handed the SAME cloned CAS/AC handler Arcs built once at `crates/corelink-container/src/routes.rs:392` (CAS) and `:481` (AC), so no new R2 connection or copy is opened (`crates/corelink-container/src/routes.rs:527`).
 
 # Gotchas
@@ -56,6 +56,6 @@ path params, builds the REAPI digest, reads Worker-injected caller metadata, and
 5. `crates/corelink-container/src/routes/bazel_v2.rs:297-300` — `findMissingBlobs` batch route.
 6. `crates/corelink-container/src/routes/bazel_v2.rs:307-314` — `header_str` Worker-metadata reader.
 7. `crates/corelink-bazel-bridge/src/adapter.rs:241-249` — `check_tenant`: the real `:instance` == `caller_tenant` isolation enforcer (`CrossTenantDenied` on mismatch).
-8. `crates/corelink-container/src/routes/bazel_v2.rs:38-41` — matchit `:name` capture-form rule (DEBT-029).
-9. `crates/corelink-container/src/routes/bazel_v2.rs:112` — `BAZEL_WRITE_CONCURRENCY_LIMIT`.
+8. `crates/corelink-container/src/routes/bazel_v2.rs:278-300` — the executed `:name`-form `.route(...)` strings (DEBT-029 matchit capture-form rule; the //! at `:38-41` narrates it).
+9. `crates/corelink-container/src/routes/bazel_v2.rs:183-184` — the executed `if *count >= BAZEL_WRITE_CONCURRENCY_LIMIT { 429 }` over-cap write guard (rejects before body buffering; the const decl is at `:112`).
 10. `crates/corelink-container/src/routes.rs:527` — `build_handlers_from(cas_read, cas_write, ac_lookup, ac_update)` passes the SAME cloned CAS/AC handler Arcs (built at `crates/corelink-container/src/routes.rs:392`/`:481`) into the Bazel state — the executed shared-store wiring (the `crates/corelink-container/src/routes/bazel_v2.rs:5-8` //! only narrates it).

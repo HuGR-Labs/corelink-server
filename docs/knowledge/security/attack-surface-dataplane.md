@@ -8,6 +8,10 @@ source_files:
   - "crates/corelink-container/src/routes/cas.rs"
   - "crates/corelink-container/src/routes/cas_erase.rs"
   - "crates/corelink-container/src/storage/r2_s3.rs"
+  - "crates/corelink-container/src/routes/bazel_v2.rs"
+  - "crates/corelink-container/src/routes/turbo_v8.rs"
+  - "crates/corelink-container/src/routes/oci.rs"
+  - "crates/corelink-container/src/adapter_cache.rs"
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
 provenance: "AUTHORED"
 tags: ["security", "data-plane", "cache-poisoning", "tenant-isolation", "red-team"]
@@ -62,15 +66,30 @@ were tried and failed. It is the data-plane companion to the broader
   client-trust header set on every forward and re-establishes them from the PAT-resolved tenant +
   D1 scope + tier, and the container re-verifies the bearer PAT and the path-vs-auth tenant before
   storage (`docs/security/2026-06-23-brutal-dataplane.md:52-64`).
-- Bazel and Turbo are tenant-scoped: Bazel checks the instance namespace equals the authenticated
-  tenant on every op; Turbo demotes a validated `teamId` to an intra-tenant sub-namespace so
-  cross-tenant reach is impossible (`docs/security/2026-06-23-brutal-dataplane.md:66-75`).
-- The OCI plane held: digest-verified on push and content-bound on serve, tenant resolved only from
-  the HMAC-signed bearer (never a header), the velocity gate wired and not fail-open on a missing
-  tenant (`docs/security/2026-06-23-brutal-dataplane.md:77-85`).
+- Bazel and Turbo are tenant-scoped: Bazel passes the authenticated `caller_tenant` into every
+  bridge op (`crates/corelink-container/src/routes/bazel_v2.rs:583`,
+  `crates/corelink-container/src/routes/bazel_v2.rs:681`) and the bridge's
+  `CrossTenantDenied` (instance namespace ≠ caller) is mapped to a 403 at
+  `crates/corelink-container/src/routes/bazel_v2.rs:448`; Turbo demotes a validated `teamId`
+  (`validate_team_id` at `crates/corelink-container/src/routes/turbo_v8.rs:852`,
+  `crates/corelink-container/src/routes/turbo_v8.rs:929`) to a sub-namespace keyed WITHIN the
+  authenticated tenant `caller_tenant = auth.0`
+  (`crates/corelink-container/src/routes/turbo_v8.rs:848`,
+  `crates/corelink-container/src/routes/turbo_v8.rs:926`) so cross-tenant reach is impossible
+  (`docs/security/2026-06-23-brutal-dataplane.md:66-75`).
+- The OCI plane held: digest-verified on push and content-bound on serve — `finalize_upload`
+  re-runs `OciDigest::parse(blob_key).verify_against_bytes(...)` and rejects a lying digest BEFORE
+  `moat.put` (`crates/corelink-container/src/routes/oci.rs:524-526`) — tenant resolved only from
+  the HMAC-signed bearer via `oci_bearer_tenant` (never a header)
+  (`crates/corelink-container/src/routes/oci.rs:810`,
+  `crates/corelink-container/src/routes/oci.rs:841`), the velocity gate wired and not fail-open on a
+  missing tenant (`docs/security/2026-06-23-brutal-dataplane.md:77-85`).
 - npm/pip/brew `_public` poisoning is closed: npm tarballs are stored per-tenant, `_public`
-  metadata is SSRF-pinned and integrity-verified pre-store, and `MoatCache::get` re-hashes served
-  bytes and self-heals a mismatch as a miss (`docs/security/2026-06-23-brutal-dataplane.md:87-99`).
+  metadata is SSRF-pinned and integrity-verified pre-store, and `MoatCache::get`
+  (`crates/corelink-container/src/adapter_cache.rs:194`) re-hashes served bytes against the mapped
+  `content_hash` and self-heals a mismatch as a miss
+  (`crates/corelink-container/src/adapter_cache.rs:219-233`;
+  `docs/security/2026-06-23-brutal-dataplane.md:87-99`).
 
 # Invariants
 
@@ -112,3 +131,7 @@ were tried and failed. It is the data-plane companion to the broader
 13. `crates/corelink-container/src/storage/r2_s3.rs:466` / `:973` / `:986` — `R2CasHandler`; `verify_content_hash` before any R2 PUT; `HashMismatch` returned with nothing written (poisoning gate).
 14. `crates/corelink-container/src/storage/r2_s3.rs:519` — every R2 key is built via `r2_key`, which derives the HMAC tenant prefix through `tenant_prefix(self.tdk, tenant)?` and fails CLOSED on its error.
 15. `crates/corelink-container/src/routes/cas.rs:674` — the native read route's precise 410-Gone tombstone gate (answers 410 before reaching the handler).
+16. `crates/corelink-container/src/routes/bazel_v2.rs:448` / `:583` / `:681` — Bazel tenant scoping: `caller_tenant` threaded into every bridge op; `BazelBridgeError::CrossTenantDenied` (instance ≠ caller) → 403 (the executed cross-tenant enforcer).
+17. `crates/corelink-container/src/routes/turbo_v8.rs:848` / `:926` / `:852` / `:929` — Turbo isolation: storage tenant is `caller_tenant = auth.0`, the validated `teamId` is a sub-namespace WITHIN it (`validate_team_id`), never a security boundary.
+18. `crates/corelink-container/src/routes/oci.rs:524-526` / `:810` / `:841` — OCI digest re-verify in `finalize_upload` before `moat.put`; tenant recovered only from the verified HMAC bearer via `oci_bearer_tenant` (header-supplied tenant is never trusted).
+19. `crates/corelink-container/src/adapter_cache.rs:194` / `:219-233` — `MoatCache::get` re-hashes served `_public` bytes against the mapped `content_hash` and treats a mismatch as a miss (self-heal), closing served-byte poisoning.

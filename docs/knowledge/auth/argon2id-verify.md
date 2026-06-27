@@ -71,9 +71,10 @@ gates, `customer_d1.rs` persists.
 - The dummy timing-burn still consumes a global permit; under sustained overload the burn is skipped and
   the request fails CLOSED uniformly — the lost timing parity is acceptable because every request shares
   its fate (`crates/corelink-container/src/adapter_pat.rs:545-598`).
-- `admin` is treated as a cache-rw superset by the capability checks, but admin *route* authorization is
-  a SEPARATE internal-auth gate, not this scope module
-  (`crates/corelink-container/src/scope.rs:34-45`).
+- `admin` is treated as a cache-rw superset by the capability checks — the executed
+  `matches!(t, … | "admin")` arms in `requires_cache_read` (`crates/corelink-container/src/scope.rs:77`)
+  and `requires_cache_write` (`:94`) — but admin *route* authorization is a SEPARATE internal-auth gate,
+  not this scope module.
 - `classify_requested_scopes` is the shared truth for the mint escalation gate and the D1 persister; the
   substring-vs-exact-token divergence it closed once let `"writes"` slip through
   (`crates/corelink-container/src/scope.rs:112-149`).

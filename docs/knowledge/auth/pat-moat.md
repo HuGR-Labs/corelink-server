@@ -19,7 +19,8 @@ verification cost on a token that cannot possibly be genuine. The moat is two in
 layers: a cheap fail-CLOSED gate at the Cloudflare Worker edge that rejects before any expensive work,
 and a deep Argon2id possession proof in the Rust container plane that only genuine tokens reach. The two
 layers share a design rule — every distinguishable rejection collapses to one uniform answer, so the
-wire never tells an attacker *why* a token failed (`crates/corelink-container/src/adapter_pat.rs:43-47`).
+wire never tells an attacker *why* a token failed — the executed uniform `VerifyError::InvalidPat`
+returns at `crates/corelink-container/src/adapter_pat.rs:543`, `:598`, `:650`, `:656`.
 This is why a flood of garbage tokens cannot exhaust the container's Argon2id pool: garbage never gets
 there.
 
@@ -28,8 +29,9 @@ there.
 The moat is the trust spine for all six cache surfaces. The Worker resolves a request's tenant from its
 PAT under a tight CPU budget (HMAC fast-fail + D1 expiry lookup) and forwards a server-trusted
 `x-corelink-tenant-id`; the container re-runs the full Option-B verification rather than trusting
-that header blindly, so a compromised or misconfigured Worker cannot grant cache access on its own
-(`crates/corelink-container/src/adapter_pat.rs:5-14`). The same cheap-then-deep shape protects the
+that header blindly, so a compromised or misconfigured Worker cannot grant cache access on its own —
+the executed re-run is the Argon2id possession verify on a blocking thread the Worker skips
+(`crates/corelink-container/src/adapter_pat.rs:602-650`). The same cheap-then-deep shape protects the
 control surfaces (mint, introspect) at the Worker edge.
 
 **Qualifier — the "full" verification is cached on the data plane.** On the six cache surfaces the

@@ -4,7 +4,6 @@ title: "Billing/commerce crate cluster"
 description: "The money path — usage aggregation/emit, the idempotent Stripe adapter + webhook verification, and the DPA-gated tier-selection checkout orchestrator."
 source_files:
   - "crates/corelink-billing/src/lib.rs"
-  - "crates/corelink-billing-stripe/src/lib.rs"
   - "crates/corelink-billing-stripe/src/signature.rs"
   - "crates/corelink-billing-stripe/src/idempotency.rs"
   - "crates/corelink-tier-selection/src/lib.rs"
@@ -48,10 +47,9 @@ The cluster powers the [money-path checkout + billing ingest](/launch/money-path
 
 1. `crates/corelink-billing/src/lib.rs:1-20` — the single-import aggregator over the 14 billing primitives.
 2. `crates/corelink-billing/src/lib.rs:32-63` — the absorbed-crate list (aggregator/emit/reconcile/stripe/tier/quota/ratelimit/abuse).
-3. `crates/corelink-billing-stripe/src/lib.rs:21-24` — `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER`: audit before state mutation on the Stripe arm.
-4. `crates/corelink-billing-stripe/src/idempotency.rs:80-97` — `derive_idempotency_key` = BLAKE3-256(JCS(aggregate)) (`INV-BILLING-NO-DUP`).
-5. `crates/corelink-billing-stripe/src/signature.rs:198-220` — `verify_stripe_signature`: webhook HMAC-SHA256, constant-time multi-candidate compare, 5-min replay window.
-6. `crates/corelink-tier-selection/src/dpa.rs:14-21` — `DpaAcceptanceGate` trait contract: fail-CLOSED `is_accepted` that `select_tier` consults.
-7. `crates/corelink-tier-selection/src/ledger.rs:191-260` — `select_tier`: the full DPA-gated checkout orchestrator (audit-first → DPA → enterprise-route → D1 lock + UNIQUE → Free/Stripe dispatch).
-8. `crates/corelink-tier-selection/src/ledger.rs:197-221` — `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER` (audit step 1) then `INV-ONBOARD-DPA-FIRST` (`is_accepted` → `DpaRequired` before any Stripe call).
-9. `crates/corelink-tier-selection/src/ledger.rs:236-260` — the 60s `tier_selection_locks` row lock (`INSERT OR IGNORE`) + UNIQUE-active check inside one critical section.
+3. `crates/corelink-billing-stripe/src/idempotency.rs:80-97` — `derive_idempotency_key` = BLAKE3-256(JCS(aggregate)) (`INV-BILLING-NO-DUP`).
+4. `crates/corelink-billing-stripe/src/signature.rs:198-220` — `verify_stripe_signature`: webhook HMAC-SHA256, constant-time multi-candidate compare, 5-min replay window.
+5. `crates/corelink-tier-selection/src/dpa.rs:14-21` — `DpaAcceptanceGate` trait contract: fail-CLOSED `is_accepted` that `select_tier` consults.
+6. `crates/corelink-tier-selection/src/ledger.rs:191-260` — `select_tier`: the full DPA-gated checkout orchestrator (audit-first → DPA → enterprise-route → D1 lock + UNIQUE → Free/Stripe dispatch).
+7. `crates/corelink-tier-selection/src/ledger.rs:197-221` — `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER` (audit step 1) then `INV-ONBOARD-DPA-FIRST` (`is_accepted` → `DpaRequired` before any Stripe call).
+8. `crates/corelink-tier-selection/src/ledger.rs:236-260` — the 60s `tier_selection_locks` row lock (`INSERT OR IGNORE`) + UNIQUE-active check inside one critical section.

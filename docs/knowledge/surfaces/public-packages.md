@@ -57,9 +57,9 @@ hold.
 
 # Invariants
 - Tenant identity comes from the bearer PAT (re-verified, Option B); the path `<tenant>` is NEVER trusted — the executed `TenantResolver::resolve` impls call `self.0.verify(pat_plaintext)` on the shared `PatVerifier` (`crates/corelink-container/src/routes/npm.rs:238-247`; `crates/corelink-container/src/routes/pip.rs:236-247`; `crates/corelink-container/src/routes/brew.rs:118-123`).
-- Public upstream bytes are deduped cross-tenant under `PUBLIC_NAMESPACE`; the PAT gates access, the public content is shared (`crates/corelink-container/src/routes/pip.rs:32-37`; `crates/corelink-container/src/routes/brew.rs:27-30`).
+- Public upstream bytes are deduped cross-tenant under `PUBLIC_NAMESPACE`; the PAT gates access, the public content is shared — the executed `self.moat.get/put(PUBLIC_NAMESPACE, …)` (ignoring the per-request tenant) is the dedup enforcer (`crates/corelink-container/src/routes/pip.rs:117-118`; `crates/corelink-container/src/routes/brew.rs:90`, `crates/corelink-container/src/routes/brew.rs:104`).
 - npm `@scoped` (private) packages stay in the per-tenant namespace, never `PUBLIC_NAMESPACE` (`crates/corelink-container/src/routes/npm.rs:97-106`).
-- OCI uses `.merge` not `nest_service` because the first segment after `/v2/` is the OCI repo name, not a tenant — stripping it would corrupt the repo (`crates/corelink-container/src/routes/oci.rs:19-30`).
+- OCI uses `.merge` not `nest_service` because the first segment after `/v2/` is the OCI repo name, not a tenant — stripping it would corrupt the repo — the executed mount is `Router::new().merge(oci_router(state))` (`crates/corelink-container/src/routes/oci.rs:753`; the //! rationale is at `:19-30`).
 - OCI cost/request-count attribution is keyed on the tenant recovered from the verified bearer, not a (stripped, forgeable) header: `oci_bearer_tenant` calls `oci::auth::verify` and recovers the tenant (`crates/corelink-container/src/routes/oci.rs:810-820`), and `oci_quota_gate` charges that resolved tenant (`crates/corelink-container/src/routes/oci.rs:841`).
 
 # Gotchas

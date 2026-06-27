@@ -7,6 +7,8 @@ source_files:
   - "worker/src/lib/quota.ts"
   - "crates/corelink-container/src/customer_d1.rs"
   - "crates/corelink-container/src/oci_cap.rs"
+  - "crates/corelink-container/src/tenant_quota.rs"
+  - "crates/corelink-container/src/routes/customer.rs"
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
 provenance: "AUTHORED"
 tags: ["security", "billing", "stripe", "money-path", "quota"]
@@ -51,10 +53,16 @@ container materializer defense-in-depth) that an operator must understand before
   suppresses the cache reconcile, a cache price never touches the runners table, and the two env
   price tables are disjoint by construction (`docs/security/2026-06-23-review-money-path.md:163-172`).
 - The `$`-ceiling and byte-accounting TOCTOU windows are closed via atomic single-statement D1
-  check-and-accrue (steady-state, cycle-roll, and brand-new-tenant first op all covered)
-  (`docs/security/2026-06-23-review-money-path.md:173-182`).
+  check-and-accrue (steady-state, cycle-roll, and brand-new-tenant first op all covered): the
+  executed enforcer is `check_and_accrue` (`crates/corelink-container/src/tenant_quota.rs:658`),
+  whose `Ok(false)` (over-ceiling) arm rejects with `402 Payment Required`
+  (`crates/corelink-container/src/tenant_quota.rs:795-799`) and which fails CLOSED on an
+  indeterminate/transport error (`docs/security/2026-06-23-review-money-path.md:173-182`).
 - F-018 billing scope gate: every billing/PII customer surface requires `requires_cache_write`, so a
-  read-only `cas:r` token gets 403 (`docs/security/2026-06-23-review-money-path.md:183-188`).
+  read-only `cas:r` token gets 403 — the executed gate is `if !crate::scope::requires_cache_write(...)
+  { 403 }` repeated on each customer-credential handler
+  (`crates/corelink-container/src/routes/customer.rs:675`, and siblings at `:733`/`:784`/`:865`/`:914`)
+  (`docs/security/2026-06-23-review-money-path.md:183-188`).
 
 # Invariants
 
@@ -99,3 +107,5 @@ container materializer defense-in-depth) that an operator must understand before
 10. `worker/src/lib/quota.ts:152` — Worker read path: `SELECT tier FROM tier_selections WHERE tenant_id = ?1 AND subscription_state = 'active'` (no paid tier for a `pending_checkout` row).
 11. `crates/corelink-container/src/customer_d1.rs:799` — container tier resolver: the same `AND subscription_state = 'active'` filter (mirrors the Worker; defense-in-depth second writer).
 12. `crates/corelink-container/src/oci_cap.rs:131` — OCI cap resolver: the same active-only filter so a `pending_checkout` row yields no paid OCI quota.
+13. `crates/corelink-container/src/tenant_quota.rs:658` / `:795-799` — the executed atomic `$`-ceiling: `check_and_accrue` returns `Ok(false)` over-ceiling, which the middleware maps to `402 Payment Required` (fail-CLOSED on indeterminate/transport error).
+14. `crates/corelink-container/src/routes/customer.rs:675` (and `:733`/`:784`/`:865`/`:914`) — the executed F-018 billing/PII scope gate: `if !requires_cache_write(scope) { 403 }` on each customer-credential handler.

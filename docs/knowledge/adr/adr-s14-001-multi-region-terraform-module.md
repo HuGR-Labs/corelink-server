@@ -4,6 +4,9 @@ title: "ADR-S14-001 — Multi-region Terraform module + per-region KV namespace 
 description: "Why CoreLink's 4-region infra uses one reusable Terraform module, a per-region KV namespace, a pinned EU DO jurisdiction, and a Rust migration binary."
 source_files:
   - "specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md"
+  - "infra/terraform/modules/corelink-region/main.tf"
+  - "apps/migrate-single-to-multi-region/src/main.rs"
+  - "crates/corelink-container/src/storage/region_map.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "s14", "region", "terraform", "residency"]
@@ -32,6 +35,19 @@ The four regions are the foundation layer for S-14, and four architectural decis
 
 Runtime enforcement of this region pinning is the subject of [ADR-S14-002 — Region pinning enforcement](/adr/adr-s14-002-region-pinning-enforcement.md).
 
+# Status vs shipped code
+
+The **artifacts** this ADR mandates exist in the repo — the reusable Terraform module
+(`infra/terraform/modules/corelink-region/main.tf`) and the Rust migration binary
+(`apps/migrate-single-to-multi-region/src/main.rs`) are both present — but the **deployed reality is
+US-only**. All R2 buckets are ENAM (R2 has no SA region), so the Consequences as written — "four
+production regions stood up (WNAM/ENAM/WEUR/SAM)" and "4 KV namespaces (~$20/mo) provisioned" — are
+**not live**; the region topology is a built-and-tested module applied to a single live region, not four
+standing regions. The container's `region_map` carries `PROVISIONED_MACROS = {wnam, enam, weur, sam}`
+as the **intended** Phase-1 set (`crates/corelink-container/src/storage/region_map.rs:34`), but that is
+the macro-mapping table, not evidence of four provisioned regions. Treat the multi-region infra as
+designed-and-coded, US-only-deployed.
+
 # Citations
 
 1. `specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md:24-37` — the FF-HR-002 / FF-HR-003 / FM-054 forcing factors.
@@ -41,3 +57,5 @@ Runtime enforcement of this region pinning is the subject of [ADR-S14-002 — Re
 5. `specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md:54-56` — module-breaking-change consequence.
 6. `specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md:72-75` — KV-namespace provisioning consequence.
 7. `specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md:93-96` — WEUR deploy-checklist consequence.
+8. `infra/terraform/modules/corelink-region/main.tf:1`, `apps/migrate-single-to-multi-region/src/main.rs:1` — the module + migration binary exist in-repo; but the deployment is US-only (all R2 ENAM), so the "4 regions stood up / 4 KV namespaces provisioned" consequences are not live.
+9. `crates/corelink-container/src/storage/region_map.rs:34` — `PROVISIONED_MACROS = {wnam, enam, weur, sam}` is the INTENDED Phase-1 macro set (a mapping table), not evidence of four standing production regions.

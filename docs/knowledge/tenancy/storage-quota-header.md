@@ -36,7 +36,8 @@ caused the rejection.
 **The header is NOT the only cap-delivery seam — OCI is the exception.** The Worker DELETES
 `x-corelink-tenant-id` (and therefore never sets `x-corelink-storage-quota-bytes`) on the OCI
 pass-through, so on the OCI surface the resolved per-tier cap travels INSIDE the verified OCI bearer
-token instead: the cap is signed into the token at mint time (`encode_cap`,
+token instead: the cap is encoded to the wire field (`encode_cap`,
+`crates/corelink-adapter-host/src/oci/auth.rs:243-248`) and signed into the token at mint time (`mint`,
 `crates/corelink-adapter-host/src/oci/auth.rs:285-303`) as the `storage_cap_bytes` field of the
 HMAC-verified `VerifiedToken` (`:200-220`), decoded fail-closed only after the signature check
 (`decode_cap`, `:250-263`, `:350-359`). It uses the SAME sentinel vocabulary as the header — `Some(n)`

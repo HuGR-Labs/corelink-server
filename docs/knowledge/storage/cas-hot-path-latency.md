@@ -50,8 +50,9 @@ view of the [native CAS surface](/surfaces/native-cas.md) running on the [contai
   (`crates/corelink-container/src/billing_d1_http.rs:90-114`).
 - Any D1 transport / non-2xx / decode error maps to `Transient` → HTTP 500 so the caller retries; the
   store is fail-CLOSED, never silently treating a failed read as success — the executed map is `run`'s
-  `.map_err(|e| BillingD1Error::Transient(...))` (`crates/corelink-container/src/billing_d1_http.rs:113`;
-  the no-row read path's `Transient` arm is `:319`).
+  `.map_err(|e| BillingD1Error::Transient(...))` (`crates/corelink-container/src/billing_d1_http.rs:113`).
+  The no-row read path returns `Ok(None)` at `:313` (no row = absent tier, not an error); `:319` is a
+  DIFFERENT arm — a present row whose `tier` column is missing maps to `Transient`.
 - WP-2 must keep the $-ceiling fail-CLOSED with a bounded, reconciled overshoot — a charge is NEVER lost
   and a tenant definitely over-ceiling is still refused
   (`docs/perf/2026-06-19-cas-hot-path-latency.md:68-80`).
@@ -74,5 +75,5 @@ view of the [native CAS surface](/surfaces/native-cas.md) running on the [contai
 5. `docs/perf/2026-06-19-cas-hot-path-latency.md:68-80` — WP-2 $-ceiling fail-closed + tombstone no-false-negative invariants.
 6. `docs/perf/2026-06-19-cas-hot-path-latency.md:74-80` — GDPR Art.17 tombstone false-negative prohibition.
 7. `crates/corelink-container/src/billing_d1_http.rs:1-28` — the sync↔async D1-over-HTTP bridge rationale.
-8. `crates/corelink-container/src/billing_d1_http.rs:113` — `run`'s `.map_err(... BillingD1Error::Transient ...)`: the executed fail-CLOSED transport-error → `Transient` → 500 (no-row arm at `:319`).
+8. `crates/corelink-container/src/billing_d1_http.rs:113` — `run`'s `.map_err(... BillingD1Error::Transient ...)`: the executed fail-CLOSED transport-error → `Transient` → 500. The no-row read returns `Ok(None)` at `:313`; `:319` is the distinct missing-`tier`-column → `Transient` arm.
 9. `crates/corelink-container/src/billing_d1_http.rs:90-114` — `run`: `block_in_place` + `block_on` per D1 round-trip.

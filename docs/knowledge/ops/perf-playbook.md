@@ -42,7 +42,7 @@ synchronous D1-over-HTTP control-plane round-trips. This runbook is the engineer
 5. The regression gate compares p99 (not median) against a baseline manifest and fails on a **tiered** burn —
    `PERF_REGRESS_CRITICAL_PCT_DEFAULT=5` for perf-critical benches, `PERF_REGRESS_DEFAULT_PCT_DEFAULT=15`
    for the rest (a per-bench `tolerance_pct` override wins), running on Linux CI so it is immune to the
-   shared-Mac noise (`.github/workflows/perf-regression.yml:11-12`, `.github/workflows/perf-regression.yml:79-85`;
+   shared-Mac noise (`.github/workflows/perf-regression.yml:80-81`, `.github/workflows/perf-regression.yml:79-85`;
    `docs/internal/PERFORMANCE-PLAYBOOK.md:372-455`).
 6. The CAS case study measured 5 sequential prod requests: ~4.0s cold then a steady ~1.5s warm that does
    NOT decay (`docs/perf/2026-06-19-cas-hot-path-latency.md:18-33`).
@@ -92,5 +92,5 @@ synchronous D1-over-HTTP control-plane round-trips. This runbook is the engineer
 12. `docs/perf/2026-06-19-cas-hot-path-latency.md:55-94` — the 4 remediation work-packages + invariants.
 13. `docs/perf/2026-06-19-cas-hot-path-latency.md:68-80` — WP-2 fail-closed quota + no-false-negative tombstone.
 14. `docs/perf/2026-06-19-cas-hot-path-latency.md:82-87` — WP-3 keep-warm scoped to active tenants (margin).
-15. `.github/workflows/perf-regression.yml:11-12` — the deployed split: critical benches gate at >5% p99, non-critical at >15% (NOT a flat 10%).
+15. `.github/workflows/perf-regression.yml:80-81` — the executed env block `PERF_REGRESS_CRITICAL_PCT_DEFAULT: "5"` / `PERF_REGRESS_DEFAULT_PCT_DEFAULT: "15"`: the deployed split (critical benches gate at >5% p99, non-critical at >15%, NOT a flat 10%). (`:11-12` is the descriptive header comment, not the enforcer.)
 16. `.github/workflows/perf-regression.yml:51-60` / `:79-85` / `:153-163` — the `critical`/`default` threshold inputs + `PERF_REGRESS_*_PCT_DEFAULT` env defaults (5 / 15) + the split-threshold check step (`tolerance_pct` per-bench override wins).

@@ -61,10 +61,13 @@ the Worker's `QUOTAS[tier].requestsPerMonthMax` byte-for-byte so the two enforce
 
 # Invariants
 
-- The cap is keyed on the verified-bearer tenant the OCI gate resolved, never a client-supplied header
-  (`crates/corelink-container/src/request_count.rs:50-56`).
+- The cap is keyed on the verified-bearer tenant the OCI gate resolved, never a client-supplied header —
+  the charge is taken inside the executed `if let Some(tenant) = oci_bearer_tenant(&st.realm_key, req.headers())`
+  (`crates/corelink-container/src/routes/oci.rs:841`).
 - Every uncertain path fail-OPENs (allow, no count) — the opposite of the $-ceiling's fail-CLOSED posture,
-  and intentional (`crates/corelink-container/src/request_count.rs:31-48`).
+  and intentional — the executed `return None` arms in `check_and_increment`: clock-unavailable
+  (`crates/corelink-container/src/request_count.rs:258`), tier-resolution fault (`:266`), uncapped-tier
+  `cap_for_tier(&tier)?` (`:270`), store error (`:277`).
 - An uncapped tier skips the counter write entirely, so there is no D1 cost for tenants with nothing to
   enforce (`crates/corelink-container/src/request_count.rs:268-270`).
 

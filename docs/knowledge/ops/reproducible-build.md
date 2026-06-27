@@ -6,6 +6,7 @@ source_files:
   - "rust-toolchain.toml"
   - "docs/build/reproducible.md"
   - "specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md"
+  - ".github/workflows/reproducible-build.yml"
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
 provenance: "AUTHORED"
 tags: ["ops", "reproducible-builds", "supply-chain", "tamper-detection", "runbook"]
@@ -29,16 +30,20 @@ GA tag's signed freeze in the [release process](/ops/release-process.md); the de
 - The customer-trust surface: any SecOps lead can re-verify a release's hash from the published report.
 
 # How it works
-1. A 2-runner `ubuntu-22.04` matrix builds the artifact, each runner SHA-256-hashes its output, and a
-   diff-check job gates the byte difference at ≤5% (`docs/build/reproducible.md:12-59`).
+1. A 2-runner matrix (`runner: [runner-1, runner-2]`) builds the artifact, each runner SHA-256-hashes
+   its output, and a diff-check job gates the byte difference at ≤5% (`docs/build/reproducible.md:12-59`).
+   The deployed workflow runs both runners on the **self-hosted Linux fleet** `[self-hosted, Linux, X64]`
+   (`.github/workflows/reproducible-build.yml:46`) — the old hosted `ubuntu-22.04` OS-matrix dimension was
+   dropped (off GitHub billing); the in-file header comment still references `ubuntu-22.04` and is stale.
 2. Every build applies the hermetic flag set: `SOURCE_DATE_EPOCH` from `git log -1 --pretty=%ct`,
    `--remap-path-prefix`, `-C codegen-units=1`, `--jobs 1`, `--frozen --offline`, `CARGO_INCREMENTAL=0`
    (`docs/build/reproducible.md:63-75`).
 3. All six non-determinism sources are documented with mitigation + residual risk (cargo timestamp, LLVM
    DWARF paths, rustc version drift, build.rs timestamps, link-order race, CPU heterogeneity)
    (`docs/build/reproducible.md:78-191`).
-4. The workflow triggers on `v*` tag push, nightly 04:00 UTC, and manual dispatch — not per-PR
-   (`docs/build/reproducible.md:14-18`).
+4. The deployed workflow triggers ONLY on a nightly `schedule` (`cron: '0 10 * * *'`) plus manual
+   `workflow_dispatch` — NOT per-PR, and (despite the prose in `docs/build/reproducible.md`) NOT on a
+   `v*` tag and NOT at 04:00 (`.github/workflows/reproducible-build.yml:18-24`).
 5. ADR-0015 ratifies the decision: 2-runner matrix + three hermetic flags + ≤5% threshold + nightly/tag CI
    + quarterly review + the post-GA-Q3 roadmap (`specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md:69-86`).
 6. The 5% value was chosen because the hermetic flags reduce diff to <2% in practice while a real backdoor
@@ -73,8 +78,8 @@ GA tag's signed freeze in the [release process](/ops/release-process.md); the de
 
 # Citations
 0. `rust-toolchain.toml:13` — `channel = "1.91.1"`: the exact-minor toolchain pin invariant (the enforcer).
-1. `docs/build/reproducible.md:12-59` — the 2-runner matrix + diff-check architecture + outcomes.
-2. `docs/build/reproducible.md:14-18` — workflow triggers (tag / nightly / manual, not per-PR).
+1. `docs/build/reproducible.md:12-59` — the 2-runner matrix + diff-check architecture + outcomes (note: the doc's runner/trigger prose is stale; the workflow is authoritative).
+2. `.github/workflows/reproducible-build.yml:18-24` / `:46` — the DEPLOYED triggers (`schedule: cron '0 10 * * *'` + `workflow_dispatch` only) and runner (`runs-on: [self-hosted, Linux, X64]`) — NOT `v*`-tag / 04:00 / `ubuntu-22.04` (the enforcer of the trigger+runner claims).
 3. `docs/build/reproducible.md:55-59` — outcome bands (bit_identical / within_threshold / exceeds).
 4. `docs/build/reproducible.md:63-75` — the hermetic build flag set.
 5. `docs/build/reproducible.md:78-191` — the six documented non-determinism sources.

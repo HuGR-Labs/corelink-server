@@ -38,7 +38,7 @@ the authenticated tenant; cross-tenant attempts are denied 403 at the route leve
    (`crates/corelink-container/src/routes/ac.rs:613`; `crates/corelink-container/src/routes/ac.rs:667`).
 
 # Invariants
-- A non-canonical action digest (not 64 lowercase-hex) is rejected 400 before storage (`crates/corelink-container/src/routes/ac.rs:460-462`).
+- A non-canonical action digest (not 64 lowercase-hex) is rejected 400 before storage — the executed `if !is_canonical_digest(&action_digest) { return (BAD_REQUEST, …) }` guard fires on each mutating path (lookup `crates/corelink-container/src/routes/ac.rs:500-502`, update `:558-559`, delete `:625-626`; the `is_canonical_digest` predicate is defined at `:460-462`).
 - Cross-tenant attempts are rejected **HTTP 403** by the route-level tenant check
   (`crates/corelink-container/src/routes/ac.rs:496-497`, `:554-555`, `:621-622`), which returns
   **before** `lookup`/`update` runs — so this reject path itself writes **no** audit row. (The
@@ -58,7 +58,7 @@ the authenticated tenant; cross-tenant attempts are denied 403 at the route leve
 1. `crates/corelink-container/src/routes/ac.rs:443-451` — the AC router (lookup/update/delete + ref list).
 2. `crates/corelink-container/src/routes/ac.rs:484` — `handle_lookup`.
 3. `crates/corelink-container/src/routes/ac.rs:539` — `handle_update`.
-4. `crates/corelink-container/src/routes/ac.rs:453-462` — `is_canonical_digest` (64 lowercase-hex) gate.
+4. `crates/corelink-container/src/routes/ac.rs:500-502` / `:558-559` / `:625-626` — the executed `if !is_canonical_digest(&action_digest) { return BAD_REQUEST }` 400 guards (lookup/update/delete, before any R2 key derivation); the `is_canonical_digest` predicate is defined at `:453-462`.
 5. `crates/corelink-container/src/routes/ac.rs:464-481` — `pat_gate_reject` native PAT possession gate.
 6. `crates/corelink-container/src/routes/ac.rs:613` — `handle_delete`.
 7. `crates/corelink-container/src/routes/ac.rs:667` — `handle_list_refs`.

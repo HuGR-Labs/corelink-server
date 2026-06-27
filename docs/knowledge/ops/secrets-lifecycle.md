@@ -4,6 +4,8 @@ title: "Secrets lifecycle & PAT-scope runbook"
 description: "How CoreLink manages secrets and PAT scopes operationally: the write-only Cloudflare secret constraint, the additive PAT-scope launch fix (pat.scope CHECK vs the cas:rw provisioning bug), the printf-not-echo secret-put discipline, and the deferred D1-encrypted-lease secrets broker (ADR-0067)."
 source_files:
   - "crates/corelink-container/src/scope.rs"
+  - "crates/corelink-clerk/src/env_config.rs"
+  - "migrations/d1/0037_signup_orchestration.sql"
   - "docs/operator/launch-pat-scope-fix-runbook.md"
   - "specs/03_architecture/adrs/ADR-0067-secrets-broker-d1-encrypted-lease-deferred.md"
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
@@ -31,9 +33,11 @@ works within the write-only-secret wall. The PAT-scope authorization itself is e
 - The forward design for the deferred secrets broker (D1-encrypted lease), recorded so the build is later.
 
 # How it works
-1. The D1 `pat.scope` column is CHECK-constrained to `('read-write','read-only','admin')` (migration
-   0037), but the provisioning path was writing `scope='cas:rw'` — a CHECK violation that would fail the
-   first real signup's PAT INSERT (`docs/operator/launch-pat-scope-fix-runbook.md:8-27`).
+1. The D1 `pat.scope` column is CHECK-constrained to `('read-write','read-only','admin')` —
+   `scope TEXT NOT NULL DEFAULT 'read-write' CHECK (scope IN ('read-write','read-only','admin'))`
+   (`migrations/d1/0037_signup_orchestration.sql:102-103`) — but the provisioning path was writing
+   `scope='cas:rw'`, a CHECK violation that would fail the first real signup's PAT INSERT
+   (`docs/operator/launch-pat-scope-fix-runbook.md:8-27`).
 2. Because auth migrations are additive-only (CI gate `check_migrations_additive.py`), the fix is
    code-side: provisioning now writes `read-write` and `scope.rs` additively accepts `read-write`/
    `read-only` alongside the legacy `cas:*` forms (`docs/operator/launch-pat-scope-fix-runbook.md:14-27`).
@@ -64,7 +68,8 @@ works within the write-only-secret wall. The PAT-scope authorization itself is e
 - The 25 legacy prod PATs were all `scope='admin'`; the optional least-privilege back-fill to `read-write`
   is owner-gated and safe either way because `admin` already grants cache rw (a superset)
   (`docs/operator/launch-pat-scope-fix-runbook.md:41-50`).
-- The Clerk issuer secret is `CLERK_JWT_ISSUER` (read by `corelink-clerk`), NOT `CLERK_ISSUER_URL` as an
+- The Clerk issuer secret is `CLERK_JWT_ISSUER` (the canonical env var name `ENV_JWT_ISSUER` in
+  `corelink-clerk`, `crates/corelink-clerk/src/env_config.rs:44`), NOT `CLERK_ISSUER_URL` as an
   earlier task called it — and unset is valid (it derives from the publishable key)
   (`docs/operator/launch-pat-scope-fix-runbook.md:51-56`).
 - The broker is deferred, not designed-away: launch ships on the interim operator-managed flat-file/env
@@ -79,6 +84,8 @@ works within the write-only-secret wall. The PAT-scope authorization itself is e
 4. `docs/operator/launch-pat-scope-fix-runbook.md:35-40` — deploy-only, no DB migration.
 5. `docs/operator/launch-pat-scope-fix-runbook.md:41-50` — owner-gated legacy-admin least-privilege back-fill.
 6. `docs/operator/launch-pat-scope-fix-runbook.md:51-56` — `printf`-not-`echo` secret put + `CLERK_JWT_ISSUER` name.
+6b. `crates/corelink-clerk/src/env_config.rs:44` — `ENV_JWT_ISSUER = "CLERK_JWT_ISSUER"` (the canonical issuer env-var name the crate reads).
+6c. `migrations/d1/0037_signup_orchestration.sql:102-103` — the `pat.scope` `DEFAULT 'read-write'` + `CHECK (scope IN ('read-write','read-only','admin'))` constraint (the schema enforcer behind the launch fix).
 7. `specs/03_architecture/adrs/ADR-0067-secrets-broker-d1-encrypted-lease-deferred.md:24-30` — write-only CF secrets constraint.
 8. `specs/03_architecture/adrs/ADR-0067-secrets-broker-d1-encrypted-lease-deferred.md:32-40` — D1-encrypted-lease broker design.
 9. `specs/03_architecture/adrs/ADR-0067-secrets-broker-d1-encrypted-lease-deferred.md:51-56` — plaintext-in-D1 + CF-direct broker rejected.

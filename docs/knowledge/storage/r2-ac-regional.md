@@ -53,8 +53,12 @@ durable tier behind the [Action Cache surface](/surfaces/action-cache.md).
 - WEUR MUST use the EU DO jurisdiction (Schrems II + GDPR Art. 46); any other jurisdiction for WEUR is a
   CRITICAL compliance gap (`crates/corelink-region/src/region.rs:112-127`,
   `crates/corelink-region/src/region.rs:140-158`).
-- The five AC regions are a fixed set and the AC bucket prefix defaults to `corelink-ac-`, overridable
-  only via env in non-prod (`crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:84-90`).
+- The five AC regions are a fixed set — the `AC_REGIONS` constant `&["sam","iad","lhr","nrt","syd"]`
+  iterated by the erase sweep (`crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:56`) — and the
+  AC bucket prefix defaults to `corelink-ac-` but is overridable via the `R2_AC_BUCKET_PREFIX` env in ANY
+  env: `new()`'s `env_or("R2_AC_BUCKET_PREFIX", DEFAULT_AC_BUCKET_PREFIX)` reads it unconditionally
+  (`crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:84`); the "non-prod envs" wording at the
+  const doc-comment `:47` is intent only, not an enforced env gate.
 - AC bucket + region are read through `env_or` defaults, so an absent/empty env never yields an empty
   bucket name (`crates/corelink-container/src/routes/ac.rs:360-361`).
 - The **target** SLO is a 24h p99 CRR-lag ceiling, with a synthetic object still missing past 24h a hard
@@ -76,5 +80,5 @@ durable tier behind the [Action Cache surface](/surfaces/action-cache.md).
 6. `crates/corelink-region/src/r2_crr.rs:41-58` — CRR 24h p99 ceiling + missing-object SEV-2 threshold.
 7. `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:1-10` — AC stored as per-region buckets `corelink-ac-{sam,iad,lhr,nrt,syd}`.
 8. `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:50-56` — the fixed five-region AC sweep set.
-9. `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:84-90` — AC bucket-prefix default + `R2_AC_BUCKET_PREFIX` override.
+9. `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:56` — the `AC_REGIONS` fixed five-region constant (the fixed-set enforcer iterated by the sweep); `:84` — `new()`'s `env_or("R2_AC_BUCKET_PREFIX", DEFAULT_AC_BUCKET_PREFIX)` honors the override in ANY env (the `:47` "non-prod" note is doc-comment intent only).
 10. `crates/corelink-container/src/routes/ac.rs:360-361` — live AC route bucket/region env resolution (`corelink-ac-iad`/`iad`).

@@ -43,7 +43,9 @@ self-service plane. It rests on the same trusted tenant id established by
   (`crates/corelink-container/src/main.rs:471`), so they sit OUTSIDE the layer by construction. When the D1 tier-resolver is unavailable
   the layer falls back to the team-default `RateLimitLayerState` for all tenants rather than failing the router (F-017).
 - The per-tenant bucket is keyed on the edge-injected `x-corelink-tenant-id`, the trustworthy tenant
-  source for the native surfaces (`crates/corelink-container/src/routes/ratelimit_layer.rs:24-35`). It is
+  source for the native surfaces — the executed `req.headers().get(TENANT_HEADER)` read
+  (`crates/corelink-container/src/routes/ratelimit_layer.rs:442-447`) folded into the bucket key via
+  `tenant_key_uuid(raw_tenant)` (`crates/corelink-container/src/routes/ratelimit_layer.rs:463`). It is
   NOT uniformly tenant-keyed across the WHOLE data plane: the OCI surface reaches this layer with
   `x-corelink-tenant-id` deleted by the Worker (the tenant is resolved from the OCI bearer AFTER the
   limiter runs), so the per-tenant gate fail-OPENS for every OCI request. A SEPARATE per-repo limiter
@@ -79,9 +81,10 @@ self-service plane. It rests on the same trusted tenant id established by
 
 # Gotchas
 
-- The limiter is wired with bounded NoOp sinks in production; the `InMemory*` capture sinks push every
-  decision onto unbounded `Vec`/`HashMap`s and self-OOM the container if wired by mistake (the prior bug)
-  (`crates/corelink-container/src/routes/ratelimit_layer.rs:38-49`).
+- The limiter is wired with bounded NoOp sinks in production — the executed field type
+  `limiter: Arc<InMemoryTokenBucketRateLimiter<NoOpRateLimitAuditSink, NoOpRateLimitMetrics>>`
+  (`crates/corelink-container/src/routes/ratelimit_layer.rs:203`); the `InMemory*` capture sinks push every
+  decision onto unbounded `Vec`/`HashMap`s and self-OOM the container if wired by mistake (the prior bug).
 - `principal()` (the token prefix for audit) fails CLOSED to the `_unknown` sentinel
   (`crates/corelink-container/src/routes/customer.rs:242-245`), but `tenant()` does NOT — the tenant must be
   a real, non-sentinel value or the request is `401` (`crates/corelink-container/src/routes/customer.rs:231-234`),
@@ -91,10 +94,10 @@ self-service plane. It rests on the same trusted tenant id established by
 
 1. `crates/corelink-container/src/main.rs:460-461` — the route-merge order enforcer: `/_health` is appended to the already-rate-limited router returned by `build_with_factory`, so it sits OUTSIDE the limiter by construction.
 2. `crates/corelink-container/src/main.rs:471` — `/_internal/*` surfaces (pat/mint, introspect, billing-ingest, dsr, cas-erase, tier-select, webhook) are merged AFTER `build_with_factory`, also outside the limiter (the `//!` narration is `crates/corelink-container/src/routes/ratelimit_layer.rs:15-22`).
-3. `crates/corelink-container/src/routes/ratelimit_layer.rs:24-35` — the per-tenant bucket keyed on the edge-injected tenant header.
+3. `crates/corelink-container/src/routes/ratelimit_layer.rs:442-447` — the executed `req.headers().get(TENANT_HEADER)` read that keys the per-tenant bucket (folded via `tenant_key_uuid` at `:463`; the `//!` narration is `:24-35`).
 3b. `crates/corelink-container/src/routes/ratelimit_layer.rs:133-161` — the OCI per-repo velocity gate (`OCI_NS`/`OCI_REPO_REQ_PER_SEC`/`OCI_REPO_BURST`): the per-tenant gate fail-OPENS on OCI (header deleted), so a separate repo-keyed limiter guards the shared `_oci` pool.
 3c. `crates/corelink-container/src/routes/ratelimit_layer.rs:204-208` — the `oci_limiter` field: a SEPARATE limiter (not tenant-keyed) for the OCI plane.
-4. `crates/corelink-container/src/routes/ratelimit_layer.rs:38-49` — bounded NoOp production sinks (the InMemory-OOM trap).
+4. `crates/corelink-container/src/routes/ratelimit_layer.rs:203` — the executed `limiter` field type wiring the bounded `NoOpRateLimitAuditSink`/`NoOpRateLimitMetrics` production sinks (the InMemory-OOM trap the `//!` `:38-49` narrates).
 5. `crates/corelink-container/src/routes/ratelimit_layer.rs:415` — `tenant_key_uuid` stable 128-bit bucket key.
 6. `crates/corelink-container/src/routes/customer.rs:185-198` — the `/v1/customer/*` routes (overview/usage/audit/billing/keys/team/account-delete).
 7. `crates/corelink-container/src/routes/customer.rs:225-235` — `tenant()` fail-CLOSED resolution: missing/empty/sentinel → `Err(())` → `401` before storage access.

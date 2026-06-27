@@ -4,6 +4,8 @@ title: "ADR-S14-002 — Tenant region-pinning enforcement (custom domain authori
 description: "Why the TLS-terminated custom domain (not an X-Region header) is the authoritative request region, enforced by a 4-layer fail-closed stack + 30k property test."
 source_files:
   - "specs/03_architecture/adrs/ADR-S14-002-region-pinning-enforcement.md"
+  - "crates/corelink-privacy/src/residency.rs"
+  - "crates/corelink-container/src/routes/residency.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "s14", "region", "residency", "schrems-ii"]
@@ -37,9 +39,26 @@ Rejected: `X-Region` header (trivially spoofed, no TLS guarantee), geo-IP (proba
 
 This enforces at runtime the region topology established by [ADR-S14-001 — Multi-region Terraform module](/adr/adr-s14-001-multi-region-terraform-module.md).
 
+# Status vs shipped code
+
+This ADR narrates the **designed** 4-layer stack, not the deployed one. The full stack
+(`region_from_host` / Tower `assert_request_residency` 451 / `assert_write_residency` / the
+`region_enforcer` DO) lives **crate-only** as a pure-logic skeleton in `corelink-privacy`
+(`crates/corelink-privacy/src/residency.rs:1-8`, per the `trait-abstraction-defer` charter), and the
+deployed container does **not** depend on `corelink-privacy` (its privacy dependency is
+`corelink-privacy-erasure-worker`). The `region_enforcer` Durable Object does not exist. What ships
+and runs in prod is a single header-based guard: the `residency_guard` Tower middleware that rejects a
+cross-region request with **HTTP 409 `residency_violation`** before any handler
+(`crates/corelink-container/src/routes/residency.rs:1`,
+`crates/corelink-container/src/routes/residency.rs:10`) — not the 451 path, and residency is **US-only
+in reality** (all R2 buckets are ENAM; see [ADR-S14-001](/adr/adr-s14-001-multi-region-terraform-module.md)).
+Treat the 4-layer stack as designed intent, the 409 guard as the live control.
+
 # Citations
 
 1. `specs/03_architecture/adrs/ADR-S14-002-region-pinning-enforcement.md:24-33` — the cross-region-leak risk and the header-vs-custom-domain question.
 2. `specs/03_architecture/adrs/ADR-S14-002-region-pinning-enforcement.md:36-52` — custom-domain-authoritative decision and the 4-layer + 30k-test enforcement stack.
 3. `specs/03_architecture/adrs/ADR-S14-002-region-pinning-enforcement.md:72-80` — header / geo-IP / trigger-only / 10k-test alternatives rejected.
 4. `specs/03_architecture/adrs/ADR-S14-002-region-pinning-enforcement.md:56-66` — positive and negative consequences.
+5. `crates/corelink-privacy/src/residency.rs:1-8` — the 4-layer region-pinning stack ships as a pure-logic skeleton in `corelink-privacy` (NOT a container dep); the `region_enforcer` DO is unbuilt.
+6. `crates/corelink-container/src/routes/residency.rs:1`, `:10` — the DEPLOYED control: the `residency_guard` middleware returning HTTP 409 `residency_violation` on a cross-region request (the header-based live path, not the designed 451 stack).

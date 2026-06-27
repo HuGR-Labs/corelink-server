@@ -5,6 +5,9 @@ description: "How CoreLink is DESIGNED to wrap data-encryption keys under a cust
 source_files:
   - "crates/corelink-container/src/byok.rs"
   - "crates/corelink-byok/src/lib.rs"
+  - "crates/corelink-byok/src/byok_core/types.rs"
+  - "crates/corelink-byok/src/byok_azure/entra.rs"
+  - "crates/corelink-byok/src/byok_aws/real.rs"
   - "deny.toml"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
@@ -65,9 +68,15 @@ no `KmsProvider`. It is the intended at-rest confidentiality complement to the d
   binary rests on those `compile_error!` guards — `crates/corelink-byok/src/lib.rs:165-166` is only a
   COMMENT claiming cargo-deny enforces it, whereas `deny.toml` carries a `multiple-versions = "deny"`
   duplicate-version ban (`deny.toml:180`), not a literal single-KMS-SDK rule.
-- `Dek`/`WrappedDek` zeroize discipline + `SecretString` credential bytes + `subtle::ConstantTimeEq`
-  comparisons are preserved by reference across the wave-35 absorption
-  (`crates/corelink-byok/src/lib.rs:64-90`).
+- `Dek` zeroize discipline is enforced by the executed `#[derive(ZeroizeOnDrop, Zeroize)]` on `Dek`
+  (`crates/corelink-byok/src/byok_core/types.rs:67`), with the 32-byte key bytes redacted from the manual
+  `Debug` impl (`crates/corelink-byok/src/byok_core/types.rs:73-77`); `WrappedDek` carries only opaque
+  KMS ciphertext, no plaintext key material. `SecretString` credential redaction is the `byok_azure`
+  newtype + its redacting `Debug` (`crates/corelink-byok/src/byok_azure/entra.rs:50-63`), and the
+  `subtle::ConstantTimeEq` comparisons are the executed `.ct_eq(...).unwrap_u8() == 0` checks in the
+  provider real adapters (`crates/corelink-byok/src/byok_aws/real.rs:673`, mirrored in the gcp/azure/vault
+  `real.rs`). `crates/corelink-byok/src/lib.rs:64-90` is the wave-35 absorption `//!` narrating these by
+  reference, NOT the enforcer.
 - `#![forbid(unsafe_code)]` holds on both the container factory and the umbrella crate's surface
   (`crates/corelink-container/src/byok.rs:10`, `crates/corelink-byok/src/lib.rs:93`).
 
@@ -87,4 +96,6 @@ no `KmsProvider`. It is the intended at-rest confidentiality complement to the d
 5b. `crates/corelink-byok/src/lib.rs:159-188` — the `_internal-*`/`_matrix-test` feature path links all four provider modules WITHOUT tripping the guards (the public-namespace gates are the only ones the `compile_error!`s inspect). `:165-166` is a COMMENT asserting cargo-deny enforces a single-SDK-per-binary rule; the actual `deny.toml:180` rule is `multiple-versions = "deny"` (a duplicate-version ban), so the production single-public-provider guarantee is the `compile_error!` guards, not cargo-deny.
 6. `crates/corelink-byok/src/lib.rs:34-43` — cargo feature reference (`aws`/`gcp`/`azure`/`vault`), default no provider.
 7. `crates/corelink-byok/src/lib.rs:52-62` — charter compliance: `forbid(unsafe_code)`, zeroize, `SecretString`, `ConstantTimeEq`.
-8. `crates/corelink-byok/src/lib.rs:64-90` — wave-35 absorption preserving zeroize + credential discipline by reference.
+8. `crates/corelink-byok/src/byok_core/types.rs:67` — `#[derive(ZeroizeOnDrop, Zeroize)]` on `Dek`: the executed zeroize-on-drop enforcer (key bytes redacted from `Debug` at `:73-77`).
+8b. `crates/corelink-byok/src/byok_azure/entra.rs:50-63` — the `SecretString` credential newtype + its redacting `Debug` (`SecretString(<redacted N bytes>)`).
+8c. `crates/corelink-byok/src/byok_aws/real.rs:673` — the executed `subtle::ConstantTimeEq` `.ct_eq(...).unwrap_u8() == 0` compare (mirrored in the gcp/azure/vault `real.rs`). `crates/corelink-byok/src/lib.rs:64-90` is the wave-35 `//!` narration, not the enforcer.

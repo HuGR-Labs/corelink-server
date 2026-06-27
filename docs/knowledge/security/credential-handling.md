@@ -41,8 +41,10 @@ channel for a freshly-minted PAT must NOT be (client-readable Clerk metadata / t
 - The two highest-value internal surfaces — cross-tenant introspection (`FABRIC_INTROSPECT_AUTH_KEY`)
   and billing ingest (`BILLING_INGEST_AUTH_KEY`) — read their dedicated key directly with a ≥32-char
   floor and NO fallback to the shared key: both routes mount only when their DEDICATED key is present
-  (`crates/corelink-container/src/main.rs:482` introspect, `crates/corelink-container/src/main.rs:503`
-  billing) (`docs/security/2026-06-23-secreview-credentials.md:72-82`).
+  — the executed `if let Some(_) = build_state_from_env()` mount guards at
+  `crates/corelink-container/src/main.rs:486` (introspect) and
+  `crates/corelink-container/src/main.rs:509` (billing) (`:482`/`:503` are the preceding comments)
+  (`docs/security/2026-06-23-secreview-credentials.md:72-82`).
 - PAT plane separation holds: the native plane verifies via constant-time HMAC, the adapter plane via
   Argon2id, mint is a pure function that returns the plaintext once and never logs it, and rotate/
   revoke is tenant-scoped and never opens a zero-valid-PAT window (`docs/security/2026-06-23-secreview-credentials.md:116-139`).
@@ -110,4 +112,4 @@ channel for a freshly-minted PAT must NOT be (client-readable Clerk metadata / t
 10. `worker/src/lib/internal_auth.ts:112-126` — `constantTimeSecretEqual`: padded `timingSafeEqual` + `bytesEqual && lenEqual` length bit (no length oracle).
 11. `worker/src/lib/internal_auth.ts:73-90` — `resolveConsumerKey`: dedicated per-consumer key iff set AND ≥32 chars, else shared-key fallback, else `null` (fail-CLOSED) — the LOW-1 fallback enforcer.
 12. `crates/corelink-container/src/routes/tier_select.rs:348-350` / `crates/corelink-container/src/routes/admin.rs:102` — the container's mirrored constant-time `ct_eq` + length-bit internal-auth gate.
-13. `crates/corelink-container/src/main.rs:482` / `:503` — `/internal/v1/auth/introspect` and `/internal/v1/billing/usage` mount only with their DEDICATED `FABRIC_INTROSPECT_AUTH_KEY` / `BILLING_INGEST_AUTH_KEY` (no shared-key fallback).
+13. `crates/corelink-container/src/main.rs:486` / `:509` — the executed `if let Some(_) = ...::build_state_from_env()` mount guards: `/internal/v1/auth/introspect` and `/internal/v1/billing/usage` mount only with their DEDICATED `FABRIC_INTROSPECT_AUTH_KEY` / `BILLING_INGEST_AUTH_KEY` (no shared-key fallback); `:482`/`:503` are the doc-comments above them.

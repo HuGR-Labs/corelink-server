@@ -4,6 +4,7 @@ title: "ADR-S11-011 — Region Migration Cooldown 30 Days"
 description: "Why a tenant's region migration is gated by a 30-day cooldown from primary_region last-set, plus Privacy Officer + Compliance approval, before data may move."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-011-region-migration-cooldown-30d.md"
+  - "crates/corelink-privacy/src/residency/migration.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "s11", "region-migration", "cooldown", "lgpd", "gdpr"]
@@ -26,6 +27,16 @@ The migration cooldown is **30 days** from `tenant.primary_region` last-set; a r
 
 The migration store enforces the 30d cooldown at the application layer with `region_migration_request.created_at_ms` as the reference timestamp; Privacy Officer + Compliance sign-off is required before `status = 'approved'`; a tenant email at submission explains the cooldown; and this ADR is referenced in the Privacy Notice region-migration section (`specs/03_architecture/adrs/ADR-S11-011-region-migration-cooldown-30d.md:62-69`).
 
+# Status vs shipped code
+
+This ADR is **library-only and not deployed**. The 30-day cooldown logic and the
+`POST /v1/admin/tenant/region-migration` handler live as a pure-logic skeleton in `corelink-privacy`
+(`crates/corelink-privacy/src/residency/migration.rs:1-8`), but the deployed container does **not**
+depend on `corelink-privacy` (its privacy dep is `corelink-privacy-erasure-worker`), so that route is
+**unmounted** in prod — no live endpoint enforces the cooldown today. The monotonic-`primary_region`
+backstop it relies on is itself a designed invariant (INV-DATA-RESIDENCY). Treat the cooldown as a
+ratified design proven against fakes, not a running control; residency in prod is US-only.
+
 # Citations
 
 1. `specs/03_architecture/adrs/ADR-S11-011-region-migration-cooldown-30d.md:23-28` — Context: privacy_model.md §7.2 cooldown requirement.
@@ -33,3 +44,4 @@ The migration store enforces the 30d cooldown at the application layer with `reg
 3. `specs/03_architecture/adrs/ADR-S11-011-region-migration-cooldown-30d.md:37-52` — Rationale: TIA window, scheduling, commitment signal, reviewer time.
 4. `specs/03_architecture/adrs/ADR-S11-011-region-migration-cooldown-30d.md:62-69` — Consequences: enforcement, reference timestamp, sign-off, notice reference.
 5. `specs/03_architecture/adrs/ADR-S11-011-region-migration-cooldown-30d.md:54-60` — Alternatives Considered: 7d and 60d rejected, 14d considered but short of buffer for large enterprise tenants.
+6. `crates/corelink-privacy/src/residency/migration.rs:1-8` — the cooldown + `POST /v1/admin/tenant/region-migration` handler ship as a library-only skeleton in `corelink-privacy` (NOT a container dep); the route is unmounted in prod.

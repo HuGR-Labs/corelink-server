@@ -53,8 +53,9 @@ never floating point.
 
 - Money is integer micro-dollars throughout; floating point is never used for the cap
   (`crates/corelink-container/src/tenant_quota.rs:32-37`).
-- Every uncertain path fail-CLOSES: over-ceiling → `402`, store/clock error → `503`; only an explicit
-  in-budget `Allow` proceeds (`crates/corelink-container/src/tenant_quota.rs:18-30`).
+- Every uncertain path fail-CLOSES — the executed arms in `QuotaGuard::check`: clock-unavailable → `503`
+  (`crates/corelink-container/src/tenant_quota.rs:745`), store error → `503` (`:762`), over-ceiling → `402`
+  (`:799`); only an explicit in-budget `Ok(true)` proceeds.
 - The accrue is a serialized DB-side increment, so concurrent ops at the cycle boundary cannot lose an
   update or over-admit spend (`crates/corelink-container/src/tenant_quota.rs:777-810`).
 

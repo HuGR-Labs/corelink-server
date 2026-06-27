@@ -59,8 +59,10 @@ written.
   a hashed tenant handle, `pat_id`, `token_id`, and scope bits — never the plaintext — and the caller
   writes the plaintext to Clerk session metadata once and discards it
   (`crates/corelink-container/src/routes/internal_pat.rs:623-631`).
-- The `admin` scope is never grantable via self-serve key creation; unrecognized tokens fail CLOSED
-  (`crates/corelink-container/src/customer_d1.rs:311-324`).
+- The `admin` scope is never grantable via self-serve key creation (the executed
+  `Ok(RequestedScopeClass::Admin) => Err(Unauthorized)` arm,
+  `crates/corelink-container/src/customer_d1.rs:322-324`); unrecognized tokens fail CLOSED at the
+  executed `Err(token) => Err(Unauthorized)` arm (`crates/corelink-container/src/customer_d1.rs:325-327`).
 - Revoke is tenant-scoped: a cross-tenant `pat_id` cannot be revoked (or even observed)
   (`crates/corelink-container/src/customer_d1.rs:1060-1064`).
 
@@ -72,8 +74,8 @@ written.
 - `scope` may be NULL on legacy rows; the verifier's D1 row reader maps that to `""`
   (`crates/corelink-container/src/adapter_pat.rs:144-150`), which then fails CLOSED at the scope gate
   rather than erroring (`crates/corelink-container/src/scope.rs:73-95`).
-- `last_used_at` is not tracked; the list handler always reports `None`
-  (`crates/corelink-container/src/customer_d1.rs:18-20`).
+- `last_used_at` is not tracked; the list handler's `PatRow` always passes `None` for it
+  (`crates/corelink-container/src/customer_d1.rs:920-921`).
 
 # Citations
 

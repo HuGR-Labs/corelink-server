@@ -4,6 +4,8 @@ title: "ADR-S14-005 — BYOK 4-provider semantics (Azure AAD flow + Vault mTLS +
 description: "Provider-specific BYOK decisions: a two-layer AES-GCM inner key to give Azure wrapKey AAD binding, mTLS + cert pinning for customer-hosted Vault, and parse-time cross-provider tamper detection."
 source_files:
   - "specs/03_architecture/adrs/ADR-S14-005-byok-gcp-azure-vault.md"
+  - "crates/corelink-byok/src/lib.rs"
+  - ".github/workflows/byok_matrix_weekly.yml"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "s14", "byok", "azure", "vault", "mtls"]
@@ -32,6 +34,18 @@ The provider-agnostic `wrap_dek(dek, key_id, encryption_context)` interface must
 
 This builds on the trait defined in [ADR-S14-004 — BYOK adapter trait + envelope-encryption flow](/adr/adr-s14-004-byok-trait-envelope-encryption.md).
 
+# Status vs shipped code
+
+BYOK is **unwired in the deployed container**. The provider semantics ship as crate code under the
+`corelink-byok` umbrella (`crates/corelink-byok/src/lib.rs:1-10`, re-exporting `KmsProvider` / `Dek` /
+`WrappedDek` / `EnvelopeEncryptor` from `corelink-byok-core`), but no live CAS blob is BYOK-encrypted at
+rest — at-rest BYOK envelope encryption is listed as pure-logic-skeleton / not-wired in CLAUDE.md's
+"Designed ≠ wired". Two further mismatches with the Decision prose: the 16-cell matrix runs as a
+**weekly staging cron** (`.github/workflows/byok_matrix_weekly.yml:16-19`, `cron: '17 6 * * 1'` +
+`workflow_dispatch`), **not** a per-PR CI gate; and the consequences (Azure ~2ms, Vault mTLS, parse-time
+tamper detection) describe the designed flow, not a control exercised on production traffic. Treat this
+ADR as ratified design + tested crate logic, not a live at-rest-encryption posture.
+
 # Citations
 
 1. `specs/03_architecture/adrs/ADR-S14-005-byok-gcp-azure-vault.md:24-36` — the three provider-specific problems.
@@ -39,3 +53,5 @@ This builds on the trait defined in [ADR-S14-004 — BYOK adapter trait + envelo
 3. `specs/03_architecture/adrs/ADR-S14-005-byok-gcp-azure-vault.md:78-130` — Vault mTLS + pinning and cross-provider tamper detection.
 4. `specs/03_architecture/adrs/ADR-S14-005-byok-gcp-azure-vault.md:132-142` — the 16-cell matrix CI gate.
 5. `specs/03_architecture/adrs/ADR-S14-005-byok-gcp-azure-vault.md:146-157` — positive consequences and trade-offs.
+6. `crates/corelink-byok/src/lib.rs:1-10` — BYOK ships as crate code (`corelink-byok` umbrella) but is unwired in the deployed container (no live at-rest BYOK-encrypted CAS blob).
+7. `.github/workflows/byok_matrix_weekly.yml:16-19` — the 16-cell matrix runs as a WEEKLY staging cron (`cron '17 6 * * 1'` + `workflow_dispatch`), NOT the per-PR CI gate the Decision prose claims.

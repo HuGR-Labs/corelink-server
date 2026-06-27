@@ -29,7 +29,7 @@ This is the data-plane possession gate and the second of CoreLink's 2-level PAT 
 5. Stage 1 — HMAC fast-reject (pre-D1): the plaintext is HMAC-checked against the signing-key overlap set; a forged token is rejected as `InvalidPat` with NO D1 round-trip (`crates/corelink-container/src/adapter_pat.rs:538-543`).
 6. Stage 2 — D1 lookup by the non-secret `token_id`, expiry-filtered in SQL; an unknown/expired/revoked id runs a bounded dummy Argon2id burn for timing parity, then returns `InvalidPat` (`crates/corelink-container/src/adapter_pat.rs:545-599`).
 7. Stage 3 — Argon2id: the secret segment is verified against the stored PHC hash on a blocking thread, gated by a global concurrency permit AND a per-tenant sub-permit (consistent global->per-tenant order); an acquire-timeout fails closed as `Backend` (`crates/corelink-container/src/adapter_pat.rs:602-650`).
-8. Stage 4 — scope gate (fail-closed): no cache-read capability -> `InvalidPat`; otherwise the read/write split is surfaced (`crates/corelink-container/src/adapter_pat.rs:652-660`; `crates/corelink-container/src/scope.rs:73-73`; `crates/corelink-container/src/scope.rs:93-93`).
+8. Stage 4 — scope gate (fail-closed): no cache-read capability -> `InvalidPat`; otherwise the read/write split is surfaced — the executed scope allowlists are `matches!(t, "cas:rw" | "cas:r" | "cas:w" | "read-write" | "read-only" | "admin")` (read) and `matches!(t, "cas:rw" | "cas:w" | "read-write" | "admin")` (write) (`crates/corelink-container/src/adapter_pat.rs:652-660`; `crates/corelink-container/src/scope.rs:77`; `crates/corelink-container/src/scope.rs:94`).
 9. Tenant binding: on a genuine PAT the gate caches `fp -> tenant`, then returns Ok ONLY if the resolved tenant equals the claimed tenant; a real PAT for tenant A against tenant B's path is a uniform 401 (`crates/corelink-container/src/native_pat_gate.rs:196-205`).
 10. Cache write: a verified entry is inserted with a short TTL so the next request in the burst skips Argon2id, and expired entries are evicted on read to bound the map (`crates/corelink-container/src/native_pat_gate.rs:218-244`).
 
@@ -38,7 +38,7 @@ This is the data-plane possession gate and the second of CoreLink's 2-level PAT 
 - A token that fails the HMAC layer NEVER reaches Argon2id — the fast-reject is pre-D1 and pre-permit (`crates/corelink-container/src/adapter_pat.rs:538-543`).
 - The D1 row lookup runs BEFORE the expensive Argon2id, so a valid-HMAC token for a nonexistent/expired/revoked `token_id` is decided cheaply and only hits the bounded dummy burn (`crates/corelink-container/src/adapter_pat.rs:545-599`).
 - Argon2id concurrency is double-bounded (global permit + per-tenant sub-permit) so neither a global flood nor one tenant flooding distinct PATs can drain the pool; saturation fails closed 503, never serves (`crates/corelink-container/src/adapter_pat.rs:602-650`).
-- The scope gate is fail-closed: an empty/absent scope grants nothing (`crates/corelink-container/src/adapter_pat.rs:652-660`; `crates/corelink-container/src/scope.rs:73-73`).
+- The scope gate is fail-closed: an empty/absent scope grants nothing — the executed `tokens(scope).any(|t| matches!(t, …))` allowlist returns `false` on no matching token (`crates/corelink-container/src/adapter_pat.rs:652-660`; `crates/corelink-container/src/scope.rs:77`).
 - Possession is bound to the CLAIMED tenant — a genuine PAT for a different tenant is rejected with the SAME uniform 401 as a forgery (no oracle) (`crates/corelink-container/src/native_pat_gate.rs:196-205`; `crates/corelink-container/src/native_pat_gate.rs:247-251`).
 - The cache key is a SHA-256 fingerprint, never the plaintext, so the in-memory map cannot leak a usable secret (`crates/corelink-container/src/native_pat_gate.rs:253-257`).
 
@@ -56,6 +56,6 @@ This is the data-plane possession gate and the second of CoreLink's 2-level PAT 
 4. `crates/corelink-container/src/native_pat_gate.rs:247-251` — uniform 401 for every PAT-rejection condition (no oracle).
 5. `crates/corelink-container/src/adapter_pat.rs:534-660` — `verify_capability`: HMAC fast-reject -> D1 lookup (+ bounded dummy burn) -> bounded Argon2id -> scope gate.
 6. `crates/corelink-container/src/adapter_pat.rs:731-735` — `verify`: thin wrapper returning the owning tenant id.
-7. `crates/corelink-container/src/scope.rs:73-73` — `requires_cache_read` (fail-closed read capability).
-8. `crates/corelink-container/src/scope.rs:93-93` — `requires_cache_write` (the write-capability split).
+7. `crates/corelink-container/src/scope.rs:77` — the executed `requires_cache_read` allowlist `matches!(t, "cas:rw" | "cas:r" | "cas:w" | "read-write" | "read-only" | "admin")` (fail-closed read capability; the fn-sig is `:73`).
+8. `crates/corelink-container/src/scope.rs:94` — the executed `requires_cache_write` allowlist `matches!(t, "cas:rw" | "cas:w" | "read-write" | "admin")` (the write-capability split; the fn-sig is `:93`).
 </content>
