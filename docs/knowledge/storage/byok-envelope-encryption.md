@@ -4,6 +4,7 @@ title: "BYOK envelope encryption at rest"
 description: "How CoreLink is DESIGNED to wrap data-encryption keys under a customer-controlled KMS (AWS/GCP/Azure/Vault) via a microkernel BYOK core with exactly one provider linked per build — note: no KMS provider is constructed in the live container yet (default build links the in-memory fake)."
 source_files:
   - "crates/corelink-container/src/byok.rs"
+  - "crates/corelink-container/src/byok_orchestrator.rs"
   - "crates/corelink-byok/src/lib.rs"
   - "crates/corelink-byok/src/byok_core/types.rs"
   - "crates/corelink-byok/src/byok_azure/entra.rs"
@@ -31,16 +32,22 @@ feature" guarantee for a PRODUCTION binary therefore rests on the public-feature
 (activating two public features is a hard compile error). Note: `crates/corelink-byok/src/lib.rs:165-166`
 is a COMMENT asserting cargo-deny "enforces the single-provider-SDK-per-binary rule" — but the repo's
 `deny.toml` carries only a `multiple-versions = "deny"` duplicate-version ban (`deny.toml:180`), NOT a
-literal single-KMS-SDK rule, so cargo-deny is a duplicate-version backstop, not the single-SDK enforcer. BYOK is the **designed** envelope-encryption layer: the
-container exposes a feature-gated factory that can construct the production provider behind an
-`Arc<dyn KmsProvider>`, but at-rest encryption is **not yet on the live R2 write path** — the default build
-links no real KMS SDK (it uses the in-memory fake) and the live storage layer (`storage.rs`/`r2_s3.rs`) wires
-no `KmsProvider`. It is the intended at-rest confidentiality complement to the durable
-[R2 CAS bucket](/storage/r2-cas-bucket.md), to be activated when the production provider is wired in.
+literal single-KMS-SDK rule, so cargo-deny is a duplicate-version backstop, not the single-SDK enforcer. BYOK at-rest encryption is an **unwired skeleton** —
+the encrypt/decrypt call site does NOT exist, and this is **not merely "feature-gated / default-fake"**: even
+the factory functions that would build a provider have **zero non-test callers**. `make_provider`
+(`crates/corelink-container/src/byok_orchestrator.rs:208`) and `make_aws_kms_provider`
+(`crates/corelink-container/src/byok.rs:26`) are invoked ONLY from the byok test files; `build_active` is
+reached only via the un-called `make_provider`. The core `EnvelopeEncryptor` / `wrap_dek` / `unwrap_dek`
+are likewise invoked nowhere outside the `corelink-byok` crate and its tests, and the live storage layer
+(`storage.rs` / `r2_s3.rs`) contains **no** `KmsProvider`, `EnvelopeEncryptor`, or `encrypt` reference at
+all — the CAS/storage write path does NOT envelope-encrypt. So enabling the `byok-aws-real` feature would
+link a real SDK but still encrypt nothing (no call site to invoke it). It remains the *intended* at-rest
+confidentiality complement to the durable [R2 CAS bucket](/storage/r2-cas-bucket.md), to be activated when a
+call site is actually wired into the write path.
 
 # Role
-- The feature-gated production factory that constructs the live KMS provider as an `Arc<dyn KmsProvider>`
-  (`crates/corelink-container/src/byok.rs:1-9`).
+- The feature-gated production factory that would construct the live KMS provider as an `Arc<dyn KmsProvider>`
+  — DEFINED but with no non-test caller (`crates/corelink-container/src/byok.rs:1-9`).
 - The BYOK umbrella crate: the single import target re-exporting the core trait + types and gating the
   four providers (`crates/corelink-byok/src/lib.rs:1-21`).
 
@@ -51,9 +58,11 @@ no `KmsProvider`. It is the intended at-rest confidentiality complement to the d
 2. The four providers are exposed as cargo features `aws`/`gcp`/`azure`/`vault`, at most one active per
    build, with no provider as the default test/CI build
    (`crates/corelink-byok/src/lib.rs:34-43`).
-3. The container constructs the production provider behind an `Arc<dyn KmsProvider>` via a feature-gated
-   async factory so future providers drop in behind the same surface
-   (`crates/corelink-container/src/byok.rs:1-9`).
+3. The container DEFINES a feature-gated async factory that would construct the production provider behind an
+   `Arc<dyn KmsProvider>` so future providers drop in behind the same surface
+   (`crates/corelink-container/src/byok.rs:1-9`) — but nothing calls it: `make_provider` /
+   `make_aws_kms_provider` / `build_active` have no non-test caller, so no provider is ever constructed in
+   the running binary.
 4. The container AWS factory `make_aws_kms_provider` only DELEGATES to `AwsKmsRealProvider::new(region)`
    (returning `Arc<dyn KmsProvider>`); the FIPS endpoint is enforced inside that provider in
    `corelink-byok`, NOT in this factory, which otherwise resolves credentials via the standard AWS SDK
@@ -81,9 +90,11 @@ no `KmsProvider`. It is the intended at-rest confidentiality complement to the d
   (`crates/corelink-container/src/byok.rs:10`, `crates/corelink-byok/src/lib.rs:93`).
 
 # Gotchas
-- The container BYOK factory is activated only under its cargo feature (`byok-aws-real`); a default build
-  links no real KMS SDK and uses the in-memory fake — so a `make_aws_kms_provider` call site only exists
-  in the feature-gated wire-up, not the default binary.
+- The container BYOK factory is compiled only under its cargo feature (`byok-aws-real`); a default build
+  links no real KMS SDK and uses the in-memory fake. But note the deeper gap: there is **no
+  `make_aws_kms_provider` call site at all** — not even in the feature-gated wire-up. `make_provider` /
+  `make_aws_kms_provider` are referenced only by the byok test files, so turning the feature on links a real
+  SDK but still wires it to nothing; the encrypt call site on the storage write path does not exist.
 - Provider selection is a build-time decision, not runtime config: switching a tenant's KMS provider is a
   rebuild + redeploy, not a flag flip.
 

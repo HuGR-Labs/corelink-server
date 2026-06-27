@@ -21,8 +21,17 @@ and a deep Argon2id possession proof in the Rust container plane that only genui
 layers share a design rule — every distinguishable rejection collapses to one uniform answer, so the
 wire never tells an attacker *why* a token failed — the executed uniform `VerifyError::InvalidPat`
 returns at `crates/corelink-container/src/adapter_pat.rs:543`, `:598`, `:650`, `:656`.
-This is why a flood of garbage tokens cannot exhaust the container's Argon2id pool: garbage never gets
-there.
+This is why a flood of **bad-HMAC** garbage tokens cannot exhaust the container's Argon2id pool: such
+garbage fails the HMAC fast-reject pre-D1 and never reaches Argon2id. The qualifier matters under the
+leaked-`PAT_SIGNING_KEY` threat model, though: a forged token that carries a VALID HMAC but names a
+NON-existent `token_id` survives the fast-reject, misses the D1 row, and DOES reach a timing-parity
+**dummy burn** that itself runs Argon2id (`crates/corelink-container/src/adapter_pat.rs:558-599`; the
+dummy verify at `crates/corelink-container/src/adapter_pat.rs:591`). That path is NOT unbounded: the
+burn is gated by the SAME global Argon2id permit as the hot path (acquired with a bounded wait, skipped
+on overload) AND by a shared synthetic per-tenant sub-permit through the `UNKNOWN_TOKEN_BUCKET`
+(`crates/corelink-container/src/adapter_pat.rs:586`), so a leaked-key flood across bogus `token_id`s
+cannot drain the global pool via this path — on sub-cap saturation it skips the burn and fails CLOSED
+uniformly (finding #12).
 
 # Role
 
@@ -91,3 +100,5 @@ on the tenant-equality check alone until its cache entry expires.
 4. `crates/corelink-container/src/adapter_pat.rs:543`, `:598`, `:650`, `:656` — every distinguishable rejection returns the uniform `VerifyError::InvalidPat` (HMAC fast-reject, unknown/expired row, Argon2id mismatch, no-cache-scope): no on-the-wire oracle.
 5. `crates/corelink-container/src/adapter_pat.rs:538-543` — the HMAC fast-reject, pre-D1, no permit consumed.
 6. `crates/corelink-container/src/adapter_pat.rs:602-650` — the deep Argon2id possession proof on a blocking thread.
+7. `crates/corelink-container/src/adapter_pat.rs:558-599` — the valid-HMAC-but-unknown-`token_id` timing-parity dummy burn (the leaked-key path that DOES reach an Argon2id round), with the dummy verify at `crates/corelink-container/src/adapter_pat.rs:591`.
+8. `crates/corelink-container/src/adapter_pat.rs:586` — the dummy-burn bound: a shared synthetic per-tenant sub-permit via `UNKNOWN_TOKEN_BUCKET` (atop the global Argon2id permit), so a leaked-key flood across bogus token_ids cannot drain the pool (finding #12).

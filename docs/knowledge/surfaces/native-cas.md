@@ -1,7 +1,7 @@
 ---
 type: "CacheSurface"
 title: "Native CAS surface"
-description: "CoreLink's first-party content-addressable storage surface — the GET/PUT/DELETE/list + bulk-batch CAS routes every other surface ultimately stores into."
+description: "CoreLink's first-party content-addressable storage surface — the GET/PUT/DELETE/list + bulk-batch CAS routes MOST other surfaces ultimately store into (Turborepo is the exception: it uses its own separate R2 bucket via `R2KvStore`, not these shared CAS blobs)."
 source_files:
   - "crates/corelink-container/src/routes/cas.rs"
   - "crates/corelink-container/src/routes/turbo_v8.rs"

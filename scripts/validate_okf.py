@@ -12,15 +12,19 @@ All STRUCTURAL checks validate the working tree at HEAD (the thing being gated);
 `checkpoint_sha` is used ONLY as the content baseline for the C5 freshness check.
 
 C5 freshness mechanism (CONTENT-ANCHOR): for each cited `path:Lx-Ly`, compare the
-CONTENT of lines Lx..Ly of `path` between the concept's `checkpoint_sha` and HEAD
-(each line trailing-whitespace-stripped, internal whitespace preserved). If the
-content the author cited no longer occupies those exact lines, the concept is
-STALE on that cite. This catches an in-range edit AND — critically — a pure
-POSITION-SHIFT (code inserted ABOVE the cited range), which slides the cite off
-its authored content WITHOUT the cited line numbers ever appearing in a diff hunk
-(the blind spot of the old two-tree `git diff` ∩ cited-range mechanism this
-replaces). We NEVER use `git log -L` / blame. Per-file fast skip: when the file
-blob is byte-identical at checkpoint and HEAD, no content can have drifted.
+CONTENT of lines Lx..Ly of `path` between the concept's `checkpoint_sha` and the
+on-disk WORKING TREE (each line trailing-whitespace-stripped, internal whitespace
+preserved). If the content the author cited no longer occupies those exact lines,
+the concept is STALE on that cite. This catches an in-range edit AND — critically
+— a pure POSITION-SHIFT (code inserted ABOVE the cited range), which slides the
+cite off its authored content WITHOUT the cited line numbers ever appearing in a
+diff hunk (the blind spot of the old two-tree `git diff` ∩ cited-range mechanism
+this replaces). The HEAD side is read from the WORKING TREE — the SAME tree C3
+(file-exists) and C6 (line-bounds) read — so a dirty/pre-commit run is self-
+consistent (worktree≠HEAD can't produce a false verdict); in CI worktree==HEAD so
+behavior is unchanged. We NEVER use `git log -L` / blame. Per-file fast skip: when
+the file is byte-identical at checkpoint and in the working tree, no content can
+have drifted.
 
 Usage:
     python3 scripts/validate_okf.py                       # default bundle docs/knowledge/
@@ -147,6 +151,8 @@ class Git:
         self._sha_cache: dict[str, bool] = {}
         self._show_cache: dict[tuple[str, str], list[str] | None] = {}
         self._blob_cache: dict[tuple[str, str], str | None] = {}
+        self._wt_blob_cache: dict[str, str | None] = {}
+        self._wt_lines_cache: dict[str, list[str] | None] = {}
 
     def run(self, args: list[str]) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -184,6 +190,41 @@ class Git:
         content = self.show_file(rev, repo_rel)
         lines = content.splitlines() if content is not None else None
         self._show_cache[key] = lines
+        return lines
+
+    def worktree_blob_sha(self, repo_rel: str):
+        """The git blob object id the on-disk WORKING-TREE file would hash to
+        (None if the path does not exist on disk). The working-tree analogue of
+        `file_blob_sha`, used for the C5 per-file trivially-fresh skip so the
+        skip stays correct in a dirty tree (where worktree != HEAD)."""
+        if repo_rel in self._wt_blob_cache:
+            return self._wt_blob_cache[repo_rel]
+        p = self.repo_root / repo_rel
+        if not p.exists():
+            self._wt_blob_cache[repo_rel] = None
+            return None
+        cp = self.run(["hash-object", "--", repo_rel])
+        val = cp.stdout.strip() if cp.returncode == 0 and cp.stdout.strip() else None
+        self._wt_blob_cache[repo_rel] = val
+        return val
+
+    def worktree_lines(self, repo_rel: str):
+        """Lines of the on-disk WORKING-TREE file `repo_rel` (line terminators
+        stripped), or None if the path does not exist on disk. This is the SAME
+        tree C3 (file-exists) and C6 (line-bounds) validate, so the C5 HEAD-side
+        baseline stays consistent with them on a dirty/pre-commit run. Cached."""
+        if repo_rel in self._wt_lines_cache:
+            return self._wt_lines_cache[repo_rel]
+        p = self.repo_root / repo_rel
+        if not p.exists():
+            self._wt_lines_cache[repo_rel] = None
+            return None
+        try:
+            content = p.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            content = None
+        lines = content.splitlines() if content is not None else None
+        self._wt_lines_cache[repo_rel] = lines
         return lines
 
     def commit_date(self, sha: str):
@@ -273,21 +314,28 @@ def cited_range_drifted(git: "Git", checkpoint_sha: str, path: str, l1: int, l2:
     the two tools can never disagree on what "stale" means).
 
     True iff the CONTENT of lines l1..l2 of `path` differs between
-    `checkpoint_sha` and HEAD (each line trailing-whitespace-stripped). This
-    fires both when the cited lines were edited in place AND when a pure
-    position-shift (an insertion above) slid the authored content off those line
-    numbers. False (trivially fresh) when the file blob is byte-identical at both
-    revs. A file added/removed between the revs is incomparable -> reported drifted.
+    `checkpoint_sha` and the on-disk WORKING TREE (each line trailing-whitespace-
+    stripped). This fires both when the cited lines were edited in place AND when
+    a pure position-shift (an insertion above) slid the authored content off those
+    line numbers. False (trivially fresh) when the file is byte-identical between
+    the checkpoint and the working tree. A file added/removed between the two is
+    incomparable -> reported drifted.
+
+    The HEAD side is read from the WORKING TREE — the SAME tree C3 (file-exists)
+    and C6 (line-bounds) validate — not `git show HEAD:path`. In CI the worktree
+    equals HEAD so behavior is identical; on a dirty/pre-commit run it makes C5
+    agree with C3/C6 (no false-negative when a cited source is edited-but-
+    uncommitted, no false-positive when a source is added on disk but not in HEAD).
     """
     ckpt_blob = git.file_blob_sha(checkpoint_sha, path)
-    head_blob = git.file_blob_sha("HEAD", path)
-    if ckpt_blob is not None and head_blob is not None and ckpt_blob == head_blob:
-        return False  # file unchanged checkpoint->HEAD: no content could drift
+    wt_blob = git.worktree_blob_sha(path)
+    if ckpt_blob is not None and wt_blob is not None and ckpt_blob == wt_blob:
+        return False  # file unchanged checkpoint->working-tree: no content could drift
     ckpt_lines = git.show_lines(checkpoint_sha, path)
-    head_lines = git.show_lines("HEAD", path)
-    if ckpt_lines is None or head_lines is None:
-        return True  # added/removed between revs — conservatively stale
-    return _norm_block(ckpt_lines, l1, l2) != _norm_block(head_lines, l1, l2)
+    wt_lines = git.worktree_lines(path)
+    if ckpt_lines is None or wt_lines is None:
+        return True  # added/removed between checkpoint and working tree — conservatively stale
+    return _norm_block(ckpt_lines, l1, l2) != _norm_block(wt_lines, l1, l2)
 
 
 def _sections(body: str) -> dict[str, list[str]]:
@@ -506,7 +554,8 @@ def run_checks(args, git: Git, fails: Failures):
                             )
 
         # C5: freshness — CONTENT-ANCHOR. For each cited range compare the
-        # CONTENT of those exact lines between checkpoint and HEAD; drift fires
+        # CONTENT of those exact lines between checkpoint and the working tree;
+        # drift fires
         # whether the cause is an in-range edit OR a pure position-shift.
         if ckpt_ok:
             for sf in c.source_files:
@@ -839,3 +888,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+# marker-test

@@ -345,13 +345,14 @@ EOF
     git diff --unified=0 "$sha_a" HEAD -- shift.txt | grep '^@@' > "$tmp/.shift_hunks" 2>&1 || true
   )
 
-  # positive: the content-anchor C5 fires on the pure position-shift.
+  # positive: the content-anchor C5 fires on the pure position-shift AND the STALE
+  # offender line NAMES the specific drifted cite (not just "some [C5] fired").
   total=$((total + 1))
   if grep -q '^\[C5\]' "$tmp/.shift_out" 2>/dev/null \
-     && grep -q 'shift.txt:3-4' "$tmp/.shift_out" 2>/dev/null; then
-    ok "C5 position-shift: insertion-above slides cite off content -> fires [C5]"
+     && grep -q 'STALE: cited content `shift.txt:3-4`' "$tmp/.shift_out" 2>/dev/null; then
+    ok "C5 position-shift: insertion-above slides cite off content -> fires [C5] naming shift.txt:3-4"
   else
-    miss "C5 position-shift positive (no [C5] on shift.txt:3-4): $(tail -1 "$tmp/.shift_out" 2>/dev/null)" "C5-shift-pos"
+    miss "C5 position-shift positive (no [C5] STALE naming shift.txt:3-4): $(tail -1 "$tmp/.shift_out" 2>/dev/null)" "C5-shift-pos"
   fi
   # corroboration: prove the OLD hunk ∩ cited-range check would have passed
   # (the only changed new-lines are 1,2 — disjoint from [3,4]) AND the untouched
@@ -362,6 +363,169 @@ EOF
     ok "C5 position-shift: old diff-∩-range would PASS (hunk @+1,2 ∌ [3,4]); untouched file not flagged"
   else
     miss "C5 position-shift corroboration (hunks: $(cat "$tmp/.shift_hunks" 2>/dev/null | tr '\n' ' '); stable flagged?)" "C5-shift-corr"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- C5 INSERT-BELOW: the DISCRIMINATOR that proves content-anchor, not blob ----
+# A blob-anchor (fire whenever the file changed at all) and a content-anchor
+# (fire only when the CITED lines' content changed) agree on every test above —
+# so none of them actually PROVE we are content-anchored. This one separates
+# them. Commit A defines a file with cited content at lines 2-3; commit B inserts
+# a line BELOW the cited range. The file BLOB changes (a blob-anchor WOULD fire),
+# but the content at lines 2-3 is byte-identical -> the content-anchor MUST NOT
+# fire [C5]. If this ever fires, C5 has silently regressed to a blob-anchor.
+assert_c5_below() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # cited content lives at lines 2-3 at checkpoint A.
+    printf 'head1\ncite-line-a\ncite-line-b\ntail1\ntail2\n' > below.txt
+    git add below.txt
+    git commit -q -m base
+    sha_a="$(git rev-parse HEAD)"
+
+    mkdir -p docs/knowledge/ops
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [below](/ops/below.md)
+EOF
+    cat > docs/knowledge/ops/below.md <<EOF
+---
+type: "Runbook"
+title: "Insert-below discriminator (hermetic)"
+description: "code inserted BELOW the cited range; the cited lines' content is unchanged."
+source_files:
+  - "below.txt"
+checkpoint_sha: "$sha_a"
+provenance: "AUTHORED"
+---
+
+# Insert-below discriminator (hermetic)
+
+Lead paragraph for the insert-below content-anchor discriminator.
+
+# How it works
+- the cited anchor block (\`below.txt:2-3\`).
+
+# Invariants
+- the cited anchor block holds (\`below.txt:2-3\`).
+
+# Citations
+1. \`below.txt:2-3\` — content stays put; only a line BELOW it is inserted.
+EOF
+    git add -A
+    git commit -q -m A
+
+    # commit B: insert a line BELOW the cited range (after line 3). The blob
+    # CHANGES but lines 2-3 (cite-line-a/cite-line-b) are byte-identical.
+    printf 'head1\ncite-line-a\ncite-line-b\nINSERTED-BELOW\ntail1\ntail2\n' > below.txt
+    git add -A
+    git commit -q -m B
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.below_out" 2>&1 || true
+    # record that the file blob genuinely changed A..HEAD (a blob-anchor WOULD fire).
+    if git diff --quiet "$sha_a" HEAD -- below.txt; then echo "blobrc=0"; else echo "blobrc=1"; fi > "$tmp/.below_blobrc"
+  )
+
+  # NEGATIVE discriminator: cited content unchanged -> [C5] must NOT fire (bundle valid).
+  total=$((total + 1))
+  if ! grep -q '^\[C5\]' "$tmp/.below_out" 2>/dev/null \
+     && grep -q 'OKF-CoreLink profile valid' "$tmp/.below_out" 2>/dev/null; then
+    ok "C5 insert-below: cited content unchanged -> does NOT fire [C5] (content-anchor, not blob-anchor)"
+  else
+    miss "C5 insert-below discriminator fired [C5] or invalid bundle: $(tail -1 "$tmp/.below_out" 2>/dev/null)" "C5-below"
+  fi
+  # corroboration: the blob DID change, so a blob-anchor would have mis-fired here.
+  total=$((total + 1))
+  if grep -q 'blobrc=1' "$tmp/.below_blobrc" 2>/dev/null; then
+    ok "C5 insert-below: file blob changed A..HEAD (a blob-anchor WOULD mis-fire; content-anchor did not)"
+  else
+    miss "C5 insert-below corroboration (blob unchanged? $(cat "$tmp/.below_blobrc" 2>/dev/null))" "C5-below-corr"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- C5 ADDED-FILE: a cited source absent at checkpoint but present at HEAD ------
+# The "incomparable -> conservatively stale" branch of cited_range_drifted. The
+# concept cites added.txt with checkpoint_sha=A, but added.txt did NOT exist at A
+# (it is introduced in the same commit as the concept). C3/C6 pass (the file is
+# present in the working tree at HEAD), but C5 cannot anchor the cite to any
+# checkpoint content -> MUST fire [C5] naming added.txt.
+assert_c5_added_file() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # checkpoint A: added.txt does NOT exist yet.
+    printf 'placeholder\n' > other.txt
+    git add other.txt
+    git commit -q -m base
+    sha_a="$(git rev-parse HEAD)"
+
+    mkdir -p docs/knowledge/ops
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [added](/ops/added.md)
+EOF
+    # added.txt is introduced HERE (so it is absent at the checkpoint sha_a).
+    printf 'newly-added-line\nsecond\n' > added.txt
+    cat > docs/knowledge/ops/added.md <<EOF
+---
+type: "Runbook"
+title: "Added-file anchor (hermetic)"
+description: "cites a file that did not exist at the checkpoint commit."
+source_files:
+  - "added.txt"
+checkpoint_sha: "$sha_a"
+provenance: "AUTHORED"
+---
+
+# Added-file anchor (hermetic)
+
+Lead paragraph for the added-file (incomparable) C5 branch.
+
+# How it works
+- the cited anchor (\`added.txt:1\`).
+
+# Invariants
+- the cited anchor holds (\`added.txt:1\`).
+
+# Citations
+1. \`added.txt:1\` — absent at the checkpoint, present at HEAD.
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.added_out" 2>&1 || true
+  )
+
+  # positive: file absent at checkpoint -> incomparable -> [C5] naming added.txt.
+  total=$((total + 1))
+  if grep -q '^\[C5\]' "$tmp/.added_out" 2>/dev/null \
+     && grep -q 'added.txt:1' "$tmp/.added_out" 2>/dev/null; then
+    ok "C5 added-file: cite absent at checkpoint, present at HEAD -> fires [C5] naming added.txt"
+  else
+    miss "C5 added-file positive (no [C5] naming added.txt): $(tail -1 "$tmp/.added_out" 2>/dev/null)" "C5-added"
   fi
   rm -rf "$tmp"
 }
@@ -377,6 +541,8 @@ assert_bad C3  C3  --bundle "$FIX/bad/C3"  --manifest "$NONE"
 assert_bad C4  C4  --bundle "$FIX/bad/C4"  --manifest "$NONE"
 assert_c5
 assert_c5_shift
+assert_c5_below
+assert_c5_added_file
 assert_c5b
 assert_bad C6  C6  --bundle "$FIX/bad/C6"  --manifest "$NONE"
 assert_bad C6b C6b --bundle "$FIX/bad/C6b" --manifest "$NONE"

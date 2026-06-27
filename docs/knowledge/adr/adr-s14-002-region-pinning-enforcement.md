@@ -1,7 +1,7 @@
 ---
 type: "ADR"
 title: "ADR-S14-002 — Tenant region-pinning enforcement (custom domain authoritative)"
-description: "Why the TLS-terminated custom domain (not an X-Region header) is the authoritative request region, enforced by a 4-layer fail-closed stack + 30k property test."
+description: "Why the TLS-terminated custom domain (not an X-Region header) is the authoritative request region. The DESIGNED enforcement is a 4-layer fail-closed stack + 30k property test, but that stack is a crate-only skeleton (not in the deployed graph) and the 30k test exercises the skeleton, not the live path — what actually ships is a single header-based HTTP 409 `residency_guard` (see Status vs shipped code)."
 source_files:
   - "specs/03_architecture/adrs/ADR-S14-002-region-pinning-enforcement.md"
   - "crates/corelink-privacy/src/residency.rs"

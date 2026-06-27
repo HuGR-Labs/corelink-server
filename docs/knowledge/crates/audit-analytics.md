@@ -11,6 +11,7 @@ source_files:
   - "crates/corelink-audit-chain/src/verifier.rs"
   - "crates/corelink-transparency-log/src/lib.rs"
   - "crates/corelink-transparency-log/src/submit.rs"
+  - "crates/corelink-container/src/routes/dsr/audit.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["crates", "audit", "analytics", "transparency", "cloudevents", "observability"]
@@ -19,7 +20,7 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # Audit/analytics crate cluster
 
-Every security-relevant action in CoreLink must leave a tamper-evident trace, and this cluster is the machinery that guarantees the trace is canonical, PII-free, and chained so a deletion or edit is detectable. It is grouped around one design spine: events are serialized via RFC 8785 JCS before hashing so the digest is deterministic, then linked without ever re-canonicalizing. The two chain crates use *different* link-hash algorithms, though: `corelink-audit` links via SHA-256 (`sha256(prev_chain_hash || content_hash)`, `crates/corelink-audit/src/lib.rs:20`), while `corelink-audit-chain` links via BLAKE3 (`crates/corelink-audit-chain/src/lib.rs:31`, `crates/corelink-audit-chain/src/lib.rs:36`). `corelink-audit` owns the event taxonomy and the PII-as-hash type system; `corelink-audit-chain` builds and daily-verifies the per-tenant hash chain; `corelink-transparency-log` is the seam that witnesses a signed entry to the public sigstore/Rekor log.
+Every security-relevant action in CoreLink must leave a tamper-evident trace, and this cluster is the machinery that *can* make the trace canonical, PII-free, and chained so a deletion or edit is detectable — **with one load-bearing carve-out: the chain logic here is real and unit-tested but has NO LIVE PRODUCER.** Nothing in the deployed container calls `HashChainBuilder::append` outside tests; the live DSR audit sink writes plain *unchained* CloudEvents to the D1 `audit_outbox` table with `emitted_at=NULL` and no `prev_hash`/`sequence_number` (`crates/corelink-container/src/routes/dsr/audit.rs:7-8`, `crates/corelink-container/src/routes/dsr/audit.rs:82`). The S-09 chain-sealing drain that would flip `emitted_at` and link those rows into the immutable chain is the unbuilt **WI-S09-007** — so "a deletion or edit is detectable" describes the chain code, NOT the deployed trail today. It is grouped around one design spine: events are serialized via RFC 8785 JCS before hashing so the digest is deterministic, then linked without ever re-canonicalizing. The two chain crates use *different* link-hash algorithms, though: `corelink-audit` links via SHA-256 (`sha256(prev_chain_hash || content_hash)`, `crates/corelink-audit/src/lib.rs:20`), while `corelink-audit-chain` links via BLAKE3 (`crates/corelink-audit-chain/src/lib.rs:31`, `crates/corelink-audit-chain/src/lib.rs:36`). `corelink-audit` owns the event taxonomy and the PII-as-hash type system; `corelink-audit-chain` builds and daily-verifies the per-tenant hash chain; `corelink-transparency-log` is the seam that witnesses a signed entry to the public sigstore/Rekor log.
 
 # Role
 
@@ -42,7 +43,7 @@ The cluster underpins the [RFC-6962 audit / transparency chain](/compliance/audi
 
 # Gotchas
 
-- The asymmetry is deliberate: the *private* audit chain fails CLOSED (integrity is a gate), but the *public* Rekor witness fails OPEN (it is best-effort enrichment, never on the write path).
+- The asymmetry is deliberate: the *private* audit chain fails CLOSED (integrity is a gate), but the *public* Rekor witness fails OPEN (it is best-effort enrichment, never on the write path). **Caveat: this fail-CLOSED property is a property of the chain *code*, not of the deployed trail** — with no live producer calling `HashChainBuilder::append` (WI-S09-007 unbuilt), the rows actually written to `audit_outbox` are unsealed/unchained, so the "edit/deletion detectable" gate is not yet enforced in production.
 - CoreLink is a Rekor *submitter*, never a log operator — it does not run an append-only log or vouch for Rekor consistency; that is the public good ADR-0066 declines to rebuild.
 - `corelink-audit` ships the trait + in-memory sink; the production `OutboxEmitter` (D1 batch INSERT alongside `corelink-meta::commit_*`) and SIEM fan-out land in the wiring layer, which is where `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER` is finally enforced.
 
@@ -59,3 +60,4 @@ The cluster underpins the [RFC-6962 audit / transparency chain](/compliance/audi
 9. `crates/corelink-audit-chain/src/verifier.rs:167-191` — fail-CLOSED constant-time `prev_hash` break + link recompute.
 10. `crates/corelink-transparency-log/src/lib.rs:11-30` — the Rekor submission seam (sign → hashedrekord → submit → witness).
 11. `crates/corelink-transparency-log/src/submit.rs:87-107` — `witness_or_degrade`: fail-OPEN witness — transient transport fault → `Degraded`, never an `Err` on the hot path.
+12. `crates/corelink-container/src/routes/dsr/audit.rs:7-8`, `crates/corelink-container/src/routes/dsr/audit.rs:82` — the live DSR audit sink: appends *unchained* CloudEvents to `audit_outbox` with `emitted_at=NULL` (no `prev_hash`/`sequence_number`); the chain-sealing drain that would link them is the unbuilt WI-S09-007 — i.e. the chain crates have no live producer.

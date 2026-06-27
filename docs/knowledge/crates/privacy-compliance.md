@@ -10,6 +10,8 @@ source_files:
   - "crates/corelink-dsr/src/audit.rs"
   - "crates/corelink-erasure-attestation/src/lib.rs"
   - "crates/corelink-erasure-attestation/src/key.rs"
+  - "crates/corelink-container/src/routes/dsr/attestation.rs"
+  - "migrations/d1/0032_erasure_attestation.sql"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["crates", "privacy", "dsr", "gdpr", "erasure", "compliance"]
@@ -29,13 +31,13 @@ The cluster backs the [DSR / erasure pipeline](/compliance/dsr-erasure.md) and t
 - `corelink-privacy` is an Option-A aggregator re-exporting the 11 privacy primitives (dsr, statuspage, breach, consent, erasure, notice, pseudonymize, residency, sub_processor, dpa::acceptance, dpa::versioning) at canonical `corelink_privacy::*` paths (`crates/corelink-privacy/src/lib.rs:1-20`, `crates/corelink-privacy/src/lib.rs:32-65`).
 - `corelink-dsr` exposes the 6-arm rights taxonomy (Access / Portability / Rectification / Erasure / Restriction / Objection) with per-jurisdiction SLA mapping (LGPD/GDPR/CCPA) and a UUIDv7 request id (`crates/corelink-dsr/src/lib.rs:30-43`).
 - It gates MFA only on the destructive arms — Erasure + Rectification require step-up; Access/Portability/Restriction/Objection do not — per the ADR-S11-001 friction-vs-security trade-off. The `MfaStepUpVerifier` contract treats a `None` token on a destructive arm as `Required` (`crates/corelink-dsr/src/mfa.rs:80-103`); the orchestrator enforces it by branching on `request.is_destructive()` and returning `DsrDecision::MfaRequired` before any store insert (`crates/corelink-dsr/src/endpoint.rs:354-367`).
-- `corelink-erasure-attestation` signs a destroy proof with per-region Ed25519 (FIPS 186-5) over RFC 8785 JCS-canonical JSON, persists it to R2 with 7-year retention, and serves the public key for offline verification (`crates/corelink-erasure-attestation/src/lib.rs:1-33`).
+- `corelink-erasure-attestation` signs a destroy proof with per-region Ed25519 (FIPS 186-5) over RFC 8785 JCS-canonical JSON (`crates/corelink-erasure-attestation/src/lib.rs:1-33`). The crate `//!` DESIGNS R2 7-year persistence + a public-key serving endpoint, but neither is wired: the live consumer writes only a D1 **metadata index row** (no signature column — `migrations/d1/0032_erasure_attestation.sql:15-27`), performs no R2 `PutObject`, and registers no public endpoint (the R2-7y persistence + serving are deferred WI-S11-008 — see `compliance/erasure-attestation`).
 
 # Invariants
 
 - DSR audit is fail-CLOSED: every `self.audit.emit(...)?` in the orchestrator `?`-propagates, so an emit failure aborts the arm before any store mutation — DSR is regulatory-grade and NEVER tolerates silent loss, distinct from billing's fail-open split-tier (`crates/corelink-dsr/src/endpoint.rs:312-318`); the `FailingDsrAuditSink` test fixture pins this fail-CLOSED contract in CI (`crates/corelink-dsr/src/audit.rs:279-295`).
 - Audit emits before store mutation on the DSR run pipeline — the orchestrator emits `request_received` BEFORE the idempotency lookup or any insert (`crates/corelink-dsr/src/endpoint.rs:307-318`).
-- `INV-ERASURE-ATTESTATION-SIGNED`: this crate only provides the signer/payload surface (`crates/corelink-erasure-attestation/src/lib.rs:35-39`); the one-attestation-per-erasure binding is enforced **cross-crate** by the consumer wiring — `corelink-container`'s DSR `attestation` module signs an Ed25519 attestation on a `VerifiedComplete` erasure (skipping fail-OPEN if the per-region seed is absent), so the invariant is not enforced inside this crate.
+- `INV-ERASURE-ATTESTATION-SIGNED`: this crate only provides the signer/payload surface (`crates/corelink-erasure-attestation/src/lib.rs:35-39`) — and the `//!` names a `ErasureAttester::attest_erasure` enforcer that **does not exist** (the real enforcer is the container free function `attestation::sign_and_persist`, `crates/corelink-container/src/routes/dsr/attestation.rs:108-220`). The binding is enforced **cross-crate** by that consumer, which signs on a `VerifiedComplete` erasure, fail-OPEN (skipping if the seed/region is absent). Correct the `//!` framing two ways: (1) it is a **non-BYOK D1/R2/Stripe delete-set for ANY tenant**, NOT "every BYOK-tenant erasure" — it records `kms_provider="corelink_d1r2_erase"` and does no KMS CMK destroy (`crates/corelink-container/src/routes/dsr/attestation.rs:10-14`, `:49-51`); (2) "persisted in R2 (7y) and indexed in D1" is only **half-live** — the D1 row is a **metadata index only** (no signature/JCS column — `migrations/d1/0032_erasure_attestation.sql:15-27`) and the R2 7-year persistence is unwired (deferred WI-S11-008). So the invariant is enforced neither inside this crate nor (for the R2/persistence half) anywhere live.
 - The signing key zeroizes on drop and never appears in logs/traces/errors: `ErasureSigningKey` derives `ZeroizeOnDrop` and its `Debug` redacts the key bytes (`crates/corelink-erasure-attestation/src/key.rs:21-49`); verify is constant-time via `ed25519-dalek`.
 
 # Gotchas
@@ -53,6 +55,8 @@ The cluster backs the [DSR / erasure pipeline](/compliance/dsr-erasure.md) and t
 5. `crates/corelink-dsr/src/mfa.rs:80-103` — `MfaStepUpVerifier` contract: `None` token on a destructive arm → `Required`.
 6. `crates/corelink-dsr/src/endpoint.rs:354-367` — MFA gate on destructive arms only (`is_destructive` → `MfaRequired`, no insert).
 7. `crates/corelink-dsr/src/endpoint.rs:307-318` — `request_received` audit emitted BEFORE the idempotency lookup / store insert.
-7. `crates/corelink-erasure-attestation/src/lib.rs:1-33` — Ed25519/JCS attestation purpose, R2 7y, public-key verify, 30d rotation.
-8. `crates/corelink-erasure-attestation/src/lib.rs:35-39` — the signer/payload surface for `INV-ERASURE-ATTESTATION-SIGNED`; the binding is enforced cross-crate by the `corelink-container` DSR `attestation` consumer (not in this crate).
+7. `crates/corelink-erasure-attestation/src/lib.rs:1-33` — Ed25519/JCS attestation purpose; the R2-7y persistence + public-key serving it describes are DESIGN, not live (deferred WI-S11-008).
+8. `crates/corelink-erasure-attestation/src/lib.rs:35-39` — the signer/payload surface for `INV-ERASURE-ATTESTATION-SIGNED`; names a non-existent `ErasureAttester::attest_erasure` enforcer. The real (fail-OPEN, non-BYOK, metadata-index-only) enforcer is the consumer below.
+10. `crates/corelink-container/src/routes/dsr/attestation.rs:10-14`, `:108-220` — `sign_and_persist`: the real cross-crate enforcer; D1/R2/Stripe delete-set (`kms_provider="corelink_d1r2_erase"`, no CMK destroy), writes a metadata-only D1 index row.
+11. `migrations/d1/0032_erasure_attestation.sql:15-27` — `erasure_attestations` schema: metadata index only, NO signature / NO JCS-payload column; R2 7y deferred.
 9. `crates/corelink-erasure-attestation/src/key.rs:21-49` — `ErasureSigningKey`: `ZeroizeOnDrop` derive + redacting `Debug` (no key material in logs).

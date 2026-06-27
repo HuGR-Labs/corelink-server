@@ -7,6 +7,7 @@ source_files:
   - "ARCHITECTURE.md"
   - "crates/corelink-container/src/storage/r2_s3.rs"
   - "worker/src/index.ts"
+  - "crates/corelink-container/src/routes/dsr/audit.rs"
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
 provenance: "AUTHORED"
 tags: ["security", "posture", "audit", "tenant-isolation", "compliance"]
@@ -38,7 +39,12 @@ launch gate).
 
 - CoreLink commits to four RFC-2119 MUST invariants that everything derives from: CAS integrity,
   tenant isolation (TLA+-verified), confidentiality at rest and in flight, and an append-only
-  Merkle-chained audit log (`ARCHITECTURE.md:27-52`).
+  Merkle-chained audit log (`ARCHITECTURE.md:27-52`). **Carve-out: the append-only Merkle-chained
+  audit log is DESIGNED-not-yet-live** — the chain crates have no live producer, and the deployed
+  audit trail is unsealed/unchained D1 `audit_outbox` rows (`emitted_at=NULL`, no `prev_hash`/
+  `sequence_number`); chain-sealing is the unbuilt WI-S09-007 (`crates/corelink-container/src/routes/dsr/audit.rs:7-8`,
+  `crates/corelink-container/src/routes/dsr/audit.rs:82`). See the
+  [audit-analytics crate cluster](/crates/audit-analytics.md).
 - The control plane (stateless Worker) and the data plane (in-region Rust container) communicate only
   over Cloudflare service bindings — no public endpoint exists for the container, so the attack
   surface is the WAF, not the gRPC server (`ARCHITECTURE.md:93-101`).
@@ -72,7 +78,10 @@ launch gate).
 
 - The four MUST guarantees (CAS integrity, tenant isolation, confidentiality, audit append-only) are
   the trust root the rest of the system enforces — verified by TLA+, proptest, or runtime assertions
-  (`ARCHITECTURE.md:33-52`).
+  (`ARCHITECTURE.md:33-52`). **Two of the four are not yet fully live and MUST NOT be cited as active
+  controls: BYOK at-rest confidentiality (designed/unwired, above) and the audit append-only chain
+  (chain code is real+tested but has no live producer — the deployed trail is unsealed `audit_outbox`
+  rows; chain-sealing = unbuilt WI-S09-007).** The two isolation/integrity layers below ARE live.
 - Tenant isolation is defense-in-depth: a logic bug in either the Worker authZ layer or the storage
   prefix layer still produces zero cross-tenant blast; the Worker half is the path-vs-PAT tenant
   mismatch 403 at `worker/src/index.ts:2141` (over the D1-resolved tenant at `:1039-1044`), and the
@@ -107,3 +116,4 @@ launch gate).
 8. `docs/security/2026-06-13-CAA-360-audit-report.md:22-27` — the fail-open-secrets root cause + the launch gate.
 9. `docs/security/2026-06-13-CAA-360-audit-report.md:51-81` — the one High (F36): migration 0064 trigger-loss documentation defect.
 10. `docs/security/2026-06-13-CAA-360-audit-report.md:104-120` — F1: cross-tenant co-residence when `R2_TDK_HEX` is unset in prod.
+13. `crates/corelink-container/src/routes/dsr/audit.rs:7-8`, `crates/corelink-container/src/routes/dsr/audit.rs:82` — the audit append-only MUST is designed-not-yet-live: the live sink writes *unchained* CloudEvents to `audit_outbox` (`emitted_at=NULL`, no `prev_hash`/`sequence_number`); chain-sealing is the unbuilt WI-S09-007.
