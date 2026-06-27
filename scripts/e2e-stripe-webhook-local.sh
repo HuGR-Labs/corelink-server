@@ -36,8 +36,23 @@
 #   H  checkout.session.completed (paid, tier=pro) → 200; mirrors A:
 #      pending_checkout→active transition + billing paid + plan=pro.
 #
-# Usage:  bash scripts/e2e-stripe-webhook-local.sh
-# Exit:   0 = all scenarios PASS;  1 = a scenario failed (see output).
+# Usage:
+#   bash scripts/e2e-stripe-webhook-local.sh            # full 15/15 run (default)
+#   bash scripts/e2e-stripe-webhook-local.sh --setup    # boot + leave running,
+#                                                        # emit eval-able handles
+#   bash scripts/e2e-stripe-webhook-local.sh --teardown # stop a --setup server
+# Exit:   0 = all scenarios PASS (run) / ready (setup) / stopped (teardown);
+#         1 = a scenario failed (run mode only; see output).
+#
+# REUSE (WP: e2e-real-client/stripe-test-env.sh): `--setup` applies the SAME
+# real-DDL schema + boots the SAME wrangler-dev signup-worker as the default run,
+# but instead of driving the 8 scenarios it persists the runtime handles to a
+# state file and prints a clean, eval-able KEY=VALUE block on STDOUT
+# (HARNESS_PORT / HARNESS_WHSEC / HARNESS_PERSIST / HARNESS_WRANGLER /
+# HARNESS_WORKER_DIR / HARNESS_STATE_FILE) so a caller can point the e2e billing
+# webhook journeys at this LOCAL receiver (never firing synthetic events at
+# prod). `--teardown` stops it. The default (no-arg) run is byte-for-byte
+# unchanged (still 15/15).
 
 set -euo pipefail
 
@@ -46,13 +61,57 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WORKER_DIR="$REPO_ROOT/apps/signup-worker"
 WRANGLER="$WORKER_DIR/node_modules/wrangler/bin/wrangler.js"
 PORT="${PORT:-8799}"
-PERSIST="$(mktemp -d "${TMPDIR:-/tmp}/sw-stripe-harness.XXXXXX")"
 DEVVARS="$WORKER_DIR/.dev.vars"
 DEVVARS_BAK=""
 DEV_PID=""
+PERSIST=""
+
+# Mode: run (default, full 15/15) | setup (boot + emit handles, stay alive) |
+# teardown (stop a prior --setup). Parsed from the first arg.
+MODE="run"
+case "${1:-}" in
+  --setup|--emit-env) MODE="setup" ;;
+  --teardown)         MODE="teardown" ;;
+  ""|--run)           MODE="run" ;;
+  *) echo "ERROR: unknown arg '${1}' (use --setup | --teardown | no arg)" >&2; exit 2 ;;
+esac
+
+# Stable state-file path keyed by PORT so a later --teardown (same PORT) finds
+# the --setup server's handles without arguments.
+STATE_FILE="${TMPDIR:-/tmp}/corelink-e2e-stripe-harness.${PORT}.state"
+
+# Progress goes to STDERR so `--setup` keeps STDOUT a clean, eval-able block.
+log() { echo "$@" >&2; }
 
 command -v node >/dev/null || { echo "ERROR: node not found" >&2; exit 1; }
 [[ -f "$WRANGLER" ]] || { echo "ERROR: wrangler not found at $WRANGLER" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# --teardown: stop a server a prior --setup left running, then exit.
+# ---------------------------------------------------------------------------
+if [[ "$MODE" == "teardown" ]]; then
+  if [[ -f "$STATE_FILE" ]]; then
+    # shellcheck disable=SC1090
+    . "$STATE_FILE"
+    set +e
+    [[ -n "${DEV_PID:-}" ]] && kill "$DEV_PID" 2>/dev/null
+    pkill -f "wrangler.*dev.*--port ${PORT}" 2>/dev/null
+    pkill -f "workerd.*${PORT}" 2>/dev/null
+    if [[ -n "${DEVVARS_BAK:-}" && -f "${DEVVARS_BAK}" ]]; then
+      mv -f "$DEVVARS_BAK" "$DEVVARS" 2>/dev/null
+    else
+      rm -f "$DEVVARS" 2>/dev/null
+    fi
+    [[ -n "${PERSIST:-}" ]] && rm -rf "$PERSIST" 2>/dev/null
+    rm -f "$STATE_FILE" 2>/dev/null
+    log "▶ teardown: stopped harness on port ${PORT}"
+  else
+    log "▶ teardown: no state file at $STATE_FILE (nothing to stop)"
+  fi
+  exit 0
+fi
+
+PERSIST="$(mktemp -d "${TMPDIR:-/tmp}/sw-stripe-harness.XXXXXX")"
 
 # A self-generated whsec. decodeWebhookSecret() base64-decodes everything after
 # the whsec_ prefix, so the suffix MUST be valid base64.
@@ -70,7 +129,11 @@ cleanup() {
   fi
   rm -rf "$PERSIST" 2>/dev/null
 }
-trap cleanup EXIT
+# Only the full RUN mode auto-cleans on exit. `--setup` intentionally leaves the
+# dev server + persist dir alive for the caller; `--teardown` reclaims them.
+if [[ "$MODE" == "run" ]]; then
+  trap cleanup EXIT
+fi
 
 # ---------------------------------------------------------------------------
 # 1. Real-DDL local schema (the 3 tables the webhook write-path touches).
@@ -129,32 +192,35 @@ SQL
 # workerd bound to it, which makes the fresh dev server fail to listen).
 lsof -ti:"$PORT" 2>/dev/null | xargs -r kill -9 2>/dev/null || true
 
-echo "▶ harness persist dir: $PERSIST"
-echo "▶ applying real-DDL schema to local D1 (CONFIG_DB)…"
+log "▶ harness persist dir: $PERSIST"
+log "▶ applying real-DDL schema to local D1 (CONFIG_DB)…"
 node "$WRANGLER" d1 execute CONFIG_DB --local --persist-to "$PERSIST" \
   --config "$WORKER_DIR/wrangler.toml" --file "$SCHEMA" --yes >/dev/null
 
-# Pre-seed a pending_checkout row so scenario A exercises the real
-# pending_checkout→active transition (not just an insert).
-node "$WRANGLER" d1 execute CONFIG_DB --local --persist-to "$PERSIST" \
-  --config "$WORKER_DIR/wrangler.toml" --yes --command \
-  "INSERT INTO tier_selections (tenant_id,tier,subscription_state,correlation_id)
-   VALUES ('harness-tenant-A','starter','pending_checkout','seed:A');" >/dev/null
+# Pre-seed the pending_checkout rows that scenarios A/F/G/H exercise. These are
+# RUN-mode only: --setup boots a clean schema for the caller to seed its own
+# (sub_e2e/cus_e2e) fixtures.
+if [[ "$MODE" == "run" ]]; then
+  # Scenario A — real pending_checkout→active transition (not just an insert).
+  node "$WRANGLER" d1 execute CONFIG_DB --local --persist-to "$PERSIST" \
+    --config "$WORKER_DIR/wrangler.toml" --yes --command \
+    "INSERT INTO tier_selections (tenant_id,tier,subscription_state,correlation_id)
+     VALUES ('harness-tenant-A','starter','pending_checkout','seed:A');" >/dev/null
 
-# Pre-seed pending_checkout rows so scenarios F/G/H exercise the real
-# pending_checkout→active transition (same structure as scenario A).
-node "$WRANGLER" d1 execute CONFIG_DB --local --persist-to "$PERSIST" \
-  --config "$WORKER_DIR/wrangler.toml" --yes --command \
-  "INSERT INTO tier_selections (tenant_id,tier,subscription_state,correlation_id)
-   VALUES ('harness-tenant-SOLO','solo','pending_checkout','seed:SOLO');" >/dev/null
-node "$WRANGLER" d1 execute CONFIG_DB --local --persist-to "$PERSIST" \
-  --config "$WORKER_DIR/wrangler.toml" --yes --command \
-  "INSERT INTO tier_selections (tenant_id,tier,subscription_state,correlation_id)
-   VALUES ('harness-tenant-TEAM','team','pending_checkout','seed:TEAM');" >/dev/null
-node "$WRANGLER" d1 execute CONFIG_DB --local --persist-to "$PERSIST" \
-  --config "$WORKER_DIR/wrangler.toml" --yes --command \
-  "INSERT INTO tier_selections (tenant_id,tier,subscription_state,correlation_id)
-   VALUES ('harness-tenant-PRO','pro','pending_checkout','seed:PRO');" >/dev/null
+  # Scenarios F/G/H — same pending_checkout→active transition as scenario A.
+  node "$WRANGLER" d1 execute CONFIG_DB --local --persist-to "$PERSIST" \
+    --config "$WORKER_DIR/wrangler.toml" --yes --command \
+    "INSERT INTO tier_selections (tenant_id,tier,subscription_state,correlation_id)
+     VALUES ('harness-tenant-SOLO','solo','pending_checkout','seed:SOLO');" >/dev/null
+  node "$WRANGLER" d1 execute CONFIG_DB --local --persist-to "$PERSIST" \
+    --config "$WORKER_DIR/wrangler.toml" --yes --command \
+    "INSERT INTO tier_selections (tenant_id,tier,subscription_state,correlation_id)
+     VALUES ('harness-tenant-TEAM','team','pending_checkout','seed:TEAM');" >/dev/null
+  node "$WRANGLER" d1 execute CONFIG_DB --local --persist-to "$PERSIST" \
+    --config "$WORKER_DIR/wrangler.toml" --yes --command \
+    "INSERT INTO tier_selections (tenant_id,tier,subscription_state,correlation_id)
+     VALUES ('harness-tenant-PRO','pro','pending_checkout','seed:PRO');" >/dev/null
+fi
 
 # ---------------------------------------------------------------------------
 # 2. .dev.vars with the test whsec (backup + restore any real one).
@@ -172,7 +238,7 @@ EOF
 # ---------------------------------------------------------------------------
 # 3. Boot wrangler dev --local.
 # ---------------------------------------------------------------------------
-echo "▶ booting wrangler dev --local on port ${PORT}"
+log "▶ booting wrangler dev --local on port ${PORT}"
 ( cd "$WORKER_DIR" && exec node "$WRANGLER" dev --local --port "$PORT" \
     --persist-to "$PERSIST" >"$PERSIST/dev.log" 2>&1 ) &
 DEV_PID=$!
@@ -185,8 +251,34 @@ for _ in $(seq 1 60); do
   # attempts burn before wrangler finishes binding (~2-3s cold start).
   sleep 1
 done
-[[ "$ready" == "1" ]] || { echo "ERROR: dev server did not become ready"; tail -30 "$PERSIST/dev.log"; exit 1; }
-echo "  ready."
+[[ "$ready" == "1" ]] || { echo "ERROR: dev server did not become ready" >&2; tail -30 "$PERSIST/dev.log" >&2; exit 1; }
+log "  ready."
+
+# ---------------------------------------------------------------------------
+# --setup: persist the runtime handles + emit an eval-able block, then exit
+# WITHOUT cleaning up (the caller drives the journeys then runs --teardown).
+# ---------------------------------------------------------------------------
+if [[ "$MODE" == "setup" ]]; then
+  cat > "$STATE_FILE" <<STATE
+DEV_PID=$DEV_PID
+PERSIST=$PERSIST
+DEVVARS=$DEVVARS
+DEVVARS_BAK=$DEVVARS_BAK
+WHSEC=$WHSEC
+PORT=$PORT
+WRANGLER=$WRANGLER
+WORKER_DIR=$WORKER_DIR
+STATE
+  log "▶ setup: harness ready on port ${PORT}; state → $STATE_FILE"
+  # The ONLY stdout output: a clean, eval-able KEY=VALUE block.
+  echo "HARNESS_PORT=$PORT"
+  echo "HARNESS_WHSEC=$WHSEC"
+  echo "HARNESS_PERSIST=$PERSIST"
+  echo "HARNESS_WRANGLER=$WRANGLER"
+  echo "HARNESS_WORKER_DIR=$WORKER_DIR"
+  echo "HARNESS_STATE_FILE=$STATE_FILE"
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Helpers

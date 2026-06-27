@@ -15,6 +15,16 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use crate::harness::{bearer, blake3_hex, url_cas, Config, JourneyResult, TokenKind};
 use crate::personas::Persona;
 
+/// Max PUT attempts the cap-drive will make per content-address before declaring
+/// the data plane unreachable. The CAS write hot-path has 2 synchronous
+/// D1-over-HTTP hops (quota + tombstone) plus a ~2.5s cold-container start
+/// (docs/perf/2026-06-19-cas-hot-path-latency.md), so a fresh quota tenant's
+/// first writes can 503/time-out while the container is cold and D1 is slow. A
+/// single cold-start blip must NOT be able to exhaust the budget mid-drive, so
+/// we allow up to 8 attempts with EXPONENTIAL backoff (the real perf fix is
+/// PR #368 WP-2 — this only de-flakes the e2e).
+const MAX_PUT_ATTEMPTS: usize = 8;
+
 /// PUT a blob, riding out TRANSIENT prod faults so a flaky window can't turn a
 /// quota journey RED on a NON-cap blip. A per-tenant data plane can 503 on its
 /// first (cold) touch, and a slow-prod window can time the request out — neither
@@ -22,7 +32,8 @@ use crate::personas::Persona;
 /// blip (observed: a fresh quota tenant timed out at 60s / 503'd on PUT #0,
 /// rotating run-to-run). We retry the SAME content-address — idempotent, since
 /// CAS is content-addressed so a re-PUT is a safe no-op/dedup — on a send-error /
-/// 503 / 504, up to a bounded budget with short pauses. Returns:
+/// 503 / 504, up to `MAX_PUT_ATTEMPTS` with EXPONENTIAL backoff (1,2,4,8,8,8,8 s,
+/// capped at 8s) so a cold-start blip can't exhaust the budget mid-drive. Returns:
 ///   `Ok(status)`  — a DEFINITIVE response: 2xx served, 402/429 cap, 404, a
 ///                   non-transient 5xx (crash-on-cap), etc. — the caller decides.
 ///   `Err(reason)` — a PERSISTENT transient fault after the budget; the caller
@@ -34,7 +45,7 @@ fn put_blob_tolerant(
     blob: &[u8],
 ) -> Result<u16, String> {
     let mut last = String::new();
-    for attempt in 0..5 {
+    for attempt in 0..MAX_PUT_ATTEMPTS {
         match client
             .put(url)
             .header(AUTHORIZATION, bearer(token))
@@ -52,11 +63,80 @@ fn put_blob_tolerant(
             }
             Err(e) => last = e.to_string(), // timeout / connection — retry
         }
-        if attempt < 4 {
-            std::thread::sleep(std::time::Duration::from_secs(2));
+        if attempt + 1 < MAX_PUT_ATTEMPTS {
+            // Exponential backoff capped at 8s: 1,2,4,8,8,8,8 — rides a cold-start
+            // window (container boot + slow D1) without a fixed-pause storm.
+            let backoff = (1u64 << attempt).min(8);
+            std::thread::sleep(std::time::Duration::from_secs(backoff));
         }
     }
-    Err(format!("data plane unreachable after 5 attempts ({last})"))
+    Err(format!(
+        "data plane unreachable after {MAX_PUT_ATTEMPTS} attempts ({last})"
+    ))
+}
+
+/// Number of priming READS the warm-up phase issues before a timed cap-drive.
+const WARMUP_PRIMING_READS: usize = 3;
+
+/// Per-priming-read attempt budget (generous, exponential 1..16 s) — warm-up
+/// rides a cold container far more patiently than the timed drive does.
+const WARMUP_READ_ATTEMPTS: usize = 6;
+
+/// WARM-UP the per-tenant data plane BEFORE the timed cap-drive: issue a few
+/// priming GET requests so the cold container boots (~2.5s) and the quota +
+/// tombstone D1-over-HTTP hops are exercised (docs/perf/2026-06-19-cas-hot-path-
+/// latency.md) WHILE we are still patient — instead of eating a cold-start 503
+/// inside the timed drive where it can rotate the journey to a transient gate.
+///
+/// We deliberately use READS (GET of a random unknown content-address), NOT
+/// writes: a GET warms the container + the same D1 hops a PUT takes, but it does
+/// NOT mutate the tenant's quota — so warm-up cannot consume the carefully-seeded
+/// under-cap headroom the drive needs to start below its limit, and it cannot
+/// pre-trip (or mask) the cap. A 404 (unknown hash) / 200 / 401 — ANY definitive
+/// response — proves the plane is warm + reachable for that probe. Transient
+/// 503/504/timeout are retried with a generous exponential budget; only a
+/// PERSISTENT fault after the whole budget is an `Err` (the caller GATES — a cold
+/// or outaged plane is not a cap result, never a FAIL).
+fn warm_up_plane(
+    client: &Client,
+    cfg: &Config,
+    tenant: &str,
+    token: &str,
+) -> Result<(), String> {
+    for p in 0..WARMUP_PRIMING_READS {
+        // Random unknown content-address → a pure read: warms the container + the
+        // quota/tombstone D1 hops, mutates nothing.
+        let probe = format!("quota-warmup-{}-{p}", uuid::Uuid::new_v4()).into_bytes();
+        let hash = blake3_hex(&probe);
+        let url = url_cas(cfg, tenant, &hash);
+        let mut last = String::new();
+        let mut reached = false;
+        for attempt in 0..WARMUP_READ_ATTEMPTS {
+            match client.get(&url).header(AUTHORIZATION, bearer(token)).send() {
+                Ok(r) => {
+                    let st = r.status().as_u16();
+                    if matches!(st, 503 | 504) {
+                        last = format!("transient {st}"); // still cold — keep priming
+                    } else {
+                        reached = true; // any definitive response ⇒ warm + reachable
+                        break;
+                    }
+                }
+                Err(e) => last = e.to_string(),
+            }
+            if attempt + 1 < WARMUP_READ_ATTEMPTS {
+                // Exponential 1,2,4,8,16 s — warm-up is patient by design.
+                let backoff = (1u64 << attempt).min(16);
+                std::thread::sleep(std::time::Duration::from_secs(backoff));
+            }
+        }
+        if !reached {
+            return Err(format!(
+                "warm-up read #{p} could not reach a warm data plane ({last})"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Resolve the (tenant, token) the destructive quota drives target.
@@ -143,6 +223,13 @@ fn under_cap_serves(cfg: &Config, client: &Client) -> JourneyResult {
         Err(gate) => return gate,
     };
 
+    // WARM-UP: prime the cold container + D1 hops with reads before the timed
+    // write, so a ~2.5s cold start can't 503 the probe. A persistent fault here
+    // is a cold/outaged plane, not a cap result → GATE.
+    if let Err(reason) = warm_up_plane(client, cfg, &tenant, token) {
+        return JourneyResult::gated(name, format!("warm-up: {reason}"));
+    }
+
     // A small unique blob — well under any tier cap for a healthy test tenant.
     let blob = format!("quota-undercap-{}", uuid::Uuid::new_v4()).into_bytes();
     let hash = blake3_hex(&blob);
@@ -190,6 +277,13 @@ fn quota_hard_cap(cfg: &Config, client: &Client) -> JourneyResult {
         Ok(x) => x,
         Err(gate) => return gate,
     };
+
+    // WARM-UP before the cap-drive: boot the cold container + exercise the D1 hops
+    // with reads, so the drive's first writes don't eat a cold-start 503 inside
+    // the timed loop. Persistent fault ⇒ cold/outaged plane, not a cap → GATE.
+    if let Err(reason) = warm_up_plane(client, cfg, &tenant, token) {
+        return JourneyResult::gated(name, format!("warm-up: {reason}"));
+    }
 
     const MAX_ATTEMPTS: usize = 100;
     let template = vec![b'x'; 1024]; // 1KB
@@ -266,6 +360,13 @@ fn quota_hard_cap_clean_and_under_cap_serves(cfg: &Config, client: &Client) -> J
         Ok(x) => x,
         Err(gate) => return gate,
     };
+
+    // WARM-UP before BOTH halves: prime the cold container + D1 hops with reads so
+    // neither the under-cap probe nor the timed drive eats a cold-start 503.
+    // Persistent fault ⇒ cold/outaged plane, not a cap result → GATE.
+    if let Err(reason) = warm_up_plane(client, cfg, &tenant, token) {
+        return JourneyResult::gated(name, format!("warm-up: {reason}"));
+    }
 
     // (a) UNDER-CAP first: a single small write must serve 2xx — proving a later
     // deny means "over cap", not "always denied". If THIS tenant is already at its

@@ -16,8 +16,7 @@
 //!
 //! Every cell is a PASS / GATED / FAIL [`JourneyResult`]:
 //!   - **PASS**  — the server rejected with the expected 4xx (and never a 5xx).
-//!   - **GATED** — P1 (the RW PAT) or the tenant segment is absent, or an
-//!     optional probe (the oversized-body limit) is not exercisable.
+//!   - **GATED** — P1 (the RW PAT) or the tenant segment is absent.
 //!   - **FAIL**  — a 5xx on malformed input, OR a silent-accept (a 2xx/stored
 //!     where the contract demands rejection), OR a transport error.
 //!
@@ -27,8 +26,7 @@
 //!     - PUT whose body does NOT match the claimed CAS digest → HASH mismatch
 //!       (4xx, and the bytes must NOT be retrievable afterwards)
 //!     - GET of a well-formed but absent digest → 404
-//!     - oversized body over the configured limit (probe) → 413 (GATED if the
-//!       limit is not hit by the probe size)
+//!     - oversized body (11 MiB) over the 10 MiB global limit → 413
 //!     - wrong content-type on a CAS PUT → still correct (accept) or a clean 4xx,
 //!       never a 5xx
 //!     - empty body PUT → a clean status, never a 5xx
@@ -342,24 +340,28 @@ fn cas_absent_digest_404(cfg: &Config, client: &Client) -> JourneyResult {
     }
 }
 
-/// **Oversized body** — a PUT whose body exceeds the configured per-object limit
-/// must be rejected with 413 (or another clean 4xx), NEVER a 5xx. The exact
-/// limit is server-config; this probe sends a body large enough to exceed common
-/// cache-object ceilings. If the probe size is accepted (the real limit is
-/// higher, or unenforced for this size), the cell GATES rather than FAILs — we
-/// must never claim a limit the server doesn't advertise, and we must never run
-/// an unbounded body that could disturb other tenants.
+/// **Oversized body** — a PUT whose body exceeds the global per-request body
+/// limit must be rejected with 413 (or another clean 4xx), NEVER a 5xx. The
+/// container caps EVERY route at a 10 MiB `DefaultBodyLimit`
+/// (`crates/corelink-container/src/main.rs:459`), so a body just over that cap
+/// is deterministically refused before any handler runs. This probe sends
+/// 11 MiB — one MiB over the 10 MiB ceiling — which is large enough to trip the
+/// limit yet still a single bounded request that is safe to send once and never
+/// a quota-drive. Because 11 MiB > 10 MiB always exceeds the cap, this cell is a
+/// real PASS/FAIL on 413, not a GATE.
 fn cas_oversized_body(cfg: &Config, client: &Client) -> JourneyResult {
-    let name = "EDGE CAS: oversized body → 413 (probe; GATED if under the limit)";
+    let name = "EDGE CAS: oversized body (11 MiB > 10 MiB cap) → 413";
     let start = Instant::now();
     let (tenant, token) = match p1_ctx(cfg, name) {
         Ok(v) => v,
         Err(g) => return g,
     };
 
-    // A bounded probe: 8 MiB. Large enough to trip a typical small-object cache
-    // ceiling, small enough to be safe + deterministic and not a quota-drive.
-    const PROBE_BYTES: usize = 8 * 1024 * 1024;
+    // 11 MiB — exactly one MiB over the 10 MiB global `DefaultBodyLimit`
+    // (main.rs:459). Deterministically exceeds the cap (a single bounded request,
+    // safe to send once), so 413 is guaranteed; small enough to not be a
+    // quota-drive or disturb other tenants.
+    const PROBE_BYTES: usize = 11 * 1024 * 1024;
     let body = vec![b'A'; PROBE_BYTES];
     // CAS verifies BLAKE3, so address the probe by its real digest — that way a
     // rejection is unambiguously the SIZE, not a hash mismatch.
@@ -387,13 +389,14 @@ fn cas_oversized_body(cfg: &Config, client: &Client) -> JourneyResult {
         return JourneyResult::pass(name, ms(start));
     }
     if matches!(st, 200 | 201) {
-        // The 8 MiB body was accepted — the real limit is higher (or unenforced
-        // at this size). Not a failure: GATE, recording that the probe didn't
-        // reach the ceiling. (Best-effort cleanup: a DELETE of what we wrote.)
+        // An 11 MiB body was ACCEPTED — the 10 MiB global `DefaultBodyLimit`
+        // (main.rs:459) failed to reject a request over its cap. That is a real
+        // regression, not a gate. (Best-effort cleanup: a DELETE of what we wrote.)
         let _ = client.delete(&url).header(AUTHORIZATION, bearer(token)).send();
-        return JourneyResult::gated(
+        return JourneyResult::fail(
             name,
-            format!("8 MiB probe accepted ({st}) — per-object limit is higher than the probe; not exercisable safely"),
+            ms(start),
+            format!("11 MiB body accepted ({st}) — the 10 MiB global body limit (main.rs:459) did not reject an over-cap request. url={url}"),
         );
     }
     // Some other clean 4xx (e.g. 400/403/422) — accept as a non-5xx rejection

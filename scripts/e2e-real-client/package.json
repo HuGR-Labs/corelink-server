@@ -1,0 +1,21 @@
+{
+  "name": "corelink-e2e-clerk-session-minter",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless-browser Clerk-session JWT minter for the CoreLink e2e suite (Testing-Token bot-detection bypass). Mints CORELINK_E2E_{CLERK,DSR,DSR_TEST}_SESSION.",
+  "bin": {
+    "clerk-session-minter": "./clerk-session-minter.mjs"
+  },
+  "scripts": {
+    "mint": "node clerk-session-minter.mjs",
+    "refresh": "node clerk-session-minter.mjs --refresh",
+    "postinstall": "echo '\\n[clerk-session-minter] Browser binary required: run `npx playwright install chromium` before first use.\\n'"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
